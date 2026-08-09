@@ -1,0 +1,25 @@
+name: Daily Live Nifty Trader
+on:
+  schedule:
+    - cron: '35 3 * * 1-5' # Fires Monday-Friday at 09:05 AM IST (03:35 UTC)
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Load Repository Code
+        uses: actions/checkout@v3
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install Market Dependencies
+        run: pip install requests pandas numpy openalgo
+      - name: Run Live Trading Script
+        env:
+          STOXKART_CLIENT_ID: ${{ secrets.STOXKART_CLIENT_ID }}
+          STOXKART_PASSWORD: ${{ secrets.STOXKART_PASSWORD }}
+          STOXKART_API_KEY: ${{ secrets.STOXKART_API_KEY }}
+          STOXKART_SECRET_KEY: ${{ secrets.STOXKART_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python trading_bot.py
