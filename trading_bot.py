@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv("STOXKART_SECRET_KEY", "YOUR_DEFAULT_SECRET_KEY")
 # Messaging Module Credentials (Telegram Bot Integration)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-
+SIMULATION_MODE = True  # Set to False only when you get real Stoxkart keys
 # Fixed Strategy Parameters
 LOT_SIZE = 1  # 1 Lot Nifty (75 units or current contract multi-lot sizes)
 MAX_PROFIT_TARGET = 2000    # Absolute strategy basket profit cap (Rs. 2000)
@@ -55,6 +55,17 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"[-] Broadcast failure: {str(e)}")
 
+
+
+def authenticate_stoxkart():
+    """Performs the morning API handshake or bypasses it for simulation."""
+    global session_token
+    if SIMULATION_MODE:
+        print("[LOG] SIMULATION MODE ACTIVE: Bypassing Stoxkart Key Check.")
+        session_token = "MOCK_TOKEN_SUCCESSFUL_HANDSHAKE"
+        return True
+
+    # ... rest of the original login code ...
 # ==============================================================================
 # 3. PRE-TRADE MARKET INTELLIGENCE LAYER
 # ==============================================================================
