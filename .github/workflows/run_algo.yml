@@ -1,8 +1,8 @@
 name: Daily Live Nifty Trader
 on:
   schedule:
-    # Triggers Monday through Friday at 03:35 AM UTC (Which is exactly 09:05 AM IST)
-    - cron: '35 3 * * 1-5'
+    - cron: '35 3 * * 1-5' # Automatic Morning Trigger
+  workflow_dispatch:      # 🟢 ADD THIS LINE: Enables the manual "Run workflow" button
 jobs:
   trade:
     runs-on: ubuntu-latest
