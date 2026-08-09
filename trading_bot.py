@@ -259,39 +259,27 @@ def run_live_terminal_monitor(positions):
 # ==============================================================================
 # 6. CENTRAL AUTOMATED LIFECYCLE CONTROLLER
 # ==============================================================================
+# ==============================================================================
+# 🎬 INSTANT TEST LIFE-CYCLE (BYPASSES TIME-WAIT FILTERS FOR CURRENT TESTING)
+# ==============================================================================
 if __name__ == "__main__":
-    print("==============================================================================")
-    print("🚀 NIFTY AUTOMATED MULTI-THEORY TRADING TERMINAL INITIALIZED")
-    print("==============================================================================")
+    print("[SYSTEM INITIALIZATION] Automated Terminal Core Engine Active.")
+    print("[TEST LOG] Running in INSTANT FORCE-TEST Mode.")
     
-    # 1. Block Execution Wait Timer Loop until pre-trade analytics frame opens (09:18 AM)
-    print("[+] Monitoring clock nodes... Waiting safely for 09:18 AM IST framework timeline.")
-    # For deployment automation scripts, real-time wait clocks can be un-commented:
-    # while datetime.now().strftime("%H:%M") < "09:18":
-    #     time.sleep(30)
-        
-    # 2. Compute Structural Analysis Checklist
-    regime, report_message = run_pre_trade_analysis()
+    # 1. Bypass authentication check for current testing
+    session_token = "MOCK_TOKEN_SUCCESSFUL_HANDSHAKE"
+    print("[SUCCESS] Stoxkart Session Generated (Simulation Model Bypass).")
     
-    # Push the detailed market summary report straight to your mobile messaging client instantly
-    send_telegram_alert(report_message)
+    # 2. Fire the mathematical analysis and market indicators calculations immediately
+    print("[LOG] Computing Market Structure, SMC Zones, Elliott Waves, and PCR Data...")
+    market_regime, target_atm, analysis_dashboard = perform_market_analysis()
     
-    # 3. Handle Order Generation Frame at Exactly 09:20 AM
-    # while datetime.now().strftime("%H:%M") < "09:20":
-    #     time.sleep(1)
-        
-    nifty_mock_spot = 24510.0
-    nearest_atm_strike = int(round(nifty_mock_spot / 50) * 50) # Finds nearest 50-point interval strike price
+    # 3. Fire the Telegram Message instantly without any 60-second delay counters
+    print("[LOG] Dispatching live analytical payload to Telegram API...")
+    send_telegram_alert(analysis_dashboard)
     
-    active_basket, execution_log = execute_order_basket(regime, nearest_atm_strike)
-    send_telegram_alert(execution_log)
+    # 4. Simulate sending order parameters to your broker logs
+    print(f"[LOG] Simulating orders dispatch based on calculated regime: {market_regime}")
+    execute_strategy_matrix(market_regime, target_atm)
     
-    # 4. Pass Array Vectors straight to Active Risk Management Engine
-    try:
-        run_live_terminal_monitor(active_basket)
-    except KeyboardInterrupt:
-        print("\n[-] Manual override recognized. Exiting terminal engine context safely.")
-    
-    print("==============================================================================")
-    print("🏁 AUTOMATED LIFECYCLE COMPLETED CLEANLY. SHUTTING DOWN CORE ROUTERS.")
-    print("==============================================================================")
+    print("[🏁 TEST COMPLETE] Terminal analysis broadcasted successfully. Shutting down system.")
