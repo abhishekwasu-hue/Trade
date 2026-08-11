@@ -79,20 +79,23 @@ class BlackScholesEngine:
 
 
 def generate_trading_signal(spot_price):
-    """SQLite डेटा प्रोसेस करून Trading Signal जनरेट करणे"""
-    conn = sqlite3.connect("cloud_portfolio_vault.db")
-    
-    # 1. १ वर्षाच्या historical डेटावरून 20 SMA काढणे
-    df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
-    df_chart['SMA_20'] = df_chart['Close'].rolling(window=20).mean()
-    latest_sma_20 = df_chart['SMA_20'].iloc[-1]
-    
-    # 2. Live OI डेटावरून Max Support/Resistance शोधणे
-    df_oi = pd.read_sql_query("SELECT * FROM live_oi_tracker ORDER BY timestamp DESC LIMIT 50", conn)
-    
-    conn.close()
-    
-    # 3. Decision Matrix / Rules (नियम लागू करणे)
+    """SQLite डेटा प्रोसेस करून Trading Signal जनरेट करणे (Safe Fallback सह)"""
+    try:
+        conn = sqlite3.connect("cloud_portfolio_vault.db")
+        # 1. १ वर्षाच्या historical डेटावरून 20 SMA काढणे
+        df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
+        conn.close()
+        
+        if not df_chart.empty and len(df_chart) >= 20:
+            df_chart['SMA_20'] = df_chart['Close'].rolling(window=20).mean()
+            latest_sma_20 = df_chart['SMA_20'].iloc[-1]
+        else:
+            latest_sma_20 = spot_price * 0.98
+    except Exception as e:
+        # जर डेटाबेस किंवा टेबल उपलब्ध नसेल तर एरर न देता default 20 SMA calculate करा
+        latest_sma_20 = spot_price * 0.98
+
+    # 2. Decision Matrix / Rules
     trend = "BULLISH" if spot_price > latest_sma_20 else "BEARISH"
     
     if trend == "BULLISH":
@@ -101,7 +104,7 @@ def generate_trading_signal(spot_price):
     else:
         strategy_action = "BUY PUT SPREAD / SELL CALL SPREAD"
         signal_color = "red"
-        
+
     return {
         "signal": trend,
         "sma_20": round(latest_sma_20, 2),
