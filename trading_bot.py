@@ -6,6 +6,11 @@ import sqlite3
 import random
 import sys
 import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 from datetime import datetime, time as datetime_time
 
 # 1. WEB DASHBOARD INITIALIZATION & LAYOUT CONFIGURATION
