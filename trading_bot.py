@@ -413,3 +413,86 @@ if st.button("🚀 Fire Iron Condor Strategy"):
                 snapshot['spot']
             )
         )
+
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+import io
+
+def generate_pdf_report(snapshot, signal_data, target_asset):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elements = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#1E3A8A'),
+        spaceAfter=15,
+        alignment=1
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'SubTitleStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor('#6B7280'),
+        spaceAfter=20,
+        alignment=1
+    )
+
+    # Header Section
+    elements.append(Paragraph("<b>⚡ QUANT ARCHITECTURE PRO - TRADING REPORT</b>", title_style))
+    elements.append(Paragraph(f"Generated On: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Asset: {target_asset}", subtitle_style))
+    elements.append(Spacer(1, 10))
+
+    # Table Data
+    data = [
+        ["Metric / Parameter", "Value / Status"],
+        ["Active Index", target_asset],
+        ["Spot Price", f"₹ {snapshot['spot']:.2f}"],
+        ["75-Min Major Trend", signal_data.get('tf_trend', 'N/A')],
+        ["Quantitative Signal", signal_data['signal']],
+        ["20-Day SMA Benchmark", f"₹ {signal_data['sma_20']}"],
+        ["Option Chain PCR", str(signal_data.get('pcr', 1.0))],
+        ["India VIX", f"{snapshot['india_vix']:.2f}"],
+        ["Recommended Strategy", signal_data['recommended_action']]
+    ]
+
+    t = Table(data, colWidths=[200, 340])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (1,0), colors.HexColor('#1E3A8A')),
+        ('TEXTCOLOR', (0,0), (1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 11),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F3F4F6')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+        ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+        ('FONTSIZE', (0,1), (-1,-1), 10),
+        ('TOPPADDING', (0,1), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,1), (-1,-1), 6),
+    ]))
+    
+    elements.append(t)
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# Streamlit UI मध्ये PDF Download Button जोडणे
+st.markdown("---")
+st.subheader("📄 Download Attractive PDF Analysis Report")
+
+pdf_bytes = generate_pdf_report(snapshot, signal_data, target_asset)
+
+st.download_button(
+    label="📥 Download Professional PDF Report",
+    data=pdf_bytes,
+    file_name=f"Quant_Report_{target_asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+    mime="application/pdf",
+    help="क्लिक करून अत्यंत आकर्षक आणि सविस्तर PDF रिपोर्ट डाऊनलोड करा."
+)
