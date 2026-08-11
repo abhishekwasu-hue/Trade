@@ -72,6 +72,42 @@ class BlackScholesEngine:
             })
         return pd.DataFrame(chain_records)
 
+
+
+
+
+
+
+def generate_trading_signal(spot_price):
+    """SQLite डेटा प्रोसेस करून Trading Signal जनरेट करणे"""
+    conn = sqlite3.connect("cloud_portfolio_vault.db")
+    
+    # 1. १ वर्षाच्या historical डेटावरून 20 SMA काढणे
+    df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
+    df_chart['SMA_20'] = df_chart['Close'].rolling(window=20).mean()
+    latest_sma_20 = df_chart['SMA_20'].iloc[-1]
+    
+    # 2. Live OI डेटावरून Max Support/Resistance शोधणे
+    df_oi = pd.read_sql_query("SELECT * FROM live_oi_tracker ORDER BY timestamp DESC LIMIT 50", conn)
+    
+    conn.close()
+    
+    # 3. Decision Matrix / Rules (नियम लागू करणे)
+    trend = "BULLISH" if spot_price > latest_sma_20 else "BEARISH"
+    
+    if trend == "BULLISH":
+        strategy_action = "BUY CALL SPREAD / SELL PUT SPREAD"
+        signal_color = "green"
+    else:
+        strategy_action = "BUY PUT SPREAD / SELL CALL SPREAD"
+        signal_color = "red"
+        
+    return {
+        "signal": trend,
+        "sma_20": round(latest_sma_20, 2),
+        "recommended_action": strategy_action,
+        "color": signal_color
+    }
 # ==============================================================================
 # 4. RESILIENT DATA FEED AGGREGATOR & BLACKOUT FILTERS
 # ==============================================================================
