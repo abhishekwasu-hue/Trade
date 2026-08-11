@@ -13,7 +13,7 @@ jobs:
       - name: Set Up Python Environment
         uses: actions/setup-python@v5 # 🟢 UPDATED: Changed from @v4 to @v5 (Fixes Node errors)
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           
       - name: Install Market Dependencies
         run: pip install -r requirements.txt
