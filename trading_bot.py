@@ -5,6 +5,7 @@ from scipy.stats import norm
 import sqlite3
 import random
 import sys
+import io
 from datetime import datetime, time as datetime_time
 
 # 1. WEB DASHBOARD INITIALIZATION & LAYOUT CONFIGURATION
