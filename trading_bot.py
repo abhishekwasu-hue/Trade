@@ -75,20 +75,23 @@ class BlackScholesEngine:
 
 
 def generate_trading_signal(spot_price):
-    """Yahoo Finance किंवा SQLite वरून Real Data आणून अचूक Trading Signal जनरेट करणे"""
+    """Yahoo Finance वरून Real Data आणून अचूक Trading Signal जनरेट करणे"""
     latest_sma_20 = None
 
-    # १. आधी Live Yahoo Finance वरून डेटा आणण्याचा प्रयत्न करा (Most Accurate)
+    # १. Real Yahoo Finance Data (period="1mo" करून अचूक डेटा आणणे)
     try:
         import yfinance as yf
         nifty = yf.Ticker("^NSEI")
-        df_chart = nifty.history(period="1m")
-        if not df_chart.empty and len(df_chart) >= 20:
-            latest_sma_20 = df_chart['Close'].tail(20).mean()
+        df_chart = nifty.history(period="1mo", interval="1d").dropna(subset=['Close'])
+        
+        if not df_chart.empty and len(df_chart) >= 5:
+            window = min(20, len(df_chart))
+            latest_sma_20 = df_chart['Close'].tail(window).mean()
+            print(f"✅ Real SMA Calculated: {latest_sma_20}")
     except Exception as e:
-        pass
+        print(f"⚠️ Live Data Fetch Error: {e}")
 
-    # २. जर Yahoo Finance चालला नाही तर local Database मधून प्रयत्न करा
+    # २. जर Yahoo Finance डेटा नाही मिळाला तरच Local Database
     if latest_sma_20 is None:
         try:
             conn = sqlite3.connect("cloud_portfolio_vault.db")
@@ -99,11 +102,11 @@ def generate_trading_signal(spot_price):
         except Exception as e:
             pass
 
-    # ३. जर दोन्ही मिळाले नाहीत तरच Fallback वापरणे
+    # ३. जर दोन्ही मिळाले नाहीत तरच Fallback
     if latest_sma_20 is None:
         latest_sma_20 = spot_price * 0.98
 
-    # सिग्नलचे मूळ लॉजिक (Unchanged)
+    # सिग्नलचे मूळ लॉजिक
     trend = "BULLISH" if spot_price > latest_sma_20 else "BEARISH"
     strategy_action = "BUY CALL SPREAD / SELL PUT SPREAD" if trend == "BULLISH" else "BUY PUT SPREAD / SELL CALL SPREAD"
     signal_color = "green" if trend == "BULLISH" else "red"
@@ -113,6 +116,7 @@ def generate_trading_signal(spot_price):
         "sma_20": round(latest_sma_20, 2),
         "recommended_action": strategy_action,
         "color": signal_color
+    }
     }
 
    
