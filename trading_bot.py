@@ -115,7 +115,7 @@ def generate_trading_signal(spot_price):
         "color": signal_color
     }
 
-    }
+   
 
 
 
