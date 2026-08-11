@@ -14,3 +14,4 @@ yfinance
 scipy
 statsmodels
 scikit-learn
+reportlab
