@@ -117,7 +117,7 @@ def generate_trading_signal(spot_price):
         "recommended_action": strategy_action,
         "color": signal_color
     }
-    }
+    
 
    
 
