@@ -108,6 +108,27 @@ def generate_trading_signal(spot_price):
         "recommended_action": strategy_action,
         "color": signal_color
     }
+
+# Main Dashboard वर Display करण्यासाठी
+signal_data = generate_trading_signal(snapshot['spot'])
+
+st.subheader("🚦 Auto-Generated Quantitative Signal")
+
+col_sig1, col_sig2, col_sig3 = st.columns(3)
+
+with col_sig1:
+    if signal_data["signal"] == "BULLISH":
+        st.success(f"📈 Market Trend: {signal_data['signal']}")
+    else:
+        st.error(f"📉 Market Trend: {signal_data['signal']}")
+
+with col_sig2:
+    st.metric("20-Day SMA Benchmark", f"₹{signal_data['sma_20']}")
+
+with col_sig3:
+    st.info(f"💡 Recommended Strategy: {signal_data['recommended_action']}")
+
+
 # ==============================================================================
 # 4. RESILIENT DATA FEED AGGREGATOR & BLACKOUT FILTERS
 # ==============================================================================
