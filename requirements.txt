@@ -11,4 +11,6 @@ python-telegram-bot
 # स्टॉक्स/मार्केट डेटा गोळा करण्यासाठी लागणारी पॅकेजेस:
 yfinance
 # Stoxkart API साठी (त्यांच्या अधिकृत पॅकेजचे नाव):
-
+scipy
+statsmodels
+scikit-learn
