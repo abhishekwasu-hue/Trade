@@ -74,42 +74,47 @@ class BlackScholesEngine:
 
 
 
-
-
-
-
 def generate_trading_signal(spot_price):
-    """SQLite डेटा प्रोसेस करून Trading Signal जनरेट करणे (Safe Fallback सह)"""
+    """Yahoo Finance किंवा SQLite वरून Real Data आणून अचूक Trading Signal जनरेट करणे"""
+    latest_sma_20 = None
+
+    # १. आधी Live Yahoo Finance वरून डेटा आणण्याचा प्रयत्न करा (Most Accurate)
     try:
-        conn = sqlite3.connect("cloud_portfolio_vault.db")
-        # 1. १ वर्षाच्या historical डेटावरून 20 SMA काढणे
-        df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
-        conn.close()
-        
+        import yfinance as yf
+        nifty = yf.Ticker("^NSEI")
+        df_chart = nifty.history(period="1m")
         if not df_chart.empty and len(df_chart) >= 20:
-            df_chart['SMA_20'] = df_chart['Close'].rolling(window=20).mean()
-            latest_sma_20 = df_chart['SMA_20'].iloc[-1]
-        else:
-            latest_sma_20 = spot_price * 0.98
+            latest_sma_20 = df_chart['Close'].tail(20).mean()
     except Exception as e:
-        # जर डेटाबेस किंवा टेबल उपलब्ध नसेल तर एरर न देता default 20 SMA calculate करा
+        pass
+
+    # २. जर Yahoo Finance चालला नाही तर local Database मधून प्रयत्न करा
+    if latest_sma_20 is None:
+        try:
+            conn = sqlite3.connect("cloud_portfolio_vault.db")
+            df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
+            conn.close()
+            if not df_chart.empty and len(df_chart) >= 20:
+                latest_sma_20 = df_chart['Close'].tail(20).mean()
+        except Exception as e:
+            pass
+
+    # ३. जर दोन्ही मिळाले नाहीत तरच Fallback वापरणे
+    if latest_sma_20 is None:
         latest_sma_20 = spot_price * 0.98
 
-    # 2. Decision Matrix / Rules
+    # सिग्नलचे मूळ लॉजिक (Unchanged)
     trend = "BULLISH" if spot_price > latest_sma_20 else "BEARISH"
-    
-    if trend == "BULLISH":
-        strategy_action = "BUY CALL SPREAD / SELL PUT SPREAD"
-        signal_color = "green"
-    else:
-        strategy_action = "BUY PUT SPREAD / SELL CALL SPREAD"
-        signal_color = "red"
+    strategy_action = "BUY CALL SPREAD / SELL PUT SPREAD" if trend == "BULLISH" else "BUY PUT SPREAD / SELL CALL SPREAD"
+    signal_color = "green" if trend == "BULLISH" else "red"
 
     return {
         "signal": trend,
         "sma_20": round(latest_sma_20, 2),
         "recommended_action": strategy_action,
         "color": signal_color
+    }
+
     }
 
 
