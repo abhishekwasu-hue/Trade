@@ -522,3 +522,19 @@ def generate_pdf_report(snapshot, signal_data, target_asset):
         
     buffer.seek(0)
     return buffer.getvalue()
+
+# Streamlit UI मध्ये PDF Download Button जोडणे
+st.markdown("---")
+st.subheader("📄 Download Attractive PDF Analysis Report")
+
+try:
+    pdf_bytes = generate_pdf_report(snapshot, signal_data, target_asset)
+    st.download_button(
+        label="📥 Download Professional PDF Report",
+        data=pdf_bytes,
+        file_name=f"Quant_Report_{target_asset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        mime="application/pdf",
+        help="क्लिक करून अत्यंत आकर्षक आणि सविस्तर PDF रिपोर्ट डाऊनलोड करा."
+    )
+except Exception as e:
+    st.warning(f"PDF Generation Error: {e}")
