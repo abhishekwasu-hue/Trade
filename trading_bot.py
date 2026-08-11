@@ -215,3 +215,100 @@ live_vix_input = st.sidebar.slider(
 )
 
 st.sidebar.markdown("---")
+# ==============================================================================
+# B. MAIN DASHBOARD SCREEN (मुख्य डॅशबोर्ड UI)
+# ==============================================================================
+
+# 1. Broker Authentication Setup
+broker_configs = [
+    {"name": "Zerodha", "api_key": broker_a_key, "secret_key": broker_a_secret, "multiplier": mult_a},
+    {"name": "AngelOne", "api_key": broker_b_key, "secret_key": broker_b_secret, "multiplier": mult_b}
+]
+
+router = MultiBrokerExecutionRouter()
+verified_accounts = router.authenticate_accounts(broker_configs)
+
+# 2. Broker Connection Status Display
+st.subheader("🌐 Broker Connectivity Status")
+status_cols = st.columns(len(verified_accounts))
+
+for idx, acc in enumerate(verified_accounts):
+    with status_cols[idx]:
+        if acc["status"] == "CONNECTED":
+            st.success(f"🟢 {acc['name']}: LIVE CONNECTED (Multiplier: {acc['multiplier']}x)")
+        else:
+            st.warning(f"🟡 {acc['name']}: PAPER TRADING MODE")
+
+st.markdown("---")
+
+# 3. Target Asset & Margin Selection Controls
+col_asset, col_margin = st.columns(2)
+with col_asset:
+    target_asset = st.selectbox("🎯 Select Active Index:", ["NIFTY", "SENSEX"])
+with col_margin:
+    available_margin = st.number_input("💰 Available Allocation Margin (₹):", value=150000, step=10000)
+
+calculated_base_lots = max(1, int(available_margin // 75000))
+
+# 4. Fetch Market Snapshot & Display Overview
+aggregator = ResilientDataAggregator(verified_accounts)
+snapshot = aggregator.fetch_market_snapshot(
+    index=target_asset, 
+    force_trend_simulation=trend_override, 
+    mock_vix=live_vix_input
+)
+
+st.subheader(f"📈 Market Overview ({target_asset})")
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Spot Price", f"₹{snapshot['spot']:.2f}")
+m2.metric("VWAP", f"₹{snapshot['vwap']:.2f}")
+m3.metric("RSI (14)", f"{snapshot['rsi']:.2f}")
+m4.metric("India VIX", f"{snapshot['india_vix']:.2f}")
+m5.metric("Market Pattern", snapshot['pattern'])
+
+st.markdown("---")
+
+# 5. Display Option Chain Greeks Matrix
+st.subheader("🔢 Live Option Chain Greeks Matrix")
+opt_matrix_df = BlackScholesEngine.generate_option_chain_matrix(
+    spot=snapshot['spot'], 
+    step_size=50 if target_asset == "NIFTY" else 100, 
+    base_iv=snapshot['base_iv']
+)
+st.dataframe(opt_matrix_df, use_container_width=True)
+
+st.markdown("---")
+
+# 6. Strategy Trigger & Execution Logs
+st.subheader("⚡ Multi-Broker Strategy Execution")
+if st.button("🚀 Fire Iron Condor Strategy"):
+    execution_reports = router.fire_multi_broker_orders(
+        index=target_asset,
+        strategy="IRON_CONDOR",
+        short_k=int(snapshot['spot'] - 100),
+        hedge_k=int(snapshot['spot'] - 300),
+        base_lots=calculated_base_lots,
+        upper_short=int(snapshot['spot'] + 100),
+        upper_hedge=int(snapshot['spot'] + 300)
+    )
+    
+    for report in execution_reports:
+        if report["status"] == "LIVE_SUCCESS":
+            st.success(f"[{report['broker']}] {report['msg']}")
+        else:
+            st.info(f"[{report['broker']}] {report['msg']}")
+            
+        # SQLite Database मधे लॉग सेव्ह करणे
+        execute_sql_query(
+            "INSERT INTO universal_paper_book VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(random.randint(100000, 999999)),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                target_asset,
+                "IRON_CONDOR",
+                str(int(snapshot['spot'] - 100)),
+                str(int(snapshot['spot'] - 300)),
+                calculated_base_lots,
+                snapshot['spot']
+            )
+        )
