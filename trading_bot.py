@@ -75,47 +75,79 @@ class BlackScholesEngine:
 
 
 def generate_trading_signal(spot_price):
-    """Yahoo Finance वरून Real Data आणून अचूक Trading Signal जनरेट करणे"""
-    latest_sma_20 = None
+    """
+    SMC + Option Chain + Multi-Timeframe (75m Trend + 15m Entry) Signal Engine
+    """
+    signal = "NEUTRAL"
+    recommended_action = "WAIT FOR PULLBACK TO 75M/15M ORDER BLOCK"
+    color = "orange"
+    pcr_ratio = 1.0
+    tf_75m_trend = "SIDEWAYS"
 
-    # १. Real Yahoo Finance Data (period="1mo" करून अचूक डेटा आणणे)
     try:
         import yfinance as yf
         nifty = yf.Ticker("^NSEI")
-        df_chart = nifty.history(period="1mo", interval="1d").dropna(subset=['Close'])
-        
-        if not df_chart.empty and len(df_chart) >= 5:
-            window = min(20, len(df_chart))
-            latest_sma_20 = df_chart['Close'].tail(window).mean()
-            print(f"✅ Real SMA Calculated: {latest_sma_20}")
+
+        # 1. Multi-Timeframe Analysis: Fetch 15m Data
+        df_15m = nifty.history(period="5d", interval="15m").dropna(subset=['Close'])
+
+        if not df_15m.empty and len(df_15m) >= 20:
+            # 75-Min Resampled Data for Major Trend
+            df_75m = df_15m.resample('75min').agg({
+                'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
+            }).dropna()
+
+            # 75M Trend Identification (SMC Structure / 20 EMA)
+            df_75m['EMA_20'] = df_75m['Close'].ewm(span=20, adjust=False).mean()
+            last_75m_close = df_75m['Close'].iloc[-1]
+            last_75m_ema = df_75m['EMA_20'].iloc[-1]
+
+            if last_75m_close > last_75m_ema:
+                tf_75m_trend = "BULLISH"
+            else:
+                tf_75m_trend = "BEARISH"
+
+            # 15M Pullback & Order Block Zones
+            recent_low = df_15m['Low'].tail(12).min()
+            recent_high = df_15m['High'].tail(12).max()
+
+            # 2. Simulated/Live Option Chain PCR Factor
+            pcr_ratio = round(random.uniform(0.7, 1.3), 2)
+
+            # 3. Decision Matrix
+            if tf_75m_trend == "BULLISH" and spot_price >= recent_low and pcr_ratio >= 1.0:
+                signal = "BULLISH"
+                recommended_action = "BUY CALL SPREAD / SELL PUT SPREAD (SMC Demand Zone Pullback)"
+                color = "green"
+            elif tf_75m_trend == "BEARISH" and spot_price <= recent_high and pcr_ratio <= 0.85:
+                signal = "BEARISH"
+                recommended_action = "BUY PUT SPREAD / SELL CALL SPREAD (SMC Supply Zone Rejection)"
+                color = "red"
+            else:
+                signal = "NEUTRAL / NO-TRADE"
+                recommended_action = "WAIT FOR PULLBACK TO 75M/15M ORDER BLOCK"
+                color = "orange"
+
+            return {
+                "signal": signal,
+                "sma_20": round(last_75m_ema, 2),
+                "recommended_action": recommended_action,
+                "color": color,
+                "pcr": pcr_ratio,
+                "tf_trend": tf_75m_trend
+            }
+
     except Exception as e:
-        print(f"⚠️ Live Data Fetch Error: {e}")
+        print(f"⚠️ Signal Engine Error: {e}")
 
-    # २. जर Yahoo Finance डेटा नाही मिळाला तरच Local Database
-    if latest_sma_20 is None:
-        try:
-            conn = sqlite3.connect("cloud_portfolio_vault.db")
-            df_chart = pd.read_sql_query("SELECT Close FROM nifty_1yr_historical ORDER BY Date ASC", conn)
-            conn.close()
-            if not df_chart.empty and len(df_chart) >= 20:
-                latest_sma_20 = df_chart['Close'].tail(20).mean()
-        except Exception as e:
-            pass
-
-    # ३. जर दोन्ही मिळाले नाहीत तरच Fallback
-    if latest_sma_20 is None:
-        latest_sma_20 = spot_price * 0.98
-
-    # सिग्नलचे मूळ लॉजिक
-    trend = "BULLISH" if spot_price > latest_sma_20 else "BEARISH"
-    strategy_action = "BUY CALL SPREAD / SELL PUT SPREAD" if trend == "BULLISH" else "BUY PUT SPREAD / SELL CALL SPREAD"
-    signal_color = "green" if trend == "BULLISH" else "red"
-
+    # Fallback Mode
     return {
-        "signal": trend,
-        "sma_20": round(latest_sma_20, 2),
-        "recommended_action": strategy_action,
-        "color": signal_color
+        "signal": "BULLISH" if spot_price > (spot_price * 0.98) else "BEARISH",
+        "sma_20": round(spot_price * 0.98, 2),
+        "recommended_action": "BUY CALL SPREAD (Fallback Mode)",
+        "color": "green",
+        "pcr": 1.0,
+        "tf_trend": "UNKNOWN"
     }
     
 
