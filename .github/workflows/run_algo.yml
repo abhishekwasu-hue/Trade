@@ -16,7 +16,7 @@ jobs:
           python-version: '3.10'
           
       - name: Install Market Dependencies
-        run: pip install requests pandas numpy openalgo
+        run: pip install -r requirements.txt
         
       - name: Run Live Trading Script
         env:
