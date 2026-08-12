@@ -214,10 +214,14 @@ class UpstoxLiveMarketAggregator:
     self.access_token = access_token.strip()
 
   def fetch_live_market_snapshot(self, index, mock_vix=13.50):
-    instrument_key = (
-        "NSE_INDEX|Nifty 50" if index == "NIFTY" else "NSE_INDEX|Sensex"
-    )
-    url = f"https://api.upstox.com/v2/market-quote/ltp?instrument_key={requests.utils.quote(instrument_key)}"
+    # Upstox API साठी योग्य इन्स्ट्रुमेंट की सेट करणे
+    if index == "NIFTY":
+      instrument_key = "NSE_INDEX|Nifty 50"
+    else:
+      instrument_key = "BSE_INDEX|SENSEX"
+
+    url = "https://api.upstox.com/v2/market-quote/ltp"
+    params = {"instrument_key": instrument_key}
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {self.access_token}",
@@ -228,20 +232,27 @@ class UpstoxLiveMarketAggregator:
 
     if len(self.access_token) > 10:
       try:
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(
+            url, headers=headers, params=params, timeout=5
+        )
         if response.status_code == 200:
           res_json = response.json()
-          spot_val = (
-              res_json.get("data", {})
-              .get(instrument_key, {})
-              .get("last_price")
-          )
+          # Upstox v2 Response structure मॅप करणे
+          data_dict = res_json.get("data", {})
+          # Key कधीकधी URL encoded किंवा direct असू शकते, दोन्ही ट्रॅक करा
+          spot_val = None
+          for k in data_dict:
+            if instrument_key in k or k in instrument_key:
+              spot_val = data_dict[k].get("last_price")
+              break
+
           if spot_val:
             spot = float(spot_val)
             data_source = "UPSTOX_LIVE_API"
-      except Exception:
-        pass
+      except Exception as e:
+        print(f"API Fetch Error: {e}")
 
+    # जर डेटा मिळाला नाही तर फॉलबॅक व्हॅल्यू वापरा
     if spot == 0.0:
       spot = 24583.80 if index == "NIFTY" else 80420.50
 
