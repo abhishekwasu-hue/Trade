@@ -23,6 +23,35 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
+def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_delta_diff, prev_signal, hysteresis_threshold_pct=20):
+    """
+    OI Diff सिग्नल — प्रथम पातळी (level) + गती (momentum) वरून कच्चा (raw) सिग्नल ठरवणे, मग तो मागच्या
+    प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे — पण केवळ delta_diff मागच्या delta_diff
+    पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (नाहीतर आधीचाच सिग्नल कायम — छोट्या,
+    noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी).
+    मागचा delta_diff बरोबर 0 असेल तर % काढताच येत नाही — त्यावेळी सुरक्षित बाजूने सिग्नल बदलला जात नाही.
+    """
+    if current_diff > 0 and delta_diff > 0:
+        raw_signal = "🟢 BULLISH"
+    elif current_diff < 0 and delta_diff < 0:
+        raw_signal = "🔴 BEARISH"
+    elif current_diff > 0 and delta_diff <= 0:
+        raw_signal = "🟡 BULLISH (Weakening)"
+    elif current_diff < 0 and delta_diff >= 0:
+        raw_signal = "🟠 BEARISH (Weakening)"
+    else:
+        raw_signal = "⚪ NEUTRAL"
+
+    if prev_signal is None or prev_delta_diff is None:
+        return raw_signal
+    if prev_delta_diff == 0:
+        return prev_signal
+    pct_change = abs(delta_diff - prev_delta_diff) / abs(prev_delta_diff) * 100
+    if pct_change >= hysteresis_threshold_pct:
+        return raw_signal
+    return prev_signal
+
+
 def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction, step=50):
     """
     दिलेल्या psychological level च्या जवळच्या strike वर OI Wall (Short Buildup) आहे का ते तपासणे —
