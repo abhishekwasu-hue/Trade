@@ -1,0 +1,225 @@
+"""
+शेअर्ड सेटअप — Sidebar (सर्व सेटिंग्ज) + Option Chain fetch, जे प्रत्येक page लोड होण्याआधी एकदाच चालतं.
+सर्व निकाल st.session_state मध्ये साठवले जातात जेणेकरून प्रत्येक स्वतंत्र page त्यांना वाचू शकेल.
+"""
+import datetime
+import streamlit as st
+
+from upstox_api import fetch_upstox_option_chain
+
+
+def setup_shared_context():
+    st.sidebar.title("⚙️ डॅशबोर्ड सेटिंग्ज")
+    symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY"])
+
+    # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
+    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "30minute", "day"], index=1)
+
+    # --- चार्ट टाईप निवडण्याची सुविधा (Candlestick / Line) ---
+    chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)
+
+
+    secrets_token = ""
+    try:
+        if "upstox" in st.secrets and "access_token" in st.secrets["upstox"]:
+            secrets_token = st.secrets["upstox"]["access_token"]
+    except Exception:
+        pass  # secrets.toml अस्तित्वात नसेल तर st.secrets स्वतःच exception देतो — तेव्हा manual token entry वर पडणे
+
+    token_input = st.sidebar.text_input("Upstox Access Token:", value=secrets_token, type="password")
+    auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (5 Minutes)", value=True)
+
+    # --- ६.५ A1 स्ट्रॅटेजी व लाईव्ह एक्झिक्युशन सेटिंग्ज ---
+    st.sidebar.markdown("---")
+    st.sidebar.title("🎯 A1 Strategy Engine सेटिंग्ज")
+    lot_size = st.sidebar.number_input("Lot Size (सध्या NIFTY = 65, अधिकृत NSE सर्क्युलर तपासा)", min_value=1, value=65, step=1)
+    risk_pct_per_trade = st.sidebar.slider("Risk % per Trade (उपलब्ध मार्जिनपैकी)", 0.5, 10.0, 2.0, step=0.5)
+    hedge_width_points = st.sidebar.number_input("Hedge Width (points, लाँग लेग शॉर्ट लेगपासून किती दूर)", min_value=50, value=100, step=50)
+    pop_threshold_pct = st.sidebar.slider("PoP Threshold (%) — किमान Probability of Profit", 50, 95, 70, step=5)
+    sl_pct_of_max_loss = st.sidebar.slider("Stop-Loss (% of Max Loss)", 10, 100, 30, step=5)
+    target_pct_of_max_profit = st.sidebar.slider("Profit Target (% of Max Profit)", 10, 100, 50, step=5)
+    vix_max_threshold = st.sidebar.number_input("India VIX कमाल मर्यादा (यापेक्षा जास्त = No Trade)", min_value=10.0, value=20.0, step=0.5)
+
+    st.sidebar.markdown("##### 🦋 Sideways (Iron Condor / Butterfly) सेटिंग्ज")
+    sideways_tight_range_pct = st.sidebar.number_input("घट्ट रेंज मर्यादा % (यापेक्षा कमी = Iron Butterfly)", min_value=0.1, value=0.6, step=0.1)
+    sideways_max_range_pct = st.sidebar.number_input("कमाल Sideways रेंज % (यापेक्षा जास्त = अजिबात Sideways ट्रेड नाही)", min_value=0.5, value=1.5, step=0.1)
+    st.sidebar.markdown("##### ⏱️ Trading Style")
+    trading_style_choice = st.sidebar.radio(
+        "Intraday की Swing?",
+        ["⚡ Intraday (त्याच दिवशी स्क्वेअर-ऑफ)", "🌙 Swing (एक दिवसापेक्षा जास्त काळ होल्ड)"],
+        index=0,
+    )
+    trading_style = "INTRADAY" if "Intraday" in trading_style_choice else "SWING"
+
+    if trading_style == "INTRADAY":
+        product_type = "I"
+        eod_squareoff_time = st.sidebar.time_input("EOD Square-off वेळ (IST)", value=datetime.time(15, 15))
+        entry_cutoff_time = st.sidebar.time_input("नवीन एंट्री बंद करण्याची वेळ (IST)", value=datetime.time(15, 0))
+        st.sidebar.caption(
+            f"Intraday मोड: Product Type आपोआप 'I' — नवीन एंट्री {entry_cutoff_time.strftime('%H:%M')} नंतर बंद, "
+            f"आणि उघड्या पोझिशन्स {eod_squareoff_time.strftime('%H:%M')} ला आपोआप स्क्वेअर-ऑफ होतील."
+        )
+
+        st.sidebar.markdown("##### 🧭 OI Confirmation Gate (Intraday)")
+        enable_oi_gate = st.sidebar.checkbox("OI Diff Tracker सिग्नल एंट्री गेट म्हणून वापरा", value=True)
+        oi_gate_strictness_choice = st.sidebar.radio(
+            "Strictness",
+            ["A — Conflict Filter (शिफारस केलेले)", "B — Strict Confirmation"],
+            index=0,
+        )
+        oi_gate_strictness = "A" if "A" in oi_gate_strictness_choice else "B"
+        enable_oi_early_exit = st.sidebar.checkbox("OI उलट फिरल्यास लवकर Exit करा (फक्त Directional स्प्रेड्ससाठी)", value=True)
+        enable_swing_oi_gate = False
+        swing_max_opposing_signals = 1
+
+        st.sidebar.markdown("##### 🧬 Signal Engine — दिशा 1H Supertrend वरून (दोन्ही रणनीतींसाठी)")
+        intraday_strategy_choice = st.sidebar.radio(
+            "कोणती रणनीती वापरायची?",
+            ["1️⃣ Price Action (BOS/CHoCH + Order Block + Retest + 15M Pattern)",
+             "2️⃣ Indicator Based (RSI 25-55/45-75 + Rejection/Engulfing)"],
+        )
+        intraday_strategy_mode = "price_action" if "1️⃣" in intraday_strategy_choice else "indicator"
+        ob_order = 3
+        ob_lookback_swings = 3
+        ob_impulse_min_move_pct = 0.3
+        ob_retest_tolerance_pct = 0.1
+        enable_kill_zone_filter = False
+        if intraday_strategy_mode == "price_action":
+            st.sidebar.caption(
+                "Order Block च्या पुष्टीसाठी लागणारी किमान impulsive हालचाल % — शांत बाजारात उंबरठा कमी करावा "
+                "लागेल (नाहीतर Order Block कधीच सापडणार नाही)."
+            )
+            ob_order = st.sidebar.number_input("Fractal Order (Swing शोधण्यासाठी)", min_value=1, value=3, step=1)
+            ob_lookback_swings = st.sidebar.number_input("Lookback Swings", min_value=2, value=3, step=1)
+            ob_impulse_min_move_pct = st.sidebar.number_input("Order Block Impulse किमान %", min_value=0.01, value=0.3, step=0.05)
+            ob_retest_tolerance_pct = st.sidebar.number_input(
+                "Retest Tolerance % (OB झोनच्या रुंदीच्या तुलनेत)", min_value=0.1, value=0.1, step=0.5,
+            )
+            st.sidebar.caption(
+                "0.1% म्हणजे किंमत जवळपास exact OB झोनच्या आतच यावी लागते (खूप कडक). वाढवल्यास झोनच्या "
+                "काठाबाहेरही थोडी 'सूट' मिळते — backtest मध्ये retest 129 पैकी फक्त 2 वेळा जुळत होता, "
+                "इथूनच ते सैल करता येईल."
+            )
+            enable_kill_zone_filter = st.sidebar.checkbox(
+                "Kill-Zone Filter (सुरुवातीचे/शेवटचे 15 मिनिट टाळा — ऐच्छिक)", value=False,
+            )
+            st.sidebar.caption(
+                "व्यावसायिक गुणवत्तेसाठी Liquidity Sweep, Unmitigated Order Block, Displacement Candle आणि "
+                "Fair Value Gap Confluence — हे चारही आता डीफॉल्ट चालूच आहेत (सैल आवृत्तीपेक्षा जास्त कडक, "
+                "पण जास्त विश्वासार्ह)."
+            )
+        st.sidebar.caption(
+            "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
+            "B: फक्त पूर्ण जुळणी असेल तरच पास (कमी पण जास्त खात्रीचे ट्रेड्स)."
+        )
+    else:
+        product_type = "D"
+        eod_squareoff_time = None
+        entry_cutoff_time = None
+        enable_oi_gate = False
+        oi_gate_strictness_choice = "A — Conflict Filter (शिफारस केलेले)"
+        oi_gate_strictness = "A"
+        enable_oi_early_exit = False
+        intraday_strategy_mode = "indicator"
+        ob_order = 3
+        ob_lookback_swings = 3
+        ob_impulse_min_move_pct = 0.3
+        ob_retest_tolerance_pct = 0.1
+        enable_kill_zone_filter = False
+        st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
+
+        st.sidebar.markdown("##### 🧭 OI+PCR+MaxPain+Rollover Gate (Swing)")
+        enable_swing_oi_gate = st.sidebar.checkbox("चारही Professional OI सिग्नल्स एंट्री गेट म्हणून वापरा", value=True)
+        swing_max_opposing_signals = st.sidebar.slider(
+            "कमाल विरोधी सिग्नल्स (यापेक्षा जास्त विरोध असेल तरच ब्लॉक)", min_value=0, max_value=3, value=1,
+        )
+        st.sidebar.caption(
+            "OI-Price Matrix (day-over-day) + PCR Contrarian + Max Pain + Rollover (Cost-of-Carry) — हे चार सिग्नल्स "
+            "मोजून, दिशेच्या विरोधात जाणाऱ्या सिग्नल्सची संख्या वरील मर्यादेपेक्षा जास्त असेल तरच एंट्री ब्लॉक होते. "
+            "Rollover फक्त वर 'Advanced OI Analysis' मध्ये बटण दाबून fetch केलेला असेल तरच या गेटमध्ये मोजला जातो."
+        )
+
+    max_trades_per_day = st.sidebar.number_input("दिवसाला जास्तीत जास्त ट्रेड्स", min_value=1, value=3, step=1)
+    max_daily_loss = st.sidebar.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
+
+    st.sidebar.markdown("### 🎮 Trading Mode")
+    trading_mode_choice = st.sidebar.radio(
+        "मोड निवडा", ["📝 PAPER (Simulated — खरे पैसे नाहीत)", "🔴 LIVE (Real Money)"], index=0,
+    )
+    trading_mode = "LIVE" if "LIVE" in trading_mode_choice else "PAPER"
+
+    if trading_mode == "PAPER":
+        enable_live_trading = True
+        confirm_live_trading = True
+        st.sidebar.info(
+            "📝 Paper Trading Mode चालू आहे — सर्व सिग्नल्स आपोआप execute होतील, पण **कोणताही खरा ऑर्डर Upstox कडे "
+            "जाणार नाही**. Entry/Exit किंमती खऱ्या मार्केट LTP वरूनच घेतल्या जातात, त्यामुळे निकाल realistic असतील."
+        )
+    else:
+        enable_live_trading = st.sidebar.checkbox("ENABLE LIVE TRADING (खरे पैसे, खरे ऑर्डर्स)", value=False)
+        confirm_live_trading = False
+        if enable_live_trading:
+            confirm_live_trading = st.sidebar.checkbox("मला समजते — यामुळे माझ्या खऱ्या Upstox खात्यातून खरे ऑर्डर्स प्लेस होतील", value=False)
+            if not confirm_live_trading:
+                st.sidebar.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय कोणतेही लाईव्ह ऑर्डर्स जाणार नाहीत.")
+
+    # --- ७. मुख्य डॅशबोर्ड लॉजिक ---
+
+
+    st.session_state["symbol"] = symbol
+    st.session_state["timeframe_option"] = timeframe_option
+    st.session_state["chart_type"] = chart_type
+    st.session_state["secrets_token"] = secrets_token
+    st.session_state["token_input"] = token_input
+    st.session_state["auto_refresh"] = auto_refresh
+    st.session_state["lot_size"] = lot_size
+    st.session_state["risk_pct_per_trade"] = risk_pct_per_trade
+    st.session_state["hedge_width_points"] = hedge_width_points
+    st.session_state["pop_threshold_pct"] = pop_threshold_pct
+    st.session_state["sl_pct_of_max_loss"] = sl_pct_of_max_loss
+    st.session_state["target_pct_of_max_profit"] = target_pct_of_max_profit
+    st.session_state["vix_max_threshold"] = vix_max_threshold
+    st.session_state["sideways_tight_range_pct"] = sideways_tight_range_pct
+    st.session_state["sideways_max_range_pct"] = sideways_max_range_pct
+    st.session_state["trading_style_choice"] = trading_style_choice
+    st.session_state["trading_style"] = trading_style
+    st.session_state["product_type"] = product_type
+    st.session_state["eod_squareoff_time"] = eod_squareoff_time
+    st.session_state["entry_cutoff_time"] = entry_cutoff_time
+    st.session_state["enable_oi_gate"] = enable_oi_gate
+    st.session_state["oi_gate_strictness_choice"] = oi_gate_strictness_choice
+    st.session_state["oi_gate_strictness"] = oi_gate_strictness
+    st.session_state["enable_oi_early_exit"] = enable_oi_early_exit
+    st.session_state["enable_swing_oi_gate"] = enable_swing_oi_gate
+    st.session_state["swing_max_opposing_signals"] = swing_max_opposing_signals
+    st.session_state["intraday_strategy_mode"] = intraday_strategy_mode
+    st.session_state["ob_order"] = ob_order
+    st.session_state["ob_lookback_swings"] = ob_lookback_swings
+    st.session_state["ob_impulse_min_move_pct"] = ob_impulse_min_move_pct
+    st.session_state["ob_retest_tolerance_pct"] = ob_retest_tolerance_pct
+    st.session_state["enable_kill_zone_filter"] = enable_kill_zone_filter
+    st.session_state["max_trades_per_day"] = max_trades_per_day
+    st.session_state["max_daily_loss"] = max_daily_loss
+    st.session_state["trading_mode_choice"] = trading_mode_choice
+    st.session_state["trading_mode"] = trading_mode
+    st.session_state["enable_live_trading"] = enable_live_trading
+    st.session_state["confirm_live_trading"] = confirm_live_trading
+
+    # --- Option Chain Fetch + यशस्वी झाल्यास मूळ किंमत/ATM काढणे ---
+    if not token_input.strip():
+        return False
+
+    raw_chain, status_msg = fetch_upstox_option_chain(token_input, symbol)
+    st.session_state["raw_chain"] = raw_chain
+    st.session_state["status_msg"] = status_msg
+
+    if status_msg == "SUCCESS" and raw_chain:
+        underlying_price = raw_chain[0].get("underlying_spot_price", 0) if raw_chain else 0
+        step = 50 if symbol == "NIFTY" else 100
+        atm_strike = round(underlying_price / step) * step if underlying_price > 0 else 0
+        st.session_state["underlying_price"] = underlying_price
+        st.session_state["step"] = step
+        st.session_state["atm_strike"] = atm_strike
+        return True
+
+    return False
