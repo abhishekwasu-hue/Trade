@@ -910,3 +910,19 @@ def supply_demand_zone(structure_info, direction):
         high = structure_info["last_swing_high"]
         return (round(high * 0.998, 2), round(high * 1.002, 2))
     return None
+def compute_atr(df, period=14):
+    """Average True Range (ATR) मोजण्यासाठी फंक्शन."""
+    if df is None or df.empty or len(df) < period:
+        return None
+    
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = true_range.rolling(window=period).mean()
+    return atr
