@@ -1,9 +1,8 @@
 """Professional OI analysis: OI-Price Matrix, PCR, Max Pain, Rollover, and the OI Confirmation Gates."""
-import datetime
 import math
 import sqlite3
 
-from config import DB_PATH
+from config import DB_PATH, get_ist_today
 
 
 def find_psychological_level(price, direction, round_to=500):
@@ -23,13 +22,14 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
-def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_delta_diff, prev_signal, hysteresis_threshold_pct=20):
+def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal, hysteresis_threshold_pct=20):
     """
-    OI Diff सिग्नल — प्रथम पातळी (level) + गती (momentum) वरून कच्चा (raw) सिग्नल ठरवणे, मग तो मागच्या
-    प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे — पण केवळ delta_diff मागच्या delta_diff
-    पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (नाहीतर आधीचाच सिग्नल कायम — छोट्या,
-    noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी).
-    मागचा delta_diff बरोबर 0 असेल तर % काढताच येत नाही — त्यावेळी सुरक्षित बाजूने सिग्नल बदलला जात नाही.
+    OI Diff सिग्नल — प्रथम पातळी (level) + गती (momentum, delta_diff) वरून कच्चा (raw) सिग्नल ठरवणे, मग तो
+    मागच्या प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे — पण केवळ Diff (raw OI फरक, delta_diff
+    नाही) मागच्या Diff पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (delta_diff फक्त माहितीसाठी
+    दाखवला जातो, त्यावर हा buffer लागू होत नाही — छोट्या, noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं
+    (flip-flop) टाळण्यासाठी).
+    मागचा Diff बरोबर 0 असेल तर % काढताच येत नाही — त्यावेळी सुरक्षित बाजूने सिग्नल बदलला जात नाही.
     """
     if current_diff > 0 and delta_diff > 0:
         raw_signal = "🟢 BULLISH"
@@ -42,11 +42,11 @@ def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_delta_diff,
     else:
         raw_signal = "⚪ NEUTRAL"
 
-    if prev_signal is None or prev_delta_diff is None:
+    if prev_signal is None or prev_diff is None:
         return raw_signal
-    if prev_delta_diff == 0:
+    if prev_diff == 0:
         return prev_signal
-    pct_change = abs(delta_diff - prev_delta_diff) / abs(prev_delta_diff) * 100
+    pct_change = abs(current_diff - prev_diff) / abs(prev_diff) * 100
     if pct_change >= hysteresis_threshold_pct:
         return raw_signal
     return prev_signal
@@ -70,7 +70,7 @@ def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction
     mkt = opt.get("market_data", {}) or {}
     current_oi = int(mkt.get("oi") or 0)
 
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     col = "initial_ce_oi" if direction == "BEARISH" else "initial_pe_oi"
@@ -88,7 +88,7 @@ def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction
 
 def get_latest_oi_signal(symbol):
     """आजच्या दिवसातील Put-Call OI Diff Tracker चा सर्वात अलीकडचा सिग्नल मिळवणे (OI Confirmation Gate साठी)."""
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -135,7 +135,7 @@ def _extract_oi_ltp(item, side):
 
 def get_previous_day_total_oi(symbol):
     """आजच्या आधीच्या शेवटच्या ट्रेडिंग दिवसाचा शेवटचा एकूण (Call+Put) OI मिळवणे — oi_diff_snapshots मधून."""
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(

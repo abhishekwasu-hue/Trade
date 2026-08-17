@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from config import get_ist_now, get_ist_today
 from database import get_performance_summary, get_equity_curve_data, get_performance_by_group
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2
 from upstox_api import fetch_candles_date_range
@@ -98,7 +99,7 @@ def render():
         (bt_style_tab2, "SWING", "day", 3650, "bts", 2),
     ]:
         with bt_style_tab:
-            today_d = datetime.date.today()
+            today_d = get_ist_today()
 
             data_source = st.radio(
                 "डेटा स्रोत", ["Upstox (Token आवश्यक)", "Yahoo Finance (Token लागत नाही)"],
@@ -254,7 +255,7 @@ def render():
                                         symbol, clean_strategy_name, r_interval, r_from, r_to, r_sl, r_rr,
                                         saved_ob_params, r_df, r_result,
                                     )
-                                bt_filename = f"A1_Backtest_{clean_strategy_name.replace(' ', '')}_{symbol}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                                bt_filename = f"A1_Backtest_{clean_strategy_name.replace(' ', '')}_{symbol}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.pdf"
                                 st.download_button(
                                     "📥 Download Backtest PDF Report", data=bt_pdf_bytes,
                                     file_name=bt_filename, mime="application/pdf", key=f"{bt_key_prefix}_dl_v2",
@@ -352,7 +353,7 @@ def render():
                                     bt_pdf_bytes = generate_backtest_report_pdf_rr(
                                         symbol, bt_style_name, r_interval, r_from, r_to, r_sl, r_rr, r_df, r_result,
                                     )
-                                bt_filename = f"A1_Backtest_{bt_style_name}_{symbol}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                                bt_filename = f"A1_Backtest_{bt_style_name}_{symbol}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.pdf"
                                 st.download_button(
                                     "📥 Download Backtest PDF Report", data=bt_pdf_bytes,
                                     file_name=bt_filename, mime="application/pdf", key=f"{bt_key_prefix}_dl",

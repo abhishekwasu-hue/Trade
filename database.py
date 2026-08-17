@@ -5,7 +5,7 @@ import os
 import sqlite3
 import pandas as pd
 
-from config import DATA_DIR, DB_PATH
+from config import DATA_DIR, DB_PATH, get_ist_now, get_ist_today
 from upstox_api import fetch_ltp_map
 
 
@@ -132,7 +132,7 @@ def log_order(order_id, trade_id, symbol, mode, order_dict, status):
                 order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
                 order_dict.get("transaction_type"), order_dict.get("order_type"),
                 order_dict.get("quantity"), order_dict.get("price"), order_dict.get("trigger_price"),
-                status, order_dict.get("tag"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                status, order_dict.get("tag"), get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )
         conn.commit()
@@ -235,7 +235,7 @@ def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     """आजच्या दिवसात बंद झालेल्या (CLOSED) ट्रेड्सचा एकूण वास्तविक नफा/तोटा (डेली सर्किट ब्रेकरसाठी).
     PAPER आणि LIVE ट्रेड्स स्वतंत्रपणे मोजले जातात, जेणेकरून Paper टेस्टिंगमुळे Live सर्किट ब्रेकर
     (किंवा उलट) चुकीने ट्रिगर होणार नाही."""
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(

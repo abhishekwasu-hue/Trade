@@ -9,6 +9,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from config import get_ist_today
+
 from signals import calculate_rsi, resample_to_1h
 
 
@@ -53,7 +55,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
 
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
 
-        today = datetime.date.today()
+        today = get_ist_today()
         overall_from = today - datetime.timedelta(days=lookback_days)
 
         hist_candles = []
@@ -121,7 +123,7 @@ def fetch_long_history(access_token, symbol="NIFTY", years=20, chunk_years=3, pr
     encoded_key = urllib.parse.quote(instrument_key, safe="")
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
 
-    today = datetime.date.today()
+    today = get_ist_today()
     earliest_available = datetime.date(2000, 1, 1)
     target_start = max(earliest_available, today - datetime.timedelta(days=years * 365))
 
@@ -252,7 +254,7 @@ def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
                     target_expiry = expiries[idx]
                     
         if not target_expiry:
-            target_expiry = datetime.date.today().strftime("%Y-%m-%d")
+            target_expiry = get_ist_today().strftime("%Y-%m-%d")
             
         url = f"https://api.upstox.com/v2/option/chain?instrument_key={requests.utils.quote(instrument_key)}&expiry_date={target_expiry}"
         res = requests.get(url, headers=headers, timeout=8)

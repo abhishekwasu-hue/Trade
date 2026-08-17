@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-from config import TIMEFRAME_CONFIG, DB_PATH
+from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today
 import sqlite3
 from database import (
     log_orders_batch, get_todays_realized_pnl,
@@ -76,7 +76,7 @@ def render():
 
     st.title(f"📈 Upstox Option Terminal ({symbol})")
 
-    last_updated_ist = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
+    last_updated_ist = get_ist_now().strftime("%H:%M:%S")
     col_live1, col_live2 = st.columns([1, 3])
     with col_live1:
         st.markdown(
@@ -453,7 +453,8 @@ def render():
     )
 
     # --- डेटाबेस बेसलाइनवरून OI Change कॅल्क्युलेट करणे ---
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    # IST तारीख वापरणे (local सर्व्हर तारीख नाही — UTC सर्व्हरवर मध्यरात्रीच्या आसपास चुकीची तारीख येऊ शकते)
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -825,7 +826,9 @@ def render():
     total_put_oi = int(df["PE Total OI"].sum()) if not df.empty else 0
     current_diff = total_put_oi - total_call_oi
 
-    now_dt = datetime.datetime.now()
+    # IST वेळ — इतर ठिकाणी (line 79, 1280) वापरलेल्याच बरोबर पद्धतीने (datetime.now() सर्व्हरच्या local
+    # वेळेवर अवलंबून असतं, जी IST नसू शकते — विशेषतः Streamlit Cloud सारख्या UTC सर्व्हरवर चुकीची वेळ दाखवत होती)
+    now_dt = get_ist_now()
     # खालच्या १० मिनिटांच्या स्लॉटवर राऊंड करणे (उदा. 13:47 -> 13:40)
     snapshot_minute = (now_dt.minute // 10) * 10
     snapshot_time = now_dt.replace(minute=snapshot_minute, second=0, microsecond=0).strftime("%H:%M")
@@ -842,13 +845,12 @@ def render():
     )
     prev_row = cur3.fetchone()
     prev_diff = prev_row[0] if prev_row else None
-    prev_delta_diff = prev_row[1] if prev_row else None
     prev_signal = prev_row[2] if prev_row else None
     delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
 
-    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि किमान 20% बदल असेल तरच आधीच्या सिग्नलपेक्षा
-    # वेगळा दाखवला जातो (hysteresis — छोट्या/noise-सदृश चढ-उतारांमुळे उगाच flip-flop टाळण्यासाठी)
-    oi_signal = compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_delta_diff, prev_signal)
+    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि Diff मध्ये किमान 20% बदल असेल तरच आधीच्या
+    # सिग्नलपेक्षा वेगळा दाखवला जातो (hysteresis — delta_diff फक्त माहितीसाठी, त्यावर buffer नाही)
+    oi_signal = compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal)
 
     # या १० मिनिटांच्या स्लॉटसाठी snapshot फक्त एकदाच रेकॉर्ड करणे (त्या स्लॉटमधला पहिला पोल टिकतो)
     cur3.execute(
@@ -1277,7 +1279,7 @@ def render():
         todays_pnl, todays_trade_count = get_todays_realized_pnl(symbol, trading_mode)
         circuit_breaker_ok = (todays_pnl > -max_daily_loss) and (todays_trade_count < max_trades_per_day)
 
-        ist_now_time = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).time()
+        ist_now_time = get_ist_now().time()
         entry_cutoff_ok = True
         if trading_style == "INTRADAY" and entry_cutoff_time is not None:
             entry_cutoff_ok = ist_now_time < entry_cutoff_time
@@ -1338,7 +1340,7 @@ def render():
         """SELECT trade_id AS "Trade ID", mode AS "Mode", strategy AS Strategy, exit_reason AS "Exit Reason",
                   realized_pnl AS "Realized P&L", entry_time AS "Entry Time", exit_time AS "Exit Time"
            FROM live_trades WHERE symbol=? AND trade_date=? ORDER BY exit_time DESC""",
-        conn_lt, params=(symbol, datetime.date.today().strftime("%Y-%m-%d")),
+        conn_lt, params=(symbol, get_ist_today().strftime("%Y-%m-%d")),
     )
     conn_lt.close()
 
@@ -1397,7 +1399,7 @@ def render():
                 news_data,
             )
 
-        report_filename = f"A1_Market_Report_{symbol}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        report_filename = f"A1_Market_Report_{symbol}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.pdf"
         st.download_button(
             label="📥 Download Full Market Analysis Report (.pdf)",
             data=pdf_bytes,
@@ -1405,3 +1407,4 @@ def render():
             mime="application/pdf",
         )
         st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
+
