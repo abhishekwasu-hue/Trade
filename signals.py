@@ -489,7 +489,7 @@ def check_price_action_strategy(df, direction, order=3, lookback_swings=3,
 
     pattern = detect_candlestick_pattern(df)
     detail["pattern"] = pattern
-    pattern_ok = (pattern in ("HAMMER", "BULLISH_ENGULFING")) if direction == "BULLISH" else (pattern in ("SHOOTING_STAR", "BEARISH_ENGULFING"))
+    pattern_ok = (pattern in ("HAMMER", "BULLISH_ENGULFING", "MORNING_STAR")) if direction == "BULLISH" else (pattern in ("SHOOTING_STAR", "BEARISH_ENGULFING", "EVENING_STAR"))
 
     return bool(structural_shift and ob_retest and pattern_ok), detail
 
@@ -599,6 +599,24 @@ def is_displacement_candle(df, index, direction, body_atr_multiplier=1.5, atr_pe
     is_big_body = body >= atr * body_atr_multiplier
     is_directional = (df["close"].iloc[index] > df["open"].iloc[index]) if direction == "BULLISH" else (df["close"].iloc[index] < df["open"].iloc[index])
     return bool(is_big_body and is_directional)
+
+
+def compute_atr(df, period=14):
+    """
+    दिलेल्या OHLC डेटाच्या शेवटच्या bar साठी Average True Range (ATR) काढणे — Trailing SL साठी वापरला जातो.
+    पुरेसा डेटा (किमान period+1 bars) नसेल तर None परत करतो.
+    """
+    n = len(df)
+    if n < period + 1:
+        return None
+    tr_list = []
+    start = n - period
+    for i in range(start, n):
+        high, low = df["high"].iloc[i], df["low"].iloc[i]
+        prev_close = df["close"].iloc[i - 1] if i > 0 else df["open"].iloc[i]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        tr_list.append(tr)
+    return sum(tr_list) / len(tr_list)
 
 
 def is_in_kill_zone(timestamp, avoid_first_minutes=15, avoid_last_minutes=15, market_open="09:15", market_close="15:30"):
@@ -766,8 +784,8 @@ def rsi_momentum_and_divergence(df, rsi_series, direction):
 
 def detect_candlestick_pattern(df):
     """
-    शेवटच्या (व त्याआधीच्या, Engulfing साठी) candle वरून pattern ओळखणे.
-    रिटर्न: "BULLISH_ENGULFING" / "HAMMER" / "SHOOTING_STAR" / "BEARISH_ENGULFING" / None
+    शेवटच्या (व त्याआधीच्या, Engulfing/Star साठी) candles वरून pattern ओळखणे.
+    रिटर्न: "BULLISH_ENGULFING" / "MORNING_STAR" / "HAMMER" / "SHOOTING_STAR" / "EVENING_STAR" / "BEARISH_ENGULFING" / None
     """
     if len(df) < 2:
         return None
@@ -793,6 +811,12 @@ def detect_candlestick_pattern(df):
     if prev_bullish and curr_bearish and c_open >= p_close and c_close <= p_open:
         return "BEARISH_ENGULFING"
 
+    # --- Morning Star / Evening Star (३ candles चा उलटफेर पॅटर्न — Engulfing नंतर, एकाच-candle
+    # पॅटर्न्सच्या आधी तपासला जातो, कारण ३-candle पॅटर्न साधारणपणे जास्त भक्कम संकेत मानला जातो) ---
+    star_pattern = detect_morning_evening_star(df)
+    if star_pattern:
+        return star_pattern
+
     # --- Hammer / Shooting Star (एकाच candle वरून — लांब wick, छोटा body) ---
     if total_range <= 0 or body <= 0:
         return None
@@ -800,6 +824,47 @@ def detect_candlestick_pattern(df):
         return "HAMMER"
     if upper_wick >= 2 * body and lower_wick <= 0.5 * body:
         return "SHOOTING_STAR"
+    return None
+
+
+def detect_morning_evening_star(df):
+    """
+    Morning Star (bullish reversal) / Evening Star (bearish reversal) — ३ candles चा पॅटर्न:
+    1) पहिली candle: ठाम शरीराची (मोठा body), प्रचलित दिशेतली
+    2) दुसरी candle: लहान शरीराची (indecision/तारा) — पहिलीच्या तुलनेत खूप लहान body
+    3) तिसरी candle: उलट दिशेतली ठाम candle, जी पहिलीच्या body च्या मध्यापलीकडे बंद होते
+    रिटर्न: "MORNING_STAR" / "EVENING_STAR" / None
+    """
+    if len(df) < 3:
+        return None
+    c1, c2, c3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+
+    def _body(c):
+        return abs(c["close"] - c["open"])
+
+    def _rng(c):
+        return c["high"] - c["low"]
+
+    body1, body2, body3 = _body(c1), _body(c2), _body(c3)
+    range1, range3 = _rng(c1), _rng(c3)
+    if range1 <= 0 or range3 <= 0:
+        return None
+
+    c1_bearish = c1["close"] < c1["open"]
+    c1_bullish = c1["close"] > c1["open"]
+    c3_bullish = c3["close"] > c3["open"]
+    c3_bearish = c3["close"] < c3["open"]
+
+    c1_strong_body = body1 >= 0.5 * range1
+    c3_strong_body = body3 >= 0.5 * range3
+    c2_small_body = body1 > 0 and body2 <= 0.3 * body1
+
+    c1_mid = (c1["open"] + c1["close"]) / 2
+
+    if c1_bearish and c1_strong_body and c2_small_body and c3_bullish and c3_strong_body and c3["close"] > c1_mid:
+        return "MORNING_STAR"
+    if c1_bullish and c1_strong_body and c2_small_body and c3_bearish and c3_strong_body and c3["close"] < c1_mid:
+        return "EVENING_STAR"
     return None
 
 
@@ -818,10 +883,10 @@ def check_pattern_rsi_gate(df_pattern_tf, rsi_series, direction, bullish_rsi_ran
     last_rsi = float(rsi_series.iloc[-1])
 
     if direction == "BULLISH":
-        pattern_ok = pattern in ("HAMMER", "BULLISH_ENGULFING")
+        pattern_ok = pattern in ("HAMMER", "BULLISH_ENGULFING", "MORNING_STAR")
         rsi_ok = bullish_rsi_range[0] < last_rsi < bullish_rsi_range[1]
     elif direction == "BEARISH":
-        pattern_ok = pattern in ("SHOOTING_STAR", "BEARISH_ENGULFING")
+        pattern_ok = pattern in ("SHOOTING_STAR", "BEARISH_ENGULFING", "EVENING_STAR")
         rsi_ok = bearish_rsi_range[0] < last_rsi < bearish_rsi_range[1]
     else:
         return False, pattern, last_rsi

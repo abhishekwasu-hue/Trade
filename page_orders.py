@@ -1,8 +1,8 @@
 """Orders page — order book, System Diagnostics, and Data Safety / Broker Reconciliation."""
-import datetime
 import pandas as pd
 import streamlit as st
 
+from config import get_ist_now, get_ist_today
 from database import get_order_log, get_db_backup_bytes, restore_db_from_bytes
 from diagnostics import run_system_diagnostics
 from trading_engine import reconcile_positions
@@ -82,7 +82,7 @@ def render():
             if backup_bytes:
                 st.download_button(
                     "📥 Download DB Backup", data=backup_bytes,
-                    file_name=f"amw_a1_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                    file_name=f"amw_a1_backup_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.db",
                     mime="application/octet-stream",
                 )
             else:
@@ -149,7 +149,7 @@ def render():
             else:
                 st.success(f"✅ {len(hist_df):,} दैनिक candles मिळाले ({hist_df['timestamp'].min().date()} ते {hist_df['timestamp'].max().date()}).")
                 csv_bytes = hist_df.to_csv(index=False).encode("utf-8")
-                filename = f"{symbol}_daily_history_{datetime.date.today().strftime('%Y%m%d')}.csv"
+                filename = f"{symbol}_daily_history_{get_ist_today().strftime('%Y%m%d')}.csv"
 
                 with st.spinner("Google Drive वर अपलोड होत आहे..."):
                     ok, result = upload_to_google_drive(csv_bytes, filename, mime_type="text/csv")

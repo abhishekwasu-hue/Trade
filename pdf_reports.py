@@ -559,8 +559,8 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
             "determined by 1H Supertrend; an entry requires a Break of Structure (BOS) or Change of Character "
             "(CHoCH) relative to the structure that existed before a confirmed Order Block (the last "
             "opposite-colour candle before a genuine impulsive move); price must then retest that Order Block "
-            "zone; and finally a 15-minute candlestick pattern (Hammer/Bullish Engulfing for bullish, Shooting "
-            "Star/Bearish Engulfing for bearish) must also be present.",
+            "zone; and finally a 15-minute candlestick pattern (Hammer/Bullish Engulfing/Morning Star for bullish, "
+            "Shooting Star/Bearish Engulfing/Evening Star for bearish) must also be present.",
             _rpt_normal,
         ))
         story.append(Spacer(1, 6))
@@ -576,8 +576,8 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
         story.append(Paragraph(
             "This check runs the new Indicator Based Signal Engine walk-forward (no lookahead): direction is "
             "determined by 1H Supertrend; an entry requires RSI(15-minute) to be between 25-55 (Bullish) or "
-            "45-75 (Bearish), together with a 15-minute Rejection Bar (Hammer/Shooting Star) or Engulfing "
-            "candlestick pattern.",
+            "45-75 (Bearish), together with a 15-minute Rejection Bar (Hammer/Shooting Star), Engulfing, or "
+            "Morning Star/Evening Star candlestick pattern.",
             _rpt_normal,
         ))
     story.append(Spacer(1, 6))

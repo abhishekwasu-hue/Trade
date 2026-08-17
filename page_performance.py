@@ -147,6 +147,9 @@ def render():
                     ob_lookback_swings = 3
                     ob_retest_tolerance_pct = 0.1
                     enable_kill_zone_filter = False
+                    require_unmitigated_ob = False
+                    require_displacement = False
+                    require_fvg_confluence = False
                     if strategy_mode == "price_action":
                         st.caption(
                             "Order Block च्या पुष्टीसाठी लागणारी किमान impulsive हालचाल % — हे बाजाराच्या "
@@ -172,10 +175,11 @@ def render():
                         enable_kill_zone_filter = st.checkbox(
                             "Kill-Zone Filter (सुरुवातीचे/शेवटचे 15 मिनिट टाळा — ऐच्छिक)", value=False, key=f"{bt_key_prefix}_killzone",
                         )
-                        st.caption(
-                            "व्यावसायिक गुणवत्तेसाठी Liquidity Sweep, Unmitigated Order Block, Displacement Candle "
-                            "आणि Fair Value Gap Confluence — हे चारही आता डीफॉल्ट चालूच आहेत (सैल आवृत्तीपेक्षा जास्त कडक, पण जास्त विश्वासार्ह)."
-                        )
+                        st.markdown("##### 🎓 व्यावसायिक गुणवत्ता गेट्स (ऐच्छिक — एकत्र लावल्यास सिग्नल्स जवळपास शून्यावर येतात)")
+                        require_unmitigated_ob = st.checkbox("Unmitigated Order Block आवश्यक", value=False, key=f"{bt_key_prefix}_unmit")
+                        require_displacement = st.checkbox("Displacement Candle आवश्यक", value=False, key=f"{bt_key_prefix}_disp")
+                        require_fvg_confluence = st.checkbox("Fair Value Gap Confluence आवश्यक", value=False, key=f"{bt_key_prefix}_fvg")
+                        st.caption("डीफॉल्ट सर्व बंद — जास्त सिग्नल्स मिळतील. एकेक चालू करून Funnel Diagnostic ने फरक तपासा.")
 
                     if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run"):
                         with st.spinner(f"{bt_from} ते {bt_to} चा {bt_interval} + 1H डेटा फेच करून तपासत आहे..."):
@@ -194,6 +198,8 @@ def render():
                                 ob_impulse_min_move_pct=ob_impulse_min_move_pct,
                                 ob_retest_tolerance_pct=ob_retest_tolerance_pct,
                                 enable_kill_zone_filter=enable_kill_zone_filter,
+                                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
+                                require_fvg_confluence=require_fvg_confluence,
                             )
                         if bt_df_range.empty or bt_df_1h.empty:
                             st.error(

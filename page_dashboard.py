@@ -34,7 +34,7 @@ from oi_analysis import (
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis,
 )
-from trading_engine import normalize_legs, open_multi_leg_trade, manage_open_trades, track_manual_trade
+from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
 
@@ -373,6 +373,9 @@ def render():
     ob_lookback_swings = st.session_state.get("ob_lookback_swings", 3)
     ob_impulse_min_move_pct = st.session_state.get("ob_impulse_min_move_pct", 0.3)
     ob_retest_tolerance_pct = st.session_state.get("ob_retest_tolerance_pct", 0.1)
+    require_unmitigated_ob = st.session_state.get("require_unmitigated_ob", False)
+    require_displacement = st.session_state.get("require_displacement", False)
+    require_fvg_confluence = st.session_state.get("require_fvg_confluence", False)
     enable_kill_zone_filter = st.session_state.get("enable_kill_zone_filter", False)
 
     # Intraday साठी दिशा नेहमी 1H Supertrend वरून (दोन्ही नवीन रणनीतींसाठी सामायिक), आणि RSI 15M वर —
@@ -1057,6 +1060,8 @@ def render():
                 df_structure_tf, pipeline_direction, order=ob_order, lookback_swings=ob_lookback_swings,
                 ob_impulse_min_move_pct=ob_impulse_min_move_pct, ob_retest_tolerance_pct=ob_retest_tolerance_pct,
                 enable_kill_zone_filter=enable_kill_zone_filter,
+                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
+                require_fvg_confluence=require_fvg_confluence,
             )
             # Order Block सापडला असेल तर — त्यापासून पुढचा Psychological Level (500 च्या पटीत) काढून,
             # त्या strike वर खरी OI Wall (Short Buildup) आहे का हे हार्ड गेट म्हणून तपासणे — फक्त Live
@@ -1315,18 +1320,8 @@ def render():
             else:
                 st.info("ℹ️ लाईव्ह एक्झिक्युशनसाठी साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही टिक करा.")
 
-    # --- उघड्या ट्रेड्सचे SL/Target/EOD मॉनिटरिंग (दर रनवर आपोआप तपासले जाते) ---
-    if enable_live_trading and confirm_live_trading:
-        eod_hour = eod_squareoff_time.hour if eod_squareoff_time else 15
-        eod_minute = eod_squareoff_time.minute if eod_squareoff_time else 15
-        closed_now = manage_open_trades(
-            token_input, symbol, product_type, eod_squareoff_hour=eod_hour, eod_squareoff_minute=eod_minute,
-            oi_reversal_exit_enabled=enable_oi_early_exit,
-        )
-        for c in closed_now:
-            emoji = "🟢" if c["reason"] == "TARGET" else "🔴"
-            mode_tag = "📝" if c.get("mode") == "PAPER" else "💰"
-            st.toast(f"{emoji}{mode_tag} Trade {c['trade_id']} बंद झाला ({c['reason']}) — P&L: ₹{c['pnl']:,.0f}")
+    # (उघड्या ट्रेड्सचे SL/Target/EOD मॉनिटरिंग आता shared_context.py मध्ये हलवलेलं आहे — जेणेकरून हे
+    # प्रत्येक page वर चालेल, फक्त Dashboard उघडी असतानाच नाही — आधीचा गंभीर gap इथेच होता.)
 
     conn_lt = sqlite3.connect(DB_PATH)
     open_df = pd.read_sql_query(

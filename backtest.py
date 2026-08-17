@@ -252,7 +252,8 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
                              min_lookback=30, max_bars=None, max_hold_bars=50,
                              order=3, lookback_swings=3, ob_impulse_lookforward=5,
                              ob_impulse_min_move_pct=0.3, ob_search_lookback=20, ob_retest_tolerance_pct=0.1,
-                             enable_kill_zone_filter=False):
+                             enable_kill_zone_filter=False,
+                             require_unmitigated_ob=False, require_displacement=False, require_fvg_confluence=False):
     """
     नवीन Signal Engine (V2) — दोन स्वतंत्र, संपूर्ण रणनीती (जुन्या Market Structure/Break/Pullback/Retest
     ऐवजी — दिशा दोन्हीसाठी 1H Supertrend वरून, no-lookahead merge_asof ने अलाइन केलेली):
@@ -300,6 +301,8 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
                 ob_impulse_lookforward=ob_impulse_lookforward, ob_impulse_min_move_pct=ob_impulse_min_move_pct,
                 ob_search_lookback=ob_search_lookback, ob_retest_tolerance_pct=ob_retest_tolerance_pct,
                 enable_kill_zone_filter=enable_kill_zone_filter,
+                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
+                require_fvg_confluence=require_fvg_confluence,
             )
         else:
             rsi_window = rsi_series_full.iloc[:i + 1]
