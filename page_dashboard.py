@@ -32,6 +32,7 @@ from oi_analysis import (
     get_latest_oi_signal, check_oi_confirmation,
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
+    compute_oi_signal_with_hysteresis,
 )
 from trading_engine import normalize_legs, open_multi_leg_trade, manage_open_trades, track_manual_trade
 from pdf_reports import generate_market_analysis_report_pdf
@@ -832,28 +833,22 @@ def render():
     conn3 = sqlite3.connect(DB_PATH)
     cur3 = conn3.cursor()
 
-    # आधीचा (या क्षणापर्यंतचा सर्वात अलीकडचा) snapshot घेणे, ΔDiff साठी
+    # आधीचा (या क्षणापर्यंतचा सर्वात अलीकडचा) snapshot घेणे, ΔDiff आणि hysteresis साठी
     cur3.execute(
-        """SELECT diff FROM oi_diff_snapshots
+        """SELECT diff, delta_diff, signal FROM oi_diff_snapshots
            WHERE symbol=? AND trade_date=? AND snapshot_time < ?
            ORDER BY snapshot_time DESC LIMIT 1""",
         (symbol, today_str, snapshot_time)
     )
     prev_row = cur3.fetchone()
     prev_diff = prev_row[0] if prev_row else None
+    prev_delta_diff = prev_row[1] if prev_row else None
+    prev_signal = prev_row[2] if prev_row else None
     delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
 
-    # सिग्नल लॉजिक: Diff ची पातळी (level) + ΔDiff ची गती (momentum) दोन्ही बघून
-    if current_diff > 0 and delta_diff > 0:
-        oi_signal = "🟢 BULLISH"
-    elif current_diff < 0 and delta_diff < 0:
-        oi_signal = "🔴 BEARISH"
-    elif current_diff > 0 and delta_diff <= 0:
-        oi_signal = "🟡 BULLISH (Weakening)"
-    elif current_diff < 0 and delta_diff >= 0:
-        oi_signal = "🟠 BEARISH (Weakening)"
-    else:
-        oi_signal = "⚪ NEUTRAL"
+    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि किमान 20% बदल असेल तरच आधीच्या सिग्नलपेक्षा
+    # वेगळा दाखवला जातो (hysteresis — छोट्या/noise-सदृश चढ-उतारांमुळे उगाच flip-flop टाळण्यासाठी)
+    oi_signal = compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_delta_diff, prev_signal)
 
     # या १० मिनिटांच्या स्लॉटसाठी snapshot फक्त एकदाच रेकॉर्ड करणे (त्या स्लॉटमधला पहिला पोल टिकतो)
     cur3.execute(
@@ -911,7 +906,10 @@ def render():
         "- 🔴 **BULLISH (Weakening)**: अजून Diff धन आहे, पण ΔDiff आता वाढत नाहीये → बुलिश जोर कमी होतोय, म्हणून रंग उलट "
         "(लाल) — पुढे बेअरिशकडे वळण्याचा इशारा\n"
         "- 🟢 **BEARISH (Weakening)**: अजून Diff ऋण आहे, पण ΔDiff आता घटत नाहीये → बेअरिश जोर कमी होतोय, म्हणून रंग उलट "
-        "(हिरवा) — पुढे बुलिशकडे वळण्याचा इशारा"
+        "(हिरवा) — पुढे बुलिशकडे वळण्याचा इशारा\\n\\n"
+        "⚙️ **Hysteresis:** सिग्नल फक्त तेव्हाच बदलतो जेव्हा ΔDiff मागच्या ΔDiff पेक्षा किमान 20% बदलतो — छोट्या, "
+        "noise-सदृश चढ-उतारांमुळे सिग्नल उगाच वारंवार भिरभिरू (flip-flop) नये म्हणून. मागचा ΔDiff बरोबर 0 असेल तेव्हा "
+        "सिग्नल सुरक्षित बाजूने बदलला जात नाही."
     )
 
     # =========================================================
@@ -1407,4 +1405,3 @@ def render():
             mime="application/pdf",
         )
         st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
-
