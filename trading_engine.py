@@ -5,7 +5,7 @@ import sqlite3
 import time
 import uuid
 
-from config import DB_PATH
+from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
 from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions
 from oi_analysis import get_latest_oi_signal, check_oi_confirmation, infer_direction_from_strategy
@@ -60,7 +60,7 @@ def reconcile_positions(access_token, symbol):
 
     return {
         "status": "ok", "mismatches": mismatches, "unexplained_broker_positions": unexplained_broker_positions,
-        "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "checked_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 def normalize_legs(strategy_result):
@@ -112,11 +112,11 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             legs_json, strikes_summary, mode, trading_style)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
-            trade_id, datetime.date.today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
+            trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
             lots, lot_size, strategy_result["net_credit"], max_profit_total, max_loss_total,
             sl_pnl_level, target_pnl_level,
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
+            get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style,
         ),
@@ -212,7 +212,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 cur.execute(
                     """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=?
                        WHERE trade_id=?""",
-                    (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
+                    (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
                 )
                 conn.commit()
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(current_pnl, 2), "mode": trade_mode})
@@ -254,11 +254,11 @@ def track_manual_trade(symbol, legs, lots, lot_size, entry_ltps, trading_mode, t
             legs_json, strikes_summary, mode, trading_style)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
-            trade_id, datetime.date.today().strftime("%Y-%m-%d"), symbol, "MANUAL",
+            trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, "MANUAL",
             None, None, None, None,
             lots, lot_size, net_credit, None, None,
             sl_pnl_level, target_pnl_level,
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
+            get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style,
         ),
@@ -317,7 +317,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type):
         log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE")
         cur.execute(
             "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='MANUAL_CLOSE', realized_pnl=? WHERE trade_id=?",
-            (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), round(current_pnl, 2), trade_id),
+            (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), round(current_pnl, 2), trade_id),
         )
         conn.commit()
         conn.close()
