@@ -77,7 +77,7 @@ def init_sqlite_db():
     """)
     # legs_json / strikes_summary — Iron Condor/Butterfly सारख्या N-leg स्ट्रॅटेजीजसाठी लागणारे नवीन कॉलम्स.
     # आधीपासून अस्तित्वात असलेल्या DB फाईलवरही सुरक्षितपणे चालण्यासाठी ALTER TABLE + try/except वापरले आहे.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT"]:
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -259,7 +259,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     query = """SELECT trade_id, mode, trading_style, strategy, legs_json, lots, lot_size, net_credit,
-                      max_profit, max_loss, entry_time, strikes_summary
+                      max_profit, max_loss, entry_time, strikes_summary, peak_pnl
                FROM live_trades WHERE symbol=? AND status='OPEN'"""
     params = [symbol]
     if mode_filter:
@@ -283,7 +283,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     ltp_map = fetch_ltp_map(access_token, list(all_keys)) if all_keys else {}
 
     records = []
-    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary), legs in parsed:
+    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl), legs in parsed:
         mtm, mtm_pct = None, None
         if legs:
             current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -299,6 +299,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
             "Trade ID": trade_id, "Mode": mode or "LIVE", "Style": style or "INTRADAY",
             "Strategy": strategy, "Legs": strikes_summary, "Lots": lots,
             "Entry Time": entry_time, "MTM (Rs)": mtm, "MTM (%)": mtm_pct,
+            "Peak P&L (Rs)": round(peak_pnl, 2) if peak_pnl is not None else None,
         })
     return pd.DataFrame(records)
 

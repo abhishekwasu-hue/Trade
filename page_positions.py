@@ -38,7 +38,11 @@ def render():
 
         styled_positions = positions_df.style.map(_style_mtm_positions, subset=["MTM (Rs)", "MTM (%)"])
         st.dataframe(styled_positions, width='stretch', height=350)
-        st.caption("🔄 दर रनला आपोआप अपडेट होते — किंमती थेट Upstox च्या सद्य LTP वरून.")
+        st.caption(
+            "🔄 दर रनला आपोआप अपडेट होते — किंमती थेट Upstox च्या सद्य LTP वरून. "
+            "**Peak P&L**: Trailing SL चालू असल्यास, या पोझिशनने आतापर्यंत गाठलेला सर्वोच्च नफा — "
+            "SL याच्यापासून ATR-अंतर मागे राहून सतत वर सरकतो."
+        )
 
         st.markdown("##### 🔴 पोझिशन मॅन्युअली बंद करा")
         st.caption(

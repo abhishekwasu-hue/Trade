@@ -129,7 +129,27 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         return False, {"status": "error", "message": f"Trade DB मध्ये नोंदवता आला नाही (trade_id टक्कर: {trade_id}). ऑर्डर प्रत्यक्षात प्लेस झाला असेल तर Reconciliation Check चालवून तपासा."}
     return True, {"trade_id": trade_id, "order_ids": order_ids}
 
-def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False):
+def compute_trailing_sl_level(current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=1.5, original_sl_level=None):
+    """
+    ATR-आधारित Trailing SL — पोझिशन नफ्यात असताना, ATR (बाजाराच्या अस्थिरतेवर आधारित) पटीत एक अंतर
+    ठेवून SL सतत नफ्याच्या दिशेने वर सरकवणे. एकदा सरकल्यावर कधीच मागे सरकत नाही (peak_pnl कधीच कमी होत
+    नाही). पोझिशन कधीच नफ्यात गेलेली नसेल (peak_pnl<=0) तर ट्रेलिंग सक्रियच होत नाही — मूळ स्थिर SL तसाच
+    वापरला जातो. परिणामी SL कधीच मूळ स्थिर SL पेक्षा वाईट (जास्त सैल) होणार नाही, याची खात्री केलेली आहे.
+    Returns: (नवीन peak_pnl, प्रत्यक्ष वापरायचा effective_sl_level)
+    """
+    new_peak_pnl = max(peak_pnl, current_pnl) if peak_pnl is not None else current_pnl
+
+    if new_peak_pnl <= 0 or atr_points is None:
+        return new_peak_pnl, original_sl_level
+
+    trailing_distance = atr_points * lot_size * lots * atr_multiplier
+    trailing_sl_level = new_peak_pnl - trailing_distance
+
+    effective_sl = trailing_sl_level if original_sl_level is None else max(original_sl_level, trailing_sl_level)
+    return new_peak_pnl, effective_sl
+
+
+def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
     Intraday ट्रेड्ससाठी EOD Square-off (डीफॉल्ट 15:15 IST) आपोआप लागू होतो — ब्रोकरचा MIS
@@ -137,6 +157,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     oi_reversal_exit_enabled=True असल्यास, Directional स्प्रेड्स (Bull Put / Bear Call) साठी OI Diff
     Tracker चा सिग्नल पोझिशनच्या विरोधात सक्रियपणे फिरला तर SL/Target च्या आधीच लवकर एक्झिट होतो
     (Iron Condor/Butterfly सारख्या non-directional स्ट्रॅटेजींना हे लागू होत नाही).
+    trailing_sl_enabled=True असल्यास, ATR-आधारित Trailing SL सर्व स्ट्रॅटेजींना (Price Action, Indicator,
+    व मूळ Credit Spreads सकट) लागू होतो — पोझिशन नफ्यात गेल्यावर SL सतत नफ्याच्या दिशेने सरकतो, कधीच
+    मूळ स्थिर SL पेक्षा वाईट होत नाही. atr_points कॉलरने (caller ने) आधीच काढून द्यायचा असतो.
     """
     ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
     past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (eod_squareoff_hour, eod_squareoff_minute)
@@ -145,7 +168,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -156,16 +179,16 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or ""))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
 
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -179,9 +202,18 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         )
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
 
+        # ATR-आधारित Trailing SL — चालू असेल तरच, आणि मूळ स्थिर SL पेक्षा कधीच वाईट (सैल) होणार नाही याची खात्री
+        effective_sl_level = sl_level
+        if trailing_sl_enabled:
+            new_peak_pnl, effective_sl_level = compute_trailing_sl_level(
+                current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=atr_multiplier, original_sl_level=sl_level,
+            )
+            if new_peak_pnl != peak_pnl:
+                cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+
         exit_reason = None
-        if sl_level is not None and current_pnl <= sl_level:
-            exit_reason = "SL"
+        if effective_sl_level is not None and current_pnl <= effective_sl_level:
+            exit_reason = "TRAILING_SL" if (trailing_sl_enabled and effective_sl_level != sl_level) else "SL"
         elif target_level is not None and current_pnl >= target_level:
             exit_reason = "TARGET"
         elif trade_style == "INTRADAY" and past_eod_cutoff:
@@ -217,6 +249,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 conn.commit()
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(current_pnl, 2), "mode": trade_mode})
 
+    # Trailing SL मुळे peak_pnl अपडेट झालेला असू शकतो, जरी या रनला कोणताही trade प्रत्यक्ष बंद झाला नसला तरी —
+    # तो बदल इथे न चुकता commit करणे आवश्यक (नाहीतर वर फक्त trade बंद झाल्यावरच commit होतो).
+    conn.commit()
     conn.close()
     return closed_summaries
 

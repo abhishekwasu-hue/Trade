@@ -5,7 +5,9 @@
 import datetime
 import streamlit as st
 
-from upstox_api import fetch_upstox_option_chain
+from upstox_api import fetch_upstox_option_chain, fetch_candles
+from signals import compute_atr
+from trading_engine import manage_open_trades
 
 
 def setup_shared_context():
@@ -84,6 +86,9 @@ def setup_shared_context():
         ob_impulse_min_move_pct = 0.3
         ob_retest_tolerance_pct = 0.1
         enable_kill_zone_filter = False
+        require_unmitigated_ob = False
+        require_displacement = False
+        require_fvg_confluence = False
         if intraday_strategy_mode == "price_action":
             st.sidebar.caption(
                 "Order Block च्या पुष्टीसाठी लागणारी किमान impulsive हालचाल % — शांत बाजारात उंबरठा कमी करावा "
@@ -97,16 +102,17 @@ def setup_shared_context():
             )
             st.sidebar.caption(
                 "0.1% म्हणजे किंमत जवळपास exact OB झोनच्या आतच यावी लागते (खूप कडक). वाढवल्यास झोनच्या "
-                "काठाबाहेरही थोडी 'सूट' मिळते — backtest मध्ये retest 129 पैकी फक्त 2 वेळा जुळत होता, "
-                "इथूनच ते सैल करता येईल."
+                "काठाबाहेरही थोडी 'सूट' मिळते."
             )
             enable_kill_zone_filter = st.sidebar.checkbox(
                 "Kill-Zone Filter (सुरुवातीचे/शेवटचे 15 मिनिट टाळा — ऐच्छिक)", value=False,
             )
+            st.sidebar.markdown("##### 🎓 व्यावसायिक गुणवत्ता गेट्स (ऐच्छिक — एकत्र लावल्यास सिग्नल्स जवळपास शून्यावर येतात)")
+            require_unmitigated_ob = st.sidebar.checkbox("Unmitigated Order Block आवश्यक (आधी कधीच टच न झालेला)", value=False)
+            require_displacement = st.sidebar.checkbox("Displacement Candle आवश्यक (ATR-सापेक्ष मोठी candle)", value=False)
+            require_fvg_confluence = st.sidebar.checkbox("Fair Value Gap Confluence आवश्यक", value=False)
             st.sidebar.caption(
-                "व्यावसायिक गुणवत्तेसाठी Liquidity Sweep, Unmitigated Order Block, Displacement Candle आणि "
-                "Fair Value Gap Confluence — हे चारही आता डीफॉल्ट चालूच आहेत (सैल आवृत्तीपेक्षा जास्त कडक, "
-                "पण जास्त विश्वासार्ह)."
+                "डीफॉल्ट सर्व बंद — जास्त सिग्नल्स मिळतील. एकेक चालू करून बघा, backtest मध्ये किती फरक पडतो ते आधी तपासा."
             )
         st.sidebar.caption(
             "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
@@ -126,6 +132,9 @@ def setup_shared_context():
         ob_impulse_min_move_pct = 0.3
         ob_retest_tolerance_pct = 0.1
         enable_kill_zone_filter = False
+        require_unmitigated_ob = False
+        require_displacement = False
+        require_fvg_confluence = False
         st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
 
         st.sidebar.markdown("##### 🧭 OI+PCR+MaxPain+Rollover Gate (Swing)")
@@ -141,6 +150,18 @@ def setup_shared_context():
 
     max_trades_per_day = st.sidebar.number_input("दिवसाला जास्तीत जास्त ट्रेड्स", min_value=1, value=3, step=1)
     max_daily_loss = st.sidebar.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
+
+    st.sidebar.markdown("### 📈 Trailing SL (ATR-आधारित)")
+    trailing_sl_enabled = st.sidebar.checkbox(
+        "Trailing SL चालू करा (सर्व स्ट्रॅटेजींसाठी — Credit Spreads सकट)", value=False,
+    )
+    atr_multiplier = 1.5
+    if trailing_sl_enabled:
+        atr_multiplier = st.sidebar.number_input("ATR Multiplier (ट्रेलिंग अंतर)", min_value=0.5, value=1.5, step=0.25)
+        st.sidebar.caption(
+            "पोझिशन नफ्यात गेल्यावर SL नफ्याच्या दिशेने सतत सरकतो, कधीच मागे सरकत नाही — पण मूळ स्थिर SL पेक्षा "
+            "कधीच वाईट होत नाही. ATR 15M underlying candles वरून काढला जातो."
+        )
 
     st.sidebar.markdown("### 🎮 Trading Mode")
     trading_mode_choice = st.sidebar.radio(
@@ -197,9 +218,14 @@ def setup_shared_context():
     st.session_state["ob_lookback_swings"] = ob_lookback_swings
     st.session_state["ob_impulse_min_move_pct"] = ob_impulse_min_move_pct
     st.session_state["ob_retest_tolerance_pct"] = ob_retest_tolerance_pct
+    st.session_state["require_unmitigated_ob"] = require_unmitigated_ob
+    st.session_state["require_displacement"] = require_displacement
+    st.session_state["require_fvg_confluence"] = require_fvg_confluence
     st.session_state["enable_kill_zone_filter"] = enable_kill_zone_filter
     st.session_state["max_trades_per_day"] = max_trades_per_day
     st.session_state["max_daily_loss"] = max_daily_loss
+    st.session_state["trailing_sl_enabled"] = trailing_sl_enabled
+    st.session_state["atr_multiplier"] = atr_multiplier
     st.session_state["trading_mode_choice"] = trading_mode_choice
     st.session_state["trading_mode"] = trading_mode
     st.session_state["enable_live_trading"] = enable_live_trading
@@ -220,6 +246,33 @@ def setup_shared_context():
         st.session_state["underlying_price"] = underlying_price
         st.session_state["step"] = step
         st.session_state["atm_strike"] = atm_strike
+
+        # --- उघड्या ट्रेड्सचे SL/Target/EOD मॉनिटरिंग — इथे (shared_context) ठेवलेलं आहे, page_dashboard.py
+        # मध्ये नाही, कारण हे प्रत्येक page-load वर चालायला हवं (Positions/Orders/Performance वर असतानाही),
+        # आधी हे फक्त Dashboard page उघडी असतानाच चालायचं — म्हणजे इतर pages वर असताना EOD/SL/Target
+        # अजिबात तपासलेच जात नव्हते, हा गंभीर gap होता.
+        if enable_live_trading and confirm_live_trading:
+            eod_hour = eod_squareoff_time.hour if eod_squareoff_time else 15
+            eod_minute = eod_squareoff_time.minute if eod_squareoff_time else 15
+
+            atr_points = None
+            if trailing_sl_enabled:
+                try:
+                    df_for_atr = fetch_candles(token_input, symbol, underlying_price, interval="15minute", lookback_days=5)
+                    atr_points = compute_atr(df_for_atr, period=14) if not df_for_atr.empty else None
+                except Exception:
+                    atr_points = None  # ATR मिळालं नाही तर ट्रेलिंग सक्रिय होणार नाही, मूळ स्थिर SL तसाच वापरला जाईल
+
+            closed_now = manage_open_trades(
+                token_input, symbol, product_type, eod_squareoff_hour=eod_hour, eod_squareoff_minute=eod_minute,
+                oi_reversal_exit_enabled=enable_oi_early_exit,
+                trailing_sl_enabled=trailing_sl_enabled, atr_points=atr_points, atr_multiplier=atr_multiplier,
+            )
+            for c in closed_now:
+                emoji = "🟢" if c["pnl"] > 0 else "🔴"
+                mode_tag = "📝" if c.get("mode") == "PAPER" else "💰"
+                st.toast(f"{emoji}{mode_tag} Trade {c['trade_id']} बंद झाला ({c['reason']}) — P&L: ₹{c['pnl']:,.0f}")
+
         return True
 
     return False
