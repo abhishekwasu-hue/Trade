@@ -1409,3 +1409,59 @@ def render():
         )
         st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
 
+    # =========================================================
+    # ९. नवीन — Multi-Strategy Orchestrator (OI/PCR, ICT-FVG, BB Squeeze, VWAP)
+    # हा A1 Engine पासून पूर्णपणे स्वतंत्र, समांतर pipeline आहे — वेगळ्या chat मध्ये बांधलेला, आता
+    # खऱ्या Upstox डेटावर इथे जोडलेला. इथला कुठलाही निकाल वरच्या A1 Engine च्या ट्रेड-निर्णयावर परिणाम
+    # करत नाही (फक्त माहितीसाठी — auto-execute होत नाही, फक्त सिग्नल्स दाखवतो).
+    # =========================================================
+    st.markdown("---")
+    st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP)")
+    show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ४ strategies चालवल्या जातील)", value=False)
+    if show_orchestrator:
+        try:
+            from loader import build_orchestrator
+            from market_data_adapter import prepare_futures_ohlcv, prepare_options_chain, prepare_structure_data
+            from strategies.base import MarketSnapshot
+            import os as _os
+
+            config_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.yaml")
+            orch = build_orchestrator(config_path)
+
+            df_for_orch = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
+            futures_ohlcv = prepare_futures_ohlcv(df_for_orch)
+            options_chain_df = prepare_options_chain(raw_chain, symbol, atm_strike)
+            structure_data = prepare_structure_data(df_for_orch)
+
+            snapshot = MarketSnapshot(
+                timestamp=get_ist_now(), futures_ohlcv=futures_ohlcv,
+                options_chain=options_chain_df, structure_data=structure_data,
+            )
+
+            st.caption(f"Structure: swept_high={structure_data['swept_high']}, swept_low={structure_data['swept_low']}, bos_direction={structure_data['bos_direction']}")
+
+            raw_results = []
+            for strat in orch.strategies:
+                r = strat.check_gates(snapshot)
+                raw_results.append({
+                    "Strategy": r.strategy_id, "Direction": r.direction.value,
+                    "Confidence": round(r.confidence, 2), "Reason": r.reason,
+                })
+            st.markdown("##### प्रत्येक Strategy चा स्वतंत्र निकाल (Orchestrator गेट्सआधी)")
+            st.dataframe(pd.DataFrame(raw_results), width="stretch")
+
+            approved = orch.run_cycle(snapshot)
+            st.markdown("##### अंतिम मंजूर सिग्नल्स (Orchestrator conflict/position गेट्सनंतर)")
+            if approved:
+                approved_rows = [{
+                    "Strategy": s.strategy_id, "Direction": s.direction.value, "Confidence": round(s.confidence, 2),
+                    "Entry": s.entry_price, "SL": s.stop_loss, "Target": s.target, "Reason": s.reason,
+                } for s in approved]
+                st.dataframe(pd.DataFrame(approved_rows), width="stretch")
+            else:
+                st.info("या cycle मध्ये कोणताही सिग्नल मंजूर झाला नाही.")
+            st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, वरच्या A1 Engine पासून पूर्णपणे स्वतंत्र.")
+        except Exception as e:
+            st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
+
+
