@@ -1,5 +1,6 @@
 """Performance & Backtest page — trade analytics and the Risk:Reward signal checker."""
 import datetime
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -366,3 +367,70 @@ def render():
                                 )
                                 st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
 
+
+    # =========================================================
+    # नवीन — Multi-Strategy Orchestrator Backtest (ict_fvg, bb_squeeze, vwap)
+    # जुन्या A1 Engine backtest पासून पूर्णपणे स्वतंत्र. oi_pcr इथे नाही (ऐतिहासिक Option OI
+    # डेटा उपलब्ध नाही, त्यामुळे ती रणनीती backtest मध्ये कधीच चालवता येत नाही).
+    # =========================================================
+    st.markdown("---")
+    st.subheader("🧩 Multi-Strategy Orchestrator Backtest (नवीन, प्रयोगिक)")
+    st.caption(
+        "फक्त futures_ohlcv वापरणाऱ्या रणनीती: ict_fvg, bb_squeeze, vwap. "
+        "oi_pcr इथे चालत नाही — तिला ऐतिहासिक प्रत्येक-क्षणाचा Option OI इतिहास लागतो, जो साठवलेला नाही."
+    )
+    ms_symbol = st.session_state.get("symbol", "NIFTY")
+    ms_from = st.date_input("पासून तारीख", value=get_ist_today() - datetime.timedelta(days=15), key="ms_bt_from")
+    ms_to = st.date_input("पर्यंत तारीख", value=get_ist_today(), key="ms_bt_to")
+    ms_strategy_choice = st.selectbox("कोणती रणनीती?", ["vwap", "bb_squeeze", "ict_fvg"], key="ms_bt_strategy")
+    ms_use_yfinance = st.checkbox("Yahoo Finance वापरा (Token लागत नाही)", value=False, key="ms_bt_yf")
+
+    if st.button("🔍 Multi-Strategy Backtest चालवा", key="ms_bt_run"):
+        yf_error = None
+        with st.spinner("डेटा फेच करून backtest चालवत आहे..."):
+            if ms_use_yfinance:
+                ms_df_raw, yf_error = fetch_yfinance_candles(ms_symbol, "15minute", ms_from, ms_to)
+            else:
+                ms_token = st.session_state.get("token_input", "")
+                ms_df_raw = fetch_candles_date_range(ms_token, ms_symbol, "15minute", ms_from, ms_to)
+
+            if ms_df_raw is None or ms_df_raw.empty:
+                if yf_error:
+                    st.error(f"❌ डेटा मिळाला नाही — नेमकं कारण:\n\n{yf_error}")
+                else:
+                    st.error("❌ कोणताही डेटा मिळाला नाही — Token किंवा तारीख-रेंज तपासा.")
+            else:
+                try:
+                    from market_data_adapter import prepare_futures_ohlcv
+                    from multi_strategy_backtest import run_strategy_backtest
+                    from strategies import STRATEGY_REGISTRY
+                    import yaml
+
+                    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        full_cfg = yaml.safe_load(f)
+                    strat_cfg = full_cfg.get("strategies", {}).get(ms_strategy_choice, {})
+                    strat_cls = STRATEGY_REGISTRY[ms_strategy_choice]
+                    strat_obj = strat_cls(config=strat_cfg)
+
+                    ms_df_prepared = prepare_futures_ohlcv(ms_df_raw)
+                    ms_result = run_strategy_backtest(ms_df_prepared, strat_obj, min_lookback=30, max_hold_bars=50)
+
+                    st.success(f"✅ {ms_result['total']} सिग्नल्स सापडले (Funnel: {ms_result['funnel']})")
+                    if ms_result["total"] > 0:
+                        mscol1, mscol2, mscol3 = st.columns(3)
+                        with mscol1:
+                            st.metric("एकूण सिग्नल्स", ms_result["total"])
+                        with mscol2:
+                            wr = f"{ms_result['win_rate']}%" if ms_result.get("win_rate") is not None else "N/A"
+                            st.metric("Win Rate", wr)
+                        with mscol3:
+                            st.metric("Target / SL", f"{ms_result['target_count']} / {ms_result['sl_count']}")
+                        st.dataframe(pd.DataFrame(ms_result["signals"]), width="stretch", height=300)
+                except ModuleNotFoundError as e:
+                    st.error(
+                        f"चूक: {type(e).__name__}: {e}\n\n"
+                        "**बहुतेक कारण**: `strategies/` फोल्डर किंवा `config.yaml` तुमच्या repo मध्ये गहाळ आहेत."
+                    )
+                except Exception as e:
+                    st.error(f"Multi-Strategy Backtest मध्ये चूक: {type(e).__name__}: {e}")
