@@ -1,0 +1,43 @@
+# AMW A1 — Multi-Strategy Config
+# प्रत्येक strategy independently enable/disable + tune करता येते
+
+orchestrator:
+  conflict_mode: "veto"          # veto | highest_confidence | weighted_vote
+  min_confidence_to_act: 0.5
+
+strategies:
+  oi_pcr:
+    enabled: true
+    weight: 1.0
+    max_positions: 2
+    atm_range: 3
+    min_oi_change_pct: 5.0
+    pcr_shift_threshold: 0.05
+
+  ict_fvg:
+    enabled: true
+    weight: 1.2
+    max_positions: 1
+    fvg_entry_buffer_pct: 0.1
+    require_choch: false
+    target_rr: 2.0
+
+  bb_squeeze:
+    enabled: true
+    weight: 0.8
+    max_positions: 2
+    squeeze_percentile: 20
+    volume_spike_multiplier: 1.5
+    lookback: 50
+    atr_sl_multiplier: 1.5
+    target_rr: 2.0
+
+  vwap:
+    enabled: true
+    weight: 1.0
+    max_positions: 2
+    mode: "both"                 # reversion | trend | both
+    reversion_std_threshold: 2.0
+    trend_sustain_candles: 5
+    target_rr: 1.5
+    sl_std_multiplier: 1.0
