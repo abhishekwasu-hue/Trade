@@ -136,56 +136,52 @@ def render():
                     st.markdown("##### 🧬 Signal Engine — दोन स्वतंत्र रणनीती (दिशा दोन्हीसाठी 1H Supertrend)")
                     strategy_choice = st.radio(
                         "कोणती रणनीती वापरायची?",
-                        ["1️⃣ Price Action (BOS/CHoCH + Order Block + Retest + 15M Pattern)",
+                        ["1️⃣ Price Action (Support/Resistance + RSI + Candlestick)",
                          "2️⃣ Indicator Based (RSI 25-55/45-75 + Rejection/Engulfing)"],
                         key=f"{bt_key_prefix}_strategy",
                     )
                     strategy_mode = "price_action" if "1️⃣" in strategy_choice else "indicator"
 
-                    ob_impulse_min_move_pct = 0.3
-                    ob_order = 3
-                    ob_lookback_swings = 3
-                    ob_retest_tolerance_pct = 0.1
-                    enable_kill_zone_filter = False
-                    require_unmitigated_ob = False
-                    require_displacement = False
-                    require_fvg_confluence = False
+                    sr_window = 20
+                    rsi_oversold = 30
+                    rsi_overbought = 70
+                    sl_buffer_pct = 0.1
+                    min_rr = 2.0
+                    retest_tolerance_pct = 0.15
+                    reversal_lookback = 3
                     if strategy_mode == "price_action":
                         st.caption(
-                            "Order Block च्या पुष्टीसाठी लागणारी किमान impulsive हालचाल % — हे बाजाराच्या "
-                            "अस्थिरतेनुसार बदलावं लागू शकतं (शांत बाजारात जास्त उंबरठा असेल तर Order Block "
-                            "कधीच सापडणार नाही — Funnel मध्ये 'entry_passed' नेहमी 0 दिसत असेल तर हे कमी करा)."
+                            "Support/Resistance (Rolling Window) जवळ RSI Oversold/Overbought/Divergence + "
+                            "Reversal Candlestick (Hammer/Engulfing/Morning-Evening Star) + त्या candle च्या "
+                            "high/low पलीकडे Breakout — हे सर्व जुळल्यावरच Entry."
                         )
                         pacol1, pacol2, pacol3 = st.columns(3)
                         with pacol1:
-                            ob_order = st.number_input("Fractal Order (Swing शोधण्यासाठी)", min_value=1, value=3, step=1, key=f"{bt_key_prefix}_ob_order")
+                            sr_window = st.number_input("S/R Rolling Window", min_value=6, value=20, step=2, key=f"{bt_key_prefix}_srwin")
                         with pacol2:
-                            ob_lookback_swings = st.number_input("Lookback Swings", min_value=2, value=3, step=1, key=f"{bt_key_prefix}_ob_lbs")
+                            rsi_oversold = st.number_input("RSI Oversold <", min_value=5, max_value=45, value=30, step=1, key=f"{bt_key_prefix}_rsios")
                         with pacol3:
-                            ob_impulse_min_move_pct = st.number_input(
-                                "Order Block Impulse किमान %", min_value=0.01, value=0.3, step=0.05, key=f"{bt_key_prefix}_ob_pct",
-                            )
-                        ob_retest_tolerance_pct = st.number_input(
-                            "Retest Tolerance % (OB झोनच्या रुंदीच्या तुलनेत)", min_value=0.1, value=0.1, step=0.5, key=f"{bt_key_prefix}_ob_tol",
-                        )
+                            rsi_overbought = st.number_input("RSI Overbought >", min_value=55, max_value=95, value=70, step=1, key=f"{bt_key_prefix}_rsiob")
+                        pacol4, pacol5, pacol6 = st.columns(3)
+                        with pacol4:
+                            sl_buffer_pct = st.number_input("SL Buffer %", min_value=0.01, value=0.1, step=0.05, key=f"{bt_key_prefix}_slbuf")
+                        with pacol5:
+                            min_rr = st.number_input("किमान Risk:Reward", min_value=1.0, value=2.0, step=0.5, key=f"{bt_key_prefix}_minrr")
+                        with pacol6:
+                            retest_tolerance_pct = st.number_input("Retest Tolerance %", min_value=0.05, value=0.15, step=0.05, key=f"{bt_key_prefix}_rtol")
+                        reversal_lookback = st.number_input("Reversal Candle Lookback (bars)", min_value=1, max_value=10, value=3, step=1, key=f"{bt_key_prefix}_revlb")
                         st.caption(
-                            "0.1% म्हणजे किंमत जवळपास exact OB झोनच्या आतच यावी लागते (खूप कडक). वाढवल्यास "
-                            "झोनच्या काठाबाहेरही थोडी 'सूट' मिळते — Funnel मध्ये retest फार कमी वेळा जुळत असेल तर हे वाढवा."
+                            "S/R Rolling Window कमी असेल तर जास्त (पण कमी विश्वासार्ह) पातळ्या सापडतील. "
+                            "Funnel मध्ये सिग्नल्स कमी दिसत असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा."
                         )
-                        enable_kill_zone_filter = st.checkbox(
-                            "Kill-Zone Filter (सुरुवातीचे/शेवटचे 15 मिनिट टाळा — ऐच्छिक)", value=False, key=f"{bt_key_prefix}_killzone",
-                        )
-                        st.markdown("##### 🎓 व्यावसायिक गुणवत्ता गेट्स (ऐच्छिक — एकत्र लावल्यास सिग्नल्स जवळपास शून्यावर येतात)")
-                        require_unmitigated_ob = st.checkbox("Unmitigated Order Block आवश्यक", value=False, key=f"{bt_key_prefix}_unmit")
-                        require_displacement = st.checkbox("Displacement Candle आवश्यक", value=False, key=f"{bt_key_prefix}_disp")
-                        require_fvg_confluence = st.checkbox("Fair Value Gap Confluence आवश्यक", value=False, key=f"{bt_key_prefix}_fvg")
-                        st.caption("डीफॉल्ट सर्व बंद — जास्त सिग्नल्स मिळतील. एकेक चालू करून Funnel Diagnostic ने फरक तपासा.")
 
                     if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run"):
+                        yf_error = None
                         with st.spinner(f"{bt_from} ते {bt_to} चा {bt_interval} + 1H डेटा फेच करून तपासत आहे..."):
                             if use_yfinance:
-                                bt_df_range = fetch_yfinance_candles(symbol, bt_interval, bt_from, bt_to)
-                                bt_df_1h = fetch_yfinance_candles(symbol, "hour", bt_from, bt_to)
+                                bt_df_range, yf_err1 = fetch_yfinance_candles(symbol, bt_interval, bt_from, bt_to)
+                                bt_df_1h, yf_err2 = fetch_yfinance_candles(symbol, "hour", bt_from, bt_to)
+                                yf_error = yf_err1 or yf_err2
                             else:
                                 bt_df_range = fetch_candles_date_range(token_input, symbol, bt_interval, bt_from, bt_to)
                                 bt_df_1h_raw = fetch_candles_date_range(token_input, symbol, "30minute", bt_from, bt_to)
@@ -194,26 +190,26 @@ def render():
                             bt_result_range = run_signal_backtest_v2(
                                 bt_df_range, bt_df_1h, strategy=strategy_mode, sl_pct=bt_sl_pct, rr_ratio=bt_rr,
                                 max_bars=None, max_hold_bars=50,
-                                order=ob_order, lookback_swings=ob_lookback_swings,
-                                ob_impulse_min_move_pct=ob_impulse_min_move_pct,
-                                ob_retest_tolerance_pct=ob_retest_tolerance_pct,
-                                enable_kill_zone_filter=enable_kill_zone_filter,
-                                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
-                                require_fvg_confluence=require_fvg_confluence,
+                                sr_window=sr_window, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
+                                sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
+                                retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
                             )
                         if bt_df_range.empty or bt_df_1h.empty:
-                            st.error(
-                                "❌ कोणताही डेटा मिळाला नाही (15M किंवा 1H) — " +
-                                ("Yahoo Finance वरून (नेटवर्क/चुकीचा सिम्बॉल तपासा)." if use_yfinance else "Upstox token तपासा.")
-                            )
+                            if yf_error:
+                                st.error(f"❌ Yahoo Finance वरून डेटा मिळाला नाही — नेमकं कारण:\n\n{yf_error}")
+                            else:
+                                st.error(
+                                    "❌ कोणताही डेटा मिळाला नाही (15M किंवा 1H) — " +
+                                    ("Yahoo Finance वरून (नेटवर्क/चुकीचा सिम्बॉल तपासा)." if use_yfinance else "Upstox token तपासा.")
+                                )
                         st.session_state[f"{bt_key_prefix}_df"] = bt_df_range
                         st.session_state[f"{bt_key_prefix}_result"] = bt_result_range
                         st.session_state[f"{bt_key_prefix}_meta"] = (bt_from, bt_to, bt_interval, bt_sl_pct, bt_rr)
                         st.session_state[f"{bt_key_prefix}_v2"] = True
                         st.session_state[f"{bt_key_prefix}_strategy_mode"] = strategy_mode
                         st.session_state[f"{bt_key_prefix}_ob_params"] = {
-                            "order": ob_order, "lookback_swings": ob_lookback_swings,
-                            "ob_impulse_min_move_pct": ob_impulse_min_move_pct,
+                            "sr_window": sr_window, "rsi_oversold": rsi_oversold, "rsi_overbought": rsi_overbought,
+                            "sl_buffer_pct": sl_buffer_pct, "min_rr": min_rr,
                         }
 
                     if f"{bt_key_prefix}_result" in st.session_state and st.session_state.get(f"{bt_key_prefix}_v2"):
@@ -277,9 +273,10 @@ def render():
                     )
 
                     if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run"):
+                        yf_error = None
                         with st.spinner(f"{bt_from} ते {bt_to} चा {bt_interval} डेटा फेच करून तपासत आहे..."):
                             if use_yfinance:
-                                bt_df_range = fetch_yfinance_candles(symbol, bt_interval, bt_from, bt_to)
+                                bt_df_range, yf_error = fetch_yfinance_candles(symbol, bt_interval, bt_from, bt_to)
                             else:
                                 bt_df_range = fetch_candles_date_range(token_input, symbol, bt_interval, bt_from, bt_to)
                             bt_result_range = run_signal_backtest_rr(
@@ -288,10 +285,13 @@ def render():
                                 max_hold_bars=20,
                             )
                         if bt_df_range.empty:
-                            st.error(
-                                "❌ कोणताही डेटा मिळाला नाही — " +
-                                ("Yahoo Finance वरून (नेटवर्क/चुकीचा सिम्बॉल तपासा)." if use_yfinance else "Upstox token तपासा.")
-                            )
+                            if yf_error:
+                                st.error(f"❌ Yahoo Finance वरून डेटा मिळाला नाही — नेमकं कारण:\n\n{yf_error}")
+                            else:
+                                st.error(
+                                    "❌ कोणताही डेटा मिळाला नाही — " +
+                                    ("Yahoo Finance वरून (नेटवर्क/चुकीचा सिम्बॉल तपासा)." if use_yfinance else "Upstox token तपासा.")
+                                )
                         st.session_state[f"{bt_key_prefix}_df"] = bt_df_range
                         st.session_state[f"{bt_key_prefix}_result"] = bt_result_range
                         st.session_state[f"{bt_key_prefix}_meta"] = (bt_from, bt_to, bt_interval, bt_sl_pct, bt_rr)

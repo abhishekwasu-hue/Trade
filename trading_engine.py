@@ -8,7 +8,7 @@ import uuid
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
 from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions
-from oi_analysis import get_latest_oi_signal, check_oi_confirmation, infer_direction_from_strategy
+from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
 def reconcile_positions(access_token, symbol):
     """
@@ -220,10 +220,8 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             exit_reason = "EOD_SQUAREOFF"
         elif oi_reversal_exit_enabled and trade_style == "INTRADAY" and oi_signal_latest:
             trade_direction = infer_direction_from_strategy(strategy_name)
-            if trade_direction:
-                ok, _ = check_oi_confirmation(trade_direction, oi_signal_latest, strictness="A")
-                if not ok:
-                    exit_reason = "OI_REVERSAL"
+            if trade_direction and not check_oi_diff_entry_gate(trade_direction, oi_signal_latest):
+                exit_reason = "OI_REVERSAL"
 
         if exit_reason:
             qty = lots * lot_size

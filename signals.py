@@ -398,100 +398,155 @@ def is_retesting_order_block(df, ob, direction, tolerance_pct=0.1):
     return last_high >= ob["ob_low"] - tol
 
 
-def check_price_action_strategy(df, direction, order=3, lookback_swings=3,
-                                  ob_impulse_lookforward=5, ob_impulse_min_move_pct=0.3,
-                                  ob_search_lookback=20, ob_retest_tolerance_pct=0.1,
-                                  require_unmitigated_ob=True, require_fvg_confluence=True,
-                                  require_displacement=True, sweep_lookback=20,
-                                  displacement_atr_multiplier=1.5,
-                                  enable_kill_zone_filter=False, avoid_first_minutes=15, avoid_last_minutes=15):
+def find_swing_sr_levels_rolling(df, window=20):
     """
-    Toggle 1: Price Action रणनीती — Professional/ICT-दर्जाची आवृत्ती (दिशा 1H Supertrend वरून बाहेरून
-    दिली जाते). मूळ (BOS/CHoCH + Order Block + Retest + Pattern) सोबतच आता ५ व्यावसायिक सुधारणा:
-
-    1. Liquidity Sweep — साध्या close-आधारित ब्रेकसोबतच, wick-sweep+reversal हाही वैध structural-shift
-       मानला जातो (bos किंवा choch किंवा sweep — कोणतंही एक खरं असेल तरी पुरेसं).
-    2. Unmitigated Order Block — OB आधीच एकदा टेस्ट झालेला (कमकुवत) नसावा (require_unmitigated_ob).
-    3. Displacement Candle — impulse मध्ये किमान एक मोठ्या-body ची, ATR-सापेक्ष ठाम candle हवी, नुसती
-       एकत्रित % हालचाल नाही (require_displacement).
-    4. Fair Value Gap (FVG) Confluence — OB च्या impulse-हालचालीजवळच एक न भरलेला FVG हवा (require_fvg_confluence).
-    5. Kill-Zone Filter (ऐच्छिक, डीफॉल्ट बंद) — दिवसाच्या सुरुवातीचे/शेवटचे काही मिनिट टाळता येतात.
-
-    हे सर्व डीफॉल्ट चालू आहेत (व्यावसायिक-दर्जा हाच डीफॉल्ट) — प्रत्येक require_* पॅरामीटर False करून
-    जुन्या (सैल) वर्तनाकडे मागे जाता येतं.
+    Rolling Window (window कालावधीच्या) वापरून Swing High/Low आधारित Support/Resistance पातळ्या —
+    दिलेल्या window च्या मध्यभागी असलेला bar त्या संपूर्ण window मधला सर्वोच्च high (किंवा सर्वात कमी low)
+    असेल, तर तो स्विंग पॉईंट (आणि म्हणून एक S/R पातळी) मानला जातो.
+    pandas च्या built-in rolling() ने vectorized — Python for-loop पेक्षा (per-bar backtest मध्ये) खूप जलद.
     """
-    detail = {
-        "bos": False, "choch": None, "liquidity_sweep": None, "order_block": None,
-        "unmitigated": None, "displacement": None, "fvg": None, "ob_retest": False, "pattern": None,
-        "kill_zone_blocked": False,
-    }
+    half = window // 2
+    n = len(df)
+    if n < window:
+        return {"support": [], "resistance": []}
+    full_window = 2 * half + 1
+    rolling_max = df["high"].rolling(window=full_window, center=True).max()
+    rolling_min = df["low"].rolling(window=full_window, center=True).min()
+    is_resistance = df["high"] == rolling_max
+    is_support = df["low"] == rolling_min
+    resistance_levels = [float(x) for x in df.loc[is_resistance, "high"].tolist()]
+    support_levels = [float(x) for x in df.loc[is_support, "low"].tolist()]
+    return {"support": sorted(set(support_levels)), "resistance": sorted(set(resistance_levels))}
 
-    if enable_kill_zone_filter and not df.empty:
-        last_ts = df["timestamp"].iloc[-1]
-        if is_in_kill_zone(last_ts, avoid_first_minutes=avoid_first_minutes, avoid_last_minutes=avoid_last_minutes):
-            detail["kill_zone_blocked"] = True
-            return False, detail
 
-    ob = find_order_block(df, direction, impulse_lookforward=ob_impulse_lookforward,
-                           impulse_min_move_pct=ob_impulse_min_move_pct, search_lookback=ob_search_lookback)
-    detail["order_block"] = ob
-    if ob is None:
+def get_nearest_sr(sr_levels, current_price):
+    """सद्य किमतीच्या सर्वात जवळचा Support (खालचा) आणि Resistance (वरचा) निवडणे."""
+    supports_below = [s for s in sr_levels["support"] if s < current_price]
+    resistances_above = [r for r in sr_levels["resistance"] if r > current_price]
+    nearest_support = max(supports_below) if supports_below else None
+    nearest_resistance = min(resistances_above) if resistances_above else None
+    return nearest_support, nearest_resistance
+
+
+def check_rsi_signal(df, rsi_series, direction, oversold=30, overbought=70, divergence_lookback=20):
+    """
+    RSI(14) Oversold(<30)/Overbought(>70) किंवा साधी Bullish/Bearish Divergence तपासणे —
+    Divergence: किंमतीने नवीन (उलट दिशेचा) टोक गाठला, पण RSI ने तेवढं गाठलं नाही.
+    """
+    if rsi_series is None or len(rsi_series) < divergence_lookback:
+        return False, None, "NONE"
+    last_rsi = float(rsi_series.iloc[-1])
+    mid = divergence_lookback // 2
+    if direction == "BULLISH":
+        oversold_hit = last_rsi < oversold
+        recent_price = df["low"].tail(divergence_lookback)
+        recent_rsi = rsi_series.tail(divergence_lookback)
+        divergence = (recent_price.iloc[mid:].min() < recent_price.iloc[:mid].min()) and (recent_rsi.iloc[mid:].min() > recent_rsi.iloc[:mid].min())
+        return (oversold_hit or divergence), last_rsi, ("BULLISH_DIVERGENCE" if divergence else "NONE")
+    else:
+        overbought_hit = last_rsi > overbought
+        recent_price = df["high"].tail(divergence_lookback)
+        recent_rsi = rsi_series.tail(divergence_lookback)
+        divergence = (recent_price.iloc[mid:].max() > recent_price.iloc[:mid].max()) and (recent_rsi.iloc[mid:].max() < recent_rsi.iloc[:mid].max())
+        return (overbought_hit or divergence), last_rsi, ("BEARISH_DIVERGENCE" if divergence else "NONE")
+
+
+def find_reversal_candle_recent(df, direction, lookback=3):
+    """
+    गेल्या lookback bars मध्ये (शेवटचा bar सोडून, कारण त्यानेच breakout दाखवायचा असतो) एक वैध reversal
+    candle (Hammer/Bullish Engulfing/Morning Star किंवा त्यांचं bearish रूप) सापडते का ते शोधणे.
+    """
+    n = len(df)
+    valid_patterns = ("HAMMER", "BULLISH_ENGULFING", "MORNING_STAR") if direction == "BULLISH" else ("SHOOTING_STAR", "BEARISH_ENGULFING", "EVENING_STAR")
+    for back in range(1, min(lookback, n - 2) + 1):
+        candle_idx = n - 1 - back
+        if candle_idx < 2:
+            continue
+        pattern = detect_candlestick_pattern(df.iloc[:candle_idx + 1])
+        if pattern in valid_patterns:
+            return {"index": candle_idx, "pattern": pattern, "high": float(df["high"].iloc[candle_idx]), "low": float(df["low"].iloc[candle_idx])}
+    return None
+
+
+def compute_entry_sl_target(reversal_candle, direction, sl_buffer_pct, nearest_sr_target, min_rr=2.0):
+    """Entry (candle high/low च्या पलीकडे) + SL (candle च्या विरुद्ध टोकापासून buffer) + Target (पुढची S/R पातळी, किमान RR राखून)."""
+    if direction == "BULLISH":
+        entry = reversal_candle["high"]
+        sl = reversal_candle["low"] * (1 - sl_buffer_pct / 100)
+        risk = entry - sl
+        min_target = entry + risk * min_rr
+        target = max(nearest_sr_target, min_target) if nearest_sr_target else min_target
+    else:
+        entry = reversal_candle["low"]
+        sl = reversal_candle["high"] * (1 + sl_buffer_pct / 100)
+        risk = sl - entry
+        min_target = entry - risk * min_rr
+        target = min(nearest_sr_target, min_target) if nearest_sr_target else min_target
+    reward = abs(target - entry)
+    rr = round(reward / risk, 2) if risk > 0 else None
+    return {"entry": round(entry, 2), "sl": round(sl, 2), "target": round(target, 2), "rr": rr}
+
+
+def check_price_action_strategy(df, direction, rsi_series=None, sr_window=20, rsi_oversold=30, rsi_overbought=70,
+                                  sl_buffer_pct=0.1, min_rr=2.0, retest_tolerance_pct=0.15, reversal_lookback=3):
+    """
+    Toggle 1: Price Action रणनीती — Classic S/R + RSI + Candlestick आवृत्ती (पूर्वीची ICT/Order-Block
+    पद्धत पूर्णपणे बदलून, वापरकर्त्याच्या दिलेल्या स्पेसिफिकेशननुसार):
+
+    १. किंमत Key Support/Resistance झोन (Rolling Window आधारित) किंवा Dynamic Trendline ला स्पर्श/retest करते
+    २. RSI(14) Oversold(<30)/Overbought(>70) किंवा साधी Divergence
+    ३. Reversal Candle (Hammer/Bullish Engulfing/Morning Star किंवा Shooting Star/Bearish Engulfing/
+       Evening Star) बंद होते
+    ४. सद्य bar ने त्या candle च्या high (Bullish) / low (Bearish) च्या पलीकडे breakout केलेला असतो — तोच
+       entry ट्रिगर
+
+    entry_ok=True मिळाल्यास detail["trade_plan"] मध्ये नेमकी Entry/SL/Target/RR (किमान 1:2) मिळते.
+    """
+    detail = {"sr_retest": False, "trendline_retest": False, "rsi_ok": False, "rsi_value": None,
+              "divergence": "NONE", "reversal_candle": None, "breakout_confirmed": False, "trade_plan": None}
+
+    sr_levels = find_swing_sr_levels_rolling(df, window=sr_window)
+    current_price = float(df["close"].iloc[-1])
+    nearest_support, nearest_resistance = get_nearest_sr(sr_levels, current_price)
+
+    reversal = find_reversal_candle_recent(df, direction, lookback=reversal_lookback)
+    detail["reversal_candle"] = reversal
+    if reversal is None:
         return False, detail
 
-    if require_unmitigated_ob:
-        unmitigated = is_order_block_unmitigated(df, ob, direction)
-        detail["unmitigated"] = unmitigated
-        if not unmitigated:
-            return False, detail
+    if direction == "BULLISH" and nearest_support is not None:
+        tol = nearest_support * (retest_tolerance_pct / 100)
+        detail["sr_retest"] = reversal["low"] <= nearest_support + tol
+    elif direction == "BEARISH" and nearest_resistance is not None:
+        tol = nearest_resistance * (retest_tolerance_pct / 100)
+        detail["sr_retest"] = reversal["high"] >= nearest_resistance - tol
 
-    prior_df = df.iloc[:ob["ob_index"] + 1]
-    prior_structure = classify_market_structure(prior_df, order=order, lookback_swings=lookback_swings)
-    if prior_structure["structure"] == "INSUFFICIENT_DATA":
+    tl = detect_trendline(df, swing_type=("low" if direction == "BULLISH" else "high"))
+    if tl and tl.get("valid", True):
+        detail["trendline_retest"] = True
+
+    zone_ok = detail["sr_retest"] or detail["trendline_retest"]
+    if not zone_ok:
         return False, detail
 
-    swing_level = prior_structure["last_swing_high"] if direction == "BULLISH" else prior_structure["last_swing_low"]
-    post_ob_closes = df["close"].iloc[ob["ob_index"] + 1:]
-    bos = bool((post_ob_closes > swing_level).any()) if direction == "BULLISH" else bool((post_ob_closes < swing_level).any())
-    detail["bos"] = bos
-
-    choch = detect_choch(prior_df, order=order, lookback_swings=lookback_swings)
-    detail["choch"] = choch
-    choch_matches = (choch == "BULLISH_CHOCH" and direction == "BULLISH") or (choch == "BEARISH_CHOCH" and direction == "BEARISH")
-
-    sweep = detect_liquidity_sweep(prior_df, direction, order=order, sweep_lookback=sweep_lookback)
-    detail["liquidity_sweep"] = sweep
-
-    structural_shift = bos or choch_matches or (sweep is not None)
-    if not structural_shift:
+    rsi_ok, rsi_val, divergence = check_rsi_signal(df, rsi_series, direction, oversold=rsi_oversold, overbought=rsi_overbought)
+    detail["rsi_ok"], detail["rsi_value"], detail["divergence"] = rsi_ok, rsi_val, divergence
+    if not rsi_ok:
         return False, detail
 
-    if require_displacement:
-        impulse_end = min(ob["ob_index"] + 1 + ob_impulse_lookforward, len(df))
-        displacement_found = any(
-            is_displacement_candle(df, idx, direction, body_atr_multiplier=displacement_atr_multiplier)
-            for idx in range(ob["ob_index"] + 1, impulse_end)
-        )
-        detail["displacement"] = displacement_found
-        if not displacement_found:
-            return False, detail
-
-    if require_fvg_confluence:
-        fvg_end = min(ob["ob_index"] + ob_impulse_lookforward + 1, len(df))
-        fvg = find_fair_value_gaps(df.iloc[:fvg_end], direction, lookback=ob_impulse_lookforward + 2)
-        detail["fvg"] = fvg
-        if fvg is None:
-            return False, detail
-
-    ob_retest = is_retesting_order_block(df, ob, direction, tolerance_pct=ob_retest_tolerance_pct)
-    detail["ob_retest"] = ob_retest
-    if not ob_retest:
+    if direction == "BULLISH":
+        breakout = current_price > reversal["high"]
+        target_level = nearest_resistance
+    else:
+        breakout = current_price < reversal["low"]
+        target_level = nearest_support
+    detail["breakout_confirmed"] = breakout
+    if not breakout:
         return False, detail
 
-    pattern = detect_candlestick_pattern(df)
-    detail["pattern"] = pattern
-    pattern_ok = (pattern in ("HAMMER", "BULLISH_ENGULFING", "MORNING_STAR")) if direction == "BULLISH" else (pattern in ("SHOOTING_STAR", "BEARISH_ENGULFING", "EVENING_STAR"))
+    detail["trade_plan"] = compute_entry_sl_target(reversal, direction, sl_buffer_pct, target_level, min_rr=min_rr)
+    return True, detail
 
-    return bool(structural_shift and ob_retest and pattern_ok), detail
 
 
 def detect_liquidity_sweep(df, direction, order=3, sweep_lookback=20, max_swings_checked=5):
@@ -910,19 +965,3 @@ def supply_demand_zone(structure_info, direction):
         high = structure_info["last_swing_high"]
         return (round(high * 0.998, 2), round(high * 1.002, 2))
     return None
-def compute_atr(df, period=14):
-    """Average True Range (ATR) मोजण्यासाठी फंक्शन."""
-    if df is None or df.empty or len(df) < period:
-        return None
-    
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
-    
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = true_range.rolling(window=period).mean()
-    return atr

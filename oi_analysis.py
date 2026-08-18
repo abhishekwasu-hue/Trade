@@ -22,7 +22,7 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
-def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal, hysteresis_threshold_pct=20):
+def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal, hysteresis_threshold_pct=10):
     """
     OI Diff सिग्नल — प्रथम पातळी (level) + गती (momentum, delta_diff) वरून कच्चा (raw) सिग्नल ठरवणे, मग तो
     मागच्या प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे — पण केवळ Diff (raw OI फरक, delta_diff
@@ -98,6 +98,33 @@ def get_latest_oi_signal(symbol):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
+
+def check_oi_diff_entry_gate(direction, oi_signal):
+    """
+    OI Diff Tracker वरून Entry/Exit साठी हार्ड गेट — Price Action आणि Indicator दोन्ही रणनीतींसाठी सामायिक.
+    BULLISH: 'BULLISH' (ठाम) किंवा 'BEARISH (Weakening)' (उलटफेराचं आधीचं संकेत) — दोन्ही वैध.
+    BEARISH: 'BEARISH' (ठाम) किंवा 'BULLISH (Weakening)' — दोन्ही वैध.
+    स्वतःच्याच दिशेचं 'X (Weakening)' (उदा. BULLISH entry ला 'BULLISH (Weakening)') अवैध — कमकुवत होणाऱ्या
+    जोमावर नवीन entry घेणं चुकीचं. NEUTRAL किंवा डेटा नसल्यास अवैध (हार्ड गेट — माहिती नसेल तर सुरक्षित नकार).
+    हेच फंक्शन Exit साठीही वापरलं जातं — उघड्या ट्रेडच्या दिशेला हा गेट False देऊ लागला की OI_REVERSAL exit होतो.
+    """
+    if oi_signal is None:
+        return False
+    is_weakening = "Weakening" in oi_signal
+    if direction == "BULLISH":
+        if "BULLISH" in oi_signal:
+            return not is_weakening
+        if "BEARISH" in oi_signal:
+            return is_weakening
+        return False
+    elif direction == "BEARISH":
+        if "BEARISH" in oi_signal:
+            return not is_weakening
+        if "BULLISH" in oi_signal:
+            return is_weakening
+        return False
+    return False
+
 
 def infer_direction_from_strategy(strategy_name):
     """स्ट्रॅटेजीच्या नावावरून तिची दिशा ठरवणे — Iron Condor/Butterfly साठी None (त्या non-directional असतात)."""

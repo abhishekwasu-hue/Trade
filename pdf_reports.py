@@ -15,8 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
-from signals import add_price_action_overlays, describe_price_action, calculate_supertrend, calculate_rsi, analyze_chart_zones, check_price_action_strategy
-from oi_analysis import find_psychological_level
+from signals import add_price_action_overlays, describe_price_action, calculate_supertrend, calculate_rsi, analyze_chart_zones, check_price_action_strategy, find_swing_sr_levels_rolling, get_nearest_sr
 from trading_engine import normalize_legs
 
 
@@ -168,11 +167,10 @@ def build_report_chart_image(df, title, zone_info=None, width=620, height=420):
         return None, "Chart could not be generated."
 
 
-def build_price_action_chart_v2(df, direction, timeframe_label, order=3, lookback_swings=3,
-                                  ob_impulse_lookforward=5, ob_impulse_min_move_pct=0.3,
-                                  ob_search_lookback=20, ob_retest_tolerance_pct=0.1, width=620, height=420):
+def build_price_action_chart_v2(df, direction, timeframe_label, rsi_series=None, sr_window=20,
+                                  rsi_oversold=30, rsi_overbought=70, width=620, height=420):
     """
-    नवीन Price Action रणनीतीनुसार (BOS/CHoCH + Order Block + Psychological Level + Retest + Pattern) चार्ट
+    नवीन Price Action रणनीतीनुसार (Support/Resistance + RSI + Candlestick Reversal + Breakout) चार्ट
     तयार करणे, सोबत त्याच निकालांवरून डायनॅमिक (हार्डकोड नाही) इंग्रजी स्पष्टीकरण.
     Returns (image_bytes_or_None, description_text_in_english).
     """
@@ -183,39 +181,35 @@ def build_price_action_chart_v2(df, direction, timeframe_label, order=3, lookbac
     chart_bytes = None
     try:
         entry_ok, detail = check_price_action_strategy(
-            df, direction, order=order, lookback_swings=lookback_swings,
-            ob_impulse_lookforward=ob_impulse_lookforward, ob_impulse_min_move_pct=ob_impulse_min_move_pct,
-            ob_search_lookback=ob_search_lookback, ob_retest_tolerance_pct=ob_retest_tolerance_pct,
+            df, direction, rsi_series=rsi_series, sr_window=sr_window,
+            rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
         )
-        ob = detail.get("order_block")
-        choch = detail.get("choch")
+        sr_levels = find_swing_sr_levels_rolling(df, window=sr_window)
+        current_price = float(df["close"].iloc[-1])
+        nearest_support, nearest_resistance = get_nearest_sr(sr_levels, current_price)
 
         fig = go.Figure(data=[go.Candlestick(
             x=df["timestamp"], open=df["open"], high=df["high"], low=df["low"], close=df["close"],
             increasing_line_color="#089981", decreasing_line_color="#F23645", showlegend=False,
         )])
 
-        if ob:
-            zone_color = "#F23645" if direction == "BEARISH" else "#089981"
-            zone_label = "Order Block (Resistance)" if direction == "BEARISH" else "Order Block (Support)"
-            fig.add_hrect(
-                y0=ob["ob_low"], y1=ob["ob_high"], fillcolor=zone_color, opacity=0.18, line_width=1,
-                line_color=zone_color, annotation_text=zone_label,
-                annotation_position="top left" if direction == "BEARISH" else "bottom left", annotation_font_size=9,
-            )
-            ob_edge = ob["ob_high"] if direction == "BEARISH" else ob["ob_low"]
-            psych_level = find_psychological_level(ob_edge, direction, round_to=500)
-            fig.add_hline(
-                y=psych_level, line_dash="dash", line_color="#FFB400", line_width=1.6,
-                annotation_text=f"Psychological Level {psych_level:,.0f}", annotation_position="right",
-                annotation_font_size=10, annotation_font_color="#FFB400",
-            )
+        if nearest_support:
+            fig.add_hline(y=nearest_support, line_dash="dot", line_color="#089981", line_width=1.4,
+                          annotation_text=f"Support {nearest_support:,.0f}", annotation_position="right",
+                          annotation_font_size=9, annotation_font_color="#089981")
+        if nearest_resistance:
+            fig.add_hline(y=nearest_resistance, line_dash="dot", line_color="#F23645", line_width=1.4,
+                          annotation_text=f"Resistance {nearest_resistance:,.0f}", annotation_position="right",
+                          annotation_font_size=9, annotation_font_color="#F23645")
 
-        if choch:
-            choch_color = "#089981" if "BULLISH" in choch else "#F23645"
+        rc = detail.get("reversal_candle")
+        if rc:
+            marker_color = "#089981" if direction == "BULLISH" else "#F23645"
             fig.add_annotation(
-                text=choch.replace("_", " "), x=df["timestamp"].iloc[-1], y=df["close"].iloc[-1],
-                showarrow=True, arrowhead=2, arrowcolor=choch_color, font=dict(color=choch_color, size=11), ax=0, ay=-40,
+                text=rc["pattern"].replace("_", " "), x=df["timestamp"].iloc[rc["index"]],
+                y=(rc["low"] if direction == "BULLISH" else rc["high"]),
+                showarrow=True, arrowhead=2, arrowcolor=marker_color, font=dict(color=marker_color, size=10),
+                ax=0, ay=(30 if direction == "BULLISH" else -30),
             )
 
         fig.update_layout(
@@ -226,46 +220,38 @@ def build_price_action_chart_v2(df, direction, timeframe_label, order=3, lookbac
     except Exception:
         chart_bytes = None
 
-    ob = detail.get("order_block")
-    choch = detail.get("choch")
-    bos = detail.get("bos")
-    ob_retest = detail.get("ob_retest")
-    pattern = detail.get("pattern")
-    psych_level_desc = find_psychological_level(
-        (ob["ob_high"] if direction == "BEARISH" else ob["ob_low"]), direction, round_to=500
-    ) if ob else None
+    rsi_val = detail.get("rsi_value")
+    divergence = detail.get("divergence", "NONE")
+    rc = detail.get("reversal_candle")
+    trade_plan = detail.get("trade_plan")
 
     lines = [f"Structure & Direction: On the {timeframe_label} timeframe, the prevailing direction is {direction}."]
-    if choch:
-        lines.append(
-            f"Change of Character (CHoCH): A {choch.replace('_', ' ').title()} was detected -- a break "
-            "against the prior trend, signalling a possible reversal."
-        )
-    elif bos:
-        lines.append(
-            "Break of Structure (BOS): Price broke through the prior swing level in the trend's own "
-            "direction, confirming continuation."
-        )
+    if detail.get("sr_retest"):
+        lines.append("Support/Resistance Retest: Price has retested a key Support/Resistance zone (Rolling Window swing-based).")
+    elif detail.get("trendline_retest"):
+        lines.append("Trendline Retest: Price is interacting with a Dynamic Trendline.")
     else:
-        lines.append("No BOS or CHoCH has been confirmed yet on this timeframe.")
+        lines.append("No Support/Resistance or Trendline retest has been confirmed yet on this timeframe.")
 
-    if ob:
-        lines.append(f"Order Block: The last opposite-colour candle before the impulsive move sits at {ob['ob_low']:,.2f} - {ob['ob_high']:,.2f}.")
-        if psych_level_desc:
-            lines.append(
-                f"Psychological Level: The nearest significant round-number level from this Order Block is "
-                f"{psych_level_desc:,.0f} (500-multiple) -- this is where OI Wall confirmation would be checked live."
-            )
-        lines.append(
-            "Retest: Price has already returned into the Order Block zone." if ob_retest
-            else "Retest: Price has NOT yet returned into the Order Block zone -- entry should wait for this."
-        )
-        lines.append(
-            f"Candlestick Pattern: A {pattern.replace('_', ' ').title()} pattern is present at the current candle."
-            if pattern else "Candlestick Pattern: No qualifying Rejection Bar or Engulfing pattern is present yet."
-        )
+    if rsi_val is not None:
+        rsi_note = f"RSI(14) is currently {rsi_val:.1f}."
+        if divergence != "NONE":
+            rsi_note += f" A {divergence.replace('_', ' ').title()} is present."
+        lines.append(rsi_note)
     else:
-        lines.append("Order Block: No valid Order Block (with a confirmed impulsive move) was found in the recent lookback window on this timeframe.")
+        lines.append("RSI(14) could not be computed (insufficient data).")
+
+    if rc:
+        lines.append(f"Reversal Candle: A {rc['pattern'].replace('_', ' ').title()} pattern was found in the recent lookback.")
+        if detail.get("breakout_confirmed") and trade_plan:
+            lines.append(
+                f"Breakout Confirmed: Entry {trade_plan['entry']:,.2f}, Stop-Loss {trade_plan['sl']:,.2f}, "
+                f"Target {trade_plan['target']:,.2f} (Risk:Reward 1:{trade_plan['rr']})."
+            )
+        else:
+            lines.append("Breakout: Price has NOT yet broken past the reversal candle's high/low -- entry should wait for this.")
+    else:
+        lines.append("Reversal Candle: No qualifying Hammer/Engulfing/Star pattern was found in the recent lookback on this timeframe.")
 
     lines.append(
         "Overall: " + (
@@ -556,20 +542,20 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
     if is_price_action:
         story.append(Paragraph(
             "This check runs the new Price Action Signal Engine walk-forward (no lookahead): direction is "
-            "determined by 1H Supertrend; an entry requires a Break of Structure (BOS) or Change of Character "
-            "(CHoCH) relative to the structure that existed before a confirmed Order Block (the last "
-            "opposite-colour candle before a genuine impulsive move); price must then retest that Order Block "
-            "zone; and finally a 15-minute candlestick pattern (Hammer/Bullish Engulfing/Morning Star for bullish, "
-            "Shooting Star/Bearish Engulfing/Evening Star for bearish) must also be present.",
+            "determined by 1H Supertrend; an entry requires price to retest a Support/Resistance zone "
+            "(Rolling Window swing-based) or a Dynamic Trendline; RSI(14) must be Oversold (&lt;30) or "
+            "Overbought (&gt;70), or show a Bullish/Bearish Divergence; a 15-minute reversal candlestick "
+            "(Hammer/Bullish Engulfing/Morning Star for bullish, Shooting Star/Bearish Engulfing/Evening Star "
+            "for bearish) must close within the recent lookback; and finally price must break past that "
+            "candle's high (Bullish) or low (Bearish) to confirm entry.",
             _rpt_normal,
         ))
         story.append(Spacer(1, 6))
         story.append(Paragraph(
-            f"Order Block settings used: Fractal Order={ob_params.get('order')}, "
-            f"Lookback Swings={ob_params.get('lookback_swings')}, "
-            f"Minimum Impulse Move={ob_params.get('ob_impulse_min_move_pct')}% "
-            "— this threshold is calibrated to market volatility; a quiet market needs a lower threshold or "
-            "Order Blocks will rarely be found.",
+            f"Settings used: S/R Rolling Window={ob_params.get('sr_window')}, "
+            f"RSI Oversold/Overbought={ob_params.get('rsi_oversold')}/{ob_params.get('rsi_overbought')}, "
+            f"SL Buffer={ob_params.get('sl_buffer_pct')}%, Minimum Risk:Reward=1:{ob_params.get('min_rr')} "
+            "— Target is the next Support/Resistance level, extended if needed to satisfy the minimum R:R.",
             _rpt_normal,
         ))
     else:
@@ -1114,7 +1100,7 @@ def generate_market_analysis_report_pdf(
     # --- 2. Charts ---
     use_price_action_v2 = direction_final in ("BULLISH", "BEARISH")
     section_title = (
-        "Charts: BOS/CHoCH, Order Block, Psychological Level & Retest (per timeframe)" if use_price_action_v2
+        "Charts: Support/Resistance, RSI & Candlestick Reversal (per timeframe)" if use_price_action_v2
         else "Charts: BOS/CHoCH, Support/Resistance, Trendlines & Demand-Supply Zones (per timeframe)"
     )
     next_section(section_title)
@@ -1124,7 +1110,8 @@ def generate_market_analysis_report_pdf(
         chart_panels.append((df_style_tf, style_tf_label))
     for df_c, label in chart_panels:
         if use_price_action_v2:
-            img_bytes, price_action_desc = build_price_action_chart_v2(df_c, direction_final, label)
+            rsi_for_chart = calculate_rsi(df_c, period=14) if df_c is not None and not df_c.empty else None
+            img_bytes, price_action_desc = build_price_action_chart_v2(df_c, direction_final, label, rsi_series=rsi_for_chart)
         else:
             zone_info = analyze_chart_zones(df_c) if df_c is not None and not df_c.empty else None
             img_bytes, price_action_desc = build_report_chart_image(df_c, f"{symbol} - {label}", zone_info=zone_info)

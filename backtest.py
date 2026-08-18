@@ -1,4 +1,5 @@
 """Walk-forward, no-lookahead signal backtesting (directional accuracy + Risk:Reward Target/SL framing)."""
+import datetime
 import pandas as pd
 
 from signals import (
@@ -250,19 +251,16 @@ def run_signal_backtest_rr(df, structure_order=3, lookback_swings=4, tolerance_p
 
 def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5, rr_ratio=2.0,
                              min_lookback=30, max_bars=None, max_hold_bars=50,
-                             order=3, lookback_swings=3, ob_impulse_lookforward=5,
-                             ob_impulse_min_move_pct=0.3, ob_search_lookback=20, ob_retest_tolerance_pct=0.1,
-                             enable_kill_zone_filter=False,
-                             require_unmitigated_ob=False, require_displacement=False, require_fvg_confluence=False):
+                             sr_window=20, rsi_oversold=30, rsi_overbought=70,
+                             sl_buffer_pct=0.1, min_rr=2.0, retest_tolerance_pct=0.15, reversal_lookback=3,
+                             is_intraday=True, eod_hour=15, eod_minute=15):
     """
-    नवीन Signal Engine (V2) — दोन स्वतंत्र, संपूर्ण रणनीती (जुन्या Market Structure/Break/Pullback/Retest
-    ऐवजी — दिशा दोन्हीसाठी 1H Supertrend वरून, no-lookahead merge_asof ने अलाइन केलेली):
+    नवीन Signal Engine (V2) — दोन स्वतंत्र, संपूर्ण रणनीती (दिशा दोन्हीसाठी 1H Supertrend वरून,
+    no-lookahead merge_asof ने अलाइन केलेली):
 
-    "price_action": BOS/CHoCH + Order Block + Retest + 15M Candlestick Pattern (check_price_action_strategy)
+    "price_action": Support/Resistance (Rolling Window) + RSI Oversold/Overbought/Divergence +
+                    Candlestick Reversal + Breakout Entry (check_price_action_strategy)
     "indicator": RSI(15M, 25-55 Bullish / 45-75 Bearish) + Candlestick Rejection/Engulfing (check_indicator_strategy)
-
-    ob_impulse_min_move_pct डीफॉल्ट 0.3% आहे — प्रत्यक्ष NIFTY च्या अस्थिरतेनुसार हे कमी/जास्त करावं लागू शकतं
-    (कमी अस्थिर कालावधीत/टाईमफ्रेममध्ये उंबरठा सैल करावा लागेल, नाहीतर Order Block कधीच सापडणार नाही).
     """
     empty_funnel = {"bars_checked": 0, "structure_directional": 0, "entry_passed": 0}
     if df.empty or df_direction is None or df_direction.empty or len(df) < min_lookback + 2:
@@ -282,30 +280,33 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
     )
     direction_series = aligned["st_dir"]
 
-    rsi_series_full = calculate_rsi(df, period=14) if strategy == "indicator" else None
+    rsi_series_full = calculate_rsi(df, period=14)  # दोन्ही रणनीतींना आता RSI लागतो
 
     funnel = {"bars_checked": 0, "structure_directional": 0, "entry_passed": 0}
     signals = []
     for i in range(start_idx, end_idx):
-        window = df.iloc[:i + 1]
+        # कामगिरीसाठी (performance) — संपूर्ण वाढणारा इतिहास प्रत्येक bar ला पुन्हा स्कॅन करण्याऐवजी (जे O(n²)
+        # होतं आणि मोठ्या backtest मध्ये अत्यंत संथ ठरत होतं), फक्त अलीकडच्या MAX_LOOKBACK_BARS bars इतकाच
+        # window strategy-check ला दिला जातो — S/R/RSI/Trendline साठी हे पुरेसं आहे.
+        MAX_LOOKBACK_BARS = 150
+        win_start = max(0, i + 1 - MAX_LOOKBACK_BARS)
+        window = df.iloc[win_start:i + 1]
         funnel["bars_checked"] += 1
         st_dir_now = direction_series.iloc[i]
         if pd.isna(st_dir_now):
             continue
         direction = "BULLISH" if st_dir_now == 1 else "BEARISH"
         funnel["structure_directional"] += 1
+        rsi_window = rsi_series_full.iloc[win_start:i + 1]
 
         if strategy == "price_action":
             entry_ok, _detail = check_price_action_strategy(
-                window, direction, order=order, lookback_swings=lookback_swings,
-                ob_impulse_lookforward=ob_impulse_lookforward, ob_impulse_min_move_pct=ob_impulse_min_move_pct,
-                ob_search_lookback=ob_search_lookback, ob_retest_tolerance_pct=ob_retest_tolerance_pct,
-                enable_kill_zone_filter=enable_kill_zone_filter,
-                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
-                require_fvg_confluence=require_fvg_confluence,
+                window, direction, rsi_series=rsi_window, sr_window=sr_window,
+                rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
+                sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
+                retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
             )
         else:
-            rsi_window = rsi_series_full.iloc[:i + 1]
             entry_ok, _detail = check_indicator_strategy(window, rsi_window, direction)
 
         if not entry_ok:
@@ -326,6 +327,8 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
         outcome = "OPEN"
         exit_price = None
         exit_bars = None
+        eod_cutoff_time = datetime.time(eod_hour, eod_minute)
+        entry_date = entry_time.date() if hasattr(entry_time, "date") else None
         hold_end = min(i + 1 + max_hold_bars, n)
         for j in range(i + 1, hold_end):
             bar_high = df["high"].iloc[j]
@@ -342,6 +345,16 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
             elif hit_target:
                 outcome, exit_price, exit_bars = "TARGET", target_price, j - i
                 break
+            elif is_intraday and entry_date is not None:
+                # Intraday साठी -- SL/Target दोन्ही चुकले, आणि EOD कट-ऑफ (उदा. 15:15) पार केला किंवा
+                # दुसऱ्याच दिवशी पोहोचलो, तर इथेच force-close (खऱ्या trading सारखं -- रात्रभर उघडं नाही).
+                bar_ts = df["timestamp"].iloc[j]
+                bar_date = bar_ts.date()
+                bar_time = bar_ts.time()
+                if bar_date != entry_date or bar_time >= eod_cutoff_time:
+                    outcome, exit_price, exit_bars = "EOD", float(df["close"].iloc[j]), j - i
+                    break
+
 
         signals.append({
             "entry_time": entry_time, "direction": direction, "entry_price": round(entry_price, 2),

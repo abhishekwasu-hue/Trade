@@ -27,11 +27,14 @@ def fetch_yfinance_candles(symbol, interval, from_date, to_date):
     """
     Yahoo Finance वरून candles मागवून आपल्या ॲपच्या नेहमीच्या candle-shape मध्ये (timestamp/open/high/
     low/close/volume/oi) बदलणे — जेणेकरून हे Upstox च्या fetch फंक्शन्ससाठी drop-in पर्याय म्हणून वापरता येईल.
+    Returns (df, error_message) — यशस्वी झाल्यास error_message=None, अयशस्वी झाल्यास नेमकं कारण असलेला मजकूर
+    (आधी सर्व अपयश शांतपणे रिकाम्या DataFrame मध्ये लपायचं — कारण कधीच कळायचं नाही; आता ते UI पर्यंत पोहोचतं).
     """
+    empty_df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
     try:
         import yfinance as yf
-    except ImportError:
-        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
+    except ImportError as e:
+        return empty_df, f"yfinance library उपलब्ध नाही (ImportError: {e}). requirements.txt मध्ये 'yfinance' आहे का तपासा."
 
     yf_symbol = YFINANCE_SYMBOL_MAP.get(symbol, symbol)
     yf_interval = YFINANCE_INTERVAL_MAP.get(interval, "1d")
@@ -47,11 +50,15 @@ def fetch_yfinance_candles(symbol, interval, from_date, to_date):
             end=(to_date + datetime.timedelta(days=1)).strftime("%Y-%m-%d"),  # end एक्सक्लुझिव्ह असतो
             interval=yf_interval,
         )
-    except Exception:
-        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
+    except Exception as e:
+        return empty_df, f"Yahoo Finance कडून डेटा मागवताना चूक ({type(e).__name__}): {e}"
 
     if yf_df is None or yf_df.empty:
-        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
+        return empty_df, (
+            f"Yahoo Finance ने रिकामा डेटा दिला (सिम्बॉल={yf_symbol}, interval={yf_interval}, "
+            f"{from_date} ते {to_date}). शक्य कारणं: चुकीचा तारीख-रेंज, बाजार बंद असलेले दिवस, "
+            "किंवा Yahoo Finance कडून तात्पुरती मर्यादा (rate limit)."
+        )
 
     df = yf_df.reset_index()
     ts_col = "Datetime" if "Datetime" in df.columns else "Date"
@@ -65,4 +72,5 @@ def fetch_yfinance_candles(symbol, interval, from_date, to_date):
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    return df[["timestamp", "open", "high", "low", "close", "volume", "oi"]].dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+    result_df = df[["timestamp", "open", "high", "low", "close", "volume", "oi"]].dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+    return result_df, None
