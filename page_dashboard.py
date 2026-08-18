@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today
+from tradingview_chart import build_lightweight_chart_html
 import sqlite3
 from database import (
     log_orders_batch, get_todays_realized_pnl,
@@ -29,7 +30,7 @@ from signals import (
 )
 from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, compute_position_size
 from oi_analysis import (
-    get_latest_oi_signal, check_oi_confirmation,
+    get_latest_oi_signal, check_oi_diff_entry_gate,
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis,
@@ -327,7 +328,7 @@ def render():
 
     # --- डीफॉल्ट झूम: सुरुवातीला अलीकडचेच candles दिसावेत (नाहीतर ९० दिवसांचा डेटा दाटीवाटीने दिसतो) ---
     if not df_candles.empty:
-        visible_candles = {"1minute": 600, "30minute": 480, "day": 365}.get(timeframe_option, 120)
+        visible_candles = {"1minute": 600, "15minute": 500, "30minute": 480, "day": 365}.get(timeframe_option, 120)
         if len(df_candles) > visible_candles:
             start_view = df_candles["timestamp"].iloc[-visible_candles]
             end_view = df_candles["timestamp"].iloc[-1]
@@ -360,6 +361,31 @@ def render():
         )
 
     # =========================================================
+    # ७.६ नवीन — खरा TradingView Chart (Lightweight Charts library, ऐच्छिक — प्रयोगिक)
+    # Plotly ऐवजी TradingView च्याच open-source library चा वापर — खरं candle-रेंडरिंग, आणि मूलभूत
+    # Drawing Tools (Trendline + Horizontal Line — fibonacci सारखे advanced tools नाहीत).
+    # ऐच्छिक ठेवलाय (डीफॉल्ट बंद) कारण हा नवीन component आहे — browser मध्ये प्रत्यक्ष तपासून बघा.
+    # =========================================================
+    show_tv_chart = st.checkbox(
+        "🆕 खरा TradingView Chart वापरून बघा (Drawing Tools सकट — प्रयोगिक, वरच्या chart ऐवजी नाही, सोबत)",
+        value=False,
+    )
+    if show_tv_chart:
+        rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
+        sr_for_tv = find_support_resistance_levels(df_candles) if not df_candles.empty else None
+        tv_html = build_lightweight_chart_html(
+            df_candles, symbol=symbol, timeframe_label=timeframe_option,
+            ema20_series=df_candles.get("ema20"), ema50_series=df_candles.get("ema50"),
+            rsi_series=rsi_for_tv, sr_levels=sr_for_tv, height=650,
+        )
+        st.components.v1.html(tv_html, height=700, scrolling=False)
+        st.caption(
+            "⚠️ Drawing Tools ने काढलेल्या रेषा फक्त browser मध्येच राहतात (client-side) — auto-refresh किंवा "
+            "page reload झाल्यावर मिटतात, साठवल्या जात नाहीत. Fibonacci सारखे advanced tools यात नाहीत — "
+            "फक्त Trendline आणि Horizontal Line."
+        )
+
+    # =========================================================
     # ७.५ DIRECTION ENGINE — Intraday/Swing style नुसार टाईमफ्रेम बदलणारे → BULLISH / BEARISH
     # (मुख्य चार्टच्या टाईमफ्रेम निवडीपासून स्वतंत्र; Signal लॉजिक तेच पण टाईमफ्रेम style-driven)
     # =========================================================
@@ -369,14 +395,13 @@ def render():
     rsi_interval, rsi_tf_label = tf_cfg["rsi"]
     confirm_interval, confirm_tf_label = tf_cfg["confirm"]
     intraday_strategy_mode = st.session_state.get("intraday_strategy_mode", "indicator")
-    ob_order = st.session_state.get("ob_order", 3)
-    ob_lookback_swings = st.session_state.get("ob_lookback_swings", 3)
-    ob_impulse_min_move_pct = st.session_state.get("ob_impulse_min_move_pct", 0.3)
-    ob_retest_tolerance_pct = st.session_state.get("ob_retest_tolerance_pct", 0.1)
-    require_unmitigated_ob = st.session_state.get("require_unmitigated_ob", False)
-    require_displacement = st.session_state.get("require_displacement", False)
-    require_fvg_confluence = st.session_state.get("require_fvg_confluence", False)
-    enable_kill_zone_filter = st.session_state.get("enable_kill_zone_filter", False)
+    sr_window = st.session_state.get("sr_window", 20)
+    rsi_oversold = st.session_state.get("rsi_oversold", 30)
+    rsi_overbought = st.session_state.get("rsi_overbought", 70)
+    sl_buffer_pct = st.session_state.get("sl_buffer_pct", 0.1)
+    min_rr = st.session_state.get("min_rr", 2.0)
+    retest_tolerance_pct = st.session_state.get("retest_tolerance_pct", 0.15)
+    reversal_lookback = st.session_state.get("reversal_lookback", 3)
 
     # Intraday साठी दिशा नेहमी 1H Supertrend वरून (दोन्ही नवीन रणनीतींसाठी सामायिक), आणि RSI 15M वर —
     # जुनी 15M Market Structure-आधारित दिशा व 5M RSI आता Intraday साठी वापरली जात नाही (Swing अपरिवर्तित).
@@ -851,7 +876,7 @@ def render():
     prev_signal = prev_row[2] if prev_row else None
     delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
 
-    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि Diff मध्ये किमान 20% बदल असेल तरच आधीच्या
+    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि Diff मध्ये किमान 10% बदल असेल तरच आधीच्या
     # सिग्नलपेक्षा वेगळा दाखवला जातो (hysteresis — delta_diff फक्त माहितीसाठी, त्यावर buffer नाही)
     oi_signal = compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal)
 
@@ -912,7 +937,7 @@ def render():
         "(लाल) — पुढे बेअरिशकडे वळण्याचा इशारा\n"
         "- 🟢 **BEARISH (Weakening)**: अजून Diff ऋण आहे, पण ΔDiff आता घटत नाहीये → बेअरिश जोर कमी होतोय, म्हणून रंग उलट "
         "(हिरवा) — पुढे बुलिशकडे वळण्याचा इशारा\\n\\n"
-        "⚙️ **Hysteresis:** सिग्नल फक्त तेव्हाच बदलतो जेव्हा ΔDiff मागच्या ΔDiff पेक्षा किमान 20% बदलतो — छोट्या, "
+        "⚙️ **Hysteresis:** सिग्नल फक्त तेव्हाच बदलतो जेव्हा Diff मागच्या Diff पेक्षा किमान 10% बदलतो — छोट्या, "
         "noise-सदृश चढ-उतारांमुळे सिग्नल उगाच वारंवार भिरभिरू (flip-flop) नये म्हणून. मागचा ΔDiff बरोबर 0 असेल तेव्हा "
         "सिग्नल सुरक्षित बाजूने बदलला जात नाही."
     )
@@ -1052,26 +1077,13 @@ def render():
         # नवीन Signal Engine — दोन्ही रणनीतींसाठी एकच संपूर्ण entry-तपासणी (Market Structure/Break/
         # Pullback/Retest ऐवजी). broke/pulled_back/retested तिन्ही याच एका निकालाशी जोडलेली आहेत,
         # जेणेकरून खालचं all_gates_passed चं सूत्र बदलावं लागणार नाही.
-        psychological_level = None
-        oi_wall_ok = True
-        oi_wall_detail = None
         if intraday_strategy_mode == "price_action":
             entry_ok, intraday_strategy_detail = check_price_action_strategy(
-                df_structure_tf, pipeline_direction, order=ob_order, lookback_swings=ob_lookback_swings,
-                ob_impulse_min_move_pct=ob_impulse_min_move_pct, ob_retest_tolerance_pct=ob_retest_tolerance_pct,
-                enable_kill_zone_filter=enable_kill_zone_filter,
-                require_unmitigated_ob=require_unmitigated_ob, require_displacement=require_displacement,
-                require_fvg_confluence=require_fvg_confluence,
+                df_structure_tf, pipeline_direction, rsi_series=rsi_series,
+                sr_window=sr_window, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
+                sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
+                retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
             )
-            # Order Block सापडला असेल तर — त्यापासून पुढचा Psychological Level (500 च्या पटीत) काढून,
-            # त्या strike वर खरी OI Wall (Short Buildup) आहे का हे हार्ड गेट म्हणून तपासणे — फक्त Live
-            # (backtest मध्ये ऐतिहासिक per-strike OI डेटा उपलब्धच नाही, त्यामुळे तिथे हे लागू करता येत नाही).
-            ob = intraday_strategy_detail.get("order_block") if intraday_strategy_detail else None
-            if entry_ok and ob:
-                ob_edge = ob["ob_high"] if pipeline_direction == "BEARISH" else ob["ob_low"]
-                psychological_level = find_psychological_level(ob_edge, pipeline_direction, round_to=500)
-                oi_wall_ok, oi_wall_detail = check_oi_wall_confirmation(raw_chain, symbol, psychological_level, pipeline_direction)
-                entry_ok = entry_ok and oi_wall_ok
         else:
             entry_ok, intraday_strategy_detail = check_indicator_strategy(df_structure_tf, rsi_series, pipeline_direction)
         broke, pulled_back, retested = entry_ok, entry_ok, entry_ok
@@ -1108,7 +1120,8 @@ def render():
 
     if trading_style == "INTRADAY" and enable_oi_gate and pipeline_direction:
         oi_signal_latest = get_latest_oi_signal(symbol)
-        oi_confirmation_ok, oi_gate_note = check_oi_confirmation(pipeline_direction, oi_signal_latest, oi_gate_strictness)
+        oi_confirmation_ok = check_oi_diff_entry_gate(pipeline_direction, oi_signal_latest)
+        oi_gate_note = oi_signal_latest or "OI डेटा उपलब्ध नाही"
     elif trading_style == "SWING" and enable_swing_oi_gate and pipeline_direction:
         _prev_total_oi_g = get_previous_day_total_oi(symbol)
         _conn_g = sqlite3.connect(DB_PATH)
@@ -1163,30 +1176,23 @@ def render():
         st.caption(" · ".join(sr_parts))
 
     if trading_style == "INTRADAY" and pipeline_direction and intraday_strategy_detail:
-        strategy_label = "Price Action (BOS/CHoCH+OB+Retest+Pattern)" if intraday_strategy_mode == "price_action" else "Indicator (RSI 25-55/45-75+Pattern)"
+        strategy_label = "Price Action (Support/Resistance + RSI + Candlestick)" if intraday_strategy_mode == "price_action" else "Indicator (RSI 25-55/45-75+Pattern)"
         st.markdown(f"**Signal Engine — {strategy_label}:** {'✅ जुळलं' if broke else '❌ जुळलं नाही'}")
         if intraday_strategy_mode == "price_action":
-            ob = intraday_strategy_detail.get("order_block")
+            rc = intraday_strategy_detail.get("reversal_candle")
+            rsi_v = intraday_strategy_detail.get("rsi_value")
             st.caption(
-                f"BOS: {'✅' if intraday_strategy_detail.get('bos') else '❌'} · "
-                f"CHoCH: {intraday_strategy_detail.get('choch') or '—'} · "
-                f"Liquidity Sweep: {'✅' if intraday_strategy_detail.get('liquidity_sweep') else '❌'} · "
-                f"Order Block: {'सापडला' if ob else 'नाही'} · "
-                f"OB Retest: {'✅' if intraday_strategy_detail.get('ob_retest') else '❌'} · "
-                f"Pattern: {intraday_strategy_detail.get('pattern') or '—'}"
+                f"S/R Retest: {'✅' if intraday_strategy_detail.get('sr_retest') else '❌'} · "
+                f"Trendline Retest: {'✅' if intraday_strategy_detail.get('trendline_retest') else '❌'} · "
+                f"RSI: {f'{rsi_v:.1f}' if rsi_v is not None else '—'} ({intraday_strategy_detail.get('divergence')}) · "
+                f"Reversal Candle: {rc['pattern'] if rc else 'नाही'} · "
+                f"Breakout: {'✅' if intraday_strategy_detail.get('breakout_confirmed') else '❌'}"
             )
-            st.caption(
-                f"🎓 Professional Checks — Unmitigated OB: {'✅' if intraday_strategy_detail.get('unmitigated') else '❌'} · "
-                f"Displacement Candle: {'✅' if intraday_strategy_detail.get('displacement') else '❌'} · "
-                f"FVG Confluence: {'✅' if intraday_strategy_detail.get('fvg') else '❌'}"
-                + (" · 🚫 Kill-Zone मध्ये ब्लॉक" if intraday_strategy_detail.get('kill_zone_blocked') else "")
-            )
-            if psychological_level is not None:
-                oi_side = oi_wall_detail.get("side", "?") if oi_wall_detail else "?"
-                oi_chg = oi_wall_detail.get("chg_oi", 0) if oi_wall_detail else 0
+            trade_plan = intraday_strategy_detail.get("trade_plan")
+            if trade_plan:
                 st.caption(
-                    f"🎯 Psychological Level: **{psychological_level}** (Order Block पासून, 500 च्या पटीत) · "
-                    f"OI Wall Confirmation ({oi_side} Chg OI={oi_chg:+,}): {'✅ हार्ड गेट पास' if oi_wall_ok else '❌ हार्ड गेट अयशस्वी — entry ब्लॉक'}"
+                    f"🎯 Entry: **{trade_plan['entry']:,}** · SL: {trade_plan['sl']:,} · "
+                    f"Target: {trade_plan['target']:,} · R:R = 1:{trade_plan['rr']}"
                 )
         else:
             st.caption(f"Pattern: {intraday_strategy_detail.get('pattern') or '—'} · RSI(15M): {intraday_strategy_detail.get('rsi'):.1f}" if intraday_strategy_detail.get("rsi") is not None else f"Pattern: {intraday_strategy_detail.get('pattern') or '—'}")
@@ -1197,7 +1203,7 @@ def render():
     if trading_style == "INTRADAY" and enable_oi_gate:
         oi_display = oi_signal_latest if oi_signal_latest else "अनुपलब्ध"
         st.markdown(
-            f"**OI Confirmation Gate ({oi_gate_strictness}):** {'✅ जुळते' if oi_confirmation_ok else '❌ OI विरोधात'} "
+            f"**OI Diff Entry Gate (Price Action + Indicator दोन्हीसाठी सामायिक):** {'✅ जुळते' if oi_confirmation_ok else '❌ OI विरोधात'} "
             f"— सद्य OI सिग्नल: {oi_display}"
         )
     elif trading_style == "SWING" and enable_swing_oi_gate:

@@ -6,7 +6,12 @@ import datetime
 import streamlit as st
 
 from upstox_api import fetch_upstox_option_chain, fetch_candles
-from signals import compute_atr
+try:
+    from signals import compute_atr
+except ImportError:
+    # deployed signals.py जुनी असेल (compute_atr गहाळ) तर संपूर्ण app क्रॅश होण्याऐवजी,
+    # फक्त Trailing SL feature बंद राहील — बाकी सर्व व्यवस्थित चालेल.
+    compute_atr = None
 from trading_engine import manage_open_trades
 
 
@@ -15,7 +20,7 @@ def setup_shared_context():
     symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY"])
 
     # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
-    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "30minute", "day"], index=1)
+    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "15minute", "30minute", "day"], index=2)
 
     # --- चार्ट टाईप निवडण्याची सुविधा (Candlestick / Line) ---
     chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)
@@ -77,42 +82,36 @@ def setup_shared_context():
         st.sidebar.markdown("##### 🧬 Signal Engine — दिशा 1H Supertrend वरून (दोन्ही रणनीतींसाठी)")
         intraday_strategy_choice = st.sidebar.radio(
             "कोणती रणनीती वापरायची?",
-            ["1️⃣ Price Action (BOS/CHoCH + Order Block + Retest + 15M Pattern)",
+            ["1️⃣ Price Action (Support/Resistance + RSI + Candlestick)",
              "2️⃣ Indicator Based (RSI 25-55/45-75 + Rejection/Engulfing)"],
         )
         intraday_strategy_mode = "price_action" if "1️⃣" in intraday_strategy_choice else "indicator"
-        ob_order = 3
-        ob_lookback_swings = 3
-        ob_impulse_min_move_pct = 0.3
-        ob_retest_tolerance_pct = 0.1
-        enable_kill_zone_filter = False
-        require_unmitigated_ob = False
-        require_displacement = False
-        require_fvg_confluence = False
+        sr_window = 20
+        rsi_oversold = 30
+        rsi_overbought = 70
+        sl_buffer_pct = 0.1
+        min_rr = 2.0
+        retest_tolerance_pct = 0.15
+        reversal_lookback = 3
         if intraday_strategy_mode == "price_action":
             st.sidebar.caption(
-                "Order Block च्या पुष्टीसाठी लागणारी किमान impulsive हालचाल % — शांत बाजारात उंबरठा कमी करावा "
-                "लागेल (नाहीतर Order Block कधीच सापडणार नाही)."
+                "Support/Resistance (Rolling Window) जवळ RSI Oversold/Overbought/Divergence + Reversal "
+                "Candlestick (Hammer/Engulfing/Morning-Evening Star) + त्या candle च्या high/low पलीकडे "
+                "Breakout — हे सर्व जुळल्यावरच Entry."
             )
-            ob_order = st.sidebar.number_input("Fractal Order (Swing शोधण्यासाठी)", min_value=1, value=3, step=1)
-            ob_lookback_swings = st.sidebar.number_input("Lookback Swings", min_value=2, value=3, step=1)
-            ob_impulse_min_move_pct = st.sidebar.number_input("Order Block Impulse किमान %", min_value=0.01, value=0.3, step=0.05)
-            ob_retest_tolerance_pct = st.sidebar.number_input(
-                "Retest Tolerance % (OB झोनच्या रुंदीच्या तुलनेत)", min_value=0.1, value=0.1, step=0.5,
-            )
+            sr_window = st.sidebar.number_input("S/R Rolling Window", min_value=6, value=20, step=2)
+            rc1, rc2 = st.sidebar.columns(2)
+            with rc1:
+                rsi_oversold = st.sidebar.number_input("RSI Oversold <", min_value=5, max_value=45, value=30, step=1)
+            with rc2:
+                rsi_overbought = st.sidebar.number_input("RSI Overbought >", min_value=55, max_value=95, value=70, step=1)
+            sl_buffer_pct = st.sidebar.number_input("SL Buffer %", min_value=0.01, value=0.1, step=0.05)
+            min_rr = st.sidebar.number_input("किमान Risk:Reward", min_value=1.0, value=2.0, step=0.5)
+            retest_tolerance_pct = st.sidebar.number_input("Retest Tolerance %", min_value=0.05, value=0.15, step=0.05)
+            reversal_lookback = st.sidebar.number_input("Reversal Candle Lookback (bars)", min_value=1, max_value=10, value=3, step=1)
             st.sidebar.caption(
-                "0.1% म्हणजे किंमत जवळपास exact OB झोनच्या आतच यावी लागते (खूप कडक). वाढवल्यास झोनच्या "
-                "काठाबाहेरही थोडी 'सूट' मिळते."
-            )
-            enable_kill_zone_filter = st.sidebar.checkbox(
-                "Kill-Zone Filter (सुरुवातीचे/शेवटचे 15 मिनिट टाळा — ऐच्छिक)", value=False,
-            )
-            st.sidebar.markdown("##### 🎓 व्यावसायिक गुणवत्ता गेट्स (ऐच्छिक — एकत्र लावल्यास सिग्नल्स जवळपास शून्यावर येतात)")
-            require_unmitigated_ob = st.sidebar.checkbox("Unmitigated Order Block आवश्यक (आधी कधीच टच न झालेला)", value=False)
-            require_displacement = st.sidebar.checkbox("Displacement Candle आवश्यक (ATR-सापेक्ष मोठी candle)", value=False)
-            require_fvg_confluence = st.sidebar.checkbox("Fair Value Gap Confluence आवश्यक", value=False)
-            st.sidebar.caption(
-                "डीफॉल्ट सर्व बंद — जास्त सिग्नल्स मिळतील. एकेक चालू करून बघा, backtest मध्ये किती फरक पडतो ते आधी तपासा."
+                "S/R Rolling Window कमी असेल तर जास्त (पण कमी विश्वासार्ह) पातळ्या सापडतील. सिग्नल्स कमी वाटत "
+                "असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा (उदा. Oversold 35, Overbought 65)."
             )
         st.sidebar.caption(
             "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
@@ -127,14 +126,13 @@ def setup_shared_context():
         oi_gate_strictness = "A"
         enable_oi_early_exit = False
         intraday_strategy_mode = "indicator"
-        ob_order = 3
-        ob_lookback_swings = 3
-        ob_impulse_min_move_pct = 0.3
-        ob_retest_tolerance_pct = 0.1
-        enable_kill_zone_filter = False
-        require_unmitigated_ob = False
-        require_displacement = False
-        require_fvg_confluence = False
+        sr_window = 20
+        rsi_oversold = 30
+        rsi_overbought = 70
+        sl_buffer_pct = 0.1
+        min_rr = 2.0
+        retest_tolerance_pct = 0.15
+        reversal_lookback = 3
         st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
 
         st.sidebar.markdown("##### 🧭 OI+PCR+MaxPain+Rollover Gate (Swing)")
@@ -152,16 +150,23 @@ def setup_shared_context():
     max_daily_loss = st.sidebar.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
 
     st.sidebar.markdown("### 📈 Trailing SL (ATR-आधारित)")
-    trailing_sl_enabled = st.sidebar.checkbox(
-        "Trailing SL चालू करा (सर्व स्ट्रॅटेजींसाठी — Credit Spreads सकट)", value=False,
-    )
+    trailing_sl_enabled = False
     atr_multiplier = 1.5
-    if trailing_sl_enabled:
-        atr_multiplier = st.sidebar.number_input("ATR Multiplier (ट्रेलिंग अंतर)", min_value=0.5, value=1.5, step=0.25)
-        st.sidebar.caption(
-            "पोझिशन नफ्यात गेल्यावर SL नफ्याच्या दिशेने सतत सरकतो, कधीच मागे सरकत नाही — पण मूळ स्थिर SL पेक्षा "
-            "कधीच वाईट होत नाही. ATR 15M underlying candles वरून काढला जातो."
+    if compute_atr is None:
+        st.sidebar.warning(
+            "⚠️ Trailing SL उपलब्ध नाही — deployed signals.py जुनी आहे (compute_atr गहाळ). "
+            "नवीनतम सर्व फाईल्स पुन्हा अपलोड करून app reboot करा."
         )
+    else:
+        trailing_sl_enabled = st.sidebar.checkbox(
+            "Trailing SL चालू करा (सर्व स्ट्रॅटेजींसाठी — Credit Spreads सकट)", value=False,
+        )
+        if trailing_sl_enabled:
+            atr_multiplier = st.sidebar.number_input("ATR Multiplier (ट्रेलिंग अंतर)", min_value=0.5, value=1.5, step=0.25)
+            st.sidebar.caption(
+                "पोझिशन नफ्यात गेल्यावर SL नफ्याच्या दिशेने सतत सरकतो, कधीच मागे सरकत नाही — पण मूळ स्थिर SL पेक्षा "
+                "कधीच वाईट होत नाही. ATR 15M underlying candles वरून काढला जातो."
+            )
 
     st.sidebar.markdown("### 🎮 Trading Mode")
     trading_mode_choice = st.sidebar.radio(
@@ -214,14 +219,13 @@ def setup_shared_context():
     st.session_state["enable_swing_oi_gate"] = enable_swing_oi_gate
     st.session_state["swing_max_opposing_signals"] = swing_max_opposing_signals
     st.session_state["intraday_strategy_mode"] = intraday_strategy_mode
-    st.session_state["ob_order"] = ob_order
-    st.session_state["ob_lookback_swings"] = ob_lookback_swings
-    st.session_state["ob_impulse_min_move_pct"] = ob_impulse_min_move_pct
-    st.session_state["ob_retest_tolerance_pct"] = ob_retest_tolerance_pct
-    st.session_state["require_unmitigated_ob"] = require_unmitigated_ob
-    st.session_state["require_displacement"] = require_displacement
-    st.session_state["require_fvg_confluence"] = require_fvg_confluence
-    st.session_state["enable_kill_zone_filter"] = enable_kill_zone_filter
+    st.session_state["sr_window"] = sr_window
+    st.session_state["rsi_oversold"] = rsi_oversold
+    st.session_state["rsi_overbought"] = rsi_overbought
+    st.session_state["sl_buffer_pct"] = sl_buffer_pct
+    st.session_state["min_rr"] = min_rr
+    st.session_state["retest_tolerance_pct"] = retest_tolerance_pct
+    st.session_state["reversal_lookback"] = reversal_lookback
     st.session_state["max_trades_per_day"] = max_trades_per_day
     st.session_state["max_daily_loss"] = max_daily_loss
     st.session_state["trailing_sl_enabled"] = trailing_sl_enabled
