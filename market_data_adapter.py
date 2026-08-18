@@ -38,9 +38,16 @@ def prepare_futures_ohlcv(df_candles, bb_period=20, atr_period=14):
 
     if "volume" not in df.columns:
         df["volume"] = 0
-    cum_vol = df["volume"].cumsum().replace(0, 1)
-    df["vwap"] = (df["close"] * df["volume"]).cumsum() / cum_vol
-    df["vwap_std"] = (df["close"] - df["vwap"]).rolling(20).std()
+
+    # VWAP रोज नव्याने (त्या दिवसाच्या पहिल्या bar पासून) सुरू व्हायला हवा — खरा intraday VWAP असाच असतो.
+    # आधी संपूर्ण DataFrame वर एकत्र cumsum होत होतं (दिवसागणिक reset न होता) — त्यामुळे VWAP दिवसागणिक
+    # जास्तच stale/lagging होत गेला, आणि जवळपास प्रत्येक bar ला (मीन-रिव्हर्जन + ट्रेंड दोन्ही मोड मध्ये)
+    # सिग्नल यायचा — हाच "backtest खूप विपरीत" दिसण्याचं खरं कारण होतं.
+    trade_date = df["timestamp"].dt.date
+    cum_pv = (df["close"] * df["volume"]).groupby(trade_date).cumsum()
+    cum_vol = df["volume"].groupby(trade_date).cumsum().replace(0, 1)
+    df["vwap"] = cum_pv / cum_vol
+    df["vwap_std"] = (df["close"] - df["vwap"]).groupby(trade_date).transform(lambda s: s.rolling(20, min_periods=5).std())
 
     return df.dropna().reset_index(drop=True)
 
