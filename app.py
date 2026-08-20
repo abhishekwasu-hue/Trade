@@ -6,7 +6,6 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 import sqlite3
-import time
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,6 +13,10 @@ from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None  # पॅकेज गहाळ असेल तर auto-refresh बंद राहील, बाकी सर्व app चालूच राहील
 
 # --- १. पेज कॉन्फिगरेशन आणि CSS (TradingView Look) ---
 st.set_page_config(
@@ -121,5 +124,11 @@ else:
 
 auto_refresh = st.session_state.get("auto_refresh", False)
 if auto_refresh:
-    time.sleep(300)
-    st.rerun()
+    # आधी इथे time.sleep(300) + st.rerun() होतं — हे संपूर्ण script ५ मिनिटं गोठवून ठेवायचं, जे
+    # Streamlit Cloud वर विश्वासार्ह नाही (session/connection च्या वागण्यानुसार, खरं अंतर कधीकधी
+    # अपेक्षेपेक्षा जास्त — उदा. वापरकर्त्याने पाहिलेलं: दर ५ ऐवजी दर २० मिनिटांनी snapshot). आता
+    # streamlit-autorefresh वापरतो — client-side JS timer, जास्त विश्वासार्ह, script गोठवत नाही.
+    if st_autorefresh is not None:
+        st_autorefresh(interval=300000, key="dashboard_autorefresh")  # 300000ms = 5 मिनिटं
+    else:
+        st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
