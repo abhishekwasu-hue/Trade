@@ -864,9 +864,9 @@ def render():
     conn3 = sqlite3.connect(DB_PATH)
     cur3 = conn3.cursor()
 
-    # आधीचा (या क्षणापर्यंतचा सर्वात अलीकडचा) snapshot घेणे, ΔDiff आणि hysteresis साठी
+    # आधीचा (या क्षणापर्यंतचा सर्वात अलीकडचा) snapshot घेणे, ΔDiff, Put/Call OI वाढ, आणि hysteresis साठी
     cur3.execute(
-        """SELECT diff, delta_diff, signal FROM oi_diff_snapshots
+        """SELECT diff, delta_diff, signal, total_put_oi, total_call_oi FROM oi_diff_snapshots
            WHERE symbol=? AND trade_date=? AND snapshot_time < ?
            ORDER BY snapshot_time DESC LIMIT 1""",
         (symbol, today_str, snapshot_time)
@@ -874,11 +874,16 @@ def render():
     prev_row = cur3.fetchone()
     prev_diff = prev_row[0] if prev_row else None
     prev_signal = prev_row[2] if prev_row else None
+    prev_put_oi = prev_row[3] if prev_row else None
+    prev_call_oi = prev_row[4] if prev_row else None
     delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
 
-    # सिग्नल — पातळी (level) + गती (momentum) वरून, आणि Diff मध्ये किमान 10% बदल असेल तरच आधीच्या
-    # सिग्नलपेक्षा वेगळा दाखवला जातो (hysteresis — delta_diff फक्त माहितीसाठी, त्यावर buffer नाही)
-    oi_signal = compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal)
+    # सिग्नल — दिशा (level) + Strong/Weak (Put/Call OI ची स्वतःची वाढ, मागच्या 10-मिनिट स्नॅपशॉटच्या
+    # तुलनेत — आधी हे delta_diff (Diff चाच फरक) वरून ठरायचं, आता खरा ताजा OI buildup बघून ठरतं), आणि
+    # Diff मध्ये किमान 10% बदल असेल तरच आधीच्या सिग्नलपेक्षा वेगळा दाखवला जातो (hysteresis)
+    oi_signal = compute_oi_signal_with_hysteresis(
+        current_diff, total_put_oi, total_call_oi, prev_put_oi, prev_call_oi, prev_diff, prev_signal,
+    )
 
     # या १० मिनिटांच्या स्लॉटसाठी snapshot फक्त एकदाच रेकॉर्ड करणे (त्या स्लॉटमधला पहिला पोल टिकतो)
     cur3.execute(
@@ -930,16 +935,17 @@ def render():
     st.caption(
         "**लॉजिक सोपं करून:** Diff = एकूण Put OI − एकूण Call OI. Diff धन (positive) असेल तर Put जास्त लिहिले जातायत → बुल्स "
         "मजबूत. Diff ऋण (negative) असेल तर Call जास्त लिहिले जातायत → बेअर्स मजबूत. "
-        "ΔDiff म्हणजे मागच्या 10 मिनिटांच्या तुलनेत Diff किती वाढला/घटला — म्हणजे ही दिशा 'अजून जोर धरतेय की कमी होतेय' हे सांगते.\n\n"
-        "- 🟢 **BULLISH**: Diff धन + ΔDiff धन (वाढतोय) → बुलिश ट्रेंड मजबूत होतोय\n"
-        "- 🔴 **BEARISH**: Diff ऋण + ΔDiff ऋण (आणखी घटतोय) → बेअरिश ट्रेंड मजबूत होतोय\n"
-        "- 🔴 **BULLISH (Weakening)**: अजून Diff धन आहे, पण ΔDiff आता वाढत नाहीये → बुलिश जोर कमी होतोय, म्हणून रंग उलट "
-        "(लाल) — पुढे बेअरिशकडे वळण्याचा इशारा\n"
-        "- 🟢 **BEARISH (Weakening)**: अजून Diff ऋण आहे, पण ΔDiff आता घटत नाहीये → बेअरिश जोर कमी होतोय, म्हणून रंग उलट "
-        "(हिरवा) — पुढे बुलिशकडे वळण्याचा इशारा\\n\\n"
+        "ΔDiff म्हणजे मागच्या 10 मिनिटांच्या तुलनेत Diff किती वाढला/घटला (फक्त माहितीसाठी दाखवला जातो).\n\n"
+        "🎯 **Strong vs Weakening — आता खऱ्या ताज्या OI वाढीवरून ठरतं** (आधी फक्त ΔDiff वरून ठरायचं, आता "
+        "प्रत्यक्ष Total Put/Call OI मागच्या 10-मिनिट स्नॅपशॉटपेक्षा खरंच वाढला का ते बघितलं जातं):\n\n"
+        "- 🟢 **BULLISH (Strong)**: Diff धन + Total Put OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढलाय → ताजा Put buildup, बुलिश थीसिसला पुष्टी\n"
+        "- 🟡 **BULLISH (Weakening)**: Diff अजून धनच आहे, पण Total Put OI वाढत नाहीये (कदाचित घटतोय सुद्धा) → ताजा buildup नाही, "
+        "जोर कमकुवत — म्हणून रंग उलट (लाल)\n"
+        "- 🔴 **BEARISH (Strong)**: Diff ऋण + Total Call OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढलाय → ताजा Call buildup, बेअरिश थीसिसला पुष्टी\n"
+        "- 🟠 **BEARISH (Weakening)**: Diff अजून ऋणच आहे, पण Total Call OI वाढत नाहीये → ताजा buildup नाही, जोर कमकुवत — "
+        "म्हणून रंग उलट (हिरवा)\n\n"
         "⚙️ **Hysteresis:** सिग्नल फक्त तेव्हाच बदलतो जेव्हा Diff मागच्या Diff पेक्षा किमान 10% बदलतो — छोट्या, "
-        "noise-सदृश चढ-उतारांमुळे सिग्नल उगाच वारंवार भिरभिरू (flip-flop) नये म्हणून. मागचा ΔDiff बरोबर 0 असेल तेव्हा "
-        "सिग्नल सुरक्षित बाजूने बदलला जात नाही."
+        "noise-सदृश चढ-उतारांमुळे सिग्नल उगाच वारंवार भिरभिरू (flip-flop) नये म्हणून."
     )
 
     # =========================================================
@@ -1493,5 +1499,3 @@ def render():
             )
         except Exception as e:
             st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
-
-
