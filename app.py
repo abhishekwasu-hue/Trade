@@ -1,0 +1,125 @@
+import datetime
+import io
+import json
+import os
+import re
+import uuid
+import xml.etree.ElementTree as ET
+import sqlite3
+import time
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import requests
+import streamlit as st
+import streamlit.components.v1 as components
+
+# --- १. पेज कॉन्फिगरेशन आणि CSS (TradingView Look) ---
+st.set_page_config(
+    page_title="Upstox Option Terminal Pro (TradingView Style)",
+    page_icon="📈",
+    layout="wide",
+)
+
+st.markdown(
+    """
+    <style>
+    .stApp { background-color: #131722; color: #d1d4dc; }
+    .stMetric { background-color: #1e222d; padding: 12px; border-radius: 6px; border: 1px solid #2a2e3d; }
+    dataframe, table, th, td { font-size: 16px !important; }
+    .stDataFrame { font-size: 16px !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# --- १.२ Indian Standard Time Live Clock (ब्राउझर-साईड JS — दर सेकंदाला टिक होते) ---
+components.html(
+    """
+    <div id="ist-clock" style="
+        font-family: 'Trebuchet MS', Arial, sans-serif;
+        background-color: #1e222d;
+        border: 1px solid #2a2e3d;
+        border-radius: 6px;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        color: #d1d4dc;
+        width: fit-content;
+    ">
+        <span style="font-size: 20px;">🕐</span>
+        <div>
+            <div style="font-size: 12px; color: #787b86; letter-spacing: 0.5px;">INDIAN STANDARD TIME (IST)</div>
+            <div id="ist-time" style="font-size: 22px; font-weight: bold; color: #2962FF; font-variant-numeric: tabular-nums;">--:--:--</div>
+        </div>
+        <div id="ist-date" style="font-size: 13px; color: #9598a1; border-left: 1px solid #2a2e3d; padding-left: 14px;">--</div>
+        <div id="market-status" style="font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">--</div>
+    </div>
+    <script>
+        function updateISTClock() {
+            const now = new Date();
+            const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour12: false });
+            const istNow = new Date(istString);
+
+            const timeStr = istNow.toLocaleTimeString("en-IN", { hour12: false });
+            const dateStr = istNow.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+
+            document.getElementById("ist-time").innerText = timeStr;
+            document.getElementById("ist-date").innerText = dateStr;
+
+            // NSE कॅश मार्केट तास: सोम-शुक्र, 09:15 - 15:30 IST
+            const day = istNow.getDay();
+            const mins = istNow.getHours() * 60 + istNow.getMinutes();
+            const isWeekday = day >= 1 && day <= 5;
+            const isMarketHours = mins >= (9 * 60 + 15) && mins <= (15 * 60 + 30);
+            const statusEl = document.getElementById("market-status");
+
+            if (isWeekday && isMarketHours) {
+                statusEl.innerText = "🟢 MARKET OPEN";
+                statusEl.style.backgroundColor = "rgba(8,153,129,0.15)";
+                statusEl.style.color = "#089981";
+            } else {
+                statusEl.innerText = "🔴 MARKET CLOSED";
+                statusEl.style.backgroundColor = "rgba(242,54,69,0.15)";
+                statusEl.style.color = "#F23645";
+            }
+        }
+        updateISTClock();
+        setInterval(updateISTClock, 1000);
+    </script>
+    """,
+    height=70,
+)
+
+from shared_context import setup_shared_context
+
+context_ok = setup_shared_context()
+
+if context_ok:
+    import page_dashboard
+    import page_positions
+    import page_orders
+    import page_performance
+
+    pages = [
+        st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
+        st.Page(page_positions.render, title="Positions", icon="💰", url_path="positions"),
+        st.Page(page_orders.render, title="Orders", icon="📝", url_path="orders"),
+        st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),
+    ]
+    pg = st.navigation(pages)
+    pg.run()
+else:
+    token_input = st.session_state.get("token_input", "")
+    status_msg = st.session_state.get("status_msg")
+    if not token_input.strip():
+        st.info("⬅️ सुरू करण्यासाठी साईडबारमध्ये तुमचा Upstox Access Token टाका.")
+    else:
+        st.error(f"❌ Upstox API Error: {status_msg}")
+
+auto_refresh = st.session_state.get("auto_refresh", False)
+if auto_refresh:
+    time.sleep(300)
+    st.rerun()
