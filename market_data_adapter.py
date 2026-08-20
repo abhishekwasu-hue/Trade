@@ -34,7 +34,10 @@ def prepare_futures_ohlcv(df_candles, bb_period=20, atr_period=14):
         (df["high"] - df["close"].shift()).abs(),
         (df["low"] - df["close"].shift()).abs(),
     ], axis=1).max(axis=1)
-    df["atr"] = tr.rolling(atr_period).mean()
+    # Wilder's Smoothing Method — आधी इथे साधी rolling mean होती (RSI मध्ये सापडलेल्याच bug चा प्रकार) —
+    # TradingView/जवळपास सर्व platforms Wilder's Smoothing वापरतात, ती calculate_supertrend मध्ये आधीच
+    # बरोबर होती, तीच पद्धत इथेही आणली — सुसंगततेसाठी आणि अचूकतेसाठी.
+    df["atr"] = tr.ewm(alpha=1 / atr_period, min_periods=atr_period, adjust=False).mean()
 
     if "volume" not in df.columns:
         df["volume"] = 0
