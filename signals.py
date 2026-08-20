@@ -4,10 +4,18 @@ import pandas as pd
 import plotly.graph_objects as go
 
 def calculate_rsi(df, period=14):
+    """
+    RSI — Wilder's Smoothing Method वापरून (TradingView, Upstox, आणि जवळपास सर्व trading platforms
+    हीच पद्धत वापरतात). आधी इथे साधी rolling mean (SMA) वापरली जायची — जी standard नाही, आणि प्रत्यक्ष
+    TradingView च्या RSI पेक्षा लक्षणीय वेगळी (कधीकधी 30+ पॉइंट्सने) येत होती. याच फाईलमधल्या ATR
+    calculation सारखीच ewm(alpha=1/period) पद्धत वापरली — सुसंगततेसाठी, आणि हीच खरी Wilder's पद्धत आहे.
+    """
     delta = df["close"].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period, min_periods=1).mean()
-    rs = gain / loss.replace(0, 1e-10)
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta.where(delta < 0, 0.0))
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, 1e-10)
     return 100 - (100 / (1 + rs))
 
 def calculate_supertrend(df, period=10, multiplier=3):
@@ -659,19 +667,20 @@ def is_displacement_candle(df, index, direction, body_atr_multiplier=1.5, atr_pe
 def compute_atr(df, period=14):
     """
     दिलेल्या OHLC डेटाच्या शेवटच्या bar साठी Average True Range (ATR) काढणे — Trailing SL साठी वापरला जातो.
+    Wilder's Smoothing Method वापरते (TradingView/जवळपास सर्व platforms हीच वापरतात) — आधी इथे फक्त
+    शेवटच्या period bars ची साधी सरासरी होती (RSI मध्ये सापडलेल्याच bug चा प्रकार), जी प्रत्यक्ष
+    TradingView च्या ATR पेक्षा वेगळी यायची — खऱ्या पैशाच्या Trailing SL वर याचा थेट परिणाम व्हायचा.
     पुरेसा डेटा (किमान period+1 bars) नसेल तर None परत करतो.
     """
     n = len(df)
     if n < period + 1:
         return None
-    tr_list = []
-    start = n - period
-    for i in range(start, n):
-        high, low = df["high"].iloc[i], df["low"].iloc[i]
-        prev_close = df["close"].iloc[i - 1] if i > 0 else df["open"].iloc[i]
-        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-        tr_list.append(tr)
-    return sum(tr_list) / len(tr_list)
+    high, low, close = df["high"], df["low"], df["close"]
+    prev_close = close.shift(1)
+    prev_close.iloc[0] = df["open"].iloc[0]  # आधीच्याच convention नुसार — पहिल्या bar साठी prev_close=open
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    atr_series = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    return float(atr_series.iloc[-1])
 
 
 def is_in_kill_zone(timestamp, avoid_first_minutes=15, avoid_last_minutes=15, market_open="09:15", market_close="15:30"):
