@@ -22,23 +22,26 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
-def compute_oi_signal_with_hysteresis(current_diff, delta_diff, prev_diff, prev_signal, hysteresis_threshold_pct=10):
+def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call_oi, prev_put_oi, prev_call_oi,
+                                        prev_diff, prev_signal, hysteresis_threshold_pct=10):
     """
-    OI Diff सिग्नल — प्रथम पातळी (level) + गती (momentum, delta_diff) वरून कच्चा (raw) सिग्नल ठरवणे, मग तो
-    मागच्या प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे — पण केवळ Diff (raw OI फरक, delta_diff
-    नाही) मागच्या Diff पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (delta_diff फक्त माहितीसाठी
-    दाखवला जातो, त्यावर हा buffer लागू होत नाही — छोट्या, noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं
-    (flip-flop) टाळण्यासाठी).
+    OI Diff सिग्नल — प्रथम दिशा (level, Diff चं चिन्ह) आणि Strong/Weak (Put/Call OI ची स्वतःची वाढ, मागच्या
+    10-मिनिट स्नॅपशॉटच्या तुलनेत — नुसता Diff मधला फरक नाही, तर खरा ताजा OI buildup झालाय की नाही) यावरून
+    कच्चा (raw) सिग्नल ठरवणे, मग तो मागच्या प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे —
+    पण केवळ Diff (raw OI फरक) मागच्या Diff पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (छोट्या,
+    noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी).
+
+    BULLISH (Diff धन): Total Put OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढला असेल तरच "Strong" — नाहीतर "Weakening"
+    (जरी Diff अजूनही धनच असला तरी, ताजा Put buildup होत नसेल तर तो कमकुवत मानला जातो).
+    BEARISH (Diff ऋण): तेच तत्त्व, पण Total Call OI च्या वाढीवरून.
     मागचा Diff बरोबर 0 असेल तर % काढताच येत नाही — त्यावेळी सुरक्षित बाजूने सिग्नल बदलला जात नाही.
     """
-    if current_diff > 0 and delta_diff > 0:
-        raw_signal = "🟢 BULLISH"
-    elif current_diff < 0 and delta_diff < 0:
-        raw_signal = "🔴 BEARISH"
-    elif current_diff > 0 and delta_diff <= 0:
-        raw_signal = "🟡 BULLISH (Weakening)"
-    elif current_diff < 0 and delta_diff >= 0:
-        raw_signal = "🟠 BEARISH (Weakening)"
+    if current_diff > 0:
+        put_growing = prev_put_oi is not None and current_put_oi > prev_put_oi
+        raw_signal = "🟢 BULLISH (Strong)" if put_growing else "🟡 BULLISH (Weakening)"
+    elif current_diff < 0:
+        call_growing = prev_call_oi is not None and current_call_oi > prev_call_oi
+        raw_signal = "🔴 BEARISH (Strong)" if call_growing else "🟠 BEARISH (Weakening)"
     else:
         raw_signal = "⚪ NEUTRAL"
 
