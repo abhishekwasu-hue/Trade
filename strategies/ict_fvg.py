@@ -34,6 +34,9 @@ class ICTFVGStrategy(StrategyBase):
         # FVG zone मध्ये price किती % आत शिरली पाहिजे entry trigger साठी
         self.fvg_entry_buffer_pct = self.config.get("fvg_entry_buffer_pct", 0.1)
         self.require_choch = self.config.get("require_choch", False)  # BOS पुरेसं की CHoCH पण हवं
+        # 🎓 नवीन गेट: FVG zone किती जुना (bars मध्ये) असेल तर अजूनही वैध मानायचा — खूप जुना (stale) FVG
+        # वर आता trading करणं संधी नसून जुना इतिहास असू शकतो
+        self.max_fvg_age_bars = self.config.get("max_fvg_age_bars", 20)
 
     def required_data(self):
         return ["futures_ohlcv", "structure_data"]
@@ -47,10 +50,23 @@ class ICTFVGStrategy(StrategyBase):
 
         last_close = ohlcv.iloc[-1]["close"]
 
-        # --- GATE 1: Liquidity sweep झाली का ---
-        swept = struct.get("swept_high", False) or struct.get("swept_low", False)
-        if not swept:
-            return self._no_signal("no liquidity sweep detected")
+        bos_direction = struct.get("bos_direction")
+        if bos_direction not in ("LONG", "SHORT"):
+            return self._no_signal("bos_direction unavailable")
+
+        # --- GATE 1 (दुरुस्त): Liquidity sweep ची दिशाच bos_direction शी जुळायला हवी — आधी फक्त
+        # "कुठलाही sweep झाला का" (swept_high OR swept_low) तपासलं जायचं, त्यामुळे विरुद्ध दिशेचा sweep
+        # (उदा. Bearish swept_high) चुकीने LONG entry ला support द्यायचा. आता: LONG साठी swept_low
+        # (bullish sweep) हवाच, SHORT साठी swept_high (bearish sweep) हवाच. ---
+        if bos_direction == "LONG":
+            sweep_aligned = struct.get("swept_low", False)
+        else:
+            sweep_aligned = struct.get("swept_high", False)
+        if not sweep_aligned:
+            return self._no_signal(
+                f"no liquidity sweep matching direction={bos_direction} "
+                f"(dir-specific sweep required — swept_low for LONG, swept_high for SHORT)"
+            )
 
         # --- GATE 2: BOS (आणि optionally CHoCH) confirmation ---
         bos_ok = struct.get("bos_confirmed", False)
@@ -60,16 +76,16 @@ class ICTFVGStrategy(StrategyBase):
         if not bos_ok and not choch_ok:
             return self._no_signal("neither BOS nor CHoCH confirmed after sweep")
 
-        bos_direction = struct.get("bos_direction")
-        if bos_direction not in ("LONG", "SHORT"):
-            return self._no_signal("bos_direction unavailable")
-
-        # --- GATE 3: FVG zone मध्ये price आली का ---
+        # --- GATE 3: FVG zone मध्ये price आली का, आणि 🎓 तो zone अजूनही ताजा (stale नाही) आहे का ---
+        current_idx = len(ohlcv) - 1
         fvg_zones = struct.get("fvg_zones", [])
         matching_zone = None
         for zone in fvg_zones:
             if zone["direction"] != bos_direction:
                 continue
+            zone_idx = zone.get("candle_idx")
+            if zone_idx is not None and (current_idx - zone_idx) > self.max_fvg_age_bars:
+                continue  # खूप जुना (stale) FVG — वगळणे
             lo, hi = min(zone["start"], zone["end"]), max(zone["start"], zone["end"])
             buffer = (hi - lo) * self.fvg_entry_buffer_pct
             if (lo - buffer) <= last_close <= (hi + buffer):
@@ -77,7 +93,7 @@ class ICTFVGStrategy(StrategyBase):
                 break
 
         if matching_zone is None:
-            return self._no_signal(f"price not in any matching FVG zone (dir={bos_direction})")
+            return self._no_signal(f"price not in any (fresh, <={self.max_fvg_age_bars} bars old) matching FVG zone (dir={bos_direction})")
 
         # --- सगळे gates pass ---
         direction = Direction.LONG if bos_direction == "LONG" else Direction.SHORT
