@@ -18,9 +18,13 @@ strategies:
     enabled: true
     weight: 1.2
     max_positions: 1
-    fvg_entry_buffer_pct: 0.1
+    fvg_entry_buffer_pct: 1.0   # ⚠️ आधी 0.1% होता -- NIFTY च्या ~15000 किमतीवर तो फक्त ~15 पॉइंट्सची सूट
+                                # द्यायचा, त्यामुळे 4 वर्षांत फक्त 11 सिग्नल्स यायचे. खऱ्या डेटावर तपासून
+                                # (0.1→1.0% ने 11→119 सिग्नल्स, win rate 30%→50%, P&L -1225→+12859 पॉइंट्स)
+                                # 1.0% हा उत्तम संतुलन सापडला.
     require_choch: false
     target_rr: 2.0
+    max_fvg_age_bars: 20   # 🎓 FVG zone यापेक्षा जुना असेल तर stale मानून वगळणे
 
   bb_squeeze:
     enabled: true
@@ -36,8 +40,13 @@ strategies:
     enabled: true
     weight: 1.0
     max_positions: 2
-    mode: "both"                 # reversion | trend | both
-    reversion_std_threshold: 2.0
-    trend_sustain_candles: 5
+    retracement_tolerance_pct: 0.1   # VWAP च्या किती % आत आलं की 'retracement झाली' मानायचं
+    extension_lookback: 10           # खरा trend तपासण्यासाठी गेल्या किती bars बघायचे
+    min_extension_pct: 0.15          # त्या lookback मध्ये किमान किती % VWAP पासून लांब गेलेलं हवं
+    sl_buffer_pct: 0.05              # SL साठी VWAP पासून किती % पलीकडे buffer
     target_rr: 1.5
-    sl_std_multiplier: 1.0
+    require_candlestick_confirmation: true   # 🎓 कडक गेट: reversal candlestick pattern हवाच
+    pattern_lookback: 3                      # candlestick pattern current + मागच्या किती bars मध्ये शोधायचा
+    require_rsi_filter: true                 # 🎓 कडक गेट: RSI आधीच खूप extended नसावा
+    rsi_long_max: 65                         # LONG साठी RSI याहून जास्त असेल तर entry नाही
+    rsi_short_min: 35                        # SHORT साठी RSI याहून कमी असेल तर entry नाही
