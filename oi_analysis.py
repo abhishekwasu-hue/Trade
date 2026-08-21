@@ -129,6 +129,74 @@ def check_oi_diff_entry_gate(direction, oi_signal):
     return False
 
 
+def classify_oi_price_action(current_oi, prev_oi, current_premium, prev_premium, oi_threshold_pct=2.0, premium_threshold_pct=1.0):
+    """
+    OI + Premium बदलावरून Writing(Selling)/Buying/Short-Covering/Long-Unwinding ठरवणे — standard
+    OI-Price Matrix (options trading मधली प्रचलित पद्धत):
+      OI ↑ + Premium ↓ -> Writing (नवीन विक्री/लेखन वाढतंय)
+      OI ↑ + Premium ↑ -> Buying (नवीन खरेदी वाढतंय)
+      OI ↓ + Premium ↑ -> Short Covering (आधीची विक्री मागे घेतायत)
+      OI ↓ + Premium ↓ -> Long Unwinding (आधीची खरेदी मागे घेतायत)
+    छोटे, noise-सदृश बदल टाळण्यासाठी दोन्हीकडे किमान threshold% लागतो — अन्यथा "स्थिर/अस्पष्ट".
+    """
+    if prev_oi is None or prev_oi == 0 or prev_premium is None or prev_premium == 0:
+        return "अपुरा डेटा"
+    oi_change_pct = (current_oi - prev_oi) / prev_oi * 100
+    premium_change_pct = (current_premium - prev_premium) / prev_premium * 100
+
+    oi_up = oi_change_pct >= oi_threshold_pct
+    oi_down = oi_change_pct <= -oi_threshold_pct
+    premium_up = premium_change_pct >= premium_threshold_pct
+    premium_down = premium_change_pct <= -premium_threshold_pct
+
+    if oi_up and premium_down:
+        return "Writing ↑ (नवीन विक्री वाढतेय)"
+    elif oi_up and premium_up:
+        return "Buying ↑ (नवीन खरेदी वाढतेय)"
+    elif oi_down and premium_up:
+        return "Short Covering (विक्री मागे घेतायत)"
+    elif oi_down and premium_down:
+        return "Long Unwinding (खरेदी मागे घेतायत)"
+    else:
+        return "स्थिर/अस्पष्ट"
+
+
+def generate_oi_price_signal(put_class, call_class):
+    """
+    Put आणि Call च्या OI-Price classification वरून एकत्रित, actionable संदेश तयार करणे — Put Writing
+    किंवा Call Short Covering (दोन्ही बुलिश) आणि Call Writing किंवा Put Short Covering (दोन्ही बेअरिश)
+    यांचा मेळ घालून दिशा ठरवणे. दोन्ही बाजूंनी विरोधाभासी संकेत आले तर "मिश्र", काहीच स्पष्ट नसेल तर "तटस्थ".
+    """
+    bullish_signals, bearish_signals = [], []
+
+    if "Writing" in put_class:
+        bullish_signals.append("Put Writing वाढतंय")
+    elif "Buying" in put_class:
+        bearish_signals.append("Put Buying वाढतंय")
+    elif "Short Covering" in put_class:
+        bearish_signals.append("Put Short Covering (आधार कमकुवत)")
+    elif "Long Unwinding" in put_class:
+        bullish_signals.append("Put Unwinding (bears मागे)")
+
+    if "Writing" in call_class:
+        bearish_signals.append("Call Writing वाढतंय")
+    elif "Buying" in call_class:
+        bullish_signals.append("Call Buying वाढतंय")
+    elif "Short Covering" in call_class:
+        bullish_signals.append("Call Short Covering (रोध कमकुवत)")
+    elif "Long Unwinding" in call_class:
+        bearish_signals.append("Call Unwinding (bulls मागे)")
+
+    if bullish_signals and not bearish_signals:
+        return "BULLISH", "🟢 " + " + ".join(bullish_signals) + " → Don't Short Call, Nifty is Bullish"
+    elif bearish_signals and not bullish_signals:
+        return "BEARISH", "🔴 " + " + ".join(bearish_signals) + " → Don't Long Put, Nifty is Bearish"
+    elif bullish_signals and bearish_signals:
+        return "MIXED", "🟡 संमिश्र संकेत — स्पष्ट दिशा नाही, सावध रहा"
+    else:
+        return "NEUTRAL", "⚪ कुठलीही स्पष्ट हालचाल नाही"
+
+
 def infer_direction_from_strategy(strategy_name):
     """स्ट्रॅटेजीच्या नावावरून तिची दिशा ठरवणे — Iron Condor/Butterfly साठी None (त्या non-directional असतात)."""
     if "BULL" in strategy_name:
