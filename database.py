@@ -86,6 +86,11 @@ def init_sqlite_db():
         cursor.execute("ALTER TABLE oi_diff_snapshots ADD COLUMN underlying_price REAL")
     except sqlite3.OperationalError:
         pass  # कॉलम आधीच अस्तित्वात आहे
+    for col_def in ["total_call_premium REAL", "total_put_premium REAL"]:
+        try:
+            cursor.execute(f"ALTER TABLE oi_diff_snapshots ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass  # कॉलम आधीच अस्तित्वात आहे
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS order_log (
