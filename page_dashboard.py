@@ -3,10 +3,7 @@ import datetime
 import re
 import time
 import uuid
-import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 
 from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today
@@ -22,7 +19,7 @@ from upstox_api import (
 )
 from signals import (
     calculate_rsi, calculate_supertrend, resample_to_1h, find_support_resistance_levels,
-    detect_trendline, check_trend_signal, add_price_action_overlays, describe_price_action,
+    detect_trendline, check_trend_signal,
     classify_market_structure, detect_break,
     classify_sideways, detect_pullback_retest,
     rsi_momentum_and_divergence, confirm_5m, supply_demand_zone, check_pattern_rsi_gate,
@@ -112,283 +109,23 @@ def render():
         df_candles["ema20"] = df_candles["close"].ewm(span=20, adjust=False).mean()
         df_candles["ema50"] = df_candles["close"].ewm(span=50, adjust=False).mean()
 
-        # व्हॉल्यूम बार्सचा रंग कँडल दिशेनुसार (rgba वापरलं, 8-digit hex plotly मध्ये चालत नाही)
-        vol_colors = np.where(
-            df_candles["close"] >= df_candles["open"],
-            "rgba(8,153,129,0.5)",
-            "rgba(242,54,69,0.5)",
-        )
-
-        fig = make_subplots(
-            rows=3, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.02,
-            row_heights=[0.62, 0.16, 0.22],
-            specs=[[{"secondary_y": False}], [{"secondary_y": False}], [{"secondary_y": False}]],
-        )
-
-        # १. मुख्य प्राईस ट्रेस — Candlestick किंवा Line (युजरच्या निवडीनुसार)
-        if chart_type == "Candlestick":
-            fig.add_trace(go.Candlestick(
-                x=df_candles["timestamp"],
-                open=df_candles["open"],
-                high=df_candles["high"],
-                low=df_candles["low"],
-                close=df_candles["close"],
-                name=symbol,
-                increasing_line_color="#089981",
-                decreasing_line_color="#F23645",
-                increasing_fillcolor="#089981",
-                decreasing_fillcolor="#F23645",
-                line_width=1,
-            ), row=1, col=1)
-        else:
-            fig.add_trace(go.Scatter(
-                x=df_candles["timestamp"],
-                y=df_candles["close"],
-                mode="lines",
-                name=symbol,
-                line=dict(color="#2962FF", width=1.8),
-                fill="tozeroy",
-                fillcolor="rgba(41,98,255,0.08)",
-            ), row=1, col=1)
-
-        # EMA रेषा
-        fig.add_trace(go.Scatter(
-            x=df_candles["timestamp"], y=df_candles["ema20"],
-            mode="lines", name="EMA 20",
-            line=dict(color="#2962FF", width=1.3),
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=df_candles["timestamp"], y=df_candles["ema50"],
-            mode="lines", name="EMA 50",
-            line=dict(color="#FF6D00", width=1.3),
-        ), row=1, col=1)
-
-        # शेवटच्या क्लोजची डॉटेड लाईन (TradingView प्राईस लाईन)
-        if not df_candles.empty:
-            last_close = df_candles["close"].iloc[-1]
-            last_color = "#089981" if last_close >= df_candles["open"].iloc[-1] else "#F23645"
-            fig.add_hline(
-                y=last_close, line_dash="dot", line_color=last_color, line_width=1,
-                row=1, col=1,
-                annotation_text=f"{last_close:,.2f}",
-                annotation_position="right",
-                annotation_font_color="#131722",
-                annotation_font_size=12,
-                annotation_bgcolor=last_color,
-            )
-
-        # २. व्हॉल्यूम (Row 2)
-        fig.add_trace(go.Bar(
-            x=df_candles["timestamp"],
-            y=df_candles["volume"],
-            name="Volume",
-            marker_color=vol_colors,
-            marker_line_width=0,
-        ), row=2, col=1)
-
-        # ३. RSI इंडिकेटर (Row 3)
-        fig.add_trace(go.Scatter(
-            x=df_candles["timestamp"],
-            y=df_candles["rsi"],
-            mode="lines",
-            name="RSI (14)",
-            line=dict(color="#7e57c2", width=1.6),
-        ), row=3, col=1)
-
-        # RSI ओव्हरबॉट/ओव्हरसोल्ड झोन शेडिंग + रेषा
-        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor="#F23645", opacity=0.06, row=3, col=1)
-        fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor="#089981", opacity=0.06, row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="rgba(242,54,69,0.5)", line_width=1, row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="rgba(8,153,129,0.5)", line_width=1, row=3, col=1)
-        fig.add_hline(y=50, line_dash="dot", line_color="#4b5563", line_width=1, row=3, col=1)
-        fig.update_yaxes(range=[0, 100], row=3, col=1)
-
-        # --- संपूर्ण TradingView-style लेआउट ---
-        fig.update_layout(
-            template="plotly_dark",
-            height=800,
-            xaxis_rangeslider_visible=False,
-            paper_bgcolor="#131722",
-            plot_bgcolor="#131722",
-            font=dict(family="Trebuchet MS, Arial, sans-serif", color="#d1d4dc", size=12),
-            margin=dict(l=10, r=60, t=70, b=10),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0,
-                bgcolor="rgba(0,0,0,0)", font=dict(size=11),
-            ),
-            dragmode="pan",
-            hovermode="x unified",
-            hoverlabel=dict(bgcolor="#1e222d", font_size=12, font_family="Trebuchet MS"),
-            uirevision="keep_zoom",
-            annotations=[dict(
-                text=f"{symbol} · {timeframe_option}",
-                xref="paper", yref="paper",
-                x=0.01, y=0.985, showarrow=False,
-                font=dict(size=26, color="#2a2e3d"),
-                xanchor="left",
-            )],
-        )
-
-        # --- TradingView स्टाईल OHLC रीडआउट (शेवटच्या कँडलचा O/H/L/C व % बदल, वर-डावीकडे) ---
-        if not df_candles.empty:
-            last_row = df_candles.iloc[-1]
-            prev_close = (
-                df_candles["close"].iloc[-2] if len(df_candles) > 1 else last_row["open"]
-            )
-            chg = last_row["close"] - prev_close
-            chg_pct = (chg / prev_close * 100) if prev_close else 0.0
-            ohlc_color = "#089981" if chg >= 0 else "#F23645"
-            ohlc_text = (
-                f"O <span style='color:#d1d4dc'>{last_row['open']:,.2f}</span>  "
-                f"H <span style='color:#d1d4dc'>{last_row['high']:,.2f}</span>  "
-                f"L <span style='color:#d1d4dc'>{last_row['low']:,.2f}</span>  "
-                f"C <span style='color:{ohlc_color}'>{last_row['close']:,.2f}</span>  "
-                f"<span style='color:{ohlc_color}'>{chg:+,.2f} ({chg_pct:+.2f}%)</span>"
-            )
-            fig.add_annotation(
-                text=ohlc_text,
-                xref="paper", yref="paper",
-                x=0.01, y=0.965, showarrow=False,
-                font=dict(size=13, color="#787b86", family="Trebuchet MS, Arial, sans-serif"),
-                xanchor="left", yanchor="top",
-                align="left",
-            )
-
-        # --- नॉन-ट्रेडिंग गॅप्स (वीकएंड + मार्केट बंद तास) अक्षातून काढणे ---
-        # हेच स्क्रोल/झूम अडखळण्याचं मुख्य कारण असतं — गॅप्समुळे कँडल्स एका कोपऱ्यात दाटतात
-        rangebreaks = [dict(bounds=["sat", "mon"])]  # शनिवार-रविवार वगळणे
-        if timeframe_option != "day":
-            # बाजार बंद तास वगळणे (संध्या. ३:३० नंतर ते सकाळी ९:१५ आधी)
-            rangebreaks.append(dict(bounds=[15.5, 9.25], pattern="hour"))
-
-        # क्रॉसहेअर + ग्रिड सर्व rows साठी
-        fig.update_xaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor="#1e222d",
-            zeroline=False,
-            rangeslider=dict(visible=False),
-            fixedrange=False,
-            showspikes=True,
-            spikemode="across",
-            spikesnap="cursor",
-            spikecolor="#758696",
-            spikethickness=1,
-            spikedash="solid",
-            rangebreaks=rangebreaks,
-        )
-
-        # --- TradingView स्टाईल क्विक-झूम बटणे (1D/5D/1M/... सर्वात वरच्या subplot वर) ---
-        if timeframe_option == "day":
-            selector_buttons = [
-                dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=3, label="3M", step="month", stepmode="backward"),
-                dict(count=6, label="6M", step="month", stepmode="backward"),
-                dict(count=1, label="YTD", step="year", stepmode="todate"),
-                dict(count=1, label="1Y", step="year", stepmode="backward"),
-                dict(step="all", label="All"),
-            ]
-        else:
-            selector_buttons = [
-                dict(count=1, label="1D", step="day", stepmode="backward"),
-                dict(count=5, label="5D", step="day", stepmode="backward"),
-                dict(count=1, label="1M", step="month", stepmode="backward"),
-                dict(count=3, label="3M", step="month", stepmode="backward"),
-                dict(count=6, label="6M", step="month", stepmode="backward"),
-                dict(step="all", label="All"),
-            ]
-
-        fig.update_xaxes(
-            row=1, col=1,
-            rangeselector=dict(
-                buttons=selector_buttons,
-                bgcolor="#1e222d",
-                activecolor="#2962FF",
-                bordercolor="#2a2e3d",
-                borderwidth=1,
-                font=dict(color="#d1d4dc", size=11),
-                x=0.99, xanchor="right",
-                y=1.09, yanchor="top",
-            ),
-        )
-        fig.update_yaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor="#1e222d",
-            side="right",
-            zeroline=False,
-            fixedrange=False,
-            showspikes=True,
-            spikemode="across",
-            spikesnap="cursor",
-            spikecolor="#758696",
-            spikethickness=1,
-            tickformat=",.2f",
-        )
-        # व्हॉल्यूम आणि RSI axes ना कमी दशांश स्थळे
-        fig.update_yaxes(tickformat=",.0f", row=2, col=1)
-        fig.update_yaxes(tickformat=",.0f", row=3, col=1)
-
-        # --- डीफॉल्ट झूम: सुरुवातीला अलीकडचेच candles दिसावेत (नाहीतर ९० दिवसांचा डेटा दाटीवाटीने दिसतो) ---
-        if not df_candles.empty:
-            visible_candles = {"1minute": 600, "15minute": 500, "30minute": 480, "day": 365}.get(timeframe_option, 120)
-            if len(df_candles) > visible_candles:
-                start_view = df_candles["timestamp"].iloc[-visible_candles]
-                end_view = df_candles["timestamp"].iloc[-1]
-                fig.update_xaxes(range=[start_view, end_view])
-
-        # X-axis फक्त सर्वात खालच्या subplot वर लेबल दाखवा
-        fig.update_xaxes(showticklabels=False, row=1, col=1)
-        fig.update_xaxes(showticklabels=False, row=2, col=1)
-        fig.update_xaxes(showticklabels=True, row=3, col=1)
-
-        # --- Price Action Overlays: Support/Resistance + Trendlines + Swing High/Low ---
-        # टाईमफ्रेम (sidebar मधून) बदलल्यास df_candles आपोआप बदलतो, त्यामुळे हे overlays दर वेळी
-        # त्याच नव्या टाईमफ्रेमच्या डेटावरून पुन्हा काढले जातात — वेगळी बटणं/कॅशिंग लागत नाही.
-        chart_sr_levels, chart_trendline_support, chart_trendline_resistance = add_price_action_overlays(
-            fig, df_candles, row=1, col=1
-        )
-
-        config = {
-            "scrollZoom": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-        }
-        st.plotly_chart(fig, width='stretch', config=config)
-
-        with st.expander("📖 Chart Description (Price Action)", expanded=False):
-            st.markdown(describe_price_action(chart_sr_levels, chart_trendline_support, chart_trendline_resistance))
-            st.caption(
-                "हिरवी टिंब-रेषा = Support, लाल टिंब-रेषा = Resistance (कंसात किती वेळा टेस्ट झाला ते). "
-                "कलर्ड सलग रेषा = Trendline (हिरवी=अजून कायम, लाल=तुटलेली). ▲/▼ मार्कर्स = Swing Low/High."
-            )
-
         # =========================================================
-        # ७.६ नवीन — खरा TradingView Chart (Lightweight Charts library, ऐच्छिक — प्रयोगिक)
-        # Plotly ऐवजी TradingView च्याच open-source library चा वापर — खरं candle-रेंडरिंग, आणि मूलभूत
-        # Drawing Tools (Trendline + Horizontal Line — fibonacci सारखे advanced tools नाहीत).
-        # ऐच्छिक ठेवलाय (डीफॉल्ट बंद) कारण हा नवीन component आहे — browser मध्ये प्रत्यक्ष तपासून बघा.
+        # ७.६ TradingView Chart (Lightweight Charts library) — खरं candle-रेंडरिंग, मूलभूत Drawing Tools
+        # (Trendline + Horizontal Line). जुना Plotly chart काढून, हाच आता एकमेव, डीफॉल्ट chart आहे.
         # =========================================================
-        show_tv_chart = st.checkbox(
-            "🆕 खरा TradingView Chart वापरून बघा (Drawing Tools सकट — प्रयोगिक, वरच्या chart ऐवजी नाही, सोबत)",
-            value=False,
+        rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
+        sr_for_tv = find_support_resistance_levels(df_candles) if not df_candles.empty else None
+        tv_html = build_lightweight_chart_html(
+            df_candles, symbol=symbol, timeframe_label=timeframe_option,
+            ema20_series=df_candles.get("ema20"), ema50_series=df_candles.get("ema50"),
+            rsi_series=rsi_for_tv, sr_levels=sr_for_tv, height=650,
         )
-        if show_tv_chart:
-            rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
-            sr_for_tv = find_support_resistance_levels(df_candles) if not df_candles.empty else None
-            tv_html = build_lightweight_chart_html(
-                df_candles, symbol=symbol, timeframe_label=timeframe_option,
-                ema20_series=df_candles.get("ema20"), ema50_series=df_candles.get("ema50"),
-                rsi_series=rsi_for_tv, sr_levels=sr_for_tv, height=650,
-            )
-            st.components.v1.html(tv_html, height=700, scrolling=False)
-            st.caption(
-                "⚠️ Drawing Tools ने काढलेल्या रेषा फक्त browser मध्येच राहतात (client-side) — auto-refresh किंवा "
-                "page reload झाल्यावर मिटतात, साठवल्या जात नाहीत. Fibonacci सारखे advanced tools यात नाहीत — "
-                "फक्त Trendline आणि Horizontal Line."
-            )
+        st.components.v1.html(tv_html, height=700, scrolling=False)
+        st.caption(
+            "⚠️ Drawing Tools ने काढलेल्या रेषा फक्त browser मध्येच राहतात (client-side) — auto-refresh किंवा "
+            "page reload झाल्यावर मिटतात, साठवल्या जात नाहीत. Fibonacci सारखे advanced tools यात नाहीत — "
+            "फक्त Trendline आणि Horizontal Line."
+        )
 
         # =========================================================
         # ७.५ DIRECTION ENGINE — Intraday/Swing style नुसार टाईमफ्रेम बदलणारे → BULLISH / BEARISH
