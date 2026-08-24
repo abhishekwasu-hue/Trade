@@ -14,9 +14,9 @@ import pandas as pd
 
 from strategies.base import MarketSnapshot
 from market_data_adapter import prepare_structure_data, apply_manual_sl_target
-from signals import calculate_supertrend
+from signals import calculate_supertrend, find_support_resistance_levels
 
-FUTURES_ONLY_STRATEGY_IDS = ("ict_fvg", "bb_squeeze", "vwap")
+FUTURES_ONLY_STRATEGY_IDS = ("ict_fvg", "bb_squeeze", "vwap", "sr_bounce")
 
 
 def _align_1h_direction(df_15m, df_1h):
@@ -33,6 +33,39 @@ def _align_1h_direction(df_15m, df_1h):
         primary_ts.sort_values("timestamp"), dir_lookup.sort_values("timestamp"), on="timestamp", direction="backward",
     )
     return aligned["st_dir"].map(lambda x: "LONG" if x == 1 else ("SHORT" if x == -1 else None))
+
+
+def _align_1h_sr_levels(df_15m, df_1h, min_touches=3, sr_lookback_1h_bars=100):
+    """
+    sr_bounce strategy साठी — 1H वर प्रत्येक बार ला (no-lookahead, फक्त त्या क्षणापर्यंतच्या 1H इतिहासावरून)
+    high-probability S/R levels काढून, प्रत्येक df_15m बार ला सर्वात अलीकडच्या 1H snapshot शी जोडणे.
+    कामगिरीसाठी (performance) — प्रत्येक 1H बार ला संपूर्ण इतिहास न वापरता, फक्त अलीकडचे
+    sr_lookback_1h_bars इतकेच bars वापरले जातात (ict_fvg च्याच आधीच्या performance-धड्याप्रमाणे).
+    """
+    if df_1h is None or df_1h.empty:
+        return [None] * len(df_15m)
+
+    n1h = len(df_1h)
+    sr_at_1h = []  # प्रत्येक 1H बार साठी (timestamp, sr_dict)
+    for i in range(n1h):
+        win_start = max(0, i + 1 - sr_lookback_1h_bars)
+        window = df_1h.iloc[win_start:i + 1]
+        if len(window) < 10:
+            sr_at_1h.append((df_1h["timestamp"].iloc[i], None))
+            continue
+        sr = find_support_resistance_levels(window, top_n=3)
+        filtered = {
+            "support": [s for s in sr["support"] if s["touches"] >= min_touches],
+            "resistance": [r for r in sr["resistance"] if r["touches"] >= min_touches],
+        }
+        sr_at_1h.append((df_1h["timestamp"].iloc[i], filtered))
+
+    sr_lookup_df = pd.DataFrame({"timestamp": [t for t, _ in sr_at_1h], "idx": range(len(sr_at_1h))})
+    primary_ts = pd.DataFrame({"timestamp": df_15m["timestamp"].values})
+    aligned = pd.merge_asof(
+        primary_ts.sort_values("timestamp"), sr_lookup_df.sort_values("timestamp"), on="timestamp", direction="backward",
+    )
+    return [sr_at_1h[int(idx)][1] if pd.notna(idx) else None for idx in aligned["idx"]]
 
 
 def run_strategy_backtest(df_prepared, strategy_obj, df_1h=None, min_lookback=30, max_hold_bars=50,
@@ -61,6 +94,7 @@ def run_strategy_backtest(df_prepared, strategy_obj, df_1h=None, min_lookback=30
     eod_cutoff_time = datetime.time(eod_hour, eod_minute)
     needs_structure = strategy_obj.strategy_id == "ict_fvg"
     needs_1h_direction = strategy_obj.strategy_id == "vwap" and df_1h is not None and not df_1h.empty
+    needs_1h_sr = strategy_obj.strategy_id == "sr_bounce" and df_1h is not None and not df_1h.empty
     apply_manual_levels = sl_points is not None and target_points is not None
 
     # कामगिरीसाठी (performance) — संपूर्ण वाढणारा इतिहास प्रत्येक bar ला prepare_structure_data/check_gates
@@ -70,6 +104,7 @@ def run_strategy_backtest(df_prepared, strategy_obj, df_1h=None, min_lookback=30
     MAX_LOOKBACK_BARS = 150
 
     direction_1h_series = _align_1h_direction(df_prepared, df_1h) if needs_1h_direction else None
+    sr_1h_list = _align_1h_sr_levels(df_prepared, df_1h, min_touches=strategy_obj.config.get("min_touches", 3)) if needs_1h_sr else None
 
     for i in range(min_lookback, n - 1):
         win_start = max(0, i + 1 - MAX_LOOKBACK_BARS)
@@ -79,6 +114,8 @@ def run_strategy_backtest(df_prepared, strategy_obj, df_1h=None, min_lookback=30
         extra = {}
         if needs_1h_direction:
             extra["trend_direction_1h"] = direction_1h_series.iloc[i]
+        if needs_1h_sr:
+            extra["sr_levels_1h"] = sr_1h_list[i]
 
         snapshot = MarketSnapshot(
             timestamp=window["timestamp"].iloc[-1],

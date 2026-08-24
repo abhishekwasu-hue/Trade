@@ -50,3 +50,13 @@ strategies:
     require_rsi_filter: true                 # 🎓 कडक गेट: RSI आधीच खूप extended नसावा
     rsi_long_max: 65                         # LONG साठी RSI याहून जास्त असेल तर entry नाही
     rsi_short_min: 35                        # SHORT साठी RSI याहून कमी असेल तर entry नाही
+
+  sr_bounce:
+    enabled: true
+    weight: 1.0
+    max_positions: 2
+    min_touches: 3              # 🎓 फक्त high-probability levels (किमान इतके touches) वापरायचे
+    retest_tolerance_pct: 0.15  # level च्या किती % आत आलं की 'retest झाली' मानायचं
+    pattern_lookback: 3         # candlestick pattern current + मागच्या किती bars मध्ये शोधायचा
+    sl_pct: 0.25                 # 🎓 SL — entry (index) किमतीच्या सरळ 0.25% वर (NIFTY ~24000 वर ~60 पॉइंट्स)
+    target_rr: 2.0              # पुढचा S/R level उपलब्ध नसेल तर किमान Risk:Reward

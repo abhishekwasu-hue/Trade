@@ -111,15 +111,23 @@ def render():
             use_stored_data = "साठवलेला" in data_source
             use_yfinance = "Yahoo" in data_source
             if use_stored_data:
-                st.caption(
-                    "✅ हा तुम्ही दिलेला खरा NIFTY50 डेटा आहे (2015-01-09 ते 2024-03-27, 1-मिनिट मूळ granularity) "
-                    "— यापुढे सर्व backtest डीफॉल्ट याच डेटावर चालतात, कुठलाही synthetic/random डेटा नाही. "
-                    "⚠️ या डेटासेटमध्ये खरा Volume नाही — VWAP साधी सरासरी (TWAP सारखी) बनते, bb_squeeze चा "
-                    "volume gate अर्थहीन ठरतो."
-                )
+                if bt_interval == "day":
+                    st.caption(
+                        "✅ हा तुम्ही दिलेला खरा NIFTY50 डेटा आहे — दैनिक (Swing) साठी **2015-01-09 ते 2026-08-20** "
+                        "(1-मिनिट भाग 2024-03-27 पर्यंत + खरा दैनिक extension त्यापुढे, खऱ्या Volume सकट) — "
+                        "यापुढे सर्व backtest डीफॉल्ट याच डेटावर चालतात, कुठलाही synthetic/random डेटा नाही."
+                    )
+                    dataset_max_date = datetime.date(2026, 8, 20)
+                else:
+                    st.caption(
+                        "✅ हा तुम्ही दिलेला खरा NIFTY50 डेटा आहे (2015-01-09 ते 2024-03-27, 1-मिनिट मूळ granularity) "
+                        "— यापुढे सर्व backtest डीफॉल्ट याच डेटावर चालतात, कुठलाही synthetic/random डेटा नाही. "
+                        "⚠️ या डेटासेटमध्ये खरा Volume नाही — VWAP साधी सरासरी (TWAP सारखी) बनते, bb_squeeze चा "
+                        "volume gate अर्थहीन ठरतो."
+                    )
+                    dataset_max_date = datetime.date(2024, 3, 27)
                 effective_max_days = 3650  # पूर्ण साठवलेला range वापरता यावा म्हणून व्यावहारिक उच्च मर्यादा
                 dataset_min_date = datetime.date(2015, 1, 9)
-                dataset_max_date = datetime.date(2024, 3, 27)
             else:
                 effective_max_days = get_yfinance_max_days(bt_interval) if use_yfinance else bt_max_days
                 dataset_min_date = None
@@ -421,6 +429,8 @@ def render():
         "oi_pcr इथे चालत नाही — तिला ऐतिहासिक प्रत्येक-क्षणाचा Option OI इतिहास लागतो, जो साठवलेला नाही."
     )
     ms_symbol = st.session_state.get("symbol", "NIFTY")
+    ms_style = st.radio("Trading Style", ["Intraday (15M, EOD square-off)", "Swing (Daily, EOD नाही — SL/Target लागेपर्यंत उघडं)"], key="ms_bt_style")
+    ms_is_intraday = "Intraday" in ms_style
     ms_data_source = st.radio(
         "डेटा स्रोत",
         ["📦 खरा साठवलेला डेटा (2015-2024, स्थानिक — शिफारस केलेली)",
@@ -430,11 +440,18 @@ def render():
     ms_use_stored_data = "साठवलेला" in ms_data_source
     ms_use_yfinance = "Yahoo" in ms_data_source
     if ms_use_stored_data:
-        st.caption(
-            "✅ खरा NIFTY50 डेटा (2015-01-09 ते 2024-03-27) — synthetic नाही. ⚠️ यात खरा Volume नाही, "
-            "त्यामुळे vwap साधी सरासरी बनते, bb_squeeze चा volume gate अर्थहीन ठरतो."
-        )
-        ms_min_date, ms_max_date = datetime.date(2015, 1, 9), datetime.date(2024, 3, 27)
+        if ms_is_intraday:
+            st.caption(
+                "✅ खरा NIFTY50 डेटा (2015-01-09 ते 2024-03-27, 1-मिनिट) — synthetic नाही. ⚠️ यात खरा Volume "
+                "नाही, त्यामुळे vwap साधी सरासरी बनते, bb_squeeze चा volume gate अर्थहीन ठरतो."
+            )
+            ms_min_date, ms_max_date = datetime.date(2015, 1, 9), datetime.date(2024, 3, 27)
+        else:
+            st.caption(
+                "✅ खरा NIFTY50 दैनिक डेटा — **2015-01-09 ते 2026-08-20** (1-मिनिट भाग 2024-03-27 पर्यंत + खरा "
+                "दैनिक extension त्यापुढे, खऱ्या Volume सकट) — synthetic नाही."
+            )
+            ms_min_date, ms_max_date = datetime.date(2015, 1, 9), datetime.date(2026, 8, 20)
     else:
         ms_min_date, ms_max_date = None, get_ist_today()
     ms_from = st.date_input(
@@ -443,9 +460,6 @@ def render():
     )
     ms_to = st.date_input("पर्यंत तारीख", value=ms_max_date, min_value=ms_min_date, max_value=ms_max_date, key="ms_bt_to")
     ms_strategy_choice = st.selectbox("कोणती रणनीती?", ["vwap", "bb_squeeze", "ict_fvg"], key="ms_bt_strategy")
-
-    ms_style = st.radio("Trading Style", ["Intraday (15M, EOD square-off)", "Swing (Daily, EOD नाही — SL/Target लागेपर्यंत उघडं)"], key="ms_bt_style")
-    ms_is_intraday = "Intraday" in ms_style
 
     st.markdown("##### 🎯 SL/Target स्वतः ठरवा (पॉइंट्स — Strategy च्या स्वतःच्या auto गणनेऐवजी)")
     ms_default_sl_target = {"vwap": (25, 40), "bb_squeeze": (40, 80), "ict_fvg": (30, 60)}
