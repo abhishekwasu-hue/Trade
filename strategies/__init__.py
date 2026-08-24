@@ -13,16 +13,18 @@ from .oi_pcr import OIPCRStrategy
 from .ict_fvg import ICTFVGStrategy
 from .bb_squeeze import BBSqueezeStrategy
 from .vwap import VWAPStrategy
+from .sr_bounce import SRBounceStrategy
 
 STRATEGY_REGISTRY = {
     OIPCRStrategy.strategy_id: OIPCRStrategy,
     ICTFVGStrategy.strategy_id: ICTFVGStrategy,
     BBSqueezeStrategy.strategy_id: BBSqueezeStrategy,
     VWAPStrategy.strategy_id: VWAPStrategy,
+    SRBounceStrategy.strategy_id: SRBounceStrategy,
 }
 
 __all__ = [
     "StrategyBase", "SignalResult", "MarketSnapshot", "Direction", "InstrumentType",
-    "OIPCRStrategy", "ICTFVGStrategy", "BBSqueezeStrategy", "VWAPStrategy",
+    "OIPCRStrategy", "ICTFVGStrategy", "BBSqueezeStrategy", "VWAPStrategy", "SRBounceStrategy",
     "STRATEGY_REGISTRY",
 ]
