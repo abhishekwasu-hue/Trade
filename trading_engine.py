@@ -74,8 +74,10 @@ def normalize_legs(strategy_result):
          "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL"},
     ]
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY"):
-    """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे."""
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None):
+    """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
+    sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
+    net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम)."""
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 
@@ -95,7 +97,11 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     order_ids = resp.get("data", {}).get("order_ids", [])
     max_loss_total = strategy_result["max_loss"] * lot_size
     max_profit_total = strategy_result["max_profit"] * lot_size
-    sl_pnl_level = -(max_loss_total * (sl_pct_of_max_loss / 100.0))
+    net_credit_total = strategy_result["net_credit"] * lot_size
+    if sl_pct_of_credit is not None:
+        sl_pnl_level = -(net_credit_total * (sl_pct_of_credit / 100.0))
+    else:
+        sl_pnl_level = -(max_loss_total * (sl_pct_of_max_loss / 100.0))
     target_pnl_level = max_profit_total * (target_pct_of_max_profit / 100.0)
     strikes_summary = " · ".join(f"{leg['role']}:{leg['strike']:.0f}" for leg in legs)
 
@@ -211,9 +217,22 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             if new_peak_pnl != peak_pnl:
                 cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
+        # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३ वाजता तपासतो: नफा >=Target
+        # (net_credit च्या 30%) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करणे), नाहीतर बंद करणे.
+        is_new_rule_trade = strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
+        past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 0)
+
         exit_reason = None
         if effective_sl_level is not None and current_pnl <= effective_sl_level:
             exit_reason = "TRAILING_SL" if (trailing_sl_enabled and effective_sl_level != sl_level) else "SL"
+        elif is_new_rule_trade:
+            if past_carry_forward_check_time:
+                if target_level is not None and current_pnl >= target_level:
+                    pass  # नफा पुरेसा (>=30% credit) -- पुढच्या दिवशी चालू ठेवणे, बंद करायचं नाही
+                else:
+                    exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+            # 3pm च्या आधी -- SL शिवाय काहीही तपासायचं नाही, Target लगेच बंद करत नाही
         elif target_level is not None and current_pnl >= target_level:
             exit_reason = "TARGET"
         elif trade_style == "INTRADAY" and past_eod_cutoff:

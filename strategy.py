@@ -180,6 +180,52 @@ def select_credit_spread(raw_chain, direction, hedge_width_points, pop_threshold
         "short_pop_pct": round(short_leg["pop"] * 100, 1),
     }
 
+def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes_otm=2, hedge_width_points=100, step=50):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून ठरवलेली पद्धत — Price Action/Indicator strategies साठी, PoP-आधारित
+    शोधाऐवजी निश्चित (fixed) strike selection: ATM पासून strikes_otm (डीफॉल्ट 2) strikes OTM Short leg,
+    तिथून hedge_width_points (डीफॉल्ट 100) पॉइंट्स आणखी दूर Hedge (Long) leg.
+    BULLISH -> Bull Put Spread, BEARISH -> Bear Call Spread. max_profit==net_credit असतो (साध्या
+    2-leg credit spread साठी नेहमीच खरं) — त्यामुळे target_pct_of_max_profit=30 दिल्यास आपोआप "30%
+    of credit" हेच होतं, वेगळी गणना लागत नाही.
+    """
+    if direction not in ("BULLISH", "BEARISH"):
+        return None
+    side = "put_options" if direction == "BULLISH" else "call_options"
+    if direction == "BULLISH":
+        short_strike = atm_strike - strikes_otm * step
+        long_strike = short_strike - hedge_width_points
+    else:
+        short_strike = atm_strike + strikes_otm * step
+        long_strike = short_strike + hedge_width_points
+
+    def find_leg(strike):
+        for item in raw_chain:
+            if item.get("strike_price") == strike:
+                opt = item.get(side, {}) or {}
+                ltp = (opt.get("market_data", {}) or {}).get("ltp")
+                instrument_key = opt.get("instrument_key")
+                greeks = opt.get("option_greeks", {}) or {}
+                pop = greeks.get("pop")
+                if ltp and instrument_key and ltp > 0:
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop}
+        return None
+
+    short_leg, long_leg = find_leg(short_strike), find_leg(long_strike)
+    if short_leg is None or long_leg is None:
+        return None
+    net_credit = short_leg["ltp"] - long_leg["ltp"]
+    if net_credit <= 0:
+        return None
+    return {
+        "strategy": "BULL_PUT_SPREAD" if direction == "BULLISH" else "BEAR_CALL_SPREAD",
+        "short_leg": short_leg, "long_leg": long_leg,
+        "net_credit": round(net_credit, 2), "spread_width": hedge_width_points,
+        "max_profit": round(net_credit, 2), "max_loss": round(hedge_width_points - net_credit, 2),
+        "short_pop_pct": round(short_leg["pop"] * 100, 1) if short_leg["pop"] else None,
+    }
+
+
 def compute_position_size(available_margin, risk_pct, max_loss_per_unit, lot_size):
     """उपलब्ध मार्जिन × रिस्क% वरून लॉट्सची संख्या ठरवणे."""
     if not available_margin or max_loss_per_unit <= 0 or lot_size <= 0:

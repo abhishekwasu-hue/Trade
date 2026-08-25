@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 
-from database import get_live_positions_with_mtm
+from database import get_live_positions_with_mtm, compute_portfolio_risk_summary
 from trading_engine import close_trade_manually
 
 
@@ -18,6 +18,23 @@ def render():
     if positions_df.empty:
         st.info("सद्य कोणतीही उघडी पोझिशन नाही.")
     else:
+        # 🎓 Portfolio-level Risk Dashboard — सर्व उघड्या positions एकत्र घेऊन, एकूण जोखीम आणि
+        # दिशा-केंद्रीकरण (सर्व एकाच दिशेने असतील तर correlated risk जास्त) दाखवणे.
+        risk_summary = compute_portfolio_risk_summary(positions_df)
+        st.markdown("##### 🎯 Portfolio Risk Summary")
+        rcol1, rcol2, rcol3, rcol4 = st.columns(4)
+        with rcol1:
+            st.metric("एकूण Positions", risk_summary["total_positions"])
+        with rcol2:
+            st.metric("एकूण जोखीम (worst-case)", f"₹{risk_summary['total_max_loss']:,.0f}")
+        with rcol3:
+            st.metric("एकूण जमा Credit", f"₹{risk_summary['total_net_credit']:,.0f}")
+        with rcol4:
+            st.metric("दिशा", f"🟢{risk_summary['bullish_count']} 🔴{risk_summary['bearish_count']} ⚪{risk_summary['neutral_count']}")
+        if risk_summary["concentration_warning"]:
+            st.warning(risk_summary["concentration_warning"])
+        st.markdown("---")
+
         total_mtm = positions_df["MTM (Rs)"].dropna().sum()
         pcol1, pcol2, pcol3 = st.columns(3)
         with pcol1:

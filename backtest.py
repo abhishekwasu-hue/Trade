@@ -258,11 +258,27 @@ def run_signal_backtest_rr(df, structure_order=3, lookback_swings=4, tolerance_p
     }
 
 
+def apply_slippage(price, direction, action, slippage_pct=0.05):
+    """
+    🎓 Slippage Modeling — वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (backtest आर्थिक वास्तवता).
+    Slippage नेहमी व्यापाऱ्याच्याच विरोधात काम करतो (bid-ask spread + market impact):
+      - BULLISH Entry (विकत घेणे) / BEARISH Exit (विकत घेणे परत) -> थोडं जास्त द्यावं लागतं
+      - BULLISH Exit (विकणे) / BEARISH Entry (विकणे) -> थोडं कमी मिळतं
+    slippage_pct=0 (डीफॉल्ट) दिल्यास कुठलाही बदल नाही — पूर्णपणे backward-compatible, जुने backtest
+    निकाल याच फंक्शनने बदलत नाहीत जोपर्यंत स्पष्टपणे slippage_pct>0 दिला जात नाही.
+    """
+    if slippage_pct == 0:
+        return price
+    factor = slippage_pct / 100
+    is_buy = (direction == "BULLISH" and action == "ENTRY") or (direction == "BEARISH" and action == "EXIT")
+    return price * (1 + factor) if is_buy else price * (1 - factor)
+
+
 def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5, rr_ratio=2.0,
                              min_lookback=30, max_bars=None, max_hold_bars=50,
                              sr_window=20, rsi_oversold=30, rsi_overbought=70,
                              sl_buffer_pct=0.1, min_rr=2.0, retest_tolerance_pct=0.15, reversal_lookback=3,
-                             is_intraday=True, eod_hour=15, eod_minute=15):
+                             is_intraday=True, eod_hour=15, eod_minute=15, slippage_pct=0):
     """
     नवीन Signal Engine (V2) — दोन स्वतंत्र, संपूर्ण रणनीती (दिशा दोन्हीसाठी 1H Supertrend वरून,
     no-lookahead merge_asof ने अलाइन केलेली):
@@ -323,6 +339,7 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
         funnel["entry_passed"] += 1
 
         entry_price = float(window["close"].iloc[-1])
+        entry_price = apply_slippage(entry_price, direction, "ENTRY", slippage_pct)
         entry_time = window["timestamp"].iloc[-1]
         if direction == "BULLISH":
             sl_price = entry_price * (1 - sl_pct / 100)
@@ -364,6 +381,8 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
                     outcome, exit_price, exit_bars = "EOD", float(df["close"].iloc[j]), j - i
                     break
 
+        if exit_price is not None:
+            exit_price = apply_slippage(exit_price, direction, "EXIT", slippage_pct)
 
         # P&L पॉइंट्स मध्ये (index अंतर) — दिशेनुसार समायोजित; exit_price नसेल (खरंच अजून OPEN) तर None
         if exit_price is not None:

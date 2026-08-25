@@ -300,13 +300,53 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
                 mtm = round((net_credit - cost_to_close_now) * lots * lot_size, 2)
                 if max_loss:
                     mtm_pct = round((mtm / (max_loss)) * 100, 1) if mtm < 0 else round((mtm / max_profit) * 100, 1) if max_profit else None
+        # 🎓 Portfolio-level Risk Dashboard साठी — max_loss/net_credit/Direction आधीच query मध्ये
+        # fetch होत होते, पण output मध्ये नव्हते. जोडलं (backward-compatible, फक्त नवीन columns).
+        direction = "BULLISH" if strategy == "BULL_PUT_SPREAD" else ("BEARISH" if strategy == "BEAR_CALL_SPREAD" else "NEUTRAL")
         records.append({
             "Trade ID": trade_id, "Mode": mode or "LIVE", "Style": style or "INTRADAY",
-            "Strategy": strategy, "Legs": strikes_summary, "Lots": lots,
+            "Strategy": strategy, "Direction": direction, "Legs": strikes_summary, "Lots": lots,
             "Entry Time": entry_time, "MTM (Rs)": mtm, "MTM (%)": mtm_pct,
+            "Max Loss (Rs)": round(max_loss * lots * lot_size, 2) if max_loss else None,
+            "Net Credit (Rs)": round(net_credit * lots * lot_size, 2) if net_credit else None,
             "Peak P&L (Rs)": round(peak_pnl, 2) if peak_pnl is not None else None,
         })
     return pd.DataFrame(records)
+
+
+def compute_portfolio_risk_summary(positions_df):
+    """
+    सर्व उघड्या positions एकत्र घेऊन — एकूण जोखीम (worst-case), दिशा-केंद्रीकरण (सर्व एकाच दिशेने असतील
+    तर एकत्रित जोखीम जास्त), आणि एकूण collected credit काढणे. Portfolio Risk Dashboard साठी.
+    """
+    if positions_df is None or positions_df.empty:
+        return {"total_positions": 0, "total_max_loss": 0, "total_net_credit": 0, "total_mtm": 0,
+                "bullish_count": 0, "bearish_count": 0, "neutral_count": 0, "concentration_warning": None}
+
+    total_max_loss = positions_df["Max Loss (Rs)"].dropna().sum() if "Max Loss (Rs)" in positions_df else 0
+    total_net_credit = positions_df["Net Credit (Rs)"].dropna().sum() if "Net Credit (Rs)" in positions_df else 0
+    total_mtm = positions_df["MTM (Rs)"].dropna().sum()
+
+    direction_counts = positions_df["Direction"].value_counts().to_dict() if "Direction" in positions_df else {}
+    bullish_count = direction_counts.get("BULLISH", 0)
+    bearish_count = direction_counts.get("BEARISH", 0)
+    neutral_count = direction_counts.get("NEUTRAL", 0)
+    total_directional = bullish_count + bearish_count
+
+    concentration_warning = None
+    if total_directional >= 2 and (bullish_count == total_directional or bearish_count == total_directional):
+        one_sided = "BULLISH" if bullish_count == total_directional else "BEARISH"
+        concentration_warning = (
+            f"⚠️ सर्व {total_directional} दिशात्मक positions {one_sided} आहेत — एकाच मोठ्या उलट हालचालीने "
+            f"सर्व एकत्र तोट्यात जाऊ शकतात (correlated risk, विविधता नाही)."
+        )
+
+    return {
+        "total_positions": len(positions_df), "total_max_loss": round(total_max_loss, 2),
+        "total_net_credit": round(total_net_credit, 2), "total_mtm": round(total_mtm, 2),
+        "bullish_count": bullish_count, "bearish_count": bearish_count, "neutral_count": neutral_count,
+        "concentration_warning": concentration_warning,
+    }
 
 def get_performance_summary(symbol, mode_filter=None, style_filter=None):
     """

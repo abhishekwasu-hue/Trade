@@ -30,8 +30,27 @@ st.markdown(
     <style>
     .stApp { background-color: #131722; color: #d1d4dc; }
     .stMetric { background-color: #1e222d; padding: 12px; border-radius: 6px; border: 1px solid #2a2e3d; }
-    dataframe, table, th, td { font-size: 16px !important; }
-    .stDataFrame { font-size: 16px !important; }
+    dataframe, table, th, td { font-size: 15px !important; }
+    .stDataFrame { font-size: 15px !important; }
+
+    /* 🎓 डिझाईन सुधारणा — Tab फॉन्ट मोठा व ठळक, एकसंध typography, कमी दृश्य गोंधळ */
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #2a2e3d; }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px !important; font-weight: 600 !important; padding: 10px 18px !important;
+        color: #9598a1 !important;
+    }
+    .stTabs [aria-selected="true"] { color: #d1d4dc !important; border-bottom: 2px solid #2962ff !important; }
+
+    /* Headers/subheaders - एकसंध scale, आधी विसंगत होते */
+    h1 { font-size: 26px !important; font-weight: 700 !important; }
+    h2, .stApp [data-testid="stHeader"] { font-size: 21px !important; font-weight: 650 !important; }
+    h3 { font-size: 18px !important; font-weight: 600 !important; }
+
+    /* Caption - छोटा, फिकट, जागा कमी घेणारा (जेणेकरून मुख्य डेटावर लक्ष केंद्रित राहील) */
+    .stCaption, [data-testid="stCaptionContainer"] { font-size: 12.5px !important; color: #7a7f8a !important; line-height: 1.4 !important; }
+
+    /* Sidebar labels - थोडे मोठे, वाचनीय */
+    section[data-testid="stSidebar"] label { font-size: 14px !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -100,6 +119,18 @@ from shared_context import setup_shared_context
 
 context_ok = setup_shared_context()
 
+# 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
+# काम करण्यासाठी), आणि "शेवटचं कधी रिफ्रेश झालं" हे साईडबारमध्ये दिसतं — जेणेकरून प्रत्यक्ष काम
+# करतंय की नाही ते लगेच पडताळता येईल (आधी कुठलाही दृश्य संकेतच नव्हता).
+auto_refresh = st.session_state.get("auto_refresh", False)
+if auto_refresh:
+    if st_autorefresh is not None:
+        st_autorefresh(interval=300000, key="dashboard_autorefresh")  # 300000ms = 5 मिनिटं
+    else:
+        st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
+    from config import get_ist_now
+    st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर ५ मिनिटांनी आपोआप)")
+
 if context_ok:
     import page_dashboard
     import page_positions
@@ -121,14 +152,3 @@ else:
         st.info("⬅️ सुरू करण्यासाठी साईडबारमध्ये तुमचा Upstox Access Token टाका.")
     else:
         st.error(f"❌ Upstox API Error: {status_msg}")
-
-auto_refresh = st.session_state.get("auto_refresh", False)
-if auto_refresh:
-    # आधी इथे time.sleep(300) + st.rerun() होतं — हे संपूर्ण script ५ मिनिटं गोठवून ठेवायचं, जे
-    # Streamlit Cloud वर विश्वासार्ह नाही (session/connection च्या वागण्यानुसार, खरं अंतर कधीकधी
-    # अपेक्षेपेक्षा जास्त — उदा. वापरकर्त्याने पाहिलेलं: दर ५ ऐवजी दर २० मिनिटांनी snapshot). आता
-    # streamlit-autorefresh वापरतो — client-side JS timer, जास्त विश्वासार्ह, script गोठवत नाही.
-    if st_autorefresh is not None:
-        st_autorefresh(interval=300000, key="dashboard_autorefresh")  # 300000ms = 5 मिनिटं
-    else:
-        st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")

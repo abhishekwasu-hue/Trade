@@ -1,0 +1,3 @@
+# फक्त विकासासाठी (development) — Streamlit Cloud वर production ला ही फाईल लागत नाही.
+# चालवण्यासाठी: pip install -r requirements-dev.txt && pytest tests/ -v
+pytest>=7.4

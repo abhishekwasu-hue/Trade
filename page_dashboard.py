@@ -8,6 +8,7 @@ import streamlit as st
 
 from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today
 from tradingview_chart import build_lightweight_chart_html
+from sr_dynamic import compute_dynamic_sr
 import sqlite3
 from database import (
     log_orders_batch, get_todays_realized_pnl,
@@ -25,7 +26,7 @@ from signals import (
     rsi_momentum_and_divergence, confirm_5m, supply_demand_zone, check_pattern_rsi_gate,
     check_price_action_strategy, check_indicator_strategy,
 )
-from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, compute_position_size
+from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, select_credit_spread_fixed_strikes, compute_position_size
 from oi_analysis import (
     get_latest_oi_signal, check_oi_diff_entry_gate,
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
@@ -114,18 +115,17 @@ def render():
         # (Trendline + Horizontal Line). जुना Plotly chart काढून, हाच आता एकमेव, डीफॉल्ट chart आहे.
         # =========================================================
         rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
-        sr_for_tv = find_support_resistance_levels(df_candles) if not df_candles.empty else None
+        # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
+        # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
+        # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
+        sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
         tv_html = build_lightweight_chart_html(
             df_candles, symbol=symbol, timeframe_label=timeframe_option,
             ema20_series=df_candles.get("ema20"), ema50_series=df_candles.get("ema50"),
             rsi_series=rsi_for_tv, sr_levels=sr_for_tv, height=650,
         )
         st.components.v1.html(tv_html, height=700, scrolling=False)
-        st.caption(
-            "⚠️ Drawing Tools ने काढलेल्या रेषा फक्त browser मध्येच राहतात (client-side) — auto-refresh किंवा "
-            "page reload झाल्यावर मिटतात, साठवल्या जात नाहीत. Fibonacci सारखे advanced tools यात नाहीत — "
-            "फक्त Trendline आणि Horizontal Line."
-        )
+        st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
 
         # =========================================================
         # ७.५ DIRECTION ENGINE — Intraday/Swing style नुसार टाईमफ्रेम बदलणारे → BULLISH / BEARISH
@@ -217,11 +217,7 @@ def render():
         else:
             st.info(f"Direction Engine साठी पुरेसा {structure_tf_label} / {rsi_tf_label} डेटा अजून उपलब्ध नाही (मार्केट सुरू झाल्यावर किंवा काही मिनिटांनी पुन्हा तपासा).")
 
-        st.caption(
-            f"Style: **{trading_style}** — Structure/Break/Pullback/Retest: {structure_tf_label} · "
-            f"RSI Momentum/Divergence: {rsi_tf_label} · अंतिम पुष्टीकरण: {confirm_tf_label}. "
-            "पूर्ण पाईपलाईन खाली 'A1 Signal Engine' सेक्शनमध्ये दाखवली आहे."
-        )
+        st.caption(f"**{trading_style}**: {structure_tf_label} Structure · {rsi_tf_label} RSI · {confirm_tf_label} Confirm")
 
         # --- डेटाबेस बेसलाइनवरून OI Change कॅल्क्युलेट करणे ---
         # IST तारीख वापरणे (local सर्व्हर तारीख नाही — UTC सर्व्हरवर मध्यरात्रीच्या आसपास चुकीची तारीख येऊ शकते)
@@ -632,11 +628,25 @@ def render():
         prev_put_premium = prev_row[6] if prev_row else None
         delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
 
-        # सिग्नल — दिशा (level) + Strong/Weak (Put/Call OI ची स्वतःची वाढ, मागच्या 10-मिनिट स्नॅपशॉटच्या
-        # तुलनेत — आधी हे delta_diff (Diff चाच फरक) वरून ठरायचं, आता खरा ताजा OI buildup बघून ठरतं), आणि
-        # Diff मध्ये किमान 10% बदल असेल तरच आधीच्या सिग्नलपेक्षा वेगळा दाखवला जातो (hysteresis)
+        # 🎓 नवीन — किमान शेवटचे ५ स्नॅपशॉट्स (Strong/Weak साठी ३०-मिनिट तुलना + दिशा बदलण्यासाठी सलग
+        # ३ स्नॅपशॉट्सचं पुष्टीकरण या दोन्हीसाठी पुरेसे) — उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी
+        cur3.execute(
+            """SELECT diff, total_put_oi, total_call_oi, signal FROM oi_diff_snapshots
+               WHERE symbol=? AND trade_date=? AND snapshot_time < ?
+               ORDER BY snapshot_time DESC LIMIT 5""",
+            (symbol, today_str, snapshot_time)
+        )
+        recent_rows = cur3.fetchall()
+        recent_snapshots_df = pd.DataFrame(
+            [{"diff": r[0], "total_put_oi": r[1], "total_call_oi": r[2], "signal": r[3]} for r in reversed(recent_rows)]
+        )  # जुनं->नवीन क्रमाने (compute_oi_signal_with_hysteresis ला हाच क्रम हवा)
+
+        # सिग्नल — दिशा (level) + Strong/Weak (Put/Call OI ची स्वतःची वाढ, आता मागच्या ३ स्नॅपशॉट्स
+        # / ~३० मिनिटांच्या तुलनेत — आधी फक्त मागच्या १ स्नॅपशॉटशी, जे खूप नॉइझी होतं), आणि दिशा
+        # बदलण्यासाठी सलग ३ स्नॅपशॉट्समध्ये तीच नवीन दिशा दिसायलाच हवी (वापरकर्त्याशी चर्चा करून
+        # ठरवलेली सुधारणा — उगाच सिग्नल भिरभिरणं टाळण्यासाठी)
         oi_signal = compute_oi_signal_with_hysteresis(
-            current_diff, total_put_oi, total_call_oi, prev_put_oi, prev_call_oi, prev_diff, prev_signal,
+            current_diff, total_put_oi, total_call_oi, recent_snapshots_df,
         )
 
         # 🎓 नवीन — Put/Call Writing/Buying/Short-Covering/Long-Unwinding ओळखून, actionable संदेश तयार करणे
@@ -666,10 +676,7 @@ def render():
             </div>""",
             unsafe_allow_html=True,
         )
-        st.caption(
-            "⚠️ हा संदेश OI + Premium (ATM±6 strikes चा एकूण) च्या 10-मिनिटांतल्या बदलावरून — अपुरा इतिहास "
-            "(पहिलाच snapshot) असेल तेव्हा 'अपुरा डेटा' दाखवेल."
-        )
+        st.caption("⚠️ पहिल्याच snapshot ला 'अपुरा डेटा' दिसेल — इतिहास लागतो.")
 
 
 
@@ -711,21 +718,16 @@ def render():
 
         st.dataframe(styled_hist, width='stretch', height=450)
 
-        st.caption(
-            "**लॉजिक सोपं करून:** Diff = एकूण Put OI − एकूण Call OI. Diff धन (positive) असेल तर Put जास्त लिहिले जातायत → बुल्स "
-            "मजबूत. Diff ऋण (negative) असेल तर Call जास्त लिहिले जातायत → बेअर्स मजबूत. "
-            "ΔDiff म्हणजे मागच्या 10 मिनिटांच्या तुलनेत Diff किती वाढला/घटला (फक्त माहितीसाठी दाखवला जातो).\n\n"
-            "🎯 **Strong vs Weakening — आता खऱ्या ताज्या OI वाढीवरून ठरतं** (आधी फक्त ΔDiff वरून ठरायचं, आता "
-            "प्रत्यक्ष Total Put/Call OI मागच्या 10-मिनिट स्नॅपशॉटपेक्षा खरंच वाढला का ते बघितलं जातं):\n\n"
-            "- 🟢 **BULLISH (Strong)**: Diff धन + Total Put OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढलाय → ताजा Put buildup, बुलिश थीसिसला पुष्टी\n"
-            "- 🟡 **BULLISH (Weakening)**: Diff अजून धनच आहे, पण Total Put OI वाढत नाहीये (कदाचित घटतोय सुद्धा) → ताजा buildup नाही, "
-            "जोर कमकुवत — म्हणून रंग उलट (लाल)\n"
-            "- 🔴 **BEARISH (Strong)**: Diff ऋण + Total Call OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढलाय → ताजा Call buildup, बेअरिश थीसिसला पुष्टी\n"
-            "- 🟠 **BEARISH (Weakening)**: Diff अजून ऋणच आहे, पण Total Call OI वाढत नाहीये → ताजा buildup नाही, जोर कमकुवत — "
-            "म्हणून रंग उलट (हिरवा)\n\n"
-            "⚙️ **Hysteresis:** सिग्नल फक्त तेव्हाच बदलतो जेव्हा Diff मागच्या Diff पेक्षा किमान 10% बदलतो — छोट्या, "
-            "noise-सदृश चढ-उतारांमुळे सिग्नल उगाच वारंवार भिरभिरू (flip-flop) नये म्हणून."
-        )
+        with st.expander("ℹ️ Signal Logic कसं काम करतं"):
+            st.caption(
+                "Diff = एकूण Put OI − एकूण Call OI. धन (+) = Put जास्त लिहिले → बुल्स मजबूत. ऋण (−) = Call जास्त लिहिले → बेअर्स मजबूत.\n\n"
+                "**Strong vs Weakening** (मागच्या ~३० मिनिटांच्या तुलनेत):\n"
+                "- 🟢 BULLISH (Strong): Diff+ आणि Put OI खरंच वाढतोय\n"
+                "- 🟡 BULLISH (Weakening): Diff+ पण Put OI वाढत नाही (रंग उलट)\n"
+                "- 🔴 BEARISH (Strong): Diff− आणि Call OI खरंच वाढतोय\n"
+                "- 🟠 BEARISH (Weakening): Diff− पण Call OI वाढत नाही (रंग उलट)\n\n"
+                "**स्थिरता**: दिशा बदलण्यासाठी सलग ३ स्नॅपशॉट्समध्ये तीच नवीन दिशा हवी — भिरभिरणं (flip-flop) टाळण्यासाठी."
+            )
 
         # =========================================================
         # ८.५ Advanced OI Analysis (Professional) — OI-Price Matrix, PCR, Max Pain, Rollover
@@ -870,6 +872,7 @@ def render():
                     sr_window=sr_window, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
                     sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
                     retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
+                    df_1h=df_1h,
                 )
             else:
                 entry_ok, intraday_strategy_detail = check_indicator_strategy(df_structure_tf, rsi_series, pipeline_direction)
@@ -1023,7 +1026,11 @@ def render():
         available_margin = None
 
         if all_gates_passed:
-            strategy_result = select_credit_spread(raw_chain, pipeline_direction, hedge_width_points, pop_threshold_pct)
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
+            # strategies) साठी आता PoP-आधारित शोध ऐवजी निश्चित (fixed) ATM+2/Hedge+4(100pt) strike
+            # selection वापरलं जातं. Iron Condor/Butterfly (sideways मार्ग, खाली) याला स्पर्श केलेला
+            # नाही — तो अजूनही जुन्याच PoP-आधारित पद्धतीने चालतो.
+            strategy_result = select_credit_spread_fixed_strikes(raw_chain, pipeline_direction, atm_strike)
         elif sideways_info and sideways_info["is_sideways"]:
             if sideways_info["strategy_type"] == "IRON_BUTTERFLY":
                 strategy_result = select_iron_butterfly(raw_chain, atm_strike, hedge_width_points, pop_threshold_pct)
@@ -1101,10 +1108,22 @@ def render():
                 if enable_live_trading and confirm_live_trading:
                     spinner_text = "Paper ऑर्डर सिम्युलेट होत आहे..." if trading_mode == "PAPER" else "लाईव्ह ऑर्डर प्लेस होत आहे..."
                     with st.spinner(spinner_text):
+                        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator strategies
+                        # आहे तशाच (त्याच timeframes/logic सह) ठेवल्या, पण आता EOD Square-off होत नाही —
+                        # trading_style="SWING" पाठवलं जातं (manage_open_trades चा EOD check फक्त
+                        # trading_style=="INTRADAY" असेल तरच लागू होतो), जेणेकरून position दुसऱ्या
+                        # दिवशीही continue राहील. Sidebar वरचा "Intraday" label मात्र तसाच आहे (फक्त
+                        # timeframe/strategy निवडीसाठी वापरला जातो).
+                        # 🎓 नवीन risk management नियम (वापरकर्त्याशी चर्चा करून ठरवलेला) — SL = net_credit
+                        # च्या 30%, Target सुद्धा 30% (max_profit==net_credit असल्याने आपोआप). हे फक्त
+                        # BULL_PUT_SPREAD/BEAR_CALL_SPREAD (Price Action/Indicator) साठीच — Iron
+                        # Condor/Butterfly (sideways) असल्यास जुनीच sidebar-टक्केवारी पद्धत वापरली जाते.
+                        is_directional_2strategy = strategy_result["strategy"] in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
                         ok, resp = open_multi_leg_trade(
                             token_input, symbol, strategy_result, lots, lot_size,
-                            sl_pct_of_max_loss, target_pct_of_max_profit, product_type,
-                            trading_mode=trading_mode, trading_style=trading_style,
+                            sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
+                            product_type, trading_mode=trading_mode, trading_style="SWING",
+                            sl_pct_of_credit=30 if is_directional_2strategy else None,
                         )
                     if ok:
                         result_emoji = "📝" if trading_mode == "PAPER" else "🟢"
@@ -1146,6 +1165,34 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab4:
+        # 🎓 Health Check — unattended auto-trader scripts (credit_spread_auto_trader.py,
+        # oi_signal_auto_trader.py) कधी शेवटचं यशस्वीरित्या चालल्या ते इथेच दिसेल — cron server
+        # बंद पडली, किंवा script अडकली, तर लगेच कळावं म्हणून.
+        st.subheader("🩺 Auto-Trader Scripts — Health Check")
+        try:
+            from notifications import check_heartbeat_stale, HEARTBEAT_DIR
+            import os as _os
+            hb_col1, hb_col2 = st.columns(2)
+            for col, script_name, label in [
+                (hb_col1, "credit_spread_auto_trader", "Credit Spread Auto-Trader"),
+                (hb_col2, "oi_signal_auto_trader", "OI Signal Auto-Trader"),
+            ]:
+                with col:
+                    hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
+                    if not _os.path.exists(hb_path):
+                        st.info(f"⚪ {label}: कधीच चालली नाही (किंवा या मशीनवर चालत नाही)")
+                    else:
+                        with open(hb_path) as f:
+                            last_run = f.read().strip()
+                        is_stale = check_heartbeat_stale(script_name, max_age_minutes=30)
+                        if is_stale:
+                            st.error(f"🔴 {label}: शेवटचं {last_run} — ३० मिनिटांपेक्षा जुनं, तपासा!")
+                        else:
+                            st.success(f"🟢 {label}: शेवटचं {last_run}")
+        except Exception:
+            st.caption("Health check उपलब्ध नाही (notifications.py सापडलं नाही).")
+        st.markdown("---")
+
         st.subheader("📄 Full Market Analysis Report (PDF)")
         st.caption(
             "OI data, multi-timeframe (1 Day / 1H / style timeframe) market structure, charts, technical analysis, "

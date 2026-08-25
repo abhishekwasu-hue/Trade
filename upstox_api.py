@@ -44,6 +44,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
             "5minute": ("minutes", "5"),
             "15minute": ("minutes", "15"),
             "30minute": ("minutes", "30"),
+            "1hour": ("hours", "1"),
             "day": ("days", "1"),
         }
         unit, val = interval_map[interval]
@@ -54,7 +55,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
         # होतो (मर्यादेच्या दुप्पट) — प्रत्येक कॉल शांतपणे (silently) अयशस्वी व्हायचा, त्यामुळे फक्त
         # आजचा (intraday) डेटा दिसायचा, जुना इतिहास दिसायचाच नाही. 30minute (>15 मिनिट) साठी १ तिमाही
         # (~90 दिवस) परवानगी आहे, तेच योग्य होतं.
-        chunk_days_map = {"1minute": 28, "5minute": 28, "15minute": 28, "30minute": 90, "day": lookback_days}
+        chunk_days_map = {"1minute": 28, "5minute": 28, "15minute": 28, "30minute": 90, "1hour": 90, "day": lookback_days}
         chunk_days = chunk_days_map.get(interval, 90)
 
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
@@ -181,13 +182,13 @@ def fetch_candles_date_range(access_token, symbol, interval, from_date, to_date)
 
     interval_map = {
         "1minute": ("minutes", "1"), "5minute": ("minutes", "5"), "15minute": ("minutes", "15"),
-        "30minute": ("minutes", "30"), "day": ("days", "1"),
+        "30minute": ("minutes", "30"), "1hour": ("hours", "1"), "day": ("days", "1"),
     }
     unit, val = interval_map.get(interval, ("days", "1"))
     # Upstox च्या अधिकृत दस्तऐवजानुसार: 1-15 मिनिट रेंजसाठी एका कॉलमध्ये जास्तीत जास्त फक्त १ महिना
     # परवानगी आहे — आधी 15minute/5minute साठी 60/45 दिवस मागवत होतो (मर्यादेपेक्षा जास्त), त्यामुळे
     # Backtest मध्ये मागवलेल्या तारीख-रेंजपेक्षा खूप कमी डेटा (किंवा शून्य ऐतिहासिक डेटा) मिळायचा.
-    chunk_days_map = {"1minute": 28, "5minute": 28, "15minute": 28, "30minute": 90, "day": 1095}
+    chunk_days_map = {"1minute": 28, "5minute": 28, "15minute": 28, "30minute": 90, "1hour": 90, "day": 1095}
     chunk_days = chunk_days_map.get(interval, 90)
 
     all_candles = []

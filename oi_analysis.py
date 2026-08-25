@@ -22,37 +22,56 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
-def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call_oi, prev_put_oi, prev_call_oi,
-                                        prev_diff, prev_signal, hysteresis_threshold_pct=10):
+def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call_oi, recent_snapshots,
+                                        lookback_for_strength=3, confirm_count=3):
     """
-    OI Diff सिग्नल — प्रथम दिशा (level, Diff चं चिन्ह) आणि Strong/Weak (Put/Call OI ची स्वतःची वाढ, मागच्या
-    10-मिनिट स्नॅपशॉटच्या तुलनेत — नुसता Diff मधला फरक नाही, तर खरा ताजा OI buildup झालाय की नाही) यावरून
-    कच्चा (raw) सिग्नल ठरवणे, मग तो मागच्या प्रत्यक्ष दाखवलेल्या सिग्नलपेक्षा वेगळा असेल तरच लागू करणे —
-    पण केवळ Diff (raw OI फरक) मागच्या Diff पेक्षा किमान hysteresis_threshold_pct% बदलला असेल तरच (छोट्या,
-    noise-सदृश बदलांमुळे उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी).
+    OI Diff सिग्नल — दिशा (level, Diff चं चिन्ह) आणि Strong/Weak, आणि छोट्या नॉइझमुळे उगाच सिग्नल
+    भिरभिरू (flip-flop) नये म्हणून दोन सुधारणा (वापरकर्त्याशी चर्चा करून ठरवलेल्या):
 
-    BULLISH (Diff धन): Total Put OI मागच्या स्नॅपशॉटपेक्षा खरंच वाढला असेल तरच "Strong" — नाहीतर "Weakening"
-    (जरी Diff अजूनही धनच असला तरी, ताजा Put buildup होत नसेल तर तो कमकुवत मानला जातो).
-    BEARISH (Diff ऋण): तेच तत्त्व, पण Total Call OI च्या वाढीवरून.
-    मागचा Diff बरोबर 0 असेल तर % काढताच येत नाही — त्यावेळी सुरक्षित बाजूने सिग्नल बदलला जात नाही.
+    A) Strong/Weak — Total Put/Call OI आता मागच्या lookback_for_strength (डीफॉल्ट ३, म्हणजे ~३०
+       मिनिटं) स्नॅपशॉट्सपूर्वीच्या तुलनेत खरंच वाढला आहे का ते बघतो — आधी फक्त मागच्या १च स्नॅपशॉट
+       (१० मिनिटांपूर्वी) शी तुलना व्हायची, जी खूप नॉइझी होती.
+    B) दिशा (BULLISH<->BEARISH) बदलण्यासाठी आता सलग confirm_count (डीफॉल्ट ३) स्नॅपशॉट्समध्ये तीच
+       नवीन दिशा (Diff चं तेच नवीन चिन्ह) सलग दिसायलाच हवी — नुसती एकदाच उलट दिशा दिसली तर जुनाच
+       सिग्नल कायम राहतो (आधीचा १०%-threshold आधारित hysteresis याहून कमी स्थिर होता).
+
+    recent_snapshots: pandas DataFrame (जुनं->नवीन क्रमाने), columns: diff, total_put_oi,
+    total_call_oi, signal — किमान शेवटचे max(lookback_for_strength, confirm_count-1) rows हवेत.
     """
-    if current_diff > 0:
-        put_growing = prev_put_oi is not None and current_put_oi > prev_put_oi
-        raw_signal = "🟢 BULLISH (Strong)" if put_growing else "🟡 BULLISH (Weakening)"
-    elif current_diff < 0:
-        call_growing = prev_call_oi is not None and current_call_oi > prev_call_oi
-        raw_signal = "🔴 BEARISH (Strong)" if call_growing else "🟠 BEARISH (Weakening)"
+    if len(recent_snapshots) >= lookback_for_strength:
+        baseline = recent_snapshots.iloc[-lookback_for_strength]
+        baseline_put_oi, baseline_call_oi = baseline["total_put_oi"], baseline["total_call_oi"]
+    elif len(recent_snapshots) > 0:
+        baseline_put_oi, baseline_call_oi = recent_snapshots.iloc[0]["total_put_oi"], recent_snapshots.iloc[0]["total_call_oi"]
     else:
-        raw_signal = "⚪ NEUTRAL"
+        baseline_put_oi = baseline_call_oi = None
 
-    if prev_signal is None or prev_diff is None:
+    if current_diff > 0:
+        put_growing = baseline_put_oi is not None and current_put_oi > baseline_put_oi
+        raw_signal = "🟢 BULLISH (Strong)" if put_growing else "🟡 BULLISH (Weakening)"
+        raw_direction = "BULLISH"
+    elif current_diff < 0:
+        call_growing = baseline_call_oi is not None and current_call_oi > baseline_call_oi
+        raw_signal = "🔴 BEARISH (Strong)" if call_growing else "🟠 BEARISH (Weakening)"
+        raw_direction = "BEARISH"
+    else:
+        raw_signal, raw_direction = "⚪ NEUTRAL", "NEUTRAL"
+
+    if len(recent_snapshots) == 0:
         return raw_signal
-    if prev_diff == 0:
-        return prev_signal
-    pct_change = abs(current_diff - prev_diff) / abs(prev_diff) * 100
-    if pct_change >= hysteresis_threshold_pct:
-        return raw_signal
-    return prev_signal
+
+    prev_signal = recent_snapshots.iloc[-1]["signal"]
+    prev_direction = "BULLISH" if "BULLISH" in prev_signal else ("BEARISH" if "BEARISH" in prev_signal else "NEUTRAL")
+
+    if raw_direction == prev_direction:
+        return raw_signal  # दिशा तीच आहे -- Strong/Weak लगेच अद्ययावत होऊ शकतो
+
+    if len(recent_snapshots) < confirm_count - 1:
+        return prev_signal  # अजून पुरेसा इतिहास नाही -- जुनाच सिग्नल कायम
+
+    recent_diffs = recent_snapshots["diff"].tail(confirm_count - 1).tolist() + [current_diff]
+    same_new_direction = all((d > 0 if raw_direction == "BULLISH" else d < 0) for d in recent_diffs)
+    return raw_signal if same_new_direction else prev_signal
 
 
 def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction, step=50):

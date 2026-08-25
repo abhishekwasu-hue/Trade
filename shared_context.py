@@ -20,7 +20,7 @@ def setup_shared_context():
     symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY"])
 
     # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
-    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "15minute", "30minute", "day"], index=2)
+    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "15minute", "30minute", "1hour", "day"], index=2)
 
     # --- चार्ट टाईप निवडण्याची सुविधा (Candlestick / Line) ---
     chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)
@@ -44,11 +44,15 @@ def setup_shared_context():
         risk_pct_per_trade = st.sidebar.slider("Risk % per Trade (उपलब्ध मार्जिनपैकी)", 0.5, 10.0, 2.0, step=0.5)
         hedge_width_points = st.sidebar.number_input("Hedge Width (points, लाँग लेग शॉर्ट लेगपासून किती दूर)", min_value=50, value=100, step=50)
         pop_threshold_pct = st.sidebar.slider("PoP Threshold (%) — किमान Probability of Profit", 50, 95, 70, step=5)
-        sl_pct_of_max_loss = st.sidebar.slider("Stop-Loss (% of Max Loss)", 10, 100, 30, step=5)
-        target_pct_of_max_profit = st.sidebar.slider("Profit Target (% of Max Profit)", 10, 100, 50, step=5)
         vix_max_threshold = st.sidebar.number_input("India VIX कमाल मर्यादा (यापेक्षा जास्त = No Trade)", min_value=10.0, value=20.0, step=0.5)
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
+        # strategies) साठी SL/Target आता निश्चित (fixed) 30%/30% (net_credit चे) आहेत, sidebar वरून
+        # बदलता येत नाहीत (हार्डकोड). खालचे sliders आता फक्त Iron Condor/Butterfly (sideways) साठीच.
         st.sidebar.markdown("##### 🦋 Sideways (Iron Condor / Butterfly) सेटिंग्ज")
+        st.sidebar.caption("⚠️ खालचे SL/Target फक्त Iron Condor/Butterfly साठी — Price Action/Indicator आता निश्चित 30% credit SL/Target वापरतात.")
+        sl_pct_of_max_loss = st.sidebar.slider("Sideways SL (% of Max Loss)", 10, 100, 30, step=5)
+        target_pct_of_max_profit = st.sidebar.slider("Sideways Profit Target (% of Max Profit)", 10, 100, 50, step=5)
         sideways_tight_range_pct = st.sidebar.number_input("घट्ट रेंज मर्यादा % (यापेक्षा कमी = Iron Butterfly)", min_value=0.1, value=0.6, step=0.1)
         sideways_max_range_pct = st.sidebar.number_input("कमाल Sideways रेंज % (यापेक्षा जास्त = अजिबात Sideways ट्रेड नाही)", min_value=0.5, value=1.5, step=0.1)
         st.sidebar.markdown("##### ⏱️ Trading Style")
@@ -60,12 +64,17 @@ def setup_shared_context():
         trading_style = "INTRADAY" if "Intraday" in trading_style_choice else "SWING"
 
         if trading_style == "INTRADAY":
-            product_type = "I"
-            eod_squareoff_time = st.sidebar.time_input("EOD Square-off वेळ (IST)", value=datetime.time(15, 15))
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator strategies आहे
+            # तशाच (timeframes/logic सह) ठेवल्या, पण आता EOD Square-off होत नाही आणि product_type
+            # "D" (Delivery/Carry-Forward) आहे — जेणेकरून position प्रत्यक्षात दुसऱ्या दिवशीही टिकेल
+            # (आधी "I" (Intraday margin) होता — तो असता तर ब्रोकरच स्वतःहून त्याच दिवशी बंद करायचा,
+            # आपला कोड EOD काढला तरी काही फरक पडला नसता).
+            product_type = "D"
+            eod_squareoff_time = None
             entry_cutoff_time = st.sidebar.time_input("नवीन एंट्री बंद करण्याची वेळ (IST)", value=datetime.time(15, 0))
             st.sidebar.caption(
-                f"Intraday मोड: Product Type आपोआप 'I' — नवीन एंट्री {entry_cutoff_time.strftime('%H:%M')} नंतर बंद, "
-                f"आणि उघड्या पोझिशन्स {eod_squareoff_time.strftime('%H:%M')} ला आपोआप स्क्वेअर-ऑफ होतील."
+                f"⚠️ EOD Square-off काढलं आहे — Position आता दुसऱ्या दिवशीही Continue राहील (Product Type "
+                f"आपोआप 'D'/Delivery). नवीन एंट्री मात्र {entry_cutoff_time.strftime('%H:%M')} नंतर बंद."
             )
 
             st.sidebar.markdown("##### 🧭 OI Confirmation Gate (Intraday)")

@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from sr_dynamic import compute_dynamic_sr
 
 def calculate_rsi(df, period=14):
     """
@@ -496,12 +497,15 @@ def compute_entry_sl_target(reversal_candle, direction, sl_buffer_pct, nearest_s
 
 
 def check_price_action_strategy(df, direction, rsi_series=None, sr_window=20, rsi_oversold=30, rsi_overbought=70,
-                                  sl_buffer_pct=0.1, min_rr=2.0, retest_tolerance_pct=0.15, reversal_lookback=3):
+                                  sl_buffer_pct=0.1, min_rr=2.0, retest_tolerance_pct=0.15, reversal_lookback=3,
+                                  df_1h=None, sr_prd=10, sr_min_strength=2):
     """
     Toggle 1: Price Action रणनीती — Classic S/R + RSI + Candlestick आवृत्ती (पूर्वीची ICT/Order-Block
     पद्धत पूर्णपणे बदलून, वापरकर्त्याच्या दिलेल्या स्पेसिफिकेशननुसार):
 
-    १. किंमत Key Support/Resistance झोन (Rolling Window आधारित) किंवा Dynamic Trendline ला स्पर्श/retest करते
+    १. किंमत Key Support/Resistance झोन (df_1h दिलं असल्यास — sr_dynamic.py चं Pine Script-जुळणारं Pivot
+       Clustering, 1H वर, वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा; नाहीतर जुनीच Rolling Window पद्धत,
+       backward-compat साठी) किंवा Dynamic Trendline ला स्पर्श/retest करते
     २. RSI(14) Oversold(<30)/Overbought(>70) किंवा साधी Divergence
     ३. Reversal Candle (Hammer/Bullish Engulfing/Morning Star किंवा Shooting Star/Bearish Engulfing/
        Evening Star) बंद होते
@@ -513,8 +517,15 @@ def check_price_action_strategy(df, direction, rsi_series=None, sr_window=20, rs
     detail = {"sr_retest": False, "trendline_retest": False, "rsi_ok": False, "rsi_value": None,
               "divergence": "NONE", "reversal_candle": None, "breakout_confirmed": False, "trade_plan": None}
 
-    sr_levels = find_swing_sr_levels_rolling(df, window=sr_window)
     current_price = float(df["close"].iloc[-1])
+    if df_1h is not None and not df_1h.empty and len(df_1h) >= 2 * sr_prd + 10:
+        sr_dynamic_result = compute_dynamic_sr(df_1h, prd=sr_prd, min_strength=sr_min_strength, current_price=current_price)
+        sr_levels = {
+            "support": [s["level"] for s in sr_dynamic_result["support"]],
+            "resistance": [r["level"] for r in sr_dynamic_result["resistance"]],
+        }
+    else:
+        sr_levels = find_swing_sr_levels_rolling(df, window=sr_window)
     nearest_support, nearest_resistance = get_nearest_sr(sr_levels, current_price)
 
     reversal = find_reversal_candle_recent(df, direction, lookback=reversal_lookback)

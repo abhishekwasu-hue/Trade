@@ -201,6 +201,11 @@ def render():
                         with pacol6:
                             retest_tolerance_pct = st.number_input("Retest Tolerance %", min_value=0.05, value=0.15, step=0.05, key=f"{bt_key_prefix}_rtol")
                         reversal_lookback = st.number_input("Reversal Candle Lookback (bars)", min_value=1, max_value=10, value=3, step=1, key=f"{bt_key_prefix}_revlb")
+                        slippage_pct = st.number_input(
+                            "Slippage % (आर्थिक वास्तवता — प्रत्येक बाजूला, 0=बंद)", min_value=0.0, value=0.0, step=0.01,
+                            key=f"{bt_key_prefix}_slip",
+                            help="Bid-Ask Spread + Market Impact मुळे प्रत्यक्ष fill किंमत LTP पेक्षा किंचित वाईट असते — व्यापाऱ्याच्याच विरोधात.",
+                        )
                         st.caption(
                             "S/R Rolling Window कमी असेल तर जास्त (पण कमी विश्वासार्ह) पातळ्या सापडतील. "
                             "Funnel मध्ये सिग्नल्स कमी दिसत असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा."
@@ -228,6 +233,7 @@ def render():
                                 sr_window=sr_window, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
                                 sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
                                 retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
+                                slippage_pct=slippage_pct,
                             )
                         if bt_df_range.empty or bt_df_1h.empty:
                             if yf_error:

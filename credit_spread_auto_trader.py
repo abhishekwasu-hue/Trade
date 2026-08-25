@@ -33,6 +33,7 @@ from signals import calculate_supertrend, resample_to_1h
 from upstox_api import fetch_candles, fetch_upstox_option_chain
 from database import get_live_positions_with_mtm
 from trading_engine import open_multi_leg_trade, close_trade_manually
+from notifications import notify_entry, notify_exit, notify_error, write_heartbeat
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "credit_spread_state.json")
 KILL_SWITCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "KILL_SWITCH")
@@ -160,8 +161,20 @@ def run_cycle(access_token, symbol="NIFTY", trading_mode="PAPER"):
     log = []
     if is_kill_switch_active():
         log.append("🛑 KILL SWITCH सक्रिय आहे — कुठलीही नवीन कृती केली जाणार नाही.")
+        write_heartbeat("credit_spread_auto_trader")
         return log
 
+    try:
+        result_log = _run_cycle_inner(access_token, symbol, trading_mode)
+        write_heartbeat("credit_spread_auto_trader")  # यशस्वी चक्र पूर्ण झालं -- heartbeat नोंदवणे
+        return result_log
+    except Exception as exc:
+        notify_error("credit_spread_auto_trader", f"चक्रादरम्यान अनपेक्षित चूक: {exc}")
+        raise  # log साठी वर पाठवणे, पण heartbeat लिहीत नाही (खरी समस्या असल्याचं कळावं)
+
+
+def _run_cycle_inner(access_token, symbol, trading_mode):
+    log = []
     state = load_state()
     now = get_ist_now()
 
@@ -186,6 +199,7 @@ def run_cycle(access_token, symbol="NIFTY", trading_mode="PAPER"):
             success, result_msg = close_trade_manually(access_token, pos["trade_id"], symbol, product_type="D")
             log.append(f"Position बंद करण्याचा प्रयत्न ({action}): यशस्वी={success}, {result_msg}")
             if success:
+                notify_exit("credit_spread_auto_trader", symbol, pos["trade_id"], action, pnl=current_mtm * LOT_SIZE)
                 state["open_position"] = None
             # अयशस्वी झाल्यास state तसंच ठेवणे -- पुढच्या चक्रात पुन्हा प्रयत्न होईल
         # CARRY_FORWARD आणि HOLD -> काहीच बदल नाही
@@ -241,6 +255,8 @@ def run_cycle(access_token, symbol="NIFTY", trading_mode="PAPER"):
     }
     state["last_entry_date"] = today_str
     save_state(state)
+    strikes_summary = f"Short {spread['short_leg']['strike']}, Long {spread['long_leg']['strike']}"
+    notify_entry("credit_spread_auto_trader", symbol, spread["strategy"], stable_direction, strikes_summary, spread["net_credit"], trade_id)
     log.append(f"✅ नवीन Entry: {spread['strategy']} — Short {spread['short_leg']['strike']}, "
                f"Long {spread['long_leg']['strike']}, Net Credit={spread['net_credit']}, Trade ID={trade_id}")
     return log
