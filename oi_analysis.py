@@ -399,3 +399,103 @@ def swing_oi_gate(pipeline_direction, oi_price_matrix, pcr_bias, max_pain_strike
     supporting = [s for s in signals if s[1] == pipeline_direction]
     ok = len(opposing) <= max_opposing
     return ok, {"supporting": supporting, "opposing": opposing, "total_signals": len(signals)}
+
+
+def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now_fn, db_path, atm_range=6, step=50):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — OI Diff Snapshot (दर १० मिनिटांचा) पूर्वी फक्त
+    Dashboard उघडं असतानाच (browser मध्ये) साठवला जायचा. आता हे पूर्ण, स्वतंत्र function आहे — Dashboard
+    आणि नवीन unattended script (oi_snapshot_collector.py) दोन्ही हेच वापरतात, त्यामुळे browser बंद
+    असतानाही (cron ने चालवल्यास) snapshots साठवले जातील, आणि Dashboard उघडल्यावर तेही टेबलमध्ये दिसतील.
+
+    fetch_chain_fn/get_ist_now_fn dependency-injection सारखे pass केले आहेत — testing सोपं करण्यासाठी
+    (upstox_api.fetch_upstox_option_chain आणि config.get_ist_now याच पद्धतीने प्रत्यक्ष वापरात दिले जातात).
+
+    रिटर्न: (snapshot_dict किंवा None, स्थिती-संदेश). त्याच १०-मिनिट स्लॉटसाठी snapshot आधीच असेल तर
+    INSERT OR IGNORE मुळे शांतपणे वगळलं जातं (डुप्लिकेट होत नाही) — तरीही (snapshot_dict, "ALREADY_EXISTS") परत येतं.
+    """
+    import sqlite3
+
+    raw_chain, status = fetch_chain_fn(access_token, symbol)
+    if not raw_chain:
+        return None, f"Option chain मिळाला नाही: {status}"
+
+    underlying_price = raw_chain[len(raw_chain) // 2].get("underlying_spot_price", 0)
+    atm_strike = round(underlying_price / step) * step
+
+    total_call_oi = total_put_oi = 0
+    total_call_premium = total_put_premium = 0.0
+    for item in raw_chain:
+        strike = item.get("strike_price")
+        if strike is None or abs(strike - atm_strike) > atm_range * step:
+            continue
+        ce = item.get("call_options", {}) or {}
+        pe = item.get("put_options", {}) or {}
+        total_call_oi += (ce.get("market_data", {}) or {}).get("oi", 0) or 0
+        total_put_oi += (pe.get("market_data", {}) or {}).get("oi", 0) or 0
+        total_call_premium += (ce.get("market_data", {}) or {}).get("ltp", 0) or 0
+        total_put_premium += (pe.get("market_data", {}) or {}).get("ltp", 0) or 0
+
+    current_diff = total_put_oi - total_call_oi
+    now_dt = get_ist_now_fn()
+    snapshot_minute = (now_dt.minute // 10) * 10
+    snapshot_time = now_dt.replace(minute=snapshot_minute, second=0, microsecond=0).strftime("%H:%M")
+    today_str = now_dt.strftime("%Y-%m-%d")
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    # Signal Engine साठी इतिहास (Dashboard सारखीच पद्धत — किमान ५ मागचे snapshots)
+    cur.execute(
+        """SELECT diff, total_put_oi, total_call_oi, signal FROM oi_diff_snapshots
+           WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 5""",
+        (symbol, today_str, snapshot_time),
+    )
+    recent_rows = cur.fetchall()
+    import pandas as pd
+    recent_snapshots_df = pd.DataFrame(
+        [{"diff": r[0], "total_put_oi": r[1], "total_call_oi": r[2], "signal": r[3]} for r in reversed(recent_rows)]
+    )
+    oi_signal = compute_oi_signal_with_hysteresis(current_diff, total_put_oi, total_call_oi, recent_snapshots_df)
+    delta_diff = (current_diff - recent_rows[0][0]) if recent_rows else 0
+
+    # 🎓 OI-Price Banner (Writing/Buying/Covering) साठी — मागच्या (सर्वात अलीकडच्या) एकाच snapshot शी तुलना.
+    # prev_single नसेल (दिवसाचा पहिलाच snapshot) तरी classify_oi_price_action ला None दिलं जातं —
+    # तेच "अपुरा डेटा" परत करतं, आणि generate_oi_price_signal त्यावरून सुरक्षितपणे "NEUTRAL" ठरवतं
+    # (मूळ page_dashboard.py च्या वर्तनाशी तंतोतंत जुळण्यासाठी — None ऐवजी कधीच थेट क्रॅश होणार नाही).
+    cur.execute(
+        """SELECT total_put_oi, total_call_oi, total_call_premium, total_put_premium FROM oi_diff_snapshots
+           WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 1""",
+        (symbol, today_str, snapshot_time),
+    )
+    prev_single = cur.fetchone()
+    prev_put_oi_s, prev_call_oi_s, prev_call_prem_s, prev_put_prem_s = prev_single if prev_single else (None, None, None, None)
+    put_oi_price_class = classify_oi_price_action(total_put_oi, prev_put_oi_s, total_put_premium, prev_put_prem_s)
+    call_oi_price_class = classify_oi_price_action(total_call_oi, prev_call_oi_s, total_call_premium, prev_call_prem_s)
+    oi_price_direction, oi_price_message = generate_oi_price_signal(put_oi_price_class, call_oi_price_class)
+
+    cur.execute(
+        """SELECT COUNT(*) FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? AND snapshot_time=?""",
+        (symbol, today_str, snapshot_time),
+    )
+    already_exists = cur.fetchone()[0] > 0
+
+    cur.execute(
+        """INSERT OR IGNORE INTO oi_diff_snapshots
+           (symbol, trade_date, snapshot_time, total_call_oi, total_put_oi, diff, delta_diff, signal,
+            underlying_price, total_call_premium, total_put_premium)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
+         underlying_price, total_call_premium, total_put_premium),
+    )
+    conn.commit()
+    conn.close()
+
+    snapshot = {
+        "snapshot_time": snapshot_time, "trade_date": today_str, "total_call_oi": total_call_oi,
+        "total_put_oi": total_put_oi, "diff": current_diff, "delta_diff": delta_diff, "signal": oi_signal,
+        "underlying_price": underlying_price, "atm_strike": atm_strike,
+        "put_oi_price_class": put_oi_price_class, "call_oi_price_class": call_oi_price_class,
+        "oi_price_direction": oi_price_direction, "oi_price_message": oi_price_message,
+    }
+    return snapshot, ("ALREADY_EXISTS" if already_exists else "OK")
