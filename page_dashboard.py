@@ -32,7 +32,7 @@ from oi_analysis import (
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
-    fetch_and_save_oi_snapshot,
+    fetch_and_save_oi_snapshot, compute_dte,
 )
 from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
 from pdf_reports import generate_market_analysis_report_pdf
@@ -593,6 +593,20 @@ def render():
     with tab2:
         st.markdown("---")
         st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर 10 मिनिटांनी)")
+
+        # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
+        # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
+        # response) — त्यामुळे fetch_upstox_option_chain चं signature बदलावं लागलं नाही (५०+ ठिकाणी
+        # वापरलेलं, ते बदलणं धोकादायक ठरलं असतं). expiry सापडली नाही तर शांतपणे काहीच दाखवत नाही.
+        expiry_date, dte = compute_dte(raw_chain, get_ist_now().date())
+        if expiry_date is not None:
+            dte_label = "आजच Expiry! 🔥" if dte == 0 else f"{dte} दिवस उरले"
+            dte_color = "#F23645" if dte is not None and dte <= 1 else "#d1d4dc"
+            st.markdown(
+                f"<span style='color:{dte_color}; font-size:14px; font-weight:600;'>"
+                f"📅 Expiry: {expiry_date.strftime('%d-%b-%Y')} ({dte_label})</span>",
+                unsafe_allow_html=True,
+            )
 
         # 🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — ही संपूर्ण गणना+साठवण आता एकाच, पुनर्वापर
         # करण्याजोग्या function मध्ये आहे (oi_analysis.fetch_and_save_oi_snapshot) — तेच नवीन
@@ -1306,5 +1320,3 @@ def render():
                 )
             except Exception as e:
                 st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
-
-
