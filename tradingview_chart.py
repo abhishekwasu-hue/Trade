@@ -183,6 +183,18 @@ def build_lightweight_chart_html(
     </table>
   </div>"""
 
+    st_legend_html = ""
+    if st1d_bull or st1d_bear or st1h_bull or st1h_bear:
+        legend_lines = []
+        if st1d_bull or st1d_bear:
+            legend_lines.append('<div><span class="st-line" style="border-top-width:3px; border-top-color:#9598a1;"></span>1D Supertrend</div>')
+        if st1h_bull or st1h_bear:
+            legend_lines.append('<div><span class="st-line" style="border-top-width:1px; border-top-color:#9598a1;"></span>1H Supertrend</div>')
+        st_legend_html = (
+            '<div id="st_legend">' + "".join(legend_lines) +
+            '<div style="margin-top:3px; font-size:9.5px; color:#787b86;">🟢 हिरवा=Bullish · 🔴 लाल=Bearish (एकाच रेषेची दिशा)</div></div>'
+        )
+
     library_js = _load_library_js()
     html = f"""
 <!DOCTYPE html>
@@ -210,6 +222,12 @@ def build_lightweight_chart_html(
   }}
   #ohlc_box span.up {{ color: #089981; }}
   #ohlc_box span.down {{ color: #F23645; }}
+  #st_legend {{
+    position: absolute; top: 8px; right: 8px; z-index: 5; background: rgba(13,16,23,0.85);
+    border: 1px solid {BORDER_COLOR}; border-radius: 4px; padding: 5px 10px; font-size: 10.5px;
+    color: {TEXT_COLOR}; pointer-events: none;
+  }}
+  #st_legend .st-line {{ display: inline-block; width: 16px; height: 0; border-top-style: solid; margin-right: 4px; vertical-align: middle; }}
 </style>
 </head>
 <body>
@@ -225,6 +243,7 @@ def build_lightweight_chart_html(
   </div>
   <div id="chart_container">
     <div id="ohlc_box"></div>
+    {st_legend_html}
   </div>
 {sr_table_section}
 
@@ -251,26 +270,28 @@ if (markerData.length > 0) {{
     LightweightCharts.createSeriesMarkers(candleSeries, markerData);
 }}
 
-// 🎓 1-Day व 1-Hour Supertrend (डीफॉल्ट, EMA20/EMA50 ऐवजी) — दिशेनुसार हिरवा(bullish)/लाल(bearish),
-// प्रत्येक timeframe साठी 2 series (bullish+bearish भाग), जेणेकरून दिशा बदलली की रंगही बदलतो
-function addSupertrendSeries(bullData, bearData, widthPx, labelPrefix) {{
+// 🎓 1-Day व 1-Hour Supertrend (डीफॉल्ट, EMA20/EMA50 ऐवजी) — दिशेनुसार हिरवा(bullish)/लाल(bearish).
+// आतून अजूनही 2 series (bullish+bearish भाग) आहेत (LightweightCharts मध्ये एका रेषेचा रंग मध्येच
+// बदलता येत नाही म्हणून), पण टायटल रिकामं ठेवलं — "Bull"/"Bear" वेगळे indicators वाटून गोंधळ होत होता
+// (वापरकर्त्याने निदर्शनास आणलं). एकच, स्वच्छ legend (टाईमफ्रेमनुसार, दिशेनुसार नाही) खाली दिली आहे.
+function addSupertrendSeries(bullData, bearData, widthPx) {{
     if (bullData.length > 0) {{
         const s = chart.addSeries(LightweightCharts.LineSeries, {{
-            color: '#089981', lineWidth: widthPx, title: labelPrefix + ' (Bull)',
+            color: '#089981', lineWidth: widthPx, title: '',
             lastValueVisible: false, priceLineVisible: false,
         }});
         s.setData(bullData);
     }}
     if (bearData.length > 0) {{
         const s = chart.addSeries(LightweightCharts.LineSeries, {{
-            color: '#F23645', lineWidth: widthPx, title: labelPrefix + ' (Bear)',
+            color: '#F23645', lineWidth: widthPx, title: '',
             lastValueVisible: false, priceLineVisible: false,
         }});
         s.setData(bearData);
     }}
 }}
-addSupertrendSeries({json.dumps(st1d_bull)}, {json.dumps(st1d_bear)}, 3, '1D Supertrend');
-addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 1, '1H Supertrend');
+addSupertrendSeries({json.dumps(st1d_bull)}, {json.dumps(st1d_bear)}, 3);
+addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 1);
 
 const volumeData = {json.dumps(volume_data)};
 if (volumeData.length > 0) {{
