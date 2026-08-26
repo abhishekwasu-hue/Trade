@@ -71,19 +71,29 @@ def build_lightweight_chart_html(
     ]
 
     def _build_supertrend_segments(line_series, dir_series):
-        """Supertrend ला दिशेनुसार (bullish=हिरवा/bearish=लाल) दोन वेगळ्या series मध्ये विभागणे —
-        lightweight-charts मध्ये एकाच LineSeries चा रंग मध्येच बदलता येत नाही, म्हणून ही सर्वमान्य पद्धत."""
+        """
+        🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं — Supertrend ला दिशेनुसार (bullish=हिरवा/bearish=लाल)
+        दोन वेगळ्या series मध्ये विभागावं लागतं (lightweight-charts मध्ये एकाच रेषेचा रंग मध्येच बदलता
+        येत नाही), पण आधी दिशा-बदलाच्या क्षणी दोन्ही भाग एकमेकांना स्पर्श करत नव्हते — रेषा तुटलेली/वेगळी
+        दिसायची. आता दिशा बदलण्याच्या नेमक्या बिंदूवर तोच बिंदू दोन्ही भागांत जोडला जातो (सांधा) —
+        त्यामुळे दृश्यतः एकच सलग रेषा दिसते, फक्त रंग बदलतो.
+        """
         bullish, bearish = [], []
         if line_series is None or dir_series is None or line_series.empty:
             return bullish, bearish
-        for t, v, d in zip(df["timestamp"], line_series, dir_series):
-            if pd.isna(v) or pd.isna(d):
+        values = line_series.reset_index(drop=True)
+        dirs = dir_series.reset_index(drop=True)
+        times = df["timestamp"].reset_index(drop=True)
+        n = len(values)
+        for i in range(n):
+            if pd.isna(values.iloc[i]) or pd.isna(dirs.iloc[i]):
                 continue
-            point = {"time": _to_unix_time(t), "value": round(float(v), 2)}
-            if int(d) == 1:
-                bullish.append(point)
-            else:
-                bearish.append(point)
+            point = {"time": _to_unix_time(times.iloc[i]), "value": round(float(values.iloc[i]), 2)}
+            current_dir = int(dirs.iloc[i])
+            (bullish if current_dir == 1 else bearish).append(point)
+            # पुढचा बिंदू दिशा बदलणार असेल, तर आत्ताचाच बिंदू त्या नवीन दिशेतही जोडणे (सांधा)
+            if i + 1 < n and not pd.isna(dirs.iloc[i + 1]) and int(dirs.iloc[i + 1]) != current_dir:
+                (bullish if int(dirs.iloc[i + 1]) == 1 else bearish).append(point)
         return bullish, bearish
 
     st1d_bull, st1d_bear = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
