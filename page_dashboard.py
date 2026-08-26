@@ -32,6 +32,7 @@ from oi_analysis import (
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
+    fetch_and_save_oi_snapshot,
 )
 from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
 from pdf_reports import generate_market_analysis_report_pdf
@@ -593,77 +594,26 @@ def render():
         st.markdown("---")
         st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर 10 मिनिटांनी)")
 
-        total_call_oi = int(df["CE Total OI"].sum()) if not df.empty else 0
-        total_put_oi = int(df["PE Total OI"].sum()) if not df.empty else 0
-        current_diff = total_put_oi - total_call_oi
-        # 🎓 नवीन — Put/Call Writing/Buying/Covering ओळखण्यासाठी, Total OI प्रमाणेच ATM±6 strikes चा
-        # एकूण Premium (LTP ची बेरीज) — OI बदलासोबत Premium बदल बघूनच "विक्री वाढतेय की खरेदी" हे कळतं
-        total_call_premium = float(df["CE LTP"].sum()) if not df.empty else 0.0
-        total_put_premium = float(df["PE LTP"].sum()) if not df.empty else 0.0
-
-        # IST वेळ — इतर ठिकाणी (line 79, 1280) वापरलेल्याच बरोबर पद्धतीने (datetime.now() सर्व्हरच्या local
-        # वेळेवर अवलंबून असतं, जी IST नसू शकते — विशेषतः Streamlit Cloud सारख्या UTC सर्व्हरवर चुकीची वेळ दाखवत होती)
-        now_dt = get_ist_now()
-        # खालच्या १० मिनिटांच्या स्लॉटवर राऊंड करणे (उदा. 13:47 -> 13:40)
-        snapshot_minute = (now_dt.minute // 10) * 10
-        snapshot_time = now_dt.replace(minute=snapshot_minute, second=0, microsecond=0).strftime("%H:%M")
-
-        conn3 = sqlite3.connect(DB_PATH)
-        cur3 = conn3.cursor()
-
-        # आधीचा (या क्षणापर्यंतचा सर्वात अलीकडचा) snapshot घेणे, ΔDiff, Put/Call OI+Premium वाढ, आणि hysteresis साठी
-        cur3.execute(
-            """SELECT diff, delta_diff, signal, total_put_oi, total_call_oi, total_call_premium, total_put_premium
-               FROM oi_diff_snapshots
-               WHERE symbol=? AND trade_date=? AND snapshot_time < ?
-               ORDER BY snapshot_time DESC LIMIT 1""",
-            (symbol, today_str, snapshot_time)
+        # 🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — ही संपूर्ण गणना+साठवण आता एकाच, पुनर्वापर
+        # करण्याजोग्या function मध्ये आहे (oi_analysis.fetch_and_save_oi_snapshot) — तेच नवीन
+        # oi_snapshot_collector.py (browser बंद असतानाही चालणारी unattended script) वापरतं, त्यामुळे
+        # Dashboard उघडलं की मधल्या काळात collector ने साठवलेले सर्व snapshots आपोआप टेबलमध्ये दिसतील.
+        snapshot_result, snapshot_status = fetch_and_save_oi_snapshot(
+            token_input, symbol, lambda t, s: (raw_chain, "OK"), get_ist_now, DB_PATH, atm_range=6,
         )
-        prev_row = cur3.fetchone()
-        prev_diff = prev_row[0] if prev_row else None
-        prev_signal = prev_row[2] if prev_row else None
-        prev_put_oi = prev_row[3] if prev_row else None
-        prev_call_oi = prev_row[4] if prev_row else None
-        prev_call_premium = prev_row[5] if prev_row else None
-        prev_put_premium = prev_row[6] if prev_row else None
-        delta_diff = (current_diff - prev_diff) if prev_diff is not None else 0
-
-        # 🎓 नवीन — किमान शेवटचे ५ स्नॅपशॉट्स (Strong/Weak साठी ३०-मिनिट तुलना + दिशा बदलण्यासाठी सलग
-        # ३ स्नॅपशॉट्सचं पुष्टीकरण या दोन्हीसाठी पुरेसे) — उगाच सिग्नल भिरभिरणं (flip-flop) टाळण्यासाठी
-        cur3.execute(
-            """SELECT diff, total_put_oi, total_call_oi, signal FROM oi_diff_snapshots
-               WHERE symbol=? AND trade_date=? AND snapshot_time < ?
-               ORDER BY snapshot_time DESC LIMIT 5""",
-            (symbol, today_str, snapshot_time)
-        )
-        recent_rows = cur3.fetchall()
-        recent_snapshots_df = pd.DataFrame(
-            [{"diff": r[0], "total_put_oi": r[1], "total_call_oi": r[2], "signal": r[3]} for r in reversed(recent_rows)]
-        )  # जुनं->नवीन क्रमाने (compute_oi_signal_with_hysteresis ला हाच क्रम हवा)
-
-        # सिग्नल — दिशा (level) + Strong/Weak (Put/Call OI ची स्वतःची वाढ, आता मागच्या ३ स्नॅपशॉट्स
-        # / ~३० मिनिटांच्या तुलनेत — आधी फक्त मागच्या १ स्नॅपशॉटशी, जे खूप नॉइझी होतं), आणि दिशा
-        # बदलण्यासाठी सलग ३ स्नॅपशॉट्समध्ये तीच नवीन दिशा दिसायलाच हवी (वापरकर्त्याशी चर्चा करून
-        # ठरवलेली सुधारणा — उगाच सिग्नल भिरभिरणं टाळण्यासाठी)
-        oi_signal = compute_oi_signal_with_hysteresis(
-            current_diff, total_put_oi, total_call_oi, recent_snapshots_df,
-        )
-
-        # 🎓 नवीन — Put/Call Writing/Buying/Short-Covering/Long-Unwinding ओळखून, actionable संदेश तयार करणे
-        put_oi_price_class = classify_oi_price_action(total_put_oi, prev_put_oi, total_put_premium, prev_put_premium)
-        call_oi_price_class = classify_oi_price_action(total_call_oi, prev_call_oi, total_call_premium, prev_call_premium)
-        oi_price_direction, oi_price_message = generate_oi_price_signal(put_oi_price_class, call_oi_price_class)
-
-        # या १० मिनिटांच्या स्लॉटसाठी snapshot फक्त एकदाच रेकॉर्ड करणे (त्या स्लॉटमधला पहिला पोल टिकतो)
-        cur3.execute(
-            """INSERT OR IGNORE INTO oi_diff_snapshots
-               (symbol, trade_date, snapshot_time, total_call_oi, total_put_oi, diff, delta_diff, signal,
-                underlying_price, total_call_premium, total_put_premium)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
-             underlying_price, total_call_premium, total_put_premium)
-        )
-        conn3.commit()
+        if snapshot_result is None:
+            st.warning(f"⚠️ OI Snapshot घेता आला नाही: {snapshot_status}")
+            total_call_oi = total_put_oi = current_diff = 0
+            oi_price_direction, oi_price_message = "NEUTRAL", "⚪ Snapshot अयशस्वी"
+            put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
+        else:
+            total_call_oi = snapshot_result["total_call_oi"]
+            total_put_oi = snapshot_result["total_put_oi"]
+            current_diff = snapshot_result["diff"]
+            oi_price_direction = snapshot_result["oi_price_direction"]
+            oi_price_message = snapshot_result["oi_price_message"]
+            put_oi_price_class = snapshot_result["put_oi_price_class"]
+            call_oi_price_class = snapshot_result["call_oi_price_class"]
 
         # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
         banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
@@ -681,16 +631,28 @@ def render():
 
 
         # आजच्या दिवसाचा संपूर्ण इतिहास दाखवणे (अलीकडचा वेळ सर्वात वर, स्क्रीनशॉटसारखे)
-        hist_df = pd.read_sql_query(
-            """SELECT snapshot_time AS Time, total_call_oi AS "Total Call OI",
-                      total_put_oi AS "Total Put OI", diff AS Diff,
-                      delta_diff AS "Δ Diff", signal AS Signal
-               FROM oi_diff_snapshots
-               WHERE symbol=? AND trade_date=?
-               ORDER BY snapshot_time DESC""",
-            conn3, params=(symbol, today_str)
-        )
-        conn3.close()
+        # 🎓 Cloud DB (Supabase) configured असेल तर तिथून वाचणे — local unattended collector ने
+        # साठवलेला डेटाही (browser बंद असतानाचा) इथे आपोआप दिसेल. नसेल तर जुन्याच local SQLite कडे वळणे.
+        from cloud_db import is_cloud_db_configured, get_oi_history_cloud
+        if is_cloud_db_configured():
+            cloud_rows = get_oi_history_cloud(symbol, today_str)
+            hist_df = pd.DataFrame([
+                {"Time": r["snapshot_time"], "Total Call OI": r["total_call_oi"], "Total Put OI": r["total_put_oi"],
+                 "Diff": r["diff"], "Δ Diff": r["delta_diff"], "Signal": r["signal"]}
+                for r in cloud_rows
+            ])
+        else:
+            conn3 = sqlite3.connect(DB_PATH)
+            hist_df = pd.read_sql_query(
+                """SELECT snapshot_time AS Time, total_call_oi AS "Total Call OI",
+                          total_put_oi AS "Total Put OI", diff AS Diff,
+                          delta_diff AS "Δ Diff", signal AS Signal
+                   FROM oi_diff_snapshots
+                   WHERE symbol=? AND trade_date=?
+                   ORDER BY snapshot_time DESC""",
+                conn3, params=(symbol, today_str)
+            )
+            conn3.close()
 
         def style_oi_numeric(val):
             if isinstance(val, (int, float)):
@@ -712,8 +674,21 @@ def render():
                 return "color: #089981; font-weight: bold;"      # Bearish कमजोर होतोय → उलट (हिरवा) रंग, बुलिशकडे झुकण्याचा इशारा
             return "color: #9598a1; font-weight: bold;"
 
+        # 🎓 वापरकर्त्याच्या विनंतीनुसार — मोठे आकडे वाचायला सोपे व्हावेत म्हणून लाखांत (1 लाख = 1,00,000)
+        # दाखवणे. .style.format() वापरल्याने फक्त DISPLAY बदलतो — रंग-कोडिंग (style_oi_numeric) अजूनही
+        # मूळ (न-बदललेल्या) संख्येवरच आधारित राहतं, त्यामुळे रंग बरोबरच राहतील.
+        def format_lakh_unsigned(val):
+            return f"{val/100000:,.2f} L" if isinstance(val, (int, float)) else val
+
+        def format_lakh_signed(val):
+            return f"{val/100000:+,.2f} L" if isinstance(val, (int, float)) else val
+
         styled_hist = hist_df.style.map(style_oi_numeric, subset=["Diff", "Δ Diff"]) \
                                     .map(style_oi_signal, subset=["Signal"]) \
+                                    .format({
+                                        "Total Call OI": format_lakh_unsigned, "Total Put OI": format_lakh_unsigned,
+                                        "Diff": format_lakh_signed, "Δ Diff": format_lakh_signed,
+                                    }) \
                                     .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
 
         st.dataframe(styled_hist, width='stretch', height=450)
@@ -1172,10 +1147,11 @@ def render():
         try:
             from notifications import check_heartbeat_stale, HEARTBEAT_DIR
             import os as _os
-            hb_col1, hb_col2 = st.columns(2)
+            hb_col1, hb_col2, hb_col3 = st.columns(3)
             for col, script_name, label in [
                 (hb_col1, "credit_spread_auto_trader", "Credit Spread Auto-Trader"),
                 (hb_col2, "oi_signal_auto_trader", "OI Signal Auto-Trader"),
+                (hb_col3, "oi_snapshot_collector", "OI Snapshot Collector"),
             ]:
                 with col:
                     hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")

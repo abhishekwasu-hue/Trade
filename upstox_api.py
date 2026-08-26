@@ -13,6 +13,20 @@ from config import get_ist_today
 
 from signals import calculate_rsi, resample_to_1h
 
+# 🎓 केंद्रीकृत Symbol -> Upstox Instrument Key mapping — आधी हे 5 ठिकाणी वेगवेगळं
+# (`"NSE_INDEX|Nifty 50" if symbol=="NIFTY" else "NSE_INDEX|Nifty Bank"`) लिहिलेलं होतं, त्यामुळे
+# SENSEX जोडताना सगळीकडे वेगळं बदलावं लागलं असतं. आता एकाच जागी.
+SYMBOL_INSTRUMENT_KEYS = {
+    "NIFTY": "NSE_INDEX|Nifty 50",
+    "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "SENSEX": "BSE_INDEX|SENSEX",
+}
+
+
+def get_instrument_key(symbol):
+    """दिलेल्या symbol साठी Upstox instrument key — ओळखीचा नसेल तर सुरक्षित डीफॉल्ट (NIFTY)."""
+    return SYMBOL_INSTRUMENT_KEYS.get(symbol, SYMBOL_INSTRUMENT_KEYS["NIFTY"])
+
 
 def fetch_timeframe_df(access_token, symbol, spot, interval_key):
     """
@@ -36,7 +50,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
         if interval not in allowed_intervals:
             interval = "30minute"
 
-        instrument_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+        instrument_key = get_instrument_key(symbol)
         encoded_key = urllib.parse.quote(instrument_key, safe="")
 
         interval_map = {
@@ -132,7 +146,7 @@ def fetch_long_history(access_token, symbol="NIFTY", years=20, chunk_years=3, pr
     जास्तीत जास्त 'years' वर्षांचा (किंवा जानेवारी 2000 पर्यंत, जे आधी येईल ते) Daily डेटा मागवता येतो.
     एका मोठ्या रिक्वेस्टऐवजी (जी response-size मर्यादेवर आदळू शकते) chunk_years च्या छोट्या तुकड्यांत मागवलं जातं.
     """
-    instrument_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+    instrument_key = get_instrument_key(symbol)
     encoded_key = urllib.parse.quote(instrument_key, safe="")
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
 
@@ -176,7 +190,7 @@ def fetch_candles_date_range(access_token, symbol, interval, from_date, to_date)
     मागे मोजतं, पण इथे भूतकाळातील कोणताही निश्चित कालावधी (आजपासून सुरू न होणाराही) निवडता येतो —
     Backtest मध्ये युजरने दिलेल्या date range साठी आवश्यक.
     """
-    instrument_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+    instrument_key = get_instrument_key(symbol)
     encoded_key = urllib.parse.quote(instrument_key, safe="")
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
 
@@ -259,7 +273,7 @@ def upload_to_google_drive(file_bytes, filename, mime_type="text/csv"):
         return False, f"अपलोड अयशस्वी: {e}"
 
 def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
-    instrument_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+    instrument_key = get_instrument_key(symbol)
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
     
     try:
@@ -482,7 +496,7 @@ def fetch_next_expiry_option_chain(access_token, symbol):
     fetch_upstox_option_chain मध्ये आधीच वापरलेला, verified expiry-listing + chain-fetch पॅटर्नच पुन्हा वापरला आहे,
     फक्त expiries[0] ऐवजी expiries[1] निवडला जातो.
     """
-    instrument_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+    instrument_key = get_instrument_key(symbol)
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
     try:
         expiry_url = f"https://api.upstox.com/v2/option/contract?instrument_key={requests.utils.quote(instrument_key)}"

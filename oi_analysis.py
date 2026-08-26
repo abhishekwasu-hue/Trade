@@ -408,13 +408,19 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
     आणि नवीन unattended script (oi_snapshot_collector.py) दोन्ही हेच वापरतात, त्यामुळे browser बंद
     असतानाही (cron ने चालवल्यास) snapshots साठवले जातील, आणि Dashboard उघडल्यावर तेही टेबलमध्ये दिसतील.
 
-    fetch_chain_fn/get_ist_now_fn dependency-injection सारखे pass केले आहेत — testing सोपं करण्यासाठी
-    (upstox_api.fetch_upstox_option_chain आणि config.get_ist_now याच पद्धतीने प्रत्यक्ष वापरात दिले जातात).
+    🎓 पुढची सुधारणा — Cloud DB (Supabase/PostgreSQL) configured असेल (cloud_db.py, environment variable
+    SUPABASE_DB_URL किंवा config फाईल द्वारे) तर तिथेच वाचन-लेखन होतं — जेणेकरून local machine वरचा
+    unattended collector आणि Streamlit Cloud वरचं Dashboard दोन्ही त्याच, सामायिक डेटाशी बोलतात
+    (आधीची समस्या: दोन वेगळ्या मशीन्सवरच्या वेगळ्या, न-जोडलेल्या SQLite फाईल्स). Cloud DB configured
+    नसेल तर आपोआप जुन्याच local SQLite कडे वळतं — कुठलंही जुनं वर्तन तुटत नाही.
+
+    fetch_chain_fn/get_ist_now_fn dependency-injection सारखे pass केले आहेत — testing सोपं करण्यासाठी.
 
     रिटर्न: (snapshot_dict किंवा None, स्थिती-संदेश). त्याच १०-मिनिट स्लॉटसाठी snapshot आधीच असेल तर
-    INSERT OR IGNORE मुळे शांतपणे वगळलं जातं (डुप्लिकेट होत नाही) — तरीही (snapshot_dict, "ALREADY_EXISTS") परत येतं.
+    शांतपणे वगळलं जातं (डुप्लिकेट होत नाही) — तरीही (snapshot_dict, "ALREADY_EXISTS") परत येतं.
     """
-    import sqlite3
+    import cloud_db
+    use_cloud = cloud_db.is_cloud_db_configured()
 
     raw_chain, status = fetch_chain_fn(access_token, symbol)
     if not raw_chain:
@@ -442,54 +448,76 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
     snapshot_time = now_dt.replace(minute=snapshot_minute, second=0, microsecond=0).strftime("%H:%M")
     today_str = now_dt.strftime("%Y-%m-%d")
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    # Signal Engine साठी इतिहास (Dashboard सारखीच पद्धत — किमान ५ मागचे snapshots)
-    cur.execute(
-        """SELECT diff, total_put_oi, total_call_oi, signal FROM oi_diff_snapshots
-           WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 5""",
-        (symbol, today_str, snapshot_time),
-    )
-    recent_rows = cur.fetchall()
     import pandas as pd
+    if use_cloud:
+        recent_rows_raw = cloud_db.get_recent_oi_snapshots_cloud(symbol, today_str, before_time=snapshot_time, limit=5)
+        recent_rows = [(r["diff"], r["total_put_oi"], r["total_call_oi"], r["signal"]) for r in recent_rows_raw]
+    else:
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT diff, total_put_oi, total_call_oi, signal FROM oi_diff_snapshots
+               WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 5""",
+            (symbol, today_str, snapshot_time),
+        )
+        recent_rows = list(reversed(cur.fetchall()))
+
     recent_snapshots_df = pd.DataFrame(
-        [{"diff": r[0], "total_put_oi": r[1], "total_call_oi": r[2], "signal": r[3]} for r in reversed(recent_rows)]
+        [{"diff": r[0], "total_put_oi": r[1], "total_call_oi": r[2], "signal": r[3]} for r in recent_rows]
     )
     oi_signal = compute_oi_signal_with_hysteresis(current_diff, total_put_oi, total_call_oi, recent_snapshots_df)
-    delta_diff = (current_diff - recent_rows[0][0]) if recent_rows else 0
+    delta_diff = (current_diff - recent_rows[-1][0]) if recent_rows else 0
 
-    # 🎓 OI-Price Banner (Writing/Buying/Covering) साठी — मागच्या (सर्वात अलीकडच्या) एकाच snapshot शी तुलना.
-    # prev_single नसेल (दिवसाचा पहिलाच snapshot) तरी classify_oi_price_action ला None दिलं जातं —
+    # 🎓 OI-Price Banner (Writing/Buying/Covering) साठी — मागच्या (सर्वात अलीकडच्या) एकाच snapshot शी
+    # तुलना. prev_single नसेल (दिवसाचा पहिलाच snapshot) तरी classify_oi_price_action ला None दिलं जातं —
     # तेच "अपुरा डेटा" परत करतं, आणि generate_oi_price_signal त्यावरून सुरक्षितपणे "NEUTRAL" ठरवतं
-    # (मूळ page_dashboard.py च्या वर्तनाशी तंतोतंत जुळण्यासाठी — None ऐवजी कधीच थेट क्रॅश होणार नाही).
-    cur.execute(
-        """SELECT total_put_oi, total_call_oi, total_call_premium, total_put_premium FROM oi_diff_snapshots
-           WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 1""",
-        (symbol, today_str, snapshot_time),
-    )
-    prev_single = cur.fetchone()
-    prev_put_oi_s, prev_call_oi_s, prev_call_prem_s, prev_put_prem_s = prev_single if prev_single else (None, None, None, None)
+    # (कधीही थेट क्रॅश होणार नाही).
+    if use_cloud:
+        all_today = cloud_db.get_oi_history_cloud(symbol, today_str)  # अलीकडचा->जुना क्रमाने
+        already_exists = any(r["snapshot_time"] == snapshot_time for r in all_today)
+        earlier_today = [r for r in all_today if r["snapshot_time"] < snapshot_time]
+        prev_single = earlier_today[0] if earlier_today else None
+        if prev_single:
+            prev_put_oi_s, prev_call_oi_s = prev_single["total_put_oi"], prev_single["total_call_oi"]
+            prev_call_prem_s, prev_put_prem_s = prev_single["total_call_premium"], prev_single["total_put_premium"]
+        else:
+            prev_put_oi_s = prev_call_oi_s = prev_call_prem_s = prev_put_prem_s = None
+        cloud_db.save_oi_snapshot_cloud(
+            symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
+            underlying_price, total_call_premium, total_put_premium,
+        )
+    else:
+        import sqlite3
+        conn2 = sqlite3.connect(db_path)
+        cur2 = conn2.cursor()
+        cur2.execute(
+            """SELECT total_put_oi, total_call_oi, total_call_premium, total_put_premium FROM oi_diff_snapshots
+               WHERE symbol=? AND trade_date=? AND snapshot_time < ? ORDER BY snapshot_time DESC LIMIT 1""",
+            (symbol, today_str, snapshot_time),
+        )
+        prev_single = cur2.fetchone()
+        prev_put_oi_s, prev_call_oi_s, prev_call_prem_s, prev_put_prem_s = prev_single if prev_single else (None, None, None, None)
+
+        cur2.execute(
+            """SELECT COUNT(*) FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? AND snapshot_time=?""",
+            (symbol, today_str, snapshot_time),
+        )
+        already_exists = cur2.fetchone()[0] > 0
+        cur2.execute(
+            """INSERT OR IGNORE INTO oi_diff_snapshots
+               (symbol, trade_date, snapshot_time, total_call_oi, total_put_oi, diff, delta_diff, signal,
+                underlying_price, total_call_premium, total_put_premium)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
+             underlying_price, total_call_premium, total_put_premium),
+        )
+        conn2.commit()
+        conn2.close()
+
     put_oi_price_class = classify_oi_price_action(total_put_oi, prev_put_oi_s, total_put_premium, prev_put_prem_s)
     call_oi_price_class = classify_oi_price_action(total_call_oi, prev_call_oi_s, total_call_premium, prev_call_prem_s)
     oi_price_direction, oi_price_message = generate_oi_price_signal(put_oi_price_class, call_oi_price_class)
-
-    cur.execute(
-        """SELECT COUNT(*) FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? AND snapshot_time=?""",
-        (symbol, today_str, snapshot_time),
-    )
-    already_exists = cur.fetchone()[0] > 0
-
-    cur.execute(
-        """INSERT OR IGNORE INTO oi_diff_snapshots
-           (symbol, trade_date, snapshot_time, total_call_oi, total_put_oi, diff, delta_diff, signal,
-            underlying_price, total_call_premium, total_put_premium)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
-         underlying_price, total_call_premium, total_put_premium),
-    )
-    conn.commit()
-    conn.close()
 
     snapshot = {
         "snapshot_time": snapshot_time, "trade_date": today_str, "total_call_oi": total_call_oi,

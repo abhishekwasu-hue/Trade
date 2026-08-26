@@ -30,22 +30,30 @@ from notifications import notify_error, write_heartbeat
 KILL_SWITCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "KILL_SWITCH")
 
 
+SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]  # 🎓 वापरकर्त्याशी चर्चा करून जोडलेला SENSEX
+
+
 def is_kill_switch_active():
     return os.path.exists(KILL_SWITCH_PATH)
 
 
-def run_cycle(access_token, symbol="NIFTY"):
-    """एक चक्र — फक्त Option Chain fetch करून snapshot साठवणे (कुठलाही trade घेत नाही, फक्त डेटा गोळा करते)."""
+def run_cycle(access_token, symbols=None):
+    """एक चक्र — दिलेल्या (डीफॉल्ट: तिन्ही) symbols साठी snapshot fetch+save (कुठलाही trade घेत नाही)."""
+    symbols = symbols or SYMBOLS
     if is_kill_switch_active():
         write_heartbeat("oi_snapshot_collector")
-        return "🛑 KILL SWITCH सक्रिय — snapshot घेतला जाणार नाही."
+        return "🛑 KILL SWITCH सक्रिय — कुठलाही snapshot घेतला जाणार नाही."
 
+    results = []
     try:
-        snapshot, status = fetch_and_save_oi_snapshot(access_token, symbol, fetch_upstox_option_chain, get_ist_now, DB_PATH, atm_range=6)
+        for symbol in symbols:
+            snapshot, status = fetch_and_save_oi_snapshot(access_token, symbol, fetch_upstox_option_chain, get_ist_now, DB_PATH, atm_range=6)
+            if snapshot is None:
+                results.append(f"[{symbol}] ❌ अयशस्वी: {status}")
+            else:
+                results.append(f"[{symbol}] ✅ [{snapshot['snapshot_time']}] Diff={snapshot['diff']}, Signal={snapshot['signal']} ({status})")
         write_heartbeat("oi_snapshot_collector")
-        if snapshot is None:
-            return f"❌ Snapshot अयशस्वी: {status}"
-        return f"✅ [{snapshot['snapshot_time']}] Diff={snapshot['diff']}, Signal={snapshot['signal']} ({status})"
+        return "\n".join(results)
     except Exception as exc:
         notify_error("oi_snapshot_collector", f"चक्रादरम्यान अनपेक्षित चूक: {exc}")
         raise
@@ -55,8 +63,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=True, help="Upstox Access Token")
-    parser.add_argument("--symbol", default="NIFTY")
+    parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX", help="स्वल्पविरामाने वेगळे केलेले symbols")
     args = parser.parse_args()
 
-    result = run_cycle(args.token, args.symbol)
-    print(f"[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}] {result}")
+    result = run_cycle(args.token, args.symbols.split(","))
+    print(f"[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}]\n{result}")

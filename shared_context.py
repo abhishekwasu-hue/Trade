@@ -17,7 +17,7 @@ from trading_engine import manage_open_trades
 
 def setup_shared_context():
     st.sidebar.title("⚙️ डॅशबोर्ड सेटिंग्ज")
-    symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY"])
+    symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY", "SENSEX"])
 
     # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
     timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "15minute", "30minute", "1hour", "day"], index=2)
