@@ -401,6 +401,28 @@ def swing_oi_gate(pipeline_direction, oi_price_matrix, pcr_bias, max_pain_strike
     return ok, {"supporting": supporting, "opposing": opposing, "total_signals": len(signals)}
 
 
+def compute_dte(raw_chain, today_date):
+    """
+    🎓 वापरकर्त्याच्या विनंतीनुसार — raw_chain मधल्या पहिल्या item मधून expiry date काढून, आजपासून
+    किती दिवस उरले (DTE, Days To Expiry) ते काढणे. raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच
+    'expiry' field असते (Upstox चं standard response) — त्यामुळे fetch_upstox_option_chain चं
+    signature बदलावं लागत नाही. expiry सापडली नाही, किंवा चुकीच्या format मध्ये असेल, तर सुरक्षितपणे
+    (None, None) — कधीही crash होत नाही.
+    """
+    import datetime
+    if not raw_chain:
+        return None, None
+    expiry_str = raw_chain[0].get("expiry")
+    if not expiry_str:
+        return None, None
+    try:
+        expiry_date = datetime.datetime.strptime(expiry_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None, None
+    dte = (expiry_date - today_date).days
+    return expiry_date, dte
+
+
 def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now_fn, db_path, atm_range=6, step=50):
     """
     🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — OI Diff Snapshot (दर १० मिनिटांचा) पूर्वी फक्त
