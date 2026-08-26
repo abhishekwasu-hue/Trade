@@ -73,11 +73,15 @@ def build_lightweight_chart_html(
 
     def _build_supertrend_segments(line_series, dir_series):
         """
-        🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं — Supertrend ला दिशेनुसार (bullish=हिरवा/bearish=लाल)
-        दोन वेगळ्या series मध्ये विभागावं लागतं (lightweight-charts मध्ये एकाच रेषेचा रंग मध्येच बदलता
-        येत नाही), पण आधी दिशा-बदलाच्या क्षणी दोन्ही भाग एकमेकांना स्पर्श करत नव्हते — रेषा तुटलेली/वेगळी
-        दिसायची. आता दिशा बदलण्याच्या नेमक्या बिंदूवर तोच बिंदू दोन्ही भागांत जोडला जातो (सांधा) —
-        त्यामुळे दृश्यतः एकच सलग रेषा दिसते, फक्त रंग बदलतो.
+        🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं (दोनदा) — Supertrend ला दिशेनुसार (bullish=हिरवा/
+        bearish=लाल) दोन वेगळ्या series मध्ये विभागावं लागतं (lightweight-charts मध्ये एकाच रेषेचा
+        रंग मध्येच बदलता येत नाही). दोन समस्या आढळल्या आणि दुरुस्त केल्या:
+        १) दिशा-बदलाच्या क्षणी — तोच बिंदू दोन्ही भागांत जोडला जातो (सांधा), रेषा तुटलेली दिसू नये म्हणून.
+        २) खरा, मोठा bug — मध्येच डेटा गहाळ (NaN) असेल, तर आधी तो पूर्णपणे वगळला (skip) जायचा, आणि
+           lightweight-charts उरलेले (लांबवरचे) बिंदू चुकीच्या सरळ रेषेने जोडायचं — screenshot मध्ये
+           दिसलेली तिरकी रेषा याच कारणामुळे. आता प्रत्येक timestamp साठी बिंदू असतोच — मूल्य नसेल तेव्हा
+           खरा 'whitespace' (फक्त वेळ, मूल्य नाही) दिला जातो, जो lightweight-charts मध्ये खरा दृश्य
+           तुटकपणा (gap) दाखवतो, चुकीची सरळ रेषा जोडत नाही.
         """
         bullish, bearish = [], []
         if line_series is None or dir_series is None or line_series.empty:
@@ -87,14 +91,25 @@ def build_lightweight_chart_html(
         times = df["timestamp"].reset_index(drop=True)
         n = len(values)
         for i in range(n):
+            t = _to_unix_time(times.iloc[i])
             if pd.isna(values.iloc[i]) or pd.isna(dirs.iloc[i]):
+                bullish.append({"time": t})
+                bearish.append({"time": t})
                 continue
-            point = {"time": _to_unix_time(times.iloc[i]), "value": round(float(values.iloc[i]), 2)}
+            point = {"time": t, "value": round(float(values.iloc[i]), 2)}
             current_dir = int(dirs.iloc[i])
-            (bullish if current_dir == 1 else bearish).append(point)
+            if current_dir == 1:
+                bullish.append(point)
+                bearish.append({"time": t})
+            else:
+                bearish.append(point)
+                bullish.append({"time": t})
             # पुढचा बिंदू दिशा बदलणार असेल, तर आत्ताचाच बिंदू त्या नवीन दिशेतही जोडणे (सांधा)
             if i + 1 < n and not pd.isna(dirs.iloc[i + 1]) and int(dirs.iloc[i + 1]) != current_dir:
-                (bullish if int(dirs.iloc[i + 1]) == 1 else bearish).append(point)
+                if int(dirs.iloc[i + 1]) == 1:
+                    bullish[-1] = point
+                else:
+                    bearish[-1] = point
         return bullish, bearish
 
     st1d_bull, st1d_bear = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
@@ -196,13 +211,21 @@ def build_lightweight_chart_html(
   </div>"""
 
     st_legend_html = ""
-    if st1d_bull or st1d_bear or st1h_bull or st1h_bear or st15m_bull or st15m_bear:
+    # 🎓 whitespace-gap दुरुस्तीमुळे या lists आता कधीच पूर्णपणे रिकाम्या नसतात (प्रत्येक timestamp साठी
+    # किमान whitespace बिंदू असतोच) — त्यामुळे खरा डेटा (value असलेला) आहे का हेच खरी तपासणी.
+    def _has_real_data(*segments):
+        return any("value" in p for seg in segments for p in seg)
+
+    has_1d = _has_real_data(st1d_bull, st1d_bear)
+    has_1h = _has_real_data(st1h_bull, st1h_bear)
+    has_15m = _has_real_data(st15m_bull, st15m_bear)
+    if has_1d or has_1h or has_15m:
         legend_lines = []
-        if st1d_bull or st1d_bear:
+        if has_1d:
             legend_lines.append('<div><span class="st-line" style="border-top-width:3px; border-top-color:#9598a1;"></span>1D Supertrend</div>')
-        if st1h_bull or st1h_bear:
+        if has_1h:
             legend_lines.append('<div><span class="st-line" style="border-top-width:2px; border-top-color:#9598a1;"></span>1H Supertrend</div>')
-        if st15m_bull or st15m_bear:
+        if has_15m:
             legend_lines.append('<div><span class="st-line" style="border-top-width:1px; border-top-color:#9598a1;"></span>15M Supertrend</div>')
         st_legend_html = (
             '<div id="st_legend">' + "".join(legend_lines) +
