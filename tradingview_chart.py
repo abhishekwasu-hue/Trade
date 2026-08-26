@@ -40,6 +40,7 @@ def build_lightweight_chart_html(
     df, symbol="NIFTY", timeframe_label="15M",
     supertrend_1d_series=None, supertrend_1d_direction=None,
     supertrend_1h_series=None, supertrend_1h_direction=None,
+    supertrend_15m_series=None, supertrend_15m_direction=None,
     rsi_series=None, sr_levels=None, pattern_markers=None, height=650,
 ):
     """
@@ -98,6 +99,7 @@ def build_lightweight_chart_html(
 
     st1d_bull, st1d_bear = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
     st1h_bull, st1h_bear = _build_supertrend_segments(supertrend_1h_series, supertrend_1h_direction)
+    st15m_bull, st15m_bear = _build_supertrend_segments(supertrend_15m_series, supertrend_15m_direction)
 
     rsi_data = []
     if rsi_series is not None and not rsi_series.empty:
@@ -194,12 +196,14 @@ def build_lightweight_chart_html(
   </div>"""
 
     st_legend_html = ""
-    if st1d_bull or st1d_bear or st1h_bull or st1h_bear:
+    if st1d_bull or st1d_bear or st1h_bull or st1h_bear or st15m_bull or st15m_bear:
         legend_lines = []
         if st1d_bull or st1d_bear:
             legend_lines.append('<div><span class="st-line" style="border-top-width:3px; border-top-color:#9598a1;"></span>1D Supertrend</div>')
         if st1h_bull or st1h_bear:
-            legend_lines.append('<div><span class="st-line" style="border-top-width:1px; border-top-color:#9598a1;"></span>1H Supertrend</div>')
+            legend_lines.append('<div><span class="st-line" style="border-top-width:2px; border-top-color:#9598a1;"></span>1H Supertrend</div>')
+        if st15m_bull or st15m_bear:
+            legend_lines.append('<div><span class="st-line" style="border-top-width:1px; border-top-color:#9598a1;"></span>15M Supertrend</div>')
         st_legend_html = (
             '<div id="st_legend">' + "".join(legend_lines) +
             '<div style="margin-top:3px; font-size:9.5px; color:#787b86;">🟢 हिरवा=Bullish · 🔴 लाल=Bearish (एकाच रेषेची दिशा)</div></div>'
@@ -301,7 +305,8 @@ function addSupertrendSeries(bullData, bearData, widthPx) {{
     }}
 }}
 addSupertrendSeries({json.dumps(st1d_bull)}, {json.dumps(st1d_bear)}, 3);
-addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 1);
+addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 2);
+addSupertrendSeries({json.dumps(st15m_bull)}, {json.dumps(st15m_bear)}, 1);
 
 const volumeData = {json.dumps(volume_data)};
 if (volumeData.length > 0) {{
