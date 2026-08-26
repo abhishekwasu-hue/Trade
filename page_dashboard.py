@@ -24,7 +24,7 @@ from signals import (
     classify_market_structure, detect_break,
     classify_sideways, detect_pullback_retest,
     rsi_momentum_and_divergence, confirm_5m, supply_demand_zone, check_pattern_rsi_gate,
-    check_price_action_strategy, check_indicator_strategy,
+    check_price_action_strategy, check_indicator_strategy, find_significant_reversal_candles,
 )
 from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, select_credit_spread_fixed_strikes, compute_position_size
 from oi_analysis import (
@@ -107,23 +107,55 @@ def render():
 
         # --- ट्रेडिंगव्यू प्रो-चार्ट (Price + MA, Volume, RSI) ---
 
-        # मूव्हिंग अॅव्हरेजेस (TradingView वर नेहमी दिसतात तशा)
-        df_candles["ema20"] = df_candles["close"].ewm(span=20, adjust=False).mean()
-        df_candles["ema50"] = df_candles["close"].ewm(span=50, adjust=False).mean()
-
         # =========================================================
-        # ७.६ TradingView Chart (Lightweight Charts library) — खरं candle-रेंडरिंग, मूलभूत Drawing Tools
-        # (Trendline + Horizontal Line). जुना Plotly chart काढून, हाच आता एकमेव, डीफॉल्ट chart आहे.
+        # ७.६ TradingView Chart (Lightweight Charts library) — खरं candle-रेंडरिंग, Drawing Tools
+        # (Trendline, H-Line, Fibonacci, Rectangle, Measure). जुना Plotly chart काढून, हाच आता एकमेव,
+        # डीफॉल्ट chart आहे.
         # =========================================================
         rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
         # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
         # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
         # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
         sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day व
+        # 1-Hour Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). दोन्ही मुख्य chart च्या
+        # timeframe शी no-lookahead (merge_asof, backward) अलाइन केले जातात — established पद्धत,
+        # sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
+        st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
+        pattern_markers_tv = []
+        if not df_candles.empty:
+            try:
+                df_1d_tv = fetch_candles(token_input, symbol, underlying_price, interval="day")
+                if df_1d_tv is not None and not df_1d_tv.empty:
+                    st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
+                    df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
+                    aligned_1d = pd.merge_asof(
+                        df_candles[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
+                        on="timestamp", direction="backward",
+                    )
+                    st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
+
+                df_1h_tv = resample_to_1h(fetch_candles(token_input, symbol, underlying_price, interval="30minute"))
+                if df_1h_tv is not None and not df_1h_tv.empty:
+                    st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
+                    df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
+                    aligned_1h = pd.merge_asof(
+                        df_candles[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
+                        on="timestamp", direction="backward",
+                    )
+                    st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
+            except Exception:
+                pass  # 1D/1H डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
+
+            # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
+            pattern_markers_tv = find_significant_reversal_candles(df_candles, lookback_compare=3)
+
         tv_html = build_lightweight_chart_html(
             df_candles, symbol=symbol, timeframe_label=timeframe_option,
-            ema20_series=df_candles.get("ema20"), ema50_series=df_candles.get("ema50"),
-            rsi_series=rsi_for_tv, sr_levels=sr_for_tv, height=650,
+            supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
+            supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
+            rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
         )
         st.components.v1.html(tv_html, height=700, scrolling=False)
         st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
@@ -1320,3 +1352,5 @@ def render():
                 )
             except Exception as e:
                 st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
+
+

@@ -44,7 +44,9 @@ def calculate_supertrend(df, period=10, multiplier=3):
     final_upper = upper_band.copy()
     final_lower = lower_band.copy()
     direction = pd.Series(1, index=df.index)
-    supertrend = pd.Series(0.0, index=df.index)
+    supertrend = pd.Series(float("nan"), index=df.index)  # 🎓 bug दुरुस्त — आधी 0.0 होतं, पण लूप index 0
+    # ला कधीच सेट करत नाही (i=1 पासून सुरू होतो), त्यामुळे तो 0.0 चुकीचाच राहायचा (chart वर plot
+    # करताना उघड झालं — एक भरकटलेला बिंदू संपूर्ण scale बिघडवत होता)
 
     for i in range(1, len(df)):
         if close.iloc[i - 1] <= final_upper.iloc[i - 1]:
@@ -900,6 +902,29 @@ def detect_candlestick_pattern(df):
     if upper_wick >= 2 * body and lower_wick <= 0.5 * body:
         return "SHOOTING_STAR"
     return None
+
+
+def find_significant_reversal_candles(df, lookback_compare=3, min_size_ratio=1.0):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (chart वर ठळक करण्यासाठी) — Hammer/Shooting Star
+    पॅटर्न + त्या candle चा range (high-low) मागच्या lookback_compare (डीफॉल्ट ३) candles च्या
+    सर्वाधिक range पेक्षा खरंच मोठा असेल तरच — ही जास्त शक्तिशाली, दुर्मिळ reversal candle मानली जाते
+    (नुसता आकाराने छोटा Hammer/Shooting Star नॉइझ असू शकतो, ठळक करण्याजोगा नाही).
+    रिटर्न: [(index, pattern_name), ...] — chart वर marker म्हणून वापरण्यासाठी.
+    """
+    markers = []
+    n = len(df)
+    for i in range(lookback_compare, n):
+        window = df.iloc[:i + 1]
+        pattern = detect_candlestick_pattern(window)
+        if pattern not in ("HAMMER", "SHOOTING_STAR"):
+            continue
+        current_range = df["high"].iloc[i] - df["low"].iloc[i]
+        prev_ranges = [df["high"].iloc[j] - df["low"].iloc[j] for j in range(i - lookback_compare, i)]
+        max_prev_range = max(prev_ranges) if prev_ranges else 0
+        if max_prev_range > 0 and current_range >= max_prev_range * min_size_ratio:
+            markers.append((i, pattern))
+    return markers
 
 
 def detect_morning_evening_star(df):

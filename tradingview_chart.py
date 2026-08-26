@@ -1,13 +1,25 @@
 """
 TradingView-style chart — त्यांच्याच open-source 'Lightweight Charts' library वापरून, Streamlit HTML
-component म्हणून embed केलेला. Plotly ऐवजी — खरा TradingView candle-रेंडरिंग, smooth pan/zoom, आणि
-मूलभूत Drawing Tools (Trendline + Horizontal Line — fibonacci सारखे advanced tools नाहीत).
+component म्हणून embed केलेला. Plotly ऐवजी — खरा TradingView candle-रेंडरिंग, smooth pan/zoom.
+
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली मोठी सुधारणा:
+  - अधिक घट्ट (deeper) dark theme, grid पूर्णपणे बंद
+  - Drawing Tools: Trendline, Horizontal Line, Fibonacci Retracement, Rectangle, Measure Tool
+  - Crosshair वर OHLC माहिती-पेटी
+  - EMA20/EMA50 काढले — त्याऐवजी 1-Day व 1-Hour Supertrend overlay (डीफॉल्ट, period=10, multiplier=3)
+  - मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star मार्कर्सने ठळक
 """
 import json
 import os
 import pandas as pd
 
 _LIB_PATH = os.path.join(os.path.dirname(__file__), "lib", "lightweight-charts.js")
+
+# 🎓 घट्ट (deeper) dark theme रंग — आधीच्या #131722 पेक्षा जास्त गडद, TradingView च्या Pro थीमसारखा
+BG_COLOR = "#0a0d13"
+PANEL_COLOR = "#0d1017"
+BORDER_COLOR = "#1c2129"
+TEXT_COLOR = "#c9cdd6"
 
 
 def _load_library_js():
@@ -26,14 +38,18 @@ def _to_unix_time(ts):
 
 def build_lightweight_chart_html(
     df, symbol="NIFTY", timeframe_label="15M",
-    ema20_series=None, ema50_series=None, rsi_series=None,
-    sr_levels=None, height=650,
+    supertrend_1d_series=None, supertrend_1d_direction=None,
+    supertrend_1h_series=None, supertrend_1h_direction=None,
+    rsi_series=None, sr_levels=None, pattern_markers=None, height=650,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
-    EMA20/EMA50 (मुख्य किंमत chart वर) + RSI (वेगळा pane) + Support/Resistance (आडव्या रेषा) +
-    Drawing Toolbar (Trendline + Horizontal Line — क्लिक करून काढता येणारे, पण Streamlit rerun झाल्यावर
-    रीसेट होतात, कारण हे client-side JS state आहे, server ला परत पाठवलं जात नाही).
+    1D/1H Supertrend (मुख्य किंमत chart वर, डीफॉल्ट — EMA20/EMA50 ऐवजी) + RSI (वेगळा pane) +
+    Support/Resistance (आडव्या रेषा) + Hammer/Shooting-Star मार्कर्स (मागच्या 2-3 candles पेक्षा मोठे
+    असतील तेच) + Drawing Toolbar (Trendline, Horizontal Line, Fibonacci, Rectangle, Measure).
+
+    supertrend_*_series/direction: pandas Series, df च्याच timestamps शी आधीच अलाइन केलेले (no-lookahead
+    merge_asof ने) — इथे फक्त रेंडर केले जातात, अलाइनमेंट page_dashboard.py मध्ये होते.
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -54,24 +70,50 @@ def build_lightweight_chart_html(
         for row in df.itertuples()
     ]
 
-    ema20_data = []
-    if ema20_series is not None and not ema20_series.empty:
-        ema20_data = [
-            {"time": _to_unix_time(t), "value": round(float(v), 2)}
-            for t, v in zip(df["timestamp"], ema20_series) if pd.notna(v)
-        ]
-    ema50_data = []
-    if ema50_series is not None and not ema50_series.empty:
-        ema50_data = [
-            {"time": _to_unix_time(t), "value": round(float(v), 2)}
-            for t, v in zip(df["timestamp"], ema50_series) if pd.notna(v)
-        ]
+    def _build_supertrend_segments(line_series, dir_series):
+        """Supertrend ला दिशेनुसार (bullish=हिरवा/bearish=लाल) दोन वेगळ्या series मध्ये विभागणे —
+        lightweight-charts मध्ये एकाच LineSeries चा रंग मध्येच बदलता येत नाही, म्हणून ही सर्वमान्य पद्धत."""
+        bullish, bearish = [], []
+        if line_series is None or dir_series is None or line_series.empty:
+            return bullish, bearish
+        for t, v, d in zip(df["timestamp"], line_series, dir_series):
+            if pd.isna(v) or pd.isna(d):
+                continue
+            point = {"time": _to_unix_time(t), "value": round(float(v), 2)}
+            if int(d) == 1:
+                bullish.append(point)
+            else:
+                bearish.append(point)
+        return bullish, bearish
+
+    st1d_bull, st1d_bear = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
+    st1h_bull, st1h_bear = _build_supertrend_segments(supertrend_1h_series, supertrend_1h_direction)
+
     rsi_data = []
     if rsi_series is not None and not rsi_series.empty:
         rsi_data = [
             {"time": _to_unix_time(t), "value": round(float(v), 2)}
             for t, v in zip(df["timestamp"], rsi_series) if pd.notna(v)
         ]
+
+    # 🎓 Hammer/Shooting-Star मार्कर्स (मागच्या 2-3 candles पेक्षा मोठे असतील तेच) — lightweight-charts
+    # च्या setMarkers() ला हवा तो फॉरमॅट: वर बाणाने Shooting Star (bearish), खाली बाणाने Hammer (bullish)
+    marker_data = []
+    if pattern_markers:
+        for idx, pattern in pattern_markers:
+            if idx >= len(df):
+                continue
+            row = df.iloc[idx]
+            if pattern == "HAMMER":
+                marker_data.append({
+                    "time": _to_unix_time(row["timestamp"]), "position": "belowBar",
+                    "color": "#089981", "shape": "arrowUp", "text": "H",
+                })
+            else:  # SHOOTING_STAR
+                marker_data.append({
+                    "time": _to_unix_time(row["timestamp"]), "position": "aboveBar",
+                    "color": "#F23645", "shape": "arrowDown", "text": "SS",
+                })
 
     sr_lines_js = []
     sr_table_rows = []  # खाली दाखवायच्या table साठी — [type, level, touches]
@@ -126,11 +168,11 @@ def build_lightweight_chart_html(
     sr_table_section = ""
     if sr_table_rows:
         sr_table_section = f"""
-  <div style="padding:10px 8px; background:#131722;">
-    <div style="color:#d1d4dc; font-size:12px; font-weight:600; padding:4px 12px;">📊 Support / Resistance Levels (जितके जास्त touches, तितकी उच्च-probability पातळी)</div>
+  <div style="padding:10px 8px; background:{BG_COLOR};">
+    <div style="color:{TEXT_COLOR}; font-size:12px; font-weight:600; padding:4px 12px;">📊 Support / Resistance Levels (जितके जास्त touches, तितकी उच्च-probability पातळी)</div>
     <table style="width:100%; border-collapse:collapse; font-family:-apple-system,sans-serif;">
       <thead>
-        <tr style="border-bottom:1px solid #2a2e3d;">
+        <tr style="border-bottom:1px solid {BORDER_COLOR};">
           <th style="padding:6px 12px; text-align:left; color:#787b86; font-size:11px;">प्रकार</th>
           <th style="padding:6px 12px; text-align:left; color:#787b86; font-size:11px;">किंमत</th>
           <th style="padding:6px 12px; text-align:left; color:#787b86; font-size:11px;">Touches</th>
@@ -151,36 +193,48 @@ def build_lightweight_chart_html(
 {library_js}
 </script>
 <style>
-  body {{ margin: 0; padding: 0; background: #131722; font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif; }}
-  #toolbar {{ display: flex; gap: 6px; padding: 6px 8px; background: #1e222d; border-bottom: 1px solid #2a2e3d; }}
+  body {{ margin: 0; padding: 0; background: {BG_COLOR}; font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif; }}
+  #toolbar {{ display: flex; gap: 5px; padding: 6px 8px; background: {PANEL_COLOR}; border-bottom: 1px solid {BORDER_COLOR}; flex-wrap: wrap; }}
   .tool-btn {{
-    background: #2a2e3d; color: #d1d4dc; border: 1px solid #363a45; border-radius: 4px;
-    padding: 5px 12px; font-size: 12px; cursor: pointer;
+    background: #161a22; color: {TEXT_COLOR}; border: 1px solid {BORDER_COLOR}; border-radius: 4px;
+    padding: 5px 10px; font-size: 11px; cursor: pointer;
   }}
   .tool-btn.active {{ background: #2962FF; color: white; border-color: #2962FF; }}
-  .tool-btn:hover {{ background: #363a45; }}
-  #chart_container {{ width: 100%; height: {height}px; }}
+  .tool-btn:hover {{ background: #1c212b; }}
+  #chart_container {{ width: 100%; height: {height}px; position: relative; }}
   #status {{ color: #787b86; font-size: 11px; padding: 4px 8px; }}
+  #ohlc_box {{
+    position: absolute; top: 8px; left: 8px; z-index: 5; background: rgba(13,16,23,0.85);
+    border: 1px solid {BORDER_COLOR}; border-radius: 4px; padding: 6px 10px; font-size: 11px;
+    color: {TEXT_COLOR}; display: none; pointer-events: none;
+  }}
+  #ohlc_box span.up {{ color: #089981; }}
+  #ohlc_box span.down {{ color: #F23645; }}
 </style>
 </head>
 <body>
   <div id="toolbar">
     <button class="tool-btn" id="btn_trendline" onclick="setTool('trendline')">📈 Trendline</button>
-    <button class="tool-btn" id="btn_hline" onclick="setTool('hline')">➖ Horizontal Line</button>
+    <button class="tool-btn" id="btn_hline" onclick="setTool('hline')">➖ H-Line</button>
+    <button class="tool-btn" id="btn_fib" onclick="setTool('fib')">🌀 Fibonacci</button>
+    <button class="tool-btn" id="btn_rect" onclick="setTool('rect')">▭ Rectangle</button>
+    <button class="tool-btn" id="btn_measure" onclick="setTool('measure')">📏 Measure</button>
     <button class="tool-btn" onclick="setTool(null)">🖱️ Cursor</button>
     <button class="tool-btn" onclick="clearAllDrawings()">🗑️ सर्व मिटवा</button>
     <span id="status" style="align-self:center;"></span>
   </div>
-  <div id="chart_container"></div>
+  <div id="chart_container">
+    <div id="ohlc_box"></div>
+  </div>
 {sr_table_section}
 
 <script>
 const chartOptions = {{
-    layout: {{ background: {{ type: 'solid', color: '#131722' }}, textColor: '#d1d4dc', fontSize: 11 }},
-    grid: {{ vertLines: {{ color: '#1e222d' }}, horzLines: {{ color: '#1e222d' }} }},
+    layout: {{ background: {{ type: 'solid', color: '{BG_COLOR}' }}, textColor: '{TEXT_COLOR}', fontSize: 11 }},
+    grid: {{ vertLines: {{ visible: false }}, horzLines: {{ visible: false }} }},
     crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
-    timeScale: {{ timeVisible: true, secondsVisible: false, borderColor: '#2a2e3d' }},
-    rightPriceScale: {{ borderColor: '#2a2e3d' }},
+    timeScale: {{ timeVisible: true, secondsVisible: false, borderColor: '{BORDER_COLOR}' }},
+    rightPriceScale: {{ borderColor: '{BORDER_COLOR}' }},
     autoSize: true,
 }};
 const chart = LightweightCharts.createChart(document.getElementById('chart_container'), chartOptions);
@@ -192,16 +246,31 @@ const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {{
 }});
 candleSeries.setData({json.dumps(candle_data)});
 
-const ema20Data = {json.dumps(ema20_data)};
-if (ema20Data.length > 0) {{
-    const ema20Series = chart.addSeries(LightweightCharts.LineSeries, {{ color: '#2962FF', lineWidth: 1, title: 'EMA20', lastValueVisible: false }});
-    ema20Series.setData(ema20Data);
+const markerData = {json.dumps(marker_data)};
+if (markerData.length > 0) {{
+    LightweightCharts.createSeriesMarkers(candleSeries, markerData);
 }}
-const ema50Data = {json.dumps(ema50_data)};
-if (ema50Data.length > 0) {{
-    const ema50Series = chart.addSeries(LightweightCharts.LineSeries, {{ color: '#FF6D00', lineWidth: 1, title: 'EMA50', lastValueVisible: false }});
-    ema50Series.setData(ema50Data);
+
+// 🎓 1-Day व 1-Hour Supertrend (डीफॉल्ट, EMA20/EMA50 ऐवजी) — दिशेनुसार हिरवा(bullish)/लाल(bearish),
+// प्रत्येक timeframe साठी 2 series (bullish+bearish भाग), जेणेकरून दिशा बदलली की रंगही बदलतो
+function addSupertrendSeries(bullData, bearData, widthPx, labelPrefix) {{
+    if (bullData.length > 0) {{
+        const s = chart.addSeries(LightweightCharts.LineSeries, {{
+            color: '#089981', lineWidth: widthPx, title: labelPrefix + ' (Bull)',
+            lastValueVisible: false, priceLineVisible: false,
+        }});
+        s.setData(bullData);
+    }}
+    if (bearData.length > 0) {{
+        const s = chart.addSeries(LightweightCharts.LineSeries, {{
+            color: '#F23645', lineWidth: widthPx, title: labelPrefix + ' (Bear)',
+            lastValueVisible: false, priceLineVisible: false,
+        }});
+        s.setData(bearData);
+    }}
 }}
+addSupertrendSeries({json.dumps(st1d_bull)}, {json.dumps(st1d_bear)}, 3, '1D Supertrend');
+addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 1, '1H Supertrend');
 
 const volumeData = {json.dumps(volume_data)};
 if (volumeData.length > 0) {{
@@ -231,17 +300,36 @@ srLines.forEach(l => {{
 
 chart.timeScale().fitContent();
 
-// --- Drawing Tools (Trendline + Horizontal Line) ---
+// --- Crosshair वर OHLC माहिती-पेटी ---
+const ohlcBox = document.getElementById('ohlc_box');
+chart.subscribeCrosshairMove((param) => {{
+    if (!param.time || !param.seriesData || !param.seriesData.get(candleSeries)) {{
+        ohlcBox.style.display = 'none';
+        return;
+    }}
+    const d = param.seriesData.get(candleSeries);
+    const up = d.close >= d.open;
+    ohlcBox.innerHTML = `<b>{symbol} · {timeframe_label}</b> &nbsp; O <span class="${{up ? 'up' : 'down'}}">${{d.open.toFixed(2)}}</span> ` +
+        `H <span class="${{up ? 'up' : 'down'}}">${{d.high.toFixed(2)}}</span> L <span class="${{up ? 'up' : 'down'}}">${{d.low.toFixed(2)}}</span> ` +
+        `C <span class="${{up ? 'up' : 'down'}}">${{d.close.toFixed(2)}}</span>`;
+    ohlcBox.style.display = 'block';
+}});
+
+// --- Drawing Tools: Trendline, Horizontal Line, Fibonacci, Rectangle, Measure ---
 let currentTool = null;
-let trendlineFirstPoint = null;
+let firstPoint = null;
 const drawnSeries = [];
+const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+const FIB_COLORS = ['#787b86', '#F23645', '#FF6D00', '#FFB400', '#089981', '#2962FF', '#787b86'];
 
 function setTool(tool) {{
     currentTool = tool;
-    trendlineFirstPoint = null;
-    document.getElementById('btn_trendline').classList.toggle('active', tool === 'trendline');
-    document.getElementById('btn_hline').classList.toggle('active', tool === 'hline');
-    document.getElementById('status').textContent = tool ? ('Tool: ' + tool + ' - chart वर क्लिक करा') : '';
+    firstPoint = null;
+    ['trendline', 'hline', 'fib', 'rect', 'measure'].forEach(t => {{
+        const btn = document.getElementById('btn_' + t);
+        if (btn) btn.classList.toggle('active', tool === t);
+    }});
+    document.getElementById('status').textContent = tool ? ('Tool: ' + tool + ' — chart वर क्लिक करा') : '';
 }}
 
 chart.subscribeClick((param) => {{
@@ -260,8 +348,8 @@ chart.subscribeClick((param) => {{
     }}
 
     if (currentTool === 'trendline') {{
-        if (!trendlineFirstPoint) {{
-            trendlineFirstPoint = {{ time: param.time, price: price }};
+        if (!firstPoint) {{
+            firstPoint = {{ time: param.time, price: price }};
             document.getElementById('status').textContent = 'दुसरा बिंदू क्लिक करा';
             return;
         }}
@@ -269,11 +357,89 @@ chart.subscribeClick((param) => {{
             color: '#2962FF', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
         }});
         lineSeries.setData([
-            {{ time: trendlineFirstPoint.time, value: trendlineFirstPoint.price }},
+            {{ time: firstPoint.time, value: firstPoint.price }},
             {{ time: param.time, value: price }},
         ]);
-        drawnSeries.push({{ type: 'trendline', ref: lineSeries }});
+        drawnSeries.push({{ type: 'series', ref: lineSeries }});
         setTool(null);
+        return;
+    }}
+
+    if (currentTool === 'fib') {{
+        if (!firstPoint) {{
+            firstPoint = {{ time: param.time, price: price }};
+            document.getElementById('status').textContent = 'दुसरा बिंदू क्लिक करा (Fibonacci)';
+            return;
+        }}
+        const high = Math.max(firstPoint.price, price);
+        const low = Math.min(firstPoint.price, price);
+        const range = high - low;
+        FIB_LEVELS.forEach((lvl, i) => {{
+            const lvlPrice = high - range * lvl;
+            const s = chart.addSeries(LightweightCharts.LineSeries, {{
+                color: FIB_COLORS[i], lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+                title: (lvl * 100).toFixed(1) + '% (' + lvlPrice.toFixed(2) + ')',
+            }});
+            s.setData([
+                {{ time: firstPoint.time, value: lvlPrice }},
+                {{ time: param.time, value: lvlPrice }},
+            ]);
+            drawnSeries.push({{ type: 'series', ref: s }});
+        }});
+        setTool(null);
+        return;
+    }}
+
+    if (currentTool === 'rect') {{
+        if (!firstPoint) {{
+            firstPoint = {{ time: param.time, price: price }};
+            document.getElementById('status').textContent = 'विरुद्ध कोपरा क्लिक करा (Rectangle)';
+            return;
+        }}
+        // 🎓 खरी भरीव (filled) rectangle lightweight-charts मध्ये सोप्या API ने शक्य नाही —
+        // वरची व खालची सीमा-रेषा काढून झोन (zone) दाखवणे, जे व्यवहारात तेवढंच उपयुक्त आहे
+        [firstPoint.price, price].forEach((p, i) => {{
+            const s = chart.addSeries(LightweightCharts.LineSeries, {{
+                color: '#2962FF', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+            }});
+            s.setData([
+                {{ time: firstPoint.time, value: p }},
+                {{ time: param.time, value: p }},
+            ]);
+            drawnSeries.push({{ type: 'series', ref: s }});
+        }});
+        setTool(null);
+        return;
+    }}
+
+    if (currentTool === 'measure') {{
+        if (!firstPoint) {{
+            firstPoint = {{ time: param.time, price: price, x: param.point.x }};
+            document.getElementById('status').textContent = 'दुसरा बिंदू क्लिक करा (Measure)';
+            return;
+        }}
+        const deltaPrice = price - firstPoint.price;
+        const deltaPct = (deltaPrice / firstPoint.price) * 100;
+        const deltaTime = Math.abs(param.time - firstPoint.time);
+        const sign = deltaPrice >= 0 ? '+' : '';
+        document.getElementById('status').innerHTML =
+            `📏 Δ ${{sign}}${{deltaPrice.toFixed(2)}} (${{sign}}${{deltaPct.toFixed(2)}}%) · ${{Math.round(deltaTime/60)}} मिनिटं`;
+        const s = chart.addSeries(LightweightCharts.LineSeries, {{
+            color: '#FFB400', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+        }});
+        s.setData([
+            {{ time: firstPoint.time, value: firstPoint.price }},
+            {{ time: param.time, value: price }},
+        ]);
+        drawnSeries.push({{ type: 'series', ref: s }});
+        currentTool = null;
+        firstPoint = null;
+        ['trendline', 'hline', 'fib', 'rect', 'measure'].forEach(t => {{
+            const btn = document.getElementById('btn_' + t);
+            if (btn) btn.classList.toggle('active', false);
+        }});
     }}
 }});
 
