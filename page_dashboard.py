@@ -118,11 +118,12 @@ def render():
         # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
         sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
 
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day व
-        # 1-Hour Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). दोन्ही मुख्य chart च्या
-        # timeframe शी no-lookahead (merge_asof, backward) अलाइन केले जातात — established पद्धत,
-        # sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day, 1-Hour
+        # व 15-Minute Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). तिन्ही मुख्य
+        # chart च्या timeframe शी no-lookahead (merge_asof, backward) अलाइन केले जातात — established
+        # पद्धत, sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
         st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
+        st15m_line_aligned = st15m_dir_aligned = None
         pattern_markers_tv = []
         if not df_candles.empty:
             try:
@@ -145,8 +146,18 @@ def render():
                         on="timestamp", direction="backward",
                     )
                     st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
+
+                df_15m_tv = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
+                if df_15m_tv is not None and not df_15m_tv.empty:
+                    st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
+                    df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()
+                    aligned_15m = pd.merge_asof(
+                        df_candles[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
+                        on="timestamp", direction="backward",
+                    )
+                    st15m_line_aligned, st15m_dir_aligned = aligned_15m["st_line"], aligned_15m["st_dir"]
             except Exception:
-                pass  # 1D/1H डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
+                pass  # 1D/1H/15M डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
 
             # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
             pattern_markers_tv = find_significant_reversal_candles(df_candles, lookback_compare=3)
@@ -155,6 +166,7 @@ def render():
             df_candles, symbol=symbol, timeframe_label=timeframe_option,
             supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
             supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
+            supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
             rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
         )
         st.components.v1.html(tv_html, height=700, scrolling=False)
@@ -1352,5 +1364,3 @@ def render():
                 )
             except Exception as e:
                 st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
-
-
