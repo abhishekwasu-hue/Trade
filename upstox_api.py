@@ -390,6 +390,36 @@ def fetch_ltp_map(access_token, instrument_keys):
     except Exception:
         return {}
 
+
+def fetch_option_greeks(access_token, instrument_keys):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Portfolio Greeks Monitoring साठी. दिलेल्या
+    instrument keys चे सद्य Delta/Gamma/Theta/Vega/IV एका डिक्शनरीमध्ये (Upstox चं समर्पित
+    v3/market-quote/option-greek endpoint — जास्तीत जास्त ५० keys एका कॉलमध्ये).
+    रिटर्न: {instrument_key: {"delta":.., "gamma":.., "theta":.., "vega":.., "iv":..}, ...}
+    """
+    if not instrument_keys:
+        return {}
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        keys_param = urllib.parse.quote(",".join(instrument_keys[:50]), safe=",|")  # API मर्यादा: ५०
+        url = f"https://api.upstox.com/v3/market-quote/option-greek?instrument_key={keys_param}"
+        res = requests.get(url, headers=headers, timeout=8)
+        result = {}
+        if res.status_code == 200:
+            data = res.json().get("data", {})
+            for v in data.values():
+                tok = v.get("instrument_token")
+                if tok:
+                    result[tok] = {
+                        "delta": v.get("delta", 0.0), "gamma": v.get("gamma", 0.0),
+                        "theta": v.get("theta", 0.0), "vega": v.get("vega", 0.0),
+                        "iv": v.get("iv", 0.0),
+                    }
+        return result
+    except Exception:
+        return {}
+
 def get_static_ip_proxy_url():
     """
     Streamlit secrets मधून Static IP Proxy URL वाचणे (उदा. QuotaGuard Static, Fixie, इ.).

@@ -20,7 +20,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import DB_PATH, get_ist_now, get_ist_today
+from config import DB_PATH, get_ist_now, get_ist_today, is_market_open
 from signals import calculate_supertrend, calculate_rsi, resample_to_1h, check_price_action_strategy, check_indicator_strategy
 from upstox_api import fetch_candles, fetch_timeframe_df, fetch_upstox_option_chain
 from strategy import select_credit_spread_fixed_strikes
@@ -96,6 +96,10 @@ def get_oi_signal_persistence(symbol, min_consistent=OI_PERSISTENCE_COUNT):
 
 
 def run_cycle(access_token, symbol="NIFTY", trading_mode="PAPER", strategy_choice="price_action"):
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — बाजार बंद असताना उगाच Option Chain fetch करू नये
+    if not is_market_open():
+        write_heartbeat("oi_signal_auto_trader")
+        return ["⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — कुठलीही कृती केली जाणार नाही."]
     if is_kill_switch_active():
         write_heartbeat("oi_signal_auto_trader")
         return ["🛑 KILL SWITCH सक्रिय — कुठलीही कृती नाही."]
@@ -151,6 +155,7 @@ def _run_cycle_inner(access_token, symbol, trading_mode, strategy_choice):
         access_token, symbol, strategy_result, lots=1, lot_size=LOT_SIZE,
         sl_pct_of_max_loss=999, target_pct_of_max_profit=30, product_type="D",
         trading_mode=trading_mode, trading_style="SWING", sl_pct_of_credit=30,
+        source="oi_signal_auto_trader",
     )
     if not success:
         log.append(f"❌ Order अयशस्वी: {result}")

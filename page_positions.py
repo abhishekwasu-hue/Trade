@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 
-from database import get_live_positions_with_mtm, compute_portfolio_risk_summary
+from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
 from trading_engine import close_trade_manually
 
 
@@ -33,6 +33,37 @@ def render():
             st.metric("दिशा", f"🟢{risk_summary['bullish_count']} 🔴{risk_summary['bearish_count']} ⚪{risk_summary['neutral_count']}")
         if risk_summary["concentration_warning"]:
             st.warning(risk_summary["concentration_warning"])
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — संपूर्ण Portfolio चे निव्वळ Greeks (जागतिक prop
+        # trading firms जसं सतत करतात तसंच). API अयशस्वी झालं तरी (network/token समस्या) पान क्रॅश होऊ
+        # नये म्हणून सुरक्षित try/except.
+        try:
+            greeks = compute_portfolio_greeks(token_input, symbol, mode_filter=pos_mode_f)
+            if greeks["positions_included"] > 0:
+                st.markdown("##### 🧮 Portfolio Greeks (निव्वळ)")
+                gcol1, gcol2, gcol3, gcol4 = st.columns(4)
+                with gcol1:
+                    st.metric("Net Delta", f"{greeks['net_delta']:,.2f}", help="दिशात्मक जोखीम — धन=Bullish bias, ऋण=Bearish bias")
+                with gcol2:
+                    st.metric("Net Gamma", f"{greeks['net_gamma']:,.4f}", help="Delta किती वेगाने बदलेल — मोठा (धन किंवा ऋण) असेल तर अचानक मोठे बदल शक्य")
+                with gcol3:
+                    st.metric("Net Theta", f"₹{greeks['net_theta']:,.2f}/दिवस", help="वेळेचा फायदा/तोटा — धन=विक्रेत्याला रोज फायदा")
+                with gcol4:
+                    st.metric("Net Vega", f"{greeks['net_vega']:,.2f}", help="Volatility जोखीम — ऋण असेल तर VIX वाढल्यास तोटा")
+        except Exception:
+            st.caption("⚠️ Portfolio Greeks मिळवता आले नाहीत (Upstox API अनुपलब्ध असू शकतं).")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रत्येक position साठी वेगळी, रणनीती-आधारित
+        # Delta Health Check (Iron Condor: दिशाहीन असावा; Credit Spread: विशिष्ट दिशेतच असावा)
+        try:
+            per_position = compute_per_position_greeks(token_input, symbol, mode_filter=pos_mode_f)
+            relevant = [p for p in per_position if p["strategy"] in ("IRON_CONDOR", "IRON_BUTTERFLY", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")]
+            if relevant:
+                st.markdown("##### 🩺 Position-निहाय Delta Health Check")
+                for p in relevant:
+                    st.markdown(f"**{p['trade_id']}** ({p['strategy']}): {p['health_emoji']} {p['health_message']}")
+        except Exception:
+            pass  # ऐच्छिक अतिरिक्त माहिती -- अयशस्वी झाली तरी मुख्य Positions page दाखवत राहणे
         st.markdown("---")
 
         total_mtm = positions_df["MTM (Rs)"].dropna().sum()

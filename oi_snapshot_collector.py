@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import DB_PATH, get_ist_now
+from config import DB_PATH, get_ist_now, is_market_open
 from upstox_api import fetch_upstox_option_chain
 from oi_analysis import fetch_and_save_oi_snapshot
 from notifications import notify_error, write_heartbeat
@@ -40,6 +40,12 @@ def is_kill_switch_active():
 def run_cycle(access_token, symbols=None):
     """एक चक्र — दिलेल्या (डीफॉल्ट: तिन्ही) symbols साठी snapshot fetch+save (कुठलाही trade घेत नाही)."""
     symbols = symbols or SYMBOLS
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — बाजार बंद असताना (सुट्टी, संध्याकाळ, पहाट) उगाच
+    # Option Chain fetch करू नये. Task Scheduler ची वेळ-मर्यादा (उदा. "8 तास") अचूक बाजार-वेळेशी जुळत
+    # नसेल तरी, ही तपासणी सुरक्षा-कवच म्हणून काम करते.
+    if not is_market_open():
+        write_heartbeat("oi_snapshot_collector")
+        return "⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — कुठलाही snapshot घेतला जाणार नाही."
     if is_kill_switch_active():
         write_heartbeat("oi_snapshot_collector")
         return "🛑 KILL SWITCH सक्रिय — कुठलाही snapshot घेतला जाणार नाही."

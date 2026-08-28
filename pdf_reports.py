@@ -47,6 +47,38 @@ try:
 except Exception:
     _RPT_FONT_MISSING_WARNING = "WARNING: Error loading fonts — some symbols may not render correctly."
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — EOD Market Report मध्ये मराठी मजकूर आहे, जो
+# Times-Roman/Helvetica/DejaVuSans यापैकी कशातही दिसत नाही (काळे चौकोन दिसतात, glyphs नाहीत) —
+# Noto Sans Devanagari या समर्पित font ने दुरुस्त केलं (फक्त Regular weight उपलब्ध आहे).
+_DEVANAGARI_FONT = "Helvetica"  # सुरक्षित fallback, font सापडला नाही तर
+try:
+    _deva_path = os.path.join(_font_dir, "NotoSansDevanagari-Regular.ttf")
+    if os.path.exists(_deva_path):
+        pdfmetrics.registerFont(TTFont("NotoSansDevanagari", _deva_path))
+        _DEVANAGARI_FONT = "NotoSansDevanagari"
+except Exception:
+    pass
+
+# EOD Market Report साठी मराठी-सुसंगत styles (इतर, इंग्रजी reports च्या styles ना धक्का न लावता, वेगळे)
+_deva_h1 = ParagraphStyle("deva_h1", fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.white)
+_deva_h1_sub = ParagraphStyle("deva_h1_sub", fontName=_DEVANAGARI_FONT, fontSize=12, leading=16, textColor=colors.HexColor("#B8BEC9"))
+_deva_h2 = ParagraphStyle("deva_h2", fontName="Helvetica-Bold", fontSize=15, leading=18, textColor=colors.white)
+_deva_h3 = ParagraphStyle("deva_h3", fontName=_DEVANAGARI_FONT, fontSize=12, leading=16, textColor=colors.HexColor("#333333"), spaceBefore=6, spaceAfter=3)
+_deva_normal = ParagraphStyle("deva_normal", fontName=_DEVANAGARI_FONT, fontSize=11, leading=15, alignment=TA_LEFT)
+_deva_footer = ParagraphStyle("deva_footer", fontName=_DEVANAGARI_FONT, fontSize=8, leading=11, textColor=colors.HexColor("#888888"))
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — EOD Market Report आता इंग्रजीत, आणि संपूर्ण मुख्य
+# मजकूर Times New Roman, Bold, Italic, 18pt (वापरकर्त्याने स्पष्टपणे "सर्वत्र" म्हणून सांगितलं).
+# reportlab चा बिल्ट-इन "Times-BoldItalic" वापरला — वेगळी font-file नोंदणी लागत नाही.
+_EOD_FONT = "Times-BoldItalic"
+_EOD_FONT_SIZE = 18
+_eod_h1 = ParagraphStyle("eod_h1", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, textColor=colors.white)
+_eod_h1_sub = ParagraphStyle("eod_h1_sub", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, textColor=colors.HexColor("#B8BEC9"))
+_eod_h2 = ParagraphStyle("eod_h2", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, textColor=colors.white)
+_eod_h3 = ParagraphStyle("eod_h3", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, textColor=colors.HexColor("#333333"), spaceBefore=6, spaceAfter=3)
+_eod_normal = ParagraphStyle("eod_normal", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, alignment=TA_LEFT)
+_eod_footer = ParagraphStyle("eod_footer", fontName=_EOD_FONT, fontSize=_EOD_FONT_SIZE, leading=22, textColor=colors.HexColor("#888888"))
+
 
 _C_BG_DARK = colors.HexColor("#131722")
 
@@ -113,13 +145,16 @@ def _section_header(text, idx, style=None):
 def _signal_style(text):
     """Colour classification for a status string — used for both badges and table row tints."""
     t = str(text).upper()
+    if "WEAKENING" in t:
+        return _C_AMBER, _C_AMBER_BG  # 🎓 आधी BULLISH/BEARISH पेक्षा प्राधान्याने तपासणे — नाहीतर
+        # "BULLISH (Weakening)" चुकून पूर्ण हिरवाच दिसायचं, कमजोर होत असल्याचा इशारा हरवायचा
     if "BEARISH" in t or "BEARS" in t or t == "WRONG" or t == "SL":
         return _C_RED, _C_RED_BG
     if "PAPER" in t:
         return _C_ACCENT, _C_ACCENT_BG
     if "BULLISH" in t or "BULLS" in t or "LIVE" in t or t.startswith("[OK]") or t == "OK" or t == "CORRECT" or t == "TARGET":
         return _C_GREEN, _C_GREEN_BG
-    if "NO TRADE" in t or "WEAKENING" in t or "[!]" in t or t == "OPEN":
+    if "NO TRADE" in t or "[!]" in t or t == "OPEN":
         return _C_AMBER, _C_AMBER_BG
     if t.startswith("[X]") or t.startswith("[NO]"):
         return _C_RED, _C_RED_BG
@@ -402,6 +437,17 @@ def _fix_missing_glyphs(s):
         s = s.replace(bad, good)
     return s
 
+
+def _fix_devanagari_glyphs(s):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — NotoSansDevanagari मध्ये → आणि ↑ सारखी बाण-चिन्हं
+    नाहीत (काळे चौकोन दिसतात) — EOD Market Report मध्ये ही चिन्हं PDF-specific साध्या ASCII-रूपाने
+    बदलतो (मूळ स्रोत मजकूर, जो Telegram साठीही वापरला जातो, तसाच अबाधित राहतो).
+    """
+    if not isinstance(s, str):
+        return s
+    return s.replace("→", "->").replace("↑", "^").replace("↓", "v")
+
 def _table_font_size(ncols):
     if ncols <= 3:
         return 10
@@ -409,27 +455,30 @@ def _table_font_size(ncols):
         return 9
     return 7.5
 
-def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None):
+def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None):
     """
     Convert a pandas DataFrame to a reportlab Table (or a Paragraph if empty).
     color_columns: optional list of column names whose cells get a colour tint based on their
     text content (bullish/green, bearish/red, weakening/amber) — this is what makes the OI and
     signal tables visually informative rather than just black-on-white grids.
+    font_name/font_size — पर्यायी, custom-styled reports साठी — दिलं नाही तर जुनाच डीफॉल्ट, backward-compatible.
     """
     if df is None or df.empty:
         return Paragraph(empty_msg, _rpt_normal)
     display_df = df.head(max_rows)
-    font_size = _table_font_size(len(display_df.columns))
+    computed_font_size = font_size or _table_font_size(len(display_df.columns))
+    table_font = font_name or _RPT_TABLE_FONT
+    table_font_bold = font_name or _RPT_TABLE_FONT_BOLD
     columns = list(display_df.columns)
     raw_rows = display_df.astype(str).values.tolist()
     data = [columns] + [[_fix_missing_glyphs(v) for v in row] for row in raw_rows]
     tbl = Table(data, repeatRows=1, hAlign="LEFT")
     style_cmds = [
-        ("FONTNAME", (0, 0), (-1, -1), _RPT_TABLE_FONT),
-        ("FONTNAME", (0, 0), (-1, 0), _RPT_TABLE_FONT_BOLD),
+        ("FONTNAME", (0, 0), (-1, -1), table_font),
+        ("FONTNAME", (0, 0), (-1, 0), table_font_bold),
         ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), font_size),
+        ("FONTSIZE", (0, 0), (-1, -1), computed_font_size),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -465,19 +514,23 @@ def _force_colors_by_label(rows, label_color_map):
             force_colors[idx] = color_pair
     return force_colors
 
-def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_colors=None):
+def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_colors=None, font_name=None, font_size=None):
     """Two-column key/value table with a dark key column — colours specific value rows either by
     keyword (color_value_rows, via _signal_style) or explicitly (force_colors={row_idx: (text_color, bg_color)},
-    for values like Max Profit/Max Loss whose text doesn't contain BULLISH/BEARISH for keyword matching)."""
+    for values like Max Profit/Max Loss whose text doesn't contain BULLISH/BEARISH for keyword matching).
+    font_name/font_size — पर्यायी, custom-styled reports साठी — दिलं नाही तर जुनाच डीफॉल्ट, backward-compatible."""
     color_value_rows = color_value_rows or set()
     force_colors = force_colors or {}
+    table_font = font_name or _RPT_TABLE_FONT
+    table_font_bold = font_name or _RPT_TABLE_FONT_BOLD
+    table_font_size = font_size or 11.5
     clean_rows = [[_fix_missing_glyphs(c) for c in row] for row in rows]
     tbl = Table(clean_rows, hAlign="LEFT", colWidths=[usable_width * key_ratio, usable_width * (1 - key_ratio)])
     style_cmds = [
-        ("FONTNAME", (0, 0), (-1, -1), _RPT_TABLE_FONT),
-        ("FONTNAME", (0, 0), (0, -1), _RPT_TABLE_FONT_BOLD),
+        ("FONTNAME", (0, 0), (-1, -1), table_font),
+        ("FONTNAME", (0, 0), (0, -1), table_font_bold),
         ("BACKGROUND", (0, 0), (0, -1), _C_BG_DARK), ("TEXTCOLOR", (0, 0), (0, -1), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 11.5), ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("FONTSIZE", (0, 0), (-1, -1), table_font_size), ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]
@@ -485,7 +538,7 @@ def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_c
         text_color, bg_color = _signal_style(rows[r][1])
         style_cmds.append(("TEXTCOLOR", (1, r), (1, r), text_color))
         style_cmds.append(("BACKGROUND", (1, r), (1, r), bg_color))
-        style_cmds.append(("FONTNAME", (1, r), (1, r), _RPT_TABLE_FONT_BOLD))
+        style_cmds.append(("FONTNAME", (1, r), (1, r), table_font_bold))
     for r, (text_color, bg_color) in force_colors.items():
         style_cmds.append(("TEXTCOLOR", (1, r), (1, r), text_color))
         style_cmds.append(("BACKGROUND", (1, r), (1, r), bg_color))
@@ -1248,6 +1301,112 @@ def generate_market_analysis_report_pdf(
         "This report was generated automatically by the AMW A1 Trading System (app.py) for personal "
         "record-keeping and as an audit trail for trading decisions. This is not investment advice.",
         _rpt_footer,
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — दररोज दुपारी ४ वाजताचा, दुसऱ्या दिवसाच्या Intraday +
+    Positional Option Selling साठी संक्षिप्त, कृतीयोग्य PDF अहवाल (आता इंग्रजीत, Times New Roman
+    Bold-Italic 18pt — वापरकर्त्याशी चर्चा करून ठरवलेलं). जुन्या "Full Market Analysis Report" प्रमाणे
+    कच्चा डेटा (संपूर्ण Option Chain, संपूर्ण OI इतिहास, संपूर्ण Trades Log) इथे नाही — फक्त सारांशित,
+    निर्णय-उपयुक्त माहिती, प्रति symbol एक विभाग. BULLISH/BEARISH आणि Strong/Weakening सारखे keywords
+    रंगीत (हिरवा/लाल/अंबर) दाखवले जातात — color_value_rows द्वारे, _signal_style वापरून.
+    symbol_outlooks: [market_report.generate_symbol_outlook(...) चे निकाल, प्रत्येक symbol साठी एक]
+    """
+    generated_at = generated_at or (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm)
+    usable_width = A4[0] - 2.8 * cm
+    story = []
+    sec = [0]
+
+    def next_section(text):
+        story.append(_section_header(text, sec[0], style=_eod_h2))
+        sec[0] += 1
+        story.append(Spacer(1, 8))
+
+    title_tbl = Table(
+        [[Paragraph("AMW A1 TRADING SYSTEM", _eod_h1)], [Paragraph("EOD Market Report for Tomorrow's Option Selling", _eod_h1_sub)]],
+        colWidths=[usable_width],
+    )
+    title_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
+    ]))
+    story.append(title_tbl)
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(_fix_missing_glyphs(f"Generated: {generated_at}"), _eod_footer))
+    story.append(Spacer(1, 10))
+
+    for outlook in symbol_outlooks:
+        symbol = outlook["symbol"]
+        next_section(f"{symbol}")
+
+        mtf = outlook["multi_tf_outlook"]
+        outlook_rows = [
+            ["Tomorrow's Outlook", _fix_missing_glyphs(mtf["outlook"])],
+            ["1D Supertrend", _fix_missing_glyphs(mtf.get("daily_dir") or "N/A")],
+            ["1H Supertrend", _fix_missing_glyphs(mtf.get("hourly_dir") or "N/A")],
+            ["15M Supertrend", _fix_missing_glyphs(mtf.get("min15_dir") or "N/A")],
+            ["India VIX", str(outlook["india_vix"]) if outlook["india_vix"] is not None else "N/A"],
+        ]
+        story.append(_kv_table(outlook_rows, usable_width, color_value_rows={0, 1, 2, 3}, font_name=_EOD_FONT, font_size=_EOD_FONT_SIZE))
+        story.append(Spacer(1, 8))
+
+        story.append(Paragraph("Recommendation (Intraday + Positional)", _eod_h3))
+        story.append(Paragraph(_fix_missing_glyphs(outlook["recommendation"]), _eod_normal))
+        story.append(Spacer(1, 8))
+
+        if outlook["sr_levels"]:
+            story.append(Paragraph("Key S/R Levels", _eod_h3))
+            sr_rows = []
+            for r in outlook["sr_levels"].get("resistance", [])[:3]:
+                sr_rows.append(["Resistance", f"{r['level']:.2f}  ({r['touches']}x touches)"])
+            for s in outlook["sr_levels"].get("support", [])[:3]:
+                sr_rows.append(["Support", f"{s['level']:.2f}  ({s['touches']}x touches)"])
+            if sr_rows:
+                story.append(_kv_table(sr_rows, usable_width, font_name=_EOD_FONT, font_size=_EOD_FONT_SIZE))
+            story.append(Spacer(1, 8))
+
+        if outlook["oi_summary"]:
+            story.append(Paragraph("Today's OI Buildup Trend", _eod_h3))
+            oi = outlook["oi_summary"]
+            oi_rows = [
+                ["Put Trend", _fix_missing_glyphs(oi["day_put_trend"])],
+                ["Call Trend", _fix_missing_glyphs(oi["day_call_trend"])],
+                ["Overall Direction", _fix_missing_glyphs(oi["day_direction"])],
+            ]
+            story.append(_kv_table(oi_rows, usable_width, color_value_rows={2}, font_name=_EOD_FONT, font_size=_EOD_FONT_SIZE))
+            story.append(Spacer(1, 8))
+
+        if outlook["chart_patterns"]:
+            story.append(Paragraph("Today's Notable Chart Patterns", _eod_h3))
+            pattern_rows = [[p["time"].strftime("%H:%M"), p["pattern"], f"{p['price']:.2f}"] for p in outlook["chart_patterns"]]
+            pattern_df = pd.DataFrame(pattern_rows, columns=["Time", "Pattern", "Price"])
+            t = df_to_reportlab_table(pattern_df, font_name=_EOD_FONT, font_size=_EOD_FONT_SIZE)
+            story.extend(t if isinstance(t, list) else [t])
+            story.append(Spacer(1, 8))
+
+        if outlook["open_positions_greeks"]:
+            story.append(Paragraph("Open Positions — Greeks Health", _eod_h3))
+            for p in outlook["open_positions_greeks"]:
+                story.append(Paragraph(
+                    _fix_missing_glyphs(f"{p['trade_id']} ({p['strategy']}): Delta={p['net_delta']}  {p['health_emoji']}"),
+                    _eod_normal,
+                ))
+            story.append(Spacer(1, 8))
+
+        story.append(Spacer(1, 10))
+
+    story.append(Paragraph(
+        "This report was generated automatically by the AMW A1 Trading System — for informational purposes only, not investment advice.",
+        _eod_footer,
     ))
 
     doc.build(story)

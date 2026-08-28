@@ -28,7 +28,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import DB_PATH, get_ist_now
+from config import DB_PATH, get_ist_now, is_market_open
 from signals import calculate_supertrend, resample_to_1h
 from upstox_api import fetch_candles, fetch_upstox_option_chain
 from database import get_live_positions_with_mtm
@@ -159,6 +159,11 @@ def run_cycle(access_token, symbol="NIFTY", trading_mode="PAPER"):
     दिशा-स्थिरता तपासून नवीन entry. trading_mode='PAPER' डीफॉल्ट — LIVE साठी स्पष्टपणे बदलावं लागतं.
     """
     log = []
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — बाजार बंद असताना उगाच Option Chain fetch करू नये
+    if not is_market_open():
+        write_heartbeat("credit_spread_auto_trader")
+        log.append("⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — कुठलीही कृती केली जाणार नाही.")
+        return log
     if is_kill_switch_active():
         log.append("🛑 KILL SWITCH सक्रिय आहे — कुठलीही नवीन कृती केली जाणार नाही.")
         write_heartbeat("credit_spread_auto_trader")
@@ -242,6 +247,7 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
         # करण्याचा प्रयत्न करू शकतं — दोन्ही एकाच वेळी चालवू नका, किंवा सावध रहा.
         sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
         product_type="D", trading_mode=trading_mode, trading_style="SWING",
+        source="credit_spread_auto_trader",
     )
     if not entry_success:
         log.append(f"❌ Order अयशस्वी: {entry_result}")

@@ -74,10 +74,12 @@ def normalize_legs(strategy_result):
          "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL"},
     ]
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL"):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
-    net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम)."""
+    net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
+    source — हा trade नेमका कुठून आला (उदा. 'DASHBOARD', 'credit_spread_auto_trader', 'oi_signal_auto_trader',
+    'oi_greeks_vix_strategy') — Positions page वर स्पष्टपणे दाखवण्यासाठी (वापरकर्त्याशी चर्चा करून जोडलेलं)."""
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 
@@ -115,8 +117,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
            (trade_id, trade_date, symbol, strategy, short_strike, long_strike, short_instrument, long_instrument,
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
-            legs_json, strikes_summary, mode, trading_style)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            legs_json, strikes_summary, mode, trading_style, source)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -124,7 +126,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             sl_pnl_level, target_pnl_level,
             get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
-            json.dumps(legs), strikes_summary, trading_mode, trading_style,
+            json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
         ),
     )
     inserted = cur.rowcount > 0
@@ -220,7 +222,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
         # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३ वाजता तपासतो: नफा >=Target
         # (net_credit च्या 30%) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करणे), नाहीतर बंद करणे.
-        is_new_rule_trade = strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
+        # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — नवीन OI+Greeks+VIX एकत्रित रणनीती (Iron Condor
+        # सुद्धा तयार करते) साठी, तोच 30%-credit SL + 3pm carry-forward नियम आता Iron Condor/Butterfly
+        # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
+        is_new_rule_trade = strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
         past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 0)
 
         exit_reason = None

@@ -1,5 +1,6 @@
 """Dashboard page — Chart, Direction Engine, Option Chain/OI, Advanced OI Analysis, Manual Trading, A1 Signal Engine, PDF Report."""
 import datetime
+import os
 import re
 import time
 import uuid
@@ -1157,6 +1158,7 @@ def render():
                             sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
                             product_type, trading_mode=trading_mode, trading_style="SWING",
                             sl_pct_of_credit=30 if is_directional_2strategy else None,
+                            source="DASHBOARD",
                         )
                     if ok:
                         result_emoji = "📝" if trading_mode == "PAPER" else "🟢"
@@ -1205,11 +1207,17 @@ def render():
         try:
             from notifications import check_heartbeat_stale, HEARTBEAT_DIR
             import os as _os
-            hb_col1, hb_col2, hb_col3 = st.columns(3)
-            for col, script_name, label in [
-                (hb_col1, "credit_spread_auto_trader", "Credit Spread Auto-Trader"),
-                (hb_col2, "oi_signal_auto_trader", "OI Signal Auto-Trader"),
-                (hb_col3, "oi_snapshot_collector", "OI Snapshot Collector"),
+            hb_col1, hb_col2, hb_col3, hb_col4, hb_col5 = st.columns(5)
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
+            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर १० मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
+            # मर्यादा इथे उगाचच सतत "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची
+            # मर्यादा (२५ तास — दुसऱ्या दिवशी ४ वाजेपर्यंत थोडी सूट).
+            for col, script_name, label, max_age_min in [
+                (hb_col1, "credit_spread_auto_trader", "Credit Spread Auto-Trader", 30),
+                (hb_col2, "oi_signal_auto_trader", "OI Signal Auto-Trader", 30),
+                (hb_col3, "oi_snapshot_collector", "OI Snapshot Collector", 30),
+                (hb_col4, "oi_greeks_vix_strategy", "OI+Greeks+VIX Strategy", 30),
+                (hb_col5, "eod_market_report", "EOD Market Report (4pm)", 25 * 60),
             ]:
                 with col:
                     hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
@@ -1218,13 +1226,37 @@ def render():
                     else:
                         with open(hb_path) as f:
                             last_run = f.read().strip()
-                        is_stale = check_heartbeat_stale(script_name, max_age_minutes=30)
+                        is_stale = check_heartbeat_stale(script_name, max_age_minutes=max_age_min)
+                        limit_label = f"{max_age_min} मिनिटांपेक्षा" if max_age_min < 60 else f"{max_age_min // 60} तासांपेक्षा"
                         if is_stale:
-                            st.error(f"🔴 {label}: शेवटचं {last_run} — ३० मिनिटांपेक्षा जुनं, तपासा!")
+                            st.error(f"🔴 {label}: शेवटचं {last_run} — {limit_label} जुनं, तपासा!")
                         else:
                             st.success(f"🟢 {label}: शेवटचं {last_run}")
         except Exception:
             st.caption("Health check उपलब्ध नाही (notifications.py सापडलं नाही).")
+        st.markdown("---")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दुपारी ४ वाजता स्वयंचलितपणे तयार होणारे EOD
+        # Market Reports (eod_market_report.py) इथे साठवलेले (data/reports/) दाखवणे व डाउनलोड करता येणे.
+        st.subheader("📅 EOD Market Reports (दुपारी ४ ची स्वयंचलित तयारी)")
+        eod_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reports")
+        if os.path.exists(eod_reports_dir):
+            eod_files = sorted(
+                [f for f in os.listdir(eod_reports_dir) if f.startswith("eod_report_") and f.endswith(".pdf")],
+                reverse=True,
+            )
+            if eod_files:
+                for fname in eod_files[:10]:  # शेवटचे १० पर्यंत, फार गर्दी नको
+                    fpath = os.path.join(eod_reports_dir, fname)
+                    with open(fpath, "rb") as f:
+                        st.download_button(
+                            label=f"📥 {fname}", data=f.read(), file_name=fname, mime="application/pdf",
+                            key=f"eod_dl_{fname}",
+                        )
+            else:
+                st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
+        else:
+            st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
         st.markdown("---")
 
         st.subheader("📄 Full Market Analysis Report (PDF)")
@@ -1364,3 +1396,5 @@ def render():
                 )
             except Exception as e:
                 st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
+
+

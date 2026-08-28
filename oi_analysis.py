@@ -66,12 +66,21 @@ def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call
     if raw_direction == prev_direction:
         return raw_signal  # दिशा तीच आहे -- Strong/Weak लगेच अद्ययावत होऊ शकतो
 
+    # 🎓 वापरकर्त्याने screenshot दाखवून निदर्शनास आणलेला खरा bug — आधी इथे prev_signal (जुना संपूर्ण
+    # string, "Strong" सहित) जसाच्या तसा परत यायचा, जरी current_diff आता खूप खोलवर उलट दिशेत गेलेला
+    # असला तरी (उदा. Diff=-50L असतानाही "BULLISH (Strong)" दिसायचं — दिशाभूल करणारं). आता held
+    # स्थितीत (पुष्टी अजून झालेली नाही) जुन्या दिशेचंच "Weakening" (कमी आत्मविश्वास) रूप दाखवतो —
+    # दिशा अजूनही स्थिर राहते (flip-flop टाळलं जातं), पण कधीच खोट्या "Strong" आत्मविश्वासाने नाही.
+    prev_direction_weakening = {
+        "BULLISH": "🟡 BULLISH (Weakening)", "BEARISH": "🟠 BEARISH (Weakening)",
+    }.get(prev_direction, prev_signal)
+
     if len(recent_snapshots) < confirm_count - 1:
-        return prev_signal  # अजून पुरेसा इतिहास नाही -- जुनाच सिग्नल कायम
+        return prev_direction_weakening  # अजून पुरेसा इतिहास नाही -- जुनीच दिशा, पण Weakening
 
     recent_diffs = recent_snapshots["diff"].tail(confirm_count - 1).tolist() + [current_diff]
     same_new_direction = all((d > 0 if raw_direction == "BULLISH" else d < 0) for d in recent_diffs)
-    return raw_signal if same_new_direction else prev_signal
+    return raw_signal if same_new_direction else prev_direction_weakening
 
 
 def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction, step=50):
@@ -209,7 +218,7 @@ def generate_oi_price_signal(put_class, call_class):
     if bullish_signals and not bearish_signals:
         return "BULLISH", "🟢 " + " + ".join(bullish_signals) + " → Don't Short Call, Nifty is Bullish"
     elif bearish_signals and not bullish_signals:
-        return "BEARISH", "🔴 " + " + ".join(bearish_signals) + " → Don't Long Put, Nifty is Bearish"
+        return "BEARISH", "🔴 " + " + ".join(bearish_signals) + " → Don't Short Put, Nifty is Bearish"
     elif bullish_signals and bearish_signals:
         return "MIXED", "🟡 संमिश्र संकेत — स्पष्ट दिशा नाही, सावध रहा"
     else:

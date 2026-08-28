@@ -77,7 +77,9 @@ def init_sqlite_db():
     """)
     # legs_json / strikes_summary — Iron Condor/Butterfly सारख्या N-leg स्ट्रॅटेजीजसाठी लागणारे नवीन कॉलम्स.
     # आधीपासून अस्तित्वात असलेल्या DB फाईलवरही सुरक्षितपणे चालण्यासाठी ALTER TABLE + try/except वापरले आहे.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL"]:
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रत्येक trade कुठून आला (कोणत्या script/interface
+    # मधून) हे ओळखण्यासाठी 'source' column — Positions page वर स्पष्टपणे दाखवण्यासाठी.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -264,7 +266,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     query = """SELECT trade_id, mode, trading_style, strategy, legs_json, lots, lot_size, net_credit,
-                      max_profit, max_loss, entry_time, strikes_summary, peak_pnl
+                      max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source
                FROM live_trades WHERE symbol=? AND status='OPEN'"""
     params = [symbol]
     if mode_filter:
@@ -288,7 +290,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     ltp_map = fetch_ltp_map(access_token, list(all_keys)) if all_keys else {}
 
     records = []
-    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl), legs in parsed:
+    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source), legs in parsed:
         mtm, mtm_pct = None, None
         if legs:
             current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -306,12 +308,163 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
         records.append({
             "Trade ID": trade_id, "Mode": mode or "LIVE", "Style": style or "INTRADAY",
             "Strategy": strategy, "Direction": direction, "Legs": strikes_summary, "Lots": lots,
+            "Source": source or "DASHBOARD",  # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — trade
+            # नेमका कुठून आला (कोणत्या script/interface) — जुन्या नोंदींना source नसतो, त्यांना
+            # "DASHBOARD" (interactive) असं मानणे — कारण unattended scripts येण्याआधीचे सर्व trades
+            # Dashboard मधूनच यायचे.
             "Entry Time": entry_time, "MTM (Rs)": mtm, "MTM (%)": mtm_pct,
             "Max Loss (Rs)": round(max_loss * lots * lot_size, 2) if max_loss else None,
             "Net Credit (Rs)": round(net_credit * lots * lot_size, 2) if net_credit else None,
             "Peak P&L (Rs)": round(peak_pnl, 2) if peak_pnl is not None else None,
         })
     return pd.DataFrame(records)
+
+
+def check_position_delta_health(strategy, net_delta, iron_condor_threshold=15, spread_danger_threshold=35):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Delta चा अर्थ रणनीतीनुसार वेगळा लावला जातो:
+    - Iron Condor/Butterfly (दिशाहीन): |Delta| मोठा -> एक बाजू "टेस्ट" झालीय, Adjustment/Roll विचार करा
+    - Credit Spread (दिशात्मक): Delta उलट दिशेने -> मूळ थीसिस अपयशी (गंभीर); बरोबर दिशेतच पण खूप मोठा ->
+      Short leg खोलवर ITM जातोय, जोखीम वाढतेय (सौम्य इशारा)
+    रिटर्न: (emoji, संदेश)
+    """
+    if strategy in ("IRON_CONDOR", "IRON_BUTTERFLY"):
+        if abs(net_delta) > iron_condor_threshold:
+            side = "वरची (Call)" if net_delta < 0 else "खालची (Put)"
+            return "⚠️", f"Delta={net_delta:.1f} (मर्यादा ±{iron_condor_threshold}) — {side} बाजू टेस्ट झालीय, Adjustment/Roll विचार करा"
+        return "✅", f"Delta={net_delta:.1f} — संतुलित (neutral), ठीक आहे"
+
+    if strategy == "BULL_PUT_SPREAD":
+        if net_delta < 0:
+            return "🔴", f"Delta={net_delta:.1f} — उलट दिशेने! मूळ Bullish थीसिस अपयशी होतोय"
+        if net_delta > spread_danger_threshold:
+            return "⚠️", f"Delta={net_delta:.1f} (मर्यादा {spread_danger_threshold}) — Short leg खोलवर ITM जातोय, जोखीम वाढतेय"
+        return "✅", f"Delta={net_delta:.1f} — अपेक्षित दिशेतच, ठीक आहे"
+
+    if strategy == "BEAR_CALL_SPREAD":
+        if net_delta > 0:
+            return "🔴", f"Delta={net_delta:.1f} — उलट दिशेने! मूळ Bearish थीसिस अपयशी होतोय"
+        if abs(net_delta) > spread_danger_threshold:
+            return "⚠️", f"Delta={net_delta:.1f} (मर्यादा -{spread_danger_threshold}) — Short leg खोलवर ITM जातोय, जोखीम वाढतेय"
+        return "✅", f"Delta={net_delta:.1f} — अपेक्षित दिशेतच, ठीक आहे"
+
+    return "ℹ️", f"Delta={net_delta:.1f} — या रणनीतीसाठी विशिष्ट तपासणी नाही"
+
+
+def compute_per_position_greeks(access_token, symbol, mode_filter=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रत्येक उघड्या position साठी स्वतंत्रपणे Greeks +
+    रणनीती-आधारित Delta Health Check (compute_portfolio_greeks च्या एकत्रित/aggregate आकड्यांऐवजी,
+    इथे प्रत्येक Trade ID साठी वेगळे परिणाम मिळतात — Iron Condor/Spread दोन्हीसाठी उपयुक्त).
+    रिटर्न: [{"trade_id":.., "strategy":.., "net_delta":.., "net_theta":.., "health_emoji":.., "health_message":..}, ...]
+    """
+    import upstox_api
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    query = "SELECT trade_id, strategy, legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN'"
+    params = [symbol]
+    if mode_filter:
+        query += " AND mode=?"
+        params.append(mode_filter)
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+    if not rows:
+        return []
+
+    all_keys = set()
+    parsed = []
+    for trade_id, strategy, legs_json, lots, lot_size in rows:
+        try:
+            legs = json.loads(legs_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        parsed.append((trade_id, strategy, legs, lots, lot_size))
+        for leg in legs:
+            if leg.get("instrument_key"):
+                all_keys.add(leg["instrument_key"])
+
+    greeks_map = upstox_api.fetch_option_greeks(access_token, list(all_keys))
+
+    results = []
+    for trade_id, strategy, legs, lots, lot_size in parsed:
+        qty = lots * lot_size
+        net_delta = net_gamma = net_theta = net_vega = 0.0
+        for leg in legs:
+            g = greeks_map.get(leg.get("instrument_key"))
+            if not g:
+                continue
+            sign = -1 if leg.get("transaction_type") == "SELL" else 1
+            net_delta += sign * g.get("delta", 0.0) * qty
+            net_gamma += sign * g.get("gamma", 0.0) * qty
+            net_theta += sign * g.get("theta", 0.0) * qty
+            net_vega += sign * g.get("vega", 0.0) * qty
+        health_emoji, health_message = check_position_delta_health(strategy, net_delta)
+        results.append({
+            "trade_id": trade_id, "strategy": strategy,
+            "net_delta": round(net_delta, 2), "net_gamma": round(net_gamma, 4),
+            "net_theta": round(net_theta, 2), "net_vega": round(net_vega, 2),
+            "health_emoji": health_emoji, "health_message": health_message,
+        })
+    return results
+
+
+def compute_portfolio_greeks(access_token, symbol, mode_filter=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — सर्व उघड्या positions च्या legs साठी ताजे
+    Delta/Gamma/Theta/Vega मिळवून, संपूर्ण Portfolio ची निव्वळ (net) जोखीम काढणे — प्रत्येक leg
+    SELL (शॉर्ट) असेल तर उलट चिन्हाने (negative), BUY (लाँग) असेल तर तशाच चिन्हाने (positive) मोजली
+    जाते — जागतिक prop trading firms जसं सतत करतात तसंच.
+    रिटर्न: {"net_delta":.., "net_gamma":.., "net_theta":.., "net_vega":.., "positions_included":N}
+    Greeks मिळाल्या नाहीत (API अपयशी, किंवा उघडी position नाही) तर सर्व शून्य (क्रॅश होत नाही).
+    """
+    import upstox_api
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    query = "SELECT legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN'"
+    params = [symbol]
+    if mode_filter:
+        query += " AND mode=?"
+        params.append(mode_filter)
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"net_delta": 0.0, "net_gamma": 0.0, "net_theta": 0.0, "net_vega": 0.0, "positions_included": 0}
+
+    all_positions = []
+    all_instrument_keys = set()
+    for legs_json, lots, lot_size in rows:
+        try:
+            legs = json.loads(legs_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        all_positions.append({"legs": legs, "lots": lots, "lot_size": lot_size})
+        for leg in legs:
+            if leg.get("instrument_key"):
+                all_instrument_keys.add(leg["instrument_key"])
+
+    greeks_map = upstox_api.fetch_option_greeks(access_token, list(all_instrument_keys))
+
+    net_delta = net_gamma = net_theta = net_vega = 0.0
+    for pos in all_positions:
+        qty = pos["lots"] * pos["lot_size"]
+        for leg in pos["legs"]:
+            g = greeks_map.get(leg.get("instrument_key"))
+            if not g:
+                continue
+            sign = -1 if leg.get("transaction_type") == "SELL" else 1
+            net_delta += sign * g.get("delta", 0.0) * qty
+            net_gamma += sign * g.get("gamma", 0.0) * qty
+            net_theta += sign * g.get("theta", 0.0) * qty
+            net_vega += sign * g.get("vega", 0.0) * qty
+
+    return {
+        "net_delta": round(net_delta, 2), "net_gamma": round(net_gamma, 4),
+        "net_theta": round(net_theta, 2), "net_vega": round(net_vega, 2),
+        "positions_included": len(all_positions),
+    }
 
 
 def compute_portfolio_risk_summary(positions_df):
