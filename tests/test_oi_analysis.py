@@ -58,6 +58,44 @@ class TestOISignalStability:
             history = pd.concat([history, pd.DataFrame([{"diff": diff, "total_put_oi": put_oi, "total_call_oi": call_oi, "signal": sig}])], ignore_index=True)
         assert "BEARISH" in history["signal"].iloc[-1]  # BULLISH कडे उगाच उडी मारली नाही
 
+    def test_held_signal_never_shows_strong_when_contradicted(self):
+        """
+        🎓 वापरकर्त्याने खऱ्या Dashboard च्या screenshot मध्ये सापडवलेला खरा bug — held (अजून पुष्टी न
+        झालेल्या) स्थितीत, Diff खोलवर उलट दिशेत गेला असतानाही (उदा. -50L), जुनं संपूर्ण "Strong" string
+        जसंच्या तसं दाखवलं जायचं. आता 'Weakening' दाखवायला हवं, कधीच 'Strong' नाही, जोपर्यंत खरी पुष्टी
+        (सलग confirm_count वेळा) होत नाही.
+        """
+        history = pd.DataFrame([
+            {"diff": 26.90e5, "total_put_oi": 134.13e5, "total_call_oi": 107.24e5, "signal": "🟢 BULLISH (Strong)"},
+            {"diff": 14.96e5, "total_put_oi": 111.32e5, "total_call_oi": 96.36e5, "signal": "🟢 BULLISH (Strong)"},
+            {"diff": 3.13e5, "total_put_oi": 152.58e5, "total_call_oi": 149.45e5, "signal": "🟢 BULLISH (Strong)"},
+        ])
+        # 12:20 -- मोठा ऋण Diff, पहिल्यांदाच (अजून पुष्टी झालेली नाही)
+        result = compute_oi_signal_with_hysteresis(-45.44e5, 135.40e5, 180.85e5, history)
+        assert "Strong" not in result
+        assert "Weakening" in result
+        assert "BULLISH" in result  # दिशा अजूनही जुनीच (BULLISH), फक्त आत्मविश्वास कमी दाखवला
+
+    def test_full_real_sequence_never_contradicts_diff_sign(self):
+        """
+        🎓 वापरकर्त्याच्याच दुसऱ्या screenshot मधली संपूर्ण, खरी सलगता (08:50 ते 09:40, दिशा दोनदा
+        उलटण्याचा प्रयत्न करणारी, एक खरी same-direction पुष्टी (09:20) सहित) — कुठल्याही क्षणी धन Diff
+        असताना 'BEARISH (Strong)' किंवा ऋण Diff असताना 'BULLISH (Strong)' दिसता कामा नये.
+        """
+        sequence = [
+            ("08:50", -15.10e5, 285.56e5, 300.67e5), ("09:00", -15.10e5, 285.56e5, 300.67e5),
+            ("09:10", 44.33e5, 405.41e5, 361.07e5), ("09:20", -28.25e5, 385.24e5, 413.49e5),
+            ("09:30", 11.18e5, 457.15e5, 445.97e5), ("09:40", 70.71e5, 511.57e5, 440.85e5),
+        ]
+        history = pd.DataFrame(columns=["diff", "total_put_oi", "total_call_oi", "signal"])
+        for _, diff, put_oi, call_oi in sequence:
+            sig = compute_oi_signal_with_hysteresis(diff, put_oi, call_oi, history)
+            if diff > 0:
+                assert not ("BEARISH" in sig and "Strong" in sig), f"धन Diff={diff} तरी BEARISH(Strong): {sig}"
+            elif diff < 0:
+                assert not ("BULLISH" in sig and "Strong" in sig), f"ऋण Diff={diff} तरी BULLISH(Strong): {sig}"
+            history = pd.concat([history, pd.DataFrame([{"diff": diff, "total_put_oi": put_oi, "total_call_oi": call_oi, "signal": sig}])], ignore_index=True)
+
 
 class TestOIEntryGateCompatibility:
     """नवीन signal-string फॉरमॅट (Strong/Weakening) सह check_oi_diff_entry_gate अजूनही बरोबर वाचतो का."""
@@ -92,3 +130,15 @@ class TestOIPriceActionClassification:
         direction, message = generate_oi_price_signal(put_class, call_class)
         assert direction == "BULLISH"
         assert "Don't Short" in message
+
+    def test_bearish_advice_is_not_logically_backwards(self):
+        """
+        🎓 वापरकर्त्याने खऱ्या Dashboard च्या screenshot मध्ये सापडवलेला खरा bug — Bearish संदेशात
+        चुकून 'Don't Long Put' लिहिलं होतं, जे उलटं (logically backwards) आहे — Bearish असेल तर
+        Put खरेदी करणे हीच योग्य कृती आहे, टाळायची नाही. योग्य सल्ला 'Don't Short Put' आहे (BULLISH च्या
+        'Don't Short Call' शी सममित तर्क — ज्या दिशेने नफा होईल ती बाजू विकू नका).
+        """
+        direction, message = generate_oi_price_signal("Put Buying वाढतंय", "अपुरा डेटा")
+        assert direction == "BEARISH"
+        assert "Don't Short Put" in message
+        assert "Long Put" not in message  # जुनी, चुकीची (उलट) फ्रेजिंग आता कुठेच नसावी
