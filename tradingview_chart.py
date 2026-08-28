@@ -36,6 +36,53 @@ def _to_unix_time(ts):
     return int(pd.Timestamp(ts).timestamp())
 
 
+def build_supertrend_segments(timestamps, line_series, dir_series):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं (तिसऱ्यांदा, आणि आता प्रत्यक्ष empirically सिद्ध) —
+    आधीच्या दोन प्रयत्नांनी (whitespace {time-only}, आणि null value) प्रत्यक्षात gap दाखवलाच नाही —
+    lightweight-charts हे दोन्ही प्रकार सरळ रेषेने जोडतच राहिलं (isolated Playwright चाचणीने
+    निर्णायकपणे सिद्ध झालं). आता खरा, सिद्ध झालेला उपाय: प्रत्येक सलग (contiguous) दिशा-तुकड्यासाठी
+    पूर्णपणे स्वतंत्र series — एकाच series च्या आत कधीच gap-बिंदू नसतो, त्यामुळे चुकीची रेषा जोडलीच
+    जाऊ शकत नाही. दिशा-बदलाच्या क्षणी, आधीच्या तुकड्याचा शेवटचा बिंदू नवीन तुकड्याचाही पहिला बिंदू
+    बनवला जातो (सांधा) — जेणेकरून खरी, सलग रेषा दिसते, फक्त रंग बदलतो.
+    module-level function (page_dashboard.py च्या नेस्टेड आतल्या ऐवजी) — pytest ने थेट, स्वतंत्रपणे
+    टेस्ट करता यावं म्हणून (हा एकदा आधी module-आतच होता, तेव्हा हा bug शोधणं/pin करणं कठीण गेलं होतं).
+    रिटर्न: [(दिशा, [बिंदू, ...]), ...] — प्रत्येक tuple म्हणजे एक स्वतंत्र, रंग-सुसंगत तुकडा.
+    """
+    segments = []
+    if line_series is None or dir_series is None or line_series.empty:
+        return segments
+    values = line_series.reset_index(drop=True)
+    dirs = dir_series.reset_index(drop=True)
+    times = pd.Series(timestamps).reset_index(drop=True)
+    n = len(values)
+
+    current_segment = []
+    current_dir = None
+    for i in range(n):
+        if pd.isna(values.iloc[i]) or pd.isna(dirs.iloc[i]):
+            if current_segment:
+                segments.append((current_dir, current_segment))
+                current_segment = []
+                current_dir = None
+            continue
+        this_dir = int(dirs.iloc[i])
+        point = {"time": _to_unix_time(times.iloc[i]), "value": round(float(values.iloc[i]), 2)}
+        if current_dir is None:
+            current_dir = this_dir
+            current_segment = [point]
+        elif this_dir == current_dir:
+            current_segment.append(point)
+        else:
+            current_segment.append(point)  # सांधा -- जुन्या तुकड्याचाही शेवटचा बिंदू
+            segments.append((current_dir, current_segment))
+            current_dir = this_dir
+            current_segment = [point]  # नवीन तुकडा, त्याच बिंदूपासून (सांधा)
+    if current_segment:
+        segments.append((current_dir, current_segment))
+    return segments
+
+
 def build_lightweight_chart_html(
     df, symbol="NIFTY", timeframe_label="15M",
     supertrend_1d_series=None, supertrend_1d_direction=None,
@@ -72,49 +119,11 @@ def build_lightweight_chart_html(
     ]
 
     def _build_supertrend_segments(line_series, dir_series):
-        """
-        🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं (दोनदा) — Supertrend ला दिशेनुसार (bullish=हिरवा/
-        bearish=लाल) दोन वेगळ्या series मध्ये विभागावं लागतं (lightweight-charts मध्ये एकाच रेषेचा
-        रंग मध्येच बदलता येत नाही). दोन समस्या आढळल्या आणि दुरुस्त केल्या:
-        १) दिशा-बदलाच्या क्षणी — तोच बिंदू दोन्ही भागांत जोडला जातो (सांधा), रेषा तुटलेली दिसू नये म्हणून.
-        २) खरा, मोठा bug — मध्येच डेटा गहाळ (NaN) असेल, तर आधी तो पूर्णपणे वगळला (skip) जायचा, आणि
-           lightweight-charts उरलेले (लांबवरचे) बिंदू चुकीच्या सरळ रेषेने जोडायचं — screenshot मध्ये
-           दिसलेली तिरकी रेषा याच कारणामुळे. आता प्रत्येक timestamp साठी बिंदू असतोच — मूल्य नसेल तेव्हा
-           खरा 'whitespace' (फक्त वेळ, मूल्य नाही) दिला जातो, जो lightweight-charts मध्ये खरा दृश्य
-           तुटकपणा (gap) दाखवतो, चुकीची सरळ रेषा जोडत नाही.
-        """
-        bullish, bearish = [], []
-        if line_series is None or dir_series is None or line_series.empty:
-            return bullish, bearish
-        values = line_series.reset_index(drop=True)
-        dirs = dir_series.reset_index(drop=True)
-        times = df["timestamp"].reset_index(drop=True)
-        n = len(values)
-        for i in range(n):
-            t = _to_unix_time(times.iloc[i])
-            if pd.isna(values.iloc[i]) or pd.isna(dirs.iloc[i]):
-                bullish.append({"time": t})
-                bearish.append({"time": t})
-                continue
-            point = {"time": t, "value": round(float(values.iloc[i]), 2)}
-            current_dir = int(dirs.iloc[i])
-            if current_dir == 1:
-                bullish.append(point)
-                bearish.append({"time": t})
-            else:
-                bearish.append(point)
-                bullish.append({"time": t})
-            # पुढचा बिंदू दिशा बदलणार असेल, तर आत्ताचाच बिंदू त्या नवीन दिशेतही जोडणे (सांधा)
-            if i + 1 < n and not pd.isna(dirs.iloc[i + 1]) and int(dirs.iloc[i + 1]) != current_dir:
-                if int(dirs.iloc[i + 1]) == 1:
-                    bullish[-1] = point
-                else:
-                    bearish[-1] = point
-        return bullish, bearish
+        return build_supertrend_segments(df["timestamp"], line_series, dir_series)
 
-    st1d_bull, st1d_bear = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
-    st1h_bull, st1h_bear = _build_supertrend_segments(supertrend_1h_series, supertrend_1h_direction)
-    st15m_bull, st15m_bear = _build_supertrend_segments(supertrend_15m_series, supertrend_15m_direction)
+    st1d_segments = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
+    st1h_segments = _build_supertrend_segments(supertrend_1h_series, supertrend_1h_direction)
+    st15m_segments = _build_supertrend_segments(supertrend_15m_series, supertrend_15m_direction)
 
     rsi_data = []
     if rsi_series is not None and not rsi_series.empty:
@@ -211,14 +220,9 @@ def build_lightweight_chart_html(
   </div>"""
 
     st_legend_html = ""
-    # 🎓 whitespace-gap दुरुस्तीमुळे या lists आता कधीच पूर्णपणे रिकाम्या नसतात (प्रत्येक timestamp साठी
-    # किमान whitespace बिंदू असतोच) — त्यामुळे खरा डेटा (value असलेला) आहे का हेच खरी तपासणी.
-    def _has_real_data(*segments):
-        return any("value" in p for seg in segments for p in seg)
-
-    has_1d = _has_real_data(st1d_bull, st1d_bear)
-    has_1h = _has_real_data(st1h_bull, st1h_bear)
-    has_15m = _has_real_data(st15m_bull, st15m_bear)
+    has_1d = len(st1d_segments) > 0
+    has_1h = len(st1h_segments) > 0
+    has_15m = len(st15m_segments) > 0
     if has_1d or has_1h or has_15m:
         legend_lines = []
         if has_1d:
@@ -311,25 +315,24 @@ if (markerData.length > 0) {{
 // आतून अजूनही 2 series (bullish+bearish भाग) आहेत (LightweightCharts मध्ये एका रेषेचा रंग मध्येच
 // बदलता येत नाही म्हणून), पण टायटल रिकामं ठेवलं — "Bull"/"Bear" वेगळे indicators वाटून गोंधळ होत होता
 // (वापरकर्त्याने निदर्शनास आणलं). एकच, स्वच्छ legend (टाईमफ्रेमनुसार, दिशेनुसार नाही) खाली दिली आहे.
-function addSupertrendSeries(bullData, bearData, widthPx) {{
-    if (bullData.length > 0) {{
+//
+// 🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं (तिसऱ्यांदा) — आधीचा whitespace/null-based gap दृष्टिकोन
+// प्रत्यक्षात कधीच काम करत नव्हता (isolated Playwright चाचणीने सिद्ध झालं — दोन्ही पद्धती सरळ रेषेने
+// जोडतच राहिल्या). आता प्रत्येक सलग (contiguous) तुकड्यासाठी स्वतंत्र series तयार करतो — यातच खरा
+// gap guarantee आहे, कारण एकाच series च्या आत कधीच gap-बिंदू नसतोच.
+function addSupertrendSegments(segments, widthPx) {{
+    segments.forEach(([direction, points]) => {{
+        const color = direction === 1 ? '#089981' : '#F23645';
         const s = chart.addSeries(LightweightCharts.LineSeries, {{
-            color: '#089981', lineWidth: widthPx, title: '',
+            color: color, lineWidth: widthPx, title: '',
             lastValueVisible: false, priceLineVisible: false,
         }});
-        s.setData(bullData);
-    }}
-    if (bearData.length > 0) {{
-        const s = chart.addSeries(LightweightCharts.LineSeries, {{
-            color: '#F23645', lineWidth: widthPx, title: '',
-            lastValueVisible: false, priceLineVisible: false,
-        }});
-        s.setData(bearData);
-    }}
+        s.setData(points);
+    }});
 }}
-addSupertrendSeries({json.dumps(st1d_bull)}, {json.dumps(st1d_bear)}, 3);
-addSupertrendSeries({json.dumps(st1h_bull)}, {json.dumps(st1h_bear)}, 2);
-addSupertrendSeries({json.dumps(st15m_bull)}, {json.dumps(st15m_bear)}, 1);
+addSupertrendSegments({json.dumps(st1d_segments)}, 3);
+addSupertrendSegments({json.dumps(st1h_segments)}, 2);
+addSupertrendSegments({json.dumps(st15m_segments)}, 1);
 
 const volumeData = {json.dumps(volume_data)};
 if (volumeData.length > 0) {{
