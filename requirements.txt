@@ -4,7 +4,7 @@ numpy
 plotly
 requests
 reportlab
-kaleido==0.2.1
+kaleido>=1.0.0
 yfinance
 google-api-python-client
 google-auth

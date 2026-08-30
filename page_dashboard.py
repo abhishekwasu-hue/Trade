@@ -7,7 +7,7 @@ import uuid
 import pandas as pd
 import streamlit as st
 
-from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today
+from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today, is_market_open
 from tradingview_chart import build_lightweight_chart_html
 from sr_dynamic import compute_dynamic_sr
 import sqlite3
@@ -657,22 +657,33 @@ def render():
         # करण्याजोग्या function मध्ये आहे (oi_analysis.fetch_and_save_oi_snapshot) — तेच नवीन
         # oi_snapshot_collector.py (browser बंद असतानाही चालणारी unattended script) वापरतं, त्यामुळे
         # Dashboard उघडलं की मधल्या काळात collector ने साठवलेले सर्व snapshots आपोआप टेबलमध्ये दिसतील.
-        snapshot_result, snapshot_status = fetch_and_save_oi_snapshot(
-            token_input, symbol, lambda t, s: (raw_chain, "OK"), get_ist_now, DB_PATH, atm_range=6,
-        )
-        if snapshot_result is None:
-            st.warning(f"⚠️ OI Snapshot घेता आला नाही: {snapshot_status}")
+        #
+        # 🎓 वापरकर्त्याने प्रत्यक्ष screenshot दाखवून निदर्शनास आणलेला खरा bug — unattended scripts
+        # साठी is_market_open() तपासणी जोडली होती, पण Dashboard चं स्वतःचं (browser उघडं असतानाचं)
+        # snapshot-घेणं त्याच तपासणीशिवाय राहिलं होतं — त्यामुळे बाजार उघडण्याआधीही (उदा. 08:10, 08:20)
+        # snapshots साठवले जात होते. आता इथेही तीच तपासणी.
+        if not is_market_open():
+            st.info(f"⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — नवीन snapshot घेतला जाणार नाही. खालचा इतिहास पाहू शकता.")
             total_call_oi = total_put_oi = current_diff = 0
-            oi_price_direction, oi_price_message = "NEUTRAL", "⚪ Snapshot अयशस्वी"
+            oi_price_direction, oi_price_message = "NEUTRAL", "⚪ बाजार बंद आहे"
             put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
         else:
-            total_call_oi = snapshot_result["total_call_oi"]
-            total_put_oi = snapshot_result["total_put_oi"]
-            current_diff = snapshot_result["diff"]
-            oi_price_direction = snapshot_result["oi_price_direction"]
-            oi_price_message = snapshot_result["oi_price_message"]
-            put_oi_price_class = snapshot_result["put_oi_price_class"]
-            call_oi_price_class = snapshot_result["call_oi_price_class"]
+            snapshot_result, snapshot_status = fetch_and_save_oi_snapshot(
+                token_input, symbol, lambda t, s: (raw_chain, "OK"), get_ist_now, DB_PATH, atm_range=6,
+            )
+            if snapshot_result is None:
+                st.warning(f"⚠️ OI Snapshot घेता आला नाही: {snapshot_status}")
+                total_call_oi = total_put_oi = current_diff = 0
+                oi_price_direction, oi_price_message = "NEUTRAL", "⚪ Snapshot अयशस्वी"
+                put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
+            else:
+                total_call_oi = snapshot_result["total_call_oi"]
+                total_put_oi = snapshot_result["total_put_oi"]
+                current_diff = snapshot_result["diff"]
+                oi_price_direction = snapshot_result["oi_price_direction"]
+                oi_price_message = snapshot_result["oi_price_message"]
+                put_oi_price_class = snapshot_result["put_oi_price_class"]
+                call_oi_price_class = snapshot_result["call_oi_price_class"]
 
         # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
         banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
@@ -1319,8 +1330,8 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab5:
-        st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP)")
-        show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ४ strategies चालवल्या जातील)", value=False)
+        st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP + SR Bounce)")
+        show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ५ strategies चालवल्या जातील)", value=False)
         if show_orchestrator:
             try:
                 from loader import build_orchestrator
@@ -1336,6 +1347,7 @@ def render():
                 for strat_id, strat_label, default_sl, default_target in [
                     ("oi_pcr", "OI/PCR", 40, 80), ("ict_fvg", "ICT-FVG", 30, 60),
                     ("bb_squeeze", "BB Squeeze", 40, 80), ("vwap", "VWAP", 25, 40),
+                    ("sr_bounce", "SR Bounce", 40, 80),
                 ]:
                     mscol1, mscol2 = st.columns(2)
                     with mscol1:
@@ -1390,8 +1402,8 @@ def render():
             except ModuleNotFoundError as e:
                 st.error(
                     f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}\n\n"
-                    "**बहुतेक कारण**: `strategies/` फोल्डर (सर्व ६ फाईल्स — `__init__.py`, `base.py`, `oi_pcr.py`, "
-                    "`ict_fvg.py`, `bb_squeeze.py`, `vwap.py`) किंवा `orchestrator.py`/`loader.py`/`config.yaml` "
+                    "**बहुतेक कारण**: `strategies/` फोल्डर (सर्व ७ फाईल्स — `__init__.py`, `base.py`, `oi_pcr.py`, "
+                    "`ict_fvg.py`, `bb_squeeze.py`, `vwap.py`, `sr_bounce.py`) किंवा `orchestrator.py`/`loader.py`/`config.yaml` "
                     "तुमच्या GitHub repo मध्ये गहाळ आहेत. Repo मध्ये जाऊन हे सर्व आहेत का तपासा."
                 )
             except Exception as e:

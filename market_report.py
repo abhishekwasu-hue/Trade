@@ -174,8 +174,15 @@ def generate_symbol_outlook(access_token, symbol, df_15m, df_1h, df_1d, india_vi
     except Exception:
         pass
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PDF मध्ये प्रत्यक्ष chart image दाखवण्यासाठी,
+    # आजचा 15M candle डेटा + त्यावरचा Supertrend (line, फक्त दिशा नाही) इथेच सोबत ठेवणे.
+    chart_supertrend_line = None
+    if df_15m is not None and not df_15m.empty and len(df_15m) > 12:
+        chart_supertrend_line, _ = calculate_supertrend(df_15m, period=10, multiplier=3)
+
     return {
         "symbol": symbol, "multi_tf_outlook": multi_tf, "sr_levels": sr_levels,
         "chart_patterns": patterns, "oi_summary": oi_summary, "india_vix": india_vix,
         "recommendation": recommendation, "open_positions_greeks": greeks_positions,
+        "chart_df": df_15m, "chart_supertrend_line": chart_supertrend_line,
     }

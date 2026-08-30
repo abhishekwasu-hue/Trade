@@ -197,9 +197,54 @@ def build_report_chart_image(df, title, zone_info=None, width=620, height=420):
             title=title, template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=110, t=36, b=10), xaxis_rangeslider_visible=False,
         )
-        return fig.to_image(format="png", engine="kaleido", scale=3), description
+        return fig.to_image(format="png", scale=3), description
     except Exception:
         return None, "Chart could not be generated."
+
+
+def build_eod_report_chart_image(df, sr_levels=None, supertrend_line=None, symbol="NIFTY",
+                                    timeframe_label="15M", max_bars=60, width=680, height=380):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — EOD Market Report मध्ये फक्त मजकूर/तक्ते होते, प्रत्यक्ष
+    chart नव्हता (वापरकर्त्याने निदर्शनास आणलं). इथे established plotly+kaleido पद्धतीनेच (जुन्या
+    build_report_chart_image प्रमाणे) — candlestick + S/R रेषा + Supertrend रेषा असलेला chart image
+    तयार करणे. फक्त शेवटचे max_bars bars दाखवले जातात (जास्त bars candle बॉडी दिसेनाशी करतात).
+    Returns: image_bytes किंवा None (डेटा नसेल/kaleido अपयशी झालं तर, गोंधळ न होता).
+    """
+    if df is None or df.empty:
+        return None
+    try:
+        df_recent = df.tail(max_bars).reset_index(drop=True)
+        fig = go.Figure(data=[go.Candlestick(
+            x=df_recent["timestamp"], open=df_recent["open"], high=df_recent["high"],
+            low=df_recent["low"], close=df_recent["close"],
+            increasing_line_color="#089981", decreasing_line_color="#F23645", showlegend=False,
+        )])
+
+        if supertrend_line is not None and not supertrend_line.empty:
+            st_recent = supertrend_line.tail(max_bars).reset_index(drop=True)
+            fig.add_trace(go.Scatter(
+                x=df_recent["timestamp"], y=st_recent, mode="lines",
+                line=dict(color="#00bcd4", width=2), showlegend=False,
+            ))
+
+        if sr_levels:
+            for r in sr_levels.get("resistance", [])[:2]:
+                fig.add_hline(y=r["level"], line_dash="dash", line_color="#F23645", line_width=1.4,
+                              annotation_text=f"R {r['level']:,.0f}", annotation_position="right",
+                              annotation_font_size=9, annotation_font_color="#F23645")
+            for s in sr_levels.get("support", [])[:2]:
+                fig.add_hline(y=s["level"], line_dash="dash", line_color="#089981", line_width=1.4,
+                              annotation_text=f"S {s['level']:,.0f}", annotation_position="right",
+                              annotation_font_size=9, annotation_font_color="#089981")
+
+        fig.update_layout(
+            title=f"{symbol} — {timeframe_label} Chart", template="plotly_white", width=width, height=height,
+            margin=dict(l=10, r=90, t=36, b=10), xaxis_rangeslider_visible=False,
+        )
+        return fig.to_image(format="png", scale=3)
+    except Exception:
+        return None
 
 
 def build_price_action_chart_v2(df, direction, timeframe_label, rsi_series=None, sr_window=20,
@@ -251,7 +296,7 @@ def build_price_action_chart_v2(df, direction, timeframe_label, rsi_series=None,
             title=f"{timeframe_label} - Direction: {direction}", template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=140, t=36, b=10), xaxis_rangeslider_visible=False,
         )
-        chart_bytes = fig.to_image(format="png", engine="kaleido", scale=3)
+        chart_bytes = fig.to_image(format="png", scale=3)
     except Exception:
         chart_bytes = None
 
@@ -352,7 +397,7 @@ def build_backtest_chart_image(df, bt_result, width=680, height=520):
             margin=dict(l=10, r=10, t=50, b=10), xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", y=1.08),
         )
-        return fig.to_image(format="png", engine="kaleido", scale=3)
+        return fig.to_image(format="png", scale=3)
     except Exception:
         return None
 
@@ -416,7 +461,7 @@ def build_backtest_chart_image_rr(df, bt_result, width=680, height=520):
             margin=dict(l=10, r=10, t=50, b=10), xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", y=1.08),
         )
-        return fig.to_image(format="png", engine="kaleido", scale=3)
+        return fig.to_image(format="png", scale=3)
     except Exception:
         return None
 
@@ -1347,6 +1392,21 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
     for outlook in symbol_outlooks:
         symbol = outlook["symbol"]
         next_section(f"{symbol}")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — फक्त मजकूर/तक्ते नाही, प्रत्यक्ष candlestick
+        # chart (S/R + Supertrend सह) — established plotly+kaleido पद्धतीने.
+        chart_bytes = build_eod_report_chart_image(
+            outlook.get("chart_df"), sr_levels=outlook.get("sr_levels"),
+            supertrend_line=outlook.get("chart_supertrend_line"), symbol=symbol, timeframe_label="15M",
+        )
+        if chart_bytes:
+            img_w = usable_width
+            img_h = img_w * (380 / 680)  # मूळ aspect ratio राखणे
+            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
+            story.append(Spacer(1, 10))
+        else:
+            story.append(Paragraph("Chart could not be generated (data unavailable or export failed).", _eod_footer))
+            story.append(Spacer(1, 8))
 
         mtf = outlook["multi_tf_outlook"]
         outlook_rows = [

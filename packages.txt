@@ -1,0 +1,5 @@
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — kaleido>=1.0 (plotly 7.0 ला हेच लागतं) ला chart
+# images (PNG) तयार करण्यासाठी खरा Chromium browser लागतो. Streamlit Cloud हे packages.txt वाचून
+# आपोआप apt-get ने स्थापित करतं — कुठलाही अतिरिक्त कोड लागत नाही, kaleido स्वतःच
+# /usr/bin/chromium इथे शोधून सापडवतं.
+chromium
