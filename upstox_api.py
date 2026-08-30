@@ -39,12 +39,25 @@ def fetch_timeframe_df(access_token, symbol, spot, interval_key):
     return fetch_candles(access_token, symbol, spot, interval=interval_key)
 
 
-def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookback_days=400):
+def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookback_days=None):
     """
-    किमान `lookback_days` (डीफॉल्ट ४००, म्हणजे ३६५+ दिवसांचा बफर) इतका इतिहास मिळवणारे इंजिन.
-    Upstox चा प्रत्येक API कॉल ठराविक तारीख-रेंजच पुरवतो, त्यामुळे संपूर्ण कालावधी
-    लहान "chunks" मध्ये विभागून, प्रत्येक chunk साठी वेगळा कॉल करून सर्व candles जोडले जातात.
+    किमान `lookback_days` इतका इतिहास मिळवणारे इंजिन. Upstox चा प्रत्येक API कॉल ठराविक तारीख-रेंजच
+    पुरवतो, त्यामुळे संपूर्ण कालावधी लहान "chunks" मध्ये विभागून, प्रत्येक chunk साठी वेगळा कॉल करून
+    सर्व candles जोडले जातात.
+
+    🎓 वापरकर्त्याने Full Market Analysis Report मध्ये प्रत्यक्ष दाखवलेला खरा bug — आधी `lookback_days`
+    डीफॉल्ट (400) *सर्वच* intervals साठी सारखाच वापरला जात होता (कुठलाही caller override करत नव्हता) —
+    त्यामुळे 15-मिनिट व 1-तास चे candles सुद्धा ~400 दिवसांच्या प्रचंड कालावधीत मागवले जायचे (chunked
+    calls द्वारे यशस्वीपणे), आणि Daily/1H/15M तिन्ही charts एकाच प्रचंड, सारख्याच कालावधीत दिसायचे —
+    finer-grained डेटासाठी हे व्यवहार्यही नाही आणि उपयुक्तही नाही. आता `lookback_days=None` दिलं (किंवा
+    दिलंच नाही) तर, प्रत्येक interval साठी योग्य, वास्तववादी डीफॉल्ट वापरला जातो — caller ने स्पष्ट
+    मूल्य दिलं तरच तेच वापरलं जातं (backward-compatible).
     """
+    if lookback_days is None:
+        lookback_days = {
+            "1minute": 5, "5minute": 10, "15minute": 20,
+            "30minute": 60, "1hour": 90, "day": 400,
+        }.get(interval, 60)
     try:
         allowed_intervals = ["1minute", "5minute", "15minute", "30minute", "day"]
         if interval not in allowed_intervals:
