@@ -1,0 +1,47 @@
+name: EOD Market Report (4pm IST daily)
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Windows Task Scheduler साठी संगणक चालू ठेवावा लागतो,
+# GitHub Actions पूर्णपणे GitHub च्या सर्व्हरवर चालतं — कुठलंही उपकरण (संगणक/मोबाईल) चालू ठेवावं लागत नाही.
+# तयार झालेला PDF याच repo मध्ये (data/reports/) परत commit केला जातो, जेणेकरून Streamlit Cloud वरच्या
+# Dashboard ला तो लगेच दिसेल (Dashboard त्याच फोल्डरमधून वाचतं).
+
+on:
+  schedule:
+    # UTC 10:30 = IST 16:00 (दुपारी ४ वाजता) — सोमवार ते शुक्रवार (1-5)
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं (GitHub च्या Actions tab मधून, "Run workflow" बटण)
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # PDF परत commit करण्यासाठी लागणारी परवानगी
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Chromium स्थापित करणे (chart image साठी, kaleido ला लागतं)
+        run: sudo apt-get update && sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: EOD Market Report तयार करणे
+        env:
+          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 eod_market_report.py --token "$UPSTOX_TOKEN" --mode PAPER
+
+      - name: तयार झालेला PDF repo मध्ये परत commit करणे
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/reports/*.pdf
+          git diff --staged --quiet && echo "नवीन PDF नाही, commit वगळत आहे" || git commit -m "🤖 EOD Market Report — auto-generated"
+          git push
