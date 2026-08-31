@@ -1,0 +1,28 @@
+name: Test Supabase Connection (मोबाईलवरून, संगणकाशिवाय)
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — फक्त मोबाईल असलेल्या वापरकर्त्यांसाठी, Supabase
+# जोडणी GitHub च्याच सर्व्हरवर टेस्ट करण्यासाठी (local Python/Terminal न वापरता). निकाल याच workflow
+# च्या "logs" मध्ये मोबाईल browser वरूनच वाचता येतो.
+
+on:
+  workflow_dispatch:  # फक्त हातानेच चालवायचं — Actions tab मधून "Run workflow" बटण
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: आवश्यक dependencies स्थापित करणे
+        run: pip install psycopg2-binary
+
+      - name: Supabase जोडणी टेस्ट करणे (निकाल खालीच दिसेल)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 test_supabase_connection.py
