@@ -22,6 +22,40 @@ def find_psychological_level(price, direction, round_to=500):
     return level
 
 
+def is_genuine_rotation(call_oi_now, call_oi_prev, put_oi_now, put_oi_prev, min_change_pct=2.0):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Call OI आणि Put OI विरुद्ध दिशेने (एक वाढतोय, दुसरा
+    घटतोय), आणि दोन्ही बदल क्षुल्लक (noise) नसतील तरच खरं "rotation" (कल-बदल) मानणे — दोन्ही एकाच
+    दिशेने हलले (दोन्ही वाढले किंवा दोन्ही घटले) तर ते सर्वसाधारण OI वाढ/घट आहे, दिशा-बदलाचा संकेत नाही.
+    रिटर्न: "BULLISH"/"BEARISH"/None (rotation नसेल किंवा पुरेसा डेटा नसेल तर).
+    """
+    if not call_oi_prev or not put_oi_prev:
+        return None
+    call_change_pct = (call_oi_now - call_oi_prev) / call_oi_prev * 100
+    put_change_pct = (put_oi_now - put_oi_prev) / put_oi_prev * 100
+    if abs(call_change_pct) < min_change_pct or abs(put_change_pct) < min_change_pct:
+        return None
+    if call_change_pct > 0 and put_change_pct < 0:
+        return "BEARISH"
+    elif call_change_pct < 0 and put_change_pct > 0:
+        return "BULLISH"
+    return None
+
+
+def rotation_confirmed_for_2_snapshots(history_rows, min_change_pct=2.0):
+    """
+    history_rows: [(call_oi, put_oi), ...] जुनं->नवीन क्रमाने, किमान ३ रांगा हव्यात. सलग दोन्ही
+    तुलनांमध्ये (t-2->t-1, आणि t-1->t) तीच rotation दिशा दिसली तरच ती दिशा, नाहीतर None.
+    """
+    if len(history_rows) < 3:
+        return None
+    r1 = is_genuine_rotation(history_rows[-2][0], history_rows[-3][0], history_rows[-2][1], history_rows[-3][1], min_change_pct)
+    r2 = is_genuine_rotation(history_rows[-1][0], history_rows[-2][0], history_rows[-1][1], history_rows[-2][1], min_change_pct)
+    if r1 is not None and r1 == r2:
+        return r1
+    return None
+
+
 def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call_oi, recent_snapshots,
                                         lookback_for_strength=3, confirm_count=3):
     """
@@ -80,7 +114,16 @@ def compute_oi_signal_with_hysteresis(current_diff, current_put_oi, current_call
 
     recent_diffs = recent_snapshots["diff"].tail(confirm_count - 1).tolist() + [current_diff]
     same_new_direction = all((d > 0 if raw_direction == "BULLISH" else d < 0) for d in recent_diffs)
-    return raw_signal if same_new_direction else prev_direction_weakening
+
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — नुसता Diff सलग confirm_count वेळा नवीन दिशेत असून
+    # पुरेसं नाही, आता Call/Put OI चं खरं "rotation" (विरुद्ध दिशेने, सलग २ स्नॅपशॉट्समध्ये) सुद्धा
+    # असायलाच हवं, तरच दिशा प्रत्यक्ष बदलते — दोन्ही अटी एकत्र (AND), फक्त एक पुरेशी नाही.
+    call_put_history = recent_snapshots[["total_call_oi", "total_put_oi"]].tail(2).values.tolist()
+    call_put_history.append([current_call_oi, current_put_oi])
+    rotation_direction = rotation_confirmed_for_2_snapshots(call_put_history)
+    rotation_confirms = rotation_direction == raw_direction
+
+    return raw_signal if (same_new_direction and rotation_confirms) else prev_direction_weakening
 
 
 def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction, step=50):
@@ -187,6 +230,35 @@ def classify_oi_price_action(current_oi, prev_oi, current_premium, prev_premium,
         return "Long Unwinding (खरेदी मागे घेतायत)"
     else:
         return "स्थिर/अस्पष्ट"
+
+
+def reconcile_with_diff_level(oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi, significance_pct=10.0):
+    """
+    🎓 वापरकर्त्याने प्रत्यक्ष Dashboard च्या screenshot मध्ये दाखवलेली खरी विसंगती — OI Buildup
+    (गती/momentum, अलीकडच्या snapshot शी तुलना) आणि Diff (एकूण पातळी, Put OI vs Call OI कोण जास्त)
+    या दोन वेगळ्या गोष्टी मोजतात, आणि कधीकधी परस्परविरोधी निष्कर्ष देतात (उदा. "Call Writing वाढतंय,
+    Bearish" असं Banner म्हणत असतानाच, Diff मात्र मोठ्या फरकाने Put-वर्चस्व/Bullish दाखवत असतो).
+    असा फरक क्षुल्लक नसेल (significance_pct पेक्षा जास्त, एकूण OI च्या तुलनेत), तर एकतर्फी आत्मविश्वासाने
+    BULLISH/BEARISH दाखवण्याऐवजी "MIXED" (संमिश्र संकेत, सावध रहा) दाखवणे — दिशाभूल टाळण्यासाठी.
+    """
+    total_oi = total_call_oi + total_put_oi
+    if total_oi <= 0:
+        return oi_price_direction, oi_price_message
+    diff_significance = abs(current_diff) / total_oi * 100
+
+    contradicts = (
+        (oi_price_direction == "BEARISH" and current_diff > 0 and diff_significance >= significance_pct) or
+        (oi_price_direction == "BULLISH" and current_diff < 0 and diff_significance >= significance_pct)
+    )
+    if contradicts:
+        diff_side = "Put" if current_diff > 0 else "Call"
+        momentum_label = oi_price_message.split("→")[0].strip().lstrip("🟢🔴 ")
+        new_message = (
+            f"🟡 संमिश्र संकेत — अलीकडची गती ({momentum_label}) आणि एकूण पातळी "
+            f"(Diff: {diff_side} OI जास्त, {current_diff/1e5:+.1f}L) परस्परविरोधी — सावध रहा"
+        )
+        return "MIXED", new_message
+    return oi_price_direction, oi_price_message
 
 
 def generate_oi_price_signal(put_class, call_class):
@@ -549,6 +621,11 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
     put_oi_price_class = classify_oi_price_action(total_put_oi, prev_put_oi_s, total_put_premium, prev_put_prem_s)
     call_oi_price_class = classify_oi_price_action(total_call_oi, prev_call_oi_s, total_call_premium, prev_call_prem_s)
     oi_price_direction, oi_price_message = generate_oi_price_signal(put_oi_price_class, call_oi_price_class)
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — गती (momentum) आणि एकूण पातळी (Diff) परस्परविरोधी
+    # असतील तर एकतर्फी BULLISH/BEARISH ऐवजी "MIXED" (सावध रहा)
+    oi_price_direction, oi_price_message = reconcile_with_diff_level(
+        oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi,
+    )
 
     snapshot = {
         "snapshot_time": snapshot_time, "trade_date": today_str, "total_call_oi": total_call_oi,
