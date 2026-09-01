@@ -232,7 +232,7 @@ def classify_oi_price_action(current_oi, prev_oi, current_premium, prev_premium,
         return "स्थिर/अस्पष्ट"
 
 
-def reconcile_with_diff_level(oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi, significance_pct=10.0):
+def reconcile_with_diff_level(oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi, stable_signal=None, significance_pct=10.0):
     """
     🎓 वापरकर्त्याने प्रत्यक्ष Dashboard च्या screenshot मध्ये दाखवलेली खरी विसंगती — OI Buildup
     (गती/momentum, अलीकडच्या snapshot शी तुलना) आणि Diff (एकूण पातळी, Put OI vs Call OI कोण जास्त)
@@ -240,7 +240,26 @@ def reconcile_with_diff_level(oi_price_direction, oi_price_message, current_diff
     Bearish" असं Banner म्हणत असतानाच, Diff मात्र मोठ्या फरकाने Put-वर्चस्व/Bullish दाखवत असतो).
     असा फरक क्षुल्लक नसेल (significance_pct पेक्षा जास्त, एकूण OI च्या तुलनेत), तर एकतर्फी आत्मविश्वासाने
     BULLISH/BEARISH दाखवण्याऐवजी "MIXED" (संमिश्र संकेत, सावध रहा) दाखवणे — दिशाभूल टाळण्यासाठी.
+
+    🎓 वापरकर्त्याने पुढच्या screenshot मध्ये दाखवलेली आणखी एक विसंगती — Banner ची गती फक्त एका
+    (मागच्या) snapshot शी तुलना करते, जी Signal column च्या hysteresis-confirmed (सलग ३ स्नॅपशॉट्स +
+    rotation तपासलेल्या, जास्त विश्वासार्ह) दिशेशीही विरोधाभासी असू शकते — stable_signal दिलं तर
+    तेही तपासलं जातं (या तपासणीला प्राधान्य, कारण ती जास्त पक्की आहे).
     """
+    if stable_signal:
+        stable_direction = "BULLISH" if "BULLISH" in stable_signal else ("BEARISH" if "BEARISH" in stable_signal else "NEUTRAL")
+        contradicts_stable = (
+            (oi_price_direction == "BEARISH" and stable_direction == "BULLISH") or
+            (oi_price_direction == "BULLISH" and stable_direction == "BEARISH")
+        )
+        if contradicts_stable:
+            momentum_label = oi_price_message.split("→")[0].strip().lstrip("🟢🔴 ")
+            new_message = (
+                f"🟡 संमिश्र संकेत — अलीकडची गती ({momentum_label}) आणि स्थिर/पुष्टी झालेला कल "
+                f"({stable_direction}) परस्परविरोधी — सावध रहा"
+            )
+            return "MIXED", new_message
+
     total_oi = total_call_oi + total_put_oi
     if total_oi <= 0:
         return oi_price_direction, oi_price_message
@@ -624,7 +643,7 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — गती (momentum) आणि एकूण पातळी (Diff) परस्परविरोधी
     # असतील तर एकतर्फी BULLISH/BEARISH ऐवजी "MIXED" (सावध रहा)
     oi_price_direction, oi_price_message = reconcile_with_diff_level(
-        oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi,
+        oi_price_direction, oi_price_message, current_diff, total_call_oi, total_put_oi, stable_signal=oi_signal,
     )
 
     snapshot = {
