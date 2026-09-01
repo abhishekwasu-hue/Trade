@@ -40,10 +40,15 @@ def main():
 
     # --- पायरी १: मूलभूत जोडणी ---
     print("\n[१/५] मूलभूत जोडणी तपासतेय...")
-    conn = cloud_db.get_connection()
+    conn, error_detail = cloud_db.get_connection_with_error()
     if conn is None:
-        print("   ❌ अयशस्वी — Connection String चुकीची आहे, किंवा Supabase project बंद/निलंबित आहे,")
-        print("      किंवा तुमचं network Supabase ला जोडू देत नाही (firewall/VPN तपासा).")
+        print("   ❌ अयशस्वी — खरं कारण (Supabase/psycopg2 कडून थेट):")
+        print(f"      {error_detail}")
+        print("\n   सामान्य कारणं:")
+        print("   • Supabase free-tier project निष्क्रियतेमुळे आपोआप 'Paused' झालेला असू शकतो —")
+        print("     Supabase dashboard उघडून प्रोजेक्ट Active आहे का तपासा (असल्यास 'Restore' बटण दाबा).")
+        print("   • Connection String मधला password चुकीचा किंवा जुना असू शकतो.")
+        print("   • Hostname/port चुकीचे असू शकतात (Supabase dashboard वरून पुन्हा कॉपी करून बघा).")
         sys.exit(1)
     conn.close()
     print("   ✅ यशस्वी — Supabase शी जोडणी झाली.")

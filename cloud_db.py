@@ -85,6 +85,25 @@ def get_connection():
         return None
 
 
+def get_connection_with_error():
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — फक्त निदान/टेस्टिंगसाठी (test_supabase_connection.py).
+    get_connection() प्रमाणेच, पण अयशस्वी झाल्यास खरा, तपशीलवार error संदेश सुद्धा परत देतं — जेणेकरून
+    "जोडणी झाली नाही" इतकंच नाही, तर *नेमकं का* (उदा. password चुकीचा, project paused, DNS सापडला
+    नाही) हे स्पष्टपणे कळेल. get_connection() चं मूळ वर्तन (production साठी शांतपणे None) अबाधित आहे.
+    रिटर्न: (connection_किंवा_None, error_message_किंवा_None)
+    """
+    if psycopg2 is None:
+        return None, "psycopg2 library स्थापित नाही (pip install psycopg2-binary)"
+    url = get_supabase_url()
+    if not url:
+        return None, "SUPABASE_DB_URL सापडली नाही (environment variable रिकामी आहे)"
+    try:
+        return psycopg2.connect(url, connect_timeout=10), None
+    except Exception as exc:
+        return None, str(exc)
+
+
 def init_cloud_table():
     """oi_diff_snapshots table (नसेल तर) तयार करणे. Configured नसेल तर शांतपणे False."""
     conn = get_connection()
