@@ -1,0 +1,37 @@
+name: OI Snapshot Collector (दर १० मिनिटं, बाजार तासात)
+
+# 🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — मूळ समस्या: संगणक सतत चालू ठेवता येत नाही, त्यामुळे
+# OI snapshots मध्ये gaps पडायचे. आता GitHub Actions (कुठलंही उपकरण चालू ठेवायची गरज नाही) +
+# Supabase (cloud DB, आत्ताच यशस्वीरित्या जोडलं) एकत्र — डेटा थेट cloud मध्ये साठतो, Dashboard तिथूनच
+# वाचतं (page_dashboard.py/oi_analysis.py आधीच cloud_db.py वापरण्यासाठी तयार आहेत).
+#
+# PDF सारखं इथे repo मध्ये काहीही commit करायची गरज नाही -- डेटा थेट Supabase मध्ये जातो.
+
+on:
+  schedule:
+    # UTC 3:45 ते 10:00 (IST 9:15 ते 15:30, बाजार तासांशी जुळणारं), दर १० मिनिटं, सोम-शुक्र
+    # 🎓 is_market_open() तपासणी script च्या आतच आहे, त्यामुळे इथे थोडी जास्तीची मर्यादा (मार्जिन)
+    # दिली तरी हरकत नाही -- बाजार-बाहेरच्या वेळी script आपोआप काहीही न करता थांबेल.
+    - cron: "*/10 3-10 * * 1-5"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+
+jobs:
+  collect-oi-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: OI Snapshot गोळा करणे (Supabase मध्ये थेट साठवलं जाईल)
+        env:
+          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 oi_snapshot_collector.py --token "$UPSTOX_TOKEN"
