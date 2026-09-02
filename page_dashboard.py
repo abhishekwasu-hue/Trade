@@ -98,9 +98,9 @@ def render():
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Chart व Direction", "📋 Option Chain व OI", "🧬 Signal Engine व Trading",
-        "📄 Reports", "🧩 Multi-Strategy",
+        "📄 Reports", "🧩 Multi-Strategy", "🌉 MTF Pullback + Gap Fill",
     ])
     with tab1:
         st.markdown("---")
@@ -1330,8 +1330,8 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab5:
-        st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP + SR Bounce)")
-        show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ५ strategies चालवल्या जातील)", value=False)
+        st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP + SR Bounce + MTF Gap Fill)")
+        show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ६ strategies चालवल्या जातील)", value=False)
         if show_orchestrator:
             try:
                 from loader import build_orchestrator
@@ -1347,7 +1347,7 @@ def render():
                 for strat_id, strat_label, default_sl, default_target in [
                     ("oi_pcr", "OI/PCR", 40, 80), ("ict_fvg", "ICT-FVG", 30, 60),
                     ("bb_squeeze", "BB Squeeze", 40, 80), ("vwap", "VWAP", 25, 40),
-                    ("sr_bounce", "SR Bounce", 40, 80),
+                    ("sr_bounce", "SR Bounce", 40, 80), ("mtf_gap_fill", "MTF Gap Fill", 55, 155),
                 ]:
                     mscol1, mscol2 = st.columns(2)
                     with mscol1:
@@ -1361,12 +1361,27 @@ def render():
                 futures_ohlcv = prepare_futures_ohlcv(df_for_orch)
                 options_chain_df = prepare_options_chain(raw_chain, symbol, atm_strike)
                 structure_data = prepare_structure_data(df_for_orch)
-                trend_direction_1h = compute_trend_direction_1h(resample_to_1h(df_1h_for_orch) if not df_1h_for_orch.empty else df_1h_for_orch)
+                df_1h_resampled = resample_to_1h(df_1h_for_orch) if not df_1h_for_orch.empty else df_1h_for_orch
+                trend_direction_1h = compute_trend_direction_1h(df_1h_resampled)
+
+                # 🎓 वापरकर्त्याने प्रत्यक्ष कोड-वाचनातून सापडवलेला खरा gap — sr_bounce (आधीपासूनच) आणि
+                # mtf_gap_fill (नवीन) दोन्हीना 1H-आधारित डेटा snapshot.extra मधून हवा असतो, पण तो आधी
+                # दिलाच जात नव्हता (फक्त trend_direction_1h होता) — त्यामुळे दोन्ही रणनीती इथे कधीच
+                # खरा signal देतच नव्हत्या (नेहमी "1H डेटा उपलब्ध नाही" हेच कारण मिळायचं).
+                from signals import find_support_resistance_levels
+                sr_levels_1h = None
+                if df_1h_resampled is not None and not df_1h_resampled.empty and len(df_1h_resampled) >= 10:
+                    sr_levels_1h = find_support_resistance_levels(df_1h_resampled, top_n=3)
+                mtf_1h_ohlcv = None
+                if df_1h_resampled is not None and not df_1h_resampled.empty:
+                    mtf_1h_ohlcv = df_1h_resampled.rename(columns={
+                        "timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close",
+                    })
 
                 snapshot = MarketSnapshot(
                     timestamp=get_ist_now(), futures_ohlcv=futures_ohlcv,
                     options_chain=options_chain_df, structure_data=structure_data,
-                    extra={"trend_direction_1h": trend_direction_1h},
+                    extra={"trend_direction_1h": trend_direction_1h, "sr_levels_1h": sr_levels_1h, "mtf_1h_ohlcv": mtf_1h_ohlcv},
                 )
 
                 st.caption(f"1H Supertrend Direction (vwap साठी): {trend_direction_1h or 'उपलब्ध नाही'}")
@@ -1402,11 +1417,77 @@ def render():
             except ModuleNotFoundError as e:
                 st.error(
                     f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}\n\n"
-                    "**बहुतेक कारण**: `strategies/` फोल्डर (सर्व ७ फाईल्स — `__init__.py`, `base.py`, `oi_pcr.py`, "
-                    "`ict_fvg.py`, `bb_squeeze.py`, `vwap.py`, `sr_bounce.py`) किंवा `orchestrator.py`/`loader.py`/`config.yaml` "
-                    "तुमच्या GitHub repo मध्ये गहाळ आहेत. Repo मध्ये जाऊन हे सर्व आहेत का तपासा."
+                    "**बहुतेक कारण**: `strategies/` फोल्डर (सर्व ८ फाईल्स — `__init__.py`, `base.py`, `oi_pcr.py`, "
+                    "`ict_fvg.py`, `bb_squeeze.py`, `vwap.py`, `sr_bounce.py`, `mtf_gap_fill.py`) किंवा "
+                    "`orchestrator.py`/`loader.py`/`config.yaml` तुमच्या GitHub repo मध्ये गहाळ आहेत. "
+                    "Repo मध्ये जाऊन हे सर्व आहेत का तपासा."
                 )
             except Exception as e:
                 st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
+
+    with tab6:
+        st.markdown("---")
+        st.subheader(f"🌉 {symbol} — MTF Pullback + Gap Fill (नवीन, प्रयोगिक)")
+        st.caption(
+            "दोन स्वतंत्र रणनीती: (१) Fibonacci Pullback — 1H swing → 38.2-61.8% झोन → 15M Reversal + RSI. "
+            "(२) Gap Fill — फक्त खरा overnight gap, पूर्णपणे भरला गेला की कुठलीही पुष्टी न घेता Entry."
+        )
+        show_mtf = st.checkbox("दाखवा (1H + 15M डेटा नव्याने मागवला जाईल)", value=False, key="mtf_show")
+        if show_mtf:
+            try:
+                import mtf_pullback_strategy as mtf
+
+                mtf_strategy_choice = st.radio("रणनीती निवडा", ["gap_fill", "fib_pullback"], horizontal=True, key="mtf_strategy")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    mtf_sl_pct = st.number_input("SL %", value=0.25, step=0.05, key="mtf_sl")
+                    mtf_target_pct = st.number_input("Target %", value=0.70, step=0.05, key="mtf_target")
+                with col2:
+                    mtf_min_swing_pct = st.number_input("किमान Swing %", value=1.0, step=0.1, key="mtf_swing")
+                    mtf_min_gap_pct = st.number_input("किमान Gap %", value=0.30, step=0.05, key="mtf_gap")
+                with col3:
+                    mtf_fib_low = st.number_input("Fib Low", value=0.50, step=0.01, key="mtf_fib_lo")
+                    mtf_fib_high = st.number_input("Fib High", value=0.80, step=0.01, key="mtf_fib_hi")
+
+                # 🎓 established fetch pattern (आधीच्या lookback_days दुरुस्तीशी सुसंगत) -- 1H साठी
+                # पुरेसा इतिहास (swings ओळखण्यासाठी), 15M साठी अलीकडचा (entry/gap-fill शोधण्यासाठी).
+                df_1h_mtf = fetch_candles(token_input, symbol, underlying_price, interval="1hour")
+                df_15m_mtf = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
+
+                if df_1h_mtf is None or df_1h_mtf.empty or df_15m_mtf is None or df_15m_mtf.empty:
+                    st.warning("1H/15M डेटा मिळाला नाही.")
+                else:
+                    h1_mtf = df_1h_mtf.rename(columns={"timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close"}).reset_index(drop=True)
+                    m15_mtf = df_15m_mtf.rename(columns={"timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close"}).reset_index(drop=True)
+                    ps_mtf = mtf.pivots(h1_mtf, min_swing_pct=mtf_min_swing_pct)
+                    st.caption(f"1H candles: {len(h1_mtf)} | 15M candles: {len(m15_mtf)} | Swings सापडले: {len(ps_mtf)}")
+
+                    if mtf_strategy_choice == "gap_fill":
+                        st.markdown("##### 🎯 सध्या अजून न भरलेले Gaps (Live Monitoring)")
+                        open_gaps = mtf.find_open_gaps_now(h1_mtf, m15_mtf, ps_mtf, min_gap_pct=mtf_min_gap_pct)
+                        if open_gaps.empty:
+                            st.info("सध्या कुठलेही उघडे (unfilled) gaps नाहीत.")
+                        else:
+                            st.dataframe(open_gaps, width="stretch")
+                            st.caption("किंमत 'FillTriggerPrice' पर्यंत पोहोचली की, गोल्ड लगेच Entry घेतली जाईल.")
+                        sig_mtf = mtf.make_gap_fill_signals(h1_mtf, m15_mtf, ps_mtf, mtf_sl_pct, mtf_target_pct, min_gap_pct=mtf_min_gap_pct)
+                    else:
+                        sig_mtf = mtf.make_signals(h1_mtf, m15_mtf, ps_mtf, mtf_fib_low, mtf_fib_high, mtf_sl_pct, mtf_target_pct)
+
+                    sig_mtf = mtf.evaluate(m15_mtf, sig_mtf)
+                    st.markdown("##### 📜 अलीकडचे Signals")
+                    if sig_mtf.empty:
+                        st.info("या कालखंडात कुठलेही signals सापडले नाहीत.")
+                    else:
+                        display_cols = ["SignalDate", "Signal", "ReversalPattern", "Entry", "StopLoss", "Target", "Outcome"]
+                        st.dataframe(sig_mtf[display_cols].tail(15).sort_values("SignalDate", ascending=False), width="stretch")
+                        closed = sig_mtf[(sig_mtf.Outcome == "SL") | (sig_mtf.Outcome.str.startswith("TARGET_"))]
+                        if not closed.empty:
+                            wins = closed.Outcome.str.startswith("TARGET_").sum()
+                            wr = 100 * wins / len(closed)
+                            st.caption(f"एकूण Closed: {len(closed)} | Win Rate: {wr:.1f}% | Net R: {closed.R_Result.sum():.2f}")
+                st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, इतर रणनीतींपासून पूर्णपणे स्वतंत्र.")
+            except Exception as e:
+                st.error(f"MTF Pullback + Gap Fill मध्ये चूक: {type(e).__name__}: {e}")
 
 
