@@ -125,7 +125,9 @@ context_ok = setup_shared_context()
 auto_refresh = st.session_state.get("auto_refresh", False)
 if auto_refresh:
     if st_autorefresh is not None:
-        st_autorefresh(interval=300000, key="dashboard_autorefresh")  # 300000ms = 5 मिनिटं
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- 5 मिनिटांवरून 1 मिनिटावर (Upstox API
+        # rate-limit चा धोका कमी करण्यासाठी, "दर सेकंदाला" ऐवजी हा सुरक्षित, तरीही जलद मध्यबिंदू).
+        st_autorefresh(interval=60000, key="dashboard_autorefresh")  # 60000ms = 1 मिनिट
     else:
         st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
     from config import get_ist_now
