@@ -26,6 +26,8 @@ Connection string सेट केलेली नसेल तर — सर्
 import json
 import os
 
+import pandas as pd
+
 try:
     import psycopg2
     import psycopg2.extras
@@ -49,6 +51,34 @@ CREATE TABLE IF NOT EXISTS oi_diff_snapshots (
     total_call_premium REAL,
     total_put_premium REAL,
     PRIMARY KEY (symbol, trade_date, snapshot_time)
+);
+"""
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Upstox Access Token Request + Notifier Webhook
+# पद्धतीने रोज एका टॅपवर मिळणारा नवीन token, इथे साठवला जातो — GitHub Actions आणि Streamlit Dashboard
+# दोन्ही इथूनच वाचतील, त्यामुळे कुठेही मॅन्युअल paste लागणार नाही.
+CREATE_TOKEN_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS upstox_tokens (
+    id SERIAL PRIMARY KEY,
+    access_token TEXT NOT NULL,
+    received_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+"""
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — S/R, Order Block, Demand/Supply Zone, Unfilled Gap
+# या सर्व विश्लेषणाचा निकाल इथेच साठवला जातो — प्रत्येक वेळी पुन्हा गणना न करता, Dashboard/रणनीती
+# थेट इथूनच वाचू शकतील (भविष्यातलं trade-planning जलद व्हावं म्हणून).
+CREATE_ZONES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS market_zones (
+    id SERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    zone_type TEXT NOT NULL,
+    zone_low REAL NOT NULL,
+    zone_high REAL NOT NULL,
+    strength REAL,
+    formed_date TIMESTAMP,
+    status TEXT NOT NULL,
+    computed_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 """
 
@@ -105,15 +135,108 @@ def get_connection_with_error():
 
 
 def init_cloud_table():
-    """oi_diff_snapshots table (नसेल तर) तयार करणे. Configured नसेल तर शांतपणे False."""
+    """oi_diff_snapshots, upstox_tokens आणि market_zones tables (नसतील तर) तयार करणे. Configured नसेल तर शांतपणे False."""
     conn = get_connection()
     if conn is None:
         return False
     try:
         with conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
+            cur.execute(CREATE_TOKEN_TABLE_SQL)
+            cur.execute(CREATE_ZONES_TABLE_SQL)
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def save_market_zones(zones_df, symbol):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिलेल्या symbol चे जुने zones काढून, नवीन गणना केलेले
+    zones साठवणे (replace-on-refresh — market_zones हे "सद्य स्थिती" दाखवतं, वाढत जाणारा इतिहास नाही).
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM market_zones WHERE symbol = %s", (symbol,))
+            for _, row in zones_df.iterrows():
+                cur.execute(
+                    """INSERT INTO market_zones (symbol, zone_type, zone_low, zone_high, strength, formed_date, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (symbol, row["zone_type"], float(row["zone_low"]), float(row["zone_high"]),
+                     float(row["strength"]) if pd.notna(row.get("strength")) else None,
+                     row["formed_date"], row["status"]),
+                )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_market_zones(symbol, status=None):
+    """साठवलेले zones वाचणे — status दिलं (उदा. 'ACTIVE') तर फक्त तेवढेच, नाहीतर सर्व."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            if status:
+                cur.execute(
+                    "SELECT symbol, zone_type, zone_low, zone_high, strength, formed_date, status FROM market_zones "
+                    "WHERE symbol = %s AND status = %s ORDER BY zone_type",
+                    (symbol, status),
+                )
+            else:
+                cur.execute(
+                    "SELECT symbol, zone_type, zone_low, zone_high, strength, formed_date, status FROM market_zones "
+                    "WHERE symbol = %s ORDER BY zone_type",
+                    (symbol,),
+                )
+            rows = cur.fetchall()
+            cols = ["symbol", "zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]
+            return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def save_upstox_token(access_token):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — नवीन Upstox token (webhook कडून मिळालेला)
+    Supabase मध्ये साठवणे. जुने token (इतिहास ठेवण्यासाठी) राहतात, फक्त नवीन ओळ (row) जोडली जाते —
+    वाचताना नेहमी सर्वात नवीनच (get_latest_upstox_token) वापरला जातो.
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO upstox_tokens (access_token) VALUES (%s)", (access_token,))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_latest_upstox_token():
+    """सर्वात अलीकडे साठवलेला Upstox token परत करणे, किंवा काहीच नसेल/जोडणी अयशस्वी झाली तर None."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT access_token FROM upstox_tokens ORDER BY received_at DESC LIMIT 1")
+            row = cur.fetchone()
+            return row[0] if row else None
+    except Exception:
+        return None
     finally:
         conn.close()
 

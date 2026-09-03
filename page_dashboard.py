@@ -75,6 +75,19 @@ def render():
     step = st.session_state["step"]
     atm_strike = st.session_state["atm_strike"]
 
+    # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या UnboundLocalError सह दाखवलेला खरा bug —
+    # df_structure_tf (आणि इतर संबंधित variables) tab1 च्या आतच तयार होतात, पण नंतरच्या tabs
+    # (tab3 वगैरे) मध्ये वापरले जातात. जर tab1 च्या कोडमध्ये कुठेतरी अनपेक्षित अडथळा आला (उदा. Upstox
+    # API चा तात्पुरता network/rate-limit त्रास), तर हे variables कधीच तयारच होत नाहीत, आणि नंतरच्या
+    # tab मध्ये वापरताना UnboundLocalError येतो. आता इथे, सर्व tabs सुरू होण्याआधीच, सुरक्षित रिकामे
+    # डीफॉल्ट देऊन ठेवले आहेत — कारण काहीही असो, हे variables कधीच "undefined" राहणार नाहीत.
+    df_structure_tf = pd.DataFrame()
+    df_rsi_tf = pd.DataFrame()
+    df_1h = pd.DataFrame()
+    rsi_series = pd.Series(dtype=float)
+    supertrend_source_df = pd.DataFrame()
+    st_line, st_dir = pd.Series(dtype=float), pd.Series(dtype=float)
+
     st.title(f"📈 Upstox Option Terminal ({symbol})")
 
     last_updated_ist = get_ist_now().strftime("%H:%M:%S")
@@ -98,9 +111,9 @@ def render():
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Chart व Direction", "📋 Option Chain व OI", "🧬 Signal Engine व Trading",
-        "📄 Reports", "🧩 Multi-Strategy", "🌉 MTF Pullback + Gap Fill",
+        "📄 Reports", "🧩 Multi-Strategy", "🌉 MTF Pullback + Gap Fill", "🗺️ Market Zones",
     ])
     with tab1:
         st.markdown("---")
@@ -1489,5 +1502,69 @@ def render():
                 st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, इतर रणनीतींपासून पूर्णपणे स्वतंत्र.")
             except Exception as e:
                 st.error(f"MTF Pullback + Gap Fill मध्ये चूक: {type(e).__name__}: {e}")
+
+    with tab7:
+        st.markdown("---")
+        st.subheader(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)")
+        st.caption(
+            "शेवटच्या १ वर्षाच्या डेटावरून पूर्वगणना करून Supabase मध्ये साठवलेलं संपूर्ण विश्लेषण — "
+            "GitHub Actions (साप्ताहिक) द्वारे अद्ययावत होतं. इथून प्रत्येक वेळी पुन्हा गणना होत नाही, फक्त वाचलं जातं."
+        )
+        try:
+            import cloud_db
+            if not cloud_db.is_cloud_db_configured():
+                st.warning("Cloud DB (Supabase) configured नाही — Market Zones फक्त तिथूनच वाचता येतात. कृपया SUPABASE_DB_URL सेट करा.")
+            else:
+                zones_status_filter = st.radio("दाखवा", ["फक्त ACTIVE (अजून अबाधित)", "सर्व (ACTIVE + FILLED)"], horizontal=True, key="zones_status")
+                status_arg = "ACTIVE" if zones_status_filter.startswith("फक्त") else None
+                zones_df = cloud_db.get_market_zones(symbol, status=status_arg)
+
+                if zones_df is None:
+                    st.error("Supabase मधून वाचता आलं नाही — जोडणी तपासा.")
+                elif zones_df.empty:
+                    st.info(
+                        f"{symbol} साठी अजून कुठलेही zones साठवलेले नाहीत — "
+                        "GitHub Actions मधून 'Market Zones Refresh' workflow एकदा हातानेच चालवा (Actions टॅब → Run workflow)."
+                    )
+                else:
+                    st.caption(f"एकूण {len(zones_df)} zones")
+                    zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE",
+                                       "BULLISH_OB", "BEARISH_OB", "DEMAND_ZONE", "SUPPLY_ZONE", "UP_GAP", "DOWN_GAP"]
+                    zone_labels = {
+                        "SUPPORT": "🟢 Support (established, 1H)", "RESISTANCE": "🔴 Resistance (established, 1H)",
+                        "DYNAMIC_SR_SUPPORT": "🟢🎯 Dynamic S/R Support (Chart-सारखाच)",
+                        "DYNAMIC_SR_RESISTANCE": "🔴🎯 Dynamic S/R Resistance (Chart-सारखाच)",
+                        "BULLISH_OB": "🟩 Bullish Order Block", "BEARISH_OB": "🟥 Bearish Order Block",
+                        "DEMAND_ZONE": "🔵 Demand Zone", "SUPPLY_ZONE": "🟠 Supply Zone",
+                        "UP_GAP": "⬆️ Unfilled Up-Gap", "DOWN_GAP": "⬇️ Unfilled Down-Gap",
+                    }
+
+                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — LTP ने Dynamic S/R ला स्पर्श केला की
+                    # dynamic_sr_instant_trader.py तो zone आपोआप FILLED करतो — तीच "notification" इथे
+                    # ठळकपणे दाखवणे (वरच्या फिल्टर-निवडीशी स्वतंत्रपणे, नेहमी संपूर्ण डेटा वाचून).
+                    all_zones_for_notif = cloud_db.get_market_zones(symbol, status=None)
+                    if all_zones_for_notif is not None and not all_zones_for_notif.empty:
+                        dyn_filled = all_zones_for_notif[
+                            all_zones_for_notif["zone_type"].isin(["DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE"])
+                            & (all_zones_for_notif["status"] == "FILLED")
+                        ]
+                        if not dyn_filled.empty:
+                            st.markdown("##### 🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)")
+                            st.dataframe(
+                                dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
+                                width="stretch",
+                            )
+                            st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
+                            st.markdown("---")
+
+                    for zt in zone_type_order:
+                        subset = zones_df[zones_df["zone_type"] == zt]
+                        if subset.empty:
+                            continue
+                        with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
+                            display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
+                            st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
+        except Exception as e:
+            st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
 

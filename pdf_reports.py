@@ -197,6 +197,13 @@ def build_report_chart_image(df, title, zone_info=None, width=620, height=420):
             title=title, template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=110, t=36, b=10), xaxis_rangeslider_visible=False,
         )
+        # 🎓 वापरकर्त्याने EOD Report मध्ये दाखवलेला खरा bug इथेही तितकाच लागू होतो — trendlines
+        # (add_price_action_overlays मधल्या) अनेक दिवसांना जोडत असल्याने, शनि-रवि/बाजार-बंद वेळ
+        # x-अक्षातून वगळला नाही तर त्या रेषा त्या रिकाम्या पट्ट्यावर सरळ (तिरकी) ओढल्या जाऊ शकतात.
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[15.5, 9.25], pattern="hour"),
+        ])
         return fig.to_image(format="png", scale=3), description
     except Exception:
         return None, "Chart could not be generated."
@@ -242,6 +249,14 @@ def build_eod_report_chart_image(df, sr_levels=None, supertrend_line=None, symbo
             title=f"{symbol} — {timeframe_label} Chart", template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=90, t=36, b=10), xaxis_rangeslider_visible=False,
         )
+        # 🎓 वापरकर्त्याने प्रत्यक्ष PDF मध्ये दाखवलेला खरा bug — शनि-रवि आणि रोजचा बाजार-बंद वेळ
+        # (15:30 ते 9:15) x-अक्षातून वगळलेला नव्हता, त्यामुळे Supertrend रेषा त्या मोठ्या रिकाम्या
+        # पट्ट्यावर सरळ (तिरकी) ओढली जायची — candles स्वतः बरोबर दिसत असल्या तरी. rangebreaks ने
+        # ही रिकामी जागा x-अक्षातूनच काढून टाकली — आता सलग trading bars एकमेकांना खेटूनच दिसतात.
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),               # शनि-रवि वगळणे
+            dict(bounds=[15.5, 9.25], pattern="hour"),  # रोजचा बाजार-बंद वेळ (15:30-9:15) वगळणे
+        ])
         return fig.to_image(format="png", scale=3)
     except Exception:
         return None
@@ -296,6 +311,13 @@ def build_price_action_chart_v2(df, direction, timeframe_label, rsi_series=None,
             title=f"{timeframe_label} - Direction: {direction}", template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=140, t=36, b=10), xaxis_rangeslider_visible=False,
         )
+        # 🎓 वापरकर्त्याने EOD Report मध्ये दाखवलेला खरा bug इथेही तितकाच लागू होतो (Full Market
+        # Analysis Report च्याच 1D/1H/15M Direction charts मध्ये) — S/R रेषा/trendlines अनेक
+        # trading-days ना जोडत असल्याने, शनि-रवि/बाजार-बंद वेळ वगळला नाही तर तिरकी रेषा तयार होते.
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[15.5, 9.25], pattern="hour"),
+        ])
         chart_bytes = fig.to_image(format="png", scale=3)
     except Exception:
         chart_bytes = None
@@ -397,6 +419,13 @@ def build_backtest_chart_image(df, bt_result, width=680, height=520):
             margin=dict(l=10, r=10, t=50, b=10), xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", y=1.08),
         )
+        # 🎓 वापरकर्त्याने EOD Report मध्ये दाखवलेला खरा bug इथेही तितकाच लागू होतो -- backtest
+        # कालावधी अनेक trading-days पसरलेला असल्याने, शनि-रवि/बाजार-बंद वेळ वगळला नाही तर रेषा त्या
+        # रिकाम्या पट्ट्यांवर तिरकी ओढली जाऊ शकते.
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[15.5, 9.25], pattern="hour"),
+        ])
         return fig.to_image(format="png", scale=3)
     except Exception:
         return None
@@ -461,6 +490,13 @@ def build_backtest_chart_image_rr(df, bt_result, width=680, height=520):
             margin=dict(l=10, r=10, t=50, b=10), xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", y=1.08),
         )
+        # 🎓 वापरकर्त्याने EOD Report मध्ये दाखवलेला खरा bug इथेही तितकाच लागू होतो -- backtest
+        # कालावधी अनेक trading-days पसरलेला असल्याने, शनि-रवि/बाजार-बंद वेळ वगळला नाही तर रेषा त्या
+        # रिकाम्या पट्ट्यांवर तिरकी ओढली जाऊ शकते.
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[15.5, 9.25], pattern="hour"),
+        ])
         return fig.to_image(format="png", scale=3)
     except Exception:
         return None

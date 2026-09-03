@@ -14,3 +14,4 @@ pytz
 pyarrow
 streamlit-autorefresh
 psycopg2-binary
+flask

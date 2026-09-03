@@ -60,3 +60,12 @@ strategies:
     pattern_lookback: 3         # candlestick pattern current + मागच्या किती bars मध्ये शोधायचा
     sl_pct: 0.25                 # 🎓 SL — entry (index) किमतीच्या सरळ 0.25% वर (NIFTY ~24000 वर ~60 पॉइंट्स)
     target_rr: 2.0              # पुढचा S/R level उपलब्ध नसेल तर किमान Risk:Reward
+
+  mtf_gap_fill:
+    enabled: true
+    weight: 1.0
+    max_positions: 1
+    min_swing_pct: 1.0    # 1H swings साठी किमान टक्केवारी (क्षुल्लक swings वगळण्यासाठी)
+    min_gap_pct: 0.30     # overnight gap ची किमान रुंदी (टक्केवारी) -- क्षुल्लक gaps वगळण्यासाठी
+    sl_pct: 0.25          # SL -- gap-fill entry किमतीच्या 0.25%
+    target_pct: 0.70      # Target -- gap-fill entry किमतीच्या 0.70% (RR≈1:2.8)
