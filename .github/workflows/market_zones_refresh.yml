@@ -1,0 +1,32 @@
+name: Market Zones Refresh (साप्ताहिक — S/R, Order Block, Demand/Supply, Gaps)
+
+# 🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — शेवटच्या १ वर्षाच्या OHLC डेटावरून S/R, Order Block,
+# Demand/Supply Zone, Unfilled Gap यांचं संपूर्ण विश्लेषण, आधीच Supabase मध्ये साठवून ठेवण्यासाठी.
+# हे विश्लेषण रोज बदलण्याची गरज नाही (S/R/Order Block दीर्घकालीन संरचना आहेत) — म्हणून साप्ताहिक.
+
+on:
+  schedule:
+    # UTC 10:00 = IST 15:30 (बाजार बंद झाल्यावर), दर सोमवारी
+    - cron: "0 10 * * 1"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+
+jobs:
+  refresh-zones:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: Market Zones गणना करून Supabase मध्ये साठवणे
+        env:
+          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 refresh_market_zones.py --token "$UPSTOX_TOKEN"
