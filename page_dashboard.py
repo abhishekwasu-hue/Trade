@@ -762,44 +762,52 @@ def render():
             )
             conn3.close()
 
-        def style_oi_numeric(val):
-            if isinstance(val, (int, float)):
-                if val > 0:
-                    return "color: #089981; font-weight: bold;"
-                elif val < 0:
-                    return "color: #F23645; font-weight: bold;"
-            return ""
+        # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या KeyError सह दाखवलेला खरा bug — Supabase आत्ताच
+        # जोडलं गेलं असेल, पण आजचा पहिला OI snapshot अजून साठवलाच गेला नसेल (उदा. "OI Snapshot
+        # Collector" workflow अजून चालूच झालेला नाही, किंवा बाजार बंद आहे), तर hist_df पूर्णपणे रिकामी
+        # (कुठलेच columns नसलेली) बनते — आणि खालचं .style.map(subset=[...]) त्या न-अस्तित्वात
+        # असलेल्या columns साठी थेट क्रॅश व्हायचं. आता आधीच तपासून, स्पष्ट संदेश दाखवतो.
+        if hist_df.empty:
+            st.info("आज अजून कुठलाही OI snapshot साठवला गेलेला नाही — GitHub Actions 'OI Snapshot Collector' चालू आहे का तपासा, किंवा काही वेळ थांबा.")
+        else:
+            def style_oi_numeric(val):
+                if isinstance(val, (int, float)):
+                    if val > 0:
+                        return "color: #089981; font-weight: bold;"
+                    elif val < 0:
+                        return "color: #F23645; font-weight: bold;"
+                return ""
 
-        def style_oi_signal(val):
-            s = str(val)
-            if "BULLISH" in s and "Weak" not in s:
-                return "color: #089981; font-weight: bold;"      # पूर्ण BULLISH → हिरवा
-            if "BEARISH" in s and "Weak" not in s:
-                return "color: #F23645; font-weight: bold;"      # पूर्ण BEARISH → लाल
-            if "BULLISH" in s and "Weakening" in s:
-                return "color: #F23645; font-weight: bold;"      # Bullish कमजोर होतोय → उलट (लाल) रंग, बेअरिशकडे झुकण्याचा इशारा
-            if "BEARISH" in s and "Weakening" in s:
-                return "color: #089981; font-weight: bold;"      # Bearish कमजोर होतोय → उलट (हिरवा) रंग, बुलिशकडे झुकण्याचा इशारा
-            return "color: #9598a1; font-weight: bold;"
+            def style_oi_signal(val):
+                s = str(val)
+                if "BULLISH" in s and "Weak" not in s:
+                    return "color: #089981; font-weight: bold;"      # पूर्ण BULLISH → हिरवा
+                if "BEARISH" in s and "Weak" not in s:
+                    return "color: #F23645; font-weight: bold;"      # पूर्ण BEARISH → लाल
+                if "BULLISH" in s and "Weakening" in s:
+                    return "color: #F23645; font-weight: bold;"      # Bullish कमजोर होतोय → उलट (लाल) रंग, बेअरिशकडे झुकण्याचा इशारा
+                if "BEARISH" in s and "Weakening" in s:
+                    return "color: #089981; font-weight: bold;"      # Bearish कमजोर होतोय → उलट (हिरवा) रंग, बुलिशकडे झुकण्याचा इशारा
+                return "color: #9598a1; font-weight: bold;"
 
-        # 🎓 वापरकर्त्याच्या विनंतीनुसार — मोठे आकडे वाचायला सोपे व्हावेत म्हणून लाखांत (1 लाख = 1,00,000)
-        # दाखवणे. .style.format() वापरल्याने फक्त DISPLAY बदलतो — रंग-कोडिंग (style_oi_numeric) अजूनही
-        # मूळ (न-बदललेल्या) संख्येवरच आधारित राहतं, त्यामुळे रंग बरोबरच राहतील.
-        def format_lakh_unsigned(val):
-            return f"{val/100000:,.2f} L" if isinstance(val, (int, float)) else val
+            # 🎓 वापरकर्त्याच्या विनंतीनुसार — मोठे आकडे वाचायला सोपे व्हावेत म्हणून लाखांत (1 लाख = 1,00,000)
+            # दाखवणे. .style.format() वापरल्याने फक्त DISPLAY बदलतो — रंग-कोडिंग (style_oi_numeric) अजूनही
+            # मूळ (न-बदललेल्या) संख्येवरच आधारित राहतं, त्यामुळे रंग बरोबरच राहतील.
+            def format_lakh_unsigned(val):
+                return f"{val/100000:,.2f} L" if isinstance(val, (int, float)) else val
 
-        def format_lakh_signed(val):
-            return f"{val/100000:+,.2f} L" if isinstance(val, (int, float)) else val
+            def format_lakh_signed(val):
+                return f"{val/100000:+,.2f} L" if isinstance(val, (int, float)) else val
 
-        styled_hist = hist_df.style.map(style_oi_numeric, subset=["Diff", "Δ Diff"]) \
-                                    .map(style_oi_signal, subset=["Signal"]) \
-                                    .format({
-                                        "Total Call OI": format_lakh_unsigned, "Total Put OI": format_lakh_unsigned,
-                                        "Diff": format_lakh_signed, "Δ Diff": format_lakh_signed,
-                                    }) \
-                                    .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
+            styled_hist = hist_df.style.map(style_oi_numeric, subset=["Diff", "Δ Diff"]) \
+                                        .map(style_oi_signal, subset=["Signal"]) \
+                                        .format({
+                                            "Total Call OI": format_lakh_unsigned, "Total Put OI": format_lakh_unsigned,
+                                            "Diff": format_lakh_signed, "Δ Diff": format_lakh_signed,
+                                        }) \
+                                        .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
 
-        st.dataframe(styled_hist, width='stretch', height=450)
+            st.dataframe(styled_hist, width='stretch', height=450)
 
         with st.expander("📈 Advanced OI Charts (PCR + Multi-Strike + Replay) — क्लिक करून उघडा", expanded=False):
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Option OI vs Time" सारखा
@@ -1894,3 +1902,5 @@ def render():
                     st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
         except Exception as e:
             st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
+
+
