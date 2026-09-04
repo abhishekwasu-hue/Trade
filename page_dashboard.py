@@ -1888,5 +1888,3 @@ def render():
                     st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
         except Exception as e:
             st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
-
-
