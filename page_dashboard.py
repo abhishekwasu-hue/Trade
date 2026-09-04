@@ -1531,7 +1531,13 @@ def render():
                 df_1h_resampled = resample_to_1h(df_1h_for_orch) if not df_1h_for_orch.empty else df_1h_for_orch
                 trend_direction_1h = compute_trend_direction_1h(df_1h_resampled)
 
-                from signals import find_support_resistance_levels
+                # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या UnboundLocalError सह दाखवलेला खरा bug —
+                # इथे आधी "from signals import find_support_resistance_levels" अशी local import होती,
+                # जी हे नाव संपूर्ण render() function-scope साठी "local" बनवायची (Python चा नियम —
+                # function मध्ये कुठेही import/assignment असेल तर संपूर्ण scope त्याला local मानतं) —
+                # त्यामुळे याच्याही आधी (line 1083 वर) वापरलेला module-level import UnboundLocalError
+                # द्यायचा. हे function आधीच module-top-level ला (ओळ 22-23) import केलेलं आहे — ही
+                # redundant local import काढून टाकली.
                 sr_levels_1h = None
                 if df_1h_resampled is not None and not df_1h_resampled.empty and len(df_1h_resampled) >= 10:
                     sr_levels_1h = find_support_resistance_levels(df_1h_resampled, top_n=3)
