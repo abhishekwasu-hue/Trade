@@ -670,12 +670,12 @@ def render():
                 st.caption("सद्य Basket रिकामी आहे.")
 
             # =========================================================
-            # ८. Put-Call OI Diff Tracker — दर ५ मिनिटांनी snapshot (Bullish/Bearish)
+            # ८. Put-Call OI Diff Tracker — दर १० मिनिटांनी snapshot (Bullish/Bearish)
             #    Strike range: existing option chain टेबलप्रमाणेच ATM ± 6 (एकूण १३ strikes)
             # =========================================================
     with tab2:
         st.markdown("---")
-        st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर ५ मिनिटांनी)")
+        st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर १० मिनिटांनी)")
 
         # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
         # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
@@ -1378,7 +1378,7 @@ def render():
             import os as _os
             hb_col1, hb_col2, hb_col3, hb_col4, hb_col5 = st.columns(5)
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
-            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर ५ मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
+            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर १० मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
             # मर्यादा इथे उगाचच सतत "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची
             # मर्यादा (२५ तास — दुसऱ्या दिवशी ४ वाजेपर्यंत थोडी सूट).
             for col, script_name, label, max_age_min in [
