@@ -37,25 +37,30 @@ def setup_shared_context():
     auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (5 Minutes)", value=True)
 
     # --- ६.५ A1 स्ट्रॅटेजी व लाईव्ह एक्झिक्युशन सेटिंग्ज ---
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी हे सर्व (Lot Size पासून Max Daily Loss पर्यंत)
+    # एकाच प्रचंड मोठ्या expander मध्ये होतं — उघडल्यावर एक अखंड भिंतीसारखं दिसायचं. आता विषयानुसार
+    # वेगळ्या, छोट्या expanders मध्ये — प्रत्येक गरजेनुसार स्वतंत्रपणे उघडता येईल, स्वच्छ दिसेल.
     st.sidebar.markdown("---")
     st.sidebar.title("🎯 A1 Strategy Engine सेटिंग्ज")
-    with st.sidebar.expander("🎯 A1 Strategy सेटिंग्ज (Lot/Risk/OI Gates/Signal Engine — क्लिक करून उघडा)", expanded=False):
+
+    with st.sidebar.expander("💰 Risk व Capital", expanded=False):
         lot_size = st.sidebar.number_input("Lot Size (सध्या NIFTY = 65, अधिकृत NSE सर्क्युलर तपासा)", min_value=1, value=65, step=1)
         risk_pct_per_trade = st.sidebar.slider("Risk % per Trade (उपलब्ध मार्जिनपैकी)", 0.5, 10.0, 2.0, step=0.5)
         hedge_width_points = st.sidebar.number_input("Hedge Width (points, लाँग लेग शॉर्ट लेगपासून किती दूर)", min_value=50, value=100, step=50)
         pop_threshold_pct = st.sidebar.slider("PoP Threshold (%) — किमान Probability of Profit", 50, 95, 70, step=5)
         vix_max_threshold = st.sidebar.number_input("India VIX कमाल मर्यादा (यापेक्षा जास्त = No Trade)", min_value=10.0, value=20.0, step=0.5)
 
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
-        # strategies) साठी SL/Target आता निश्चित (fixed) 30%/30% (net_credit चे) आहेत, sidebar वरून
-        # बदलता येत नाहीत (हार्डकोड). खालचे sliders आता फक्त Iron Condor/Butterfly (sideways) साठीच.
-        st.sidebar.markdown("##### 🦋 Sideways (Iron Condor / Butterfly) सेटिंग्ज")
+    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
+    # strategies) साठी SL/Target आता निश्चित (fixed) 30%/30% (net_credit चे) आहेत, sidebar वरून
+    # बदलता येत नाहीत (हार्डकोड). खालचे sliders आता फक्त Iron Condor/Butterfly (sideways) साठीच.
+    with st.sidebar.expander("🦋 Sideways (Iron Condor / Butterfly)", expanded=False):
         st.sidebar.caption("⚠️ खालचे SL/Target फक्त Iron Condor/Butterfly साठी — Price Action/Indicator आता निश्चित 30% credit SL/Target वापरतात.")
         sl_pct_of_max_loss = st.sidebar.slider("Sideways SL (% of Max Loss)", 10, 100, 30, step=5)
         target_pct_of_max_profit = st.sidebar.slider("Sideways Profit Target (% of Max Profit)", 10, 100, 50, step=5)
         sideways_tight_range_pct = st.sidebar.number_input("घट्ट रेंज मर्यादा % (यापेक्षा कमी = Iron Butterfly)", min_value=0.1, value=0.6, step=0.1)
         sideways_max_range_pct = st.sidebar.number_input("कमाल Sideways रेंज % (यापेक्षा जास्त = अजिबात Sideways ट्रेड नाही)", min_value=0.5, value=1.5, step=0.1)
-        st.sidebar.markdown("##### ⏱️ Trading Style")
+
+    with st.sidebar.expander("⏱️ Trading Style", expanded=False):
         trading_style_choice = st.sidebar.radio(
             "Intraday की Swing?",
             ["⚡ Intraday (त्याच दिवशी स्क्वेअर-ऑफ)", "🌙 Swing (एक दिवसापेक्षा जास्त काळ होल्ड)"],
@@ -76,8 +81,13 @@ def setup_shared_context():
                 f"⚠️ EOD Square-off काढलं आहे — Position आता दुसऱ्या दिवशीही Continue राहील (Product Type "
                 f"आपोआप 'D'/Delivery). नवीन एंट्री मात्र {entry_cutoff_time.strftime('%H:%M')} नंतर बंद."
             )
+        else:
+            product_type = "D"
+            eod_squareoff_time = None
+            entry_cutoff_time = None
 
-            st.sidebar.markdown("##### 🧭 OI Confirmation Gate (Intraday)")
+    if trading_style == "INTRADAY":
+        with st.sidebar.expander("🧭 OI Confirmation Gate", expanded=False):
             enable_oi_gate = st.sidebar.checkbox("OI Diff Tracker सिग्नल एंट्री गेट म्हणून वापरा", value=True)
             oi_gate_strictness_choice = st.sidebar.radio(
                 "Strictness",
@@ -86,10 +96,14 @@ def setup_shared_context():
             )
             oi_gate_strictness = "A" if "A" in oi_gate_strictness_choice else "B"
             enable_oi_early_exit = st.sidebar.checkbox("OI उलट फिरल्यास लवकर Exit करा (फक्त Directional स्प्रेड्ससाठी)", value=True)
-            enable_swing_oi_gate = False
-            swing_max_opposing_signals = 1
+            st.sidebar.caption(
+                "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
+                "B: फक्त पूर्ण जुळणी असेल तरच पास (कमी पण जास्त खात्रीचे ट्रेड्स)."
+            )
+        enable_swing_oi_gate = False
+        swing_max_opposing_signals = 1
 
-            st.sidebar.markdown("##### 🧬 Signal Engine — दिशा 1H Supertrend वरून (दोन्ही रणनीतींसाठी)")
+        with st.sidebar.expander("🧬 Signal Engine (दिशा 1H Supertrend वरून)", expanded=False):
             intraday_strategy_choice = st.sidebar.radio(
                 "कोणती रणनीती वापरायची?",
                 ["1️⃣ Price Action (Support/Resistance + RSI + Candlestick)",
@@ -123,29 +137,22 @@ def setup_shared_context():
                     "S/R Rolling Window कमी असेल तर जास्त (पण कमी विश्वासार्ह) पातळ्या सापडतील. सिग्नल्स कमी वाटत "
                     "असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा (उदा. Oversold 35, Overbought 65)."
                 )
-            st.sidebar.caption(
-                "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
-                "B: फक्त पूर्ण जुळणी असेल तरच पास (कमी पण जास्त खात्रीचे ट्रेड्स)."
-            )
-        else:
-            product_type = "D"
-            eod_squareoff_time = None
-            entry_cutoff_time = None
-            enable_oi_gate = False
-            oi_gate_strictness_choice = "A — Conflict Filter (शिफारस केलेले)"
-            oi_gate_strictness = "A"
-            enable_oi_early_exit = False
-            intraday_strategy_mode = "indicator"
-            sr_window = 20
-            rsi_oversold = 30
-            rsi_overbought = 70
-            sl_buffer_pct = 0.1
-            min_rr = 2.0
-            retest_tolerance_pct = 0.15
-            reversal_lookback = 3
-            st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
+    else:
+        enable_oi_gate = False
+        oi_gate_strictness_choice = "A — Conflict Filter (शिफारस केलेले)"
+        oi_gate_strictness = "A"
+        enable_oi_early_exit = False
+        intraday_strategy_mode = "indicator"
+        sr_window = 20
+        rsi_oversold = 30
+        rsi_overbought = 70
+        sl_buffer_pct = 0.1
+        min_rr = 2.0
+        retest_tolerance_pct = 0.15
+        reversal_lookback = 3
 
-            st.sidebar.markdown("##### 🧭 OI+PCR+MaxPain+Rollover Gate (Swing)")
+        with st.sidebar.expander("🧭 OI+PCR+MaxPain+Rollover Gate (Swing)", expanded=False):
+            st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
             enable_swing_oi_gate = st.sidebar.checkbox("चारही Professional OI सिग्नल्स एंट्री गेट म्हणून वापरा", value=True)
             swing_max_opposing_signals = st.sidebar.slider(
                 "कमाल विरोधी सिग्नल्स (यापेक्षा जास्त विरोध असेल तरच ब्लॉक)", min_value=0, max_value=3, value=1,
@@ -156,6 +163,7 @@ def setup_shared_context():
                 "Rollover फक्त वर 'Advanced OI Analysis' मध्ये बटण दाबून fetch केलेला असेल तरच या गेटमध्ये मोजला जातो."
             )
 
+    with st.sidebar.expander("🛡️ Daily Limits", expanded=False):
         max_trades_per_day = st.sidebar.number_input("दिवसाला जास्तीत जास्त ट्रेड्स", min_value=1, value=3, step=1)
         max_daily_loss = st.sidebar.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
 

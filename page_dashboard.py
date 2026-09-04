@@ -111,9 +111,10 @@ def render():
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Chart व Direction", "📋 Option Chain व OI", "🧬 Signal Engine व Trading",
         "📄 Reports", "🧩 Multi-Strategy", "🌉 MTF Pullback + Gap Fill", "🗺️ Market Zones",
+        "🎯 Strategy Builder",
     ])
     with tab1:
         st.markdown("---")
@@ -344,6 +345,30 @@ def render():
         conn.close()
 
         df = pd.DataFrame(chain_data)
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR (Put-Call Ratio) आणि एकूण Total OI,
+        # आधी option chain table मध्ये कुठेच दिसत नव्हते — व्यावसायिक Platforms (Sensibull इ.) प्रमाणे
+        # PCR ठळक metric म्हणून वर, आणि Total एक वेगळी row म्हणून table च्या तळाशी.
+        if not df.empty:
+            total_ce_oi = df["CE Total OI"].sum()
+            total_pe_oi = df["PE Total OI"].sum()
+            total_ce_chg = df["CE Chg OI"].sum()
+            total_pe_chg = df["PE Chg OI"].sum()
+            pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
+            pcr_label = "🟢 Bullish (PCR>1)" if pcr > 1 else ("🔴 Bearish (PCR<1)" if pcr < 1 else "⚪ तटस्थ")
+
+            pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+            pcol1.metric("PCR (Put-Call Ratio)", f"{pcr:.2f}", pcr_label)
+            pcol2.metric("एकूण Call OI", f"{total_ce_oi:,.0f}")
+            pcol3.metric("एकूण Put OI", f"{total_pe_oi:,.0f}")
+            pcol4.metric("एकूण Net Diff", f"{total_pe_chg - total_ce_chg:,.0f}")
+
+            total_row = pd.DataFrame([{
+                "CE Chg OI": total_ce_chg, "CE Total OI": total_ce_oi, "CE LTP": None,
+                "Strike Price": "TOTAL", "PE LTP": None, "PE Total OI": total_pe_oi,
+                "PE Chg OI": total_pe_chg, "Net Diff": total_pe_chg - total_ce_chg, "Dominance": "",
+            }])
+            df = pd.concat([df, total_row], ignore_index=True)
 
     with tab2:
         st.markdown("---")
@@ -645,12 +670,12 @@ def render():
                 st.caption("सद्य Basket रिकामी आहे.")
 
             # =========================================================
-            # ८. Put-Call OI Diff Tracker — दर १० मिनिटांनी snapshot (Bullish/Bearish)
+            # ८. Put-Call OI Diff Tracker — दर ५ मिनिटांनी snapshot (Bullish/Bearish)
             #    Strike range: existing option chain टेबलप्रमाणेच ATM ± 6 (एकूण १३ strikes)
             # =========================================================
     with tab2:
         st.markdown("---")
-        st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर 10 मिनिटांनी)")
+        st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर ५ मिनिटांनी)")
 
         # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
         # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
@@ -776,6 +801,124 @@ def render():
 
         st.dataframe(styled_hist, width='stretch', height=450)
 
+        with st.expander("📈 Advanced OI Charts (PCR + Multi-Strike + Replay) — क्लिक करून उघडा", expanded=False):
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Option OI vs Time" सारखा
+            # chart (PCR + NIFTY किंमत, वेळेनुसार) — established get_oi_price_history_cloud() (आधीच
+            # साठवलेला underlying_price वापरून) पुनर्वापर करून.
+            st.markdown("##### 📈 PCR + किंमत — वेळेनुसार (Sensibull-सारखं)")
+            try:
+                if is_cloud_db_configured():
+                    from cloud_db import get_oi_price_history_cloud
+                    price_history_rows = get_oi_price_history_cloud(symbol, today_str)
+                else:
+                    conn_ph = sqlite3.connect(DB_PATH)
+                    price_history_rows = pd.read_sql_query(
+                        """SELECT snapshot_time, total_call_oi, total_put_oi, underlying_price
+                           FROM oi_diff_snapshots WHERE symbol=? AND trade_date=?
+                           ORDER BY snapshot_time ASC""",
+                        conn_ph, params=(symbol, today_str),
+                    ).to_dict("records")
+                    conn_ph.close()
+
+                if not price_history_rows:
+                    st.caption("अजून पुरेसा इतिहास नाही (किमान २ snapshots हवेत).")
+                else:
+                    ph_df = pd.DataFrame(price_history_rows)
+                    ph_df["pcr"] = ph_df.apply(lambda r: (r["total_put_oi"] / r["total_call_oi"]) if r["total_call_oi"] else 0, axis=1)
+
+                    import plotly.graph_objects as go
+                    from plotly.subplots import make_subplots
+                    fig_pcr = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_put_oi"], name="Put OI", marker_color="#089981", opacity=0.5), secondary_y=False)
+                    fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_call_oi"], name="Call OI", marker_color="#F23645", opacity=0.5), secondary_y=False)
+                    fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["pcr"], name="PCR", line=dict(color="#2962ff", width=2)), secondary_y=True)
+                    if ph_df["underlying_price"].notna().any():
+                        fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["underlying_price"], name=symbol, line=dict(color="#787b86", width=2)), secondary_y=True)
+                    fig_pcr.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
+                    fig_pcr.update_yaxes(title_text="OI", secondary_y=False)
+                    fig_pcr.update_yaxes(title_text="PCR / किंमत", secondary_y=True)
+                    st.plotly_chart(fig_pcr, use_container_width=True)
+            except Exception as e:
+                st.caption(f"PCR chart मध्ये चूक: {type(e).__name__}: {e}")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Multi Strike OI" सारखं —
+            # निवडलेल्या strikes चा OI, वेळेनुसार. आजपासूनच डेटा जमा होईल (आधी per-strike इतिहास साठवलाच
+            # जात नव्हता), त्यामुळे सुरुवातीला थोडा (काही तासांचा) इतिहासच दिसेल.
+            st.markdown("##### 📊 Multi-Strike OI (वेळेनुसार) — आजपासूनचा इतिहास")
+            # 🎓 वापरकर्त्याने आधी दाखवलेल्या UnboundLocalError शीच सुसंगत, डीफेन्सिव्ह default —
+            # खालच्या try-block मध्ये कुठेही exception आलं (assignment आधीच), तरी पुढच्या (Replay)
+            # विभागात हा variable कधीच "undefined" राहणार नाही.
+            all_strike_oi = None
+            try:
+                if is_cloud_db_configured():
+                    from cloud_db import get_strike_oi_history
+                    all_strike_oi = get_strike_oi_history(symbol, today_str)
+                else:
+                    all_strike_oi = None
+                    st.caption("Cloud DB configured नाही — Multi-Strike OI साठी Supabase हवाच.")
+
+                if all_strike_oi is None or all_strike_oi.empty:
+                    st.caption("अजून कुठलाही per-strike इतिहास नाही — collector काही वेळ चालल्यावर इथे दिसेल.")
+                else:
+                    available_msoi_strikes = sorted(all_strike_oi["strike"].unique())
+                    default_strikes = [s for s in available_msoi_strikes if abs(s - atm_strike) <= 100]
+                    selected_strikes = st.multiselect("कुठले Strikes बघायचे", available_msoi_strikes, default=default_strikes or available_msoi_strikes[:4])
+
+                    if selected_strikes:
+                        filtered = all_strike_oi[all_strike_oi["strike"].isin(selected_strikes)]
+                        import plotly.graph_objects as go
+                        fig_msoi = go.Figure()
+                        for (strike_val, opt_type), grp in filtered.groupby(["strike", "option_type"]):
+                            grp_sorted = grp.sort_values("snapshot_time")
+                            fig_msoi.add_trace(go.Scatter(
+                                x=grp_sorted["snapshot_time"], y=grp_sorted["oi"],
+                                name=f"{strike_val:.0f} {opt_type}", mode="lines+markers",
+                            ))
+                        fig_msoi.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10),
+                                                xaxis_title="वेळ", yaxis_title="Open Interest")
+                        st.plotly_chart(fig_msoi, use_container_width=True)
+            except Exception as e:
+                st.caption(f"Multi-Strike OI मध्ये चूक: {type(e).__name__}: {e}")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "OI Change Replay" सारखं —
+            # दिवसभरातल्या प्रत्येक strike च्या OI बदलाचं animated playback (Plotly frames वापरून).
+            st.markdown("##### 🎬 OI Change Replay (दिवसभराचं Playback)")
+            try:
+                if is_cloud_db_configured() and all_strike_oi is not None and not all_strike_oi.empty:
+                    replay_times = sorted(all_strike_oi["snapshot_time"].unique())
+                    if len(replay_times) < 2:
+                        st.caption("Replay साठी किमान २ snapshots हवेत — अजून पुरेसा इतिहास जमा झालेला नाही.")
+                    else:
+                        import plotly.graph_objects as go
+                        all_replay_strikes = sorted(all_strike_oi["strike"].unique())
+                        frames = []
+                        for t in replay_times:
+                            snap = all_strike_oi[all_strike_oi["snapshot_time"] == t]
+                            ce_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "CE")]["oi"].sum() for s in all_replay_strikes]
+                            pe_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "PE")]["oi"].sum() for s in all_replay_strikes]
+                            frames.append(go.Frame(
+                                data=[go.Bar(x=all_replay_strikes, y=ce_vals, name="Call OI", marker_color="#F23645"),
+                                      go.Bar(x=all_replay_strikes, y=pe_vals, name="Put OI", marker_color="#089981")],
+                                name=t,
+                            ))
+                        fig_replay = go.Figure(data=frames[0].data, frames=frames)
+                        fig_replay.update_layout(
+                            template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group",
+                            xaxis_title="Strike", yaxis_title="Open Interest",
+                            updatemenus=[{"type": "buttons", "buttons": [
+                                {"label": "▶️ Play", "method": "animate", "args": [None, {"frame": {"duration": 700, "redraw": True}, "fromcurrent": True}]},
+                                {"label": "⏸️ Pause", "method": "animate", "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
+                            ]}],
+                            sliders=[{"steps": [{"args": [[t], {"frame": {"duration": 0, "redraw": True}, "mode": "immediate"}],
+                                                  "label": t, "method": "animate"} for t in replay_times]}],
+                        )
+                        st.plotly_chart(fig_replay, use_container_width=True)
+                else:
+                    st.caption("Replay साठी Multi-Strike OI डेटा हवा (वर बघा).")
+            except Exception as e:
+                st.caption(f"OI Change Replay मध्ये चूक: {type(e).__name__}: {e}")
+
+
         with st.expander("ℹ️ Signal Logic कसं काम करतं"):
             st.caption(
                 "Diff = एकूण Put OI − एकूण Call OI. धन (+) = Put जास्त लिहिले → बुल्स मजबूत. ऋण (−) = Call जास्त लिहिले → बेअर्स मजबूत.\n\n"
@@ -853,7 +996,7 @@ def render():
             if pcr_val is not None:
                 pcr_color = "#089981" if pcr_bias == "BULLISH" else ("#F23645" if pcr_bias == "BEARISH" else "#787b86")
                 st.markdown(f"**PCR: {pcr_val}** — <span style='color:{pcr_color};font-weight:bold;'>{pcr_bias}</span>", unsafe_allow_html=True)
-                st.caption("टोकाच्या पातळीवर (>1.5 किंवा <0.5) Contrarian वाचला जातो — अति-एकतर्फी पोझिशनिंग अनेकदा उलटफेराचं लक्षण.")
+                st.caption("PCR<0.70 Bullish(Oversold) · 0.70-0.90 Bearish · 0.90-1.0 Sideways · 1.0-1.3 Bullish · >1.3 Bearish(Overbought)")
             else:
                 st.info("PCR काढण्यासाठी पुरेसा OI डेटा नाही.")
 
@@ -996,73 +1139,75 @@ def render():
                 f"of {swing_gate_detail['total_signals']} signals"
             )
 
-        # --- पाईपलाईन चेकलिस्ट दाखवणे ---
-        pc1, pc2 = st.columns(2)
-        with pc1:
-            st.markdown(f"**Direction Engine:** {pipeline_direction or 'NEUTRAL / अपुरा डेटा'}")
-            st.markdown(f"**Market Structure ({structure_tf_label}):** {structure_info['structure']}")
-            st.markdown(f"**Break Detection:** {'✅ ब्रेक झाली' if broke else '❌ अजून नाही'}" + (f" (level: {broken_level:,.2f})" if broken_level else ""))
-            st.markdown(f"**Pullback:** {'✅' if pulled_back else '❌'}   **Retest:** {'✅' if retested else '❌'}")
-        with pc2:
-            rsi_val_str = f"{rsi_check['rsi']:.1f}" if rsi_check["rsi"] is not None else "—"
-            st.markdown(f"**RSI Momentum ({rsi_tf_label}):** {'✅ जुळते' if rsi_check['momentum_ok'] else '❌ जुळत नाही'} (RSI: {rsi_val_str})")
-            st.markdown(f"**RSI Divergence:** {rsi_check['divergence']}")
-            st.markdown(f"**Confirmation ({confirm_tf_label}):** {'✅' if confirmed_5m else '❌'}")
-            st.markdown(f"**Supply/Demand Zone:** {zone if zone else '—'}")
+        with st.expander("🔍 Signal Engine — प्रत्येक पायरीचा तपशील (Diagnostic)", expanded=False):
+            # --- पाईपलाईन चेकलिस्ट दाखवणे ---
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                st.markdown(f"**Direction Engine:** {pipeline_direction or 'NEUTRAL / अपुरा डेटा'}")
+                st.markdown(f"**Market Structure ({structure_tf_label}):** {structure_info['structure']}")
+                st.markdown(f"**Break Detection:** {'✅ ब्रेक झाली' if broke else '❌ अजून नाही'}" + (f" (level: {broken_level:,.2f})" if broken_level else ""))
+                st.markdown(f"**Pullback:** {'✅' if pulled_back else '❌'}   **Retest:** {'✅' if retested else '❌'}")
+            with pc2:
+                rsi_val_str = f"{rsi_check['rsi']:.1f}" if rsi_check["rsi"] is not None else "—"
+                st.markdown(f"**RSI Momentum ({rsi_tf_label}):** {'✅ जुळते' if rsi_check['momentum_ok'] else '❌ जुळत नाही'} (RSI: {rsi_val_str})")
+                st.markdown(f"**RSI Divergence:** {rsi_check['divergence']}")
+                st.markdown(f"**Confirmation ({confirm_tf_label}):** {'✅' if confirmed_5m else '❌'}")
+                st.markdown(f"**Supply/Demand Zone:** {zone if zone else '—'}")
 
-        st.markdown(
-            f"**Trendline Gate ({structure_tf_label}):** {'✅ ' + trend_signal['gate_reason'] if trend_signal['gate_ok'] else '❌ ' + trend_signal['gate_reason']}"
-        )
-        if trend_signal["caution"]:
-            st.warning(f"⚠️ {trend_signal['caution']}")
-        if sr_levels and (sr_levels.get("support") or sr_levels.get("resistance")):
-            sr_parts = []
-            if sr_levels["support"]:
-                sr_parts.append("Support: " + ", ".join(f"{s['level']:.0f} ({s['touches']}x)" for s in sr_levels["support"]))
-            if sr_levels["resistance"]:
-                sr_parts.append("Resistance: " + ", ".join(f"{r['level']:.0f} ({r['touches']}x)" for r in sr_levels["resistance"]))
-            st.caption(" · ".join(sr_parts))
+            st.markdown(
+                f"**Trendline Gate ({structure_tf_label}):** {'✅ ' + trend_signal['gate_reason'] if trend_signal['gate_ok'] else '❌ ' + trend_signal['gate_reason']}"
+            )
+            if trend_signal["caution"]:
+                st.warning(f"⚠️ {trend_signal['caution']}")
+            if sr_levels and (sr_levels.get("support") or sr_levels.get("resistance")):
+                sr_parts = []
+                if sr_levels["support"]:
+                    sr_parts.append("Support: " + ", ".join(f"{s['level']:.0f} ({s['touches']}x)" for s in sr_levels["support"]))
+                if sr_levels["resistance"]:
+                    sr_parts.append("Resistance: " + ", ".join(f"{r['level']:.0f} ({r['touches']}x)" for r in sr_levels["resistance"]))
+                st.caption(" · ".join(sr_parts))
 
-        if trading_style == "INTRADAY" and pipeline_direction and intraday_strategy_detail:
-            strategy_label = "Price Action (Support/Resistance + RSI + Candlestick)" if intraday_strategy_mode == "price_action" else "Indicator (RSI 25-55/45-75+Pattern)"
-            st.markdown(f"**Signal Engine — {strategy_label}:** {'✅ जुळलं' if broke else '❌ जुळलं नाही'}")
-            if intraday_strategy_mode == "price_action":
-                rc = intraday_strategy_detail.get("reversal_candle")
-                rsi_v = intraday_strategy_detail.get("rsi_value")
-                st.caption(
-                    f"S/R Retest: {'✅' if intraday_strategy_detail.get('sr_retest') else '❌'} · "
-                    f"Trendline Retest: {'✅' if intraday_strategy_detail.get('trendline_retest') else '❌'} · "
-                    f"RSI: {f'{rsi_v:.1f}' if rsi_v is not None else '—'} ({intraday_strategy_detail.get('divergence')}) · "
-                    f"Reversal Candle: {rc['pattern'] if rc else 'नाही'} · "
-                    f"Breakout: {'✅' if intraday_strategy_detail.get('breakout_confirmed') else '❌'}"
-                )
-                trade_plan = intraday_strategy_detail.get("trade_plan")
-                if trade_plan:
+            if trading_style == "INTRADAY" and pipeline_direction and intraday_strategy_detail:
+                strategy_label = "Price Action (Support/Resistance + RSI + Candlestick)" if intraday_strategy_mode == "price_action" else "Indicator (RSI 25-55/45-75+Pattern)"
+                st.markdown(f"**Signal Engine — {strategy_label}:** {'✅ जुळलं' if broke else '❌ जुळलं नाही'}")
+                if intraday_strategy_mode == "price_action":
+                    rc = intraday_strategy_detail.get("reversal_candle")
+                    rsi_v = intraday_strategy_detail.get("rsi_value")
                     st.caption(
-                        f"🎯 Entry: **{trade_plan['entry']:,}** · SL: {trade_plan['sl']:,} · "
-                        f"Target: {trade_plan['target']:,} · R:R = 1:{trade_plan['rr']}"
+                        f"S/R Retest: {'✅' if intraday_strategy_detail.get('sr_retest') else '❌'} · "
+                        f"Trendline Retest: {'✅' if intraday_strategy_detail.get('trendline_retest') else '❌'} · "
+                        f"RSI: {f'{rsi_v:.1f}' if rsi_v is not None else '—'} ({intraday_strategy_detail.get('divergence')}) · "
+                        f"Reversal Candle: {rc['pattern'] if rc else 'नाही'} · "
+                        f"Breakout: {'✅' if intraday_strategy_detail.get('breakout_confirmed') else '❌'}"
                     )
-            else:
-                st.caption(f"Pattern: {intraday_strategy_detail.get('pattern') or '—'} · RSI(15M): {intraday_strategy_detail.get('rsi'):.1f}" if intraday_strategy_detail.get("rsi") is not None else f"Pattern: {intraday_strategy_detail.get('pattern') or '—'}")
+                    trade_plan = intraday_strategy_detail.get("trade_plan")
+                    if trade_plan:
+                        st.caption(
+                            f"🎯 Entry: **{trade_plan['entry']:,}** · SL: {trade_plan['sl']:,} · "
+                            f"Target: {trade_plan['target']:,} · R:R = 1:{trade_plan['rr']}"
+                        )
+                else:
+                    st.caption(f"Pattern: {intraday_strategy_detail.get('pattern') or '—'} · RSI(15M): {intraday_strategy_detail.get('rsi'):.1f}" if intraday_strategy_detail.get("rsi") is not None else f"Pattern: {intraday_strategy_detail.get('pattern') or '—'}")
 
-        vix_str = f"{india_vix:.2f}" if india_vix is not None else "उपलब्ध नाही"
-        st.markdown(f"**India VIX:** {vix_str} — {'✅ ट्रेडिंगसाठी ठीक' if vix_ok else '🚫 NO TRADE (VIX जास्त / अनुपलब्ध)'}")
+            vix_str = f"{india_vix:.2f}" if india_vix is not None else "उपलब्ध नाही"
+            st.markdown(f"**India VIX:** {vix_str} — {'✅ ट्रेडिंगसाठी ठीक' if vix_ok else '🚫 NO TRADE (VIX जास्त / अनुपलब्ध)'}")
 
-        if trading_style == "INTRADAY" and enable_oi_gate:
-            oi_display = oi_signal_latest if oi_signal_latest else "अनुपलब्ध"
-            st.markdown(
-                f"**OI Diff Entry Gate (Price Action + Indicator दोन्हीसाठी सामायिक):** {'✅ जुळते' if oi_confirmation_ok else '❌ OI विरोधात'} "
-                f"— सद्य OI सिग्नल: {oi_display}"
-            )
-        elif trading_style == "SWING" and enable_swing_oi_gate:
-            st.markdown(
-                f"**OI+PCR+MaxPain+Rollover Gate (Swing):** {'✅ जुळते' if oi_confirmation_ok else '❌ विरोधात'} — {oi_gate_note}"
-            )
-            if swing_gate_detail:
-                if swing_gate_detail["supporting"]:
-                    st.caption("समर्थन देणारे: " + ", ".join(f"{name} ({bias})" for name, bias in swing_gate_detail["supporting"]))
-                if swing_gate_detail["opposing"]:
-                    st.caption("विरोध करणारे: " + ", ".join(f"{name} ({bias})" for name, bias in swing_gate_detail["opposing"]))
+            if trading_style == "INTRADAY" and enable_oi_gate:
+                oi_display = oi_signal_latest if oi_signal_latest else "अनुपलब्ध"
+                st.markdown(
+                    f"**OI Diff Entry Gate (Price Action + Indicator दोन्हीसाठी सामायिक):** {'✅ जुळते' if oi_confirmation_ok else '❌ OI विरोधात'} "
+                    f"— सद्य OI सिग्नल: {oi_display}"
+                )
+            elif trading_style == "SWING" and enable_swing_oi_gate:
+                st.markdown(
+                    f"**OI+PCR+MaxPain+Rollover Gate (Swing):** {'✅ जुळते' if oi_confirmation_ok else '❌ विरोधात'} — {oi_gate_note}"
+                )
+                if swing_gate_detail:
+                    if swing_gate_detail["supporting"]:
+                        st.caption("समर्थन देणारे: " + ", ".join(f"{name} ({bias})" for name, bias in swing_gate_detail["supporting"]))
+                    if swing_gate_detail["opposing"]:
+                        st.caption("विरोध करणारे: " + ", ".join(f"{name} ({bias})" for name, bias in swing_gate_detail["opposing"]))
+
 
         # --- सर्व गेट्स एकत्र तपासणे (डायरेक्शनल मार्ग) ---
         all_gates_passed = bool(
@@ -1233,7 +1378,7 @@ def render():
             import os as _os
             hb_col1, hb_col2, hb_col3, hb_col4, hb_col5 = st.columns(5)
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
-            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर १० मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
+            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर ५ मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
             # मर्यादा इथे उगाचच सतत "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची
             # मर्यादा (२५ तास — दुसऱ्या दिवशी ४ वाजेपर्यंत थोडी सूट).
             for col, script_name, label, max_age_min in [
@@ -1343,7 +1488,8 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab5:
-        st.subheader("🧩 Multi-Strategy Orchestrator (नवीन, प्रयोगिक — OI/PCR + ICT-FVG + BB Squeeze + VWAP + SR Bounce + MTF Gap Fill)")
+        st.subheader("🧩 Multi-Strategy Orchestrator")
+        st.caption("OI/PCR · ICT-FVG · BB Squeeze · VWAP · SR Bounce · MTF Gap Fill — ६ रणनीती एकत्र")
         show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ६ strategies चालवल्या जातील)", value=False)
         if show_orchestrator:
             try:
@@ -1355,19 +1501,27 @@ def render():
                 config_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.yaml")
                 orch = build_orchestrator(config_path)
 
-                st.markdown("##### 🎯 SL/Target स्वतः ठरवा (पॉइंट्स — Strategy च्या स्वतःच्या auto गणनेऐवजी)")
+                # 🎓 वापरकर्त्याने "गर्दी" म्हणून निदर्शनास आणलेला मुद्दा — आधी १२ input boxes
+                # (६ strategies × SL+Target) नेहमीच उघडे दिसायचे, स्क्रीन भरून टाकायचे. आता डीफॉल्ट-
+                # बंद expander मध्ये — गरज असेल तेव्हाच उघडा, नाहीतर स्वच्छ, व्यावसायिक दिसणारं पान.
+                default_sl_target = {
+                    "oi_pcr": (40, 80), "ict_fvg": (30, 60), "bb_squeeze": (40, 80),
+                    "vwap": (25, 40), "sr_bounce": (40, 80), "mtf_gap_fill": (55, 155),
+                }
+                strat_display_names = {
+                    "oi_pcr": "OI/PCR", "ict_fvg": "ICT-FVG", "bb_squeeze": "BB Squeeze",
+                    "vwap": "VWAP", "sr_bounce": "SR Bounce", "mtf_gap_fill": "MTF Gap Fill",
+                }
                 ms_sl_target = {}
-                for strat_id, strat_label, default_sl, default_target in [
-                    ("oi_pcr", "OI/PCR", 40, 80), ("ict_fvg", "ICT-FVG", 30, 60),
-                    ("bb_squeeze", "BB Squeeze", 40, 80), ("vwap", "VWAP", 25, 40),
-                    ("sr_bounce", "SR Bounce", 40, 80), ("mtf_gap_fill", "MTF Gap Fill", 55, 155),
-                ]:
-                    mscol1, mscol2 = st.columns(2)
-                    with mscol1:
-                        sl_pts = st.number_input(f"{strat_label} — SL (पॉइंट्स)", min_value=1, value=default_sl, step=1, key=f"live_ms_sl_{strat_id}")
-                    with mscol2:
-                        target_pts = st.number_input(f"{strat_label} — Target (पॉइंट्स)", min_value=1, value=default_target, step=1, key=f"live_ms_target_{strat_id}")
-                    ms_sl_target[strat_id] = (sl_pts, target_pts)
+                with st.expander("⚙️ Advanced — SL/Target स्वतः ठरवा (पॉइंट्स)", expanded=False):
+                    for strat_id, (default_sl, default_target) in default_sl_target.items():
+                        strat_label = strat_display_names[strat_id]
+                        mscol1, mscol2 = st.columns(2)
+                        with mscol1:
+                            sl_pts = st.number_input(f"{strat_label} — SL", min_value=1, value=default_sl, step=1, key=f"live_ms_sl_{strat_id}")
+                        with mscol2:
+                            target_pts = st.number_input(f"{strat_label} — Target", min_value=1, value=default_target, step=1, key=f"live_ms_target_{strat_id}")
+                        ms_sl_target[strat_id] = (sl_pts, target_pts)
 
                 df_for_orch = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
                 df_1h_for_orch = fetch_candles(token_input, symbol, underlying_price, interval="30minute")
@@ -1377,10 +1531,6 @@ def render():
                 df_1h_resampled = resample_to_1h(df_1h_for_orch) if not df_1h_for_orch.empty else df_1h_for_orch
                 trend_direction_1h = compute_trend_direction_1h(df_1h_resampled)
 
-                # 🎓 वापरकर्त्याने प्रत्यक्ष कोड-वाचनातून सापडवलेला खरा gap — sr_bounce (आधीपासूनच) आणि
-                # mtf_gap_fill (नवीन) दोन्हीना 1H-आधारित डेटा snapshot.extra मधून हवा असतो, पण तो आधी
-                # दिलाच जात नव्हता (फक्त trend_direction_1h होता) — त्यामुळे दोन्ही रणनीती इथे कधीच
-                # खरा signal देतच नव्हत्या (नेहमी "1H डेटा उपलब्ध नाही" हेच कारण मिळायचं).
                 from signals import find_support_resistance_levels
                 sr_levels_1h = None
                 if df_1h_resampled is not None and not df_1h_resampled.empty and len(df_1h_resampled) >= 10:
@@ -1397,35 +1547,47 @@ def render():
                     extra={"trend_direction_1h": trend_direction_1h, "sr_levels_1h": sr_levels_1h, "mtf_1h_ohlcv": mtf_1h_ohlcv},
                 )
 
-                st.caption(f"1H Supertrend Direction (vwap साठी): {trend_direction_1h or 'उपलब्ध नाही'}")
-                st.caption(f"Structure: swept_high={structure_data['swept_high']}, swept_low={structure_data['swept_low']}, bos_direction={structure_data['bos_direction']}")
-
                 raw_results = []
                 for strat in orch.strategies:
                     r = strat.check_gates(snapshot)
-                    sl_pts, target_pts = ms_sl_target.get(r.strategy_id, (40, 80))
+                    sl_pts, target_pts = ms_sl_target.get(r.strategy_id, default_sl_target.get(r.strategy_id, (40, 80)))
                     r = apply_manual_sl_target(r, sl_pts, target_pts, reference_price=underlying_price)
-                    raw_results.append({
-                        "Strategy": r.strategy_id, "Direction": r.direction.value,
-                        "Confidence": round(r.confidence, 2), "Entry": r.entry_price, "SL": r.stop_loss,
-                        "Target": r.target, "Reason": r.reason,
-                    })
-                st.markdown("##### प्रत्येक Strategy चा स्वतंत्र निकाल (Orchestrator गेट्सआधी, SL/Target तुमचेच)")
-                st.dataframe(pd.DataFrame(raw_results), width="stretch")
+                    raw_results.append(r)
 
                 approved = orch.run_cycle(snapshot)
                 for s in approved:
-                    sl_pts, target_pts = ms_sl_target.get(s.strategy_id, (40, 80))
+                    sl_pts, target_pts = ms_sl_target.get(s.strategy_id, default_sl_target.get(s.strategy_id, (40, 80)))
                     apply_manual_sl_target(s, sl_pts, target_pts, reference_price=underlying_price)
-                st.markdown("##### अंतिम मंजूर सिग्नल्स (Orchestrator conflict/position गेट्सनंतर, SL/Target तुमचेच)")
+
+                # 🎓 सर्वात महत्त्वाचं (मंजूर सिग्नल्स) आधी दाखवणे — आधी हे तक्त्याच्या तळाशी लपलेलं होतं
+                st.markdown("##### ✅ अंतिम मंजूर सिग्नल्स")
                 if approved:
-                    approved_rows = [{
-                        "Strategy": s.strategy_id, "Direction": s.direction.value, "Confidence": round(s.confidence, 2),
-                        "Entry": s.entry_price, "SL": s.stop_loss, "Target": s.target, "Reason": s.reason,
-                    } for s in approved]
-                    st.dataframe(pd.DataFrame(approved_rows), width="stretch")
+                    approved_cols = st.columns(min(len(approved), 3))
+                    for i, s in enumerate(approved):
+                        with approved_cols[i % 3]:
+                            badge_color = "#089981" if s.direction.value == "LONG" else "#F23645" if s.direction.value == "SHORT" else "#787b86"
+                            st.markdown(
+                                f"""<div style="border:1px solid {badge_color};border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+                                <div style="font-weight:700;color:{badge_color};">● {s.strategy_id} — {s.direction.value}</div>
+                                <div style="font-size:13px;color:#9598a1;margin-top:4px;">Entry: {s.entry_price} · SL: {s.stop_loss} · Target: {s.target}</div>
+                                <div style="font-size:12px;color:#787b86;margin-top:4px;">{s.reason}</div>
+                                </div>""",
+                                unsafe_allow_html=True,
+                            )
                 else:
                     st.info("या cycle मध्ये कोणताही सिग्नल मंजूर झाला नाही.")
+
+                # 🎓 प्रत्येक strategy चा तपशील — आधी नेहमी उघडा dataframe होता, आता collapsed
+                with st.expander(f"🔍 सर्व ६ Strategies चा स्वतंत्र निकाल (Orchestrator गेट्सआधी)", expanded=False):
+                    color_map = {"LONG": "🟢", "SHORT": "🔴", "NONE": "⚪"}
+                    for r in raw_results:
+                        dot = color_map.get(r.direction.value, "⚪")
+                        st.markdown(f"{dot} **{strat_display_names.get(r.strategy_id, r.strategy_id)}** — {r.direction.value} "
+                                    f"(Confidence: {round(r.confidence, 2)}) — {r.reason}")
+                    st.caption(f"1H Supertrend Direction: {trend_direction_1h or 'उपलब्ध नाही'} | "
+                               f"Structure: swept_high={structure_data['swept_high']}, swept_low={structure_data['swept_low']}, "
+                               f"bos_direction={structure_data['bos_direction']}")
+
                 st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, वरच्या A1 Engine पासून पूर्णपणे स्वतंत्र.")
             except ModuleNotFoundError as e:
                 st.error(
@@ -1566,5 +1728,165 @@ def render():
                             st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
         except Exception as e:
             st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
+
+    with tab8:
+        st.markdown("---")
+        st.subheader(f"🎯 {symbol} — Strategy Builder (Multi-Leg Payoff + Combined Greeks)")
+        st.caption("Sensibull-सारखं — एकाहून अधिक legs जोडून, एकत्रित P&L payoff diagram आणि Greeks बघा.")
+        try:
+            import strategy_payoff as sp
+
+            st.session_state.setdefault("strategy_builder_legs", [])
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
+            # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
+            st.markdown("##### 🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)")
+            rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
+            rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
+            for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
+                with rm_cols[rm_i]:
+                    if st.button(rm_name, key=f"rm_{rm_name}", width="stretch"):
+                        template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
+                        new_legs = []
+                        for tleg in template_legs:
+                            matched = next((r for r in raw_chain if r["strike_price"] == tleg["strike"]), None)
+                            premium, instr_key = 0.0, None
+                            if matched:
+                                opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
+                                premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                                instr_key = opt_data.get("instrument_key")
+                            new_legs.append({**tleg, "premium": premium, "lot_size": int(lot_size), "instrument_key": instr_key})
+                        st.session_state["strategy_builder_legs"] = new_legs
+                        st.rerun()
+            st.markdown("---")
+
+            available_strikes = sorted({row["strike_price"] for row in raw_chain}) if raw_chain else []
+            if not available_strikes:
+                st.warning("Option chain डेटा उपलब्ध नाही.")
+            else:
+                st.markdown("##### ➕ नवीन Leg जोडा")
+                lc1, lc2, lc3, lc4 = st.columns(4)
+                with lc1:
+                    leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
+                with lc2:
+                    leg_option_type = st.selectbox("प्रकार", ["CE", "PE"], key="sb_option_type")
+                default_strike_idx = min(range(len(available_strikes)), key=lambda i: abs(available_strikes[i] - atm_strike)) if available_strikes else 0
+                with lc3:
+                    leg_strike = st.selectbox("Strike", available_strikes, index=default_strike_idx, key="sb_strike")
+                with lc4:
+                    leg_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_lots")
+
+                # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
+                auto_premium = 0.0
+                matched_row = next((r for r in raw_chain if r["strike_price"] == leg_strike), None)
+                if matched_row:
+                    opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
+                    auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
+
+                if st.button("➕ Leg जोडा"):
+                    instrument_key = None
+                    if matched_row:
+                        opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
+                        instrument_key = opt_data.get("instrument_key")
+                    st.session_state["strategy_builder_legs"].append({
+                        "direction": leg_direction, "option_type": leg_option_type, "strike": float(leg_strike),
+                        "premium": float(leg_premium), "lots": int(leg_lots), "lot_size": int(lot_size),
+                        "instrument_key": instrument_key,
+                    })
+                    st.rerun()
+
+            legs = st.session_state["strategy_builder_legs"]
+            if not legs:
+                st.info("अजून कुठलेही legs जोडलेले नाहीत — वरून जोडा.")
+            else:
+                st.markdown("##### 📜 सद्य Legs")
+                for i, leg in enumerate(legs):
+                    lcol1, lcol2 = st.columns([5, 1])
+                    with lcol1:
+                        st.write(f"{leg['direction']} {leg['option_type']} {leg['strike']:.0f} @ ₹{leg['premium']:.2f} × {leg['lots']} lot(s)")
+                    with lcol2:
+                        if st.button("🗑️", key=f"sb_remove_{i}"):
+                            st.session_state["strategy_builder_legs"].pop(i)
+                            st.rerun()
+
+                if st.button("🧹 सर्व Legs काढा"):
+                    st.session_state["strategy_builder_legs"] = []
+                    st.rerun()
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
+                # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
+                # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
+                st.markdown("##### 🎛️ Strike Controls")
+                shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
+                if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
+                    shifted_legs = []
+                    for leg in legs:
+                        new_strike = leg["strike"] + shift_amount
+                        matched = next((r for r in raw_chain if r["strike_price"] == new_strike), None)
+                        premium, instr_key = leg["premium"], leg.get("instrument_key")
+                        if matched:
+                            opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
+                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                            instr_key = opt_data.get("instrument_key")
+                        shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
+                    st.session_state["strategy_builder_legs"] = shifted_legs
+                    st.rerun()
+
+                # --- Payoff Diagram (OI Overlay सह) ---
+                price_range = sp.build_default_price_range(underlying_price, num_points=100, range_pct=5.0)
+                payoff_curve = sp.compute_strategy_payoff_curve(legs, price_range)
+                max_profit, max_loss = sp.compute_max_profit_loss(payoff_curve)
+                breakevens = sp.find_breakeven_points(price_range, payoff_curve)
+
+                gcol1, gcol2, gcol3 = st.columns(3)
+                gcol1.metric("कमाल नफा (या range मध्ये)", f"₹{max_profit:,.0f}")
+                gcol2.metric("कमाल तोटा (या range मध्ये)", f"₹{max_loss:,.0f}")
+                gcol3.metric("Breakeven", ", ".join(f"{b:,.0f}" for b in breakevens) if breakevens else "—")
+
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या payoff chart मागे दिसणारे
+                # OI bars (प्रत्येक strike ला किती Call/Put OI आहे) -- कुठल्या strikes ला जास्त
+                # "रोध"/"आधार" आहे हे दृश्य स्वरूपात कळण्यासाठी.
+                oi_strikes = [r["strike_price"] for r in raw_chain if price_range[0] <= r["strike_price"] <= price_range[-1]]
+                if oi_strikes:
+                    # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
+                    # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
+                    from oi_analysis import _extract_oi_ltp
+                    ce_oi_vals = [next((_extract_oi_ltp(r, "call_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
+                    pe_oi_vals = [next((_extract_oi_ltp(r, "put_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
+                    fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
+                    fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
+
+                fig.add_trace(go.Scatter(x=price_range, y=payoff_curve, mode="lines", name="P&L", line=dict(color="#2962ff", width=2), fill="tozeroy"), secondary_y=False)
+                fig.add_hline(y=0, line_dash="dash", line_color="#787b86")
+                fig.add_vline(x=underlying_price, line_dash="dot", line_color="#f0b90b", annotation_text="सद्य किंमत")
+                fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
+                fig.update_yaxes(title_text="P&L (₹)", secondary_y=False)
+                fig.update_yaxes(title_text="Open Interest", secondary_y=True)
+                st.plotly_chart(fig, use_container_width=True)
+
+                # --- Combined Greeks (established fetch_option_greeks पुनर्वापर) ---
+                instrument_keys = [leg["instrument_key"] for leg in legs if leg.get("instrument_key")]
+                if instrument_keys and token_input.strip():
+                    greeks_map = fetch_option_greeks(token_input, instrument_keys)
+                    legs_with_greeks = []
+                    for leg in legs:
+                        g = greeks_map.get(leg.get("instrument_key"), {})
+                        legs_with_greeks.append({**leg, **g})
+                    combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
+                    st.markdown("##### 🧮 Combined Greeks (संपूर्ण Strategy)")
+                    ecol1, ecol2, ecol3, ecol4 = st.columns(4)
+                    ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
+                    ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
+                    ecol3.metric("Theta", f"{combined_greeks['theta']:.2f}")
+                    ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
+                else:
+                    st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
+        except Exception as e:
+            st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 
 

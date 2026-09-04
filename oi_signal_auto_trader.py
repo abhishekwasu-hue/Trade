@@ -30,7 +30,7 @@ from notifications import notify_entry, notify_error, write_heartbeat
 
 KILL_SWITCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "KILL_SWITCH")
 LOT_SIZE = 75
-OI_PERSISTENCE_COUNT = 3  # ~३० मिनिटं (दर १० मिनिटांचे snapshots)
+OI_PERSISTENCE_COUNT = 6  # ~३० मिनिटं (दर ५ मिनिटांचे snapshots -- वापरकर्त्याशी चर्चा करून collector 10->5 मिनिट केला, मूळ ~30 मिनिटांचा हेतू जपण्यासाठी 3->6)
 
 
 def is_kill_switch_active():

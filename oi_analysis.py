@@ -382,20 +382,30 @@ def compute_oi_price_matrix(current_total_oi, prev_total_oi, current_price, prev
         return {"category": "SHORT_COVERING", "bias": "BULLISH", "strength": "Weak/Temporary"}
     return {"category": "LONG_UNWINDING", "bias": "BEARISH", "strength": "Weak/Temporary"}
 
-def compute_pcr_signal(total_put_oi, total_call_oi, high_threshold=1.5, low_threshold=0.5):
+def compute_pcr_signal(total_put_oi, total_call_oi):
     """
-    PCR (Put-Call Ratio) कधीकधी Contrarian वाचला जातो: टोकाच्या पातळीवर उलट दिशेचा इशारा देतो —
-    खूप जास्त PCR = भरपूर Puts विकले गेलेत = मजबूत सपोर्ट = अनेकदा उलट तेजीचा (bullish) संकेत.
-    खूप कमी PCR = भरपूर Calls विकले गेलेत = मजबूत रेझिस्टन्स = अनेकदा उलट मंदीचा (bearish) संकेत.
+    🎓 वापरकर्त्याशी चर्चा करून अंतिम ठरवलेली, ५-पट्ट्यांची PCR Logic ("Neutral" काढून टाकलं,
+    त्याऐवजी SIDEWAYS हा वेगळाच अर्थपूर्ण संकेत — established Iron Condor/Sideways संकल्पनेशी सुसंगत):
+
+    PCR < 0.70          -> BULLISH   (Oversold — आक्रमक Call writing, Contrarian bullish reversal धोका)
+    PCR 0.70 - 0.90     -> BEARISH
+    PCR 0.90 - 1.0      -> SIDEWAYS  (श्रेणीबद्ध/range-bound कल — ना स्पष्ट bullish, ना bearish)
+    PCR 1.0 - 1.3       -> BULLISH
+    PCR > 1.3           -> BEARISH   (Overbought — आक्रमक Put writing, Contrarian bearish reversal धोका)
     """
     if not total_call_oi:
-        return None, "NEUTRAL"
+        return None, "NEUTRAL"  # डेटाच उपलब्ध नाही -- हे "SIDEWAYS" पेक्षा वेगळं (सिग्नल-अभावाचं प्रकरण)
     pcr = round(total_put_oi / total_call_oi, 2)
-    if pcr >= high_threshold:
+    if pcr < 0.70:
         return pcr, "BULLISH"
-    if pcr <= low_threshold:
+    elif pcr < 0.90:
         return pcr, "BEARISH"
-    return pcr, "NEUTRAL"
+    elif pcr <= 1.0:
+        return pcr, "SIDEWAYS"
+    elif pcr <= 1.3:
+        return pcr, "BULLISH"
+    else:
+        return pcr, "BEARISH"
 
 def compute_max_pain(raw_chain):
     """
@@ -553,20 +563,24 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
 
     total_call_oi = total_put_oi = 0
     total_call_premium = total_put_premium = 0.0
+    strikes_data = []  # 🎓 नवीन -- प्रत्येक strike चा वेगळा OI, per-strike इतिहास साठवण्यासाठी (established aggregation-loop चाच पुनर्वापर, नवीन API कॉल्स नाहीत)
     for item in raw_chain:
         strike = item.get("strike_price")
         if strike is None or abs(strike - atm_strike) > atm_range * step:
             continue
         ce = item.get("call_options", {}) or {}
         pe = item.get("put_options", {}) or {}
-        total_call_oi += (ce.get("market_data", {}) or {}).get("oi", 0) or 0
-        total_put_oi += (pe.get("market_data", {}) or {}).get("oi", 0) or 0
+        ce_oi_val = (ce.get("market_data", {}) or {}).get("oi", 0) or 0
+        pe_oi_val = (pe.get("market_data", {}) or {}).get("oi", 0) or 0
+        total_call_oi += ce_oi_val
+        total_put_oi += pe_oi_val
         total_call_premium += (ce.get("market_data", {}) or {}).get("ltp", 0) or 0
         total_put_premium += (pe.get("market_data", {}) or {}).get("ltp", 0) or 0
+        strikes_data.append({"strike": strike, "ce_oi": ce_oi_val, "pe_oi": pe_oi_val})
 
     current_diff = total_put_oi - total_call_oi
     now_dt = get_ist_now_fn()
-    snapshot_minute = (now_dt.minute // 10) * 10
+    snapshot_minute = (now_dt.minute // 5) * 5
     snapshot_time = now_dt.replace(minute=snapshot_minute, second=0, microsecond=0).strftime("%H:%M")
     today_str = now_dt.strftime("%Y-%m-%d")
 
@@ -609,6 +623,10 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
             symbol, today_str, snapshot_time, total_call_oi, total_put_oi, current_diff, delta_diff, oi_signal,
             underlying_price, total_call_premium, total_put_premium,
         )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Multi-Strike OI इतिहास (Dashboard चं Tier ३
+        # feature) साठी, प्रत्येक strike चा OI सुद्धा (already-fetched डेटावरूनच, नवीन API कॉल न करता)
+        # साठवणे. फक्त cloud-configured असेल तेव्हाच (Multi-Strike OI view Supabase वरूनच वाचतं).
+        cloud_db.save_strike_oi_snapshot(symbol, today_str, snapshot_time, strikes_data)
     else:
         import sqlite3
         conn2 = sqlite3.connect(db_path)

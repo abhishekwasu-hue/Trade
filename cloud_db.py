@@ -82,6 +82,21 @@ CREATE TABLE IF NOT EXISTS market_zones (
 );
 """
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Multi Strike OI" सारखं, प्रत्येक strike
+# चा OI इतिहास (वेळेनुसार) साठवण्यासाठी — आधी फक्त एकूण (Total) Call/Put OI साठवला जायचा.
+# oi_snapshot_collector.py आधीच प्रत्येक strike चा डेटा वाचतो (aggregate करण्यासाठी) — तोच पुनर्वापर.
+CREATE_STRIKE_OI_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS strike_oi_history (
+    symbol TEXT NOT NULL,
+    strike REAL NOT NULL,
+    option_type TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    snapshot_time TEXT NOT NULL,
+    oi BIGINT,
+    PRIMARY KEY (symbol, strike, option_type, trade_date, snapshot_time)
+);
+"""
+
 
 def get_supabase_url():
     """पर्यावरण चल आधी तपासणे, नंतर config फाईल — दोन्हीपैकी काहीच नसेल तर None."""
@@ -135,7 +150,7 @@ def get_connection_with_error():
 
 
 def init_cloud_table():
-    """oi_diff_snapshots, upstox_tokens आणि market_zones tables (नसतील तर) तयार करणे. Configured नसेल तर शांतपणे False."""
+    """oi_diff_snapshots, upstox_tokens, market_zones आणि strike_oi_history tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
         return False
@@ -144,8 +159,66 @@ def init_cloud_table():
             cur.execute(CREATE_TABLE_SQL)
             cur.execute(CREATE_TOKEN_TABLE_SQL)
             cur.execute(CREATE_ZONES_TABLE_SQL)
+            cur.execute(CREATE_STRIKE_OI_TABLE_SQL)
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def save_strike_oi_snapshot(symbol, trade_date, snapshot_time, strikes_data):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रत्येक strike चा CE/PE OI, त्याच snapshot_time
+    साठी, एकत्रित साठवणे. strikes_data: [{"strike":x, "ce_oi":n, "pe_oi":n}, ...] (oi_snapshot_collector
+    कडे आधीच उपलब्ध, aggregate करण्यासाठी वापरलेलाच डेटा -- नवीन API कॉल्स लागत नाहीत).
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            for d in strikes_data:
+                for option_type, oi_val in [("CE", d["ce_oi"]), ("PE", d["pe_oi"])]:
+                    cur.execute(
+                        """INSERT INTO strike_oi_history (symbol, strike, option_type, trade_date, snapshot_time, oi)
+                           VALUES (%s, %s, %s, %s, %s, %s)
+                           ON CONFLICT (symbol, strike, option_type, trade_date, snapshot_time)
+                           DO UPDATE SET oi = EXCLUDED.oi""",
+                        (symbol, d["strike"], option_type, trade_date, snapshot_time, oi_val),
+                    )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_strike_oi_history(symbol, trade_date, strikes=None):
+    """दिलेल्या दिवसाचा, प्रत्येक strike चा (हवं तर विशिष्ट strikes फिल्टर करून) OI इतिहास वाचणे."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            if strikes:
+                placeholders = ",".join(["%s"] * len(strikes))
+                cur.execute(
+                    f"""SELECT strike, option_type, snapshot_time, oi FROM strike_oi_history
+                        WHERE symbol=%s AND trade_date=%s AND strike IN ({placeholders})
+                        ORDER BY snapshot_time ASC""",
+                    (symbol, trade_date, *strikes),
+                )
+            else:
+                cur.execute(
+                    """SELECT strike, option_type, snapshot_time, oi FROM strike_oi_history
+                       WHERE symbol=%s AND trade_date=%s ORDER BY snapshot_time ASC""",
+                    (symbol, trade_date),
+                )
+            rows = cur.fetchall()
+            return pd.DataFrame(rows, columns=["strike", "option_type", "snapshot_time", "oi"])
+    except Exception:
+        return None
     finally:
         conn.close()
 
@@ -295,6 +368,29 @@ def get_recent_oi_snapshots_cloud(symbol, trade_date, before_time=None, limit=5)
                 )
             rows = cur.fetchall()
         return list(reversed(rows))  # जुनं->नवीन
+    finally:
+        conn.close()
+
+
+def get_oi_price_history_cloud(symbol, trade_date):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + NIFTY किंमत, वेळेनुसार Chart (Sensibull-सारखं)
+    साठी. established get_oi_history_cloud() पेक्षा वेगळं (त्यात बदल टाळला, सुरक्षिततेसाठी) —
+    इथे underlying_price सुद्धा वाचला जातो (जो table मध्ये आधीच साठवलेला आहे, पण जुनं function वाचत
+    नव्हतं). अलीकडचा वेळ शेवटी (ASC) -- chart plotting साठी योग्य क्रम.
+    """
+    conn = get_connection()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT snapshot_time, total_call_oi, total_put_oi, underlying_price
+                   FROM oi_diff_snapshots WHERE symbol=%s AND trade_date=%s
+                   ORDER BY snapshot_time ASC""",
+                (symbol, trade_date),
+            )
+            return cur.fetchall()
     finally:
         conn.close()
 
