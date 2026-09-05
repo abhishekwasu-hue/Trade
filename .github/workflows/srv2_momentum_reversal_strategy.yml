@@ -1,18 +1,15 @@
-name: SRv2 Momentum-Filter Reversal (Nifty, दर ५ मिनिटं)
+name: SRv2 Momentum-Filter Reversal (Nifty) — DISABLED (VPS वर, दर १ मिनिट चालतंय)
 
 # 🎓 वापरकर्त्याशी चर्चा करून, संपूर्ण blueprint वरून बांधलेली नवीन रणनीती —
 # established SRv2 (Chart वर दाखवला जाणारा) + 0.40% दिशात्मक-गती फिल्टर + ATM+1/ATM+3 Credit Spread +
 # One-Touch/Cooldown (established srv2_strategy_state, Supabase) — सुरुवातीला फक्त PAPER mode.
 #
-# ⚠️ रणनीती स्वतः 15-मिनिट chart वापरते, पण GitHub Actions ची खरी तांत्रिक किमान मर्यादा ५ मिनिटं
-# आहे (established) — दर ५ मिनिटांनी चालली तरी नुकसान नाही (established idempotent पॅटर्न, नवीन
-# 15-मिनिट candle आलेली नसेल तर फक्त "काहीच बदल नाही" असं सांगून थांबेल).
+# ⚠️ वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established VPS (DigitalOcean) वर आता खरा दर-१-मिनिटाचा
+# cron कार्यरत आहे (GitHub Actions च्या ५-मिनिट मर्यादेपेक्षा जास्त वारंवार) — त्यामुळे इथला automatic
+# schedule काढला (डुप्लिकेट trades टाळण्यासाठी). हवं तेव्हा हातानेच ("Run workflow") अजूनही चालवता येतं.
 
 on:
-  schedule:
-    # UTC 3:45 ते 10:00 (IST 9:15 ते 15:30, बाजार तासांशी जुळणारं), दर ५ मिनिटं, सोम-शुक्र
-    - cron: "*/5 3-10 * * 1-5"
-  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+  workflow_dispatch:  # फक्त हातानेच चालवण्यासाठी -- automatic schedule VPS वर आहे
 
 jobs:
   srv2-momentum-reversal:
