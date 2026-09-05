@@ -1,0 +1,36 @@
+name: NIFTY 1-Min Data Daily Update
+
+# 🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — दररोज बाजार बंद झाल्यावर, established
+# nifty_1min_ohlc (Supabase) table मधल्या शेवटच्या timestamp पासून आजपर्यंतचा गॅप आपोआप भरणे --
+# जेणेकरून Backtest/Demand-Supply/S-R गणना नेहमी ताज्या, संपूर्ण 1-मिनिट इतिहासावर आधारित राहतील,
+# Upstox वर वारंवार थेट अवलंबून न राहता.
+#
+# ⚠️ पहिल्यांदा चालवण्याआधी, established parquet इतिहास (2015-2024-03-27) आधी एकदाच
+# migrate_nifty_1min_to_supabase.py ने चढवलेला असावा — ही workflow फक्त त्यानंतरचा गॅप भरते/रोज वाढवते.
+
+on:
+  schedule:
+    # UTC 10:15 = IST 15:45 (बाजार बंद झाल्यावर, established Market Zones Refresh च्याही थोडं आधी), सोम-शुक्र
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं (पहिल्या मोठ्या गॅप-भरण्यासाठीही हेच वापरा)
+
+jobs:
+  update-nifty-1min:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: NIFTY 1-मिनिट डेटा अद्ययावत करणे
+        env:
+          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 daily_nifty_1min_update.py --token "$UPSTOX_TOKEN"
