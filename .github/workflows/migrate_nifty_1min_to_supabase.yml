@@ -1,0 +1,35 @@
+name: NIFTY 1-Min Data Migration (एक-वेळचं — फक्त हातानेच चालवा)
+
+# 🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — established parquet इतिहास (data/nifty50_1min.parquet,
+# 2015-01-09 ते 2024-03-27, ~८,५२,००० candles) Supabase कडे एकदाच चढवण्यासाठी.
+#
+# ⚠️ हे **schedule नाही** — फक्त एकदाच, हातानेच ("Run workflow") चालवायचं आहे. established
+# save_nifty_1min_batch() मध्ये ON CONFLICT DO NOTHING असल्याने, चुकून पुन्हा चालवलं तरी सुरक्षित
+# (डुप्लिकेट रांगा येणार नाहीत) — पण साधारणपणे एकदाच पुरेसं आहे.
+#
+# ⚠️ यानंतर established "NIFTY 1-Min Data Daily Update" workflow (हातानेच) चालवून, established
+# parquet इतिहास संपतो तिथून (2024-03-27) आजपर्यंतचा मोठा गॅप भरा.
+
+on:
+  workflow_dispatch:  # फक्त हातानेच चालवण्यासाठी -- कुठलंही schedule नाही
+
+jobs:
+  migrate-nifty-1min:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 🎓 ~८,५२,००० रांगा, batched -- साधारणपणे काही मिनिटंच लागतील, तरीही सुरक्षित मार्जिन
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: NIFTY 1-मिनिट इतिहास Supabase कडे migrate करणे
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 migrate_nifty_1min_to_supabase.py
