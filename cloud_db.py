@@ -129,6 +129,17 @@ CREATE TABLE IF NOT EXISTS signal_log (
 );
 """
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Nifty SRv2 Momentum-Filter Reversal" रणनीतीचं
+# राज्य (One-Touch Rule + Cooldown Period) — GitHub Actions प्रत्येक वेळी नवीन (rikama) environment
+# मध्ये चालत असल्याने, हे राज्य Supabase मध्येच साठवावं लागतं (स्थानिक फाईल टिकत नाही).
+CREATE_SRV2_STATE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS srv2_strategy_state (
+    symbol TEXT PRIMARY KEY,
+    last_tested_level REAL,
+    last_sl_hit_time TIMESTAMP
+);
+"""
+
 
 def get_supabase_url():
     """पर्यावरण चल आधी तपासणे, नंतर config फाईल — दोन्हीपैकी काहीच नसेल तर None."""
@@ -182,8 +193,8 @@ def get_connection_with_error():
 
 
 def init_cloud_table():
-    """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc आणि
-    signal_log tables (नसतील तर) तयार करणे."""
+    """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc,
+    signal_log आणि srv2_strategy_state tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
         return False
@@ -195,8 +206,50 @@ def init_cloud_table():
             cur.execute(CREATE_STRIKE_OI_TABLE_SQL)
             cur.execute(CREATE_NIFTY_1MIN_TABLE_SQL)
             cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
+            cur.execute(CREATE_SRV2_STATE_TABLE_SQL)
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def get_srv2_state(symbol):
+    """established srv2 रणनीतीचं राज्य वाचणे (One-Touch + Cooldown साठी) — नसेल तर सुरक्षित डीफॉल्ट."""
+    conn = get_connection()
+    if conn is None:
+        return {"last_tested_level": None, "last_sl_hit_time": None}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_tested_level, last_sl_hit_time FROM srv2_strategy_state WHERE symbol=%s", (symbol,))
+            row = cur.fetchone()
+            if row is None:
+                return {"last_tested_level": None, "last_sl_hit_time": None}
+            return {"last_tested_level": row[0], "last_sl_hit_time": row[1]}
+    except Exception:
+        return {"last_tested_level": None, "last_sl_hit_time": None}
+    finally:
+        conn.close()
+
+
+def save_srv2_state(symbol, last_tested_level=None, last_sl_hit_time=None):
+    """established srv2 रणनीतीचं राज्य साठवणे (upsert — symbol आधीच असेल तर अद्ययावत, नसेल तर नवीन)."""
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO srv2_strategy_state (symbol, last_tested_level, last_sl_hit_time)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (symbol) DO UPDATE SET
+                       last_tested_level = EXCLUDED.last_tested_level,
+                       last_sl_hit_time = EXCLUDED.last_sl_hit_time""",
+                (symbol, last_tested_level, last_sl_hit_time),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
     finally:
         conn.close()
 
@@ -470,6 +523,18 @@ def get_latest_upstox_token():
         return None
     finally:
         conn.close()
+
+
+def get_effective_upstox_token(cli_token):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Upstox Token Webhook (VPS वर, एका
+    मोबाईल-टॅपवर रोज नवीन token) पूर्ण automation साठी वापरण्यायोग्य करणे. established --token
+    (GitHub Secret) दिलेला असेल तर तोच वापरणे (backward-compatible, जुनी पद्धत अजूनही चालते) —
+    नाहीतर established get_latest_upstox_token() (Supabase, Webhook ने साठवलेला) आपोआप वापरणे.
+    """
+    if cli_token:
+        return cli_token
+    return get_latest_upstox_token()
 
 
 def save_oi_snapshot_cloud(symbol, trade_date, snapshot_time, total_call_oi, total_put_oi,

@@ -146,11 +146,15 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     args = parser.parse_args()
 
     init_sqlite_db()
     cloud_db.init_cloud_table()
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
     for symbol in args.symbols.split(","):
-        print(process_symbol(args.token, symbol.strip()))
+        print(process_symbol(token, symbol.strip()))

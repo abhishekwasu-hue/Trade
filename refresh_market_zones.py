@@ -55,14 +55,18 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     args = parser.parse_args()
 
     cloud_db.init_cloud_table()
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
     all_ok = True
     for symbol in args.symbols.split(","):
-        ok, message = refresh_symbol(args.token, symbol.strip())
+        ok, message = refresh_symbol(token, symbol.strip())
         print(("✅ " if ok else "❌ ") + message)
         all_ok = all_ok and ok
 

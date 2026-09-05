@@ -170,13 +170,19 @@ def _run_cycle_inner(access_token, symbol, trading_mode, strategy_choice):
 
 if __name__ == "__main__":
     import argparse
+    import cloud_db
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbol", default="NIFTY")
     parser.add_argument("--mode", default="PAPER", choices=["PAPER", "LIVE"])
     parser.add_argument("--strategy", default="price_action", choices=["price_action", "indicator"])
     args = parser.parse_args()
 
-    result_log = run_cycle(args.token, args.symbol, args.mode, args.strategy)
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
+
+    result_log = run_cycle(token, args.symbol, args.mode, args.strategy)
     for line in result_log:
         print(f"[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}] {line}")

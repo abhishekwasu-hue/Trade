@@ -18,6 +18,7 @@ from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
     execute_order_leg_set, get_static_ip_proxy_url, check_proxy_egress_ip,
     get_registered_static_ips, fetch_ltp_map, fetch_next_expiry_option_chain,
+    fetch_option_greeks,
 )
 from signals import (
     calculate_rsi, calculate_supertrend, resample_to_1h, find_support_resistance_levels,

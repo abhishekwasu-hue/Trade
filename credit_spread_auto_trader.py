@@ -270,12 +270,21 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
 
 if __name__ == "__main__":
     import argparse
+    import cloud_db
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Upstox Token Webhook (VPS, रोज
+    # आपोआप Supabase मध्ये token) पूर्ण automation साठी वापरण्यायोग्य — required=True काढून, दिलेला
+    # नसेल तर Supabase कडून आपोआप वाचणे (get_effective_upstox_token).
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbol", default="NIFTY")
     parser.add_argument("--mode", default="PAPER", choices=["PAPER", "LIVE"])
     args = parser.parse_args()
 
-    result_log = run_cycle(args.token, args.symbol, args.mode)
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
+
+    result_log = run_cycle(token, args.symbol, args.mode)
     for line in result_log:
         print(f"[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}] {line}")

@@ -147,17 +147,23 @@ def evaluate_symbol(access_token, symbol, atm_strike):
 
 
 if __name__ == "__main__":
+    import cloud_db
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--mode", default="PAPER", choices=["PAPER", "LIVE"])
     args = parser.parse_args()
+
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
 
     for symbol in ["NIFTY", "SENSEX"]:
         if not is_expiry_week_entry_day(symbol):
             print(f"{symbol}: आजचा दिवस entry साठी योग्य नाही (expiry {['सोम','मंगळ','बुध','गुरु','शुक्र'][SYMBOL_EXPIRY_WEEKDAY[symbol]]}वारी)")
             continue
         # ⚠️ ATM strike प्रत्यक्ष LTP वरून काढावं लागेल — इथे उदाहरणादाखल placeholder
-        result = evaluate_symbol(args.token, symbol, atm_strike=0)
+        result = evaluate_symbol(token, symbol, atm_strike=0)
         print(f"\n{symbol}: VIX={result['vix']}, Confluence={result['confluence_direction']}"
               f"(level={result['confluence_level']}) -> Strategy: {result['strategy']}")
         if result["strategy"] not in ("NO_TRADE",):

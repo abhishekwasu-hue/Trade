@@ -67,10 +67,16 @@ def run_cycle(access_token, symbols=None):
 
 if __name__ == "__main__":
     import argparse
+    import cloud_db
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX", help="स्वल्पविरामाने वेगळे केलेले symbols")
     args = parser.parse_args()
 
-    result = run_cycle(args.token, args.symbols.split(","))
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
+
+    result = run_cycle(token, args.symbols.split(","))
     print(f"[{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')}]\n{result}")
