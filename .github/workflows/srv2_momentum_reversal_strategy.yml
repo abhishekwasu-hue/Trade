@@ -1,0 +1,38 @@
+name: SRv2 Momentum-Filter Reversal (Nifty, दर ५ मिनिटं)
+
+# 🎓 वापरकर्त्याशी चर्चा करून, संपूर्ण blueprint वरून बांधलेली नवीन रणनीती —
+# established SRv2 (Chart वर दाखवला जाणारा) + 0.40% दिशात्मक-गती फिल्टर + ATM+1/ATM+3 Credit Spread +
+# One-Touch/Cooldown (established srv2_strategy_state, Supabase) — सुरुवातीला फक्त PAPER mode.
+#
+# ⚠️ रणनीती स्वतः 15-मिनिट chart वापरते, पण GitHub Actions ची खरी तांत्रिक किमान मर्यादा ५ मिनिटं
+# आहे (established) — दर ५ मिनिटांनी चालली तरी नुकसान नाही (established idempotent पॅटर्न, नवीन
+# 15-मिनिट candle आलेली नसेल तर फक्त "काहीच बदल नाही" असं सांगून थांबेल).
+
+on:
+  schedule:
+    # UTC 3:45 ते 10:00 (IST 9:15 ते 15:30, बाजार तासांशी जुळणारं), दर ५ मिनिटं, सोम-शुक्र
+    - cron: "*/5 3-10 * * 1-5"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+
+jobs:
+  srv2-momentum-reversal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: SRv2 Momentum-Reversal तपासून, आढळल्यास PAPER trade
+        env:
+          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 srv2_momentum_reversal_strategy.py --token "$UPSTOX_TOKEN"
