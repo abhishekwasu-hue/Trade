@@ -2,6 +2,8 @@
 import math
 import sqlite3
 
+import pandas as pd
+
 from config import DB_PATH, get_ist_today
 
 
@@ -672,3 +674,21 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
         "oi_price_direction": oi_price_direction, "oi_price_message": oi_price_message,
     }
     return snapshot, ("ALREADY_EXISTS" if already_exists else "OK")
+
+
+def aggregate_oi_history(hist_df, interval_minutes):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established ५-मिनिट snapshots ना, निवडलेल्या
+    interval (5/10/15) नुसार पुन्हा-गटबद्ध करणे (Dashboard वर 3 selectable views साठी).
+    OI हे "cumulative" (त्या क्षणीचा एकूण साठा) आहे, बेरीज नाही — म्हणून प्रत्येक bucket साठी त्यातल्या
+    शेवटच्या (सर्वात अलीकडच्या) snapshot चीच value घ्यायची (candle-chart च्या "close" सारखं).
+    """
+    if interval_minutes == 5 or hist_df.empty:
+        return hist_df
+    df = hist_df.copy()
+    df["_dt"] = pd.to_datetime(df["Time"], format="%H:%M")
+    df = df.sort_values("_dt")
+    df["_bucket"] = df["_dt"].dt.floor(f"{interval_minutes}min")
+    aggregated = df.groupby("_bucket").last().reset_index()
+    aggregated["Time"] = aggregated["_bucket"].dt.strftime("%H:%M")
+    return aggregated.drop(columns=["_dt", "_bucket"]).sort_values("Time", ascending=False).reset_index(drop=True)

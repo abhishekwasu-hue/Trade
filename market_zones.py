@@ -84,6 +84,18 @@ def detect_demand_supply_zones(df, impulse_mult=1.5, avg_window=20, base_lookbac
     return zones
 
 
+def compute_current_role(zone_low, zone_high, current_ltp):
+    """
+    🎓 वापरकर्त्याने स्पष्ट, थेट सांगितलेलं आणि महत्त्वाचं तत्त्व — zone चा ऐतिहासिक प्रकार (Order
+    Block/Demand Zone/Supply Zone/इ.) काहीही असो, सद्य LTP च्या तुलनेत त्याची भूमिका ठरते:
+    LTP पेक्षा zone वर असेल -> Resistance/Supply. LTP पेक्षा खाली असेल -> Support/Demand.
+    (ऐतिहासिक "Bullish Order Block" लेबल असूनही, तो सद्य LTP च्या वर असेल तर तो आत्ता विक्री-दबावाचा
+    (Resistance) भाग असू शकतो — फक्त तो कसा तयार झाला हे दाखवतो, आत्ताची भूमिका दाखवत नाही.)
+    """
+    zone_mid = (zone_low + zone_high) / 2
+    return "RESISTANCE_SUPPLY" if zone_mid > current_ltp else "SUPPORT_DEMAND"
+
+
 def is_zone_mitigated(zone_low, zone_high, df_after_formation):
     """
     🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नियम — किंमत त्या zone मध्ये परत आली (range overlap झाला)

@@ -25,7 +25,7 @@ import datetime
 import sqlite3
 
 from config import DB_PATH, get_ist_now
-from signals import calculate_supertrend, classify_market_structure
+from signals import calculate_supertrend, classify_market_structure, resample_to_1h
 from oi_analysis import rotation_confirmed_for_2_snapshots
 from strategy import select_credit_spread_fixed_strikes
 from upstox_api import fetch_upstox_option_chain, fetch_india_vix, fetch_candles
@@ -125,7 +125,11 @@ def evaluate_symbol(access_token, symbol, atm_strike):
     """एका symbol साठी संपूर्ण निर्णय-प्रक्रिया — दिशा, VIX, strategy निवड."""
     raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol)
     india_vix = fetch_india_vix(access_token)
-    df_1h = fetch_candles(access_token, symbol, atm_strike, interval="1hour", lookback_days=60)
+    # 🎓 वापरकर्त्याने Market Zones मध्ये दाखवलेला खरा bug -- थेट fetch_candles(interval="1hour")
+    # वापरलं तर, established allowed_intervals यादीत "1hour" नसल्याने ते शांतपणे "30minute" कडे
+    # fallback होतं, resample न होताच -- established resample_to_1h() पॅटर्नने दुरुस्त.
+    df_30m = fetch_candles(access_token, symbol, atm_strike, interval="30minute", lookback_days=60)
+    df_1h = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
 
     supertrend_dir = get_supertrend_direction(df_1h)
     structure_info = classify_market_structure(df_1h) if df_1h is not None and not df_1h.empty else {"structure": "INSUFFICIENT_DATA"}

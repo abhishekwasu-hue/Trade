@@ -1,21 +1,21 @@
 """
 oi_snapshot_collector.py
 ----------------------------
-पूर्णपणे स्वयंचलित (unattended), local machine वर cron/scheduler द्वारे दर ५ मिनिटांनी चालवायची
+पूर्णपणे स्वयंचलित (unattended), local machine वर cron/scheduler द्वारे दर १० मिनिटांनी चालवायची
 script — वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा:
 
 ⚠️ आधी समस्या: OI Diff Snapshot फक्त Dashboard browser मध्ये उघडं असतानाच (आणि auto-refresh चालू
 असतानाच) साठवला जायचा — browser बंद केल्यास त्या काळातले snapshots कधीच रेकॉर्ड होत नव्हते, इतिहासात
 पोकळी (gaps) राहायची.
 
-✅ आता: हीच स्वतंत्र script cron ने दर ५ मिनिटांनी चालवली, तर ती Option Chain fetch करून, OI/Premium
+✅ आता: हीच स्वतंत्र script cron ने दर १० मिनिटांनी चालवली, तर ती Option Chain fetch करून, OI/Premium
 गणना करून, त्याच database (oi_diff_snapshots table) मध्ये साठवते — Dashboard सोबतच वापरलेल्याच,
 पुनर्वापर केलेल्या (oi_analysis.fetch_and_save_oi_snapshot) function द्वारे — त्यामुळे Dashboard आणि ही
 script नेहमी सुसंगत निकाल देतात. Browser नंतर कधीही उघडलं, तरी मधल्या काळातले सर्व snapshots आधीच
 टेबलमध्ये साठवलेले दिसतील.
 
-⚙️ चालवणे (cron उदाहरण, दर ५ मिनिटांनी बाजार-वेळेत):
-  */5 9-15 * * 1-5  python3 oi_snapshot_collector.py --token YOUR_UPSTOX_TOKEN
+⚙️ चालवणे (cron उदाहरण, दर १० मिनिटांनी बाजार-वेळेत):
+  */10 9-15 * * 1-5  python3 oi_snapshot_collector.py --token YOUR_UPSTOX_TOKEN
 """
 import os
 import sys

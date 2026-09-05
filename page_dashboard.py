@@ -33,7 +33,7 @@ from oi_analysis import (
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
-    fetch_and_save_oi_snapshot, compute_dte,
+    fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
 )
 from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
 from pdf_reports import generate_market_analysis_report_pdf
@@ -723,6 +723,17 @@ def render():
                 put_oi_price_class = snapshot_result["put_oi_price_class"]
                 call_oi_price_class = snapshot_result["call_oi_price_class"]
 
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + संबंधित संदेश आता ठळक banner वरच (आधी
+        # फक्त खालच्या "Advanced OI Analysis" च्या collapsed भागात होता, इथे लगेच दिसत नव्हता).
+        pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
+        pcr_messages = {
+            "BULLISH": "🟢 Oversold — संभाव्य Bullish Reversal (Bear Trap धोका)",
+            "BEARISH": "🔴 Overbought — संभाव्य Bearish Reversal (Bull Trap धोका)",
+            "SIDEWAYS": "🟡 श्रेणीबद्ध (Sideways) कल",
+            "NEUTRAL": "⚪ अपुरा डेटा",
+        }
+        pcr_line = f"PCR: {pcr_val:.2f} — {pcr_messages.get(pcr_bias, '')}" if pcr_val is not None else "PCR: उपलब्ध नाही"
+
         # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
         banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
         banner_border = {"BULLISH": "#089981", "BEARISH": "#F23645", "MIXED": "#c9a227", "NEUTRAL": "#4b5563"}[oi_price_direction]
@@ -730,7 +741,8 @@ def render():
             f"""<div style="background-color:{banner_bg}; border-left: 5px solid {banner_border}; padding: 14px 18px;
             border-radius: 6px; margin: 10px 0;">
             <span style="font-size: 17px; font-weight: 700; color: #f0f0f0;">{oi_price_message}</span><br/>
-            <span style="font-size: 12px; color: #aaa;">Put: {put_oi_price_class} · Call: {call_oi_price_class}</span>
+            <span style="font-size: 12px; color: #aaa;">Put: {put_oi_price_class} · Call: {call_oi_price_class}</span><br/>
+            <span style="font-size: 14px; font-weight: 600; color: #d0d0d0;">{pcr_line}</span>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -761,6 +773,12 @@ def render():
                 conn3, params=(symbol, today_str)
             )
             conn3.close()
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — collector आता ५-मिनिट granularity वर snapshots
+        # साठवतो — इथे वापरकर्त्याला 5/10/15-मिनिट यापैकी हवा तो view निवडता येईल (established
+        # aggregate_oi_history() — प्रत्येक bucket ची शेवटची value, OI च्या "cumulative" स्वरूपाला सुसंगत).
+        view_interval = st.radio("View Interval", [5, 10, 15], index=0, horizontal=True, format_func=lambda x: f"{x} मिनिट", key="oi_view_interval")
+        hist_df = aggregate_oi_history(hist_df, view_interval)
 
         # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या KeyError सह दाखवलेला खरा bug — Supabase आत्ताच
         # जोडलं गेलं असेल, पण आजचा पहिला OI snapshot अजून साठवलाच गेला नसेल (उदा. "OI Snapshot
@@ -1640,7 +1658,10 @@ def render():
 
                 # 🎓 established fetch pattern (आधीच्या lookback_days दुरुस्तीशी सुसंगत) -- 1H साठी
                 # पुरेसा इतिहास (swings ओळखण्यासाठी), 15M साठी अलीकडचा (entry/gap-fill शोधण्यासाठी).
-                df_1h_mtf = fetch_candles(token_input, symbol, underlying_price, interval="1hour")
+                # 🎓 वापरकर्त्याने Market Zones मध्ये दाखवलेला खरा bug -- थेट fetch_candles(interval=
+                # "1hour") वापरलं तर, established allowed_intervals यादीत "1hour" नसल्याने ते शांतपणे
+                # "30minute" कडे fallback होतं, resample न होताच -- fetch_timeframe_df() वापरून दुरुस्त.
+                df_1h_mtf = fetch_timeframe_df(token_input, symbol, underlying_price, "1hour")
                 df_15m_mtf = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
 
                 if df_1h_mtf is None or df_1h_mtf.empty or df_15m_mtf is None or df_15m_mtf.empty:
@@ -1733,6 +1754,20 @@ def render():
                             st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
                             st.markdown("---")
 
+                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा
+                    # **संपूर्ण** intraday Signal Log — trade झाला किंवा न झाला तरीही, प्रत्येक तपासलेला
+                    # level इथे दिसेल (established get_signal_log() पुनर्वापर करून).
+                    st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
+                    signal_log_df = cloud_db.get_signal_log(symbol, get_ist_now().strftime("%Y-%m-%d"))
+                    if signal_log_df is None or signal_log_df.empty:
+                        st.caption("आज अजून कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
+                    else:
+                        log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
+                        display_log = signal_log_df if log_filter == "सर्व" else signal_log_df[signal_log_df["hit_type"] != "NO_HIT"]
+                        st.dataframe(display_log, width="stretch", height=300)
+                        st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level cross झाला.")
+                    st.markdown("---")
+
                     for zt in zone_type_order:
                         subset = zones_df[zones_df["zone_type"] == zt]
                         if subset.empty:
@@ -1740,6 +1775,43 @@ def render():
                         with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
                             display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
                             st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
+
+                    # 🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — zone चा ऐतिहासिक
+                    # प्रकार (Order Block/Demand Zone/Supply Zone इ.) काहीही असो, त्याची **सद्य** भूमिका
+                    # ठरते ती फक्त सद्य LTP च्या तुलनेतच: LTP च्या वर = Resistance/Supply, खाली =
+                    # Support/Demand. हे मुख्य, प्रकारानुसार-गटवारीच्या (वरच्या) दृश्यापेक्षा वेगळं आणि
+                    # जास्त कृतीयोग्य आहे — त्यामुळे इथे स्वतंत्रपणे, सर्वात ठळकपणे दाखवतो.
+                    from market_zones import compute_current_role
+                    zones_with_role = zones_df.copy()
+                    zones_with_role["zone_mid"] = (zones_with_role["zone_low"] + zones_with_role["zone_high"]) / 2
+                    zones_with_role["current_role"] = zones_with_role.apply(
+                        lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
+                    )
+                    st.markdown("---")
+                    st.markdown(f"##### 🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)")
+                    st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
+
+                    rcol1, rcol2 = st.columns(2)
+                    with rcol1:
+                        st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
+                        resistance_zones = zones_with_role[zones_with_role["current_role"] == "RESISTANCE_SUPPLY"].sort_values("zone_mid")
+                        if resistance_zones.empty:
+                            st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
+                        else:
+                            st.dataframe(
+                                resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
+                                width="stretch",
+                            )
+                    with rcol2:
+                        st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
+                        support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
+                        if support_zones.empty:
+                            st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
+                        else:
+                            st.dataframe(
+                                support_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
+                                width="stretch",
+                            )
         except Exception as e:
             st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
@@ -1900,6 +1972,45 @@ def render():
                     ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
                 else:
                     st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधूनच थेट execution,
+                # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही. सुरुवातीला
+                # फक्त PAPER mode (वापरकर्त्याने स्पष्ट सांगितल्याप्रमाणे — LIVE पर्यायच दिलेला नाही).
+                st.markdown("---")
+                st.markdown("##### 🚀 Strategy Execute करा (Combined SL/Target)")
+                st.info("📝 सध्या फक्त **PAPER Trading Mode** — कुठलाही खरा ऑर्डर जाणार नाही.")
+
+                missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
+                if missing_keys:
+                    st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
+                else:
+                    ecol_sl, ecol_target = st.columns(2)
+                    with ecol_sl:
+                        sl_pct = st.number_input(
+                            "SL % (Credit चा, किंवा Debit असल्यास Max Loss चा)",
+                            min_value=1, max_value=100, value=30, step=5, key="sb_sl_pct",
+                        )
+                    with ecol_target:
+                        target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
+                    exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
+
+                    if st.button("✅ PAPER Trade Execute करा", type="primary"):
+                        strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
+                        if strategy_result["is_credit_strategy"]:
+                            trade_result, trade_status = open_multi_leg_trade(
+                                token_input, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
+                                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                                sl_pct_of_credit=sl_pct, source="strategy_builder",
+                            )
+                        else:
+                            trade_result, trade_status = open_multi_leg_trade(
+                                token_input, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
+                                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                                sl_pct_of_credit=None, source="strategy_builder",
+                            )
+                        st.success(f"PAPER Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
         except Exception as e:
             st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 

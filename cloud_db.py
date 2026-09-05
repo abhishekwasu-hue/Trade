@@ -97,6 +97,38 @@ CREATE TABLE IF NOT EXISTS strike_oi_history (
 );
 """
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — गेल्या ५+ वर्षांचा (प्रत्यक्षात संपूर्ण उपलब्ध इतिहास,
+# 2015 पासून) NIFTY 1-मिनिट OHLC डेटा, रोज आपोआप अद्ययावत होणारा — जेणेकरून Backtest/Demand-Supply/
+# S-R गणना प्रत्येक वेळी थेट Upstox वरून (मर्यादित lookback सह) डेटा न मागवता, इथूनच वाचू शकतील.
+CREATE_NIFTY_1MIN_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS nifty_1min_ohlc (
+    timestamp TIMESTAMP PRIMARY KEY,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    volume BIGINT DEFAULT 0
+);
+"""
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा प्रत्येक शोधलेला
+# सिग्नल (trade झाला किंवा न झाला तरीही) — Dashboard वर संपूर्ण intraday Signal Log दाखवण्यासाठी.
+CREATE_SIGNAL_LOG_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS signal_log (
+    id SERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    signal_time TIMESTAMP NOT NULL,
+    level_type TEXT NOT NULL,
+    level_price REAL NOT NULL,
+    hit_type TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    ltp_at_signal REAL,
+    trade_status TEXT,
+    reason TEXT
+);
+"""
+
 
 def get_supabase_url():
     """पर्यावरण चल आधी तपासणे, नंतर config फाईल — दोन्हीपैकी काहीच नसेल तर None."""
@@ -150,7 +182,8 @@ def get_connection_with_error():
 
 
 def init_cloud_table():
-    """oi_diff_snapshots, upstox_tokens, market_zones आणि strike_oi_history tables (नसतील तर) तयार करणे."""
+    """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc आणि
+    signal_log tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
         return False
@@ -160,8 +193,133 @@ def init_cloud_table():
             cur.execute(CREATE_TOKEN_TABLE_SQL)
             cur.execute(CREATE_ZONES_TABLE_SQL)
             cur.execute(CREATE_STRIKE_OI_TABLE_SQL)
+            cur.execute(CREATE_NIFTY_1MIN_TABLE_SQL)
+            cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def save_signal_log(entry):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा प्रत्येक शोधलेला
+    सिग्नल साठवणे (trade झाला किंवा न झाला तरीही) — Dashboard वरच्या संपूर्ण Signal Log साठी.
+    entry: {"symbol":.., "trade_date":.., "signal_time":.., "level_type":.., "level_price":..,
+            "hit_type":.., "direction":.., "ltp_at_signal":.., "trade_status":.., "reason":..}
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO signal_log (symbol, trade_date, signal_time, level_type, level_price,
+                                            hit_type, direction, ltp_at_signal, trade_status, reason)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (entry["symbol"], entry["trade_date"], entry["signal_time"], entry["level_type"],
+                 entry["level_price"], entry["hit_type"], entry["direction"], entry.get("ltp_at_signal"),
+                 entry.get("trade_status"), entry.get("reason")),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_signal_log(symbol, trade_date):
+    """त्या दिवसाचा संपूर्ण Signal Log वाचणे (अलीकडचा वेळ सर्वात वर)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT signal_time, level_type, level_price, hit_type, direction, ltp_at_signal,
+                          trade_status, reason
+                   FROM signal_log WHERE symbol=%s AND trade_date=%s ORDER BY signal_time DESC""",
+                (symbol, trade_date),
+            )
+            rows = cur.fetchall()
+            cols = ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]
+            return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def save_nifty_1min_batch(rows):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — मोठ्या प्रमाणात (लाखो) 1-मिनिट candles efficiently
+    साठवण्यासाठी — psycopg2.extras.execute_values() वापरून एकाच वेळी batch-insert (एक-एक row करत
+    नाही, जे ८,५०,०००+ रांगांसाठी अत्यंत संथ ठरलं असतं). ON CONFLICT DO NOTHING -- आधीच असलेल्या
+    timestamps पुन्हा दिले तरी सुरक्षितपणे वगळले जातात (idempotent -- पुन्हा चालवलं तरी डुप्लिकेट नाही).
+    rows: [{"timestamp":.., "open":.., "high":.., "low":.., "close":.., "volume":..}, ...]
+    """
+    if not rows:
+        return True
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        import psycopg2.extras
+        with conn.cursor() as cur:
+            values = [(r["timestamp"], r["open"], r["high"], r["low"], r["close"], r.get("volume", 0)) for r in rows]
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO nifty_1min_ohlc (timestamp, open, high, low, close, volume) VALUES %s "
+                "ON CONFLICT (timestamp) DO NOTHING",
+                values,
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_nifty_1min_range(from_date=None, to_date=None):
+    """साठवलेला NIFTY 1-मिनिट डेटा, ऐच्छिक तारीख-रेंज फिल्टरसह वाचणे (established load_nifty_1min()
+    च्याच interface शी जुळणारं — columns: timestamp, open, high, low, close, volume)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            query = "SELECT timestamp, open, high, low, close, volume FROM nifty_1min_ohlc WHERE 1=1"
+            params = []
+            if from_date is not None:
+                query += " AND timestamp >= %s"
+                params.append(from_date)
+            if to_date is not None:
+                query += " AND timestamp <= %s"
+                params.append(to_date)
+            query += " ORDER BY timestamp ASC"
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def get_nifty_1min_latest_timestamp():
+    """साठवलेल्या डेटातली सर्वात अलीकडची timestamp (gap-fill/daily-update स्क्रिप्टसाठी -- कुठून पुढे भरायचं ते ठरवण्यासाठी)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(timestamp) FROM nifty_1min_ohlc")
+            result = cur.fetchone()
+            return result[0] if result else None
+    except Exception:
+        return None
     finally:
         conn.close()
 

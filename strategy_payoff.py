@@ -89,6 +89,38 @@ def build_ready_made_strategy(strategy_name, atm_strike, hedge_width=100):
     return [{"direction": d, "option_type": ot, "strike": float(s), "lots": 1} for d, ot, s in templates[strategy_name]]
 
 
+def build_strategy_result_from_legs(legs, payoff_curve):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधून थेट execution साठी, legs
+    (direction/option_type/strike/premium/lots/lot_size/instrument_key) पासून established
+    open_multi_leg_trade() ला अपेक्षित strategy_result dict तयार करणे. max_loss/max_profit
+    payoff-curve वरूनच (प्रति-lot, lot_size ने भागून) काढले जातात — कारण Strategy Builder मध्ये
+    कुठलेही ठराविक (Credit Spread सारखे) सूत्र लागू होत नाही, संपूर्ण, अचूक payoff-गणनाच वापरायला हवी.
+    """
+    lot_size = legs[0]["lot_size"]
+    net_credit_per_lot = sum(
+        (leg["premium"] if leg["direction"] == "SELL" else -leg["premium"]) * leg["lots"]
+        for leg in legs
+    )
+    max_profit_total, max_loss_total = max(payoff_curve), min(payoff_curve)
+    max_profit_per_lot = max_profit_total / lot_size
+    # 🎓 established convention (select_credit_spread_fixed_strikes()) मध्ये max_loss नेहमी **धन**
+    # (नुकसानाची रक्कम) असतो, payoff-curve चं raw किमान मूल्य (जे ऋण असतं) नाही — trading_engine.py चं
+    # sl_pnl_level = -(max_loss * sl_pct/100) हे सूत्र धन max_loss गृहीत धरतं. इथे abs() ने दुरुस्त.
+    max_loss_per_lot = abs(max_loss_total) / lot_size
+
+    result_legs = [
+        {"role": f"LEG{i + 1}_{leg['direction']}_{leg['option_type']}", "strike": leg["strike"],
+         "instrument_key": leg["instrument_key"], "transaction_type": leg["direction"]}
+        for i, leg in enumerate(legs)
+    ]
+    return {
+        "legs": result_legs, "net_credit": net_credit_per_lot,
+        "max_profit": max_profit_per_lot, "max_loss": max_loss_per_lot,
+        "strategy_type": "CUSTOM_MULTI_LEG", "is_credit_strategy": net_credit_per_lot > 0,
+    }
+
+
 READY_MADE_CATEGORIES = {
     "Bullish": ["Buy Call", "Sell Put", "Bull Call Spread", "Bull Put Spread"],
     "Bearish": ["Buy Put", "Sell Call", "Bear Put Spread", "Bear Call Spread"],

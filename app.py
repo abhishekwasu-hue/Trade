@@ -131,7 +131,7 @@ if auto_refresh:
     else:
         st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
     from config import get_ist_now
-    st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर ५ मिनिटांनी आपोआप)")
+    st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर १ मिनिटाने आपोआप)")
 
 if context_ok:
     import page_dashboard
