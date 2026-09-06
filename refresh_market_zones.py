@@ -13,32 +13,30 @@ import sys
 
 import cloud_db
 from market_zones import compute_all_zones
-from real_nifty_data import resample_ohlc
 from signals import resample_to_1h
 from upstox_api import fetch_candles
 
 
 def refresh_symbol(access_token, symbol, lookback_days=365):
-    """एका symbol साठी संपूर्ण विश्लेषण करून Supabase मध्ये साठवणे."""
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — NIFTY साठी आता established, रोज-अद्ययावत होणारा
-    # nifty_1min_ohlc (Supabase) वापरतो — प्रत्येक वेळी थेट Upstox कडून (मर्यादित lookback सह) डेटा
-    # मागवून calculations अस्थिर होऊ नयेत म्हणून. इतर symbols (BANKNIFTY/SENSEX) साठी अजूनही established
-    # थेट Upstox-fetch मार्गच (त्यांच्यासाठी अजून 1-मिनिट Supabase इतिहास साठवलेला नाही).
-    if symbol == "NIFTY":
-        df_1min = cloud_db.get_nifty_1min_range()
-        if df_1min is None or df_1min.empty:
-            return False, f"{symbol}: Supabase मध्ये 1-मिनिट डेटा नाही -- आधी migrate_nifty_1min_to_supabase.py चालवा."
-        df_1h = resample_ohlc(df_1min, 60)
-        df_15m = resample_ohlc(df_1min, 15)
-    else:
-        # 🎓 वापरकर्त्याने प्रत्यक्ष Dashboard वर दाखवलेला खरा bug — इथे आधी थेट
-        # fetch_candles(interval="1hour", ...) कॉल केलं जायचं, पण established fetch_candles() मध्ये
-        # "1hour" हा allowed_intervals यादीतच नाही — त्यामुळे तो शांतपणे "30minute" कडे fallback व्हायचा,
-        # आणि resample न होताच "1H zones" प्रत्यक्षात 30-मिनिटांच्या candles वरूनच मोजले जायचे. आता
-        # established fetch_timeframe_df()/resample_to_1h() च्याच पॅटर्नने, स्पष्टपणे 30मिनिट->1H resample.
-        df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=lookback_days)
-        df_1h = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
-        df_15m = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=lookback_days)
+    """
+    एका symbol साठी संपूर्ण विश्लेषण करून Supabase मध्ये साठवणे.
+
+    🎓 वापरकर्त्याने प्रत्यक्ष Dashboard वर दाखवलेला खरा शोध — अधिकृत Upstox दस्तऐवजीकरणानुसार
+    ("1minute: last 1 month candles till endDate"), Upstox कडून 1-मिनिट डेटा कधीच एका रोलिंग
+    १-महिन्यापेक्षा जास्त मागे जाऊच शकत नाही — म्हणजे established parquet (2015-2024-03-27) आणि
+    established रोजचा नवीन डेटा यांच्यामधला संपूर्ण ऐतिहासिक गॅप (2024-03-27 ते ~१ महिन्यापूर्वी)
+    कधीच पूर्णपणे भरता येणार नाही. यामुळे NIFTY साठी established nifty_1min_ohlc (Supabase) वरून
+    Market Zones काढल्यास ते जुन्याच (2024-03-27 पूर्वीच्या) किमतींवर आधारित राहायचे, सद्य किमतीशी
+    (established उदा. NIFTY 23897) पूर्णपणे विसंगत.
+
+    दुरुस्ती — Market Zones साठी (established backtest/1-मिनिट रणनींतींसाठी nifty_1min_ohlc कायम
+    असला तरी) आता सर्व symbols (established NIFTY सकट) established इतर symbols (BANKNIFTY/SENSEX)
+    सारखाच, थेट Upstox 30-मिनिट (established १ वर्षाचा lookback, resample करून 1H) मार्ग वापरतो —
+    established जेणेकरून zones सद्य किमतीशी सुसंगत, अद्ययावत राहतील.
+    """
+    df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=lookback_days)
+    df_1h = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
+    df_15m = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=lookback_days)
 
     if df_1h is None or df_1h.empty:
         return False, f"{symbol}: 1H डेटा मिळाला नाही"
