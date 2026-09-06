@@ -119,6 +119,7 @@ components.html(
 
 
 # डॅशबोर्ड लोड होण्यापूर्वी Supabase मधून लेटेस्ट टोकन थेट st.session_state मध्ये सेट करा
+# Supabase मधून आपोआप टोकन फेच करून थेट सेट करणे
 try:
     import os
     import supabase
@@ -134,8 +135,7 @@ try:
 except Exception:
     pass
 
-from shared_context import setup_shared_context
-context_ok = setup_shared_context()
+
 
 # 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
 # काम करण्यासाठी), आणि "शेवटचं कधी रिफ्रेश झालं" हे साईडबारमध्ये दिसतं — जेणेकरून प्रत्यक्ष काम
