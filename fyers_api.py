@@ -84,9 +84,18 @@ def transform_fyers_option_chain(fyers_options_chain, underlying_price=None):
     🎓 established Fyers च्या FLAT list स्वरूपाला, established आपल्या अंतर्गत raw_chain (Upstox-सारखं
     nested, प्रति-strike एक dict) स्वरूपात रूपांतरित करणे -- जेणेकरून established
     select_credit_spread_fixed_strikes() सारखी functions कुठलाही बदल न करता वापरता येतील.
+
+    🎓 वापरकर्त्याने प्रत्यक्ष, खऱ्या Fyers account सह पडताळून सापडवलेला खरा तपशील -- established
+    optionsChain च्या पहिल्याच entry मध्ये strike_price=-1, option_type="" असा underlying-index
+    चा summary-row असतो (त्याचाच ltp = सद्य underlying_price) -- हा row strikes-यादीत मोजायचा नाही,
+    फक्त त्यातूनच underlying_price आपोआप काढायचा (वेगळा parameter दिलेला नसेल तर).
     """
     strikes = {}
     for entry in fyers_options_chain:
+        if entry.get("option_type") not in ("CE", "PE"):
+            if underlying_price is None:
+                underlying_price = entry.get("ltp")
+            continue
         strike = entry["strike_price"]
         if strike not in strikes:
             strikes[strike] = {"strike_price": strike, "underlying_spot_price": underlying_price,
@@ -100,14 +109,21 @@ def transform_fyers_option_chain(fyers_options_chain, underlying_price=None):
             strikes[strike]["call_options"] = leg_data
         else:
             strikes[strike]["put_options"] = leg_data
+    # 🎓 underlying_price नंतर कळला असेल (established summary-row नंतरच आढळला असेल), तर established
+    # सर्व आधीच तयार झालेल्या strikes मध्येही तोच भरून, सुसंगतता राखणे.
+    for strike_data in strikes.values():
+        if strike_data["underlying_spot_price"] is None:
+            strike_data["underlying_spot_price"] = underlying_price
     return [strikes[k] for k in sorted(strikes.keys())]
 
 
 def fetch_fyers_option_chain(access_token, symbol):
-    """established Fyers Option Chain API -- established raw_chain स्वरूपात रूपांतरित करून परत करणे."""
+    """established Fyers Option Chain API -- established raw_chain स्वरूपात रूपांतरित करून परत करणे.
+    🎓 वापरकर्त्याने प्रत्यक्ष, खऱ्या Fyers account सह पडताळून सापडवलेला खरा bug -- हा endpoint
+    established DATA_URL वर आहे (established BASE_URL/api/v3 वर नाही, जो 404 देत होता)."""
     try:
         res = requests.get(
-            f"{BASE_URL}/options-chain-v3",
+            f"{DATA_URL}/options-chain-v3",
             headers=_headers(access_token),
             params={"symbol": symbol, "strikecount": 20},
             timeout=8,
