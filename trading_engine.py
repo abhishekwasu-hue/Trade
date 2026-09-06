@@ -74,12 +74,15 @@ def normalize_legs(strategy_result):
          "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL"},
     ]
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL"):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
     source — हा trade नेमका कुठून आला (उदा. 'DASHBOARD', 'credit_spread_auto_trader', 'oi_signal_auto_trader',
-    'oi_greeks_vix_strategy') — Positions page वर स्पष्टपणे दाखवण्यासाठी (वापरकर्त्याशी चर्चा करून जोडलेलं)."""
+    'oi_greeks_vix_strategy') — Positions page वर स्पष्टपणे दाखवण्यासाठी (वापरकर्त्याशी चर्चा करून जोडलेलं).
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — adapter (established
+    BrokerAdapter इन्स्टन्स) दिला असेल तर established त्याच broker/account द्वारे ऑर्डर जाते (access_token
+    फक्त trade_id/स्टोरेज साठी वापरला जातो); न दिल्यास established, जुनं (थेट Upstox) वर्तन तसंच राहतं."""
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 
@@ -92,7 +95,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         }
         for leg in legs
     ]
-    status_code, resp = execute_order_leg_set(access_token, orders, trading_mode)
+    status_code, resp = (adapter.execute_order_leg_set(orders, trading_mode) if adapter is not None
+                          else execute_order_leg_set(access_token, orders, trading_mode))
     if status_code != 200 or resp.get("status") != "success":
         return False, resp
 
@@ -117,8 +121,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
            (trade_id, trade_date, symbol, strategy, short_strike, long_strike, short_instrument, long_instrument,
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
-            legs_json, strikes_summary, mode, trading_style, source)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            legs_json, strikes_summary, mode, trading_style, source, account_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -127,6 +131,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
+            adapter.get_account_id() if adapter is not None else None,
         ),
     )
     inserted = cur.rowcount > 0
@@ -328,8 +333,11 @@ def track_manual_trade(symbol, legs, lots, lot_size, entry_ltps, trading_mode, t
     return True, trade_id, None
 
 
-def close_trade_manually(access_token, trade_id, symbol, product_type):
-    """दिलेला specific trade_id मॅन्युअली बंद करणे (Positions tab मधील 'Close' बटणासाठी) — मोड (PAPER/LIVE) DB मधूनच वाचली जाते."""
+def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reason="MANUAL_CLOSE"):
+    """दिलेला specific trade_id बंद करणे — मोड (PAPER/LIVE) DB मधूनच वाचली जाते.
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — exit_reason आता parameter (डीफॉल्ट established
+    'MANUAL_CLOSE', backward-compatible) — नवीन established trade_monitor.py यालाच पुनर्वापर करून
+    'SL_HIT'/'TARGET_HIT' कारणांसह स्वयंचलितपणे बंद करू शकतं."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -373,8 +381,8 @@ def close_trade_manually(access_token, trade_id, symbol, product_type):
         order_ids = resp.get("data", {}).get("order_ids", [])
         log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE")
         cur.execute(
-            "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='MANUAL_CLOSE', realized_pnl=? WHERE trade_id=?",
-            (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), round(current_pnl, 2), trade_id),
+            "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=? WHERE trade_id=?",
+            (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
         )
         conn.commit()
         conn.close()
@@ -382,3 +390,35 @@ def close_trade_manually(access_token, trade_id, symbol, product_type):
 
     conn.close()
     return False, f"बंद करताना त्रुटी: {resp}"
+
+
+def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
+                                   target_pct_of_max_profit, product_type, trading_mode="PAPER",
+                                   trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT"):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
+    established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
+    सर्व strategies, सर्व accounts वर एकसारख्या (replicated) चालवणे -- प्रत्येक account साठी established
+    lot_multiplier नुसार वेगळे lots, पण established एकच strategy_result (एकाच broker-type गृहीत धरून,
+    established, आत्ता फक्त Upstox सक्रिय असल्याने सुरक्षित).
+
+    रिटर्न: (results, factory_errors) -- results: [{"account_id":.., "ok":.., "result":..}, ...],
+    factory_errors: कुठला account (token/broker-type समस्येमुळे) पूर्णपणे वगळला गेला त्याची यादी.
+    """
+    import broker_factory
+    adapters, factory_errors = broker_factory.get_all_active_adapters()
+    if not adapters:
+        return [], factory_errors
+
+    results = []
+    for adapter, lot_multiplier in adapters:
+        effective_lots = max(1, round(base_lots * lot_multiplier))
+        ok, result = open_multi_leg_trade(
+            access_token=adapter.access_token, symbol=symbol, strategy_result=strategy_result,
+            lots=effective_lots, lot_size=lot_size, sl_pct_of_max_loss=sl_pct_of_max_loss,
+            target_pct_of_max_profit=target_pct_of_max_profit, product_type=product_type,
+            trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
+            source=source, adapter=adapter,
+        )
+        results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
+    return results, factory_errors

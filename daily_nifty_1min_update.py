@@ -61,8 +61,13 @@ def update_nifty_1min(access_token):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--token", required=True, help="Upstox Access Token")
+    parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     args = parser.parse_args()
 
-    ok, message = update_nifty_1min(args.token)
+    token = cloud_db.get_effective_upstox_token(args.token)
+    if not token:
+        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+        exit(1)
+
+    ok, message = update_nifty_1min(token)
     print(("✅ " if ok else "❌ ") + message)

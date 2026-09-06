@@ -112,12 +112,30 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
             cloud_db.save_signal_log(log_entry)
             continue
 
-        trade_result, trade_status = open_multi_leg_trade(
-            access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
-            sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_max_profit,
-            product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-            sl_pct_of_credit=sl_pct_of_credit, source="dynamic_sr_instant",
-        )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — established
+        # broker_accounts (Supabase) मध्ये किमान एक account नोंदवलेला असेल, तर established
+        # execute_trade_on_all_accounts() (सर्व सक्रिय accounts वर replicated) वापरणे; अजून
+        # कुठलाही account नोंदवलेला नसेल (established, आत्ताची स्थिती), तर established, जुना
+        # (single --token, backward-compatible) मार्गच कायम.
+        accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
+        if accounts_df is not None and not accounts_df.empty:
+            from trading_engine import execute_trade_on_all_accounts
+            results, factory_errors = execute_trade_on_all_accounts(
+                symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_max_profit,
+                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                sl_pct_of_credit=sl_pct_of_credit, source="dynamic_sr_instant",
+            )
+            trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+            if factory_errors:
+                trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+        else:
+            trade_result, trade_status = open_multi_leg_trade(
+                access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_max_profit,
+                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                sl_pct_of_credit=sl_pct_of_credit, source="dynamic_sr_instant",
+            )
         log_entry["trade_status"] = trade_status
         cloud_db.save_signal_log(log_entry)
 

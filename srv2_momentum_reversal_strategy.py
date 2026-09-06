@@ -131,12 +131,30 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65):
             net_credit_total = strategy_result["net_credit"] * lot_size
             sl_pct = compute_sl_pct_from_absolute(SL_RUPEES, net_credit_total)
 
-            trade_result, trade_status = open_multi_leg_trade(
-                access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-                sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
-            )
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — established
+            # broker_accounts (Supabase) मध्ये किमान एक account नोंदवलेला असेल, तर established
+            # execute_trade_on_all_accounts() (सर्व सक्रिय accounts वर replicated) वापरणे; अजून
+            # कुठलाही account नोंदवलेला नसेल (established, आत्ताची स्थिती), तर established, जुना
+            # (single --token, backward-compatible) मार्गच कायम.
+            accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
+            if accounts_df is not None and not accounts_df.empty:
+                from trading_engine import execute_trade_on_all_accounts
+                results, factory_errors = execute_trade_on_all_accounts(
+                    symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                    product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                    sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
+                )
+                trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+                if factory_errors:
+                    trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+            else:
+                trade_result, trade_status = open_multi_leg_trade(
+                    access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                    product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                    sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
+                )
 
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
 

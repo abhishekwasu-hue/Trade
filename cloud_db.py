@@ -61,8 +61,10 @@ CREATE_TOKEN_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS upstox_tokens (
     id SERIAL PRIMARY KEY,
     access_token TEXT NOT NULL,
+    account_id TEXT,
     received_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE upstox_tokens ADD COLUMN IF NOT EXISTS account_id TEXT;
 """
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — S/R, Order Block, Demand/Supply Zone, Unfilled Gap
@@ -140,6 +142,19 @@ CREATE TABLE IF NOT EXISTS srv2_strategy_state (
 );
 """
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — कुठले accounts
+# (कुठल्या broker वर) established रणनींतींनी वापरायचे, याची नोंदणी.
+CREATE_BROKER_ACCOUNTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS broker_accounts (
+    account_id TEXT PRIMARY KEY,
+    broker_type TEXT NOT NULL,
+    nickname TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    lot_multiplier REAL DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+"""
+
 
 def get_supabase_url():
     """पर्यावरण चल आधी तपासणे, नंतर config फाईल — दोन्हीपैकी काहीच नसेल तर None."""
@@ -194,7 +209,7 @@ def get_connection_with_error():
 
 def init_cloud_table():
     """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc,
-    signal_log आणि srv2_strategy_state tables (नसतील तर) तयार करणे."""
+    signal_log, srv2_strategy_state आणि broker_accounts tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
         return False
@@ -207,8 +222,87 @@ def init_cloud_table():
             cur.execute(CREATE_NIFTY_1MIN_TABLE_SQL)
             cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
             cur.execute(CREATE_SRV2_STATE_TABLE_SQL)
+            cur.execute(CREATE_BROKER_ACCOUNTS_TABLE_SQL)
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def add_broker_account(account_id, broker_type, nickname=None, lot_multiplier=1.0):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" रणनीतीसाठी नवीन account
+    नोंदवणे. account_id (nickname, unique) आधीच असेल तर अद्ययावत (upsert) होतो.
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO broker_accounts (account_id, broker_type, nickname, lot_multiplier)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (account_id) DO UPDATE SET
+                       broker_type = EXCLUDED.broker_type, nickname = EXCLUDED.nickname,
+                       lot_multiplier = EXCLUDED.lot_multiplier""",
+                (account_id, broker_type, nickname, lot_multiplier),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_all_broker_accounts(active_only=True):
+    """established, नोंदवलेले सर्व accounts वाचणे (established रणनींतींनी loop करून प्रत्येकावर trade घेण्यासाठी)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            query = "SELECT account_id, broker_type, nickname, is_active, lot_multiplier FROM broker_accounts"
+            if active_only:
+                query += " WHERE is_active = TRUE"
+            query += " ORDER BY account_id"
+            cur.execute(query)
+            rows = cur.fetchall()
+            return pd.DataFrame(rows, columns=["account_id", "broker_type", "nickname", "is_active", "lot_multiplier"])
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def set_broker_account_active(account_id, is_active):
+    """established account सक्रिय/निष्क्रिय करणे (Dashboard वरच्या toggle साठी)."""
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE broker_accounts SET is_active=%s WHERE account_id=%s", (is_active, account_id))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def delete_broker_account(account_id):
+    """established account पूर्णपणे काढून टाकणे."""
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM broker_accounts WHERE account_id=%s", (account_id,))
+        conn.commit()
+        return True
+    except Exception:
+        return False
     finally:
         conn.close()
 
@@ -489,18 +583,21 @@ def get_market_zones(symbol, status=None):
         conn.close()
 
 
-def save_upstox_token(access_token):
+def save_upstox_token(access_token, account_id=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — नवीन Upstox token (webhook कडून मिळालेला)
     Supabase मध्ये साठवणे. जुने token (इतिहास ठेवण्यासाठी) राहतात, फक्त नवीन ओळ (row) जोडली जाते —
     वाचताना नेहमी सर्वात नवीनच (get_latest_upstox_token) वापरला जातो.
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — account_id दिला
+    (established broker_accounts मधलं nickname) तर तो त्याच account साठी वेगळा साठवला जातो;
+    न दिल्यास established, एकमेव (single) खात्यासाठीचं जुनं वर्तन तसंच (backward-compatible) राहतं.
     """
     conn = get_connection()
     if conn is None:
         return False
     try:
         with conn.cursor() as cur:
-            cur.execute("INSERT INTO upstox_tokens (access_token) VALUES (%s)", (access_token,))
+            cur.execute("INSERT INTO upstox_tokens (access_token, account_id) VALUES (%s, %s)", (access_token, account_id))
         conn.commit()
         return True
     except Exception:
@@ -509,14 +606,24 @@ def save_upstox_token(access_token):
         conn.close()
 
 
-def get_latest_upstox_token():
-    """सर्वात अलीकडे साठवलेला Upstox token परत करणे, किंवा काहीच नसेल/जोडणी अयशस्वी झाली तर None."""
+def get_latest_upstox_token(account_id=None):
+    """सर्वात अलीकडे साठवलेला Upstox token परत करणे, किंवा काहीच नसेल/जोडणी अयशस्वी झाली तर None.
+    🎓 account_id दिला तर फक्त त्याच account चा token; न दिल्यास established, जुना (account_id
+    नसलेला/single-account) token वाचला जातो — backward-compatible."""
     conn = get_connection()
     if conn is None:
         return None
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT access_token FROM upstox_tokens ORDER BY received_at DESC LIMIT 1")
+            if account_id is not None:
+                cur.execute(
+                    "SELECT access_token FROM upstox_tokens WHERE account_id=%s ORDER BY received_at DESC LIMIT 1",
+                    (account_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT access_token FROM upstox_tokens WHERE account_id IS NULL ORDER BY received_at DESC LIMIT 1"
+                )
             row = cur.fetchone()
             return row[0] if row else None
     except Exception:
@@ -525,16 +632,17 @@ def get_latest_upstox_token():
         conn.close()
 
 
-def get_effective_upstox_token(cli_token):
+def get_effective_upstox_token(cli_token, account_id=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Upstox Token Webhook (VPS वर, एका
     मोबाईल-टॅपवर रोज नवीन token) पूर्ण automation साठी वापरण्यायोग्य करणे. established --token
     (GitHub Secret) दिलेला असेल तर तोच वापरणे (backward-compatible, जुनी पद्धत अजूनही चालते) —
     नाहीतर established get_latest_upstox_token() (Supabase, Webhook ने साठवलेला) आपोआप वापरणे.
+    account_id दिला तर established multi-account token वाचला जातो (backward-compatible, डीफॉल्ट None).
     """
     if cli_token:
         return cli_token
-    return get_latest_upstox_token()
+    return get_latest_upstox_token(account_id)
 
 
 def save_oi_snapshot_cloud(symbol, trade_date, snapshot_time, total_call_oi, total_put_oi,

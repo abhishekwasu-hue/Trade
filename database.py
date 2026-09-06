@@ -79,7 +79,10 @@ def init_sqlite_db():
     # आधीपासून अस्तित्वात असलेल्या DB फाईलवरही सुरक्षितपणे चालण्यासाठी ALTER TABLE + try/except वापरले आहे.
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रत्येक trade कुठून आला (कोणत्या script/interface
     # मधून) हे ओळखण्यासाठी 'source' column — Positions page वर स्पष्टपणे दाखवण्यासाठी.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT"]:
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — प्रत्येक trade
+    # कुठल्या account चा आहे हे साठवण्यासाठी 'account_id' column, established Trade Monitor ला
+    # योग्य adapter निवडून तोच trade बंद करता यावा म्हणून आवश्यक.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:

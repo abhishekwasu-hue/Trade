@@ -61,6 +61,9 @@ if __name__ == "__main__":
     parser.add_argument("--save-to-supabase", action="store_true",
                          help="मिळालेला token established Supabase (upstox_tokens table) मध्ये थेट साठवणे -- "
                               "जेणेकरून GitHub Actions आणि VPS वरचे cron jobs दोन्ही आपोआप वापरतील (established get_effective_upstox_token())")
+    parser.add_argument("--account-id", default=None,
+                         help="🎓 'Multi-Broker Multi-Account' -- established broker_accounts मधलं nickname दिलं, तर हा token "
+                              "फक्त त्याच account साठी साठवला जातो (established, single-account वापरासाठी न दिला तरी चालतं)")
     args = parser.parse_args()
 
     login_url = build_login_url(args.client_id, args.redirect_uri)
@@ -75,9 +78,10 @@ if __name__ == "__main__":
     elif args.save_to_supabase:
         import cloud_db
         cloud_db.init_cloud_table()
-        saved = cloud_db.save_upstox_token(access_token)
+        saved = cloud_db.save_upstox_token(access_token, account_id=args.account_id)
+        account_label = f"account '{args.account_id}'" if args.account_id else "established, एकमेव (single) खातं"
         if saved:
-            print(f"\n✅ नवीन token established Supabase मध्ये साठवला — GitHub Actions आणि VPS दोन्ही आपोआप वापरतील (कुठलाही मॅन्युअल बदल लागणार नाही).")
+            print(f"\n✅ नवीन token established Supabase मध्ये ({account_label}) साठवला — GitHub Actions आणि VPS दोन्ही आपोआप वापरतील (कुठलाही मॅन्युअल बदल लागणार नाही).")
         else:
             print(f"\n⚠️ token मिळाला, पण Supabase मध्ये साठवता आला नाही (SUPABASE_DB_URL तपासा). token: {access_token}")
     else:
