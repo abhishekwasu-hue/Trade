@@ -17,9 +17,11 @@ def get_broker_adapter(account_id, broker_type):
     established account_id/broker_type वरून, योग्य token मिळवून, संबंधित BrokerAdapter इन्स्टन्स
     तयार करणे. यशस्वी झाल्यास (adapter, None), अयशस्वी झाल्यास (None, error_message).
 
-    🎓 प्रामाणिक, महत्त्वाची स्थिती -- established FyersBrokerAdapter code-स्तरावर तयार असला तरी,
-    त्याच्या Option-Symbol निर्मितीची (विशेषतः NIFTY इंडेक्स-options साठी नेमकं नामकरण) पडताळणी अजून
-    प्रत्यक्ष Fyers account सह झालेली नाही -- म्हणून इथे जाणीवपूर्वक सक्रिय केलेला नाही.
+    🎓 वापरकर्त्याने प्रत्यक्ष, खऱ्या Fyers account सह LTP + Option Chain (४१ strikes, बरोबर
+    स्वरूपात) पडताळल्यानंतर सक्रिय केलेलं. ⚠️ प्रामाणिक टीप — फक्त data-fetch (LTP/Option Chain)
+    पडताळलेलं आहे, established प्रत्यक्ष order-placement (LIVE mode) अजून पडताळलेलं नाही — established
+    सर्व रणनींती डीफॉल्टने PAPER mode वापरतात (established, फक्त LTP वरूनच सिम्युलेटेड fill, खरा
+    order-placement API कॉल करत नाही), त्यामुळे established PAPER साठी हे सुरक्षित आहे.
     """
     if broker_type == "upstox":
         token = cloud_db.get_effective_upstox_token(None, account_id=account_id)
@@ -28,7 +30,10 @@ def get_broker_adapter(account_id, broker_type):
         return UpstoxBrokerAdapter(access_token=token, account_id=account_id), None
 
     if broker_type == "fyers":
-        return None, f"{account_id}: Fyers integration अजून पूर्ण झालेला नाही (Option-Symbol पडताळणी बाकी आहे)."
+        token = cloud_db.get_effective_upstox_token(None, account_id=account_id)
+        if not token:
+            return None, f"{account_id}: Fyers token उपलब्ध नाही (Supabase मध्ये साठवलेला नाही)."
+        return FyersBrokerAdapter(access_token=token, account_id=account_id), None
 
     return None, f"{account_id}: अज्ञात broker_type '{broker_type}'."
 
