@@ -10,8 +10,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import supabase
-from dotenv import load_dotenv
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -117,25 +115,9 @@ components.html(
     height=70,
 )
 
+from shared_context import setup_shared_context
 
-# डॅशबोर्ड लोड होण्यापूर्वी Supabase मधून लेटेस्ट टोकन थेट st.session_state मध्ये सेट करा
-# Supabase मधून आपोआप टोकन फेच करून थेट सेट करणे
-try:
-    import os
-    import supabase
-    from dotenv import load_dotenv
-    load_dotenv()
-    url = os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
-    if url and key:
-        db = supabase.create_client(url, key)
-        res = db.table('upstox_tokens').select('access_token').order('created_at', desc=True).limit(1).execute()
-        if res.data and len(res.data) > 0:
-            st.session_state["token_input"] = res.data[0]['access_token']
-except Exception:
-    pass
-
-
+context_ok = setup_shared_context()
 
 # 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
 # काम करण्यासाठी), आणि "शेवटचं कधी रिफ्रेश झालं" हे साईडबारमध्ये दिसतं — जेणेकरून प्रत्यक्ष काम
@@ -151,7 +133,7 @@ if auto_refresh:
     from config import get_ist_now
     st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर १ मिनिटाने आपोआप)")
 
-#if context_ok:
+if context_ok:
     import page_dashboard
     import page_positions
     import page_orders
@@ -165,3 +147,10 @@ if auto_refresh:
     ]
     pg = st.navigation(pages)
     pg.run()
+else:
+    token_input = st.session_state.get("token_input", "")
+    status_msg = st.session_state.get("status_msg")
+    if not token_input.strip():
+        st.info("⬅️ सुरू करण्यासाठी साईडबारमध्ये तुमचा Upstox Access Token टाका.")
+    else:
+        st.error(f"❌ Upstox API Error: {status_msg}")
