@@ -117,8 +117,24 @@ components.html(
     height=70,
 )
 
-from shared_context import setup_shared_context
 
+# डॅशबोर्ड लोड होण्यापूर्वी Supabase मधून लेटेस्ट टोकन थेट st.session_state मध्ये सेट करा
+try:
+    import os
+    import supabase
+    from dotenv import load_dotenv
+    load_dotenv()
+    url = os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    if url and key:
+        db = supabase.create_client(url, key)
+        res = db.table('upstox_tokens').select('access_token').order('created_at', desc=True).limit(1).execute()
+        if res.data and len(res.data) > 0:
+            st.session_state["token_input"] = res.data[0]['access_token']
+except Exception:
+    pass
+
+from shared_context import setup_shared_context
 context_ok = setup_shared_context()
 
 # 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
