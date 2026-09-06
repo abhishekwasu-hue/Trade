@@ -11,6 +11,8 @@ fyers_api.py
 established authorization पॅटर्न: access_token नेहमी "client_id:access_token" या combined स्वरूपातच
 साठवला/पाठवला जातो (established Fyers चाच अधिकृत नियम — Bearer नाही).
 """
+import hashlib
+
 import pandas as pd
 import requests
 
@@ -19,6 +21,40 @@ DATA_URL = "https://api-t1.fyers.in/data"
 
 # established Fyers resolution-codes (established दस्तऐवजीकरणानुसार)
 INTERVAL_TO_RESOLUTION = {"1minute": "1", "5minute": "5", "15minute": "15", "30minute": "30", "1hour": "60", "day": "D"}
+
+
+def build_app_id_hash(app_id, app_secret):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून, संशोधन केलेल्या माहितीवरून जोडलेलं — established Fyers token-exchange
+    ला आवश्यक appIdHash. established, अत्यंत सामान्य चूक: app_id आणि app_secret मध्ये **कोलन (":")**
+    असायलाच हवा — नसेल तर established, पूर्णपणे वेगळा (चुकीचा) hash तयार होतो, आणि established Fyers
+    "Error -371: Please provide SHA-256 hash of appId and app secret" असा error देतो.
+    """
+    return hashlib.sha256(f"{app_id}:{app_secret}".encode("utf-8")).hexdigest()
+
+
+def exchange_auth_code_for_token(app_id, app_secret, auth_code):
+    """established Fyers OAuth v3 -- established validate-authcode API वापरून, auth_code चं
+    access_token मध्ये रूपांतर. यशस्वी झाल्यास (combined_token, None), अयशस्वी झाल्यास (None, error)."""
+    app_id_hash = build_app_id_hash(app_id, app_secret)
+    try:
+        res = requests.post(
+            f"{BASE_URL}/validate-authcode",
+            headers={"Content-Type": "application/json"},
+            json={"grant_type": "authorization_code", "appIdHash": app_id_hash, "code": auth_code},
+            timeout=10,
+        )
+        if res.status_code != 200:
+            return None, f"HTTP {res.status_code}: {res.text}"
+        data = res.json()
+        access_token = data.get("access_token")
+        if not access_token:
+            return None, f"access_token मिळाला नाही: {data}"
+        # 🎓 established Fyers चा नियम -- Authorization header ला नेहमी "app_id:access_token" हेच
+        # combined स्वरूप लागतं (established Bearer नाही) -- इथेच जोडून, वापरण्यास तयार token देणे.
+        return f"{app_id}:{access_token}", None
+    except Exception as e:
+        return None, str(e)
 
 
 def _headers(access_token):
