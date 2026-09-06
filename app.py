@@ -151,7 +151,7 @@ if auto_refresh:
     from config import get_ist_now
     st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर १ मिनिटाने आपोआप)")
 
-if context_ok:
+#if context_ok:
     import page_dashboard
     import page_positions
     import page_orders
