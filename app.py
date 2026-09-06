@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import supabase
+from dotenv import load_dotenv
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -148,6 +150,24 @@ if context_ok:
     pg = st.navigation(pages)
     pg.run()
 else:
+    # Supabase मधून ऑटोमॅटिक टोकन फेच करणारे लॉजिक
+    if not st.session_state.get("token_input"):
+        try:
+            import os
+            import supabase
+            from dotenv import load_dotenv
+            load_dotenv()
+            url = os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+            key = os.getenv("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+            if url and key:
+                db = supabase.create_client(url, key)
+                res = db.table('upstox_tokens').select('access_token').order('created_at', desc=True).limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    st.session_state["token_input"] = res.data[0]['access_token']
+                    st.rerun()
+        except Exception:
+            pass
+
     token_input = st.session_state.get("token_input", "")
     status_msg = st.session_state.get("status_msg")
     if not token_input.strip():
