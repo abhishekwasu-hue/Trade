@@ -632,6 +632,37 @@ def get_latest_upstox_token(account_id=None):
         conn.close()
 
 
+def get_token_age_hours(account_id=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — रोजचा manual OAuth login (get_upstox_token_manual.py)
+    चुकल्यास सर्व cron jobs शांतपणे token न मिळाल्याने थांबतात, कुणालाच कळत नाही — यासाठी सर्वात
+    अलीकडचा token किती तासांपूर्वी साठवला गेला, ते तपासण्यासाठी (check_token_freshness.py वापरतं).
+    रिटर्न: तासांमधलं वय (float), किंवा token च नसेल/जोडणी अयशस्वी झाली तर None.
+    """
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            if account_id is not None:
+                cur.execute(
+                    "SELECT EXTRACT(EPOCH FROM (NOW() - received_at)) / 3600.0 FROM upstox_tokens "
+                    "WHERE account_id=%s ORDER BY received_at DESC LIMIT 1",
+                    (account_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT EXTRACT(EPOCH FROM (NOW() - received_at)) / 3600.0 FROM upstox_tokens "
+                    "WHERE account_id IS NULL ORDER BY received_at DESC LIMIT 1"
+                )
+            row = cur.fetchone()
+            return float(row[0]) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
 def get_effective_upstox_token(cli_token, account_id=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Upstox Token Webhook (VPS वर, एका

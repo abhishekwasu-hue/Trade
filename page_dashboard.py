@@ -26,17 +26,17 @@ from signals import (
     classify_market_structure, detect_break,
     classify_sideways, detect_pullback_retest,
     rsi_momentum_and_divergence, confirm_5m, supply_demand_zone, check_pattern_rsi_gate,
-    check_price_action_strategy, check_indicator_strategy, find_significant_reversal_candles,
+    find_significant_reversal_candles,
 )
 from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, select_credit_spread_fixed_strikes, compute_position_size
 from oi_analysis import (
-    get_latest_oi_signal, check_oi_diff_entry_gate,
     get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
     fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
 )
 from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
+from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
 
@@ -1066,105 +1066,164 @@ def render():
     with tab3:
         st.subheader(f"🧬 A1 Signal Engine ({trading_style}) — पूर्ण पाईपलाईन")
 
-        pipeline_direction = direction_final if "direction_final" in locals() and direction_final in ("BULLISH", "BEARISH") else None
+        if trading_style == "INTRADAY":
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Phase 2a — Entry Signal Extraction) —
+            # established Direction Engine नंतरचं संपूर्ण Signal Engine pipeline (Market Structure →
+            # Break/Pullback/Retest → RSI → VIX → OI Gate → Sideways → Strategy Selection → Sizing)
+            # आता `entry_engine.evaluate_intraday_signal()` मध्ये (शुद्ध, Streamlit-मुक्त) — dashboard
+            # आणि भविष्यातली standalone entry service (Phase 2b) दोन्ही तेच वापरतील. निकाल तंतोतंत तोच
+            # आहे (फक्त जागा बदलली, गणित एकही ओळीत बदललेलं नाही — मूळ कोडशी ओळ-न-ओळ जुळवून काढलेलं).
+            # established SWING मार्ग अजून इथेच, न-बदललेला (खालच्या else मध्ये) — तो वेगळ्या,
+            # काळजीपूर्वक तपासलेल्या पासमध्ये extract होईल (tab2 च्या OI-snapshot cross-dependency मुळे).
+            intraday_settings = {
+                "trading_style": trading_style,
+                "intraday_strategy_mode": intraday_strategy_mode,
+                "sr_window": sr_window,
+                "rsi_oversold": rsi_oversold,
+                "rsi_overbought": rsi_overbought,
+                "sl_buffer_pct": sl_buffer_pct,
+                "min_rr": min_rr,
+                "retest_tolerance_pct": retest_tolerance_pct,
+                "reversal_lookback": reversal_lookback,
+                "vix_max_threshold": vix_max_threshold,
+                "enable_oi_gate": enable_oi_gate,
+                "sideways_tight_range_pct": sideways_tight_range_pct,
+                "sideways_max_range_pct": sideways_max_range_pct,
+                "hedge_width_points": hedge_width_points,
+                "pop_threshold_pct": pop_threshold_pct,
+                "risk_pct_per_trade": risk_pct_per_trade,
+                "lot_size": lot_size,
+            }
+            sig = evaluate_intraday_signal(
+                token_input, symbol, raw_chain, underlying_price, atm_strike, step, intraday_settings,
+                df_structure_tf=df_structure_tf, df_rsi_tf=df_rsi_tf, df_1h=df_1h, rsi_series=rsi_series,
+            )
+            pipeline_direction = sig["pipeline_direction"]
+            pattern_rsi_ok = sig["pattern_rsi_ok"]
+            pattern_detected = sig["pattern_detected"]
+            pattern_rsi_value = sig["pattern_rsi_value"]
+            intraday_strategy_detail = sig["intraday_strategy_detail"]
+            structure_info = sig["structure_info"]
+            broke, broken_level = sig["broke"], sig["broken_level"]
+            pulled_back, retested = sig["pulled_back"], sig["retested"]
+            confirmed_5m = sig["confirmed_5m"]
+            zone = sig["zone"]
+            sr_levels = sig["sr_levels"]
+            trendline_support = sig["trendline_support"]
+            trendline_resistance = sig["trendline_resistance"]
+            trend_signal = sig["trend_signal"]
+            rsi_check = sig["rsi_check"]
+            india_vix = sig["india_vix"]
+            vix_ok = sig["vix_ok"]
+            oi_signal_latest = sig["oi_signal_latest"]
+            oi_confirmation_ok = sig["oi_confirmation_ok"]
+            oi_gate_note = sig["oi_gate_note"]
+            swing_gate_detail = None
+            all_gates_passed = sig["all_gates_passed"]
+            sideways_info = sig["sideways_info"]
+            strategy_result = sig["strategy_result"]
+            lots, risk_amount = sig["lots"], sig["risk_amount"]
+            available_margin = sig["available_margin"]
+        else:
+            # established SWING मार्ग — जुनाच, न-बदललेला कोड (Phase 2a scope च्या बाहेर).
+            pipeline_direction = direction_final if "direction_final" in locals() and direction_final in ("BULLISH", "BEARISH") else None
 
-        pattern_rsi_ok = True
-        pattern_detected = None
-        pattern_rsi_value = None
-        intraday_strategy_detail = None
+            pattern_rsi_ok = True
+            pattern_detected = None
+            pattern_rsi_value = None
+            intraday_strategy_detail = None
 
-        # Structure टाईमफ्रेम डेटा (आधीच Direction Engine साठी fetch केलेला df_structure_tf पुन्हा वापरणे)
-        structure_info = classify_market_structure(df_structure_tf) if not df_structure_tf.empty else {"structure": "INSUFFICIENT_DATA", "last_swing_high": None, "last_swing_low": None}
+            structure_info = classify_market_structure(df_structure_tf) if not df_structure_tf.empty else {"structure": "INSUFFICIENT_DATA", "last_swing_high": None, "last_swing_low": None}
 
-        broke, broken_level = (False, None)
-        pulled_back, retested = (False, False)
-        confirmed_5m = False
-        zone = None
-        df_confirm_tf = pd.DataFrame()
-        sr_levels = None
-        trendline_support = None
-        trendline_resistance = None
-        trend_signal = {"gate_ok": True, "gate_reason": "पुरेसा डेटा नाही — गेट वगळला", "caution": None}
+            broke, broken_level = (False, None)
+            pulled_back, retested = (False, False)
+            confirmed_5m = False
+            zone = None
+            df_confirm_tf = pd.DataFrame()
+            sr_levels = None
+            trendline_support = None
+            trendline_resistance = None
+            trend_signal = {"gate_ok": True, "gate_reason": "पुरेसा डेटा नाही — गेट वगळला", "caution": None}
 
-        # rsi_check नेहमी काढणे (दिशा NEUTRAL असली तरी) — Sideways Detection ला rsi_check["rsi"] लागतेच;
-        # आधी हे फक्त pipeline_direction असेल तेव्हाच काढले जायचे, त्यामुळे Sideways मार्ग कधीच खरा ठरत नव्हता.
-        rsi_check = rsi_momentum_and_divergence(df_structure_tf, rsi_series, pipeline_direction or "BULLISH")
+            rsi_check = rsi_momentum_and_divergence(df_structure_tf, rsi_series, pipeline_direction or "BULLISH")
 
-        if pipeline_direction and trading_style == "INTRADAY":
-            # नवीन Signal Engine — दोन्ही रणनीतींसाठी एकच संपूर्ण entry-तपासणी (Market Structure/Break/
-            # Pullback/Retest ऐवजी). broke/pulled_back/retested तिन्ही याच एका निकालाशी जोडलेली आहेत,
-            # जेणेकरून खालचं all_gates_passed चं सूत्र बदलावं लागणार नाही.
-            if intraday_strategy_mode == "price_action":
-                entry_ok, intraday_strategy_detail = check_price_action_strategy(
-                    df_structure_tf, pipeline_direction, rsi_series=rsi_series,
-                    sr_window=sr_window, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought,
-                    sl_buffer_pct=sl_buffer_pct, min_rr=min_rr,
-                    retest_tolerance_pct=retest_tolerance_pct, reversal_lookback=reversal_lookback,
-                    df_1h=df_1h,
+            if pipeline_direction:
+                broke, broken_level = detect_break(df_structure_tf, structure_info, pipeline_direction)
+                pulled_back, retested = detect_pullback_retest(df_structure_tf, broken_level, pipeline_direction)
+                zone = supply_demand_zone(structure_info, pipeline_direction)
+                df_confirm_tf = df_rsi_tf if confirm_interval == rsi_interval else fetch_timeframe_df(
+                    token_input, symbol, underlying_price, confirm_interval
                 )
-            else:
-                entry_ok, intraday_strategy_detail = check_indicator_strategy(df_structure_tf, rsi_series, pipeline_direction)
-            broke, pulled_back, retested = entry_ok, entry_ok, entry_ok
-            confirmed_5m = entry_ok
+                confirmed_5m = confirm_5m(df_confirm_tf, pipeline_direction) if not df_confirm_tf.empty else False
 
-            sr_levels = find_support_resistance_levels(df_structure_tf)
-            trendline_support = detect_trendline(df_structure_tf, swing_type="low")
-            trendline_resistance = detect_trendline(df_structure_tf, swing_type="high")
-            trend_signal = check_trend_signal(pipeline_direction, trendline_support, trendline_resistance, sr_levels)
+                # --- Multi-level Support/Resistance + Trendline (Structure टाईमफ्रेमवर) ---
+                sr_levels = find_support_resistance_levels(df_structure_tf)
+                trendline_support = detect_trendline(df_structure_tf, swing_type="low")
+                trendline_resistance = detect_trendline(df_structure_tf, swing_type="high")
+                trend_signal = check_trend_signal(pipeline_direction, trendline_support, trendline_resistance, sr_levels)
 
-        elif pipeline_direction:
-            broke, broken_level = detect_break(df_structure_tf, structure_info, pipeline_direction)
-            pulled_back, retested = detect_pullback_retest(df_structure_tf, broken_level, pipeline_direction)
-            zone = supply_demand_zone(structure_info, pipeline_direction)
-            df_confirm_tf = df_rsi_tf if confirm_interval == rsi_interval else fetch_timeframe_df(
-                token_input, symbol, underlying_price, confirm_interval
+            india_vix = fetch_india_vix(token_input)
+            vix_ok = (india_vix is not None) and (india_vix <= vix_max_threshold)
+
+            oi_signal_latest = None
+            oi_confirmation_ok = True
+            oi_gate_note = "N/A (गेट बंद आहे)"
+            swing_gate_detail = None
+
+            if enable_swing_oi_gate and pipeline_direction:
+                _prev_total_oi_g = get_previous_day_total_oi(symbol)
+                _conn_g = sqlite3.connect(DB_PATH)
+                _cur_g = _conn_g.cursor()
+                _cur_g.execute(
+                    "SELECT underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date < ? ORDER BY trade_date DESC, snapshot_time DESC LIMIT 1",
+                    (symbol, today_str),
+                )
+                _row_g = _cur_g.fetchone()
+                _conn_g.close()
+                _prev_price_g = _row_g[0] if _row_g else None
+
+                _oi_matrix_g = compute_oi_price_matrix(total_call_oi + total_put_oi, _prev_total_oi_g, underlying_price, _prev_price_g)
+                _pcr_val_g, _pcr_bias_g = compute_pcr_signal(total_put_oi, total_call_oi)
+                _max_pain_g = compute_max_pain(raw_chain)
+                _rollover_g = st.session_state.get("rollover_cache")  # वरील Advanced OI Analysis सेक्शनमधील बटणाने कॅश केलेला (ऐच्छिक)
+
+                oi_confirmation_ok, swing_gate_detail = swing_oi_gate(
+                    pipeline_direction, _oi_matrix_g, _pcr_bias_g, _max_pain_g, underlying_price, _rollover_g,
+                    max_opposing=swing_max_opposing_signals,
+                )
+                oi_gate_note = (
+                    f"Supporting: {len(swing_gate_detail['supporting'])}, Opposing: {len(swing_gate_detail['opposing'])} "
+                    f"of {swing_gate_detail['total_signals']} signals"
+                )
+
+            all_gates_passed = bool(
+                pipeline_direction and broke and pulled_back and retested
+                and rsi_check["momentum_ok"] and confirmed_5m and vix_ok and oi_confirmation_ok
+                and trend_signal["gate_ok"] and pattern_rsi_ok
             )
-            confirmed_5m = confirm_5m(df_confirm_tf, pipeline_direction) if not df_confirm_tf.empty else False
 
-            # --- Multi-level Support/Resistance + Trendline (Structure टाईमफ्रेमवर) ---
-            sr_levels = find_support_resistance_levels(df_structure_tf)
-            trendline_support = detect_trendline(df_structure_tf, swing_type="low")
-            trendline_resistance = detect_trendline(df_structure_tf, swing_type="high")
-            trend_signal = check_trend_signal(pipeline_direction, trendline_support, trendline_resistance, sr_levels)
+            sideways_info = None
+            if not pipeline_direction:
+                sideways_info = classify_sideways(
+                    df_structure_tf, structure_info, rsi_check, india_vix, vix_max_threshold,
+                    tight_range_pct=sideways_tight_range_pct, max_range_pct=sideways_max_range_pct,
+                )
 
-        india_vix = fetch_india_vix(token_input)
-        vix_ok = (india_vix is not None) and (india_vix <= vix_max_threshold)
+            strategy_result = None
+            lots, risk_amount = 0, 0.0
+            available_margin = None
 
-        # --- OI Confirmation Gate — Intraday (10-min snapshot) किंवा Swing (OI-Price Matrix + PCR + Max Pain + Rollover) ---
-        oi_signal_latest = None
-        oi_confirmation_ok = True
-        oi_gate_note = "N/A (गेट बंद आहे)"
-        swing_gate_detail = None
+            if all_gates_passed:
+                strategy_result = select_credit_spread_fixed_strikes(raw_chain, pipeline_direction, atm_strike)
+            elif sideways_info and sideways_info["is_sideways"]:
+                if sideways_info["strategy_type"] == "IRON_BUTTERFLY":
+                    strategy_result = select_iron_butterfly(raw_chain, atm_strike, hedge_width_points, pop_threshold_pct)
+                else:
+                    strategy_result = select_iron_condor(raw_chain, atm_strike, step, hedge_width_points, pop_threshold_pct)
 
-        if trading_style == "INTRADAY" and enable_oi_gate and pipeline_direction:
-            oi_signal_latest = get_latest_oi_signal(symbol)
-            oi_confirmation_ok = check_oi_diff_entry_gate(pipeline_direction, oi_signal_latest)
-            oi_gate_note = oi_signal_latest or "OI डेटा उपलब्ध नाही"
-        elif trading_style == "SWING" and enable_swing_oi_gate and pipeline_direction:
-            _prev_total_oi_g = get_previous_day_total_oi(symbol)
-            _conn_g = sqlite3.connect(DB_PATH)
-            _cur_g = _conn_g.cursor()
-            _cur_g.execute(
-                "SELECT underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date < ? ORDER BY trade_date DESC, snapshot_time DESC LIMIT 1",
-                (symbol, today_str),
-            )
-            _row_g = _cur_g.fetchone()
-            _conn_g.close()
-            _prev_price_g = _row_g[0] if _row_g else None
-
-            _oi_matrix_g = compute_oi_price_matrix(total_call_oi + total_put_oi, _prev_total_oi_g, underlying_price, _prev_price_g)
-            _pcr_val_g, _pcr_bias_g = compute_pcr_signal(total_put_oi, total_call_oi)
-            _max_pain_g = compute_max_pain(raw_chain)
-            _rollover_g = st.session_state.get("rollover_cache")  # वरील Advanced OI Analysis सेक्शनमधील बटणाने कॅश केलेला (ऐच्छिक)
-
-            oi_confirmation_ok, swing_gate_detail = swing_oi_gate(
-                pipeline_direction, _oi_matrix_g, _pcr_bias_g, _max_pain_g, underlying_price, _rollover_g,
-                max_opposing=swing_max_opposing_signals,
-            )
-            oi_gate_note = (
-                f"Supporting: {len(swing_gate_detail['supporting'])}, Opposing: {len(swing_gate_detail['opposing'])} "
-                f"of {swing_gate_detail['total_signals']} signals"
-            )
+            if strategy_result:
+                available_margin = get_available_margin(token_input)
+                lots, risk_amount = compute_position_size(available_margin, risk_pct_per_trade, strategy_result["max_loss"], lot_size)
 
         with st.expander("🔍 Signal Engine — प्रत्येक पायरीचा तपशील (Diagnostic)", expanded=False):
             # --- पाईपलाईन चेकलिस्ट दाखवणे ---
@@ -1235,41 +1294,6 @@ def render():
                     if swing_gate_detail["opposing"]:
                         st.caption("विरोध करणारे: " + ", ".join(f"{name} ({bias})" for name, bias in swing_gate_detail["opposing"]))
 
-
-        # --- सर्व गेट्स एकत्र तपासणे (डायरेक्शनल मार्ग) ---
-        all_gates_passed = bool(
-            pipeline_direction and broke and pulled_back and retested
-            and rsi_check["momentum_ok"] and confirmed_5m and vix_ok and oi_confirmation_ok
-            and trend_signal["gate_ok"] and pattern_rsi_ok
-        )
-
-        # --- Sideways मार्ग — डायरेक्शन Engine NEUTRAL/MIXED असेल तेव्हाच तपासले जाते ---
-        sideways_info = None
-        if not pipeline_direction:
-            sideways_info = classify_sideways(
-                df_structure_tf, structure_info, rsi_check, india_vix, vix_max_threshold,
-                tight_range_pct=sideways_tight_range_pct, max_range_pct=sideways_max_range_pct,
-            )
-
-        strategy_result = None
-        lots, risk_amount = 0, 0.0
-        available_margin = None
-
-        if all_gates_passed:
-            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
-            # strategies) साठी आता PoP-आधारित शोध ऐवजी निश्चित (fixed) ATM+2/Hedge+4(100pt) strike
-            # selection वापरलं जातं. Iron Condor/Butterfly (sideways मार्ग, खाली) याला स्पर्श केलेला
-            # नाही — तो अजूनही जुन्याच PoP-आधारित पद्धतीने चालतो.
-            strategy_result = select_credit_spread_fixed_strikes(raw_chain, pipeline_direction, atm_strike)
-        elif sideways_info and sideways_info["is_sideways"]:
-            if sideways_info["strategy_type"] == "IRON_BUTTERFLY":
-                strategy_result = select_iron_butterfly(raw_chain, atm_strike, hedge_width_points, pop_threshold_pct)
-            else:
-                strategy_result = select_iron_condor(raw_chain, atm_strike, step, hedge_width_points, pop_threshold_pct)
-
-        if strategy_result:
-            available_margin = get_available_margin(token_input)
-            lots, risk_amount = compute_position_size(available_margin, risk_pct_per_trade, strategy_result["max_loss"], lot_size)
 
         st.markdown("---")
     with tab3:

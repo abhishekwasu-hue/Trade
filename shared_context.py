@@ -3,79 +3,18 @@
 सर्व निकाल st.session_state मध्ये साठवले जातात जेणेकरून प्रत्येक स्वतंत्र page त्यांना वाचू शकेल.
 """
 import datetime
+import json
 import os
 import streamlit as st
 
-try:
-    from supabase import create_client
-except ImportError:
-    create_client = None  # पॅकेज इंस्टॉल नसेल तर Supabase auto-fetch बंद राहील, manual entry पर्याय राहील
-
-from upstox_api import fetch_upstox_option_chain, fetch_candles
-
-# 🔧 तुमच्या Supabase टेबलच्या रचनेनुसार खालचे तीन बदला (गरज असल्यास):
-SUPABASE_TABLE = "tokens"
-SUPABASE_TOKEN_COLUMN = "access_token"
-SUPABASE_ROW_ID = 1
-
-
-def _get_supabase_client():
-    """secrets.toml (प्राधान्य) किंवा environment variables मधून Supabase client तयार करतो."""
-    if create_client is None:
-        return None
-    url = key = None
-    try:
-        url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
-    except Exception:
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        return None
-    try:
-        return create_client(url, key)
-    except Exception:
-        return None
-
-
-def fetch_token_from_supabase():
-    """Supabase मधून access token वाचतो. काहीही चूक झाल्यास रिकामी स्ट्रिंग परत देतो (app क्रॅश होणार नाही)."""
-    client = _get_supabase_client()
-    if client is None:
-        return ""
-    try:
-        resp = (
-            client.table(SUPABASE_TABLE)
-            .select(SUPABASE_TOKEN_COLUMN)
-            .eq("id", SUPABASE_ROW_ID)
-            .execute()
-        )
-        if resp.data:
-            return resp.data[0].get(SUPABASE_TOKEN_COLUMN, "") or ""
-    except Exception:
-        pass
-    return ""
-
-
-def save_token_to_supabase(new_token: str) -> bool:
-    """नवीन/रिफ्रेश केलेला token Supabase मध्ये अपडेट करतो (उदा. रोज सकाळी नवीन token जनरेट केल्यावर)."""
-    client = _get_supabase_client()
-    if client is None or not new_token.strip():
-        return False
-    try:
-        client.table(SUPABASE_TABLE).update({SUPABASE_TOKEN_COLUMN: new_token}).eq(
-            "id", SUPABASE_ROW_ID
-        ).execute()
-        return True
-    except Exception:
-        return False
+import cloud_db
+from upstox_api import fetch_upstox_option_chain
 try:
     from signals import compute_atr
 except ImportError:
     # deployed signals.py जुनी असेल (compute_atr गहाळ) तर संपूर्ण app क्रॅश होण्याऐवजी,
     # फक्त Trailing SL feature बंद राहील — बाकी सर्व व्यवस्थित चालेल.
     compute_atr = None
-from trading_engine import manage_open_trades
 
 
 def setup_shared_context():
@@ -89,35 +28,64 @@ def setup_shared_context():
     chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)
 
 
+    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Token load priority आता: Cloud DB (cloud_db.py चं
+    # established `upstox_tokens` table — daily OAuth cron script हेच table वापरतो) → secrets.toml →
+    # रिकामं (manual entry). वेगळी नवीन Supabase table न काढता established, आधीच existent असलेली
+    # token pipeline (cron ↔ dashboard) एकसंध (single source of truth) केली — त्यामुळे cron ने रोज
+    # refresh केलेला token dashboard वर लगेच दिसेल, वेगळं sync लागणार नाही.
     secrets_token = ""
     try:
         if "upstox" in st.secrets and "access_token" in st.secrets["upstox"]:
             secrets_token = st.secrets["upstox"]["access_token"]
     except Exception:
-        pass  # secrets.toml अस्तित्वात नसेल तर st.secrets स्वतःच exception देतो — तेव्हा पुढच्या स्रोतांवर पडणे
+        pass  # secrets.toml अस्तित्वात नसेल तर st.secrets स्वतःच exception देतो — तेव्हा पुढच्या fallback वर पडणे
 
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — token आता Supabase मधून आपोआप fetch होतो
-    # (प्राधान्यक्रम: Supabase > secrets.toml), त्यामुळे ब्राउझर बंद/रिफ्रेश झाला किंवा नवीन सेशन
-    # सुरू झालं तरीही दर वेळी manually token टाकावा लागत नाही. गरज पडल्यास खाली manually
-    # override किंवा नवीन token Supabase मध्ये save करता येतो (उदा. रोज सकाळचा नवीन token).
-    supabase_token = fetch_token_from_supabase()
-    default_token = supabase_token or secrets_token
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Cloud DB configured आहे की नाही, हे सायलंटली न
+    # लपवता sidebar वर एका ओळीत दाखवणे (काळजीपूर्वक "टोकन फिक्स झाला" इतकंच सांगणारं वाक्य नाही, तर
+    # वापरकर्त्याला *आत्ता काय स्थिती आहे* थेट दिसावं — Cloud sync बंद असेल तर तेही स्पष्ट दिसावं).
+    cloud_configured = False
+    try:
+        cloud_configured = cloud_db.is_cloud_db_configured()
+    except Exception:
+        cloud_configured = False
 
-    with st.sidebar.expander("🔑 Upstox Access Token", expanded=not bool(default_token)):
-        if supabase_token:
-            st.caption("✅ Token Supabase मधून आपोआप लोड झाला.")
-        elif secrets_token:
-            st.caption("✅ Token secrets.toml मधून लोड झाला.")
+    cloud_token = ""
+    if cloud_configured:
+        try:
+            cloud_token = cloud_db.get_effective_upstox_token(None) or ""
+        except Exception:
+            cloud_token = ""  # Cloud DB जोडणी अयशस्वी झाली तरी संपूर्ण app क्रॅश होणार नाही, पुढच्या fallback वर पडणे
+
+    default_token = cloud_token or secrets_token
+
+    if cloud_configured:
+        if cloud_token:
+            st.sidebar.caption("🔗 Cloud Token Sync: ON — Supabase मधून token सापडला.")
         else:
-            st.caption("⚠️ कुठूनही आपोआप token सापडला नाही — खाली manually टाका किंवा Supabase कनेक्शन तपासा.")
-        token_input = st.text_input("Upstox Access Token:", value=default_token, type="password")
-        if st.button("💾 हा Token Supabase मध्ये Save करा"):
-            if save_token_to_supabase(token_input):
-                st.success("Token Supabase मध्ये saved झाला — पुढच्या वेळी आपोआप लोड होईल.")
-            else:
-                st.error("Save करता आलं नाही — Supabase URL/Key (secrets.toml किंवा env vars) तपासा.")
+            st.sidebar.caption("🔗 Cloud Token Sync: ON — पण Supabase मध्ये अजून कुठलाच token साठवलेला नाही.")
+    else:
+        st.sidebar.caption("⚪ Cloud Token Sync: OFF — SUPABASE_DB_URL सेट नाही, फक्त secrets/manual token वापरला जाईल.")
 
-    auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (5 Minutes)", value=True)
+    token_input = st.sidebar.text_input("Upstox Access Token:", value=default_token, type="password")
+
+    if st.sidebar.button("💾 Save Token to Supabase"):
+        if token_input.strip():
+            try:
+                # established इतर सर्व cron scripts (daily_nifty_1min_update.py, srv2_momentum_reversal_strategy.py
+                # इ.) प्रमाणेच, save करण्याआधी table अस्तित्वात आहे याची खात्री (idempotent, CREATE TABLE IF
+                # NOT EXISTS) — dashboard हाच पहिला touch-point असेल (table अजून तयारच नसेल) तरीही save यशस्वी व्हावं.
+                cloud_db.init_cloud_table()
+                saved_ok = cloud_db.save_upstox_token(token_input.strip())
+            except Exception:
+                saved_ok = False
+            if saved_ok:
+                st.sidebar.success("✅ Token Supabase (upstox_tokens table) मध्ये साठवला.")
+            else:
+                st.sidebar.error("❌ Token साठवता आला नाही — SUPABASE_DB_URL सेट आहे का, ते तपासा.")
+        else:
+            st.sidebar.warning("⚠️ आधी वरती Token टाका, मग Save करा.")
+
+    auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (1 Minute)", value=True)
 
     # --- ६.५ A1 स्ट्रॅटेजी व लाईव्ह एक्झिक्युशन सेटिंग्ज ---
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी हे सर्व (Lot Size पासून Max Daily Loss पर्यंत)
@@ -337,6 +305,33 @@ def setup_shared_context():
     st.session_state["enable_live_trading"] = enable_live_trading
     st.session_state["confirm_live_trading"] = confirm_live_trading
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Review फिक्स) — engine_settings.json लिहिणं आधी
+    # option chain fetch यशस्वी झाल्यावरच होत होतं — म्हणजे chain fetch तात्पुरता अयशस्वी झाला (network/
+    # rate-limit) आणि नेमकं त्याच rerun ला Live Trading चालू/बंद केलं, तर engine_service.py ला जुनी/
+    # डीफॉल्ट settings दिसायच्या, शांतपणे. हे settings option chain शी संबंधित नाहीत — म्हणून आता चार्ट
+    # यशस्वी झाला की नाही, याची पर्वा न करता, इथेच (token असेल तरच) लिहिलं जातं.
+    try:
+        os.makedirs("data", exist_ok=True)
+        engine_settings = {
+            "trading_mode": trading_mode,
+            "monitoring_enabled": bool(enable_live_trading and confirm_live_trading),
+            "product_type": product_type,
+            "oi_reversal_exit_enabled": enable_oi_early_exit,
+            "trailing_sl_enabled": trailing_sl_enabled,
+            "atr_multiplier": atr_multiplier,
+            "eod_squareoff_hour": eod_squareoff_time.hour if eod_squareoff_time else 15,
+            "eod_squareoff_minute": eod_squareoff_time.minute if eod_squareoff_time else 15,
+        }
+        with open(os.path.join("data", "engine_settings.json"), "w") as f:
+            json.dump(engine_settings, f)
+    except Exception:
+        pass  # settings file लिहिता आला नाही तरी dashboard क्रॅश होऊ नये — engine_service.py आधीच्या/डीफॉल्ट settings वापरेल
+
+    if enable_live_trading and confirm_live_trading:
+        st.sidebar.caption("🛰️ Position Monitoring (SL/Target/EOD): established `engine_service.py` (systemd) वर, स्वतंत्रपणे चालू.")
+    else:
+        st.sidebar.caption("⏸️ Position Monitoring बंद आहे — Live Trading सक्रिय करा (आणि पुष्टी द्या).")
+
     # --- Option Chain Fetch + यशस्वी झाल्यास मूळ किंमत/ATM काढणे ---
     if not token_input.strip():
         return False
@@ -352,32 +347,6 @@ def setup_shared_context():
         st.session_state["underlying_price"] = underlying_price
         st.session_state["step"] = step
         st.session_state["atm_strike"] = atm_strike
-
-        # --- उघड्या ट्रेड्सचे SL/Target/EOD मॉनिटरिंग — इथे (shared_context) ठेवलेलं आहे, page_dashboard.py
-        # मध्ये नाही, कारण हे प्रत्येक page-load वर चालायला हवं (Positions/Orders/Performance वर असतानाही),
-        # आधी हे फक्त Dashboard page उघडी असतानाच चालायचं — म्हणजे इतर pages वर असताना EOD/SL/Target
-        # अजिबात तपासलेच जात नव्हते, हा गंभीर gap होता.
-        if enable_live_trading and confirm_live_trading:
-            eod_hour = eod_squareoff_time.hour if eod_squareoff_time else 15
-            eod_minute = eod_squareoff_time.minute if eod_squareoff_time else 15
-
-            atr_points = None
-            if trailing_sl_enabled:
-                try:
-                    df_for_atr = fetch_candles(token_input, symbol, underlying_price, interval="15minute", lookback_days=5)
-                    atr_points = compute_atr(df_for_atr, period=14) if not df_for_atr.empty else None
-                except Exception:
-                    atr_points = None  # ATR मिळालं नाही तर ट्रेलिंग सक्रिय होणार नाही, मूळ स्थिर SL तसाच वापरला जाईल
-
-            closed_now = manage_open_trades(
-                token_input, symbol, product_type, eod_squareoff_hour=eod_hour, eod_squareoff_minute=eod_minute,
-                oi_reversal_exit_enabled=enable_oi_early_exit,
-                trailing_sl_enabled=trailing_sl_enabled, atr_points=atr_points, atr_multiplier=atr_multiplier,
-            )
-            for c in closed_now:
-                emoji = "🟢" if c["pnl"] > 0 else "🔴"
-                mode_tag = "📝" if c.get("mode") == "PAPER" else "💰"
-                st.toast(f"{emoji}{mode_tag} Trade {c['trade_id']} बंद झाला ({c['reason']}) — P&L: ₹{c['pnl']:,.0f}")
 
         return True
 
