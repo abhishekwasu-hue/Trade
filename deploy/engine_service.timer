@@ -1,0 +1,13 @@
+[Unit]
+Description=AMW A1 - Position Monitoring दर १ मिनिटाला (systemd timer, cron-सारखं)
+
+[Timer]
+# दर १ मिनिटाला ट्रिगर — engine_service.py स्वतःच is_market_open()/monitoring_enabled तपासून
+# बाजार बंद असताना किंवा Live Trading सक्रिय नसताना काहीही करत नाही (शांतपणे return होतं),
+# त्यामुळे रात्री/सुट्टीच्या दिवशीही हे टायमर चालू ठेवणं सुरक्षित आहे (उगाच extra load नाही).
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
