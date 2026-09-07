@@ -3,9 +3,72 @@
 सर्व निकाल st.session_state मध्ये साठवले जातात जेणेकरून प्रत्येक स्वतंत्र page त्यांना वाचू शकेल.
 """
 import datetime
+import os
 import streamlit as st
 
+try:
+    from supabase import create_client
+except ImportError:
+    create_client = None  # पॅकेज इंस्टॉल नसेल तर Supabase auto-fetch बंद राहील, manual entry पर्याय राहील
+
 from upstox_api import fetch_upstox_option_chain, fetch_candles
+
+# 🔧 तुमच्या Supabase टेबलच्या रचनेनुसार खालचे तीन बदला (गरज असल्यास):
+SUPABASE_TABLE = "tokens"
+SUPABASE_TOKEN_COLUMN = "access_token"
+SUPABASE_ROW_ID = 1
+
+
+def _get_supabase_client():
+    """secrets.toml (प्राधान्य) किंवा environment variables मधून Supabase client तयार करतो."""
+    if create_client is None:
+        return None
+    url = key = None
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+    except Exception:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        return None
+    try:
+        return create_client(url, key)
+    except Exception:
+        return None
+
+
+def fetch_token_from_supabase():
+    """Supabase मधून access token वाचतो. काहीही चूक झाल्यास रिकामी स्ट्रिंग परत देतो (app क्रॅश होणार नाही)."""
+    client = _get_supabase_client()
+    if client is None:
+        return ""
+    try:
+        resp = (
+            client.table(SUPABASE_TABLE)
+            .select(SUPABASE_TOKEN_COLUMN)
+            .eq("id", SUPABASE_ROW_ID)
+            .execute()
+        )
+        if resp.data:
+            return resp.data[0].get(SUPABASE_TOKEN_COLUMN, "") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def save_token_to_supabase(new_token: str) -> bool:
+    """नवीन/रिफ्रेश केलेला token Supabase मध्ये अपडेट करतो (उदा. रोज सकाळी नवीन token जनरेट केल्यावर)."""
+    client = _get_supabase_client()
+    if client is None or not new_token.strip():
+        return False
+    try:
+        client.table(SUPABASE_TABLE).update({SUPABASE_TOKEN_COLUMN: new_token}).eq(
+            "id", SUPABASE_ROW_ID
+        ).execute()
+        return True
+    except Exception:
+        return False
 try:
     from signals import compute_atr
 except ImportError:
@@ -31,9 +94,29 @@ def setup_shared_context():
         if "upstox" in st.secrets and "access_token" in st.secrets["upstox"]:
             secrets_token = st.secrets["upstox"]["access_token"]
     except Exception:
-        pass  # secrets.toml अस्तित्वात नसेल तर st.secrets स्वतःच exception देतो — तेव्हा manual token entry वर पडणे
+        pass  # secrets.toml अस्तित्वात नसेल तर st.secrets स्वतःच exception देतो — तेव्हा पुढच्या स्रोतांवर पडणे
 
-    token_input = st.sidebar.text_input("Upstox Access Token:", value=secrets_token, type="password")
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — token आता Supabase मधून आपोआप fetch होतो
+    # (प्राधान्यक्रम: Supabase > secrets.toml), त्यामुळे ब्राउझर बंद/रिफ्रेश झाला किंवा नवीन सेशन
+    # सुरू झालं तरीही दर वेळी manually token टाकावा लागत नाही. गरज पडल्यास खाली manually
+    # override किंवा नवीन token Supabase मध्ये save करता येतो (उदा. रोज सकाळचा नवीन token).
+    supabase_token = fetch_token_from_supabase()
+    default_token = supabase_token or secrets_token
+
+    with st.sidebar.expander("🔑 Upstox Access Token", expanded=not bool(default_token)):
+        if supabase_token:
+            st.caption("✅ Token Supabase मधून आपोआप लोड झाला.")
+        elif secrets_token:
+            st.caption("✅ Token secrets.toml मधून लोड झाला.")
+        else:
+            st.caption("⚠️ कुठूनही आपोआप token सापडला नाही — खाली manually टाका किंवा Supabase कनेक्शन तपासा.")
+        token_input = st.text_input("Upstox Access Token:", value=default_token, type="password")
+        if st.button("💾 हा Token Supabase मध्ये Save करा"):
+            if save_token_to_supabase(token_input):
+                st.success("Token Supabase मध्ये saved झाला — पुढच्या वेळी आपोआप लोड होईल.")
+            else:
+                st.error("Save करता आलं नाही — Supabase URL/Key (secrets.toml किंवा env vars) तपासा.")
+
     auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (5 Minutes)", value=True)
 
     # --- ६.५ A1 स्ट्रॅटेजी व लाईव्ह एक्झिक्युशन सेटिंग्ज ---
