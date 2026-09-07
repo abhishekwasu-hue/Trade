@@ -100,11 +100,40 @@ def is_zone_mitigated(zone_low, zone_high, df_after_formation):
     """
     🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नियम — किंमत त्या zone मध्ये परत आली (range overlap झाला)
     की तो zone "mitigated" (भरला/संपला) मानायचा.
+
+    🎓 वापरकर्त्याने प्रत्यक्ष Dashboard export मधून सापडवलेली bug — किंमत जर zone मधून थेट स्पर्श न
+    करता "उडी मारून" (gap) पलीकडे गेली — म्हणजे एका candle चा close zone च्या एका बाजूला, पुढच्या
+    candle चा open दुसऱ्या बाजूला, पण कुठल्याही candle चा [low,high] प्रत्यक्ष zone ला स्पर्शतच नाही —
+    तर आधीचा फक्त-overlap तर्क हे कधीच ओळखायचा नाही, आणि zone कायमचा चुकीने "ACTIVE" दाखवायचा
+    (उदा. NIFTY CMP च्या खूप वर असलेला जुना "Bullish Order Block/Demand Zone"). आता
+    `dynamic_sr_instant_trader.py` च्या check_level_crossed() सारखाच gap-through तर्कही तपासतो —
+    zone च्या कुठल्याही टोकाला (zone_low किंवा zone_high) gap-through झालं तरी पुरेसं आहे, कारण
+    किंमत त्या संपूर्ण range च्या पलीकडे गेली म्हणजे तो zone यापुढे "untouched support/resistance"
+    राहत नाही.
     """
     if df_after_formation.empty:
         return False
+
     overlap = (df_after_formation["high"] >= zone_low) & (df_after_formation["low"] <= zone_high)
-    return bool(overlap.any())
+    if bool(overlap.any()):
+        return True
+
+    # established दोन call-sites वेगळ्या column-casing सह येतात (Order Block/Demand-Supply: lowercase
+    # "open"/"close"; Unfilled Gap: "Open"/"Close") — दोन्ही चालावं म्हणून जी उपलब्ध आहे ती वापरणे.
+    open_col = "open" if "open" in df_after_formation.columns else ("Open" if "Open" in df_after_formation.columns else None)
+    close_col = "close" if "close" in df_after_formation.columns else ("Close" if "Close" in df_after_formation.columns else None)
+    if open_col is None or close_col is None:
+        return False  # gap-through तपासण्यासाठी लागणारे स्तंभच उपलब्ध नाहीत — फक्त direct-overlap निकाल
+
+    prev_close = None
+    for _, row in df_after_formation.iterrows():
+        if prev_close is not None:
+            lo, hi = min(prev_close, row[open_col]), max(prev_close, row[open_col])
+            # zone_low किंवा zone_high यापैकी कुठलंही टोक या gap-range मध्ये सापडलं, तरी gap-through
+            if lo <= zone_low <= hi or lo <= zone_high <= hi:
+                return True
+        prev_close = row[close_col]
+    return False
 
 
 def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,

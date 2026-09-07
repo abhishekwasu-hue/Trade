@@ -66,7 +66,16 @@ class MTFGapFillStrategy(StrategyBase):
 
         # 🎓 फक्त सद्य (शेवटच्या) candle नेच gap आत्ता "पूर्ण भरला" का — इथेच तपासणे (live/per-cycle),
         # मागच्या cycles मध्ये आधीच भरला गेलेला gap पुन्हा वापरला जाऊ नये.
-        direction, entry_price, matched_leg = None, None, None
+        # 🎓 वापरकर्त्याने Signal Log export मधून सापडवलेली bug — established इतर सर्व strategies
+        # (ict_fvg, bb_squeeze, sr_bounce, vwap) entry price म्हणून नेहमी established सद्य (शेवटच्या)
+        # candle चा close वापरतात — पण इथे आधी entry_price थेट gap_low/gap_high (gap जेव्हा तयार
+        # झाला तेव्हाचा, कधीकधी दिवस/आठवडे जुना जुना level) होता, सद्य किंमत नाही! त्यामुळे SL/Target
+        # (जे entry_price वरूनच % म्हणून काढले जातात) प्रत्यक्ष बाजारात मिळणाऱ्या किमतीशी विसंगत
+        # ठरायचे — "gap पूर्ण भरला" याचा अर्थ फक्त एवढाच की सद्य candle चा low/high त्या जुन्या level
+        # पर्यंत पोहोचला, सद्य close तिथेच आहे असं नाही (विशेषतः मोठ्या range च्या candle मध्ये).
+        # आता established convention प्रमाणे entry_price = सद्य candle चा Close.
+        current_close = float(last["Close"])
+        direction, matched_leg = None, None
         for leg_dir, a, b in legs:
             leg_start = h1_std.iloc[a["idx"]]["Date"]; leg_end = h1_std.iloc[b["idx"]]["Date"]
             wanted_kind = "UP_GAP" if leg_dir == "LONG" else "DOWN_GAP"
@@ -76,7 +85,6 @@ class MTFGapFillStrategy(StrategyBase):
                 fully_filled = (last.Low <= g["gap_low"]) if leg_dir == "LONG" else (last.High >= g["gap_high"])
                 if not fully_filled: continue
                 direction = leg_dir
-                entry_price = g["gap_low"] if leg_dir == "LONG" else g["gap_high"]
                 matched_leg = (a, b)
                 break
             if direction:
@@ -85,6 +93,7 @@ class MTFGapFillStrategy(StrategyBase):
         if not direction:
             return self._no_signal("सद्य candle ने कुठलाही उघडा gap पूर्ण भरलेला नाही")
 
+        entry_price = current_close
         sl_distance = entry_price * (self.sl_pct / 100)
         target_distance = entry_price * (self.target_pct / 100)
         if direction == "LONG":
