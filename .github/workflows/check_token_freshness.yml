@@ -1,0 +1,34 @@
+name: Token Freshness Check (रोज बाजार उघडण्याआधी)
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — रोजचा manual OAuth token refresh चुकला, तर सर्व
+# cron jobs शांतपणे थांबतात. ही workflow बाजार उघडण्याआधी token तपासून, जुना/गहाळ असेल तरच Telegram
+# वर alert पाठवते — जेणेकरून वेळेत manual login करता येईल.
+
+on:
+  schedule:
+    # UTC 03:15 = IST 08:45 (बाजार उघडण्याआधी, 9:15 IST), सोमवार ते शुक्रवार
+    - cron: "15 3 * * 1-5"
+  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+
+jobs:
+  check-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: Token Freshness तपासणे
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 check_token_freshness.py
+        continue-on-error: true  # token जुना असेल तरी workflow "failed" दिसू नये — Telegram alert हाच खरा सिग्नल
