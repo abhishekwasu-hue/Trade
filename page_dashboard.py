@@ -18,7 +18,7 @@ from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
     execute_order_leg_set, get_static_ip_proxy_url, check_proxy_egress_ip,
     get_registered_static_ips, fetch_ltp_map, fetch_next_expiry_option_chain,
-    fetch_option_greeks,
+    fetch_option_greeks, extract_order_ids,
 )
 from signals import (
     calculate_rsi, calculate_supertrend, resample_to_1h, find_support_resistance_levels,
@@ -567,7 +567,7 @@ def render():
                                 }
                                 status_code, resp = execute_order_leg_set(token_input, [order], trading_mode)
                                 if status_code == 200 and resp.get("status") == "success":
-                                    order_ids = resp.get("data", {}).get("order_ids", [])
+                                    order_ids = extract_order_ids(resp)
                                     tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
                                     st.success(f"{tag} ऑर्डर प्लेस झाला — Order ID: {order_ids}")
 
@@ -643,7 +643,7 @@ def render():
                             ]
                             status_code, resp = execute_order_leg_set(token_input, basket_orders, trading_mode)
                             if status_code == 200 and resp.get("status") == "success":
-                                order_ids = resp.get("data", {}).get("order_ids", [])
+                                order_ids = extract_order_ids(resp)
                                 tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
                                 st.success(f"{tag} Basket प्लेस झाला — Order IDs: {order_ids}")
 

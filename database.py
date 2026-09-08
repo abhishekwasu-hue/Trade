@@ -261,6 +261,23 @@ def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     conn.close()
     return total_pnl, total_trades_today
 
+def has_open_trade_from_source(symbol, source):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established त्याच source
+    (उदा. 'dynamic_sr_instant') कडून established symbol साठी सध्या कुठलाही OPEN trade आहे का —
+    established zone ला दुसऱ्यांदा hit होऊनही, आधीची position बंद होईपर्यंत नवीन trade न घेण्यासाठी.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM live_trades WHERE symbol=? AND source=? AND status='OPEN'",
+        (symbol, source),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count > 0
+
+
 def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     """
     सर्व OPEN पोझिशन्ससाठी सद्य LTP आणून खरा (real) MTM P&L काढणे — Positions टॅबसाठी,

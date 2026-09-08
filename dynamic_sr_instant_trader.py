@@ -31,7 +31,7 @@ import argparse
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db
+from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message
 from strategy import select_credit_spread_fixed_strikes
 from trading_engine import open_multi_leg_trade
@@ -58,14 +58,20 @@ def check_level_crossed(level, candles):
 
 
 def process_symbol(access_token, symbol, lots=1, lot_size=65,
-                    sl_pct_of_credit=30, target_pct_of_max_profit=30, recent_candles_count=10):
+                    sl_pct_of_credit=20, target_pct_of_max_profit=50, recent_candles_count=10):
     """
     एका symbol साठी — अलीकडचे 1-मिनिट candles, साठवलेले Dynamic S/R levels, प्रत्येकासाठी
     crossing-तपासणी, Signal Log, आणि आढळल्यास trade+notification.
+
+    🎓 वापरकर्त्याशी चर्चा करून सुधारित (आधी SL 30%/Target 30% होतं) — SL आता निव्वळ प्रीमियमच्या 20%,
+    Target 50%. ही रणनीती established pure INTRADAY राहते (3:10pm carry-forward लागू होत नाही,
+    established `trading_engine.manage_open_trades()` मध्ये source="dynamic_sr_instant" वरून वगळलेलं) —
+    established EOD Square-off (15:15) नेहमी लागू. Trailing SL आता established ATR-आधारित नाही — नवीन,
+    वेगळी %-आधारित यंत्रणा (MTM नफा 20% झाल्यावर सक्रिय, 10% credit lock) established
+    manage_open_trades() मध्येच याच source साठी नेहमी सक्रिय — इथे वेगळं काही सेट करावं लागत नाही.
     """
-    # 🎓 save_market_zones() संपूर्ण symbol चे zones "replace" करतो (फक्त Dynamic SR नाही) —
-    # म्हणून एक zone FILLED करायचं असेल तरी, आधी *सर्व* zones (सर्व प्रकार, ACTIVE+FILLED दोन्ही)
-    # वाचावे लागतात, मगच योग्य तो एकच row अद्ययावत करून, पूर्ण संच परत साठवायचा.
+    # established zones आता कधीच FILLED केले जात नाहीत (खाली hit_count/cooldown ने नियंत्रित) —
+    # म्हणून फक्त ACTIVE Dynamic SR levels वाचणे पुरेसे आहे (पूर्ण संच वाचून परत साठवायची गरज नाही).
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
         return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
@@ -88,8 +94,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
     trade_date = now.strftime("%Y-%m-%d")
 
     outcomes = []
-    zones_changed = False
-    for idx, row in dyn_levels.iterrows():
+    for _, row in dyn_levels.iterrows():
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — hit झाला किंवा नाही, प्रत्येक तपासलेला level
@@ -102,6 +107,33 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
         }
 
         if not hit:
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकच zone
+        # दिवसातून जास्तीत जास्त २ वेळा trade करू शकतो — पण दोन्ही अटी पाळून: (अ) established आधीच्या
+        # hit पासून किमान ३० मिनिटांचं अंतर (cooldown — किंमत त्याच पातळीजवळ लगेच पुन्हा घुटमळत असेल
+        # तर उगाच वारंवार trade नको), आणि (ब) established आधीची (या symbol साठी established याच
+        # source ची) position आधीच बंद (CLOSED) झालेली असावी — दोन trades एकाच वेळी उघडे राहू नयेत.
+        hit_count_so_far, last_hit_time = cloud_db.get_zone_hits_today(symbol, row["zone_low"], trade_date)
+
+        if hit_count_so_far >= 2:
+            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+            log_entry["reason"] = "आजच्या या zone साठी established कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        if last_hit_time is not None:
+            elapsed_minutes = (now - last_hit_time).total_seconds() / 60
+            if elapsed_minutes < 30:
+                log_entry["trade_status"] = "SKIPPED_COOLDOWN_30MIN"
+                log_entry["reason"] = f"मागच्या hit ला फक्त {elapsed_minutes:.1f} मिनिटं झालीत (established किमान 30 हवीत)"
+                cloud_db.save_signal_log(log_entry)
+                continue
+
+        if hit_count_so_far >= 1 and has_open_trade_from_source(symbol, "dynamic_sr_instant"):
+            log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
+            log_entry["reason"] = "established आधीची position अजून बंद झालेली नाही"
             cloud_db.save_signal_log(log_entry)
             continue
 
@@ -139,23 +171,25 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
         log_entry["trade_status"] = trade_status
         cloud_db.save_signal_log(log_entry)
 
-        # --- हाच zone आता "mitigated" (FILLED) -- बाकी सर्व zones जसेच्या तसे ठेवून ---
-        all_zones.loc[idx, "status"] = "FILLED"
-        zones_changed = True
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established आता zone
+        # कायमचं FILLED केलं जात नाही (आधी असंच होतं — त्यामुळे दिवसातून फक्त एकदाच trade व्हायचा,
+        # आणि नंतरचे touches Signal Log मधून पूर्णपणे गायबच व्हायचे). established हा zone दिवसभर
+        # ACTIVE राहतो — वरचे hit_count/cooldown/open-position चेक्सच पुढच्या trades ला नियंत्रित
+        # करतात, आणि प्रत्येक तपासलेला touch (trade झाला किंवा वगळला) Signal Log मध्ये दिसत राहतो.
 
         level_label = "Support" if row["zone_type"] == "DYNAMIC_SR_SUPPORT" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
         message = (
-            f"🎯 <b>{symbol} Dynamic S/R Cross!</b>\n"
+            f"🎯 <b>{symbol} Dynamic S/R Cross! (आजचा {hit_count_so_far + 1}/2 वा hit)</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}).\n"
-            f"PAPER Trade: {strategy_result.get('strategy_type', direction)} — {trade_status}\n"
+            # 🎓 वापरकर्त्याने Dashboard export मधून सापडवलेली bug — established इतर strategies प्रमाणेच
+            # strategy_result ची key "strategy" आहे, "strategy_type" नाही (ती key कधीच अस्तित्वातच
+            # नव्हती) — त्यामुळे हा .get() नेहमी फक्त established fallback (direction) दाखवायचा.
+            f"PAPER Trade: {strategy_result.get('strategy', direction)} — {trade_status}\n"
             f"वेळ: {now.strftime('%H:%M:%S')}"
         )
         send_telegram_message(message)
         outcomes.append(f"{level_label} {row['zone_low']:.2f} ({hit_type}) -> PAPER trade {trade_status}")
-
-    if zones_changed:
-        cloud_db.save_market_zones(all_zones, symbol)
 
     if not outcomes:
         return f"{symbol}: सद्य 1-मिनिट candles मध्ये कुठलाही साठवलेला Dynamic S/R level cross झाला नाही"

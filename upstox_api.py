@@ -404,6 +404,29 @@ def fetch_ltp_map(access_token, instrument_keys):
         return {}
 
 
+def extract_order_ids(resp):
+    """
+    🎓 वापरकर्त्याने सापडवलेली bug — established Upstox Multi Order API च्या अधिकृत डॉक्युमेंटेशन प्रमाणे
+    (place-multi-order), यशस्वी झाल्यावर `data` हा dict-with-"order_ids" नसून **objects ची list**
+    असते — `[{"correlation_id":.., "order_id":..}, ...]`. established कोड आधी चुकीचं dict-आकार
+    गृहीत धरायचा (`resp["data"]["order_ids"]`) — त्यामुळे प्रत्यक्ष LIVE order यशस्वी झाला तरी
+    `AttributeError: 'list' object has no attribute 'get'` (crash) यायचा.
+
+    established PAPER mode (execute_order_leg_set, याच फाईलमध्ये) established स्वतःचं सिम्युलेटेड
+    रिस्पॉन्स वेगळ्या, जुन्या dict-shape मध्ये (`{"order_ids": [...]}`) देतो — तेही चालू राहावं म्हणून
+    दोन्ही स्वरूपं इथेच, एकाच ठिकाणी हाताळली आहेत (भविष्यात Upstox ने आकार बदलला तरी फक्त इथेच फिक्स
+    करावा लागेल).
+    """
+    data = resp.get("data")
+    if data is None:
+        return []
+    if isinstance(data, dict):
+        return data.get("order_ids", [])  # established PAPER mode चं सिम्युलेटेड स्वरूप
+    if isinstance(data, list):
+        return [item.get("order_id") for item in data if isinstance(item, dict) and item.get("order_id")]
+    return []
+
+
 def fetch_option_greeks(access_token, instrument_keys):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Portfolio Greeks Monitoring साठी. दिलेल्या

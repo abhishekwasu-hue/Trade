@@ -348,6 +348,34 @@ def save_srv2_state(symbol, last_tested_level=None, last_sl_hit_time=None):
         conn.close()
 
 
+def get_zone_hits_today(symbol, level_price, trade_date):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकाच zone ला
+    दिवसातून जास्तीत जास्त किती वेळा (आणि केव्हा शेवटचं) hit झालाय, हे established signal_log वरूनच
+    काढणे (वेगळं table/column लागत नाही — प्रत्येक hit आधीच इथे साठवलेला असतो).
+    रिटर्न: (hit_count: int, last_hit_time: datetime किंवा None)
+    """
+    conn = get_connection()
+    if conn is None:
+        return 0, None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT signal_time FROM signal_log
+                   WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
+                   ORDER BY signal_time DESC""",
+                (symbol, trade_date, level_price),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return 0, None
+            return len(rows), rows[0][0]
+    except Exception:
+        return 0, None
+    finally:
+        conn.close()
+
+
 def save_signal_log(entry):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा प्रत्येक शोधलेला

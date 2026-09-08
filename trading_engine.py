@@ -7,7 +7,7 @@ import uuid
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
-from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions
+from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
 def reconcile_positions(access_token, symbol):
@@ -104,7 +104,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     if status_code != 200 or resp.get("status") != "success":
         return False, resp
 
-    order_ids = resp.get("data", {}).get("order_ids", [])
+    order_ids = extract_order_ids(resp)
     max_loss_total = strategy_result["max_loss"] * lot_size
     max_profit_total = strategy_result["max_profit"] * lot_size
     net_credit_total = strategy_result["net_credit"] * lot_size
@@ -130,7 +130,15 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
-            lots, lot_size, strategy_result["net_credit"], max_profit_total, max_loss_total,
+            # 🎓 वापरकर्त्याने Dashboard export मधून सापडवलेली bug — established net_credit column
+            # नेहमीच "per-share" (lot_size/lots ने न गुणलेला) साठवला जायचा — पण max_profit/max_loss
+            # चुकून आधीच lot_size ने गुणलेले (max_profit_total/max_loss_total, "एका lot चा total")
+            # साठवले जायचे. established database.py चा Positions/CSV display फॉर्म्युला तिन्ही column
+            # सारखेच (per-share) गृहीत धरून `* lots * lot_size` करतो — त्यामुळे max_loss/max_profit
+            # प्रत्यक्षात lot_size ने **दुसऱ्यांदा** गुणले जायचे (उदा. Iron Condor चा खरा max_loss
+            # ₹6,655 ऐवजी ₹367,575 सारखा भलताच मोठा दिसायचा). आता established net_credit प्रमाणेच,
+            # दोन्ही per-share (strategy_result मधलं मूळ, न गुणलेलं मूल्य) साठवलं जातं.
+            lots, lot_size, strategy_result["net_credit"], strategy_result["max_profit"], strategy_result["max_loss"],
             sl_pnl_level, target_pnl_level,
             get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
@@ -330,7 +338,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             ]
             status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode)
             if status_code == 200 and resp.get("status") == "success":
-                order_ids = resp.get("data", {}).get("order_ids", [])
+                order_ids = extract_order_ids(resp)
                 log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE")
                 cur.execute(
                     """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=?
@@ -443,7 +451,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     ]
     status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE")
     if status_code == 200 and resp.get("status") == "success":
-        order_ids = resp.get("data", {}).get("order_ids", [])
+        order_ids = extract_order_ids(resp)
         log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE")
         cur.execute(
             "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=? WHERE trade_id=?",
