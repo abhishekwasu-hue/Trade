@@ -31,6 +31,5 @@ jobs:
 
       - name: NIFTY 1-मिनिट डेटा अद्ययावत करणे
         env:
-          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python3 daily_nifty_1min_update.py --token "$UPSTOX_TOKEN"
+        run: python3 daily_nifty_1min_update.py

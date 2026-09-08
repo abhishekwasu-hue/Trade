@@ -1,4 +1,4 @@
-name: OI Snapshot Collector (दर ५ मिनिटं, बाजार तासात)
+name: OI Snapshot Collector (मॅन्युअल-only — आता VPS cron वर दर ५ मिनिटं चालतं)
 
 # 🎓 वापरकर्त्याशी चर्चा करून बांधलेली सुधारणा — मूळ समस्या: संगणक सतत चालू ठेवता येत नाही, त्यामुळे
 # OI snapshots मध्ये gaps पडायचे. आता GitHub Actions (कुठलंही उपकरण चालू ठेवायची गरज नाही) +
@@ -10,13 +10,17 @@ name: OI Snapshot Collector (दर ५ मिनिटं, बाजार त�
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आता Dashboard वर 5/10/15-मिनिट असे ३ selectable
 # view-पर्याय हवेत (एकाच वेळी सर्व दिसण्याऐवजी) -- त्यासाठी collection ला परत सर्वात बारीक (५ मिनिट)
 # पातळीवर आणलं, जेणेकरून 10/15-मिनिट views ५-मिनिटांच्याच डेटावरून योग्यरित्या aggregate होतील.
+#
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Every-5-min GitHub Actions Delay फिक्स) — GitHub
+# Actions established `*/5` (दर ५ मिनिटं) हे जगातल्या हजारो repos मधलं सर्वात लोकप्रिय schedule
+# असल्यामुळे, high-load मुळे असे वारंवार होणारे schedules मुद्दामच delay/skip करतं (established Actions
+# tab वर प्रत्यक्ष ~१५-२० मिनिटांच्या अंतराने run्स दिसत होते, ५ मिनिटं नाही — GitHub च्या मोफत सेवेची
+# अंगभूत मर्यादा, कोडची चूक नाही). आता established `dynamic_sr_instant_trader.py`/
+# `srv2_momentum_reversal_strategy.py`/`trade_monitor.py` प्रमाणेच VPS crontab वर (दर १ मिनिटाला,
+# अचूक, delay शिवाय) हलवलं — हा workflow आता फक्त हाताने चालवण्यासाठी (backup/testing) उरलाय.
 
 on:
-  schedule:
-    # UTC 3:45 ते 10:00 (IST 9:15 ते 15:30, बाजार तासांशी जुळणारं), दर ५ मिनिटं (GitHub ची खरी,
-    # हमीपूर्वक चालणारी किमान मर्यादा -- वापरकर्त्याशी चर्चा करून established), सोम-शुक्र
-    - cron: "*/5 3-10 * * 1-5"
-  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+  workflow_dispatch:  # हवं तेव्हा हाताने चालवण्यासाठी (backup/testing) — आपोआप (schedule) चालत नाही
 
 jobs:
   collect-oi-snapshot:
@@ -35,6 +39,5 @@ jobs:
 
       - name: OI Snapshot गोळा करणे (Supabase मध्ये थेट साठवलं जाईल)
         env:
-          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python3 oi_snapshot_collector.py --token "$UPSTOX_TOKEN"
+        run: python3 oi_snapshot_collector.py

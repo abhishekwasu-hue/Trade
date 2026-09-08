@@ -26,6 +26,5 @@ jobs:
 
       - name: Market Zones गणना करून Supabase मध्ये साठवणे
         env:
-          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python3 refresh_market_zones.py --token "$UPSTOX_TOKEN"
+        run: python3 refresh_market_zones.py

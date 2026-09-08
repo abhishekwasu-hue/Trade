@@ -28,8 +28,7 @@ jobs:
 
       - name: SRv2 Momentum-Reversal तपासून, आढळल्यास PAPER trade
         env:
-          UPSTOX_TOKEN: ${{ secrets.UPSTOX_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python3 srv2_momentum_reversal_strategy.py --token "$UPSTOX_TOKEN"
+        run: python3 srv2_momentum_reversal_strategy.py
