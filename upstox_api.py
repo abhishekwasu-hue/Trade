@@ -28,10 +28,18 @@ def get_instrument_key(symbol):
     return SYMBOL_INSTRUMENT_KEYS.get(symbol, SYMBOL_INSTRUMENT_KEYS["NIFTY"])
 
 
+@st.cache_data(ttl=60)
 def fetch_timeframe_df(access_token, symbol, spot, interval_key):
     """
     'interval_key' नुसार योग्य पद्धतीने candles मिळवणे. '1hour' साठी थेट API कॉल न करता (तो पॅरामीटर
     Upstox कडून verified नाही) 30-मिनिटांचा डेटा resample करून तयार केला जातो — आधीच वापरलेली, सुरक्षित पद्धत.
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Dashboard Speed) — `@st.cache_data(ttl=60)` जोडला —
+    established Dashboard (page_dashboard.py) एकाच rerun मध्ये established समान (symbol, interval)
+    combo अनेक ठिकाणी (Chart, Direction Engine, Multi-Strategy, MTF Pullback — वेगळ्या pages वरही)
+    मागवतो, आणि established 1-मिनिट auto-refresh मुळे दर मिनिटाला हेच पुन्हा-पुन्हा Upstox कडून
+    मागवलं जायचं — जरी 15/30-मिनिट candle त्या दरम्यान बदललेलाच नसतो. आता ६० सेकंदांच्या आत established
+    same params साठी established API कॉलच होत नाही (cached निकाल वापरला जातो).
     """
     if interval_key == "1hour":
         df_30m = fetch_candles(access_token, symbol, spot, interval="30minute")
@@ -39,6 +47,7 @@ def fetch_timeframe_df(access_token, symbol, spot, interval_key):
     return fetch_candles(access_token, symbol, spot, interval=interval_key)
 
 
+@st.cache_data(ttl=60)
 def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookback_days=None):
     """
     किमान `lookback_days` इतका इतिहास मिळवणारे इंजिन. Upstox चा प्रत्येक API कॉल ठराविक तारीख-रेंजच
@@ -354,8 +363,11 @@ def fetch_market_news(max_items_per_feed=5):
             continue  # हा फीड अयशस्वी — पुढच्या फीडकडे जाणे, संपूर्ण रिपोर्ट थांबवायचे नाही
     return results
 
+@st.cache_data(ttl=30)
 def fetch_india_vix(access_token):
-    """India VIX (instrument key: NSE_INDEX|India VIX) चा सध्याचा LTP मिळवणे."""
+    """India VIX (instrument key: NSE_INDEX|India VIX) चा सध्याचा LTP मिळवणे.
+    🎓 established VIX हळू बदलतो (LTP सारखं trading-निर्णायक नाही) — established 30-सेकंद cache
+    सुरक्षित, आणि established दर rerun ला होणारे अनावश्यक API कॉल्स टाळते."""
     try:
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         key = urllib.parse.quote("NSE_INDEX|India VIX", safe="")
@@ -370,8 +382,11 @@ def fetch_india_vix(access_token):
     except Exception:
         return None
 
+@st.cache_data(ttl=60)
 def get_available_margin(access_token):
-    """Equity segment मधील उपलब्ध ट्रेडिंग मार्जिन (v2 Get Funds and Margin API)."""
+    """Equity segment मधील उपलब्ध ट्रेडिंग मार्जिन (v2 Get Funds and Margin API).
+    🎓 established margin दर सेकंदाला बदलत नाही (फक्त trade उघडल्यावर/बंद झाल्यावर) — established
+    60-सेकंद cache सुरक्षित, Position Sizing च्या अचूकतेला बाधा न आणता अनावश्यक API कॉल्स टाळते."""
     try:
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         url = "https://api.upstox.com/v2/user/get-funds-and-margin?segment=SEC"
@@ -427,6 +442,7 @@ def extract_order_ids(resp):
     return []
 
 
+@st.cache_data(ttl=30)
 def fetch_option_greeks(access_token, instrument_keys):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Portfolio Greeks Monitoring साठी. दिलेल्या
