@@ -393,21 +393,30 @@ def compute_pcr_zone_label(pcr):
     खरं तर Overbought नाहीच) साठीही चुकून "🔴 Overbought" दिसायचं — तेच PCR 1.0-1.3 (सौम्य Bullish)
     साठी चुकून "🟢 Oversold" दिसायचं.
 
-    ही function established compute_pcr_signal() च्याच ५ पट्ट्यांशी तंतोतंत जुळणारा, प्रत्येक
-    पट्टीसाठी वेगळा (अचूक) संदेश देते — सौम्य आणि टोकाचं (Overbought/Oversold) यात गल्लत होत नाही.
+    🎓 वापरकर्त्याशी चर्चा करून पुढे सुधारित —
+    १. सौम्य पट्ट्यांचा "अजून ___ नाही" संदेश आता established दिशेने योग्य टोकाकडे इशारा देतो: PCR
+       0.70-0.90 (सौम्य Bearish) कमी होत गेला तर established Oversold (<0.70) कडे जातो, Overbought
+       (>1.3, पूर्णपणे उलट टोक) कडे नाही — म्हणून आता "अजून Oversold नाही" (established उलट, 1.0-1.3
+       साठी "अजून Overbought नाही").
+    २. Oversold/Overbought (टोकाच्या पट्ट्या) हा established एक contrarian-reversal इशारा आहे,
+       ठाम दिशा-निश्चिती नाही — म्हणून संदेशातून "Bullish"/"Bearish Reversal" हे ठाम शब्द काढले,
+       established "Bear Trap"/"Bull Trap" (जे आधीच धोका दर्शवतं) एवढंच ठेवलं.
+
+    established compute_pcr_signal() च्याच ५ पट्ट्यांशी तंतोतंत जुळणारा, प्रत्येक पट्टीसाठी वेगळा
+    (अचूक) संदेश देते — सौम्य आणि टोकाचं (Overbought/Oversold) यात गल्लत होत नाही.
     """
     if pcr is None:
         return "⚪ अपुरा डेटा"
     if pcr < 0.70:
-        return "🟢 Oversold — संभाव्य Bullish Reversal (Bear Trap धोका)"
+        return "🟢 Oversold — संभाव्य Reversal (Bear Trap धोका)"
     elif pcr < 0.90:
-        return "🔴 सौम्य Bearish कल (अजून Overbought नाही)"
+        return "🔴 सौम्य Bearish कल (अजून Oversold नाही)"
     elif pcr <= 1.0:
         return "🟡 श्रेणीबद्ध (Sideways) कल"
     elif pcr <= 1.3:
-        return "🟢 सौम्य Bullish कल (अजून Oversold नाही)"
+        return "🟢 सौम्य Bullish कल (अजून Overbought नाही)"
     else:
-        return "🔴 Overbought — संभाव्य Bearish Reversal (Bull Trap धोका)"
+        return "🔴 Overbought — संभाव्य Reversal (Bull Trap धोका)"
 
 
 def compute_pcr_signal(total_put_oi, total_call_oi):
