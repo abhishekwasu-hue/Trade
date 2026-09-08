@@ -39,6 +39,7 @@ from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_tr
 from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
+from live_ticker import render_live_ticker
 
 
 def render():
@@ -53,6 +54,12 @@ def render():
     pop_threshold_pct = st.session_state["pop_threshold_pct"]
     sl_pct_of_max_loss = st.session_state["sl_pct_of_max_loss"]
     target_pct_of_max_profit = st.session_state["target_pct_of_max_profit"]
+
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Professional Grade — Blink फिक्स) — किंमत/P&L टिकर
+    # established स्वतंत्र fragment (live_ticker.py) मध्ये, दर ६० सेकंदाला **स्वतःच** ताजा होतो —
+    # खालचं संपूर्ण पान (chart/tabs) अजिबात हलत नाही, पूर्ण-पान रिफ्रेश आता established दर ५ मिनिटांनी.
+    render_live_ticker()
+    st.markdown("---")
     vix_max_threshold = st.session_state["vix_max_threshold"]
     sideways_tight_range_pct = st.session_state["sideways_tight_range_pct"]
     sideways_max_range_pct = st.session_state["sideways_max_range_pct"]

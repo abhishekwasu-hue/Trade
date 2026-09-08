@@ -135,12 +135,17 @@ market_hours_now = is_market_open(open_time=_dt.time(9, 10), close_time=_dt.time
 
 if auto_refresh and market_hours_now:
     if st_autorefresh is not None:
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- 5 मिनिटांवरून 1 मिनिटावर (Upstox API
-        # rate-limit चा धोका कमी करण्यासाठी, "दर सेकंदाला" ऐवजी हा सुरक्षित, तरीही जलद मध्यबिंदू).
-        st_autorefresh(interval=60000, key="dashboard_autorefresh")  # 60000ms = 1 मिनिट
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Professional Grade — Blink फिक्स) — आधी दर १
+        # मिनिटाला **संपूर्ण पान** पुन्हा चालायचं (लक्षणीय "blink" — chart/tabs सगळं क्षणभर नाहीसं होऊन
+        # परत यायचं, अव्यावसायिक दिसायचं). किंमत/P&L टिकर (established live_ticker.py, स्वतंत्र
+        # `@st.fragment(run_every="60s")`) आता दर ६० सेकंदाला **स्वतःच, बाकीचं पान न हलवता** ताजा
+        # होतो — म्हणून संपूर्ण पानाचं auto-refresh आता दर ५ मिनिटांनी पुरेसं आहे (established
+        # चार्ट/Direction Engine/Signal Engine इतक्या वारंवार बदलायची गरजच नाही — 15-मिनिट candle
+        # तसंही १५ मिनिटांनीच बदलतो).
+        st_autorefresh(interval=300000, key="dashboard_autorefresh")  # 300000ms = ५ मिनिट
     else:
         st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
-    st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर १ मिनिटाने आपोआप)")
+    st.sidebar.caption(f"🔄 शेवटचं पूर्ण-पान रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर ५ मिनिटांनी आपोआप — किंमत/P&L टिकर मात्र दर ६० सेकंदाला स्वतंत्रपणे ताजा होतो)")
 elif auto_refresh and not market_hours_now:
     st.sidebar.caption("⏸️ बाजार बंद (9:10-15:40 बाहेर) — Auto-refresh थांबवला, फक्त हाताने Refresh करा (माऊस/F5).")
     if st.sidebar.button("🔄 आत्ता Refresh करा"):
