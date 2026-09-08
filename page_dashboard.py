@@ -562,6 +562,8 @@ def render():
                                     "disclosed_quantity": 0,
                                     "trigger_price": manual_trigger if manual_order_type in ("SL", "SL-M") else 0,
                                     "is_amo": False,
+                                    # 🎓 वापरकर्त्याने Upstox कडून सापडवलेली bug (UDAPI1115) — वर बघा
+                                    "correlation_id": uuid.uuid4().hex[:20],
                                 }
                                 status_code, resp = execute_order_leg_set(token_input, [order], trading_mode)
                                 if status_code == 200 and resp.get("status") == "success":
@@ -635,6 +637,7 @@ def render():
                                     "price": leg["Price"], "tag": "BASKET", "instrument_token": leg["instrument_key"],
                                     "order_type": leg["Order Type"], "transaction_type": leg["Action"],
                                     "disclosed_quantity": 0, "trigger_price": leg["Trigger"], "is_amo": False,
+                                    "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
                                 }
                                 for leg in st.session_state.order_basket
                             ]

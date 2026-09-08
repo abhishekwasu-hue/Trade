@@ -92,6 +92,10 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             "tag": f"A1_{leg['role'].upper()[:16]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": leg["transaction_type"],
             "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
+            # 🎓 वापरकर्त्याने Upstox कडून सापडवलेली bug — Upstox Multi Order API ला प्रत्येक order
+            # साठी `correlation_id` (unique, alphanumeric, कमाल २० अक्षरं) आता सक्तीचा आहे — नसेल तर
+            # "UDAPI1115: correlation_id is required" देऊन संपूर्ण ऑर्डर नाकारतो.
+            "correlation_id": uuid.uuid4().hex[:20],
         }
         for leg in legs
     ]
@@ -162,6 +166,32 @@ def compute_trailing_sl_level(current_pnl, peak_pnl, atr_points, lot_size, lots,
     return new_peak_pnl, effective_sl
 
 
+def compute_pct_trailing_sl_level(current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली, established ATR-Trailing पेक्षा वेगळी यंत्रणा — फक्त
+    `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी: established ATR ऐवजी निव्वळ प्रीमियमच्या
+    टक्केवारीवर आधारित —
+      • MTM नफा established activation_pct (डीफॉल्ट 20%) पर्यंत पोहोचेपर्यंत काहीही होत नाही (मूळ
+        स्थिर SL तसाच).
+      • एकदा पोहोचला की, SL established lock_pct (डीफॉल्ट 10% credit) इतकं मागे ठेवून लगेच वर सरकतो
+        (म्हणजे activation क्षणी SL = breakeven + (activation_pct - lock_pct)% इतका lock होतो).
+      • पुढे नफा वाढतच राहिला, तर SL सुद्धा established lock_pct चं अंतर राखत सतत वर सरकत राहतो — कधीच
+        मागे सरकत नाही (peak_pnl कधीच कमी होत नाही, established ATR आवृत्तीसारखंच).
+    Returns: (नवीन peak_pnl, प्रत्यक्ष वापरायचा effective_sl_level)
+    """
+    new_peak_pnl = max(peak_pnl, current_pnl) if peak_pnl is not None else current_pnl
+
+    activation_level = net_credit_total * (activation_pct / 100.0)
+    if new_peak_pnl < activation_level:
+        return new_peak_pnl, original_sl_level  # अजून 20% पर्यंत पोहोचलेलं नाही — मूळ स्थिर SL तसाच
+
+    lock_amount = net_credit_total * (lock_pct / 100.0)
+    trailing_sl_level = new_peak_pnl - lock_amount
+
+    effective_sl = trailing_sl_level if original_sl_level is None else max(original_sl_level, trailing_sl_level)
+    return new_peak_pnl, effective_sl
+
+
 def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
@@ -173,6 +203,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     trailing_sl_enabled=True असल्यास, ATR-आधारित Trailing SL सर्व स्ट्रॅटेजींना (Price Action, Indicator,
     व मूळ Credit Spreads सकट) लागू होतो — पोझिशन नफ्यात गेल्यावर SL सतत नफ्याच्या दिशेने सरकतो, कधीच
     मूळ स्थिर SL पेक्षा वाईट होत नाही. atr_points कॉलरने (caller ने) आधीच काढून द्यायचा असतो.
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
+    दोन विशेष नियम, established `source` column वरून ओळखले जातात (established sidebar-आधारित
+    trailing_sl_enabled/carry-forward टॉगल्सपासून पूर्णपणे स्वतंत्र, कारण ही रणनीती नेहमी pure
+    intraday राहायला हवी, इतर स्ट्रॅटेजींप्रमाणे carry-forward नाही):
+      • 3:10pm Carry-Forward नियम या source ला लागू होत नाही (जरी strategy_name established
+        BULL_PUT_SPREAD/BEAR_CALL_SPREAD शी जुळत असला तरी) — नेहमी प्लेन 15:15 EOD Square-off.
+      • established ATR-Trailing ऐवजी नवीन %-आधारित Trailing (compute_pct_trailing_sl_level, वर) —
+        MTM नफा 20% झाल्यावर सक्रिय, 10% credit lock सह — नेहमी सक्रिय (sidebar टॉगलची गरज नाही).
     """
     ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
     past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (eod_squareoff_hour, eod_squareoff_minute)
@@ -181,7 +220,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -192,16 +231,16 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or ""))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
 
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -214,15 +253,28 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             for leg in legs
         )
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
+        net_credit_total = net_credit * lots * lot_size
 
-        # ATR-आधारित Trailing SL — चालू असेल तरच, आणि मूळ स्थिर SL पेक्षा कधीच वाईट (सैल) होणार नाही याची खात्री
+        is_pct_trailing_trade = (source == "dynamic_sr_instant")
+
         effective_sl_level = sl_level
-        if trailing_sl_enabled:
+        is_trailing_active = False
+        if is_pct_trailing_trade:
+            # established ATR-Trailing ऐवजी — नेहमी सक्रिय (sidebar टॉगलची गरज नाही), 20% नफ्यानंतर सक्रिय
+            new_peak_pnl, effective_sl_level = compute_pct_trailing_sl_level(
+                current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=sl_level,
+            )
+            if new_peak_pnl != peak_pnl:
+                cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+            is_trailing_active = effective_sl_level != sl_level
+        elif trailing_sl_enabled:
+            # established ATR-आधारित Trailing SL — चालू असेल तरच, आणि मूळ स्थिर SL पेक्षा कधीच वाईट (सैल) होणार नाही याची खात्री
             new_peak_pnl, effective_sl_level = compute_trailing_sl_level(
                 current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=atr_multiplier, original_sl_level=sl_level,
             )
             if new_peak_pnl != peak_pnl:
                 cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+            is_trailing_active = effective_sl_level != sl_level
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
         # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३:१० वाजता तपासतो: नफा >=Target
@@ -232,12 +284,21 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
         # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
         # सामायिक — फक्त SRv2 साठी वेगळी नाही).
-        is_new_rule_trade = strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` ला हा carry-forward नियम
+        # वगळलेला — तो नेहमी pure intraday राहायला हवा (strategy_name जुळत असला तरी), म्हणून source
+        # वरही तपासणे.
+        is_new_rule_trade = (
+            strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
+            and source != "dynamic_sr_instant"
+        )
         past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
 
         exit_reason = None
         if effective_sl_level is not None and current_pnl <= effective_sl_level:
-            exit_reason = "TRAILING_SL" if (trailing_sl_enabled and effective_sl_level != sl_level) else "SL"
+            if is_trailing_active:
+                exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
+            else:
+                exit_reason = "SL"
         elif is_new_rule_trade:
             if past_carry_forward_check_time:
                 if target_level is not None and current_pnl >= target_level:
@@ -263,6 +324,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     "order_type": "MARKET",
                     "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
                     "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
+                    "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
                 }
                 for leg in legs
             ]
@@ -375,6 +437,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
             "tag": f"MANUAL_CLOSE_{str(leg.get('role', 'LEG'))[:12]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
             "disclosed_quantity": 0, "trigger_price": 0, "price": 0, "is_amo": False,
+            "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
         }
         for leg in legs
     ]
