@@ -64,14 +64,20 @@ def reconcile_positions(access_token, symbol):
     }
 
 def normalize_legs(strategy_result):
-    """कोणत्याही स्ट्रॅटेजी रिझल्टला (2-leg स्प्रेड किंवा 4-leg कंडोर/बटरफ्लाय) समान legs-list स्वरूपात आणणे."""
+    """कोणत्याही स्ट्रॅटेजी रिझल्टला (2-leg स्प्रेड किंवा 4-leg कंडोर/बटरफ्लाय) समान legs-list स्वरूपात आणणे.
+    🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — established "ltp" (entry-वेळचा प्रीमियम) आधी इथेच
+    गाळला जायचा (2-leg स्प्रेड साठी) — म्हणजे Order Book च्या "Price" column ला (जो established
+    MARKET order request चा price=0 दाखवतो, कारण MARKET order ला limit price नसतोच) दाखवायला
+    प्रत्यक्ष entry किंमतच उपलब्ध नव्हती. आता established "ltp" (उपलब्ध असल्यास) पुढे नेलं जातं."""
     if "legs" in strategy_result:
         return strategy_result["legs"]
     return [
         {"role": "long_hedge", "strike": strategy_result["long_leg"]["strike"],
-         "instrument_key": strategy_result["long_leg"]["instrument_key"], "transaction_type": "BUY"},
+         "instrument_key": strategy_result["long_leg"]["instrument_key"], "transaction_type": "BUY",
+         "ltp": strategy_result["long_leg"].get("ltp")},
         {"role": "short_leg", "strike": strategy_result["short_leg"]["strike"],
-         "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL"},
+         "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL",
+         "ltp": strategy_result["short_leg"].get("ltp")},
     ]
 
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None):
@@ -116,7 +122,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     strikes_summary = " · ".join(f"{leg['role']}:{leg['strike']:.0f}" for leg in legs)
 
     trade_id = f"{'PAPER' if trading_mode == 'PAPER' else symbol}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    log_orders_batch(order_ids, trade_id, symbol, trading_mode, orders, status="COMPLETE")
+    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — established MARKET orders चा request price
+    # नेहमी 0 असतो (limit price नसतोच) — established प्रत्यक्ष entry किंमत (प्रत्येक leg चं "ltp"/
+    # "premium", established strategy_result मधून) इथे वेगळी पाठवली जाते.
+    entry_fill_prices = {
+        leg["instrument_key"]: (leg.get("ltp") if leg.get("ltp") is not None else leg.get("premium"))
+        for leg in legs
+    }
+    log_orders_batch(order_ids, trade_id, symbol, trading_mode, orders, status="COMPLETE", fill_prices=entry_fill_prices)
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -339,7 +352,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode)
             if status_code == 200 and resp.get("status") == "success":
                 order_ids = extract_order_ids(resp)
-                log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE")
+                log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE", fill_prices=current_ltps)
                 cur.execute(
                     """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=?
                        WHERE trade_id=?""",
@@ -452,7 +465,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE")
     if status_code == 200 and resp.get("status") == "success":
         order_ids = extract_order_ids(resp)
-        log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE")
+        log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE", fill_prices=ltp_map)
         cur.execute(
             "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=? WHERE trade_id=?",
             (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),

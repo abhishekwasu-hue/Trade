@@ -113,17 +113,28 @@ def init_sqlite_db():
             trigger_price REAL,
             status TEXT,
             tag TEXT,
-            placed_at TEXT
+            placed_at TEXT,
+            fill_price REAL
         )
     """)
+    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — established "Price" column established
+    # request मधला price (MARKET orders साठी नेहमी 0, कारण limit price नसतोच) दाखवायचा, प्रत्यक्ष
+    # entry/exit किंमत (LTP) नाही. established नवीन fill_price column मध्ये ती खरी किंमत साठवली
+    # जाईल — जुन्या (आधीपासून अस्तित्वात असलेल्या) DB फाईलवरही सुरक्षितपणे लागू होण्यासाठी ALTER TABLE.
+    try:
+        cursor.execute("ALTER TABLE order_log ADD COLUMN fill_price REAL")
+    except sqlite3.OperationalError:
+        pass  # कॉलम आधीच अस्तित्वात आहे
     conn.commit()
     conn.close()
 
 init_sqlite_db()
 
 
-def log_order(order_id, trade_id, symbol, mode, order_dict, status):
-    """खऱ्या ब्रोकर टर्मिनलसारखं — प्रत्येक ऑर्डर (leg) चा एक कायमचा रेकॉर्ड ठेवणे, Orders टॅबसाठी."""
+def log_order(order_id, trade_id, symbol, mode, order_dict, status, fill_price=None):
+    """खऱ्या ब्रोकर टर्मिनलसारखं — प्रत्येक ऑर्डर (leg) चा एक कायमचा रेकॉर्ड ठेवणे, Orders टॅबसाठी.
+    fill_price — established प्रत्यक्ष entry/exit वेळचा LTP (MARKET orders चा request price नेहमी 0
+    असतो, तो दाखवण्याऐवजी हीच खरी किंमत Order Book वर दाखवली जाते)."""
     try:
         instrument_key = order_dict.get("instrument_token", "")
         strike = None
@@ -136,13 +147,13 @@ def log_order(order_id, trade_id, symbol, mode, order_dict, status):
         cur.execute(
             """INSERT INTO order_log
                (order_id, trade_id, symbol, mode, instrument_key, strike, option_type, transaction_type,
-                order_type, quantity, price, trigger_price, status, tag, placed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                order_type, quantity, price, trigger_price, status, tag, placed_at, fill_price)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
                 order_dict.get("transaction_type"), order_dict.get("order_type"),
                 order_dict.get("quantity"), order_dict.get("price"), order_dict.get("trigger_price"),
-                status, order_dict.get("tag"), get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
+                status, order_dict.get("tag"), get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), fill_price,
             ),
         )
         conn.commit()
@@ -150,11 +161,14 @@ def log_order(order_id, trade_id, symbol, mode, order_dict, status):
     except Exception:
         pass  # ऑर्डर लॉगिंग अयशस्वी झाली तरी मुख्य ऑर्डर-प्लेसमेंट थांबता कामा नये
 
-def log_orders_batch(order_ids, trade_id, symbol, mode, orders, status="COMPLETE"):
-    """एका ऑर्डर-सेटमधील प्रत्येक leg साठी log_order() कॉल करणे."""
+def log_orders_batch(order_ids, trade_id, symbol, mode, orders, status="COMPLETE", fill_prices=None):
+    """एका ऑर्डर-सेटमधील प्रत्येक leg साठी log_order() कॉल करणे.
+    fill_prices — ऐच्छिक {instrument_key: price} dict (established entry/exit वेळचा LTP); न दिल्यास
+    established जुनं वर्तन (fill_price=None, फक्त request चा price=0 दिसेल) तसंच राहतं."""
     for i, o in enumerate(orders):
         oid = order_ids[i] if i < len(order_ids) else f"UNKNOWN-{i}"
-        log_order(oid, trade_id, symbol, mode, o, status)
+        fill_price = (fill_prices or {}).get(o.get("instrument_token"))
+        log_order(oid, trade_id, symbol, mode, o, status, fill_price=fill_price)
 
 def save_candles_to_db(symbol, interval, df):
     if df.empty:
@@ -320,8 +334,16 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
                     for leg in legs
                 )
                 mtm = round((net_credit - cost_to_close_now) * lots * lot_size, 2)
+                # 🎓 वापरकर्त्याने Positions tab वरून सापडवलेली bug (Regression) — मागच्या फिक्समध्ये
+                # established max_loss/max_profit column आता per-share (net_credit प्रमाणेच) साठवले
+                # जातात — पण इथे mtm (established TOTAL, lots*lot_size ने आधीच गुणलेला) त्या
+                # per-share max_loss/max_profit शीच थेट भागला जायचा — scale जुळत नव्हती, त्यामुळे
+                # MTM% भलताच चुकीचा (फुगलेला) यायचा. आता established दोन्ही बाजू सुसंगत (TOTAL/TOTAL).
                 if max_loss:
-                    mtm_pct = round((mtm / (max_loss)) * 100, 1) if mtm < 0 else round((mtm / max_profit) * 100, 1) if max_profit else None
+                    mtm_pct = (
+                        round((mtm / (max_loss * lots * lot_size)) * 100, 1) if mtm < 0
+                        else round((mtm / (max_profit * lots * lot_size)) * 100, 1) if max_profit else None
+                    )
         # 🎓 Portfolio-level Risk Dashboard साठी — max_loss/net_credit/Direction आधीच query मध्ये
         # fetch होत होते, पण output मध्ये नव्हते. जोडलं (backward-compatible, फक्त नवीन columns).
         direction = "BULLISH" if strategy == "BULL_PUT_SPREAD" else ("BEARISH" if strategy == "BEAR_CALL_SPREAD" else "NEUTRAL")
@@ -611,7 +633,7 @@ def get_order_log(symbol, mode_filter=None, limit=100):
     conn = sqlite3.connect(DB_PATH)
     query = """SELECT placed_at AS "Time", order_id AS "Order ID", trade_id AS "Trade ID", mode AS "Mode",
                       transaction_type AS "Action", order_type AS "Type", quantity AS "Qty",
-                      price AS "Price", trigger_price AS "Trigger", status AS "Status", tag AS "Tag"
+                      COALESCE(fill_price, price) AS "Price", trigger_price AS "Trigger", status AS "Status", tag AS "Tag"
                FROM order_log WHERE symbol=?"""
     params = [symbol]
     if mode_filter:

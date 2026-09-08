@@ -583,7 +583,7 @@ def render():
                                     )
                                     # order_log व live_trades मध्ये एकच trade_id वापरणे (traceability साठी) — track झालं तरच
                                     # खरा trade_id वापरता येईल, नाहीतर वेगळा (untracked) tag वापरणे
-                                    log_orders_batch(order_ids, track_trade_id or "MANUAL_UNTRACKED", symbol, trading_mode, [order], status="COMPLETE")
+                                    log_orders_batch(order_ids, track_trade_id or "MANUAL_UNTRACKED", symbol, trading_mode, [order], status="COMPLETE", fill_prices=entry_ltps)
                                     if track_ok:
                                         st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
                                     else:
@@ -662,7 +662,7 @@ def render():
                                     symbol, legs_for_tracking, basket_lots, lot_size, entry_ltps, trading_mode, trading_style,
                                     sl_amount=basket_sl_amount, target_amount=basket_target_amount, tag_prefix="BASKET",
                                 )
-                                log_orders_batch(order_ids, track_trade_id or "BASKET_UNTRACKED", symbol, trading_mode, basket_orders, status="COMPLETE")
+                                log_orders_batch(order_ids, track_trade_id or "BASKET_UNTRACKED", symbol, trading_mode, basket_orders, status="COMPLETE", fill_prices=entry_ltps)
                                 if track_ok:
                                     st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
                                 else:
