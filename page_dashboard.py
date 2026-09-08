@@ -30,7 +30,7 @@ from signals import (
 )
 from strategy import _pop_lookup, select_iron_condor, select_iron_butterfly, select_credit_spread, select_credit_spread_fixed_strikes, compute_position_size
 from oi_analysis import (
-    get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_max_pain,
+    get_previous_day_total_oi, compute_oi_price_matrix, compute_pcr_signal, compute_pcr_zone_label, compute_max_pain,
     compute_rollover_proxy, swing_oi_gate, find_psychological_level, check_oi_wall_confirmation,
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
     fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
@@ -726,14 +726,12 @@ def render():
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + संबंधित संदेश आता ठळक banner वरच (आधी
         # फक्त खालच्या "Advanced OI Analysis" च्या collapsed भागात होता, इथे लगेच दिसत नव्हता).
+        # 🎓 वापरकर्त्याने Dashboard वरून सापडवलेली bug — आधी खालचा pcr_messages dict established
+        # bias (फक्त BULLISH/BEARISH) बघून संदेश निवडायचा, त्यामुळे PCR 0.70-0.90 (सौम्य Bearish) लाही
+        # चुकून "Overbought" दिसायचं. आता compute_pcr_zone_label() established प्रत्यक्ष PCR किमतीवरून
+        # (५ वेगळ्या पट्ट्या) अचूक संदेश देतं.
         pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
-        pcr_messages = {
-            "BULLISH": "🟢 Oversold — संभाव्य Bullish Reversal (Bear Trap धोका)",
-            "BEARISH": "🔴 Overbought — संभाव्य Bearish Reversal (Bull Trap धोका)",
-            "SIDEWAYS": "🟡 श्रेणीबद्ध (Sideways) कल",
-            "NEUTRAL": "⚪ अपुरा डेटा",
-        }
-        pcr_line = f"PCR: {pcr_val:.2f} — {pcr_messages.get(pcr_bias, '')}" if pcr_val is not None else "PCR: उपलब्ध नाही"
+        pcr_line = f"PCR: {pcr_val:.2f} — {compute_pcr_zone_label(pcr_val)}" if pcr_val is not None else "PCR: उपलब्ध नाही"
 
         # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
         banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]

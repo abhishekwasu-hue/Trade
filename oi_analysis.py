@@ -384,6 +384,32 @@ def compute_oi_price_matrix(current_total_oi, prev_total_oi, current_price, prev
         return {"category": "SHORT_COVERING", "bias": "BULLISH", "strength": "Weak/Temporary"}
     return {"category": "LONG_UNWINDING", "bias": "BEARISH", "strength": "Weak/Temporary"}
 
+def compute_pcr_zone_label(pcr):
+    """
+    🎓 वापरकर्त्याने Dashboard वरून सापडवलेली bug — established banner आधी फक्त established
+    compute_pcr_signal() च्या bias (BULLISH/BEARISH, फक्त २ शक्य किमती) बघून संदेश दाखवायचा — पण त्याच
+    एका bias खाली established ५ पट्ट्यांपैकी २-२ पट्ट्या एकत्र आल्या होत्या (उदा. PCR 0.70-0.90 सौम्य
+    Bearish आणि PCR>1.3 खरा Overbought — दोन्ही bias="BEARISH"). त्यामुळे PCR=0.88 (सौम्य Bearish,
+    खरं तर Overbought नाहीच) साठीही चुकून "🔴 Overbought" दिसायचं — तेच PCR 1.0-1.3 (सौम्य Bullish)
+    साठी चुकून "🟢 Oversold" दिसायचं.
+
+    ही function established compute_pcr_signal() च्याच ५ पट्ट्यांशी तंतोतंत जुळणारा, प्रत्येक
+    पट्टीसाठी वेगळा (अचूक) संदेश देते — सौम्य आणि टोकाचं (Overbought/Oversold) यात गल्लत होत नाही.
+    """
+    if pcr is None:
+        return "⚪ अपुरा डेटा"
+    if pcr < 0.70:
+        return "🟢 Oversold — संभाव्य Bullish Reversal (Bear Trap धोका)"
+    elif pcr < 0.90:
+        return "🔴 सौम्य Bearish कल (अजून Overbought नाही)"
+    elif pcr <= 1.0:
+        return "🟡 श्रेणीबद्ध (Sideways) कल"
+    elif pcr <= 1.3:
+        return "🟢 सौम्य Bullish कल (अजून Oversold नाही)"
+    else:
+        return "🔴 Overbought — संभाव्य Bearish Reversal (Bull Trap धोका)"
+
+
 def compute_pcr_signal(total_put_oi, total_call_oi):
     """
     🎓 वापरकर्त्याशी चर्चा करून अंतिम ठरवलेली, ५-पट्ट्यांची PCR Logic ("Neutral" काढून टाकलं,
