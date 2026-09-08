@@ -122,16 +122,29 @@ context_ok = setup_shared_context()
 # 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
 # काम करण्यासाठी), आणि "शेवटचं कधी रिफ्रेश झालं" हे साईडबारमध्ये दिसतं — जेणेकरून प्रत्यक्ष काम
 # करतंय की नाही ते लगेच पडताळता येईल (आधी कुठलाही दृश्य संकेतच नव्हता).
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established बाजार तासांबाहेर (established रोजच्या
+# 9:15-15:30 च्या दोन्ही बाजूला ५/१० मिनिटांची सूट — established 9:10 ते 15:40) दर मिनिटाला उगाच
+# auto-refresh चालू ठेवायची गरज नाही (ना नवीन डेटा, ना trading decision) — फक्त वायफळ Upstox API
+# कॉल्स + CPU load (established 1GB droplet साठी विशेष महत्त्वाचं). बाजार बंद असताना established
+# फक्त हाताने (mouse click ने) refresh व्हावं.
+from config import is_market_open, get_ist_now
+import datetime as _dt
+
 auto_refresh = st.session_state.get("auto_refresh", False)
-if auto_refresh:
+market_hours_now = is_market_open(open_time=_dt.time(9, 10), close_time=_dt.time(15, 40))
+
+if auto_refresh and market_hours_now:
     if st_autorefresh is not None:
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- 5 मिनिटांवरून 1 मिनिटावर (Upstox API
         # rate-limit चा धोका कमी करण्यासाठी, "दर सेकंदाला" ऐवजी हा सुरक्षित, तरीही जलद मध्यबिंदू).
         st_autorefresh(interval=60000, key="dashboard_autorefresh")  # 60000ms = 1 मिनिट
     else:
         st.sidebar.warning("⚠️ Auto-refresh साठी 'streamlit-autorefresh' पॅकेज इंस्टॉल नाही — requirements.txt तपासा.")
-    from config import get_ist_now
     st.sidebar.caption(f"🔄 शेवटचं रिफ्रेश: {get_ist_now().strftime('%H:%M:%S')} (दर १ मिनिटाने आपोआप)")
+elif auto_refresh and not market_hours_now:
+    st.sidebar.caption("⏸️ बाजार बंद (9:10-15:40 बाहेर) — Auto-refresh थांबवला, फक्त हाताने Refresh करा (माऊस/F5).")
+    if st.sidebar.button("🔄 आत्ता Refresh करा"):
+        st.rerun()
 
 if context_ok:
     import page_dashboard

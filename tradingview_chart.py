@@ -279,6 +279,7 @@ def build_lightweight_chart_html(
     <button class="tool-btn" id="btn_rect" onclick="setTool('rect')">▭ Rectangle</button>
     <button class="tool-btn" id="btn_measure" onclick="setTool('measure')">📏 Measure</button>
     <button class="tool-btn" onclick="setTool(null)">🖱️ Cursor</button>
+    <button class="tool-btn" id="btn_fit" onclick="chart.timeScale().fitContent()">⤢ Auto-Fit</button>
     <button class="tool-btn" onclick="clearAllDrawings()">🗑️ सर्व मिटवा</button>
     <span id="status" style="align-self:center;"></span>
   </div>
