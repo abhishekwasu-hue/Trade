@@ -117,7 +117,12 @@ def build_strategy_result_from_legs(legs, payoff_curve):
     return {
         "legs": result_legs, "net_credit": net_credit_per_lot,
         "max_profit": max_profit_per_lot, "max_loss": max_loss_per_lot,
-        "strategy_type": "CUSTOM_MULTI_LEG", "is_credit_strategy": net_credit_per_lot > 0,
+        # 🎓 वापरकर्त्याने Dashboard वरून सापडवलेली bug — established इतर सर्व strategy-selector
+        # functions (select_iron_condor, select_credit_spread इ., strategy.py मध्ये) "strategy" हीच
+        # key वापरतात, जी established trading_engine.open_multi_leg_trade() ला हवी असते (DB मध्ये
+        # साठवण्यासाठी). इथे आधी चुकून "strategy_type" (वेगळं नाव) होतं — त्यामुळे PAPER Trade Execute
+        # करताना KeyError: 'strategy' यायचा.
+        "strategy": "CUSTOM_MULTI_LEG", "is_credit_strategy": net_credit_per_lot > 0,
     }
 
 
