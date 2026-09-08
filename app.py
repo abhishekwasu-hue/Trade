@@ -138,12 +138,21 @@ if context_ok:
     import page_positions
     import page_orders
     import page_performance
+    import page_multi_strategy
+    import page_mtf_pullback
+    import page_broker_accounts
 
     pages = [
         st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
         st.Page(page_positions.render, title="Positions", icon="💰", url_path="positions"),
         st.Page(page_orders.render, title="Orders", icon="📝", url_path="orders"),
         st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Dashboard वरची tab-गर्दी कमी करण्यासाठी, हे
+        # तीन (आधी page_dashboard.py चे tabs) आता established Positions/Orders/Performance
+        # सारखेच स्वतंत्र sidebar pages आहेत.
+        st.Page(page_multi_strategy.render, title="Multi-Strategy", icon="🧩", url_path="multi-strategy"),
+        st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
+        st.Page(page_broker_accounts.render, title="Broker Accounts", icon="⚙️", url_path="broker-accounts"),
     ]
     pg = st.navigation(pages)
     pg.run()

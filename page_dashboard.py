@@ -112,10 +112,9 @@ def render():
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab7, tab8 = st.tabs([
         "📊 Chart व Direction", "📋 Option Chain व OI", "🧬 Signal Engine व Trading",
-        "📄 Reports", "🧩 Multi-Strategy", "🌉 MTF Pullback + Gap Fill", "🗺️ Market Zones",
-        "🎯 Strategy Builder", "⚙️ Broker Accounts",
+        "📄 Reports", "🗺️ Market Zones", "🎯 Strategy Builder",
     ])
     with tab1:
         st.markdown("---")
@@ -1533,199 +1532,11 @@ def render():
             st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
 
         # =========================================================
-        # ९. नवीन — Multi-Strategy Orchestrator (OI/PCR, ICT-FVG, BB Squeeze, VWAP)
-        # हा A1 Engine पासून पूर्णपणे स्वतंत्र, समांतर pipeline आहे — वेगळ्या chat मध्ये बांधलेला, आता
-        # खऱ्या Upstox डेटावर इथे जोडलेला. इथला कुठलाही निकाल वरच्या A1 Engine च्या ट्रेड-निर्णयावर परिणाम
-        # करत नाही (फक्त माहितीसाठी — auto-execute होत नाही, फक्त सिग्नल्स दाखवतो).
+        # ९. Multi-Strategy Orchestrator आणि MTF Pullback + Gap Fill आता established वेगळ्या
+        # sidebar pages वर हलवलेले आहेत (page_multi_strategy.py / page_mtf_pullback.py) —
+        # Dashboard वरची tab-गर्दी कमी करण्यासाठी (वापरकर्त्याशी चर्चा करून ठरवलेलं).
         # =========================================================
         st.markdown("---")
-    with tab5:
-        st.subheader("🧩 Multi-Strategy Orchestrator")
-        st.caption("OI/PCR · ICT-FVG · BB Squeeze · VWAP · SR Bounce · MTF Gap Fill — ६ रणनीती एकत्र")
-        show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ६ strategies चालवल्या जातील)", value=False)
-        if show_orchestrator:
-            try:
-                from loader import build_orchestrator
-                from market_data_adapter import prepare_futures_ohlcv, prepare_options_chain, prepare_structure_data, compute_trend_direction_1h, apply_manual_sl_target
-                from strategies.base import MarketSnapshot
-                import os as _os
-
-                config_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.yaml")
-                orch = build_orchestrator(config_path)
-
-                # 🎓 वापरकर्त्याने "गर्दी" म्हणून निदर्शनास आणलेला मुद्दा — आधी १२ input boxes
-                # (६ strategies × SL+Target) नेहमीच उघडे दिसायचे, स्क्रीन भरून टाकायचे. आता डीफॉल्ट-
-                # बंद expander मध्ये — गरज असेल तेव्हाच उघडा, नाहीतर स्वच्छ, व्यावसायिक दिसणारं पान.
-                default_sl_target = {
-                    "oi_pcr": (40, 80), "ict_fvg": (30, 60), "bb_squeeze": (40, 80),
-                    "vwap": (25, 40), "sr_bounce": (40, 80), "mtf_gap_fill": (55, 155),
-                }
-                strat_display_names = {
-                    "oi_pcr": "OI/PCR", "ict_fvg": "ICT-FVG", "bb_squeeze": "BB Squeeze",
-                    "vwap": "VWAP", "sr_bounce": "SR Bounce", "mtf_gap_fill": "MTF Gap Fill",
-                }
-                ms_sl_target = {}
-                with st.expander("⚙️ Advanced — SL/Target स्वतः ठरवा (पॉइंट्स)", expanded=False):
-                    for strat_id, (default_sl, default_target) in default_sl_target.items():
-                        strat_label = strat_display_names[strat_id]
-                        mscol1, mscol2 = st.columns(2)
-                        with mscol1:
-                            sl_pts = st.number_input(f"{strat_label} — SL", min_value=1, value=default_sl, step=1, key=f"live_ms_sl_{strat_id}")
-                        with mscol2:
-                            target_pts = st.number_input(f"{strat_label} — Target", min_value=1, value=default_target, step=1, key=f"live_ms_target_{strat_id}")
-                        ms_sl_target[strat_id] = (sl_pts, target_pts)
-
-                df_for_orch = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
-                df_1h_for_orch = fetch_candles(token_input, symbol, underlying_price, interval="30minute")
-                futures_ohlcv = prepare_futures_ohlcv(df_for_orch)
-                options_chain_df = prepare_options_chain(raw_chain, symbol, atm_strike)
-                structure_data = prepare_structure_data(df_for_orch)
-                df_1h_resampled = resample_to_1h(df_1h_for_orch) if not df_1h_for_orch.empty else df_1h_for_orch
-                trend_direction_1h = compute_trend_direction_1h(df_1h_resampled)
-
-                # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या UnboundLocalError सह दाखवलेला खरा bug —
-                # इथे आधी "from signals import find_support_resistance_levels" अशी local import होती,
-                # जी हे नाव संपूर्ण render() function-scope साठी "local" बनवायची (Python चा नियम —
-                # function मध्ये कुठेही import/assignment असेल तर संपूर्ण scope त्याला local मानतं) —
-                # त्यामुळे याच्याही आधी (line 1083 वर) वापरलेला module-level import UnboundLocalError
-                # द्यायचा. हे function आधीच module-top-level ला (ओळ 22-23) import केलेलं आहे — ही
-                # redundant local import काढून टाकली.
-                sr_levels_1h = None
-                if df_1h_resampled is not None and not df_1h_resampled.empty and len(df_1h_resampled) >= 10:
-                    sr_levels_1h = find_support_resistance_levels(df_1h_resampled, top_n=3)
-                mtf_1h_ohlcv = None
-                if df_1h_resampled is not None and not df_1h_resampled.empty:
-                    mtf_1h_ohlcv = df_1h_resampled.rename(columns={
-                        "timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close",
-                    })
-
-                snapshot = MarketSnapshot(
-                    timestamp=get_ist_now(), futures_ohlcv=futures_ohlcv,
-                    options_chain=options_chain_df, structure_data=structure_data,
-                    extra={"trend_direction_1h": trend_direction_1h, "sr_levels_1h": sr_levels_1h, "mtf_1h_ohlcv": mtf_1h_ohlcv},
-                )
-
-                raw_results = []
-                for strat in orch.strategies:
-                    r = strat.check_gates(snapshot)
-                    sl_pts, target_pts = ms_sl_target.get(r.strategy_id, default_sl_target.get(r.strategy_id, (40, 80)))
-                    r = apply_manual_sl_target(r, sl_pts, target_pts, reference_price=underlying_price)
-                    raw_results.append(r)
-
-                approved = orch.run_cycle(snapshot)
-                for s in approved:
-                    sl_pts, target_pts = ms_sl_target.get(s.strategy_id, default_sl_target.get(s.strategy_id, (40, 80)))
-                    apply_manual_sl_target(s, sl_pts, target_pts, reference_price=underlying_price)
-
-                # 🎓 सर्वात महत्त्वाचं (मंजूर सिग्नल्स) आधी दाखवणे — आधी हे तक्त्याच्या तळाशी लपलेलं होतं
-                st.markdown("##### ✅ अंतिम मंजूर सिग्नल्स")
-                if approved:
-                    approved_cols = st.columns(min(len(approved), 3))
-                    for i, s in enumerate(approved):
-                        with approved_cols[i % 3]:
-                            badge_color = "#089981" if s.direction.value == "LONG" else "#F23645" if s.direction.value == "SHORT" else "#787b86"
-                            st.markdown(
-                                f"""<div style="border:1px solid {badge_color};border-radius:8px;padding:10px 12px;margin-bottom:8px;">
-                                <div style="font-weight:700;color:{badge_color};">● {s.strategy_id} — {s.direction.value}</div>
-                                <div style="font-size:13px;color:#9598a1;margin-top:4px;">Entry: {s.entry_price} · SL: {s.stop_loss} · Target: {s.target}</div>
-                                <div style="font-size:12px;color:#787b86;margin-top:4px;">{s.reason}</div>
-                                </div>""",
-                                unsafe_allow_html=True,
-                            )
-                else:
-                    st.info("या cycle मध्ये कोणताही सिग्नल मंजूर झाला नाही.")
-
-                # 🎓 प्रत्येक strategy चा तपशील — आधी नेहमी उघडा dataframe होता, आता collapsed
-                with st.expander(f"🔍 सर्व ६ Strategies चा स्वतंत्र निकाल (Orchestrator गेट्सआधी)", expanded=False):
-                    color_map = {"LONG": "🟢", "SHORT": "🔴", "NONE": "⚪"}
-                    for r in raw_results:
-                        dot = color_map.get(r.direction.value, "⚪")
-                        st.markdown(f"{dot} **{strat_display_names.get(r.strategy_id, r.strategy_id)}** — {r.direction.value} "
-                                    f"(Confidence: {round(r.confidence, 2)}) — {r.reason}")
-                    st.caption(f"1H Supertrend Direction: {trend_direction_1h or 'उपलब्ध नाही'} | "
-                               f"Structure: swept_high={structure_data['swept_high']}, swept_low={structure_data['swept_low']}, "
-                               f"bos_direction={structure_data['bos_direction']}")
-
-                st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, वरच्या A1 Engine पासून पूर्णपणे स्वतंत्र.")
-            except ModuleNotFoundError as e:
-                st.error(
-                    f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}\n\n"
-                    "**बहुतेक कारण**: `strategies/` फोल्डर (सर्व ८ फाईल्स — `__init__.py`, `base.py`, `oi_pcr.py`, "
-                    "`ict_fvg.py`, `bb_squeeze.py`, `vwap.py`, `sr_bounce.py`, `mtf_gap_fill.py`) किंवा "
-                    "`orchestrator.py`/`loader.py`/`config.yaml` तुमच्या GitHub repo मध्ये गहाळ आहेत. "
-                    "Repo मध्ये जाऊन हे सर्व आहेत का तपासा."
-                )
-            except Exception as e:
-                st.error(f"Multi-Strategy Orchestrator मध्ये चूक: {type(e).__name__}: {e}")
-
-    with tab6:
-        st.markdown("---")
-        st.subheader(f"🌉 {symbol} — MTF Pullback + Gap Fill (नवीन, प्रयोगिक)")
-        st.caption(
-            "दोन स्वतंत्र रणनीती: (१) Fibonacci Pullback — 1H swing → 38.2-61.8% झोन → 15M Reversal + RSI. "
-            "(२) Gap Fill — फक्त खरा overnight gap, पूर्णपणे भरला गेला की कुठलीही पुष्टी न घेता Entry."
-        )
-        show_mtf = st.checkbox("दाखवा (1H + 15M डेटा नव्याने मागवला जाईल)", value=False, key="mtf_show")
-        if show_mtf:
-            try:
-                import mtf_pullback_strategy as mtf
-
-                mtf_strategy_choice = st.radio("रणनीती निवडा", ["gap_fill", "fib_pullback"], horizontal=True, key="mtf_strategy")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    mtf_sl_pct = st.number_input("SL %", value=0.25, step=0.05, key="mtf_sl")
-                    mtf_target_pct = st.number_input("Target %", value=0.70, step=0.05, key="mtf_target")
-                with col2:
-                    mtf_min_swing_pct = st.number_input("किमान Swing %", value=1.0, step=0.1, key="mtf_swing")
-                    mtf_min_gap_pct = st.number_input("किमान Gap %", value=0.30, step=0.05, key="mtf_gap")
-                with col3:
-                    mtf_fib_low = st.number_input("Fib Low", value=0.50, step=0.01, key="mtf_fib_lo")
-                    mtf_fib_high = st.number_input("Fib High", value=0.80, step=0.01, key="mtf_fib_hi")
-
-                # 🎓 established fetch pattern (आधीच्या lookback_days दुरुस्तीशी सुसंगत) -- 1H साठी
-                # पुरेसा इतिहास (swings ओळखण्यासाठी), 15M साठी अलीकडचा (entry/gap-fill शोधण्यासाठी).
-                # 🎓 वापरकर्त्याने Market Zones मध्ये दाखवलेला खरा bug -- थेट fetch_candles(interval=
-                # "1hour") वापरलं तर, established allowed_intervals यादीत "1hour" नसल्याने ते शांतपणे
-                # "30minute" कडे fallback होतं, resample न होताच -- fetch_timeframe_df() वापरून दुरुस्त.
-                df_1h_mtf = fetch_timeframe_df(token_input, symbol, underlying_price, "1hour")
-                df_15m_mtf = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
-
-                if df_1h_mtf is None or df_1h_mtf.empty or df_15m_mtf is None or df_15m_mtf.empty:
-                    st.warning("1H/15M डेटा मिळाला नाही.")
-                else:
-                    h1_mtf = df_1h_mtf.rename(columns={"timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close"}).reset_index(drop=True)
-                    m15_mtf = df_15m_mtf.rename(columns={"timestamp": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close"}).reset_index(drop=True)
-                    ps_mtf = mtf.pivots(h1_mtf, min_swing_pct=mtf_min_swing_pct)
-                    st.caption(f"1H candles: {len(h1_mtf)} | 15M candles: {len(m15_mtf)} | Swings सापडले: {len(ps_mtf)}")
-
-                    if mtf_strategy_choice == "gap_fill":
-                        st.markdown("##### 🎯 सध्या अजून न भरलेले Gaps (Live Monitoring)")
-                        open_gaps = mtf.find_open_gaps_now(h1_mtf, m15_mtf, ps_mtf, min_gap_pct=mtf_min_gap_pct)
-                        if open_gaps.empty:
-                            st.info("सध्या कुठलेही उघडे (unfilled) gaps नाहीत.")
-                        else:
-                            st.dataframe(open_gaps, width="stretch")
-                            st.caption("किंमत 'FillTriggerPrice' पर्यंत पोहोचली की, गोल्ड लगेच Entry घेतली जाईल.")
-                        sig_mtf = mtf.make_gap_fill_signals(h1_mtf, m15_mtf, ps_mtf, mtf_sl_pct, mtf_target_pct, min_gap_pct=mtf_min_gap_pct)
-                    else:
-                        sig_mtf = mtf.make_signals(h1_mtf, m15_mtf, ps_mtf, mtf_fib_low, mtf_fib_high, mtf_sl_pct, mtf_target_pct)
-
-                    sig_mtf = mtf.evaluate(m15_mtf, sig_mtf)
-                    st.markdown("##### 📜 अलीकडचे Signals")
-                    if sig_mtf.empty:
-                        st.info("या कालखंडात कुठलेही signals सापडले नाहीत.")
-                    else:
-                        display_cols = ["SignalDate", "Signal", "ReversalPattern", "Entry", "StopLoss", "Target", "Outcome"]
-                        st.dataframe(sig_mtf[display_cols].tail(15).sort_values("SignalDate", ascending=False), width="stretch")
-                        closed = sig_mtf[(sig_mtf.Outcome == "SL") | (sig_mtf.Outcome.str.startswith("TARGET_"))]
-                        if not closed.empty:
-                            wins = closed.Outcome.str.startswith("TARGET_").sum()
-                            wr = 100 * wins / len(closed)
-                            st.caption(f"एकूण Closed: {len(closed)} | Win Rate: {wr:.1f}% | Net R: {closed.R_Result.sum():.2f}")
-                st.caption("⚠️ हे फक्त माहितीसाठी आहे — इथून auto-execute होत नाही, इतर रणनीतींपासून पूर्णपणे स्वतंत्र.")
-            except Exception as e:
-                st.error(f"MTF Pullback + Gap Fill मध्ये चूक: {type(e).__name__}: {e}")
-
     with tab7:
         st.markdown("---")
         st.subheader(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)")
@@ -2041,59 +1852,5 @@ def render():
             st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 
 
-    with tab9:
-        # 🎓 वापरकर्त्याशी चर्चा करून बांधलेला — "Multi-Broker Multi-Account" रणनीतीसाठी
-        # user-friendly Account Management विभाग — established broker_accounts (Supabase) वर
-        # आधारित (Add/List/Enable-Disable/Delete), established Dashboard-वापरकर्त्याला कुठलाही
-        # कोड न लिहिता accounts व्यवस्थापित करता यावेत म्हणून.
-        st.subheader("⚙️ Broker Accounts व्यवस्थापन (Multi-Broker Multi-Account)")
-        st.caption("इथे नोंदवलेले, सक्रिय (Active) accounts established SRv2/Dynamic-S/R सारख्या रणनींतींनी एकाच वेळी (replicated) वापरले जातील.")
-
-        try:
-            import cloud_db
-            with st.expander("➕ नवीन Account जोडा", expanded=False):
-                new_account_id = st.text_input("Account ID (unique नाव, उदा. 'Abhi-Upstox-Main')", key="new_account_id")
-                new_broker_type = st.selectbox("Broker", ["upstox", "fyers"], key="new_broker_type")
-                new_nickname = st.text_input("Nickname (ऐच्छिक, उदा. 'माझं मुख्य खातं')", key="new_nickname")
-                new_lot_multiplier = st.number_input("Lot Multiplier (उदा. 2.0 म्हणजे established base-lots च्या दुप्पट)", min_value=0.1, value=1.0, step=0.1, key="new_lot_multiplier")
-                if new_broker_type == "fyers":
-                    st.warning("⚠️ Fyers अजून पूर्ण झालेला नाही (Option-Symbol पडताळणी बाकी) — जोडता येईल, पण established रणनींती त्याला वगळतील, स्पष्ट error सह.")
-                if st.button("Account जोडा", type="primary"):
-                    if not new_account_id.strip():
-                        st.error("Account ID रिकामं ठेवता येणार नाही.")
-                    else:
-                        added = cloud_db.add_broker_account(new_account_id.strip(), new_broker_type, new_nickname.strip() or None, new_lot_multiplier)
-                        if added:
-                            st.success(f"'{new_account_id}' यशस्वीरित्या जोडला.")
-                            st.rerun()
-                        else:
-                            st.error("Account जोडता आला नाही (Supabase जोडणी तपासा).")
-
-            st.markdown("---")
-            st.markdown("##### 📋 नोंदवलेले सर्व Accounts")
-            accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
-            if accounts_df is None or accounts_df.empty:
-                st.info("अजून कुठलाही account नोंदवलेला नाही — वरून एक जोडा.")
-            else:
-                for _, acc in accounts_df.iterrows():
-                    acol1, acol2, acol3, acol4, acol5 = st.columns([2, 1, 1, 1, 1])
-                    with acol1:
-                        st.markdown(f"**{acc['account_id']}** ({acc['nickname'] or '—'})")
-                    with acol2:
-                        st.caption(f"Broker: {acc['broker_type']}")
-                    with acol3:
-                        st.caption(f"Lots ×{acc['lot_multiplier']}")
-                    with acol4:
-                        status_label = "🟢 Active" if acc["is_active"] else "🔴 Inactive"
-                        st.caption(status_label)
-                    with acol5:
-                        toggle_label = "बंद करा" if acc["is_active"] else "सुरू करा"
-                        if st.button(toggle_label, key=f"toggle_{acc['account_id']}"):
-                            cloud_db.set_broker_account_active(acc["account_id"], not acc["is_active"])
-                            st.rerun()
-                    if st.button(f"🗑️ '{acc['account_id']}' काढून टाका", key=f"delete_{acc['account_id']}"):
-                        cloud_db.delete_broker_account(acc["account_id"])
-                        st.rerun()
-                    st.markdown("---")
-        except Exception as e:
-            st.error(f"Broker Accounts मध्ये चूक: {type(e).__name__}: {e}")
+    # established Broker Accounts व्यवस्थापन आता established वेगळ्या sidebar page वर हलवलेलं आहे
+    # (page_broker_accounts.py) — Dashboard वरची tab-गर्दी कमी करण्यासाठी.
