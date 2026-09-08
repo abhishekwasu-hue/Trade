@@ -225,13 +225,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
-        # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३ वाजता तपासतो: नफा >=Target
+        # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३:१० वाजता तपासतो: नफा >=Target
         # (net_credit च्या 30%) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करणे), नाहीतर बंद करणे.
         # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — नवीन OI+Greeks+VIX एकत्रित रणनीती (Iron Condor
-        # सुद्धा तयार करते) साठी, तोच 30%-credit SL + 3pm carry-forward नियम आता Iron Condor/Butterfly
+        # सुद्धा तयार करते) साठी, तोच 30%-credit SL + 3:10pm carry-forward नियम आता Iron Condor/Butterfly
         # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
+        # सामायिक — फक्त SRv2 साठी वेगळी नाही).
         is_new_rule_trade = strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
-        past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 0)
+        past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
 
         exit_reason = None
         if effective_sl_level is not None and current_pnl <= effective_sl_level:

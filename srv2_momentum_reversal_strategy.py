@@ -37,8 +37,11 @@ from upstox_api import fetch_upstox_option_chain, fetch_candles
 
 MOMENTUM_MIN_PCT = 0.40      # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं थ्रेशहोल्ड
 TOUCH_TOLERANCE_PCT = 0.05   # established gap-fill/dynamic-sr च्याच tolerance-तत्त्वानुसार
-SL_RUPEES = 500              # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं, प्रति lot-pair निव्वळ प्रीमियमवर
-TARGET_PCT_OF_PREMIUM = 80   # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं
+# 🎓 वापरकर्त्याशी चर्चा करून सुधारित (आधीचं ₹500 flat + 80% target — आता निव्वळ प्रीमियमच्या
+# टक्केवारीवर आधारित, established trading_engine.py च्या 30%-credit "new rule" स्ट्रॅटेजींशी सुसंगत):
+# SL = collective premium च्या 30%, Target/3:10pm carry-forward मर्यादाही 30%.
+SL_PCT_OF_CREDIT = 30        # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं — निव्वळ प्रीमियमच्या 30% (टक्केवारी, स्थिर रक्कम नाही)
+TARGET_PCT_OF_PREMIUM = 30   # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं (आधी 80% होतं)
 COOLDOWN_MINUTES = 30        # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं (२ candles × १५-मिनिट)
 LEVEL_REPEAT_TOLERANCE_PCT = 0.05  # "तोच level" ओळखण्यासाठी (One-Touch Rule)
 
@@ -129,7 +132,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65):
                 return f"{symbol}: {level_type} {level_price:.2f} टेस्ट झाला, पण strike-निवड अयशस्वी"
 
             net_credit_total = strategy_result["net_credit"] * lot_size
-            sl_pct = compute_sl_pct_from_absolute(SL_RUPEES, net_credit_total)
+            sl_pct = SL_PCT_OF_CREDIT  # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — आता थेट निव्वळ प्रीमियमच्या 30% (₹ स्थिर रक्कम ऐवजी)
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — established
             # broker_accounts (Supabase) मध्ये किमान एक account नोंदवलेला असेल, तर established
@@ -162,7 +165,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65):
             message = (
                 f"🎯 <b>{symbol} SRv2 Momentum-Reversal</b>\n"
                 f"{level_type} {level_price:.2f} — {move_pct}% दिशात्मक गती (फिल्टर पास).\n"
-                f"{strategy_label} — SL ₹{SL_RUPEES} ({sl_pct:.1f}%), Target {TARGET_PCT_OF_PREMIUM}%.\n"
+                f"{strategy_label} — SL {sl_pct:.1f}% of Premium, Target {TARGET_PCT_OF_PREMIUM}%.\n"
                 f"PAPER Trade: {trade_status} — वेळ: {now.strftime('%H:%M:%S')}"
             )
             send_telegram_message(message)
