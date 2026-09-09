@@ -137,11 +137,22 @@ def is_zone_mitigated(zone_low, zone_high, df_after_formation):
 
 
 def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
-                       base_lookback=4, base_tightness_mult=0.7, min_gap_pct=0.30, sr_top_n=5):
+                       base_lookback=4, base_tightness_mult=0.7, min_gap_pct=0.30, sr_top_n=5,
+                       df_15m_recent=None):
     """
     संपूर्ण विश्लेषण एकत्र — S/R (1H वर), Order Blocks (1H वर), Demand/Supply Zones (1H वर),
     Unfilled Gaps (15M वर, established). प्रत्येक zone ला mitigation-स्थिती (FILLED/ACTIVE) सह.
     रिटर्न: DataFrame, saving/display दोन्हीसाठी सुसंगत रचनेत.
+
+    🎓 वापरकर्त्याने चार्ट वि. प्रत्यक्ष trading मधल्या विसंगतीवरून सापडवलेली bug — established
+    df_15m_recent (नवीन, ऐच्छिक पॅरामीटर) — established Dynamic S/R (established, 1-मिनिट Instant
+    Trader साठी महत्त्वाचा) साठी established df_15m (established, दीर्घकालीन Unfilled-Gap
+    तपासणीसाठी योग्य असलेला, संपूर्ण १ वर्षाचा) ऐवजी established वेगळा, established Dashboard चार्टच्याच
+    डीफॉल्ट (established, 15-मिनिटसाठी established २० दिवस) इतका **अलीकडचा** डेटा वापरणे. established
+    संपूर्ण वर्षभरातून established maxnumsr=5 निवडल्यास established सर्वात टोकाचे (जुने, दूरचे) swing
+    points येतात — established सद्य किमतीपासून शेकडो पॉइंट्स दूर, established कधीच trigger न होणारे,
+    established जरी चार्टवर established (established वेगळ्या, अलीकडच्या डेटावरून काढलेले) जवळचे
+    levels established योग्य दिसत असले तरी. न दिल्यास established df_15m वरच पडतो (backward-compatible).
     """
     rows = []
     now_date = df_1h["timestamp"].iloc[-1] if not df_1h.empty else None
@@ -160,8 +171,11 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
     # (sr_dynamic.compute_dynamic_sr — Pivot clustering, min_strength=2 आधीच फिल्टर) आतापर्यंत कुठेही
     # साठवला जात नव्हता, प्रत्येक वेळी Dashboard उघडल्यावर नव्याने मोजला जायचा. आता इथेही साठवतो —
     # जेणेकरून LTP-आधारित instant-trigger monitoring script याच साठवलेल्या levels वापरू शकेल.
-    if len(df_15m) >= 100:
-        dyn_sr = compute_dynamic_sr(df_15m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+    # 🎓 established (वर बघा) — established df_15m_recent (अलीकडचा, established chart-सारखा डेटा)
+    # वापरणे — established df_15m (संपूर्ण वर्ष) नाही.
+    df_dyn_sr_source = df_15m_recent if df_15m_recent is not None else df_15m
+    if len(df_dyn_sr_source) >= 100:
+        dyn_sr = compute_dynamic_sr(df_dyn_sr_source, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
         for s in dyn_sr.get("support", []):
             rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT", "zone_low": s["level"], "zone_high": s["level"],
                          "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})

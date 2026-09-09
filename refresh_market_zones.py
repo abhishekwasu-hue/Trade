@@ -38,10 +38,21 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     df_1h = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
     df_15m = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=lookback_days)
 
+    # 🎓 वापरकर्त्याने चार्ट वि. प्रत्यक्ष trading मधल्या विसंगतीवरून सापडवलेली bug — established
+    # Dynamic S/R (established, 1-मिनिट Instant Trader साठी वापरला जाणारा) साठी established df_15m
+    # (संपूर्ण lookback_days, established डीफॉल्ट ३६५ दिवस) ऐवजी established वेगळा, established
+    # Dashboard चार्टच्याच डीफॉल्ट इतका (established 15-मिनिटसाठी established Upstox चा स्वतःचा
+    # डीफॉल्ट — established उदा. २० दिवस) **अलीकडचा** डेटा — established संपूर्ण वर्षभरातून
+    # established सर्वात टोकाचे (जुने, सद्य किमतीपासून दूर) points निवडले जाऊ नयेत म्हणून.
+    df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute")  # established डीफॉल्ट lookback (chart-सारखाच)
+
     if df_1h is None or df_1h.empty:
         return False, f"{symbol}: 1H डेटा मिळाला नाही"
 
-    zones_df = compute_all_zones(df_1h, df_15m if df_15m is not None else df_1h.iloc[:0], symbol=symbol)
+    zones_df = compute_all_zones(
+        df_1h, df_15m if df_15m is not None else df_1h.iloc[:0], symbol=symbol,
+        df_15m_recent=df_15m_recent if df_15m_recent is not None and not df_15m_recent.empty else None,
+    )
     if zones_df.empty:
         return False, f"{symbol}: पुरेसा इतिहास नाही (किमान २० candles प्रति timeframe हवेत) -- कुठलेही zones सापडले नाहीत."
     saved = cloud_db.save_market_zones(zones_df, symbol)
