@@ -70,18 +70,20 @@ def build_ready_made_strategy(strategy_name, atm_strike, hedge_width=100):
         "Buy Call": [("BUY", "CE", atm_strike)],
         "Sell Put": [("SELL", "PE", atm_strike)],
         "Bull Call Spread": [("BUY", "CE", atm_strike), ("SELL", "CE", atm_strike + hedge_width)],
-        "Bull Put Spread": [("SELL", "PE", atm_strike), ("BUY", "PE", atm_strike - hedge_width)],
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Margin Rule: BUY (hedge) leg नेहमी SELL leg
+        # च्या आधी यायला हवा (established, margin/SPAN गणनेसाठी हेज आधीच सक्रिय दिसावा म्हणून).
+        "Bull Put Spread": [("BUY", "PE", atm_strike - hedge_width), ("SELL", "PE", atm_strike)],
         "Buy Put": [("BUY", "PE", atm_strike)],
         "Sell Call": [("SELL", "CE", atm_strike)],
         "Bear Put Spread": [("BUY", "PE", atm_strike), ("SELL", "PE", atm_strike - hedge_width)],
-        "Bear Call Spread": [("SELL", "CE", atm_strike), ("BUY", "CE", atm_strike + hedge_width)],
+        "Bear Call Spread": [("BUY", "CE", atm_strike + hedge_width), ("SELL", "CE", atm_strike)],
         "Short Straddle": [("SELL", "CE", atm_strike), ("SELL", "PE", atm_strike)],
         "Long Straddle": [("BUY", "CE", atm_strike), ("BUY", "PE", atm_strike)],
         "Short Strangle": [("SELL", "CE", atm_strike + hedge_width), ("SELL", "PE", atm_strike - hedge_width)],
         "Long Strangle": [("BUY", "CE", atm_strike + hedge_width), ("BUY", "PE", atm_strike - hedge_width)],
         "Iron Condor": [
-            ("SELL", "CE", atm_strike + hedge_width), ("BUY", "CE", atm_strike + 2 * hedge_width),
-            ("SELL", "PE", atm_strike - hedge_width), ("BUY", "PE", atm_strike - 2 * hedge_width),
+            ("BUY", "CE", atm_strike + 2 * hedge_width), ("BUY", "PE", atm_strike - 2 * hedge_width),
+            ("SELL", "CE", atm_strike + hedge_width), ("SELL", "PE", atm_strike - hedge_width),
         ],
     }
     if strategy_name not in templates:
