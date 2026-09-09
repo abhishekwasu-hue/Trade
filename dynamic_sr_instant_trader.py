@@ -13,13 +13,17 @@ gap-मध्ये level चुकवायचं (कधीच trigger व्�
 close आणि पुढच्या candle च्या open मध्ये level सापडला, म्हणजे उडी मारून ओलांडला गेला).
 
 तर्क:
-  १. Supabase मधून साठवलेले ACTIVE DYNAMIC_SR_SUPPORT/RESISTANCE levels वाचणे (established persistence).
+  १. Supabase मधून साठवलेले ACTIVE DYNAMIC_SR_SUPPORT_1M/RESISTANCE_1M levels वाचणे (established, 1-मिनिट डेटावरून काढलेले, persistence).
   २. अलीकडचे 1-मिनिट candles मिळवून, प्रत्येक ACTIVE level साठी check_level_crossed() तपासणे.
-  ३. Support cross -> Bull Put Spread. Resistance cross -> Bear Call Spread.
-  ४. established select_credit_spread_fixed_strikes(strikes_otm=0 — ATM वरच Short leg, hedge_width_points=100 दूर Long leg) + open_multi_leg_trade() (PAPER) वापरून execute.
-  ५. **प्रत्येक तपासलेला level** (hit झाला किंवा नाही) Signal Log मध्ये साठवणे — Dashboard वर संपूर्ण
+  ३. established Next-Level Exit — established touched level established आधीच्या (favourable दिशेने)
+     established उघड्या position साठी established profit-target असेल, तर established आधी established
+     ती established बंद (established Signal Log/Telegram सह established "NEXT_LEVEL_EXIT").
+  ४. established RSI(14, established 1-मिनिट) फिल्टर — Support touch (RSI<40) -> Bull Put Spread.
+     Resistance touch (RSI>60) -> Bear Call Spread. established RSI established जुळत नसेल तर established
+     established दुर्लक्षित.
+  ५. established select_credit_spread_fixed_strikes(strikes_otm=0 — ATM वरच Short leg, hedge_width_points=100 दूर Long leg) + open_multi_leg_trade() (PAPER) वापरून execute — established entry_level_price established साठवलेला (established Next-Level Exit साठी).
+  ६. **प्रत्येक तपासलेला level** (hit झाला किंवा नाही) Signal Log मध्ये साठवणे — Dashboard वर संपूर्ण
      intraday इतिहास दिसण्यासाठी. फक्त hit झालेलेच नाही — सर्व levels, प्रत्येक cycle ला.
-  ६. Hit झालेला zone Supabase मध्ये FILLED (mitigated) करणे.
   ७. established Telegram notification.
 
 ⚠️ GitHub Actions ची खरी तांत्रिक किमान मर्यादा ५ मिनिटं आहे (established) — त्यामुळे ही script
@@ -29,13 +33,36 @@ close आणि पुढच्या candle च्या open मध्ये l
 """
 import argparse
 
+import pandas as pd
+
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source
+from database import init_sqlite_db, has_open_trade_from_source, get_open_trades_with_entry_level
 from notifications import send_telegram_message
+from signals import calculate_rsi
 from strategy import select_credit_spread_fixed_strikes
-from trading_engine import open_multi_leg_trade
+from trading_engine import open_multi_leg_trade, close_trade_manually
 from upstox_api import fetch_upstox_option_chain, fetch_candles
+
+RSI_SUPPORT_MAX = 40     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं — Support touch + 1-मिनिट RSI < 40 -> Bull Put Spread
+RSI_RESISTANCE_MIN = 60  # established Resistance touch + 1-मिनिट RSI > 60 -> Bear Call Spread
+
+
+def check_instant_rsi_filter(candles_df, direction):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी Instant Trader ला कुठलीही entry-पूर्व
+    पुष्टी लागत नव्हती (तात्काळ trade). आता established 1-मिनिट RSI(14) फिल्टर:
+    Support (BULLISH) -> RSI established RSI_SUPPORT_MAX (40) च्या **खाली** हवा.
+    Resistance (BEARISH) -> RSI established RSI_RESISTANCE_MIN (60) च्या **वर** हवा.
+    रिटर्न: (pass: bool, rsi_value: float किंवा None)
+    """
+    rsi_series = calculate_rsi(candles_df, period=14)
+    if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
+        return False, None
+    latest_rsi = round(float(rsi_series.iloc[-1]), 2)
+    if direction == "BULLISH":
+        return latest_rsi < RSI_SUPPORT_MAX, latest_rsi
+    return latest_rsi > RSI_RESISTANCE_MIN, latest_rsi
 
 
 def check_level_crossed(level, candles):
@@ -76,7 +103,10 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
     if all_zones is None or all_zones.empty:
         return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
 
-    dyn_levels = all_zones[(all_zones["zone_type"].str.startswith("DYNAMIC_SR")) & (all_zones["status"] == "ACTIVE")]
+    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेला भेद — established DYNAMIC_SR_*_1M (established, 1-मिनिट
+    # candles वरून काढलेले, established याच established तात्काळ स्वभावाला अनुसरून) — established
+    # DYNAMIC_SR_*_15M (established, SRv2 Momentum-Filter Reversal साठीचे, established वेगळे) नाही.
+    dyn_levels = all_zones[(all_zones["zone_type"].str.endswith("_1M")) & (all_zones["status"] == "ACTIVE")]
     if dyn_levels.empty:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels नाहीत"
 
@@ -99,7 +129,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — hit झाला किंवा नाही, प्रत्येक तपासलेला level
         # Signal Log मध्ये साठवणे (Dashboard वर संपूर्ण intraday इतिहास दिसण्यासाठी).
-        direction = "BULLISH" if row["zone_type"] == "DYNAMIC_SR_SUPPORT" else "BEARISH"
+        direction = "BULLISH" if row["zone_type"] == "DYNAMIC_SR_SUPPORT_1M" else "BEARISH"
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": row["zone_type"],
             "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
@@ -107,6 +137,35 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
         }
 
         if not hit:
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit + Instant Reversal) — established
+        # या touched level च्या established favourable दिशेने established आधीची (याच source ची)
+        # established कुठली established उघडी position established असेल (established entry level पेक्षा
+        # established Support-मूळ trade साठी established वर, established Resistance-मूळ trade साठी
+        # established खाली established हा established touched level established असेल), तर established
+        # established ती established आधी established "profit-booked" म्हणून established बंद करून,
+        # established नंतर established याच established touched level वर established (RSI+Multi-Hit
+        # established गेट्स established पास झाल्यास) established नवीन (reversal) trade established घेतली
+        # established जाते.
+        for ot in get_open_trades_with_entry_level(symbol, "dynamic_sr_instant"):
+            origin_bullish = ot["strategy"] == "BULL_PUT_SPREAD"
+            favourable = (row["zone_low"] > ot["entry_level_price"]) if origin_bullish else (row["zone_low"] < ot["entry_level_price"])
+            if favourable:
+                closed_ok, close_msg = close_trade_manually(access_token, ot["trade_id"], symbol, "D", exit_reason="NEXT_LEVEL_EXIT")
+                if closed_ok:
+                    send_telegram_message(
+                        f"💰 <b>{symbol} Next-Level Exit — नफा बुक केला!</b>\n"
+                        f"Trade {ot['trade_id']} (entry level {ot['entry_level_price']:.2f}) — "
+                        f"{row['zone_low']:.2f} पर्यंत पोहोचल्यामुळे बंद केला.\n"
+                        f"आता याच level वर instant reversal trade तपासला जाईल."
+                    )
+
+        rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction)
+        if not rsi_ok:
+            log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
+            log_entry["reason"] = f"RSI {rsi_value} established established (Support<{RSI_SUPPORT_MAX}/Resistance>{RSI_RESISTANCE_MIN}) established शी सुसंगत नाही"
             cloud_db.save_signal_log(log_entry)
             continue
 
@@ -160,6 +219,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_max_profit,
                 product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
                 sl_pct_of_credit=sl_pct_of_credit, source="dynamic_sr_instant",
+                entry_level_price=row["zone_low"],
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
             if factory_errors:
@@ -170,6 +230,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_max_profit,
                 product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
                 sl_pct_of_credit=sl_pct_of_credit, source="dynamic_sr_instant",
+                entry_level_price=row["zone_low"],
             )
         log_entry["trade_status"] = trade_status
         cloud_db.save_signal_log(log_entry)
@@ -180,11 +241,11 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
         # ACTIVE राहतो — वरचे hit_count/cooldown/open-position चेक्सच पुढच्या trades ला नियंत्रित
         # करतात, आणि प्रत्येक तपासलेला touch (trade झाला किंवा वगळला) Signal Log मध्ये दिसत राहतो.
 
-        level_label = "Support" if row["zone_type"] == "DYNAMIC_SR_SUPPORT" else "Resistance"
+        level_label = "Support" if row["zone_type"] == "DYNAMIC_SR_SUPPORT_1M" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
         message = (
             f"🎯 <b>{symbol} Dynamic S/R Cross! (आजचा {hit_count_so_far + 1}/2 वा hit)</b>\n"
-            f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}).\n"
+            f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). RSI {rsi_value}.\n"
             # 🎓 वापरकर्त्याने Dashboard export मधून सापडवलेली bug — established इतर strategies प्रमाणेच
             # strategy_result ची key "strategy" आहे, "strategy_type" नाही (ती key कधीच अस्तित्वातच
             # नव्हती) — त्यामुळे हा .get() नेहमी फक्त established fallback (direction) दाखवायचा.

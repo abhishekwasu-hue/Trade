@@ -392,12 +392,19 @@ def _render_market_zones():
                 )
             else:
                 st.caption(f"एकूण {len(zones_df)} zones")
-                zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE",
+                zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT_1M", "DYNAMIC_SR_RESISTANCE_1M",
+                                   "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
                                    "BULLISH_OB", "BEARISH_OB", "DEMAND_ZONE", "SUPPLY_ZONE", "UP_GAP", "DOWN_GAP"]
                 zone_labels = {
                     "SUPPORT": "🟢 Support (established, 1H)", "RESISTANCE": "🔴 Resistance (established, 1H)",
-                    "DYNAMIC_SR_SUPPORT": "🟢🎯 Dynamic S/R Support (Chart-सारखाच)",
-                    "DYNAMIC_SR_RESISTANCE": "🔴🎯 Dynamic S/R Resistance (Chart-सारखाच)",
+                    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेला भेद — established 1-मिनिट (Instant Trader
+                    # साठी, established Chart-सारखाच जर चार्ट 1-मिनिटावर असेल तर) आणि established
+                    # 15-मिनिट (SRv2 Momentum-Filter Reversal साठी) established वेगळे, established
+                    # वेगळ्या डेटावरून काढलेले.
+                    "DYNAMIC_SR_SUPPORT_1M": "🟢🎯 Dynamic S/R Support (1-मिनिट, Instant Trader)",
+                    "DYNAMIC_SR_RESISTANCE_1M": "🔴🎯 Dynamic S/R Resistance (1-मिनिट, Instant Trader)",
+                    "DYNAMIC_SR_SUPPORT_15M": "🟢🎯 Dynamic S/R Support (15-मिनिट, SRv2)",
+                    "DYNAMIC_SR_RESISTANCE_15M": "🔴🎯 Dynamic S/R Resistance (15-मिनिट, SRv2)",
                     "BULLISH_OB": "🟩 Bullish Order Block", "BEARISH_OB": "🟥 Bearish Order Block",
                     "DEMAND_ZONE": "🔵 Demand Zone", "SUPPLY_ZONE": "🟠 Supply Zone",
                     "UP_GAP": "⬆️ Unfilled Up-Gap", "DOWN_GAP": "⬇️ Unfilled Down-Gap",
@@ -409,7 +416,10 @@ def _render_market_zones():
                 all_zones_for_notif = cloud_db.get_market_zones(symbol, status=None)
                 if all_zones_for_notif is not None and not all_zones_for_notif.empty:
                     dyn_filled = all_zones_for_notif[
-                        all_zones_for_notif["zone_type"].isin(["DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE"])
+                        all_zones_for_notif["zone_type"].isin([
+                            "DYNAMIC_SR_SUPPORT_1M", "DYNAMIC_SR_RESISTANCE_1M",
+                            "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
+                        ])
                         & (all_zones_for_notif["status"] == "FILLED")
                     ]
                     if not dyn_filled.empty:

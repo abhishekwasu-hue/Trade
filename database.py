@@ -82,7 +82,12 @@ def init_sqlite_db():
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — प्रत्येक trade
     # कुठल्या account चा आहे हे साठवण्यासाठी 'account_id' column, established Trade Monitor ला
     # योग्य adapter निवडून तोच trade बंद करता यावा म्हणून आवश्यक.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT"]:
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit, 1-मिनिट Instant Trader) — established
+    # entry-वेळचा S/R level (established underlying किमतीचा, option strike नाही) साठवण्यासाठी —
+    # established, established नंतर established favourable दिशेने established पुढचा level touch
+    # झाला की established, established position "profit-booked" म्हणून बंद करून established त्याच
+    # जागी established नवीन (reversal) trade घेण्यासाठी आवश्यक.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -274,6 +279,26 @@ def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     total_trades_today = cur.fetchone()[0]
     conn.close()
     return total_pnl, total_trades_today
+
+def get_open_trades_with_entry_level(symbol, source):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit) — established त्याच symbol+source
+    साठी established OPEN असलेले trades, established त्यांच्या entry_level_price सकट — established
+    "favourable दिशेने established पुढचा level touch झाला का" established तपासण्यासाठी.
+    रिटर्न: [{"trade_id":.., "strategy":.., "entry_level_price":..}, ...] (established entry_level_price
+    established None असलेले established वगळलेले).
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT trade_id, strategy, entry_level_price FROM live_trades
+           WHERE symbol=? AND source=? AND status='OPEN' AND entry_level_price IS NOT NULL""",
+        (symbol, source),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{"trade_id": r[0], "strategy": r[1], "entry_level_price": r[2]} for r in rows]
+
 
 def has_open_trade_from_source(symbol, source):
     """

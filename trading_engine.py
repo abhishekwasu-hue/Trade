@@ -86,7 +86,7 @@ def normalize_legs(strategy_result):
          "ltp": strategy_result["short_leg"].get("ltp")},
     ]
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
@@ -94,7 +94,11 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     'oi_greeks_vix_strategy') — Positions page वर स्पष्टपणे दाखवण्यासाठी (वापरकर्त्याशी चर्चा करून जोडलेलं).
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — adapter (established
     BrokerAdapter इन्स्टन्स) दिला असेल तर established त्याच broker/account द्वारे ऑर्डर जाते (access_token
-    फक्त trade_id/स्टोरेज साठी वापरला जातो); न दिल्यास established, जुनं (थेट Upstox) वर्तन तसंच राहतं."""
+    फक्त trade_id/स्टोरेज साठी वापरला जातो); न दिल्यास established, जुनं (थेट Upstox) वर्तन तसंच राहतं.
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit, 1-मिनिट Instant Trader) — entry_level_price
+    (ऐच्छिक) — established, entry-वेळचा underlying S/R level (option strike नाही) — established नंतर
+    established favourable दिशेने established पुढचा level touch झाला की established profit-booking
+    exit साठी established वापरला जातो (established इतर strategies साठी established None, वापरलं जात नाही)."""
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 
@@ -144,8 +148,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
            (trade_id, trade_date, symbol, strategy, short_strike, long_strike, short_instrument, long_instrument,
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
-            legs_json, strikes_summary, mode, trading_style, source, account_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -163,6 +167,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
+            entry_level_price,
         ),
     )
     inserted = cur.rowcount > 0
@@ -282,7 +287,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
         net_credit_total = net_credit * lots * lot_size
 
-        is_pct_trailing_trade = (source == "dynamic_sr_instant")
+        # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — established %-आधारित Trailing SL आता established
+        # `dynamic_sr_instant` सोबतच established `srv2_momentum_reversal` लाही लागू — established दोन्ही
+        # 20% नफ्यानंतर सक्रिय, breakeven+10% credit लॉक, established सारखाच tत्र.
+        PCT_TRAILING_SOURCES = ("dynamic_sr_instant", "srv2_momentum_reversal")
+        is_pct_trailing_trade = (source in PCT_TRAILING_SOURCES)
 
         effective_sl_level = sl_level
         is_trailing_active = False
@@ -490,7 +499,8 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
-                                   trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT"):
+                                   trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
+                                   entry_level_price=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -514,7 +524,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
             lots=effective_lots, lot_size=lot_size, sl_pct_of_max_loss=sl_pct_of_max_loss,
             target_pct_of_max_profit=target_pct_of_max_profit, product_type=product_type,
             trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
-            source=source, adapter=adapter,
+            source=source, adapter=adapter, entry_level_price=entry_level_price,
         )
         results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
     return results, factory_errors
