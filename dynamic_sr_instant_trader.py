@@ -16,7 +16,7 @@ close आणि पुढच्या candle च्या open मध्ये l
   १. Supabase मधून साठवलेले ACTIVE DYNAMIC_SR_SUPPORT/RESISTANCE levels वाचणे (established persistence).
   २. अलीकडचे 1-मिनिट candles मिळवून, प्रत्येक ACTIVE level साठी check_level_crossed() तपासणे.
   ३. Support cross -> Bull Put Spread. Resistance cross -> Bear Call Spread.
-  ४. established select_credit_spread_fixed_strikes() + open_multi_leg_trade() (PAPER) वापरून execute.
+  ४. established select_credit_spread_fixed_strikes(strikes_otm=0 — ATM वरच Short leg, hedge_width_points=100 दूर Long leg) + open_multi_leg_trade() (PAPER) वापरून execute.
   ५. **प्रत्येक तपासलेला level** (hit झाला किंवा नाही) Signal Log मध्ये साठवणे — Dashboard वर संपूर्ण
      intraday इतिहास दिसण्यासाठी. फक्त hit झालेलेच नाही — सर्व levels, प्रत्येक cycle ला.
   ६. Hit झालेला zone Supabase मध्ये FILLED (mitigated) करणे.
@@ -138,7 +138,10 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
             continue
 
         # --- Level Crossed! तात्काळ Trade (कुठलीही पुष्टी न घेता) ---
-        strategy_result = select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike)
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — Short leg आता ATM वरच (strikes_otm=0, आधी डीफॉल्ट ATM±2
+        # होतं) — हेज (Long leg) अजूनही established hedge_width_points (डीफॉल्ट 100) दूर. यामुळे
+        # established SRv2 (जो ATM±1 वापरतो) शी strike-collision चा धोकाही आपोआप कमी होतो.
+        strategy_result = select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes_otm=0)
         if strategy_result is None:
             log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
             cloud_db.save_signal_log(log_entry)

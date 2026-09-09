@@ -30,7 +30,6 @@ import cloud_db
 from config import get_ist_now
 from database import init_sqlite_db
 from notifications import send_telegram_message
-from sr_dynamic import compute_dynamic_sr
 from strategy import select_credit_spread_fixed_strikes
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles
@@ -41,7 +40,10 @@ TOUCH_TOLERANCE_PCT = 0.05   # established gap-fill/dynamic-sr च्याच t
 # टक्केवारीवर आधारित, established trading_engine.py च्या 30%-credit "new rule" स्ट्रॅटेजींशी सुसंगत):
 # SL = collective premium च्या 30%, Target/3:10pm carry-forward मर्यादाही 30%.
 SL_PCT_OF_CREDIT = 30        # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं — निव्वळ प्रीमियमच्या 30% (टक्केवारी, स्थिर रक्कम नाही)
-TARGET_PCT_OF_PREMIUM = 30   # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं (आधी 80% होतं)
+TARGET_PCT_OF_PREMIUM = 80   # 🎓 वापरकर्त्याशी चर्चा करून पुन्हा 80% वर आणलं (30% कडे बदललं होतं ते
+# established आता वेगळ्या CARRY_FORWARD_MIN_PROFIT_PCT (trading_engine.py, डीफॉल्ट 30%) शी गल्लत
+# झाल्यामुळे होतं — Target (केव्हाही गाठला तरी लगेच बंद) आणि 3:10pm Carry-Forward चा किमान-नफा उंबरठा
+# या आता established दोन वेगळ्या, स्वतंत्र गोष्टी आहेत.
 COOLDOWN_MINUTES = 30        # 🎓 वापरकर्त्याने स्पष्ट सांगितलेलं (२ candles × १५-मिनिट)
 LEVEL_REPEAT_TOLERANCE_PCT = 0.05  # "तोच level" ओळखण्यासाठी (One-Touch Rule)
 
@@ -90,86 +92,97 @@ def is_repeated_level(level_price, last_tested_level, tolerance_pct=LEVEL_REPEAT
 
 
 def process_symbol(access_token, symbol, lots=1, lot_size=65):
-    """एका symbol साठी — SRv2 levels, momentum-फिल्टर, One-Touch/Cooldown, आणि आढळल्यास PAPER trade."""
+    """एका symbol साठी — SRv2 levels, momentum-फिल्टर, One-Touch/Cooldown, आणि आढळल्यास PAPER trade.
+
+    🎓 वापरकर्त्याशी चर्चा करून सुधारित — established दिशा live compute_dynamic_sr() ऐवजी आता
+    established dynamic_sr_instant_trader.py सारखेच, Supabase मध्ये established रोज एकदा (EOD,
+    refresh_market_zones.py द्वारे) साठवलेले DYNAMIC_SR_SUPPORT/RESISTANCE levels (established
+    ACTIVE स्थितीतले) वापरते — प्रत्येक cycle ला नव्याने live गणना करत नाही."""
     now = get_ist_now()
     state = cloud_db.get_srv2_state(symbol)
 
     if is_in_cooldown(state["last_sl_hit_time"], now):
         return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {COOLDOWN_MINUTES} मिनिटं विराम)"
 
+    all_zones = cloud_db.get_market_zones(symbol)
+    if all_zones is None or all_zones.empty:
+        return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
+    dyn_levels = all_zones[(all_zones["zone_type"].str.startswith("DYNAMIC_SR")) & (all_zones["status"] == "ACTIVE")]
+    if dyn_levels.empty:
+        return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels नाहीत"
+
     candles_df = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=5)
     if candles_df is None or candles_df.empty or len(candles_df) < 12:
         return f"{symbol}: पुरेसा 15-मिनिट इतिहास मिळाला नाही"
 
     underlying_price = candles_df["close"].iloc[-1]
-    dyn_sr = compute_dynamic_sr(candles_df, current_price=underlying_price)
     candles = candles_df.tail(11).to_dict("records")
 
-    for level_type, levels in [("SUPPORT", dyn_sr.get("support", [])), ("RESISTANCE", dyn_sr.get("resistance", []))]:
+    for _, zrow in dyn_levels.iterrows():
+        level_type = "SUPPORT" if zrow["zone_type"] == "DYNAMIC_SR_SUPPORT" else "RESISTANCE"
         direction = "BULLISH" if level_type == "SUPPORT" else "BEARISH"
-        for lvl in levels:
-            level_price = lvl["level"]
-            touched = abs(underlying_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
-            if not touched:
-                continue
+        level_price = zrow["zone_low"]
+        touched = abs(underlying_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
+        if not touched:
+            continue
 
-            if is_repeated_level(level_price, state["last_tested_level"]):
-                continue  # 🎓 One-Touch Rule -- तोच level लगेच पुन्हा, दुर्लक्षित
+        if is_repeated_level(level_price, state["last_tested_level"]):
+            continue  # 🎓 One-Touch Rule -- तोच level लगेच पुन्हा, दुर्लक्षित
 
-            momentum_ok, move_pct = check_momentum_filter(candles, direction)
-            if not momentum_ok:
-                continue  # 🎓 Rule 1 -- पुरेशी दिशात्मक गती नाही, choppy बाजार
+        momentum_ok, move_pct = check_momentum_filter(candles, direction)
+        if not momentum_ok:
+            continue  # 🎓 Rule 1 -- पुरेशी दिशात्मक गती नाही, choppy बाजार
 
-            # --- सर्व अटी पूर्ण! Entry ---
-            raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol)
-            if not raw_chain:
-                return f"{symbol}: Option chain मिळाली नाही ({chain_status})"
-            atm_strike = round(underlying_price / 50) * 50
+        # --- सर्व अटी पूर्ण! Entry ---
+        raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol)
+        if not raw_chain:
+            return f"{symbol}: Option chain मिळाली नाही ({chain_status})"
+        atm_strike = round(underlying_price / 50) * 50
 
-            strategy_result = select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes_otm=1, hedge_width_points=100)
-            if strategy_result is None:
-                cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
-                return f"{symbol}: {level_type} {level_price:.2f} टेस्ट झाला, पण strike-निवड अयशस्वी"
-
-            net_credit_total = strategy_result["net_credit"] * lot_size
-            sl_pct = SL_PCT_OF_CREDIT  # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — आता थेट निव्वळ प्रीमियमच्या 30% (₹ स्थिर रक्कम ऐवजी)
-
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — established
-            # broker_accounts (Supabase) मध्ये किमान एक account नोंदवलेला असेल, तर established
-            # execute_trade_on_all_accounts() (सर्व सक्रिय accounts वर replicated) वापरणे; अजून
-            # कुठलाही account नोंदवलेला नसेल (established, आत्ताची स्थिती), तर established, जुना
-            # (single --token, backward-compatible) मार्गच कायम.
-            accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
-            if accounts_df is not None and not accounts_df.empty:
-                from trading_engine import execute_trade_on_all_accounts
-                results, factory_errors = execute_trade_on_all_accounts(
-                    symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
-                    sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                    product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-                    sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
-                )
-                trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
-                if factory_errors:
-                    trade_status += " | वगळलेले: " + "; ".join(factory_errors)
-            else:
-                trade_result, trade_status = open_multi_leg_trade(
-                    access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
-                    sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                    product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-                    sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
-                )
-
+        strategy_result = select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes_otm=1, hedge_width_points=100)
+        if strategy_result is None:
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
+            return f"{symbol}: {level_type} {level_price:.2f} टेस्ट झाला, पण strike-निवड अयशस्वी"
 
-            strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
-            message = (
-                f"🎯 <b>{symbol} SRv2 Momentum-Reversal</b>\n"
-                f"{level_type} {level_price:.2f} — {move_pct}% दिशात्मक गती (फिल्टर पास).\n"
-                f"{strategy_label} — SL {sl_pct:.1f}% of Premium, Target {TARGET_PCT_OF_PREMIUM}%.\n"
-                f"PAPER Trade: {trade_status} — वेळ: {now.strftime('%H:%M:%S')}"
+        net_credit_total = strategy_result["net_credit"] * lot_size
+        sl_pct = SL_PCT_OF_CREDIT  # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — आता थेट निव्वळ प्रीमियमच्या 30% (₹ स्थिर रक्कम ऐवजी)
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — established
+        # broker_accounts (Supabase) मध्ये किमान एक account नोंदवलेला असेल, तर established
+        # execute_trade_on_all_accounts() (सर्व सक्रिय accounts वर replicated) वापरणे; अजून
+        # कुठलाही account नोंदवलेला नसेल (established, आत्ताची स्थिती), तर established, जुना
+        # (single --token, backward-compatible) मार्गच कायम.
+        accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
+        if accounts_df is not None and not accounts_df.empty:
+            from trading_engine import execute_trade_on_all_accounts
+            results, factory_errors = execute_trade_on_all_accounts(
+                symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
             )
-            send_telegram_message(message)
-            return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({move_pct}% गती) -> {strategy_label} PAPER trade {trade_status}"
+            trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+            if factory_errors:
+                trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+        else:
+            trade_result, trade_status = open_multi_leg_trade(
+                access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
+            )
+
+        cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
+
+        strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
+        message = (
+            f"🎯 <b>{symbol} SRv2 Momentum-Reversal</b>\n"
+            f"{level_type} {level_price:.2f} — {move_pct}% दिशात्मक गती (फिल्टर पास).\n"
+            f"{strategy_label} — SL {sl_pct:.1f}% of Premium, Target {TARGET_PCT_OF_PREMIUM}%.\n"
+            f"PAPER Trade: {trade_status} — वेळ: {now.strftime('%H:%M:%S')}"
+        )
+        send_telegram_message(message)
+        return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({move_pct}% गती) -> {strategy_label} PAPER trade {trade_status}"
 
     return f"{symbol}: कुठलाही SRv2 level (पुरेशी गती + One-Touch सह) पात्र ठरला नाही"
 

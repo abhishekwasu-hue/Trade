@@ -1818,11 +1818,39 @@ def render():
                     st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधूनच थेट execution,
-                # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही. सुरुवातीला
-                # फक्त PAPER mode (वापरकर्त्याने स्पष्ट सांगितल्याप्रमाणे — LIVE पर्यायच दिलेला नाही).
+                # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही.
+                # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेलं — आता PAPER सोबतच LIVE trading सुद्धा, established
+                # Multi-Broker Multi-Account architecture (broker_factory.py, established SRv2/Dynamic-S/R
+                # साठी आधीच वापरात असलेली) पुनर्वापर करून — Upstox आणि Fyers दोन्ही broker निवडता येतील.
+                # ⚠️ प्रामाणिक इशारा (वापरकर्त्याला दिलेला, त्याने स्वीकारलेला) — Fyers वर प्रत्यक्ष
+                # LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही (फक्त data-fetch पडताळलेलं) —
+                # वापरकर्त्याने स्वतः काळजीपूर्वक, लहान आकारात प्रत्यक्ष टेस्ट करण्याचं मान्य केलं आहे.
                 st.markdown("---")
                 st.markdown("##### 🚀 Strategy Execute करा (Combined SL/Target)")
-                st.info("📝 सध्या फक्त **PAPER Trading Mode** — कुठलाही खरा ऑर्डर जाणार नाही.")
+
+                import cloud_db
+                from broker_factory import get_broker_adapter
+
+                accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
+                if accounts_df is None or accounts_df.empty:
+                    st.warning("⚠️ कुठलाही सक्रिय Broker Account नोंदवलेला नाही — 'Broker Accounts' पानावर आधी एक जोडा (Upstox किंवा Fyers). तोपर्यंत फक्त Dashboard च्या डीफॉल्ट Upstox token ने PAPER trade करता येईल.")
+                    account_options = ["(डीफॉल्ट — Dashboard चा Upstox token, PAPER only)"]
+                    account_lookup = {}
+                else:
+                    account_options = [f"{row['account_id']} ({row['broker_type']})" for _, row in accounts_df.iterrows()]
+                    account_lookup = {f"{row['account_id']} ({row['broker_type']})": row for _, row in accounts_df.iterrows()}
+
+                sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
+                selected_account = account_lookup.get(sel_account_label)
+
+                trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
+                confirm_live = True
+                if trading_mode_choice == "LIVE":
+                    if selected_account is not None and selected_account["broker_type"] == "fyers":
+                        st.warning("⚠️ Fyers वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
+                    confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
+                    if not confirm_live:
+                        st.info("LIVE trade करण्यासाठी वरचा confirmation आधी टिक करा.")
 
                 missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
                 if missing_keys:
@@ -1838,23 +1866,33 @@ def render():
                         target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
                     exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
 
-                    if st.button("✅ PAPER Trade Execute करा", type="primary"):
+                    execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
+                    button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
+                    if st.button(button_label, type="primary", disabled=execute_disabled):
+                        adapter = None
+                        exec_token = token_input
+                        if selected_account is not None:
+                            adapter, adapter_error = get_broker_adapter(selected_account["account_id"], selected_account["broker_type"])
+                            if adapter is None:
+                                st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
+                                st.stop()
+
                         strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
                         if strategy_result["is_credit_strategy"]:
                             trade_result, trade_status = open_multi_leg_trade(
-                                token_input, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
                                 sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
-                                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-                                sl_pct_of_credit=sl_pct, source="strategy_builder",
+                                product_type="NRML", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
                             )
                         else:
                             trade_result, trade_status = open_multi_leg_trade(
-                                token_input, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
                                 sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
-                                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
-                                sl_pct_of_credit=None, source="strategy_builder",
+                                product_type="NRML", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
                             )
-                        st.success(f"PAPER Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
+                        st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
         except Exception as e:
             st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 

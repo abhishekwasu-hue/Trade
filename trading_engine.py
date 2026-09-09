@@ -10,6 +10,12 @@ from database import log_orders_batch
 from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
+# 🎓 वापरकर्त्याशी चर्चा करून वेगळं काढलेलं — established Target (प्रत्येक strategy चा स्वतःचा
+# target_pct_of_max_profit, उदा. SRv2 साठी 80%) आणि established 3:10pm Carry-Forward साठी "किमान
+# इतका नफा असायलाच हवा" हा उंबरठा — या दोन वेगळ्या गोष्टी आहेत. established सर्व "new rule" strategies
+# (BULL_PUT_SPREAD/BEAR_CALL_SPREAD/IRON_CONDOR/IRON_BUTTERFLY, dynamic_sr_instant वगळता) साठी सामायिक.
+CARRY_FORWARD_MIN_PROFIT_PCT = 30
+
 def reconcile_positions(access_token, symbol):
     """
     स्थानिक DB मधील OPEN (LIVE) ट्रेड्सची तुलना Upstox कडील खऱ्या पोझिशन्सशी करून विसंगती शोधणे —
@@ -298,10 +304,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             is_trailing_active = effective_sl_level != sl_level
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
-        # BEAR_CALL_SPREAD) साठी Target लगेच बंद करत नाही — फक्त दुपारी ३:१० वाजता तपासतो: नफा >=Target
-        # (net_credit च्या 30%) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करणे), नाहीतर बंद करणे.
+        # BEAR_CALL_SPREAD) साठी established Target (net_credit च्या स्वतःच्या target_pct_of_max_profit
+        # %, उदा. 80%) आधी established दुपारी ३:१० लाच बंद व्हायचा नियम होता — पण Target गाठला की तो
+        # लगेच (कधीही) बंद व्हायला हवा, वेळेची वाट न बघता. established ३:१०चा नियम आता established
+        # वेगळ्या, कमी उंबरठ्याशी (CARRY_FORWARD_MIN_PROFIT_PCT) जोडलेला — established Target (80%)
+        # अजून गाठलेला नसेल, तरच "किमान इतका (३०%) नफा आहे का, नाहीतर आजच बंद करा" ही सुरक्षा-तपासणी.
         # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — नवीन OI+Greeks+VIX एकत्रित रणनीती (Iron Condor
-        # सुद्धा तयार करते) साठी, तोच 30%-credit SL + 3:10pm carry-forward नियम आता Iron Condor/Butterfly
+        # सुद्धा तयार करते) साठी, तोच SL + 3:10pm carry-forward नियम आता Iron Condor/Butterfly
         # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
         # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
         # सामायिक — फक्त SRv2 साठी वेगळी नाही).
@@ -313,6 +322,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             and source != "dynamic_sr_instant"
         )
         past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
+        carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
 
         exit_reason = None
         if effective_sl_level is not None and current_pnl <= effective_sl_level:
@@ -320,15 +330,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
             else:
                 exit_reason = "SL"
-        elif is_new_rule_trade:
-            if past_carry_forward_check_time:
-                if target_level is not None and current_pnl >= target_level:
-                    pass  # नफा पुरेसा (>=30% credit) -- पुढच्या दिवशी चालू ठेवणे, बंद करायचं नाही
-                else:
-                    exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
-            # 3pm च्या आधी -- SL शिवाय काहीही तपासायचं नाही, Target लगेच बंद करत नाही
         elif target_level is not None and current_pnl >= target_level:
-            exit_reason = "TARGET"
+            exit_reason = "TARGET"  # established Target गाठला की केव्हाही (वेळेची वाट न बघता) लगेच बंद
+        elif is_new_rule_trade and past_carry_forward_check_time:
+            # established Target (वर तपासलेला) अजून गाठलेला नाही, आणि established आता दुपारी ३:१०
+            # झालेली आहे -- established वेगळ्या, कमी उंबरठ्याशी (established डीफॉल्ट 30% credit)
+            # पुरेसा नफा आहे का तपासणे -- असेल तर पुढच्या दिवशी चालू ठेवणे, नाहीतर आजच बंद करणे.
+            if current_pnl < carry_forward_min_profit_level:
+                exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+            # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
         elif trade_style == "INTRADAY" and past_eod_cutoff:
             exit_reason = "EOD_SQUAREOFF"
         elif oi_reversal_exit_enabled and trade_style == "INTRADAY" and oi_signal_latest:
