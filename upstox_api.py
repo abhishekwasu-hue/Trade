@@ -398,6 +398,46 @@ def get_available_margin(access_token):
     except Exception:
         return None
 
+
+def fetch_required_margin(access_token, orders):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — established Upstox च्या
+    अधिकृत Margin Calculator API (`v2/charges/margin`) वापरून, established संपूर्ण strategy
+    (established सर्व legs एकत्र, एकाच कॉल मध्ये — जास्तीत जास्त 20 instruments) साठी **नेमकी**
+    लागणारी मार्जिन (SPAN+Exposure, established hedge-फायद्यासकट) आधीच कळते — established
+    strategy_result["max_loss"] सारखा ढोबळ अंदाज नाही, established प्रत्यक्ष ब्रोकर-गणना.
+
+    established `orders` — established open_multi_leg_trade()/Strategy Builder ने आधीच बांधलेली
+    तीच list (प्रत्येकात established "instrument_token"/"quantity"/"transaction_type"/"product").
+
+    रिटर्न: आवश्यक मार्जिन (float), किंवा मिळाली नाही तर None (established caller ने established
+    सुरक्षित fallback — उदा. max_loss-आधारित ढोबळ अंदाज — वापरावा).
+    """
+    if not orders:
+        return None
+    try:
+        headers = {
+            "Accept": "application/json", "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token.strip()}",
+        }
+        instruments = [
+            {
+                "instrument_key": o["instrument_token"], "quantity": o["quantity"],
+                "transaction_type": o["transaction_type"], "product": o.get("product", "D"),
+            }
+            for o in orders
+        ]
+        res = requests.post(
+            "https://api.upstox.com/v2/charges/margin", headers=headers,
+            json={"instruments": instruments}, timeout=10,
+        )
+        if res.status_code == 200:
+            data = res.json().get("data", {})
+            return float(data.get("required_margin", data.get("final_margin", 0)))
+        return None
+    except Exception:
+        return None
+
 def fetch_ltp_map(access_token, instrument_keys):
     """दिलेल्या instrument keys ची सद्य LTP्स एका डिक्शनरीमध्ये (v3 LTP API)."""
     if not instrument_keys:

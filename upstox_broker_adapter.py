@@ -8,7 +8,7 @@ upstox_broker_adapter.py
 from broker_adapter import BrokerAdapter
 from upstox_api import (
     fetch_ltp_map, fetch_upstox_option_chain, fetch_candles,
-    execute_order_leg_set, get_available_margin,
+    execute_order_leg_set, get_available_margin, fetch_required_margin,
 )
 
 
@@ -30,3 +30,8 @@ class UpstoxBrokerAdapter(BrokerAdapter):
 
     def get_funds(self):
         return get_available_margin(self.access_token)
+
+    def get_required_margin(self, orders):
+        # 🎓 established Upstox चं अधिकृत Margin Calculator API (v2/charges/margin) — established
+        # संपूर्ण strategy साठी नेमकी मार्जिन (hedge-फायद्यासकट), ढोबळ अंदाज नाही.
+        return fetch_required_margin(self.access_token, orders)

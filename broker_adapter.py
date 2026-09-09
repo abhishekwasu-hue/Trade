@@ -13,6 +13,7 @@ account शी बोलतायत याची पर्वा न करत�
   - fetch_candles(symbol, interval, lookback_days) -> established DataFrame
   - execute_order_leg_set(orders, trading_mode) -> established (status_code, response_dict)
   - get_funds() -> उपलब्ध मार्जिन (float)
+  - get_required_margin(orders) -> established strategy साठी लागणारी मार्जिन (float), ऐच्छिक (डीफॉल्ट None)
 """
 from abc import ABC, abstractmethod
 
@@ -51,3 +52,13 @@ class BrokerAdapter(ABC):
     def get_funds(self):
         """उपलब्ध मार्जिन (float), किंवा मिळाली नाही तर None."""
         ...
+
+    def get_required_margin(self, orders):
+        """
+        🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — establishedया strategy
+        साठी established broker कडे नेमकी किती मार्जिन लागेल — established `orders` (established
+        instrument_token/quantity/transaction_type/product सह). Non-abstract, डीफॉल्ट None (established
+        subclass कडे अचूक margin-calculator API नसेल तर) — caller ने established तेव्हा max_loss-आधारित
+        सुरक्षित अंदाज वापरावा.
+        """
+        return None
