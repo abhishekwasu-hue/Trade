@@ -68,6 +68,15 @@ def _render_strategy_builder():
 
         st.session_state.setdefault("strategy_builder_legs", [])
 
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Strategy Builder Speed Fix, भाग २) — established
+        # आधी प्रत्येक ठिकाणी (Ready-Made template, Add Leg premium, Shift Controls, OI bars) established
+        # raw_chain मध्ये `next((r for r in raw_chain if r["strike_price"]==X), None)` असा रेषीय (linear)
+        # शोध वारंवार व्हायचा — established OI bars साठी तर established प्रत्येक strike साठी *पुन्हा*
+        # संपूर्ण raw_chain स्कॅन व्हायचा (O(n²) — established प्रत्येक छोट्या interaction ला, अगदी नुसता
+        # Strike dropdown बदलला तरी, संथ वाटायचं). आता established एकच dictionary (`chain_by_strike`)
+        # एकदाच बांधून, established सर्वत्र त्यातूनच O(1) शोध.
+        chain_by_strike = {row["strike_price"]: row for row in raw_chain} if raw_chain else {}
+
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
         # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
         st.markdown("##### 🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)")
@@ -79,7 +88,7 @@ def _render_strategy_builder():
                     template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
                     new_legs = []
                     for tleg in template_legs:
-                        matched = next((r for r in raw_chain if r["strike_price"] == tleg["strike"]), None)
+                        matched = chain_by_strike.get(tleg["strike"])
                         premium, instr_key = 0.0, None
                         if matched:
                             opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
@@ -108,7 +117,7 @@ def _render_strategy_builder():
 
             # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
             auto_premium = 0.0
-            matched_row = next((r for r in raw_chain if r["strike_price"] == leg_strike), None)
+            matched_row = chain_by_strike.get(leg_strike)
             if matched_row:
                 opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
                 auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
@@ -153,7 +162,7 @@ def _render_strategy_builder():
                 shifted_legs = []
                 for leg in legs:
                     new_strike = leg["strike"] + shift_amount
-                    matched = next((r for r in raw_chain if r["strike_price"] == new_strike), None)
+                    matched = chain_by_strike.get(new_strike)
                     premium, instr_key = leg["premium"], leg.get("instrument_key")
                     if matched:
                         opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
@@ -185,9 +194,11 @@ def _render_strategy_builder():
             if oi_strikes:
                 # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
                 # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
+                # established chain_by_strike (वर एकदाच बांधलेलं) वापरून O(1) शोध -- आधी established
+                # प्रत्येक strike साठी संपूर्ण raw_chain पुन्हा स्कॅन व्हायचा (O(n²), संथपणाचं मुख्य कारण).
                 from oi_analysis import _extract_oi_ltp
-                ce_oi_vals = [next((_extract_oi_ltp(r, "call_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
-                pe_oi_vals = [next((_extract_oi_ltp(r, "put_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
+                ce_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "call_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
+                pe_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "put_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
                 fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
                 fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
 
@@ -344,6 +355,132 @@ def _render_strategy_builder():
                     st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
     except Exception as e:
         st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
+
+
+
+@st.fragment
+def _render_market_zones():
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix, भाग ३) — established Strategy
+    Builder सारखीच समस्या इथेही होती — established दोन radio-filter बदलले तरी established
+    संपूर्ण Dashboard (Direction Engine, A1 Signal Engine सकट) पुन्हा चालायचा. हे tab established
+    फक्त Supabase वरून वाचतं (symbol/underlying_price शिवाय established इतर कशावरही अवलंबून नाही)
+    — म्हणून established पूर्णपणे स्वतंत्र fragment बनवणं इथेही सुरक्षित आणि योग्य आहे."""
+    symbol = st.session_state["symbol"]
+    underlying_price = st.session_state["underlying_price"]
+
+    st.markdown("---")
+    st.subheader(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)")
+    st.caption(
+        "शेवटच्या १ वर्षाच्या डेटावरून पूर्वगणना करून Supabase मध्ये साठवलेलं संपूर्ण विश्लेषण — "
+        "GitHub Actions (साप्ताहिक) द्वारे अद्ययावत होतं. इथून प्रत्येक वेळी पुन्हा गणना होत नाही, फक्त वाचलं जातं."
+    )
+    try:
+        import cloud_db
+        if not cloud_db.is_cloud_db_configured():
+            st.warning("Cloud DB (Supabase) configured नाही — Market Zones फक्त तिथूनच वाचता येतात. कृपया SUPABASE_DB_URL सेट करा.")
+        else:
+            zones_status_filter = st.radio("दाखवा", ["फक्त ACTIVE (अजून अबाधित)", "सर्व (ACTIVE + FILLED)"], horizontal=True, key="zones_status")
+            status_arg = "ACTIVE" if zones_status_filter.startswith("फक्त") else None
+            zones_df = cloud_db.get_market_zones(symbol, status=status_arg)
+
+            if zones_df is None:
+                st.error("Supabase मधून वाचता आलं नाही — जोडणी तपासा.")
+            elif zones_df.empty:
+                st.info(
+                    f"{symbol} साठी अजून कुठलेही zones साठवलेले नाहीत — "
+                    "GitHub Actions मधून 'Market Zones Refresh' workflow एकदा हातानेच चालवा (Actions टॅब → Run workflow)."
+                )
+            else:
+                st.caption(f"एकूण {len(zones_df)} zones")
+                zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE",
+                                   "BULLISH_OB", "BEARISH_OB", "DEMAND_ZONE", "SUPPLY_ZONE", "UP_GAP", "DOWN_GAP"]
+                zone_labels = {
+                    "SUPPORT": "🟢 Support (established, 1H)", "RESISTANCE": "🔴 Resistance (established, 1H)",
+                    "DYNAMIC_SR_SUPPORT": "🟢🎯 Dynamic S/R Support (Chart-सारखाच)",
+                    "DYNAMIC_SR_RESISTANCE": "🔴🎯 Dynamic S/R Resistance (Chart-सारखाच)",
+                    "BULLISH_OB": "🟩 Bullish Order Block", "BEARISH_OB": "🟥 Bearish Order Block",
+                    "DEMAND_ZONE": "🔵 Demand Zone", "SUPPLY_ZONE": "🟠 Supply Zone",
+                    "UP_GAP": "⬆️ Unfilled Up-Gap", "DOWN_GAP": "⬇️ Unfilled Down-Gap",
+                }
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — LTP ने Dynamic S/R ला स्पर्श केला की
+                # dynamic_sr_instant_trader.py तो zone आपोआप FILLED करतो — तीच "notification" इथे
+                # ठळकपणे दाखवणे (वरच्या फिल्टर-निवडीशी स्वतंत्रपणे, नेहमी संपूर्ण डेटा वाचून).
+                all_zones_for_notif = cloud_db.get_market_zones(symbol, status=None)
+                if all_zones_for_notif is not None and not all_zones_for_notif.empty:
+                    dyn_filled = all_zones_for_notif[
+                        all_zones_for_notif["zone_type"].isin(["DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE"])
+                        & (all_zones_for_notif["status"] == "FILLED")
+                    ]
+                    if not dyn_filled.empty:
+                        st.markdown("##### 🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)")
+                        st.dataframe(
+                            dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
+                            width="stretch",
+                        )
+                        st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
+                        st.markdown("---")
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा
+                # **संपूर्ण** intraday Signal Log — trade झाला किंवा न झाला तरीही, प्रत्येक तपासलेला
+                # level इथे दिसेल (established get_signal_log() पुनर्वापर करून).
+                st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
+                signal_log_df = cloud_db.get_signal_log(symbol, get_ist_now().strftime("%Y-%m-%d"))
+                if signal_log_df is None or signal_log_df.empty:
+                    st.caption("आज अजून कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
+                else:
+                    log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
+                    display_log = signal_log_df if log_filter == "सर्व" else signal_log_df[signal_log_df["hit_type"] != "NO_HIT"]
+                    st.dataframe(display_log, width="stretch", height=300)
+                    st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level cross झाला.")
+                st.markdown("---")
+
+                for zt in zone_type_order:
+                    subset = zones_df[zones_df["zone_type"] == zt]
+                    if subset.empty:
+                        continue
+                    with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
+                        display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
+                        st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
+
+                # 🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — zone चा ऐतिहासिक
+                # प्रकार (Order Block/Demand Zone/Supply Zone इ.) काहीही असो, त्याची **सद्य** भूमिका
+                # ठरते ती फक्त सद्य LTP च्या तुलनेतच: LTP च्या वर = Resistance/Supply, खाली =
+                # Support/Demand. हे मुख्य, प्रकारानुसार-गटवारीच्या (वरच्या) दृश्यापेक्षा वेगळं आणि
+                # जास्त कृतीयोग्य आहे — त्यामुळे इथे स्वतंत्रपणे, सर्वात ठळकपणे दाखवतो.
+                from market_zones import compute_current_role
+                zones_with_role = zones_df.copy()
+                zones_with_role["zone_mid"] = (zones_with_role["zone_low"] + zones_with_role["zone_high"]) / 2
+                zones_with_role["current_role"] = zones_with_role.apply(
+                    lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
+                )
+                st.markdown("---")
+                st.markdown(f"##### 🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)")
+                st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
+
+                rcol1, rcol2 = st.columns(2)
+                with rcol1:
+                    st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
+                    resistance_zones = zones_with_role[zones_with_role["current_role"] == "RESISTANCE_SUPPLY"].sort_values("zone_mid")
+                    if resistance_zones.empty:
+                        st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
+                    else:
+                        st.dataframe(
+                            resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
+                            width="stretch",
+                        )
+                with rcol2:
+                    st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
+                    support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
+                    if support_zones.empty:
+                        st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
+                    else:
+                        st.dataframe(
+                            support_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
+                            width="stretch",
+                        )
+    except Exception as e:
+        st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
 
 def render():
@@ -1849,119 +1986,7 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab7:
-        st.markdown("---")
-        st.subheader(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)")
-        st.caption(
-            "शेवटच्या १ वर्षाच्या डेटावरून पूर्वगणना करून Supabase मध्ये साठवलेलं संपूर्ण विश्लेषण — "
-            "GitHub Actions (साप्ताहिक) द्वारे अद्ययावत होतं. इथून प्रत्येक वेळी पुन्हा गणना होत नाही, फक्त वाचलं जातं."
-        )
-        try:
-            import cloud_db
-            if not cloud_db.is_cloud_db_configured():
-                st.warning("Cloud DB (Supabase) configured नाही — Market Zones फक्त तिथूनच वाचता येतात. कृपया SUPABASE_DB_URL सेट करा.")
-            else:
-                zones_status_filter = st.radio("दाखवा", ["फक्त ACTIVE (अजून अबाधित)", "सर्व (ACTIVE + FILLED)"], horizontal=True, key="zones_status")
-                status_arg = "ACTIVE" if zones_status_filter.startswith("फक्त") else None
-                zones_df = cloud_db.get_market_zones(symbol, status=status_arg)
-
-                if zones_df is None:
-                    st.error("Supabase मधून वाचता आलं नाही — जोडणी तपासा.")
-                elif zones_df.empty:
-                    st.info(
-                        f"{symbol} साठी अजून कुठलेही zones साठवलेले नाहीत — "
-                        "GitHub Actions मधून 'Market Zones Refresh' workflow एकदा हातानेच चालवा (Actions टॅब → Run workflow)."
-                    )
-                else:
-                    st.caption(f"एकूण {len(zones_df)} zones")
-                    zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE",
-                                       "BULLISH_OB", "BEARISH_OB", "DEMAND_ZONE", "SUPPLY_ZONE", "UP_GAP", "DOWN_GAP"]
-                    zone_labels = {
-                        "SUPPORT": "🟢 Support (established, 1H)", "RESISTANCE": "🔴 Resistance (established, 1H)",
-                        "DYNAMIC_SR_SUPPORT": "🟢🎯 Dynamic S/R Support (Chart-सारखाच)",
-                        "DYNAMIC_SR_RESISTANCE": "🔴🎯 Dynamic S/R Resistance (Chart-सारखाच)",
-                        "BULLISH_OB": "🟩 Bullish Order Block", "BEARISH_OB": "🟥 Bearish Order Block",
-                        "DEMAND_ZONE": "🔵 Demand Zone", "SUPPLY_ZONE": "🟠 Supply Zone",
-                        "UP_GAP": "⬆️ Unfilled Up-Gap", "DOWN_GAP": "⬇️ Unfilled Down-Gap",
-                    }
-
-                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — LTP ने Dynamic S/R ला स्पर्श केला की
-                    # dynamic_sr_instant_trader.py तो zone आपोआप FILLED करतो — तीच "notification" इथे
-                    # ठळकपणे दाखवणे (वरच्या फिल्टर-निवडीशी स्वतंत्रपणे, नेहमी संपूर्ण डेटा वाचून).
-                    all_zones_for_notif = cloud_db.get_market_zones(symbol, status=None)
-                    if all_zones_for_notif is not None and not all_zones_for_notif.empty:
-                        dyn_filled = all_zones_for_notif[
-                            all_zones_for_notif["zone_type"].isin(["DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE"])
-                            & (all_zones_for_notif["status"] == "FILLED")
-                        ]
-                        if not dyn_filled.empty:
-                            st.markdown("##### 🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)")
-                            st.dataframe(
-                                dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
-                                width="stretch",
-                            )
-                            st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
-                            st.markdown("---")
-
-                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा
-                    # **संपूर्ण** intraday Signal Log — trade झाला किंवा न झाला तरीही, प्रत्येक तपासलेला
-                    # level इथे दिसेल (established get_signal_log() पुनर्वापर करून).
-                    st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
-                    signal_log_df = cloud_db.get_signal_log(symbol, get_ist_now().strftime("%Y-%m-%d"))
-                    if signal_log_df is None or signal_log_df.empty:
-                        st.caption("आज अजून कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
-                    else:
-                        log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
-                        display_log = signal_log_df if log_filter == "सर्व" else signal_log_df[signal_log_df["hit_type"] != "NO_HIT"]
-                        st.dataframe(display_log, width="stretch", height=300)
-                        st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level cross झाला.")
-                    st.markdown("---")
-
-                    for zt in zone_type_order:
-                        subset = zones_df[zones_df["zone_type"] == zt]
-                        if subset.empty:
-                            continue
-                        with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
-                            display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
-                            st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
-
-                    # 🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — zone चा ऐतिहासिक
-                    # प्रकार (Order Block/Demand Zone/Supply Zone इ.) काहीही असो, त्याची **सद्य** भूमिका
-                    # ठरते ती फक्त सद्य LTP च्या तुलनेतच: LTP च्या वर = Resistance/Supply, खाली =
-                    # Support/Demand. हे मुख्य, प्रकारानुसार-गटवारीच्या (वरच्या) दृश्यापेक्षा वेगळं आणि
-                    # जास्त कृतीयोग्य आहे — त्यामुळे इथे स्वतंत्रपणे, सर्वात ठळकपणे दाखवतो.
-                    from market_zones import compute_current_role
-                    zones_with_role = zones_df.copy()
-                    zones_with_role["zone_mid"] = (zones_with_role["zone_low"] + zones_with_role["zone_high"]) / 2
-                    zones_with_role["current_role"] = zones_with_role.apply(
-                        lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
-                    )
-                    st.markdown("---")
-                    st.markdown(f"##### 🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)")
-                    st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
-
-                    rcol1, rcol2 = st.columns(2)
-                    with rcol1:
-                        st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
-                        resistance_zones = zones_with_role[zones_with_role["current_role"] == "RESISTANCE_SUPPLY"].sort_values("zone_mid")
-                        if resistance_zones.empty:
-                            st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
-                        else:
-                            st.dataframe(
-                                resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
-                                width="stretch",
-                            )
-                    with rcol2:
-                        st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
-                        support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
-                        if support_zones.empty:
-                            st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
-                        else:
-                            st.dataframe(
-                                support_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
-                                width="stretch",
-                            )
-        except Exception as e:
-            st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
+        _render_market_zones()
 
     with tab8:
         _render_strategy_builder()
