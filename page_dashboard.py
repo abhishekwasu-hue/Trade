@@ -42,6 +42,310 @@ from upstox_api import fetch_market_news
 from live_ticker import render_live_ticker
 
 
+
+@st.fragment
+def _render_strategy_builder():
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Strategy Builder Speed Fix) — established आधी
+    Strategy Builder established render() याच मोठ्या function मध्ये होता — Leg जोडणे/बटण दाबणे
+    यासारख्या established छोट्या interactions नेही established संपूर्ण Dashboard (Direction Engine,
+    A1 Signal Engine, OI Tracker — established सर्व Upstox API कॉल्स + गणनेसकट) पुन्हा चालायचा,
+    established भलताच संथ वाटायचा. आता established `@st.fragment` — established आतले rerun्स
+    (Leg जोडणे, Ready-Made टेम्प्लेट, Execute) established फक्त हाच भाग रीरन करतात, established
+    बाकीचं पान (chart/Signal Engine) अजिबात हलत नाही."""
+    symbol = st.session_state["symbol"]
+    raw_chain = st.session_state["raw_chain"]
+    underlying_price = st.session_state["underlying_price"]
+    atm_strike = st.session_state["atm_strike"]
+    hedge_width_points = st.session_state["hedge_width_points"]
+    lot_size = st.session_state["lot_size"]
+    token_input = st.session_state["token_input"]
+
+    st.markdown("---")
+    st.subheader(f"🎯 {symbol} — Strategy Builder (Multi-Leg Payoff + Combined Greeks)")
+    st.caption("Sensibull-सारखं — एकाहून अधिक legs जोडून, एकत्रित P&L payoff diagram आणि Greeks बघा.")
+    try:
+        import strategy_payoff as sp
+
+        st.session_state.setdefault("strategy_builder_legs", [])
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
+        # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
+        st.markdown("##### 🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)")
+        rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
+        rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
+        for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
+            with rm_cols[rm_i]:
+                if st.button(rm_name, key=f"rm_{rm_name}", width="stretch"):
+                    template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
+                    new_legs = []
+                    for tleg in template_legs:
+                        matched = next((r for r in raw_chain if r["strike_price"] == tleg["strike"]), None)
+                        premium, instr_key = 0.0, None
+                        if matched:
+                            opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
+                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                            instr_key = opt_data.get("instrument_key")
+                        new_legs.append({**tleg, "premium": premium, "lot_size": int(lot_size), "instrument_key": instr_key})
+                    st.session_state["strategy_builder_legs"] = new_legs
+                    st.rerun()
+        st.markdown("---")
+
+        available_strikes = sorted({row["strike_price"] for row in raw_chain}) if raw_chain else []
+        if not available_strikes:
+            st.warning("Option chain डेटा उपलब्ध नाही.")
+        else:
+            st.markdown("##### ➕ नवीन Leg जोडा")
+            lc1, lc2, lc3, lc4 = st.columns(4)
+            with lc1:
+                leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
+            with lc2:
+                leg_option_type = st.selectbox("प्रकार", ["CE", "PE"], key="sb_option_type")
+            default_strike_idx = min(range(len(available_strikes)), key=lambda i: abs(available_strikes[i] - atm_strike)) if available_strikes else 0
+            with lc3:
+                leg_strike = st.selectbox("Strike", available_strikes, index=default_strike_idx, key="sb_strike")
+            with lc4:
+                leg_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_lots")
+
+            # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
+            auto_premium = 0.0
+            matched_row = next((r for r in raw_chain if r["strike_price"] == leg_strike), None)
+            if matched_row:
+                opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
+                auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+            leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
+
+            if st.button("➕ Leg जोडा"):
+                instrument_key = None
+                if matched_row:
+                    opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
+                    instrument_key = opt_data.get("instrument_key")
+                st.session_state["strategy_builder_legs"].append({
+                    "direction": leg_direction, "option_type": leg_option_type, "strike": float(leg_strike),
+                    "premium": float(leg_premium), "lots": int(leg_lots), "lot_size": int(lot_size),
+                    "instrument_key": instrument_key,
+                })
+                st.rerun()
+
+        legs = st.session_state["strategy_builder_legs"]
+        if not legs:
+            st.info("अजून कुठलेही legs जोडलेले नाहीत — वरून जोडा.")
+        else:
+            st.markdown("##### 📜 सद्य Legs")
+            for i, leg in enumerate(legs):
+                lcol1, lcol2 = st.columns([5, 1])
+                with lcol1:
+                    st.write(f"{leg['direction']} {leg['option_type']} {leg['strike']:.0f} @ ₹{leg['premium']:.2f} × {leg['lots']} lot(s)")
+                with lcol2:
+                    if st.button("🗑️", key=f"sb_remove_{i}"):
+                        st.session_state["strategy_builder_legs"].pop(i)
+                        st.rerun()
+
+            if st.button("🧹 सर्व Legs काढा"):
+                st.session_state["strategy_builder_legs"] = []
+                st.rerun()
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
+            # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
+            # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
+            st.markdown("##### 🎛️ Strike Controls")
+            shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
+            if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
+                shifted_legs = []
+                for leg in legs:
+                    new_strike = leg["strike"] + shift_amount
+                    matched = next((r for r in raw_chain if r["strike_price"] == new_strike), None)
+                    premium, instr_key = leg["premium"], leg.get("instrument_key")
+                    if matched:
+                        opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
+                        premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                        instr_key = opt_data.get("instrument_key")
+                    shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
+                st.session_state["strategy_builder_legs"] = shifted_legs
+                st.rerun()
+
+            # --- Payoff Diagram (OI Overlay सह) ---
+            price_range = sp.build_default_price_range(underlying_price, num_points=100, range_pct=5.0)
+            payoff_curve = sp.compute_strategy_payoff_curve(legs, price_range)
+            max_profit, max_loss = sp.compute_max_profit_loss(payoff_curve)
+            breakevens = sp.find_breakeven_points(price_range, payoff_curve)
+
+            gcol1, gcol2, gcol3 = st.columns(3)
+            gcol1.metric("कमाल नफा (या range मध्ये)", f"₹{max_profit:,.0f}")
+            gcol2.metric("कमाल तोटा (या range मध्ये)", f"₹{max_loss:,.0f}")
+            gcol3.metric("Breakeven", ", ".join(f"{b:,.0f}" for b in breakevens) if breakevens else "—")
+
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या payoff chart मागे दिसणारे
+            # OI bars (प्रत्येक strike ला किती Call/Put OI आहे) -- कुठल्या strikes ला जास्त
+            # "रोध"/"आधार" आहे हे दृश्य स्वरूपात कळण्यासाठी.
+            oi_strikes = [r["strike_price"] for r in raw_chain if price_range[0] <= r["strike_price"] <= price_range[-1]]
+            if oi_strikes:
+                # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
+                # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
+                from oi_analysis import _extract_oi_ltp
+                ce_oi_vals = [next((_extract_oi_ltp(r, "call_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
+                pe_oi_vals = [next((_extract_oi_ltp(r, "put_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
+                fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
+                fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
+
+            fig.add_trace(go.Scatter(x=price_range, y=payoff_curve, mode="lines", name="P&L", line=dict(color="#2962ff", width=2), fill="tozeroy"), secondary_y=False)
+            fig.add_hline(y=0, line_dash="dash", line_color="#787b86")
+            fig.add_vline(x=underlying_price, line_dash="dot", line_color="#f0b90b", annotation_text="सद्य किंमत")
+            fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
+            fig.update_yaxes(title_text="P&L (₹)", secondary_y=False)
+            fig.update_yaxes(title_text="Open Interest", secondary_y=True)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # --- Combined Greeks (established fetch_option_greeks पुनर्वापर) ---
+            instrument_keys = [leg["instrument_key"] for leg in legs if leg.get("instrument_key")]
+            if instrument_keys and token_input.strip():
+                greeks_map = fetch_option_greeks(token_input, instrument_keys)
+                legs_with_greeks = []
+                for leg in legs:
+                    g = greeks_map.get(leg.get("instrument_key"), {})
+                    legs_with_greeks.append({**leg, **g})
+                combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
+                st.markdown("##### 🧮 Combined Greeks (संपूर्ण Strategy)")
+                ecol1, ecol2, ecol3, ecol4 = st.columns(4)
+                ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
+                ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
+                ecol3.metric("Theta", f"{combined_greeks['theta']:.2f}")
+                ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
+            else:
+                st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधूनच थेट execution,
+            # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही.
+            # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेलं — आता PAPER सोबतच LIVE trading सुद्धा, established
+            # Multi-Broker Multi-Account architecture (broker_factory.py, established SRv2/Dynamic-S/R
+            # साठी आधीच वापरात असलेली) पुनर्वापर करून — Upstox आणि Fyers दोन्ही broker निवडता येतील.
+            # ⚠️ प्रामाणिक इशारा (वापरकर्त्याला दिलेला, त्याने स्वीकारलेला) — Fyers वर प्रत्यक्ष
+            # LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही (फक्त data-fetch पडताळलेलं) —
+            # वापरकर्त्याने स्वतः काळजीपूर्वक, लहान आकारात प्रत्यक्ष टेस्ट करण्याचं मान्य केलं आहे.
+            st.markdown("---")
+            st.markdown("##### 🚀 Strategy Execute करा (Combined SL/Target)")
+
+            import cloud_db
+            from broker_factory import get_broker_adapter
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी कुठलाही account
+            # नोंदवलेला असेल, तर "डीफॉल्ट (Dashboard चा रोजचा Upstox token)" हा पर्यायच dropdown
+            # मधून पूर्णपणे गायब व्हायचा — म्हणजे established एकच खरं Upstox खातं असलेल्या
+            # वापरकर्त्याला (established वेगळं Multi-Account नकोच असताना) उगाच account नोंदवावं
+            # लागायचं. आता established डीफॉल्ट पर्याय **नेहमीच** उपलब्ध असतो, नोंदवलेल्या accounts
+            # सोबतच — आणि established LIVE साठीही चालतो (established Dashboard चा रोजचा token
+            # थेट adapter=None म्हणून वापरला जातो, established आधीच पूर्णपणे पडताळलेला मार्ग).
+            DEFAULT_ACCOUNT_LABEL = "डीफॉल्ट (Dashboard चा रोजचा Upstox token)"
+            accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
+            account_options = [DEFAULT_ACCOUNT_LABEL]
+            account_lookup = {}
+            if accounts_df is not None and not accounts_df.empty:
+                for _, row in accounts_df.iterrows():
+                    label = f"{row['account_id']} ({row['broker_type']})"
+                    account_options.append(label)
+                    account_lookup[label] = row
+
+            sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
+            selected_account = account_lookup.get(sel_account_label)
+
+            trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
+            confirm_live = True
+            if trading_mode_choice == "LIVE":
+                if selected_account is not None and selected_account["broker_type"] == "fyers":
+                    st.warning("⚠️ Fyers वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
+                confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
+                if not confirm_live:
+                    st.info("LIVE trade करण्यासाठी वरचा confirmation आधी टिक करा.")
+
+            missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
+            if missing_keys:
+                st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
+            else:
+                ecol_sl, ecol_target = st.columns(2)
+                with ecol_sl:
+                    sl_pct = st.number_input(
+                        "SL % (Credit चा, किंवा Debit असल्यास Max Loss चा)",
+                        min_value=1, max_value=100, value=30, step=5, key="sb_sl_pct",
+                    )
+                with ecol_target:
+                    target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
+                exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
+
+                execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
+                button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
+                if st.button(button_label, type="primary", disabled=execute_disabled):
+                    adapter = None
+                    exec_token = token_input
+                    if selected_account is not None:
+                        adapter, adapter_error = get_broker_adapter(selected_account["account_id"], selected_account["broker_type"])
+                        if adapter is None:
+                            st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
+                            st.stop()
+
+                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — चुकीची
+                    # entry ब्रोकर अकाउंटला जाऊन order-reject/अर्धवट-fill होण्याआधीच, established
+                    # निवडलेल्या account मध्ये पुरेशी मार्जिन आहे का तपासणे. Upstox असेल तर established
+                    # अधिकृत Margin Calculator API (नेमकी, hedge-फायद्यासकट); अन्यथा (Fyers इ., जिथे
+                    # ही अचूक API उपलब्ध नाही) established max_loss-आधारित सुरक्षित (worst-case) अंदाज.
+                    margin_check_orders = [
+                        {
+                            "instrument_token": leg["instrument_key"], "quantity": exec_lots * int(lot_size),
+                            "transaction_type": leg["direction"], "product": "D",
+                        }
+                        for leg in legs
+                    ]
+                    if adapter is not None:
+                        required_margin = adapter.get_required_margin(margin_check_orders)
+                        available_margin = adapter.get_funds()
+                    else:
+                        required_margin = fetch_required_margin(exec_token, margin_check_orders)
+                        available_margin = get_available_margin(exec_token)
+
+                    strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
+                    if required_margin is None:
+                        # established अचूक API उपलब्ध नाही (उदा. Fyers) — established max_loss
+                        # (worst-case तोटा) याच रकमेपेक्षा जास्त मार्जिन प्रत्यक्षात लागतेच, म्हणून
+                        # हा established सुरक्षित (conservative) किमान अंदाज.
+                        required_margin = abs(strategy_result["max_loss"]) * exec_lots * int(lot_size)
+                        margin_source_note = "(ढोबळ अंदाज — max_loss वरून, established broker चं अचूक Margin API उपलब्ध नाही)"
+                    else:
+                        margin_source_note = "(established broker च्या अचूक Margin Calculator वरून)"
+
+                    if available_margin is None:
+                        st.warning(f"⚠️ उपलब्ध मार्जिन तपासता आली नाही — काळजीपूर्वक पुढे जा. आवश्यक अंदाजे मार्जिन: ₹{required_margin:,.0f} {margin_source_note}")
+                    elif available_margin < required_margin:
+                        st.error(
+                            f"❌ अपुरी मार्जिन — Trade घेतला जाणार नाही.\n\n"
+                            f"आवश्यक: ₹{required_margin:,.0f} {margin_source_note}\n"
+                            f"उपलब्ध: ₹{available_margin:,.0f}\n"
+                            f"तूट: ₹{required_margin - available_margin:,.0f}"
+                        )
+                        st.stop()
+                    else:
+                        st.caption(f"✅ मार्जिन तपासली — आवश्यक ₹{required_margin:,.0f} {margin_source_note}, उपलब्ध ₹{available_margin:,.0f}")
+
+                    if strategy_result["is_credit_strategy"]:
+                        trade_result, trade_status = open_multi_leg_trade(
+                            exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                            sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
+                            product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                            sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
+                        )
+                    else:
+                        trade_result, trade_status = open_multi_leg_trade(
+                            exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                            sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
+                            product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                            sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
+                        )
+                    st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
+    except Exception as e:
+        st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
+
+
 def render():
     symbol = st.session_state["symbol"]
     timeframe_option = st.session_state["timeframe_option"]
@@ -1660,290 +1964,7 @@ def render():
             st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
     with tab8:
-        st.markdown("---")
-        st.subheader(f"🎯 {symbol} — Strategy Builder (Multi-Leg Payoff + Combined Greeks)")
-        st.caption("Sensibull-सारखं — एकाहून अधिक legs जोडून, एकत्रित P&L payoff diagram आणि Greeks बघा.")
-        try:
-            import strategy_payoff as sp
-
-            st.session_state.setdefault("strategy_builder_legs", [])
-
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
-            # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
-            st.markdown("##### 🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)")
-            rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
-            rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
-            for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
-                with rm_cols[rm_i]:
-                    if st.button(rm_name, key=f"rm_{rm_name}", width="stretch"):
-                        template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
-                        new_legs = []
-                        for tleg in template_legs:
-                            matched = next((r for r in raw_chain if r["strike_price"] == tleg["strike"]), None)
-                            premium, instr_key = 0.0, None
-                            if matched:
-                                opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
-                                premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                                instr_key = opt_data.get("instrument_key")
-                            new_legs.append({**tleg, "premium": premium, "lot_size": int(lot_size), "instrument_key": instr_key})
-                        st.session_state["strategy_builder_legs"] = new_legs
-                        st.rerun()
-            st.markdown("---")
-
-            available_strikes = sorted({row["strike_price"] for row in raw_chain}) if raw_chain else []
-            if not available_strikes:
-                st.warning("Option chain डेटा उपलब्ध नाही.")
-            else:
-                st.markdown("##### ➕ नवीन Leg जोडा")
-                lc1, lc2, lc3, lc4 = st.columns(4)
-                with lc1:
-                    leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
-                with lc2:
-                    leg_option_type = st.selectbox("प्रकार", ["CE", "PE"], key="sb_option_type")
-                default_strike_idx = min(range(len(available_strikes)), key=lambda i: abs(available_strikes[i] - atm_strike)) if available_strikes else 0
-                with lc3:
-                    leg_strike = st.selectbox("Strike", available_strikes, index=default_strike_idx, key="sb_strike")
-                with lc4:
-                    leg_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_lots")
-
-                # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
-                auto_premium = 0.0
-                matched_row = next((r for r in raw_chain if r["strike_price"] == leg_strike), None)
-                if matched_row:
-                    opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
-                    auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
-
-                if st.button("➕ Leg जोडा"):
-                    instrument_key = None
-                    if matched_row:
-                        opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
-                        instrument_key = opt_data.get("instrument_key")
-                    st.session_state["strategy_builder_legs"].append({
-                        "direction": leg_direction, "option_type": leg_option_type, "strike": float(leg_strike),
-                        "premium": float(leg_premium), "lots": int(leg_lots), "lot_size": int(lot_size),
-                        "instrument_key": instrument_key,
-                    })
-                    st.rerun()
-
-            legs = st.session_state["strategy_builder_legs"]
-            if not legs:
-                st.info("अजून कुठलेही legs जोडलेले नाहीत — वरून जोडा.")
-            else:
-                st.markdown("##### 📜 सद्य Legs")
-                for i, leg in enumerate(legs):
-                    lcol1, lcol2 = st.columns([5, 1])
-                    with lcol1:
-                        st.write(f"{leg['direction']} {leg['option_type']} {leg['strike']:.0f} @ ₹{leg['premium']:.2f} × {leg['lots']} lot(s)")
-                    with lcol2:
-                        if st.button("🗑️", key=f"sb_remove_{i}"):
-                            st.session_state["strategy_builder_legs"].pop(i)
-                            st.rerun()
-
-                if st.button("🧹 सर्व Legs काढा"):
-                    st.session_state["strategy_builder_legs"] = []
-                    st.rerun()
-
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
-                # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
-                # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
-                st.markdown("##### 🎛️ Strike Controls")
-                shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
-                if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
-                    shifted_legs = []
-                    for leg in legs:
-                        new_strike = leg["strike"] + shift_amount
-                        matched = next((r for r in raw_chain if r["strike_price"] == new_strike), None)
-                        premium, instr_key = leg["premium"], leg.get("instrument_key")
-                        if matched:
-                            opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
-                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                            instr_key = opt_data.get("instrument_key")
-                        shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
-                    st.session_state["strategy_builder_legs"] = shifted_legs
-                    st.rerun()
-
-                # --- Payoff Diagram (OI Overlay सह) ---
-                price_range = sp.build_default_price_range(underlying_price, num_points=100, range_pct=5.0)
-                payoff_curve = sp.compute_strategy_payoff_curve(legs, price_range)
-                max_profit, max_loss = sp.compute_max_profit_loss(payoff_curve)
-                breakevens = sp.find_breakeven_points(price_range, payoff_curve)
-
-                gcol1, gcol2, gcol3 = st.columns(3)
-                gcol1.metric("कमाल नफा (या range मध्ये)", f"₹{max_profit:,.0f}")
-                gcol2.metric("कमाल तोटा (या range मध्ये)", f"₹{max_loss:,.0f}")
-                gcol3.metric("Breakeven", ", ".join(f"{b:,.0f}" for b in breakevens) if breakevens else "—")
-
-                import plotly.graph_objects as go
-                from plotly.subplots import make_subplots
-                fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या payoff chart मागे दिसणारे
-                # OI bars (प्रत्येक strike ला किती Call/Put OI आहे) -- कुठल्या strikes ला जास्त
-                # "रोध"/"आधार" आहे हे दृश्य स्वरूपात कळण्यासाठी.
-                oi_strikes = [r["strike_price"] for r in raw_chain if price_range[0] <= r["strike_price"] <= price_range[-1]]
-                if oi_strikes:
-                    # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
-                    # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
-                    from oi_analysis import _extract_oi_ltp
-                    ce_oi_vals = [next((_extract_oi_ltp(r, "call_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
-                    pe_oi_vals = [next((_extract_oi_ltp(r, "put_options")[0] for r in raw_chain if r["strike_price"] == s), 0) for s in oi_strikes]
-                    fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
-                    fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
-
-                fig.add_trace(go.Scatter(x=price_range, y=payoff_curve, mode="lines", name="P&L", line=dict(color="#2962ff", width=2), fill="tozeroy"), secondary_y=False)
-                fig.add_hline(y=0, line_dash="dash", line_color="#787b86")
-                fig.add_vline(x=underlying_price, line_dash="dot", line_color="#f0b90b", annotation_text="सद्य किंमत")
-                fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
-                fig.update_yaxes(title_text="P&L (₹)", secondary_y=False)
-                fig.update_yaxes(title_text="Open Interest", secondary_y=True)
-                st.plotly_chart(fig, use_container_width=True)
-
-                # --- Combined Greeks (established fetch_option_greeks पुनर्वापर) ---
-                instrument_keys = [leg["instrument_key"] for leg in legs if leg.get("instrument_key")]
-                if instrument_keys and token_input.strip():
-                    greeks_map = fetch_option_greeks(token_input, instrument_keys)
-                    legs_with_greeks = []
-                    for leg in legs:
-                        g = greeks_map.get(leg.get("instrument_key"), {})
-                        legs_with_greeks.append({**leg, **g})
-                    combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
-                    st.markdown("##### 🧮 Combined Greeks (संपूर्ण Strategy)")
-                    ecol1, ecol2, ecol3, ecol4 = st.columns(4)
-                    ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
-                    ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
-                    ecol3.metric("Theta", f"{combined_greeks['theta']:.2f}")
-                    ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
-                else:
-                    st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
-
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधूनच थेट execution,
-                # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही.
-                # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेलं — आता PAPER सोबतच LIVE trading सुद्धा, established
-                # Multi-Broker Multi-Account architecture (broker_factory.py, established SRv2/Dynamic-S/R
-                # साठी आधीच वापरात असलेली) पुनर्वापर करून — Upstox आणि Fyers दोन्ही broker निवडता येतील.
-                # ⚠️ प्रामाणिक इशारा (वापरकर्त्याला दिलेला, त्याने स्वीकारलेला) — Fyers वर प्रत्यक्ष
-                # LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही (फक्त data-fetch पडताळलेलं) —
-                # वापरकर्त्याने स्वतः काळजीपूर्वक, लहान आकारात प्रत्यक्ष टेस्ट करण्याचं मान्य केलं आहे.
-                st.markdown("---")
-                st.markdown("##### 🚀 Strategy Execute करा (Combined SL/Target)")
-
-                import cloud_db
-                from broker_factory import get_broker_adapter
-
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी कुठलाही account
-                # नोंदवलेला असेल, तर "डीफॉल्ट (Dashboard चा रोजचा Upstox token)" हा पर्यायच dropdown
-                # मधून पूर्णपणे गायब व्हायचा — म्हणजे established एकच खरं Upstox खातं असलेल्या
-                # वापरकर्त्याला (established वेगळं Multi-Account नकोच असताना) उगाच account नोंदवावं
-                # लागायचं. आता established डीफॉल्ट पर्याय **नेहमीच** उपलब्ध असतो, नोंदवलेल्या accounts
-                # सोबतच — आणि established LIVE साठीही चालतो (established Dashboard चा रोजचा token
-                # थेट adapter=None म्हणून वापरला जातो, established आधीच पूर्णपणे पडताळलेला मार्ग).
-                DEFAULT_ACCOUNT_LABEL = "डीफॉल्ट (Dashboard चा रोजचा Upstox token)"
-                accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
-                account_options = [DEFAULT_ACCOUNT_LABEL]
-                account_lookup = {}
-                if accounts_df is not None and not accounts_df.empty:
-                    for _, row in accounts_df.iterrows():
-                        label = f"{row['account_id']} ({row['broker_type']})"
-                        account_options.append(label)
-                        account_lookup[label] = row
-
-                sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
-                selected_account = account_lookup.get(sel_account_label)
-
-                trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
-                confirm_live = True
-                if trading_mode_choice == "LIVE":
-                    if selected_account is not None and selected_account["broker_type"] == "fyers":
-                        st.warning("⚠️ Fyers वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
-                    confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
-                    if not confirm_live:
-                        st.info("LIVE trade करण्यासाठी वरचा confirmation आधी टिक करा.")
-
-                missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
-                if missing_keys:
-                    st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
-                else:
-                    ecol_sl, ecol_target = st.columns(2)
-                    with ecol_sl:
-                        sl_pct = st.number_input(
-                            "SL % (Credit चा, किंवा Debit असल्यास Max Loss चा)",
-                            min_value=1, max_value=100, value=30, step=5, key="sb_sl_pct",
-                        )
-                    with ecol_target:
-                        target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
-                    exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
-
-                    execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
-                    button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
-                    if st.button(button_label, type="primary", disabled=execute_disabled):
-                        adapter = None
-                        exec_token = token_input
-                        if selected_account is not None:
-                            adapter, adapter_error = get_broker_adapter(selected_account["account_id"], selected_account["broker_type"])
-                            if adapter is None:
-                                st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
-                                st.stop()
-
-                        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — चुकीची
-                        # entry ब्रोकर अकाउंटला जाऊन order-reject/अर्धवट-fill होण्याआधीच, established
-                        # निवडलेल्या account मध्ये पुरेशी मार्जिन आहे का तपासणे. Upstox असेल तर established
-                        # अधिकृत Margin Calculator API (नेमकी, hedge-फायद्यासकट); अन्यथा (Fyers इ., जिथे
-                        # ही अचूक API उपलब्ध नाही) established max_loss-आधारित सुरक्षित (worst-case) अंदाज.
-                        margin_check_orders = [
-                            {
-                                "instrument_token": leg["instrument_key"], "quantity": exec_lots * int(lot_size),
-                                "transaction_type": leg["direction"], "product": "D",
-                            }
-                            for leg in legs
-                        ]
-                        if adapter is not None:
-                            required_margin = adapter.get_required_margin(margin_check_orders)
-                            available_margin = adapter.get_funds()
-                        else:
-                            required_margin = fetch_required_margin(exec_token, margin_check_orders)
-                            available_margin = get_available_margin(exec_token)
-
-                        strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
-                        if required_margin is None:
-                            # established अचूक API उपलब्ध नाही (उदा. Fyers) — established max_loss
-                            # (worst-case तोटा) याच रकमेपेक्षा जास्त मार्जिन प्रत्यक्षात लागतेच, म्हणून
-                            # हा established सुरक्षित (conservative) किमान अंदाज.
-                            required_margin = abs(strategy_result["max_loss"]) * exec_lots * int(lot_size)
-                            margin_source_note = "(ढोबळ अंदाज — max_loss वरून, established broker चं अचूक Margin API उपलब्ध नाही)"
-                        else:
-                            margin_source_note = "(established broker च्या अचूक Margin Calculator वरून)"
-
-                        if available_margin is None:
-                            st.warning(f"⚠️ उपलब्ध मार्जिन तपासता आली नाही — काळजीपूर्वक पुढे जा. आवश्यक अंदाजे मार्जिन: ₹{required_margin:,.0f} {margin_source_note}")
-                        elif available_margin < required_margin:
-                            st.error(
-                                f"❌ अपुरी मार्जिन — Trade घेतला जाणार नाही.\n\n"
-                                f"आवश्यक: ₹{required_margin:,.0f} {margin_source_note}\n"
-                                f"उपलब्ध: ₹{available_margin:,.0f}\n"
-                                f"तूट: ₹{required_margin - available_margin:,.0f}"
-                            )
-                            st.stop()
-                        else:
-                            st.caption(f"✅ मार्जिन तपासली — आवश्यक ₹{required_margin:,.0f} {margin_source_note}, उपलब्ध ₹{available_margin:,.0f}")
-
-                        if strategy_result["is_credit_strategy"]:
-                            trade_result, trade_status = open_multi_leg_trade(
-                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
-                                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
-                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
-                                sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
-                            )
-                        else:
-                            trade_result, trade_status = open_multi_leg_trade(
-                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
-                                sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
-                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
-                                sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
-                            )
-                        st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
-        except Exception as e:
-            st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
+        _render_strategy_builder()
 
 
     # established Broker Accounts व्यवस्थापन आता established वेगळ्या sidebar page वर हलवलेलं आहे
