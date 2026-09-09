@@ -158,7 +158,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65):
             results, factory_errors = execute_trade_on_all_accounts(
                 symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
                 sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
@@ -168,7 +168,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65):
             trade_result, trade_status = open_multi_leg_trade(
                 access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                product_type="NRML", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
                 sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
             )
 

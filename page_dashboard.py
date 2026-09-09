@@ -18,7 +18,7 @@ from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
     execute_order_leg_set, get_static_ip_proxy_url, check_proxy_egress_ip,
     get_registered_static_ips, fetch_ltp_map, fetch_next_expiry_option_chain,
-    fetch_option_greeks, extract_order_ids,
+    fetch_option_greeks, extract_order_ids, fetch_required_margin,
 )
 from signals import (
     calculate_rsi, calculate_supertrend, resample_to_1h, find_support_resistance_levels,
@@ -1831,14 +1831,22 @@ def render():
                 import cloud_db
                 from broker_factory import get_broker_adapter
 
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी कुठलाही account
+                # नोंदवलेला असेल, तर "डीफॉल्ट (Dashboard चा रोजचा Upstox token)" हा पर्यायच dropdown
+                # मधून पूर्णपणे गायब व्हायचा — म्हणजे established एकच खरं Upstox खातं असलेल्या
+                # वापरकर्त्याला (established वेगळं Multi-Account नकोच असताना) उगाच account नोंदवावं
+                # लागायचं. आता established डीफॉल्ट पर्याय **नेहमीच** उपलब्ध असतो, नोंदवलेल्या accounts
+                # सोबतच — आणि established LIVE साठीही चालतो (established Dashboard चा रोजचा token
+                # थेट adapter=None म्हणून वापरला जातो, established आधीच पूर्णपणे पडताळलेला मार्ग).
+                DEFAULT_ACCOUNT_LABEL = "डीफॉल्ट (Dashboard चा रोजचा Upstox token)"
                 accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
-                if accounts_df is None or accounts_df.empty:
-                    st.warning("⚠️ कुठलाही सक्रिय Broker Account नोंदवलेला नाही — 'Broker Accounts' पानावर आधी एक जोडा (Upstox किंवा Fyers). तोपर्यंत फक्त Dashboard च्या डीफॉल्ट Upstox token ने PAPER trade करता येईल.")
-                    account_options = ["(डीफॉल्ट — Dashboard चा Upstox token, PAPER only)"]
-                    account_lookup = {}
-                else:
-                    account_options = [f"{row['account_id']} ({row['broker_type']})" for _, row in accounts_df.iterrows()]
-                    account_lookup = {f"{row['account_id']} ({row['broker_type']})": row for _, row in accounts_df.iterrows()}
+                account_options = [DEFAULT_ACCOUNT_LABEL]
+                account_lookup = {}
+                if accounts_df is not None and not accounts_df.empty:
+                    for _, row in accounts_df.iterrows():
+                        label = f"{row['account_id']} ({row['broker_type']})"
+                        account_options.append(label)
+                        account_lookup[label] = row
 
                 sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
                 selected_account = account_lookup.get(sel_account_label)
@@ -1877,19 +1885,60 @@ def render():
                                 st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
                                 st.stop()
 
+                        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — चुकीची
+                        # entry ब्रोकर अकाउंटला जाऊन order-reject/अर्धवट-fill होण्याआधीच, established
+                        # निवडलेल्या account मध्ये पुरेशी मार्जिन आहे का तपासणे. Upstox असेल तर established
+                        # अधिकृत Margin Calculator API (नेमकी, hedge-फायद्यासकट); अन्यथा (Fyers इ., जिथे
+                        # ही अचूक API उपलब्ध नाही) established max_loss-आधारित सुरक्षित (worst-case) अंदाज.
+                        margin_check_orders = [
+                            {
+                                "instrument_token": leg["instrument_key"], "quantity": exec_lots * int(lot_size),
+                                "transaction_type": leg["direction"], "product": "D",
+                            }
+                            for leg in legs
+                        ]
+                        if adapter is not None:
+                            required_margin = adapter.get_required_margin(margin_check_orders)
+                            available_margin = adapter.get_funds()
+                        else:
+                            required_margin = fetch_required_margin(exec_token, margin_check_orders)
+                            available_margin = get_available_margin(exec_token)
+
                         strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
+                        if required_margin is None:
+                            # established अचूक API उपलब्ध नाही (उदा. Fyers) — established max_loss
+                            # (worst-case तोटा) याच रकमेपेक्षा जास्त मार्जिन प्रत्यक्षात लागतेच, म्हणून
+                            # हा established सुरक्षित (conservative) किमान अंदाज.
+                            required_margin = abs(strategy_result["max_loss"]) * exec_lots * int(lot_size)
+                            margin_source_note = "(ढोबळ अंदाज — max_loss वरून, established broker चं अचूक Margin API उपलब्ध नाही)"
+                        else:
+                            margin_source_note = "(established broker च्या अचूक Margin Calculator वरून)"
+
+                        if available_margin is None:
+                            st.warning(f"⚠️ उपलब्ध मार्जिन तपासता आली नाही — काळजीपूर्वक पुढे जा. आवश्यक अंदाजे मार्जिन: ₹{required_margin:,.0f} {margin_source_note}")
+                        elif available_margin < required_margin:
+                            st.error(
+                                f"❌ अपुरी मार्जिन — Trade घेतला जाणार नाही.\n\n"
+                                f"आवश्यक: ₹{required_margin:,.0f} {margin_source_note}\n"
+                                f"उपलब्ध: ₹{available_margin:,.0f}\n"
+                                f"तूट: ₹{required_margin - available_margin:,.0f}"
+                            )
+                            st.stop()
+                        else:
+                            st.caption(f"✅ मार्जिन तपासली — आवश्यक ₹{required_margin:,.0f} {margin_source_note}, उपलब्ध ₹{available_margin:,.0f}")
+
                         if strategy_result["is_credit_strategy"]:
                             trade_result, trade_status = open_multi_leg_trade(
                                 exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
                                 sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
-                                product_type="NRML", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
                                 sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
                             )
                         else:
                             trade_result, trade_status = open_multi_leg_trade(
                                 exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
                                 sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
-                                product_type="NRML", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
                                 sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
                             )
                         st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
