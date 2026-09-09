@@ -138,21 +138,27 @@ def is_zone_mitigated(zone_low, zone_high, df_after_formation):
 
 def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
                        base_lookback=4, base_tightness_mult=0.7, min_gap_pct=0.30, sr_top_n=5,
-                       df_15m_recent=None):
+                       df_15m_recent=None, df_1m_recent=None):
     """
     संपूर्ण विश्लेषण एकत्र — S/R (1H वर), Order Blocks (1H वर), Demand/Supply Zones (1H वर),
     Unfilled Gaps (15M वर, established). प्रत्येक zone ला mitigation-स्थिती (FILLED/ACTIVE) सह.
     रिटर्न: DataFrame, saving/display दोन्हीसाठी सुसंगत रचनेत.
 
     🎓 वापरकर्त्याने चार्ट वि. प्रत्यक्ष trading मधल्या विसंगतीवरून सापडवलेली bug — established
-    df_15m_recent (नवीन, ऐच्छिक पॅरामीटर) — established Dynamic S/R (established, 1-मिनिट Instant
-    Trader साठी महत्त्वाचा) साठी established df_15m (established, दीर्घकालीन Unfilled-Gap
-    तपासणीसाठी योग्य असलेला, संपूर्ण १ वर्षाचा) ऐवजी established वेगळा, established Dashboard चार्टच्याच
-    डीफॉल्ट (established, 15-मिनिटसाठी established २० दिवस) इतका **अलीकडचा** डेटा वापरणे. established
-    संपूर्ण वर्षभरातून established maxnumsr=5 निवडल्यास established सर्वात टोकाचे (जुने, दूरचे) swing
-    points येतात — established सद्य किमतीपासून शेकडो पॉइंट्स दूर, established कधीच trigger न होणारे,
-    established जरी चार्टवर established (established वेगळ्या, अलीकडच्या डेटावरून काढलेले) जवळचे
-    levels established योग्य दिसत असले तरी. न दिल्यास established df_15m वरच पडतो (backward-compatible).
+    df_15m_recent (ऐच्छिक) — established Dynamic S/R (established, SRv2 Momentum-Filter Reversal
+    साठी, established जे स्वतः 15-मिनिट candles वर काम करतं) साठी established df_15m (established,
+    दीर्घकालीन Unfilled-Gap तपासणीसाठी योग्य असलेला, संपूर्ण १ वर्षाचा) ऐवजी established वेगळा,
+    established Dashboard चार्टच्याच डीफॉल्ट (established, 15-मिनिटसाठी established २० दिवस) इतका
+    **अलीकडचा** डेटा वापरणे. न दिल्यास established df_15m वरच पडतो (backward-compatible).
+
+    🎓 वापरकर्त्याशी चर्चा करून पुढे स्पष्ट केलेला भेद — established 1-मिनिट आणि established 15-मिनिट
+    candles वरून established pivot-clustering established **वेगळेच** levels देतो (established, 1-मिनिट
+    वर जास्त, established जवळचे, कमी-निर्णायक pivots; established 15-मिनिट वर कमी, established जास्त
+    अर्थपूर्ण pivots) — established दोन वेगळ्या रणनींतींना (established Instant Trader — established
+    तात्काळ स्वभावासाठी established 1-मिनिट स्वतःचे levels; established SRv2 — established स्वतःच
+    15-मिनिट रचना असल्यामुळे established df_15m_recent) established वेगळे zone_type नावांखाली
+    (established DYNAMIC_SR_*_1M विरुद्ध established DYNAMIC_SR_*_15M) established वेगळे साठवले
+    जातात — established एकाच नावाखाली established गल्लत होऊ नये म्हणून.
     """
     rows = []
     now_date = df_1h["timestamp"].iloc[-1] if not df_1h.empty else None
@@ -167,20 +173,30 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
             rows.append({"symbol": symbol, "zone_type": "RESISTANCE", "zone_low": r["level"], "zone_high": r["level"],
                          "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
 
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Chart वर दाखवला जाणारा Dynamic S/R
-    # (sr_dynamic.compute_dynamic_sr — Pivot clustering, min_strength=2 आधीच फिल्टर) आतापर्यंत कुठेही
-    # साठवला जात नव्हता, प्रत्येक वेळी Dashboard उघडल्यावर नव्याने मोजला जायचा. आता इथेही साठवतो —
-    # जेणेकरून LTP-आधारित instant-trigger monitoring script याच साठवलेल्या levels वापरू शकेल.
-    # 🎓 established (वर बघा) — established df_15m_recent (अलीकडचा, established chart-सारखा डेटा)
-    # वापरणे — established df_15m (संपूर्ण वर्ष) नाही.
-    df_dyn_sr_source = df_15m_recent if df_15m_recent is not None else df_15m
-    if len(df_dyn_sr_source) >= 100:
-        dyn_sr = compute_dynamic_sr(df_dyn_sr_source, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
-        for s in dyn_sr.get("support", []):
-            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT", "zone_low": s["level"], "zone_high": s["level"],
+    # 🎓 established Dynamic S/R (15-मिनिट, established SRv2 Momentum-Filter Reversal साठी) —
+    # established df_15m_recent (अलीकडचा, established chart-सारखा डेटा) वापरून, established
+    # DYNAMIC_SR_*_15M नावाने साठवलेला.
+    df_dyn_sr_15m_source = df_15m_recent if df_15m_recent is not None else df_15m
+    if len(df_dyn_sr_15m_source) >= 100:
+        dyn_sr_15m = compute_dynamic_sr(df_dyn_sr_15m_source, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_15m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": s["level"], "zone_high": s["level"],
                          "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
-        for r in dyn_sr.get("resistance", []):
-            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE", "zone_low": r["level"], "zone_high": r["level"],
+        for r in dyn_sr_15m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": r["level"], "zone_high": r["level"],
+                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+
+    # 🎓 established Dynamic S/R (1-मिनिट, established Instant Reversal Trader साठी) — established
+    # df_1m_recent (दिलेला असल्यास) वापरून, established DYNAMIC_SR_*_1M नावाने वेगळा साठवलेला —
+    # established तात्काळ (instant) स्वभावाला अनुसरून established स्वतःचे, established जास्त
+    # जवळचे/बारीक levels.
+    if df_1m_recent is not None and len(df_1m_recent) >= 100:
+        dyn_sr_1m = compute_dynamic_sr(df_1m_recent, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_1m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": s["level"], "zone_high": s["level"],
+                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr_1m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": r["level"], "zone_high": r["level"],
                          "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
 
     # --- Order Blocks (mitigation-तपासणीसह) ---
