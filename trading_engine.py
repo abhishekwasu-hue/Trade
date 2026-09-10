@@ -245,17 +245,29 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     मूळ स्थिर SL पेक्षा वाईट होत नाही. atr_points कॉलरने (caller ने) आधीच काढून द्यायचा असतो.
 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
-    दोन विशेष नियम, established `source` column वरून ओळखले जातात (established sidebar-आधारित
-    trailing_sl_enabled/carry-forward टॉगल्सपासून पूर्णपणे स्वतंत्र, कारण ही रणनीती नेहमी pure
-    intraday राहायला हवी, इतर स्ट्रॅटेजींप्रमाणे carry-forward नाही):
-      • 3:10pm Carry-Forward नियम या source ला लागू होत नाही (जरी strategy_name established
+    दोन विशेष नियम, `source` column वरून ओळखले जातात (sidebar-आधारित trailing_sl_enabled/carry-forward
+    टॉगल्सपासून पूर्णपणे स्वतंत्र, कारण ही रणनीती नेहमी pure intraday राहायला हवी, इतर
+    स्ट्रॅटेजींप्रमाणे carry-forward नाही):
+      • 3:10pm Carry-Forward नियम या source ला लागू होत नाही (जरी strategy_name
         BULL_PUT_SPREAD/BEAR_CALL_SPREAD शी जुळत असला तरी) — नेहमी प्लेन 15:15 EOD Square-off.
-      • established ATR-Trailing ऐवजी नवीन %-आधारित Trailing (compute_pct_trailing_sl_level, वर) —
+      • ATR-Trailing ऐवजी नवीन %-आधारित Trailing (compute_pct_trailing_sl_level, वर) —
         MTM नफा 20% झाल्यावर सक्रिय, 10% credit lock सह — नेहमी सक्रिय (sidebar टॉगलची गरज नाही).
+
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुरक्षा-सुधारणा (Auto-Reconciliation) — दर
+    cycle ला (दर मिनिटाला, cron मार्फत) प्रत्यक्ष SL/Target तपासण्याआधीच, आधी
+    reconcile_open_trades_with_broker() चालवून, Upstox app/website वरून थेट बंद केलेली (पण आपल्या
+    database मध्ये अजूनही "OPEN" दिसणारी) position आधीच शोधून बंद केली जाते — जेणेकरून तिच्यावर
+    चुकून पुन्हा नवीन order जाऊ नये.
     """
     ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
     past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (eod_squareoff_hour, eod_squareoff_minute)
     oi_signal_latest = get_latest_oi_signal(symbol) if oi_reversal_exit_enabled else None
+
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुरक्षा-सुधारणा — दर cycle ला आधी Broker Reconciliation
+    # (फक्त वाचतं, कुठलाही order पाठवत नाही) — Upstox app/website वरून थेट बंद केलेली position
+    # आपल्या database मध्ये अजूनही "OPEN" दिसत राहू नये, आणि चुकून तिच्यावर पुन्हा नवीन order जाऊ नये.
+    reconcile_open_trades_with_broker(access_token, symbol)
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -417,12 +429,77 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 )
                 conn.commit()
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(current_pnl, 2), "mode": trade_mode})
+            else:
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुरक्षा-सुधारणा — आधी close-order
+                # अयशस्वी झाल्यास कुठलीही नोंद (log/notification) होतच नव्हती — trade OPEN च
+                # राहायचा, आणि दर मिनिटाला तेच शांतपणे (गुपचूप) परत अयशस्वी व्हायचं, कधीच कळायचं नाही.
+                # आता print (monitor.log मध्ये दिसेल) आणि Telegram notification दोन्ही.
+                print(
+                    f"⚠️ CLOSE ORDER FAILED — trade_id={trade_id}, symbol={symbol}, reason={exit_reason}, "
+                    f"status_code={status_code}, response={resp}"
+                )
+                try:
+                    from notifications import send_telegram_message
+                    send_telegram_message(
+                        f"🔴 <b>{symbol} — Position बंद करण्याचा प्रयत्न अयशस्वी!</b>\n"
+                        f"Trade {trade_id} (कारण: {exit_reason}) — broker कडून अयशस्वी उत्तर.\n"
+                        f"कृपया Dashboard/Upstox app उघडून प्रत्यक्ष स्थिती तपासा."
+                    )
+                except Exception:
+                    pass  # Telegram पाठवताना चूक झाली तरी मुख्य loop थांबता कामा नये
 
     # Trailing SL मुळे peak_pnl अपडेट झालेला असू शकतो, जरी या रनला कोणताही trade प्रत्यक्ष बंद झाला नसला तरी —
     # तो बदल इथे न चुकता commit करणे आवश्यक (नाहीतर वर फक्त trade बंद झाल्यावरच commit होतो).
     conn.commit()
     conn.close()
     return closed_summaries
+
+
+def reconcile_open_trades_with_broker(access_token, symbol):
+    """
+    वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — कधीकधी position आपल्या
+    Dashboard बाहेर जाऊन, थेट Upstox app/website वरून बंद केली जाते. अशा वेळी आपल्या database ला
+    ते कळतच नाही, आणि Positions tab वर ती खोटी "उघडी" दिसत राहते — मग तिथून चुकून पुन्हा "बंद करा"
+    दाबलं, तर एक नवा, चुकीचा order Upstox कडे जाऊ शकतो.
+
+    हे function फक्त वाचतं (Upstox कडे कुठलाही order पाठवत नाही) — प्रत्यक्ष भरतल्या Upstox
+    Positions शी आपल्या OPEN trades ताडून बघतं. एखाद्या trade च्या सर्व legs ची quantity broker
+    कडे शून्य असेल (म्हणजे ती position आता तिथे अस्तित्वातच नाही), तर आपल्या database मध्येच
+    "CLOSED" म्हणून नोंदवतो.
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुरक्षा-सुधारणा — फक्त mode='LIVE' trades साठीच
+    (PAPER trades ला खरी Upstox position कधीच नसते — त्यामुळे आधी PAPER trades सुद्धा चुकून
+    "बाहेरून बंद झालेले" समजून बंद केले जायचे, जे साफ चुकीचं होतं).
+
+    रिटर्न: (reconciled_list, error_message). यशस्वी झालं की error_message रिकामं.
+    """
+    positions = fetch_broker_positions(access_token)
+    if positions is None:
+        return [], "Upstox कडून Positions मिळाल्या नाहीत (token/नेटवर्क तपासा) — reconciliation करता आलं नाही."
+
+    broker_open_keys = {p.get("instrument_token") for p in positions if p.get("quantity", 0) != 0}
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT trade_id, legs_json FROM live_trades WHERE symbol=? AND status='OPEN' AND mode='LIVE'", (symbol,))
+    open_trades = cur.fetchall()
+
+    reconciled = []
+    for trade_id, legs_json_str in open_trades:
+        legs = json.loads(legs_json_str) if legs_json_str else []
+        if not legs:
+            continue
+        still_open_at_broker = any(leg["instrument_key"] in broker_open_keys for leg in legs)
+        if not still_open_at_broker:
+            cur.execute(
+                """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='RECONCILED_EXTERNAL_CLOSE'
+                   WHERE trade_id=?""",
+                (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), trade_id),
+            )
+            reconciled.append(trade_id)
+    conn.commit()
+    conn.close()
+    return reconciled, ""
 
 
 def track_manual_trade(symbol, legs, lots, lot_size, entry_ltps, trading_mode, trading_style, sl_amount=None, target_amount=None, tag_prefix="MANUAL"):
