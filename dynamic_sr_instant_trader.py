@@ -65,17 +65,26 @@ def check_instant_rsi_filter(candles_df, direction):
     return latest_rsi > RSI_RESISTANCE_MIN, latest_rsi
 
 
-def check_level_crossed(level, candles):
+TOUCH_TOLERANCE_PCT = 0.02  # 🎓 वापरकर्त्याशी चर्चा करून जोडलेला बफर — level पासून ±0.02% च्या आत
+# candle चा low/high आला तरी "स्पर्श" (TOUCH) समजला जातो — प्रत्यक्ष तंतोतंत overlap नसला तरी.
+# SRv2 च्या TOUCH_TOLERANCE_PCT (0.05%) सारखीच, टक्केवारी-आधारित पद्धत — स्थिर पॉइंट्सऐवजी, जेणेकरून
+# NIFTY ची किंमत भविष्यात कितीही वर/खाली गेली तरी प्रमाण तेच राहील.
+
+
+def check_level_crossed(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
     """
-    🎓 वापरकर्त्याने विचारलेला Gap Up/Down प्रश्न सोडवण्यासाठी जोडलेला तर्क — अलीकडच्या 1-मिनिट
-    candles च्या [low,high] रेंज मधून, आणि सलग candles मधल्या gap मधूनही (मागच्या candle चा close ते
-    पुढच्या candle चा open) level ओलांडला का तपासणे.
+    वापरकर्त्याने विचारलेला Gap Up/Down प्रश्न सोडवण्यासाठी जोडलेला तर्क — अलीकडच्या 1-मिनिट
+    candles च्या [low,high] रेंज मधून (आता ±tolerance_pct% बफरसह), आणि सलग candles मधल्या gap
+    मधूनही (मागच्या candle चा close ते पुढच्या candle चा open) level ओलांडला का तपासणे.
     candles: [{"open":.., "high":.., "low":.., "close":..}, ...] (जुनं ते नवीन क्रमाने).
     रिटर्न: (hit: bool, hit_type: "TOUCH"/"GAP_THROUGH"/None, approx_price: float/None)
     """
+    buffer = level * tolerance_pct / 100
+    level_low, level_high = level - buffer, level + buffer
+
     prev_close = None
     for c in candles:
-        if c["low"] <= level <= c["high"]:
+        if c["low"] <= level_high and c["high"] >= level_low:
             return True, "TOUCH", level
         if prev_close is not None:
             if (prev_close < level < c["open"]) or (prev_close > level > c["open"]):
@@ -165,7 +174,7 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
         rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction)
         if not rsi_ok:
             log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
-            log_entry["reason"] = f"RSI {rsi_value} established established (Support<{RSI_SUPPORT_MAX}/Resistance>{RSI_RESISTANCE_MIN}) established शी सुसंगत नाही"
+            log_entry["reason"] = f"RSI {rsi_value} दिशेशी जुळत नाही (Support<{RSI_SUPPORT_MAX} / Resistance>{RSI_RESISTANCE_MIN} हवं होतं)"
             cloud_db.save_signal_log(log_entry)
             continue
 
