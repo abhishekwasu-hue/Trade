@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 
 from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
-from trading_engine import close_trade_manually
+from trading_engine import close_trade_manually, reconcile_open_trades_with_broker
 
 
 def render():
@@ -12,6 +12,22 @@ def render():
     product_type = st.session_state.get("product_type", "I")
 
     st.subheader("💰 Positions — Real-Time MTM P&L")
+
+    # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — कधी position Upstox च्या
+    # स्वतःच्या app/website वरून थेट बंद केली, तर आपल्या database ला ते कळत नाही आणि इथे खोटी
+    # "उघडी" दिसत राहते. हे बटण फक्त वाचतं (Upstox कडे कुठलाही order पाठवत नाही) — प्रत्यक्ष
+    # भरतल्या Positions शी ताडून, बाहेरून बंद झालेल्या आपोआप "CLOSED" करतं.
+    if st.button("🔄 Broker सोबत जुळवा (प्रत्यक्ष Upstox Positions शी ताडून बघा)"):
+        with st.spinner("जुळवत आहे..."):
+            reconciled, error = reconcile_open_trades_with_broker(token_input, symbol)
+        if error:
+            st.error(f"❌ {error}")
+        elif reconciled:
+            st.success(f"✅ {len(reconciled)} पोझिशन्स Upstox वर आधीच बंद असल्याचं आढळलं, database मध्ये अपडेट केलं: {', '.join(reconciled)}")
+            st.rerun()
+        else:
+            st.info("सर्व काही जुळलेलंच आहे — database आणि Upstox मध्ये फरक नाही.")
+
     pos_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="pos_mode_filter")
     pos_mode_f = None if pos_mode_choice == "सर्व" else ("LIVE" if "LIVE" in pos_mode_choice else "PAPER")
     positions_df = get_live_positions_with_mtm(token_input, symbol, mode_filter=pos_mode_f)
@@ -104,10 +120,17 @@ def render():
             row = positions_df.loc[positions_df["Trade ID"] == tid]
             return f"{tid} — {row['Strategy'].values[0]} ({row['Legs'].values[0]})"
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Select All + Exit All) — st.multiselect चा
-        # `default` फक्त पहिल्याच वेळी काम करतो (Streamlit चं widget-state, key दिल्यावर, त्यानंतरच्या
-        # rerun्सना default कडे दुर्लक्ष करतं) — म्हणून "सर्व निवडा" checkbox बदलल्यावर, on_change
-        # callback मधून थेट session_state अपडेट करणे, हाच योग्य/विश्वासार्ह मार्ग.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची दुरुस्ती — Streamlit एकदा widget (इथे
+        # multiselect) याच run मध्ये render झाल्यावर, त्याच key ला थेट session_state["..."]=value
+        # असं परत नियुक्त करू देत नाही (StreamlitWidgetAlreadyInstantiatedError, प्रत्यक्ष चालवताना
+        # आढळलेली). म्हणून बटण-क्लिकनंतर रीसेट "pending flag" वापरून पुढच्या (नवीन) run च्या
+        # सुरुवातीलाच (widget render होण्याआधीच) केला जातो.
+        if st.session_state.pop("_pending_multiselect_clear", False):
+            st.session_state["close_trade_multiselect"] = []
+            st.session_state["close_select_all"] = False
+
+        # st.multiselect चा `default` फक्त पहिल्याच वेळी काम करतो — म्हणून "सर्व निवडा"
+        # checkbox बदलल्यावर, on_change callback मधून थेट session_state अपडेट करणे, हाच योग्य मार्ग.
         def _toggle_select_all():
             st.session_state["close_trade_multiselect"] = list(all_trade_ids) if st.session_state.get("close_select_all") else []
 
@@ -135,7 +158,6 @@ def render():
                 else:
                     st.error(f"❌ {tid} बंद करता आलं नाही: {result}")
             if any(ok for _, ok, _ in results):
-                st.session_state["close_trade_multiselect"] = []
-                st.session_state["close_select_all"] = False
+                st.session_state["_pending_multiselect_clear"] = True
                 st.rerun()
 
