@@ -7,7 +7,7 @@ import uuid
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
-from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids
+from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids, get_instrument_key
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
 # 🎓 वापरकर्त्याशी चर्चा करून वेगळं काढलेलं — established Target (प्रत्येक strategy चा स्वतःचा
@@ -15,6 +15,15 @@ from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_di
 # इतका नफा असायलाच हवा" हा उंबरठा — या दोन वेगळ्या गोष्टी आहेत. established सर्व "new rule" strategies
 # (BULL_PUT_SPREAD/BEAR_CALL_SPREAD/IRON_CONDOR/IRON_BUTTERFLY, dynamic_sr_instant वगळता) साठी सामायिक.
 CARRY_FORWARD_MIN_PROFIT_PCT = 30
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
+# SL/Target आता प्रीमियमवर नाही, underlying स्पॉट किमतीच्या हालचालीवर आधारित —
+# entry-वेळचा S/R level (entry_level_price) पासून favourable/adverse दिशेने
+# स्पॉट किती % हलला, त्यावरून. जुना प्रीमियम-आधारित SL(20%)/
+# Target(50%)/%-Trailing या source साठी पूर्णपणे बदलला — आता
+# लागू established होत नाही.
+DYNAMIC_SR_SPOT_SL_PCT = 0.05
+DYNAMIC_SR_SPOT_TARGET_PCT = 0.20
 
 def reconcile_positions(access_token, symbol):
     """
@@ -92,13 +101,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
     source — हा trade नेमका कुठून आला (उदा. 'DASHBOARD', 'credit_spread_auto_trader', 'oi_signal_auto_trader',
     'oi_greeks_vix_strategy') — Positions page वर स्पष्टपणे दाखवण्यासाठी (वापरकर्त्याशी चर्चा करून जोडलेलं).
-    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — adapter (established
-    BrokerAdapter इन्स्टन्स) दिला असेल तर established त्याच broker/account द्वारे ऑर्डर जाते (access_token
-    फक्त trade_id/स्टोरेज साठी वापरला जातो); न दिल्यास established, जुनं (थेट Upstox) वर्तन तसंच राहतं.
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — adapter (BrokerAdapter
+    इन्स्टन्स) दिला असेल तर त्याच broker/account द्वारे ऑर्डर जाते (access_token फक्त trade_id/स्टोरेज
+    साठी वापरला जातो); न दिल्यास, जुनं (थेट Upstox) वर्तन तसंच राहतं.
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit, 1-मिनिट Instant Trader) — entry_level_price
-    (ऐच्छिक) — established, entry-वेळचा underlying S/R level (option strike नाही) — established नंतर
-    established favourable दिशेने established पुढचा level touch झाला की established profit-booking
-    exit साठी established वापरला जातो (established इतर strategies साठी established None, वापरलं जात नाही)."""
+    (ऐच्छिक) — entry-वेळचा underlying S/R level (option strike नाही) — नंतर favourable दिशेने पुढचा
+    level touch झाला की profit-booking exit साठी वापरला जातो (इतर strategies साठी None, वापरलं जात नाही)."""
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 
@@ -252,7 +260,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -263,16 +271,25 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or ""))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` trades साठी underlying
+    # स्पॉटची सद्य LTP लागते (option-leg LTPs पुरेसे नाहीत, SL/Target आता स्पॉट-आधारित). कमीत कमी
+    # एक असा trade असेल तरच हा जादा fetch करणे.
+    underlying_spot = None
+    if any(t[11] == "dynamic_sr_instant" for t in parsed_trades):
+        spot_key = get_instrument_key(symbol)
+        spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
+        underlying_spot = spot_ltp_map.get(spot_key)
+
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -287,73 +304,94 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
         net_credit_total = net_credit * lots * lot_size
 
-        # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — established %-आधारित Trailing SL आता established
-        # `dynamic_sr_instant` सोबतच established `srv2_momentum_reversal` लाही लागू — established दोन्ही
-        # 20% नफ्यानंतर सक्रिय, breakeven+10% credit लॉक, established सारखाच tत्र.
-        PCT_TRAILING_SOURCES = ("dynamic_sr_instant", "srv2_momentum_reversal")
-        is_pct_trailing_trade = (source in PCT_TRAILING_SOURCES)
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी SL/Target आता
+        # प्रीमियमवर नाही, underlying स्पॉटच्या हालचालीवर आधारित (entry_level_price पासून). जुना
+        # प्रीमियम-आधारित SL/Target/%-Trailing/Carry-Forward — या source साठी पूर्णपणे बदलला.
+        if source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
+            direction_bullish = (strategy_name == "BULL_PUT_SPREAD")
+            spot_pct_move = (underlying_spot - entry_level_price) / entry_level_price
 
-        effective_sl_level = sl_level
-        is_trailing_active = False
-        if is_pct_trailing_trade:
-            # established ATR-Trailing ऐवजी — नेहमी सक्रिय (sidebar टॉगलची गरज नाही), 20% नफ्यानंतर सक्रिय
-            new_peak_pnl, effective_sl_level = compute_pct_trailing_sl_level(
-                current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=sl_level,
-            )
-            if new_peak_pnl != peak_pnl:
-                cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
-            is_trailing_active = effective_sl_level != sl_level
-        elif trailing_sl_enabled:
-            # established ATR-आधारित Trailing SL — चालू असेल तरच, आणि मूळ स्थिर SL पेक्षा कधीच वाईट (सैल) होणार नाही याची खात्री
-            new_peak_pnl, effective_sl_level = compute_trailing_sl_level(
-                current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=atr_multiplier, original_sl_level=sl_level,
-            )
-            if new_peak_pnl != peak_pnl:
-                cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
-            is_trailing_active = effective_sl_level != sl_level
-
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
-        # BEAR_CALL_SPREAD) साठी established Target (net_credit च्या स्वतःच्या target_pct_of_max_profit
-        # %, उदा. 80%) आधी established दुपारी ३:१० लाच बंद व्हायचा नियम होता — पण Target गाठला की तो
-        # लगेच (कधीही) बंद व्हायला हवा, वेळेची वाट न बघता. established ३:१०चा नियम आता established
-        # वेगळ्या, कमी उंबरठ्याशी (CARRY_FORWARD_MIN_PROFIT_PCT) जोडलेला — established Target (80%)
-        # अजून गाठलेला नसेल, तरच "किमान इतका (३०%) नफा आहे का, नाहीतर आजच बंद करा" ही सुरक्षा-तपासणी.
-        # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — नवीन OI+Greeks+VIX एकत्रित रणनीती (Iron Condor
-        # सुद्धा तयार करते) साठी, तोच SL + 3:10pm carry-forward नियम आता Iron Condor/Butterfly
-        # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
-        # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
-        # सामायिक — फक्त SRv2 साठी वेगळी नाही).
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` ला हा carry-forward नियम
-        # वगळलेला — तो नेहमी pure intraday राहायला हवा (strategy_name जुळत असला तरी), म्हणून source
-        # वरही तपासणे.
-        is_new_rule_trade = (
-            strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
-            and source != "dynamic_sr_instant"
-        )
-        past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
-        carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
-
-        exit_reason = None
-        if effective_sl_level is not None and current_pnl <= effective_sl_level:
-            if is_trailing_active:
-                exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
+            exit_reason = None
+            if direction_bullish:
+                if spot_pct_move >= DYNAMIC_SR_SPOT_TARGET_PCT / 100:
+                    exit_reason = "SPOT_TARGET"
+                elif spot_pct_move <= -DYNAMIC_SR_SPOT_SL_PCT / 100:
+                    exit_reason = "SPOT_SL"
             else:
-                exit_reason = "SL"
-        elif target_level is not None and current_pnl >= target_level:
-            exit_reason = "TARGET"  # established Target गाठला की केव्हाही (वेळेची वाट न बघता) लगेच बंद
-        elif is_new_rule_trade and past_carry_forward_check_time:
-            # established Target (वर तपासलेला) अजून गाठलेला नाही, आणि established आता दुपारी ३:१०
-            # झालेली आहे -- established वेगळ्या, कमी उंबरठ्याशी (established डीफॉल्ट 30% credit)
-            # पुरेसा नफा आहे का तपासणे -- असेल तर पुढच्या दिवशी चालू ठेवणे, नाहीतर आजच बंद करणे.
-            if current_pnl < carry_forward_min_profit_level:
-                exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
-            # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
-        elif trade_style == "INTRADAY" and past_eod_cutoff:
-            exit_reason = "EOD_SQUAREOFF"
-        elif oi_reversal_exit_enabled and trade_style == "INTRADAY" and oi_signal_latest:
-            trade_direction = infer_direction_from_strategy(strategy_name)
-            if trade_direction and not check_oi_diff_entry_gate(trade_direction, oi_signal_latest):
-                exit_reason = "OI_REVERSAL"
+                if spot_pct_move <= -DYNAMIC_SR_SPOT_TARGET_PCT / 100:
+                    exit_reason = "SPOT_TARGET"
+                elif spot_pct_move >= DYNAMIC_SR_SPOT_SL_PCT / 100:
+                    exit_reason = "SPOT_SL"
+
+            if exit_reason is None and trade_style == "INTRADAY" and past_eod_cutoff:
+                exit_reason = "EOD_SQUAREOFF"
+        else:
+            # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता
+            # `srv2_momentum_reversal` लाही लागू — 20% नफ्यानंतर सक्रिय, breakeven+10% credit लॉक.
+            PCT_TRAILING_SOURCES = ("srv2_momentum_reversal",)
+            is_pct_trailing_trade = (source in PCT_TRAILING_SOURCES)
+
+            effective_sl_level = sl_level
+            is_trailing_active = False
+            if is_pct_trailing_trade:
+                # ATR-Trailing ऐवजी — नेहमी सक्रिय (sidebar टॉगलची गरज नाही), 20% नफ्यानंतर सक्रिय
+                new_peak_pnl, effective_sl_level = compute_pct_trailing_sl_level(
+                    current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=sl_level,
+                )
+                if new_peak_pnl != peak_pnl:
+                    cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+                is_trailing_active = effective_sl_level != sl_level
+            elif trailing_sl_enabled:
+                # ATR-आधारित Trailing SL — चालू असेल तरच, आणि मूळ स्थिर SL पेक्षा कधीच वाईट (सैल) होणार नाही याची खात्री
+                new_peak_pnl, effective_sl_level = compute_trailing_sl_level(
+                    current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=atr_multiplier, original_sl_level=sl_level,
+                )
+                if new_peak_pnl != peak_pnl:
+                    cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+                is_trailing_active = effective_sl_level != sl_level
+
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला नवीन नियम — Price Action/Indicator (BULL_PUT_SPREAD/
+            # BEAR_CALL_SPREAD) साठी Target (net_credit च्या स्वतःच्या target_pct_of_max_profit %,
+            # उदा. 80%) आधी दुपारी ३:१० लाच बंद व्हायचा नियम होता — पण Target गाठला की तो लगेच
+            # (कधीही) बंद व्हायला हवा, वेळेची वाट न बघता. ३:१०चा नियम आता वेगळ्या, कमी उंबरठ्याशी
+            # (CARRY_FORWARD_MIN_PROFIT_PCT) जोडलेला — Target (80%) अजून गाठलेला नसेल, तरच "किमान
+            # इतका (३०%) नफा आहे का, नाहीतर आजच बंद करा" ही सुरक्षा-तपासणी.
+            # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — नवीन OI+Greeks+VIX एकत्रित रणनीती (Iron Condor
+            # सुद्धा तयार करते) साठी, तोच SL + 3:10pm carry-forward नियम आता Iron Condor/Butterfly
+            # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
+            # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
+            # सामायिक — फक्त SRv2 साठी वेगळी नाही).
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` ला हा carry-forward
+            # नियम कधीच लागू होत नाही (सामान्यतः वरच्या वेगळ्या शाखेतच जातो — पण entry_level_price/
+            # underlying_spot काही कारणाने गहाळ असेल तरीही, सुरक्षिततेसाठी इथेही स्पष्ट वगळलेला).
+            is_new_rule_trade = (
+                strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
+                and source != "dynamic_sr_instant"
+            )
+            past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
+            carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
+
+            exit_reason = None
+            if effective_sl_level is not None and current_pnl <= effective_sl_level:
+                if is_trailing_active:
+                    exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
+                else:
+                    exit_reason = "SL"
+            elif target_level is not None and current_pnl >= target_level:
+                exit_reason = "TARGET"  # Target गाठला की केव्हाही (वेळेची वाट न बघता) लगेच बंद
+            elif is_new_rule_trade and past_carry_forward_check_time:
+                # Target (वर तपासलेला) अजून गाठलेला नाही, आणि आता दुपारी ३:१० झालेली आहे --
+                # वेगळ्या, कमी उंबरठ्याशी (डीफॉल्ट 30% credit) पुरेसा नफा आहे का तपासणे -- असेल तर
+                # पुढच्या दिवशी चालू ठेवणे, नाहीतर आजच बंद करणे.
+                if current_pnl < carry_forward_min_profit_level:
+                    exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+                # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
+            elif trade_style == "INTRADAY" and past_eod_cutoff:
+                exit_reason = "EOD_SQUAREOFF"
+            elif oi_reversal_exit_enabled and trade_style == "INTRADAY" and oi_signal_latest:
+                trade_direction = infer_direction_from_strategy(strategy_name)
+                if trade_direction and not check_oi_diff_entry_gate(trade_direction, oi_signal_latest):
+                    exit_reason = "OI_REVERSAL"
 
         if exit_reason:
             qty = lots * lot_size

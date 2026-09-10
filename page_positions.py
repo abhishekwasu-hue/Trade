@@ -94,24 +94,48 @@ def render():
 
         st.markdown("##### 🔴 पोझिशन मॅन्युअली बंद करा")
         st.caption(
-            "विशेषतः Manual Trading Panel मधून SL/Target न ठेवता उघडलेल्या पोझिशन्ससाठी उपयोगी — "
-            "त्या आपोआप बंद होत नाहीत, इथूनच बंद कराव्या लागतील (किंवा EOD पर्यंत थांबावं लागेल)."
+            "एक, अनेक, किंवा सर्व पोझिशन्स एकाच वेळी निवडून बंद करता येतील — विशेषतः Manual Trading "
+            "Panel मधून SL/Target न ठेवता उघडलेल्या पोझिशन्ससाठी उपयोगी (त्या आपोआप बंद होत नाहीत)."
         )
-        close_trade_id = st.selectbox(
-            "बंद करण्यासाठी पोझिशन निवडा",
-            options=positions_df["Trade ID"].tolist(),
-            format_func=lambda tid: (
-                f"{tid} — {positions_df.loc[positions_df['Trade ID']==tid, 'Strategy'].values[0]} "
-                f"({positions_df.loc[positions_df['Trade ID']==tid, 'Legs'].values[0]})"
-            ),
-            key="close_trade_select",
+
+        all_trade_ids = positions_df["Trade ID"].tolist()
+
+        def _format_trade(tid):
+            row = positions_df.loc[positions_df["Trade ID"] == tid]
+            return f"{tid} — {row['Strategy'].values[0]} ({row['Legs'].values[0]})"
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Select All + Exit All) — st.multiselect चा
+        # `default` फक्त पहिल्याच वेळी काम करतो (Streamlit चं widget-state, key दिल्यावर, त्यानंतरच्या
+        # rerun्सना default कडे दुर्लक्ष करतं) — म्हणून "सर्व निवडा" checkbox बदलल्यावर, on_change
+        # callback मधून थेट session_state अपडेट करणे, हाच योग्य/विश्वासार्ह मार्ग.
+        def _toggle_select_all():
+            st.session_state["close_trade_multiselect"] = list(all_trade_ids) if st.session_state.get("close_select_all") else []
+
+        st.checkbox("सर्व पोझिशन्स निवडा", key="close_select_all", on_change=_toggle_select_all)
+
+        # आधीच्या rerun मध्ये बंद झालेले trade_ids आता positions_df मध्ये नसतील — multiselect ला
+        # न-अस्तित्वात असलेले options दिल्यास तो error देतो, त्यामुळे साठवलेली निवड आधी फिल्टर करणे.
+        st.session_state["close_trade_multiselect"] = [
+            tid for tid in st.session_state.get("close_trade_multiselect", []) if tid in all_trade_ids
+        ]
+
+        selected_trade_ids = st.multiselect(
+            "बंद करण्यासाठी पोझिशन(न्स) निवडा",
+            options=all_trade_ids,
+            format_func=_format_trade,
+            key="close_trade_multiselect",
         )
-        if st.button("🔴 ही पोझिशन आत्ताच बंद करा"):
-            with st.spinner("बंद करत आहे..."):
-                ok, result = close_trade_manually(token_input, close_trade_id, symbol, product_type)
-            if ok:
-                st.success(f"✅ पोझिशन बंद झाली — Realized P&L: ₹{result:,.2f}")
+
+        if st.button(f"🔴 निवडलेल्या {len(selected_trade_ids)} पोझिशन्स बंद करा", disabled=len(selected_trade_ids) == 0):
+            with st.spinner(f"{len(selected_trade_ids)} पोझिशन्स बंद करत आहे..."):
+                results = [(tid, *close_trade_manually(token_input, tid, symbol, product_type)) for tid in selected_trade_ids]
+            for tid, ok, result in results:
+                if ok:
+                    st.success(f"✅ {tid} बंद झाली — Realized P&L: ₹{result:,.2f}")
+                else:
+                    st.error(f"❌ {tid} बंद करता आलं नाही: {result}")
+            if any(ok for _, ok, _ in results):
+                st.session_state["close_trade_multiselect"] = []
+                st.session_state["close_select_all"] = False
                 st.rerun()
-            else:
-                st.error(f"❌ बंद करता आलं नाही: {result}")
 

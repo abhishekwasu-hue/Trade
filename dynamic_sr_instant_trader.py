@@ -199,9 +199,16 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
                 cloud_db.save_signal_log(log_entry)
                 continue
 
-        if hit_count_so_far >= 1 and has_open_trade_from_source(symbol, "dynamic_sr_instant"):
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुधारणा — आधीची तपासणी फक्त "याच specific
+        # level ला आज दुसऱ्यांदा hit झाला तरच" (hit_count_so_far>=1) चालायची — म्हणजे एका वेगळ्या
+        # (किंवा किंचित वेगळा गणलेल्या) level वर आधीच उघडी असलेली position असतानाही, त्या दुसऱ्या
+        # (आजचा पहिलाच hit असलेल्या) level वर नवीन trade उघडली जायची — तीन trades काही मिनिटांत
+        # उघडणे असं प्रत्यक्ष घडलं (वापरकर्त्याने Order Log मधून सापडवलेलं). आता ही तपासणी
+        # **कुठल्याही** level साठी बिनशर्त — याच source ची कुठलीही position उघडी असेल, तर (मग ती
+        # कुठल्याही level वरची असो) नवीन entry होणारच नाही.
+        if has_open_trade_from_source(symbol, "dynamic_sr_instant"):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
-            log_entry["reason"] = "established आधीची position अजून बंद झालेली नाही"
+            log_entry["reason"] = "आधीची position (या strategy ची, कुठल्याही level वरची) अजून बंद झालेली नाही"
             cloud_db.save_signal_log(log_entry)
             continue
 

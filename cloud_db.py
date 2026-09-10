@@ -23,6 +23,7 @@ Connection string सेट केलेली नसेल तर — सर्
 फक्त तर्कशास्त्र (mocked connection सह) पडताळलं आहे. कृपया तुमच्या स्वतःच्या Supabase वर एकदा
 प्रत्यक्ष चाचणी करा.
 """
+import datetime
 import json
 import os
 
@@ -552,6 +553,64 @@ def get_strike_oi_history(symbol, trade_date, strikes=None):
             return pd.DataFrame(rows, columns=["strike", "option_type", "snapshot_time", "oi"])
     except Exception:
         return None
+    finally:
+        conn.close()
+
+
+def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_date=None):
+    """
+    10-मिनिटांचा हलका 1M Dynamic S/R refresh — save_market_zones() (पूर्ण replace) च्या उलट, इथे
+    फक्त DYNAMIC_SR_*_1M प्रकारचे zones merge केले जातात:
+      - नवीन गणना केलेला level जुन्या ACTIVE level च्या ±tolerance_pct% च्या आत असेल, तर जुनाच
+        level_price कायम ठेवला जातो (Multi-Hit hit-count history टिकून राहावी म्हणून).
+      - नवीन, न जुळणारा उमेदवार असेल, तो नव्याने जोडला जातो.
+      - जुना, नव्या गणनेत न सापडलेला level DELETE केला जात नाही (मोठा gap झाल्यावर जुना पण खरा
+        level "सर्वोत्तम ५" यादीतून बाहेर पडला तरी हरवू नये, किंमत नंतर तिथे परत आली तर उपयोगी
+        पडावा म्हणून). त्यामुळे दिवसभरात यादी ५ पेक्षा जास्त वाढू शकते — रोजची स्वच्छता फक्त
+        रात्रीच्या पूर्ण refresh_market_zones.py द्वारेच होते.
+    रिटर्न: True/False (यशस्वी झालं की नाही).
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        formed_date = formed_date or datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, zone_type, zone_low FROM market_zones WHERE symbol = %s "
+                "AND zone_type IN ('DYNAMIC_SR_SUPPORT_1M', 'DYNAMIC_SR_RESISTANCE_1M') AND status = 'ACTIVE'",
+                (symbol,),
+            )
+            existing = cur.fetchall()  # [(id, zone_type, zone_low), ...]
+
+            for zone_type, candidates in [
+                ("DYNAMIC_SR_SUPPORT_1M", dyn_sr_result.get("support", [])),
+                ("DYNAMIC_SR_RESISTANCE_1M", dyn_sr_result.get("resistance", [])),
+            ]:
+                existing_of_type = [(row_id, zone_low) for (row_id, zt, zone_low) in existing if zt == zone_type]
+                matched_existing_ids = set()
+
+                for cand in candidates:
+                    cand_level = float(cand["level"])
+                    buffer = cand_level * tolerance_pct / 100
+                    matched = next(
+                        (row_id for (row_id, zone_low) in existing_of_type
+                         if abs(float(zone_low) - cand_level) <= buffer and row_id not in matched_existing_ids),
+                        None,
+                    )
+                    if matched is not None:
+                        matched_existing_ids.add(matched)  # जुनाच level_price कायम -- काहीही न बदलता
+                    else:
+                        cur.execute(
+                            """INSERT INTO market_zones (symbol, zone_type, zone_low, zone_high, strength, formed_date, status)
+                               VALUES (%s, %s, %s, %s, %s, %s, 'ACTIVE')""",
+                            (symbol, zone_type, cand_level, cand_level, float(cand["touches"]), formed_date),
+                        )
+
+        conn.commit()
+        return True
+    except Exception:
+        return False
     finally:
         conn.close()
 
