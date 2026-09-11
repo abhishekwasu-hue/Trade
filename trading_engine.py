@@ -25,6 +25,20 @@ CARRY_FORWARD_MIN_PROFIT_PCT = 30
 DYNAMIC_SR_SPOT_SL_PCT = 0.05
 DYNAMIC_SR_SPOT_TARGET_PCT = 0.20
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — स्पॉट-आधारित SL/Target सोबतच, निव्वळ प्रीमियम-आधारित
+# SL/Target (Trailing सह) — दोन्ही एकत्र, जे आधी घडेल ते लागू. Trailing चे activation/lock % हे
+# चर्चेत स्पष्ट सांगून ठरवलेलं गृहीतक आहे (SRv2 च्या 20%/10% पॅटर्नशी सुसंगत, पण या घट्ट 10%/25%
+# च्या प्रमाणात छोटं केलेलं).
+DYNAMIC_SR_PREMIUM_SL_PCT = 10
+DYNAMIC_SR_PREMIUM_TARGET_PCT = 25
+DYNAMIC_SR_PREMIUM_TRAILING_ACTIVATION_PCT = 10
+DYNAMIC_SR_PREMIUM_TRAILING_LOCK_PCT = 5
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी EOD आता 15:00 (इतर
+# strategies साठीचा डीफॉल्ट 15:15 तसाच, फक्त या source साठी वेगळा, आधीचा).
+DYNAMIC_SR_EOD_HOUR = 15
+DYNAMIC_SR_EOD_MINUTE = 0
+
 def reconcile_positions(access_token, symbol):
     """
     स्थानिक DB मधील OPEN (LIVE) ट्रेड्सची तुलना Upstox कडील खऱ्या पोझिशन्सशी करून विसंगती शोधणे —
@@ -298,6 +312,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     if any(t[11] == "dynamic_sr_instant" for t in parsed_trades):
         spot_key = get_instrument_key(symbol)
         spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
+        # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("exit condition match झाली तरी exit झाला नाही") सोडवण्यासाठी
+        # जोडलेली, तात्पुरती diagnostic नोंद — underlying_spot None आलं (म्हणजे संपूर्ण स्पॉट-आधारित
+        # SL/Target branch वगळला जाऊन जुन्या प्रीमियम-आधारित मार्गाकडे पडेल) तर, नेमकं काय मिळालं ते
+        # स्पष्ट दिसावं (उदा. Upstox च्या response मधला key आपण पाठवलेल्या "NSE_INDEX|Nifty 50" शी
+        # जुळलाच नसेल, तर हेच कारण असू शकतं — पण याची अजून खात्रीशीर पडताळणी झालेली नाही).
+        if not spot_ltp_map or spot_key not in spot_ltp_map:
+            print(f"⚠️ underlying_spot मिळाला नाही — spot_key='{spot_key}', मिळालेला raw response: {spot_ltp_map}")
         underlying_spot = spot_ltp_map.get(spot_key)
 
     closed_summaries = []
@@ -316,9 +337,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
         net_credit_total = net_credit * lots * lot_size
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी SL/Target आता
-        # प्रीमियमवर नाही, underlying स्पॉटच्या हालचालीवर आधारित (entry_level_price पासून). जुना
-        # प्रीमियम-आधारित SL/Target/%-Trailing/Carry-Forward — या source साठी पूर्णपणे बदलला.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
+        # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
+        # घडेल ते लागू (Next-Level-Exit पूर्णपणे काढून टाकलेला).
         if source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
             direction_bullish = (strategy_name == "BULL_PUT_SPREAD")
             spot_pct_move = (underlying_spot - entry_level_price) / entry_level_price
@@ -335,8 +356,27 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 elif spot_pct_move >= DYNAMIC_SR_SPOT_SL_PCT / 100:
                     exit_reason = "SPOT_SL"
 
-            if exit_reason is None and trade_style == "INTRADAY" and past_eod_cutoff:
-                exit_reason = "EOD_SQUAREOFF"
+            # निव्वळ प्रीमियम-आधारित (Trailing SL सह) — अजून वरचा (स्पॉट) exit_reason ठरलेला नसेल तरच
+            if exit_reason is None:
+                new_peak_pnl, effective_premium_sl_level = compute_pct_trailing_sl_level(
+                    current_pnl, peak_pnl, net_credit_total,
+                    activation_pct=DYNAMIC_SR_PREMIUM_TRAILING_ACTIVATION_PCT,
+                    lock_pct=DYNAMIC_SR_PREMIUM_TRAILING_LOCK_PCT,
+                    original_sl_level=-(net_credit_total * DYNAMIC_SR_PREMIUM_SL_PCT / 100.0),
+                )
+                if new_peak_pnl != peak_pnl:
+                    cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_pnl, trade_id))
+                is_premium_trailing_active = effective_premium_sl_level != -(net_credit_total * DYNAMIC_SR_PREMIUM_SL_PCT / 100.0)
+
+                if current_pnl <= effective_premium_sl_level:
+                    exit_reason = "PREMIUM_TRAILING_SL" if is_premium_trailing_active else "PREMIUM_SL"
+                elif net_credit_total and (current_pnl / net_credit_total) >= DYNAMIC_SR_PREMIUM_TARGET_PCT / 100:
+                    exit_reason = "PREMIUM_TARGET"
+
+            if exit_reason is None and trade_style == "INTRADAY":
+                dynamic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (DYNAMIC_SR_EOD_HOUR, DYNAMIC_SR_EOD_MINUTE)
+                if dynamic_sr_past_eod_cutoff:
+                    exit_reason = "EOD_SQUAREOFF"
         else:
             # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता
             # `srv2_momentum_reversal` लाही लागू — 20% नफ्यानंतर सक्रिय, breakeven+10% credit लॉक.

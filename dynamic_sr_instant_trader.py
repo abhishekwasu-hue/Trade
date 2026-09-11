@@ -13,16 +13,13 @@ gap-मध्ये level चुकवायचं (कधीच trigger व्�
 close आणि पुढच्या candle च्या open मध्ये level सापडला, म्हणजे उडी मारून ओलांडला गेला).
 
 तर्क:
-  १. Supabase मधून साठवलेले ACTIVE DYNAMIC_SR_SUPPORT_1M/RESISTANCE_1M levels वाचणे (established, 1-मिनिट डेटावरून काढलेले, persistence).
+  १. Supabase मधून साठवलेले ACTIVE DYNAMIC_SR_SUPPORT_1M/RESISTANCE_1M levels वाचणे (1-मिनिट डेटावरून काढलेले, persistence).
   २. अलीकडचे 1-मिनिट candles मिळवून, प्रत्येक ACTIVE level साठी check_level_crossed() तपासणे.
-  ३. established Next-Level Exit — established touched level established आधीच्या (favourable दिशेने)
-     established उघड्या position साठी established profit-target असेल, तर established आधी established
-     ती established बंद (established Signal Log/Telegram सह established "NEXT_LEVEL_EXIT").
-  ४. established RSI(14, established 1-मिनिट) फिल्टर — Support touch (RSI<40) -> Bull Put Spread.
-     Resistance touch (RSI>60) -> Bear Call Spread. established RSI established जुळत नसेल तर established
-     established दुर्लक्षित.
-  ५. established select_credit_spread_fixed_strikes(strikes_otm=0 — ATM वरच Short leg, hedge_width_points=100 दूर Long leg) + open_multi_leg_trade() (PAPER) वापरून execute — established entry_level_price established साठवलेला (established Next-Level Exit साठी).
-  ६. **प्रत्येक तपासलेला level** (hit झाला किंवा नाही) Signal Log मध्ये साठवणे — Dashboard वर संपूर्ण
+  ३. RSI(14, 1-मिनिट) फिल्टर — Support touch (RSI<40) -> Bull Put Spread.
+     Resistance touch (RSI>60) -> Bear Call Spread. RSI जुळत नसेल तर दुर्लक्षित.
+  ४. select_credit_spread_fixed_strikes(strikes_otm=0 — ATM वरच Short leg, hedge_width_points=100 दूर Long leg) + open_multi_leg_trade() (PAPER) वापरून execute — entry_level_price साठवलेला (trading_engine.py च्या स्पॉट-आधारित SL/Target साठी).
+  ५. **प्रत्येक तपासलेला level** (hit झाला किंवा नाही) Signal Log मध्ये साठवणे — Dashboard वर संपूर्ण
+     intraday इतिहास दिसण्यासाठी. फक्त hit झालेलेच नाही — सर्व levels, प्रत्येक cycle ला.
      intraday इतिहास दिसण्यासाठी. फक्त hit झालेलेच नाही — सर्व levels, प्रत्येक cycle ला.
   ७. established Telegram notification.
 
@@ -37,15 +34,20 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source, get_open_trades_with_entry_level
+from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message
 from signals import calculate_rsi
 from strategy import select_credit_spread_fixed_strikes
-from trading_engine import open_multi_leg_trade, close_trade_manually
+from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles
 
 RSI_SUPPORT_MAX = 40     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं — Support touch + 1-मिनिट RSI < 40 -> Bull Put Spread
-RSI_RESISTANCE_MIN = 60  # established Resistance touch + 1-मिनिट RSI > 60 -> Bear Call Spread
+RSI_RESISTANCE_MIN = 60  # Resistance touch + 1-मिनिट RSI > 60 -> Bear Call Spread
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 14:45 नंतर नवीन entry घ्यायचीच नाही (आधीच्या उघड्या
+# positions वर याचा परिणाम नाही, त्या EOD 15:00 लाच बंद होतील).
+NO_NEW_ENTRY_AFTER_HOUR = 14
+NO_NEW_ENTRY_AFTER_MINUTE = 45
 
 
 def check_instant_rsi_filter(candles_df, direction):
@@ -168,27 +170,18 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
             cloud_db.save_signal_log(log_entry)
             continue
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit + Instant Reversal) — established
-        # या touched level च्या established favourable दिशेने established आधीची (याच source ची)
-        # established कुठली established उघडी position established असेल (established entry level पेक्षा
-        # established Support-मूळ trade साठी established वर, established Resistance-मूळ trade साठी
-        # established खाली established हा established touched level established असेल), तर established
-        # established ती established आधी established "profit-booked" म्हणून established बंद करून,
-        # established नंतर established याच established touched level वर established (RSI+Multi-Hit
-        # established गेट्स established पास झाल्यास) established नवीन (reversal) trade established घेतली
-        # established जाते.
-        for ot in get_open_trades_with_entry_level(symbol, "dynamic_sr_instant"):
-            origin_bullish = ot["strategy"] == "BULL_PUT_SPREAD"
-            favourable = (row["zone_low"] > ot["entry_level_price"]) if origin_bullish else (row["zone_low"] < ot["entry_level_price"])
-            if favourable:
-                closed_ok, close_msg = close_trade_manually(access_token, ot["trade_id"], symbol, "D", exit_reason="NEXT_LEVEL_EXIT")
-                if closed_ok:
-                    send_telegram_message(
-                        f"💰 <b>{symbol} Next-Level Exit — नफा बुक केला!</b>\n"
-                        f"Trade {ot['trade_id']} (entry level {ot['entry_level_price']:.2f}) — "
-                        f"{row['zone_low']:.2f} पर्यंत पोहोचल्यामुळे बंद केला.\n"
-                        f"आता याच level वर instant reversal trade तपासला जाईल."
-                    )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 14:45 नंतर नवीन entry नाही (आधीच्या उघड्या
+        # positions ला याचा काहीही परिणाम नाही — त्या trading_engine.py च्या EOD 15:00 नेच बंद होतील).
+        if (now.hour, now.minute) >= (NO_NEW_ENTRY_AFTER_HOUR, NO_NEW_ENTRY_AFTER_MINUTE):
+            log_entry["trade_status"] = "SKIPPED_TOO_LATE_FOR_NEW_ENTRY"
+            log_entry["reason"] = f"{NO_NEW_ENTRY_AFTER_HOUR}:{NO_NEW_ENTRY_AFTER_MINUTE:02d} नंतर नवीन entry नाही"
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून काढून टाकलेला — Next-Level Exit + Instant Reversal (आधी इथे होता)
+        # — आता entry_level_price फक्त trading_engine.py च्या स्पॉट-आधारित SL/Target साठीच वापरला
+        # जातो, जुनी "favourable दिशेने पुढचा level touch झाला की जुनी बंद करून नवीन उघडा" ही वेगळी
+        # यंत्रणा पूर्णपणे काढलेली.
 
         rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction)
         if not rsi_ok:
