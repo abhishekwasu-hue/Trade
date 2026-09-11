@@ -94,19 +94,25 @@ def check_level_crossed(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
 
 
 def process_symbol(access_token, symbol, lots=1, lot_size=65,
-                    sl_pct_of_credit=20, target_pct_of_max_profit=50, recent_candles_count=10):
+                    sl_pct_of_credit=20, target_pct_of_max_profit=50, recent_candles_count=2):
     """
     एका symbol साठी — अलीकडचे 1-मिनिट candles, साठवलेले Dynamic S/R levels, प्रत्येकासाठी
     crossing-तपासणी, Signal Log, आणि आढळल्यास trade+notification.
 
+    🎓 वापरकर्त्याने Signal Log मधून सापडवलेली bug — recent_candles_count आधी 10 होता (मागच्या
+    10 मिनिटांच्या candles पैकी कुठल्याही एकाने level ला स्पर्श केला तरी "TOUCH" दाखवायचं) — म्हणजे
+    किंमत 7-8 मिनिटांपूर्वी level जवळ होती, आता खूप दूर गेली, तरी तो जुना candle अजूनही "मागच्या 10"
+    च्या यादीत असल्यामुळे खोटं, कालबाह्य "TOUCH" दाखवत राहायचं. आता फक्त शेवटचे 2 candles (सद्य
+    किंमत + gap-check साठी एक जास्तीचा) — जुना, कालबाह्य touch यापुढे कधीच दाखवला जाणार नाही.
+
     🎓 वापरकर्त्याशी चर्चा करून सुधारित (आधी SL 30%/Target 30% होतं) — SL आता निव्वळ प्रीमियमच्या 20%,
-    Target 50%. ही रणनीती established pure INTRADAY राहते (3:10pm carry-forward लागू होत नाही,
-    established `trading_engine.manage_open_trades()` मध्ये source="dynamic_sr_instant" वरून वगळलेलं) —
-    established EOD Square-off (15:15) नेहमी लागू. Trailing SL आता established ATR-आधारित नाही — नवीन,
-    वेगळी %-आधारित यंत्रणा (MTM नफा 20% झाल्यावर सक्रिय, 10% credit lock) established
+    Target 50%. ही रणनीती pure INTRADAY राहते (3:10pm carry-forward लागू होत नाही,
+    `trading_engine.manage_open_trades()` मध्ये source="dynamic_sr_instant" वरून वगळलेलं) —
+    EOD Square-off (15:15) नेहमी लागू. Trailing SL आता ATR-आधारित नाही — नवीन,
+    वेगळी %-आधारित यंत्रणा (MTM नफा 20% झाल्यावर सक्रिय, 10% credit lock)
     manage_open_trades() मध्येच याच source साठी नेहमी सक्रिय — इथे वेगळं काही सेट करावं लागत नाही.
     """
-    # established zones आता कधीच FILLED केले जात नाहीत (खाली hit_count/cooldown ने नियंत्रित) —
+    # zones आता कधीच FILLED केले जात नाहीत (खाली hit_count/cooldown ने नियंत्रित) —
     # म्हणून फक्त ACTIVE Dynamic SR levels वाचणे पुरेसे आहे (पूर्ण संच वाचून परत साठवायची गरज नाही).
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -122,7 +128,20 @@ def process_symbol(access_token, symbol, lots=1, lot_size=65,
     candles_df = fetch_candles(access_token, symbol, current_spot=0, interval="1minute", lookback_days=1)
     if candles_df is None or candles_df.empty:
         return f"{symbol}: 1-मिनिट candles मिळाले नाहीत"
-    recent_candles = candles_df.tail(recent_candles_count).to_dict("records")
+
+    # 🎓 वापरकर्त्याने सापडवलेली, अजून खोलातली bug — lookback_days=1 म्हणजे "मागचे १ कॅलेंडर दिवस",
+    # ज्यामुळे कालच्या दिवसाचे शेवटचे candles सुद्धा (आजच्या सोबतच) यात येतात. दिवसाच्या सुरुवातीच्या
+    # काही मिनिटांत (जेव्हा आजचे स्वतःचे candles अजून recent_candles_count इतके तयारच झालेले नसतात),
+    # tail() आपोआप कालचे (gap-पूर्वीचे) candles घ्यायचा — आणि तेच आजच्या levels ना खोटा स्पर्श
+    # दाखवायचे (आज बाजारात ती किंमत कधीच न आलेली असतानाही). आता आजच्याच तारखेचे candles आधी वेगळे
+    # काढून, त्यातूनच शेवटचे तपासतो — कालचा candle कधीच यात येणार नाही.
+    today_date = get_ist_now().date()
+    candles_df["_date"] = candles_df["timestamp"].dt.date
+    todays_candles_df = candles_df[candles_df["_date"] == today_date]
+    if todays_candles_df.empty:
+        return f"{symbol}: आजचे 1-मिनिट candles अजून तयार झालेले नाहीत"
+
+    recent_candles = todays_candles_df.tail(recent_candles_count).to_dict("records")
 
     raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol)
     if not raw_chain:
