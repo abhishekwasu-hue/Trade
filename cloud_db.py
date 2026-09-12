@@ -143,6 +143,17 @@ CREATE TABLE IF NOT EXISTS srv2_strategy_state (
 );
 """
 
+# वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 चे lots/hedge_width_points आता Dashboard वरून
+# बदलता येतील (hardcode नाही). symbol प्रत्येकाची स्वतंत्र नोंद.
+CREATE_SRV2_SETTINGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS srv2_settings (
+    symbol TEXT PRIMARY KEY,
+    lots INTEGER NOT NULL DEFAULT 1,
+    hedge_width_points REAL NOT NULL DEFAULT 100,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+"""
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — कुठले accounts
 # (कुठल्या broker वर) established रणनींतींनी वापरायचे, याची नोंदणी.
 CREATE_BROKER_ACCOUNTS_TABLE_SQL = """
@@ -210,7 +221,7 @@ def get_connection_with_error():
 
 def init_cloud_table():
     """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc,
-    signal_log, srv2_strategy_state आणि broker_accounts tables (नसतील तर) तयार करणे."""
+    signal_log, srv2_strategy_state, srv2_settings आणि broker_accounts tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
         return False
@@ -223,6 +234,7 @@ def init_cloud_table():
             cur.execute(CREATE_NIFTY_1MIN_TABLE_SQL)
             cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
             cur.execute(CREATE_SRV2_STATE_TABLE_SQL)
+            cur.execute(CREATE_SRV2_SETTINGS_TABLE_SQL)
             cur.execute(CREATE_BROKER_ACCOUNTS_TABLE_SQL)
         conn.commit()
         return True
@@ -327,7 +339,7 @@ def get_srv2_state(symbol):
 
 
 def save_srv2_state(symbol, last_tested_level=None, last_sl_hit_time=None):
-    """established srv2 रणनीतीचं राज्य साठवणे (upsert — symbol आधीच असेल तर अद्ययावत, नसेल तर नवीन)."""
+    """srv2 रणनीतीचं राज्य साठवणे (upsert — symbol आधीच असेल तर अद्ययावत, नसेल तर नवीन)."""
     conn = get_connection()
     if conn is None:
         return False
@@ -345,6 +357,84 @@ def save_srv2_state(symbol, last_tested_level=None, last_sl_hit_time=None):
         return True
     except Exception:
         return False
+    finally:
+        conn.close()
+
+
+def get_srv2_settings(symbol):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 चे lots/hedge_width_points Dashboard वरून
+    बदलता येण्यासाठी. नोंद नसेल तर सुरक्षित डीफॉल्ट (lots=1, hedge_width_points=100 — जुनं hardcoded
+    मूल्य)."""
+    conn = get_connection()
+    if conn is None:
+        return {"lots": 1, "hedge_width_points": 100.0}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT lots, hedge_width_points FROM srv2_settings WHERE symbol=%s", (symbol,))
+            row = cur.fetchone()
+            if row is None:
+                return {"lots": 1, "hedge_width_points": 100.0}
+            return {"lots": int(row[0]), "hedge_width_points": float(row[1])}
+    except Exception:
+        return {"lots": 1, "hedge_width_points": 100.0}
+    finally:
+        conn.close()
+
+
+def save_srv2_settings(symbol, lots, hedge_width_points):
+    """SRv2 चे lots/hedge_width_points साठवणे (upsert)."""
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO srv2_settings (symbol, lots, hedge_width_points, updated_at)
+                   VALUES (%s, %s, %s, NOW())
+                   ON CONFLICT (symbol) DO UPDATE SET
+                       lots = EXCLUDED.lots,
+                       hedge_width_points = EXCLUDED.hedge_width_points,
+                       updated_at = NOW()""",
+                (symbol, lots, hedge_width_points),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_next_level_in_direction(symbol, entry_level_price, direction_bullish, timeframe_suffixes=("15M", "30M", "60M")):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe SRv2, Next-Level-Exit) —
+    entry_level_price पासून favourable दिशेने, दिलेल्या कुठल्याही timeframe (15M/30M/60M, पूल
+    केलेले — कुठल्याही एका timeframe पुरतं मर्यादित नाही) मधला सर्वात जवळचा ACTIVE level शोधणे.
+    direction_bullish=True -> entry_level_price पेक्षा वर, सर्वात जवळचा (favourable = वर जाणं).
+    direction_bullish=False -> entry_level_price पेक्षा खाली, सर्वात जवळचा (favourable = खाली जाणं).
+    रिटर्न: level_price (float) किंवा None (सापडला नाही तर)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        zone_types = []
+        for tf in timeframe_suffixes:
+            zone_types.append(f"DYNAMIC_SR_SUPPORT_{tf}")
+            zone_types.append(f"DYNAMIC_SR_RESISTANCE_{tf}")
+        placeholders = ",".join(["%s"] * len(zone_types))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT zone_low FROM market_zones WHERE symbol=%s AND zone_type IN ({placeholders}) AND status='ACTIVE'",
+                (symbol, *zone_types),
+            )
+            rows = cur.fetchall()
+        candidates = [float(r[0]) for r in rows]
+        if direction_bullish:
+            above = [c for c in candidates if c > entry_level_price]
+            return min(above) if above else None
+        below = [c for c in candidates if c < entry_level_price]
+        return max(below) if below else None
+    except Exception:
+        return None
     finally:
         conn.close()
 
@@ -557,10 +647,10 @@ def get_strike_oi_history(symbol, trade_date, strikes=None):
         conn.close()
 
 
-def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_date=None):
+def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pct=0.02, formed_date=None):
     """
-    10-मिनिटांचा हलका 1M Dynamic S/R refresh — save_market_zones() (पूर्ण replace) च्या उलट, इथे
-    फक्त DYNAMIC_SR_*_1M प्रकारचे zones merge केले जातात:
+    हलका (5-मिनिट/10-मिनिट) Dynamic S/R refresh — save_market_zones() (पूर्ण replace) च्या उलट, इथे
+    फक्त DYNAMIC_SR_*_{timeframe_suffix} (उदा. "1M" किंवा "15M") प्रकारचे zones merge केले जातात:
       - नवीन गणना केलेला level जुन्या ACTIVE level च्या ±tolerance_pct% च्या आत असेल, तर जुनाच
         level_price कायम ठेवला जातो (Multi-Hit hit-count history टिकून राहावी म्हणून).
       - नवीन, न जुळणारा उमेदवार असेल, तो नव्याने जोडला जातो.
@@ -575,17 +665,19 @@ def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_
         return False
     try:
         formed_date = formed_date or datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+        support_type = f"DYNAMIC_SR_SUPPORT_{timeframe_suffix}"
+        resistance_type = f"DYNAMIC_SR_RESISTANCE_{timeframe_suffix}"
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, zone_type, zone_low FROM market_zones WHERE symbol = %s "
-                "AND zone_type IN ('DYNAMIC_SR_SUPPORT_1M', 'DYNAMIC_SR_RESISTANCE_1M') AND status = 'ACTIVE'",
-                (symbol,),
+                "AND zone_type IN (%s, %s) AND status = 'ACTIVE'",
+                (symbol, support_type, resistance_type),
             )
             existing = cur.fetchall()  # [(id, zone_type, zone_low), ...]
 
             for zone_type, candidates in [
-                ("DYNAMIC_SR_SUPPORT_1M", dyn_sr_result.get("support", [])),
-                ("DYNAMIC_SR_RESISTANCE_1M", dyn_sr_result.get("resistance", [])),
+                (support_type, dyn_sr_result.get("support", [])),
+                (resistance_type, dyn_sr_result.get("resistance", [])),
             ]:
                 existing_of_type = [(row_id, zone_low) for (row_id, zt, zone_low) in existing if zt == zone_type]
                 matched_existing_ids = set()
@@ -613,6 +705,11 @@ def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_
         return False
     finally:
         conn.close()
+
+
+def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_date=None):
+    """Backward-compatible wrapper — merge_dynamic_sr_zones() ला "1M" सह कॉल करते."""
+    return merge_dynamic_sr_zones(symbol, dyn_sr_result, "1M", tolerance_pct, formed_date)
 
 
 def save_market_zones(zones_df, symbol):

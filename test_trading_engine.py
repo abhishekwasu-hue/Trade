@@ -331,19 +331,93 @@ class TestDynamicSrInstantSourceRules:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D", eod_squareoff_hour=15, eod_squareoff_minute=15)
         assert len(closed) == 0  # 15:15 चा कटऑफ अजून झालेला नाही
 
-    def test_srv2_momentum_reversal_pct_trailing_also_active(self, temp_db, monkeypatch):
-        """🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — established %-आधारित Trailing SL आता
-        established `srv2_momentum_reversal` लाही (established `dynamic_sr_instant` सोबतच) लागू
-        व्हायला हवा — established तोच 20% activation / 10% lock पॅटर्न."""
+    def test_srv2_bullish_spot_sl_hit(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून बदललेली सुधारणा — srv2_momentum_reversal साठी आता जुनी
+        %-Trailing SL नाही, स्पॉट-आधारित SL (0.10%, entry_level_price पासून प्रतिकूल दिशेने)."""
         seed_trade(temp_db, "T8", net_credit=30, sl_level=-2250, target_level=2250,
-                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY", peak_pnl=600)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 29.0, "PE24300": 3.0})
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23875.0))  # -0.105%, SL पेक्षा जास्त
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D", trailing_sl_enabled=False)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
-        assert closed[0]["reason"] == "PCT_TRAILING_SL"
+        assert closed[0]["reason"] == "SPOT_SL"
+
+    def test_srv2_premium_target_hit(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T9", net_credit=30, sl_level=-2250, target_level=100,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        # स्पॉट neutral (SL ट्रिगर होऊ नये), पण target_level (100) पेक्षा जास्त pnl
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23910.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "PREMIUM_TARGET"
+
+    def test_srv2_next_level_exit(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 साठी Next-Level-Exit परत आणला (15M/30M/60M
+        पूल केलेले) — favourable दिशेने पुढचा level (24000) गाठला की बंद व्हायला हवं."""
+        seed_trade(temp_db, "T10", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(24005.0))  # पुढचा level (24000) ओलांडला
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 24000.0)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "NEXT_LEVEL_EXIT"
+
+    def test_srv2_neither_stays_open(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T11", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23910.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 24000.0)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+    def test_srv2_carry_forward_closes_when_insufficient_profit_at_310pm(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने सापडवलेली, महत्त्वाची दुरुस्ती — नवीन Spot/Premium exit-रचना जोडताना ही
+        आधीचीच 3:10pm Carry-Forward तपासणी चुकून काढली गेली होती, परत जोडली. Target अजून गाठलेला
+        नाही, 3:10pm झालेली आहे, नफा 30% (net credit) पेक्षा कमी -> आजच बंद व्हायला हवं."""
+        # net_credit_total=2250, 30%=675. cost_to_close=25 -> pnl=(30-25)*75=375 (<675)
+        seed_trade(temp_db, "T12", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=25.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 9, 41)  # UTC 9:41 = IST 15:11 (3:10pm नंतर, EOD 15:15 आधी)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+
+    def test_srv2_carry_forward_stays_open_when_sufficient_profit_at_310pm(self, temp_db, monkeypatch):
+        """तोच वेळ (3:10pm नंतर), पण नफा 30% (net credit) पेक्षा जास्त -> पुढच्या दिवशी चालू ठेवणे
+        (आजच बंद न करता — EOD 15:15 चाही परिणाम होता कामा नये)."""
+        # cost_to_close=21 -> pnl=(30-21)*75=675 (>=675, बरोबर 30%)
+        seed_trade(temp_db, "T13", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=21.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 9, 46)  # UTC 9:46 = IST 15:16 (EOD 15:15 च्याही नंतर)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0  # पुरेसा नफा -- EOD नंतरही उघडीच राहायला हवी
 
 
 class TestCorrelationIdInOrders:

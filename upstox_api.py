@@ -294,6 +294,24 @@ def upload_to_google_drive(file_bytes, filename, mime_type="text/csv"):
     except Exception as e:
         return False, f"अपलोड अयशस्वी: {e}"
 
+def fetch_option_expiries(access_token, symbol):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — सर्व उपलब्ध expiry dates
+    (चढत्या क्रमाने, स्ट्रिंग "YYYY-MM-DD") मिळवणे. fetch_upstox_option_chain() च्याच expiry-यादी
+    कोडचा पुनर्वापर — गृहीत धरलेला वार नाही, प्रत्यक्ष API कडून."""
+    instrument_key = get_instrument_key(symbol)
+    headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+    try:
+        expiry_url = f"https://api.upstox.com/v2/option/contract?instrument_key={requests.utils.quote(instrument_key)}"
+        exp_res = requests.get(expiry_url, headers=headers, timeout=8)
+        if exp_res.status_code == 200:
+            exp_data = exp_res.json().get("data", [])
+            expiries = sorted(list(set([item.get("expiry") for item in exp_data if item.get("expiry")])))
+            return expiries
+    except Exception:
+        pass
+    return []
+
+
 def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
     instrument_key = get_instrument_key(symbol)
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}

@@ -119,14 +119,19 @@ def _fake_zones():
     ])
 
 
-def _candles_with_rsi(touch_rows, declining=True):
+def _candles_with_rsi(touch_rows, declining=True, today_ist=None):
     """RSI(14) साठी किमान 15 candles लागतात. touch_rows (शेवटचे, टच घडवणारे) च्या आधी घसरणारा
     (declining=True, Support/BULLISH साठी RSI<40) किंवा चढणारा (declining=False, Resistance/BEARISH
     साठी RSI>60) trend prepend करतो.
 
     🎓 वापरकर्त्याने सापडवलेली bug (lookback_days=1 मुळे कालचे candles मिसळणे) फिक्स केल्यानंतर —
     process_symbol() आता candles_df["timestamp"] वापरून आजचाच दिवस फिल्टर करतो, त्यामुळे सर्व test
-    fixtures ना आता timestamp column (आजच्याच, test चालतानाच्या खऱ्या तारखेसह) हवा."""
+    fixtures ना आता timestamp column हवा. 🎓 पुढे सापडलेली दुसरी bug — जर हा helper `with
+    patch.object(dsr, "get_ist_now", ...)` सुरू होण्याआधी कॉल केला, तर तो खऱ्या (mock न केलेल्या)
+    आजच्या तारखेने candles बनवतो — आणि नंतर process_symbol() च्या आत mock केलेल्या तारखेशी विसंगती
+    येते (विशेषतः रोज मध्यरात्रीनंतर test चालवल्यास). म्हणून आता `today_ist` explicit पॅरामीटर —
+    जो test स्वतःच्या get_ist_now mock शी जुळणारा द्यायला हवा (न दिल्यास डीफॉल्ट dsr.get_ist_now()
+    — जुनं, कमी सुरक्षित वर्तन)."""
     n = 25
     if declining:
         trend = [{"open": 24200 - i * 10, "high": 24210 - i * 10, "low": 24190 - i * 10, "close": 24195 - i * 10} for i in range(n)]
@@ -136,7 +141,7 @@ def _candles_with_rsi(touch_rows, declining=True):
     # 🎓 pd.Timestamp.now() सर्व्हरच्या local (शक्यतो UTC) वेळेवर अवलंबून असतो — production code च्या
     # get_ist_now() शी दिवस-सीमेवर (विशेषतः संध्याकाळी UTC नुसार) न जुळण्याचा धोका आहे, म्हणून तेच
     # (dsr.get_ist_now, जेणेकरून mock केल्यास दोन्ही ठिकाणी तीच वेळ वापरली जाईल) वापरून सुसंगत ठेवतो.
-    today_ist = dsr.get_ist_now().replace(hour=10, minute=0, second=0, microsecond=0)
+    today_ist = (today_ist or dsr.get_ist_now()).replace(hour=10, minute=0, second=0, microsecond=0)
     timestamps = pd.date_range(end=today_ist, periods=len(all_rows), freq="1min")
     df = pd.DataFrame(all_rows)
     df["timestamp"] = timestamps
@@ -155,7 +160,7 @@ class TestProcessSymbol:
         candles_gap = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
-        ], declining=True)
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_gap), \
@@ -181,7 +186,7 @@ class TestProcessSymbol:
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
-        ], declining=True)
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
@@ -199,7 +204,7 @@ class TestProcessSymbol:
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
-        ], declining=True)
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
@@ -436,7 +441,7 @@ class TestProcessSymbolMultiAccount:
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
-        ], declining=True)
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
         accounts_df = pd.DataFrame([{"account_id": "A1", "broker_type": "upstox", "nickname": "A", "is_active": True, "lot_multiplier": 1.0}])
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
@@ -482,12 +487,12 @@ class TestInstantRsiFilter:
         assert rsi_value < 40
 
     def test_entry_skipped_when_rsi_wrong_direction(self):
-        """🎓 गाभा टेस्ट — Support ला स्पर्श झाला, पण RSI established जास्त (established चढता trend)
-        असल्यामुळे established entry established दुर्लक्षित व्हायला हवी."""
+        """गाभा टेस्ट — Support ला स्पर्श झाला, पण RSI जास्त (चढता trend) असल्यामुळे entry
+        दुर्लक्षित व्हायला हवी."""
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
-        ], declining=False)  # established establishedच्या establishedउलट established दिशा
+        ], declining=False, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))  # entry च्या उलट दिशा
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \

@@ -5,6 +5,8 @@ import sqlite3
 import time
 import uuid
 
+import cloud_db
+
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
 from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids, get_instrument_key
@@ -38,6 +40,12 @@ DYNAMIC_SR_PREMIUM_TRAILING_LOCK_PCT = 5
 # strategies साठीचा डीफॉल्ट 15:15 तसाच, फक्त या source साठी वेगळा, आधीचा).
 DYNAMIC_SR_EOD_HOUR = 15
 DYNAMIC_SR_EOD_MINUTE = 0
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 Momentum-Reversal (15M/30M/60M एकत्र) साठी
+# नवीन exit-रचना — Spot SL(0.10%, entry_level_price पासून) + Premium Target (जुनाच, 80% —
+# target_level column मधूनच) + Next-Level-Exit (15M/30M/60M पूल केलेले) — जे आधी घडेल ते लागू.
+# जुनी %-Trailing SL आणि 3:10pm Carry-Forward — या source साठी पूर्णपणे काढलेले.
+SRV2_SPOT_SL_PCT = 0.10
 
 def reconcile_positions(access_token, symbol):
     """
@@ -309,7 +317,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # स्पॉटची सद्य LTP लागते (option-leg LTPs पुरेसे नाहीत, SL/Target आता स्पॉट-आधारित). कमीत कमी
     # एक असा trade असेल तरच हा जादा fetch करणे.
     underlying_spot = None
-    if any(t[11] == "dynamic_sr_instant" for t in parsed_trades):
+    if any(t[11] in ("dynamic_sr_instant", "srv2_momentum_reversal") for t in parsed_trades):
         spot_key = get_instrument_key(symbol)
         spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
         # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("exit condition match झाली तरी exit झाला नाही") सोडवण्यासाठी
@@ -377,10 +385,44 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 dynamic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (DYNAMIC_SR_EOD_HOUR, DYNAMIC_SR_EOD_MINUTE)
                 if dynamic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
+        elif source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
+            direction_bullish = (strategy_name == "BULL_PUT_SPREAD")
+            spot_pct_move = (underlying_spot - entry_level_price) / entry_level_price
+
+            exit_reason = None
+            if direction_bullish and spot_pct_move <= -SRV2_SPOT_SL_PCT / 100:
+                exit_reason = "SPOT_SL"
+            elif not direction_bullish and spot_pct_move >= SRV2_SPOT_SL_PCT / 100:
+                exit_reason = "SPOT_SL"
+
+            if exit_reason is None and target_level is not None and current_pnl >= target_level:
+                exit_reason = "PREMIUM_TARGET"
+
+            if exit_reason is None:
+                next_level = cloud_db.get_next_level_in_direction(symbol, entry_level_price, direction_bullish)
+                if next_level is not None:
+                    reached = (underlying_spot >= next_level) if direction_bullish else (underlying_spot <= next_level)
+                    if reached:
+                        exit_reason = "NEXT_LEVEL_EXIT"
+
+            # 🎓 वापरकर्त्याने सापडवलेली, महत्त्वाची दुरुस्ती — नवीन Spot/Premium exit-रचना जोडताना
+            # ही आधीचीच 3:10pm Carry-Forward तपासणी चुकून काढली गेली होती — ती परत जोडली. Target
+            # (वर तपासलेला) अजून गाठलेला नसेल, आणि 3:10pm झालेली असेल — नफा किमान 30% (net credit
+            # च्या) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करता), नाहीतर आजच बंद करणे.
+            if exit_reason is None:
+                past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
+                if past_carry_forward_check_time:
+                    carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
+                    if current_pnl < carry_forward_min_profit_level:
+                        exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+                    # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
+                elif trade_style == "INTRADAY" and past_eod_cutoff:
+                    exit_reason = "EOD_SQUAREOFF"
         else:
-            # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता
-            # `srv2_momentum_reversal` लाही लागू — 20% नफ्यानंतर सक्रिय, breakeven+10% credit लॉक.
-            PCT_TRAILING_SOURCES = ("srv2_momentum_reversal",)
+            # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता कुठल्याही
+            # source ला लागू होत नाही (dynamic_sr_instant/srv2_momentum_reversal दोन्ही आता स्वतंत्र,
+            # वरच्या branches मध्ये हाताळले जातात).
+            PCT_TRAILING_SOURCES = ()
             is_pct_trailing_trade = (source in PCT_TRAILING_SOURCES)
 
             effective_sl_level = sl_level
@@ -413,12 +455,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             # लाही लागू — सर्व unattended strategies मध्ये सुसंगत जोखीम-व्यवस्थापन.
             # 🎓 वापरकर्त्याशी चर्चा करून सुधारित — तपासण्याची वेळ 3:00 वरून 3:10 केली (सर्व वरील स्ट्रॅटेजींसाठी
             # सामायिक — फक्त SRv2 साठी वेगळी नाही).
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` ला हा carry-forward
-            # नियम कधीच लागू होत नाही (सामान्यतः वरच्या वेगळ्या शाखेतच जातो — पण entry_level_price/
-            # underlying_spot काही कारणाने गहाळ असेल तरीही, सुरक्षिततेसाठी इथेही स्पष्ट वगळलेला).
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant`/`srv2_momentum_reversal`
+            # ला हा carry-forward नियम कधीच लागू होत नाही (सामान्यतः वरच्या वेगळ्या शाखांमध्येच जातात
+            # — पण entry_level_price/underlying_spot काही कारणाने गहाळ असेल तरीही, सुरक्षिततेसाठी
+            # इथेही स्पष्ट वगळलेले).
             is_new_rule_trade = (
                 strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
-                and source != "dynamic_sr_instant"
+                and source not in ("dynamic_sr_instant", "srv2_momentum_reversal")
             )
             past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
             carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)

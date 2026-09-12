@@ -13,11 +13,43 @@ import streamlit as st
 
 
 def render():
-    st.subheader("⚙️ Broker Accounts व्यवस्थापन (Multi-Broker Multi-Account)")
-    st.caption("इथे नोंदवलेले, सक्रिय (Active) accounts established SRv2/Dynamic-S/R सारख्या रणनींतींनी एकाच वेळी (replicated) वापरले जातील.")
+    st.subheader("⚙️ Settings")
 
     try:
         import cloud_db
+
+        st.markdown("##### 🎯 SRv2 Momentum-Reversal Settings (15M/30M/60M)")
+        st.caption(
+            "Lots आणि Hedge Width Points — इथून बदलले की लगेच पुढच्या cycle पासून लागू होतील "
+            "(hardcoded नाहीत — कधीही, वेळोवेळी बदलता येतील)."
+        )
+        srv2_settings_symbol = st.selectbox(
+            "Symbol", ["NIFTY", "BANKNIFTY", "SENSEX"], key="srv2_settings_symbol",
+        )
+        current_srv2_settings = cloud_db.get_srv2_settings(srv2_settings_symbol)
+        srv2_col1, srv2_col2 = st.columns(2)
+        with srv2_col1:
+            new_srv2_lots = st.number_input(
+                "Lots", min_value=1, max_value=50, value=int(current_srv2_settings["lots"]),
+                step=1, key="srv2_lots_input",
+            )
+        with srv2_col2:
+            new_srv2_hedge_width = st.number_input(
+                "Hedge Width Points", min_value=25.0, max_value=1000.0,
+                value=float(current_srv2_settings["hedge_width_points"]), step=25.0,
+                key="srv2_hedge_width_input",
+            )
+        if st.button("💾 SRv2 Settings जतन करा", key="save_srv2_settings_btn"):
+            ok = cloud_db.save_srv2_settings(srv2_settings_symbol, int(new_srv2_lots), float(new_srv2_hedge_width))
+            if ok:
+                st.success(f"✅ {srv2_settings_symbol} साठी जतन झालं — Lots: {int(new_srv2_lots)}, Hedge Width: {float(new_srv2_hedge_width)}")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+        st.markdown("---")
+        st.markdown("##### 🏦 Broker Accounts (Multi-Broker Multi-Account)")
+        st.caption("इथे नोंदवलेले, सक्रिय (Active) accounts SRv2/Dynamic-S/R सारख्या रणनींतींनी एकाच वेळी (replicated) वापरले जातील.")
+
 
         with st.expander("➕ नवीन Account जोडा (Login सह — एकाच वेळी, शिफारस केलेली पद्धत)", expanded=False):
             st.caption(
