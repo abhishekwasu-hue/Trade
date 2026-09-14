@@ -154,6 +154,66 @@ CREATE TABLE IF NOT EXISTS srv2_settings (
 );
 """
 
+# वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — एकाच, flexible
+# table मध्ये कुठल्याही strategy चे settings — नवीन field जोडायला schema-बदल (migration) लागू नये
+# म्हणून JSONB. (strategy_name, symbol) प्रत्येकाची स्वतंत्र नोंद.
+CREATE_STRATEGY_SETTINGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS strategy_settings (
+    strategy_name TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    settings JSONB NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (strategy_name, symbol)
+);
+"""
+
+# वापरकर्त्याशी चर्चा करून ठरवलेले, नवीन नियम-संचातले डीफॉल्ट — Dashboard वरून बदलले नसतील तर हेच
+# वापरले जातात (कधीच hardcoded राहत नाहीत — इथूनच, एकाच जागी, बदलण्याजोगे).
+STRATEGY_SETTINGS_DEFAULTS = {
+    "1m_instant": {
+        "lots": 1,
+        "itm_depth_points": 50,          # Short leg — ATM पासून किती points ITM
+        "hedge_width_points": 150,       # Long hedge — short strike पासून किती दूर
+        "spread_sl_spot_pct": 0.05,
+        "spread_sl_premium_points": 5,
+        "spread_tsl_spot_pct": 0.10,
+        "spread_tsl_premium_points": 10,
+        "spread_target_spot_pct": 0.20,
+        "spread_target_premium_points": 15,
+        "naked_enabled": True,           # "on the same signal" -- डीफॉल्ट सक्रिय, Dashboard वरून बंद करता येईल
+        "naked_hedge_enabled": False,    # डीफॉल्ट: निव्वळ (naked) buy, hedge नाही
+        "naked_hedge_width_points": 150,
+        "naked_sl_spot_pct": 0.05,
+        "naked_sl_premium_points": 10,
+        "naked_tsl_spot_pct": 0.10,
+        "naked_tsl_premium_points": 20,
+        "naked_target_spot_pct": 0.20,
+        "naked_target_premium_points": 30,
+    },
+    "15m_dynamic_sr": {
+        "lots": 1,
+        "itm_depth_points": 100,
+        "hedge_width_points": 150,
+        "spread_sl_spot_pct": 0.15,
+        "spread_sl_premium_points": 10,
+        "spread_tsl_spot_pct": 0.30,
+        "spread_tsl_premium_points": 25,
+        "spread_target_pct_of_premium": 80,
+        "carry_forward_min_profit_pct": 30,
+        "naked_enabled": True,
+        "naked_hedge_enabled": False,
+        "naked_hedge_width_points": 150,
+        "naked_sl_spot_pct": 0.05,
+        "naked_sl_premium_points": 10,
+        "naked_tsl_spot_pct": 0.10,
+        "naked_tsl_premium_points": 20,
+        "naked_target_spot_pct": 0.40,
+        "naked_target_premium_points": 50,
+        "naked_eod_hour": 15,            # Naked trades कधीच carry-forward नाहीत, नेहमी आजच 3:00pm ला बंद
+        "naked_eod_minute": 0,
+    },
+}
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — कुठले accounts
 # (कुठल्या broker वर) established रणनींतींनी वापरायचे, याची नोंदणी.
 CREATE_BROKER_ACCOUNTS_TABLE_SQL = """
@@ -235,6 +295,7 @@ def init_cloud_table():
             cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
             cur.execute(CREATE_SRV2_STATE_TABLE_SQL)
             cur.execute(CREATE_SRV2_SETTINGS_TABLE_SQL)
+            cur.execute(CREATE_STRATEGY_SETTINGS_TABLE_SQL)
             cur.execute(CREATE_BROKER_ACCOUNTS_TABLE_SQL)
         conn.commit()
         return True
@@ -396,6 +457,59 @@ def save_srv2_settings(symbol, lots, hedge_width_points):
                        hedge_width_points = EXCLUDED.hedge_width_points,
                        updated_at = NOW()""",
                 (symbol, lots, hedge_width_points),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_strategy_settings(strategy_name, symbol):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
+    strategy_name ("1m_instant" किंवा "15m_dynamic_sr") + symbol साठी settings. Supabase मध्ये
+    साठवलेले (Dashboard वरून बदललेले) आणि डीफॉल्ट (STRATEGY_SETTINGS_DEFAULTS) यांचं मिश्रण —
+    वापरकर्त्याने फक्त काही fields बदलले असतील, तर बाकीचे डीफॉल्ट कायम राहतात. Supabase न मिळाल्यास
+    (किंवा नोंद नसल्यास) संपूर्णपणे डीफॉल्ट."""
+    defaults = dict(STRATEGY_SETTINGS_DEFAULTS.get(strategy_name, {}))
+    conn = get_connection()
+    if conn is None:
+        return defaults
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT settings FROM strategy_settings WHERE strategy_name=%s AND symbol=%s",
+                (strategy_name, symbol),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return defaults
+            stored = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            merged = dict(defaults)
+            merged.update(stored)
+            return merged
+    except Exception:
+        return defaults
+    finally:
+        conn.close()
+
+
+def save_strategy_settings(strategy_name, symbol, settings_dict):
+    """strategy_name + symbol साठी settings साठवणे (upsert, आंशिक अपडेट — फक्त दिलेले fields
+    बदलतात, बाकीचे आधीचेच राहतात — PostgreSQL JSONB `||` merge-operator वापरून)."""
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO strategy_settings (strategy_name, symbol, settings, updated_at)
+                   VALUES (%s, %s, %s, NOW())
+                   ON CONFLICT (strategy_name, symbol) DO UPDATE SET
+                       settings = strategy_settings.settings || EXCLUDED.settings,
+                       updated_at = NOW()""",
+                (strategy_name, symbol, json.dumps(settings_dict)),
             )
         conn.commit()
         return True

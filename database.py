@@ -87,7 +87,10 @@ def init_sqlite_db():
     # established, established नंतर established favourable दिशेने established पुढचा level touch
     # झाला की established, established position "profit-booked" म्हणून बंद करून established त्याच
     # जागी established नवीन (reversal) trade घेण्यासाठी आवश्यक.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL"]:
+    # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (नवीन नियम-संच, Bot Dynamic SR Algo) — TSL
+    # (Entry/Breakeven वर घट्ट करणारी) एकदाच (sticky) सक्रिय झाली की कायम तशीच राहते; आणि
+    # 15M/30M/60M साठी "same-timeframe Next-Level-Exit" ओळखण्यासाठी entry_timeframe.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
