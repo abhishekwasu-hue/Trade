@@ -1890,19 +1890,28 @@ def render():
         try:
             from notifications import check_heartbeat_stale, HEARTBEAT_DIR
             import os as _os
-            hb_col1, hb_col2, hb_col3, hb_col4, hb_col5 = st.columns(5)
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
-            # (दुपारी ४ वाजता) चालतो, त्यामुळे इतर (दर १० मिनिटांनी चालणाऱ्या) scripts सारखी ३०-मिनिट
-            # मर्यादा इथे उगाचच सतत "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची
-            # मर्यादा (२५ तास — दुसऱ्या दिवशी ४ वाजेपर्यंत थोडी सूट).
-            for col, script_name, label, max_age_min in [
-                (hb_col1, "credit_spread_auto_trader", "Credit Spread Auto-Trader", 30),
-                (hb_col2, "oi_signal_auto_trader", "OI Signal Auto-Trader", 30),
-                (hb_col3, "oi_snapshot_collector", "OI Snapshot Collector", 30),
-                (hb_col4, "oi_greeks_vix_strategy", "OI+Greeks+VIX Strategy", 30),
-                (hb_col5, "eod_market_report", "EOD Market Report (4pm)", 25 * 60),
-            ]:
-                with col:
+            # 🎓 Production-readiness सुधारणा — engine_service/dynamic_sr_instant_trader/
+            # srv2_momentum_reversal इथे जोडले (आधी गाळले गेले होते — तिन्ही महत्त्वाचे VPS बॉट्स आहेत).
+            # ⚠️ इशारा: हा heartbeat फाईल *local* आहे — ती script ज्या मशीनवर (उदा. VPS) चालते, त्याच
+            # मशीनवर dashboard चालत असेल तरच "कधीच चालली नाही" ऐवजी खरा status दिसेल. Dashboard वेगळ्या
+            # होस्टवर (उदा. Streamlit Cloud) असेल, तर हे कायम ⚪ दाखवेल — त्यासाठी ping_healthcheck()
+            # (notifications.py, बाह्य uptime-monitor) हा जास्त विश्वासार्ह पर्याय आहे.
+            hb_specs = [
+                ("credit_spread_auto_trader", "Credit Spread Auto-Trader", 30),
+                ("oi_signal_auto_trader", "OI Signal Auto-Trader", 30),
+                ("oi_snapshot_collector", "OI Snapshot Collector", 30),
+                ("oi_greeks_vix_strategy", "OI+Greeks+VIX Strategy", 30),
+                ("engine_service", "Engine Service (SL/Target/EOD)", 10),
+                ("dynamic_sr_instant_trader", "Dynamic S/R Instant Trader", 10),
+                ("srv2_momentum_reversal", "SRv2 Momentum-Reversal", 10),
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
+                # (दुपारी ४ वाजता) चालतो, त्यामुळे इतरांसारखी ३०-मिनिट मर्यादा इथे उगाचच सतत
+                # "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची मर्यादा (२५ तास).
+                ("eod_market_report", "EOD Market Report (4pm)", 25 * 60),
+            ]
+            hb_cols = st.columns(4)
+            for idx, (script_name, label, max_age_min) in enumerate(hb_specs):
+                with hb_cols[idx % 4]:
                     hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
                     if not _os.path.exists(hb_path):
                         st.info(f"⚪ {label}: कधीच चालली नाही (किंवा या मशीनवर चालत नाही)")

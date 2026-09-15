@@ -16,6 +16,10 @@ from signals import calculate_rsi, resample_to_1h
 # 🎓 केंद्रीकृत Symbol -> Upstox Instrument Key mapping — आधी हे 5 ठिकाणी वेगवेगळं
 # (`"NSE_INDEX|Nifty 50" if symbol=="NIFTY" else "NSE_INDEX|Nifty Bank"`) लिहिलेलं होतं, त्यामुळे
 # SENSEX जोडताना सगळीकडे वेगळं बदलावं लागलं असतं. आता एकाच जागी.
+from log_setup import get_logger
+
+_logger = get_logger("upstox_api.py")
+
 SYMBOL_INSTRUMENT_KEYS = {
     "NIFTY": "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
@@ -26,6 +30,37 @@ SYMBOL_INSTRUMENT_KEYS = {
 def get_instrument_key(symbol):
     """दिलेल्या symbol साठी Upstox instrument key — ओळखीचा नसेल तर सुरक्षित डीफॉल्ट (NIFTY)."""
     return SYMBOL_INSTRUMENT_KEYS.get(symbol, SYMBOL_INSTRUMENT_KEYS["NIFTY"])
+
+
+# 🎓 Production-readiness सुधारणा — याआधी प्रत्येक ठिकाणी थेट requests.get/post वापरलं जायचं, कुठलाही
+# rate-limit (HTTP 429) किंवा तात्पुरता सर्व्हर एरर (5xx) हाताळलं जायचं नाही. विशेषतः OI Snapshot
+# Collector (दर ५ मिनिटांनी, ३ symbols साठी) आणि dashboard एकाच वेळी हिट झाले तर Upstox चं rate-limit
+# ओलांडलं जाण्याची शक्यता. हे फक्त **वाचन** (GET, idempotent) कॉल्ससाठी — ऑर्डर placement (POST) ला
+# मुद्दामच retry केलेलं नाही, कारण ऑर्डर आधीच यशस्वी होऊन फक्त response हरवला असेल तर आपोआप retry
+# केल्याने डुप्लिकेट ऑर्डर जाण्याचा धोका असतो (त्यासाठी वेगळी, careful idempotency-key based रणनीती
+# लागेल — इथे मुद्दाम स्कोपच्या बाहेर ठेवलेली आहे).
+def _get_with_retry(url, max_retries=3, backoff_base=1.5, **kwargs):
+    """requests.get() चीच जागा घेणारं — पण HTTP 429 (rate-limited) किंवा 502/503/504 (तात्पुरता सर्व्हर
+    त्रास) आल्यास, exponential backoff ने (Retry-After header असल्यास तोच वापरून) कमाल max_retries
+    वेळा पुन्हा प्रयत्न. इतर कुठलाही status code असल्यास (200 असो वा 4xx) लगेच तोच response परत —
+    कॉलिंग कोडचं आधीचं error-handling (status_code तपासणी, इ.) जसंच्या तसं चालू राहतं."""
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            res = requests.get(url, **kwargs)
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt == max_retries:
+                raise
+            time.sleep(backoff_base ** attempt)
+            continue
+        if res.status_code in (429, 502, 503, 504) and attempt < max_retries:
+            retry_after = res.headers.get("Retry-After")
+            wait_s = float(retry_after) if retry_after else (backoff_base ** attempt)
+            time.sleep(min(wait_s, 20))
+            continue
+        return res
+    raise last_exc  # व्यवहारात कधीच इथे पोचणार नाही (वरचा loop नेहमी return किंवा raise करतो)
 
 
 @st.cache_data(ttl=60)
@@ -109,7 +144,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
 
             hist_url = f"https://api.upstox.com/v3/historical-candle/{encoded_key}/{unit}/{val}/{to_str}/{from_str}"
             try:
-                res_hist = requests.get(hist_url, headers=headers, timeout=15)
+                res_hist = _get_with_retry(hist_url, headers=headers, timeout=15)
                 if res_hist.status_code == 200:
                     chunk_candles = res_hist.json().get("data", {}).get("candles", [])
                     hist_candles.extend(chunk_candles)
@@ -125,7 +160,7 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
         intraday_url = f"https://api.upstox.com/v3/historical-candle/intraday/{encoded_key}/{unit}/{val}"
         intraday_candles = []
         try:
-            res_intra = requests.get(intraday_url, headers=headers, timeout=10)
+            res_intra = _get_with_retry(intraday_url, headers=headers, timeout=10)
             if res_intra.status_code == 200:
                 intraday_candles = res_intra.json().get("data", {}).get("candles", [])
             else:
@@ -308,6 +343,7 @@ def fetch_option_expiries(access_token, symbol):
             expiries = sorted(list(set([item.get("expiry") for item in exp_data if item.get("expiry")])))
             return expiries
     except Exception:
+        _logger.exception("fetch_option_expiries() मध्ये अनपेक्षित चूक (silently handled)")
         pass
     return []
 
@@ -318,8 +354,8 @@ def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
     
     try:
         expiry_url = f"https://api.upstox.com/v2/option/contract?instrument_key={requests.utils.quote(instrument_key)}"
-        exp_res = requests.get(expiry_url, headers=headers, timeout=8)
-        
+        exp_res = _get_with_retry(expiry_url, headers=headers, timeout=8)
+
         target_expiry = None
         if exp_res.status_code == 200:
             exp_data = exp_res.json().get("data", [])
@@ -333,8 +369,8 @@ def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
             target_expiry = get_ist_today().strftime("%Y-%m-%d")
             
         url = f"https://api.upstox.com/v2/option/chain?instrument_key={requests.utils.quote(instrument_key)}&expiry_date={target_expiry}"
-        res = requests.get(url, headers=headers, timeout=8)
-        
+        res = _get_with_retry(url, headers=headers, timeout=8)
+
         if res.status_code == 200:
             res_json = res.json()
             data = res_json.get("data", [])
@@ -378,6 +414,7 @@ def fetch_market_news(max_items_per_feed=5):
             if headlines:
                 results.append({"source": feed["name"], "headlines": headlines})
         except Exception:
+            _logger.exception("fetch_market_news() मध्ये अनपेक्षित चूक (silently handled)")
             continue  # हा फीड अयशस्वी — पुढच्या फीडकडे जाणे, संपूर्ण रिपोर्ट थांबवायचे नाही
     return results
 
@@ -390,7 +427,7 @@ def fetch_india_vix(access_token):
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         key = urllib.parse.quote("NSE_INDEX|India VIX", safe="")
         url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={key}"
-        res = requests.get(url, headers=headers, timeout=8)
+        res = _get_with_retry(url, headers=headers, timeout=8)
         if res.status_code == 200:
             data = res.json().get("data", {})
             for v in data.values():
@@ -398,6 +435,7 @@ def fetch_india_vix(access_token):
                     return float(v["last_price"])
         return None
     except Exception:
+        _logger.exception("fetch_india_vix() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 @st.cache_data(ttl=60)
@@ -408,12 +446,13 @@ def get_available_margin(access_token):
     try:
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         url = "https://api.upstox.com/v2/user/get-funds-and-margin?segment=SEC"
-        res = requests.get(url, headers=headers, timeout=8)
+        res = _get_with_retry(url, headers=headers, timeout=8)
         if res.status_code == 200:
             eq = res.json().get("data", {}).get("equity", {})
             return float(eq.get("available_margin", 0))
         return None
     except Exception:
+        _logger.exception("get_available_margin() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 
@@ -454,6 +493,7 @@ def fetch_required_margin(access_token, orders):
             return float(data.get("required_margin", data.get("final_margin", 0)))
         return None
     except Exception:
+        _logger.exception("fetch_required_margin() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def fetch_ltp_map(access_token, instrument_keys):
@@ -464,7 +504,7 @@ def fetch_ltp_map(access_token, instrument_keys):
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         keys_param = urllib.parse.quote(",".join(instrument_keys), safe=",|")
         url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={keys_param}"
-        res = requests.get(url, headers=headers, timeout=8)
+        res = _get_with_retry(url, headers=headers, timeout=8)
         result = {}
         if res.status_code == 200:
             data = res.json().get("data", {})
@@ -474,6 +514,7 @@ def fetch_ltp_map(access_token, instrument_keys):
                     result[tok] = float(v.get("last_price", 0))
         return result
     except Exception:
+        _logger.exception("fetch_ltp_map() मध्ये अनपेक्षित चूक (silently handled)")
         return {}
 
 
@@ -514,7 +555,7 @@ def fetch_option_greeks(access_token, instrument_keys):
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         keys_param = urllib.parse.quote(",".join(instrument_keys[:50]), safe=",|")  # API मर्यादा: ५०
         url = f"https://api.upstox.com/v3/market-quote/option-greek?instrument_key={keys_param}"
-        res = requests.get(url, headers=headers, timeout=8)
+        res = _get_with_retry(url, headers=headers, timeout=8)
         result = {}
         if res.status_code == 200:
             data = res.json().get("data", {})
@@ -528,6 +569,7 @@ def fetch_option_greeks(access_token, instrument_keys):
                     }
         return result
     except Exception:
+        _logger.exception("fetch_option_greeks() मध्ये अनपेक्षित चूक (silently handled)")
         return {}
 
 def get_static_ip_proxy_url():
@@ -542,6 +584,7 @@ def get_static_ip_proxy_url():
     try:
         return st.secrets.get("proxy", {}).get("url", "").strip() or None
     except Exception:
+        _logger.exception("get_static_ip_proxy_url() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def check_proxy_egress_ip(proxy_url, timeout=8):
@@ -553,6 +596,7 @@ def check_proxy_egress_ip(proxy_url, timeout=8):
             return res.json().get("ip")
         return None
     except Exception:
+        _logger.exception("check_proxy_egress_ip() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def get_registered_static_ips(access_token):
@@ -564,6 +608,7 @@ def get_registered_static_ips(access_token):
             return res.json().get("data", {})
         return None
     except Exception:
+        _logger.exception("get_registered_static_ips() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def fetch_broker_positions(access_token):
@@ -573,7 +618,7 @@ def fetch_broker_positions(access_token):
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         proxy_url = get_static_ip_proxy_url()
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-        res = requests.get(
+        res = _get_with_retry(
             "https://api.upstox.com/v2/portfolio/short-term-positions",
             headers=headers, timeout=10, proxies=proxies,
         )
@@ -581,6 +626,7 @@ def fetch_broker_positions(access_token):
             return res.json().get("data", [])
         return None
     except Exception:
+        _logger.exception("fetch_broker_positions() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def execute_order_leg_set(access_token, orders, trading_mode):
@@ -625,6 +671,7 @@ def place_multi_leg_order(access_token, orders):
         try:
             body = res.json()
         except Exception:
+            _logger.exception("place_multi_leg_order() मध्ये अनपेक्षित चूक (silently handled)")
             body = {"raw": res.text}
         return res.status_code, body
     except Exception as e:
@@ -657,4 +704,5 @@ def fetch_next_expiry_option_chain(access_token, symbol):
             return data, next_expiry
         return None, None
     except Exception:
+        _logger.exception("fetch_next_expiry_option_chain() मध्ये अनपेक्षित चूक (silently handled)")
         return None, None

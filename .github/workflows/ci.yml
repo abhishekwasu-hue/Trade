@@ -1,0 +1,40 @@
+name: CI (Lint + Tests)
+
+# 🎓 Production-readiness सुधारणा — याआधी कुठलाही workflow push/PR वर कोड तपासत नव्हता; आता प्रत्येक
+# push/PR वर (१) संपूर्ण repo मधल्या सर्व .py फाईल्स valid Python आहेत का (py_compile) आणि (२)
+# tests/ मधले सर्व pytest tests पास होतात का, हे आपोआप तपासलं जातं.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Dependencies स्थापित करणे
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Syntax check (सर्व .py फाईल्स compile होतात का)
+        run: python -m compileall -q .
+
+      - name: pytest (tests/)
+        env:
+          # टेस्ट्समध्ये कुठलाही खरा network कॉल जात नाही (सर्व mocked) — तरीही cloud_db.py import-वेळी
+          # SUPABASE_DB_URL शोधतं, त्यामुळे इथे रिकामं ठेवून "configured नाही" पथ स्पष्टपणे तपासला जातो.
+          SUPABASE_DB_URL: ""
+        run: python -m pytest tests/ -v

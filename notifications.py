@@ -91,15 +91,42 @@ def notify_error(script_name, error_detail):
     return send_telegram_message(message)
 
 
+def ping_healthcheck(script_name, timeout=8):
+    """
+    🎓 Production-readiness सुधारणा — established `write_heartbeat()` फक्त *local* फाईलमध्ये नोंद
+    करतं, जी फक्त त्याच होस्टवरून (उदा. established VPS) वाचता येते — established होस्टच स्वतः बंद
+    पडला (वीज/नेट/क्रॅश), तर ते local फाईल कुणालाच दिसत नाही आणि कुणालाच कळत नाही. हे function
+    त्याला पूरक — बाहेरच्या (external) uptime-monitoring सेवेला (उदा. healthchecks.io / UptimeRobot
+    चा मोफत "push monitor" टियर — दोन्ही एक साधा GET URL देतात) एक "मी जिवंत आहे" ping पाठवतं.
+
+    Setup (ऐच्छिक — नसेल तर हे function गप्प काहीच करत नाही, script वर परिणाम नाही):
+      environment variable `HEALTHCHECK_PING_URL_<SCRIPT_NAME_UPPER>` (script-specific) असेल तर तो
+      वापरला जातो, नाहीतर सर्वांसाठी समान `HEALTHCHECK_PING_URL`. उदा.:
+        HEALTHCHECK_PING_URL_ENGINE_SERVICE=https://hc-ping.com/xxxx-xxxx-...
+    """
+    specific_key = f"HEALTHCHECK_PING_URL_{script_name.upper()}"
+    url = os.environ.get(specific_key) or os.environ.get("HEALTHCHECK_PING_URL")
+    if not url:
+        return False
+    try:
+        requests.get(url, timeout=timeout)
+        return True
+    except Exception:
+        return False  # बाह्य monitoring सेवा तात्पुरती अनुपलब्ध असली तरी script थांबता कामा नये
+
+
 def write_heartbeat(script_name):
     """
     प्रत्येक cycle च्या शेवटी बोलावायचं — 'script शेवटची कधी यशस्वीरित्या धावली' याची नोंद, बाहेरून
-    (उदा. दुसरी monitoring script, किंवा तुम्ही स्वतः) तपासता यावी म्हणून.
+    (उदा. दुसरी monitoring script, किंवा तुम्ही स्वतः) तपासता यावी म्हणून. सोबतच (configured असल्यास)
+    बाह्य uptime-monitor लाही ping — जेणेकरून होस्टच बंद पडला तरी कळेल (local heartbeat फाईल तेव्हा
+    उपयोगाची नसते).
     """
     os.makedirs(HEARTBEAT_DIR, exist_ok=True)
     path = os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
     with open(path, "w") as f:
         f.write(datetime.datetime.now().isoformat())
+    ping_healthcheck(script_name)
 
 
 def check_heartbeat_stale(script_name, max_age_minutes=30):

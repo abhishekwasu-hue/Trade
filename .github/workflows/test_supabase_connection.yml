@@ -25,4 +25,4 @@ jobs:
       - name: Supabase जोडणी टेस्ट करणे (निकाल खालीच दिसेल)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python3 test_supabase_connection.py
+        run: python3 tests/test_supabase_connection.py

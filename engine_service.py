@@ -29,6 +29,10 @@ from notifications import notify_error, notify_exit, write_heartbeat
 from trading_engine import manage_open_trades
 from upstox_api import fetch_candles
 
+from log_setup import get_logger
+
+_logger = get_logger("engine_service.py")
+
 SCRIPT_NAME = "engine_service"
 SETTINGS_PATH = os.path.join("data", "engine_settings.json")
 MONITORED_SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
@@ -70,6 +74,7 @@ def compute_atr_points(access_token, symbol, settings):
         df = fetch_candles(access_token, symbol, underlying_price=0, interval="15minute", lookback_days=5)
         return compute_atr(df, period=14) if not df.empty else None
     except Exception:
+        _logger.exception("compute_atr_points() मध्ये अनपेक्षित चूक (silently handled)")
         return None  # ATR मिळालं नाही तर ट्रेलिंग बंद राहील, मूळ स्थिर SL तसाच लागू होईल — क्रॅश नाही
 
 

@@ -9,6 +9,10 @@ from config import DATA_DIR, DB_PATH, get_ist_now, get_ist_today
 from upstox_api import fetch_ltp_map
 
 
+from log_setup import get_logger
+
+_logger = get_logger("database.py")
+
 def init_sqlite_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -174,6 +178,7 @@ def log_order(order_id, trade_id, symbol, mode, order_dict, status, fill_price=N
         conn.commit()
         conn.close()
     except Exception:
+        _logger.exception("log_order() मध्ये अनपेक्षित चूक (silently handled)")
         pass  # ऑर्डर लॉगिंग अयशस्वी झाली तरी मुख्य ऑर्डर-प्लेसमेंट थांबता कामा नये
 
 def log_orders_batch(order_ids, trade_id, symbol, mode, orders, status="COMPLETE", fill_prices=None):
@@ -255,6 +260,7 @@ def get_db_backup_bytes():
         with open(DB_PATH, "rb") as f:
             return f.read()
     except Exception:
+        _logger.exception("get_db_backup_bytes() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 def restore_db_from_bytes(uploaded_bytes):
@@ -269,6 +275,34 @@ def restore_db_from_bytes(uploaded_bytes):
         return True, "Restore यशस्वी झाला."
     except Exception as e:
         return False, f"Restore अयशस्वी: {e}"
+
+_AUTO_BACKUP_MARKER = os.path.join(DATA_DIR, ".last_auto_backup")
+
+def auto_backup_due(interval_minutes=60):
+    """🎓 Production-readiness सुधारणा — मॅन्युअल "Download Backup" बटणावर भरवसा ठेवण्याऐवजी, dashboard
+    उघडं असताना दर ठराविक वेळाने आपोआप backup घेतलं जावं (Streamlit Cloud च्या ephemeral storage
+    विरुद्ध संरक्षण). दर rerun ला उगाच अपलोड होऊ नये म्हणून एक साधा local marker — शेवटचा backup
+    कधी झाला ते तपासतो. Marker फाईल स्वतःच ephemeral असली तरी हरकत नाही: container restart
+    झाल्यावर ती गायब झाली तरी पुढच्या rerun लाच लगेच एक नवा backup होईल, इतकाच परिणाम."""
+    try:
+        if not os.path.exists(_AUTO_BACKUP_MARKER):
+            return True
+        with open(_AUTO_BACKUP_MARKER, "r") as f:
+            last_str = f.read().strip()
+        last_dt = datetime.datetime.fromisoformat(last_str)
+        return (get_ist_now() - last_dt).total_seconds() >= interval_minutes * 60
+    except Exception:
+        _logger.exception("auto_backup_due() मध्ये अनपेक्षित चूक (silently handled)")
+        return True
+
+def mark_auto_backup_done():
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(_AUTO_BACKUP_MARKER, "w") as f:
+            f.write(get_ist_now().isoformat())
+    except Exception:
+        _logger.exception("mark_auto_backup_done() मध्ये अनपेक्षित चूक (silently handled)")
+        pass  # marker लिहिता आला नाही तरी हरकत नाही — पुढच्या rerun ला पुन्हा backup प्रयत्न होईल, जास्तीत जास्त इतकाच परिणाम
 
 def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     """आजच्या दिवसात बंद झालेल्या (CLOSED) ट्रेड्सचा एकूण वास्तविक नफा/तोटा (डेली सर्किट ब्रेकरसाठी).

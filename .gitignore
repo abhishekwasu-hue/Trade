@@ -1,0 +1,42 @@
+# 🎓 Production-readiness सुधारणा — याआधी .gitignore च अस्तित्वात नव्हतं, म्हणजे चुकून एखादा
+# secrets.toml, local SQLite DB (ट्रेड हिस्ट्री सकट), किंवा runtime state फाईल कमिट होण्यापासून
+# कुठलंही संरचनात्मक संरक्षण नव्हतं. data/reports/*.pdf आणि data/*.parquet हे मुद्दाम ट्रॅक केलेले
+# आहेत (EOD PDF रिपोर्ट्स व ऐतिहासिक डेटासेट) — त्यामुळे संपूर्ण data/ ब्लँकेट-इग्नोर न करता,
+# फक्त runtime-generated/संवेदनशील फाईल्स इथे वगळल्या आहेत.
+
+# --- Secrets / credentials ---
+.streamlit/secrets.toml
+secrets.toml
+.env
+.env.*
+
+# --- Local SQLite databases (ट्रेड हिस्ट्री, OI history) ---
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- Runtime state / settings फाईल्स (प्रत्येक deploy वर पुन्हा तयार होतात) ---
+data/engine_settings.json
+data/credit_spread_state.json
+data/notification_config.json
+data/KILL_SWITCH
+data/notifications_log.txt
+data/*_heartbeat.json
+data/heartbeats/
+data/app.log*
+data/.last_auto_backup
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- OS / editor ---
+.DS_Store
+*.swp
+
+# --- Virtual environments ---
+.venv/
+venv/

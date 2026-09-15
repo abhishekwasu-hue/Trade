@@ -20,7 +20,7 @@ import datetime
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root (हा script आता tests/ मध्ये आहे)
 
 
 def main():

@@ -1,0 +1,34 @@
+name: Trigger Upstox Token Request (रोज सकाळी मोबाईल Approval)
+
+# 🎓 Production-readiness सुधारणा — याआधी रोजचा token refresh पूर्णपणे मानवी आठवणीवर अवलंबून होता
+# (कुणीतरी सकाळी मॅन्युअली trigger_upstox_token_request.py चालवायचं, मग check_token_freshness.py
+# फक्त अलर्ट द्यायचं — पण refresh प्रक्रिया सुरूच करायचं नाही). आता हा workflow रोज सकाळी ०८:०० IST ला
+# (बाजार उघडण्याच्या सव्वा तास आधी, आणि check_token_freshness.yml च्या ०८:४५ च्या तपासणीआधी) आपोआप
+# Upstox ला विनंती पाठवतो — वापरकर्त्याला फक्त मोबाईलवर एक टॅप (Approve) करायचं उरतं, संपूर्ण
+# मॅन्युअल पावलं (login URL उघडणे, OTP, कोड कॉपी-पेस्ट) नाही.
+
+on:
+  schedule:
+    - cron: "30 2 * * 1-5"  # ०८:०० IST, सोम-शुक्र
+  workflow_dispatch:  # हातानेही केव्हाही चालवता येईल
+
+jobs:
+  trigger-token-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: आवश्यक dependency स्थापित करणे
+        run: pip install requests
+
+      - name: Upstox कडे Token Request पाठवणे
+        env:
+          UPSTOX_CLIENT_ID: ${{ secrets.UPSTOX_CLIENT_ID }}
+          UPSTOX_CLIENT_SECRET: ${{ secrets.UPSTOX_CLIENT_SECRET }}
+        run: python3 trigger_upstox_token_request.py
