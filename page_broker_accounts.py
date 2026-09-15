@@ -63,7 +63,7 @@ def render():
                 "कधीकधी टॅब बदलताना जुनी माहिती विसरतो. यासाठी App ID/Secret एका नोट्स ॲपमध्ये आधीच "
                 "कॉपी ठेवलं तर पुन्हा टाकणं झटपट होईल."
             )
-            wiz_broker_type = st.selectbox("Broker", ["upstox", "fyers"], key="wiz_broker_type")
+            wiz_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya"], key="wiz_broker_type")
             wiz_account_id = st.text_input(
                 "Account ID (तुम्हीच ठरवलेलं, कुठलंही unique नाव — उदा. 'Abhi-Fyers'; हा Broker चा User ID नाही, फक्त इथलं लेबल)",
                 key="wiz_account_id",
@@ -75,95 +75,171 @@ def render():
             )
 
             st.markdown("---")
-            st.markdown(f"**{wiz_broker_type.title()} Developer App तपशील**")
-            # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("खरंच user-friendly आहे का?") — पहिल्यांदाच हे करणाऱ्याला
-            # "App ID कुठून मिळणार" हेच माहीत नसतं — इथेच स्पष्ट मार्गदर्शन.
-            if wiz_broker_type == "upstox":
-                st.caption("🔗 App नसेल तर आधी तयार करा: [Upstox Developer Console](https://account.upstox.com/developer/apps)")
-            else:
-                st.caption("🔗 App नसेल तर आधी तयार करा: [Fyers Developer Console](https://myapi.fyers.in/dashboard)")
-            st.caption("Redirect URI कुठलाही चालतो (उदा. `https://127.0.0.1`) — फक्त App मध्ये नोंदवलेला आणि इथे टाकलेला **तंतोतंत सारखाच** हवा.")
-            if wiz_broker_type == "upstox":
-                wiz_app_id = st.text_input("Client ID", key="wiz_upstox_client_id")
-                wiz_app_secret = st.text_input("Client Secret", type="password", key="wiz_upstox_client_secret")
-            else:
-                wiz_app_id = st.text_input("App ID (उदा. XXXXXX-100)", key="wiz_fyers_app_id")
-                wiz_app_secret = st.text_input("App Secret", type="password", key="wiz_fyers_app_secret")
-            wiz_redirect_uri = st.text_input(
-                "Redirect URI (तुमच्या App मध्ये established नोंदवलेलाच, तंतोतंत तसाच)",
-                key="wiz_redirect_uri",
-            )
 
-            if st.button("१. Login URL तयार करा", key="wiz_gen_url"):
-                if not (wiz_account_id.strip() and wiz_app_id.strip() and wiz_app_secret.strip() and wiz_redirect_uri.strip()):
-                    st.error("वरची सर्व माहिती (Account ID, App ID/Client ID, Secret, Redirect URI) आधी भरा.")
+            if wiz_broker_type in ("upstox", "fyers"):
+                st.markdown(f"**{wiz_broker_type.title()} Developer App तपशील**")
+                # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("खरंच user-friendly आहे का?") — पहिल्यांदाच हे करणाऱ्याला
+                # "App ID कुठून मिळणार" हेच माहीत नसतं — इथेच स्पष्ट मार्गदर्शन.
+                if wiz_broker_type == "upstox":
+                    st.caption("🔗 App नसेल तर आधी तयार करा: [Upstox Developer Console](https://account.upstox.com/developer/apps)")
                 else:
-                    if wiz_broker_type == "upstox":
-                        from get_upstox_token_manual import build_login_url as _build_url
-                    else:
-                        from get_fyers_token_manual import build_login_url as _build_url
-                    st.session_state["wiz_login_url"] = _build_url(wiz_app_id.strip(), wiz_redirect_uri.strip())
-
-            if st.session_state.get("wiz_login_url"):
-                # 🎓 वापरकर्त्याने विचारलेला प्रश्न — established आधी st.code() (फक्त कॉपी, क्लिक करता
-                # येत नाही) होतं, मोबाईलवर विशेष त्रासदायक — आता खरी क्लिक करण्याजोगी लिंक.
-                st.markdown(f"**पायरी अ — इथे क्लिक करून लॉगिन करा:** [🔗 {wiz_broker_type.title()} Login उघडा]({st.session_state['wiz_login_url']})")
-                with st.expander("URL कॉपी करायचंय? (लिंक चालत नसेल तरच)"):
-                    st.code(st.session_state["wiz_login_url"])
-
-                code_field_name = "auth_code" if wiz_broker_type == "fyers" else "code"
-                st.warning(
-                    f"⚠️ **लॉगिन नंतर पान \"होत नाही उघडत\"/\"Error\" दाखवेल — हे सामान्य आहे, काळजी करू नका.** "
-                    f"त्या (error दाखवणाऱ्या) पानाच्या **address bar** मध्ये बघा — तिथल्या URL मध्ये "
-                    f"'{code_field_name}=' नंतरचा भाग (पुढच्या '&' चिन्हापर्यंतच, त्यानंतरचं काहीही नाही) "
-                    f"निवडून कॉपी करा — तेच खाली पेस्ट करायचं आहे, संपूर्ण URL नाही."
+                    st.caption("🔗 App नसेल तर आधी तयार करा: [Fyers Developer Console](https://myapi.fyers.in/dashboard)")
+                st.caption("Redirect URI कुठलाही चालतो (उदा. `https://127.0.0.1`) — फक्त App मध्ये नोंदवलेला आणि इथे टाकलेला **तंतोतंत सारखाच** हवा.")
+                if wiz_broker_type == "upstox":
+                    wiz_app_id = st.text_input("Client ID", key="wiz_upstox_client_id")
+                    wiz_app_secret = st.text_input("Client Secret", type="password", key="wiz_upstox_client_secret")
+                else:
+                    wiz_app_id = st.text_input("App ID (उदा. XXXXXX-100)", key="wiz_fyers_app_id")
+                    wiz_app_secret = st.text_input("App Secret", type="password", key="wiz_fyers_app_secret")
+                wiz_redirect_uri = st.text_input(
+                    "Redirect URI (तुमच्या App मध्ये नोंदवलेलाच, तंतोतंत तसाच)",
+                    key="wiz_redirect_uri",
                 )
-                st.caption(f"पायरी ब — established '{code_field_name}=' नंतरचा भागच (पूर्ण URL नाही) इथे पेस्ट करा:")
-                wiz_auth_code = st.text_input(code_field_name.title(), key="wiz_auth_code")
-                # 🎓 established चुकून संपूर्ण URL paste केला (फक्त code ऐवजी) तर लगेच कळावं म्हणून तपासणी.
-                if wiz_auth_code.strip().startswith("http"):
-                    st.error(f"हा तर संपूर्ण URL दिसतोय — फक्त '{code_field_name}=' नंतरचा भाग (URL नाही) टाका.")
 
-                if st.button("२. Setup पूर्ण करा (Token मिळवा + Account नोंदवा)", type="primary", key="wiz_complete"):
-                    if not wiz_auth_code.strip() or wiz_auth_code.strip().startswith("http"):
-                        st.error(f"आधी वरचा बरोबर {code_field_name} टाका (पूर्ण URL नाही, फक्त तो भाग).")
+                if st.button("१. Login URL तयार करा", key="wiz_gen_url"):
+                    if not (wiz_account_id.strip() and wiz_app_id.strip() and wiz_app_secret.strip() and wiz_redirect_uri.strip()):
+                        st.error("वरची सर्व माहिती (Account ID, App ID/Client ID, Secret, Redirect URI) आधी भरा.")
                     else:
                         if wiz_broker_type == "upstox":
-                            from get_upstox_token_manual import exchange_code_for_token
-                            token, error = exchange_code_for_token(
-                                wiz_app_id.strip(), wiz_app_secret.strip(), wiz_redirect_uri.strip(), wiz_auth_code.strip(),
-                            )
+                            from get_upstox_token_manual import build_login_url as _build_url
                         else:
-                            from fyers_api import exchange_auth_code_for_token
-                            token, error = exchange_auth_code_for_token(
-                                wiz_app_id.strip(), wiz_app_secret.strip(), wiz_auth_code.strip(),
-                            )
+                            from get_fyers_token_manual import build_login_url as _build_url
+                        st.session_state["wiz_login_url"] = _build_url(wiz_app_id.strip(), wiz_redirect_uri.strip())
 
-                        if error:
-                            st.error(f"Token मिळवताना अयशस्वी: {error}")
+                if st.session_state.get("wiz_login_url"):
+                    # 🎓 वापरकर्त्याने विचारलेला प्रश्न — आधी st.code() (फक्त कॉपी, क्लिक करता
+                    # येत नाही) होतं, मोबाईलवर विशेष त्रासदायक — आता खरी क्लिक करण्याजोगी लिंक.
+                    st.markdown(f"**पायरी अ — इथे क्लिक करून लॉगिन करा:** [🔗 {wiz_broker_type.title()} Login उघडा]({st.session_state['wiz_login_url']})")
+                    with st.expander("URL कॉपी करायचंय? (लिंक चालत नसेल तरच)"):
+                        st.code(st.session_state["wiz_login_url"])
+
+                    code_field_name = "auth_code" if wiz_broker_type == "fyers" else "code"
+                    st.warning(
+                        f"⚠️ **लॉगिन नंतर पान \"होत नाही उघडत\"/\"Error\" दाखवेल — हे सामान्य आहे, काळजी करू नका.** "
+                        f"त्या (error दाखवणाऱ्या) पानाच्या **address bar** मध्ये बघा — तिथल्या URL मध्ये "
+                        f"'{code_field_name}=' नंतरचा भाग (पुढच्या '&' चिन्हापर्यंतच, त्यानंतरचं काहीही नाही) "
+                        f"निवडून कॉपी करा — तेच खाली पेस्ट करायचं आहे, संपूर्ण URL नाही."
+                    )
+                    st.caption(f"पायरी ब — '{code_field_name}=' नंतरचा भागच (पूर्ण URL नाही) इथे पेस्ट करा:")
+                    wiz_auth_code = st.text_input(code_field_name.title(), key="wiz_auth_code")
+                    # 🎓 चुकून संपूर्ण URL paste केला (फक्त code ऐवजी) तर लगेच कळावं म्हणून तपासणी.
+                    if wiz_auth_code.strip().startswith("http"):
+                        st.error(f"हा तर संपूर्ण URL दिसतोय — फक्त '{code_field_name}=' नंतरचा भाग (URL नाही) टाका.")
+
+                    if st.button("२. Setup पूर्ण करा (Token मिळवा + Account नोंदवा)", type="primary", key="wiz_complete"):
+                        if not wiz_auth_code.strip() or wiz_auth_code.strip().startswith("http"):
+                            st.error(f"आधी वरचा बरोबर {code_field_name} टाका (पूर्ण URL नाही, फक्त तो भाग).")
                         else:
-                            cloud_db.init_cloud_table()
-                            token_saved = cloud_db.save_upstox_token(token, account_id=wiz_account_id.strip())
-                            account_added = cloud_db.add_broker_account(
-                                wiz_account_id.strip(), wiz_broker_type, wiz_nickname.strip() or None, wiz_lot_multiplier,
-                            )
-                            if token_saved and account_added:
-                                st.success(f"✅ '{wiz_account_id}' — token साठवला आणि account नोंदवला. आता Strategy Builder/इतर strategies मध्ये हे account निवडता येईल.")
-                                del st.session_state["wiz_login_url"]
-                                st.rerun()
+                            if wiz_broker_type == "upstox":
+                                from get_upstox_token_manual import exchange_code_for_token
+                                token, error = exchange_code_for_token(
+                                    wiz_app_id.strip(), wiz_app_secret.strip(), wiz_redirect_uri.strip(), wiz_auth_code.strip(),
+                                )
                             else:
-                                st.warning("⚠️ token/account साठवताना अंशतः अयशस्वी — SUPABASE_DB_URL सेट आहे का तपासा.")
+                                from fyers_api import exchange_auth_code_for_token
+                                token, error = exchange_auth_code_for_token(
+                                    wiz_app_id.strip(), wiz_app_secret.strip(), wiz_auth_code.strip(),
+                                )
 
-            st.caption(
-                "🔁 **रोजची आठवण** — Upstox/Fyers दोन्हीचे token रोज expire होतात (broker च्याच धोरणामुळे). "
-                "रोज सकाळी हीच पायरी (Login URL → लॉगिन → code पेस्ट → Setup पूर्ण करा) पुन्हा करावी लागेल — "
-                "'Account नोंदणी' पुन्हा करावी लागणार नाही (established आपोआप अद्ययावत/upsert होते), फक्त token ताजा होतो."
-            )
+                            if error:
+                                st.error(f"Token मिळवताना अयशस्वी: {error}")
+                            else:
+                                cloud_db.init_cloud_table()
+                                token_saved = cloud_db.save_upstox_token(token, account_id=wiz_account_id.strip())
+                                account_added = cloud_db.add_broker_account(
+                                    wiz_account_id.strip(), wiz_broker_type, wiz_nickname.strip() or None, wiz_lot_multiplier,
+                                )
+                                if token_saved and account_added:
+                                    st.success(f"✅ '{wiz_account_id}' — token साठवला आणि account नोंदवला. आता Strategy Builder/इतर strategies मध्ये हे account निवडता येईल.")
+                                    del st.session_state["wiz_login_url"]
+                                    st.rerun()
+                                else:
+                                    st.warning("⚠️ token/account साठवताना अंशतः अयशस्वी — SUPABASE_DB_URL सेट आहे का तपासा.")
+
+                st.caption(
+                    "🔁 **रोजची आठवण** — Upstox/Fyers दोन्हीचे token रोज expire होतात (broker च्याच धोरणामुळे). "
+                    "रोज सकाळी हीच पायरी (Login URL → लॉगिन → code पेस्ट → Setup पूर्ण करा) पुन्हा करावी लागेल — "
+                    "'Account नोंदणी' पुन्हा करावी लागणार नाही (आपोआप अद्ययावत/upsert होते), फक्त token ताजा होतो."
+                )
+
+            else:  # shoonya — OAuth-redirect नाही, थेट credential-based login (एकाच पायरीत)
+                st.markdown("**Shoonya (Finvasia) खातं तपशील**")
+                st.caption(
+                    "🔗 API Key/Secret + Vendor Code साठी: [Shoonya API सेटअप](https://shoonya.com/api-documentation) "
+                    "(खाते उघडताना/नंतर Finvasia कडून मिळतं). ⚠️ Shoonya LIVE order-placement अजून प्रत्यक्ष "
+                    "पडताळलेलं नाही — आधी लहान रकमेने स्वतः टेस्ट करा."
+                )
+                wiz_shoonya_userid = st.text_input("User ID", key="wiz_shoonya_userid")
+                wiz_shoonya_password = st.text_input("Password", type="password", key="wiz_shoonya_password")
+                wiz_shoonya_vendor_code = st.text_input("Vendor Code", key="wiz_shoonya_vendor_code")
+                wiz_shoonya_api_secret = st.text_input("API Secret", type="password", key="wiz_shoonya_api_secret")
+                wiz_shoonya_2fa_mode = st.radio(
+                    "2FA कसं द्यायचं",
+                    ["TOTP Secret (शिफारस — दर वेळी कोड आपोआप तयार होईल)", "सद्य कोड/जन्मतारीख थेट टाका"],
+                    key="wiz_shoonya_2fa_mode",
+                )
+                if wiz_shoonya_2fa_mode.startswith("TOTP"):
+                    wiz_shoonya_totp_secret = st.text_input(
+                        "TOTP Secret (2FA सेटअप वेळी एकदाच दाखवलेला Base32 कोड)",
+                        type="password", key="wiz_shoonya_totp_secret",
+                    )
+                    wiz_shoonya_factor2_manual = ""
+                else:
+                    wiz_shoonya_totp_secret = ""
+                    wiz_shoonya_factor2_manual = st.text_input(
+                        "सद्य ६-अंकी TOTP कोड किंवा जन्मतारीख (DD-MM-YYYY)", key="wiz_shoonya_factor2_manual",
+                    )
+
+                if st.button("Login करा (Token मिळवा + Account नोंदवा)", type="primary", key="wiz_shoonya_login"):
+                    required_ok = (
+                        wiz_account_id.strip() and wiz_shoonya_userid.strip() and wiz_shoonya_password.strip()
+                        and wiz_shoonya_vendor_code.strip() and wiz_shoonya_api_secret.strip()
+                        and (wiz_shoonya_totp_secret.strip() or wiz_shoonya_factor2_manual.strip())
+                    )
+                    if not required_ok:
+                        st.error("वरची सर्व माहिती (Account ID, User ID, Password, Vendor Code, API Secret, 2FA) आधी भरा.")
+                    else:
+                        from shoonya_api import login as shoonya_login
+                        if wiz_shoonya_totp_secret.strip():
+                            from get_shoonya_token_manual import generate_totp
+                            factor2, totp_error = generate_totp(wiz_shoonya_totp_secret.strip())
+                            if totp_error:
+                                factor2 = None
+                        else:
+                            factor2, totp_error = wiz_shoonya_factor2_manual.strip(), None
+
+                        if totp_error:
+                            st.error(totp_error)
+                        else:
+                            token, error = shoonya_login(
+                                wiz_shoonya_userid.strip(), wiz_shoonya_password.strip(), factor2,
+                                wiz_shoonya_vendor_code.strip(), wiz_shoonya_api_secret.strip(),
+                            )
+                            if error:
+                                st.error(f"Login अयशस्वी: {error}")
+                            else:
+                                cloud_db.init_cloud_table()
+                                token_saved = cloud_db.save_upstox_token(token, account_id=wiz_account_id.strip())
+                                account_added = cloud_db.add_broker_account(
+                                    wiz_account_id.strip(), "shoonya", wiz_nickname.strip() or None, wiz_lot_multiplier,
+                                )
+                                if token_saved and account_added:
+                                    st.success(f"✅ '{wiz_account_id}' — token साठवला आणि account नोंदवला.")
+                                    st.rerun()
+                                else:
+                                    st.warning("⚠️ token/account साठवताना अंशतः अयशस्वी — SUPABASE_DB_URL सेट आहे का तपासा.")
+
+                st.caption(
+                    "🔁 **रोजची आठवण** — Shoonya चा token सुद्धा रोज expire होतो — रोज सकाळी हेच Login बटण "
+                    "पुन्हा दाबावं लागेल. TOTP Secret एकदा दिला असेल तर हीच एक पायरी पुरेशी (browser/code "
+                    "कॉपी-पेस्ट लागत नाही) — त्यामुळे हे रोजचं काम GitHub Actions सारख्या पूर्णपणे "
+                    "स्वयंचलित cron मधूनही (get_shoonya_token_manual.py --save-to-supabase) करता येतं."
+                )
 
         with st.expander("🔧 Advanced — आधीच token असेल तर (फक्त Account नोंदणी)", expanded=False):
-            st.caption("जर तुम्ही CLI script (get_upstox_token_manual.py/get_fyers_token_manual.py) द्वारे आधीच token साठवलेला असेल, तर फक्त Account इथे नोंदवा.")
+            st.caption("जर तुम्ही CLI script (get_upstox_token_manual.py/get_fyers_token_manual.py/get_shoonya_token_manual.py) द्वारे आधीच token साठवलेला असेल, तर फक्त Account इथे नोंदवा.")
             new_account_id = st.text_input("Account ID (unique नाव, उदा. 'Abhi-Upstox-Main')", key="new_account_id")
-            new_broker_type = st.selectbox("Broker", ["upstox", "fyers"], key="new_broker_type")
+            new_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya"], key="new_broker_type")
             new_nickname = st.text_input("Nickname (ऐच्छिक, उदा. 'माझं मुख्य खातं')", key="new_nickname")
             new_lot_multiplier = st.number_input("Lot Multiplier (उदा. 2.0 म्हणजे established base-lots च्या दुप्पट)", min_value=0.1, value=1.0, step=0.1, key="new_lot_multiplier")
             if st.button("Account जोडा", type="primary"):

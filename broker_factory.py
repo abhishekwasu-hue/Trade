@@ -10,6 +10,7 @@ get_all_active_adapters() द्वारे सर्व सक्रिय acc
 import cloud_db
 from upstox_broker_adapter import UpstoxBrokerAdapter
 from fyers_broker_adapter import FyersBrokerAdapter
+from shoonya_broker_adapter import ShoonyaBrokerAdapter
 
 
 def get_broker_adapter(account_id, broker_type):
@@ -34,6 +35,17 @@ def get_broker_adapter(account_id, broker_type):
         if not token:
             return None, f"{account_id}: Fyers token उपलब्ध नाही (Supabase मध्ये साठवलेला नाही)."
         return FyersBrokerAdapter(access_token=token, account_id=account_id), None
+
+    if broker_type == "shoonya":
+        # 🎓 वापरकर्त्याच्या विनंतीवरून जोडलेलं — Shoonya (Finvasia) साठी LIVE trading सपोर्ट.
+        # ⚠️ प्रामाणिक टीप (Fyers प्रमाणेच) — code-स्तरावर तयार आहे, पण प्रत्यक्ष, खऱ्या Shoonya
+        # account सह अजून पडताळलेला नाही (shoonya_api.py वरचे इशारे बघा). सर्व रणनींती डीफॉल्टने
+        # PAPER mode वापरतात, त्यामुळे LIVE mode स्वतः वापरण्याआधी आधी एकदा प्रत्यक्ष, लहान
+        # रकमेने स्वतः टेस्ट करा.
+        token = cloud_db.get_effective_upstox_token(None, account_id=account_id)
+        if not token:
+            return None, f"{account_id}: Shoonya token उपलब्ध नाही (Supabase मध्ये साठवलेला नाही)."
+        return ShoonyaBrokerAdapter(access_token=token, account_id=account_id), None
 
     return None, f"{account_id}: अज्ञात broker_type '{broker_type}'."
 
