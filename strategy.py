@@ -199,6 +199,8 @@ def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes
         short_strike = atm_strike + strikes_otm * step
         long_strike = short_strike + hedge_width_points
 
+    option_type = "CE" if side == "call_options" else "PE"
+
     def find_leg(strike):
         for item in raw_chain:
             if item.get("strike_price") == strike:
@@ -208,7 +210,8 @@ def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes
                 greeks = opt.get("option_greeks", {}) or {}
                 pop = greeks.get("pop")
                 if ltp and instrument_key and ltp > 0:
-                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop}
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop,
+                            "option_type": option_type, "expiry": item.get("expiry")}
         return None
 
     short_leg, long_leg = find_leg(short_strike), find_leg(long_strike)
@@ -223,6 +226,107 @@ def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes
         "net_credit": round(net_credit, 2), "spread_width": hedge_width_points,
         "max_profit": round(net_credit, 2), "max_loss": round(hedge_width_points - net_credit, 2),
         "short_pop_pct": round(short_leg["pop"] * 100, 1) if short_leg["pop"] else None,
+    }
+
+
+def select_credit_spread_itm(raw_chain, direction, atm_strike, itm_depth_points=100, hedge_width_points=150, step=50):
+    """
+    वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
+    select_credit_spread_fixed_strikes() सारखीच रचना, पण Short leg आता ATM पासून OTM ऐवजी
+    **ITM** दिशेने itm_depth_points दूर (BULLISH/Support -> Put strike ATM पेक्षा वर,
+    BEARISH/Resistance -> Call strike ATM पेक्षा खाली) — जास्त प्रीमियम, defined-risk साठी
+    hedge तितकाच hedge_width_points दूर (existing दिशेनेच, फक्त short strike चा आधार बदलला).
+    """
+    if direction not in ("BULLISH", "BEARISH"):
+        return None
+    side = "put_options" if direction == "BULLISH" else "call_options"
+    itm_offset = round(itm_depth_points / step) * step
+    if direction == "BULLISH":
+        short_strike = atm_strike + itm_offset
+        long_strike = short_strike - hedge_width_points
+    else:
+        short_strike = atm_strike - itm_offset
+        long_strike = short_strike + hedge_width_points
+
+    option_type = "CE" if side == "call_options" else "PE"
+
+    def find_leg(strike):
+        for item in raw_chain:
+            if item.get("strike_price") == strike:
+                opt = item.get(side, {}) or {}
+                ltp = (opt.get("market_data", {}) or {}).get("ltp")
+                instrument_key = opt.get("instrument_key")
+                greeks = opt.get("option_greeks", {}) or {}
+                pop = greeks.get("pop")
+                if ltp and instrument_key and ltp > 0:
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop,
+                            "option_type": option_type, "expiry": item.get("expiry")}
+        return None
+
+    short_leg, long_leg = find_leg(short_strike), find_leg(long_strike)
+    if short_leg is None or long_leg is None:
+        return None
+    net_credit = short_leg["ltp"] - long_leg["ltp"]
+    if net_credit <= 0:
+        return None
+    return {
+        "strategy": "BULL_PUT_SPREAD" if direction == "BULLISH" else "BEAR_CALL_SPREAD",
+        "short_leg": short_leg, "long_leg": long_leg,
+        "net_credit": round(net_credit, 2), "spread_width": hedge_width_points,
+        "max_profit": round(net_credit, 2), "max_loss": round(hedge_width_points - net_credit, 2),
+        "short_pop_pct": round(short_leg["pop"] * 100, 1) if short_leg["pop"] else None,
+    }
+
+
+def select_naked_option_itm(raw_chain, direction, atm_strike, itm_depth_points, hedge_enabled=False, hedge_width_points=150, step=50):
+    """
+    वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade / "Long With Hedge") — BULLISH
+    (Support) -> ITM Call खरेदी. BEARISH (Resistance) -> ITM Put खरेदी. डीफॉल्ट hedge_enabled=False
+    (निव्वळ/naked buy — hedge नाही) — वापरकर्त्याने Dashboard वरून सक्रिय केल्यासच hedge (further
+    OTM leg विकून debit spread) जोडली जाते.
+    """
+    if direction not in ("BULLISH", "BEARISH"):
+        return None
+    side = "call_options" if direction == "BULLISH" else "put_options"
+    itm_offset = round(itm_depth_points / step) * step
+    buy_strike = (atm_strike - itm_offset) if direction == "BULLISH" else (atm_strike + itm_offset)
+
+    option_type = "CE" if side == "call_options" else "PE"
+
+    def find_leg(strike):
+        for item in raw_chain:
+            if item.get("strike_price") == strike:
+                opt = item.get(side, {}) or {}
+                ltp = (opt.get("market_data", {}) or {}).get("ltp")
+                instrument_key = opt.get("instrument_key")
+                if ltp and instrument_key and ltp > 0:
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp,
+                            "option_type": option_type, "expiry": item.get("expiry")}
+        return None
+
+    buy_leg = find_leg(buy_strike)
+    if buy_leg is None:
+        return None
+
+    if not hedge_enabled:
+        return {
+            "strategy": "NAKED_CALL" if direction == "BULLISH" else "NAKED_PUT",
+            "buy_leg": buy_leg, "net_credit": -buy_leg["ltp"],  # ऋण (debit) -- खरेदीसाठी दिलेली रक्कम
+            "max_profit": None, "max_loss": round(buy_leg["ltp"], 2),
+        }
+
+    hedge_strike = (buy_strike + hedge_width_points) if direction == "BULLISH" else (buy_strike - hedge_width_points)
+    hedge_leg = find_leg(hedge_strike)
+    if hedge_leg is None:
+        return None
+    net_debit = buy_leg["ltp"] - hedge_leg["ltp"]
+    if net_debit <= 0:
+        return None
+    return {
+        "strategy": "NAKED_CALL" if direction == "BULLISH" else "NAKED_PUT",
+        "buy_leg": buy_leg, "hedge_leg": hedge_leg,
+        "net_credit": round(-net_debit, 2), "spread_width": hedge_width_points,
+        "max_profit": round(hedge_width_points - net_debit, 2), "max_loss": round(net_debit, 2),
     }
 
 

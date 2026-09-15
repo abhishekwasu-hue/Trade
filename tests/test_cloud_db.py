@@ -693,3 +693,65 @@ class TestGetNextLevelInDirection:
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
         result = cloud_db.get_next_level_in_direction("NIFTY", 23900.0, direction_bullish=True)
         assert result is None
+
+
+class TestStrategySettings:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — flexible
+    JSONB-आधारित strategy-wise settings, डीफॉल्ट + आंशिक override merge."""
+
+    def test_get_settings_returns_full_defaults_when_no_row(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        assert result == cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]
+
+    def test_get_settings_merges_partial_override_with_defaults(self, monkeypatch):
+        # फक्त lots आणि itm_depth_points बदललेले (Dashboard वर वापरकर्त्याने) — बाकीचे fields
+        # (उदा. hedge_width_points) डीफॉल्टच राहायला हवेत.
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ({"lots": 5, "itm_depth_points": 75},)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        assert result["lots"] == 5
+        assert result["itm_depth_points"] == 75
+        assert result["hedge_width_points"] == 150  # डीफॉल्टच, न बदललेला
+
+    def test_get_settings_no_connection_returns_defaults(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        result = cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
+        assert result == cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
+
+    def test_save_settings_calls_upsert_with_json(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.save_strategy_settings("1m_instant", "NIFTY", {"lots": 3})
+        assert result is True
+        insert_calls = [c for c in mock_cursor.execute.call_args_list if "INSERT INTO strategy_settings" in c[0][0]]
+        assert len(insert_calls) == 1
+        assert insert_calls[0][0][1][0] == "1m_instant"
+        assert insert_calls[0][0][1][1] == "NIFTY"
+
+    def test_save_settings_no_connection_returns_false(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        result = cloud_db.save_strategy_settings("1m_instant", "NIFTY", {"lots": 3})
+        assert result is False
+
+    def test_naked_disabled_by_default_matches_spec(self):
+        """वापरकर्त्याने स्पष्ट सांगितलेलं — डीफॉल्ट hedging नसावी (निव्वळ/naked buy)."""
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["naked_hedge_enabled"] is False
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["naked_hedge_enabled"] is False
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["naked_enabled"] is True
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["naked_enabled"] is True

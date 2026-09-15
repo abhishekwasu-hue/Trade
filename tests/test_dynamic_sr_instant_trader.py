@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pandas as pd
 
 import dynamic_sr_instant_trader as dsr
+import cloud_db
 from config import get_ist_now
 
 
@@ -165,7 +166,8 @@ class TestProcessSymbol:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_gap), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True) as mock_telegram, \
              patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
@@ -180,9 +182,10 @@ class TestProcessSymbol:
             assert "GAP_THROUGH" in logged_types
             assert "NO_HIT" in logged_types
 
-    def test_short_leg_selected_at_atm_not_otm(self):
-        """🎓 वापरकर्त्याशी चर्चा करून सुधारित — Short leg आता ATM वरच (strikes_otm=0, आधी डीफॉल्ट
-        ATM±2 होतं) — established SRv2 (ATM±1) शी strike-collision चा धोकाही यामुळे कमी होतो."""
+    def test_short_leg_uses_itm_depth_from_settings(self):
+        """वापरकर्त्याशी चर्चा करून सुधारित (Bot Dynamic SR Algo -- नवीन नियम-संच) -- Short leg
+        आता ITM दिशेने (settings मधल्या itm_depth_points इतका, डीफॉल्ट 50) -- जुना ATM-आधारित
+        strikes_otm नाही."""
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
@@ -191,14 +194,17 @@ class TestProcessSymbol:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_select, \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_select.called
-            assert mock_select.call_args.kwargs.get("strikes_otm") == 0
+            assert mock_select.call_args.kwargs.get("itm_depth_points") == 50
+            assert mock_select.call_args.kwargs.get("hedge_width_points") == 150
 
     def test_direct_touch_executes_trade(self):
         candles_touch = _candles_with_rsi([
@@ -209,7 +215,8 @@ class TestProcessSymbol:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
@@ -272,7 +279,8 @@ class TestProcessSymbol:
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
@@ -300,6 +308,7 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 14, 50, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
@@ -314,7 +323,8 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 14, 44, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T40"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
@@ -327,7 +337,8 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
@@ -340,6 +351,7 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr, "send_telegram_message") as mock_telegram, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
@@ -356,6 +368,7 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, recent_hit_time)):
@@ -370,6 +383,7 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, old_hit_time)), \
@@ -391,6 +405,7 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
@@ -406,7 +421,8 @@ class TestMultiHitGating:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T2"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
@@ -447,7 +463,8 @@ class TestProcessSymbolMultiAccount:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr.cloud_db, "get_all_broker_accounts", return_value=accounts_df), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "ok": True, "result": "OPENED"}], [])) as mock_multi, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
@@ -497,6 +514,7 @@ class TestInstantRsiFilter:
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log:
             dsr.process_symbol("fake_token", "NIFTY")
@@ -504,3 +522,167 @@ class TestInstantRsiFilter:
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_RSI_FILTER" in statuses
 
+
+
+def _fake_zones_5m_only():
+    """फक्त 5M level (1M नाही) -- pooling तपासण्यासाठी. Level आणि candles established
+    working (_fake_zones()) पॅटर्नशी सुसंगत ठेवलेला (RSI दिशा योग्य राहावी म्हणून)."""
+    return pd.DataFrame([
+        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23900.0, "zone_high": 23900.0,
+         "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+    ])
+
+
+class TestPooled1MAnd5M:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo -- नवीन नियम-संच) -- 1M आणि 5M
+    दोन्ही levels एकत्र, first-touch-wins."""
+
+    def test_5m_only_level_still_triggers_entry(self):
+        """फक्त 5M level ला (1M नाही) touch झाला, तरी trade व्हायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T70"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            result = dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert "5M" in result
+            assert mock_trade.call_args.kwargs.get("entry_timeframe") == "5M"
+
+
+class TestNakedOptionTrade:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade / "Long With Hedge") --
+    Credit Spread सोबतच, समांतर, डीफॉल्ट सक्रिय."""
+
+    def test_naked_trade_fires_alongside_spread_by_default(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T71"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_naked_select.called
+            assert mock_trade.call_count == 2  # स्प्रेड + Naked दोन्ही
+
+    def test_naked_trade_skipped_when_disabled_in_settings(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        disabled_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        disabled_settings["naked_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr.cloud_db, "get_strategy_settings", return_value=disabled_settings), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_naked_option_itm") as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T72"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_naked_select.called
+            assert mock_trade.call_count == 1  # फक्त स्प्रेड, Naked नाही
+
+
+class TestExpiryDayLogic:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) -- आज expiry असेल, तर पुढच्या
+    आठवड्याची expiry (expiry_index=1) वापरायला हवी."""
+
+    def test_expiry_day_uses_next_expiry_index(self):
+        today_str = datetime.datetime(2026, 9, 11, 10, 0, 0).strftime("%Y-%m-%d")
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[today_str]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")) as mock_chain, \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T73"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_chain.call_args.kwargs.get("expiry_index") == 1
+
+    def test_is_todays_expiry_day_true(self):
+        today_str = dsr.get_ist_now().strftime("%Y-%m-%d")
+        with patch.object(dsr, "fetch_option_expiries", return_value=[today_str]):
+            assert dsr.is_todays_expiry_day("fake_token", "NIFTY") is True
+
+    def test_is_todays_expiry_day_false(self):
+        with patch.object(dsr, "fetch_option_expiries", return_value=["2099-01-01"]):
+            assert dsr.is_todays_expiry_day("fake_token", "NIFTY") is False
+
+class TestPCRGate:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Spread+Naked)
+    एकत्र लागू, RSI नंतर लगेच."""
+
+    def test_pcr_gate_blocks_entry(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(False, 0.72, "PCR 0.72 < 0.80")), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_PCR_GATE" in statuses
+
+    def test_pcr_gate_allows_entry_when_passed(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T90"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called

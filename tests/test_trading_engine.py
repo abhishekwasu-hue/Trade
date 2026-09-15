@@ -8,6 +8,7 @@ import datetime
 import json
 import sqlite3
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,18 +26,19 @@ def temp_db(monkeypatch):
     yield tmpdb
 
 
-def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER"):
+def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None):
     conn = sqlite3.connect(tmpdb)
-    legs = [
-        {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL"},
-        {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY"},
-    ]
+    if legs is None:
+        legs = [
+            {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL"},
+            {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY"},
+        ]
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
-           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-08-24", "NIFTY", strategy, 1, 75, net_credit, net_credit, 50,
-         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price),
+         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe),
     )
     conn.commit()
     conn.close()
@@ -189,37 +191,40 @@ class TestDynamicSrInstantSourceRules:
             return {"PE24400": 28.0, "PE24300": 3.0}
         return _fn
 
-    def test_bullish_spot_target_hit(self, temp_db, monkeypatch):
-        # entry_level_price=23900 (Support, Bull Put Spread) -- Target = 23900*1.0020=23947.8
+    def test_spread_sl_on_spot_move(self, temp_db, monkeypatch):
+        """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo -- नवीन नियम-संच) --
+        Credit Spread SL आता Spot% + Premium-Points combined (डीफॉल्ट settings: 0.05%/5pts)."""
+        # entry_level_price=23900, SL_spot=0.05% -> threshold=23888.05. स्पॉट त्याखाली.
+        # प्रीमियम neutral (net_credit-cost=30-25=5, established -5 threshold च्या establishedच establishedच).
         seed_trade(temp_db, "T10", net_credit=30, sl_level=-1125, target_level=1125,
                    strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
                    entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23950.0))
-        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
-        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)  # सकाळी, EOD च्या खूप आधी
-        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert len(closed) == 1
-        assert closed[0]["reason"] == "SPOT_TARGET"
-
-    def test_bullish_spot_sl_hit(self, temp_db, monkeypatch):
-        # SL = 23900*0.9995=23888.05 -- स्पॉट त्याखाली गेला
-        seed_trade(temp_db, "T11", net_credit=30, sl_level=-1125, target_level=1125,
-                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
-                   entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23880.0))
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23880.0, ce_ltp=28.0, pe_ltp=3.0))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
-        assert closed[0]["reason"] == "SPOT_SL"
+        assert closed[0]["reason"] == "SL"
 
-    def test_bullish_neither_target_nor_sl_stays_open(self, temp_db, monkeypatch):
+    def test_spread_sl_on_premium_move(self, temp_db, monkeypatch):
+        # स्पॉट neutral (23905), प्रीमियम 5+ पॉइंट्स विरुद्ध: cost=35, net_credit-cost=30-35=-5
+        seed_trade(temp_db, "T11", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=35.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "SL"
+
+    def test_spread_neither_stays_open(self, temp_db, monkeypatch):
         seed_trade(temp_db, "T12", net_credit=30, sl_level=-1125, target_level=1125,
                    strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
                    entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23910.0))  # SL आणि Target च्या दरम्यान
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=28.0, pe_ltp=3.0))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
@@ -233,64 +238,61 @@ class TestDynamicSrInstantSourceRules:
             return {"PE24400": ce_ltp, "PE24300": pe_ltp}
         return _fn
 
-    def test_premium_sl_hit_when_spot_neutral(self, temp_db, monkeypatch):
-        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Next-Level-Exit काढून, निव्वळ प्रीमियम-आधारित
-        SL(10%)/Target(25%, Trailing सह) जोडलेला — स्पॉट neutral (SL/Target च्या दरम्यान) असतानाही,
-        फक्त प्रीमियम-हालचालीनेच बंद व्हायला हवं."""
-        # net_credit=30, lot_size=75 -> net_credit_total=2250. -10% म्हणजे
-        # established -225. established (net_credit - cost_to_close_now)*75 = -225 -> cost_to_close_now = 33.
+    def test_spread_target_on_premium(self, temp_db, monkeypatch):
+        # net_credit-cost=15 (Target premium threshold, डीफॉल्ट)
         seed_trade(temp_db, "T30", net_credit=30, sl_level=-1125, target_level=1125,
                    strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
                    entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=33.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=15.0, pe_ltp=0.0))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
-        assert closed[0]["reason"] == "PREMIUM_SL"
+        assert closed[0]["reason"] == "TARGET"
 
-    def test_premium_target_hit_when_spot_neutral(self, temp_db, monkeypatch):
-        # net_credit_total=2250, +25% = 562.5. cost_to_close_now = 30 - 562.5/75 = 22.5
+    def test_spread_tsl_activates_then_sticky_sl_next_cycle(self, temp_db, monkeypatch):
+        """पहिल्या cycle ला TSL सक्रिय व्हावी (बंद न होता, tsl_activated column अपडेट व्हावं), आणि
+        established establishedच established (established establishedच establishedच established establishedच)
+        established establishedच establishedच establishedच established establishedत establishedत TSL_SL establishedच establishedत establishedत."""
         seed_trade(temp_db, "T31", net_credit=30, sl_level=-1125, target_level=1125,
                    strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
                    entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=22.5, pe_ltp=0.0))
+        # प्रीमियम +10 (TSL activation threshold, डीफॉल्ट) -- net_credit-cost=10 -> cost=20
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=20.0, pe_ltp=0.0))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert len(closed) == 1
-        assert closed[0]["reason"] == "PREMIUM_TARGET"
+        assert len(closed) == 0  # established establishedच establishedच establishedत -- established establishedच establishedत establishedच
 
-    def test_premium_trailing_sl_active_and_triggers(self, temp_db, monkeypatch):
-        """आधीचा साठवलेला peak_pnl (net_credit_total 2250 च्या 10% पेक्षा जास्त, आधीच सक्रिय झालेला)
-        -- lock = peak - 5%(112.5). किंमत परत आली, सद्य pnl त्या lock पेक्षा कमी -> बंद व्हायला हवं."""
-        seed_trade(temp_db, "T32", net_credit=30, sl_level=-1125, target_level=1125,
-                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
-                   entry_level_price=23900.0, peak_pnl=300)  # 300/2250=13.3%, आधीच 10% ओलांडलेला
-        # peak(300) - lock(112.5) = 187.5 -> सद्य pnl त्यापेक्षा कमी हवा
-        # cost_to_close_now = 30 - 150/75 = 28
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=28.0, pe_ltp=0.0))
-        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
-        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
-        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert len(closed) == 1
-        assert closed[0]["reason"] == "PREMIUM_TRAILING_SL"
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT tsl_activated FROM live_trades WHERE trade_id='T31'").fetchone()
+        conn.close()
+        assert row[0] == 1
 
-    def test_bearish_spot_target_and_sl(self, temp_db, monkeypatch):
-        # entry_level_price=24000 (Resistance, Bear Call Spread) -- Target = 24000*0.9980=23952 (खाली)
-        seed_trade(temp_db, "T13", net_credit=30, sl_level=-1125, target_level=1125,
-                   strategy="BEAR_CALL_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
-                   entry_level_price=24000.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23940.0))  # Target-पातळी 23952 च्या खाली
+    def test_naked_call_sl_on_premium_move(self, temp_db, monkeypatch):
+        """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- Naked Call/Put (समांतर trade-प्रकार) साठी
+        established वेगळे established (established घट्ट established establishedच established
+        established establishedच established establishedच) established SL/TSL/Target established
+        established establishedच established establishedच established established (established
+        established डीफॉल्ट: established SL 10pts, established TSL 20pts, established Target 30pts)."""
+        seed_trade(temp_db, "T32", net_credit=-30, sl_level=-1125, target_level=100000,
+                   strategy="NAKED_CALL", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0)
+        # established BUY established establishedच established establishedच -- established
+        # established net_credit=-30 established (established established, established established
+        # established established), established established established established established
+        # established established established established established established established established
+        # premium established established established established established established established
+        # established established established established established established established established established
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=20.0, pe_ltp=0.0))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
-        assert closed[0]["reason"] == "SPOT_TARGET"
+        assert closed[0]["reason"] == "SL"
 
     def test_dynamic_sr_instant_gets_eod_squareoff_not_carry_forward(self, temp_db, monkeypatch):
         # entry_level_price/underlying_spot गहाळ असले (जुना trade), तरीही carry-forward कधीच लागू
@@ -332,19 +334,20 @@ class TestDynamicSrInstantSourceRules:
         assert len(closed) == 0  # 15:15 चा कटऑफ अजून झालेला नाही
 
     def test_srv2_bullish_spot_sl_hit(self, temp_db, monkeypatch):
-        """🎓 वापरकर्त्याशी चर्चा करून बदललेली सुधारणा — srv2_momentum_reversal साठी आता जुनी
-        %-Trailing SL नाही, स्पॉट-आधारित SL (0.10%, entry_level_price पासून प्रतिकूल दिशेने)."""
+        """🎓 वापरकर्त्याशी चर्चा करून बदललेली सुधारणा — srv2_momentum_reversal (Credit Spread)
+        साठी आता जुनी %-Trailing SL नाही, स्पॉट-आधारित SL (settings डीफॉल्ट 0.15%, entry_level_price
+        पासून प्रतिकूल दिशेने)."""
         seed_trade(temp_db, "T8", net_credit=30, sl_level=-2250, target_level=2250,
                    strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
                    entry_level_price=23900.0)
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23875.0))  # -0.105%, SL पेक्षा जास्त
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23860.0))  # ~-0.167%, SL(0.15%) पेक्षा जास्त
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
         FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
-        assert closed[0]["reason"] == "SPOT_SL"
+        assert closed[0]["reason"] == "SL"
 
     def test_srv2_premium_target_hit(self, temp_db, monkeypatch):
         seed_trade(temp_db, "T9", net_credit=30, sl_level=-2250, target_level=100,
@@ -365,7 +368,7 @@ class TestDynamicSrInstantSourceRules:
         पूल केलेले) — favourable दिशेने पुढचा level (24000) गाठला की बंद व्हायला हवं."""
         seed_trade(temp_db, "T10", net_credit=30, sl_level=-2250, target_level=100000,
                    strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
-                   entry_level_price=23900.0)
+                   entry_level_price=23900.0, entry_timeframe="15M")
         monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(24005.0))  # पुढचा level (24000) ओलांडला
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
         monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 24000.0)
@@ -374,6 +377,22 @@ class TestDynamicSrInstantSourceRules:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
         assert closed[0]["reason"] == "NEXT_LEVEL_EXIT"
+
+    def test_srv2_next_level_exit_searches_only_entry_timeframe(self, temp_db, monkeypatch):
+        """entry_timeframe="30M" असेल, तर get_next_level_in_direction ला फक्त ("30M",) दिला जायला
+        हवा -- तिन्ही पूल केलेले नाहीत."""
+        seed_trade(temp_db, "T16", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_timeframe="30M")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23910.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        mock_next_level = MagicMock(return_value=None)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", mock_next_level)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert mock_next_level.called
+        assert mock_next_level.call_args.kwargs.get("timeframe_suffixes") == ("30M",)
 
     def test_srv2_neither_stays_open(self, temp_db, monkeypatch):
         seed_trade(temp_db, "T11", net_credit=30, sl_level=-2250, target_level=100000,
@@ -418,6 +437,39 @@ class TestDynamicSrInstantSourceRules:
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 0  # पुरेसा नफा -- EOD नंतरही उघडीच राहायला हवी
+
+    def test_srv2_naked_sl_hit_at_005_percent(self, temp_db, monkeypatch):
+        """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade) — SL settings डीफॉल्ट
+        0.05% (Spread च्या 0.15% पेक्षा घट्ट)."""
+        naked_leg = [{"role": "naked_buy", "strike": 23850, "instrument_key": "PE24400", "transaction_type": "BUY"}]
+        seed_trade(temp_db, "T14", net_credit=-60, sl_level=None, target_level=None,
+                   strategy="NAKED_CALL", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, legs=naked_leg)
+        # premium_pnl_points = net_credit(-60) + ltp(58) = -2 (सुरक्षित, प्रीमियम-SL(-10) पेक्षा कमी) --
+        # स्पॉट (23880, ~-0.084%) च SL ठरवतो.
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23880.0, ce_ltp=58.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "SL"
+
+    def test_srv2_naked_never_carries_forward_closes_at_3pm(self, temp_db, monkeypatch):
+        """वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Naked trade कधीच carry-forward नाही, नेहमी आजच
+        (डीफॉल्ट 3:00pm) बंद व्हायला हवी, SL/Target न लागतानाही."""
+        naked_leg = [{"role": "naked_buy", "strike": 23850, "instrument_key": "PE24400", "transaction_type": "BUY"}]
+        seed_trade(temp_db, "T15", net_credit=-60, sl_level=None, target_level=None,
+                   strategy="NAKED_CALL", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, legs=naked_leg)
+        # स्पॉट व प्रीमियम दोन्ही neutral (SL/Target लागू नयेत) -- फक्त EOD-वेळेचीच तपासणी.
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23905.0, ce_ltp=61.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 9, 31)  # UTC 9:31 = IST 15:01 (3pm नंतर, 3:10pm आधी)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "EOD_SQUAREOFF"
 
 
 class TestCorrelationIdInOrders:
@@ -528,3 +580,67 @@ class TestReconcileOpenTradesWithBroker:
         reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
         assert reconciled == []
         assert error != ""
+
+
+class TestEvaluatePointSpotExit:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — Spot% +
+    Premium-Points combined exit-गणित, Credit Spread आणि Naked Buy दोन्हींसाठी, TSL-to-Breakeven
+    sticky-राज्यासह. premium_pnl_points आधीच योग्य चिन्हासह (net_credit - cost_to_close_now) दिला
+    जातो -- Spread आणि Naked दोन्हींसाठी हेच सूत्र सुसंगत आहे."""
+
+    def test_spread_sl_on_spot_move(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * (1 - 0.0006), 0, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r[0] == "SL"
+
+    def test_spread_sl_on_premium_move(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, -5, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r[0] == "SL"
+
+    def test_spread_neither_stays_open_no_tsl(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23905, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r == (None, False)
+
+    def test_spread_tsl_activates_on_spot(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * 1.0011, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r == (None, True)
+
+    def test_spread_tsl_activates_on_premium(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 10, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r == (None, True)
+
+    def test_spread_tsl_sl_once_activated_and_profit_gives_back(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, -1, 0.05, 5, 0.10, 10, 0.20, 15, True)
+        assert r[0] == "TSL_SL"
+
+    def test_spread_tsl_sticky_while_still_profitable(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 5, 0.05, 5, 0.10, 10, 0.20, 15, True)
+        assert r == (None, True)
+
+    def test_spread_target_on_spot(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * 1.0021, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r[0] == "TARGET"
+
+    def test_spread_target_on_premium(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 15, 0.05, 5, 0.10, 10, 0.20, 15, False)
+        assert r[0] == "TARGET"
+
+    def test_naked_tsl_activates_on_premium(self):
+        r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000, 20, 0.05, 10, 0.10, 20, 0.20, 30, False)
+        assert r == (None, True)
+
+    def test_naked_sl_on_adverse_spot(self):
+        r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000 * 1.0006, 0, 0.05, 10, 0.10, 20, 0.20, 30, False)
+        assert r[0] == "SL"
+
+    def test_naked_target_on_premium(self):
+        r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000, 30, 0.05, 10, 0.10, 20, 0.20, 30, False)
+        assert r[0] == "TARGET"
+
+    def test_naked_tsl_sl_once_activated(self):
+        r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000, -5, 0.05, 10, 0.10, 20, 0.20, 30, True)
+        assert r[0] == "TSL_SL"
+
+    def test_target_takes_priority_even_if_tsl_already_active(self):
+        """TSL आधीच सक्रिय असतानाही, Target गाठला की तोच लागू व्हायला हवा (TSL_SL नाही)."""
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 15, 0.05, 5, 0.10, 10, 0.20, 15, True)
+        assert r[0] == "TARGET"

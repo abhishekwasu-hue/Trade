@@ -4,7 +4,7 @@ import sqlite3
 
 import pandas as pd
 
-from config import DB_PATH, get_ist_today
+from config import DB_PATH, get_ist_today, get_ist_now
 
 
 def find_psychological_level(price, direction, round_to=500):
@@ -365,6 +365,49 @@ def get_previous_day_total_oi(symbol):
     row = cur.fetchone()
     conn.close()
     return (row[0] + row[1]) if row else None
+
+
+def get_latest_pcr(symbol, max_age_minutes=15):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — Bot Dynamic SR Algo) — आजचा सर्वात
+    अलीकडचा (ATM-जवळचा, oi_snapshot_collector.py कडूनच साठवलेला) PCR (Put OI / Call OI) मिळवणे.
+    snapshot खूप जुना (max_age_minutes पेक्षा जास्त — collector थांबलेला असू शकतो) असेल, तर None
+    (डेटा विश्वासार्ह नाही असं समजून) — वापरकर्त्याने ठरवल्याप्रमाणे, अशा वेळी trade थांबवणे अपेक्षित."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT total_call_oi, total_put_oi, snapshot_time FROM oi_diff_snapshots
+           WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT 1""",
+        (symbol, today_str),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if row is None or not row[0]:
+        return None
+    total_call_oi, total_put_oi, snapshot_time_str = row
+    try:
+        snapshot_dt = pd.to_datetime(f"{today_str} {snapshot_time_str}")
+        age_minutes = (get_ist_now() - snapshot_dt).total_seconds() / 60
+        if age_minutes > max_age_minutes:
+            return None
+    except Exception:
+        pass  # वेळ parse करता आली नाही तर वयाची तपासणी वगळणे (डेटा असला तरी वापरणे)
+    return round(total_put_oi / total_call_oi, 3)
+
+
+def check_pcr_gate(symbol, direction, pcr_bullish_min, pcr_bearish_max):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — Bot Dynamic SR Algo, दोन्ही strategies) —
+    PCR < pcr_bullish_min असेल तर BULLISH trade नाही. PCR > pcr_bearish_max असेल तर BEARISH trade
+    नाही. डेटा उपलब्ध नसेल/जुना असेल, तर सुरक्षिततेसाठी trade थांबवणे (वापरकर्त्याने ठरवलेला निर्णय).
+    रिटर्न: (allowed: bool, pcr: float|None, reason: str)"""
+    pcr = get_latest_pcr(symbol)
+    if pcr is None:
+        return False, None, "PCR डेटा उपलब्ध नाही किंवा खूप जुना आहे (oi_snapshot_collector.py तपासा)"
+    if direction == "BULLISH" and pcr < pcr_bullish_min:
+        return False, pcr, f"PCR {pcr} < {pcr_bullish_min} — Bullish trade साठी पुरेसा पाठिंबा नाही"
+    if direction == "BEARISH" and pcr > pcr_bearish_max:
+        return False, pcr, f"PCR {pcr} > {pcr_bearish_max} — Bearish trade साठी पुरेसा पाठिंबा नाही"
+    return True, pcr, "PCR गेट पास"
 
 def compute_oi_price_matrix(current_total_oi, prev_total_oi, current_price, prev_price):
     """
