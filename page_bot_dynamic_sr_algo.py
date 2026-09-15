@@ -13,7 +13,13 @@ STRATEGY_LABELS = {"1m_instant": "1-मिनिट Instant Trader (1M + 5M)", "
 
 
 def _number_input(label, settings, key, **kwargs):
-    return st.number_input(label, value=float(settings[key]) if isinstance(settings[key], float) else int(settings[key]), key=f"bdsr_{key}", **kwargs)
+    # 🎓 वापरकर्त्याने सापडवलेली bug — आधी साठवलेल्या value च्या (int/float) प्रकारावरून casting
+    # व्हायचं, पण caller ने दिलेले min_value/max_value/step मात्र नेहमी float — Streamlit ला हे
+    # दोन्ही एकाच प्रकारचे (सर्व int किंवा सर्व float) हवेत, नाहीतर StreamlitMixedNumericTypesError.
+    # आता caller च्या kwargs वरूनच (साठवलेल्या value च्या प्रकारावरून नाही) ठरवतो.
+    is_float = isinstance(kwargs.get("step"), float) or isinstance(kwargs.get("min_value"), float) or isinstance(kwargs.get("max_value"), float)
+    value = float(settings[key]) if is_float else int(settings[key])
+    return st.number_input(label, value=value, key=f"bdsr_{key}", **kwargs)
 
 
 def render():
