@@ -407,6 +407,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe) in parsed_trades:
         if not legs:
             continue
+        # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("Target गाठूनही बंद होत नाही") सोडवण्यासाठी जोडलेली,
+        # अजून एक तात्पुरती diagnostic नोंद — प्रत्येक trade साठी, कुठलाही अंदाज न धरता, कच्ची मूल्यं
+        # आणि त्यांचे प्रकार (type) थेट दाखवणे — नेमकी कुठली अट (entry_level_price/underlying_spot
+        # is not None) खोटी ठरतेय ते निर्विवादपणे कळावं.
+        print(
+            f"🔍 RAW {trade_id} — source={source!r}, entry_level_price={entry_level_price!r} "
+            f"(type={type(entry_level_price).__name__}), underlying_spot={underlying_spot!r} "
+            f"(type={type(underlying_spot).__name__}), strategy={strategy_name!r}"
+        )
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
         if any(v is None for v in current_ltps.values()):
             continue  # काही leg ची सद्य LTP मिळाली नाही — ही तपासणी पुढच्या रनला पुन्हा होईल
