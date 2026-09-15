@@ -160,6 +160,7 @@ class TestProcessSymbol:
              patch.object(srv2, "fetch_option_expiries", return_value=[]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True) as mock_telegram, \
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True) as mock_save:
@@ -191,6 +192,7 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=True), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade:
@@ -229,6 +231,7 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_resistance_zone()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -269,6 +272,7 @@ class TestProcessSymbol:
              patch.object(srv2, "fetch_option_expiries", return_value=[]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T2"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
@@ -317,6 +321,7 @@ class TestProcessSymbolMultiAccount:
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=accounts_df), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "ok": True, "result": "OPENED"}], [])) as mock_multi, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -337,11 +342,13 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones_30m_only()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T60"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -359,6 +366,7 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value={**cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], "lots": 3, "hedge_width_points": 75.0}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
@@ -382,6 +390,7 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=[today_str]), \
@@ -400,6 +409,7 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
@@ -433,11 +443,13 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T64"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -455,11 +467,13 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23800, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T80"}, "OPENED")) as mock_trade, \
@@ -478,11 +492,13 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "get_strategy_settings", return_value=disabled_settings), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2, "select_naked_option_itm") as mock_naked_select, \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T81"}, "OPENED")) as mock_trade, \
@@ -492,3 +508,33 @@ class TestMultiTimeframe:
             srv2.process_symbol("fake_token", "NIFTY")
             assert not mock_naked_select.called
             assert mock_trade.call_count == 1  # फक्त स्प्रेड, Naked नाही
+
+
+class TestPCRGate:
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — SRv2 मध्येही, RSI नंतर लगेच,
+    दोन्ही trade-प्रकारांना एकत्र लागू."""
+
+    def test_pcr_gate_blocks_entry(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(False, 0.72, "PCR 0.72 < 0.80")), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade:
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+
+    def test_pcr_gate_allows_entry_when_passed(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T91"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called

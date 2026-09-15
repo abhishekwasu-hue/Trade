@@ -174,6 +174,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 50,          # Short leg — ATM पासून किती points ITM
         "hedge_width_points": 150,       # Long hedge — short strike पासून किती दूर
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Spread+Naked)
+        # एकत्र लागू. PCR < pcr_bullish_min -> Bullish trade नाही. PCR > pcr_bearish_max -> Bearish
+        # trade नाही. डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe).
+        "pcr_bullish_min": 0.80,
+        "pcr_bearish_max": 1.10,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,
@@ -194,6 +199,8 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 100,
         "hedge_width_points": 150,
+        "pcr_bullish_min": 0.80,
+        "pcr_bearish_max": 1.10,
         "spread_sl_spot_pct": 0.15,
         "spread_sl_premium_points": 10,
         "spread_tsl_spot_pct": 0.30,

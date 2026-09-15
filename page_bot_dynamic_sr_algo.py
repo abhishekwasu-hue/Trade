@@ -34,7 +34,6 @@ def render():
 
     settings = cloud_db.get_strategy_settings(strategy_key, symbol)
 
-    st.markdown("---")
     st.markdown("##### 🔻 Short With Hedge (Credit Spread — मुख्य ट्रेड)")
     st.caption("Short leg आता ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
     c1, c2, c3 = st.columns(3)
@@ -44,6 +43,14 @@ def render():
         itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", min_value=25.0, max_value=500.0, step=25.0)
     with c3:
         hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", min_value=25.0, max_value=500.0, step=25.0)
+
+    st.markdown("##### 🚦 PCR Gate (Trade Filter)")
+    st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो.")
+    p1, p2 = st.columns(2)
+    with p1:
+        pcr_bullish_min = _number_input("PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
+    with p2:
+        pcr_bearish_max = _number_input("PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
 
     st.markdown("##### 🎯 Trade Drop-Down Settings — SL / TSL / Target (Credit Spread)")
     if strategy_key == "1m_instant":
@@ -109,6 +116,7 @@ def render():
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
         new_settings = {
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
+            "pcr_bullish_min": float(pcr_bullish_min), "pcr_bearish_max": float(pcr_bearish_max),
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),
             "spread_tsl_spot_pct": float(spread_tsl_spot_pct), "spread_tsl_premium_points": float(spread_tsl_premium_points),
             "naked_enabled": bool(naked_enabled), "naked_hedge_enabled": bool(naked_hedge_enabled),

@@ -31,6 +31,7 @@ from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message
 from signals import calculate_rsi
+from oi_analysis import check_pcr_gate
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
@@ -156,6 +157,17 @@ def process_symbol(access_token, symbol, lot_size=65):
         if not rsi_ok:
             log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
             log_entry["reason"] = f"RSI {rsi_value} दिशेशी जुळत नाही (Support<{RSI_SUPPORT_MAX} / Resistance>{RSI_RESISTANCE_MIN} हवं होतं)"
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Credit
+        # Spread + Naked) एकत्र लागू. डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे.
+        pcr_ok, pcr_value, pcr_reason = check_pcr_gate(
+            symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"],
+        )
+        if not pcr_ok:
+            log_entry["trade_status"] = "SKIPPED_PCR_GATE"
+            log_entry["reason"] = pcr_reason
             cloud_db.save_signal_log(log_entry)
             continue
 

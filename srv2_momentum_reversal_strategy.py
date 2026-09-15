@@ -30,6 +30,7 @@ from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message
 from signals import calculate_rsi
 from strategy import select_credit_spread_itm, select_naked_option_itm
+from oi_analysis import check_pcr_gate
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
@@ -151,6 +152,12 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         rsi_ok, rsi_value = check_rsi_filter(candles_df, direction)
         if not rsi_ok:
+            continue
+
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Credit
+        # Spread + Naked) एकत्र लागू. डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे.
+        pcr_ok, pcr_value, pcr_reason = check_pcr_gate(symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"])
+        if not pcr_ok:
             continue
 
         # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी).
