@@ -29,7 +29,7 @@ from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message
 from signals import calculate_rsi
-from strategy import select_credit_spread_fixed_strikes
+from strategy import select_credit_spread_itm, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
@@ -126,9 +126,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     if is_in_cooldown(state["last_sl_hit_time"], now):
         return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {COOLDOWN_MINUTES} मिनिटं विराम)"
 
-    settings = cloud_db.get_srv2_settings(symbol)
+    settings = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
     lots = settings["lots"]
-    hedge_width_points = settings["hedge_width_points"]
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -170,36 +169,34 @@ def process_symbol(access_token, symbol, lot_size=65):
             return f"{symbol}: Option chain मिळाली नाही ({chain_status})"
         atm_strike = round(underlying_price / 50) * 50
 
-        strategy_result = select_credit_spread_fixed_strikes(
-            raw_chain, direction, atm_strike, strikes_otm=1, hedge_width_points=hedge_width_points,
+        spread_result = select_credit_spread_itm(
+            raw_chain, direction, atm_strike,
+            itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
         )
-        if strategy_result is None:
+        if spread_result is None:
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
             return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
-
-        net_credit_total = strategy_result["net_credit"] * lot_size
-        sl_pct = SL_PCT_OF_CREDIT
 
         accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
         if accounts_df is not None and not accounts_df.empty:
             from trading_engine import execute_trade_on_all_accounts
             results, factory_errors = execute_trade_on_all_accounts(
-                symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
+                symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
                 product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
-                sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
-                entry_level_price=level_price,
+                sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
             if factory_errors:
                 trade_status += " | वगळलेले: " + "; ".join(factory_errors)
         else:
             trade_result, trade_status = open_multi_leg_trade(
-                access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
+                access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
                 product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
-                sl_pct_of_credit=sl_pct, source="srv2_momentum_reversal",
-                entry_level_price=level_price,
+                sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
 
         cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
@@ -210,12 +207,42 @@ def process_symbol(access_token, symbol, lot_size=65):
             "reason": f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास",
         })
 
+        naked_status = ""
+        naked_result = None
+        if settings.get("naked_enabled", True):
+            naked_result = select_naked_option_itm(
+                raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"],
+                hedge_enabled=settings.get("naked_hedge_enabled", False),
+                hedge_width_points=settings.get("naked_hedge_width_points", 150),
+            )
+            if naked_result is not None:
+                if accounts_df is not None and not accounts_df.empty:
+                    from trading_engine import execute_trade_on_all_accounts
+                    naked_results, naked_factory_errors = execute_trade_on_all_accounts(
+                        symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
+                        sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                        sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                        entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                    )
+                    naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
+                else:
+                    _, naked_status = open_multi_leg_trade(
+                        access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
+                        sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                        sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                        entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                    )
+
         strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
+        naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         message = (
             f"🎯 <b>{symbol} SRv2 Momentum-Reversal ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/2 वा hit)\n"
             f"{level_type} {level_price:.2f} — RSI {rsi_value} (फिल्टर पास).\n"
-            f"{strategy_label} — SL {sl_pct:.1f}% of Premium, Target {TARGET_PCT_OF_PREMIUM}%.\n"
-            f"PAPER Trade: {trade_status} — वेळ: {now.strftime('%H:%M:%S')}"
+            f"Credit Spread: {strategy_label} — {trade_status}\n"
+            + naked_line
+            + f"वेळ: {now.strftime('%H:%M:%S')}"
         )
         send_telegram_message(message)
         return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({timeframe_suffix}, RSI {rsi_value}) -> {strategy_label} PAPER trade {trade_status}"

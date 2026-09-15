@@ -521,8 +521,9 @@ def save_strategy_settings(strategy_name, symbol, settings_dict):
 
 def get_next_level_in_direction(symbol, entry_level_price, direction_bullish, timeframe_suffixes=("15M", "30M", "60M")):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe SRv2, Next-Level-Exit) —
-    entry_level_price पासून favourable दिशेने, दिलेल्या कुठल्याही timeframe (15M/30M/60M, पूल
-    केलेले — कुठल्याही एका timeframe पुरतं मर्यादित नाही) मधला सर्वात जवळचा ACTIVE level शोधणे.
+    entry_level_price पासून favourable दिशेने, दिलेल्या timeframe_suffixes (डीफॉल्ट तिन्ही पूल
+    केलेले — पण caller ने विशिष्ट एकच timeframe दिल्यास, उदा. ("15M",), "same-timeframe exit"
+    हेही याच function ने साध्य होतं) मधला सर्वात जवळचा ACTIVE level शोधणे.
     direction_bullish=True -> entry_level_price पेक्षा वर, सर्वात जवळचा (favourable = वर जाणं).
     direction_bullish=False -> entry_level_price पेक्षा खाली, सर्वात जवळचा (favourable = खाली जाणं).
     रिटर्न: level_price (float) किंवा None (सापडला नाही तर)."""

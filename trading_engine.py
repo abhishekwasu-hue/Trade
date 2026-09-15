@@ -452,38 +452,74 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if dynamic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
         elif source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
-            direction_bullish = (strategy_name == "BULL_PUT_SPREAD")
-            spot_pct_move = (underlying_spot - entry_level_price) / entry_level_price
+            settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
+            is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
+            direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
+            premium_pnl_points = net_credit - cost_to_close_now
 
-            exit_reason = None
-            if direction_bullish and spot_pct_move <= -SRV2_SPOT_SL_PCT / 100:
-                exit_reason = "SPOT_SL"
-            elif not direction_bullish and spot_pct_move >= SRV2_SPOT_SL_PCT / 100:
-                exit_reason = "SPOT_SL"
+            if is_naked:
+                # वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Naked trade "pure intraday" — कधीच
+                # carry-forward नाही, नेहमी आजच (डीफॉल्ट 3:00pm) बंद. Spot%+Premium-Points एकत्र,
+                # TSL-to-Breakeven सह (dynamic_sr_instant सारखीच, वेगळ्या उंबरठ्यांसह).
+                point_exit_reason, tsl_now_activated = evaluate_point_spot_exit(
+                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    settings_15m["naked_sl_spot_pct"], settings_15m["naked_sl_premium_points"],
+                    settings_15m["naked_tsl_spot_pct"], settings_15m["naked_tsl_premium_points"],
+                    settings_15m["naked_target_spot_pct"], settings_15m["naked_target_premium_points"],
+                    tsl_activated,
+                )
+                if tsl_now_activated != tsl_activated:
+                    cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
+                exit_reason = point_exit_reason
 
-            if exit_reason is None and target_level is not None and current_pnl >= target_level:
-                exit_reason = "PREMIUM_TARGET"
+                if exit_reason is None and trade_style == "INTRADAY":
+                    naked_past_eod = (ist_now.hour, ist_now.minute) >= (settings_15m["naked_eod_hour"], settings_15m["naked_eod_minute"])
+                    if naked_past_eod:
+                        exit_reason = "EOD_SQUAREOFF"
+            else:
+                # वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Credit Spread साठी SL/TSL स्पॉट%+प्रीमियम-
+                # पॉइंट्स एकत्र (Target मात्र वेगळाच — निव्वळ प्रीमियमच्या 80%, existing target_level
+                # column मार्फतच, म्हणून इथे target-उंबरठे प्रचंड मोठे देऊन evaluate_point_spot_exit
+                # चा स्वतःचा built-in target-मार्ग निष्क्रिय केलेला).
+                point_exit_reason, tsl_now_activated = evaluate_point_spot_exit(
+                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    settings_15m["spread_sl_spot_pct"], settings_15m["spread_sl_premium_points"],
+                    settings_15m["spread_tsl_spot_pct"], settings_15m["spread_tsl_premium_points"],
+                    target_spot_pct=1e9, target_premium_points=1e9,
+                    tsl_already_activated=tsl_activated,
+                )
+                if tsl_now_activated != tsl_activated:
+                    cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
+                exit_reason = point_exit_reason if point_exit_reason != "TARGET" else None
 
-            if exit_reason is None:
-                next_level = cloud_db.get_next_level_in_direction(symbol, entry_level_price, direction_bullish)
-                if next_level is not None:
-                    reached = (underlying_spot >= next_level) if direction_bullish else (underlying_spot <= next_level)
-                    if reached:
-                        exit_reason = "NEXT_LEVEL_EXIT"
+                if exit_reason is None and target_level is not None and current_pnl >= target_level:
+                    exit_reason = "PREMIUM_TARGET"
 
-            # 🎓 वापरकर्त्याने सापडवलेली, महत्त्वाची दुरुस्ती — नवीन Spot/Premium exit-रचना जोडताना
-            # ही आधीचीच 3:10pm Carry-Forward तपासणी चुकून काढली गेली होती — ती परत जोडली. Target
-            # (वर तपासलेला) अजून गाठलेला नसेल, आणि 3:10pm झालेली असेल — नफा किमान 30% (net credit
-            # च्या) असेल तर पुढच्या दिवशी चालू ठेवणे (काहीही न करता), नाहीतर आजच बंद करणे.
-            if exit_reason is None:
-                past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
-                if past_carry_forward_check_time:
-                    carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
-                    if current_pnl < carry_forward_min_profit_level:
-                        exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
-                    # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
-                elif trade_style == "INTRADAY" and past_eod_cutoff:
-                    exit_reason = "EOD_SQUAREOFF"
+                # वापरकर्त्याशी चर्चा करून ठरवलेला नियम ("Use the same SR timeframe for exit") —
+                # Next-Level-Exit आता फक्त entry_timeframe च्याच levels मधून शोधतो, तिन्ही पूल
+                # केलेले नाहीत (entry_timeframe गहाळ असल्यास, सुरक्षिततेसाठी तिन्हीतूनच शोधणे —
+                # जुनं, established वर्तन).
+                if exit_reason is None:
+                    search_timeframes = (entry_timeframe,) if entry_timeframe else ("15M", "30M", "60M")
+                    next_level = cloud_db.get_next_level_in_direction(symbol, entry_level_price, direction_bullish, timeframe_suffixes=search_timeframes)
+                    if next_level is not None:
+                        reached = (underlying_spot >= next_level) if direction_bullish else (underlying_spot <= next_level)
+                        if reached:
+                            exit_reason = "NEXT_LEVEL_EXIT"
+
+                # 🎓 वापरकर्त्याने सापडवलेली, महत्त्वाची दुरुस्ती — नवीन Spot/Premium exit-रचना जोडताना
+                # ही आधीचीच 3:10pm Carry-Forward तपासणी चुकून काढली गेली होती — ती परत जोडली. Target
+                # (वर तपासलेला) अजून गाठलेला नसेल, आणि 3:10pm झालेली असेल — नफा किमान (settings मधला)
+                # carry_forward_min_profit_pct इतका असेल तर पुढच्या दिवशी चालू ठेवणे, नाहीतर आजच बंद.
+                if exit_reason is None:
+                    past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
+                    if past_carry_forward_check_time:
+                        carry_forward_min_profit_level = net_credit_total * (settings_15m["carry_forward_min_profit_pct"] / 100.0)
+                        if current_pnl < carry_forward_min_profit_level:
+                            exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+                        # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
+                    elif trade_style == "INTRADAY" and past_eod_cutoff:
+                        exit_reason = "EOD_SQUAREOFF"
         else:
             # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता कुठल्याही
             # source ला लागू होत नाही (dynamic_sr_instant/srv2_momentum_reversal दोन्ही आता स्वतंत्र,

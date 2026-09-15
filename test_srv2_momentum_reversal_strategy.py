@@ -12,6 +12,7 @@ import datetime
 import pandas as pd
 
 import srv2_momentum_reversal_strategy as srv2
+import cloud_db
 from config import get_ist_now
 
 
@@ -156,7 +157,9 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True) as mock_telegram, \
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True) as mock_save:
@@ -229,7 +232,7 @@ class TestProcessSymbol:
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(srv2, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T50"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -263,7 +266,9 @@ class TestProcessSymbol:
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now())), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T2"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
@@ -311,7 +316,7 @@ class TestProcessSymbolMultiAccount:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(srv2, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=accounts_df), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "ok": True, "result": "OPENED"}], [])) as mock_multi, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -329,13 +334,14 @@ class TestMultiTimeframe:
         """फक्त 30M level (15M/60M नाहीत) असला, तरी तोही तपासला जाऊन trade व्हायला हवा."""
         candles_df = _fake_candles_df(last_close=23902)
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_srv2_settings", return_value={"lots": 1, "hedge_width_points": 100.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones_30m_only()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T60"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -350,14 +356,14 @@ class TestMultiTimeframe:
         hardcoded मूल्यांऐवजी प्रत्यक्ष वापरली जायला हवीत."""
         candles_df = _fake_candles_df(last_close=23902)
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_srv2_settings", return_value={"lots": 3, "hedge_width_points": 75.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value={**cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], "lots": 3, "hedge_width_points": 75.0}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
-             patch.object(srv2, "select_credit_spread_fixed_strikes", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T61"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -373,7 +379,7 @@ class TestMultiTimeframe:
         candles_df = _fake_candles_df(last_close=23902)
         today_str = srv2.get_ist_now().strftime("%Y-%m-%d")
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_srv2_settings", return_value={"lots": 1, "hedge_width_points": 100.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
@@ -391,7 +397,7 @@ class TestMultiTimeframe:
     def test_non_expiry_day_uses_current_expiry_index(self):
         candles_df = _fake_candles_df(last_close=23902)
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_srv2_settings", return_value={"lots": 1, "hedge_width_points": 100.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
@@ -424,13 +430,14 @@ class TestMultiTimeframe:
         Spot-SL/Next-Level-Exit साठी trade उघडतानाच साठवला जायला हवा."""
         candles_df = _fake_candles_df(last_close=23902)
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_srv2_settings", return_value={"lots": 1, "hedge_width_points": 100.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T64"}, "OPENED")) as mock_trade, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
@@ -438,3 +445,50 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
             srv2.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_args.kwargs.get("entry_level_price") == 23900.0
+            assert mock_trade.call_args.kwargs.get("entry_timeframe") == "15M"
+
+    def test_naked_trade_fires_alongside_spread_by_default(self):
+        """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade) — SRv2 मध्येही Credit
+        Spread सोबतच, समांतर, डीफॉल्ट सक्रिय."""
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2, "has_open_trade_from_source", return_value=False), \
+             patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23800, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
+             patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T80"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_naked_select.called
+            assert mock_trade.call_count == 2  # स्प्रेड + Naked दोन्ही
+
+    def test_naked_trade_skipped_when_disabled_in_settings(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        disabled_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        disabled_settings["naked_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=disabled_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2, "has_open_trade_from_source", return_value=False), \
+             patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "select_naked_option_itm") as mock_naked_select, \
+             patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T81"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_naked_select.called
+            assert mock_trade.call_count == 1  # फक्त स्प्रेड, Naked नाही

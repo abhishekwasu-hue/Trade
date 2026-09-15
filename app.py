@@ -159,6 +159,7 @@ if context_ok:
     import page_multi_strategy
     import page_mtf_pullback
     import page_broker_accounts
+    import page_bot_dynamic_sr_algo
 
     pages = [
         st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
@@ -166,11 +167,17 @@ if context_ok:
         st.Page(page_orders.render, title="Orders", icon="📝", url_path="orders"),
         st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Dashboard वरची tab-गर्दी कमी करण्यासाठी, हे
-        # तीन (आधी page_dashboard.py चे tabs) आता established Positions/Orders/Performance
-        # सारखेच स्वतंत्र sidebar pages आहेत.
+        # तीन (आधी page_dashboard.py चे tabs) आता Positions/Orders/Performance सारखेच स्वतंत्र
+        # sidebar pages आहेत.
         st.Page(page_multi_strategy.render, title="Multi-Strategy", icon="🧩", url_path="multi-strategy"),
         st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
-        st.Page(page_broker_accounts.render, title="Broker Accounts", icon="⚙️", url_path="broker-accounts"),
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं नवीन page (Bot Dynamic SR Algo — नवीन नियम-संच) —
+        # 1M Instant Trader आणि 15M/30M/60M Dynamic SR Reversal या दोन्ही strategies चे सर्व
+        # settings (Lots, ITM Depth, Hedge Width, SL/TSL/Target, Naked Option Trade toggle).
+        st.Page(page_bot_dynamic_sr_algo.render, title="Bot Dynamic SR Algo", icon="🤖", url_path="bot-dynamic-sr-algo"),
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Broker Accounts" हे स्वतंत्र नाव sidebar मधून
+        # काढून "Settings" केलं (आतलं काम तेच — पान/फाईल तीच आहे, फक्त नाव/जागा बदलली).
+        st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),
     ]
     pg = st.navigation(pages)
     pg.run()
