@@ -262,10 +262,13 @@ def _render_strategy_builder():
             sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
             selected_account = account_lookup.get(sel_account_label)
 
+            if selected_account is not None and selected_account["broker_type"] == "stocko":
+                st.warning("⚠️ Stocko वर अजून फक्त LIVE order-placement उपलब्ध आहे — PAPER mode साठी लागणारा LTP/Market Data API अजून जोडलेला नाही (वेगळा दस्तऐवज लागेल).")
+
             trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
             confirm_live = True
             if trading_mode_choice == "LIVE":
-                if selected_account is not None and selected_account["broker_type"] in ("fyers", "shoonya"):
+                if selected_account is not None and selected_account["broker_type"] in ("fyers", "shoonya", "stocko"):
                     st.warning(f"⚠️ {selected_account['broker_type'].title()} वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
                 confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
                 if not confirm_live:
