@@ -1,112 +1,77 @@
 """
 trade_monitor.py
-------------------
-🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुधारणा — established SRv2/Dynamic-S/R (आणि इतर सर्व
-established रणनीती) फक्त Entry (trade उघडणे) करत होत्या — SL/Target गाठल्यावर आपोआप Exit करणारी
-कुठलीही यंत्रणा अस्तित्वातच नव्हती (established sl_pnl_level/target_pnl_level फक्त database मध्ये
-साठवले जायचे, कधीच परत वाचून तपासले जायचे नाहीत).
+------------------------------------
+🎓 वापरकर्त्याने सापडवलेली, अत्यंत महत्त्वाची bug — ही script आधी `trading_engine.manage_open_trades()`
+ला कधीच बोलावतच नव्हती! स्वतःचंच, खूप जुनं, वेगळं exit-logic (फक्त sl_pnl_level/target_pnl_level —
+निश्चित रुपये-रकमा, entry-वेळीच साठवलेल्या) वापरत होती — त्यामुळे नंतर बांधलेलं संपूर्ण नवीन
+exit-तंत्रज्ञान (ITM strikes, Spot%+Premium-Points, TSL-to-Breakeven, Next-Level-Exit,
+Carry-Forward, PCR Gate — trading_engine.py मधलं सर्वकाही) **प्रत्यक्षात कधीच वापरलंच जात नव्हतं**.
 
-ही script established `live_trades` table मधले सर्व "OPEN" trades (कुठल्याही established रणनीतीने
-उघडलेले असोत — source काहीही असो) सतत तपासते, सद्य LTP वरून P&L काढून, established sl_pnl_level/
-target_pnl_level गाठले का बघते, आणि गाठले असल्यास established close_trade_manually() (नवीन
-exit_reason parameter सह) वापरून आपोआप बंद करते.
+🎓 वापरकर्त्याशी चर्चा करून सापडलेली आणि सोडवलेली Duplicate-Exit Bug — याआधी `engine_service.py`
+(वेगळा systemd timer) आणि हीच script दोघेही `manage_open_trades()` द्वारे **त्याच** live_trades
+वर, **त्याच वेळी**, स्वतंत्रपणे SL/Target/EOD तपासत होते — म्हणजे एकच trade दोनदा बंद होण्याचा
+धोका होता. आता सर्व logic इथेच एकत्र — तीच एकमेव, अधिकृत जागा (crontab, दर १ मिनिटाला).
+`load_settings`/`compute_atr_points`/`MONITORED_SYMBOLS` — engine_service.py मधूनच import
+(कोड दोनदा लिहू नये म्हणून, तीच फाईल आता फक्त या shared helpers साठी टिकवून ठेवलेली आहे).
 
-⚠️ VPS वर सतत (दर १ मिनिट) चालवण्यासाठी डिझाईन केलेली — GitHub Actions वर नाही (established ५-मिनिट
-मर्यादा, SL/Target-निरीक्षणासाठी खूपच धीमी).
+`monitoring_enabled` (Dashboard "Live Trading" टिक) इथे गेट म्हणून वापरलेला नाही — SRv2/
+Dynamic-S/R चे trades Dashboard च्या स्थितीपासून पूर्णपणे स्वतंत्र आहेत.
+
+⚠️ VPS वर सतत (दर १ मिनिट) चालवण्यासाठी डिझाईन केलेली — GitHub Actions वर नाही (५-मिनिट मर्यादा,
+SL/Target-निरीक्षणासाठी खूपच धीमी).
 
 चालवणे:
     python3 trade_monitor.py --token <UPSTOX_TOKEN>
 """
 import argparse
-import json
-import sqlite3
 
 import cloud_db
-from config import DB_PATH
-from notifications import send_telegram_message
-from trading_engine import close_trade_manually
-from upstox_api import fetch_ltp_map
+from engine_service import load_settings, compute_atr_points, MONITORED_SYMBOLS
+from notifications import notify_exit, notify_error, write_heartbeat
+from trading_engine import manage_open_trades
+
+SCRIPT_NAME = "trade_monitor"
 
 
-def get_all_open_trades():
-    """established live_trades table कडून सर्व 'OPEN' status चे trades वाचणे (कुठल्याही source/symbol चे असोत)."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT trade_id, symbol, legs_json, lots, lot_size, net_credit,
-                  sl_pnl_level, target_pnl_level, mode, source
-           FROM live_trades WHERE status='OPEN'"""
-    )
-    rows = cur.fetchall()
-    conn.close()
-    cols = ["trade_id", "symbol", "legs_json", "lots", "lot_size", "net_credit",
-            "sl_pnl_level", "target_pnl_level", "mode", "source"]
-    return [dict(zip(cols, row)) for row in rows]
-
-
-def compute_current_trade_pnl(legs, ltp_map, net_credit, lots, lot_size):
-    """established close_trade_manually() च्याच P&L-गणिताचा पुनर्वापर -- फक्त तपासण्यासाठी (बंद न करता)."""
-    cost_to_close_now = sum(
-        ltp_map[leg["instrument_key"]] * (1 if leg["transaction_type"] == "SELL" else -1)
-        for leg in legs
-    )
-    return (net_credit - cost_to_close_now) * lots * lot_size
-
-
-def check_trade_for_exit(current_pnl, sl_pnl_level, target_pnl_level):
-    """सद्य P&L, established sl_pnl_level (ऋण, तोट्याची पातळी) आणि target_pnl_level (धन, नफ्याची
-    पातळी) च्या तुलनेत -- कारण द्यायचं की नाही, आणि कारण काय, ते ठरवणे."""
-    if sl_pnl_level is not None and current_pnl <= sl_pnl_level:
-        return "SL_HIT"
-    if target_pnl_level is not None and current_pnl >= target_pnl_level:
-        return "TARGET_HIT"
-    return None
-
-
-def run_monitor_cycle(access_token, product_type="NRML"):
-    """एका cycle मध्ये, सर्व OPEN trades तपासून, आवश्यक असल्यास बंद करणे."""
-    open_trades = get_all_open_trades()
-    if not open_trades:
-        return "कुठलेही OPEN trades नाहीत."
+def run_monitor_cycle(access_token, product_type="D"):
+    """प्रत्येक symbol साठी, manage_open_trades() मार्फत सर्व OPEN trades तपासून, आवश्यक असल्यास
+    बंद करणे (SL/TSL/Target/EOD/Carry-Forward/Next-Level-Exit/OI-reversal-exit/Trailing-SL —
+    सर्व एकाच, अधिकृत ठिकाणाहून). एका symbol मध्ये त्रुटी आली तरी बाकीचे symbols तपासले जातच राहतात."""
+    settings = load_settings()
+    effective_product_type = settings.get("product_type", product_type)
 
     results = []
-    for trade in open_trades:
-        legs = json.loads(trade["legs_json"]) if trade["legs_json"] else []
-        if not legs:
-            continue
-        instrument_keys = [leg["instrument_key"] for leg in legs]
-        ltp_map = fetch_ltp_map(access_token, instrument_keys)
-        if any(ltp_map.get(k) is None for k in instrument_keys):
-            results.append(f"{trade['trade_id']}: सद्य LTP मिळाली नाही, वगळतोय")
-            continue
-
-        current_pnl = compute_current_trade_pnl(legs, ltp_map, trade["net_credit"], trade["lots"], trade["lot_size"])
-        exit_reason = check_trade_for_exit(current_pnl, trade["sl_pnl_level"], trade["target_pnl_level"])
-
-        if exit_reason is None:
-            results.append(f"{trade['trade_id']} ({trade['symbol']}, {trade['source']}): P&L ₹{current_pnl:.0f} — अजून OPEN")
-            continue
-
-        ok, close_result = close_trade_manually(access_token, trade["trade_id"], trade["symbol"], product_type, exit_reason=exit_reason)
-        if ok:
-            emoji = "🔴" if exit_reason == "SL_HIT" else "🟢"
-            message = (
-                f"{emoji} <b>{trade['symbol']} Trade बंद झाला ({exit_reason})</b>\n"
-                f"Trade ID: {trade['trade_id']} (source: {trade['source']})\n"
-                f"Realized P&L: ₹{close_result:.0f}"
+    any_symbol_succeeded = False
+    for symbol in MONITORED_SYMBOLS:
+        try:
+            atr_points = compute_atr_points(access_token, symbol, settings)
+            closed = manage_open_trades(
+                access_token, symbol, effective_product_type,
+                eod_squareoff_hour=settings.get("eod_squareoff_hour", 15),
+                eod_squareoff_minute=settings.get("eod_squareoff_minute", 15),
+                oi_reversal_exit_enabled=settings.get("oi_reversal_exit_enabled", False),
+                trailing_sl_enabled=settings.get("trailing_sl_enabled", False),
+                atr_points=atr_points,
+                atr_multiplier=settings.get("atr_multiplier", 1.5),
             )
-            send_telegram_message(message)
-            results.append(f"{trade['trade_id']}: {exit_reason} -> बंद झाला (P&L ₹{close_result:.0f})")
-        else:
-            results.append(f"{trade['trade_id']}: {exit_reason} आढळला, पण बंद करताना त्रुटी: {close_result}")
+            any_symbol_succeeded = True
+            for c in closed:
+                notify_exit(SCRIPT_NAME, symbol, c["trade_id"], c["reason"], c.get("pnl"))
+                results.append(f"{c['trade_id']} ({symbol}): {c['reason']} -> बंद झाला (P&L ₹{c['pnl']:.0f})")
+        except Exception as e:
+            notify_error(SCRIPT_NAME, f"{symbol}: {e}")
+            results.append(f"{symbol}: त्रुटी — {e}")
 
-    return "\n".join(results) if results else "कुठलेही trades तपासण्यासारखे नाहीत."
+    if any_symbol_succeeded:
+        write_heartbeat(SCRIPT_NAME)
+
+    return "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
-    parser.add_argument("--product-type", default="NRML")
+    parser.add_argument("--product-type", default="D")
     args = parser.parse_args()
 
     token = cloud_db.get_effective_upstox_token(args.token)
