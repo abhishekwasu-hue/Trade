@@ -452,6 +452,14 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
             )
+            # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("Target गाठूनही बंद होत नाही") सोडवण्यासाठी जोडलेली,
+            # तात्पुरती diagnostic नोंद — प्रत्येक cycle ला नेमकं गणित (अंदाज नाही, थेट पुरावा) दिसावा.
+            print(
+                f"🔎 {trade_id} ({symbol}, {strategy_name}) — entry_level={entry_level_price}, "
+                f"underlying_spot={underlying_spot}, premium_pnl_points={premium_pnl_points:.2f}, "
+                f"target_premium_points={target_premium_points}, target_spot_pct={target_spot_pct}, "
+                f"tsl_activated={tsl_activated}, exit_reason={point_exit_reason}"
+            )
             if tsl_now_activated != tsl_activated:
                 cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
 
