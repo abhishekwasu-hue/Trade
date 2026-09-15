@@ -1,9 +1,10 @@
 """Orders page — order book, System Diagnostics, and Data Safety / Broker Reconciliation."""
+import datetime
 import pandas as pd
 import streamlit as st
 
 from config import get_ist_now, get_ist_today
-from database import get_order_log, get_db_backup_bytes, restore_db_from_bytes
+from database import get_order_log, get_order_log_full, get_db_backup_bytes, restore_db_from_bytes
 from diagnostics import run_system_diagnostics
 from trading_engine import reconcile_positions
 from upstox_api import fetch_long_history, upload_to_google_drive
@@ -67,7 +68,29 @@ def render():
         st.info("अजून कोणतेही ऑर्डर्स नाहीत.")
     else:
         st.dataframe(orders_df, width='stretch', height=400)
-        st.caption(f"एकूण {len(orders_df)} ऑर्डर्स दाखवले (नवीनतम आधी) — Single, Basket, A1 Engine व SL/Target/EOD close या सर्वांच्या नोंदी.")
+        st.caption(f"एकूण {len(orders_df)} ऑर्डर्स दाखवले (नवीनतम आधी, फक्त अलीकडचे २००) — Single, Basket, A1 Engine व SL/Target/EOD close या सर्वांच्या नोंदी.")
+
+    st.markdown("##### 📥 Order Log डाऊनलोड करा (तारखेनुसार)")
+    st.caption("वरचा टेबल फक्त अलीकडचे २०० ऑर्डर्स दाखवतो — इथे कुठल्याही तारीख-रेंजमधले सर्व ऑर्डर्स CSV म्हणून डाऊनलोड करता येतील.")
+    odlcol1, odlcol2 = st.columns(2)
+    with odlcol1:
+        order_dl_from = st.date_input("पासून", value=get_ist_today() - datetime.timedelta(days=30), key="orders_dl_from")
+    with odlcol2:
+        order_dl_to = st.date_input("पर्यंत", value=get_ist_today(), key="orders_dl_to")
+    if order_dl_from > order_dl_to:
+        st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+    else:
+        order_dl_df = get_order_log_full(symbol, start_date=order_dl_from, end_date=order_dl_to, mode_filter=ord_mode_f)
+        if order_dl_df.empty:
+            st.info("या कालावधीत कोणतेही ऑर्डर्स सापडले नाहीत.")
+        else:
+            st.caption(f"{len(order_dl_df)} ऑर्डर्स सापडले ({order_dl_from} ते {order_dl_to}).")
+            order_dl_csv = order_dl_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Order Log CSV डाऊनलोड करा", data=order_dl_csv,
+                file_name=f"{symbol}_OrderLog_{order_dl_from}_{order_dl_to}.csv",
+                mime="text/csv", key="orders_dl_download",
+            )
 
     st.markdown("---")
     with st.expander("🛡️ Data Safety & Broker Reconciliation"):
