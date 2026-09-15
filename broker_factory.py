@@ -11,6 +11,7 @@ import cloud_db
 from upstox_broker_adapter import UpstoxBrokerAdapter
 from fyers_broker_adapter import FyersBrokerAdapter
 from shoonya_broker_adapter import ShoonyaBrokerAdapter
+from stocko_broker_adapter import StockoBrokerAdapter
 
 
 def get_broker_adapter(account_id, broker_type):
@@ -46,6 +47,17 @@ def get_broker_adapter(account_id, broker_type):
         if not token:
             return None, f"{account_id}: Shoonya token उपलब्ध नाही (Supabase मध्ये साठवलेला नाही)."
         return ShoonyaBrokerAdapter(access_token=token, account_id=account_id), None
+
+    if broker_type == "stocko":
+        # 🎓 वापरकर्त्याच्या विनंतीवरून, वापरकर्त्याने दिलेल्या अधिकृत Stocko API PDF वरून जोडलेलं.
+        # ⚠️ प्रामाणिक टीप — Order/Funds/Positions पडताळलेल्या PDF वरून अचूक बांधलेले आहेत, पण
+        # LTP/Option Chain/Historical Candles साठी endpoint PDF मध्ये सापडले नाहीत (stocko_api.py
+        # वरचे इशारे बघा) — त्यामुळे Stocko अजून Strategy Builder/A1 Engine साठी वापरता येणार
+        # नाही, फक्त मॅन्युअली (strike/instrument_token माहीत असलेले) orders साठी.
+        token = cloud_db.get_effective_upstox_token(None, account_id=account_id)
+        if not token:
+            return None, f"{account_id}: Stocko token उपलब्ध नाही (Supabase मध्ये साठवलेला नाही)."
+        return StockoBrokerAdapter(access_token=token, account_id=account_id), None
 
     return None, f"{account_id}: अज्ञात broker_type '{broker_type}'."
 

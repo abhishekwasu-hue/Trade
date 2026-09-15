@@ -63,7 +63,7 @@ def render():
                 "कधीकधी टॅब बदलताना जुनी माहिती विसरतो. यासाठी App ID/Secret एका नोट्स ॲपमध्ये आधीच "
                 "कॉपी ठेवलं तर पुन्हा टाकणं झटपट होईल."
             )
-            wiz_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya"], key="wiz_broker_type")
+            wiz_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya", "stocko"], key="wiz_broker_type")
             wiz_account_id = st.text_input(
                 "Account ID (तुम्हीच ठरवलेलं, कुठलंही unique नाव — उदा. 'Abhi-Fyers'; हा Broker चा User ID नाही, फक्त इथलं लेबल)",
                 key="wiz_account_id",
@@ -76,34 +76,51 @@ def render():
 
             st.markdown("---")
 
-            if wiz_broker_type in ("upstox", "fyers"):
+            if wiz_broker_type in ("upstox", "fyers", "stocko"):
                 st.markdown(f"**{wiz_broker_type.title()} Developer App तपशील**")
                 # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("खरंच user-friendly आहे का?") — पहिल्यांदाच हे करणाऱ्याला
                 # "App ID कुठून मिळणार" हेच माहीत नसतं — इथेच स्पष्ट मार्गदर्शन.
                 if wiz_broker_type == "upstox":
                     st.caption("🔗 App नसेल तर आधी तयार करा: [Upstox Developer Console](https://account.upstox.com/developer/apps)")
-                else:
+                elif wiz_broker_type == "fyers":
                     st.caption("🔗 App नसेल तर आधी तयार करा: [Fyers Developer Console](https://myapi.fyers.in/dashboard)")
+                else:
+                    st.caption("🔗 OAuth2 Client ID/Secret Stocko (SAS Online) कडून मिळतं — तुमच्या खात्याशी संबंधित व्यक्तीशी/सपोर्टशी संपर्क करा.")
+                    import os as _os
+                    if not _os.environ.get("STOCKO_BASE_URL"):
+                        st.warning("⚠️ STOCKO_BASE_URL environment variable अजून सेट केलेला नाही — तो सेट केल्याशिवाय Stocko login काम करणार नाही (Stocko कडून खरं मूल्य मिळवा).")
                 st.caption("Redirect URI कुठलाही चालतो (उदा. `https://127.0.0.1`) — फक्त App मध्ये नोंदवलेला आणि इथे टाकलेला **तंतोतंत सारखाच** हवा.")
                 if wiz_broker_type == "upstox":
                     wiz_app_id = st.text_input("Client ID", key="wiz_upstox_client_id")
                     wiz_app_secret = st.text_input("Client Secret", type="password", key="wiz_upstox_client_secret")
-                else:
+                elif wiz_broker_type == "fyers":
                     wiz_app_id = st.text_input("App ID (उदा. XXXXXX-100)", key="wiz_fyers_app_id")
                     wiz_app_secret = st.text_input("App Secret", type="password", key="wiz_fyers_app_secret")
+                else:
+                    wiz_app_id = st.text_input("OAuth2 Client ID", key="wiz_stocko_client_id")
+                    wiz_app_secret = st.text_input("OAuth2 Client Secret", type="password", key="wiz_stocko_client_secret")
                 wiz_redirect_uri = st.text_input(
                     "Redirect URI (तुमच्या App मध्ये नोंदवलेलाच, तंतोतंत तसाच)",
                     key="wiz_redirect_uri",
                 )
+                wiz_stocko_api_client_id = ""
+                if wiz_broker_type == "stocko":
+                    wiz_stocko_api_client_id = st.text_input(
+                        "तुमचा Stocko ट्रेडिंग Login ID (OAuth2 Client ID पेक्षा वेगळा — हा जवळजवळ प्रत्येक API कॉलला लागतो)",
+                        key="wiz_stocko_api_client_id",
+                    )
 
                 if st.button("१. Login URL तयार करा", key="wiz_gen_url"):
-                    if not (wiz_account_id.strip() and wiz_app_id.strip() and wiz_app_secret.strip() and wiz_redirect_uri.strip()):
-                        st.error("वरची सर्व माहिती (Account ID, App ID/Client ID, Secret, Redirect URI) आधी भरा.")
+                    if not (wiz_account_id.strip() and wiz_app_id.strip() and wiz_app_secret.strip() and wiz_redirect_uri.strip()
+                            and (wiz_broker_type != "stocko" or wiz_stocko_api_client_id.strip())):
+                        st.error("वरची सर्व माहिती (Account ID, Client ID, Secret, Redirect URI" + (", ट्रेडिंग Login ID" if wiz_broker_type == "stocko" else "") + ") आधी भरा.")
                     else:
                         if wiz_broker_type == "upstox":
                             from get_upstox_token_manual import build_login_url as _build_url
-                        else:
+                        elif wiz_broker_type == "fyers":
                             from get_fyers_token_manual import build_login_url as _build_url
+                        else:
+                            from get_stocko_token_manual import build_login_url as _build_url
                         st.session_state["wiz_login_url"] = _build_url(wiz_app_id.strip(), wiz_redirect_uri.strip())
 
                 if st.session_state.get("wiz_login_url"):
@@ -135,10 +152,16 @@ def render():
                                 token, error = exchange_code_for_token(
                                     wiz_app_id.strip(), wiz_app_secret.strip(), wiz_redirect_uri.strip(), wiz_auth_code.strip(),
                                 )
-                            else:
+                            elif wiz_broker_type == "fyers":
                                 from fyers_api import exchange_auth_code_for_token
                                 token, error = exchange_auth_code_for_token(
                                     wiz_app_id.strip(), wiz_app_secret.strip(), wiz_auth_code.strip(),
+                                )
+                            else:
+                                from stocko_api import exchange_auth_code_for_token
+                                token, error = exchange_auth_code_for_token(
+                                    wiz_app_id.strip(), wiz_app_secret.strip(), wiz_auth_code.strip(),
+                                    wiz_redirect_uri.strip(), wiz_stocko_api_client_id.strip(),
                                 )
 
                             if error:
@@ -157,7 +180,7 @@ def render():
                                     st.warning("⚠️ token/account साठवताना अंशतः अयशस्वी — SUPABASE_DB_URL सेट आहे का तपासा.")
 
                 st.caption(
-                    "🔁 **रोजची आठवण** — Upstox/Fyers दोन्हीचे token रोज expire होतात (broker च्याच धोरणामुळे). "
+                    "🔁 **रोजची आठवण** — Upstox/Fyers/Stocko तिन्हीचे token रोज expire होतात (broker च्याच धोरणामुळे). "
                     "रोज सकाळी हीच पायरी (Login URL → लॉगिन → code पेस्ट → Setup पूर्ण करा) पुन्हा करावी लागेल — "
                     "'Account नोंदणी' पुन्हा करावी लागणार नाही (आपोआप अद्ययावत/upsert होते), फक्त token ताजा होतो."
                 )
@@ -237,9 +260,9 @@ def render():
                 )
 
         with st.expander("🔧 Advanced — आधीच token असेल तर (फक्त Account नोंदणी)", expanded=False):
-            st.caption("जर तुम्ही CLI script (get_upstox_token_manual.py/get_fyers_token_manual.py/get_shoonya_token_manual.py) द्वारे आधीच token साठवलेला असेल, तर फक्त Account इथे नोंदवा.")
+            st.caption("जर तुम्ही CLI script (get_upstox_token_manual.py/get_fyers_token_manual.py/get_shoonya_token_manual.py/get_stocko_token_manual.py) द्वारे आधीच token साठवलेला असेल, तर फक्त Account इथे नोंदवा.")
             new_account_id = st.text_input("Account ID (unique नाव, उदा. 'Abhi-Upstox-Main')", key="new_account_id")
-            new_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya"], key="new_broker_type")
+            new_broker_type = st.selectbox("Broker", ["upstox", "fyers", "shoonya", "stocko"], key="new_broker_type")
             new_nickname = st.text_input("Nickname (ऐच्छिक, उदा. 'माझं मुख्य खातं')", key="new_nickname")
             new_lot_multiplier = st.number_input("Lot Multiplier (उदा. 2.0 म्हणजे established base-lots च्या दुप्पट)", min_value=0.1, value=1.0, step=0.1, key="new_lot_multiplier")
             if st.button("Account जोडा", type="primary"):
