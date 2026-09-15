@@ -367,6 +367,168 @@ def _render_strategy_builder():
 
 
 @st.fragment
+def _render_advanced_oi_charts():
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix) — Multi-Strike OI निवड
+    (multiselect) बदलल्यावर आधी संपूर्ण Dashboard पुन्हा चालायचा. आता वेगळा fragment —
+    फक्त हाच भाग रीरन होतो. हा भाग पूर्णपणे वाचनीय (read-only, फक्त Supabase/SQLite मधून
+    इतिहास वाचतो) आहे — कुठल्याही trading निर्णयावर परिणाम करणारा state इथे तयार होत नाही."""
+    from cloud_db import is_cloud_db_configured
+
+    symbol = st.session_state["symbol"]
+    atm_strike = st.session_state["atm_strike"]
+    today_str = get_ist_now().strftime("%Y-%m-%d")
+
+    with st.expander("📈 Advanced OI Charts (PCR + Multi-Strike + Replay) — क्लिक करून उघडा", expanded=False):
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Option OI vs Time" सारखा
+        # chart (PCR + NIFTY किंमत, वेळेनुसार) — established get_oi_price_history_cloud() (आधीच
+        # साठवलेला underlying_price वापरून) पुनर्वापर करून.
+        st.markdown("##### 📈 PCR + किंमत — वेळेनुसार (Sensibull-सारखं)")
+        try:
+            if is_cloud_db_configured():
+                from cloud_db import get_oi_price_history_cloud
+                price_history_rows = get_oi_price_history_cloud(symbol, today_str)
+            else:
+                conn_ph = sqlite3.connect(DB_PATH)
+                price_history_rows = pd.read_sql_query(
+                    """SELECT snapshot_time, total_call_oi, total_put_oi, underlying_price
+                       FROM oi_diff_snapshots WHERE symbol=? AND trade_date=?
+                       ORDER BY snapshot_time ASC""",
+                    conn_ph, params=(symbol, today_str),
+                ).to_dict("records")
+                conn_ph.close()
+
+            if not price_history_rows:
+                st.caption("अजून पुरेसा इतिहास नाही (किमान २ snapshots हवेत).")
+            else:
+                ph_df = pd.DataFrame(price_history_rows)
+                ph_df["pcr"] = ph_df.apply(lambda r: (r["total_put_oi"] / r["total_call_oi"]) if r["total_call_oi"] else 0, axis=1)
+
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots
+                fig_pcr = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_put_oi"], name="Put OI", marker_color="#089981", opacity=0.5), secondary_y=False)
+                fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_call_oi"], name="Call OI", marker_color="#F23645", opacity=0.5), secondary_y=False)
+                fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["pcr"], name="PCR", line=dict(color="#2962ff", width=2)), secondary_y=True)
+                if ph_df["underlying_price"].notna().any():
+                    fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["underlying_price"], name=symbol, line=dict(color="#787b86", width=2)), secondary_y=True)
+                fig_pcr.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
+                fig_pcr.update_yaxes(title_text="OI", secondary_y=False)
+                fig_pcr.update_yaxes(title_text="PCR / किंमत", secondary_y=True)
+                st.plotly_chart(fig_pcr, use_container_width=True)
+        except Exception as e:
+            st.caption(f"PCR chart मध्ये चूक: {type(e).__name__}: {e}")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Multi Strike OI" सारखं —
+        # निवडलेल्या strikes चा OI, वेळेनुसार. आजपासूनच डेटा जमा होईल (आधी per-strike इतिहास साठवलाच
+        # जात नव्हता), त्यामुळे सुरुवातीला थोडा (काही तासांचा) इतिहासच दिसेल.
+        st.markdown("##### 📊 Multi-Strike OI (वेळेनुसार) — आजपासूनचा इतिहास")
+        # 🎓 वापरकर्त्याने आधी दाखवलेल्या UnboundLocalError शीच सुसंगत, डीफेन्सिव्ह default —
+        # खालच्या try-block मध्ये कुठेही exception आलं (assignment आधीच), तरी पुढच्या (Replay)
+        # विभागात हा variable कधीच "undefined" राहणार नाही.
+        all_strike_oi = None
+        try:
+            if is_cloud_db_configured():
+                from cloud_db import get_strike_oi_history
+                all_strike_oi = get_strike_oi_history(symbol, today_str)
+            else:
+                all_strike_oi = None
+                st.caption("Cloud DB configured नाही — Multi-Strike OI साठी Supabase हवाच.")
+
+            if all_strike_oi is None or all_strike_oi.empty:
+                st.caption("अजून कुठलाही per-strike इतिहास नाही — collector काही वेळ चालल्यावर इथे दिसेल.")
+            else:
+                available_msoi_strikes = sorted(all_strike_oi["strike"].unique())
+                default_strikes = [s for s in available_msoi_strikes if abs(s - atm_strike) <= 100]
+                selected_strikes = st.multiselect("कुठले Strikes बघायचे", available_msoi_strikes, default=default_strikes or available_msoi_strikes[:4])
+
+                if selected_strikes:
+                    filtered = all_strike_oi[all_strike_oi["strike"].isin(selected_strikes)]
+                    import plotly.graph_objects as go
+                    fig_msoi = go.Figure()
+                    for (strike_val, opt_type), grp in filtered.groupby(["strike", "option_type"]):
+                        grp_sorted = grp.sort_values("snapshot_time")
+                        fig_msoi.add_trace(go.Scatter(
+                            x=grp_sorted["snapshot_time"], y=grp_sorted["oi"],
+                            name=f"{strike_val:.0f} {opt_type}", mode="lines+markers",
+                        ))
+                    fig_msoi.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10),
+                                            xaxis_title="वेळ", yaxis_title="Open Interest")
+                    st.plotly_chart(fig_msoi, use_container_width=True)
+        except Exception as e:
+            st.caption(f"Multi-Strike OI मध्ये चूक: {type(e).__name__}: {e}")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "OI Change Replay" सारखं —
+        # दिवसभरातल्या प्रत्येक strike च्या OI बदलाचं animated playback (Plotly frames वापरून).
+        st.markdown("##### 🎬 OI Change Replay (दिवसभराचं Playback)")
+        try:
+            if is_cloud_db_configured() and all_strike_oi is not None and not all_strike_oi.empty:
+                replay_times = sorted(all_strike_oi["snapshot_time"].unique())
+                if len(replay_times) < 2:
+                    st.caption("Replay साठी किमान २ snapshots हवेत — अजून पुरेसा इतिहास जमा झालेला नाही.")
+                else:
+                    import plotly.graph_objects as go
+                    all_replay_strikes = sorted(all_strike_oi["strike"].unique())
+                    frames = []
+                    for t in replay_times:
+                        snap = all_strike_oi[all_strike_oi["snapshot_time"] == t]
+                        ce_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "CE")]["oi"].sum() for s in all_replay_strikes]
+                        pe_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "PE")]["oi"].sum() for s in all_replay_strikes]
+                        frames.append(go.Frame(
+                            data=[go.Bar(x=all_replay_strikes, y=ce_vals, name="Call OI", marker_color="#F23645"),
+                                  go.Bar(x=all_replay_strikes, y=pe_vals, name="Put OI", marker_color="#089981")],
+                            name=t,
+                        ))
+                    fig_replay = go.Figure(data=frames[0].data, frames=frames)
+                    fig_replay.update_layout(
+                        template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group",
+                        xaxis_title="Strike", yaxis_title="Open Interest",
+                        updatemenus=[{"type": "buttons", "buttons": [
+                            {"label": "▶️ Play", "method": "animate", "args": [None, {"frame": {"duration": 700, "redraw": True}, "fromcurrent": True}]},
+                            {"label": "⏸️ Pause", "method": "animate", "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
+                        ]}],
+                        sliders=[{"steps": [{"args": [[t], {"frame": {"duration": 0, "redraw": True}, "mode": "immediate"}],
+                                              "label": t, "method": "animate"} for t in replay_times]}],
+                    )
+                    st.plotly_chart(fig_replay, use_container_width=True)
+            else:
+                st.caption("Replay साठी Multi-Strike OI डेटा हवा (वर बघा).")
+        except Exception as e:
+            st.caption(f"OI Change Replay मध्ये चूक: {type(e).__name__}: {e}")
+
+
+
+@st.fragment
+def _render_rollover_analysis():
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix) — Rollover बटण दाबल्यावर आधी
+    संपूर्ण Dashboard पुन्हा चालायचा (chart, Signal Engine सकट). आता वेगळा fragment —
+    Rollover चा निकाल आधीच session_state (rollover_cache) मध्ये साठवला जातो — इथे
+    फक्त हाच भाग रीरन होतो, बाकीचं पान अजिबात हलत नाही."""
+    raw_chain = st.session_state["raw_chain"]
+    atm_strike = st.session_state["atm_strike"]
+    token_input = st.session_state["token_input"]
+    symbol = st.session_state["symbol"]
+
+    st.markdown("##### 📅 Rollover Analysis")
+    st.caption("पुढच्या expiry चा डेटा लागतो म्हणून हे on-demand आहे (extra API कॉल्स).")
+    if st.button("🔍 Rollover काढा", key="rollover_btn"):
+        with st.spinner("पुढच्या expiry चा डेटा फेच होत आहे..."):
+            near_chain_ro = raw_chain
+            next_chain_ro, next_expiry_ro = fetch_next_expiry_option_chain(token_input, symbol)
+            rollover_display = compute_rollover_proxy(near_chain_ro, next_chain_ro, atm_strike) if next_chain_ro else None
+            st.session_state["rollover_cache"] = rollover_display
+        if rollover_display:
+            st.metric("Rollover %", f"{rollover_display['rollover_pct']}%")
+            coc_str = f"₹{rollover_display['cost_of_carry']:+,.2f}" if rollover_display["cost_of_carry"] is not None else "N/A"
+            st.caption(
+                f"Cost-of-Carry (पुढची − जवळची synthetic future): {coc_str} → Bias: {rollover_display['bias']}\n\n"
+                f"Near OI: {rollover_display['near_expiry_total_oi']:,} · Next OI: {rollover_display['next_expiry_total_oi']:,}"
+            )
+        else:
+            st.warning("Rollover डेटा मिळाला नाही (पुढची expiry उपलब्ध नसेल किंवा API त्रुटी).")
+
+
+
+@st.fragment
 def _render_manual_trading_panel():
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix) — Manual Trading Panel आधी render()
     च्याच मोठ्या function मध्ये होता, म्हणून Strike/Option/Lots निवडणे यासारख्या छोट्या interactions
@@ -1332,122 +1494,7 @@ def render():
 
             st.dataframe(styled_hist, width='stretch', height=450)
 
-        with st.expander("📈 Advanced OI Charts (PCR + Multi-Strike + Replay) — क्लिक करून उघडा", expanded=False):
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Option OI vs Time" सारखा
-            # chart (PCR + NIFTY किंमत, वेळेनुसार) — established get_oi_price_history_cloud() (आधीच
-            # साठवलेला underlying_price वापरून) पुनर्वापर करून.
-            st.markdown("##### 📈 PCR + किंमत — वेळेनुसार (Sensibull-सारखं)")
-            try:
-                if is_cloud_db_configured():
-                    from cloud_db import get_oi_price_history_cloud
-                    price_history_rows = get_oi_price_history_cloud(symbol, today_str)
-                else:
-                    conn_ph = sqlite3.connect(DB_PATH)
-                    price_history_rows = pd.read_sql_query(
-                        """SELECT snapshot_time, total_call_oi, total_put_oi, underlying_price
-                           FROM oi_diff_snapshots WHERE symbol=? AND trade_date=?
-                           ORDER BY snapshot_time ASC""",
-                        conn_ph, params=(symbol, today_str),
-                    ).to_dict("records")
-                    conn_ph.close()
-
-                if not price_history_rows:
-                    st.caption("अजून पुरेसा इतिहास नाही (किमान २ snapshots हवेत).")
-                else:
-                    ph_df = pd.DataFrame(price_history_rows)
-                    ph_df["pcr"] = ph_df.apply(lambda r: (r["total_put_oi"] / r["total_call_oi"]) if r["total_call_oi"] else 0, axis=1)
-
-                    import plotly.graph_objects as go
-                    from plotly.subplots import make_subplots
-                    fig_pcr = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_put_oi"], name="Put OI", marker_color="#089981", opacity=0.5), secondary_y=False)
-                    fig_pcr.add_trace(go.Bar(x=ph_df["snapshot_time"], y=ph_df["total_call_oi"], name="Call OI", marker_color="#F23645", opacity=0.5), secondary_y=False)
-                    fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["pcr"], name="PCR", line=dict(color="#2962ff", width=2)), secondary_y=True)
-                    if ph_df["underlying_price"].notna().any():
-                        fig_pcr.add_trace(go.Scatter(x=ph_df["snapshot_time"], y=ph_df["underlying_price"], name=symbol, line=dict(color="#787b86", width=2)), secondary_y=True)
-                    fig_pcr.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
-                    fig_pcr.update_yaxes(title_text="OI", secondary_y=False)
-                    fig_pcr.update_yaxes(title_text="PCR / किंमत", secondary_y=True)
-                    st.plotly_chart(fig_pcr, use_container_width=True)
-            except Exception as e:
-                st.caption(f"PCR chart मध्ये चूक: {type(e).__name__}: {e}")
-
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Multi Strike OI" सारखं —
-            # निवडलेल्या strikes चा OI, वेळेनुसार. आजपासूनच डेटा जमा होईल (आधी per-strike इतिहास साठवलाच
-            # जात नव्हता), त्यामुळे सुरुवातीला थोडा (काही तासांचा) इतिहासच दिसेल.
-            st.markdown("##### 📊 Multi-Strike OI (वेळेनुसार) — आजपासूनचा इतिहास")
-            # 🎓 वापरकर्त्याने आधी दाखवलेल्या UnboundLocalError शीच सुसंगत, डीफेन्सिव्ह default —
-            # खालच्या try-block मध्ये कुठेही exception आलं (assignment आधीच), तरी पुढच्या (Replay)
-            # विभागात हा variable कधीच "undefined" राहणार नाही.
-            all_strike_oi = None
-            try:
-                if is_cloud_db_configured():
-                    from cloud_db import get_strike_oi_history
-                    all_strike_oi = get_strike_oi_history(symbol, today_str)
-                else:
-                    all_strike_oi = None
-                    st.caption("Cloud DB configured नाही — Multi-Strike OI साठी Supabase हवाच.")
-
-                if all_strike_oi is None or all_strike_oi.empty:
-                    st.caption("अजून कुठलाही per-strike इतिहास नाही — collector काही वेळ चालल्यावर इथे दिसेल.")
-                else:
-                    available_msoi_strikes = sorted(all_strike_oi["strike"].unique())
-                    default_strikes = [s for s in available_msoi_strikes if abs(s - atm_strike) <= 100]
-                    selected_strikes = st.multiselect("कुठले Strikes बघायचे", available_msoi_strikes, default=default_strikes or available_msoi_strikes[:4])
-
-                    if selected_strikes:
-                        filtered = all_strike_oi[all_strike_oi["strike"].isin(selected_strikes)]
-                        import plotly.graph_objects as go
-                        fig_msoi = go.Figure()
-                        for (strike_val, opt_type), grp in filtered.groupby(["strike", "option_type"]):
-                            grp_sorted = grp.sort_values("snapshot_time")
-                            fig_msoi.add_trace(go.Scatter(
-                                x=grp_sorted["snapshot_time"], y=grp_sorted["oi"],
-                                name=f"{strike_val:.0f} {opt_type}", mode="lines+markers",
-                            ))
-                        fig_msoi.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10),
-                                                xaxis_title="वेळ", yaxis_title="Open Interest")
-                        st.plotly_chart(fig_msoi, use_container_width=True)
-            except Exception as e:
-                st.caption(f"Multi-Strike OI मध्ये चूक: {type(e).__name__}: {e}")
-
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "OI Change Replay" सारखं —
-            # दिवसभरातल्या प्रत्येक strike च्या OI बदलाचं animated playback (Plotly frames वापरून).
-            st.markdown("##### 🎬 OI Change Replay (दिवसभराचं Playback)")
-            try:
-                if is_cloud_db_configured() and all_strike_oi is not None and not all_strike_oi.empty:
-                    replay_times = sorted(all_strike_oi["snapshot_time"].unique())
-                    if len(replay_times) < 2:
-                        st.caption("Replay साठी किमान २ snapshots हवेत — अजून पुरेसा इतिहास जमा झालेला नाही.")
-                    else:
-                        import plotly.graph_objects as go
-                        all_replay_strikes = sorted(all_strike_oi["strike"].unique())
-                        frames = []
-                        for t in replay_times:
-                            snap = all_strike_oi[all_strike_oi["snapshot_time"] == t]
-                            ce_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "CE")]["oi"].sum() for s in all_replay_strikes]
-                            pe_vals = [snap[(snap["strike"] == s) & (snap["option_type"] == "PE")]["oi"].sum() for s in all_replay_strikes]
-                            frames.append(go.Frame(
-                                data=[go.Bar(x=all_replay_strikes, y=ce_vals, name="Call OI", marker_color="#F23645"),
-                                      go.Bar(x=all_replay_strikes, y=pe_vals, name="Put OI", marker_color="#089981")],
-                                name=t,
-                            ))
-                        fig_replay = go.Figure(data=frames[0].data, frames=frames)
-                        fig_replay.update_layout(
-                            template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group",
-                            xaxis_title="Strike", yaxis_title="Open Interest",
-                            updatemenus=[{"type": "buttons", "buttons": [
-                                {"label": "▶️ Play", "method": "animate", "args": [None, {"frame": {"duration": 700, "redraw": True}, "fromcurrent": True}]},
-                                {"label": "⏸️ Pause", "method": "animate", "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
-                            ]}],
-                            sliders=[{"steps": [{"args": [[t], {"frame": {"duration": 0, "redraw": True}, "mode": "immediate"}],
-                                                  "label": t, "method": "animate"} for t in replay_times]}],
-                        )
-                        st.plotly_chart(fig_replay, use_container_width=True)
-                else:
-                    st.caption("Replay साठी Multi-Strike OI डेटा हवा (वर बघा).")
-            except Exception as e:
-                st.caption(f"OI Change Replay मध्ये चूक: {type(e).__name__}: {e}")
+        _render_advanced_oi_charts()
 
 
         with st.expander("ℹ️ Signal Logic कसं काम करतं"):
@@ -1542,23 +1589,7 @@ def render():
                 st.info("Max Pain काढण्यासाठी पुरेसा OI डेटा नाही.")
 
         with adv4:
-            st.markdown("##### 📅 Rollover Analysis")
-            st.caption("पुढच्या expiry चा डेटा लागतो म्हणून हे on-demand आहे (extra API कॉल्स).")
-            if st.button("🔍 Rollover काढा", key="rollover_btn"):
-                with st.spinner("पुढच्या expiry चा डेटा फेच होत आहे..."):
-                    near_chain_ro = raw_chain
-                    next_chain_ro, next_expiry_ro = fetch_next_expiry_option_chain(token_input, symbol)
-                    rollover_display = compute_rollover_proxy(near_chain_ro, next_chain_ro, atm_strike) if next_chain_ro else None
-                    st.session_state["rollover_cache"] = rollover_display
-                if rollover_display:
-                    st.metric("Rollover %", f"{rollover_display['rollover_pct']}%")
-                    coc_str = f"₹{rollover_display['cost_of_carry']:+,.2f}" if rollover_display["cost_of_carry"] is not None else "N/A"
-                    st.caption(
-                        f"Cost-of-Carry (पुढची − जवळची synthetic future): {coc_str} → Bias: {rollover_display['bias']}\n\n"
-                        f"Near OI: {rollover_display['near_expiry_total_oi']:,} · Next OI: {rollover_display['next_expiry_total_oi']:,}"
-                    )
-                else:
-                    st.warning("Rollover डेटा मिळाला नाही (पुढची expiry उपलब्ध नसेल किंवा API त्रुटी).")
+            _render_rollover_analysis()
 
 
         # =========================================================
