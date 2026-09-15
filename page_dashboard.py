@@ -367,6 +367,240 @@ def _render_strategy_builder():
 
 
 @st.fragment
+def _render_manual_trading_panel():
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix) — Manual Trading Panel आधी render()
+    च्याच मोठ्या function मध्ये होता, म्हणून Strike/Option/Lots निवडणे यासारख्या छोट्या interactions
+    नेही संपूर्ण Dashboard (chart, OI Analysis, Signal Engine — सर्व Upstox API कॉल्स + गणनेसकट)
+    पुन्हा चालायचा. आता वेगळा fragment — आतले rerun्स (Strike बदलणे, Basket मध्ये जोडणे, Order
+    प्लेस करणे) फक्त हाच पॅनल रीरन करतात, बाकीचं पान अजिबात हलत नाही."""
+    symbol = st.session_state["symbol"]
+    raw_chain = st.session_state["raw_chain"]
+    atm_strike = st.session_state["atm_strike"]
+    lot_size = st.session_state["lot_size"]
+    token_input = st.session_state["token_input"]
+    product_type = st.session_state["product_type"]
+    trading_mode = st.session_state["trading_mode"]
+    trading_style = st.session_state["trading_style"]
+    enable_live_trading = st.session_state["enable_live_trading"]
+    confirm_live_trading = st.session_state["confirm_live_trading"]
+
+    st.markdown("---")
+    with st.expander("🖐️ Manual Trading Panel (क्लिक करून उघडा — Option विकत घेणे/विकणे)", expanded=False):
+        st.subheader("🖐️ Manual Trading Panel")
+        st.caption(
+            "वरील Option Chain मधून कोणताही strike/CE/PE निवडून थेट ऑर्डर द्या, किंवा अनेक legs Basket मध्ये "
+            "जमा करून एकत्र प्लेस करा. Order Types: MARKET, LIMIT, SL, SL-M. लाईव्ह प्लेसमेंटसाठी साईडबारमधील "
+            "'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आवश्यक आहेत."
+        )
+
+        if "order_basket" not in st.session_state:
+            st.session_state.order_basket = []
+
+        available_strikes = sorted({item.get("strike_price") for item in raw_chain if item.get("strike_price") is not None})
+
+        if not available_strikes:
+            st.warning("Option chain मधून strikes उपलब्ध नाहीत.")
+        else:
+            mtc1, mtc2, mtc3, mtc4 = st.columns(4)
+            with mtc1:
+                default_strike = st.session_state.get("clicked_strike_from_chain")
+                if default_strike is not None and default_strike in available_strikes:
+                    default_idx = available_strikes.index(default_strike)
+                elif atm_strike in available_strikes:
+                    default_idx = available_strikes.index(atm_strike)
+                else:
+                    default_idx = 0
+                manual_strike = st.selectbox("Strike", available_strikes, index=default_idx, key="manual_strike")
+            with mtc2:
+                manual_side = st.selectbox("Option", ["CE", "PE"], key="manual_side")
+            with mtc3:
+                manual_txn = st.selectbox("Action", ["BUY", "SELL"], key="manual_txn")
+            with mtc4:
+                manual_order_type = st.selectbox("Order Type", ["MARKET", "LIMIT", "SL", "SL-M"], key="manual_order_type")
+
+            mtc5, mtc6, mtc7 = st.columns(3)
+            with mtc5:
+                manual_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="manual_lots")
+            with mtc6:
+                manual_price = st.number_input(
+                    "Price (LIMIT / SL साठी आवश्यक)", min_value=0.0, value=0.0, step=0.05,
+                    key="manual_price", disabled=manual_order_type not in ("LIMIT", "SL"),
+                )
+            with mtc7:
+                manual_trigger = st.number_input(
+                    "Trigger Price (SL / SL-M साठी आवश्यक)", min_value=0.0, value=0.0, step=0.05,
+                    key="manual_trigger", disabled=manual_order_type not in ("SL", "SL-M"),
+                )
+
+            manual_set_sl_target = st.checkbox("SL/Target सेट करा (ऐच्छिक — नाही तर फक्त EOD/मॅन्युअल Close ने बंद होईल)", key="manual_set_sltgt")
+            manual_sl_amount, manual_target_amount = None, None
+            if manual_set_sl_target:
+                sltc1, sltc2 = st.columns(2)
+                with sltc1:
+                    manual_sl_amount = st.number_input("SL (₹ तोटा, संपूर्ण पोझिशन)", min_value=0.0, value=1000.0, step=100.0, key="manual_sl_amt")
+                with sltc2:
+                    manual_target_amount = st.number_input("Target (₹ नफा, संपूर्ण पोझिशन)", min_value=0.0, value=2000.0, step=100.0, key="manual_target_amt")
+
+            side_key = "call_options" if manual_side == "CE" else "put_options"
+            manual_lookup = _pop_lookup(raw_chain, side_key, manual_strike)
+
+            if not manual_lookup or not manual_lookup.get("instrument_key"):
+                st.warning("या strike/option साठी instrument सापडला नाही.")
+            else:
+                ltp_display = f"₹{manual_lookup['ltp']:.2f}" if manual_lookup.get("ltp") is not None else "अनुपलब्ध"
+                st.caption(
+                    f"LTP: {ltp_display} · Instrument: {manual_lookup['instrument_key']} · "
+                    f"Qty: {manual_lots * lot_size} ({manual_lots} lot × {lot_size})"
+                )
+
+                order_valid = True
+                if manual_order_type in ("LIMIT", "SL") and manual_price <= 0:
+                    st.error("LIMIT / SL ऑर्डरसाठी Price > 0 असणे आवश्यक आहे.")
+                    order_valid = False
+                if manual_order_type in ("SL", "SL-M") and manual_trigger <= 0:
+                    st.error("SL / SL-M ऑर्डरसाठी Trigger Price > 0 असणे आवश्यक आहे.")
+                    order_valid = False
+
+                bcol1, bcol2 = st.columns(2)
+                with bcol1:
+                    if st.button("➕ Basket मध्ये जोडा", disabled=not order_valid):
+                        st.session_state.order_basket.append({
+                            "Strike": manual_strike, "Option": manual_side, "Action": manual_txn,
+                            "Order Type": manual_order_type, "Lots": manual_lots,
+                            "Price": manual_price if manual_order_type in ("LIMIT", "SL") else 0,
+                            "Trigger": manual_trigger if manual_order_type in ("SL", "SL-M") else 0,
+                            "instrument_key": manual_lookup["instrument_key"],
+                        })
+                        st.success("Basket मध्ये leg जोडला गेला.")
+                        st.rerun()
+                with bcol2:
+                    single_btn_label = "⚡ आत्ताच Single Order प्लेस करा (PAPER)" if trading_mode == "PAPER" else "⚡ आत्ताच Single Order प्लेस करा (LIVE)"
+                    if st.button(single_btn_label, disabled=not order_valid):
+                        if not (enable_live_trading and confirm_live_trading):
+                            st.error("साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आधी टिक करा.")
+                        else:
+                            order = {
+                                "quantity": manual_lots * lot_size, "product": product_type, "validity": "DAY",
+                                "price": manual_price if manual_order_type in ("LIMIT", "SL") else 0,
+                                "tag": "MANUAL", "instrument_token": manual_lookup["instrument_key"],
+                                "order_type": manual_order_type, "transaction_type": manual_txn,
+                                "disclosed_quantity": 0,
+                                "trigger_price": manual_trigger if manual_order_type in ("SL", "SL-M") else 0,
+                                "is_amo": False,
+                                # 🎓 वापरकर्त्याने Upstox कडून सापडवलेली bug (UDAPI1115) — वर बघा
+                                "correlation_id": uuid.uuid4().hex[:20],
+                            }
+                            status_code, resp = execute_order_leg_set(token_input, [order], trading_mode)
+                            if status_code == 200 and resp.get("status") == "success":
+                                order_ids = extract_order_ids(resp)
+                                tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
+                                st.success(f"{tag} ऑर्डर प्लेस झाला — Order ID: {order_ids}")
+
+                                # Positions tab मध्ये MTM दिसण्यासाठी व (ऐच्छिक) SL/Target मॉनिटरिंगसाठी live_trades मध्ये नोंदवणे
+                                entry_ltps = resp.get("paper_fills", {}) if trading_mode == "PAPER" else fetch_ltp_map(token_input, [manual_lookup["instrument_key"]])
+                                leg_for_tracking = [{
+                                    "instrument_key": manual_lookup["instrument_key"], "transaction_type": manual_txn,
+                                    "role": f"{manual_txn}_{manual_side}", "strike": manual_strike,
+                                }]
+                                track_ok, track_trade_id, track_err = track_manual_trade(
+                                    symbol, leg_for_tracking, manual_lots, lot_size, entry_ltps, trading_mode, trading_style,
+                                    sl_amount=manual_sl_amount, target_amount=manual_target_amount, tag_prefix="MANUAL",
+                                )
+                                # order_log व live_trades मध्ये एकच trade_id वापरणे (traceability साठी) — track झालं तरच
+                                # खरा trade_id वापरता येईल, नाहीतर वेगळा (untracked) tag वापरणे
+                                log_orders_batch(order_ids, track_trade_id or "MANUAL_UNTRACKED", symbol, trading_mode, [order], status="COMPLETE", fill_prices=entry_ltps)
+                                if track_ok:
+                                    st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
+                                else:
+                                    st.warning(f"⚠️ ऑर्डर यशस्वी झाला, पण Positions tab मध्ये ट्रॅक करता आला नाही: {track_err}")
+                            else:
+                                st.error(f"❌ ऑर्डर अयशस्वी: {resp}")
+
+        if st.session_state.order_basket:
+            st.markdown("##### 🧺 सद्य Basket")
+            basket_df = pd.DataFrame(st.session_state.order_basket).drop(columns=["instrument_key"])
+            st.dataframe(basket_df, width='stretch')
+
+            remove_idx = st.selectbox(
+                "काढून टाकण्यासाठी leg निवडा (ऐच्छिक)",
+                options=list(range(len(st.session_state.order_basket))),
+                format_func=lambda i: (
+                    f"{i+1}. {st.session_state.order_basket[i]['Action']} "
+                    f"{st.session_state.order_basket[i]['Strike']} {st.session_state.order_basket[i]['Option']} "
+                    f"({st.session_state.order_basket[i]['Order Type']})"
+                ),
+                key="remove_idx",
+            )
+            rcol1, rcol2, rcol3 = st.columns(3)
+            with rcol1:
+                if st.button("🗑️ ही Leg काढा"):
+                    st.session_state.order_basket.pop(remove_idx)
+                    st.rerun()
+            with rcol2:
+                if st.button("🧹 संपूर्ण Basket रिकामी करा"):
+                    st.session_state.order_basket = []
+                    st.rerun()
+
+            basket_set_sl_target = st.checkbox("Basket साठी SL/Target सेट करा (ऐच्छिक)", key="basket_set_sltgt")
+            basket_sl_amount, basket_target_amount = None, None
+            if basket_set_sl_target:
+                bsltc1, bsltc2 = st.columns(2)
+                with bsltc1:
+                    basket_sl_amount = st.number_input("SL (₹ तोटा, संपूर्ण Basket)", min_value=0.0, value=1000.0, step=100.0, key="basket_sl_amt")
+                with bsltc2:
+                    basket_target_amount = st.number_input("Target (₹ नफा, संपूर्ण Basket)", min_value=0.0, value=2000.0, step=100.0, key="basket_target_amt")
+
+            with rcol3:
+                basket_btn_label = "🚀 संपूर्ण Basket प्लेस करा (PAPER)" if trading_mode == "PAPER" else "🚀 संपूर्ण Basket प्लेस करा (LIVE)"
+                if st.button(basket_btn_label):
+                    if not (enable_live_trading and confirm_live_trading):
+                        st.error("साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आधी टिक करा.")
+                    else:
+                        basket_orders = [
+                            {
+                                "quantity": leg["Lots"] * lot_size, "product": product_type, "validity": "DAY",
+                                "price": leg["Price"], "tag": "BASKET", "instrument_token": leg["instrument_key"],
+                                "order_type": leg["Order Type"], "transaction_type": leg["Action"],
+                                "disclosed_quantity": 0, "trigger_price": leg["Trigger"], "is_amo": False,
+                                "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
+                            }
+                            for leg in st.session_state.order_basket
+                        ]
+                        status_code, resp = execute_order_leg_set(token_input, basket_orders, trading_mode)
+                        if status_code == 200 and resp.get("status") == "success":
+                            order_ids = extract_order_ids(resp)
+                            tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
+                            st.success(f"{tag} Basket प्लेस झाला — Order IDs: {order_ids}")
+
+                            # Positions tab मध्ये MTM दिसण्यासाठी व (ऐच्छिक) SL/Target मॉनिटरिंगसाठी live_trades मध्ये नोंदवणे
+                            basket_keys = [leg["instrument_key"] for leg in st.session_state.order_basket]
+                            entry_ltps = resp.get("paper_fills", {}) if trading_mode == "PAPER" else fetch_ltp_map(token_input, basket_keys)
+                            legs_for_tracking = [
+                                {
+                                    "instrument_key": leg["instrument_key"], "transaction_type": leg["Action"],
+                                    "role": f"{leg['Action']}_{leg['Option']}", "strike": leg["Strike"],
+                                }
+                                for leg in st.session_state.order_basket
+                            ]
+                            basket_lots = st.session_state.order_basket[0]["Lots"] if st.session_state.order_basket else 1
+                            track_ok, track_trade_id, track_err = track_manual_trade(
+                                symbol, legs_for_tracking, basket_lots, lot_size, entry_ltps, trading_mode, trading_style,
+                                sl_amount=basket_sl_amount, target_amount=basket_target_amount, tag_prefix="BASKET",
+                            )
+                            log_orders_batch(order_ids, track_trade_id or "BASKET_UNTRACKED", symbol, trading_mode, basket_orders, status="COMPLETE", fill_prices=entry_ltps)
+                            if track_ok:
+                                st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
+                            else:
+                                st.warning(f"⚠️ ऑर्डर यशस्वी झाला, पण Positions tab मध्ये ट्रॅक करता आला नाही: {track_err}")
+                            st.session_state.order_basket = []
+                        else:
+                            st.error(f"❌ Basket अयशस्वी: {resp}")
+        else:
+            st.caption("सद्य Basket रिकामी आहे.")
+
+
+
+@st.fragment
 def _render_market_zones():
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix, भाग ३) — established Strategy
     Builder सारखीच समस्या इथेही होती — established दोन radio-filter बदलले तरी established
@@ -940,229 +1174,12 @@ def render():
                             "(आठवड्यातून एकदाच बदलता येतो)."
                         )
 
-        # =========================================================
-        # ७.५ Manual Trading Panel — Option Chain मधून थेट ऑर्डर + Basket Orders
-        # (place_multi_leg_order हेच आधीच वापरलेले व verified Upstox Multi Order API वापरते)
-        # =========================================================
     with tab3:
-        st.markdown("---")
-        with st.expander("🖐️ Manual Trading Panel (क्लिक करून उघडा — Option विकत घेणे/विकणे)", expanded=False):
-            st.subheader("🖐️ Manual Trading Panel")
-            st.caption(
-                "वरील Option Chain मधून कोणताही strike/CE/PE निवडून थेट ऑर्डर द्या, किंवा अनेक legs Basket मध्ये "
-                "जमा करून एकत्र प्लेस करा. Order Types: MARKET, LIMIT, SL, SL-M. लाईव्ह प्लेसमेंटसाठी साईडबारमधील "
-                "'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आवश्यक आहेत."
-            )
+        # ७.५ Manual Trading Panel — Option Chain मधून थेट ऑर्डर + Basket Orders (आता वेगळा fragment)
+        _render_manual_trading_panel()
 
-            if "order_basket" not in st.session_state:
-                st.session_state.order_basket = []
-
-            available_strikes = sorted({item.get("strike_price") for item in raw_chain if item.get("strike_price") is not None})
-
-            if not available_strikes:
-                st.warning("Option chain मधून strikes उपलब्ध नाहीत.")
-            else:
-                mtc1, mtc2, mtc3, mtc4 = st.columns(4)
-                with mtc1:
-                    default_strike = st.session_state.get("clicked_strike_from_chain")
-                    if default_strike is not None and default_strike in available_strikes:
-                        default_idx = available_strikes.index(default_strike)
-                    elif atm_strike in available_strikes:
-                        default_idx = available_strikes.index(atm_strike)
-                    else:
-                        default_idx = 0
-                    manual_strike = st.selectbox("Strike", available_strikes, index=default_idx, key="manual_strike")
-                with mtc2:
-                    manual_side = st.selectbox("Option", ["CE", "PE"], key="manual_side")
-                with mtc3:
-                    manual_txn = st.selectbox("Action", ["BUY", "SELL"], key="manual_txn")
-                with mtc4:
-                    manual_order_type = st.selectbox("Order Type", ["MARKET", "LIMIT", "SL", "SL-M"], key="manual_order_type")
-
-                mtc5, mtc6, mtc7 = st.columns(3)
-                with mtc5:
-                    manual_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="manual_lots")
-                with mtc6:
-                    manual_price = st.number_input(
-                        "Price (LIMIT / SL साठी आवश्यक)", min_value=0.0, value=0.0, step=0.05,
-                        key="manual_price", disabled=manual_order_type not in ("LIMIT", "SL"),
-                    )
-                with mtc7:
-                    manual_trigger = st.number_input(
-                        "Trigger Price (SL / SL-M साठी आवश्यक)", min_value=0.0, value=0.0, step=0.05,
-                        key="manual_trigger", disabled=manual_order_type not in ("SL", "SL-M"),
-                    )
-
-                manual_set_sl_target = st.checkbox("SL/Target सेट करा (ऐच्छिक — नाही तर फक्त EOD/मॅन्युअल Close ने बंद होईल)", key="manual_set_sltgt")
-                manual_sl_amount, manual_target_amount = None, None
-                if manual_set_sl_target:
-                    sltc1, sltc2 = st.columns(2)
-                    with sltc1:
-                        manual_sl_amount = st.number_input("SL (₹ तोटा, संपूर्ण पोझिशन)", min_value=0.0, value=1000.0, step=100.0, key="manual_sl_amt")
-                    with sltc2:
-                        manual_target_amount = st.number_input("Target (₹ नफा, संपूर्ण पोझिशन)", min_value=0.0, value=2000.0, step=100.0, key="manual_target_amt")
-
-                side_key = "call_options" if manual_side == "CE" else "put_options"
-                manual_lookup = _pop_lookup(raw_chain, side_key, manual_strike)
-
-                if not manual_lookup or not manual_lookup.get("instrument_key"):
-                    st.warning("या strike/option साठी instrument सापडला नाही.")
-                else:
-                    ltp_display = f"₹{manual_lookup['ltp']:.2f}" if manual_lookup.get("ltp") is not None else "अनुपलब्ध"
-                    st.caption(
-                        f"LTP: {ltp_display} · Instrument: {manual_lookup['instrument_key']} · "
-                        f"Qty: {manual_lots * lot_size} ({manual_lots} lot × {lot_size})"
-                    )
-
-                    order_valid = True
-                    if manual_order_type in ("LIMIT", "SL") and manual_price <= 0:
-                        st.error("LIMIT / SL ऑर्डरसाठी Price > 0 असणे आवश्यक आहे.")
-                        order_valid = False
-                    if manual_order_type in ("SL", "SL-M") and manual_trigger <= 0:
-                        st.error("SL / SL-M ऑर्डरसाठी Trigger Price > 0 असणे आवश्यक आहे.")
-                        order_valid = False
-
-                    bcol1, bcol2 = st.columns(2)
-                    with bcol1:
-                        if st.button("➕ Basket मध्ये जोडा", disabled=not order_valid):
-                            st.session_state.order_basket.append({
-                                "Strike": manual_strike, "Option": manual_side, "Action": manual_txn,
-                                "Order Type": manual_order_type, "Lots": manual_lots,
-                                "Price": manual_price if manual_order_type in ("LIMIT", "SL") else 0,
-                                "Trigger": manual_trigger if manual_order_type in ("SL", "SL-M") else 0,
-                                "instrument_key": manual_lookup["instrument_key"],
-                            })
-                            st.success("Basket मध्ये leg जोडला गेला.")
-                            st.rerun()
-                    with bcol2:
-                        single_btn_label = "⚡ आत्ताच Single Order प्लेस करा (PAPER)" if trading_mode == "PAPER" else "⚡ आत्ताच Single Order प्लेस करा (LIVE)"
-                        if st.button(single_btn_label, disabled=not order_valid):
-                            if not (enable_live_trading and confirm_live_trading):
-                                st.error("साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आधी टिक करा.")
-                            else:
-                                order = {
-                                    "quantity": manual_lots * lot_size, "product": product_type, "validity": "DAY",
-                                    "price": manual_price if manual_order_type in ("LIMIT", "SL") else 0,
-                                    "tag": "MANUAL", "instrument_token": manual_lookup["instrument_key"],
-                                    "order_type": manual_order_type, "transaction_type": manual_txn,
-                                    "disclosed_quantity": 0,
-                                    "trigger_price": manual_trigger if manual_order_type in ("SL", "SL-M") else 0,
-                                    "is_amo": False,
-                                    # 🎓 वापरकर्त्याने Upstox कडून सापडवलेली bug (UDAPI1115) — वर बघा
-                                    "correlation_id": uuid.uuid4().hex[:20],
-                                }
-                                status_code, resp = execute_order_leg_set(token_input, [order], trading_mode)
-                                if status_code == 200 and resp.get("status") == "success":
-                                    order_ids = extract_order_ids(resp)
-                                    tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
-                                    st.success(f"{tag} ऑर्डर प्लेस झाला — Order ID: {order_ids}")
-
-                                    # Positions tab मध्ये MTM दिसण्यासाठी व (ऐच्छिक) SL/Target मॉनिटरिंगसाठी live_trades मध्ये नोंदवणे
-                                    entry_ltps = resp.get("paper_fills", {}) if trading_mode == "PAPER" else fetch_ltp_map(token_input, [manual_lookup["instrument_key"]])
-                                    leg_for_tracking = [{
-                                        "instrument_key": manual_lookup["instrument_key"], "transaction_type": manual_txn,
-                                        "role": f"{manual_txn}_{manual_side}", "strike": manual_strike,
-                                    }]
-                                    track_ok, track_trade_id, track_err = track_manual_trade(
-                                        symbol, leg_for_tracking, manual_lots, lot_size, entry_ltps, trading_mode, trading_style,
-                                        sl_amount=manual_sl_amount, target_amount=manual_target_amount, tag_prefix="MANUAL",
-                                    )
-                                    # order_log व live_trades मध्ये एकच trade_id वापरणे (traceability साठी) — track झालं तरच
-                                    # खरा trade_id वापरता येईल, नाहीतर वेगळा (untracked) tag वापरणे
-                                    log_orders_batch(order_ids, track_trade_id or "MANUAL_UNTRACKED", symbol, trading_mode, [order], status="COMPLETE", fill_prices=entry_ltps)
-                                    if track_ok:
-                                        st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
-                                    else:
-                                        st.warning(f"⚠️ ऑर्डर यशस्वी झाला, पण Positions tab मध्ये ट्रॅक करता आला नाही: {track_err}")
-                                else:
-                                    st.error(f"❌ ऑर्डर अयशस्वी: {resp}")
-
-            if st.session_state.order_basket:
-                st.markdown("##### 🧺 सद्य Basket")
-                basket_df = pd.DataFrame(st.session_state.order_basket).drop(columns=["instrument_key"])
-                st.dataframe(basket_df, width='stretch')
-
-                remove_idx = st.selectbox(
-                    "काढून टाकण्यासाठी leg निवडा (ऐच्छिक)",
-                    options=list(range(len(st.session_state.order_basket))),
-                    format_func=lambda i: (
-                        f"{i+1}. {st.session_state.order_basket[i]['Action']} "
-                        f"{st.session_state.order_basket[i]['Strike']} {st.session_state.order_basket[i]['Option']} "
-                        f"({st.session_state.order_basket[i]['Order Type']})"
-                    ),
-                    key="remove_idx",
-                )
-                rcol1, rcol2, rcol3 = st.columns(3)
-                with rcol1:
-                    if st.button("🗑️ ही Leg काढा"):
-                        st.session_state.order_basket.pop(remove_idx)
-                        st.rerun()
-                with rcol2:
-                    if st.button("🧹 संपूर्ण Basket रिकामी करा"):
-                        st.session_state.order_basket = []
-                        st.rerun()
-
-                basket_set_sl_target = st.checkbox("Basket साठी SL/Target सेट करा (ऐच्छिक)", key="basket_set_sltgt")
-                basket_sl_amount, basket_target_amount = None, None
-                if basket_set_sl_target:
-                    bsltc1, bsltc2 = st.columns(2)
-                    with bsltc1:
-                        basket_sl_amount = st.number_input("SL (₹ तोटा, संपूर्ण Basket)", min_value=0.0, value=1000.0, step=100.0, key="basket_sl_amt")
-                    with bsltc2:
-                        basket_target_amount = st.number_input("Target (₹ नफा, संपूर्ण Basket)", min_value=0.0, value=2000.0, step=100.0, key="basket_target_amt")
-
-                with rcol3:
-                    basket_btn_label = "🚀 संपूर्ण Basket प्लेस करा (PAPER)" if trading_mode == "PAPER" else "🚀 संपूर्ण Basket प्लेस करा (LIVE)"
-                    if st.button(basket_btn_label):
-                        if not (enable_live_trading and confirm_live_trading):
-                            st.error("साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आधी टिक करा.")
-                        else:
-                            basket_orders = [
-                                {
-                                    "quantity": leg["Lots"] * lot_size, "product": product_type, "validity": "DAY",
-                                    "price": leg["Price"], "tag": "BASKET", "instrument_token": leg["instrument_key"],
-                                    "order_type": leg["Order Type"], "transaction_type": leg["Action"],
-                                    "disclosed_quantity": 0, "trigger_price": leg["Trigger"], "is_amo": False,
-                                    "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
-                                }
-                                for leg in st.session_state.order_basket
-                            ]
-                            status_code, resp = execute_order_leg_set(token_input, basket_orders, trading_mode)
-                            if status_code == 200 and resp.get("status") == "success":
-                                order_ids = extract_order_ids(resp)
-                                tag = "📝 PAPER" if trading_mode == "PAPER" else "✅"
-                                st.success(f"{tag} Basket प्लेस झाला — Order IDs: {order_ids}")
-
-                                # Positions tab मध्ये MTM दिसण्यासाठी व (ऐच्छिक) SL/Target मॉनिटरिंगसाठी live_trades मध्ये नोंदवणे
-                                basket_keys = [leg["instrument_key"] for leg in st.session_state.order_basket]
-                                entry_ltps = resp.get("paper_fills", {}) if trading_mode == "PAPER" else fetch_ltp_map(token_input, basket_keys)
-                                legs_for_tracking = [
-                                    {
-                                        "instrument_key": leg["instrument_key"], "transaction_type": leg["Action"],
-                                        "role": f"{leg['Action']}_{leg['Option']}", "strike": leg["Strike"],
-                                    }
-                                    for leg in st.session_state.order_basket
-                                ]
-                                basket_lots = st.session_state.order_basket[0]["Lots"] if st.session_state.order_basket else 1
-                                track_ok, track_trade_id, track_err = track_manual_trade(
-                                    symbol, legs_for_tracking, basket_lots, lot_size, entry_ltps, trading_mode, trading_style,
-                                    sl_amount=basket_sl_amount, target_amount=basket_target_amount, tag_prefix="BASKET",
-                                )
-                                log_orders_batch(order_ids, track_trade_id or "BASKET_UNTRACKED", symbol, trading_mode, basket_orders, status="COMPLETE", fill_prices=entry_ltps)
-                                if track_ok:
-                                    st.caption(f"📍 Positions tab मध्ये ट्रॅक होत आहे (Trade ID: {track_trade_id}).")
-                                else:
-                                    st.warning(f"⚠️ ऑर्डर यशस्वी झाला, पण Positions tab मध्ये ट्रॅक करता आला नाही: {track_err}")
-                                st.session_state.order_basket = []
-                            else:
-                                st.error(f"❌ Basket अयशस्वी: {resp}")
-            else:
-                st.caption("सद्य Basket रिकामी आहे.")
-
-            # =========================================================
-            # ८. Put-Call OI Diff Tracker — दर १० मिनिटांनी snapshot (Bullish/Bearish)
-            #    Strike range: existing option chain टेबलप्रमाणेच ATM ± 6 (एकूण १३ strikes)
-            # =========================================================
+    # ८. Put-Call OI Diff Tracker — दर १० मिनिटांनी snapshot (Bullish/Bearish)
+    #    Strike range: existing option chain टेबलप्रमाणेच ATM ± 6 (एकूण १३ strikes)
     with tab2:
         st.markdown("---")
         st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर १० मिनिटांनी)")
