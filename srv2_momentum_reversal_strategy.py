@@ -215,25 +215,35 @@ def process_symbol(access_token, symbol, lot_size=65):
                 hedge_enabled=settings.get("naked_hedge_enabled", False),
                 hedge_width_points=settings.get("naked_hedge_width_points", 150),
             )
-            if naked_result is not None:
-                if accounts_df is not None and not accounts_df.empty:
-                    from trading_engine import execute_trade_on_all_accounts
-                    naked_results, naked_factory_errors = execute_trade_on_all_accounts(
-                        symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
-                        sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
-                        sl_pct_of_credit=100, source="srv2_momentum_reversal",
-                        entry_level_price=level_price, entry_timeframe=timeframe_suffix,
-                    )
-                    naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
-                else:
-                    _, naked_status = open_multi_leg_trade(
-                        access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
-                        sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
-                        sl_pct_of_credit=100, source="srv2_momentum_reversal",
-                        entry_level_price=level_price, entry_timeframe=timeframe_suffix,
-                    )
+            if naked_result is None:
+                # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("naked trade दिसत नाही") सोडवण्यासाठी जोडलेली,
+                # तात्पुरती diagnostic नोंद.
+                print(
+                    f"⚠️ Naked trade सापडला नाही — symbol={symbol}, direction={direction}, "
+                    f"atm_strike={atm_strike}, itm_depth_points={settings['itm_depth_points']} "
+                    f"(गरजेचा strike raw_chain मध्ये उपलब्ध नसावा)"
+                )
+        else:
+            print(f"ℹ️ Naked trade बंद आहे (naked_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
+        if naked_result is not None:
+            if accounts_df is not None and not accounts_df.empty:
+                from trading_engine import execute_trade_on_all_accounts
+                naked_results, naked_factory_errors = execute_trade_on_all_accounts(
+                    symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                    entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                )
+                naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
+            else:
+                _, naked_status = open_multi_leg_trade(
+                    access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                    entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                )
 
         strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""

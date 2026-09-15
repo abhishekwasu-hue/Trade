@@ -199,6 +199,8 @@ def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes
         short_strike = atm_strike + strikes_otm * step
         long_strike = short_strike + hedge_width_points
 
+    option_type = "CE" if side == "call_options" else "PE"
+
     def find_leg(strike):
         for item in raw_chain:
             if item.get("strike_price") == strike:
@@ -208,7 +210,8 @@ def select_credit_spread_fixed_strikes(raw_chain, direction, atm_strike, strikes
                 greeks = opt.get("option_greeks", {}) or {}
                 pop = greeks.get("pop")
                 if ltp and instrument_key and ltp > 0:
-                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop}
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop,
+                            "option_type": option_type, "expiry": item.get("expiry")}
         return None
 
     short_leg, long_leg = find_leg(short_strike), find_leg(long_strike)
@@ -245,6 +248,8 @@ def select_credit_spread_itm(raw_chain, direction, atm_strike, itm_depth_points=
         short_strike = atm_strike - itm_offset
         long_strike = short_strike + hedge_width_points
 
+    option_type = "CE" if side == "call_options" else "PE"
+
     def find_leg(strike):
         for item in raw_chain:
             if item.get("strike_price") == strike:
@@ -254,7 +259,8 @@ def select_credit_spread_itm(raw_chain, direction, atm_strike, itm_depth_points=
                 greeks = opt.get("option_greeks", {}) or {}
                 pop = greeks.get("pop")
                 if ltp and instrument_key and ltp > 0:
-                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop}
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp, "pop": pop,
+                            "option_type": option_type, "expiry": item.get("expiry")}
         return None
 
     short_leg, long_leg = find_leg(short_strike), find_leg(long_strike)
@@ -285,6 +291,8 @@ def select_naked_option_itm(raw_chain, direction, atm_strike, itm_depth_points, 
     itm_offset = round(itm_depth_points / step) * step
     buy_strike = (atm_strike - itm_offset) if direction == "BULLISH" else (atm_strike + itm_offset)
 
+    option_type = "CE" if side == "call_options" else "PE"
+
     def find_leg(strike):
         for item in raw_chain:
             if item.get("strike_price") == strike:
@@ -292,7 +300,8 @@ def select_naked_option_itm(raw_chain, direction, atm_strike, itm_depth_points, 
                 ltp = (opt.get("market_data", {}) or {}).get("ltp")
                 instrument_key = opt.get("instrument_key")
                 if ltp and instrument_key and ltp > 0:
-                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp}
+                    return {"strike": strike, "instrument_key": instrument_key, "ltp": ltp,
+                            "option_type": option_type, "expiry": item.get("expiry")}
         return None
 
     buy_leg = find_leg(buy_strike)

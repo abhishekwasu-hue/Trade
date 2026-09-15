@@ -109,29 +109,35 @@ def normalize_legs(strategy_result):
     प्रत्यक्ष entry किंमतच उपलब्ध नव्हती. आता "ltp" (उपलब्ध असल्यास) पुढे नेलं जातं.
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade / "Long With Hedge") —
     "buy_leg" (hedge नसलेला निव्वळ खरेदी) आणि "buy_leg"+"hedge_leg" (hedge सक्रिय केलेला debit
-    स्प्रेड) दोन्ही स्वरूपं ओळखली जातात."""
+    स्प्रेड) दोन्ही स्वरूपं ओळखली जातात.
+    🎓 वापरकर्त्याने विचारलेला प्रश्न ("Order Log मध्ये strike/expiry कळतच नाही") सोडवण्यासाठी —
+    प्रत्येक leg मध्ये आता "option_type" (CE/PE) आणि "expiry" सुद्धा (उपलब्ध असल्यास) पुढे नेले जातात."""
     if "legs" in strategy_result:
         return strategy_result["legs"]
     if "buy_leg" in strategy_result:
         legs = [
             {"role": "naked_buy", "strike": strategy_result["buy_leg"]["strike"],
              "instrument_key": strategy_result["buy_leg"]["instrument_key"], "transaction_type": "BUY",
-             "ltp": strategy_result["buy_leg"].get("ltp")},
+             "ltp": strategy_result["buy_leg"].get("ltp"), "option_type": strategy_result["buy_leg"].get("option_type"),
+             "expiry": strategy_result["buy_leg"].get("expiry")},
         ]
         if "hedge_leg" in strategy_result:
             legs.append(
                 {"role": "naked_hedge", "strike": strategy_result["hedge_leg"]["strike"],
                  "instrument_key": strategy_result["hedge_leg"]["instrument_key"], "transaction_type": "SELL",
-                 "ltp": strategy_result["hedge_leg"].get("ltp")},
+                 "ltp": strategy_result["hedge_leg"].get("ltp"), "option_type": strategy_result["hedge_leg"].get("option_type"),
+                 "expiry": strategy_result["hedge_leg"].get("expiry")},
             )
         return legs
     return [
         {"role": "long_hedge", "strike": strategy_result["long_leg"]["strike"],
          "instrument_key": strategy_result["long_leg"]["instrument_key"], "transaction_type": "BUY",
-         "ltp": strategy_result["long_leg"].get("ltp")},
+         "ltp": strategy_result["long_leg"].get("ltp"), "option_type": strategy_result["long_leg"].get("option_type"),
+         "expiry": strategy_result["long_leg"].get("expiry")},
         {"role": "short_leg", "strike": strategy_result["short_leg"]["strike"],
          "instrument_key": strategy_result["short_leg"]["instrument_key"], "transaction_type": "SELL",
-         "ltp": strategy_result["short_leg"].get("ltp")},
+         "ltp": strategy_result["short_leg"].get("ltp"), "option_type": strategy_result["short_leg"].get("option_type"),
+         "expiry": strategy_result["short_leg"].get("expiry")},
     ]
 
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
@@ -158,6 +164,10 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             "tag": f"A1_{leg['role'].upper()[:16]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": leg["transaction_type"],
             "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
+            # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("Order Log मध्ये strike/expiry कळत नाही") सोडवण्यासाठी
+            # जोडलेलं — leg मध्येच आधीपासून उपलब्ध असलेली माहिती इथे order-dict मध्येही पुढे नेली,
+            # जेणेकरून log_order() ती प्रत्यक्ष साठवू शकेल (आधी हे कधीच पास केलं जात नव्हतं).
+            "strike": leg.get("strike"), "option_type": leg.get("option_type"), "expiry": leg.get("expiry"),
             # 🎓 वापरकर्त्याने Upstox कडून सापडवलेली bug — Upstox Multi Order API ला प्रत्येक order
             # साठी `correlation_id` (unique, alphanumeric, कमाल २० अक्षरं) आता सक्तीचा आहे — नसेल तर
             # "UDAPI1115: correlation_id is required" देऊन संपूर्ण ऑर्डर नाकारतो.
@@ -599,6 +609,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     "order_type": "MARKET",
                     "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
                     "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
+                    "strike": leg.get("strike"), "option_type": leg.get("option_type"), "expiry": leg.get("expiry"),
                     "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
                 }
                 for leg in legs
@@ -777,6 +788,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
             "tag": f"MANUAL_CLOSE_{str(leg.get('role', 'LEG'))[:12]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
             "disclosed_quantity": 0, "trigger_price": 0, "price": 0, "is_amo": False,
+            "strike": leg.get("strike"), "option_type": leg.get("option_type"), "expiry": leg.get("expiry"),
             "correlation_id": uuid.uuid4().hex[:20],  # 🎓 UDAPI1115 फिक्स — वर बघा
         }
         for leg in legs

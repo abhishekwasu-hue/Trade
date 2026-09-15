@@ -125,12 +125,18 @@ def init_sqlite_db():
             fill_price REAL
         )
     """)
-    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — established "Price" column established
+    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — "Price" column
     # request मधला price (MARKET orders साठी नेहमी 0, कारण limit price नसतोच) दाखवायचा, प्रत्यक्ष
-    # entry/exit किंमत (LTP) नाही. established नवीन fill_price column मध्ये ती खरी किंमत साठवली
+    # entry/exit किंमत (LTP) नाही. नवीन fill_price column मध्ये ती खरी किंमत साठवली
     # जाईल — जुन्या (आधीपासून अस्तित्वात असलेल्या) DB फाईलवरही सुरक्षितपणे लागू होण्यासाठी ALTER TABLE.
     try:
         cursor.execute("ALTER TABLE order_log ADD COLUMN fill_price REAL")
+    except sqlite3.OperationalError:
+        pass  # कॉलम आधीच अस्तित्वात आहे
+    # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("Order Log मध्ये expiry कळत नाही") सोडवण्यासाठी जोडलेला
+    # नवीन column — जुन्या (आधीपासून अस्तित्वात असलेल्या) DB फाईलवरही सुरक्षितपणे लागू होण्यासाठी.
+    try:
+        cursor.execute("ALTER TABLE order_log ADD COLUMN expiry TEXT")
     except sqlite3.OperationalError:
         pass  # कॉलम आधीच अस्तित्वात आहे
     conn.commit()
@@ -141,24 +147,25 @@ init_sqlite_db()
 
 def log_order(order_id, trade_id, symbol, mode, order_dict, status, fill_price=None):
     """खऱ्या ब्रोकर टर्मिनलसारखं — प्रत्येक ऑर्डर (leg) चा एक कायमचा रेकॉर्ड ठेवणे, Orders टॅबसाठी.
-    fill_price — established प्रत्यक्ष entry/exit वेळचा LTP (MARKET orders चा request price नेहमी 0
-    असतो, तो दाखवण्याऐवजी हीच खरी किंमत Order Book वर दाखवली जाते)."""
+    fill_price — प्रत्यक्ष entry/exit वेळचा LTP (MARKET orders चा request price नेहमी 0
+    असतो, तो दाखवण्याऐवजी हीच खरी किंमत Order Book वर दाखवली जाते).
+    🎓 वापरकर्त्याने विचारलेला प्रश्न ("Order Log मध्ये strike/expiry कळत नाही") सोडवण्यासाठी —
+    आधी strike/option_type कधीच भरले जायचे नाहीत (फक्त एक अपूर्ण placeholder होता, नेहमी None
+    साठवायचा). आता trading_engine.py कडून order_dict मध्येच पुढे आलेली खरी माहिती वापरली जाते."""
     try:
         instrument_key = order_dict.get("instrument_token", "")
-        strike = None
-        option_type = None
-        if "|" in instrument_key:
-            # instrument key मधून काही उपयुक्त माहिती काढता आली तर काढणे (अनिवार्य नाही, फक्त प्रदर्शनासाठी)
-            pass
+        strike = order_dict.get("strike")
+        option_type = order_dict.get("option_type")
+        expiry = order_dict.get("expiry")
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO order_log
-               (order_id, trade_id, symbol, mode, instrument_key, strike, option_type, transaction_type,
+               (order_id, trade_id, symbol, mode, instrument_key, strike, option_type, expiry, transaction_type,
                 order_type, quantity, price, trigger_price, status, tag, placed_at, fill_price)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+                order_id, trade_id, symbol, mode, instrument_key, strike, option_type, expiry,
                 order_dict.get("transaction_type"), order_dict.get("order_type"),
                 order_dict.get("quantity"), order_dict.get("price"), order_dict.get("trigger_price"),
                 status, order_dict.get("tag"), get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), fill_price,
@@ -657,10 +664,13 @@ def get_performance_by_group(symbol, group_col, mode_filter=None):
     return pd.DataFrame(rows).sort_values("Total P&L", ascending=False)
 
 def get_order_log(symbol, mode_filter=None, limit=100):
-    """आजच्या (व अलीकडच्या) सर्व ऑर्डर्सची यादी — Orders टॅबसाठी (खऱ्या ब्रोकर Order Book सारखं)."""
+    """आजच्या (व अलीकडच्या) सर्व ऑर्डर्सची यादी — Orders टॅबसाठी (खऱ्या ब्रोकर Order Book सारखं).
+    🎓 वापरकर्त्याने विचारलेला प्रश्न ("कुठला strike/expiry होता ते कळतच नाही") सोडवण्यासाठी —
+    आता Strike/Option Type/Expiry हे columns सुद्धा दाखवले जातात (आधी हे पूर्णपणे वगळलेले होते)."""
     conn = sqlite3.connect(DB_PATH)
     query = """SELECT placed_at AS "Time", order_id AS "Order ID", trade_id AS "Trade ID", mode AS "Mode",
-                      transaction_type AS "Action", order_type AS "Type", quantity AS "Qty",
+                      transaction_type AS "Action", strike AS "Strike", option_type AS "Option Type",
+                      expiry AS "Expiry", order_type AS "Type", quantity AS "Qty",
                       COALESCE(fill_price, price) AS "Price", trigger_price AS "Trigger", status AS "Status", tag AS "Tag"
                FROM order_log WHERE symbol=?"""
     params = [symbol]
