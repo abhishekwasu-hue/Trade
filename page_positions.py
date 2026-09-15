@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 
+from config import get_ist_now
 from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
 from trading_engine import close_trade_manually, reconcile_open_trades_with_broker
 
@@ -106,6 +107,12 @@ def render():
             "🔄 दर रनला आपोआप अपडेट होते — किंमती थेट Upstox च्या सद्य LTP वरून. "
             "**Peak P&L**: Trailing SL चालू असल्यास, या पोझिशनने आतापर्यंत गाठलेला सर्वोच्च नफा — "
             "SL याच्यापासून ATR-अंतर मागे राहून सतत वर सरकतो."
+        )
+        positions_csv = positions_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📥 Positions CSV डाऊनलोड करा", data=positions_csv,
+            file_name=f"{symbol}_Positions_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv", key="positions_csv_download",
         )
 
         st.markdown("##### 🔴 पोझिशन मॅन्युअली बंद करा")

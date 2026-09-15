@@ -12,6 +12,12 @@ from upstox_api import fetch_candles_date_range
 from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
 from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2
+from pnl_reports import generate_pnl_report
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Trading Charges) — "आतापर्यंतचे एकूण" Charges/Net P&L
+# साठी trades ची सुरुवात कधी झाली हे माहीत नसतं, त्यामुळे इथे एक व्यवहार्य, पुरेशी जुनी सुरुवात-तारीख
+# (हे app अस्तित्वात येण्याआधीचीच) वापरली आहे — त्यामुळे "आतापर्यंतचा संपूर्ण इतिहास" कव्हर होतो.
+_ALL_TIME_START = datetime.date(2020, 1, 1)
 
 def render():
     symbol = st.session_state["symbol"]
@@ -45,6 +51,25 @@ def render():
             st.metric("Avg Loss", f"₹{summary['avg_loss']:,.0f}" if summary["avg_loss"] is not None else "N/A")
         with pcol8:
             st.metric("Best / Worst", f"₹{summary['best_trade']:,.0f} / ₹{summary['worst_trade']:,.0f}")
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — वरचं "Total P&L" आतापर्यंत फक्त Gross होतं
+        # (वास्तविक ब्रोकरेज शुल्क कुठेच दाखवलं जात नव्हतं). आता आतापर्यंतच्या संपूर्ण इतिहासाचं,
+        # charges.py वापरून मोजलेलं वास्तविक शुल्क आणि त्यानंतरचा Net P&L इथेच दाखवला जातो.
+        _, _all_time_totals = generate_pnl_report(symbol, "Monthly", _ALL_TIME_START, get_ist_today(), mode_filter=perf_mode_f)
+        pcol9, pcol10 = st.columns(2)
+        with pcol9:
+            st.metric(
+                "एकूण Charges (वास्तविक ब्रोकरेज)", f"₹{_all_time_totals['total_charges']:,.0f}",
+                f"{_all_time_totals['total_orders']} orders",
+            )
+        with pcol10:
+            st.metric("Net P&L (charges नंतर)", f"₹{_all_time_totals['net_pnl']:,.0f}")
+        if _all_time_totals["charges_by_broker"]:
+            _broker_lines = " · ".join(
+                f"{b.upper()}: {v['orders']} orders / ₹{v['charge']:,.0f}"
+                for b, v in _all_time_totals["charges_by_broker"].items()
+            )
+            st.caption(f"ब्रोकरनुसार: {_broker_lines}")
 
         st.markdown("##### 📉 Equity Curve (संचयी वास्तविक P&L)")
         curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f)
@@ -82,6 +107,55 @@ def render():
                     comp_rows.append({"Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"], "Total P&L": s["total_pnl"], "Avg P&L": s["avg_pnl"]})
             if comp_rows:
                 st.dataframe(pd.DataFrame(comp_rows), width="stretch", hide_index=True)
+
+    st.markdown("---")
+    st.subheader("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)")
+    st.caption(
+        "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक ब्रोकरेज (प्रत्येक ऑर्डरनुसार — "
+        "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर; Stocko निश्चित ₹1200/महिना — वापरलेल्या महिन्यातल्या "
+        "दिवसांत सम-भागांनी वाटलेला, कारण तो प्लॅन per-order नाही) = Net P&L."
+    )
+    rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
+    repcol1, repcol2 = st.columns(2)
+    with repcol1:
+        rep_from = st.date_input(
+            "पासून", value=get_ist_today() - datetime.timedelta(days=30), key="pnl_report_from",
+        )
+    with repcol2:
+        rep_to = st.date_input("पर्यंत", value=get_ist_today(), key="pnl_report_to")
+
+    if rep_from > rep_to:
+        st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+    else:
+        report_df, report_totals = generate_pnl_report(symbol, rep_period, rep_from, rep_to, mode_filter=perf_mode_f)
+        if report_df.empty:
+            st.info("या कालावधीत कोणतेही बंद ट्रेड्स किंवा ऑर्डर्स सापडले नाहीत.")
+        else:
+            rcol1, rcol2, rcol3, rcol4 = st.columns(4)
+            with rcol1:
+                st.metric("Gross P&L", f"₹{report_totals['gross_pnl']:,.0f}")
+            with rcol2:
+                st.metric("एकूण Charges", f"₹{report_totals['total_charges']:,.0f}", f"{report_totals['total_orders']} orders")
+            with rcol3:
+                st.metric("Net P&L", f"₹{report_totals['net_pnl']:,.0f}")
+            with rcol4:
+                st.metric("बंद ट्रेड्स", report_totals["total_trades"])
+
+            if report_totals["charges_by_broker"]:
+                broker_lines = " · ".join(
+                    f"{b.upper()}: {v['orders']} orders / ₹{v['charge']:,.0f}"
+                    for b, v in report_totals["charges_by_broker"].items()
+                )
+                st.caption(f"ब्रोकरनुसार: {broker_lines}")
+
+            st.dataframe(report_df, width="stretch", hide_index=True)
+
+            report_csv = report_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                f"📥 {rep_period} P&L Report डाऊनलोड करा (CSV)", data=report_csv,
+                file_name=f"{symbol}_{rep_period}_PnL_Report_{rep_from}_{rep_to}.csv",
+                mime="text/csv", key="pnl_report_download",
+            )
 
     st.markdown("---")
     st.subheader("🔬 Signal Check (Risk:Reward आधारित — Options P&L नाही)")

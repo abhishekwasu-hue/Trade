@@ -716,3 +716,61 @@ def get_order_log(symbol, mode_filter=None, limit=100):
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
+
+def get_order_log_full(symbol, start_date=None, end_date=None, mode_filter=None):
+    """Order Log — दिलेल्या तारीख-रेंजमध्ये (start_date/end_date न दिल्यास सर्व), मर्यादा-विरहित —
+    Orders टॅबवरच्या तारखेनुसार CSV डाऊनलोडसाठी (get_order_log() च्या 100-रांगा मर्यादेविरुद्ध)."""
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT placed_at AS "Time", order_id AS "Order ID", trade_id AS "Trade ID", mode AS "Mode",
+                      transaction_type AS "Action", strike AS "Strike", option_type AS "Option Type",
+                      expiry AS "Expiry", order_type AS "Type", quantity AS "Qty",
+                      COALESCE(fill_price, price) AS "Price", trigger_price AS "Trigger", status AS "Status", tag AS "Tag"
+               FROM order_log WHERE symbol=?"""
+    params = [symbol]
+    if start_date:
+        query += " AND date(placed_at) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d"))
+    if end_date:
+        query += " AND date(placed_at) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d"))
+    if mode_filter:
+        query += " AND mode=?"
+        params.append(mode_filter)
+    query += " ORDER BY placed_at DESC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
+    """दिलेल्या तारीख-रेंजमधले सर्व orders, account_id सकट (charges.py ला ब्रोकर ओळखण्यासाठी लागतो) —
+    order_log.trade_id → live_trades.account_id असा LEFT JOIN. trade_id जुळला नाही (उदा. Manual
+    Trading Panel चे MANUAL_UNTRACKED/BASKET_UNTRACKED, जे कायम फक्त Upstox वापरतात) तर account_id
+    NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो."""
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, lt.account_id
+               FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
+               WHERE o.symbol=? AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
+    params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+    if mode_filter:
+        query += " AND o.mode=?"
+        params.append(mode_filter)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def get_closed_trades_for_report(symbol, start_date, end_date, mode_filter=None):
+    """दिलेल्या तारीख-रेंजमध्ये बंद (CLOSED) झालेले trades — exit_time नुसार (P&L exit च्याच दिवशी
+    'realized' मानला जातो, entry दिवशी नाही) — Daily/Weekly/Monthly P&L Report साठी."""
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT trade_id, exit_time, realized_pnl FROM live_trades
+               WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
+               AND date(exit_time) >= ? AND date(exit_time) <= ?"""
+    params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if not df.empty:
+        df["exit_time"] = pd.to_datetime(df["exit_time"])
+    return df
