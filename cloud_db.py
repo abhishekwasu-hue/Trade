@@ -35,6 +35,10 @@ try:
 except ImportError:
     psycopg2 = None
 
+from log_setup import get_logger
+
+_logger = get_logger("cloud_db.py")
+
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_BASE_DIR, "data", "notification_config.json")
 
@@ -197,6 +201,7 @@ def get_connection():
     try:
         return psycopg2.connect(url, connect_timeout=10)
     except Exception:
+        _logger.exception("get_connection() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
 
@@ -263,6 +268,7 @@ def add_broker_account(account_id, broker_type, nickname=None, lot_multiplier=1.
         conn.commit()
         return True
     except Exception:
+        _logger.exception("add_broker_account() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -283,6 +289,7 @@ def get_all_broker_accounts(active_only=True):
             rows = cur.fetchall()
             return pd.DataFrame(rows, columns=["account_id", "broker_type", "nickname", "is_active", "lot_multiplier"])
     except Exception:
+        _logger.exception("get_all_broker_accounts() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -299,6 +306,7 @@ def set_broker_account_active(account_id, is_active):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("set_broker_account_active() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -315,6 +323,7 @@ def delete_broker_account(account_id):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("delete_broker_account() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -333,6 +342,7 @@ def get_srv2_state(symbol):
                 return {"last_tested_level": None, "last_sl_hit_time": None}
             return {"last_tested_level": row[0], "last_sl_hit_time": row[1]}
     except Exception:
+        _logger.exception("get_srv2_state() मध्ये अनपेक्षित चूक (silently handled)")
         return {"last_tested_level": None, "last_sl_hit_time": None}
     finally:
         conn.close()
@@ -356,6 +366,7 @@ def save_srv2_state(symbol, last_tested_level=None, last_sl_hit_time=None):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_srv2_state() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -376,6 +387,7 @@ def get_srv2_settings(symbol):
                 return {"lots": 1, "hedge_width_points": 100.0}
             return {"lots": int(row[0]), "hedge_width_points": float(row[1])}
     except Exception:
+        _logger.exception("get_srv2_settings() मध्ये अनपेक्षित चूक (silently handled)")
         return {"lots": 1, "hedge_width_points": 100.0}
     finally:
         conn.close()
@@ -400,6 +412,7 @@ def save_srv2_settings(symbol, lots, hedge_width_points):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_srv2_settings() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -434,6 +447,7 @@ def get_next_level_in_direction(symbol, entry_level_price, direction_bullish, ti
         below = [c for c in candidates if c < entry_level_price]
         return max(below) if below else None
     except Exception:
+        _logger.exception("get_next_level_in_direction() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -462,6 +476,7 @@ def get_zone_hits_today(symbol, level_price, trade_date):
                 return 0, None
             return len(rows), rows[0][0]
     except Exception:
+        _logger.exception("get_zone_hits_today() मध्ये अनपेक्षित चूक (silently handled)")
         return 0, None
     finally:
         conn.close()
@@ -490,6 +505,7 @@ def save_signal_log(entry):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_signal_log() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -512,6 +528,7 @@ def get_signal_log(symbol, trade_date):
             cols = ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]
             return pd.DataFrame(rows, columns=cols)
     except Exception:
+        _logger.exception("get_signal_log() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -543,6 +560,7 @@ def save_nifty_1min_batch(rows):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_nifty_1min_batch() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -569,6 +587,7 @@ def get_nifty_1min_range(from_date=None, to_date=None):
             rows = cur.fetchall()
             return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
     except Exception:
+        _logger.exception("get_nifty_1min_range() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -585,6 +604,7 @@ def get_nifty_1min_latest_timestamp():
             result = cur.fetchone()
             return result[0] if result else None
     except Exception:
+        _logger.exception("get_nifty_1min_latest_timestamp() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -613,6 +633,7 @@ def save_strike_oi_snapshot(symbol, trade_date, snapshot_time, strikes_data):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_strike_oi_snapshot() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -642,6 +663,7 @@ def get_strike_oi_history(symbol, trade_date, strikes=None):
             rows = cur.fetchall()
             return pd.DataFrame(rows, columns=["strike", "option_type", "snapshot_time", "oi"])
     except Exception:
+        _logger.exception("get_strike_oi_history() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -702,6 +724,7 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
         conn.commit()
         return True
     except Exception:
+        _logger.exception("merge_dynamic_sr_zones() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -734,6 +757,7 @@ def save_market_zones(zones_df, symbol):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_market_zones() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -762,6 +786,7 @@ def get_market_zones(symbol, status=None):
             cols = ["symbol", "zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]
             return pd.DataFrame(rows, columns=cols)
     except Exception:
+        _logger.exception("get_market_zones() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -785,6 +810,7 @@ def save_upstox_token(access_token, account_id=None):
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_upstox_token() मध्ये अनपेक्षित चूक (silently handled)")
         return False
     finally:
         conn.close()
@@ -811,6 +837,7 @@ def get_latest_upstox_token(account_id=None):
             row = cur.fetchone()
             return row[0] if row else None
     except Exception:
+        _logger.exception("get_latest_upstox_token() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -842,6 +869,7 @@ def get_token_age_hours(account_id=None):
             row = cur.fetchone()
             return float(row[0]) if row else None
     except Exception:
+        _logger.exception("get_token_age_hours() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()
@@ -885,6 +913,7 @@ def save_oi_snapshot_cloud(symbol, trade_date, snapshot_time, total_call_oi, tot
         conn.commit()
         return True
     except Exception:
+        _logger.exception("save_oi_snapshot_cloud() मध्ये अनपेक्षित चूक (silently handled)")
         conn.rollback()
         return False
     finally:

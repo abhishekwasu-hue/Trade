@@ -35,7 +35,7 @@ import pandas as pd
 import cloud_db
 from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source
-from notifications import send_telegram_message
+from notifications import send_telegram_message, write_heartbeat
 from signals import calculate_rsi
 from strategy import select_credit_spread_fixed_strikes
 from trading_engine import open_multi_leg_trade
@@ -302,3 +302,4 @@ if __name__ == "__main__":
         exit(1)
     for symbol in args.symbols.split(","):
         print(process_symbol(token, symbol.strip()))
+    write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं

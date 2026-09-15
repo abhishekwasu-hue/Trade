@@ -1,17 +1,22 @@
-streamlit>=1.37.0
-pandas
-numpy
-plotly
-requests
-reportlab
-kaleido>=1.0.0
-yfinance
-google-api-python-client
-google-auth
-google-auth-httplib2
-pyyaml
-pytz
-pyarrow
-streamlit-autorefresh
-psycopg2-binary
-flask
+# 🎓 Production-readiness सुधारणा — याआधी एकही पॅकेज pin केलेलं नव्हतं (फक्त streamlit ला खालची
+# मर्यादा होती), म्हणजे कधीही fresh `pip install` (नवीन Streamlit Cloud deploy, नवीन VPS सेटअप)
+# झाला की वेगळी (कदाचित breaking) आवृत्ती येऊ शकत होती. आता प्रत्येक पॅकेज त्याच्या सध्या-तपासलेल्या
+# major आवृत्तीला (compatible-release `~=`) लॉक केलं आहे — patch/minor updates (bug/security fixes)
+# आपोआप मिळतील, पण breaking major-version उडी (उदा. pandas 2→3) आपोआप येणार नाही.
+streamlit>=1.37.0,<2.0.0
+pandas~=3.0
+numpy~=2.4
+plotly~=7.0
+requests~=2.33
+reportlab~=5.0
+kaleido>=1.0.0,<2.0.0
+yfinance~=1.7
+google-api-python-client~=2.200
+google-auth~=2.58
+google-auth-httplib2~=0.4
+pyyaml~=6.0
+pytz>=2024.1
+pyarrow~=25.0
+streamlit-autorefresh~=1.0
+psycopg2-binary~=2.9
+flask~=3.1

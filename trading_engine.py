@@ -16,6 +16,10 @@ from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_di
 # target_pct_of_max_profit, उदा. SRv2 साठी 80%) आणि established 3:10pm Carry-Forward साठी "किमान
 # इतका नफा असायलाच हवा" हा उंबरठा — या दोन वेगळ्या गोष्टी आहेत. established सर्व "new rule" strategies
 # (BULL_PUT_SPREAD/BEAR_CALL_SPREAD/IRON_CONDOR/IRON_BUTTERFLY, dynamic_sr_instant वगळता) साठी सामायिक.
+from log_setup import get_logger
+
+_logger = get_logger("trading_engine.py")
+
 CARRY_FORWARD_MIN_PROFIT_PCT = 30
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
@@ -529,6 +533,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                         f"कृपया Dashboard/Upstox app उघडून प्रत्यक्ष स्थिती तपासा."
                     )
                 except Exception:
+                    _logger.exception("manage_open_trades() मध्ये अनपेक्षित चूक (silently handled)")
                     pass  # Telegram पाठवताना चूक झाली तरी मुख्य loop थांबता कामा नये
 
     # Trailing SL मुळे peak_pnl अपडेट झालेला असू शकतो, जरी या रनला कोणताही trade प्रत्यक्ष बंद झाला नसला तरी —
