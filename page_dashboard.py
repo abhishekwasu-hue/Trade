@@ -608,7 +608,30 @@ def render():
         pattern_markers_tv = []
         if not df_candles.empty:
             try:
-                df_1d_tv = fetch_candles(token_input, symbol, underlying_price, interval="day")
+                # 🎓 Production-speed सुधारणा — हे तीन fetch_candles() कॉल्स (day/30min/15min) एकमेकांपासून
+                # पूर्णपणे स्वतंत्र आहेत, पण आधी sequentially (एकामागोमाग एक) चालायचे — cache-miss झाल्यावर
+                # (पहिलं load, किंवा दर ६० सेकंदांनी cache expire झाल्यावर) तिन्ही Upstox कॉल्सची वाट
+                # क्रमाने बघावी लागायची. आता ThreadPoolExecutor ने समांतर — एकूण वेळ जवळजवळ "सर्वात संथ
+                # एका कॉल इतका" होतो, तिन्हींच्या बेरजेइतका नाही. Streamlit च्या st.warning/st.error
+                # (fetch_candles च्या आतल्या error-path मध्ये) worker thread मधून योग्य काम करावं म्हणून
+                # add_script_run_ctx ने मुख्य thread चा context प्रत्येक worker ला जोडलेला आहे (Streamlit
+                # च्याच अधिकृत pattern नुसार — थेट raw threading वापरणं धोकादायक ठरतं).
+                from concurrent.futures import ThreadPoolExecutor
+                from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+
+                def _fetch_with_ctx(ctx, *args, **kwargs):
+                    add_script_run_ctx(ctx=ctx)
+                    return fetch_candles(*args, **kwargs)
+
+                _ctx = get_script_run_ctx()
+                with ThreadPoolExecutor(max_workers=3) as _executor:
+                    _f_1d = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="day")
+                    _f_30m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="30minute")
+                    _f_15m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="15minute")
+                    df_1d_tv = _f_1d.result()
+                    df_1h_tv = resample_to_1h(_f_30m.result())
+                    df_15m_tv = _f_15m.result()
+
                 if df_1d_tv is not None and not df_1d_tv.empty:
                     st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
                     df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
@@ -618,7 +641,6 @@ def render():
                     )
                     st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
 
-                df_1h_tv = resample_to_1h(fetch_candles(token_input, symbol, underlying_price, interval="30minute"))
                 if df_1h_tv is not None and not df_1h_tv.empty:
                     st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
                     df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
@@ -628,7 +650,6 @@ def render():
                     )
                     st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
 
-                df_15m_tv = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
                 if df_15m_tv is not None and not df_15m_tv.empty:
                     st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
                     df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()

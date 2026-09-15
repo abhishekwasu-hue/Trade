@@ -329,10 +329,13 @@ def upload_to_google_drive(file_bytes, filename, mime_type="text/csv"):
     except Exception as e:
         return False, f"अपलोड अयशस्वी: {e}"
 
+@st.cache_data(ttl=300)
 def fetch_option_expiries(access_token, symbol):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — सर्व उपलब्ध expiry dates
     (चढत्या क्रमाने, स्ट्रिंग "YYYY-MM-DD") मिळवणे. fetch_upstox_option_chain() च्याच expiry-यादी
-    कोडचा पुनर्वापर — गृहीत धरलेला वार नाही, प्रत्यक्ष API कडून."""
+    कोडचा पुनर्वापर — गृहीत धरलेला वार नाही, प्रत्यक्ष API कडून.
+    🎓 Production-speed सुधारणा — expiry-यादी दिवसभरात जवळजवळ कधीच बदलत नाही (साप्ताहिक/मासिक
+    expiry cycle नुसारच बदलते) — त्यामुळे ५-मिनिट cache पूर्णपणे सुरक्षित, अनावश्यक API कॉल्स टाळते."""
     instrument_key = get_instrument_key(symbol)
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
     try:
@@ -348,7 +351,16 @@ def fetch_option_expiries(access_token, symbol):
     return []
 
 
+@st.cache_data(ttl=10)
 def fetch_upstox_option_chain(access_token, symbol, expiry_index=0):
+    """
+    🎓 Production-speed सुधारणा — याआधी हा कॉल अजिबात cached नव्हता, आणि shared_context.py त्याला
+    **प्रत्येक rerun ला, प्रत्येक page वर, बिनशर्त** बोलावतं (@st.fragment नाही — मुख्य app.py च्याच
+    सुरुवातीला) — म्हणजे नुसता एखादा sidebar checkbox टॉगल केला तरी, Positions/Orders सारख्या
+    option-chain शी थेट संबंध नसलेल्या page वरही, संपूर्ण chain (expiry-यादी + chain, दोन सलग Upstox
+    कॉल्स) पुन्हा fetch व्हायचा — हा dashboard "slow" वाटण्याचं सर्वात मोठं कारण. आता १०-सेकंद cache —
+    वेगवान UI interactions (checkbox/slider बदलणे) साठी पुरेसा वेगवान, तरीही trading साठी व्यवहार्यपणे
+    "live" (Upstox कडून प्रत्यक्ष किंमत/OI काही सेकंदांतच जुनी होतेच, हा फरक नगण्य)."""
     instrument_key = get_instrument_key(symbol)
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
     
