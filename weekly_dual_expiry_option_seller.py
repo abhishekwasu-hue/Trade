@@ -63,10 +63,20 @@ def pd_isna(x):
 
 
 def get_oi_rotation_direction(db_path, symbol, min_change_pct=2.0):
-    """established rotation_confirmed_for_2_snapshots() वापरून, अलीकडच्या ३ snapshots वरून OI-आधारित दिशा."""
+    """rotation_confirmed_for_2_snapshots() वापरून, अलीकडच्या ३ snapshots वरून OI-आधारित दिशा.
+
+    🎓 वापरकर्त्याने VPS वरून सापडवलेली Cloud DB bug (oi_analysis.get_latest_pcr() बघा) इथेही
+    होती — Cloud DB configured असताना नेहमी फक्त local SQLite कडेच बघायचं. फिक्स."""
+    import cloud_db
+    today_str = get_ist_now().strftime("%Y-%m-%d")
+    if cloud_db.is_cloud_db_configured():
+        cloud_rows = cloud_db.get_recent_oi_snapshots_cloud(symbol, today_str, limit=3)
+        if len(cloud_rows) < 3:
+            return None
+        history_rows = [(r["total_call_oi"], r["total_put_oi"]) for r in cloud_rows]
+        return rotation_confirmed_for_2_snapshots(history_rows, min_change_pct)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    today_str = get_ist_now().strftime("%Y-%m-%d")
     cur.execute(
         """SELECT total_call_oi, total_put_oi FROM oi_diff_snapshots
            WHERE symbol=? AND trade_date=? ORDER BY snapshot_time ASC""",

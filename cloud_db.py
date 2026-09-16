@@ -1092,6 +1092,68 @@ def get_recent_oi_snapshots_cloud(symbol, trade_date, before_time=None, limit=5)
         conn.close()
 
 
+def get_latest_oi_snapshot_cloud(symbol, trade_date):
+    """वापरकर्त्याने VPS वरून प्रत्यक्ष तपासून सापडवलेली bug (PCR Gate) — त्या दिवसाचा सर्वात
+    अलीकडचा snapshot, फक्त एकच रांग (oi_analysis.get_latest_pcr() साठी). आधी हे function
+    अस्तित्वातच नव्हतं — get_latest_pcr() नेहमी फक्त local SQLite कडेच बघायचं, Cloud DB configured
+    असतानाही. पण oi_snapshot_collector.py Cloud DB configured असेल तर तिथेच लिहितो (local SQLite
+    मध्ये काहीच लिहीत नाही) — त्यामुळे PCR Gate ला कायम "डेटा उपलब्ध नाही" दिसायचं आणि प्रत्येक
+    trade अडवला जायचा, जरी collector स्वतः दर ५ मिनिटांनी व्यवस्थित (Supabase मध्ये) डेटा साठवत असला तरी."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT snapshot_time, total_call_oi, total_put_oi FROM oi_diff_snapshots
+                   WHERE symbol=%s AND trade_date=%s
+                   ORDER BY snapshot_time DESC LIMIT 1""",
+                (symbol, trade_date),
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def get_latest_oi_signal_cloud(symbol, trade_date):
+    """त्या दिवसाचा सर्वात अलीकडचा 'signal' — oi_analysis.get_latest_oi_signal() साठी (A1 Engine
+    च्या OI Confirmation Gate मध्ये वापरलं जातं — get_latest_pcr() सारखीच, Cloud DB configured
+    असताना local SQLite कडे बघण्याची चूक इथेही होती)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT signal FROM oi_diff_snapshots WHERE symbol=%s AND trade_date=%s
+                   ORDER BY snapshot_time DESC LIMIT 1""",
+                (symbol, trade_date),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def get_previous_day_oi_cloud(symbol, today_str):
+    """आजच्या आधीच्या शेवटच्या ट्रेडिंग दिवसाचा शेवटचा एकूण (Call+Put) OI — oi_analysis.
+    get_previous_day_total_oi() साठी (Swing मोडचं OI-Price Matrix — तीच local-SQLite-only चूक)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT total_call_oi, total_put_oi FROM oi_diff_snapshots
+                   WHERE symbol=%s AND trade_date < %s ORDER BY trade_date DESC, snapshot_time DESC LIMIT 1""",
+                (symbol, today_str),
+            )
+            row = cur.fetchone()
+            return (row[0] + row[1]) if row else None
+    finally:
+        conn.close()
+
+
 def get_oi_price_history_cloud(symbol, trade_date):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + NIFTY किंमत, वेळेनुसार Chart (Sensibull-सारखं)

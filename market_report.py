@@ -76,10 +76,29 @@ def get_today_oi_buildup_summary(symbol):
     """
     आजच्या दिवसाच्या पहिल्या व शेवटच्या oi_diff_snapshots वरून — दिवसभरातला निव्वळ Put/Call
     Writing/Buying कल आणि शेवटचा signal. रिटर्न: dict, किंवा डेटा नसेल तर None.
+
+    🎓 वापरकर्त्याने VPS वरून सापडवलेली Cloud DB bug (oi_analysis.get_latest_pcr() बघा) इथेही
+    होती — Cloud DB configured असताना नेहमी फक्त local SQLite कडेच बघायचं. फिक्स.
     """
+    import cloud_db
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    if cloud_db.is_cloud_db_configured():
+        rows_desc = cloud_db.get_oi_history_cloud(symbol, today_str)  # नवीन->जुनं
+        if len(rows_desc) < 2:
+            return None
+        last, first = rows_desc[0], rows_desc[-1]
+        put_class = classify_oi_price_action(last["total_put_oi"], first["total_put_oi"], last["total_put_premium"], first["total_put_premium"])
+        call_class = classify_oi_price_action(last["total_call_oi"], first["total_call_oi"], last["total_call_premium"], first["total_call_premium"])
+        day_direction, day_message = generate_oi_price_signal(put_class, call_class)
+        return {
+            "day_put_trend": _translate_oi_trend_to_english(put_class),
+            "day_call_trend": _translate_oi_trend_to_english(call_class),
+            "day_direction": day_direction, "day_message": day_message,
+            "latest_signal": last["signal"], "snapshot_count": len(rows_desc),
+        }
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    today_str = get_ist_today().strftime("%Y-%m-%d")
     cur.execute(
         """SELECT total_put_oi, total_call_oi, total_put_premium, total_call_premium, signal
            FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time ASC""",

@@ -45,21 +45,28 @@ def is_kill_switch_active():
 
 
 def get_oi_signal_persistence(symbol, min_consistent=OI_PERSISTENCE_COUNT):
-    """oi_signal_auto_trader.py सारखीच established पद्धत — सलग स्नॅपशॉट्समध्ये तीच दिशा टिकून आहे का."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    """oi_signal_auto_trader.py सारखीच पद्धत — सलग स्नॅपशॉट्समध्ये तीच दिशा टिकून आहे का.
+
+    🎓 वापरकर्त्याने VPS वरून सापडवलेली Cloud DB bug (get_latest_pcr() बघा) इथेही होती — फिक्स."""
+    import cloud_db
     today_str = get_ist_today().strftime("%Y-%m-%d")
-    cur.execute(
-        "SELECT signal FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT ?",
-        (symbol, today_str, min_consistent),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    if len(rows) < min_consistent:
+    if cloud_db.is_cloud_db_configured():
+        cloud_rows = cloud_db.get_recent_oi_snapshots_cloud(symbol, today_str, limit=min_consistent)
+        signals = [r["signal"] for r in cloud_rows]
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT signal FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT ?",
+            (symbol, today_str, min_consistent),
+        )
+        signals = [r[0] for r in cur.fetchall()]
+        conn.close()
+    if len(signals) < min_consistent:
         return None
     directions = []
-    for r in rows:
-        sig = r[0] or ""
+    for sig in signals:
+        sig = sig or ""
         if "BULLISH" in sig:
             directions.append("BULLISH")
         elif "BEARISH" in sig:
