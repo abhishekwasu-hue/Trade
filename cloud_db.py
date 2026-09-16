@@ -178,9 +178,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 50,          # Short leg — ATM पासून किती points ITM
         "hedge_width_points": 150,       # Long hedge — short strike पासून किती दूर
-        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Spread+Naked)
-        # एकत्र लागू. PCR < pcr_bullish_min -> Bullish trade नाही. PCR > pcr_bearish_max -> Bearish
-        # trade नाही. डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe).
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
+        # आधी RSI उंबरठे (Support<40/Resistance>60) module मध्ये hardcoded होते, PCR गेट कधीच बंद
+        # करता येत नव्हता. आता दोन्ही Dashboard वरून (Entry Gate विभाग) नियंत्रित करता येतात —
+        # डीफॉल्ट दोन्ही चालू, जुनेच उंबरठे, म्हणजे न बदलणाऱ्या वापरकर्त्यांसाठी वर्तन तेच राहतं.
+        "entry_rsi_gate_enabled": True,
+        "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
+        "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        "entry_pcr_gate_enabled": True,
+        # PCR < pcr_bullish_min -> Bullish trade नाही. PCR > pcr_bearish_max -> Bearish trade नाही.
+        # डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe) — हे PCR गेट बंद असतानाही लागू होत नाही.
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,
         "spread_sl_spot_pct": 0.05,
@@ -203,6 +210,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 100,
         "hedge_width_points": 150,
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
+        # 1m_instant सारखीच सुधारणा, पण srv2_momentum_reversal_strategy.py चा RSI गेट एकाच
+        # neutral_level (50) भोवती सममित आहे (Support<50/Resistance>50), दोन वेगळे उंबरठे नाहीत.
+        "entry_rsi_gate_enabled": True,
+        "rsi_neutral_level": 50,
+        "entry_pcr_gate_enabled": True,
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,
         "spread_sl_spot_pct": 0.15,

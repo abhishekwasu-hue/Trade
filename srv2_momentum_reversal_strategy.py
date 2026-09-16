@@ -129,6 +129,9 @@ def process_symbol(access_token, symbol, lot_size=65):
 
     settings = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
     lots = settings["lots"]
+    entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
+    rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
+    entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -150,15 +153,20 @@ def process_symbol(access_token, symbol, lot_size=65):
         else:
             level_type, direction = "RESISTANCE", "BEARISH"
 
-        rsi_ok, rsi_value = check_rsi_filter(candles_df, direction)
-        if not rsi_ok:
-            continue
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
+        # वरून पूर्णपणे बंद करता येतो.
+        if entry_rsi_gate_enabled:
+            rsi_ok, rsi_value = check_rsi_filter(candles_df, direction, rsi_neutral_level)
+            if not rsi_ok:
+                continue
 
-        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Credit
-        # Spread + Naked) एकत्र लागू. डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे.
-        pcr_ok, pcr_value, pcr_reason = check_pcr_gate(symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"])
-        if not pcr_ok:
-            continue
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — on/off) — दोन्ही trade-प्रकारांना
+        # (Credit Spread + Naked) एकत्र लागू, पण आता Dashboard वरून पूर्णपणे बंदही करता येतो. बंद
+        # नसेल तरच — डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे (fail-safe).
+        if entry_pcr_gate_enabled:
+            pcr_ok, pcr_value, pcr_reason = check_pcr_gate(symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"])
+            if not pcr_ok:
+                continue
 
         # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी).
         hit_count_so_far, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date)
