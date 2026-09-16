@@ -163,8 +163,16 @@ def check_oi_wall_confirmation(raw_chain, symbol, psychological_level, direction
     }
 
 def get_latest_oi_signal(symbol):
-    """आजच्या दिवसातील Put-Call OI Diff Tracker चा सर्वात अलीकडचा सिग्नल मिळवणे (OI Confirmation Gate साठी)."""
+    """आजच्या दिवसातील Put-Call OI Diff Tracker चा सर्वात अलीकडचा सिग्नल मिळवणे (OI Confirmation Gate साठी).
+
+    🎓 वापरकर्त्याने VPS वरून get_latest_pcr() मध्ये सापडवलेली bug याच function मध्येही होती — Cloud
+    DB (Supabase) configured असतानाही नेहमी फक्त local SQLite कडेच बघायचं, जिथे oi_snapshot_collector.py
+    (Cloud configured असेल तेव्हा फक्त तिथेच लिहितं) कधीच काही लिहीत नाही — त्यामुळे A1 Engine चं मुख्य
+    OI Confirmation Gate (enable_oi_gate, डीफॉल्ट चालू) कायम NEUTRAL/None बघून प्रत्येक entry अडवायचं."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
+    import cloud_db
+    if cloud_db.is_cloud_db_configured():
+        return cloud_db.get_latest_oi_signal_cloud(symbol, today_str)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -353,8 +361,12 @@ def _extract_oi_ltp(item, side):
     return (int(oi) if oi is not None else 0), (float(ltp) if ltp is not None else None)
 
 def get_previous_day_total_oi(symbol):
-    """आजच्या आधीच्या शेवटच्या ट्रेडिंग दिवसाचा शेवटचा एकूण (Call+Put) OI मिळवणे — oi_diff_snapshots मधून."""
+    """आजच्या आधीच्या शेवटच्या ट्रेडिंग दिवसाचा शेवटचा एकूण (Call+Put) OI मिळवणे — oi_diff_snapshots मधून.
+    (get_latest_pcr()/get_latest_oi_signal() सारखीच Cloud DB चूक इथेही होती — आता फिक्स.)"""
     today_str = get_ist_today().strftime("%Y-%m-%d")
+    import cloud_db
+    if cloud_db.is_cloud_db_configured():
+        return cloud_db.get_previous_day_oi_cloud(symbol, today_str)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -371,20 +383,35 @@ def get_latest_pcr(symbol, max_age_minutes=15):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — Bot Dynamic SR Algo) — आजचा सर्वात
     अलीकडचा (ATM-जवळचा, oi_snapshot_collector.py कडूनच साठवलेला) PCR (Put OI / Call OI) मिळवणे.
     snapshot खूप जुना (max_age_minutes पेक्षा जास्त — collector थांबलेला असू शकतो) असेल, तर None
-    (डेटा विश्वासार्ह नाही असं समजून) — वापरकर्त्याने ठरवल्याप्रमाणे, अशा वेळी trade थांबवणे अपेक्षित."""
+    (डेटा विश्वासार्ह नाही असं समजून) — वापरकर्त्याने ठरवल्याप्रमाणे, अशा वेळी trade थांबवणे अपेक्षित.
+
+    🎓 वापरकर्त्याने VPS वरून प्रत्यक्ष log+DB तपासून सापडवलेली गंभीर bug — हे function आधी नेहमीच
+    फक्त local SQLite कडे बघायचं, Cloud DB (Supabase) configured असतानाही. पण
+    oi_snapshot_collector.py Cloud DB configured असेल तर तिथेच (फक्त तिथेच, local SQLite मध्ये
+    नाही) लिहितं — त्यामुळे local SQLite कायम रिकामी राहायची आणि PCR Gate ला रोज, प्रत्येक वेळी
+    "डेटा उपलब्ध नाही" दिसून प्रत्येक trade अडवला जायचा — जरी collector स्वतः दर ५ मिनिटांनी अगदी
+    व्यवस्थित (फक्त चुकीच्या — म्हणजे Cloud — जागी) डेटा साठवत असला तरी."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT total_call_oi, total_put_oi, snapshot_time FROM oi_diff_snapshots
-           WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT 1""",
-        (symbol, today_str),
-    )
-    row = cur.fetchone()
-    conn.close()
-    if row is None or not row[0]:
-        return None
-    total_call_oi, total_put_oi, snapshot_time_str = row
+
+    import cloud_db
+    if cloud_db.is_cloud_db_configured():
+        row = cloud_db.get_latest_oi_snapshot_cloud(symbol, today_str)
+        if row is None or not row.get("total_call_oi"):
+            return None
+        total_call_oi, total_put_oi, snapshot_time_str = row["total_call_oi"], row["total_put_oi"], row["snapshot_time"]
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT total_call_oi, total_put_oi, snapshot_time FROM oi_diff_snapshots
+               WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT 1""",
+            (symbol, today_str),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if row is None or not row[0]:
+            return None
+        total_call_oi, total_put_oi, snapshot_time_str = row
     try:
         snapshot_dt = pd.to_datetime(f"{today_str} {snapshot_time_str}")
         age_minutes = (get_ist_now() - snapshot_dt).total_seconds() / 60

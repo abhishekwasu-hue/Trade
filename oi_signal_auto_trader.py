@@ -66,22 +66,31 @@ def get_current_a1_direction(access_token, symbol, strategy_choice="price_action
 
 
 def get_oi_signal_persistence(symbol, min_consistent=OI_PERSISTENCE_COUNT):
-    """oi_diff_snapshots मधले शेवटचे min_consistent स्नॅपशॉट्स — तीच दिशा (BULLISH/BEARISH) सलग टिकून आहे का."""
-    import sqlite3
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    """oi_diff_snapshots मधले शेवटचे min_consistent स्नॅपशॉट्स — तीच दिशा (BULLISH/BEARISH) सलग टिकून आहे का.
+
+    🎓 वापरकर्त्याने VPS वरून oi_analysis.get_latest_pcr() मध्ये सापडवलेली bug इथेही होती — Cloud DB
+    (Supabase) configured असताना नेहमी फक्त local SQLite कडेच बघायचं, जिथे oi_snapshot_collector.py
+    तेव्हा काहीच लिहीत नाही (फक्त Cloud मध्ये लिहितं) — त्यामुळे हा OI persistence gate कायम अपयशी व्हायचा."""
+    import cloud_db
     today_str = get_ist_today().strftime("%Y-%m-%d")
-    cur.execute(
-        "SELECT signal FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT ?",
-        (symbol, today_str, min_consistent),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    if len(rows) < min_consistent:
-        return None, f"अपुरा इतिहास ({len(rows)}/{min_consistent} स्नॅपशॉट्स)"
+    if cloud_db.is_cloud_db_configured():
+        cloud_rows = cloud_db.get_recent_oi_snapshots_cloud(symbol, today_str, limit=min_consistent)
+        signals = [r["signal"] for r in cloud_rows]
+    else:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT signal FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT ?",
+            (symbol, today_str, min_consistent),
+        )
+        signals = [r[0] for r in cur.fetchall()]
+        conn.close()
+    if len(signals) < min_consistent:
+        return None, f"अपुरा इतिहास ({len(signals)}/{min_consistent} स्नॅपशॉट्स)"
     directions = []
-    for r in rows:
-        sig = r[0] or ""
+    for sig in signals:
+        sig = sig or ""
         if "BULLISH" in sig:
             directions.append("BULLISH")
         elif "BEARISH" in sig:
