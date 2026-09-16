@@ -12,14 +12,25 @@ SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
 STRATEGY_LABELS = {"1m_instant": "1-मिनिट Instant Trader (1M + 5M)", "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal"}
 
 
-def _number_input(label, settings, key, **kwargs):
+def _widget_key(strategy_key, symbol, field):
+    # 🎓 वापरकर्त्याने सापडवलेली bug — आधी widget key फक्त "bdsr_<field>" असायचा (strategy/symbol
+    # शिवाय), म्हणजे सर्व 2 strategies × 3 symbols साठी तोच एक key — Strategy/Symbol बदलल्यावर
+    # cloud_db.get_strategy_settings() नवीन combo चे बरोबर settings आणायचं, पण Streamlit त्या
+    # widget-key ला आधीच साठवलेली (आधीच्या combo ची) value दाखवत राहायचं (हेच established Streamlit
+    # वर्तन — same key असेल तर नवीन `value=` कडे दुर्लक्ष होतं). आता प्रत्येक widget चा key स्वतः
+    # strategy_key+symbol सकट असल्याने, combo बदलताच तो पूर्णपणे नवीन widget ठरतो — आणि cloud_db
+    # वरून आलेलं बरोबर value लगेच दिसतं.
+    return f"bdsr_{strategy_key}_{symbol}_{field}"
+
+
+def _number_input(label, settings, key, strategy_key, symbol, **kwargs):
     # 🎓 वापरकर्त्याने सापडवलेली bug — आधी साठवलेल्या value च्या (int/float) प्रकारावरून casting
     # व्हायचं, पण caller ने दिलेले min_value/max_value/step मात्र नेहमी float — Streamlit ला हे
     # दोन्ही एकाच प्रकारचे (सर्व int किंवा सर्व float) हवेत, नाहीतर StreamlitMixedNumericTypesError.
     # आता caller च्या kwargs वरूनच (साठवलेल्या value च्या प्रकारावरून नाही) ठरवतो.
     is_float = isinstance(kwargs.get("step"), float) or isinstance(kwargs.get("min_value"), float) or isinstance(kwargs.get("max_value"), float)
     value = float(settings[key]) if is_float else int(settings[key])
-    return st.number_input(label, value=value, key=f"bdsr_{key}", **kwargs)
+    return st.number_input(label, value=value, key=_widget_key(strategy_key, symbol, key), **kwargs)
 
 
 def render():
@@ -38,47 +49,47 @@ def render():
     st.caption("Short leg आता ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        lots = _number_input("Lots", settings, "lots", min_value=1, max_value=50, step=1)
+        lots = _number_input("Lots", settings, "lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
     with c2:
-        itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", min_value=25.0, max_value=500.0, step=25.0)
+        itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
     with c3:
-        hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", min_value=25.0, max_value=500.0, step=25.0)
+        hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     st.markdown("##### 🚦 PCR Gate (Trade Filter)")
     st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो.")
     p1, p2 = st.columns(2)
     with p1:
-        pcr_bullish_min = _number_input("PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
+        pcr_bullish_min = _number_input("PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", strategy_key, symbol, min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
     with p2:
-        pcr_bearish_max = _number_input("PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
+        pcr_bearish_max = _number_input("PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", strategy_key, symbol, min_value=0.10, max_value=2.0, step=0.05, format="%.2f")
 
     st.markdown("##### 🎯 Trade Drop-Down Settings — SL / TSL / Target (Credit Spread)")
     if strategy_key == "1m_instant":
         st.caption("SL/TSL/Target — Spot% आणि Premium-Points दोन्ही एकत्र (जे आधी घडेल ते लागू).")
         s1, s2 = st.columns(2)
         with s1:
-            spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            spread_target_spot_pct = _number_input("Target — Spot %", settings, "spread_target_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            spread_target_spot_pct = _number_input("Target — Spot %", settings, "spread_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
         with s2:
-            spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
-            spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
-            spread_target_premium_points = _number_input("Target — Premium Points", settings, "spread_target_premium_points", min_value=1.0, max_value=200.0, step=1.0)
+            spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+            spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+            spread_target_premium_points = _number_input("Target — Premium Points", settings, "spread_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
         st.caption("TSL सक्रिय झाल्यावर SL Entry/Breakeven वर घट्ट होतो (एकदाच, कायमचा).")
     else:
         st.caption("SL/TSL — Spot% + Premium-Points एकत्र. Target मात्र निव्वळ प्रीमियमच्या % (उदा. 80%).")
         s1, s2 = st.columns(2)
         with s1:
-            spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
         with s2:
-            spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
-            spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
+            spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+            spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
         s3, s4 = st.columns(2)
         with s3:
-            spread_target_pct_of_premium = _number_input("Target — % of Net Premium", settings, "spread_target_pct_of_premium", min_value=1.0, max_value=200.0, step=1.0)
+            spread_target_pct_of_premium = _number_input("Target — % of Net Premium", settings, "spread_target_pct_of_premium", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
         with s4:
-            carry_forward_min_profit_pct = _number_input("Carry-Forward किमान नफा %", settings, "carry_forward_min_profit_pct", min_value=1.0, max_value=100.0, step=1.0)
+            carry_forward_min_profit_pct = _number_input("Carry-Forward किमान नफा %", settings, "carry_forward_min_profit_pct", strategy_key, symbol, min_value=1.0, max_value=100.0, step=1.0)
         st.caption("3:10pm ला Target अजून गाठलेला नसेल — नफा वरील % पेक्षा जास्त तर पुढच्या दिवशी चालू, नाहीतर आजच बंद. Exit त्याच timeframe च्या पुढच्या level ला (entry_timeframe नुसार).")
 
     st.markdown("---")
@@ -86,31 +97,31 @@ def render():
     st.caption("त्याच सिग्नलवर, Credit Spread सोबतच, समांतर घेतला जातो. डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
     n0, n1 = st.columns(2)
     with n0:
-        naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key="bdsr_naked_enabled")
+        naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
     with n1:
-        naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key="bdsr_naked_hedge_enabled")
+        naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key=_widget_key(strategy_key, symbol, "naked_hedge_enabled"))
     n2, n3 = st.columns(2)
     with n2:
-        naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", min_value=25.0, max_value=500.0, step=25.0)
+        naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     st.markdown("##### 🎯 Trade Drop-Down Settings — SL / TSL / Target (Naked Option)")
     st.caption("Naked trade कधीच carry-forward नाही — नेहमी आजच (खालील EOD वेळेला) बंद.")
     m1, m2 = st.columns(2)
     with m1:
-        naked_sl_spot_pct = _number_input("SL — Spot %", settings, "naked_sl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-        naked_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "naked_tsl_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-        naked_target_spot_pct = _number_input("Target — Spot %", settings, "naked_target_spot_pct", min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+        naked_sl_spot_pct = _number_input("SL — Spot %", settings, "naked_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+        naked_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "naked_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+        naked_target_spot_pct = _number_input("Target — Spot %", settings, "naked_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
     with m2:
-        naked_sl_premium_points = _number_input("SL — Premium Points", settings, "naked_sl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
-        naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", min_value=1.0, max_value=200.0, step=1.0)
-        naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", min_value=1.0, max_value=200.0, step=1.0)
+        naked_sl_premium_points = _number_input("SL — Premium Points", settings, "naked_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+        naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+        naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
 
     if strategy_key == "15m_dynamic_sr":
         e1, e2 = st.columns(2)
         with e1:
-            naked_eod_hour = _number_input("Naked EOD तास (24-तास)", settings, "naked_eod_hour", min_value=9, max_value=15, step=1)
+            naked_eod_hour = _number_input("Naked EOD तास (24-तास)", settings, "naked_eod_hour", strategy_key, symbol, min_value=9, max_value=15, step=1)
         with e2:
-            naked_eod_minute = _number_input("Naked EOD मिनिट", settings, "naked_eod_minute", min_value=0, max_value=59, step=5)
+            naked_eod_minute = _number_input("Naked EOD मिनिट", settings, "naked_eod_minute", strategy_key, symbol, min_value=0, max_value=59, step=5)
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
