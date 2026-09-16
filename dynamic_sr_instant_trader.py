@@ -140,7 +140,12 @@ def process_symbol(access_token, symbol, lot_size=65):
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": row["zone_type"],
             "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
-            "ltp_at_signal": None, "trade_status": None, "reason": "level cross आढळला नाही" if not hit else "",
+            # 🎓 वापरकर्त्याने सापडवलेली bug — हा संदेश "level cross आढळला नाही" असायचा, पण प्रत्यक्ष
+            # निकष (check_level_crossed वरचा docstring बघा) TOUCH किंवा GAP_THROUGH आहे — "cross" या
+            # शब्दाने असं वाटायचं की entry साठी level पूर्ण ओलांडून पलीकडे बंद व्हावी लागते, जे खरं
+            # नाही (नुसता स्पर्श पुरेसा आहे) — फक्त संदेशाचा शब्द चुकीचा होता, प्रत्यक्ष तर्कशास्त्र
+            # (TOUCH रांगा log मध्ये दिसतात, फक्त RSI गेटने पुढे थांबवलेल्या) बरोबरच आहे.
+            "ltp_at_signal": None, "trade_status": None, "reason": "level ला स्पर्श (touch) आढळला नाही (शेवटच्या candles मध्ये)" if not hit else "",
         }
 
         if not hit:

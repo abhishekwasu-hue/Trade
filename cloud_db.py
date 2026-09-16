@@ -225,6 +225,28 @@ STRATEGY_SETTINGS_DEFAULTS = {
     },
 }
 
+# वापरकर्त्याने सापडवलेली bug — वरचे itm_depth_points/hedge_width_points/naked_hedge_width_points
+# डीफॉल्ट NIFTY (strike step 50) साठी ठरवलेले आहेत, पण सर्व तीनही symbols साठी तेच सपाट आकडे
+# दाखवले जायचे — BANKNIFTY/SENSEX चा strike step 100 (NIFTY च्या दुप्पट) असल्याने तोच आकडा त्यांच्यासाठी
+# प्रत्यक्षात निम्म्या strikes-ITM ला जातो, प्रमाणाबाहेर. खालचा STRIKE_STEP आणि _scale_strike_relative_defaults()
+# हे फक्त strike-निवडीशी संबंधित (points) fields, symbol च्या स्वतःच्या strike step नुसार प्रमाणात
+# मोठे/लहान करतात — फक्त वापरकर्त्याने अजून त्या symbol साठी स्वतः customize न केलेल्या डीफॉल्टवरच लागू
+# होतं (एकदा जतन केलं की तोच जतन केलेला आकडा कायम वापरला जातो, इथे काही बदलत नाही).
+STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
+_STRIKE_RELATIVE_FIELDS = ("itm_depth_points", "hedge_width_points", "naked_hedge_width_points")
+
+
+def _scale_strike_relative_defaults(defaults, symbol):
+    step = STRIKE_STEP.get(symbol, STRIKE_STEP["NIFTY"])
+    baseline_step = STRIKE_STEP["NIFTY"]
+    if step == baseline_step:
+        return defaults
+    scaled = dict(defaults)
+    for field in _STRIKE_RELATIVE_FIELDS:
+        if field in scaled:
+            scaled[field] = max(round(scaled[field] / baseline_step) * step, step)
+    return scaled
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Multi-Broker Multi-Account" — कुठले accounts
 # (कुठल्या broker वर) established रणनींतींनी वापरायचे, याची नोंदणी.
 CREATE_BROKER_ACCOUNTS_TABLE_SQL = """
@@ -491,8 +513,9 @@ def get_strategy_settings(strategy_name, symbol):
     strategy_name ("1m_instant" किंवा "15m_dynamic_sr") + symbol साठी settings. Supabase मध्ये
     साठवलेले (Dashboard वरून बदललेले) आणि डीफॉल्ट (STRATEGY_SETTINGS_DEFAULTS) यांचं मिश्रण —
     वापरकर्त्याने फक्त काही fields बदलले असतील, तर बाकीचे डीफॉल्ट कायम राहतात. Supabase न मिळाल्यास
-    (किंवा नोंद नसल्यास) संपूर्णपणे डीफॉल्ट."""
-    defaults = dict(STRATEGY_SETTINGS_DEFAULTS.get(strategy_name, {}))
+    (किंवा नोंद नसल्यास) संपूर्णपणे डीफॉल्ट (itm_depth_points/hedge_width_points/naked_hedge_width_points
+    symbol च्या स्वतःच्या strike step नुसार आधीच प्रमाणात मोठे/लहान केलेले — _scale_strike_relative_defaults() बघा)."""
+    defaults = _scale_strike_relative_defaults(dict(STRATEGY_SETTINGS_DEFAULTS.get(strategy_name, {})), symbol)
     conn = get_connection()
     if conn is None:
         return defaults
