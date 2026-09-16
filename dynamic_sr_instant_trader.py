@@ -50,16 +50,17 @@ TOUCH_TOLERANCE_PCT = 0.02  # level पासून ±0.02% च्या आत 
 POOLED_TIMEFRAMES = ["1M", "5M"]
 
 
-def check_instant_rsi_filter(candles_df, direction):
-    """1-मिनिट RSI(14) फिल्टर — Support(BULLISH) -> RSI RSI_SUPPORT_MAX च्या खाली.
-    Resistance(BEARISH) -> RSI RSI_RESISTANCE_MIN च्या वर. रिटर्न: (pass: bool, rsi_value: float|None)"""
+def check_instant_rsi_filter(candles_df, direction, rsi_support_max=RSI_SUPPORT_MAX, rsi_resistance_min=RSI_RESISTANCE_MIN):
+    """1-मिनिट RSI(14) फिल्टर — Support(BULLISH) -> RSI rsi_support_max च्या खाली.
+    Resistance(BEARISH) -> RSI rsi_resistance_min च्या वर. रिटर्न: (pass: bool, rsi_value: float|None)
+    उंबरठे आता Dashboard वरून (Entry Gate) बदलण्याजोगे — settings दिले नाहीत तर जुनेच डीफॉल्ट."""
     rsi_series = calculate_rsi(candles_df, period=14)
     if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
         return False, None
     latest_rsi = round(float(rsi_series.iloc[-1]), 2)
     if direction == "BULLISH":
-        return latest_rsi < RSI_SUPPORT_MAX, latest_rsi
-    return latest_rsi > RSI_RESISTANCE_MIN, latest_rsi
+        return latest_rsi < rsi_support_max, latest_rsi
+    return latest_rsi > rsi_resistance_min, latest_rsi
 
 
 def check_level_crossed(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
@@ -105,6 +106,10 @@ def process_symbol(access_token, symbol, lot_size=65):
     आढळल्यास Credit-Spread (ITM) + (सक्रिय असल्यास) समांतर Naked Option PAPER trade."""
     settings = cloud_db.get_strategy_settings("1m_instant", symbol)
     lots = settings["lots"]
+    entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
+    rsi_support_max = settings.get("rsi_support_max", RSI_SUPPORT_MAX)
+    rsi_resistance_min = settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN)
+    entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -158,23 +163,28 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction)
-        if not rsi_ok:
-            log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
-            log_entry["reason"] = f"RSI {rsi_value} दिशेशी जुळत नाही (Support<{RSI_SUPPORT_MAX} / Resistance>{RSI_RESISTANCE_MIN} हवं होतं)"
-            cloud_db.save_signal_log(log_entry)
-            continue
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
+        # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर).
+        if entry_rsi_gate_enabled:
+            rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
+            if not rsi_ok:
+                log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
+                log_entry["reason"] = f"RSI {rsi_value} दिशेशी जुळत नाही (Support<{rsi_support_max} / Resistance>{rsi_resistance_min} हवं होतं)"
+                cloud_db.save_signal_log(log_entry)
+                continue
 
-        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate) — दोन्ही trade-प्रकारांना (Credit
-        # Spread + Naked) एकत्र लागू. डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे.
-        pcr_ok, pcr_value, pcr_reason = check_pcr_gate(
-            symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"],
-        )
-        if not pcr_ok:
-            log_entry["trade_status"] = "SKIPPED_PCR_GATE"
-            log_entry["reason"] = pcr_reason
-            cloud_db.save_signal_log(log_entry)
-            continue
+        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — on/off) — दोन्ही trade-प्रकारांना
+        # (Credit Spread + Naked) एकत्र लागू, पण आता Dashboard वरून पूर्णपणे बंदही करता येतो. बंद
+        # नसेल तरच — डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे (fail-safe).
+        if entry_pcr_gate_enabled:
+            pcr_ok, pcr_value, pcr_reason = check_pcr_gate(
+                symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"],
+            )
+            if not pcr_ok:
+                log_entry["trade_status"] = "SKIPPED_PCR_GATE"
+                log_entry["reason"] = pcr_reason
+                cloud_db.save_signal_log(log_entry)
+                continue
 
         hit_count_so_far, last_hit_time = cloud_db.get_zone_hits_today(symbol, row["zone_low"], trade_date)
         if hit_count_so_far >= 2:
