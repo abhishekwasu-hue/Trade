@@ -142,6 +142,12 @@ def process_symbol(access_token, symbol, lot_size=65):
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
 
         direction = "BULLISH" if row["zone_type"].startswith("DYNAMIC_SR_SUPPORT") else "BEARISH"
+        # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
+        # च्या आतच ठरायचा, पण खाली (यशस्वी trade नंतरच्या Telegram संदेशात) कायम वापरला जायचा — RSI Gate
+        # Dashboard वरून बंद केला की इथे NameError येऊन entire script क्रॅश व्हायचा, अगदी order
+        # यशस्वीरित्या प्लेस झाल्यानंतरही (Naked leg, Telegram, पुढच्या levels साठीचा loop — सगळं तिथेच
+        # अर्धवट थांबायचं). आता आधीच None ने सुरुवात — गेट बंद असेल तर संदेशातही तेच स्पष्ट दिसेल.
+        rsi_value = None
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": row["zone_type"],
             "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
@@ -290,10 +296,11 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
+        rsi_display = f"RSI {rsi_value}." if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)."
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         message = (
             f"🎯 <b>{symbol} Dynamic S/R Cross ({timeframe_suffix})! (आजचा {hit_count_so_far + 1}/2 वा hit)</b>\n"
-            f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). RSI {rsi_value}.\n"
+            f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"
             f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n"
             + naked_line
             + f"वेळ: {now.strftime('%H:%M:%S')}"

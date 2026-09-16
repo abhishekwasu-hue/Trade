@@ -153,6 +153,12 @@ def process_symbol(access_token, symbol, lot_size=65):
         else:
             level_type, direction = "RESISTANCE", "BEARISH"
 
+        # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
+        # च्या आतच ठरायचा, पण खाली (save_signal_log आणि Telegram संदेशात, यशस्वी trade नंतर लगेचच)
+        # कायम वापरला जायचा — RSI Gate बंद केला की इथे NameError येऊन order प्लेस झाल्यानंतरही
+        # entire script क्रॅश व्हायचा (Naked leg, Telegram, दोन्हीही कधीच पोहोचायचेच नाहीत). आता आधीच
+        # None ने सुरुवात.
+        rsi_value = None
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो.
         if entry_rsi_gate_enabled:
@@ -214,12 +220,13 @@ def process_symbol(access_token, symbol, lot_size=65):
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
 
+        rsi_reason = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
         cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
         cloud_db.save_signal_log({
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
             "level_price": level_price, "hit_type": "TOUCH", "direction": direction,
             "ltp_at_signal": underlying_price, "trade_status": trade_status,
-            "reason": f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास",
+            "reason": rsi_reason,
         })
 
         naked_status = ""
@@ -262,15 +269,16 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
+        rsi_display = f"RSI {rsi_value} (फिल्टर पास)" if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)"
         message = (
             f"🎯 <b>{symbol} SRv2 Momentum-Reversal ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/2 वा hit)\n"
-            f"{level_type} {level_price:.2f} — RSI {rsi_value} (फिल्टर पास).\n"
+            f"{level_type} {level_price:.2f} — {rsi_display}.\n"
             f"Credit Spread: {strategy_label} — {trade_status}\n"
             + naked_line
             + f"वेळ: {now.strftime('%H:%M:%S')}"
         )
         send_telegram_message(message)
-        return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({timeframe_suffix}, RSI {rsi_value}) -> {strategy_label} PAPER trade {trade_status}"
+        return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({timeframe_suffix}, {rsi_display}) -> {strategy_label} PAPER trade {trade_status}"
 
     return f"{symbol}: कुठलाही SRv2 level (15M/30M/60M, RSI+Multi-Hit मर्यादेसह) पात्र ठरला नाही"
 
