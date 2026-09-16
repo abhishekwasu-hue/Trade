@@ -287,7 +287,14 @@ class TestProcessSymbol:
         established BULLISH (Support Bounce, established RSI<50 हवा) established साठी established
         established नाकारलं जायला हवं — established जरी established किंमत established Support ला
         established प्रत्यक्ष स्पर्श करत असली तरी."""
-        dates = pd.date_range("2026-09-05 09:15", periods=30, freq="15min")
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Signal Logging टेस्ट लिहिताना सापडलेली, वेगळी
+        # bug) — हार्डकोड जुनी तारीख ("2026-09-05") वापरलेली होती, त्यामुळे _collect_touch_candidates()
+        # आजचे candles रिकामे समजून हा candidate आधीच वगळत होता — म्हणजे RSI-गेट खरंच कधीच तपासलाच
+        # जात नव्हता, आणि "not mock_trade.called" फक्त "कुठलाही candidate सापडला नाही" या (चुकीच्या)
+        # कारणाने खरं ठरत होतं, RSI-नकारामुळे नाही. आता _fake_candles_df() सारखीच आजच्या तारखेला
+        # संपणारी तारीख-रचना.
+        end_ts = srv2.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
+        dates = pd.date_range(end=end_ts, periods=30, freq="15min")
         # established सलग वाढ, established शेवटी established बरोब्बर established support_level (23900)
         # ला स्पर्श -- established RSI established establishedच्या established उभारीमुळे established >50 असेल.
         rising_closes = [23800 + i * (100 / 29) for i in range(29)] + [23900.0]
@@ -538,3 +545,88 @@ class TestPCRGate:
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
             srv2.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
+
+
+class TestSignalLogging:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones tab वर 1m_instant सारखाच संपूर्ण
+    Signal Log, SRv2 साठीही) — याआधी फक्त प्रत्यक्ष trade झाला तरच save_signal_log() व्हायचं;
+    आता touch न झालेले आणि कुठल्याही gate ने अडवलेले candidates सुद्धा (reason सह) साठवले
+    जातात, जेणेकरून entry/exit cross-verify करता येईल."""
+
+    def test_no_hit_logs_but_does_not_trade(self):
+        candles_df = _fake_candles_df(last_close=24500)  # level (23900) पासून खूप दूर -- touch नाही
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_log.called
+            logged = mock_log.call_args[0][0]
+            assert logged["hit_type"] == "NO_HIT"
+
+    def test_rsi_filter_rejection_is_logged(self):
+        # 🎓 आजच्याच तारखेला संपणारे candles हवेत (_fake_candles_df सारखे) -- हार्डकोड जुनी तारीख
+        # वापरली तर _collect_touch_candidates() todays_candles_df रिकामं समजून हा candidate आधीच
+        # वगळतो, आणि RSI-गेट कधीच तपासलाच जात नाही.
+        end_ts = srv2.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
+        dates = pd.date_range(end=end_ts, periods=30, freq="15min")
+        rising_closes = [23800 + i * (100 / 29) for i in range(29)] + [23900.0]
+        candles_rising = pd.DataFrame({"timestamp": dates, "open": rising_closes, "high": [c + 5 for c in rising_closes],
+                                        "low": [c - 5 for c in rising_closes], "close": rising_closes, "volume": 0, "oi": 0})
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_rising), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_log.called
+            logged = mock_log.call_args[0][0]
+            assert logged["trade_status"] == "SKIPPED_RSI_FILTER"
+
+    def test_pcr_gate_rejection_is_logged(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(False, 0.72, "PCR 0.72 < 0.80")), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_log.called
+            logged = mock_log.call_args[0][0]
+            assert logged["trade_status"] == "SKIPPED_PCR_GATE"
+
+    def test_multi_hit_limit_is_logged(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now())), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_log.called
+            logged = mock_log.call_args[0][0]
+            assert logged["trade_status"] == "SKIPPED_MAX_2_HITS_REACHED"
+
+    def test_open_position_skip_is_logged(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2, "has_open_trade_from_source", return_value=True), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_log.called
+            logged = mock_log.call_args[0][0]
+            assert logged["trade_status"] == "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"

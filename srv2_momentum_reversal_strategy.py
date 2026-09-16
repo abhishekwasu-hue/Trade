@@ -144,14 +144,29 @@ def process_symbol(access_token, symbol, lot_size=65):
 
     for level_price, timeframe_suffix, candles_df, underlying_price in candidates:
         touched = abs(underlying_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
-        if not touched:
-            continue
 
         # वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून.
         if underlying_price >= level_price:
             level_type, direction = "SUPPORT", "BULLISH"
         else:
             level_type, direction = "RESISTANCE", "BEARISH"
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones tab वर 1-मिनिट Instant Trader
+        # सारखाच संपूर्ण Signal Log, SRv2 साठीही) — याआधी इथे फक्त प्रत्यक्ष trade झाला तरच
+        # save_signal_log() व्हायचं; touch न झालेले किंवा कुठल्याही gate ने अडवलेले candidates
+        # कधीच साठवले जात नव्हते, त्यामुळे entry/exit cross-verify करायला काहीच data नव्हतं. आता
+        # प्रत्येक तपासलेला candidate (NO_HIT सकट) इथे लगेच साठवला जातो.
+        log_entry = {
+            "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
+            "level_price": level_price, "hit_type": "TOUCH" if touched else "NO_HIT",
+            "direction": direction if touched else "NONE", "ltp_at_signal": underlying_price,
+            "trade_status": None,
+            "reason": "" if touched else f"level ला स्पर्श (touch) आढळला नाही ({timeframe_suffix})",
+        }
+
+        if not touched:
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
         # च्या आतच ठरायचा, पण खाली (save_signal_log आणि Telegram संदेशात, यशस्वी trade नंतर लगेचच)
@@ -164,6 +179,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         if entry_rsi_gate_enabled:
             rsi_ok, rsi_value = check_rsi_filter(candles_df, direction, rsi_neutral_level)
             if not rsi_ok:
+                log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
+                log_entry["reason"] = f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही (Bullish<{rsi_neutral_level} / Bearish>{rsi_neutral_level} हवं होतं)"
+                cloud_db.save_signal_log(log_entry)
                 continue
 
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — on/off) — दोन्ही trade-प्रकारांना
@@ -172,13 +190,22 @@ def process_symbol(access_token, symbol, lot_size=65):
         if entry_pcr_gate_enabled:
             pcr_ok, pcr_value, pcr_reason = check_pcr_gate(symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"])
             if not pcr_ok:
+                log_entry["trade_status"] = "SKIPPED_PCR_GATE"
+                log_entry["reason"] = f"{pcr_reason} ({timeframe_suffix})"
+                cloud_db.save_signal_log(log_entry)
                 continue
 
         # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी).
         hit_count_so_far, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date)
         if hit_count_so_far >= 2:
+            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+            log_entry["reason"] = f"आजच्या या zone साठी कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
             continue
         if has_open_trade_from_source(symbol, "srv2_momentum_reversal"):
+            log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
+            log_entry["reason"] = f"आधीची position (या strategy ची, कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
@@ -195,6 +222,9 @@ def process_symbol(access_token, symbol, lot_size=65):
             itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
         )
         if spread_result is None:
+            log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
+            log_entry["reason"] = f"strike-निवड अयशस्वी ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
             return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
 
@@ -222,12 +252,9 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         rsi_reason = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
         cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
-        cloud_db.save_signal_log({
-            "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
-            "level_price": level_price, "hit_type": "TOUCH", "direction": direction,
-            "ltp_at_signal": underlying_price, "trade_status": trade_status,
-            "reason": rsi_reason,
-        })
+        log_entry["trade_status"] = trade_status
+        log_entry["reason"] = rsi_reason
+        cloud_db.save_signal_log(log_entry)
 
         naked_status = ""
         naked_result = None
