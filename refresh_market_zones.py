@@ -13,6 +13,7 @@ import sys
 
 import cloud_db
 from market_zones import compute_all_zones
+from notifications import notify_error
 from signals import resample_to_1h
 from upstox_api import fetch_candles
 
@@ -42,8 +43,25 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
         → df_1m_recent (established DYNAMIC_SR_*_1M नावाने साठवलं जातं)
     """
     df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=lookback_days)
+    # 🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली, गंभीर bug — एखादा historical chunk
+    # (Upstox API कडून, नेटवर्क/rate-limit मुळे) अयशस्वी झाला तरी fetch_candles() आधी शांतपणे
+    # (Streamlit-only st.warning() मार्फत, जे headless cron मध्ये no-op होतं) फक्त तेवढाच भाग गाळून
+    # पुढे जायचं — म्हणजे df_30m/df_15m मध्ये काही महिन्यांचं अंतर (gap) राहायचं, आणि नेमकं त्याच
+    # काळात किंमत एखाद्या जुन्या zone मधून प्रत्यक्ष गेली असली तरी mitigation-तपासणीला (is_zone_mitigated())
+    # ते कधीच दिसायचं नाही — जुनी Bullish Order Block/Demand Zone (किंमत आता खूप खाली गेल्यावरही)
+    # कायमची चुकीने ACTIVE दाखवत राहायची. आता असा gap आढळला की त्या symbol साठी आजचं साठवणंच
+    # वगळतो (जुनाच, शक्यतो बरोबर असलेला डेटा तसाच ठेवून) — अर्धवट/चुकीच्या डेटावरून पुन्हा-गणना
+    # करून जुना योग्य निकाल खराब करण्यापेक्षा हे सुरक्षित.
+    if df_30m is not None and df_30m.attrs.get("failed_chunks", 0) > 0:
+        msg = f"{symbol}: 30-मिनिट इतिहासाचे {df_30m.attrs['failed_chunks']} chunk(s) मिळाले नाहीत — आजचे zones साठवले नाहीत (जुनेच कायम राहतील)."
+        notify_error("refresh_market_zones", msg)
+        return False, msg
     df_1h = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
     df_15m = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=lookback_days)
+    if df_15m is not None and df_15m.attrs.get("failed_chunks", 0) > 0:
+        msg = f"{symbol}: 15-मिनिट इतिहासाचे {df_15m.attrs['failed_chunks']} chunk(s) मिळाले नाहीत — आजचे zones साठवले नाहीत (जुनेच कायम राहतील)."
+        notify_error("refresh_market_zones", msg)
+        return False, msg
 
     # 🎓 वापरकर्त्याने चार्ट वि. प्रत्यक्ष trading मधल्या विसंगतीवरून सापडवलेली bug — established
     # Dynamic S/R (established, 1-मिनिट Instant Trader साठी वापरला जाणारा) साठी established df_15m
