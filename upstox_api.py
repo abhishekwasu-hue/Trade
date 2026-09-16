@@ -20,6 +20,30 @@ from log_setup import get_logger
 
 _logger = get_logger("upstox_api.py")
 
+
+def _warn(message):
+    """🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली bug — st.warning()/st.error() ScriptRunContext
+    शिवाय (उदा. refresh_market_zones.py सारखी headless cron/GitHub Actions script) शांतपणे no-op
+    होतं, त्यामुळे chunk-fetch अयशस्वी झाल्याचा इशारा तिथे पूर्णपणे अदृश्य व्हायचा — जुनी झालेली
+    zones ACTIVE दाखवत राहायची, कारण गणनेसाठी वापरलेल्या डेटातच अंतर (gap) होतं, आणि कुणालाच ते
+    दिसायचं नाही. आता print() (GitHub Actions log मध्ये दिसतं) + file-log, दोन्हीकडे नेहमीच जातं.
+    """
+    print(message)
+    _logger.warning(message)
+    try:
+        st.warning(message)
+    except Exception:
+        pass
+
+
+def _err(message):
+    print(message)
+    _logger.error(message)
+    try:
+        st.error(message)
+    except Exception:
+        pass
+
 SYMBOL_INSTRUMENT_KEYS = {
     "NIFTY": "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
@@ -171,7 +195,9 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
         all_candles = hist_candles + intraday_candles
 
         if not all_candles:
-            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+            empty_df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+            empty_df.attrs["failed_chunks"] = failed_chunks
+            return empty_df
 
         df_candles = pd.DataFrame(all_candles, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
         df_candles["timestamp"] = pd.to_datetime(df_candles["timestamp"])
@@ -181,8 +207,8 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
 
         if failed_chunks > 0:
             earliest_str = df_candles["timestamp"].min().strftime("%Y-%m-%d") if not df_candles.empty else "N/A"
-            st.warning(
-                f"⚠️ {interval} साठी {failed_chunks} historical chunk(s) मिळाले नाहीत — मागवलेला इतिहास "
+            _warn(
+                f"⚠️ {symbol} {interval} साठी {failed_chunks} historical chunk(s) मिळाले नाहीत — मागवलेला इतिहास "
                 f"({lookback_days} दिवस) पूर्ण मिळाला नसेल. सद्य उपलब्ध डेटा {earliest_str} पासून सुरू होतो."
             )
 
@@ -191,11 +217,19 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
 
         df_candles["rsi"] = calculate_rsi(df_candles)
 
+        # 🎓 वापरकर्त्याने सापडवलेली bug (Market Zones — जुनी Bullish OB/Demand Zone कायम ACTIVE
+        # दाखवत राहिली, जरी किंमत खूप खाली गेली) — कॉलरला (उदा. refresh_market_zones.py) हा डेटा
+        # अपूर्ण आहे हे स्पष्टपणे कळावं म्हणून, न मिळालेल्या chunks ची संख्या डेटामध्येच जोडलेली
+        # (backward-compatible — जुने callers याकडे दुर्लक्ष करतात, तरीही चालतं).
+        df_candles.attrs["failed_chunks"] = failed_chunks
+
         return df_candles
 
     except Exception as e:
-        st.error(f"⚠️ एरर आला: {str(e)}")
-        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+        _err(f"⚠️ {symbol} {interval} एरर आला: {str(e)}")
+        empty_df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+        empty_df.attrs["failed_chunks"] = 1
+        return empty_df
 
 def fetch_long_history(access_token, symbol="NIFTY", years=20, chunk_years=3, progress_callback=None):
     """
