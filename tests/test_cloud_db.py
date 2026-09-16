@@ -285,6 +285,26 @@ class TestMarketZonesStorage:
         assert cloud_db.save_market_zones(pd.DataFrame(), "NIFTY") is False
         assert cloud_db.get_market_zones("NIFTY") is None
 
+    def test_save_market_zones_delete_excludes_1m_and_5m(self, monkeypatch):
+        """🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली bug — DYNAMIC_SR_*_1M/*_5M zones
+        (refresh_dynamic_sr_1m.py/refresh_dynamic_sr_5m.py च्या दर-५-मिनिटांच्या merge-cron ने
+        जपलेले) nightly full-refresh च्या DELETE मध्ये कधीच उडायला नकोत -- ते फक्त त्यांच्याच
+        dedicated cron कडूनच manage व्हावेत."""
+        from unittest.mock import MagicMock
+        import pandas as pd
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        zones_df = pd.DataFrame([
+            {"zone_type": "SUPPORT", "zone_low": 24000, "zone_high": 24000, "strength": 5, "formed_date": "2024-01-01", "status": "ACTIVE"},
+        ])
+        cloud_db.save_market_zones(zones_df, "NIFTY")
+        delete_sql = mock_cursor.execute.call_args_list[0][0][0]
+        assert "_1M" in delete_sql and "_5M" in delete_sql
+        assert "NOT IN" in delete_sql
+
 
 class TestSignalLog:
     """

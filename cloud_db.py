@@ -897,13 +897,30 @@ def save_market_zones(zones_df, symbol):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिलेल्या symbol चे जुने zones काढून, नवीन गणना केलेले
     zones साठवणे (replace-on-refresh — market_zones हे "सद्य स्थिती" दाखवतं, वाढत जाणारा इतिहास नाही).
+
+    🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली, गंभीर bug — DYNAMIC_SR_*_1M आणि
+    DYNAMIC_SR_*_5M zones ला स्वतःची, वेगळी, merge-आधारित refresh scripts आहेत
+    (refresh_dynamic_sr_1m.py/refresh_dynamic_sr_5m.py — दर ५ मिनिटांनी, जुने levels कधीच न
+    काढता, "Merge the both levels with the historical levels. Do not remove historical levels"
+    या स्पष्ट सांगितलेल्या नियमाप्रमाणे). पण रोज रात्री हेच function (nightly पूर्ण refresh_market_zones.py
+    मार्फत) त्या symbol चे **सर्वच** zones आधी पुसायचं (DELETE, timeframe-suffix काहीही असो) —
+    _5M साठी compute_all_zones() कधीच नवीन rows देतच नाही (5-मिनिट गणना तिथे अस्तित्वातच नाही),
+    त्यामुळे दर रात्री सर्व 5-मिनिट Dynamic S/R levels कायमचे रिकामे व्हायचे, दुसऱ्या दिवशी सकाळपासून
+    दर-५-मिनिटांच्या cron ने पुन्हा हळूहळू तयार व्हायला लागायचे. _1M साठी compute_all_zones() नवीन rows
+    देतं खरं, पण त्या दिवसभरातल्या merge-cron ने जपलेला इतिहास पूर्णपणे बदलून टाकायचं — "इतिहास कधीच
+    काढू नका" या नियमाच्याच विरोधात. आता DELETE मधून हे दोन्ही zone_types पूर्णपणे वगळले आहेत — ते
+    फक्त त्यांच्याच dedicated merge-crons कडूनच manage होतात, nightly full-refresh त्यांना हातही
+    लावत नाही (compute_all_zones() आताही यापुढे DYNAMIC_SR_*_1M rows देत नाही — बघा तिथली टिप्पणी).
     """
     conn = get_connection()
     if conn is None:
         return False
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM market_zones WHERE symbol = %s", (symbol,))
+            cur.execute(
+                "DELETE FROM market_zones WHERE symbol = %s AND RIGHT(zone_type, 3) NOT IN ('_1M', '_5M')",
+                (symbol,),
+            )
             for _, row in zones_df.iterrows():
                 cur.execute(
                     """INSERT INTO market_zones (symbol, zone_type, zone_low, zone_high, strength, formed_date, status)
