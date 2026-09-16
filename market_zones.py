@@ -138,7 +138,7 @@ def is_zone_mitigated(zone_low, zone_high, df_after_formation):
 
 def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
                        base_lookback=4, base_tightness_mult=0.7, min_gap_pct=0.30, sr_top_n=5,
-                       df_15m_recent=None):
+                       df_15m_recent=None, df_1m_recent=None, df_5m_recent=None):
     """
     संपूर्ण विश्लेषण एकत्र — S/R (1H वर), Order Blocks (1H वर), Demand/Supply Zones (1H वर),
     Unfilled Gaps (15M वर). प्रत्येक zone ला mitigation-स्थिती (FILLED/ACTIVE) सह.
@@ -150,12 +150,14 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
     ऐवजी वेगळा, Dashboard चार्टच्याच डीफॉल्ट (15-मिनिटसाठी २० दिवस) इतका **अलीकडचा** डेटा
     वापरणे. न दिल्यास df_15m वरच पडतो (backward-compatible).
 
-    🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली bug — DYNAMIC_SR_*_1M (Instant Trader
-    साठी) येथेच नियमित गणना व्हायची, त्यामुळे रोज रात्रीच्या नियमित रिफ्रेशला
-    refresh_dynamic_sr_1m.py च्या दर-५-मिनिटांच्या merge-cron ने जपलेला 1-मिनिट इतिहास बदलून
-    टाकायचं — "इतिहास कधीच काढू नका" या नियमाच्या विरोधात. आता 1M पूर्णपणे त्या dedicated
-    merge-cron कडेच सोपवलेलं आहे — इथे generate होत नाही (cloud_db.save_market_zones() सुद्धा
-    DYNAMIC_SR_*_1M/*_5M zone_types ला आपल्या DELETE मधून वगळतं, बघा तिथली टिप्पणी).
+    🎓 वापरकर्त्याशी चर्चा करून पुढे स्पष्ट केलेली रचना (Dynamic S/R Instant Trader — 1-मिनिट +
+    5-मिनिट pooled) — df_1m_recent/df_5m_recent (दोन्ही ऐच्छिक), Instant Trader च्याच तात्काळ
+    स्वभावासाठी जवळचे/बारीक levels, DYNAMIC_SR_*_1M/*_5M नावाने. दोन्ही इथेच, रोज रात्रीच्या
+    nightly refresh ने ताज्या (अलीकडच्या काही दिवसांच्याच) डेटावरून पुन्हा-गणना होतात — जेणेकरून
+    दिवसभराच्या दर-५-मिनिटांच्या merge-cron ने (refresh_dynamic_sr_1m.py/refresh_dynamic_sr_5m.py)
+    जपलेले, पण आता आठवडाभर जुने झालेले levels रोज योग्यरित्या ताजे होतात — कायमचे गोठलेले (frozen)
+    राहत नाहीत. वापरकर्त्याने स्पष्ट सांगितलेला नियम: "दुसऱ्या दिवशी नवीन लेव्हल्स कॅल्क्युलेट
+    झाल्यानंतर आदल्या सर्व झोन अपडेट व्हायला पाहिजे."
     """
     rows = []
     now_date = df_1h["timestamp"].iloc[-1] if not df_1h.empty else None
@@ -181,6 +183,32 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
                          "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
         for r in dyn_sr_15m.get("resistance", []):
             rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": r["level"], "zone_high": r["level"],
+                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+
+    # 🎓 Dynamic S/R (1-मिनिट, Instant Reversal Trader साठी) — df_1m_recent वापरून,
+    # DYNAMIC_SR_*_1M नावाने. रोज रात्री इथे ताजी पुन्हा-गणना होते (दिवसभराच्या merge-cron ने
+    # जपलेले जुने levels कायमचे गोठलेले राहू नयेत म्हणून).
+    if df_1m_recent is not None and len(df_1m_recent) >= 100:
+        dyn_sr_1m = compute_dynamic_sr(df_1m_recent, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_1m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": s["level"], "zone_high": s["level"],
+                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr_1m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": r["level"], "zone_high": r["level"],
+                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+
+    # 🎓 Dynamic S/R (5-मिनिट, Instant Reversal Trader साठी) — df_5m_recent वापरून,
+    # DYNAMIC_SR_*_5M नावाने. वापरकर्त्याने Market Zones export मधून सापडवलेली bug — याआधी इथे
+    # 5-मिनिट गणना अस्तित्वातच नव्हती, त्यामुळे रोज रात्रीच्या पूर्ण refresh मध्ये हे zone_types
+    # कधीच पुन्हा तयार होत नसत — फक्त पुसले जायचे (save_market_zones() चं DELETE) आणि दुसऱ्या
+    # दिवशी सकाळपासून दर-५-मिनिटांच्या merge-cron ने पुन्हा हळूहळू शून्यातून तयार व्हायला लागायचे.
+    if df_5m_recent is not None and len(df_5m_recent) >= 100:
+        dyn_sr_5m = compute_dynamic_sr(df_5m_recent, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_5m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": s["level"], "zone_high": s["level"],
+                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr_5m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": r["level"], "zone_high": r["level"],
                          "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
 
     # --- Order Blocks (mitigation-तपासणीसह) ---

@@ -36,11 +36,11 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     established जेणेकरून zones सद्य किमतीशी सुसंगत, अद्ययावत राहतील.
 
     🎓 established SRv2 Momentum-Filter Reversal (established, 15-मिनिट candles) साठी वेगळा,
-    अलीकडचा डेटासेट — df_15m_recent (DYNAMIC_SR_*_15M नावाने साठवलं जातं). Dynamic S/R
-    Instant Reversal Trader (established, 1-मिनिट candles, तात्काळ) साठीचे DYNAMIC_SR_*_1M
-    levels आता इथे generate होत नाहीत — ते पूर्णपणे refresh_dynamic_sr_1m.py च्या दर-५-मिनिटांच्या
-    merge-cron कडेच सोपवलेले आहेत (बघा cloud_db.save_market_zones() मधली टिप्पणी — नाहीतर हा
-    nightly full-refresh रोज त्या merge ने जपलेला इतिहास बदलून टाकायचा).
+    अलीकडचा डेटासेट — df_15m_recent (DYNAMIC_SR_*_15M नावाने साठवलं जातं). Dynamic S/R Instant
+    Reversal Trader (established, 1-मिनिट + 5-मिनिट candles, तात्काळ) साठी df_1m_recent/
+    df_5m_recent — दोन्ही रोज रात्री इथेच ताजी पुन्हा-गणना होतात (DYNAMIC_SR_*_1M/*_5M), जेणेकरून
+    refresh_dynamic_sr_1m.py/refresh_dynamic_sr_5m.py च्या दर-५-मिनिटांच्या merge-cron ने दिवसभर
+    जपलेले, पण आता जुने झालेले levels रोज योग्यरित्या ताजे होतात — कायमचे गोठलेले राहत नाहीत.
     """
     df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=lookback_days)
     # 🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली, गंभीर bug — एखादा historical chunk
@@ -70,6 +70,8 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     # डीफॉल्ट — established उदा. २० दिवस) **अलीकडचा** डेटा — established संपूर्ण वर्षभरातून
     # established सर्वात टोकाचे (जुने, सद्य किमतीपासून दूर) points निवडले जाऊ नयेत म्हणून.
     df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute")  # established डीफॉल्ट lookback (chart-सारखाच)
+    df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (1-मिनिटसाठी ~5 दिवस)
+    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (5-मिनिटसाठी ~10 दिवस)
 
     if df_1h is None or df_1h.empty:
         return False, f"{symbol}: 1H डेटा मिळाला नाही"
@@ -77,6 +79,8 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     zones_df = compute_all_zones(
         df_1h, df_15m if df_15m is not None else df_1h.iloc[:0], symbol=symbol,
         df_15m_recent=df_15m_recent if df_15m_recent is not None and not df_15m_recent.empty else None,
+        df_1m_recent=df_1m_recent if df_1m_recent is not None and not df_1m_recent.empty else None,
+        df_5m_recent=df_5m_recent if df_5m_recent is not None and not df_5m_recent.empty else None,
     )
     if zones_df.empty:
         return False, f"{symbol}: पुरेसा इतिहास नाही (किमान २० candles प्रति timeframe हवेत) -- कुठलेही zones सापडले नाहीत."
