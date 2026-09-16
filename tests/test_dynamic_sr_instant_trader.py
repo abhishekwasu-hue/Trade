@@ -157,7 +157,13 @@ def _fake_chain(spot):
 
 class TestProcessSymbol:
     def test_gap_through_executes_trade_and_logs_all_levels(self):
-        """🎓 वापरकर्त्याने विचारलेला Gap Down प्रश्न + मागितलेला संपूर्ण Signal Log -- दोन्ही एकत्र."""
+        """🎓 वापरकर्त्याने विचारलेला Gap Down प्रश्न + मागितलेला संपूर्ण Signal Log -- दोन्ही एकत्र.
+
+        🎓 वापरकर्त्याशी चर्चा करून जोडलेल्या सुधारणेनंतर (दिशा आता row["zone_type"] च्या साठवलेल्या
+        label वरून नाही, सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून ठरते) — किंमत support level
+        (23900) च्या खालीच गॅप-डाऊन होऊन स्थिरावली, त्यामुळे दिशा आता BEARISH (level आता resistance
+        सारखा वागतो). हा टेस्ट gap-through detection + संपूर्ण Signal Log याचीच पडताळणी करतो,
+        RSI ची नाही -- म्हणून check_instant_rsi_filter थेट pass होईल असा mock केला आहे."""
         candles_gap = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
@@ -165,8 +171,9 @@ class TestProcessSymbol:
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_gap), \
+             patch.object(dsr, "check_instant_rsi_filter", return_value=(True, 65.0)), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BEAR_CALL_SPREAD", "legs": []}), \
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True) as mock_telegram, \
@@ -223,6 +230,37 @@ class TestProcessSymbol:
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True):
             result = dsr.process_symbol("fake_token", "NIFTY")
             assert "TOUCH" in result
+
+    def test_direction_follows_current_price_not_stored_label(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "All levels above LTP will act as
+        resistance and levels below LTP will act as support" — दिशा आता row["zone_type"] च्या
+        साठवलेल्या (मागच्या cron cycle च्या) label वरून नाही, तर सद्य किमतीच्या level च्या सापेक्ष
+        स्थितीवरून ठरते. इथे zone साठवलेला RESISTANCE_1M असला, तरी सद्य किंमत (23902) त्या level
+        (23900) च्या वर आहे (support सारखी स्थिती) -- त्यामुळे दिशा BULLISH व्हायला हवी, साठवलेला
+        RESISTANCE label असूनही (srv2_momentum_reversal_strategy.py मध्ये आधीच वापरलेल्याच
+        नियमाप्रमाणे)."""
+        def _fake_resistance_labeled_zone():
+            return pd.DataFrame([
+                {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": 23900.0, "zone_high": 23900.0,
+                 "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+            ])
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_resistance_labeled_zone()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_select.call_args.args[1] == "BULLISH"  # साठवलेला RESISTANCE label असूनही
 
     def test_yesterdays_candle_never_causes_false_touch_at_market_open(self):
         """🎓 वापरकर्त्याने सापडवलेली, खरी bug (केवळ candle-window छोटा करून सुटणारी नाही) —

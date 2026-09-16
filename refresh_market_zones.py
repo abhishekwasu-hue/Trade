@@ -35,12 +35,12 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     सारखाच, थेट Upstox 30-मिनिट (established १ वर्षाचा lookback, resample करून 1H) मार्ग वापरतो —
     established जेणेकरून zones सद्य किमतीशी सुसंगत, अद्ययावत राहतील.
 
-    🎓 established Dynamic S/R साठी established दोन वेगळे, स्वतंत्र डेटासेट (established दोन वेगळ्या
-    रणनींतींसाठी, established त्यांच्याच स्वभावाला अनुसरून):
-      • established SRv2 Momentum-Filter Reversal (established, 15-मिनिट candles) → df_15m_recent
-        (established DYNAMIC_SR_*_15M नावाने साठवलं जातं)
-      • established Dynamic S/R Instant Reversal Trader (established, 1-मिनिट candles, तात्काळ)
-        → df_1m_recent (established DYNAMIC_SR_*_1M नावाने साठवलं जातं)
+    🎓 established SRv2 Momentum-Filter Reversal (established, 15-मिनिट candles) साठी वेगळा,
+    अलीकडचा डेटासेट — df_15m_recent (DYNAMIC_SR_*_15M नावाने साठवलं जातं). Dynamic S/R Instant
+    Reversal Trader (established, 1-मिनिट + 5-मिनिट candles, तात्काळ) साठी df_1m_recent/
+    df_5m_recent — दोन्ही रोज रात्री इथेच ताजी पुन्हा-गणना होतात (DYNAMIC_SR_*_1M/*_5M), जेणेकरून
+    refresh_dynamic_sr_1m.py/refresh_dynamic_sr_5m.py च्या दर-५-मिनिटांच्या merge-cron ने दिवसभर
+    जपलेले, पण आता जुने झालेले levels रोज योग्यरित्या ताजे होतात — कायमचे गोठलेले राहत नाहीत.
     """
     df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=lookback_days)
     # 🎓 वापरकर्त्याने Market Zones export मधून सापडवलेली, गंभीर bug — एखादा historical chunk
@@ -70,15 +70,8 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     # डीफॉल्ट — established उदा. २० दिवस) **अलीकडचा** डेटा — established संपूर्ण वर्षभरातून
     # established सर्वात टोकाचे (जुने, सद्य किमतीपासून दूर) points निवडले जाऊ नयेत म्हणून.
     df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute")  # established डीफॉल्ट lookback (chart-सारखाच)
-
-    # 🎓 वापरकर्त्याशी चर्चा करून पुढे स्पष्ट केलेला भेद — established Dynamic S/R Instant Reversal
-    # Trader established 1-मिनिट candles वर touch तपासतो, established तात्काळ स्वभावाला अनुसरून
-    # established त्याला established स्वतःचे, established 1-मिनिट डेटावरून काढलेले levels हवेत —
-    # established 15-मिनिट डेटावरून काढलेले (established SRv2 साठीचे) नाही. established Upstox चा
-    # स्वतःचा डीफॉल्ट (established 1-मिनिटसाठी established ५ दिवस — established 1-मिनिट डेटा
-    # established रोलिंग १ महिन्यापेक्षा जास्त मागे जाऊच शकत नाही, म्हणून established छोटा,
-    # established व्यवहार्य lookback).
-    df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")
+    df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (1-मिनिटसाठी ~5 दिवस)
+    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (5-मिनिटसाठी ~10 दिवस)
 
     if df_1h is None or df_1h.empty:
         return False, f"{symbol}: 1H डेटा मिळाला नाही"
@@ -87,6 +80,7 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
         df_1h, df_15m if df_15m is not None else df_1h.iloc[:0], symbol=symbol,
         df_15m_recent=df_15m_recent if df_15m_recent is not None and not df_15m_recent.empty else None,
         df_1m_recent=df_1m_recent if df_1m_recent is not None and not df_1m_recent.empty else None,
+        df_5m_recent=df_5m_recent if df_5m_recent is not None and not df_5m_recent.empty else None,
     )
     if zones_df.empty:
         return False, f"{symbol}: पुरेसा इतिहास नाही (किमान २० candles प्रति timeframe हवेत) -- कुठलेही zones सापडले नाहीत."

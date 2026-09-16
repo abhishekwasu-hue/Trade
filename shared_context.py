@@ -23,7 +23,7 @@ def setup_shared_context():
     symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY", "SENSEX"])
 
     # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
-    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "15minute", "30minute", "1hour", "day"], index=2)
+    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "5minute", "15minute", "30minute", "1hour", "day"], index=3)
 
     # --- चार्ट टाईप निवडण्याची सुविधा (Candlestick / Line) ---
     chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)

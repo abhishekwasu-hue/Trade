@@ -133,6 +133,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         return f"{symbol}: आजचे 1-मिनिट candles अजून तयार झालेले नाहीत"
 
     recent_candles = todays_candles_df.tail(2).to_dict("records")  # फक्त शेवटचे 2 (सद्य किंमत + gap-check)
+    current_price = recent_candles[-1]["close"]
 
     now = get_ist_now()
     trade_date = now.strftime("%Y-%m-%d")
@@ -141,7 +142,15 @@ def process_symbol(access_token, symbol, lot_size=65):
     for row, timeframe_suffix in pooled_levels:
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
 
-        direction = "BULLISH" if row["zone_type"].startswith("DYNAMIC_SR_SUPPORT") else "BEARISH"
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिशा आता row["zone_type"] च्या साठवलेल्या
+        # (मागच्या रात्रीच्या/मागच्या merge-cron cycle च्या) SUPPORT/RESISTANCE label वरून नाही, तर
+        # सद्य किमतीच्या (current_price) level च्या सापेक्ष स्थितीवरून ठरते — srv2_momentum_reversal_strategy.py
+        # मध्ये आधीच वापरलेल्या नियमाप्रमाणेच ("दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून
+        # ठरते, साठवलेल्या ऐतिहासिक label वरून नाही"). किंमत level च्या वर = Resistance/BEARISH,
+        # खाली किंवा बरोबर = Support/BULLISH — साठवलेला label जुना/स्टेल असला (उदा. gap-open नंतर
+        # किंमत level च्या दुसऱ्याच बाजूला गेली) तरी प्रत्यक्ष trade नेहमी सद्य किमतीशी सुसंगतच घेतला
+        # जातो, आधीच्या रात्रीच्या किमतीशी नाही.
+        direction = "BULLISH" if current_price >= row["zone_low"] else "BEARISH"
         # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
         # च्या आतच ठरायचा, पण खाली (यशस्वी trade नंतरच्या Telegram संदेशात) कायम वापरला जायचा — RSI Gate
         # Dashboard वरून बंद केला की इथे NameError येऊन entire script क्रॅश व्हायचा, अगदी order
