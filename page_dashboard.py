@@ -846,7 +846,7 @@ def _render_market_zones():
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                     display_log = signal_log_df if log_filter == "सर्व" else signal_log_df[signal_log_df["hit_type"] != "NO_HIT"]
                     st.dataframe(display_log, width="stretch", height=300)
-                    st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level cross झाला.")
+                    st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
                 st.markdown("---")
 
                 for zt in zone_type_order:
