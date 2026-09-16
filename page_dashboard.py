@@ -837,16 +837,38 @@ def _render_market_zones():
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा
                 # **संपूर्ण** intraday Signal Log — trade झाला किंवा न झाला तरीही, प्रत्येक तपासलेला
-                # level इथे दिसेल (established get_signal_log() पुनर्वापर करून).
-                st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
+                # level इथे दिसेल (established get_signal_log() पुनर्वापर करून). 1m_instant आणि SRv2
+                # दोन्ही एकाच signal_log table मध्ये साठवतात — level_type वरून वेगळे काढले जातात
+                # ("DYNAMIC_SR_..." prefix = 1m_instant, प्लेन "SUPPORT"/"RESISTANCE" = SRv2).
                 signal_log_df = cloud_db.get_signal_log(symbol, get_ist_now().strftime("%Y-%m-%d"))
-                if signal_log_df is None or signal_log_df.empty:
+                instant_log_df = signal_log_df[signal_log_df["level_type"].str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
+
+                st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
+                if instant_log_df is None or instant_log_df.empty:
                     st.caption("आज अजून कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
                 else:
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
-                    display_log = signal_log_df if log_filter == "सर्व" else signal_log_df[signal_log_df["hit_type"] != "NO_HIT"]
+                    display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
                     st.dataframe(display_log, width="stretch", height=300)
-                    st.caption(f"एकूण {len(signal_log_df)} तपासण्या — {(signal_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                    st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                st.markdown("---")
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 (15M/30M/60M Momentum-Reversal)
+                # साठीही, 1m_instant सारखाच संपूर्ण Signal Log — याआधी SRv2 फक्त प्रत्यक्ष trade
+                # झाल्यावरच log करायचं, त्यामुळे touch झाला पण RSI/PCR गेटने अडवला अशा candidates चं
+                # काहीच cross-verify करता येत नव्हतं. कुठला timeframe (15M/30M/60M) होता ते
+                # "reason" column मध्ये दिसेल (level_type मध्ये timeframe साठवलं जात नाही, कारण
+                # दिशा-निर्णयाचा level_type "SUPPORT"/"RESISTANCE" हाच सद्य किमतीवरून ठरतो — बघा
+                # वरची टिप्पणी, "dynamic label -- साठवलेला RESISTANCE नाही").
+                st.markdown("##### 📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)")
+                srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
+                if srv2_log_df is None or srv2_log_df.empty:
+                    st.caption("आज अजून कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
+                else:
+                    srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
+                    srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
+                    st.dataframe(srv2_display_log, width="stretch", height=300)
+                    st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 15M/30M/60M — ते 'reason' column मध्ये दिसेल.)")
                 st.markdown("---")
 
                 for zt in zone_type_order:
