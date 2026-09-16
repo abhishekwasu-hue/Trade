@@ -932,11 +932,6 @@ def render():
     sl_pct_of_max_loss = st.session_state["sl_pct_of_max_loss"]
     target_pct_of_max_profit = st.session_state["target_pct_of_max_profit"]
 
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Professional Grade — Blink फिक्स) — किंमत/P&L टिकर
-    # established स्वतंत्र fragment (live_ticker.py) मध्ये, दर ६० सेकंदाला **स्वतःच** ताजा होतो —
-    # खालचं संपूर्ण पान (chart/tabs) अजिबात हलत नाही, पूर्ण-पान रिफ्रेश आता established दर ५ मिनिटांनी.
-    render_live_ticker()
-    st.markdown("---")
     vix_max_threshold = st.session_state["vix_max_threshold"]
     sideways_tight_range_pct = st.session_state["sideways_tight_range_pct"]
     sideways_max_range_pct = st.session_state["sideways_max_range_pct"]
@@ -975,23 +970,14 @@ def render():
 
     st.title(f"📈 Upstox Option Terminal ({symbol})")
 
-    last_updated_ist = get_ist_now().strftime("%H:%M:%S")
-    col_live1, col_live2 = st.columns([1, 3])
-    with col_live1:
-        st.markdown(
-            f"""
-            <div style="background-color:#1e222d;border:1px solid #2a2e3d;border-radius:6px;padding:10px 14px;">
-                <div style="font-size:12px;color:#787b86;letter-spacing:0.5px;">
-                    🟢 {symbol} 50 · LIVE DATA
-                </div>
-                <div style="font-size:26px;font-weight:bold;color:#d1d4dc;font-variant-numeric:tabular-nums;">
-                    ₹{underlying_price:,.2f}
-                </div>
-                <div style="font-size:11px;color:#9598a1;">Last updated {last_updated_ist} IST</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    # 🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वरचा NIFTY LTP Upstox च्या live LTP च्या तुलनेत
+    # laggy दिसत होता) — हा headline कार्ड आधी इथे static होता, फक्त पूर्ण-पान रिफ्रेशवर (दर ५
+    # मिनिटांनी, app.py चा st_autorefresh) अद्ययावत होणाऱ्या underlying_price वर अवलंबून — तर
+    # त्याच्याच शेजारी live_ticker.py चा वेगळा fragment (दर १५ सेकंदाला, थेट fetch_ltp_map() ने)
+    # एक वेगळी, ताजी किंमत दाखवायचा — एकाच पानावर दोन वेगवेगळ्या वेगाने अपडेट होणारे LTP, कधीकधी
+    # वेगळे आकडे दाखवणारे. आता हाच headline कार्ड त्याच fast fragment चा भाग — एकच, नेहमी ताजी
+    # (जास्तीत जास्त १५ सेकंद जुनी) किंमत, कुठलाही duplicate display उरलेला नाही.
+    render_live_ticker()
 
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)

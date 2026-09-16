@@ -1,22 +1,32 @@
 """
 live_ticker.py
 ------------------------------------
-🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Professional Grade — Blink फिक्स) — established आधी
-संपूर्ण Dashboard पान दर १ मिनिटाला पूर्णपणे पुन्हा चालायचं (chart/tabs क्षणभर नाहीसं होऊन परत यायचं —
-लक्षणीय "blink", अव्यावसायिक दिसायचं). आता फक्त किंमत/P&L टिकर इथे, established स्वतंत्र
-`@st.fragment(run_every="60s")` मध्ये — दर ६० सेकंदाला **फक्त हाच छोटा भाग** नव्याने रेंडर होतो,
-बाकीचं संपूर्ण पान (chart, tabs, sidebar) अजिबात हलत नाही. संपूर्ण पानाचं रिफ्रेश आता established
-दर ५ मिनिटांनी (app.py) — chart/Direction Engine/Signal Engine इतक्या वारंवार बदलायची गरजच नाही.
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Professional Grade — Blink फिक्स) — आधी संपूर्ण
+Dashboard पान दर १ मिनिटाला पूर्णपणे पुन्हा चालायचं (chart/tabs क्षणभर नाहीसं होऊन परत यायचं —
+लक्षणीय "blink", अव्यावसायिक दिसायचं). आता फक्त किंमत/P&L टिकर इथे, स्वतंत्र `@st.fragment`
+मध्ये — दर काही सेकंदांनी **फक्त हाच छोटा भाग** नव्याने रेंडर होतो, बाकीचं संपूर्ण पान (chart,
+tabs, sidebar) अजिबात हलत नाही. संपूर्ण पानाचं रिफ्रेश आता दर ५ मिनिटांनी (app.py) —
+chart/Direction Engine/Signal Engine इतक्या वारंवार बदलायची गरजच नाही.
 
-Fragment established बाकीच्या script-execution पासून स्वतंत्र चालत असल्यामुळे, याला लागणारा डेटा
-(LTP, positions) established स्वतःच, हलकेपणाने (पूर्ण Option Chain न मागवता — फक्त underlying चा
-LTP) मागवतो.
+Fragment बाकीच्या script-execution पासून स्वतंत्र चालत असल्यामुळे, याला लागणारा डेटा (LTP,
+positions) स्वतःच, हलकेपणाने (पूर्ण Option Chain न मागवता — फक्त underlying चा LTP) मागवतो.
+
+🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वरचा NIFTY LTP Upstox च्या live LTP च्या तुलनेत laggy
+दिसत होता) — आधी page_dashboard.py मध्ये headline "🟢 SYMBOL LIVE DATA" कार्ड वेगळाच, static
+होता (फक्त दर ५-मिनिटांच्या पूर्ण-पान रिफ्रेशवर अद्ययावत होणाऱ्या underlying_price वर अवलंबून),
+तर हाच fragment त्याच्याच शेजारी वेगळी, ताजी किंमत st.metric() मध्ये दाखवायचा — एकाच पानावर
+दोन वेगवेगळ्या वेगाने अपडेट होणारे LTP, कधीकधी वेगळे आकडे. आता headline कार्ड इथेच, याच
+fragment चा भाग — एकच स्रोत, कुठलाही duplicate/स्टेल display उरलेला नाही. रिफ्रेश गतीही ६०
+वरून १५ सेकंदांवर आणली (fetch_ltp_map() एकाच instrument साठीचा हलका कॉल — इतक्या वारंवार
+चालवणं सुरक्षित).
 """
 import streamlit as st
 
 from upstox_api import get_instrument_key, fetch_ltp_map
 from database import get_live_positions_with_mtm
 from config import get_ist_now
+
+TICKER_REFRESH_SECONDS = 15
 
 
 def _render_ticker_body():
@@ -33,6 +43,24 @@ def _render_ticker_body():
     except Exception:
         pass  # LTP मिळाला नाही तरी टिकर क्रॅश होऊ नये — "—" दाखवेल
 
+    ltp_display = f"₹{current_ltp:,.2f}" if current_ltp is not None else "—"
+    st.markdown(
+        f"""
+        <div style="background-color:#1e222d;border:1px solid #2a2e3d;border-radius:6px;padding:10px 14px;">
+            <div style="font-size:12px;color:#787b86;letter-spacing:0.5px;">
+                🟢 {symbol} · LIVE DATA
+            </div>
+            <div style="font-size:26px;font-weight:bold;color:#d1d4dc;font-variant-numeric:tabular-nums;">
+                {ltp_display}
+            </div>
+            <div style="font-size:11px;color:#9598a1;">
+                शेवटचं: {get_ist_now().strftime('%H:%M:%S')} IST (दर {TICKER_REFRESH_SECONDS} सेकंदांनी स्वतंत्रपणे ताजा)
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     total_mtm = None
     try:
         positions_df = get_live_positions_with_mtm(token_input, symbol)
@@ -43,17 +71,11 @@ def _render_ticker_body():
     except Exception:
         pass  # Positions मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
 
-    tcol1, tcol2, tcol3 = st.columns(3)
-    with tcol1:
-        st.metric(f"{symbol} LTP", f"₹{current_ltp:,.2f}" if current_ltp is not None else "—")
-    with tcol2:
-        st.metric("उघड्या Positions चा एकूण MTM", f"₹{total_mtm:,.0f}" if total_mtm is not None else "—")
-    with tcol3:
-        st.caption(f"🟢 Live — शेवटचं: {get_ist_now().strftime('%H:%M:%S')} (दर ६० सेकंदाला स्वतंत्रपणे ताजा)")
+    st.metric("उघड्या Positions चा एकूण MTM", f"₹{total_mtm:,.0f}" if total_mtm is not None else "—")
 
 
 if hasattr(st, "fragment"):
-    @st.fragment(run_every="60s")
+    @st.fragment(run_every=f"{TICKER_REFRESH_SECONDS}s")
     def render_live_ticker():
         _render_ticker_body()
 else:
