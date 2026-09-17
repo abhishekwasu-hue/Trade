@@ -1713,6 +1713,45 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     return result
 
 
+_TF_GROUP_ORDER = ["1M", "5M", "15M", "30M", "60M"]
+_TF_GROUP_COLORS = {
+    "1M": colors.HexColor("#2962FF"), "5M": colors.HexColor("#00897B"), "15M": colors.HexColor("#7E57C2"),
+    "30M": colors.HexColor("#D68A00"), "60M": colors.HexColor("#E64A19"),
+}
+
+
+def _subsection_banner(text, usable_width, accent_color):
+    """Trade Log आतल्या प्रत्येक Entry Timeframe गटासाठी स्वतःचं, ठळक (मुख्य section-header पेक्षा
+    लहान) रंगीत heading — जेणेकरून 1M आणि 5M S/R touch trades एकाच मोठ्या टेबलमध्ये मिसळू नयेत,
+    प्रत्येक गटाला स्वतःचं स्पष्ट शीर्षक मिळावं."""
+    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=11.5, leading=14, textColor=colors.white)
+    tbl = Table([[Paragraph(text, style)]], colWidths=[usable_width])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), accent_color),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return tbl
+
+
+def _trade_log_groups_by_timeframe(trade_log_df):
+    """"Entry Timeframe" स्तंभानुसार trade_log_df चे गट पाडणे — 1M, 5M, 15M, 30M, 60M या क्रमाने,
+    इतर कुठलंही/अज्ञात शेवटी — प्रत्येक गटासाठी (label, accent_color, sub_df_without_tf_column).
+    "Entry Timeframe" स्तंभ नसेल (जुना कॉलर) तर एकच "All Trades" गट परत करणे — मोडणार नाही."""
+    if "Entry Timeframe" not in trade_log_df.columns:
+        return [("All Trades", _C_ACCENT, trade_log_df)]
+    present = list(trade_log_df["Entry Timeframe"].unique())
+    ordered = [tf for tf in _TF_GROUP_ORDER if tf in present] + sorted(tf for tf in present if tf not in _TF_GROUP_ORDER)
+    groups = []
+    for tf in ordered:
+        sub_df = trade_log_df[trade_log_df["Entry Timeframe"] == tf].drop(columns=["Entry Timeframe"])
+        label = f"{tf} S/R Touch Trades" if tf != "N/A" else "Other / Unknown Timeframe Trades"
+        color = _TF_GROUP_COLORS.get(tf, _C_GREY)
+        trade_word = "trade" if len(sub_df) == 1 else "trades"
+        groups.append((f"{label} ({len(sub_df)} {trade_word})", color, sub_df))
+    return groups
+
+
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
                                       by_source_df, by_timeframe_df, trade_log_df, recommendations):
     """
@@ -1852,10 +1891,15 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.append(Paragraph(
             "Every SL/Target Exit Reason below names the exact basis it was triggered on — "
             "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
-            "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance.",
+            "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance. "
+            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables.",
             ParagraphStyle("trade_log_note", fontName=_RPT_FONT, fontSize=9.5, leading=13, textColor=colors.HexColor("#555555"), spaceAfter=6),
         ))
-        story.extend(_build_trade_log_table(trade_log_df, usable_width, max_rows=250))
+        for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
+            story.append(_subsection_banner(group_label, usable_width, group_color))
+            story.append(Spacer(1, 4))
+            story.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
+            story.append(Spacer(1, 10))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph(

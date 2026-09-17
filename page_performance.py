@@ -425,9 +425,15 @@ def render():
                 lambda r: _exit_reason_label_with_tag(r["exit_reason"], r["exit_reason_detail"]), axis=1,
             )
             trade_log_pdf_df["Exit Reason Detail"] = trade_log_pdf_df["exit_reason_detail"].fillna("-")
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PDF च्या Trade Log मध्ये 1M आणि 5M S/R
+            # touch trades एकाच मोठ्या टेबलमध्ये मिसळण्याऐवजी, प्रत्येक Entry Timeframe साठी वेगळं,
+            # स्वतःच्या ठळक heading सकट उप-टेबल (generate_performance_report_pdf त्यावरून गट करतो).
+            trade_log_pdf_df["Entry Timeframe"] = trade_log_pdf_df["entry_timeframe"].where(
+                trade_log_pdf_df["entry_timeframe"].notna() & (trade_log_pdf_df["entry_timeframe"] != "UNKNOWN"), "N/A",
+            )
             trade_log_pdf_df = trade_log_pdf_df[[
                 "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                "Exit Reason Detail", "Realized P&L", "mode",
+                "Exit Reason Detail", "Realized P&L", "mode", "Entry Timeframe",
             ]].rename(columns={"mode": "Mode"})
 
             trade_log_display = trade_log_display[[
