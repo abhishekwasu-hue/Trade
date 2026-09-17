@@ -66,3 +66,71 @@ mkswap /swapfile
 swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
+
+---
+
+# Upstox Token Webhook — Deployment (1-Tap Mobile Approval)
+
+`trigger_upstox_token_request.py` (GitHub Actions, रोज सकाळी ०८:०० IST) Upstox ला "आजचा token हवा"
+अशी विनंती पाठवतो — तुमच्या मोबाईलवर Upstox app मध्ये notification येते, एका टॅपने Approve केलं की
+Upstox तो token एका webhook URL ला POST करतो. `upstox_token_webhook.py` (VPS वर, Flask) तो POST
+स्वीकारून Supabase मध्ये साठवतो — कुठेही manual copy-paste लागत नाही.
+
+⚠️ **महत्त्वाचं** — `upstox_token_webhook.py` चा स्वतःचा server (`app.run()`) plain HTTP आहे, TLS/SSL
+नाही. `https://VPS-IP:8080` असं थेट URL Upstox ला दिलं तर तो **खरं HTTPS होत नाही** (TLS handshake
+वरच अयशस्वी होतो) — Upstox चा webhook-delivery बहुतेक अयशस्वी होईल. यासाठी **cloudflared** (Cloudflare
+Tunnel) वापरून, त्याच्याकडूनच खरं, विश्वासार्ह (publicly trusted) HTTPS मिळवतो — Flask ला कुठलाही
+SSL बदल करावा लागत नाही.
+
+## एकदाच सेटअप (droplet वर, root किंवा sudo सह):
+
+```bash
+# 1. cloudflared इंस्टॉल करणे
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+dpkg -i cloudflared.deb
+
+# 2. दोन्ही systemd unit files copy करणे — paths जुळवा (तुमचा प्रोजेक्ट फोल्डर वेगळा असेल तर बदला)
+cp deploy/upstox_token_webhook.service /etc/systemd/system/
+cp deploy/cloudflared_upstox_webhook.service /etc/systemd/system/
+
+# 3. systemd ला नवीन units दिसण्यासाठी
+systemctl daemon-reload
+
+# 4. दोन्ही सुरू करा (आणि reboot नंतरही आपोआप सुरू व्हावेत म्हणून enable)
+systemctl enable --now upstox_token_webhook.service
+systemctl enable --now cloudflared_upstox_webhook.service
+
+# 5. तपासणी — दोन्ही "active (running)" दिसायला हवेत
+systemctl status upstox_token_webhook.service
+systemctl status cloudflared_upstox_webhook.service
+```
+
+## तुमची नवीन, खरी HTTPS URL शोधणे:
+```bash
+journalctl -u cloudflared_upstox_webhook -n 20 --no-pager | grep trycloudflare
+```
+यात `https://xxxx-xxx-xxx.trycloudflare.com` असं काहीतरी दिसेल — **हीच** URL (शेवटी `/upstox-webhook`
+जोडून, उदा. `https://xxxx-xxx-xxx.trycloudflare.com/upstox-webhook`) पुढच्या पायरीत Upstox कडे
+नोंदवायची आहे.
+
+## Upstox Developer Console मध्ये Notifier URL नोंदवणे (एकदाच, मॅन्युअली):
+1. https://account.upstox.com/developer/apps वर जा, तुमचं App उघडा.
+2. "Notifier URL" (किंवा "Redirect/Webhook URL") field मध्ये वरची URL पेस्ट करा, Save करा.
+
+## ⚠️ URL बदलते (Quick Tunnel ची मर्यादा):
+ही "Quick Tunnel" पद्धत मोफत आहे, कुठलंही Cloudflare account/domain लागत नाही — पण
+`cloudflared_upstox_webhook.service` कधीही (re)start झाला (उदा. VPS reboot, क्रॅश) की **नवीन** URL
+मिळते. तेव्हा वरची "URL शोधणे" पायरी पुन्हा करून, Upstox Console मध्येही अपडेट करावी लागेल.
+
+कायमस्वरूपी, कधीच न बदलणारी URL हवी असल्यास — तुमच्याकडे स्वतःचं domain असेल तर **Cloudflare Named
+Tunnel** वापरा (Cloudflare Dashboard → Zero Trust → Networks → Tunnels मधून एकदा तयार करून, एक
+कायमचा subdomain — उदा. `upstox-webhook.तुमचंdomain.com` — त्याला जोडता येतो; त्यानंतर हीच URL कधीच
+बदलत नाही, reboot झाला तरी).
+
+## मॅन्युअली टेस्ट करायचं असेल:
+```bash
+systemctl restart upstox_token_webhook.service cloudflared_upstox_webhook.service
+journalctl -u cloudflared_upstox_webhook -n 20 --no-pager
+journalctl -u upstox_token_webhook -n 20 --no-pager
+curl http://localhost:8080/health   # स्थानिक (VPS वरूनच) तपासणी — {"status":"ok"} यायला हवं
+```

@@ -1,0 +1,26 @@
+[Unit]
+Description=Cloudflare Quick Tunnel — upstox_token_webhook.py (localhost:8080) साठी खरी, विश्वासार्ह HTTPS URL
+After=network-online.target upstox_token_webhook.service
+Wants=network-online.target
+Requires=upstox_token_webhook.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — upstox_token_webhook.py चा स्वतःचा server
+# (app.run()) plain HTTP आहे, कुठलंही TLS/SSL certificate configured नाही — त्यामुळे
+# "https://VPS-IP:8080" असं थेट लिहिलं तरी खरं HTTPS होत नाही (Upstox च्या webhook-delivery
+# ला हवं असणारं). cloudflared इथे TLS एका मोफत, विश्वासार्ह (publicly trusted) प्रमाणपत्रासह
+# स्वतः handle करतो, आणि आतून plain HTTP (localhost:8080) कडे पाठवतो — त्यामुळे Flask
+# app मध्ये कुठलाही SSL बदल करावा लागत नाही.
+# ⚠️ ही "Quick Tunnel" पद्धत आहे (मोफत, Cloudflare account/domain न लागता) — पण प्रत्येक वेळी
+# हा service (re)start झाला (उदा. VPS reboot) की मिळणारी URL बदलते. नवीन URL
+# journalctl -u cloudflared_upstox_webhook -n 20 मध्ये दिसेल — ती दरवेळी Upstox Developer
+# Console च्या Notifier URL मध्ये अपडेट करावी लागेल. कायमस्वरूपी, कधीच न बदलणारी URL हवी
+# असल्यास (आणि तुमच्याकडे स्वतःचं domain असल्यास), Cloudflare Named Tunnel वापरा —
+# त्यासाठी वेगळी सूचना README.md मध्ये.
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+
+[Install]
+WantedBy=multi-user.target
