@@ -10,7 +10,10 @@ import datetime
 import pandas as pd
 
 YFINANCE_SYMBOL_MAP = {"NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK"}
-YFINANCE_INTERVAL_MAP = {"15minute": "15m", "30minute": "30m", "hour": "60m", "day": "1d"}
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Classical S/R Reversal backtest, 5M+15M) — "5minute" आधी
+# इथे मॅप केलेलं नव्हतं (कधी वापरलंच गेलं नव्हतं), त्यामुळे .get(interval,"1d") fallback मुळे गप्प
+# DAILY डेटा यायचा — आता खरा Yahoo "5m" interval जोडला.
+YFINANCE_INTERVAL_MAP = {"5minute": "5m", "15minute": "15m", "30minute": "30m", "hour": "60m", "day": "1d"}
 YFINANCE_MAX_INTRADAY_DAYS = 59  # Yahoo चं स्वतःचं ~60 दिवसांचं धोरण, थोडं मार्जिन ठेवून
 
 
