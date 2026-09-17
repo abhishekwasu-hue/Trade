@@ -772,6 +772,11 @@ def _render_market_zones():
     — म्हणून established पूर्णपणे स्वतंत्र fragment बनवणं इथेही सुरक्षित आणि योग्य आहे."""
     symbol = st.session_state["symbol"]
     underlying_price = st.session_state["underlying_price"]
+    # 🎓 वापरकर्त्याने सापडवलेली bug — हे fragment मूळतः फक्त Supabase वरून वाचायचं (symbol/
+    # underlying_price शिवाय इतर कशावरही अवलंबून नव्हतं), पण 5M/15M Confluence Table (live
+    # candles fetch साठी token लागतो) जोडल्यावर token_input इथे कधीच वाचलाच गेला नाही —
+    # बटण दाबल्यावर थेट NameError यायचा.
+    token_input = st.session_state["token_input"]
 
     st.markdown("---")
     mega_header(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)", HDR_PURPLE)
