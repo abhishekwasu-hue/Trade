@@ -18,11 +18,21 @@ import trading_engine
 
 @pytest.fixture
 def temp_db(monkeypatch):
-    """प्रत्येक test साठी नवीन, स्वतंत्र तात्पुरता SQLite DB."""
+    """प्रत्येक test साठी नवीन, स्वतंत्र तात्पुरता SQLite DB.
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — manage_open_trades() नेहमी सर्वात आधी
+    reconcile_open_trades_with_broker() (-> fetch_broker_positions(), खरा Upstox network call)
+    चालवतं. आधी हे कुठेही mock केलेलं नव्हतं — sandbox मध्ये नेटवर्क अडवलं गेलं की
+    retry/backoff मुळे प्रत्येक असा test काही सेकंद ते मिनिटं थांबायचा (flaky, कधी-कधी hang
+    झाल्यासारखं वाटायचं). इथे एक सुरक्षित डीफॉल्ट (रिकामी यादी — "कुठलीही broker position नाही",
+    reconciliation लगेच काहीही न करता संपतं) — ज्या tests ना विशिष्ट broker-position वर्तन
+    हवं आहे (उदा. TestReconcileOpenTradesWithBroker), ते स्वतःच्या monkeypatch.setattr() ने
+    हेच पुन्हा override करतात, जे नेहमीप्रमाणे चालत राहतं.
+    """
     tmpdb = tempfile.mktemp(suffix=".db")
     monkeypatch.setattr(database, "DB_PATH", tmpdb)
     database.init_sqlite_db()
     monkeypatch.setattr(trading_engine, "DB_PATH", tmpdb)
+    monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda access_token: [])
     yield tmpdb
 
 
@@ -132,6 +142,21 @@ class TestThreePMCarryForwardLogic:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
         assert closed[0]["reason"] == "SL"
+
+    def test_classic_sl_stores_exit_reason_detail(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF) — exit_reason_detail
+        DB मध्ये प्रत्यक्ष साठवलं जायला हवं, फक्त in-memory closed_summaries मध्ये नाही."""
+        seed_trade(temp_db, "T4b", net_credit=30, sl_level=-1125, target_level=1125)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 60.0, "PE24300": 5.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT exit_reason, exit_reason_detail FROM live_trades WHERE trade_id='T4b'").fetchone()
+        conn.close()
+        assert row[0] == "SL"
+        assert row[1] is not None and "SL level" in row[1]
 
 
 class TestPctTrailingSlLevel:
@@ -591,22 +616,27 @@ class TestEvaluatePointSpotExit:
     def test_spread_sl_on_spot_move(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * (1 - 0.0006), 0, 0.05, 5, 0.10, 10, 0.20, 15, False)
         assert r[0] == "SL"
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF — "exact reason") —
+        # detail ने नेमकं सांगायला हवं की Spot% मुळे लागला, Premium Points मुळे नाही (दुसऱ्याचा
+        # संदर्भ "still at ..." असा फक्त माहितीसाठी असू शकतो, म्हणून नेमका "via" वाक्यांश तपासतो).
+        assert "via Spot move" in r[2]
 
     def test_spread_sl_on_premium_move(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, -5, 0.05, 5, 0.10, 10, 0.20, 15, False)
         assert r[0] == "SL"
+        assert "via Premium points" in r[2]
 
     def test_spread_neither_stays_open_no_tsl(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23905, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
-        assert r == (None, False)
+        assert r == (None, False, None)
 
     def test_spread_tsl_activates_on_spot(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * 1.0011, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
-        assert r == (None, True)
+        assert r == (None, True, None)
 
     def test_spread_tsl_activates_on_premium(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 10, 0.05, 5, 0.10, 10, 0.20, 15, False)
-        assert r == (None, True)
+        assert r == (None, True, None)
 
     def test_spread_tsl_sl_once_activated_and_profit_gives_back(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, -1, 0.05, 5, 0.10, 10, 0.20, 15, True)
@@ -614,19 +644,26 @@ class TestEvaluatePointSpotExit:
 
     def test_spread_tsl_sticky_while_still_profitable(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 5, 0.05, 5, 0.10, 10, 0.20, 15, True)
-        assert r == (None, True)
+        assert r == (None, True, None)
 
     def test_spread_target_on_spot(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900 * 1.0021, 2, 0.05, 5, 0.10, 10, 0.20, 15, False)
         assert r[0] == "TARGET"
+        assert "via Spot move" in r[2]
 
     def test_spread_target_on_premium(self):
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 15, 0.05, 5, 0.10, 10, 0.20, 15, False)
         assert r[0] == "TARGET"
+        assert "via Premium points" in r[2]
+
+    def test_tsl_sl_detail_mentions_breakeven(self):
+        r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, -1, 0.05, 5, 0.10, 10, 0.20, 15, True)
+        assert r[0] == "TSL_SL"
+        assert "Breakeven" in r[2]
 
     def test_naked_tsl_activates_on_premium(self):
         r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000, 20, 0.05, 10, 0.10, 20, 0.20, 30, False)
-        assert r == (None, True)
+        assert r == (None, True, None)
 
     def test_naked_sl_on_adverse_spot(self):
         r = trading_engine.evaluate_point_spot_exit(False, 24000, 24000 * 1.0006, 0, 0.05, 10, 0.10, 20, 0.20, 30, False)

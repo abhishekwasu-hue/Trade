@@ -280,30 +280,61 @@ def evaluate_point_spot_exit(
     tsl_already_activated: आधीच्या cycle मध्ये TSL (Entry/Breakeven) सक्रिय झाली होती का — एकदा
     सक्रिय झाली की कायम (sticky) राहते, पुन्हा जुन्या (घट्ट नसलेल्या) SL कडे परत जात नाही.
 
-    रिटर्न: (exit_reason: "TARGET"/"SL"/"TSL_SL"/None, tsl_now_activated: bool)
+    रिटर्न: (exit_reason: "TARGET"/"SL"/"TSL_SL"/None, tsl_now_activated: bool, detail: str|None)
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF — "exact reason" मागणी) —
+    तिसरा detail — Spot% विरुद्ध Premium Points यापैकी नेमकं कोणतं उंबरठा ओलांडला गेला, हे स्पष्ट
+    सांगणारा वाचनीय मजकूर. exit_reason च्या पहिल्या दोन मूल्यांवर (कोड-आधारित business logic, उदा.
+    `point_exit_reason != "TARGET"`) याचा **काहीही** परिणाम होत नाही — फक्त जोड आहे.
     """
     if direction_bullish:
         spot_move_pct = (current_spot - entry_spot) / entry_spot
     else:
         spot_move_pct = (entry_spot - current_spot) / entry_spot
+    spot_move_display = spot_move_pct * 100
 
     # Target — TSL च्या स्थितीशी संबंध नाही, गाठला की केव्हाही लगेच बंद
-    if spot_move_pct >= target_spot_pct / 100 or premium_pnl_points >= target_premium_points:
-        return "TARGET", tsl_already_activated
+    # 🎓 detail मुद्दाम इंग्रजीत (Marathi/Devanagari नाही) — हा stored DB मजकूर Performance Report
+    # PDF मध्ये थेट दाखवला जातो, आणि PDF फॉन्ट्समध्ये (fonts/ फोल्डरमध्ये फक्त DejaVu Sans आहे,
+    # Devanagari font नाही) मराठी glyphs रिकाम्या चौकोनासारखे दिसतात — म्हणून इथे इंग्रजीतच.
+    target_by_spot = spot_move_pct >= target_spot_pct / 100
+    target_by_premium = premium_pnl_points >= target_premium_points
+    if target_by_spot or target_by_premium:
+        if target_by_spot and target_by_premium:
+            detail = (f"Target hit — both Spot move {spot_move_display:.2f}% (threshold {target_spot_pct}%) and "
+                       f"Premium gain {premium_pnl_points:.1f} points (threshold {target_premium_points}) reached simultaneously.")
+        elif target_by_spot:
+            detail = (f"Target hit via Spot move — {spot_move_display:.2f}% reached/exceeded the {target_spot_pct}% threshold "
+                       f"(Premium gain still at {premium_pnl_points:.1f}/{target_premium_points} points).")
+        else:
+            detail = (f"Target hit via Premium points — {premium_pnl_points:.1f} points reached/exceeded the {target_premium_points}-point threshold "
+                       f"(Spot move still at {spot_move_display:.2f}%/{target_spot_pct}%).")
+        return "TARGET", tsl_already_activated, detail
 
     if tsl_already_activated:
         # TSL आधीच सक्रिय — SL आता Entry/Breakeven वर घट्ट (प्रीमियम-नफा 0 किंवा त्याखाली गेला की बंद)
         if premium_pnl_points <= 0:
-            return "TSL_SL", True
-        return None, True
+            detail = f"Trailing SL hit (locked to Entry/Breakeven) — Premium gain {premium_pnl_points:.1f} points dropped to/below zero."
+            return "TSL_SL", True, detail
+        return None, True, None
 
     # TSL अजून सक्रिय नाही — मूळ (सैल) SL तपासणे
-    if spot_move_pct <= -sl_spot_pct / 100 or premium_pnl_points <= -sl_premium_points:
-        return "SL", False
+    sl_by_spot = spot_move_pct <= -sl_spot_pct / 100
+    sl_by_premium = premium_pnl_points <= -sl_premium_points
+    if sl_by_spot or sl_by_premium:
+        if sl_by_spot and sl_by_premium:
+            detail = (f"Stop-Loss hit — both adverse Spot move {spot_move_display:.2f}% (threshold -{sl_spot_pct}%) and "
+                       f"Premium loss {premium_pnl_points:.1f} points (threshold -{sl_premium_points}) reached simultaneously.")
+        elif sl_by_spot:
+            detail = (f"Stop-Loss hit via Spot move — adverse move {spot_move_display:.2f}% reached/exceeded the -{sl_spot_pct}% threshold "
+                       f"(Premium loss still at {premium_pnl_points:.1f}/-{sl_premium_points} points).")
+        else:
+            detail = (f"Stop-Loss hit via Premium points — loss {premium_pnl_points:.1f} points reached/exceeded the -{sl_premium_points}-point threshold "
+                       f"(Spot move still at {spot_move_display:.2f}%/-{sl_spot_pct}%).")
+        return "SL", False, detail
 
     # TSL सक्रिय व्हायची अट (आता किंवा आधीपासून) पूर्ण झाली का
     tsl_now_activated = (spot_move_pct >= tsl_spot_pct / 100) or (premium_pnl_points >= tsl_premium_points)
-    return None, tsl_now_activated
+    return None, tsl_now_activated, None
 
 
 def compute_pct_trailing_sl_level(current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=None):
@@ -422,6 +453,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         )
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
         net_credit_total = net_credit * lots * lot_size
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF) — प्रत्येक trade चं
+        # Exit नेमकं कशामुळे झालं (Spot% विरुद्ध Premium Points, कोणता next level, इ.) — exit_reason
+        # कोड (business logic साठी, बदलेला नाही) सोबतच, वाचनीय detail वेगळ्या column मध्ये.
+        exit_reason_detail = None
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
@@ -451,7 +486,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 target_spot_pct = settings_1m["spread_target_spot_pct"]
                 target_premium_points = settings_1m["spread_target_premium_points"]
 
-            point_exit_reason, tsl_now_activated = evaluate_point_spot_exit(
+            point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
                 direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
@@ -460,11 +495,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
 
             exit_reason = point_exit_reason
+            exit_reason_detail = point_exit_detail
 
             if exit_reason is None and trade_style == "INTRADAY":
                 dynamic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (DYNAMIC_SR_EOD_HOUR, DYNAMIC_SR_EOD_MINUTE)
                 if dynamic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
+                    exit_reason_detail = f"Auto-closed at EOD Square-off ({DYNAMIC_SR_EOD_HOUR}:{DYNAMIC_SR_EOD_MINUTE:02d}) — neither SL nor Target was hit."
         elif source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
             settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
@@ -475,7 +512,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Naked trade "pure intraday" — कधीच
                 # carry-forward नाही, नेहमी आजच (डीफॉल्ट 3:00pm) बंद. Spot%+Premium-Points एकत्र,
                 # TSL-to-Breakeven सह (dynamic_sr_instant सारखीच, वेगळ्या उंबरठ्यांसह).
-                point_exit_reason, tsl_now_activated = evaluate_point_spot_exit(
+                point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
                     direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
                     settings_15m["naked_sl_spot_pct"], settings_15m["naked_sl_premium_points"],
                     settings_15m["naked_tsl_spot_pct"], settings_15m["naked_tsl_premium_points"],
@@ -485,17 +522,19 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if tsl_now_activated != tsl_activated:
                     cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
                 exit_reason = point_exit_reason
+                exit_reason_detail = point_exit_detail
 
                 if exit_reason is None and trade_style == "INTRADAY":
                     naked_past_eod = (ist_now.hour, ist_now.minute) >= (settings_15m["naked_eod_hour"], settings_15m["naked_eod_minute"])
                     if naked_past_eod:
                         exit_reason = "EOD_SQUAREOFF"
+                        exit_reason_detail = f"Auto-closed at EOD Square-off ({settings_15m['naked_eod_hour']}:{settings_15m['naked_eod_minute']:02d}) — neither SL nor Target was hit."
             else:
                 # वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Credit Spread साठी SL/TSL स्पॉट%+प्रीमियम-
                 # पॉइंट्स एकत्र (Target मात्र वेगळाच — निव्वळ प्रीमियमच्या 80%, existing target_level
                 # column मार्फतच, म्हणून इथे target-उंबरठे प्रचंड मोठे देऊन evaluate_point_spot_exit
                 # चा स्वतःचा built-in target-मार्ग निष्क्रिय केलेला).
-                point_exit_reason, tsl_now_activated = evaluate_point_spot_exit(
+                point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
                     direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
                     settings_15m["spread_sl_spot_pct"], settings_15m["spread_sl_premium_points"],
                     settings_15m["spread_tsl_spot_pct"], settings_15m["spread_tsl_premium_points"],
@@ -505,9 +544,14 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if tsl_now_activated != tsl_activated:
                     cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
                 exit_reason = point_exit_reason if point_exit_reason != "TARGET" else None
+                exit_reason_detail = point_exit_detail if exit_reason is not None else None
 
                 if exit_reason is None and target_level is not None and current_pnl >= target_level:
                     exit_reason = "PREMIUM_TARGET"
+                    exit_reason_detail = (
+                        f"Hit {settings_15m['spread_target_pct_of_premium']}% of Net Premium as Target "
+                        f"(P&L Rs {current_pnl:,.0f} >= Target level Rs {target_level:,.0f})."
+                    )
 
                 # वापरकर्त्याशी चर्चा करून ठरवलेला नियम ("Use the same SR timeframe for exit") —
                 # Next-Level-Exit आता फक्त entry_timeframe च्याच levels मधून शोधतो, तिन्ही पूल
@@ -520,6 +564,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                         reached = (underlying_spot >= next_level) if direction_bullish else (underlying_spot <= next_level)
                         if reached:
                             exit_reason = "NEXT_LEVEL_EXIT"
+                            exit_reason_detail = (
+                                f"Reached the next S/R level (Rs {next_level:,.1f}, {entry_timeframe or '15M/30M/60M'}) — "
+                                "profit-booked at this next level instead of the original entry level."
+                            )
 
                 # 🎓 वापरकर्त्याने सापडवलेली, महत्त्वाची दुरुस्ती — नवीन Spot/Premium exit-रचना जोडताना
                 # ही आधीचीच 3:10pm Carry-Forward तपासणी चुकून काढली गेली होती — ती परत जोडली. Target
@@ -531,9 +579,14 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                         carry_forward_min_profit_level = net_credit_total * (settings_15m["carry_forward_min_profit_pct"] / 100.0)
                         if current_pnl < carry_forward_min_profit_level:
                             exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+                            exit_reason_detail = (
+                                f"Insufficient profit at 3:10pm (P&L Rs {current_pnl:,.0f} < minimum Rs {carry_forward_min_profit_level:,.0f}, "
+                                f"{settings_15m['carry_forward_min_profit_pct']}% of credit) — closed today instead of carrying forward."
+                            )
                         # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
                     elif trade_style == "INTRADAY" and past_eod_cutoff:
                         exit_reason = "EOD_SQUAREOFF"
+                        exit_reason_detail = "Auto-closed at EOD Square-off — Target/Carry-Forward conditions were not met."
         else:
             # 🎓 वापरकर्त्याशी चर्चा करून वाढवलेली सुधारणा — %-आधारित Trailing SL आता कुठल्याही
             # source ला लागू होत नाही (dynamic_sr_instant/srv2_momentum_reversal दोन्ही आता स्वतंत्र,
@@ -583,26 +636,36 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
 
             exit_reason = None
+            exit_reason_detail = None
             if effective_sl_level is not None and current_pnl <= effective_sl_level:
                 if is_trailing_active:
                     exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
+                    exit_reason_detail = f"Trailing SL — total P&L Rs {current_pnl:,.0f} hit/crossed the (profit-adjusted) trailing SL level Rs {effective_sl_level:,.0f}."
                 else:
                     exit_reason = "SL"
+                    exit_reason_detail = f"Stop-Loss — total P&L Rs {current_pnl:,.0f} hit/crossed the fixed SL level Rs {effective_sl_level:,.0f}."
             elif target_level is not None and current_pnl >= target_level:
                 exit_reason = "TARGET"  # Target गाठला की केव्हाही (वेळेची वाट न बघता) लगेच बंद
+                exit_reason_detail = f"Target — total P&L Rs {current_pnl:,.0f} reached/exceeded the Target level Rs {target_level:,.0f}."
             elif is_new_rule_trade and past_carry_forward_check_time:
                 # Target (वर तपासलेला) अजून गाठलेला नाही, आणि आता दुपारी ३:१० झालेली आहे --
                 # वेगळ्या, कमी उंबरठ्याशी (डीफॉल्ट 30% credit) पुरेसा नफा आहे का तपासणे -- असेल तर
                 # पुढच्या दिवशी चालू ठेवणे, नाहीतर आजच बंद करणे.
                 if current_pnl < carry_forward_min_profit_level:
                     exit_reason = "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+                    exit_reason_detail = (
+                        f"Insufficient profit at 3:10pm (P&L Rs {current_pnl:,.0f} < minimum Rs {carry_forward_min_profit_level:,.0f}, "
+                        f"{CARRY_FORWARD_MIN_PROFIT_PCT}% of credit) — closed today instead of carrying forward."
+                    )
                 # पुरेसा नफा असेल तर काहीही करायचं नाही -- पुढच्या दिवशी चालू ठेवणे
             elif trade_style == "INTRADAY" and past_eod_cutoff:
                 exit_reason = "EOD_SQUAREOFF"
+                exit_reason_detail = "Auto-closed at EOD Square-off — none of SL/Target/Carry-Forward conditions applied."
             elif oi_reversal_exit_enabled and trade_style == "INTRADAY" and oi_signal_latest:
                 trade_direction = infer_direction_from_strategy(strategy_name)
                 if trade_direction and not check_oi_diff_entry_gate(trade_direction, oi_signal_latest):
                     exit_reason = "OI_REVERSAL"
+                    exit_reason_detail = "OI Diff Tracker signal reversed against the position — exited early for safety, ahead of SL/Target."
 
         if exit_reason:
             qty = lots * lot_size
@@ -623,9 +686,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 order_ids = extract_order_ids(resp)
                 log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE", fill_prices=current_ltps)
                 cur.execute(
-                    """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=?
+                    """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, exit_reason_detail=?, realized_pnl=?
                        WHERE trade_id=?""",
-                    (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
+                    (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, exit_reason_detail, round(current_pnl, 2), trade_id),
                 )
                 conn.commit()
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(current_pnl, 2), "mode": trade_mode})

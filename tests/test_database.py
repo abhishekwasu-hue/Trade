@@ -9,6 +9,7 @@ import json
 import sqlite3
 import tempfile
 
+import pandas as pd
 import pytest
 
 import database
@@ -25,16 +26,16 @@ def temp_db(monkeypatch):
 
 def seed_closed_trade(tmpdb, trade_id, realized_pnl, exit_reason, exit_date, symbol="NIFTY",
                        source="dynamic_sr_instant", entry_timeframe="15M", entry_level_price=23900.0,
-                       strategy="BULL_PUT_SPREAD", mode="LIVE"):
+                       strategy="BULL_PUT_SPREAD", mode="LIVE", exit_reason_detail=None):
     conn = sqlite3.connect(tmpdb)
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, exit_time, exit_reason,
-           realized_pnl, status, legs_json, mode, trading_style, source, entry_level_price,
-           entry_timeframe) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           exit_reason_detail, realized_pnl, status, legs_json, mode, trading_style, source,
+           entry_level_price, entry_timeframe) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, exit_date, symbol, strategy, 1, 75, 1000, 1000, 500, 250, 500,
-         f"{exit_date} 10:00:00", f"{exit_date} 14:00:00", exit_reason, realized_pnl, "CLOSED",
-         json.dumps([]), mode, "INTRADAY", source, entry_level_price, entry_timeframe),
+         f"{exit_date} 10:00:00", f"{exit_date} 14:00:00", exit_reason, exit_reason_detail, realized_pnl,
+         "CLOSED", json.dumps([]), mode, "INTRADAY", source, entry_level_price, entry_timeframe),
     )
     conn.commit()
     conn.close()
@@ -66,6 +67,18 @@ class TestGetClosedTradesDetail:
         df = database.get_closed_trades_detail("NIFTY", mode_filter="PAPER")
         assert len(df) == 1
         assert df.iloc[0]["Trade ID"] == "T2"
+
+    def test_includes_exit_reason_detail(self, temp_db):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF) — SL/Target नेमकं
+        Spot% की Premium Points मुळे लागला, हे स्पष्ट करणारा exit_reason_detail column."""
+        seed_closed_trade(
+            temp_db, "T1", -200.0, "SL", "2026-09-10",
+            exit_reason_detail="Stop-Loss hit via Premium points - loss -6.0 points reached/exceeded the -5-point threshold.",
+        )
+        seed_closed_trade(temp_db, "T2", 300.0, "EOD_SQUAREOFF", "2026-09-10")
+        df = database.get_closed_trades_detail("NIFTY").sort_values("Trade ID").reset_index(drop=True)
+        assert df.iloc[0]["exit_reason_detail"] == "Stop-Loss hit via Premium points - loss -6.0 points reached/exceeded the -5-point threshold."
+        assert pd.isna(df.iloc[1]["exit_reason_detail"])
 
 
 class TestGetExitReasonBreakdown:
