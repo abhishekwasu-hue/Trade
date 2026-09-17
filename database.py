@@ -712,29 +712,9 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
         })
     return pd.DataFrame(rows).sort_values("Total P&L", ascending=False)
 
-def get_order_log(symbol, mode_filter=None, limit=100):
-    """आजच्या (व अलीकडच्या) सर्व ऑर्डर्सची यादी — Orders टॅबसाठी (खऱ्या ब्रोकर Order Book सारखं).
-    🎓 वापरकर्त्याने विचारलेला प्रश्न ("कुठला strike/expiry होता ते कळतच नाही") सोडवण्यासाठी —
-    आता Strike/Option Type/Expiry हे columns सुद्धा दाखवले जातात (आधी हे पूर्णपणे वगळलेले होते)."""
-    conn = sqlite3.connect(DB_PATH)
-    query = """SELECT placed_at AS "Time", order_id AS "Order ID", trade_id AS "Trade ID", mode AS "Mode",
-                      transaction_type AS "Action", strike AS "Strike", option_type AS "Option Type",
-                      expiry AS "Expiry", order_type AS "Type", quantity AS "Qty",
-                      COALESCE(fill_price, price) AS "Price", trigger_price AS "Trigger", status AS "Status", tag AS "Tag"
-               FROM order_log WHERE symbol=?"""
-    params = [symbol]
-    if mode_filter:
-        query += " AND mode=?"
-        params.append(mode_filter)
-    query += " ORDER BY placed_at DESC LIMIT ?"
-    params.append(limit)
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
-    return df
-
 def get_order_log_full(symbol, start_date=None, end_date=None, mode_filter=None):
     """Order Log — दिलेल्या तारीख-रेंजमध्ये (start_date/end_date न दिल्यास सर्व), मर्यादा-विरहित —
-    Orders टॅबवरच्या तारखेनुसार CSV डाऊनलोडसाठी (get_order_log() च्या 100-रांगा मर्यादेविरुद्ध)."""
+    Orders टॅबवरच्या तारीख-रेंज फिल्टर व CSV डाऊनलोडसाठी."""
     conn = sqlite3.connect(DB_PATH)
     query = """SELECT placed_at AS "Time", order_id AS "Order ID", trade_id AS "Trade ID", mode AS "Mode",
                       transaction_type AS "Action", strike AS "Strike", option_type AS "Option Type",

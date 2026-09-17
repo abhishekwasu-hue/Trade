@@ -835,17 +835,33 @@ def _render_market_zones():
                         st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
                         st.markdown("---")
 
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा
-                # **संपूर्ण** intraday Signal Log — trade झाला किंवा न झाला तरीही, प्रत्येक तपासलेला
-                # level इथे दिसेल (established get_signal_log() पुनर्वापर करून). 1m_instant आणि SRv2
-                # दोन्ही एकाच signal_log table मध्ये साठवतात — level_type वरून वेगळे काढले जातात
-                # ("DYNAMIC_SR_..." prefix = 1m_instant, प्लेन "SUPPORT"/"RESISTANCE" = SRv2).
-                signal_log_df = cloud_db.get_signal_log(symbol, get_ist_now().strftime("%Y-%m-%d"))
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Signal Log आता तारीख-रेंज निवडता येते
+                # (डीफॉल्ट: आजचीच तारीख, त्यामुळे नेहमीचं वर्तन तसंच राहतं) — जुने दिवसही तपासता यावेत.
+                sig_log_today = get_ist_today()
+                sig_log_range_choice = st.radio(
+                    "Signal Log कालावधी", ["आज", "गेले 7 दिवस", "कस्टम रेंज"], horizontal=True, key="signal_log_range_choice",
+                )
+                if sig_log_range_choice == "आज":
+                    sig_log_from, sig_log_to = sig_log_today, sig_log_today
+                elif sig_log_range_choice == "गेले 7 दिवस":
+                    sig_log_from, sig_log_to = sig_log_today - datetime.timedelta(days=7), sig_log_today
+                else:
+                    sigl_col1, sigl_col2 = st.columns(2)
+                    with sigl_col1:
+                        sig_log_from = st.date_input("पासून", value=sig_log_today, key="signal_log_from")
+                    with sigl_col2:
+                        sig_log_to = st.date_input("पर्यंत", value=sig_log_today, key="signal_log_to")
+
+                if sig_log_from > sig_log_to:
+                    st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+                    signal_log_df = None
+                else:
+                    signal_log_df = cloud_db.get_signal_log_range(symbol, sig_log_from, sig_log_to)
                 instant_log_df = signal_log_df[signal_log_df["level_type"].str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
 
                 st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
                 if instant_log_df is None or instant_log_df.empty:
-                    st.caption("आज अजून कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
+                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
                 else:
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                     display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
@@ -863,7 +879,7 @@ def _render_market_zones():
                 st.markdown("##### 📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)")
                 srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
                 if srv2_log_df is None or srv2_log_df.empty:
-                    st.caption("आज अजून कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
+                    st.caption("या कालावधीत कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
                 else:
                     srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
                     srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
