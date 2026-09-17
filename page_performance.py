@@ -17,6 +17,44 @@ from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
 from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2, generate_performance_report_pdf
 from pnl_reports import generate_pnl_report
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Performance टॅब खूप crowded/एकसुरी दिसतोय, headings
+# मोठ्या फॉन्टमध्ये व multicolour हव्यात, catchy दिसावं" — आधी सर्व headings (st.subheader/### /#####)
+# एकाच फिकट राखाडी रंगात व एकसारख्या आकारात दिसत, त्यामुळे विभागांमध्ये स्पष्ट फरक जाणवत नव्हता.
+# आता तीन पातळ्यांचे रंगीत, मोठ्या फॉन्टचे headings — प्रत्येक विभागाला स्वतःचा रंग व जास्त
+# वर-खालची जागा (margin), जेणेकरून पान भरगच्च न वाटता, नजर पटकन हव्या त्या विभागाकडे जाईल.
+_HDR_BLUE, _HDR_TEAL, _HDR_PURPLE, _HDR_ORANGE = "#2962FF", "#00BFA5", "#AB47BC", "#FF6D00"
+_HDR_PINK, _HDR_GREEN, _HDR_AMBER, _HDR_CYAN, _HDR_RED = "#EC407A", "#66BB6A", "#FFC107", "#26C6DA", "#E64A19"
+
+
+def _mega_header(text, color):
+    """पानावरचे मुख्य विभाग (Performance Analytics/P&L Report/Signal Check/Multi-Strategy Backtest)
+    साठी — मोठा, ठळक, रंगीत, खालून जाड रंगीत रेषेसकट heading (आधीच्या st.subheader ऐवजी)."""
+    st.markdown(
+        f'<div style="font-size:2.1rem; font-weight:800; color:{color}; '
+        f'margin:2.4rem 0 1.1rem 0; padding-bottom:0.5rem; border-bottom:4px solid {color};">'
+        f'{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _mid_header(text, color):
+    """मुख्य विभागाच्या आतले उप-विभाग (आधी "### ...") साठी — मध्यम मोठा, रंगीत heading."""
+    st.markdown(
+        f'<div style="font-size:1.55rem; font-weight:750; color:{color}; '
+        f'margin:1.8rem 0 0.9rem 0;">{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _sub_header(text, color):
+    """सर्वात आतले उप-उप-विभाग (आधी "##### ...") साठी — रंगीत पण तुलनेने छोटा heading."""
+    st.markdown(
+        f'<div style="font-size:1.2rem; font-weight:700; color:{color}; '
+        f'margin:1.3rem 0 0.5rem 0;">{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Trading Charges) — "आतापर्यंतचे एकूण" Charges/Net P&L
 # साठी trades ची सुरुवात कधी झाली हे माहीत नसतं, त्यामुळे इथे एक व्यवहार्य, पुरेशी जुनी सुरुवात-तारीख
 # (हे app अस्तित्वात येण्याआधीचीच) वापरली आहे — त्यामुळे "आतापर्यंतचा संपूर्ण इतिहास" कव्हर होतो.
@@ -254,7 +292,7 @@ def render():
     symbol = st.session_state["symbol"]
     token_input = st.session_state["token_input"]
 
-    st.subheader("📈 Performance Analytics")
+    _mega_header("📈 Performance Analytics", _HDR_BLUE)
     perf_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="perf_mode_filter")
     perf_mode_f = None if perf_mode_choice == "सर्व" else ("LIVE" if "LIVE" in perf_mode_choice else "PAPER")
 
@@ -264,7 +302,7 @@ def render():
     # विश्लेषणासाठी आहे — आजचा दिवस त्यामागे कधीच लपत नाही.
     # =========================================================
     today_d = get_ist_today()
-    st.markdown(f"### 📌 आजची कामगिरी — {today_d.strftime('%d-%b-%Y')}")
+    _mid_header(f"📌 आजची कामगिरी — {today_d.strftime('%d-%b-%Y')}", _HDR_AMBER)
     st.caption("हे नेहमी आपोआप आजच्या तारखेचं दिसतं — तारीख निवडायची गरज नाही.")
     _, today_totals = generate_pnl_report(symbol, "Daily", today_d, today_d, mode_filter=perf_mode_f)
     if today_totals["total_trades"] == 0:
@@ -282,14 +320,14 @@ def render():
 
         tacol1, tacol2 = st.columns(2)
         with tacol1:
-            st.markdown("##### 🎯 आज — रणनीतीनुसार (Strategy)")
+            _sub_header("🎯 आज — रणनीतीनुसार (Strategy)", _HDR_BLUE)
             _render_group_breakdown(symbol, "source", perf_mode_f, today_d, today_d, "आजचं Strategy-wise P&L")
         with tacol2:
-            st.markdown("##### ⏱️ आज — टाईमफ्रेमनुसार")
+            _sub_header("⏱️ आज — टाईमफ्रेमनुसार", _HDR_TEAL)
             _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, today_d, today_d, "आजचं Timeframe-wise P&L")
 
     st.markdown("---")
-    st.markdown("### 📊 एकूण (All-Time) कामगिरी")
+    _mid_header("📊 एकूण (All-Time) कामगिरी", _HDR_PINK)
     summary = get_performance_summary(symbol, mode_filter=perf_mode_f)
     if summary.get("total_trades", 0) == 0:
         st.info("अजून कोणतेही बंद झालेले ट्रेड्स नाहीत — Performance आकडे दिसण्यासाठी किमान एक ट्रेड बंद व्हायला हवा.")
@@ -334,7 +372,7 @@ def render():
             )
             st.caption(f"ब्रोकरनुसार: {_broker_lines}")
 
-        st.markdown("##### 📉 Equity Curve (संचयी वास्तविक P&L)")
+        _sub_header("📉 Equity Curve (संचयी वास्तविक P&L)", _HDR_PURPLE)
         curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f)
         if not curve_df.empty:
             eq_fig = go.Figure()
@@ -352,7 +390,7 @@ def render():
             st.info("Equity Curve साठी पुरेसा डेटा नाही.")
 
         if perf_mode_f is None:
-            st.markdown("##### 📝 PAPER वि LIVE तुलना")
+            _sub_header("📝 PAPER वि LIVE तुलना", _HDR_ORANGE)
             comp_rows = []
             for label in ("LIVE", "PAPER"):
                 s = get_performance_summary(symbol, mode_filter=label)
@@ -362,7 +400,7 @@ def render():
                 st.dataframe(pd.DataFrame(comp_rows), width="stretch", hide_index=True)
 
     st.markdown("---")
-    st.markdown("### 🔍 रणनीती व टाईमफ्रेम विश्लेषण (तारीख/तारीख-रेंज निवडून)")
+    _mid_header("🔍 रणनीती व टाईमफ्रेम विश्लेषण (तारीख/तारीख-रेंज निवडून)", _HDR_GREEN)
     st.caption(
         "कोणती रणनीती (Algo Strategy) आणि कोणता Entry Timeframe जास्त फायदेशीर आहे हे इथे कालावधी "
         "निवडून तपासा — त्याच आधारावर algo/strategy सेटिंग्ज बदलायच्या का हे ठरवता येईल."
@@ -404,7 +442,7 @@ def render():
         with an_tab4:
             _render_group_breakdown(symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
 
-        st.markdown("##### 📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण")
+        _sub_header("📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण", _HDR_PINK)
         trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
         trade_log_display = None
         trade_log_pdf_df = None
@@ -448,7 +486,7 @@ def render():
                 mime="text/csv", key="trade_log_reasons_download",
             )
 
-        st.markdown("##### 🧭 निष्कर्ष व शिफारसी (Conclusion & Recommendations)")
+        _sub_header("🧭 निष्कर्ष व शिफारसी (Conclusion & Recommendations)", _HDR_GREEN)
         st.caption(
             "खालील शिफारसी exit_reason च्या (SL/Target/Trailing-SL/EOD) ऐतिहासिक वितरणावर आधारित, "
             "नियम-आधारित (rule-based) automated निरीक्षणं आहेत — अंतिम निर्णय (SL%/Target/Trailing-SL "
@@ -466,7 +504,7 @@ def render():
                 st.markdown(rec)
 
         st.markdown("---")
-        st.markdown("##### 📄 संपूर्ण Performance Report (PDF)")
+        _sub_header("📄 संपूर्ण Performance Report (PDF)", _HDR_AMBER)
         st.caption(
             "वरील संपूर्ण विश्लेषण (Summary, Strategy/Timeframe breakdown, प्रत्येक Trade चं Entry+Exit कारण, शिफारसी) "
             "एकाच, प्रिंट-योग्य PDF मध्ये (इंग्रजीत — PDF fonts मध्ये मराठी glyphs उपलब्ध नाहीत). Trade Log मधल्या "
@@ -496,7 +534,7 @@ def render():
             )
 
     st.markdown("---")
-    st.subheader("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)")
+    _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
     st.caption(
         "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक ब्रोकरेज (प्रत्येक ऑर्डरनुसार — "
         "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर; Stocko निश्चित ₹1200/महिना — वापरलेल्या महिन्यातल्या "
@@ -545,7 +583,7 @@ def render():
             )
 
     st.markdown("---")
-    st.subheader("🔬 Signal Check (Risk:Reward आधारित — Options P&L नाही)")
+    _mega_header("🔬 Signal Check (Risk:Reward आधारित — Options P&L नाही)", _HDR_PURPLE)
     st.warning(
         "⚠️ **मर्यादा**: हे फक्त Direction Engine + Market Structure सिग्नलची ऐतिहासिक अचूकता तपासतं "
         "(walk-forward, no lookahead) — दिलेल्या SL% व Risk:Reward गुणोत्तरावरून प्रत्येक सिग्नलनंतर "
@@ -625,7 +663,7 @@ def render():
                     bt_rr = st.number_input("Risk:Reward गुणोत्तर", min_value=0.5, value=2.0, step=0.5, key=f"{bt_key_prefix}_rr")
 
                 if bt_style_name == "INTRADAY":
-                    st.markdown("##### 🧬 Signal Engine — दोन स्वतंत्र रणनीती (दिशा दोन्हीसाठी 1H Supertrend)")
+                    _sub_header("🧬 Signal Engine — दोन स्वतंत्र रणनीती (दिशा दोन्हीसाठी 1H Supertrend)", _HDR_CYAN)
                     strategy_choice = st.radio(
                         "कोणती रणनीती वापरायची?",
                         ["1️⃣ Price Action (Support/Resistance + RSI + Candlestick)",
@@ -726,7 +764,7 @@ def render():
                             st.success(f"✅ {r_from} ते {r_to} या कालावधीत {r_result['total']} सिग्नल्स सापडले.")
 
                         if funnel:
-                            st.markdown("##### 🔍 Funnel Diagnostic")
+                            _sub_header("🔍 Funnel Diagnostic", _HDR_BLUE)
                             fc1, fc2, fc3 = st.columns(3)
                             with fc1:
                                 st.metric("तपासलेले Bars", funnel["bars_checked"])
@@ -824,7 +862,7 @@ def render():
                             )
 
                         if funnel:
-                            st.markdown("##### 🔍 Funnel Diagnostic — नेमकं कुठे अडतंय?")
+                            _sub_header("🔍 Funnel Diagnostic — नेमकं कुठे अडतंय?", _HDR_TEAL)
                             fcol1, fcol2, fcol3, fcol4 = st.columns(4)
                             with fcol1:
                                 st.metric("तपासलेले Bars", funnel["bars_checked"])
@@ -890,7 +928,7 @@ def render():
     # डेटा उपलब्ध नाही, त्यामुळे ती रणनीती backtest मध्ये कधीच चालवता येत नाही).
     # =========================================================
     st.markdown("---")
-    st.subheader("🧩 Multi-Strategy Orchestrator Backtest (नवीन, प्रयोगिक)")
+    _mega_header("🧩 Multi-Strategy Orchestrator Backtest (नवीन, प्रयोगिक)", _HDR_RED)
     st.caption(
         "फक्त futures_ohlcv वापरणाऱ्या रणनीती: ict_fvg, bb_squeeze, vwap. "
         "oi_pcr इथे चालत नाही — तिला ऐतिहासिक प्रत्येक-क्षणाचा Option OI इतिहास लागतो, जो साठवलेला नाही."
@@ -928,7 +966,7 @@ def render():
     ms_to = st.date_input("पर्यंत तारीख", value=ms_max_date, min_value=ms_min_date, max_value=ms_max_date, key="ms_bt_to")
     ms_strategy_choice = st.selectbox("कोणती रणनीती?", ["vwap", "bb_squeeze", "ict_fvg"], key="ms_bt_strategy")
 
-    st.markdown("##### 🎯 SL/Target स्वतः ठरवा (पॉइंट्स — Strategy च्या स्वतःच्या auto गणनेऐवजी)")
+    _sub_header("🎯 SL/Target स्वतः ठरवा (पॉइंट्स — Strategy च्या स्वतःच्या auto गणनेऐवजी)", _HDR_PURPLE)
     ms_default_sl_target = {"vwap": (25, 40), "bb_squeeze": (40, 80), "ict_fvg": (30, 60)}
     ms_def_sl, ms_def_target = ms_default_sl_target.get(ms_strategy_choice, (40, 80))
     mscol1, mscol2 = st.columns(2)
