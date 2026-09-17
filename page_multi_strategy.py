@@ -8,6 +8,7 @@ import streamlit as st
 
 from upstox_api import fetch_candles
 from signals import find_support_resistance_levels, resample_to_1h
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL
 
 
 def render():
@@ -17,7 +18,7 @@ def render():
     raw_chain = st.session_state["raw_chain"]
     atm_strike = st.session_state["atm_strike"]
 
-    st.subheader("🧩 Multi-Strategy Orchestrator")
+    mega_header("🧩 Multi-Strategy Orchestrator", HDR_BLUE)
     st.caption("OI/PCR · ICT-FVG · BB Squeeze · VWAP · SR Bounce · MTF Gap Fill — ६ रणनीती एकत्र")
     show_orchestrator = st.checkbox("दाखवा (प्रत्येक वेळी सर्व ६ strategies चालवल्या जातील)", value=False)
     if show_orchestrator:
@@ -89,7 +90,7 @@ def render():
                 apply_manual_sl_target(s, sl_pts, target_pts, reference_price=underlying_price)
 
             # 🎓 सर्वात महत्त्वाचं (मंजूर सिग्नल्स) आधी दाखवणे — आधी हे तक्त्याच्या तळाशी लपलेलं होतं
-            st.markdown("##### ✅ अंतिम मंजूर सिग्नल्स")
+            sub_header("✅ अंतिम मंजूर सिग्नल्स", HDR_TEAL)
             if approved:
                 approved_cols = st.columns(min(len(approved), 3))
                 for i, s in enumerate(approved):

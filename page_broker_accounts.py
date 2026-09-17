@@ -11,14 +11,16 @@ get_upstox_token_manual.py/get_fyers_token_manual.py स्वतंत्रप
 established दोन्ही एकाच फॉर्ममध्ये, एकदाच — टर्मिनलची गरजच नाही."""
 import streamlit as st
 
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
+
 
 def render():
-    st.subheader("⚙️ Settings")
+    mega_header("⚙️ Settings", HDR_BLUE)
 
     try:
         import cloud_db
 
-        st.markdown("##### 🎯 SRv2 Momentum-Reversal Settings (15M/30M/60M)")
+        sub_header("🎯 SRv2 Momentum-Reversal Settings (15M/30M/60M)", HDR_TEAL)
         st.caption(
             "Lots आणि Hedge Width Points — इथून बदलले की लगेच पुढच्या cycle पासून लागू होतील "
             "(hardcoded नाहीत — कधीही, वेळोवेळी बदलता येतील)."
@@ -47,7 +49,7 @@ def render():
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
         st.markdown("---")
-        st.markdown("##### 🏦 Broker Accounts (Multi-Broker Multi-Account)")
+        sub_header("🏦 Broker Accounts (Multi-Broker Multi-Account)", HDR_PURPLE)
         st.caption("इथे नोंदवलेले, सक्रिय (Active) accounts SRv2/Dynamic-S/R सारख्या रणनींतींनी एकाच वेळी (replicated) वापरले जातील.")
 
 
@@ -277,7 +279,7 @@ def render():
                         st.error("Account जोडता आला नाही (Supabase जोडणी तपासा).")
 
         st.markdown("---")
-        st.markdown("##### 📋 नोंदवलेले सर्व Accounts")
+        sub_header("📋 नोंदवलेले सर्व Accounts", HDR_BLUE)
         accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
         if accounts_df is None or accounts_df.empty:
             st.info("अजून कुठलाही account नोंदवलेला नाही — वरून एक जोडा.")

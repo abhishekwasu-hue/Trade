@@ -40,6 +40,7 @@ from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
 from live_ticker import render_live_ticker
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 
 
 
@@ -61,7 +62,7 @@ def _render_strategy_builder():
     token_input = st.session_state["token_input"]
 
     st.markdown("---")
-    st.subheader(f"🎯 {symbol} — Strategy Builder (Multi-Leg Payoff + Combined Greeks)")
+    mega_header(f"🎯 {symbol} — Strategy Builder (Multi-Leg Payoff + Combined Greeks)", HDR_BLUE)
     st.caption("Sensibull-सारखं — एकाहून अधिक legs जोडून, एकत्रित P&L payoff diagram आणि Greeks बघा.")
     try:
         import strategy_payoff as sp
@@ -79,7 +80,7 @@ def _render_strategy_builder():
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
         # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
-        st.markdown("##### 🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)")
+        sub_header("🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)", HDR_BLUE)
         rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
         rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
         for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
@@ -103,7 +104,7 @@ def _render_strategy_builder():
         if not available_strikes:
             st.warning("Option chain डेटा उपलब्ध नाही.")
         else:
-            st.markdown("##### ➕ नवीन Leg जोडा")
+            sub_header("➕ नवीन Leg जोडा", HDR_TEAL)
             lc1, lc2, lc3, lc4 = st.columns(4)
             with lc1:
                 leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
@@ -139,7 +140,7 @@ def _render_strategy_builder():
         if not legs:
             st.info("अजून कुठलेही legs जोडलेले नाहीत — वरून जोडा.")
         else:
-            st.markdown("##### 📜 सद्य Legs")
+            sub_header("📜 सद्य Legs", HDR_PURPLE)
             for i, leg in enumerate(legs):
                 lcol1, lcol2 = st.columns([5, 1])
                 with lcol1:
@@ -156,7 +157,7 @@ def _render_strategy_builder():
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
             # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
             # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
-            st.markdown("##### 🎛️ Strike Controls")
+            sub_header("🎛️ Strike Controls", HDR_ORANGE)
             shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
             if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
                 shifted_legs = []
@@ -219,7 +220,7 @@ def _render_strategy_builder():
                     g = greeks_map.get(leg.get("instrument_key"), {})
                     legs_with_greeks.append({**leg, **g})
                 combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
-                st.markdown("##### 🧮 Combined Greeks (संपूर्ण Strategy)")
+                sub_header("🧮 Combined Greeks (संपूर्ण Strategy)", HDR_PINK)
                 ecol1, ecol2, ecol3, ecol4 = st.columns(4)
                 ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
                 ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
@@ -237,7 +238,7 @@ def _render_strategy_builder():
             # LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही (फक्त data-fetch पडताळलेलं) —
             # वापरकर्त्याने स्वतः काळजीपूर्वक, लहान आकारात प्रत्यक्ष टेस्ट करण्याचं मान्य केलं आहे.
             st.markdown("---")
-            st.markdown("##### 🚀 Strategy Execute करा (Combined SL/Target)")
+            sub_header("🚀 Strategy Execute करा (Combined SL/Target)", HDR_GREEN)
 
             import cloud_db
             from broker_factory import get_broker_adapter
@@ -382,7 +383,7 @@ def _render_advanced_oi_charts():
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Option OI vs Time" सारखा
         # chart (PCR + NIFTY किंमत, वेळेनुसार) — established get_oi_price_history_cloud() (आधीच
         # साठवलेला underlying_price वापरून) पुनर्वापर करून.
-        st.markdown("##### 📈 PCR + किंमत — वेळेनुसार (Sensibull-सारखं)")
+        sub_header("📈 PCR + किंमत — वेळेनुसार (Sensibull-सारखं)", HDR_AMBER)
         try:
             if is_cloud_db_configured():
                 from cloud_db import get_oi_price_history_cloud
@@ -421,7 +422,7 @@ def _render_advanced_oi_charts():
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Multi Strike OI" सारखं —
         # निवडलेल्या strikes चा OI, वेळेनुसार. आजपासूनच डेटा जमा होईल (आधी per-strike इतिहास साठवलाच
         # जात नव्हता), त्यामुळे सुरुवातीला थोडा (काही तासांचा) इतिहासच दिसेल.
-        st.markdown("##### 📊 Multi-Strike OI (वेळेनुसार) — आजपासूनचा इतिहास")
+        sub_header("📊 Multi-Strike OI (वेळेनुसार) — आजपासूनचा इतिहास", HDR_CYAN)
         # 🎓 वापरकर्त्याने आधी दाखवलेल्या UnboundLocalError शीच सुसंगत, डीफेन्सिव्ह default —
         # खालच्या try-block मध्ये कुठेही exception आलं (assignment आधीच), तरी पुढच्या (Replay)
         # विभागात हा variable कधीच "undefined" राहणार नाही.
@@ -459,7 +460,7 @@ def _render_advanced_oi_charts():
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "OI Change Replay" सारखं —
         # दिवसभरातल्या प्रत्येक strike च्या OI बदलाचं animated playback (Plotly frames वापरून).
-        st.markdown("##### 🎬 OI Change Replay (दिवसभराचं Playback)")
+        sub_header("🎬 OI Change Replay (दिवसभराचं Playback)", HDR_RED)
         try:
             if is_cloud_db_configured() and all_strike_oi is not None and not all_strike_oi.empty:
                 replay_times = sorted(all_strike_oi["snapshot_time"].unique())
@@ -508,7 +509,7 @@ def _render_rollover_analysis():
     token_input = st.session_state["token_input"]
     symbol = st.session_state["symbol"]
 
-    st.markdown("##### 📅 Rollover Analysis")
+    sub_header("📅 Rollover Analysis", HDR_BLUE)
     st.caption("पुढच्या expiry चा डेटा लागतो म्हणून हे on-demand आहे (extra API कॉल्स).")
     if st.button("🔍 Rollover काढा", key="rollover_btn"):
         with st.spinner("पुढच्या expiry चा डेटा फेच होत आहे..."):
@@ -548,7 +549,7 @@ def _render_manual_trading_panel():
 
     st.markdown("---")
     with st.expander("🖐️ Manual Trading Panel (क्लिक करून उघडा — Option विकत घेणे/विकणे)", expanded=False):
-        st.subheader("🖐️ Manual Trading Panel")
+        mega_header("🖐️ Manual Trading Panel", HDR_TEAL)
         st.caption(
             "वरील Option Chain मधून कोणताही strike/CE/PE निवडून थेट ऑर्डर द्या, किंवा अनेक legs Basket मध्ये "
             "जमा करून एकत्र प्लेस करा. Order Types: MARKET, LIMIT, SL, SL-M. लाईव्ह प्लेसमेंटसाठी साईडबारमधील "
@@ -679,7 +680,7 @@ def _render_manual_trading_panel():
                                 st.error(f"❌ ऑर्डर अयशस्वी: {resp}")
 
         if st.session_state.order_basket:
-            st.markdown("##### 🧺 सद्य Basket")
+            sub_header("🧺 सद्य Basket", HDR_TEAL)
             basket_df = pd.DataFrame(st.session_state.order_basket).drop(columns=["instrument_key"])
             st.dataframe(basket_df, width='stretch')
 
@@ -773,7 +774,7 @@ def _render_market_zones():
     underlying_price = st.session_state["underlying_price"]
 
     st.markdown("---")
-    st.subheader(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)")
+    mega_header(f"🗺️ {symbol} — Market Zones (S/R + Order Block + Demand/Supply + Unfilled Gap)", HDR_PURPLE)
     st.caption(
         "शेवटच्या १ वर्षाच्या डेटावरून पूर्वगणना करून Supabase मध्ये साठवलेलं संपूर्ण विश्लेषण — "
         "GitHub Actions (साप्ताहिक) द्वारे अद्ययावत होतं. इथून प्रत्येक वेळी पुन्हा गणना होत नाही, फक्त वाचलं जातं."
@@ -827,7 +828,7 @@ def _render_market_zones():
                         & (all_zones_for_notif["status"] == "FILLED")
                     ]
                     if not dyn_filled.empty:
-                        st.markdown("##### 🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)")
+                        sub_header("🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)", HDR_PURPLE)
                         st.dataframe(
                             dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
                             width="stretch",
@@ -859,7 +860,7 @@ def _render_market_zones():
                     signal_log_df = cloud_db.get_signal_log_range(symbol, sig_log_from, sig_log_to)
                 instant_log_df = signal_log_df[signal_log_df["level_type"].str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
 
-                st.markdown("##### 📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)")
+                sub_header("📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
                 if instant_log_df is None or instant_log_df.empty:
                     st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
                 else:
@@ -876,7 +877,7 @@ def _render_market_zones():
                 # "reason" column मध्ये दिसेल (level_type मध्ये timeframe साठवलं जात नाही, कारण
                 # दिशा-निर्णयाचा level_type "SUPPORT"/"RESISTANCE" हाच सद्य किमतीवरून ठरतो — बघा
                 # वरची टिप्पणी, "dynamic label -- साठवलेला RESISTANCE नाही").
-                st.markdown("##### 📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)")
+                sub_header("📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)", HDR_PINK)
                 srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
                 if srv2_log_df is None or srv2_log_df.empty:
                     st.caption("या कालावधीत कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
@@ -907,7 +908,7 @@ def _render_market_zones():
                     lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
                 )
                 st.markdown("---")
-                st.markdown(f"##### 🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)")
+                sub_header(f"🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", HDR_GREEN)
                 st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
 
                 rcol1, rcol2 = st.columns(2)
@@ -984,7 +985,7 @@ def render():
     supertrend_source_df = pd.DataFrame()
     st_line, st_dir = pd.Series(dtype=float), pd.Series(dtype=float)
 
-    st.title(f"📈 Upstox Option Terminal ({symbol})")
+    mega_header(f"📈 Upstox Option Terminal ({symbol})", HDR_ORANGE)
 
     # 🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वरचा NIFTY LTP Upstox च्या live LTP च्या तुलनेत
     # laggy दिसत होता) — हा headline कार्ड आधी इथे static होता, फक्त पूर्ण-पान रिफ्रेशवर (दर ५
@@ -1004,7 +1005,7 @@ def render():
     ])
     with tab1:
         st.markdown("---")
-        st.subheader(f"📊 {symbol} TradingView Style Chart ({timeframe_option})")
+        mega_header(f"📊 {symbol} TradingView Style Chart ({timeframe_option})", HDR_PINK)
 
         # --- ट्रेडिंगव्यू प्रो-चार्ट (Price + MA, Volume, RSI) ---
 
@@ -1119,7 +1120,7 @@ def render():
             rsi_interval, rsi_tf_label = "15minute", "15M"
 
         supertrend_tf_label = "1H" if trading_style == "INTRADAY" else structure_tf_label
-        st.subheader(f"🧭 Direction Engine ({trading_style}) — Supertrend {supertrend_tf_label} + RSI-14 {rsi_tf_label}")
+        mega_header(f"🧭 Direction Engine ({trading_style}) — Supertrend {supertrend_tf_label} + RSI-14 {rsi_tf_label}", HDR_GREEN)
 
         df_structure_tf = fetch_timeframe_df(token_input, symbol, underlying_price, structure_interval)
 
@@ -1279,7 +1280,7 @@ def render():
 
     with tab2:
         st.markdown("---")
-        st.subheader("📋 Option Chain & Calculated Change in OI Table")
+        mega_header("📋 Option Chain & Calculated Change in OI Table", HDR_AMBER)
 
         def style_option_chain(val):
             color = ""
@@ -1368,7 +1369,7 @@ def render():
     #    Strike range: existing option chain टेबलप्रमाणेच ATM ± 6 (एकूण १३ strikes)
     with tab2:
         st.markdown("---")
-        st.subheader("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर १० मिनिटांनी)")
+        mega_header("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर १० मिनिटांनी)", HDR_CYAN)
 
         # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
         # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
@@ -1537,7 +1538,7 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab2:
-        st.subheader("📐 Advanced OI Analysis (Professional)")
+        mega_header("📐 Advanced OI Analysis (Professional)", HDR_RED)
 
         matrix_mode = "SWING" if trading_style == "SWING" else "INTRADAY"
 
@@ -1580,7 +1581,7 @@ def render():
 
         adv1, adv2 = st.columns(2)
         with adv1:
-            st.markdown(f"##### 🔄 OI-Price Matrix ({trading_style})")
+            sub_header(f"🔄 OI-Price Matrix ({trading_style})", HDR_AMBER)
             if oi_matrix_display and oi_matrix_display["category"] != "INSUFFICIENT_DATA":
                 m_color = "#089981" if oi_matrix_display["bias"] == "BULLISH" else "#F23645"
                 st.markdown(
@@ -1594,7 +1595,7 @@ def render():
                 st.info("पुरेसा डेटा अजून नाही" + (" (Swing साठी किमान एक आधीचा ट्रेडिंग दिवस लागतो)." if matrix_mode == "SWING" else "."))
 
         with adv2:
-            st.markdown("##### ⚖️ PCR (Put-Call Ratio)")
+            sub_header("⚖️ PCR (Put-Call Ratio)", HDR_CYAN)
             if pcr_val is not None:
                 pcr_color = "#089981" if pcr_bias == "BULLISH" else ("#F23645" if pcr_bias == "BEARISH" else "#787b86")
                 st.markdown(f"**PCR: {pcr_val}** — <span style='color:{pcr_color};font-weight:bold;'>{pcr_bias}</span>", unsafe_allow_html=True)
@@ -1604,7 +1605,7 @@ def render():
 
         adv3, adv4 = st.columns(2)
         with adv3:
-            st.markdown("##### 🎯 Max Pain")
+            sub_header("🎯 Max Pain", HDR_RED)
             if max_pain_strike_val is not None:
                 diff_from_spot = max_pain_strike_val - underlying_price
                 st.metric("Max Pain Strike", f"{max_pain_strike_val:.0f}", f"स्पॉटपासून {diff_from_spot:+,.0f}")
@@ -1623,7 +1624,7 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab3:
-        st.subheader(f"🧬 A1 Signal Engine ({trading_style}) — पूर्ण पाईपलाईन")
+        mega_header(f"🧬 A1 Signal Engine ({trading_style}) — पूर्ण पाईपलाईन", HDR_BLUE)
 
         if trading_style == "INTRADAY":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Phase 2a — Entry Signal Extraction) —
@@ -1856,7 +1857,7 @@ def render():
 
         st.markdown("---")
     with tab3:
-        st.subheader("📐 Strategy Selection & Risk Sizing")
+        mega_header("📐 Strategy Selection & Risk Sizing", HDR_TEAL)
 
         if sideways_info is not None:
             st.markdown(
@@ -1967,10 +1968,10 @@ def render():
         conn_lt.close()
 
         if not open_df.empty:
-            st.markdown("##### 📂 सद्य उघडे (OPEN) ट्रेड्स")
+            sub_header("📂 सद्य उघडे (OPEN) ट्रेड्स", HDR_BLUE)
             st.dataframe(open_df, width='stretch')
         if not closed_df.empty:
-            st.markdown("##### 📁 आजचे बंद झालेले ट्रेड्स")
+            sub_header("📁 आजचे बंद झालेले ट्रेड्स", HDR_TEAL)
             st.dataframe(closed_df, width='stretch')
 
         # =========================================================
@@ -1982,7 +1983,7 @@ def render():
         # 🎓 Health Check — unattended auto-trader scripts (credit_spread_auto_trader.py,
         # oi_signal_auto_trader.py) कधी शेवटचं यशस्वीरित्या चालल्या ते इथेच दिसेल — cron server
         # बंद पडली, किंवा script अडकली, तर लगेच कळावं म्हणून.
-        st.subheader("🩺 Auto-Trader Scripts — Health Check")
+        mega_header("🩺 Auto-Trader Scripts — Health Check", HDR_PURPLE)
         try:
             from notifications import check_heartbeat_stale, HEARTBEAT_DIR
             import os as _os
@@ -2026,7 +2027,7 @@ def render():
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दुपारी ४ वाजता स्वयंचलितपणे तयार होणारे EOD
         # Market Reports (eod_market_report.py) इथे साठवलेले (data/reports/) दाखवणे व डाउनलोड करता येणे.
-        st.subheader("📅 EOD Market Reports (दुपारी ४ ची स्वयंचलित तयारी)")
+        mega_header("📅 EOD Market Reports (दुपारी ४ ची स्वयंचलित तयारी)", HDR_ORANGE)
         eod_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reports")
         if os.path.exists(eod_reports_dir):
             eod_files = sorted(
@@ -2047,7 +2048,7 @@ def render():
             st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
         st.markdown("---")
 
-        st.subheader("📄 Full Market Analysis Report (PDF)")
+        mega_header("📄 Full Market Analysis Report (PDF)", HDR_PINK)
         st.caption(
             "OI data, multi-timeframe (1 Day / 1H / style timeframe) market structure, charts, technical analysis, "
             "VIX/strategy/risk sizing, and the live trades log — all in one PDF. "
