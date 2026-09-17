@@ -748,7 +748,11 @@ class TestStrategySettings:
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
         result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
-        assert result == cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]
+        # symbol_enabled हा STRATEGY_SETTINGS_DEFAULTS मध्ये नाही (symbol-निहाय आहे, get_strategy_settings()
+        # मध्येच जोडला जातो — NIFTY साठी डीफॉल्ट True).
+        expected = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        expected["symbol_enabled"] = True
+        assert result == expected
 
     def test_get_settings_merges_partial_override_with_defaults(self, monkeypatch):
         # फक्त lots आणि itm_depth_points बदललेले (Dashboard वर वापरकर्त्याने) — बाकीचे fields
@@ -768,7 +772,9 @@ class TestStrategySettings:
     def test_get_settings_no_connection_returns_defaults(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
         result = cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
-        assert result == cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
+        expected = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        expected["symbol_enabled"] = True
+        assert result == expected
 
     def test_save_settings_calls_upsert_with_json(self, monkeypatch):
         mock_cursor = MagicMock()

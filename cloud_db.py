@@ -529,6 +529,11 @@ def get_strategy_settings(strategy_name, symbol):
     (किंवा नोंद नसल्यास) संपूर्णपणे डीफॉल्ट (itm_depth_points/hedge_width_points/naked_hedge_width_points
     symbol च्या स्वतःच्या strike step नुसार आधीच प्रमाणात मोठे/लहान केलेले — _scale_strike_relative_defaults() बघा)."""
     defaults = _scale_strike_relative_defaults(dict(STRATEGY_SETTINGS_DEFAULTS.get(strategy_name, {})), symbol)
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (symbol_enabled) — "उपलब्ध भांडवलानुसार वापरकर्ताच
+    # symbol निवडणार" — त्यामुळे NIFTY डीफॉल्ट सक्रिय (आधीपासूनचं वर्तन कायम), पण BANKNIFTY/SENSEX
+    # डीफॉल्ट निष्क्रिय (opt-in) — वापरकर्त्याने Dashboard वरून स्पष्टपणे सक्रिय केल्यासच त्या
+    # symbol वर प्रत्यक्ष (PAPER) trade घेतला जातो.
+    defaults["symbol_enabled"] = (symbol == "NIFTY")
     conn = get_connection()
     if conn is None:
         return defaults

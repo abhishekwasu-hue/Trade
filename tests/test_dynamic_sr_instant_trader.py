@@ -183,11 +183,16 @@ class TestProcessSymbol:
             assert "GAP_THROUGH" in result
             assert mock_trade.called
             assert mock_telegram.called
-            # 🎓 दोन्ही levels (एक hit, एक no-hit) साठी log व्हायलाच हवं -- संपूर्ण Signal Log
-            assert mock_log.call_count == 2
-            logged_types = [c.args[0]["hit_type"] for c in mock_log.call_args_list]
+            # 🎓 दोन्ही levels (एक hit, एक no-hit) साठी log व्हायलाच हवं -- संपूर्ण Signal Log, अधिक
+            # naked trade साठीचा diagnostic entry (select_naked_option_itm इथे mock केलेला नाही,
+            # आणि _fake_chain मध्ये आवश्यक ITM strike नसल्याने ती None परत देते).
+            assert mock_log.call_count == 3
+            logged_entries = [c.args[0] for c in mock_log.call_args_list]
+            logged_types = [e["hit_type"] for e in logged_entries]
             assert "GAP_THROUGH" in logged_types
             assert "NO_HIT" in logged_types
+            naked_diag = [e for e in logged_entries if e.get("trade_status") == "SKIPPED_NAKED_STRIKE_NOT_FOUND"]
+            assert len(naked_diag) == 1
 
     def test_short_leg_uses_itm_depth_from_settings(self):
         """वापरकर्त्याशी चर्चा करून सुधारित (Bot Dynamic SR Algo -- नवीन नियम-संच) -- Short leg
@@ -468,6 +473,17 @@ class TestMultiHitGating:
              patch.object(dsr, "has_open_trade_from_source", return_value=False):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
+
+    def test_symbol_disabled_skips_entirely(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (symbol_enabled) — उपलब्ध भांडवलानुसार
+        वापरकर्ता BANKNIFTY/SENSEX बंद ठेवू शकतो; बंद असल्यास zones/candles काहीही न वाचता थेट थांबायला हवं."""
+        disabled_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        disabled_settings["symbol_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=disabled_settings), \
+             patch.object(dsr.cloud_db, "get_market_zones") as mock_zones:
+            result = dsr.process_symbol("fake_token", "BANKNIFTY")
+            assert "बंद आहे" in result
+            assert not mock_zones.called
 
     def test_no_active_zones_handled_gracefully(self):
         empty_zones = pd.DataFrame(columns=["symbol", "zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"])

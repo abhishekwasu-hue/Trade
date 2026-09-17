@@ -121,13 +121,19 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now):
 def process_symbol(access_token, symbol, lot_size=65):
     """एका symbol साठी — 15M/30M/60M levels एकत्र, RSI-फिल्टर, Multi-Hit/Cooldown, Expiry-Day
     Logic, आणि आढळल्यास PAPER trade (settings-चालित lots/hedge_width_points सह)."""
+    settings = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (symbol_enabled) — उपलब्ध भांडवलानुसार वापरकर्ता
+    # Bot Dynamic SR Algo पानावरून प्रत्येक symbol स्वतंत्रपणे चालू/बंद करू शकतो — बंद असलेल्या
+    # symbol वर इथेच थांबतो, पुढचं काहीही (cooldown/state check, candles fetch, trade) होत नाही.
+    if not settings.get("symbol_enabled", symbol == "NIFTY"):
+        return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा)"
+
     now = get_ist_now()
     state = cloud_db.get_srv2_state(symbol)
 
     if is_in_cooldown(state["last_sl_hit_time"], now):
         return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {COOLDOWN_MINUTES} मिनिटं विराम)"
 
-    settings = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
     lots = settings["lots"]
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
@@ -258,6 +264,11 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         naked_status = ""
         naked_result = None
+        # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("naked trade execute झाला नाही") सोडवण्यासाठी जोडलेली
+        # सुधारणा — आधी हे फक्त print() (फक्त GitHub Actions/VPS logs मध्ये दिसायचं) होतं, आता
+        # signal_log मध्येही नोंदवलं जातं — त्यामुळे Dashboard वरच्या Market Zones → Signal Log
+        # मध्ये (कुठल्याही log-access शिवाय) नेमकं कारण दिसेल.
+        naked_diag_entry = dict(log_entry)
         if settings.get("naked_enabled", True):
             naked_result = select_naked_option_itm(
                 raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"],
@@ -265,14 +276,17 @@ def process_symbol(access_token, symbol, lot_size=65):
                 hedge_width_points=settings.get("naked_hedge_width_points", 150),
             )
             if naked_result is None:
-                # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("naked trade दिसत नाही") सोडवण्यासाठी जोडलेली,
-                # तात्पुरती diagnostic नोंद.
-                print(
-                    f"⚠️ Naked trade सापडला नाही — symbol={symbol}, direction={direction}, "
-                    f"atm_strike={atm_strike}, itm_depth_points={settings['itm_depth_points']} "
-                    f"(गरजेचा strike raw_chain मध्ये उपलब्ध नसावा)"
+                naked_diag_entry["trade_status"] = "SKIPPED_NAKED_STRIKE_NOT_FOUND"
+                naked_diag_entry["reason"] = (
+                    f"Naked trade साठी आवश्यक ITM strike (atm={atm_strike}, डेप्थ "
+                    f"{settings['itm_depth_points']}) raw_chain मध्ये सापडला नाही"
                 )
+                cloud_db.save_signal_log(naked_diag_entry)
+                print(f"⚠️ {naked_diag_entry['reason']} — symbol={symbol}, direction={direction}")
         else:
+            naked_diag_entry["trade_status"] = "SKIPPED_NAKED_DISABLED"
+            naked_diag_entry["reason"] = "naked_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
+            cloud_db.save_signal_log(naked_diag_entry)
             print(f"ℹ️ Naked trade बंद आहे (naked_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
         if naked_result is not None:
             if accounts_df is not None and not accounts_df.empty:
@@ -313,7 +327,11 @@ def process_symbol(access_token, symbol, lot_size=65):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
-    parser.add_argument("--symbols", default="NIFTY")
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — इथला डीफॉल्ट आता refresh_market_zones.py सारखाच
+    # तिन्ही symbols — प्रत्यक्ष कोणत्या symbol वर trade घ्यायचा हे आता process_symbol() च्या आतल्या
+    # symbol_enabled सेटिंगवरून ठरतं (Bot Dynamic SR Algo पानावरून, उपलब्ध भांडवलानुसार), या CLI
+    # यादीवरून नाही — त्यामुळे VPS crontab मध्ये --symbols बदलावं लागत नाही.
+    parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     args = parser.parse_args()
 
     init_sqlite_db()

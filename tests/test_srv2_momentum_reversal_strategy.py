@@ -307,6 +307,18 @@ class TestProcessSymbol:
             result = srv2.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
 
+    def test_symbol_disabled_skips_entirely(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (symbol_enabled) — उपलब्ध भांडवलानुसार
+        वापरकर्ता BANKNIFTY/SENSEX बंद ठेवू शकतो; बंद असल्यास state/cooldown/candles काहीही
+        न वाचता थेट थांबायला हवं."""
+        disabled_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        disabled_settings["symbol_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=disabled_settings), \
+             patch.object(srv2.cloud_db, "get_srv2_state") as mock_state:
+            result = srv2.process_symbol("fake_token", "SENSEX")
+            assert "बंद आहे" in result
+            assert not mock_state.called
+
     def test_insufficient_candle_history_handled_gracefully(self):
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
