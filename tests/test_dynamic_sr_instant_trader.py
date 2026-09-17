@@ -155,7 +155,54 @@ def _fake_chain(spot):
              "put_options": {"instrument_key": "PE1", "market_data": {"ltp": 45}, "option_greeks": {}}}]
 
 
+class TestCollectPooledLevels:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — timeframe_choice setting (Bot Dynamic SR Algo
+    पानावरून) नुसार वापरकर्त्याला फक्त 1M, फक्त 5M, किंवा दोन्ही (डीफॉल्ट) touch levels तपासता यायला हवेत."""
+
+    def _zones_1m_and_5m(self):
+        return pd.DataFrame([
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": 23900.0, "zone_high": 23900.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23850.0, "zone_high": 23850.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+
+    def test_default_pools_both_timeframes(self):
+        pooled = dsr._collect_pooled_levels(self._zones_1m_and_5m())
+        suffixes = sorted(s for _, s in pooled)
+        assert suffixes == ["1M", "5M"]
+
+    def test_1m_only(self):
+        pooled = dsr._collect_pooled_levels(self._zones_1m_and_5m(), ["1M"])
+        assert [s for _, s in pooled] == ["1M"]
+
+    def test_5m_only(self):
+        pooled = dsr._collect_pooled_levels(self._zones_1m_and_5m(), ["5M"])
+        assert [s for _, s in pooled] == ["5M"]
+
+
 class TestProcessSymbol:
+    def test_timeframe_choice_1m_ignores_5m_levels(self):
+        """🎓 settings मध्ये timeframe_choice="1M" असेल तर 5M zone touch झाला तरी दुर्लक्षित व्हायला हवा."""
+        zones_5m_only_touch = pd.DataFrame([
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23900.0, "zone_high": 23900.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings_1m_only = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings_1m_only["timeframe_choice"] = "1M"
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=zones_5m_only_touch), \
+             patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings_1m_only), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade:
+            result = dsr.process_symbol("fake_token", "NIFTY")
+            assert "कुठलेही ACTIVE Dynamic S/R levels (1M) नाहीत" in result
+            assert not mock_trade.called
+
     def test_gap_through_executes_trade_and_logs_all_levels(self):
         """🎓 वापरकर्त्याने विचारलेला Gap Down प्रश्न + मागितलेला संपूर्ण Signal Log -- दोन्ही एकत्र.
 
