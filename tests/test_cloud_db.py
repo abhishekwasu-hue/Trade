@@ -801,3 +801,24 @@ class TestStrategySettings:
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["naked_hedge_enabled"] is False
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["naked_enabled"] is True
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["naked_enabled"] is True
+
+    def test_classic_sr_reversal_symbol_enabled_defaults_false_even_for_nifty(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — नवीन "classic_sr_reversal" strategy अजून
+        backtest-टप्प्यातच असल्याने, इतर दोन strategies प्रमाणे NIFTY साठी डीफॉल्ट सक्रिय नसावी —
+        वापरकर्त्याने Dashboard वरून स्पष्टपणे सक्रिय केल्याशिवाय कुठलाही (PAPER सुद्धा) trade नाही."""
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        result = cloud_db.get_strategy_settings("classic_sr_reversal", "NIFTY")
+        assert result["symbol_enabled"] is False
+        # बाकीचे इतर strategies प्रमाणेच — पूर्ण डीफॉल्ट (फक्त symbol_enabled वेगळा)
+        expected = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"])
+        expected["symbol_enabled"] = False
+        assert result == expected
+
+    def test_classic_sr_reversal_entry_refinement_gates_default_off(self):
+        """तिन्ही नवीन Entry Refinement गेट्स (Swing/Demand-Supply/Trendline) डीफॉल्ट बंद —
+        backtest मधल्याच डीफॉल्ट तर्काशी सुसंगत, backward-compatible."""
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"]
+        assert defaults["swing_confluence_enabled"] is False
+        assert defaults["demand_supply_gate_enabled"] is False
+        assert defaults["trendline_gate_enabled"] is False
+        assert "entry_pcr_gate_enabled" not in defaults  # PCR गेट मुद्दाम नाही (चर्चेत ठरल्याप्रमाणे)

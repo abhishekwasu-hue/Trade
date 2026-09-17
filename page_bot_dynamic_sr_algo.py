@@ -17,7 +17,13 @@ import cloud_db
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
-STRATEGY_LABELS = {"1m_instant": "1-मिनिट Instant Trader (1M + 5M)", "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal"}
+STRATEGY_LABELS = {
+    "1m_instant": "1-मिनिट Instant Trader (1M + 5M)",
+    "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal",
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन स्वतंत्र तिसरी strategy — "Classical Support/Resistance
+    # Reversal" (5M+15M pooled). आधीच्या दोन strategies पूर्णपणे अबाधित — फक्त हा नवीन पर्याय जोडलेला.
+    "classic_sr_reversal": "🎯 Classical S/R Reversal (5M + 15M)",
+}
 
 
 def _widget_key(strategy_key, symbol, field):
@@ -43,7 +49,7 @@ def _number_input(label, settings, key, strategy_key, symbol, **kwargs):
 
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
-    st.caption("दोन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
+    st.caption("तिन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -69,12 +75,15 @@ def render():
     tab_entry, tab_exit = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate"])
 
     with tab_entry:
-        if strategy_key == "1m_instant":
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategy मध्ये 1M आणि 5M दोन्ही
-            # टाईमफ्रेमचे touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास
-            # फक्त एकाच टाईमफ्रेमवर मर्यादित ठेवता येईल.
+        if strategy_key in ("1m_instant", "classic_sr_reversal"):
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategies मध्ये दोन्ही टाईमफ्रेमचे
+            # touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास फक्त एकाच
+            # टाईमफ्रेमवर मर्यादित ठेवता येईल.
             sub_header("⏱️ Touch Timeframe", HDR_TEAL)
-            _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
+            if strategy_key == "1m_instant":
+                _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
+            else:
+                _TF_OPTIONS = {"BOTH": "5M + 15M (दोन्ही, डीफॉल्ट)", "5M": "फक्त 5M", "15M": "फक्त 15M"}
             _tf_keys = list(_TF_OPTIONS.keys())
             timeframe_choice = st.radio(
                 "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
@@ -121,24 +130,78 @@ def render():
                 min_value=30, max_value=70, step=1, disabled=not entry_rsi_gate_enabled,
             )
 
-        st.markdown("---")
-        sub_header("🚦 PCR Gate", HDR_PINK)
-        entry_pcr_gate_enabled = st.checkbox(
-            "PCR Gate सक्रिय (बंद केल्यास — PCR तपासला जाणार नाही, फक्त डेटा गहाळ/जुना असतानाचं सुरक्षा-कवचही बंद होईल)",
-            value=bool(settings.get("entry_pcr_gate_enabled", True)),
-            key=_widget_key(strategy_key, symbol, "entry_pcr_gate_enabled"),
-        )
-        st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
-        p1, p2 = st.columns(2)
-        with p1:
-            pcr_bullish_min = _number_input(
-                "PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", strategy_key, symbol,
-                min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — classic_sr_reversal साठी PCR गेट मुद्दामच नाही
+        # ("फक्त शुद्ध classical S/R" कल्पना — RSI गेटच फक्त, backtest मध्येही तेच वापरलेलं).
+        if strategy_key != "classic_sr_reversal":
+            st.markdown("---")
+            sub_header("🚦 PCR Gate", HDR_PINK)
+            entry_pcr_gate_enabled = st.checkbox(
+                "PCR Gate सक्रिय (बंद केल्यास — PCR तपासला जाणार नाही, फक्त डेटा गहाळ/जुना असतानाचं सुरक्षा-कवचही बंद होईल)",
+                value=bool(settings.get("entry_pcr_gate_enabled", True)),
+                key=_widget_key(strategy_key, symbol, "entry_pcr_gate_enabled"),
             )
-        with p2:
-            pcr_bearish_max = _number_input(
-                "PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", strategy_key, symbol,
-                min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+            st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
+            p1, p2 = st.columns(2)
+            with p1:
+                pcr_bullish_min = _number_input(
+                    "PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", strategy_key, symbol,
+                    min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+                )
+            with p2:
+                pcr_bearish_max = _number_input(
+                    "PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", strategy_key, symbol,
+                    min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+                )
+
+        if strategy_key == "classic_sr_reversal":
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
+            # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
+            # ऐच्छिक, स्वतंत्र confluence गेट्स (सर्व डीफॉल्ट बंद). RSI गेट (वर) आणि हे तिन्ही गेट्स
+            # मिळून — Credit Spread व Naked दोन्हीला एकच, सामायिक सिग्नल (वेगळे गेट्स नाहीत).
+            st.markdown("---")
+            sub_header("🔍 Entry Refinement (ऐच्छिक Confluence गेट्स)", HDR_PINK)
+            st.caption("तिन्ही डीफॉल्ट बंद — सक्रिय केल्यास, त्या गेटची अट पूर्ण झाली तरच entry घेतली जाते (RSI Gate नंतर लगेच, Credit Spread + Naked दोन्हींना एकत्र लागू).")
+
+            sw1, sw2 = st.columns([1, 2])
+            with sw1:
+                swing_confluence_enabled = st.checkbox(
+                    "Swing High/Low Confluence", value=bool(settings.get("swing_confluence_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "swing_confluence_enabled"),
+                )
+            with sw2:
+                st.caption("touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low/High च्या जवळ असावा.")
+            sw3, sw4 = st.columns(2)
+            with sw3:
+                swing_tolerance_pct = _number_input(
+                    "Swing Tolerance %", settings, "swing_tolerance_pct", strategy_key, symbol,
+                    min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not swing_confluence_enabled,
+                )
+            with sw4:
+                swing_order = _number_input(
+                    "Swing Order (bars दोन्ही बाजूला)", settings, "swing_order", strategy_key, symbol,
+                    min_value=2, max_value=10, step=1, disabled=not swing_confluence_enabled,
+                )
+
+            ds1, ds2 = st.columns([1, 2])
+            with ds1:
+                demand_supply_gate_enabled = st.checkbox(
+                    "Demand/Supply Zone", value=bool(settings.get("demand_supply_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "demand_supply_gate_enabled"),
+                )
+            with ds2:
+                st.caption("touch झालेला level Demand Zone (Support) / Supply Zone (Resistance) च्या आतच असावा.")
+
+            tl1, tl2 = st.columns([1, 2])
+            with tl1:
+                trendline_gate_enabled = st.checkbox(
+                    "Trendline (BROKEN नसावी)", value=bool(settings.get("trendline_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "trendline_gate_enabled"),
+                )
+            with tl2:
+                st.caption("त्याच दिशेची trendline (Ascending Support/Descending Resistance) अस्तित्वात असून BROKEN असेल, तरच अडवते.")
+            trendline_lookback_swings = _number_input(
+                "Trendline Lookback Swings", settings, "trendline_lookback_swings", strategy_key, symbol,
+                min_value=3, max_value=8, step=1, disabled=not trendline_gate_enabled,
             )
 
         st.markdown("---")
@@ -153,7 +216,7 @@ def render():
 
     with tab_exit:
         sub_header("🎯 SL / TSL / Target (Credit Spread)", HDR_AMBER)
-        if strategy_key == "1m_instant":
+        if strategy_key in ("1m_instant", "classic_sr_reversal"):
             st.caption("SL/TSL/Target — Spot% आणि Premium-Points दोन्ही एकत्र (जे आधी घडेल ते लागू).")
             s1, s2 = st.columns(2)
             with s1:
@@ -207,8 +270,6 @@ def render():
             "symbol_enabled": bool(symbol_enabled),
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
             "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
-            "entry_pcr_gate_enabled": bool(entry_pcr_gate_enabled),
-            "pcr_bullish_min": float(pcr_bullish_min), "pcr_bearish_max": float(pcr_bearish_max),
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),
             "spread_tsl_spot_pct": float(spread_tsl_spot_pct), "spread_tsl_premium_points": float(spread_tsl_premium_points),
             "naked_enabled": bool(naked_enabled), "naked_hedge_enabled": bool(naked_hedge_enabled),
@@ -217,12 +278,29 @@ def render():
             "naked_tsl_spot_pct": float(naked_tsl_spot_pct), "naked_tsl_premium_points": float(naked_tsl_premium_points),
             "naked_target_spot_pct": float(naked_target_spot_pct), "naked_target_premium_points": float(naked_target_premium_points),
         }
+        # 🎓 classic_sr_reversal साठी PCR गेट मुद्दामच नाही (वर पहा) — त्यामुळे हे fields save करायचे नाहीत.
+        if strategy_key != "classic_sr_reversal":
+            new_settings["entry_pcr_gate_enabled"] = bool(entry_pcr_gate_enabled)
+            new_settings["pcr_bullish_min"] = float(pcr_bullish_min)
+            new_settings["pcr_bearish_max"] = float(pcr_bearish_max)
+
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)
             new_settings["rsi_resistance_min"] = int(rsi_resistance_min)
             new_settings["spread_target_spot_pct"] = float(spread_target_spot_pct)
             new_settings["spread_target_premium_points"] = float(spread_target_premium_points)
+        elif strategy_key == "classic_sr_reversal":
+            new_settings["timeframe_choice"] = timeframe_choice
+            new_settings["rsi_neutral_level"] = int(rsi_neutral_level)
+            new_settings["spread_target_spot_pct"] = float(spread_target_spot_pct)
+            new_settings["spread_target_premium_points"] = float(spread_target_premium_points)
+            new_settings["swing_confluence_enabled"] = bool(swing_confluence_enabled)
+            new_settings["swing_tolerance_pct"] = float(swing_tolerance_pct)
+            new_settings["swing_order"] = int(swing_order)
+            new_settings["demand_supply_gate_enabled"] = bool(demand_supply_gate_enabled)
+            new_settings["trendline_gate_enabled"] = bool(trendline_gate_enabled)
+            new_settings["trendline_lookback_swings"] = int(trendline_lookback_swings)
         else:
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)
             new_settings["spread_target_pct_of_premium"] = float(spread_target_pct_of_premium)

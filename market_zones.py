@@ -15,7 +15,7 @@ market_zones.py
 """
 import pandas as pd
 
-from signals import find_support_resistance_levels
+from signals import find_support_resistance_levels, analyze_chart_zones
 from mtf_pullback_strategy import find_overnight_gaps
 from sr_dynamic import compute_dynamic_sr
 
@@ -234,4 +234,105 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
             rows.append({"symbol": symbol, "zone_type": g["kind"], "zone_low": g["gap_low"],
                          "zone_high": g["gap_high"], "strength": None, "formed_date": g["gap_time"], "status": status})
 
+    return pd.DataFrame(rows)
+
+
+# =========================================================
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones — "5M/15M Confluence Table") —
+# वापरकर्त्याने Classical S/R Reversal backtest साठी चर्चा केलेल्या संकल्पना (Swing High/Low वरून
+# Demand/Supply — signals.analyze_chart_zones(), Order Block) आता Market Zones पानावरही, 5-मिनिट व
+# 15-मिनिट या दोन्ही टाईमफ्रेम्ससाठी वेगळ्या, सद्य किमतीच्या सर्वात जवळचे दाखवणारा एक संगम-तक्ता.
+# Support/Resistance साठी backend मुळे आधीच रोज रात्री साठवलेले DYNAMIC_SR_SUPPORT/RESISTANCE_{TF}
+# levels वापरले जातात (पुन्हा गणना नाही, जलद) — Demand/Supply व Order Block मात्र इथेच, थेट (त्या
+# specific timeframe साठी backend कधीच पूर्वगणना/साठवण करत नाही, फक्त 1H वर करतो).
+# =========================================================
+
+def _pick_nearest_level(levels, current_price, want_below):
+    """levels: [(level, extra_dict), ...]. current_price च्या दिलेल्या बाजूला (want_below=True->खाली
+    (Support), False->वर (Resistance)) सर्वात जवळचा एक निवडणे. काहीच सापडलं नाही तर None."""
+    side = [lv for lv in levels if (lv[0] <= current_price if want_below else lv[0] >= current_price)]
+    if not side:
+        return None
+    return min(side, key=lambda lv: abs(lv[0] - current_price))
+
+
+def compute_5m_15m_confluence_row(timeframe_label, df_tf, dynamic_sr_zones_df, current_price,
+                                    swing_order=3, impulse_mult=1.5, avg_window=20):
+    """
+    एका टाईमफ्रेमसाठी (5M किंवा 15M) — Support/Resistance (आधीच साठवलेल्या Dynamic S/R वरून, सद्य
+    किमतीच्या सापेक्ष पुन्हा-वर्गीकृत — साठवलेला जुना label नाही), Demand/Supply Zone
+    (signals.analyze_chart_zones() — Classical S/R Reversal backtest मध्ये वापरलेलीच स्वतःची, Swing
+    High/Low-आधारित पद्धत), आणि सद्य किमतीच्या सर्वात जवळचा, अजून ACTIVE (mitigated नसलेला) Order
+    Block — एकत्र एका dict मध्ये (raw numbers — UI/CSV दोन्हीसाठी वापरता यावेत म्हणून, आधीच फॉरमॅट
+    केलेला मजकूर नाही).
+    """
+    row = {
+        "timeframe": timeframe_label, "current_price": round(float(current_price), 2),
+        "support_level": None, "support_distance_pct": None,
+        "resistance_level": None, "resistance_distance_pct": None,
+        "demand_zone_low": None, "demand_zone_high": None, "demand_zone_distance_pct": None,
+        "supply_zone_low": None, "supply_zone_high": None, "supply_zone_distance_pct": None,
+        "order_block_type": None, "order_block_low": None, "order_block_high": None, "order_block_distance_pct": None,
+    }
+
+    # --- Support/Resistance — आधीच साठवलेले (cloud_db) Dynamic S/R levels, सद्य किमतीशी सुसंगत पुन्हा-वर्गीकृत ---
+    if dynamic_sr_zones_df is not None and not dynamic_sr_zones_df.empty:
+        dyn_subset = dynamic_sr_zones_df[
+            dynamic_sr_zones_df["zone_type"].isin([f"DYNAMIC_SR_SUPPORT_{timeframe_label}", f"DYNAMIC_SR_RESISTANCE_{timeframe_label}"])
+            & (dynamic_sr_zones_df["status"] == "ACTIVE")
+        ]
+        levels = [(float(r["zone_low"]), {}) for _, r in dyn_subset.iterrows()]
+        nearest_support = _pick_nearest_level(levels, current_price, want_below=True)
+        nearest_resistance = _pick_nearest_level(levels, current_price, want_below=False)
+        if nearest_support:
+            row["support_level"] = round(nearest_support[0], 2)
+            row["support_distance_pct"] = round((nearest_support[0] - current_price) / current_price * 100, 3)
+        if nearest_resistance:
+            row["resistance_level"] = round(nearest_resistance[0], 2)
+            row["resistance_distance_pct"] = round((nearest_resistance[0] - current_price) / current_price * 100, 3)
+
+    # --- Demand/Supply Zone — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना) ---
+    if df_tf is not None and len(df_tf) >= swing_order * 2 + 1:
+        chart_zones = analyze_chart_zones(df_tf, order=swing_order)
+        dz, sz = chart_zones.get("demand_zone"), chart_zones.get("supply_zone")
+        if dz:
+            row["demand_zone_low"], row["demand_zone_high"] = round(dz[0], 2), round(dz[1], 2)
+            dz_mid = (dz[0] + dz[1]) / 2
+            row["demand_zone_distance_pct"] = round((dz_mid - current_price) / current_price * 100, 3)
+        if sz:
+            row["supply_zone_low"], row["supply_zone_high"] = round(sz[0], 2), round(sz[1], 2)
+            sz_mid = (sz[0] + sz[1]) / 2
+            row["supply_zone_distance_pct"] = round((sz_mid - current_price) / current_price * 100, 3)
+
+    # --- Order Block — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना), mitigation तपासून
+    # फक्त अजून ACTIVE असलेल्यांमधूनच सद्य किमतीच्या सर्वात जवळचा एक ---
+    if df_tf is not None and len(df_tf) >= avg_window + 1:
+        obs = detect_order_blocks(df_tf, impulse_mult=impulse_mult, avg_window=avg_window)
+        active_obs = []
+        for ob in obs:
+            after = df_tf[df_tf["timestamp"] > ob["formed_date"]]
+            if not is_zone_mitigated(ob["zone_low"], ob["zone_high"], after.iloc[1:]):
+                ob_mid = (ob["zone_low"] + ob["zone_high"]) / 2
+                active_obs.append((ob_mid, ob))
+        nearest_ob = min(active_obs, key=lambda x: abs(x[0] - current_price)) if active_obs else None
+        if nearest_ob:
+            ob = nearest_ob[1]
+            row["order_block_type"] = ob["zone_type"]
+            row["order_block_low"], row["order_block_high"] = round(ob["zone_low"], 2), round(ob["zone_high"], 2)
+            row["order_block_distance_pct"] = round((nearest_ob[0] - current_price) / current_price * 100, 3)
+
+    return row
+
+
+def compute_5m_15m_confluence_table(current_price, timeframe_dfs, dynamic_sr_zones_df,
+                                      swing_order=3, impulse_mult=1.5, avg_window=20):
+    """timeframe_dfs: {"5M": df_5m, "15M": df_15m} (क्रमाने) -> compute_5m_15m_confluence_row() च्या
+    रांगांचा DataFrame, एक रांग प्रति टाईमफ्रेम."""
+    rows = [
+        compute_5m_15m_confluence_row(
+            label, df, dynamic_sr_zones_df, current_price,
+            swing_order=swing_order, impulse_mult=impulse_mult, avg_window=avg_window,
+        )
+        for label, df in timeframe_dfs.items()
+    ]
     return pd.DataFrame(rows)

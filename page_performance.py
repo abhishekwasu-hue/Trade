@@ -10,7 +10,7 @@ from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
     get_closed_trades_detail, get_exit_reason_breakdown,
 )
-from backtest import run_signal_backtest_rr, run_signal_backtest_v2
+from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
 from upstox_api import fetch_candles_date_range
 from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
@@ -564,7 +564,9 @@ def render():
         "नाहीत (जुना OI डेटा फक्त तुम्ही app वापरायला सुरुवात केल्यापासूनच साठलाय)."
     )
 
-    bt_style_tab1, bt_style_tab2 = st.tabs(["⚡ Intraday (15M)", "🌙 Swing (Daily)"])
+    bt_style_tab1, bt_style_tab2, bt_style_tab3 = st.tabs(
+        ["⚡ Intraday (15M)", "🌙 Swing (Daily)", "🎯 Classical S/R Reversal (5M+15M)"]
+    )
 
     for bt_style_tab, bt_style_name, bt_interval, bt_max_days, bt_key_prefix, default_lbs in [
         (bt_style_tab1, "INTRADAY", "15minute", 180, "bti", 3),
@@ -892,6 +894,185 @@ def render():
                                     file_name=bt_filename, mime="application/pdf", key=f"{bt_key_prefix}_dl",
                                 )
                                 st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
+
+    with bt_style_tab3:
+        # =========================================================
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रस्तावित तिसरी strategy ("Classical Support/
+        # Resistance Reversal", 5M+15M pooled — Support touch=Bull Put Spread, Resistance touch=Bear
+        # Call Spread) — आधी backtest ने तपासून बघूया असं ठरलं (PAPER/LIVE आधी नाही). हा backtest
+        # sr_dynamic.compute_dynamic_sr() (Market Zones साठीच वापरला जाणारा तोच classical अल्गोरिदम)
+        # + RSI(त्याच टाईमफ्रेमचा) फिल्टर (PCR/momentum-candle गेट मुद्दाम वगळलेले — "शुद्ध classical
+        # S/R" कल्पना स्वतंत्रपणे तपासण्यासाठी) वापरतो. निकाल चांगले दिसले, तरच पुढे PAPER trading
+        # script बांधायचं — trading_engine.py ला अजून काहीही स्पर्श झालेला नाही.
+        # =========================================================
+        st.caption(
+            "Support touch (RSI < Neutral) -> BULLISH (Bull Put Spread) · Resistance touch (RSI > Neutral) -> "
+            "BEARISH (Bear Call Spread) — 5M व 15M दोन्ही टाईमफ्रेम्सचे classical Dynamic S/R levels एकत्र "
+            "पूल केलेले (कुठल्याही एकाला प्राधान्य नाही, dynamic_sr_instant_trader.py सारखंच). एका वेळी फक्त "
+            "एकच उघडी position + SL/Target नंतर 30-मिनिट cooldown."
+        )
+        st.warning(
+            "⚠️ **मर्यादा**: फक्त INDEX स्पॉट %-वरचं SL/Target सिम्युलेशन — प्रत्यक्ष credit-spread च्या ₹ "
+            "P&L चा backtest नाही. TSL-to-Breakeven इथे सिम्युलेट केलेलं नाही (bar-level डेटावरून विश्वासार्ह "
+            "नाही) — फक्त सरळ SL/Target. प्रत्यक्ष PAPER/LIVE आवृत्तीत मात्र इतर दोन्ही strategies प्रमाणेच "
+            "पूर्ण TSL-to-Breakeven असेल."
+        )
+
+        csr_source = st.radio(
+            "डेटा स्रोत", ["📦 खरा साठवलेला डेटा (2015-2024, स्थानिक — शिफारस केलेली)",
+                          "Upstox (Token आवश्यक)", "Yahoo Finance (Token लागत नाही)"],
+            horizontal=True, key="csr_source",
+        )
+        csr_use_stored = "साठवलेला" in csr_source
+        csr_use_yfinance = "Yahoo" in csr_source
+        csr_today = get_ist_today()
+        if csr_use_stored:
+            csr_min_date, csr_max_date = datetime.date(2015, 1, 9), datetime.date(2024, 3, 27)
+            csr_max_days = 3650
+        else:
+            csr_max_days = get_yfinance_max_days("5minute") if csr_use_yfinance else 180
+            csr_min_date, csr_max_date = None, csr_today
+            if csr_use_yfinance:
+                st.caption(f"⚠️ Yahoo Finance वर 5/15-मिनिटांचा डेटा फक्त गेल्या ~{csr_max_days} दिवसांपुरताच उपलब्ध असतो.")
+
+        csr_default_from = (csr_max_date - datetime.timedelta(days=min(60, csr_max_days))) if csr_use_stored else csr_today - datetime.timedelta(days=min(60, csr_max_days))
+        ccol1, ccol2 = st.columns(2)
+        with ccol1:
+            csr_from = st.date_input(
+                "पासून", value=max(csr_default_from, csr_min_date) if csr_min_date else csr_default_from,
+                min_value=csr_min_date, max_value=csr_max_date, key="csr_from",
+            )
+        with ccol2:
+            csr_to = st.date_input("पर्यंत", value=csr_max_date, min_value=csr_min_date, max_value=csr_max_date, key="csr_to")
+
+        csr_range_days = (csr_to - csr_from).days
+        if csr_range_days <= 0:
+            st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+        elif csr_range_days > csr_max_days:
+            st.error(f"जास्तीत जास्त {csr_max_days} दिवसांची रेंज निवडता येईल (सध्या {csr_range_days} दिवस निवडले आहेत).")
+        else:
+            pcol1, pcol2, pcol3 = st.columns(3)
+            with pcol1:
+                csr_sl_pct = st.number_input("SL Spot % (level पासून)", min_value=0.05, value=0.4, step=0.05, key="csr_sl")
+            with pcol2:
+                csr_target_pct = st.number_input("Target Spot % (level पासून)", min_value=0.05, value=0.8, step=0.05, key="csr_target")
+            with pcol3:
+                csr_rsi_neutral = st.number_input("RSI Neutral पातळी", min_value=20, max_value=80, value=50, step=5, key="csr_rsi")
+            pcol4, pcol5 = st.columns(2)
+            with pcol4:
+                csr_tolerance = st.number_input("Touch Tolerance %", min_value=0.01, value=0.05, step=0.01, key="csr_tol")
+            with pcol5:
+                csr_cooldown = st.number_input("Cooldown (मिनिटं, SL/Target नंतर)", min_value=0, value=30, step=5, key="csr_cooldown")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Entry Refinement (Swing High/Low, Demand/
+            # Supply, Trendline) — तीनही स्वतंत्रपणे togglable (डीफॉल्ट बंद, backward-compatible),
+            # जेणेकरून कोणता confluence-गेट खरंच result सुधारतो हे स्वतंत्रपणे तपासता येईल.
+            _sub_header("🧭 Entry Refinement (ऐच्छिक — Swing High/Low, Demand/Supply, Trendline)", _HDR_PINK)
+            st.caption(
+                "RSI गेटनंतर, अतिरिक्त confluence तपासण्या — level फक्त 'clustered pivot zone' नाही, तर "
+                "नुकत्याच झालेल्या खऱ्या Swing जवळ / Demand-Supply zone च्या आत / त्याच दिशेची Trendline "
+                "तुटलेली नाही, हे बघून entry अधिक निवडक बनवणे. सर्व डीफॉल्ट बंद — एकही चालू केला नाही तर वरचाच निकाल."
+            )
+            gcol1, gcol2, gcol3 = st.columns(3)
+            with gcol1:
+                csr_swing_gate = st.checkbox("Swing High/Low Confluence", value=False, key="csr_swing_gate")
+                csr_swing_tol = st.number_input(
+                    "Swing Tolerance %", min_value=0.01, value=0.15, step=0.05, key="csr_swing_tol",
+                    disabled=not csr_swing_gate,
+                )
+            with gcol2:
+                csr_ds_gate = st.checkbox("Demand/Supply Zone", value=False, key="csr_ds_gate")
+                st.caption("Zone = शेवटच्या Swing Low/High भोवतीचा ±0.3% पट्टा.")
+            with gcol3:
+                csr_tl_gate = st.checkbox("Trendline (BROKEN अडवतो)", value=False, key="csr_tl_gate")
+                csr_tl_lookback = st.number_input(
+                    "Trendline Lookback Swings", min_value=3, max_value=8, value=4, step=1, key="csr_tl_lookback",
+                    disabled=not csr_tl_gate,
+                )
+            csr_swing_order = st.number_input(
+                "Swing/Structure Order (bars — Swing/Demand-Supply/Trendline तिन्हींसाठी समान)",
+                min_value=2, max_value=10, value=3, step=1, key="csr_swing_order",
+                disabled=not (csr_swing_gate or csr_ds_gate or csr_tl_gate),
+            )
+
+            if st.button(f"🔍 {csr_range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key="csr_run"):
+                yf_error = None
+                with st.spinner(f"{csr_from} ते {csr_to} चा 5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
+                    if csr_use_stored:
+                        from real_nifty_data import load_nifty_resampled
+                        csr_df5 = load_nifty_resampled(5, csr_from, csr_to)
+                        csr_df15 = load_nifty_resampled(15, csr_from, csr_to)
+                    elif csr_use_yfinance:
+                        csr_df5, yf_err1 = fetch_yfinance_candles(symbol, "5minute", csr_from, csr_to)
+                        csr_df15, yf_err2 = fetch_yfinance_candles(symbol, "15minute", csr_from, csr_to)
+                        yf_error = yf_err1 or yf_err2
+                    else:
+                        csr_df5 = fetch_candles_date_range(token_input, symbol, "5minute", csr_from, csr_to)
+                        csr_df15 = fetch_candles_date_range(token_input, symbol, "15minute", csr_from, csr_to)
+
+                    csr_result = run_classic_sr_reversal_backtest(
+                        csr_df5, csr_df15, sl_spot_pct=csr_sl_pct, target_spot_pct=csr_target_pct,
+                        rsi_neutral=csr_rsi_neutral, touch_tolerance_pct=csr_tolerance, cooldown_minutes=csr_cooldown,
+                        swing_order=csr_swing_order, swing_confluence_enabled=csr_swing_gate,
+                        swing_tolerance_pct=csr_swing_tol, demand_supply_gate_enabled=csr_ds_gate,
+                        trendline_gate_enabled=csr_tl_gate, trendline_lookback_swings=csr_tl_lookback,
+                    )
+                if csr_df5.empty and csr_df15.empty:
+                    if yf_error:
+                        st.error(f"❌ Yahoo Finance वरून डेटा मिळाला नाही — नेमकं कारण:\n\n{yf_error}")
+                    else:
+                        st.error(
+                            "❌ कोणताही डेटा मिळाला नाही (5M किंवा 15M) — " +
+                            ("Yahoo Finance वरून (नेटवर्क/चुकीचा सिम्बॉल तपासा)." if csr_use_yfinance else "Upstox token तपासा.")
+                        )
+                st.session_state["csr_result"] = csr_result
+                st.session_state["csr_meta"] = (csr_from, csr_to)
+
+            if "csr_result" in st.session_state:
+                cr = st.session_state["csr_result"]
+                cr_from, cr_to = st.session_state["csr_meta"]
+                funnel = cr.get("funnel", {})
+                if funnel:
+                    _sub_header("🔍 Funnel Diagnostic", _HDR_BLUE)
+                    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+                    fc1.metric("5M Touches", funnel.get("touches_5m", 0))
+                    fc2.metric("5M RSI-गेट पास", funnel.get("rsi_passed_5m", 0))
+                    fc3.metric("5M Swing-गेट पास", funnel.get("swing_passed_5m", 0))
+                    fc4.metric("5M Demand/Supply-गेट पास", funnel.get("demand_supply_passed_5m", 0))
+                    fc5.metric("5M Trendline-गेट पास", funnel.get("trendline_passed_5m", 0))
+                    fc6, fc7, fc8, fc9, fc10 = st.columns(5)
+                    fc6.metric("15M Touches", funnel.get("touches_15m", 0))
+                    fc7.metric("15M RSI-गेट पास", funnel.get("rsi_passed_15m", 0))
+                    fc8.metric("15M Swing-गेट पास", funnel.get("swing_passed_15m", 0))
+                    fc9.metric("15M Demand/Supply-गेट पास", funnel.get("demand_supply_passed_15m", 0))
+                    fc10.metric("15M Trendline-गेट पास", funnel.get("trendline_passed_15m", 0))
+                    st.caption("गेट बंद असेल, तर तो टप्पा आपोआप 'पास' मोजला जातो (मागच्याच संख्येइतकाच) — फरक फक्त चालू केलेल्या गेट्समध्येच दिसेल.")
+
+                if cr["total"] == 0:
+                    st.info(f"📭 {cr_from} ते {cr_to} या कालावधीत कोणतेही सिग्नल्स सापडले नाहीत.")
+                else:
+                    st.success(f"✅ {cr_from} ते {cr_to} या कालावधीत {cr['total']} सिग्नल्स सापडले.")
+                    mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
+                    mcol1.metric("एकूण सिग्नल्स", cr["total"])
+                    win_rate_str = f"{cr['win_rate']}%" if cr["win_rate"] is not None else "N/A"
+                    mcol2.metric("Win Rate", win_rate_str)
+                    mcol3.metric("Target / SL", f"{cr['target_count']} / {cr['sl_count']}")
+                    mcol4.metric("अजून Open", cr["open_count"])
+                    total_pnl_pct = cr.get("total_pnl_pct")
+                    mcol5.metric("एकूण P&L (%)", f"{total_pnl_pct:+,.2f}%" if total_pnl_pct is not None else "N/A")
+                    mcol6, mcol7 = st.columns(2)
+                    mcol6.metric("Bullish (Support) / Bearish (Resistance)", f"{cr['bullish_count']} / {cr['bearish_count']}")
+                    mcol7.metric("5M-वरून / 15M-वरून", f"{cr['touch_5m_count']} / {cr['touch_15m_count']}")
+                    st.caption("⚠️ P&L हा index स्पॉट %-अंतरावर आधारित आहे — खरा Option Premium P&L नाही.")
+
+                    csr_sig_df = pd.DataFrame(cr["signals"])
+                    st.dataframe(csr_sig_df, width="stretch", height=280)
+                    csr_csv = csr_sig_df.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        "📥 Signals CSV डाऊनलोड करा", data=csr_csv,
+                        file_name=f"{symbol}_ClassicSRReversal_{cr_from}_{cr_to}.csv",
+                        mime="text/csv", key="csr_dl",
+                    )
 
 
     # =========================================================
