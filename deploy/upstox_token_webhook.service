@@ -1,0 +1,19 @@
+[Unit]
+Description=Upstox Token Webhook — मोबाईल Approve केल्यावर आलेला access_token Supabase मध्ये साठवतो
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — WorkingDirectory आणि python3 चा पूर्ण मार्ग तुमच्या
+# droplet वरच्या actual paths प्रमाणे बदला (उदा. जर virtualenv वापरत असाल तर तिथला python3).
+WorkingDirectory=/root/Trade
+ExecStart=/usr/bin/python3 /root/Trade/upstox_token_webhook.py
+# SUPABASE_DB_URL इथे थेट न लिहिता वेगळ्या env file मध्ये (खाली EnvironmentFile) — जेणेकरून हा
+# unit file git मध्ये commit केला तरी secrets लीक होणार नाहीत.
+EnvironmentFile=/root/Trade/.env
+
+[Install]
+WantedBy=multi-user.target
