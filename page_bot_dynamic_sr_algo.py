@@ -52,6 +52,19 @@ def render():
 
     settings = cloud_db.get_strategy_settings(strategy_key, symbol)
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (symbol_enabled) — "Symbol selection optional
+    # ठेवा, उपलब्ध भांडवलानुसार वापरकर्ता निवडणार" — त्यामुळे प्रत्येक symbol साठी स्वतंत्र मास्टर
+    # चालू/बंद स्विच (NIFTY डीफॉल्ट चालू — आधीपासूनचं वर्तन कायम; BANKNIFTY/SENSEX डीफॉल्ट बंद —
+    # वापरकर्त्याने भांडवल असल्यासच स्पष्टपणे सक्रिय करायचं). बंद असल्यास हा symbol या strategy
+    # साठी पूर्णपणे वगळला जातो — कुठलाही PAPER/LIVE trade घेतला जात नाही.
+    symbol_enabled = st.checkbox(
+        f"✅ {symbol} साठी {STRATEGY_LABELS[strategy_key]} सक्रिय (उपलब्ध भांडवलानुसार निवडा)",
+        value=bool(settings.get("symbol_enabled", symbol == "NIFTY")),
+        key=_widget_key(strategy_key, symbol, "symbol_enabled"),
+    )
+    if not symbol_enabled:
+        st.warning(f"⚠️ {symbol} सध्या बंद आहे — या symbol वर कुठलाही नवीन trade (Credit Spread किंवा Naked) घेतला जाणार नाही.")
+
     tab_entry, tab_exit = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate"])
 
     with tab_entry:
@@ -175,6 +188,7 @@ def render():
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
         new_settings = {
+            "symbol_enabled": bool(symbol_enabled),
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
             "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
             "entry_pcr_gate_enabled": bool(entry_pcr_gate_enabled),
