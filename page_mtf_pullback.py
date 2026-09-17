@@ -4,6 +4,7 @@
 import streamlit as st
 
 from upstox_api import fetch_candles, fetch_timeframe_df
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 
 
 def render():
@@ -11,7 +12,7 @@ def render():
     token_input = st.session_state["token_input"]
     underlying_price = st.session_state["underlying_price"]
 
-    st.subheader(f"🌉 {symbol} — MTF Pullback + Gap Fill (नवीन, प्रयोगिक)")
+    mega_header(f"🌉 {symbol} — MTF Pullback + Gap Fill (नवीन, प्रयोगिक)", HDR_BLUE)
     st.caption(
         "दोन स्वतंत्र रणनीती: (१) Fibonacci Pullback — 1H swing → 38.2-61.8% झोन → 15M Reversal + RSI. "
         "(२) Gap Fill — फक्त खरा overnight gap, पूर्णपणे भरला गेला की कुठलीही पुष्टी न घेता Entry."
@@ -45,7 +46,7 @@ def render():
                 st.caption(f"1H candles: {len(h1_mtf)} | 15M candles: {len(m15_mtf)} | Swings सापडले: {len(ps_mtf)}")
 
                 if mtf_strategy_choice == "gap_fill":
-                    st.markdown("##### 🎯 सध्या अजून न भरलेले Gaps (Live Monitoring)")
+                    sub_header("🎯 सध्या अजून न भरलेले Gaps (Live Monitoring)", HDR_TEAL)
                     open_gaps = mtf.find_open_gaps_now(h1_mtf, m15_mtf, ps_mtf, min_gap_pct=mtf_min_gap_pct)
                     if open_gaps.empty:
                         st.info("सध्या कुठलेही उघडे (unfilled) gaps नाहीत.")
@@ -57,7 +58,7 @@ def render():
                     sig_mtf = mtf.make_signals(h1_mtf, m15_mtf, ps_mtf, mtf_fib_low, mtf_fib_high, mtf_sl_pct, mtf_target_pct)
 
                 sig_mtf = mtf.evaluate(m15_mtf, sig_mtf)
-                st.markdown("##### 📜 अलीकडचे Signals")
+                sub_header("📜 अलीकडचे Signals", HDR_PURPLE)
                 if sig_mtf.empty:
                     st.info("या कालखंडात कुठलेही signals सापडले नाहीत.")
                 else:

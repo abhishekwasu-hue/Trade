@@ -8,6 +8,7 @@ from database import get_order_log_full, get_db_backup_bytes, restore_db_from_by
 from diagnostics import run_system_diagnostics
 from trading_engine import reconcile_positions
 from upstox_api import fetch_long_history, upload_to_google_drive
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 
 def render():
     symbol = st.session_state["symbol"]
@@ -60,7 +61,7 @@ def render():
                 st.warning("⚠️ वरील एक किंवा अधिक तपासण्यांमध्ये समस्या आढळली — ट्रेडिंग सुरू करण्याआधी बघा.")
 
     st.markdown("---")
-    st.subheader("📝 Order Book")
+    mega_header("📝 Order Book", HDR_BLUE)
     ord_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="ord_mode_filter")
     ord_mode_f = None if ord_mode_choice == "सर्व" else ("LIVE" if "LIVE" in ord_mode_choice else "PAPER")
 
@@ -101,7 +102,7 @@ def render():
 
     st.markdown("---")
     with st.expander("🛡️ Data Safety & Broker Reconciliation"):
-        st.markdown("##### 💾 Database Backup / Restore")
+        sub_header("💾 Database Backup / Restore", HDR_TEAL)
         st.caption(
             "Streamlit Cloud चा storage ephemeral आहे — container restart/redeploy झाला तर हा DB (सर्व trade "
             "history, OI history) मिटू शकतो. नियमितपणे (उदा. रोज ट्रेडिंगनंतर) backup डाऊनलोड करून ठेवा."
@@ -129,7 +130,7 @@ def render():
                         st.error(f"❌ {msg}")
 
         st.markdown("---")
-        st.markdown("##### 🔄 Broker Reconciliation (फक्त LIVE ट्रेड्ससाठी)")
+        sub_header("🔄 Broker Reconciliation (फक्त LIVE ट्रेड्ससाठी)", HDR_PURPLE)
         st.caption(
             "स्थानिक DB मधील OPEN LIVE ट्रेड्सची तुलना Upstox कडील खऱ्या पोझिशन्सशी करणे — तुम्ही Upstox "
             "app मधून manually एखादी पोझिशन बंद केली असेल, तर ती इथे लगेच दिसेल."

@@ -5,6 +5,7 @@ import pandas as pd
 from config import get_ist_now
 from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
 from trading_engine import close_trade_manually, reconcile_open_trades_with_broker
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
 
 
 def render():
@@ -12,7 +13,7 @@ def render():
     token_input = st.session_state["token_input"]
     product_type = st.session_state.get("product_type", "I")
 
-    st.subheader("💰 Positions — Real-Time MTM P&L")
+    mega_header("💰 Positions — Real-Time MTM P&L", HDR_BLUE)
 
     # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — कधी position Upstox च्या
     # स्वतःच्या app/website वरून थेट बंद केली, तर आपल्या database ला ते कळत नाही आणि इथे खोटी
@@ -38,7 +39,7 @@ def render():
         # 🎓 Portfolio-level Risk Dashboard — सर्व उघड्या positions एकत्र घेऊन, एकूण जोखीम आणि
         # दिशा-केंद्रीकरण (सर्व एकाच दिशेने असतील तर correlated risk जास्त) दाखवणे.
         risk_summary = compute_portfolio_risk_summary(positions_df)
-        st.markdown("##### 🎯 Portfolio Risk Summary")
+        sub_header("🎯 Portfolio Risk Summary", HDR_TEAL)
         rcol1, rcol2, rcol3, rcol4 = st.columns(4)
         with rcol1:
             st.metric("एकूण Positions", risk_summary["total_positions"])
@@ -57,7 +58,7 @@ def render():
         try:
             greeks = compute_portfolio_greeks(token_input, symbol, mode_filter=pos_mode_f)
             if greeks["positions_included"] > 0:
-                st.markdown("##### 🧮 Portfolio Greeks (निव्वळ)")
+                sub_header("🧮 Portfolio Greeks (निव्वळ)", HDR_PURPLE)
                 gcol1, gcol2, gcol3, gcol4 = st.columns(4)
                 with gcol1:
                     st.metric("Net Delta", f"{greeks['net_delta']:,.2f}", help="दिशात्मक जोखीम — धन=Bullish bias, ऋण=Bearish bias")
@@ -76,7 +77,7 @@ def render():
             per_position = compute_per_position_greeks(token_input, symbol, mode_filter=pos_mode_f)
             relevant = [p for p in per_position if p["strategy"] in ("IRON_CONDOR", "IRON_BUTTERFLY", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")]
             if relevant:
-                st.markdown("##### 🩺 Position-निहाय Delta Health Check")
+                sub_header("🩺 Position-निहाय Delta Health Check", HDR_ORANGE)
                 for p in relevant:
                     st.markdown(f"**{p['trade_id']}** ({p['strategy']}): {p['health_emoji']} {p['health_message']}")
         except Exception:
@@ -115,7 +116,7 @@ def render():
             mime="text/csv", key="positions_csv_download",
         )
 
-        st.markdown("##### 🔴 पोझिशन मॅन्युअली बंद करा")
+        sub_header("🔴 पोझिशन मॅन्युअली बंद करा", HDR_BLUE)
         st.caption(
             "एक, अनेक, किंवा सर्व पोझिशन्स एकाच वेळी निवडून बंद करता येतील — विशेषतः Manual Trading "
             "Panel मधून SL/Target न ठेवता उघडलेल्या पोझिशन्ससाठी उपयोगी (त्या आपोआप बंद होत नाहीत)."

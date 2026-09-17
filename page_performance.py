@@ -16,43 +16,15 @@ from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
 from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2, generate_performance_report_pdf
 from pnl_reports import generate_pnl_report
+from ui_headers import (
+    mega_header as _mega_header, mid_header as _mid_header, sub_header as _sub_header,
+    HDR_BLUE as _HDR_BLUE, HDR_TEAL as _HDR_TEAL, HDR_PURPLE as _HDR_PURPLE, HDR_ORANGE as _HDR_ORANGE,
+    HDR_PINK as _HDR_PINK, HDR_GREEN as _HDR_GREEN, HDR_AMBER as _HDR_AMBER, HDR_CYAN as _HDR_CYAN, HDR_RED as _HDR_RED,
+)
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Performance टॅब खूप crowded/एकसुरी दिसतोय, headings
-# मोठ्या फॉन्टमध्ये व multicolour हव्यात, catchy दिसावं" — आधी सर्व headings (st.subheader/### /#####)
-# एकाच फिकट राखाडी रंगात व एकसारख्या आकारात दिसत, त्यामुळे विभागांमध्ये स्पष्ट फरक जाणवत नव्हता.
-# आता तीन पातळ्यांचे रंगीत, मोठ्या फॉन्टचे headings — प्रत्येक विभागाला स्वतःचा रंग व जास्त
-# वर-खालची जागा (margin), जेणेकरून पान भरगच्च न वाटता, नजर पटकन हव्या त्या विभागाकडे जाईल.
-_HDR_BLUE, _HDR_TEAL, _HDR_PURPLE, _HDR_ORANGE = "#2962FF", "#00BFA5", "#AB47BC", "#FF6D00"
-_HDR_PINK, _HDR_GREEN, _HDR_AMBER, _HDR_CYAN, _HDR_RED = "#EC407A", "#66BB6A", "#FFC107", "#26C6DA", "#E64A19"
-
-
-def _mega_header(text, color):
-    """पानावरचे मुख्य विभाग (Performance Analytics/P&L Report/Signal Check/Multi-Strategy Backtest)
-    साठी — मोठा, ठळक, रंगीत, खालून जाड रंगीत रेषेसकट heading (आधीच्या st.subheader ऐवजी)."""
-    st.markdown(
-        f'<div style="font-size:2.1rem; font-weight:800; color:{color}; '
-        f'margin:2.4rem 0 1.1rem 0; padding-bottom:0.5rem; border-bottom:4px solid {color};">'
-        f'{text}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def _mid_header(text, color):
-    """मुख्य विभागाच्या आतले उप-विभाग (आधी "### ...") साठी — मध्यम मोठा, रंगीत heading."""
-    st.markdown(
-        f'<div style="font-size:1.55rem; font-weight:750; color:{color}; '
-        f'margin:1.8rem 0 0.9rem 0;">{text}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def _sub_header(text, color):
-    """सर्वात आतले उप-उप-विभाग (आधी "##### ...") साठी — रंगीत पण तुलनेने छोटा heading."""
-    st.markdown(
-        f'<div style="font-size:1.2rem; font-weight:700; color:{color}; '
-        f'margin:1.3rem 0 0.5rem 0;">{text}</div>',
-        unsafe_allow_html=True,
-    )
+# मोठ्या फॉन्टमध्ये व multicolour हव्यात, catchy दिसावं" — रंगीत, मोठ्या फॉन्टचे mega/mid/sub headings
+# (आता ui_headers.py मध्ये, इतर सर्व pages सोबत शेअर्ड — आधी इथेच वेगळे परिभाषित होते).
 
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Trading Charges) — "आतापर्यंतचे एकूण" Charges/Net P&L

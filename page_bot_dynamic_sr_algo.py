@@ -14,6 +14,7 @@ SL/TSL/Target Exit Gate, Naked Option Trade toggle) — एकाच पान�
 import streamlit as st
 
 import cloud_db
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
 STRATEGY_LABELS = {"1m_instant": "1-मिनिट Instant Trader (1M + 5M)", "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal"}
@@ -41,7 +42,7 @@ def _number_input(label, settings, key, strategy_key, symbol, **kwargs):
 
 
 def render():
-    st.subheader("🤖 Bot Dynamic SR Algo")
+    mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("दोन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     col_a, col_b = st.columns(2)
@@ -72,7 +73,7 @@ def render():
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategy मध्ये 1M आणि 5M दोन्ही
             # टाईमफ्रेमचे touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास
             # फक्त एकाच टाईमफ्रेमवर मर्यादित ठेवता येईल.
-            st.markdown("##### ⏱️ Touch Timeframe")
+            sub_header("⏱️ Touch Timeframe", HDR_TEAL)
             _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
             _tf_keys = list(_TF_OPTIONS.keys())
             timeframe_choice = st.radio(
@@ -83,7 +84,7 @@ def render():
             )
             st.markdown("---")
 
-        st.markdown("##### 🔻 Strike व Size निवड (Credit Spread — मुख्य ट्रेड)")
+        sub_header("🔻 Strike व Size निवड (Credit Spread — मुख्य ट्रेड)", HDR_PURPLE)
         st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -94,7 +95,7 @@ def render():
             hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
         st.markdown("---")
-        st.markdown("##### 🧭 RSI Gate")
+        sub_header("🧭 RSI Gate", HDR_ORANGE)
         entry_rsi_gate_enabled = st.checkbox(
             "RSI Gate सक्रिय (बंद केल्यास — फक्त S/R Touch वरच entry, RSI तपासला जाणार नाही)",
             value=bool(settings.get("entry_rsi_gate_enabled", True)),
@@ -121,7 +122,7 @@ def render():
             )
 
         st.markdown("---")
-        st.markdown("##### 🚦 PCR Gate")
+        sub_header("🚦 PCR Gate", HDR_PINK)
         entry_pcr_gate_enabled = st.checkbox(
             "PCR Gate सक्रिय (बंद केल्यास — PCR तपासला जाणार नाही, फक्त डेटा गहाळ/जुना असतानाचं सुरक्षा-कवचही बंद होईल)",
             value=bool(settings.get("entry_pcr_gate_enabled", True)),
@@ -141,7 +142,7 @@ def render():
             )
 
         st.markdown("---")
-        st.markdown("##### 🔺 Long With Hedge (Naked Option Trade)")
+        sub_header("🔺 Long With Hedge (Naked Option Trade)", HDR_GREEN)
         st.caption("त्याच सिग्नलवर, Credit Spread सोबतच, समांतर घेतला जातो. डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
         n0, n1 = st.columns(2)
         with n0:
@@ -151,7 +152,7 @@ def render():
         naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     with tab_exit:
-        st.markdown("##### 🎯 SL / TSL / Target (Credit Spread)")
+        sub_header("🎯 SL / TSL / Target (Credit Spread)", HDR_AMBER)
         if strategy_key == "1m_instant":
             st.caption("SL/TSL/Target — Spot% आणि Premium-Points दोन्ही एकत्र (जे आधी घडेल ते लागू).")
             s1, s2 = st.columns(2)
@@ -181,7 +182,7 @@ def render():
             st.caption("3:10pm ला Target अजून गाठलेला नसेल — नफा वरील % पेक्षा जास्त तर पुढच्या दिवशी चालू, नाहीतर आजच बंद. Exit त्याच timeframe च्या पुढच्या level ला (entry_timeframe नुसार).")
 
         st.markdown("---")
-        st.markdown("##### 🎯 SL / TSL / Target (Naked Option)")
+        sub_header("🎯 SL / TSL / Target (Naked Option)", HDR_CYAN)
         st.caption("Naked trade कधीच carry-forward नाही — नेहमी आजच (खालील EOD वेळेला) बंद.")
         m1, m2 = st.columns(2)
         with m1:
