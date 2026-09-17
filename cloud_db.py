@@ -178,6 +178,10 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 50,          # Short leg — ATM पासून किती points ITM
         "hedge_width_points": 150,       # Long hedge — short strike पासून किती दूर
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 1M आणि 5M दोन्ही टाईमफ्रेमचे touch levels
+        # डीफॉल्ट एकत्र (पूल केलेले) तपासले जातात, पण वापरकर्त्याला फक्त एकाच टाईमफ्रेमवर मर्यादित
+        # ठेवायचं असल्यास "1M" किंवा "5M" निवडता येईल — "BOTH" (डीफॉल्ट) = आधीचंच वर्तन कायम.
+        "timeframe_choice": "BOTH",      # "BOTH" | "1M" | "5M"
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
         # आधी RSI उंबरठे (Support<40/Resistance>60) module मध्ये hardcoded होते, PCR गेट कधीच बंद
         # करता येत नव्हता. आता दोन्ही Dashboard वरून (Entry Gate विभाग) नियंत्रित करता येतात —

@@ -91,10 +91,12 @@ def is_todays_expiry_day(access_token, symbol):
     return expiries[0] == get_ist_now().strftime("%Y-%m-%d")
 
 
-def _collect_pooled_levels(all_zones):
-    """1M आणि 5M दोन्ही ACTIVE levels एकाच यादीत — [(zone_row, timeframe_suffix), ...]."""
+def _collect_pooled_levels(all_zones, timeframes=None):
+    """दिलेल्या timeframes (डीफॉल्ट दोन्ही — 1M व 5M) च्या ACTIVE levels एकाच यादीत —
+    [(zone_row, timeframe_suffix), ...]. वापरकर्त्याने settings मधून फक्त एकच टाईमफ्रेम
+    (timeframe_choice="1M"/"5M") निवडली असेल, तर तेवढंच पूल केलं जातं."""
     pooled = []
-    for suffix in POOLED_TIMEFRAMES:
+    for suffix in (timeframes or POOLED_TIMEFRAMES):
         dyn_levels = all_zones[(all_zones["zone_type"].str.endswith(f"_{suffix}")) & (all_zones["status"] == "ACTIVE")]
         for _, row in dyn_levels.iterrows():
             pooled.append((row, suffix))
@@ -115,14 +117,16 @@ def process_symbol(access_token, symbol, lot_size=65):
     rsi_support_max = settings.get("rsi_support_max", RSI_SUPPORT_MAX)
     rsi_resistance_min = settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
+    timeframe_choice = settings.get("timeframe_choice", "BOTH")
+    active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
         return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
 
-    pooled_levels = _collect_pooled_levels(all_zones)
+    pooled_levels = _collect_pooled_levels(all_zones, active_timeframes)
     if not pooled_levels:
-        return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (1M/5M) नाहीत"
+        return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels ({'/'.join(active_timeframes)}) नाहीत"
 
     candles_df = fetch_candles(access_token, symbol, current_spot=0, interval="1minute", lookback_days=1)
     if candles_df is None or candles_df.empty:

@@ -68,6 +68,21 @@ def render():
     tab_entry, tab_exit = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate"])
 
     with tab_entry:
+        if strategy_key == "1m_instant":
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategy मध्ये 1M आणि 5M दोन्ही
+            # टाईमफ्रेमचे touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास
+            # फक्त एकाच टाईमफ्रेमवर मर्यादित ठेवता येईल.
+            st.markdown("##### ⏱️ Touch Timeframe")
+            _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
+            _tf_keys = list(_TF_OPTIONS.keys())
+            timeframe_choice = st.radio(
+                "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
+                _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
+                index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")),
+                key=_widget_key(strategy_key, symbol, "timeframe_choice"),
+            )
+            st.markdown("---")
+
         st.markdown("##### 🔻 Strike व Size निवड (Credit Spread — मुख्य ट्रेड)")
         st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
         c1, c2, c3 = st.columns(3)
@@ -202,6 +217,7 @@ def render():
             "naked_target_spot_pct": float(naked_target_spot_pct), "naked_target_premium_points": float(naked_target_premium_points),
         }
         if strategy_key == "1m_instant":
+            new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)
             new_settings["rsi_resistance_min"] = int(rsi_resistance_min)
             new_settings["spread_target_spot_pct"] = float(spread_target_spot_pct)
