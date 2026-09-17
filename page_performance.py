@@ -73,6 +73,37 @@ _SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL", "TSL_SL", "SL_H
 _TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT", "TARGET_HIT"}
 
 
+def _exit_basis_tag(exit_reason, detail):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PDF मध्ये SL/Target चा प्रकार लगेच दिसावा) —
+    exit_reason_detail च्या मजकुरावरून (trading_engine.evaluate_point_spot_exit() ने आधीच लिहिलेला,
+    "via Spot move"/"via Premium points"/"both ... simultaneously" इ.) SL/Target नेमका Spot%,
+    Premium Points, दोन्ही, की निव्वळ ₹ P&L वर आधारित होता हे लहान टॅगमध्ये काढणे — Exit Reason
+    स्तंभातच दिसावं म्हणून (नुसत्या लांब Detail स्तंभात दडलेला मजकूर वाचायला लागू नये)."""
+    if not detail or not isinstance(detail, str):
+        return None
+    if "via Spot move" in detail:
+        return "Spot %-based"
+    if "via Premium points" in detail:
+        return "Premium pts-based"
+    if exit_reason in ("SL", "TARGET") and "simultaneously" in detail:
+        return "Spot %+Premium pts"
+    if exit_reason == "TSL_SL":
+        return "Premium pts-based"
+    if exit_reason == "PREMIUM_TARGET":
+        return "Premium %-based"
+    if exit_reason in ("SL", "TRAILING_SL", "PCT_TRAILING_SL", "TARGET") and "total P&L" in detail:
+        return "Fixed Rs P&L-based"
+    return None
+
+
+def _exit_reason_label_with_tag(exit_reason, detail):
+    """_EXIT_REASON_LABELS_PLAIN चं लेबल + (शक्य असल्यास) _exit_basis_tag() चा टॅग — फक्त PDF च्या
+    Exit Reason स्तंभासाठी (जुन्या, या feature आधीच्या trades साठी detail नसल्याने टॅगशिवायच राहतं)."""
+    label = _EXIT_REASON_LABELS_PLAIN.get(exit_reason, exit_reason)
+    tag = _exit_basis_tag(exit_reason, detail)
+    return f"{label} ({tag})" if tag else label
+
+
 def _entry_reason_text(row):
     """source/entry_timeframe/entry_level_price/strategy या आधीपासूनच साठवलेल्या स्तंभांवरून, प्रत्येक
     trade साठी वाचनीय 'Entry Reason' मजकूर तयार करणे (कारण एकच स्वतंत्र मजकूर-स्तंभ आधी साठवलेला नव्हता)."""
@@ -388,7 +419,11 @@ def render():
             # PDF साठी वेगळा, इमोजी-विरहित (plain) DataFrame — on-screen table मात्र इमोजीसकटच राहतो.
             trade_log_pdf_df = trade_log_df.copy()
             trade_log_pdf_df["Entry Reason"] = trade_log_pdf_df.apply(_entry_reason_text_en, axis=1)
-            trade_log_pdf_df["Exit Reason"] = trade_log_pdf_df["exit_reason"].map(lambda r: _EXIT_REASON_LABELS_PLAIN.get(r, r))
+            # 🎓 Exit Reason स्तंभातच SL/Target चा नेमका प्रकार (Spot %-based / Premium pts-based /
+            # दोन्ही / Fixed Rs P&L-based) दिसावा — फक्त लांब Detail स्तंभात दडलेला राहू नये.
+            trade_log_pdf_df["Exit Reason"] = trade_log_pdf_df.apply(
+                lambda r: _exit_reason_label_with_tag(r["exit_reason"], r["exit_reason_detail"]), axis=1,
+            )
             trade_log_pdf_df["Exit Reason Detail"] = trade_log_pdf_df["exit_reason_detail"].fillna("-")
             trade_log_pdf_df = trade_log_pdf_df[[
                 "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
@@ -426,7 +461,12 @@ def render():
 
         st.markdown("---")
         st.markdown("##### 📄 संपूर्ण Performance Report (PDF)")
-        st.caption("वरील संपूर्ण विश्लेषण (Summary, Strategy/Timeframe breakdown, प्रत्येक Trade चं Entry+Exit कारण, शिफारसी) एकाच, प्रिंट-योग्य PDF मध्ये (इंग्रजीत — PDF fonts मध्ये मराठी glyphs उपलब्ध नाहीत).")
+        st.caption(
+            "वरील संपूर्ण विश्लेषण (Summary, Strategy/Timeframe breakdown, प्रत्येक Trade चं Entry+Exit कारण, शिफारसी) "
+            "एकाच, प्रिंट-योग्य PDF मध्ये (इंग्रजीत — PDF fonts मध्ये मराठी glyphs उपलब्ध नाहीत). Trade Log मधल्या "
+            "प्रत्येक SL/Target साठी तो नेमका Spot% मुळे, Premium Points मुळे, दोन्ही मुळे, की निव्वळ ठराविक ₹ "
+            "P&L level मुळे लागला हे Exit Reason स्तंभातच कंसात दाखवलं जातं."
+        )
         if st.button("📄 Performance Report PDF तयार करा", key="perf_pdf_generate"):
             with st.spinner("PDF तयार होत आहे..."):
                 an_summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)

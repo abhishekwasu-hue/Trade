@@ -15,6 +15,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.pdfgen.canvas import Canvas as _BaseCanvas
 
 from signals import add_price_action_overlays, describe_price_action, calculate_supertrend, calculate_rsi, analyze_chart_zones, check_price_action_strategy, find_swing_sr_levels_rolling, get_nearest_sr
 from trading_engine import normalize_legs
@@ -1539,25 +1540,111 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
         return None
 
 
-def _rec_text_to_paragraph(rec_markdown):
+_REC_HEX = {"red": "#F23645", "green": "#089981", "amber": "#D68A00", "grey": "#787B86"}
+
+
+def _rec_callout(rec_markdown, usable_width):
     """Performance टॅबवरच्या rule-based शिफारसींची इंग्रजी आवृत्ती (Streamlit markdown: **bold**,
-    ⚠️/✅/🟡 emoji prefix) -> reportlab Paragraph (<b> tags, इमोजीऐवजी रंगीत [!]/[+]/[~] चिन्ह — PDF
-    fonts मध्ये इमोजी glyphs नसल्याने)."""
+    ⚠️/✅/🟡 emoji prefix) -> रंगीत डाव्या पट्टीसकट "callout box" (reportlab Table, तिचं Paragraph
+    <b> tags सकट) — इमोजीऐवजी [!]/[+]/[~] चिन्ह (PDF fonts मध्ये इमोजी glyphs नसल्याने), प्लेन
+    मजकुरापेक्षा अधिक ठळक/आकर्षक दिसावं म्हणून हलक्या tint background असलेला बॉक्स."""
     text = rec_markdown.strip()
     if text.startswith("⚠️"):
-        color, tag, text = _C_RED, "[!]", text[2:].strip()
+        key, color, bg, tag, text = "red", _C_RED, _C_RED_BG, "[!]", text[2:].strip()
     elif text.startswith("✅"):
-        color, tag, text = _C_GREEN, "[+]", text[2:].strip()
+        key, color, bg, tag, text = "green", _C_GREEN, _C_GREEN_BG, "[+]", text[2:].strip()
     elif text.startswith("🟡"):
-        color, tag, text = _C_AMBER, "[~]", text[2:].strip()
+        key, color, bg, tag, text = "amber", _C_AMBER, _C_AMBER_BG, "[~]", text[2:].strip()
     else:
-        color, tag = _C_GREY, "[-]"
+        key, color, bg, tag = "grey", _C_GREY, _C_GREY_BG, "[-]"
     html_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
-    style = ParagraphStyle(
-        "perf_rec", fontName=_RPT_FONT, fontSize=10.5, leading=14,
-        textColor=color, spaceBefore=2, spaceAfter=6, leftIndent=4,
+    body_style = ParagraphStyle(
+        "perf_rec", fontName=_RPT_FONT, fontSize=10.5, leading=14, textColor=colors.HexColor("#222222"),
     )
-    return Paragraph(f"<b>{tag}</b> {html_text}", style)
+    para = Paragraph(f"<b><font color='{_REC_HEX[key]}'>{tag}</font></b> {html_text}", body_style)
+    bar_w = 0.3 * cm
+    tbl = Table([["", para]], colWidths=[bar_w, usable_width - bar_w])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), color), ("BACKGROUND", (1, 0), (1, -1), bg),
+        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (1, 0), (1, -1), 10), ("RIGHTPADDING", (1, 0), (1, -1), 10),
+        ("LEFTPADDING", (0, 0), (0, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return tbl
+
+
+_STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_RPT_FONT, leading=13, alignment=TA_LEFT)
+
+
+def _stat_cards_row(items, usable_width):
+    """items: [(label, value_str, hex_color_or_None), ...] -> एक रांग समान-रुंदीच्या "dashboard"
+    कार्डांची (छोटं राखाडी लेबल वर, मोठा ठळक आकडा खाली) — Summary स्तंभात एका दृष्टिक्षेपात सर्वात
+    महत्त्वाचे आकडे (Total Trades/Win Rate/Net P&L/Profit Factor) दिसावेत म्हणून, प्लेन टेबलपेक्षा
+    जास्त आकर्षक/स्कॅन-करण्यायोग्य."""
+    n = len(items)
+    cell_w = usable_width / n
+    cells = []
+    for label, value, hex_color in items:
+        value_color = hex_color or "#131722"
+        cells.append(Paragraph(
+            f'<font size=9 color="#666666">{label}</font><br/>'
+            f'<font size=17 color="{value_color}"><b>{value}</b></font>',
+            _STAT_CARD_STYLE,
+        ))
+    tbl = Table([cells], colWidths=[cell_w] * n)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG), ("GRID", (0, 0), (-1, -1), 0.75, colors.white),
+        ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return tbl
+
+
+def _exit_reason_color(label):
+    """Trade Log च्या Exit Reason सेलला रंग देण्यासाठी — SL-प्रकार लाल, Target-प्रकार हिरवा, Trailing
+    SL अंबर, EOD राखाडी — जेणेकरून लांब टेबलमध्येही नजर फिरवताच कोणता trade कसा बंद झाला दिसेल."""
+    t = str(label)
+    if "Trailing SL" in t:
+        return _C_AMBER, _C_AMBER_BG
+    if "Stop-Loss" in t:
+        return _C_RED, _C_RED_BG
+    if "Target" in t:
+        return _C_GREEN, _C_GREEN_BG
+    if "EOD" in t:
+        return _C_GREY, _C_GREY_BG
+    return None, None
+
+
+class _NumberedCanvas(_BaseCanvas):
+    """"Page X of Y" फूटर काढणारा canvas — reportlab च्या standard delayed-page-count pattern नुसार
+    (एकूण पानसंख्या आधी माहीत नसते, त्यामुळे सर्व पानं आधी बफर करून, save() वेळी फूटर काढून लिहितो)."""
+
+    def __init__(self, *args, **kwargs):
+        _BaseCanvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_footer(total_pages)
+            _BaseCanvas.showPage(self)
+        _BaseCanvas.save(self)
+
+    def _draw_footer(self, total_pages):
+        self.setStrokeColor(colors.HexColor("#DDDDDD"))
+        self.setLineWidth(0.5)
+        self.line(1.4 * cm, 1.1 * cm, A4[0] - 1.4 * cm, 1.1 * cm)
+        self.setFont(_RPT_TABLE_FONT, 8)
+        self.setFillColor(colors.HexColor("#888888"))
+        self.drawString(1.4 * cm, 0.65 * cm, "A1 TRADING SYSTEM — Performance Report")
+        self.drawRightString(A4[0] - 1.4 * cm, 0.65 * cm, f"Page {self._pageNumber} of {total_pages}")
 
 
 _TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=7.5, leading=9.5)
@@ -1583,13 +1670,20 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     header_row = [Paragraph(_fix_missing_glyphs(str(c)), _TRADE_LOG_HEADER_STYLE) for c in columns]
     data = [header_row]
     pnl_col_idx = columns.index("Realized P&L") if "Realized P&L" in columns else None
+    exit_col_idx = columns.index("Exit Reason") if "Exit Reason" in columns else None
     pnl_row_colors = {}
+    exit_row_colors = {}
     for row_idx, row in enumerate(display_df.itertuples(index=False), start=1):
         row_cells = []
         for col_idx, (col_name, val) in enumerate(zip(columns, row)):
             if col_name == "Realized P&L":
                 pnl_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
                 row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
+            elif col_name == "Exit Reason":
+                text_color, bg_color = _exit_reason_color(val)
+                if text_color is not None:
+                    exit_row_colors[row_idx] = (text_color, bg_color)
+                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
             elif col_name in wrap_columns:
                 row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
             else:
@@ -1608,6 +1702,10 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     if pnl_col_idx is not None:
         for row_idx, color in pnl_row_colors.items():
             style_cmds.append(("TEXTCOLOR", (pnl_col_idx, row_idx), (pnl_col_idx, row_idx), color))
+    if exit_col_idx is not None:
+        for row_idx, (text_color, bg_color) in exit_row_colors.items():
+            style_cmds.append(("TEXTCOLOR", (exit_col_idx, row_idx), (exit_col_idx, row_idx), text_color))
+            style_cmds.append(("BACKGROUND", (exit_col_idx, row_idx), (exit_col_idx, row_idx), bg_color))
     tbl.setStyle(TableStyle(style_cmds))
     result = [tbl]
     if len(df) > max_rows:
@@ -1632,7 +1730,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     """
     generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm, topMargin=1.2 * cm, bottomMargin=1.7 * cm)
     usable_width = A4[0] - 2.8 * cm
     story = []
     sec = [0]
@@ -1652,6 +1750,9 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
     story.append(title_tbl)
+    accent_bar = Table([[""]], colWidths=[18 * cm], rowHeights=[0.15 * cm])
+    accent_bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _C_ACCENT)]))
+    story.append(accent_bar)
     story.append(Spacer(1, 10))
 
     meta_tbl = Table([[
@@ -1689,6 +1790,17 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             2: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
             4: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
         }
+        win_rate = summary["win_rate"]
+        win_hex = "#089981" if win_rate >= 50 else "#F23645"
+        net_hex = "#089981" if net_pnl >= 0 else "#F23645"
+        pf_hex = "#089981" if (summary.get("profit_factor") or 0) >= 1 else "#F23645"
+        story.append(_stat_cards_row([
+            ("TOTAL TRADES", str(summary["total_trades"]), None),
+            ("WIN RATE", f"{win_rate}%", win_hex),
+            ("NET P&L (AFTER CHARGES)", f"Rs {net_pnl:,.0f}", net_hex),
+            ("PROFIT FACTOR", pf_str, pf_hex),
+        ], usable_width))
+        story.append(Spacer(1, 6))
         story.append(_kv_table(summary_rows, usable_width, key_ratio=0.4, force_colors=force_colors))
     story.append(Spacer(1, 8))
 
@@ -1728,7 +1840,8 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ))
     else:
         for rec in recommendations:
-            story.append(_rec_text_to_paragraph(rec))
+            story.append(_rec_callout(rec, usable_width))
+            story.append(Spacer(1, 4))
     story.append(Spacer(1, 8))
 
     story.append(PageBreak())
@@ -1736,6 +1849,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     if trade_log_df is None or trade_log_df.empty:
         story.append(Paragraph("No closed trades in this period.", ParagraphStyle("no_trades", fontName=_RPT_FONT, fontSize=11)))
     else:
+        story.append(Paragraph(
+            "Every SL/Target Exit Reason below names the exact basis it was triggered on — "
+            "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
+            "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance.",
+            ParagraphStyle("trade_log_note", fontName=_RPT_FONT, fontSize=9.5, leading=13, textColor=colors.HexColor("#555555"), spaceAfter=6),
+        ))
         story.extend(_build_trade_log_table(trade_log_df, usable_width, max_rows=250))
 
     story.append(Spacer(1, 10))
@@ -1745,6 +1864,6 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         _rpt_footer,
     ))
 
-    doc.build(story)
+    doc.build(story, canvasmaker=_NumberedCanvas)
     buf.seek(0)
     return buf.getvalue()
