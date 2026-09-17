@@ -712,6 +712,65 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
         })
     return pd.DataFrame(rows).sort_values("Total P&L", ascending=False)
 
+
+def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date=None):
+    """प्रत्येक बंद (CLOSED) trade चा तपशील — Entry (source/timeframe/level/option-structure) आणि
+    Exit (exit_reason) या दोन्हींसकट — Performance टॅबवरच्या 'Entry+Exit कारण' Trade Log साठी."""
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
+                      COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
+                      entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy,
+                      COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, realized_pnl AS "Realized P&L",
+                      COALESCE(mode, 'LIVE') AS mode
+               FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
+    params = [symbol]
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
+    query += " ORDER BY exit_time DESC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_exit_reason_breakdown(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
+    """group_col (source/entry_timeframe) आणि exit_reason नुसार एकत्रित आकडे — कोणत्या कारणाने
+    (SL/Target/Trailing SL/EOD वगैरे) सर्वात जास्त वेळा बाहेर पडलं जातं हे strategy/timeframe-निहाय
+    तपासण्यासाठी — SL/Target/Trailing-SL सेटिंग्ज optimize करण्याच्या शिफारशींचा आधार."""
+    conn = sqlite3.connect(DB_PATH)
+    col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
+    query = f"""SELECT {col_expr} AS grp, COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, realized_pnl
+                FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
+    params = [symbol]
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for (grp, reason), sub in df.groupby(["grp", "exit_reason"]):
+        rows.append({
+            "Group": grp, "Exit Reason": reason, "Trades": len(sub),
+            "Total P&L": round(sub["realized_pnl"].sum(), 2),
+            "Avg P&L": round(sub["realized_pnl"].mean(), 2),
+        })
+    return pd.DataFrame(rows)
+
 def get_order_log_full(symbol, start_date=None, end_date=None, mode_filter=None):
     """Order Log — दिलेल्या तारीख-रेंजमध्ये (start_date/end_date न दिल्यास सर्व), मर्यादा-विरहित —
     Orders टॅबवरच्या तारीख-रेंज फिल्टर व CSV डाऊनलोडसाठी."""
