@@ -612,9 +612,10 @@ def compute_portfolio_risk_summary(positions_df):
         "concentration_warning": concentration_warning,
     }
 
-def get_performance_summary(symbol, mode_filter=None, style_filter=None):
+def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
     """
     बंद झालेल्या (CLOSED) ट्रेड्सवरून Win Rate, Avg P&L, Profit Factor वगैरे मूळ कामगिरी आकडे काढणे.
+    start_date/end_date दिले (उदा. आजची तारीख दोन्हीसाठी) तर फक्त त्या exit_time रेंजमधले trades मोजले जातात.
     """
     conn = sqlite3.connect(DB_PATH)
     query = "SELECT realized_pnl FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"
@@ -625,6 +626,12 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None):
     if style_filter:
         query += " AND COALESCE(trading_style,'INTRADAY')=?"
         params.append(style_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
 
@@ -671,8 +678,10 @@ def get_equity_curve_data(symbol, mode_filter=None, style_filter=None):
     df["cumulative_pnl"] = df["realized_pnl"].cumsum()
     return df
 
-def get_performance_by_group(symbol, group_col, mode_filter=None):
-    """strategy किंवा trading_style नुसार कामगिरीची विभागणी (Win Rate, Total P&L, Trade Count)."""
+def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
+    """strategy (source)/entry_timeframe/trading_style नुसार कामगिरीची विभागणी (Win Rate, Total P&L,
+    Trade Count) — कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे ठरवण्यासाठी. start_date/end_date दिले
+    तर फक्त त्या exit_time रेंजमधलेच trades मोजले जातात (न दिल्यास संपूर्ण इतिहास)."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
     query = f"""SELECT {col_expr} AS grp, realized_pnl FROM live_trades
@@ -681,6 +690,12 @@ def get_performance_by_group(symbol, group_col, mode_filter=None):
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     if df.empty:
