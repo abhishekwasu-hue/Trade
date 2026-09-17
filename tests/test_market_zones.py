@@ -72,3 +72,67 @@ class TestComputeAllZonesDailyRefresh:
         zone_types = set(zones_df["zone_type"])
         assert "DYNAMIC_SR_SUPPORT_1M" not in zone_types and "DYNAMIC_SR_SUPPORT_5M" not in zone_types
         assert "DYNAMIC_SR_SUPPORT_15M" in zone_types or "DYNAMIC_SR_RESISTANCE_15M" in zone_types
+
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Market Zones पानावरचा नवीन "5M/15M Confluence
+# Table" (Support/Resistance + Demand/Supply + Order Block, सद्य किमतीच्या सापेक्ष).
+
+def _row(ts, o, h, l, c):
+    return {"timestamp": pd.Timestamp(ts), "open": o, "high": h, "low": l, "close": c}
+
+
+def _quiet_then_impulsive_bars(start_ts="2024-01-02 09:15:00"):
+    """२१ शांत bars + एक विरुद्ध (bearish, Order Block उमेदवार) candle + एक मोठी impulsive तेजीची
+    candle + काही bars नंतर (mitigation-तपासणीसाठी) — detect_order_blocks() ला खरा BULLISH_OB
+    (99.4-100.6 भोवती) सापडावा म्हणून, प्रत्यक्ष चालवून पडताळलेला डेटा."""
+    ts0 = pd.Timestamp(start_ts)
+    rows = []
+    for i in range(21):
+        v = 100.0 + (i % 3) * 0.2
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * i), v, v + 0.3, v - 0.3, v))
+    rows.append(_row(ts0 + pd.Timedelta(minutes=5 * 21), 100.5, 100.6, 99.4, 99.5))
+    rows.append(_row(ts0 + pd.Timedelta(minutes=5 * 22), 99.5, 115.5, 99.3, 115.0))
+    for j, v in enumerate([116, 117]):
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * (23 + j)), v, v + 0.3, v - 0.3, v))
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
+class TestCompute5m15mConfluenceRow:
+    def test_support_resistance_from_stored_dynamic_sr_zones(self):
+        dyn_sr = pd.DataFrame([
+            {"zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23000.0, "zone_high": 23000.0, "status": "ACTIVE"},
+            {"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 23100.0, "zone_high": 23100.0, "status": "ACTIVE"},
+            {"zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 22900.0, "zone_high": 22900.0, "status": "FILLED"},  # FILLED -> दुर्लक्षित
+        ])
+        row = mz.compute_5m_15m_confluence_row("5M", None, dyn_sr, current_price=23050.0)
+        assert row["support_level"] == 23000.0
+        assert row["resistance_level"] == 23100.0
+        assert row["support_distance_pct"] < 0  # support नेहमी सद्य किमतीच्या खाली -> ऋण अंतर
+        assert row["resistance_distance_pct"] > 0
+
+    def test_order_block_and_demand_supply_computed_live(self):
+        df = _quiet_then_impulsive_bars()
+        row = mz.compute_5m_15m_confluence_row("5M", df, None, current_price=116.0)
+        assert row["order_block_type"] == "BULLISH_OB"
+        assert row["order_block_low"] == 99.4
+        assert row["order_block_high"] == 100.6
+        assert row["order_block_distance_pct"] < 0  # OB सद्य किमतीच्या खाली आहे
+        # Demand/Supply zones (swing-आधारित) — काहीतरी सापडलं पाहिजे, नेमकं मूल्य data-specific
+        assert row["demand_zone_low"] is not None
+        assert row["supply_zone_low"] is not None
+
+    def test_insufficient_data_returns_none_fields(self):
+        df = _quiet_then_impulsive_bars().head(3)  # order/avg_window साठी खूपच कमी
+        row = mz.compute_5m_15m_confluence_row("5M", df, None, current_price=100.0)
+        assert row["demand_zone_low"] is None
+        assert row["order_block_type"] is None
+        assert row["support_level"] is None  # dynamic_sr_zones_df=None दिलेला
+
+
+class TestCompute5m15mConfluenceTable:
+    def test_returns_one_row_per_timeframe_in_order(self):
+        df_5m = _quiet_then_impulsive_bars()
+        df_15m = _quiet_then_impulsive_bars(start_ts="2024-01-02 09:15:00")
+        table = mz.compute_5m_15m_confluence_table(116.0, {"5M": df_5m, "15M": df_15m}, None)
+        assert list(table["timeframe"]) == ["5M", "15M"]
+        assert len(table) == 2
