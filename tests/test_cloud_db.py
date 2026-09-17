@@ -343,6 +343,25 @@ class TestSignalLog:
                                           "level_type": "x", "level_price": 1, "hit_type": "x", "direction": "x"}) is False
         assert cloud_db.get_signal_log("NIFTY", "2026-09-05") is None
 
+    def test_get_signal_log_range_returns_dataframe(self, monkeypatch):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-05 10:15", "DYNAMIC_SR_SUPPORT", 23900.0, "TOUCH", "BULLISH", 23901.0, "OPENED", ""),
+            ("2026-09-03 11:20", "SUPPORT", 23800.0, "NO_HIT", "BEARISH", 23850.0, None, ""),
+        ]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        df = cloud_db.get_signal_log_range("NIFTY", "2026-09-01", "2026-09-05")
+        assert len(df) == 2
+        assert list(df.columns) == ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]
+        assert "BETWEEN" in mock_cursor.execute.call_args.args[0]
+
+    def test_get_signal_log_range_no_connection_returns_none(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        assert cloud_db.get_signal_log_range("NIFTY", "2026-09-01", "2026-09-05") is None
+
 
 class TestSRv2StrategyState:
     """

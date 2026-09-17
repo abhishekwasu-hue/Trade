@@ -692,6 +692,30 @@ def get_signal_log(symbol, trade_date):
         conn.close()
 
 
+def get_signal_log_range(symbol, start_date, end_date):
+    """दिलेल्या तारीख-रेंजमधला (दोन्ही तारखा सहित) संपूर्ण Signal Log वाचणे — Market Zones टॅबवरच्या
+    तारीख-रेंज फिल्टरसाठी (get_signal_log() फक्त एका दिवसापुरता मर्यादित आहे)."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT signal_time, level_type, level_price, hit_type, direction, ltp_at_signal,
+                          trade_status, reason
+                   FROM signal_log WHERE symbol=%s AND trade_date BETWEEN %s AND %s ORDER BY signal_time DESC""",
+                (symbol, start_date, end_date),
+            )
+            rows = cur.fetchall()
+            cols = ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]
+            return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        _logger.exception("get_signal_log_range() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+    finally:
+        conn.close()
+
+
 def save_nifty_1min_batch(rows):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — मोठ्या प्रमाणात (लाखो) 1-मिनिट candles efficiently

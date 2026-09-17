@@ -6,7 +6,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import get_ist_now, get_ist_today
-from database import get_performance_summary, get_equity_curve_data, get_performance_by_group
+from database import (
+    get_performance_summary, get_equity_curve_data, get_performance_by_group,
+    get_closed_trades_detail, get_exit_reason_breakdown,
+)
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2
 from upstox_api import fetch_candles_date_range
 from signals import resample_to_1h
@@ -19,6 +22,146 @@ from pnl_reports import generate_pnl_report
 # (हे app अस्तित्वात येण्याआधीचीच) वापरली आहे — त्यामुळे "आतापर्यंतचा संपूर्ण इतिहास" कव्हर होतो.
 _ALL_TIME_START = datetime.date(2020, 1, 1)
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "कोणती रणनीती (algo) जास्त फायदेशीर आहे" हे कळावं म्हणून
+# live_trades.source कोडला वाचनीय नाव — जेणेकरून टेबल/चार्टमध्ये कच्चा internal कोड ऐवजी नाव दिसेल.
+_SOURCE_LABELS = {
+    "dynamic_sr_instant": "1-Min Instant Trader (Dynamic S/R)",
+    "srv2_momentum_reversal": "SRv2 Momentum Reversal (15/30/60M)",
+    "credit_spread_auto_trader": "Credit Spread Auto Trader",
+    "oi_signal_auto_trader": "OI Signal Auto Trader",
+    "oi_greeks_vix_strategy": "OI + Greeks + VIX Strategy",
+    "strategy_builder": "Strategy Builder (Custom)",
+    "MANUAL": "Manual Entry",
+    "DASHBOARD": "Dashboard (Manual)",
+    "MULTI_ACCOUNT": "Multi-Account Copy",
+    "UNKNOWN": "अज्ञात (जुने ट्रेड्स)",
+}
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "प्रत्येक trade चं Entry व Exit कारण दिसायला हवं" या
+# मागणीसाठी — live_trades.exit_reason (आधीपासूनच साठवलेला) वाचनीय स्वरूपात दाखवण्यासाठी.
+_EXIT_REASON_LABELS = {
+    "SL": "🔴 Stop-Loss गाठला",
+    "TRAILING_SL": "🟡 Trailing SL (ATR-आधारित)",
+    "PCT_TRAILING_SL": "🟡 Trailing SL (%-आधारित)",
+    "TARGET": "🟢 Target गाठला",
+    "PREMIUM_TARGET": "🟢 Premium Target गाठला",
+    "NEXT_LEVEL_EXIT": "🟢 पुढचा S/R Level गाठला (profit-booked)",
+    "EOD_SQUAREOFF": "⚪ EOD Square-off (दिवसअखेर)",
+    "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT": "⚪ अपुरा नफा — carry न करता बंद",
+    "OI_REVERSAL": "🔵 OI Reversal सिग्नल",
+    "MANUAL_CLOSE": "✋ मॅन्युअली बंद केलं",
+    "RECONCILED_EXTERNAL_CLOSE": "↔️ Broker कडून बाहेरून बंद (Reconciled)",
+    "UNKNOWN": "अज्ञात",
+}
+# SL/TSL प्रकारचे exit_reason "जोखीम-नियंत्रण" (जोखीम मर्यादित करण्यासाठी बंद) म्हणून एकत्र मोजण्यासाठी.
+_SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL"}
+_TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT"}
+
+
+def _entry_reason_text(row):
+    """source/entry_timeframe/entry_level_price/strategy या आधीपासूनच साठवलेल्या स्तंभांवरून, प्रत्येक
+    trade साठी वाचनीय 'Entry Reason' मजकूर तयार करणे (कारण एकच स्वतंत्र मजकूर-स्तंभ आधी साठवलेला नव्हता)."""
+    src = _SOURCE_LABELS.get(row["source"], row["source"])
+    tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
+    lvl = f"₹{row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
+    return f"{src} — {tf} S/R level ({lvl}) touch; रचना: {row['strategy']}"
+
+
+def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date, chart_title):
+    """group_col (source/entry_timeframe/strategy/trading_style) नुसार कामगिरी — टेबल + बार चार्ट +
+    विजेता/पराभूत caption. कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे एका दृष्टिक्षेपात कळावं म्हणून."""
+    df = get_performance_by_group(symbol, group_col, mode_filter=mode_filter, start_date=start_date, end_date=end_date)
+    if df.empty:
+        st.caption("या कालावधीत डेटा नाही.")
+        return None
+    if group_col == "source":
+        df = df.copy()
+        df["Group"] = df["Group"].map(lambda g: _SOURCE_LABELS.get(g, g))
+    df_sorted = df.sort_values("Total P&L", ascending=False).reset_index(drop=True)
+    best, worst = df_sorted.iloc[0], df_sorted.iloc[-1]
+    if len(df_sorted) > 1:
+        st.success(f"🏆 सर्वाधिक फायदेशीर: **{best['Group']}** — ₹{best['Total P&L']:,.0f} ({best['Trades']} trades, Win Rate {best['Win Rate %']}%)")
+        st.error(f"📉 सर्वात कमी फायदेशीर: **{worst['Group']}** — ₹{worst['Total P&L']:,.0f} ({worst['Trades']} trades, Win Rate {worst['Win Rate %']}%)")
+    else:
+        st.info(f"फक्त एकच गट सापडला: **{best['Group']}** — ₹{best['Total P&L']:,.0f}")
+
+    bar_colors = ["#26A69A" if v >= 0 else "#EF5350" for v in df_sorted["Total P&L"]]
+    fig = go.Figure(go.Bar(
+        x=df_sorted["Group"], y=df_sorted["Total P&L"], marker_color=bar_colors,
+        text=df_sorted["Total P&L"].map(lambda v: f"₹{v:,.0f}"), textposition="outside",
+    ))
+    fig.update_layout(
+        template="plotly_dark", height=300, margin=dict(l=10, r=10, t=30, b=30),
+        paper_bgcolor="#131722", plot_bgcolor="#131722", title=chart_title, yaxis_title="Total P&L (₹)",
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.dataframe(df_sorted, width="stretch", hide_index=True)
+    return df_sorted
+
+
+def _build_recommendations(symbol, group_col, group_label, mode_filter, start_date, end_date, min_trades=5):
+    """group_col (source/entry_timeframe) नुसार exit_reason वितरण तपासून, SL/Target/Trailing-SL
+    सेटिंग्ज कशा optimize कराव्यात याबद्दल नियम-आधारित (rule-based), आकड्यांसकट शिफारशी तयार करणे.
+    कमी trades (< min_trades) असलेले गट सांख्यिकीयदृष्ट्या अविश्वसनीय म्हणून वगळले जातात."""
+    exit_df = get_exit_reason_breakdown(symbol, group_col, mode_filter=mode_filter, start_date=start_date, end_date=end_date)
+    if exit_df.empty:
+        return []
+
+    recs = []
+    for grp, sub in exit_df.groupby("Group"):
+        total_trades = sub["Trades"].sum()
+        if total_trades < min_trades:
+            continue
+        total_pnl = sub["Total P&L"].sum()
+        grp_label = _SOURCE_LABELS.get(grp, grp) if group_col == "source" else grp
+
+        sl_sub = sub[sub["Exit Reason"].isin(_SL_TYPE_EXIT_REASONS)]
+        target_sub = sub[sub["Exit Reason"].isin(_TARGET_TYPE_EXIT_REASONS)]
+        eod_sub = sub[sub["Exit Reason"] == "EOD_SQUAREOFF"]
+
+        sl_trades = sl_sub["Trades"].sum()
+        sl_pct = sl_trades / total_trades * 100
+        target_trades = target_sub["Trades"].sum()
+        target_pct = target_trades / total_trades * 100
+        eod_trades = eod_sub["Trades"].sum()
+        eod_pct = eod_trades / total_trades * 100
+        eod_pnl = eod_sub["Total P&L"].sum()
+
+        if sl_pct >= 50 and total_pnl < 0:
+            recs.append(
+                f"⚠️ **{group_label}: {grp_label}** — {sl_pct:.0f}% trades ({int(sl_trades)}/{int(total_trades)}) "
+                f"SL/Trailing-SL ला touch होऊन बंद झाले आणि एकूण निव्वळ तोटा ₹{total_pnl:,.0f} आहे. "
+                "सुचवलेली दुरुस्ती: Entry गेट्स (RSI/PCR) अजून कडक करा, किंवा SL % थोडं वाढवून बघा — "
+                "सध्याचा SL खूप घट्ट असून सामान्य चढ-उतारातच लागतोय असं दिसतंय."
+            )
+        if eod_pct >= 30 and eod_pnl < 0:
+            recs.append(
+                f"⚠️ **{group_label}: {grp_label}** — {eod_pct:.0f}% trades ({int(eod_trades)}/{int(total_trades)}) "
+                f"EOD Square-off ला निव्वळ तोट्यात (₹{eod_pnl:,.0f}) बंद होतायत. "
+                "सुचवलेली दुरुस्ती: नवीन entry साठीची कट-ऑफ वेळ आधी आणा, किंवा Target अजून जवळ ठेवून "
+                "दिवसअखेरपर्यंत position उघडी राहण्याचं प्रमाण कमी करा."
+            )
+        if target_pct >= 50 and total_pnl > 0:
+            recs.append(
+                f"✅ **{group_label}: {grp_label}** — {target_pct:.0f}% trades ({int(target_trades)}/{int(total_trades)}) "
+                f"Target/पुढचा Level गाठून नफ्यात बंद होतायत (एकूण ₹{total_pnl:,.0f}). "
+                "सध्याची सेटिंग्ज चांगली काम करतायत — हीच कायम ठेवा, शक्य असल्यास lot size थोडी वाढवण्याचा विचार करा."
+            )
+
+        tsl_sub = sub[sub["Exit Reason"].isin(["TRAILING_SL", "PCT_TRAILING_SL"])]
+        if not tsl_sub.empty and not target_sub.empty:
+            tsl_avg = tsl_sub["Total P&L"].sum() / tsl_sub["Trades"].sum()
+            target_avg = target_sub["Total P&L"].sum() / target_sub["Trades"].sum()
+            if tsl_avg > 0 and target_avg > 0 and tsl_avg < target_avg * 0.5:
+                recs.append(
+                    f"🟡 **{group_label}: {grp_label}** — Trailing SL मुळे बंद झालेल्या trades चा सरासरी नफा "
+                    f"(₹{tsl_avg:,.0f}) हा थेट Target गाठलेल्या trades च्या सरासरी नफ्यापेक्षा (₹{target_avg:,.0f}) "
+                    "निम्म्याहून कमी आहे — Trailing SL लवकर घट्ट होऊन नफा वेळेआधी बुक होतोय असं दिसतंय. "
+                    "सुचवलेली दुरुस्ती: Trailing SL चं ATR गुणक (किंवा % अंतर) थोडं सैल करून नफा जास्त वाढू द्या."
+                )
+    return recs
+
+
 def render():
     symbol = st.session_state["symbol"]
     token_input = st.session_state["token_input"]
@@ -27,6 +170,38 @@ def render():
     perf_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="perf_mode_filter")
     perf_mode_f = None if perf_mode_choice == "सर्व" else ("LIVE" if "LIVE" in perf_mode_choice else "PAPER")
 
+    # =========================================================
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आजची कामगिरी आपोआप, कुठलीही तारीख/फिल्टर
+    # निवडण्याची गरज न पडता, पान उघडताक्षणीच दिसते. खालचा तारीख-रेंज फिल्टर फक्त ऐतिहासिक
+    # विश्लेषणासाठी आहे — आजचा दिवस त्यामागे कधीच लपत नाही.
+    # =========================================================
+    today_d = get_ist_today()
+    st.markdown(f"### 📌 आजची कामगिरी — {today_d.strftime('%d-%b-%Y')}")
+    st.caption("हे नेहमी आपोआप आजच्या तारखेचं दिसतं — तारीख निवडायची गरज नाही.")
+    _, today_totals = generate_pnl_report(symbol, "Daily", today_d, today_d, mode_filter=perf_mode_f)
+    if today_totals["total_trades"] == 0:
+        st.info("आज अजून कोणताही ट्रेड बंद झालेला नाही.")
+    else:
+        tcol1, tcol2, tcol3, tcol4 = st.columns(4)
+        with tcol1:
+            st.metric("आजचे बंद ट्रेड्स", today_totals["total_trades"])
+        with tcol2:
+            st.metric("Gross P&L", f"₹{today_totals['gross_pnl']:,.0f}")
+        with tcol3:
+            st.metric("एकूण Charges", f"₹{today_totals['total_charges']:,.0f}", f"{today_totals['total_orders']} orders")
+        with tcol4:
+            st.metric("Net P&L (आज)", f"₹{today_totals['net_pnl']:,.0f}")
+
+        tacol1, tacol2 = st.columns(2)
+        with tacol1:
+            st.markdown("##### 🎯 आज — रणनीतीनुसार (Strategy)")
+            _render_group_breakdown(symbol, "source", perf_mode_f, today_d, today_d, "आजचं Strategy-wise P&L")
+        with tacol2:
+            st.markdown("##### ⏱️ आज — टाईमफ्रेमनुसार")
+            _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, today_d, today_d, "आजचं Timeframe-wise P&L")
+
+    st.markdown("---")
+    st.markdown("### 📊 एकूण (All-Time) कामगिरी")
     summary = get_performance_summary(symbol, mode_filter=perf_mode_f)
     if summary.get("total_trades", 0) == 0:
         st.info("अजून कोणतेही बंद झालेले ट्रेड्स नाहीत — Performance आकडे दिसण्यासाठी किमान एक ट्रेड बंद व्हायला हवा.")
@@ -88,16 +263,6 @@ def render():
         else:
             st.info("Equity Curve साठी पुरेसा डेटा नाही.")
 
-        bcol1, bcol2 = st.columns(2)
-        with bcol1:
-            st.markdown("##### 📊 Strategy नुसार")
-            by_strat = get_performance_by_group(symbol, "strategy", mode_filter=perf_mode_f)
-            st.dataframe(by_strat, width="stretch", hide_index=True) if not by_strat.empty else st.caption("डेटा नाही.")
-        with bcol2:
-            st.markdown("##### ⏱️ Style नुसार (Intraday/Swing)")
-            by_style = get_performance_by_group(symbol, "trading_style", mode_filter=perf_mode_f)
-            st.dataframe(by_style, width="stretch", hide_index=True) if not by_style.empty else st.caption("डेटा नाही.")
-
         if perf_mode_f is None:
             st.markdown("##### 📝 PAPER वि LIVE तुलना")
             comp_rows = []
@@ -107,6 +272,85 @@ def render():
                     comp_rows.append({"Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"], "Total P&L": s["total_pnl"], "Avg P&L": s["avg_pnl"]})
             if comp_rows:
                 st.dataframe(pd.DataFrame(comp_rows), width="stretch", hide_index=True)
+
+    st.markdown("---")
+    st.markdown("### 🔍 रणनीती व टाईमफ्रेम विश्लेषण (तारीख/तारीख-रेंज निवडून)")
+    st.caption(
+        "कोणती रणनीती (Algo Strategy) आणि कोणता Entry Timeframe जास्त फायदेशीर आहे हे इथे कालावधी "
+        "निवडून तपासा — त्याच आधारावर algo/strategy सेटिंग्ज बदलायच्या का हे ठरवता येईल."
+    )
+    quick_range = st.radio(
+        "जलद निवड", ["आज", "गेले 7 दिवस", "गेला महिना", "गेले 3 महिने", "संपूर्ण इतिहास", "कस्टम रेंज"],
+        horizontal=True, key="perf_analysis_quick_range", index=2,
+    )
+    if quick_range == "आज":
+        an_from, an_to = today_d, today_d
+    elif quick_range == "गेले 7 दिवस":
+        an_from, an_to = today_d - datetime.timedelta(days=7), today_d
+    elif quick_range == "गेला महिना":
+        an_from, an_to = today_d - datetime.timedelta(days=30), today_d
+    elif quick_range == "गेले 3 महिने":
+        an_from, an_to = today_d - datetime.timedelta(days=90), today_d
+    elif quick_range == "संपूर्ण इतिहास":
+        an_from, an_to = _ALL_TIME_START, today_d
+    else:
+        acol1, acol2 = st.columns(2)
+        with acol1:
+            an_from = st.date_input("पासून", value=today_d - datetime.timedelta(days=30), key="perf_analysis_from")
+        with acol2:
+            an_to = st.date_input("पर्यंत", value=today_d, key="perf_analysis_to")
+
+    if an_from > an_to:
+        st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+    else:
+        st.caption(f"निवडलेली रेंज: {an_from} ते {an_to}")
+        an_tab1, an_tab2, an_tab3, an_tab4 = st.tabs(
+            ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार", "📐 Trading Style नुसार"]
+        )
+        with an_tab1:
+            _render_group_breakdown(symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
+        with an_tab2:
+            _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
+        with an_tab3:
+            _render_group_breakdown(symbol, "strategy", perf_mode_f, an_from, an_to, "Option Structure-wise P&L")
+        with an_tab4:
+            _render_group_breakdown(symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
+
+        st.markdown("##### 📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण")
+        trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+        if trade_log_df.empty:
+            st.caption("या कालावधीत कोणतेही बंद ट्रेड्स नाहीत.")
+        else:
+            trade_log_display = trade_log_df.copy()
+            trade_log_display["Entry Reason"] = trade_log_display.apply(_entry_reason_text, axis=1)
+            trade_log_display["Exit Reason"] = trade_log_display["exit_reason"].map(lambda r: _EXIT_REASON_LABELS.get(r, r))
+            trade_log_display = trade_log_display[[
+                "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason", "Realized P&L", "mode",
+            ]].rename(columns={"mode": "Mode"})
+            st.dataframe(trade_log_display, width="stretch", height=350, hide_index=True)
+            trade_log_csv = trade_log_display.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📥 Trade Log CSV डाऊनलोड करा (Entry+Exit कारणांसकट)", data=trade_log_csv,
+                file_name=f"{symbol}_TradeLog_Reasons_{an_from}_{an_to}.csv",
+                mime="text/csv", key="trade_log_reasons_download",
+            )
+
+        st.markdown("##### 🧭 निष्कर्ष व शिफारसी (Conclusion & Recommendations)")
+        st.caption(
+            "खालील शिफारसी exit_reason च्या (SL/Target/Trailing-SL/EOD) ऐतिहासिक वितरणावर आधारित, "
+            "नियम-आधारित (rule-based) automated निरीक्षणं आहेत — अंतिम निर्णय (SL%/Target/Trailing-SL "
+            "अंतर बदलायचं का) नेहमी तुम्हीच घ्या. सांख्यिकीयदृष्ट्या अविश्वसनीय होऊ नये म्हणून किमान 5 "
+            "trades असलेलेच गट इथे विचारात घेतले आहेत."
+        )
+        all_recs = (
+            _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to)
+            + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to)
+        )
+        if not all_recs:
+            st.info("या कालावधीत निष्कर्ष काढण्याइतका पुरेसा डेटा नाही (किमान 5 trades/गट हवेत).")
+        else:
+            for rec in all_recs:
+                st.markdown(rec)
 
     st.markdown("---")
     st.subheader("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)")
