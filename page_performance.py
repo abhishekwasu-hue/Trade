@@ -964,6 +964,37 @@ def render():
             with pcol5:
                 csr_cooldown = st.number_input("Cooldown (मिनिटं, SL/Target नंतर)", min_value=0, value=30, step=5, key="csr_cooldown")
 
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Entry Refinement (Swing High/Low, Demand/
+            # Supply, Trendline) — तीनही स्वतंत्रपणे togglable (डीफॉल्ट बंद, backward-compatible),
+            # जेणेकरून कोणता confluence-गेट खरंच result सुधारतो हे स्वतंत्रपणे तपासता येईल.
+            _sub_header("🧭 Entry Refinement (ऐच्छिक — Swing High/Low, Demand/Supply, Trendline)", _HDR_PINK)
+            st.caption(
+                "RSI गेटनंतर, अतिरिक्त confluence तपासण्या — level फक्त 'clustered pivot zone' नाही, तर "
+                "नुकत्याच झालेल्या खऱ्या Swing जवळ / Demand-Supply zone च्या आत / त्याच दिशेची Trendline "
+                "तुटलेली नाही, हे बघून entry अधिक निवडक बनवणे. सर्व डीफॉल्ट बंद — एकही चालू केला नाही तर वरचाच निकाल."
+            )
+            gcol1, gcol2, gcol3 = st.columns(3)
+            with gcol1:
+                csr_swing_gate = st.checkbox("Swing High/Low Confluence", value=False, key="csr_swing_gate")
+                csr_swing_tol = st.number_input(
+                    "Swing Tolerance %", min_value=0.01, value=0.15, step=0.05, key="csr_swing_tol",
+                    disabled=not csr_swing_gate,
+                )
+            with gcol2:
+                csr_ds_gate = st.checkbox("Demand/Supply Zone", value=False, key="csr_ds_gate")
+                st.caption("Zone = शेवटच्या Swing Low/High भोवतीचा ±0.3% पट्टा.")
+            with gcol3:
+                csr_tl_gate = st.checkbox("Trendline (BROKEN अडवतो)", value=False, key="csr_tl_gate")
+                csr_tl_lookback = st.number_input(
+                    "Trendline Lookback Swings", min_value=3, max_value=8, value=4, step=1, key="csr_tl_lookback",
+                    disabled=not csr_tl_gate,
+                )
+            csr_swing_order = st.number_input(
+                "Swing/Structure Order (bars — Swing/Demand-Supply/Trendline तिन्हींसाठी समान)",
+                min_value=2, max_value=10, value=3, step=1, key="csr_swing_order",
+                disabled=not (csr_swing_gate or csr_ds_gate or csr_tl_gate),
+            )
+
             if st.button(f"🔍 {csr_range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key="csr_run"):
                 yf_error = None
                 with st.spinner(f"{csr_from} ते {csr_to} चा 5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
@@ -982,6 +1013,9 @@ def render():
                     csr_result = run_classic_sr_reversal_backtest(
                         csr_df5, csr_df15, sl_spot_pct=csr_sl_pct, target_spot_pct=csr_target_pct,
                         rsi_neutral=csr_rsi_neutral, touch_tolerance_pct=csr_tolerance, cooldown_minutes=csr_cooldown,
+                        swing_order=csr_swing_order, swing_confluence_enabled=csr_swing_gate,
+                        swing_tolerance_pct=csr_swing_tol, demand_supply_gate_enabled=csr_ds_gate,
+                        trendline_gate_enabled=csr_tl_gate, trendline_lookback_swings=csr_tl_lookback,
                     )
                 if csr_df5.empty and csr_df15.empty:
                     if yf_error:
@@ -1000,11 +1034,19 @@ def render():
                 funnel = cr.get("funnel", {})
                 if funnel:
                     _sub_header("🔍 Funnel Diagnostic", _HDR_BLUE)
-                    fc1, fc2, fc3, fc4 = st.columns(4)
+                    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
                     fc1.metric("5M Touches", funnel.get("touches_5m", 0))
                     fc2.metric("5M RSI-गेट पास", funnel.get("rsi_passed_5m", 0))
-                    fc3.metric("15M Touches", funnel.get("touches_15m", 0))
-                    fc4.metric("15M RSI-गेट पास", funnel.get("rsi_passed_15m", 0))
+                    fc3.metric("5M Swing-गेट पास", funnel.get("swing_passed_5m", 0))
+                    fc4.metric("5M Demand/Supply-गेट पास", funnel.get("demand_supply_passed_5m", 0))
+                    fc5.metric("5M Trendline-गेट पास", funnel.get("trendline_passed_5m", 0))
+                    fc6, fc7, fc8, fc9, fc10 = st.columns(5)
+                    fc6.metric("15M Touches", funnel.get("touches_15m", 0))
+                    fc7.metric("15M RSI-गेट पास", funnel.get("rsi_passed_15m", 0))
+                    fc8.metric("15M Swing-गेट पास", funnel.get("swing_passed_15m", 0))
+                    fc9.metric("15M Demand/Supply-गेट पास", funnel.get("demand_supply_passed_15m", 0))
+                    fc10.metric("15M Trendline-गेट पास", funnel.get("trendline_passed_15m", 0))
+                    st.caption("गेट बंद असेल, तर तो टप्पा आपोआप 'पास' मोजला जातो (मागच्याच संख्येइतकाच) — फरक फक्त चालू केलेल्या गेट्समध्येच दिसेल.")
 
                 if cr["total"] == 0:
                     st.info(f"📭 {cr_from} ते {cr_to} या कालावधीत कोणतेही सिग्नल्स सापडले नाहीत.")

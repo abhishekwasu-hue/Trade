@@ -34,7 +34,10 @@ class TestRunClassicSrReversalBacktest:
     def test_empty_inputs_returns_empty(self):
         result = backtest.run_classic_sr_reversal_backtest(pd.DataFrame(), pd.DataFrame())
         assert result == {"total": 0, "signals": [], "funnel": {
-            "touches_5m": 0, "rsi_passed_5m": 0, "touches_15m": 0, "rsi_passed_15m": 0,
+            "touches_5m": 0, "rsi_passed_5m": 0, "swing_passed_5m": 0,
+            "demand_supply_passed_5m": 0, "trendline_passed_5m": 0,
+            "touches_15m": 0, "rsi_passed_15m": 0, "swing_passed_15m": 0,
+            "demand_supply_passed_15m": 0, "trendline_passed_15m": 0,
         }}
 
     def test_support_touch_target_hit(self, monkeypatch):
@@ -117,3 +120,92 @@ class TestRunClassicSrReversalBacktest:
         assert result["signals"][0]["timeframe"] == "15M"
         assert result["touch_15m_count"] == 1
         assert result["touch_5m_count"] == 0
+
+
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Refinement — Swing High/Low, Demand/Supply,
+# Trendline) — इथे compute_dynamic_sr/calculate_rsi स्टब्ड आहेत (आधीसारखेच), पण
+# find_swings/analyze_chart_zones/detect_trendline खऱ्याच वापरल्या जातात — त्यामुळे प्रत्यक्ष
+# किंमत-रचना (zigzag) काळजीपूर्वक तयार करावी लागते जेणेकरून खरी swing/demand-supply/trendline
+# अवस्था predictable राहील (स्क्रिप्टने आधी पडताळून घेतलेली).
+
+# दोन खरे swing lows (100, 100) + शेवटी level=100 ला पुन्हा touch — find_swings/analyze_chart_zones
+# दोघांनाही "level=100 च्या अगदी जवळ/आतला अलीकडचा confirmed swing/demand-zone" दाखवतात.
+_ZIGZAG_WITH_CONFIRMED_SWING_NEAR_100 = [108, 104, 101, 100.0, 101, 104, 108.0, 104, 101, 100.0, 101, 104, 109.0, 104, 101, 100.0]
+
+# तीन ascending swing lows (98 -> 99 -> 100.3) -> वैध ASCENDING_SUPPORT trendline, पण शेवटचा close
+# (100.0, पुन्हा level=100 touch) त्या trendline च्या खाली -> BROKEN.
+_ZIGZAG_WITH_BROKEN_ASCENDING_TRENDLINE = [
+    108, 104, 101, 98.0, 101, 104, 108.0, 104, 101, 99.0, 101, 104, 109.0, 104, 101, 100.3,
+    104, 108, 113.0, 108, 104, 100.0,
+]
+
+
+def _flat_bars(values, start_ts="2024-01-02 09:15:00"):
+    start = pd.Timestamp(start_ts)
+    return [_row(start + pd.Timedelta(minutes=5 * i), v, v, v, v) for i, v in enumerate(values)]
+
+
+class TestClassicSrReversalEntryRefinement:
+    def test_swing_confluence_gate_blocks_on_insufficient_data(self, monkeypatch):
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        df_5m = pd.DataFrame(_HIST_DAY + [
+            _row("2024-01-02 09:15:00", 101, 101.5, 99.8, 100.9),
+            _row("2024-01-02 09:20:00", 100.9, 101.0, 100.5, 100.95),
+        ])
+        result = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, swing_confluence_enabled=True,
+        )
+        # window मध्ये find_swings() साठी पुरेसा डेटा नाही (order*2+1 पेक्षा कमी बार) -> गेट अडवतो
+        assert result["total"] == 0
+
+    def test_swing_confluence_gate_passes_with_confirmed_swing_near_level(self, monkeypatch):
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        df_5m = pd.DataFrame(_HIST_DAY + _flat_bars(_ZIGZAG_WITH_CONFIRMED_SWING_NEAR_100))
+        result = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, swing_confluence_enabled=True,
+        )
+        assert result["total"] == 1
+        assert result["signals"][0]["direction"] == "BULLISH"
+        assert result["funnel"]["swing_passed_5m"] >= 1
+
+    def test_demand_supply_gate_blocks_on_insufficient_data(self, monkeypatch):
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        df_5m = pd.DataFrame(_HIST_DAY + [
+            _row("2024-01-02 09:15:00", 101, 101.5, 99.8, 100.9),
+            _row("2024-01-02 09:20:00", 100.9, 101.0, 100.5, 100.95),
+        ])
+        result = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, demand_supply_gate_enabled=True,
+        )
+        # structure_15m सारखीच classify_market_structure() ला किमान 2+2 confirmed swings लागतात,
+        # इथे अजिबातच नाहीत -> demand_zone=None -> गेट अडवतो
+        assert result["total"] == 0
+
+    def test_demand_supply_gate_passes_when_level_inside_zone(self, monkeypatch):
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        df_5m = pd.DataFrame(_HIST_DAY + _flat_bars(_ZIGZAG_WITH_CONFIRMED_SWING_NEAR_100))
+        result = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, demand_supply_gate_enabled=True,
+        )
+        assert result["total"] == 1
+        assert result["funnel"]["demand_supply_passed_5m"] >= 1
+
+    def test_trendline_gate_blocks_when_broken(self, monkeypatch):
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        df_5m = pd.DataFrame(_HIST_DAY + _flat_bars(_ZIGZAG_WITH_BROKEN_ASCENDING_TRENDLINE))
+        result_gated = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, trendline_gate_enabled=True,
+        )
+        assert result_gated["total"] == 0
+
+        # हाच डेटा, गेट बंद असताना — बेसलाइन वर्तन अबाधित (गेट खरंच काहीतरी अडवत होता, योगायोगाने रिकामं नाही)
+        result_ungated = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1,
+        )
+        assert result_ungated["total"] == 1
+        assert result_ungated["signals"][0]["direction"] == "BULLISH"

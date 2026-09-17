@@ -6,6 +6,7 @@ from signals import (
     classify_market_structure, detect_break, detect_pullback_retest,
     calculate_supertrend, calculate_rsi, check_pattern_rsi_gate,
     check_price_action_strategy, check_indicator_strategy,
+    find_swings, detect_trendline, analyze_chart_zones,
 )
 from sr_dynamic import compute_dynamic_sr
 
@@ -419,7 +420,10 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
 
 
 def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, touch_tolerance_pct,
-                                   sr_prd, sr_channel_w_pct, sr_maxnumsr, sr_min_strength, min_lookback_days):
+                                   sr_prd, sr_channel_w_pct, sr_maxnumsr, sr_min_strength, min_lookback_days,
+                                   swing_order=3, swing_confluence_enabled=False, swing_tolerance_pct=0.15,
+                                   demand_supply_gate_enabled=False, trendline_gate_enabled=False,
+                                   trendline_lookback_swings=4):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Classical Support/Resistance Reversal strategy —
     प्रस्तावित तिसरी strategy, 5M+15M) — एका टाईमफ्रेमच्या df वर, दर ट्रेडिंग-दिवशी (आदल्या
@@ -430,10 +434,27 @@ def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, t
     Resistance/BEARISH -> RSI>rsi_neutral) ते सापडणे. दिशा साठवलेल्या classification वरून नाही, तर
     प्रत्येक touch-बारच्या close किमतीवरून ठरते (dynamic_sr_instant_trader.py सारखंच — "stale" label
     टाळण्यासाठी).
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Refinement — Swing High/Low, Demand/Supply,
+    Trendline) — RSI गेट नंतर, तीन अतिरिक्त, स्वतंत्रपणे togglable confluence गेट्स (सर्व डीफॉल्ट बंद
+    — backward-compatible, चालू केल्याशिवाय जुनाच निकाल):
+      - swing_confluence_enabled: touch झालेला level हा नुकत्याच झालेल्या खऱ्या swing low (Support)
+        / swing high (Resistance) च्या (signals.find_swings) जवळ (swing_tolerance_pct% च्या आत) आहे
+        का — म्हणजे नुसता clustered pivot-zone नाही, तर ताजा, खरा structural point.
+      - demand_supply_gate_enabled: level हा signals.analyze_chart_zones() च्या Demand zone (Support)
+        / Supply zone (Resistance) च्या आत आहे का (शेवटच्या swing low/high भोवतीचा ±0.3% पट्टा).
+      - trendline_gate_enabled: त्याच दिशेची trendline (signals.detect_trendline — Support साठी
+        Ascending, Resistance साठी Descending) अस्तित्वात असून BROKEN असेल, तरच signal अडवला जातो
+        (पुरेसा डेटा नसेल/trendline सापडली नसेल तर गेट आपोआप पास — check_trend_signal() च्या
+        फॉलबॅक-तत्त्वासारखंच).
+    प्रत्येक गेट फक्त RSI-पास झालेल्या (आधीच लहान संख्येच्या) candidates वरच चालतो — कामगिरीसाठी
+    प्रत्येक बारवर नाही.
     रिटर्न: (candidates: [{"timestamp","row_idx","direction","level","timeframe"}, ...], funnel dict).
     """
     candidates = []
-    funnel = {"touches": 0, "rsi_passed": 0}
+    funnel = {
+        "touches": 0, "rsi_passed": 0, "swing_passed": 0, "demand_supply_passed": 0, "trendline_passed": 0,
+    }
     if df is None or df.empty:
         return candidates, funnel
 
@@ -470,6 +491,38 @@ def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, t
                 if not rsi_ok:
                     continue
                 funnel["rsi_passed"] += 1
+
+                window = None  # lazily तयार — फक्त एखादा confluence गेट चालू असेल तरच लागतो
+
+                if swing_confluence_enabled:
+                    window = df.iloc[:i + 1]
+                    sh_idx, sl_idx = find_swings(window, order=swing_order)
+                    ref_idx = sl_idx if direction == "BULLISH" else sh_idx
+                    if not ref_idx:
+                        continue
+                    nearest_swing_price = window["low" if direction == "BULLISH" else "high"].iloc[ref_idx[-1]]
+                    if abs(nearest_swing_price - level) > level * swing_tolerance_pct / 100:
+                        continue
+                funnel["swing_passed"] += 1
+
+                if demand_supply_gate_enabled:
+                    window = window if window is not None else df.iloc[:i + 1]
+                    chart_zones = analyze_chart_zones(window, order=swing_order)
+                    zone = chart_zones["demand_zone"] if direction == "BULLISH" else chart_zones["supply_zone"]
+                    if zone is None or not (zone[0] <= level <= zone[1]):
+                        continue
+                funnel["demand_supply_passed"] += 1
+
+                if trendline_gate_enabled:
+                    window = window if window is not None else df.iloc[:i + 1]
+                    tl = detect_trendline(
+                        window, swing_type=("low" if direction == "BULLISH" else "high"),
+                        lookback_swings=trendline_lookback_swings, order=swing_order,
+                    )
+                    if tl is not None and tl.get("valid") and tl["status"] == "BROKEN":
+                        continue
+                funnel["trendline_passed"] += 1
+
                 candidates.append({
                     "timestamp": df["timestamp"].iloc[i], "row_idx": i, "direction": direction,
                     "level": round(float(level), 2), "timeframe": timeframe_label,
@@ -480,7 +533,10 @@ def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, t
 def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot_pct=0.8, rsi_neutral=50,
                                        touch_tolerance_pct=0.05, sr_prd=10, sr_channel_w_pct=10,
                                        sr_maxnumsr=5, sr_min_strength=2, min_lookback_days=5,
-                                       max_hold_bars=50, cooldown_minutes=30):
+                                       max_hold_bars=50, cooldown_minutes=30, swing_order=3,
+                                       swing_confluence_enabled=False, swing_tolerance_pct=0.15,
+                                       demand_supply_gate_enabled=False, trendline_gate_enabled=False,
+                                       trendline_lookback_swings=4):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रस्तावित तिसरी strategy ("Classical Support/
     Resistance Reversal", 5M+15M) साठी walk-forward, no-lookahead backtest. Support touch (RSI<
@@ -488,6 +544,11 @@ def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot
     BEARISH (Bear Call Spread) — दोन्ही टाईमफ्रेम्स "first touch wins" पद्धतीने एकत्र पूल केलेल्या
     (dynamic_sr_instant_trader.py सारखंच), एकाच वेळी फक्त एकच उघडी position + SL/Target नंतर
     cooldown_minutes (डीफॉल्ट 30, इतर दोन्ही strategies प्रमाणेच).
+
+    🎓 Entry Refinement (सर्व डीफॉल्ट बंद — चालू केल्याशिवाय आधीचाच निकाल) — RSI गेटनंतर तीन अतिरिक्त,
+    स्वतंत्र confluence गेट्स (तपशील _classic_sr_touch_candidates() च्या docstring मध्ये):
+    swing_confluence_enabled (नुकत्याच झालेल्या खऱ्या Swing High/Low जवळ आहे का), demand_supply_gate_enabled
+    (Demand/Supply zone च्या आत आहे का), trendline_gate_enabled (त्याच दिशेची Trendline BROKEN नाहीये ना).
 
     entry_spot (SL/Target %-गणनेचा आधार) हा नेमका touch झालेला level आहे — trading_engine.py च्या
     evaluate_point_spot_exit() मध्ये entry_level_price कसा वापरला जातो, त्याच पद्धतीने (नेमकी
@@ -507,7 +568,10 @@ def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot
     "sl_count","open_count","win_rate","bullish_count","bearish_count","touch_5m_count",
     "touch_15m_count","total_pnl_pct","funnel"}.
     """
-    empty_funnel = {"touches_5m": 0, "rsi_passed_5m": 0, "touches_15m": 0, "rsi_passed_15m": 0}
+    empty_funnel = {
+        "touches_5m": 0, "rsi_passed_5m": 0, "swing_passed_5m": 0, "demand_supply_passed_5m": 0, "trendline_passed_5m": 0,
+        "touches_15m": 0, "rsi_passed_15m": 0, "swing_passed_15m": 0, "demand_supply_passed_15m": 0, "trendline_passed_15m": 0,
+    }
     df_5m = df_5m if df_5m is not None else pd.DataFrame(columns=["timestamp", "open", "high", "low", "close"])
     df_15m = df_15m if df_15m is not None else pd.DataFrame(columns=["timestamp", "open", "high", "low", "close"])
     if df_5m.empty and df_15m.empty:
@@ -518,18 +582,24 @@ def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot
     rsi_5m = calculate_rsi(df_5m, period=14) if not df_5m.empty else pd.Series(dtype=float)
     rsi_15m = calculate_rsi(df_15m, period=14) if not df_15m.empty else pd.Series(dtype=float)
 
+    refinement_kwargs = dict(
+        swing_order=swing_order, swing_confluence_enabled=swing_confluence_enabled,
+        swing_tolerance_pct=swing_tolerance_pct, demand_supply_gate_enabled=demand_supply_gate_enabled,
+        trendline_gate_enabled=trendline_gate_enabled, trendline_lookback_swings=trendline_lookback_swings,
+    )
     cand_5m, funnel_5m = _classic_sr_touch_candidates(
         df_5m, "5M", rsi_5m, rsi_neutral, touch_tolerance_pct, sr_prd, sr_channel_w_pct, sr_maxnumsr,
-        sr_min_strength, min_lookback_days,
+        sr_min_strength, min_lookback_days, **refinement_kwargs,
     )
     cand_15m, funnel_15m = _classic_sr_touch_candidates(
         df_15m, "15M", rsi_15m, rsi_neutral, touch_tolerance_pct, sr_prd, sr_channel_w_pct, sr_maxnumsr,
-        sr_min_strength, min_lookback_days,
+        sr_min_strength, min_lookback_days, **refinement_kwargs,
     )
-    funnel = {
-        "touches_5m": funnel_5m["touches"], "rsi_passed_5m": funnel_5m["rsi_passed"],
-        "touches_15m": funnel_15m["touches"], "rsi_passed_15m": funnel_15m["rsi_passed"],
-    }
+    funnel = {}
+    for key, val in funnel_5m.items():
+        funnel[f"{key}_5m"] = val
+    for key, val in funnel_15m.items():
+        funnel[f"{key}_15m"] = val
 
     all_candidates = sorted(cand_5m + cand_15m, key=lambda c: c["timestamp"])
     if not all_candidates:
