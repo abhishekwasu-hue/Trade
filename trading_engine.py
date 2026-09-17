@@ -45,6 +45,12 @@ DYNAMIC_SR_PREMIUM_TRAILING_LOCK_PCT = 5
 DYNAMIC_SR_EOD_HOUR = 15
 DYNAMIC_SR_EOD_MINUTE = 0
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Classical Support/Resistance Reversal" (नवीन,
+# स्वतंत्र तिसरी strategy, 5M+15M pooled — backtest आधी, चांगले निकाल दिसल्यावर PAPER trading) —
+# dynamic_sr_instant सारखाच EOD उंबरठा (15:00).
+CLASSIC_SR_EOD_HOUR = 15
+CLASSIC_SR_EOD_MINUTE = 0
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 Momentum-Reversal (15M/30M/60M एकत्र) साठी
 # नवीन exit-रचना — Spot SL(0.10%, entry_level_price पासून) + Premium Target (जुनाच, 80% —
 # target_level column मधूनच) + Next-Level-Exit (15M/30M/60M पूल केलेले) — जे आधी घडेल ते लागू.
@@ -502,6 +508,47 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if dynamic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
                     exit_reason_detail = f"Auto-closed at EOD Square-off ({DYNAMIC_SR_EOD_HOUR}:{DYNAMIC_SR_EOD_MINUTE:02d}) — neither SL nor Target was hit."
+        elif source == "classic_sr_reversal" and entry_level_price is not None and underlying_spot is not None:
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Classical Support/Resistance Reversal"
+            # (नवीन, स्वतंत्र तिसरी strategy, 5M+15M pooled) — dynamic_sr_instant सारखीच रचना
+            # (Spot%+Premium-Points+TSL-to-Breakeven, केंद्रीकृत evaluate_point_spot_exit()) — फक्त
+            # वेगळ्या settings-namespace ("classic_sr_reversal") मधून, वेगळा EOD उंबरठा.
+            settings_csr = cloud_db.get_strategy_settings("classic_sr_reversal", symbol)
+            is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
+            direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
+            premium_pnl_points = net_credit - cost_to_close_now
+
+            if is_naked:
+                sl_spot_pct = settings_csr["naked_sl_spot_pct"]
+                sl_premium_points = settings_csr["naked_sl_premium_points"]
+                tsl_spot_pct = settings_csr["naked_tsl_spot_pct"]
+                tsl_premium_points = settings_csr["naked_tsl_premium_points"]
+                target_spot_pct = settings_csr["naked_target_spot_pct"]
+                target_premium_points = settings_csr["naked_target_premium_points"]
+            else:
+                sl_spot_pct = settings_csr["spread_sl_spot_pct"]
+                sl_premium_points = settings_csr["spread_sl_premium_points"]
+                tsl_spot_pct = settings_csr["spread_tsl_spot_pct"]
+                tsl_premium_points = settings_csr["spread_tsl_premium_points"]
+                target_spot_pct = settings_csr["spread_target_spot_pct"]
+                target_premium_points = settings_csr["spread_target_premium_points"]
+
+            point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
+                direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
+                target_spot_pct, target_premium_points, tsl_activated,
+            )
+            if tsl_now_activated != tsl_activated:
+                cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
+
+            exit_reason = point_exit_reason
+            exit_reason_detail = point_exit_detail
+
+            if exit_reason is None and trade_style == "INTRADAY":
+                classic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (CLASSIC_SR_EOD_HOUR, CLASSIC_SR_EOD_MINUTE)
+                if classic_sr_past_eod_cutoff:
+                    exit_reason = "EOD_SQUAREOFF"
+                    exit_reason_detail = f"Auto-closed at EOD Square-off ({CLASSIC_SR_EOD_HOUR}:{CLASSIC_SR_EOD_MINUTE:02d}) — neither SL nor Target was hit."
         elif source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
             settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")

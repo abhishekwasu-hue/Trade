@@ -240,6 +240,43 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "naked_eod_hour": 15,            # Naked trades कधीच carry-forward नाहीत, नेहमी आजच 3:00pm ला बंद
         "naked_eod_minute": 0,
     },
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली स्वतंत्र, नवीन strategy — "Classical Support/Resistance
+    # Reversal" (5M+15M pooled, Support touch -> Bull Put Spread, Resistance touch -> Bear Call
+    # Spread — तोच classical Dynamic S/R अल्गोरिदम जो Market Zones साठी वापरला जातो). backtest मध्ये
+    # ठरल्याप्रमाणे — PCR गेट मुद्दाम नाही (फक्त "शुद्ध classical S/R" कल्पना, RSI गेटच फक्त),
+    # आणि तीन नवीन ऐच्छिक Entry Refinement गेट्स (Swing High/Low, Demand/Supply, Trendline) — सर्व
+    # डीफॉल्ट बंद, backtest मध्ये वापरलेल्याच डीफॉल्ट मूल्यांसह.
+    "classic_sr_reversal": {
+        "lots": 1,
+        "itm_depth_points": 50,
+        "hedge_width_points": 150,
+        "timeframe_choice": "BOTH",      # "BOTH" | "5M" | "15M"
+        "entry_rsi_gate_enabled": True,
+        "rsi_neutral_level": 50,
+        # Entry Refinement — तिन्ही ऐच्छिक, स्वतंत्र (backtest.run_classic_sr_reversal_backtest()
+        # मधल्याच गेट्सशी सुसंगत तर्क आणि डीफॉल्ट मूल्यं).
+        "swing_confluence_enabled": False,
+        "swing_tolerance_pct": 0.15,
+        "swing_order": 3,
+        "demand_supply_gate_enabled": False,
+        "trendline_gate_enabled": False,
+        "trendline_lookback_swings": 4,
+        "spread_sl_spot_pct": 0.4,
+        "spread_sl_premium_points": 5,
+        "spread_tsl_spot_pct": 0.6,
+        "spread_tsl_premium_points": 10,
+        "spread_target_spot_pct": 0.8,
+        "spread_target_premium_points": 15,
+        "naked_enabled": True,
+        "naked_hedge_enabled": False,
+        "naked_hedge_width_points": 150,
+        "naked_sl_spot_pct": 0.4,
+        "naked_sl_premium_points": 10,
+        "naked_tsl_spot_pct": 0.6,
+        "naked_tsl_premium_points": 20,
+        "naked_target_spot_pct": 0.8,
+        "naked_target_premium_points": 30,
+    },
 }
 
 # वापरकर्त्याने सापडवलेली bug — वरचे itm_depth_points/hedge_width_points/naked_hedge_width_points
@@ -537,7 +574,10 @@ def get_strategy_settings(strategy_name, symbol):
     # symbol निवडणार" — त्यामुळे NIFTY डीफॉल्ट सक्रिय (आधीपासूनचं वर्तन कायम), पण BANKNIFTY/SENSEX
     # डीफॉल्ट निष्क्रिय (opt-in) — वापरकर्त्याने Dashboard वरून स्पष्टपणे सक्रिय केल्यासच त्या
     # symbol वर प्रत्यक्ष (PAPER) trade घेतला जातो.
-    defaults["symbol_enabled"] = (symbol == "NIFTY")
+    # "classic_sr_reversal" (नवीन, अजून backtest-टप्प्यातच असलेली strategy) साठी मात्र सर्व symbols
+    # (NIFTY सकट) डीफॉल्ट निष्क्रियच — वापरकर्त्याने Bot Dynamic SR Algo वरून स्वतः, जाणीवपूर्वक
+    # सक्रिय केल्याशिवाय कुठलाही (अगदी PAPER) trade घेतला जाऊ नये.
+    defaults["symbol_enabled"] = (symbol == "NIFTY") if strategy_name != "classic_sr_reversal" else False
     conn = get_connection()
     if conn is None:
         return defaults
