@@ -2,6 +2,7 @@
 import datetime
 import io
 import os
+import re
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -1503,6 +1504,245 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
     story.append(Paragraph(
         "This report was generated automatically by the AMW A1 Trading System — for informational purposes only, not investment advice.",
         _eod_footer,
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# =========================================================
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Performance टॅबवरचा नवीन "संपूर्ण Performance Report"
+# PDF — Summary + Strategy/Timeframe-wise P&L (चार्ट्ससह) + प्रत्येक बंद Trade चं Entry व Exit
+# (नेमक्या Spot%/Premium-Points कारणासकट) कारण + rule-based शिफारसी, एकाच, प्रिंट-योग्य PDF मध्ये.
+# Entry Reason/Exit Reason मराठी (Devanagari) मजकूर असल्याने, या संपूर्ण report मध्ये कुठेही इमोजी
+# वापरलेला नाही (DejaVu Sans/NotoSansDevanagari या दोन्ही PDF-fonts मध्ये सर्व इमोजी glyphs नाहीत) —
+# त्याऐवजी रंगीत बॅनर/पट्ट्या आणि [!]/[+]/[~] सारखे साधे चिन्ह वापरले आहेत.
+# =========================================================
+
+def build_group_pnl_bar_chart(df, title, width=680, height=300):
+    """Group (Strategy/Timeframe) नुसार Total P&L चा साधा, रंगीत (नफा=हिरवा, तोटा=लाल) bar chart."""
+    if df is None or df.empty:
+        return None
+    try:
+        bar_colors = ["#089981" if v >= 0 else "#F23645" for v in df["Total P&L"]]
+        fig = go.Figure(go.Bar(
+            x=df["Group"].astype(str), y=df["Total P&L"], marker_color=bar_colors,
+            text=[f"₹{v:,.0f}" for v in df["Total P&L"]], textposition="outside",
+        ))
+        fig.update_layout(
+            title=title, template="plotly_white", width=width, height=height,
+            margin=dict(l=10, r=10, t=40, b=10), yaxis_title="Total P&L (₹)",
+        )
+        return fig.to_image(format="png", scale=3)
+    except Exception:
+        return None
+
+
+def _rec_text_to_paragraph(rec_markdown):
+    """Performance टॅबवरच्या rule-based शिफारसींची इंग्रजी आवृत्ती (Streamlit markdown: **bold**,
+    ⚠️/✅/🟡 emoji prefix) -> reportlab Paragraph (<b> tags, इमोजीऐवजी रंगीत [!]/[+]/[~] चिन्ह — PDF
+    fonts मध्ये इमोजी glyphs नसल्याने)."""
+    text = rec_markdown.strip()
+    if text.startswith("⚠️"):
+        color, tag, text = _C_RED, "[!]", text[2:].strip()
+    elif text.startswith("✅"):
+        color, tag, text = _C_GREEN, "[+]", text[2:].strip()
+    elif text.startswith("🟡"):
+        color, tag, text = _C_AMBER, "[~]", text[2:].strip()
+    else:
+        color, tag = _C_GREY, "[-]"
+    html_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    style = ParagraphStyle(
+        "perf_rec", fontName=_RPT_FONT, fontSize=10.5, leading=14,
+        textColor=color, spaceBefore=2, spaceAfter=6, leftIndent=4,
+    )
+    return Paragraph(f"<b>{tag}</b> {html_text}", style)
+
+
+_TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=7.5, leading=9.5)
+_TRADE_LOG_HEADER_STYLE = ParagraphStyle("trade_log_header", fontName=_RPT_TABLE_FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white)
+
+
+def _build_trade_log_table(df, usable_width, max_rows=250):
+    """
+    Trade Log चा टेबल — df_to_reportlab_table() (plain strings, कुठलंही column-width control नाही)
+    वापरल्यास "Entry Reason"/"Exit Reason Detail" सारखे लांब मजकूराचे स्तंभ पानाच्या रुंदीबाहेर जाऊन
+    कापले जातात (उजवीकडचे स्तंभ दिसतच नाहीत) — हे टाळण्यासाठी इथे प्रत्येक स्तंभाची निश्चित रुंदी
+    आणि लांब स्तंभांसाठी Paragraph-wrapping (मजकूर अनेक ओळींत मावतो, रांग उंच होते पण कापली जात नाही).
+    """
+    display_df = df.head(max_rows)
+    col_fracs = {
+        "Trade ID": 0.11, "Entry Time": 0.095, "Entry Reason": 0.225, "Exit Time": 0.095,
+        "Exit Reason": 0.115, "Exit Reason Detail": 0.225, "Realized P&L": 0.075, "Mode": 0.06,
+    }
+    columns = list(display_df.columns)
+    col_widths = [usable_width * col_fracs.get(c, 1.0 / len(columns)) for c in columns]
+    wrap_columns = {"Entry Reason", "Exit Reason", "Exit Reason Detail"}
+
+    header_row = [Paragraph(_fix_missing_glyphs(str(c)), _TRADE_LOG_HEADER_STYLE) for c in columns]
+    data = [header_row]
+    pnl_col_idx = columns.index("Realized P&L") if "Realized P&L" in columns else None
+    pnl_row_colors = {}
+    for row_idx, row in enumerate(display_df.itertuples(index=False), start=1):
+        row_cells = []
+        for col_idx, (col_name, val) in enumerate(zip(columns, row)):
+            if col_name == "Realized P&L":
+                pnl_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
+                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
+            elif col_name in wrap_columns:
+                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
+            else:
+                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
+        data.append(row_cells)
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]
+    if pnl_col_idx is not None:
+        for row_idx, color in pnl_row_colors.items():
+            style_cmds.append(("TEXTCOLOR", (pnl_col_idx, row_idx), (pnl_col_idx, row_idx), color))
+    tbl.setStyle(TableStyle(style_cmds))
+    result = [tbl]
+    if len(df) > max_rows:
+        result.append(Paragraph(f"(showing first {max_rows} of {len(df)} rows)", _rpt_footer))
+    return result
+
+
+def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
+                                      by_source_df, by_timeframe_df, trade_log_df, recommendations):
+    """
+    Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise व Timeframe-wise
+    P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं Entry व Exit कारण (Exit साठी — SL/Target नेमकं Spot%
+    की Premium Points मुळे लागला, हे स्पष्ट सांगणारा detail), आणि rule-based शिफारसी.
+
+    summary — database.get_performance_summary() चा dict (निवडलेल्या तारीख-रेंजसाठी).
+    pnl_totals — pnl_reports.generate_pnl_report() च्या totals dict (charges-सकट Net P&L साठी).
+    by_source_df/by_timeframe_df — get_performance_by_group() च्या (Group/Trades/Win Rate %/
+    Total P&L/Avg P&L स्तंभांसकट) sorted DataFrames, किंवा डेटा नसल्यास None.
+    trade_log_df — Trade ID/Entry Time/Entry Reason/Exit Time/Exit Reason/Exit Reason (नेमकं
+    कारण)/Realized P&L/Mode स्तंभांसकट, इमोजी-विरहित (PDF-सुरक्षित) DataFrame, किंवा None.
+    recommendations — Performance टॅबवरच्या rule-based शिफारसींची यादी (markdown स्ट्रिंग्स).
+    """
+    generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm, topMargin=1.2 * cm, bottomMargin=1.2 * cm)
+    usable_width = A4[0] - 2.8 * cm
+    story = []
+    sec = [0]
+
+    def next_section(text):
+        story.append(_section_header(text, sec[0], style=_rpt_h2_bt))
+        sec[0] += 1
+        story.append(Spacer(1, 8))
+
+    title_tbl = Table(
+        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
+        colWidths=[18 * cm],
+    )
+    title_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
+    ]))
+    story.append(title_tbl)
+    story.append(Spacer(1, 10))
+
+    meta_tbl = Table([[
+        Paragraph(f"Symbol<br/><b>{symbol}</b>", _rpt_normal),
+        Paragraph(f"Mode<br/><b>{mode_label}</b>", _rpt_normal),
+        Paragraph(f"Date Range<br/><b>{date_from} to {date_to}</b>", _rpt_normal),
+        Paragraph(f"Generated<br/><b>{generated_at}</b>", _rpt_normal),
+    ]], colWidths=[usable_width / 4] * 4)
+    meta_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG), ("GRID", (0, 0), (-1, -1), 0.4, colors.white),
+        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8), ("LEFTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(meta_tbl)
+    story.append(Spacer(1, 8))
+
+    next_section("Summary")
+    if not summary or summary.get("total_trades", 0) == 0:
+        story.append(Paragraph("No CLOSED trades in this period.", ParagraphStyle("no_data", fontName=_RPT_FONT, fontSize=11, leading=15)))
+    else:
+        pf_str = f"{summary['profit_factor']}" if summary.get("profit_factor") is not None else "N/A"
+        gross_pnl = pnl_totals.get("gross_pnl", summary["total_pnl"]) if pnl_totals else summary["total_pnl"]
+        total_charges = pnl_totals.get("total_charges", 0) if pnl_totals else 0
+        net_pnl = pnl_totals.get("net_pnl", gross_pnl - total_charges) if pnl_totals else gross_pnl
+        summary_rows = [
+            ["Total Trades", str(summary["total_trades"])],
+            ["Win Rate", f"{summary['win_rate']}%"],
+            ["Gross P&L", f"Rs {gross_pnl:,.0f}"],
+            ["Total Charges", f"Rs {total_charges:,.0f}"],
+            ["Net P&L (after charges)", f"Rs {net_pnl:,.0f}"],
+            ["Profit Factor", pf_str],
+            ["Avg P&L / Trade", f"Rs {summary['avg_pnl']:,.0f}"],
+            ["Best / Worst Trade", f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
+        ]
+        force_colors = {
+            2: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
+            4: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
+        }
+        story.append(_kv_table(summary_rows, usable_width, key_ratio=0.4, force_colors=force_colors))
+    story.append(Spacer(1, 8))
+
+    next_section("Strategy-wise Performance (which algo strategy is most profitable)")
+    if by_source_df is None or by_source_df.empty:
+        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data2", fontName=_RPT_FONT, fontSize=11)))
+    else:
+        chart_bytes = build_group_pnl_bar_chart(by_source_df, "Strategy-wise Total P&L")
+        if chart_bytes:
+            img_w = usable_width
+            img_h = img_w * 300 / 680
+            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
+            story.append(Spacer(1, 6))
+        t = df_to_reportlab_table(by_source_df)
+        story.extend(t if isinstance(t, list) else [t])
+    story.append(Spacer(1, 8))
+
+    next_section("Timeframe-wise Performance (which entry timeframe is most profitable)")
+    if by_timeframe_df is None or by_timeframe_df.empty:
+        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data3", fontName=_RPT_FONT, fontSize=11)))
+    else:
+        chart_bytes = build_group_pnl_bar_chart(by_timeframe_df, "Timeframe-wise Total P&L")
+        if chart_bytes:
+            img_w = usable_width
+            img_h = img_w * 300 / 680
+            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
+            story.append(Spacer(1, 6))
+        t = df_to_reportlab_table(by_timeframe_df)
+        story.extend(t if isinstance(t, list) else [t])
+    story.append(Spacer(1, 8))
+
+    next_section("Conclusion & Recommendations")
+    if not recommendations:
+        story.append(Paragraph(
+            "Not enough data in this period to draw conclusions (at least 5 trades/group needed).",
+            ParagraphStyle("no_rec", fontName=_RPT_FONT, fontSize=11),
+        ))
+    else:
+        for rec in recommendations:
+            story.append(_rec_text_to_paragraph(rec))
+    story.append(Spacer(1, 8))
+
+    story.append(PageBreak())
+    next_section(f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)")
+    if trade_log_df is None or trade_log_df.empty:
+        story.append(Paragraph("No closed trades in this period.", ParagraphStyle("no_trades", fontName=_RPT_FONT, fontSize=11)))
+    else:
+        story.extend(_build_trade_log_table(trade_log_df, usable_width, max_rows=250))
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        "This report was generated automatically by the AMW A1 Trading System — for informational purposes only, not investment advice. "
+        "The Recommendations section is a rule-based, data-driven starting point, not financial advice — the final decision is always yours.",
+        _rpt_footer,
     ))
 
     doc.build(story)

@@ -14,7 +14,7 @@ from backtest import run_signal_backtest_rr, run_signal_backtest_v2
 from upstox_api import fetch_candles_date_range
 from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
-from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2
+from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2, generate_performance_report_pdf
 from pnl_reports import generate_pnl_report
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Trading Charges) — "आतापर्यंतचे एकूण" Charges/Net P&L
@@ -43,6 +43,7 @@ _EXIT_REASON_LABELS = {
     "SL": "🔴 Stop-Loss गाठला",
     "TRAILING_SL": "🟡 Trailing SL (ATR-आधारित)",
     "PCT_TRAILING_SL": "🟡 Trailing SL (%-आधारित)",
+    "TSL_SL": "🟡 Trailing SL ला स्पर्श (Entry/Breakeven वर घट्ट)",
     "TARGET": "🟢 Target गाठला",
     "PREMIUM_TARGET": "🟢 Premium Target गाठला",
     "NEXT_LEVEL_EXIT": "🟢 पुढचा S/R Level गाठला (profit-booked)",
@@ -51,11 +52,25 @@ _EXIT_REASON_LABELS = {
     "OI_REVERSAL": "🔵 OI Reversal सिग्नल",
     "MANUAL_CLOSE": "✋ मॅन्युअली बंद केलं",
     "RECONCILED_EXTERNAL_CLOSE": "↔️ Broker कडून बाहेरून बंद (Reconciled)",
+    "SL_HIT": "🔴 Stop-Loss गाठला (जुनी नोंद)",
+    "TARGET_HIT": "🟢 Target गाठला (जुनी नोंद)",
     "UNKNOWN": "अज्ञात",
 }
+# PDF Report साठी — fonts/ फोल्डरमध्ये Devanagari font नसल्याने (फक्त DejaVu Sans आहे — ना इमोजी,
+# ना मराठी script), पूर्णपणे इंग्रजी, इमोजी-विरहित समांतर लेबल्स — फक्त PDF मध्ये वापरण्यासाठी.
+_EXIT_REASON_LABELS_PLAIN = {
+    "SL": "Stop-Loss hit", "TRAILING_SL": "Trailing SL (ATR-based)",
+    "PCT_TRAILING_SL": "Trailing SL (%-based)", "TSL_SL": "Trailing SL hit (locked to Entry/Breakeven)",
+    "TARGET": "Target hit", "PREMIUM_TARGET": "Premium Target hit",
+    "NEXT_LEVEL_EXIT": "Next S/R Level hit (profit-booked)", "EOD_SQUAREOFF": "EOD Square-off (end of day)",
+    "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT": "Insufficient profit — closed without carrying forward",
+    "OI_REVERSAL": "OI Reversal signal", "MANUAL_CLOSE": "Closed manually",
+    "RECONCILED_EXTERNAL_CLOSE": "Closed externally by broker (Reconciled)",
+    "SL_HIT": "Stop-Loss hit (legacy record)", "TARGET_HIT": "Target hit (legacy record)", "UNKNOWN": "Unknown",
+}
 # SL/TSL प्रकारचे exit_reason "जोखीम-नियंत्रण" (जोखीम मर्यादित करण्यासाठी बंद) म्हणून एकत्र मोजण्यासाठी.
-_SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL"}
-_TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT"}
+_SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL", "TSL_SL", "SL_HIT"}
+_TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT", "TARGET_HIT"}
 
 
 def _entry_reason_text(row):
@@ -65,6 +80,15 @@ def _entry_reason_text(row):
     tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
     lvl = f"₹{row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
     return f"{src} — {tf} S/R level ({lvl}) touch; रचना: {row['strategy']}"
+
+
+def _entry_reason_text_en(row):
+    """_entry_reason_text() ची पूर्णपणे इंग्रजी आवृत्ती — फक्त Performance Report PDF साठी (PDF च्या
+    fonts/ फोल्डरमध्ये Devanagari font नसल्याने, तिथे मराठी शब्द रिकाम्या चौकोनासारखे दिसतात)."""
+    src = _SOURCE_LABELS.get(row["source"], row["source"])
+    tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
+    lvl = f"Rs {row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
+    return f"{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
 
 
 def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date, chart_title):
@@ -99,10 +123,12 @@ def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date
     return df_sorted
 
 
-def _build_recommendations(symbol, group_col, group_label, mode_filter, start_date, end_date, min_trades=5):
+def _build_recommendations(symbol, group_col, group_label, mode_filter, start_date, end_date, min_trades=5, english=False):
     """group_col (source/entry_timeframe) नुसार exit_reason वितरण तपासून, SL/Target/Trailing-SL
     सेटिंग्ज कशा optimize कराव्यात याबद्दल नियम-आधारित (rule-based), आकड्यांसकट शिफारशी तयार करणे.
-    कमी trades (< min_trades) असलेले गट सांख्यिकीयदृष्ट्या अविश्वसनीय म्हणून वगळले जातात."""
+    कमी trades (< min_trades) असलेले गट सांख्यिकीयदृष्ट्या अविश्वसनीय म्हणून वगळले जातात.
+    english=True — Performance Report PDF साठी (fonts/ मध्ये Devanagari font नसल्याने PDF मध्ये फक्त
+    इंग्रजी शिफारसी दाखवाव्या लागतात) — on-screen Streamlit साठी मात्र नेहमीचंच (english=False) मराठी."""
     exit_df = get_exit_reason_breakdown(symbol, group_col, mode_filter=mode_filter, start_date=start_date, end_date=end_date)
     if exit_df.empty:
         return []
@@ -128,37 +154,68 @@ def _build_recommendations(symbol, group_col, group_label, mode_filter, start_da
         eod_pnl = eod_sub["Total P&L"].sum()
 
         if sl_pct >= 50 and total_pnl < 0:
-            recs.append(
-                f"⚠️ **{group_label}: {grp_label}** — {sl_pct:.0f}% trades ({int(sl_trades)}/{int(total_trades)}) "
-                f"SL/Trailing-SL ला touch होऊन बंद झाले आणि एकूण निव्वळ तोटा ₹{total_pnl:,.0f} आहे. "
-                "सुचवलेली दुरुस्ती: Entry गेट्स (RSI/PCR) अजून कडक करा, किंवा SL % थोडं वाढवून बघा — "
-                "सध्याचा SL खूप घट्ट असून सामान्य चढ-उतारातच लागतोय असं दिसतंय."
-            )
+            if english:
+                recs.append(
+                    f"⚠️ **{group_label}: {grp_label}** — {sl_pct:.0f}% of trades ({int(sl_trades)}/{int(total_trades)}) "
+                    f"closed via SL/Trailing-SL, with a net loss of Rs {total_pnl:,.0f} overall. "
+                    "Suggested fix: tighten entry gates (RSI/PCR) further, or widen the SL % — the current SL "
+                    "looks too tight and is getting hit by normal price noise."
+                )
+            else:
+                recs.append(
+                    f"⚠️ **{group_label}: {grp_label}** — {sl_pct:.0f}% trades ({int(sl_trades)}/{int(total_trades)}) "
+                    f"SL/Trailing-SL ला touch होऊन बंद झाले आणि एकूण निव्वळ तोटा ₹{total_pnl:,.0f} आहे. "
+                    "सुचवलेली दुरुस्ती: Entry गेट्स (RSI/PCR) अजून कडक करा, किंवा SL % थोडं वाढवून बघा — "
+                    "सध्याचा SL खूप घट्ट असून सामान्य चढ-उतारातच लागतोय असं दिसतंय."
+                )
         if eod_pct >= 30 and eod_pnl < 0:
-            recs.append(
-                f"⚠️ **{group_label}: {grp_label}** — {eod_pct:.0f}% trades ({int(eod_trades)}/{int(total_trades)}) "
-                f"EOD Square-off ला निव्वळ तोट्यात (₹{eod_pnl:,.0f}) बंद होतायत. "
-                "सुचवलेली दुरुस्ती: नवीन entry साठीची कट-ऑफ वेळ आधी आणा, किंवा Target अजून जवळ ठेवून "
-                "दिवसअखेरपर्यंत position उघडी राहण्याचं प्रमाण कमी करा."
-            )
+            if english:
+                recs.append(
+                    f"⚠️ **{group_label}: {grp_label}** — {eod_pct:.0f}% of trades ({int(eod_trades)}/{int(total_trades)}) "
+                    f"close at EOD Square-off with a net loss (Rs {eod_pnl:,.0f}). "
+                    "Suggested fix: bring the new-entry cutoff time earlier, or keep the Target closer so fewer "
+                    "positions stay open until end of day."
+                )
+            else:
+                recs.append(
+                    f"⚠️ **{group_label}: {grp_label}** — {eod_pct:.0f}% trades ({int(eod_trades)}/{int(total_trades)}) "
+                    f"EOD Square-off ला निव्वळ तोट्यात (₹{eod_pnl:,.0f}) बंद होतायत. "
+                    "सुचवलेली दुरुस्ती: नवीन entry साठीची कट-ऑफ वेळ आधी आणा, किंवा Target अजून जवळ ठेवून "
+                    "दिवसअखेरपर्यंत position उघडी राहण्याचं प्रमाण कमी करा."
+                )
         if target_pct >= 50 and total_pnl > 0:
-            recs.append(
-                f"✅ **{group_label}: {grp_label}** — {target_pct:.0f}% trades ({int(target_trades)}/{int(total_trades)}) "
-                f"Target/पुढचा Level गाठून नफ्यात बंद होतायत (एकूण ₹{total_pnl:,.0f}). "
-                "सध्याची सेटिंग्ज चांगली काम करतायत — हीच कायम ठेवा, शक्य असल्यास lot size थोडी वाढवण्याचा विचार करा."
-            )
+            if english:
+                recs.append(
+                    f"✅ **{group_label}: {grp_label}** — {target_pct:.0f}% of trades ({int(target_trades)}/{int(total_trades)}) "
+                    f"close profitably by hitting Target/Next-Level (Rs {total_pnl:,.0f} total). "
+                    "Current settings are working well — keep them as-is, and consider a modest lot-size increase if possible."
+                )
+            else:
+                recs.append(
+                    f"✅ **{group_label}: {grp_label}** — {target_pct:.0f}% trades ({int(target_trades)}/{int(total_trades)}) "
+                    f"Target/पुढचा Level गाठून नफ्यात बंद होतायत (एकूण ₹{total_pnl:,.0f}). "
+                    "सध्याची सेटिंग्ज चांगली काम करतायत — हीच कायम ठेवा, शक्य असल्यास lot size थोडी वाढवण्याचा विचार करा."
+                )
 
         tsl_sub = sub[sub["Exit Reason"].isin(["TRAILING_SL", "PCT_TRAILING_SL"])]
         if not tsl_sub.empty and not target_sub.empty:
             tsl_avg = tsl_sub["Total P&L"].sum() / tsl_sub["Trades"].sum()
             target_avg = target_sub["Total P&L"].sum() / target_sub["Trades"].sum()
             if tsl_avg > 0 and target_avg > 0 and tsl_avg < target_avg * 0.5:
-                recs.append(
-                    f"🟡 **{group_label}: {grp_label}** — Trailing SL मुळे बंद झालेल्या trades चा सरासरी नफा "
-                    f"(₹{tsl_avg:,.0f}) हा थेट Target गाठलेल्या trades च्या सरासरी नफ्यापेक्षा (₹{target_avg:,.0f}) "
-                    "निम्म्याहून कमी आहे — Trailing SL लवकर घट्ट होऊन नफा वेळेआधी बुक होतोय असं दिसतंय. "
-                    "सुचवलेली दुरुस्ती: Trailing SL चं ATR गुणक (किंवा % अंतर) थोडं सैल करून नफा जास्त वाढू द्या."
-                )
+                if english:
+                    recs.append(
+                        f"🟡 **{group_label}: {grp_label}** — the average profit on trades closed by Trailing SL "
+                        f"(Rs {tsl_avg:,.0f}) is less than half the average profit on trades that hit Target directly "
+                        f"(Rs {target_avg:,.0f}) — the Trailing SL appears to be locking in profit too early. "
+                        "Suggested fix: loosen the Trailing SL's ATR multiplier (or % distance) to let profits run further."
+                    )
+                else:
+                    recs.append(
+                        f"🟡 **{group_label}: {grp_label}** — Trailing SL मुळे बंद झालेल्या trades चा सरासरी नफा "
+                        f"(₹{tsl_avg:,.0f}) हा थेट Target गाठलेल्या trades च्या सरासरी नफ्यापेक्षा (₹{target_avg:,.0f}) "
+                        "निम्म्याहून कमी आहे — Trailing SL लवकर घट्ट होऊन नफा वेळेआधी बुक होतोय असं दिसतंय. "
+                        "सुचवलेली दुरुस्ती: Trailing SL चं ATR गुणक (किंवा % अंतर) थोडं सैल करून नफा जास्त वाढू द्या."
+                    )
     return recs
 
 
@@ -308,9 +365,9 @@ def render():
             ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार", "📐 Trading Style नुसार"]
         )
         with an_tab1:
-            _render_group_breakdown(symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
+            an_by_source = _render_group_breakdown(symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
         with an_tab2:
-            _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
+            an_by_timeframe = _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
         with an_tab3:
             _render_group_breakdown(symbol, "strategy", perf_mode_f, an_from, an_to, "Option Structure-wise P&L")
         with an_tab4:
@@ -318,14 +375,29 @@ def render():
 
         st.markdown("##### 📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण")
         trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+        trade_log_display = None
+        trade_log_pdf_df = None
         if trade_log_df.empty:
             st.caption("या कालावधीत कोणतेही बंद ट्रेड्स नाहीत.")
         else:
             trade_log_display = trade_log_df.copy()
             trade_log_display["Entry Reason"] = trade_log_display.apply(_entry_reason_text, axis=1)
             trade_log_display["Exit Reason"] = trade_log_display["exit_reason"].map(lambda r: _EXIT_REASON_LABELS.get(r, r))
+            trade_log_display["Exit Reason (नेमकं कारण)"] = trade_log_display["exit_reason_detail"].fillna("—")
+            # PDF मध्ये embedded इमोजी सुरक्षित नाहीत (table font मध्ये सर्व glyphs नसतात) — त्यामुळे
+            # PDF साठी वेगळा, इमोजी-विरहित (plain) DataFrame — on-screen table मात्र इमोजीसकटच राहतो.
+            trade_log_pdf_df = trade_log_df.copy()
+            trade_log_pdf_df["Entry Reason"] = trade_log_pdf_df.apply(_entry_reason_text_en, axis=1)
+            trade_log_pdf_df["Exit Reason"] = trade_log_pdf_df["exit_reason"].map(lambda r: _EXIT_REASON_LABELS_PLAIN.get(r, r))
+            trade_log_pdf_df["Exit Reason Detail"] = trade_log_pdf_df["exit_reason_detail"].fillna("-")
+            trade_log_pdf_df = trade_log_pdf_df[[
+                "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
+                "Exit Reason Detail", "Realized P&L", "mode",
+            ]].rename(columns={"mode": "Mode"})
+
             trade_log_display = trade_log_display[[
-                "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason", "Realized P&L", "mode",
+                "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
+                "Exit Reason (नेमकं कारण)", "Realized P&L", "mode",
             ]].rename(columns={"mode": "Mode"})
             st.dataframe(trade_log_display, width="stretch", height=350, hide_index=True)
             trade_log_csv = trade_log_display.to_csv(index=False).encode("utf-8")
@@ -351,6 +423,31 @@ def render():
         else:
             for rec in all_recs:
                 st.markdown(rec)
+
+        st.markdown("---")
+        st.markdown("##### 📄 संपूर्ण Performance Report (PDF)")
+        st.caption("वरील संपूर्ण विश्लेषण (Summary, Strategy/Timeframe breakdown, प्रत्येक Trade चं Entry+Exit कारण, शिफारसी) एकाच, प्रिंट-योग्य PDF मध्ये (इंग्रजीत — PDF fonts मध्ये मराठी glyphs उपलब्ध नाहीत).")
+        if st.button("📄 Performance Report PDF तयार करा", key="perf_pdf_generate"):
+            with st.spinner("PDF तयार होत आहे..."):
+                an_summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+                _, an_pnl_totals = generate_pnl_report(symbol, "Daily", an_from, an_to, mode_filter=perf_mode_f)
+                all_recs_en = (
+                    _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
+                    + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
+                )
+                mode_label_en = {"सर्व": "All", "फक्त LIVE": "LIVE only", "फक्त PAPER": "PAPER only"}.get(perf_mode_choice, perf_mode_choice)
+                perf_pdf_bytes = generate_performance_report_pdf(
+                    symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
+                    an_by_source, an_by_timeframe, trade_log_pdf_df, all_recs_en,
+                )
+            st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
+            st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
+        if st.session_state.get("perf_pdf_bytes"):
+            st.download_button(
+                "📥 Performance Report PDF डाऊनलोड करा", data=st.session_state["perf_pdf_bytes"],
+                file_name=st.session_state.get("perf_pdf_filename", f"{symbol}_Performance_Report.pdf"),
+                mime="application/pdf", key="perf_pdf_download",
+            )
 
     st.markdown("---")
     st.subheader("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)")

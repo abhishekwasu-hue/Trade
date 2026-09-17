@@ -94,7 +94,7 @@ def init_sqlite_db():
     # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (नवीन नियम-संच, Bot Dynamic SR Algo) — TSL
     # (Entry/Breakeven वर घट्ट करणारी) एकदाच (sticky) सक्रिय झाली की कायम तशीच राहते; आणि
     # 15M/30M/60M साठी "same-timeframe Next-Level-Exit" ओळखण्यासाठी entry_timeframe.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT"]:
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -720,8 +720,8 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     query = """SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
                       COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy,
-                      COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, realized_pnl AS "Realized P&L",
-                      COALESCE(mode, 'LIVE') AS mode
+                      COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
+                      realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
                FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
     params = [symbol]
     if mode_filter:
