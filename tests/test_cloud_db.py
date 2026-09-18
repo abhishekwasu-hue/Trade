@@ -822,3 +822,11 @@ class TestStrategySettings:
         assert defaults["demand_supply_gate_enabled"] is False
         assert defaults["trendline_gate_enabled"] is False
         assert "entry_pcr_gate_enabled" not in defaults  # PCR गेट मुद्दाम नाही (चर्चेत ठरल्याप्रमाणे)
+
+    def test_classic_sr_reversal_major_swings_only_defaults(self):
+        """🎓 वापरकर्त्याने प्रत्यक्ष चार्ट screenshot वरून "major swings only" दाखवलं, आणि तीच कल्पना
+        strategy मध्ये आणायला सांगितलं — दोन्ही एकत्र: वाढवलेला swing_order (3->5) आणि नवीन
+        swing_min_move_pct (ZigZag-सारखा magnitude फिल्टर, signals.filter_major_swings())."""
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"]
+        assert defaults["swing_order"] == 5
+        assert defaults["swing_min_move_pct"] == 0.5

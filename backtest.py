@@ -6,7 +6,7 @@ from signals import (
     classify_market_structure, detect_break, detect_pullback_retest,
     calculate_supertrend, calculate_rsi, check_pattern_rsi_gate,
     check_price_action_strategy, check_indicator_strategy,
-    find_swings, detect_trendline, analyze_chart_zones,
+    find_swings, detect_trendline, analyze_chart_zones, filter_major_swings,
 )
 from sr_dynamic import compute_dynamic_sr
 
@@ -422,8 +422,8 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
 def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, touch_tolerance_pct,
                                    sr_prd, sr_channel_w_pct, sr_maxnumsr, sr_min_strength, min_lookback_days,
                                    swing_order=3, swing_confluence_enabled=False, swing_tolerance_pct=0.15,
-                                   demand_supply_gate_enabled=False, trendline_gate_enabled=False,
-                                   trendline_lookback_swings=4):
+                                   swing_min_move_pct=0.0, demand_supply_gate_enabled=False,
+                                   trendline_gate_enabled=False, trendline_lookback_swings=4):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Classical Support/Resistance Reversal strategy —
     प्रस्तावित तिसरी strategy, 5M+15M) — एका टाईमफ्रेमच्या df वर, दर ट्रेडिंग-दिवशी (आदल्या
@@ -440,7 +440,10 @@ def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, t
     — backward-compatible, चालू केल्याशिवाय जुनाच निकाल):
       - swing_confluence_enabled: touch झालेला level हा नुकत्याच झालेल्या खऱ्या swing low (Support)
         / swing high (Resistance) च्या (signals.find_swings) जवळ (swing_tolerance_pct% च्या आत) आहे
-        का — म्हणजे नुसता clustered pivot-zone नाही, तर ताजा, खरा structural point.
+        का — म्हणजे नुसता clustered pivot-zone नाही, तर ताजा, खरा structural point. swing_min_move_pct
+        > 0 असेल तर, वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेल्या "major swings only" कल्पनेप्रमाणे,
+        raw fractal स्विंग्सवर आधी signals.filter_major_swings() (ZigZag-सारखा magnitude फिल्टर) लावला
+        जातो — किरकोळ (कमी हालचालीचे) स्विंग्स आधीच गाळले जातात.
       - demand_supply_gate_enabled: level हा signals.analyze_chart_zones() च्या Demand zone (Support)
         / Supply zone (Resistance) च्या आत आहे का (शेवटच्या swing low/high भोवतीचा ±0.3% पट्टा).
       - trendline_gate_enabled: त्याच दिशेची trendline (signals.detect_trendline — Support साठी
@@ -497,6 +500,8 @@ def _classic_sr_touch_candidates(df, timeframe_label, rsi_series, rsi_neutral, t
                 if swing_confluence_enabled:
                     window = df.iloc[:i + 1]
                     sh_idx, sl_idx = find_swings(window, order=swing_order)
+                    if swing_min_move_pct > 0:
+                        sh_idx, sl_idx = filter_major_swings(window, sh_idx, sl_idx, min_move_pct=swing_min_move_pct)
                     ref_idx = sl_idx if direction == "BULLISH" else sh_idx
                     if not ref_idx:
                         continue
@@ -535,8 +540,8 @@ def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot
                                        sr_maxnumsr=5, sr_min_strength=2, min_lookback_days=5,
                                        max_hold_bars=50, cooldown_minutes=30, swing_order=3,
                                        swing_confluence_enabled=False, swing_tolerance_pct=0.15,
-                                       demand_supply_gate_enabled=False, trendline_gate_enabled=False,
-                                       trendline_lookback_swings=4):
+                                       swing_min_move_pct=0.0, demand_supply_gate_enabled=False,
+                                       trendline_gate_enabled=False, trendline_lookback_swings=4):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — प्रस्तावित तिसरी strategy ("Classical Support/
     Resistance Reversal", 5M+15M) साठी walk-forward, no-lookahead backtest. Support touch (RSI<
@@ -584,7 +589,8 @@ def run_classic_sr_reversal_backtest(df_5m, df_15m, sl_spot_pct=0.4, target_spot
 
     refinement_kwargs = dict(
         swing_order=swing_order, swing_confluence_enabled=swing_confluence_enabled,
-        swing_tolerance_pct=swing_tolerance_pct, demand_supply_gate_enabled=demand_supply_gate_enabled,
+        swing_tolerance_pct=swing_tolerance_pct, swing_min_move_pct=swing_min_move_pct,
+        demand_supply_gate_enabled=demand_supply_gate_enabled,
         trendline_gate_enabled=trendline_gate_enabled, trendline_lookback_swings=trendline_lookback_swings,
     )
     cand_5m, funnel_5m = _classic_sr_touch_candidates(

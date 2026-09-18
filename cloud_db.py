@@ -257,7 +257,14 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # मधल्याच गेट्सशी सुसंगत तर्क आणि डीफॉल्ट मूल्यं).
         "swing_confluence_enabled": False,
         "swing_tolerance_pct": 0.15,
-        "swing_order": 3,
+        # 🎓 वापरकर्त्याने प्रत्यक्ष चार्ट screenshot वरून "major swings only" (किरकोळ noise-स्विंग्स
+        # वगळून फक्त खरोखर लक्षणीय turning points) दाखवलं आणि तीच कल्पना strategy मध्ये आणायला सांगितलं
+        # — दोन्ही एकत्र: (१) swing_order डीफॉल्ट 3 वरून 5 केला (fractal शोधासाठी दोन्ही बाजूला जास्त
+        # bars, आपोआप किरकोळ wiggles कमी पकडले जातात), (२) नवीन swing_min_move_pct (डीफॉल्ट 0.5%) —
+        # signals.filter_major_swings() द्वारे, मागच्या स्विंगपासून किमान इतकी % हालचाल नसेल तर तो
+        # स्विंग confluence साठी वापरला जात नाही (ZigZag-सारखा magnitude फिल्टर, fractal शोधीच्या वर).
+        "swing_order": 5,
+        "swing_min_move_pct": 0.5,
         "demand_supply_gate_enabled": False,
         "trendline_gate_enabled": False,
         "trendline_lookback_swings": 4,
