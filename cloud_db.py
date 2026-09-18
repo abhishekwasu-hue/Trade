@@ -725,6 +725,21 @@ def save_signal_log(entry):
         conn.close()
 
 
+def _as_trade_date_str(value):
+    """🎓 वापरकर्त्याने सापडवलेली गंभीर bug (Signal Log कधीच काहीच दाखवायचं नाही, Dashboard restart
+    केल्यावरही) — signal_log.trade_date column **TEXT** आहे (bot scripts नेहमी plain string
+    "YYYY-MM-DD" साठवतात — dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py चा
+    trade_date = now.strftime("%Y-%m-%d")). पण Dashboard (page_dashboard.py) Signal Log tab
+    get_ist_today() (datetime.date object) किंवा st.date_input() (तेही date object) थेट पास करायचं.
+    psycopg2 datetime.date ला SQL मध्ये आपोआप ::date cast सकट पाठवतो — त्यामुळे झालेली
+    "trade_date BETWEEN date AND date" (TEXT विरुद्ध DATE) तुलना PostgreSQL मध्येच
+    "operator does not exist: text >= date" error द्यायचं — जी except Exception: नेच शांतपणे
+    गिळली जायची (return None), आणि Dashboard ला "कुठलाही signal सापडला नाही" असं (चुकीचं) दिसायचं —
+    प्रत्यक्षात bot scripts व्यवस्थित लिहीत होते, फक्त हा वाचनाचा query कधीच यशस्वी व्हायचाच नाही.
+    आता कुठलाही caller date object किंवा string दोन्ही सुरक्षितपणे पाठवू शकतो."""
+    return value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else value
+
+
 def get_signal_log(symbol, trade_date):
     """त्या दिवसाचा संपूर्ण Signal Log वाचणे (अलीकडचा वेळ सर्वात वर)."""
     conn = get_connection()
@@ -736,7 +751,7 @@ def get_signal_log(symbol, trade_date):
                 """SELECT signal_time, level_type, level_price, hit_type, direction, ltp_at_signal,
                           trade_status, reason
                    FROM signal_log WHERE symbol=%s AND trade_date=%s ORDER BY signal_time DESC""",
-                (symbol, trade_date),
+                (symbol, _as_trade_date_str(trade_date)),
             )
             rows = cur.fetchall()
             cols = ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]
@@ -760,7 +775,7 @@ def get_signal_log_range(symbol, start_date, end_date):
                 """SELECT signal_time, level_type, level_price, hit_type, direction, ltp_at_signal,
                           trade_status, reason
                    FROM signal_log WHERE symbol=%s AND trade_date BETWEEN %s AND %s ORDER BY signal_time DESC""",
-                (symbol, start_date, end_date),
+                (symbol, _as_trade_date_str(start_date), _as_trade_date_str(end_date)),
             )
             rows = cur.fetchall()
             cols = ["signal_time", "level_type", "level_price", "hit_type", "direction", "ltp_at_signal", "trade_status", "reason"]

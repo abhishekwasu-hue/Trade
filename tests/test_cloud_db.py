@@ -8,6 +8,7 @@ upstox_api.py चं केंद्रीकृत Symbol->Instrument Key mappi
 वातावरणात (network प्रतिबंधामुळे) चाचणी करता आलेला नाही — फक्त graceful-fallback आणि mocked-connection
 logic इथे तपासलं आहे.
 """
+import datetime
 import os
 from unittest.mock import MagicMock, patch
 
@@ -361,6 +362,35 @@ class TestSignalLog:
     def test_get_signal_log_range_no_connection_returns_none(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
         assert cloud_db.get_signal_log_range("NIFTY", "2026-09-01", "2026-09-05") is None
+
+    def test_get_signal_log_range_normalizes_date_objects_to_strings(self, monkeypatch):
+        """🎓 वापरकर्त्याने सापडवलेली गंभीर bug — page_dashboard.py Signal Log tab नेहमी
+        get_ist_today()/st.date_input() (datetime.date objects) पाठवतं, पण signal_log.trade_date
+        column TEXT आहे. psycopg2 datetime.date ला ::date cast सकट पाठवतो -> PostgreSQL मध्ये
+        "text BETWEEN date AND date" कधीच जुळायचं नाही (silently caught, None रिटर्न) -> Dashboard
+        वर कायम "कुठलाही signal नाही" (चुकीचं) दिसायचं, जरी bot scripts व्यवस्थित लिहीत असले तरी.
+        आता date objects आधीच "YYYY-MM-DD" string मध्ये रूपांतरित होऊनच query ला जातात."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_signal_log_range("NIFTY", datetime.date(2026, 9, 1), datetime.date(2026, 9, 18))
+        bound_params = mock_cursor.execute.call_args.args[1]
+        assert bound_params == ("NIFTY", "2026-09-01", "2026-09-18")
+        assert all(isinstance(p, str) for p in bound_params)
+
+    def test_get_signal_log_normalizes_date_object_to_string(self, monkeypatch):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_signal_log("NIFTY", datetime.date(2026, 9, 18))
+        bound_params = mock_cursor.execute.call_args.args[1]
+        assert bound_params == ("NIFTY", "2026-09-18")
 
 
 class TestSRv2StrategyState:
