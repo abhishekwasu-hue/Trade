@@ -67,7 +67,23 @@ def setup_shared_context():
     else:
         st.sidebar.caption("⚪ Cloud Token Sync: OFF — SUPABASE_DB_URL सेट नाही, फक्त secrets/manual token वापरला जाईल.")
 
-    token_input = st.sidebar.text_input("Upstox Access Token:", value=default_token, type="password")
+    # 🎓 वापरकर्त्याने सापडवलेली bug — "मोबाईलवर Approve केल्यानंतरही Dashboard 401 (token expired)
+    # देत राहतो". Streamlit च्या widgets चं जुनंच, ओळखीचं वर्तन (page_bot_dynamic_sr_algo.py मध्ये आधीच
+    # फिक्स केलेल्या _widget_key bug सारखंच) — `value=` फक्त widget पहिल्यांदाच तयार होताना वापरलं
+    # जातं; त्यानंतर (auto-refresh मुळे बराच वेळ उघडी असलेल्या त्याच जुन्या session मध्ये) नवीन
+    # `value=default_token` पास केलं तरी widget त्याकडे दुर्लक्ष करून जुनाच (कालचा, आता expired झालेला)
+    # token दाखवत राहतो — जरी Supabase मध्ये webhook ने नवीन token आधीच साठवलेला असला तरी. आता widget
+    # चा स्वतःचा key ("token_input_widget") वापरून, प्रत्येक rerun ला cloud_token तपासला जातो —
+    # वापरकर्त्याने स्वतः field manually बदललेलं नसेल (अजूनही आधीच्या cloud token शीच जुळत असेल) तरच
+    # नवीन cloud_token जबरदस्तीने भरला जातो — वापरकर्त्याने स्वतः वेगळा token paste केला असेल, तर
+    # त्याला कधीच overwrite केलं जात नाही.
+    _TOKEN_WIDGET_KEY = "token_input_widget"
+    if cloud_token and st.session_state.get("_last_known_cloud_token") != cloud_token:
+        if st.session_state.get(_TOKEN_WIDGET_KEY, default_token) == st.session_state.get("_last_known_cloud_token", ""):
+            st.session_state[_TOKEN_WIDGET_KEY] = cloud_token
+        st.session_state["_last_known_cloud_token"] = cloud_token
+
+    token_input = st.sidebar.text_input("Upstox Access Token:", value=default_token, key=_TOKEN_WIDGET_KEY, type="password")
 
     if st.sidebar.button("💾 Save Token to Supabase"):
         if token_input.strip():
