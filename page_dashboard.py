@@ -907,7 +907,7 @@ def _render_market_zones():
 
                 sub_header("📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
                 if instant_log_df is None or instant_log_df.empty:
-                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
+                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (VPS cron, दर १ मिनिट) चालू आहे का तपासा. (GitHub Actions मधली आवृत्ती आता फक्त हाताने चालवण्यासाठी — automatic schedule VPS वर हलवलेला आहे.)")
                 else:
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                     display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
