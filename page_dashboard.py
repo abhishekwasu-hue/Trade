@@ -12,7 +12,7 @@ from tradingview_chart import build_lightweight_chart_html
 from sr_dynamic import compute_dynamic_sr
 import sqlite3
 from database import (
-    log_orders_batch, get_todays_realized_pnl,
+    log_orders_batch, get_todays_realized_pnl, has_open_trade_from_source,
 )
 from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
@@ -907,7 +907,7 @@ def _render_market_zones():
 
                 sub_header("📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
                 if instant_log_df is None or instant_log_df.empty:
-                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (GitHub Actions) चालू आहे का तपासा.")
+                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (VPS cron, दर १ मिनिट) चालू आहे का तपासा. (GitHub Actions मधली आवृत्ती आता फक्त हाताने चालवण्यासाठी — automatic schedule VPS वर हलवलेला आहे.)")
                 else:
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                     display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
@@ -1011,6 +1011,7 @@ def render():
     trading_mode = st.session_state["trading_mode"]
     enable_live_trading = st.session_state["enable_live_trading"]
     confirm_live_trading = st.session_state["confirm_live_trading"]
+    a1_signal_engine_enabled = st.session_state["a1_signal_engine_enabled"]
     raw_chain = st.session_state["raw_chain"]
     status_msg = st.session_state["status_msg"]
     underlying_price = st.session_state["underlying_price"]
@@ -1955,12 +1956,30 @@ def render():
                 f"Style: {trading_style}"
             )
 
+            # 🎓 वापरकर्त्याने Order Log वरून सापडवलेली गंभीर bug — A1 Signal Engine कडे (इतर तिन्ही
+            # automated bot strategies — dynamic_sr_instant/srv2/classic_sr_reversal — च्या उलट)
+            # "आधीच याच source ची position उघडी आहे का" हा बिनशर्त check कधीच नव्हता. auto_refresh
+            # मुळे दर मिनिटाला हा संपूर्ण block पुन्हा चालतो — जुनी position SL/Target ला बंद झाल्या-
+            # बंद, तेवढ्याच rerun मध्ये तेच सिग्नल-गेट्स अजूनही पास होत असतील, तर लगेच नवीन trade
+            # आपोआप उघडली जायची (कुठलाही cooldown/gap नाही) — काही सेकंदातच whipsaw (उघड-बंद-पुन्हा
+            # उघड) होत राहायचं. आता इतर तिन्ही bots प्रमाणेच, आधीची position बंद होईपर्यंत
+            # नवीन A1 trade घेतली जात नाही.
+            already_open = has_open_trade_from_source(symbol, "DASHBOARD")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — A1 Signal Engine ला आता (इतर तीन bot
+            # strategies प्रमाणेच) sidebar वरून स्पष्ट, डीफॉल्ट-बंद ON/OFF toggle आहे
+            # (shared_context.py, "a1_signal_engine_enabled"). वापरकर्त्याने मुद्दाम चालू
+            # केल्याशिवाय, PAPER mode मध्येही, इथून कधीच trade आपोआप घेतलं जात नाही.
             if lots < 1:
                 st.warning("🚫 **NO TRADE** — दिलेल्या Risk % नुसार 1 लॉटसाठीही पुरेसे मार्जिन उपलब्ध नाही.")
             elif not circuit_breaker_ok:
                 st.error("🚫 **NO TRADE** — दैनिक सर्किट ब्रेकर (कमाल तोटा / कमाल ट्रेड्स) गाठला गेला आहे.")
             elif not entry_cutoff_ok:
                 st.warning(f"🚫 **NO TRADE** — Intraday एंट्री कटऑफ वेळ ({entry_cutoff_time.strftime('%H:%M')} IST) उलटून गेली आहे.")
+            elif already_open:
+                st.info("ℹ️ **NO NEW TRADE** — A1 Signal Engine ची आधीची position अजून उघडी आहे (बंद होईपर्यंत नवीन trade घेतली जाणार नाही).")
+            elif not a1_signal_engine_enabled:
+                st.warning("🚫 **NO TRADE** — A1 Signal Engine sidebar वरून बंद आहे (सिग्नल दिसतंय, पण trade घेतलं जाणार नाही — sidebar मधून \"A1 Signal Engine ऑटो-Execute सक्रिय\" टिक करा).")
             else:
                 mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
                 st.success(f"✅ **FINAL A1 SIGNAL: {mode_label}** — {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s), सर्व गेट्स पास.")

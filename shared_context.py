@@ -265,7 +265,7 @@ def setup_shared_context():
         enable_live_trading = True
         confirm_live_trading = True
         st.sidebar.info(
-            "📝 Paper Trading Mode चालू आहे — सर्व सिग्नल्स आपोआप execute होतील, पण **कोणताही खरा ऑर्डर Upstox कडे "
+            "📝 Paper Trading Mode चालू आहे — Manual/Strategy Builder ऑर्डर्स सिम्युलेट होतील, पण **कोणताही खरा ऑर्डर Upstox कडे "
             "जाणार नाही**. Entry/Exit किंमती खऱ्या मार्केट LTP वरूनच घेतल्या जातात, त्यामुळे निकाल realistic असतील."
         )
     else:
@@ -276,6 +276,24 @@ def setup_shared_context():
             if not confirm_live_trading:
                 st.sidebar.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय कोणतेही लाईव्ह ऑर्डर्स जाणार नाहीत.")
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "आपण फक्त 2 strategies (Bot Dynamic SR Algo
+    # वरून) चालू केल्या, तरीही एक ओळखीचं नसलेलं PAPER trade झालं" असा प्रश्न वापरकर्त्याने विचारला.
+    # कारण सापडलं — Dashboard च्या स्वतःच्या "🧬 A1 Signal Engine" (page_dashboard.py) ला आधी
+    # कुठलाच स्वतंत्र ON/OFF नव्हता — PAPER mode मध्ये (वरचा डीफॉल्ट) ते नेहमीच आपोआप, dashboard
+    # उघडं असेल तेव्हा, स्वतःचे गेट्स पास झाले की trade घ्यायचं — इतर तीन bot strategies (ज्यांना
+    # Bot Dynamic SR Algo वरून स्पष्ट symbol_enabled toggle आहे) च्या उलट. आता A1 Signal Engine ला
+    # सुद्धा तसाच, स्वतंत्र, डीफॉल्ट-बंद toggle — वापरकर्त्याने स्पष्टपणे चालू केल्याशिवाय कधीच
+    # (PAPER सुद्धा) trade घेतलं जाणार नाही.
+    st.sidebar.markdown("### 🧬 A1 Signal Engine")
+    a1_signal_engine_enabled = st.sidebar.checkbox(
+        "A1 Signal Engine ऑटो-Execute सक्रिय (डीफॉल्ट बंद)", value=False,
+        help="Dashboard च्या 'Signal Engine व Trading' tab मधलं स्वतंत्र, discretionary trading engine — "
+             "Bot Dynamic SR Algo च्या 3 strategies पासून वेगळं. बंद असल्यास हे पान उघडं असतानाही "
+             "कुठलाही (PAPER सुद्धा) trade आपोआप घेतलं जाणार नाही.",
+    )
+    if not a1_signal_engine_enabled:
+        st.sidebar.caption("⚪ A1 Signal Engine सध्या बंद आहे — सिग्नल्स दिसतील, पण कुठलाही trade आपोआप घेतलं जाणार नाही.")
+
     # --- ७. मुख्य डॅशबोर्ड लॉजिक ---
 
 
@@ -284,6 +302,7 @@ def setup_shared_context():
     st.session_state["chart_type"] = chart_type
     st.session_state["secrets_token"] = secrets_token
     st.session_state["token_input"] = token_input
+    st.session_state["a1_signal_engine_enabled"] = a1_signal_engine_enabled
     st.session_state["auto_refresh"] = auto_refresh
     st.session_state["lot_size"] = lot_size
     st.session_state["risk_pct_per_trade"] = risk_pct_per_trade
