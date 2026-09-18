@@ -1011,6 +1011,7 @@ def render():
     trading_mode = st.session_state["trading_mode"]
     enable_live_trading = st.session_state["enable_live_trading"]
     confirm_live_trading = st.session_state["confirm_live_trading"]
+    a1_signal_engine_enabled = st.session_state["a1_signal_engine_enabled"]
     raw_chain = st.session_state["raw_chain"]
     status_msg = st.session_state["status_msg"]
     underlying_price = st.session_state["underlying_price"]
@@ -1965,6 +1966,10 @@ def render():
             # नवीन A1 trade घेतली जात नाही.
             already_open = has_open_trade_from_source(symbol, "DASHBOARD")
 
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — A1 Signal Engine ला आता (इतर तीन bot
+            # strategies प्रमाणेच) sidebar वरून स्पष्ट, डीफॉल्ट-बंद ON/OFF toggle आहे
+            # (shared_context.py, "a1_signal_engine_enabled"). वापरकर्त्याने मुद्दाम चालू
+            # केल्याशिवाय, PAPER mode मध्येही, इथून कधीच trade आपोआप घेतलं जात नाही.
             if lots < 1:
                 st.warning("🚫 **NO TRADE** — दिलेल्या Risk % नुसार 1 लॉटसाठीही पुरेसे मार्जिन उपलब्ध नाही.")
             elif not circuit_breaker_ok:
@@ -1973,6 +1978,8 @@ def render():
                 st.warning(f"🚫 **NO TRADE** — Intraday एंट्री कटऑफ वेळ ({entry_cutoff_time.strftime('%H:%M')} IST) उलटून गेली आहे.")
             elif already_open:
                 st.info("ℹ️ **NO NEW TRADE** — A1 Signal Engine ची आधीची position अजून उघडी आहे (बंद होईपर्यंत नवीन trade घेतली जाणार नाही).")
+            elif not a1_signal_engine_enabled:
+                st.warning("🚫 **NO TRADE** — A1 Signal Engine sidebar वरून बंद आहे (सिग्नल दिसतंय, पण trade घेतलं जाणार नाही — sidebar मधून \"A1 Signal Engine ऑटो-Execute सक्रिय\" टिक करा).")
             else:
                 mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
                 st.success(f"✅ **FINAL A1 SIGNAL: {mode_label}** — {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s), सर्व गेट्स पास.")
