@@ -2,14 +2,14 @@ name: Trigger Upstox Token Request (रोज सकाळी मोबाईल
 
 # 🎓 Production-readiness सुधारणा — याआधी रोजचा token refresh पूर्णपणे मानवी आठवणीवर अवलंबून होता
 # (कुणीतरी सकाळी मॅन्युअली trigger_upstox_token_request.py चालवायचं, मग check_token_freshness.py
-# फक्त अलर्ट द्यायचं — पण refresh प्रक्रिया सुरूच करायचं नाही). आता हा workflow रोज सकाळी ०८:०० IST ला
-# (बाजार उघडण्याच्या सव्वा तास आधी, आणि check_token_freshness.yml च्या ०८:४५ च्या तपासणीआधी) आपोआप
+# फक्त अलर्ट द्यायचं — पण refresh प्रक्रिया सुरूच करायचं नाही). आता हा workflow रोज सकाळी ०७:०० IST ला
+# (बाजार उघडण्याच्या पावणेदोन तास आधी, आणि check_token_freshness.yml च्या ०८:४५ च्या तपासणीआधी) आपोआप
 # Upstox ला विनंती पाठवतो — वापरकर्त्याला फक्त मोबाईलवर एक टॅप (Approve) करायचं उरतं, संपूर्ण
 # मॅन्युअल पावलं (login URL उघडणे, OTP, कोड कॉपी-पेस्ट) नाही.
 
 on:
   schedule:
-    - cron: "30 2 * * 1-5"  # ०८:०० IST, सोम-शुक्र
+    - cron: "30 1 * * 1-5"  # ०७:०० IST, सोम-शुक्र
   workflow_dispatch:  # हातानेही केव्हाही चालवता येईल
 
 jobs:
