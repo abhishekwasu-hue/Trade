@@ -343,6 +343,28 @@ def evaluate_point_spot_exit(
     return None, tsl_now_activated, None
 
 
+def compute_premium_trailing_floor(premium_pnl_points, peak_premium_pnl_points, trail_distance_points):
+    """
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
+    strategies") — 3 Bot स्ट्रॅटेजींसाठी (1-Min Instant/dynamic_sr_instant, SRv2/srv2_momentum_reversal,
+    Classical S/R Reversal/classic_sr_reversal) Premium-Points-आधारित *सतत* Trailing Stop.
+
+    evaluate_point_spot_exit() मधलं मूळ TSL-to-Breakeven लॉजिक (अजूनही पूर्णपणे न बदललेलं) एकदाच
+    सक्रिय झाल्यावर SL कायमचा Entry/Breakeven (0) वर अडकवतं. हे फंक्शन त्याच्या वर, पूर्णपणे स्वतंत्रपणे
+    (manage_open_trades() मधून, evaluate_point_spot_exit() चं परिणाम "still open" असेल तरच) वापरलं
+    जातं — TSL एकदा सक्रिय झाल्यावर, SL Breakeven ऐवजी (Peak Premium Points - trail_distance_points)
+    इतका, नफा जसा वाढत जाईल तसा सतत मागे-मागे सरकत राहतो. Breakeven पेक्षा हे कधीच सैल (वाईट) होत नाही
+    — कारण हे फक्त exit_reason अजून None असतानाच (म्हणजे Breakeven आधीच ओलांडला गेलेला नाही तेव्हाच)
+    तपासलं जातं.
+
+    Returns: (नवीन peak_premium_pnl_points, floor_points — याच्या खाली/बरोबर premium_pnl_points
+    गेला की Trailing SL लागू व्हायला हवा)
+    """
+    new_peak = max(peak_premium_pnl_points or 0.0, premium_pnl_points)
+    floor_points = new_peak - trail_distance_points
+    return new_peak, floor_points
+
+
 def compute_pct_trailing_sl_level(current_pnl, peak_pnl, net_credit_total, activation_pct=20, lock_pct=10, original_sl_level=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली, established ATR-Trailing पेक्षा वेगळी यंत्रणा — फक्त
@@ -431,8 +453,12 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` trades साठी underlying
     # स्पॉटची सद्य LTP लागते (option-leg LTPs पुरेसे नाहीत, SL/Target आता स्पॉट-आधारित). कमीत कमी
     # एक असा trade असेल तरच हा जादा fetch करणे.
+    # 🎓 Trailing SL feature टेस्ट करताना सापडलेली, आधीपासूनची गंभीर bug — इथे "classic_sr_reversal"
+    # गहाळ होता, म्हणजे त्या strategy चे trades कधीच त्यांच्या स्वतःच्या (Spot%+Premium-Points+TSL)
+    # exit branch मध्ये पोहोचायचेच नाहीत (entry_level_price असूनही underlying_spot नेहमी None) —
+    # शांतपणे चुकीच्या generic (A1/manual) exit-लॉजिककडे पडायचे. आता जोडला.
     underlying_spot = None
-    if any(t[11] in ("dynamic_sr_instant", "srv2_momentum_reversal") for t in parsed_trades):
+    if any(t[11] in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal") for t in parsed_trades):
         spot_key = get_instrument_key(symbol)
         spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
         # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("exit condition match झाली तरी exit झाला नाही") सोडवण्यासाठी
@@ -503,6 +529,24 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             exit_reason = point_exit_reason
             exit_reason_detail = point_exit_detail
 
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — user-defined Premium-Points Trailing Stop
+            # (settings-चालित, डीफॉल्ट बंद). TSL आधीच सक्रिय झाली असेल आणि अजून SL/Target लागलेला
+            # नसेल तरच लागू — Breakeven (evaluate_point_spot_exit वरचाच) कधीच सैल केला जात नाही.
+            if exit_reason is None and tsl_now_activated:
+                trail_enabled = settings_1m["naked_trailing_sl_enabled"] if is_naked else settings_1m["spread_trailing_sl_enabled"]
+                if trail_enabled:
+                    trail_distance = settings_1m["naked_trailing_distance_points"] if is_naked else settings_1m["spread_trailing_distance_points"]
+                    new_peak_premium, floor_points = compute_premium_trailing_floor(premium_pnl_points, peak_pnl, trail_distance)
+                    if new_peak_premium != peak_pnl:
+                        cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_premium, trade_id))
+                        peak_pnl = new_peak_premium
+                    if premium_pnl_points <= floor_points:
+                        exit_reason = "TSL_SL"
+                        exit_reason_detail = (
+                            f"Trailing SL hit (Premium Points trail) — Peak premium gain {new_peak_premium:.1f} pts, "
+                            f"trailing distance {trail_distance:.1f} pts -> floor {floor_points:.1f} pts, now at {premium_pnl_points:.1f} pts."
+                        )
+
             if exit_reason is None and trade_style == "INTRADAY":
                 dynamic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (DYNAMIC_SR_EOD_HOUR, DYNAMIC_SR_EOD_MINUTE)
                 if dynamic_sr_past_eod_cutoff:
@@ -544,6 +588,23 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             exit_reason = point_exit_reason
             exit_reason_detail = point_exit_detail
 
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — user-defined Premium-Points Trailing Stop
+            # (settings-चालित, डीफॉल्ट बंद). 1m_instant प्रमाणेच.
+            if exit_reason is None and tsl_now_activated:
+                trail_enabled = settings_csr["naked_trailing_sl_enabled"] if is_naked else settings_csr["spread_trailing_sl_enabled"]
+                if trail_enabled:
+                    trail_distance = settings_csr["naked_trailing_distance_points"] if is_naked else settings_csr["spread_trailing_distance_points"]
+                    new_peak_premium, floor_points = compute_premium_trailing_floor(premium_pnl_points, peak_pnl, trail_distance)
+                    if new_peak_premium != peak_pnl:
+                        cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_premium, trade_id))
+                        peak_pnl = new_peak_premium
+                    if premium_pnl_points <= floor_points:
+                        exit_reason = "TSL_SL"
+                        exit_reason_detail = (
+                            f"Trailing SL hit (Premium Points trail) — Peak premium gain {new_peak_premium:.1f} pts, "
+                            f"trailing distance {trail_distance:.1f} pts -> floor {floor_points:.1f} pts, now at {premium_pnl_points:.1f} pts."
+                        )
+
             if exit_reason is None and trade_style == "INTRADAY":
                 classic_sr_past_eod_cutoff = (ist_now.hour, ist_now.minute) >= (CLASSIC_SR_EOD_HOUR, CLASSIC_SR_EOD_MINUTE)
                 if classic_sr_past_eod_cutoff:
@@ -571,6 +632,21 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 exit_reason = point_exit_reason
                 exit_reason_detail = point_exit_detail
 
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा — user-defined Premium-Points Trailing Stop
+                # (settings-चालित, डीफॉल्ट बंद). 1m_instant प्रमाणेच.
+                if exit_reason is None and tsl_now_activated and settings_15m["naked_trailing_sl_enabled"]:
+                    trail_distance = settings_15m["naked_trailing_distance_points"]
+                    new_peak_premium, floor_points = compute_premium_trailing_floor(premium_pnl_points, peak_pnl, trail_distance)
+                    if new_peak_premium != peak_pnl:
+                        cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_premium, trade_id))
+                        peak_pnl = new_peak_premium
+                    if premium_pnl_points <= floor_points:
+                        exit_reason = "TSL_SL"
+                        exit_reason_detail = (
+                            f"Trailing SL hit (Premium Points trail) — Peak premium gain {new_peak_premium:.1f} pts, "
+                            f"trailing distance {trail_distance:.1f} pts -> floor {floor_points:.1f} pts, now at {premium_pnl_points:.1f} pts."
+                        )
+
                 if exit_reason is None and trade_style == "INTRADAY":
                     naked_past_eod = (ist_now.hour, ist_now.minute) >= (settings_15m["naked_eod_hour"], settings_15m["naked_eod_minute"])
                     if naked_past_eod:
@@ -592,6 +668,22 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     cur.execute("UPDATE live_trades SET tsl_activated=? WHERE trade_id=?", (1 if tsl_now_activated else 0, trade_id))
                 exit_reason = point_exit_reason if point_exit_reason != "TARGET" else None
                 exit_reason_detail = point_exit_detail if exit_reason is not None else None
+
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा — user-defined Premium-Points Trailing Stop
+                # (settings-चालित, डीफॉल्ट बंद). PREMIUM_TARGET/NEXT_LEVEL_EXIT/Carry-Forward
+                # तपासण्यांच्या आधी (existing TSL-to-Breakeven प्रमाणेच priority).
+                if exit_reason is None and tsl_now_activated and settings_15m["spread_trailing_sl_enabled"]:
+                    trail_distance = settings_15m["spread_trailing_distance_points"]
+                    new_peak_premium, floor_points = compute_premium_trailing_floor(premium_pnl_points, peak_pnl, trail_distance)
+                    if new_peak_premium != peak_pnl:
+                        cur.execute("UPDATE live_trades SET peak_pnl=? WHERE trade_id=?", (new_peak_premium, trade_id))
+                        peak_pnl = new_peak_premium
+                    if premium_pnl_points <= floor_points:
+                        exit_reason = "TSL_SL"
+                        exit_reason_detail = (
+                            f"Trailing SL hit (Premium Points trail) — Peak premium gain {new_peak_premium:.1f} pts, "
+                            f"trailing distance {trail_distance:.1f} pts -> floor {floor_points:.1f} pts, now at {premium_pnl_points:.1f} pts."
+                        )
 
                 if exit_reason is None and target_level is not None and current_pnl >= target_level:
                     exit_reason = "PREMIUM_TARGET"

@@ -262,6 +262,33 @@ def render():
             naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
             naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
 
+        st.markdown("---")
+        sub_header("📈 Trailing Stop Loss (Premium Points, सतत)", HDR_PURPLE)
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
+        # strategies") — डीफॉल्ट TSL Activation गाठल्यावर SL कायमचा Entry/Breakeven वर अडकतो. इथे
+        # चालू केल्यास, त्याऐवजी SL नफ्याच्या मागे-मागे (Peak Premium Points - खालचं अंतर) सतत
+        # सरकत राहतो — कधीच Breakeven पेक्षा सैल होत नाही. डीफॉल्ट बंद (जुनं वर्तन कायम).
+        st.caption("TSL Activation (वर) गाठल्यावर लागू — चालू केल्यास SL Breakeven वर न अडकता, नफ्याच्या मागे-मागे (Peak Premium Points - खालचं Trailing Distance) सतत सरकत राहतो.")
+        tsl1, tsl2 = st.columns(2)
+        with tsl1:
+            spread_trailing_sl_enabled = st.checkbox(
+                "Credit Spread — Trailing SL सक्रिय", value=bool(settings.get("spread_trailing_sl_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "spread_trailing_sl_enabled"),
+            )
+            spread_trailing_distance_points = _number_input(
+                "Credit Spread — Trailing Distance (Premium Points)", settings, "spread_trailing_distance_points",
+                strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not spread_trailing_sl_enabled,
+            )
+        with tsl2:
+            naked_trailing_sl_enabled = st.checkbox(
+                "Naked Option — Trailing SL सक्रिय", value=bool(settings.get("naked_trailing_sl_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "naked_trailing_sl_enabled"),
+            )
+            naked_trailing_distance_points = _number_input(
+                "Naked Option — Trailing Distance (Premium Points)", settings, "naked_trailing_distance_points",
+                strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not naked_trailing_sl_enabled,
+            )
+
         if strategy_key == "15m_dynamic_sr":
             e1, e2 = st.columns(2)
             with e1:
@@ -282,6 +309,8 @@ def render():
             "naked_sl_spot_pct": float(naked_sl_spot_pct), "naked_sl_premium_points": float(naked_sl_premium_points),
             "naked_tsl_spot_pct": float(naked_tsl_spot_pct), "naked_tsl_premium_points": float(naked_tsl_premium_points),
             "naked_target_spot_pct": float(naked_target_spot_pct), "naked_target_premium_points": float(naked_target_premium_points),
+            "spread_trailing_sl_enabled": bool(spread_trailing_sl_enabled), "spread_trailing_distance_points": float(spread_trailing_distance_points),
+            "naked_trailing_sl_enabled": bool(naked_trailing_sl_enabled), "naked_trailing_distance_points": float(naked_trailing_distance_points),
         }
         # 🎓 classic_sr_reversal साठी PCR गेट मुद्दामच नाही (वर पहा) — त्यामुळे हे fields save करायचे नाहीत.
         if strategy_key != "classic_sr_reversal":

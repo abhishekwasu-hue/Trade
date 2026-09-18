@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import cloud_db
 import database
 import trading_engine
 
@@ -681,3 +682,151 @@ class TestEvaluatePointSpotExit:
         """TSL आधीच सक्रिय असतानाही, Target गाठला की तोच लागू व्हायला हवा (TSL_SL नाही)."""
         r = trading_engine.evaluate_point_spot_exit(True, 23900, 23900, 15, 0.05, 5, 0.10, 10, 0.20, 15, True)
         assert r[0] == "TARGET"
+
+
+class TestComputePremiumTrailingFloor:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("user defined trailing stop loss for all strategies") —
+    3 Bot स्ट्रॅटेजींसाठी Premium-Points-आधारित सतत Trailing Stop चं शुद्ध (pure) गणित."""
+
+    def test_peak_tracks_current_when_higher(self):
+        new_peak, floor_points = trading_engine.compute_premium_trailing_floor(20.0, 15.0, 5.0)
+        assert new_peak == 20.0
+        assert floor_points == 15.0
+
+    def test_peak_never_decreases_when_current_drops(self):
+        new_peak, floor_points = trading_engine.compute_premium_trailing_floor(18.0, 25.0, 5.0)
+        assert new_peak == 25.0  # आधीचा peak (25) कायम, सद्य (18) पेक्षा जास्त
+        assert floor_points == 20.0
+
+    def test_none_peak_treated_as_zero(self):
+        new_peak, floor_points = trading_engine.compute_premium_trailing_floor(10.0, None, 5.0)
+        assert new_peak == 10.0
+        assert floor_points == 5.0
+
+
+class TestPremiumTrailingStopLossIntegration:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — तिन्ही Bot स्ट्रॅटेजींच्या manage_open_trades() branches
+    मध्ये नवीन Premium-Points Trailing SL (settings-चालित, डीफॉल्ट बंद) योग्य प्रकारे लागू होतो का."""
+
+    def _mock_ltp_map(self, spot_value, short_leg_ltp, long_hedge_ltp):
+        def _fn(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": spot_value}
+            return {"PE24400": short_leg_ltp, "PE24300": long_hedge_ltp}
+        return _fn
+
+    def _settings_with_trailing(self, base_strategy_name, **overrides):
+        def _fn(strategy_name, symbol):
+            settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS[base_strategy_name])
+            settings["symbol_enabled"] = True
+            settings.update(overrides)
+            return settings
+        return _fn
+
+    def test_disabled_by_default_stays_at_old_breakeven_only(self, temp_db, monkeypatch):
+        """trailing टॉगल डीफॉल्ट बंद असल्याने, TSL सक्रिय असतानाही नफा breakeven च्या वर असेल
+        (जुनं वर्तन) तर बंद व्हायला नको — नवीन कोड जोडण्याआधीचंच वर्तन अबाधित."""
+        seed_trade(temp_db, "TT1", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0)
+        # स्पॉट neutral, प्रीमियम-नफा = 30-18 = 12 (breakeven च्या वर, Target 15 च्या खाली, पण
+        # trailing बंद असल्याने काहीच परिणाम नाही)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+    def test_dynamic_sr_instant_trailing_stays_open_above_floor(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "TT2", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_strategy_settings", self._settings_with_trailing(
+            "1m_instant", spread_trailing_sl_enabled=True, spread_trailing_distance_points=5,
+        ))
+        # प्रीमियम-नफा = 30-18 = 12 (Target 15 च्या खाली); peak आता 12, floor = 12-5 = 7; 12 > 7 -- उघडाच राहायला हवा
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT peak_pnl FROM live_trades WHERE trade_id='TT2'").fetchone()
+        conn.close()
+        assert row == (12.0,)  # नवीन peak साठवला गेला
+
+    def test_dynamic_sr_instant_trailing_triggers_below_floor(self, temp_db, monkeypatch):
+        # आधीच्या cycle मध्ये peak 15 पर्यंत गेलेला (saved), आता प्रीमियम-नफा घसरून 8 झालेला --
+        # floor = 15-5 = 10, 8 <= 10 -- Trailing SL लागू व्हायलाच हवा (Target 15 च्या खालीच राहून, TARGET न लागता).
+        seed_trade(temp_db, "TT3", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=15)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_strategy_settings", self._settings_with_trailing(
+            "1m_instant", spread_trailing_sl_enabled=True, spread_trailing_distance_points=5,
+        ))
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 22.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TSL_SL"
+
+    def test_classic_sr_reversal_trailing_triggers_below_floor(self, temp_db, monkeypatch):
+        # dynamic_sr_instant च्याच नंबर्ससह (classic_sr_reversal चाही spread_target_premium_points
+        # डीफॉल्ट 15 आहे) -- peak 15, current 8, floor=10, TARGET(15) च्या खाली राहून TSL_SL लागू.
+        seed_trade(temp_db, "TT4", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="classic_sr_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=15)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_strategy_settings", self._settings_with_trailing(
+            "classic_sr_reversal", spread_trailing_sl_enabled=True, spread_trailing_distance_points=5,
+        ))
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 22.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TSL_SL"
+
+    def test_srv2_spread_trailing_triggers_below_floor(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "TT5", net_credit=30, sl_level=-2250, target_level=100000,
+                   strategy="BULL_PUT_SPREAD", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=30)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_strategy_settings", self._settings_with_trailing(
+            "15m_dynamic_sr", spread_trailing_sl_enabled=True, spread_trailing_distance_points=5,
+        ))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: None)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 6.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TSL_SL"
+
+    def test_srv2_naked_trailing_triggers_below_floor(self, temp_db, monkeypatch):
+        # एकच naked (BUY) leg -- net_credit=-30 (debit paid), ltp=54 -> premium_pnl_points =
+        # net_credit - cost_to_close_now = -30 - (-54) = 24. peak आधीच 30 (seeded), floor=30-5=25,
+        # 24 <= 25 -- Trailing SL लागू व्हायलाच हवा.
+        seed_trade(temp_db, "TT6", net_credit=-30, sl_level=-1125, target_level=100000,
+                   strategy="NAKED_CALL", source="srv2_momentum_reversal", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=30,
+                   legs=[{"role": "naked_leg", "strike": 24400, "instrument_key": "CE24400", "transaction_type": "BUY"}])
+        monkeypatch.setattr(trading_engine.cloud_db, "get_strategy_settings", self._settings_with_trailing(
+            "15m_dynamic_sr", naked_trailing_sl_enabled=True, naked_trailing_distance_points=5,
+        ))
+        def _naked_ltp(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": 23905.0}
+            return {"CE24400": 54.0}
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", _naked_ltp)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TSL_SL"

@@ -209,6 +209,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "naked_tsl_premium_points": 20,
         "naked_target_spot_pct": 0.20,
         "naked_target_premium_points": 30,
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
+        # strategies") — आधीचा TSL_SL एकदाच सक्रिय झाल्यावर SL कायमचा Entry/Breakeven वर अडकायचा
+        # (evaluate_point_spot_exit, अजूनही न बदललेला). आता, हा नवीन टॉगल चालू केल्यास, TSL सक्रिय
+        # झाल्यानंतर SL Breakeven ऐवजी सतत नफ्याच्या मागे-मागे (Peak Premium Points - trailing
+        # distance) सरकत राहतो — Premium Points याच युनिटमध्ये (वापरकर्त्याने निवडलेल्या पद्धतीनुसार).
+        # डीफॉल्ट बंद — जुनं (Breakeven-only) वर्तन न बदलणाऱ्या वापरकर्त्यांसाठी तेच राहतं.
+        "spread_trailing_sl_enabled": False,
+        "spread_trailing_distance_points": 5,
+        "naked_trailing_sl_enabled": False,
+        "naked_trailing_distance_points": 10,
     },
     "15m_dynamic_sr": {
         "lots": 1,
@@ -239,6 +249,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "naked_target_premium_points": 50,
         "naked_eod_hour": 15,            # Naked trades कधीच carry-forward नाहीत, नेहमी आजच 3:00pm ला बंद
         "naked_eod_minute": 0,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("user defined trailing stop loss for all strategies") —
+        # 1m_instant सारखीच, Premium Points आधारित सतत Trailing Stop (TSL सक्रिय झाल्यानंतर, Breakeven
+        # ऐवजी). डीफॉल्ट बंद.
+        "spread_trailing_sl_enabled": False,
+        "spread_trailing_distance_points": 8,
+        "naked_trailing_sl_enabled": False,
+        "naked_trailing_distance_points": 15,
     },
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली स्वतंत्र, नवीन strategy — "Classical Support/Resistance
     # Reversal" (5M+15M pooled, Support touch -> Bull Put Spread, Resistance touch -> Bear Call
@@ -283,6 +300,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "naked_tsl_premium_points": 20,
         "naked_target_spot_pct": 0.8,
         "naked_target_premium_points": 30,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("user defined trailing stop loss for all strategies") —
+        # 1m_instant सारखीच, Premium Points आधारित सतत Trailing Stop (TSL सक्रिय झाल्यानंतर, Breakeven
+        # ऐवजी). डीफॉल्ट बंद.
+        "spread_trailing_sl_enabled": False,
+        "spread_trailing_distance_points": 5,
+        "naked_trailing_sl_enabled": False,
+        "naked_trailing_distance_points": 10,
     },
 }
 
