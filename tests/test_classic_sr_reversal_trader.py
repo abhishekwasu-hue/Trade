@@ -126,6 +126,21 @@ class TestEntryRefinementGateFunctions:
         ok, nearest = csr.check_swing_confluence(df, 100.0, "BULLISH")
         assert ok is False
 
+    def test_swing_min_move_pct_filters_minor_swing(self):
+        """🎓 वापरकर्त्याने प्रत्यक्ष चार्ट screenshot वरून "major swings only" दाखवलं — swing_min_move_pct
+        डीफॉल्ट (0.0) सह किरकोळ (मागच्या high पासून फक्त ~2.9% हालचालीचा) स्विंग लो गेट पास करतो, पण
+        जास्त threshold दिल्यास तो किरकोळ स्विंग गाळला जाऊन उरलेला एकमेव major स्विंग लो (90.0) दूर
+        असल्याने गेट अडवतो."""
+        vals = [108, 104, 101, 90.0, 95, 99, 103.0, 102, 101, 100.05, 101, 102, 103.5, 101, 100.5, 100.0]
+        df = pd.DataFrame(_flat_bars(vals))
+        baseline_ok, baseline_nearest = csr.check_swing_confluence(df, 100.0, "BULLISH")
+        assert baseline_ok is True
+        assert baseline_nearest == 100.05
+
+        filtered_ok, filtered_nearest = csr.check_swing_confluence(df, 100.0, "BULLISH", swing_min_move_pct=3.5)
+        assert filtered_ok is False
+        assert filtered_nearest == 90.0
+
     def test_demand_supply_passes_when_level_inside_zone(self):
         df = pd.DataFrame(_flat_bars(_ZIGZAG_WITH_CONFIRMED_SWING_NEAR_100))
         ok, zone = csr.check_demand_supply_confluence(df, 100.0, "BULLISH")
@@ -275,7 +290,7 @@ class TestProcessSymbolCoreFlow:
             {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 100.0, "zone_high": 100.0,
              "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
         ])
-        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(trendline_gate_enabled=True, entry_rsi_gate_enabled=False)), \
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(trendline_gate_enabled=True, entry_rsi_gate_enabled=False, swing_order=3)), \
              patch.object(csr.cloud_db, "get_market_zones", return_value=zone_matching_zigzag), \
              patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(csr, "fetch_candles", return_value=broken_trendline_candles), \

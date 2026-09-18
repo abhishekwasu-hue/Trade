@@ -170,6 +170,28 @@ class TestClassicSrReversalEntryRefinement:
         assert result["signals"][0]["direction"] == "BULLISH"
         assert result["funnel"]["swing_passed_5m"] >= 1
 
+    def test_swing_min_move_pct_filters_minor_swing_and_blocks_entry(self, monkeypatch):
+        """🎓 वापरकर्त्याने प्रत्यक्ष चार्ट screenshot वरून "major swings only" दाखवलं, आणि तीच कल्पना
+        strategy मध्ये आणायला सांगितलं — swing_min_move_pct=0 (डीफॉल्ट) सह, level(100) पासून फक्त
+        0.05 दूर असलेला किरकोळ (मागच्या high पासून फक्त ~2.9% हालचालीचा) स्विंग लो गेट पास करतो. पण
+        swing_min_move_pct=3.5 सह तो किरकोळ स्विंग गाळला जातो, आणि उरलेला एकमेव major स्विंग लो (90.0)
+        tolerance च्या खूप बाहेर असल्याने गेट संपूर्ण signal अडवतो — नेमकं हेच फरक दाखवण्यासाठी दोन्ही
+        बाजू (baseline pass + filtered block) एकाच डेटासेटवर तपासलेल्या."""
+        _stub_zones(monkeypatch)
+        _stub_rsi(monkeypatch, 30)
+        zigzag = [108, 104, 101, 90.0, 95, 99, 103.0, 102, 101, 100.05, 101, 102, 103.5, 101, 100.5, 100.0]
+        df_5m = pd.DataFrame(_HIST_DAY + _flat_bars(zigzag))
+
+        baseline = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, swing_confluence_enabled=True,
+        )
+        assert baseline["total"] == 1
+
+        filtered = backtest.run_classic_sr_reversal_backtest(
+            df_5m, pd.DataFrame(), min_lookback_days=1, swing_confluence_enabled=True, swing_min_move_pct=3.5,
+        )
+        assert filtered["total"] == 0
+
     def test_demand_supply_gate_blocks_on_insufficient_data(self, monkeypatch):
         _stub_zones(monkeypatch)
         _stub_rsi(monkeypatch, 30)

@@ -169,8 +169,8 @@ def render():
                     key=_widget_key(strategy_key, symbol, "swing_confluence_enabled"),
                 )
             with sw2:
-                st.caption("touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low/High च्या जवळ असावा.")
-            sw3, sw4 = st.columns(2)
+                st.caption("touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low/High च्या जवळ असावा — वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेल्या \"major swings only\" कल्पनेप्रमाणे, खालचे दोन्ही पॅरामीटर्स किरकोळ (noise) स्विंग्स आपोआप गाळतात.")
+            sw3, sw4, sw5 = st.columns(3)
             with sw3:
                 swing_tolerance_pct = _number_input(
                     "Swing Tolerance %", settings, "swing_tolerance_pct", strategy_key, symbol,
@@ -180,6 +180,11 @@ def render():
                 swing_order = _number_input(
                     "Swing Order (bars दोन्ही बाजूला)", settings, "swing_order", strategy_key, symbol,
                     min_value=2, max_value=10, step=1, disabled=not swing_confluence_enabled,
+                )
+            with sw5:
+                swing_min_move_pct = _number_input(
+                    "Major Swing किमान % हालचाल", settings, "swing_min_move_pct", strategy_key, symbol,
+                    min_value=0.0, max_value=5.0, step=0.1, format="%.1f", disabled=not swing_confluence_enabled,
                 )
 
             ds1, ds2 = st.columns([1, 2])
@@ -298,6 +303,7 @@ def render():
             new_settings["swing_confluence_enabled"] = bool(swing_confluence_enabled)
             new_settings["swing_tolerance_pct"] = float(swing_tolerance_pct)
             new_settings["swing_order"] = int(swing_order)
+            new_settings["swing_min_move_pct"] = float(swing_min_move_pct)
             new_settings["demand_supply_gate_enabled"] = bool(demand_supply_gate_enabled)
             new_settings["trendline_gate_enabled"] = bool(trendline_gate_enabled)
             new_settings["trendline_lookback_swings"] = int(trendline_lookback_swings)

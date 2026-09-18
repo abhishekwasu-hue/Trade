@@ -96,6 +96,43 @@ def find_swings(df, order=3):
             swing_low_idx.append(i)
     return swing_high_idx, swing_low_idx
 
+def filter_major_swings(df, swing_high_idx, swing_low_idx, min_move_pct=0.5):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "major swings only" (चार्टवर visually दाखवलेल्या
+    उदाहरणाप्रमाणे, किरकोळ noise-स्विंग्स गाळून फक्त खरोखर लक्षणीय turning points). find_swings()
+    फक्त local fractal (order bars दोन्ही बाजूला) तपासतो — दोन शेजारी छोटे स्विंग्सही तितकेच वैध
+    मानतो. इथे ZigZag-सारखा magnitude फिल्टर वरून लावला जातो: मागच्या (विरुद्ध प्रकारच्या) confirmed
+    major swing पासून किमान min_move_pct% हालचाल झाली असेल तरच नवीन स्विंग "major" मानला जातो; त्याच
+    प्रकारचे (high-after-high किंवा low-after-low) सलग स्विंग्स आढळल्यास फक्त जास्त टोकाचा (extreme)
+    ठेवला जातो. रिटर्न: (major_swing_high_idx, major_swing_low_idx) — मूळ इंडेक्सेसचेच उपसंच."""
+    combined = sorted([(i, "high") for i in swing_high_idx] + [(i, "low") for i in swing_low_idx])
+    if not combined:
+        return [], []
+
+    def price_at(idx, typ):
+        return df["high"].iloc[idx] if typ == "high" else df["low"].iloc[idx]
+
+    major_high_idx, major_low_idx = [], []
+    last_idx, last_type = combined[0]
+    last_price = price_at(last_idx, last_type)
+    (major_high_idx if last_type == "high" else major_low_idx).append(last_idx)
+
+    for idx, typ in combined[1:]:
+        price = price_at(idx, typ)
+        if typ == last_type:
+            more_extreme = (typ == "high" and price > last_price) or (typ == "low" and price < last_price)
+            if more_extreme:
+                (major_high_idx if typ == "high" else major_low_idx)[-1] = idx
+                last_idx, last_price = idx, price
+            continue
+        move_pct = abs(price - last_price) / last_price * 100 if last_price else 0
+        if move_pct >= min_move_pct:
+            (major_high_idx if typ == "high" else major_low_idx).append(idx)
+            last_idx, last_type, last_price = idx, typ, price
+        # move_pct खूप लहान -> हा स्विंग "noise" मानून पूर्णपणे वगळला जातो
+
+    return major_high_idx, major_low_idx
+
+
 def find_support_resistance_levels(df, order=3, cluster_tolerance_pct=0.3, top_n=3):
     """
     सर्व swing highs/lows एकत्र करून, जवळपासचे एकत्र (cluster) करून, touch-count नुसार सगळ्यात

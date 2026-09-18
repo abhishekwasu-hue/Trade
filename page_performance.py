@@ -980,6 +980,11 @@ def render():
                     "Swing Tolerance %", min_value=0.01, value=0.15, step=0.05, key="csr_swing_tol",
                     disabled=not csr_swing_gate,
                 )
+                csr_swing_min_move = st.number_input(
+                    "Major Swing किमान % हालचाल (0 = फिल्टर बंद)", min_value=0.0, max_value=5.0, value=0.0,
+                    step=0.1, key="csr_swing_min_move", disabled=not csr_swing_gate,
+                    help="वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेली \"major swings only\" कल्पना — मागच्या स्विंगपासून किमान इतकी % हालचाल नसेल तर तो किरकोळ (noise) स्विंग confluence साठी वापरला जात नाही.",
+                )
             with gcol2:
                 csr_ds_gate = st.checkbox("Demand/Supply Zone", value=False, key="csr_ds_gate")
                 st.caption("Zone = शेवटच्या Swing Low/High भोवतीचा ±0.3% पट्टा.")
@@ -1014,7 +1019,8 @@ def render():
                         csr_df5, csr_df15, sl_spot_pct=csr_sl_pct, target_spot_pct=csr_target_pct,
                         rsi_neutral=csr_rsi_neutral, touch_tolerance_pct=csr_tolerance, cooldown_minutes=csr_cooldown,
                         swing_order=csr_swing_order, swing_confluence_enabled=csr_swing_gate,
-                        swing_tolerance_pct=csr_swing_tol, demand_supply_gate_enabled=csr_ds_gate,
+                        swing_tolerance_pct=csr_swing_tol, swing_min_move_pct=csr_swing_min_move,
+                        demand_supply_gate_enabled=csr_ds_gate,
                         trendline_gate_enabled=csr_tl_gate, trendline_lookback_swings=csr_tl_lookback,
                     )
                 if csr_df5.empty and csr_df15.empty:

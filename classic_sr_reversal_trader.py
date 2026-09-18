@@ -43,7 +43,7 @@ import cloud_db
 from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message, write_heartbeat
-from signals import calculate_rsi, find_swings, analyze_chart_zones, detect_trendline
+from signals import calculate_rsi, find_swings, filter_major_swings, analyze_chart_zones, detect_trendline
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
@@ -71,10 +71,15 @@ def check_classic_sr_rsi_filter(candles_df, direction, neutral_level=RSI_NEUTRAL
     return latest_rsi > neutral_level, latest_rsi
 
 
-def check_swing_confluence(candles_df, level, direction, swing_order=3, swing_tolerance_pct=0.15):
+def check_swing_confluence(candles_df, level, direction, swing_order=3, swing_tolerance_pct=0.15, swing_min_move_pct=0.0):
     """Entry Refinement — touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low
-    (Support) / Swing High (Resistance) च्या जवळ आहे का (backtest.py च्या याच गेटशी सुसंगत तर्क)."""
+    (Support) / Swing High (Resistance) च्या जवळ आहे का (backtest.py च्या याच गेटशी सुसंगत तर्क).
+    🎓 वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेली "major swings only" कल्पना — swing_min_move_pct > 0
+    असेल तर, raw fractal स्विंग्सवर आधी filter_major_swings() (ZigZag-सारखा magnitude फिल्टर) लावला
+    जातो, जेणेकरून किरकोळ (noise) स्विंग्स confluence म्हणून मोजले जात नाहीत."""
     sh_idx, sl_idx = find_swings(candles_df, order=swing_order)
+    if swing_min_move_pct > 0:
+        sh_idx, sl_idx = filter_major_swings(candles_df, sh_idx, sl_idx, min_move_pct=swing_min_move_pct)
     ref_idx = sl_idx if direction == "BULLISH" else sh_idx
     if not ref_idx:
         return False, None
@@ -152,6 +157,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     swing_confluence_enabled = settings.get("swing_confluence_enabled", False)
     swing_tolerance_pct = settings.get("swing_tolerance_pct", 0.15)
     swing_order = settings.get("swing_order", 3)
+    swing_min_move_pct = settings.get("swing_min_move_pct", 0.0)
     demand_supply_gate_enabled = settings.get("demand_supply_gate_enabled", False)
     trendline_gate_enabled = settings.get("trendline_gate_enabled", False)
     trendline_lookback_swings = settings.get("trendline_lookback_swings", 4)
@@ -219,7 +225,7 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         # 🎓 Entry Refinement — तीन ऐच्छिक, स्वतंत्र confluence गेट्स (सर्व डीफॉल्ट बंद).
         if swing_confluence_enabled:
-            swing_ok, nearest_swing = check_swing_confluence(candles_df, row["zone_low"], direction, swing_order, swing_tolerance_pct)
+            swing_ok, nearest_swing = check_swing_confluence(candles_df, row["zone_low"], direction, swing_order, swing_tolerance_pct, swing_min_move_pct)
             if not swing_ok:
                 log_entry["trade_status"] = "SKIPPED_SWING_CONFLUENCE_GATE"
                 log_entry["reason"] = (
