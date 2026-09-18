@@ -763,6 +763,18 @@ def _render_manual_trading_panel():
 
 
 
+def _render_signal_log_by_date(df):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Signal Log आता तारीख-निहाय (date-wise) वेगळं
+    दाखवला जातो, एका सलग flat table ऐवजी — विशेषतः "गेले 7 दिवस"/"कस्टम रेंज" निवडलं असताना, कुठला
+    signal नेमका कुठल्या दिवसाचा हे स्पष्टपणे वेगळं दिसावं म्हणून. सर्वात अलीकडची तारीख सर्वात वर."""
+    signal_time = pd.to_datetime(df["signal_time"])
+    dates = signal_time.dt.date
+    for d in sorted(dates.unique(), reverse=True):
+        day_df = df[dates == d]
+        st.markdown(f"**📅 {d}** — {len(day_df)} तपासण्या, {(day_df['hit_type'] != 'NO_HIT').sum()} वेळा touch")
+        st.dataframe(day_df, width="stretch", height=min(300, 60 + 35 * len(day_df)))
+
+
 @st.fragment
 def _render_market_zones():
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Speed Fix, भाग ३) — established Strategy
@@ -911,8 +923,8 @@ def _render_market_zones():
                 else:
                     log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                     display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
-                    st.dataframe(display_log, width="stretch", height=300)
                     st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                    _render_signal_log_by_date(display_log)
                 st.markdown("---")
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 (15M/30M/60M Momentum-Reversal)
@@ -929,8 +941,8 @@ def _render_market_zones():
                 else:
                     srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
                     srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
-                    st.dataframe(srv2_display_log, width="stretch", height=300)
                     st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 15M/30M/60M — ते 'reason' column मध्ये दिसेल.)")
+                    _render_signal_log_by_date(srv2_display_log)
                 st.markdown("---")
 
                 for zt in zone_type_order:
