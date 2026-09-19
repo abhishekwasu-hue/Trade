@@ -264,9 +264,30 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
 
     order_type_map = {"MARKET": "MARKET", "LIMIT": "LIMIT", "SL": "SL", "SL-M": "SLM"}
     product_map = {"D": "NRML", "I": "MIS"}
+    # PDF #2 प्रमाणे Stocko चे स्वतःचे वैध exchange codes — "NSE_FO" (Upstox चं स्वरूप) यात नाही.
+    VALID_STOCKO_EXCHANGES = {"NSE", "NFO", "CDS", "BSE", "MCX"}
     order_ids = []
     for o in orders:
         exch, _, token = o["instrument_token"].partition("|")
+        # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — Shoonya साठीच्याच
+        # टीपेप्रमाणे — बॉट्स strike-निवडीसाठी नेहमी fetch_upstox_option_chain() वापरतात, त्यामुळे
+        # इथे पोहोचणारा instrument_token नेहमी Upstox च्याच स्वरूपात असतो ("NSE_FO|<upstox numeric
+        # token>"). आधी हा exchange="NSE_FO" (Stocko ला "NSE"/"NFO"/... हवं) आणि Upstox चाच numeric
+        # token (Stocko साठी निरर्थक, त्यांचा स्वतःचा instrument_token वेगळाच असतो) म्हणून थेट
+        # Stocko कडे पाठवला जायचा. Stocko साठी स्वतःचा option-chain/strike-resolution मार्ग अजून
+        # bot-स्तरावर जोडलेला नाही (fetch_shoonya_option_chain() सारखं काहीच Stocko साठी अस्तित्वात
+        # नाही) — तोपर्यंत असा स्पष्टपणे-चुकीचा instrument असेल, तर शांतपणे चुकीचा/अंदाजे order
+        # पाठवण्यापेक्षा, इथेच स्पष्ट error देऊन थांबणं जास्त सुरक्षित.
+        if exch not in VALID_STOCKO_EXCHANGES:
+            return 500, {
+                "status": "error",
+                "message": (
+                    f"Stocko LIVE order अडवला — instrument_token ('{o['instrument_token']}') Upstox च्या "
+                    "स्वरूपात आहे, Stocko चा स्वतःचा instrument_token नाही (अजून जोडलेलं नाही). चुकीच्या/भलत्याच "
+                    "contract वर order जाण्यापेक्षा हे थांबवणं सुरक्षित."
+                ),
+                "partial_order_ids": order_ids,
+            }
         status_code, resp = place_order(
             access_token,
             exchange=exch or "NFO",

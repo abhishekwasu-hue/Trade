@@ -206,9 +206,30 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
         order_ids = []
         for o in orders:
             exch, _, token = o["instrument_token"].partition("|")
+            # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — बॉट्स (dynamic_sr_instant_trader.py
+            # इ.) निवडलेला broker कुठलाही असो, strike-निवडीसाठी नेहमी fetch_upstox_option_chain()
+            # वापरतात — त्यामुळे इथे पोहोचणारा instrument_token नेहमी Upstox च्याच स्वरूपात असतो
+            # ("NSE_FO|<upstox numeric token>"), आणि "trading_symbol" कधीच कुठूनच पाठवलं जात नाही.
+            # आधी असं असूनही आपण exch="NSE_FO" (Shoonya ला "NFO" हवं) आणि tsym=<upstox token>
+            # (Shoonya साठी निरर्थक संख्या, खरा trading symbol नाही) पाठवत राहायचो — प्रत्येक ऑर्डर
+            # reject होण्याची शक्यता, किंवा त्याहून वाईट, चुकीच्या contract वर जाण्याचीही शक्यता होती.
+            # Shoonya साठी स्वतःचा, वेगळा option-chain/strike-resolution मार्ग (search_scrip()/
+            # fetch_shoonya_option_chain() वापरून) अजून bot-स्तरावर जोडलेला नाही — तोपर्यंत असा
+            # स्पष्टपणे-चुकीचा instrument असेल, तर शांतपणे चुकीचा/अंदाजे order पाठवण्यापेक्षा, इथेच
+            # स्पष्ट error देऊन थांबणं जास्त सुरक्षित.
+            if not o.get("trading_symbol"):
+                return 500, {
+                    "status": "error",
+                    "message": (
+                        f"Shoonya LIVE order अडवला — instrument_token ('{o['instrument_token']}') Upstox च्या "
+                        "स्वरूपात आहे, Shoonya चा स्वतःचा trading_symbol नाही (अजून जोडलेलं नाही). चुकीच्या/भलत्याच "
+                        "contract वर order जाण्यापेक्षा हे थांबवणं सुरक्षित."
+                    ),
+                    "partial_order_ids": order_ids,
+                }
             jdata = {
                 "uid": userid, "actid": userid,
-                "exch": exch or "NFO", "tsym": o.get("trading_symbol") or token,
+                "exch": exch or "NFO", "tsym": o["trading_symbol"],
                 "qty": str(o["quantity"]), "prc": str(o.get("price", 0)),
                 "prd": "M",  # NRML/Carry-Forward — codebase इतरत्र वापरत असलेल्या "D"/Delivery शी समतुल्य
                 "trantype": "B" if o["transaction_type"] == "BUY" else "S",
