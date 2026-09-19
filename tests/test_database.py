@@ -230,3 +230,129 @@ class TestRunAutoBackupIfDue:
         monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: captured.append(interval_minutes) or False)
         database.run_auto_backup_if_due(interval_minutes=30)
         assert captured == [30]
+
+
+class TestGetPerformanceSummaryWinRateAndRoi:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target, ROI — मार्जिन-आधारित)
+    — प्रत्येक seed_closed_trade() ने max_loss=500, lots=1, lot_size=75 (एकसमान) वापरलं जातं, म्हणजे
+    प्रत्येक trade ची मार्जिन नेहमी 500*1*75=37,500 — अचूक अपेक्षित आकडे हाताने काढता येतात."""
+
+    def _seed_mixed_trades(self, tmpdb):
+        # sl_target-counted (win_rate साठी मोजले जाणारे): T1 (TARGET, win), T2 (SL, loss)
+        seed_closed_trade(tmpdb, "T1", 500.0, "TARGET", "2026-09-01")
+        seed_closed_trade(tmpdb, "T2", -200.0, "SL", "2026-09-02")
+        # excluded (Trailing SL/EOD) -- win_rate मध्ये कधीच मोजले जात नाहीत, पण win_rate_all_exits/
+        # roi_pct/total_pnl मध्ये मात्र मोजले जातात (जुनं वर्तन + ROI संपूर्ण P&L वरच).
+        seed_closed_trade(tmpdb, "T3", 100.0, "TRAILING_SL", "2026-09-03")
+        seed_closed_trade(tmpdb, "T4", 100.0, "PCT_TRAILING_SL", "2026-09-04")
+        seed_closed_trade(tmpdb, "T5", -100.0, "EOD_SQUAREOFF", "2026-09-05")
+
+    def test_win_rate_counts_only_pure_sl_and_target(self, temp_db):
+        self._seed_mixed_trades(temp_db)
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["total_trades"] == 5
+        assert summary["sl_target_trade_count"] == 2
+        assert summary["win_rate"] == 50.0  # 1 win (T1) / 2 counted (T1,T2) -- T3/T4/T5 वगळलेले
+
+    def test_win_rate_all_exits_kept_as_reference_and_differs_from_new(self, temp_db):
+        """जुनं (सर्व closed trades, P&L-चिन्ह आधारित) win rate वेगळं (60%, कारण T3/T4 positive
+        trailing trades धरतो) -- नवीन win_rate (50%) पेक्षा वेगळं, दोन्ही स्वतंत्रपणे
+        बरोबर calculate होतायत हे सिद्ध करण्यासाठी (चुकून जुनाच फॉर्म्युला वापरला असता तर 60% आलं असतं)."""
+        self._seed_mixed_trades(temp_db)
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["win_rate"] == 50.0
+        assert summary["win_rate_all_exits"] == 60.0  # wins: T1,T3,T4 (positive) / एकूण 5
+
+    def test_win_rate_none_when_no_pure_sl_or_target_trades(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 100.0, "TRAILING_SL", "2026-09-01")
+        seed_closed_trade(temp_db, "T2", -50.0, "EOD_SQUAREOFF", "2026-09-02")
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["sl_target_trade_count"] == 0
+        assert summary["win_rate"] is None
+        assert summary["win_rate_all_exits"] is not None  # हे मात्र कधीच None नसतं (total_trades>0 असेल तोवर)
+
+    def test_roi_pct_based_on_total_margin_used(self, temp_db):
+        self._seed_mixed_trades(temp_db)
+        summary = database.get_performance_summary("NIFTY")
+        # margin/trade = 500(max_loss) * 1(lots) * 75(lot_size) = 37,500; 5 trades -> 187,500
+        assert summary["margin_used"] == 187500.0
+        # total_pnl = 500-200+100+100-100 = 400
+        assert summary["total_pnl"] == 400.0
+        assert summary["roi_pct"] == round(400.0 / 187500.0 * 100, 2)
+
+    def test_roi_none_when_no_margin_data(self, temp_db):
+        """max_loss/lots/lot_size उपलब्ध नसतील (जुनी, अपूर्ण नोंद) -- roi_pct None, crash नाही."""
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, entry_time, exit_time,
+               exit_reason, realized_pnl, status, legs_json, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("T1", "2026-09-01", "NIFTY", "BULL_PUT_SPREAD", "2026-09-01 10:00:00", "2026-09-01 14:00:00",
+             "TARGET", 500.0, "CLOSED", json.dumps([]), "LIVE", "INTRADAY", "dynamic_sr_instant"),
+        )
+        conn.commit()
+        conn.close()
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["margin_used"] == 0
+        assert summary["roi_pct"] is None
+
+
+class TestGetPerformanceByGroupWinRateAndRoi:
+    def test_group_win_rate_and_roi_computed_per_group(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-01", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "T2", -200.0, "SL", "2026-09-02", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "T3", 100.0, "TRAILING_SL", "2026-09-03", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "T4", 300.0, "TARGET", "2026-09-04", source="srv2_momentum_reversal")
+
+        df = database.get_performance_by_group("NIFTY", "source")
+        assert set(df["Group"]) == {"dynamic_sr_instant", "srv2_momentum_reversal"}
+
+        dsr_row = df[df["Group"] == "dynamic_sr_instant"].iloc[0]
+        assert dsr_row["SL/Target Trades"] == 2  # T1,T2 (T3 trailing वगळलेला)
+        assert dsr_row["Win Rate %"] == 50.0
+        assert dsr_row["Win Rate % (All Exits)"] == round(2 / 3 * 100, 1)  # T1,T3 positive / 3 एकूण
+
+        srv2_row = df[df["Group"] == "srv2_momentum_reversal"].iloc[0]
+        assert srv2_row["Win Rate %"] == 100.0  # फक्त T4 (TARGET, win)
+        assert srv2_row["ROI %"] == round(300.0 / 37500.0 * 100, 2)
+
+    def test_group_win_rate_none_for_group_with_no_sl_target_trades(self, temp_db):
+        """एका group चा Win Rate % None असेल आणि दुसऱ्या group चा numeric value असेल, तर
+        pandas None ला आपोआप float NaN मध्ये रूपांतरित करतो (एकाच स्तंभात None + numeric
+        mixed असेल तरच — एकट्या row मध्ये हे घडत नाही, म्हणून इथे मुद्दाम 2 वेगळे groups
+        seed केले आहेत). caller (page_performance.py) ने pd.isna()/pd.notna() वापरायलाच हवं,
+        plain "is None" नाही."""
+        seed_closed_trade(temp_db, "T1", 100.0, "TRAILING_SL", "2026-09-01", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "T2", 500.0, "TARGET", "2026-09-02", source="srv2_momentum_reversal")
+        df = database.get_performance_by_group("NIFTY", "source")
+
+        dsr_row = df[df["Group"] == "dynamic_sr_instant"].iloc[0]
+        assert dsr_row["SL/Target Trades"] == 0
+        assert pd.isna(dsr_row["Win Rate %"])  # Python मध्ये None होता, pandas coercion मुळे आता NaN
+
+        srv2_row = df[df["Group"] == "srv2_momentum_reversal"].iloc[0]
+        assert srv2_row["Win Rate %"] == 100.0  # हा group मात्र नेहमीप्रमाणेच numeric
+
+
+class TestGetPerformanceByTwoGroups:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("strategy आणि timeframe दोन्ही एकत्र दाखवणारं वेगळं टेबल")."""
+
+    def test_groups_by_both_columns_combined(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-01", source="dynamic_sr_instant", entry_timeframe="1M")
+        seed_closed_trade(temp_db, "T2", 300.0, "TARGET", "2026-09-02", source="dynamic_sr_instant", entry_timeframe="5M")
+        seed_closed_trade(temp_db, "T3", -100.0, "SL", "2026-09-03", source="dynamic_sr_instant", entry_timeframe="1M")
+
+        df = database.get_performance_by_two_groups("NIFTY", "source", "entry_timeframe")
+        assert len(df) == 2  # (dynamic_sr_instant,1M) आणि (dynamic_sr_instant,5M) -- वेगळ्या ओळी
+
+        combo_1m = df[(df["Strategy"] == "dynamic_sr_instant") & (df["Timeframe"] == "1M")].iloc[0]
+        assert combo_1m["Trades"] == 2  # T1,T3
+        assert combo_1m["Total P&L"] == 400.0  # 500-100
+        assert combo_1m["Win Rate %"] == 50.0  # T1 win / (T1,T3) दोन्ही SL/Target-counted
+
+        combo_5m = df[(df["Strategy"] == "dynamic_sr_instant") & (df["Timeframe"] == "5M")].iloc[0]
+        assert combo_5m["Trades"] == 1
+        assert combo_5m["Win Rate %"] == 100.0
+
+    def test_empty_when_no_trades(self, temp_db):
+        assert database.get_performance_by_two_groups("NIFTY", "source", "entry_timeframe").empty

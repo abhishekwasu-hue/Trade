@@ -8,7 +8,8 @@ import streamlit as st
 from config import get_ist_now, get_ist_today
 from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
-    get_closed_trades_detail, get_exit_reason_breakdown,
+    get_performance_by_two_groups, get_closed_trades_detail, get_exit_reason_breakdown,
+    SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS,
 )
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
 from upstox_api import fetch_candles_date_range
@@ -79,8 +80,10 @@ _EXIT_REASON_LABELS_PLAIN = {
     "SL_HIT": "Stop-Loss hit (legacy record)", "TARGET_HIT": "Target hit (legacy record)", "UNKNOWN": "Unknown",
 }
 # SL/TSL प्रकारचे exit_reason "जोखीम-नियंत्रण" (जोखीम मर्यादित करण्यासाठी बंद) म्हणून एकत्र मोजण्यासाठी.
-_SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL", "TSL_SL", "SL_HIT"}
-_TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT", "TARGET_HIT"}
+# 🎓 आता database.py मध्ये केंद्रीय ठिकाणी (win-rate गणनेसाठीही तिथेच वापरलेले, duplicate टाळण्यासाठी
+# इथून import केलेले) — फक्त नावासाठी स्थानिक alias.
+_SL_TYPE_EXIT_REASONS = SL_TYPE_EXIT_REASONS
+_TARGET_TYPE_EXIT_REASONS = TARGET_TYPE_EXIT_REASONS
 
 
 def _exit_basis_tag(exit_reason, detail):
@@ -144,11 +147,25 @@ def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date
         df["Group"] = df["Group"].map(lambda g: _SOURCE_LABELS.get(g, g))
     df_sorted = df.sort_values("Total P&L", ascending=False).reset_index(drop=True)
     best, worst = df_sorted.iloc[0], df_sorted.iloc[-1]
+
+    def _wr_str(row):
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target) — या group मध्ये
+        # एकही शुद्ध SL/Target trade नसेल (उदा. सगळेच Trailing SL/EOD ला बंद झाले), तर Win Rate
+        # "N/A" दाखवतो. 🎓 pd.notna() (v is not None नाही) — कारण pd.DataFrame(rows) बांधताना
+        # स्तंभात इतर (numeric) मूल्यंही असतील, तर pandas Python None ला आपोआप float NaN मध्ये
+        # रूपांतरित करतो (row["Win Rate %"] is not None कधीच False होत नाही, कारण NaN is not
+        # None). NaN "None" म्हणून दिसत राहायचं (कुरूप) — आता pd.notna() दोन्ही (None व NaN) पकडतो.
+        return f"{row['Win Rate %']}%" if pd.notna(row["Win Rate %"]) else "N/A (शुद्ध SL/Target नाही)"
+
     if len(df_sorted) > 1:
-        st.success(f"🏆 सर्वाधिक फायदेशीर: **{best['Group']}** — ₹{best['Total P&L']:,.0f} ({best['Trades']} trades, Win Rate {best['Win Rate %']}%)")
-        st.error(f"📉 सर्वात कमी फायदेशीर: **{worst['Group']}** — ₹{worst['Total P&L']:,.0f} ({worst['Trades']} trades, Win Rate {worst['Win Rate %']}%)")
+        st.success(f"🏆 सर्वाधिक फायदेशीर: **{best['Group']}** — ₹{best['Total P&L']:,.0f} ({best['Trades']} trades, Win Rate {_wr_str(best)})")
+        st.error(f"📉 सर्वात कमी फायदेशीर: **{worst['Group']}** — ₹{worst['Total P&L']:,.0f} ({worst['Trades']} trades, Win Rate {_wr_str(worst)})")
     else:
         st.info(f"फक्त एकच गट सापडला: **{best['Group']}** — ₹{best['Total P&L']:,.0f}")
+    st.caption(
+        "Win Rate % — फक्त शुद्ध SL/Target exits (Trailing SL/Breakeven/EOD/Manual वगळून). "
+        "'Win Rate % (All Exits)' स्तंभ जुन्या (सर्व exits धरून) पद्धतीने, फक्त संदर्भासाठी."
+    )
 
     bar_colors = ["#26A69A" if v >= 0 else "#EF5350" for v in df_sorted["Total P&L"]]
     fig = go.Figure(go.Bar(
@@ -160,7 +177,13 @@ def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date
         paper_bgcolor="#131722", plot_bgcolor="#131722", title=chart_title, yaxis_title="Total P&L (₹)",
     )
     st.plotly_chart(fig, width="stretch")
-    st.dataframe(df_sorted, width="stretch", hide_index=True)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target) — एकही SL/Target trade
+    # नसलेल्या group साठी "Win Rate %" None असतो — st.dataframe() मध्ये तसंच दाखवलं तर कुरूप "None"
+    # दिसतं, त्यामुळे फक्त on-screen दाखवण्यापुरतं (PDF/return value अबाधित) "N/A" मध्ये रूपांतर.
+    display_df = df_sorted.copy()
+    display_df["Win Rate %"] = display_df["Win Rate %"].map(lambda v: v if pd.notna(v) else "N/A")
+    display_df["ROI %"] = display_df["ROI %"].map(lambda v: v if pd.notna(v) else "N/A")
+    st.dataframe(display_df, width="stretch", hide_index=True)
     return df_sorted
 
 
@@ -304,11 +327,15 @@ def render():
     if summary.get("total_trades", 0) == 0:
         st.info("अजून कोणतेही बंद झालेले ट्रेड्स नाहीत — Performance आकडे दिसण्यासाठी किमान एक ट्रेड बंद व्हायला हवा.")
     else:
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target) — win_rate आता
+        # शुद्ध SL/Target exits वरूनच; एकही नसेल तर "N/A" (चुकीचं "None%" नाही). Roi % (मार्जिन-
+        # आधारित) आणि जुनं (सर्व exits) win rate संदर्भासाठी वेगळ्या caption मध्ये दाखवलं जातं.
+        win_rate_str = f"{summary['win_rate']}%" if summary["win_rate"] is not None else "N/A"
         pcol1, pcol2, pcol3, pcol4 = st.columns(4)
         with pcol1:
             st.metric("Total Trades", summary["total_trades"])
         with pcol2:
-            st.metric("Win Rate", f"{summary['win_rate']}%")
+            st.metric("Win Rate (शुद्ध SL/Target)", win_rate_str, f"{summary['sl_target_trade_count']} trades")
         with pcol3:
             st.metric("Total P&L", f"₹{summary['total_pnl']:,.0f}")
         with pcol4:
@@ -324,6 +351,17 @@ def render():
             st.metric("Avg Loss", f"₹{summary['avg_loss']:,.0f}" if summary["avg_loss"] is not None else "N/A")
         with pcol8:
             st.metric("Best / Worst", f"₹{summary['best_trade']:,.0f} / ₹{summary['worst_trade']:,.0f}")
+
+        pcol11, pcol12 = st.columns(2)
+        with pcol11:
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI — वापरलेल्या मार्जिनवर आधारित) — प्रत्यक्ष
+            # broker margin साठवलेला नसल्याने, max_loss-आधारित worst-case अंदाज (Dashboard च्या
+            # Pre-Trade Margin Check मध्ये आधीपासूनच वापरलेल्याच पद्धतीने).
+            roi_str = f"{summary['roi_pct']}%" if summary["roi_pct"] is not None else "N/A"
+            st.metric("ROI % (वापरलेल्या मार्जिनवर)", roi_str, f"मार्जिन ₹{summary['margin_used']:,.0f}")
+        with pcol12:
+            wr_all_str = f"{summary['win_rate_all_exits']}%" if summary["win_rate_all_exits"] is not None else "N/A"
+            st.metric("Win Rate (सर्व Exits, जुनी पद्धत)", wr_all_str, help="संदर्भासाठी — Trailing SL/EOD/Manual सकट सर्व closed trades")
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — वरचं "Total P&L" आतापर्यंत फक्त Gross होतं
         # (वास्तविक ब्रोकरेज शुल्क कुठेच दाखवलं जात नव्हतं). आता आतापर्यंतच्या संपूर्ण इतिहासाचं,
@@ -367,7 +405,10 @@ def render():
             for label in ("LIVE", "PAPER"):
                 s = get_performance_summary(symbol, mode_filter=label)
                 if s.get("total_trades", 0) > 0:
-                    comp_rows.append({"Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"], "Total P&L": s["total_pnl"], "Avg P&L": s["avg_pnl"]})
+                    comp_rows.append({
+                        "Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"],
+                        "Total P&L": s["total_pnl"], "Avg P&L": s["avg_pnl"], "ROI %": s["roi_pct"],
+                    })
             if comp_rows:
                 st.dataframe(pd.DataFrame(comp_rows), width="stretch", hide_index=True)
 
@@ -402,8 +443,8 @@ def render():
         st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
     else:
         st.caption(f"निवडलेली रेंज: {an_from} ते {an_to}")
-        an_tab1, an_tab2, an_tab3, an_tab4 = st.tabs(
-            ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार", "📐 Trading Style नुसार"]
+        an_tab1, an_tab2, an_tab3, an_tab4, an_tab5 = st.tabs(
+            ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार", "📐 Trading Style नुसार", "🎯⏱️ Strategy + Timeframe एकत्र"]
         )
         with an_tab1:
             an_by_source = _render_group_breakdown(symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
@@ -413,6 +454,21 @@ def render():
             _render_group_breakdown(symbol, "strategy", perf_mode_f, an_from, an_to, "Option Structure-wise P&L")
         with an_tab4:
             _render_group_breakdown(symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
+        with an_tab5:
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — "strategy आणि timeframe दोन्ही एकत्र दाखवणारं
+            # वेगळं टेबल हवं" — वरचे दोन्ही (an_tab1/an_tab2) स्वतंत्रपणे एकाच स्तंभावर group करतात;
+            # इथे प्रत्येक strategy+timeframe जोडीसाठी स्वतंत्र ओळ, कुठली specific जोडी सर्वात
+            # फायदेशीर आहे हे थेट दिसण्यासाठी.
+            combo_df = get_performance_by_two_groups(symbol, "source", "entry_timeframe", mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+            if combo_df.empty:
+                st.caption("या कालावधीत डेटा नाही.")
+            else:
+                combo_df = combo_df.copy()
+                combo_df["Strategy"] = combo_df["Strategy"].map(lambda g: _SOURCE_LABELS.get(g, g))
+                combo_df["Win Rate %"] = combo_df["Win Rate %"].map(lambda v: v if pd.notna(v) else "N/A")
+                combo_df["ROI %"] = combo_df["ROI %"].map(lambda v: v if pd.notna(v) else "N/A")
+                st.caption("प्रत्येक Strategy + Timeframe जोडीसाठी स्वतंत्र कामगिरी — Total P&L नुसार क्रमवारी.")
+                st.dataframe(combo_df, width="stretch", hide_index=True)
 
         _sub_header("📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण", _HDR_PINK)
         trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
@@ -484,20 +540,29 @@ def render():
             "P&L level मुळे लागला हे Exit Reason स्तंभातच कंसात दाखवलं जातं."
         )
         if st.button("📄 Performance Report PDF तयार करा", key="perf_pdf_generate"):
-            with st.spinner("PDF तयार होत आहे..."):
-                an_summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
-                _, an_pnl_totals = generate_pnl_report(symbol, "Daily", an_from, an_to, mode_filter=perf_mode_f)
-                all_recs_en = (
-                    _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
-                    + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
-                )
-                mode_label_en = {"सर्व": "All", "फक्त LIVE": "LIVE only", "फक्त PAPER": "PAPER only"}.get(perf_mode_choice, perf_mode_choice)
-                perf_pdf_bytes = generate_performance_report_pdf(
-                    symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
-                    an_by_source, an_by_timeframe, trade_log_pdf_df, all_recs_en,
-                )
-            st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
-            st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
+            mode_label_en = {"सर्व": "All", "फक्त LIVE": "LIVE only", "फक्त PAPER": "PAPER only"}.get(perf_mode_choice, perf_mode_choice)
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PDF Report Optimize) — आधी बटण दाबताच, तेच
+            # symbol/mode/तारीख-रेंज असूनही, दरवेळी संपूर्ण PDF (सर्व charts kaleido ने पुन्हा
+            # रेंडर करून) पुन्हा तयार व्हायचं — कुठलंही caching नव्हतं. आता तेच इनपुट असेल, तर आधीच
+            # तयार असलेला PDF पुन्हा वापरला जातो (फक्त काहीतरी बदललं — तारीख-रेंज/mode — तरच पुन्हा तयार होतं).
+            pdf_cache_key = (symbol, mode_label_en, str(an_from), str(an_to))
+            if st.session_state.get("perf_pdf_cache_key") == pdf_cache_key and st.session_state.get("perf_pdf_bytes"):
+                st.info("ℹ️ याच कालावधी/मोडसाठी PDF आधीच तयार आहे — खाली थेट डाऊनलोड करा (पुन्हा तयार करायची गरज नाही).")
+            else:
+                with st.spinner("PDF तयार होत आहे..."):
+                    an_summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+                    _, an_pnl_totals = generate_pnl_report(symbol, "Daily", an_from, an_to, mode_filter=perf_mode_f)
+                    all_recs_en = (
+                        _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
+                        + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
+                    )
+                    perf_pdf_bytes = generate_performance_report_pdf(
+                        symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
+                        an_by_source, an_by_timeframe, trade_log_pdf_df, all_recs_en,
+                    )
+                st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
+                st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
+                st.session_state["perf_pdf_cache_key"] = pdf_cache_key
         if st.session_state.get("perf_pdf_bytes"):
             st.download_button(
                 "📥 Performance Report PDF डाऊनलोड करा", data=st.session_state["perf_pdf_bytes"],
