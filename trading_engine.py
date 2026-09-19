@@ -492,7 +492,8 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
-        # घडेल ते लागू (Next-Level-Exit पूर्णपणे काढून टाकलेला).
+        # घडेल ते लागू. (🎓 Next-Level-Exit आधी इथून पूर्णपणे काढला होता, पण वापरकर्त्याने पुन्हा
+        # मागितल्यावर — फक्त 5M-touch entries साठी, Credit Spread + Naked दोन्हींसाठी — खाली परत जोडला.)
         if source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
             # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
             # जुना %-आधारित SL/Target/Trailing पूर्णपणे बदलला — आता Spot% + Premium-Points combined
@@ -545,6 +546,22 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                         exit_reason_detail = (
                             f"Trailing SL hit (Premium Points trail) — Peak premium gain {new_peak_premium:.1f} pts, "
                             f"trailing distance {trail_distance:.1f} pts -> floor {floor_points:.1f} pts, now at {premium_pnl_points:.1f} pts."
+                        )
+
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — 5M-touch एंटर झालेल्या trades साठी Next-Level-Exit
+            # परत आणला (आधी पूर्णपणे काढून टाकलेला होता) — फक्त entry_timeframe=="5M" असेल तरच
+            # (वापरकर्त्याने स्पष्टपणे 1M entries ला हे लागू न करण्याचं ठरवलं), Credit Spread आणि
+            # Naked दोन्हींना (SRv2 च्या फक्त-Spread पद्धतीपेक्षा वेगळं), आणि SL/TSL/Target सोबतच
+            # "जे आधी घडेल ते" — त्यांना पूर्णपणे बदलत नाही.
+            if exit_reason is None and entry_timeframe == "5M":
+                next_level = cloud_db.get_next_level_in_direction(symbol, entry_level_price, direction_bullish, timeframe_suffixes=("5M",))
+                if next_level is not None:
+                    reached = (underlying_spot >= next_level) if direction_bullish else (underlying_spot <= next_level)
+                    if reached:
+                        exit_reason = "NEXT_LEVEL_EXIT"
+                        exit_reason_detail = (
+                            f"Reached the next 5M S/R level (Rs {next_level:,.1f}) — profit-booked at this next level "
+                            f"instead of waiting for SL/TSL/Target."
                         )
 
             if exit_reason is None and trade_style == "INTRADAY":
