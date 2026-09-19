@@ -27,7 +27,7 @@ import pandas as pd
 import cloud_db
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
-from notifications import send_telegram_message, write_heartbeat
+from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import calculate_rsi, resample_to_1h
 from strategy import select_credit_spread_itm, select_naked_option_itm
@@ -345,6 +345,21 @@ def process_symbol(access_token, symbol, lot_size=65):
     return f"{symbol}: कुठलाही SRv2 level (15M/30M/60M, RSI+Multi-Hit मर्यादेसह) पात्र ठरला नाही"
 
 
+def run_all_symbols(token, symbols):
+    """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py प्रमाणेच इथेही — एका
+    symbol मधल्या अनपेक्षित exception मुळे उरलेले symbols त्याच cycle मध्ये कधीच तपासलेच जायचे
+    नाहीत, आणि heartbeat/अलर्टही कधीच पोहोचायचा नाही. आता स्वतंत्र, प्रत्येक symbol वेगळा."""
+    any_symbol_succeeded = False
+    for symbol in symbols:
+        try:
+            print(process_symbol(token, symbol.strip()))
+            any_symbol_succeeded = True
+        except Exception as e:
+            notify_error("srv2_momentum_reversal", f"{symbol.strip()}: {e}")
+            print(f"⚠️ {symbol.strip()}: अनपेक्षित त्रुटी — {e}")
+    return any_symbol_succeeded
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
@@ -367,9 +382,9 @@ if __name__ == "__main__":
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
                 exit(1)
-            for symbol in args.symbols.split(","):
-                print(process_symbol(token, symbol.strip()))
-            write_heartbeat("srv2_momentum_reversal")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+            any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
+            if any_symbol_succeeded:
+                write_heartbeat("srv2_momentum_reversal")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup) —
             # dynamic_sr_instant_trader.py सारखीच सुधारणा.
             run_auto_backup_if_due(interval_minutes=60)

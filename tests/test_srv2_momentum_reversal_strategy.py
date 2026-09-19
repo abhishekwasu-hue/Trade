@@ -5,7 +5,7 @@ srv2_momentum_reversal_strategy.py — वापरकर्त्याने �
 "Nifty SRv2 Momentum-Filter Reversal" रणनीती — established SRv2 + 0.40% गती-फिल्टर +
 established ATM+1/ATM+3 strike-निवड + One-Touch/Cooldown.
 """
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import datetime
 
@@ -750,3 +750,39 @@ class TestSignalLogging:
             assert mock_log.called
             logged = mock_log.call_args[0][0]
             assert logged["trade_status"] == "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
+
+
+class TestRunAllSymbols:
+    """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py प्रमाणेच इथेही — एका
+    symbol मधल्या अनपेक्षित exception मुळे उरलेले symbols त्याच cycle मध्ये कधीच तपासलेच जायचे
+    नाहीत, आणि heartbeat/अलर्टही कधीच पोहोचायचा नाही. आता प्रत्येक symbol स्वतंत्र."""
+
+    def test_one_symbol_exception_does_not_block_the_rest(self, monkeypatch):
+        calls = []
+
+        def fake_process_symbol(token, symbol):
+            calls.append(symbol)
+            if symbol == "BANKNIFTY":
+                raise RuntimeError("database is locked")
+            return f"{symbol}: ok"
+
+        monkeypatch.setattr(srv2, "process_symbol", fake_process_symbol)
+        mock_notify = MagicMock()
+        monkeypatch.setattr(srv2, "notify_error", mock_notify)
+
+        result = srv2.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY", "SENSEX"])
+
+        assert calls == ["NIFTY", "BANKNIFTY", "SENSEX"]
+        assert result is True
+        assert mock_notify.called
+        assert "BANKNIFTY" in mock_notify.call_args.args[1]
+
+    def test_all_symbols_failing_returns_false(self, monkeypatch):
+        def fake_process_symbol(token, symbol):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(srv2, "process_symbol", fake_process_symbol)
+        monkeypatch.setattr(srv2, "notify_error", MagicMock())
+
+        result = srv2.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY"])
+        assert result is False

@@ -7,7 +7,7 @@ candles मधल्या gap मधून (Gap Up/Down वापरकर्�
 PAPER trade + zone mitigation + Telegram + **संपूर्ण Signal Log** (hit झाला किंवा नाही तरीही).
 """
 import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -855,3 +855,39 @@ class TestPCRGate:
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
+
+
+class TestRunAllSymbols:
+    """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — एका symbol मधल्या अनपेक्षित exception मुळे उरलेले
+    symbols त्याच cycle मध्ये कधीच तपासलेच जायचे नाहीत (loop तिथेच थांबायचा), आणि heartbeat/अलर्टही
+    कधीच पोहोचायचा नाही. आता प्रत्येक symbol स्वतंत्र, एकाची चूक बाकीच्यांना अडवत नाही."""
+
+    def test_one_symbol_exception_does_not_block_the_rest(self, monkeypatch):
+        calls = []
+
+        def fake_process_symbol(token, symbol):
+            calls.append(symbol)
+            if symbol == "BANKNIFTY":
+                raise RuntimeError("database is locked")
+            return f"{symbol}: ok"
+
+        monkeypatch.setattr(dsr, "process_symbol", fake_process_symbol)
+        mock_notify = MagicMock()
+        monkeypatch.setattr(dsr, "notify_error", mock_notify)
+
+        result = dsr.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY", "SENSEX"])
+
+        assert calls == ["NIFTY", "BANKNIFTY", "SENSEX"]  # तिन्ही तपासले गेले, BANKNIFTY च्या अपयशानंतरही
+        assert result is True  # किमान एक (NIFTY/SENSEX) यशस्वी झाला
+        assert mock_notify.called
+        assert "BANKNIFTY" in mock_notify.call_args.args[1]
+
+    def test_all_symbols_failing_returns_false(self, monkeypatch):
+        def fake_process_symbol(token, symbol):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(dsr, "process_symbol", fake_process_symbol)
+        monkeypatch.setattr(dsr, "notify_error", MagicMock())
+
+        result = dsr.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY"])
+        assert result is False  # heartbeat लिहू नये
