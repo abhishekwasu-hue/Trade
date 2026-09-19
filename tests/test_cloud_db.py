@@ -370,12 +370,12 @@ class TestSignalLog:
 
     def test_identical_no_action_entry_skips_reinsert(self, monkeypatch):
         """🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वर Signal Log "2-3 वेळा repeat") — त्याच दिवशी,
-        त्याच level साठी, सर्वात अलीकडची नोंद अगदी तशीच (hit_type+trade_status+reason) असेल, आणि
+        त्याच level साठी, सर्वात अलीकडची नोंद अगदी तशीच (hit_type+trade_status) असेल, आणि
         नवीन entry मध्ये कधीच खरा trade attempt नसेल (trade_status=SKIPPED_* इ.), तर पुन्हा
         साठवली जाऊ नये."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "मागच्या hit ला फक्त 5.0 मिनिटं झालीत")
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
@@ -388,18 +388,39 @@ class TestSignalLog:
         assert mock_cursor.execute.call_count == 1  # फक्त SELECT dedup-check, INSERT नाही
         assert "SELECT" in mock_cursor.execute.call_args_list[0][0][0]
 
-    def test_changed_reason_still_inserts_new_row(self, monkeypatch):
-        """मागची नोंद वेगळ्या reason ची असेल (उदा. वेगळी cooldown वेळ), तर नवीन नोंद व्हायलाच हवी."""
+    def test_changed_reason_alone_still_deduped(self, monkeypatch):
+        """🎓 code-review द्वारे सापडवलेली, पहिल्या फिक्सची त्रुटी — reason मध्ये bot script दर cycle ला
+        बदलणारं जिवंत मूल्य embed करतं (उदा. cooldown चे elapsed मिनिटं, live RSI/PCR आकडा), त्यामुळे
+        reason हा dedup-तुलनेचा भाग असणं चुकीचं होतं — त्यामुळे नेमकं cooldown/RSI/PCR च्या सर्वाधिक
+        repeat होणाऱ्या केसेससाठीच dedup कधीच जुळायचा नाही. आता trade_status सारखाच असेल, तर reason
+        वेगळा (उदा. वेगळी cooldown वेळ) असला तरी dedup व्हायलाच हवं."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "मागच्या hit ला फक्त 5.0 मिनिटं झालीत")
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
         entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 10:18",
                   "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "TOUCH",
                   "direction": "BULLISH", "ltp_at_signal": 23902.0, "trade_status": "SKIPPED_COOLDOWN_30MIN",
-                  "reason": "मागच्या hit ला फक्त 6.0 मिनिटं झालीत"}  # वेगळा reason
+                  "reason": "मागच्या hit ला फक्त 6.0 मिनिटं झालीत"}  # वेगळा reason, पण तोच trade_status
+        cloud_db.save_signal_log(entry)
+        assert mock_cursor.execute.call_count == 1  # फक्त SELECT dedup-check, INSERT नाही
+        assert "SELECT" in mock_cursor.execute.call_args_list[0][0][0]
+
+    def test_changed_trade_status_still_inserts_new_row(self, monkeypatch):
+        """मागची नोंद वेगळ्या trade_status ची असेल (उदा. cooldown संपून आता RSI गेटने अडवलं), तर
+        नवीन नोंद व्हायलाच हवी — हा खरा, अर्थपूर्ण state-transition आहे."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 10:31",
+                  "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "TOUCH",
+                  "direction": "BULLISH", "ltp_at_signal": 23902.0, "trade_status": "SKIPPED_RSI_FILTER",
+                  "reason": "RSI 42.0 दिशेशी जुळत नाही"}  # वेगळा trade_status
         cloud_db.save_signal_log(entry)
         assert mock_cursor.execute.call_count == 2  # SELECT + INSERT दोन्ही
         assert "INSERT INTO signal_log" in mock_cursor.execute.call_args_list[1][0][0]
