@@ -28,12 +28,18 @@ def temp_db(monkeypatch):
     reconciliation लगेच काहीही न करता संपतं) — ज्या tests ना विशिष्ट broker-position वर्तन
     हवं आहे (उदा. TestReconcileOpenTradesWithBroker), ते स्वतःच्या monkeypatch.setattr() ने
     हेच पुन्हा override करतात, जे नेहमीप्रमाणे चालत राहतं.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Margin Check in Bots, गंभीर यादीतला
+    सहावा मुद्दा) — open_multi_leg_trade() आता LIVE trades साठी check_margin_available() कॉल
+    करतं (जे adapter नसेल तर fetch_required_margin()/get_available_margin() — खरे Upstox network
+    calls — वापरतं). वरच्या fetch_broker_positions सारखीच सुरक्षित डीफॉल्ट (नेहमी "मार्जिन OK")
+    — ज्या tests ना अपुऱ्या-मार्जिन वर्तन विशेषतः तपासायचं आहे, ते स्वतःच override करतात.
     """
     tmpdb = tempfile.mktemp(suffix=".db")
     monkeypatch.setattr(database, "DB_PATH", tmpdb)
     database.init_sqlite_db()
     monkeypatch.setattr(trading_engine, "DB_PATH", tmpdb)
     monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda access_token: [])
+    monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
     yield tmpdb
 
 
@@ -1059,6 +1065,124 @@ class TestOpenMultiLegTradeKillSwitch:
 
     def test_live_mode_kill_switch_ok_proceeds_normally(self, temp_db, monkeypatch):
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is True
+
+
+class TestCheckMarginAvailable:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Margin Check in Bots, गंभीर यादीतला
+    सहावा मुद्दा) — page_dashboard.py च्या Strategy Builder मध्ये आधीपासूनच असलेला Pre-Trade Margin
+    Check आता trading_engine.open_multi_leg_trade() (सर्व 3 bots चं LIVE choke-point) मध्येही."""
+
+    def _strategy_result(self):
+        return {"strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30}
+
+    def test_adapter_path_uses_adapter_methods(self, monkeypatch):
+        mock_adapter = MagicMock()
+        mock_adapter.get_required_margin.return_value = 5000.0
+        mock_adapter.get_funds.return_value = 10000.0
+        ok, reason = trading_engine.check_margin_available("fake_token", mock_adapter, [{"o": 1}], self._strategy_result(), 1, 75)
+        assert ok is True
+        assert reason is None
+        mock_adapter.get_required_margin.assert_called_once_with([{"o": 1}])
+        mock_adapter.get_funds.assert_called_once()
+
+    def test_raw_path_uses_upstox_functions(self, monkeypatch):
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", lambda t, o: 5000.0)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: 10000.0)
+        ok, reason = trading_engine.check_margin_available("fake_token", None, [{"o": 1}], self._strategy_result(), 1, 75)
+        assert ok is True
+        assert reason is None
+
+    def test_required_margin_none_falls_back_to_max_loss(self, monkeypatch):
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", lambda t, o: None)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: 3000.0)
+        # max_loss=50 * lots=2 * lot_size=75 = 7500 -- उपलब्ध 3000 पेक्षा जास्त -- block व्हायलाच हवं
+        ok, reason = trading_engine.check_margin_available("fake_token", None, [{"o": 1}], self._strategy_result(), 2, 75)
+        assert ok is False
+        assert "MARGIN_INSUFFICIENT" in reason
+
+    def test_available_margin_none_does_not_block(self, monkeypatch):
+        """उपलब्ध मार्जिन तपासताच आली नाही (Fyers सारखा broker) -- Dashboard प्रमाणेच सावधपणे
+        पुढे जाऊ देतो, block करत नाही."""
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", lambda t, o: 999999.0)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: None)
+        ok, reason = trading_engine.check_margin_available("fake_token", None, [{"o": 1}], self._strategy_result(), 1, 75)
+        assert ok is True
+        assert reason is None
+
+    def test_insufficient_margin_blocks(self, monkeypatch):
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", lambda t, o: 8000.0)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: 5000.0)
+        ok, reason = trading_engine.check_margin_available("fake_token", None, [{"o": 1}], self._strategy_result(), 1, 75)
+        assert ok is False
+        assert "MARGIN_INSUFFICIENT" in reason
+        assert "8,000" in reason
+        assert "5,000" in reason
+
+    def test_sufficient_margin_ok(self, monkeypatch):
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", lambda t, o: 5000.0)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: 8000.0)
+        ok, reason = trading_engine.check_margin_available("fake_token", None, [{"o": 1}], self._strategy_result(), 1, 75)
+        assert ok is True
+        assert reason is None
+
+
+class TestOpenMultiLegTradeMarginCheck:
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_live_blocked_by_insufficient_margin_skips_order_and_alerts(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (False, "MARGIN_INSUFFICIENT — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert resp["status"] == "error"
+        assert "MARGIN_INSUFFICIENT" in resp["reason"]
+        assert not execute_calls
+        assert len(telegram_calls) == 1
+        assert "मार्जिन" in telegram_calls[0]
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT COUNT(*) FROM live_trades").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_paper_mode_never_checks_margin(self, temp_db, monkeypatch):
+        def _boom(*a, **k):
+            raise AssertionError("PAPER mode ने कधीच margin तपासायला नको")
+        monkeypatch.setattr(trading_engine, "check_margin_available", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+
+    def test_live_mode_margin_ok_proceeds_normally(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
 
         ok, resp = trading_engine.open_multi_leg_trade(

@@ -9,7 +9,10 @@ import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch, get_todays_live_total_pnl_and_count
-from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions, extract_order_ids, get_instrument_key
+from upstox_api import (
+    execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
+    extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
+)
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
 # 🎓 वापरकर्त्याशी चर्चा करून वेगळं काढलेलं — established Target (प्रत्येक strategy चा स्वतःचा
@@ -250,6 +253,48 @@ def _alert_kill_switch_blocked(symbol, source, reason):
         _logger.exception("_alert_kill_switch_blocked() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def check_margin_available(access_token, adapter, orders, strategy_result, lots, lot_size):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Margin Check in Bots, गंभीर यादीतला
+    सहावा मुद्दा) — page_dashboard.py च्या Strategy Builder मध्ये आधीपासूनच असलेला हाच Pre-Trade
+    Margin Check (Upstox चं अधिकृत Margin Calculator API, hedge-फायद्यासकट; अचूक API नसेल — उदा.
+    Fyers — तर max_loss-आधारित सुरक्षित worst-case अंदाज) आता 3 bots + trading_engine.py च्या इतर
+    सर्व LIVE कॉल्ससाठीही, या एकाच choke-point (open_multi_leg_trade()) मधून लागू. उपलब्ध मार्जिन
+    तपासताच आली नाही (adapter/API कडून None), तर Dashboard प्रमाणेच सावधपणे पुढे जाऊ देतो (block
+    करत नाही) — फक्त खरंच अपुरी मार्जिन स्पष्ट दिसली, तरच block. रिटर्न: (ok: bool, reason: str|None)."""
+    if adapter is not None:
+        required_margin = adapter.get_required_margin(orders)
+        available_margin = adapter.get_funds()
+    else:
+        required_margin = fetch_required_margin(access_token, orders)
+        available_margin = get_available_margin(access_token)
+
+    if required_margin is None:
+        required_margin = abs(strategy_result["max_loss"]) * lots * lot_size
+
+    if available_margin is None:
+        return True, None  # तपासताच आली नाही -- Dashboard प्रमाणेच सावधपणे पुढे जाऊ देतो, block नाही
+    if available_margin < required_margin:
+        return False, (
+            f"MARGIN_INSUFFICIENT — आवश्यक ₹{required_margin:,.0f}, उपलब्ध ₹{available_margin:,.0f} "
+            f"(तूट ₹{required_margin - available_margin:,.0f})"
+        )
+    return True, None
+
+
+def _alert_margin_insufficient(symbol, source, reason):
+    """अपुऱ्या मार्जिनमुळे LIVE trade ब्लॉक झाल्यावर Telegram अलर्ट — इतर गंभीर अलर्ट्स सारखंच
+    (Kill Switch/LTP-fetch-failure), cooldown नाही."""
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"🟠 <b>{symbol} ({source}) — LIVE Trade अपुऱ्या मार्जिनमुळे ब्लॉक!</b>\n"
+            f"{reason}\n"
+            f"Broker account मध्ये मार्जिन वाढवा, किंवा lots/strategy कमी करा."
+        )
+    except Exception:
+        _logger.exception("_alert_margin_insufficient() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
@@ -291,6 +336,13 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         }
         for leg in legs
     ]
+
+    if trading_mode == "LIVE":
+        margin_ok, margin_reason = check_margin_available(access_token, adapter, orders, strategy_result, lots, lot_size)
+        if not margin_ok:
+            _alert_margin_insufficient(symbol, source, margin_reason)
+            return False, {"status": "error", "reason": margin_reason}
+
     status_code, resp = (adapter.execute_order_leg_set(orders, trading_mode) if adapter is not None
                           else execute_order_leg_set(access_token, orders, trading_mode))
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling, गंभीर
