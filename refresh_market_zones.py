@@ -76,10 +76,17 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     # Dashboard चार्टच्याच डीफॉल्ट इतका (established 15-मिनिटसाठी established Upstox चा स्वतःचा
     # डीफॉल्ट — established उदा. २० दिवस) **अलीकडचा** डेटा — established संपूर्ण वर्षभरातून
     # established सर्वात टोकाचे (जुने, सद्य किमतीपासून दूर) points निवडले जाऊ नयेत म्हणून.
-    df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute")  # established डीफॉल्ट lookback (chart-सारखाच)
-    df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (1-मिनिटसाठी ~5 दिवस)
-    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (5-मिनिटसाठी ~10 दिवस)
-    df_30m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="30minute")  # डीफॉल्ट lookback (chart-सारखाच, ~60 दिवस)
+    # 🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches प्रत्यक्षात profitable नाहीत, त्यामुळे लक्ष आता
+    # 5M आणि त्यावरच्या (15M/30M/60M) timeframes वर — त्यांच्यासाठी DYNAMIC_SR_* levels जास्त मजबूत
+    # (जास्त candles/touches वरून) असावेत म्हणून lookback_days स्पष्टपणे वाढवला (Upstox च्या स्वतःच्या
+    # डीफॉल्टपेक्षा जास्त — पण एका API chunk मध्येच बसेल इतकाच, fetch_candles() मधले chunk_days_map
+    # बघा). df_1m_recent चा lookback मुद्दाम जुनाच (Upstox डीफॉल्ट) ठेवला — 1M zone-गणना अजूनही होते
+    # (वापरकर्त्याने timeframe_choice परत "1M"/"BOTH" केलं तर उपलब्ध असावी म्हणून), फक्त तिला जास्त
+    # डेटा देण्याचा आता उपयोग नाही (1m_instant चा डीफॉल्ट timeframe_choice आता "5M").
+    df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=30)  # आधी चार्ट-डीफॉल्ट (~20 दिवस)
+    df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (1-मिनिटसाठी ~5 दिवस) -- मुद्दाम तसाच
+    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=20)  # आधी Upstox डीफॉल्ट (~10 दिवस)
+    df_30m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=90)  # आधी चार्ट-डीफॉल्ट (~60 दिवस) -- 90 exactly एका chunk मध्ये बसतो
     # "1hour" Upstox कडून थेट verified नाही (fetch_timeframe_df() प्रमाणेच) — 30-मिनिट resample करून.
     df_60m_recent = resample_to_1h(df_30m_recent) if df_30m_recent is not None and not df_30m_recent.empty else df_30m_recent
 
