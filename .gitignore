@@ -26,6 +26,7 @@ data/*_heartbeat.json
 data/heartbeats/
 data/app.log*
 data/.last_auto_backup
+data/*.lock
 
 # --- Python ---
 __pycache__/
