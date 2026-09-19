@@ -131,7 +131,10 @@ class TestRefreshSymbolSkipsOnGap:
         })
 
         def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
-            if interval == "30minute" and lookback_days is None:
+            # 🎓 वापरकर्त्याने सांगितलेला निर्णय (1M profitable नाही, 5M+ वर लक्ष) — df_30m_recent
+            # आता lookback_days=90 सह मागवला जातो (आधी डीफॉल्ट/None), जेणेकरून जास्त candles/touches
+            # वरून मजबूत levels मिळतील (df_30m, पूर्ण-वर्षाचा fetch, lookback_days=365 राहतो — वेगळाच).
+            if interval == "30minute" and lookback_days == 90:
                 return df_30m_recent
             return _fake_df(failed_chunks=0)
 
@@ -149,3 +152,28 @@ class TestRefreshSymbolSkipsOnGap:
             assert compute_kwargs["df_30m_recent"] is df_30m_recent
             assert compute_kwargs["df_60m_recent"] is not None
             assert len(compute_kwargs["df_60m_recent"]) < len(df_30m_recent)
+
+    def test_5m_and_15m_recent_use_increased_lookback(self):
+        """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 5M/15M/30M
+        साठी lookback_days Upstox च्या स्वतःच्या (लहान) डीफॉल्टपेक्षा स्पष्टपणे जास्त हवा (जास्त
+        candles/touches वरून मजबूत levels), पण 1M साठी मात्र जुनाच (डीफॉल्ट) — तो आता वापरला जात
+        नसला, तरी backward-compatible zone-गणना म्हणून कायम."""
+        seen_lookback_days = {}
+
+        def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
+            if lookback_days is None or lookback_days != 365:  # 365 = df_1h/df_15m साठीचा पूर्ण-वर्षाचा fetch, वेगळाच
+                seen_lookback_days.setdefault(interval, []).append(lookback_days)
+            return _fake_df(failed_chunks=0)
+
+        with patch.object(rmz, "fetch_candles", side_effect=fetch_side_effect), \
+             patch.object(rmz, "compute_all_zones", return_value=pd.DataFrame([
+                 {"symbol": "NIFTY", "zone_type": "SUPPORT", "zone_low": 100.0, "zone_high": 100.0,
+                  "strength": 3, "formed_date": "2026-01-01", "status": "ACTIVE"},
+             ])), \
+             patch.object(rmz.cloud_db, "save_market_zones", return_value=True):
+            ok, message = rmz.refresh_symbol("fake_token", "NIFTY")
+            assert ok is True
+            assert 20 in seen_lookback_days["5minute"]
+            assert 30 in seen_lookback_days["15minute"]
+            assert 90 in seen_lookback_days["30minute"]
+            assert None in seen_lookback_days.get("1minute", [None])

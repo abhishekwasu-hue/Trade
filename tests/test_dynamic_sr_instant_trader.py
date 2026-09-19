@@ -112,10 +112,14 @@ class TestCheckLevelCrossed:
 
 
 def _fake_zones():
+    """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 1m_instant चा
+    डीफॉल्ट timeframe_choice आता "BOTH" ऐवजी "5M" आहे. हे fixture बहुतेक टेस्ट्समध्ये
+    (settings mock न करता, म्हणजे डीफॉल्ट settings सहच) वापरलं जातं, त्यामुळे ते आता 5M zone_type
+    वापरतं — 1M असतं तर डीफॉल्ट settings सोबत हे कधीच touch झालंच नसतं (active_timeframes=["5M"])."""
     return pd.DataFrame([
-        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": 23900.0, "zone_high": 23900.0,
+        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23900.0, "zone_high": 23900.0,
          "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
-        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": 24500.0, "zone_high": 24500.0,
+        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 24500.0, "zone_high": 24500.0,
          "strength": 2.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
     ])
 
@@ -293,7 +297,7 @@ class TestProcessSymbol:
         नियमाप्रमाणे)."""
         def _fake_resistance_labeled_zone():
             return pd.DataFrame([
-                {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": 23900.0, "zone_high": 23900.0,
+                {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 23900.0, "zone_high": 23900.0,
                  "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
             ])
         candles_touch = _candles_with_rsi([
