@@ -28,6 +28,7 @@ import cloud_db
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message, write_heartbeat
+from process_lock import ProcessLock, ProcessLockHeld
 from signals import calculate_rsi
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from oi_analysis import check_pcr_gate
@@ -340,12 +341,20 @@ if __name__ == "__main__":
     parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     args = parser.parse_args()
 
-    init_sqlite_db()
-    cloud_db.init_cloud_table()
-    token = cloud_db.get_effective_upstox_token(args.token)
-    if not token:
-        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
-        exit(1)
-    for symbol in args.symbols.split(","):
-        print(process_symbol(token, symbol.strip()))
-    write_heartbeat("srv2_momentum_reversal")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Duplicate-Order Protection, गंभीर
+    # यादीतला पाचवा मुद्दा) — dynamic_sr_instant_trader.py सारखीच सुधारणा (VPS crontab वर दर १
+    # मिनिटाला चालणारी script मंद network मुळे जास्त वेळ घेतली, तर overlapping invocation
+    # डुप्लिकेट ऑर्डर पाठवू शकते — आधीचीच invocation अजून चालू असेल, तर इथेच थांबतो).
+    try:
+        with ProcessLock("srv2_momentum_reversal_strategy"):
+            init_sqlite_db()
+            cloud_db.init_cloud_table()
+            token = cloud_db.get_effective_upstox_token(args.token)
+            if not token:
+                print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                exit(1)
+            for symbol in args.symbols.split(","):
+                print(process_symbol(token, symbol.strip()))
+            write_heartbeat("srv2_momentum_reversal")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+    except ProcessLockHeld as e:
+        print(f"⏭️ मागची invocation अजून चालू आहे, ही वगळली — डुप्लिकेट ऑर्डर टाळण्यासाठी ({e})")

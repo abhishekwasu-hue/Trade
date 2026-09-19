@@ -32,6 +32,7 @@ from database import init_sqlite_db, has_open_trade_from_source
 from notifications import send_telegram_message, write_heartbeat
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate
+from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
@@ -356,12 +357,20 @@ if __name__ == "__main__":
     parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     args = parser.parse_args()
 
-    init_sqlite_db()
-    cloud_db.init_cloud_table()
-    token = cloud_db.get_effective_upstox_token(args.token)
-    if not token:
-        print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
-        exit(1)
-    for symbol in args.symbols.split(","):
-        print(process_symbol(token, symbol.strip()))
-    write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Duplicate-Order Protection, गंभीर
+    # यादीतला पाचवा मुद्दा) — VPS crontab वर दर १ मिनिटाला चालणारी ही script मंद network/retry
+    # मुळे १ मिनिटापेक्षा जास्त वेळ घेऊ शकते; अशा वेळी cron ची पुढची invocation समांतर सुरू होऊन
+    # डुप्लिकेट (खरे) ऑर्डर पाठवू शकते. आधीचीच invocation अजून चालू असेल, तर इथेच थांबतो.
+    try:
+        with ProcessLock("dynamic_sr_instant_trader"):
+            init_sqlite_db()
+            cloud_db.init_cloud_table()
+            token = cloud_db.get_effective_upstox_token(args.token)
+            if not token:
+                print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                exit(1)
+            for symbol in args.symbols.split(","):
+                print(process_symbol(token, symbol.strip()))
+            write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+    except ProcessLockHeld as e:
+        print(f"⏭️ मागची invocation अजून चालू आहे, ही वगळली — डुप्लिकेट ऑर्डर टाळण्यासाठी ({e})")
