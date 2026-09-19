@@ -977,6 +977,97 @@ class TestOpenMultiLegTradePartialFailure:
         assert not reversal_called  # "error" (0 legs भरले) -- partial_failure नाही, वेगळा मार्ग
 
 
+class TestCheckKillSwitch:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE तोटा/trade-count मर्यादेपलीकडे गेल्यावर नवीन LIVE
+    trade अडवलं जायला हवं."""
+
+    def test_disabled_always_ok_regardless_of_pnl(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss": 100, "max_trades_per_day": 1})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-999999, 999))
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_daily_loss_breached_blocks(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-6000, 2))
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_DAILY_LOSS" in reason
+
+    def test_max_trades_breached_blocks(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (500, 15))
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_MAX_TRADES" in reason
+
+    def test_within_limits_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-100, 3))
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is True
+        assert reason is None
+
+
+class TestOpenMultiLegTradeKillSwitch:
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_live_blocked_by_kill_switch_skips_order_and_alerts(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (False, "KILL_SWITCH_DAILY_LOSS — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert resp["status"] == "error"
+        assert "KILL_SWITCH_DAILY_LOSS" in resp["reason"]
+        assert not execute_calls  # ऑर्डरच पाठवला गेला नाही
+        assert len(telegram_calls) == 1
+        assert "Kill Switch" in telegram_calls[0]
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT COUNT(*) FROM live_trades").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_paper_mode_never_checks_kill_switch(self, temp_db, monkeypatch):
+        def _boom():
+            raise AssertionError("PAPER mode ने कधीच kill switch तपासायला नको")
+        monkeypatch.setattr(trading_engine, "check_kill_switch", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+
+    def test_live_mode_kill_switch_ok_proceeds_normally(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is True
+
+
 class TestEvaluatePointSpotExit:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — Spot% +
     Premium-Points combined exit-गणित, Credit Spread आणि Naked Buy दोन्हींसाठी, TSL-to-Breakeven

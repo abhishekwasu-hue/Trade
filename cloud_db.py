@@ -648,6 +648,37 @@ def get_strategy_settings(strategy_name, symbol):
         conn.close()
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit, गंभीर
+# यादीतला चौथा मुद्दा) — तिन्ही bots साठी एकत्रित, संपूर्ण-खात्यासाठीचं (per-strategy/symbol नाही)
+# सुरक्षा-सेटिंग. नवीन टेबल न बनवता, आधीच अस्तित्वात असलेल्या (आणि आधीच पूर्णपणे टेस्ट केलेल्या)
+# strategy_settings infra चाच पुनर्वापर — strategy_name="__global_kill_switch__", symbol="ALL" ही
+# एकच, स्थिर जोडी वापरून.
+KILL_SWITCH_STRATEGY_KEY = "__global_kill_switch__"
+KILL_SWITCH_SYMBOL_KEY = "ALL"
+KILL_SWITCH_DEFAULTS = {
+    "enabled": True,
+    "max_daily_loss": 10000,
+    "max_trades_per_day": 15,
+}
+
+
+def get_kill_switch_settings():
+    """आजचा एकत्रित (सर्व symbols/strategies मिळून) LIVE Kill Switch — enabled/max_daily_loss/
+    max_trades_per_day. Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट."""
+    settings = get_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY)
+    return {
+        "enabled": bool(settings.get("enabled", KILL_SWITCH_DEFAULTS["enabled"])),
+        "max_daily_loss": settings.get("max_daily_loss", KILL_SWITCH_DEFAULTS["max_daily_loss"]),
+        "max_trades_per_day": settings.get("max_trades_per_day", KILL_SWITCH_DEFAULTS["max_trades_per_day"]),
+    }
+
+
+def save_kill_switch_settings(enabled, max_daily_loss, max_trades_per_day):
+    return save_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY, {
+        "enabled": bool(enabled), "max_daily_loss": float(max_daily_loss), "max_trades_per_day": int(max_trades_per_day),
+    })
+
+
 def get_all_strategy_trading_modes():
     """
     🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता यावं

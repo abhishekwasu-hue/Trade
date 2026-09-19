@@ -324,6 +324,28 @@ def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     conn.close()
     return total_pnl, total_trades_today
 
+def get_todays_live_total_pnl_and_count():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L + trade count, सर्व symbols आणि सर्व
+    strategies/sources मिळून (get_todays_realized_pnl() च्या उलट, जो एकाच symbol+mode पुरता मर्यादित
+    आहे) — तिन्ही bots + Dashboard यांना समान, संपूर्ण-खात्यासाठीचं एकत्रित संरक्षण देण्यासाठी."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE trade_date=? AND status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE'",
+        (today_str,),
+    )
+    total_pnl = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM live_trades WHERE trade_date=? AND COALESCE(mode,'LIVE')='LIVE'",
+        (today_str,),
+    )
+    total_trades_today = cur.fetchone()[0]
+    conn.close()
+    return total_pnl, total_trades_today
+
+
 def get_open_trades_with_entry_level(symbol, source):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Next-Level Exit) — established त्याच symbol+source

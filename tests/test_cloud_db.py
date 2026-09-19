@@ -905,3 +905,33 @@ class TestGetAllStrategyTradingModes:
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
         assert cloud_db.get_all_strategy_trading_modes() == {}
+
+
+class TestKillSwitchSettings:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — get/save_kill_switch_settings() हे आधीच पूर्णपणे टेस्ट केलेल्या
+    get/save_strategy_settings() चेच पातळ wrapper आहेत (strategy_name="__global_kill_switch__",
+    symbol="ALL" या स्थिर जोडीसह) — त्यामुळे इथे फक्त wrapping/डीफॉल्ट्स तपासले जातात."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_kill_switch_settings()
+        assert settings == {"enabled": True, "max_daily_loss": 10000, "max_trades_per_day": 15}
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={"enabled": False, "max_daily_loss": 25000, "max_trades_per_day": 8},
+        ) as mock_get:
+            settings = cloud_db.get_kill_switch_settings()
+        mock_get.assert_called_once_with(cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY)
+        assert settings == {"enabled": False, "max_daily_loss": 25000, "max_trades_per_day": 8}
+
+    def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_kill_switch_settings(True, "15000", "10")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
+            {"enabled": True, "max_daily_loss": 15000.0, "max_trades_per_day": 10},
+        )
