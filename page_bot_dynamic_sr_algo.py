@@ -72,7 +72,7 @@ def render():
     if not symbol_enabled:
         st.warning(f"⚠️ {symbol} सध्या बंद आहे — या symbol वर कुठलाही नवीन trade (Credit Spread किंवा Naked) घेतला जाणार नाही.")
 
-    tab_entry, tab_exit = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate"])
+    tab_entry, tab_exit, tab_mode = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate", "🎮 Mode & Broker"])
 
     with tab_entry:
         if strategy_key in ("1m_instant", "classic_sr_reversal"):
@@ -296,6 +296,57 @@ def render():
             with e2:
                 naked_eod_minute = _number_input("Naked EOD मिनिट", settings, "naked_eod_minute", strategy_key, symbol, min_value=0, max_value=59, step=5)
 
+    with tab_mode:
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PAPER/LIVE टॉगल + broker selection, प्रत्येक strategy
+        # साठी स्वतंत्र, जेणेकरून भविष्यात हळूहळू LIVE trading सुरू करता येईल") — आधी bot scripts मध्ये
+        # trading_mode="PAPER" hardcoded होतं, आणि broker निवड नव्हतीच (कुठलाही account नोंदवला की
+        # आपोआप सर्व सक्रिय accounts वर replicate व्हायचं). आता दोन्ही इथूनच, strategy+symbol निहाय.
+        sub_header("🎮 Trading Mode (PAPER / LIVE)", HDR_ORANGE)
+        st.caption("डीफॉल्ट नेहमी PAPER (सिम्युलेटेड, खरे पैसे नाहीत). LIVE केल्यासच हा bot (VPS cron वर, दर काही मिनिटांनी चालणारा) खरे ऑर्डर्स पाठवेल.")
+        trading_mode_choice = st.radio(
+            "मोड", ["📝 PAPER (Simulated)", "🔴 LIVE (Real Money)"],
+            index=0 if settings.get("trading_mode", "PAPER") != "LIVE" else 1,
+            key=_widget_key(strategy_key, symbol, "trading_mode_radio"), horizontal=True,
+        )
+        trading_mode_selected = "LIVE" if "LIVE" in trading_mode_choice else "PAPER"
+        live_confirmed = True
+        if trading_mode_selected == "LIVE":
+            live_confirmed = st.checkbox(
+                f"मला समजते — {STRATEGY_LABELS[strategy_key]} ({symbol}) आता खऱ्या पैशांनी, VPS वर आपोआप (कुठलाही manual क्लिक न करता) ट्रेड करेल",
+                value=False, key=_widget_key(strategy_key, symbol, "trading_mode_confirm"),
+            )
+            if not live_confirmed:
+                st.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय जतन केलं तरी मोड PAPER वरच राहील (सुरक्षिततेसाठी).")
+            else:
+                st.error(f"🔴 {symbol} — {STRATEGY_LABELS[strategy_key]} LIVE मोडमध्ये जतन होणार आहे — पुढच्या cron cycle पासून खरे ऑर्डर्स!")
+
+        st.markdown("---")
+        sub_header("🏦 Broker Selection (कुठल्या account वर execute करायचं)", HDR_TEAL)
+        st.caption(
+            "रिकामं ठेवलं (डीफॉल्ट) तर नेहमीप्रमाणे शुद्ध Upstox वर, एकच trade उघडला जातो. एक किंवा अनेक "
+            "account निवडल्यास (तुमच्या भांडवलानुसार), प्रत्येक निवडलेल्या account वर स्वतंत्र trade "
+            "उघडला जातो — प्रत्येकाचं SL/TSL/Target management स्वतंत्रपणे त्याच broker वर होतं. "
+            "(Signal-गणना — candles/RSI/S-R levels — मात्र नेहमीच Upstox वरूनच होते, फक्त प्रत्यक्ष "
+            "ऑर्डर निवडलेल्या broker कडे जातो.)"
+        )
+        accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
+        if accounts_df is None or accounts_df.empty:
+            st.info("कुठलेही broker accounts अजून नोंदवलेले नाहीत (Broker Accounts पानावरून नोंदवा). तोपर्यंत नेहमी शुद्ध Upstox वापरला जाईल.")
+            broker_account_ids = []
+        else:
+            account_options = {
+                row["account_id"]: f"{row['nickname'] or row['account_id']} ({row['broker_type']})" + ("" if row["is_active"] else " ⚪ निष्क्रिय")
+                for _, row in accounts_df.iterrows()
+            }
+            current_selection = [aid for aid in (settings.get("broker_account_ids") or []) if aid in account_options]
+            broker_account_ids = st.multiselect(
+                "Broker Account(s) — एक किंवा अनेक निवडा", list(account_options.keys()),
+                default=current_selection, format_func=lambda aid: account_options[aid],
+                key=_widget_key(strategy_key, symbol, "broker_account_ids"),
+            )
+            if broker_account_ids:
+                st.caption(f"निवडलेले: {', '.join(account_options[aid] for aid in broker_account_ids)}")
+
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
         new_settings = {
@@ -311,6 +362,10 @@ def render():
             "naked_target_spot_pct": float(naked_target_spot_pct), "naked_target_premium_points": float(naked_target_premium_points),
             "spread_trailing_sl_enabled": bool(spread_trailing_sl_enabled), "spread_trailing_distance_points": float(spread_trailing_distance_points),
             "naked_trailing_sl_enabled": bool(naked_trailing_sl_enabled), "naked_trailing_distance_points": float(naked_trailing_distance_points),
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — LIVE निवडलं तरी पुष्टीकरण टिक केलेलं नसेल, तर
+            # सुरक्षिततेसाठी PAPER वरच जतन होतं (शांतपणे LIVE जतन होऊन खरे ऑर्डर्स सुरू होता कामा नयेत).
+            "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",
+            "broker_account_ids": broker_account_ids,
         }
         # 🎓 classic_sr_reversal साठी PCR गेट मुद्दामच नाही (वर पहा) — त्यामुळे हे fields save करायचे नाहीत.
         if strategy_key != "classic_sr_reversal":

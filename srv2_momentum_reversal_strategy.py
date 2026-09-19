@@ -234,15 +234,20 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
             return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
 
-        accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
-        if accounts_df is not None and not accounts_df.empty:
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PAPER/LIVE टॉगल + per-strategy Broker Selection) —
+        # dynamic_sr_instant_trader.py प्रमाणेच — settings मधल्याच trading_mode/broker_account_ids
+        # वरून, "कुठलेही broker_accounts नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी.
+        trading_mode = settings.get("trading_mode", "PAPER")
+        broker_account_ids = settings.get("broker_account_ids") or []
+        if broker_account_ids:
             from trading_engine import execute_trade_on_all_accounts
             results, factory_errors = execute_trade_on_all_accounts(
                 symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="srv2_momentum_reversal",
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                account_ids=broker_account_ids,
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
             if factory_errors:
@@ -251,7 +256,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             trade_result, trade_status = open_multi_leg_trade(
                 access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
-                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="srv2_momentum_reversal",
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
@@ -289,21 +294,22 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(naked_diag_entry)
             print(f"ℹ️ Naked trade बंद आहे (naked_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
         if naked_result is not None:
-            if accounts_df is not None and not accounts_df.empty:
+            if broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 naked_results, naked_factory_errors = execute_trade_on_all_accounts(
                     symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="srv2_momentum_reversal",
                     entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+                    account_ids=broker_account_ids,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
                 _, naked_status = open_multi_leg_trade(
                     access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="srv2_momentum_reversal",
                     entry_level_price=level_price, entry_timeframe=timeframe_suffix,
                 )
