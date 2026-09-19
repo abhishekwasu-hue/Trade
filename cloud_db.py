@@ -648,6 +648,40 @@ def get_strategy_settings(strategy_name, symbol):
         conn.close()
 
 
+def get_all_strategy_trading_modes():
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता यावं
+    म्हणून) — पानाच्या सर्वात वर, सध्या कुठली strategy+symbol combo LIVE आहे हे एका दृष्टीक्षेपात
+    दाखवण्यासाठी. सर्व (strategy_name, symbol) combos एकाच query मध्ये — प्रत्येकासाठी वेगळा
+    get_strategy_settings() कॉल (वेगळी DB round-trip) टाळण्यासाठी.
+
+    ज्या combo साठी कधीच काही साठवलंच गेलेलं नाही, ते इथे अजिबात दिसणार नाहीत — असे सर्व आपोआप
+    डीफॉल्ट (PAPER, शुद्ध Upstox) आहेत हे गृहीत धरता येतं.
+
+    रिटर्न: {(strategy_name, symbol): {"trading_mode": "PAPER"/"LIVE", "broker_account_ids": [...]}, ...}
+    Supabase न मिळाल्यास रिकामा dict (कुठलीही चूक न देता)."""
+    conn = get_connection()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT strategy_name, symbol, settings FROM strategy_settings")
+            rows = cur.fetchall()
+        result = {}
+        for strategy_name, symbol, raw_settings in rows:
+            settings = raw_settings if isinstance(raw_settings, dict) else json.loads(raw_settings)
+            result[(strategy_name, symbol)] = {
+                "trading_mode": settings.get("trading_mode", "PAPER"),
+                "broker_account_ids": settings.get("broker_account_ids") or [],
+            }
+        return result
+    except Exception:
+        _logger.exception("get_all_strategy_trading_modes() मध्ये अनपेक्षित चूक (silently handled)")
+        return {}
+    finally:
+        conn.close()
+
+
 def save_strategy_settings(strategy_name, symbol, settings_dict):
     """strategy_name + symbol साठी settings साठवणे (upsert, आंशिक अपडेट — फक्त दिलेले fields
     बदलतात, बाकीचे आधीचेच राहतात — PostgreSQL JSONB `||` merge-operator वापरून)."""
