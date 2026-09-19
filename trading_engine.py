@@ -397,6 +397,33 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         return False, resp
 
     order_ids = extract_order_ids(resp)
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — SL ची पातळी (आणि साठवलेला
+    # entry fill price) आतापर्यंत नेहमी strategy_result मधल्या (signal-check वेळी, order पाठवण्याआधी
+    # घेतलेल्या) option-chain LTP वरून ठरायची — MARKET orders च्या प्रत्यक्ष अंमलबजावणीत (slippage,
+    # bid-ask spread) प्रत्यक्ष भरलेली किंमत यापेक्षा वेगळी असू शकते. पण upstox_api.execute_order_leg_set()
+    # (LIVE असेल तर resp["verified_legs"][i]["average_price"], PAPER असेल तर resp["paper_fills"])
+    # आधीच खरी fill किंमत मागवते/मोजते — फक्त ती इथे कधीच वापरली जायचीच नाही. उदा. spread_sl_premium_points
+    # सारखी घट्ट SL मर्यादा (काही अंक) असेल, तर काही अंकांचा slippage-फरकही SL अंतराचा मोठा भाग खाऊन
+    # टाकू शकतो. आता उपलब्ध असल्यास खरी fill किंमत वापरली जाते (adapter-routed brokers — Shoonya/
+    # Stocko/Fyers — यांच्याकडे हे field नसतात, तेव्हा जुनाच chain-snapshot आधार सुरक्षितपणे राहतो).
+    verified_legs = resp.get("verified_legs")
+    paper_fills = resp.get("paper_fills")
+    actual_fill_prices = {}
+    if verified_legs:
+        for vleg in verified_legs:
+            if vleg.get("average_price") is not None and vleg.get("instrument_token"):
+                actual_fill_prices[vleg["instrument_token"]] = vleg["average_price"]
+    elif paper_fills:
+        actual_fill_prices = dict(paper_fills)
+
+    if actual_fill_prices and all(leg["instrument_key"] in actual_fill_prices for leg in legs):
+        net_credit = sum(
+            actual_fill_prices[leg["instrument_key"]] * (1 if leg["transaction_type"] == "SELL" else -1)
+            for leg in legs
+        )
+    else:
+        net_credit = strategy_result["net_credit"]  # खरी fill किंमत उपलब्ध नसेल — जुनाच chain-snapshot आधार
+
     # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — इथे आधी फक्त
     # lot_size नेच गुणलं जायचं, lots ने नाही. पण manage_open_trades() मधला current_pnl
     # (exit-वेळी प्रत्यक्ष तुलना होणारा) नेहमी `* lots * lot_size` असतो (बघा वरचा
@@ -412,7 +439,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # राहतात (unbounded-profit trade साठी % target गणिताला अर्थच नाही — SL/Trailing-SL/EOD अजूनही
     # लागू होतातच, फक्त निश्चित profit-target नाही).
     max_profit_total = (strategy_result["max_profit"] * lots * lot_size) if strategy_result["max_profit"] is not None else None
-    net_credit_total = strategy_result["net_credit"] * lots * lot_size
+    net_credit_total = net_credit * lots * lot_size
     if sl_pct_of_credit is not None:
         # 🎓 Naked Option साठी net_credit ऋण (debit, buy_leg["ltp"] इतका) असतो,
         # Credit Spread साठी धन (credit) — abs() शिवाय naked trades साठी sl_pnl_level
@@ -427,11 +454,13 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     strikes_summary = " · ".join(f"{leg['role']}:{leg['strike']:.0f}" for leg in legs)
 
     trade_id = f"{'PAPER' if trading_mode == 'PAPER' else symbol}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — established MARKET orders चा request price
-    # नेहमी 0 असतो (limit price नसतोच) — established प्रत्यक्ष entry किंमत (प्रत्येक leg चं "ltp"/
-    # "premium", established strategy_result मधून) इथे वेगळी पाठवली जाते.
+    # 🎓 वापरकर्त्याने Order Book वरून सापडवलेली bug — MARKET orders चा request price नेहमी 0 असतो
+    # (limit price नसतोच) — प्रत्यक्ष entry किंमत वेगळी पाठवली जाते. आता खरी fill किंमत उपलब्ध असेल
+    # (actual_fill_prices, वर बघा) तर तीच; नाहीतर जुनाच chain-snapshot आधार (leg चं "ltp"/"premium").
     entry_fill_prices = {
-        leg["instrument_key"]: (leg.get("ltp") if leg.get("ltp") is not None else leg.get("premium"))
+        leg["instrument_key"]: actual_fill_prices.get(
+            leg["instrument_key"], leg.get("ltp") if leg.get("ltp") is not None else leg.get("premium"),
+        )
         for leg in legs
     }
     log_orders_batch(order_ids, trade_id, symbol, trading_mode, orders, status="COMPLETE", fill_prices=entry_fill_prices)
@@ -456,7 +485,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             # प्रत्यक्षात lot_size ने **दुसऱ्यांदा** गुणले जायचे (उदा. Iron Condor चा खरा max_loss
             # ₹6,655 ऐवजी ₹367,575 सारखा भलताच मोठा दिसायचा). आता established net_credit प्रमाणेच,
             # दोन्ही per-share (strategy_result मधलं मूळ, न गुणलेलं मूल्य) साठवलं जातं.
-            lots, lot_size, strategy_result["net_credit"], strategy_result["max_profit"], strategy_result["max_loss"],
+            lots, lot_size, net_credit, strategy_result["max_profit"], strategy_result["max_loss"],
             sl_pnl_level, target_pnl_level,
             get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
