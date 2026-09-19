@@ -794,6 +794,70 @@ class TestEntryBasisUsesActualFillPrice:
         conn.close()
         assert row[0] == 25.0  # strategy_result["net_credit"] चाच जुना आधार
 
+    def test_target_and_max_profit_max_loss_also_shift_with_fill_price_not_just_net_credit(self, temp_db, monkeypatch):
+        """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug (वरच्याच fill-price दुरुस्तीतली अपूर्ण बाब) —
+        net_credit वर तर खरी fill किंमत लागू व्हायची, पण max_profit/max_loss (म्हणजे
+        target_pnl_level आणि sl_pct_of_max_loss मार्गाचा sl_pnl_level दोन्हींचा आधार) अजूनही
+        strategy_result मधलेच जुने (chain-snapshot-वेळचे) राहायचे. width (max_profit+max_loss)
+        किमतीवर अवलंबून नसतो, फक्त net_credit बदलतो — म्हणजे net_credit जेवढा बदलला (delta),
+        max_profit त्याच +delta ने आणि max_loss -delta ने सरकवला की परत सुसंगत होतात."""
+        def fake_execute(token, orders, mode):
+            return 200, {
+                "status": "success", "data": {"order_ids": ["T1", "T2"]},
+                "verified_legs": [
+                    {"instrument_token": "PE24400", "average_price": 48.0},  # short leg, chain-snapshot 50 होता
+                    {"instrument_token": "PE24300", "average_price": 28.0},  # long leg, chain-snapshot 25 होता
+                ],
+            }
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="LIVE", trading_style="SWING",  # sl_pct_of_credit नाही -- max_loss मार्ग वापरण्यासाठी
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level = row
+        # खरा net_credit = short(48) - long(28) = 20 (chain-snapshot च्या 25 ऐवजी) -> delta = -5
+        assert net_credit == 20.0
+        assert max_profit == 20.0  # जुना 25 + delta(-5)
+        assert max_loss == 80.0  # जुना 75 - delta(-5)
+        assert max_profit + max_loss == 100.0  # width (strategy_result: 25+75=100) कायम अबाधित
+        assert sl_pnl_level == -6000.0  # -(80 * 1 * 75 * 100%) -- जुन्या (75-आधारित) ऐवजी नवीन max_loss आधारित
+        assert target_pnl_level == 1200.0  # 20 * 1 * 75 * 80% -- जुन्या (25-आधारित, 1500) ऐवजी नवीन max_profit आधारित
+
+    def test_naked_max_profit_none_survives_fill_price_adjustment(self, temp_db, monkeypatch):
+        """Naked (hedge नसलेला) trade चा max_profit=None (unbounded) असतो -- fill-price दुरुस्ती
+        त्याला None च ठेवायला हवी (crash नाही), max_loss मात्र तरीही योग्य दिशेने सरकायला हवा."""
+        naked_result = {
+            "strategy": "NAKED_CALL", "buy_leg": {"strike": 24000, "instrument_key": "CE24000", "ltp": 60},
+            "net_credit": -60, "max_profit": None, "max_loss": 60,
+        }
+        def fake_execute(token, orders, mode):
+            return 200, {
+                "status": "success", "data": {"order_ids": ["T1"]},
+                "verified_legs": [{"instrument_token": "CE24000", "average_price": 65.0}],  # आधीपेक्षा जास्त किंमतीत भरलं (slippage)
+            }
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", naked_result, lots=1, lot_size=75,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="LIVE", trading_style="SWING",
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT net_credit, max_profit, max_loss, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        net_credit, max_profit, max_loss, target_pnl_level = row
+        assert net_credit == -65.0  # जास्त किंमतीत विकत घेतलं -- net_credit आणखी ऋण
+        assert max_profit is None  # unbounded, crash नाही
+        assert max_loss == 65.0  # 60 वरून 65 पर्यंत वाढला (जास्त पैसे दिले, जास्त तोटा शक्य)
+        assert target_pnl_level is None  # max_profit None असल्याने target_pnl_level सुद्धा None
+
 
 class TestReconcileOpenTradesWithBroker:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — Upstox च्या स्वतःच्या

@@ -424,13 +424,28 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     else:
         net_credit = strategy_result["net_credit"]  # खरी fill किंमत उपलब्ध नसेल — जुनाच chain-snapshot आधार
 
+    # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली, वरच्याच fill-price दुरुस्तीतली अपूर्ण बाब — net_credit वर तर
+    # खरी fill किंमत लागू झाली, पण max_profit/max_loss (target_pnl_level आणि sl_pct_of_max_loss
+    # मार्गासाठीचा sl_pnl_level दोन्हींचा आधार) अजूनही strategy_result मधलेच जुने (chain-snapshot-वेळचे)
+    # राहायचे — म्हणजे प्रत्यक्ष entry (net_credit) आणि Target/SL चा आधार (max_profit/max_loss)
+    # विसंगत बनायचे. गणिती संबंध (strategy.py च्या तिन्ही strategy-प्रकारांसाठी पडताळलेला — Credit
+    # Spread: max_profit=net_credit, max_loss=width-net_credit; Naked+Hedge: max_profit=width+net_credit,
+    # max_loss=-net_credit; Naked (hedge नसलेला): max_profit=None, max_loss=-net_credit) — कुठल्याही
+    # प्रकारात max_profit+max_loss (strike width) किमतीवर अवलंबून नसलेला, स्थिर आकडा असतो — फक्त
+    # net_credit fill किमतीनुसार बदलतो. त्यामुळे net_credit जितका बदलला (delta), तितकाच max_profit
+    # +delta आणि max_loss -delta ने सरकवला की दोन्ही परत सुसंगत होतात — खरी fill किंमत उपलब्ध
+    # नसेल तर delta=0 (काहीही बदलत नाही, जुनंच वर्तन).
+    net_credit_delta = net_credit - strategy_result["net_credit"]
+    max_profit_adj = (strategy_result["max_profit"] + net_credit_delta) if strategy_result["max_profit"] is not None else None
+    max_loss_adj = strategy_result["max_loss"] - net_credit_delta
+
     # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — इथे आधी फक्त
     # lot_size नेच गुणलं जायचं, lots ने नाही. पण manage_open_trades() मधला current_pnl
     # (exit-वेळी प्रत्यक्ष तुलना होणारा) नेहमी `* lots * lot_size` असतो (बघा वरचा
     # net_credit_total, ओळ ~741). त्यामुळे lots>1 असेल, तर SL/Target रकमेत lots गुणलाच जायचा नाही
     # — म्हणजे intended रकमेच्या फक्त 1/lots इतक्याच हालचालीवर SL/Target लगेच trigger व्हायचा
     # (उदा. lots=3 → SL तिप्पट लवकर, Target तिप्पट लवकर) — जितके lots जास्त, तितकी चूक मोठी.
-    max_loss_total = strategy_result["max_loss"] * lots * lot_size
+    max_loss_total = max_loss_adj * lots * lot_size
     # 🎓 Naked Option (hedge नसलेला buy) साठी max_profit=None असतो (theoretically
     # unbounded — strategy.py.select_naked_option_itm() बघा) — None * lots क्रॅश व्हायचा, आणि तो
     # क्रॅश प्रत्यक्ष order Upstox कडे गेल्यानंतर, database मध्ये trade साठवण्याआधी व्हायचा — म्हणजे
@@ -438,7 +453,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # नाही). आता None सुरक्षितपणे हाताळला जातो — max_profit_total/target_pnl_level दोन्ही None
     # राहतात (unbounded-profit trade साठी % target गणिताला अर्थच नाही — SL/Trailing-SL/EOD अजूनही
     # लागू होतातच, फक्त निश्चित profit-target नाही).
-    max_profit_total = (strategy_result["max_profit"] * lots * lot_size) if strategy_result["max_profit"] is not None else None
+    max_profit_total = (max_profit_adj * lots * lot_size) if max_profit_adj is not None else None
     net_credit_total = net_credit * lots * lot_size
     if sl_pct_of_credit is not None:
         # 🎓 Naked Option साठी net_credit ऋण (debit, buy_leg["ltp"] इतका) असतो,
@@ -485,7 +500,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             # प्रत्यक्षात lot_size ने **दुसऱ्यांदा** गुणले जायचे (उदा. Iron Condor चा खरा max_loss
             # ₹6,655 ऐवजी ₹367,575 सारखा भलताच मोठा दिसायचा). आता established net_credit प्रमाणेच,
             # दोन्ही per-share (strategy_result मधलं मूळ, न गुणलेलं मूल्य) साठवलं जातं.
-            lots, lot_size, net_credit, strategy_result["max_profit"], strategy_result["max_loss"],
+            lots, lot_size, net_credit, max_profit_adj, max_loss_adj,
             sl_pnl_level, target_pnl_level,
             get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), None, None, None, "OPEN",
             None, None,
