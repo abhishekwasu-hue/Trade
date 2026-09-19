@@ -121,6 +121,32 @@ class TestUpstoxTokenStorage:
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
         assert cloud_db.get_latest_upstox_token() is None
 
+    def test_save_encrypts_when_key_configured(self, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा (Plaintext Broker Credentials) -- TOKEN_ENCRYPTION_KEY
+        सेट असेल तर DB मध्ये plaintext token कधीच जाता कामा नये."""
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        monkeypatch.setattr(cloud_db, "encrypt_token", lambda t: f"enc:v1:{t}-encrypted")
+
+        cloud_db.save_upstox_token("fake_token_abc123")
+        sql, params = mock_cursor.execute.call_args[0]
+        assert params == ("enc:v1:fake_token_abc123-encrypted", None)
+
+    def test_get_decrypts_stored_value(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("enc:v1:something",)
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        monkeypatch.setattr(cloud_db, "decrypt_token", lambda t: "decrypted_plaintext_token")
+
+        token = cloud_db.get_latest_upstox_token()
+        assert token == "decrypted_plaintext_token"
+
 
 class TestStrikeOIHistory:
     """
