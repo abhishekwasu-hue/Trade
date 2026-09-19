@@ -235,10 +235,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol, expiry_index=expiry_index)
         if not raw_chain:
             return f"{symbol}: Option chain मिळाली नाही ({chain_status})"
-        atm_strike = round(underlying_price / 50) * 50
+        strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
+        atm_strike = round(underlying_price / strike_step) * strike_step
 
         spread_result = select_credit_spread_itm(
-            raw_chain, direction, atm_strike,
+            raw_chain, direction, atm_strike, step=strike_step,
             itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
         )
         if spread_result is None:
@@ -290,7 +291,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         naked_diag_entry = dict(log_entry)
         if settings.get("naked_enabled", True):
             naked_result = select_naked_option_itm(
-                raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"],
+                raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"], step=strike_step,
                 hedge_enabled=settings.get("naked_hedge_enabled", False),
                 hedge_width_points=settings.get("naked_hedge_width_points", 150),
             )

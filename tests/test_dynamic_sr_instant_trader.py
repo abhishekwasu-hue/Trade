@@ -269,6 +269,43 @@ class TestProcessSymbol:
             assert mock_select.call_args.kwargs.get("itm_depth_points") == 50
             assert mock_select.call_args.kwargs.get("hedge_width_points") == 150
 
+    def test_atm_strike_rounds_to_symbol_own_strike_step_not_always_50(self):
+        """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — atm_strike कायम round(price/50)*50 वापरत होता,
+        NIFTY (strike step 50) साठी बरोबर, पण BANKNIFTY/SENSEX (strike step 100) साठी अनेकदा चुकीचा
+        (राऊंड-ऑफ ग्रिडवर strike येतो, जो त्या symbol साठी प्रत्यक्षात अस्तित्वातच नसतो — raw_chain मध्ये
+        सापडतच नाही, त्यामुळे strike-निवड निम्म्या वेळा उगाचच अयशस्वी होते). आता symbol च्या
+        cloud_db.STRIKE_STEP नुसार राऊंड होतो, आणि तोच step select_credit_spread_itm()/
+        select_naked_option_itm() ला ITM-depth राऊंडिंगसाठी दिला जातो."""
+        touch_rows = [
+            {"open": 51960, "high": 51970, "low": 51950, "close": 51955},
+            {"open": 51950, "high": 51955, "low": 51920, "close": 51930},
+        ]
+        candles_touch = _candles_with_rsi(touch_rows, declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        banknifty_zones = pd.DataFrame([
+            {"symbol": "BANKNIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 51930.0, "zone_high": 51930.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        settings_banknifty = dsr.cloud_db.get_strategy_settings("1m_instant", "BANKNIFTY")
+        settings_banknifty["symbol_enabled"] = True
+        settings_banknifty["naked_enabled"] = False
+        settings_banknifty["entry_rsi_gate_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings_banknifty), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=banknifty_zones), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(51930.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "BANKNIFTY")
+            assert mock_select.called
+            # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती
+            assert mock_select.call_args.args[2] == 51900
+            assert mock_select.call_args.kwargs.get("step") == 100
+
     def test_direct_touch_executes_trade(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
