@@ -35,6 +35,7 @@ try:
 except ImportError:
     psycopg2 = None
 
+from crypto_utils import encrypt_token, decrypt_token
 from log_setup import get_logger
 
 _logger = get_logger("cloud_db.py")
@@ -1174,7 +1175,9 @@ def save_upstox_token(access_token, account_id=None):
         return False
     try:
         with conn.cursor() as cur:
-            cur.execute("INSERT INTO upstox_tokens (access_token, account_id) VALUES (%s, %s)", (access_token, account_id))
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Plaintext Broker Credentials) -- TOKEN_ENCRYPTION_KEY
+            # सेट असेल तर encrypt करूनच साठवला जातो (नसेल तर आधीसारखाच plaintext, backward-compatible).
+            cur.execute("INSERT INTO upstox_tokens (access_token, account_id) VALUES (%s, %s)", (encrypt_token(access_token), account_id))
         conn.commit()
         return True
     except Exception:
@@ -1203,7 +1206,9 @@ def get_latest_upstox_token(account_id=None):
                     "SELECT access_token FROM upstox_tokens WHERE account_id IS NULL ORDER BY received_at DESC LIMIT 1"
                 )
             row = cur.fetchone()
-            return row[0] if row else None
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Plaintext Broker Credentials) -- encrypt_token()
+            # प्रमाणेच, पारदर्शक decrypt (उपसर्ग नसलेले जुने plaintext rows जसेच्या तसे परत येतात).
+            return decrypt_token(row[0]) if row else None
     except Exception:
         _logger.exception("get_latest_upstox_token() मध्ये अनपेक्षित चूक (silently handled)")
         return None
