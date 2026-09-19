@@ -439,7 +439,25 @@ def oi_temp_db(monkeypatch):
 
 class TestGetLatestPCR:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — Bot Dynamic SR Algo) — आजचा सर्वात
-    अलीकडचा (ATM-जवळचा) PCR मिळवणे, आणि जुना/गहाळ डेटा असल्यास None."""
+    अलीकडचा (ATM-जवळचा) PCR मिळवणे, आणि जुना/गहाळ डेटा असल्यास None.
+
+    🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug (test-only, production मध्ये अप्रत्यक्ष) — हे टेस्ट्स आधी
+    real get_ist_now()/get_ist_today() (म्हणजे test चालवतानाची खरी घड्याळ-वेळ) वापरून "N मिनिटं
+    आधीचा" snapshot-time बनवायचे, पण फक्त HH:MM:SS भाग घेऊन trade_date मात्र कायम "आज" (मूळ, न
+    सरकलेलं) ठेवायचे — मध्यरात्री (IST) च्या आसपास चाचणी चालवली, तर "N मिनिटं आधी" प्रत्यक्षात
+    कालच्या दिवसात सरकतो, पण trade_date तरीही आजचाच राहतो — त्यामुळे रो अंतर्गत विसंगत (चुकीचा) बनतो
+    आणि "सर्वात अलीकडचा कोणता"/"किती जुना" या दोन्ही तपासण्या चुकीच्या निकालाकडे नेतात (production
+    कोड स्वतः बरोबर आहे — oi_snapshot_collector.py कधीच मध्यरात्रीच्या आसपास चालत नाही, त्यामुळे
+    असा विसंगत रो प्रत्यक्षात कधीच तयार होत नाही — पण चाचणी घड्याळाच्या वेळेवर अवलंबून राहणं
+    (मध्यरात्रीच्या ~१ तासाच्या खिडकीत अनिश्चित) स्वतःच चुकीचं आहे). आता स्थिर, गोठवलेली दुपारची
+    वेळ (मध्यरात्रीपासून दूर) — चाचणी केव्हाही चालवली तरी तोच निकाल."""
+
+    _FROZEN_NOW = pd.Timestamp("2026-01-15 11:00:00")  # गुरुवार, दुपार — मध्यरात्री-सीमेपासून दूर
+
+    @pytest.fixture(autouse=True)
+    def _freeze_time(self, monkeypatch):
+        monkeypatch.setattr(oi_analysis, "get_ist_now", lambda: self._FROZEN_NOW.to_pydatetime())
+        monkeypatch.setattr(oi_analysis, "get_ist_today", lambda: self._FROZEN_NOW.date())
 
     def _insert_snapshot(self, path, symbol, trade_date, snapshot_time, call_oi, put_oi):
         conn = sqlite3.connect(path)
