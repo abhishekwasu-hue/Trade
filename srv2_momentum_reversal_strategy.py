@@ -29,7 +29,7 @@ from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat
 from process_lock import ProcessLock, ProcessLockHeld
-from signals import calculate_rsi
+from signals import calculate_rsi, resample_to_1h
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from oi_analysis import check_pcr_gate
 from trading_engine import open_multi_leg_trade
@@ -105,7 +105,15 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now):
         dyn_levels = all_zones[(all_zones["zone_type"].str.endswith(f"_{suffix}")) & (all_zones["status"] == "ACTIVE")]
         if dyn_levels.empty:
             continue
-        candles_df = fetch_candles(access_token, symbol, current_spot=0, interval=interval, lookback_days=5)
+        if interval == "60minute":
+            # 🎓 वापरकर्त्याने सापडवलेली bug — "60minute"/"1hour" Upstox कडून थेट verified नाही
+            # (fetch_candles() मध्ये allowed_intervals यादीत नाही, त्यामुळे आधी शांतपणे "30minute"
+            # कडे पडायचं, पण RSI(14) "60M" चाच आहे असं भासवत राहायचं). आता fetch_timeframe_df()
+            # मध्ये आधीच वापरलेला पॅटर्न — 30-मिनिट candles मागवून resample करणे.
+            df_30m = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=5)
+            candles_df = resample_to_1h(df_30m) if df_30m is not None and not df_30m.empty else df_30m
+        else:
+            candles_df = fetch_candles(access_token, symbol, current_spot=0, interval=interval, lookback_days=5)
         if candles_df is None or candles_df.empty or len(candles_df) < 12:
             continue
         candles_df = candles_df.copy()

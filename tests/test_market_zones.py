@@ -73,6 +73,32 @@ class TestComputeAllZonesDailyRefresh:
         assert "DYNAMIC_SR_SUPPORT_1M" not in zone_types and "DYNAMIC_SR_SUPPORT_5M" not in zone_types
         assert "DYNAMIC_SR_SUPPORT_15M" in zone_types or "DYNAMIC_SR_RESISTANCE_15M" in zone_types
 
+    def test_generates_30m_and_60m_zones_when_recent_data_given(self):
+        """🎓 वापरकर्त्याने सापडवलेली bug (SRv2 Momentum-Reversal चं 30M/60M कधीच काम करायचं नाही) —
+        df_30m_recent/df_60m_recent दिल्यास DYNAMIC_SR_*_30M/*_60M zone_types generate व्हायला हवेत."""
+        df_1h = _fake_ohlc(300)
+        df_15m = _fake_ohlc(300, freq="15min")
+        df_15m_recent = _fake_ohlc(150, freq="15min")
+        df_30m_recent = _fake_ohlc(150, freq="30min")
+        df_60m_recent = _fake_ohlc(150, freq="1h")
+        zones_df = mz.compute_all_zones(
+            df_1h, df_15m, symbol="NIFTY", df_15m_recent=df_15m_recent,
+            df_30m_recent=df_30m_recent, df_60m_recent=df_60m_recent,
+        )
+        zone_types = set(zones_df["zone_type"])
+        assert "DYNAMIC_SR_SUPPORT_30M" in zone_types or "DYNAMIC_SR_RESISTANCE_30M" in zone_types
+        assert "DYNAMIC_SR_SUPPORT_60M" in zone_types or "DYNAMIC_SR_RESISTANCE_60M" in zone_types
+
+    def test_no_30m_or_60m_zones_when_recent_data_not_given(self):
+        """df_30m_recent/df_60m_recent न दिल्यास (backward-compatible) ते zone_types generate होऊ नयेत."""
+        df_1h = _fake_ohlc(300)
+        df_15m = _fake_ohlc(300, freq="15min")
+        df_15m_recent = _fake_ohlc(150, freq="15min")
+        zones_df = mz.compute_all_zones(df_1h, df_15m, symbol="NIFTY", df_15m_recent=df_15m_recent)
+        zone_types = set(zones_df["zone_type"])
+        assert "DYNAMIC_SR_SUPPORT_30M" not in zone_types and "DYNAMIC_SR_RESISTANCE_30M" not in zone_types
+        assert "DYNAMIC_SR_SUPPORT_60M" not in zone_types and "DYNAMIC_SR_RESISTANCE_60M" not in zone_types
+
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Market Zones पानावरचा नवीन "5M/15M Confluence
 # Table" (Support/Resistance + Demand/Supply + Order Block, सद्य किमतीच्या सापेक्ष).
