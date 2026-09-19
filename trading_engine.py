@@ -9,7 +9,7 @@ import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import log_orders_batch
-from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_broker_positions, extract_order_ids, get_instrument_key
+from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions, extract_order_ids, get_instrument_key
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
 # 🎓 वापरकर्त्याशी चर्चा करून वेगळं काढलेलं — established Target (प्रत्येक strategy चा स्वतःचा
@@ -466,6 +466,38 @@ def compute_pct_trailing_sl_level(current_pnl, peak_pnl, net_credit_total, activ
     return new_peak_pnl, effective_sl
 
 
+def _alert_ltp_fetch_failure(symbol, context_label, error_detail, has_live_trades):
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Token-Expiry/LTP-Fetch Silent Failure,
+    गंभीर यादीतला तिसरा मुद्दा) — आधी LTP मिळाली नाही (उदा. token expire झाला, HTTP 401) की
+    manage_open_trades() फक्त शांतपणे त्या cycle साठी exit-तपासणी वगळायचं (continue) — कुठलाही
+    alert नाही. उघडी LIVE position मग SL/TSL/Target शिवाय, कुणालाच न कळता, अनिश्चित काळ तशीच राहू
+    शकायची. आता — फक्त LIVE trades साठीच (PAPER मध्ये खरे पैसे नाहीत, कमी तातडीचं) — नेहमी Telegram
+    अलर्ट (cron दर मिनिटाला चालतो, त्यामुळे समस्या राहिली तर पुढच्याही cycle ला पुन्हा अलर्ट येईल —
+    इथे मुद्दामच cooldown नाही, हीच codebase मधली established पद्धत — उदा. CLOSE ORDER FAILED अलर्ट).
+    401/403 दिसल्यास टोकन-समस्या असल्याचं स्पष्टपणे सांगणारा वेगळा संदेश.
+    """
+    if not has_live_trades:
+        return
+    try:
+        from notifications import send_telegram_message
+        is_auth_issue = bool(error_detail) and ("401" in error_detail or "403" in error_detail)
+        if is_auth_issue:
+            send_telegram_message(
+                f"🔴 <b>{symbol} — Upstox टोकन समस्या (Authentication अयशस्वी)!</b>\n"
+                f"{context_label} साठी LTP मिळाली नाही ({error_detail}) — टोकन expire/अवैध झाला असण्याची "
+                f"दाट शक्यता. LIVE positions चं SL/TSL/Target या cycle ला तपासलंच गेलं नाही. "
+                f"कृपया लगेच Dashboard उघडून नवीन token approve करा."
+            )
+        else:
+            send_telegram_message(
+                f"🟠 <b>{symbol} — {context_label} LTP मिळाली नाही</b> ({error_detail or 'रिकामा प्रतिसाद'}) — "
+                f"LIVE positions चं SL/TSL/Target या cycle ला तपासलंच गेलं नाही. समस्या कायम राहिल्यास लगेच तपासा."
+            )
+    except Exception:
+        _logger.exception("_alert_ltp_fetch_failure() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
@@ -540,6 +572,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
+    if not ltp_map and all_keys:
+        # 🎓 फक्त अपयशाच्या (रिकाम्या निकालाच्याच) मार्गावरच fetch_ltp_map_detailed() ला वेगळा कॉल —
+        # जेणेकरून वरचा मुख्य fetch_ltp_map() कॉल (आणि त्याला monkeypatch करणाऱ्या established टेस्ट्स)
+        # पूर्णपणे अबाधित राहतात, आणि यशस्वी (सामान्य) मार्गावर जादा नेटवर्क कॉलही होत नाही.
+        _, ltp_error_detail = fetch_ltp_map_detailed(access_token, list(all_keys))
+        has_live_trades = any(t[7] == "LIVE" for t in parsed_trades)
+        _alert_ltp_fetch_failure(symbol, "Option-leg", ltp_error_detail, has_live_trades)
 
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` trades साठी underlying
     # स्पॉटची सद्य LTP लागते (option-leg LTPs पुरेसे नाहीत, SL/Target आता स्पॉट-आधारित). कमीत कमी
@@ -559,6 +598,14 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # जुळलाच नसेल, तर हेच कारण असू शकतं — पण याची अजून खात्रीशीर पडताळणी झालेली नाही).
         if not spot_ltp_map or spot_key not in spot_ltp_map:
             print(f"⚠️ underlying_spot मिळाला नाही — spot_key='{spot_key}', मिळालेला raw response: {spot_ltp_map}")
+            # 🎓 इथेही फक्त अपयशाच्याच मार्गावर fetch_ltp_map_detailed() ला वेगळा कॉल (वर बघा — मुख्य
+            # fetch_ltp_map() कॉल established टेस्ट्ससाठी अबाधित ठेवण्यासाठी).
+            _, spot_error_detail = fetch_ltp_map_detailed(access_token, [spot_key])
+            has_live_spot_trades = any(
+                t[7] == "LIVE" and t[11] in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal")
+                for t in parsed_trades
+            )
+            _alert_ltp_fetch_failure(symbol, "Underlying Spot", spot_error_detail, has_live_spot_trades)
         underlying_spot = spot_ltp_map.get(spot_key)
 
     closed_summaries = []

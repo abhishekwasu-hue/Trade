@@ -18,6 +18,53 @@ def _mock_get_response(status_code, data=None):
     return resp
 
 
+class TestFetchLtpMapDetailed:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Token-Expiry/LTP-Fetch Silent Failure,
+    गंभीर यादीतला तिसरा मुद्दा) — fetch_ltp_map_detailed() ने अयशस्वी झाल्यास नेमकं कारण
+    (उदा. "HTTP 401") caller ला कळवायला हवं, fetch_ltp_map() (जुनं, backward-compatible) ने
+    कधीच न बदलता तेच behavior द्यायला हवं."""
+
+    def test_success_returns_data_and_none_error(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": {"NSE_INDEX:Nifty 50": {"instrument_token": "NSE_INDEX|Nifty 50", "last_price": 24000.5}}}
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result, error = upstox_api.fetch_ltp_map_detailed("fake_token", ["NSE_INDEX|Nifty 50"])
+        assert result == {"NSE_INDEX|Nifty 50": 24000.5}
+        assert error is None
+
+    def test_401_returns_empty_dict_and_error_detail(self):
+        resp = MagicMock()
+        resp.status_code = 401
+        resp.text = "Unauthorized: token expired"
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result, error = upstox_api.fetch_ltp_map_detailed("fake_token", ["PE24400"])
+        assert result == {}
+        assert "401" in error
+
+    def test_exception_returns_empty_dict_and_error_detail(self):
+        with patch.object(upstox_api, "_get_with_retry", side_effect=Exception("connection reset")):
+            result, error = upstox_api.fetch_ltp_map_detailed("fake_token", ["PE24400"])
+        assert result == {}
+        assert "connection reset" in error
+
+    def test_empty_instrument_keys_returns_empty_no_error(self):
+        result, error = upstox_api.fetch_ltp_map_detailed("fake_token", [])
+        assert result == {}
+        assert error is None
+
+    def test_fetch_ltp_map_backward_compatible_success(self):
+        with patch.object(upstox_api, "fetch_ltp_map_detailed", return_value=({"PE24400": 20.0}, None)):
+            result = upstox_api.fetch_ltp_map("fake_token", ["PE24400"])
+        assert result == {"PE24400": 20.0}
+
+    def test_fetch_ltp_map_backward_compatible_failure_returns_empty_dict_only(self):
+        """जुनंच वर्तन — fetch_ltp_map() ला अयशस्वी झाल्यास फक्त रिकामा dict, error_detail कधीच दिसत नाही."""
+        with patch.object(upstox_api, "fetch_ltp_map_detailed", return_value=({}, "HTTP 401: ...")):
+            result = upstox_api.fetch_ltp_map("fake_token", ["PE24400"])
+        assert result == {}
+
+
 class TestGetOrderDetails:
     def test_returns_data_on_200(self):
         with patch.object(upstox_api, "_get_with_retry", return_value=_mock_get_response(200, {"status": "complete"})):
