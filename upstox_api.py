@@ -87,6 +87,28 @@ def _get_with_retry(url, max_retries=3, backoff_base=1.5, **kwargs):
     raise last_exc  # व्यवहारात कधीच इथे पोचणार नाही (वरचा loop नेहमी return किंवा raise करतो)
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Rate Limiting on Order Placement, दुय्यम
+# 🟡 यादीतला मुद्दा) — वापरकर्त्याशी चर्चा करून ठरवलेला, जाणीवपूर्वक अरुंद (narrow) निर्णय: फक्त
+# HTTP 429 आल्यासच retry — 502/503/504 किंवा network exception (timeout/connection error) वर
+# कधीच नाही, कारण त्या स्थितीत order खरंच Upstox कडे पोहोचून place झाला की नाही हे अस्पष्ट राहतं
+# (retry केल्यास duplicate LIVE order जाण्याचा खरा धोका — _get_with_retry() वरच्या जुन्याच कमेंटमध्ये
+# हेच कारण देऊन POST कॉल्सना मुद्दामच retry-मुक्त ठेवलं होतं). 429 वेगळा आहे — तो म्हणजे Upstox ने
+# request स्वतःच नाकारला, order कधीच place झालाच नाही, त्यामुळे तिथेच retry पूर्णपणे सुरक्षित.
+def _post_with_retry_429_only(url, max_retries=3, backoff_base=1.5, **kwargs):
+    """requests.post() चीच जागा घेणारं, पण **फक्त** HTTP 429 आल्यासच retry (Retry-After header
+    असल्यास तोच वापरून) — इतर कुठलाही status code (200, 4xx, 5xx) असल्यास लगेच तोच response परत,
+    आणि कुठलाही network exception लगेच वर (caller कडे) propagate — दोन्ही बाबतीत कधीच retry नाही."""
+    res = requests.post(url, **kwargs)
+    for attempt in range(max_retries):
+        if res.status_code != 429:
+            return res
+        retry_after = res.headers.get("Retry-After")
+        wait_s = float(retry_after) if retry_after else (backoff_base ** attempt)
+        time.sleep(min(wait_s, 20))
+        res = requests.post(url, **kwargs)
+    return res
+
+
 @st.cache_data(ttl=60)
 def fetch_timeframe_df(access_token, symbol, spot, interval_key):
     """
@@ -530,7 +552,7 @@ def fetch_required_margin(access_token, orders):
             }
             for o in orders
         ]
-        res = requests.post(
+        res = _post_with_retry_429_only(
             "https://api.upstox.com/v2/charges/margin", headers=headers,
             json={"instruments": instruments}, timeout=10,
         )
@@ -737,7 +759,7 @@ def place_multi_leg_order(access_token, orders):
         proxy_url = get_static_ip_proxy_url()
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
         url = "https://api.upstox.com/v2/order/multi/place"
-        res = requests.post(url, headers=headers, json=orders, timeout=15, proxies=proxies)
+        res = _post_with_retry_429_only(url, headers=headers, json=orders, timeout=15, proxies=proxies)
         try:
             body = res.json()
         except Exception:

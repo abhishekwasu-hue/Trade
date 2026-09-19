@@ -8,6 +8,8 @@ GET /v2/order/details ने पोल करून खरी (terminal) स्�
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import upstox_api
 
 
@@ -215,3 +217,81 @@ class TestExecuteOrderLegSetLiveVerification:
             )
         assert status_code == 200
         assert not mock_poll.called
+
+
+def _mock_post_response(status_code, retry_after=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.headers = {"Retry-After": retry_after} if retry_after else {}
+    return resp
+
+
+class TestPostWithRetry429Only:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Rate Limiting on Order Placement, दुय्यम
+    🟡 यादीतला मुद्दा) — वापरकर्त्याशी चर्चा करून ठरवलेला, जाणीवपूर्वक अरुंद निर्णय: **फक्त** HTTP 429
+    वर retry (order कधीच place झालाच नाही, त्यामुळे सुरक्षित) — 502/503/504 किंवा network exception
+    वर कधीच नाही (order प्रत्यक्ष place झाला की नाही याबद्दल संदिग्धता, duplicate-order धोका)."""
+
+    def test_200_returns_immediately_no_retry(self):
+        with patch.object(upstox_api.time, "sleep") as mock_sleep, \
+             patch.object(upstox_api.requests, "post", return_value=_mock_post_response(200)) as mock_post:
+            res = upstox_api._post_with_retry_429_only("https://fake.url")
+        assert res.status_code == 200
+        assert mock_post.call_count == 1
+        assert not mock_sleep.called
+
+    def test_429_retries_then_succeeds(self):
+        responses = [_mock_post_response(429), _mock_post_response(429), _mock_post_response(200)]
+        with patch.object(upstox_api.time, "sleep"), \
+             patch.object(upstox_api.requests, "post", side_effect=responses) as mock_post:
+            res = upstox_api._post_with_retry_429_only("https://fake.url", max_retries=3)
+        assert res.status_code == 200
+        assert mock_post.call_count == 3
+
+    def test_429_exhausts_retries_returns_last_429(self):
+        with patch.object(upstox_api.time, "sleep"), \
+             patch.object(upstox_api.requests, "post", return_value=_mock_post_response(429)) as mock_post:
+            res = upstox_api._post_with_retry_429_only("https://fake.url", max_retries=2)
+        assert res.status_code == 429
+        assert mock_post.call_count == 3  # पहिला प्रयत्न + 2 retries
+
+    def test_502_never_retried(self):
+        """order प्रत्यक्ष place झाला की नाही अस्पष्ट राहू शकतं (Upstox च्या सर्व्हरपर्यंत पोहोचलं) —
+        त्यामुळे 502/503/504 वर कधीच retry नाही (duplicate-order धोका टाळण्यासाठी)."""
+        with patch.object(upstox_api.time, "sleep") as mock_sleep, \
+             patch.object(upstox_api.requests, "post", return_value=_mock_post_response(502)) as mock_post:
+            res = upstox_api._post_with_retry_429_only("https://fake.url")
+        assert res.status_code == 502
+        assert mock_post.call_count == 1
+        assert not mock_sleep.called
+
+    def test_network_exception_propagates_immediately_no_retry(self):
+        """network timeout/connection error -- order खरंच पोहोचला की नाही अस्पष्ट, त्यामुळे कधीच
+        retry नाही -- exception जशीच्या तशी caller कडे जायलाच हवी."""
+        import requests as _requests
+        with patch.object(upstox_api.time, "sleep") as mock_sleep, \
+             patch.object(upstox_api.requests, "post", side_effect=_requests.exceptions.Timeout("timed out")) as mock_post:
+            with pytest.raises(_requests.exceptions.Timeout):
+                upstox_api._post_with_retry_429_only("https://fake.url")
+        assert mock_post.call_count == 1
+        assert not mock_sleep.called
+
+    def test_retry_after_header_used_when_present(self):
+        responses = [_mock_post_response(429, retry_after="7"), _mock_post_response(200)]
+        with patch.object(upstox_api.time, "sleep") as mock_sleep, \
+             patch.object(upstox_api.requests, "post", side_effect=responses):
+            upstox_api._post_with_retry_429_only("https://fake.url")
+        mock_sleep.assert_called_once_with(7.0)
+
+
+class TestPlaceMultiLegOrderUsesRetry429Only:
+    def test_place_multi_leg_order_recovers_from_transient_429(self):
+        orders = [{"instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"}]
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {"status": "success", "data": [{"order_id": "O1"}]}
+        with patch.object(upstox_api.time, "sleep"), \
+             patch.object(upstox_api.requests, "post", side_effect=[_mock_post_response(429), success_resp]):
+            status_code, body = upstox_api.place_multi_leg_order("fake_token", orders)
+        assert status_code == 200
+        assert body["status"] == "success"
