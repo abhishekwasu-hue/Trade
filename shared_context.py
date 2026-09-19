@@ -8,8 +8,7 @@ import os
 import streamlit as st
 
 import cloud_db
-from config import get_ist_now
-from upstox_api import fetch_upstox_option_chain, upload_to_google_drive
+from upstox_api import fetch_upstox_option_chain
 try:
     from signals import compute_atr
 except ImportError:
@@ -371,21 +370,12 @@ def setup_shared_context():
     # 🎓 Production-readiness सुधारणा — Automatic Periodic DB Backup. आधी Orders पेजवरचं मॅन्युअल
     # "Download Backup" बटण हाच एकमेव उपाय होता (Streamlit Cloud चा local SQLite restart/redeploy ला
     # मिटू शकतो) — रोज कुणी दाबेल याची खात्री नव्हती. आता dashboard उघडं असताना दर तासाला, Google
-    # Drive configured असेल तरच (established "20-Year History" फीचरने आधीच वापरलेला, टेस्ट केलेला
-    # मार्ग — कुठलाही नवीन secret लागत नाही), आपोआप एक backup अपलोड होतो. Configured नसेल किंवा
-    # अपलोड अयशस्वी झालं तरी dashboard पूर्णपणे नेहमीसारखं चालू राहतं (गप्प वगळलं जातं).
+    # Drive configured असेल तरच, आपोआप एक backup अपलोड होतो (database.run_auto_backup_if_due() —
+    # तिन्ही bots कडूनही, VPS crontab वरून, हाच एकच फंक्शन वापरला जातो — Crash Recovery सुधारणा).
+    # Configured नसेल किंवा अपलोड अयशस्वी झालं तरी dashboard पूर्णपणे नेहमीसारखं चालू राहतं.
     try:
         import database as _database
-        if _database.auto_backup_due(interval_minutes=60):
-            _backup_bytes = _database.get_db_backup_bytes()
-            if _backup_bytes:
-                ok, _msg = upload_to_google_drive(
-                    _backup_bytes,
-                    f"amw_a1_autobackup_{get_ist_now().strftime('%Y%m%d_%H%M')}.db",
-                    mime_type="application/octet-stream",
-                )
-                if ok:
-                    _database.mark_auto_backup_done()
+        _database.run_auto_backup_if_due(interval_minutes=60)
     except Exception:
         pass  # ऐच्छिक सुरक्षा-फीचर — अयशस्वी झालं तरी dashboard क्रॅश होऊ नये
 

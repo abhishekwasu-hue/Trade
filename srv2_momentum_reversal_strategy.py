@@ -26,7 +26,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now
-from database import init_sqlite_db, has_open_trade_from_source
+from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import calculate_rsi
@@ -356,5 +356,8 @@ if __name__ == "__main__":
             for symbol in args.symbols.split(","):
                 print(process_symbol(token, symbol.strip()))
             write_heartbeat("srv2_momentum_reversal")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup) —
+            # dynamic_sr_instant_trader.py सारखीच सुधारणा.
+            run_auto_backup_if_due(interval_minutes=60)
     except ProcessLockHeld as e:
         print(f"⏭️ मागची invocation अजून चालू आहे, ही वगळली — डुप्लिकेट ऑर्डर टाळण्यासाठी ({e})")

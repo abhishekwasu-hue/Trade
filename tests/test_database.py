@@ -181,3 +181,52 @@ class TestGetOpenTradesByOtherSources:
 
     def test_empty_when_no_other_trades(self, temp_db):
         assert database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant") == []
+
+
+class TestRunAutoBackupIfDue:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup, महत्त्वाच्या
+    🟠 यादीतला मुद्दा) — आधी हे फक्त shared_context.py (Dashboard उघडं असतानाच) मध्ये होतं, आता
+    तिन्ही bots (VPS crontab) कडूनही वापरण्याजोगा एकच, सामायिक मार्ग."""
+
+    def test_not_due_returns_false_without_touching_anything(self, monkeypatch):
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: False)
+        called = []
+        monkeypatch.setattr(database, "get_db_backup_bytes", lambda: called.append(1))
+        assert database.run_auto_backup_if_due() is False
+        assert not called
+
+    def test_due_but_no_bytes_returns_false(self, monkeypatch):
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: True)
+        monkeypatch.setattr(database, "get_db_backup_bytes", lambda: None)
+        upload_called = []
+        monkeypatch.setattr(database, "upload_to_google_drive", lambda *a, **k: upload_called.append(1))
+        assert database.run_auto_backup_if_due() is False
+        assert not upload_called
+
+    def test_successful_upload_marks_done_and_returns_true(self, monkeypatch):
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: True)
+        monkeypatch.setattr(database, "get_db_backup_bytes", lambda: b"fake_db_bytes")
+        monkeypatch.setattr(database, "upload_to_google_drive", lambda data, name, mime_type: (True, "https://drive/file"))
+        marked = []
+        monkeypatch.setattr(database, "mark_auto_backup_done", lambda: marked.append(1))
+        assert database.run_auto_backup_if_due() is True
+        assert marked
+
+    def test_failed_upload_does_not_mark_done_returns_false(self, monkeypatch):
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: True)
+        monkeypatch.setattr(database, "get_db_backup_bytes", lambda: b"fake_db_bytes")
+        monkeypatch.setattr(database, "upload_to_google_drive", lambda data, name, mime_type: (False, "Drive not configured"))
+        marked = []
+        monkeypatch.setattr(database, "mark_auto_backup_done", lambda: marked.append(1))
+        assert database.run_auto_backup_if_due() is False
+        assert not marked
+
+    def test_exception_anywhere_returns_false_not_raises(self, monkeypatch):
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: (_ for _ in ()).throw(Exception("boom")))
+        assert database.run_auto_backup_if_due() is False
+
+    def test_interval_minutes_passed_through(self, monkeypatch):
+        captured = []
+        monkeypatch.setattr(database, "auto_backup_due", lambda interval_minutes: captured.append(interval_minutes) or False)
+        database.run_auto_backup_if_due(interval_minutes=30)
+        assert captured == [30]
