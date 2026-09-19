@@ -147,6 +147,11 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली bug (live trading आधी) — Dashboard वरचं "Target — % of Net
+    # Premium" setting (spread_target_pct_of_premium, page_bot_dynamic_sr_algo.py) आधी इथे कधीच
+    # वाचलंच जायचं नाही — नेहमी हार्डकोडेड TARGET_PCT_OF_PREMIUM (80%) वापरला जायचा. वापरकर्त्याने
+    # 40% सेट केलं तरी bot शांतपणे 80% वरच थांबत राहायचा.
+    target_pct_of_premium = settings.get("spread_target_pct_of_premium", TARGET_PCT_OF_PREMIUM)
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -252,7 +257,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             from trading_engine import execute_trade_on_all_accounts
             results, factory_errors = execute_trade_on_all_accounts(
                 symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="srv2_momentum_reversal",
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
@@ -264,7 +269,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         else:
             trade_result, trade_status = open_multi_leg_trade(
                 access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=TARGET_PCT_OF_PREMIUM,
+                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="srv2_momentum_reversal",
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
