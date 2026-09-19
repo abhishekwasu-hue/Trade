@@ -62,6 +62,38 @@ def get_broker_adapter(account_id, broker_type):
     return None, f"{account_id}: अज्ञात broker_type '{broker_type}'."
 
 
+def get_adapters_for_accounts(account_ids):
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("प्रत्येक strategy साठी वापरकर्ता स्वतः, उपलब्ध भांडवलानुसार,
+    एक किंवा अनेक broker accounts निवडू शकेल") — get_all_active_adapters() सारखंच, पण "सर्व सक्रिय"
+    ऐवजी फक्त caller ने दिलेल्या account_ids साठीच (मग तो account active असो वा नसो — वापरकर्त्याने
+    स्पष्टपणे निवडलेला आहे, त्यामुळे इथे is_active तपासलं जात नाही).
+
+    रिटर्न: ([(adapter, lot_multiplier), ...], [error_message, ...]) -- वरच्याच get_all_active_adapters()
+    प्रमाणेच, एका account चं अपयश इतरांना अडवत नाही.
+    """
+    if not account_ids:
+        return [], []
+    accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
+    if accounts_df is None or accounts_df.empty:
+        return [], [f"कुठलेही broker accounts नोंदवलेले नाहीत (निवडलेले होते: {', '.join(account_ids)})."]
+
+    by_id = {row["account_id"]: row for _, row in accounts_df.iterrows()}
+    adapters = []
+    errors = []
+    for account_id in account_ids:
+        row = by_id.get(account_id)
+        if row is None:
+            errors.append(f"{account_id}: नोंदणीकृत नाही (broker_accounts मधून काढून टाकला असेल).")
+            continue
+        adapter, error = get_broker_adapter(row["account_id"], row["broker_type"])
+        if adapter is not None:
+            adapters.append((adapter, row["lot_multiplier"]))
+        else:
+            errors.append(error)
+    return adapters, errors
+
+
 def get_all_active_adapters():
     """
     established सर्व सक्रिय (is_active=True) broker_accounts साठी adapters तयार करणे.

@@ -328,26 +328,48 @@ class TestProcessSymbol:
 
 
 class TestProcessSymbolMultiAccount:
-    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- established broker_accounts नोंदवलेले असतील तर
-    established execute_trade_on_all_accounts() (replicated) वापरायला हवं."""
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
+    नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी, settings मधल्याच broker_account_ids (वापरकर्त्याने
+    याच strategy+symbol साठी स्पष्ट निवडलेले) असतील तरच execute_trade_on_all_accounts() (replicated)
+    वापरलं जातं."""
 
-    def test_uses_multi_account_when_accounts_registered(self):
-        import pandas as pd
+    def test_uses_multi_account_when_broker_account_ids_selected(self):
         candles_df = _fake_candles_df(last_close=23902)
-        accounts_df = pd.DataFrame([{"account_id": "A1", "broker_type": "upstox", "nickname": "A", "is_active": True, "lot_multiplier": 1.0}])
+        settings_with_broker = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings_with_broker["symbol_enabled"] = True
+        settings_with_broker["broker_account_ids"] = ["A1"]
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=accounts_df), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings_with_broker), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "ok": True, "result": "OPENED"}], [])) as mock_multi, \
              patch.object(srv2, "send_telegram_message", return_value=True), \
              patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
             result = srv2.process_symbol("fake_token", "NIFTY")
             assert mock_multi.called
+            assert mock_multi.call_args.kwargs["account_ids"] == ["A1"]
             assert "A1" in result
+
+    def test_uses_single_upstox_trade_when_no_broker_account_ids(self):
+        """डीफॉल्ट (broker_account_ids रिकामी) — जुनंच शुद्ध Upstox, single trade वर्तन कायम."""
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch("trading_engine.execute_trade_on_all_accounts") as mock_multi, \
+             patch.object(srv2, "open_multi_leg_trade", return_value=(True, "trade_id_123")) as mock_single, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_multi.called
+            assert mock_single.called
+            assert mock_single.call_args.kwargs["trading_mode"] == "PAPER"
 
 
 class TestMultiTimeframe:

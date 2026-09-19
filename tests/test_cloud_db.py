@@ -860,3 +860,48 @@ class TestStrategySettings:
         defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"]
         assert defaults["swing_order"] == 5
         assert defaults["swing_min_move_pct"] == 0.5
+
+
+class TestGetAllStrategyTradingModes:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता
+    यावं) — पानाच्या वर सर्व strategy+symbol combos पैकी कुठले LIVE आहेत हे एकाच query मध्ये दाखवण्यासाठी."""
+
+    def test_returns_dict_keyed_by_strategy_symbol(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("1m_instant", "NIFTY", {"trading_mode": "LIVE", "broker_account_ids": ["ACC_A"]}),
+            ("classic_sr_reversal", "BANKNIFTY", {"trading_mode": "PAPER"}),
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_all_strategy_trading_modes()
+        assert result[("1m_instant", "NIFTY")] == {"trading_mode": "LIVE", "broker_account_ids": ["ACC_A"]}
+        assert result[("classic_sr_reversal", "BANKNIFTY")] == {"trading_mode": "PAPER", "broker_account_ids": []}
+
+    def test_handles_json_string_settings(self, monkeypatch):
+        """कधीकधी psycopg2 JSONB ला dict ऐवजी raw JSON string परत देऊ शकतो."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("15m_dynamic_sr", "NIFTY", '{"trading_mode": "LIVE"}')]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_all_strategy_trading_modes()
+        assert result[("15m_dynamic_sr", "NIFTY")]["trading_mode"] == "LIVE"
+
+    def test_no_connection_returns_empty_dict(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        assert cloud_db.get_all_strategy_trading_modes() == {}
+
+    def test_no_rows_returns_empty_dict(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        assert cloud_db.get_all_strategy_trading_modes() == {}

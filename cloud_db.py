@@ -219,6 +219,15 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_trailing_distance_points": 5,
         "naked_trailing_sl_enabled": False,
         "naked_trailing_distance_points": 10,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PAPER/LIVE toggle + broker selection, per strategy") —
+        # डीफॉल्ट नेहमी PAPER (न बदलणाऱ्या वापरकर्त्यांसाठी जुनंच, सुरक्षित वर्तन कायम). LIVE केलं तरच
+        # bot scripts (dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py/
+        # classic_sr_reversal_trader.py) खरे ऑर्डर्स पाठवतात.
+        "trading_mode": "PAPER",     # "PAPER" | "LIVE"
+        # broker_account_ids — रिकामी यादी (डीफॉल्ट) = शुद्ध Upstox, single trade (जुनंच वर्तन).
+        # वापरकर्त्याने broker_accounts मधून एक किंवा अनेक account_id निवडले, तर त्या प्रत्येक
+        # account वर स्वतंत्र trade उघडला जातो (प्रत्येकाचं स्वतःचं SL/TSL/Target management).
+        "broker_account_ids": [],
     },
     "15m_dynamic_sr": {
         "lots": 1,
@@ -256,6 +265,10 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_trailing_distance_points": 8,
         "naked_trailing_sl_enabled": False,
         "naked_trailing_distance_points": 15,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PAPER/LIVE toggle + broker selection, per strategy") —
+        # 1m_instant सारखीच. डीफॉल्ट नेहमी PAPER, broker_account_ids रिकामी (= शुद्ध Upstox).
+        "trading_mode": "PAPER",
+        "broker_account_ids": [],
     },
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली स्वतंत्र, नवीन strategy — "Classical Support/Resistance
     # Reversal" (5M+15M pooled, Support touch -> Bull Put Spread, Resistance touch -> Bear Call
@@ -307,6 +320,10 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_trailing_distance_points": 5,
         "naked_trailing_sl_enabled": False,
         "naked_trailing_distance_points": 10,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PAPER/LIVE toggle + broker selection, per strategy") —
+        # 1m_instant सारखीच. डीफॉल्ट नेहमी PAPER, broker_account_ids रिकामी (= शुद्ध Upstox).
+        "trading_mode": "PAPER",
+        "broker_account_ids": [],
     },
 }
 
@@ -627,6 +644,40 @@ def get_strategy_settings(strategy_name, symbol):
             return merged
     except Exception:
         return defaults
+    finally:
+        conn.close()
+
+
+def get_all_strategy_trading_modes():
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता यावं
+    म्हणून) — पानाच्या सर्वात वर, सध्या कुठली strategy+symbol combo LIVE आहे हे एका दृष्टीक्षेपात
+    दाखवण्यासाठी. सर्व (strategy_name, symbol) combos एकाच query मध्ये — प्रत्येकासाठी वेगळा
+    get_strategy_settings() कॉल (वेगळी DB round-trip) टाळण्यासाठी.
+
+    ज्या combo साठी कधीच काही साठवलंच गेलेलं नाही, ते इथे अजिबात दिसणार नाहीत — असे सर्व आपोआप
+    डीफॉल्ट (PAPER, शुद्ध Upstox) आहेत हे गृहीत धरता येतं.
+
+    रिटर्न: {(strategy_name, symbol): {"trading_mode": "PAPER"/"LIVE", "broker_account_ids": [...]}, ...}
+    Supabase न मिळाल्यास रिकामा dict (कुठलीही चूक न देता)."""
+    conn = get_connection()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT strategy_name, symbol, settings FROM strategy_settings")
+            rows = cur.fetchall()
+        result = {}
+        for strategy_name, symbol, raw_settings in rows:
+            settings = raw_settings if isinstance(raw_settings, dict) else json.loads(raw_settings)
+            result[(strategy_name, symbol)] = {
+                "trading_mode": settings.get("trading_mode", "PAPER"),
+                "broker_account_ids": settings.get("broker_account_ids") or [],
+            }
+        return result
+    except Exception:
+        _logger.exception("get_all_strategy_trading_modes() मध्ये अनपेक्षित चूक (silently handled)")
+        return {}
     finally:
         conn.close()
 

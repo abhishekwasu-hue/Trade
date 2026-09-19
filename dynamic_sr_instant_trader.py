@@ -249,15 +249,22 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        accounts_df = cloud_db.get_all_broker_accounts(active_only=False)
-        if accounts_df is not None and not accounts_df.empty:
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PAPER/LIVE टॉगल + per-strategy Broker Selection) — आधी
+        # इथे "कुठलेही broker_accounts नोंदवलेले असतील तर सर्व सक्रिय accounts वर replicate" असं होतं
+        # (म्हणजे कुठल्याही एका strategy साठी account जोडला की सगळ्याच bots ला लागू व्हायचं) — आता
+        # settings मधल्याच trading_mode/broker_account_ids वरून (Bot Dynamic SR Algo वरून वापरकर्त्याने
+        # याच strategy+symbol साठी स्पष्ट निवडलेले) — रिकामी यादी (डीफॉल्ट) = जुनंच शुद्ध Upstox वर्तन.
+        trading_mode = settings.get("trading_mode", "PAPER")
+        broker_account_ids = settings.get("broker_account_ids") or []
+        if broker_account_ids:
             from trading_engine import execute_trade_on_all_accounts
             results, factory_errors = execute_trade_on_all_accounts(
                 symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,  # 🎓 Target आता trading_engine.py च्या evaluate_point_spot_exit मध्येच ठरतं
-                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
                 entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                account_ids=broker_account_ids,
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
             if factory_errors:
@@ -266,7 +273,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             trade_result, trade_status = open_multi_leg_trade(
                 access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
                 entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
             )
@@ -300,21 +307,22 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(naked_diag_entry)
             print(f"ℹ️ Naked trade बंद आहे (naked_enabled=False, settings — symbol={symbol}, strategy=1m_instant)")
         if naked_result is not None:
-            if accounts_df is not None and not accounts_df.empty:
+            if broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 naked_results, naked_factory_errors = execute_trade_on_all_accounts(
                     symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                    account_ids=broker_account_ids,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
                 _, naked_status = open_multi_leg_trade(
                     access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                    product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
                 )

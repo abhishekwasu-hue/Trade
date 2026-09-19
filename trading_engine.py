@@ -431,7 +431,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -440,13 +440,29 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         conn.close()
         return []
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — account_id दिलेला
+    # (म्हणजे हा trade निवडलेल्या broker account वर उघडलेला) असेल, तर बंद करतानाही तोच account/broker
+    # वापरायला हवा (नाहीतर बंद-ऑर्डर चुकीने Upstox कडे जाईल, आणि प्रत्यक्ष position दुसऱ्याच
+    # broker वर उघडीच राहील — गंभीर, खऱ्या-पैशाशी संबंधित धोका). इथेच एकदा accounts वाचून, प्रत्येक
+    # distinct account_id साठी adapter cache करतो (प्रत्येक trade साठी पुन:पुन्हा resolve न करता).
+    _adapter_cache = {}
+
+    def _resolve_close_adapter(account_id):
+        if account_id is None:
+            return None
+        if account_id not in _adapter_cache:
+            import broker_factory
+            adapters, _errors = broker_factory.get_adapters_for_accounts([account_id])
+            _adapter_cache[account_id] = adapters[0][0] if adapters else None
+        return _adapter_cache[account_id]
+
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
 
@@ -471,7 +487,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         underlying_spot = spot_ltp_map.get(spot_key)
 
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -837,7 +853,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 }
                 for leg in legs
             ]
-            status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode)
+            close_adapter = _resolve_close_adapter(account_id)
+            status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode) if close_adapter is not None
+                                  else execute_order_leg_set(access_token, close_orders, trade_mode))
             if status_code == 200 and resp.get("status") == "success":
                 order_ids = extract_order_ids(resp)
                 log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE", fill_prices=current_ltps)
@@ -891,6 +909,15 @@ def reconcile_open_trades_with_broker(access_token, symbol):
     (PAPER trades ला खरी Upstox position कधीच नसते — त्यामुळे आधी PAPER trades सुद्धा चुकून
     "बाहेरून बंद झालेले" समजून बंद केले जायचे, जे साफ चुकीचं होतं).
 
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) टेस्ट करताना सापडलेली, महत्त्वाची
+    व्याप्ती-मर्यादा — हे फक्त Upstox च्या स्वतःच्या Positions शी ताडून बघतं, त्यामुळे फक्त शुद्ध Upstox
+    trades (account_id IS NULL — कुठलाही विशिष्ट broker account निवडलेला नाही) साठीच सुरक्षित आहे.
+    वापरकर्त्याने निवडलेल्या इतर broker (Fyers/Shoonya/Stocko) accounts वरचे trades इथे मुद्दामच
+    वगळलेले — कारण BrokerAdapter इंटरफेसला अजून "fetch_positions()" नाहीये (फक्त execute_order_leg_set
+    आहे), त्यामुळे त्यांची reconciliation शक्यच नाही. असे trades अजूनही SL/TSL/Target/EOD वर बरोबर
+    (त्याच निवडलेल्या broker वर) बंद होतात — फक्त "वापरकर्त्याने broker च्या स्वतःच्या app/website वरून
+    थेट बंद केलं तर आपोआप कळणं" ही सुरक्षा-जाळी त्यांना लागू नाही.
+
     रिटर्न: (reconciled_list, error_message). यशस्वी झालं की error_message रिकामं.
     """
     positions = fetch_broker_positions(access_token)
@@ -901,7 +928,10 @@ def reconcile_open_trades_with_broker(access_token, symbol):
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT trade_id, legs_json FROM live_trades WHERE symbol=? AND status='OPEN' AND mode='LIVE'", (symbol,))
+    cur.execute(
+        "SELECT trade_id, legs_json FROM live_trades WHERE symbol=? AND status='OPEN' AND mode='LIVE' AND account_id IS NULL",
+        (symbol,),
+    )
     open_trades = cur.fetchall()
 
     reconciled = []
@@ -980,7 +1010,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT legs_json, lots, lot_size, net_credit, mode FROM live_trades WHERE trade_id=? AND status='OPEN'",
+        "SELECT legs_json, lots, lot_size, net_credit, mode, account_id FROM live_trades WHERE trade_id=? AND status='OPEN'",
         (trade_id,),
     )
     row = cur.fetchone()
@@ -988,7 +1018,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         conn.close()
         return False, "Trade सापडला नाही किंवा आधीच बंद आहे."
 
-    legs_json_str, lots, lot_size, net_credit, trade_mode = row
+    legs_json_str, lots, lot_size, net_credit, trade_mode, account_id = row
     legs = json.loads(legs_json_str) if legs_json_str else []
     if not legs:
         conn.close()
@@ -1017,7 +1047,16 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         }
         for leg in legs
     ]
-    status_code, resp = execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE")
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — trade निवडलेल्या broker
+    # account वर उघडलेला असेल (account_id), तर मॅन्युअली बंद करतानाही तोच broker वापरायला हवा —
+    # manage_open_trades() मधल्याच _resolve_close_adapter() पॅटर्नप्रमाणे.
+    close_adapter = None
+    if account_id is not None:
+        import broker_factory
+        adapters, _errors = broker_factory.get_adapters_for_accounts([account_id])
+        close_adapter = adapters[0][0] if adapters else None
+    status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode or "LIVE") if close_adapter is not None
+                          else execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE"))
     if status_code == 200 and resp.get("status") == "success":
         order_ids = extract_order_ids(resp)
         log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE", fill_prices=ltp_map)
@@ -1036,7 +1075,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
                                    trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
-                                   entry_level_price=None, entry_timeframe=None):
+                                   entry_level_price=None, entry_timeframe=None, account_ids=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -1044,11 +1083,20 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
     lot_multiplier नुसार वेगळे lots, पण established एकच strategy_result (एकाच broker-type गृहीत धरून,
     established, आत्ता फक्त Upstox सक्रिय असल्याने सुरक्षित).
 
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection — "user can choose multiple
+    account or single, as per capital available") — account_ids (ऐच्छिक यादी) दिली असेल, तर "सर्व
+    सक्रिय accounts" ऐवजी फक्त त्याच, वापरकर्त्याने त्या strategy+symbol साठी Bot Dynamic SR Algo
+    वरून स्पष्ट निवडलेल्या account(s) वर चालवलं जातं. न दिल्यास (None, जुनं वर्तन) — सर्व सक्रिय
+    accounts वर replicate (backward-compatible).
+
     रिटर्न: (results, factory_errors) -- results: [{"account_id":.., "ok":.., "result":..}, ...],
     factory_errors: कुठला account (token/broker-type समस्येमुळे) पूर्णपणे वगळला गेला त्याची यादी.
     """
     import broker_factory
-    adapters, factory_errors = broker_factory.get_all_active_adapters()
+    if account_ids:
+        adapters, factory_errors = broker_factory.get_adapters_for_accounts(account_ids)
+    else:
+        adapters, factory_errors = broker_factory.get_all_active_adapters()
     if not adapters:
         return [], factory_errors
 

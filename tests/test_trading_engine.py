@@ -37,7 +37,7 @@ def temp_db(monkeypatch):
     yield tmpdb
 
 
-def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None):
+def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None):
     conn = sqlite3.connect(tmpdb)
     if legs is None:
         legs = [
@@ -47,9 +47,9 @@ def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BU
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
-           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-08-24", "NIFTY", strategy, 1, 75, net_credit, net_credit, 50,
-         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe),
+         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id),
     )
     conn.commit()
     conn.close()
@@ -655,6 +655,24 @@ class TestReconcileOpenTradesWithBroker:
         conn.close()
         assert row == ("OPEN",)
 
+    def test_broker_selected_trade_not_reconciled_via_upstox(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) टेस्ट करताना सापडलेली
+        सुरक्षा-मर्यादा — account_id असलेला (निवडलेल्या broker वर उघडलेला) trade Upstox च्या Positions
+        शी कधीच ताडून बघितला जाऊ नये (चुकीचा broker तपासला जाईल) — जरी Upstox कडे legs "बंद" दिसल्या तरी."""
+        seed_trade(temp_db, "T23", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE", account_id="ACC_SHOONYA_1")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": 0},
+            {"instrument_token": "PE24300", "quantity": 0},
+        ])
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
+        assert error == ""
+        assert reconciled == []  # account_id असलेला trade वगळलाच जायला हवा
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status FROM live_trades WHERE trade_id='T23'").fetchone()
+        conn.close()
+        assert row == ("OPEN",)
+
     def test_one_leg_still_open_does_not_reconcile(self, temp_db, monkeypatch):
         """एकच leg अजून उघडी असेल तरीही — पूर्ण trade बंद केलं जाऊ नये (आंशिक स्थिती अनिश्चित असते)."""
         seed_trade(temp_db, "T22", net_credit=30, sl_level=-1125, target_level=1125)
@@ -670,6 +688,46 @@ class TestReconcileOpenTradesWithBroker:
         reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
         assert reconciled == []
         assert error != ""
+
+
+class TestManageOpenTradesBrokerRouting:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — manage_open_trades()
+    ने प्रत्येक trade बंद करताना, त्याच्या साठवलेल्या account_id प्रमाणेच योग्य broker/adapter
+    वापरायला हवा — नाहीतर चुकीच्या broker कडे (नेहमी Upstox कडे) बंद-ऑर्डर जाऊ शकतो, आणि प्रत्यक्ष
+    position दुसऱ्याच broker वर उघडीच राहील."""
+
+    def test_closes_via_selected_broker_adapter_not_upstox(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T51", net_credit=30, sl_level=-100000, target_level=1000, account_id="ACC_X")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 5.0, "PE24300": 0.0})
+
+        upstox_execute_calls = []
+        monkeypatch.setattr(
+            trading_engine, "execute_order_leg_set",
+            lambda t, o, m: (upstox_execute_calls.append(1), (200, {"status": "success"}))[1],
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.execute_order_leg_set.return_value = (200, {"status": "success"})
+        import broker_factory
+        monkeypatch.setattr(broker_factory, "get_adapters_for_accounts", lambda ids: ([(mock_adapter, 1.0)], []))
+
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TARGET"
+        assert mock_adapter.execute_order_leg_set.called
+        assert not upstox_execute_calls  # खरा Upstox execute_order_leg_set कधीच कॉल व्हायला नको
+
+    def test_account_id_none_still_uses_raw_upstox(self, temp_db, monkeypatch):
+        """जुनंच वर्तन — account_id नसलेला (शुद्ध Upstox) trade अजूनही access_token नेच बंद व्हायला हवा."""
+        seed_trade(temp_db, "T52", net_credit=30, sl_level=-100000, target_level=1000, account_id=None)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 5.0, "PE24300": 0.0})
+        upstox_execute_calls = []
+        monkeypatch.setattr(
+            trading_engine, "execute_order_leg_set",
+            lambda t, o, m: (upstox_execute_calls.append(1), (200, {"status": "success"}))[1],
+        )
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert len(upstox_execute_calls) == 1
 
 
 class TestEvaluatePointSpotExit:

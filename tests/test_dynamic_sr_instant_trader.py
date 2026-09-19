@@ -551,29 +551,56 @@ class TestMultiHitGating:
 
 
 class TestProcessSymbolMultiAccount:
-    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा -- established broker_accounts नोंदवलेले असतील तर
-    established execute_trade_on_all_accounts() (replicated) वापरायला हवं."""
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
+    नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी, settings मधल्याच broker_account_ids (वापरकर्त्याने
+    याच strategy+symbol साठी स्पष्ट निवडलेले) असतील तरच execute_trade_on_all_accounts() (replicated)
+    वापरलं जातं."""
 
-    def test_uses_multi_account_when_accounts_registered(self):
+    def test_uses_multi_account_when_broker_account_ids_selected(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
         ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
-        accounts_df = pd.DataFrame([{"account_id": "A1", "broker_type": "upstox", "nickname": "A", "is_active": True, "lot_multiplier": 1.0}])
+        settings_with_broker = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings_with_broker["symbol_enabled"] = True
+        settings_with_broker["broker_account_ids"] = ["A1"]
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(dsr.cloud_db, "get_all_broker_accounts", return_value=accounts_df), \
+             patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings_with_broker), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "ok": True, "result": "OPENED"}], [])) as mock_multi, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
              patch.object(dsr.cloud_db, "save_market_zones", return_value=True):
             result = dsr.process_symbol("fake_token", "NIFTY")
             assert mock_multi.called
+            assert mock_multi.call_args.kwargs["account_ids"] == ["A1"]
             assert "A1" in result
+
+    def test_uses_single_upstox_trade_when_no_broker_account_ids(self):
+        """डीफॉल्ट (broker_account_ids रिकामी) — जुनंच शुद्ध Upstox, single trade वर्तन कायम."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch("trading_engine.execute_trade_on_all_accounts") as mock_multi, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=(True, "trade_id_123")) as mock_single, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_multi.called
+            assert mock_single.called
+            assert mock_single.call_args.kwargs["trading_mode"] == "PAPER"
 
 
 class TestInstantRsiFilter:
