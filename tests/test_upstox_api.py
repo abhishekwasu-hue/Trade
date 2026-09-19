@@ -199,6 +199,48 @@ class TestVerifyAndAnnotateFills:
         result = upstox_api._verify_and_annotate_fills("fake_token", self._orders(), resp)
         assert result == resp
 
+    def test_still_pending_leg_after_timeout_fires_urgent_alert(self):
+        """🎓 पूर्व-live रिव्ह्यूत सापडवलेली, गंभीर bug — poll_order_fill() ने terminal status
+        मिळण्याआधीच वेळ संपली (status="open", कधीच rejected/cancelled/complete नाही) तर तो leg
+        "भरलाच नाही" (rejected सारखाच) समजला जायचा -- पण खरा order अजूनही pending असून क्षणभरात
+        भरला जाऊ शकतो, म्हणजे एक untracked (कधीच live_trades मध्ये न नोंदवलेली) real position उरू
+        शकते. आता अशा genuinely-uncertain (confirmed rejected/cancelled पेक्षा वेगळ्या) स्थितीसाठी
+        वेगळा, तातडीचा अलर्ट यायलाच हवा."""
+        resp = {"status": "success", "data": [
+            {"order_id": "O1", "correlation_id": "C1"},
+            {"order_id": "O2", "correlation_id": "C2"},
+        ]}
+
+        def side_effect(token, order_id):
+            return {"status": "complete"} if order_id == "O1" else {"status": "open"}  # O2 कधीच terminal झाला नाही
+
+        with patch.object(upstox_api, "poll_order_fill", side_effect=side_effect), \
+             patch("notifications.send_telegram_message") as mock_telegram:
+            result = upstox_api._verify_and_annotate_fills("fake_token", self._orders(), resp)
+        assert mock_telegram.called
+        alert_text = mock_telegram.call_args.args[0]
+        assert "O2" in alert_text
+        assert "तातडीचं" in alert_text
+        assert "O1" not in alert_text  # confirmed complete leg अलर्टमध्ये नसावा
+        # business-logic classification अबाधित (partial_failure, जुनंच वर्तन) -- फक्त जोडलेला अलर्ट
+        assert result["status"] == "partial_failure"
+
+    def test_all_legs_confirmed_terminal_does_not_fire_urgent_alert(self):
+        """दोन्ही legs confirmed terminal (complete/rejected) असतील -- खरंच अनिश्चित काहीच नाही --
+        तर तातडीचा अलर्ट यायलाच नको (false-positive टाळण्यासाठी)."""
+        resp = {"status": "success", "data": [
+            {"order_id": "O1", "correlation_id": "C1"},
+            {"order_id": "O2", "correlation_id": "C2"},
+        ]}
+
+        def side_effect(token, order_id):
+            return {"status": "complete"} if order_id == "O1" else {"status": "rejected"}
+
+        with patch.object(upstox_api, "poll_order_fill", side_effect=side_effect), \
+             patch("notifications.send_telegram_message") as mock_telegram:
+            upstox_api._verify_and_annotate_fills("fake_token", self._orders(), resp)
+        assert not mock_telegram.called
+
 
 class TestExecuteOrderLegSetLiveVerification:
     def test_live_success_calls_verification_and_keeps_success(self):
