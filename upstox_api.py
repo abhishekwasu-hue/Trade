@@ -588,8 +588,18 @@ def fetch_ltp_map_detailed(access_token, instrument_keys):
         result = {}
         for v in data.values():
             tok = v.get("instrument_token")
-            if tok:
-                result[tok] = float(v.get("last_price", 0))
+            # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — आधी "last_price"
+            # गहाळ असेल तर 0.0 गृहीत धरलं जायचं (खरी, वैध किंमत असल्यासारखं) — पण
+            # manage_open_trades() मधला "LTP मिळाली नाही -- ही तपासणी वगळा" (is None) guard फक्त
+            # खरोखर None साठीच काम करतो, 0.0 साठी नाही. त्यामुळे एखाद्या leg चा प्रतिसाद अपुरा/चुकीचा
+            # आला (उदा. Upstox कडून तात्पुरता glitch), तरी तो leg "LTP = ₹0" म्हणून शांतपणे स्वीकारला
+            # जायचा -- SELL leg साठी हे cost_to_close_now कमी दाखवतं, म्हणजे current_pnl चुकून जास्त
+            # (जास्त नफ्याचा) दिसतो, आणि प्रत्यक्षात Target न गाठलेली position चुकीने लगेच बंद होऊ
+            # शकते. आता "last_price" खरोखर गहाळ असेल, तर ती key result dict मध्ये अजिबात जोडली जात
+            # नाही (म्हणजे .get() कडून None च मिळेल) -- फक्त प्रत्यक्ष दिलेली (0 सकट, जर तीच खरी
+            # किंमत असेल तर) किंमतच वापरली जाते.
+            if tok and v.get("last_price") is not None:
+                result[tok] = float(v["last_price"])
         return result, None
     except Exception as e:
         _logger.exception("fetch_ltp_map_detailed() मध्ये अनपेक्षित चूक (silently handled)")
