@@ -206,7 +206,11 @@ def build_report_chart_image(df, title, zone_info=None, width=620, height=420):
             dict(bounds=["sat", "mon"]),
             dict(bounds=[15.5, 9.25], pattern="hour"),
         ])
-        return fig.to_image(format="png", scale=3), description
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PDF Report Optimize) — kaleido export scale आधी सर्वत्र
+        # 3x होता (प्रत्येक chart साठी 9x जास्त pixels — छपाईसाठी अनावश्यक जास्त उच्च-रिझोल्यूशन).
+        # आता 2x (standard "retina" दर्जा — print/screen दोन्हीसाठी पुरेसा तीक्ष्ण) — हाच बदल या
+        # फाईलमधल्या सर्व chart-builder फंक्शन्समध्ये (कमी pixels = kaleido rendering वेळ लक्षणीय कमी).
+        return fig.to_image(format="png", scale=2), description
     except Exception:
         return None, "Chart could not be generated."
 
@@ -259,7 +263,7 @@ def build_eod_report_chart_image(df, sr_levels=None, supertrend_line=None, symbo
             dict(bounds=["sat", "mon"]),               # शनि-रवि वगळणे
             dict(bounds=[15.5, 9.25], pattern="hour"),  # रोजचा बाजार-बंद वेळ (15:30-9:15) वगळणे
         ])
-        return fig.to_image(format="png", scale=3)
+        return fig.to_image(format="png", scale=2)
     except Exception:
         return None
 
@@ -320,7 +324,7 @@ def build_price_action_chart_v2(df, direction, timeframe_label, rsi_series=None,
             dict(bounds=["sat", "mon"]),
             dict(bounds=[15.5, 9.25], pattern="hour"),
         ])
-        chart_bytes = fig.to_image(format="png", scale=3)
+        chart_bytes = fig.to_image(format="png", scale=2)
     except Exception:
         chart_bytes = None
 
@@ -428,7 +432,7 @@ def build_backtest_chart_image(df, bt_result, width=680, height=520):
             dict(bounds=["sat", "mon"]),
             dict(bounds=[15.5, 9.25], pattern="hour"),
         ])
-        return fig.to_image(format="png", scale=3)
+        return fig.to_image(format="png", scale=2)
     except Exception:
         return None
 
@@ -499,7 +503,7 @@ def build_backtest_chart_image_rr(df, bt_result, width=680, height=520):
             dict(bounds=["sat", "mon"]),
             dict(bounds=[15.5, 9.25], pattern="hour"),
         ])
-        return fig.to_image(format="png", scale=3)
+        return fig.to_image(format="png", scale=2)
     except Exception:
         return None
 
@@ -1535,7 +1539,7 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
             title=title, template="plotly_white", width=width, height=height,
             margin=dict(l=10, r=10, t=40, b=10), yaxis_title="Total P&L (₹)",
         )
-        return fig.to_image(format="png", scale=3)
+        return fig.to_image(format="png", scale=2)
     except Exception:
         return None
 
@@ -1815,9 +1819,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         gross_pnl = pnl_totals.get("gross_pnl", summary["total_pnl"]) if pnl_totals else summary["total_pnl"]
         total_charges = pnl_totals.get("total_charges", 0) if pnl_totals else 0
         net_pnl = pnl_totals.get("net_pnl", gross_pnl - total_charges) if pnl_totals else gross_pnl
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target, ROI — मार्जिन-
+        # आधारित) — win_rate आता शुद्ध SL/Target trades नसतील तर None असू शकतो (आधी कधीच None
+        # नसायचं) — इथे comparisons/formatting आधी None-गार्ड आवश्यक, नाहीतर PDF तयार करताना crash होईल.
+        win_rate = summary.get("win_rate")
+        win_rate_str = f"{win_rate}%" if win_rate is not None else "N/A"
+        roi_pct = summary.get("roi_pct")
+        roi_str = f"{roi_pct}%" if roi_pct is not None else "N/A"
         summary_rows = [
             ["Total Trades", str(summary["total_trades"])],
-            ["Win Rate", f"{summary['win_rate']}%"],
+            ["Win Rate (pure SL/Target only)", win_rate_str],
+            ["Win Rate (all exits, reference)", f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
+            ["ROI % (on margin used)", f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
             ["Gross P&L", f"Rs {gross_pnl:,.0f}"],
             ["Total Charges", f"Rs {total_charges:,.0f}"],
             ["Net P&L (after charges)", f"Rs {net_pnl:,.0f}"],
@@ -1826,16 +1839,16 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             ["Best / Worst Trade", f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
         ]
         force_colors = {
-            2: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
-            4: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
+            4: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
+            6: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
         }
-        win_rate = summary["win_rate"]
-        win_hex = "#089981" if win_rate >= 50 else "#F23645"
+        win_hex = "#089981" if (win_rate or 0) >= 50 else "#F23645"
         net_hex = "#089981" if net_pnl >= 0 else "#F23645"
         pf_hex = "#089981" if (summary.get("profit_factor") or 0) >= 1 else "#F23645"
         story.append(_stat_cards_row([
             ("TOTAL TRADES", str(summary["total_trades"]), None),
-            ("WIN RATE", f"{win_rate}%", win_hex),
+            ("WIN RATE (SL/TARGET)", win_rate_str, win_hex if win_rate is not None else None),
+            ("ROI % (MARGIN)", roi_str, None),
             ("NET P&L (AFTER CHARGES)", f"Rs {net_pnl:,.0f}", net_hex),
             ("PROFIT FACTOR", pf_str, pf_hex),
         ], usable_width))

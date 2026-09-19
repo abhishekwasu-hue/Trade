@@ -18,11 +18,21 @@ except ImportError:
 
 
 def setup_shared_context():
-    st.sidebar.title("⚙️ डॅशबोर्ड सेटिंग्ज")
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sidebar catchy/attractive बनवा") — साधा st.sidebar.title()
+    # ऐवजी, ui_headers.py च्या mega_header सारखाच रंगीत, ठळक heading (sidebar च्या अरुंद रुंदीला
+    # शोभेल इतक्या छोट्या फॉन्टमध्ये) — मुख्य पानाशी एकसंध, पण sidebar ला स्वतःची वेगळी ओळख मिळावी.
+    st.sidebar.markdown(
+        '<div style="font-size:1.3rem; font-weight:800; color:#2962FF; '
+        'margin:0 0 0.6rem 0; padding-bottom:0.4rem; border-bottom:3px solid #2962FF;">'
+        '⚙️ डॅशबोर्ड सेटिंग्ज</div>',
+        unsafe_allow_html=True,
+    )
     symbol = st.sidebar.selectbox("इंडेक्स निवडा:", ["NIFTY", "BANKNIFTY", "SENSEX"])
 
     # --- नवीन टाइमफ्रेम निवडण्याची सुविधा ---
-    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "5minute", "15minute", "30minute", "1hour", "day"], index=3)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — चार्टचा डीफॉल्ट टाईमफ्रेम आधी 30-मिनिट होता (index=3),
+    # आता 5-मिनिट (index=1) — बहुतांश intraday वापरासाठी जास्त उपयुक्त, बारीक रेझोल्यूशन.
+    timeframe_option = st.sidebar.selectbox("चार्ट टाईमफ्रेम (Timeframe):", ["1minute", "5minute", "15minute", "30minute", "1hour", "day"], index=1)
 
     # --- चार्ट टाईप निवडण्याची सुविधा (Candlestick / Line) ---
     chart_type = st.sidebar.radio("चार्ट टाईप:", ["Candlestick", "Line"], index=0, horizontal=True)
@@ -58,48 +68,53 @@ def setup_shared_context():
 
     default_token = cloud_token or secrets_token
 
-    if cloud_configured:
-        if cloud_token:
-            st.sidebar.caption("🔗 Cloud Token Sync: ON — Supabase मधून token सापडला.")
-        else:
-            st.sidebar.caption("🔗 Cloud Token Sync: ON — पण Supabase मध्ये अजून कुठलाच token साठवलेला नाही.")
-    else:
-        st.sidebar.caption("⚪ Cloud Token Sync: OFF — SUPABASE_DB_URL सेट नाही, फक्त secrets/manual token वापरला जाईल.")
-
-    # 🎓 वापरकर्त्याने सापडवलेली bug — "मोबाईलवर Approve केल्यानंतरही Dashboard 401 (token expired)
-    # देत राहतो". Streamlit च्या widgets चं जुनंच, ओळखीचं वर्तन (page_bot_dynamic_sr_algo.py मध्ये आधीच
-    # फिक्स केलेल्या _widget_key bug सारखंच) — `value=` फक्त widget पहिल्यांदाच तयार होताना वापरलं
-    # जातं; त्यानंतर (auto-refresh मुळे बराच वेळ उघडी असलेल्या त्याच जुन्या session मध्ये) नवीन
-    # `value=default_token` पास केलं तरी widget त्याकडे दुर्लक्ष करून जुनाच (कालचा, आता expired झालेला)
-    # token दाखवत राहतो — जरी Supabase मध्ये webhook ने नवीन token आधीच साठवलेला असला तरी. आता widget
-    # चा स्वतःचा key ("token_input_widget") वापरून, प्रत्येक rerun ला cloud_token तपासला जातो —
-    # वापरकर्त्याने स्वतः field manually बदललेलं नसेल (अजूनही आधीच्या cloud token शीच जुळत असेल) तरच
-    # नवीन cloud_token जबरदस्तीने भरला जातो — वापरकर्त्याने स्वतः वेगळा token paste केला असेल, तर
-    # त्याला कधीच overwrite केलं जात नाही.
-    _TOKEN_WIDGET_KEY = "token_input_widget"
-    if cloud_token and st.session_state.get("_last_known_cloud_token") != cloud_token:
-        if st.session_state.get(_TOKEN_WIDGET_KEY, default_token) == st.session_state.get("_last_known_cloud_token", ""):
-            st.session_state[_TOKEN_WIDGET_KEY] = cloud_token
-        st.session_state["_last_known_cloud_token"] = cloud_token
-
-    token_input = st.sidebar.text_input("Upstox Access Token:", value=default_token, key=_TOKEN_WIDGET_KEY, type="password")
-
-    if st.sidebar.button("💾 Save Token to Supabase"):
-        if token_input.strip():
-            try:
-                # established इतर सर्व cron scripts (daily_nifty_1min_update.py, srv2_momentum_reversal_strategy.py
-                # इ.) प्रमाणेच, save करण्याआधी table अस्तित्वात आहे याची खात्री (idempotent, CREATE TABLE IF
-                # NOT EXISTS) — dashboard हाच पहिला touch-point असेल (table अजून तयारच नसेल) तरीही save यशस्वी व्हावं.
-                cloud_db.init_cloud_table()
-                saved_ok = cloud_db.save_upstox_token(token_input.strip())
-            except Exception:
-                saved_ok = False
-            if saved_ok:
-                st.sidebar.success("✅ Token Supabase (upstox_tokens table) मध्ये साठवला.")
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sidebar catchy बनवा, गर्दी कमी करा") — आधी Cloud Sync
+    # captions + Token field + Save बटण हे सर्व नेहमी उघडं (sidebar वर बरीच जागा घ्यायचं), जरी
+    # token आधीच व्यवस्थित सेट असला तरी. आता एका expander मध्ये — token आधीच उपलब्ध असेल तर बंद
+    # (collapsed, रोजच्या वापरात हे बघावं लागत नाही), नसेल (नवीन वापरकर्ता) तरच आपोआप उघडं.
+    with st.sidebar.expander("🔑 Upstox Token सेटअप", expanded=not bool(default_token)):
+        if cloud_configured:
+            if cloud_token:
+                st.caption("🔗 Cloud Token Sync: ON — Supabase मधून token सापडला.")
             else:
-                st.sidebar.error("❌ Token साठवता आला नाही — SUPABASE_DB_URL सेट आहे का, ते तपासा.")
+                st.caption("🔗 Cloud Token Sync: ON — पण Supabase मध्ये अजून कुठलाच token साठवलेला नाही.")
         else:
-            st.sidebar.warning("⚠️ आधी वरती Token टाका, मग Save करा.")
+            st.caption("⚪ Cloud Token Sync: OFF — SUPABASE_DB_URL सेट नाही, फक्त secrets/manual token वापरला जाईल.")
+
+        # 🎓 वापरकर्त्याने सापडवलेली bug — "मोबाईलवर Approve केल्यानंतरही Dashboard 401 (token expired)
+        # देत राहतो". Streamlit च्या widgets चं जुनंच, ओळखीचं वर्तन (page_bot_dynamic_sr_algo.py मध्ये आधीच
+        # फिक्स केलेल्या _widget_key bug सारखंच) — `value=` फक्त widget पहिल्यांदाच तयार होताना वापरलं
+        # जातं; त्यानंतर (auto-refresh मुळे बराच वेळ उघडी असलेल्या त्याच जुन्या session मध्ये) नवीन
+        # `value=default_token` पास केलं तरी widget त्याकडे दुर्लक्ष करून जुनाच (कालचा, आता expired झालेला)
+        # token दाखवत राहतो — जरी Supabase मध्ये webhook ने नवीन token आधीच साठवलेला असला तरी. आता widget
+        # चा स्वतःचा key ("token_input_widget") वापरून, प्रत्येक rerun ला cloud_token तपासला जातो —
+        # वापरकर्त्याने स्वतः field manually बदललेलं नसेल (अजूनही आधीच्या cloud token शीच जुळत असेल) तरच
+        # नवीन cloud_token जबरदस्तीने भरला जातो — वापरकर्त्याने स्वतः वेगळा token paste केला असेल, तर
+        # त्याला कधीच overwrite केलं जात नाही.
+        _TOKEN_WIDGET_KEY = "token_input_widget"
+        if cloud_token and st.session_state.get("_last_known_cloud_token") != cloud_token:
+            if st.session_state.get(_TOKEN_WIDGET_KEY, default_token) == st.session_state.get("_last_known_cloud_token", ""):
+                st.session_state[_TOKEN_WIDGET_KEY] = cloud_token
+            st.session_state["_last_known_cloud_token"] = cloud_token
+
+        token_input = st.text_input("Upstox Access Token:", value=default_token, key=_TOKEN_WIDGET_KEY, type="password")
+
+        if st.button("💾 Save Token to Supabase"):
+            if token_input.strip():
+                try:
+                    # इतर सर्व cron scripts (daily_nifty_1min_update.py, srv2_momentum_reversal_strategy.py
+                    # इ.) प्रमाणेच, save करण्याआधी table अस्तित्वात आहे याची खात्री (idempotent, CREATE TABLE IF
+                    # NOT EXISTS) — dashboard हाच पहिला touch-point असेल (table अजून तयारच नसेल) तरीही save यशस्वी व्हावं.
+                    cloud_db.init_cloud_table()
+                    saved_ok = cloud_db.save_upstox_token(token_input.strip())
+                except Exception:
+                    saved_ok = False
+                if saved_ok:
+                    st.success("✅ Token Supabase (upstox_tokens table) मध्ये साठवला.")
+                else:
+                    st.error("❌ Token साठवता आला नाही — SUPABASE_DB_URL सेट आहे का, ते तपासा.")
+            else:
+                st.warning("⚠️ आधी वरती Token टाका, मग Save करा.")
 
     auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (1 Minute)", value=True)
 
@@ -108,7 +123,12 @@ def setup_shared_context():
     # एकाच प्रचंड मोठ्या expander मध्ये होतं — उघडल्यावर एक अखंड भिंतीसारखं दिसायचं. आता विषयानुसार
     # वेगळ्या, छोट्या expanders मध्ये — प्रत्येक गरजेनुसार स्वतंत्रपणे उघडता येईल, स्वच्छ दिसेल.
     st.sidebar.markdown("---")
-    st.sidebar.title("🎯 A1 Strategy Engine सेटिंग्ज")
+    st.sidebar.markdown(
+        '<div style="font-size:1.15rem; font-weight:800; color:#AB47BC; '
+        'margin:0 0 0.5rem 0; padding-bottom:0.3rem; border-bottom:3px solid #AB47BC;">'
+        '🎯 A1 Strategy Engine सेटिंग्ज</div>',
+        unsafe_allow_html=True,
+    )
 
     with st.sidebar.expander("💰 Risk व Capital", expanded=False):
         lot_size = st.sidebar.number_input("Lot Size (सध्या NIFTY = 65, अधिकृत NSE सर्क्युलर तपासा)", min_value=1, value=65, step=1)

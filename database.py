@@ -13,6 +13,25 @@ from log_setup import get_logger
 
 _logger = get_logger("database.py")
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (शिफारसी — SL/TSL-प्रकार वि. Target-प्रकार वर्गीकरण) — आधी हे
+# page_performance.py मध्ये फक्त शिफारसींसाठी, स्थानिक पातळीवर परिभाषित होते. आता इथे, केंद्रीय
+# ठिकाणी — page_performance.py इथून import करतो (duplicate व्याख्या टाळण्यासाठी). हे Trailing-SL/
+# Premium-Target सकट, "व्यापक" वर्गीकरण आहे — खालच्या win-rate साठीच्या "शुद्ध" (narrow) सेट्सपेक्षा वेगळं.
+SL_TYPE_EXIT_REASONS = {"SL", "TRAILING_SL", "PCT_TRAILING_SL", "TSL_SL", "SL_HIT"}
+TARGET_TYPE_EXIT_REASONS = {"TARGET", "PREMIUM_TARGET", "NEXT_LEVEL_EXIT", "TARGET_HIT"}
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target) — वापरकर्त्याशी स्पष्टपणे
+# चर्चा करून ठरवलेला निर्णय: Win Rate आता **फक्त** शुद्ध SL किंवा शुद्ध TARGET या दोनच exit_reason
+# प्रकारांवर आधारित असायला हवी — Trailing SL (स्वतःहून घट्ट होणारा) किंवा Breakeven-वर अडकलेला SL
+# (TSL_SL) यामुळे बंद झालेले trades, तसंच EOD/Carry-Forward/Manual/OI-Reversal/Next-Level-Exit —
+# हे सगळे या गणनेतून (numerator आणि denominator दोन्हीतून) पूर्णपणे वगळायचे. वरच्या "व्यापक"
+# SL_TYPE_EXIT_REASONS/TARGET_TYPE_EXIT_REASONS (जे Trailing/Premium-Target सुद्धा धरतात, फक्त
+# शिफारसींसाठी वापरलेले) यांच्यापेक्षा हे मुद्दामच वेगळे, अरुंद (narrow) सेट्स आहेत.
+WIN_RATE_SL_REASONS = {"SL", "SL_HIT"}  # SL_HIT = जुनी (legacy) नोंद, "SL" चाच जुना समानार्थी शब्द
+WIN_RATE_TARGET_REASONS = {"TARGET", "TARGET_HIT"}  # TARGET_HIT = जुनी (legacy) नोंद
+WIN_RATE_COUNTED_REASONS = WIN_RATE_SL_REASONS | WIN_RATE_TARGET_REASONS
+
+
 def init_sqlite_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -677,13 +696,36 @@ def compute_portfolio_risk_summary(positions_df):
         "concentration_warning": concentration_warning,
     }
 
+def _compute_margin_used(df):
+    """max_loss * lots * lot_size एकत्र (ROI% साठी "वापरलेली मार्जिन" चा worst-case अंदाज). काही
+    जुन्या/अपूर्ण नोंदींमध्ये हे स्तंभ None असू शकतात (mixed dtype मुळे df["max_loss"].abs() थेट
+    केलं तर "bad operand type for abs(): 'NoneType'" crash होतो) — pd.to_numeric(errors="coerce")
+    ने असे None/अवैध आधी NaN करून, sum() (डीफॉल्ट skipna=True) आपोआप वगळतो — तो trade मार्जिनमध्ये
+    मोजला जात नाही, पण बाकी काहीच अडत नाही."""
+    max_loss = pd.to_numeric(df["max_loss"], errors="coerce").abs()
+    lots = pd.to_numeric(df["lots"], errors="coerce")
+    lot_size = pd.to_numeric(df["lot_size"], errors="coerce")
+    return (max_loss * lots * lot_size).sum()
+
+
 def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
     """
-    बंद झालेल्या (CLOSED) ट्रेड्सवरून Win Rate, Avg P&L, Profit Factor वगैरे मूळ कामगिरी आकडे काढणे.
-    start_date/end_date दिले (उदा. आजची तारीख दोन्हीसाठी) तर फक्त त्या exit_time रेंजमधले trades मोजले जातात.
+    बंद झालेल्या (CLOSED) ट्रेड्सवरून Win Rate, Avg P&L, Profit Factor, ROI% वगैरे मूळ कामगिरी आकडे
+    काढणे. start_date/end_date दिले (उदा. आजची तारीख दोन्हीसाठी) तर फक्त त्या exit_time रेंजमधले
+    trades मोजले जातात.
+
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target) — "win_rate" आता फक्त
+    शुद्ध SL किंवा शुद्ध TARGET exit_reason असलेल्या trades वरून (दोन्ही numerator आणि denominator) —
+    Trailing SL/Breakeven/EOD/Manual/इ. सर्व वगळून. जुनं (सर्व closed trades, P&L-चिन्ह आधारित) win
+    rate "win_rate_all_exits" म्हणून संदर्भासाठी अजूनही उपलब्ध.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI — मार्जिन-आधारित) — प्रत्यक्ष broker margin प्रत्येक trade
+    सोबत साठवलेला नाही, त्यामुळे max_loss * lots * lot_size (Dashboard च्या Pre-Trade Margin
+    Check मध्ये आधीपासूनच वापरलेला, सुरक्षित worst-case अंदाज) हीच "वापरलेली
+    मार्जिन" मानून roi_pct = एकूण realized P&L / एकूण मार्जिन.
     """
     conn = sqlite3.connect(DB_PATH)
-    query = "SELECT realized_pnl FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"
+    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size FROM live_trades "
+             "WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL")
     params = [symbol]
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
@@ -709,10 +751,18 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
     gross_profit = wins.sum()
     gross_loss = abs(losses.sum())
 
+    sl_target_df = df[df["exit_reason"].isin(WIN_RATE_COUNTED_REASONS)]
+    sl_target_wins = sl_target_df[sl_target_df["exit_reason"].isin(WIN_RATE_TARGET_REASONS)]
+    sl_target_count = len(sl_target_df)
+
+    margin_used = _compute_margin_used(df)
+
     return {
         "total_trades": len(pnls),
         "win_count": len(wins), "loss_count": len(losses),
-        "win_rate": round(len(wins) / len(pnls) * 100, 1) if len(pnls) else None,
+        "win_rate": round(len(sl_target_wins) / sl_target_count * 100, 1) if sl_target_count else None,
+        "sl_target_trade_count": sl_target_count,
+        "win_rate_all_exits": round(len(wins) / len(pnls) * 100, 1) if len(pnls) else None,
         "total_pnl": round(pnls.sum(), 2),
         "avg_pnl": round(pnls.mean(), 2),
         "avg_win": round(wins.mean(), 2) if len(wins) else None,
@@ -720,6 +770,8 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
         "best_trade": round(pnls.max(), 2),
         "worst_trade": round(pnls.min(), 2),
         "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else None,
+        "margin_used": round(margin_used, 2),
+        "roi_pct": round(pnls.sum() / margin_used * 100, 2) if margin_used > 0 else None,
     }
 
 def get_equity_curve_data(symbol, mode_filter=None, style_filter=None):
@@ -743,13 +795,33 @@ def get_equity_curve_data(symbol, mode_filter=None, style_filter=None):
     df["cumulative_pnl"] = df["realized_pnl"].cumsum()
     return df
 
+def _group_win_rate_and_roi(sub):
+    """एका group च्या (DataFrame) उप-संचावरून — नवीन (SL/Target-फक्त) Win Rate, जुना (सर्व exits,
+    संदर्भासाठी) Win Rate, आणि margin-आधारित ROI% — get_performance_by_group()/
+    get_performance_by_two_groups() दोन्हीत सामायिक वापरण्यासाठी (duplicate टाळण्यासाठी)."""
+    wins = sub[sub["realized_pnl"] > 0]
+    sl_target_sub = sub[sub["exit_reason"].isin(WIN_RATE_COUNTED_REASONS)]
+    sl_target_wins = sl_target_sub[sl_target_sub["exit_reason"].isin(WIN_RATE_TARGET_REASONS)]
+    sl_target_count = len(sl_target_sub)
+    margin_used = _compute_margin_used(sub)
+    total_pnl = sub["realized_pnl"].sum()
+    return {
+        "Win Rate %": round(len(sl_target_wins) / sl_target_count * 100, 1) if sl_target_count else None,
+        "SL/Target Trades": sl_target_count,
+        "Win Rate % (All Exits)": round(len(wins) / len(sub) * 100, 1),
+        "ROI %": round(total_pnl / margin_used * 100, 2) if margin_used > 0 else None,
+    }
+
+
 def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
     """strategy (source)/entry_timeframe/trading_style नुसार कामगिरीची विभागणी (Win Rate, Total P&L,
-    Trade Count) — कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे ठरवण्यासाठी. start_date/end_date दिले
-    तर फक्त त्या exit_time रेंजमधलेच trades मोजले जातात (न दिल्यास संपूर्ण इतिहास)."""
+    Trade Count, ROI%) — कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे ठरवण्यासाठी. start_date/end_date
+    दिले तर फक्त त्या exit_time रेंजमधलेच trades मोजले जातात (न दिल्यास संपूर्ण इतिहास).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Winning Rate — फक्त शुद्ध SL/Target, ROI — मार्जिन-आधारित) —
+    get_performance_summary() मध्ये वापरलेलीच पद्धत, इथे प्रत्येक group साठी स्वतंत्रपणे."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
-    query = f"""SELECT {col_expr} AS grp, realized_pnl FROM live_trades
+    query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size FROM live_trades
                 WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     params = [symbol]
     if mode_filter:
@@ -768,10 +840,46 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
 
     rows = []
     for grp, sub in df.groupby("grp"):
-        wins = sub[sub["realized_pnl"] > 0]
         rows.append({
             "Group": grp, "Trades": len(sub),
-            "Win Rate %": round(len(wins) / len(sub) * 100, 1),
+            **_group_win_rate_and_roi(sub),
+            "Total P&L": round(sub["realized_pnl"].sum(), 2),
+            "Avg P&L": round(sub["realized_pnl"].mean(), 2),
+        })
+    return pd.DataFrame(rows).sort_values("Total P&L", ascending=False)
+
+
+def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=None, start_date=None, end_date=None):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("strategy आणि timeframe दोन्ही एकत्र दाखवणारं वेगळं
+    टेबल") — group_col1 + group_col2 दोन्हींच्या प्रत्येक जोडीसाठी स्वतंत्र ओळ (उदा. "1-Min Instant
+    Trader" + "5M" ही specific जोडी किती फायदेशीर आहे, वेगळ्या-वेगळ्या single-column breakdown
+    टेबलांमध्ये हे लगेच दिसत नाही). get_performance_by_group() सारखीच गणना (Win Rate/ROI%), फक्त
+    group_col1×group_col2 च्या cross-tab वर."""
+    conn = sqlite3.connect(DB_PATH)
+    col_expr1 = f"COALESCE({group_col1}, 'UNKNOWN')"
+    col_expr2 = f"COALESCE({group_col2}, 'UNKNOWN')"
+    query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size
+                FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
+    params = [symbol]
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for (g1, g2), sub in df.groupby(["grp1", "grp2"]):
+        rows.append({
+            "Strategy": g1, "Timeframe": g2, "Trades": len(sub),
+            **_group_win_rate_and_roi(sub),
             "Total P&L": round(sub["realized_pnl"].sum(), 2),
             "Avg P&L": round(sub["realized_pnl"].mean(), 2),
         })

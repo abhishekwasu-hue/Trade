@@ -30,27 +30,53 @@ st.markdown(
     <style>
     .stApp { background-color: #131722; color: #d1d4dc; }
     .stMetric { background-color: #1e222d; padding: 12px; border-radius: 6px; border: 1px solid #2a2e3d; }
-    dataframe, table, th, td { font-size: 15px !important; }
-    .stDataFrame { font-size: 15px !important; }
+    /* 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सर्व टॅबमध्ये फॉन्ट वाढवा, multicolor वापरा") — dataframe/
+    table फॉन्ट आधीच्या 15px वरून 16.5px — वाचनीयता आणखी वाढावी म्हणून. */
+    dataframe, table, th, td { font-size: 16.5px !important; }
+    .stDataFrame { font-size: 16.5px !important; }
+    .stMetric [data-testid="stMetricValue"] { font-size: 1.9rem !important; }
+    .stMetric [data-testid="stMetricLabel"] { font-size: 0.95rem !important; }
 
-    /* 🎓 डिझाईन सुधारणा — Tab फॉन्ट मोठा व ठळक, एकसंध typography, कमी दृश्य गोंधळ */
+    /* 🎓 डिझाईन सुधारणा — Tab फॉन्ट आणखी मोठा व ठळक (16px -> 17.5px), आणि प्रत्येक tab ला वेगळा
+    रंग (multicolor — cycle through, ui_headers.py च्या mega/mid/sub_header पॅलेटशी सुसंगत) —
+    त्यामुळे कुठला tab निवडलेला आहे हे लगेच, रंगानेच वेगळं दिसतं (आधी सर्व tabs एकाच फिकट रंगात). */
     .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid #2a2e3d; }
     .stTabs [data-baseweb="tab"] {
-        font-size: 16px !important; font-weight: 600 !important; padding: 10px 18px !important;
+        font-size: 17.5px !important; font-weight: 650 !important; padding: 10px 18px !important;
         color: #9598a1 !important;
     }
-    .stTabs [aria-selected="true"] { color: #d1d4dc !important; border-bottom: 2px solid #2962ff !important; }
+    .stTabs [aria-selected="true"] { color: #d1d4dc !important; border-bottom: 3px solid #2962ff !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+1)[aria-selected="true"] { border-bottom-color: #2962FF !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+2)[aria-selected="true"] { border-bottom-color: #00BFA5 !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+3)[aria-selected="true"] { border-bottom-color: #AB47BC !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+4)[aria-selected="true"] { border-bottom-color: #FF6D00 !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+5)[aria-selected="true"] { border-bottom-color: #EC407A !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+6)[aria-selected="true"] { border-bottom-color: #66BB6A !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+7)[aria-selected="true"] { border-bottom-color: #FFC107 !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+8)[aria-selected="true"] { border-bottom-color: #26C6DA !important; }
+    .stTabs [data-baseweb="tab-list"] button:nth-child(9n+9)[aria-selected="true"] { border-bottom-color: #E64A19 !important; }
 
-    /* Headers/subheaders - एकसंध scale, आधी विसंगत होते */
-    h1 { font-size: 26px !important; font-weight: 700 !important; }
-    h2, .stApp [data-testid="stHeader"] { font-size: 21px !important; font-weight: 650 !important; }
-    h3 { font-size: 18px !important; font-weight: 600 !important; }
+    /* Headers/subheaders - एकसंध scale, आधीपेक्षा थोडे मोठे */
+    h1 { font-size: 27px !important; font-weight: 700 !important; }
+    h2, .stApp [data-testid="stHeader"] { font-size: 22px !important; font-weight: 650 !important; }
+    h3 { font-size: 19px !important; font-weight: 600 !important; }
 
     /* Caption - छोटा, फिकट, जागा कमी घेणारा (जेणेकरून मुख्य डेटावर लक्ष केंद्रित राहील) */
-    .stCaption, [data-testid="stCaptionContainer"] { font-size: 12.5px !important; color: #7a7f8a !important; line-height: 1.4 !important; }
+    .stCaption, [data-testid="stCaptionContainer"] { font-size: 13px !important; color: #7a7f8a !important; line-height: 1.4 !important; }
 
-    /* Sidebar labels - थोडे मोठे, वाचनीय */
-    section[data-testid="stSidebar"] label { font-size: 14px !important; }
+    /* 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sidebar catchy आणि attractive बनवा, गर्दी कमी करा") —
+    मुख्य पानापेक्षा किंचित वेगळी (थोडी गडद) पार्श्वभूमी, उजवीकडे रंगीत सीमारेषा — sidebar एक
+    वेगळा, दृष्टीस पडणारा "पॅनल" वाटावा म्हणून. Labels थोडे मोठे, अधिक वाचनीय. Expanders मधली
+    शीर्षकं ठळक + रंगीत डावी सीमारेषा — विभागांमध्ये स्पष्ट, आकर्षक फरक दिसावा म्हणून. */
+    section[data-testid="stSidebar"] {
+        background-color: #171b26 !important; border-right: 2px solid #2962FF33 !important;
+    }
+    section[data-testid="stSidebar"] label { font-size: 14.5px !important; }
+    section[data-testid="stSidebar"] .stExpander {
+        border: 1px solid #2a2e3d !important; border-left: 3px solid #2962FF !important;
+        border-radius: 6px !important; margin-bottom: 6px !important;
+    }
+    section[data-testid="stSidebar"] .stExpander summary { font-weight: 600 !important; }
     </style>
     """,
     unsafe_allow_html=True,
