@@ -1123,6 +1123,7 @@ class TestCheckKillSwitch:
     def test_disabled_always_ok_regardless_of_pnl(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss": 100, "max_trades_per_day": 1})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-999999, 999))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is True
         assert reason is None
@@ -1130,6 +1131,7 @@ class TestCheckKillSwitch:
     def test_daily_loss_breached_blocks(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-6000, 2))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False
         assert "KILL_SWITCH_DAILY_LOSS" in reason
@@ -1137,6 +1139,7 @@ class TestCheckKillSwitch:
     def test_max_trades_breached_blocks(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (500, 15))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False
         assert "KILL_SWITCH_MAX_TRADES" in reason
@@ -1144,9 +1147,23 @@ class TestCheckKillSwitch:
     def test_within_limits_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-100, 3))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is True
         assert reason is None
+
+    def test_unverified_reconciled_trades_blocks_even_within_pnl_limits(self, monkeypatch):
+        """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडवलेली bug —
+        reconcile_open_trades_with_broker() externally बंद झालेल्या trade चा realized_pnl कधीच
+        साठवत नाही (NULL राहतो), त्यामुळे तो तोटा COALESCE(SUM(...),0) मधून वगळला जातो —
+        "आजचा तोटा ₹0" (मर्यादेच्या आतच) दिसत असला, तरी असे unverified trades असतील तर
+        नवीन LIVE trading थांबायलाच हवं (fail-safe)."""
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (0, 1))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 1)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_UNVERIFIED_PNL" in reason
 
 
 class TestOpenMultiLegTradeKillSwitch:

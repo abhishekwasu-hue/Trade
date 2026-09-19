@@ -8,7 +8,10 @@ import uuid
 import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
-from database import log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources
+from database import (
+    log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
+    get_unverified_reconciled_trades_today_count,
+)
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
     extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
@@ -227,6 +230,18 @@ def check_kill_switch():
     settings = cloud_db.get_kill_switch_settings()
     if not settings.get("enabled", True):
         return True, None
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconciliation ने externally
+    # बंद केलेल्या trades चा realized_pnl कधीच कळत नाही (NULL राहतो), त्यामुळे तो तोटा वरच्या SUM
+    # मध्ये कधीच धरलाच जात नाही — "आजचा तोटा ₹0" चुकीने दिसू शकतो, ज्या दिवशी खरंच मोठा तोटा झालेला
+    # असेल त्याच दिवशी. अंदाजे आकडा गृहीत धरण्यापेक्षा, अशा वेळी नवीन LIVE trading थांबवणंच सुरक्षित.
+    unverified_count = get_unverified_reconciled_trades_today_count()
+    if unverified_count > 0:
+        return False, (
+            f"KILL_SWITCH_UNVERIFIED_PNL — आज {unverified_count} LIVE trade(s) Upstox app/website "
+            f"वरून थेट बंद झालेल्या दिसतात, पण त्यांचा खरा नफा/तोटा अजून नोंदवलेला नाही — आजचा एकूण "
+            f"तोटा अचूक मोजता येत नसल्याने नवीन LIVE trades थांबवले. कृपया Dashboard/Upstox वरून "
+            f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
+        )
     total_pnl, total_trades = get_todays_live_total_pnl_and_count()
     max_daily_loss = settings.get("max_daily_loss", 10000)
     max_trades_per_day = settings.get("max_trades_per_day", 15)
