@@ -267,7 +267,14 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
     # PDF #2 प्रमाणे Stocko चे स्वतःचे वैध exchange codes — "NSE_FO" (Upstox चं स्वरूप) यात नाही.
     VALID_STOCKO_EXCHANGES = {"NSE", "NFO", "CDS", "BSE", "MCX"}
     order_ids = []
-    for o in orders:
+    # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — place_order() चा डीफॉल्ट user_order_id
+    # (int(time.time()) % 100000, सेकंद-रिझोल्यूशन) एकाच multi-leg ऑर्डरमधल्या सलग legs साठी
+    # सहज एकसारखाच येऊ शकतो (जलद, sequential HTTP कॉल्स बहुतेकदा एकाच सेकंदात पूर्ण होतात) —
+    # Stocko कडून दुसरा leg duplicate order id म्हणून नाकारला जाण्याचा धोका. आता batch-निहाय
+    # एकच base (मिलिसेकंद-रिझोल्यूशन) + leg-index, त्यामुळे एकाच batch मधल्या legs ना हमखास
+    # वेगवेगळे id मिळतात.
+    batch_order_id_base = int(time.time() * 1000) % 90000
+    for i, o in enumerate(orders):
         exch, _, token = o["instrument_token"].partition("|")
         # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — Shoonya साठीच्याच
         # टीपेप्रमाणे — बॉट्स strike-निवडीसाठी नेहमी fetch_upstox_option_chain() वापरतात, त्यामुळे
@@ -298,7 +305,14 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
             product=product_map.get(o.get("product"), "NRML"),
             price=o.get("price", 0),
             trigger_price=o.get("trigger_price", 0),
+            user_order_id=batch_order_id_base + i,
         )
+        # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — STOCKO_BASE_URL सेट नसेल, तर place_order()
+        # (_check_base_url() मुळे) resp म्हणून dict ऐवजी थेट error-string परत देतो (status_code=None) —
+        # खालचा resp.get(...) तेव्हा dict नसलेल्या string वर कॉल होऊन AttributeError ने संपूर्ण
+        # LIVE order-placement अनपेक्षितपणे क्रॅश व्हायचं, ऐवजी स्पष्ट error हवा होता.
+        if status_code is None:
+            return 500, {"status": "error", "message": resp, "partial_order_ids": order_ids}
         if resp.get("status") == "success":
             order_ids.append(resp.get("data", {}).get("oms_order_id"))
         else:
