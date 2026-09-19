@@ -353,6 +353,72 @@ class TestSignalLog:
         assert result is True
         assert mock_cursor.execute.called
 
+    def test_real_trade_attempt_never_deduped_even_if_identical(self, monkeypatch):
+        """🎓 trade_status="OPENED" (खरा order attempt) असलेली नोंद -- मागची तशीच असली तरी कधीच
+        dedupe होऊ नये (SELECT dedup-check अजिबात चालवलाच जाऊ नये, थेट INSERT)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 10:16",
+                  "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "TOUCH",
+                  "direction": "BULLISH", "ltp_at_signal": 23901.0, "trade_status": "OPENED", "reason": ""}
+        cloud_db.save_signal_log(entry)
+        assert mock_cursor.execute.call_count == 1  # फक्त INSERT, SELECT dedup-check नाही
+        assert "INSERT INTO signal_log" in mock_cursor.execute.call_args_list[0][0][0]
+
+    def test_identical_no_action_entry_skips_reinsert(self, monkeypatch):
+        """🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वर Signal Log "2-3 वेळा repeat") — त्याच दिवशी,
+        त्याच level साठी, सर्वात अलीकडची नोंद अगदी तशीच (hit_type+trade_status+reason) असेल, आणि
+        नवीन entry मध्ये कधीच खरा trade attempt नसेल (trade_status=SKIPPED_* इ.), तर पुन्हा
+        साठवली जाऊ नये."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "मागच्या hit ला फक्त 5.0 मिनिटं झालीत")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 10:17",
+                  "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "TOUCH",
+                  "direction": "BULLISH", "ltp_at_signal": 23902.0, "trade_status": "SKIPPED_COOLDOWN_30MIN",
+                  "reason": "मागच्या hit ला फक्त 5.0 मिनिटं झालीत"}
+        result = cloud_db.save_signal_log(entry)
+        assert result is True
+        assert mock_cursor.execute.call_count == 1  # फक्त SELECT dedup-check, INSERT नाही
+        assert "SELECT" in mock_cursor.execute.call_args_list[0][0][0]
+
+    def test_changed_reason_still_inserts_new_row(self, monkeypatch):
+        """मागची नोंद वेगळ्या reason ची असेल (उदा. वेगळी cooldown वेळ), तर नवीन नोंद व्हायलाच हवी."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "मागच्या hit ला फक्त 5.0 मिनिटं झालीत")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 10:18",
+                  "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "TOUCH",
+                  "direction": "BULLISH", "ltp_at_signal": 23902.0, "trade_status": "SKIPPED_COOLDOWN_30MIN",
+                  "reason": "मागच्या hit ला फक्त 6.0 मिनिटं झालीत"}  # वेगळा reason
+        cloud_db.save_signal_log(entry)
+        assert mock_cursor.execute.call_count == 2  # SELECT + INSERT दोन्ही
+        assert "INSERT INTO signal_log" in mock_cursor.execute.call_args_list[1][0][0]
+
+    def test_no_prior_entry_inserts_normally(self, monkeypatch):
+        """त्या level साठी आजची पहिलीच नोंद (fetchone -> None) -- नेहमीप्रमाणे insert व्हायला हवी."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        entry = {"symbol": "NIFTY", "trade_date": "2026-09-05", "signal_time": "2026-09-05 09:16",
+                  "level_type": "DYNAMIC_SR_SUPPORT_5M", "level_price": 23900.0, "hit_type": "NO_HIT",
+                  "direction": "NONE", "ltp_at_signal": None, "trade_status": None, "reason": "level ला स्पर्श आढळला नाही"}
+        cloud_db.save_signal_log(entry)
+        assert mock_cursor.execute.call_count == 2  # SELECT (काहीच सापडलं नाही) + INSERT
+        assert "INSERT INTO signal_log" in mock_cursor.execute.call_args_list[1][0][0]
+
     def test_get_signal_log_returns_dataframe(self, monkeypatch):
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
