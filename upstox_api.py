@@ -542,26 +542,44 @@ def fetch_required_margin(access_token, orders):
         _logger.exception("fetch_required_margin() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
-def fetch_ltp_map(access_token, instrument_keys):
-    """दिलेल्या instrument keys ची सद्य LTP्स एका डिक्शनरीमध्ये (v3 LTP API)."""
+def fetch_ltp_map_detailed(access_token, instrument_keys):
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Token-Expiry/LTP-Fetch Silent Failure) —
+    fetch_ltp_map() सारखंच, पण अयशस्वी झाल्यास **नेमकं का** (उदा. "HTTP 401" — token expire/अवैध
+    झाल्याचं स्पष्ट चिन्ह) हेही caller ला कळावं म्हणून. आधी fetch_ltp_map() फक्त शांतपणे रिकामा dict
+    परत करायचं — 401 (token-समस्या), 5xx (सर्व्हर-समस्या), आणि "200 पण रिकामा डेटा" (उदा. बाजार
+    बंद) या सर्व, पूर्णपणे वेगळ्या परिस्थिती एकाच "रिकामा dict" मध्ये गुडूप व्हायच्या — caller ला
+    (उदा. manage_open_trades()) कधीच कळायचं नाही की उघड्या LIVE positions चं SL/TSL/Target या
+    cycle ला तपासलंच गेलं नाही, आणि का.
+    रिटर्न: (result_dict, error_detail_किंवा_None) — यशस्वी झाल्यास error_detail नेहमी None.
+    """
     if not instrument_keys:
-        return {}
+        return {}, None
     try:
         headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
         keys_param = urllib.parse.quote(",".join(instrument_keys), safe=",|")
         url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={keys_param}"
         res = _get_with_retry(url, headers=headers, timeout=8)
+        if res.status_code != 200:
+            return {}, f"HTTP {res.status_code}: {res.text[:200]}"
+        data = res.json().get("data", {})
         result = {}
-        if res.status_code == 200:
-            data = res.json().get("data", {})
-            for v in data.values():
-                tok = v.get("instrument_token")
-                if tok:
-                    result[tok] = float(v.get("last_price", 0))
-        return result
-    except Exception:
-        _logger.exception("fetch_ltp_map() मध्ये अनपेक्षित चूक (silently handled)")
-        return {}
+        for v in data.values():
+            tok = v.get("instrument_token")
+            if tok:
+                result[tok] = float(v.get("last_price", 0))
+        return result, None
+    except Exception as e:
+        _logger.exception("fetch_ltp_map_detailed() मध्ये अनपेक्षित चूक (silently handled)")
+        return {}, f"Exception: {e}"
+
+
+def fetch_ltp_map(access_token, instrument_keys):
+    """दिलेल्या instrument keys ची सद्य LTP्स एका डिक्शनरीमध्ये (v3 LTP API).
+    🎓 जुनंच, backward-compatible वर्तन — फक्त dict परत करतं, त्रुटीचं कारण हवं असल्यास
+    fetch_ltp_map_detailed() वापरा (manage_open_trades() मध्ये वापरलेलं, token-expiry अलर्टसाठी)."""
+    result, _error_detail = fetch_ltp_map_detailed(access_token, instrument_keys)
+    return result
 
 
 def extract_order_ids(resp):

@@ -730,6 +730,106 @@ class TestManageOpenTradesBrokerRouting:
         assert len(upstox_execute_calls) == 1
 
 
+class TestAlertLtpFetchFailure:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Token-Expiry/LTP-Fetch Silent Failure,
+    गंभीर यादीतला तिसरा मुद्दा) — LTP मिळाली नाही (उदा. token expire) की LIVE trades साठी नेहमी
+    Telegram अलर्ट, PAPER-केवळ trades साठी नाही."""
+
+    def test_no_live_trades_sends_no_alert(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        trading_engine._alert_ltp_fetch_failure("NIFTY", "Option-leg", "HTTP 401: ...", has_live_trades=False)
+        assert not telegram_calls
+
+    def test_401_error_sends_auth_specific_alert(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        trading_engine._alert_ltp_fetch_failure("NIFTY", "Option-leg", "HTTP 401: Unauthorized", has_live_trades=True)
+        assert len(telegram_calls) == 1
+        assert "टोकन समस्या" in telegram_calls[0]
+
+    def test_generic_error_sends_generic_alert(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        trading_engine._alert_ltp_fetch_failure("NIFTY", "Underlying Spot", "Exception: connection reset", has_live_trades=True)
+        assert len(telegram_calls) == 1
+        assert "टोकन समस्या" not in telegram_calls[0]
+        assert "LTP मिळाली नाही" in telegram_calls[0]
+
+    def test_none_error_detail_still_alerts(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        trading_engine._alert_ltp_fetch_failure("NIFTY", "Option-leg", None, has_live_trades=True)
+        assert len(telegram_calls) == 1
+
+
+class TestManageOpenTradesLtpFetchFailureAlerting:
+    """manage_open_trades() मधलं वायरिंग — LTP fetch अयशस्वी झाल्यास योग्य वेळी, योग्य संदर्भासह अलर्ट."""
+
+    def test_option_leg_fetch_empty_with_live_trade_alerts(self, temp_db, monkeypatch):
+        import notifications
+        seed_trade(temp_db, "T60", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        # LIVE trade असल्याने आधी reconcile_open_trades_with_broker() चालतं -- broker कडे अजूनही
+        # ही position उघडी दाखवली नाही, तर आपोआप "बाहेरून बंद झाली" समजून बंद केली जाईल, आणि मग
+        # LTP fetch पर्यंत पोहोचणारच नाही -- म्हणून इथे legs अजून उघड्याच आहेत हे स्पष्ट सांगणे गरजेचं.
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75},
+            {"instrument_token": "PE24300", "quantity": 75},
+        ])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {})
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map_detailed", lambda t, k: ({}, "HTTP 401: Unauthorized"))
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert closed == []  # LTP नसल्याने या cycle ला काहीच बंद होणार नाही
+        assert len(telegram_calls) == 1
+        assert "टोकन समस्या" in telegram_calls[0]
+
+    def test_option_leg_fetch_empty_with_only_paper_trade_no_alert(self, temp_db, monkeypatch):
+        import notifications
+        seed_trade(temp_db, "T61", net_credit=30, sl_level=-1125, target_level=1125, mode="PAPER")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {})
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map_detailed", lambda t, k: ({}, "HTTP 401: Unauthorized"))
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert not telegram_calls
+
+    def test_underlying_spot_fetch_empty_with_live_trade_alerts(self, temp_db, monkeypatch):
+        """underlying_spot न मिळाल्याने trade generic (A1/manual) exit-मार्गाकडे पडतो -- तिथे
+        चुकून SL/Target लागू नये म्हणून sl_level/target_level जाणीवपूर्वक कधीच न गाठता येणारे,
+        आणि EOD-cutoff टाळण्यासाठी वेळ गोठवलेली."""
+        import notifications
+        seed_trade(temp_db, "T62", net_credit=30, sl_level=-1000000, target_level=1000000, mode="LIVE",
+                   source="dynamic_sr_instant", entry_level_price=23900.0, trading_style="INTRADAY")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75},
+            {"instrument_token": "PE24300", "quantity": 75},
+        ])
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)  # UTC 5:00 = IST 10:30 (EOD च्या आधी)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+
+        def fake_fetch_ltp_map(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {}  # underlying spot मिळालाच नाही
+            return {"PE24400": 5.0, "PE24300": 0.0}  # option legs मात्र ठीक
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", fake_fetch_ltp_map)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map_detailed", lambda t, k: ({}, "HTTP 401: Unauthorized"))
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(telegram_calls) == 1
+        assert "Underlying Spot" in telegram_calls[0] or "टोकन समस्या" in telegram_calls[0]
+
+
 class TestAutoReverseFilledLegs:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling, गंभीर
     यादीतला दुसरा मुद्दा) — Multi-leg ऑर्डर मधला काही भाग भरला, काही अयशस्वी झाला तर उरलेला
