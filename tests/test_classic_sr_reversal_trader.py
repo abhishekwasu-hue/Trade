@@ -7,7 +7,7 @@ High/Low, Demand/Supply, Trendline — सर्व Bot Dynamic SR Algo वर�
 अजून backtest-टप्प्यातच असल्याने symbol_enabled डीफॉल्ट सर्व symbols (NIFTY सकट) साठी False आहे.
 """
 import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -424,3 +424,39 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "fetch_candles", return_value=pd.DataFrame()):
             result = csr.process_symbol("fake_token", "NIFTY")
             assert "मिळाले नाहीत" in result
+
+
+class TestRunAllSymbols:
+    """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py प्रमाणेच इथेही — एका
+    symbol मधल्या अनपेक्षित exception मुळे उरलेले symbols त्याच cycle मध्ये कधीच तपासलेच जायचे
+    नाहीत, आणि heartbeat/अलर्टही कधीच पोहोचायचा नाही. आता प्रत्येक symbol स्वतंत्र."""
+
+    def test_one_symbol_exception_does_not_block_the_rest(self, monkeypatch):
+        calls = []
+
+        def fake_process_symbol(token, symbol):
+            calls.append(symbol)
+            if symbol == "BANKNIFTY":
+                raise RuntimeError("database is locked")
+            return f"{symbol}: ok"
+
+        monkeypatch.setattr(csr, "process_symbol", fake_process_symbol)
+        mock_notify = MagicMock()
+        monkeypatch.setattr(csr, "notify_error", mock_notify)
+
+        result = csr.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY", "SENSEX"])
+
+        assert calls == ["NIFTY", "BANKNIFTY", "SENSEX"]
+        assert result is True
+        assert mock_notify.called
+        assert "BANKNIFTY" in mock_notify.call_args.args[1]
+
+    def test_all_symbols_failing_returns_false(self, monkeypatch):
+        def fake_process_symbol(token, symbol):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(csr, "process_symbol", fake_process_symbol)
+        monkeypatch.setattr(csr, "notify_error", MagicMock())
+
+        result = csr.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY"])
+        assert result is False

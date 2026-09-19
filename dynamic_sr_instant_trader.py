@@ -29,7 +29,7 @@ import pandas as pd
 import cloud_db
 from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
-from notifications import send_telegram_message, write_heartbeat
+from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate
 from process_lock import ProcessLock, ProcessLockHeld
@@ -348,6 +348,26 @@ def process_symbol(access_token, symbol, lot_size=65):
     return f"{symbol}: 🎯 " + "; ".join(outcomes)
 
 
+def run_all_symbols(token, symbols):
+    """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — trade_monitor.py प्रमाणेच प्रत्येक symbol स्वतंत्रपणे
+    try/except मध्ये असायला हवा होता, पण आधी थेट `__main__` मध्ये एकच बिनसंरक्षित loop होता — एका
+    symbol मध्ये अनपेक्षित exception (उदा. SQLite "database is locked", network glitch) आलं की
+    उरलेले symbols त्याच cycle मध्ये कधीच तपासलेच जायचे नाहीत (loop तिथेच थांबायचा), आणि हे function
+    कॉल करणाऱ्या कडचा write_heartbeat() सुद्धा कधीच पोहोचायचा नाही — कुठलाही Telegram अलर्टही नाही,
+    म्हणजे bot शांतपणे तास-न्-तास "मृत" राहू शकत होता, कुणालाही न कळता. आता स्वतंत्र function (test
+    करता यावं म्हणून) — प्रत्येक symbol वेगळा, एकाची चूक बाकीच्यांना अडवत नाही, अपयशी झाल्यास
+    Telegram अलर्ट. रिटर्न: किमान एक symbol यशस्वी झाला का (heartbeat लिहायचा का ठरवण्यासाठी)."""
+    any_symbol_succeeded = False
+    for symbol in symbols:
+        try:
+            print(process_symbol(token, symbol.strip()))
+            any_symbol_succeeded = True
+        except Exception as e:
+            notify_error("dynamic_sr_instant_trader", f"{symbol.strip()}: {e}")
+            print(f"⚠️ {symbol.strip()}: अनपेक्षित त्रुटी — {e}")
+    return any_symbol_succeeded
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
@@ -370,9 +390,9 @@ if __name__ == "__main__":
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
                 exit(1)
-            for symbol in args.symbols.split(","):
-                print(process_symbol(token, symbol.strip()))
-            write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+            any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
+            if any_symbol_succeeded:
+                write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup) —
             # आधी हे फक्त Dashboard उघडं असतानाच चालायचं; VPS crontab वर दिवसांदिवस Dashboard न
             # उघडताही चालणाऱ्या या bot कडून आता दर तासाला (Google Drive configured असेल तरच) आपोआप.
