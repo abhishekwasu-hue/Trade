@@ -150,6 +150,72 @@ def normalize_legs(strategy_result):
          "expiry": strategy_result["short_leg"].get("expiry")},
     ]
 
+def _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product_type, symbol):
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling) —
+    Multi-leg ऑर्डर मधला काही legs भरले, काही अयशस्वी झाले (resp["status"]=="partial_failure",
+    upstox_api.py च्या Order Fill Verification वरून) — तर उरलेला "अर्धवट" (unhedged, नुसता naked)
+    भाग शक्य तितक्या लवकर, स्वयंचलितपणे, जे भरले तेच legs उलट दिशेने (SELL<->BUY, MARKET) बंद
+    (square-off) करतो — आणि Telegram वर नेहमी कळवतो (यशस्वी झालं किंवा अयशस्वी, दोन्ही स्थितीत
+    वापरकर्त्याला कळायलाच हवं). कुठलाही trade live_trades मध्ये साठवला जात नाही (मूळ, हेतू असलेली
+    position कधीच पूर्णपणे उभी राहिलीच नाही) — फक्त order_log मध्ये (log_orders_batch द्वारे)
+    reversal-प्रयत्नाची नोंद.
+    """
+    from notifications import send_telegram_message
+    filled_legs = [
+        leg for leg in resp.get("verified_legs", [])
+        if leg.get("status") == "complete" and leg.get("instrument_token") and leg.get("quantity")
+    ]
+    if not filled_legs:
+        try:
+            send_telegram_message(
+                f"🔴 <b>{symbol} — Multi-leg ऑर्डर पूर्णपणे अयशस्वी</b> — एकही leg भरला गेला नाही. "
+                "कुठलीही उघडी position तयार झालेली नाही."
+            )
+        except Exception:
+            _logger.exception("_auto_reverse_filled_legs() मध्ये अनपेक्षित चूक (silently handled)")
+        return
+
+    reversal_orders = [
+        {
+            "quantity": leg["quantity"], "product": leg.get("product") or product_type, "validity": "DAY", "price": 0,
+            "tag": "AUTO_REVERSE_PARTIAL", "instrument_token": leg["instrument_token"],
+            "order_type": "MARKET",
+            "transaction_type": ("SELL" if leg.get("transaction_type") == "BUY" else "BUY"),
+            "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
+            "correlation_id": uuid.uuid4().hex[:20],
+        }
+        for leg in filled_legs
+    ]
+    reversal_status, reversal_resp = (adapter.execute_order_leg_set(reversal_orders, trading_mode) if adapter is not None
+                                       else execute_order_leg_set(access_token, reversal_orders, trading_mode))
+    reversal_ok = reversal_status == 200 and reversal_resp.get("status") == "success"
+    legs_desc = ", ".join(leg["instrument_token"] for leg in filled_legs)
+
+    try:
+        reversal_order_ids = extract_order_ids(reversal_resp) if isinstance(reversal_resp, dict) else []
+        log_orders_batch(
+            reversal_order_ids, f"AUTO_REVERSE_{int(time.time())}", symbol, trading_mode, reversal_orders,
+            status="COMPLETE" if reversal_ok else "FAILED",
+        )
+    except Exception:
+        _logger.exception("_auto_reverse_filled_legs() मध्ये अनपेक्षित चूक (silently handled)")
+
+    try:
+        if reversal_ok:
+            send_telegram_message(
+                f"🟠 <b>{symbol} — Multi-leg ऑर्डर अंशतः अयशस्वी</b> — {len(filled_legs)} leg(s) भरले होते "
+                f"({legs_desc}), बाकीचे अयशस्वी. आपोआप उलट ऑर्डर टाकून ते बंद (square-off) केले — ✅ यशस्वी."
+            )
+        else:
+            send_telegram_message(
+                f"🔴 <b>{symbol} — गंभीर! Multi-leg ऑर्डर अंशतः अयशस्वी, आणि आपोआप बंद करण्याचा प्रयत्नही अयशस्वी!</b>\n"
+                f"उघडे legs: {legs_desc}\nकृपया तात्काळ Upstox app/website उघडून स्वतः बंद करा."
+            )
+    except Exception:
+        _logger.exception("_auto_reverse_filled_legs() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
@@ -187,6 +253,15 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     ]
     status_code, resp = (adapter.execute_order_leg_set(orders, trading_mode) if adapter is not None
                           else execute_order_leg_set(access_token, orders, trading_mode))
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling, गंभीर
+    # यादीतला दुसरा मुद्दा) — Order Fill Verification (upstox_api.py) मुळे आता कळू शकतं की multi-leg
+    # ऑर्डर मधला काही भाग भरला, काही अयशस्वी झाला (उदा. मार्जिन कमी पडलं, एक strike illiquid) —
+    # असा "अर्धवट, unhedged" भाग तसाच उघडा राहू देणं सर्वात धोकादायक. लगेच, स्वयंचलितपणे जे भरले
+    # तेच legs उलट दिशेने बंद (square-off) करतो, आणि Telegram वर कळवतो (यशस्वी किंवा अयशस्वी दोन्ही
+    # स्थितीत). PAPER mode/इतर brokers (जिथे verification अजून लागू नाही) साठी resp["status"] कधीच
+    # "partial_failure" येणार नाही — त्यामुळे हे पूर्णपणे additive, फक्त Upstox LIVE साठीच सक्रिय.
+    if resp.get("status") == "partial_failure":
+        _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product_type, symbol)
     if status_code != 200 or resp.get("status") != "success":
         return False, resp
 
