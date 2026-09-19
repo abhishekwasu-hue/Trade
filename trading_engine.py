@@ -8,7 +8,10 @@ import uuid
 import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
-from database import log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources
+from database import (
+    log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
+    get_unverified_reconciled_trades_today_count,
+)
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
     extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
@@ -227,6 +230,18 @@ def check_kill_switch():
     settings = cloud_db.get_kill_switch_settings()
     if not settings.get("enabled", True):
         return True, None
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconciliation ने externally
+    # बंद केलेल्या trades चा realized_pnl कधीच कळत नाही (NULL राहतो), त्यामुळे तो तोटा वरच्या SUM
+    # मध्ये कधीच धरलाच जात नाही — "आजचा तोटा ₹0" चुकीने दिसू शकतो, ज्या दिवशी खरंच मोठा तोटा झालेला
+    # असेल त्याच दिवशी. अंदाजे आकडा गृहीत धरण्यापेक्षा, अशा वेळी नवीन LIVE trading थांबवणंच सुरक्षित.
+    unverified_count = get_unverified_reconciled_trades_today_count()
+    if unverified_count > 0:
+        return False, (
+            f"KILL_SWITCH_UNVERIFIED_PNL — आज {unverified_count} LIVE trade(s) Upstox app/website "
+            f"वरून थेट बंद झालेल्या दिसतात, पण त्यांचा खरा नफा/तोटा अजून नोंदवलेला नाही — आजचा एकूण "
+            f"तोटा अचूक मोजता येत नसल्याने नवीन LIVE trades थांबवले. कृपया Dashboard/Upstox वरून "
+            f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
+        )
     total_pnl, total_trades = get_todays_live_total_pnl_and_count()
     max_daily_loss = settings.get("max_daily_loss", 10000)
     max_trades_per_day = settings.get("max_trades_per_day", 15)
@@ -382,14 +397,33 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         return False, resp
 
     order_ids = extract_order_ids(resp)
-    max_loss_total = strategy_result["max_loss"] * lot_size
-    max_profit_total = strategy_result["max_profit"] * lot_size
-    net_credit_total = strategy_result["net_credit"] * lot_size
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — इथे आधी फक्त
+    # lot_size नेच गुणलं जायचं, lots ने नाही. पण manage_open_trades() मधला current_pnl
+    # (exit-वेळी प्रत्यक्ष तुलना होणारा) नेहमी `* lots * lot_size` असतो (बघा वरचा
+    # net_credit_total, ओळ ~741). त्यामुळे lots>1 असेल, तर SL/Target रकमेत lots गुणलाच जायचा नाही
+    # — म्हणजे intended रकमेच्या फक्त 1/lots इतक्याच हालचालीवर SL/Target लगेच trigger व्हायचा
+    # (उदा. lots=3 → SL तिप्पट लवकर, Target तिप्पट लवकर) — जितके lots जास्त, तितकी चूक मोठी.
+    max_loss_total = strategy_result["max_loss"] * lots * lot_size
+    # 🎓 Naked Option (hedge नसलेला buy) साठी max_profit=None असतो (theoretically
+    # unbounded — strategy.py.select_naked_option_itm() बघा) — None * lots क्रॅश व्हायचा, आणि तो
+    # क्रॅश प्रत्यक्ष order Upstox कडे गेल्यानंतर, database मध्ये trade साठवण्याआधी व्हायचा — म्हणजे
+    # खरा पैसा गेलेला, पण bot ला त्या trade चं अस्तित्वच माहीत नाही (SL/Target/EOD काहीच लागू होत
+    # नाही). आता None सुरक्षितपणे हाताळला जातो — max_profit_total/target_pnl_level दोन्ही None
+    # राहतात (unbounded-profit trade साठी % target गणिताला अर्थच नाही — SL/Trailing-SL/EOD अजूनही
+    # लागू होतातच, फक्त निश्चित profit-target नाही).
+    max_profit_total = (strategy_result["max_profit"] * lots * lot_size) if strategy_result["max_profit"] is not None else None
+    net_credit_total = strategy_result["net_credit"] * lots * lot_size
     if sl_pct_of_credit is not None:
-        sl_pnl_level = -(net_credit_total * (sl_pct_of_credit / 100.0))
+        # 🎓 Naked Option साठी net_credit ऋण (debit, buy_leg["ltp"] इतका) असतो,
+        # Credit Spread साठी धन (credit) — abs() शिवाय naked trades साठी sl_pnl_level
+        # चुकून धन यायचा, त्यामुळे entry नंतर लगेचच (कुठलीही खरी किंमत-हालचाल
+        # न होताच) SL trigger व्हायचा (current_pnl <= sl_pnl_level
+        # पहिल्याच तपासणीलाच खरं ठरायचं). आता abs() मुळे दोन्ही केसेससाठी SL
+        # पातळी नेहमी योग्य ऋण (तोटा) असते.
+        sl_pnl_level = -(abs(net_credit_total) * (sl_pct_of_credit / 100.0))
     else:
         sl_pnl_level = -(max_loss_total * (sl_pct_of_max_loss / 100.0))
-    target_pnl_level = max_profit_total * (target_pct_of_max_profit / 100.0)
+    target_pnl_level = (max_profit_total * (target_pct_of_max_profit / 100.0)) if max_profit_total is not None else None
     strikes_summary = " · ".join(f"{leg['role']}:{leg['strike']:.0f}" for leg in legs)
 
     trade_id = f"{'PAPER' if trading_mode == 'PAPER' else symbol}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
@@ -1162,7 +1196,18 @@ def reconcile_open_trades_with_broker(access_token, symbol):
     if positions is None:
         return [], "Upstox कडून Positions मिळाल्या नाहीत (token/नेटवर्क तपासा) — reconciliation करता आलं नाही."
 
-    broker_open_keys = {p.get("instrument_token") for p in positions if p.get("quantity", 0) != 0}
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — आधी `broker_open_keys` मध्ये
+    # फक्त धन quantity असलेले instruments असायचे, आणि कुठलाही leg त्या यादीत *नसेल* (मग तो broker कडे
+    # खरंच बंद असो, किंवा response मध्ये नुसताच गहाळ/अपूर्ण असो — दोन्ही सारखेच दिसायचे) तर trade
+    # CLOSED मार्क व्हायचा. एकच रिकामा/अर्धवट response (क्षणिक network glitch, किंवा carry-forward
+    # झालेली position "short-term-positions" API मध्ये त्या दिवशी दिसलीच नाही तरीही) — आणि सर्वच्या
+    # सर्व OPEN LIVE trades एकाच वेळी CLOSED होऊन जायच्या, पुढे SL/Target/EOD काहीच लागू न होता
+    # unmanaged राहायच्या. आता फक्त तीच position CLOSED मार्क होते, जिच्या **सर्व** legs broker कडून
+    # स्पष्टपणे quantity=0 सह कळवलेल्या असतात (नुसतं यादीत नसणं पुरेसं नाही) — एखादा leg response मध्ये
+    # गहाळ असेल, तर ती trade सुरक्षिततेसाठी OPEN च राहते (manage_open_trades चं SL/Target/EOD अजूनही
+    # लागू राहतं) — जास्तीत जास्त एखादी खरोखर जुनी बंद झालेली trade DB मध्ये चुकून "OPEN" दिसत राहणं
+    # (manual साफसफाई लागेल), पण कधीच खरी उघडी position "बंद" समजून अनियंत्रित सोडली जाणार नाही.
+    broker_flat_keys = {p.get("instrument_token") for p in positions if p.get("quantity", 0) == 0}
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1177,8 +1222,8 @@ def reconcile_open_trades_with_broker(access_token, symbol):
         legs = json.loads(legs_json_str) if legs_json_str else []
         if not legs:
             continue
-        still_open_at_broker = any(leg["instrument_key"] in broker_open_keys for leg in legs)
-        if not still_open_at_broker:
+        all_legs_confirmed_flat = all(leg["instrument_key"] in broker_flat_keys for leg in legs)
+        if all_legs_confirmed_flat:
             cur.execute(
                 """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='RECONCILED_EXTERNAL_CLOSE'
                    WHERE trade_id=?""",

@@ -625,6 +625,101 @@ class TestCorrelationIdInOrders:
             assert "correlation_id" in o and o["correlation_id"]
 
 
+class TestSlTargetLevelsPreLiveFixes:
+    """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडलेले, थेट पैशाशी संबंधित
+    bugs (तीनही स्वतंत्र review-agents नी दुजोरा दिलेले) — open_multi_leg_trade() मधले
+    sl_pnl_level/target_pnl_level फक्त lot_size ने गुणले जायचे, lots ने नाही; आणि Naked Option
+    (hedge नसलेला buy, max_profit=None) साठी None*lot_size क्रॅश व्हायचा -- तोही order Upstox कडे
+    प्रत्यक्ष गेल्यानंतर, database मध्ये trade साठवण्याआधी."""
+
+    def _capture(self, monkeypatch):
+        captured = {}
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {kk: 50.0 for kk in k})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set",
+                             lambda t, o, m: (200, {"status": "success", "data": {"order_ids": ["T1", "T2"]}}))
+        return captured
+
+    def _stored_levels(self, tmpdb, trade_id):
+        conn = sqlite3.connect(tmpdb)
+        row = conn.execute(
+            "SELECT sl_pnl_level, target_pnl_level, max_profit, max_loss FROM live_trades WHERE trade_id=?",
+            (trade_id,),
+        ).fetchone()
+        conn.close()
+        return row
+
+    def test_sl_target_levels_scale_with_lots_not_just_lot_size(self, temp_db, monkeypatch):
+        """lots=3 सह घेतलेल्या credit-spread trade चे sl_pnl_level/target_pnl_level, lots=1 च्या
+        बरोबर 3 पटच असायला हवेत -- manage_open_trades() मधला current_pnl नेहमी `* lots * lot_size`
+        असतो (net_credit_total, ओळ ~741), त्यामुळे तुलना योग्य रकमेशीच व्हायला हवी."""
+        self._capture(monkeypatch)
+        strategy_result = {
+            "strategy": "BULL_PUT_SPREAD",
+            "short_leg": {"strike": 24400, "instrument_key": "PE24400", "ltp": 50},
+            "long_leg": {"strike": 24300, "instrument_key": "PE24300", "ltp": 25},
+            "net_credit": 25, "max_profit": 25, "max_loss": 75,
+        }
+        ok, result = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", strategy_result, lots=3, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="PAPER", trading_style="SWING", sl_pct_of_credit=100,
+        )
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        sl_level, target_level = row
+        # net_credit_total (lots=3) = 25 * 3 * 75 = 5625; sl_pct_of_credit=100 -> sl_pnl_level = -5625
+        assert sl_level == -5625.0
+        # max_profit_total (lots=3) = 25 * 3 * 75 = 5625; target_pct=80% -> 4500
+        assert target_level == 4500.0
+
+    def test_naked_option_without_hedge_does_not_crash_on_none_max_profit(self, temp_db, monkeypatch):
+        """🎓 Naked Option (hedge नसलेला, डीफॉल्ट settings) साठी strategy.py.select_naked_option_itm()
+        max_profit=None (unbounded) रिटर्न करतं -- यामुळे आधी None*lots*lot_size TypeError यायचा,
+        प्रत्यक्ष order Upstox कडे गेल्यानंतर, DB insert च्या आधी. आता क्रॅश होता कामा नये, आणि
+        target_pnl_level None (unbounded profit साठी % target चा अर्थच नाही) साठवला जायला हवा."""
+        self._capture(monkeypatch)
+        naked_result = {
+            "strategy": "NAKED_CALL", "buy_leg": {"strike": 24000, "instrument_key": "CE24000", "ltp": 150},
+            "net_credit": -150.0, "max_profit": None, "max_loss": 150.0,
+        }
+        ok, result = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", naked_result, lots=2, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", sl_pct_of_credit=100,
+        )
+        assert ok is True  # क्रॅश झाला नाही
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        sl_level, target_level = row
+        assert target_level is None  # unbounded profit -- fixed % target साठवला जाऊ नये
+        # 🎓 net_credit ऋण (debit, -150) असल्याने abs() शिवाय sl_pnl_level चुकून धन यायचा (entry
+        # नंतर लगेचच खोटा SL trigger व्हायचा). net_credit_total = -150*2*75 = -22500;
+        # sl_pct_of_credit=100 -> sl_pnl_level = -(abs(-22500)*1.0) = -22500 (ऋणच, योग्य).
+        assert sl_level == -22500.0
+
+    def test_naked_option_sl_level_is_negative_not_positive(self, temp_db, monkeypatch):
+        """🎓 विशेषतः sign-fix तपासण्यासाठी -- fix आधी sl_pnl_level धन (+22500) यायचा, ज्यामुळे
+        current_pnl <= sl_pnl_level ही तुलना entry नंतर लगेचच (कुठलीही खरी किंमत-हालचाल न होताच)
+        खरी ठरायची -- म्हणजे प्रत्येक naked trade उघडल्याक्षणीच चुकीने STOP_LOSS ने बंद व्हायचा."""
+        self._capture(monkeypatch)
+        naked_result = {
+            "strategy": "NAKED_PUT", "buy_leg": {"strike": 24500, "instrument_key": "PE24500", "ltp": 120},
+            "net_credit": -120.0, "max_profit": None, "max_loss": 120.0,
+        }
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", naked_result, lots=1, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", sl_pct_of_credit=100,
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        assert row[0] < 0  # कधीच धन नसावा
+
+
 class TestReconcileOpenTradesWithBroker:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — Upstox च्या स्वतःच्या
     app/website वरून थेट बंद केलेली position आपल्याच database मध्ये आपोआप "CLOSED" करणे —
@@ -694,6 +789,43 @@ class TestReconcileOpenTradesWithBroker:
         reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
         assert reconciled == []
         assert error != ""
+
+    def test_empty_positions_response_does_not_close_everything(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडवलेली, अत्यंत गंभीर
+        bug (तीनही agents पैकी एकाने सापडवलेली) — fetch_broker_positions() 200 status सह रिकामी यादी
+        ([], None नाही) रिटर्न करतं तेव्हाही (क्षणिक glitch, किंवा carry-forward झालेली position
+        "short-term-positions" API मध्ये त्या दिवशी दिसलीच नाही तरीही) — आधी `positions is None`
+        तपासणी हे पकडायचीच नाही, आणि रिकाम्या यादीमुळे प्रत्येक leg "broker कडे नाही" ठरून सर्वच्या
+        सर्व OPEN LIVE trades एकाच झटक्यात (चुकीने) CLOSED व्हायच्या -- पुढे SL/Target/EOD काहीच लागू
+        न होता, खरी उघडी position कायमची अनियंत्रित राहायची. आता रिकामी/अपूर्ण यादी कुठलाही trade
+        बंद करत नाही -- फक्त explicit quantity=0 सापडलेली position तशीच गणली जाते."""
+        seed_trade(temp_db, "T24", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [])
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
+        assert error == ""
+        assert reconciled == []  # आधी इथे ["T24"] यायचं -- चुकीने बंद
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status FROM live_trades WHERE trade_id='T24'").fetchone()
+        conn.close()
+        assert row == ("OPEN",)
+
+    def test_leg_missing_from_response_entirely_does_not_reconcile(self, temp_db, monkeypatch):
+        """response मध्ये leg चा उल्लेखच नसेल (quantity=0 सहही नाही, पूर्णपणे गहाळ) -- ती leg
+        "explicitly बंद" म्हणून कधीच गणली जाऊ नये, फक्त response मध्ये स्पष्टपणे quantity=0 दिलेली
+        असेल तरच."""
+        seed_trade(temp_db, "T25", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": 0},
+            # PE24300 (दुसरी leg) यादीत पूर्णपणे गहाळ -- quantity=0 सहही नमूद नाही
+        ])
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
+        assert reconciled == []
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status FROM live_trades WHERE trade_id='T25'").fetchone()
+        conn.close()
+        assert row == ("OPEN",)
 
 
 class TestManageOpenTradesBrokerRouting:
@@ -991,6 +1123,7 @@ class TestCheckKillSwitch:
     def test_disabled_always_ok_regardless_of_pnl(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss": 100, "max_trades_per_day": 1})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-999999, 999))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is True
         assert reason is None
@@ -998,6 +1131,7 @@ class TestCheckKillSwitch:
     def test_daily_loss_breached_blocks(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-6000, 2))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False
         assert "KILL_SWITCH_DAILY_LOSS" in reason
@@ -1005,6 +1139,7 @@ class TestCheckKillSwitch:
     def test_max_trades_breached_blocks(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (500, 15))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False
         assert "KILL_SWITCH_MAX_TRADES" in reason
@@ -1012,9 +1147,23 @@ class TestCheckKillSwitch:
     def test_within_limits_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-100, 3))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is True
         assert reason is None
+
+    def test_unverified_reconciled_trades_blocks_even_within_pnl_limits(self, monkeypatch):
+        """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडवलेली bug —
+        reconcile_open_trades_with_broker() externally बंद झालेल्या trade चा realized_pnl कधीच
+        साठवत नाही (NULL राहतो), त्यामुळे तो तोटा COALESCE(SUM(...),0) मधून वगळला जातो —
+        "आजचा तोटा ₹0" (मर्यादेच्या आतच) दिसत असला, तरी असे unverified trades असतील तर
+        नवीन LIVE trading थांबायलाच हवं (fail-safe)."""
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (0, 1))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 1)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_UNVERIFIED_PNL" in reason
 
 
 class TestOpenMultiLegTradeKillSwitch:
