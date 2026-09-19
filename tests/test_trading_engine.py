@@ -730,6 +730,153 @@ class TestManageOpenTradesBrokerRouting:
         assert len(upstox_execute_calls) == 1
 
 
+class TestAutoReverseFilledLegs:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling, गंभीर
+    यादीतला दुसरा मुद्दा) — Multi-leg ऑर्डर मधला काही भाग भरला, काही अयशस्वी झाला तर उरलेला
+    अर्धवट (unhedged) भाग लगेच स्वयंचलितपणे बंद (square-off) करायला हवा, आणि Telegram वर नेहमी
+    कळवायला हवं."""
+
+    def _partial_resp(self, legs):
+        return {"status": "partial_failure", "verified_legs": legs}
+
+    def test_no_filled_legs_sends_plain_alert_no_reversal_attempted(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(o) or (200, {"status": "success"}))
+
+        trading_engine._auto_reverse_filled_legs(
+            "fake_token", None, {"status": "error", "verified_legs": [
+                {"order_id": "O1", "status": "rejected", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+            ]},
+            "LIVE", "D", "NIFTY",
+        )
+        assert not execute_calls  # कुठलाही reversal-ऑर्डर पाठवायचा प्रश्नच नाही -- काहीच भरलं नाही
+        assert len(telegram_calls) == 1
+        assert "पूर्णपणे अयशस्वी" in telegram_calls[0]
+
+    def test_partial_fill_reversal_succeeds_sends_success_alert(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        reversal_orders_sent = []
+
+        def fake_execute(token, orders, mode):
+            reversal_orders_sent.append(orders)
+            return 200, {"status": "success", "data": [{"order_id": "REV1"}]}
+
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+
+        filled_legs = [
+            {"order_id": "O1", "status": "complete", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+        ]
+        trading_engine._auto_reverse_filled_legs("fake_token", None, self._partial_resp(filled_legs), "LIVE", "D", "NIFTY")
+
+        assert len(reversal_orders_sent) == 1
+        reversal_order = reversal_orders_sent[0][0]
+        assert reversal_order["instrument_token"] == "PE24400"
+        assert reversal_order["transaction_type"] == "BUY"  # मूळ SELL leg -- उलट दिशा
+        assert reversal_order["quantity"] == 75
+        assert len(telegram_calls) == 1
+        assert "अंशतः अयशस्वी" in telegram_calls[0]
+        assert "✅ यशस्वी" in telegram_calls[0]
+
+    def test_partial_fill_reversal_fails_sends_critical_alert(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (500, {"status": "error"}))
+
+        filled_legs = [
+            {"order_id": "O1", "status": "complete", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+        ]
+        trading_engine._auto_reverse_filled_legs("fake_token", None, self._partial_resp(filled_legs), "LIVE", "D", "NIFTY")
+
+        assert len(telegram_calls) == 1
+        assert "गंभीर" in telegram_calls[0]
+        assert "PE24400" in telegram_calls[0]
+
+    def test_uses_adapter_when_given_not_raw_access_token(self, monkeypatch):
+        import notifications
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
+        upstox_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: upstox_calls.append(1) or (200, {"status": "success"}))
+        mock_adapter = MagicMock()
+        mock_adapter.execute_order_leg_set.return_value = (200, {"status": "success", "data": [{"order_id": "REV1"}]})
+
+        filled_legs = [
+            {"order_id": "O1", "status": "complete", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+        ]
+        trading_engine._auto_reverse_filled_legs("fake_token", mock_adapter, self._partial_resp(filled_legs), "LIVE", "D", "NIFTY")
+
+        assert mock_adapter.execute_order_leg_set.called
+        assert not upstox_calls
+
+
+class TestOpenMultiLegTradePartialFailure:
+    """open_multi_leg_trade() ने resp["status"]=="partial_failure" ओळखून auto-reversal ट्रिगर
+    करायलाच हवं, आणि कुठलाही trade live_trades मध्ये साठवला जाऊ नये (मूळ position कधीच पूर्ण
+    उभी राहिलीच नाही)."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_partial_failure_triggers_reversal_and_returns_false(self, temp_db, monkeypatch):
+        import notifications
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
+        partial_resp = {
+            "status": "partial_failure",
+            "verified_legs": [
+                {"order_id": "O1", "status": "complete", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+                {"order_id": "O2", "status": "rejected", "instrument_token": "PE24300", "transaction_type": "BUY", "quantity": 75, "product": "D"},
+            ],
+        }
+        reversal_calls = []
+
+        def execute_side_effect(token, orders, mode, _call=[0]):
+            _call[0] += 1
+            if _call[0] == 1:
+                return 200, partial_resp
+            reversal_calls.append(orders)
+            return 200, {"status": "success", "data": [{"order_id": "REV1"}]}
+
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", execute_side_effect)
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert len(reversal_calls) == 1
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT COUNT(*) FROM live_trades").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_full_failure_zero_filled_legs_does_not_call_reversal_helper(self, temp_db, monkeypatch):
+        error_resp = {"status": "error", "verified_legs": [
+            {"order_id": "O1", "status": "rejected", "instrument_token": "PE24400", "transaction_type": "SELL", "quantity": 75, "product": "D"},
+        ]}
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda token, orders, mode: (200, error_resp))
+        reversal_called = []
+        monkeypatch.setattr(trading_engine, "_auto_reverse_filled_legs", lambda *a, **k: reversal_called.append(1))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert not reversal_called  # "error" (0 legs भरले) -- partial_failure नाही, वेगळा मार्ग
+
+
 class TestEvaluatePointSpotExit:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — Spot% +
     Premium-Points combined exit-गणित, Credit Spread आणि Naked Buy दोन्हींसाठी, TSL-to-Breakeven

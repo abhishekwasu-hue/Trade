@@ -681,13 +681,19 @@ def execute_order_leg_set(access_token, orders, trading_mode):
     Circuit Breaker, Position Sizing सगळं) एकसारखंच राहील — फक्त ऑर्डर प्रत्यक्षात Upstox कडे
     जाते की नाही, इतकाच फरक असतो.
 
-    trading_mode == "LIVE": खरा Upstox Multi Order API कॉल (Static IP Proxy मार्गे).
+    trading_mode == "LIVE": खरा Upstox Multi Order API कॉल (Static IP Proxy मार्गे) — त्यानंतर लगेच
+    प्रत्येक leg चा order_id GET /v2/order/details ने पोल करून खरी (terminal) स्थिती तपासली जाते
+    (_verify_and_annotate_fills — वर बघा) — resp["status"]="success" आता फक्त सर्वच legs खरोखर
+    'complete' असतील तरच.
     trading_mode == "PAPER": कोणताही खरा API कॉल न करता, प्रत्येक leg ची सध्याची मार्केट LTP आणून
     त्यावरच तात्काळ भरलेली (filled) सिम्युलेटेड ऑर्डर तयार करणे — त्यामुळे किंमती खऱ्याच बाजारातल्या
-    असतात, फक्त पैसे हलत नाहीत.
+    असतात, फक्त पैसे हलत नाहीत (verification ची गरजच नाही, खरा order कधीच जात नाही).
     """
     if trading_mode == "LIVE":
-        return place_multi_leg_order(access_token, orders)
+        status_code, resp = place_multi_leg_order(access_token, orders)
+        if status_code == 200 and isinstance(resp, dict) and resp.get("status") == "success":
+            resp = _verify_and_annotate_fills(access_token, orders, resp)
+        return status_code, resp
 
     instrument_keys = [o["instrument_token"] for o in orders]
     ltp_map = fetch_ltp_map(access_token, instrument_keys)
@@ -722,6 +728,102 @@ def place_multi_leg_order(access_token, orders):
         return res.status_code, body
     except Exception as e:
         return None, {"error": str(e)}
+
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Order Fill Verification, गंभीर यादीतला
+# पहिला मुद्दा) — Upstox च्या Multi Order API चं तात्काळ "200 success" उत्तर फक्त "ऑर्डर broker कडे
+# स्वीकारला गेला" इतकंच सांगतं — "प्रत्यक्ष भरला (filled) गेला" हे नाही. आधी आपण हेच शांतपणे
+# "यशस्वी" गृहीत धरायचो — म्हणजे नंतर broker कडून नाकारलेला (rejected) order सुद्धा live_trades
+# मध्ये "OPEN" म्हणून साठवला जायचा, आणि कुणालाच कधी कळायचं नाही. MARKET order असल्याने Upstox कडून
+# अंतिम (terminal) स्थिती जवळजवळ तात्काळ मिळते — त्यामुळे "complete"/"rejected"/"cancelled" यापैकी
+# कुठलीतरी मिळेपर्यंत, कमी वेळ (सेकंदांत) थांबून पुन्हा-पुन्हा तपासणे — Upstox च्या अधिकृत
+# डॉक्युमेंटेशनमधले (Order Status Appendix) संभाव्य status मूल्यं.
+ORDER_TERMINAL_STATUSES = {"complete", "rejected", "cancelled"}
+
+
+def get_order_details(access_token, order_id):
+    """एका specific order_id ची सद्य स्थिती (status/filled_quantity/average_price) — Upstox च्या
+    GET /v2/order/details वरून. मिळाली नाही (नेटवर्क/एरर) तर None — caller ने पुन्हा पोल करावं."""
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        proxy_url = get_static_ip_proxy_url()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        res = _get_with_retry(
+            f"https://api.upstox.com/v2/order/details?order_id={order_id}",
+            headers=headers, timeout=8, proxies=proxies,
+        )
+        if res.status_code == 200:
+            return res.json().get("data")
+        return None
+    except Exception:
+        _logger.exception("get_order_details() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+
+
+def poll_order_fill(access_token, order_id, max_attempts=6, delay_seconds=0.5):
+    """दिलेला order_id 'complete'/'rejected'/'cancelled' या अंतिम (terminal) स्थितीपर्यंत
+    पोहोचेपर्यंत, कमी अंतराने (MARKET orders जवळजवळ तात्काळ भरतात, त्यामुळे डीफॉल्ट ६ प्रयत्न × ०.५
+    सेकंद = जास्तीत जास्त ~३ सेकंद पुरेसे) पुन्हा-पुन्हा तपासणे.
+    रिटर्न: शेवटची मिळालेली order details (dict, 'status' key सह) — अंतिम स्थिती वेळेत न मिळाल्यास
+    शेवटची (अजूनही अनिश्चित) स्थितीच जशीच्या तशी; काहीच मिळालं नाही तर None."""
+    last = None
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            time.sleep(delay_seconds)
+        details = get_order_details(access_token, order_id)
+        if details is not None:
+            last = details
+            if details.get("status") in ORDER_TERMINAL_STATUSES:
+                return last
+    return last
+
+
+def _verify_and_annotate_fills(access_token, orders, resp):
+    """LIVE Multi Order API च्या तात्काळ यशस्वी प्रतिसादानंतर, प्रत्येक leg चा order_id घेऊन
+    (Upstox च्या प्रतिसादातल्याच correlation_id वरून submitted `orders` शी जोडून — Upstox अंतर्गत
+    BUY-आधी-SELL क्रमाने पाठवतो, म्हणजे प्रतिसादाचा क्रम submitted क्रमाशी जुळेलच असं नाही, correlation_id
+    हाच विश्वासार्ह जोडणारा दुवा) त्याची खरी (terminal) स्थिती तपासणे.
+    resp["status"] फक्त सर्वच legs खरोखर 'complete' असतील तरच 'success' राहतो — एकही leg
+    rejected/cancelled/अनिश्चित असेल तर 'partial_failure' (काही legs भरले, काही नाही — unhedged,
+    धोकादायक स्थिती) किंवा (कुठलाच leg भरला नसेल तर) 'error'. resp["verified_legs"] मध्ये प्रत्येक
+    leg चा तपशील (instrument_token/transaction_type/quantity सकट — auto-reversal साठी लागणारा,
+    trading_engine.py मध्ये वापरला जातो) — नवीन key, जुने callers याकडे दुर्लक्ष करू शकतात
+    (backward-compatible)."""
+    order_data = resp.get("data")
+    if not isinstance(order_data, list):
+        return resp
+    orders_by_correlation = {o.get("correlation_id"): o for o in orders}
+    verified_legs = []
+    for item in order_data:
+        if not isinstance(item, dict) or not item.get("order_id"):
+            continue
+        order_id = item["order_id"]
+        correlation_id = item.get("correlation_id")
+        details = poll_order_fill(access_token, order_id) or {}
+        original_order = orders_by_correlation.get(correlation_id, {})
+        verified_legs.append({
+            "order_id": order_id, "correlation_id": correlation_id,
+            "status": details.get("status", "unknown"),
+            "filled_quantity": details.get("filled_quantity"),
+            "average_price": details.get("average_price"),
+            "instrument_token": original_order.get("instrument_token"),
+            "transaction_type": original_order.get("transaction_type"),
+            "quantity": original_order.get("quantity"),
+            "product": original_order.get("product"),
+        })
+    resp["verified_legs"] = verified_legs
+    if not verified_legs:
+        return resp
+    filled_count = sum(1 for leg in verified_legs if leg["status"] == "complete")
+    if filled_count == len(verified_legs):
+        resp["status"] = "success"
+    elif filled_count == 0:
+        resp["status"] = "error"
+        resp.setdefault("errors", []).append({"message": "एकही leg प्रत्यक्ष भरला गेला नाही (GET /v2/order/details द्वारे तपासलं)."})
+    else:
+        resp["status"] = "partial_failure"
+        resp.setdefault("errors", []).append({"message": f"फक्त {filled_count}/{len(verified_legs)} legs भरले — बाकीचे अयशस्वी/अनिश्चित (GET /v2/order/details द्वारे तपासलं)."})
+    return resp
 
 def fetch_next_expiry_option_chain(access_token, symbol):
     """
