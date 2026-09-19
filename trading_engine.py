@@ -8,7 +8,7 @@ import uuid
 import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
-from database import log_orders_batch, get_todays_live_total_pnl_and_count
+from database import log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
     extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
@@ -295,6 +295,24 @@ def _alert_margin_insufficient(symbol, source, reason):
         _logger.exception("_alert_margin_insufficient() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source_trades):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही,
+    वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय) — याच symbol वर आधीच दुसऱ्या strategy(-strategies) ची
+    OPEN position असताना नवीन LIVE trade उघडलं जातंय, हे कळवणं — trade अडवला जात नाही, निर्णय
+    वापरकर्त्याकडेच (कदाचित मुद्दामच वेगवेगळ्या दिशेने diversify करायचं असेल)."""
+    try:
+        from notifications import send_telegram_message
+        others_desc = "; ".join(f"{t['source']} ({t['strategy']})" for t in other_source_trades)
+        send_telegram_message(
+            f"⚠️ <b>{symbol} — Cross-Strategy Overlap!</b>\n"
+            f"नवीन trade: {source} ({strategy_result.get('strategy', '?')})\n"
+            f"आधीच उघड्या (इतर strategies): {others_desc}\n"
+            f"दोन्ही एकाच underlying वर — margin/एकत्रित जोखीम स्वतः तपासा (हे फक्त सूचना आहे, trade ब्लॉक केलेलं नाही)."
+        )
+    except Exception:
+        _logger.exception("_alert_cross_strategy_conflict() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
@@ -315,6 +333,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         if not kill_switch_ok:
             _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
             return False, {"status": "error", "reason": kill_switch_reason}
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
+        # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).
+        other_source_trades = get_open_trades_by_other_sources(symbol, source)
+        if other_source_trades:
+            _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source_trades)
 
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
