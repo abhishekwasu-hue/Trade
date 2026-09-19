@@ -352,13 +352,21 @@ def run_auto_backup_if_due(interval_minutes=60):
 def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     """आजच्या दिवसात बंद झालेल्या (CLOSED) ट्रेड्सचा एकूण वास्तविक नफा/तोटा (डेली सर्किट ब्रेकरसाठी).
     PAPER आणि LIVE ट्रेड्स स्वतंत्रपणे मोजले जातात, जेणेकरून Paper टेस्टिंगमुळे Live सर्किट ब्रेकर
-    (किंवा उलट) चुकीने ट्रिगर होणार नाही."""
+    (किंवा उलट) चुकीने ट्रिगर होणार नाही.
+
+    🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — P&L बेरीज आधी `trade_date`
+    (entry ची तारीख, trading_engine.py:415) वरून फिल्टर व्हायची, पण हे system मुद्दामच trades रात्रभर
+    carry-forward करतं (3:10pm "अपुरा नफा" check — trading_engine.py). सोमवारी उघडलेली, मंगळवारी
+    सकाळी मोठ्या तोट्यात बंद झालेली trade — मंगळवारच्या (जेव्हा खरा तोटा झाला त्याच दिवशीच्या) बेरजेत
+    कधीच धरलीच जायची नाही. आता realized_pnl ची बेरीज exit_time (प्रत्यक्ष तोटा/नफा कधी *realize*
+    झाला, त्या तारखेवरून) वरून — trade-count मात्र मुद्दामच अजूनही trade_date (entry) वरूनच, कारण तो
+    "आज किती नवीन trades उघडले" (entry-दर मर्यादा) मोजतो, वेगळाच उद्देश."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE symbol=? AND trade_date=? AND status='CLOSED' AND COALESCE(mode,'LIVE')=?",
-        (symbol, today_str, trading_mode),
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE symbol=? AND status='CLOSED' AND COALESCE(mode,'LIVE')=? AND substr(exit_time,1,10)=?",
+        (symbol, trading_mode, today_str),
     )
     total_pnl = cur.fetchone()[0]
     cur.execute(
@@ -373,12 +381,18 @@ def get_todays_live_total_pnl_and_count():
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L + trade count, सर्व symbols आणि सर्व
     strategies/sources मिळून (get_todays_realized_pnl() च्या उलट, जो एकाच symbol+mode पुरता मर्यादित
-    आहे) — तिन्ही bots + Dashboard यांना समान, संपूर्ण-खात्यासाठीचं एकत्रित संरक्षण देण्यासाठी."""
+    आहे) — तिन्ही bots + Dashboard यांना समान, संपूर्ण-खात्यासाठीचं एकत्रित संरक्षण देण्यासाठी.
+
+    🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — get_todays_realized_pnl()
+    सारखीच — P&L बेरीज आता exit_time वरून (कधी तोटा/नफा *realize* झाला), trade-count (entry-दर
+    मर्यादेसाठी) अजूनही trade_date (entry) वरून. याआधी carry-forward झालेली, दुसऱ्या दिवशी मोठ्या
+    तोट्यात बंद झालेली trade त्या दिवशीच्या kill-switch तपासणीत कधीच दिसायचीच नाही — म्हणजे नेमक्या
+    सर्वात जास्त गरज असलेल्या दिवशीच Kill Switch गप्प बसायचा."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE trade_date=? AND status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE'",
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE' AND substr(exit_time,1,10)=?",
         (today_str,),
     )
     total_pnl = cur.fetchone()[0]
@@ -389,6 +403,29 @@ def get_todays_live_total_pnl_and_count():
     total_trades_today = cur.fetchone()[0]
     conn.close()
     return total_pnl, total_trades_today
+
+
+def get_unverified_reconciled_trades_today_count():
+    """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconcile_open_trades_with_broker()
+    ने (trading_engine.py) externally बंद झालेली LIVE position CLOSED मार्क करताना realized_pnl कधीच
+    साठवत नाही (ते function फक्त वाचतं, कुठलाही LTP मागवत नाही — त्यामुळे नेमका नफा/तोटा तिथे कळणंच
+    शक्य नाही). त्यामुळे COALESCE(SUM(realized_pnl),0) मध्ये असे NULL रो कायमच वगळले जातात — म्हणजे
+    वापरकर्त्याने स्वतः Upstox app मधून एखादी मोठ्या तोट्यातली position बंद केली (किंवा reconciliation
+    च्या आधीच्या bug मुळे चुकून बंद मार्क झालेली position), तरी kill-switch ला तो तोटा कधीच दिसायचा
+    नाही — "आजचा तोटा ₹0" असं चुकीने वाटून bots नवीन LIVE trades घेतच राहायचे. आता असे unverified
+    (realized_pnl अजून माहीत नसलेले) trades असल्यास kill-switch ने वेगळ्या, स्पष्ट कारणासह नवीन LIVE
+    trades थांबवावेत (fail-safe — अंदाजे आकडा गृहीत धरण्यापेक्षा नवीन trading थांबवणं सुरक्षित)."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE' "
+        "AND exit_reason='RECONCILED_EXTERNAL_CLOSE' AND realized_pnl IS NULL AND substr(exit_time,1,10)=?",
+        (today_str,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
 
 
 def get_open_trades_with_entry_level(symbol, source):

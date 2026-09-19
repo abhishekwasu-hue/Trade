@@ -140,6 +140,81 @@ class TestGetTodaysLiveTotalPnlAndCount:
         assert total_pnl == 0
         assert total_trades == 1
 
+    def test_carried_forward_trade_counted_on_exit_day_not_entry_day(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — हे system मुद्दामच
+        trades रात्रभर carry-forward करतं (3:10pm "अपुरा नफा" check). सोमवारी उघडलेली, मंगळवारी
+        सकाळी मोठ्या तोट्यात बंद झालेली trade — मंगळवारच्याच (जेव्हा खरा तोटा realize झाला) kill-switch
+        तपासणीत धरली जायलाच हवी, सोमवारच्या (entry-दिवसाच्या) नाही."""
+        import sqlite3
+        import json
+        import datetime as dt
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, exit_time, exit_reason,
+               realized_pnl, status, legs_json, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("T_CARRY", "2026-09-15", "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+             "2026-09-15 15:20:00", "2026-09-16 09:30:00", "SL", -40000.0,
+             "CLOSED", json.dumps([]), "LIVE", "INTRADAY", "dynamic_sr_instant"),
+        )
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 16))
+        total_pnl, _ = database.get_todays_live_total_pnl_and_count()
+        assert total_pnl == -40000.0  # exit दिवशी (16 तारखेला) धरलं जायलाच हवं
+
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 15))
+        total_pnl_entry_day, _ = database.get_todays_live_total_pnl_and_count()
+        assert total_pnl_entry_day == 0  # entry दिवशी (15 तारखेला) अजून बंदच झालेली नव्हती
+
+
+class TestGetUnverifiedReconciledTradesTodayCount:
+    """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconcile_open_trades_with_broker()
+    (trading_engine.py) externally बंद झालेल्या LIVE position चा realized_pnl कधीच साठवत नाही (ते
+    function फक्त वाचतं) — त्यामुळे असे trades kill-switch च्या SUM मधून कायमचे वगळले जायचे."""
+
+    def _seed(self, tmpdb, trade_id, exit_reason, realized_pnl, exit_date, mode="LIVE"):
+        conn = sqlite3.connect(tmpdb)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, exit_time, exit_reason,
+               realized_pnl, status, legs_json, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, exit_date, "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+             f"{exit_date} 10:00:00", f"{exit_date} 11:00:00", exit_reason, realized_pnl,
+             "CLOSED", json.dumps([]), mode, "INTRADAY", "dynamic_sr_instant"),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_counts_reconciled_trades_with_null_pnl_today(self, temp_db, monkeypatch):
+        import datetime as dt
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 16))
+        self._seed(temp_db, "T1", "RECONCILED_EXTERNAL_CLOSE", None, "2026-09-16")
+        assert database.get_unverified_reconciled_trades_today_count() == 1
+
+    def test_ignores_reconciled_trades_with_known_pnl(self, temp_db, monkeypatch):
+        """realized_pnl आधीच कुठल्यातरी मार्गाने भरलेला असेल (उदा. हाताने दुरुस्त केलेला), तर मोजू नये."""
+        import datetime as dt
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 16))
+        self._seed(temp_db, "T1", "RECONCILED_EXTERNAL_CLOSE", -5000.0, "2026-09-16")
+        assert database.get_unverified_reconciled_trades_today_count() == 0
+
+    def test_ignores_normal_null_free_closes(self, temp_db, monkeypatch):
+        """सामान्य SL/Target/EOD exits ना नेहमीच realized_pnl असतो -- ते इथे कधीच मोजले जाऊ नयेत."""
+        import datetime as dt
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 16))
+        self._seed(temp_db, "T1", "SL", -1000.0, "2026-09-16")
+        assert database.get_unverified_reconciled_trades_today_count() == 0
+
+    def test_ignores_other_days(self, temp_db, monkeypatch):
+        import datetime as dt
+        monkeypatch.setattr(database, "get_ist_today", lambda: dt.date(2026, 9, 16))
+        self._seed(temp_db, "T1", "RECONCILED_EXTERNAL_CLOSE", None, "2026-09-15")
+        assert database.get_unverified_reconciled_trades_today_count() == 0
+
 
 def seed_open_trade(tmpdb, trade_id, symbol, source, strategy="BULL_PUT_SPREAD"):
     conn = sqlite3.connect(tmpdb)

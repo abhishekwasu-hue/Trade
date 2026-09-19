@@ -26,6 +26,7 @@ import os
 import cloud_db
 from config import is_market_open
 from notifications import notify_error, notify_exit, write_heartbeat
+from process_lock import ProcessLock, ProcessLockHeld
 from trading_engine import manage_open_trades
 from upstox_api import fetch_candles
 
@@ -91,24 +92,36 @@ def run_once():
         notify_error(SCRIPT_NAME, "Upstox token सापडला नाही (Supabase रिकामं) — Position Monitoring या cycle साठी वगळलं.")
         return
 
-    for symbol in MONITORED_SYMBOLS:
-        try:
-            atr_points = compute_atr_points(token, symbol, settings)
-            closed_now = manage_open_trades(
-                token, symbol, settings["product_type"],
-                eod_squareoff_hour=settings["eod_squareoff_hour"],
-                eod_squareoff_minute=settings["eod_squareoff_minute"],
-                oi_reversal_exit_enabled=settings["oi_reversal_exit_enabled"],
-                trailing_sl_enabled=settings["trailing_sl_enabled"],
-                atr_points=atr_points, atr_multiplier=settings["atr_multiplier"],
-            )
-            for c in closed_now:
-                notify_exit(SCRIPT_NAME, symbol, c["trade_id"], c["reason"], pnl=c.get("pnl"))
-        except Exception as exc:
-            # एका symbol मध्ये अपयश आलं तरी बाकीच्या symbols चं monitoring थांबता कामा नये.
-            notify_error(SCRIPT_NAME, f"{symbol} monitoring अयशस्वी: {exc}")
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — trade_monitor.py चा
+    # docstring म्हणतो की duplicate-exit bug (हीच script + trade_monitor.py दोघेही एकाच वेळी
+    # manage_open_trades() चालवत) आधीच "consolidation" ने सुटलेली आहे, पण deploy/README.md आणि
+    # deploy/engine_service.timer/.service अजूनही फक्त याच script साठीच आहेत (trade_monitor.py
+    # साठी कुठलाही systemd unit कधीच जोडलेला नाही) — म्हणजे नेमकं कोणती script प्रत्यक्ष VPS वर
+    # चालू आहे (किंवा चुकून दोन्ही) हे repo वरून खात्रीने सांगता येत नाही. त्यामुळे इथे + trade_monitor.py
+    # दोन्हीकडे एकाच नावाचा ProcessLock — कुठलीही, किंवा दोन्ही, समांतर चालल्या तरी एकाच वेळी फक्त
+    # एकच प्रत्यक्षात manage_open_trades() चालवेल, दुसरी सुरक्षितपणे वगळली जाईल.
+    try:
+        with ProcessLock("position_exit_monitor"):
+            for symbol in MONITORED_SYMBOLS:
+                try:
+                    atr_points = compute_atr_points(token, symbol, settings)
+                    closed_now = manage_open_trades(
+                        token, symbol, settings["product_type"],
+                        eod_squareoff_hour=settings["eod_squareoff_hour"],
+                        eod_squareoff_minute=settings["eod_squareoff_minute"],
+                        oi_reversal_exit_enabled=settings["oi_reversal_exit_enabled"],
+                        trailing_sl_enabled=settings["trailing_sl_enabled"],
+                        atr_points=atr_points, atr_multiplier=settings["atr_multiplier"],
+                    )
+                    for c in closed_now:
+                        notify_exit(SCRIPT_NAME, symbol, c["trade_id"], c["reason"], pnl=c.get("pnl"))
+                except Exception as exc:
+                    # एका symbol मध्ये अपयश आलं तरी बाकीच्या symbols चं monitoring थांबता कामा नये.
+                    notify_error(SCRIPT_NAME, f"{symbol} monitoring अयशस्वी: {exc}")
 
-    write_heartbeat(SCRIPT_NAME)
+            write_heartbeat(SCRIPT_NAME)
+    except ProcessLockHeld:
+        pass  # दुसरी exit-monitor invocation (हीच script किंवा trade_monitor.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं
 
 
 if __name__ == "__main__":

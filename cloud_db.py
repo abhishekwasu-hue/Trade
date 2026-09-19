@@ -822,12 +822,24 @@ def save_signal_log(entry):
     🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वर Signal Log "2-3 वेळा repeat" दिसणे) — bot दर १
     मिनिटाला चालतो (candle timeframe 5M/15M/इ. असला तरी touch-तपासणी नेहमी अलीकडच्या candles वरून,
     दर cron cycle ला). किंमत एखाद्या level जवळ बराच वेळ राहिली (उदा. 30-मिनिटांचा cooldown, किंवा
-    max-hits आधीच गाठलेला), तर प्रत्येक cron cycle ला तीच नेमकी स्थिती (hit_type+trade_status+reason)
-    पुन्हा-पुन्हा नवीन row म्हणून साठवली जायची — Dashboard वर निरुपयोगी, जवळजवळ-सारख्याच नोंदींचा
-    ढीग दिसायचा. आता — फक्त "काहीच प्रत्यक्ष प्रयत्न झाला नाही" अशा नोंदींसाठी (_is_no_action_trade_status),
-    त्याच दिवशीची, त्याच level ची, सर्वात अलीकडची नोंद अगदी तशीच (hit_type+trade_status+reason)
-    असेल, तर पुन्हा साठवत नाही (प्रत्येक दिवशी किमान एक नोंद कायम राहते, त्यामुळे bot चालू आहे की नाही
-    हे तपासताही येतं). प्रत्यक्ष trade attempt कधीच dedupe होत नाही — तो नेहमी नव्याने साठवला जातो.
+    max-hits आधीच गाठलेला), तर प्रत्येक cron cycle ला तीच नेमकी स्थिती पुन्हा-पुन्हा नवीन row म्हणून
+    साठवली जायची — Dashboard वर निरुपयोगी, जवळजवळ-सारख्याच नोंदींचा ढीग दिसायचा.
+
+    🎓 वापरकर्त्याने code-review द्वारे सापडवलेली, पहिल्या फिक्सची (हीच सुधारणा, आधीची आवृत्ती) गंभीर
+    त्रुटी — dedup-तुलना आधी `reason` column सकट करायची, पण bot script चं `reason` प्रत्येक cycle ला
+    बदलणारं, जिवंत मूल्य embed करतं (उदा. "मागच्या hit ला फक्त {elapsed_minutes:.1f} मिनिटं झालीत" —
+    दर मिनिटाला 5.0 -> 6.0 -> 7.0 ...; किंवा RSI/PCR gate चा live RSI/PCR आकडा) — त्यामुळे `reason`
+    जवळजवळ प्रत्येक cycle ला वेगळाच असायचा, आणि dedup-तुलना कधीच जुळायचीच नाही — नेमकं cooldown/RSI/PCR
+    या सर्वात सामान्य, सर्वाधिक repeat होणाऱ्या केसेससाठीच फिक्स काम करायचा नाही (फक्त खरोखर static
+    reason असलेले MAX_2_HITS_REACHED/PREVIOUS_POSITION_STILL_OPEN/TOO_LATE_FOR_NEW_ENTRY काम करायचे).
+    आता तुलना फक्त hit_type + trade_status वरून (reason वगळून) — trade_status हाच स्थिर, अर्थपूर्ण
+    "का थांबवलं" चा enum आहे (उदा. "SKIPPED_COOLDOWN_30MIN"), reason ही फक्त त्याचं तपशीलवार, बदलतं
+    वर्णन — तेच dedup साठी वापरणं चुकीचं होतं.
+
+    फक्त "काहीच प्रत्यक्ष प्रयत्न झाला नाही" अशा नोंदींसाठीच (_is_no_action_trade_status), त्याच
+    दिवशीची, त्याच level ची, सर्वात अलीकडची नोंद hit_type+trade_status मध्ये सारखीच असेल, तर पुन्हा
+    साठवत नाही (प्रत्येक दिवशी किमान एक नोंद कायम राहते, त्यामुळे bot चालू आहे की नाही हे तपासताही
+    येतं). प्रत्यक्ष trade attempt कधीच dedupe होत नाही — तो नेहमी नव्याने साठवला जातो.
     """
     conn = get_connection()
     if conn is None:
@@ -837,13 +849,13 @@ def save_signal_log(entry):
             trade_status = entry.get("trade_status")
             if _is_no_action_trade_status(trade_status):
                 cur.execute(
-                    """SELECT hit_type, trade_status, reason FROM signal_log
+                    """SELECT hit_type, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_type=%s AND level_price=%s
                        ORDER BY signal_time DESC LIMIT 1""",
                     (entry["symbol"], entry["trade_date"], entry["level_type"], entry["level_price"]),
                 )
                 last = cur.fetchone()
-                if last is not None and last[0] == entry["hit_type"] and last[1] == trade_status and last[2] == entry.get("reason"):
+                if last is not None and last[0] == entry["hit_type"] and last[1] == trade_status:
                     return True  # आधीच्याच स्थितीची नोंद -- पुन्हा साठवली नाही, पण हे अपयश नाही
             cur.execute(
                 """INSERT INTO signal_log (symbol, trade_date, signal_time, level_type, level_price,
