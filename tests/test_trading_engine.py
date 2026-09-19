@@ -625,6 +625,101 @@ class TestCorrelationIdInOrders:
             assert "correlation_id" in o and o["correlation_id"]
 
 
+class TestSlTargetLevelsPreLiveFixes:
+    """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडलेले, थेट पैशाशी संबंधित
+    bugs (तीनही स्वतंत्र review-agents नी दुजोरा दिलेले) — open_multi_leg_trade() मधले
+    sl_pnl_level/target_pnl_level फक्त lot_size ने गुणले जायचे, lots ने नाही; आणि Naked Option
+    (hedge नसलेला buy, max_profit=None) साठी None*lot_size क्रॅश व्हायचा -- तोही order Upstox कडे
+    प्रत्यक्ष गेल्यानंतर, database मध्ये trade साठवण्याआधी."""
+
+    def _capture(self, monkeypatch):
+        captured = {}
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {kk: 50.0 for kk in k})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set",
+                             lambda t, o, m: (200, {"status": "success", "data": {"order_ids": ["T1", "T2"]}}))
+        return captured
+
+    def _stored_levels(self, tmpdb, trade_id):
+        conn = sqlite3.connect(tmpdb)
+        row = conn.execute(
+            "SELECT sl_pnl_level, target_pnl_level, max_profit, max_loss FROM live_trades WHERE trade_id=?",
+            (trade_id,),
+        ).fetchone()
+        conn.close()
+        return row
+
+    def test_sl_target_levels_scale_with_lots_not_just_lot_size(self, temp_db, monkeypatch):
+        """lots=3 सह घेतलेल्या credit-spread trade चे sl_pnl_level/target_pnl_level, lots=1 च्या
+        बरोबर 3 पटच असायला हवेत -- manage_open_trades() मधला current_pnl नेहमी `* lots * lot_size`
+        असतो (net_credit_total, ओळ ~741), त्यामुळे तुलना योग्य रकमेशीच व्हायला हवी."""
+        self._capture(monkeypatch)
+        strategy_result = {
+            "strategy": "BULL_PUT_SPREAD",
+            "short_leg": {"strike": 24400, "instrument_key": "PE24400", "ltp": 50},
+            "long_leg": {"strike": 24300, "instrument_key": "PE24300", "ltp": 25},
+            "net_credit": 25, "max_profit": 25, "max_loss": 75,
+        }
+        ok, result = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", strategy_result, lots=3, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="PAPER", trading_style="SWING", sl_pct_of_credit=100,
+        )
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        sl_level, target_level = row
+        # net_credit_total (lots=3) = 25 * 3 * 75 = 5625; sl_pct_of_credit=100 -> sl_pnl_level = -5625
+        assert sl_level == -5625.0
+        # max_profit_total (lots=3) = 25 * 3 * 75 = 5625; target_pct=80% -> 4500
+        assert target_level == 4500.0
+
+    def test_naked_option_without_hedge_does_not_crash_on_none_max_profit(self, temp_db, monkeypatch):
+        """🎓 Naked Option (hedge नसलेला, डीफॉल्ट settings) साठी strategy.py.select_naked_option_itm()
+        max_profit=None (unbounded) रिटर्न करतं -- यामुळे आधी None*lots*lot_size TypeError यायचा,
+        प्रत्यक्ष order Upstox कडे गेल्यानंतर, DB insert च्या आधी. आता क्रॅश होता कामा नये, आणि
+        target_pnl_level None (unbounded profit साठी % target चा अर्थच नाही) साठवला जायला हवा."""
+        self._capture(monkeypatch)
+        naked_result = {
+            "strategy": "NAKED_CALL", "buy_leg": {"strike": 24000, "instrument_key": "CE24000", "ltp": 150},
+            "net_credit": -150.0, "max_profit": None, "max_loss": 150.0,
+        }
+        ok, result = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", naked_result, lots=2, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", sl_pct_of_credit=100,
+        )
+        assert ok is True  # क्रॅश झाला नाही
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        sl_level, target_level = row
+        assert target_level is None  # unbounded profit -- fixed % target साठवला जाऊ नये
+        # 🎓 net_credit ऋण (debit, -150) असल्याने abs() शिवाय sl_pnl_level चुकून धन यायचा (entry
+        # नंतर लगेचच खोटा SL trigger व्हायचा). net_credit_total = -150*2*75 = -22500;
+        # sl_pct_of_credit=100 -> sl_pnl_level = -(abs(-22500)*1.0) = -22500 (ऋणच, योग्य).
+        assert sl_level == -22500.0
+
+    def test_naked_option_sl_level_is_negative_not_positive(self, temp_db, monkeypatch):
+        """🎓 विशेषतः sign-fix तपासण्यासाठी -- fix आधी sl_pnl_level धन (+22500) यायचा, ज्यामुळे
+        current_pnl <= sl_pnl_level ही तुलना entry नंतर लगेचच (कुठलीही खरी किंमत-हालचाल न होताच)
+        खरी ठरायची -- म्हणजे प्रत्येक naked trade उघडल्याक्षणीच चुकीने STOP_LOSS ने बंद व्हायचा."""
+        self._capture(monkeypatch)
+        naked_result = {
+            "strategy": "NAKED_PUT", "buy_leg": {"strike": 24500, "instrument_key": "PE24500", "ltp": 120},
+            "net_credit": -120.0, "max_profit": None, "max_loss": 120.0,
+        }
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", naked_result, lots=1, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", sl_pct_of_credit=100,
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT sl_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        assert row[0] < 0  # कधीच धन नसावा
+
+
 class TestReconcileOpenTradesWithBroker:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — Upstox च्या स्वतःच्या
     app/website वरून थेट बंद केलेली position आपल्याच database मध्ये आपोआप "CLOSED" करणे —

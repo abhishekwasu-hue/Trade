@@ -382,14 +382,33 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         return False, resp
 
     order_ids = extract_order_ids(resp)
-    max_loss_total = strategy_result["max_loss"] * lot_size
-    max_profit_total = strategy_result["max_profit"] * lot_size
-    net_credit_total = strategy_result["net_credit"] * lot_size
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — इथे आधी फक्त
+    # lot_size नेच गुणलं जायचं, lots ने नाही. पण manage_open_trades() मधला current_pnl
+    # (exit-वेळी प्रत्यक्ष तुलना होणारा) नेहमी `* lots * lot_size` असतो (बघा वरचा
+    # net_credit_total, ओळ ~741). त्यामुळे lots>1 असेल, तर SL/Target रकमेत lots गुणलाच जायचा नाही
+    # — म्हणजे intended रकमेच्या फक्त 1/lots इतक्याच हालचालीवर SL/Target लगेच trigger व्हायचा
+    # (उदा. lots=3 → SL तिप्पट लवकर, Target तिप्पट लवकर) — जितके lots जास्त, तितकी चूक मोठी.
+    max_loss_total = strategy_result["max_loss"] * lots * lot_size
+    # 🎓 Naked Option (hedge नसलेला buy) साठी max_profit=None असतो (theoretically
+    # unbounded — strategy.py.select_naked_option_itm() बघा) — None * lots क्रॅश व्हायचा, आणि तो
+    # क्रॅश प्रत्यक्ष order Upstox कडे गेल्यानंतर, database मध्ये trade साठवण्याआधी व्हायचा — म्हणजे
+    # खरा पैसा गेलेला, पण bot ला त्या trade चं अस्तित्वच माहीत नाही (SL/Target/EOD काहीच लागू होत
+    # नाही). आता None सुरक्षितपणे हाताळला जातो — max_profit_total/target_pnl_level दोन्ही None
+    # राहतात (unbounded-profit trade साठी % target गणिताला अर्थच नाही — SL/Trailing-SL/EOD अजूनही
+    # लागू होतातच, फक्त निश्चित profit-target नाही).
+    max_profit_total = (strategy_result["max_profit"] * lots * lot_size) if strategy_result["max_profit"] is not None else None
+    net_credit_total = strategy_result["net_credit"] * lots * lot_size
     if sl_pct_of_credit is not None:
-        sl_pnl_level = -(net_credit_total * (sl_pct_of_credit / 100.0))
+        # 🎓 Naked Option साठी net_credit ऋण (debit, buy_leg["ltp"] इतका) असतो,
+        # Credit Spread साठी धन (credit) — abs() शिवाय naked trades साठी sl_pnl_level
+        # चुकून धन यायचा, त्यामुळे entry नंतर लगेचच (कुठलीही खरी किंमत-हालचाल
+        # न होताच) SL trigger व्हायचा (current_pnl <= sl_pnl_level
+        # पहिल्याच तपासणीलाच खरं ठरायचं). आता abs() मुळे दोन्ही केसेससाठी SL
+        # पातळी नेहमी योग्य ऋण (तोटा) असते.
+        sl_pnl_level = -(abs(net_credit_total) * (sl_pct_of_credit / 100.0))
     else:
         sl_pnl_level = -(max_loss_total * (sl_pct_of_max_loss / 100.0))
-    target_pnl_level = max_profit_total * (target_pct_of_max_profit / 100.0)
+    target_pnl_level = (max_profit_total * (target_pct_of_max_profit / 100.0)) if max_profit_total is not None else None
     strikes_summary = " · ".join(f"{leg['role']}:{leg['strike']:.0f}" for leg in legs)
 
     trade_id = f"{'PAPER' if trading_mode == 'PAPER' else symbol}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
