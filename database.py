@@ -383,6 +383,23 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
+def get_open_trades_by_other_sources(symbol, exclude_source):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही) —
+    दिलेल्या symbol वर सध्या OPEN असलेले, exclude_source (सध्या नवीन trade घेणारी strategy) व्यतिरिक्त
+    इतर कुठल्याही strategy/source कडून आलेले trades — जेणेकरून दोन वेगवेगळ्या bots नकळत एकाच underlying
+    वर (कदाचित विरुद्ध दिशेने) एकाच वेळी trade घेत असतील, तर कळवता येईल.
+    रिटर्न: [{"source":.., "strategy":.., "trade_id":..}, ...]"""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT source, strategy, trade_id FROM live_trades WHERE symbol=? AND status='OPEN' AND COALESCE(source,'')!=?",
+        (symbol, exclude_source or ""),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{"source": r[0], "strategy": r[1], "trade_id": r[2]} for r in rows]
+
+
 def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     """
     सर्व OPEN पोझिशन्ससाठी सद्य LTP आणून खरा (real) MTM P&L काढणे — Positions टॅबसाठी,

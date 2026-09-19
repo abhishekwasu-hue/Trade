@@ -139,3 +139,45 @@ class TestGetTodaysLiveTotalPnlAndCount:
         total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
         assert total_pnl == 0
         assert total_trades == 1
+
+
+def seed_open_trade(tmpdb, trade_id, symbol, source, strategy="BULL_PUT_SPREAD"):
+    conn = sqlite3.connect(tmpdb)
+    conn.execute(
+        """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+           max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode,
+           trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (trade_id, "2026-09-19", symbol, strategy, 1, 75, 1000, 1000, 500, 250, 500,
+         "2026-09-19 10:00:00", "OPEN", json.dumps([]), "LIVE", "INTRADAY", source),
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestGetOpenTradesByOtherSources:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही) —
+    एकाच symbol वर, इतर strategies कडून सध्या OPEN असलेले trades शोधणे."""
+
+    def test_finds_open_trades_from_other_sources(self, temp_db):
+        seed_open_trade(temp_db, "T1", "NIFTY", "srv2_momentum_reversal", "BEAR_CALL_SPREAD")
+        others = database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant")
+        assert len(others) == 1
+        assert others[0] == {"source": "srv2_momentum_reversal", "strategy": "BEAR_CALL_SPREAD", "trade_id": "T1"}
+
+    def test_excludes_same_source(self, temp_db):
+        seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant")
+        others = database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant")
+        assert others == []
+
+    def test_excludes_other_symbols(self, temp_db):
+        seed_open_trade(temp_db, "T1", "BANKNIFTY", "srv2_momentum_reversal")
+        others = database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant")
+        assert others == []
+
+    def test_excludes_closed_trades(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-19", symbol="NIFTY", source="srv2_momentum_reversal")
+        others = database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant")
+        assert others == []
+
+    def test_empty_when_no_other_trades(self, temp_db):
+        assert database.get_open_trades_by_other_sources("NIFTY", "dynamic_sr_instant") == []

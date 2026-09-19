@@ -1192,6 +1192,83 @@ class TestOpenMultiLegTradeMarginCheck:
         assert ok is True
 
 
+class TestAlertCrossStrategyConflict:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही,
+    वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय)."""
+
+    def test_sends_alert_naming_other_strategies(self, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+
+        trading_engine._alert_cross_strategy_conflict(
+            "NIFTY", "dynamic_sr_instant", {"strategy": "BULL_PUT_SPREAD"},
+            [{"source": "srv2_momentum_reversal", "strategy": "BEAR_CALL_SPREAD", "trade_id": "T1"}],
+        )
+        assert len(telegram_calls) == 1
+        assert "NIFTY" in telegram_calls[0]
+        assert "dynamic_sr_instant" in telegram_calls[0]
+        assert "srv2_momentum_reversal" in telegram_calls[0]
+        assert "BEAR_CALL_SPREAD" in telegram_calls[0]
+
+
+class TestOpenMultiLegTradeCrossStrategyConflict:
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_live_with_other_source_open_alerts_but_does_not_block(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+        seed_trade(temp_db, "T_OTHER", 1000, -500, 500, source="srv2_momentum_reversal")
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="dynamic_sr_instant",
+        )
+        assert ok is True  # अलर्ट पाठवला, पण trade ब्लॉक झाला नाही
+        assert len(telegram_calls) == 1
+        assert "Cross-Strategy Overlap" in telegram_calls[0]
+
+    def test_live_with_no_other_source_open_no_alert(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="dynamic_sr_instant",
+        )
+        assert ok is True
+        assert not telegram_calls
+
+    def test_paper_mode_never_checks_cross_strategy_conflict(self, temp_db, monkeypatch):
+        def _boom(*a, **k):
+            raise AssertionError("PAPER mode ने कधीच cross-strategy conflict तपासायला नको")
+        monkeypatch.setattr(trading_engine, "get_open_trades_by_other_sources", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+
+
 class TestEvaluatePointSpotExit:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) — Spot% +
     Premium-Points combined exit-गणित, Credit Spread आणि Naked Buy दोन्हींसाठी, TSL-to-Breakeven
