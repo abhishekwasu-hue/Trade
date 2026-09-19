@@ -320,6 +320,70 @@ class TestDynamicSrInstantSourceRules:
         assert len(closed) == 1
         assert closed[0]["reason"] == "SL"
 
+    def test_next_level_exit_on_5m_entry(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा — 1-Min Instant Trader साठी Next-Level-Exit परत आणला,
+        पण फक्त 5M-touch entries साठी (वापरकर्त्याने स्पष्टपणे ठरवलेलं). स्पॉट/प्रीमियम दोन्ही
+        neutral (कुठलाही SL/TSL/Target लागू होणार नाही असे) ठेवून, फक्त next-level गाठल्यानेच बंद
+        व्हायला हवं."""
+        seed_trade(temp_db, "T40", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_timeframe="5M")
+        # प्रीमियम-नफा = 30-30 = 0 (neutral, SL/TSL/Target यापैकी काहीही लागू होणार नाही)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=30.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 23905.0)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "NEXT_LEVEL_EXIT"
+
+    def test_next_level_exit_applies_to_naked_trades_too(self, temp_db, monkeypatch):
+        """वापरकर्त्याने ठरवलेलं — Next-Level-Exit Credit Spread आणि Naked दोन्हींना लागू (SRv2 च्या
+        फक्त-Spread पद्धतीपेक्षा वेगळं)."""
+        seed_trade(temp_db, "T41", net_credit=-30, sl_level=-1125, target_level=100000,
+                   strategy="NAKED_CALL", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_timeframe="5M")
+        # cost_to_close_now = ce_ltp(SELL leg, +1) - pe_ltp(BUY leg, -1) = 0-30 = -30;
+        # प्रीमियम-नफा = net_credit(-30) - cost_to_close_now(-30) = 0 (neutral)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=0.0, pe_ltp=30.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 23905.0)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "NEXT_LEVEL_EXIT"
+
+    def test_next_level_exit_not_applied_to_1m_entry(self, temp_db, monkeypatch):
+        """वापरकर्त्याने स्पष्टपणे ठरवलेलं — 1M-touch entries ला Next-Level-Exit लागू नाही (अजूनही
+        फक्त सध्याचेच Spot%/Premium/TSL नियम). get_next_level_in_direction ला कधीच call व्हायलाच
+        नको, आणि trade neutral असल्याने उघडाच राहायला हवा."""
+        seed_trade(temp_db, "T42", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_timeframe="1M")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=30.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        mock_next_level = MagicMock(return_value=23905.0)
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", mock_next_level)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+        mock_next_level.assert_not_called()
+
+    def test_next_level_exit_does_not_fire_when_level_not_reached(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T43", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_timeframe="5M")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map_with_options(23910.0, ce_ltp=30.0, pe_ltp=0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", lambda *a, **k: 24000.0)  # स्पॉट (23910) अजून तिथे पोहोचलेला नाही
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
     def test_dynamic_sr_instant_gets_eod_squareoff_not_carry_forward(self, temp_db, monkeypatch):
         # entry_level_price/underlying_spot गहाळ असले (जुना trade), तरीही carry-forward कधीच लागू
         # होता कामा नये — EOD_SQUAREOFF च व्हावं.
