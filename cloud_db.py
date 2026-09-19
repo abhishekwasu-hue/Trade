@@ -804,25 +804,54 @@ def get_zone_hits_today(symbol, level_price, trade_date):
         conn.close()
 
 
+def _is_no_action_trade_status(trade_status):
+    """कधीच खरा order attempt न झालेली स्थिती — None (अजून NO_HIT), STRATEGY_SELECTION_FAILED,
+    किंवा कुठलंही SKIPPED_* (RSI/PCR/Cooldown/Max-Hits/इ. गेट). प्रत्यक्ष trade attempt चा निकाल
+    (open_multi_leg_trade()/execute_trade_on_all_accounts() कडून, उदा. "OPENED" किंवा
+    "A1:OPENED; A2:FAILED") यापैकी कधीच नसतो."""
+    return trade_status is None or trade_status == "STRATEGY_SELECTION_FAILED" or str(trade_status).startswith("SKIPPED_")
+
+
 def save_signal_log(entry):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा प्रत्येक शोधलेला
     सिग्नल साठवणे (trade झाला किंवा न झाला तरीही) — Dashboard वरच्या संपूर्ण Signal Log साठी.
     entry: {"symbol":.., "trade_date":.., "signal_time":.., "level_type":.., "level_price":..,
             "hit_type":.., "direction":.., "ltp_at_signal":.., "trade_status":.., "reason":..}
+
+    🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वर Signal Log "2-3 वेळा repeat" दिसणे) — bot दर १
+    मिनिटाला चालतो (candle timeframe 5M/15M/इ. असला तरी touch-तपासणी नेहमी अलीकडच्या candles वरून,
+    दर cron cycle ला). किंमत एखाद्या level जवळ बराच वेळ राहिली (उदा. 30-मिनिटांचा cooldown, किंवा
+    max-hits आधीच गाठलेला), तर प्रत्येक cron cycle ला तीच नेमकी स्थिती (hit_type+trade_status+reason)
+    पुन्हा-पुन्हा नवीन row म्हणून साठवली जायची — Dashboard वर निरुपयोगी, जवळजवळ-सारख्याच नोंदींचा
+    ढीग दिसायचा. आता — फक्त "काहीच प्रत्यक्ष प्रयत्न झाला नाही" अशा नोंदींसाठी (_is_no_action_trade_status),
+    त्याच दिवशीची, त्याच level ची, सर्वात अलीकडची नोंद अगदी तशीच (hit_type+trade_status+reason)
+    असेल, तर पुन्हा साठवत नाही (प्रत्येक दिवशी किमान एक नोंद कायम राहते, त्यामुळे bot चालू आहे की नाही
+    हे तपासताही येतं). प्रत्यक्ष trade attempt कधीच dedupe होत नाही — तो नेहमी नव्याने साठवला जातो.
     """
     conn = get_connection()
     if conn is None:
         return False
     try:
         with conn.cursor() as cur:
+            trade_status = entry.get("trade_status")
+            if _is_no_action_trade_status(trade_status):
+                cur.execute(
+                    """SELECT hit_type, trade_status, reason FROM signal_log
+                       WHERE symbol=%s AND trade_date=%s AND level_type=%s AND level_price=%s
+                       ORDER BY signal_time DESC LIMIT 1""",
+                    (entry["symbol"], entry["trade_date"], entry["level_type"], entry["level_price"]),
+                )
+                last = cur.fetchone()
+                if last is not None and last[0] == entry["hit_type"] and last[1] == trade_status and last[2] == entry.get("reason"):
+                    return True  # आधीच्याच स्थितीची नोंद -- पुन्हा साठवली नाही, पण हे अपयश नाही
             cur.execute(
                 """INSERT INTO signal_log (symbol, trade_date, signal_time, level_type, level_price,
                                             hit_type, direction, ltp_at_signal, trade_status, reason)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (entry["symbol"], entry["trade_date"], entry["signal_time"], entry["level_type"],
                  entry["level_price"], entry["hit_type"], entry["direction"], entry.get("ltp_at_signal"),
-                 entry.get("trade_status"), entry.get("reason")),
+                 trade_status, entry.get("reason")),
             )
         conn.commit()
         return True
