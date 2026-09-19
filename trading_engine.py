@@ -8,7 +8,7 @@ import uuid
 import cloud_db
 
 from config import DB_PATH, get_ist_now, get_ist_today
-from database import log_orders_batch
+from database import log_orders_batch, get_todays_live_total_pnl_and_count
 from upstox_api import execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions, extract_order_ids, get_instrument_key
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
@@ -216,6 +216,40 @@ def _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product
         _logger.exception("_auto_reverse_filled_legs() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def check_kill_switch():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L किंवा trade-count (सर्व symbols/bots
+    मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो. PAPER trades कधीच
+    अडवले जात नाहीत — फक्त LIVE (खरे पैसे) साठीच हा संरक्षक. रिटर्न: (ok: bool, reason: str|None)."""
+    settings = cloud_db.get_kill_switch_settings()
+    if not settings.get("enabled", True):
+        return True, None
+    total_pnl, total_trades = get_todays_live_total_pnl_and_count()
+    max_daily_loss = settings.get("max_daily_loss", 10000)
+    max_trades_per_day = settings.get("max_trades_per_day", 15)
+    if total_pnl <= -max_daily_loss:
+        return False, f"KILL_SWITCH_DAILY_LOSS — आजचा एकूण LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा ₹{max_daily_loss:,.0f})"
+    if total_trades >= max_trades_per_day:
+        return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
+    return True, None
+
+
+def _alert_kill_switch_blocked(symbol, source, reason):
+    """LIVE Kill Switch ट्रिप झाल्यावर, नवीन LIVE trade ब्लॉक केल्यावर Telegram अलर्ट — _alert_ltp_fetch_failure()
+    सारखंच, cooldown नाही (गंभीर, पैशांशी संबंधित स्थिती असल्याने दर वेळी सूचना देणं चुकून दुर्लक्षित
+    होण्यापेक्षा जास्त सुरक्षित)."""
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"🛑 <b>{symbol} ({source}) — LIVE Kill Switch सक्रिय!</b>\n"
+            f"{reason}\n"
+            f"हा नवीन LIVE ट्रेड ब्लॉक केला गेला (PAPER trades वर परिणाम नाही). Bot Dynamic SR Algo "
+            f"पानावरून Kill Switch सेटिंग्ज तपासा/रीसेट करा."
+        )
+    except Exception:
+        _logger.exception("_alert_kill_switch_blocked() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
@@ -231,6 +265,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Same-Timeframe Next-Level-Exit, 15M/30M/60M) —
     entry_timeframe (ऐच्छिक, उदा. "15M"/"30M"/"60M"/"1M"/"5M") — Next-Level-Exit साठी त्याच
     timeframe चा पुढचा level शोधण्यासाठी वापरला जातो."""
+    if trading_mode == "LIVE":
+        kill_switch_ok, kill_switch_reason = check_kill_switch()
+        if not kill_switch_ok:
+            _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
+            return False, {"status": "error", "reason": kill_switch_reason}
+
     legs = normalize_legs(strategy_result)
     qty = lots * lot_size
 

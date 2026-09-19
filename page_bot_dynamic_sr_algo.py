@@ -14,6 +14,7 @@ SL/TSL/Target Exit Gate, Naked Option Trade toggle) — एकाच पान�
 import streamlit as st
 
 import cloud_db
+import database
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
@@ -65,11 +66,57 @@ def _render_live_status_banner():
         st.success("🟢 सर्व strategies सध्या PAPER मोडमध्ये आहेत — कुठलाही खरा पैसा वापरला जात नाही.")
 
 
+def _render_kill_switch_panel():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — तिन्ही bots साठी एकत्रित, संपूर्ण-खात्यासाठीचं (per-strategy/symbol
+    नाही) सुरक्षा-सेटिंग. आजचा एकूण LIVE तोटा किंवा ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर पुढचे
+    सर्व LIVE trades (कुठल्याही bot/symbol चे) trading_engine.open_multi_leg_trade() कडूनच आपोआप
+    थांबतात (PAPER trades वर कुठलाही परिणाम नाही)."""
+    ks_settings = cloud_db.get_kill_switch_settings()
+    total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+
+    with st.expander("🛑 LIVE Kill Switch (सर्व Bots + Dashboard साठी एकत्रित)", expanded=False):
+        st.caption(
+            "आजचा एकूण खऱ्या पैशांचा (LIVE) तोटा किंवा ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर "
+            "तिन्ही bots + Dashboard कडून पुढचे कुठलेही नवीन LIVE trade घेतले जाणार नाहीत (PAPER "
+            "trades नेहमीप्रमाणेच चालू राहतील) — जोपर्यंत तुम्ही स्वतः इथून सेटिंग्ज बदलत नाही."
+        )
+        tripped = ks_settings["enabled"] and (
+            total_pnl <= -ks_settings["max_daily_loss"] or total_trades >= ks_settings["max_trades_per_day"]
+        )
+        if not ks_settings["enabled"]:
+            st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
+        elif tripped:
+            st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन LIVE trade ब्लॉक केला जातोय.")
+        else:
+            st.success(f"🟢 Kill Switch OK — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}.")
+
+        ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
+        c1, c2 = st.columns(2)
+        with c1:
+            ks_max_loss = st.number_input(
+                "कमाल दैनिक तोटा ₹ (सर्व LIVE bots मिळून)", min_value=500.0,
+                value=float(ks_settings["max_daily_loss"]), step=500.0, key="bdsr_ks_max_loss",
+            )
+        with c2:
+            ks_max_trades = st.number_input(
+                "कमाल दैनिक LIVE ट्रेड्स (सर्व bots मिळून)", min_value=1,
+                value=int(ks_settings["max_trades_per_day"]), step=1, key="bdsr_ks_max_trades",
+            )
+        if st.button("💾 Kill Switch सेव्ह करा", key="bdsr_ks_save_btn"):
+            ok = cloud_db.save_kill_switch_settings(ks_enabled, ks_max_loss, ks_max_trades)
+            if ok:
+                st.success("✅ Kill Switch सेटिंग्ज जतन झाल्या.")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("तिन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     _render_live_status_banner()
+    _render_kill_switch_panel()
 
     with st.expander("❓ हे पान पहिल्यांदाच वापरताय? इथे क्लिक करा"):
         st.markdown(

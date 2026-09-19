@@ -96,3 +96,46 @@ class TestGetExitReasonBreakdown:
     def test_empty_when_no_trades(self, temp_db):
         df = database.get_exit_reason_breakdown("NIFTY", "source")
         assert df.empty
+
+
+class TestGetTodaysLiveTotalPnlAndCount:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
+    गंभीर यादीतला चौथा मुद्दा) — सर्व symbols/sources मिळून आजचा एकूण LIVE P&L + trade count."""
+
+    def test_sums_across_symbols_and_sources_live_only(self, temp_db):
+        import config
+        today_str = config.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "T1", -3000.0, "SL", today_str, symbol="NIFTY", source="dynamic_sr_instant", mode="LIVE")
+        seed_closed_trade(temp_db, "T2", 500.0, "TARGET", today_str, symbol="BANKNIFTY", source="srv2_momentum_reversal", mode="LIVE")
+        seed_closed_trade(temp_db, "T3", -100000.0, "SL", today_str, symbol="NIFTY", source="classic_sr_reversal", mode="PAPER")
+
+        total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+        assert total_pnl == -2500.0
+        assert total_trades == 2
+
+    def test_ignores_other_days(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -3000.0, "SL", "2020-01-01", mode="LIVE")
+        total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+        assert total_pnl == 0
+        assert total_trades == 0
+
+    def test_counts_open_live_trades_too_not_just_closed(self, temp_db):
+        """PNL फक्त CLOSED वरून, पण trade-count मध्ये आजचे सर्व (OPEN सकट) LIVE trades मोजले जातात —
+        get_todays_realized_pnl() सारखंच वर्तन (मर्यादा gaming टाळण्यासाठी, फक्त बंद झालेलेच नाही)."""
+        import sqlite3
+        import json
+        import config
+        today_str = config.get_ist_today().strftime("%Y-%m-%d")
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode,
+               trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("T_OPEN", today_str, "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+             f"{today_str} 10:00:00", "OPEN", json.dumps([]), "LIVE", "INTRADAY", "dynamic_sr_instant"),
+        )
+        conn.commit()
+        conn.close()
+        total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+        assert total_pnl == 0
+        assert total_trades == 1
