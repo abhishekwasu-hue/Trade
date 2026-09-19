@@ -1181,7 +1181,18 @@ def reconcile_open_trades_with_broker(access_token, symbol):
     if positions is None:
         return [], "Upstox कडून Positions मिळाल्या नाहीत (token/नेटवर्क तपासा) — reconciliation करता आलं नाही."
 
-    broker_open_keys = {p.get("instrument_token") for p in positions if p.get("quantity", 0) != 0}
+    # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — आधी `broker_open_keys` मध्ये
+    # फक्त धन quantity असलेले instruments असायचे, आणि कुठलाही leg त्या यादीत *नसेल* (मग तो broker कडे
+    # खरंच बंद असो, किंवा response मध्ये नुसताच गहाळ/अपूर्ण असो — दोन्ही सारखेच दिसायचे) तर trade
+    # CLOSED मार्क व्हायचा. एकच रिकामा/अर्धवट response (क्षणिक network glitch, किंवा carry-forward
+    # झालेली position "short-term-positions" API मध्ये त्या दिवशी दिसलीच नाही तरीही) — आणि सर्वच्या
+    # सर्व OPEN LIVE trades एकाच वेळी CLOSED होऊन जायच्या, पुढे SL/Target/EOD काहीच लागू न होता
+    # unmanaged राहायच्या. आता फक्त तीच position CLOSED मार्क होते, जिच्या **सर्व** legs broker कडून
+    # स्पष्टपणे quantity=0 सह कळवलेल्या असतात (नुसतं यादीत नसणं पुरेसं नाही) — एखादा leg response मध्ये
+    # गहाळ असेल, तर ती trade सुरक्षिततेसाठी OPEN च राहते (manage_open_trades चं SL/Target/EOD अजूनही
+    # लागू राहतं) — जास्तीत जास्त एखादी खरोखर जुनी बंद झालेली trade DB मध्ये चुकून "OPEN" दिसत राहणं
+    # (manual साफसफाई लागेल), पण कधीच खरी उघडी position "बंद" समजून अनियंत्रित सोडली जाणार नाही.
+    broker_flat_keys = {p.get("instrument_token") for p in positions if p.get("quantity", 0) == 0}
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1196,8 +1207,8 @@ def reconcile_open_trades_with_broker(access_token, symbol):
         legs = json.loads(legs_json_str) if legs_json_str else []
         if not legs:
             continue
-        still_open_at_broker = any(leg["instrument_key"] in broker_open_keys for leg in legs)
-        if not still_open_at_broker:
+        all_legs_confirmed_flat = all(leg["instrument_key"] in broker_flat_keys for leg in legs)
+        if all_legs_confirmed_flat:
             cur.execute(
                 """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='RECONCILED_EXTERNAL_CLOSE'
                    WHERE trade_id=?""",

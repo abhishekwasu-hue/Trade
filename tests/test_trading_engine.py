@@ -790,6 +790,43 @@ class TestReconcileOpenTradesWithBroker:
         assert reconciled == []
         assert error != ""
 
+    def test_empty_positions_response_does_not_close_everything(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने लाईव्ह ट्रेडिंगआधी मागितलेल्या सखोल review मध्ये सापडवलेली, अत्यंत गंभीर
+        bug (तीनही agents पैकी एकाने सापडवलेली) — fetch_broker_positions() 200 status सह रिकामी यादी
+        ([], None नाही) रिटर्न करतं तेव्हाही (क्षणिक glitch, किंवा carry-forward झालेली position
+        "short-term-positions" API मध्ये त्या दिवशी दिसलीच नाही तरीही) — आधी `positions is None`
+        तपासणी हे पकडायचीच नाही, आणि रिकाम्या यादीमुळे प्रत्येक leg "broker कडे नाही" ठरून सर्वच्या
+        सर्व OPEN LIVE trades एकाच झटक्यात (चुकीने) CLOSED व्हायच्या -- पुढे SL/Target/EOD काहीच लागू
+        न होता, खरी उघडी position कायमची अनियंत्रित राहायची. आता रिकामी/अपूर्ण यादी कुठलाही trade
+        बंद करत नाही -- फक्त explicit quantity=0 सापडलेली position तशीच गणली जाते."""
+        seed_trade(temp_db, "T24", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [])
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
+        assert error == ""
+        assert reconciled == []  # आधी इथे ["T24"] यायचं -- चुकीने बंद
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status FROM live_trades WHERE trade_id='T24'").fetchone()
+        conn.close()
+        assert row == ("OPEN",)
+
+    def test_leg_missing_from_response_entirely_does_not_reconcile(self, temp_db, monkeypatch):
+        """response मध्ये leg चा उल्लेखच नसेल (quantity=0 सहही नाही, पूर्णपणे गहाळ) -- ती leg
+        "explicitly बंद" म्हणून कधीच गणली जाऊ नये, फक्त response मध्ये स्पष्टपणे quantity=0 दिलेली
+        असेल तरच."""
+        seed_trade(temp_db, "T25", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": 0},
+            # PE24300 (दुसरी leg) यादीत पूर्णपणे गहाळ -- quantity=0 सहही नमूद नाही
+        ])
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY")
+        assert reconciled == []
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status FROM live_trades WHERE trade_id='T25'").fetchone()
+        conn.close()
+        assert row == ("OPEN",)
+
 
 class TestManageOpenTradesBrokerRouting:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — manage_open_trades()
