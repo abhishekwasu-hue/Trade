@@ -1,4 +1,32 @@
-# Engine Service — Deployment (Phase 1: Position Monitoring)
+# ⚠️ प्रत्यक्षात काय चालू आहे (VPS वर पडताळलेलं, महत्त्वाचं)
+
+Position-exit monitoring साठी codebase मध्ये **दोन** स्वतंत्र script आहेत — `engine_service.py`
+(हा systemd timer) आणि `trade_monitor.py` (crontab). दोघेही एकाच वेळी चालू असतील तर एकच trade
+दोनदा बंद होण्याचा धोका होता (आता `ProcessLock` मुळे तसं होणार नाही, पण दोन्ही चालू ठेवणं
+गोंधळाचं आणि निरर्थक आहे — फक्त एकच खरा असायला हवा).
+
+**पडताळणी (२०२६-०९-१९, प्रत्यक्ष VPS वर):**
+```
+$ systemctl status engine_service.timer
+     Loaded: loaded (...; disabled; preset: enabled)
+     Active: inactive (dead)
+# ०७ सप्टेंबरपासून बंद, पुन्हा सुरूच केलेलं नाही.
+
+$ crontab -l | grep trade_monitor
+45-59 3 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+* 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+# दर मिनिटाला, ९:१५ सकाळी ते ~४:२९ संध्याकाळ IST, सोम-शुक्र — चालूच आहे.
+```
+
+**निष्कर्ष — `trade_monitor.py` (crontab) हाच खरा, सक्रिय exit-monitoring मार्ग आहे.
+`engine_service.timer` निष्क्रिय आहे — खालच्या "Engine Service" सूचना फक्त ऐतिहासिक/संदर्भासाठी
+ठेवलेल्या आहेत. `engine_service.timer` परत कधीच `systemctl enable --now` करू नका — ते
+`trade_monitor.py` शीच डुप्लिकेट होईल.** Crontab च्या सेटअपसाठी खाली "Trade Monitor — प्रत्यक्ष
+Deployment (crontab)" बघा.
+
+---
+
+# Engine Service — Deployment (Phase 1: Position Monitoring) — ⚠️ सध्या निष्क्रिय, फक्त संदर्भासाठी
 
 `engine_service.py` established SL/Target/EOD मॉनिटरिंग आता Dashboard (Streamlit) पासून पूर्ण
 स्वतंत्र, systemd timer वर दर १ मिनिटाला चालतं — ब्राउझर बंद असला तरी चालू राहतं.
@@ -66,6 +94,33 @@ mkswap /swapfile
 swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
+
+---
+
+# Trade Monitor — प्रत्यक्ष Deployment (crontab) — ⚠️ हाच खरा, सक्रिय मार्ग
+
+`trade_monitor.py` (crontab, VPS वर दर मिनिटाला) — SL/Target/EOD/TSL/Carry-Forward/Next-Level-Exit/
+PCR Gate सकट संपूर्ण आधुनिक exit-logic (`trading_engine.manage_open_trades()`) प्रत्यक्षात इथूनच
+चालते. `engine_service.py` मधलेच काही shared helpers (`load_settings`/`compute_atr_points`/
+`MONITORED_SYMBOLS`) import करते, पण स्वतःचा systemd timer वापरत नाही — cron नियंत्रित करतो.
+
+**सद्य crontab (VPS वर `crontab -l` ने पडताळलेलं, वेळा UTC मध्ये — VPS ची timezone
+`timedatectl`/`date` ने आधी खात्री करूनच बदल करा):**
+```
+45-59 3 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+* 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+```
+म्हणजे दर मिनिटाला, सकाळी ९:१५ ते संध्याकाळी ~४:२९ IST, सोमवार-शुक्रवार (UTC 3:45 ते 10:59 शी
+समतुल्य) — भारतीय बाजाराच्या पूर्ण सत्रभर.
+
+**तपासणी:**
+```bash
+tail -f /root/Trade/monitor.log
+crontab -l | grep trade_monitor
+```
+
+**⚠️ `engine_service.timer` परत सुरू करण्याआधी** — आधी हा crontab entry काढून टाका (किंवा
+उलट) — दोन्ही एकाच वेळी चालू ठेवू नका.
 
 ---
 

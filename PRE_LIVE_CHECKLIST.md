@@ -44,27 +44,30 @@ None of them have been confirmed against a live market session.
   response shape. It does not — and currently cannot — trigger for
   Shoonya/Stocko. Another reason those brokers are gated above, not a
   separate risk once they're wired up.
-- **Which script actually runs exit-monitoring on your VPS is unconfirmed.**
-  `engine_service.py` has a committed systemd timer
-  (`deploy/engine_service.service`) and `deploy/README.md` documents that
-  setup. But `trade_monitor.py`'s own docstring says it's meant to run via
-  **crontab** (not systemd) and describes itself as "the one, sole
-  authoritative place" for exit logic — implying a past migration the deploy
-  docs were never updated for. Both are now protected against running
-  concurrently (`ProcessLock`), so nothing breaks either way — but if the
-  wrong one is actually live, or both are, that needs to be known, not
-  assumed. **Resolve on the VPS before going live:**
+- ~~Which script actually runs exit-monitoring on your VPS is unconfirmed.~~
+  **RESOLVED 2026-09-19, verified directly on the VPS:**
   ```
-  systemctl status engine_service.timer
-  crontab -l | grep trade_monitor
+  $ systemctl status engine_service.timer
+       Loaded: loaded (...; disabled; preset: enabled)
+       Active: inactive (dead)
+  # Stopped 2026-09-07, never restarted since.
+
+  $ crontab -l | grep trade_monitor
+  45-59 3 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+  * 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
+  # Every minute, 9:15 AM - ~4:29 PM IST, Mon-Fri — running.
   ```
-  Whichever one is confirmed live, consider removing the other's deployment
-  path entirely rather than leaving two dormant copies of exit logic in the
-  repo.
+  `trade_monitor.py` (crontab) is the real, active exit-monitoring path.
+  `engine_service.timer` is confirmed dead. `deploy/README.md` has been
+  updated to document the crontab setup and flag `engine_service.timer`'s
+  section as historical-only — **do not re-enable it** without first
+  removing the `trade_monitor.py` crontab entries (or vice versa); running
+  both is the duplicate-exit scenario `ProcessLock` guards against but
+  neither script needs to court.
 
 ## 3. Recommended rollout, in order
 
-1. Confirm the deployment question in §2 on the actual VPS.
+1. ~~Confirm the deployment question in §2 on the actual VPS.~~ Done.
 2. Run PAPER mode through at least a few full trading sessions after this
    merge. Watch the Signal Log and Order Log daily — not just for errors, but
    for entries/exits that look right by eye.
