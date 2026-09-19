@@ -6,7 +6,7 @@ import sqlite3
 import pandas as pd
 
 from config import DATA_DIR, DB_PATH, get_ist_now, get_ist_today
-from upstox_api import fetch_ltp_map
+from upstox_api import fetch_ltp_map, upload_to_google_drive
 
 
 from log_setup import get_logger
@@ -303,6 +303,32 @@ def mark_auto_backup_done():
     except Exception:
         _logger.exception("mark_auto_backup_done() मध्ये अनपेक्षित चूक (silently handled)")
         pass  # marker लिहिता आला नाही तरी हरकत नाही — पुढच्या rerun ला पुन्हा backup प्रयत्न होईल, जास्तीत जास्त इतकाच परिणाम
+
+def run_auto_backup_if_due(interval_minutes=60):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup, महत्त्वाच्या
+    🟠 यादीतला मुद्दा) — आधी auto_backup_due()/get_db_backup_bytes()/upload_to_google_drive()/
+    mark_auto_backup_done() हे चार टप्पे फक्त shared_context.py (Dashboard उघडं असतानाच) मध्ये एकत्र
+    केलेले होते. तिन्ही automated bots (VPS crontab, बिनदिक्कतपणे दिवसांदिवस Dashboard न उघडताही
+    चालणारे — त्यामुळे खरा VPS-crash/disk-failure धोका इथेच जास्त) कधीच स्वतःचा backup घेत नव्हते.
+    आता हाच एकच, सामायिक मार्ग — Dashboard आणि तिन्ही bots दोन्हीकडून सारख्याच वर्तनासह वापरण्याजोगा.
+    Google Drive configured नसेल/अपलोड अयशस्वी झालं तरी गप्प वगळलं जातं (caller कधीच अडत नाही).
+    रिटर्न: खरंच नवीन backup अपलोड झालं का (bool, फक्त निदान/लॉगिंगसाठी)."""
+    try:
+        if not auto_backup_due(interval_minutes=interval_minutes):
+            return False
+        backup_bytes = get_db_backup_bytes()
+        if not backup_bytes:
+            return False
+        ok, _msg = upload_to_google_drive(
+            backup_bytes, f"amw_a1_autobackup_{get_ist_now().strftime('%Y%m%d_%H%M')}.db",
+            mime_type="application/octet-stream",
+        )
+        if ok:
+            mark_auto_backup_done()
+        return ok
+    except Exception:
+        _logger.exception("run_auto_backup_if_due() मध्ये अनपेक्षित चूक (silently handled)")
+        return False
 
 def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     """आजच्या दिवसात बंद झालेल्या (CLOSED) ट्रेड्सचा एकूण वास्तविक नफा/तोटा (डेली सर्किट ब्रेकरसाठी).

@@ -28,7 +28,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source
+from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate
@@ -372,5 +372,9 @@ if __name__ == "__main__":
             for symbol in args.symbols.split(","):
                 print(process_symbol(token, symbol.strip()))
             write_heartbeat("dynamic_sr_instant_trader")  # 🎓 Production-readiness सुधारणा — याआधी हे script कधीच heartbeat नोंदवत नव्हतं
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Crash Recovery / DB Backup) —
+            # आधी हे फक्त Dashboard उघडं असतानाच चालायचं; VPS crontab वर दिवसांदिवस Dashboard न
+            # उघडताही चालणाऱ्या या bot कडून आता दर तासाला (Google Drive configured असेल तरच) आपोआप.
+            run_auto_backup_if_due(interval_minutes=60)
     except ProcessLockHeld as e:
         print(f"⏭️ मागची invocation अजून चालू आहे, ही वगळली — डुप्लिकेट ऑर्डर टाळण्यासाठी ({e})")
