@@ -55,6 +55,33 @@ class TestFetchLtpMapDetailed:
         assert result == {}
         assert error is None
 
+    def test_missing_last_price_key_is_omitted_not_zero(self):
+        """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — एखाद्या leg साठी
+        response मध्ये "last_price" key च गहाळ असेल (अपुरा/चुकीचा प्रतिसाद), तर ती किंमत 0.0 म्हणून
+        गृहीत धरली जाऊ नये (SELL leg साठी हे current_pnl खोटं जास्त दाखवून चुकीचा Target-exit घडवू
+        शकतं) — त्याऐवजी result dict मधून ती key अजिबात गाळली जायला हवी (म्हणजे .get() कडून None
+        मिळेल, आणि manage_open_trades() चा "LTP मिळाली नाही" guard योग्यरित्या कार्यान्वित होईल)."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": {
+            "NSE_FO:PE24400": {"instrument_token": "PE24400"},  # last_price key च नाही
+            "NSE_FO:PE24300": {"instrument_token": "PE24300", "last_price": 27.5},
+        }}
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result, error = upstox_api.fetch_ltp_map_detailed("fake_token", ["PE24400", "PE24300"])
+        assert "PE24400" not in result  # गहाळ key -- .get() कडून None मिळेल
+        assert result["PE24300"] == 27.5
+
+    def test_genuine_zero_last_price_is_kept_as_zero(self):
+        """खरोखर last_price=0 दिलेला असेल (उदा. worthless deep-OTM contract), तर तो legitimate
+        शून्य म्हणूनच वापरायला हवा -- गहाळ data सारखा गाळला जाऊ नये."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": {"NSE_FO:PE24000": {"instrument_token": "PE24000", "last_price": 0}}}
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result, error = upstox_api.fetch_ltp_map_detailed("fake_token", ["PE24000"])
+        assert result["PE24000"] == 0.0
+
     def test_fetch_ltp_map_backward_compatible_success(self):
         with patch.object(upstox_api, "fetch_ltp_map_detailed", return_value=({"PE24400": 20.0}, None)):
             result = upstox_api.fetch_ltp_map("fake_token", ["PE24400"])

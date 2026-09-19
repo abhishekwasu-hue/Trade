@@ -205,6 +205,57 @@ class TestProcessSymbol:
             assert mock_save.called
             assert "Bull Put Spread" in result
 
+    def test_custom_target_pct_setting_is_actually_used(self):
+        """🎓 वापरकर्त्याने पडताळणीत सापडवलेली bug (live trading आधी) — Dashboard वरचं "Target — %
+        of Net Premium" setting (spread_target_pct_of_premium) आधी इथे कधीच वाचलंच जायचं नाही,
+        नेहमी हार्डकोडेड 80% वापरला जायचा. वापरकर्त्याने 40% सेट केलं तरी bot शांतपणे 80% वरच
+        थांबायचा -- आता settings चीच value खरोखर वापरली जायला हवी."""
+        candles_df = _fake_candles_df(last_close=23902)
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["spread_target_pct_of_premium"] = 40.0
+        custom_settings["naked_enabled"] = False  # फक्त spread call तपासण्यासाठी, naked leg (वेगळा target_pct_of_max_profit=100 वापरतो) वेगळी ठेवण्यासाठी
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_trade.call_args.kwargs["target_pct_of_max_profit"] == 40.0
+
+    def test_atm_strike_rounds_to_symbol_own_strike_step_not_always_50(self):
+        """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py
+        प्रमाणेच इथेही atm_strike कायम round(price/50)*50 वापरत होता, BANKNIFTY/SENSEX (strike step 100)
+        साठी अनेकदा चुकीचा (raw_chain मध्ये सापडतच न येणाऱ्या ग्रिडवर strike). आता symbol च्या
+        cloud_db.STRIKE_STEP नुसार राऊंड होतो."""
+        candles_df = _fake_candles_df(last_close=51930)
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["symbol_enabled"] = True
+        custom_settings["entry_rsi_gate_enabled"] = False
+        custom_settings["naked_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones(symbol="BANKNIFTY", support_level=51930.0)), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(51930.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "BANKNIFTY")
+            assert mock_select.called
+            # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती
+            assert mock_select.call_args.args[2] == 51900
+            assert mock_select.call_args.kwargs.get("step") == 100
+
     def test_multi_hit_max_2_per_level_skips_third(self):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit, One-Touch ऐवजी) — established
         established level ला आजच established 2 वेळा hit झालेला असेल, तर established 3रा वेळा

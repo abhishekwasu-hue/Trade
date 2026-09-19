@@ -720,6 +720,81 @@ class TestSlTargetLevelsPreLiveFixes:
         assert row[0] < 0  # कधीच धन नसावा
 
 
+class TestEntryBasisUsesActualFillPrice:
+    """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — SL पातळी आणि साठवलेला
+    net_credit आधी नेहमी strategy_result मधल्या (signal-check वेळी, order पाठवण्याआधी घेतलेल्या)
+    chain-LTP वरून ठरायचे — MARKET order च्या प्रत्यक्ष slippage कडे पूर्णपणे दुर्लक्ष करून. पण
+    upstox_api.execute_order_leg_set() आधीच खरी fill किंमत (resp["verified_legs"]/["paper_fills"])
+    परत देतं — आता तीच वापरली जायला हवी, उपलब्ध असेल तेव्हा."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD",
+            "short_leg": {"strike": 24400, "instrument_key": "PE24400", "ltp": 50},
+            "long_leg": {"strike": 24300, "instrument_key": "PE24300", "ltp": 25},
+            "net_credit": 25, "max_profit": 25, "max_loss": 75,  # chain-snapshot आधारित (जुना)
+        }
+
+    def test_live_order_uses_verified_leg_average_price_not_chain_snapshot(self, temp_db, monkeypatch):
+        """खरा fill (slippage मुळे) chain-snapshot पेक्षा वेगळा असेल (short leg 48 ऐवजी संभवतः
+        जास्त, long leg 27 ऐवजी संभवतः जास्त -- net_credit कमी झालेला, 25 ऐवजी 20), तर साठवलेला
+        net_credit आणि sl_pnl_level त्या खऱ्या (कमी झालेल्या) आधारावरच असायला हवेत."""
+        def fake_execute(token, orders, mode):
+            return 200, {
+                "status": "success", "data": {"order_ids": ["T1", "T2"]},
+                "verified_legs": [
+                    {"instrument_token": "PE24400", "average_price": 48.0},  # short leg, chain-snapshot 50 होता
+                    {"instrument_token": "PE24300", "average_price": 28.0},  # long leg, chain-snapshot 25 होता
+                ],
+            }
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="LIVE", trading_style="SWING", sl_pct_of_credit=100,
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT net_credit, sl_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        net_credit, sl_pnl_level = row
+        # खरा net_credit = short(48) - long(28) = 20 (chain-snapshot च्या 25 ऐवजी)
+        assert net_credit == 20.0
+        assert sl_pnl_level == -1500.0  # -(20 * 1 * 75 * 100%)
+
+    def test_paper_order_uses_paper_fills_not_chain_snapshot(self, temp_db, monkeypatch):
+        def fake_execute(token, orders, mode):
+            return 200, {
+                "status": "success", "data": {"order_ids": ["T1", "T2"]},
+                "paper_fills": {"PE24400": 49.0, "PE24300": 26.0},
+            }
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="PAPER", trading_style="SWING", sl_pct_of_credit=100,
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT net_credit FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        assert row[0] == 23.0  # short(49) - long(26) = 23, chain-snapshot च्या 25 ऐवजी
+
+    def test_falls_back_to_chain_snapshot_when_no_verified_fill_data(self, temp_db, monkeypatch):
+        """Shoonya/Stocko/Fyers सारखे adapter-routed brokers verified_legs/paper_fills कधीच देत
+        नाहीत -- अशा वेळी जुनाच chain-snapshot आधार (backward-compatible) वापरला जायलाच हवा."""
+        def fake_execute(token, orders, mode):
+            return 200, {"status": "success", "data": {"order_ids": ["T1", "T2"]}}  # verified_legs/paper_fills नाहीत
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=None, target_pct_of_max_profit=80, product_type="D",
+            trading_mode="LIVE", trading_style="SWING", sl_pct_of_credit=100,
+        )
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT net_credit FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        assert row[0] == 25.0  # strategy_result["net_credit"] चाच जुना आधार
+
+
 class TestReconcileOpenTradesWithBroker:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — Upstox च्या स्वतःच्या
     app/website वरून थेट बंद केलेली position आपल्याच database मध्ये आपोआप "CLOSED" करणे —

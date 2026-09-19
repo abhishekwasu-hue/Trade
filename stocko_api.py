@@ -264,9 +264,37 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
 
     order_type_map = {"MARKET": "MARKET", "LIMIT": "LIMIT", "SL": "SL", "SL-M": "SLM"}
     product_map = {"D": "NRML", "I": "MIS"}
+    # PDF #2 प्रमाणे Stocko चे स्वतःचे वैध exchange codes — "NSE_FO" (Upstox चं स्वरूप) यात नाही.
+    VALID_STOCKO_EXCHANGES = {"NSE", "NFO", "CDS", "BSE", "MCX"}
     order_ids = []
-    for o in orders:
+    # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — place_order() चा डीफॉल्ट user_order_id
+    # (int(time.time()) % 100000, सेकंद-रिझोल्यूशन) एकाच multi-leg ऑर्डरमधल्या सलग legs साठी
+    # सहज एकसारखाच येऊ शकतो (जलद, sequential HTTP कॉल्स बहुतेकदा एकाच सेकंदात पूर्ण होतात) —
+    # Stocko कडून दुसरा leg duplicate order id म्हणून नाकारला जाण्याचा धोका. आता batch-निहाय
+    # एकच base (मिलिसेकंद-रिझोल्यूशन) + leg-index, त्यामुळे एकाच batch मधल्या legs ना हमखास
+    # वेगवेगळे id मिळतात.
+    batch_order_id_base = int(time.time() * 1000) % 90000
+    for i, o in enumerate(orders):
         exch, _, token = o["instrument_token"].partition("|")
+        # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — Shoonya साठीच्याच
+        # टीपेप्रमाणे — बॉट्स strike-निवडीसाठी नेहमी fetch_upstox_option_chain() वापरतात, त्यामुळे
+        # इथे पोहोचणारा instrument_token नेहमी Upstox च्याच स्वरूपात असतो ("NSE_FO|<upstox numeric
+        # token>"). आधी हा exchange="NSE_FO" (Stocko ला "NSE"/"NFO"/... हवं) आणि Upstox चाच numeric
+        # token (Stocko साठी निरर्थक, त्यांचा स्वतःचा instrument_token वेगळाच असतो) म्हणून थेट
+        # Stocko कडे पाठवला जायचा. Stocko साठी स्वतःचा option-chain/strike-resolution मार्ग अजून
+        # bot-स्तरावर जोडलेला नाही (fetch_shoonya_option_chain() सारखं काहीच Stocko साठी अस्तित्वात
+        # नाही) — तोपर्यंत असा स्पष्टपणे-चुकीचा instrument असेल, तर शांतपणे चुकीचा/अंदाजे order
+        # पाठवण्यापेक्षा, इथेच स्पष्ट error देऊन थांबणं जास्त सुरक्षित.
+        if exch not in VALID_STOCKO_EXCHANGES:
+            return 500, {
+                "status": "error",
+                "message": (
+                    f"Stocko LIVE order अडवला — instrument_token ('{o['instrument_token']}') Upstox च्या "
+                    "स्वरूपात आहे, Stocko चा स्वतःचा instrument_token नाही (अजून जोडलेलं नाही). चुकीच्या/भलत्याच "
+                    "contract वर order जाण्यापेक्षा हे थांबवणं सुरक्षित."
+                ),
+                "partial_order_ids": order_ids,
+            }
         status_code, resp = place_order(
             access_token,
             exchange=exch or "NFO",
@@ -277,7 +305,14 @@ def execute_order_leg_set(access_token, orders, trading_mode="LIVE"):
             product=product_map.get(o.get("product"), "NRML"),
             price=o.get("price", 0),
             trigger_price=o.get("trigger_price", 0),
+            user_order_id=batch_order_id_base + i,
         )
+        # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — STOCKO_BASE_URL सेट नसेल, तर place_order()
+        # (_check_base_url() मुळे) resp म्हणून dict ऐवजी थेट error-string परत देतो (status_code=None) —
+        # खालचा resp.get(...) तेव्हा dict नसलेल्या string वर कॉल होऊन AttributeError ने संपूर्ण
+        # LIVE order-placement अनपेक्षितपणे क्रॅश व्हायचं, ऐवजी स्पष्ट error हवा होता.
+        if status_code is None:
+            return 500, {"status": "error", "message": resp, "partial_order_ids": order_ids}
         if resp.get("status") == "success":
             order_ids.append(resp.get("data", {}).get("oms_order_id"))
         else:

@@ -251,6 +251,37 @@ class TestProcessSymbolCoreFlow:
             csr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_atm_strike_rounds_to_symbol_own_strike_step_not_always_50(self):
+        """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py प्रमाणेच इथेही
+        atm_strike कायम round(price/50)*50 वापरत होता, BANKNIFTY/SENSEX (strike step 100) साठी
+        अनेकदा चुकीचा (raw_chain मध्ये सापडतच न येणाऱ्या ग्रिडवर strike). आता symbol च्या
+        cloud_db.STRIKE_STEP नुसार राऊंड होतो."""
+        banknifty_zones = pd.DataFrame([
+            {"symbol": "BANKNIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 51930.0, "zone_high": 51930.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        candles_touch = _candles_with_rsi([
+            {"open": 51960, "high": 51970, "low": 51950, "close": 51955},
+            {"open": 51950, "high": 51955, "low": 51920, "close": 51930},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(entry_rsi_gate_enabled=False)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=banknifty_zones), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(51930.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_select, \
+             patch.object(csr, "select_naked_option_itm", return_value=None), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            csr.process_symbol("fake_token", "BANKNIFTY")
+            assert mock_select.called
+            # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती
+            assert mock_select.call_args.args[2] == 51900
+            assert mock_select.call_args.kwargs.get("step") == 100
+
     def test_swing_gate_enabled_blocks_entry_without_confluence(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
