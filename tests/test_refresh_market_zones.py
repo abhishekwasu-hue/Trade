@@ -119,3 +119,33 @@ class TestRefreshSymbolSkipsOnGap:
             assert ok is True
             assert mock_save.called
             assert not mock_notify.called
+
+    def test_passes_30m_recent_and_resampled_60m_recent_to_compute_all_zones(self):
+        """🎓 वापरकर्त्याने सापडवलेली bug (SRv2 चं 30M/60M कधीच काम करायचं नाही) — df_30m_recent
+        थेट मागवला जायला हवा, आणि df_60m_recent त्याच्याच resample वरून (interval="60minute"/"1hour"
+        थेट कधीच मागवला जाऊ नये -- fetch_candles() मध्ये तो verified/allowed नाही)."""
+        df_30m_recent = pd.DataFrame({
+            "timestamp": pd.date_range("2026-01-01 09:15", periods=200, freq="30min"),
+            "open": [100.0] * 200, "high": [105.0] * 200, "low": [95.0] * 200,
+            "close": [102.0] * 200, "volume": [0] * 200, "oi": [0] * 200,
+        })
+
+        def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
+            if interval == "30minute" and lookback_days is None:
+                return df_30m_recent
+            return _fake_df(failed_chunks=0)
+
+        with patch.object(rmz, "fetch_candles", side_effect=fetch_side_effect) as mock_fetch, \
+             patch.object(rmz, "compute_all_zones", return_value=pd.DataFrame([
+                 {"symbol": "NIFTY", "zone_type": "SUPPORT", "zone_low": 100.0, "zone_high": 100.0,
+                  "strength": 3, "formed_date": "2026-01-01", "status": "ACTIVE"},
+             ])) as mock_compute, \
+             patch.object(rmz.cloud_db, "save_market_zones", return_value=True):
+            ok, message = rmz.refresh_symbol("fake_token", "NIFTY")
+            assert ok is True
+            assert all(call.kwargs.get("interval") != "60minute" and call.kwargs.get("interval") != "1hour"
+                       for call in mock_fetch.call_args_list)
+            _, compute_kwargs = mock_compute.call_args
+            assert compute_kwargs["df_30m_recent"] is df_30m_recent
+            assert compute_kwargs["df_60m_recent"] is not None
+            assert len(compute_kwargs["df_60m_recent"]) < len(df_30m_recent)

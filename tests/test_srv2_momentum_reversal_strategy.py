@@ -146,6 +146,41 @@ def _fake_dyn_zones_30m_only(symbol="NIFTY", support_level=23900.0):
     ])
 
 
+def _fake_dyn_zones_60m_only(symbol="NIFTY", support_level=23900.0):
+    """फक्त 60M level (15M/30M नाहीत)."""
+    return pd.DataFrame([
+        {"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_60M", "zone_low": support_level, "zone_high": support_level,
+         "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+    ])
+
+
+class TestCollectTouchCandidates60m:
+    """🎓 वापरकर्त्याने सापडवलेली bug — "60minute" हा Upstox कडून थेट verified interval नाही
+    (fetch_candles() मध्ये allowed_intervals यादीत नाही), त्यामुळे आधी शांतपणे "30minute" कडे पडायचं
+    (पण RSI "60M" चाच आहे असं भासवत राहायचं). आता 30-मिनिट candles मागवून resample करायला हवं
+    (fetch_timeframe_df() मध्ये आधीच वापरलेला पॅटर्न) — कधीच थेट interval="60minute"/"1hour" मागवला
+    जाऊ नये."""
+
+    def test_60m_candidate_fetches_30minute_and_resamples(self):
+        df_30m = _fake_candles_df(n=60, last_close=23930)  # >=12 तासांचं, resample नंतरही >=12 hourly candles उरावेत
+
+        def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
+            assert interval != "60minute" and interval != "1hour"
+            if interval == "30minute":
+                return df_30m
+            return pd.DataFrame(columns=df_30m.columns)
+
+        with patch.object(srv2, "fetch_candles", side_effect=fetch_side_effect):
+            candidates = srv2._collect_touch_candidates(
+                "fake_token", "NIFTY", _fake_dyn_zones_60m_only(), srv2.get_ist_now(),
+            )
+        assert len(candidates) == 1
+        level_price, suffix, candles_df, underlying_price = candidates[0]
+        assert suffix == "60M"
+        # resample_to_1h ने 30-मिनिट candles अर्ध्यावर आणायला हवेत (साधारण)
+        assert len(candles_df) < len(df_30m)
+
+
 class TestProcessSymbol:
     def test_cooldown_blocks_entry(self):
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": get_ist_now()}):

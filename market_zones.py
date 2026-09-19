@@ -138,7 +138,8 @@ def is_zone_mitigated(zone_low, zone_high, df_after_formation):
 
 def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
                        base_lookback=4, base_tightness_mult=0.7, min_gap_pct=0.30, sr_top_n=5,
-                       df_15m_recent=None, df_1m_recent=None, df_5m_recent=None):
+                       df_15m_recent=None, df_1m_recent=None, df_5m_recent=None,
+                       df_30m_recent=None, df_60m_recent=None):
     """
     संपूर्ण विश्लेषण एकत्र — S/R (1H वर), Order Blocks (1H वर), Demand/Supply Zones (1H वर),
     Unfilled Gaps (15M वर). प्रत्येक zone ला mitigation-स्थिती (FILLED/ACTIVE) सह.
@@ -158,6 +159,13 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
     जपलेले, पण आता आठवडाभर जुने झालेले levels रोज योग्यरित्या ताजे होतात — कायमचे गोठलेले (frozen)
     राहत नाहीत. वापरकर्त्याने स्पष्ट सांगितलेला नियम: "दुसऱ्या दिवशी नवीन लेव्हल्स कॅल्क्युलेट
     झाल्यानंतर आदल्या सर्व झोन अपडेट व्हायला पाहिजे."
+
+    🎓 वापरकर्त्याने सापडवलेली bug (SRv2 Momentum-Reversal चा "15M/30M/60M एकत्र" — प्रत्यक्षात फक्त
+    15M) — df_30m_recent/df_60m_recent हे दोन्ही पॅरामीटर आधी अस्तित्वातच नव्हते, त्यामुळे
+    DYNAMIC_SR_*_30M/*_60M हे zone_types कधीच generate व्हायचेच नाहीत — srv2_momentum_reversal_strategy.py
+    तिन्ही timeframes (15M/30M/60M) तपासतो असं म्हणत असला, तरी प्रत्यक्षात 30M/60M साठी कधीच कुठलाही
+    ACTIVE level सापडायचाच नाही (Signal Log मध्येही ते कधीच दिसायचे नाहीत). आता df_15m_recent
+    प्रमाणेच, DYNAMIC_SR_*_30M/*_60M नावाने साठवले जातात.
     """
     rows = []
     now_date = df_1h["timestamp"].iloc[-1] if not df_1h.empty else None
@@ -183,6 +191,29 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
                          "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
         for r in dyn_sr_15m.get("resistance", []):
             rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": r["level"], "zone_high": r["level"],
+                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+
+    # 🎓 Dynamic S/R (30-मिनिट, SRv2 Momentum-Filter Reversal साठी) — df_30m_recent वापरून,
+    # DYNAMIC_SR_*_30M नावाने. df_15m_recent सारखाच पॅटर्न.
+    if df_30m_recent is not None and len(df_30m_recent) >= 100:
+        dyn_sr_30m = compute_dynamic_sr(df_30m_recent, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_30m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": s["level"], "zone_high": s["level"],
+                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr_30m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": r["level"], "zone_high": r["level"],
+                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+
+    # 🎓 Dynamic S/R (60-मिनिट, SRv2 Momentum-Filter Reversal साठी) — df_60m_recent वापरून,
+    # DYNAMIC_SR_*_60M नावाने (Upstox कडून "1hour" थेट verified नसल्याने, caller ने 30-मिनिट
+    # candles resample करून द्यायचे — fetch_timeframe_df() मध्ये आधीच वापरलेला पॅटर्न).
+    if df_60m_recent is not None and len(df_60m_recent) >= 100:
+        dyn_sr_60m = compute_dynamic_sr(df_60m_recent, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr_60m.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_60M", "zone_low": s["level"], "zone_high": s["level"],
+                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr_60m.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_60M", "zone_low": r["level"], "zone_high": r["level"],
                          "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
 
     # 🎓 Dynamic S/R (1-मिनिट, Instant Reversal Trader साठी) — df_1m_recent वापरून,
