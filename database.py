@@ -1025,9 +1025,12 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     """दिलेल्या तारीख-रेंजमधले सर्व orders, account_id सकट (charges.py ला ब्रोकर ओळखण्यासाठी लागतो) —
     order_log.trade_id → live_trades.account_id असा LEFT JOIN. trade_id जुळला नाही (उदा. Manual
     Trading Panel चे MANUAL_UNTRACKED/BASKET_UNTRACKED, जे कायम फक्त Upstox वापरतात) तर account_id
-    NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो."""
+    NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो.
+    quantity/fill_price/price/transaction_type — charges.py ला STT/Exchange/SEBI/Stamp Duty सारखे
+    turnover-आधारित सरकारी/एक्सचेंज शुल्क अचूक मोजण्यासाठी लागतात (फक्त flat brokerage पुरेसं नाही)."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, lt.account_id
+    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.quantity, o.fill_price, o.price,
+                      o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
                WHERE o.symbol=? AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
     params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]

@@ -142,6 +142,24 @@ def _entry_reason_text_en(row):
     return f"{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
 
 
+_CHARGE_BREAKDOWN_LABELS = {
+    "brokerage": "Brokerage", "stt": "STT", "exchange_txn": "Exchange Txn Charge",
+    "sebi_fee": "SEBI Fee", "stamp_duty": "Stamp Duty", "gst": "GST",
+}
+
+
+def _render_charges_breakdown_caption(breakdown):
+    """"एकूण Charges" फक्त flat brokerage नाही — STT/Exchange Txn/SEBI Fee/Stamp Duty/त्यावरचा GST
+    यांची बेरीज आहे (charges.py) — options साठी STT हा brokerage पेक्षाही मोठा असू शकतो, त्यामुळे हे
+    ब्रेकडाऊन इथे स्पष्ट दाखवलं जातं, वापरकर्त्याला "एकूण Charges" नेमकं कशाचं बनलंय हे कळावं म्हणून."""
+    if not breakdown or not any(breakdown.values()):
+        return
+    lines = " · ".join(
+        f"{_CHARGE_BREAKDOWN_LABELS[k]}: ₹{v:,.0f}" for k, v in breakdown.items() if v
+    )
+    st.caption(f"💰 Charges मध्ये काय-काय: {lines}")
+
+
 def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date, chart_title):
     """group_col (source/entry_timeframe/strategy/trading_style) नुसार कामगिरी — टेबल + बार चार्ट +
     विजेता/पराभूत caption. कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे एका दृष्टिक्षेपात कळावं म्हणून."""
@@ -396,6 +414,7 @@ def render():
                 for b, v in _all_time_totals["charges_by_broker"].items()
             )
             st.caption(f"ब्रोकरनुसार: {_broker_lines}")
+        _render_charges_breakdown_caption(_all_time_totals.get("charges_breakdown"))
 
         _sub_header("📉 Equity Curve (संचयी वास्तविक P&L)", _HDR_PURPLE)
         curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f)
@@ -593,9 +612,10 @@ def render():
     st.markdown("---")
     _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
     st.caption(
-        "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक ब्रोकरेज (प्रत्येक ऑर्डरनुसार — "
-        "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर; Stocko निश्चित ₹1200/महिना — वापरलेल्या महिन्यातल्या "
-        "दिवसांत सम-भागांनी वाटलेला, कारण तो प्लॅन per-order नाही) = Net P&L."
+        "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Brokerage — "
+        "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर, Stocko निश्चित ₹1200/महिना — + STT/Exchange Txn "
+        "Charge/SEBI Fee/Stamp Duty/त्यावरचा GST, प्रत्येक ऑर्डरच्या turnover वरून) = Net P&L. ⚠️ सरकारी/"
+        "एक्सचेंज दर वेळोवेळी बदलतात — प्रत्यक्ष broker च्या Contract Note शी अधूनमधून पडताळून पाहा."
     )
     rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
     repcol1, repcol2 = st.columns(2)
@@ -629,6 +649,7 @@ def render():
                     for b, v in report_totals["charges_by_broker"].items()
                 )
                 st.caption(f"ब्रोकरनुसार: {broker_lines}")
+            _render_charges_breakdown_caption(report_totals.get("charges_breakdown"))
 
             st.dataframe(report_df, width="stretch", hide_index=True)
 

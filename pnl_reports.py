@@ -14,7 +14,7 @@ PERIOD_FREQ = {"Daily": "D", "Weekly": "W", "Monthly": "MS"}
 _EMPTY_REPORT_COLUMNS = ["Period", "Trades", "Gross P&L", "Charges", "Net P&L", "Orders"]
 _EMPTY_TOTALS = {
     "total_trades": 0, "gross_pnl": 0.0, "total_charges": 0.0, "net_pnl": 0.0,
-    "total_orders": 0, "charges_by_broker": {},
+    "total_orders": 0, "charges_by_broker": {}, "charges_breakdown": {},
 }
 
 
@@ -93,5 +93,8 @@ def generate_pnl_report(symbol, period, start_date, end_date, mode_filter=None):
         # केलं तर Stocko चे प्रत्यक्ष ऑर्डर्स मोजलेच जाणार नाहीत).
         "total_orders": charges_summary["total_orders"],
         "charges_by_broker": charges_summary["per_broker"],
+        # 🎓 STT/Exchange Txn/SEBI Fee/Stamp Duty/GST यांचं ब्रेकडाऊन (charges.py) — फक्त flat brokerage
+        # किती नाही, "एकूण Charges" नेमकं कशाचं बनलंय हे वापरकर्त्याला दिसावं म्हणून.
+        "charges_breakdown": charges_summary["breakdown"],
     }
     return report_df, totals

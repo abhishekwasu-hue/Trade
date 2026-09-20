@@ -230,7 +230,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # डीफॉल्ट नेहमी PAPER (न बदलणाऱ्या वापरकर्त्यांसाठी जुनंच, सुरक्षित वर्तन कायम). LIVE केलं तरच
         # bot scripts (dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py/
         # classic_sr_reversal_trader.py) खरे ऑर्डर्स पाठवतात.
-        "trading_mode": "PAPER",     # "PAPER" | "LIVE"
+        "trading_mode": "PAPER",     # "PAPER" | "LIVE" | "LIVE_PAPER" (LIVE + शॅडो PAPER तुलना)
         # broker_account_ids — रिकामी यादी (डीफॉल्ट) = शुद्ध Upstox, single trade (जुनंच वर्तन).
         # वापरकर्त्याने broker_accounts मधून एक किंवा अनेक account_id निवडले, तर त्या प्रत्येक
         # account वर स्वतंत्र trade उघडला जातो (प्रत्येकाचं स्वतःचं SL/TSL/Target management).
@@ -698,7 +698,7 @@ def get_all_strategy_trading_modes():
     ज्या combo साठी कधीच काही साठवलंच गेलेलं नाही, ते इथे अजिबात दिसणार नाहीत — असे सर्व आपोआप
     डीफॉल्ट (PAPER, शुद्ध Upstox) आहेत हे गृहीत धरता येतं.
 
-    रिटर्न: {(strategy_name, symbol): {"trading_mode": "PAPER"/"LIVE", "broker_account_ids": [...]}, ...}
+    रिटर्न: {(strategy_name, symbol): {"trading_mode": "PAPER"/"LIVE"/"LIVE_PAPER", "broker_account_ids": [...]}, ...}
     Supabase न मिळाल्यास रिकामा dict (कुठलीही चूक न देता)."""
     conn = get_connection()
     if conn is None:
