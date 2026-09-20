@@ -21,7 +21,7 @@ except ImportError:
 
 # --- १. पेज कॉन्फिगरेशन आणि CSS (TradingView Look) ---
 st.set_page_config(
-    page_title="Upstox Option Terminal Pro (TradingView Style)",
+    page_title="AMW's A1 Option Trading Terminal",
     page_icon="📈",
     layout="wide",
 )
@@ -57,7 +57,7 @@ def _require_app_password():
     with gate_col:
         st.markdown(
             '<div style="font-size:1.6rem; font-weight:800; color:#2962FF; margin:20vh 0 1rem 0; '
-            'text-align:center;">🔒 Upstox Option Terminal Pro</div>',
+            'text-align:center;">🔒 AMW\'s A1 Option Trading Terminal</div>',
             unsafe_allow_html=True,
         )
         if not configured_password:

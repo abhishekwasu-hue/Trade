@@ -16,6 +16,12 @@ def find_pivots(df, prd=10):
     """
     Pine Script चा ta.pivothigh/pivotlow — bar i चा pivot high/low म्हणजे [i-prd, i+prd] या
     संपूर्ण window मध्ये तोच सर्वाधिक/सर्वात कमी. रिटर्न: कालानुक्रमे (जुने आधी) किमतींची यादी.
+
+    🎓 वापरकर्त्याने दिलेल्या मूळ Pine Script शी थेट ताडून सापडवलेली, छोटी पण खरी विसंगती —
+    Pine चं `array.unshift(pivotvals, ph ? ph : pl)` — म्हणजे एकाच bar वर pivot high आणि pivot low
+    दोन्ही आले (शक्य आहे, prd सममित असल्याने), तर Pine **फक्त high** ठेवतो, low गाळतो (ternary,
+    "else" कधीच दोन्ही नाही). आधी इथे दोन्ही स्वतंत्र if असल्याने दोन्ही जोडले जायचे — आता तोच
+    ternary-सारखा प्राधान्यक्रम (high आधी तपासून, तोच नसेल तरच low).
     """
     highs, lows = df["high"].values, df["low"].values
     n = len(df)
@@ -25,7 +31,7 @@ def find_pivots(df, prd=10):
         window_l = lows[i - prd:i + prd + 1]
         if highs[i] == window_h.max():
             pivots.append(highs[i])
-        if lows[i] == window_l.min():
+        elif lows[i] == window_l.min():
             pivots.append(lows[i])
     return pivots
 
