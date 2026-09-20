@@ -945,18 +945,14 @@ def _render_market_zones():
                     _render_signal_log_by_date(srv2_display_log)
                 st.markdown("---")
 
-                for zt in zone_type_order:
-                    subset = zones_df[zones_df["zone_type"] == zt]
-                    if subset.empty:
-                        continue
-                    with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
-                        display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
-                        st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
-
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा (पानाची पुनर्रचना) — "खरी भूमिका" टेबल (जास्त
+                # कृतीयोग्य, सद्य LTP-सापेक्ष दृश्य) आता Signal Log टेबल्सच्या लगेच खाली, आणि
+                # प्रकारानुसार-गटवारीचं (ऐतिहासिक, कमी तातडीचं) दृश्य सर्वात शेवटी — आधी उलट क्रम होता.
+                #
                 # 🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — zone चा ऐतिहासिक
                 # प्रकार (Order Block/Demand Zone/Supply Zone इ.) काहीही असो, त्याची **सद्य** भूमिका
                 # ठरते ती फक्त सद्य LTP च्या तुलनेतच: LTP च्या वर = Resistance/Supply, खाली =
-                # Support/Demand. हे मुख्य, प्रकारानुसार-गटवारीच्या (वरच्या) दृश्यापेक्षा वेगळं आणि
+                # Support/Demand. हे मुख्य, प्रकारानुसार-गटवारीच्या (खालच्या) दृश्यापेक्षा वेगळं आणि
                 # जास्त कृतीयोग्य आहे — त्यामुळे इथे स्वतंत्रपणे, सर्वात ठळकपणे दाखवतो.
                 from market_zones import compute_current_role
                 zones_with_role = zones_df.copy()
@@ -964,7 +960,6 @@ def _render_market_zones():
                 zones_with_role["current_role"] = zones_with_role.apply(
                     lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
                 )
-                st.markdown("---")
                 sub_header(f"🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", HDR_GREEN)
                 st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
 
@@ -992,6 +987,17 @@ def _render_market_zones():
                         support_display = support_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
                         support_display.insert(0, "Level", [f"Support {i}" for i in range(1, len(support_display) + 1)])
                         st.dataframe(support_display, width="stretch", hide_index=True)
+
+                st.markdown("---")
+                sub_header("🗂️ प्रकारानुसार (ऐतिहासिक) — सर्व Zones", HDR_PURPLE)
+                st.caption("वरच्या 'खरी भूमिका' दृश्याइतकं तातडीचं नाही — zone मूळ कशामुळे (Order Block/Demand-Supply/Dynamic S/R इ.) तयार झाला, त्या ऐतिहासिक प्रकारानुसार गटवारी.")
+                for zt in zone_type_order:
+                    subset = zones_df[zones_df["zone_type"] == zt]
+                    if subset.empty:
+                        continue
+                    with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
+                        display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
+                        st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
     except Exception as e:
         st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
