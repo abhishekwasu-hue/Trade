@@ -372,6 +372,36 @@ class TestGetPerformanceSummaryWinRateAndRoi:
         assert summary["roi_pct"] is None
 
 
+class TestGetPerformanceSummaryAndEquityCurveDateFilter:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — Performance पानावरचं "एकूण (All-Time) कामगिरी" आता
+    एका ठराविक तारखेपासूनच मोजतं (जुने/test trades गाळण्यासाठी) -- get_performance_summary()/
+    get_equity_curve_data() दोन्हींना दिलेला start_date त्याआधीचे trades पूर्णपणे वगळतो
+    (प्रत्यक्ष database मधून काढत नाही -- फक्त या query चा फिल्टर)."""
+
+    def test_performance_summary_start_date_excludes_earlier_trades(self, temp_db):
+        seed_closed_trade(temp_db, "OLD", -1000.0, "SL", "2026-09-10")
+        seed_closed_trade(temp_db, "NEW", 500.0, "TARGET", "2026-09-20")
+        summary = database.get_performance_summary("NIFTY", start_date=datetime.date(2026, 9, 17))
+        assert summary["total_trades"] == 1
+        assert summary["total_pnl"] == 500.0
+
+    def test_equity_curve_start_date_excludes_earlier_trades(self, temp_db):
+        seed_closed_trade(temp_db, "OLD", -1000.0, "SL", "2026-09-10")
+        seed_closed_trade(temp_db, "NEW1", 300.0, "TARGET", "2026-09-18")
+        seed_closed_trade(temp_db, "NEW2", 200.0, "TARGET", "2026-09-19")
+        curve_df = database.get_equity_curve_data("NIFTY", start_date=datetime.date(2026, 9, 17))
+        assert len(curve_df) == 2
+        # OLD trade गाळल्यामुळे cumulative sum 300 पासून सुरू व्हायला हवा, -700 पासून नाही
+        assert list(curve_df["cumulative_pnl"]) == [300.0, 500.0]
+
+    def test_equity_curve_no_start_date_includes_all(self, temp_db):
+        seed_closed_trade(temp_db, "OLD", -1000.0, "SL", "2026-09-10")
+        seed_closed_trade(temp_db, "NEW", 500.0, "TARGET", "2026-09-20")
+        curve_df = database.get_equity_curve_data("NIFTY")
+        assert len(curve_df) == 2
+        assert list(curve_df["cumulative_pnl"]) == [-1000.0, -500.0]
+
+
 class TestGetPerformanceByGroupWinRateAndRoi:
     def test_group_win_rate_and_roi_computed_per_group(self, temp_db):
         seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-01", source="dynamic_sr_instant")

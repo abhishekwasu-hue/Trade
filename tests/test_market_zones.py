@@ -134,6 +134,24 @@ def _oscillating_bars(n=60, start_ts="2024-01-02 09:15:00"):
     return pd.DataFrame(rows)
 
 
+def _quiet_base_then_clean_breakout_bars(start_ts="2024-01-02 09:15:00"):
+    """२० शांत bars + एक खराखुरा घट्ट "base" (३ tight candles, detect_demand_supply_zones ला
+    DEMAND_ZONE सापडावा म्हणून) + एक मोठी impulsive तेजीची candle जिचा low base च्या पूर्ण वरच आहे
+    (जेणेकरून तोच breakout candle स्वतःच लगेच zone ला परत स्पर्श करून mitigate करत नाही) + काही
+    bars नंतर."""
+    ts0 = pd.Timestamp(start_ts)
+    rows = []
+    for i in range(20):
+        v = 100.0 + (i % 3) * 0.1
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * i), v, v + 0.2, v - 0.2, v))
+    for i in range(20, 23):
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * i), 100.0, 100.1, 99.9, 100.0))
+    rows.append(_row(ts0 + pd.Timedelta(minutes=5 * 23), 100.5, 115.0, 100.4, 114.5))
+    for j, v in enumerate([115, 116]):
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * (24 + j)), v, v + 0.3, v - 0.3, v))
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
 class TestCompute5m15mConfluenceRow:
     def test_support_resistance_computed_live_from_major_swings(self):
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Support/Resistance आता आधी साठवलेल्या Dynamic S/R
@@ -146,16 +164,55 @@ class TestCompute5m15mConfluenceRow:
         assert row["support_distance_pct"] < 0  # support नेहमी सद्य किमतीच्या खाली -> ऋण अंतर
         assert row["resistance_distance_pct"] > 0
 
-    def test_order_block_and_demand_supply_computed_live(self):
+    def test_support_resistance_gives_next_r2_r3_s2_s3_levels_too(self):
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी फक्त सर्वात जवळचा Support/Resistance (S1/R1)
+        # दिसायचा, नंतर S2/R2 जोडले, आता S3/R3 सुद्धा — किमान तीन distinct levels असलेल्या डेटावर,
+        # तिन्ही (1 सर्वात जवळचा, मग 2, मग 3) उत्तरोत्तर आणखी दूर असायला हवेत.
+        ts0 = pd.Timestamp("2024-01-02 09:15:00")
+        levels = [90, 100, 110, 100, 90, 100, 120, 100, 90, 100, 110, 100, 85, 100, 120, 100]
+        rows = []
+        for i, lv in enumerate(levels):
+            for k in range(4):
+                rows.append(_row(ts0 + pd.Timedelta(minutes=5 * (i * 4 + k)), lv, lv + 1, lv - 1, lv))
+        df = pd.DataFrame(rows)
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=100.0, swing_order=3)
+        assert row["support_level"] is not None and row["support_level_2"] is not None and row["support_level_3"] is not None
+        assert row["support_level"] > row["support_level_2"] > row["support_level_3"]  # उत्तरोत्तर आणखी दूर
+        assert row["resistance_level"] is not None and row["resistance_level_2"] is not None and row["resistance_level_3"] is not None
+        assert row["resistance_level"] < row["resistance_level_2"] < row["resistance_level_3"]
+
+    def test_order_block_computed_live(self):
         df = _quiet_then_impulsive_bars()
         row = mz.compute_5m_15m_confluence_row("5M", df, current_price=116.0)
         assert row["order_block_type"] == "BULLISH_OB"
         assert row["order_block_low"] == 99.4
         assert row["order_block_high"] == 100.6
         assert row["order_block_distance_pct"] < 0  # OB सद्य किमतीच्या खाली आहे
-        # Demand/Supply zones (swing-आधारित) — काहीतरी सापडलं पाहिजे, नेमकं मूल्य data-specific
-        assert row["demand_zone_low"] is not None
-        assert row["supply_zone_low"] is not None
+
+    def test_demand_supply_zone_uses_real_base_range_not_stale_tolerance_band(self):
+        # 🎓 वापरकर्त्याने सापडवलेली तक्रार — Demand/Supply Zone ची रुंदी (gap) खूप मोठी, अव्यवहार्य
+        # वाटत होती (जुनी analyze_chart_zones() ची सरसकट ±0.3% पट्टी). आता detect_demand_supply_zones()
+        # (Order Block सारखीच, प्रत्यक्ष base candles च्या खऱ्या high/low वरून) — रुंदी त्या candles च्या
+        # प्रत्यक्ष range इतकीच, आगाऊ ठरवलेली टक्केवारी नाही.
+        df = _quiet_base_then_clean_breakout_bars()
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=116.0)
+        assert row["demand_zone_low"] == 99.9
+        assert row["demand_zone_high"] == 100.3
+        assert row["demand_zone_distance_pct"] < 0
+
+    def test_demand_supply_zone_not_falsely_mitigated_by_its_own_base_candles(self):
+        # 🎓 सापडवलेली, आधीपासूनच अस्तित्वात असलेली bug — detect_demand_supply_zones() चा
+        # formed_date आधी base range च्या *पहिल्या* candle चा असायचा, त्यामुळे is_zone_mitigated()
+        # ला दिला जाणारा "after formation" स्लाईस त्याच zone च्या उरलेल्या base candles (जे
+        # व्याख्येनुसारच zone च्या आतच असतात) पकडून प्रत्येक zone ला जवळपास तात्काळ FILLED ठरवायचा.
+        # आता formed_date base च्या *शेवटच्या* candle चा — त्यामुळे हा genuine, अजून untouched zone
+        # चुकीने रिकामा (None) दाखवला जात नाही.
+        df = _quiet_base_then_clean_breakout_bars()
+        zones = mz.detect_demand_supply_zones(df)
+        assert len(zones) == 1
+        assert zones[0]["zone_type"] == "DEMAND_ZONE"
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=116.0)
+        assert row["demand_zone_low"] is not None  # खोटं mitigated/None दाखवायला नको
 
     def test_insufficient_data_returns_none_fields(self):
         df = _quiet_then_impulsive_bars().head(3)  # order/avg_window साठी खूपच कमी
