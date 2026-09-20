@@ -189,3 +189,29 @@ journalctl -u cloudflared_upstox_webhook -n 20 --no-pager
 journalctl -u upstox_token_webhook -n 20 --no-pager
 curl http://localhost:8080/health   # स्थानिक (VPS वरूनच) तपासणी — {"status":"ok"} यायला हवं
 ```
+
+## ⚠️ प्रत्यक्ष घडलेला गंभीर बग — "429: error code 1015" (Cloudflare rate-limit) मध्ये अडकणे
+🎓 वापरकर्त्याला प्रत्यक्ष live trading आधी आलेला अनुभव — `cloudflared_upstox_webhook.service` कधी
+अयशस्वी झालं (network blip/VPS reboot), की जुन्या `RestartSec=5` मुळे दर ५ सेकंदाला Cloudflare च्या
+मोफत quick-tunnel endpoint ला पुन्हा विनंती जायची — याच वारंवार-विनंतीमुळे Cloudflare स्वतःच
+rate-limit (`429: error code 1015`) लावतं, आणि मग service कायमचं (अनंत लूपमध्ये) अडकून राहतं — कधीच
+एकही URL न मिळवता. रोजचा token-refresh त्यामुळे शांतपणे अयशस्वी व्हायचा, कुठलाही स्पष्ट error न
+दाखवता (`check_token_freshness.py --verify-live` शिवाय हे सापडणंही अवघड).
+
+**लक्षण ओळखणे:**
+```bash
+journalctl -u cloudflared_upstox_webhook -n 40 --no-pager | grep "429\|1015"
+```
+हे दिसलं (आणि `systemctl status` मध्ये restart counter झपाट्याने वाढताना दिसलं), तर हेच घडलंय.
+
+**बरं करणे (rate-limit निघून जाईपर्यंत थांबावं लागतं):**
+```bash
+systemctl stop cloudflared_upstox_webhook.service
+sleep 60   # किंवा जास्त — 429 लगेच निघून जात नसेल तर काही मिनिटं थांबा
+systemctl start cloudflared_upstox_webhook.service
+journalctl -u cloudflared_upstox_webhook -n 20 --no-pager | grep trycloudflare
+```
+
+आता `RestartSec=30` + `StartLimitIntervalSec=600`/`StartLimitBurst=5` (५ प्रयत्नांनंतर systemd
+स्वतःहून थांबतं, अनंत लूप नाही) — त्यामुळे हे स्वतःहून पुन्हा घडण्याची शक्यता कमी आहे, पण VPS reboot
+सारख्या मोठ्या गोष्टीनंतर पुन्हा घडलं, तर वरचीच पावलं वापरा.

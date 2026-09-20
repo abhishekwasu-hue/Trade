@@ -3,11 +3,23 @@ Description=Cloudflare Quick Tunnel — upstox_token_webhook.py (localhost:8080)
 After=network-online.target upstox_token_webhook.service
 Wants=network-online.target
 Requires=upstox_token_webhook.service
+# 🎓 वापरकर्त्याने प्रत्यक्ष अनुभवलेला, गंभीर bug (live trading आधीच सापडलेला) — खालचा जुना
+# RestartSec=5 इतका घट्ट होता, की cloudflared एकदा कुठल्याही कारणाने (network blip, VPS reboot)
+# अयशस्वी झालं, की दर ५ सेकंदाला Cloudflare च्या मोफत "quick tunnel" endpoint ला विनंती
+# पाठवत राहायचं -- आणि तेच वारंवार-विनंतीचं वर्तनच Cloudflare कडून "429: error code 1015"
+# (rate-limited) आणतं. एकदा हे घडलं, की service स्वतःच स्वतःला कायमचं अडकवून ठेवायचं (fail ->
+# लगेच retry -> पुन्हा rate-limit -> पुन्हा fail ...) -- webhook कधीच एक URL सुद्धा मिळवू शकायचं
+# नाही, आणि रोजचा token-refresh त्यामुळे शांतपणे अयशस्वी व्हायचा, कुठलाही स्पष्ट alert न येता.
+# आता RestartSec बरंच सैल (30 सेकंद) आणि StartLimitBurst/IntervalSec ने ५ प्रयत्नांनंतर (१०
+# मिनिटांत) systemd ने स्वतःहून थांबावं (अनंत लूप नाही) -- वारंवार होणाऱ्या खऱ्या (transient)
+# अपयशांतूनही Cloudflare कडून पुन्हा rate-limit होणार नाही इतपत मोकळीक.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
 Restart=always
-RestartSec=5
+RestartSec=30
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — upstox_token_webhook.py चा स्वतःचा server
 # (app.run()) plain HTTP आहे, कुठलंही TLS/SSL certificate configured नाही — त्यामुळे
 # "https://VPS-IP:8080" असं थेट लिहिलं तरी खरं HTTPS होत नाही (Upstox च्या webhook-delivery
