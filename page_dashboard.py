@@ -763,6 +763,36 @@ def _render_manual_trading_panel():
 
 
 
+# 🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — "खरी भूमिका" टेबलमधला "Level"
+# column आधी सर्व categories (Resistance, Supply Zone, Bearish OB, Dynamic Resistance इ.) मिसळून
+# एकच सलग क्रमांक (Resistance 1..22) द्यायचा — हे दिशाभूल करणारं आहे, कारण प्रत्येक category
+# वेगळ्या स्वरूपाची आहे (झालेला उलट भाव किती वेळा टच झाला हे "Resistance" साठी अर्थपूर्ण आहे,
+# पण "Bearish OB" साठी नाही). आता प्रत्येक category साठी स्वतंत्रपणे 1,2,3... क्रमांक — LTP पासून
+# सर्वात जवळचा त्या category चा "1" (आधीच zone_mid नुसार sort केलेला क्रम कायम राहतो, फक्त
+# numbering per-category रीस्टार्ट होतं).
+_ZONE_TYPE_SHORT_LABELS = {
+    "SUPPORT": "S/R (established, 1H)", "RESISTANCE": "S/R (established, 1H)",
+    "DYNAMIC_SR_SUPPORT_1M": "Dynamic S/R (1M)", "DYNAMIC_SR_RESISTANCE_1M": "Dynamic S/R (1M)",
+    "DYNAMIC_SR_SUPPORT_5M": "Dynamic S/R (5M)", "DYNAMIC_SR_RESISTANCE_5M": "Dynamic S/R (5M)",
+    "DYNAMIC_SR_SUPPORT_15M": "Dynamic S/R (15M)", "DYNAMIC_SR_RESISTANCE_15M": "Dynamic S/R (15M)",
+    "BULLISH_OB": "Bullish OB", "BEARISH_OB": "Bearish OB",
+    "DEMAND_ZONE": "Demand Zone", "SUPPLY_ZONE": "Supply Zone",
+    "UP_GAP": "Up-Gap", "DOWN_GAP": "Down-Gap",
+}
+
+
+def _category_wise_levels(zone_types):
+    """प्रत्येक zone_type category साठी स्वतंत्रपणे 1,2,3... लेबल तयार करणे — categories मिसळून
+    एकत्र क्रमांक नाही. Caller ने आधीच LTP पासूनच्या अंतरानुसार (zone_mid) sort केलेला df द्यावा,
+    तोच क्रम इथे राखला जातो."""
+    counters = {}
+    labels = []
+    for zt in zone_types:
+        counters[zt] = counters.get(zt, 0) + 1
+        labels.append(f"{_ZONE_TYPE_SHORT_LABELS.get(zt, zt)} {counters[zt]}")
+    return labels
+
+
 def _render_signal_log_by_date(df):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Signal Log आता तारीख-निहाय (date-wise) वेगळं
     दाखवला जातो, एका सलग flat table ऐवजी — विशेषतः "गेले 7 दिवस"/"कस्टम रेंज" निवडलं असताना, कुठला
@@ -984,7 +1014,7 @@ def _render_market_zones():
                         st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
                     else:
                         resistance_display = resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
-                        resistance_display.insert(0, "Level", [f"Resistance {i}" for i in range(1, len(resistance_display) + 1)])
+                        resistance_display.insert(0, "Level", _category_wise_levels(resistance_zones["zone_type"]))
                         st.dataframe(resistance_display, width="stretch", hide_index=True)
                 with rcol2:
                     st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
@@ -993,7 +1023,7 @@ def _render_market_zones():
                         st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
                     else:
                         support_display = support_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
-                        support_display.insert(0, "Level", [f"Support {i}" for i in range(1, len(support_display) + 1)])
+                        support_display.insert(0, "Level", _category_wise_levels(support_zones["zone_type"]))
                         st.dataframe(support_display, width="stretch", hide_index=True)
 
                 st.markdown("---")
