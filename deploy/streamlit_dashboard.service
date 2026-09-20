@@ -1,5 +1,5 @@
 [Unit]
-Description=Upstox Option Terminal Pro — Streamlit Dashboard (मुख्य ट्रेडिंग app)
+Description=AMW's A1 Option Trading Terminal — Streamlit Dashboard (मुख्य ट्रेडिंग app)
 After=network-online.target
 Wants=network-online.target
 
