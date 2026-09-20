@@ -77,6 +77,31 @@ st.markdown(
         border-radius: 6px !important; margin-bottom: 6px !important;
     }
     section[data-testid="stSidebar"] .stExpander summary { font-weight: 600 !important; }
+
+    /* 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sidebar वरचे ७-८ पानं multicolor करा, पहिलं अक्षर capital,
+    फॉन्ट मोठा करा") — st.navigation() ने बनवलेली page-list (Dashboard/Positions/Orders/Performance/
+    Multi-Strategy/MTF Pullback/Bot Dynamic SR Algo/Settings) आधी .stTabs सारखी multicolor नव्हती —
+    इथे तोच रंगीत-सायकल पॅटर्न (वरच्याच पॅलेटशी सुसंगत) आणि मोठा, ठळक फॉन्ट. */
+    [data-testid="stSidebarNavLink"] {
+        font-size: 17px !important; font-weight: 650 !important; text-transform: capitalize !important;
+        border-radius: 6px !important; margin-bottom: 3px !important; padding: 8px 10px !important;
+    }
+    /* 🎓 प्रत्यक्ष चालवून पडताळलं (Playwright screenshot) — stSidebarNavLinkContainer प्रत्येक <li>
+    च्या आतच एकुलता एक असतो (nth-of-type कायम 1 राहतं, cycling साठी निरुपयोगी) आणि लेबल मजकुराचा
+    रंग वेगळ्या (stMarkdownContainer च्या आतल्या <p>) rule ने आधीच ठरलेला असतो, त्यामुळे बाहेरून
+    रंग दिला तरी inherit होत नाही — म्हणून खरी सायकल <li> siblings वर (stSidebarNavItems च्या आत)
+    आणि रंग थेट त्या <p> वरच लावला आहे. */
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+1) [data-testid="stMarkdownContainer"] p { color: #2962FF !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+2) [data-testid="stMarkdownContainer"] p { color: #00BFA5 !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+3) [data-testid="stMarkdownContainer"] p { color: #AB47BC !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+4) [data-testid="stMarkdownContainer"] p { color: #FF6D00 !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+5) [data-testid="stMarkdownContainer"] p { color: #EC407A !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+6) [data-testid="stMarkdownContainer"] p { color: #66BB6A !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+7) [data-testid="stMarkdownContainer"] p { color: #FFC107 !important; }
+    [data-testid="stSidebarNavItems"] > li:nth-of-type(8n+8) [data-testid="stMarkdownContainer"] p { color: #26C6DA !important; }
+    [data-testid="stSidebarNavLink"][aria-current="page"] {
+        background-color: #1e222d !important; font-weight: 750 !important; box-shadow: inset 3px 0 0 currentColor !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,

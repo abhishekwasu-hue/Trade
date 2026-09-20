@@ -1757,19 +1757,27 @@ def _trade_log_groups_by_timeframe(trade_log_df):
 
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
-                                      by_source_df, by_timeframe_df, trade_log_df, recommendations):
+                                      by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations):
     """
-    Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise व Timeframe-wise
-    P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं Entry व Exit कारण (Exit साठी — SL/Target नेमकं Spot%
-    की Premium Points मुळे लागला, हे स्पष्ट सांगणारा detail), आणि rule-based शिफारसी.
+    Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise, Timeframe-wise व
+    Option Structure-wise (Credit Spread वि. Naked Option) P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं
+    Entry व Exit कारण (Exit साठी — SL/Target नेमकं Spot% की Premium Points मुळे लागला, हे स्पष्ट
+    सांगणारा detail), आणि rule-based शिफारसी.
 
     summary — database.get_performance_summary() चा dict (निवडलेल्या तारीख-रेंजसाठी).
     pnl_totals — pnl_reports.generate_pnl_report() च्या totals dict (charges-सकट Net P&L साठी).
-    by_source_df/by_timeframe_df — get_performance_by_group() च्या (Group/Trades/Win Rate %/
-    Total P&L/Avg P&L स्तंभांसकट) sorted DataFrames, किंवा डेटा नसल्यास None.
+    by_source_df/by_timeframe_df/by_structure_df — get_performance_by_group() च्या (Group/Trades/
+    Win Rate %/Total P&L/Avg P&L स्तंभांसकट) sorted DataFrames, किंवा डेटा नसल्यास None.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("credit spread आणि naked option buy वेगळे दाखवा, त्यांचं
+    विश्लेषण/निष्कर्ष वेगळे असावेत") — by_structure_df (database.OPTION_STRUCTURE_GROUP_SQL वापरून
+    तयार केलेला, "Credit Spread"/"Naked Option Buy" असे दोन गट) आधी PDF मध्ये अजिबात नव्हता (on-screen
+    "Option Structure नुसार" टॅबमध्येच फक्त दिसायचा) — आता by_source_df/by_timeframe_df सारखाच स्वतंत्र
+    विभाग.
     trade_log_df — Trade ID/Entry Time/Entry Reason/Exit Time/Exit Reason/Exit Reason (नेमकं
     कारण)/Realized P&L/Mode स्तंभांसकट, इमोजी-विरहित (PDF-सुरक्षित) DataFrame, किंवा None.
-    recommendations — Performance टॅबवरच्या rule-based शिफारसींची यादी (markdown स्ट्रिंग्स).
+    recommendations — Performance टॅबवरच्या rule-based शिफारसींची यादी (markdown स्ट्रिंग्स — यात आता
+    Strategy/Timeframe सोबतच Option Structure-निहायही शिफारसी असतात, प्रत्येक स्वतंत्रपणे ओळखता येईल
+    अशा "**Option Structure: Credit Spread**"/"**Option Structure: Naked Option Buy**" उपसर्गासकट).
     """
     generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
     buf = io.BytesIO()
@@ -1881,6 +1889,20 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
             story.append(Spacer(1, 6))
         t = df_to_reportlab_table(by_timeframe_df)
+        story.extend(t if isinstance(t, list) else [t])
+    story.append(Spacer(1, 8))
+
+    next_section("Option Structure-wise Performance (Credit Spread vs Naked Option)")
+    if by_structure_df is None or by_structure_df.empty:
+        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data4", fontName=_RPT_FONT, fontSize=11)))
+    else:
+        chart_bytes = build_group_pnl_bar_chart(by_structure_df, "Option Structure-wise Total P&L")
+        if chart_bytes:
+            img_w = usable_width
+            img_h = img_w * 300 / 680
+            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
+            story.append(Spacer(1, 6))
+        t = df_to_reportlab_table(by_structure_df)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 

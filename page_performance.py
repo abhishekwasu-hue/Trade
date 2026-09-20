@@ -9,7 +9,7 @@ from config import get_ist_now, get_ist_today
 from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
     get_performance_by_two_groups, get_closed_trades_detail, get_exit_reason_breakdown,
-    SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS,
+    SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS, OPTION_STRUCTURE_GROUP_SQL,
 )
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
 from upstox_api import fetch_candles_date_range
@@ -46,6 +46,13 @@ _SOURCE_LABELS = {
     "DASHBOARD": "Dashboard (Manual)",
     "MULTI_ACCOUNT": "Multi-Account Copy",
     "UNKNOWN": "अज्ञात (जुने ट्रेड्स)",
+}
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — database.OPTION_STRUCTURE_GROUP_SQL च्या बकेटिंग-कोडना
+# वाचनीय नाव (IRON_CONDOR/IRON_BUTTERFLY जसेच्या तसे राहतात, त्यांना बकेटिंगची गरज नाही).
+_STRUCTURE_LABELS = {
+    "CREDIT_SPREAD": "Credit Spread", "NAKED_OPTION": "Naked Option Buy",
+    "IRON_CONDOR": "Iron Condor", "IRON_BUTTERFLY": "Iron Butterfly",
 }
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "प्रत्येक trade चं Entry व Exit कारण दिसायला हवं" या
@@ -145,6 +152,9 @@ def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date
     if group_col == "source":
         df = df.copy()
         df["Group"] = df["Group"].map(lambda g: _SOURCE_LABELS.get(g, g))
+    elif group_col == OPTION_STRUCTURE_GROUP_SQL:
+        df = df.copy()
+        df["Group"] = df["Group"].map(lambda g: _STRUCTURE_LABELS.get(g, g))
     df_sorted = df.sort_values("Total P&L", ascending=False).reset_index(drop=True)
     best, worst = df_sorted.iloc[0], df_sorted.iloc[-1]
 
@@ -203,7 +213,12 @@ def _build_recommendations(symbol, group_col, group_label, mode_filter, start_da
         if total_trades < min_trades:
             continue
         total_pnl = sub["Total P&L"].sum()
-        grp_label = _SOURCE_LABELS.get(grp, grp) if group_col == "source" else grp
+        if group_col == "source":
+            grp_label = _SOURCE_LABELS.get(grp, grp)
+        elif group_col == OPTION_STRUCTURE_GROUP_SQL:
+            grp_label = _STRUCTURE_LABELS.get(grp, grp)
+        else:
+            grp_label = grp
 
         sl_sub = sub[sub["Exit Reason"].isin(_SL_TYPE_EXIT_REASONS)]
         target_sub = sub[sub["Exit Reason"].isin(_TARGET_TYPE_EXIT_REASONS)]
@@ -451,7 +466,10 @@ def render():
         with an_tab2:
             an_by_timeframe = _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
         with an_tab3:
-            _render_group_breakdown(symbol, "strategy", perf_mode_f, an_from, an_to, "Option Structure-wise P&L")
+            an_by_structure = _render_group_breakdown(
+                symbol, OPTION_STRUCTURE_GROUP_SQL, perf_mode_f, an_from, an_to,
+                "Option Structure-wise P&L (Credit Spread vs Naked Option)",
+            )
         with an_tab4:
             _render_group_breakdown(symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
         with an_tab5:
@@ -524,6 +542,7 @@ def render():
         all_recs = (
             _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to)
             + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to)
+            + _build_recommendations(symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to)
         )
         if not all_recs:
             st.info("या कालावधीत निष्कर्ष काढण्याइतका पुरेसा डेटा नाही (किमान 5 trades/गट हवेत).")
@@ -555,10 +574,11 @@ def render():
                     all_recs_en = (
                         _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
                         + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
+                        + _build_recommendations(symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to, english=True)
                     )
                     perf_pdf_bytes = generate_performance_report_pdf(
                         symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
-                        an_by_source, an_by_timeframe, trade_log_pdf_df, all_recs_en,
+                        an_by_source, an_by_timeframe, an_by_structure, trade_log_pdf_df, all_recs_en,
                     )
                 st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
                 st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
