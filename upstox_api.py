@@ -810,10 +810,11 @@ def get_order_details(access_token, order_id):
         return None
 
 
-def poll_order_fill(access_token, order_id, max_attempts=6, delay_seconds=0.5):
+def poll_order_fill(access_token, order_id, max_attempts=10, delay_seconds=0.5):
     """दिलेला order_id 'complete'/'rejected'/'cancelled' या अंतिम (terminal) स्थितीपर्यंत
-    पोहोचेपर्यंत, कमी अंतराने (MARKET orders जवळजवळ तात्काळ भरतात, त्यामुळे डीफॉल्ट ६ प्रयत्न × ०.५
-    सेकंद = जास्तीत जास्त ~३ सेकंद पुरेसे) पुन्हा-पुन्हा तपासणे.
+    पोहोचेपर्यंत, कमी अंतराने (MARKET orders जवळजवळ तात्काळ भरतात, त्यामुळे डीफॉल्ट १० प्रयत्न × ०.५
+    सेकंद = जास्तीत जास्त ~५ सेकंद पुरेसे — पूर्व-live रिव्ह्यूत ६ प्रयत्नांवरून वाढवले, जास्त
+    load/volatility च्या क्षणी वेळेत terminal status न मिळण्याची शक्यता आणखी कमी करण्यासाठी) पुन्हा-पुन्हा तपासणे.
     रिटर्न: शेवटची मिळालेली order details (dict, 'status' key सह) — अंतिम स्थिती वेळेत न मिळाल्यास
     शेवटची (अजूनही अनिश्चित) स्थितीच जशीच्या तशी; काहीच मिळालं नाही तर None."""
     last = None
@@ -864,6 +865,38 @@ def _verify_and_annotate_fills(access_token, orders, resp):
     resp["verified_legs"] = verified_legs
     if not verified_legs:
         return resp
+
+    # 🎓 पूर्व-live रिव्ह्यूत सापडवलेली, गंभीर bug — poll_order_fill() ने terminal status
+    # (complete/rejected/cancelled) मिळण्याआधीच वेळ संपली (उदा. जास्त load/volatility च्या क्षणी),
+    # तर तो leg status="unknown"/अजून-pending असाच परत येतो — आणि खालचा `== "complete"` तपासणी
+    # त्याला "rejected सारखाच, भरलाच नाही" समजते. पण खरा order प्रत्यक्षात अजूनही Upstox कडे pending
+    # असू शकतो, आणि क्षणभरातच खरोखर भरला जाऊ शकतो — अशा वेळी status="error"/"partial_failure" मुळे
+    # हा trade कधीच live_trades मध्ये साठवलाच जात नाही (open_multi_leg_trade() False परत देतो, DB
+    # INSERT च होत नाही), म्हणजे एक खरी, उघडी position पूर्णपणे untracked राहते — कधीच SL/Target/EOD
+    # लागू न होता, आणि reconcile_open_trades_with_broker() लाही कधीच सापडणार नाही (ते फक्त आपल्याच
+    # DB मधल्या existing OPEN trades broker सोबत ताडून बघतं, आपल्याकडे नोंदच नसलेल्या broker
+    # positions शोधत नाही). हे "confirmed rejected/cancelled" (खरंच अयशस्वी, सुरक्षित) पेक्षा पूर्णपणे
+    # वेगळं, जास्त धोकादायक — त्यामुळे इथेच वेगळा, तातडीचा Telegram अलर्ट (business-logic
+    # classification मध्ये कुठलाही बदल न करता — फक्त जोड).
+    uncertain_legs = [leg for leg in verified_legs if leg["status"] not in ORDER_TERMINAL_STATUSES]
+    if uncertain_legs:
+        try:
+            from notifications import send_telegram_message
+            legs_desc = "; ".join(
+                f"order_id={leg['order_id']} ({leg.get('instrument_token', '?')}, status={leg['status']})"
+                for leg in uncertain_legs
+            )
+            send_telegram_message(
+                "🆘 <b>तातडीचं — Order fill स्थिती वेळेत निश्चित झाली नाही!</b>\n"
+                f"{legs_desc}\n"
+                "हा order Upstox कडे प्रत्यक्षात अजूनही pending असू शकतो आणि क्षणभरात भरला जाऊ शकतो — "
+                "अशा वेळी आपली प्रणाली त्याला 'अयशस्वी' समजून DB मध्ये नोंदवतच नाही, म्हणजे प्रत्यक्ष "
+                "position असूनही ती पूर्णपणे untracked (SL/Target/EOD लागू न होता) राहू शकते. कृपया "
+                "Upstox app/website उघडून वरचे order_id(s) स्वतः लगेच तपासा."
+            )
+        except Exception:
+            _logger.exception("_verify_and_annotate_fills() मध्ये अनपेक्षित चूक (silently handled)")
+
     filled_count = sum(1 for leg in verified_legs if leg["status"] == "complete")
     if filled_count == len(verified_legs):
         resp["status"] = "success"
