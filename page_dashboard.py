@@ -1384,7 +1384,12 @@ def render():
             pcol1.metric("PCR (Put-Call Ratio)", f"{pcr:.2f}", pcr_label)
             pcol2.metric("एकूण Call OI", f"{total_ce_oi:,.0f}")
             pcol3.metric("एकूण Put OI", f"{total_pe_oi:,.0f}")
-            pcol4.metric("एकूण Net Diff", f"{total_pe_chg - total_ce_chg:,.0f}")
+            pcol4.metric(
+                "एकूण Net Diff (आजचा Chg OI: PE−CE)", f"{total_pe_chg - total_ce_chg:,.0f}",
+                help="हे 'Put OI − Call OI' नाही — आजच्या सुरुवातीच्या (baseline) OI पासून आत्तापर्यंत "
+                     "Put आणि Call च्या OI मध्ये किती बदल झाला, त्याचा फरक. बाजार उघडल्यावर लगेच (किंवा "
+                     "बंद असताना) हा 0 दिसणं सामान्यच आहे — अजून कुठलाही नवीन बदल नोंदवलेला नाही.",
+            )
 
             total_row = pd.DataFrame([{
                 "CE Chg OI": total_ce_chg, "CE Total OI": total_ce_oi, "CE LTP": None,
