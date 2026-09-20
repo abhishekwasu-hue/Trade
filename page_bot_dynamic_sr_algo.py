@@ -305,7 +305,14 @@ def render():
             naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
         with n1:
             naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key=_widget_key(strategy_key, symbol, "naked_hedge_enabled"))
-        naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
+        n2, n3 = st.columns(2)
+        with n2:
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी Naked Option Trade नेहमी वरच्याच Credit Spread
+            # "Lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
+            # trade-प्रकार असल्याने आता स्वतंत्रपणे ठरवता येतं.
+            naked_lots = _number_input("Naked Option — Lots (Credit Spread पासून स्वतंत्र)", settings, "naked_lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
+        with n3:
+            naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     with tab_exit:
         sub_header("🎯 SL / TSL / Target (Credit Spread)", HDR_AMBER)
@@ -458,7 +465,7 @@ def render():
             "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),
             "spread_tsl_spot_pct": float(spread_tsl_spot_pct), "spread_tsl_premium_points": float(spread_tsl_premium_points),
-            "naked_enabled": bool(naked_enabled), "naked_hedge_enabled": bool(naked_hedge_enabled),
+            "naked_enabled": bool(naked_enabled), "naked_lots": int(naked_lots), "naked_hedge_enabled": bool(naked_hedge_enabled),
             "naked_hedge_width_points": float(naked_hedge_width_points),
             "naked_sl_spot_pct": float(naked_sl_spot_pct), "naked_sl_premium_points": float(naked_sl_premium_points),
             "naked_tsl_spot_pct": float(naked_tsl_spot_pct), "naked_tsl_premium_points": float(naked_tsl_premium_points),

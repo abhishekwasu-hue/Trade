@@ -153,6 +153,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा — नवीन strategy असल्याने डीफॉल्ट निष्क्रिय)"
     lots = settings["lots"]
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच — Naked Option
+    # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
+    naked_lots = settings.get("naked_lots", lots)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
     swing_confluence_enabled = settings.get("swing_confluence_enabled", False)
@@ -345,7 +348,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             if broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 naked_results, naked_factory_errors = execute_trade_on_all_accounts(
-                    symbol=symbol, strategy_result=naked_result, base_lots=lots, lot_size=lot_size,
+                    symbol=symbol, strategy_result=naked_result, base_lots=naked_lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
@@ -355,7 +358,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
                 _, naked_status = open_multi_leg_trade(
-                    access_token, symbol, naked_result, lots=lots, lot_size=lot_size,
+                    access_token, symbol, naked_result, lots=naked_lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
