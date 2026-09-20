@@ -1663,83 +1663,83 @@ def render():
         # =========================================================
         st.markdown("---")
     with tab2:
-        mega_header("📐 Advanced OI Analysis (Professional)", HDR_RED)
+        with st.expander("📐 Advanced OI Analysis (Professional) — OI-Price Matrix, PCR, Max Pain, Rollover", expanded=False):
 
-        matrix_mode = "SWING" if trading_style == "SWING" else "INTRADAY"
+            matrix_mode = "SWING" if trading_style == "SWING" else "INTRADAY"
 
-        if matrix_mode == "SWING":
-            prev_total_oi = get_previous_day_total_oi(symbol)
-            # आजचा नवीनतम snapshot (किंमतीसह) — OI Diff Tracker सेक्शनने आत्ताच रेकॉर्ड केलेला
-            prev_price = None
-            conn_pm = sqlite3.connect(DB_PATH)
-            cur_pm = conn_pm.cursor()
-            cur_pm.execute(
-                "SELECT underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date < ? ORDER BY trade_date DESC, snapshot_time DESC LIMIT 1",
-                (symbol, today_str),
-            )
-            row_pm = cur_pm.fetchone()
-            conn_pm.close()
-            if row_pm:
-                prev_price = row_pm[0]
-            current_total_oi_for_matrix = total_call_oi + total_put_oi
-            oi_matrix_display = compute_oi_price_matrix(current_total_oi_for_matrix, prev_total_oi, underlying_price, prev_price)
-            matrix_period_label = "आजचा वि. आधीचा ट्रेडिंग दिवस"
-        else:
-            # Intraday: गेल्या दोन 10-मिनिटांच्या snapshots मधून
-            conn_pm = sqlite3.connect(DB_PATH)
-            cur_pm = conn_pm.cursor()
-            cur_pm.execute(
-                "SELECT total_call_oi, total_put_oi, underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT 2",
-                (symbol, today_str),
-            )
-            rows_pm = cur_pm.fetchall()
-            conn_pm.close()
-            if len(rows_pm) >= 2:
-                (call_now, put_now, price_now), (call_prev, put_prev, price_prev) = rows_pm[0], rows_pm[1]
-                oi_matrix_display = compute_oi_price_matrix(call_now + put_now, call_prev + put_prev, price_now, price_prev)
-            else:
-                oi_matrix_display = None
-            matrix_period_label = "गेल्या 10 मिनिटांत"
-
-        pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
-        max_pain_strike_val = compute_max_pain(raw_chain)
-
-        adv1, adv2 = st.columns(2)
-        with adv1:
-            sub_header(f"🔄 OI-Price Matrix ({trading_style})", HDR_AMBER)
-            if oi_matrix_display and oi_matrix_display["category"] != "INSUFFICIENT_DATA":
-                m_color = "#089981" if oi_matrix_display["bias"] == "BULLISH" else "#F23645"
-                st.markdown(
-                    f"**{oi_matrix_display['category'].replace('_',' ').title()}** — "
-                    f"<span style='color:{m_color};font-weight:bold;'>{oi_matrix_display['bias']}</span> "
-                    f"({oi_matrix_display['strength']})",
-                    unsafe_allow_html=True,
+            if matrix_mode == "SWING":
+                prev_total_oi = get_previous_day_total_oi(symbol)
+                # आजचा नवीनतम snapshot (किंमतीसह) — OI Diff Tracker सेक्शनने आत्ताच रेकॉर्ड केलेला
+                prev_price = None
+                conn_pm = sqlite3.connect(DB_PATH)
+                cur_pm = conn_pm.cursor()
+                cur_pm.execute(
+                    "SELECT underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date < ? ORDER BY trade_date DESC, snapshot_time DESC LIMIT 1",
+                    (symbol, today_str),
                 )
-                st.caption(f"एकूण (Call+Put) OI व किंमत बदल ({matrix_period_label}) वरून काढलेलं.")
+                row_pm = cur_pm.fetchone()
+                conn_pm.close()
+                if row_pm:
+                    prev_price = row_pm[0]
+                current_total_oi_for_matrix = total_call_oi + total_put_oi
+                oi_matrix_display = compute_oi_price_matrix(current_total_oi_for_matrix, prev_total_oi, underlying_price, prev_price)
+                matrix_period_label = "आजचा वि. आधीचा ट्रेडिंग दिवस"
             else:
-                st.info("पुरेसा डेटा अजून नाही" + (" (Swing साठी किमान एक आधीचा ट्रेडिंग दिवस लागतो)." if matrix_mode == "SWING" else "."))
+                # Intraday: गेल्या दोन 10-मिनिटांच्या snapshots मधून
+                conn_pm = sqlite3.connect(DB_PATH)
+                cur_pm = conn_pm.cursor()
+                cur_pm.execute(
+                    "SELECT total_call_oi, total_put_oi, underlying_price FROM oi_diff_snapshots WHERE symbol=? AND trade_date=? ORDER BY snapshot_time DESC LIMIT 2",
+                    (symbol, today_str),
+                )
+                rows_pm = cur_pm.fetchall()
+                conn_pm.close()
+                if len(rows_pm) >= 2:
+                    (call_now, put_now, price_now), (call_prev, put_prev, price_prev) = rows_pm[0], rows_pm[1]
+                    oi_matrix_display = compute_oi_price_matrix(call_now + put_now, call_prev + put_prev, price_now, price_prev)
+                else:
+                    oi_matrix_display = None
+                matrix_period_label = "गेल्या 10 मिनिटांत"
 
-        with adv2:
-            sub_header("⚖️ PCR (Put-Call Ratio)", HDR_CYAN)
-            if pcr_val is not None:
-                pcr_color = "#089981" if pcr_bias == "BULLISH" else ("#F23645" if pcr_bias == "BEARISH" else "#787b86")
-                st.markdown(f"**PCR: {pcr_val}** — <span style='color:{pcr_color};font-weight:bold;'>{pcr_bias}</span>", unsafe_allow_html=True)
-                st.caption("PCR<0.70 Bullish(Oversold) · 0.70-0.90 Bearish · 0.90-1.0 Sideways · 1.0-1.3 Bullish · >1.3 Bearish(Overbought)")
-            else:
-                st.info("PCR काढण्यासाठी पुरेसा OI डेटा नाही.")
+            pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
+            max_pain_strike_val = compute_max_pain(raw_chain)
 
-        adv3, adv4 = st.columns(2)
-        with adv3:
-            sub_header("🎯 Max Pain", HDR_RED)
-            if max_pain_strike_val is not None:
-                diff_from_spot = max_pain_strike_val - underlying_price
-                st.metric("Max Pain Strike", f"{max_pain_strike_val:.0f}", f"स्पॉटपासून {diff_from_spot:+,.0f}")
-                st.caption("Expiry जवळ किंमत या strike कडे झुकण्याची शक्यता असते (सर्व उपलब्ध strikes वापरून काढलेलं).")
-            else:
-                st.info("Max Pain काढण्यासाठी पुरेसा OI डेटा नाही.")
+            adv1, adv2 = st.columns(2)
+            with adv1:
+                sub_header(f"🔄 OI-Price Matrix ({trading_style})", HDR_AMBER)
+                if oi_matrix_display and oi_matrix_display["category"] != "INSUFFICIENT_DATA":
+                    m_color = "#089981" if oi_matrix_display["bias"] == "BULLISH" else "#F23645"
+                    st.markdown(
+                        f"**{oi_matrix_display['category'].replace('_',' ').title()}** — "
+                        f"<span style='color:{m_color};font-weight:bold;'>{oi_matrix_display['bias']}</span> "
+                        f"({oi_matrix_display['strength']})",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"एकूण (Call+Put) OI व किंमत बदल ({matrix_period_label}) वरून काढलेलं.")
+                else:
+                    st.info("पुरेसा डेटा अजून नाही" + (" (Swing साठी किमान एक आधीचा ट्रेडिंग दिवस लागतो)." if matrix_mode == "SWING" else "."))
 
-        with adv4:
-            _render_rollover_analysis()
+            with adv2:
+                sub_header("⚖️ PCR (Put-Call Ratio)", HDR_CYAN)
+                if pcr_val is not None:
+                    pcr_color = "#089981" if pcr_bias == "BULLISH" else ("#F23645" if pcr_bias == "BEARISH" else "#787b86")
+                    st.markdown(f"**PCR: {pcr_val}** — <span style='color:{pcr_color};font-weight:bold;'>{pcr_bias}</span>", unsafe_allow_html=True)
+                    st.caption("PCR<0.70 Bullish(Oversold) · 0.70-0.90 Bearish · 0.90-1.0 Sideways · 1.0-1.3 Bullish · >1.3 Bearish(Overbought)")
+                else:
+                    st.info("PCR काढण्यासाठी पुरेसा OI डेटा नाही.")
+
+            adv3, adv4 = st.columns(2)
+            with adv3:
+                sub_header("🎯 Max Pain", HDR_RED)
+                if max_pain_strike_val is not None:
+                    diff_from_spot = max_pain_strike_val - underlying_price
+                    st.metric("Max Pain Strike", f"{max_pain_strike_val:.0f}", f"स्पॉटपासून {diff_from_spot:+,.0f}")
+                    st.caption("Expiry जवळ किंमत या strike कडे झुकण्याची शक्यता असते (सर्व उपलब्ध strikes वापरून काढलेलं).")
+                else:
+                    st.info("Max Pain काढण्यासाठी पुरेसा OI डेटा नाही.")
+
+            with adv4:
+                _render_rollover_analysis()
 
 
         # =========================================================
@@ -2126,69 +2126,69 @@ def render():
         # 🎓 Health Check — unattended auto-trader scripts (credit_spread_auto_trader.py,
         # oi_signal_auto_trader.py) कधी शेवटचं यशस्वीरित्या चालल्या ते इथेच दिसेल — cron server
         # बंद पडली, किंवा script अडकली, तर लगेच कळावं म्हणून.
-        mega_header("🩺 Auto-Trader Scripts — Health Check", HDR_PURPLE)
-        try:
-            from notifications import check_heartbeat_stale, HEARTBEAT_DIR
-            import os as _os
-            # 🎓 Production-readiness सुधारणा — engine_service/dynamic_sr_instant_trader/
-            # srv2_momentum_reversal इथे जोडले (आधी गाळले गेले होते — तिन्ही महत्त्वाचे VPS बॉट्स आहेत).
-            # ⚠️ इशारा: हा heartbeat फाईल *local* आहे — ती script ज्या मशीनवर (उदा. VPS) चालते, त्याच
-            # मशीनवर dashboard चालत असेल तरच "कधीच चालली नाही" ऐवजी खरा status दिसेल. Dashboard वेगळ्या
-            # होस्टवर (उदा. Streamlit Cloud) असेल, तर हे कायम ⚪ दाखवेल — त्यासाठी ping_healthcheck()
-            # (notifications.py, बाह्य uptime-monitor) हा जास्त विश्वासार्ह पर्याय आहे.
-            hb_specs = [
-                ("credit_spread_auto_trader", "Credit Spread Auto-Trader", 30),
-                ("oi_signal_auto_trader", "OI Signal Auto-Trader", 30),
-                ("oi_snapshot_collector", "OI Snapshot Collector", 30),
-                ("oi_greeks_vix_strategy", "OI+Greeks+VIX Strategy", 30),
-                ("engine_service", "Engine Service (SL/Target/EOD)", 10),
-                ("dynamic_sr_instant_trader", "Dynamic S/R Instant Trader", 10),
-                ("srv2_momentum_reversal", "SRv2 Momentum-Reversal", 10),
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
-                # (दुपारी ४ वाजता) चालतो, त्यामुळे इतरांसारखी ३०-मिनिट मर्यादा इथे उगाचच सतत
-                # "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची मर्यादा (२५ तास).
-                ("eod_market_report", "EOD Market Report (4pm)", 25 * 60),
-            ]
-            hb_cols = st.columns(4)
-            for idx, (script_name, label, max_age_min) in enumerate(hb_specs):
-                with hb_cols[idx % 4]:
-                    hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
-                    if not _os.path.exists(hb_path):
-                        st.info(f"⚪ {label}: कधीच चालली नाही (किंवा या मशीनवर चालत नाही)")
-                    else:
-                        with open(hb_path) as f:
-                            last_run = f.read().strip()
-                        is_stale = check_heartbeat_stale(script_name, max_age_minutes=max_age_min)
-                        limit_label = f"{max_age_min} मिनिटांपेक्षा" if max_age_min < 60 else f"{max_age_min // 60} तासांपेक्षा"
-                        if is_stale:
-                            st.error(f"🔴 {label}: शेवटचं {last_run} — {limit_label} जुनं, तपासा!")
+        with st.expander("🩺 Auto-Trader Scripts — Health Check", expanded=False):
+            try:
+                from notifications import check_heartbeat_stale, HEARTBEAT_DIR
+                import os as _os
+                # 🎓 Production-readiness सुधारणा — engine_service/dynamic_sr_instant_trader/
+                # srv2_momentum_reversal इथे जोडले (आधी गाळले गेले होते — तिन्ही महत्त्वाचे VPS बॉट्स आहेत).
+                # ⚠️ इशारा: हा heartbeat फाईल *local* आहे — ती script ज्या मशीनवर (उदा. VPS) चालते, त्याच
+                # मशीनवर dashboard चालत असेल तरच "कधीच चालली नाही" ऐवजी खरा status दिसेल. Dashboard वेगळ्या
+                # होस्टवर (उदा. Streamlit Cloud) असेल, तर हे कायम ⚪ दाखवेल — त्यासाठी ping_healthcheck()
+                # (notifications.py, बाह्य uptime-monitor) हा जास्त विश्वासार्ह पर्याय आहे.
+                hb_specs = [
+                    ("credit_spread_auto_trader", "Credit Spread Auto-Trader", 30),
+                    ("oi_signal_auto_trader", "OI Signal Auto-Trader", 30),
+                    ("oi_snapshot_collector", "OI Snapshot Collector", 30),
+                    ("oi_greeks_vix_strategy", "OI+Greeks+VIX Strategy", 30),
+                    ("engine_service", "Engine Service (SL/Target/EOD)", 10),
+                    ("dynamic_sr_instant_trader", "Dynamic S/R Instant Trader", 10),
+                    ("srv2_momentum_reversal", "SRv2 Momentum-Reversal", 10),
+                    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
+                    # (दुपारी ४ वाजता) चालतो, त्यामुळे इतरांसारखी ३०-मिनिट मर्यादा इथे उगाचच सतत
+                    # "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची मर्यादा (२५ तास).
+                    ("eod_market_report", "EOD Market Report (4pm)", 25 * 60),
+                ]
+                hb_cols = st.columns(4)
+                for idx, (script_name, label, max_age_min) in enumerate(hb_specs):
+                    with hb_cols[idx % 4]:
+                        hb_path = _os.path.join(HEARTBEAT_DIR, f"{script_name}.txt")
+                        if not _os.path.exists(hb_path):
+                            st.info(f"⚪ {label}: कधीच चालली नाही (किंवा या मशीनवर चालत नाही)")
                         else:
-                            st.success(f"🟢 {label}: शेवटचं {last_run}")
-        except Exception:
-            st.caption("Health check उपलब्ध नाही (notifications.py सापडलं नाही).")
+                            with open(hb_path) as f:
+                                last_run = f.read().strip()
+                            is_stale = check_heartbeat_stale(script_name, max_age_minutes=max_age_min)
+                            limit_label = f"{max_age_min} मिनिटांपेक्षा" if max_age_min < 60 else f"{max_age_min // 60} तासांपेक्षा"
+                            if is_stale:
+                                st.error(f"🔴 {label}: शेवटचं {last_run} — {limit_label} जुनं, तपासा!")
+                            else:
+                                st.success(f"🟢 {label}: शेवटचं {last_run}")
+            except Exception:
+                st.caption("Health check उपलब्ध नाही (notifications.py सापडलं नाही).")
         st.markdown("---")
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दुपारी ४ वाजता स्वयंचलितपणे तयार होणारे EOD
         # Market Reports (eod_market_report.py) इथे साठवलेले (data/reports/) दाखवणे व डाउनलोड करता येणे.
-        mega_header("📅 EOD Market Reports (दुपारी ४ ची स्वयंचलित तयारी)", HDR_ORANGE)
-        eod_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reports")
-        if os.path.exists(eod_reports_dir):
-            eod_files = sorted(
-                [f for f in os.listdir(eod_reports_dir) if f.startswith("eod_report_") and f.endswith(".pdf")],
-                reverse=True,
-            )
-            if eod_files:
-                for fname in eod_files[:10]:  # शेवटचे १० पर्यंत, फार गर्दी नको
-                    fpath = os.path.join(eod_reports_dir, fname)
-                    with open(fpath, "rb") as f:
-                        st.download_button(
-                            label=f"📥 {fname}", data=f.read(), file_name=fname, mime="application/pdf",
-                            key=f"eod_dl_{fname}",
-                        )
+        with st.expander("📅 EOD Market Reports (दुपारी ४ ची स्वयंचलित तयारी)", expanded=False):
+            eod_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reports")
+            if os.path.exists(eod_reports_dir):
+                eod_files = sorted(
+                    [f for f in os.listdir(eod_reports_dir) if f.startswith("eod_report_") and f.endswith(".pdf")],
+                    reverse=True,
+                )
+                if eod_files:
+                    for fname in eod_files[:10]:  # शेवटचे १० पर्यंत, फार गर्दी नको
+                        fpath = os.path.join(eod_reports_dir, fname)
+                        with open(fpath, "rb") as f:
+                            st.download_button(
+                                label=f"📥 {fname}", data=f.read(), file_name=fname, mime="application/pdf",
+                                key=f"eod_dl_{fname}",
+                            )
+                else:
+                    st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
             else:
                 st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
-        else:
-            st.caption("अजून कुठलाही EOD Report तयार झालेला नाही (eod_market_report.py चालवली नसेल).")
         st.markdown("---")
 
         mega_header("📄 Full Market Analysis Report (PDF)", HDR_PINK)
