@@ -126,16 +126,21 @@ crontab -l | grep trade_monitor
 
 # Entry-Signal Bots + Dynamic S/R Refresh — Deployment (crontab)
 
-`refresh_dynamic_sr_1m.py`/`_5m.py`/`_15m.py` (Dynamic S/R levels, candle-आधारित), `oi_snapshot_collector.py`,
+`refresh_dynamic_sr_1m.py`/`_5m.py` (Dynamic S/R levels, candle-आधारित), `oi_snapshot_collector.py`,
 आणि तीन entry bots — `srv2_momentum_reversal_strategy.py`, `dynamic_sr_instant_trader.py`, व
 `classic_sr_reversal_trader.py` — हे सर्व VPS वरच्या crontab मधूनच चालतात (कुठलाही systemd
 timer/service नाही).
+
+⚠️ **`refresh_dynamic_sr_15m.py` हा file या repo मध्ये कधीच अस्तित्वातच नव्हता** — तो VPS crontab
+मध्ये चुकून जोडलेला होता, आणि दर 5 मिनिटांनी फक्त "No such file or directory" error देत होता,
+काहीही न करता (`refresh_15m.log` बघा). **15M/30M/60M Dynamic S/R फक्त रोज रात्री एकदाच
+`refresh_market_zones.py` द्वारे अपडेट होतात** (हीच रचना मुद्दाम आहे — खाली बघा) — त्यामुळे ती चुकीची
+crontab line VPS वरून **काढून टाका**, नवीन काही जोडायची गरज नाही.
 
 **शिफारस केलेला crontab (9:16 ऐवजी 9:15 पासून सुरू होणारा, खालच्या "टायमिंग-चूक" भागात सांगितलेला
 fix आधीच लागू केलेला — वेळा UTC मध्ये, `crontab -e` मध्ये पेस्ट करा):**
 ```
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_5m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_5m.log 2>&1
-*/5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_15m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_15m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_1m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_1m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 oi_snapshot_collector.py >> /root/Trade/oi_snapshot.log 2>&1
 45-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1

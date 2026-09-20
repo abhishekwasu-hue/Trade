@@ -132,9 +132,10 @@ class TestRefreshSymbolSkipsOnGap:
 
         def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
             # 🎓 वापरकर्त्याने सांगितलेला निर्णय (1M profitable नाही, 5M+ वर लक्ष) — df_30m_recent
-            # आता lookback_days=90 सह मागवला जातो (आधी डीफॉल्ट/None), जेणेकरून जास्त candles/touches
-            # वरून मजबूत levels मिळतील (df_30m, पूर्ण-वर्षाचा fetch, lookback_days=365 राहतो — वेगळाच).
-            if interval == "30minute" and lookback_days == 90:
+            # आता lookback_days=180 सह मागवला जातो (आधी 90, TradingView च्या levels शी जुळण्यासाठी
+            # वापरकर्त्याने आणखी वाढवायला सांगितल्यावर) — जेणेकरून जास्त candles/touches वरून मजबूत
+            # levels मिळतील (df_30m, पूर्ण-वर्षाचा fetch, lookback_days=365 राहतो — वेगळाच).
+            if interval == "30minute" and lookback_days == 180:
                 return df_30m_recent
             return _fake_df(failed_chunks=0)
 
@@ -157,7 +158,10 @@ class TestRefreshSymbolSkipsOnGap:
         """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 5M/15M/30M
         साठी lookback_days Upstox च्या स्वतःच्या (लहान) डीफॉल्टपेक्षा स्पष्टपणे जास्त हवा (जास्त
         candles/touches वरून मजबूत levels), पण 1M साठी मात्र जुनाच (डीफॉल्ट) — तो आता वापरला जात
-        नसला, तरी backward-compatible zone-गणना म्हणून कायम."""
+        नसला, तरी backward-compatible zone-गणना म्हणून कायम.
+        🎓 वापरकर्त्याने TradingView च्या levels शी थेट पडताळून दाखवलं की 15M/30M चे आकडे जुळत
+        नव्हते — त्यामुळे 15M/30M चा lookback 30/90 वरून 180 पर्यंत आणखी वाढवला (5M, "15 मिनिट आणि
+        त्यावरचे" या स्पष्ट सांगितलेल्या व्याप्तीबाहेर असल्याने, मुद्दामच अबाधित — 20 दिवसच राहतो)."""
         seen_lookback_days = {}
 
         def fetch_side_effect(access_token, symbol, current_spot, interval, lookback_days=None):
@@ -174,6 +178,6 @@ class TestRefreshSymbolSkipsOnGap:
             ok, message = rmz.refresh_symbol("fake_token", "NIFTY")
             assert ok is True
             assert 20 in seen_lookback_days["5minute"]
-            assert 30 in seen_lookback_days["15minute"]
-            assert 90 in seen_lookback_days["30minute"]
+            assert 180 in seen_lookback_days["15minute"]
+            assert 180 in seen_lookback_days["30minute"]
             assert None in seen_lookback_days.get("1minute", [None])
