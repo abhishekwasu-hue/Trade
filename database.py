@@ -734,15 +734,52 @@ def compute_portfolio_risk_summary(positions_df):
     }
 
 def _compute_margin_used(df):
-    """max_loss * lots * lot_size एकत्र (ROI% साठी "वापरलेली मार्जिन" चा worst-case अंदाज). काही
-    जुन्या/अपूर्ण नोंदींमध्ये हे स्तंभ None असू शकतात (mixed dtype मुळे df["max_loss"].abs() थेट
-    केलं तर "bad operand type for abs(): 'NoneType'" crash होतो) — pd.to_numeric(errors="coerce")
-    ने असे None/अवैध आधी NaN करून, sum() (डीफॉल्ट skipna=True) आपोआप वगळतो — तो trade मार्जिनमध्ये
-    मोजला जात नाही, पण बाकी काहीच अडत नाही."""
+    """ROI% साठी "वापरलेली मार्जिन" — प्रत्यक्ष *एकाच वेळी उघडे* असलेल्या trades च्या
+    (max_loss*lots*lot_size) बेरजेचा सर्वात मोठा (peak concurrent) आकडा — साधी सर्व trades ची बेरीज
+    नाही.
+
+    🎓 वापरकर्त्याने निदर्शनास आणलेली, बरोबर तक्रार — आधी सर्व trades चा margin (max_loss*lots*
+    lot_size) निव्वळ बेरीज व्हायचा, जणू सर्व एकाच वेळी उघडे होते. पण established bots (1m_instant,
+    dynamic_sr_instant_trader इ.) एका वेळी फक्त एकच trade उघडतात (नवीन entry आधीचा बंद झाल्याशिवाय
+    घेतच नाहीत) — त्यामुळे तेच भांडवल वारंवार पुन्हा-पुन्हा वापरलं जातं, सर्व वेगळं-वेगळं भांडवल नाही.
+    साधी बेरीज त्यामुळे "वापरलेली मार्जिन" प्रत्यक्षापेक्षा कितीतरी पट जास्त दाखवायची (उदा. २० trades
+    → वीसपट भांडवल दाखवायचं), आणि ROI% खोटाच खूप लहान (जवळपास शून्य) दिसायचा.
+
+    आता entry_time/exit_time वरून sweep-line (classic "meeting rooms") पद्धतीने — प्रत्येक क्षणी
+    प्रत्यक्ष उघडे असलेल्या trades चीच बेरीज करून, त्यातला सर्वात मोठा (peak) आकडा "margin_used"
+    मानला जातो. निव्वळ sequential (कधीच overlap न होणाऱ्या) trades साठी हे आपोआप फक्त सर्वात मोठ्या
+    एका trade इतकंच येतं (बरोबर, कारण तेच भांडवल पुन्हा-पुन्हा वापरलं गेलं). वेगवेगळ्या strategies/
+    accounts वर खरंच एकाच वेळी अनेक trades उघडे असतील, तर ते इथे बरोबर एकत्र मोजले जातात (overlap
+    प्रत्यक्ष असेल तरच).
+
+    entry_time/exit_time उपलब्ध नसलेल्या (जुन्या/अपूर्ण) नोंदी — त्यांचा margin peak मध्ये netting
+    न करता वेगळा जोडला जातो (सुरक्षित, worst-case गृहीतक — जुनं वर्तनच त्यांच्यापुरतं कायम).
+    """
     max_loss = pd.to_numeric(df["max_loss"], errors="coerce").abs()
     lots = pd.to_numeric(df["lots"], errors="coerce")
     lot_size = pd.to_numeric(df["lot_size"], errors="coerce")
-    return (max_loss * lots * lot_size).sum()
+    trade_margin = max_loss * lots * lot_size
+
+    entry_time = pd.to_datetime(df["entry_time"], errors="coerce") if "entry_time" in df.columns else pd.Series(pd.NaT, index=df.index)
+    exit_time = pd.to_datetime(df["exit_time"], errors="coerce") if "exit_time" in df.columns else pd.Series(pd.NaT, index=df.index)
+
+    has_margin = trade_margin.notna() & (trade_margin > 0)
+    timed = has_margin & entry_time.notna() & exit_time.notna() & (exit_time >= entry_time)
+    untimed_margin = trade_margin[has_margin & ~timed].sum()
+
+    if not timed.any():
+        return untimed_margin
+
+    # sweep-line: प्रत्येक trade चे दोन events -- entry ला +margin, exit ला -margin. वेळेनुसार
+    # क्रमवारी लावून cumulative sum चा कमाल आकडा हाच "कधीही एकाचवेळी जास्तीत जास्त किती भांडवल
+    # वापरलं गेलं". बरोब्बर त्याच क्षणी एक trade बंद व दुसरा सुरू झाला, तर आधी "बंद" मोजून (order=0),
+    # मग "सुरू" (order=1) -- खरंच sequential trades ला उगाच overlap समजलं जाऊ नये म्हणून.
+    events = pd.concat([
+        pd.DataFrame({"time": exit_time[timed], "delta": -trade_margin[timed], "order": 0}),
+        pd.DataFrame({"time": entry_time[timed], "delta": trade_margin[timed], "order": 1}),
+    ], ignore_index=True).sort_values(["time", "order"])
+    peak = events["delta"].cumsum().max()
+    return float(peak) + untimed_margin
 
 
 def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
@@ -761,7 +798,7 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
     मार्जिन" मानून roi_pct = एकूण realized P&L / एकूण मार्जिन.
     """
     conn = sqlite3.connect(DB_PATH)
-    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size FROM live_trades "
+    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time FROM live_trades "
              "WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL")
     params = [symbol]
     if mode_filter:
@@ -959,7 +996,7 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
     get_performance_summary() मध्ये वापरलेलीच पद्धत, इथे प्रत्येक group साठी स्वतंत्रपणे."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
-    query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size FROM live_trades
+    query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time FROM live_trades
                 WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     params = [symbol]
     if mode_filter:
@@ -996,7 +1033,7 @@ def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=No
     conn = sqlite3.connect(DB_PATH)
     col_expr1 = f"COALESCE({group_col1}, 'UNKNOWN')"
     col_expr2 = f"COALESCE({group_col2}, 'UNKNOWN')"
-    query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size
+    query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time
                 FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     params = [symbol]
     if mode_filter:

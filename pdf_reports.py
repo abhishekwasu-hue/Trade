@@ -124,6 +124,8 @@ _rpt_normal = ParagraphStyle("rpt_normal", fontName=_RPT_FONT, fontSize=11.5, le
 
 _rpt_meta = ParagraphStyle("rpt_meta", fontName=_RPT_FONT, fontSize=11.5, leading=15, textColor=colors.HexColor("#555555"))
 
+_rpt_kv_wrap = ParagraphStyle("rpt_kv_wrap", fontName=_RPT_FONT, fontSize=9.5, leading=12.5, textColor=colors.HexColor("#333333"))
+
 _rpt_value_big = ParagraphStyle("rpt_value_big", fontName=_RPT_FONT_BOLD, fontSize=18, leading=22, textColor=_C_BG_DARK)
 
 _rpt_footer = ParagraphStyle("rpt_footer", fontName=_RPT_FONT, fontSize=8, leading=11, textColor=colors.HexColor("#888888"))
@@ -1875,21 +1877,37 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         win_rate_str = f"{win_rate}%" if win_rate is not None else "N/A"
         roi_pct = summary.get("roi_pct")
         roi_str = f"{roi_pct}%" if roi_pct is not None else "N/A"
+        # 🎓 वापरकर्त्याने विचारलेली तक्रार ("charges खूप जास्त वाटतायत") — आधी फक्त "Total Charges"
+        # ही एकच निव्वळ बेरीज दिसायची, नेमकं कशाचं बनलंय ते कुठेच नाही — वापरकर्त्याला स्वतः पडताळता
+        # यावं म्हणून (web UI च्या _render_charges_breakdown_caption() सारखीच) order-संख्या आणि
+        # brokerage/STT/Exchange/SEBI/Stamp/GST ब्रेकडाऊन आता इथेही.
+        total_orders = pnl_totals.get("total_orders", 0) if pnl_totals else 0
+        charges_breakdown = pnl_totals.get("charges_breakdown") if pnl_totals else None
         summary_rows = [
             ["Total Trades", str(summary["total_trades"])],
             ["Win Rate (pure SL/Target only)", win_rate_str],
             ["Win Rate (all exits, reference)", f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
             ["ROI % (on margin used)", f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
             ["Gross P&L", f"Rs {gross_pnl:,.0f}"],
-            ["Total Charges", f"Rs {total_charges:,.0f}"],
-            ["Net P&L (after charges)", f"Rs {net_pnl:,.0f}"],
+            ["Total Charges", f"Rs {total_charges:,.0f} ({total_orders} orders)"],
+        ]
+        if charges_breakdown and any(charges_breakdown.values()):
+            _cb_labels = {"brokerage": "Brokerage", "stt": "STT", "exchange_txn": "Exchange Txn",
+                          "sebi_fee": "SEBI Fee", "stamp_duty": "Stamp Duty", "gst": "GST"}
+            _cb_line = " / ".join(f"{_cb_labels[k]} Rs {v:,.0f}" for k, v in charges_breakdown.items() if v)
+            # प्लेन string cells wrap होत नाहीत (Table column च्या रुंदीबाहेर overflow/clipped) — इथे
+            # ओळ बरीच लांब असू शकते (सहा घटकांपर्यंत), त्यामुळे Paragraph मध्ये wrap करून दिली आहे.
+            summary_rows.append(["  └ Charges Breakdown", Paragraph(_cb_line, _rpt_kv_wrap)])
+        net_pnl_row_idx = len(summary_rows)
+        summary_rows.append(["Net P&L (after charges)", f"Rs {net_pnl:,.0f}"])
+        summary_rows.extend([
             ["Profit Factor", pf_str],
             ["Avg P&L / Trade", f"Rs {summary['avg_pnl']:,.0f}"],
             ["Best / Worst Trade", f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
-        ]
+        ])
         force_colors = {
             4: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
-            6: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
+            net_pnl_row_idx: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
         }
         win_hex = "#089981" if (win_rate or 0) >= 50 else "#F23645"
         net_hex = "#089981" if net_pnl >= 0 else "#F23645"

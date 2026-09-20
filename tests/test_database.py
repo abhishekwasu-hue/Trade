@@ -346,14 +346,54 @@ class TestGetPerformanceSummaryWinRateAndRoi:
         assert summary["win_rate"] is None
         assert summary["win_rate_all_exits"] is not None  # हे मात्र कधीच None नसतं (total_trades>0 असेल तोवर)
 
-    def test_roi_pct_based_on_total_margin_used(self, temp_db):
+    def test_roi_pct_based_on_peak_concurrent_margin_used(self, temp_db):
+        # 🎓 वापरकर्त्याने सापडवलेली, बरोबर तक्रार — margin_used आधी सर्व 5 trades चा margin निव्वळ
+        # बेरीज करायचा (187,500), जणू सर्व एकाच वेळी उघडे होते. पण _seed_mixed_trades() इथे प्रत्येक
+        # trade वेगळ्या दिवशी (10:00-14:00, कधीच overlap न होणारे, established bots (एका वेळी फक्त
+        # एकच trade) च्या खऱ्या वर्तनासारखे) — त्यामुळे खरी "वापरलेली मार्जिन" फक्त सर्वात मोठ्या एका
+        # trade इतकीच (37,500) असायला हवी, तेच भांडवल पुन्हा-पुन्हा वापरलं गेलं असं गृहीत धरून.
         self._seed_mixed_trades(temp_db)
         summary = database.get_performance_summary("NIFTY")
-        # margin/trade = 500(max_loss) * 1(lots) * 75(lot_size) = 37,500; 5 trades -> 187,500
-        assert summary["margin_used"] == 187500.0
+        assert summary["margin_used"] == 37500.0
         # total_pnl = 500-200+100+100-100 = 400
         assert summary["total_pnl"] == 400.0
-        assert summary["roi_pct"] == round(400.0 / 187500.0 * 100, 2)
+        assert summary["roi_pct"] == round(400.0 / 37500.0 * 100, 2)
+
+    def test_margin_used_sums_genuinely_overlapping_trades(self, temp_db):
+        # दोन trades खरंच एकाच वेळी उघडे असतील (उदा. दोन वेगळ्या strategies/accounts वर समांतर) —
+        # तेव्हा मात्र त्यांची मार्जिन खरंच एकत्र मोजायला हवी (netting नाही).
+        conn = sqlite3.connect(temp_db)
+        for tid, entry, exit_ in [("A", "2026-09-01 10:00:00", "2026-09-01 12:00:00"),
+                                    ("B", "2026-09-01 10:30:00", "2026-09-01 11:30:00")]:
+            conn.execute(
+                """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+                   max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, exit_time, exit_reason,
+                   realized_pnl, status, legs_json, mode, trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (tid, "2026-09-01", "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+                 entry, exit_, "TARGET", 300.0, "CLOSED", json.dumps([]), "LIVE", "INTRADAY", "manual"),
+            )
+        conn.commit()
+        conn.close()
+        summary = database.get_performance_summary("NIFTY")
+        # B (10:30-11:30) पूर्णपणे A (10:00-12:00) च्या आत -- 10:30-11:30 मध्ये दोन्ही एकत्र उघडे
+        # (peak = 500*1*75*2 = 75,000)
+        assert summary["margin_used"] == 75000.0
+
+    def test_margin_used_falls_back_to_sum_when_times_missing(self, temp_db):
+        """entry_time/exit_time नसलेल्या (जुन्या/अपूर्ण) नोंदींसाठी जुनं (netting नसलेलं, सुरक्षित)
+        वर्तनच कायम -- वेगळं जोडलं जातं, चुकून वगळलं जात नाही."""
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, exit_reason, realized_pnl, status,
+               legs_json, mode, trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("T1", "2026-09-01", "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+             "TARGET", 300.0, "CLOSED", json.dumps([]), "LIVE", "INTRADAY", "manual"),
+        )
+        conn.commit()
+        conn.close()
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["margin_used"] == 37500.0
 
     def test_roi_none_when_no_margin_data(self, temp_db):
         """max_loss/lots/lot_size उपलब्ध नसतील (जुनी, अपूर्ण नोंद) -- roi_pct None, crash नाही."""
