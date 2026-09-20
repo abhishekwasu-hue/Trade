@@ -454,7 +454,7 @@ def render():
     )
     quick_range = st.radio(
         "जलद निवड", ["आज", "गेले 7 दिवस", "गेला महिना", "गेले 3 महिने", "संपूर्ण इतिहास", "कस्टम रेंज"],
-        horizontal=True, key="perf_analysis_quick_range", index=2,
+        horizontal=True, key="perf_analysis_quick_range", index=0,
     )
     if quick_range == "आज":
         an_from, an_to = today_d, today_d
@@ -648,9 +648,10 @@ def render():
     rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
     repcol1, repcol2 = st.columns(2)
     with repcol1:
-        rep_from = st.date_input(
-            "पासून", value=get_ist_today() - datetime.timedelta(days=30), key="pnl_report_from",
-        )
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सर्व CSV/PDF reports, log tables, orders/positions
+        # साठी Default date आज पाहिजे") — आधी डीफॉल्ट "गेले 30 दिवस" होतं, आता आजचीच तारीख — पान
+        # उघडताक्षणीच आजचा रिपोर्ट दिसतो, जुना डेटा हवा असल्यास वापरकर्ता स्वतः तारीख मागे बदलू शकतो.
+        rep_from = st.date_input("पासून", value=get_ist_today(), key="pnl_report_from")
     with repcol2:
         rep_to = st.date_input("पर्यंत", value=get_ist_today(), key="pnl_report_to")
 
