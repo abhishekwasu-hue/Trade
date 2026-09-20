@@ -127,46 +127,44 @@ crontab -l | grep trade_monitor
 # Entry-Signal Bots + Dynamic S/R Refresh — Deployment (crontab)
 
 `refresh_dynamic_sr_1m.py`/`_5m.py`/`_15m.py` (Dynamic S/R levels, candle-आधारित), `oi_snapshot_collector.py`,
-आणि दोन entry bots — `srv2_momentum_reversal_strategy.py` व `dynamic_sr_instant_trader.py` — हे सर्व
-VPS वरच्या crontab मधूनच चालतात (कुठलाही systemd timer/service नाही).
+आणि तीन entry bots — `srv2_momentum_reversal_strategy.py`, `dynamic_sr_instant_trader.py`, व
+`classic_sr_reversal_trader.py` — हे सर्व VPS वरच्या crontab मधूनच चालतात (कुठलाही systemd
+timer/service नाही).
 
-**सद्य crontab (2026-09-20, VPS वरून वापरकर्त्याने पडताळलेलं, वेळा UTC मध्ये):**
+**शिफारस केलेला crontab (9:16 ऐवजी 9:15 पासून सुरू होणारा, खालच्या "टायमिंग-चूक" भागात सांगितलेला
+fix आधीच लागू केलेला — वेळा UTC मध्ये, `crontab -e` मध्ये पेस्ट करा):**
 ```
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_5m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_5m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_15m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_15m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_1m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_1m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 oi_snapshot_collector.py >> /root/Trade/oi_snapshot.log 2>&1
-46-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
+45-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
 * 4-10 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
-46-59 3 * * 1-5 cd /root/Trade && sleep 15 && python3 dynamic_sr_instant_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/dsr.log 2>&1
+45-59 3 * * 1-5 cd /root/Trade && sleep 15 && python3 dynamic_sr_instant_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/dsr.log 2>&1
 * 4-10 * * 1-5 cd /root/Trade && sleep 15 && python3 dynamic_sr_instant_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/dsr.log 2>&1
+45-59 3 * * 1-5 cd /root/Trade && sleep 45 && python3 classic_sr_reversal_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/classic_sr.log 2>&1
+* 4-10 * * 1-5 cd /root/Trade && sleep 45 && python3 classic_sr_reversal_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/classic_sr.log 2>&1
 ```
+`sleep 0/15/30/45` — `trade_monitor.py` (लगेच), `dynamic_sr_instant_trader.py` (15s), `srv2_momentum_reversal_strategy.py`
+(30s), `classic_sr_reversal_trader.py` (45s) — असे टप्प्याटप्प्याने, Upstox API वर एकाच क्षणी गर्दी
+होऊ नये म्हणून.
 
-⚠️ **`classic_sr_reversal_trader.py` वरच्या crontab मध्ये कुठेच नाही** — म्हणजे ती strategy सध्या
-प्रत्यक्ष चालतच नाही (LIVE किंवा PAPER, कुठल्याही मोडमध्ये), Bot Dynamic SR Algo पानावरून सेटिंग्ज
-बदलल्या तरीही. हवं असल्यास वरच्याच `dynamic_sr_instant_trader.py`/`srv2_momentum_reversal_strategy.py`
-च्या ओळींसारखीच एक cron entry जोडावी लागेल.
+⚠️ **`classic_sr_reversal_trader.py` चा `symbol_enabled` डीफॉल्ट सर्व symbols साठी बंद आहे**
+(backtest-टप्प्यातली strategy असल्याने, `cloud_db.py` मधला मुद्दाम ठेवलेला safety default) — वरचं
+crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo पानावरून "🎯 Classical S/R Reversal" strategy
+साठी हवा तो symbol स्पष्टपणे सक्रिय (checkbox) केल्याशिवाय कुठलाही trade (PAPER सुद्धा) घेतला जाणार
+नाही — script चालतच राहील, पण दरवेळी "symbol बंद आहे" म्हणून थांबेल.
 
-## 🎓 वापरकर्त्याने सापडवलेली टायमिंग-चूक — entry bots 9:15 ऐवजी 9:16 ला सुरू व्हायचे
+## 🎓 वापरकर्त्याने सापडवलेली टायमिंग-चूक (इतिहास) — entry bots आधी 9:15 ऐवजी 9:16 ला सुरू व्हायचे
 
-`refresh_dynamic_sr_*.py`/`oi_snapshot_collector.py` candle-आधारित असल्याने त्यांना 9:16 (पहिला
-पूर्ण 1-मिनिट candle तेव्हाच बंद होतो) पर्यंत थांबावंच लागतं — तिथे काहीही गमावत नाही. पण
-`srv2_momentum_reversal_strategy.py`/`dynamic_sr_instant_trader.py` candle ची वाट न बघता **थेट live
-LTP** level ला touch झाला का हे तपासतात — त्यामुळे त्यांचा पहिला run `46-59 3 * * 1-5` (UTC 3:46 =
-IST 9:16) ऐवजी `trade_monitor.py` सारखाच `45-59 3 * * 1-5` (UTC 3:45 = IST 9:15) असायला हवा — नाहीतर
-बाजार उघडल्यावरचा पहिला, अनेकदा सर्वात मोठ्या हालचालीचा मिनिट (9:15-9:16) पूर्णपणे चुकतो.
-
-**बदल (VPS वर `crontab -e` मध्ये, फक्त या दोन ओळींमधला `46-59` → `45-59` — बाकी सर्व जसंच्या तसं):**
-```diff
-- 46-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
-+ 45-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
-- 46-59 3 * * 1-5 cd /root/Trade && sleep 15 && python3 dynamic_sr_instant_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/dsr.log 2>&1
-+ 45-59 3 * * 1-5 cd /root/Trade && sleep 15 && python3 dynamic_sr_instant_trader.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/dsr.log 2>&1
-```
-`sleep 15`/`sleep 30` मुद्दामच ठेवलेले — त्यामुळे एकाच मिनिटात (9:15) `trade_monitor.py` (लगेच),
-`dynamic_sr_instant_trader.py` (15 सेकंदांनी), `srv2_momentum_reversal_strategy.py` (30 सेकंदांनी)
-असे टप्प्याटप्प्याने चालतात — Upstox API वर एकाच क्षणी गर्दी होत नाही. `* 4-10 * * 1-5` (9:30 नंतरच्या)
-ओळींना बदलण्याची गरज नाही — त्या आधीपासूनच दर मिनिटाला चालू आहेत.
+मूळ crontab मध्ये `srv2_momentum_reversal_strategy.py`/`dynamic_sr_instant_trader.py` चा पहिला run
+`46-59 3 * * 1-5` (UTC 3:46 = IST **9:16**) होता — `refresh_dynamic_sr_*.py`/`oi_snapshot_collector.py`
+सारखाच, जे candle-आधारित असल्याने 9:16 (पहिला पूर्ण 1-मिनिट candle तेव्हाच बंद होतो) पर्यंत थांबावंच
+लागतं. पण हे दोन्ही entry bots candle ची वाट न बघता **थेट live LTP** level ला touch झाला का हे
+तपासतात — त्यामुळे बाजार उघडल्यावरचा पहिला, अनेकदा सर्वात मोठ्या हालचालीचा मिनिट (9:15-9:16) आधी
+पूर्णपणे चुकायचा. वरच्या "शिफारस केलेला crontab" मध्ये हा fix (`46-59` → `45-59`, `trade_monitor.py`
+सारखंच) आधीच लागू केलेला आहे — `classic_sr_reversal_trader.py` नव्यानेच जोडताना सुरुवातीपासूनच
+बरोबर वेळेत (9:15) जोडलेली आहे, त्याला हा जुना बगच कधी लागला नव्हता.
 
 ⚠️ Note: **F&O (options) ला pre-open session नाही** (फक्त equity/cash मार्केटला 9:00-9:15 pre-open
 असतो) — त्यामुळे "9:10 च्या pre-open किमतीनुसार S/R अपडेट करा" हा दृष्टिकोन इथे लागू होत नाही (त्या
