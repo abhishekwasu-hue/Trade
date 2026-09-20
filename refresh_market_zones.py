@@ -83,10 +83,17 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     # बघा). df_1m_recent चा lookback मुद्दाम जुनाच (Upstox डीफॉल्ट) ठेवला — 1M zone-गणना अजूनही होते
     # (वापरकर्त्याने timeframe_choice परत "1M"/"BOTH" केलं तर उपलब्ध असावी म्हणून), फक्त तिला जास्त
     # डेटा देण्याचा आता उपयोग नाही (1m_instant चा डीफॉल्ट timeframe_choice आता "5M").
-    df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=30)  # आधी चार्ट-डीफॉल्ट (~20 दिवस)
+    # 🎓 वापरकर्त्याने TradingView च्या "Support Resistance Channels" (prd/channel-width/maxnumsr —
+    # हेच parameters sr_dynamic.compute_dynamic_sr() मध्येही वापरलेले आहेत) आणि आपल्या Dashboard च्या
+    # 15M SRv2 chart वरचे levels एकमेकांशी थेट पडताळून दाखवली — 15M/30M चे आकडे जुळत नव्हते. कारण —
+    # TradingView कडे chart वर आधीच खूप जास्त (महिन्यांचा) इतिहास लोड असतो, आपण मात्र फक्त 30/90
+    # दिवसांचाच अलीकडचा डेटा वापरत होतो — त्यामुळे वेगळे pivot points, वेगळे levels. आता 15M/30M
+    # साठी 180 दिवस (~6 महिने) — TradingView च्या लोड झालेल्या इतिहासाच्या जास्त जवळ. 1M/5M (जिथे
+    # user ने "15 मिनिट आणि त्यावरचे" असं स्पष्ट सांगितलं) मुद्दामच अबाधित ठेवले.
+    df_15m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=180)  # आधी 30 दिवस
     df_1m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="1minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (1-मिनिटसाठी ~5 दिवस) -- मुद्दाम तसाच
-    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=20)  # आधी Upstox डीफॉल्ट (~10 दिवस)
-    df_30m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=90)  # आधी चार्ट-डीफॉल्ट (~60 दिवस) -- 90 exactly एका chunk मध्ये बसतो
+    df_5m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=20)  # आधी Upstox डीफॉल्ट (~10 दिवस) -- मुद्दाम अबाधित (फक्त 15M+ वाढवायचं होतं)
+    df_30m_recent = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=180)  # आधी 90 दिवस
     # "1hour" Upstox कडून थेट verified नाही (fetch_timeframe_df() प्रमाणेच) — 30-मिनिट resample करून.
     df_60m_recent = resample_to_1h(df_30m_recent) if df_30m_recent is not None and not df_30m_recent.empty else df_30m_recent
 
