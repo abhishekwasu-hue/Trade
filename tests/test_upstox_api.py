@@ -94,6 +94,43 @@ class TestFetchLtpMapDetailed:
         assert result == {}
 
 
+class TestVerifyTokenLive:
+    """🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — "मोबाईलवर Approve करूनही 401
+    चालूच" या तक्रारीचं मूळ localize करण्यासाठी जोडलेलं फंक्शन — Supabase मधली वेळ (freshness) नाही,
+    तर प्रत्यक्ष Upstox कडून token स्वीकारला जातो का हे थेट तपासतं."""
+
+    def test_empty_token_returns_false_without_network_call(self):
+        with patch.object(upstox_api.requests, "get") as mock_get:
+            is_valid, detail = upstox_api.verify_token_live("")
+        assert is_valid is False
+        assert "रिकामा" in detail
+        mock_get.assert_not_called()
+
+    def test_valid_token_returns_true_on_200(self):
+        with patch.object(upstox_api.requests, "get", return_value=_mock_get_response(200, {})):
+            is_valid, detail = upstox_api.verify_token_live("fake_token")
+        assert is_valid is True
+        assert "वैध" in detail
+
+    def test_expired_token_returns_false_on_401(self):
+        with patch.object(upstox_api.requests, "get", return_value=_mock_get_response(401, {})):
+            is_valid, detail = upstox_api.verify_token_live("stale_token")
+        assert is_valid is False
+        assert "401" in detail
+
+    def test_unexpected_status_returns_false_with_code(self):
+        with patch.object(upstox_api.requests, "get", return_value=_mock_get_response(500, {})):
+            is_valid, detail = upstox_api.verify_token_live("fake_token")
+        assert is_valid is False
+        assert "500" in detail
+
+    def test_connection_exception_returns_false_not_raised(self):
+        with patch.object(upstox_api.requests, "get", side_effect=ConnectionError("boom")):
+            is_valid, detail = upstox_api.verify_token_live("fake_token")
+        assert is_valid is False
+        assert "जोडणी" in detail
+
+
 class TestGetOrderDetails:
     def test_returns_data_on_200(self):
         with patch.object(upstox_api, "_get_with_retry", return_value=_mock_get_response(200, {"status": "complete"})):
