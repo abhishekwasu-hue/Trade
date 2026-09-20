@@ -887,46 +887,6 @@ def _render_market_zones():
                         st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
                         st.markdown("---")
 
-                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "5M/15M Confluence Table" — Classical
-                # S/R Reversal backtest साठी चर्चा केलेल्या संकल्पना (Swing High/Low वरून Demand/
-                # Supply, Trendline ऐवजी इथे थेट Order Block) आता Market Zones पानावरही, 5-मिनिट व
-                # 15-मिनिट दोन्ही टाईमफ्रेम्ससाठी, सद्य किमतीच्या सर्वात जवळचेच एकत्र एका तक्त्यात.
-                sub_header("📊 5M / 15M Confluence Table (Support/Resistance + Demand/Supply + Order Block)", HDR_CYAN)
-                st.caption(
-                    "Support/Resistance — आधीच रोज रात्री साठवलेले Dynamic S/R levels (वरचीच यादी, सद्य LTP शी "
-                    "पुन्हा-जुळवलेले). Demand/Supply Zone — Swing High/Low वरून (Classical S/R Reversal backtest "
-                    "मध्ये वापरलेलीच पद्धत, इथे थेट/ताजी गणना). Order Block — मोठ्या impulsive हालचालीच्याच आधीची "
-                    "शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या सर्वात जवळचेच दाखवले आहेत."
-                )
-                if st.button("🔍 5M/15M Confluence Table तयार करा", key="mz_confluence_run"):
-                    with st.spinner("5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
-                        from market_zones import compute_5m_15m_confluence_table
-                        df_conf_5m = fetch_candles(token_input, symbol, underlying_price, interval="5minute")
-                        df_conf_15m = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
-                        confluence_table = compute_5m_15m_confluence_table(
-                            underlying_price, {"5M": df_conf_5m, "15M": df_conf_15m}, all_zones_for_notif,
-                        )
-                    st.session_state["mz_confluence_table"] = confluence_table
-
-                if "mz_confluence_table" in st.session_state:
-                    ct = st.session_state["mz_confluence_table"]
-                    display_rows = []
-                    for _, r in ct.iterrows():
-                        display_rows.append({
-                            "Timeframe": r["timeframe"],
-                            "Support": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
-                            "Resistance": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
-                            "Demand Zone": f"{r['demand_zone_low']:,.2f} - {r['demand_zone_high']:,.2f} ({r['demand_zone_distance_pct']:+.2f}%)" if r["demand_zone_low"] is not None else "—",
-                            "Supply Zone": f"{r['supply_zone_low']:,.2f} - {r['supply_zone_high']:,.2f} ({r['supply_zone_distance_pct']:+.2f}%)" if r["supply_zone_low"] is not None else "—",
-                            "Order Block": (
-                                f"{'🟩 Bullish' if r['order_block_type'] == 'BULLISH_OB' else '🟥 Bearish'} "
-                                f"{r['order_block_low']:,.2f} - {r['order_block_high']:,.2f} ({r['order_block_distance_pct']:+.2f}%)"
-                            ) if r["order_block_type"] is not None else "—",
-                        })
-                    st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
-                    st.caption(f"सद्य LTP: ₹{underlying_price:,.2f}. कंसातली टक्केवारी = त्या level/zone-mid चं सद्य LTP पासूनचं अंतर (+ = वर, − = खाली).")
-                st.markdown("---")
-
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Signal Log आता तारीख-रेंज निवडता येते
                 # (डीफॉल्ट: आजचीच तारीख, त्यामुळे नेहमीचं वर्तन तसंच राहतं) — जुने दिवसही तपासता यावेत.
                 sig_log_today = get_ist_today()
@@ -1036,6 +996,48 @@ def _render_market_zones():
                     with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
                         display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
                         st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "5M/15M Confluence Table" आता
+                # Support/Resistance साठीही Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या
+                # candles वरून थेट गणना) वापरते — आधी साठवलेले Dynamic S/R levels नाही (चार्टवरच्या
+                # TradingView levels शी न जुळण्याची वेगळी, आधीच चर्चा झालेली समस्या होती). तसंच
+                # वापरकर्त्याच्या मागणीनुसार हा तक्ता आता पानाच्या सर्वात शेवटी (आधी Signal Log/Zones
+                # च्याही आधी, वरच्या बाजूला होता).
+                st.markdown("---")
+                sub_header("📊 5M / 15M Confluence Table (Support/Resistance + Demand/Supply + Order Block)", HDR_CYAN)
+                st.caption(
+                    "Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles "
+                    "वरून थेट/ताजी गणना — established Classical S/R Reversal strategy सारखीच पद्धत). Demand/Supply "
+                    "Zone — Swing High/Low वरून (तीच पद्धत). Order Block — मोठ्या impulsive हालचालीच्याच आधीची "
+                    "शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या सर्वात जवळचेच दाखवले आहेत."
+                )
+                if st.button("🔍 5M/15M Confluence Table तयार करा", key="mz_confluence_run"):
+                    with st.spinner("5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
+                        from market_zones import compute_5m_15m_confluence_table
+                        df_conf_5m = fetch_candles(token_input, symbol, underlying_price, interval="5minute")
+                        df_conf_15m = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
+                        confluence_table = compute_5m_15m_confluence_table(
+                            underlying_price, {"5M": df_conf_5m, "15M": df_conf_15m},
+                        )
+                    st.session_state["mz_confluence_table"] = confluence_table
+
+                if "mz_confluence_table" in st.session_state:
+                    ct = st.session_state["mz_confluence_table"]
+                    display_rows = []
+                    for _, r in ct.iterrows():
+                        display_rows.append({
+                            "Timeframe": r["timeframe"],
+                            "Support": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
+                            "Resistance": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
+                            "Demand Zone": f"{r['demand_zone_low']:,.2f} - {r['demand_zone_high']:,.2f} ({r['demand_zone_distance_pct']:+.2f}%)" if r["demand_zone_low"] is not None else "—",
+                            "Supply Zone": f"{r['supply_zone_low']:,.2f} - {r['supply_zone_high']:,.2f} ({r['supply_zone_distance_pct']:+.2f}%)" if r["supply_zone_low"] is not None else "—",
+                            "Order Block": (
+                                f"{'🟩 Bullish' if r['order_block_type'] == 'BULLISH_OB' else '🟥 Bearish'} "
+                                f"{r['order_block_low']:,.2f} - {r['order_block_high']:,.2f} ({r['order_block_distance_pct']:+.2f}%)"
+                            ) if r["order_block_type"] is not None else "—",
+                        })
+                    st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
+                    st.caption(f"सद्य LTP: ₹{underlying_price:,.2f}. कंसातली टक्केवारी = त्या level/zone-mid चं सद्य LTP पासूनचं अंतर (+ = वर, − = खाली).")
     except Exception as e:
         st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
