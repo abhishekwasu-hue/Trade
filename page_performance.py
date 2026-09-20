@@ -157,7 +157,7 @@ _CHARGE_BREAKDOWN_LABELS = {
 
 
 def _render_charges_breakdown_caption(breakdown):
-    """charges.py आता per-order ब्रोकर्ससाठी ढोबळ ₹35/ऑर्डर (brokerage + सर्व सरकारी/एक्सचेंज शुल्क
+    """charges.py आता per-order ब्रोकर्ससाठी ढोबळ ₹25/ऑर्डर (all-inclusive brokerage + सर्व सरकारी/एक्सचेंज शुल्क
     मिळून) मोजतं, त्यामुळे stt/exchange_txn/sebi_fee/stamp_duty/gst नेहमी 0 राहतात (फक्त "brokerage"
     मध्येच रक्कम दिसते) — पण breakdown-shape जुनीच ठेवलीये, त्यामुळे ही caption शून्य नसलेली मूल्यंच
     (`if v`) दाखवते, न बदलता."""
@@ -657,7 +657,7 @@ def render():
         _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
         st.caption(
             "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − ढोबळ शुल्क अंदाज (Upstox/Fyers/"
-            "Shoonya ₹35/ऑर्डर — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, एकत्र; Stocko निश्चित "
+            "Shoonya ₹25/ऑर्डर all-inclusive — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, एकत्र; Stocko निश्चित "
             "₹1200/महिना) = Net P&L. ⚠️ हा एक ढोबळ, सोपा अंदाज आहे, तंतोतंत नाही — प्रत्यक्ष रक्कम broker "
             "च्या Contract Note शी पडताळून पाहा."
         )

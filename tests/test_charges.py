@@ -1,7 +1,7 @@
 """
 tests/test_charges.py
 --------------------------------
-charges.py — प्रति-ऑर्डर ब्रोकर्सना (Upstox/Fyers/Shoonya) ढोबळ ₹35/ऑर्डर (FLAT_CHARGE_PER_ORDER)
+charges.py — प्रति-ऑर्डर ब्रोकर्सना (Upstox/Fyers/Shoonya) ढोबळ ₹25/ऑर्डर all-inclusive (FLAT_CHARGE_PER_ORDER)
 brokerage म्हणून लागतो का, Stocko चं निश्चित मासिक शुल्क आधीसारखंच वेगळं राहतं का, आणि stt/exchange_txn/
 sebi_fee/stamp_duty/gst हे breakdown-सुसंगततेसाठी नेहमी 0 राहतात का, याची पडताळणी.
 """
@@ -75,7 +75,7 @@ class TestStockoFlatMonthly:
         daily, summary = charges.compute_charges(
             df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "stocko"},
         )
-        # प्रति-ऑर्डर ₹35 नाही — फक्त निश्चित मासिक शुल्क (वरच्या टेस्टमध्ये पडताळलेलं)
+        # प्रति-ऑर्डर ₹25 नाही — फक्त निश्चित मासिक शुल्क (वरच्या टेस्टमध्ये पडताळलेलं)
         stocko_daily = daily[daily["broker_type"] == "stocko"]
         assert (stocko_daily.loc[stocko_daily["orders"] > 0, "brokerage"] == 0.0).all()
 

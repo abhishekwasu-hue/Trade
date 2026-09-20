@@ -1,7 +1,7 @@
 """
 tests/test_pnl_reports.py
 --------------------------------
-pnl_reports.generate_pnl_report() — charges.py चं ढोबळ प्रति-ऑर्डर ₹35 (brokerage) breakdown
+pnl_reports.generate_pnl_report() — charges.py चं ढोबळ प्रति-ऑर्डर ₹25 (brokerage) breakdown
 "charges_breakdown" totals मधून वापरकर्त्यापर्यंत (page_performance.py) योग्यपणे पोचतं का, याची पडताळणी.
 """
 import datetime
@@ -62,7 +62,7 @@ class TestGeneratePnlReportChargesBreakdown:
         breakdown = totals["charges_breakdown"]
         assert breakdown  # non-empty
         assert set(breakdown.keys()) == {"brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst"}
-        assert breakdown["brokerage"] == pytest.approx(2 * 35.0)  # 2 orders * ₹35 ढोबळ अंदाज
+        assert breakdown["brokerage"] == pytest.approx(2 * 25.0)  # 2 orders * ₹25 all-inclusive ढोबळ अंदाज
         assert breakdown["stt"] == 0.0
         assert breakdown["stamp_duty"] == 0.0
         assert totals["total_charges"] == pytest.approx(sum(breakdown.values()), abs=0.1)

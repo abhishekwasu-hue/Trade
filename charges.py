@@ -6,7 +6,7 @@ charges.py
 🎓 वापरकर्त्याने मागितलेली सुधारणा (rough, सोपा अंदाज) — आधी brokerage + STT + Exchange Txn Charge +
 SEBI Turnover Fee + Stamp Duty + त्यावरचा GST असे सहा वेगवेगळे घटक, प्रत्येक ऑर्डरच्या प्रीमियम
 turnover वरून टक्केवारीने मोजले जायचे — पण वापरकर्त्याला हे जास्त/अनपेक्षित वाटलं आणि पडताळणं अवघड
-झालं. आता प्रत्येक per-order ब्रोकरसाठी (Upstox/Fyers/Shoonya) एक निश्चित, ढोबळ ₹35/ऑर्डर (brokerage
+झालं. आता प्रत्येक per-order ब्रोकरसाठी (Upstox/Fyers/Shoonya) एक निश्चित, ढोबळ ₹25/ऑर्डर (all-inclusive, brokerage
 + सर्व सरकारी/एक्सचेंज शुल्क मिळून, एकत्र) — तंतोतंत नाही, पण साधा आणि अंदाज बांधता येण्याजोगा.
 Stocko — निश्चित ₹1200/महिना (per-order नाही, फिक्स्ड सबस्क्रिप्शन प्लॅन, आधीसारखाच) कायम.
 
@@ -20,7 +20,7 @@ import datetime
 
 import pandas as pd
 
-FLAT_CHARGE_PER_ORDER = 35.0  # ढोबळ अंदाज — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, प्रति ऑर्डर
+FLAT_CHARGE_PER_ORDER = 25.0  # ढोबळ अंदाज — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, प्रति ऑर्डर (all-inclusive)
 STOCKO_FLAT_MONTHLY = 1200.0
 DEFAULT_BROKER = "upstox"
 
@@ -55,7 +55,7 @@ def resolve_broker_type(account_id, broker_map):
 
 
 def _add_flat_order_charge(df):
-    """प्रत्येक ऑर्डर-रांगेला ढोबळ ₹35 (FLAT_CHARGE_PER_ORDER, brokerage + सर्व सरकारी/एक्सचेंज शुल्क
+    """प्रत्येक ऑर्डर-रांगेला ढोबळ ₹25 (FLAT_CHARGE_PER_ORDER, all-inclusive brokerage + सर्व सरकारी/एक्सचेंज शुल्क
     मिळून) जोडते — Stocko साठी प्रति-ऑर्डर शुल्क 0 (कारण ते निश्चित मासिक शुल्क आहे, compute_charges()
     मध्ये वेगळं जोडलं जातं). breakdown मधले stt/exchange_txn/sebi_fee/stamp_duty/gst स्तंभ established
     UI/PDF code शी सुसंगत राहण्यासाठी अजूनही आहेत, पण आता नेहमी 0 — संपूर्ण ढोबळ रक्कम फक्त "brokerage"
