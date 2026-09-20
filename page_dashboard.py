@@ -1090,7 +1090,7 @@ def render():
     supertrend_source_df = pd.DataFrame()
     st_line, st_dir = pd.Series(dtype=float), pd.Series(dtype=float)
 
-    mega_header(f"📈 Upstox Option Terminal ({symbol})", HDR_ORANGE)
+    mega_header(f"📈 AMW's A1 Option Trading Terminal ({symbol})", HDR_ORANGE)
 
     # 🎓 वापरकर्त्याने सापडवलेली bug (Dashboard वरचा NIFTY LTP Upstox च्या live LTP च्या तुलनेत
     # laggy दिसत होता) — हा headline कार्ड आधी इथे static होता, फक्त पूर्ण-पान रिफ्रेशवर (दर ५
