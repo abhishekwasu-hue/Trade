@@ -346,10 +346,10 @@ if (volumeData.length > 0) {{
 const rsiData = {json.dumps(rsi_data)};
 if (rsiData.length > 0) {{
     const rsiPane = chart.addPane();
-    const rsiSeries = rsiPane.addSeries(LightweightCharts.LineSeries, {{ color: '#7e57c2', lineWidth: 1.5, title: 'RSI-14', lastValueVisible: false }});
+    const rsiSeries = rsiPane.addSeries(LightweightCharts.LineSeries, {{ color: '#7e57c2', lineWidth: 1.5, title: 'RSI-14', lastValueVisible: true }});
     rsiSeries.setData(rsiData);
-    rsiSeries.createPriceLine({{ price: 70, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
-    rsiSeries.createPriceLine({{ price: 30, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
+    rsiSeries.createPriceLine({{ price: 60, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
+    rsiSeries.createPriceLine({{ price: 40, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
     rsiPane.setHeight(100);
 }}
 
