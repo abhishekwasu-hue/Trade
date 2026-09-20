@@ -1102,7 +1102,17 @@ def render():
     render_live_ticker()
 
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
-    df_candles = fetch_candles(token_input, symbol, underlying_price, interval=timeframe_option)
+    # 🎓 वापरकर्त्याने TradingView च्या याच Dynamic S/R indicator (sr_for_tv, खाली) शी थेट पडताळून
+    # दाखवलं — मुख्य Dashboard चा हा चार्ट refresh_market_zones.py च्या साठवलेल्या zones शी संबंधित
+    # नाही, तर इथेच प्रत्येक page-load ला df_candles वरून थेट, ताजी गणना होते. त्यामुळे तिथला lookback
+    # वाढवून काहीच फरक पडला नाही — इथला (fetch_candles चा 15minute साठी डीफॉल्ट फक्त ~20 दिवस) वाढवणं
+    # हाच खरा fix. refresh_market_zones.py प्रमाणेच 180 दिवस, "15 मिनिट आणि त्यावरचे" याच व्याप्तीत
+    # (1minute/5minute साठी Upstox डीफॉल्टच, day आधीपासूनच 400 दिवस मोठा आहे).
+    _CHART_LOOKBACK_DAYS = {"15minute": 180, "30minute": 180, "1hour": 365}
+    df_candles = fetch_candles(
+        token_input, symbol, underlying_price, interval=timeframe_option,
+        lookback_days=_CHART_LOOKBACK_DAYS.get(timeframe_option),
+    )
 
     tab1, tab2, tab3, tab4, tab7, tab8 = st.tabs([
         "📊 Chart व Direction", "📋 Option Chain व OI", "🧬 Signal Engine व Trading",
