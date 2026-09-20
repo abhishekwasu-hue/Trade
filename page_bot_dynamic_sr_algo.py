@@ -254,56 +254,55 @@ def render():
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
             # ऐच्छिक, स्वतंत्र confluence गेट्स (सर्व डीफॉल्ट बंद). RSI गेट (वर) आणि हे तिन्ही गेट्स
             # मिळून — Credit Spread व Naked दोन्हीला एकच, सामायिक सिग्नल (वेगळे गेट्स नाहीत).
-            st.markdown("---")
-            sub_header("🔍 Entry Refinement (ऐच्छिक Confluence गेट्स)", HDR_PINK)
-            st.caption("तिन्ही डीफॉल्ट बंद — सक्रिय केल्यास, त्या गेटची अट पूर्ण झाली तरच entry घेतली जाते (RSI Gate नंतर लगेच, Credit Spread + Naked दोन्हींना एकत्र लागू).")
+            with st.expander("🔍 Entry Refinement (ऐच्छिक Confluence गेट्स)", expanded=False):
+                st.caption("तिन्ही डीफॉल्ट बंद — सक्रिय केल्यास, त्या गेटची अट पूर्ण झाली तरच entry घेतली जाते (RSI Gate नंतर लगेच, Credit Spread + Naked दोन्हींना एकत्र लागू).")
 
-            sw1, sw2 = st.columns([1, 2])
-            with sw1:
-                swing_confluence_enabled = st.checkbox(
-                    "Swing High/Low Confluence", value=bool(settings.get("swing_confluence_enabled", False)),
-                    key=_widget_key(strategy_key, symbol, "swing_confluence_enabled"),
-                )
-            with sw2:
-                st.caption("touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low/High च्या जवळ असावा — वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेल्या \"major swings only\" कल्पनेप्रमाणे, खालचे दोन्ही पॅरामीटर्स किरकोळ (noise) स्विंग्स आपोआप गाळतात.")
-            sw3, sw4, sw5 = st.columns(3)
-            with sw3:
-                swing_tolerance_pct = _number_input(
-                    "Swing Tolerance %", settings, "swing_tolerance_pct", strategy_key, symbol,
-                    min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not swing_confluence_enabled,
-                )
-            with sw4:
-                swing_order = _number_input(
-                    "Swing Order (bars दोन्ही बाजूला)", settings, "swing_order", strategy_key, symbol,
-                    min_value=2, max_value=10, step=1, disabled=not swing_confluence_enabled,
-                )
-            with sw5:
-                swing_min_move_pct = _number_input(
-                    "Major Swing किमान % हालचाल", settings, "swing_min_move_pct", strategy_key, symbol,
-                    min_value=0.0, max_value=5.0, step=0.1, format="%.1f", disabled=not swing_confluence_enabled,
-                )
+                sw1, sw2 = st.columns([1, 2])
+                with sw1:
+                    swing_confluence_enabled = st.checkbox(
+                        "Swing High/Low Confluence", value=bool(settings.get("swing_confluence_enabled", False)),
+                        key=_widget_key(strategy_key, symbol, "swing_confluence_enabled"),
+                    )
+                with sw2:
+                    st.caption("touch झालेला level हा नुकत्याच झालेल्या खऱ्या (confirmed) Swing Low/High च्या जवळ असावा — वापरकर्त्याने प्रत्यक्ष चार्टवरून दाखवलेल्या \"major swings only\" कल्पनेप्रमाणे, खालचे दोन्ही पॅरामीटर्स किरकोळ (noise) स्विंग्स आपोआप गाळतात.")
+                sw3, sw4, sw5 = st.columns(3)
+                with sw3:
+                    swing_tolerance_pct = _number_input(
+                        "Swing Tolerance %", settings, "swing_tolerance_pct", strategy_key, symbol,
+                        min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not swing_confluence_enabled,
+                    )
+                with sw4:
+                    swing_order = _number_input(
+                        "Swing Order (bars दोन्ही बाजूला)", settings, "swing_order", strategy_key, symbol,
+                        min_value=2, max_value=10, step=1, disabled=not swing_confluence_enabled,
+                    )
+                with sw5:
+                    swing_min_move_pct = _number_input(
+                        "Major Swing किमान % हालचाल", settings, "swing_min_move_pct", strategy_key, symbol,
+                        min_value=0.0, max_value=5.0, step=0.1, format="%.1f", disabled=not swing_confluence_enabled,
+                    )
 
-            ds1, ds2 = st.columns([1, 2])
-            with ds1:
-                demand_supply_gate_enabled = st.checkbox(
-                    "Demand/Supply Zone", value=bool(settings.get("demand_supply_gate_enabled", False)),
-                    key=_widget_key(strategy_key, symbol, "demand_supply_gate_enabled"),
-                )
-            with ds2:
-                st.caption("touch झालेला level Demand Zone (Support) / Supply Zone (Resistance) च्या आतच असावा.")
+                ds1, ds2 = st.columns([1, 2])
+                with ds1:
+                    demand_supply_gate_enabled = st.checkbox(
+                        "Demand/Supply Zone", value=bool(settings.get("demand_supply_gate_enabled", False)),
+                        key=_widget_key(strategy_key, symbol, "demand_supply_gate_enabled"),
+                    )
+                with ds2:
+                    st.caption("touch झालेला level Demand Zone (Support) / Supply Zone (Resistance) च्या आतच असावा.")
 
-            tl1, tl2 = st.columns([1, 2])
-            with tl1:
-                trendline_gate_enabled = st.checkbox(
-                    "Trendline (BROKEN नसावी)", value=bool(settings.get("trendline_gate_enabled", False)),
-                    key=_widget_key(strategy_key, symbol, "trendline_gate_enabled"),
+                tl1, tl2 = st.columns([1, 2])
+                with tl1:
+                    trendline_gate_enabled = st.checkbox(
+                        "Trendline (BROKEN नसावी)", value=bool(settings.get("trendline_gate_enabled", False)),
+                        key=_widget_key(strategy_key, symbol, "trendline_gate_enabled"),
+                    )
+                with tl2:
+                    st.caption("त्याच दिशेची trendline (Ascending Support/Descending Resistance) अस्तित्वात असून BROKEN असेल, तरच अडवते.")
+                trendline_lookback_swings = _number_input(
+                    "Trendline Lookback Swings", settings, "trendline_lookback_swings", strategy_key, symbol,
+                    min_value=3, max_value=8, step=1, disabled=not trendline_gate_enabled,
                 )
-            with tl2:
-                st.caption("त्याच दिशेची trendline (Ascending Support/Descending Resistance) अस्तित्वात असून BROKEN असेल, तरच अडवते.")
-            trendline_lookback_swings = _number_input(
-                "Trendline Lookback Swings", settings, "trendline_lookback_swings", strategy_key, symbol,
-                min_value=3, max_value=8, step=1, disabled=not trendline_gate_enabled,
-            )
 
         st.markdown("---")
         sub_header("🔺 Long With Hedge (Naked Option Trade)", HDR_GREEN)
@@ -365,32 +364,31 @@ def render():
             naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
             naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
 
-        st.markdown("---")
-        sub_header("📈 Trailing Stop Loss (Premium Points, सतत)", HDR_PURPLE)
-        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
-        # strategies") — डीफॉल्ट TSL Activation गाठल्यावर SL कायमचा Entry/Breakeven वर अडकतो. इथे
-        # चालू केल्यास, त्याऐवजी SL नफ्याच्या मागे-मागे (Peak Premium Points - खालचं अंतर) सतत
-        # सरकत राहतो — कधीच Breakeven पेक्षा सैल होत नाही. डीफॉल्ट बंद (जुनं वर्तन कायम).
-        st.caption("TSL Activation (वर) गाठल्यावर लागू — चालू केल्यास SL Breakeven वर न अडकता, नफ्याच्या मागे-मागे (Peak Premium Points - खालचं Trailing Distance) सतत सरकत राहतो.")
-        tsl1, tsl2 = st.columns(2)
-        with tsl1:
-            spread_trailing_sl_enabled = st.checkbox(
-                "Credit Spread — Trailing SL सक्रिय", value=bool(settings.get("spread_trailing_sl_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "spread_trailing_sl_enabled"),
-            )
-            spread_trailing_distance_points = _number_input(
-                "Credit Spread — Trailing Distance (Premium Points)", settings, "spread_trailing_distance_points",
-                strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not spread_trailing_sl_enabled,
-            )
-        with tsl2:
-            naked_trailing_sl_enabled = st.checkbox(
-                "Naked Option — Trailing SL सक्रिय", value=bool(settings.get("naked_trailing_sl_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "naked_trailing_sl_enabled"),
-            )
-            naked_trailing_distance_points = _number_input(
-                "Naked Option — Trailing Distance (Premium Points)", settings, "naked_trailing_distance_points",
-                strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not naked_trailing_sl_enabled,
-            )
+        with st.expander("📈 Trailing Stop Loss (Premium Points, सतत, ऐच्छिक — डीफॉल्ट बंद)", expanded=False):
+            # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
+            # strategies") — डीफॉल्ट TSL Activation गाठल्यावर SL कायमचा Entry/Breakeven वर अडकतो. इथे
+            # चालू केल्यास, त्याऐवजी SL नफ्याच्या मागे-मागे (Peak Premium Points - खालचं अंतर) सतत
+            # सरकत राहतो — कधीच Breakeven पेक्षा सैल होत नाही. डीफॉल्ट बंद (जुनं वर्तन कायम).
+            st.caption("TSL Activation (वर) गाठल्यावर लागू — चालू केल्यास SL Breakeven वर न अडकता, नफ्याच्या मागे-मागे (Peak Premium Points - खालचं Trailing Distance) सतत सरकत राहतो.")
+            tsl1, tsl2 = st.columns(2)
+            with tsl1:
+                spread_trailing_sl_enabled = st.checkbox(
+                    "Credit Spread — Trailing SL सक्रिय", value=bool(settings.get("spread_trailing_sl_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "spread_trailing_sl_enabled"),
+                )
+                spread_trailing_distance_points = _number_input(
+                    "Credit Spread — Trailing Distance (Premium Points)", settings, "spread_trailing_distance_points",
+                    strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not spread_trailing_sl_enabled,
+                )
+            with tsl2:
+                naked_trailing_sl_enabled = st.checkbox(
+                    "Naked Option — Trailing SL सक्रिय", value=bool(settings.get("naked_trailing_sl_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "naked_trailing_sl_enabled"),
+                )
+                naked_trailing_distance_points = _number_input(
+                    "Naked Option — Trailing Distance (Premium Points)", settings, "naked_trailing_distance_points",
+                    strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not naked_trailing_sl_enabled,
+                )
 
         if strategy_key == "15m_dynamic_sr":
             e1, e2 = st.columns(2)
