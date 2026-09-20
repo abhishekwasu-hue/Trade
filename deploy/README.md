@@ -215,3 +215,38 @@ journalctl -u cloudflared_upstox_webhook -n 20 --no-pager | grep trycloudflare
 आता `RestartSec=30` + `StartLimitIntervalSec=600`/`StartLimitBurst=5` (५ प्रयत्नांनंतर systemd
 स्वतःहून थांबतं, अनंत लूप नाही) — त्यामुळे हे स्वतःहून पुन्हा घडण्याची शक्यता कमी आहे, पण VPS reboot
 सारख्या मोठ्या गोष्टीनंतर पुन्हा घडलं, तर वरचीच पावलं वापरा.
+
+# Dashboard Password Gate (APP_PASSWORD) — ⚠️ Live Trading आधी अनिवार्य
+
+🎓 वापरकर्त्याने प्रत्यक्ष सापडवलेली गंभीर सुरक्षा त्रुटी — Streamlit Dashboard (`app.py`) आधी
+कुठल्याही password/login शिवाय, VPS च्या public IP:port वरून (server `0.0.0.0` वर बांधलेला)
+**कुणालाही** उघडं होतं — LIVE Trading चालू करणं, Lot Size/SL/Target बदलणं, Broker
+credentials/access tokens बघणं-बदलणं, सर्व काही. आता `app.py` च्या अगदी सुरुवातीला एक password
+gate आहे — बरोबर पासवर्ड दिल्याशिवाय काहीच (chart, settings, काहीही) दिसणार नाही.
+
+**Fail-closed** — `APP_PASSWORD` सेट केलेला नसेल, तरीही Dashboard उघडं सोडत नाही; त्याऐवजी सेटअप
+सूचना दाखवून थांबतं. त्यामुळे live trading सुरू करण्याआधी हे सेट करणं **अनिवार्य** आहे.
+
+## एकदाच सेटअप:
+
+```bash
+# 1. Dashboard साठी systemd unit copy करणे (आधीपासून bare `streamlit run` command ने चालत असेल,
+#    तर तो आधी थांबवा — जेणेकरून दोन प्रोसेस एकाच पोर्टवर भांडणार नाहीत)
+cp deploy/streamlit_dashboard.service /etc/systemd/system/
+
+# 2. established upstox_token_webhook.service सारखाच, तोच /root/Trade/.env वापरतो -- त्यात
+#    (आधीच SUPABASE_DB_URL वगैरे असेल तिथेच) एक नवीन ओळ जोडा:
+echo 'APP_PASSWORD=तुमचा-मजबूत-पासवर्ड-इथे-टाका' >> /root/Trade/.env
+
+# 3. systemd ला नवीन unit दिसण्यासाठी, आणि सुरू करणे
+systemctl daemon-reload
+systemctl enable --now streamlit_dashboard.service
+
+# 4. तपासणी — "active (running)" दिसायला हवं
+systemctl status streamlit_dashboard.service
+```
+
+Browser मध्ये Dashboard उघडल्यावर आता सर्वात आधी पासवर्ड विचारला जाईल — बरोबर टाकल्यावरच पुढे
+जाता येईल (एका browser session/tab पुरतं लक्षात राहतं, पुन्हा-पुन्हा विचारत नाही).
+
+⚠️ पासवर्ड कधीही `git commit` करू नका — फक्त `.env` फाईलमध्येच (जी `.gitignore` मध्ये आधीच आहे).

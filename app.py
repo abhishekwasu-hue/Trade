@@ -1,4 +1,5 @@
 import datetime
+import hmac
 import io
 import json
 import os
@@ -24,6 +25,63 @@ st.set_page_config(
     page_icon="📈",
     layout="wide",
 )
+
+
+# 🎓 वापरकर्त्याने सापडवलेली गंभीर सुरक्षा त्रुटी — संपूर्ण Dashboard (LIVE Trading toggle, Broker
+# credentials/tokens, Bot lots/SL/Target सेटिंग्ज सकट) आधी कुठल्याही password/login शिवाय, VPS च्या
+# public IP:port वरून कुणालाही उघडं होतं (server 0.0.0.0 वर बांधलेला). आता संपूर्ण app च्या अगदी
+# सुरुवातीला (set_page_config नंतर लगेच, बाकी काहीही render होण्याआधी) हा gate — बरोबर पासवर्ड
+# दिल्याशिवाय पुढे काहीच (charts, settings, काहीही) दिसणार नाही. Fail-closed: APP_PASSWORD/secrets
+# configured नसेल, तरीही उघडं सोडत नाही — चुकून live trading उघडं राहण्यापेक्षा, ऑपरेटरला स्पष्ट
+# सेटअप-सूचना देऊन थांबणं जास्त सुरक्षित.
+def _get_configured_app_password():
+    """पर्यावरण चल (VPS, systemd Environment=) किंवा secrets.toml (Streamlit Cloud) — दोन्ही
+    मार्ग, established secrets_token च्या priority-pattern प्रमाणेच."""
+    pwd = os.environ.get("APP_PASSWORD")
+    if pwd:
+        return pwd
+    try:
+        if "app_password" in st.secrets:
+            return st.secrets["app_password"]
+    except Exception:
+        pass
+    return None
+
+
+def _require_app_password():
+    if st.session_state.get("_app_authenticated"):
+        return
+
+    configured_password = _get_configured_app_password()
+    _, gate_col, _ = st.columns([1, 1.3, 1])
+    with gate_col:
+        st.markdown(
+            '<div style="font-size:1.6rem; font-weight:800; color:#2962FF; margin:20vh 0 1rem 0; '
+            'text-align:center;">🔒 Upstox Option Terminal Pro</div>',
+            unsafe_allow_html=True,
+        )
+        if not configured_password:
+            st.error(
+                "⚠️ हा Dashboard अजून सुरक्षित नाही — APP_PASSWORD सेट केलेला नाही.\n\n"
+                "VPS वर systemd service file मध्ये `Environment=\"APP_PASSWORD=तुमचा-मजबूत-पासवर्ड\"` "
+                "जोडा (किंवा Streamlit Cloud वर secrets.toml मध्ये `app_password = \"...\"`), मग "
+                "service restart करा — सेट केल्याशिवाय हे पान कुणालाही उघडता येणार नाही."
+            )
+            st.stop()
+
+        with st.form("app_password_form"):
+            entered_password = st.text_input("पासवर्ड", type="password")
+            submitted = st.form_submit_button("प्रवेश करा", width="stretch")
+        if submitted:
+            if hmac.compare_digest(entered_password, configured_password):
+                st.session_state["_app_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("❌ चुकीचा पासवर्ड — पुन्हा प्रयत्न करा.")
+    st.stop()
+
+
+_require_app_password()
 
 st.markdown(
     """

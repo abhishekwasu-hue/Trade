@@ -1,0 +1,22 @@
+[Unit]
+Description=Upstox Option Terminal Pro — Streamlit Dashboard (मुख्य ट्रेडिंग app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — WorkingDirectory आणि python3/streamlit चा पूर्ण मार्ग
+# तुमच्या droplet वरच्या actual paths प्रमाणे बदला (उदा. virtualenv वापरत असाल तर तिथला streamlit).
+WorkingDirectory=/root/Trade
+ExecStart=/usr/local/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+# established upstox_token_webhook.service सारखाच — सर्व secrets (SUPABASE_DB_URL, APP_PASSWORD
+# इ.) याच एका /root/Trade/.env फाईलमधून, जी कधीच git मध्ये commit होत नाही (.gitignore मध्ये आहे).
+# 🎓 वापरकर्त्याने सापडवलेली गंभीर सुरक्षा त्रुटी — APP_PASSWORD इथेच जोडा (या .env फाईलमध्ये एक नवीन
+# ओळ: APP_PASSWORD=तुमचा-मजबूत-पासवर्ड) — नसेल तर संपूर्ण Dashboard बंदच राहील (fail-closed), उघडं
+# राहणार नाही.
+EnvironmentFile=/root/Trade/.env
+
+[Install]
+WantedBy=multi-user.target
