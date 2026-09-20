@@ -850,6 +850,22 @@ def _group_win_rate_and_roi(sub):
     }
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("credit spread आणि naked option buy चं विश्लेषण/निष्कर्ष वेगळे
+# हवेत, एकत्र मिसळू नका") — प्रत्येक Dynamic SR bot (1m_instant/classic_sr_reversal/15m_dynamic_sr)
+# credit spread ट्रेड्स (BULL_PUT_SPREAD/BEAR_CALL_SPREAD -- फक्त दिशा वेगळी, रचना एकच) आणि naked
+# option ट्रेड्स (NAKED_CALL/NAKED_PUT) दोन्ही, एकाच `source` खाली, `strategy` स्तंभातल्या वेगळ्या
+# कोडने साठवतो. get_performance_by_group()/get_exit_reason_breakdown() ला थेट "strategy" column
+# नाव दिलं, तर हे ६ कच्चे कोड वेगळे-वेगळे दिसतात (राजकीय गोंधळ) -- ही SQL अभिव्यक्ती त्याऐवजी दिली,
+# तर नेमके हे २ अर्थपूर्ण गट (Iron Condor/Iron Butterfly जसेच्या तसे) मिळतात. दोन्ही फंक्शन्स
+# group_col ला थेट SQL अभिव्यक्ती म्हणून वापरतात (COALESCE(...) च्या आत टाकतात) -- म्हणूनच हे शक्य
+# आहे, कुठलाही स्कीमा बदल न करता (हार्डकोडेड, कधीच वापरकर्ता-इनपुट नाही -- SQL injection चा प्रश्नच नाही).
+OPTION_STRUCTURE_GROUP_SQL = (
+    "CASE WHEN strategy IN ('BULL_PUT_SPREAD', 'BEAR_CALL_SPREAD') THEN 'CREDIT_SPREAD' "
+    "WHEN strategy IN ('NAKED_CALL', 'NAKED_PUT') THEN 'NAKED_OPTION' "
+    "ELSE strategy END"
+)
+
+
 def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
     """strategy (source)/entry_timeframe/trading_style नुसार कामगिरीची विभागणी (Win Rate, Total P&L,
     Trade Count, ROI%) — कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे ठरवण्यासाठी. start_date/end_date

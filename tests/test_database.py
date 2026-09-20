@@ -409,6 +409,49 @@ class TestGetPerformanceByGroupWinRateAndRoi:
         assert srv2_row["Win Rate %"] == 100.0  # हा group मात्र नेहमीप्रमाणेच numeric
 
 
+class TestOptionStructureGroupSql:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("credit spread आणि naked option buy वेगळे विश्लेषण/
+    निष्कर्ष हवेत") — OPTION_STRUCTURE_GROUP_SQL ने BULL_PUT_SPREAD/BEAR_CALL_SPREAD -> CREDIT_SPREAD
+    आणि NAKED_CALL/NAKED_PUT -> NAKED_OPTION असे दोन गट बनवायला हवेत, इतर (Iron Condor/Butterfly)
+    जसेच्या तसे राहायला हवेत."""
+
+    def test_credit_spread_variants_bucket_together(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-01", strategy="BULL_PUT_SPREAD")
+        seed_closed_trade(temp_db, "T2", -100.0, "SL", "2026-09-02", strategy="BEAR_CALL_SPREAD")
+        df = database.get_performance_by_group("NIFTY", database.OPTION_STRUCTURE_GROUP_SQL)
+        assert set(df["Group"]) == {"CREDIT_SPREAD"}
+        row = df.iloc[0]
+        assert row["Trades"] == 2
+        assert row["Total P&L"] == 400.0
+
+    def test_naked_option_variants_bucket_together_and_separate_from_spread(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 200.0, "TARGET", "2026-09-01", strategy="NAKED_CALL")
+        seed_closed_trade(temp_db, "T2", 300.0, "TARGET", "2026-09-02", strategy="NAKED_PUT")
+        seed_closed_trade(temp_db, "T3", -50.0, "SL", "2026-09-03", strategy="BULL_PUT_SPREAD")
+        df = database.get_performance_by_group("NIFTY", database.OPTION_STRUCTURE_GROUP_SQL)
+        assert set(df["Group"]) == {"CREDIT_SPREAD", "NAKED_OPTION"}
+        naked_row = df[df["Group"] == "NAKED_OPTION"].iloc[0]
+        assert naked_row["Trades"] == 2
+        assert naked_row["Total P&L"] == 500.0
+        spread_row = df[df["Group"] == "CREDIT_SPREAD"].iloc[0]
+        assert spread_row["Trades"] == 1
+        assert spread_row["Total P&L"] == -50.0
+
+    def test_other_structures_pass_through_unbucketed(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 100.0, "TARGET", "2026-09-01", strategy="IRON_CONDOR")
+        df = database.get_performance_by_group("NIFTY", database.OPTION_STRUCTURE_GROUP_SQL)
+        assert set(df["Group"]) == {"IRON_CONDOR"}
+
+    def test_exit_reason_breakdown_also_buckets_by_structure(self, temp_db):
+        """_build_recommendations() हेच group_col पुढे get_exit_reason_breakdown() ला देतं —
+        तेही तितकंच बरोबर bucket करायला हवं."""
+        seed_closed_trade(temp_db, "T1", -100.0, "SL", "2026-09-01", strategy="NAKED_CALL")
+        seed_closed_trade(temp_db, "T2", -150.0, "SL", "2026-09-02", strategy="NAKED_PUT")
+        df = database.get_exit_reason_breakdown("NIFTY", database.OPTION_STRUCTURE_GROUP_SQL)
+        assert set(df["Group"]) == {"NAKED_OPTION"}
+        assert df.iloc[0]["Trades"] == 2
+
+
 class TestGetPerformanceByTwoGroups:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("strategy आणि timeframe दोन्ही एकत्र दाखवणारं वेगळं टेबल")."""
 
