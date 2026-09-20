@@ -1362,6 +1362,97 @@ class TestOpenMultiLegTradeKillSwitch:
         assert ok is True
 
 
+class TestOpenMultiLegTradeLivePaperMode:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode="LIVE_PAPER"
+    दिलं की open_multi_leg_trade() स्वतःला दोनदा कॉल करतं (एकदा "LIVE", एकदा "PAPER") — दोन्ही
+    स्वतंत्र trades DB मध्ये नोंदवले जायला हवेत, आणि शॅडो PAPER trade LIVE च्या यश/अपयशावर परिणाम
+    करता कामा नये."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_live_paper_places_both_live_and_paper_orders(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        modes_called = []
+
+        def fake_execute(token, orders, mode):
+            modes_called.append(mode)
+            return 200, {"status": "success", "data": {"order_ids": [f"{mode}-1", f"{mode}-2"]}}
+
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="LIVE_PAPER", source="dynamic_sr_instant",
+        )
+        assert ok is True
+        assert modes_called == ["LIVE", "PAPER"]
+        assert resp["status"] == "success"
+        assert "live" in resp and "paper_shadow" in resp
+
+        conn = sqlite3.connect(temp_db)
+        rows = conn.execute("SELECT mode, source FROM live_trades ORDER BY mode").fetchall()
+        conn.close()
+        assert rows == [("LIVE", "dynamic_sr_instant"), ("PAPER", "dynamic_sr_instant")]
+
+    def test_live_paper_kill_switch_blocks_live_but_paper_leg_still_opens(self, temp_db, monkeypatch):
+        import notifications
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (False, "KILL_SWITCH_DAILY_LOSS — test"))
+        modes_called = []
+
+        def fake_execute(token, orders, mode):
+            modes_called.append(mode)
+            return 200, {"status": "success", "data": {"order_ids": [f"{mode}-1", f"{mode}-2"]}}
+
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="LIVE_PAPER",
+        )
+        # LIVE leg ब्लॉक झाला (kill switch), त्यामुळे overall result अयशस्वी — पण शॅडो PAPER
+        # trade तरीही घेतला गेला (execute_order_leg_set फक्त "PAPER" साठीच कॉल झाला).
+        assert ok is False
+        assert modes_called == ["PAPER"]
+        assert resp["paper_shadow_ok"] is True
+
+        conn = sqlite3.connect(temp_db)
+        rows = conn.execute("SELECT mode FROM live_trades").fetchall()
+        conn.close()
+        assert rows == [("PAPER",)]
+
+    def test_live_paper_kill_switch_does_not_block_shadow_paper_leg(self, temp_db, monkeypatch):
+        """PAPER mode कधीच kill switch तपासत नाही (जुनाच नियम) — LIVE_PAPER मधल्या शॅडो leg लाही तेच लागू."""
+        calls = {"n": 0}
+        real_check = trading_engine.check_kill_switch
+
+        def counting_check():
+            calls["n"] += 1
+            return False, "KILL_SWITCH_DAILY_LOSS — test"
+
+        monkeypatch.setattr(trading_engine, "check_kill_switch", counting_check)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": {"order_ids": [f"{m}-1"]}}))
+        import notifications
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
+
+        trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="LIVE_PAPER",
+        )
+        # फक्त LIVE leg साठीच check_kill_switch() कॉल झालं असायला हवं (एकूण 1 वेळा, 2 नाही)
+        assert calls["n"] == 1
+
+
 class TestCheckMarginAvailable:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Margin Check in Bots, गंभीर यादीतला
     सहावा मुद्दा) — page_dashboard.py च्या Strategy Builder मध्ये आधीपासूनच असलेला Pre-Trade Margin

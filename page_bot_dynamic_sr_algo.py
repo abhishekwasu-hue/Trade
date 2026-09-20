@@ -56,11 +56,17 @@ def _render_live_status_banner():
     # दिसणारी पट्टी.
     all_modes = cloud_db.get_all_strategy_trading_modes()
     live_combos = [
-        (strategy_key, symbol) for (strategy_key, symbol), info in all_modes.items()
-        if info.get("trading_mode") == "LIVE"
+        (strategy_key, symbol, info.get("trading_mode")) for (strategy_key, symbol), info in all_modes.items()
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — LIVE_PAPER मध्येही
+        # खराच पैसा वापरला जातो (सोबत फक्त तुलनेसाठी एक शॅडो PAPER trade), त्यामुळे हा banner LIVE
+        # प्रमाणेच LIVE_PAPER लाही दाखवतो.
+        if info.get("trading_mode") in ("LIVE", "LIVE_PAPER")
     ]
     if live_combos:
-        lines = "; ".join(f"**{STRATEGY_LABELS.get(sk, sk)} ({sym})**" for sk, sym in live_combos)
+        lines = "; ".join(
+            f"**{STRATEGY_LABELS.get(sk, sk)} ({sym})** ({'LIVE+PAPER' if mode == 'LIVE_PAPER' else 'LIVE'})"
+            for sk, sym, mode in live_combos
+        )
         st.error(f"🔴 सध्या LIVE (खऱ्या पैशांनी) चालू आहे: {lines}")
     else:
         st.success("🟢 सर्व strategies सध्या PAPER मोडमध्ये आहेत — कुठलाही खरा पैसा वापरला जात नाही.")
@@ -153,7 +159,9 @@ def render():
     # Broker" tab उघडल्याशिवायही इथेच लगेच दिसावा (नवीन वापरकर्त्याला tab शोधावा लागू नये).
     _current_mode = settings.get("trading_mode", "PAPER")
     _current_broker_ids = settings.get("broker_account_ids") or []
-    if _current_mode == "LIVE":
+    if _current_mode == "LIVE_PAPER":
+        _mode_caption = "🔴📝 सध्याचा मोड: **LIVE+PAPER** (खरे पैसे + तुलनेसाठी शॅडो PAPER trade)"
+    elif _current_mode == "LIVE":
         _mode_caption = "🔴 सध्याचा मोड: **LIVE** (खरे पैसे)"
     else:
         _mode_caption = "📝 सध्याचा मोड: **PAPER** (सिम्युलेटेड, सुरक्षित)"
@@ -401,20 +409,39 @@ def render():
         # हे पान वापरू शकेल.
         st.info(f"सध्या तुम्ही **{STRATEGY_LABELS[strategy_key]}** ({symbol}) साठी सेटिंग्ज बदलताय — इतर strategies/symbols यावर परिणाम होणार नाही.")
 
-        sub_header("पायरी १ — Trading Mode (PAPER / LIVE)", HDR_ORANGE)
-        st.caption("PAPER = फक्त सराव/सिम्युलेशन, खरे पैसे अजिबात वापरले जात नाहीत. LIVE = खरे पैसे, खरे ऑर्डर्स — हा bot VPS वर आपोआप (दर काही मिनिटांनी) चालतो.")
-        trading_mode_choice = st.radio(
-            "मोड निवडा", ["📝 PAPER (सराव, सुरक्षित — शिफारस)", "🔴 LIVE (खरे पैसे)"],
-            index=0 if settings.get("trading_mode", "PAPER") != "LIVE" else 1,
-            key=_widget_key(strategy_key, symbol, "trading_mode_radio"), horizontal=True,
-            help="नवीन असाल तर PAPER वरच ठेवा. काही दिवस Performance पानावर निकाल बघून, समाधान झाल्यावरच LIVE करा.",
+        sub_header("पायरी १ — Trading Mode (PAPER / LIVE / LIVE+PAPER)", HDR_ORANGE)
+        st.caption(
+            "PAPER = फक्त सराव/सिम्युलेशन, खरे पैसे अजिबात वापरले जात नाहीत. LIVE = खरे पैसे, खरे "
+            "ऑर्डर्स. LIVE+PAPER = खरा LIVE ऑर्डर + त्याच वेळी, त्याच सिग्नलवर एक शॅडो PAPER trade "
+            "सुद्धा स्वतंत्रपणे नोंदवला जातो (फक्त तुलनेसाठी — प्रत्यक्ष/सिम्युलेटेड निकाल शेजारी-शेजारी "
+            "बघता यावेत म्हणून, त्याचे स्वतःचे खरे पैसे वापरले जात नाहीत). हा bot VPS वर आपोआप (दर काही "
+            "मिनिटांनी) चालतो."
         )
-        trading_mode_selected = "LIVE" if "LIVE" in trading_mode_choice else "PAPER"
+        _mode_options = [
+            "📝 PAPER (सराव, सुरक्षित — शिफारस)", "🔴 LIVE (खरे पैसे)", "🔴📝 LIVE+PAPER (खरे पैसे + शॅडो PAPER तुलना)",
+        ]
+        _saved_mode = settings.get("trading_mode", "PAPER")
+        _saved_index = {"PAPER": 0, "LIVE": 1, "LIVE_PAPER": 2}.get(_saved_mode, 0)
+        trading_mode_choice = st.radio(
+            "मोड निवडा", _mode_options, index=_saved_index,
+            key=_widget_key(strategy_key, symbol, "trading_mode_radio"), horizontal=True,
+            help="नवीन असाल तर PAPER वरच ठेवा. काही दिवस Performance पानावर निकाल बघून, समाधान झाल्यावरच LIVE किंवा LIVE+PAPER करा.",
+        )
+        if trading_mode_choice == _mode_options[2]:
+            trading_mode_selected = "LIVE_PAPER"
+        elif trading_mode_choice == _mode_options[1]:
+            trading_mode_selected = "LIVE"
+        else:
+            trading_mode_selected = "PAPER"
         live_confirmed = True
-        if trading_mode_selected == "LIVE":
+        if trading_mode_selected in ("LIVE", "LIVE_PAPER"):
+            _confirm_label = (
+                f"मला समजते — {STRATEGY_LABELS[strategy_key]} ({symbol}) आता खऱ्या पैशांनी, VPS वर आपोआप "
+                f"(कुठलाही manual क्लिक न करता) ट्रेड करेल"
+                + (" (सोबत तुलनेसाठी एक शॅडो PAPER trade सुद्धा नोंदवला जाईल)" if trading_mode_selected == "LIVE_PAPER" else "")
+            )
             live_confirmed = st.checkbox(
-                f"मला समजते — {STRATEGY_LABELS[strategy_key]} ({symbol}) आता खऱ्या पैशांनी, VPS वर आपोआप (कुठलाही manual क्लिक न करता) ट्रेड करेल",
-                value=False, key=_widget_key(strategy_key, symbol, "trading_mode_confirm"),
+                _confirm_label, value=False, key=_widget_key(strategy_key, symbol, "trading_mode_confirm"),
             )
             if not live_confirmed:
                 st.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय जतन केलं तरी मोड PAPER वरच राहील (सुरक्षिततेसाठी) — हा एक जाणीवपूर्वक निर्णय असायला हवा.")
@@ -452,7 +479,12 @@ def render():
             broker_summary = f"{len(broker_account_ids)} निवडलेल्या broker account(s) वर ({', '.join(account_options[aid] for aid in broker_account_ids)})"
         else:
             broker_summary = "तुमच्या मुख्य Upstox खात्यावर"
-        if effective_mode == "LIVE":
+        if effective_mode == "LIVE_PAPER":
+            st.error(
+                f"📋 **सारांश** — 'Settings जतन करा' दाबल्यावर: {STRATEGY_LABELS[strategy_key]} ({symbol}) "
+                f"🔴📝 **LIVE+PAPER** — {broker_summary} खरा ऑर्डर, + सोबत तुलनेसाठी स्वतंत्र शॅडो PAPER trade."
+            )
+        elif effective_mode == "LIVE":
             st.error(f"📋 **सारांश** — 'Settings जतन करा' दाबल्यावर: {STRATEGY_LABELS[strategy_key]} ({symbol}) 🔴 **LIVE** — {broker_summary}, खऱ्या पैशांनी ट्रेड करेल.")
         else:
             st.success(f"📋 **सारांश** — 'Settings जतन करा' दाबल्यावर: {STRATEGY_LABELS[strategy_key]} ({symbol}) 📝 **PAPER** — {broker_summary}, फक्त सिम्युलेशन (सुरक्षित).")

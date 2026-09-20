@@ -28,6 +28,12 @@ _logger = get_logger("trading_engine.py")
 
 CARRY_FORWARD_MIN_PROFIT_PCT = 30
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — खरा LIVE trade + सोबत तुलनेसाठी
+# शॅडो PAPER trade (एकच strategy_result, दोन्ही स्वतंत्र नोंदी) — open_multi_leg_trade() मध्येच हाताळलं
+# जातं (खाली पहा), त्यामुळे 3 bot scripts किंवा execute_trade_on_all_accounts() मध्ये कुठलाही बदल
+# लागत नाही (trading_mode जसाच्या तसा फक्त पुढे पास होतो).
+TRADING_MODE_LIVE_AND_PAPER = "LIVE_PAPER"
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
 # SL/Target आता प्रीमियमवर नाही, underlying स्पॉट किमतीच्या हालचालीवर आधारित —
 # entry-वेळचा S/R level (entry_level_price) पासून favourable/adverse दिशेने
@@ -342,7 +348,33 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     level touch झाला की profit-booking exit साठी वापरला जातो (इतर strategies साठी None, वापरलं जात नाही).
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Same-Timeframe Next-Level-Exit, 15M/30M/60M) —
     entry_timeframe (ऐच्छिक, उदा. "15M"/"30M"/"60M"/"1M"/"5M") — Next-Level-Exit साठी त्याच
-    timeframe चा पुढचा level शोधण्यासाठी वापरला जातो."""
+    timeframe चा पुढचा level शोधण्यासाठी वापरला जातो.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode=="LIVE_PAPER"
+    असेल तर हेच फंक्शन स्वतःला दोनदा, वेगळ्या trading_mode ने कॉल करतं — एकदा "LIVE" (खरा ऑर्डर,
+    कुठल्याही सुरक्षा-तपासण्या/Kill Switch सकट) आणि एकदा "PAPER" (शुद्ध सिम्युलेशन, फक्त तुलनेसाठी लॉग
+    होतो). शॅडो PAPER trade कधीच LIVE trade च्या यश/अपयशावर परिणाम करत नाही, आणि LIVE अयशस्वी/ब्लॉक
+    झाला तरीही शॅडो PAPER trade प्रयत्न होतोच (जेणेकरून "शुद्ध PAPER मध्ये काय झालं असतं" हे नेहमी
+    कळेल)."""
+    if trading_mode == TRADING_MODE_LIVE_AND_PAPER:
+        live_ok, live_resp = open_multi_leg_trade(
+            access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
+            target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
+            sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+        )
+        paper_ok, paper_resp = open_multi_leg_trade(
+            access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
+            target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
+            sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+        )
+        combined_resp = {
+            "status": "success" if live_ok else "error",
+            "reason": None if live_ok else live_resp.get("reason", live_resp.get("status")),
+            "live": live_resp, "paper_shadow": paper_resp, "paper_shadow_ok": paper_ok,
+        }
+        return live_ok, combined_resp
+
     if trading_mode == "LIVE":
         kill_switch_ok, kill_switch_reason = check_kill_switch()
         if not kill_switch_ok:

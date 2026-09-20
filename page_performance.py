@@ -9,7 +9,7 @@ from config import get_ist_now, get_ist_today
 from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
     get_performance_by_two_groups, get_closed_trades_detail, get_exit_reason_breakdown,
-    SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS, OPTION_STRUCTURE_GROUP_SQL,
+    get_live_vs_shadow_paper_pairs, SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS, OPTION_STRUCTURE_GROUP_SQL,
 )
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
 from upstox_api import fetch_candles_date_range
@@ -140,6 +140,24 @@ def _entry_reason_text_en(row):
     tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
     lvl = f"Rs {row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
     return f"{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
+
+
+_CHARGE_BREAKDOWN_LABELS = {
+    "brokerage": "Brokerage", "stt": "STT", "exchange_txn": "Exchange Txn Charge",
+    "sebi_fee": "SEBI Fee", "stamp_duty": "Stamp Duty", "gst": "GST",
+}
+
+
+def _render_charges_breakdown_caption(breakdown):
+    """"एकूण Charges" फक्त flat brokerage नाही — STT/Exchange Txn/SEBI Fee/Stamp Duty/त्यावरचा GST
+    यांची बेरीज आहे (charges.py) — options साठी STT हा brokerage पेक्षाही मोठा असू शकतो, त्यामुळे हे
+    ब्रेकडाऊन इथे स्पष्ट दाखवलं जातं, वापरकर्त्याला "एकूण Charges" नेमकं कशाचं बनलंय हे कळावं म्हणून."""
+    if not breakdown or not any(breakdown.values()):
+        return
+    lines = " · ".join(
+        f"{_CHARGE_BREAKDOWN_LABELS[k]}: ₹{v:,.0f}" for k, v in breakdown.items() if v
+    )
+    st.caption(f"💰 Charges मध्ये काय-काय: {lines}")
 
 
 def _render_group_breakdown(symbol, group_col, mode_filter, start_date, end_date, chart_title):
@@ -396,6 +414,7 @@ def render():
                 for b, v in _all_time_totals["charges_by_broker"].items()
             )
             st.caption(f"ब्रोकरनुसार: {_broker_lines}")
+        _render_charges_breakdown_caption(_all_time_totals.get("charges_breakdown"))
 
         _sub_header("📉 Equity Curve (संचयी वास्तविक P&L)", _HDR_PURPLE)
         curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f)
@@ -435,7 +454,7 @@ def render():
     )
     quick_range = st.radio(
         "जलद निवड", ["आज", "गेले 7 दिवस", "गेला महिना", "गेले 3 महिने", "संपूर्ण इतिहास", "कस्टम रेंज"],
-        horizontal=True, key="perf_analysis_quick_range", index=2,
+        horizontal=True, key="perf_analysis_quick_range", index=0,
     )
     if quick_range == "आज":
         an_from, an_to = today_d, today_d
@@ -532,6 +551,33 @@ def render():
                 mime="text/csv", key="trade_log_reasons_download",
             )
 
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER शॅडो मोड — Performance Report मध्ये
+        # slippage) — LIVE+PAPER मोडमध्ये उघडलेल्या प्रत्येक जोडी (खरा LIVE trade + तोच सिग्नल शॅडो
+        # PAPER trade) साठीच अर्थपूर्ण — त्यामुळे "सर्व" मोड निवडलेला असेल, आणि प्रत्यक्ष जोडी
+        # सापडली, तरच हा विभाग दिसतो (LIVE+PAPER कधीच वापरलेला नसेल, तर आपोआप अदृश्य).
+        slippage_pairs_df = (
+            get_live_vs_shadow_paper_pairs(symbol, an_from, an_to) if perf_mode_f is None else pd.DataFrame()
+        )
+        if not slippage_pairs_df.empty:
+            _sub_header("🔴📝 LIVE vi Shadow PAPER Slippage (LIVE+PAPER मोड)", _HDR_ORANGE)
+            st.caption(
+                "LIVE+PAPER मोडमध्ये घेतलेल्या प्रत्येक जोडीसाठी (खरा LIVE trade + त्याच सिग्नलवरचा "
+                "शॅडो PAPER trade) — प्रत्यक्ष अंमलबजावणी (slippage/spread मुळे) शुद्ध सिम्युलेशनपेक्षा "
+                "किती वेगळी ठरली, ते इथे दिसतं. ऋण (negative) P&L Slippage म्हणजे प्रत्यक्ष LIVE निकाल "
+                "PAPER पेक्षा वाईट ठरला."
+            )
+            avg_entry_slip = slippage_pairs_df["Entry Slippage (Rs)"].dropna().mean()
+            avg_pnl_slip = slippage_pairs_df["P&L Slippage (Rs)"].dropna().mean()
+            total_pnl_slip = slippage_pairs_df["P&L Slippage (Rs)"].dropna().sum()
+            slcol1, slcol2, slcol3 = st.columns(3)
+            with slcol1:
+                st.metric("जोड्या (LIVE+PAPER pairs)", len(slippage_pairs_df))
+            with slcol2:
+                st.metric("सरासरी Entry Slippage", f"₹{avg_entry_slip:,.1f}" if pd.notna(avg_entry_slip) else "N/A")
+            with slcol3:
+                st.metric("एकूण P&L Slippage", f"₹{total_pnl_slip:,.0f}", f"सरासरी ₹{avg_pnl_slip:,.1f}/trade" if pd.notna(avg_pnl_slip) else None)
+            st.dataframe(slippage_pairs_df, width="stretch", hide_index=True)
+
         _sub_header("🧭 निष्कर्ष व शिफारसी (Conclusion & Recommendations)", _HDR_GREEN)
         st.caption(
             "खालील शिफारसी exit_reason च्या (SL/Target/Trailing-SL/EOD) ऐतिहासिक वितरणावर आधारित, "
@@ -579,6 +625,7 @@ def render():
                     perf_pdf_bytes = generate_performance_report_pdf(
                         symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
                         an_by_source, an_by_timeframe, an_by_structure, trade_log_pdf_df, all_recs_en,
+                        slippage_pairs_df=slippage_pairs_df,
                     )
                 st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
                 st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
@@ -593,16 +640,18 @@ def render():
     st.markdown("---")
     _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
     st.caption(
-        "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक ब्रोकरेज (प्रत्येक ऑर्डरनुसार — "
-        "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर; Stocko निश्चित ₹1200/महिना — वापरलेल्या महिन्यातल्या "
-        "दिवसांत सम-भागांनी वाटलेला, कारण तो प्लॅन per-order नाही) = Net P&L."
+        "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Brokerage — "
+        "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर, Stocko निश्चित ₹1200/महिना — + STT/Exchange Txn "
+        "Charge/SEBI Fee/Stamp Duty/त्यावरचा GST, प्रत्येक ऑर्डरच्या turnover वरून) = Net P&L. ⚠️ सरकारी/"
+        "एक्सचेंज दर वेळोवेळी बदलतात — प्रत्यक्ष broker च्या Contract Note शी अधूनमधून पडताळून पाहा."
     )
     rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
     repcol1, repcol2 = st.columns(2)
     with repcol1:
-        rep_from = st.date_input(
-            "पासून", value=get_ist_today() - datetime.timedelta(days=30), key="pnl_report_from",
-        )
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सर्व CSV/PDF reports, log tables, orders/positions
+        # साठी Default date आज पाहिजे") — आधी डीफॉल्ट "गेले 30 दिवस" होतं, आता आजचीच तारीख — पान
+        # उघडताक्षणीच आजचा रिपोर्ट दिसतो, जुना डेटा हवा असल्यास वापरकर्ता स्वतः तारीख मागे बदलू शकतो.
+        rep_from = st.date_input("पासून", value=get_ist_today(), key="pnl_report_from")
     with repcol2:
         rep_to = st.date_input("पर्यंत", value=get_ist_today(), key="pnl_report_to")
 
@@ -629,6 +678,7 @@ def render():
                     for b, v in report_totals["charges_by_broker"].items()
                 )
                 st.caption(f"ब्रोकरनुसार: {broker_lines}")
+            _render_charges_breakdown_caption(report_totals.get("charges_breakdown"))
 
             st.dataframe(report_df, width="stretch", hide_index=True)
 

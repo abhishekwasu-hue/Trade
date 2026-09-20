@@ -866,6 +866,84 @@ OPTION_STRUCTURE_GROUP_SQL = (
 )
 
 
+def get_live_vs_shadow_paper_pairs(symbol, start_date, end_date):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER शॅडो मोड — Performance Report मध्ये slippage
+    दिसावं) — LIVE+PAPER trading mode मध्ये प्रत्येक खऱ्या LIVE trade सोबत trading_engine.
+    open_multi_leg_trade() कडूनच, त्याच सिग्नलवर (same source/strategy/entry_level_price/
+    entry_timeframe), जवळपास त्याच क्षणी एक शॅडो PAPER trade उघडला जातो. इथे असे जोडे (LIVE trade
+    ला, त्याच group मधल्या, entry_time 5 मिनिटांच्या आत असलेल्या सर्वात जवळच्या PAPER trade शी,
+    greedy nearest-match — प्रत्येक PAPER trade फक्त एकदाच वापरला जातो) शोधून, प्रत्यक्ष LIVE
+    execution आणि शुद्ध PAPER सिम्युलेशन मधला फरक (entry premium व P&L, दोन्हीतला "slippage") मोजते.
+    केवळ LIVE mode मध्ये (शॅडो PAPER शिवाय) घेतलेल्या trades साठी कधीच जोडी सापडणार नाही — रिकामा
+    DataFrame, म्हणजे हे फीचर आपोआप फक्त LIVE+PAPER मोड प्रत्यक्ष वापरला तरच काही दाखवतं.
+
+    रिटर्न: DataFrame — Entry Date/Strategy/Entry Level/Timeframe/LIVE Net Credit/PAPER Net Credit/
+    Entry Slippage (Rs)/LIVE P&L/PAPER P&L/P&L Slippage (Rs) (जोडी न सापडल्यास रिकामा, हेच स्तंभ)."""
+    cols = [
+        "Entry Date", "Strategy", "Entry Level", "Timeframe", "LIVE Net Credit", "PAPER Net Credit",
+        "Entry Slippage (Rs)", "LIVE P&L", "PAPER P&L", "P&L Slippage (Rs)",
+    ]
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT trade_id, source, strategy, entry_level_price, entry_timeframe, entry_time,
+                      net_credit, realized_pnl, mode
+               FROM live_trades
+               WHERE symbol=? AND status='CLOSED' AND mode IN ('LIVE','PAPER')
+                     AND entry_level_price IS NOT NULL AND entry_time IS NOT NULL
+                     AND date(entry_time) >= ? AND date(entry_time) <= ?"""
+    params = [
+        symbol, start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date,
+        end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date,
+    ]
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df["entry_time"] = pd.to_datetime(df["entry_time"])
+    live_df = df[df["mode"] == "LIVE"].sort_values("entry_time")
+    paper_df = df[df["mode"] == "PAPER"]
+
+    rows = []
+    used_paper_ids = set()
+    for _, live_row in live_df.iterrows():
+        candidates = paper_df[
+            (paper_df["source"] == live_row["source"])
+            & (paper_df["strategy"] == live_row["strategy"])
+            & (paper_df["entry_level_price"] == live_row["entry_level_price"])
+            & (paper_df["entry_timeframe"] == live_row["entry_timeframe"])
+            & (~paper_df["trade_id"].isin(used_paper_ids))
+        ]
+        if candidates.empty:
+            continue
+        time_diff = (candidates["entry_time"] - live_row["entry_time"]).abs()
+        candidates = candidates[time_diff <= pd.Timedelta(minutes=5)]
+        if candidates.empty:
+            continue
+        best = candidates.loc[(candidates["entry_time"] - live_row["entry_time"]).abs().idxmin()]
+        used_paper_ids.add(best["trade_id"])
+
+        entry_slippage = None
+        if pd.notna(live_row["net_credit"]) and pd.notna(best["net_credit"]):
+            entry_slippage = round(live_row["net_credit"] - best["net_credit"], 2)
+        pnl_slippage = None
+        if pd.notna(live_row["realized_pnl"]) and pd.notna(best["realized_pnl"]):
+            pnl_slippage = round(live_row["realized_pnl"] - best["realized_pnl"], 2)
+
+        rows.append({
+            "Entry Date": live_row["entry_time"].strftime("%Y-%m-%d"),
+            "Strategy": live_row["strategy"],
+            "Entry Level": live_row["entry_level_price"],
+            "Timeframe": live_row["entry_timeframe"] or "N/A",
+            "LIVE Net Credit": live_row["net_credit"],
+            "PAPER Net Credit": best["net_credit"],
+            "Entry Slippage (Rs)": entry_slippage,
+            "LIVE P&L": live_row["realized_pnl"],
+            "PAPER P&L": best["realized_pnl"],
+            "P&L Slippage (Rs)": pnl_slippage,
+        })
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+
+
 def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
     """strategy (source)/entry_timeframe/trading_style नुसार कामगिरीची विभागणी (Win Rate, Total P&L,
     Trade Count, ROI%) — कोणती रणनीती/टाईमफ्रेम जास्त फायदेशीर आहे हे ठरवण्यासाठी. start_date/end_date
@@ -1025,9 +1103,12 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     """दिलेल्या तारीख-रेंजमधले सर्व orders, account_id सकट (charges.py ला ब्रोकर ओळखण्यासाठी लागतो) —
     order_log.trade_id → live_trades.account_id असा LEFT JOIN. trade_id जुळला नाही (उदा. Manual
     Trading Panel चे MANUAL_UNTRACKED/BASKET_UNTRACKED, जे कायम फक्त Upstox वापरतात) तर account_id
-    NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो."""
+    NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो.
+    quantity/fill_price/price/transaction_type — charges.py ला STT/Exchange/SEBI/Stamp Duty सारखे
+    turnover-आधारित सरकारी/एक्सचेंज शुल्क अचूक मोजण्यासाठी लागतात (फक्त flat brokerage पुरेसं नाही)."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, lt.account_id
+    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.quantity, o.fill_price, o.price,
+                      o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
                WHERE o.symbol=? AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
     params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
