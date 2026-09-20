@@ -815,16 +815,19 @@ def _render_market_zones():
             else:
                 st.caption(f"एकूण {len(zones_df)} zones")
                 zone_type_order = ["SUPPORT", "RESISTANCE", "DYNAMIC_SR_SUPPORT_1M", "DYNAMIC_SR_RESISTANCE_1M",
+                                   "DYNAMIC_SR_SUPPORT_5M", "DYNAMIC_SR_RESISTANCE_5M",
                                    "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
                                    "BULLISH_OB", "BEARISH_OB", "DEMAND_ZONE", "SUPPLY_ZONE", "UP_GAP", "DOWN_GAP"]
                 zone_labels = {
                     "SUPPORT": "🟢 Support (established, 1H)", "RESISTANCE": "🔴 Resistance (established, 1H)",
-                    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेला भेद — established 1-मिनिट (Instant Trader
-                    # साठी, established Chart-सारखाच जर चार्ट 1-मिनिटावर असेल तर) आणि established
-                    # 15-मिनिट (SRv2 Momentum-Filter Reversal साठी) established वेगळे, established
-                    # वेगळ्या डेटावरून काढलेले.
+                    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेला भेद — established 1-मिनिट/5-मिनिट (Instant
+                    # Trader साठी, established `timeframe_choice` setting नुसार — डीफॉल्ट आता 5-मिनिट,
+                    # "1m touch जास्त profitable नाहीत" या निर्णयानुसार) आणि established 15-मिनिट (SRv2
+                    # Momentum-Filter Reversal साठी) established वेगळे, established वेगळ्या डेटावरून काढलेले.
                     "DYNAMIC_SR_SUPPORT_1M": "🟢🎯 Dynamic S/R Support (1-मिनिट, Instant Trader)",
                     "DYNAMIC_SR_RESISTANCE_1M": "🔴🎯 Dynamic S/R Resistance (1-मिनिट, Instant Trader)",
+                    "DYNAMIC_SR_SUPPORT_5M": "🟢🎯 Dynamic S/R Support (5-मिनिट, Instant Trader)",
+                    "DYNAMIC_SR_RESISTANCE_5M": "🔴🎯 Dynamic S/R Resistance (5-मिनिट, Instant Trader)",
                     "DYNAMIC_SR_SUPPORT_15M": "🟢🎯 Dynamic S/R Support (15-मिनिट, SRv2)",
                     "DYNAMIC_SR_RESISTANCE_15M": "🔴🎯 Dynamic S/R Resistance (15-मिनिट, SRv2)",
                     "BULLISH_OB": "🟩 Bullish Order Block", "BEARISH_OB": "🟥 Bearish Order Block",
@@ -840,6 +843,7 @@ def _render_market_zones():
                     dyn_filled = all_zones_for_notif[
                         all_zones_for_notif["zone_type"].isin([
                             "DYNAMIC_SR_SUPPORT_1M", "DYNAMIC_SR_RESISTANCE_1M",
+                            "DYNAMIC_SR_SUPPORT_5M", "DYNAMIC_SR_RESISTANCE_5M",
                             "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
                         ])
                         & (all_zones_for_notif["status"] == "FILLED")
@@ -917,7 +921,11 @@ def _render_market_zones():
                     signal_log_df = cloud_db.get_signal_log_range(symbol, sig_log_from, sig_log_to)
                 instant_log_df = signal_log_df[signal_log_df["level_type"].str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
 
-                sub_header("📜 High-Frequency 1-मिनिट S/R — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
+                # 🎓 वापरकर्त्याने निदर्शनास आणलेली सुधारणा — हा header आधी कायमचा "1-मिनिट" दाखवत होता,
+                # पण `dynamic_sr_instant_trader.py`चा `timeframe_choice` सेटिंग (डीफॉल्ट आता 5-मिनिट,
+                # "1m touch जास्त profitable नाहीत" या निर्णयानुसार) 1M/5M/BOTH यापैकी काहीही असू शकतो —
+                # त्यामुळे टाईमफ्रेम-निरपेक्ष नाव, आणि खाली प्रत्यक्ष कुठला टाईमफ्रेम आहे ते level_type वरून दिसतंच.
+                sub_header("📜 High-Frequency Dynamic S/R (Instant Trader, 1M/5M) — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
                 if instant_log_df is None or instant_log_df.empty:
                     st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (VPS cron, दर १ मिनिट) चालू आहे का तपासा. (GitHub Actions मधली आवृत्ती आता फक्त हाताने चालवण्यासाठी — automatic schedule VPS वर हलवलेला आहे.)")
                 else:
