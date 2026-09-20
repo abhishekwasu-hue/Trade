@@ -15,17 +15,26 @@ threshold पेक्षा जुना असेल, तरच established no
 Multi-account: established --account-id दिला तर फक्त त्याच account चा token तपासला जातो;
 न दिल्यास established, एकमेव (single) खात्याचा token तपासला जातो (backward-compatible).
 
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "मोबाईलवर Approve करूनही 401 चालूच" अशी तक्रार आली
+तेव्हा लक्षात आलं की खालचा freshness check फक्त Supabase मधली वेळ (केव्हा साठवला) बघतो — token
+*वेळेत* साठवला गेला तरी तो *खरोखर वैध* आहे याची खात्री देत नाही (उदा. webhook ला Cloudflare
+Tunnel URL बदलल्याने आजचा नवीन token कधी पोहोचलाच नाही, आणि जुनाच token पुन्हा-पुन्हा "ताजा"
+दिसत राहतो, कारण साठवण्याची वेळ बदलतच नाही). `--verify-live` दिलं तर, freshness ठीक असला तरीही,
+प्रत्यक्ष Upstox ला कॉल करून token खरंच स्वीकारला जातो का हे थेट तपासलं जातं — हेच नेमकं वेगळं
+सांगतं: "token साठवलाच गेला नाही" वि. "साठवला गेला, पण तो स्वतःच अवैध/expired आहे".
+
 चालवणे:
-    python3 check_token_freshness.py [--account-id <ACCOUNT_ID>] [--max-age-hours 20]
+    python3 check_token_freshness.py [--account-id <ACCOUNT_ID>] [--max-age-hours 20] [--verify-live]
 """
 import argparse
 import sys
 
 import cloud_db
 from notifications import send_telegram_message
+from upstox_api import verify_token_live
 
 
-def check_and_alert(account_id=None, max_age_hours=20.0):
+def check_and_alert(account_id=None, max_age_hours=20.0, verify_live=False):
     """
     रिटर्न: (is_stale_or_missing: bool, message: str) — CLI आणि टेस्ट्स दोन्हीसाठी उपयोगी.
     """
@@ -56,6 +65,21 @@ def check_and_alert(account_id=None, max_age_hours=20.0):
         send_telegram_message(message)
         return True, message
 
+    if verify_live:
+        token = cloud_db.get_latest_upstox_token(account_id)
+        is_valid, detail = verify_token_live(token)
+        if not is_valid:
+            message = (
+                f"🆘 Upstox Token Supabase मध्ये ताजा दिसतोय ({account_label}, {age_hours:.1f} तासांपूर्वी साठवलेला) — "
+                f"पण Upstox कडून प्रत्यक्ष नाकारला गेला: {detail}\n"
+                f"याचा अर्थ webhook ने *काहीतरी* नुकतंच साठवलं, पण तो प्रत्यक्षात वैध token नाही — "
+                f"Cloudflare Tunnel URL (cloudflared_upstox_webhook.service) आणि Upstox Developer "
+                f"Console चा Notifier URL जुळतात का, आणि upstox_token_webhook.py चे लॉग्ज तपासा."
+            )
+            send_telegram_message(message)
+            return True, message
+        return False, f"✅ Token ताजा आणि प्रत्यक्ष वैधही आहे ({account_label}) — {age_hours:.1f} तासांपूर्वी साठवला, {detail}."
+
     return False, f"✅ Token ताजा आहे ({account_label}) — {age_hours:.1f} तासांपूर्वी साठवला."
 
 
@@ -66,8 +90,12 @@ if __name__ == "__main__":
                               "न दिल्यास established, single-account token तपासला जातो.")
     parser.add_argument("--max-age-hours", type=float, default=20.0,
                          help="या तासांपेक्षा जुना token असेल तर alert (डीफॉल्ट: 20 तास — Upstox token रोज expire होतो).")
+    parser.add_argument("--verify-live", action="store_true",
+                         help="फक्त Supabase मधली वेळ (freshness) नाही, तर प्रत्यक्ष Upstox ला कॉल करून token "
+                              "खरंच स्वीकारला जातो का हेही तपासा (401 डीबगिंगसाठी उपयोगी).")
     args = parser.parse_args()
 
-    is_stale, msg = check_and_alert(account_id=args.account_id, max_age_hours=args.max_age_hours)
+    is_stale, msg = check_and_alert(account_id=args.account_id, max_age_hours=args.max_age_hours,
+                                     verify_live=args.verify_live)
     print(msg)
     sys.exit(1 if is_stale else 0)

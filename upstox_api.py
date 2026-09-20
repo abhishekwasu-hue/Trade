@@ -506,6 +506,31 @@ def fetch_india_vix(access_token):
         _logger.exception("fetch_india_vix() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
+def verify_token_live(access_token):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "मोबाईलवर Approve करूनही 401 चालूच" या तक्रारीचं
+    मूळ कारण localize करण्यासाठी. `check_token_freshness.py` फक्त Supabase मधली वेळ (केव्हा
+    साठवला) तपासतं — पण token *वेळेत* साठवला गेला तरी तो *खरोखर वैध* आहे याची खात्री देत नाही
+    (उदा. Cloudflare Tunnel URL बदलल्याने webhook ला आजचा नवीन token कधी पोहोचलाच नाही, आणि
+    कालचाच जुना/expired token "ताजा" (काही तासांपूर्वीचाच) दिसत राहतो). हे फंक्शन प्रत्यक्ष Upstox
+    ला हलकं authenticated कॉल (Get Funds & Margin) करून थेट, निःसंदिग्ध उत्तर देतं.
+    रिटर्न: (is_valid: bool, detail: str).
+    """
+    if not access_token:
+        return False, "token रिकामा/उपलब्ध नाही"
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        url = "https://api.upstox.com/v2/user/get-funds-and-margin?segment=SEC"
+        res = requests.get(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            return True, "token वैध आहे (Upstox ने 200 दिला)"
+        if res.status_code == 401:
+            return False, "401 Unauthorized — Upstox कडून token एक्सपायर/अवैध ठरला"
+        return False, f"अनपेक्षित प्रतिसाद: HTTP {res.status_code}"
+    except Exception as exc:
+        return False, f"Upstox ला जोडणी करता आली नाही: {exc}"
+
+
 @st.cache_data(ttl=60)
 def get_available_margin(access_token):
     """Equity segment मधील उपलब्ध ट्रेडिंग मार्जिन (v2 Get Funds and Margin API).
