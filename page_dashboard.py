@@ -968,6 +968,11 @@ def _render_market_zones():
                 sub_header(f"🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", HDR_GREEN)
                 st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
 
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Date column गहाळ होता (वरच्या, प्रकारानुसार-
+                # गटवारीच्या टेबलमध्ये आहे, इथे नव्हता). तसंच LTP पासून जवळचा/लांबचा कोणता level
+                # हे स्पष्ट कळावं म्हणून — प्रत्येक टेबलमध्ये LTP च्या सर्वात जवळचा "1", नंतर "2", "3"
+                # असे क्रमांक (सर्वात आधीच LTP पासूनच्या अंतरानुसारच sort केलेले असल्याने, फक्त तोच
+                # क्रम numbering ला वापरला — वेगळी sort लागत नाही).
                 rcol1, rcol2 = st.columns(2)
                 with rcol1:
                     st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
@@ -975,20 +980,18 @@ def _render_market_zones():
                     if resistance_zones.empty:
                         st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
                     else:
-                        st.dataframe(
-                            resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
-                            width="stretch",
-                        )
+                        resistance_display = resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
+                        resistance_display.insert(0, "Level", [f"Resistance {i}" for i in range(1, len(resistance_display) + 1)])
+                        st.dataframe(resistance_display, width="stretch", hide_index=True)
                 with rcol2:
                     st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
                     support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
                     if support_zones.empty:
                         st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
                     else:
-                        st.dataframe(
-                            support_zones[["zone_type", "zone_low", "zone_high", "strength", "status"]],
-                            width="stretch",
-                        )
+                        support_display = support_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
+                        support_display.insert(0, "Level", [f"Support {i}" for i in range(1, len(support_display) + 1)])
+                        st.dataframe(support_display, width="stretch", hide_index=True)
     except Exception as e:
         st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 
