@@ -164,10 +164,10 @@ class TestCompute5m15mConfluenceRow:
         assert row["support_distance_pct"] < 0  # support नेहमी सद्य किमतीच्या खाली -> ऋण अंतर
         assert row["resistance_distance_pct"] > 0
 
-    def test_support_resistance_gives_next_r2_s2_level_too(self):
+    def test_support_resistance_gives_next_r2_r3_s2_s3_levels_too(self):
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी फक्त सर्वात जवळचा Support/Resistance (S1/R1)
-        # दिसायचा, त्यापुढचा (S2/R2) नाही. आता किमान दोन distinct levels असलेल्या डेटावर, दोन्ही
-        # बाजूंना पुढचा level सुद्धा वेगळा (S1 पेक्षा आणखी दूर, R1 पेक्षा आणखी दूर) दिलेला हवा.
+        # दिसायचा, नंतर S2/R2 जोडले, आता S3/R3 सुद्धा — किमान तीन distinct levels असलेल्या डेटावर,
+        # तिन्ही (1 सर्वात जवळचा, मग 2, मग 3) उत्तरोत्तर आणखी दूर असायला हवेत.
         ts0 = pd.Timestamp("2024-01-02 09:15:00")
         levels = [90, 100, 110, 100, 90, 100, 120, 100, 90, 100, 110, 100, 85, 100, 120, 100]
         rows = []
@@ -176,10 +176,10 @@ class TestCompute5m15mConfluenceRow:
                 rows.append(_row(ts0 + pd.Timedelta(minutes=5 * (i * 4 + k)), lv, lv + 1, lv - 1, lv))
         df = pd.DataFrame(rows)
         row = mz.compute_5m_15m_confluence_row("5M", df, current_price=100.0, swing_order=3)
-        assert row["support_level"] is not None and row["support_level_2"] is not None
-        assert row["support_level_2"] < row["support_level"]  # S2 सद्य किमतीपासून S1 पेक्षाही दूर
-        assert row["resistance_level"] is not None and row["resistance_level_2"] is not None
-        assert row["resistance_level_2"] > row["resistance_level"]  # R2 R1 पेक्षाही दूर
+        assert row["support_level"] is not None and row["support_level_2"] is not None and row["support_level_3"] is not None
+        assert row["support_level"] > row["support_level_2"] > row["support_level_3"]  # उत्तरोत्तर आणखी दूर
+        assert row["resistance_level"] is not None and row["resistance_level_2"] is not None and row["resistance_level_3"] is not None
+        assert row["resistance_level"] < row["resistance_level_2"] < row["resistance_level_3"]
 
     def test_order_block_computed_live(self):
         df = _quiet_then_impulsive_bars()

@@ -879,13 +879,12 @@ def _render_market_zones():
                         & (all_zones_for_notif["status"] == "FILLED")
                     ]
                     if not dyn_filled.empty:
-                        sub_header("🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)", HDR_PURPLE)
-                        st.dataframe(
-                            dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
-                            width="stretch",
-                        )
-                        st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
-                        st.markdown("---")
+                        with st.expander("🎯 अलीकडे Hit झालेले Dynamic S/R Levels (Notification)", expanded=False):
+                            st.dataframe(
+                                dyn_filled[["zone_type", "zone_low", "strength", "formed_date"]].sort_values("formed_date", ascending=False),
+                                width="stretch",
+                            )
+                            st.caption("हेच levels `dynamic_sr_instant_trader.py` ने PAPER trade घेण्यासाठी वापरले (Positions page वर Source='dynamic_sr_instant' पहा).")
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Signal Log आता तारीख-रेंज निवडता येते
                 # (डीफॉल्ट: आजचीच तारीख, त्यामुळे नेहमीचं वर्तन तसंच राहतं) — जुने दिवसही तपासता यावेत.
@@ -915,15 +914,14 @@ def _render_market_zones():
                 # पण `dynamic_sr_instant_trader.py`चा `timeframe_choice` सेटिंग (डीफॉल्ट आता 5-मिनिट,
                 # "1m touch जास्त profitable नाहीत" या निर्णयानुसार) 1M/5M/BOTH यापैकी काहीही असू शकतो —
                 # त्यामुळे टाईमफ्रेम-निरपेक्ष नाव, आणि खाली प्रत्यक्ष कुठला टाईमफ्रेम आहे ते level_type वरून दिसतंच.
-                sub_header("📜 High-Frequency Dynamic S/R (Instant Trader, 1M/5M) — संपूर्ण Signal Log (Intraday)", HDR_ORANGE)
-                if instant_log_df is None or instant_log_df.empty:
-                    st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (VPS cron, दर १ मिनिट) चालू आहे का तपासा. (GitHub Actions मधली आवृत्ती आता फक्त हाताने चालवण्यासाठी — automatic schedule VPS वर हलवलेला आहे.)")
-                else:
-                    log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
-                    display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
-                    st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
-                    _render_signal_log_by_date(display_log)
-                st.markdown("---")
+                with st.expander("📜 High-Frequency Dynamic S/R (Instant Trader, 1M/5M) — संपूर्ण Signal Log (Intraday)", expanded=False):
+                    if instant_log_df is None or instant_log_df.empty:
+                        st.caption("या कालावधीत कुठलाही signal तपासला गेलेला नाही — `dynamic_sr_instant_trader.py` (VPS cron, दर १ मिनिट) चालू आहे का तपासा. (GitHub Actions मधली आवृत्ती आता फक्त हाताने चालवण्यासाठी — automatic schedule VPS वर हलवलेला आहे.)")
+                    else:
+                        log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
+                        display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
+                        st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                        _render_signal_log_by_date(display_log)
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 (15M/30M/60M Momentum-Reversal)
                 # साठीही, 1m_instant सारखाच संपूर्ण Signal Log — याआधी SRv2 फक्त प्रत्यक्ष trade
@@ -932,16 +930,15 @@ def _render_market_zones():
                 # "reason" column मध्ये दिसेल (level_type मध्ये timeframe साठवलं जात नाही, कारण
                 # दिशा-निर्णयाचा level_type "SUPPORT"/"RESISTANCE" हाच सद्य किमतीवरून ठरतो — बघा
                 # वरची टिप्पणी, "dynamic label -- साठवलेला RESISTANCE नाही").
-                sub_header("📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)", HDR_PINK)
-                srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
-                if srv2_log_df is None or srv2_log_df.empty:
-                    st.caption("या कालावधीत कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
-                else:
-                    srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
-                    srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
-                    st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 15M/30M/60M — ते 'reason' column मध्ये दिसेल.)")
-                    _render_signal_log_by_date(srv2_display_log)
-                st.markdown("---")
+                with st.expander("📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)", expanded=False):
+                    srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
+                    if srv2_log_df is None or srv2_log_df.empty:
+                        st.caption("या कालावधीत कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
+                    else:
+                        srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
+                        srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
+                        st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 15M/30M/60M — ते 'reason' column मध्ये दिसेल.)")
+                        _render_signal_log_by_date(srv2_display_log)
 
                 # 🎓 वापरकर्त्याने मागितलेली सुधारणा (पानाची पुनर्रचना) — "खरी भूमिका" टेबल (जास्त
                 # कृतीयोग्य, सद्य LTP-सापेक्ष दृश्य) आता Signal Log टेबल्सच्या लगेच खाली, आणि
@@ -986,9 +983,8 @@ def _render_market_zones():
                         support_display.insert(0, "Level", _category_wise_levels(support_zones["zone_type"]))
                         st.dataframe(support_display, width="stretch", hide_index=True)
 
-                st.markdown("---")
                 sub_header("🗂️ प्रकारानुसार (ऐतिहासिक) — सर्व Zones", HDR_PURPLE)
-                st.caption("वरच्या 'खरी भूमिका' दृश्याइतकं तातडीचं नाही — zone मूळ कशामुळे (Order Block/Demand-Supply/Dynamic S/R इ.) तयार झाला, त्या ऐतिहासिक प्रकारानुसार गटवारी.")
+                st.caption("वरच्या 'खरी भूमिका' दृश्याइतकं तातडीचं नाही — zone मूळ कशामुळे (Order Block/Demand-Supply/Dynamic S/R इ.) तयार झाला, त्या ऐतिहासिक प्रकारानुसार गटवारी. प्रत्येक प्रकार आधीच स्वतःच्या collapse-होण्याजोग्या पट्टीत -- हवा तो उघडून बघा.")
                 for zt in zone_type_order:
                     subset = zones_df[zones_df["zone_type"] == zt]
                     if subset.empty:
@@ -1004,45 +1000,47 @@ def _render_market_zones():
                 # वापरकर्त्याच्या मागणीनुसार हा तक्ता आता पानाच्या सर्वात शेवटी (आधी Signal Log/Zones
                 # च्याही आधी, वरच्या बाजूला होता).
                 st.markdown("---")
-                sub_header("📊 5M / 15M Confluence Table (Support/Resistance + Demand/Supply + Order Block)", HDR_CYAN)
-                st.caption(
-                    "Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles "
-                    "वरून थेट/ताजी गणना — established Classical S/R Reversal strategy सारखीच पद्धत); सद्य LTP च्या "
-                    "सर्वात जवळचा (1) आणि त्यापुढचा (2) असे दोन्ही. Demand/Supply Zone — प्रत्यक्ष impulsive "
-                    "हालचालीच्याच आधीच्या शांत \"base\" candles च्या खऱ्या high/low रेंजवरून (Order Block सारखीच "
-                    "पद्धत — सरसकट ±0.3% पट्टी नाही, त्यामुळे व्यवहार्य/tradable रुंदीचा). Order Block — मोठ्या "
-                    "impulsive हालचालीच्याच आधीची शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या "
-                    "सर्वात जवळचेच दाखवले आहेत."
-                )
-                if st.button("🔍 5M/15M Confluence Table तयार करा", key="mz_confluence_run"):
-                    with st.spinner("5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
-                        from market_zones import compute_5m_15m_confluence_table
-                        df_conf_5m = fetch_candles(token_input, symbol, underlying_price, interval="5minute")
-                        df_conf_15m = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
-                        confluence_table = compute_5m_15m_confluence_table(
-                            underlying_price, {"5M": df_conf_5m, "15M": df_conf_15m},
-                        )
-                    st.session_state["mz_confluence_table"] = confluence_table
+                with st.expander("📊 5M / 15M Confluence Table (Support/Resistance + Demand/Supply + Order Block)", expanded=False):
+                    st.caption(
+                        "Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles "
+                        "वरून थेट/ताजी गणना — established Classical S/R Reversal strategy सारखीच पद्धत); सद्य LTP च्या "
+                        "सर्वात जवळचे तीन्ही (1 सर्वात जवळचा, मग 2, मग 3). Demand/Supply Zone — प्रत्यक्ष impulsive "
+                        "हालचालीच्याच आधीच्या शांत \"base\" candles च्या खऱ्या high/low रेंजवरून (Order Block सारखीच "
+                        "पद्धत — सरसकट ±0.3% पट्टी नाही, त्यामुळे व्यवहार्य/tradable रुंदीचा). Order Block — मोठ्या "
+                        "impulsive हालचालीच्याच आधीची शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या "
+                        "सर्वात जवळचेच दाखवले आहेत."
+                    )
+                    if st.button("🔍 5M/15M Confluence Table तयार करा", key="mz_confluence_run"):
+                        with st.spinner("5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
+                            from market_zones import compute_5m_15m_confluence_table
+                            df_conf_5m = fetch_candles(token_input, symbol, underlying_price, interval="5minute")
+                            df_conf_15m = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
+                            confluence_table = compute_5m_15m_confluence_table(
+                                underlying_price, {"5M": df_conf_5m, "15M": df_conf_15m},
+                            )
+                        st.session_state["mz_confluence_table"] = confluence_table
 
-                if "mz_confluence_table" in st.session_state:
-                    ct = st.session_state["mz_confluence_table"]
-                    display_rows = []
-                    for _, r in ct.iterrows():
-                        display_rows.append({
-                            "Timeframe": r["timeframe"],
-                            "Support 1": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
-                            "Support 2": f"{r['support_level_2']:,.2f} ({r['support_distance_pct_2']:+.2f}%)" if r["support_level_2"] is not None else "—",
-                            "Resistance 1": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
-                            "Resistance 2": f"{r['resistance_level_2']:,.2f} ({r['resistance_distance_pct_2']:+.2f}%)" if r["resistance_level_2"] is not None else "—",
-                            "Demand Zone": f"{r['demand_zone_low']:,.2f} - {r['demand_zone_high']:,.2f} ({r['demand_zone_distance_pct']:+.2f}%)" if r["demand_zone_low"] is not None else "—",
-                            "Supply Zone": f"{r['supply_zone_low']:,.2f} - {r['supply_zone_high']:,.2f} ({r['supply_zone_distance_pct']:+.2f}%)" if r["supply_zone_low"] is not None else "—",
-                            "Order Block": (
-                                f"{'🟩 Bullish' if r['order_block_type'] == 'BULLISH_OB' else '🟥 Bearish'} "
-                                f"{r['order_block_low']:,.2f} - {r['order_block_high']:,.2f} ({r['order_block_distance_pct']:+.2f}%)"
-                            ) if r["order_block_type"] is not None else "—",
-                        })
-                    st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
-                    st.caption(f"सद्य LTP: ₹{underlying_price:,.2f}. कंसातली टक्केवारी = त्या level/zone-mid चं सद्य LTP पासूनचं अंतर (+ = वर, − = खाली).")
+                    if "mz_confluence_table" in st.session_state:
+                        ct = st.session_state["mz_confluence_table"]
+                        display_rows = []
+                        for _, r in ct.iterrows():
+                            display_rows.append({
+                                "Timeframe": r["timeframe"],
+                                "Support 1": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
+                                "Support 2": f"{r['support_level_2']:,.2f} ({r['support_distance_pct_2']:+.2f}%)" if r["support_level_2"] is not None else "—",
+                                "Support 3": f"{r['support_level_3']:,.2f} ({r['support_distance_pct_3']:+.2f}%)" if r["support_level_3"] is not None else "—",
+                                "Resistance 1": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
+                                "Resistance 2": f"{r['resistance_level_2']:,.2f} ({r['resistance_distance_pct_2']:+.2f}%)" if r["resistance_level_2"] is not None else "—",
+                                "Resistance 3": f"{r['resistance_level_3']:,.2f} ({r['resistance_distance_pct_3']:+.2f}%)" if r["resistance_level_3"] is not None else "—",
+                                "Demand Zone": f"{r['demand_zone_low']:,.2f} - {r['demand_zone_high']:,.2f} ({r['demand_zone_distance_pct']:+.2f}%)" if r["demand_zone_low"] is not None else "—",
+                                "Supply Zone": f"{r['supply_zone_low']:,.2f} - {r['supply_zone_high']:,.2f} ({r['supply_zone_distance_pct']:+.2f}%)" if r["supply_zone_low"] is not None else "—",
+                                "Order Block": (
+                                    f"{'🟩 Bullish' if r['order_block_type'] == 'BULLISH_OB' else '🟥 Bearish'} "
+                                    f"{r['order_block_low']:,.2f} - {r['order_block_high']:,.2f} ({r['order_block_distance_pct']:+.2f}%)"
+                                ) if r["order_block_type"] is not None else "—",
+                            })
+                        st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
+                        st.caption(f"सद्य LTP: ₹{underlying_price:,.2f}. कंसातली टक्केवारी = त्या level/zone-mid चं सद्य LTP पासूनचं अंतर (+ = वर, − = खाली).")
     except Exception as e:
         st.error(f"Market Zones मध्ये चूक: {type(e).__name__}: {e}")
 

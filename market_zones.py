@@ -296,6 +296,11 @@ def _pick_nearest_level(levels, current_price, want_below):
     return min(side, key=lambda lv: abs(lv[0] - current_price))
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — R2/S2 नंतर लगेच R3/S3 सुद्धा हवे होते. एकाच ठिकाणी बदलता
+# यावा म्हणून स्थिरांक (आणखी पुढचे हवे असल्यास फक्त हाच आकडा वाढवायचा).
+_SR_LEVELS_PER_SIDE = 3
+
+
 def _pick_nearest_n_levels(levels, current_price, want_below, n=2):
     """_pick_nearest_level() सारखंच, पण सर्वात जवळचे (अंतरानुसार क्रमवारी) कमाल n levels — "पुढचा"
     (R2/S2) level दाखवण्यासाठी. काहीच सापडलं नाही तर रिकामी यादी."""
@@ -322,36 +327,34 @@ def compute_5m_15m_confluence_row(timeframe_label, df_tf, current_price,
     """
     row = {
         "timeframe": timeframe_label, "current_price": round(float(current_price), 2),
-        "support_level": None, "support_distance_pct": None,
-        "support_level_2": None, "support_distance_pct_2": None,
-        "resistance_level": None, "resistance_distance_pct": None,
-        "resistance_level_2": None, "resistance_distance_pct_2": None,
         "demand_zone_low": None, "demand_zone_high": None, "demand_zone_distance_pct": None,
         "supply_zone_low": None, "supply_zone_high": None, "supply_zone_distance_pct": None,
         "order_block_type": None, "order_block_low": None, "order_block_high": None, "order_block_distance_pct": None,
     }
+    for n in range(1, _SR_LEVELS_PER_SIDE + 1):
+        suffix = "" if n == 1 else f"_{n}"
+        row[f"support_level{suffix}"] = None
+        row[f"support_distance_pct{suffix}"] = None
+        row[f"resistance_level{suffix}"] = None
+        row[f"resistance_distance_pct{suffix}"] = None
 
     # --- Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles
-    # वरून थेट/लाईव्ह गणना, cluster केलेल्या सर्व levels मधून सद्य किमतीच्या सर्वात जवळचे दोन्ही -- "1"
-    # (सर्वात जवळचा) व "2" (त्यापुढचा) ---
+    # वरून थेट/लाईव्ह गणना, cluster केलेल्या सर्व levels मधून सद्य किमतीच्या सर्वात जवळचे कमाल
+    # _SR_LEVELS_PER_SIDE (सध्या 3 -- "1"/"2"/"3", फक्त सर्वात जवळचा एकच नाही) ---
     if df_tf is not None and len(df_tf) >= swing_order * 2 + 1:
         classical_sr = find_support_resistance_levels(df_tf, order=swing_order, top_n=10)
         support_levels = [(c["level"], c) for c in classical_sr["support"]]
         resistance_levels = [(c["level"], c) for c in classical_sr["resistance"]]
-        nearest_supports = _pick_nearest_n_levels(support_levels, current_price, want_below=True)
-        nearest_resistances = _pick_nearest_n_levels(resistance_levels, current_price, want_below=False)
-        if len(nearest_supports) >= 1:
-            row["support_level"] = round(nearest_supports[0][0], 2)
-            row["support_distance_pct"] = round((nearest_supports[0][0] - current_price) / current_price * 100, 3)
-        if len(nearest_supports) >= 2:
-            row["support_level_2"] = round(nearest_supports[1][0], 2)
-            row["support_distance_pct_2"] = round((nearest_supports[1][0] - current_price) / current_price * 100, 3)
-        if len(nearest_resistances) >= 1:
-            row["resistance_level"] = round(nearest_resistances[0][0], 2)
-            row["resistance_distance_pct"] = round((nearest_resistances[0][0] - current_price) / current_price * 100, 3)
-        if len(nearest_resistances) >= 2:
-            row["resistance_level_2"] = round(nearest_resistances[1][0], 2)
-            row["resistance_distance_pct_2"] = round((nearest_resistances[1][0] - current_price) / current_price * 100, 3)
+        nearest_supports = _pick_nearest_n_levels(support_levels, current_price, want_below=True, n=_SR_LEVELS_PER_SIDE)
+        nearest_resistances = _pick_nearest_n_levels(resistance_levels, current_price, want_below=False, n=_SR_LEVELS_PER_SIDE)
+        for i, (level, _extra) in enumerate(nearest_supports):
+            suffix = "" if i == 0 else f"_{i + 1}"
+            row[f"support_level{suffix}"] = round(level, 2)
+            row[f"support_distance_pct{suffix}"] = round((level - current_price) / current_price * 100, 3)
+        for i, (level, _extra) in enumerate(nearest_resistances):
+            suffix = "" if i == 0 else f"_{i + 1}"
+            row[f"resistance_level{suffix}"] = round(level, 2)
+            row[f"resistance_distance_pct{suffix}"] = round((level - current_price) / current_price * 100, 3)
 
     # --- Demand/Supply Zone — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना), mitigation
     # तपासून फक्त अजून ACTIVE असलेल्यांमधूनच सद्य किमतीच्या सर्वात जवळचा एक (Order Block सारखीच पद्धत,
