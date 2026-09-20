@@ -781,6 +781,37 @@ class TestNakedOptionTrade:
             assert not mock_naked_select.called
             assert mock_trade.call_count == 1  # फक्त स्प्रेड, Naked नाही
 
+    def test_naked_lots_used_independently_from_spread_lots(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच
+        "lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं). आता स्वतंत्र "naked_lots" — दोन्ही वेगळे
+        असतानाही प्रत्येक trade त्याच्याच स्वतःच्या lots सह उघडायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        custom_settings["symbol_enabled"] = True
+        custom_settings["lots"] = 2
+        custom_settings["naked_lots"] = 5
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T73"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2
+            spread_call, naked_call = mock_trade.call_args_list
+            assert spread_call.kwargs.get("lots") == 2
+            assert naked_call.kwargs.get("lots") == 5
+
 
 class TestExpiryDayLogic:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) -- आज expiry असेल, तर पुढच्या

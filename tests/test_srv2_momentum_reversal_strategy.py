@@ -487,10 +487,12 @@ class TestMultiTimeframe:
 
     def test_settings_lots_and_hedge_width_passed_through(self):
         """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Dashboard settings (lots=3, hedge_width=75)
-        hardcoded मूल्यांऐवजी प्रत्यक्ष वापरली जायला हवीत."""
+        hardcoded मूल्यांऐवजी प्रत्यक्ष वापरली जायला हवीत. naked_enabled=False -- फक्त spread call
+        तपासण्यासाठी (mock_trade.call_args शेवटचा कॉल पकडतो, आणि naked_lots आता स्वतंत्र सेटिंग
+        असल्याने naked call इथे तपासायचा नाही)."""
         candles_df = _fake_candles_df(last_close=23902)
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_strategy_settings", return_value={**cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], "lots": 3, "hedge_width_points": 75.0}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value={**cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"], "lots": 3, "hedge_width_points": 75.0, "naked_enabled": False}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
@@ -610,6 +612,35 @@ class TestMultiTimeframe:
             srv2.process_symbol("fake_token", "NIFTY")
             assert mock_naked_select.called
             assert mock_trade.call_count == 2  # स्प्रेड + Naked दोन्ही
+
+    def test_naked_lots_used_independently_from_spread_lots(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच इथेही —
+        Naked Option Trade आता Credit Spread पासून स्वतंत्र "naked_lots" वापरतो."""
+        candles_df = _fake_candles_df(last_close=23902)
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["lots"] = 2
+        custom_settings["naked_lots"] = 5
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2, "has_open_trade_from_source", return_value=False), \
+             patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23800, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}), \
+             patch.object(srv2.cloud_db, "get_all_broker_accounts", return_value=None), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T81"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2
+            spread_call, naked_call = mock_trade.call_args_list
+            assert spread_call.kwargs.get("lots") == 2
+            assert naked_call.kwargs.get("lots") == 5
 
     def test_naked_trade_skipped_when_disabled_in_settings(self):
         candles_df = _fake_candles_df(last_close=23902)
