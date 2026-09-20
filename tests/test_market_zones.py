@@ -123,22 +123,32 @@ def _quiet_then_impulsive_bars(start_ts="2024-01-02 09:15:00"):
     return pd.DataFrame(rows).reset_index(drop=True)
 
 
+def _oscillating_bars(n=60, start_ts="2024-01-02 09:15:00"):
+    """वारंवार वर-खाली दोलायमान (oscillating) किमती — दोन्ही बाजूला (Support व Resistance)
+    किमान एक major swing cluster तयार होण्याइतकी — sr_dynamic.py च्या टेस्टमधल्याच पॅटर्नसारखी."""
+    ts0 = pd.Timestamp(start_ts)
+    rows = []
+    for i in range(n):
+        base = 100.0 + (i % 20) * 0.5
+        rows.append(_row(ts0 + pd.Timedelta(minutes=5 * i), base, base + 5, base - 5, base))
+    return pd.DataFrame(rows)
+
+
 class TestCompute5m15mConfluenceRow:
-    def test_support_resistance_from_stored_dynamic_sr_zones(self):
-        dyn_sr = pd.DataFrame([
-            {"zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23000.0, "zone_high": 23000.0, "status": "ACTIVE"},
-            {"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 23100.0, "zone_high": 23100.0, "status": "ACTIVE"},
-            {"zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 22900.0, "zone_high": 22900.0, "status": "FILLED"},  # FILLED -> दुर्लक्षित
-        ])
-        row = mz.compute_5m_15m_confluence_row("5M", None, dyn_sr, current_price=23050.0)
-        assert row["support_level"] == 23000.0
-        assert row["resistance_level"] == 23100.0
+    def test_support_resistance_computed_live_from_major_swings(self):
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Support/Resistance आता आधी साठवलेल्या Dynamic S/R
+        # (cloud_db) ऐवजी, याच टाईमफ्रेमच्या candles वरून थेट, Classical (major Swing High/Low —
+        # signals.find_support_resistance_levels()) पद्धतीने.
+        df = _oscillating_bars()
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=100.0)
+        assert row["support_level"] is not None and row["support_level"] < 100.0
+        assert row["resistance_level"] is not None and row["resistance_level"] >= 100.0
         assert row["support_distance_pct"] < 0  # support नेहमी सद्य किमतीच्या खाली -> ऋण अंतर
         assert row["resistance_distance_pct"] > 0
 
     def test_order_block_and_demand_supply_computed_live(self):
         df = _quiet_then_impulsive_bars()
-        row = mz.compute_5m_15m_confluence_row("5M", df, None, current_price=116.0)
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=116.0)
         assert row["order_block_type"] == "BULLISH_OB"
         assert row["order_block_low"] == 99.4
         assert row["order_block_high"] == 100.6
@@ -149,16 +159,16 @@ class TestCompute5m15mConfluenceRow:
 
     def test_insufficient_data_returns_none_fields(self):
         df = _quiet_then_impulsive_bars().head(3)  # order/avg_window साठी खूपच कमी
-        row = mz.compute_5m_15m_confluence_row("5M", df, None, current_price=100.0)
+        row = mz.compute_5m_15m_confluence_row("5M", df, current_price=100.0)
         assert row["demand_zone_low"] is None
         assert row["order_block_type"] is None
-        assert row["support_level"] is None  # dynamic_sr_zones_df=None दिलेला
+        assert row["support_level"] is None  # swing_order*2+1 इतकाही डेटा नाही
 
 
 class TestCompute5m15mConfluenceTable:
     def test_returns_one_row_per_timeframe_in_order(self):
         df_5m = _quiet_then_impulsive_bars()
         df_15m = _quiet_then_impulsive_bars(start_ts="2024-01-02 09:15:00")
-        table = mz.compute_5m_15m_confluence_table(116.0, {"5M": df_5m, "15M": df_15m}, None)
+        table = mz.compute_5m_15m_confluence_table(116.0, {"5M": df_5m, "15M": df_15m})
         assert list(table["timeframe"]) == ["5M", "15M"]
         assert len(table) == 2

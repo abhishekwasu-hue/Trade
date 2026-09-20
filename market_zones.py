@@ -287,15 +287,16 @@ def _pick_nearest_level(levels, current_price, want_below):
     return min(side, key=lambda lv: abs(lv[0] - current_price))
 
 
-def compute_5m_15m_confluence_row(timeframe_label, df_tf, dynamic_sr_zones_df, current_price,
+def compute_5m_15m_confluence_row(timeframe_label, df_tf, current_price,
                                     swing_order=3, impulse_mult=1.5, avg_window=20):
     """
-    एका टाईमफ्रेमसाठी (5M किंवा 15M) — Support/Resistance (आधीच साठवलेल्या Dynamic S/R वरून, सद्य
-    किमतीच्या सापेक्ष पुन्हा-वर्गीकृत — साठवलेला जुना label नाही), Demand/Supply Zone
-    (signals.analyze_chart_zones() — Classical S/R Reversal backtest मध्ये वापरलेलीच स्वतःची, Swing
-    High/Low-आधारित पद्धत), आणि सद्य किमतीच्या सर्वात जवळचा, अजून ACTIVE (mitigated नसलेला) Order
-    Block — एकत्र एका dict मध्ये (raw numbers — UI/CSV दोन्हीसाठी वापरता यावेत म्हणून, आधीच फॉरमॅट
-    केलेला मजकूर नाही).
+    एका टाईमफ्रेमसाठी (5M किंवा 15M) — Support/Resistance (signals.find_support_resistance_levels() —
+    major Swing High/Low वरून, याच टाईमफ्रेमच्या candles वरून थेट/ताजी गणना — established Classical
+    S/R Reversal strategy सारखीच पद्धत; आधी साठवलेले Dynamic S/R नाही — ते TradingView chart levels शी
+    जुळत नसल्याने वापरकर्त्याने बदलायला सांगितलं), Demand/Supply Zone (signals.analyze_chart_zones() —
+    तीच Swing High/Low-आधारित पद्धत), आणि सद्य किमतीच्या सर्वात जवळचा, अजून ACTIVE (mitigated नसलेला)
+    Order Block — एकत्र एका dict मध्ये (raw numbers — UI/CSV दोन्हीसाठी वापरता यावेत म्हणून, आधीच
+    फॉरमॅट केलेला मजकूर नाही).
     """
     row = {
         "timeframe": timeframe_label, "current_price": round(float(current_price), 2),
@@ -306,15 +307,14 @@ def compute_5m_15m_confluence_row(timeframe_label, df_tf, dynamic_sr_zones_df, c
         "order_block_type": None, "order_block_low": None, "order_block_high": None, "order_block_distance_pct": None,
     }
 
-    # --- Support/Resistance — आधीच साठवलेले (cloud_db) Dynamic S/R levels, सद्य किमतीशी सुसंगत पुन्हा-वर्गीकृत ---
-    if dynamic_sr_zones_df is not None and not dynamic_sr_zones_df.empty:
-        dyn_subset = dynamic_sr_zones_df[
-            dynamic_sr_zones_df["zone_type"].isin([f"DYNAMIC_SR_SUPPORT_{timeframe_label}", f"DYNAMIC_SR_RESISTANCE_{timeframe_label}"])
-            & (dynamic_sr_zones_df["status"] == "ACTIVE")
-        ]
-        levels = [(float(r["zone_low"]), {}) for _, r in dyn_subset.iterrows()]
-        nearest_support = _pick_nearest_level(levels, current_price, want_below=True)
-        nearest_resistance = _pick_nearest_level(levels, current_price, want_below=False)
+    # --- Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles
+    # वरून थेट/लाईव्ह गणना, cluster केलेल्या सर्व levels मधून सद्य किमतीच्या सर्वात जवळचा एक) ---
+    if df_tf is not None and len(df_tf) >= swing_order * 2 + 1:
+        classical_sr = find_support_resistance_levels(df_tf, order=swing_order, top_n=10)
+        support_levels = [(c["level"], c) for c in classical_sr["support"]]
+        resistance_levels = [(c["level"], c) for c in classical_sr["resistance"]]
+        nearest_support = _pick_nearest_level(support_levels, current_price, want_below=True)
+        nearest_resistance = _pick_nearest_level(resistance_levels, current_price, want_below=False)
         if nearest_support:
             row["support_level"] = round(nearest_support[0], 2)
             row["support_distance_pct"] = round((nearest_support[0] - current_price) / current_price * 100, 3)
@@ -355,13 +355,13 @@ def compute_5m_15m_confluence_row(timeframe_label, df_tf, dynamic_sr_zones_df, c
     return row
 
 
-def compute_5m_15m_confluence_table(current_price, timeframe_dfs, dynamic_sr_zones_df,
+def compute_5m_15m_confluence_table(current_price, timeframe_dfs,
                                       swing_order=3, impulse_mult=1.5, avg_window=20):
     """timeframe_dfs: {"5M": df_5m, "15M": df_15m} (क्रमाने) -> compute_5m_15m_confluence_row() च्या
     रांगांचा DataFrame, एक रांग प्रति टाईमफ्रेम."""
     rows = [
         compute_5m_15m_confluence_row(
-            label, df, dynamic_sr_zones_df, current_price,
+            label, df, current_price,
             swing_order=swing_order, impulse_mult=impulse_mult, avg_window=avg_window,
         )
         for label, df in timeframe_dfs.items()
