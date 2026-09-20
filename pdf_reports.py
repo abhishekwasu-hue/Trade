@@ -3,6 +3,7 @@ import datetime
 import io
 import os
 import re
+from xml.sax.saxutils import escape as _xml_escape
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -586,6 +587,41 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     if len(df) > max_rows:
         note = Paragraph(f"(showing first {max_rows} of {len(df)} rows)", _rpt_footer)
     return [tbl, note] if note else tbl
+
+
+def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=7):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER slippage PDF मध्ये) — df_to_reportlab_table()
+    रुंद (10 स्तंभांच्या) DataFrame साठी वापरलं, तर colWidths न दिल्याने नैसर्गिक (auto) रुंदी पानाच्या
+    रुंदीपेक्षा जास्त होऊन उजवीकडचे स्तंभ कापले जातात/दिसतच नाहीत — इथे प्रत्येक सेल Paragraph म्हणून
+    wrap केलेला (लांब मजकूर पुढच्या ओळीत जातो) आणि colWidths=usable_width/स्तंभ-संख्या — त्यामुळे
+    टेबल कधीच पानाबाहेर जात नाही. फक्त याच (रुंद) टेबलसाठी वापरलेलं — df_to_reportlab_table() इतर
+    सर्व existing कॉल्ससाठी जसंच्या तसं (बदल नाही)."""
+    if df is None or df.empty:
+        return Paragraph("No data available.", _rpt_normal)
+    display_df = df.head(max_rows)
+    columns = list(display_df.columns)
+    cell_style = ParagraphStyle("wide_cell", fontName=_RPT_TABLE_FONT, fontSize=font_size, leading=font_size + 2)
+    header_style = ParagraphStyle(
+        "wide_header", fontName=_RPT_TABLE_FONT_BOLD, fontSize=font_size, leading=font_size + 2, textColor=colors.white,
+    )
+    data = [[Paragraph(_xml_escape(_fix_missing_glyphs(str(c))), header_style) for c in columns]]
+    for row in display_df.astype(str).values.tolist():
+        data.append([Paragraph(_xml_escape(_fix_missing_glyphs(v)), cell_style) for v in row])
+    col_width = usable_width / len(columns)
+    tbl = Table(data, colWidths=[col_width] * len(columns), repeatRows=1, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    note = None
+    if len(df) > max_rows:
+        note = Paragraph(f"(showing first {max_rows} of {len(df)} rows)", _rpt_footer)
+    return [tbl, note] if note else tbl
+
 
 def _force_colors_by_label(rows, label_color_map):
     """
@@ -1757,7 +1793,8 @@ def _trade_log_groups_by_timeframe(trade_log_df):
 
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
-                                      by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations):
+                                      by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations,
+                                      slippage_pairs_df=None):
     """
     Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise, Timeframe-wise व
     Option Structure-wise (Credit Spread वि. Naked Option) P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं
@@ -1778,6 +1815,10 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     recommendations — Performance टॅबवरच्या rule-based शिफारसींची यादी (markdown स्ट्रिंग्स — यात आता
     Strategy/Timeframe सोबतच Option Structure-निहायही शिफारसी असतात, प्रत्येक स्वतंत्रपणे ओळखता येईल
     अशा "**Option Structure: Credit Spread**"/"**Option Structure: Naked Option Buy**" उपसर्गासकट).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER शॅडो मोड — slippage PDF मध्येही यायला हवं) —
+    slippage_pairs_df (database.get_live_vs_shadow_paper_pairs()) — रिकामा/None असेल (म्हणजे या
+    कालावधीत LIVE+PAPER मोड प्रत्यक्ष वापरलेलाच नाही) तर हा संपूर्ण विभाग (heading सकट) वगळला जातो —
+    फक्त प्रत्यक्ष LIVE+PAPER trades असतील तरच PDF मध्ये दिसतो.
     """
     generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
     buf = io.BytesIO()
@@ -1905,6 +1946,32 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         t = df_to_reportlab_table(by_structure_df)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
+
+    if slippage_pairs_df is not None and not slippage_pairs_df.empty:
+        next_section("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)")
+        story.append(Paragraph(
+            "For every pair opened in LIVE+PAPER mode (a real LIVE order plus a shadow PAPER trade "
+            "on the same signal), this shows how much real execution (slippage/spread) differed from "
+            "the pure simulation. A negative P&amp;L Slippage means the real LIVE result was worse "
+            "than PAPER.", ParagraphStyle("slippage_note", fontName=_RPT_FONT, fontSize=10, leading=14),
+        ))
+        story.append(Spacer(1, 6))
+        entry_slip_series = slippage_pairs_df["Entry Slippage (Rs)"].dropna()
+        pnl_slip_series = slippage_pairs_df["P&L Slippage (Rs)"].dropna()
+        avg_entry_slip = entry_slip_series.mean() if not entry_slip_series.empty else None
+        avg_pnl_slip = pnl_slip_series.mean() if not pnl_slip_series.empty else None
+        total_pnl_slip = pnl_slip_series.sum() if not pnl_slip_series.empty else 0
+        slip_summary_rows = [
+            ["LIVE+PAPER Pairs", str(len(slippage_pairs_df))],
+            ["Avg Entry Slippage", f"Rs {avg_entry_slip:,.1f}" if avg_entry_slip is not None else "N/A"],
+            ["Avg P&L Slippage / Trade", f"Rs {avg_pnl_slip:,.1f}" if avg_pnl_slip is not None else "N/A"],
+            ["Total P&L Slippage", f"Rs {total_pnl_slip:,.0f}"],
+        ]
+        story.append(_kv_table(slip_summary_rows, usable_width, key_ratio=0.4))
+        story.append(Spacer(1, 6))
+        t = _wide_df_table_wrapped(slippage_pairs_df, usable_width)
+        story.extend(t if isinstance(t, list) else [t])
+        story.append(Spacer(1, 8))
 
     next_section("Conclusion & Recommendations")
     if not recommendations:
