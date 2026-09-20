@@ -131,24 +131,24 @@ def setup_shared_context():
     )
 
     with st.sidebar.expander("💰 Risk व Capital", expanded=False):
-        lot_size = st.sidebar.number_input("Lot Size (सध्या NIFTY = 65, अधिकृत NSE सर्क्युलर तपासा)", min_value=1, value=65, step=1)
-        risk_pct_per_trade = st.sidebar.slider("Risk % per Trade (उपलब्ध मार्जिनपैकी)", 0.5, 10.0, 2.0, step=0.5)
-        hedge_width_points = st.sidebar.number_input("Hedge Width (points, लाँग लेग शॉर्ट लेगपासून किती दूर)", min_value=50, value=100, step=50)
-        pop_threshold_pct = st.sidebar.slider("PoP Threshold (%) — किमान Probability of Profit", 50, 95, 70, step=5)
-        vix_max_threshold = st.sidebar.number_input("India VIX कमाल मर्यादा (यापेक्षा जास्त = No Trade)", min_value=10.0, value=20.0, step=0.5)
+        lot_size = st.number_input("Lot Size (सध्या NIFTY = 65, अधिकृत NSE सर्क्युलर तपासा)", min_value=1, value=65, step=1)
+        risk_pct_per_trade = st.slider("Risk % per Trade (उपलब्ध मार्जिनपैकी)", 0.5, 10.0, 2.0, step=0.5)
+        hedge_width_points = st.number_input("Hedge Width (points, लाँग लेग शॉर्ट लेगपासून किती दूर)", min_value=50, value=100, step=50)
+        pop_threshold_pct = st.slider("PoP Threshold (%) — किमान Probability of Profit", 50, 95, 70, step=5)
+        vix_max_threshold = st.number_input("India VIX कमाल मर्यादा (यापेक्षा जास्त = No Trade)", min_value=10.0, value=20.0, step=0.5)
 
     # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator (आपल्या २ मुख्य
     # strategies) साठी SL/Target आता निश्चित (fixed) 30%/30% (net_credit चे) आहेत, sidebar वरून
     # बदलता येत नाहीत (हार्डकोड). खालचे sliders आता फक्त Iron Condor/Butterfly (sideways) साठीच.
     with st.sidebar.expander("🦋 Sideways (Iron Condor / Butterfly)", expanded=False):
-        st.sidebar.caption("⚠️ खालचे SL/Target फक्त Iron Condor/Butterfly साठी — Price Action/Indicator आता निश्चित 30% credit SL/Target वापरतात.")
-        sl_pct_of_max_loss = st.sidebar.slider("Sideways SL (% of Max Loss)", 10, 100, 30, step=5)
-        target_pct_of_max_profit = st.sidebar.slider("Sideways Profit Target (% of Max Profit)", 10, 100, 50, step=5)
-        sideways_tight_range_pct = st.sidebar.number_input("घट्ट रेंज मर्यादा % (यापेक्षा कमी = Iron Butterfly)", min_value=0.1, value=0.6, step=0.1)
-        sideways_max_range_pct = st.sidebar.number_input("कमाल Sideways रेंज % (यापेक्षा जास्त = अजिबात Sideways ट्रेड नाही)", min_value=0.5, value=1.5, step=0.1)
+        st.caption("⚠️ खालचे SL/Target फक्त Iron Condor/Butterfly साठी — Price Action/Indicator आता निश्चित 30% credit SL/Target वापरतात.")
+        sl_pct_of_max_loss = st.slider("Sideways SL (% of Max Loss)", 10, 100, 30, step=5)
+        target_pct_of_max_profit = st.slider("Sideways Profit Target (% of Max Profit)", 10, 100, 50, step=5)
+        sideways_tight_range_pct = st.number_input("घट्ट रेंज मर्यादा % (यापेक्षा कमी = Iron Butterfly)", min_value=0.1, value=0.6, step=0.1)
+        sideways_max_range_pct = st.number_input("कमाल Sideways रेंज % (यापेक्षा जास्त = अजिबात Sideways ट्रेड नाही)", min_value=0.5, value=1.5, step=0.1)
 
     with st.sidebar.expander("⏱️ Trading Style", expanded=False):
-        trading_style_choice = st.sidebar.radio(
+        trading_style_choice = st.radio(
             "Intraday की Swing?",
             ["⚡ Intraday (त्याच दिवशी स्क्वेअर-ऑफ)", "🌙 Swing (एक दिवसापेक्षा जास्त काळ होल्ड)"],
             index=0,
@@ -163,8 +163,8 @@ def setup_shared_context():
             # आपला कोड EOD काढला तरी काही फरक पडला नसता).
             product_type = "D"
             eod_squareoff_time = None
-            entry_cutoff_time = st.sidebar.time_input("नवीन एंट्री बंद करण्याची वेळ (IST)", value=datetime.time(15, 0))
-            st.sidebar.caption(
+            entry_cutoff_time = st.time_input("नवीन एंट्री बंद करण्याची वेळ (IST)", value=datetime.time(15, 0))
+            st.caption(
                 f"⚠️ EOD Square-off काढलं आहे — Position आता दुसऱ्या दिवशीही Continue राहील (Product Type "
                 f"आपोआप 'D'/Delivery). नवीन एंट्री मात्र {entry_cutoff_time.strftime('%H:%M')} नंतर बंद."
             )
@@ -175,15 +175,15 @@ def setup_shared_context():
 
     if trading_style == "INTRADAY":
         with st.sidebar.expander("🧭 OI Confirmation Gate", expanded=False):
-            enable_oi_gate = st.sidebar.checkbox("OI Diff Tracker सिग्नल एंट्री गेट म्हणून वापरा", value=True)
-            oi_gate_strictness_choice = st.sidebar.radio(
+            enable_oi_gate = st.checkbox("OI Diff Tracker सिग्नल एंट्री गेट म्हणून वापरा", value=True)
+            oi_gate_strictness_choice = st.radio(
                 "Strictness",
                 ["A — Conflict Filter (शिफारस केलेले)", "B — Strict Confirmation"],
                 index=0,
             )
             oi_gate_strictness = "A" if "A" in oi_gate_strictness_choice else "B"
-            enable_oi_early_exit = st.sidebar.checkbox("OI उलट फिरल्यास लवकर Exit करा (फक्त Directional स्प्रेड्ससाठी)", value=True)
-            st.sidebar.caption(
+            enable_oi_early_exit = st.checkbox("OI उलट फिरल्यास लवकर Exit करा (फक्त Directional स्प्रेड्ससाठी)", value=True)
+            st.caption(
                 "A: फक्त सक्रिय विरोध (उलट दिशेचा OI) असेल तरच ब्लॉक — Weakening/Neutral पास होतात. "
                 "B: फक्त पूर्ण जुळणी असेल तरच पास (कमी पण जास्त खात्रीचे ट्रेड्स)."
             )
@@ -191,7 +191,7 @@ def setup_shared_context():
         swing_max_opposing_signals = 1
 
         with st.sidebar.expander("🧬 Signal Engine (दिशा 1H Supertrend वरून)", expanded=False):
-            intraday_strategy_choice = st.sidebar.radio(
+            intraday_strategy_choice = st.radio(
                 "कोणती रणनीती वापरायची?",
                 ["1️⃣ Price Action (Support/Resistance + RSI + Candlestick)",
                  "2️⃣ Indicator Based (RSI 25-55/45-75 + Rejection/Engulfing)"],
@@ -205,22 +205,22 @@ def setup_shared_context():
             retest_tolerance_pct = 0.15
             reversal_lookback = 3
             if intraday_strategy_mode == "price_action":
-                st.sidebar.caption(
+                st.caption(
                     "Support/Resistance (Rolling Window) जवळ RSI Oversold/Overbought/Divergence + Reversal "
                     "Candlestick (Hammer/Engulfing/Morning-Evening Star) + त्या candle च्या high/low पलीकडे "
                     "Breakout — हे सर्व जुळल्यावरच Entry."
                 )
-                sr_window = st.sidebar.number_input("S/R Rolling Window", min_value=6, value=20, step=2)
-                rc1, rc2 = st.sidebar.columns(2)
+                sr_window = st.number_input("S/R Rolling Window", min_value=6, value=20, step=2)
+                rc1, rc2 = st.columns(2)
                 with rc1:
-                    rsi_oversold = st.sidebar.number_input("RSI Oversold <", min_value=5, max_value=45, value=30, step=1)
+                    rsi_oversold = st.number_input("RSI Oversold <", min_value=5, max_value=45, value=30, step=1)
                 with rc2:
-                    rsi_overbought = st.sidebar.number_input("RSI Overbought >", min_value=55, max_value=95, value=70, step=1)
-                sl_buffer_pct = st.sidebar.number_input("SL Buffer %", min_value=0.01, value=0.1, step=0.05)
-                min_rr = st.sidebar.number_input("किमान Risk:Reward", min_value=1.0, value=2.0, step=0.5)
-                retest_tolerance_pct = st.sidebar.number_input("Retest Tolerance %", min_value=0.05, value=0.15, step=0.05)
-                reversal_lookback = st.sidebar.number_input("Reversal Candle Lookback (bars)", min_value=1, max_value=10, value=3, step=1)
-                st.sidebar.caption(
+                    rsi_overbought = st.number_input("RSI Overbought >", min_value=55, max_value=95, value=70, step=1)
+                sl_buffer_pct = st.number_input("SL Buffer %", min_value=0.01, value=0.1, step=0.05)
+                min_rr = st.number_input("किमान Risk:Reward", min_value=1.0, value=2.0, step=0.5)
+                retest_tolerance_pct = st.number_input("Retest Tolerance %", min_value=0.05, value=0.15, step=0.05)
+                reversal_lookback = st.number_input("Reversal Candle Lookback (bars)", min_value=1, max_value=10, value=3, step=1)
+                st.caption(
                     "S/R Rolling Window कमी असेल तर जास्त (पण कमी विश्वासार्ह) पातळ्या सापडतील. सिग्नल्स कमी वाटत "
                     "असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा (उदा. Oversold 35, Overbought 65)."
                 )
@@ -239,61 +239,73 @@ def setup_shared_context():
         reversal_lookback = 3
 
         with st.sidebar.expander("🧭 OI+PCR+MaxPain+Rollover Gate (Swing)", expanded=False):
-            st.sidebar.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
-            enable_swing_oi_gate = st.sidebar.checkbox("चारही Professional OI सिग्नल्स एंट्री गेट म्हणून वापरा", value=True)
-            swing_max_opposing_signals = st.sidebar.slider(
+            st.caption("Swing मोड: Product Type आपोआप 'D' (Carryforward) — पोझिशन्स SL/Target लागेपर्यंत अनेक दिवस उघड्या राहू शकतात, कोणताही EOD स्क्वेअर-ऑफ नाही.")
+            enable_swing_oi_gate = st.checkbox("चारही Professional OI सिग्नल्स एंट्री गेट म्हणून वापरा", value=True)
+            swing_max_opposing_signals = st.slider(
                 "कमाल विरोधी सिग्नल्स (यापेक्षा जास्त विरोध असेल तरच ब्लॉक)", min_value=0, max_value=3, value=1,
             )
-            st.sidebar.caption(
+            st.caption(
                 "OI-Price Matrix (day-over-day) + PCR Contrarian + Max Pain + Rollover (Cost-of-Carry) — हे चार सिग्नल्स "
                 "मोजून, दिशेच्या विरोधात जाणाऱ्या सिग्नल्सची संख्या वरील मर्यादेपेक्षा जास्त असेल तरच एंट्री ब्लॉक होते. "
                 "Rollover फक्त वर 'Advanced OI Analysis' मध्ये बटण दाबून fetch केलेला असेल तरच या गेटमध्ये मोजला जातो."
             )
 
     with st.sidebar.expander("🛡️ Daily Limits", expanded=False):
-        max_trades_per_day = st.sidebar.number_input("दिवसाला जास्तीत जास्त ट्रेड्स", min_value=1, value=3, step=1)
-        max_daily_loss = st.sidebar.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
+        max_trades_per_day = st.number_input("दिवसाला जास्तीत जास्त ट्रेड्स", min_value=1, value=3, step=1)
+        max_daily_loss = st.number_input("दैनिक कमाल तोटा ₹ (Circuit Breaker)", min_value=500, value=5000, step=500)
 
-    st.sidebar.markdown("### 📈 Trailing SL (ATR-आधारित)")
-    with st.sidebar.expander("📈 Trailing SL तपशील (क्लिक करून उघडा)", expanded=False):
+    with st.sidebar.expander("📈 Trailing SL (ATR-आधारित)", expanded=False):
         trailing_sl_enabled = False
         atr_multiplier = 1.5
         if compute_atr is None:
-            st.sidebar.warning(
+            st.warning(
                 "⚠️ Trailing SL उपलब्ध नाही — deployed signals.py जुनी आहे (compute_atr गहाळ). "
                 "नवीनतम सर्व फाईल्स पुन्हा अपलोड करून app reboot करा."
             )
         else:
-            trailing_sl_enabled = st.sidebar.checkbox(
+            trailing_sl_enabled = st.checkbox(
                 "Trailing SL चालू करा (सर्व स्ट्रॅटेजींसाठी — Credit Spreads सकट)", value=False,
             )
             if trailing_sl_enabled:
-                atr_multiplier = st.sidebar.number_input("ATR Multiplier (ट्रेलिंग अंतर)", min_value=0.5, value=1.5, step=0.25)
-                st.sidebar.caption(
+                atr_multiplier = st.number_input("ATR Multiplier (ट्रेलिंग अंतर)", min_value=0.5, value=1.5, step=0.25)
+                st.caption(
                     "पोझिशन नफ्यात गेल्यावर SL नफ्याच्या दिशेने सतत सरकतो, कधीच मागे सरकत नाही — पण मूळ स्थिर SL पेक्षा "
                     "कधीच वाईट होत नाही. ATR 15M underlying candles वरून काढला जातो."
                 )
 
-    st.sidebar.markdown("### 🎮 Trading Mode")
-    trading_mode_choice = st.sidebar.radio(
-        "मोड निवडा", ["📝 PAPER (Simulated — खरे पैसे नाहीत)", "🔴 LIVE (Real Money)"], index=0,
-    )
-    trading_mode = "LIVE" if "LIVE" in trading_mode_choice else "PAPER"
-
-    if trading_mode == "PAPER":
-        enable_live_trading = True
-        confirm_live_trading = True
-        st.sidebar.info(
-            "📝 Paper Trading Mode चालू आहे — Manual/Strategy Builder ऑर्डर्स सिम्युलेट होतील, पण **कोणताही खरा ऑर्डर Upstox कडे "
-            "जाणार नाही**. Entry/Exit किंमती खऱ्या मार्केट LTP वरूनच घेतल्या जातात, त्यामुळे निकाल realistic असतील."
-        )
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("sidebar खूप crowd आहे, user क्लिक करून गरजेनुसार
+    # उघडेल") — Trading Mode आता (इतर settings groups सारखाच) collapsed expander मध्ये, पण पैशांशी
+    # संबंधित असल्याने सद्य स्थिती (PAPER/LIVE, आणि LIVE असेल तर सक्रिय/पुष्टी झालेली का) expander च्या
+    # बाहेर, कायम दिसणारी एक ओळ — क्लिक न करताही "मी आत्ता कुठल्या मोडमध्ये आहे" हे लगेच कळतं.
+    _prev_trading_mode = st.session_state.get("trading_mode", "PAPER")
+    _prev_live_active = bool(st.session_state.get("enable_live_trading") and st.session_state.get("confirm_live_trading"))
+    if _prev_trading_mode == "LIVE" and _prev_live_active:
+        st.sidebar.error("🔴 LIVE ट्रेडिंग सक्रिय — खरे ऑर्डर्स जाऊ शकतात!")
+    elif _prev_trading_mode == "LIVE":
+        st.sidebar.warning("🔴 LIVE Mode निवडलेला — पण अजून सक्रिय/पुष्टी केलेला नाही.")
     else:
-        enable_live_trading = st.sidebar.checkbox("ENABLE LIVE TRADING (खरे पैसे, खरे ऑर्डर्स)", value=False)
-        confirm_live_trading = False
-        if enable_live_trading:
-            confirm_live_trading = st.sidebar.checkbox("मला समजते — यामुळे माझ्या खऱ्या Upstox खात्यातून खरे ऑर्डर्स प्लेस होतील", value=False)
-            if not confirm_live_trading:
-                st.sidebar.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय कोणतेही लाईव्ह ऑर्डर्स जाणार नाहीत.")
+        st.sidebar.caption("📝 PAPER Mode (Simulated) — कुठलाही खरा ऑर्डर जाणार नाही.")
+
+    with st.sidebar.expander("🎮 Trading Mode (बदलण्यासाठी क्लिक करा)", expanded=False):
+        trading_mode_choice = st.radio(
+            "मोड निवडा", ["📝 PAPER (Simulated — खरे पैसे नाहीत)", "🔴 LIVE (Real Money)"], index=0,
+        )
+        trading_mode = "LIVE" if "LIVE" in trading_mode_choice else "PAPER"
+
+        if trading_mode == "PAPER":
+            enable_live_trading = True
+            confirm_live_trading = True
+            st.info(
+                "📝 Paper Trading Mode चालू आहे — Manual/Strategy Builder ऑर्डर्स सिम्युलेट होतील, पण **कोणताही खरा ऑर्डर Upstox कडे "
+                "जाणार नाही**. Entry/Exit किंमती खऱ्या मार्केट LTP वरूनच घेतल्या जातात, त्यामुळे निकाल realistic असतील."
+            )
+        else:
+            enable_live_trading = st.checkbox("ENABLE LIVE TRADING (खरे पैसे, खरे ऑर्डर्स)", value=False)
+            confirm_live_trading = False
+            if enable_live_trading:
+                confirm_live_trading = st.checkbox("मला समजते — यामुळे माझ्या खऱ्या Upstox खात्यातून खरे ऑर्डर्स प्लेस होतील", value=False)
+                if not confirm_live_trading:
+                    st.warning("⚠️ वरील पुष्टीकरण टिक केल्याशिवाय कोणतेही लाईव्ह ऑर्डर्स जाणार नाहीत.")
 
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "आपण फक्त 2 strategies (Bot Dynamic SR Algo
     # वरून) चालू केल्या, तरीही एक ओळखीचं नसलेलं PAPER trade झालं" असा प्रश्न वापरकर्त्याने विचारला.
@@ -303,15 +315,20 @@ def setup_shared_context():
     # Bot Dynamic SR Algo वरून स्पष्ट symbol_enabled toggle आहे) च्या उलट. आता A1 Signal Engine ला
     # सुद्धा तसाच, स्वतंत्र, डीफॉल्ट-बंद toggle — वापरकर्त्याने स्पष्टपणे चालू केल्याशिवाय कधीच
     # (PAPER सुद्धा) trade घेतलं जाणार नाही.
-    st.sidebar.markdown("### 🧬 A1 Signal Engine")
-    a1_signal_engine_enabled = st.sidebar.checkbox(
-        "A1 Signal Engine ऑटो-Execute सक्रिय (डीफॉल्ट बंद)", value=False,
-        help="Dashboard च्या 'Signal Engine व Trading' tab मधलं स्वतंत्र, discretionary trading engine — "
-             "Bot Dynamic SR Algo च्या 3 strategies पासून वेगळं. बंद असल्यास हे पान उघडं असतानाही "
-             "कुठलाही (PAPER सुद्धा) trade आपोआप घेतलं जाणार नाही.",
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("sidebar खूप crowd आहे") — इतर settings groups
+    # सारखाच आता collapsed expander मध्ये, पण सद्य स्थिती (सक्रिय/बंद) कायम दिसणाऱ्या एका ओळीत.
+    _prev_a1_enabled = bool(st.session_state.get("a1_signal_engine_enabled"))
+    st.sidebar.caption(
+        "🟢 A1 Signal Engine सक्रिय आहे." if _prev_a1_enabled else
+        "⚪ A1 Signal Engine सध्या बंद आहे — सिग्नल्स दिसतील, पण कुठलाही trade आपोआप घेतलं जाणार नाही."
     )
-    if not a1_signal_engine_enabled:
-        st.sidebar.caption("⚪ A1 Signal Engine सध्या बंद आहे — सिग्नल्स दिसतील, पण कुठलाही trade आपोआप घेतलं जाणार नाही.")
+    with st.sidebar.expander("🧬 A1 Signal Engine (बदलण्यासाठी क्लिक करा)", expanded=False):
+        a1_signal_engine_enabled = st.checkbox(
+            "A1 Signal Engine ऑटो-Execute सक्रिय (डीफॉल्ट बंद)", value=False,
+            help="Dashboard च्या 'Signal Engine व Trading' tab मधलं स्वतंत्र, discretionary trading engine — "
+                 "Bot Dynamic SR Algo च्या 3 strategies पासून वेगळं. बंद असल्यास हे पान उघडं असतानाही "
+                 "कुठलाही (PAPER सुद्धा) trade आपोआप घेतलं जाणार नाही.",
+        )
 
     # --- ७. मुख्य डॅशबोर्ड लॉजिक ---
 
