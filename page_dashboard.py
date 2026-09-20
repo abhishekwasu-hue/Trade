@@ -1007,9 +1007,12 @@ def _render_market_zones():
                 sub_header("📊 5M / 15M Confluence Table (Support/Resistance + Demand/Supply + Order Block)", HDR_CYAN)
                 st.caption(
                     "Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles "
-                    "वरून थेट/ताजी गणना — established Classical S/R Reversal strategy सारखीच पद्धत). Demand/Supply "
-                    "Zone — Swing High/Low वरून (तीच पद्धत). Order Block — मोठ्या impulsive हालचालीच्याच आधीची "
-                    "शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या सर्वात जवळचेच दाखवले आहेत."
+                    "वरून थेट/ताजी गणना — established Classical S/R Reversal strategy सारखीच पद्धत); सद्य LTP च्या "
+                    "सर्वात जवळचा (1) आणि त्यापुढचा (2) असे दोन्ही. Demand/Supply Zone — प्रत्यक्ष impulsive "
+                    "हालचालीच्याच आधीच्या शांत \"base\" candles च्या खऱ्या high/low रेंजवरून (Order Block सारखीच "
+                    "पद्धत — सरसकट ±0.3% पट्टी नाही, त्यामुळे व्यवहार्य/tradable रुंदीचा). Order Block — मोठ्या "
+                    "impulsive हालचालीच्याच आधीची शेवटची विरुद्ध candle (अजून mitigate न झालेला). सर्व सद्य LTP च्या "
+                    "सर्वात जवळचेच दाखवले आहेत."
                 )
                 if st.button("🔍 5M/15M Confluence Table तयार करा", key="mz_confluence_run"):
                     with st.spinner("5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
@@ -1027,8 +1030,10 @@ def _render_market_zones():
                     for _, r in ct.iterrows():
                         display_rows.append({
                             "Timeframe": r["timeframe"],
-                            "Support": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
-                            "Resistance": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
+                            "Support 1": f"{r['support_level']:,.2f} ({r['support_distance_pct']:+.2f}%)" if r["support_level"] is not None else "—",
+                            "Support 2": f"{r['support_level_2']:,.2f} ({r['support_distance_pct_2']:+.2f}%)" if r["support_level_2"] is not None else "—",
+                            "Resistance 1": f"{r['resistance_level']:,.2f} ({r['resistance_distance_pct']:+.2f}%)" if r["resistance_level"] is not None else "—",
+                            "Resistance 2": f"{r['resistance_level_2']:,.2f} ({r['resistance_distance_pct_2']:+.2f}%)" if r["resistance_level_2"] is not None else "—",
                             "Demand Zone": f"{r['demand_zone_low']:,.2f} - {r['demand_zone_high']:,.2f} ({r['demand_zone_distance_pct']:+.2f}%)" if r["demand_zone_low"] is not None else "—",
                             "Supply Zone": f"{r['supply_zone_low']:,.2f} - {r['supply_zone_high']:,.2f} ({r['supply_zone_distance_pct']:+.2f}%)" if r["supply_zone_low"] is not None else "—",
                             "Order Block": (

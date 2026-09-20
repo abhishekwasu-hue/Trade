@@ -15,7 +15,7 @@ market_zones.py
 """
 import pandas as pd
 
-from signals import find_support_resistance_levels, analyze_chart_zones
+from signals import find_support_resistance_levels
 from mtf_pullback_strategy import find_overnight_gaps
 from sr_dynamic import compute_dynamic_sr
 
@@ -79,8 +79,17 @@ def detect_demand_supply_zones(df, impulse_mult=1.5, avg_window=20, base_lookbac
         zone_low = float(df["low"].iloc[base_start:i].min())
         zone_high = float(df["high"].iloc[base_start:i].max())
         zone_type = "DEMAND_ZONE" if is_impulsive_up.iloc[i] else "SUPPLY_ZONE"
+        # 🎓 वापरकर्त्याच्या तक्रारीवरून (Confluence Table मधली Demand/Supply Zone values नेहमी
+        # रिकामी/doubtful दिसत होती) सापडवलेली, आधीपासूनच अस्तित्वात असलेली bug — formed_date आधी
+        # base range च्या *पहिल्या* candle चा असायचा (base_start), पण is_zone_mitigated() ला दिला
+        # जाणारा "after formation" स्लाईस (`df[timestamp > formed_date]`) त्यामुळे त्याच zone च्या
+        # *उरलेल्या* base candles (base_start नंतरचे, अजूनही zone_low/high च्याच आत) समाविष्ट करायचा
+        # — म्हणजे प्रत्येक multi-candle zone स्वतःच्याच base वरून जवळपास तात्काळ "mitigated"
+        # (FILLED) ठरायचा, base_lookback=1 (एकाच candle चा base) असेल तरच अपवाद. आता formed_date =
+        # base range च्या *शेवटच्या* candle चा (impulsive move च्या ऐन आधीचा) — जेणेकरून mitigation
+        # तपासणी फक्त प्रत्यक्ष breakout नंतरपासूनच सुरू होते, स्वतःच्याच base विरुद्ध नाही.
         zones.append({"zone_type": zone_type, "zone_low": zone_low, "zone_high": zone_high,
-                       "formed_date": df["timestamp"].iloc[base_start]})
+                       "formed_date": df["timestamp"].iloc[i - 1]})
     return zones
 
 
@@ -287,53 +296,85 @@ def _pick_nearest_level(levels, current_price, want_below):
     return min(side, key=lambda lv: abs(lv[0] - current_price))
 
 
+def _pick_nearest_n_levels(levels, current_price, want_below, n=2):
+    """_pick_nearest_level() सारखंच, पण सर्वात जवळचे (अंतरानुसार क्रमवारी) कमाल n levels — "पुढचा"
+    (R2/S2) level दाखवण्यासाठी. काहीच सापडलं नाही तर रिकामी यादी."""
+    side = [lv for lv in levels if (lv[0] <= current_price if want_below else lv[0] >= current_price)]
+    side.sort(key=lambda lv: abs(lv[0] - current_price))
+    return side[:n]
+
+
 def compute_5m_15m_confluence_row(timeframe_label, df_tf, current_price,
-                                    swing_order=3, impulse_mult=1.5, avg_window=20):
+                                    swing_order=3, impulse_mult=1.5, avg_window=20,
+                                    base_lookback=4, base_tightness_mult=0.7):
     """
     एका टाईमफ्रेमसाठी (5M किंवा 15M) — Support/Resistance (signals.find_support_resistance_levels() —
     major Swing High/Low वरून, याच टाईमफ्रेमच्या candles वरून थेट/ताजी गणना — established Classical
     S/R Reversal strategy सारखीच पद्धत; आधी साठवलेले Dynamic S/R नाही — ते TradingView chart levels शी
-    जुळत नसल्याने वापरकर्त्याने बदलायला सांगितलं), Demand/Supply Zone (signals.analyze_chart_zones() —
-    तीच Swing High/Low-आधारित पद्धत), आणि सद्य किमतीच्या सर्वात जवळचा, अजून ACTIVE (mitigated नसलेला)
-    Order Block — एकत्र एका dict मध्ये (raw numbers — UI/CSV दोन्हीसाठी वापरता यावेत म्हणून, आधीच
-    फॉरमॅट केलेला मजकूर नाही).
+    जुळत नसल्याने वापरकर्त्याने बदलायला सांगितलं; सद्य किमतीच्या सर्वात जवळचे दोन्ही -- "1" व "2",
+    फक्त एकच नाही), Demand/Supply Zone (detect_demand_supply_zones() — established compute_all_zones()
+    (nightly, 1H) साठीच वापरलेली, प्रत्यक्ष "base" candles च्या रेंजवर आधारित पद्धत -- वापरकर्त्याने
+    सापडवल्याप्रमाणे आधीची analyze_chart_zones() ची निव्वळ ±0.3% सरसकट पट्टी (न-प्रत्यक्ष, फक्त एका
+    किमतीभोवतीची tolerance-band, इथे "zone" म्हणून दाखवल्यास दिशाभूल करणारी/खूप रुंद) होती, आता
+    Order Block सारखीच खरी candle-आधारित रुंदी), आणि सद्य किमतीच्या सर्वात जवळचा, अजून ACTIVE
+    (mitigated नसलेला) Order Block — एकत्र एका dict मध्ये (raw numbers — UI/CSV दोन्हीसाठी वापरता
+    यावेत म्हणून, आधीच फॉरमॅट केलेला मजकूर नाही).
     """
     row = {
         "timeframe": timeframe_label, "current_price": round(float(current_price), 2),
         "support_level": None, "support_distance_pct": None,
+        "support_level_2": None, "support_distance_pct_2": None,
         "resistance_level": None, "resistance_distance_pct": None,
+        "resistance_level_2": None, "resistance_distance_pct_2": None,
         "demand_zone_low": None, "demand_zone_high": None, "demand_zone_distance_pct": None,
         "supply_zone_low": None, "supply_zone_high": None, "supply_zone_distance_pct": None,
         "order_block_type": None, "order_block_low": None, "order_block_high": None, "order_block_distance_pct": None,
     }
 
     # --- Support/Resistance — Classical (major Swing High/Low वरून, याच टाईमफ्रेमच्या ताज्या candles
-    # वरून थेट/लाईव्ह गणना, cluster केलेल्या सर्व levels मधून सद्य किमतीच्या सर्वात जवळचा एक) ---
+    # वरून थेट/लाईव्ह गणना, cluster केलेल्या सर्व levels मधून सद्य किमतीच्या सर्वात जवळचे दोन्ही -- "1"
+    # (सर्वात जवळचा) व "2" (त्यापुढचा) ---
     if df_tf is not None and len(df_tf) >= swing_order * 2 + 1:
         classical_sr = find_support_resistance_levels(df_tf, order=swing_order, top_n=10)
         support_levels = [(c["level"], c) for c in classical_sr["support"]]
         resistance_levels = [(c["level"], c) for c in classical_sr["resistance"]]
-        nearest_support = _pick_nearest_level(support_levels, current_price, want_below=True)
-        nearest_resistance = _pick_nearest_level(resistance_levels, current_price, want_below=False)
-        if nearest_support:
-            row["support_level"] = round(nearest_support[0], 2)
-            row["support_distance_pct"] = round((nearest_support[0] - current_price) / current_price * 100, 3)
-        if nearest_resistance:
-            row["resistance_level"] = round(nearest_resistance[0], 2)
-            row["resistance_distance_pct"] = round((nearest_resistance[0] - current_price) / current_price * 100, 3)
+        nearest_supports = _pick_nearest_n_levels(support_levels, current_price, want_below=True)
+        nearest_resistances = _pick_nearest_n_levels(resistance_levels, current_price, want_below=False)
+        if len(nearest_supports) >= 1:
+            row["support_level"] = round(nearest_supports[0][0], 2)
+            row["support_distance_pct"] = round((nearest_supports[0][0] - current_price) / current_price * 100, 3)
+        if len(nearest_supports) >= 2:
+            row["support_level_2"] = round(nearest_supports[1][0], 2)
+            row["support_distance_pct_2"] = round((nearest_supports[1][0] - current_price) / current_price * 100, 3)
+        if len(nearest_resistances) >= 1:
+            row["resistance_level"] = round(nearest_resistances[0][0], 2)
+            row["resistance_distance_pct"] = round((nearest_resistances[0][0] - current_price) / current_price * 100, 3)
+        if len(nearest_resistances) >= 2:
+            row["resistance_level_2"] = round(nearest_resistances[1][0], 2)
+            row["resistance_distance_pct_2"] = round((nearest_resistances[1][0] - current_price) / current_price * 100, 3)
 
-    # --- Demand/Supply Zone — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना) ---
-    if df_tf is not None and len(df_tf) >= swing_order * 2 + 1:
-        chart_zones = analyze_chart_zones(df_tf, order=swing_order)
-        dz, sz = chart_zones.get("demand_zone"), chart_zones.get("supply_zone")
-        if dz:
-            row["demand_zone_low"], row["demand_zone_high"] = round(dz[0], 2), round(dz[1], 2)
-            dz_mid = (dz[0] + dz[1]) / 2
-            row["demand_zone_distance_pct"] = round((dz_mid - current_price) / current_price * 100, 3)
-        if sz:
-            row["supply_zone_low"], row["supply_zone_high"] = round(sz[0], 2), round(sz[1], 2)
-            sz_mid = (sz[0] + sz[1]) / 2
-            row["supply_zone_distance_pct"] = round((sz_mid - current_price) / current_price * 100, 3)
+    # --- Demand/Supply Zone — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना), mitigation
+    # तपासून फक्त अजून ACTIVE असलेल्यांमधूनच सद्य किमतीच्या सर्वात जवळचा एक (Order Block सारखीच पद्धत,
+    # प्रत्यक्ष "base" candles च्या high/low वरून -- सरसकट ±0.3% पट्टी नाही) ---
+    if df_tf is not None and len(df_tf) >= avg_window + 1:
+        zones = detect_demand_supply_zones(df_tf, impulse_mult, avg_window, base_lookback, base_tightness_mult)
+        active_dz, active_sz = [], []
+        for z in zones:
+            after = df_tf[df_tf["timestamp"] > z["formed_date"]]
+            if is_zone_mitigated(z["zone_low"], z["zone_high"], after.iloc[1:]):
+                continue
+            mid = (z["zone_low"] + z["zone_high"]) / 2
+            (active_dz if z["zone_type"] == "DEMAND_ZONE" else active_sz).append((mid, z))
+        nearest_dz = min(active_dz, key=lambda x: abs(x[0] - current_price)) if active_dz else None
+        nearest_sz = min(active_sz, key=lambda x: abs(x[0] - current_price)) if active_sz else None
+        if nearest_dz:
+            dz = nearest_dz[1]
+            row["demand_zone_low"], row["demand_zone_high"] = round(dz["zone_low"], 2), round(dz["zone_high"], 2)
+            row["demand_zone_distance_pct"] = round((nearest_dz[0] - current_price) / current_price * 100, 3)
+        if nearest_sz:
+            sz = nearest_sz[1]
+            row["supply_zone_low"], row["supply_zone_high"] = round(sz["zone_low"], 2), round(sz["zone_high"], 2)
+            row["supply_zone_distance_pct"] = round((nearest_sz[0] - current_price) / current_price * 100, 3)
 
     # --- Order Block — याच टाईमफ्रेमच्या ताज्या candles वरून, थेट (लाईव्ह गणना), mitigation तपासून
     # फक्त अजून ACTIVE असलेल्यांमधूनच सद्य किमतीच्या सर्वात जवळचा एक ---
