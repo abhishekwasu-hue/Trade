@@ -31,7 +31,15 @@ from ui_headers import (
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Trading Charges) — "आतापर्यंतचे एकूण" Charges/Net P&L
 # साठी trades ची सुरुवात कधी झाली हे माहीत नसतं, त्यामुळे इथे एक व्यवहार्य, पुरेशी जुनी सुरुवात-तारीख
 # (हे app अस्तित्वात येण्याआधीचीच) वापरली आहे — त्यामुळे "आतापर्यंतचा संपूर्ण इतिहास" कव्हर होतो.
+# (हा "संपूर्ण इतिहास" quick-range filter साठीच वापरला जातो — खालचा _ALL_TIME_SUMMARY_START वेगळा आहे.)
 _ALL_TIME_START = datetime.date(2020, 1, 1)
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — "एकूण (All-Time) कामगिरी" विभाग (वरचे मुख्य आकडे: Total Trades/
+# Win Rate/P&L/Charges इ.) आता खऱ्या all-time ऐवजी 17-Sep-2026 पासूनच मोजतो (जुन्या/test trades मुळे
+# आकडे विस्कळीत होत होते). ही फक्त या एका विभागाची display-filter तारीख आहे — प्रत्यक्ष trade/order
+# इतिहास database मधून काढला जात नाही (तो audit/tax साठी जपून ठेवलेला राहतो); खालचा "संपूर्ण इतिहास"
+# quick-range option (तारीख/तारीख-रेंज निवडून विश्लेषण) अजूनही खरा संपूर्ण इतिहास दाखवतो.
+_ALL_TIME_SUMMARY_START = datetime.date(2026, 9, 17)
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "कोणती रणनीती (algo) जास्त फायदेशीर आहे" हे कळावं म्हणून
 # live_trades.source कोडला वाचनीय नाव — जेणेकरून टेबल/चार्टमध्ये कच्चा internal कोड ऐवजी नाव दिसेल.
@@ -361,7 +369,8 @@ def render():
 
         st.markdown("---")
         _mid_header("📊 एकूण (All-Time) कामगिरी", _HDR_PINK)
-        summary = get_performance_summary(symbol, mode_filter=perf_mode_f)
+        st.caption(f"{_ALL_TIME_SUMMARY_START.strftime('%d-%b-%Y')} पासूनचेच आकडे — त्याआधीचे (जुने/test) trades इथे मोजले जात नाहीत.")
+        summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
         if summary.get("total_trades", 0) == 0:
             st.info("अजून कोणतेही बंद झालेले ट्रेड्स नाहीत — Performance आकडे दिसण्यासाठी किमान एक ट्रेड बंद व्हायला हवा.")
         else:
@@ -404,7 +413,7 @@ def render():
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — वरचं "Total P&L" आतापर्यंत फक्त Gross होतं
             # (वास्तविक ब्रोकरेज शुल्क कुठेच दाखवलं जात नव्हतं). आता आतापर्यंतच्या संपूर्ण इतिहासाचं,
             # charges.py वापरून मोजलेलं वास्तविक शुल्क आणि त्यानंतरचा Net P&L इथेच दाखवला जातो.
-            _, _all_time_totals = generate_pnl_report(symbol, "Monthly", _ALL_TIME_START, get_ist_today(), mode_filter=perf_mode_f)
+            _, _all_time_totals = generate_pnl_report(symbol, "Monthly", _ALL_TIME_SUMMARY_START, get_ist_today(), mode_filter=perf_mode_f)
             pcol9, pcol10 = st.columns(2)
             with pcol9:
                 st.metric(
@@ -422,7 +431,7 @@ def render():
             _render_charges_breakdown_caption(_all_time_totals.get("charges_breakdown"))
 
             _sub_header("📉 Equity Curve (संचयी वास्तविक P&L)", _HDR_PURPLE)
-            curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f)
+            curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
             if not curve_df.empty:
                 eq_fig = go.Figure()
                 eq_fig.add_trace(go.Scatter(
@@ -442,7 +451,7 @@ def render():
                 _sub_header("📝 PAPER वि LIVE तुलना", _HDR_ORANGE)
                 comp_rows = []
                 for label in ("LIVE", "PAPER"):
-                    s = get_performance_summary(symbol, mode_filter=label)
+                    s = get_performance_summary(symbol, mode_filter=label, start_date=_ALL_TIME_SUMMARY_START)
                     if s.get("total_trades", 0) > 0:
                         comp_rows.append({
                             "Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"],

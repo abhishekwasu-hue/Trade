@@ -811,8 +811,9 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
         "roi_pct": round(pnls.sum() / margin_used * 100, 2) if margin_used > 0 else None,
     }
 
-def get_equity_curve_data(symbol, mode_filter=None, style_filter=None):
-    """वेळेनुसार संचयी (cumulative) वास्तविक P&L — Equity Curve चार्टसाठी."""
+def get_equity_curve_data(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
+    """वेळेनुसार संचयी (cumulative) वास्तविक P&L — Equity Curve चार्टसाठी. start_date दिली तर
+    त्याच्याआधीचे trades curve मध्ये मोजले जात नाहीत (cumulative sum त्याच तारखेपासूनच सुरू होतो)."""
     conn = sqlite3.connect(DB_PATH)
     query = """SELECT exit_time, realized_pnl FROM live_trades
                WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
@@ -823,6 +824,12 @@ def get_equity_curve_data(symbol, mode_filter=None, style_filter=None):
     if style_filter:
         query += " AND COALESCE(trading_style,'INTRADAY')=?"
         params.append(style_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
     query += " ORDER BY exit_time ASC"
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
