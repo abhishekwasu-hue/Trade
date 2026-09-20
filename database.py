@@ -113,7 +113,13 @@ def init_sqlite_db():
     # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (नवीन नियम-संच, Bot Dynamic SR Algo) — TSL
     # (Entry/Breakeven वर घट्ट करणारी) एकदाच (sticky) सक्रिय झाली की कायम तशीच राहते; आणि
     # 15M/30M/60M साठी "same-timeframe Next-Level-Exit" ओळखण्यासाठी entry_timeframe.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT"]:
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन) — Upstox चं Margin Calculator API
+    # (v2/charges/margin) आधीपासूनच फक्त LIVE trades च्या pre-trade gate साठी वापरलं जायचं (खरा
+    # आकडा मिळायचाच), पण तो नंतर कुठेच साठवला जात नव्हता — ROI% साठी परत max_loss-आधारित ढोबळ
+    # अंदाजच वापरला जायचा. आता trading_engine.open_multi_leg_trade() हाच खरा आकडा (PAPER trades
+    # साठीही -- सध्या बहुतांश मूल्यांकन PAPER वरच होतंय) इथे साठवतो; NULL असेल (जुन्या नोंदी, किंवा
+    # API कॉल अयशस्वी) तर database._compute_margin_used() आपोआप max_loss*lots*lot_size वर पडतो.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -754,11 +760,24 @@ def _compute_margin_used(df):
 
     entry_time/exit_time उपलब्ध नसलेल्या (जुन्या/अपूर्ण) नोंदी — त्यांचा margin peak मध्ये netting
     न करता वेगळा जोडला जातो (सुरक्षित, worst-case गृहीतक — जुनं वर्तनच त्यांच्यापुरतं कायम).
+
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (खरी मार्जिन, अंदाज नाही) — प्रत्येक trade वर आता
+    entry_margin_required (Upstox च्या Margin Calculator API कडून, trading_engine.
+    open_multi_leg_trade() ने trade उघडतानाच साठवलेला खरा आकडा — SPAN+Exposure, hedge-फायद्यासकट)
+    उपलब्ध असल्यास तोच वापरला जातो — max_loss*lots*lot_size (ढोबळ worst-case अंदाज, हेज्ड
+    credit spread साठी प्रत्यक्ष लागणाऱ्या मार्जिनपेक्षा बरंच जास्त असू शकतो) फक्त जुन्या नोंदींसाठी
+    (entry_margin_required NULL — त्या वेळी हे column नव्हतंच, किंवा API कॉल अयशस्वी झाला होता)
+    fallback म्हणून.
     """
     max_loss = pd.to_numeric(df["max_loss"], errors="coerce").abs()
     lots = pd.to_numeric(df["lots"], errors="coerce")
     lot_size = pd.to_numeric(df["lot_size"], errors="coerce")
-    trade_margin = max_loss * lots * lot_size
+    estimated_margin = max_loss * lots * lot_size
+    if "entry_margin_required" in df.columns:
+        real_margin = pd.to_numeric(df["entry_margin_required"], errors="coerce")
+        trade_margin = real_margin.where(real_margin.notna() & (real_margin > 0), estimated_margin)
+    else:
+        trade_margin = estimated_margin
 
     entry_time = pd.to_datetime(df["entry_time"], errors="coerce") if "entry_time" in df.columns else pd.Series(pd.NaT, index=df.index)
     exit_time = pd.to_datetime(df["exit_time"], errors="coerce") if "exit_time" in df.columns else pd.Series(pd.NaT, index=df.index)
@@ -798,7 +817,7 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
     मार्जिन" मानून roi_pct = एकूण realized P&L / एकूण मार्जिन.
     """
     conn = sqlite3.connect(DB_PATH)
-    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time FROM live_trades "
+    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
              "WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL")
     params = [symbol]
     if mode_filter:
@@ -996,7 +1015,7 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
     get_performance_summary() मध्ये वापरलेलीच पद्धत, इथे प्रत्येक group साठी स्वतंत्रपणे."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
-    query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time FROM live_trades
+    query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades
                 WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     params = [symbol]
     if mode_filter:
@@ -1033,7 +1052,7 @@ def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=No
     conn = sqlite3.connect(DB_PATH)
     col_expr1 = f"COALESCE({group_col1}, 'UNKNOWN')"
     col_expr2 = f"COALESCE({group_col2}, 'UNKNOWN')"
-    query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time
+    query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required
                 FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     params = [symbol]
     if mode_filter:

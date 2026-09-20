@@ -3,19 +3,12 @@ charges.py
 ------------------------------
 वास्तविक ट्रेडिंग शुल्क (brokerage + सरकारी/एक्सचेंज शुल्क) मोजण्यासाठी.
 
-दोन प्रकारचे शुल्क:
-1) Brokerage — प्रत्येक ब्रोकरची शुल्क-रचना वेगळी: Upstox/Fyers — प्रति ऑर्डर ₹20, Shoonya — प्रति
-   ऑर्डर ₹5, Stocko — निश्चित ₹1200/महिना (per-order नाही, फिक्स्ड सबस्क्रिप्शन प्लॅन). हे दर
-   वापरकर्त्याने दिलेले आहेत — प्रत्यक्ष प्लॅन बदलल्यास इथेच अपडेट करा.
-2) सरकारी/एक्सचेंज शुल्क (STT, Exchange Transaction Charge, SEBI Turnover Fee, Stamp Duty, त्यावरचा
-   GST) — हे ब्रोकर कुठलाही असो, प्रत्येक NSE Index Options ऑर्डरवर सारखेच लागू होतात, आणि प्रत्यक्षात
-   options साठी हे brokerage पेक्षाही मोठे असू शकतात (उदा. STT एकट्याचा 0.1% प्रीमियमवर). आधी हे
-   शुल्क अजिबात मोजलेच जात नव्हते — त्यामुळे "Net P&L (charges नंतर)" प्रत्यक्षापेक्षा जास्त (overstated)
-   दिसत होता. आता quantity/fill_price/transaction_type (order_log मधूनच उपलब्ध) वापरून प्रत्येक
-   ऑर्डरचा turnover काढून हे शुल्क मोजले जातात.
-   ⚠️ हे दर SEBI/NSE/सरकारकडून वेळोवेळी बदलतात (शेवटचा मोठा बदल — ऑक्टोबर 2024 मध्ये options STT
-   0.0625% वरून 0.1% झालं). इथले दर 2024 अखेरच्या नियमांनुसार आहेत — प्रत्यक्ष broker च्या Contract
-   Note/Ledger शी अधूनमधून पडताळून पाहा, आणि बदल झाल्यास इथेच अपडेट करा.
+🎓 वापरकर्त्याने मागितलेली सुधारणा (rough, सोपा अंदाज) — आधी brokerage + STT + Exchange Txn Charge +
+SEBI Turnover Fee + Stamp Duty + त्यावरचा GST असे सहा वेगवेगळे घटक, प्रत्येक ऑर्डरच्या प्रीमियम
+turnover वरून टक्केवारीने मोजले जायचे — पण वापरकर्त्याला हे जास्त/अनपेक्षित वाटलं आणि पडताळणं अवघड
+झालं. आता प्रत्येक per-order ब्रोकरसाठी (Upstox/Fyers/Shoonya) एक निश्चित, ढोबळ ₹35/ऑर्डर (brokerage
++ सर्व सरकारी/एक्सचेंज शुल्क मिळून, एकत्र) — तंतोतंत नाही, पण साधा आणि अंदाज बांधता येण्याजोगा.
+Stocko — निश्चित ₹1200/महिना (per-order नाही, फिक्स्ड सबस्क्रिप्शन प्लॅन, आधीसारखाच) कायम.
 
 account_id → broker_type कसं ठरतं: order_log/live_trades मधला account_id सेट असेल तर cloud_db च्या
 broker_accounts table (Supabase, फक्त multi-broker सेटअपमध्ये existent) मधून broker_type शोधला जातो.
@@ -25,23 +18,11 @@ account_id रिकामा (None) असेल — म्हणजे जु�
 """
 import datetime
 
-import numpy as np
 import pandas as pd
 
-BROKERAGE_PER_ORDER = {
-    "upstox": 20.0,
-    "fyers": 20.0,
-    "shoonya": 5.0,
-}
+FLAT_CHARGE_PER_ORDER = 35.0  # ढोबळ अंदाज — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, प्रति ऑर्डर
 STOCKO_FLAT_MONTHLY = 1200.0
 DEFAULT_BROKER = "upstox"
-
-# --- सरकारी/एक्सचेंज शुल्क दर (NSE Index Options, प्रीमियम turnover वर) ---
-STT_SELL_PCT = 0.001            # Securities Transaction Tax — फक्त SELL ऑर्डरवर (0.1%, ऑक्टो-2024 पासून)
-EXCHANGE_TXN_PCT = 0.00035      # NSE Exchange Transaction Charge — BUY व SELL दोन्हीवर (अंदाजे 0.035%)
-SEBI_TURNOVER_PCT = 0.0000001   # SEBI Turnover Fee — ₹10/कोटी — BUY व SELL दोन्हीवर
-STAMP_DUTY_BUY_PCT = 0.00003    # Stamp Duty (राज्य सरकार) — फक्त BUY ऑर्डरवर (0.003%)
-GST_PCT = 0.18                  # Brokerage + Exchange Txn Charge + SEBI Fee यावर 18% GST (STT/Stamp Duty वर GST नाही)
 
 _EMPTY_DAILY_CHARGES = pd.DataFrame(columns=[
     "date", "broker_type", "orders", "brokerage", "stt", "exchange_txn", "sebi_fee",
@@ -73,46 +54,26 @@ def resolve_broker_type(account_id, broker_map):
     return broker_map.get(account_id, DEFAULT_BROKER)
 
 
-def _add_statutory_and_brokerage_charges(df):
-    """प्रत्येक ऑर्डर-रांगेला brokerage + STT + Exchange Txn + SEBI Fee + Stamp Duty + त्यावरचा GST
-    जोडते. turnover = quantity × (fill_price असेल तर तो, नाहीतर request price). Stocko साठी प्रति-ऑर्डर
-    brokerage 0 (कारण ते निश्चित मासिक शुल्क आहे, खाली वेगळं जोडलं जातं) — पण STT/Exchange/SEBI/Stamp
-    Duty Stocko वरही (कोणत्याही ब्रोकरवर) लागू होतातच, ते ब्रोकरच्या प्लॅनवर अवलंबून नसतात."""
+def _add_flat_order_charge(df):
+    """प्रत्येक ऑर्डर-रांगेला ढोबळ ₹35 (FLAT_CHARGE_PER_ORDER, brokerage + सर्व सरकारी/एक्सचेंज शुल्क
+    मिळून) जोडते — Stocko साठी प्रति-ऑर्डर शुल्क 0 (कारण ते निश्चित मासिक शुल्क आहे, compute_charges()
+    मध्ये वेगळं जोडलं जातं). breakdown मधले stt/exchange_txn/sebi_fee/stamp_duty/gst स्तंभ established
+    UI/PDF code शी सुसंगत राहण्यासाठी अजूनही आहेत, पण आता नेहमी 0 — संपूर्ण ढोबळ रक्कम फक्त "brokerage"
+    मध्ये दाखवली जाते."""
     df = df.copy()
-
-    def _numeric_col(name):
-        if name not in df.columns:
-            return pd.Series(float("nan"), index=df.index)
-        return pd.to_numeric(df[name], errors="coerce")
-
-    fill_price = _numeric_col("fill_price")
-    req_price = _numeric_col("price")
-    effective_price = fill_price.where(fill_price.notna() & (fill_price > 0), req_price).fillna(0.0).abs()
-    quantity = _numeric_col("quantity").fillna(0.0).abs()
-    df["turnover"] = quantity * effective_price
-
-    if "transaction_type" in df.columns:
-        txn_type = df["transaction_type"].fillna("").astype(str).str.upper()
-    else:
-        txn_type = pd.Series("", index=df.index)
-    is_sell = txn_type == "SELL"
-    is_buy = txn_type == "BUY"
-
-    df["brokerage"] = df["broker_type"].map(BROKERAGE_PER_ORDER).fillna(0.0)
-    df["stt"] = np.where(is_sell, df["turnover"] * STT_SELL_PCT, 0.0)
-    df["exchange_txn"] = df["turnover"] * EXCHANGE_TXN_PCT
-    df["sebi_fee"] = df["turnover"] * SEBI_TURNOVER_PCT
-    df["stamp_duty"] = np.where(is_buy, df["turnover"] * STAMP_DUTY_BUY_PCT, 0.0)
-    df["gst"] = (df["brokerage"] + df["exchange_txn"] + df["sebi_fee"]) * GST_PCT
-    df["charge"] = df["brokerage"] + df["stt"] + df["exchange_txn"] + df["sebi_fee"] + df["stamp_duty"] + df["gst"]
+    df["brokerage"] = df["broker_type"].apply(lambda b: 0.0 if b == "stocko" else FLAT_CHARGE_PER_ORDER)
+    df["stt"] = 0.0
+    df["exchange_txn"] = 0.0
+    df["sebi_fee"] = 0.0
+    df["stamp_duty"] = 0.0
+    df["gst"] = 0.0
+    df["charge"] = df["brokerage"]
     return df
 
 
 def compute_charges(orders_df, start_date, end_date, broker_map=None):
     """
-    orders_df: columns 'placed_at' (str/datetime-parseable), 'account_id' (nullable), आणि
-      'quantity'/'fill_price'/'price'/'transaction_type' (STT/Exchange/SEBI/Stamp Duty साठी — नसतील
-      तर ते शुल्क 0 धरले जातात, फक्त brokerage मोजला जातो).
+    orders_df: columns 'placed_at' (str/datetime-parseable), 'account_id' (nullable), 'order_id'.
     start_date/end_date: datetime.date — रिपोर्टची तारीख-रेंज (Stocko चं प्रोरेशन याच रेंजपुरतं मर्यादित).
 
     रिटर्न: (daily_charges_df, summary)
@@ -134,7 +95,7 @@ def compute_charges(orders_df, start_date, end_date, broker_map=None):
         return _EMPTY_DAILY_CHARGES.copy(), dict(_EMPTY_SUMMARY, per_broker={}, breakdown=dict(_EMPTY_BREAKDOWN))
 
     df["broker_type"] = df["account_id"].apply(lambda a: resolve_broker_type(a, broker_map))
-    df = _add_statutory_and_brokerage_charges(df)
+    df = _add_flat_order_charge(df)
 
     charge_cols = ["brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst", "charge"]
     grouped = (

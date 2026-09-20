@@ -274,23 +274,42 @@ def _alert_kill_switch_blocked(symbol, source, reason):
         _logger.exception("_alert_kill_switch_blocked() मध्ये अनपेक्षित चूक (silently handled)")
 
 
-def check_margin_available(access_token, adapter, orders, strategy_result, lots, lot_size):
+def _resolve_required_margin(access_token, adapter, orders, strategy_result, lots, lot_size):
+    """orders साठी खरी आवश्यक मार्जिन — adapter असेल तर त्याचं (Shoonya/Stocko/Fyers), नाहीतर
+    Upstox चं अधिकृत Margin Calculator API (SPAN+Exposure, hedge-फायद्यासकट). मिळालीच नाही (API
+    अनुपलब्ध/token समस्या) तर max_loss-आधारित सुरक्षित worst-case अंदाज.
+
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन, अंदाज नाही) — हाच आकडा आधी फक्त
+    check_margin_available() च्या LIVE gate साठी काढला जायचा आणि नंतर टाकून दिला जायचा — इथे
+    वेगळ्या function मध्ये काढल्याने open_multi_leg_trade() ला (PAPER trades साठीही) हाच एकदाच
+    काढलेला आकडा live_trades.entry_margin_required मध्ये साठवता येतो, वेगळा API कॉल न करता."""
+    if adapter is not None:
+        required_margin = adapter.get_required_margin(orders)
+    else:
+        required_margin = fetch_required_margin(access_token, orders)
+    if required_margin is None:
+        required_margin = abs(strategy_result["max_loss"]) * lots * lot_size
+    return required_margin
+
+
+def check_margin_available(access_token, adapter, orders, strategy_result, lots, lot_size, required_margin=None):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Margin Check in Bots, गंभीर यादीतला
     सहावा मुद्दा) — page_dashboard.py च्या Strategy Builder मध्ये आधीपासूनच असलेला हाच Pre-Trade
     Margin Check (Upstox चं अधिकृत Margin Calculator API, hedge-फायद्यासकट; अचूक API नसेल — उदा.
     Fyers — तर max_loss-आधारित सुरक्षित worst-case अंदाज) आता 3 bots + trading_engine.py च्या इतर
     सर्व LIVE कॉल्ससाठीही, या एकाच choke-point (open_multi_leg_trade()) मधून लागू. उपलब्ध मार्जिन
     तपासताच आली नाही (adapter/API कडून None), तर Dashboard प्रमाणेच सावधपणे पुढे जाऊ देतो (block
-    करत नाही) — फक्त खरंच अपुरी मार्जिन स्पष्ट दिसली, तरच block. रिटर्न: (ok: bool, reason: str|None)."""
+    करत नाही) — फक्त खरंच अपुरी मार्जिन स्पष्ट दिसली, तरच block. रिटर्न: (ok: bool, reason: str|None).
+
+    required_margin — ऐच्छिक; open_multi_leg_trade() ने आधीच _resolve_required_margin() ने काढलेला
+    असेल, तर तोच पुन्हा-वापरला जातो (वेगळा API कॉल टाळण्यासाठी). दिला नाही (established callers/
+    tests) तर आधीसारखाच इथेच काढला जातो."""
+    if required_margin is None:
+        required_margin = _resolve_required_margin(access_token, adapter, orders, strategy_result, lots, lot_size)
     if adapter is not None:
-        required_margin = adapter.get_required_margin(orders)
         available_margin = adapter.get_funds()
     else:
-        required_margin = fetch_required_margin(access_token, orders)
         available_margin = get_available_margin(access_token)
-
-    if required_margin is None:
-        required_margin = abs(strategy_result["max_loss"]) * lots * lot_size
 
     if available_margin is None:
         return True, None  # तपासताच आली नाही -- Dashboard प्रमाणेच सावधपणे पुढे जाऊ देतो, block नाही
@@ -408,8 +427,17 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         for leg in legs
     ]
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन) — आधी हा आकडा (Upstox च्या Margin
+    # Calculator API कडून) फक्त LIVE gate साठी काढला जायचा आणि नंतर टाकून दिला जायचा. आता PAPER
+    # trades साठीही (सध्या बहुतांश मूल्यांकन तिथेच होतंय) काढून थेट live_trades.entry_margin_required
+    # मध्ये साठवला जातो — Performance पानावरचं ROI% आता max_loss-आधारित ढोबळ अंदाजाऐवजी खऱ्या
+    # SPAN+Exposure मार्जिनवर (hedge-फायद्यासकट) आधारित असतं.
+    entry_margin_required = _resolve_required_margin(access_token, adapter, orders, strategy_result, lots, lot_size)
+
     if trading_mode == "LIVE":
-        margin_ok, margin_reason = check_margin_available(access_token, adapter, orders, strategy_result, lots, lot_size)
+        margin_ok, margin_reason = check_margin_available(
+            access_token, adapter, orders, strategy_result, lots, lot_size, required_margin=entry_margin_required,
+        )
         if not margin_ok:
             _alert_margin_insufficient(symbol, source, margin_reason)
             return False, {"status": "error", "reason": margin_reason}
@@ -519,8 +547,9 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
            (trade_id, trade_date, symbol, strategy, short_strike, long_strike, short_instrument, long_instrument,
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
-            legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe,
+            entry_margin_required)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -538,7 +567,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
-            entry_level_price, entry_timeframe,
+            entry_level_price, entry_timeframe, entry_margin_required,
         ),
     )
     inserted = cur.rowcount > 0

@@ -157,9 +157,10 @@ _CHARGE_BREAKDOWN_LABELS = {
 
 
 def _render_charges_breakdown_caption(breakdown):
-    """"एकूण Charges" फक्त flat brokerage नाही — STT/Exchange Txn/SEBI Fee/Stamp Duty/त्यावरचा GST
-    यांची बेरीज आहे (charges.py) — options साठी STT हा brokerage पेक्षाही मोठा असू शकतो, त्यामुळे हे
-    ब्रेकडाऊन इथे स्पष्ट दाखवलं जातं, वापरकर्त्याला "एकूण Charges" नेमकं कशाचं बनलंय हे कळावं म्हणून."""
+    """charges.py आता per-order ब्रोकर्ससाठी ढोबळ ₹35/ऑर्डर (brokerage + सर्व सरकारी/एक्सचेंज शुल्क
+    मिळून) मोजतं, त्यामुळे stt/exchange_txn/sebi_fee/stamp_duty/gst नेहमी 0 राहतात (फक्त "brokerage"
+    मध्येच रक्कम दिसते) — पण breakdown-shape जुनीच ठेवलीये, त्यामुळे ही caption शून्य नसलेली मूल्यंच
+    (`if v`) दाखवते, न बदलता."""
     if not breakdown or not any(breakdown.values()):
         return
     lines = " · ".join(
@@ -655,10 +656,10 @@ def render():
     with _perf_tab2:
         _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
         st.caption(
-            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Brokerage — "
-            "Upstox/Fyers ₹20, Shoonya ₹5 प्रति ऑर्डर, Stocko निश्चित ₹1200/महिना — + STT/Exchange Txn "
-            "Charge/SEBI Fee/Stamp Duty/त्यावरचा GST, प्रत्येक ऑर्डरच्या turnover वरून) = Net P&L. ⚠️ सरकारी/"
-            "एक्सचेंज दर वेळोवेळी बदलतात — प्रत्यक्ष broker च्या Contract Note शी अधूनमधून पडताळून पाहा."
+            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − ढोबळ शुल्क अंदाज (Upstox/Fyers/"
+            "Shoonya ₹35/ऑर्डर — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, एकत्र; Stocko निश्चित "
+            "₹1200/महिना) = Net P&L. ⚠️ हा एक ढोबळ, सोपा अंदाज आहे, तंतोतंत नाही — प्रत्यक्ष रक्कम broker "
+            "च्या Contract Note शी पडताळून पाहा."
         )
         rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
         repcol1, repcol2 = st.columns(2)
