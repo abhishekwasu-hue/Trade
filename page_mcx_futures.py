@@ -9,6 +9,12 @@ Dynamic SR Algo पान) ला अजिबात हात लावले�
 (mcx_futures_trader.py) अजून बांधलेली नाही — Upstox कडून खरे instrument_key/lot_size/tick_size
 (resolve_mcx_futures_instruments.py ने) पडताळल्याशिवाय ते सुरक्षित नाही. तोपर्यंत Order Log/Dynamic
 S/R टॅब रिकामेच दिसतील — तिथेच तसं स्पष्ट नमूद केलेलं आहे.
+
+🎓 वापरकर्त्याने स्पष्ट केलेली, या project मधल्या सर्वच bots ना लागू असलेली सामायिक रचना ("Max 2 entry
+per level this setting is common for all bot in this project") — Multi-Hit मर्यादा: एकाच S/R level
+वर एका दिवसात जास्तीत जास्त 2 वेळाच entry (`cloud_db.get_zone_hits_today()`, srv2_momentum_reversal_strategy.py/
+dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py मध्ये आधीच आहे — hardcoded, Dashboard वरून
+बदलण्याजोगी नाही). mcx_futures_trader.py बांधताना हाच नियम, तोच helper वापरून, इथेही लागू करायचा आहे.
 """
 import datetime
 
@@ -76,6 +82,10 @@ def render():
             key=_widget_key(symbol, "symbol_enabled"),
         )
         lots = _number_input("Lots (× commodity चा स्वतःचा lot_size)", settings, "lots", symbol, min_value=1, max_value=50, step=1)
+        st.caption(
+            "🔁 Multi-Hit मर्यादा (या project च्या सर्व bots सारखीच, बदलण्याजोगी नाही) — एकाच S/R "
+            "level वर एका दिवसात जास्तीत जास्त 2 वेळाच entry घेतली जाईल."
+        )
 
         st.markdown("---")
         sub_header("⏱️ Touch Timeframe", HDR_TEAL)
