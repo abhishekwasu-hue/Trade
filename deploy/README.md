@@ -178,6 +178,50 @@ crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo �
 
 ---
 
+# MCX Futures Trader — Deployment (crontab) — ⚠️ वेगळा, स्वतंत्र cron — अजून सक्रिय करू नका
+
+🎓 वापरकर्त्याने मागितलेली सुधारणा ("यासाठी cron पण वेगळा तयार करा") — वरच्या NIFTY/BANKNIFTY/SENSEX
+entry bots चा crontab अजिबात बदलायचा नाही (वापरकर्त्याने स्पष्टपणे सांगितलेलं) — MCX Futures Trader
+साठी **पूर्णपणे वेगळी** crontab entries इथे नोंदवल्या आहेत, वरच्या bots च्या ओळींमध्ये मिसळलेल्या नाहीत.
+
+⚠️ **या ओळी अजून VPS crontab मध्ये जोडू नका** — `mcx_futures_trader.py` हा script अजून बांधलेलाच
+नाही (फक्त Dashboard चं "MCX Futures Trader" पान/settings तयार आहेत — बघा `page_mcx_futures.py`).
+आधी जोडलं तर नेमकी तीच bug परत घडेल जी वर "`refresh_dynamic_sr_15m.py` हा file कधीच अस्तित्वातच
+नव्हता" या इशाऱ्यात नोंदवलेली आहे — दर काही मिनिटांनी फक्त "No such file or directory" error, काहीही
+न करता. Script बांधून, `resolve_mcx_futures_instruments.py` ने खरे instrument_key/lot_size पडताळून
+झाल्यावरच ही entry प्रत्यक्ष जोडा.
+
+## MCX चे trading hours NSE पेक्षा खूप वेगळे — वेगळी crontab window का लागते
+
+NSE च्या 9:15 AM–3:30 PM च्या विपरीत, MCX चा session **9:00 AM ते 11:30 PM (हिवाळा) किंवा 11:55 PM
+(अमेरिकेच्या Daylight Saving काळात, कारण Crude Oil/Gold आंतरराष्ट्रीय किमतींशी जोडलेले आहेत) पर्यंत**
+चालतो — जवळपास संपूर्ण दिवस. त्यामुळे वरच्या entry bots ची crontab window (UTC 3:45-10:xx, म्हणजे
+IST 9:15-4:29) इथे वापरता येत नाही — वेगळी, जास्त रुंद window लागते.
+
+**तयार ठेवलेली crontab entry (जोडण्यासाठी तयार, वेळा UTC मध्ये — बांधल्यानंतर, पडताळणी झाल्यावरच
+जोडा):**
+```
+45-59 3 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
+* 4-18 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
+```
+UTC 3:45 ते 18:59 = IST 9:15 AM ते पुढच्या दिवशी 12:29 AM — म्हणजे 11:55 PM (उन्हाळी वेळेतला MCX
+close) सुद्धा आत बसतो; `sleep 60` (वरच्या entry bots च्या 15/30/45s पेक्षा जास्त — वेगळ्या तासाला
+चालत असल्याने टक्कर होण्याची शक्यता नसली, तरी VPS वरच्या इतर दर-मिनिटाच्या cron jobs (trade_monitor.py
+वगैरे, त्याच मिनिटाला) सोबत सुरुवातीचीच गर्दी टाळण्यासाठी). **महत्त्वाचं** — script स्वतःच आतून, actual
+MCX holiday calendar/नेमकी बंद होण्याची वेळ (हिवाळा/उन्हाळा) तपासून सुरक्षितपणे थांबायला हवं — ही cron
+window मुद्दामच किंचित रुंद (12:29 AM पर्यंत) ठेवलेली आहे, script ने स्वतःच बरोबर वेळी थांबावं.
+
+⚠️ **NSE bots च्या (`trade_monitor.py`/`srv2_momentum_reversal_strategy.py` इ.) कुठल्याही crontab
+entry ला हात लावलेला नाही** — वरचं जोडणं म्हणजे फक्त नवीन ओळी, existing ओळींमध्ये कुठलाही बदल नाही.
+
+**तपासणी (जोडल्यानंतर):**
+```bash
+tail -f /root/Trade/mcx_futures.log
+crontab -l | grep mcx_futures
+```
+
+---
+
 # Market Zones Refresh (15M/30M/60M — SRv2 चा एकमेव zone-स्रोत) — आता VPS crontab वर
 
 🎓 वापरकर्त्याने सापडवलेली bug — SRv2 Momentum-Reversal चा Signal Log रिकामा दिसत होता ("Srv2 log

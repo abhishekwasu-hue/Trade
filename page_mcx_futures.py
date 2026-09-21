@@ -55,7 +55,9 @@ def render():
     st.warning(
         "⚠️ सध्या ही strategy अजून प्रत्यक्ष trading साठी सुरू केलेली नाही — Upstox कडून खरे "
         "instrument_key/lot_size पडताळल्याशिवाय (`resolve_mcx_futures_instruments.py`) ती सुरक्षित "
-        "नाही. इथले settings आधीच जतन करून ठेवता येतात — strategy प्रत्यक्ष सुरू झाल्यावर तीच वापरेल."
+        "नाही. इथले settings आधीच जतन करून ठेवता येतात — strategy प्रत्यक्ष सुरू झाल्यावर तीच वापरेल. "
+        "VPS crontab entry सुद्धा (NSE bots पासून पूर्णपणे वेगळी, `deploy/README.md` मध्ये तयार करून "
+        "ठेवलेली) script बांधून/पडताळून झाल्याशिवाय जोडलेली नाही."
     )
 
     _render_status_banner()
