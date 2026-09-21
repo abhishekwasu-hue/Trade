@@ -2,12 +2,16 @@ name: Market Zones Refresh (रोज — S/R, Order Block, Demand/Supply, Gaps)
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी साप्ताहिक होतं, आता रोज (बाजार बंद झाल्यावर) —
 # जेणेकरून दुसऱ्या दिवसाचा trade-plan नेहमी आदल्या दिवसाच्या ताज्या डेटावरून आपोआप तयार असेल.
+#
+# 🎓 वापरकर्त्याने सापडवलेली bug — SRv2 Momentum-Reversal चा Signal Log रिकामा दिसत होता ("Srv2 log
+# disat nnahi"). Root cause: हा 15M/30M/60M zones (SRv2 यावरच अवलंबून) चा एकमेव स्रोत होता, आणि
+# प्रत्यक्ष run history तपासली असता तो GitHub Actions `schedule` cron शेवटचा १८ सप्टेंबरलाच यशस्वी
+# झाला होता — trigger_upstox_token_request.yml सारखीच "scheduled workflows are best-effort" समस्या.
+# म्हणून हाही आता VPS crontab वर हलवला आहे (deploy/README.md "Market Zones Refresh" विभाग बघा) —
+# `workflow_dispatch` फक्त मॅन्युअल/backup साठी उरलाय.
 
 on:
-  schedule:
-    # UTC 10:00 = IST 15:30 (बाजार बंद झाल्यावर), सोमवार ते शुक्रवार
-    - cron: "0 10 * * 1-5"
-  workflow_dispatch:  # हवं तेव्हा हातानेही चालवता येतं
+  workflow_dispatch:  # backup — VPS crontab (deploy/README.md बघा) हाच आता खरा, रोजचा ट्रिगर आहे
 
 jobs:
   refresh-zones:
