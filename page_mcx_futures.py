@@ -5,16 +5,19 @@ page_mcx_futures.py
 (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER). NIFTY/BANKNIFTY/SENSEX च्या तिन्ही existing bots (Bot
 Dynamic SR Algo पान) ला अजिबात हात लावलेला नाही — इथून फक्त हाच नवीन strategy चालतो.
 
-⚠️ सध्याची स्थिती (प्रामाणिक टीप) — हे पान settings साठवतं/दाखवतं, पण प्रत्यक्ष trading script
-(mcx_futures_trader.py) अजून बांधलेली नाही — Upstox कडून खरे instrument_key/lot_size/tick_size
-(resolve_mcx_futures_instruments.py ने) पडताळल्याशिवाय ते सुरक्षित नाही. तोपर्यंत Order Log/Dynamic
-S/R टॅब रिकामेच दिसतील — तिथेच तसं स्पष्ट नमूद केलेलं आहे.
+✅ अद्ययावत — प्रत्यक्ष trading script (`mcx_futures_trader.py`) व Dynamic S/R refresh script
+(`refresh_market_zones_mcx.py`) दोन्ही आता बांधलेले आहेत (existing 3 bots — options — यांच्याच
+`trading_engine.open_multi_leg_trade()`/`manage_open_trades()` वापरून, एकाच futures leg सह — तिथे
+कुठलाही बदल न करता). ⚠️ तरीही VPS crontab वर अजून सक्रिय केलेले नाहीत — `resolve_mcx_futures_instruments.py`
+ने खरा instrument_key/lot_size प्रत्यक्ष पडताळून, `refresh_market_zones_mcx.py`/`mcx_futures_trader.py`
+हाताने एकदा चालवून निकाल तपासल्याशिवाय (`deploy/README.md` मधली चेकलिस्ट) ते सुरक्षित नाही —
+तोपर्यंत Order Log/Dynamic S/R/Performance Report टॅब रिकामेच दिसतील, तिथेही तसं नमूद केलेलं आहे.
 
 🎓 वापरकर्त्याने स्पष्ट केलेली, या project मधल्या सर्वच bots ना लागू असलेली सामायिक रचना ("Max 2 entry
 per level this setting is common for all bot in this project") — Multi-Hit मर्यादा: एकाच S/R level
 वर एका दिवसात जास्तीत जास्त 2 वेळाच entry (`cloud_db.get_zone_hits_today()`, srv2_momentum_reversal_strategy.py/
-dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py मध्ये आधीच आहे — hardcoded, Dashboard वरून
-बदलण्याजोगी नाही). mcx_futures_trader.py बांधताना हाच नियम, तोच helper वापरून, इथेही लागू करायचा आहे.
+dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py प्रमाणेच — hardcoded, Dashboard वरून
+बदलण्याजोगी नाही) — mcx_futures_trader.py मध्येही हाच नियम, तोच helper वापरून लागू केलेला आहे.
 """
 import datetime
 
@@ -97,11 +100,13 @@ def render():
         "इतर NIFTY/BANKNIFTY/SENSEX bots (Bot Dynamic SR Algo पान) पासून पूर्णपणे स्वतंत्र."
     )
     st.warning(
-        "⚠️ सध्या ही strategy अजून प्रत्यक्ष trading साठी सुरू केलेली नाही — Upstox कडून खरे "
-        "instrument_key/lot_size पडताळल्याशिवाय (`resolve_mcx_futures_instruments.py`) ती सुरक्षित "
-        "नाही. इथले settings आधीच जतन करून ठेवता येतात — strategy प्रत्यक्ष सुरू झाल्यावर तीच वापरेल. "
-        "VPS crontab entry सुद्धा (NSE bots पासून पूर्णपणे वेगळी, `deploy/README.md` मध्ये तयार करून "
-        "ठेवलेली) script बांधून/पडताळून झाल्याशिवाय जोडलेली नाही."
+        "⚠️ `mcx_futures_trader.py`/`refresh_market_zones_mcx.py` script आता बांधलेल्या आहेत, पण "
+        "VPS crontab वर अजून सक्रिय केलेल्या नाहीत — Upstox कडून खरे instrument_key/lot_size प्रत्यक्ष "
+        "पडताळल्याशिवाय (`resolve_mcx_futures_instruments.py` VPS वर चालवून) आणि दोन्ही scripts "
+        "हाताने एकदा चालवून निकाल तपासल्याशिवाय (`deploy/README.md` मधली चेकलिस्ट) ते सुरक्षित नाही. "
+        "इथले settings आधीच जतन करून ठेवता येतात — strategy सक्रिय झाल्यावर तीच वापरेल. VPS crontab "
+        "entry सुद्धा (NSE bots पासून पूर्णपणे वेगळी, `deploy/README.md` मध्ये तयार करून ठेवलेली) "
+        "वरची पडताळणी झाल्याशिवाय जोडलेली नाही."
     )
 
     _render_status_banner()
