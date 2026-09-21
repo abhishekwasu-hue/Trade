@@ -180,10 +180,40 @@ crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo �
 
 # Upstox Token Webhook — Deployment (1-Tap Mobile Approval)
 
-`trigger_upstox_token_request.py` (GitHub Actions, रोज सकाळी ०८:०० IST) Upstox ला "आजचा token हवा"
-अशी विनंती पाठवतो — तुमच्या मोबाईलवर Upstox app मध्ये notification येते, एका टॅपने Approve केलं की
-Upstox तो token एका webhook URL ला POST करतो. `upstox_token_webhook.py` (VPS वर, Flask) तो POST
-स्वीकारून Supabase मध्ये साठवतो — कुठेही manual copy-paste लागत नाही.
+`trigger_upstox_token_request.py` Upstox ला "आजचा token हवा" अशी विनंती पाठवतो — तुमच्या मोबाईलवर
+Upstox app मध्ये notification येते, एका टॅपने Approve केलं की Upstox तो token एका webhook URL ला
+POST करतो. `upstox_token_webhook.py` (VPS वर, Flask) तो POST स्वीकारून Supabase मध्ये साठवतो —
+कुठेही manual copy-paste लागत नाही.
+
+## ⚠️ रोजचा ट्रिगर आता VPS crontab वर (GitHub Actions cron अविश्वसनीय ठरलं)
+
+🎓 वापरकर्त्याने प्रत्यक्ष सापडवलेला बग — "notification आलंच नाही, ७:३० वाजले, yml मध्ये ७:०० सेट आहे"
+अशी तक्रार आल्यावर, `trigger_upstox_token_request.yml` चा GitHub Actions `schedule` cron तपासला असता
+तो १६/१७ सप्टेंबरनंतर **एकदाही आपोआप चाललाच नव्हता** — cron वेळ (`"30 1 * * 1-5"` = ०७:०० IST) बरोबर
+असूनही. GitHub स्वतः सांगतं की scheduled workflows "best-effort" असतात, जास्त load मध्ये सरळ skip
+होऊ शकतात — या repo मध्ये आधीच अनेक scheduled workflows असल्याने हेच घडत होतं (मधल्या काळात रोज
+मॅन्युअल "Run workflow" क्लिकनेच चालवावं लागत होतं).
+
+`trade_monitor.py`/entry bots साठी आधीच याच कारणासाठी VPS crontab वापरलं जातंय (वर बघा) — तोच पॅटर्न
+इथेही: workflow मधला `schedule` काढून टाकला (फक्त मॅन्युअल/backup `workflow_dispatch` उरलाय), आणि हा
+daily trigger आता खालच्या crontab entry ने चालतो — VPS cron कधीच silently skip होत नाही.
+
+**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — ०१:३० UTC = ०७:०० IST, सोम-शुक्र):**
+```
+30 1 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 trigger_upstox_token_request.py >> /root/Trade/token_request.log 2>&1
+```
+`set -a && . .env && set +a` हे `.env` मधले सर्व (`UPSTOX_CLIENT_ID`/`UPSTOX_CLIENT_SECRET` सकट)
+environment variables म्हणून export करतं — cron स्वतः `.env` वाचत नाही, त्यामुळे हे लागतंच.
+
+⚠️ **आधी खात्री करा** `/root/Trade/.env` मध्ये `UPSTOX_CLIENT_ID` आणि `UPSTOX_CLIENT_SECRET` (Upstox
+Developer Console मधलं App बनवताना मिळालेलं API Key/Secret — access_token नाही) आहेत — आधी हे फक्त
+GitHub Actions Secrets मध्ये होते, `.env` मध्ये नसतील तर आधी तिथे जोडा.
+
+**तपासणी:**
+```bash
+tail -f /root/Trade/token_request.log
+crontab -l | grep trigger_upstox_token_request
+```
 
 ⚠️ **महत्त्वाचं** — `upstox_token_webhook.py` चा स्वतःचा server (`app.run()`) plain HTTP आहे, TLS/SSL
 नाही. `https://VPS-IP:8080` असं थेट URL Upstox ला दिलं तर तो **खरं HTTPS होत नाही** (TLS handshake

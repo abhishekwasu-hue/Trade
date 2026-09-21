@@ -2,15 +2,16 @@ name: Trigger Upstox Token Request (रोज सकाळी मोबाईल
 
 # 🎓 Production-readiness सुधारणा — याआधी रोजचा token refresh पूर्णपणे मानवी आठवणीवर अवलंबून होता
 # (कुणीतरी सकाळी मॅन्युअली trigger_upstox_token_request.py चालवायचं, मग check_token_freshness.py
-# फक्त अलर्ट द्यायचं — पण refresh प्रक्रिया सुरूच करायचं नाही). आता हा workflow रोज सकाळी ०७:०० IST ला
-# (बाजार उघडण्याच्या पावणेदोन तास आधी, आणि check_token_freshness.yml च्या ०८:४५ च्या तपासणीआधी) आपोआप
-# Upstox ला विनंती पाठवतो — वापरकर्त्याला फक्त मोबाईलवर एक टॅप (Approve) करायचं उरतं, संपूर्ण
-# मॅन्युअल पावलं (login URL उघडणे, OTP, कोड कॉपी-पेस्ट) नाही.
+# फक्त अलर्ट द्यायचं — पण refresh प्रक्रिया सुरूच करायचं नाही). त्यासाठी इथे रोज सकाळी ०७:०० IST चा
+# `schedule` cron होता — पण प्रत्यक्ष run history तपासली असता (वापरकर्त्याने "notification आलंच नाही,
+# ७:३० झाले" अशी तक्रार केल्यावर) तो GitHub Actions cron १६/१७ सप्टेंबरनंतर एकदाही आपोआप चाललाच नव्हता
+# (GitHub स्वतः "scheduled workflows are best-effort, can be delayed/skipped under load" असं सांगतं —
+# या repo मध्ये आधीच ६-७ इतर scheduled workflows आहेत). म्हणून हा daily trigger आता VPS च्या स्वतःच्या
+# crontab वर हलवला आहे (deploy/README.md "Upstox Token Webhook" विभाग बघा — इतर वेळ-संवेदनशील jobs
+# आधीपासूनच याच कारणासाठी तिथे आहेत). हा workflow आता फक्त मॅन्युअल/backup ट्रिगर म्हणून ठेवलाय.
 
 on:
-  schedule:
-    - cron: "30 1 * * 1-5"  # ०७:०० IST, सोम-शुक्र
-  workflow_dispatch:  # हातानेही केव्हाही चालवता येईल
+  workflow_dispatch:  # backup — VPS crontab (deploy/README.md बघा) हाच आता खरा, रोजचा ट्रिगर आहे
 
 jobs:
   trigger-token-request:
