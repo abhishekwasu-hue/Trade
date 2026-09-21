@@ -352,6 +352,14 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "target_points": 40,             # Target — underlying futures points
         "trailing_sl_enabled": False,
         "trailing_distance_points": 10,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("SL/Target/Trailing SL also on percentage, add other
+        # gate") — Points सोबतच आता Percentage (entry किंमतीच्या % वर आधारित) हा पर्यायी mode —
+        # डीफॉल्ट "POINTS" (आधीचंच वर्तन, backward-compatible). दोन्ही सेटिंग्ज कायम साठवलेली राहतात
+        # (mode बदलला तरी मागचा भरलेला आकडा हरवत नाही) — फक्त निवडलेला mode प्रत्यक्ष वापरला जातो.
+        "sl_target_mode": "POINTS",      # "POINTS" | "PERCENT"
+        "sl_pct": 2.0,                   # Stop Loss — entry किंमतीच्या % (sl_target_mode="PERCENT" असेल तरच)
+        "target_pct": 4.0,               # Target — entry किंमतीच्या %
+        "trailing_pct": 1.0,             # Trailing SL अंतर — सद्य किंमतीच्या % (trailing_sl_enabled सोबतच)
         "trading_mode": "PAPER",
         "broker_account_ids": [],
     },

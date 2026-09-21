@@ -206,28 +206,63 @@ def render():
 
     with tab_exit:
         sub_header("🎯 SL / Target / Trailing SL", HDR_AMBER)
-        st.caption("Options प्रमाणे premium नाही — सरळ underlying futures points मध्ये.")
+        st.caption("Options प्रमाणे premium नाही — सरळ underlying futures वर, Points किंवा Percentage — दोन्हीपैकी एक निवडा.")
+
+        _MODE_OPTIONS = {"POINTS": "Points (ठराविक futures points)", "PERCENT": "Percentage (entry किंमतीच्या %)"}
+        _mode_keys = list(_MODE_OPTIONS.keys())
+        _mode_stored = settings.get("sl_target_mode", "POINTS")
+        _mode_index = _mode_keys.index(_mode_stored) if _mode_stored in _mode_keys else 0
+        sl_target_mode = st.radio(
+            "SL/Target/Trailing कशावर आधारित असावं?", _mode_keys, format_func=lambda k: _MODE_OPTIONS[k],
+            horizontal=True, index=_mode_index, key=_widget_key(symbol, "sl_target_mode"),
+        )
+        is_percent_mode = sl_target_mode == "PERCENT"
+
         e1, e2 = st.columns(2)
         with e1:
-            sl_points = _number_input("Stop Loss (futures points)", settings, "sl_points", symbol, min_value=1.0, max_value=1000.0, step=1.0)
+            sl_points = _number_input(
+                "Stop Loss (futures points)", settings, "sl_points", symbol,
+                min_value=1.0, max_value=1000.0, step=1.0, disabled=is_percent_mode,
+            )
+            sl_pct = _number_input(
+                "Stop Loss (% of entry price)", settings, "sl_pct", symbol,
+                min_value=0.1, max_value=50.0, step=0.1, disabled=not is_percent_mode,
+            )
         with e2:
-            target_points = _number_input("Target (futures points)", settings, "target_points", symbol, min_value=1.0, max_value=2000.0, step=1.0)
+            target_points = _number_input(
+                "Target (futures points)", settings, "target_points", symbol,
+                min_value=1.0, max_value=2000.0, step=1.0, disabled=is_percent_mode,
+            )
+            target_pct = _number_input(
+                "Target (% of entry price)", settings, "target_pct", symbol,
+                min_value=0.1, max_value=100.0, step=0.1, disabled=not is_percent_mode,
+            )
 
         trailing_sl_enabled = st.checkbox(
             "Trailing Stop Loss सक्रिय (डीफॉल्ट बंद)", value=bool(settings.get("trailing_sl_enabled", False)),
             key=_widget_key(symbol, "trailing_sl_enabled"),
         )
-        trailing_distance_points = _number_input(
-            "Trailing Distance (futures points, सक्रिय असेल तरच)", settings, "trailing_distance_points", symbol,
-            min_value=1.0, max_value=500.0, step=1.0, disabled=not trailing_sl_enabled,
-        )
+        t1, t2 = st.columns(2)
+        with t1:
+            trailing_distance_points = _number_input(
+                "Trailing Distance (futures points)", settings, "trailing_distance_points", symbol,
+                min_value=1.0, max_value=500.0, step=1.0, disabled=not trailing_sl_enabled or is_percent_mode,
+            )
+        with t2:
+            trailing_pct = _number_input(
+                "Trailing Distance (% of सद्य किंमत)", settings, "trailing_pct", symbol,
+                min_value=0.1, max_value=20.0, step=0.1, disabled=not trailing_sl_enabled or not is_percent_mode,
+            )
 
         if st.button("💾 Exit Gate सेव्ह करा", key=_widget_key(symbol, "save_exit")):
             new_settings = dict(settings)
             new_settings.update({
+                "sl_target_mode": sl_target_mode,
                 "sl_points": float(sl_points), "target_points": float(target_points),
+                "sl_pct": float(sl_pct), "target_pct": float(target_pct),
                 "trailing_sl_enabled": bool(trailing_sl_enabled),
                 "trailing_distance_points": float(trailing_distance_points),
+                "trailing_pct": float(trailing_pct),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Exit Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")

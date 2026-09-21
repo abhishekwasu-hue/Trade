@@ -220,6 +220,86 @@ class TestProcessSymbolEntry:
             assert "कुठलेही ACTIVE Dynamic S/R levels" in result
 
 
+class TestPercentMode:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("SL/Target/Trailing SL also on percentage, add other
+    gate") — Points सोबतच Percentage mode. entry/सद्य किंमतीवरून points-समतुल्य आकडा काढून
+    trading_engine ला (जो mode बद्दल काहीच जाणत नाही) नेहमीच points दिले जातात, हेच इथे तपासायचं."""
+
+    def test_percent_mode_converts_sl_target_to_points_using_entry_price(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["sl_target_mode"] = "PERCENT"
+        settings["sl_pct"] = 2.0
+        settings["target_pct"] = 4.0
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            strategy_result = mock_trade.call_args.args[2]
+            # entry ≈ 6500 (last candle close) -> SL 2% ≈ 130, Target 4% ≈ 260
+            assert abs(strategy_result["max_loss"] - 6500.0 * 0.02) < 1.0
+            assert abs(strategy_result["max_profit"] - 6500.0 * 0.04) < 1.0
+
+    def test_points_mode_unaffected_by_percent_settings(self):
+        """sl_target_mode="POINTS" (डीफॉल्ट) असेल, तर sl_pct/target_pct सेटिंग्ज असल्या तरीही
+        वापरल्या जाऊ नयेत — जुनंच वर्तन (backward-compatible)."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["sl_target_mode"] = "POINTS"
+        settings["sl_points"] = 20.0
+        settings["target_points"] = 40.0
+        settings["sl_pct"] = 99.0  # वापरलं गेलं तर चाचणी अयशस्वी होईल इतकं टोकाचं मूल्य
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            strategy_result = mock_trade.call_args.args[2]
+            assert strategy_result["max_loss"] == 20.0
+            assert strategy_result["max_profit"] == 40.0
+
+    def test_monitor_symbol_converts_trailing_pct_to_points_using_current_price(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["trailing_sl_enabled"] = True
+        settings["sl_target_mode"] = "PERCENT"
+        settings["trailing_pct"] = 1.0
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("fake_token", "CRUDEOIL")
+            kwargs = mock_manage.call_args.kwargs
+            assert abs(kwargs["atr_points"] - 6500.0 * 0.01) < 1.0
+            assert kwargs["atr_multiplier"] == 1.0
+
+    def test_monitor_symbol_percent_mode_resolve_failure_disables_trailing_safely(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["trailing_sl_enabled"] = True
+        settings["sl_target_mode"] = "PERCENT"
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=(False, "सापडला नाही")), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("fake_token", "CRUDEOIL")
+            kwargs = mock_manage.call_args.kwargs
+            assert kwargs["atr_points"] is None
+
+
 class TestProcessSymbolMultiAccount:
     def test_uses_multi_account_when_broker_account_ids_selected(self):
         settings = dict(_DEFAULT_SETTINGS)
