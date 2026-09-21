@@ -54,14 +54,35 @@ def resolve_symbol(access_token, symbol):
 
     results = res.json().get("data", [])
     today_str = get_ist_today().isoformat()
-    # exact symbol-नाव जुळणारे, आणि अजून expire न झालेलेच (आजच्या तारखेच्या आधीचे कधीच नाहीत) निवडणे.
+    symbol_upper = symbol.upper()
+
+    # 🎓 वापरकर्त्याने प्रत्यक्ष VPS वर चालवून सापडवलेली गंभीर bug — आधीचा `startswith()` फिल्टर
+    # "GOLD" शोधताना "GOLDTEN"/"GOLDM"/"GOLDGUINEA"/"GOLDPETAL" सारखे पूर्णपणे वेगळे (वेगळा
+    # lot_size/tick_size असलेले) commodity contracts सुद्धा जुळवायचा — trading_symbol नुसतं त्याच
+    # अक्षरांनी सुरू होतो इतकंच पुरेसं मानलं जायचं. नंतर फक्त expiry नुसार क्रमवारी लावून सर्वात
+    # जवळचा निवडायचा — म्हणजे नेमका कोणता contract निवडला जाईल हे कुठल्या variant चा expiry आधी
+    # येतो या (कधीही बदलू शकणाऱ्या) योगायोगावर अवलंबून होतं. प्रत्यक्ष चाचणीत GOLD साठी GOLDTEN
+    # (weekly, वेगळा lot_size) निवडला गेला — वापरकर्त्याला अपेक्षित plain GOLD नाही.
+    # आता trading_symbol चा " FUT" च्या आधीचा भाग query symbol शी **तंतोतंत** (फक्त prefix नाही)
+    # जुळायलाच हवा — Upstox चं MCX trading_symbol स्वरूप कायम "<NAME> FUT <DD> <MON> <YY>" असंच आहे.
+    def _exact_name(trading_symbol):
+        return (trading_symbol or "").upper().split(" FUT")[0].strip()
+
     matches = [
         r for r in results
-        if r.get("trading_symbol", "").upper().startswith(symbol.upper())
+        if _exact_name(r.get("trading_symbol")) == symbol_upper
         and (r.get("expiry") or "") >= today_str
     ]
     if not matches:
-        return False, f"'{symbol}' साठी अजून expire न झालेला कुठलाही MCX Futures contract सापडला नाही (raw results: {len(results)})"
+        # डीबग-सुसंगत इशारा — loose (नुसत्या prefix-जुळणाऱ्या) नावांपैकी काय सापडलं ते दाखवणे,
+        # जेणेकरून खरंच plain "GOLD" सारखा exact contract अस्तित्वातच नसेल (उदा. Upstox/MCX ने नाव
+        # बदललं असेल), तर पुढचं पाऊल (कुठलं exact नाव वापरायचं) लगेच ठरवता येईल.
+        loose_names = sorted(set(
+            r.get("trading_symbol", "") for r in results
+            if r.get("trading_symbol", "").upper().startswith(symbol_upper)
+        ))
+        loose_hint = f" — जवळची (prefix-जुळणारी) नावं सापडली: {', '.join(loose_names[:10])}" if loose_names else ""
+        return False, f"'{symbol}' साठी अजून expire न झालेला कुठलाही exact MCX Futures contract सापडला नाही (raw results: {len(results)}){loose_hint}"
 
     # expiry नुसार क्रमवारी — सर्वात जवळचा (सध्याचा, "continuous") contract निवडणे.
     matches.sort(key=lambda r: r.get("expiry", ""))

@@ -85,3 +85,49 @@ None of them have been confirmed against a live market session.
 - `fetch_ltp_map`/option chain/candles for Stocko are stubbed (return
   empty/`None`) — no public endpoint found in the Stocko API PDF provided.
   PAPER mode is explicitly unavailable on Stocko for this reason.
+
+## 5. MCX Futures Trader (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER) — NOT safe for LIVE, or even automated PAPER, capital yet
+
+A separate strategy from everything above — direct futures (no options), its
+own page (`page_mcx_futures.py`), its own execution bot (`mcx_futures_trader.py`,
+PR #76), its own zones refresh (`refresh_market_zones_mcx.py`, PR #76). Reuses
+`trading_engine.open_multi_leg_trade()`/`manage_open_trades()` unmodified (a
+single futures leg passed through the same "legs" path options use), so the
+engine-level risk gates in §1/§2 above (kill switch, margin check, partial-fill
+reversal — Upstox-only per §2) already apply to it. What's specifically
+**not yet done, and blocks even a first automated PAPER run**:
+
+- **Real instrument data never verified.** `resolve_mcx_futures_instruments.py`
+  (PR #73) exists and is read-only-safe, but nobody has run it against a real
+  Upstox token on the VPS yet — the actual `instrument_key`/`lot_size`/
+  `tick_size` for any of the 5 commodities is still unconfirmed.
+- **No Dynamic S/R data exists.** `refresh_market_zones_mcx.py` has never been
+  run — `cloud_db.market_zones` has zero rows for any MCX symbol, so
+  `mcx_futures_trader.py` would find no ACTIVE levels and do nothing (safe,
+  but useless) even if started.
+- **`mcx_futures_trader.py` has never been run once, manually or otherwise** —
+  only unit-tested (mocked Upstox calls, `tests/test_mcx_futures_trader.py`).
+  No real order, PAPER or LIVE, has ever come from this script.
+- **VPS crontab not added.** `deploy/README.md`'s MCX section has the entries
+  ready but explicitly deferred behind the 3 items above — do not add them
+  until each has been done and its output looks sane by eye.
+- **Shoonya/Stocko not evaluated for MCX at all.** `broker_account_ids`
+  routing works mechanically (same `execute_trade_on_all_accounts()` path),
+  but nobody has checked whether Shoonya/Stocko can even place an MCX order —
+  treat this exactly like §2's NIFTY gate: Upstox-only until proven otherwise.
+
+**Rollout order (MCX-specific, mirrors §3 above but starts further back):**
+1. Run `resolve_mcx_futures_instruments.py` on the VPS with a real token —
+   confirm sane `instrument_key`/`lot_size`/`tick_size`/`expiry` for all 5
+   commodities.
+2. Run `refresh_market_zones_mcx.py` once by hand — spot-check the saved
+   30M/60M levels against a real chart (e.g. TradingView) for 1-2 commodities.
+3. Run `mcx_futures_trader.py` once by hand (PAPER mode — the settings
+   default) — confirm no errors, and that the Dashboard's Signal Log/Order
+   Log/Level Hit Log show what's expected.
+4. Only then add the crontab entries from `deploy/README.md`.
+5. Run PAPER mode through several full MCX sessions before considering LIVE —
+   note MCX's session runs to ~11:30/11:55 PM IST, much longer than NSE's, so
+   "a few sessions" takes real calendar time to accumulate.
+6. Go LIVE only on Upstox, only 1 lot, same discipline as §3 above — this is
+   a brand-new, unverified strategy, not a variant of an already-proven one.

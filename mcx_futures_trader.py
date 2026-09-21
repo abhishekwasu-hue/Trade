@@ -38,6 +38,10 @@ page_mcx_futures.py (Dashboard) वरून.
   - Trailing SL — page_mcx_futures.py चा साधा "points मागे" trailing_distance_points,
     trading_engine.compute_trailing_sl_level() ला atr_multiplier=1.0 सह दिलेला (ATR गुणक नाही,
     सरळ तितकेच points मागे) — नवीन trailing-गणित लिहावं लागलं नाही.
+  - SL/Target/Trailing — Points सोबतच Percentage mode (sl_target_mode="PERCENT", page_mcx_futures.py
+    च्या Exit Gate वरून निवडण्याजोगं, डीफॉल्ट "POINTS" — backward-compatible). Percentage असेल तर
+    entry (SL/Target) किंवा सद्य किंमतीवरून (Trailing, प्रत्येक monitor cycle ला ताजी) points-समतुल्य
+    आकडा काढून तोच trading_engine ला दिला जातो — trading_engine.py ला mode बद्दल काहीच माहीत नसतं.
 
 ⚠️ PAPER mode डीफॉल्ट (page_mcx_futures.py सेटिंग्ज — trading_mode). LIVE करण्याआधी किमान काही
 दिवस PAPER मध्ये चालवून निकाल बघा.
@@ -200,10 +204,20 @@ def process_symbol(access_token, symbol):
             # पूर्णपणे futures-side workaround.
             "strike": 0, "option_type": None, "expiry": resolved.get("expiry"),
         }
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — sl_target_mode=="PERCENT"
+        # असेल तर entry_price_estimate च्या % वरून points-समतुल्य आकडा काढला जातो — पुढे trading_engine.
+        # open_multi_leg_trade() ला नेहमीच points (max_loss/max_profit) च मिळतात, mode तिथे कधीच जात
+        # नाही (trading_engine.py ला अजिबात हात न लावता).
+        if settings.get("sl_target_mode", "POINTS") == "PERCENT":
+            sl_points_effective = entry_price_estimate * float(settings.get("sl_pct", 2.0)) / 100
+            target_points_effective = entry_price_estimate * float(settings.get("target_pct", 4.0)) / 100
+        else:
+            sl_points_effective = float(settings["sl_points"])
+            target_points_effective = float(settings["target_points"])
         strategy_result = {
             "strategy": "MCX_FUTURES_LONG" if direction == "BULLISH" else "MCX_FUTURES_SHORT",
             "legs": [leg], "net_credit": net_credit_estimate,
-            "max_loss": float(settings["sl_points"]), "max_profit": float(settings["target_points"]),
+            "max_loss": sl_points_effective, "max_profit": target_points_effective,
         }
 
         trading_mode = settings.get("trading_mode", "PAPER")
@@ -254,6 +268,20 @@ def monitor_symbol(access_token, symbol):
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
     trailing_sl_enabled = bool(settings.get("trailing_sl_enabled", False))
     trailing_distance_points = settings.get("trailing_distance_points") if trailing_sl_enabled else None
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — trailing_pct असेल तर
+    # सद्य किंमतीवरून (प्रत्येक monitoring cycle ला ताजी, resolve_symbol()/fetch_mcx_candles()
+    # कडून) points-समतुल्य अंतर काढलं जातं — compute_trailing_sl_level() ला अजिबात हात न लावता.
+    if trailing_sl_enabled and settings.get("sl_target_mode", "POINTS") == "PERCENT":
+        ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
+        if ok:
+            df_current = fetch_mcx_candles(access_token, resolved["instrument_key"], interval="30minute", lookback_days=1)
+            if df_current is not None and not df_current.empty:
+                current_price = float(df_current["close"].iloc[-1])
+                trailing_distance_points = current_price * float(settings.get("trailing_pct", 1.0)) / 100
+            else:
+                trailing_distance_points = None  # सद्य किंमत मिळाली नाही — या cycle ला trailing वगळणे (सुरक्षित)
+        else:
+            trailing_distance_points = None
     return manage_open_trades(
         access_token, symbol, PRODUCT_TYPE,
         eod_squareoff_hour=MCX_EOD_HOUR, eod_squareoff_minute=MCX_EOD_MINUTE,
