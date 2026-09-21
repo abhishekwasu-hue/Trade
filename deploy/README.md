@@ -184,12 +184,21 @@ crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo �
 entry bots चा crontab अजिबात बदलायचा नाही (वापरकर्त्याने स्पष्टपणे सांगितलेलं) — MCX Futures Trader
 साठी **पूर्णपणे वेगळी** crontab entries इथे नोंदवल्या आहेत, वरच्या bots च्या ओळींमध्ये मिसळलेल्या नाहीत.
 
-⚠️ **या ओळी अजून VPS crontab मध्ये जोडू नका** — `mcx_futures_trader.py` हा script अजून बांधलेलाच
-नाही (फक्त Dashboard चं "MCX Futures Trader" पान/settings तयार आहेत — बघा `page_mcx_futures.py`).
-आधी जोडलं तर नेमकी तीच bug परत घडेल जी वर "`refresh_dynamic_sr_15m.py` हा file कधीच अस्तित्वातच
-नव्हता" या इशाऱ्यात नोंदवलेली आहे — दर काही मिनिटांनी फक्त "No such file or directory" error, काहीही
-न करता. Script बांधून, `resolve_mcx_futures_instruments.py` ने खरे instrument_key/lot_size पडताळून
-झाल्यावरच ही entry प्रत्यक्ष जोडा.
+✅ **Update** — `mcx_futures_trader.py` (entry+exit) आणि `refresh_market_zones_mcx.py` (Dynamic S/R,
+30M/60M) दोन्ही स्क्रिप्ट्स आता बांधलेल्या आहेत (आधी फक्त Dashboard चं पान/settings होतं).
+
+⚠️ **तरीही या ओळी अजून VPS crontab मध्ये जोडू नका** — जोडण्याआधी:
+1. `python3 resolve_mcx_futures_instruments.py` VPS वर चालवून, खरा instrument_key/lot_size/tick_size
+   Upstox कडून प्रत्यक्ष पडताळा (अजून हे केलेलं नाही — PR #73 मध्ये फक्त read-only resolver जोडलेला).
+2. `python3 refresh_market_zones_mcx.py` एकदा हाताने चालवून, कुठल्याही commodity साठी Dynamic S/R
+   zones प्रत्यक्ष तयार होतात/वाजवी दिसतात याची खात्री करा (नाहीतर mcx_futures_trader.py ला
+   कुठलेही ACTIVE levels सापडणार नाहीत — निरुपद्रवी, पण उपयोगहीन).
+3. `python3 mcx_futures_trader.py` एकदा हाताने (PAPER mode — page_mcx_futures.py चा डीफॉल्ट)
+   चालवून बघा, कुठलाही अनपेक्षित error येत नाही ना, आणि Signal Log (Dashboard) मध्ये अपेक्षित
+   नोंदी दिसतात ना.
+4. वरच्या तिन्ही पायऱ्या समाधानकारक झाल्यावरच खालच्या crontab ओळी प्रत्यक्ष जोडा — आधी जोडलं तर
+   नेमकी तीच bug परत घडेल जी वर "`refresh_dynamic_sr_15m.py` हा file कधीच अस्तित्वातच नव्हता" या
+   इशाऱ्यात नोंदवलेली आहे — दर काही मिनिटांनी निरुपयोगी प्रयत्न, काहीही अर्थपूर्ण न करता.
 
 ## MCX चे trading hours NSE पेक्षा खूप वेगळे — वेगळी crontab window का लागते
 
@@ -198,12 +207,17 @@ NSE च्या 9:15 AM–3:30 PM च्या विपरीत, MCX चा s
 चालतो — जवळपास संपूर्ण दिवस. त्यामुळे वरच्या entry bots ची crontab window (UTC 3:45-10:xx, म्हणजे
 IST 9:15-4:29) इथे वापरता येत नाही — वेगळी, जास्त रुंद window लागते.
 
-**तयार ठेवलेली crontab entry (जोडण्यासाठी तयार, वेळा UTC मध्ये — बांधल्यानंतर, पडताळणी झाल्यावरच
-जोडा):**
+**तयार ठेवलेल्या crontab entries (जोडण्यासाठी तयार, वेळा UTC मध्ये — वरच्या 4 पायऱ्या पूर्ण/
+पडताळणी झाल्यावरच जोडा):**
 ```
 45-59 3 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
 * 4-18 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
+35 18 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_mcx.py >> /root/Trade/market_zones_mcx_refresh.log 2>&1
 ```
+तिसरी ओळ (`refresh_market_zones_mcx.py`) — रोज MCX बंद झाल्यावर (18:35 UTC = 00:05 IST पुढच्या
+दिवशी, 11:55 PM च्या उन्हाळी-वेळेतल्या MCX close नंतरही सुरक्षित) — `refresh_market_zones.py` च्याच
+(NSE साठीच्या) crontab ओळीशी सुसंगत पॅटर्न, पण पूर्णपणे वेगळी वेळ (MCX च्या उशिरापर्यंतच्या session
+मुळे) आणि वेगळी log file.
 UTC 3:45 ते 18:59 = IST 9:15 AM ते पुढच्या दिवशी 12:29 AM — म्हणजे 11:55 PM (उन्हाळी वेळेतला MCX
 close) सुद्धा आत बसतो; `sleep 60` (वरच्या entry bots च्या 15/30/45s पेक्षा जास्त — वेगळ्या तासाला
 चालत असल्याने टक्कर होण्याची शक्यता नसली, तरी VPS वरच्या इतर दर-मिनिटाच्या cron jobs (trade_monitor.py
