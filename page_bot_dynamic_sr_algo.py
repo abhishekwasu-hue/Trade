@@ -171,20 +171,28 @@ def render():
     tab_entry, tab_exit, tab_mode = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate", "🎮 Mode & Broker"])
 
     with tab_entry:
-        if strategy_key in ("1m_instant", "classic_sr_reversal"):
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategies मध्ये दोन्ही टाईमफ्रेमचे
+        if strategy_key in ("1m_instant", "classic_sr_reversal", "15m_dynamic_sr"):
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategies मध्ये सर्व टाईमफ्रेमचे
             # touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास फक्त एकाच
             # टाईमफ्रेमवर मर्यादित ठेवता येईल.
             sub_header("⏱️ Touch Timeframe", HDR_TEAL)
             if strategy_key == "1m_instant":
                 _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
-            else:
+                _tf_default = "BOTH"
+            elif strategy_key == "classic_sr_reversal":
                 _TF_OPTIONS = {"BOTH": "5M + 15M (दोन्ही, डीफॉल्ट)", "5M": "फक्त 5M", "15M": "फक्त 15M"}
+                _tf_default = "BOTH"
+            else:
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी 15M/30M/60M कायम एकत्र पूल
+                # व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. वापरकर्त्याच्या विनंतीनुसार आता डीफॉल्ट
+                # फक्त 30M — "ALL" निवडून हवं तेव्हा आधीचंच (तिन्ही एकत्र) वर्तनही मिळू शकतं.
+                _TF_OPTIONS = {"30M": "फक्त 30M (डीफॉल्ट)", "15M": "फक्त 15M", "60M": "फक्त 60M", "ALL": "15M + 30M + 60M (तिन्ही एकत्र)"}
+                _tf_default = "30M"
             _tf_keys = list(_TF_OPTIONS.keys())
             timeframe_choice = st.radio(
                 "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
                 _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
-                index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")),
+                index=_tf_keys.index(settings.get("timeframe_choice", _tf_default)),
                 key=_widget_key(strategy_key, symbol, "timeframe_choice"),
             )
             st.markdown("---")
@@ -206,7 +214,7 @@ def render():
             value=bool(settings.get("entry_rsi_gate_enabled", True)),
             key=_widget_key(strategy_key, symbol, "entry_rsi_gate_enabled"),
         )
-        if strategy_key == "1m_instant":
+        if strategy_key in ("1m_instant", "15m_dynamic_sr"):
             st.caption("Support/Bullish → RSI यापेक्षा कमी हवा. Resistance/Bearish → RSI यापेक्षा जास्त हवा.")
             r1, r2 = st.columns(2)
             with r1:
@@ -532,7 +540,9 @@ def render():
             new_settings["trendline_gate_enabled"] = bool(trendline_gate_enabled)
             new_settings["trendline_lookback_swings"] = int(trendline_lookback_swings)
         else:
-            new_settings["rsi_neutral_level"] = int(rsi_neutral_level)
+            new_settings["timeframe_choice"] = timeframe_choice
+            new_settings["rsi_support_max"] = int(rsi_support_max)
+            new_settings["rsi_resistance_min"] = int(rsi_resistance_min)
             new_settings["spread_target_pct_of_premium"] = float(spread_target_pct_of_premium)
             new_settings["carry_forward_min_profit_pct"] = float(carry_forward_min_profit_pct)
             new_settings["naked_eod_hour"] = int(naked_eod_hour)

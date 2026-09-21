@@ -240,11 +240,17 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 100,
         "hedge_width_points": 150,
-        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
-        # 1m_instant सारखीच सुधारणा, पण srv2_momentum_reversal_strategy.py चा RSI गेट एकाच
-        # neutral_level (50) भोवती सममित आहे (Support<50/Resistance>50), दोन वेगळे उंबरठे नाहीत.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी तिन्ही timeframes (15M/30M/60M) कायम
+        # एकत्र पूल व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. वापरकर्त्याच्या विनंतीनुसार आता डीफॉल्ट
+        # फक्त 30M — "ALL" निवडून हवं तेव्हा आधीचंच (तिन्ही एकत्र) वर्तनही मिळू शकतं.
+        "timeframe_choice": "30M",       # "30M" | "15M" | "60M" | "ALL"
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
+        # आधी srv2_momentum_reversal_strategy.py चा RSI गेट एकाच neutral_level (50) भोवती सममित
+        # होता (Support<50/Resistance>50, दरम्यान "dead zone" नाही). आता 1m_instant सारखाच
+        # dual-threshold — 40-60 च्या दरम्यानचा RSI आता कुठल्याच दिशेला confirm करत नाही.
         "entry_rsi_gate_enabled": True,
-        "rsi_neutral_level": 50,
+        "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
+        "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
         "entry_pcr_gate_enabled": True,
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,
