@@ -24,10 +24,16 @@ import streamlit as st
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today
-from database import get_order_log_full
+from database import (
+    get_order_log_full, get_performance_summary, get_closed_trades_detail,
+    get_live_vs_shadow_paper_pairs, OPTION_STRUCTURE_GROUP_SQL,
+)
+from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
+from pdf_reports import generate_performance_report_pdf
+from pnl_reports import generate_pnl_report
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
-from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER
+from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
@@ -103,8 +109,8 @@ def render():
     symbol = st.selectbox("Commodity निवडा", MCX_SYMBOLS, key="mcxf_symbol")
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
 
-    tab_chart, tab_entry, tab_exit, tab_orders, tab_zones, tab_mode = st.tabs([
-        "📈 Chart", "🚪 Entry Gate", "🚪 Exit Gate", "📜 Order Log", "📐 Dynamic S/R", "🎮 Mode & Broker",
+    tab_chart, tab_entry, tab_exit, tab_orders, tab_perf, tab_zones, tab_mode = st.tabs([
+        "📈 Chart", "🚪 Entry Gate", "🚪 Exit Gate", "📜 Order Log", "📊 Performance Report", "📐 Dynamic S/R", "🎮 Mode & Broker",
     ])
 
     with tab_chart:
@@ -257,6 +263,146 @@ def render():
                     "📥 Order Log CSV डाऊनलोड करा", data=dl_csv,
                     file_name=f"{symbol}_MCX_OrderLog_{ord_from}_{ord_to}.csv",
                     mime="text/csv", key=_widget_key(symbol, "order_dl"),
+                )
+
+    with tab_perf:
+        sub_header(f"📊 {symbol} — Performance Report", HDR_PINK)
+        st.caption(
+            "Performance पानासारखाच संपूर्ण विश्लेषण (Strategy/Timeframe breakdown, प्रत्येक Trade चं Entry+Exit "
+            "कारण, शिफारसी) आणि तोच प्रिंट-योग्य PDF (इंग्रजीत — PDF fonts मध्ये मराठी glyphs उपलब्ध नाहीत). "
+            "'Option Structure नुसार' विभाग MCX Futures ला लागू होत नाही (इथे options नाहीत, सरळ futures) — "
+            "तो रिकामाच दिसेल, ते अपेक्षितच आहे."
+        )
+        perf_mode_choice = st.radio(
+            "दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key=_widget_key(symbol, "perf_mode_filter"),
+        )
+        perf_mode_f = None if perf_mode_choice == "सर्व" else ("LIVE" if "LIVE" in perf_mode_choice else "PAPER")
+
+        perf_today = get_ist_today()
+        perf_range_choice = st.radio(
+            "कालावधी", ["आज", "गेले 7 दिवस", "गेला महिना", "संपूर्ण इतिहास", "कस्टम रेंज"], horizontal=True,
+            key=_widget_key(symbol, "perf_range"),
+        )
+        if perf_range_choice == "आज":
+            perf_from, perf_to = perf_today, perf_today
+        elif perf_range_choice == "गेले 7 दिवस":
+            perf_from, perf_to = perf_today - datetime.timedelta(days=7), perf_today
+        elif perf_range_choice == "गेला महिना":
+            perf_from, perf_to = perf_today - datetime.timedelta(days=30), perf_today
+        elif perf_range_choice == "संपूर्ण इतिहास":
+            perf_from, perf_to = datetime.date(2020, 1, 1), perf_today
+        else:
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                perf_from = st.date_input("पासून", value=perf_today - datetime.timedelta(days=30), key=_widget_key(symbol, "perf_from"))
+            with pc2:
+                perf_to = st.date_input("पर्यंत", value=perf_today, key=_widget_key(symbol, "perf_to"))
+
+        if perf_from > perf_to:
+            st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+        else:
+            st.caption(f"निवडलेली रेंज: {perf_from} ते {perf_to}")
+            summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=perf_from, end_date=perf_to)
+            if summary.get("total_trades", 0) == 0:
+                st.info(
+                    "या कालावधीत कोणतेही बंद ट्रेड्स नाहीत — strategy अजून प्रत्यक्ष चालू केलेली नसल्याने "
+                    "(वर बघा) हे अपेक्षितच आहे."
+                )
+            else:
+                scol1, scol2, scol3, scol4 = st.columns(4)
+                with scol1:
+                    st.metric("बंद ट्रेड्स", summary["total_trades"])
+                with scol2:
+                    st.metric("Win Rate", f"{summary['win_rate']}%" if summary.get("win_rate") is not None else "N/A")
+                with scol3:
+                    st.metric("Gross P&L", f"₹{summary['total_pnl']:,.0f}")
+                with scol4:
+                    st.metric("ROI %", f"{summary['roi_pct']}%" if summary.get("roi_pct") is not None else "N/A")
+
+            st.markdown("---")
+            perf_tab1, perf_tab2, perf_tab3 = st.tabs(
+                ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार"]
+            )
+            with perf_tab1:
+                perf_by_source = _render_group_breakdown(symbol, "source", perf_mode_f, perf_from, perf_to, "Strategy-wise P&L")
+            with perf_tab2:
+                perf_by_timeframe = _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, perf_from, perf_to, "Timeframe-wise P&L")
+            with perf_tab3:
+                perf_by_structure = _render_group_breakdown(
+                    symbol, OPTION_STRUCTURE_GROUP_SQL, perf_mode_f, perf_from, perf_to,
+                    "Option Structure-wise P&L (MCX Futures साठी लागू नाही)",
+                )
+
+            sub_header("📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण", HDR_PURPLE)
+            perf_trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=perf_from, end_date=perf_to)
+            perf_trade_log_pdf_df = None
+            if perf_trade_log_df.empty:
+                st.caption("या कालावधीत कोणतेही बंद ट्रेड्स नाहीत.")
+            else:
+                perf_trade_log_display = perf_trade_log_df.copy()
+                perf_trade_log_display["Entry Reason"] = perf_trade_log_display.apply(_entry_reason_text, axis=1)
+                perf_trade_log_display["Exit Reason"] = perf_trade_log_display["exit_reason"].map(lambda r: _EXIT_REASON_LABELS.get(r, r))
+                perf_trade_log_display["Exit Reason (नेमकं कारण)"] = perf_trade_log_display["exit_reason_detail"].fillna("—")
+                perf_trade_log_display = perf_trade_log_display[[
+                    "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
+                    "Exit Reason (नेमकं कारण)", "Realized P&L", "mode",
+                ]].rename(columns={"mode": "Mode"})
+                st.dataframe(perf_trade_log_display, width="stretch", height=350, hide_index=True)
+                perf_trade_log_csv = perf_trade_log_display.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "📥 Trade Log CSV डाऊनलोड करा (Entry+Exit कारणांसकट)", data=perf_trade_log_csv,
+                    file_name=f"{symbol}_MCX_TradeLog_Reasons_{perf_from}_{perf_to}.csv",
+                    mime="text/csv", key=_widget_key(symbol, "trade_log_reasons_download"),
+                )
+
+                perf_trade_log_pdf_df = perf_trade_log_df.copy()
+                perf_trade_log_pdf_df["Entry Reason"] = perf_trade_log_pdf_df.apply(_entry_reason_text_en, axis=1)
+                perf_trade_log_pdf_df["Exit Reason"] = perf_trade_log_pdf_df.apply(
+                    lambda r: _exit_reason_label_with_tag(r["exit_reason"], r["exit_reason_detail"]), axis=1,
+                )
+                perf_trade_log_pdf_df["Exit Reason Detail"] = perf_trade_log_pdf_df["exit_reason_detail"].fillna("-")
+                perf_trade_log_pdf_df["Entry Timeframe"] = perf_trade_log_pdf_df["entry_timeframe"].where(
+                    perf_trade_log_pdf_df["entry_timeframe"].notna() & (perf_trade_log_pdf_df["entry_timeframe"] != "UNKNOWN"), "N/A",
+                )
+                perf_trade_log_pdf_df = perf_trade_log_pdf_df[[
+                    "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
+                    "Exit Reason Detail", "Realized P&L", "mode", "Entry Timeframe",
+                ]].rename(columns={"mode": "Mode"})
+
+            perf_slippage_pairs_df = (
+                get_live_vs_shadow_paper_pairs(symbol, perf_from, perf_to) if perf_mode_f is None else pd.DataFrame()
+            )
+
+            st.markdown("---")
+            sub_header("📄 संपूर्ण Performance Report (PDF)", HDR_AMBER)
+            if st.button("📄 Performance Report PDF तयार करा", key=_widget_key(symbol, "perf_pdf_generate")):
+                mode_label_en = {"सर्व": "All", "फक्त LIVE": "LIVE only", "फक्त PAPER": "PAPER only"}.get(perf_mode_choice, perf_mode_choice)
+                pdf_cache_key = (symbol, mode_label_en, str(perf_from), str(perf_to))
+                perf_pdf_state_key = _widget_key(symbol, "perf_pdf_cache_key")
+                perf_pdf_bytes_key = _widget_key(symbol, "perf_pdf_bytes")
+                if st.session_state.get(perf_pdf_state_key) == pdf_cache_key and st.session_state.get(perf_pdf_bytes_key):
+                    st.info("ℹ️ याच कालावधी/मोडसाठी PDF आधीच तयार आहे — खाली थेट डाऊनलोड करा (पुन्हा तयार करायची गरज नाही).")
+                else:
+                    with st.spinner("PDF तयार होत आहे..."):
+                        _, perf_pnl_totals = generate_pnl_report(symbol, "Daily", perf_from, perf_to, mode_filter=perf_mode_f)
+                        perf_recs_en = (
+                            _build_recommendations(symbol, "source", "Strategy", perf_mode_f, perf_from, perf_to, english=True)
+                            + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, perf_from, perf_to, english=True)
+                            + _build_recommendations(symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, perf_from, perf_to, english=True)
+                        )
+                        perf_pdf_bytes = generate_performance_report_pdf(
+                            symbol, mode_label_en, perf_from, perf_to, summary, perf_pnl_totals,
+                            perf_by_source, perf_by_timeframe, perf_by_structure, perf_trade_log_pdf_df, perf_recs_en,
+                            slippage_pairs_df=perf_slippage_pairs_df,
+                        )
+                    st.session_state[perf_pdf_bytes_key] = perf_pdf_bytes
+                    st.session_state[_widget_key(symbol, "perf_pdf_filename")] = f"{symbol}_MCX_Performance_Report_{perf_from}_{perf_to}.pdf"
+                    st.session_state[perf_pdf_state_key] = pdf_cache_key
+            if st.session_state.get(_widget_key(symbol, "perf_pdf_bytes")):
+                st.download_button(
+                    "📥 Performance Report PDF डाऊनलोड करा", data=st.session_state[_widget_key(symbol, "perf_pdf_bytes")],
+                    file_name=st.session_state.get(_widget_key(symbol, "perf_pdf_filename"), f"{symbol}_MCX_Performance_Report.pdf"),
+                    mime="application/pdf", key=_widget_key(symbol, "perf_pdf_download"),
                 )
 
     with tab_zones:
