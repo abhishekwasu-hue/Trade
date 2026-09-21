@@ -18,10 +18,8 @@ from config import get_ist_now
 
 class TestCheckRsiFilter:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Momentum Filter (0.40% स्विंग-हालचाल)
-    काढून, established RSI(14)-आधारित फिल्टर. वापरकर्त्याने नंतर मागितलेली सुधारणा (dual-threshold,
-    dynamic_sr_instant_trader.py सारखाच पॅटर्न) — आता डीफॉल्ट Support/Bullish साठी RSI<40, Resistance/
-    Bearish साठी RSI>60 (40-60 च्या दरम्यान कुठलीच दिशा confirm होत नाही, आधीच्या single symmetric
-    level=50 पेक्षा strict)."""
+    काढून, established 15-मिनिट RSI(14)-आधारित फिल्टर: Resistance/Bearish साठी RSI>50, established
+    Support/Bullish साठी RSI<50."""
 
     def _rising_df(self, n=30, start=100):
         # established सलग वाढणाऱ्या closes -> established RSI established 50 च्या वर जायला हवा
@@ -61,43 +59,6 @@ class TestCheckRsiFilter:
         passed, rsi_value = srv2.check_rsi_filter(df, "BULLISH")
         assert passed is False
         assert rsi_value is None
-
-
-class TestCheckRsiFilterDualThreshold:
-    """🎓 वापरकर्त्याने मागितलेली सुधारणा (RSI 40/60) — dynamic_sr_instant_trader.py सारखाच dual-
-    threshold: Support/Bullish साठी RSI<40, Resistance/Bearish साठी RSI>60. 40-60 च्या दरम्यानचा RSI
-    ("dead zone") आता कुठल्याच दिशेला पात्र ठरत नाही — आधीच्या single symmetric level=50 पेक्षा
-    strict. निश्चित RSI मूल्यांसाठी calculate_rsi() mock करून, नेमक्या सीमांवर (40/50/60) पडताळणी."""
-
-    def _fake_df(self):
-        return pd.DataFrame({"close": [100] * 20})
-
-    def test_bullish_passes_below_default_40(self):
-        with patch.object(srv2, "calculate_rsi", return_value=pd.Series([35.0])):
-            passed, rsi_value = srv2.check_rsi_filter(self._fake_df(), "BULLISH")
-        assert passed is True
-        assert rsi_value == 35.0
-
-    def test_bullish_fails_in_dead_zone_at_50(self):
-        with patch.object(srv2, "calculate_rsi", return_value=pd.Series([50.0])):
-            passed, rsi_value = srv2.check_rsi_filter(self._fake_df(), "BULLISH")
-        assert passed is False
-
-    def test_bearish_fails_in_dead_zone_at_50(self):
-        with patch.object(srv2, "calculate_rsi", return_value=pd.Series([50.0])):
-            passed, rsi_value = srv2.check_rsi_filter(self._fake_df(), "BEARISH")
-        assert passed is False
-
-    def test_bearish_passes_above_default_60(self):
-        with patch.object(srv2, "calculate_rsi", return_value=pd.Series([65.0])):
-            passed, rsi_value = srv2.check_rsi_filter(self._fake_df(), "BEARISH")
-        assert passed is True
-        assert rsi_value == 65.0
-
-    def test_custom_thresholds_override_defaults(self):
-        with patch.object(srv2, "calculate_rsi", return_value=pd.Series([45.0])):
-            passed, rsi_value = srv2.check_rsi_filter(self._fake_df(), "BULLISH", rsi_support_max=50, rsi_resistance_min=55)
-        assert passed is True  # 45 < 50 (custom उंबरठा, डीफॉल्ट 40 नाही)
 
 
 class TestComputeSLPctFromAbsolute:
@@ -169,10 +130,10 @@ def _fake_candles_df(n=20, last_close=23930):
 
 
 def _fake_dyn_zones(symbol="NIFTY", support_level=23900.0):
-    """SRv2 चा नवीन डीफॉल्ट timeframe_choice ("30M") शी जुळणारा, सर्वसाधारण entry-logic टेस्ट्ससाठीचा
-    ACTIVE zone — DYNAMIC_SR_*_30M (30-मिनिट डेटावरून काढलेले)."""
+    """SRv2 आता Supabase मध्ये साठवलेले DYNAMIC_SR_*_15M levels वापरतो (15-मिनिट डेटावरून काढलेले,
+    Instant Trader च्या 1-मिनिट आवृत्तीपासून वेगळे)."""
     return pd.DataFrame([
-        {"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": support_level, "zone_high": support_level,
+        {"symbol": symbol, "zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": support_level, "zone_high": support_level,
          "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
     ])
 
@@ -218,38 +179,6 @@ class TestCollectTouchCandidates60m:
         assert suffix == "60M"
         # resample_to_1h ने 30-मिनिट candles अर्ध्यावर आणायला हवेत (साधारण)
         assert len(candles_df) < len(df_30m)
-
-
-def _fake_dyn_zones_all_three(symbol="NIFTY", support_level=23900.0):
-    """15M + 30M + 60M तिन्हीही ACTIVE levels एकत्र — timeframe_choice फिल्टरिंग तपासण्यासाठी."""
-    return pd.DataFrame([
-        {"symbol": symbol, "zone_type": f"DYNAMIC_SR_SUPPORT_{suffix}", "zone_low": support_level, "zone_high": support_level,
-         "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"}
-        for suffix in ("15M", "30M", "60M")
-    ])
-
-
-class TestCollectTouchCandidatesTimeframeFilter:
-    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("30 minute candle for sr dynamic bot") — आधी तिन्ही
-    timeframes (15M/30M/60M) कायम एकत्र पूल व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. आता
-    active_suffixes दिलं (settings मधल्या timeframe_choice वरून) तर फक्त तेवढेच timeframes तपासले
-    जातात — इतर सक्रिय (ACTIVE) zones असूनही दुर्लक्षित."""
-
-    def test_active_suffixes_none_returns_all_three(self):
-        candles_df = _fake_candles_df(n=60, last_close=23930)
-        with patch.object(srv2, "fetch_candles", return_value=candles_df):
-            candidates = srv2._collect_touch_candidates(
-                "fake_token", "NIFTY", _fake_dyn_zones_all_three(), srv2.get_ist_now(), active_suffixes=None,
-            )
-        assert {c[1] for c in candidates} == {"15M", "30M", "60M"}
-
-    def test_active_suffixes_30m_only_excludes_others(self):
-        candles_df = _fake_candles_df(n=60, last_close=23930)
-        with patch.object(srv2, "fetch_candles", return_value=candles_df):
-            candidates = srv2._collect_touch_candidates(
-                "fake_token", "NIFTY", _fake_dyn_zones_all_three(), srv2.get_ist_now(), active_suffixes={"30M"},
-            )
-        assert {c[1] for c in candidates} == {"30M"}
 
 
 class TestProcessSymbol:
@@ -381,7 +310,7 @@ class TestProcessSymbol:
         तरी सद्य किंमत त्या level च्या वर असेल (support सारखी स्थिती), तर BULLISH (Bull Put) व्हायला हवं."""
         def _fake_resistance_zone(symbol="NIFTY", level=23900.0):
             return pd.DataFrame([
-                {"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": level, "zone_high": level,
+                {"symbol": symbol, "zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": level, "zone_high": level,
                  "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
             ])
         candles_df = _fake_candles_df(last_close=23902)  # किंमत level (23900) च्या वर -- आता Support सारखी
@@ -556,24 +485,6 @@ class TestMultiTimeframe:
             assert mock_trade.called
             assert "30M" in result
 
-    def test_15m_only_level_ignored_by_default(self):
-        """🎓 वापरकर्त्याने मागितलेली सुधारणा — नवीन डीफॉल्ट (timeframe_choice="30M") मुळे, वेगळं
-        सेटिंग न बदलताही (बेअर STRATEGY_SETTINGS_DEFAULTS), फक्त 15M level ACTIVE असेल तर तो आता
-        दुर्लक्षित व्हायला हवा (आधी सर्व तीन एकत्र पूल व्हायचे, म्हणजे हा trade व्हायचा)."""
-        zone_15m_only = pd.DataFrame([
-            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 23900.0, "zone_high": 23900.0,
-             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
-        ])
-        candles_df = _fake_candles_df(last_close=23902)
-        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
-             patch.object(srv2, "fetch_candles", return_value=candles_df), \
-             patch.object(srv2.cloud_db, "get_market_zones", return_value=zone_15m_only), \
-             patch.object(srv2, "open_multi_leg_trade") as mock_trade:
-            result = srv2.process_symbol("fake_token", "NIFTY")
-            assert not mock_trade.called
-            assert "आजचे" in result and "नाहीत" in result
-
     def test_settings_lots_and_hedge_width_passed_through(self):
         """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Dashboard settings (lots=3, hedge_width=75)
         hardcoded मूल्यांऐवजी प्रत्यक्ष वापरली जायला हवीत. naked_enabled=False -- फक्त spread call
@@ -675,7 +586,7 @@ class TestMultiTimeframe:
              patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
             srv2.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_args.kwargs.get("entry_level_price") == 23900.0
-            assert mock_trade.call_args.kwargs.get("entry_timeframe") == "30M"
+            assert mock_trade.call_args.kwargs.get("entry_timeframe") == "15M"
 
     def test_naked_trade_fires_alongside_spread_by_default(self):
         """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade) — SRv2 मध्येही Credit

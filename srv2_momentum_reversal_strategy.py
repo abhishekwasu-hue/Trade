@@ -4,16 +4,14 @@ srv2_momentum_reversal_strategy.py
 Nifty SRv2 Momentum-Filter Reversal — आता Multi-Timeframe (15-मिनिट + 30-मिनिट + 60-मिनिट एकत्र).
 
 वापरकर्त्याशी चर्चा करून ठरवलेली रचना:
-  - डीफॉल्ट फक्त 30-मिनिट timeframe (settings मधला timeframe_choice — "ALL" निवडल्यास आधीसारखंच
-    15M/30M/60M तिन्हीही एकत्र, प्रति-symbol Dashboard वरून बदलता येतं).
-  - "First come, first touch" (एकापेक्षा जास्त timeframe सक्रिय असतील तर) — कुठलाही एक (कुठल्याही
-    सक्रिय timeframe चा) पात्र ठरला, की तोच घेतला जातो. कुठल्याही timeframe ला प्राधान्य नाही.
-  - Position-मर्यादा एकत्रित — सक्रिय timeframes मिळून एकाच वेळी फक्त एकच उघडी position.
-  - SL लागल्यावर, पुढचा (कुठल्याही सक्रिय timeframe चा) touch पुन्हा trade करू शकतो.
+  - तिन्ही timeframes (15M/30M/60M) चे ACTIVE Dynamic S/R levels एकाच यादीत एकत्र तपासले जातात.
+  - "First come, first touch" — कुठलाही एक (कुठल्याही timeframe चा) पात्र ठरला, की तोच घेतला जातो.
+    कुठल्याही timeframe ला प्राधान्य नाही.
+  - Position-मर्यादा एकत्रित — तिन्ही timeframes मिळून एकाच वेळी फक्त एकच उघडी position.
+  - SL लागल्यावर, पुढचा (कुठल्याही timeframe चा) touch पुन्हा trade करू शकतो.
   - Support/Resistance ही सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून ठरते (साठवलेल्या ऐतिहासिक
     label वरून नाही) — एक level Support/Resistance मध्ये "रूपांतरित" होऊ शकतो.
-  - RSI(14, त्याच timeframe चा) dual-threshold फिल्टर — Support/Bullish साठी RSI<40 (rsi_support_max),
-    Resistance/Bearish साठी RSI>60 (rsi_resistance_min) — dynamic_sr_instant_trader.py सारखाच पॅटर्न.
+  - RSI(14, त्याच timeframe चा) फिल्टर — Resistance/Bearish साठी RSI>50, Support/Bullish साठी RSI<50.
   - Lots आणि Hedge Width Points आता Dashboard वरून बदलता येतात (cloud_db.srv2_settings, hardcode नाही).
   - Expiry Day ला (आजची तारीख == चालू साप्ताहिक expiry) पुढच्या आठवड्याच्या expiry चे strikes वापरले
     जातात (expiry_index=1) — जास्त जोखीम टाळण्यासाठी.
@@ -37,12 +35,7 @@ from oi_analysis import check_pcr_gate
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
-# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी single symmetric rsi_neutral_level (दोन्ही
-# दिशांना एकच उंबरठा, दरम्यान कुठलाही "dead zone" नाही). आता dynamic_sr_instant_trader.py सारखाच
-# dual-threshold (Support/Bullish साठी वेगळा max, Resistance/Bearish साठी वेगळा min) — 40-60 च्या
-# दरम्यानचा RSI आता कुठल्याच दिशेला confirm करत नाही (आधीपेक्षा strict, कमी पण जास्त विश्वासार्ह entries).
-RSI_SUPPORT_MAX = 40     # Support/Bullish touch + RSI < 40 -> पात्र
-RSI_RESISTANCE_MIN = 60  # Resistance/Bearish touch + RSI > 60 -> पात्र
+RSI_NEUTRAL_LEVEL = 50
 TOUCH_TOLERANCE_PCT = 0.05
 SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
@@ -53,18 +46,18 @@ LEVEL_REPEAT_TOLERANCE_PCT = 0.05
 TIMEFRAME_TO_SUFFIX = {"15minute": "15M", "30minute": "30M", "60minute": "60M"}
 
 
-def check_rsi_filter(candles_df, direction, rsi_support_max=RSI_SUPPORT_MAX, rsi_resistance_min=RSI_RESISTANCE_MIN):
+def check_rsi_filter(candles_df, direction, neutral_level=RSI_NEUTRAL_LEVEL):
     """Rule 1 — 15/30/60-मिनिट (candles_df ज्या timeframe चा असेल त्याचा) RSI(14) दिशेशी सुसंगत आहे का.
-    direction: "BULLISH" (Support Bounce) -> RSI rsi_support_max च्या खाली हवा.
-    "BEARISH" (Resistance Bounce) -> RSI rsi_resistance_min च्या वर हवा.
+    direction: "BULLISH" (Support Bounce) -> RSI 50 च्या खाली हवा.
+    "BEARISH" (Resistance Bounce) -> RSI 50 च्या वर हवा.
     रिटर्न: (pass: bool, rsi_value: float किंवा None)"""
     rsi_series = calculate_rsi(candles_df, period=14)
     if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
         return False, None
     latest_rsi = round(float(rsi_series.iloc[-1]), 2)
     if direction == "BULLISH":
-        return latest_rsi < rsi_support_max, latest_rsi
-    return latest_rsi > rsi_resistance_min, latest_rsi
+        return latest_rsi < neutral_level, latest_rsi
+    return latest_rsi > neutral_level, latest_rsi
 
 
 def compute_sl_pct_from_absolute(sl_rupees, net_credit_total):
@@ -101,19 +94,14 @@ def is_todays_expiry_day(access_token, symbol):
     return expiries[0] == today_str
 
 
-def _collect_touch_candidates(access_token, symbol, all_zones, now, active_suffixes=None):
+def _collect_touch_candidates(access_token, symbol, all_zones, now):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe) — 15M/30M/60M तिन्हींचे ACTIVE
     levels, प्रत्येकाचे स्वतःचे candles (त्याच timeframe चा RSI साठी) आणि सद्य किंमत (आजच्याच
     दिवसाची, कालचे candles मिसळू नयेत म्हणून) — एकाच यादीत एकत्र करणे.
-    active_suffixes: None (डीफॉल्ट, backward-compatible) म्हणजे तिन्हीही — किंवा फक्त ठराविक
-    timeframes पुरतं मर्यादित करण्यासाठी उदा. {"30M"} (वापरकर्त्याशी चर्चा करून जोडलेला
-    timeframe_choice — settings मधून एकाच timeframe वर मर्यादित ठेवता येतं).
     रिटर्न: [(level_price, timeframe_suffix, candles_df, underlying_price), ...]"""
     candidates = []
     today_date = now.date()
     for interval, suffix in TIMEFRAME_TO_SUFFIX.items():
-        if active_suffixes is not None and suffix not in active_suffixes:
-            continue
         dyn_levels = all_zones[(all_zones["zone_type"].str.endswith(f"_{suffix}")) & (all_zones["status"] == "ACTIVE")]
         if dyn_levels.empty:
             continue
@@ -160,15 +148,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
-    rsi_support_max = settings.get("rsi_support_max", RSI_SUPPORT_MAX)
-    rsi_resistance_min = settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN)
+    rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी तिन्ही timeframes (15M/30M/60M) कायम एकत्र
-    # पूल केले जायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. आता dynamic_sr_instant_trader.py/
-    # classic_sr_reversal_trader.py सारखाच timeframe_choice — फक्त एकाच timeframe वर मर्यादित
-    # ठेवता येतं ("ALL" = आधीचंच वर्तन, तिन्ही एकत्र).
-    timeframe_choice = settings.get("timeframe_choice", "30M")
-    active_suffixes = None if timeframe_choice == "ALL" else {timeframe_choice}
     # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली bug (live trading आधी) — Dashboard वरचं "Target — % of Net
     # Premium" setting (spread_target_pct_of_premium, page_bot_dynamic_sr_algo.py) आधी इथे कधीच
     # वाचलंच जायचं नाही — नेहमी हार्डकोडेड TARGET_PCT_OF_PREMIUM (80%) वापरला जायचा. वापरकर्त्याने
@@ -180,7 +161,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
 
     trade_date = now.strftime("%Y-%m-%d")
-    candidates = _collect_touch_candidates(access_token, symbol, all_zones, now, active_suffixes)
+    candidates = _collect_touch_candidates(access_token, symbol, all_zones, now)
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (15M/30M/60M) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
@@ -219,10 +200,10 @@ def process_symbol(access_token, symbol, lot_size=65):
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो.
         if entry_rsi_gate_enabled:
-            rsi_ok, rsi_value = check_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
+            rsi_ok, rsi_value = check_rsi_filter(candles_df, direction, rsi_neutral_level)
             if not rsi_ok:
                 log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
-                log_entry["reason"] = f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही (Bullish<{rsi_support_max} / Bearish>{rsi_resistance_min} हवं होतं)"
+                log_entry["reason"] = f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही (Bullish<{rsi_neutral_level} / Bearish>{rsi_neutral_level} हवं होतं)"
                 cloud_db.save_signal_log(log_entry)
                 continue
 
