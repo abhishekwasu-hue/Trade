@@ -178,6 +178,42 @@ crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo �
 
 ---
 
+# Market Zones Refresh (15M/30M/60M — SRv2 चा एकमेव zone-स्रोत) — आता VPS crontab वर
+
+🎓 वापरकर्त्याने सापडवलेली bug — SRv2 Momentum-Reversal चा Signal Log रिकामा दिसत होता ("Srv2 log
+disat nnahi", दिवसभर एकही entry नाही, तेच `1M/5M Instant Trader` चा log मात्र नेहमीसारखाच भरलेला).
+Root cause: SRv2 फक्त `status == "ACTIVE"` असलेले 15M/30M/60M zones शोधतो
+(`srv2_momentum_reversal_strategy._collect_touch_candidates()`), आणि हे zones फक्त
+`refresh_market_zones.py` कडूनच येतात — जो अजूनही **फक्त GitHub Actions cron** वर होता (VPS crontab
+वर कधीच हलवलेला नव्हता, 1M/5M प्रमाणे). प्रत्यक्ष run history तपासली असता तो शेवटचा यशस्वी (schedule
+ने) १८ सप्टेंबरलाच चालला होता — `trigger_upstox_token_request.yml` साठी सापडलेली, तीच "scheduled
+workflows are best-effort, silently skip होऊ शकतात" समस्या. Zones शिळे राहिले (सर्व आधीचे ACTIVE
+zones दरम्यान hit/invalidate झाले), नवीन कधीच generate झाले नाहीत — SRv2 ला रोज "कुठलेही ACTIVE
+Dynamic S/R levels (15M/30M/60M) सापडले नाहीत" असं दिसत राहिलं, आणि तो कधीच कुठलाही candidate
+साठवायचाच नाही (लगेच early-return, `save_signal_log()` पर्यंत पोचतच नाही).
+
+**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — बाजार बंद झाल्यावर, १०:०५ UTC = १५:३५ IST,
+सोम-शुक्र — मूळ GitHub Actions cron पेक्षा 5 मिनिटं उशीरा, जेणेकरून बाजार खरंच बंद झाल्याची खात्री
+असेल):**
+```
+5 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones.py >> /root/Trade/market_zones_refresh.log 2>&1
+```
+`--token` दिलेला नाही — स्क्रिप्ट आपोआप Supabase मधून सद्य token घेते (इतर crontab entries सारखंच).
+
+**तपासणी:**
+```bash
+tail -f /root/Trade/market_zones_refresh.log
+crontab -l | grep refresh_market_zones
+```
+यशस्वी run नंतर log मध्ये प्रत्येक symbol साठी "✅ NIFTY: N zones साठवले (M अजून ACTIVE)" असं दिसायला
+हवं — `M` (ACTIVE count) 0 असेल, तर तेव्हा SRv2 चा Signal Log त्या दिवशी रिकामाच राहील (हे स्क्रिप्ट
+बरोबर चालूनही घडू शकतं — फक्त त्या दिवशी कुठलेही नवीन 15M/30M/60M zone तयार झालेले नाहीत असा अर्थ).
+
+⚠️ GitHub Actions मधला `schedule` काढून टाकलेला आहे (`workflow_dispatch` फक्त मॅन्युअल/backup साठी
+उरलाय) — वरची crontab entry हाच आता खरा, रोजचा ट्रिगर आहे.
+
+---
+
 # Upstox Token Webhook — Deployment (1-Tap Mobile Approval)
 
 `trigger_upstox_token_request.py` Upstox ला "आजचा token हवा" अशी विनंती पाठवतो — तुमच्या मोबाईलवर
