@@ -33,13 +33,18 @@ def temp_db(monkeypatch):
     करतं (जे adapter नसेल तर fetch_required_margin()/get_available_margin() — खरे Upstox network
     calls — वापरतं). वरच्या fetch_broker_positions सारखीच सुरक्षित डीफॉल्ट (नेहमी "मार्जिन OK")
     — ज्या tests ना अपुऱ्या-मार्जिन वर्तन विशेषतः तपासायचं आहे, ते स्वतःच override करतात.
-    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन) — open_multi_leg_trade() आता
+    (PAPER trades साठीही, LIVE gate शी संबंध नसताना) _resolve_required_margin() नेहमीच कॉल करतं
+    (entry_margin_required साठवण्यासाठी) — वरचा check_margin_available() मॉक याला cover करत
+    नाही (तो फक्त गेट साठी), त्यामुळे इथे स्वतंत्रपणे mock करणे आवश्यक — नाहीतर प्रत्येक test खरा
+    (fake_token सह अयशस्वी होणारा) Upstox network call करेल."""
     tmpdb = tempfile.mktemp(suffix=".db")
     monkeypatch.setattr(database, "DB_PATH", tmpdb)
     database.init_sqlite_db()
     monkeypatch.setattr(trading_engine, "DB_PATH", tmpdb)
     monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda access_token: [])
     monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
+    monkeypatch.setattr(trading_engine, "_resolve_required_margin", lambda *a, **k: 37500.0)
     yield tmpdb
 
 
@@ -1569,6 +1574,48 @@ class TestOpenMultiLegTradeMarginCheck:
             sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
         )
         assert ok is True
+
+
+class TestEntryMarginRequiredStored:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन, अंदाज नाही) — Upstox च्या Margin
+    Calculator API कडून मिळालेला खरा आकडा आता PAPER trades साठीही (LIVE gate शी संबंध नसताना)
+    live_trades.entry_margin_required मध्ये साठवला जातो का, हे पडताळणारे tests."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_real_margin_stored_for_paper_trade(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "_resolve_required_margin", lambda *a, **k: 4200.0)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT entry_margin_required FROM live_trades WHERE trade_id=?", (resp["trade_id"],)).fetchone()
+        conn.close()
+        assert row[0] == 4200.0
+
+    def test_check_margin_available_reuses_passed_required_margin(self, monkeypatch):
+        """required_margin आधीच दिलं असेल, तर check_margin_available() स्वतःचा वेगळा API कॉल
+        (fetch_required_margin/adapter.get_required_margin) करत नाही -- तोच पुन्हा वापरतो."""
+        def _boom(*a, **k):
+            raise AssertionError("required_margin आधीच दिलेला असताना पुन्हा fetch_required_margin() कॉल व्हायला नको")
+        monkeypatch.setattr(trading_engine, "fetch_required_margin", _boom)
+        monkeypatch.setattr(trading_engine, "get_available_margin", lambda t: 10000.0)
+        ok, reason = trading_engine.check_margin_available(
+            "fake_token", None, [{"o": 1}], {"max_loss": 50}, 1, 75, required_margin=4200.0,
+        )
+        assert ok is True
+        assert reason is None
 
 
 class TestAlertCrossStrategyConflict:

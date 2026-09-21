@@ -395,6 +395,25 @@ class TestGetPerformanceSummaryWinRateAndRoi:
         summary = database.get_performance_summary("NIFTY")
         assert summary["margin_used"] == 37500.0
 
+    def test_margin_used_prefers_real_entry_margin_required_over_max_loss_estimate(self, temp_db):
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी खरी मार्जिन, अंदाज नाही) — Upstox च्या Margin
+        # Calculator API कडून मिळालेला खरा आकडा (entry_margin_required, hedge-फायद्यासकट) उपलब्ध
+        # असेल तर तोच वापरायला हवा, max_loss*lots*lot_size (ढोबळ, इथे जास्त) चा अंदाज नाही.
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, exit_reason, realized_pnl, status,
+               legs_json, mode, trading_style, source, entry_margin_required)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("T1", "2026-09-01", "NIFTY", "BULL_PUT_SPREAD", 1, 75, 1000, 1000, 500, 250, 500,
+             "TARGET", 300.0, "CLOSED", json.dumps([]), "LIVE", "INTRADAY", "manual", 4200.0),
+        )
+        conn.commit()
+        conn.close()
+        summary = database.get_performance_summary("NIFTY")
+        # max_loss-आधारित अंदाज 37,500 असता (500*1*75) -- पण खरी entry_margin_required (4,200) आहे.
+        assert summary["margin_used"] == 4200.0
+
     def test_roi_none_when_no_margin_data(self, temp_db):
         """max_loss/lots/lot_size उपलब्ध नसतील (जुनी, अपूर्ण नोंद) -- roi_pct None, crash नाही."""
         conn = sqlite3.connect(temp_db)
