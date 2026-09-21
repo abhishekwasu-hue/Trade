@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import time
 import uuid
 import xml.etree.ElementTree as ET
 import sqlite3
@@ -34,6 +35,47 @@ st.set_page_config(
 # दिल्याशिवाय पुढे काहीच (charts, settings, काहीही) दिसणार नाही. Fail-closed: APP_PASSWORD/secrets
 # configured नसेल, तरीही उघडं सोडत नाही — चुकून live trading उघडं राहण्यापेक्षा, ऑपरेटरला स्पष्ट
 # सेटअप-सूचना देऊन थांबणं जास्त सुरक्षित.
+
+# 🎓 वापरकर्त्याने सापडवलेली irritation — "password waanwar takawa lagto" — `_app_authenticated`
+# आधी फक्त `st.session_state` मध्ये (server-side, या browser tab च्या websocket connection पुरतंच)
+# ठेवलं जायचं — service restart (नवीन deploy), नवीन tab, किंवा मोबाईलवर app background/foreground
+# (weak network वर websocket तुटतो-जोडतो) यापैकी कशानेही सत्र हरवायचं, परत पासवर्ड विचारायचा. आता
+# यशस्वी login नंतर एक स्वाक्षरीकृत (HMAC, पासवर्डनेच सही केलेला — वेगळी secret key लागत नाही) cookie
+# (`amw_auth`, वापरकर्त्याशी चर्चा करून सुरक्षिततेसाठी मुद्दाम कमी ठेवलेली — १ दिवस वैध) ब्राउझरमध्ये
+# साठवला जातो — पुढच्या भेटीत `st.context.cookies` (Streamlit native, कुठलाही जास्तीचा pip
+# package/component-mount-लॅग नाही) मधून वाचून आपोआप authenticated.
+# ⚠️ हा VPS अजून plain HTTP वर आहे (TLS नाही) — त्यामुळे हा cookie तिथेही (लॉगिन फॉर्मच्या पासवर्डसारखाच)
+# त्याच नेटवर्कवरच्या कुणाला traffic sniff करता आलं तर चोरता येऊ शकतो. भविष्यात Dashboard साठीही
+# (upstox_token_webhook सारखंच cloudflared वापरून) खरी HTTPS मिळवणं हाच यावरचा योग्य दीर्घकालीन उपाय.
+_AUTH_COOKIE_NAME = "amw_auth"
+_AUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60  # १ दिवस
+
+
+def _auth_cookie_token(configured_password, expiry_ts):
+    return hmac.new(configured_password.encode(), str(expiry_ts).encode(), "sha256").hexdigest()
+
+
+def _set_auth_cookie(configured_password):
+    expiry_ts = int(time.time()) + _AUTH_COOKIE_MAX_AGE_SECONDS
+    cookie_value = f"{expiry_ts}.{_auth_cookie_token(configured_password, expiry_ts)}"
+    components.html(
+        "<script>document.cookie = "
+        f"\"{_AUTH_COOKIE_NAME}={cookie_value}; max-age={_AUTH_COOKIE_MAX_AGE_SECONDS}; path=/; SameSite=Lax\";"
+        "</script>",
+        height=0,
+    )
+
+
+def _check_auth_cookie(configured_password):
+    raw = st.context.cookies.get(_AUTH_COOKIE_NAME)
+    if not raw or "." not in raw:
+        return False
+    expiry_str, token = raw.split(".", 1)
+    if not expiry_str.isdigit() or int(expiry_str) < int(time.time()):
+        return False
+    return hmac.compare_digest(token, _auth_cookie_token(configured_password, int(expiry_str)))
+
+
 def _get_configured_app_password():
     """पर्यावरण चल (VPS, systemd Environment=) किंवा secrets.toml (Streamlit Cloud) — दोन्ही
     मार्ग, established secrets_token च्या priority-pattern प्रमाणेच."""
@@ -53,6 +95,10 @@ def _require_app_password():
         return
 
     configured_password = _get_configured_app_password()
+    if configured_password and _check_auth_cookie(configured_password):
+        st.session_state["_app_authenticated"] = True
+        return
+
     _, gate_col, _ = st.columns([1, 1.3, 1])
     with gate_col:
         st.markdown(
@@ -75,6 +121,7 @@ def _require_app_password():
         if submitted:
             if hmac.compare_digest(entered_password, configured_password):
                 st.session_state["_app_authenticated"] = True
+                _set_auth_cookie(configured_password)
                 st.rerun()
             else:
                 st.error("❌ चुकीचा पासवर्ड — पुन्हा प्रयत्न करा.")
