@@ -1,17 +1,11 @@
 """
 srv2_momentum_reversal_strategy.py
 ------------------------------------------------
-Nifty SRv2 Momentum-Filter Reversal — Multi-Timeframe (30-मिनिट + 60-मिनिट).
-
-🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute time frame nko") — आधी 15M/30M/60M तिन्हीही एकत्र
-पूल व्हायचे (आणि नंतर, आधीच्या सुधारणेत, डीफॉल्ट फक्त 30M झालं होतं). आता 15M इथून (TIMEFRAME_TO_SUFFIX)
-पूर्णपणे काढून टाकलेला आहे — "ALL" निवडला तरीही आता फक्त 30M+60M, 15M कधीच नाही. (classic_sr_reversal_trader.py
-अजूनही स्वतःच्या स्वतंत्र 5M+15M साठी हेच DYNAMIC_SR_*_15M zones वापरतो — तो अबाधित, फक्त हाच bot 15M
-कडे दुर्लक्ष करतो.)
+Nifty SRv2 Momentum-Filter Reversal — आता Multi-Timeframe (15-मिनिट + 30-मिनिट + 60-मिनिट एकत्र).
 
 वापरकर्त्याशी चर्चा करून ठरवलेली रचना:
-  - डीफॉल्ट फक्त 30-मिनिट timeframe (settings मधला timeframe_choice — "ALL" निवडल्यास 30M+60M दोन्ही
-    एकत्र, प्रति-symbol Dashboard वरून बदलता येतं. 15M हा पर्यायच नाही, "ALL" मध्येही नाही).
+  - डीफॉल्ट फक्त 30-मिनिट timeframe (settings मधला timeframe_choice — "ALL" निवडल्यास आधीसारखंच
+    15M/30M/60M तिन्हीही एकत्र, प्रति-symbol Dashboard वरून बदलता येतं).
   - "First come, first touch" (एकापेक्षा जास्त timeframe सक्रिय असतील तर) — कुठलाही एक (कुठल्याही
     सक्रिय timeframe चा) पात्र ठरला, की तोच घेतला जातो. कुठल्याही timeframe ला प्राधान्य नाही.
   - Position-मर्यादा एकत्रित — सक्रिय timeframes मिळून एकाच वेळी फक्त एकच उघडी position.
@@ -56,12 +50,7 @@ COOLDOWN_MINUTES = 30
 LEVEL_REPEAT_TOLERANCE_PCT = 0.05
 
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Multi-Timeframe. Upstox interval-नाव -> zone_type suffix.
-# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute time frame nko") — 15M इथून पूर्णपणे काढलेला —
-# "ALL" निवडला तरीही (active_suffixes=None, म्हणजे इथेच जे काही आहे ते सर्व) आता फक्त 30M+60M
-# तपासले जातात, 15M कधीच नाही. classic_sr_reversal_trader.py अजूनही स्वतःच्या 5M+15M साठी हेच
-# DYNAMIC_SR_*_15M zones (market_zones_refresh.py कडून, इथूनच स्वतंत्रपणे) वापरतो — तो अबाधित,
-# फक्त SRv2 (हाच bot) साठीच 15M बंद केलेला आहे.
-TIMEFRAME_TO_SUFFIX = {"30minute": "30M", "60minute": "60M"}
+TIMEFRAME_TO_SUFFIX = {"15minute": "15M", "30minute": "30M", "60minute": "60M"}
 
 
 def check_rsi_filter(candles_df, direction, rsi_support_max=RSI_SUPPORT_MAX, rsi_resistance_min=RSI_RESISTANCE_MIN):

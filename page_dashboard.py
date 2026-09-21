@@ -930,14 +930,14 @@ def _render_market_zones():
                 # "reason" column मध्ये दिसेल (level_type मध्ये timeframe साठवलं जात नाही, कारण
                 # दिशा-निर्णयाचा level_type "SUPPORT"/"RESISTANCE" हाच सद्य किमतीवरून ठरतो — बघा
                 # वरची टिप्पणी, "dynamic label -- साठवलेला RESISTANCE नाही").
-                with st.expander("📜 SRv2 Momentum-Reversal (30M/60M) — संपूर्ण Signal Log (Intraday)", expanded=False):
+                with st.expander("📜 SRv2 Momentum-Reversal (15M/30M/60M) — संपूर्ण Signal Log (Intraday)", expanded=False):
                     srv2_log_df = signal_log_df[signal_log_df["level_type"].isin(["SUPPORT", "RESISTANCE"])] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
                     if srv2_log_df is None or srv2_log_df.empty:
                         st.caption("या कालावधीत कुठलाही SRv2 signal तपासला गेलेला नाही — `srv2_momentum_reversal_strategy.py` (VPS cron) चालू आहे का तपासा.")
                     else:
                         srv2_log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="srv2_signal_log_filter")
                         srv2_display_log = srv2_log_df if srv2_log_filter == "सर्व" else srv2_log_df[srv2_log_df["hit_type"] != "NO_HIT"]
-                        st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 30M/60M — ते 'reason' column मध्ये दिसेल.)")
+                        st.caption(f"एकूण {len(srv2_log_df)} तपासण्या — {(srv2_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (कुठला timeframe — 15M/30M/60M — ते 'reason' column मध्ये दिसेल.)")
                         _render_signal_log_by_date(srv2_display_log)
 
                 # 🎓 वापरकर्त्याने मागितलेली सुधारणा (पानाची पुनर्रचना) — "खरी भूमिका" टेबल (जास्त

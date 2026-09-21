@@ -20,9 +20,7 @@ from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
 STRATEGY_LABELS = {
     "1m_instant": "1-मिनिट Instant Trader (1M + 5M)",
-    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute time frame nko") — प्रत्यक्ष strategy (आणि
-    # internal key "15m_dynamic_sr", backward-compat साठी बदललेला नाही) आता फक्त 30M/60M तपासते.
-    "15m_dynamic_sr": "30M/60M Dynamic SR Reversal",
+    "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal",
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन स्वतंत्र तिसरी strategy — "Classical Support/Resistance
     # Reversal" (5M+15M pooled). आधीच्या दोन strategies पूर्णपणे अबाधित — फक्त हा नवीन पर्याय जोडलेला.
     "classic_sr_reversal": "🎯 Classical S/R Reversal (5M + 15M)",
@@ -186,21 +184,15 @@ def render():
                 _tf_default = "BOTH"
             else:
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी 15M/30M/60M कायम एकत्र पूल
-                # व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. वापरकर्त्याच्या विनंतीनुसार आधी डीफॉल्ट
-                # फक्त 30M केलं, आणि नंतर ("15 minute time frame nko") 15M इथून पूर्णपणे काढून
-                # टाकलं — "ALL" निवडला तरीही आता फक्त 30M+60M (कधीच 15M नाही). classic_sr_reversal
-                # (5M+15M) अबाधित — तिथला 15M वेगळाच, स्वतंत्र सेटिंग आहे.
-                _TF_OPTIONS = {"30M": "फक्त 30M (डीफॉल्ट)", "60M": "फक्त 60M", "ALL": "30M + 60M (दोन्ही एकत्र)"}
+                # व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. वापरकर्त्याच्या विनंतीनुसार आता डीफॉल्ट
+                # फक्त 30M — "ALL" निवडून हवं तेव्हा आधीचंच (तिन्ही एकत्र) वर्तनही मिळू शकतं.
+                _TF_OPTIONS = {"30M": "फक्त 30M (डीफॉल्ट)", "15M": "फक्त 15M", "60M": "फक्त 60M", "ALL": "15M + 30M + 60M (तिन्ही एकत्र)"}
                 _tf_default = "30M"
             _tf_keys = list(_TF_OPTIONS.keys())
-            # 🎓 यापुढे काढलेला पर्याय (उदा. जुना "15M", SRv2 साठी) कुणी आधीच साठवलेला असेल, तर
-            # _tf_keys.index() मध्ये ValueError येऊ नये म्हणून सुरक्षित fallback (डीफॉल्टकडे).
-            _tf_stored = settings.get("timeframe_choice", _tf_default)
-            _tf_index = _tf_keys.index(_tf_stored) if _tf_stored in _tf_keys else _tf_keys.index(_tf_default)
             timeframe_choice = st.radio(
                 "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
                 _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
-                index=_tf_index,
+                index=_tf_keys.index(settings.get("timeframe_choice", _tf_default)),
                 key=_widget_key(strategy_key, symbol, "timeframe_choice"),
             )
             st.markdown("---")

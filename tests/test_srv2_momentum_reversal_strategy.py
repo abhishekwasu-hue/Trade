@@ -221,9 +221,7 @@ class TestCollectTouchCandidates60m:
 
 
 def _fake_dyn_zones_all_three(symbol="NIFTY", support_level=23900.0):
-    """15M + 30M + 60M तिन्हीही ACTIVE levels एकत्र (15M zone मुद्दामच समाविष्ट — तो कधीच उचलला जाऊ
-    नये, TIMEFRAME_TO_SUFFIX मधून पूर्णपणे काढलेला आहे, हे पडताळण्यासाठी) — timeframe_choice
-    फिल्टरिंग तपासण्यासाठी."""
+    """15M + 30M + 60M तिन्हीही ACTIVE levels एकत्र — timeframe_choice फिल्टरिंग तपासण्यासाठी."""
     return pd.DataFrame([
         {"symbol": symbol, "zone_type": f"DYNAMIC_SR_SUPPORT_{suffix}", "zone_low": support_level, "zone_high": support_level,
          "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"}
@@ -232,41 +230,26 @@ def _fake_dyn_zones_all_three(symbol="NIFTY", support_level=23900.0):
 
 
 class TestCollectTouchCandidatesTimeframeFilter:
-    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("30 minute candle for sr dynamic bot", नंतर "15 minute
-    time frame nko") — आधी तिन्ही timeframes (15M/30M/60M) कायम एकत्र पूल व्हायचे. आता 15M
-    TIMEFRAME_TO_SUFFIX मधूनच पूर्णपणे काढलेला — 15M zone ACTIVE असूनही, active_suffixes=None
-    ("ALL") असतानाही, तो कधीच उचलला जात नाही. active_suffixes दिलं (settings मधल्या
-    timeframe_choice वरून) तर त्यातलेच (30M/60M पैकी) फक्त तेवढे timeframes तपासले जातात."""
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("30 minute candle for sr dynamic bot") — आधी तिन्ही
+    timeframes (15M/30M/60M) कायम एकत्र पूल व्हायचे, वेगळं बंद करण्याचा पर्यायच नव्हता. आता
+    active_suffixes दिलं (settings मधल्या timeframe_choice वरून) तर फक्त तेवढेच timeframes तपासले
+    जातात — इतर सक्रिय (ACTIVE) zones असूनही दुर्लक्षित."""
 
-    def test_active_suffixes_none_returns_30m_and_60m_never_15m(self):
+    def test_active_suffixes_none_returns_all_three(self):
         candles_df = _fake_candles_df(n=60, last_close=23930)
         with patch.object(srv2, "fetch_candles", return_value=candles_df):
             candidates = srv2._collect_touch_candidates(
                 "fake_token", "NIFTY", _fake_dyn_zones_all_three(), srv2.get_ist_now(), active_suffixes=None,
             )
-        assert {c[1] for c in candidates} == {"30M", "60M"}
+        assert {c[1] for c in candidates} == {"15M", "30M", "60M"}
 
-    def test_active_suffixes_30m_only_excludes_60m_and_15m(self):
+    def test_active_suffixes_30m_only_excludes_others(self):
         candles_df = _fake_candles_df(n=60, last_close=23930)
         with patch.object(srv2, "fetch_candles", return_value=candles_df):
             candidates = srv2._collect_touch_candidates(
                 "fake_token", "NIFTY", _fake_dyn_zones_all_three(), srv2.get_ist_now(), active_suffixes={"30M"},
             )
         assert {c[1] for c in candidates} == {"30M"}
-
-    def test_15m_zone_alone_never_produces_a_candidate(self):
-        """15M zone हाच एकमेव ACTIVE zone असला (30M/60M नाहीत), तरी आता कुठलाही candidate मिळू नये —
-        TIMEFRAME_TO_SUFFIX मध्ये 15M चा उल्लेखच नाही."""
-        only_15m = pd.DataFrame([
-            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 23900.0, "zone_high": 23900.0,
-             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
-        ])
-        candles_df = _fake_candles_df(n=60, last_close=23930)
-        with patch.object(srv2, "fetch_candles", return_value=candles_df):
-            candidates = srv2._collect_touch_candidates(
-                "fake_token", "NIFTY", only_15m, srv2.get_ist_now(), active_suffixes=None,
-            )
-        assert candidates == []
 
 
 class TestProcessSymbol:
