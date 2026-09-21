@@ -21,16 +21,33 @@ import datetime
 import streamlit as st
 
 import cloud_db
+import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today
 from database import get_order_log_full
+from sr_dynamic import compute_dynamic_sr
+from tradingview_chart import build_lightweight_chart_html
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER
+from upstox_api import fetch_mcx_candles
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
 STRATEGY_KEY = "mcx_futures"
 
+CHART_TIMEFRAME_OPTIONS = {
+    "5minute": "5 मिनिट", "15minute": "15 मिनिट", "30minute": "30 मिनिट",
+    "1hour": "1 तास", "day": "Daily",
+}
+
 
 def _widget_key(symbol, field):
     return f"mcxf_{symbol}_{field}"
+
+
+@st.cache_data(ttl=300)
+def _resolve_mcx_instrument_cached(access_token, symbol):
+    """🎓 resolve_mcx_futures_instruments.resolve_symbol() स्वतः cache करत नाही (तो एक standalone,
+    वाचन-फक्त script आहे) — इथे Chart टॅब उघडताना प्रत्येक rerun (उदा. टाईमफ्रेम बदल) ला Upstox च्या
+    Search Instruments API ला पुन्हा-पुन्हा हिट न करता, ५ मिनिटांसाठी तोच resolved contract वापरणे."""
+    return mcx_resolver.resolve_symbol(access_token, symbol)
 
 
 def _number_input(label, settings, key, symbol, **kwargs):
@@ -71,9 +88,39 @@ def render():
     symbol = st.selectbox("Commodity निवडा", MCX_SYMBOLS, key="mcxf_symbol")
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
 
-    tab_entry, tab_exit, tab_orders, tab_zones, tab_mode = st.tabs([
-        "🚪 Entry Gate", "🚪 Exit Gate", "📜 Order Log", "📐 Dynamic S/R", "🎮 Mode & Broker",
+    tab_chart, tab_entry, tab_exit, tab_orders, tab_zones, tab_mode = st.tabs([
+        "📈 Chart", "🚪 Entry Gate", "🚪 Exit Gate", "📜 Order Log", "📐 Dynamic S/R", "🎮 Mode & Broker",
     ])
+
+    with tab_chart:
+        sub_header(f"📈 {symbol} — Futures Price Chart", HDR_BLUE)
+        chart_tf = st.radio(
+            "टाईमफ्रेम", list(CHART_TIMEFRAME_OPTIONS.keys()), format_func=lambda k: CHART_TIMEFRAME_OPTIONS[k],
+            index=2, horizontal=True, key=_widget_key(symbol, "chart_tf"),
+        )
+        token = st.session_state.get("token_input", "")
+        if not token:
+            st.info("Upstox token उपलब्ध नाही — चार्टसाठी वैध token लागतो (sidebar वरून टाकलेला/cron ने refresh केलेला).")
+        else:
+            ok, resolved = _resolve_mcx_instrument_cached(token, symbol)
+            if not ok:
+                st.warning(f"⚠️ {symbol} चा सध्याचा (current/continuous) Futures contract सापडला नाही: {resolved}")
+            else:
+                df_mcx = fetch_mcx_candles(token, resolved["instrument_key"], interval=chart_tf)
+                if df_mcx is None or df_mcx.empty:
+                    st.info("चार्टसाठी candle डेटा मिळाला नाही.")
+                else:
+                    rsi_series = df_mcx["rsi"] if "rsi" in df_mcx.columns else None
+                    sr_levels = compute_dynamic_sr(df_mcx, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+                    tv_html = build_lightweight_chart_html(
+                        df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
+                        rsi_series=rsi_series, sr_levels=sr_levels, height=550,
+                    )
+                    st.components.v1.html(tv_html, height=600, scrolling=False)
+                    st.caption(
+                        f"📄 Contract: **{resolved['trading_symbol']}** (expiry {resolved['expiry']}) — Upstox च्या "
+                        "Search Instruments API कडून थेट, कायम आपोआप current/continuous front-month."
+                    )
 
     with tab_entry:
         symbol_enabled = st.checkbox(
