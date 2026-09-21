@@ -253,6 +253,115 @@ def fetch_candles(access_token, symbol, current_spot, interval="30minute", lookb
         empty_df.attrs["failed_chunks"] = 1
         return empty_df
 
+@st.cache_data(ttl=60)
+def fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=None):
+    """
+    MCX Futures साठी fetch_candles() सारखंच chunked historical+intraday candle fetching — पण
+    get_instrument_key(symbol) च्या डीफॉल्ट NIFTY/BANKNIFTY/SENSEX index-key ऐवजी, थेट कॉलरने दिलेला
+    instrument_key (resolve_mcx_futures_instruments.resolve_symbol() कडून मिळालेला, कायम current/
+    continuous front-month contract — दर महिन्याला बदलतो) वापरतं.
+
+    🎓 वापरकर्त्याशी ठरलेला डिझाईन निर्णय — fetch_candles() ला थेट instrument_key पॅरामीटर जोडून
+    ("adhichya nifty strategy mdhe bdal nko" या स्पष्ट सूचनेनुसार, established NIFTY/BANKNIFTY/SENSEX
+    कॉल-साईट्सना धक्का न लावता) बदलण्याऐवजी, हे स्वतंत्र फंक्शन — त्यामुळे fetch_candles() चं वर्तन/
+    signature जसंच्या तसं, कुठलाही धोका शून्य.
+    """
+    if lookback_days is None:
+        lookback_days = {
+            "1minute": 5, "5minute": 10, "15minute": 20,
+            "30minute": 60, "1hour": 90, "day": 400,
+        }.get(interval, 60)
+    try:
+        allowed_intervals = ["1minute", "5minute", "15minute", "30minute", "day"]
+        if interval not in allowed_intervals:
+            interval = "30minute"
+
+        encoded_key = urllib.parse.quote(instrument_key, safe="")
+
+        interval_map = {
+            "1minute": ("minutes", "1"),
+            "5minute": ("minutes", "5"),
+            "15minute": ("minutes", "15"),
+            "30minute": ("minutes", "30"),
+            "1hour": ("hours", "1"),
+            "day": ("days", "1"),
+        }
+        unit, val = interval_map[interval]
+
+        chunk_days_map = {"1minute": 28, "5minute": 28, "15minute": 28, "30minute": 90, "1hour": 90, "day": lookback_days}
+        chunk_days = chunk_days_map.get(interval, 90)
+
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+
+        today = get_ist_today()
+        overall_from = today - datetime.timedelta(days=lookback_days)
+
+        hist_candles = []
+        failed_chunks = 0
+        chunk_to = today
+        while chunk_to > overall_from:
+            chunk_from = max(overall_from, chunk_to - datetime.timedelta(days=chunk_days))
+            to_str = chunk_to.strftime("%Y-%m-%d")
+            from_str = chunk_from.strftime("%Y-%m-%d")
+
+            hist_url = f"https://api.upstox.com/v3/historical-candle/{encoded_key}/{unit}/{val}/{to_str}/{from_str}"
+            try:
+                res_hist = _get_with_retry(hist_url, headers=headers, timeout=15)
+                if res_hist.status_code == 200:
+                    chunk_candles = res_hist.json().get("data", {}).get("candles", [])
+                    hist_candles.extend(chunk_candles)
+                else:
+                    failed_chunks += 1
+            except requests.exceptions.RequestException:
+                failed_chunks += 1
+
+            chunk_to = chunk_from - datetime.timedelta(days=1)
+
+        intraday_url = f"https://api.upstox.com/v3/historical-candle/intraday/{encoded_key}/{unit}/{val}"
+        intraday_candles = []
+        try:
+            res_intra = _get_with_retry(intraday_url, headers=headers, timeout=10)
+            if res_intra.status_code == 200:
+                intraday_candles = res_intra.json().get("data", {}).get("candles", [])
+            else:
+                st.warning(f"Intraday API failed: {res_intra.status_code} - {res_intra.text}")
+        except requests.exceptions.RequestException as e:
+            st.warning(f"Intraday API अपवाद: {str(e)}")
+
+        all_candles = hist_candles + intraday_candles
+
+        if not all_candles:
+            empty_df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+            empty_df.attrs["failed_chunks"] = failed_chunks
+            return empty_df
+
+        df_candles = pd.DataFrame(all_candles, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
+        df_candles["timestamp"] = pd.to_datetime(df_candles["timestamp"])
+
+        df_candles = df_candles.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
+
+        if failed_chunks > 0:
+            earliest_str = df_candles["timestamp"].min().strftime("%Y-%m-%d") if not df_candles.empty else "N/A"
+            _warn(
+                f"⚠️ {instrument_key} {interval} साठी {failed_chunks} historical chunk(s) मिळाले नाहीत — मागवलेला "
+                f"इतिहास ({lookback_days} दिवस) पूर्ण मिळाला नसेल. सद्य उपलब्ध डेटा {earliest_str} पासून सुरू होतो."
+            )
+
+        for col in ["open", "high", "low", "close", "volume", "oi"]:
+            df_candles[col] = pd.to_numeric(df_candles[col], errors="coerce")
+
+        df_candles["rsi"] = calculate_rsi(df_candles)
+        df_candles.attrs["failed_chunks"] = failed_chunks
+
+        return df_candles
+
+    except Exception as e:
+        _err(f"⚠️ MCX candles ({instrument_key}, {interval}) एरर आला: {str(e)}")
+        empty_df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi", "rsi"])
+        empty_df.attrs["failed_chunks"] = 1
+        return empty_df
+
+
 def fetch_long_history(access_token, symbol="NIFTY", years=20, chunk_years=3, progress_callback=None):
     """
     Upstox च्या V3 Historical Candle API नुसार Daily डेटा जानेवारी 2000 पासून उपलब्ध आहे — त्यामुळे

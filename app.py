@@ -316,6 +316,7 @@ if context_ok:
     import page_mtf_pullback
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
+    import page_mcx_futures
 
     pages = [
         st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
@@ -331,6 +332,9 @@ if context_ok:
         # 1M Instant Trader आणि 15M/30M/60M Dynamic SR Reversal या दोन्ही strategies चे सर्व
         # settings (Lots, ITM Depth, Hedge Width, SL/TSL/Target, Naked Option Trade toggle).
         st.Page(page_bot_dynamic_sr_algo.render, title="Bot Dynamic SR Algo", icon="🤖", url_path="bot-dynamic-sr-algo"),
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं नवीन, स्वतंत्र page — MCX Futures Trader (वरच्या
+        # NIFTY/BANKNIFTY/SENSEX bots पासून पूर्णपणे वेगळं — options नाही, सरळ Futures).
+        st.Page(page_mcx_futures.render, title="MCX Futures Trader", icon="🛢️", url_path="mcx-futures"),
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Broker Accounts" हे स्वतंत्र नाव sidebar मधून
         # काढून "Settings" केलं (आतलं काम तेच — पान/फाईल तीच आहे, फक्त नाव/जागा बदलली).
         st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),
