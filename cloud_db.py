@@ -334,6 +334,27 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "trading_mode": "PAPER",
         "broker_account_ids": [],
     },
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, संपूर्णपणे नवीन, स्वतंत्र strategy — MCX Futures Trader
+    # (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER). इतर तिन्ही strategies (NIFTY/BANKNIFTY/SENSEX options)
+    # यांना अजिबात हात लावलेला नाही — पूर्णपणे वेगळी, स्वतःची settings/execution. Upstox चा Option
+    # Chain API MCX साठी उपलब्धच नाही, त्यामुळे ही options (credit spread/naked) नाही — सरळ Futures
+    # contract खरेदी/विक्री (S/R touch झाला की), त्यामुळे इथे net_credit/strike-निवड/hedge हे concept
+    # लागू नाहीत — SL/Target सरळ futures points मध्ये.
+    "mcx_futures": {
+        "lots": 1,                       # प्रत्यक्ष quantity = lots × commodity चा स्वतःचा lot_size (Upstox कडून)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("30 minute candle", नंतर explicit केलं — हा MCX strategy
+        # साठीच, existing NIFTY bots साठी नाही) — डीफॉल्ट फक्त 30M, 15M हा पर्यायच नाही (कधीच नाही).
+        "timeframe_choice": "30M",       # "30M" | "60M" | "ALL" (30M+60M दोन्ही — 15M कधीच नाही)
+        "entry_rsi_gate_enabled": True,
+        "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
+        "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        "sl_points": 20,                 # Stop Loss — underlying futures points (options premium नाही)
+        "target_points": 40,             # Target — underlying futures points
+        "trailing_sl_enabled": False,
+        "trailing_distance_points": 10,
+        "trading_mode": "PAPER",
+        "broker_account_ids": [],
+    },
 }
 
 # वापरकर्त्याने सापडवलेली bug — वरचे itm_depth_points/hedge_width_points/naked_hedge_width_points

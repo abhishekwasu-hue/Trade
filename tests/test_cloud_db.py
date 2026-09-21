@@ -975,6 +975,50 @@ class TestStrategySettings:
         assert defaults["swing_min_move_pct"] == 0.5
 
 
+class TestMcxFuturesStrategySettings:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली, संपूर्णपणे नवीन, स्वतंत्र strategy — MCX Futures Trader.
+    NIFTY/BANKNIFTY/SENSEX च्या तिन्ही strategies पासून पूर्णपणे वेगळी — options-specific fields
+    (itm_depth_points/hedge_width_points/net_credit इ.) इथे मुळीच नाहीत, सरळ futures points मध्ये
+    SL/Target."""
+
+    def test_no_mcx_symbol_enabled_by_default(self, monkeypatch):
+        """नवीन/अपडाळलेली strategy — कुठल्याही MCX commodity साठी डीफॉल्ट सक्रिय नाही (classic_sr_reversal
+        सारखाच safe-by-default — वापरकर्त्याने Dashboard वरून स्पष्टपणे सक्रिय केल्याशिवाय कुठलाही, PAPER
+        सुद्धा, trade नाही). symbol_enabled logic (symbol == "NIFTY") MCX symbols साठी आपोआप False ठरतं."""
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        for symbol in ("CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"):
+            result = cloud_db.get_strategy_settings("mcx_futures", symbol)
+            assert result["symbol_enabled"] is False
+
+    def test_rsi_dual_threshold_defaults_40_60(self):
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        assert defaults["rsi_support_max"] == 40
+        assert defaults["rsi_resistance_min"] == 60
+        assert defaults["entry_rsi_gate_enabled"] is True
+
+    def test_timeframe_choice_defaults_to_30m_only(self):
+        """15M हा पर्यायच नाही (कधीच नाही) — फक्त 30M/60M/ALL(दोन्ही एकत्र)."""
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        assert defaults["timeframe_choice"] == "30M"
+
+    def test_no_options_specific_fields(self):
+        """options-only concepts (strike-निवड/hedge/net_credit) इथे नकोतच — सरळ Futures."""
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        for absent_field in ("itm_depth_points", "hedge_width_points", "naked_enabled", "entry_pcr_gate_enabled"):
+            assert absent_field not in defaults
+
+    def test_sl_target_are_futures_points_not_premium(self):
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        assert defaults["sl_points"] == 20
+        assert defaults["target_points"] == 40
+        assert defaults["trailing_sl_enabled"] is False
+
+    def test_defaults_to_paper_mode(self):
+        defaults = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        assert defaults["trading_mode"] == "PAPER"
+        assert defaults["broker_account_ids"] == []
+
+
 class TestGetAllStrategyTradingModes:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता
     यावं) — पानाच्या वर सर्व strategy+symbol combos पैकी कुठले LIVE आहेत हे एकाच query मध्ये दाखवण्यासाठी."""
