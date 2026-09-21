@@ -18,6 +18,7 @@ dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py मध्ये आ�
 """
 import datetime
 
+import pandas as pd
 import streamlit as st
 
 import cloud_db
@@ -40,6 +41,20 @@ CHART_TIMEFRAME_OPTIONS = {
 
 def _widget_key(symbol, field):
     return f"mcxf_{symbol}_{field}"
+
+
+def _render_level_hit_log_by_date(df):
+    """🎓 page_dashboard.py च्या `_render_signal_log_by_date()` (Market Zones टॅबवरचा Signal Log,
+    SRv2/Dynamic SR Instant Trader साठी) याच पॅटर्नचं MCX साठी स्वतंत्र अनुकरण — तारीख-निहाय (date-wise)
+    वेगळं दाखवला जातो, सर्वात अलीकडची तारीख सर्वात वर. `cloud_db.signal_log` table symbol-निरपेक्ष
+    आहे (कुठलाही strategy_key/exchange column नाही) — त्यामुळे mcx_futures_trader.py (बांधल्यावर)
+    established `cloud_db.save_signal_log()` याच table मध्ये थेट वापरू शकेल, वेगळी table लागणार नाही."""
+    signal_time = pd.to_datetime(df["signal_time"])
+    dates = signal_time.dt.date
+    for d in sorted(dates.unique(), reverse=True):
+        day_df = df[dates == d]
+        st.markdown(f"**📅 {d}** — {len(day_df)} तपासण्या, {(day_df['hit_type'] != 'NO_HIT').sum()} वेळा touch")
+        st.dataframe(day_df, width="stretch", height=min(300, 60 + 35 * len(day_df)))
 
 
 @st.cache_data(ttl=300)
@@ -259,6 +274,45 @@ def render():
                 width="stretch",
             )
             st.caption(f"एकूण {len(zones_df)} ACTIVE zones.")
+
+        st.markdown("---")
+        sub_header(f"📜 {symbol} — Level Hit Log", HDR_PURPLE)
+        st.caption(
+            "Dashboard च्या Market Zones टॅबवरच्या Signal Log सारखंच — प्रत्येक तपासलेला S/R level touch "
+            "(trade झाला किंवा न झाला तरीही). `cloud_db.signal_log` symbol-निरपेक्ष table आहे, त्यामुळे "
+            "mcx_futures_trader.py बांधल्यावर हीच table वापरेल — वेगळी table लागणार नाही."
+        )
+        hit_log_today = get_ist_today()
+        hit_log_range_choice = st.radio(
+            "कालावधी", ["आज", "गेले 7 दिवस", "कस्टम रेंज"], horizontal=True, key=_widget_key(symbol, "hit_log_range"),
+        )
+        if hit_log_range_choice == "आज":
+            hit_log_from, hit_log_to = hit_log_today, hit_log_today
+        elif hit_log_range_choice == "गेले 7 दिवस":
+            hit_log_from, hit_log_to = hit_log_today - datetime.timedelta(days=7), hit_log_today
+        else:
+            hl1, hl2 = st.columns(2)
+            with hl1:
+                hit_log_from = st.date_input("पासून", value=hit_log_today, key=_widget_key(symbol, "hit_log_from"))
+            with hl2:
+                hit_log_to = st.date_input("पर्यंत", value=hit_log_today, key=_widget_key(symbol, "hit_log_to"))
+
+        if hit_log_from > hit_log_to:
+            st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+        else:
+            hit_log_df = cloud_db.get_signal_log_range(symbol, hit_log_from, hit_log_to)
+            if hit_log_df is None or hit_log_df.empty:
+                st.info(
+                    "या कालावधीत कुठलाही level touch तपासला गेलेला नाही — strategy अजून प्रत्यक्ष चालू "
+                    "केलेली नसल्याने (वर बघा) हे अपेक्षितच आहे."
+                )
+            else:
+                hit_log_filter = st.radio(
+                    "दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key=_widget_key(symbol, "hit_log_filter"),
+                )
+                display_hit_log = hit_log_df if hit_log_filter == "सर्व" else hit_log_df[hit_log_df["hit_type"] != "NO_HIT"]
+                st.caption(f"एकूण {len(hit_log_df)} तपासण्या — {(hit_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                _render_level_hit_log_by_date(display_hit_log)
 
     with tab_mode:
         st.info(f"सध्या तुम्ही **MCX Futures Trader** ({symbol}) साठी सेटिंग्ज बदलताय — इतर commodities यावर परिणाम होणार नाही.")
