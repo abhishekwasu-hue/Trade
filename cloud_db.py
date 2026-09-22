@@ -1224,7 +1224,7 @@ def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_
     return merge_dynamic_sr_zones(symbol, dyn_sr_result, "1M", tolerance_pct, formed_date)
 
 
-def save_market_zones(zones_df, symbol):
+def save_market_zones(zones_df, symbol, scoped=False):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिलेल्या symbol चे जुने zones काढून, नवीन गणना केलेले
     zones साठवणे (replace-on-refresh — market_zones हे "सद्य स्थिती" दाखवतं, वाढत जाणारा इतिहास नाही).
@@ -1237,13 +1237,32 @@ def save_market_zones(zones_df, symbol):
     refresh आताही **सर्वच** zone_types (1M/5M सकट) रोज साफ करून, ताज्या (अलीकडच्या काही दिवसांच्या)
     डेटावरून पुन्हा गणना करतो — बघा market_zones.compute_all_zones() मधली df_1m_recent/df_5m_recent
     टिप्पणी.
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेला नवीन पर्याय (`scoped`) — NIFTY/BANKNIFTY/SENSEX चे 15M/30M/60M
+    zones बाजार चालू असताना (intraday) वारंवार ताजे करायचे होते, पण वरचा डीफॉल्ट (symbol-व्यापी, सगळेच
+    zone_types काढणारा) DELETE बाजार चालू असताना वापरणं **धोकादायक** ठरलं असतं — `DYNAMIC_SR_*_1M/*_5M`
+    zones त्याच क्षणी `dynamic_sr_instant_trader.py` दर मिनिटाला वेगळ्या (जुने न काढता फक्त STALE
+    करणाऱ्या) पद्धतीने live जपत असतो, त्यावरच प्रत्यक्ष trade चालू असू शकतो — ते intraday इथून उडवणं
+    live trading मध्ये अचानक व्यत्यय आणू शकलं असतं. `scoped=True` दिलं की DELETE फक्त `zones_df` मध्ये
+    प्रत्यक्ष दिलेल्या zone_types पुरतंच मर्यादित राहतं (`zones_df["zone_type"].unique()`) — caller ने
+    फक्त 15M/30M/60M रांगा दिल्या, तर फक्त तेवढेच zone_types बदलतात, इतर कशालाही (1M/5M, SUPPORT/
+    RESISTANCE, Order Blocks इ.) हात लागत नाही. डीफॉल्ट `False` — established रोजच्या पूर्ण
+    (refresh_market_zones.py/refresh_market_zones_mcx.py) refresh चं वर्तन पूर्णपणे अबाधित.
     """
     conn = get_connection()
     if conn is None:
         return False
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM market_zones WHERE symbol = %s", (symbol,))
+            if scoped:
+                zone_types = zones_df["zone_type"].dropna().unique().tolist()
+                if zone_types:
+                    cur.execute(
+                        "DELETE FROM market_zones WHERE symbol = %s AND zone_type = ANY(%s)",
+                        (symbol, zone_types),
+                    )
+            else:
+                cur.execute("DELETE FROM market_zones WHERE symbol = %s", (symbol,))
             for _, row in zones_df.iterrows():
                 cur.execute(
                     """INSERT INTO market_zones (symbol, zone_type, zone_low, zone_high, strength, formed_date, status)

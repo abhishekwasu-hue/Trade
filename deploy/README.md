@@ -293,6 +293,44 @@ crontab -l | grep refresh_market_zones
 
 ---
 
+# NIFTY/BANKNIFTY/SENSEX — 15M/30M/60M Zones Intraday Refresh (5x/दिवस — नवीन, वेगळा cron)
+
+🎓 वापरकर्त्याने सापडवलेली bug — वरचा `refresh_market_zones.py` cron दिवसातून **फक्त एकदाच** (बाजार
+बंद झाल्यावर, 15:35 IST) चालतो, त्यामुळे SRv2/Classic S/R Reversal bots चे 15M/30M/60M zones दिवसभर
+stale राहतात (MCX Market Zones प्रमाणेच सापडलेली, त्याच वर्गातली समस्या — बघा वरचा MCX भाग).
+वापरकर्त्याने किमान 5 वेळा/दिवस अपडेट मागितलं.
+
+⚠️ **वरचा `refresh_market_zones.py` cron मात्र दिवसातून एकदाच बाजार बंद झाल्यावरच चालवायचा, बदलायचा
+नाही** — तो त्याच वेळी DYNAMIC_SR_*_1M/*_5M zones सुद्धा नव्याने काढतो, आणि **`save_market_zones()`
+चं डीफॉल्ट DELETE symbol-व्यापी आहे (सगळेच zone_types पुसतं)** — तेच 1M/5M zones
+`dynamic_sr_instant_trader.py` बाजार चालू असताना दर मिनिटाला, जुने कधीच न काढता फक्त STALE करणाऱ्या
+पद्धतीने live जपत असतो, त्यावरच प्रत्यक्ष trade चालू असू शकतो. तो cron intraday चालवला असता, तर प्रत्येक
+वेळी live-maintained 1M/5M zones सरसकट उडून नव्याने लिहिले गेले असते — real money trading मध्ये अचानक
+व्यत्यय येण्याचा धोका.
+
+त्यामुळे **नवीन, पूर्णपणे स्वतंत्र** `refresh_market_zones_intraday.py` script जोडलेला आहे —
+`market_zones.compute_intraday_sr_zones()` (फक्त 15M/30M/60M, compute_all_zones() ला अजिबात स्पर्श
+न करता) व `cloud_db.save_market_zones(..., scoped=True)` (फक्त तेच सहा zone_types replace — 1M/5M,
+SUPPORT/RESISTANCE, Order Blocks इ. पूर्णपणे अबाधित) वापरतो.
+
+**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — वरच्या once-daily entry सोबतच, ती न बदलता
+नवीन ओळ म्हणून; बाजार सत्रादरम्यान 4 वेळा + वरचा मूळचा close-नंतरचा run = एकूण 5 वेळा/दिवस):**
+```
+5 5,6,8,9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_intraday.py >> /root/Trade/market_zones_intraday_refresh.log 2>&1
+```
+म्हणजे 10:35, 11:35, 13:35, 14:35 IST (नवीन 4, बाजार सत्रात 9:15 AM–3:30 PM च्या आतच) + वरचा मूळचा
+15:35 IST (close+5, अजूनही तोच, न बदललेला `refresh_market_zones.py` run) — एकूण 5 वेळा/दिवस.
+
+**तपासणी:**
+```bash
+tail -f /root/Trade/market_zones_intraday_refresh.log
+crontab -l | grep refresh_market_zones_intraday
+```
+यशस्वी run नंतर log मध्ये प्रत्येक symbol साठी "✅ NIFTY: N zones साठवले (15M+30M+60M, इतर zone_types
+अबाधित)" असं दिसायला हवं.
+
+---
+
 # Upstox Token Webhook — Deployment (1-Tap Mobile Approval)
 
 `trigger_upstox_token_request.py` Upstox ला "आजचा token हवा" अशी विनंती पाठवतो — तुमच्या मोबाईलवर
