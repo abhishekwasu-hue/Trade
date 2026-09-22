@@ -17,13 +17,29 @@ Carry-Forward, PCR Gate — trading_engine.py मधलं सर्वकाह
 `monitoring_enabled` (Dashboard "Live Trading" टिक) इथे गेट म्हणून वापरलेला नाही — SRv2/
 Dynamic-S/R चे trades Dashboard च्या स्थितीपासून पूर्णपणे स्वतंत्र आहेत.
 
-⚠️ VPS वर सतत (दर १ मिनिट) चालवण्यासाठी डिझाईन केलेली — GitHub Actions वर नाही (५-मिनिट मर्यादा,
-SL/Target-निरीक्षणासाठी खूपच धीमी).
+⚠️ VPS वर सतत (crontab, दर १ मिनिटाला नव्याने invoke) चालवण्यासाठी डिझाईन केलेली — GitHub Actions वर
+नाही (५-मिनिट मर्यादा, SL/Target-निरीक्षणासाठी खूपच धीमी).
+
+🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("SL slippage कमी करा — polling interval कमी करा") —
+Performance Report मध्ये आढळलं की SL प्रत्यक्षात threshold च्या बऱ्याच पुढे जाऊन लागत होता (उदा.
+-0.05% थ्रेशोल्ड असताना -0.11% वर exit) — कारण cron दर 60 सेकंदांनीच नव्याने ही script सुरू करतो,
+मध्ये किंमत किती पुढे गेली हे कळतच नाही. आता cron अजूनही दर 60 सेकंदांनीच invoke करतो (तेच crontab,
+बदललेलं नाही), पण प्रत्येक invocation आता स्वतःच आतून `--interval-seconds` (डीफॉल्ट 20) च्या
+अंतराने `--loop-seconds` (डीफॉल्ट 50, 60-सेकंद cron window च्या आत बसावं म्हणून बफर ठेवलेला) पर्यंत
+पुन्हा-पुन्हा तपासत राहते — म्हणजे प्रत्यक्षात दर ~20 सेकंदांनी SL/Target तपासलं जातं, overshoot/slippage
+साधारण एक-तृतीयांश होतो. ⚠️ हे अजूनही तिखट tick-by-tick निरीक्षण नाही — फक्त interval कमी केलेला —
+पूर्ण उपाय (broker-side resting SL order) स्वतंत्रपणे, नंतरच्या टप्प्यात.
+
+⚠️ प्रत्येक cycle मध्ये प्रत्येक monitored symbol साठी API कॉल्स होतात (ATR candles + open trades ची
+LTP) — आता 60 सेकंदांत ~3x जास्त वेळा (पूर्वी 1, आता ~3) — Upstox rate-limit च्या आत राहण्यासाठी
+`--interval-seconds` गरज पडल्यास वाढवता येतो (कमी frequent, पण कमी API load).
 
 चालवणे:
     python3 trade_monitor.py --token <UPSTOX_TOKEN>
+    python3 trade_monitor.py --token <UPSTOX_TOKEN> --interval-seconds 30 --loop-seconds 50  # हळू
 """
 import argparse
+import time
 
 import cloud_db
 from engine_service import load_settings, compute_atr_points, MONITORED_SYMBOLS
@@ -81,10 +97,37 @@ def run_monitor_cycle(access_token, product_type="D"):
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
 
 
+def run_monitor_loop(token, product_type="D", interval_seconds=20, loop_seconds=50,
+                      cycle_fn=run_monitor_cycle, sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print):
+    """एका cron invocation च्या आत, `interval_seconds`च्या अंतराने `loop_seconds` पर्यंत
+    run_monitor_cycle() पुन्हा-पुन्हा चालवणे (SL slippage कमी करण्यासाठी — बघा वरची फाईल-टिप्पणी).
+    प्रत्येक cycle चा वेळ वजा करूनच पुढचा sleep काढला जातो, जेणेकरून एकूण वेळ loop_seconds च्या आसपासच
+    राहील (cycle ला जास्त वेळ लागला, तर पुढचा sleep कमी/शून्य होतो, ओलांडत नाही)."""
+    start = now_fn()
+    cycles = 0
+    while True:
+        cycle_start = now_fn()
+        print_fn(cycle_fn(token, product_type))
+        cycles += 1
+        elapsed = now_fn() - start
+        remaining_in_budget = loop_seconds - elapsed
+        if remaining_in_budget <= 0:
+            break
+        cycle_duration = now_fn() - cycle_start
+        sleep_time = min(interval_seconds - cycle_duration, remaining_in_budget)
+        if sleep_time > 0:
+            sleep_fn(sleep_time)
+    return cycles
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--product-type", default="D")
+    parser.add_argument("--interval-seconds", type=float, default=20,
+                         help="किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 20 — पूर्वीच्या दर-60-सेकंदांऐवजी)")
+    parser.add_argument("--loop-seconds", type=float, default=50,
+                         help="एका cron invocation मध्ये किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 50 — 60-सेकंद cron window च्या आत बसावं म्हणून बफर)")
     args = parser.parse_args()
 
     token = cloud_db.get_effective_upstox_token(args.token)
@@ -92,4 +135,4 @@ if __name__ == "__main__":
         print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
         exit(1)
 
-    print(run_monitor_cycle(token, args.product_type))
+    run_monitor_loop(token, args.product_type, args.interval_seconds, args.loop_seconds)
