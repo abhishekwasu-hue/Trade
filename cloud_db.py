@@ -32,8 +32,33 @@ import pandas as pd
 try:
     import psycopg2
     import psycopg2.extras
+    import psycopg2.extensions
 except ImportError:
     psycopg2 = None
+
+# 🎓 वापरकर्त्याने प्रत्यक्ष VPS वर सापडवलेली, गंभीर bug — MCX Level Hit Log (आणि संभाव्यतः
+# NIFTY/BANKNIFTY/SENSEX चा Signal Log सुद्धा, तोच कोड-मार्ग) कायम रिकामाच दिसायचा — प्रत्यक्ष
+# `data/app.log` मध्ये सापडलं: `psycopg2.errors.InvalidSchemaName: schema "np" does not exist`,
+# SQL मध्ये अक्षरशः `np.float64(1416.2)` असा मजकूर embed झालेला. मूळ कारण: `zone_low`/`level_price`
+# सारखी मूल्यं pandas DataFrame मधून येतात (numpy.float64 प्रकारात, कधीच plain Python float मध्ये
+# रूपांतरित न होता — dynamic_sr_instant_trader.py/mcx_futures_trader.py दोन्हीकडे). NumPy 2.x
+# (requirements.txt: `numpy~=2.4`) पासून `numpy.float64` चं repr "np.float64(1416.2)" असं दाखवतं
+# (जुन्या NumPy मध्ये नुसतं "1416.2") — आणि psycopg2 चा डीफॉल्ट adapter त्याच repr वर अवलंबून असल्याने,
+# प्रत्येक असा INSERT/UPDATE (कुठलाही error/exception caller ला कधीच न दिसता, फक्त `data/app.log`
+# मध्ये शांतपणे नोंदवला जायचा — save_signal_log() सारख्या सर्वच function मध्ये `except Exception`
+# आहे) सुरुवातीपासूनच अयशस्वी होत होता. एकाच, केंद्रीय ठिकाणी (इथेच, import च्या वेळीच एकदा) योग्य
+# adapters नोंदवून, कुठल्याही caller ला स्वतः `float()`/`int()` cast लक्षात ठेवायची गरज उरत नाही —
+# आत्ताचे आणि भविष्यातले सर्वच numpy-सोर्स्ड मूल्यं आपोआप बरोबर लिहिली जातील.
+if psycopg2 is not None:
+    try:
+        import numpy as _np
+        psycopg2.extensions.register_adapter(_np.float64, lambda val: psycopg2.extensions.AsIs(float(val)))
+        psycopg2.extensions.register_adapter(_np.float32, lambda val: psycopg2.extensions.AsIs(float(val)))
+        psycopg2.extensions.register_adapter(_np.int64, lambda val: psycopg2.extensions.AsIs(int(val)))
+        psycopg2.extensions.register_adapter(_np.int32, lambda val: psycopg2.extensions.AsIs(int(val)))
+        psycopg2.extensions.register_adapter(_np.bool_, lambda val: psycopg2.extensions.AsIs(bool(val)))
+    except ImportError:
+        pass  # numpy उपलब्ध नाही (अत्यंत दुर्मिळ) -- तरी psycopg2 इतर सर्व प्रकारांसाठी काम करत राहील
 
 from crypto_utils import encrypt_token, decrypt_token
 from log_setup import get_logger
