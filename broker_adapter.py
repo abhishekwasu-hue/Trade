@@ -62,3 +62,22 @@ class BrokerAdapter(ABC):
         सुरक्षित अंदाज वापरावा.
         """
         return None
+
+    def supports_broker_side_stop_loss(self):
+        """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL", सध्या फक्त Upstox
+        साठी) — caller ने (trading_engine.py) हे आधी तपासूनच place_stop_loss_order()/cancel_order()
+        वापरावं; न-सपोर्ट करणाऱ्या brokers (Shoonya/Stocko/Fyers) साठी डीफॉल्ट False — polling-based
+        (trade_monitor.py) exit हाच त्यांचा एकमेव मार्ग तसाच राहतो, काहीही न बदलता."""
+        return False
+
+    def place_stop_loss_order(self, instrument_token, quantity, transaction_type, product, trigger_price):
+        """established leg साठी resting SL-M (Stop-Loss Market) order ठेवणे — फक्त
+        supports_broker_side_stop_loss()==True असणाऱ्या brokers नीच override करावं.
+        रिटर्न: order_id (str) यशस्वी झाल्यास, नाहीतर None."""
+        raise NotImplementedError(f"{type(self).__name__} broker-side SL orders support करत नाही")
+
+    def cancel_order(self, order_id):
+        """established आधीच ठेवलेला order (उदा. वरचा resting SL-M) रद्द करणे — established polling-based
+        exit (Target/TSL/इ.) ने trade आधीच बंद केला की, हा उरलेला pending order रद्द करण्यासाठी वापरायचा.
+        रिटर्न: True/False (यशस्वी झालं की नाही)."""
+        raise NotImplementedError(f"{type(self).__name__} broker-side SL orders support करत नाही")

@@ -914,6 +914,86 @@ def place_multi_leg_order(access_token, orders):
         return None, {"error": str(e)}
 
 
+def place_stop_loss_order(access_token, instrument_token, quantity, transaction_type, product, trigger_price, correlation_id=None):
+    """
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — Performance Report
+    मधून सापडलेला SL slippage (trade_monitor.py चं 20-सेकंद polling — Phase 1 — तरीही पूर्णपणे टाळू
+    शकत नाही, कारण ते अजूनही *बघून-मग-बंद-करणारंच* आहे) कायमचा घालवण्यासाठी — entry झाल्या-झाल्याच
+    Upstox कडेच एक resting SL-M (Stop-Loss Market) order ठेवणे, जो exchange level वरच, आपोआप,
+    कुठल्याही polling-अंतराशिवाय trigger होतो.
+
+    single-leg ऑर्डर (multi-leg API नाही — प्रत्येक trade's entry च्या उलट दिशेने, एकेक leg साठी वेगळा
+    SL लागतो; एकत्र multi-leg SL Upstox च्या API मध्ये अस्तित्वातच नाही). SL-M म्हणजे trigger_price
+    गाठल्यावर लगेच MARKET ऑर्डर टाकली जाते (limit price लागत नाही, partial-fill चा धोका कमी).
+
+    🎓 फक्त plumbing — हे function अजून कुठूनही (live entry/exit flow मधून) कॉल होत नाही, स्वतंत्रपणे
+    चाचणी करून, वेगळ्या PR मध्ये प्रत्यक्ष वापरात आणलं जाईल (careful, टप्प्याटप्प्याने).
+
+    रिटर्न: (status_code, response_dict) — resp["data"]["order_id"] यशस्वी झाल्यास.
+    """
+    try:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token.strip()}",
+        }
+        proxy_url = get_static_ip_proxy_url()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        body = {
+            "quantity": quantity, "product": product, "validity": "DAY", "price": 0,
+            "tag": "A1_SL_M", "instrument_token": instrument_token,
+            "order_type": "SL-M", "transaction_type": transaction_type,
+            "disclosed_quantity": 0, "trigger_price": trigger_price, "is_amo": False,
+            "correlation_id": correlation_id or uuid.uuid4().hex[:20],
+        }
+        url = "https://api.upstox.com/v2/order/place"
+        res = _post_with_retry_429_only(url, headers=headers, json=body, timeout=15, proxies=proxies)
+        try:
+            resp = res.json()
+        except Exception:
+            _logger.exception("place_stop_loss_order() मध्ये अनपेक्षित चूक (silently handled)")
+            resp = {"raw": res.text}
+        return res.status_code, resp
+    except Exception as e:
+        return None, {"error": str(e)}
+
+
+def cancel_order(access_token, order_id):
+    """
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — polling-based exit
+    (Target/TSL/Next-Level/PCR-Gate/OI-Reversal/EOD/Manual) ने trade आधीच बंद केला, तर broker कडे
+    अजूनही pending असलेला resting SL-M order **इथूनच** रद्द केला जातो — नाहीतर तो नंतर चुकून trigger
+    होऊन नवीन, अनपेक्षित (unhedged) position उघडू शकतो, हा सर्वात मोठा धोका आहे या फीचरमधला.
+
+    DELETE (idempotent) असल्याने 429 वर retry सुरक्षित आहे (POST सारखा duplicate-ऑर्डरचा धोका नाही).
+    order आधीच भरला गेलेला/cancel झालेला असेल, तर Upstox त्रुटी देतो — ती इथे गिळली जात नाही,
+    caller ने बघून योग्य ते (उदा. फक्त लॉग करून पुढे जाणे) ठरवावं.
+
+    रिटर्न: (status_code, response_dict).
+    """
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        proxy_url = get_static_ip_proxy_url()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        url = f"https://api.upstox.com/v2/order/cancel?order_id={order_id}"
+        res = requests.delete(url, headers=headers, timeout=15, proxies=proxies)
+        for attempt in range(3):
+            if res.status_code != 429:
+                break
+            retry_after = res.headers.get("Retry-After")
+            wait_s = float(retry_after) if retry_after else (1.5 ** attempt)
+            time.sleep(min(wait_s, 20))
+            res = requests.delete(url, headers=headers, timeout=15, proxies=proxies)
+        try:
+            resp = res.json()
+        except Exception:
+            _logger.exception("cancel_order() मध्ये अनपेक्षित चूक (silently handled)")
+            resp = {"raw": res.text}
+        return res.status_code, resp
+    except Exception as e:
+        return None, {"error": str(e)}
+
+
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Order Fill Verification, गंभीर यादीतला
 # पहिला मुद्दा) — Upstox च्या Multi Order API चं तात्काळ "200 success" उत्तर फक्त "ऑर्डर broker कडे
 # स्वीकारला गेला" इतकंच सांगतं — "प्रत्यक्ष भरला (filled) गेला" हे नाही. आधी आपण हेच शांतपणे
