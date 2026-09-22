@@ -123,7 +123,7 @@ expander) **डीफॉल्ट बंद** असलेला per-strategy-pe
   empty/`None`) — no public endpoint found in the Stocko API PDF provided.
   PAPER mode is explicitly unavailable on Stocko for this reason.
 
-## 5. MCX Futures Trader (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER) — NOT safe for LIVE, or even automated PAPER, capital yet
+## 5. MCX Futures Trader (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER) — crontab already active (PAPER), rollout order verification incomplete
 
 A separate strategy from everything above — direct futures (no options), its
 own page (`page_mcx_futures.py`), its own execution bot (`mcx_futures_trader.py`,
@@ -131,38 +131,52 @@ PR #76), its own zones refresh (`refresh_market_zones_mcx.py`, PR #76). Reuses
 `trading_engine.open_multi_leg_trade()`/`manage_open_trades()` unmodified (a
 single futures leg passed through the same "legs" path options use), so the
 engine-level risk gates in §1/§2 above (kill switch, margin check, partial-fill
-reversal — Upstox-only per §2) already apply to it. What's specifically
-**not yet done, and blocks even a first automated PAPER run**:
+reversal — Upstox-only per §2) already apply to it. Automated PAPER *is* now
+running (crontab confirmed live, see the 2026-09-22 note below) — what's
+still unverified before trusting its output or considering LIVE:
 
-- **Real instrument data never verified.** `resolve_mcx_futures_instruments.py`
-  (PR #73) exists and is read-only-safe, but nobody has run it against a real
-  Upstox token on the VPS yet — the actual `instrument_key`/`lot_size`/
-  `tick_size` for any of the 5 commodities is still unconfirmed.
-- **No Dynamic S/R data exists.** `refresh_market_zones_mcx.py` has never been
-  run — `cloud_db.market_zones` has zero rows for any MCX symbol, so
-  `mcx_futures_trader.py` would find no ACTIVE levels and do nothing (safe,
-  but useless) even if started.
-- **`mcx_futures_trader.py` has never been run once, manually or otherwise** —
-  only unit-tested (mocked Upstox calls, `tests/test_mcx_futures_trader.py`).
-  No real order, PAPER or LIVE, has ever come from this script.
-- **VPS crontab not added.** `deploy/README.md`'s MCX section has the entries
-  ready but explicitly deferred behind the 3 items above — do not add them
-  until each has been done and its output looks sane by eye.
+- **Real instrument data never independently confirmed.**
+  `resolve_mcx_futures_instruments.py` (PR #73) exists and is read-only-safe,
+  but nobody has separately confirmed sane `instrument_key`/`lot_size`/
+  `tick_size` output for all 5 commodities by eye — `mcx_futures_trader.py`
+  calls it every cycle regardless, so it's implicitly exercised, but a
+  standalone sanity check hasn't been done.
+- **Dynamic S/R data status unconfirmed for symbols other than CRUDEOIL.**
+  `refresh_market_zones_mcx.py`'s output hasn't been spot-checked against a
+  real chart for any commodity — if `cloud_db.market_zones` has zero rows for
+  a symbol, `mcx_futures_trader.py` just finds no ACTIVE levels and does
+  nothing (safe, but useless) rather than erroring.
 - **Shoonya/Stocko not evaluated for MCX at all.** `broker_account_ids`
   routing works mechanically (same `execute_trade_on_all_accounts()` path),
   but nobody has checked whether Shoonya/Stocko can even place an MCX order —
   treat this exactly like §2's NIFTY gate: Upstox-only until proven otherwise.
 
+🎓 **2026-09-22 update — found live on the VPS, out of the documented order below.**
+`crontab -l` on the VPS shows all 3 MCX lines from `deploy/README.md` already
+active (entry bot every minute during MCX hours, nightly
+`refresh_market_zones_mcx.py`) — added before steps 1-3 below were confirmed
+done in order. Verified in this session: CRUDEOIL's `symbol_enabled` was off
+until now (so `mcx_futures_trader.py` was returning early every cron tick,
+writing nothing to `signal_log` — this, not a bug, is why the Dashboard's
+Level Hit Log looked empty even though cron was clearly running), and
+CRUDEOIL's Trading Mode is confirmed **PAPER** (user-checked, not LIVE — no
+real capital at risk right now). Steps 1-2 below (resolver/zones sanity
+checks) were **not independently confirmed** before the crontab went in —
+worth spot-checking now that the loop is actually live, per step 3.
+
 **Rollout order (MCX-specific, mirrors §3 above but starts further back):**
 1. Run `resolve_mcx_futures_instruments.py` on the VPS with a real token —
    confirm sane `instrument_key`/`lot_size`/`tick_size`/`expiry` for all 5
-   commodities.
+   commodities. **Not independently confirmed — worth spot-checking now.**
 2. Run `refresh_market_zones_mcx.py` once by hand — spot-check the saved
    30M/60M levels against a real chart (e.g. TradingView) for 1-2 commodities.
-3. Run `mcx_futures_trader.py` once by hand (PAPER mode — the settings
-   default) — confirm no errors, and that the Dashboard's Signal Log/Order
-   Log/Level Hit Log show what's expected.
-4. Only then add the crontab entries from `deploy/README.md`.
+   **Not independently confirmed — worth spot-checking now.**
+3. ✅ Crontab is running `mcx_futures_trader.py` automatically now (PAPER) —
+   watch the Dashboard's Level Hit Log/Order Log for a few cron cycles and
+   confirm entries look sane (no repeated errors in `mcx_futures.log`).
+4. Crontab entries from `deploy/README.md` are live (see above) — for any
+   *other* MCX symbol before enabling `symbol_enabled`, still do steps 1-2
+   by hand first (this update only covers CRUDEOIL's current state).
 5. Run PAPER mode through several full MCX sessions before considering LIVE —
    note MCX's session runs to ~11:30/11:55 PM IST, much longer than NSE's, so
    "a few sessions" takes real calendar time to accumulate.
