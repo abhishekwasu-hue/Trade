@@ -235,6 +235,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # वापरकर्त्याने broker_accounts मधून एक किंवा अनेक account_id निवडले, तर त्या प्रत्येक
         # account वर स्वतंत्र trade उघडला जातो (प्रत्येकाचं स्वतःचं SL/TSL/Target management).
         "broker_account_ids": [],
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — डीफॉल्ट बंद.
+        # चालू केल्यास, entry नंतर लगेच Upstox कडेच resting SL-M order ठेवला जातो (फक्त LIVE —
+        # PAPER/LIVE_PAPER मध्ये फक्त trigger price ची dry-run गणना+लॉग होते, खरा order नाही) —
+        # trade_monitor.py च्या polling-based SL सोबतच, exchange-level backstop म्हणून.
+        "broker_side_sl_enabled": False,
     },
     "15m_dynamic_sr": {
         "lots": 1,
@@ -277,6 +282,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 1m_instant सारखीच. डीफॉल्ट नेहमी PAPER, broker_account_ids रिकामी (= शुद्ध Upstox).
         "trading_mode": "PAPER",
         "broker_account_ids": [],
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — 1m_instant
+        # सारखीच, डीफॉल्ट बंद.
+        "broker_side_sl_enabled": False,
     },
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली स्वतंत्र, नवीन strategy — "Classical Support/Resistance
     # Reversal" (5M+15M pooled, Support touch -> Bull Put Spread, Resistance touch -> Bear Call
@@ -333,6 +341,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 1m_instant सारखीच. डीफॉल्ट नेहमी PAPER, broker_account_ids रिकामी (= शुद्ध Upstox).
         "trading_mode": "PAPER",
         "broker_account_ids": [],
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — 1m_instant
+        # सारखीच, डीफॉल्ट बंद.
+        "broker_side_sl_enabled": False,
     },
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, संपूर्णपणे नवीन, स्वतंत्र strategy — MCX Futures Trader
     # (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER). इतर तिन्ही strategies (NIFTY/BANKNIFTY/SENSEX options)

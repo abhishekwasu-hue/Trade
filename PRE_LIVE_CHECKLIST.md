@@ -78,21 +78,42 @@ None of them have been confirmed against a live market session.
 5. Re-visit Shoonya/Stocko only after their own option-chain/strike-resolution
    path is built and has been through the same PAPER-first process.
 
-## 3b. Broker-side SL (Phase 2, Upstox-only) — plumbing added, NOT wired into live flow yet
+## 3b. Broker-side SL (Phase 2, Upstox-only, Naked + Credit Spread) — wired in, PAPER-tested, LIVE untested
 
 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा — Performance Report (2026-09-22) मध्ये सापडलेल्या SL
 slippage चं Phase 1 (`trade_monitor.py`, ~20-सेकंद polling — PR #80) आधीच मर्ज झालेलं आहे. Phase 2
-(resting SL-M order थेट Upstox कडेच — पूर्ण polling-मुक्त) साठी फक्त plumbing जोडलेली आहे
-(`upstox_api.place_stop_loss_order()`/`cancel_order()`, `UpstoxBrokerAdapter.place_stop_loss_order()`/
-`cancel_order()`/`supports_broker_side_stop_loss()`) — **हे कुठल्याही live entry/exit flow मधून अजून
-कॉल होत नाही**, फक्त unit-tested आहे. पुढच्या पायऱ्या (वेगळ्या PR मध्ये, अजून व्हायच्या आहेत):
-`open_multi_leg_trade()` मध्ये entry नंतर लगेच SL-M order ठेवणे (plain SL trades साठीच — Trailing
-SL/Next-Level/PCR-Gate/OI-Reversal अजूनही polling-वरच राहतील, हे static price-trigger express करू
-शकत नाहीत), आणि `manage_open_trades()`/`close_trade_manually()` च्या **प्रत्येक** इतर exit-path मध्ये
-हा pending SL order cancel करणे (सर्वात मोठा धोका — cancel चुकला तर जुना order नंतर चुकून trigger
-होऊन unwanted position उघडू शकतो). scope सध्या फक्त Upstox (`adapter is None` किंवा
-`isinstance(adapter, UpstoxBrokerAdapter)`) — Shoonya/Stocko/Fyers `supports_broker_side_stop_loss()`
-कडून आपोआप `False` मिळत असल्याने पूर्णपणे अस्पर्शित राहतात.
+(resting SL-M order थेट Upstox कडेच — पूर्ण polling-मुक्त) आता entry/exit flow मध्ये पूर्णपणे wired
+आहे — settings मध्ये (`Bot Dynamic SR Algo` पान → Exit Gate टॅब → "⚡ Broker-Side SL — Phase 2"
+expander) **डीफॉल्ट बंद** असलेला per-strategy-per-symbol टॉगल (`broker_side_sl_enabled`).
+
+**काय होतं (चालू केल्यावर):**
+- `open_multi_leg_trade()` — entry confirm झाल्या-झाल्याच `_maybe_place_broker_side_sl()` कॉल होतो.
+  Naked — trigger price गणिताने अचूक (entry_price ± sl_premium_points). Credit Spread — फक्त SHORT
+  (SELL) leg वर, hedge leg entry किमतीलाच स्थिर आहे असं **worst-case/conservative** गृहीत धरून
+  (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — प्रत्यक्षात SL आवश्यकतेपेक्षा किंचित आधीच लागू शकतो,
+  कधीच उशिरा नाही).
+- `trading_mode != "LIVE"` (PAPER/LIVE_PAPER चा PAPER भाग) — **खरा order कधीच जात नाही**, फक्त
+  trigger price ची गणना होऊन `monitor.log` मध्ये लॉग होते (`legs_json.sl_order_id="DRYRUN"`) —
+  वापरकर्त्याने स्पष्टपणे मागितलेली "आधी PAPER मध्ये test करूया" ही सुरक्षा-पायरी.
+- `manage_open_trades()` (SL/TSL/Target/Next-Level/EOD/OI-Reversal/Carry-Forward/broker-reconciliation
+  — सर्व exit-paths) आणि `close_trade_manually()` — trade कुठल्याही कारणाने बंद होताना
+  `_maybe_cancel_broker_side_sl()` आपोआप कॉल होऊन pending SL-M order रद्द करतो (हे चुकलं तर जुना
+  order नंतर चुकून trigger होऊन unwanted position उघडू शकतो — या फीचरमधला सर्वात मोठा धोका).
+- फक्त 3 sources साठी लागू (Spot%+Premium-Points settings-चालित SL वापरणारे — बाकीच्यांना (MANUAL/
+  credit_spread_auto_trader/इ.) हे feature अजिबात लागू नाही, जुनंच वर्तन): `dynamic_sr_instant`
+  ("1m_instant" settings), `classic_sr_reversal`, `srv2_momentum_reversal` ("15m_dynamic_sr" settings).
+- Scope फक्त Upstox (`adapter is None` किंवा `isinstance(adapter, UpstoxBrokerAdapter)`) —
+  Shoonya/Stocko/Fyers `supports_broker_side_stop_loss()` कडून आपोआप `False` मिळत असल्याने
+  पूर्णपणे अस्पर्शित राहतात.
+
+**अजून व्हायचं आहे (LIVE करण्याआधी अनिवार्य):**
+- ⚠️ **कधीही खरा LIVE order अजून टाकलेला नाही** — फक्त `pytest tests/` (unit + integration, mocked
+  Upstox API) आणि PAPER dry-run लॉग वाचून पडताळणी. प्रत्यक्ष VPS वर PAPER mode मध्ये काही दिवस चालवून
+  `monitor.log` मधले dry-run trigger prices वापरकर्त्याने डोळ्यांनी पडताळल्याशिवाय **कुठल्याही
+  symbol/strategy साठी हा टॉगल LIVE मोड मध्ये चालू करू नये.**
+- टॉगल चालू करण्याआधी prod Supabase मध्ये `broker_side_sl_enabled` column/field नव्याने ADD होत नाही
+  (JSONB मध्ये आपोआप मर्ज होतं) — वेगळं migration लागत नाही, पण जुनं cached settings-दाखवणं (Dashboard
+  उघडाच ठेवलेलं असेल तर) refresh करूनच नवीन टॉगल दिसेल.
 
 ## 4. Known, deliberately out-of-scope items (not bugs, just incomplete)
 
