@@ -218,41 +218,50 @@ def render():
         )
         is_percent_mode = sl_target_mode == "PERCENT"
 
+        # 🎓 वापरकर्त्याने सापडवलेली गोंधळाची रचना ("repeat setting... confusion") — आधी Points आणि
+        # Percentage दोन्ही fields एकाच वेळी दिसायचे (न-निवडलेला फक्त disabled/greyed-out) — SL/Target/
+        # Trailing प्रत्येकी 2, म्हणजे 6 fields दिसायचे जिथे खरंच फक्त 2-3 लागतात. आता निवडलेल्या mode
+        # चंच field दाखवलं जातं — दुसऱ्याची जतन केलेली value settings मधून तशीच वाचली/जपली जाते
+        # (mode बदलला तरी हरवत नाही), फक्त UI मध्ये दिसत नाही इतकंच.
         e1, e2 = st.columns(2)
-        with e1:
-            sl_points = _number_input(
-                "Stop Loss (futures points)", settings, "sl_points", symbol,
-                min_value=1.0, max_value=1000.0, step=1.0, disabled=is_percent_mode,
-            )
-            sl_pct = _number_input(
-                "Stop Loss (% of entry price)", settings, "sl_pct", symbol,
-                min_value=0.1, max_value=50.0, step=0.1, disabled=not is_percent_mode,
-            )
-        with e2:
-            target_points = _number_input(
-                "Target (futures points)", settings, "target_points", symbol,
-                min_value=1.0, max_value=2000.0, step=1.0, disabled=is_percent_mode,
-            )
-            target_pct = _number_input(
-                "Target (% of entry price)", settings, "target_pct", symbol,
-                min_value=0.1, max_value=100.0, step=0.1, disabled=not is_percent_mode,
-            )
+        if is_percent_mode:
+            with e1:
+                sl_pct = _number_input(
+                    "Stop Loss (% of entry price)", settings, "sl_pct", symbol, min_value=0.1, max_value=50.0, step=0.1,
+                )
+            with e2:
+                target_pct = _number_input(
+                    "Target (% of entry price)", settings, "target_pct", symbol, min_value=0.1, max_value=100.0, step=0.1,
+                )
+            sl_points, target_points = float(settings["sl_points"]), float(settings["target_points"])
+        else:
+            with e1:
+                sl_points = _number_input(
+                    "Stop Loss (futures points)", settings, "sl_points", symbol, min_value=1.0, max_value=1000.0, step=1.0,
+                )
+            with e2:
+                target_points = _number_input(
+                    "Target (futures points)", settings, "target_points", symbol, min_value=1.0, max_value=2000.0, step=1.0,
+                )
+            sl_pct, target_pct = float(settings["sl_pct"]), float(settings["target_pct"])
 
         trailing_sl_enabled = st.checkbox(
-            "Trailing Stop Loss सक्रिय (डीफॉल्ट बंद)", value=bool(settings.get("trailing_sl_enabled", False)),
+            "Trailing Stop Loss सक्रिय (ऐच्छिक — डीफॉल्ट बंद)", value=bool(settings.get("trailing_sl_enabled", False)),
             key=_widget_key(symbol, "trailing_sl_enabled"),
         )
-        t1, t2 = st.columns(2)
-        with t1:
-            trailing_distance_points = _number_input(
-                "Trailing Distance (futures points)", settings, "trailing_distance_points", symbol,
-                min_value=1.0, max_value=500.0, step=1.0, disabled=not trailing_sl_enabled or is_percent_mode,
-            )
-        with t2:
+        if trailing_sl_enabled and is_percent_mode:
             trailing_pct = _number_input(
-                "Trailing Distance (% of सद्य किंमत)", settings, "trailing_pct", symbol,
-                min_value=0.1, max_value=20.0, step=0.1, disabled=not trailing_sl_enabled or not is_percent_mode,
+                "Trailing Distance (% of सद्य किंमत)", settings, "trailing_pct", symbol, min_value=0.1, max_value=20.0, step=0.1,
             )
+            trailing_distance_points = float(settings["trailing_distance_points"])
+        elif trailing_sl_enabled:
+            trailing_distance_points = _number_input(
+                "Trailing Distance (futures points)", settings, "trailing_distance_points", symbol, min_value=1.0, max_value=500.0, step=1.0,
+            )
+            trailing_pct = float(settings["trailing_pct"])
+        else:
+            trailing_distance_points = float(settings["trailing_distance_points"])
+            trailing_pct = float(settings["trailing_pct"])
 
         if st.button("💾 Exit Gate सेव्ह करा", key=_widget_key(symbol, "save_exit")):
             new_settings = dict(settings)

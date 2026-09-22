@@ -729,21 +729,40 @@ class TestMergeDynamicSr1mZones:
         assert len(insert_calls) == 1
         assert insert_calls[0][0][1][2] == 24500.0  # zone_low param
 
-    def test_existing_level_not_in_new_candidates_is_never_deleted(self, monkeypatch):
-        """🎓 वापरकर्त्याने सापडवलेला मुद्दा — मोठा gap झाल्यावर जुना पण खरा level "सर्वोत्तम ५"
-        यादीतून बाहेर पडला, तरी DELETE होता कामा नये — किंमत नंतर तिथे परत आली तर उपयोगी पडावा
-        म्हणून, तो तसाच ठेवायला हवा."""
+    def test_existing_level_not_in_new_candidates_is_marked_stale_not_deleted(self, monkeypatch):
+        """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("market open hotach sarv level update
+        karayche, fresh support and resistance pahijet") — आता नव्या ताज्या गणनेत न सापडलेला जुना
+        level DELETE होत नाही (इतिहासासाठी row टिकतो), पण status='STALE' होतो, जेणेकरून
+        status='ACTIVE' फिल्टर करणाऱ्या bots ना (उदा. dynamic_sr_instant_trader.py) तो आपोआप
+        दिसेनासा होतो -- चार्टवरचं (नेहमी ताजं टॉप-5) आणि bot ची ACTIVE यादी सुसंगत राहावी म्हणून."""
         existing_rows = [(1, "DYNAMIC_SR_SUPPORT_1M", 23900.0), (2, "DYNAMIC_SR_RESISTANCE_1M", 24500.0)]
         mock_conn, mock_cursor = self._mock_conn(existing_rows)
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        # दोन्ही आता नव्या गणनेत सापडतच नाहीत -- पण DELETE होता कामा नये
+        # दोन्ही आता नव्या गणनेत सापडतच नाहीत -- DELETE नाही, पण STALE व्हायला हवं
         dyn_sr = {"support": [], "resistance": []}
         result = cloud_db.merge_dynamic_sr_1m_zones("NIFTY", dyn_sr)
         assert result is True
 
         delete_calls = [c for c in mock_cursor.execute.call_args_list if "DELETE FROM market_zones" in c[0][0]]
-        assert len(delete_calls) == 0  # कधीच DELETE नाही -- फक्त रात्रीच्या पूर्ण refresh नेच निवृत्त होणार
+        assert len(delete_calls) == 0  # कधीच hard DELETE नाही
+
+        stale_calls = [c for c in mock_cursor.execute.call_args_list if "UPDATE market_zones" in c[0][0] and "STALE" in c[0][0]]
+        assert len(stale_calls) == 2  # दोन्ही zone_types साठी (support + resistance) एक-एक UPDATE
+        staled_ids = {row_id for c in stale_calls for row_id in c[0][1]}
+        assert staled_ids == {1, 2}
+
+    def test_matched_existing_level_is_not_marked_stale(self, monkeypatch):
+        """जुळलेला (matched) जुना level STALE होता कामा नये -- फक्त न-जुळलेलाच."""
+        existing_rows = [(1, "DYNAMIC_SR_SUPPORT_1M", 23900.0)]
+        mock_conn, mock_cursor = self._mock_conn(existing_rows)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        dyn_sr = {"support": [{"level": 23901.0, "touches": 3}], "resistance": []}
+        cloud_db.merge_dynamic_sr_1m_zones("NIFTY", dyn_sr)
+
+        stale_calls = [c for c in mock_cursor.execute.call_args_list if "UPDATE market_zones" in c[0][0] and "STALE" in c[0][0]]
+        assert len(stale_calls) == 0
 
     def test_no_connection_returns_false(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)

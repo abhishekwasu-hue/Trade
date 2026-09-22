@@ -831,7 +831,7 @@ def _render_market_zones():
         if not cloud_db.is_cloud_db_configured():
             st.warning("Cloud DB (Supabase) configured नाही — Market Zones फक्त तिथूनच वाचता येतात. कृपया SUPABASE_DB_URL सेट करा.")
         else:
-            zones_status_filter = st.radio("दाखवा", ["फक्त ACTIVE (अजून अबाधित)", "सर्व (ACTIVE + FILLED)"], horizontal=True, key="zones_status")
+            zones_status_filter = st.radio("दाखवा", ["फक्त ACTIVE (अजून अबाधित)", "सर्व (ACTIVE + FILLED + STALE)"], horizontal=True, key="zones_status")
             status_arg = "ACTIVE" if zones_status_filter.startswith("फक्त") else None
             zones_df = cloud_db.get_market_zones(symbol, status=status_arg)
 
