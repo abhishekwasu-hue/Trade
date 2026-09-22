@@ -5,13 +5,13 @@ page_mcx_futures.py
 (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER). NIFTY/BANKNIFTY/SENSEX च्या तिन्ही existing bots (Bot
 Dynamic SR Algo पान) ला अजिबात हात लावलेला नाही — इथून फक्त हाच नवीन strategy चालतो.
 
-✅ अद्ययावत — प्रत्यक्ष trading script (`mcx_futures_trader.py`) व Dynamic S/R refresh script
-(`refresh_market_zones_mcx.py`) दोन्ही आता बांधलेले आहेत (existing 3 bots — options — यांच्याच
-`trading_engine.open_multi_leg_trade()`/`manage_open_trades()` वापरून, एकाच futures leg सह — तिथे
-कुठलाही बदल न करता). ⚠️ तरीही VPS crontab वर अजून सक्रिय केलेले नाहीत — `resolve_mcx_futures_instruments.py`
-ने खरा instrument_key/lot_size प्रत्यक्ष पडताळून, `refresh_market_zones_mcx.py`/`mcx_futures_trader.py`
-हाताने एकदा चालवून निकाल तपासल्याशिवाय (`deploy/README.md` मधली चेकलिस्ट) ते सुरक्षित नाही —
-तोपर्यंत Order Log/Dynamic S/R/Performance Report टॅब रिकामेच दिसतील, तिथेही तसं नमूद केलेलं आहे.
+✅ अद्ययावत (2026-09-22) — प्रत्यक्ष trading script (`mcx_futures_trader.py`) व Dynamic S/R refresh
+script (`refresh_market_zones_mcx.py`) दोन्ही बांधलेले आहेत, आणि VPS crontab वर आता **प्रत्यक्ष सक्रिय
+आहेत** (`crontab -l` ने पडताळलेलं — दर मिनिटाला entry bot, रात्री zones refresh). PRE_LIVE_CHECKLIST.md
+§5 मध्ये नोंदवल्याप्रमाणे, resolver/zones च्या स्वतंत्र spot-check पायऱ्या (क्रम-अनुसार) झाल्याची खात्री
+नाही — पण crontab स्वतःच दर cycle ला दोन्ही वापरतोच, त्यामुळे काहीही चुकीचं असेल तर लगेच log/Signal
+Log मध्ये दिसेल. Trading Mode प्रत्येक symbol साठी स्वतंत्र (डीफॉल्ट PAPER — खालचा हिरवा/लाल बॅनर
+सद्य स्थिती दाखवतो).
 
 🎓 वापरकर्त्याने स्पष्ट केलेली, या project मधल्या सर्वच bots ना लागू असलेली सामायिक रचना ("Max 2 entry
 per level this setting is common for all bot in this project") — Multi-Hit मर्यादा: एकाच S/R level
@@ -99,14 +99,12 @@ def render():
         "contract खरेदी/विक्री (options नाही — Upstox चा Option Chain API MCX साठी उपलब्धच नाही). "
         "इतर NIFTY/BANKNIFTY/SENSEX bots (Bot Dynamic SR Algo पान) पासून पूर्णपणे स्वतंत्र."
     )
-    st.warning(
-        "⚠️ `mcx_futures_trader.py`/`refresh_market_zones_mcx.py` script आता बांधलेल्या आहेत, पण "
-        "VPS crontab वर अजून सक्रिय केलेल्या नाहीत — Upstox कडून खरे instrument_key/lot_size प्रत्यक्ष "
-        "पडताळल्याशिवाय (`resolve_mcx_futures_instruments.py` VPS वर चालवून) आणि दोन्ही scripts "
-        "हाताने एकदा चालवून निकाल तपासल्याशिवाय (`deploy/README.md` मधली चेकलिस्ट) ते सुरक्षित नाही. "
-        "इथले settings आधीच जतन करून ठेवता येतात — strategy सक्रिय झाल्यावर तीच वापरेल. VPS crontab "
-        "entry सुद्धा (NSE bots पासून पूर्णपणे वेगळी, `deploy/README.md` मध्ये तयार करून ठेवलेली) "
-        "वरची पडताळणी झाल्याशिवाय जोडलेली नाही."
+    st.info(
+        "ℹ️ `mcx_futures_trader.py`/`refresh_market_zones_mcx.py` VPS crontab वर **सक्रिय आहेत** "
+        "(दर मिनिटाला entry-तपासणी, रात्री zones refresh) — प्रत्येक commodity साठी वरचा "
+        "'trading सक्रिय' checkbox (Entry Gate टॅब) चालू असेल तरच प्रत्यक्ष तपासणी/trade होते. "
+        "resolver/zones च्या स्वतंत्र spot-check पायऱ्या (`PRE_LIVE_CHECKLIST.md` §5) अजून "
+        "स्वतंत्रपणे पडताळलेल्या नाहीत — काही चुकीचं वाटल्यास `mcx_futures.log`/Signal Log आधी तपासा."
     )
 
     _render_status_banner()
@@ -301,8 +299,9 @@ def render():
             orders_df = get_order_log_full(symbol, start_date=ord_from, end_date=ord_to)
             if orders_df.empty:
                 st.info(
-                    "या कालावधीत कोणतेही ऑर्डर्स नाहीत — strategy अजून प्रत्यक्ष चालू केलेली नसल्याने "
-                    "(वर बघा) हे अपेक्षितच आहे."
+                    "या कालावधीत कोणतेही ऑर्डर्स नाहीत — म्हणजे अजून कुठलाही trade झालेला नाही "
+                    "(symbol बंद असेल, किंवा RSI/Multi-Hit गेटमुळे candidate qualify झालेला नाही — "
+                    "Level Hit Log टॅबवर नेमकं कारण दिसेल)."
                 )
             else:
                 st.dataframe(orders_df, width="stretch", height=400)
@@ -354,8 +353,8 @@ def render():
             summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=perf_from, end_date=perf_to)
             if summary.get("total_trades", 0) == 0:
                 st.info(
-                    "या कालावधीत कोणतेही बंद ट्रेड्स नाहीत — strategy अजून प्रत्यक्ष चालू केलेली नसल्याने "
-                    "(वर बघा) हे अपेक्षितच आहे."
+                    "या कालावधीत कोणतेही बंद ट्रेड्स नाहीत — म्हणजे अजून कुठलाही trade उघडून बंद "
+                    "झालेला नाही (Order Log/Level Hit Log टॅबवर नेमकं कारण दिसेल)."
                 )
             else:
                 scol1, scol2, scol3, scol4 = st.columns(4)
@@ -498,8 +497,10 @@ def render():
             hit_log_df = cloud_db.get_signal_log_range(symbol, hit_log_from, hit_log_to)
             if hit_log_df is None or hit_log_df.empty:
                 st.info(
-                    "या कालावधीत कुठलाही level touch तपासला गेलेला नाही — strategy अजून प्रत्यक्ष चालू "
-                    "केलेली नसल्याने (वर बघा) हे अपेक्षितच आहे."
+                    "या कालावधीत कुठलाही level touch तपासला गेलेला नाही — बहुतेक हे symbol साठी "
+                    "'trading सक्रिय' (Entry Gate टॅब) अजून चालू केलेलं नसल्यामुळे असेल — तो checkbox "
+                    "आणि 'Entry Gate सेव्ह करा' बटण तपासा. सक्रिय असूनही रिकामं दिसत असेल, तर "
+                    "`mcx_futures.log` मध्ये (VPS) नेमकं कारण दिसेल."
                 )
             else:
                 hit_log_filter = st.radio(
