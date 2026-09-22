@@ -390,6 +390,27 @@ def render():
                     strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0, disabled=not naked_trailing_sl_enabled,
                 )
 
+        with st.expander("⚡ Broker-Side SL — Phase 2 (फक्त Upstox, डीफॉल्ट बंद)", expanded=False):
+            # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL", "PAPER mode
+            # मध्ये आधी test करूया") — Performance Report मध्ये सापडलेल्या SL slippage चा फेज १
+            # (trade_monitor.py, 60s->~20s polling) आधीच मर्ज झालेला आहे. हा फेज २ — entry नंतर लगेच
+            # Upstox कडेच resting SL-M order ठेवला जातो, exchange level वरच trigger होण्यासाठी.
+            st.caption(
+                "चालू केल्यास — entry नंतर लगेच Upstox कडेच SL-M (Stop-Loss Market) order ठेवला जातो "
+                "(वरचा 'SL — Premium Points' थ्रेशोल्ड वापरून) — trade_monitor.py च्या 20-सेकंद "
+                "polling ची वाट न बघताच exchange level वर SL trigger होऊ शकतो. Credit Spread साठी "
+                "फक्त SHORT leg वर (hedge leg स्थिर आहे असं worst-case गृहीत धरून — प्रत्यक्षात SL "
+                "आवश्यकतेपेक्षा किंचित आधीच लागू शकतो, कधीच उशिरा नाही). "
+                "**PAPER/LIVE+PAPER मोड मध्ये खरा order कधीच जात नाही** — फक्त trigger price ची गणना "
+                "होऊन log मध्ये (`monitor.log`) दिसते, जेणेकरून LIVE करण्याआधी गणित पडताळता येईल. "
+                "**फक्त शुद्ध Upstox** (कुठलाही विशिष्ट broker account न निवडलेला, किंवा Upstox "
+                "account निवडलेला) — Shoonya/Stocko/Fyers अजून support करत नाहीत, त्यांच्यावर काहीही परिणाम नाही."
+            )
+            broker_side_sl_enabled = st.checkbox(
+                "Broker-Side SL (Phase 2) सक्रिय", value=bool(settings.get("broker_side_sl_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "broker_side_sl_enabled"),
+            )
+
         if strategy_key == "15m_dynamic_sr":
             e1, e2 = st.columns(2)
             with e1:
@@ -502,6 +523,7 @@ def render():
             "naked_target_spot_pct": float(naked_target_spot_pct), "naked_target_premium_points": float(naked_target_premium_points),
             "spread_trailing_sl_enabled": bool(spread_trailing_sl_enabled), "spread_trailing_distance_points": float(spread_trailing_distance_points),
             "naked_trailing_sl_enabled": bool(naked_trailing_sl_enabled), "naked_trailing_distance_points": float(naked_trailing_distance_points),
+            "broker_side_sl_enabled": bool(broker_side_sl_enabled),
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा — LIVE निवडलं तरी पुष्टीकरण टिक केलेलं नसेल, तर
             # सुरक्षिततेसाठी PAPER वरच जतन होतं (शांतपणे LIVE जतन होऊन खरे ऑर्डर्स सुरू होता कामा नयेत).
             "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",

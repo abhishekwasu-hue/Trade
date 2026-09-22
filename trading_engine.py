@@ -15,6 +15,7 @@ from database import (
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
     extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
+    place_stop_loss_order as upstox_place_stop_loss_order, cancel_order as upstox_cancel_order,
 )
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
@@ -353,6 +354,135 @@ def _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source
         _logger.exception("_alert_cross_strategy_conflict() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+# 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL", "PAPER mode मध्ये आधी
+# test करूया") — source नुसार कुठल्या settings-namespace मधून SL threshold वाचायचा — फक्त हेच तीन
+# sources evaluate_point_spot_exit() (Spot%+Premium-Points, settings-चालित) वापरतात; इतर कुठलेही
+# (MANUAL/credit_spread_auto_trader/इ.) अजून जुन्याच sl_pnl_level (एकत्रित Rs threshold) पद्धतीवर
+# आहेत, ज्याला single-leg trigger price मध्ये रूपांतरित करणं वेगळं, अजून न केलेलं काम आहे.
+_BROKER_SIDE_SL_SETTINGS_NAMESPACE = {
+    "dynamic_sr_instant": "1m_instant",
+    "classic_sr_reversal": "classic_sr_reversal",
+    "srv2_momentum_reversal": "15m_dynamic_sr",
+}
+
+
+def _resolve_broker_side_sl_premium_points(source, symbol, is_naked):
+    """`source` broker-side SL support करतो का (आणि वापरकर्त्याने तो त्या symbol साठी चालूच केलाय
+    का) — असेल तरच sl_premium_points (Naked/Spread नुसार), नाहीतर None (म्हणजे हे feature इथे
+    लागूच नाही — काहीही न बदलता, जुनं polling-only वर्तन)."""
+    namespace = _BROKER_SIDE_SL_SETTINGS_NAMESPACE.get(source)
+    if namespace is None:
+        return None
+    settings = cloud_db.get_strategy_settings(namespace, symbol)
+    if not settings.get("broker_side_sl_enabled", False):
+        return None
+    key_prefix = "naked" if is_naked else "spread"
+    return settings.get(f"{key_prefix}_sl_premium_points")
+
+
+def _maybe_place_broker_side_sl(access_token, adapter, trading_mode, source, symbol, legs,
+                                 entry_fill_prices, lots, lot_size, strategy_name, product_type):
+    """
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — entry झाल्या-झाल्याच
+    (शक्य असेल तिथे) resting SL-M order ठेवणे, जेणेकरून trade_monitor.py च्या पुढच्या polling-cycle
+    ची वाट न बघता, exchange level वरच SL trigger होऊ शकेल.
+
+    Naked (एकच leg) — trigger price गणिताने अचूक (entry_price ± sl_premium_points).
+    Credit Spread (2-leg) — फक्त SHORT (SELL) leg वर SL order — long/hedge leg entry किमतीलाच
+    स्थिर आहे असं **worst-case, conservative** गृहीत धरून (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय
+    — प्रत्यक्षात hedge leg थोडा फायदा देऊ शकतो, त्यामुळे हे गृहीतक SL आवश्यकतेपेक्षा किंचित आधीच
+    trigger करू शकतो, कधीच उशिरा नाही — सुरक्षित बाजूला चूक).
+
+    trading_mode != "LIVE" (PAPER/LIVE_PAPER चा PAPER भाग) असेल, तर कुठलाही खरा order न टाकता फक्त
+    trigger price ची गणना करून `legs` मध्येच (sl_trigger_price) साठवली/लॉग केली जाते — वापरकर्त्याला
+    "PAPER mode मध्ये आधी test करूया" या मागणीनुसार, LIVE करण्याआधी गणित डोळ्यांनी पडताळता यावं म्हणून.
+
+    `legs` (list of dict) याच function मध्ये **in-place** बदलली जाते — caller कडे तीच list पुढे
+    `json.dumps(legs)` द्वारे DB मध्ये साठवली जाते, त्यामुळे इथे वेगळं DB लेखन/स्कीमा बदल लागत नाही.
+    """
+    is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
+    sl_premium_points = _resolve_broker_side_sl_premium_points(source, symbol, is_naked)
+    if sl_premium_points is None:
+        return
+
+    # Naked — नेहमी "naked_buy" role चाच मुख्य leg (hedge असो वा नसो, normalize_legs() मध्ये तोच
+    # legs[0] असतो, पण role वरूनच स्पष्टपणे शोधणं जास्त सुरक्षित — भविष्यात क्रम बदलला तरी बरोबर राहील).
+    # Spread — फक्त SHORT (SELL) leg (वर function-docstring मधली worst-case टिप्पणी बघा).
+    sl_leg = (
+        next((leg for leg in legs if leg.get("role") == "naked_buy"), legs[0] if legs else None)
+        if is_naked else next((leg for leg in legs if leg["transaction_type"] == "SELL"), None)
+    )
+    if sl_leg is None:
+        return
+    entry_price = entry_fill_prices.get(sl_leg["instrument_key"])
+    if entry_price is None:
+        return
+
+    if sl_leg["transaction_type"] == "SELL":
+        exit_transaction_type = "BUY"
+        trigger_price = round(entry_price + sl_premium_points, 1)
+    else:
+        exit_transaction_type = "SELL"
+        trigger_price = round(entry_price - sl_premium_points, 1)
+
+    sl_leg["sl_trigger_price"] = trigger_price
+
+    if trading_mode != "LIVE":
+        _logger.info(
+            f"[Broker-side SL DRY-RUN, {trading_mode}] {symbol} {sl_leg['instrument_key']} "
+            f"{exit_transaction_type} SL-M trigger={trigger_price} (entry={entry_price}, "
+            f"sl_premium_points={sl_premium_points}) — फक्त गणित, खरा order नाही."
+        )
+        sl_leg["sl_order_id"] = "DRYRUN"
+        return
+
+    qty = lots * lot_size
+    if adapter is not None:
+        if not adapter.supports_broker_side_stop_loss():
+            return
+        order_id = adapter.place_stop_loss_order(sl_leg["instrument_key"], qty, exit_transaction_type, product_type, trigger_price)
+    else:
+        _, resp = upstox_place_stop_loss_order(access_token, sl_leg["instrument_key"], qty, exit_transaction_type, product_type, trigger_price)
+        order_id = resp.get("data", {}).get("order_id") if isinstance(resp, dict) and resp.get("status") == "success" else None
+
+    if order_id:
+        sl_leg["sl_order_id"] = order_id
+        _logger.info(f"[Broker-side SL] {symbol} {sl_leg['instrument_key']} SL-M order_id={order_id} trigger={trigger_price} ठेवला.")
+    else:
+        _logger.error(
+            f"[Broker-side SL] {symbol} {sl_leg['instrument_key']} SL-M order placement अयशस्वी "
+            f"(trigger={trigger_price}) — trade_monitor.py चं polling-based SL हेच या trade साठी एकमेव सुरक्षा-जाळं राहील."
+        )
+
+
+def _maybe_cancel_broker_side_sl(access_token, adapter, legs):
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — trade कुठल्याही
+    **इतर** कारणाने (Target/TSL/Next-Level/EOD/Manual/Kill-Switch/इ.) बंद होत असेल, तर वरच्या
+    _maybe_place_broker_side_sl() ने ठेवलेला pending SL-M order इथेच रद्द करणे — **हे न केल्यास,
+    तोच जुना order नंतर चुकून trigger होऊन नवीन, अनपेक्षित (unhedged) position उघडू शकतो** — या
+    संपूर्ण फीचरमधला सर्वात मोठा धोका, म्हणून प्रत्येक बंद-करण्याच्या मार्गातून (manage_open_trades()
+    व close_trade_manually() दोन्हीतून) हे नेहमी कॉल व्हायलाच हवं.
+
+    "DRYRUN" (PAPER mode चं चिन्ह) आढळल्यास कुठलाही खरा cancel-कॉल न करता शांतपणे वगळतो. कुठलाही
+    sl_order_id नसेल (feature बंद होतं, किंवा placement आधीच अयशस्वी झालेलं होतं) तरी शांतपणे वगळतो."""
+    for leg in legs:
+        order_id = leg.get("sl_order_id")
+        if not order_id or order_id == "DRYRUN":
+            continue
+        try:
+            if adapter is not None:
+                cancelled = adapter.cancel_order(order_id)
+            else:
+                _, resp = upstox_cancel_order(access_token, order_id)
+                cancelled = isinstance(resp, dict) and resp.get("status") == "success"
+            if cancelled:
+                _logger.info(f"[Broker-side SL] pending SL-M order_id={order_id} रद्द केला (trade दुसऱ्या कारणाने आधीच बंद झाला).")
+            else:
+                _logger.error(f"[Broker-side SL] pending SL-M order_id={order_id} रद्द करता आला नाही — Upstox app/website वर हाताने तपासा आणि रद्द करा.")
+        except Exception:
+            _logger.exception(f"[Broker-side SL] order_id={order_id} रद्द करताना अनपेक्षित चूक — Upstox app/website वर हाताने तपासा.")
+
+
 def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
@@ -538,6 +668,13 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         )
         for leg in legs
     }
+    # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — LIVE_PAPER (शॅडो
+    # PAPER भाग) च्या recursive कॉल मध्ये trading_mode=="PAPER" च असतो, त्यामुळे इथेही आपोआप dry-run
+    # (खरा order नाही, फक्त trigger price ची गणना/लॉग) — वेगळं काही हाताळायची गरज नाही.
+    _maybe_place_broker_side_sl(
+        access_token, adapter, trading_mode, source, symbol, legs, entry_fill_prices, lots, lot_size,
+        strategy_result["strategy"], product_type,
+    )
     log_orders_batch(order_ids, trade_id, symbol, trading_mode, orders, status="COMPLETE", fill_prices=entry_fill_prices)
 
     conn = sqlite3.connect(DB_PATH)
@@ -1236,6 +1373,12 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             if status_code == 200 and resp.get("status") == "success":
                 order_ids = extract_order_ids(resp)
                 log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE", fill_prices=current_ltps)
+                # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — trade
+                # आत्ताच (SL/TSL/Target/Next-Level/EOD/OI-Reversal/Carry-Forward यापैकी कुठल्याही
+                # कारणाने) प्रत्यक्ष बंद झाला — जर _maybe_place_broker_side_sl() ने आधी resting
+                # SL-M order ठेवलेला असेल, तो इथेच रद्द करणे अत्यावश्यक (वर _maybe_cancel_broker_side_sl
+                # चीच टिप्पणी बघा — हे चुकलं तर जुना order नंतर चुकून trigger होऊ शकतो).
+                _maybe_cancel_broker_side_sl(access_token, close_adapter, legs)
                 cur.execute(
                     """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, exit_reason_detail=?, realized_pnl=?
                        WHERE trade_id=?""",
@@ -1329,6 +1472,12 @@ def reconcile_open_trades_with_broker(access_token, symbol):
             continue
         all_legs_confirmed_flat = all(leg["instrument_key"] in broker_flat_keys for leg in legs)
         if all_legs_confirmed_flat:
+            # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — वापरकर्त्याने
+            # position Upstox app/website वरून थेट (Dashboard बाहेरच) बंद केली — आधी ठेवलेला resting
+            # SL-M order (असल्यास) इथेही रद्द करणे आवश्यक, नाहीतर तो नंतर चुकून trigger होऊन नवीन,
+            # पूर्णपणे अनपेक्षित position उघडू शकतो. हे function फक्त account_id IS NULL (शुद्ध Upstox)
+            # trades साठीच चालतं (वरची क्वेरी बघा), त्यामुळे adapter=None (थेट upstox_cancel_order).
+            _maybe_cancel_broker_side_sl(access_token, None, legs)
             cur.execute(
                 """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason='RECONCILED_EXTERNAL_CLOSE'
                    WHERE trade_id=?""",
@@ -1448,6 +1597,10 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     if status_code == 200 and resp.get("status") == "success":
         order_ids = extract_order_ids(resp)
         log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE", fill_prices=ltp_map)
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — Dashboard वरून
+        # मॅन्युअली बंद केला तरी, आधी ठेवलेला resting SL-M order इथेही रद्द करणे आवश्यक (वरच्या
+        # _maybe_cancel_broker_side_sl()/manage_open_trades() चीच टिप्पणी).
+        _maybe_cancel_broker_side_sl(access_token, close_adapter, legs)
         cur.execute(
             "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=? WHERE trade_id=?",
             (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
