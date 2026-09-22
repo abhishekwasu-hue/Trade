@@ -1112,12 +1112,19 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
     हलका (5-मिनिट/10-मिनिट) Dynamic S/R refresh — save_market_zones() (पूर्ण replace) च्या उलट, इथे
     फक्त DYNAMIC_SR_*_{timeframe_suffix} (उदा. "1M" किंवा "15M") प्रकारचे zones merge केले जातात:
       - नवीन गणना केलेला level जुन्या ACTIVE level च्या ±tolerance_pct% च्या आत असेल, तर जुनाच
-        level_price कायम ठेवला जातो (Multi-Hit hit-count history टिकून राहावी म्हणून).
-      - नवीन, न जुळणारा उमेदवार असेल, तो नव्याने जोडला जातो.
-      - जुना, नव्या गणनेत न सापडलेला level DELETE केला जात नाही (मोठा gap झाल्यावर जुना पण खरा
-        level "सर्वोत्तम ५" यादीतून बाहेर पडला तरी हरवू नये, किंमत नंतर तिथे परत आली तर उपयोगी
-        पडावा म्हणून). त्यामुळे दिवसभरात यादी ५ पेक्षा जास्त वाढू शकते — रोजची स्वच्छता फक्त
-        रात्रीच्या पूर्ण refresh_market_zones.py द्वारेच होते.
+        level_price कायम ठेवला जातो (Multi-Hit hit-count history टिकून राहावी म्हणून — ते
+        signal_log वरून काढलं जातं, zone row मध्ये नाही, त्यामुळे status बदलल्याने हरवत नाही).
+      - नवीन, न जुळणारा उमेदवार असेल, तो नव्याने ACTIVE म्हणून जोडला जातो.
+      - जुना, नव्या गणनेत न सापडलेला (म्हणजे आताच्या ताज्या "सर्वोत्तम ५" यादीत नसलेला) level आता
+        DELETE होत नाही, पण 'STALE' म्हणून चिन्हांकित होतो (इतिहासासाठी row टिकून राहतो, पण
+        status='ACTIVE' फिल्टर करणाऱ्या सर्व bots/queries ना (उदा. dynamic_sr_instant_trader.py)
+        तो आपोआप दिसेनासा होतो).
+
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा — आधी जुना level कायमचा ACTIVE राहायचा (दिवसभर
+    यादी फक्त वाढतच जायची, कधीच prune व्हायची नाही — रात्रीच्या पूर्ण refresh_market_zones.py
+    शिवाय) — त्यामुळे चार्टवरचं (नेहमी ताजं टॉप-5) आणि Signal Log मधलं (साचत गेलेलं, prune न
+    झालेलं) असं दोन वेगळं चित्र दिसायचं. आता दर 5-मिनिटांच्या प्रत्येक cycle ला — म्हणजे बाजार
+    उघडल्या-उघडल्याच्या पहिल्या cycle पासूनच — ACTIVE यादी नेहमी ताज्या गणनेइतकीच राहते.
     रिटर्न: True/False (यशस्वी झालं की नाही).
     """
     conn = get_connection()
@@ -1158,6 +1165,14 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
                                VALUES (%s, %s, %s, %s, %s, %s, 'ACTIVE')""",
                             (symbol, zone_type, cand_level, cand_level, float(cand["touches"]), formed_date),
                         )
+
+                stale_ids = [row_id for (row_id, _zone_low) in existing_of_type if row_id not in matched_existing_ids]
+                if stale_ids:
+                    placeholders = ",".join(["%s"] * len(stale_ids))
+                    cur.execute(
+                        f"UPDATE market_zones SET status = 'STALE' WHERE id IN ({placeholders})",
+                        tuple(stale_ids),
+                    )
 
         conn.commit()
         return True
