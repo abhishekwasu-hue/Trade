@@ -23,6 +23,7 @@ LIVE trading on any symbol/broker whose gating item below is unresolved.
 | 13 | ATM strike always rounded to a 50-point grid — silently failed strike selection on BANKNIFTY/SENSEX (100-point grid) roughly half the time | #47 |
 | 14 | Stocko: same-second multi-leg orders could get an identical `user_order_id` and get rejected as duplicates | #47 |
 | 15 | Stocko: missing `STOCKO_BASE_URL` crashed order placement with an unhandled `AttributeError` instead of a clean error | #47 |
+| 16 | `numpy.float64` values (from pandas-derived `level_price`/`zone_low`) silently corrupted every `cloud_db.py` write via `psycopg2` under NumPy 2.x's changed `repr()` — every `save_signal_log()` call for MCX (and almost certainly NIFTY/BANKNIFTY/SENSEX too, same code path) was failing silently, logged only to `data/app.log`, never surfaced on the Dashboard | #85 |
 
 Every row above has a unit test asserting the specific failure mode is closed.
 None of them have been confirmed against a live market session.
