@@ -91,12 +91,24 @@ def _get_configured_app_password():
 
 
 def _require_app_password():
+    configured_password = _get_configured_app_password()
+
+    # 🎓 वापरकर्त्याने सापडवलेली bug ("password वारंवार मागतो — cookie fix असूनही") — खरं कारण:
+    # यशस्वी login नंतर (खाली) cookie सेट होण्यासाठी `_set_auth_cookie()` (components.html() द्वारे
+    # browser मध्ये <script> इंजेक्ट करतं) आणि लगेच पुढेच `st.rerun()` — यामध्ये race condition. browser
+    # ला त्या injected script ला प्रत्यक्ष चालून cookie सेट करायला वेळच मिळायचा नाही, rerun ने आधीच
+    # पान बदलायचं — cookie कधीच सेट व्हायचीच नाही, पुढच्या भेटीत पुन्हा विचारलं जायचं. आता दोन fixes:
+    # (अ) खाली rerun च्या आधी थोडा वेळ, (ब) इथे — cookie आधीच वैध असूनही, प्रत्येक authenticated
+    # page-load ला ती पुन्हा-ताजी (sliding-window) केली जाते — कधी पहिल्यांदा miss झाली तरी पुढच्या
+    # कुठल्याही page-load/auto-refresh ला (दर काही मिनिटांनी होतोच) आपोआप पुन्हा प्रयत्न होतो.
     if st.session_state.get("_app_authenticated"):
+        if configured_password:
+            _set_auth_cookie(configured_password)
         return
 
-    configured_password = _get_configured_app_password()
     if configured_password and _check_auth_cookie(configured_password):
         st.session_state["_app_authenticated"] = True
+        _set_auth_cookie(configured_password)
         return
 
     _, gate_col, _ = st.columns([1, 1.3, 1])
@@ -122,6 +134,10 @@ def _require_app_password():
             if hmac.compare_digest(entered_password, configured_password):
                 st.session_state["_app_authenticated"] = True
                 _set_auth_cookie(configured_password)
+                # 🎓 मुख्य fix — components.html() ने इंजेक्ट केलेल्या <script> ला browser मध्ये प्रत्यक्ष
+                # चालून cookie सेट करायला थोडा वेळ हवा; लगेच rerun केलं तर race मध्ये cookie कधीच
+                # सेट व्हायचीच नाही (वरची टिप्पणी बघा) — 300ms थांबून मगच rerun.
+                time.sleep(0.3)
                 st.rerun()
             else:
                 st.error("❌ चुकीचा पासवर्ड — पुन्हा प्रयत्न करा.")
