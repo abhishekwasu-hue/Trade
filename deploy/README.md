@@ -149,8 +149,14 @@ crontab line VPS वरून **काढून टाका**, नवीन क
 
 **शिफारस केलेला crontab (9:16 ऐवजी 9:15 पासून सुरू होणारा, खालच्या "टायमिंग-चूक" भागात सांगितलेला
 fix आधीच लागू केलेला — वेळा UTC मध्ये, `crontab -e` मध्ये पेस्ट करा):**
+
+🎓 वापरकर्त्याने मागितलेली सुधारणा — `refresh_dynamic_sr_5m.py` आधी 1M प्रमाणेच दर 5 मिनिटांनी
+merge व्हायचा, आता दर **30 मिनिटांनी** (`*/5` → `*/30`) — फक्त cadence कमी केला, स्क्रिप्ट/लॉजिक
+अजिबात बदललेलं नाही (`merge_dynamic_sr_zones()` अजूनही तसंच, जुने न काढता फक्त STALE करणारं, safe
+merge — फक्त किती वेळा चालतं तेवढंच बदललं). `refresh_dynamic_sr_1m.py` (1M zones) दर 5 मिनिटांनीच
+कायम — फक्त 5M बदललं.
 ```
-*/5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_5m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_5m.log 2>&1
+*/30 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_5m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_5m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 refresh_dynamic_sr_1m.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/refresh_1m.log 2>&1
 */5 3-10 * * 1-5 cd /root/Trade && python3 oi_snapshot_collector.py >> /root/Trade/oi_snapshot.log 2>&1
 45-59 3 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> /root/Trade/srv2.log 2>&1
