@@ -104,14 +104,24 @@ PCR Gate सकट संपूर्ण आधुनिक exit-logic (`trading
 चालते. `engine_service.py` मधलेच काही shared helpers (`load_settings`/`compute_atr_points`/
 `MONITORED_SYMBOLS`) import करते, पण स्वतःचा systemd timer वापरत नाही — cron नियंत्रित करतो.
 
+🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("SL slippage कमी करा") — Performance Report मध्ये
+सापडलं की SL threshold च्या बऱ्याच पुढे जाऊन लागत होता, कारण cron दर 60 सेकंदांनीच नव्याने ही
+script सुरू करत होता. **crontab अजूनही दर 1 मिनिटालाच invoke करतो (खाली तेच, बदललेलं नाही)** —
+पण आता `trade_monitor.py` स्वतःच आतून, प्रत्येक invocation मध्ये, दर ~20 सेकंदांनी (डीफॉल्ट
+`--interval-seconds 20`) 60-सेकंद cron window च्या आत (`--loop-seconds 50`) पुन्हा-पुन्हा तपासत
+राहते — म्हणजे प्रत्यक्ष SL/Target तपासणी आता दर ~20 सेकंदांनी होते, दर 60 सेकंदांनी नाही. यामुळे
+प्रति-symbol API कॉल्स ~3x वाढतात (rate-limit वर लक्ष ठेवा — जास्त वाटल्यास
+`--interval-seconds 30` किंवा `40` देऊन कमी करता येतं).
+
 **सद्य crontab (VPS वर `crontab -l` ने पडताळलेलं, वेळा UTC मध्ये — VPS ची timezone
 `timedatectl`/`date` ने आधी खात्री करूनच बदल करा):**
 ```
 45-59 3 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
 * 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> /root/Trade/monitor.log 2>&1
 ```
-म्हणजे दर मिनिटाला, सकाळी ९:१५ ते संध्याकाळी ~४:२९ IST, सोमवार-शुक्रवार (UTC 3:45 ते 10:59 शी
-समतुल्य) — भारतीय बाजाराच्या पूर्ण सत्रभर.
+म्हणजे cron दर मिनिटाला invoke करतो (सकाळी ९:१५ ते संध्याकाळी ~४:२९ IST, सोमवार-शुक्रवार — UTC
+3:45 ते 10:59 शी समतुल्य — भारतीय बाजाराच्या पूर्ण सत्रभर), आणि प्रत्येक invocation च्या आत
+script स्वतःच ~3 वेळा (दर ~20 सेकंदांनी) पुन्हा तपासते.
 
 **तपासणी:**
 ```bash
