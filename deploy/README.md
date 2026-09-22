@@ -222,12 +222,23 @@ IST 9:15-4:29) इथे वापरता येत नाही — वेग
 ```
 45-59 3 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
 * 4-18 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
-35 18 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_mcx.py >> /root/Trade/market_zones_mcx_refresh.log 2>&1
+35 5,8,11,14,18 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_mcx.py >> /root/Trade/market_zones_mcx_refresh.log 2>&1
 ```
-तिसरी ओळ (`refresh_market_zones_mcx.py`) — रोज MCX बंद झाल्यावर (18:35 UTC = 00:05 IST पुढच्या
-दिवशी, 11:55 PM च्या उन्हाळी-वेळेतल्या MCX close नंतरही सुरक्षित) — `refresh_market_zones.py` च्याच
-(NSE साठीच्या) crontab ओळीशी सुसंगत पॅटर्न, पण पूर्णपणे वेगळी वेळ (MCX च्या उशिरापर्यंतच्या session
-मुळे) आणि वेगळी log file.
+🎓 वापरकर्त्याने सापडवलेली bug (22-Sep) — तिसरी ओळ आधी दिवसातून **एकदाच** (फक्त `35 18 * * 1-5`, म्हणजे
+MCX बंद झाल्यावर) चालायची — त्यामुळे Market Zones (bot प्रत्यक्ष trading साठी वापरत असलेले साठवलेले
+zones) दिवसभर stale राहायचे, चार्टच्या नेहमी-ताज्या live गणनेशी न जुळणारे. आता त्याच स्क्रिप्टला MCX
+च्या लांब session (9 AM–11:30/11:55 PM) मध्ये पसरून **दिवसातून 5 वेळा** (11:05, 14:05, 17:05, 20:05
+IST + मूळचा शेवटचा close-नंतरचा 00:05 IST) चालवलं जातं — एकाच line मध्ये स्वल्पविरामाने वेगळे तास
+(`5,8,11,14,18` UTC) देऊन, नवीन line न जोडता.
+शेवटचा run (18:35 UTC = 00:05 IST पुढच्या दिवशी, 11:55 PM च्या उन्हाळी-वेळेतल्या MCX close नंतरही
+सुरक्षित) आधीसारखाच ठेवलेला आहे — पूर्ण दिवसाच्या candles वरून अंतिम, सर्वात विश्वासार्ह EOD zone set
+यासाठी. मधले 4 runs फक्त त्या-त्या क्षणापर्यंतच्या आंशिक (partial) दिवसावरून ताजे recompute करतात —
+`cloud_db.save_market_zones()` प्रत्येक वेळी त्या symbol चे **सर्व जुने zones आधी DELETE करून** नवीन
+संच पूर्णपणे बदलतो (replace-on-refresh, वाढत जाणारा इतिहास नाही), त्यामुळे दिवसातून 5 वेळा चालवूनही
+डुप्लिकेट/कचरा साठण्याची शक्यता नाही — प्रत्येक वेळी फक्त सद्य (त्या क्षणापर्यंतच्या) संगणनेइतकाच संच
+राहतो.
+`refresh_market_zones.py` च्याच (NSE साठीच्या) crontab ओळीशी सुसंगत पॅटर्न, पण पूर्णपणे वेगळी वेळ (MCX
+च्या उशिरापर्यंतच्या session मुळे) आणि वेगळी log file.
 UTC 3:45 ते 18:59 = IST 9:15 AM ते पुढच्या दिवशी 12:29 AM — म्हणजे 11:55 PM (उन्हाळी वेळेतला MCX
 close) सुद्धा आत बसतो; `sleep 60` (वरच्या entry bots च्या 15/30/45s पेक्षा जास्त — वेगळ्या तासाला
 चालत असल्याने टक्कर होण्याची शक्यता नसली, तरी VPS वरच्या इतर दर-मिनिटाच्या cron jobs (trade_monitor.py
