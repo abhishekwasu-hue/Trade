@@ -36,6 +36,81 @@ def _to_unix_time(ts):
     return int(pd.Timestamp(ts).timestamp())
 
 
+def _price_binned_profile(df, value_column, num_bins=24):
+    """
+    🎓 सामायिक (shared) गणना — किंमतीनुसार (price-binned) horizontal histogram, कुठल्याही per-candle
+    संख्यात्मक स्तंभासाठी (volume किंवा oi). वेळेनुसार नाही (जसं खालचा नेहमीचा Volume pane दाखवतो तसं
+    नाही). आपल्याकडे tick-data नाही, फक्त candle-level OHLCV(+OI) आहे — म्हणून प्रत्येक candle चं मूल्य,
+    त्याच्या high-low range मध्ये येणाऱ्या सगळ्या price-bins मध्ये समान वाटून (proportional
+    approximation) टाकलं आहे. compute_volume_profile()/compute_oi_profile() या दोन्ही याच core वर
+    बांधलेले आहेत.
+
+    रिटर्न: [{"price_low", "price_high", "value", "is_poc"}, ...] — फक्त शून्यापेक्षा जास्त मूल्य
+    असलेले bins (is_poc = सर्वात जास्त मूल्य असलेला bin).
+    """
+    if df is None or df.empty or value_column not in df.columns or num_bins <= 0:
+        return []
+    price_min = float(df["low"].min())
+    price_max = float(df["high"].max())
+    if price_max <= price_min:
+        return []
+    bin_size = (price_max - price_min) / num_bins
+    bins = [0.0] * num_bins
+
+    for row in df.itertuples():
+        raw = getattr(row, value_column)
+        val = float(raw) if pd.notna(raw) else 0.0
+        if val <= 0:
+            continue
+        lo, hi = float(row.low), float(row.high)
+        lo_idx = max(0, min(int((lo - price_min) / bin_size), num_bins - 1))
+        hi_idx = max(0, min(int((hi - price_min) / bin_size), num_bins - 1))
+        span = hi_idx - lo_idx + 1
+        for i in range(lo_idx, hi_idx + 1):
+            bins[i] += val / span
+
+    max_val = max(bins) if bins else 0.0
+    profile = []
+    for i, v in enumerate(bins):
+        if v <= 0:
+            continue
+        profile.append({
+            "price_low": round(price_min + i * bin_size, 2),
+            "price_high": round(price_min + (i + 1) * bin_size, 2),
+            "value": round(v, 2),
+            "is_poc": v == max_val,
+        })
+    return profile
+
+
+def compute_volume_profile(df, num_bins=24):
+    """
+    🎓 Volume Profile — किंमतीनुसार (price-binned) horizontal volume histogram.
+
+    रिटर्न: [{"price_low", "price_high", "volume", "is_poc"}, ...] (is_poc = Point of Control —
+    सर्वात जास्त volume असलेला bin).
+    """
+    return [
+        {"price_low": b["price_low"], "price_high": b["price_high"], "volume": b["value"], "is_poc": b["is_poc"]}
+        for b in _price_binned_profile(df, "volume", num_bins)
+    ]
+
+
+def compute_oi_profile(df, num_bins=24):
+    """
+    🎓 OI Profile — Volume Profile सारखंच, पण Open Interest वर आधारित (Upstox च्या historical-candle
+    API मधून प्रत्येक candle सोबतच "oi" येतो — NIFTY/BANKNIFTY/SENSEX व MCX Futures दोन्हीकडच्या
+    df मध्ये आधीपासूनच उपलब्ध, वेगळा API कॉल लागत नाही). Index instruments साठी OI शून्य असू शकतो —
+    तेव्हा profile रिकामाच राहतो (त्रुटी नाही, फक्त काही दाखवण्यासारखं नाही).
+
+    रिटर्न: [{"price_low", "price_high", "oi", "is_poc"}, ...] (is_poc = सर्वात जास्त OI असलेला bin).
+    """
+    return [
+        {"price_low": b["price_low"], "price_high": b["price_high"], "oi": b["value"], "is_poc": b["is_poc"]}
+        for b in _price_binned_profile(df, "oi", num_bins)
+    ]
+
+
 def build_supertrend_segments(timestamps, line_series, dir_series):
     """
     🎓 वापरकर्त्याशी चर्चा करून दुरुस्त केलं (तिसऱ्यांदा, आणि आता प्रत्यक्ष empirically सिद्ध) —
@@ -94,7 +169,9 @@ def build_lightweight_chart_html(
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
     1D/1H Supertrend (मुख्य किंमत chart वर, डीफॉल्ट — EMA20/EMA50 ऐवजी) + RSI (वेगळा pane) +
     Support/Resistance (आडव्या रेषा) + Hammer/Shooting-Star मार्कर्स (मागच्या 2-3 candles पेक्षा मोठे
-    असतील तेच) + Drawing Toolbar (Trendline, Horizontal Line, Fibonacci, Rectangle, Measure).
+    असतील तेच) + Volume Profile व OI Profile (किंमतीनुसार horizontal bars, प्रत्येकाच्या स्वतंत्र
+    toolbar बटणाने on/off — डीफॉल्ट दोन्ही बंद) + Drawing Toolbar (Trendline, Horizontal Line,
+    Fibonacci, Rectangle, Measure).
 
     supertrend_*_series/direction: pandas Series, df च्याच timestamps शी आधीच अलाइन केलेले (no-lookahead
     merge_asof ने) — इथे फक्त रेंडर केले जातात, अलाइनमेंट page_dashboard.py मध्ये होते.
@@ -117,6 +194,9 @@ def build_lightweight_chart_html(
         }
         for row in df.itertuples()
     ]
+
+    volume_profile_data = compute_volume_profile(df)
+    oi_profile_data = compute_oi_profile(df)
 
     def _build_supertrend_segments(line_series, dir_series):
         return build_supertrend_segments(df["timestamp"], line_series, dir_series)
@@ -281,6 +361,8 @@ def build_lightweight_chart_html(
     <button class="tool-btn" onclick="setTool(null)">🖱️ Cursor</button>
     <button class="tool-btn" id="btn_fit" onclick="chart.timeScale().fitContent()">⤢ Auto-Fit</button>
     <button class="tool-btn" onclick="clearAllDrawings()">🗑️ सर्व मिटवा</button>
+    <button class="tool-btn" id="btn_volprofile" onclick="toggleVolumeProfile()">📊 Vol Profile</button>
+    <button class="tool-btn" id="btn_oiprofile" onclick="toggleOIProfile()">📶 OI Profile</button>
     <span id="status" style="align-self:center;"></span>
   </div>
   <div id="chart_container">
@@ -360,6 +442,124 @@ srLines.forEach(l => {{
         lineStyle: LightweightCharts.LineStyle.Dashed, title: l.title,
     }});
 }});
+
+// --- Volume Profile: किंमतीनुसार (price-binned) horizontal volume bars, on/off बटणाने toggle ---
+// lightweight-charts v5 च्या Series Primitives (ISeriesPrimitive) API वापरून काढलं — Volume Profile
+// हा library चा built-in series-प्रकार नाही, म्हणून candleSeries वर स्वतःचा canvas-renderer जोडावा
+// लागतो. डावीकडून सुरू होणाऱ्या bars, रुंदी = volume च्या प्रमाणात (जास्तीत जास्त pane रुंदीच्या 25%),
+// सगळ्यात जास्त volume असलेला bin (Point of Control) वेगळ्या (अंबर) रंगात ठळक.
+class VolumeProfileRenderer {{
+    constructor(source) {{ this._source = source; }}
+    draw(target) {{
+        const data = this._source._data;
+        const series = this._source._series;
+        if (!data || data.length === 0) return;
+        target.useBitmapCoordinateSpace(scope => {{
+            const ctx = scope.context;
+            const maxVol = Math.max(...data.map(d => d.volume));
+            if (!maxVol) return;
+            const maxBarWidth = scope.bitmapSize.width * 0.25;
+            ctx.save();
+            data.forEach(d => {{
+                const yTop = series.priceToCoordinate(d.price_high);
+                const yBottom = series.priceToCoordinate(d.price_low);
+                if (yTop === null || yBottom === null) return;
+                const yTopPx = yTop * scope.verticalPixelRatio;
+                const yBottomPx = yBottom * scope.verticalPixelRatio;
+                const barHeight = Math.max(1, yBottomPx - yTopPx - 1);
+                const barWidth = (d.volume / maxVol) * maxBarWidth;
+                ctx.fillStyle = d.is_poc ? 'rgba(255,180,0,0.55)' : 'rgba(41,98,255,0.28)';
+                ctx.fillRect(0, yTopPx, barWidth, barHeight);
+            }});
+            ctx.restore();
+        }});
+    }}
+}}
+class VolumeProfilePaneView {{
+    constructor(source) {{ this._source = source; }}
+    renderer() {{ return new VolumeProfileRenderer(this._source); }}
+}}
+class VolumeProfilePrimitive {{
+    constructor(data) {{
+        this._data = data;
+        this._paneViews = [new VolumeProfilePaneView(this)];
+    }}
+    updateAllViews() {{}}
+    paneViews() {{ return this._paneViews; }}
+    attached({{ series }}) {{ this._series = series; }}
+}}
+const volumeProfileData = {json.dumps(volume_profile_data)};
+let vpPrimitive = null;
+function toggleVolumeProfile() {{
+    const btn = document.getElementById('btn_volprofile');
+    if (vpPrimitive) {{
+        candleSeries.detachPrimitive(vpPrimitive);
+        vpPrimitive = null;
+        btn.classList.remove('active');
+    }} else if (volumeProfileData.length > 0) {{
+        vpPrimitive = new VolumeProfilePrimitive(volumeProfileData);
+        candleSeries.attachPrimitive(vpPrimitive);
+        btn.classList.add('active');
+    }}
+}}
+
+// --- OI Profile: Volume Profile सारखंच, पण Open Interest वर आधारित — उजवीकडून सुरू होणाऱ्या bars
+// (Volume Profile डावीकडून सुरू होतो), जेणेकरून दोन्ही एकाच वेळी चालू असतील तरी गोंधळ होणार नाही.
+class OIProfileRenderer {{
+    constructor(source) {{ this._source = source; }}
+    draw(target) {{
+        const data = this._source._data;
+        const series = this._source._series;
+        if (!data || data.length === 0) return;
+        target.useBitmapCoordinateSpace(scope => {{
+            const ctx = scope.context;
+            const maxOi = Math.max(...data.map(d => d.oi));
+            if (!maxOi) return;
+            const paneWidth = scope.bitmapSize.width;
+            const maxBarWidth = paneWidth * 0.25;
+            ctx.save();
+            data.forEach(d => {{
+                const yTop = series.priceToCoordinate(d.price_high);
+                const yBottom = series.priceToCoordinate(d.price_low);
+                if (yTop === null || yBottom === null) return;
+                const yTopPx = yTop * scope.verticalPixelRatio;
+                const yBottomPx = yBottom * scope.verticalPixelRatio;
+                const barHeight = Math.max(1, yBottomPx - yTopPx - 1);
+                const barWidth = (d.oi / maxOi) * maxBarWidth;
+                ctx.fillStyle = d.is_poc ? 'rgba(255,64,129,0.55)' : 'rgba(171,71,188,0.28)';
+                ctx.fillRect(paneWidth - barWidth, yTopPx, barWidth, barHeight);
+            }});
+            ctx.restore();
+        }});
+    }}
+}}
+class OIProfilePaneView {{
+    constructor(source) {{ this._source = source; }}
+    renderer() {{ return new OIProfileRenderer(this._source); }}
+}}
+class OIProfilePrimitive {{
+    constructor(data) {{
+        this._data = data;
+        this._paneViews = [new OIProfilePaneView(this)];
+    }}
+    updateAllViews() {{}}
+    paneViews() {{ return this._paneViews; }}
+    attached({{ series }}) {{ this._series = series; }}
+}}
+const oiProfileData = {json.dumps(oi_profile_data)};
+let oiPrimitive = null;
+function toggleOIProfile() {{
+    const btn = document.getElementById('btn_oiprofile');
+    if (oiPrimitive) {{
+        candleSeries.detachPrimitive(oiPrimitive);
+        oiPrimitive = null;
+        btn.classList.remove('active');
+    }} else if (oiProfileData.length > 0) {{
+        oiPrimitive = new OIProfilePrimitive(oiProfileData);
+        candleSeries.attachPrimitive(oiPrimitive);
+        btn.classList.add('active');
+    }}
+}}
 
 chart.timeScale().fitContent();
 
