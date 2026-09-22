@@ -333,6 +333,45 @@ class TestMarketZonesStorage:
         assert "_1M" not in delete_sql and "_5M" not in delete_sql
         assert "NOT IN" not in delete_sql
 
+    def test_scoped_delete_limits_to_given_zone_types(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला `scoped=True` -- NIFTY चे 15M/30M/60M zones intraday
+        वारंवार ताजे करताना, त्याच वेळी dynamic_sr_instant_trader.py जपत असलेले 1M/5M live zones
+        सुरक्षित (अबाधित) राहायला हवेत -- DELETE फक्त दिलेल्या zones_df मधल्या zone_types पुरतंच
+        मर्यादित असायला हवं, symbol-व्यापी नाही."""
+        from unittest.mock import MagicMock
+        import pandas as pd
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        zones_df = pd.DataFrame([
+            {"zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 24000, "zone_high": 24000,
+             "strength": 3, "formed_date": "2024-01-01", "status": "ACTIVE"},
+        ])
+        result = cloud_db.save_market_zones(zones_df, "NIFTY", scoped=True)
+        assert result is True
+        delete_sql, delete_params = mock_cursor.execute.call_args_list[0][0]
+        assert "DELETE FROM market_zones" in delete_sql
+        assert "zone_type = ANY" in delete_sql
+        assert delete_params == ("NIFTY", ["DYNAMIC_SR_SUPPORT_15M"])
+        # DELETE (1) + INSERT (1) = 2 एकूण calls -- 1M/5M/इतर zone_types साठी कुठलाही DELETE नाही
+        assert mock_cursor.execute.call_count == 2
+
+    def test_scoped_true_with_empty_df_skips_delete_entirely(self, monkeypatch):
+        """पुरेसा candle-डेटा नसेल तर zones_df रिकामा असू शकतो -- तेव्हा scoped DELETE अजिबात
+        चालवायचा नाही (जुने zones तसेच सुरक्षित राहायला हवेत, चुकून सगळंच पुसलं जाऊ नये)."""
+        from unittest.mock import MagicMock
+        import pandas as pd
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.save_market_zones(pd.DataFrame(columns=["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]), "NIFTY", scoped=True)
+        assert result is True
+        assert mock_cursor.execute.call_count == 0
+
 
 class TestSignalLog:
     """

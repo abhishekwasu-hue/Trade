@@ -100,6 +100,54 @@ class TestComputeAllZonesDailyRefresh:
         assert "DYNAMIC_SR_SUPPORT_60M" not in zone_types and "DYNAMIC_SR_RESISTANCE_60M" not in zone_types
 
 
+class TestComputeIntradaySrZones:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेलं compute_intraday_sr_zones() — NIFTY चे 15M/30M/60M zones
+    बाजार चालू असताना वारंवार ताजे करण्यासाठी, compute_all_zones() पासून मुद्दाम पूर्णपणे स्वतंत्र
+    (1M/5M ला अजिबात स्पर्श करत नाही — तेच dynamic_sr_instant_trader.py live जपत असतो)."""
+
+    def test_only_15m_30m_60m_zone_types_ever_produced(self):
+        zones_df = mz.compute_intraday_sr_zones(
+            "NIFTY",
+            df_15m_recent=_fake_ohlc(150, freq="15min"),
+            df_30m_recent=_fake_ohlc(150, freq="30min"),
+            df_60m_recent=_fake_ohlc(150, freq="1h"),
+        )
+        zone_types = set(zones_df["zone_type"])
+        assert zone_types <= {
+            "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
+            "DYNAMIC_SR_SUPPORT_30M", "DYNAMIC_SR_RESISTANCE_30M",
+            "DYNAMIC_SR_SUPPORT_60M", "DYNAMIC_SR_RESISTANCE_60M",
+        }
+        assert zone_types  # किमान एकातरी timeframe साठी काहीतरी सापडायला हवं
+        assert not any(zt.endswith("_1M") or zt.endswith("_5M") for zt in zone_types)
+        assert "SUPPORT" not in zone_types and "RESISTANCE" not in zone_types
+
+    def test_none_inputs_produce_empty_dataframe(self):
+        zones_df = mz.compute_intraday_sr_zones("NIFTY")
+        assert zones_df.empty
+
+    def test_partial_timeframes_skip_missing_ones_gracefully(self):
+        """फक्त 15M दिला (30M/60M नाही) तर फक्त 15M zone_types यायला हवेत, error नाही."""
+        zones_df = mz.compute_intraday_sr_zones("NIFTY", df_15m_recent=_fake_ohlc(150, freq="15min"))
+        zone_types = set(zones_df["zone_type"])
+        assert zone_types <= {"DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M"}
+        assert not any(zt.endswith("_30M") or zt.endswith("_60M") for zt in zone_types)
+
+    def test_insufficient_history_per_timeframe_skips_gracefully(self):
+        zones_df = mz.compute_intraday_sr_zones(
+            "NIFTY",
+            df_15m_recent=_fake_ohlc(10, freq="15min"),
+            df_30m_recent=_fake_ohlc(150, freq="30min"),
+        )
+        zone_types = set(zones_df["zone_type"])
+        assert not any(zt.endswith("_15M") for zt in zone_types)
+        assert zone_types  # 30M ला मात्र पुरेसा डेटा आहे, काहीतरी यायलाच हवं
+
+    def test_symbol_column_set_correctly(self):
+        zones_df = mz.compute_intraday_sr_zones("BANKNIFTY", df_15m_recent=_fake_ohlc(150, freq="15min"))
+        assert (zones_df["symbol"] == "BANKNIFTY").all()
+
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Market Zones पानावरचा नवीन "5M/15M Confluence
 # Table" (Support/Resistance + Demand/Supply + Order Block, सद्य किमतीच्या सापेक्ष).
 

@@ -277,6 +277,41 @@ def compute_all_zones(df_1h, df_15m, symbol, impulse_mult=1.5, avg_window=20,
     return pd.DataFrame(rows)
 
 
+def compute_intraday_sr_zones(symbol, df_15m_recent=None, df_30m_recent=None, df_60m_recent=None):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेलं, compute_all_zones() पासून **मुद्दाम पूर्णपणे स्वतंत्र** function
+    — NIFTY/BANKNIFTY/SENSEX चे DYNAMIC_SR_*_15M/30M/60M zones बाजार चालू असताना (intraday) वारंवार
+    ताजे करायचे होते ("Fakt ekdach update nko diwsatun, at least 5 ones update pahije"), पण
+    compute_all_zones() (व त्याचाच वापरणारा refresh_market_zones.py) रोज एकदाच, बाजार बंद झाल्यावर
+    चालतो — कारण तो 1M/5M zones सुद्धा त्याच वेळी नव्याने काढतो, आणि dynamic_sr_instant_trader.py
+    (दर मिनिटाला चालणारा, प्रत्यक्ष live trade घेणारा bot) त्याच 1M/5M zones ला अतिशय काळजीपूर्वक
+    (जुने कधीच न काढता, फक्त STALE करणाऱ्या merge_dynamic_sr_zones() ने) जपत असतो — ते बाजार चालू
+    असताना इथून सरसकट उडवून पुन्हा लिहिणं धोकादायक ठरलं असतं.
+
+    हे function त्यामुळे **फक्त** 15M/30M/60M zones काढतं (compute_all_zones() मधल्याच तीन ब्लॉक्सची
+    हुबेहूब नक्कल — त्याच compute_dynamic_sr() parameters सह, सुसंगततेसाठी) — 1M/5M, स्थिर
+    SUPPORT/RESISTANCE (१ वर्षाचं), Order Block/Demand-Supply/Gap यांना अजिबात स्पर्श करत नाही, आणि
+    cloud_db.save_market_zones(..., scoped=True) सोबत वापरायचं आहे (फक्त हेच सहा zone_types replace
+    होतील, बाकी सगळं अबाधित).
+
+    रिटर्न: pd.DataFrame — फक्त DYNAMIC_SR_SUPPORT_15M/RESISTANCE_15M/SUPPORT_30M/RESISTANCE_30M/
+    SUPPORT_60M/RESISTANCE_60M (जितक्या timeframes साठी पुरेसा डेटा दिला तितकेच).
+    """
+    rows = []
+    for tf_label, df_tf in (("15M", df_15m_recent), ("30M", df_30m_recent), ("60M", df_60m_recent)):
+        if df_tf is None or len(df_tf) < 100:
+            continue
+        now_date = df_tf["timestamp"].iloc[-1]
+        dyn_sr = compute_dynamic_sr(df_tf, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        for s in dyn_sr.get("support", []):
+            rows.append({"symbol": symbol, "zone_type": f"DYNAMIC_SR_SUPPORT_{tf_label}", "zone_low": s["level"],
+                         "zone_high": s["level"], "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        for r in dyn_sr.get("resistance", []):
+            rows.append({"symbol": symbol, "zone_type": f"DYNAMIC_SR_RESISTANCE_{tf_label}", "zone_low": r["level"],
+                         "zone_high": r["level"], "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+    return pd.DataFrame(rows)
+
+
 # =========================================================
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones — "5M/15M Confluence Table") —
 # वापरकर्त्याने Classical S/R Reversal backtest साठी चर्चा केलेल्या संकल्पना (Swing High/Low वरून
