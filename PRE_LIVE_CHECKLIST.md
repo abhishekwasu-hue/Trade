@@ -78,6 +78,22 @@ None of them have been confirmed against a live market session.
 5. Re-visit Shoonya/Stocko only after their own option-chain/strike-resolution
    path is built and has been through the same PAPER-first process.
 
+## 3b. Broker-side SL (Phase 2, Upstox-only) — plumbing added, NOT wired into live flow yet
+
+🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा — Performance Report (2026-09-22) मध्ये सापडलेल्या SL
+slippage चं Phase 1 (`trade_monitor.py`, ~20-सेकंद polling — PR #80) आधीच मर्ज झालेलं आहे. Phase 2
+(resting SL-M order थेट Upstox कडेच — पूर्ण polling-मुक्त) साठी फक्त plumbing जोडलेली आहे
+(`upstox_api.place_stop_loss_order()`/`cancel_order()`, `UpstoxBrokerAdapter.place_stop_loss_order()`/
+`cancel_order()`/`supports_broker_side_stop_loss()`) — **हे कुठल्याही live entry/exit flow मधून अजून
+कॉल होत नाही**, फक्त unit-tested आहे. पुढच्या पायऱ्या (वेगळ्या PR मध्ये, अजून व्हायच्या आहेत):
+`open_multi_leg_trade()` मध्ये entry नंतर लगेच SL-M order ठेवणे (plain SL trades साठीच — Trailing
+SL/Next-Level/PCR-Gate/OI-Reversal अजूनही polling-वरच राहतील, हे static price-trigger express करू
+शकत नाहीत), आणि `manage_open_trades()`/`close_trade_manually()` च्या **प्रत्येक** इतर exit-path मध्ये
+हा pending SL order cancel करणे (सर्वात मोठा धोका — cancel चुकला तर जुना order नंतर चुकून trigger
+होऊन unwanted position उघडू शकतो). scope सध्या फक्त Upstox (`adapter is None` किंवा
+`isinstance(adapter, UpstoxBrokerAdapter)`) — Shoonya/Stocko/Fyers `supports_broker_side_stop_loss()`
+कडून आपोआप `False` मिळत असल्याने पूर्णपणे अस्पर्शित राहतात.
+
 ## 4. Known, deliberately out-of-scope items (not bugs, just incomplete)
 
 - Full per-broker option-chain fetching for Shoonya/Stocko (§2).

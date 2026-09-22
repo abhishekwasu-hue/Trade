@@ -401,3 +401,70 @@ class TestPlaceMultiLegOrderUsesRetry429Only:
             status_code, body = upstox_api.place_multi_leg_order("fake_token", orders)
         assert status_code == 200
         assert body["status"] == "success"
+
+
+class TestPlaceStopLossOrder:
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL", फक्त plumbing — अजून
+    कुठल्याही live entry/exit flow मधून कॉल होत नाही)."""
+
+    def test_success_sends_sl_m_order_type_and_returns_order_id(self):
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {"status": "success", "data": {"order_id": "SL-O1"}}
+        with patch.object(upstox_api, "_post_with_retry_429_only", return_value=success_resp) as mock_post:
+            status_code, body = upstox_api.place_stop_loss_order(
+                "fake_token", "NSE_FO|12345", 75, "SELL", "D", trigger_price=123.45,
+            )
+        assert status_code == 200
+        assert body["data"]["order_id"] == "SL-O1"
+        sent_body = mock_post.call_args.kwargs["json"]
+        assert sent_body["order_type"] == "SL-M"
+        assert sent_body["trigger_price"] == 123.45
+        assert sent_body["transaction_type"] == "SELL"
+        assert sent_body["quantity"] == 75
+        assert sent_body["instrument_token"] == "NSE_FO|12345"
+
+    def test_network_exception_returns_error_dict_not_raise(self):
+        import requests as _requests
+        with patch.object(upstox_api, "_post_with_retry_429_only", side_effect=_requests.exceptions.ConnectionError("boom")):
+            status_code, body = upstox_api.place_stop_loss_order("fake_token", "NSE_FO|12345", 75, "SELL", "D", 123.45)
+        assert status_code is None
+        assert "error" in body
+
+    def test_correlation_id_defaults_to_generated_when_not_given(self):
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {"status": "success", "data": {"order_id": "SL-O1"}}
+        with patch.object(upstox_api, "_post_with_retry_429_only", return_value=success_resp) as mock_post:
+            upstox_api.place_stop_loss_order("fake_token", "NSE_FO|12345", 75, "SELL", "D", 123.45)
+        sent_body = mock_post.call_args.kwargs["json"]
+        assert sent_body["correlation_id"]  # रिकामं नाही
+
+
+class TestCancelOrder:
+    def test_success_returns_200_and_success_status(self):
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {"status": "success"}
+        with patch.object(upstox_api.requests, "delete", return_value=success_resp) as mock_delete:
+            status_code, body = upstox_api.cancel_order("fake_token", "SL-O1")
+        assert status_code == 200
+        assert body["status"] == "success"
+        assert "order_id=SL-O1" in mock_delete.call_args.args[0]
+
+    def test_retries_on_429_then_succeeds(self):
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {"status": "success"}
+        with patch.object(upstox_api.time, "sleep"), \
+             patch.object(upstox_api.requests, "delete", side_effect=[_mock_post_response(429), success_resp]):
+            status_code, body = upstox_api.cancel_order("fake_token", "SL-O1")
+        assert status_code == 200
+        assert body["status"] == "success"
+
+    def test_network_exception_returns_error_dict_not_raise(self):
+        import requests as _requests
+        with patch.object(upstox_api.requests, "delete", side_effect=_requests.exceptions.ConnectionError("boom")):
+            status_code, body = upstox_api.cancel_order("fake_token", "SL-O1")
+        assert status_code is None
+        assert "error" in body
