@@ -29,7 +29,7 @@ import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
-    get_live_vs_shadow_paper_pairs, OPTION_STRUCTURE_GROUP_SQL,
+    get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, OPTION_STRUCTURE_GROUP_SQL,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
@@ -92,6 +92,78 @@ def _render_status_banner():
         st.success("🟢 सर्व MCX commodities सध्या PAPER मोडमध्ये आहेत — कुठलाही खरा पैसा वापरला जात नाही.")
 
 
+def _render_all_commodities_positions():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("1 common position tab पाहिजे, ज्यामध्ये सर्व commodity
+    च्या live and exited position ची summary असेल") — मुख्य Dashboard चा Positions टॅप
+    (page_positions.py) `st.session_state["symbol"]` (फक्त NIFTY/BANKNIFTY/SENSEX निवडता येणारा
+    sidebar dropdown) वापरतो — MCX commodities त्या dropdown मध्ये कधीच नसतात, त्यामुळे MCX चे
+    trades तिथे कधीच दिसतच नव्हते. इथे प्रत्येक commodity साठी (वरच्या per-commodity dropdown ची
+    वाट न बघता) established get_live_positions_with_mtm()/get_closed_trades_detail() तेच, सिद्ध
+    फंक्शन्स वापरून एकत्र केलेलं आहे — कुठलाही नवीन query-पॅटर्न नाही."""
+    token = st.session_state.get("token_input", "")
+    if not token:
+        st.info("Upstox token उपलब्ध नाही — sidebar मधून token टाका.")
+        return
+
+    sub_header("💼 सर्व Commodities — Open Positions (Live MTM)", HDR_TEAL)
+    open_frames = []
+    for sym in MCX_SYMBOLS:
+        try:
+            df = get_live_positions_with_mtm(token, sym)
+        except Exception:
+            continue  # एका commodity साठी LTP मिळाला नाही तरी बाकीच्या दिसायला हव्यात
+        if not df.empty:
+            df.insert(0, "Symbol", sym)
+            open_frames.append(df)
+
+    if not open_frames:
+        st.info("सध्या कुठल्याही MCX commodity ची उघडी (OPEN) position नाही.")
+    else:
+        combined_open = pd.concat(open_frames, ignore_index=True)
+        st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
+        total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
+        st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")
+
+    st.markdown("---")
+    sub_header("📜 सर्व Commodities — Exit झालेले Trades", HDR_PURPLE)
+    today_d = get_ist_today()
+    range_choice = st.radio(
+        "कालावधी", ["आज", "गेले 7 दिवस", "गेला महिना", "कस्टम रेंज"], horizontal=True, key="mcxf_allpos_range",
+    )
+    if range_choice == "आज":
+        ex_from, ex_to = today_d, today_d
+    elif range_choice == "गेले 7 दिवस":
+        ex_from, ex_to = today_d - datetime.timedelta(days=7), today_d
+    elif range_choice == "गेला महिना":
+        ex_from, ex_to = today_d - datetime.timedelta(days=30), today_d
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            ex_from = st.date_input("पासून", value=today_d, key="mcxf_allpos_from")
+        with c2:
+            ex_to = st.date_input("पर्यंत", value=today_d, key="mcxf_allpos_to")
+
+    if ex_from > ex_to:
+        st.error("'पर्यंत' ही तारीख 'पासून' नंतरची असावी.")
+        return
+
+    closed_frames = []
+    for sym in MCX_SYMBOLS:
+        df = get_closed_trades_detail(sym, start_date=ex_from, end_date=ex_to)
+        if not df.empty:
+            df.insert(0, "Symbol", sym)
+            closed_frames.append(df)
+
+    if not closed_frames:
+        st.info("या कालावधीत कुठल्याही MCX commodity चा एकही trade बंद झालेला नाही.")
+    else:
+        combined_closed = pd.concat(closed_frames, ignore_index=True).sort_values("Exit Time", ascending=False)
+        st.dataframe(combined_closed, width="stretch", height=min(400, 60 + 35 * len(combined_closed)))
+        total_realized = combined_closed["Realized P&L"].sum()
+        st.metric(f"{ex_from} ते {ex_to}: एकूण Realized P&L", f"₹{total_realized:,.0f}")
+        st.caption(f"एकूण {len(combined_closed)} बंद झालेले trades (सर्व commodities मिळून, नवीनतम आधी).")
+
+
 def render():
     mega_header("🛢️ MCX Futures Trader", HDR_BLUE)
     st.caption(
@@ -109,6 +181,13 @@ def render():
 
     _render_status_banner()
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — हा भाग मुद्दामच खालच्या "Commodity निवडा" dropdown च्या
+    # बाहेर (वर) आहे — सर्व 5 commodities एकत्र, एकाच वेळी दाखवण्यासाठी, प्रत्येकासाठी वेगळं निवडावं
+    # न लागता.
+    with st.expander("💼 सर्व Positions (सर्व Commodities एकत्र) — Live + Exit झालेले", expanded=True):
+        _render_all_commodities_positions()
+
+    st.markdown("---")
     symbol = st.selectbox("Commodity निवडा", MCX_SYMBOLS, key="mcxf_symbol")
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
 
