@@ -60,28 +60,41 @@ class TestCheckLevelCrossed:
         assert hit is False
         assert hit_type is None
 
-    def test_near_miss_no_longer_counts_as_touch_buffer_removed(self):
-        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Support resistance touch buffer is 0.020% remove it")
-        — आधी ±0.02% बफरच्या आत असलेला near-miss सुद्धा TOUCH धरला जायचा (जुनी टेस्ट: वापरकर्त्याशी
-        चर्चा करून जोडलेला बफर). आता TOUCH_TOLERANCE_PCT=0 असल्याने, candle ने level ला तंतोतंत स्पर्श
-        केला नसेल (नुसता जवळ असून चालणार नाही) तर हा NO_HIT असायला हवा."""
+    def test_near_miss_within_0_01_pct_buffer_counts_as_touch(self):
+        """🎓 वापरकर्त्याशी झालेला बदलांचा क्रम — आधी ±0.02% बफर होता, वापरकर्त्याने तो पूर्णपणे
+        काढायला सांगितला (TOUCH_TOLERANCE_PCT=0), आणि लगेच पुढे "Keep level touch buffer 0.010% of
+        spot" — म्हणजे आधीच्या निम्मा, छोटासा बफर परत ठेवला. candle ने level ला तंतोतंत स्पर्श केला
+        नसला, तरी त्याच्या 0.01% च्या आत असेल तर अजूनही TOUCH धरला जायला हवा."""
         level = 24000.0
-        old_buffer_that_no_longer_applies = level * 0.02 / 100  # = 4.8 -- फक्त संदर्भासाठी, आता वापरलं जात नाही
+        buffer = level * 0.01 / 100  # = 2.4
         # दोन्ही candles level च्या **एकाच बाजूला** (खाली) ठेवलेले -- जेणेकरून GAP_THROUGH मार्ग
-        # (prev_close/open level च्या दोन्ही बाजूला असतील तरच लागू होतो) चुकून triggered होऊ नये,
-        # आणि खरंच फक्त TOUCH-बफर काढल्याचा परिणाम तपासला जाईल.
+        # चुकून triggered होऊ नये, आणि खरंच फक्त TOUCH-बफरचा परिणाम तपासला जाईल.
         candles = [
             {"open": 23900, "high": 23910, "low": 23890, "close": 23895},
-            # या candle चा high (जुन्या 0.02% बफरच्या आत असला तरी) level ला प्रत्यक्ष स्पर्श करत नाही
-            {"open": 23990, "high": level - old_buffer_that_no_longer_applies + 1, "low": 23985, "close": 23992},
+            # या candle चा high बफरच्या (2.4 च्या) आतच आहे, पण level ला प्रत्यक्ष स्पर्श केलेला नाही
+            {"open": 23990, "high": level - buffer + 1, "low": 23985, "close": 23992},
+        ]
+        hit, hit_type, price = dsr.check_level_crossed(level, candles)
+        assert hit is True
+        assert hit_type == "TOUCH"
+
+    def test_near_miss_beyond_0_01_pct_buffer_does_not_count_as_touch(self):
+        """वरच्याच बफर (0.01%) च्याही पलीकडे (जुन्या 0.02% बफरच्या आत असला तरी) असलेला near-miss
+        आता TOUCH धरला जाऊ नये."""
+        level = 24000.0
+        old_wider_buffer = level * 0.02 / 100  # = 4.8 -- सध्याच्या 0.01% (=2.4) पेक्षा जास्त
+        candles = [
+            {"open": 23900, "high": 23910, "low": 23890, "close": 23895},
+            # या candle चा high जुन्या 0.02% बफरच्या आत असला तरी, सध्याच्या 0.01% बफरच्या बाहेर आहे
+            {"open": 23990, "high": level - old_wider_buffer + 1, "low": 23985, "close": 23992},
         ]
         hit, hit_type, price = dsr.check_level_crossed(level, candles)
         assert hit is False
         assert hit_type is None
 
-    def test_exact_touch_still_counts_with_zero_buffer(self):
-        """बफर काढला तरी, candle च्या range मध्ये level तंतोतंत आला (even by exactly touching the
-        high/low boundary) तर तो TOUCH अजूनही ओळखला जायलाच हवा."""
+    def test_exact_touch_still_counts(self):
+        """बफर कितीही असला तरी, candle च्या range मध्ये level तंतोतंत आला (even by exactly touching
+        the high/low boundary) तर तो TOUCH अजूनही ओळखला जायलाच हवा."""
         level = 24000.0
         candles = [
             {"open": 24010, "high": 24015, "low": 24010, "close": 24012},
