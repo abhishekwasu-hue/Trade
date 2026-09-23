@@ -1367,6 +1367,82 @@ class TestOpenMultiLegTradeKillSwitch:
         assert ok is True
 
 
+class TestOpenMultiLegTradeManualPause:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा trading stop button") —
+    cloud_db.get_trading_pause_settings() paused=True असेल तर, PAPER/LIVE/LIVE_PAPER — तिन्ही
+    trading_mode मध्ये नवीन trade ब्लॉक व्हायलाच हवा (Kill Switch च्या उलट, जो फक्त LIVE साठीच)."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_paused_blocks_paper_mode_and_alerts(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "टेस्ट कारण", "paused_at": "2026-09-23T10:00:00"})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+        assert not execute_calls  # ऑर्डरच पाठवला गेला नाही — PAPER असूनही
+        assert len(telegram_calls) == 1
+        assert "थांबवलेले" in telegram_calls[0]
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT COUNT(*) FROM live_trades").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_paused_blocks_live_mode_before_kill_switch_check(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+
+        def _boom():
+            raise AssertionError("Trading Pause आधीच ब्लॉक करायला हवा — Kill Switch पर्यंत पोहोचायलाच नको")
+        monkeypatch.setattr(trading_engine, "check_kill_switch", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+
+    def test_paused_blocks_live_paper_mode_without_recursing(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE_PAPER",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+        assert not execute_calls  # ना LIVE, ना शॅडो PAPER — काहीच प्रयत्न झाला नाही
+
+    def test_not_paused_proceeds_normally(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": False, "reason": "", "paused_at": None})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+
+
 class TestOpenMultiLegTradeLivePaperMode:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode="LIVE_PAPER"
     दिलं की open_multi_leg_trade() स्वतःला दोनदा कॉल करतं (एकदा "LIVE", एकदा "PAPER") — दोन्ही

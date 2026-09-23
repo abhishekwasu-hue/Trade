@@ -275,6 +275,22 @@ def _alert_kill_switch_blocked(symbol, source, reason):
         _logger.exception("_alert_kill_switch_blocked() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def _alert_trading_pause_blocked(symbol, source, trading_mode, reason):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("trading stop button") — मॅन्युअल Trading Pause चालू
+    असताना नवीन trade (PAPER किंवा LIVE, दोन्ही) ब्लॉक केल्यावर Telegram अलर्ट — kill-switch अलर्ट
+    सारखीच, cooldown नाही."""
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"⏸️ <b>{symbol} ({source}, {trading_mode}) — नवीन Trades मॅन्युअली थांबवलेले आहेत!</b>\n"
+            f"{reason or 'वापरकर्त्याने Dashboard वरून थांबवलं.'}\n"
+            f"हा नवीन trade ब्लॉक केला गेला (आधीच्या उघड्या positions चं monitoring/SL/Target मात्र "
+            f"नेहमीप्रमाणेच चालू आहे). Dashboard साईडबारमधून पुन्हा सुरू करा."
+        )
+    except Exception:
+        _logger.exception("_alert_trading_pause_blocked() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def _resolve_required_margin(access_token, adapter, orders, strategy_result, lots, lot_size):
     """orders साठी खरी आवश्यक मार्जिन — adapter असेल तर त्याचं (Shoonya/Stocko/Fyers), नाहीतर
     Upstox चं अधिकृत Margin Calculator API (SPAN+Exposure, hedge-फायद्यासकट). मिळालीच नाही (API
@@ -503,7 +519,18 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     कुठल्याही सुरक्षा-तपासण्या/Kill Switch सकट) आणि एकदा "PAPER" (शुद्ध सिम्युलेशन, फक्त तुलनेसाठी लॉग
     होतो). शॅडो PAPER trade कधीच LIVE trade च्या यश/अपयशावर परिणाम करत नाही, आणि LIVE अयशस्वी/ब्लॉक
     झाला तरीही शॅडो PAPER trade प्रयत्न होतोच (जेणेकरून "शुद्ध PAPER मध्ये काय झालं असतं" हे नेहमी
-    कळेल)."""
+    कळेल).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("trading stop button, kill switch पेक्षा वेगळा") — मॅन्युअल
+    Trading Pause (cloud_db.get_trading_pause_settings()) — Kill Switch च्या उलट, हा PAPER+LIVE+
+    LIVE_PAPER सगळ्यांना, इथेच सर्वात आधी (कुठलाही mode-specific split होण्याआधी) एकाच ठिकाणी लागू
+    होतो — सर्व 4 entry bots इथूनच नवीन trade उघडतात, त्यामुळे बाकी कुठेही वेगळा बदल लागत नाही.
+    आधीच उघड्या असलेल्या positions चं व्यवस्थापन (manage_open_trades()) या फंक्शनमधून जातच नाही,
+    त्यामुळे त्यावर याचा काहीही परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं."""
+    pause_settings = cloud_db.get_trading_pause_settings()
+    if pause_settings.get("paused"):
+        _alert_trading_pause_blocked(symbol, source, trading_mode, pause_settings.get("reason"))
+        return False, {"status": "error", "reason": "TRADING_PAUSED — वापरकर्त्याने Dashboard वरून नवीन trades मॅन्युअली थांबवलेले आहेत."}
+
     if trading_mode == TRADING_MODE_LIVE_AND_PAPER:
         live_ok, live_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,

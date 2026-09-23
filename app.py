@@ -291,6 +291,37 @@ from shared_context import setup_shared_context
 
 context_ok = setup_shared_context()
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा trading stop button, जो वापरकर्ता
+# स्वतःच्या इच्छेने दाबेल — बाकी संपूर्ण Dashboard जसंच्या तसं चालू राहील") — Kill Switch (Bot
+# Dynamic SR Algo पानावर) फक्त LIVE साठी, आपोआप (daily loss/trade-count मर्यादेवरून) ट्रिप होतो.
+# हा वेगळा, पूर्णपणे मॅन्युअल toggle — प्रत्येक पानावर (sidebar मध्ये, कुठूनही एका क्लिकवर उपलब्ध)
+# — दाबल्यावर PAPER आणि LIVE दोन्हीचे नवीन trades थांबतात (trading_engine.open_multi_leg_trade()
+# च्या अगदी सुरुवातीलाच तपासलं जातं — बघा cloud_db.get_trading_pause_settings()). आधीच उघड्या
+# असलेल्या positions चं SL/Target/Trailing/EOD monitoring (trade_monitor.py) यावर काहीही परिणाम
+# होत नाही — उर्वरित Dashboard (Positions/Orders/Performance/Charts) नेहमीप्रमाणेच चालू राहतं.
+import cloud_db as _cloud_db_pause
+
+_trading_pause_state = _cloud_db_pause.get_trading_pause_settings()
+with st.sidebar:
+    st.markdown("---")
+    if _trading_pause_state["paused"]:
+        st.error("🛑 **नवीन Trades थांबवलेले आहेत** (Manual Stop)")
+        if _trading_pause_state.get("reason"):
+            st.caption(f"कारण: {_trading_pause_state['reason']}")
+        if st.button("▶️ नवीन Trades पुन्हा सुरू करा", width="stretch", type="primary"):
+            _cloud_db_pause.set_trading_pause(False)
+            st.rerun()
+    else:
+        if st.button("🛑 नवीन Trades थांबवा (Stop Trading)", width="stretch"):
+            _cloud_db_pause.set_trading_pause(True, reason="Dashboard वरून मॅन्युअली थांबवलं")
+            st.rerun()
+    st.caption(
+        "ⓘ हे Kill Switch पेक्षा वेगळं — तो आपोआप (LIVE loss-मर्यादेवरून) ट्रिप होतो, हे तुम्ही स्वतः "
+        "केव्हाही दाबता (PAPER+LIVE दोन्ही नवीन trades थांबतात). आधीच उघड्या positions चं SL/Target/"
+        "Monitoring नेहमीप्रमाणेच चालू राहतं — फक्त नवीन trade उघडणं थांबतं."
+    )
+    st.markdown("---")
+
 # 🎓 दुरुस्ती — auto_refresh आता pg.run() च्या आधी नोंदवला जातो (component जास्त विश्वासार्हपणे
 # काम करण्यासाठी), आणि "शेवटचं कधी रिफ्रेश झालं" हे साईडबारमध्ये दिसतं — जेणेकरून प्रत्यक्ष काम
 # करतंय की नाही ते लगेच पडताळता येईल (आधी कुठलाही दृश्य संकेतच नव्हता).

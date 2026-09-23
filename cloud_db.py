@@ -773,6 +773,37 @@ def save_kill_switch_settings(enabled, max_daily_loss, max_trades_per_day):
     })
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop
+# असा वेगळा button पाहिजे") — वरचा Kill Switch फक्त LIVE साठी, आपोआप (daily loss/trade-count
+# मर्यादेवरून) ट्रिप होतो — PAPER trades कधीच अडवत नाही. हे पूर्णपणे वेगळं, नवीन फीचर — वापरकर्ता
+# स्वतः, केव्हाही, एका क्लिकवर नवीन trades थांबवू शकतो — PAPER आणि LIVE दोन्हीसाठी लागू (हा
+# risk-threshold-आधारित नाही, वापरकर्त्याचा थेट निर्णय आहे). आधीच उघडलेल्या positions वर (trade_monitor.py
+# चं SL/Target/Trailing/EOD monitoring) याचा **काहीही** परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं,
+# उर्वरित Dashboard/bots जसेच्या तसे चालू राहतात (trading_engine.open_multi_leg_trade() च्या अगदी
+# सुरुवातीलाच एकाच ठिकाणी तपासलं जातं — सर्व 4 entry bots इथूनच trades उघडतात).
+TRADING_PAUSE_STRATEGY_KEY = "__global_trading_pause__"
+TRADING_PAUSE_SYMBOL_KEY = "ALL"
+
+
+def get_trading_pause_settings():
+    """सर्व symbols/strategies/PAPER+LIVE साठी एकत्रित — मॅन्युअल 'नवीन Trades थांबवा' स्थिती.
+    Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट — paused=False (चालू)."""
+    settings = get_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY)
+    return {
+        "paused": bool(settings.get("paused", False)),
+        "reason": settings.get("reason", ""),
+        "paused_at": settings.get("paused_at"),
+    }
+
+
+def set_trading_pause(paused, reason=""):
+    """paused=True -> नवीन trades थांबवले (कुठलाही bot नवीन position उघडणार नाही, PAPER+LIVE दोन्ही).
+    paused=False -> पुन्हा सुरू. आधीच्या उघड्या positions वर कधीच परिणाम नाही."""
+    payload = {"paused": bool(paused), "reason": str(reason or "")}
+    payload["paused_at"] = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).isoformat() if paused else None
+    return save_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY, payload)
+
+
 def get_all_strategy_trading_modes():
     """
     🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता यावं

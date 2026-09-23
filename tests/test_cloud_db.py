@@ -1373,3 +1373,45 @@ class TestKillSwitchSettings:
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
             {"enabled": True, "max_daily_loss": 15000.0, "max_trades_per_day": 10},
         )
+
+
+class TestTradingPauseSettings:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा, मॅन्युअल trading stop button —
+    PAPER trades लाही लागू व्हावा") — get/set_trading_pause() हे आधीच पूर्णपणे टेस्ट केलेल्या
+    get/save_strategy_settings() चेच पातळ wrapper आहेत (strategy_name="__global_trading_pause__",
+    symbol="ALL" या स्थिर जोडीसह) — त्यामुळे इथे फक्त wrapping/डीफॉल्ट्स तपासले जातात."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_trading_pause_settings()
+        assert settings == {"paused": False, "reason": "", "paused_at": None}
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={"paused": True, "reason": "उद्याचं Union Budget", "paused_at": "2026-09-23T10:00:00"},
+        ) as mock_get:
+            settings = cloud_db.get_trading_pause_settings()
+        mock_get.assert_called_once_with(cloud_db.TRADING_PAUSE_STRATEGY_KEY, cloud_db.TRADING_PAUSE_SYMBOL_KEY)
+        assert settings == {"paused": True, "reason": "उद्याचं Union Budget", "paused_at": "2026-09-23T10:00:00"}
+
+    def test_set_paused_true_stamps_paused_at(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.set_trading_pause(True, reason="Manual stop")
+        assert ok is True
+        mock_save.assert_called_once()
+        args, _ = mock_save.call_args
+        assert args[0] == cloud_db.TRADING_PAUSE_STRATEGY_KEY
+        assert args[1] == cloud_db.TRADING_PAUSE_SYMBOL_KEY
+        payload = args[2]
+        assert payload["paused"] is True
+        assert payload["reason"] == "Manual stop"
+        assert payload["paused_at"] is not None  # वेळ नोंदवली गेली
+
+    def test_set_paused_false_clears_paused_at(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.set_trading_pause(False)
+        assert ok is True
+        payload = mock_save.call_args[0][2]
+        assert payload["paused"] is False
+        assert payload["paused_at"] is None
