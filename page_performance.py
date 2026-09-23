@@ -9,7 +9,8 @@ from config import get_ist_now, get_ist_today
 from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
     get_performance_by_two_groups, get_closed_trades_detail, get_exit_reason_breakdown,
-    get_live_vs_shadow_paper_pairs, SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS, OPTION_STRUCTURE_GROUP_SQL,
+    get_live_vs_shadow_paper_pairs, get_sl_tsl_overshoot, SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS,
+    OPTION_STRUCTURE_GROUP_SQL,
 )
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
 from upstox_api import fetch_candles_date_range
@@ -566,6 +567,30 @@ def render():
                     mime="text/csv", key="trade_log_reasons_download",
                 )
 
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("review slipages after trade monitor update", नंतर
+            # "yes" — रोजच्या रोज बघता यावं म्हणून, दरवेळी manual SQL query न चालवता) — प्रत्येक SL/TSL
+            # exit प्रत्यक्ष threshold च्या किती "पुढे जाऊन" पकडला गेला (overshoot) — polling-based
+            # monitoring (trade_monitor.py/mcx_futures_trader.py) च्या interval-सुधारणांनंतर स्लिपेज
+            # खरंच कमी होतंय का, हे कालांतराने इथेच पडताळता येईल.
+            overshoot_df = get_sl_tsl_overshoot(symbol, perf_mode_f, an_from, an_to)
+            if not overshoot_df.empty:
+                _sub_header("⚡ SL/TSL Overshoot (Slippage) Tracker", _HDR_ORANGE)
+                st.caption(
+                    "प्रत्येक SL/Trailing-SL exit च्या वेळी, bot ला किंमत त्याच्या threshold च्या किती "
+                    "पुढे जाऊन सापडली (polling interval मुळे अपरिहार्य असा gap) — trading_engine.py ने "
+                    "आधीच साठवलेल्या Exit Reason Detail मधूनच काढलेलं, वेगळी query न चालवता."
+                )
+                _os_pts = overshoot_df["Overshoot (pts)"].dropna()
+                _os_rs = overshoot_df["Overshoot (Rs)"].dropna()
+                oscol1, oscol2, oscol3 = st.columns(3)
+                with oscol1:
+                    st.metric("SL/TSL Exits (या कालावधीत)", len(overshoot_df))
+                with oscol2:
+                    st.metric("सरासरी Overshoot (Points)", f"{_os_pts.mean():.2f} pts" if not _os_pts.empty else "N/A")
+                with oscol3:
+                    st.metric("सरासरी Overshoot (Fixed Rs रणनीती)", f"₹{_os_rs.mean():,.0f}" if not _os_rs.empty else "N/A")
+                st.dataframe(overshoot_df, width="stretch", hide_index=True)
+
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER शॅडो मोड — Performance Report मध्ये
             # slippage) — LIVE+PAPER मोडमध्ये उघडलेल्या प्रत्येक जोडी (खरा LIVE trade + तोच सिग्नल शॅडो
             # PAPER trade) साठीच अर्थपूर्ण — त्यामुळे "सर्व" मोड निवडलेला असेल, आणि प्रत्यक्ष जोडी
@@ -640,7 +665,7 @@ def render():
                         perf_pdf_bytes = generate_performance_report_pdf(
                             symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
                             an_by_source, an_by_timeframe, an_by_structure, trade_log_pdf_df, all_recs_en,
-                            slippage_pairs_df=slippage_pairs_df,
+                            slippage_pairs_df=slippage_pairs_df, overshoot_df=overshoot_df,
                         )
                     st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
                     st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
