@@ -76,10 +76,11 @@ TIMEFRAME_SUFFIXES = ["30M", "60M"]  # 15M कधीच नाही (वाप�
 
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py
 # मधलाच hysteresis-आधारित direction-निर्णय (बघा determine_direction_with_hysteresis()) आता इथेही.
-# MCX इथे फक्त 30M/60M candles वापरतो (srv2 च्याच 30M/60M सारखेच, 15M कधीच नाही), त्यामुळे तिथलाच
-# अरुंद buffer — 0.015% (dynamic_sr_instant_trader.py च्या 1M/5M साठीच्या 0.10% पेक्षा वेगळा,
-# स्वतंत्र constant — तिन्ही bots एकमेकांपासून स्वतंत्र राहतात).
-DIRECTION_HYSTERESIS_BUFFER_PCT = 0.015
+# सुरुवातीला srv2 सारखाच 0.015% buffer ठेवला होता (तोही फक्त 30M/60M वापरतो म्हणून), पण वापरकर्त्याने
+# लगेच MCX साठी स्वतंत्रपणे 1% (commodities — CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER — साठी जास्त
+# रुंद, कारण त्यांची किंमत-हालचाल NIFTY/BANKNIFTY पेक्षा वेगळ्या प्रमाणात असते) सांगितलं — स्वतंत्र
+# constant, बाकी दोन्ही bots ला हात लावलेला नाही.
+DIRECTION_HYSTERESIS_BUFFER_PCT = 1.0
 
 # MCX चं trading session NSE पेक्षा खूप उशिरापर्यंत (रात्री, हंगामानुसार ~23:30/23:55 पर्यंत बदलतं,
 # deploy/README.md मधली नोंद बघा) — प्रत्यक्ष exchange-close च्या थोडं आधी, established इतर
