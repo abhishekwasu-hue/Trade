@@ -62,24 +62,32 @@ def _render_ticker_body():
     )
 
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी फक्त उघड्या (OPEN) positions चा MTM दिसायचा, आज
-    # आधीच बंद (exit) झालेल्या trades चा realized P&L त्यात धरलाच जायचा नाही. आता दोन्ही एकत्र —
-    # उघड्या positions चा सद्य MTM + आजच बंद झालेल्या (LIVE व PAPER दोन्ही, symbol हाच) trades चा
-    # realized P&L — म्हणजे आजचा खरा संपूर्ण (एकत्रित) profit/loss.
-    total_today_pnl = None
+    # आधीच बंद (exit) झालेल्या trades चा realized P&L त्यात धरलाच जायचा नाही. आता उघड्या positions
+    # चा सद्य MTM + आजच बंद झालेल्या trades चा realized P&L एकत्र — आजचा खरा संपूर्ण P&L. वापरकर्त्याने
+    # पुढे स्पष्टपणे मागितल्याप्रमाणे LIVE आणि PAPER **एकत्रित एका आकड्यात नाही, तर दोन स्वतंत्र
+    # बॉक्समध्ये** — PAPER टेस्टिंगचा आकडा LIVE च्या खऱ्या पैशांच्या आकड्यात चुकून मिसळू नये म्हणून.
+    live_today_pnl, paper_today_pnl = None, None
     try:
-        open_mtm = 0.0
         positions_df = get_live_positions_with_mtm(token_input, symbol)
+        open_mtm_by_mode = {"LIVE": 0.0, "PAPER": 0.0}
         if not positions_df.empty and "MTM (Rs)" in positions_df.columns:
-            valid_mtm = positions_df["MTM (Rs)"].dropna()
-            if not valid_mtm.empty:
-                open_mtm = valid_mtm.sum()
+            for mode in ("LIVE", "PAPER"):
+                mode_mtm = positions_df.loc[positions_df["Mode"] == mode, "MTM (Rs)"].dropna()
+                if not mode_mtm.empty:
+                    open_mtm_by_mode[mode] = mode_mtm.sum()
+
         live_realized, _ = get_todays_realized_pnl(symbol, "LIVE")
         paper_realized, _ = get_todays_realized_pnl(symbol, "PAPER")
-        total_today_pnl = open_mtm + live_realized + paper_realized
+        live_today_pnl = open_mtm_by_mode["LIVE"] + live_realized
+        paper_today_pnl = open_mtm_by_mode["PAPER"] + paper_realized
     except Exception:
         pass  # Positions/P&L मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
 
-    st.metric("आजच्या Position चा MTM (Exit सह, एकूण P&L)", f"₹{total_today_pnl:,.0f}" if total_today_pnl is not None else "—")
+    mcol1, mcol2 = st.columns(2)
+    with mcol1:
+        st.metric("🔴 LIVE — आजचा MTM (Exit सह)", f"₹{live_today_pnl:,.0f}" if live_today_pnl is not None else "—")
+    with mcol2:
+        st.metric("📝 PAPER — आजचा MTM (Exit सह)", f"₹{paper_today_pnl:,.0f}" if paper_today_pnl is not None else "—")
 
 
 if hasattr(st, "fragment"):
