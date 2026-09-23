@@ -214,7 +214,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 cloud_db.save_signal_log(log_entry)
                 continue
 
-        hit_count_so_far, last_hit_time = cloud_db.get_zone_hits_today(
+        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=cloud_db.zone_role_from_type(row["zone_type"]),
         )
         if hit_count_so_far >= 2:
@@ -223,11 +223,14 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        if last_hit_time is not None:
-            elapsed_minutes = (now - last_hit_time).total_seconds() / 60
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — cooldown आता फक्त खऱ्या trade नंतरच सुरू होतो
+        # (last_trade_time), नुसत्या नाकारलेल्या (RSI/PCR gate ने) touch मुळे नाही — आधी सलग
+        # RSI-नाकारलेले touches सुद्धा घड्याळ रीसेट करत राहायचे, खरा trade कधीच न होता.
+        if last_trade_time is not None:
+            elapsed_minutes = (now - last_trade_time).total_seconds() / 60
             if elapsed_minutes < 30:
                 log_entry["trade_status"] = "SKIPPED_COOLDOWN_30MIN"
-                log_entry["reason"] = f"मागच्या hit ला फक्त {elapsed_minutes:.1f} मिनिटं झालीत (किमान 30 हवीत)"
+                log_entry["reason"] = f"मागच्या trade ला फक्त {elapsed_minutes:.1f} मिनिटं झालीत (किमान 30 हवीत)"
                 cloud_db.save_signal_log(log_entry)
                 continue
 

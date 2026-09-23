@@ -174,7 +174,7 @@ def process_symbol(access_token, symbol):
                 cloud_db.save_signal_log(log_entry)
                 continue
 
-        hit_count_so_far, last_hit_time = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
+        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
         if hit_count_so_far >= 2:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"

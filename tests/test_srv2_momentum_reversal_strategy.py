@@ -264,7 +264,7 @@ class TestProcessSymbol:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits, \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)) as mock_hits, \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")):
             srv2.process_symbol("fake_token", "NIFTY")
             assert mock_hits.called
@@ -278,7 +278,7 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now())), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), get_ist_now())), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade:
             result = srv2.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
@@ -293,7 +293,7 @@ class TestProcessSymbol:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=True), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade:
             result = srv2.process_symbol("fake_token", "NIFTY")
@@ -332,7 +332,7 @@ class TestProcessSymbol:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_resistance_zone()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(srv2, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
@@ -354,7 +354,7 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now())), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now(), get_ist_now())), \
              patch.object(srv2, "has_open_trade_from_source", return_value=True), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade:
             result = srv2.process_symbol("fake_token", "NIFTY")
@@ -367,7 +367,7 @@ class TestProcessSymbol:
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now())), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now(), get_ist_now())), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=[]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -484,7 +484,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones_30m_only()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -510,7 +510,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -534,7 +534,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=[today_str]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")) as mock_chain, \
@@ -553,7 +553,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")) as mock_chain, \
@@ -587,7 +587,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -611,7 +611,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -639,7 +639,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -665,7 +665,7 @@ class TestMultiTimeframe:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=False), \
              patch.object(srv2, "fetch_option_expiries", return_value=["2099-01-01"]), \
              patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
@@ -771,7 +771,7 @@ class TestSignalLogging:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now())), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), get_ist_now())), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
              patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
             result = srv2.process_symbol("fake_token", "NIFTY")
@@ -786,7 +786,7 @@ class TestSignalLogging:
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(srv2, "has_open_trade_from_source", return_value=True), \
              patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
              patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:

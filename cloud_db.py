@@ -864,7 +864,7 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकाच zone ला
     दिवसातून जास्तीत जास्त किती वेळा (आणि केव्हा शेवटचं) hit झालाय, हे established signal_log वरूनच
     काढणे (वेगळं table/column लागत नाही — प्रत्येक hit आधीच इथे साठवलेला असतो).
-    रिटर्न: (hit_count: int, last_hit_time: datetime किंवा None)
+    रिटर्न: (hit_count: int, last_hit_time: datetime किंवा None, last_trade_time: datetime किंवा None)
 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेला `role` पर्याय — आधी हा counter फक्त (symbol, price, day)
     वर होता, support/resistance वेगळे मोजायचा नाही — त्यामुळे एखादा level support म्हणून 2 वेळा hit
@@ -873,15 +873,23 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     counter (`role="SUPPORT"`/`"RESISTANCE"` दिलं की फक्त त्याच role च्या — `level_type` मध्ये तो
     शब्द असलेल्या — hits मोजल्या जातात) — एकाच किंमतीवर दिवसातून जास्तीत जास्त 2+2=4 trades शक्य.
     `role=None` (डीफॉल्ट) दिलं तर आधीचंच वर्तन (दोन्ही मिळून एकत्र मोजणी) — backward compatible.
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेला `last_trade_time` (वेगळा, `last_hit_time` पासून स्वतंत्र) —
+    वापरकर्त्याने CSV export मधून दाखवून दिलं: 30-मिनिटांचा cooldown आधी **कुठल्याही touch** पासून
+    (RSI/PCR gate ने नाकारलेला touch सुद्धा) मोजला जायचा — त्यामुळे सलग RSI-नाकारलेले touches
+    (प्रत्यक्ष trade कधीच न होता) घड्याळ सतत रीसेट करत राहायचे. आता `last_trade_time` फक्त **खऱ्या
+    trade attempt** (`_is_no_action_trade_status()` False असलेल्या, उदा. "OPENED") च्या वेळेवरून —
+    cooldown साठी हेच वापरायचं (max-2-hits चा `hit_count`/`last_hit_time` मात्र आधीसारखाच touch-आधारित
+    राहतो, तो बदललेला नाही).
     """
     conn = get_connection()
     if conn is None:
-        return 0, None
+        return 0, None, None
     try:
         with conn.cursor() as cur:
             if role:
                 cur.execute(
-                    """SELECT signal_time FROM signal_log
+                    """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
                        AND level_type LIKE %s
                        ORDER BY signal_time DESC""",
@@ -889,18 +897,19 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
                 )
             else:
                 cur.execute(
-                    """SELECT signal_time FROM signal_log
+                    """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
                        ORDER BY signal_time DESC""",
                     (symbol, trade_date, level_price),
                 )
             rows = cur.fetchall()
             if not rows:
-                return 0, None
-            return len(rows), rows[0][0]
+                return 0, None, None
+            last_trade_time = next((r[0] for r in rows if not _is_no_action_trade_status(r[1])), None)
+            return len(rows), rows[0][0], last_trade_time
     except Exception:
         _logger.exception("get_zone_hits_today() मध्ये अनपेक्षित चूक (silently handled)")
-        return 0, None
+        return 0, None, None
     finally:
         conn.close()
 

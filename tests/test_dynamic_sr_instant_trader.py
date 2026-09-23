@@ -263,7 +263,7 @@ class TestProcessSymbol:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_select.called
             assert mock_select.call_args.kwargs.get("itm_depth_points") == 50
@@ -299,7 +299,7 @@ class TestProcessSymbol:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "BANKNIFTY")
             assert mock_select.called
             # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती
@@ -415,7 +415,7 @@ class TestProcessSymbol:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(dsr.cloud_db, "save_market_zones") as mock_save:
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_save.called
@@ -442,7 +442,7 @@ class TestMultiHitGating:
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
@@ -459,7 +459,7 @@ class TestMultiHitGating:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T40"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
@@ -473,7 +473,7 @@ class TestMultiHitGating:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
@@ -490,7 +490,7 @@ class TestMultiHitGating:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits:
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)) as mock_hits:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_hits.called
             assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
@@ -504,7 +504,7 @@ class TestMultiHitGating:
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr, "send_telegram_message") as mock_telegram, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now())):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), get_ist_now())):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
             assert not mock_telegram.called
@@ -520,7 +520,7 @@ class TestMultiHitGating:
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, recent_hit_time)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, recent_hit_time, recent_hit_time)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
@@ -535,7 +535,7 @@ class TestMultiHitGating:
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, old_hit_time)), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, old_hit_time, old_hit_time)), \
              patch.object(dsr, "has_open_trade_from_source", return_value=True):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
@@ -557,7 +557,7 @@ class TestMultiHitGating:
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(dsr, "has_open_trade_from_source", return_value=True):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
@@ -575,7 +575,7 @@ class TestMultiHitGating:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T2"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, old_hit_time)), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, old_hit_time, old_hit_time)), \
              patch.object(dsr, "has_open_trade_from_source", return_value=False):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
@@ -741,7 +741,7 @@ class TestPooled1MAnd5M:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T70"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             result = dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
             assert "5M" in result
@@ -769,7 +769,7 @@ class TestNakedOptionTrade:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T71"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_naked_select.called
             assert mock_trade.call_count == 2  # स्प्रेड + Naked दोन्ही
@@ -794,7 +794,7 @@ class TestNakedOptionTrade:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T72"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_naked_select.called
             assert mock_trade.call_count == 1  # फक्त स्प्रेड, Naked नाही
@@ -823,7 +823,7 @@ class TestNakedOptionTrade:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T73"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_count == 2
             spread_call, naked_call = mock_trade.call_args_list
@@ -852,7 +852,7 @@ class TestExpiryDayLogic:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T73"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_chain.call_args.kwargs.get("expiry_index") == 1
 
@@ -881,7 +881,7 @@ class TestPCRGate:
              patch.object(dsr, "check_pcr_gate", return_value=(False, 0.72, "PCR 0.72 < 0.80")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
@@ -901,7 +901,7 @@ class TestPCRGate:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T90"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
