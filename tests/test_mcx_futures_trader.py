@@ -108,6 +108,24 @@ class TestProcessSymbolGates:
             logged_statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_RSI_FILTER" in logged_statuses
 
+    def test_get_zone_hits_today_called_with_role_from_level_type(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला role-split max-2 counter — last_close==support_level
+        त्यामुळे level_type="SUPPORT" ठरतो (current_price >= level_price), तोच role पास व्हायला हवा."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_hits.called
+            assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
+
     def test_max_2_hits_blocks_entry(self):
         settings = dict(_DEFAULT_SETTINGS)
         settings["symbol_enabled"] = True

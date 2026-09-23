@@ -674,6 +674,71 @@ class TestGetZoneHitsToday:
         assert count == 0
         assert last_time is None
 
+    def test_no_role_query_has_no_level_type_filter(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला `role` पर्याय — role न दिल्यास (डीफॉल्ट) query ने
+        support/resistance दोन्ही मिळून मोजायला हवं (backward compatible, जुनं वर्तन)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "level_type" not in sql
+        assert params == ("NIFTY", "2026-09-08", 23900.0)
+
+    def test_role_given_adds_level_type_filter(self, monkeypatch):
+        """role="SUPPORT" दिलं की फक्त support-role च्या hits मोजल्या जाव्यात — तोच level नंतर
+        resistance म्हणून test झाला तरी तो वेगळा (स्वतंत्र कमाल-2) counter असायला हवा."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "level_type LIKE" in sql
+        assert params == ("NIFTY", "2026-09-08", 23900.0, "%SUPPORT%")
+
+    def test_support_and_resistance_hits_counted_independently(self, monkeypatch):
+        """एकाच किंमतीला support म्हणून 2 hits, resistance म्हणून 0 -- role="RESISTANCE" ने
+        विचारल्यास अजूनही 0/2 दिसायला हवं (support चे hits resistance च्या counter मध्ये मिसळू नयेत)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+
+        def _execute(sql, params):
+            if "level_type LIKE" in sql and params[-1] == "%RESISTANCE%":
+                mock_cursor.fetchall.return_value = []
+            else:
+                mock_cursor.fetchall.return_value = [("2026-09-08 11:30:00",), ("2026-09-08 09:20:00",)]
+
+        mock_cursor.execute.side_effect = _execute
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        support_count, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
+        resistance_count, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="RESISTANCE")
+        assert support_count == 2
+        assert resistance_count == 0
+
+
+class TestZoneRoleFromType:
+    def test_support_zone_type_variants(self):
+        assert cloud_db.zone_role_from_type("SUPPORT") == "SUPPORT"
+        assert cloud_db.zone_role_from_type("DYNAMIC_SR_SUPPORT_1M") == "SUPPORT"
+        assert cloud_db.zone_role_from_type("DYNAMIC_SR_SUPPORT_30M") == "SUPPORT"
+
+    def test_resistance_zone_type_variants(self):
+        assert cloud_db.zone_role_from_type("RESISTANCE") == "RESISTANCE"
+        assert cloud_db.zone_role_from_type("DYNAMIC_SR_RESISTANCE_5M") == "RESISTANCE"
+
+    def test_unrelated_or_empty_zone_type_returns_none(self):
+        assert cloud_db.zone_role_from_type("BULLISH_OB") is None
+        assert cloud_db.zone_role_from_type("") is None
+        assert cloud_db.zone_role_from_type(None) is None
+
 
 class TestGetTokenAgeHours:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — check_token_freshness.py साठी, token किती

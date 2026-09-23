@@ -477,6 +477,24 @@ class TestMultiHitGating:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_get_zone_hits_today_called_with_role_from_zone_type(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला role-split max-2 counter — _fake_zones() मधला touch
+        होणारा level DYNAMIC_SR_SUPPORT_5M आहे, त्यामुळे role="SUPPORT" इतकाच पास व्हायला हवा
+        (resistance च्या counter मध्ये मिसळू नये)."""
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits:
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_hits.called
+            assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
+
     def test_third_hit_of_day_skipped_max_2_reached(self):
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \

@@ -402,6 +402,25 @@ class TestProcessSymbolCoreFlow:
             assert not mock_naked_select.called
             assert mock_trade.call_count == 1
 
+    def test_get_zone_hits_today_called_with_role_from_zone_type(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला role-split max-2 counter — touch होणारा level
+        DYNAMIC_SR_SUPPORT_5M आहे, त्यामुळे role="SUPPORT" इतकाच पास व्हायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings()), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_hits.called
+            assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
+
     def test_max_2_hits_reached_skipped(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},

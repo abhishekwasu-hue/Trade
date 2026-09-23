@@ -256,6 +256,20 @@ class TestProcessSymbol:
             assert mock_select.call_args.args[2] == 51900
             assert mock_select.call_args.kwargs.get("step") == 100
 
+    def test_get_zone_hits_today_called_with_role_from_level_type(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला role-split max-2 counter — last_close=23902 >=
+        support_level=23900 त्यामुळे level_type="SUPPORT" ठरतो, तोच role म्हणून पास व्हायला हवा."""
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits, \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_hits.called
+            assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
+
     def test_multi_hit_max_2_per_level_skips_third(self):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit, One-Touch ऐवजी) — established
         established level ला आजच established 2 वेळा hit झालेला असेल, तर established 3रा वेळा

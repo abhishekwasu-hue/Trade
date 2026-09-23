@@ -218,11 +218,13 @@ def process_symbol(access_token, symbol, lot_size=65):
                 cloud_db.save_signal_log(log_entry)
                 continue
 
-        # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी).
-        hit_count_so_far, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date)
+        # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी). support/resistance
+        # साठी स्वतंत्र कमाल-2 counter (role= दिलं) — तोच level भूमिका बदलून (support->resistance
+        # किंवा उलट) दुसऱ्या दिशेने test झाला तर तो एक वेगळाच candidate मानला जातो.
+        hit_count_so_far, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
         if hit_count_so_far >= 2:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = f"आजच्या या zone साठी कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
         if has_open_trade_from_source(symbol, "srv2_momentum_reversal"):
