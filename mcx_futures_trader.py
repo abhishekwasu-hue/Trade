@@ -71,7 +71,11 @@ STRATEGY_KEY = "mcx_futures"
 # स्वयंचलित MIS square-off मध्ये येत नाही) तेच इथेही — established संपूर्ण codebase मध्ये सुसंगत.
 PRODUCT_TYPE = "D"
 
-TOUCH_TOLERANCE_PCT = 0.05
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — entry-वेळचा touch-detection buffer आता सर्व commodities साठी
+# 0.10% (आधी 0.05% होता) — किंमत level च्या ±0.10% च्या आत आली/candle range त्यात असेल तरच TOUCH
+# मानला जातो (हे hysteresis-आधारित direction-buffer, DIRECTION_HYSTERESIS_BUFFER_PCT, पेक्षा वेगळं —
+# तो कुठला touch झाल्यावर दिशा काय ठरवायची ते सांगतो, हा touch खरंच झाला का ते).
+TOUCH_TOLERANCE_PCT = 0.10
 TIMEFRAME_SUFFIXES = ["30M", "60M"]  # 15M कधीच नाही (वापरकर्त्याने स्पष्ट सांगितल्याप्रमाणे)
 
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py

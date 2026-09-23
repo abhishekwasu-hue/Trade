@@ -112,6 +112,40 @@ class TestProcessSymbolGates:
             assert mock_log.call_args.args[0]["hit_type"] == "NO_HIT"
             assert not mock_trade.called
 
+    def test_touch_tolerance_widened_to_0_10_pct(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा — entry touch-buffer 0.05% वरून 0.10% केला. level=6500
+        पासून 5 पॉइंट्स दूर (जुन्या 0.05% बफर — ~3.25 पॉइंट्स — च्या बाहेर, पण नव्या 0.10% — ~6.5
+        पॉइंट्स — च्या आतच) — आता हा TOUCH म्हणून मोजायला हवा."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        candles_df = _fake_candles_df(last_close=6505.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_log.call_args.args[0]["hit_type"] == "TOUCH"
+
+    def test_touch_tolerance_still_excludes_beyond_0_10_pct(self):
+        """level=6500 पासून 7 पॉइंट्स दूर — नव्या 0.10% बफर (~6.5 पॉइंट्स) च्याही बाहेर — अजूनही
+        NO_HIT च राहायला हवं (buffer अमर्याद रुंद झालेला नाही)."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        candles_df = _fake_candles_df(last_close=6507.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_log.call_args.args[0]["hit_type"] == "NO_HIT"
+
     def test_rsi_gate_blocks_entry(self):
         """किंमत level (6500) च्या वरच आहे -> BULLISH -> RSI support_max पेक्षा कमी हवा. सलग
         वाढणाऱ्या closes मुळे RSI जास्त असेल -> गेटने अडवायला हवं."""
