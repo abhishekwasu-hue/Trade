@@ -799,6 +799,105 @@ class TestZoneRoleFromType:
         assert cloud_db.zone_role_from_type(None) is None
 
 
+class TestIvHistoryStorage:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Record iv of option premium daily for
+    analysis") — iv_history table, strike_oi_history सारखाच upsert पॅटर्न."""
+
+    def test_save_iv_snapshot_upserts_each_row(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        rows = [
+            {"strike": 24000, "option_type": "CE", "expiry": "2026-09-25", "iv": 12.5, "ltp": 150.0, "underlying_price": 24010.0},
+            {"strike": 24000, "option_type": "PE", "expiry": "2026-09-25", "iv": 13.1, "ltp": 140.0, "underlying_price": 24010.0},
+        ]
+        result = cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", rows)
+        assert result is True
+        assert mock_cursor.execute.call_count == 2
+        sql, params = mock_cursor.execute.call_args_list[0][0]
+        assert "INSERT INTO iv_history" in sql
+        assert "ON CONFLICT" in sql
+        assert params == ("NIFTY", 24000, "CE", "2026-09-23", "15:25", "2026-09-25", 12.5, 150.0, 24010.0)
+
+    def test_save_iv_snapshot_missing_optional_fields_default_to_none(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}])
+        _, params = mock_cursor.execute.call_args_list[0][0]
+        assert params == ("NIFTY", 24000, "CE", "2026-09-23", "15:25", None, None, None, None)
+
+    def test_no_connection_returns_safe_defaults(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        assert cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}]) is False
+        assert cloud_db.get_iv_history("NIFTY") is None
+
+    def test_get_iv_history_no_range_reads_everything(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_iv_history("NIFTY")
+        assert result is not None and result.empty
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "trade_date >=" not in sql
+        assert "trade_date <=" not in sql
+        assert params == ["NIFTY"]
+
+    def test_get_iv_history_with_date_range_filters(self, monkeypatch):
+        """🎓 "काल IV काय होता, आज काय आहे" अशी तुलना यावरूनच होणार — from_date/to_date दिल्यावर तेवढाच
+        range query मध्ये यायला हवा."""
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-22", "15:25", "2026-09-25", 24000.0, "CE", 12.0, 148.0, 24000.0),
+            ("2026-09-23", "15:25", "2026-09-25", 24000.0, "CE", 12.8, 152.0, 24010.0),
+        ]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_iv_history("NIFTY", from_date="2026-09-22", to_date="2026-09-23")
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "trade_date >= %s" in sql and "trade_date <= %s" in sql
+        assert params == ["NIFTY", "2026-09-22", "2026-09-23"]
+        assert len(result) == 2
+        assert list(result["trade_date"]) == ["2026-09-22", "2026-09-23"]
+
+    def test_get_iv_history_strikes_filter(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_iv_history("NIFTY", strikes=[23900, 24000])
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "strike IN (%s,%s)" in sql
+        assert params == ["NIFTY", 23900, 24000]
+
+    def test_query_error_returns_safe_default(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.execute.side_effect = Exception("db error")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        assert cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}]) is False
+        assert cloud_db.get_iv_history("NIFTY") is None
+
+
 class TestGetTokenAgeHours:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — check_token_freshness.py साठी, token किती
     जुना आहे ते तपासण्यासाठीचं helper."""
