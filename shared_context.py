@@ -285,6 +285,16 @@ def setup_shared_context():
         st.sidebar.warning("🔴 LIVE Mode निवडलेला — पण अजून सक्रिय/पुष्टी केलेला नाही.")
     else:
         st.sidebar.caption("📝 PAPER Mode (Simulated) — कुठलाही खरा ऑर्डर जाणार नाही.")
+    # 🎓 वापरकर्त्याने सापडवलेला confusion — हा toggle फक्त Manual Trading Panel/Strategy Builder/
+    # A1 Signal Engine साठी आहे असं इथे कुठेच स्पष्ट नव्हतं — बघून असं वाटायचं की हा संपूर्ण
+    # Dashboard चा (automated cron bots — Bot Dynamic SR Algo/MCX Futures Trader — सकट) master
+    # switch आहे. प्रत्यक्षात त्या bots चा trading_mode त्यांच्याच पानावरून, स्वतंत्रपणे ठरतो —
+    # इथे बदलला तरी त्यांच्यावर काहीही परिणाम होत नाही.
+    st.sidebar.caption(
+        "ⓘ हे फक्त Manual Trading Panel/Strategy Builder/A1 Signal Engine साठी — तुमचे automated "
+        "bots (Bot Dynamic SR Algo/MCX Futures Trader) चा trading mode इथून बदलत नाही, तो "
+        "त्यांच्याच पानावरून, प्रत्येक symbol साठी स्वतंत्रपणे सेट करा."
+    )
 
     with st.sidebar.expander("🎮 Trading Mode (बदलण्यासाठी क्लिक करा)", expanded=False):
         trading_mode_choice = st.radio(
@@ -399,10 +409,12 @@ def setup_shared_context():
     except Exception:
         pass  # settings file लिहिता आला नाही तरी dashboard क्रॅश होऊ नये — engine_service.py आधीच्या/डीफॉल्ट settings वापरेल
 
-    if enable_live_trading and confirm_live_trading:
-        st.sidebar.caption("🛰️ Position Monitoring (SL/Target/EOD): established `engine_service.py` (systemd) वर, स्वतंत्रपणे चालू.")
-    else:
-        st.sidebar.caption("⏸️ Position Monitoring बंद आहे — Live Trading सक्रिय करा (आणि पुष्टी द्या).")
+    # 🎓 वापरकर्त्याने सापडवलेली, दिशाभूल करणारी caption इथेच होती — "Position Monitoring चालू/बंद"
+    # हे `engine_service.py` बद्दल बोलायचं, पण deploy/README.md मध्येच नोंदवल्याप्रमाणे तो आता
+    # निष्क्रिय आहे — खरं SL/Target/EOD monitoring `trade_monitor.py` (VPS crontab) करतं, जे या
+    # toggle शी काहीही संबंध न ठेवता, नेहमीच (automated bots सकट सर्व open positions साठी) चालू
+    # असतं. हा toggle बंद असतानाही monitoring प्रत्यक्षात चालूच राहायचं, पण इथे खोटं "बंद आहे"
+    # दिसायचं — काढून टाकलं (फक्त हा toggle नियंत्रित न करणारी गोष्ट इथे दाखवण्यात अर्थ नाही).
 
     # 🎓 Production-readiness सुधारणा — Automatic Periodic DB Backup. आधी Orders पेजवरचं मॅन्युअल
     # "Download Backup" बटण हाच एकमेव उपाय होता (Streamlit Cloud चा local SQLite restart/redeploy ला
