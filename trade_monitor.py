@@ -24,15 +24,16 @@ Dynamic-S/R चे trades Dashboard च्या स्थितीपासू�
 Performance Report मध्ये आढळलं की SL प्रत्यक्षात threshold च्या बऱ्याच पुढे जाऊन लागत होता (उदा.
 -0.05% थ्रेशोल्ड असताना -0.11% वर exit) — कारण cron दर 60 सेकंदांनीच नव्याने ही script सुरू करतो,
 मध्ये किंमत किती पुढे गेली हे कळतच नाही. आता cron अजूनही दर 60 सेकंदांनीच invoke करतो (तेच crontab,
-बदललेलं नाही), पण प्रत्येक invocation आता स्वतःच आतून `--interval-seconds` (डीफॉल्ट 20) च्या
-अंतराने `--loop-seconds` (डीफॉल्ट 50, 60-सेकंद cron window च्या आत बसावं म्हणून बफर ठेवलेला) पर्यंत
-पुन्हा-पुन्हा तपासत राहते — म्हणजे प्रत्यक्षात दर ~20 सेकंदांनी SL/Target तपासलं जातं, overshoot/slippage
-साधारण एक-तृतीयांश होतो. ⚠️ हे अजूनही तिखट tick-by-tick निरीक्षण नाही — फक्त interval कमी केलेला —
-पूर्ण उपाय (broker-side resting SL order) स्वतंत्रपणे, नंतरच्या टप्प्यात.
+बदललेलं नाही), पण प्रत्येक invocation आता स्वतःच आतून `--interval-seconds` (डीफॉल्ट सुरुवातीला 20,
+वापरकर्त्याने पुढे आणखी घट्ट करून **15** केलेलं) च्या अंतराने `--loop-seconds` (डीफॉल्ट 50, 60-सेकंद
+cron window च्या आत बसावं म्हणून बफर ठेवलेला) पर्यंत पुन्हा-पुन्हा तपासत राहते — म्हणजे प्रत्यक्षात
+दर ~15 सेकंदांनी SL/Target तपासलं जातं, overshoot/slippage आणखी कमी होतो. ⚠️ हे अजूनही तिखट
+tick-by-tick निरीक्षण नाही — फक्त interval कमी केलेला — पूर्ण उपाय (broker-side resting SL order)
+स्वतंत्रपणे, नंतरच्या टप्प्यात (बघा trading_engine.py चं Phase 2 broker-side SL).
 
 ⚠️ प्रत्येक cycle मध्ये प्रत्येक monitored symbol साठी API कॉल्स होतात (ATR candles + open trades ची
-LTP) — आता 60 सेकंदांत ~3x जास्त वेळा (पूर्वी 1, आता ~3) — Upstox rate-limit च्या आत राहण्यासाठी
-`--interval-seconds` गरज पडल्यास वाढवता येतो (कमी frequent, पण कमी API load).
+LTP) — आता 60 सेकंदांत ~4x जास्त वेळा (पूर्वी 1, नंतर ~3, आता ~4) — Upstox rate-limit च्या आत
+राहण्यासाठी `--interval-seconds` गरज पडल्यास वाढवता येतो (कमी frequent, पण कमी API load).
 
 चालवणे:
     python3 trade_monitor.py --token <UPSTOX_TOKEN>
@@ -97,7 +98,7 @@ def run_monitor_cycle(access_token, product_type="D"):
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
 
 
-def run_monitor_loop(token, product_type="D", interval_seconds=20, loop_seconds=50,
+def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=50,
                       cycle_fn=run_monitor_cycle, sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print):
     """एका cron invocation च्या आत, `interval_seconds`च्या अंतराने `loop_seconds` पर्यंत
     run_monitor_cycle() पुन्हा-पुन्हा चालवणे (SL slippage कमी करण्यासाठी — बघा वरची फाईल-टिप्पणी).
@@ -124,8 +125,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--product-type", default="D")
-    parser.add_argument("--interval-seconds", type=float, default=20,
-                         help="किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 20 — पूर्वीच्या दर-60-सेकंदांऐवजी)")
+    parser.add_argument("--interval-seconds", type=float, default=15,
+                         help="किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 15 — पूर्वीच्या दर-60-सेकंदांऐवजी, वापरकर्त्याने 20 वरून आणखी घट्ट केलेलं)")
     parser.add_argument("--loop-seconds", type=float, default=50,
                          help="एका cron invocation मध्ये किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 50 — 60-सेकंद cron window च्या आत बसावं म्हणून बफर)")
     args = parser.parse_args()

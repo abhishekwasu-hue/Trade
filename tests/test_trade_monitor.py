@@ -6,6 +6,7 @@ ProcessLock इथेही + engine_service.py दोन्हीकडे ज�
 टिप्पणी. दोन्हींपैकी कुठलीही (किंवा चुकून दोन्ही) प्रत्यक्ष VPS वर चालू असो, एकाच वेळी फक्त एकच
 manage_open_trades() चालवेल.
 """
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
@@ -117,3 +118,16 @@ class TestRunMonitorLoop:
         )
         assert sum(sleep_calls) <= 45
         assert all(s >= 0 for s in sleep_calls)
+
+    def test_default_interval_seconds_is_15(self):
+        """🎓 वापरकर्त्याशी चर्चा करून पुढे आणखी घट्ट केलेलं (आधी 20 होतं, सुरुवातीच्या SL-slippage
+        फिक्समध्ये) — run_monitor_loop() चा डीफॉल्ट आणि `--interval-seconds` चा argparse डीफॉल्ट
+        दोन्ही 15 असायला हवेत (cron/crontab explicit flag न देताच रिलाय करतो यावर)."""
+        sig = inspect.signature(trade_monitor.run_monitor_loop)
+        assert sig.parameters["interval_seconds"].default == 15
+
+    def test_cli_default_interval_seconds_is_15(self):
+        """__main__ मधला argparse डीफॉल्ट सुद्धा 15 च असायला हवा (function-signature डीफॉल्टशी
+        सुसंगत) -- प्रत्यक्ष trade_monitor.py च्या source मधूनच पडताळणी (tautological मॉक टाळून)."""
+        source = inspect.getsource(trade_monitor)
+        assert '"--interval-seconds", type=float, default=15' in source
