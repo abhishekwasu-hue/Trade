@@ -520,3 +520,37 @@ Browser मध्ये Dashboard उघडल्यावर आता सर�
 जाता येईल (एका browser session/tab पुरतं लक्षात राहतं, पुन्हा-पुन्हा विचारत नाही).
 
 ⚠️ पासवर्ड कधीही `git commit` करू नका — फक्त `.env` फाईलमध्येच (जी `.gitignore` मध्ये आधीच आहे).
+
+---
+
+# ⚠️ Streamlit Dashboard — Duplicate systemd Unit मुळे Port Conflict (प्रत्यक्ष घडलेलं, २३-Sep-2026)
+
+🎓 वापरकर्त्याला प्रत्यक्ष आलेला अनुभव — Dashboard वर `AttributeError: module 'cloud_db' has no
+attribute 'get_trading_pause_settings'` दिसत होता, जरी VPS वरचा कोड आधीच नवीनतम मर्ज (`78912f5`)
+होता. कोड बरोबर होता — खरं कारण होतं की VPS वर **दोन वेगळे systemd units** (`dashboard.service` आणि
+`streamlit_dashboard.service` — बहुतेक जुन्या सेटअप-प्रयत्नांतून राहिलेलं डुप्लिकेट) एकाच पोर्ट 8501
+वर app चालवायचा प्रयत्न करत होते. जुना (`dashboard.service`) आधीच पोर्ट धरून बसलेला होता (जुना,
+मेमरीतला `cloud_db` module घेऊन), त्यामुळे नवीन deploy नंतर `streamlit_dashboard.service` restart
+केला तरी bind fail होऊन crash-loop (`Port 8501 is not available`, दर काही सेकंदांनी restart) मध्ये
+अडकत होता.
+
+**कसं ओळखायचं (हीच लक्षणं परत दिसली तर):**
+```bash
+sudo lsof -i :8501
+systemctl list-units --type=service --all | grep -iE "streamlit|dashboard"
+```
+एकापेक्षा जास्त सर्व्हिस/प्रोसेस 8501 शी संबंधित दिसली, तर हाच प्रकार आहे.
+
+**कायमचं निराकरण** — फक्त **`streamlit_dashboard.service`** हाच अधिकृत/एकमेव Dashboard unit आहे (वर
+"Dashboard Password Gate" सेक्शन बघा). दुसरं कुठलंही unit/manual process सापडलं तर:
+```bash
+sudo systemctl stop <जुनं-unit-नाव>
+sudo systemctl disable <जुनं-unit-नाव>
+sudo rm /etc/systemd/system/<जुनं-unit-नाव>
+sudo systemctl daemon-reload
+```
+
+⚠️ पुढच्या वेळी **नवीन systemd unit जोडण्याआधी** नेहमी आधी तपासा की तेच काम करणारं दुसरं unit
+अस्तित्वात नाही ना (`systemctl list-units --type=service --all | grep -i <keyword>`) — विशेषतः
+Dashboard सारख्या एकाच पोर्टवर bind होणाऱ्या service साठी. `deploy/streamlit_dashboard.service` शिवाय
+दुसरं कुठलंही unit file `app.py`/Dashboard साठी तयार करू नका.
