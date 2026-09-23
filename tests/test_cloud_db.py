@@ -1354,24 +1354,24 @@ class TestKillSwitchSettings:
     def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
         settings = cloud_db.get_kill_switch_settings()
-        assert settings == {"enabled": True, "max_daily_loss": 10000, "max_trades_per_day": 15}
+        assert settings == {"enabled": True, "max_daily_loss_pct": 2.0, "max_daily_profit_pct": 3.0, "max_trades_per_day": 15}
 
     def test_get_returns_saved_values(self, monkeypatch):
         with patch.object(
             cloud_db, "get_strategy_settings",
-            return_value={"enabled": False, "max_daily_loss": 25000, "max_trades_per_day": 8},
+            return_value={"enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8},
         ) as mock_get:
             settings = cloud_db.get_kill_switch_settings()
         mock_get.assert_called_once_with(cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY)
-        assert settings == {"enabled": False, "max_daily_loss": 25000, "max_trades_per_day": 8}
+        assert settings == {"enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8}
 
     def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
         with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
-            ok = cloud_db.save_kill_switch_settings(True, "15000", "10")
+            ok = cloud_db.save_kill_switch_settings(True, "2.5", "5.0", "10")
         assert ok is True
         mock_save.assert_called_once_with(
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
-            {"enabled": True, "max_daily_loss": 15000.0, "max_trades_per_day": 10},
+            {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10},
         )
 
 

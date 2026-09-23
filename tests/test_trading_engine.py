@@ -37,7 +37,12 @@ def temp_db(monkeypatch):
     (PAPER trades साठीही, LIVE gate शी संबंध नसताना) _resolve_required_margin() नेहमीच कॉल करतं
     (entry_margin_required साठवण्यासाठी) — वरचा check_margin_available() मॉक याला cover करत
     नाही (तो फक्त गेट साठी), त्यामुळे इथे स्वतंत्रपणे mock करणे आवश्यक — नाहीतर प्रत्येक test खरा
-    (fake_token सह अयशस्वी होणारा) Upstox network call करेल."""
+    (fake_token सह अयशस्वी होणारा) Upstox network call करेल.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (Kill Switch — Loss/Profit % एकूण capital च्या सापेक्ष) —
+    check_kill_switch() आता (LIVE trades साठी) cloud_db.get_effective_upstox_token() +
+    get_total_capital() (खरे Upstox network calls) वापरतं — वरच्याच पॅटर्नने, सुरक्षित डीफॉल्ट
+    (मोठं, कुठल्याही सामान्य टेस्ट-रकमेला trip न होणारं capital) — विशेषतः Kill Switch चं वर्तनच
+    तपासणारे tests (TestCheckKillSwitch) स्वतःचे मूल्य स्वतंत्रपणे मॉक करतात."""
     tmpdb = tempfile.mktemp(suffix=".db")
     monkeypatch.setattr(database, "DB_PATH", tmpdb)
     database.init_sqlite_db()
@@ -45,6 +50,8 @@ def temp_db(monkeypatch):
     monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda access_token: [])
     monkeypatch.setattr(trading_engine, "check_margin_available", lambda *a, **k: (True, None))
     monkeypatch.setattr(trading_engine, "_resolve_required_margin", lambda *a, **k: 37500.0)
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "fake_token")
+    monkeypatch.setattr(trading_engine, "get_total_capital", lambda access_token: 1000000.0)
     yield tmpdb
 
 
@@ -1290,26 +1297,63 @@ class TestOpenMultiLegTradePartialFailure:
 class TestCheckKillSwitch:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE तोटा/trade-count मर्यादेपलीकडे गेल्यावर नवीन LIVE
-    trade अडवलं जायला हवं."""
+    trade अडवलं जायला हवं.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit... ekun capital chya respected
+    te asayla pahije both loss and profit, certain profit book jhalyanantr, automatic trading stop
+    karne awashyak") — max_daily_loss_pct/max_daily_profit_pct आता एकूण capital च्या % (flat ₹
+    नाही) — इथे total_capital=₹10,00,000 (get_total_capital मॉक) कायम वापरलेला, त्यामुळे प्रत्येक
+    test मधली ₹ मर्यादा स्वतः दिलेल्या %-वरून काढता येते."""
+
+    TOTAL_CAPITAL = 1_000_000.0
+
+    def _mock_capital(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "fake_token")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda access_token: self.TOTAL_CAPITAL)
 
     def test_disabled_always_ok_regardless_of_pnl(self, monkeypatch):
-        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss": 100, "max_trades_per_day": 1})
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss_pct": 1.0, "max_daily_profit_pct": 1.0, "max_trades_per_day": 1})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-999999, 999))
         monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is True
         assert reason is None
 
+    def test_capital_unknown_blocks_fail_safe(self, monkeypatch):
+        """Upstox कडून एकूण capital मिळालंच नाही (token/नेटवर्क समस्या) — %-आधारित मर्यादा मोजताच
+        येत नसल्याने, अंदाजे आकडा गृहीत न धरता नवीन LIVE trading थांबवायलाच हवं (fail-safe)."""
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (0, 0))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: None)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_CAPITAL_UNKNOWN" in reason
+
     def test_daily_loss_breached_blocks(self, monkeypatch):
-        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
-        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-6000, 2))
+        self._mock_capital(monkeypatch)
+        # 5% of ₹10,00,000 = ₹50,000 -- तोटा ₹60,000 (त्याच्या पलीकडे)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-60000, 2))
         monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False
         assert "KILL_SWITCH_DAILY_LOSS" in reason
 
+    def test_daily_profit_target_reached_blocks(self, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली नवीन सुधारणा — ठराविक नफा (% capital) गाठल्यावर, उरलेल्या
+        दिवसासाठी नवीन LIVE trades आपोआप थांबायला हव्यात (नफा "दिला" जाऊ नये म्हणून)."""
+        self._mock_capital(monkeypatch)
+        # 10% of ₹10,00,000 = ₹1,00,000 -- नफा ₹1,20,000 (लक्ष्य आधीच गाठलेलं)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (120000, 2))
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_DAILY_PROFIT_TARGET" in reason
+
     def test_max_trades_breached_blocks(self, monkeypatch):
-        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (500, 15))
         monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
@@ -1317,7 +1361,8 @@ class TestCheckKillSwitch:
         assert "KILL_SWITCH_MAX_TRADES" in reason
 
     def test_within_limits_ok(self, monkeypatch):
-        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-100, 3))
         monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
         ok, reason = trading_engine.check_kill_switch()
@@ -1330,7 +1375,7 @@ class TestCheckKillSwitch:
         साठवत नाही (NULL राहतो), त्यामुळे तो तोटा COALESCE(SUM(...),0) मधून वगळला जातो —
         "आजचा तोटा ₹0" (मर्यादेच्या आतच) दिसत असला, तरी असे unverified trades असतील तर
         नवीन LIVE trading थांबायलाच हवं (fail-safe)."""
-        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss": 5000, "max_trades_per_day": 15})
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15})
         monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (0, 1))
         monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 1)
         ok, reason = trading_engine.check_kill_switch()

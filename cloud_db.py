@@ -749,27 +749,39 @@ def get_strategy_settings(strategy_name, symbol):
 # एकच, स्थिर जोडी वापरून.
 KILL_SWITCH_STRATEGY_KEY = "__global_kill_switch__"
 KILL_SWITCH_SYMBOL_KEY = "ALL"
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch मध्ये loss limit पाहिजे का discuss" -> "ekun
+# capital chya respected te asayla pahije both loss and profit, certain profit book jhalyanantr,
+# automatic trading stop karne awashyak") — आधी max_daily_loss एक स्थिर ₹ आकडा होता (₹10,000,
+# capital वाढलं/कमी झालं तरी न बदलणारा). आता दोन्ही मर्यादा (तोटा आणि नफा दोन्ही) **एकूण capital
+# च्या %** म्हणून साठवल्या जातात — प्रत्यक्ष ₹ रक्कम trading_engine.check_kill_switch() मध्ये,
+# त्या क्षणीच्या upstox_api.get_total_capital() वरून काढली जाते. max_daily_profit_pct — नवीन —
+# आजचा नफा इतका % गाठला की उरलेल्या दिवसासाठी नवीन LIVE trades आपोआप थांबतात (नफा दिला जाऊ नये
+# म्हणून, तोट्याप्रमाणेच एक सुरक्षा-मर्यादा).
 KILL_SWITCH_DEFAULTS = {
     "enabled": True,
-    "max_daily_loss": 10000,
+    "max_daily_loss_pct": 2.0,
+    "max_daily_profit_pct": 3.0,
     "max_trades_per_day": 15,
 }
 
 
 def get_kill_switch_settings():
-    """आजचा एकत्रित (सर्व symbols/strategies मिळून) LIVE Kill Switch — enabled/max_daily_loss/
-    max_trades_per_day. Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट."""
+    """आजचा एकत्रित (सर्व symbols/strategies मिळून) LIVE Kill Switch — enabled/max_daily_loss_pct/
+    max_daily_profit_pct/max_trades_per_day. Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं)
+    डीफॉल्ट."""
     settings = get_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY)
     return {
         "enabled": bool(settings.get("enabled", KILL_SWITCH_DEFAULTS["enabled"])),
-        "max_daily_loss": settings.get("max_daily_loss", KILL_SWITCH_DEFAULTS["max_daily_loss"]),
+        "max_daily_loss_pct": settings.get("max_daily_loss_pct", KILL_SWITCH_DEFAULTS["max_daily_loss_pct"]),
+        "max_daily_profit_pct": settings.get("max_daily_profit_pct", KILL_SWITCH_DEFAULTS["max_daily_profit_pct"]),
         "max_trades_per_day": settings.get("max_trades_per_day", KILL_SWITCH_DEFAULTS["max_trades_per_day"]),
     }
 
 
-def save_kill_switch_settings(enabled, max_daily_loss, max_trades_per_day):
+def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct, max_trades_per_day):
     return save_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY, {
-        "enabled": bool(enabled), "max_daily_loss": float(max_daily_loss), "max_trades_per_day": int(max_trades_per_day),
+        "enabled": bool(enabled), "max_daily_loss_pct": float(max_daily_loss_pct),
+        "max_daily_profit_pct": float(max_daily_profit_pct), "max_trades_per_day": int(max_trades_per_day),
     })
 
 

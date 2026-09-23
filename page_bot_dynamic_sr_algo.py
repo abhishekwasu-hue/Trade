@@ -15,6 +15,7 @@ import streamlit as st
 
 import cloud_db
 import database
+import upstox_api
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
@@ -77,40 +78,72 @@ def _render_kill_switch_panel():
     गंभीर यादीतला चौथा मुद्दा) — तिन्ही bots साठी एकत्रित, संपूर्ण-खात्यासाठीचं (per-strategy/symbol
     नाही) सुरक्षा-सेटिंग. आजचा एकूण LIVE तोटा किंवा ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर पुढचे
     सर्व LIVE trades (कुठल्याही bot/symbol चे) trading_engine.open_multi_leg_trade() कडूनच आपोआप
-    थांबतात (PAPER trades वर कुठलाही परिणाम नाही)."""
+    थांबतात (PAPER trades वर कुठलाही परिणाम नाही).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit... ekun capital chya respected
+    te asayla pahije both loss and profit, certain profit book jhalyanantr, automatic trading stop
+    karne awashyak") — max_daily_loss/max_daily_profit आता flat ₹ ऐवजी **एकूण capital च्या %**
+    (capital = Upstox कडून available_margin + used_margin, trading_engine.check_kill_switch() मध्येच
+    प्रत्यक्ष वेळी काढलं जातं). इथे फक्त preview/display साठी तोच आकडा वापरला आहे. नवीन — नफ्याची
+    बाजूही (max_daily_profit_pct) — ठराविक नफा गाठल्यावर उरलेल्या दिवसासाठी नवीन LIVE trades आपोआप
+    थांबतात."""
     ks_settings = cloud_db.get_kill_switch_settings()
     total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+    token_input = st.session_state.get("token_input", "")
+    total_capital = upstox_api.get_total_capital(token_input) if token_input else None
+    max_daily_loss_amount = (total_capital * ks_settings["max_daily_loss_pct"] / 100) if total_capital else None
+    max_daily_profit_amount = (total_capital * ks_settings["max_daily_profit_pct"] / 100) if total_capital else None
 
     with st.expander("🛑 LIVE Kill Switch (सर्व Bots + Dashboard साठी एकत्रित)", expanded=False):
         st.caption(
-            "आजचा एकूण खऱ्या पैशांचा (LIVE) तोटा किंवा ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर "
-            "तिन्ही bots + Dashboard कडून पुढचे कुठलेही नवीन LIVE trade घेतले जाणार नाहीत (PAPER "
-            "trades नेहमीप्रमाणेच चालू राहतील) — जोपर्यंत तुम्ही स्वतः इथून सेटिंग्ज बदलत नाही."
+            "आजचा एकूण खऱ्या पैशांचा (LIVE) तोटा किंवा नफा (दोन्ही — एकूण capital च्या % म्हणून) किंवा "
+            "ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर तिन्ही bots + Dashboard कडून पुढचे कुठलेही "
+            "नवीन LIVE trade घेतले जाणार नाहीत (PAPER trades नेहमीप्रमाणेच चालू राहतील) — जोपर्यंत "
+            "तुम्ही स्वतः इथून सेटिंग्ज बदलत नाही. नफ्याची मर्यादा मुद्दाम — आजचा नफा आधीच लक्ष्य "
+            "गाठलेला असेल, तर तो परत \"दिला\" जाऊ नये म्हणून."
         )
+        if total_capital is None:
+            st.warning(
+                "⚠️ एकूण capital (Upstox Funds & Margin वरून) सध्या मिळालं नाही — token/नेटवर्क तपासा. "
+                "खरी trading वेळी हेच कारण असेल, तर Kill Switch सुरक्षिततेसाठी नवीन LIVE trades आपोआप थांबवतो."
+            )
+        else:
+            st.caption(f"सध्याचं एकूण capital (Upstox, available+used margin): ₹{total_capital:,.0f}")
+
         tripped = ks_settings["enabled"] and (
-            total_pnl <= -ks_settings["max_daily_loss"] or total_trades >= ks_settings["max_trades_per_day"]
+            total_capital is None
+            or total_pnl <= -max_daily_loss_amount
+            or total_pnl >= max_daily_profit_amount
+            or total_trades >= ks_settings["max_trades_per_day"]
         )
         if not ks_settings["enabled"]:
             st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
         elif tripped:
             st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन LIVE trade ब्लॉक केला जातोय.")
         else:
-            st.success(f"🟢 Kill Switch OK — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}.")
+            st.success(
+                f"🟢 Kill Switch OK — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f}, "
+                f"नफा-लक्ष्य ₹{max_daily_profit_amount:,.0f}), ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}."
+            )
 
         ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
-            ks_max_loss = st.number_input(
-                "कमाल दैनिक तोटा ₹ (सर्व LIVE bots मिळून)", min_value=500.0,
-                value=float(ks_settings["max_daily_loss"]), step=500.0, key="bdsr_ks_max_loss",
+            ks_max_loss_pct = st.number_input(
+                "कमाल दैनिक तोटा % (एकूण capital चा)", min_value=0.1, max_value=100.0,
+                value=float(ks_settings["max_daily_loss_pct"]), step=0.5, key="bdsr_ks_max_loss_pct",
             )
         with c2:
+            ks_max_profit_pct = st.number_input(
+                "दैनिक नफा-लक्ष्य % (एकूण capital चा)", min_value=0.1, max_value=100.0,
+                value=float(ks_settings["max_daily_profit_pct"]), step=0.5, key="bdsr_ks_max_profit_pct",
+            )
+        with c3:
             ks_max_trades = st.number_input(
                 "कमाल दैनिक LIVE ट्रेड्स (सर्व bots मिळून)", min_value=1,
                 value=int(ks_settings["max_trades_per_day"]), step=1, key="bdsr_ks_max_trades",
             )
         if st.button("💾 Kill Switch सेव्ह करा", key="bdsr_ks_save_btn"):
-            ok = cloud_db.save_kill_switch_settings(ks_enabled, ks_max_loss, ks_max_trades)
+            ok = cloud_db.save_kill_switch_settings(ks_enabled, ks_max_loss_pct, ks_max_profit_pct, ks_max_trades)
             if ok:
                 st.success("✅ Kill Switch सेटिंग्ज जतन झाल्या.")
             else:

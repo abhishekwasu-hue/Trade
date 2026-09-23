@@ -14,7 +14,7 @@ from database import (
 )
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
-    extract_order_ids, get_instrument_key, get_available_margin, fetch_required_margin,
+    extract_order_ids, get_instrument_key, get_available_margin, get_total_capital, fetch_required_margin,
     place_stop_loss_order as upstox_place_stop_loss_order, cancel_order as upstox_cancel_order,
 )
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
@@ -233,7 +233,20 @@ def check_kill_switch():
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L किंवा trade-count (सर्व symbols/bots
     मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो. PAPER trades कधीच
-    अडवले जात नाहीत — फक्त LIVE (खरे पैसे) साठीच हा संरक्षक. रिटर्न: (ok: bool, reason: str|None)."""
+    अडवले जात नाहीत — फक्त LIVE (खरे पैसे) साठीच हा संरक्षक.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit pahije ka discuss" -> "ekun
+    capital chya respected te asayla pahije both loss and profit, certain profit book jhalyanantr,
+    automatic trading stop karne awashyak") — max_daily_loss_pct/max_daily_profit_pct (दोन्ही %,
+    settings मध्ये) आता cloud_db.get_effective_upstox_token()(→upstox_api.get_total_capital(),
+    available + used margin, Upstox equity) शी गुणून प्रत्यक्ष ₹ रक्कम काढली जाते — त्यामुळे capital
+    वाढलं/कमी झालं तरी मर्यादा आपोआप प्रमाणातच राहते. जाणीवपूर्वक Upstox च्याच token वरून (या
+    function ला पाठवलेल्या access_token वरून नाही) — कारण open_multi_leg_trade() ला adapter-routed
+    (Shoonya/Stocko/Fyers) trade साठी access_token म्हणून त्याच broker चा token मिळतो, जो Upstox च्या
+    Funds API ला चालणारच नाही — Kill Switch मात्र नेहमीच संपूर्ण-खात्यासाठीचं (सर्व brokers मिळून)
+    संरक्षण आहे, त्यामुळे capital-आधारच नेहमी शुद्ध Upstox token वरूनच ठरतो.
+    नफ्याची बाजूही नवीन — आजचा नफा तितका % गाठला, की उरलेल्या दिवसासाठी नवीन LIVE trades आपोआप
+    थांबतात (आधीचा नफा "दिला" जाऊ नये म्हणून).
+    रिटर्न: (ok: bool, reason: str|None)."""
     settings = cloud_db.get_kill_switch_settings()
     if not settings.get("enabled", True):
         return True, None
@@ -249,11 +262,33 @@ def check_kill_switch():
             f"तोटा अचूक मोजता येत नसल्याने नवीन LIVE trades थांबवले. कृपया Dashboard/Upstox वरून "
             f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
         )
+
+    upstox_token = cloud_db.get_effective_upstox_token(None)
+    total_capital = get_total_capital(upstox_token) if upstox_token else None
+    if not total_capital or total_capital <= 0:
+        return False, (
+            "KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
+            "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन LIVE "
+            "trades थांबवले."
+        )
+
     total_pnl, total_trades = get_todays_live_total_pnl_and_count()
-    max_daily_loss = settings.get("max_daily_loss", 10000)
+    max_daily_loss_pct = settings.get("max_daily_loss_pct", 2.0)
+    max_daily_profit_pct = settings.get("max_daily_profit_pct", 3.0)
     max_trades_per_day = settings.get("max_trades_per_day", 15)
-    if total_pnl <= -max_daily_loss:
-        return False, f"KILL_SWITCH_DAILY_LOSS — आजचा एकूण LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा ₹{max_daily_loss:,.0f})"
+    max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
+    max_daily_profit_amount = total_capital * max_daily_profit_pct / 100
+    if total_pnl <= -max_daily_loss_amount:
+        return False, (
+            f"KILL_SWITCH_DAILY_LOSS — आजचा एकूण LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा {max_daily_loss_pct:.1f}% "
+            f"म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital ₹{total_capital:,.0f})"
+        )
+    if total_pnl >= max_daily_profit_amount:
+        return False, (
+            f"KILL_SWITCH_DAILY_PROFIT_TARGET — आजचा एकूण LIVE नफा ₹{total_pnl:,.0f} आधीच लक्ष्य "
+            f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, एकूण capital "
+            f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन LIVE trading थांबवलं (नफा टिकवण्यासाठी)"
+        )
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
     return True, None
