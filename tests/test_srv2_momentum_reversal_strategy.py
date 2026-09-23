@@ -295,6 +295,34 @@ class TestProcessSymbol:
             assert mock_select.call_args.args[2] == 51900
             assert mock_select.call_args.kwargs.get("step") == 100
 
+    def test_entry_uses_fresh_chain_price_not_stale_touch_detection_price(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("entry साठी touch-detection च्याच जुन्या किंमतीवर
+        अवलंबून आहे, ताजी किंमत परत घ्या") — dynamic_sr_instant_trader.py प्रमाणेच, entry-क्षणी
+        परत मागवलेल्या option chain मधली सद्य spot किंमत (touch-detection वेळच्या जुन्या candle-close
+        ऐवजी) आता atm_strike आणि entry_spot_price (SL/TSL च्या Spot% आधारासाठी) दोन्हींसाठी वापरली
+        जायला हवी."""
+        candles_df = _fake_candles_df(last_close=23902)  # touch-detection वेळची (जुनी) किंमत
+        fresh_spot = 23940.0  # entry-क्षणी परत मागवलेल्या chain मधली वेगळी, ताजी किंमत
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["entry_rsi_gate_enabled"] = False
+        custom_settings["naked_enabled"] = False  # फक्त spread call तपासण्यासाठी, isolate करून
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(fresh_spot), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}) as mock_select, \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_trade.call_args.kwargs["entry_spot_price"] == fresh_spot
+            # round(23940/50)*50 = 23950 -- जुन्या (stale) 23902 वरून round(23902/50)*50=23900 पेक्षा वेगळं
+            assert mock_select.call_args.args[2] == 23950
+
     def test_get_zone_hits_today_called_with_role_from_level_type(self):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेला role-split max-2 counter — last_close=23902 >=
         support_level=23900 त्यामुळे level_type="SUPPORT" ठरतो, तोच role म्हणून पास व्हायला हवा."""
