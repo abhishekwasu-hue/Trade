@@ -337,6 +337,33 @@ crontab -l | grep refresh_market_zones_intraday
 
 ---
 
+# NIFTY Option IV Daily Snapshot — Deployment (crontab, नवीन)
+
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन script ("Record iv of option premium daily for analysis")
+— `iv_snapshot_collector.py` रोज एकदा NIFTY च्या ATM ± 5 strikes (CE+PE) चा Implied Volatility (व
+सोबतच LTP, underlying_price) `iv_history` table मध्ये साठवते — "काल IV काय होता, आज काय आहे" अशी
+तुलना दर वेळी हाताने (PDF/live fetch वरून) काढण्याऐवजी, लगेच साठवलेल्या इतिहासावरून करता यावी म्हणून.
+आधीच अस्तित्वात असलेला `fetch_option_greeks()` (Strategy Builder च्या "Combined Greeks" साठी वापरलेला
+— Upstox च्या v3/market-quote/option-greek endpoint वरून थेट IV) हाच पुनर्वापर केला आहे — वेगळी
+गणना/नवीन endpoint लागत नाही, आणि इतर कुठल्याही live trading bot ला अजिबात स्पर्श केलेला नाही.
+
+**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — बाजार बंद होण्याआधी, 09:55 UTC = 15:25 IST,
+सोम-शुक्र — market अजून live असतानाच, live quotes धरून):**
+```
+55 9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 iv_snapshot_collector.py >> /root/Trade/iv_snapshot.log 2>&1
+```
+`--token` दिलेला नाही — स्क्रिप्ट आपोआप Supabase मधून सद्य token घेते (इतर crontab entries सारखंच).
+
+**तपासणी:**
+```bash
+tail -f /root/Trade/iv_snapshot.log
+crontab -l | grep iv_snapshot
+```
+यशस्वी run नंतर log मध्ये "✅ NIFTY: 22 legs (ATM±5 strikes, ATM=XXXXX) IV साठवला" असं दिसायला हवं
+(11 strikes × 2 = 22 rows).
+
+---
+
 # Upstox Token Webhook — Deployment (1-Tap Mobile Approval)
 
 `trigger_upstox_token_request.py` Upstox ला "आजचा token हवा" अशी विनंती पाठवतो — तुमच्या मोबाईलवर

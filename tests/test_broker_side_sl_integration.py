@@ -61,7 +61,12 @@ class FakeTime(datetime.datetime):
 
 def _enabled_settings(**overrides):
     def _fn(strategy_name, symbol):
-        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS[strategy_name])
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("trading stop button") जोडताना सापडलेली फरक — खरं
+        # cloud_db.get_strategy_settings() STRATEGY_SETTINGS_DEFAULTS मध्ये नसलेल्या strategy_name
+        # साठीही (उदा. kill-switch/trading-pause सारखे अंतर्गत strategy_settings-reuse keys)
+        # सुरक्षितपणे रिकामा dict देतं (.get(strategy_name, {})) — इथला fake आधी हार्ड इंडेक्सिंग
+        # करायचा (KeyError), जो फक्त 1m_instant/इ. साठीच काम करायचा. आता तोच .get()-फॉलबॅक.
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS.get(strategy_name, {}))
         settings["broker_side_sl_enabled"] = True
         settings.update(overrides)
         return settings

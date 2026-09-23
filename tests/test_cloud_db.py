@@ -799,6 +799,105 @@ class TestZoneRoleFromType:
         assert cloud_db.zone_role_from_type(None) is None
 
 
+class TestIvHistoryStorage:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Record iv of option premium daily for
+    analysis") — iv_history table, strike_oi_history सारखाच upsert पॅटर्न."""
+
+    def test_save_iv_snapshot_upserts_each_row(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        rows = [
+            {"strike": 24000, "option_type": "CE", "expiry": "2026-09-25", "iv": 12.5, "ltp": 150.0, "underlying_price": 24010.0},
+            {"strike": 24000, "option_type": "PE", "expiry": "2026-09-25", "iv": 13.1, "ltp": 140.0, "underlying_price": 24010.0},
+        ]
+        result = cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", rows)
+        assert result is True
+        assert mock_cursor.execute.call_count == 2
+        sql, params = mock_cursor.execute.call_args_list[0][0]
+        assert "INSERT INTO iv_history" in sql
+        assert "ON CONFLICT" in sql
+        assert params == ("NIFTY", 24000, "CE", "2026-09-23", "15:25", "2026-09-25", 12.5, 150.0, 24010.0)
+
+    def test_save_iv_snapshot_missing_optional_fields_default_to_none(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}])
+        _, params = mock_cursor.execute.call_args_list[0][0]
+        assert params == ("NIFTY", 24000, "CE", "2026-09-23", "15:25", None, None, None, None)
+
+    def test_no_connection_returns_safe_defaults(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        assert cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}]) is False
+        assert cloud_db.get_iv_history("NIFTY") is None
+
+    def test_get_iv_history_no_range_reads_everything(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_iv_history("NIFTY")
+        assert result is not None and result.empty
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "trade_date >=" not in sql
+        assert "trade_date <=" not in sql
+        assert params == ["NIFTY"]
+
+    def test_get_iv_history_with_date_range_filters(self, monkeypatch):
+        """🎓 "काल IV काय होता, आज काय आहे" अशी तुलना यावरूनच होणार — from_date/to_date दिल्यावर तेवढाच
+        range query मध्ये यायला हवा."""
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-22", "15:25", "2026-09-25", 24000.0, "CE", 12.0, 148.0, 24000.0),
+            ("2026-09-23", "15:25", "2026-09-25", 24000.0, "CE", 12.8, 152.0, 24010.0),
+        ]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_iv_history("NIFTY", from_date="2026-09-22", to_date="2026-09-23")
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "trade_date >= %s" in sql and "trade_date <= %s" in sql
+        assert params == ["NIFTY", "2026-09-22", "2026-09-23"]
+        assert len(result) == 2
+        assert list(result["trade_date"]) == ["2026-09-22", "2026-09-23"]
+
+    def test_get_iv_history_strikes_filter(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        cloud_db.get_iv_history("NIFTY", strikes=[23900, 24000])
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "strike IN (%s,%s)" in sql
+        assert params == ["NIFTY", 23900, 24000]
+
+    def test_query_error_returns_safe_default(self, monkeypatch):
+        from unittest.mock import MagicMock
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.execute.side_effect = Exception("db error")
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        assert cloud_db.save_iv_snapshot("NIFTY", "2026-09-23", "15:25", [{"strike": 24000, "option_type": "CE"}]) is False
+        assert cloud_db.get_iv_history("NIFTY") is None
+
+
 class TestGetTokenAgeHours:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — check_token_freshness.py साठी, token किती
     जुना आहे ते तपासण्यासाठीचं helper."""
@@ -1274,3 +1373,45 @@ class TestKillSwitchSettings:
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
             {"enabled": True, "max_daily_loss": 15000.0, "max_trades_per_day": 10},
         )
+
+
+class TestTradingPauseSettings:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा, मॅन्युअल trading stop button —
+    PAPER trades लाही लागू व्हावा") — get/set_trading_pause() हे आधीच पूर्णपणे टेस्ट केलेल्या
+    get/save_strategy_settings() चेच पातळ wrapper आहेत (strategy_name="__global_trading_pause__",
+    symbol="ALL" या स्थिर जोडीसह) — त्यामुळे इथे फक्त wrapping/डीफॉल्ट्स तपासले जातात."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_trading_pause_settings()
+        assert settings == {"paused": False, "reason": "", "paused_at": None}
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={"paused": True, "reason": "उद्याचं Union Budget", "paused_at": "2026-09-23T10:00:00"},
+        ) as mock_get:
+            settings = cloud_db.get_trading_pause_settings()
+        mock_get.assert_called_once_with(cloud_db.TRADING_PAUSE_STRATEGY_KEY, cloud_db.TRADING_PAUSE_SYMBOL_KEY)
+        assert settings == {"paused": True, "reason": "उद्याचं Union Budget", "paused_at": "2026-09-23T10:00:00"}
+
+    def test_set_paused_true_stamps_paused_at(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.set_trading_pause(True, reason="Manual stop")
+        assert ok is True
+        mock_save.assert_called_once()
+        args, _ = mock_save.call_args
+        assert args[0] == cloud_db.TRADING_PAUSE_STRATEGY_KEY
+        assert args[1] == cloud_db.TRADING_PAUSE_SYMBOL_KEY
+        payload = args[2]
+        assert payload["paused"] is True
+        assert payload["reason"] == "Manual stop"
+        assert payload["paused_at"] is not None  # वेळ नोंदवली गेली
+
+    def test_set_paused_false_clears_paused_at(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.set_trading_pause(False)
+        assert ok is True
+        payload = mock_save.call_args[0][2]
+        assert payload["paused"] is False
+        assert payload["paused_at"] is None

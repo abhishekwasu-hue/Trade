@@ -275,6 +275,22 @@ def _alert_kill_switch_blocked(symbol, source, reason):
         _logger.exception("_alert_kill_switch_blocked() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def _alert_trading_pause_blocked(symbol, source, trading_mode, reason):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("trading stop button") — मॅन्युअल Trading Pause चालू
+    असताना नवीन trade (PAPER किंवा LIVE, दोन्ही) ब्लॉक केल्यावर Telegram अलर्ट — kill-switch अलर्ट
+    सारखीच, cooldown नाही."""
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"⏸️ <b>{symbol} ({source}, {trading_mode}) — नवीन Trades मॅन्युअली थांबवलेले आहेत!</b>\n"
+            f"{reason or 'वापरकर्त्याने Dashboard वरून थांबवलं.'}\n"
+            f"हा नवीन trade ब्लॉक केला गेला (आधीच्या उघड्या positions चं monitoring/SL/Target मात्र "
+            f"नेहमीप्रमाणेच चालू आहे). Dashboard साईडबारमधून पुन्हा सुरू करा."
+        )
+    except Exception:
+        _logger.exception("_alert_trading_pause_blocked() मध्ये अनपेक्षित चूक (silently handled)")
+
+
 def _resolve_required_margin(access_token, adapter, orders, strategy_result, lots, lot_size):
     """orders साठी खरी आवश्यक मार्जिन — adapter असेल तर त्याचं (Shoonya/Stocko/Fyers), नाहीतर
     Upstox चं अधिकृत Margin Calculator API (SPAN+Exposure, hedge-फायद्यासकट). मिळालीच नाही (API
@@ -483,7 +499,7 @@ def _maybe_cancel_broker_side_sl(access_token, adapter, legs):
             _logger.exception(f"[Broker-side SL] order_id={order_id} रद्द करताना अनपेक्षित चूक — Upstox app/website वर हाताने तपासा.")
 
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
@@ -498,24 +514,41 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Same-Timeframe Next-Level-Exit, 15M/30M/60M) —
     entry_timeframe (ऐच्छिक, उदा. "15M"/"30M"/"60M"/"1M"/"5M") — Next-Level-Exit साठी त्याच
     timeframe चा पुढचा level शोधण्यासाठी वापरला जातो.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("TSL activation/SL respect to entry price, not level price")
+    — entry_spot_price (ऐच्छिक) — प्रत्यक्ष order-placement वेळचा underlying spot LTP (entry_level_price
+    सारखाच नाही — तो फक्त सिग्नल कुठल्या S/R level वर आला, तेच सांगतो; प्रत्यक्ष entry त्या level पासून
+    काही सेकंद/पॉइंट्स दूर झालेली असू शकते). manage_open_trades() मधलं Spot%-आधारित SL/TSL/Target आता
+    entry_level_price ऐवजी हाच वापरतं (दिलेला असेल तर — न दिल्यास, जुन्या (entry_spot_price नसलेल्या)
+    trades साठी entry_level_price वरच सुरक्षितपणे पडतं).
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode=="LIVE_PAPER"
     असेल तर हेच फंक्शन स्वतःला दोनदा, वेगळ्या trading_mode ने कॉल करतं — एकदा "LIVE" (खरा ऑर्डर,
     कुठल्याही सुरक्षा-तपासण्या/Kill Switch सकट) आणि एकदा "PAPER" (शुद्ध सिम्युलेशन, फक्त तुलनेसाठी लॉग
     होतो). शॅडो PAPER trade कधीच LIVE trade च्या यश/अपयशावर परिणाम करत नाही, आणि LIVE अयशस्वी/ब्लॉक
     झाला तरीही शॅडो PAPER trade प्रयत्न होतोच (जेणेकरून "शुद्ध PAPER मध्ये काय झालं असतं" हे नेहमी
-    कळेल)."""
+    कळेल).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("trading stop button, kill switch पेक्षा वेगळा") — मॅन्युअल
+    Trading Pause (cloud_db.get_trading_pause_settings()) — Kill Switch च्या उलट, हा PAPER+LIVE+
+    LIVE_PAPER सगळ्यांना, इथेच सर्वात आधी (कुठलाही mode-specific split होण्याआधी) एकाच ठिकाणी लागू
+    होतो — सर्व 4 entry bots इथूनच नवीन trade उघडतात, त्यामुळे बाकी कुठेही वेगळा बदल लागत नाही.
+    आधीच उघड्या असलेल्या positions चं व्यवस्थापन (manage_open_trades()) या फंक्शनमधून जातच नाही,
+    त्यामुळे त्यावर याचा काहीही परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं."""
+    pause_settings = cloud_db.get_trading_pause_settings()
+    if pause_settings.get("paused"):
+        _alert_trading_pause_blocked(symbol, source, trading_mode, pause_settings.get("reason"))
+        return False, {"status": "error", "reason": "TRADING_PAUSED — वापरकर्त्याने Dashboard वरून नवीन trades मॅन्युअली थांबवलेले आहेत."}
+
     if trading_mode == TRADING_MODE_LIVE_AND_PAPER:
         live_ok, live_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
-            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
         )
         paper_ok, paper_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
-            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
         )
         combined_resp = {
             "status": "success" if live_ok else "error",
@@ -685,8 +718,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
             legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe,
-            entry_margin_required)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            entry_margin_required, entry_spot_price)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -704,7 +737,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
-            entry_level_price, entry_timeframe, entry_margin_required,
+            entry_level_price, entry_timeframe, entry_margin_required, entry_spot_price,
         ),
     )
     inserted = cur.rowcount > 0
@@ -925,12 +958,18 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुरक्षा-सुधारणा — दर cycle ला आधी Broker Reconciliation
     # (फक्त वाचतं, कुठलाही order पाठवत नाही) — Upstox app/website वरून थेट बंद केलेली position
     # आपल्या database मध्ये अजूनही "OPEN" दिसत राहू नये, आणि चुकून तिच्यावर पुन्हा नवीन order जाऊ नये.
-    reconcile_open_trades_with_broker(access_token, symbol)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war") जोडताना — broker positions
+    # आता SL/Target/TSL साठीही लागतात (खाली broker_pnl_by_key बघा), त्यामुळे इथे एकदाच fetch करून
+    # reconcile_open_trades_with_broker() ला दिलं जातं (पूर्वी हे function स्वतःच वेगळा API कॉल
+    # करायचं — आता तोच एक कॉल दोन्हीसाठी पुनर्वापरलेला, प्रत्येक cycle ला Upstox कडे एक जास्तीचा
+    # कॉल टाळण्यासाठी).
+    broker_positions = fetch_broker_positions(access_token)
+    reconcile_open_trades_with_broker(access_token, symbol, positions=broker_positions)
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -957,11 +996,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id, entry_spot_price))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
     if not ltp_map and all_keys:
@@ -1000,8 +1039,24 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             _alert_ltp_fetch_failure(symbol, "Underlying Spot", spot_error_detail, has_live_spot_trades)
         underlying_spot = spot_ltp_map.get(spot_key)
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war set kra, net premium war nahi —
+    # yamule slipages kami hotil") — चर्चेअंती वापरकर्त्याने स्पष्ट केलं: charges नाही, पण Gross P&L
+    # स्वतः पुन्हा (आतल्या LTP snapshot वरून) मोजण्याऐवजी, **Broker च्या स्वतःच्या Positions API
+    # कडून खरा live MTM** वापरावा — तो internal LTP-recompute पेक्षा जास्त noise-प्रतिरोधक असतो.
+    # फक्त शुद्ध Upstox LIVE trades साठीच शक्य (account_id IS NULL — reconcile_open_trades_with_broker()
+    # च्याच व्याप्ती-मर्यादेप्रमाणे, कारण BrokerAdapter इंटरफेसला अजून "fetch_positions()" नाहीये).
+    # PAPER trades ला खरी Upstox position कधीच नसते, त्यामुळे त्यांच्यासाठी आणि broker data गहाळ/अपुरं
+    # असेल तर (कुठलाही leg सापडला नाही) — जुनाच internal-calc मार्ग सुरक्षितपणे (silently) वापरला जातो,
+    # कधीच अडत/तुटत नाही. (वरच्याच broker_positions चा पुनर्वापर — वेगळा जादा API कॉल नाही.)
+    broker_pnl_by_key = {}
+    for pos in (broker_positions or []):
+        key = pos.get("instrument_token")
+        pnl = pos.get("pnl", pos.get("unrealised"))
+        if key and pnl is not None:
+            broker_pnl_by_key[key] = broker_pnl_by_key.get(key, 0) + pnl
+
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -1014,11 +1069,28 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             for leg in legs
         )
         current_pnl = (net_credit - cost_to_close_now) * lots * lot_size
+        # वरचं Broker MTM override — फक्त LIVE + शुद्ध Upstox (account_id None) + या trade च्या **सर्व**
+        # legs साठी broker data प्रत्यक्ष उपलब्ध असेल तरच (आंशिक डेटा असेल तर सुरक्षिततेसाठी जुनाच मार्ग).
+        broker_mtm_used = False
+        if trade_mode == "LIVE" and account_id is None and broker_pnl_by_key:
+            leg_keys = [leg["instrument_key"] for leg in legs]
+            if all(k in broker_pnl_by_key for k in leg_keys):
+                current_pnl = sum(broker_pnl_by_key[k] for k in leg_keys)
+                broker_mtm_used = True
         net_credit_total = net_credit * lots * lot_size
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report PDF) — प्रत्येक trade चं
         # Exit नेमकं कशामुळे झालं (Spot% विरुद्ध Premium Points, कोणता next level, इ.) — exit_reason
         # कोड (business logic साठी, बदलेला नाही) सोबतच, वाचनीय detail वेगळ्या column मध्ये.
         exit_reason_detail = None
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation
+        # respect to entry price, not to level price and stop loss also respect to entry price") —
+        # entry_level_price (S/R zone level, उदा. 23353.1) आणि प्रत्यक्ष entry-वेळचा spot वेगळे असू
+        # शकतात (signal-detection आणि प्रत्यक्ष order-placement मध्ये काही सेकंद/पॉइंट्सचा फरक असू
+        # शकतो) — Next-Level-Exit साठी entry_level_price तसाच (खाली, बदलेला नाही) वापरला जातो, पण
+        # Spot%-आधारित SL/TSL/Target साठी आता entry_spot_price (उपलब्ध असल्यास) — जुन्या (deploy
+        # आधीच्या, entry_spot_price नसलेल्या) trades साठी entry_level_price वरच सुरक्षितपणे पडतं.
+        spot_anchor = entry_spot_price if entry_spot_price is not None else entry_level_price
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
@@ -1032,7 +1104,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             settings_1m = cloud_db.get_strategy_settings("1m_instant", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
             direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
-            premium_pnl_points = net_credit - cost_to_close_now
+            # 🎓 current_pnl वरून (net_credit - cost_to_close_now नव्हे) — जेणेकरून वरचं Broker MTM
+            # override (LIVE + शुद्ध Upstox trades साठी) आपोआप इथेही (SL/Target/TSL — तिन्ही) लागू
+            # होईल. Override नसेल (PAPER/adapter-routed/broker data गहाळ) तर गणिती दृष्ट्या तंतोतंत
+            # आधीचाच निकाल (current_pnl = (net_credit - cost_to_close_now) * lots * lot_size असल्याने).
+            premium_pnl_points = current_pnl / (lots * lot_size)
 
             if is_naked:
                 sl_spot_pct = settings_1m["naked_sl_spot_pct"]
@@ -1050,7 +1126,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 target_premium_points = settings_1m["spread_target_premium_points"]
 
             point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
             )
@@ -1107,7 +1183,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             settings_csr = cloud_db.get_strategy_settings("classic_sr_reversal", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
             direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
-            premium_pnl_points = net_credit - cost_to_close_now
+            # 🎓 current_pnl वरून (net_credit - cost_to_close_now नव्हे) — जेणेकरून वरचं Broker MTM
+            # override (LIVE + शुद्ध Upstox trades साठी) आपोआप इथेही (SL/Target/TSL — तिन्ही) लागू
+            # होईल. Override नसेल (PAPER/adapter-routed/broker data गहाळ) तर गणिती दृष्ट्या तंतोतंत
+            # आधीचाच निकाल (current_pnl = (net_credit - cost_to_close_now) * lots * lot_size असल्याने).
+            premium_pnl_points = current_pnl / (lots * lot_size)
 
             if is_naked:
                 sl_spot_pct = settings_csr["naked_sl_spot_pct"]
@@ -1125,7 +1205,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 target_premium_points = settings_csr["spread_target_premium_points"]
 
             point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
             )
@@ -1161,14 +1241,18 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
             direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
-            premium_pnl_points = net_credit - cost_to_close_now
+            # 🎓 current_pnl वरून (net_credit - cost_to_close_now नव्हे) — जेणेकरून वरचं Broker MTM
+            # override (LIVE + शुद्ध Upstox trades साठी) आपोआप इथेही (SL/Target/TSL — तिन्ही) लागू
+            # होईल. Override नसेल (PAPER/adapter-routed/broker data गहाळ) तर गणिती दृष्ट्या तंतोतंत
+            # आधीचाच निकाल (current_pnl = (net_credit - cost_to_close_now) * lots * lot_size असल्याने).
+            premium_pnl_points = current_pnl / (lots * lot_size)
 
             if is_naked:
                 # वापरकर्त्याशी चर्चा करून ठरवलेला नियम — Naked trade "pure intraday" — कधीच
                 # carry-forward नाही, नेहमी आजच (डीफॉल्ट 3:00pm) बंद. Spot%+Premium-Points एकत्र,
                 # TSL-to-Breakeven सह (dynamic_sr_instant सारखीच, वेगळ्या उंबरठ्यांसह).
                 point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                     settings_15m["naked_sl_spot_pct"], settings_15m["naked_sl_premium_points"],
                     settings_15m["naked_tsl_spot_pct"], settings_15m["naked_tsl_premium_points"],
                     settings_15m["naked_target_spot_pct"], settings_15m["naked_target_premium_points"],
@@ -1205,7 +1289,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # column मार्फतच, म्हणून इथे target-उंबरठे प्रचंड मोठे देऊन evaluate_point_spot_exit
                 # चा स्वतःचा built-in target-मार्ग निष्क्रिय केलेला).
                 point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                     settings_15m["spread_sl_spot_pct"], settings_15m["spread_sl_premium_points"],
                     settings_15m["spread_tsl_spot_pct"], settings_15m["spread_tsl_premium_points"],
                     target_spot_pct=1e9, target_premium_points=1e9,
@@ -1354,6 +1438,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     exit_reason_detail = "OI Diff Tracker signal reversed against the position — exited early for safety, ahead of SL/Target."
 
         if exit_reason:
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war") — या trade चं SL/Target/
+            # TSL Broker च्या स्वतःच्या live MTM वरून ठरलं होतं (internal LTP-recompute नाही), हे नंतर
+            # Performance Report/Signal तपासताना स्पष्ट दिसावं म्हणून detail मध्येच नोंद.
+            if broker_mtm_used:
+                exit_reason_detail = (exit_reason_detail or exit_reason) + " [Broker MTM]"
             qty = lots * lot_size
             close_orders = [
                 {
@@ -1413,7 +1502,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     return closed_summaries
 
 
-def reconcile_open_trades_with_broker(access_token, symbol):
+_UNSET_POSITIONS = object()  # reconcile_open_trades_with_broker() च्या `positions` पॅरामीटरसाठी sentinel — None (caller ने आधीच प्रयत्न करून अयशस्वी झाल्याचं कळवलं) आणि "दिलंच नाही" (स्वतः fetch कर) यांतला फरक ओळखण्यासाठी.
+
+
+def reconcile_open_trades_with_broker(access_token, symbol, positions=_UNSET_POSITIONS):
     """
     वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Broker Reconciliation) — कधीकधी position आपल्या
     Dashboard बाहेर जाऊन, थेट Upstox app/website वरून बंद केली जाते. अशा वेळी आपल्या database ला
@@ -1438,9 +1530,15 @@ def reconcile_open_trades_with_broker(access_token, symbol):
     (त्याच निवडलेल्या broker वर) बंद होतात — फक्त "वापरकर्त्याने broker च्या स्वतःच्या app/website वरून
     थेट बंद केलं तर आपोआप कळणं" ही सुरक्षा-जाळी त्यांना लागू नाही.
 
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war") जोडताना — manage_open_trades()
+    ला आता SL/Target/TSL साठीही broker positions लागतात (बघा तिथला broker_pnl_by_key), आणि हे function
+    ते आधीच fetch करून बोलावलं जातं — त्याच cycle मध्ये तोच API कॉल दोनदा (इथे परत, आणि तिथेही) होऊ नये
+    म्हणून `positions` (ऐच्छिक) — दिलं तर तेच वापरतो (पुन्हा fetch करत नाही), न दिल्यास आधीसारखंच
+    स्वतःच fetch करतो (जुनेच behavior — इतर सर्व callers/tests अबाधित).
     रिटर्न: (reconciled_list, error_message). यशस्वी झालं की error_message रिकामं.
     """
-    positions = fetch_broker_positions(access_token)
+    if positions is _UNSET_POSITIONS:
+        positions = fetch_broker_positions(access_token)
     if positions is None:
         return [], "Upstox कडून Positions मिळाल्या नाहीत (token/नेटवर्क तपासा) — reconciliation करता आलं नाही."
 
@@ -1616,7 +1714,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
                                    trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
-                                   entry_level_price=None, entry_timeframe=None, account_ids=None):
+                                   entry_level_price=None, entry_timeframe=None, account_ids=None, entry_spot_price=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -1650,6 +1748,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
             target_pct_of_max_profit=target_pct_of_max_profit, product_type=product_type,
             trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
             source=source, adapter=adapter, entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_spot_price=entry_spot_price,
         )
         results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
     return results, factory_errors

@@ -48,7 +48,7 @@ def temp_db(monkeypatch):
     yield tmpdb
 
 
-def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None):
+def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None, entry_spot_price=None):
     conn = sqlite3.connect(tmpdb)
     if legs is None:
         legs = [
@@ -58,9 +58,9 @@ def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BU
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
-           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-08-24", "NIFTY", strategy, 1, 75, net_credit, net_credit, 50,
-         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id),
+         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price),
     )
     conn.commit()
     conn.close()
@@ -971,6 +971,34 @@ class TestReconcileOpenTradesWithBroker:
         conn.close()
         assert row == ("OPEN",)
 
+    def test_accepts_prefetched_positions_without_refetching(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war") जोडताना — manage_open_trades()
+        ला broker positions आता SL/Target/TSL साठीही लागतात, त्यामुळे तेच आधीच fetch केलेले positions
+        इथे `positions=` म्हणून पुरवता येतात (नवीन जादा API कॉल न करता)."""
+        def _boom(t):
+            raise AssertionError("positions दिलेले असताना पुन्हा fetch_broker_positions() कधीच कॉल व्हायला नको")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", _boom)
+        seed_trade(temp_db, "T26", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker(
+            "fake_token", "NIFTY", positions=[
+                {"instrument_token": "PE24400", "quantity": 0},
+                {"instrument_token": "PE24300", "quantity": 0},
+            ],
+        )
+        assert error == ""
+        assert reconciled == ["T26"]
+
+    def test_positions_none_treated_as_failed_fetch_without_refetching(self, temp_db, monkeypatch):
+        """caller ने आधीच fetch करून तो अयशस्वी झाल्याचं (None) कळवलं, तर पुन्हा स्वतः fetch न करता
+        थेट अपयशाचा मार्गच घ्यायला हवा."""
+        def _boom(t):
+            raise AssertionError("positions=None (already-failed) दिलेलं असताना पुन्हा fetch व्हायला नको")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", _boom)
+        seed_trade(temp_db, "T27", net_credit=30, sl_level=-1125, target_level=1125, mode="LIVE")
+        reconciled, error = trading_engine.reconcile_open_trades_with_broker("fake_token", "NIFTY", positions=None)
+        assert reconciled == []
+        assert "मिळाल्या नाहीत" in error
+
 
 class TestManageOpenTradesBrokerRouting:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — manage_open_trades()
@@ -1363,6 +1391,82 @@ class TestOpenMultiLegTradeKillSwitch:
         ok, resp = trading_engine.open_multi_leg_trade(
             "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
             sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is True
+
+
+class TestOpenMultiLegTradeManualPause:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा trading stop button") —
+    cloud_db.get_trading_pause_settings() paused=True असेल तर, PAPER/LIVE/LIVE_PAPER — तिन्ही
+    trading_mode मध्ये नवीन trade ब्लॉक व्हायलाच हवा (Kill Switch च्या उलट, जो फक्त LIVE साठीच)."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_paused_blocks_paper_mode_and_alerts(self, temp_db, monkeypatch):
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "टेस्ट कारण", "paused_at": "2026-09-23T10:00:00"})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+        assert not execute_calls  # ऑर्डरच पाठवला गेला नाही — PAPER असूनही
+        assert len(telegram_calls) == 1
+        assert "थांबवलेले" in telegram_calls[0]
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT COUNT(*) FROM live_trades").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_paused_blocks_live_mode_before_kill_switch_check(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+
+        def _boom():
+            raise AssertionError("Trading Pause आधीच ब्लॉक करायला हवा — Kill Switch पर्यंत पोहोचायलाच नको")
+        monkeypatch.setattr(trading_engine, "check_kill_switch", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+
+    def test_paused_blocks_live_paper_mode_without_recursing(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE_PAPER",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+        assert not execute_calls  # ना LIVE, ना शॅडो PAPER — काहीच प्रयत्न झाला नाही
+
+    def test_not_paused_proceeds_normally(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": False, "reason": "", "paused_at": None})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
         )
         assert ok is True
 
@@ -1917,3 +2021,165 @@ class TestPremiumTrailingStopLossIntegration:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 1
         assert closed[0]["reason"] == "TSL_SL"
+
+
+class TestBrokerMtmOverridesPremiumPnl:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war set kra, net premium war
+    nahi — yamule slipages kami hotil") — चर्चेअंती स्पष्ट झालं: charges नाही, पण Gross P&L
+    internal LTP-recompute ऐवजी Upstox च्या स्वतःच्या Positions API कडून (broker चा live MTM,
+    `pnl` field) घ्यावा — फक्त शुद्ध Upstox LIVE trades (account_id IS NULL) साठीच शक्य."""
+
+    def _mock_ltp_map(self, spot_value, short_leg_ltp, long_hedge_ltp):
+        # प्रीमियम internally (LTP वरून) computed तर अजूनही profitable दाखवेल (short_leg=18 -> 30-18=12,
+        # breakeven च्या वर) — म्हणजे या टेस्ट्समधला निकाल फक्त Broker MTM override मुळेच बदलेल हे स्पष्ट सिद्ध होतं.
+        def _fn(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": spot_value}
+            return {"PE24400": short_leg_ltp, "PE24300": long_hedge_ltp}
+        return _fn
+
+    def test_broker_mtm_overrides_and_drives_tsl_sl_for_pure_upstox_live_trade(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "BM1", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE")
+        # Internal LTP calc: 30-18=12 (अजूनही profitable, TSL_SL लागणार नाही). पण Broker positions
+        # (quantity != 0 -- reconcile ने बंद समजू नये म्हणून) एकत्र pnl = -100+25 = -75 (म्हणजे
+        # -75/75 = -1 point, breakeven च्या खाली) -- हेच वापरलं गेलं तरच TSL_SL लागेल.
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -100.0},
+            {"instrument_token": "PE24300", "quantity": 75, "pnl": 25.0},
+        ])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TSL_SL"
+        assert closed[0]["pnl"] == -75.0  # Broker pnl (-100+25), internal calc (12*75=900) नव्हे
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='BM1'").fetchone()
+        conn.close()
+        assert "[Broker MTM]" in row[0]
+
+    def test_broker_mtm_not_used_for_paper_trade(self, temp_db, monkeypatch):
+        """PAPER trade ला खरी Upstox position कधीच नसते -- Broker data असूनही (चुकून जुळलं तरी)
+        कधीच वापरलं जाऊ नये, नेहमीच internal LTP calc वापरायला हवा."""
+        seed_trade(temp_db, "BM2", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="PAPER")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -1000.0},
+            {"instrument_token": "PE24300", "quantity": 75, "pnl": 25.0},
+        ])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0  # internal calc (profitable, 12 pts) कायम वापरला गेला
+
+    def test_broker_mtm_not_used_for_adapter_routed_live_account(self, temp_db, monkeypatch):
+        """account_id दिलेला (निवडलेल्या broker वर उघडलेला) LIVE trade -- Upstox च्या Positions शी
+        कधीच ताडून बघितला जाऊ नये (reconcile_open_trades_with_broker() च्याच व्याप्ती-मर्यादेप्रमाणे)."""
+        seed_trade(temp_db, "BM3", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE", account_id="ACC_SHOONYA_1")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -1000.0},
+            {"instrument_token": "PE24300", "quantity": 75, "pnl": 25.0},
+        ])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0  # internal calc कायम वापरला गेला, account_id असलेला trade वगळलाच गेला
+
+    def test_broker_mtm_falls_back_when_a_leg_is_missing_from_broker_data(self, temp_db, monkeypatch):
+        """Broker response मध्ये एखाद्या leg चा data गहाळ असेल (आंशिक), तर आंशिक/चुकीचं गणित करण्याऐवजी
+        सुरक्षिततेसाठी जुनाच internal-calc मार्ग वापरायला हवा."""
+        seed_trade(temp_db, "BM4", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -1000.0},
+            # PE24300 (long hedge leg) गहाळ
+        ])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0  # आंशिक broker data -- सुरक्षित fallback (internal calc, profitable)
+
+
+class TestSpotPctSlTslRespectsActualEntrySpot:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation respect
+    to entry price, not to level price and stop loss also respect to entry price") — Spot%-आधारित
+    SL/TSL/Target ची तुलना आता entry_level_price (S/R zone level, उदा. 23900 — फक्त सिग्नल कुठे आला
+    ते सांगतो) ऐवजी entry_spot_price (प्रत्यक्ष order-placement वेळचा spot, जो level पासून काही
+    सेकंद/पॉइंट्स दूर असू शकतो) पासून होते."""
+
+    def _ltp_map(self, spot_value, short_leg_ltp, long_hedge_ltp):
+        def _fn(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": spot_value}
+            return {"PE24400": short_leg_ltp, "PE24300": long_hedge_ltp}
+        return _fn
+
+    def test_sl_triggers_from_actual_entry_spot_even_when_level_price_shows_no_adverse_move(self, temp_db, monkeypatch):
+        # entry_level_price (23900, S/R level) आणि entry_spot_price (24000, प्रत्यक्ष entry — level
+        # पासून बरीच वर, म्हणजे entry lag/slippage मुळे) वेगळे. current_spot=23895:
+        #   level (23900) पासून हलला फक्त -0.0209% -- sl_spot_pct(0.05%) च्या आतच, SL लागू नये.
+        #   प्रत्यक्ष entry (24000) पासून मात्र -0.4375% -- sl_spot_pct(0.05%) च्या खूप पलीकडे, SL लागायलाच हवं.
+        # premium_pnl_points = 30-20 = 10 (धन, ना SL ना Target premium-मार्गाने लागेल) -- फक्त spot%
+        # चाच परिणाम स्वच्छपणे तपासला जातो.
+        seed_trade(temp_db, "SP1", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_spot_price=24000.0, tsl_activated=0, peak_pnl=0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(23895.0, 20.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "SL"
+
+    def test_falls_back_to_level_price_when_entry_spot_price_missing(self, temp_db, monkeypatch):
+        """जुन्या (deploy आधीच्या, entry_spot_price न साठवलेल्या) trades साठी — तोच सीनारियो, पण
+        entry_spot_price न देता — जुनंच (entry_level_price-आधारित) वर्तन कायम राहायला हवं, SL लागू
+        नये (कारण level पासूनचा move buffer च्या आतच आहे)."""
+        seed_trade(temp_db, "SP2", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=0, peak_pnl=0)  # entry_spot_price दिलेलाच नाही
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(23895.0, 20.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+    def test_next_level_exit_still_uses_level_price_not_entry_spot(self, temp_db, monkeypatch):
+        """entry_spot_price हा फक्त Spot%-SL/TSL/Target साठी — Next-Level-Exit (कुठला पुढचा S/R level
+        शोधायचा) अजूनही entry_level_price (खरा zone level) वरूनच व्हायला हवं, entry_spot_price वरून नाही.
+        current_spot मुद्दाम entry_spot_price (24000, नवीन anchor) च्या बरोबर ठेवला आहे, जेणेकरून
+        spot_move_pct=0 राहील आणि SL/TSL/Target काहीच trigger न होता खाली Next-Level-Exit पर्यंत पोहोचेल."""
+        seed_trade(temp_db, "SP3", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_spot_price=24000.0, tsl_activated=0, peak_pnl=0,
+                   entry_timeframe="5M")
+        # premium_pnl_points = 30-25 = 5 -- SL(-5)/TSL(10)/Target(15) कुठल्याही उंबरठ्याला स्पर्श करत नाही
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(24000.0, 25.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        next_level_calls = []
+
+        def _fake_next_level(symbol, entry_level_price, direction_bullish, timeframe_suffixes):
+            next_level_calls.append(entry_level_price)
+            return None
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", _fake_next_level)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert next_level_calls == [23900.0]  # entry_level_price (zone level), entry_spot_price (24000) नव्हे

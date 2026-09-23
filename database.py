@@ -119,7 +119,13 @@ def init_sqlite_db():
     # अंदाजच वापरला जायचा. आता trading_engine.open_multi_leg_trade() हाच खरा आकडा (PAPER trades
     # साठीही -- सध्या बहुतांश मूल्यांकन PAPER वरच होतंय) इथे साठवतो; NULL असेल (जुन्या नोंदी, किंवा
     # API कॉल अयशस्वी) तर database._compute_margin_used() आपोआप max_loss*lots*lot_size वर पडतो.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL"]:
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation respect
+    # to entry price, not to level price and stop loss also respect to entry price") — entry_level_price
+    # (S/R zone level, उदा. 23353.1 — Next-Level-Exit साठी अजूनही तसाच वापरला जातो) आणि प्रत्यक्ष
+    # entry-वेळचा spot LTP हे दोन वेगळे आकडे असू शकतात (signal-detection आणि प्रत्यक्ष order-placement
+    # यामध्ये काही सेकंदांचा फरक असू शकतो). SL/TSL/Target च्या Spot% गणितासाठी आता हाच खरा entry_spot_price
+    # वापरला जातो (entry_level_price ऐवजी) — नवीन, वेगळा column.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:

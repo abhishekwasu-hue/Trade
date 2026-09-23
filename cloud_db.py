@@ -130,6 +130,25 @@ CREATE TABLE IF NOT EXISTS strike_oi_history (
 );
 """
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Record iv of option premium daily for analysis") —
+# रोज "काल IV काय होता, आज काय आहे" अशी तुलना हाताने (PDF/live fetch वरून) करण्याऐवजी, iv_snapshot_
+# collector.py कडून रोज एकदा (EOD आधी) साठवलेला, ATM-भोवतीचा IV इतिहास — strike_oi_history सारखाच
+# upsert पॅटर्न (त्याच दिवशी पुन्हा चालवलं तरी duplicate rows नाहीत, फक्त अद्ययावत).
+CREATE_IV_HISTORY_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS iv_history (
+    symbol TEXT NOT NULL,
+    strike REAL NOT NULL,
+    option_type TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    snapshot_time TEXT NOT NULL,
+    expiry TEXT,
+    iv REAL,
+    ltp REAL,
+    underlying_price REAL,
+    PRIMARY KEY (symbol, strike, option_type, trade_date, snapshot_time)
+);
+"""
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — गेल्या ५+ वर्षांचा (प्रत्यक्षात संपूर्ण उपलब्ध इतिहास,
 # 2015 पासून) NIFTY 1-मिनिट OHLC डेटा, रोज आपोआप अद्ययावत होणारा — जेणेकरून Backtest/Demand-Supply/
 # S-R गणना प्रत्येक वेळी थेट Upstox वरून (मर्यादित lookback सह) डेटा न मागवता, इथूनच वाचू शकतील.
@@ -490,7 +509,7 @@ def get_connection_with_error():
 
 
 def init_cloud_table():
-    """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, nifty_1min_ohlc,
+    """oi_diff_snapshots, upstox_tokens, market_zones, strike_oi_history, iv_history, nifty_1min_ohlc,
     signal_log, srv2_strategy_state, srv2_settings आणि broker_accounts tables (नसतील तर) तयार करणे."""
     conn = get_connection()
     if conn is None:
@@ -501,6 +520,7 @@ def init_cloud_table():
             cur.execute(CREATE_TOKEN_TABLE_SQL)
             cur.execute(CREATE_ZONES_TABLE_SQL)
             cur.execute(CREATE_STRIKE_OI_TABLE_SQL)
+            cur.execute(CREATE_IV_HISTORY_TABLE_SQL)
             cur.execute(CREATE_NIFTY_1MIN_TABLE_SQL)
             cur.execute(CREATE_SIGNAL_LOG_TABLE_SQL)
             cur.execute(CREATE_SRV2_STATE_TABLE_SQL)
@@ -751,6 +771,37 @@ def save_kill_switch_settings(enabled, max_daily_loss, max_trades_per_day):
     return save_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY, {
         "enabled": bool(enabled), "max_daily_loss": float(max_daily_loss), "max_trades_per_day": int(max_trades_per_day),
     })
+
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop
+# असा वेगळा button पाहिजे") — वरचा Kill Switch फक्त LIVE साठी, आपोआप (daily loss/trade-count
+# मर्यादेवरून) ट्रिप होतो — PAPER trades कधीच अडवत नाही. हे पूर्णपणे वेगळं, नवीन फीचर — वापरकर्ता
+# स्वतः, केव्हाही, एका क्लिकवर नवीन trades थांबवू शकतो — PAPER आणि LIVE दोन्हीसाठी लागू (हा
+# risk-threshold-आधारित नाही, वापरकर्त्याचा थेट निर्णय आहे). आधीच उघडलेल्या positions वर (trade_monitor.py
+# चं SL/Target/Trailing/EOD monitoring) याचा **काहीही** परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं,
+# उर्वरित Dashboard/bots जसेच्या तसे चालू राहतात (trading_engine.open_multi_leg_trade() च्या अगदी
+# सुरुवातीलाच एकाच ठिकाणी तपासलं जातं — सर्व 4 entry bots इथूनच trades उघडतात).
+TRADING_PAUSE_STRATEGY_KEY = "__global_trading_pause__"
+TRADING_PAUSE_SYMBOL_KEY = "ALL"
+
+
+def get_trading_pause_settings():
+    """सर्व symbols/strategies/PAPER+LIVE साठी एकत्रित — मॅन्युअल 'नवीन Trades थांबवा' स्थिती.
+    Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट — paused=False (चालू)."""
+    settings = get_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY)
+    return {
+        "paused": bool(settings.get("paused", False)),
+        "reason": settings.get("reason", ""),
+        "paused_at": settings.get("paused_at"),
+    }
+
+
+def set_trading_pause(paused, reason=""):
+    """paused=True -> नवीन trades थांबवले (कुठलाही bot नवीन position उघडणार नाही, PAPER+LIVE दोन्ही).
+    paused=False -> पुन्हा सुरू. आधीच्या उघड्या positions वर कधीच परिणाम नाही."""
+    payload = {"paused": bool(paused), "reason": str(reason or "")}
+    payload["paused_at"] = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).isoformat() if paused else None
+    return save_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY, payload)
 
 
 def get_all_strategy_trading_modes():
@@ -1176,6 +1227,76 @@ def get_strike_oi_history(symbol, trade_date, strikes=None):
             return pd.DataFrame(rows, columns=["strike", "option_type", "snapshot_time", "oi"])
     except Exception:
         _logger.exception("get_strike_oi_history() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+    finally:
+        conn.close()
+
+
+def save_iv_snapshot(symbol, trade_date, snapshot_time, rows):
+    """
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Record iv of option premium daily for analysis") —
+    दिलेल्या strikes/option_types चा IV (व सोबतच LTP, expiry, underlying_price — त्याच fetch_option_
+    greeks() कॉल मधून आधीच उपलब्ध) एकत्रित साठवणे. save_strike_oi_snapshot() सारखाच upsert पॅटर्न —
+    त्याच दिवशी/वेळेला पुन्हा चालवलं तरी duplicate rows नाहीत, फक्त अद्ययावत.
+    rows: [{"strike":.., "option_type":"CE"/"PE", "expiry":.., "iv":.., "ltp":.., "underlying_price":..}, ...]
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            for r in rows:
+                cur.execute(
+                    """INSERT INTO iv_history (symbol, strike, option_type, trade_date, snapshot_time,
+                                                expiry, iv, ltp, underlying_price)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (symbol, strike, option_type, trade_date, snapshot_time)
+                       DO UPDATE SET expiry = EXCLUDED.expiry, iv = EXCLUDED.iv, ltp = EXCLUDED.ltp,
+                                     underlying_price = EXCLUDED.underlying_price""",
+                    (symbol, r["strike"], r["option_type"], trade_date, snapshot_time,
+                     r.get("expiry"), r.get("iv"), r.get("ltp"), r.get("underlying_price")),
+                )
+        conn.commit()
+        return True
+    except Exception:
+        _logger.exception("save_iv_snapshot() मध्ये अनपेक्षित चूक (silently handled)")
+        return False
+    finally:
+        conn.close()
+
+
+def get_iv_history(symbol, from_date=None, to_date=None, strikes=None):
+    """IV इतिहास वाचणे — "काल IV काय होता, आज काय आहे" अशी तुलना यावरूनच करता येते. from_date/to_date
+    दिले तर त्या range मधलाच (both inclusive) इतिहास, दोन्ही न दिल्यास संपूर्ण साठवलेला इतिहास.
+    strikes दिलं तर तेवढेच strikes."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            clauses = ["symbol=%s"]
+            params = [symbol]
+            if from_date:
+                clauses.append("trade_date >= %s")
+                params.append(from_date)
+            if to_date:
+                clauses.append("trade_date <= %s")
+                params.append(to_date)
+            if strikes:
+                placeholders = ",".join(["%s"] * len(strikes))
+                clauses.append(f"strike IN ({placeholders})")
+                params.extend(strikes)
+            where_sql = " AND ".join(clauses)
+            cur.execute(
+                f"""SELECT trade_date, snapshot_time, expiry, strike, option_type, iv, ltp, underlying_price
+                    FROM iv_history WHERE {where_sql} ORDER BY trade_date ASC, snapshot_time ASC""",
+                params,
+            )
+            rows = cur.fetchall()
+            cols = ["trade_date", "snapshot_time", "expiry", "strike", "option_type", "iv", "ltp", "underlying_price"]
+            return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        _logger.exception("get_iv_history() मध्ये अनपेक्षित चूक (silently handled)")
         return None
     finally:
         conn.close()

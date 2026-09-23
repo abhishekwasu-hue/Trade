@@ -44,7 +44,20 @@ RSI_RESISTANCE_MIN = 60  # Resistance touch + 1-मिनिट RSI > 60 -> Bear
 NO_NEW_ENTRY_AFTER_HOUR = 14
 NO_NEW_ENTRY_AFTER_MINUTE = 45
 
-TOUCH_TOLERANCE_PCT = 0.02  # level पासून ±0.02% च्या आत candle चा low/high आला तरी "स्पर्श" (TOUCH)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी ±0.02% होता, मग वापरकर्त्याने पूर्णपणे काढायला सांगितला
+# (0), आणि लगेच पुढे "Keep level touch buffer 0.010% of spot" — म्हणजे पूर्णपणे तंतोतंत स्पर्शाऐवजी,
+# आधीच्या निम्मा (0.02% -> 0.01%), छोटासा buffer परत ठेवायचा — level पासून ±0.01% च्या आत candle
+# चा low/high आला तरी अजूनही "स्पर्श" (TOUCH) धरला जातो.
+TOUCH_TOLERANCE_PCT = 0.01
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("क्षणभर एखाद्या level च्या खाली/वरती गेल्यानंतर ताबडतोब
+# support चा resistance किंवा resistance चा support असं नोंदवणं कितपत योग्य आहे... hysteresis
+# लागू कर") — आधी direction (BULLISH/BEARISH) फक्त `current_price >= level` या raw तुलनेवर ठरायची
+# — किंमत level च्या अगदी काठावर wobble करत असेल, तर प्रत्येक मिनिटाला direction उगाच फ्लिप व्हायची
+# (उदा. RSI Entry Gate चुकीच्या rule कडे — Support<40 ऐवजी Resistance>60 — पडताळला जायचा). आता
+# ±0.10% hysteresis buffer — किंमत level पासून स्पष्टपणे (buffer च्या पलीकडे) एका बाजूला जात नाही,
+# तोपर्यंत मागची "निश्चित" दिशाच कायम राहते (बघा determine_direction_with_hysteresis()).
+DIRECTION_HYSTERESIS_BUFFER_PCT = 0.10
 
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 1M आता 5M सोबतच एकत्र, पूल केलेले (Instrument key/
 # zone_type suffix -> "timeframe" लेबल, entry_timeframe column साठी).
@@ -81,6 +94,25 @@ def check_level_crossed(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
                 return True, "GAP_THROUGH", c["open"]
         prev_close = c["close"]
     return False, None, None
+
+
+def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (hysteresis, ±0.10%) — किंमत level पासून ±buffer_pct% च्या
+    आतच (borderline) असेल, तर आधीचीच "निश्चित" दिशा कायम ठेवायची (उगाच फ्लिप नाही). closes (आजच्या
+    सर्व candles च्या close किमती, जुनं ते नवीन क्रमाने) मधून मागे जाऊन, ज्या पहिल्या candle चं close
+    त्या बॅंडच्या (level±buffer) स्पष्टपणे बाहेर आहे, तीच शेवटची निश्चित दिशा मानली जाते — त्यामुळे
+    कुठलंही वेगळं persisted state न ठेवताही (हा script दर मिनिटाला नव्याने चालतो), प्रत्येक वेळी
+    सुसंगत उत्तर मिळतं. दिवसभर कधीच बॅंडबाहेर गेलं नसेल (उदा. दिवसाची सुरुवात, नवीनच level), तर
+    सद्य किमतीची raw तुलनाच (जुनं वर्तन) सुरक्षित fallback म्हणून वापरली जाते.
+    रिटर्न: "BULLISH"/"BEARISH" """
+    buffer = level * buffer_pct / 100
+    upper, lower = level + buffer, level - buffer
+    for close in reversed(closes):
+        if close >= upper:
+            return "BULLISH"
+        if close <= lower:
+            return "BEARISH"
+    return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
 def is_todays_expiry_day(access_token, symbol):
@@ -151,6 +183,10 @@ def process_symbol(access_token, symbol, lot_size=65):
     now = get_ist_now()
     trade_date = now.strftime("%Y-%m-%d")
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (hysteresis) — सर्व levels साठी एकच, प्रति-symbol एकदाच
+    # काढलेली आजच्या close किमतींची यादी (प्रत्येक level साठी पुन:पुन्हा tolist() करायची गरज नाही).
+    todays_closes = todays_candles_df["close"].tolist()
+
     outcomes = []
     for row, timeframe_suffix in pooled_levels:
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
@@ -163,7 +199,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         # खाली किंवा बरोबर = Support/BULLISH — साठवलेला label जुना/स्टेल असला (उदा. gap-open नंतर
         # किंमत level च्या दुसऱ्याच बाजूला गेली) तरी प्रत्यक्ष trade नेहमी सद्य किमतीशी सुसंगतच घेतला
         # जातो, आधीच्या रात्रीच्या किमतीशी नाही.
-        direction = "BULLISH" if current_price >= row["zone_low"] else "BEARISH"
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("क्षणभर level च्या खाली/वर गेल्यावर लगेच direction फ्लिप
+        # करणं योग्य नाही... hysteresis लागू कर, 0.10% buffer") — आता raw तुलनेऐवजी hysteresis सह
+        # (बघा determine_direction_with_hysteresis()) — किंमत level पासून ±0.10% च्या आतच wobble
+        # करत असेल, तर आधीचीच निश्चित दिशा कायम राहते, प्रत्येक मिनिटाला उगाच फ्लिप होत नाही.
+        direction = determine_direction_with_hysteresis(row["zone_low"], todays_closes)
         # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
         # च्या आतच ठरायचा, पण खाली (यशस्वी trade नंतरच्या Telegram संदेशात) कायम वापरला जायचा — RSI Gate
         # Dashboard वरून बंद केला की इथे NameError येऊन entire script क्रॅश व्हायचा, अगदी order
@@ -273,7 +313,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,  # 🎓 Target आता trading_engine.py च्या evaluate_point_spot_exit मध्येच ठरतं
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 account_ids=broker_account_ids,
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
@@ -285,7 +325,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
             )
         log_entry["trade_status"] = trade_status
         cloud_db.save_signal_log(log_entry)
@@ -324,7 +364,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
-                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
@@ -334,7 +374,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
-                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 )
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"

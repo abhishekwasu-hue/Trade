@@ -60,16 +60,45 @@ class TestCheckLevelCrossed:
         assert hit is False
         assert hit_type is None
 
-    def test_near_miss_within_buffer_counts_as_touch(self):
-        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला बफर (±0.02%) — candle ने level ला तंतोतंत स्पर्श केला
-        नसला, तरी त्याच्या 0.02% च्या आत असेल तर established TOUCH established धरला जावा."""
+    def test_near_miss_within_0_01_pct_buffer_counts_as_touch(self):
+        """🎓 वापरकर्त्याशी झालेला बदलांचा क्रम — आधी ±0.02% बफर होता, वापरकर्त्याने तो पूर्णपणे
+        काढायला सांगितला (TOUCH_TOLERANCE_PCT=0), आणि लगेच पुढे "Keep level touch buffer 0.010% of
+        spot" — म्हणजे आधीच्या निम्मा, छोटासा बफर परत ठेवला. candle ने level ला तंतोतंत स्पर्श केला
+        नसला, तरी त्याच्या 0.01% च्या आत असेल तर अजूनही TOUCH धरला जायला हवा."""
         level = 24000.0
-        buffer = level * 0.02 / 100  # = 4.8
+        buffer = level * 0.01 / 100  # = 2.4
+        # दोन्ही candles level च्या **एकाच बाजूला** (खाली) ठेवलेले -- जेणेकरून GAP_THROUGH मार्ग
+        # चुकून triggered होऊ नये, आणि खरंच फक्त TOUCH-बफरचा परिणाम तपासला जाईल.
+        candles = [
+            {"open": 23900, "high": 23910, "low": 23890, "close": 23895},
+            # या candle चा high बफरच्या (2.4 च्या) आतच आहे, पण level ला प्रत्यक्ष स्पर्श केलेला नाही
+            {"open": 23990, "high": level - buffer + 1, "low": 23985, "close": 23992},
+        ]
+        hit, hit_type, price = dsr.check_level_crossed(level, candles)
+        assert hit is True
+        assert hit_type == "TOUCH"
+
+    def test_near_miss_beyond_0_01_pct_buffer_does_not_count_as_touch(self):
+        """वरच्याच बफर (0.01%) च्याही पलीकडे (जुन्या 0.02% बफरच्या आत असला तरी) असलेला near-miss
+        आता TOUCH धरला जाऊ नये."""
+        level = 24000.0
+        old_wider_buffer = level * 0.02 / 100  # = 4.8 -- सध्याच्या 0.01% (=2.4) पेक्षा जास्त
+        candles = [
+            {"open": 23900, "high": 23910, "low": 23890, "close": 23895},
+            # या candle चा high जुन्या 0.02% बफरच्या आत असला तरी, सध्याच्या 0.01% बफरच्या बाहेर आहे
+            {"open": 23990, "high": level - old_wider_buffer + 1, "low": 23985, "close": 23992},
+        ]
+        hit, hit_type, price = dsr.check_level_crossed(level, candles)
+        assert hit is False
+        assert hit_type is None
+
+    def test_exact_touch_still_counts(self):
+        """बफर कितीही असला तरी, candle च्या range मध्ये level तंतोतंत आला (even by exactly touching
+        the high/low boundary) तर तो TOUCH अजूनही ओळखला जायलाच हवा."""
+        level = 24000.0
         candles = [
             {"open": 24010, "high": 24015, "low": 24010, "close": 24012},
-            # established candle चा high (level - buffer + 1) -- established बफरच्या आतच, established
-            # established प्रत्यक्ष level ला स्पर्श establishedच केलेला नाही
-            {"open": level - buffer - 5, "high": level - buffer + 1, "low": level - buffer - 8, "close": level - buffer - 2},
+            {"open": 23990, "high": 24000, "low": 23985, "close": 23995},  # high == level, तंतोतंत स्पर्श
         ]
         hit, hit_type, price = dsr.check_level_crossed(level, candles)
         assert hit is True
@@ -109,6 +138,42 @@ class TestCheckLevelCrossed:
         ]
         hit, hit_type, price = dsr.check_level_crossed(level, candles)
         assert hit is False
+
+
+class TestDetermineDirectionWithHysteresis:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("क्षणभर एखाद्या level च्या खाली/वरती गेल्यानंतर ताबडतोब
+    support चा resistance किंवा resistance चा support असं नोंदवणं कितपत योग्य आहे... hysteresis
+    लागू कर, 0.10% buffer") — किंमत level पासून ±0.10% च्या आतच wobble करत असेल, तर आधीचीच निश्चित
+    दिशा कायम राहायला हवी, प्रत्येक candle ला उगाच फ्लिप होता कामा नये."""
+
+    LEVEL = 23353.1  # वापरकर्त्याने दाखवलेल्या खऱ्या उदाहरणातलाच level
+
+    def test_sticky_bullish_when_dip_stays_within_buffer(self):
+        """किंमत आधी स्पष्टपणे level च्या वर होती (confirmed BULLISH), नंतर level च्या किंचित खाली
+        (पण buffer च्या आतच) गेली — जुनी (raw तुलना) पद्धत इथे चुकून BEARISH दाखवायची, आता निश्चित
+        BULLISH च राहायला हवं (खऱ्या केसमध्ये नेमकं हेच 09:56 ला व्हायला हवं होतं)."""
+        closes = [23400.0, 23350.0]  # 23350 < level(23353.1) पण lower buffer(23329.75) च्या वरच
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_flips_to_bearish_only_when_clearly_beyond_buffer(self):
+        """किंमत खरंच buffer च्या पलीकडे (स्पष्टपणे) खाली गेली, तरच दिशा खऱ्या अर्थाने फ्लिप व्हायला हवी."""
+        closes = [23400.0, 23300.0]  # 23300 < lower buffer (23329.75) -- खरा breakdown
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+    def test_falls_back_to_raw_comparison_when_never_left_band(self):
+        """आजचा संपूर्ण इतिहास कधीच buffer च्या बाहेर गेलाच नसेल (उदा. दिवसाची सुरुवात, नवीनच
+        level), तर सद्य किमतीची raw तुलनाच (जुनं वर्तन) सुरक्षित fallback म्हणून वापरली जायला हवी."""
+        closes = [23353.1]  # बरोबर level वरच, buffer बाहेर कधीच नाही
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_real_world_scenario_stays_bullish_through_momentary_dip(self):
+        """🎓 वापरकर्त्याने दाखवलेलं खरं उदाहरण — किंमत स्पष्टपणे support च्या वर असतानाच, एका
+        candle साठी किंचित खाली डोकावली (0.10% च्या आतच) आणि परत वर आली. hysteresis शिवाय (जुनी
+        raw तुलना) मधल्या candle ला direction चुकून BEARISH व्हायचं (RSI Gate चुकीच्या rule कडे —
+        Resistance>60 — पडताळायचा). आता संपूर्ण काळात BULLISH च राहायला हवं."""
+        closes = [23400.0, 23370.0, 23350.0, 23365.0]  # सगळेच buffer (23329.75-23376.45) च्या आत/वर
+        for i in range(1, len(closes) + 1):
+            assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
 
 
 def _fake_zones():
@@ -746,6 +811,32 @@ class TestPooled1MAnd5M:
             assert mock_trade.called
             assert "5M" in result
             assert mock_trade.call_args.kwargs.get("entry_timeframe") == "5M"
+
+    def test_open_multi_leg_trade_receives_actual_entry_spot_not_level_price(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation
+        respect to entry price, not to level price") — open_multi_leg_trade() ला entry_level_price
+        (row["zone_low"], इथे 23900 — S/R zone) सोबतच, प्रत्यक्ष entry-वेळचा spot (option chain मधला
+        underlying_spot_price, इथे 23902.0 — level पेक्षा वेगळा) entry_spot_price म्हणून वेगळा
+        पाठवला जायलाच हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T71"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_trade.call_args.kwargs.get("entry_level_price") == 23900.0  # row["zone_low"] (5M zone)
+            assert mock_trade.call_args.kwargs.get("entry_spot_price") == 23902.0  # प्रत्यक्ष chain spot, level पेक्षा वेगळा
 
 
 class TestNakedOptionTrade:
