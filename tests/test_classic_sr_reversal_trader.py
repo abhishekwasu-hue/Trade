@@ -209,7 +209,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             result = csr.process_symbol("fake_token", "NIFTY")
             assert "TOUCH" in result
             assert mock_trade.called
@@ -247,7 +247,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             csr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
@@ -275,7 +275,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             csr.process_symbol("fake_token", "BANKNIFTY")
             assert mock_select.called
             # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती
@@ -351,7 +351,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             csr.process_symbol("fake_token", "NIFTY")
             assert mock_naked_select.called
             assert mock_trade.call_count == 2  # स्प्रेड + Naked, दोन्ही एकाच पास झालेल्या गेट्सवर
@@ -374,7 +374,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             csr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_count == 2
             spread_call, naked_call = mock_trade.call_args_list
@@ -397,7 +397,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             csr.process_symbol("fake_token", "NIFTY")
             assert not mock_naked_select.called
             assert mock_trade.call_count == 1
@@ -416,7 +416,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(csr, "send_telegram_message", return_value=True), \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits:
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)) as mock_hits:
             csr.process_symbol("fake_token", "NIFTY")
             assert mock_hits.called
             assert mock_hits.call_args.kwargs.get("role") == "SUPPORT"
@@ -432,7 +432,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "fetch_candles", return_value=candles_touch), \
              patch.object(csr, "open_multi_leg_trade") as mock_trade, \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now())):
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), get_ist_now())):
             csr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
@@ -449,7 +449,7 @@ class TestProcessSymbolCoreFlow:
              patch.object(csr, "fetch_candles", return_value=candles_touch), \
              patch.object(csr, "open_multi_leg_trade") as mock_trade, \
              patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
-             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(csr, "has_open_trade_from_source", return_value=True):
             csr.process_symbol("fake_token", "NIFTY")
             assert not mock_trade.called

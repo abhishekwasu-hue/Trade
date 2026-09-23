@@ -633,7 +633,7 @@ class TestGetEffectiveUpstoxToken:
 class TestGetZoneHitsToday:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकाच zone ला
     आजपर्यंत किती वेळा hit झालाय आणि शेवटचा hit केव्हा — established signal_log वरून (वेगळं
-    table/column न वापरता)."""
+    table/column न वापरता). रिटर्न आता 3-tuple: (hit_count, last_hit_time, last_trade_time)."""
 
     def test_no_hits_returns_zero_and_none(self, monkeypatch):
         mock_conn = MagicMock()
@@ -642,26 +642,31 @@ class TestGetZoneHitsToday:
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        count, last_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         assert count == 0
-        assert last_time is None
+        assert last_hit_time is None
+        assert last_trade_time is None
 
-    def test_two_hits_returns_count_and_latest_time(self, monkeypatch):
+    def test_two_hits_returns_count_and_latest_hit_time(self, monkeypatch):
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [("2026-09-08 11:30:00",), ("2026-09-08 09:20:00",)]
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-08 11:30:00", "SKIPPED_RSI_FILTER"), ("2026-09-08 09:20:00", "SKIPPED_RSI_FILTER"),
+        ]
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        count, last_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         assert count == 2
-        assert last_time == "2026-09-08 11:30:00"  # established ORDER BY ... DESC मुळे सर्वात अलीकडची पहिली
+        assert last_hit_time == "2026-09-08 11:30:00"  # established ORDER BY ... DESC मुळे सर्वात अलीकडची पहिली
+        assert last_trade_time is None  # दोन्ही touches फक्त RSI-नाकारलेले, खरा trade कधीच नाही
 
     def test_no_connection_returns_safe_default(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
-        count, last_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         assert count == 0
-        assert last_time is None
+        assert last_hit_time is None
+        assert last_trade_time is None
 
     def test_query_error_returns_safe_default(self, monkeypatch):
         mock_conn = MagicMock()
@@ -670,9 +675,10 @@ class TestGetZoneHitsToday:
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        count, last_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         assert count == 0
-        assert last_time is None
+        assert last_hit_time is None
+        assert last_trade_time is None
 
     def test_no_role_query_has_no_level_type_filter(self, monkeypatch):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेला `role` पर्याय — role न दिल्यास (डीफॉल्ट) query ने
@@ -712,16 +718,69 @@ class TestGetZoneHitsToday:
             if "level_type LIKE" in sql and params[-1] == "%RESISTANCE%":
                 mock_cursor.fetchall.return_value = []
             else:
-                mock_cursor.fetchall.return_value = [("2026-09-08 11:30:00",), ("2026-09-08 09:20:00",)]
+                mock_cursor.fetchall.return_value = [
+                    ("2026-09-08 11:30:00", "OPENED"), ("2026-09-08 09:20:00", "OPENED"),
+                ]
 
         mock_cursor.execute.side_effect = _execute
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        support_count, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
-        resistance_count, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="RESISTANCE")
+        support_count, _, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
+        resistance_count, _, _ = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="RESISTANCE")
         assert support_count == 2
         assert resistance_count == 0
+
+    def test_last_trade_time_ignores_rejected_touches(self, monkeypatch):
+        """🎓 वापरकर्त्याने CSV export मधून सापडवलेली, गोंधळात टाकणारी वागणूक — "मागच्या hit ला
+        फक्त 1 मिनिट झालं, 30 हवीत" हा cooldown message प्रत्यक्षात एका RSI-नाकारलेल्या touch वरून
+        (खरा trade कधीच न होता) येत होता. आता last_trade_time साठी फक्त खरे trade attempts (उदा.
+        "OPENED") मोजले जावेत -- SKIPPED_RSI_FILTER/SKIPPED_PCR_GATE/इ. कधीच नाही, जरी ते सर्वात
+        अलीकडचे (rows[0]) असले तरी."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-08 11:35:00", "SKIPPED_RSI_FILTER"),   # सर्वात अलीकडचा -- पण खरा trade नाही
+            ("2026-09-08 11:20:00", "SKIPPED_PCR_GATE"),     # हाही नाही
+            ("2026-09-08 10:00:00", "OPENED"),               # हाच खरा शेवटचा trade
+            ("2026-09-08 09:00:00", "OPENED"),
+        ]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        assert count == 4
+        assert last_hit_time == "2026-09-08 11:35:00"  # touch-आधारित count/hit_time बदललेलं नाही
+        assert last_trade_time == "2026-09-08 10:00:00"  # cooldown साठी मात्र फक्त खरा trade
+
+    def test_last_trade_time_none_when_only_rejected_touches(self, monkeypatch):
+        """दिवसभर फक्त RSI/PCR-नाकारलेले touches असतील (खरा trade कधीच न होता), तर last_trade_time
+        None असायला हवा -- म्हणजे cooldown अजिबात लागू होणार नाही (नवीन खऱ्या trade ला अडवलं जाणार नाही)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("2026-09-08 11:35:00", "SKIPPED_RSI_FILTER"),
+            ("2026-09-08 11:20:00", "SKIPPED_PCR_GATE"),
+            ("2026-09-08 11:00:00", None),  # अजून प्रत्यक्ष प्रयत्नच झाला नाही
+        ]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        count, last_hit_time, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        assert count == 3
+        assert last_trade_time is None
+
+    def test_last_trade_time_recognizes_partial_multi_account_status(self, monkeypatch):
+        """"A1:OPENED; A2:FAILED" सारखा multi-account निकाल सुद्धा खरा trade attempt आहे (फक्त
+        None/STRATEGY_SELECTION_FAILED/SKIPPED_* नाहीत) -- last_trade_time मध्ये मोजला जायला हवा."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("2026-09-08 11:00:00", "A1:OPENED; A2:FAILED")]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        _, _, last_trade_time = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        assert last_trade_time == "2026-09-08 11:00:00"
 
 
 class TestZoneRoleFromType:

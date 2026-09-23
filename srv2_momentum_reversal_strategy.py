@@ -221,7 +221,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी). support/resistance
         # साठी स्वतंत्र कमाल-2 counter (role= दिलं) — तोच level भूमिका बदलून (support->resistance
         # किंवा उलट) दुसऱ्या दिशेने test झाला तर तो एक वेगळाच candidate मानला जातो.
-        hit_count_so_far, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
+        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
         if hit_count_so_far >= 2:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"

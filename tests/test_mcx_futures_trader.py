@@ -119,7 +119,7 @@ class TestProcessSymbolGates:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)) as mock_hits, \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)) as mock_hits, \
              patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
              patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")):
             mft.process_symbol("fake_token", "CRUDEOIL")
@@ -135,7 +135,7 @@ class TestProcessSymbolGates:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(2, mft.get_ist_now())), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(2, mft.get_ist_now(), mft.get_ist_now())), \
              patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(mft, "open_multi_leg_trade") as mock_trade:
             mft.process_symbol("fake_token", "CRUDEOIL")
@@ -152,7 +152,7 @@ class TestProcessSymbolGates:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=True), \
              patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(mft, "open_multi_leg_trade") as mock_trade:
@@ -178,7 +178,7 @@ class TestProcessSymbolEntry:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved(lot_size=100)), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=False), \
              patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(mft, "send_telegram_message", return_value=True) as mock_telegram, \
@@ -212,7 +212,7 @@ class TestProcessSymbolEntry:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6402.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=False), \
              patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(mft, "send_telegram_message", return_value=True), \
@@ -255,7 +255,7 @@ class TestPercentMode:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=False), \
              patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(mft, "send_telegram_message", return_value=True), \
@@ -281,7 +281,7 @@ class TestPercentMode:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=False), \
              patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(mft, "send_telegram_message", return_value=True), \
@@ -329,7 +329,7 @@ class TestProcessSymbolMultiAccount:
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
              patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
-             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
              patch.object(mft, "has_open_trade_from_source", return_value=False), \
              patch("trading_engine.execute_trade_on_all_accounts", return_value=([{"account_id": "A1", "result": "OPENED"}], [])) as mock_multi, \
              patch.object(mft, "open_multi_leg_trade") as mock_single, \
