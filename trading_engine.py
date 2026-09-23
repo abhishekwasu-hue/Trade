@@ -499,7 +499,7 @@ def _maybe_cancel_broker_side_sl(access_token, adapter, legs):
             _logger.exception(f"[Broker-side SL] order_id={order_id} रद्द करताना अनपेक्षित चूक — Upstox app/website वर हाताने तपासा.")
 
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
@@ -514,6 +514,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Same-Timeframe Next-Level-Exit, 15M/30M/60M) —
     entry_timeframe (ऐच्छिक, उदा. "15M"/"30M"/"60M"/"1M"/"5M") — Next-Level-Exit साठी त्याच
     timeframe चा पुढचा level शोधण्यासाठी वापरला जातो.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("TSL activation/SL respect to entry price, not level price")
+    — entry_spot_price (ऐच्छिक) — प्रत्यक्ष order-placement वेळचा underlying spot LTP (entry_level_price
+    सारखाच नाही — तो फक्त सिग्नल कुठल्या S/R level वर आला, तेच सांगतो; प्रत्यक्ष entry त्या level पासून
+    काही सेकंद/पॉइंट्स दूर झालेली असू शकते). manage_open_trades() मधलं Spot%-आधारित SL/TSL/Target आता
+    entry_level_price ऐवजी हाच वापरतं (दिलेला असेल तर — न दिल्यास, जुन्या (entry_spot_price नसलेल्या)
+    trades साठी entry_level_price वरच सुरक्षितपणे पडतं).
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode=="LIVE_PAPER"
     असेल तर हेच फंक्शन स्वतःला दोनदा, वेगळ्या trading_mode ने कॉल करतं — एकदा "LIVE" (खरा ऑर्डर,
     कुठल्याही सुरक्षा-तपासण्या/Kill Switch सकट) आणि एकदा "PAPER" (शुद्ध सिम्युलेशन, फक्त तुलनेसाठी लॉग
@@ -536,13 +542,13 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
-            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
         )
         paper_ok, paper_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
-            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
         )
         combined_resp = {
             "status": "success" if live_ok else "error",
@@ -712,8 +718,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
             legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe,
-            entry_margin_required)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            entry_margin_required, entry_spot_price)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -731,7 +737,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
-            entry_level_price, entry_timeframe, entry_margin_required,
+            entry_level_price, entry_timeframe, entry_margin_required, entry_spot_price,
         ),
     )
     inserted = cur.rowcount > 0
@@ -963,7 +969,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -990,11 +996,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id, entry_spot_price))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
     if not ltp_map and all_keys:
@@ -1050,7 +1056,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             broker_pnl_by_key[key] = broker_pnl_by_key.get(key, 0) + pnl
 
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -1076,6 +1082,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # Exit नेमकं कशामुळे झालं (Spot% विरुद्ध Premium Points, कोणता next level, इ.) — exit_reason
         # कोड (business logic साठी, बदलेला नाही) सोबतच, वाचनीय detail वेगळ्या column मध्ये.
         exit_reason_detail = None
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation
+        # respect to entry price, not to level price and stop loss also respect to entry price") —
+        # entry_level_price (S/R zone level, उदा. 23353.1) आणि प्रत्यक्ष entry-वेळचा spot वेगळे असू
+        # शकतात (signal-detection आणि प्रत्यक्ष order-placement मध्ये काही सेकंद/पॉइंट्सचा फरक असू
+        # शकतो) — Next-Level-Exit साठी entry_level_price तसाच (खाली, बदलेला नाही) वापरला जातो, पण
+        # Spot%-आधारित SL/TSL/Target साठी आता entry_spot_price (उपलब्ध असल्यास) — जुन्या (deploy
+        # आधीच्या, entry_spot_price नसलेल्या) trades साठी entry_level_price वरच सुरक्षितपणे पडतं.
+        spot_anchor = entry_spot_price if entry_spot_price is not None else entry_level_price
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
@@ -1111,7 +1126,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 target_premium_points = settings_1m["spread_target_premium_points"]
 
             point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
             )
@@ -1190,7 +1205,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 target_premium_points = settings_csr["spread_target_premium_points"]
 
             point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                 sl_spot_pct, sl_premium_points, tsl_spot_pct, tsl_premium_points,
                 target_spot_pct, target_premium_points, tsl_activated,
             )
@@ -1237,7 +1252,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # carry-forward नाही, नेहमी आजच (डीफॉल्ट 3:00pm) बंद. Spot%+Premium-Points एकत्र,
                 # TSL-to-Breakeven सह (dynamic_sr_instant सारखीच, वेगळ्या उंबरठ्यांसह).
                 point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                     settings_15m["naked_sl_spot_pct"], settings_15m["naked_sl_premium_points"],
                     settings_15m["naked_tsl_spot_pct"], settings_15m["naked_tsl_premium_points"],
                     settings_15m["naked_target_spot_pct"], settings_15m["naked_target_premium_points"],
@@ -1274,7 +1289,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # column मार्फतच, म्हणून इथे target-उंबरठे प्रचंड मोठे देऊन evaluate_point_spot_exit
                 # चा स्वतःचा built-in target-मार्ग निष्क्रिय केलेला).
                 point_exit_reason, tsl_now_activated, point_exit_detail = evaluate_point_spot_exit(
-                    direction_bullish, entry_level_price, underlying_spot, premium_pnl_points,
+                    direction_bullish, spot_anchor, underlying_spot, premium_pnl_points,
                     settings_15m["spread_sl_spot_pct"], settings_15m["spread_sl_premium_points"],
                     settings_15m["spread_tsl_spot_pct"], settings_15m["spread_tsl_premium_points"],
                     target_spot_pct=1e9, target_premium_points=1e9,
@@ -1699,7 +1714,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
                                    trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
-                                   entry_level_price=None, entry_timeframe=None, account_ids=None):
+                                   entry_level_price=None, entry_timeframe=None, account_ids=None, entry_spot_price=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -1733,6 +1748,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
             target_pct_of_max_profit=target_pct_of_max_profit, product_type=product_type,
             trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
             source=source, adapter=adapter, entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
+            entry_spot_price=entry_spot_price,
         )
         results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
     return results, factory_errors

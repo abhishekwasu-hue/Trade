@@ -277,7 +277,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,  # 🎓 Target आता trading_engine.py च्या evaluate_point_spot_exit मध्येच ठरतं
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 account_ids=broker_account_ids,
             )
             trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
@@ -289,7 +289,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                 product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
             )
         log_entry["trade_status"] = trade_status
         cloud_db.save_signal_log(log_entry)
@@ -328,7 +328,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
-                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
@@ -338,7 +338,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
-                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 )
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"

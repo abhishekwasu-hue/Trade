@@ -776,6 +776,32 @@ class TestPooled1MAnd5M:
             assert "5M" in result
             assert mock_trade.call_args.kwargs.get("entry_timeframe") == "5M"
 
+    def test_open_multi_leg_trade_receives_actual_entry_spot_not_level_price(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation
+        respect to entry price, not to level price") — open_multi_leg_trade() ला entry_level_price
+        (row["zone_low"], इथे 23900 — S/R zone) सोबतच, प्रत्यक्ष entry-वेळचा spot (option chain मधला
+        underlying_spot_price, इथे 23902.0 — level पेक्षा वेगळा) entry_spot_price म्हणून वेगळा
+        पाठवला जायलाच हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T71"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_trade.call_args.kwargs.get("entry_level_price") == 23900.0  # row["zone_low"] (5M zone)
+            assert mock_trade.call_args.kwargs.get("entry_spot_price") == 23902.0  # प्रत्यक्ष chain spot, level पेक्षा वेगळा
+
 
 class TestNakedOptionTrade:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade / "Long With Hedge") --

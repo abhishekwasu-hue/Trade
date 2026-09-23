@@ -48,7 +48,7 @@ def temp_db(monkeypatch):
     yield tmpdb
 
 
-def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None):
+def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None, entry_spot_price=None):
     conn = sqlite3.connect(tmpdb)
     if legs is None:
         legs = [
@@ -58,9 +58,9 @@ def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BU
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
-           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-08-24", "NIFTY", strategy, 1, 75, net_credit, net_credit, 50,
-         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id),
+         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price),
     )
     conn.commit()
     conn.close()
@@ -2113,3 +2113,73 @@ class TestBrokerMtmOverridesPremiumPnl:
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 0  # आंशिक broker data -- सुरक्षित fallback (internal calc, profitable)
+
+
+class TestSpotPctSlTslRespectsActualEntrySpot:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation respect
+    to entry price, not to level price and stop loss also respect to entry price") — Spot%-आधारित
+    SL/TSL/Target ची तुलना आता entry_level_price (S/R zone level, उदा. 23900 — फक्त सिग्नल कुठे आला
+    ते सांगतो) ऐवजी entry_spot_price (प्रत्यक्ष order-placement वेळचा spot, जो level पासून काही
+    सेकंद/पॉइंट्स दूर असू शकतो) पासून होते."""
+
+    def _ltp_map(self, spot_value, short_leg_ltp, long_hedge_ltp):
+        def _fn(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": spot_value}
+            return {"PE24400": short_leg_ltp, "PE24300": long_hedge_ltp}
+        return _fn
+
+    def test_sl_triggers_from_actual_entry_spot_even_when_level_price_shows_no_adverse_move(self, temp_db, monkeypatch):
+        # entry_level_price (23900, S/R level) आणि entry_spot_price (24000, प्रत्यक्ष entry — level
+        # पासून बरीच वर, म्हणजे entry lag/slippage मुळे) वेगळे. current_spot=23895:
+        #   level (23900) पासून हलला फक्त -0.0209% -- sl_spot_pct(0.05%) च्या आतच, SL लागू नये.
+        #   प्रत्यक्ष entry (24000) पासून मात्र -0.4375% -- sl_spot_pct(0.05%) च्या खूप पलीकडे, SL लागायलाच हवं.
+        # premium_pnl_points = 30-20 = 10 (धन, ना SL ना Target premium-मार्गाने लागेल) -- फक्त spot%
+        # चाच परिणाम स्वच्छपणे तपासला जातो.
+        seed_trade(temp_db, "SP1", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_spot_price=24000.0, tsl_activated=0, peak_pnl=0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(23895.0, 20.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "SL"
+
+    def test_falls_back_to_level_price_when_entry_spot_price_missing(self, temp_db, monkeypatch):
+        """जुन्या (deploy आधीच्या, entry_spot_price न साठवलेल्या) trades साठी — तोच सीनारियो, पण
+        entry_spot_price न देता — जुनंच (entry_level_price-आधारित) वर्तन कायम राहायला हवं, SL लागू
+        नये (कारण level पासूनचा move buffer च्या आतच आहे)."""
+        seed_trade(temp_db, "SP2", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=0, peak_pnl=0)  # entry_spot_price दिलेलाच नाही
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(23895.0, 20.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+    def test_next_level_exit_still_uses_level_price_not_entry_spot(self, temp_db, monkeypatch):
+        """entry_spot_price हा फक्त Spot%-SL/TSL/Target साठी — Next-Level-Exit (कुठला पुढचा S/R level
+        शोधायचा) अजूनही entry_level_price (खरा zone level) वरूनच व्हायला हवं, entry_spot_price वरून नाही.
+        current_spot मुद्दाम entry_spot_price (24000, नवीन anchor) च्या बरोबर ठेवला आहे, जेणेकरून
+        spot_move_pct=0 राहील आणि SL/TSL/Target काहीच trigger न होता खाली Next-Level-Exit पर्यंत पोहोचेल."""
+        seed_trade(temp_db, "SP3", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, entry_spot_price=24000.0, tsl_activated=0, peak_pnl=0,
+                   entry_timeframe="5M")
+        # premium_pnl_points = 30-25 = 5 -- SL(-5)/TSL(10)/Target(15) कुठल्याही उंबरठ्याला स्पर्श करत नाही
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp_map(24000.0, 25.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        next_level_calls = []
+
+        def _fake_next_level(symbol, entry_level_price, direction_bullish, timeframe_suffixes):
+            next_level_calls.append(entry_level_price)
+            return None
+        monkeypatch.setattr(trading_engine.cloud_db, "get_next_level_in_direction", _fake_next_level)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert next_level_calls == [23900.0]  # entry_level_price (zone level), entry_spot_price (24000) नव्हे
