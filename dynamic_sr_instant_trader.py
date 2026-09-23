@@ -44,7 +44,11 @@ RSI_RESISTANCE_MIN = 60  # Resistance touch + 1-मिनिट RSI > 60 -> Bear
 NO_NEW_ENTRY_AFTER_HOUR = 14
 NO_NEW_ENTRY_AFTER_MINUTE = 45
 
-TOUCH_TOLERANCE_PCT = 0.02  # level पासून ±0.02% च्या आत candle चा low/high आला तरी "स्पर्श" (TOUCH)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Support resistance touch buffer is 0.020% remove it") —
+# आधी level पासून ±0.02% च्या आत candle चा low/high आला तरी "स्पर्श" (TOUCH) धरला जायचा. आता 0 —
+# candle च्या [low, high] रेंज मध्ये level प्रत्यक्ष यायलाच हवा (तंतोतंत स्पर्श), किंचित जवळ आलेला
+# पुरेसा नाही.
+TOUCH_TOLERANCE_PCT = 0
 
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 1M आता 5M सोबतच एकत्र, पूल केलेले (Instrument key/
 # zone_type suffix -> "timeframe" लेबल, entry_timeframe column साठी).

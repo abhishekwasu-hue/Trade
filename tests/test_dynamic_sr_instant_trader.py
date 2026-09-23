@@ -60,16 +60,32 @@ class TestCheckLevelCrossed:
         assert hit is False
         assert hit_type is None
 
-    def test_near_miss_within_buffer_counts_as_touch(self):
-        """🎓 वापरकर्त्याशी चर्चा करून जोडलेला बफर (±0.02%) — candle ने level ला तंतोतंत स्पर्श केला
-        नसला, तरी त्याच्या 0.02% च्या आत असेल तर established TOUCH established धरला जावा."""
+    def test_near_miss_no_longer_counts_as_touch_buffer_removed(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Support resistance touch buffer is 0.020% remove it")
+        — आधी ±0.02% बफरच्या आत असलेला near-miss सुद्धा TOUCH धरला जायचा (जुनी टेस्ट: वापरकर्त्याशी
+        चर्चा करून जोडलेला बफर). आता TOUCH_TOLERANCE_PCT=0 असल्याने, candle ने level ला तंतोतंत स्पर्श
+        केला नसेल (नुसता जवळ असून चालणार नाही) तर हा NO_HIT असायला हवा."""
         level = 24000.0
-        buffer = level * 0.02 / 100  # = 4.8
+        old_buffer_that_no_longer_applies = level * 0.02 / 100  # = 4.8 -- फक्त संदर्भासाठी, आता वापरलं जात नाही
+        # दोन्ही candles level च्या **एकाच बाजूला** (खाली) ठेवलेले -- जेणेकरून GAP_THROUGH मार्ग
+        # (prev_close/open level च्या दोन्ही बाजूला असतील तरच लागू होतो) चुकून triggered होऊ नये,
+        # आणि खरंच फक्त TOUCH-बफर काढल्याचा परिणाम तपासला जाईल.
+        candles = [
+            {"open": 23900, "high": 23910, "low": 23890, "close": 23895},
+            # या candle चा high (जुन्या 0.02% बफरच्या आत असला तरी) level ला प्रत्यक्ष स्पर्श करत नाही
+            {"open": 23990, "high": level - old_buffer_that_no_longer_applies + 1, "low": 23985, "close": 23992},
+        ]
+        hit, hit_type, price = dsr.check_level_crossed(level, candles)
+        assert hit is False
+        assert hit_type is None
+
+    def test_exact_touch_still_counts_with_zero_buffer(self):
+        """बफर काढला तरी, candle च्या range मध्ये level तंतोतंत आला (even by exactly touching the
+        high/low boundary) तर तो TOUCH अजूनही ओळखला जायलाच हवा."""
+        level = 24000.0
         candles = [
             {"open": 24010, "high": 24015, "low": 24010, "close": 24012},
-            # established candle चा high (level - buffer + 1) -- established बफरच्या आतच, established
-            # established प्रत्यक्ष level ला स्पर्श establishedच केलेला नाही
-            {"open": level - buffer - 5, "high": level - buffer + 1, "low": level - buffer - 8, "close": level - buffer - 2},
+            {"open": 23990, "high": 24000, "low": 23985, "close": 23995},  # high == level, तंतोतंत स्पर्श
         ]
         hit, hit_type, price = dsr.check_level_crossed(level, candles)
         assert hit is True
