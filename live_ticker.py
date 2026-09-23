@@ -23,7 +23,7 @@ fragment चा भाग — एकच स्रोत, कुठलाही d
 import streamlit as st
 
 from upstox_api import get_instrument_key, fetch_ltp_map
-from database import get_live_positions_with_mtm
+from database import get_live_positions_with_mtm, get_todays_realized_pnl
 from config import get_ist_now
 
 TICKER_REFRESH_SECONDS = 15
@@ -61,17 +61,25 @@ def _render_ticker_body():
         unsafe_allow_html=True,
     )
 
-    total_mtm = None
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी फक्त उघड्या (OPEN) positions चा MTM दिसायचा, आज
+    # आधीच बंद (exit) झालेल्या trades चा realized P&L त्यात धरलाच जायचा नाही. आता दोन्ही एकत्र —
+    # उघड्या positions चा सद्य MTM + आजच बंद झालेल्या (LIVE व PAPER दोन्ही, symbol हाच) trades चा
+    # realized P&L — म्हणजे आजचा खरा संपूर्ण (एकत्रित) profit/loss.
+    total_today_pnl = None
     try:
+        open_mtm = 0.0
         positions_df = get_live_positions_with_mtm(token_input, symbol)
         if not positions_df.empty and "MTM (Rs)" in positions_df.columns:
             valid_mtm = positions_df["MTM (Rs)"].dropna()
             if not valid_mtm.empty:
-                total_mtm = valid_mtm.sum()
+                open_mtm = valid_mtm.sum()
+        live_realized, _ = get_todays_realized_pnl(symbol, "LIVE")
+        paper_realized, _ = get_todays_realized_pnl(symbol, "PAPER")
+        total_today_pnl = open_mtm + live_realized + paper_realized
     except Exception:
-        pass  # Positions मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
+        pass  # Positions/P&L मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
 
-    st.metric("उघड्या Positions चा एकूण MTM", f"₹{total_mtm:,.0f}" if total_mtm is not None else "—")
+    st.metric("आजच्या Position चा MTM (Exit सह, एकूण P&L)", f"₹{total_today_pnl:,.0f}" if total_today_pnl is not None else "—")
 
 
 if hasattr(st, "fragment"):
