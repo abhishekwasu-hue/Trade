@@ -35,6 +35,14 @@ page_mcx_futures.py (Dashboard) वरून.
     trade_monitor.py चं MONITORED_SYMBOLS (NIFTY/BANKNIFTY/SENSEX, engine_service.py) इथे मुद्दामच
     बदललेलं नाही — त्याऐवजी हीच script (एकाच cron cycle मध्ये) entry-तपासणीनंतर स्वतःच
     manage_open_trades() सुद्धा प्रत्येक MCX symbol साठी चालवते.
+    🎓 वापरकर्त्याने सापडवलेली सुधारणा ("exit slippage") — आधी हे monitoring एका cron invocation
+    मध्ये (दर मिनिटाला) फक्त एकदाच व्हायचं — trade_monitor.py (NIFTY/BANKNIFTY/SENSEX) च्या
+    "दर ~15 सेकंदांनी पुन्हा तपासा" फिक्सच्या आधीच्या, जास्त slippage-प्रवण अवस्थेसारखंच. आता
+    trade_monitor.py च्याच run_monitor_loop() पॅटर्नने — entry-तपासणी अजूनही एकदाच (दर मिनिटाला,
+    वेगवान करायची गरज नाही), पण exit-monitoring (run_exit_monitor_loop()) आता त्याच cron
+    invocation च्या आत दर ~15 सेकंदांनी (--interval-seconds, ~30 सेकंदांपर्यंत --loop-seconds —
+    trade_monitor.py च्या 50 पेक्षा कमी, कारण MCX cron ओळीत आधीच `sleep 60` stagger आहे) पुन्हा-पुन्हा
+    — SL/Target ओलांडल्यानंतर बॉटला कळायला आता जास्तीत जास्त ~60 सेकंदांऐवजी ~15-20 सेकंद लागतात.
   - Trailing SL — page_mcx_futures.py चा साधा "points मागे" trailing_distance_points,
     trading_engine.compute_trailing_sl_level() ला atr_multiplier=1.0 सह दिलेला (ATR गुणक नाही,
     सरळ तितकेच points मागे) — नवीन trailing-गणित लिहावं लागलं नाही.
@@ -51,6 +59,7 @@ page_mcx_futures.py (Dashboard) वरून.
     # किंवा स्वतःचा token देऊन: python3 mcx_futures_trader.py --token <UPSTOX_TOKEN>
 """
 import argparse
+import time
 
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
@@ -326,8 +335,9 @@ def monitor_symbol(access_token, symbol):
 
 
 def run_all_symbols(token, symbols):
-    """🎓 established 3 bots प्रमाणेच — प्रत्येक symbol चं entry-तपासणी व exit-monitoring स्वतंत्र
-    try/except मध्ये, एकाच्या अपयशाने बाकीच्यांना/heartbeat ला अडवू नये म्हणून."""
+    """🎓 established 3 bots प्रमाणेच — प्रत्येक symbol ची entry-तपासणी स्वतंत्र try/except मध्ये,
+    एकाच्या अपयशाने बाकीच्यांना/heartbeat ला अडवू नये म्हणून. exit-monitoring आता वेगळ्या
+    run_exit_monitor_loop() मधून (खाली बघा — cron slippage कमी करण्यासाठी वेगवान)."""
     any_symbol_succeeded = False
     for symbol in symbols:
         symbol = symbol.strip()
@@ -337,22 +347,67 @@ def run_all_symbols(token, symbols):
         except Exception as e:
             notify_error("mcx_futures_trader", f"{symbol}: entry-तपासणी त्रुटी — {e}")
             print(f"⚠️ {symbol}: entry-तपासणी अनपेक्षित त्रुटी — {e}")
+    return any_symbol_succeeded
 
+
+def run_exit_monitor_cycle(token, symbols):
+    """प्रत्येक symbol साठी monitor_symbol() (SL/Target/Trailing/EOD) — एकाच cycle मध्ये सर्व
+    commodities, एकाच्या अपयशाने बाकीच्यांना न अडवता (established 3 bots च्या पॅटर्नप्रमाणेच)."""
+    results = []
+    any_symbol_succeeded = False
+    for symbol in symbols:
+        symbol = symbol.strip()
         try:
             closed = monitor_symbol(token, symbol)
-            if closed:
-                print(f"{symbol}: 🔔 {len(closed)} position(s) बंद झाल्या — {closed}")
             any_symbol_succeeded = True
+            if closed:
+                results.append(f"{symbol}: 🔔 {len(closed)} position(s) बंद झाल्या — {closed}")
         except Exception as e:
             notify_error("mcx_futures_trader", f"{symbol}: monitor त्रुटी — {e}")
-            print(f"⚠️ {symbol}: monitor अनपेक्षित त्रुटी — {e}")
-    return any_symbol_succeeded
+            results.append(f"⚠️ {symbol}: monitor अनपेक्षित त्रुटी — {e}")
+    return results, any_symbol_succeeded
+
+
+def run_exit_monitor_loop(token, symbols, interval_seconds=15, loop_seconds=30,
+                           sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("exit slippage") — trade_monitor.py च्याच
+    run_monitor_loop() पॅटर्नची MCX आवृत्ती — एका cron invocation च्या आत, interval_seconds च्या
+    अंतराने loop_seconds पर्यंत run_exit_monitor_cycle() पुन्हा-पुन्हा चालवणे, जेणेकरून SL/Target
+    ओलांडल्यानंतर बॉटला कळायला आधीच्या (दर मिनिटाला फक्त एकदा) ऐवजी जास्तीत जास्त
+    interval_seconds इतकाच वेळ लागेल. प्रत्येक cycle चा वेळ वजा करूनच पुढचा sleep काढला जातो,
+    जेणेकरून एकूण वेळ loop_seconds च्या आसपासच राहील.
+    ⚠️ loop_seconds डीफॉल्ट trade_monitor.py च्या 50 पेक्षा मुद्दामच कमी (30) ठेवला — VPS crontab
+    मधली MCX ची ओळ स्वतःच आधी `sleep 60` (stampede टाळण्यासाठीचा stagger) करते, म्हणजे प्रत्यक्ष
+    काम सुरू व्हायलाच cron-tick नंतर जवळपास पूर्ण मिनिट जातं. entry-तपासणी + हा loop मिळून जर
+    उरलेल्या ~60-सेकंद budget पेक्षा जास्त वेळ घेतला, तर पुढची invocation ProcessLockHeld मुळे
+    सरळ वगळली जाईल (उलट परिणाम — cycles आणखी विरळ). 30 सेकंद यात सुरक्षित बसतो."""
+    start = now_fn()
+    any_succeeded_overall = False
+    while True:
+        cycle_start = now_fn()
+        results, any_succeeded = run_exit_monitor_cycle(token, symbols)
+        any_succeeded_overall = any_succeeded_overall or any_succeeded
+        for r in results:
+            print_fn(r)
+        elapsed = now_fn() - start
+        remaining_in_budget = loop_seconds - elapsed
+        if remaining_in_budget <= 0:
+            break
+        cycle_duration = now_fn() - cycle_start
+        sleep_time = min(interval_seconds - cycle_duration, remaining_in_budget)
+        if sleep_time > 0:
+            sleep_fn(sleep_time)
+    return any_succeeded_overall
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbols", default=",".join(MCX_FUTURES_SYMBOLS))
+    parser.add_argument("--interval-seconds", type=float, default=15,
+                         help="exit-monitoring किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 15, trade_monitor.py सारखंच)")
+    parser.add_argument("--loop-seconds", type=float, default=30,
+                         help="एका cron invocation मध्ये exit-monitoring किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 30 — MCX crontab च्या आधीच्या sleep 60 stagger नंतरच्या उरलेल्या budget मध्ये सुरक्षित बसावं म्हणून, trade_monitor.py च्या 50 पेक्षा कमी)")
     args = parser.parse_args()
 
     # 🎓 established 3 bots प्रमाणेच — Duplicate-Order Protection (VPS crontab वर मंद network/retry
@@ -365,8 +420,10 @@ if __name__ == "__main__":
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
                 exit(1)
-            any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
-            if any_symbol_succeeded:
+            symbols_list = args.symbols.split(",")
+            entry_succeeded = run_all_symbols(token, symbols_list)
+            exit_succeeded = run_exit_monitor_loop(token, symbols_list, args.interval_seconds, args.loop_seconds)
+            if entry_succeeded or exit_succeeded:
                 write_heartbeat("mcx_futures_trader")
             run_auto_backup_if_due(interval_minutes=60)
     except ProcessLockHeld as e:
