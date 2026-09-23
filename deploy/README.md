@@ -269,6 +269,30 @@ tail -f /root/Trade/mcx_futures.log
 crontab -l | grep mcx_futures
 ```
 
+## Pre-Market Readiness Check — रोज सकाळी बाजार उघडण्याआधी आपोआप (नवीन, LIVE करण्याआधी जोडलेलं)
+
+🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "Pre-market sanity-check, रोज सकाळी
+आपोआप") — `mcx_market_readiness_check.py` (READ-ONLY, कुठलाही order/trade नाही) रोज बाजार
+उघडण्याआधी (8:55 IST) resolver (5 commodities चे instrument_key/lot_size/tick_size/expiry),
+आजचे ACTIVE 30M/60M zones (प्रत्येक commodity साठी), आणि Upstox token वैधता — तिन्ही तपासून एक
+Telegram संदेश पाठवतो — समस्या सापडो अथवा न सापडो, नेहमीच (रोजचा run न चुकता झाल्याची खात्री
+मिळावी म्हणून मुद्दामच). समस्या आढळल्यास (🔴) commodity तिथेच `symbol_enabled` बंद ठेवा/तपासा —
+आधीच bot त्या commodity साठी काहीही करणार नाही (निरुपद्रवी), पण झोपेतूनही समस्या लगेच कळावी
+म्हणून हा आगाऊ इशारा.
+
+```
+25 3 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 mcx_market_readiness_check.py >> /root/Trade/mcx_readiness_check.log 2>&1
+```
+(UTC 3:25 = IST 8:55 — MCX 9:00 AM उघडण्याच्या 5 मिनिटं आधी, entry bot च्या पहिल्या cron line
+च्या (3:45 UTC) आधीच.)
+
+मॅन्युअली, कधीही, कुठल्याही नवीन commodity साठी `symbol_enabled` चालू करण्याआधी हातानेही चालवता
+येतं (`PRE_LIVE_CHECKLIST.md` §5 पायरी 1-2 ची जागा आता हेच script घेतं):
+```bash
+python3 mcx_market_readiness_check.py            # सर्व 5 commodities + Telegram अलर्ट
+python3 mcx_market_readiness_check.py --no-alert  # फक्त स्क्रीनवर रिपोर्ट, Telegram नाही
+```
+
 ---
 
 # Market Zones Refresh (15M/30M/60M — SRv2 चा एकमेव zone-स्रोत) — आता VPS crontab वर

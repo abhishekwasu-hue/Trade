@@ -170,6 +170,50 @@ class TestGetTodaysLiveTotalPnlAndCount:
         assert total_pnl_entry_day == 0  # entry दिवशी (15 तारखेला) अजून बंदच झालेली नव्हती
 
 
+class TestGetTodaysMcxLivePnlAndCount:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital
+    cap") — फक्त source='mcx_futures' (5 commodities मिळून) साठीचा आजचा LIVE P&L + सध्या उघडी
+    असलेल्या LIVE positions ची संख्या — check_mcx_kill_switch() साठी."""
+
+    def _seed_open(self, tmpdb, trade_id, symbol, mode="LIVE", source="mcx_futures"):
+        conn = sqlite3.connect(tmpdb)
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode,
+               trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, today_str, symbol, "MCX_FUTURES", 1, 100, 0, 500, 500, 500, 500,
+             f"{today_str} 10:00:00", "OPEN", json.dumps([]), mode, "INTRADAY", source),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_sums_only_mcx_source_live_closed_trades(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "M1", -3000.0, "SL", today_str, symbol="CRUDEOIL", source="mcx_futures", mode="LIVE")
+        seed_closed_trade(temp_db, "M2", 1000.0, "TARGET", today_str, symbol="GOLD", source="mcx_futures", mode="LIVE")
+        seed_closed_trade(temp_db, "N1", -50000.0, "SL", today_str, symbol="NIFTY", source="dynamic_sr_instant", mode="LIVE")
+        seed_closed_trade(temp_db, "M3", -9999.0, "SL", today_str, symbol="SILVER", source="mcx_futures", mode="PAPER")
+
+        total_pnl, open_positions = database.get_todays_mcx_live_pnl_and_count()
+        assert total_pnl == -2000.0  # फक्त M1+M2 (mcx_futures, LIVE) — NIFTY आणि PAPER वगळलेले
+        assert open_positions == 0
+
+    def test_counts_open_mcx_live_positions_across_commodities(self, temp_db):
+        self._seed_open(temp_db, "M_OPEN1", "CRUDEOIL", mode="LIVE")
+        self._seed_open(temp_db, "M_OPEN2", "GOLD", mode="LIVE")
+        self._seed_open(temp_db, "N_OPEN", "NIFTY", mode="LIVE", source="dynamic_sr_instant")
+        self._seed_open(temp_db, "M_OPEN_PAPER", "SILVER", mode="PAPER")
+
+        _, open_positions = database.get_todays_mcx_live_pnl_and_count()
+        assert open_positions == 2  # फक्त CRUDEOIL+GOLD (mcx_futures, LIVE, OPEN)
+
+    def test_empty_when_no_trades(self, temp_db):
+        total_pnl, open_positions = database.get_todays_mcx_live_pnl_and_count()
+        assert total_pnl == 0
+        assert open_positions == 0
+
+
 class TestGetUnverifiedReconciledTradesTodayCount:
     """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconcile_open_trades_with_broker()
     (trading_engine.py) externally बंद झालेल्या LIVE position चा realized_pnl कधीच साठवत नाही (ते

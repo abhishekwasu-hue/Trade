@@ -29,7 +29,8 @@ import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
-    get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, OPTION_STRUCTURE_GROUP_SQL,
+    get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
+    OPTION_STRUCTURE_GROUP_SQL,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
@@ -37,7 +38,7 @@ from pnl_reports import generate_pnl_report
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
-from upstox_api import fetch_mcx_candles
+from upstox_api import fetch_mcx_candles, get_total_capital
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
 STRATEGY_KEY = "mcx_futures"
@@ -90,6 +91,65 @@ def _render_status_banner():
         st.error(f"🔴 सध्या LIVE (खऱ्या पैशांनी) चालू आहे: {', '.join(live_combos)}")
     else:
         st.success("🟢 सर्व MCX commodities सध्या PAPER मोडमध्ये आहेत — कुठलाही खरा पैसा वापरला जात नाही.")
+
+
+def _render_mcx_kill_switch_panel():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital
+    cap") — page_bot_dynamic_sr_algo.py च्या ग्लोबल Kill Switch पॅनेलसारखंच, पण फक्त MCX (5
+    commodities मिळून) पुरतं — trading_engine.check_mcx_kill_switch() जे प्रत्यक्षात वापरतं तेच
+    settings इथून बदलता येतात. ग्लोबल Kill Switch (Bot Dynamic SR Algo पान) सुद्धा MCX ला लागू
+    होतोच — हा फक्त त्याहून कडक, MCX-विशिष्ट दुसरा थर आहे."""
+    ks = cloud_db.get_mcx_kill_switch_settings()
+    total_pnl, open_positions = get_todays_mcx_live_pnl_and_count()
+    token_input = st.session_state.get("token_input", "")
+    total_capital = get_total_capital(token_input) if token_input else None
+    max_daily_loss_amount = (total_capital * ks["max_daily_loss_pct"] / 100) if total_capital else None
+
+    with st.expander("🛑 MCX-विशिष्ट Kill Switch (5 Commodities मिळून, ग्लोबलपेक्षा स्वतंत्र/कडक)", expanded=False):
+        st.caption(
+            "MCX ही brand-new रणनीती आहे (अजून एकही खरा LIVE order गेलेला नाही) — त्यामुळे ग्लोबल Kill "
+            "Switch (Bot Dynamic SR Algo पान) सोबतच, इथे फक्त MCX साठीच स्वतंत्र, जास्त कडक मर्यादा — "
+            "आजचा MCX-पुरताच तोटा किंवा एकाच वेळी उघडी असलेल्या commodities ची संख्या इथल्या मर्यादेपलीकडे "
+            "गेली, तर नवीन MCX LIVE trade आपोआप थांबतो (PAPER trades वर परिणाम नाही, बाकी bots वरही नाही)."
+        )
+        if total_capital is None:
+            st.warning("⚠️ एकूण capital मिळालं नाही (token/नेटवर्क तपासा) — तोटा-मर्यादा मोजता येत नाही, यावेळी Kill Switch नवीन MCX LIVE trades आपोआप थांबवेल.")
+        else:
+            st.caption(f"सध्याचं एकूण capital (Upstox): ₹{total_capital:,.0f}")
+
+        tripped = ks["enabled"] and (
+            total_capital is None
+            or open_positions >= ks["max_open_positions"]
+            or total_pnl <= -(max_daily_loss_amount or 0)
+        )
+        if not ks["enabled"]:
+            st.warning("⚪ MCX Kill Switch सध्या बंद आहे — फक्त ग्लोबल Kill Switch लागू आहे.")
+        elif tripped:
+            st.error(f"🔴 MCX Kill Switch ट्रिप झालं आहे — आजचा MCX LIVE P&L ₹{total_pnl:,.0f}, उघडी positions {open_positions}. नवीन MCX LIVE trade ब्लॉक केला जातोय.")
+        else:
+            # tripped=False इथे फक्त ks["enabled"] आणि total_capital दोन्ही असतील तरच पोहोचतं (वरच्या
+            # `or` chain प्रमाणे) — म्हणजे max_daily_loss_amount इथे नेहमीच उपलब्ध असतो.
+            st.success(f"🟢 MCX Kill Switch OK — आजचा MCX LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f})")
+            st.caption(f"उघडी positions {open_positions}/{ks['max_open_positions']}")
+
+        mks_enabled = st.checkbox("MCX Kill Switch सक्रिय", value=ks["enabled"], key="mcx_ks_enabled")
+        c1, c2 = st.columns(2)
+        with c1:
+            mks_max_loss_pct = st.number_input(
+                "कमाल दैनिक तोटा % (एकूण capital चा, फक्त MCX)", min_value=0.1, max_value=100.0,
+                value=float(ks["max_daily_loss_pct"]), step=0.25, key="mcx_ks_max_loss_pct",
+            )
+        with c2:
+            mks_max_open = st.number_input(
+                "कमाल एकाच वेळी उघडी positions (सर्व 5 commodities मिळून)", min_value=1, max_value=5,
+                value=int(ks["max_open_positions"]), step=1, key="mcx_ks_max_open",
+            )
+        if st.button("💾 MCX Kill Switch सेव्ह करा", key="mcx_ks_save_btn"):
+            ok = cloud_db.save_mcx_kill_switch_settings(mks_enabled, mks_max_loss_pct, mks_max_open)
+            if ok:
+                st.success("✅ MCX Kill Switch सेटिंग्ज जतन झाल्या.")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
 
 def _render_all_commodities_positions():
@@ -180,6 +240,7 @@ def render():
     )
 
     _render_status_banner()
+    _render_mcx_kill_switch_panel()
 
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — हा भाग मुद्दामच खालच्या "Commodity निवडा" dropdown च्या
     # बाहेर (वर) आहे — सर्व 5 commodities एकत्र, एकाच वेळी दाखवण्यासाठी, प्रत्येकासाठी वेगळं निवडावं
