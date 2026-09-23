@@ -1515,6 +1515,53 @@ class TestOpenMultiLegTradeManualPause:
         )
         assert ok is True
 
+    def test_paused_still_allows_strategy_builder_manual_trade(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trade बंद" ने फक्त automatic trading थांबावी) —
+        Dashboard चं Strategy Builder (source="strategy_builder", legs बनवून एकदाच, स्पष्टपणे
+        पडताळून घेतलेली trade) हा खरा मॅन्युअल मार्ग आहे, त्यामुळे pause चालू असतानाही तो चालायला
+        हवा — बाकी सगळे (bot) sources अजूनही ब्लॉकच व्हायला हवेत."""
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            source="strategy_builder",
+        )
+        assert ok is True
+
+    def test_paused_still_blocks_a1_signal_engine_dashboard_source(self, temp_db, monkeypatch):
+        """🎓 A1 Signal Engine (source="DASHBOARD") हे sidebar auto-execute टॉगलने चालणारं,
+        bot-सारखंच automatic engine आहे (Strategy Builder सारखं एकदाच-मॅन्युअल नाही) —
+        वापरकर्त्याने स्पष्टपणे सांगितल्याप्रमाणे pause असताना हे अजूनही ब्लॉकच व्हायला हवं."""
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            source="DASHBOARD",
+        )
+        assert ok is False
+        assert "TRADING_PAUSED" in resp["reason"]
+        assert not execute_calls
+
+    def test_paused_still_blocks_automated_bot_sources(self, temp_db, monkeypatch):
+        """तिन्ही cron bots + auto-traders चे sources कधीच सूट मिळालेली नाहीत, हे स्पष्टपणे पडताळणे."""
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": True, "reason": "", "paused_at": None})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+
+        for bot_source in ("dynamic_sr_instant", "classic_sr_reversal", "srv2_momentum_reversal",
+                           "mcx_futures", "credit_spread_auto_trader", "oi_signal_auto_trader", "oi_greeks_vix_strategy"):
+            ok, resp = trading_engine.open_multi_leg_trade(
+                "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+                sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+                source=bot_source,
+            )
+            assert ok is False, f"{bot_source} pause असतानाही trade घेऊ शकला — असं होता कामा नये"
+            assert "TRADING_PAUSED" in resp["reason"]
+
 
 class TestOpenMultiLegTradeLivePaperMode:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode="LIVE_PAPER"
