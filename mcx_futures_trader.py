@@ -418,7 +418,15 @@ if __name__ == "__main__":
             cloud_db.init_cloud_table()
             token = cloud_db.get_effective_upstox_token(args.token)
             if not token:
-                print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                msg = "कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही)."
+                print(f"❌ {msg}")
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE readiness — "token-missing वर Telegram
+                # अलर्ट") — याआधी हा path पूर्णपणे गप्प राहायचा (फक्त cron log मध्ये print, कुठलाही
+                # अलर्ट नाही) — बाकी सर्व failure-paths (kill switch/margin/order-failure) आधीच
+                # Telegram अलर्ट पाठवतात, पण नेमकं इथेच (सकाळी token expire झालेला असेल तर) गप्प राहणं
+                # सर्वात धोकादायक होतं — संपूर्ण दिवसभर बॉट काहीच न करता शांतपणे थांबून राहू शकायचा,
+                # कुणालाच न कळता.
+                notify_error("mcx_futures_trader", msg)
                 exit(1)
             symbols_list = args.symbols.split(",")
             entry_succeeded = run_all_symbols(token, symbols_list)

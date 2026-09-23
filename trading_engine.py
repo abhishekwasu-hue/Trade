@@ -10,7 +10,7 @@ import cloud_db
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
     log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
-    get_unverified_reconciled_trades_today_count,
+    get_unverified_reconciled_trades_today_count, get_todays_mcx_live_pnl_and_count,
 )
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
@@ -301,6 +301,48 @@ def check_kill_switch():
         )
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
+    return True, None
+
+
+def check_mcx_kill_switch():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital
+    cap") — वरच्या ग्लोबल check_kill_switch() (सर्व symbols/strategies मिळून, एकच %) पेक्षा पूर्णपणे
+    स्वतंत्र, MCX (5 commodities मिळून) साठीच जास्त कडक Kill Switch — MCX ही brand-new (शून्य
+    दिवसांचा LIVE इतिहास असलेली) रणनीती असल्याने, ग्लोबल मर्यादा अजून बरीच दूर असतानाही फक्त MCX
+    मध्येच मोठा तोटा होत असेल किंवा एकाच वेळी खूप जास्त commodities उघडे राहत असतील तर लवकर थांबावं.
+    दोन्ही Kill Switches (हे + ग्लोबल) स्वतंत्रपणे तपासले जातात — कुठलाही एक ट्रिप झाला तरी नवीन MCX
+    LIVE trade अडतो; open_multi_leg_trade() मध्ये फक्त source=="mcx_futures" असेल तेव्हाच, ग्लोबल
+    check_kill_switch() नंतर, जोडून तपासलं जातं.
+    रिटर्न: (ok: bool, reason: str|None)."""
+    settings = cloud_db.get_mcx_kill_switch_settings()
+    if not settings.get("enabled", True):
+        return True, None
+
+    total_pnl, open_positions = get_todays_mcx_live_pnl_and_count()
+
+    max_open_positions = settings.get("max_open_positions", 2)
+    if open_positions >= max_open_positions:
+        return False, (
+            f"MCX_KILL_SWITCH_MAX_OPEN_POSITIONS — सध्या {open_positions} MCX LIVE positions आधीच "
+            f"उघडी आहेत (मर्यादा {max_open_positions}, सर्व 5 commodities मिळून)"
+        )
+
+    upstox_token = cloud_db.get_effective_upstox_token(None)
+    total_capital = get_total_capital(upstox_token) if upstox_token else None
+    if not total_capital or total_capital <= 0:
+        return False, (
+            "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
+            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX LIVE trades "
+            "थांबवले."
+        )
+    max_daily_loss_pct = settings.get("max_daily_loss_pct", 1.0)
+    max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
+    if total_pnl <= -max_daily_loss_amount:
+        return False, (
+            f"MCX_KILL_SWITCH_DAILY_LOSS — आजचा एकूण MCX LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा "
+            f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital "
+            f"₹{total_capital:,.0f})"
+        )
     return True, None
 
 
@@ -610,6 +652,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         if not kill_switch_ok:
             _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
             return False, {"status": "error", "reason": kill_switch_reason}
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
+        # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी.
+        if source == "mcx_futures":
+            mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
+            if not mcx_kill_switch_ok:
+                _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
+                return False, {"status": "error", "reason": mcx_kill_switch_reason}
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
         # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).

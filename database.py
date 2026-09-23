@@ -418,6 +418,28 @@ def get_todays_live_total_pnl_and_count():
     return total_pnl, total_trades_today
 
 
+def get_todays_mcx_live_pnl_and_count():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital
+    cap") — आजचा MCX (source='mcx_futures', 5 commodities मिळून) LIVE realized P&L आणि सध्या उघडी
+    असलेल्या LIVE positions ची संख्या — वरच्या get_todays_live_total_pnl_and_count() सारखंच (exit_time
+    वरून P&L बेरीज), पण फक्त MCX पुरतं मर्यादित — check_mcx_kill_switch() साठी."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE' "
+        "AND source='mcx_futures' AND substr(exit_time,1,10)=?",
+        (today_str,),
+    )
+    total_pnl = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM live_trades WHERE status='OPEN' AND COALESCE(mode,'LIVE')='LIVE' AND source='mcx_futures'",
+    )
+    open_positions = cur.fetchone()[0]
+    conn.close()
+    return total_pnl, open_positions
+
+
 def get_unverified_reconciled_trades_today_count():
     """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconcile_open_trades_with_broker()
     ने (trading_engine.py) externally बंद झालेली LIVE position CLOSED मार्क करताना realized_pnl कधीच

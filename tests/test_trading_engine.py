@@ -1440,6 +1440,110 @@ class TestOpenMultiLegTradeKillSwitch:
         assert ok is True
 
 
+class TestCheckMcxKillSwitch:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital
+    cap") — ग्लोबल Kill Switch पेक्षा स्वतंत्र, फक्त MCX साठीच — daily-loss % आणि max-open-positions
+    दोन्ही तपासणी."""
+
+    TOTAL_CAPITAL = 1_000_000.0
+
+    def _mock_capital(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "fake_token")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda access_token: self.TOTAL_CAPITAL)
+
+    def test_disabled_always_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": False, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (-999999, 99))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_max_open_positions_breached_blocks(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (0, 2))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False
+        assert "MCX_KILL_SWITCH_MAX_OPEN_POSITIONS" in reason
+
+    def test_capital_unknown_blocks_fail_safe(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (0, 0))
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: None)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False
+        assert "MCX_KILL_SWITCH_CAPITAL_UNKNOWN" in reason
+
+    def test_daily_loss_breached_blocks(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        # 1% of ₹10,00,000 = ₹10,000 -- तोटा ₹15,000 (त्याच्या पलीकडे)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (-15000, 0))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False
+        assert "MCX_KILL_SWITCH_DAILY_LOSS" in reason
+
+    def test_within_limits_ok(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (-100, 1))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is True
+        assert reason is None
+
+
+class TestOpenMultiLegTradeMcxKillSwitch:
+    def _mcx_strategy_result(self):
+        return {
+            "strategy": "MCX_FUTURES", "max_loss": 500, "max_profit": 500, "net_credit": 0,
+            "legs": [
+                {"role": "futures_leg", "strike": 0, "instrument_key": "MCX_FUT_1", "transaction_type": "BUY", "option_type": None, "expiry": "2026-09-30"},
+            ],
+        }
+
+    def test_mcx_source_blocked_by_mcx_kill_switch_even_when_global_ok(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", lambda: (False, "MCX_KILL_SWITCH_DAILY_LOSS — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "CRUDEOIL", self._mcx_strategy_result(), lots=1, lot_size=100,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="mcx_futures",
+        )
+        assert ok is False
+        assert "MCX_KILL_SWITCH_DAILY_LOSS" in resp["reason"]
+        assert not execute_calls
+
+    def test_non_mcx_source_never_checks_mcx_kill_switch(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+
+        def _boom():
+            raise AssertionError("MCX नसलेल्या source साठी check_mcx_kill_switch() कधीच चालायला नको")
+        monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", _boom)
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", TestOpenMultiLegTradeKillSwitch()._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="dynamic_sr_instant",
+        )
+        assert ok is True
+
+    def test_mcx_source_ok_proceeds_normally(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "CRUDEOIL", self._mcx_strategy_result(), lots=1, lot_size=100,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="mcx_futures",
+        )
+        assert ok is True
+
+
 class TestOpenMultiLegTradeManualPause:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा trading stop button") —
     cloud_db.get_trading_pause_settings() paused=True असेल तर, PAPER/LIVE/LIVE_PAPER — तिन्ही

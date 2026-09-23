@@ -785,6 +785,39 @@ def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct,
     })
 
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch/capital cap") —
+# वरचा ग्लोबल Kill Switch (सर्व symbols/strategies मिळून, एकच %) MCX लाही लागू होतोच, पण MCX ही
+# brand-new (शून्य दिवसांचा LIVE इतिहास असलेली) रणनीती आहे — तिला स्वतःची, जास्त कडक, स्वतंत्र मर्यादा
+# हवी (ग्लोबल मर्यादा अजून बरीच दूर असतानाही, फक्त MCX मध्येच मोठा तोटा होत असेल तर लवकर थांबावं).
+# दोन्ही Kill Switches स्वतंत्रपणे तपासले जातात — कुठलाही एक ट्रिप झाला तरी नवीन MCX LIVE trade अडतो.
+MCX_KILL_SWITCH_STRATEGY_KEY = "__mcx_kill_switch__"
+MCX_KILL_SWITCH_SYMBOL_KEY = "ALL"
+MCX_KILL_SWITCH_DEFAULTS = {
+    "enabled": True,
+    "max_daily_loss_pct": 1.0,
+    "max_open_positions": 2,
+}
+
+
+def get_mcx_kill_switch_settings():
+    """MCX-विशिष्ट (5 commodities मिळून) Kill Switch — enabled/max_daily_loss_pct/max_open_positions.
+    Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट (ग्लोबलपेक्षा जाणीवपूर्वक कडक —
+    1% loss cap, कमाल 2 positions एकाच वेळी, brand-new रणनीतीसाठी)."""
+    settings = get_strategy_settings(MCX_KILL_SWITCH_STRATEGY_KEY, MCX_KILL_SWITCH_SYMBOL_KEY)
+    return {
+        "enabled": bool(settings.get("enabled", MCX_KILL_SWITCH_DEFAULTS["enabled"])),
+        "max_daily_loss_pct": settings.get("max_daily_loss_pct", MCX_KILL_SWITCH_DEFAULTS["max_daily_loss_pct"]),
+        "max_open_positions": settings.get("max_open_positions", MCX_KILL_SWITCH_DEFAULTS["max_open_positions"]),
+    }
+
+
+def save_mcx_kill_switch_settings(enabled, max_daily_loss_pct, max_open_positions):
+    return save_strategy_settings(MCX_KILL_SWITCH_STRATEGY_KEY, MCX_KILL_SWITCH_SYMBOL_KEY, {
+        "enabled": bool(enabled), "max_daily_loss_pct": float(max_daily_loss_pct),
+        "max_open_positions": int(max_open_positions),
+    })
+
+
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop
 # असा वेगळा button पाहिजे") — वरचा Kill Switch फक्त LIVE साठी, आपोआप (daily loss/trade-count
 # मर्यादेवरून) ट्रिप होतो — PAPER trades कधीच अडवत नाही. हे पूर्णपणे वेगळं, नवीन फीचर — वापरकर्ता

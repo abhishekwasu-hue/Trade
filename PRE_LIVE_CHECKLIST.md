@@ -183,3 +183,28 @@ worth spot-checking now that the loop is actually live, per step 3.
    "a few sessions" takes real calendar time to accumulate.
 6. Go LIVE only on Upstox, only 1 lot, same discipline as §3 above — this is
    a brand-new, unverified strategy, not a variant of an already-proven one.
+
+🎓 **2026-09-23 update — LIVE-readiness gaps closed in code; steps 1-2's actual
+eyeball verification still pending a human look.** Four things added this
+session, ahead of the user's plan to go LIVE on all 5 commodities:
+- **MCX-specific Kill Switch** (`trading_engine.check_mcx_kill_switch()`,
+  settings panel on `page_mcx_futures.py`) — independent of the global Kill
+  Switch (§1), scoped to `source='mcx_futures'` only: its own daily-loss %
+  (default 1%, tighter than the global 2%) and a hard cap on how many MCX
+  positions (across all 5 commodities) can be open at once (default 2).
+  Either kill switch tripping blocks a new MCX LIVE order.
+- **Silent-failure fixed** — `mcx_futures_trader.py`'s missing-Upstox-token
+  path now sends a Telegram alert via `notify_error()` instead of only
+  printing to the cron log (previously the one failure mode nothing else
+  alerted on).
+- **`mcx_market_readiness_check.py`** (new, read-only) — automates steps 1-2
+  above (resolver + zones) plus a token-validity check, in one script,
+  runnable by hand (`python3 mcx_market_readiness_check.py`) or via a new
+  daily crontab line (8:55 IST, before market open — see `deploy/README.md`)
+  that always sends one Telegram summary (🟢/🔴), whether or not a problem
+  is found, so a missed/failed run is never silent either.
+- **Still not done**: this only makes steps 1-2 *checkable in one command*
+  — nobody has yet read the script's actual output against a real chart
+  (TradingView) for GOLD/SILVER/COPPER/NATURALGAS (only CRUDEOIL has any
+  PAPER track record at all, and that's only ~1-2 days old). Run it and
+  read the report before enabling `symbol_enabled`/LIVE for each commodity.
