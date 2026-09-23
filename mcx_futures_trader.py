@@ -74,6 +74,14 @@ PRODUCT_TYPE = "D"
 TOUCH_TOLERANCE_PCT = 0.05
 TIMEFRAME_SUFFIXES = ["30M", "60M"]  # 15M कधीच नाही (वापरकर्त्याने स्पष्ट सांगितल्याप्रमाणे)
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py
+# मधलाच hysteresis-आधारित direction-निर्णय (बघा determine_direction_with_hysteresis()) आता इथेही.
+# सुरुवातीला srv2 सारखाच 0.015% buffer ठेवला होता (तोही फक्त 30M/60M वापरतो म्हणून), पण वापरकर्त्याने
+# लगेच MCX साठी स्वतंत्रपणे 1% (commodities — CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER — साठी जास्त
+# रुंद, कारण त्यांची किंमत-हालचाल NIFTY/BANKNIFTY पेक्षा वेगळ्या प्रमाणात असते) सांगितलं — स्वतंत्र
+# constant, बाकी दोन्ही bots ला हात लावलेला नाही.
+DIRECTION_HYSTERESIS_BUFFER_PCT = 1.0
+
 # MCX चं trading session NSE पेक्षा खूप उशिरापर्यंत (रात्री, हंगामानुसार ~23:30/23:55 पर्यंत बदलतं,
 # deploy/README.md मधली नोंद बघा) — प्रत्यक्ष exchange-close च्या थोडं आधी, established इतर
 # strategies (15:15 IST, exchange-close 15:30 च्या आधी) सारखाच सुरक्षित मार्जिन ठेवणारा डीफॉल्ट.
@@ -81,12 +89,30 @@ MCX_EOD_HOUR = 23
 MCX_EOD_MINUTE = 15
 
 
+def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
+    """🎓 dynamic_sr_instant_trader.py/srv2_momentum_reversal_strategy.py मधल्याच फंक्शनची हुबेहूब
+    नक्कल — किंमत level पासून ±buffer_pct% च्या आतच (borderline) असेल, तर आधीचीच "निश्चित" दिशा कायम
+    ठेवायची (उगाच फ्लिप नाही). closes (त्या candidate च्या timeframe च्या आजच्या सर्व candles च्या
+    close किमती, जुनं ते नवीन क्रमाने) मधून मागे जाऊन, ज्या पहिल्या candle चं close त्या बॅंडच्या
+    (level±buffer) स्पष्टपणे बाहेर आहे, तीच शेवटची निश्चित दिशा मानली जाते. दिवसभर कधीच बॅंडबाहेर
+    गेलं नसेल, तर सद्य किमतीची raw तुलनाच (जुनं वर्तन) safe fallback.
+    रिटर्न: "BULLISH"/"BEARISH" """
+    buffer = level * buffer_pct / 100
+    upper, lower = level + buffer, level - buffer
+    for close in reversed(closes):
+        if close >= upper:
+            return "BULLISH"
+        if close <= lower:
+            return "BEARISH"
+    return "BULLISH" if closes[-1] >= level else "BEARISH"
+
+
 def _collect_touch_candidates(access_token, instrument_key, all_zones, active_suffixes, now):
     """दिलेल्या timeframes (30M/60M) च्या ACTIVE levels, प्रत्येकाचे स्वतःचे candles (त्याच
     timeframe चा RSI साठी) आणि सद्य किंमत (आजच्याच दिवसाची) — एकाच यादीत एकत्र करणे.
     srv2_momentum_reversal_strategy._collect_touch_candidates() याच पॅटर्नचं MCX-futures आवृत्ती —
     फरक फक्त instrument_key (resolve_mcx_futures_instruments कडून) व fetch_mcx_candles() वापरणं.
-    रिटर्न: [(level_price, timeframe_suffix, candles_df, current_price), ...]"""
+    रिटर्न: [(level_price, timeframe_suffix, candles_df, current_price, todays_closes), ...]"""
     candidates = []
     today_date = now.date()
     for suffix in active_suffixes:
@@ -105,8 +131,9 @@ def _collect_touch_candidates(access_token, instrument_key, all_zones, active_su
         if todays_candles_df.empty:
             continue
         current_price = todays_candles_df["close"].iloc[-1]
+        todays_closes = todays_candles_df["close"].tolist()
         for _, zrow in dyn_levels.iterrows():
-            candidates.append((zrow["zone_low"], suffix, candles_df, current_price))
+            candidates.append((zrow["zone_low"], suffix, candles_df, current_price, todays_closes))
     return candidates
 
 
@@ -140,15 +167,14 @@ def process_symbol(access_token, symbol):
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels ({'/'.join(active_suffixes)}) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
-    for level_price, timeframe_suffix, candles_df, current_price in candidates:
+    for level_price, timeframe_suffix, candles_df, current_price, todays_closes in candidates:
         touched = abs(current_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
 
-        # दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून (साठवलेल्या ऐतिहासिक label वरून नाही) —
-        # srv2_momentum_reversal_strategy.py/dynamic_sr_instant_trader.py सारखाच established नियम.
-        if current_price >= level_price:
-            level_type, direction = "SUPPORT", "BULLISH"
-        else:
-            level_type, direction = "RESISTANCE", "BEARISH"
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी दिशा फक्त सद्य किमतीच्या raw तुलनेवरून ठरायची,
+        # आता srv2_momentum_reversal_strategy.py सारखीच hysteresis logic (0.015% buffer) — किंमत
+        # level पासून त्या बँडच्या आतच wobble करत असेल, तर आधीचीच निश्चित दिशा कायम राहते.
+        direction = determine_direction_with_hysteresis(level_price, todays_closes)
+        level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
 
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,

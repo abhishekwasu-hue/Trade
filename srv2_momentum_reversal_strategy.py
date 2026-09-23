@@ -41,9 +41,32 @@ SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
 COOLDOWN_MINUTES = 30
 LEVEL_REPEAT_TOLERANCE_PCT = 0.05
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py मधलाच hysteresis-आधारित
+# direction-निर्णय (बघा determine_direction_with_hysteresis()) आता इथेही, पण 15M/30M/60M चे
+# candles वापरत असल्याने (1M/5M पेक्षा साहजिकच कमी noisy) वेगळा, अरुंद buffer — 0.015% (त्या
+# फाईलमधल्या 0.10% पेक्षा वेगळा, स्वतंत्र constant — दोन्ही bots एकमेकांपासून स्वतंत्र राहतात).
+DIRECTION_HYSTERESIS_BUFFER_PCT = 0.015
 
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Multi-Timeframe. Upstox interval-नाव -> zone_type suffix.
 TIMEFRAME_TO_SUFFIX = {"15minute": "15M", "30minute": "30M", "60minute": "60M"}
+
+
+def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
+    """🎓 dynamic_sr_instant_trader.py मधल्याच फंक्शनची हुबेहूब नक्कल (वापरकर्त्याने तिथेही, इथेही
+    hysteresis लावायला सांगितलं) — किंमत level पासून ±buffer_pct% च्या आतच (borderline) असेल, तर
+    आधीचीच "निश्चित" दिशा कायम ठेवायची (उगाच फ्लिप नाही). closes (त्या candidate च्या timeframe
+    च्या आजच्या सर्व candles च्या close किमती, जुनं ते नवीन क्रमाने) मधून मागे जाऊन, ज्या पहिल्या
+    candle चं close त्या बॅंडच्या (level±buffer) स्पष्टपणे बाहेर आहे, तीच शेवटची निश्चित दिशा मानली
+    जाते. दिवसभर कधीच बॅंडबाहेर गेलं नसेल, तर सद्य किमतीची raw तुलनाच (जुनं वर्तन) safe fallback.
+    रिटर्न: "BULLISH"/"BEARISH" """
+    buffer = level * buffer_pct / 100
+    upper, lower = level + buffer, level - buffer
+    for close in reversed(closes):
+        if close >= upper:
+            return "BULLISH"
+        if close <= lower:
+            return "BEARISH"
+    return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
 def check_rsi_filter(candles_df, direction, neutral_level=RSI_NEUTRAL_LEVEL):
@@ -98,7 +121,7 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe) — 15M/30M/60M तिन्हींचे ACTIVE
     levels, प्रत्येकाचे स्वतःचे candles (त्याच timeframe चा RSI साठी) आणि सद्य किंमत (आजच्याच
     दिवसाची, कालचे candles मिसळू नयेत म्हणून) — एकाच यादीत एकत्र करणे.
-    रिटर्न: [(level_price, timeframe_suffix, candles_df, underlying_price), ...]"""
+    रिटर्न: [(level_price, timeframe_suffix, candles_df, underlying_price, todays_closes), ...]"""
     candidates = []
     today_date = now.date()
     for interval, suffix in TIMEFRAME_TO_SUFFIX.items():
@@ -122,8 +145,9 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now):
         if todays_candles_df.empty:
             continue
         underlying_price = todays_candles_df["close"].iloc[-1]
+        todays_closes = todays_candles_df["close"].tolist()
         for _, zrow in dyn_levels.iterrows():
-            candidates.append((zrow["zone_low"], suffix, candles_df, underlying_price))
+            candidates.append((zrow["zone_low"], suffix, candles_df, underlying_price, todays_closes))
     return candidates
 
 
@@ -165,14 +189,15 @@ def process_symbol(access_token, symbol, lot_size=65):
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (15M/30M/60M) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
-    for level_price, timeframe_suffix, candles_df, underlying_price in candidates:
+    for level_price, timeframe_suffix, candles_df, underlying_price, todays_closes in candidates:
         touched = abs(underlying_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
 
-        # वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून.
-        if underlying_price >= level_price:
-            level_type, direction = "SUPPORT", "BULLISH"
-        else:
-            level_type, direction = "RESISTANCE", "BEARISH"
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी दिशा फक्त सद्य किमतीच्या raw तुलनेवरून ठरायची
+        # (dynamic_sr_instant_trader.py मध्ये आधी होतं तसंच) — आता तिथल्याच hysteresis logic ने,
+        # पण इथे 0.015% (अरुंद) buffer सह — किंमत level पासून त्या बँडच्या आतच wobble करत असेल,
+        # तर आधीचीच निश्चित दिशा कायम राहते.
+        direction = determine_direction_with_hysteresis(level_price, todays_closes)
+        level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones tab वर 1-मिनिट Instant Trader
         # सारखाच संपूर्ण Signal Log, SRv2 साठीही) — याआधी इथे फक्त प्रत्यक्ष trade झाला तरच

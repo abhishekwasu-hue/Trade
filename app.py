@@ -317,8 +317,10 @@ with st.sidebar:
             st.rerun()
     st.caption(
         "ⓘ हे Kill Switch पेक्षा वेगळं — तो आपोआप (LIVE loss-मर्यादेवरून) ट्रिप होतो, हे तुम्ही स्वतः "
-        "केव्हाही दाबता (PAPER+LIVE दोन्ही नवीन trades थांबतात). आधीच उघड्या positions चं SL/Target/"
-        "Monitoring नेहमीप्रमाणेच चालू राहतं — फक्त नवीन trade उघडणं थांबतं."
+        "केव्हाही दाबता. फक्त **automatic** trading (3 cron bots + A1 Signal Engine auto-execute) "
+        "थांबतं — **मॅन्युअल trading (Manual Trading Panel, Strategy Builder) यावर परिणाम होत नाही**, "
+        "तुम्ही तेव्हाही स्वतः trade घेऊ शकता. आधीच उघड्या positions चं SL/Target/Monitoring "
+        "नेहमीप्रमाणेच चालू राहतं — फक्त नवीन automatic trade उघडणं थांबतं."
     )
     st.markdown("---")
 

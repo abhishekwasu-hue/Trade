@@ -15,10 +15,13 @@ import cloud_db
 import mcx_futures_trader as mft
 
 
-def _fake_candles_df(n=20, last_close=6500.0):
+def _fake_candles_df(n=20, last_close=6500.0, closes=None):
+    """closes दिलं तर तेच वापरलं जातं (n/last_close दुर्लक्षित) -- hysteresis-संवेदनशील टेस्ट्ससाठी
+    (उदा. test_bearish_touch_places_sell) आजची संपूर्ण candle-मालिका नियंत्रित करायला हवी असते."""
     end_ts = mft.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
-    dates = pd.date_range(end=end_ts, periods=n, freq="30min")
-    closes = [6600.0 - i for i in range(n - 1)] + [last_close]
+    if closes is None:
+        closes = [6600.0 - i for i in range(n - 1)] + [last_close]
+    dates = pd.date_range(end=end_ts, periods=len(closes), freq="30min")
     return pd.DataFrame({"timestamp": dates, "open": closes, "high": [c + 5 for c in closes],
                           "low": [c - 5 for c in closes], "close": closes, "volume": 0, "oi": 0})
 
@@ -39,6 +42,31 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 
 
 _DEFAULT_SETTINGS = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"])
+
+
+class TestDetermineDirectionWithHysteresis:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_
+    strategy.py मधलीच hysteresis पद्धत इथेही. वापरकर्त्याने पुढे स्पष्टपणे MCX साठी वेगळा, रुंद
+    buffer मागितला — 1% (srv2 च्या 0.015% पेक्षा रुंद — commodities च्या मोठ्या हालचालींसाठी)."""
+
+    LEVEL = 6500.0  # buffer(1%) = ±65
+
+    def test_sticky_bullish_when_dip_stays_within_buffer(self):
+        closes = [6600.0, 6450.0]  # 6450 < level(6500) पण lower buffer (6435) च्या वरच
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_flips_to_bearish_only_when_clearly_beyond_buffer(self):
+        closes = [6600.0, 6400.0]  # lower buffer (6435) च्या स्पष्टपणे खाली -- खरा breakdown
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+    def test_falls_back_to_raw_comparison_when_never_left_band(self):
+        closes = [6500.0]  # बरोबर level वरच, buffer बाहेर कधीच नाही
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_real_world_scenario_stays_bullish_through_momentary_dip(self):
+        closes = [6600.0, 6520.0, 6450.0, 6510.0]  # सगळेच buffer (6435-6565) च्या आत/वर
+        for i in range(1, len(closes) + 1):
+            assert mft.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
 
 
 class TestProcessSymbolGates:
@@ -90,7 +118,11 @@ class TestProcessSymbolGates:
         settings = dict(_DEFAULT_SETTINGS)
         settings["symbol_enabled"] = True
         settings["entry_rsi_gate_enabled"] = True
-        rising_closes = [6400.0 + i * 5 for i in range(20)]
+        # 🎓 MCX साठी hysteresis buffer 1% (वापरकर्त्याने मागितल्याप्रमाणे, srv2 च्या 0.015% पेक्षा
+        # रुंद — commodities च्या मोठ्या हालचालींसाठी) — त्यामुळे ±65 पॉइंट्सचा बँड, संपूर्ण उभारीचा
+        # आवाका (range) त्याच्या आतच असेल असं धरलं, म्हणजे hysteresis बँडबाहेर कधीच जात नाही आणि
+        # raw तुलनेचाच (जुनं वर्तन, BULLISH) safe fallback वापरला जातो.
+        rising_closes = [6450.0 + i * 2.5 for i in range(20)]
         end_ts = mft.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
         candles_df = pd.DataFrame({
             "timestamp": pd.date_range(end=end_ts, periods=20, freq="30min"),
@@ -207,7 +239,11 @@ class TestProcessSymbolEntry:
         settings = dict(_DEFAULT_SETTINGS)
         settings["symbol_enabled"] = True
         settings["entry_rsi_gate_enabled"] = False
-        candles_df = _fake_candles_df(last_close=6400.0)  # level पेक्षा किंचित कमी, पण touch-tolerance च्या आत
+        # 🎓 MCX चा 1% hysteresis buffer (~64 पॉइंट्स इथे) — _fake_candles_df() चा जुना सपाट-सदृश
+        # आकार (6600 पासून हळूहळू घसरत) buffer च्या वर राहतो, त्यामुळे इथे स्वतंत्र fixture — किंमत
+        # आधीपासूनच स्पष्टपणे lower buffer (6337.98) च्या खाली (6300) राहून, शेवटीच level ला स्पर्श
+        # (6400) — खरा Resistance test from below.
+        candles_df = _fake_candles_df(closes=[6300.0] * 19 + [6400.0])  # level पेक्षा किंचित कमी, पण touch-tolerance च्या आत
         with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
              patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6402.0)), \

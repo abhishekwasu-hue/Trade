@@ -35,6 +35,16 @@ CARRY_FORWARD_MIN_PROFIT_PCT = 30
 # लागत नाही (trading_mode जसाच्या तसा फक्त पुढे पास होतो).
 TRADING_MODE_LIVE_AND_PAPER = "LIVE_PAPER"
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trade बंद" बटणाने फक्त automatic trading थांबावी, मॅन्युअल
+# trading चालू राहावी) — "strategy_builder" (Dashboard चं Strategy Builder — legs बनवून एकदाच,
+# स्पष्टपणे पडताळून trade घेणं) हाच खरा "आत्ता, हीच trade" प्रकारचा मॅन्युअल मार्ग असल्याने वगळला.
+# "DASHBOARD" (A1 Signal Engine — sidebar auto-execute टॉगल, चालू ठेवला की dashboard उघडं
+# असतानाच सिग्नल जुळेल तेव्हा आपोआप trade घेतो, कोडमध्येच "इतर 3 bots प्रमाणेच" असं नमूद — वापरकर्त्याने
+# स्पष्टपणे automatic ठरवलं) वगळलेला नाही, तो अजूनही ब्लॉक होतो. "Manual Trading Panel" (Option
+# Chain वरून थेट Buy/Sell) हे इथून कधीच जातच नाही (execute_order_leg_set() थेट वापरतं) — आधीपासूनच
+# या pause चा त्यावर परिणाम होत नव्हता.
+TRADING_PAUSE_EXEMPT_SOURCES = {"strategy_builder"}
+
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` (1-मिनिट Instant Reversal) साठी
 # SL/Target आता प्रीमियमवर नाही, underlying स्पॉट किमतीच्या हालचालीवर आधारित —
 # entry-वेळचा S/R level (entry_level_price) पासून favourable/adverse दिशेने
@@ -566,9 +576,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     LIVE_PAPER सगळ्यांना, इथेच सर्वात आधी (कुठलाही mode-specific split होण्याआधी) एकाच ठिकाणी लागू
     होतो — सर्व 4 entry bots इथूनच नवीन trade उघडतात, त्यामुळे बाकी कुठेही वेगळा बदल लागत नाही.
     आधीच उघड्या असलेल्या positions चं व्यवस्थापन (manage_open_trades()) या फंक्शनमधून जातच नाही,
-    त्यामुळे त्यावर याचा काहीही परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं."""
+    त्यामुळे त्यावर याचा काहीही परिणाम होत नाही — फक्त नवीन trade उघडणं थांबतं.
+    🎓 वापरकर्त्याने पुढे मागितलेली सुधारणा — "Trade बंद" ने फक्त automatic (bot-चालित) trading
+    थांबावी, खऱ्या मॅन्युअल trading वर परिणाम होऊ नये — source TRADING_PAUSE_EXEMPT_SOURCES मध्ये
+    असेल (सध्या फक्त "strategy_builder") तर हा pause लागूच होत नाही."""
     pause_settings = cloud_db.get_trading_pause_settings()
-    if pause_settings.get("paused"):
+    if pause_settings.get("paused") and source not in TRADING_PAUSE_EXEMPT_SOURCES:
         _alert_trading_pause_blocked(symbol, source, trading_mode, pause_settings.get("reason"))
         return False, {"status": "error", "reason": "TRADING_PAUSED — वापरकर्त्याने Dashboard वरून नवीन trades मॅन्युअली थांबवलेले आहेत."}
 

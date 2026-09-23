@@ -106,6 +106,45 @@ class TestIsRepeatedLevel:
         assert srv2.is_repeated_level(23900.0, 24500.0) is False
 
 
+class TestDetermineDirectionWithHysteresis:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py मधलीच hysteresis पद्धत
+    इथेही, पण 15M/30M/60M candles साठी वेगळा, अरुंद buffer — 0.015%. किंमत level पासून त्या
+    (अरुंद) बँडच्या आतच wobble करत असेल, तर आधीचीच निश्चित दिशा कायम राहायला हवी."""
+
+    LEVEL = 23353.1  # dynamic_sr_instant_trader.py च्या टेस्टमधलाच level, तुलना सोपी व्हावी म्हणून
+
+    def test_sticky_bullish_when_dip_stays_within_buffer(self):
+        """किंमत आधी स्पष्टपणे level च्या वर होती (confirmed BULLISH), नंतर level च्या किंचित खाली
+        (पण 0.015% buffer च्या आतच) गेली — निश्चित BULLISH च राहायला हवं."""
+        closes = [23400.0, 23351.0]  # 23351 < level(23353.1) पण lower buffer(~23349.6) च्या वरच
+        assert srv2.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_flips_to_bearish_only_when_clearly_beyond_buffer(self):
+        """किंमत खरंच buffer च्या पलीकडे (स्पष्टपणे) खाली गेली, तरच दिशा खऱ्या अर्थाने फ्लिप व्हायला हवी."""
+        closes = [23400.0, 23340.0]  # 23340 < lower buffer (~23349.6) -- खरा breakdown
+        assert srv2.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+    def test_falls_back_to_raw_comparison_when_never_left_band(self):
+        """आजचा संपूर्ण इतिहास कधीच buffer च्या बाहेर गेलाच नसेल, तर सद्य किमतीची raw तुलनाच
+        (जुनं वर्तन) सुरक्षित fallback म्हणून वापरली जायला हवी."""
+        closes = [23353.1]  # बरोबर level वरच, buffer बाहेर कधीच नाही
+        assert srv2.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_real_world_scenario_stays_bullish_through_momentary_dip(self):
+        """किंमत स्पष्टपणे support च्या वर असतानाच, एका candle साठी किंचित खाली डोकावली (0.015%
+        च्या आतच) आणि परत वर आली — संपूर्ण काळात BULLISH च राहायला हवं, उगाच फ्लिप नाही."""
+        closes = [23400.0, 23352.0, 23350.5, 23355.0]  # सगळेच buffer (~23349.6-23356.6) च्या आत/वर
+        for i in range(1, len(closes) + 1):
+            assert srv2.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
+
+    def test_uses_narrower_buffer_than_dynamic_sr_instant_trader(self):
+        """🎓 वापरकर्त्याने स्पष्टपणे मागितलेला 0.015% (dynamic_sr_instant_trader.py च्या 0.10%
+        पेक्षा वेगळा, अरुंद) buffer — एक हालचाल जी तिथल्या 0.10% buffer च्या आतच बसते, पण इथल्या
+        0.015% buffer च्या बाहेर पडते, इथे मात्र दिशा खरंच फ्लिप करायला हवी."""
+        closes = [23400.0, 23330.0]  # dynamic_sr_instant_trader.py च्या 0.10% lower(23329.75) पेक्षा वरच
+        assert srv2.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+
 def _fake_chain(spot):
     atm = round(spot / 50) * 50
     chain = []
@@ -175,7 +214,7 @@ class TestCollectTouchCandidates60m:
                 "fake_token", "NIFTY", _fake_dyn_zones_60m_only(), srv2.get_ist_now(),
             )
         assert len(candidates) == 1
-        level_price, suffix, candles_df, underlying_price = candidates[0]
+        level_price, suffix, candles_df, underlying_price, todays_closes = candidates[0]
         assert suffix == "60M"
         # resample_to_1h ने 30-मिनिट candles अर्ध्यावर आणायला हवेत (साधारण)
         assert len(candles_df) < len(df_30m)
@@ -397,7 +436,13 @@ class TestProcessSymbol:
         dates = pd.date_range(end=end_ts, periods=30, freq="15min")
         # established सलग वाढ, established शेवटी established बरोब्बर established support_level (23900)
         # ला स्पर्श -- established RSI established establishedच्या established उभारीमुळे established >50 असेल.
-        rising_closes = [23800 + i * (100 / 29) for i in range(29)] + [23900.0]
+        # 🎓 SRv2 साठी 0.015% hysteresis buffer जोडल्यानंतर सुधारित — शेवटचा close नुसता level बरोबरच
+        # असेल (आणि आधीची सगळी history level च्या स्पष्टपणे खालीच), तर hysteresis दिशा BEARISH ठरवेल
+        # (level ला खालून resistance सारखा टेस्ट केला असं मानून) — इथे मात्र उभारीतच अगदी शेवटच्या
+        # आधीचा close स्पष्टपणे बँडच्या वर (23920) ठेवून, नंतर बरोब्बर level ला स्पर्श — त्यामुळे दिशा
+        # अजूनही BULLISH च राहते (हाच टेस्टचा मूळ हेतू — जोरदार तेजीमुळे RSI>50, Support Bounce<50 शी
+        # विसंगत ठरून नाकारलं जायला हवं), फक्त रचना hysteresis-सुसंगत केली.
+        rising_closes = [23800 + i * (100 / 29) for i in range(28)] + [23920.0, 23900.0]
         candles_rising = pd.DataFrame({"timestamp": dates, "open": rising_closes, "high": [c + 5 for c in rising_closes],
                                         "low": [c - 5 for c in rising_closes], "close": rising_closes, "volume": 0, "oi": 0})
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
@@ -737,7 +782,10 @@ class TestSignalLogging:
         # वगळतो, आणि RSI-गेट कधीच तपासलाच जात नाही.
         end_ts = srv2.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
         dates = pd.date_range(end=end_ts, periods=30, freq="15min")
-        rising_closes = [23800 + i * (100 / 29) for i in range(29)] + [23900.0]
+        # 🎓 SRv2 साठी 0.015% hysteresis buffer जोडल्यानंतर सुधारित (बघा
+        # test_rsi_filter_rejects_wrong_direction मधली तीच टीप) — शेवटच्या touch आधी एक close
+        # बँडच्या स्पष्टपणे वर (23920) ठेवून दिशा BULLISH च राहील याची खात्री.
+        rising_closes = [23800 + i * (100 / 29) for i in range(28)] + [23920.0, 23900.0]
         candles_rising = pd.DataFrame({"timestamp": dates, "open": rising_closes, "high": [c + 5 for c in rising_closes],
                                         "low": [c - 5 for c in rising_closes], "close": rising_closes, "volume": 0, "oi": 0})
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \

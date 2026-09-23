@@ -23,7 +23,7 @@ fragment चा भाग — एकच स्रोत, कुठलाही d
 import streamlit as st
 
 from upstox_api import get_instrument_key, fetch_ltp_map
-from database import get_live_positions_with_mtm
+from database import get_live_positions_with_mtm, get_todays_realized_pnl
 from config import get_ist_now
 
 TICKER_REFRESH_SECONDS = 15
@@ -61,17 +61,33 @@ def _render_ticker_body():
         unsafe_allow_html=True,
     )
 
-    total_mtm = None
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी फक्त उघड्या (OPEN) positions चा MTM दिसायचा, आज
+    # आधीच बंद (exit) झालेल्या trades चा realized P&L त्यात धरलाच जायचा नाही. आता उघड्या positions
+    # चा सद्य MTM + आजच बंद झालेल्या trades चा realized P&L एकत्र — आजचा खरा संपूर्ण P&L. वापरकर्त्याने
+    # पुढे स्पष्टपणे मागितल्याप्रमाणे LIVE आणि PAPER **एकत्रित एका आकड्यात नाही, तर दोन स्वतंत्र
+    # बॉक्समध्ये** — PAPER टेस्टिंगचा आकडा LIVE च्या खऱ्या पैशांच्या आकड्यात चुकून मिसळू नये म्हणून.
+    live_today_pnl, paper_today_pnl = None, None
     try:
         positions_df = get_live_positions_with_mtm(token_input, symbol)
+        open_mtm_by_mode = {"LIVE": 0.0, "PAPER": 0.0}
         if not positions_df.empty and "MTM (Rs)" in positions_df.columns:
-            valid_mtm = positions_df["MTM (Rs)"].dropna()
-            if not valid_mtm.empty:
-                total_mtm = valid_mtm.sum()
-    except Exception:
-        pass  # Positions मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
+            for mode in ("LIVE", "PAPER"):
+                mode_mtm = positions_df.loc[positions_df["Mode"] == mode, "MTM (Rs)"].dropna()
+                if not mode_mtm.empty:
+                    open_mtm_by_mode[mode] = mode_mtm.sum()
 
-    st.metric("उघड्या Positions चा एकूण MTM", f"₹{total_mtm:,.0f}" if total_mtm is not None else "—")
+        live_realized, _ = get_todays_realized_pnl(symbol, "LIVE")
+        paper_realized, _ = get_todays_realized_pnl(symbol, "PAPER")
+        live_today_pnl = open_mtm_by_mode["LIVE"] + live_realized
+        paper_today_pnl = open_mtm_by_mode["PAPER"] + paper_realized
+    except Exception:
+        pass  # Positions/P&L मिळाले नाहीत तरी टिकर क्रॅश होऊ नये
+
+    mcol1, mcol2 = st.columns(2)
+    with mcol1:
+        st.metric("🔴 LIVE — आजचा MTM (Exit सह)", f"₹{live_today_pnl:,.0f}" if live_today_pnl is not None else "—")
+    with mcol2:
+        st.metric("📝 PAPER — आजचा MTM (Exit सह)", f"₹{paper_today_pnl:,.0f}" if paper_today_pnl is not None else "—")
 
 
 if hasattr(st, "fragment"):
