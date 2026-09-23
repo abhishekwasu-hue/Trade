@@ -658,6 +658,31 @@ def get_available_margin(access_token):
         return None
 
 
+@st.cache_data(ttl=60)
+def get_total_capital(access_token):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Kill Switch — Loss/Profit % आता flat ₹ ऐवजी एकूण capital
+    च्या सापेक्ष) — "trade साठी जी margin वापरली जाते त्यावरून काढलेला आकडा" — Upstox च्या Funds &
+    Margin API मधून available_margin + used_margin (equity segment) बेरीज. नुसता available_margin
+    (get_available_margin() वर) वापरला असता, तर एखादी position उघडल्या-उघडल्याच तो आपोआप कमी दिसून
+    "एकूण capital" चुकीचं (कमी) दाखवलं असतं — बेरीज दिवसभर स्थिर (फक्त realized P&L/deposit-withdrawal
+    ने बदलणारी) राहते.
+    ⚠️ हे फक्त याच Upstox token च्या खात्यापुरतं — इतर linked broker (Shoonya/Stocko/Fyers) accounts
+    वरचं भांडवल यात मोजलं जात नाही (Kill Switch चा एकूण LIVE P&L मात्र सर्व brokers मिळून असतो — ही
+    एक जाणीवपूर्वक स्वीकारलेली मर्यादा आहे, कारण त्या brokers च्या API मधून used_margin/equity सारखा
+    समान आकडा अजून उपलब्ध नाही)."""
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        url = "https://api.upstox.com/v2/user/get-funds-and-margin?segment=SEC"
+        res = _get_with_retry(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            eq = res.json().get("data", {}).get("equity", {})
+            return float(eq.get("available_margin", 0)) + float(eq.get("used_margin", 0))
+        return None
+    except Exception:
+        _logger.exception("get_total_capital() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+
+
 def fetch_required_margin(access_token, orders):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — established Upstox च्या

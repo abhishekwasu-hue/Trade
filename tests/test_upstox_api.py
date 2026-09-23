@@ -94,6 +94,38 @@ class TestFetchLtpMapDetailed:
         assert result == {}
 
 
+class TestGetTotalCapital:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (Kill Switch — Loss/Profit % एकूण capital च्या सापेक्ष) —
+    get_total_capital() = available_margin + used_margin (Upstox Funds & Margin API, equity
+    segment) — नुसता available_margin नाही, कारण तो उघड्या positions मुळे दिवसभर कमी-जास्त होतो."""
+
+    def setup_method(self):
+        upstox_api.get_total_capital.clear()
+
+    def test_sums_available_and_used_margin(self):
+        resp = _mock_get_response(200, {"equity": {"available_margin": 150000.0, "used_margin": 850000.0}})
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.get_total_capital("fake_token")
+        assert result == 1000000.0
+
+    def test_missing_used_margin_defaults_to_zero(self):
+        resp = _mock_get_response(200, {"equity": {"available_margin": 150000.0}})
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.get_total_capital("fake_token")
+        assert result == 150000.0
+
+    def test_non_200_returns_none(self):
+        resp = _mock_get_response(401)
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.get_total_capital("fake_token")
+        assert result is None
+
+    def test_exception_returns_none_not_raised(self):
+        with patch.object(upstox_api, "_get_with_retry", side_effect=Exception("connection reset")):
+            result = upstox_api.get_total_capital("fake_token")
+        assert result is None
+
+
 class TestVerifyTokenLive:
     """🎓 वापरकर्त्याने रागाने, पण अगदी बरोबर दुरुस्त केलेला मुद्दा — "मोबाईलवर Approve करूनही 401
     चालूच" या तक्रारीचं मूळ localize करण्यासाठी जोडलेलं फंक्शन — Supabase मधली वेळ (freshness) नाही,
