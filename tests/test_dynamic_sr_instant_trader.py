@@ -140,6 +140,42 @@ class TestCheckLevelCrossed:
         assert hit is False
 
 
+class TestDetermineDirectionWithHysteresis:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("क्षणभर एखाद्या level च्या खाली/वरती गेल्यानंतर ताबडतोब
+    support चा resistance किंवा resistance चा support असं नोंदवणं कितपत योग्य आहे... hysteresis
+    लागू कर, 0.10% buffer") — किंमत level पासून ±0.10% च्या आतच wobble करत असेल, तर आधीचीच निश्चित
+    दिशा कायम राहायला हवी, प्रत्येक candle ला उगाच फ्लिप होता कामा नये."""
+
+    LEVEL = 23353.1  # वापरकर्त्याने दाखवलेल्या खऱ्या उदाहरणातलाच level
+
+    def test_sticky_bullish_when_dip_stays_within_buffer(self):
+        """किंमत आधी स्पष्टपणे level च्या वर होती (confirmed BULLISH), नंतर level च्या किंचित खाली
+        (पण buffer च्या आतच) गेली — जुनी (raw तुलना) पद्धत इथे चुकून BEARISH दाखवायची, आता निश्चित
+        BULLISH च राहायला हवं (खऱ्या केसमध्ये नेमकं हेच 09:56 ला व्हायला हवं होतं)."""
+        closes = [23400.0, 23350.0]  # 23350 < level(23353.1) पण lower buffer(23329.75) च्या वरच
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_flips_to_bearish_only_when_clearly_beyond_buffer(self):
+        """किंमत खरंच buffer च्या पलीकडे (स्पष्टपणे) खाली गेली, तरच दिशा खऱ्या अर्थाने फ्लिप व्हायला हवी."""
+        closes = [23400.0, 23300.0]  # 23300 < lower buffer (23329.75) -- खरा breakdown
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+    def test_falls_back_to_raw_comparison_when_never_left_band(self):
+        """आजचा संपूर्ण इतिहास कधीच buffer च्या बाहेर गेलाच नसेल (उदा. दिवसाची सुरुवात, नवीनच
+        level), तर सद्य किमतीची raw तुलनाच (जुनं वर्तन) सुरक्षित fallback म्हणून वापरली जायला हवी."""
+        closes = [23353.1]  # बरोबर level वरच, buffer बाहेर कधीच नाही
+        assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_real_world_scenario_stays_bullish_through_momentary_dip(self):
+        """🎓 वापरकर्त्याने दाखवलेलं खरं उदाहरण — किंमत स्पष्टपणे support च्या वर असतानाच, एका
+        candle साठी किंचित खाली डोकावली (0.10% च्या आतच) आणि परत वर आली. hysteresis शिवाय (जुनी
+        raw तुलना) मधल्या candle ला direction चुकून BEARISH व्हायचं (RSI Gate चुकीच्या rule कडे —
+        Resistance>60 — पडताळायचा). आता संपूर्ण काळात BULLISH च राहायला हवं."""
+        closes = [23400.0, 23370.0, 23350.0, 23365.0]  # सगळेच buffer (23329.75-23376.45) च्या आत/वर
+        for i in range(1, len(closes) + 1):
+            assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
+
+
 def _fake_zones():
     """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 1m_instant चा
     डीफॉल्ट timeframe_choice आता "BOTH" ऐवजी "5M" आहे. हे fixture बहुतेक टेस्ट्समध्ये
