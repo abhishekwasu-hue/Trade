@@ -41,6 +41,31 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 _DEFAULT_SETTINGS = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"])
 
 
+class TestDetermineDirectionWithHysteresis:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_
+    strategy.py मधलीच hysteresis पद्धत इथेही, तोच 0.015% buffer (srv2 सारखाच — MCX सुद्धा फक्त
+    30M/60M candles वापरतो, 15M कधीच नाही)."""
+
+    LEVEL = 6500.0
+
+    def test_sticky_bullish_when_dip_stays_within_buffer(self):
+        closes = [6600.0, 6499.5]  # 6499.5 < level(6500) पण lower buffer (~6499.025) च्या वरच
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_flips_to_bearish_only_when_clearly_beyond_buffer(self):
+        closes = [6600.0, 6480.0]  # lower buffer (~6499.025) च्या स्पष्टपणे खाली -- खरा breakdown
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BEARISH"
+
+    def test_falls_back_to_raw_comparison_when_never_left_band(self):
+        closes = [6500.0]  # बरोबर level वरच, buffer बाहेर कधीच नाही
+        assert mft.determine_direction_with_hysteresis(self.LEVEL, closes) == "BULLISH"
+
+    def test_real_world_scenario_stays_bullish_through_momentary_dip(self):
+        closes = [6600.0, 6499.3, 6499.1, 6500.4]  # सगळेच buffer (~6499.025-6500.975) च्या आत/वर
+        for i in range(1, len(closes) + 1):
+            assert mft.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
+
+
 class TestProcessSymbolGates:
     def test_symbol_disabled_returns_early(self):
         settings = dict(_DEFAULT_SETTINGS)
