@@ -265,6 +265,14 @@ def process_symbol(access_token, symbol, lot_size=65):
         raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol, expiry_index=expiry_index)
         if not raw_chain:
             return f"{symbol}: Option chain मिळाली नाही ({chain_status})"
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("entry साठी touch-detection च्याच जुन्या किंमतीवर
+        # अवलंबून आहे, ताजी किंमत परत घ्या") — dynamic_sr_instant_trader.py/classic_sr_reversal_trader.py
+        # प्रमाणेच — आतापर्यंत इथे touch-detection वेळचा (काही मिनिटं जुना असू शकणारा candle-close)
+        # underlying_price हाच ATM strike + entry_spot_price (SL/TSL च्या Spot% आधारासाठी) दोन्हींसाठी
+        # वापरला जायचा. आता याच क्षणी ताज्या मागवलेल्या option chain मधली सद्य spot किंमत वापरली जाते —
+        # ATM strike आणि SL/TSL चा आधार दोन्ही प्रत्यक्ष entry-क्षणाच्या जवळ.
+        underlying_price = raw_chain[0].get("underlying_spot_price") or underlying_price
+        log_entry["ltp_at_signal"] = underlying_price
         strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
         atm_strike = round(underlying_price / strike_step) * strike_step
 
