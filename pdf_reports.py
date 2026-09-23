@@ -1796,7 +1796,7 @@ def _trade_log_groups_by_timeframe(trade_log_df):
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
                                       by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations,
-                                      slippage_pairs_df=None):
+                                      slippage_pairs_df=None, overshoot_df=None):
     """
     Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise, Timeframe-wise व
     Option Structure-wise (Credit Spread वि. Naked Option) P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं
@@ -1821,6 +1821,9 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     slippage_pairs_df (database.get_live_vs_shadow_paper_pairs()) — रिकामा/None असेल (म्हणजे या
     कालावधीत LIVE+PAPER मोड प्रत्यक्ष वापरलेलाच नाही) तर हा संपूर्ण विभाग (heading सकट) वगळला जातो —
     फक्त प्रत्यक्ष LIVE+PAPER trades असतील तरच PDF मध्ये दिसतो.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("review slipages after trade monitor update", नंतर PDF मध्येही
+    हवं म्हणून) — overshoot_df (database.get_sl_tsl_overshoot()) — रिकामा/None असेल तर हा विभागही
+    वगळला जातो (या कालावधीत SL/TSL exits नसतील, किंवा जुन्या detail-format आधीचे trades असतील तर).
     """
     generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
     buf = io.BytesIO()
@@ -1964,6 +1967,28 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         t = df_to_reportlab_table(by_structure_df)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
+
+    if overshoot_df is not None and not overshoot_df.empty:
+        next_section("SL/TSL Overshoot (Slippage) Tracker")
+        story.append(Paragraph(
+            "For every SL/Trailing-SL exit, how far past its threshold the bot found the price before "
+            "catching it — an inherent gap from polling-based monitoring (trade_monitor.py / "
+            "mcx_futures_trader.py). Tracking this over time shows whether polling-interval speedups "
+            "actually reduced slippage.", ParagraphStyle("overshoot_note", fontName=_RPT_FONT, fontSize=10, leading=14),
+        ))
+        story.append(Spacer(1, 6))
+        _os_pts = overshoot_df["Overshoot (pts)"].dropna()
+        _os_rs = overshoot_df["Overshoot (Rs)"].dropna()
+        overshoot_summary_rows = [
+            ["SL/TSL Exits", str(len(overshoot_df))],
+            ["Avg Overshoot (Points)", f"{_os_pts.mean():.2f} pts" if not _os_pts.empty else "N/A"],
+            ["Avg Overshoot (Fixed Rs strategies)", f"Rs {_os_rs.mean():,.0f}" if not _os_rs.empty else "N/A"],
+        ]
+        story.append(_kv_table(overshoot_summary_rows, usable_width, key_ratio=0.4))
+        story.append(Spacer(1, 6))
+        t = _wide_df_table_wrapped(overshoot_df, usable_width)
+        story.extend(t if isinstance(t, list) else [t])
+        story.append(Spacer(1, 8))
 
     if slippage_pairs_df is not None and not slippage_pairs_df.empty:
         next_section("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)")

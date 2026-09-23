@@ -2,6 +2,7 @@
 import datetime
 import json
 import os
+import re
 import sqlite3
 import pandas as pd
 
@@ -1110,6 +1111,103 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
+
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("review slippages after trade monitor update") — trading_engine.py
+# च्या evaluate_point_spot_exit()/manage_open_trades() ने आधीच exit_reason_detail मध्ये लिहिलेल्या
+# वाचनीय मजकुरातून (regex ने), प्रत्येक SL/TSL exit प्रत्यक्ष threshold च्या किती "पुढे जाऊन" (overshoot)
+# पकडला गेला हे काढणे — polling-based monitoring (trade_monitor.py/mcx_futures_trader.py) च्या
+# interval-सुधारणांनंतर स्लिपेज खरंच कमी झालं का, हे रोज (दरवेळी manual SQL query न चालवता) तपासता यावं.
+_SL_TSL_OVERSHOOT_PATTERNS = [
+    # TSL locked to Entry/Breakeven — threshold नेहमी 0, म्हणून overshoot = |प्रत्यक्ष आकडा|
+    (re.compile(r"Premium gain (-?[\d.]+) points dropped to/below zero"),
+     lambda m: {"basis": "TSL Breakeven (Premium pts)", "overshoot_points": abs(float(m.group(1)))}),
+    # निरंतर Premium-Points Trailing SL — floor ओलांडून प्रत्यक्ष कुठे पकडलं गेलं
+    (re.compile(r"floor (-?[\d.]+) pts, now at (-?[\d.]+) pts"),
+     lambda m: {"basis": "TSL Trail (Premium pts)", "overshoot_points": float(m.group(1)) - float(m.group(2))}),
+    # SL — दोन्ही (Spot% + Premium pts) एकाच वेळी
+    (re.compile(
+        r"Stop-Loss hit — both adverse Spot move (-?[\d.]+)% \(threshold -([\d.]+)%\) and "
+        r"Premium loss (-?[\d.]+) points \(threshold -([\d.]+)\) reached simultaneously"
+    ), lambda m: {
+        "basis": "SL (Spot %+Premium pts)",
+        "overshoot_pct": abs(float(m.group(1))) - float(m.group(2)),
+        "overshoot_points": abs(float(m.group(3))) - float(m.group(4)),
+    }),
+    # SL — फक्त Premium points मुळे
+    (re.compile(r"Stop-Loss hit via Premium points — loss (-?[\d.]+) points reached/exceeded the -([\d.]+)-point threshold"),
+     lambda m: {"basis": "SL (Premium pts)", "overshoot_points": abs(float(m.group(1))) - float(m.group(2))}),
+    # SL — फक्त Spot% मुळे
+    (re.compile(r"Stop-Loss hit via Spot move — adverse move (-?[\d.]+)% reached/exceeded the -([\d.]+)% threshold"),
+     lambda m: {"basis": "SL (Spot %)", "overshoot_pct": abs(float(m.group(1))) - float(m.group(2))}),
+    # जुनी/इतर रणनीतींची निव्वळ ₹ P&L-आधारित SL/Trailing-SL (Rs मध्ये negative असू शकतं, त्यामुळे optional "-")
+    (re.compile(
+        r"(?:Trailing SL|Stop-Loss) — total P&L Rs (-?[\d,]+) hit/crossed the (?:\(profit-adjusted\) )?"
+        r"(?:trailing SL|fixed SL) level Rs (-?[\d,]+)"
+    ), lambda m: {
+        "basis": "SL/TSL (Fixed Rs)",
+        "overshoot_rs": abs(float(m.group(2).replace(",", "")) - float(m.group(1).replace(",", ""))),
+    }),
+]
+
+
+def _parse_sl_tsl_overshoot_detail(detail):
+    """वरच्या पॅटर्न्सपैकी पहिला जुळणारा वापरून overshoot काढणे — काहीच जुळलं नाही (उदा. जुनं, आताच्या
+    detail-format आधीचं trade) तर None — असे trades overshoot टेबलमधून वगळले जातात, चुकीचा आकडा
+    दाखवण्यापेक्षा."""
+    if not detail or not isinstance(detail, str):
+        return None
+    for pattern, extractor in _SL_TSL_OVERSHOOT_PATTERNS:
+        m = pattern.search(detail)
+        if m:
+            result = {"overshoot_points": None, "overshoot_pct": None, "overshoot_rs": None}
+            result.update(extractor(m))
+            return result
+    return None
+
+
+def get_sl_tsl_overshoot(symbol, mode_filter=None, start_date=None, end_date=None):
+    """प्रत्येक SL/TSL exit साठी — threshold च्या किती "पुढे जाऊन" (overshoot) bot ला किंमत सापडली,
+    तेच trading_engine.py ने आधीच exit_reason_detail मध्ये साठवलेल्या मजकुरातून काढून — Performance
+    टॅबवर SL/TSL Overshoot (Slippage) Tracker साठी."""
+    conn = sqlite3.connect(DB_PATH)
+    query = """SELECT trade_id AS "Trade ID", exit_time AS "Exit Time", exit_reason,
+                      exit_reason_detail, realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS "Mode"
+               FROM live_trades
+               WHERE symbol=? AND status='CLOSED' AND exit_reason_detail IS NOT NULL
+                     AND exit_reason IN ('SL', 'TSL_SL', 'TRAILING_SL', 'PCT_TRAILING_SL')"""
+    params = [symbol]
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
+    query += " ORDER BY exit_time DESC"
+    raw_df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+
+    cols = ["Trade ID", "Exit Time", "Exit Reason", "Basis", "Overshoot (pts)", "Overshoot (%)", "Overshoot (Rs)", "Realized P&L", "Mode"]
+    if raw_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    rows = []
+    for _, r in raw_df.iterrows():
+        parsed = _parse_sl_tsl_overshoot_detail(r["exit_reason_detail"])
+        if parsed is None:
+            continue
+        rows.append({
+            "Trade ID": r["Trade ID"], "Exit Time": r["Exit Time"], "Exit Reason": r["exit_reason"],
+            "Basis": parsed["basis"],
+            "Overshoot (pts)": round(parsed["overshoot_points"], 2) if parsed["overshoot_points"] is not None else None,
+            "Overshoot (%)": round(parsed["overshoot_pct"], 3) if parsed["overshoot_pct"] is not None else None,
+            "Overshoot (Rs)": round(parsed["overshoot_rs"], 0) if parsed["overshoot_rs"] is not None else None,
+            "Realized P&L": r["Realized P&L"], "Mode": r["Mode"],
+        })
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
 
 def get_exit_reason_breakdown(symbol, group_col, mode_filter=None, start_date=None, end_date=None):
