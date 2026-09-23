@@ -7,7 +7,7 @@ mocking पॅटर्नचं अनुकरण — पण options ऐवज
 गणित नाही, फक्त sl_points/target_points सरळ max_loss/max_profit म्हणून पास होतात का, आणि दिशेनुसार
 BUY/SELL बरोबर ठरतं का, हेच सर्वात जास्त धोक्याचं — म्हणून सर्वात कसून तपासलेलं).
 """
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -439,3 +439,104 @@ class TestMonitorSymbol:
             kwargs = mock_manage.call_args.kwargs
             assert kwargs["trailing_sl_enabled"] is False
             assert kwargs["atr_points"] is None
+
+
+class TestRunExitMonitorCycle:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("exit slippage") — established 3 bots च्या पॅटर्नप्रमाणेच,
+    एका symbol चं monitor_symbol() अपयशी झालं तरी बाकीचे symbols तपासलेच जायला हवेत."""
+
+    def test_one_symbol_exception_does_not_block_others_in_cycle(self, monkeypatch):
+        calls = []
+
+        def fake_monitor(token, symbol):
+            calls.append(symbol)
+            if symbol == "GOLD":
+                raise RuntimeError("boom")
+            return []
+
+        monkeypatch.setattr(mft, "monitor_symbol", fake_monitor)
+        monkeypatch.setattr(mft, "notify_error", MagicMock())
+
+        results, any_succeeded = mft.run_exit_monitor_cycle("tok", ["CRUDEOIL", "GOLD", "SILVER"])
+        assert calls == ["CRUDEOIL", "GOLD", "SILVER"]
+        assert any_succeeded is True
+        assert any("GOLD" in r for r in results)
+
+    def test_closed_positions_reported_in_results(self, monkeypatch):
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: [{"trade_id": "T1", "reason": "SL"}])
+        results, any_succeeded = mft.run_exit_monitor_cycle("tok", ["CRUDEOIL"])
+        assert any_succeeded is True
+        assert any("CRUDEOIL" in r and "बंद" in r for r in results)
+
+
+class TestRunExitMonitorLoop:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("exit slippage") — trade_monitor.py च्याच
+    run_monitor_loop() पॅटर्नची MCX आवृत्ती (बघा tests/test_trade_monitor.py::TestRunMonitorLoop) —
+    fake clock/sleep वापरून वेळ न घालवता चाचणी. आधी हे monitoring cron invocation मध्ये फक्त
+    एकदाच व्हायचं, आता interval_seconds च्या अंतराने loop_seconds पर्यंत पुन्हा-पुन्हा."""
+
+    def _fake_clock(self, start=0.0):
+        state = {"now": start}
+
+        def now_fn():
+            return state["now"]
+
+        def sleep_fn(seconds):
+            state["now"] += seconds
+
+        return now_fn, sleep_fn, state
+
+    def test_runs_multiple_cycles_within_loop_budget(self, monkeypatch):
+        now_fn, sleep_fn, _ = self._fake_clock()
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: calls.append(s) or [])
+
+        any_succeeded = mft.run_exit_monitor_loop(
+            "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=30,
+            sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+        )
+        # instant fake-cycle (0 सेकंद घेतो) -> 0, 15, 30 सेकंदांना cycle चालतो (शेवटचा तंतोतंत
+        # loop_seconds च्या सीमेवर), नंतर बजेट संपलेलं दिसून थांबतं.
+        assert len(calls) == 3
+        assert any_succeeded is True
+
+    def test_single_cycle_when_it_alone_exceeds_loop_budget(self, monkeypatch):
+        now_fn, sleep_fn, state = self._fake_clock()
+        calls = []
+
+        def slow_monitor(token, symbol):
+            calls.append(symbol)
+            state["now"] += 100  # loop_seconds (30) पेक्षा जास्त
+            return []
+
+        monkeypatch.setattr(mft, "monitor_symbol", slow_monitor)
+        mft.run_exit_monitor_loop(
+            "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=30,
+            sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+        )
+        assert calls == ["CRUDEOIL"]
+
+    def test_never_sleeps_past_loop_budget(self, monkeypatch):
+        now_fn, _, state = self._fake_clock()
+        sleep_calls = []
+
+        def tracking_sleep(seconds):
+            sleep_calls.append(seconds)
+            state["now"] += seconds
+
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: [])
+        mft.run_exit_monitor_loop(
+            "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=28,
+            sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
+        )
+        assert sum(sleep_calls) <= 28
+        assert all(s >= 0 for s in sleep_calls)
+
+    def test_default_loop_seconds_is_30_narrower_than_trade_monitor(self):
+        """🎓 MCX crontab च्या ओळीत आधीच `sleep 60` stagger आहे (trade_monitor.py च्या cron ओळीत
+        नाही) — त्यामुळे उरलेला budget कमी, म्हणून डीफॉल्ट loop_seconds (30) trade_monitor.py च्या
+        (50) पेक्षा जाणूनबुजून कमी ठेवलेला आहे."""
+        import inspect
+        sig = inspect.signature(mft.run_exit_monitor_loop)
+        assert sig.parameters["loop_seconds"].default == 30
+        assert sig.parameters["interval_seconds"].default == 15

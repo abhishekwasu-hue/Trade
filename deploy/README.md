@@ -194,27 +194,25 @@ crontab जोडलं तरी, Dashboard च्या Bot Dynamic SR Algo �
 
 ---
 
-# MCX Futures Trader — Deployment (crontab) — ⚠️ वेगळा, स्वतंत्र cron — अजून सक्रिय करू नका
+# MCX Futures Trader — Deployment (crontab) — ✅ VPS वर प्रत्यक्ष सक्रिय (२३-सप्टेंबर, `crontab -l` ने पडताळलेलं)
 
 🎓 वापरकर्त्याने मागितलेली सुधारणा ("यासाठी cron पण वेगळा तयार करा") — वरच्या NIFTY/BANKNIFTY/SENSEX
 entry bots चा crontab अजिबात बदलायचा नाही (वापरकर्त्याने स्पष्टपणे सांगितलेलं) — MCX Futures Trader
 साठी **पूर्णपणे वेगळी** crontab entries इथे नोंदवल्या आहेत, वरच्या bots च्या ओळींमध्ये मिसळलेल्या नाहीत.
 
-✅ **Update** — `mcx_futures_trader.py` (entry+exit) आणि `refresh_market_zones_mcx.py` (Dynamic S/R,
-30M/60M) दोन्ही स्क्रिप्ट्स आता बांधलेल्या आहेत (आधी फक्त Dashboard चं पान/settings होतं).
+⚠️ खालचा "अजून जोडू नका" इशारा आता जुना आहे — प्रत्यक्ष VPS वर (`crontab -l` ने २३-सप्टेंबर रोजी
+पडताळलेलं) या तिन्ही ओळी आधीच सक्रिय आहेत. खालच्या 4 पायऱ्या ऐतिहासिक संदर्भासाठी तशाच ठेवल्या आहेत —
+नव्या VPS वर पहिल्यांदा सेटअप करताना अजूनही याच क्रमाने पडताळणी करा.
 
-⚠️ **तरीही या ओळी अजून VPS crontab मध्ये जोडू नका** — जोडण्याआधी:
 1. `python3 resolve_mcx_futures_instruments.py` VPS वर चालवून, खरा instrument_key/lot_size/tick_size
-   Upstox कडून प्रत्यक्ष पडताळा (अजून हे केलेलं नाही — PR #73 मध्ये फक्त read-only resolver जोडलेला).
+   Upstox कडून प्रत्यक्ष पडताळा.
 2. `python3 refresh_market_zones_mcx.py` एकदा हाताने चालवून, कुठल्याही commodity साठी Dynamic S/R
    zones प्रत्यक्ष तयार होतात/वाजवी दिसतात याची खात्री करा (नाहीतर mcx_futures_trader.py ला
    कुठलेही ACTIVE levels सापडणार नाहीत — निरुपद्रवी, पण उपयोगहीन).
 3. `python3 mcx_futures_trader.py` एकदा हाताने (PAPER mode — page_mcx_futures.py चा डीफॉल्ट)
    चालवून बघा, कुठलाही अनपेक्षित error येत नाही ना, आणि Signal Log (Dashboard) मध्ये अपेक्षित
    नोंदी दिसतात ना.
-4. वरच्या तिन्ही पायऱ्या समाधानकारक झाल्यावरच खालच्या crontab ओळी प्रत्यक्ष जोडा — आधी जोडलं तर
-   नेमकी तीच bug परत घडेल जी वर "`refresh_dynamic_sr_15m.py` हा file कधीच अस्तित्वातच नव्हता" या
-   इशाऱ्यात नोंदवलेली आहे — दर काही मिनिटांनी निरुपयोगी प्रयत्न, काहीही अर्थपूर्ण न करता.
+4. वरच्या तिन्ही पायऱ्या समाधानकारक झाल्यावरच खालच्या crontab ओळी प्रत्यक्ष जोडा.
 
 ## MCX चे trading hours NSE पेक्षा खूप वेगळे — वेगळी crontab window का लागते
 
@@ -230,6 +228,16 @@ IST 9:15-4:29) इथे वापरता येत नाही — वेग
 * 4-18 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py >> /root/Trade/mcx_futures.log 2>&1
 35 5,8,11,14,18 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_mcx.py >> /root/Trade/market_zones_mcx_refresh.log 2>&1
 ```
+
+🎓 वापरकर्त्याने सापडवलेली सुधारणा ("exit slippage") — पहिल्या दोन ओळींचं (entry+exit) crontab
+स्वतः बदललेलं नाही (अजूनही दर मिनिटाला, तेच `sleep 60` stagger), पण `mcx_futures_trader.py` आतून
+आता वेगळं वागतं — SL/Target/Trailing/EOD (`monitor_symbol()`) आता `trade_monitor.py` च्याच
+पॅटर्नने त्याच invocation मध्ये दर ~15 सेकंदांनी (`--interval-seconds`), ~30 सेकंदांपर्यंत
+(`--loop-seconds`) पुन्हा-पुन्हा तपासलं जातं — आधी फक्त एकदाच (म्हणजे दर ~60 सेकंदांनीच) व्हायचं.
+`loop_seconds` चा डीफॉल्ट (30) `trade_monitor.py` च्या (50) पेक्षा मुद्दामच कमी ठेवला — MCX च्या
+cron ओळीत आधीच `sleep 60` stagger असल्याने प्रत्यक्ष कामासाठी उरलेला budget कमी असतो; जास्त
+loop_seconds दिला तर पुढची invocation ProcessLockHeld मुळे वगळली जाऊ शकते (उलट परिणाम).
+
 🎓 वापरकर्त्याने सापडवलेली bug (22-Sep) — तिसरी ओळ आधी दिवसातून **एकदाच** (फक्त `35 18 * * 1-5`, म्हणजे
 MCX बंद झाल्यावर) चालायची — त्यामुळे Market Zones (bot प्रत्यक्ष trading साठी वापरत असलेले साठवलेले
 zones) दिवसभर stale राहायचे, चार्टच्या नेहमी-ताज्या live गणनेशी न जुळणारे. आता त्याच स्क्रिप्टला MCX
