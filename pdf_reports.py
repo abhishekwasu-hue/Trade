@@ -525,9 +525,24 @@ def _fix_missing_glyphs(s):
     attribute 'replace') — df.astype(str) पांडासमध्ये NaN ला स्ट्रिंग बनवत नाही (float('nan') तसाच
     राहतो), फक्त इतर सेल्स स्ट्रिंग होतात — काही cells NaN/None असलेल्या (उदा. Fixed-Rs strategy
     trades साठी Overshoot % रिकामं) DataFrame मधून हे function raw float घेऊन पुढे xml escape ला
-    द्यायचं, जे crash व्हायचं. आता str() कोणत्याही non-string इनपुटला आधीच बदलतो."""
-    if not isinstance(s, str):
+    द्यायचं, जे crash व्हायचं.
+    🎓 वापरकर्त्याने सापडवलेली regression (मागच्या फिक्सचीच) — "Charges Breakdown" ओळीत Paragraph
+    object क्रॅश न होता दिसलीच नाही, त्याऐवजी त्याचा raw Python repr टेबलमध्ये छापला गेला
+    (`_kv_table()` मुद्दामच लांब मजकुरासाठी Paragraph cell values पाठवतं — बघा generate_
+    performance_report_pdf() मधली Charges Breakdown ओळ) — आधीचा फिक्स (str() *सर्वच* non-string
+    इनपुटला लागू) खूप व्यापक होता, Paragraph सकट. आता फक्त float/None (जिथून खरा crash यायचा) स्ट्रिंग
+    होतात — इतर कुठलाही object (Paragraph सारखे flowables) आधीसारखेच जसेच्या तसे राहतात.
+    🎓 त्याच PDF मध्ये सापडवलेली आणखी एक — "Win Rate %" (एकही शुद्ध SL/Target trade नसलेल्या group
+    साठी, get_performance_by_group() मुद्दामच None देतं — page_performance.py Dashboard वर आधीच
+    `pd.notna(v) else "N/A"` ने दाखवतं, पण PDF च्या group-tables (df_to_reportlab_table) मध्ये हे
+    कधीच झालं नव्हतं) — literal "nan"/"None" असं छापलं जायचं. आता NaN/None दोन्ही "N/A" (Dashboard
+    सारखंच) दाखवतात, बाकी खरे float आकडे नेहमीप्रमाणेच स्ट्रिंग होतात."""
+    if s is None or (isinstance(s, float) and s != s):  # NaN != NaN — classic isnan check, no math import needed
+        return "N/A"
+    if isinstance(s, float):
         return str(s)
+    if not isinstance(s, str):
+        return s
     for bad, good in _MISSING_GLYPH_MAP.items():
         s = s.replace(bad, good)
     return s

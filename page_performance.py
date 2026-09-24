@@ -18,6 +18,7 @@ from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
 from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2, generate_performance_report_pdf
 from pnl_reports import generate_pnl_report
+from resolve_mcx_futures_instruments import MCX_FUTURES_SYMBOLS
 from ui_headers import (
     mega_header as _mega_header, mid_header as _mid_header, sub_header as _sub_header,
     HDR_BLUE as _HDR_BLUE, HDR_TEAL as _HDR_TEAL, HDR_PURPLE as _HDR_PURPLE, HDR_ORANGE as _HDR_ORANGE,
@@ -336,6 +337,33 @@ def render():
 
     with _perf_tab1:
         _mega_header("📈 Performance Analytics", _HDR_BLUE)
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PDF मध्ये सर्व MCX commodity trades असायला हवेत, All
+        # Commodity Performance साठी वेगळं बटण द्या") — फक्त MCX commodity (CRUDEOIL/GOLD/SILVER/
+        # NATURALGAS/COPPER) निवडलेली असतानाच हा checkbox दिसतो — चालू केला की या संपूर्ण टॅबमधली सर्व
+        # summary/breakdown/PDF आता एकट्या symbol ऐवजी सर्व 5 MCX commodities एकत्र (combined) दाखवते.
+        # खालचा `perf_symbol` (single string किंवा list) — database.py च्या query functions ला थेट
+        # जातो (नवीन `_symbol_where_clause()` list/tuple घेऊन "symbol IN (...)" करतं — established
+        # single-symbol वर्तन अबाधित). NIFTY/BANKNIFTY/SENSEX साठी हा checkbox दिसतच नाही — त्यांचं
+        # वर्तन जसंच्या तसं.
+        perf_all_mcx_combined = False
+        if symbol in MCX_FUTURES_SYMBOLS:
+            perf_all_mcx_combined = st.checkbox(
+                "🌐 सर्व MCX Commodities एकत्र दाखवा (CRUDEOIL+GOLD+SILVER+NATURALGAS+COPPER combined)",
+                key="perf_all_mcx_combined",
+                help="चालू केलं की खालचं संपूर्ण विश्लेषण (Summary/Strategy/Timeframe/PDF सकट) फक्त निवडलेल्या "
+                     "commodity ऐवजी सर्व 5 MCX commodities एकत्र दाखवेल.",
+            )
+        if perf_all_mcx_combined:
+            perf_symbol = MCX_FUTURES_SYMBOLS
+            perf_symbol_label = "ALL_MCX"
+            perf_symbol_title = "All MCX Commodities"
+            st.info(f"🌐 खालचं संपूर्ण विश्लेषण आता **सर्व 5 MCX commodities एकत्र** ({', '.join(MCX_FUTURES_SYMBOLS)}) दाखवतंय.")
+        else:
+            perf_symbol = symbol
+            perf_symbol_label = symbol
+            perf_symbol_title = symbol
+
         perf_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="perf_mode_filter")
         perf_mode_f = None if perf_mode_choice == "सर्व" else ("LIVE" if "LIVE" in perf_mode_choice else "PAPER")
 
@@ -347,7 +375,7 @@ def render():
         today_d = get_ist_today()
         _mid_header(f"📌 आजची कामगिरी — {today_d.strftime('%d-%b-%Y')}", _HDR_AMBER)
         st.caption("हे नेहमी आपोआप आजच्या तारखेचं दिसतं — तारीख निवडायची गरज नाही.")
-        _, today_totals = generate_pnl_report(symbol, "Daily", today_d, today_d, mode_filter=perf_mode_f)
+        _, today_totals = generate_pnl_report(perf_symbol, "Daily", today_d, today_d, mode_filter=perf_mode_f)
         if today_totals["total_trades"] == 0:
             st.info("आज अजून कोणताही ट्रेड बंद झालेला नाही.")
         else:
@@ -364,15 +392,15 @@ def render():
             tacol1, tacol2 = st.columns(2)
             with tacol1:
                 _sub_header("🎯 आज — रणनीतीनुसार (Strategy)", _HDR_BLUE)
-                _render_group_breakdown(symbol, "source", perf_mode_f, today_d, today_d, "आजचं Strategy-wise P&L")
+                _render_group_breakdown(perf_symbol, "source", perf_mode_f, today_d, today_d, "आजचं Strategy-wise P&L")
             with tacol2:
                 _sub_header("⏱️ आज — टाईमफ्रेमनुसार", _HDR_TEAL)
-                _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, today_d, today_d, "आजचं Timeframe-wise P&L")
+                _render_group_breakdown(perf_symbol, "entry_timeframe", perf_mode_f, today_d, today_d, "आजचं Timeframe-wise P&L")
 
         st.markdown("---")
         _mid_header("📊 एकूण (All-Time) कामगिरी", _HDR_PINK)
         st.caption(f"{_ALL_TIME_SUMMARY_START.strftime('%d-%b-%Y')} पासूनचेच आकडे — त्याआधीचे (जुने/test) trades इथे मोजले जात नाहीत.")
-        summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
+        summary = get_performance_summary(perf_symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
         if summary.get("total_trades", 0) == 0:
             st.info("अजून कोणतेही बंद झालेले ट्रेड्स नाहीत — Performance आकडे दिसण्यासाठी किमान एक ट्रेड बंद व्हायला हवा.")
         else:
@@ -415,7 +443,7 @@ def render():
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — वरचं "Total P&L" आतापर्यंत फक्त Gross होतं
             # (वास्तविक ब्रोकरेज शुल्क कुठेच दाखवलं जात नव्हतं). आता आतापर्यंतच्या संपूर्ण इतिहासाचं,
             # charges.py वापरून मोजलेलं वास्तविक शुल्क आणि त्यानंतरचा Net P&L इथेच दाखवला जातो.
-            _, _all_time_totals = generate_pnl_report(symbol, "Monthly", _ALL_TIME_SUMMARY_START, get_ist_today(), mode_filter=perf_mode_f)
+            _, _all_time_totals = generate_pnl_report(perf_symbol, "Monthly", _ALL_TIME_SUMMARY_START, get_ist_today(), mode_filter=perf_mode_f)
             pcol9, pcol10 = st.columns(2)
             with pcol9:
                 st.metric(
@@ -433,7 +461,7 @@ def render():
             _render_charges_breakdown_caption(_all_time_totals.get("charges_breakdown"))
 
             _sub_header("📉 Equity Curve (संचयी वास्तविक P&L)", _HDR_PURPLE)
-            curve_df = get_equity_curve_data(symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
+            curve_df = get_equity_curve_data(perf_symbol, mode_filter=perf_mode_f, start_date=_ALL_TIME_SUMMARY_START)
             if not curve_df.empty:
                 eq_fig = go.Figure()
                 eq_fig.add_trace(go.Scatter(
@@ -453,7 +481,7 @@ def render():
                 _sub_header("📝 PAPER वि LIVE तुलना", _HDR_ORANGE)
                 comp_rows = []
                 for label in ("LIVE", "PAPER"):
-                    s = get_performance_summary(symbol, mode_filter=label, start_date=_ALL_TIME_SUMMARY_START)
+                    s = get_performance_summary(perf_symbol, mode_filter=label, start_date=_ALL_TIME_SUMMARY_START)
                     if s.get("total_trades", 0) > 0:
                         comp_rows.append({
                             "Mode": label, "Trades": s["total_trades"], "Win Rate %": s["win_rate"],
@@ -497,22 +525,22 @@ def render():
                 ["🎯 Algo Strategy नुसार", "⏱️ Timeframe नुसार", "🧩 Option Structure नुसार", "📐 Trading Style नुसार", "🎯⏱️ Strategy + Timeframe एकत्र"]
             )
             with an_tab1:
-                an_by_source = _render_group_breakdown(symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
+                an_by_source = _render_group_breakdown(perf_symbol, "source", perf_mode_f, an_from, an_to, "Strategy-wise P&L")
             with an_tab2:
-                an_by_timeframe = _render_group_breakdown(symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
+                an_by_timeframe = _render_group_breakdown(perf_symbol, "entry_timeframe", perf_mode_f, an_from, an_to, "Timeframe-wise P&L")
             with an_tab3:
                 an_by_structure = _render_group_breakdown(
-                    symbol, OPTION_STRUCTURE_GROUP_SQL, perf_mode_f, an_from, an_to,
+                    perf_symbol, OPTION_STRUCTURE_GROUP_SQL, perf_mode_f, an_from, an_to,
                     "Option Structure-wise P&L (Credit Spread vs Naked Option)",
                 )
             with an_tab4:
-                _render_group_breakdown(symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
+                _render_group_breakdown(perf_symbol, "trading_style", perf_mode_f, an_from, an_to, "Trading Style-wise P&L")
             with an_tab5:
                 # 🎓 वापरकर्त्याने मागितलेली सुधारणा — "strategy आणि timeframe दोन्ही एकत्र दाखवणारं
                 # वेगळं टेबल हवं" — वरचे दोन्ही (an_tab1/an_tab2) स्वतंत्रपणे एकाच स्तंभावर group करतात;
                 # इथे प्रत्येक strategy+timeframe जोडीसाठी स्वतंत्र ओळ, कुठली specific जोडी सर्वात
                 # फायदेशीर आहे हे थेट दिसण्यासाठी.
-                combo_df = get_performance_by_two_groups(symbol, "source", "entry_timeframe", mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+                combo_df = get_performance_by_two_groups(perf_symbol, "source", "entry_timeframe", mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
                 if combo_df.empty:
                     st.caption("या कालावधीत डेटा नाही.")
                 else:
@@ -524,7 +552,7 @@ def render():
                     st.dataframe(combo_df, width="stretch", hide_index=True)
 
             _sub_header("📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण", _HDR_PINK)
-            trade_log_df = get_closed_trades_detail(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+            trade_log_df = get_closed_trades_detail(perf_symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
             trade_log_display = None
             trade_log_pdf_df = None
             if trade_log_df.empty:
@@ -563,7 +591,7 @@ def render():
                 trade_log_csv = trade_log_display.to_csv(index=False).encode("utf-8")
                 st.download_button(
                     "📥 Trade Log CSV डाऊनलोड करा (Entry+Exit कारणांसकट)", data=trade_log_csv,
-                    file_name=f"{symbol}_TradeLog_Reasons_{an_from}_{an_to}.csv",
+                    file_name=f"{perf_symbol_label}_TradeLog_Reasons_{an_from}_{an_to}.csv",
                     mime="text/csv", key="trade_log_reasons_download",
                 )
 
@@ -572,7 +600,7 @@ def render():
             # exit प्रत्यक्ष threshold च्या किती "पुढे जाऊन" पकडला गेला (overshoot) — polling-based
             # monitoring (trade_monitor.py/mcx_futures_trader.py) च्या interval-सुधारणांनंतर स्लिपेज
             # खरंच कमी होतंय का, हे कालांतराने इथेच पडताळता येईल.
-            overshoot_df = get_sl_tsl_overshoot(symbol, perf_mode_f, an_from, an_to)
+            overshoot_df = get_sl_tsl_overshoot(perf_symbol, perf_mode_f, an_from, an_to)
             if not overshoot_df.empty:
                 _sub_header("⚡ SL/TSL Overshoot (Slippage) Tracker", _HDR_ORANGE)
                 st.caption(
@@ -596,7 +624,7 @@ def render():
             # PAPER trade) साठीच अर्थपूर्ण — त्यामुळे "सर्व" मोड निवडलेला असेल, आणि प्रत्यक्ष जोडी
             # सापडली, तरच हा विभाग दिसतो (LIVE+PAPER कधीच वापरलेला नसेल, तर आपोआप अदृश्य).
             slippage_pairs_df = (
-                get_live_vs_shadow_paper_pairs(symbol, an_from, an_to) if perf_mode_f is None else pd.DataFrame()
+                get_live_vs_shadow_paper_pairs(perf_symbol, an_from, an_to) if perf_mode_f is None else pd.DataFrame()
             )
             if not slippage_pairs_df.empty:
                 _sub_header("🔴📝 LIVE vi Shadow PAPER Slippage (LIVE+PAPER मोड)", _HDR_ORANGE)
@@ -626,9 +654,9 @@ def render():
                 "trades असलेलेच गट इथे विचारात घेतले आहेत."
             )
             all_recs = (
-                _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to)
-                + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to)
-                + _build_recommendations(symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to)
+                _build_recommendations(perf_symbol, "source", "Strategy", perf_mode_f, an_from, an_to)
+                + _build_recommendations(perf_symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to)
+                + _build_recommendations(perf_symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to)
             )
             if not all_recs:
                 st.info("या कालावधीत निष्कर्ष काढण्याइतका पुरेसा डेटा नाही (किमान 5 trades/गट हवेत).")
@@ -647,33 +675,33 @@ def render():
             if st.button("📄 Performance Report PDF तयार करा", key="perf_pdf_generate"):
                 mode_label_en = {"सर्व": "All", "फक्त LIVE": "LIVE only", "फक्त PAPER": "PAPER only"}.get(perf_mode_choice, perf_mode_choice)
                 # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PDF Report Optimize) — आधी बटण दाबताच, तेच
-                # symbol/mode/तारीख-रेंज असूनही, दरवेळी संपूर्ण PDF (सर्व charts kaleido ने पुन्हा
+                # perf_symbol/mode/तारीख-रेंज असूनही, दरवेळी संपूर्ण PDF (सर्व charts kaleido ने पुन्हा
                 # रेंडर करून) पुन्हा तयार व्हायचं — कुठलंही caching नव्हतं. आता तेच इनपुट असेल, तर आधीच
                 # तयार असलेला PDF पुन्हा वापरला जातो (फक्त काहीतरी बदललं — तारीख-रेंज/mode — तरच पुन्हा तयार होतं).
-                pdf_cache_key = (symbol, mode_label_en, str(an_from), str(an_to))
+                pdf_cache_key = (perf_symbol_label, mode_label_en, str(an_from), str(an_to))
                 if st.session_state.get("perf_pdf_cache_key") == pdf_cache_key and st.session_state.get("perf_pdf_bytes"):
                     st.info("ℹ️ याच कालावधी/मोडसाठी PDF आधीच तयार आहे — खाली थेट डाऊनलोड करा (पुन्हा तयार करायची गरज नाही).")
                 else:
                     with st.spinner("PDF तयार होत आहे..."):
-                        an_summary = get_performance_summary(symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
-                        _, an_pnl_totals = generate_pnl_report(symbol, "Daily", an_from, an_to, mode_filter=perf_mode_f)
+                        an_summary = get_performance_summary(perf_symbol, mode_filter=perf_mode_f, start_date=an_from, end_date=an_to)
+                        _, an_pnl_totals = generate_pnl_report(perf_symbol, "Daily", an_from, an_to, mode_filter=perf_mode_f)
                         all_recs_en = (
-                            _build_recommendations(symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
-                            + _build_recommendations(symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
-                            + _build_recommendations(symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to, english=True)
+                            _build_recommendations(perf_symbol, "source", "Strategy", perf_mode_f, an_from, an_to, english=True)
+                            + _build_recommendations(perf_symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
+                            + _build_recommendations(perf_symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to, english=True)
                         )
                         perf_pdf_bytes = generate_performance_report_pdf(
-                            symbol, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
+                            perf_symbol_title, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
                             an_by_source, an_by_timeframe, an_by_structure, trade_log_pdf_df, all_recs_en,
                             slippage_pairs_df=slippage_pairs_df, overshoot_df=overshoot_df,
                         )
                     st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
-                    st.session_state["perf_pdf_filename"] = f"{symbol}_Performance_Report_{an_from}_{an_to}.pdf"
+                    st.session_state["perf_pdf_filename"] = f"{perf_symbol_label}_Performance_Report_{an_from}_{an_to}.pdf"
                     st.session_state["perf_pdf_cache_key"] = pdf_cache_key
             if st.session_state.get("perf_pdf_bytes"):
                 st.download_button(
                     "📥 Performance Report PDF डाऊनलोड करा", data=st.session_state["perf_pdf_bytes"],
-                    file_name=st.session_state.get("perf_pdf_filename", f"{symbol}_Performance_Report.pdf"),
+                    file_name=st.session_state.get("perf_pdf_filename", f"{perf_symbol_label}_Performance_Report.pdf"),
                     mime="application/pdf", key="perf_pdf_download",
                 )
 

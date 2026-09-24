@@ -840,6 +840,20 @@ def _compute_margin_used(df):
     return float(peak) + untimed_margin
 
 
+def _symbol_where_clause(symbol):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Performance Report PDF मध्ये सर्व MCX commodity trades
+    असायला हवेत, All Commodity Performance साठी वेगळं बटण द्या") — Performance/PnL Report च्या
+    वाचन-फक्त (read-only) query functions मध्ये `symbol` आता एकच string (established, जुनंच वर्तन,
+    कुठलाही बदल नाही) किंवा list/tuple/set (नवीन — उदा. 5 MCX commodities एकत्र) दोन्ही घेऊ शकतो.
+    trading/entry/exit अंमलबजावणीच्या (execution) functions ला (उदा. get_live_positions_with_mtm,
+    has_open_trade_from_source) याचा काहीही संबंध नाही — त्या फक्त single-symbol string वरच चालतात,
+    तसंच राहतं, इथे बदल केलेलाच नाही."""
+    if isinstance(symbol, (list, tuple, set)):
+        symbols = list(symbol)
+        return f"symbol IN ({','.join('?' * len(symbols))})", symbols
+    return "symbol=?", [symbol]
+
+
 def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
     """
     बंद झालेल्या (CLOSED) ट्रेड्सवरून Win Rate, Avg P&L, Profit Factor, ROI% वगैरे मूळ कामगिरी आकडे
@@ -856,9 +870,9 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
     मार्जिन" मानून roi_pct = एकूण realized P&L / एकूण मार्जिन.
     """
     conn = sqlite3.connect(DB_PATH)
-    query = ("SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
-             "WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL")
-    params = [symbol]
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = (f"SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
+             f"WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL")
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -910,9 +924,9 @@ def get_equity_curve_data(symbol, mode_filter=None, style_filter=None, start_dat
     """वेळेनुसार संचयी (cumulative) वास्तविक P&L — Equity Curve चार्टसाठी. start_date दिली तर
     त्याच्याआधीचे trades curve मध्ये मोजले जात नाहीत (cumulative sum त्याच तारखेपासूनच सुरू होतो)."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT exit_time, realized_pnl FROM live_trades
-               WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
-    params = [symbol]
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = f"""SELECT exit_time, realized_pnl FROM live_trades
+               WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -986,14 +1000,15 @@ def get_live_vs_shadow_paper_pairs(symbol, start_date, end_date):
         "Entry Slippage (Rs)", "LIVE P&L", "PAPER P&L", "P&L Slippage (Rs)",
     ]
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT trade_id, source, strategy, entry_level_price, entry_timeframe, entry_time,
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = f"""SELECT trade_id, source, strategy, entry_level_price, entry_timeframe, entry_time,
                       net_credit, realized_pnl, mode
                FROM live_trades
-               WHERE symbol=? AND status='CLOSED' AND mode IN ('LIVE','PAPER')
+               WHERE {symbol_clause} AND status='CLOSED' AND mode IN ('LIVE','PAPER')
                      AND entry_level_price IS NOT NULL AND entry_time IS NOT NULL
                      AND date(entry_time) >= ? AND date(entry_time) <= ?"""
-    params = [
-        symbol, start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date,
+    params += [
+        start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date,
         end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date,
     ]
     df = pd.read_sql_query(query, conn, params=params)
@@ -1054,9 +1069,9 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
     get_performance_summary() मध्ये वापरलेलीच पद्धत, इथे प्रत्येक group साठी स्वतंत्रपणे."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
+    symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades
-                WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
-    params = [symbol]
+                WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1091,9 +1106,9 @@ def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=No
     conn = sqlite3.connect(DB_PATH)
     col_expr1 = f"COALESCE({group_col1}, 'UNKNOWN')"
     col_expr2 = f"COALESCE({group_col2}, 'UNKNOWN')"
+    symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required
-                FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
-    params = [symbol]
+                FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1123,13 +1138,13 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     """प्रत्येक बंद (CLOSED) trade चा तपशील — Entry (source/timeframe/level/option-structure) आणि
     Exit (exit_reason) या दोन्हींसकट — Performance टॅबवरच्या 'Entry+Exit कारण' Trade Log साठी."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = f"""SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
                       COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
                       realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
-               FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
-    params = [symbol]
+               FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1203,12 +1218,12 @@ def get_sl_tsl_overshoot(symbol, mode_filter=None, start_date=None, end_date=Non
     तेच trading_engine.py ने आधीच exit_reason_detail मध्ये साठवलेल्या मजकुरातून काढून — Performance
     टॅबवर SL/TSL Overshoot (Slippage) Tracker साठी."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT trade_id AS "Trade ID", exit_time AS "Exit Time", exit_reason,
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = f"""SELECT trade_id AS "Trade ID", exit_time AS "Exit Time", exit_reason,
                       exit_reason_detail, realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS "Mode"
                FROM live_trades
-               WHERE symbol=? AND status='CLOSED' AND exit_reason_detail IS NOT NULL
+               WHERE {symbol_clause} AND status='CLOSED' AND exit_reason_detail IS NOT NULL
                      AND exit_reason IN ('SL', 'TSL_SL', 'TRAILING_SL', 'PCT_TRAILING_SL')"""
-    params = [symbol]
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1248,9 +1263,9 @@ def get_exit_reason_breakdown(symbol, group_col, mode_filter=None, start_date=No
     तपासण्यासाठी — SL/Target/Trailing-SL सेटिंग्ज optimize करण्याच्या शिफारशींचा आधार."""
     conn = sqlite3.connect(DB_PATH)
     col_expr = f"COALESCE({group_col}, 'UNKNOWN')"
+    symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr} AS grp, COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, realized_pnl
-                FROM live_trades WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL"""
-    params = [symbol]
+                FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1306,11 +1321,13 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     quantity/fill_price/price/transaction_type — charges.py ला STT/Exchange/SEBI/Stamp Duty सारखे
     turnover-आधारित सरकारी/एक्सचेंज शुल्क अचूक मोजण्यासाठी लागतात (फक्त flat brokerage पुरेसं नाही)."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.quantity, o.fill_price, o.price,
+    symbol_clause, params = _symbol_where_clause(symbol)
+    symbol_clause = symbol_clause.replace("symbol", "o.symbol")
+    query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.quantity, o.fill_price, o.price,
                       o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
-               WHERE o.symbol=? AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
-    params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+               WHERE {symbol_clause} AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
+    params += [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
     if mode_filter:
         query += " AND o.mode=?"
         params.append(mode_filter)
@@ -1322,10 +1339,11 @@ def get_closed_trades_for_report(symbol, start_date, end_date, mode_filter=None)
     """दिलेल्या तारीख-रेंजमध्ये बंद (CLOSED) झालेले trades — exit_time नुसार (P&L exit च्याच दिवशी
     'realized' मानला जातो, entry दिवशी नाही) — Daily/Weekly/Monthly P&L Report साठी."""
     conn = sqlite3.connect(DB_PATH)
-    query = """SELECT trade_id, exit_time, realized_pnl FROM live_trades
-               WHERE symbol=? AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = f"""SELECT trade_id, exit_time, realized_pnl FROM live_trades
+               WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
                AND date(exit_time) >= ? AND date(exit_time) <= ?"""
-    params = [symbol, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+    params += [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
