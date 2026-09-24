@@ -644,3 +644,69 @@ class TestGetLivePositionsWithMtmManualOverride:
         df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
         assert len(df) == 1
         assert pd.isna(df.iloc[0]["Manual SL Override (Rs)"])
+
+
+class TestSymbolWhereClauseListSupport:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("PDF मध्ये सर्व MCX commodity trades असायला हवेत, All
+    Commodity Performance साठी वेगळं बटण द्या") — Performance/PnL Report च्या query functions आता
+    single-symbol string (established, अबाधित) किंवा symbols ची list/tuple (नवीन — 5 MCX commodities
+    एकत्र) दोन्ही घेऊ शकतात."""
+
+    def _seed_multi_symbol(self, tmpdb):
+        seed_closed_trade(tmpdb, "C1", -2000.0, "TRAILING_SL", "2026-09-24", symbol="CRUDEOIL", source="mcx_futures")
+        seed_closed_trade(tmpdb, "G1", 1500.0, "TARGET", "2026-09-24", symbol="GOLD", source="mcx_futures")
+        seed_closed_trade(tmpdb, "S1", -500.0, "SL", "2026-09-24", symbol="SILVER", source="mcx_futures")
+        # दुसऱ्या symbol वरचा trade (list मध्ये नसलेला) कधीच combined मोजणीत मिसळता कामा नये.
+        seed_closed_trade(tmpdb, "N1", 99999.0, "TARGET", "2026-09-24", symbol="NIFTY", source="dynamic_sr_instant")
+
+    def test_get_performance_summary_with_symbol_list_combines_only_those_symbols(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        summary = database.get_performance_summary(["CRUDEOIL", "GOLD", "SILVER"])
+        assert summary["total_trades"] == 3
+        assert summary["total_pnl"] == -1000.0  # -2000+1500-500, NIFTY चा 99999 समाविष्ट नाही
+
+    def test_get_performance_summary_single_string_behaviour_unchanged(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        summary = database.get_performance_summary("CRUDEOIL")
+        assert summary["total_trades"] == 1
+        assert summary["total_pnl"] == -2000.0
+
+    def test_get_performance_by_group_with_symbol_list(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        df = database.get_performance_by_group(["CRUDEOIL", "GOLD", "SILVER"], "source")
+        assert len(df) == 1
+        assert df.iloc[0]["Group"] == "mcx_futures"
+        assert df.iloc[0]["Trades"] == 3
+
+    def test_get_closed_trades_detail_with_symbol_list(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        df = database.get_closed_trades_detail(["CRUDEOIL", "GOLD", "SILVER"])
+        assert len(df) == 3
+        assert "NIFTY" not in df["Trade ID"].str.cat()  # NIFTY trade ID "N1" कुठेच नाही, फक्त पुष्टीसाठी
+        assert set(df["Trade ID"]) == {"C1", "G1", "S1"}
+
+    def test_get_equity_curve_data_with_symbol_list(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        df = database.get_equity_curve_data(["CRUDEOIL", "GOLD", "SILVER"])
+        assert len(df) == 3
+        assert df["cumulative_pnl"].iloc[-1] == -1000.0
+
+    def test_get_orders_with_account_with_symbol_list_does_not_crash(self, temp_db):
+        import datetime as dt
+        self._seed_multi_symbol(temp_db)
+        df = database.get_orders_with_account(
+            ["CRUDEOIL", "GOLD", "SILVER"], dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        )
+        assert list(df.columns) == [
+            "order_id", "trade_id", "placed_at", "mode", "quantity", "fill_price", "price",
+            "transaction_type", "account_id",
+        ]
+
+    def test_get_closed_trades_for_report_with_symbol_list(self, temp_db):
+        import datetime as dt
+        self._seed_multi_symbol(temp_db)
+        df = database.get_closed_trades_for_report(
+            ["CRUDEOIL", "GOLD", "SILVER"], dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        )
+        assert len(df) == 3
+        assert round(df["realized_pnl"].sum(), 2) == -1000.0

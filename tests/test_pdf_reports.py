@@ -8,8 +8,9 @@ column च्या रुंदीबाहेर overflow होऊ नये 
 दाखवल्यास/चुकीच्या प्रकाराने दिल्यास PDF तयार होताना क्रॅश होईल, हेच इथे पडताळलं आहे.
 """
 import pandas as pd
+from reportlab.platypus import Paragraph
 
-from pdf_reports import _fix_missing_glyphs, generate_performance_report_pdf
+from pdf_reports import _fix_missing_glyphs, _rpt_kv_wrap, df_to_reportlab_table, generate_performance_report_pdf
 
 _SUMMARY = {
     "total_trades": 20, "win_rate": 31.2, "win_rate_all_exits": 30.0,
@@ -55,16 +56,31 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
 class TestFixMissingGlyphsNonString:
     """🎓 वापरकर्त्याने सापडवलेली bug (PDF generation क्रॅश — AttributeError: 'float' object has no
     attribute 'replace', pdf_reports.py:611) — df.astype(str) पांडासमध्ये फक्त non-NaN सेल्स स्ट्रिंग
-    बनवतं, NaN float('nan') म्हणूनच राहतं — तेच पुढे xml escape ला जाऊन क्रॅश व्हायचं."""
+    बनवतं, NaN float('nan') म्हणूनच राहतं — तेच पुढे xml escape ला जाऊन क्रॅश व्हायचं.
+    🎓 वापरकर्त्याने सापडवलेली regression (पहिल्या फिक्सचीच, CRUDEOIL Performance Report PDF मध्ये) —
+    (1) "Charges Breakdown" ओळीतला Paragraph object raw Python repr म्हणून छापला गेला (आधीचा फिक्स
+    सरसकट सर्व non-string इनपुटला str() लावायचा — Paragraph सकट), आणि (2) एकही शुद्ध SL/Target trade
+    नसलेल्या group चा "Win Rate %" literal "nan"/"None" म्हणून दिसायचा (Dashboard वर आधीच "N/A" असतं,
+    PDF मध्ये कधीच नव्हतं). आता दोन्ही फिक्स — NaN/None "N/A" दाखवतात, Paragraph सारखे flowables
+    जसेच्या तसे राहतात."""
 
-    def test_nan_float_becomes_string(self):
-        assert _fix_missing_glyphs(float("nan")) == "nan"
+    def test_nan_float_becomes_na_string(self):
+        assert _fix_missing_glyphs(float("nan")) == "N/A"
 
-    def test_none_becomes_string(self):
-        assert _fix_missing_glyphs(None) == "None"
+    def test_none_becomes_na_string(self):
+        assert _fix_missing_glyphs(None) == "N/A"
+
+    def test_regular_float_becomes_plain_string(self):
+        assert _fix_missing_glyphs(3.5) == "3.5"
 
     def test_regular_string_unaffected(self):
         assert _fix_missing_glyphs("hello") == "hello"
+
+    def test_paragraph_object_passes_through_unchanged(self):
+        """Charges Breakdown ओळीत _kv_table() मुद्दामच Paragraph cell values पाठवतं (लांब मजकूर
+        wrap व्हावा म्हणून) — _fix_missing_glyphs() ने ते बदलता/स्ट्रिंगमध्ये convert करता कामा नयेत."""
+        para = Paragraph("Brokerage Rs 100", _rpt_kv_wrap)
+        assert _fix_missing_glyphs(para) is para
 
 
 class TestGeneratePerformanceReportPdfOvershootDf:
@@ -84,5 +100,40 @@ class TestGeneratePerformanceReportPdfOvershootDf:
             "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
             {"gross_pnl": -700, "total_charges": 0, "net_pnl": -700},
             None, None, None, None, [], overshoot_df=overshoot_df,
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+
+class TestGeneratePerformanceReportPdfCrudeoilRegression:
+    """🎓 वापरकर्त्याने अपलोड केलेल्या खऱ्या CRUDEOIL PDF मध्ये सापडवलेल्या दोन्ही bugs (एकाच वेळी) —
+    (1) Charges Breakdown ओळीत Paragraph चा raw repr, (2) एकही शुद्ध SL/Target trade नसलेल्या group
+    (दोन्ही trades Trailing SL ने बंद) चा Win Rate % literal "nan" — दोन्ही एकत्र reproduce करून
+    फिक्स झाल्याची खात्री."""
+
+    def test_by_source_df_win_rate_none_shows_na_not_nan(self):
+        by_source_df = pd.DataFrame([
+            {"Group": "mcx_futures", "Trades": 2, "Win Rate %": None, "SL/Target Trades": 0,
+             "Win Rate % (All Exits)": 0.0, "ROI %": -0.01, "Total P&L": -3800.0, "Avg P&L": -1900.0},
+        ])
+        tbl = df_to_reportlab_table(by_source_df)
+        # Header row + 1 data row; columns are Group/Trades/Win Rate %/... — "Win Rate %" is index 2.
+        assert tbl._cellvalues[1][2] == "N/A"
+        assert "nan" not in str(tbl._cellvalues[1][2]).lower()
+
+    def test_charges_breakdown_with_nan_win_rate_group_does_not_crash(self):
+        pnl_totals = {
+            "gross_pnl": -3800, "total_charges": 100, "net_pnl": -3900, "total_orders": 4,
+            "charges_breakdown": {"brokerage": 100, "stt": 0, "exchange_txn": 0, "sebi_fee": 0, "stamp_duty": 0, "gst": 0},
+        }
+        by_source_df = pd.DataFrame([
+            {"Group": "mcx_futures", "Trades": 2, "Win Rate %": None, "SL/Target Trades": 0,
+             "Win Rate % (All Exits)": 0.0, "ROI %": -0.01, "Total P&L": -3800.0, "Avg P&L": -1900.0},
+        ])
+        pdf_bytes = generate_performance_report_pdf(
+            "CRUDEOIL", "All", "2026-09-24", "2026-09-24",
+            {"total_trades": 2, "win_rate": None, "win_rate_all_exits": 0.0, "roi_pct": -0.01,
+             "margin_used": 27612125.0, "total_pnl": -3800, "avg_pnl": -1900,
+             "best_trade": -1800, "worst_trade": -2000, "profit_factor": 0.0},
+            pnl_totals, by_source_df, by_source_df, by_source_df, None, [],
         )
         assert pdf_bytes[:4] == b"%PDF"
