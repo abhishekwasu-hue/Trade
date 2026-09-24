@@ -405,21 +405,35 @@ crontab -l | grep refresh_market_zones_intraday
 
 ---
 
-# NIFTY Option IV Daily Snapshot — Deployment (crontab, नवीन)
+# NIFTY Option IV Snapshot — Deployment (crontab)
 
 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन script ("Record iv of option premium daily for analysis")
-— `iv_snapshot_collector.py` रोज एकदा NIFTY च्या ATM ± 5 strikes (CE+PE) चा Implied Volatility (व
-सोबतच LTP, underlying_price) `iv_history` table मध्ये साठवते — "काल IV काय होता, आज काय आहे" अशी
-तुलना दर वेळी हाताने (PDF/live fetch वरून) काढण्याऐवजी, लगेच साठवलेल्या इतिहासावरून करता यावी म्हणून.
-आधीच अस्तित्वात असलेला `fetch_option_greeks()` (Strategy Builder च्या "Combined Greeks" साठी वापरलेला
-— Upstox च्या v3/market-quote/option-greek endpoint वरून थेट IV) हाच पुनर्वापर केला आहे — वेगळी
+— `iv_snapshot_collector.py` NIFTY च्या ATM ± 5 strikes (CE+PE) चा Implied Volatility (व सोबतच LTP,
+underlying_price) `iv_history` table मध्ये साठवते — "काल IV काय होता, आज काय आहे" अशी तुलना दर वेळी
+हाताने (PDF/live fetch वरून) काढण्याऐवजी, लगेच साठवलेल्या इतिहासावरून करता यावी म्हणून. आधीच
+अस्तित्वात असलेला `fetch_option_greeks()` (Strategy Builder च्या "Combined Greeks" साठी वापरलेला —
+Upstox च्या v3/market-quote/option-greek endpoint वरून थेट IV) हाच पुनर्वापर केला आहे — वेगळी
 गणना/नवीन endpoint लागत नाही, आणि इतर कुठल्याही live trading bot ला अजिबात स्पर्श केलेला नाही.
 
-**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — बाजार बंद होण्याआधी, 09:55 UTC = 15:25 IST,
-सोम-शुक्र — market अजून live असतानाच, live quotes धरून):**
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — dynamic_sr_instant_trader.py
+चा नवीन `entry_iv_gate_enabled`, "5 minute instant dynamic sr strategy sideways/low-avg IV मध्ये
+चांगली चालते, trending breakout मध्ये तोटा" या निरीक्षणावर चर्चा करून) — हा gate आजचा ताजा ATM IV
+वापरतो, त्यामुळे script आता रोज **एकदाच** (EOD आधी) ऐवजी बाजार-तासांत **दर ~15-20 मिनिटांनी** सुद्धा
+चालवावी लागते (oi_snapshot_collector.py च्याच cadence-style, PCR Gate साठी) — collection-logic
+बदललेली नाही, फक्त वारंवारता. जुनी EOD-only entry अजूनही ठेवलेली आहे (त्याच दिवसाचा शेवटचा, सर्वात
+संपूर्ण record — Average IV Breakout Gate चं "काल"/baseline त्याच EOD snapshot वरून येतं).
+
+**जोडायचं crontab entry (`crontab -e`, वेळा UTC मध्ये):**
 ```
+# बाजार-तासांत, दर 15 मिनिटांनी (9:20 AM ते 3:20 PM IST = 3:50 ते 9:50 UTC) — Average IV Breakout Gate साठी ताजा IV
+50-59/15,0-50/15 3-9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 iv_snapshot_collector.py >> /root/Trade/iv_snapshot.log 2>&1
+# EOD, बाजार बंद होण्याआधी (09:55 UTC = 15:25 IST) — जुनीच, "कालचा" baseline record
 55 9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 iv_snapshot_collector.py >> /root/Trade/iv_snapshot.log 2>&1
 ```
+(वरची पहिली ओळ थोडी क्लिष्ट दिसते कारण IST 9:20-3:20 चा भाग UTC मध्ये दोन तासांच्या सीमा ओलांडतो —
+सोपं करायचं असल्यास साधी `*/15 3-9 * * 1-5` (दर 15 मिनिटांनी, UTC 3:00-9:59 म्हणजे IST 8:30-3:29,
+बाजार उघडण्याआधीचीही चालेल, निरुपद्रवी) सुद्धा चालेल.)
+
 `--token` दिलेला नाही — स्क्रिप्ट आपोआप Supabase मधून सद्य token घेते (इतर crontab entries सारखंच).
 
 **तपासणी:**

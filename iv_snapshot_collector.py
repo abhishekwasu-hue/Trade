@@ -2,16 +2,22 @@
 iv_snapshot_collector.py
 ------------------------------------
 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन script ("Record iv of option premium daily for analysis") —
-रोज एकदा (EOD आधी) NIFTY च्या ATM ± 5 strikes (CE+PE) चा Implied Volatility (व सोबतच LTP,
-underlying_price) साठवणे — जेणेकरून "काल IV काय होता, आज काय आहे" अशी तुलना Dashboard/analysis
-मधून लगेच करता येईल, दर वेळी हाताने PDF/live fetch वरून काढण्याऐवजी.
+NIFTY च्या ATM ± 5 strikes (CE+PE) चा Implied Volatility (व सोबतच LTP, underlying_price) साठवणे —
+जेणेकरून "काल IV काय होता, आज काय आहे" अशी तुलना Dashboard/analysis मधून लगेच करता येईल, दर वेळी
+हाताने PDF/live fetch वरून काढण्याऐवजी.
 
 fetch_option_greeks() (आधीच अस्तित्वात, Strategy Builder च्या "Combined Greeks" साठी वापरलेला —
 Upstox च्या v3/market-quote/option-greek endpoint वरून थेट IV) हाच पुनर्वापर केला आहे — वेगळी
 गणना/नवीन endpoint लागत नाही. cloud_db.STRIKE_STEP (established, इतर bots मध्येही वापरलेला) वरून
 प्रत्येक symbol चा योग्य strike-अंतर.
 
-चालवणे (VPS वर, रोज बाजार बंद होण्याआधी — deploy/README.md मध्ये crontab तयार आहे):
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — dynamic_sr_instant_trader.py
+चा नवीन entry_iv_gate_enabled) — आधी हे script रोज **एकदाच** (EOD आधी) चालायचं (फक्त "काल" चा record
+साठी पुरेसं). आता Gate ला "आजचा ताजा IV" (oi_snapshot_collector.py च्या PCR सारखाच) intraday सुद्धा
+हवा असल्याने, बाजार-तासांत **दर ~15-20 मिनिटांनी सुद्धा** चालवायला हवं (खाली crontab बघा,
+deploy/README.md मध्ये नोंदवलेलं) — collection-logic (ATM±5 strikes) बदललेलं नाही, फक्त वारंवारता.
+
+चालवणे (VPS वर crontab — deploy/README.md मध्ये तयार आहे — दिवसातून अनेकदा + EOD, दोन्हीसाठी एकच):
     python3 iv_snapshot_collector.py --token <UPSTOX_TOKEN>
 """
 import argparse

@@ -436,6 +436,31 @@ def check_pcr_gate(symbol, direction, pcr_bullish_min, pcr_bearish_max):
         return False, pcr, f"PCR {pcr} > {pcr_bearish_max} — Bearish trade साठी पुरेसा पाठिंबा नाही"
     return True, pcr, "PCR गेट पास"
 
+
+def check_iv_change_gate(symbol, iv_change_max_pct, lookback_days=10):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
+    dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
+    Breakout happen it books loss") — आजचा ATM IV, गेल्या lookback_days दिवसांच्या सरासरी ATM IV
+    पेक्षा iv_change_max_pct% पेक्षा जास्त वाढलेला (breakout) असेल, तर नवीन entry थांबवते — PCR
+    गेटसारखा directional नाही, दोन्ही दिशांना (BULLISH/BEARISH) सारखाच लागू (VIX Spike Halt सारखं
+    regime-सिग्नल — IV वाढ म्हणजे trending/breakout ची शक्यता जास्त). डेटा उपलब्ध नाही/जुना आहे,
+    किंवा पुरेसा इतिहास (किमान १ आधीचा दिवस) अजून जमलेला नाही, तर सुरक्षिततेसाठी trade थांबवणे
+    (fail-safe, established PCR Gate पॅटर्नप्रमाणेच).
+    रिटर्न: (allowed: bool, change_pct: float|None, reason: str)"""
+    import cloud_db
+    result = cloud_db.get_iv_change_from_average(symbol, lookback_days=lookback_days)
+    if result is None:
+        return False, None, "IV डेटा उपलब्ध नाही/जुना आहे किंवा पुरेसा इतिहास अजून जमलेला नाही (iv_snapshot_collector.py तपासा)"
+    change_pct = result["change_pct"]
+    if change_pct >= iv_change_max_pct:
+        return False, change_pct, (
+            f"IV गेल्या {result['days_in_baseline']} दिवसांच्या सरासरी {result['baseline_avg_iv']:.1f}% वरून "
+            f"आज {result['today_iv']:.1f}% ({change_pct:+.1f}%) — मर्यादेपेक्षा ({iv_change_max_pct:.0f}%) जास्त वाढ, "
+            f"trending/breakout शक्यता — entry थांबवली"
+        )
+    return True, change_pct, "IV गेट पास"
+
+
 def compute_oi_price_matrix(current_total_oi, prev_total_oi, current_price, prev_price):
     """
     Long Buildup / Short Buildup / Short Covering / Long Unwinding — किंमत आणि एकूण OI दोन्हीच्या

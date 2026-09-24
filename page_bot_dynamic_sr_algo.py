@@ -348,6 +348,30 @@ def render():
                     min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
                 )
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
+        # better in sideways, low iv or average iv market, but in trending when Breakout happen it
+        # books loss") — Average IV Breakout Gate, फक्त 1m_instant साठी (हीच strategy चर्चेत होती).
+        if strategy_key == "1m_instant":
+            st.markdown("---")
+            sub_header("📈 Average IV Breakout Gate", HDR_CYAN)
+            entry_iv_gate_enabled = st.checkbox(
+                "IV Gate सक्रिय (डीफॉल्ट बंद — किमान काही दिवस iv_snapshot_collector.py चा इतिहास जमल्याशिवाय चालू करू नका)",
+                value=bool(settings.get("entry_iv_gate_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
+            )
+            st.caption("आजचा ATM IV गेल्या N दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर entry थांबवायची — दोन्ही दिशांना (Bullish/Bearish) सारखंच लागू. IV डेटा गहाळ/जुना/अपुरा इतिहास असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
+            iv1, iv2 = st.columns(2)
+            with iv1:
+                iv_change_max_pct = _number_input(
+                    "IV % वाढ मर्यादा (यापेक्षा जास्त वाढ = breakout)", settings, "iv_change_max_pct", strategy_key, symbol,
+                    min_value=5.0, max_value=100.0, step=1.0, format="%.1f", disabled=not entry_iv_gate_enabled,
+                )
+            with iv2:
+                iv_lookback_days = _number_input(
+                    "सरासरीसाठी किती मागचे दिवस", settings, "iv_lookback_days", strategy_key, symbol,
+                    min_value=1, max_value=30, step=1, disabled=not entry_iv_gate_enabled,
+                )
+
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
@@ -640,6 +664,9 @@ def render():
             new_settings["rsi_resistance_min"] = int(rsi_resistance_min)
             new_settings["spread_target_spot_pct"] = float(spread_target_spot_pct)
             new_settings["spread_target_premium_points"] = float(spread_target_premium_points)
+            new_settings["entry_iv_gate_enabled"] = bool(entry_iv_gate_enabled)
+            new_settings["iv_change_max_pct"] = float(iv_change_max_pct)
+            new_settings["iv_lookback_days"] = int(iv_lookback_days)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

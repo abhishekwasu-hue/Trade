@@ -497,6 +497,76 @@ class TestGetLatestPCR:
         assert pcr == 1.2  # जुना (50000) नाही, नवीनच (120000) वापरला जायला हवा
 
 
+class TestCheckIvChangeGate:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
+    dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
+    Breakout happen it books loss") — PCR गेटसारखाच fail-safe पॅटर्न, पण दिशा-निरपेक्ष (दोन्ही
+    BULLISH/BEARISH ला सारखाच लागू)."""
+
+    def test_data_unavailable_blocks_fail_safe(self, monkeypatch):
+        import cloud_db
+        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", lambda symbol, lookback_days=10: None)
+        ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert ok is False
+        assert change_pct is None
+        assert "उपलब्ध नाही" in reason or "इतिहास" in reason
+
+    def test_below_threshold_passes(self, monkeypatch):
+        import cloud_db
+        monkeypatch.setattr(
+            cloud_db, "get_iv_change_from_average",
+            lambda symbol, lookback_days=10: {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5},
+        )
+        ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert ok is True
+        assert change_pct == 10.0
+        assert reason == "IV गेट पास"
+
+    def test_above_threshold_blocks(self, monkeypatch):
+        import cloud_db
+        monkeypatch.setattr(
+            cloud_db, "get_iv_change_from_average",
+            lambda symbol, lookback_days=10: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
+        )
+        ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert ok is False
+        assert change_pct == 30.0
+        assert "breakout" in reason.lower()
+
+    def test_exactly_at_threshold_blocks(self, monkeypatch):
+        """>= threshold (नुसतं > नाही) -- सीमा-केस."""
+        import cloud_db
+        monkeypatch.setattr(
+            cloud_db, "get_iv_change_from_average",
+            lambda symbol, lookback_days=10: {"today_iv": 11.5, "baseline_avg_iv": 10.0, "change_pct": 15.0, "days_in_baseline": 5},
+        )
+        ok, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert ok is False
+
+    def test_direction_agnostic_both_bullish_and_bearish_blocked_the_same(self, monkeypatch):
+        """PCR गेटसारखा directional नाही -- symbol/threshold सोडून दिशेचा कुठलाही पॅरामीटरच नाही."""
+        import cloud_db
+        monkeypatch.setattr(
+            cloud_db, "get_iv_change_from_average",
+            lambda symbol, lookback_days=10: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
+        )
+        ok1, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        ok2, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert ok1 is False and ok2 is False
+
+    def test_lookback_days_passed_through(self, monkeypatch):
+        import cloud_db
+        captured = {}
+
+        def fake_get(symbol, lookback_days=10):
+            captured["lookback_days"] = lookback_days
+            return {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5}
+
+        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", fake_get)
+        oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0, lookback_days=20)
+        assert captured["lookback_days"] == 20
+
+
 class TestCheckPCRGate:
     """वापरकर्त्याशी चर्चा करून ठरवलेला नियम — PCR < pcr_bullish_min -> Bullish नाही.
     PCR > pcr_bearish_max -> Bearish नाही. डेटा नसेल तर सुरक्षिततेसाठी trade थांबवणे."""
