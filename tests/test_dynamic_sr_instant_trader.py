@@ -1116,6 +1116,7 @@ class TestIvGate:
         custom_settings = self._iv_gate_enabled_settings()
         custom_settings["iv_change_max_pct"] = 20.0
         custom_settings["iv_lookback_days"] = 5
+        custom_settings["iv_marubozu_threshold"] = 0.65
         with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
              patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
@@ -1129,7 +1130,7 @@ class TestIvGate:
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
-            mock_iv_gate.assert_called_once_with("NIFTY", 20.0, 5)
+            mock_iv_gate.assert_called_once_with("NIFTY", 20.0, 5, 0.65)
 
 
 class TestRunAllSymbols:

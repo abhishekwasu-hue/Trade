@@ -250,6 +250,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_iv_gate_enabled": False,
         "iv_change_max_pct": 15.0,
         "iv_lookback_days": 10,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
+        # hardcoded" + "Simple day candle is marabozu ... is trending") — baseline साठी कुठले
+        # मागचे दिवस "sideways" धरायचे हे ठरवणारा Marubozu body_ratio threshold — आधी module-level
+        # हार्डकोड (MARUBOZU_TRENDING_THRESHOLD=0.8) होता, आता Dashboard वरून बदलण्याजोगा.
+        "iv_marubozu_threshold": 0.8,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,

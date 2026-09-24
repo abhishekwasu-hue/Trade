@@ -167,6 +167,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_iv_gate_enabled = settings.get("entry_iv_gate_enabled", False)
     iv_change_max_pct = settings.get("iv_change_max_pct", 15.0)
     iv_lookback_days = settings.get("iv_lookback_days", 10)
+    iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -252,7 +253,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         # regime माहीतच नाही) तर पूर्वीसारखंच fail-safe skip, flip नाही.
         is_directional_trade = False
         if entry_iv_gate_enabled:
-            iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days)
+            iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days, iv_marubozu_threshold)
             if not iv_ok:
                 if iv_change_pct is None:
                     log_entry["trade_status"] = "SKIPPED_IV_GATE"

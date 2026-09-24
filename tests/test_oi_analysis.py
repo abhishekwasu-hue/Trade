@@ -505,7 +505,7 @@ class TestCheckIvChangeGate:
 
     def test_data_unavailable_blocks_fail_safe(self, monkeypatch):
         import cloud_db
-        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", lambda symbol, lookback_days=10: None)
+        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", lambda symbol, lookback_days=10, marubozu_threshold=0.8: None)
         ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
         assert ok is False
         assert change_pct is None
@@ -515,7 +515,7 @@ class TestCheckIvChangeGate:
         import cloud_db
         monkeypatch.setattr(
             cloud_db, "get_iv_change_from_average",
-            lambda symbol, lookback_days=10: {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5},
+            lambda symbol, lookback_days=10, marubozu_threshold=0.8: {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5},
         )
         ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
         assert ok is True
@@ -526,7 +526,7 @@ class TestCheckIvChangeGate:
         import cloud_db
         monkeypatch.setattr(
             cloud_db, "get_iv_change_from_average",
-            lambda symbol, lookback_days=10: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
+            lambda symbol, lookback_days=10, marubozu_threshold=0.8: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
         )
         ok, change_pct, reason = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
         assert ok is False
@@ -538,7 +538,7 @@ class TestCheckIvChangeGate:
         import cloud_db
         monkeypatch.setattr(
             cloud_db, "get_iv_change_from_average",
-            lambda symbol, lookback_days=10: {"today_iv": 11.5, "baseline_avg_iv": 10.0, "change_pct": 15.0, "days_in_baseline": 5},
+            lambda symbol, lookback_days=10, marubozu_threshold=0.8: {"today_iv": 11.5, "baseline_avg_iv": 10.0, "change_pct": 15.0, "days_in_baseline": 5},
         )
         ok, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
         assert ok is False
@@ -548,7 +548,7 @@ class TestCheckIvChangeGate:
         import cloud_db
         monkeypatch.setattr(
             cloud_db, "get_iv_change_from_average",
-            lambda symbol, lookback_days=10: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
+            lambda symbol, lookback_days=10, marubozu_threshold=0.8: {"today_iv": 13.0, "baseline_avg_iv": 10.0, "change_pct": 30.0, "days_in_baseline": 5},
         )
         ok1, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
         ok2, _, _ = oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
@@ -558,13 +558,40 @@ class TestCheckIvChangeGate:
         import cloud_db
         captured = {}
 
-        def fake_get(symbol, lookback_days=10):
+        def fake_get(symbol, lookback_days=10, marubozu_threshold=0.8):
             captured["lookback_days"] = lookback_days
             return {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5}
 
         monkeypatch.setattr(cloud_db, "get_iv_change_from_average", fake_get)
         oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0, lookback_days=20)
         assert captured["lookback_days"] == 20
+
+    def test_marubozu_threshold_passed_through(self, monkeypatch):
+        import cloud_db
+        captured = {}
+
+        def fake_get(symbol, lookback_days=10, marubozu_threshold=0.8):
+            captured["marubozu_threshold"] = marubozu_threshold
+            return {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5}
+
+        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", fake_get)
+        oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0, marubozu_threshold=0.65)
+        assert captured["marubozu_threshold"] == 0.65
+
+    def test_marubozu_threshold_defaults_to_cloud_db_constant_when_not_given(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
+        hardcoded") -- caller ने marubozu_threshold दिलाच नाही (जुना कॉलर/backward-compat) तरी
+        established cloud_db.MARUBOZU_TRENDING_THRESHOLD (0.8) डीफॉल्ट म्हणून वापरला जायला हवा."""
+        import cloud_db
+        captured = {}
+
+        def fake_get(symbol, lookback_days=10, marubozu_threshold=0.8):
+            captured["marubozu_threshold"] = marubozu_threshold
+            return {"today_iv": 11.0, "baseline_avg_iv": 10.0, "change_pct": 10.0, "days_in_baseline": 5}
+
+        monkeypatch.setattr(cloud_db, "get_iv_change_from_average", fake_get)
+        oi_analysis.check_iv_change_gate("NIFTY", iv_change_max_pct=15.0)
+        assert captured["marubozu_threshold"] == cloud_db.MARUBOZU_TRENDING_THRESHOLD
 
 
 class TestCheckPCRGate:
