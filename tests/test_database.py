@@ -771,6 +771,19 @@ class TestGetTradeLegsWithPrices:
         assert legs["long_hedge"]["entry_price"] == 8.0
         assert legs["long_hedge"]["exit_price"] is None
 
+    def test_legs_include_lots_and_lot_size_and_computed_qty(self, temp_db):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("No of lots and lot size also there") — प्रत्येक leg
+        सोबत lots/lot_size (आणि qty=lots*lot_size) — _seed_trade_with_legs() lots=1, lot_size=75 सेट करतो."""
+        self._seed_trade_with_legs(temp_db, "T1B", status="OPEN")
+        legs_map = database.get_trade_legs_with_prices(["T1B"])
+        legs = {leg["role"]: leg for leg in legs_map["T1B"]}
+        assert legs["short_leg"]["lots"] == 1
+        assert legs["short_leg"]["lot_size"] == 75
+        assert legs["short_leg"]["qty"] == 75
+        assert legs["long_hedge"]["lots"] == 1
+        assert legs["long_hedge"]["lot_size"] == 75
+        assert legs["long_hedge"]["qty"] == 75
+
     def test_closed_trade_has_both_entry_and_exit_price(self, temp_db):
         self._seed_trade_with_legs(temp_db, "T2", status="CLOSED")
         legs_map = database.get_trade_legs_with_prices(["T2"])
@@ -785,6 +798,7 @@ class TestGetTradeLegsWithPrices:
         legs_map = database.get_trade_legs_with_prices(["T3"])
         text = database._format_legs_with_prices(legs_map["T3"], include_exit=False)
         assert "24400PE (SELL)" in text
+        assert "Lots 1 (Qty 75)" in text
         assert "Entry ₹38.00" in text
         assert "Exit" not in text  # OPEN trade — exit price कधीच दाखवायचा नाही
 

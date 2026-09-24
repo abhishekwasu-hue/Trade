@@ -532,13 +532,16 @@ def get_trade_legs_with_prices(trade_ids):
     Dashboard वर कधीच दाखवलं जात नव्हतं) — कुठलीही नवीन DB column/migration न लागता, established
     दोन्ही tables (legs_json + order_log) जोडून वाचतो.
     रिटर्न: {trade_id: [{"role", "strike", "option_type", "transaction_type", "entry_price",
-    "exit_price"}, ...]} — exit_price अजून बंद न झालेल्या (OPEN) legs साठी None."""
+    "exit_price", "lots", "lot_size", "qty"}, ...]} — exit_price अजून बंद न झालेल्या (OPEN) legs
+    साठी None. lots/lot_size (आणि qty=lots*lot_size, वापरकर्त्याने मागितलेलं — "No of lots and lot
+    size also there") संपूर्ण trade साठी एकच असतात (प्रत्येक leg त्याच quantity मध्ये ट्रेड होतो),
+    live_trades मधून, कुठलाही नवीन column न लागता."""
     if not trade_ids:
         return {}
     conn = sqlite3.connect(DB_PATH)
     placeholders = ",".join("?" * len(trade_ids))
     legs_rows = conn.execute(
-        f"SELECT trade_id, legs_json FROM live_trades WHERE trade_id IN ({placeholders})", trade_ids,
+        f"SELECT trade_id, legs_json, lots, lot_size FROM live_trades WHERE trade_id IN ({placeholders})", trade_ids,
     ).fetchall()
     orders_df = pd.read_sql_query(
         f"""SELECT trade_id, instrument_key, fill_price, placed_at FROM order_log
@@ -549,7 +552,7 @@ def get_trade_legs_with_prices(trade_ids):
     conn.close()
 
     result = {}
-    for trade_id, legs_json_str in legs_rows:
+    for trade_id, legs_json_str, lots, lot_size in legs_rows:
         legs = json.loads(legs_json_str) if legs_json_str else []
         trade_orders = orders_df[orders_df["trade_id"] == trade_id]
         leg_rows = []
@@ -562,6 +565,8 @@ def get_trade_legs_with_prices(trade_ids):
                 "transaction_type": leg.get("transaction_type"),
                 "entry_price": fills[0] if fills else None,
                 "exit_price": fills[-1] if len(fills) > 1 else None,
+                "lots": lots, "lot_size": lot_size,
+                "qty": (lots * lot_size) if (lots is not None and lot_size is not None) else None,
             })
         result[trade_id] = leg_rows
     return result
@@ -569,15 +574,17 @@ def get_trade_legs_with_prices(trade_ids):
 
 def _format_legs_with_prices(leg_rows, include_exit):
     """get_trade_legs_with_prices() च्या एका trade च्या leg_rows वरून — वाचनीय एका-ओळीचा मजकूर
-    ("role strike option_type (BUY/SELL) Entry ₹X" — include_exit=True असेल आणि exit_price
-    उपलब्ध असेल तरच "→ Exit ₹Y" जोडलं जातं). कुठलाही डेटा नसेल तर None (रिकामा स्तंभ, "N/A" नाही —
-    caller ने हवं तसं दाखवावं)."""
+    ("role strike option_type (BUY/SELL) Lots N (Qty Q) Entry ₹X" — include_exit=True असेल आणि
+    exit_price उपलब्ध असेल तरच "→ Exit ₹Y" जोडलं जातं). कुठलाही डेटा नसेल तर None (रिकामा स्तंभ,
+    "N/A" नाही — caller ने हवं तसं दाखवावं)."""
     if not leg_rows:
         return None
     parts = []
     for leg in leg_rows:
         strike = f"{leg['strike']:.0f}" if leg.get("strike") is not None else "?"
         piece = f"{leg.get('role', 'leg')} {strike}{leg.get('option_type') or ''} ({leg.get('transaction_type') or ''})"
+        if leg.get("lots") is not None and leg.get("qty") is not None:
+            piece += f" Lots {leg['lots']} (Qty {leg['qty']})"
         if leg.get("entry_price") is not None:
             piece += f" Entry ₹{leg['entry_price']:.2f}"
             if include_exit and leg.get("exit_price") is not None:
