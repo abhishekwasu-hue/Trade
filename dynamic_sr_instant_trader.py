@@ -32,6 +32,16 @@ tuned आहेत — उदा. RSI<40 चा अर्थ "oversold, वर b
 continuation साठी उलटा/चुकीचा संकेत ठरेल). IV डेटाच उपलब्ध नसेल/जुना असेल (fail-safe — regime
 माहीतच नाही) तरच पूर्वीसारखं trade skip होतं, flip नाही (अनिश्चित दिशेने directional bet घेणं
 धोकादायक).
+
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level hit, he
+honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed happen
+then take entry in the same direction") — `entry_breakout_gate_enabled` (डीफॉल्ट बंद) — established
+max-2-hits च्या पलीकडचा, तिसरा trade. अट: (१) त्याच level वर आजचे दोन्ही touch-trades आधीच CLOSED
+आणि दोन्ही SL/TSL लागून हरलेले (हाच "buildup" — level सलग टिकला नाही, वेगळं indicator लागत नाही),
+आणि (२) एक 5-मिनिट candle त्या level च्या पलीकडे (breakout-दिशेने — मूळ 2 trades च्या **उलट**)
+निर्णायकपणे close झाला (नुसता touch नाही). दोन्ही अटी पूर्ण झाल्या तरच breakout-दिशेने 3रा trade —
+RSI/PCR Gate (directional trade असल्याने, IV-flip सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच
+यायला हवं म्हणून) दोन्ही वगळलेले.
 """
 import argparse
 
@@ -39,7 +49,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
+from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, check_breakout_buildup
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate, check_iv_change_gate
@@ -126,6 +136,21 @@ def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYST
     return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
+def check_breakout_candle_close(level, breakout_direction, candles_5m):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Breakout buildup and 5 minute
+    candle closed happen then take entry in the same direction") — नुकताच पूर्ण झालेला (शेवटचा,
+    आजच्याच दिवसाचा) 5-मिनिट candle त्या level च्या पलीकडे निर्णायकपणे **close** झाला आहे का (नुसता
+    touch/wick नाही, candle close) — breakout_direction नुसार (BULLISH = level च्या वर close,
+    BEARISH = level च्या खाली close). candles_5m: [{"close":..}, ...] (जुनं ते नवीन क्रमाने, फक्त
+    आजचेच). रिटर्न: bool"""
+    if not candles_5m:
+        return False
+    last_close = candles_5m[-1]["close"]
+    if breakout_direction == "BULLISH":
+        return last_close > level
+    return last_close < level
+
+
 def is_todays_expiry_day(access_token, symbol):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — आज चालू (सर्वात जवळची)
     साप्ताहिक expiry आहे का, प्रत्यक्ष option-chain expiry-यादीवरून (गृहीत धरलेला वार नाही)."""
@@ -168,6 +193,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_change_max_pct = settings.get("iv_change_max_pct", 15.0)
     iv_lookback_days = settings.get("iv_lookback_days", 10)
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
+    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -246,13 +272,45 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level
+        # hit, he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute
+        # candle closed happen then take entry in the same direction") — max-2-hits तपासणी आता
+        # इतर सर्व gates च्याही आधी (RSI/PCR/IV Gate ला लागू करायचं की वगळायचं हे ठरवण्यासाठी).
+        # hit_count_so_far>=2 असेल तर established behavior (skip) चालूच राहतो — Breakout Gate चालू
+        # असेल आणि "buildup" (दोन्ही आधीचे trades SL/TSL लागून हरलेले) + 5-मिनिट candle त्या level
+        # पलीकडे (breakout-दिशेने — मूळ 2 trades च्या उलट) close झाला, तरच हा तिसरा, वेगळा (max-2 च्या
+        # पलीकडचा) trade घेतला जातो.
+        role = cloud_db.zone_role_from_type(row["zone_type"])
+        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
+            symbol, row["zone_low"], trade_date, role=role,
+        )
+        is_breakout_trade = False
+        if hit_count_so_far >= 2:
+            if entry_breakout_gate_enabled and check_breakout_buildup(symbol, row["zone_low"], trade_date):
+                breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
+                candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
+                todays_5m_candles = []
+                if candles_5m_df is not None and not candles_5m_df.empty:
+                    candles_5m_df = candles_5m_df.copy()
+                    candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
+                    todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+                if check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles):
+                    direction = breakout_direction
+                    log_entry["direction"] = direction
+                    is_breakout_trade = True
+            if not is_breakout_trade:
+                log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+                log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+                cloud_db.save_signal_log(log_entry)
+                continue
+
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip on IV Breakout — बघा वरची
-        # फाईल-टिप्पणी) — इतर सर्व gates च्याही आधी तपासतो, कारण याचा निकाल पुढच्या RSI/PCR Gate ला
-        # लागू करायचा की वगळायचा हे ठरवतो. आजचा IV गेल्या सरासरीपेक्षा खरंच जास्त वाढलेला (मोजलेला,
-        # डेटा-गहाळ नाही) आढळला, तरच दिशा उलटते — डेटाच अनुपलब्ध/जुना असेल (iv_change_pct is None,
-        # regime माहीतच नाही) तर पूर्वीसारखंच fail-safe skip, flip नाही.
-        is_directional_trade = False
-        if entry_iv_gate_enabled:
+        # फाईल-टिप्पणी) — Breakout trade आधीच ठरलेला असेल (वर), तर हा block पूर्णपणे वगळला जातो
+        # (दिशा आधीच ठरलेली आहे, दुसऱ्यांदा फ्लिप/तपासणी नको). आजचा IV गेल्या सरासरीपेक्षा खरंच जास्त
+        # वाढलेला (मोजलेला, डेटा-गहाळ नाही) आढळला, तरच दिशा उलटते — डेटाच अनुपलब्ध/जुना असेल
+        # (iv_change_pct is None, regime माहीतच नाही) तर पूर्वीसारखंच fail-safe skip, flip नाही.
+        is_directional_trade = is_breakout_trade
+        if entry_iv_gate_enabled and not is_directional_trade:
             iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days, iv_marubozu_threshold)
             if not iv_ok:
                 if iv_change_pct is None:
@@ -266,8 +324,9 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional
-        # trade (IV breakout, वर) साठी मुद्दामच वगळलेला — RSI उंबरठे reversal-गृहीतकासाठी tuned आहेत
-        # (उदा. RSI<40 = "oversold, वर bounce होईल"), breakout-continuation साठी उलटा संकेत ठरेल.
+        # trade (IV breakout/Breakout Entry, वर) साठी मुद्दामच वगळलेला — RSI उंबरठे reversal-
+        # गृहीतकासाठी tuned आहेत (उदा. RSI<40 = "oversold, वर bounce होईल"), breakout-continuation
+        # साठी उलटा संकेत ठरेल.
         if entry_rsi_gate_enabled and not is_directional_trade:
             rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
             if not rsi_ok:
@@ -290,19 +349,12 @@ def process_symbol(access_token, symbol, lot_size=65):
                 cloud_db.save_signal_log(log_entry)
                 continue
 
-        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
-            symbol, row["zone_low"], trade_date, role=cloud_db.zone_role_from_type(row["zone_type"]),
-        )
-        if hit_count_so_far >= 2:
-            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
-            cloud_db.save_signal_log(log_entry)
-            continue
-
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — cooldown आता फक्त खऱ्या trade नंतरच सुरू होतो
         # (last_trade_time), नुसत्या नाकारलेल्या (RSI/PCR gate ने) touch मुळे नाही — आधी सलग
-        # RSI-नाकारलेले touches सुद्धा घड्याळ रीसेट करत राहायचे, खरा trade कधीच न होता.
-        if last_trade_time is not None:
+        # RSI-नाकारलेले touches सुद्धा घड्याळ रीसेट करत राहायचे, खरा trade कधीच न होता. Breakout
+        # trade साठी वगळलेला — established design नुसार तो मुद्दामच लगेच (2ऱ्या SL/TSL नंतर लवकरच,
+        # 5-मिनिट candle close होताच) यायला हवा, 30 मिनिटांची अतिरिक्त वाट नाही.
+        if last_trade_time is not None and not is_breakout_trade:
             elapsed_minutes = (now - last_trade_time).total_seconds() / 60
             if elapsed_minutes < 30:
                 log_entry["trade_status"] = "SKIPPED_COOLDOWN_30MIN"
@@ -364,9 +416,12 @@ def process_symbol(access_token, symbol, lot_size=65):
                 entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
             )
         log_entry["trade_status"] = trade_status
-        # 🎓 Directional trade (IV Breakout Gate — दिशा-flip) असल्यास Signal Log मध्येच स्पष्ट नोंद —
-        # नंतर Performance Report/Signal Log मधून reversal विरुद्ध directional trades वेगळे शोधता यावेत.
-        if is_directional_trade:
+        # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
+        # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
+        # directional trades वेगळे शोधता यावेत.
+        if is_breakout_trade:
+            log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (2 आधीचे SL/TSL + 5-मिनिट candle close), RSI/PCR Gate वगळले"
+        elif is_directional_trade:
             log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
         cloud_db.save_signal_log(log_entry)
 
@@ -419,15 +474,20 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
-        if is_directional_trade:
+        if is_breakout_trade:
+            rsi_display = "📈 Breakout Entry (2 आधीचे SL/TSL + 5-मिनिट candle close) — RSI/PCR Gate वगळले."
+        elif is_directional_trade:
             rsi_display = f"📈 Directional trade (IV breakout {iv_change_pct:+.1f}%) — RSI/PCR Gate वगळले."
         elif entry_rsi_gate_enabled:
             rsi_display = f"RSI {rsi_value}."
         else:
             rsi_display = "RSI Gate बंद (तपासलं नाही)."
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
+        # 🎓 Breakout Entry हा max-2-hits च्या पलीकडचा, वेगळा (तिसरा) trade आहे -- "X/2 वा hit" हा
+        # शीर्षक-भाग breakout साठी दिशाभूल करणारा ठरेल, म्हणून वेगळा हेडर.
+        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/2 वा hit)"
         message = (
-            f"🎯 <b>{symbol} Dynamic S/R Cross ({timeframe_suffix})! (आजचा {hit_count_so_far + 1}/2 वा hit)</b>\n"
+            f"{hit_label_header} <b>{symbol} ({timeframe_suffix})!</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"
             f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n"
             + naked_line
