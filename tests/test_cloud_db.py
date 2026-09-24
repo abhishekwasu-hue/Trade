@@ -898,6 +898,10 @@ class TestIvHistoryStorage:
         assert cloud_db.get_iv_history("NIFTY") is None
 
 
+def _ohlc_row(trade_date, open_, high, low, close):
+    return {"trade_date": trade_date, "open": open_, "high": high, "low": low, "close": close}
+
+
 def _iv_row(trade_date, snapshot_time, strike, option_type, iv, underlying_price):
     return {
         "trade_date": trade_date, "snapshot_time": snapshot_time, "expiry": "2026-09-25",
@@ -915,6 +919,67 @@ class FakeIvDateTime(datetime.datetime):
     @classmethod
     def utcnow(cls):
         return cls._fixed_utcnow
+
+
+class TestComputeBodyRatio:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Simple day candle is marabozu or likely marabozu
+    with short wick is trending in intraday") — |Close-Open|/(High-Low), इंडिकेटरशिवाय plain
+    daily-candle आधारित trending/sideways मोजमाप."""
+
+    def test_pure_marubozu_ratio_near_one(self):
+        # Open 23900, Low 23890, High 24110, Close 24100 -- range 220, body 200
+        ratio = cloud_db.compute_body_ratio(23900, 24110, 23890, 24100)
+        assert round(ratio, 2) == round(200 / 220, 2)
+
+    def test_doji_like_ratio_near_zero(self):
+        # Open 24000, Low 23850, High 24150, Close 24020 -- range 300, body 20
+        ratio = cloud_db.compute_body_ratio(24000, 24150, 23850, 24020)
+        assert round(ratio, 2) == round(20 / 300, 2)
+
+    def test_zero_range_day_returns_zero_not_crash(self):
+        """High==Low (हालचालच नाही, अत्यंत दुर्मिळ) -- division-by-zero ऐवजी सुरक्षित 0.0."""
+        assert cloud_db.compute_body_ratio(24000, 24000, 24000, 24000) == 0.0
+
+
+class TestIsSidewaysDay:
+    def test_below_threshold_is_sideways(self):
+        assert cloud_db.is_sideways_day(24000, 24150, 23850, 24020, marubozu_threshold=0.8) is True
+
+    def test_at_or_above_threshold_is_not_sideways(self):
+        # body_ratio 200/220 ≈ 0.909 >= 0.8
+        assert cloud_db.is_sideways_day(23900, 24110, 23890, 24100, marubozu_threshold=0.8) is False
+
+    def test_custom_threshold_respected(self):
+        # body_ratio 150/250 = 0.6 -- 0.8 सह sideways, 0.5 सह trending
+        assert cloud_db.is_sideways_day(24000, 24200, 23950, 24150, marubozu_threshold=0.8) is True
+        assert cloud_db.is_sideways_day(24000, 24200, 23950, 24150, marubozu_threshold=0.5) is False
+
+
+class TestGetNiftyDailyOhlc:
+    """🎓 established `nifty_1min_ohlc` (रोज अद्ययावत होणारा NIFTY 1-मिनिट डेटा) मधून resample
+    करून प्रत्येक दिवसाचा daily O/H/L/C काढणे -- नवीन कुठलाही API कॉल/cron लागत नाही."""
+
+    def test_no_data_returns_none(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_nifty_1min_range", lambda from_date=None, to_date=None: None)
+        assert cloud_db.get_nifty_daily_ohlc() is None
+
+    def test_resamples_1min_candles_to_daily_ohlc(self, monkeypatch):
+        import pandas as pd
+        rows = [
+            {"timestamp": pd.Timestamp("2026-09-23 09:15:00"), "open": 23800.0, "high": 23810.0, "low": 23795.0, "close": 23805.0, "volume": 0},
+            {"timestamp": pd.Timestamp("2026-09-23 12:00:00"), "open": 23805.0, "high": 23920.0, "low": 23690.0, "close": 23900.0, "volume": 0},
+            {"timestamp": pd.Timestamp("2026-09-23 15:29:00"), "open": 23900.0, "high": 23905.0, "low": 23895.0, "close": 23898.0, "volume": 0},
+            {"timestamp": pd.Timestamp("2026-09-24 09:15:00"), "open": 24000.0, "high": 24010.0, "low": 23995.0, "close": 24005.0, "volume": 0},
+        ]
+        monkeypatch.setattr(cloud_db, "get_nifty_1min_range", lambda from_date=None, to_date=None: pd.DataFrame(rows))
+        result = cloud_db.get_nifty_daily_ohlc()
+        assert result is not None
+        day1 = result[result["trade_date"] == "2026-09-23"].iloc[0]
+        assert day1["open"] == 23800.0   # दिवसाचा पहिला candle चा open
+        assert day1["high"] == 23920.0   # दिवसातला कमाल high
+        assert day1["low"] == 23690.0    # दिवसातला किमान low
+        assert day1["close"] == 23898.0  # दिवसाचा शेवटचा candle चा close
+        assert len(result) == 2  # दोन वेगळे trade_dates
 
 
 class TestGetIvChangeFromAverage:
@@ -990,7 +1055,13 @@ class TestGetIvChangeFromAverage:
             _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
             _iv_row("2026-09-24", "10:25", 24000, "PE", 13.0, 24000.0),
         ]
+        # दोन्ही prior दिवस SIDEWAYS (body_ratio < 0.8 marubozu threshold) -- बेसलाइनमध्ये मोजले जावेत.
+        daily_ohlc = pd.DataFrame([
+            _ohlc_row("2026-09-22", 23800.0, 23850.0, 23750.0, 23810.0),  # range 100, body 10, ratio 0.10
+            _ohlc_row("2026-09-23", 23900.0, 23950.0, 23850.0, 23910.0),  # range 100, body 10, ratio 0.10
+        ])
         monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", lambda: daily_ohlc)
         result = cloud_db.get_iv_change_from_average("NIFTY", lookback_days=10, max_age_minutes=20)
         assert result is not None
         assert result["today_iv"] == 12.5
@@ -1012,10 +1083,77 @@ class TestGetIvChangeFromAverage:
             _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
             _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
         ]
+        daily_ohlc = pd.DataFrame([
+            _ohlc_row("2026-09-20", 23000.0, 23050.0, 22950.0, 23010.0),  # sideways
+            _ohlc_row("2026-09-23", 23900.0, 23950.0, 23850.0, 23910.0),  # sideways
+        ])
         monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", lambda: daily_ohlc)
         result = cloud_db.get_iv_change_from_average("NIFTY", lookback_days=1)
         assert result["days_in_baseline"] == 1
         assert result["baseline_avg_iv"] == 10.0  # फक्त 23-सप्टेंबरचाच, 20-सप्टेंबरचा वगळलेला
+
+    def test_trending_day_excluded_from_baseline(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Fakt N diwsacha average फायद्याचा नाही" +
+        "Simple day candle is marabozu ... is trending") -- trending (Marubozu-सारखा) दिवस बेसलाइन
+        सरासरीतून पूर्णपणे वगळला जायला हवा, जरी तो lookback window च्या आतच असला तरी."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            # ट्रेंडिंग दिवस (उंच IV, 20.0) -- वगळला जायला हवा
+            _iv_row("2026-09-22", "15:25", 23800, "CE", 20.0, 23800.0),
+            _iv_row("2026-09-22", "15:25", 23800, "PE", 20.0, 23800.0),
+            # sideways दिवस -- हाच फक्त बेसलाइनमध्ये यायला हवा
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 10.0, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 10.0, 23900.0),
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
+        ]
+        daily_ohlc = pd.DataFrame([
+            _ohlc_row("2026-09-22", 23700.0, 23920.0, 23690.0, 23900.0),  # range 230, body 200, ratio 0.87 -- TRENDING
+            _ohlc_row("2026-09-23", 23900.0, 23950.0, 23850.0, 23910.0),  # range 100, body 10, ratio 0.10 -- sideways
+        ])
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", lambda: daily_ohlc)
+        result = cloud_db.get_iv_change_from_average("NIFTY", lookback_days=10)
+        assert result is not None
+        assert result["days_in_baseline"] == 1
+        assert result["baseline_avg_iv"] == 10.0  # trending दिवसाचा (20.0) परिणाम अजिबात नाही
+
+    def test_day_missing_from_daily_ohlc_treated_as_unknown_excluded(self, monkeypatch):
+        """iv_history मध्ये दिवस आहे, पण daily_ohlc (nifty_1min_ohlc) मध्ये गहाळ (उदा. डेटा-गॅप) --
+        classification अनिश्चित असल्याने sideways गृहीत न धरता वगळलंच जायला हवं (fail-safe)."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 10.0, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 10.0, 23900.0),
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
+        ]
+        daily_ohlc = pd.DataFrame(columns=["trade_date", "open", "high", "low", "close"])  # 23-सप्टेंबरची नोंदच नाही
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", lambda: daily_ohlc)
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+    def test_non_nifty_symbol_always_returns_none(self, monkeypatch):
+        """day-classification फक्त NIFTY साठी शक्य (nifty_1min_ohlc फक्त NIFTY साठीच) -- इतर symbols
+        साठी जुनं सरसकट-सरासरी वर्तन परत येत नाही, fail-safe None."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 10.0, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 10.0, 23900.0),
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
+        ]
+
+        def _boom():
+            raise AssertionError("BANKNIFTY साठी get_nifty_daily_ohlc() कधीच call व्हायला नको")
+
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", _boom)
+        assert cloud_db.get_iv_change_from_average("BANKNIFTY") is None
 
     def test_zero_baseline_returns_none(self, monkeypatch):
         import pandas as pd
@@ -1026,7 +1164,11 @@ class TestGetIvChangeFromAverage:
             _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
             _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
         ]
+        daily_ohlc = pd.DataFrame([
+            _ohlc_row("2026-09-23", 23900.0, 23950.0, 23850.0, 23910.0),  # sideways
+        ])
         monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        monkeypatch.setattr(cloud_db, "get_nifty_daily_ohlc", lambda: daily_ohlc)
         assert cloud_db.get_iv_change_from_average("NIFTY") is None
 
 

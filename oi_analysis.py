@@ -437,18 +437,24 @@ def check_pcr_gate(symbol, direction, pcr_bullish_min, pcr_bearish_max):
     return True, pcr, "PCR गेट पास"
 
 
-def check_iv_change_gate(symbol, iv_change_max_pct, lookback_days=10):
+def check_iv_change_gate(symbol, iv_change_max_pct, lookback_days=10, marubozu_threshold=None):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
     dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
-    Breakout happen it books loss") — आजचा ATM IV, गेल्या lookback_days दिवसांच्या सरासरी ATM IV
+    Breakout happen it books loss") — आजचा ATM IV, गेल्या lookback_days **SIDEWAYS-classified**
+    (Marubozu body_ratio आधारित, बघा cloud_db.get_iv_change_from_average) दिवसांच्या सरासरी ATM IV
     पेक्षा iv_change_max_pct% पेक्षा जास्त वाढलेला (breakout) असेल, तर नवीन entry थांबवते — PCR
     गेटसारखा directional नाही, दोन्ही दिशांना (BULLISH/BEARISH) सारखाच लागू (VIX Spike Halt सारखं
     regime-सिग्नल — IV वाढ म्हणजे trending/breakout ची शक्यता जास्त). डेटा उपलब्ध नाही/जुना आहे,
-    किंवा पुरेसा इतिहास (किमान १ आधीचा दिवस) अजून जमलेला नाही, तर सुरक्षिततेसाठी trade थांबवणे
+    किंवा पुरेसा sideways इतिहास (किमान १ दिवस) अजून जमलेला नाही, तर सुरक्षिततेसाठी trade थांबवणे
     (fail-safe, established PCR Gate पॅटर्नप्रमाणेच).
+    🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no hardcoded") —
+    marubozu_threshold आता Dashboard-सेटिंगमधून (caller कडून) येतो — None दिल्यास established
+    डीफॉल्ट (cloud_db.MARUBOZU_TRENDING_THRESHOLD) वापरला जातो.
     रिटर्न: (allowed: bool, change_pct: float|None, reason: str)"""
     import cloud_db
-    result = cloud_db.get_iv_change_from_average(symbol, lookback_days=lookback_days)
+    if marubozu_threshold is None:
+        marubozu_threshold = cloud_db.MARUBOZU_TRENDING_THRESHOLD
+    result = cloud_db.get_iv_change_from_average(symbol, lookback_days=lookback_days, marubozu_threshold=marubozu_threshold)
     if result is None:
         return False, None, "IV डेटा उपलब्ध नाही/जुना आहे किंवा पुरेसा इतिहास अजून जमलेला नाही (iv_snapshot_collector.py तपासा)"
     change_pct = result["change_pct"]

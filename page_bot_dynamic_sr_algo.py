@@ -359,8 +359,8 @@ def render():
                 value=bool(settings.get("entry_iv_gate_enabled", False)),
                 key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
             )
-            st.caption("आजचा ATM IV गेल्या N दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर entry थांबवायची — दोन्ही दिशांना (Bullish/Bearish) सारखंच लागू. IV डेटा गहाळ/जुना/अपुरा इतिहास असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
-            iv1, iv2 = st.columns(2)
+            st.caption("आजचा ATM IV, गेल्या N **sideways (Marubozu body_ratio<0.8 daily candle — trending दिवस वगळलेले)** दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा sideways-दिवसांचा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक). ⚠️ फक्त NIFTY साठी.")
+            iv1, iv2, iv3 = st.columns(3)
             with iv1:
                 iv_change_max_pct = _number_input(
                     "IV % वाढ मर्यादा (यापेक्षा जास्त वाढ = breakout)", settings, "iv_change_max_pct", strategy_key, symbol,
@@ -368,8 +368,15 @@ def render():
                 )
             with iv2:
                 iv_lookback_days = _number_input(
-                    "सरासरीसाठी किती मागचे दिवस", settings, "iv_lookback_days", strategy_key, symbol,
+                    "सरासरीसाठी किती मागचे sideways दिवस", settings, "iv_lookback_days", strategy_key, symbol,
                     min_value=1, max_value=30, step=1, disabled=not entry_iv_gate_enabled,
+                )
+            with iv3:
+                # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
+                # hardcoded") — Marubozu threshold (आधी module-level हार्डकोड 0.8) आता इथून बदलण्याजोगा.
+                iv_marubozu_threshold = _number_input(
+                    "Marubozu threshold (day trending कधी धरायचा — जास्त = कडक)", settings, "iv_marubozu_threshold", strategy_key, symbol,
+                    min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
                 )
 
         if strategy_key == "classic_sr_reversal":
@@ -667,6 +674,7 @@ def render():
             new_settings["entry_iv_gate_enabled"] = bool(entry_iv_gate_enabled)
             new_settings["iv_change_max_pct"] = float(iv_change_max_pct)
             new_settings["iv_lookback_days"] = int(iv_lookback_days)
+            new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

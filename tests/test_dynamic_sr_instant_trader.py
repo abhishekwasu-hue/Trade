@@ -1031,7 +1031,11 @@ class TestIvGate:
             dsr.process_symbol("fake_token", "NIFTY")
             assert not mock_iv_gate.called
 
-    def test_iv_gate_blocks_entry_when_enabled_and_failing(self):
+    def test_iv_gate_blocks_entry_when_data_unavailable_fail_safe(self):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip — "In trending I want to
+        block reversals trade, but trending trade should be continue") — IV डेटाच उपलब्ध नाही/जुना
+        आहे (change_pct is None, regime माहीतच नाही) तेव्हाच पूर्वीसारखं fail-safe skip -- flip नाही
+        (अनिश्चित दिशेने directional bet घेणं धोकादायक)."""
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
@@ -1042,7 +1046,7 @@ class TestIvGate:
              patch.object(dsr, "fetch_candles", return_value=candles_touch), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(dsr, "check_iv_change_gate", return_value=(False, 32.0, "IV ... breakout ... entry थांबवली")), \
+             patch.object(dsr, "check_iv_change_gate", return_value=(False, None, "IV डेटा उपलब्ध नाही")), \
              patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
@@ -1050,6 +1054,39 @@ class TestIvGate:
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_IV_GATE" in statuses
+
+    def test_iv_breakout_flips_direction_and_skips_rsi_pcr_instead_of_blocking(self):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("In trending I want to block reversals
+        trade, but trending trade should be continue") — खरा IV breakout आढळला (change_pct दिलेला)
+        तर trade skip न होता, उलट दिशेने (मूळ signal BULLISH होता -> BEARISH) directional trade
+        घेतला जायला हवा, आणि RSI/PCR Gate मुद्दामच वगळले जायला हवेत (call च होता कामा नये)."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._iv_gate_enabled_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(dsr, "check_pcr_gate") as mock_pcr_gate, \
+             patch.object(dsr, "check_iv_change_gate", return_value=(False, 32.0, "IV breakout — entry थांबवली")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T94"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_rsi_gate.called
+            assert not mock_pcr_gate.called
+            # मूळ touch-signal दिशा BULLISH (support, घसरत खाली येऊन touch) होती -- flip नंतर BEARISH
+            assert mock_select.call_args.args[1] == "BEARISH"
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            directional_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Directional" in (e.get("reason") or "")]
+            assert len(directional_entries) == 1
+            assert "32.0" in directional_entries[0]["reason"] or "+32.0" in directional_entries[0]["reason"]
 
     def test_iv_gate_allows_entry_when_enabled_and_passing(self):
         candles_touch = _candles_with_rsi([
@@ -1079,6 +1116,7 @@ class TestIvGate:
         custom_settings = self._iv_gate_enabled_settings()
         custom_settings["iv_change_max_pct"] = 20.0
         custom_settings["iv_lookback_days"] = 5
+        custom_settings["iv_marubozu_threshold"] = 0.65
         with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
              patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
@@ -1092,7 +1130,7 @@ class TestIvGate:
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
-            mock_iv_gate.assert_called_once_with("NIFTY", 20.0, 5)
+            mock_iv_gate.assert_called_once_with("NIFTY", 20.0, 5, 0.65)
 
 
 class TestRunAllSymbols:

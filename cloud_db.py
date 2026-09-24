@@ -250,6 +250,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_iv_gate_enabled": False,
         "iv_change_max_pct": 15.0,
         "iv_lookback_days": 10,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
+        # hardcoded" + "Simple day candle is marabozu ... is trending") — baseline साठी कुठले
+        # मागचे दिवस "sideways" धरायचे हे ठरवणारा Marubozu body_ratio threshold — आधी module-level
+        # हार्डकोड (MARUBOZU_TRENDING_THRESHOLD=0.8) होता, आता Dashboard वरून बदलण्याजोगा.
+        "iv_marubozu_threshold": 0.8,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,
@@ -1430,14 +1435,61 @@ def _atm_avg_iv_from_rows(rows_df):
     return float(ivs.mean())
 
 
-def get_iv_change_from_average(symbol, lookback_days=10, max_age_minutes=20):
+# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "2 category Trending
+# diwsacha iv ani sideways diwsacha iv ha data आपल्याकडे asawa. Fakt N diwsacha average फायद्याचा
+# नाही") — plain N-दिवसांची सरासरी trending आणि sideways दोन्ही प्रकारचे दिवस मिसळते, त्यामुळे
+# baseline सौम्य/दिशाभूल करणारा ठरतो. इंडिकेटरशिवाय ("indicator मध्ये interest नाही") — फक्त plain
+# daily candle (Open/High/Low/Close) वरून "Marubozu (किंवा जवळपास तसा, छोट्या wicks सह) = trending"
+# हे body_ratio (body / day's range) ने मोजलं जातं — 1.0 च्या जवळ म्हणजे wicks जवळपास नाहीतच (शुद्ध
+# दिशेने गेलेला दिवस), 0 च्या जवळ म्हणजे मोठे wicks (इकडे-तिकडे होऊन जवळपास तिथेच बंद — sideways).
+# वापरकर्त्याने चर्चा करून ठरवलेला threshold 0.8.
+MARUBOZU_TRENDING_THRESHOLD = 0.8
+
+
+def compute_body_ratio(open_, high, low, close):
+    """|Close-Open| / (High-Low) — 0 (मोठे wicks, sideways) ते 1 (Marubozu, trending). दिवसाचा
+    range शून्य असेल (हालचालच नाही) तर सुरक्षितपणे 0.0 (sideways च समजायचं)."""
+    day_range = high - low
+    if day_range <= 0:
+        return 0.0
+    return abs(close - open_) / day_range
+
+
+def is_sideways_day(open_, high, low, close, marubozu_threshold=MARUBOZU_TRENDING_THRESHOLD):
+    """body_ratio marubozu_threshold पेक्षा कमी असेल तरच sideways (trending नाही)."""
+    return compute_body_ratio(open_, high, low, close) < marubozu_threshold
+
+
+def get_nifty_daily_ohlc(from_date=None, to_date=None):
+    """established `nifty_1min_ohlc` (रोज अद्ययावत होणारा, गेल्या ५+ वर्षांचा NIFTY 1-मिनिट डेटा)
+    मधून प्रत्येक ट्रेडिंग दिवसाचा daily Open/High/Low/Close (resample — दिवसाचा पहिला open, कमाल
+    high, किमान low, शेवटचा close) — Marubozu-आधारित trending/sideways classification साठी. नवीन
+    कुठलाही API कॉल/cron लागत नाही. फक्त NIFTY साठी (established टेबलच फक्त NIFTY साठी आहे).
+    रिटर्न: DataFrame [trade_date, open, high, low, close] किंवा (डेटा नसल्यास) None."""
+    df = get_nifty_1min_range(from_date=from_date, to_date=to_date)
+    if df is None or df.empty:
+        return None
+    df = df.copy()
+    df["trade_date"] = pd.to_datetime(df["timestamp"]).dt.strftime("%Y-%m-%d")
+    daily = df.groupby("trade_date").agg(
+        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"),
+    ).reset_index()
+    return daily
+
+
+def get_iv_change_from_average(symbol, lookback_days=10, max_age_minutes=20, marubozu_threshold=MARUBOZU_TRENDING_THRESHOLD):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
     dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
-    Breakout happen it books loss") — आजचा ताजा ATM IV, मागच्या (जास्तीत जास्त lookback_days, जितके
-    उपलब्ध असतील तितकेच) ट्रेडिंग दिवसांच्या EOD ATM IV च्या सरासरीशी (single "yesterday" पेक्षा जास्त
-    स्थिर baseline) किती% वाढला हे मोजणे. आजचा snapshot max_age_minutes पेक्षा जुना असेल (collector
-    थांबलेला असू शकतो) किंवा किमान १ आधीचा दिवसही उपलब्ध नसेल (पुरेसा इतिहास अजून जमलेला नाही), तर
-    None — established PCR Gate च्या fail-safe पॅटर्नप्रमाणेच, caller ने तेव्हा trade थांबवावा.
+    Breakout happen it books loss") — आजचा ताजा ATM IV, मागच्या **फक्त Marubozu-आधारित SIDEWAYS-
+    classified** ट्रेडिंग दिवसांच्या (जास्तीत जास्त lookback_days, जितके उपलब्ध असतील तितकेच, सर्वात
+    अलीकडच्यापासून मागे शोधत) EOD ATM IV च्या सरासरीशी किती% वाढला हे मोजणे — trending दिवसांचा
+    नेहमीच जास्त असणारा IV बेसलाइनला विचलित करू नये म्हणून (plain सर्व-दिवसांची सरासरी दिशाभूल करते).
+    आजचा snapshot max_age_minutes पेक्षा जुना असेल (collector थांबलेला असू शकतो), किंवा किमान १
+    sideways दिवसही सापडला नाही (पुरेसा इतिहास अजून जमलेला नाही), तर None — established PCR Gate
+    च्या fail-safe पॅटर्नप्रमाणेच, caller ने तेव्हा trade थांबवावा.
+    ⚠️ फक्त NIFTY साठी (day-classification `nifty_1min_ohlc` वरून, जो फक्त NIFTY साठीच आहे) — इतर
+    symbols साठी नेहमीच None (sideways दिवसच classify करता येत नसल्याने, जुनं सरसकट-सरासरी वर्तन
+    परत येत नाही — fail-safe).
     रिटर्न: {"today_iv":.., "baseline_avg_iv":.., "change_pct":.., "days_in_baseline":..} किंवा None."""
     df = get_iv_history(symbol)
     if df is None or df.empty:
@@ -1465,7 +1517,16 @@ def get_iv_change_from_average(symbol, lookback_days=10, max_age_minutes=20):
     if age_minutes > max_age_minutes:
         return None
 
-    prior_dates = [d for d in trade_dates if d < today_str][-lookback_days:]
+    daily_ohlc = get_nifty_daily_ohlc() if symbol == "NIFTY" else None
+    if daily_ohlc is None or daily_ohlc.empty:
+        return None
+    sideways_dates = {
+        row["trade_date"] for _, row in daily_ohlc.iterrows()
+        if is_sideways_day(row["open"], row["high"], row["low"], row["close"], marubozu_threshold)
+    }
+
+    prior_dates_sideways = [d for d in trade_dates if d < today_str and d in sideways_dates]
+    prior_dates = prior_dates_sideways[-lookback_days:]
     if not prior_dates:
         return None
 
