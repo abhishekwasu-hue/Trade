@@ -506,6 +506,26 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
+def has_active_tsl_trades(symbols):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
+    Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —
+    दिलेल्या symbols पैकी कुठल्याही एकावर सध्या TSL-locked (tsl_activated=1) असा किमान एक OPEN trade
+    आहे का — trade_monitor.py च्या adaptive fast-poll साठी (हलकं, स्थानिक SQLite query, कुठलाही Upstox
+    API कॉल नाही — प्रत्येक cycle नंतर हे बिनधास्त तपासता येतं)."""
+    if not symbols:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(symbols))
+    cur.execute(
+        f"SELECT 1 FROM live_trades WHERE status='OPEN' AND tsl_activated=1 AND symbol IN ({placeholders}) LIMIT 1",
+        symbols,
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row is not None
+
+
 def get_open_trades_by_other_sources(symbol, exclude_source):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही) —
     दिलेल्या symbol वर सध्या OPEN असलेले, exclude_source (सध्या नवीन trade घेणारी strategy) व्यतिरिक्त

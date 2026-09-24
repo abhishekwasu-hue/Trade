@@ -131,3 +131,99 @@ class TestRunMonitorLoop:
         सुसंगत) -- प्रत्यक्ष trade_monitor.py च्या source मधूनच पडताळणी (tautological मॉक टाळून)."""
         source = inspect.getsource(trade_monitor)
         assert '"--interval-seconds", type=float, default=15' in source
+
+
+class TestRunMonitorLoopTslFastCheck:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (TSL-only fast check) — Performance Report च्या
+    SL/TSL Overshoot Tracker मध्ये TSL (Entry/Breakeven-locked) exits मध्येच खरी slippage आढळली,
+    सामान्य Spot%-SL exits मध्ये नाही. त्यामुळे blanket interval घट्ट करण्याऐवजी, कुठलाही
+    TSL-locked trade सक्रिय असेल तेव्हाच sleep interval घट्ट (tsl_interval_seconds) होतो."""
+
+    def _fake_clock(self, start=0.0):
+        state = {"now": start}
+
+        def now_fn():
+            return state["now"]
+
+        def sleep_fn(seconds):
+            state["now"] += seconds
+
+        return now_fn, sleep_fn, state
+
+    def test_uses_normal_interval_when_no_tsl_active(self):
+        now_fn, sleep_fn, _ = self._fake_clock()
+        sleep_calls = []
+
+        def tracking_sleep(seconds):
+            sleep_calls.append(seconds)
+            sleep_fn(seconds)
+
+        trade_monitor.run_monitor_loop(
+            "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
+            cycle_fn=lambda t, p: "ok", sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
+            has_active_tsl_fn=lambda: False,
+        )
+        # 0 -> 20 -> 40 (पूर्ण 20-sec sleeps), नंतर उरलेल्या 10-sec budget पुरताच शेवटचा sleep (ओलांडत नाही)
+        assert sleep_calls == [20.0, 20.0, 10.0]
+
+    def test_uses_tsl_interval_when_tsl_active(self):
+        now_fn, sleep_fn, _ = self._fake_clock()
+        sleep_calls = []
+
+        def tracking_sleep(seconds):
+            sleep_calls.append(seconds)
+            sleep_fn(seconds)
+
+        trade_monitor.run_monitor_loop(
+            "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
+            cycle_fn=lambda t, p: "ok", sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
+            has_active_tsl_fn=lambda: True,
+        )
+        assert all(s == 5.0 for s in sleep_calls)
+        assert len(sleep_calls) > 2  # 20-sec ऐवजी 5-sec interval मुळे जास्त cycles व्हायला हवेत
+
+    def test_switches_interval_mid_loop_as_tsl_state_changes(self):
+        """पहिल्या cycle नंतर TSL सक्रिय होतो (उदा. price move मुळे) -- लगेच पुढच्या sleep पासूनच
+        घट्ट interval वापरला जायला हवा, संपूर्ण loop साठी आधीच ठरवलेला नाही."""
+        now_fn, sleep_fn, _ = self._fake_clock()
+        state = {"tsl_active": False}
+        cycle_calls = []
+
+        def cycle_fn(t, p):
+            cycle_calls.append(1)
+            if len(cycle_calls) == 1:
+                state["tsl_active"] = True  # पहिल्याच cycle नंतर TSL सक्रिय झाला
+            return "ok"
+
+        sleep_calls = []
+
+        def tracking_sleep(seconds):
+            sleep_calls.append(seconds)
+            sleep_fn(seconds)
+
+        trade_monitor.run_monitor_loop(
+            "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
+            cycle_fn=cycle_fn, sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
+            has_active_tsl_fn=lambda: state["tsl_active"],
+        )
+        assert sleep_calls[0] == 5.0  # पहिल्या cycle नंतर लगेच घट्ट interval
+
+    def test_default_tsl_interval_seconds_is_5(self):
+        sig = inspect.signature(trade_monitor.run_monitor_loop)
+        assert sig.parameters["tsl_interval_seconds"].default == 5
+
+    def test_default_has_active_tsl_fn_calls_database_helper(self, monkeypatch):
+        """has_active_tsl_fn दिलेला नसेल तर database.has_active_tsl_trades(MONITORED_SYMBOLS) वर
+        डीफॉल्ट पडायला हवं (हलकी स्थानिक SQLite तपासणी, इथे mock करून खरी DB टाळलेली)."""
+        now_fn, sleep_fn, _ = self._fake_clock()
+        calls = []
+        monkeypatch.setattr(trade_monitor.database, "has_active_tsl_trades", lambda symbols: calls.append(symbols) or False)
+        trade_monitor.run_monitor_loop(
+            "tok", "D", interval_seconds=20, loop_seconds=20,
+            cycle_fn=lambda t, p: "ok", sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+        )
+        assert calls == [trade_monitor.MONITORED_SYMBOLS]
+
+    def test_cli_default_tsl_interval_seconds_is_5(self):
+        source = inspect.getsource(trade_monitor)
+        assert '"--tsl-interval-seconds", type=float, default=5' in source
