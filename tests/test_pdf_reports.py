@@ -7,7 +7,9 @@ SEBI/Stamp/GST चा ब्रेकडाऊनही दाखवला ज�
 column च्या रुंदीबाहेर overflow होऊ नये म्हणून Paragraph मध्ये wrap करून दिली आहे -- ती अजिबात न
 दाखवल्यास/चुकीच्या प्रकाराने दिल्यास PDF तयार होताना क्रॅश होईल, हेच इथे पडताळलं आहे.
 """
-from pdf_reports import generate_performance_report_pdf
+import pandas as pd
+
+from pdf_reports import _fix_missing_glyphs, generate_performance_report_pdf
 
 _SUMMARY = {
     "total_trades": 20, "win_rate": 31.2, "win_rate_all_exits": 30.0,
@@ -46,5 +48,41 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
         pdf_bytes = generate_performance_report_pdf(
             "NIFTY", "All", "2026-09-01", "2026-09-05", {"total_trades": 0},
             {"gross_pnl": 0, "total_charges": 0, "net_pnl": 0}, None, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+
+class TestFixMissingGlyphsNonString:
+    """🎓 वापरकर्त्याने सापडवलेली bug (PDF generation क्रॅश — AttributeError: 'float' object has no
+    attribute 'replace', pdf_reports.py:611) — df.astype(str) पांडासमध्ये फक्त non-NaN सेल्स स्ट्रिंग
+    बनवतं, NaN float('nan') म्हणूनच राहतं — तेच पुढे xml escape ला जाऊन क्रॅश व्हायचं."""
+
+    def test_nan_float_becomes_string(self):
+        assert _fix_missing_glyphs(float("nan")) == "nan"
+
+    def test_none_becomes_string(self):
+        assert _fix_missing_glyphs(None) == "None"
+
+    def test_regular_string_unaffected(self):
+        assert _fix_missing_glyphs("hello") == "hello"
+
+
+class TestGeneratePerformanceReportPdfOvershootDf:
+    """overshoot_df मध्ये NaN सेल्स (उदा. Fixed-Rs strategy trades साठी Overshoot % रिकामं) असल्यावरही
+    PDF क्रॅश होता कामा नये — आधी `_wide_df_table_wrapped()` मध्ये हेच क्रॅश व्हायचं."""
+
+    def test_overshoot_df_with_nan_cells_does_not_crash(self):
+        overshoot_df = pd.DataFrame([
+            {"Trade ID": "T1", "Exit Time": "2026-09-24 11:00:00", "Exit Reason": "SL",
+             "Basis": "Fixed Rs", "Overshoot (pts)": None, "Overshoot (%)": None,
+             "Overshoot (Rs)": 150.0, "Realized P&L": -1500.0, "Mode": "LIVE"},
+            {"Trade ID": "T2", "Exit Time": "2026-09-24 11:05:00", "Exit Reason": "TRAILING_SL",
+             "Basis": "Spot %", "Overshoot (pts)": 1.5, "Overshoot (%)": 0.05,
+             "Overshoot (Rs)": None, "Realized P&L": 800.0, "Mode": "LIVE"},
+        ])
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
+            {"gross_pnl": -700, "total_charges": 0, "net_pnl": -700},
+            None, None, None, None, [], overshoot_df=overshoot_df,
         )
         assert pdf_bytes[:4] == b"%PDF"

@@ -520,9 +520,14 @@ _MISSING_GLYPH_MAP = {
 }
 
 def _fix_missing_glyphs(s):
-    """Swap emoji codepoints that DejaVu Sans can't render for ones it can (checked via cmap, not guessed)."""
+    """Swap emoji codepoints that DejaVu Sans can't render for ones it can (checked via cmap, not guessed).
+    🎓 वापरकर्त्याने सापडवलेली bug (PDF generation क्रॅश — AttributeError: 'float' object has no
+    attribute 'replace') — df.astype(str) पांडासमध्ये NaN ला स्ट्रिंग बनवत नाही (float('nan') तसाच
+    राहतो), फक्त इतर सेल्स स्ट्रिंग होतात — काही cells NaN/None असलेल्या (उदा. Fixed-Rs strategy
+    trades साठी Overshoot % रिकामं) DataFrame मधून हे function raw float घेऊन पुढे xml escape ला
+    द्यायचं, जे crash व्हायचं. आता str() कोणत्याही non-string इनपुटला आधीच बदलतो."""
     if not isinstance(s, str):
-        return s
+        return str(s)
     for bad, good in _MISSING_GLYPH_MAP.items():
         s = s.replace(bad, good)
     return s
