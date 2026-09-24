@@ -359,7 +359,7 @@ def render():
                 value=bool(settings.get("entry_iv_gate_enabled", False)),
                 key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
             )
-            st.caption("आजचा ATM IV गेल्या N दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक).")
+            st.caption("आजचा ATM IV, गेल्या N **sideways (Marubozu body_ratio<0.8 daily candle — trending दिवस वगळलेले)** दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा sideways-दिवसांचा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक). ⚠️ फक्त NIFTY साठी.")
             iv1, iv2 = st.columns(2)
             with iv1:
                 iv_change_max_pct = _number_input(
@@ -368,7 +368,7 @@ def render():
                 )
             with iv2:
                 iv_lookback_days = _number_input(
-                    "सरासरीसाठी किती मागचे दिवस", settings, "iv_lookback_days", strategy_key, symbol,
+                    "सरासरीसाठी किती मागचे sideways दिवस", settings, "iv_lookback_days", strategy_key, symbol,
                     min_value=1, max_value=30, step=1, disabled=not entry_iv_gate_enabled,
                 )
 
