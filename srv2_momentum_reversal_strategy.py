@@ -27,15 +27,18 @@ import pandas as pd
 import cloud_db
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
+# rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.py/mcx_futures_trader.py सारखाच
+# dual-threshold RSI गेट (Support<40 / Resistance>60, established, सिद्ध तर्क — नवीन कॉपी नाही).
+from dynamic_sr_instant_trader import check_instant_rsi_filter
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
-from signals import calculate_rsi, resample_to_1h
+from signals import resample_to_1h
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from oi_analysis import check_pcr_gate
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
-RSI_NEUTRAL_LEVEL = 50
 TOUCH_TOLERANCE_PCT = 0.05
 SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
@@ -67,20 +70,6 @@ def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYST
         if close <= lower:
             return "BEARISH"
     return "BULLISH" if closes[-1] >= level else "BEARISH"
-
-
-def check_rsi_filter(candles_df, direction, neutral_level=RSI_NEUTRAL_LEVEL):
-    """Rule 1 — 15/30/60-मिनिट (candles_df ज्या timeframe चा असेल त्याचा) RSI(14) दिशेशी सुसंगत आहे का.
-    direction: "BULLISH" (Support Bounce) -> RSI 50 च्या खाली हवा.
-    "BEARISH" (Resistance Bounce) -> RSI 50 च्या वर हवा.
-    रिटर्न: (pass: bool, rsi_value: float किंवा None)"""
-    rsi_series = calculate_rsi(candles_df, period=14)
-    if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
-        return False, None
-    latest_rsi = round(float(rsi_series.iloc[-1]), 2)
-    if direction == "BULLISH":
-        return latest_rsi < neutral_level, latest_rsi
-    return latest_rsi > neutral_level, latest_rsi
 
 
 def compute_sl_pct_from_absolute(sl_rupees, net_credit_total):
@@ -117,14 +106,22 @@ def is_todays_expiry_day(access_token, symbol):
     return expiries[0] == today_str
 
 
-def _collect_touch_candidates(access_token, symbol, all_zones, now):
-    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe) — 15M/30M/60M तिन्हींचे ACTIVE
-    levels, प्रत्येकाचे स्वतःचे candles (त्याच timeframe चा RSI साठी) आणि सद्य किंमत (आजच्याच
-    दिवसाची, कालचे candles मिसळू नयेत म्हणून) — एकाच यादीत एकत्र करणे.
+def _collect_touch_candidates(access_token, symbol, all_zones, now, active_timeframes=None):
+    """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe) — 15M/30M/60M पैकी established
+    active_timeframes मध्ये असलेल्यांचेच ACTIVE levels, प्रत्येकाचे स्वतःचे candles (त्याच timeframe
+    चा RSI साठी) आणि सद्य किंमत (आजच्याच दिवसाची, कालचे candles मिसळू नयेत म्हणून) — एकाच यादीत
+    एकत्र करणे.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute डीफॉल्ट, 30/60 optional") — active_timeframes
+    (उदा. ["15M"] किंवा ["15M","30M"]) दिलं नाही (None, established जुने कॉलर्स/tests) तर established
+    जुनंच वर्तन — तिन्ही (15M/30M/60M) एकत्र.
     रिटर्न: [(level_price, timeframe_suffix, candles_df, underlying_price, todays_closes), ...]"""
+    if active_timeframes is None:
+        active_timeframes = list(TIMEFRAME_TO_SUFFIX.values())
     candidates = []
     today_date = now.date()
     for interval, suffix in TIMEFRAME_TO_SUFFIX.items():
+        if suffix not in active_timeframes:
+            continue
         dyn_levels = all_zones[(all_zones["zone_type"].str.endswith(f"_{suffix}")) & (all_zones["status"] == "ACTIVE")]
         if dyn_levels.empty:
             continue
@@ -172,8 +169,18 @@ def process_symbol(access_token, symbol, lot_size=65):
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
-    rsi_neutral_level = settings.get("rsi_neutral_level", RSI_NEUTRAL_LEVEL)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — dynamic_sr_instant_trader.py/
+    # mcx_futures_trader.py सारखेच dual-threshold defaults (established single rsi_neutral_level=50
+    # ऐवजी).
+    rsi_support_max = settings.get("rsi_support_max", 40)
+    rsi_resistance_min = settings.get("rsi_resistance_min", 60)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute डीफॉल्ट ठेवा, 30 आणि 60 minute optional राहील") —
+    # आधी तिन्ही (15M/30M/60M) नेहमीच एकत्र तपासले जायचे, निवडीची सोयच नव्हती. आता Dashboard वरून
+    # (Entry Gate) निवडलेले टाईमफ्रेम्स — डीफॉल्ट फक्त 15M.
+    active_timeframes = settings.get("active_timeframes", ["15M"])
+    if not active_timeframes:
+        active_timeframes = ["15M"]  # सुरक्षा-कवच — चुकून सर्व अनचेक झाले तरी bot पूर्णपणे बधिर होऊ नये
     # 🎓 वापरकर्त्याने पडताळणीत सापडवलेली bug (live trading आधी) — Dashboard वरचं "Target — % of Net
     # Premium" setting (spread_target_pct_of_premium, page_bot_dynamic_sr_algo.py) आधी इथे कधीच
     # वाचलंच जायचं नाही — नेहमी हार्डकोडेड TARGET_PCT_OF_PREMIUM (80%) वापरला जायचा. वापरकर्त्याने
@@ -185,7 +192,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         return f"{symbol}: कुठलेही zones सापडले नाहीत (आधी refresh_market_zones.py चालवा)"
 
     trade_date = now.strftime("%Y-%m-%d")
-    candidates = _collect_touch_candidates(access_token, symbol, all_zones, now)
+    candidates = _collect_touch_candidates(access_token, symbol, all_zones, now, active_timeframes=active_timeframes)
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (15M/30M/60M) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
@@ -225,10 +232,10 @@ def process_symbol(access_token, symbol, lot_size=65):
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो.
         if entry_rsi_gate_enabled:
-            rsi_ok, rsi_value = check_rsi_filter(candles_df, direction, rsi_neutral_level)
+            rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
             if not rsi_ok:
                 log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
-                log_entry["reason"] = f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही (Bullish<{rsi_neutral_level} / Bearish>{rsi_neutral_level} हवं होतं)"
+                log_entry["reason"] = f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही (Support<{rsi_support_max} / Resistance>{rsi_resistance_min} हवं होतं)"
                 cloud_db.save_signal_log(log_entry)
                 continue
 

@@ -4,7 +4,7 @@ import pandas as pd
 
 from config import get_ist_now
 from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
-from trading_engine import close_trade_manually, reconcile_open_trades_with_broker
+from trading_engine import close_trade_manually, reconcile_open_trades_with_broker, set_manual_sl_override, clear_manual_sl_override
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
 
 
@@ -171,4 +171,54 @@ def render():
             if any(ok for _, ok, _ in results):
                 st.session_state["_pending_multiselect_clear"] = True
                 st.rerun()
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सध्या उघड्या trade चा TSL तात्पुरता बदलायचाय — घट्ट
+        # आणि सैल दोन्ही") — फक्त एका निवडलेल्या trade साठी — established automatic SL/TSL/Target
+        # लॉजिक त्या एकाच trade साठी पूर्णपणे वगळून, फक्त हे नवीन threshold तपासलं जातं (Target
+        # नेहमीप्रमाणेच लागू राहतो). trading_engine.set_manual_sl_override()/clear_manual_sl_override()
+        # प्रत्येक बदलावर Telegram अलर्ट पाठवतात — विशेषतः सैल करताना जोखीम वाढते, त्यामुळे कधीच गप्प
+        # बदल होत नाही.
+        st.markdown("---")
+        sub_header("🎯 Trailing SL तात्पुरता बदला (Manual Override)", HDR_ORANGE)
+        st.caption(
+            "एका विशिष्ट trade चा SL/TSL तात्पुरता घट्ट किंवा सैल करा — established automatic "
+            "SL/TSL/Trailing लॉजिक त्या trade साठी पूर्णपणे वगळलं जातं (Target मात्र नेहमीप्रमाणेच "
+            "लागू राहतो). ⚠️ सैल केल्यास जोखीम वाढते — established trailing-SL logic कधीच मूळ SL पेक्षा "
+            "सैल होत नाही, हा त्याला जाणीवपूर्वक अपवाद आहे. प्रत्येक बदलावर Telegram अलर्ट येतो."
+        )
+        override_trade_id = st.selectbox(
+            "Trade निवडा", options=all_trade_ids, format_func=_format_trade, key="tsl_override_trade_select",
+        )
+        if override_trade_id:
+            override_row = positions_df.loc[positions_df["Trade ID"] == override_trade_id].iloc[0]
+            current_override = override_row.get("Manual SL Override (Rs)")
+            has_override = pd.notna(current_override)
+            ocol1, ocol2 = st.columns(2)
+            with ocol1:
+                mtm_val = override_row["MTM (Rs)"]
+                st.metric("सद्य MTM P&L", f"₹{mtm_val:,.0f}" if pd.notna(mtm_val) else "N/A")
+            with ocol2:
+                st.metric("सध्याचा Manual Override", f"₹{current_override:,.0f}" if has_override else "नाही (established logic लागू)")
+
+            new_override_level = st.number_input(
+                "नवीन SL पातळी (₹ एकूण trade P&L)",
+                value=float(current_override) if has_override else 0.0, step=100.0, key="tsl_override_new_level",
+            )
+            oc1, oc2 = st.columns(2)
+            with oc1:
+                if st.button("⚠️ SL Override सेट करा", key="tsl_override_set_btn"):
+                    ok, err = set_manual_sl_override(override_trade_id, new_override_level)
+                    if ok:
+                        st.success(f"✅ {override_trade_id} चा SL आता ₹{new_override_level:,.0f} वर सेट झाला — Telegram अलर्ट पाठवला.")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {err}")
+            with oc2:
+                if has_override and st.button("🗑️ Override काढा (established logic परत लागू करा)", key="tsl_override_clear_btn"):
+                    ok, err = clear_manual_sl_override(override_trade_id)
+                    if ok:
+                        st.success(f"✅ {override_trade_id} चा Override काढला.")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {err}")
 

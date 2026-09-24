@@ -289,11 +289,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "lots": 1,
         "itm_depth_points": 100,
         "hedge_width_points": 150,
-        # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — RSI/PCR आता on/off + adjustable) —
-        # 1m_instant सारखीच सुधारणा, पण srv2_momentum_reversal_strategy.py चा RSI गेट एकाच
-        # neutral_level (50) भोवती सममित आहे (Support<50/Resistance>50), दोन वेगळे उंबरठे नाहीत.
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single,
+        # सममित rsi_neutral_level (50, Support<50/Resistance>50) ऐवजी आता 1m_instant/mcx_futures
+        # सारखाच dual-threshold RSI गेट.
         "entry_rsi_gate_enabled": True,
-        "rsi_neutral_level": 50,
+        "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
+        "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("3 वेगवेगळे timeframe आहेत, selection user friendly
+        # असू द्या, डीफॉल्ट 15 मिनिट ठेवा, 30 आणि 60 मिनिट optional राहील") — आधी तिन्ही (15M/30M/60M)
+        # नेहमीच एकत्र तपासले जायचे, निवडीची सोयच नव्हती.
+        "active_timeframes": ["15M"],    # ["15M"] | ["15M","30M"] | ["15M","30M","60M"] | इ. — किमान एक हवा
         "entry_pcr_gate_enabled": True,
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,

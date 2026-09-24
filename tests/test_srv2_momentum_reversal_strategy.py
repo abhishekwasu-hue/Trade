@@ -16,49 +16,44 @@ import cloud_db
 from config import get_ist_now
 
 
-class TestCheckRsiFilter:
-    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established Momentum Filter (0.40% स्विंग-हालचाल)
-    काढून, established 15-मिनिट RSI(14)-आधारित फिल्टर: Resistance/Bearish साठी RSI>50, established
-    Support/Bullish साठी RSI<50."""
+class TestSrv2UsesSharedDualThresholdRsiFilter:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
+    rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.check_instant_rsi_filter() (established,
+    सिद्ध — नवीन कॉपी नाही) पुनर्वापरलेला — Support<40/Resistance>60 (डीफॉल्ट, Dashboard वरून
+    बदलण्याजोगे). प्रत्यक्ष RSI-गणिताच्या चाचण्या त्याच्याच test file मध्ये आधीच आहेत — इथे फक्त
+    srv2 ने तेच फंक्शन वापरायला हवं, हे पडताळतो."""
 
-    def _rising_df(self, n=30, start=100):
-        # established सलग वाढणाऱ्या closes -> established RSI established 50 च्या वर जायला हवा
-        closes = [start + i for i in range(n)]
-        return pd.DataFrame({"close": closes})
+    def test_srv2_module_reuses_check_instant_rsi_filter(self):
+        from dynamic_sr_instant_trader import check_instant_rsi_filter
+        assert srv2.check_instant_rsi_filter is check_instant_rsi_filter
 
-    def _falling_df(self, n=30, start=200):
-        closes = [start - i for i in range(n)]
-        return pd.DataFrame({"close": closes})
-
-    def test_bullish_passes_when_rsi_below_50(self):
-        df = self._falling_df()  # established सलग घसरण -> established RSI established कमी (established <50)
-        passed, rsi_value = srv2.check_rsi_filter(df, "BULLISH")
-        assert passed is True
-        assert rsi_value < 50
-
-    def test_bullish_fails_when_rsi_above_50(self):
-        df = self._rising_df()  # established सलग वाढ -> established RSI established जास्त (established >50)
-        passed, rsi_value = srv2.check_rsi_filter(df, "BULLISH")
-        assert passed is False
-        assert rsi_value > 50
-
-    def test_bearish_passes_when_rsi_above_50(self):
-        df = self._rising_df()
-        passed, rsi_value = srv2.check_rsi_filter(df, "BEARISH")
-        assert passed is True
-        assert rsi_value > 50
-
-    def test_bearish_fails_when_rsi_below_50(self):
-        df = self._falling_df()
-        passed, rsi_value = srv2.check_rsi_filter(df, "BEARISH")
-        assert passed is False
-        assert rsi_value < 50
-
-    def test_insufficient_candles_returns_false(self):
-        df = pd.DataFrame({"close": [100, 101, 102]})  # established RSI(14) साठी अपुरा इतिहास
-        passed, rsi_value = srv2.check_rsi_filter(df, "BULLISH")
-        assert passed is False
-        assert rsi_value is None
+    def test_custom_rsi_thresholds_actually_used(self):
+        """🎓 वापरकर्त्याने पडताळणीत सापडवलेल्या तत्सम bugs (dynamic_sr_instant/target_pct साठी
+        आधीच आढळलेल्या) टाळण्यासाठी — Dashboard वरचं rsi_support_max/rsi_resistance_min खरंच
+        check_instant_rsi_filter() ला पाठवलं जातं, हार्डकोडेड डीफॉल्ट (40/60) कायम वापरला जात नाही."""
+        candles_df = _fake_candles_df(last_close=23902)
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["rsi_support_max"] = 5
+        custom_settings["rsi_resistance_min"] = 95
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(srv2, "has_open_trade_from_source", return_value=False), \
+             patch.object(srv2, "check_instant_rsi_filter", return_value=(True, 30.0)) as mock_rsi_filter, \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_rsi_filter.called
+            assert mock_rsi_filter.call_args.args[2] == 5    # rsi_support_max
+            assert mock_rsi_filter.call_args.args[3] == 95   # rsi_resistance_min
 
 
 class TestComputeSLPctFromAbsolute:
@@ -218,6 +213,43 @@ class TestCollectTouchCandidates60m:
         assert suffix == "60M"
         # resample_to_1h ने 30-मिनिट candles अर्ध्यावर आणायला हवेत (साधारण)
         assert len(candles_df) < len(df_30m)
+
+
+class TestCollectTouchCandidatesActiveTimeframes:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute डीफॉल्ट, 30/60 optional") —
+    active_timeframes दिलं की, फक्त त्यातल्याच timeframes चे ACTIVE zones candidates मध्ये यावेत,
+    बाकीचे (जरी ACTIVE असले तरी) पूर्णपणे वगळले जावेत."""
+
+    def _combined_15m_and_30m_zones(self):
+        return pd.concat([_fake_dyn_zones(support_level=23900.0), _fake_dyn_zones_30m_only(support_level=24000.0)], ignore_index=True)
+
+    def test_only_15m_returned_when_active_timeframes_is_15m_only(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2, "fetch_candles", return_value=candles_df):
+            candidates = srv2._collect_touch_candidates(
+                "fake_token", "NIFTY", self._combined_15m_and_30m_zones(), srv2.get_ist_now(), active_timeframes=["15M"],
+            )
+        assert len(candidates) == 1
+        assert candidates[0][1] == "15M"
+
+    def test_both_returned_when_both_active(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2, "fetch_candles", return_value=candles_df):
+            candidates = srv2._collect_touch_candidates(
+                "fake_token", "NIFTY", self._combined_15m_and_30m_zones(), srv2.get_ist_now(), active_timeframes=["15M", "30M"],
+            )
+        suffixes = {c[1] for c in candidates}
+        assert suffixes == {"15M", "30M"}
+
+    def test_default_none_means_all_timeframes(self):
+        """active_timeframes न दिल्यास (established जुने कॉलर्स) established जुनंच वर्तन — तिन्ही एकत्र."""
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2, "fetch_candles", return_value=candles_df):
+            candidates = srv2._collect_touch_candidates(
+                "fake_token", "NIFTY", self._combined_15m_and_30m_zones(), srv2.get_ist_now(),
+            )
+        suffixes = {c[1] for c in candidates}
+        assert suffixes == {"15M", "30M"}
 
 
 class TestProcessSymbol:
@@ -550,10 +582,14 @@ class TestMultiTimeframe:
     Expiry-Day Logic."""
 
     def test_30m_only_level_still_triggers_entry(self):
-        """फक्त 30M level (15M/60M नाहीत) असला, तरी तोही तपासला जाऊन trade व्हायला हवा."""
+        """फक्त 30M level (15M/60M नाहीत) असला, तरी 30M active_timeframes मध्ये असेल तर तोही तपासला
+        जाऊन trade व्हायला हवा (🎓 active_timeframes डीफॉल्ट फक्त ["15M"] असल्याने, इथे स्पष्टपणे
+        30M समाविष्ट करूनच वापरकर्त्याने निवड केल्याचं गृहीत धरलेलं)."""
         candles_df = _fake_candles_df(last_close=23902)
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        custom_settings["active_timeframes"] = ["15M", "30M", "60M"]
         with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
-             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=custom_settings), \
              patch.object(srv2, "fetch_candles", return_value=candles_df), \
              patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones_30m_only()), \
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \

@@ -126,7 +126,13 @@ def init_sqlite_db():
     # entry-वेळचा spot LTP हे दोन वेगळे आकडे असू शकतात (signal-detection आणि प्रत्यक्ष order-placement
     # यामध्ये काही सेकंदांचा फरक असू शकतो). SL/TSL/Target च्या Spot% गणितासाठी आता हाच खरा entry_spot_price
     # वापरला जातो (entry_level_price ऐवजी) — नवीन, वेगळा column.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL"]:
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सध्या उघड्या trade चा TSL तात्पुरता बदलायचाय, घट्ट आणि
+    # सैल दोन्ही") — manual_sl_override_pnl (NULL=कधीच override न केलेला) — set असेल तर
+    # trading_engine.manage_open_trades() established सर्व per-source SL/TSL/Target शाखा वगळून
+    # फक्त हाच एक (Rs P&L) threshold तपासतो — established trailing-SL च्या "कधीच सैल होत नाही" या
+    # तत्त्वाला जाणीवपूर्वक अपवाद (वापरकर्त्याने स्पष्ट मागितल्याप्रमाणे), म्हणून प्रत्येक set/clear वर
+    # Telegram अलर्ट अनिवार्य (trading_engine.set_manual_sl_override()/clear_manual_sl_override()).
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL", "manual_sl_override_pnl REAL"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -525,7 +531,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     query = """SELECT trade_id, mode, trading_style, strategy, legs_json, lots, lot_size, net_credit,
-                      max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source
+                      max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source, manual_sl_override_pnl
                FROM live_trades WHERE symbol=? AND status='OPEN'"""
     params = [symbol]
     if mode_filter:
@@ -549,7 +555,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     ltp_map = fetch_ltp_map(access_token, list(all_keys)) if all_keys else {}
 
     records = []
-    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source), legs in parsed:
+    for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source, manual_sl_override_pnl), legs in parsed:
         mtm, mtm_pct = None, None
         if legs:
             current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -583,6 +589,10 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
             "Max Loss (Rs)": round(max_loss * lots * lot_size, 2) if max_loss else None,
             "Net Credit (Rs)": round(net_credit * lots * lot_size, 2) if net_credit else None,
             "Peak P&L (Rs)": round(peak_pnl, 2) if peak_pnl is not None else None,
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("TSL तात्पुरता बदलायचाय") — सेट असेल तरच दिसतो,
+            # जेणेकरून override सक्रिय असलेली trade Positions टेबलमध्येच लगेच वेगळी दिसेल (विसरता
+            # कामा नये — विशेषतः सैल केलेली असेल तर).
+            "Manual SL Override (Rs)": round(manual_sl_override_pnl, 2) if manual_sl_override_pnl is not None else None,
         })
     return pd.DataFrame(records)
 

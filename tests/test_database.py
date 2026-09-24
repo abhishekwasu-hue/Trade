@@ -607,3 +607,40 @@ class TestGetPerformanceByTwoGroups:
 
     def test_empty_when_no_trades(self, temp_db):
         assert database.get_performance_by_two_groups("NIFTY", "source", "entry_timeframe").empty
+
+
+class TestGetLivePositionsWithMtmManualOverride:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("TSL तात्पुरता बदलायचाय") — get_live_positions_with_mtm()
+    च्या output मध्ये "Manual SL Override (Rs)" स्तंभ बरोबर दिसतो का (Positions पानावर override
+    सक्रिय असलेली trade लगेच वेगळी दिसावी म्हणून)."""
+
+    def _seed_open(self, tmpdb, trade_id, manual_sl_override_pnl=None):
+        legs = [
+            {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL"},
+            {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY"},
+        ]
+        conn = sqlite3.connect(tmpdb)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
+               strikes_summary, mode, trading_style, source, manual_sl_override_pnl)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, "2026-09-24", "NIFTY", "BULL_PUT_SPREAD", 1, 75, 30.0, 30.0, 50.0, -1125.0, 1125.0,
+             "2026-09-24 10:00:00", "OPEN", json.dumps(legs), "test", "PAPER", "SWING", None, manual_sl_override_pnl),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_override_shown_when_set(self, temp_db, monkeypatch):
+        self._seed_open(temp_db, "T1", manual_sl_override_pnl=-500.0)
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert len(df) == 1
+        assert df.iloc[0]["Manual SL Override (Rs)"] == -500.0
+
+    def test_override_none_when_not_set(self, temp_db, monkeypatch):
+        self._seed_open(temp_db, "T2", manual_sl_override_pnl=None)
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert len(df) == 1
+        assert pd.isna(df.iloc[0]["Manual SL Override (Rs)"])

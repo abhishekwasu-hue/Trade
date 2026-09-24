@@ -55,7 +55,7 @@ def temp_db(monkeypatch):
     yield tmpdb
 
 
-def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None, entry_spot_price=None):
+def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BULL_PUT_SPREAD", source=None, trading_style="SWING", peak_pnl=None, entry_level_price=None, mode="PAPER", tsl_activated=0, legs=None, entry_timeframe=None, account_id=None, entry_spot_price=None, manual_sl_override_pnl=None):
     conn = sqlite3.connect(tmpdb)
     if legs is None:
         legs = [
@@ -65,9 +65,9 @@ def seed_trade(tmpdb, trade_id, net_credit, sl_level, target_level, strategy="BU
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
-           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           strikes_summary, mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-08-24", "NIFTY", strategy, 1, 75, net_credit, net_credit, 50,
-         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price),
+         sl_level, target_level, "2026-08-24 10:00:00", "OPEN", json.dumps(legs), "test", mode, trading_style, source, peak_pnl, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl),
     )
     conn.commit()
     conn.close()
@@ -176,6 +176,147 @@ class TestThreePMCarryForwardLogic:
         conn.close()
         assert row[0] == "SL"
         assert row[1] is not None and "SL level" in row[1]
+
+
+class TestManualSlOverride:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("सध्या उघड्या trade चा TSL तात्पुरता बदलायचाय — घट्ट आणि
+    सैल दोन्ही") — manage_open_trades() मधला सर्वोच्च-प्राधान्याचा manual_sl_override_pnl तपासणी-टप्पा
+    established सर्व per-source SL/TSL शाखांना पूर्णपणे वगळतो (Target मात्र नेहमीप्रमाणेच लागू)."""
+
+    def test_tighter_override_triggers_early_exit(self, temp_db, monkeypatch):
+        # pnl=-600 (सामान्य SL -1125 पेक्षा वर, म्हणजे established SL सामान्यपणे अजिबात ट्रिप होणार नाही)
+        seed_trade(temp_db, "T1", net_credit=30, sl_level=-1125, target_level=1125, manual_sl_override_pnl=-500)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "MANUAL_SL_OVERRIDE"
+
+    def test_looser_override_prevents_exit_that_normal_sl_would_trigger(self, temp_db, monkeypatch):
+        """गाभा टेस्ट — pnl=-1500, established सामान्य SL (-1125) असता तर हा trade नक्कीच बंद झाला
+        असता, पण override खूप सैल (-5000) असल्याने established शाखाच वगळली जाते — trade उघडाच राहतो."""
+        seed_trade(temp_db, "T2", net_credit=30, sl_level=-1125, target_level=100000, manual_sl_override_pnl=-5000)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 50.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 0
+
+    def test_override_active_still_respects_target(self, temp_db, monkeypatch):
+        """Override फक्त SL बाजूचा आहे — Target गाठला की तो अजूनही नेहमीप्रमाणेच बंद व्हायला हवा."""
+        seed_trade(temp_db, "T3", net_credit=30, sl_level=-1125, target_level=1125, manual_sl_override_pnl=-5000)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 14.0, "PE24300": 0.0})  # pnl=1200
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "TARGET"
+
+    def test_exit_reason_detail_names_the_manual_level(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T4", net_credit=30, sl_level=-1125, target_level=1125, manual_sl_override_pnl=-500)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT exit_reason, exit_reason_detail FROM live_trades WHERE trade_id='T4'").fetchone()
+        conn.close()
+        assert row[0] == "MANUAL_SL_OVERRIDE"
+        assert "manually-set" in row[1] and "-500" in row[1]
+
+    def test_override_bypasses_named_source_branch_too(self, temp_db, monkeypatch):
+        """override केवळ generic (source=None) trades साठीच नाही — dynamic_sr_instant सारख्या
+        named-source trades साठीही established branch पूर्णपणे वगळून हाच override तपासला जायला हवा."""
+        seed_trade(
+            temp_db, "T5", net_credit=30, sl_level=-1125, target_level=1125, manual_sl_override_pnl=-500,
+            source="dynamic_sr_instant", entry_level_price=25000.0,
+        )
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "MANUAL_SL_OVERRIDE"
+
+    def test_no_override_leaves_normal_sl_behaviour_unchanged(self, temp_db, monkeypatch):
+        """Regression — manual_sl_override_pnl=None (डीफॉल्ट) असेल, तर established वर्तन तंतोतंत
+        आधीसारखंच (test_sl_hit_closes_regardless_of_time चीच पुनरावृत्ती, override नसताना)."""
+        seed_trade(temp_db, "T6", net_credit=30, sl_level=-1125, target_level=1125)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 60.0, "PE24300": 5.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1
+        assert closed[0]["reason"] == "SL"
+
+
+class TestSetClearManualSlOverride:
+    """trading_engine.set_manual_sl_override()/clear_manual_sl_override() — फक्त OPEN trades वर,
+    आणि प्रत्येक वेळी (set/clear दोन्ही) Telegram अलर्ट (कधीच गप्प बदल होत नाही)."""
+
+    def _mock_telegram(self, monkeypatch):
+        import notifications
+        calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: calls.append(msg))
+        return calls
+
+    def test_set_override_on_open_trade_writes_db_and_alerts(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T1", net_credit=30, sl_level=-1125, target_level=1125)
+        telegram_calls = self._mock_telegram(monkeypatch)
+        ok, err = trading_engine.set_manual_sl_override("T1", -500.0)
+        assert ok is True
+        assert err is None
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT manual_sl_override_pnl FROM live_trades WHERE trade_id='T1'").fetchone()
+        conn.close()
+        assert row[0] == -500.0
+        assert len(telegram_calls) == 1
+        assert "T1" in telegram_calls[0]
+        assert "-500" in telegram_calls[0]
+
+    def test_set_override_on_nonexistent_trade_fails(self, temp_db, monkeypatch):
+        telegram_calls = self._mock_telegram(monkeypatch)
+        ok, err = trading_engine.set_manual_sl_override("NO_SUCH_TRADE", -500.0)
+        assert ok is False
+        assert err is not None
+        assert telegram_calls == []  # अस्तित्वात नसलेल्या trade वर अलर्टही जायला नको
+
+    def test_set_override_on_closed_trade_fails(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T2", net_credit=30, sl_level=-1125, target_level=1125)
+        conn = sqlite3.connect(temp_db)
+        conn.execute("UPDATE live_trades SET status='CLOSED' WHERE trade_id='T2'")
+        conn.commit()
+        conn.close()
+        self._mock_telegram(monkeypatch)
+        ok, err = trading_engine.set_manual_sl_override("T2", -500.0)
+        assert ok is False
+
+    def test_clear_override_removes_value_and_alerts(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "T3", net_credit=30, sl_level=-1125, target_level=1125, manual_sl_override_pnl=-500.0)
+        telegram_calls = self._mock_telegram(monkeypatch)
+        ok, err = trading_engine.clear_manual_sl_override("T3")
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT manual_sl_override_pnl FROM live_trades WHERE trade_id='T3'").fetchone()
+        conn.close()
+        assert row[0] is None
+        assert len(telegram_calls) == 1
+
+    def test_clear_override_on_nonexistent_trade_fails(self, temp_db, monkeypatch):
+        self._mock_telegram(monkeypatch)
+        ok, err = trading_engine.clear_manual_sl_override("NO_SUCH_TRADE")
+        assert ok is False
+
+    def test_telegram_failure_does_not_break_set_override(self, temp_db, monkeypatch):
+        """Telegram अपयशी झाला (नेटवर्क/token समस्या) तरी DB write यशस्वी राहायलाच हवा — override
+        प्रत्यक्ष लागू व्हायलाच हवा, फक्त सूचना गेली नाही म्हणून अख्खं feature अडकता कामा नये."""
+        seed_trade(temp_db, "T4", net_credit=30, sl_level=-1125, target_level=1125)
+        import notifications
+
+        def _boom(msg):
+            raise ConnectionError("telegram down")
+        monkeypatch.setattr(notifications, "send_telegram_message", _boom)
+        ok, err = trading_engine.set_manual_sl_override("T4", -500.0)
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT manual_sl_override_pnl FROM live_trades WHERE trade_id='T4'").fetchone()
+        conn.close()
+        assert row[0] == -500.0
 
 
 class TestPctTrailingSlLevel:
