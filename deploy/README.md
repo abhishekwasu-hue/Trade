@@ -295,6 +295,33 @@ python3 mcx_market_readiness_check.py --no-alert  # फक्त स्क्र
 
 ---
 
+## India VIX Spike Halt — रोज सकाळी बाजार उघडल्यावर आपोआप (नवीन, वापरकर्त्याशी चर्चा करून ठरवलेलं)
+
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या पाच मिनिटांत ठराविक% level
+क्रॉस केली तर त्या दिवशी NIFTY साठी automatic bot ने trading थांबवावी" — चर्चेअंती ठरलेलं: % बदल
+आदल्या ट्रेडिंग दिवसाच्या VIX close च्या तुलनेत मोजायचा, आजच्या 9:15 open शी नाही, डीफॉल्ट
+threshold 5%) — `check_vix_spike_halt.py` (READ-ONLY, कुठलाही order/trade नाही) रोज बाजार
+उघडून ~5 मिनिटांनी (9:20 IST) India VIX चा सध्याचा LTP आणि आदल्या दिवसाचा close मागवून % बदल
+मोजतं, आणि निकाल साठवतं — `trading_engine.check_vix_spike_halt()` हाच आधीच साठवलेला निकाल वाचून
+फक्त **NIFTY**च्या नवीन **LIVE** trades अडवतं/परवानगी देतं (PAPER trades established Kill Switch
+पॅटर्नप्रमाणेच कधीच अडत नाहीत). समस्या सापडो अथवा न सापडो (halt झालं किंवा नाही), नेहमीच एक
+Telegram संदेश पाठवतो — रोजचा run न चुकता झाल्याची खात्री मिळावी म्हणून मुद्दामच. enabled/
+threshold_pct Dashboard वरून (Bot Dynamic SR Algo पान) बदलता येतात.
+
+```
+50 3 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 check_vix_spike_halt.py >> /root/Trade/vix_spike_check.log 2>&1
+```
+(UTC 3:50 = IST 9:20 — बाजार उघडून (9:15 IST) 5 मिनिटांनी, established readiness-check/entry-bot
+cron lines च्याच पद्धतीने.)
+
+मॅन्युअली, कधीही, हातानेही चालवता येतं:
+```bash
+python3 check_vix_spike_halt.py            # VIX % बदल तपासा + Telegram अलर्ट
+python3 check_vix_spike_halt.py --no-alert # फक्त स्क्रीनवर रिपोर्ट, Telegram नाही
+```
+
+---
+
 # Market Zones Refresh (15M/30M/60M — SRv2 चा एकमेव zone-स्रोत) — आता VPS crontab वर
 
 🎓 वापरकर्त्याने सापडवलेली bug — SRv2 Momentum-Reversal चा Signal Log रिकामा दिसत होता ("Srv2 log
