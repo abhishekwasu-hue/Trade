@@ -562,10 +562,14 @@ def render():
                 trade_log_display["Entry Reason"] = trade_log_display.apply(_entry_reason_text, axis=1)
                 trade_log_display["Exit Reason"] = trade_log_display["exit_reason"].map(lambda r: _EXIT_REASON_LABELS.get(r, r))
                 trade_log_display["Exit Reason (नेमकं कारण)"] = trade_log_display["exit_reason_detail"].fillna("—")
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("actual strike price, entry price, exit price
+                # दिसायला हवं") — जुन्या (legs_json नसलेल्या) trades साठी None ऐवजी वाचनीय "N/A".
+                trade_log_display["Legs (Strike/Entry/Exit Price)"] = trade_log_display["Legs (Strike/Entry/Exit Price)"].fillna("N/A")
                 # PDF मध्ये embedded इमोजी सुरक्षित नाहीत (table font मध्ये सर्व glyphs नसतात) — त्यामुळे
                 # PDF साठी वेगळा, इमोजी-विरहित (plain) DataFrame — on-screen table मात्र इमोजीसकटच राहतो.
                 trade_log_pdf_df = trade_log_df.copy()
                 trade_log_pdf_df["Entry Reason"] = trade_log_pdf_df.apply(_entry_reason_text_en, axis=1)
+                trade_log_pdf_df["Legs (Strike/Entry/Exit Price)"] = trade_log_pdf_df["Legs (Strike/Entry/Exit Price)"].fillna("N/A")
                 # 🎓 Exit Reason स्तंभातच SL/Target चा नेमका प्रकार (Spot %-based / Premium pts-based /
                 # दोन्ही / Fixed Rs P&L-based) दिसावा — फक्त लांब Detail स्तंभात दडलेला राहू नये.
                 trade_log_pdf_df["Exit Reason"] = trade_log_pdf_df.apply(
@@ -579,13 +583,13 @@ def render():
                     trade_log_pdf_df["entry_timeframe"].notna() & (trade_log_pdf_df["entry_timeframe"] != "UNKNOWN"), "N/A",
                 )
                 trade_log_pdf_df = trade_log_pdf_df[[
-                    "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason Detail", "Realized P&L", "mode", "Entry Timeframe",
+                    "Trade ID", "Entry Time", "Entry Reason", "Legs (Strike/Entry/Exit Price)",
+                    "Exit Time", "Exit Reason", "Exit Reason Detail", "Realized P&L", "mode", "Entry Timeframe",
                 ]].rename(columns={"mode": "Mode"})
 
                 trade_log_display = trade_log_display[[
-                    "Trade ID", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason (नेमकं कारण)", "Realized P&L", "mode",
+                    "Trade ID", "Entry Time", "Entry Reason", "Legs (Strike/Entry/Exit Price)",
+                    "Exit Time", "Exit Reason", "Exit Reason (नेमकं कारण)", "Realized P&L", "mode",
                 ]].rename(columns={"mode": "Mode"})
                 st.dataframe(trade_log_display, width="stretch", height=350, hide_index=True)
                 trade_log_csv = trade_log_display.to_csv(index=False).encode("utf-8")
