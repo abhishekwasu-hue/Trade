@@ -1067,7 +1067,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price
+        """SELECT trade_id, legs_json, lots, lot_size, net_credit, sl_pnl_level, target_pnl_level, mode, trading_style, strategy, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl
            FROM live_trades WHERE symbol=? AND status='OPEN'""",
         (symbol,),
     )
@@ -1094,11 +1094,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     parsed_trades = []
     all_keys = set()
-    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in open_trades:
+    for (trade_id, legs_json_str, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) in open_trades:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             all_keys.add(leg["instrument_key"])
-        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id, entry_spot_price))
+        parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys))
     if not ltp_map and all_keys:
@@ -1154,7 +1154,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             broker_pnl_by_key[key] = broker_pnl_by_key.get(key, 0) + pnl
 
     closed_summaries = []
-    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price) in parsed_trades:
+    for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) in parsed_trades:
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -1188,13 +1188,36 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # शकतो) — Next-Level-Exit साठी entry_level_price तसाच (खाली, बदलेला नाही) वापरला जातो, पण
         # Spot%-आधारित SL/TSL/Target साठी आता entry_spot_price (उपलब्ध असल्यास) — जुन्या (deploy
         # आधीच्या, entry_spot_price नसलेल्या) trades साठी entry_level_price वरच सुरक्षितपणे पडतं.
+        # (मुद्दामच खाली if/elif-chain च्या आधीच काढलेला — manual override branch मध्ये अडथळा येऊ नये.)
         spot_anchor = entry_spot_price if entry_spot_price is not None else entry_level_price
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("सध्या उघड्या trade चा TSL manually बदलायचाय — घट्ट
+        # आणि सैल दोन्ही अनुमत") — सर्वोच्च प्राधान्याचा, स्वतंत्र तपासणी-टप्पा — या trade साठी
+        # (Positions पानावरून) manual_sl_override_pnl सेट केलेला असेल, तर खालच्या established सर्व
+        # per-source SL/TSL/Target शाखा (dynamic_sr_instant/classic_sr_reversal/srv2/generic — जे
+        # पुढे elif म्हणून राहतात, आतली एकही ओळ बदललेली नाही) पूर्णपणे वगळल्या जातात — फक्त हाच एक
+        # साधा Rs P&L threshold तपासला जातो (Target मात्र नेहमीप्रमाणेच लागू — override फक्त SL
+        # बाजूचा आहे, नफा घेण्याला अडवत नाही). established trailing-SL mechanisms "कधीच मूळ SL
+        # पेक्षा सैल होत नाहीत" (compute_trailing_sl_level() मधलं max(original, trailing) बघा) —
+        # या override ला जाणीवपूर्वक तो अपवाद आहे, म्हणून set/clear करताना Telegram अलर्ट अनिवार्य
+        # (set_manual_sl_override()/clear_manual_sl_override()) — कधीच गप्प बदल होत नाही.
+        exit_reason = None
+        if manual_sl_override_pnl is not None:
+            if current_pnl <= manual_sl_override_pnl:
+                exit_reason = "MANUAL_SL_OVERRIDE"
+                exit_reason_detail = (
+                    f"Manually-set SL override — total P&L Rs {current_pnl:,.0f} hit/crossed the "
+                    f"manually-set level Rs {manual_sl_override_pnl:,.0f}."
+                )
+            elif target_level is not None and current_pnl >= target_level:
+                exit_reason = "TARGET"
+                exit_reason_detail = f"Target — total P&L Rs {current_pnl:,.0f} reached/exceeded the Target level Rs {target_level:,.0f}."
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
         # घडेल ते लागू. (🎓 Next-Level-Exit आधी इथून पूर्णपणे काढला होता, पण वापरकर्त्याने पुन्हा
         # मागितल्यावर — फक्त 5M-touch entries साठी, Credit Spread + Naked दोन्हींसाठी — खाली परत जोडला.)
-        if source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
+        elif source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
             # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
             # जुना %-आधारित SL/Target/Trailing पूर्णपणे बदलला — आता Spot% + Premium-Points combined
             # (settings-चालित, hardcode-मुक्त) — Credit Spread आणि Naked (समांतर trade-प्रकार)
@@ -1807,6 +1830,65 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 
     conn.close()
     return False, f"बंद करताना त्रुटी: {resp}"
+
+
+def set_manual_sl_override(trade_id, override_pnl_level):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("सध्या उघड्या trade चा TSL तात्पुरता बदलायचाय — घट्ट आणि
+    सैल दोन्ही") — सध्या उघड्या (OPEN) एका specific trade चा SL तात्पुरता manually बदलणे (Positions
+    पानावरून). manage_open_trades() मध्ये हाच सर्वोच्च प्राधान्याने तपासला जातो — established
+    per-source SL/TSL शाखा पूर्णपणे वगळून, फक्त हाच एक Rs P&L threshold (Target अजूनही नेहमीप्रमाणेच
+    लागू — override फक्त SL बाजूचा आहे). established trailing-SL mechanisms "कधीच मूळ SL पेक्षा
+    सैल होत नाहीत" या तत्त्वाला जाणीवपूर्वक अपवाद — म्हणून प्रत्येक वेळी Telegram अलर्ट (कधीच गप्प
+    बदल होत नाही, विशेषतः सैल करताना जोखीम वाढते).
+    रिटर्न: (ok: bool, error: str|None)."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT symbol FROM live_trades WHERE trade_id=? AND status='OPEN'", (trade_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "Trade सापडला नाही किंवा आधीच बंद आहे."
+    symbol, = row
+    cur.execute("UPDATE live_trades SET manual_sl_override_pnl=? WHERE trade_id=?", (float(override_pnl_level), trade_id))
+    conn.commit()
+    conn.close()
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"⚠️ <b>{symbol} ({trade_id}) — SL Manually बदलला!</b>\n"
+            f"नवीन SL पातळी: Rs {override_pnl_level:,.0f} (एकूण trade P&L वर आधारित).\n"
+            f"आतापासून established सर्व automatic SL/TSL/Trailing लॉजिक वगळलं जाईल (Target मात्र "
+            f"नेहमीप्रमाणेच लागू) — फक्त हाच एक threshold तपासला जाईल, जोपर्यंत तुम्ही स्वतः बदलत/काढत नाही."
+        )
+    except Exception:
+        _logger.exception("set_manual_sl_override() च्या Telegram अलर्टमध्ये अनपेक्षित चूक (silently handled)")
+    return True, None
+
+
+def clear_manual_sl_override(trade_id):
+    """set_manual_sl_override() ने सेट केलेला override काढून टाकणे — established automatic
+    SL/TSL/Target लॉजिक पुढच्याच manage_open_trades() cycle पासून परत सक्रिय होतं.
+    रिटर्न: (ok: bool, error: str|None)."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT symbol FROM live_trades WHERE trade_id=? AND status='OPEN'", (trade_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, "Trade सापडला नाही किंवा आधीच बंद आहे."
+    symbol, = row
+    cur.execute("UPDATE live_trades SET manual_sl_override_pnl=NULL WHERE trade_id=?", (trade_id,))
+    conn.commit()
+    conn.close()
+    try:
+        from notifications import send_telegram_message
+        send_telegram_message(
+            f"ℹ️ <b>{symbol} ({trade_id}) — Manual SL Override काढला</b>\n"
+            f"आतापासून परत established automatic SL/TSL/Target लॉजिक लागू होईल."
+        )
+    except Exception:
+        _logger.exception("clear_manual_sl_override() च्या Telegram अलर्टमध्ये अनपेक्षित चूक (silently handled)")
+    return True, None
 
 
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
