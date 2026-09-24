@@ -31,7 +31,7 @@ from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
-from oi_analysis import check_pcr_gate
+from oi_analysis import check_pcr_gate, check_iv_change_gate
 from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
@@ -153,6 +153,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     rsi_support_max = settings.get("rsi_support_max", RSI_SUPPORT_MAX)
     rsi_resistance_min = settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
+    entry_iv_gate_enabled = settings.get("entry_iv_gate_enabled", False)
+    iv_change_max_pct = settings.get("iv_change_max_pct", 15.0)
+    iv_lookback_days = settings.get("iv_lookback_days", 10)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -251,6 +254,18 @@ def process_symbol(access_token, symbol, lot_size=65):
             if not pcr_ok:
                 log_entry["trade_status"] = "SKIPPED_PCR_GATE"
                 log_entry["reason"] = pcr_reason
+                cloud_db.save_signal_log(log_entry)
+                continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "sideways/low-avg
+        # IV मध्ये चांगली चालते, trending breakout मध्ये तोटा" या निरीक्षणावर चर्चा करून) — दिशा
+        # बघत नाही (PCR सारखं directional नाही), IV आजच्या सरासरीपेक्षा जास्त वाढलेला असेल तर
+        # दोन्ही दिशांच्या entries थांबतात. डीफॉल्ट बंद — वापरकर्त्याने Dashboard वरून चालू करायचा.
+        if entry_iv_gate_enabled:
+            iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days)
+            if not iv_ok:
+                log_entry["trade_status"] = "SKIPPED_IV_GATE"
+                log_entry["reason"] = iv_reason
                 cloud_db.save_signal_log(log_entry)
                 continue
 

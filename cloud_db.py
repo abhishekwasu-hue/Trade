@@ -240,6 +240,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe) — हे PCR गेट बंद असतानाही लागू होत नाही.
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
+        # better in sideways, low iv or average iv market, but in trending when Breakout happen it
+        # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या
+        # सरासरी ATM IV पेक्षा iv_change_max_pct% पेक्षा जास्त वाढलेला असेल, तर (दोन्ही दिशांना
+        # सारखंच — PCR सारखा directional नाही, VIX Spike Halt सारखं regime-सिग्नल) नवीन entry
+        # थांबवली जाते. डीफॉल्ट बंद (नवीन/अपरीक्षित — पुरेसा iv_history इतिहास जमेपर्यंत वापरकर्त्याने
+        # स्वतः चालू करायचा).
+        "entry_iv_gate_enabled": False,
+        "iv_change_max_pct": 15.0,
+        "iv_lookback_days": 10,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,
@@ -1400,6 +1410,86 @@ def get_iv_history(symbol, from_date=None, to_date=None, strikes=None):
         return None
     finally:
         conn.close()
+
+
+def _atm_avg_iv_from_rows(rows_df):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate) — दिलेल्या (एकाच
+    दिवसाच्या/snapshot च्या) iv_history rows मधून, त्या वेळच्या underlying_price च्या सर्वात
+    जवळचा strike शोधून त्याची CE+PE IV सरासरी काढणे — एकाच प्रातिनिधिक "ATM IV" संख्येसाठी."""
+    if rows_df is None or rows_df.empty:
+        return None
+    underlying = rows_df["underlying_price"].iloc[-1]
+    if not underlying:
+        return None
+    rows_df = rows_df.copy()
+    rows_df["_dist"] = (rows_df["strike"] - underlying).abs()
+    nearest_strike = rows_df.loc[rows_df["_dist"].idxmin(), "strike"]
+    ivs = rows_df.loc[rows_df["strike"] == nearest_strike, "iv"].dropna()
+    if ivs.empty:
+        return None
+    return float(ivs.mean())
+
+
+def get_iv_change_from_average(symbol, lookback_days=10, max_age_minutes=20):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
+    dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
+    Breakout happen it books loss") — आजचा ताजा ATM IV, मागच्या (जास्तीत जास्त lookback_days, जितके
+    उपलब्ध असतील तितकेच) ट्रेडिंग दिवसांच्या EOD ATM IV च्या सरासरीशी (single "yesterday" पेक्षा जास्त
+    स्थिर baseline) किती% वाढला हे मोजणे. आजचा snapshot max_age_minutes पेक्षा जुना असेल (collector
+    थांबलेला असू शकतो) किंवा किमान १ आधीचा दिवसही उपलब्ध नसेल (पुरेसा इतिहास अजून जमलेला नाही), तर
+    None — established PCR Gate च्या fail-safe पॅटर्नप्रमाणेच, caller ने तेव्हा trade थांबवावा.
+    रिटर्न: {"today_iv":.., "baseline_avg_iv":.., "change_pct":.., "days_in_baseline":..} किंवा None."""
+    df = get_iv_history(symbol)
+    if df is None or df.empty:
+        return None
+
+    now_ist = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    today_str = now_ist.strftime("%Y-%m-%d")
+
+    trade_dates = sorted(df["trade_date"].unique())
+    if today_str not in trade_dates:
+        return None
+
+    today_rows = df[df["trade_date"] == today_str]
+    latest_snapshot_time = today_rows["snapshot_time"].max()
+    latest_today_rows = today_rows[today_rows["snapshot_time"] == latest_snapshot_time]
+    today_atm_iv = _atm_avg_iv_from_rows(latest_today_rows)
+    if today_atm_iv is None:
+        return None
+
+    try:
+        snap_dt = datetime.datetime.strptime(f"{today_str} {latest_snapshot_time}", "%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return None
+    age_minutes = (now_ist.replace(tzinfo=None) - snap_dt).total_seconds() / 60.0
+    if age_minutes > max_age_minutes:
+        return None
+
+    prior_dates = [d for d in trade_dates if d < today_str][-lookback_days:]
+    if not prior_dates:
+        return None
+
+    daily_ivs = []
+    for d in prior_dates:
+        day_rows = df[df["trade_date"] == d]
+        last_time = day_rows["snapshot_time"].max()
+        last_rows = day_rows[day_rows["snapshot_time"] == last_time]
+        iv = _atm_avg_iv_from_rows(last_rows)
+        if iv is not None:
+            daily_ivs.append(iv)
+
+    if not daily_ivs:
+        return None
+
+    baseline_avg_iv = sum(daily_ivs) / len(daily_ivs)
+    if baseline_avg_iv <= 0:
+        return None
+
+    change_pct = (today_atm_iv - baseline_avg_iv) / baseline_avg_iv * 100
+    return {
+        "today_iv": today_atm_iv, "baseline_avg_iv": baseline_avg_iv,
+        "change_pct": change_pct, "days_in_baseline": len(daily_ivs),
+    }
 
 
 def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pct=0.02, formed_date=None):

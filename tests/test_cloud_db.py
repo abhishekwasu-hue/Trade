@@ -898,6 +898,138 @@ class TestIvHistoryStorage:
         assert cloud_db.get_iv_history("NIFTY") is None
 
 
+def _iv_row(trade_date, snapshot_time, strike, option_type, iv, underlying_price):
+    return {
+        "trade_date": trade_date, "snapshot_time": snapshot_time, "expiry": "2026-09-25",
+        "strike": strike, "option_type": option_type, "iv": iv, "ltp": 100.0,
+        "underlying_price": underlying_price,
+    }
+
+
+class FakeIvDateTime(datetime.datetime):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate) — get_iv_change_from_
+    average() cloud_db.py च्याच established save_vix_spike_halt_status() पॅटर्नने (get_ist_today()
+    import न करता) datetime.datetime.utcnow()+5:30 वापरतं — त्यामुळे इथेही तोच FakeTime-स्टाईल mock."""
+    _fixed_utcnow = None
+
+    @classmethod
+    def utcnow(cls):
+        return cls._fixed_utcnow
+
+
+class TestGetIvChangeFromAverage:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "5 minute instant
+    dynamic sr strategy work better in sideways, low iv or average iv market, but in trending when
+    Breakout happen it books loss") — आजचा ATM IV, गेल्या N दिवसांच्या सरासरी ATM IV शी तुलना."""
+
+    def setup_method(self):
+        # 5:00 UTC + 5:30 = 10:30 IST, 2026-09-24 -- सर्व टेस्ट्समध्ये "आज" हाच.
+        FakeIvDateTime._fixed_utcnow = datetime.datetime(2026, 9, 24, 5, 0)
+
+    def _patch_now(self, monkeypatch):
+        monkeypatch.setattr(cloud_db.datetime, "datetime", FakeIvDateTime)
+
+    def test_no_history_returns_none(self, monkeypatch):
+        self._patch_now(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: None)
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+    def test_empty_history_returns_none(self, monkeypatch):
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(
+            columns=["trade_date", "snapshot_time", "expiry", "strike", "option_type", "iv", "ltp", "underlying_price"],
+        ))
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+    def test_no_todays_snapshot_returns_none(self, monkeypatch):
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [_iv_row("2026-09-23", "15:25", 24000, "CE", 12.0, 24000.0)]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+    def test_stale_todays_snapshot_returns_none(self, monkeypatch):
+        """आजचा snapshot max_age_minutes पेक्षा जुना -- collector थांबलेला असू शकतो, fail-safe None."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            _iv_row("2026-09-22", "15:25", 24000, "CE", 10.0, 24000.0),
+            _iv_row("2026-09-22", "15:25", 24000, "PE", 10.4, 24000.0),
+            _iv_row("2026-09-24", "09:30", 24000, "CE", 14.0, 24000.0),  # 10:30 - 9:30 = 60 मि जुना
+            _iv_row("2026-09-24", "09:30", 24000, "PE", 14.4, 24000.0),
+        ]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        assert cloud_db.get_iv_change_from_average("NIFTY", max_age_minutes=20) is None
+
+    def test_no_prior_days_returns_none(self, monkeypatch):
+        """पुरेसा इतिहास अजून जमलेला नाही (आजचाच पहिला दिवस) -- fail-safe None."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 13.0, 24000.0),
+        ]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+    def test_success_computes_change_pct_from_average(self, monkeypatch):
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            # कालच्या आधीचा दिवस (EOD) -- ATM=23800, avg IV=(10.0+10.4)/2=10.2
+            _iv_row("2026-09-22", "09:20", 23700, "CE", 99.0, 23800.0),  # आधीचा, ignored (EOD नाही)
+            _iv_row("2026-09-22", "15:25", 23800, "CE", 10.0, 23800.0),
+            _iv_row("2026-09-22", "15:25", 23800, "PE", 10.4, 23800.0),
+            # कालचा दिवस (EOD) -- ATM=23900, avg IV=(10.8+11.2)/2=11.0
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 10.8, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 11.2, 23900.0),
+            # आज, सर्वात अलीकडचा -- ATM=24000 (जवळचा strike), avg IV=(12.0+13.0)/2=12.5
+            _iv_row("2026-09-24", "09:30", 24000, "CE", 20.0, 24000.0),  # जुना, ignored (सर्वात अलीकडचा नाही)
+            _iv_row("2026-09-24", "10:25", 23900, "CE", 99.0, 24000.0),  # वेगळा strike, ATM नाही, ignored
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 13.0, 24000.0),
+        ]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        result = cloud_db.get_iv_change_from_average("NIFTY", lookback_days=10, max_age_minutes=20)
+        assert result is not None
+        assert result["today_iv"] == 12.5
+        assert result["baseline_avg_iv"] == 10.6  # (10.2+11.0)/2
+        assert result["days_in_baseline"] == 2
+        assert round(result["change_pct"], 2) == round((12.5 - 10.6) / 10.6 * 100, 2)
+
+    def test_lookback_days_limits_prior_days_used(self, monkeypatch):
+        """lookback_days पेक्षा जास्त इतिहास असेल, तर फक्त सर्वात अलीकडचे N दिवसच वापरायला हवेत."""
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            # खूप जुना दिवस, वेगळाच (खूप कमी) IV -- lookback_days=1 दिल्यास वगळला जायला हवा
+            _iv_row("2026-09-20", "15:25", 23000, "CE", 1.0, 23000.0),
+            _iv_row("2026-09-20", "15:25", 23000, "PE", 1.0, 23000.0),
+            # सर्वात अलीकडचा आधीचा दिवस
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 10.0, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 10.0, 23900.0),
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
+        ]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        result = cloud_db.get_iv_change_from_average("NIFTY", lookback_days=1)
+        assert result["days_in_baseline"] == 1
+        assert result["baseline_avg_iv"] == 10.0  # फक्त 23-सप्टेंबरचाच, 20-सप्टेंबरचा वगळलेला
+
+    def test_zero_baseline_returns_none(self, monkeypatch):
+        import pandas as pd
+        self._patch_now(monkeypatch)
+        rows = [
+            _iv_row("2026-09-23", "15:25", 23900, "CE", 0.0, 23900.0),
+            _iv_row("2026-09-23", "15:25", 23900, "PE", 0.0, 23900.0),
+            _iv_row("2026-09-24", "10:25", 24000, "CE", 12.0, 24000.0),
+            _iv_row("2026-09-24", "10:25", 24000, "PE", 12.0, 24000.0),
+        ]
+        monkeypatch.setattr(cloud_db, "get_iv_history", lambda symbol: pd.DataFrame(rows))
+        assert cloud_db.get_iv_change_from_average("NIFTY") is None
+
+
 class TestGetTokenAgeHours:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — check_token_freshness.py साठी, token किती
     जुना आहे ते तपासण्यासाठीचं helper."""
