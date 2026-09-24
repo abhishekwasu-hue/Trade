@@ -21,6 +21,17 @@ dynamic_sr_instant_trader.py
 
 Gap Up/Down हाताळणी (check_level_crossed, TOUCH + GAP_THROUGH) आणि "आजचाच दिवस" फिल्टर (कालचे
 candles चुकून न मिसळणे) — दोन्ही जुन्याच, आधीच सापडलेल्या bugs साठीचे फिक्स — जसेच्या तसे ठेवलेले.
+
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip on IV Breakout — "In trending I want
+to block reversals trade, but trending trade should be continue") — Average IV Breakout Gate
+(`entry_iv_gate_enabled`) आता, आढळल्यास (आजचा IV गेल्या सरासरीपेक्षा जास्त वाढलेला — trending regime),
+trade पूर्णपणे **skip** करत नाही — त्याऐवजी दिशा **flip** करून, त्याच touch वर breakout-च्याच
+दिशेने (reversal ऐवजी trend-continuation) trade घेतला जातो (structure तेच — Credit Spread + Naked,
+फक्त उलट बाजूचं). अशा directional trades साठी RSI/PCR Gate मुद्दामच वगळले जातात (ते reversal-साठीच
+tuned आहेत — उदा. RSI<40 चा अर्थ "oversold, वर bounce होईल" असा reversal-गृहीतक आहे, breakout-
+continuation साठी उलटा/चुकीचा संकेत ठरेल). IV डेटाच उपलब्ध नसेल/जुना असेल (fail-safe — regime
+माहीतच नाही) तरच पूर्वीसारखं trade skip होतं, flip नाही (अनिश्चित दिशेने directional bet घेणं
+धोकादायक).
 """
 import argparse
 
@@ -234,9 +245,29 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip on IV Breakout — बघा वरची
+        # फाईल-टिप्पणी) — इतर सर्व gates च्याही आधी तपासतो, कारण याचा निकाल पुढच्या RSI/PCR Gate ला
+        # लागू करायचा की वगळायचा हे ठरवतो. आजचा IV गेल्या सरासरीपेक्षा खरंच जास्त वाढलेला (मोजलेला,
+        # डेटा-गहाळ नाही) आढळला, तरच दिशा उलटते — डेटाच अनुपलब्ध/जुना असेल (iv_change_pct is None,
+        # regime माहीतच नाही) तर पूर्वीसारखंच fail-safe skip, flip नाही.
+        is_directional_trade = False
+        if entry_iv_gate_enabled:
+            iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days)
+            if not iv_ok:
+                if iv_change_pct is None:
+                    log_entry["trade_status"] = "SKIPPED_IV_GATE"
+                    log_entry["reason"] = iv_reason
+                    cloud_db.save_signal_log(log_entry)
+                    continue
+                direction = "BEARISH" if direction == "BULLISH" else "BULLISH"
+                log_entry["direction"] = direction
+                is_directional_trade = True
+
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
-        # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर).
-        if entry_rsi_gate_enabled:
+        # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional
+        # trade (IV breakout, वर) साठी मुद्दामच वगळलेला — RSI उंबरठे reversal-गृहीतकासाठी tuned आहेत
+        # (उदा. RSI<40 = "oversold, वर bounce होईल"), breakout-continuation साठी उलटा संकेत ठरेल.
+        if entry_rsi_gate_enabled and not is_directional_trade:
             rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
             if not rsi_ok:
                 log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
@@ -246,26 +277,15 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (PCR Gate — on/off) — दोन्ही trade-प्रकारांना
         # (Credit Spread + Naked) एकत्र लागू, पण आता Dashboard वरून पूर्णपणे बंदही करता येतो. बंद
-        # नसेल तरच — डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे (fail-safe).
-        if entry_pcr_gate_enabled:
+        # नसेल तरच — डेटा गहाळ/जुना असल्यास सुरक्षिततेसाठी trade थांबवणे (fail-safe). Directional
+        # trade साठी वगळलेला (वरचंच कारण — RSI Gate प्रमाणेच PCR उंबरठेही reversal-गृहीतकासाठी).
+        if entry_pcr_gate_enabled and not is_directional_trade:
             pcr_ok, pcr_value, pcr_reason = check_pcr_gate(
                 symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"],
             )
             if not pcr_ok:
                 log_entry["trade_status"] = "SKIPPED_PCR_GATE"
                 log_entry["reason"] = pcr_reason
-                cloud_db.save_signal_log(log_entry)
-                continue
-
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Average IV Breakout Gate — "sideways/low-avg
-        # IV मध्ये चांगली चालते, trending breakout मध्ये तोटा" या निरीक्षणावर चर्चा करून) — दिशा
-        # बघत नाही (PCR सारखं directional नाही), IV आजच्या सरासरीपेक्षा जास्त वाढलेला असेल तर
-        # दोन्ही दिशांच्या entries थांबतात. डीफॉल्ट बंद — वापरकर्त्याने Dashboard वरून चालू करायचा.
-        if entry_iv_gate_enabled:
-            iv_ok, iv_change_pct, iv_reason = check_iv_change_gate(symbol, iv_change_max_pct, iv_lookback_days)
-            if not iv_ok:
-                log_entry["trade_status"] = "SKIPPED_IV_GATE"
-                log_entry["reason"] = iv_reason
                 cloud_db.save_signal_log(log_entry)
                 continue
 
@@ -343,6 +363,10 @@ def process_symbol(access_token, symbol, lot_size=65):
                 entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
             )
         log_entry["trade_status"] = trade_status
+        # 🎓 Directional trade (IV Breakout Gate — दिशा-flip) असल्यास Signal Log मध्येच स्पष्ट नोंद —
+        # नंतर Performance Report/Signal Log मधून reversal विरुद्ध directional trades वेगळे शोधता यावेत.
+        if is_directional_trade:
+            log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
         cloud_db.save_signal_log(log_entry)
 
         naked_status = ""
@@ -394,7 +418,12 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
-        rsi_display = f"RSI {rsi_value}." if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)."
+        if is_directional_trade:
+            rsi_display = f"📈 Directional trade (IV breakout {iv_change_pct:+.1f}%) — RSI/PCR Gate वगळले."
+        elif entry_rsi_gate_enabled:
+            rsi_display = f"RSI {rsi_value}."
+        else:
+            rsi_display = "RSI Gate बंद (तपासलं नाही)."
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         message = (
             f"🎯 <b>{symbol} Dynamic S/R Cross ({timeframe_suffix})! (आजचा {hit_count_so_far + 1}/2 वा hit)</b>\n"

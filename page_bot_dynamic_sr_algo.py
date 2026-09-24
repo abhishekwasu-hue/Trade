@@ -359,7 +359,7 @@ def render():
                 value=bool(settings.get("entry_iv_gate_enabled", False)),
                 key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
             )
-            st.caption("आजचा ATM IV गेल्या N दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर entry थांबवायची — दोन्ही दिशांना (Bullish/Bearish) सारखंच लागू. IV डेटा गहाळ/जुना/अपुरा इतिहास असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
+            st.caption("आजचा ATM IV गेल्या N दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक).")
             iv1, iv2 = st.columns(2)
             with iv1:
                 iv_change_max_pct = _number_input(
