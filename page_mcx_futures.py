@@ -37,8 +37,10 @@ from pdf_reports import generate_performance_report_pdf
 from pnl_reports import generate_pnl_report
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
+from trading_engine import close_trade_manually
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital
+from mcx_futures_trader import PRODUCT_TYPE
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
 STRATEGY_KEY = "mcx_futures"
@@ -183,6 +185,58 @@ def _render_all_commodities_positions():
         st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
         total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
         st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Algo bot ni घेतलेले trade Position tab मधून manually
+        # close करता यायला पाहिजे") — page_positions.py (NIFTY/BANKNIFTY/SENSEX) मध्ये हे आधीच आहे,
+        # पण MCX commodities साठी कुठेच नव्हतं (तिथला Positions टॅब फक्त sidebar च्या symbol-निवडीवर
+        # चालतो, MCX त्यात कधीच नसतो). तोच established close_trade_manually() (broker-side SL आधी
+        # cancel करूनच सुरक्षितपणे बंद करतो) इथेही — फक्त प्रत्येक निवडलेल्या trade_id साठी त्याच्या
+        # स्वतःच्या "Symbol" स्तंभावरून योग्य commodity ठरवून (एकाच combined table मध्ये 5 commodities
+        # असल्याने, page_positions.py सारखा एकच सामायिक symbol गृहीत धरता येत नाही). MCX नेहमी
+        # PRODUCT_TYPE="D" वापरतो (mcx_futures_trader.py, established) — sidebar च्या product_type शी
+        # गल्लत होऊ नये म्हणून तोच थेट इथे वापरला आहे.
+        sub_header("🔴 पोझिशन मॅन्युअली बंद करा", HDR_BLUE)
+        st.caption("एक, अनेक, किंवा सर्व commodities च्या पोझिशन्स एकाच वेळी निवडून बंद करता येतील.")
+
+        all_trade_ids = combined_open["Trade ID"].tolist()
+
+        def _format_trade(tid):
+            row = combined_open.loc[combined_open["Trade ID"] == tid]
+            return f"{row['Symbol'].values[0]} — {tid} — {row['Strategy'].values[0]} ({row['Legs'].values[0]})"
+
+        if st.session_state.pop("_mcx_pending_multiselect_clear", False):
+            st.session_state["mcx_close_trade_multiselect"] = []
+            st.session_state["mcx_close_select_all"] = False
+
+        def _toggle_select_all():
+            st.session_state["mcx_close_trade_multiselect"] = list(all_trade_ids) if st.session_state.get("mcx_close_select_all") else []
+
+        st.checkbox("सर्व पोझिशन्स निवडा", key="mcx_close_select_all", on_change=_toggle_select_all)
+
+        st.session_state["mcx_close_trade_multiselect"] = [
+            tid for tid in st.session_state.get("mcx_close_trade_multiselect", []) if tid in all_trade_ids
+        ]
+
+        selected_trade_ids = st.multiselect(
+            "बंद करण्यासाठी पोझिशन(न्स) निवडा",
+            options=all_trade_ids, format_func=_format_trade, key="mcx_close_trade_multiselect",
+        )
+
+        if st.button(f"🔴 निवडलेल्या {len(selected_trade_ids)} पोझिशन्स बंद करा", disabled=len(selected_trade_ids) == 0, key="mcx_close_btn"):
+            with st.spinner(f"{len(selected_trade_ids)} पोझिशन्स बंद करत आहे..."):
+                results = []
+                for tid in selected_trade_ids:
+                    row_symbol = combined_open.loc[combined_open["Trade ID"] == tid, "Symbol"].values[0]
+                    ok, result = close_trade_manually(token, tid, row_symbol, PRODUCT_TYPE)
+                    results.append((tid, ok, result))
+            for tid, ok, result in results:
+                if ok:
+                    st.success(f"✅ {tid} बंद झाली — Realized P&L: ₹{result:,.2f}")
+                else:
+                    st.error(f"❌ {tid} बंद करता आलं नाही: {result}")
+            if any(ok for _, ok, _ in results):
+                st.session_state["_mcx_pending_multiselect_clear"] = True
+                st.rerun()
 
     st.markdown("---")
     sub_header("📜 सर्व Commodities — Exit झालेले Trades", HDR_PURPLE)
