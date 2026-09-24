@@ -1721,9 +1721,13 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     आणि लांब स्तंभांसाठी Paragraph-wrapping (मजकूर अनेक ओळींत मावतो, रांग उंच होते पण कापली जात नाही).
     """
     display_df = df.head(max_rows)
+    # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("actual strike price, entry price, exit price
+    # PDF मध्ये दिसायला हवं") — नवीन "Legs (Strike/Entry/Exit Price)" स्तंभासाठी जागा करून बाकीचे
+    # स्तंभ प्रमाणात आकुंचित केले (एकूण अजूनही 1.0 च्या आत, त्यामुळे टेबल पानाबाहेर जात नाही).
     col_fracs = {
-        "Trade ID": 0.11, "Entry Time": 0.095, "Entry Reason": 0.225, "Exit Time": 0.095,
-        "Exit Reason": 0.115, "Exit Reason Detail": 0.225, "Realized P&L": 0.075, "Mode": 0.06,
+        "Trade ID": 0.09, "Entry Time": 0.075, "Entry Reason": 0.16,
+        "Legs (Strike/Entry/Exit Price)": 0.20, "Exit Time": 0.075,
+        "Exit Reason": 0.09, "Exit Reason Detail": 0.16, "Realized P&L": 0.07, "Mode": 0.05,
     }
     columns = list(display_df.columns)
     col_widths = [usable_width * col_fracs.get(c, 1.0 / len(columns)) for c in columns]

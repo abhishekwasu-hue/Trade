@@ -523,6 +523,69 @@ def get_open_trades_by_other_sources(symbol, exclude_source):
     return [{"source": r[0], "strategy": r[1], "trade_id": r[2]} for r in rows]
 
 
+def get_trade_legs_with_prices(trade_ids):
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Positions आणि Performance Report PDF दोन्हीत
+    actual strike price, entry price, exit price दिसायला हवं") — प्रत्येक trade च्या प्रत्येक leg
+    साठी strike/option_type/role (live_trades.legs_json, आधीच साठवलेलं) + प्रत्यक्ष entry/exit fill
+    price (order_log.fill_price — trading_engine.py चं established log_orders_batch() हे entry
+    वेळी आणि close_trade_manually()/manage_open_trades() च्या exit वेळी दोन्ही आधीच साठवतं, फक्त
+    Dashboard वर कधीच दाखवलं जात नव्हतं) — कुठलीही नवीन DB column/migration न लागता, established
+    दोन्ही tables (legs_json + order_log) जोडून वाचतो.
+    रिटर्न: {trade_id: [{"role", "strike", "option_type", "transaction_type", "entry_price",
+    "exit_price"}, ...]} — exit_price अजून बंद न झालेल्या (OPEN) legs साठी None."""
+    if not trade_ids:
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    placeholders = ",".join("?" * len(trade_ids))
+    legs_rows = conn.execute(
+        f"SELECT trade_id, legs_json FROM live_trades WHERE trade_id IN ({placeholders})", trade_ids,
+    ).fetchall()
+    orders_df = pd.read_sql_query(
+        f"""SELECT trade_id, instrument_key, fill_price, placed_at FROM order_log
+            WHERE trade_id IN ({placeholders}) AND fill_price IS NOT NULL
+            ORDER BY placed_at ASC""",
+        conn, params=trade_ids,
+    )
+    conn.close()
+
+    result = {}
+    for trade_id, legs_json_str in legs_rows:
+        legs = json.loads(legs_json_str) if legs_json_str else []
+        trade_orders = orders_df[orders_df["trade_id"] == trade_id]
+        leg_rows = []
+        for leg in legs:
+            ikey = leg.get("instrument_key")
+            fills = trade_orders.loc[trade_orders["instrument_key"] == ikey, "fill_price"].tolist()
+            leg_rows.append({
+                "role": leg.get("role") or leg.get("transaction_type", "leg"),
+                "strike": leg.get("strike"), "option_type": leg.get("option_type"),
+                "transaction_type": leg.get("transaction_type"),
+                "entry_price": fills[0] if fills else None,
+                "exit_price": fills[-1] if len(fills) > 1 else None,
+            })
+        result[trade_id] = leg_rows
+    return result
+
+
+def _format_legs_with_prices(leg_rows, include_exit):
+    """get_trade_legs_with_prices() च्या एका trade च्या leg_rows वरून — वाचनीय एका-ओळीचा मजकूर
+    ("role strike option_type (BUY/SELL) Entry ₹X" — include_exit=True असेल आणि exit_price
+    उपलब्ध असेल तरच "→ Exit ₹Y" जोडलं जातं). कुठलाही डेटा नसेल तर None (रिकामा स्तंभ, "N/A" नाही —
+    caller ने हवं तसं दाखवावं)."""
+    if not leg_rows:
+        return None
+    parts = []
+    for leg in leg_rows:
+        strike = f"{leg['strike']:.0f}" if leg.get("strike") is not None else "?"
+        piece = f"{leg.get('role', 'leg')} {strike}{leg.get('option_type') or ''} ({leg.get('transaction_type') or ''})"
+        if leg.get("entry_price") is not None:
+            piece += f" Entry ₹{leg['entry_price']:.2f}"
+            if include_exit and leg.get("exit_price") is not None:
+                piece += f" → Exit ₹{leg['exit_price']:.2f}"
+        parts.append(piece)
+    return " · ".join(parts)
+
+
 def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     """
     सर्व OPEN पोझिशन्ससाठी सद्य LTP आणून खरा (real) MTM P&L काढणे — Positions टॅबसाठी,
@@ -553,6 +616,9 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
         parsed.append((r, legs))
 
     ltp_map = fetch_ltp_map(access_token, list(all_keys)) if all_keys else {}
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Positions मध्ये actual strike/entry price दिसायला हवं") —
+    # OPEN trade असल्याने exit price अजून नाहीच (include_exit=False).
+    legs_prices_map = get_trade_legs_with_prices([r[0] for r in rows])
 
     records = []
     for (trade_id, mode, style, strategy, legs_json, lots, lot_size, net_credit, max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source, manual_sl_override_pnl), legs in parsed:
@@ -580,7 +646,13 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
         direction = "BULLISH" if strategy == "BULL_PUT_SPREAD" else ("BEARISH" if strategy == "BEAR_CALL_SPREAD" else "NEUTRAL")
         records.append({
             "Trade ID": trade_id, "Mode": mode or "LIVE", "Style": style or "INTRADAY",
-            "Strategy": strategy, "Direction": direction, "Legs": strikes_summary, "Lots": lots,
+            "Strategy": strategy, "Direction": direction, "Legs": strikes_summary,
+            # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("actual strike price, entry price show
+            # व्हायला पाहिजे") — "Legs" (वरचं, फक्त role:strike) च्या जोडीला, प्रत्यक्ष entry fill
+            # price सकट — established order_log.fill_price वरून (trading_engine.py चं
+            # log_orders_batch(), आधीच entry वेळी साठवलेलं).
+            "Legs (Strike & Entry Price)": _format_legs_with_prices(legs_prices_map.get(trade_id, []), include_exit=False),
+            "Lots": lots,
             "Source": source or "DASHBOARD",  # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — trade
             # नेमका कुठून आला (कोणत्या script/interface) — जुन्या नोंदींना source नसतो, त्यांना
             # "DASHBOARD" (interactive) असं मानणे — कारण unattended scripts येण्याआधीचे सर्व trades
@@ -1157,6 +1229,14 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     query += " ORDER BY exit_time DESC"
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
+    if not df.empty:
+        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Performance Report मध्ये actual strike price,
+        # entry price, exit price दिसायला हवं") — established legs_json (strike/option_type) +
+        # order_log.fill_price (entry आणि exit दोन्ही, आधीच साठवलेलं) जोडून एका वाचनीय स्तंभात.
+        legs_prices_map = get_trade_legs_with_prices(df["Trade ID"].tolist())
+        df["Legs (Strike/Entry/Exit Price)"] = df["Trade ID"].map(
+            lambda tid: _format_legs_with_prices(legs_prices_map.get(tid, []), include_exit=True)
+        )
     return df
 
 

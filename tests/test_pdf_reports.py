@@ -137,3 +137,27 @@ class TestGeneratePerformanceReportPdfCrudeoilRegression:
             pnl_totals, by_source_df, by_source_df, by_source_df, None, [],
         )
         assert pdf_bytes[:4] == b"%PDF"
+
+
+class TestGeneratePerformanceReportPdfTradeLogLegsColumn:
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("actual strike price, entry price, exit price
+    Performance Report मध्ये दिसायला हवं") — नवीन "Legs (Strike/Entry/Exit Price)" स्तंभासकट Trade Log
+    (आणि त्यातला एक None cell, जुन्या legs_json नसलेल्या trades साठी) क्रॅश न होता render होतो का."""
+
+    def test_trade_log_with_legs_column_and_none_cell_does_not_crash(self):
+        trade_log_df = pd.DataFrame([
+            {"Trade ID": "T1", "Entry Time": "2026-09-24 10:00:00", "Entry Reason": "dynamic_sr_instant - 5M S/R level",
+             "Legs (Strike/Entry/Exit Price)": "short_leg 24400PE (SELL) Entry ₹38.00 → Exit ₹15.00",
+             "Exit Time": "2026-09-24 14:00:00", "Exit Reason": "Target", "Exit Reason Detail": "Target hit",
+             "Realized P&L": 500.0, "Mode": "PAPER", "Entry Timeframe": "5M"},
+            {"Trade ID": "T2", "Entry Time": "2026-09-24 11:00:00", "Entry Reason": "dynamic_sr_instant - 5M S/R level",
+             "Legs (Strike/Entry/Exit Price)": "N/A",  # जुना trade, legs_json शिवाय
+             "Exit Time": "2026-09-24 12:00:00", "Exit Reason": "SL", "Exit Reason Detail": "SL hit",
+             "Realized P&L": -200.0, "Mode": "PAPER", "Entry Timeframe": "5M"},
+        ])
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
+            {"gross_pnl": 300, "total_charges": 0, "net_pnl": 300},
+            None, None, None, trade_log_df, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"

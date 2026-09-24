@@ -710,3 +710,108 @@ class TestSymbolWhereClauseListSupport:
         )
         assert len(df) == 3
         assert round(df["realized_pnl"].sum(), 2) == -1000.0
+
+
+class TestGetTradeLegsWithPrices:
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Positions आणि Performance Report PDF दोन्हीत
+    actual strike price, entry price, exit price दिसायला हवं") — legs_json (strike/option_type/role)
+    + order_log.fill_price (entry आणि exit) जोडून वाचता येतात का, हे पडताळणारे tests."""
+
+    def _seed_trade_with_legs(self, tmpdb, trade_id, status="OPEN", symbol="NIFTY"):
+        legs = [
+            {"role": "short_leg", "strike": 24400, "option_type": "PE",
+             "instrument_key": "PE24400", "transaction_type": "SELL"},
+            {"role": "long_hedge", "strike": 24300, "option_type": "PE",
+             "instrument_key": "PE24300", "transaction_type": "BUY"},
+        ]
+        conn = sqlite3.connect(tmpdb)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, entry_time, exit_time, realized_pnl, status, legs_json,
+               strikes_summary, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, "2026-09-24", symbol, "BULL_PUT_SPREAD", 1, 75, 30.0, 30.0, 50.0,
+             "2026-09-24 10:00:00", "2026-09-24 14:00:00" if status == "CLOSED" else None,
+             500.0 if status == "CLOSED" else None, status, json.dumps(legs),
+             "short_leg:24400 · long_hedge:24300", "PAPER", "INTRADAY", "test"),
+        )
+        # Entry fills (both legs) — earliest placed_at.
+        conn.execute(
+            """INSERT INTO order_log (order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+               transaction_type, fill_price, placed_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (f"{trade_id}_E1", trade_id, symbol, "PAPER", "PE24400", 24400, "PE", "SELL", 38.0, "2026-09-24 10:00:00"),
+        )
+        conn.execute(
+            """INSERT INTO order_log (order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+               transaction_type, fill_price, placed_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (f"{trade_id}_E2", trade_id, symbol, "PAPER", "PE24300", 24300, "PE", "BUY", 8.0, "2026-09-24 10:00:01"),
+        )
+        if status == "CLOSED":
+            # Exit fills (opposite transaction_type) — later placed_at.
+            conn.execute(
+                """INSERT INTO order_log (order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+                   transaction_type, fill_price, placed_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (f"{trade_id}_X1", trade_id, symbol, "PAPER", "PE24400", 24400, "PE", "BUY", 15.0, "2026-09-24 14:00:00"),
+            )
+            conn.execute(
+                """INSERT INTO order_log (order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+                   transaction_type, fill_price, placed_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (f"{trade_id}_X2", trade_id, symbol, "PAPER", "PE24300", 24300, "PE", "SELL", 3.0, "2026-09-24 14:00:01"),
+            )
+        conn.commit()
+        conn.close()
+
+    def test_open_trade_has_entry_price_but_no_exit_price(self, temp_db):
+        self._seed_trade_with_legs(temp_db, "T1", status="OPEN")
+        legs_map = database.get_trade_legs_with_prices(["T1"])
+        legs = {leg["role"]: leg for leg in legs_map["T1"]}
+        assert legs["short_leg"]["strike"] == 24400
+        assert legs["short_leg"]["entry_price"] == 38.0
+        assert legs["short_leg"]["exit_price"] is None
+        assert legs["long_hedge"]["entry_price"] == 8.0
+        assert legs["long_hedge"]["exit_price"] is None
+
+    def test_closed_trade_has_both_entry_and_exit_price(self, temp_db):
+        self._seed_trade_with_legs(temp_db, "T2", status="CLOSED")
+        legs_map = database.get_trade_legs_with_prices(["T2"])
+        legs = {leg["role"]: leg for leg in legs_map["T2"]}
+        assert legs["short_leg"]["entry_price"] == 38.0
+        assert legs["short_leg"]["exit_price"] == 15.0
+        assert legs["long_hedge"]["entry_price"] == 8.0
+        assert legs["long_hedge"]["exit_price"] == 3.0
+
+    def test_format_legs_with_prices_open_position(self, temp_db):
+        self._seed_trade_with_legs(temp_db, "T3", status="OPEN")
+        legs_map = database.get_trade_legs_with_prices(["T3"])
+        text = database._format_legs_with_prices(legs_map["T3"], include_exit=False)
+        assert "24400PE (SELL)" in text
+        assert "Entry ₹38.00" in text
+        assert "Exit" not in text  # OPEN trade — exit price कधीच दाखवायचा नाही
+
+    def test_format_legs_with_prices_closed_position_shows_exit(self, temp_db):
+        self._seed_trade_with_legs(temp_db, "T4", status="CLOSED")
+        legs_map = database.get_trade_legs_with_prices(["T4"])
+        text = database._format_legs_with_prices(legs_map["T4"], include_exit=True)
+        assert "Entry ₹38.00 → Exit ₹15.00" in text
+        assert "Entry ₹8.00 → Exit ₹3.00" in text
+
+    def test_get_live_positions_with_mtm_includes_legs_entry_price_column(self, temp_db, monkeypatch):
+        self._seed_trade_with_legs(temp_db, "T5", status="OPEN")
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 40.0, "PE24300": 9.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert len(df) == 1
+        assert "Entry ₹38.00" in df.iloc[0]["Legs (Strike & Entry Price)"]
+
+    def test_get_closed_trades_detail_includes_legs_entry_exit_column(self, temp_db):
+        self._seed_trade_with_legs(temp_db, "T6", status="CLOSED")
+        df = database.get_closed_trades_detail("NIFTY")
+        assert len(df) == 1
+        col = df.iloc[0]["Legs (Strike/Entry/Exit Price)"]
+        assert "Entry ₹38.00 → Exit ₹15.00" in col
+
+    def test_no_legs_json_returns_none_gracefully(self, temp_db):
+        """जुन्या trades ना legs_json नसेल (established seed_closed_trade() रिकामी [] साठवतो) —
+        क्रॅश न होता, फक्त None (रिकामा स्तंभ)."""
+        seed_closed_trade(temp_db, "T7", 100.0, "TARGET", "2026-09-24")
+        df = database.get_closed_trades_detail("NIFTY")
+        assert df.iloc[0]["Legs (Strike/Entry/Exit Price)"] is None
