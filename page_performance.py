@@ -694,10 +694,32 @@ def render():
                             + _build_recommendations(perf_symbol, "entry_timeframe", "Timeframe", perf_mode_f, an_from, an_to, english=True)
                             + _build_recommendations(perf_symbol, OPTION_STRUCTURE_GROUP_SQL, "Option Structure", perf_mode_f, an_from, an_to, english=True)
                         )
+                        # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("संबंधित चार्ट सुद्धा प्रिंट झाला
+                        # पाहिजे — ज्या लेवलला एन्ट्री आणि एक्झिट झालेले आहे ते चार्टवर दिसायला हवं, जेणेकरून
+                        # cross-verify करता येईल") — फक्त सर्वात अलीकडच्या 10 trades साठीच (PDF सुटसुटीत
+                        # ठेवण्यासाठी, आणि Upstox वर जास्त API कॉल्स टाळण्यासाठी — प्रत्येक chart साठी एक
+                        # वेगळा historical-candle कॉल लागतो). Combined MCX मोडमध्ये (एकच underlying नसल्याने,
+                        # perf_symbol तेव्हा list असतो) हा विभागच वगळला जातो.
+                        trade_charts = []
+                        if not perf_all_mcx_combined and trade_log_df is not None and not trade_log_df.empty:
+                            for _, tr in trade_log_df.head(10).iterrows():
+                                entry_dt = pd.to_datetime(tr["Entry Time"], errors="coerce")
+                                exit_dt = pd.to_datetime(tr["Exit Time"], errors="coerce")
+                                if pd.isna(entry_dt) or pd.isna(exit_dt):
+                                    continue
+                                candles_df = fetch_candles_date_range(
+                                    token_input, perf_symbol, "5minute", entry_dt.date(), exit_dt.date(),
+                                )
+                                trade_charts.append({
+                                    "trade_id": tr["Trade ID"], "entry_time": tr["Entry Time"], "exit_time": tr["Exit Time"],
+                                    "entry_level_price": tr.get("entry_level_price"), "realized_pnl": tr.get("Realized P&L"),
+                                    "exit_reason": tr.get("exit_reason"), "legs_text": tr.get("Legs (Strike/Entry/Exit Price)"),
+                                    "candles_df": candles_df,
+                                })
                         perf_pdf_bytes = generate_performance_report_pdf(
                             perf_symbol_title, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,
                             an_by_source, an_by_timeframe, an_by_structure, trade_log_pdf_df, all_recs_en,
-                            slippage_pairs_df=slippage_pairs_df, overshoot_df=overshoot_df,
+                            slippage_pairs_df=slippage_pairs_df, overshoot_df=overshoot_df, trade_charts=trade_charts,
                         )
                     st.session_state["perf_pdf_bytes"] = perf_pdf_bytes
                     st.session_state["perf_pdf_filename"] = f"{perf_symbol_label}_Performance_Report_{an_from}_{an_to}.pdf"
