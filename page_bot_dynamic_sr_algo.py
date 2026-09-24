@@ -221,6 +221,25 @@ def render():
                 key=_widget_key(strategy_key, symbol, "timeframe_choice"),
             )
             st.markdown("---")
+        elif strategy_key == "15m_dynamic_sr":
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("3 वेगवेगळे timeframe आहेत, selection user friendly
+            # असू द्या, डीफॉल्ट 15 मिनिट ठेवा, 30 आणि 60 मिनिट optional राहील") — इतर दोन strategies
+            # च्या "दोन पैकी एक/दोन्ही" radio पेक्षा वेगळं (इथे 3 टाईमफ्रेम्स, कुठलंही combination
+            # हवं असू शकतं) — प्रत्येक टाईमफ्रेमसाठी स्वतंत्र checkbox, 15M डीफॉल्ट चालू.
+            sub_header("⏱️ Touch Timeframe (एक किंवा अनेक निवडा)", HDR_TEAL)
+            st.caption("15M डीफॉल्ट सक्रिय — 30M आणि 60M ऐच्छिक (हव्या तितक्या एकत्र निवडता येतील, किमान एक हवाच).")
+            _srv2_active_tf = settings.get("active_timeframes", ["15M"])
+            tf1, tf2, tf3 = st.columns(3)
+            with tf1:
+                srv2_tf_15m = st.checkbox("15M (डीफॉल्ट)", value="15M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_15m"))
+            with tf2:
+                srv2_tf_30m = st.checkbox("30M (ऐच्छिक)", value="30M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_30m"))
+            with tf3:
+                srv2_tf_60m = st.checkbox("60M (ऐच्छिक)", value="60M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_60m"))
+            active_timeframes = [tf for tf, checked in [("15M", srv2_tf_15m), ("30M", srv2_tf_30m), ("60M", srv2_tf_60m)] if checked]
+            if not active_timeframes:
+                st.warning("⚠️ किमान एक टाईमफ्रेम निवडायलाच हवा — काहीही निवडलं नसेल, तर जतन करताना आपोआप 15M निवडला जाईल.")
+            st.markdown("---")
 
         sub_header("🔻 Strike व Size निवड (Credit Spread — मुख्य ट्रेड)", HDR_PURPLE)
         st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
@@ -239,7 +258,7 @@ def render():
             value=bool(settings.get("entry_rsi_gate_enabled", True)),
             key=_widget_key(strategy_key, symbol, "entry_rsi_gate_enabled"),
         )
-        if strategy_key == "1m_instant":
+        if strategy_key in ("1m_instant", "15m_dynamic_sr"):
             st.caption("Support/Bullish → RSI यापेक्षा कमी हवा. Resistance/Bearish → RSI यापेक्षा जास्त हवा.")
             r1, r2 = st.columns(2)
             with r1:
@@ -587,7 +606,12 @@ def render():
             new_settings["trendline_gate_enabled"] = bool(trendline_gate_enabled)
             new_settings["trendline_lookback_swings"] = int(trendline_lookback_swings)
         else:
-            new_settings["rsi_neutral_level"] = int(rsi_neutral_level)
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40" + "timeframe selection user
+            # friendly, 15M डीफॉल्ट, 30/60 ऐच्छिक") — फक्त "15m_dynamic_sr" (SRv2) याच else-शाखेत
+            # पोहोचतो (STRATEGY_LABELS मध्ये फक्त हे तीनच strategy keys आहेत).
+            new_settings["rsi_support_max"] = int(rsi_support_max)
+            new_settings["rsi_resistance_min"] = int(rsi_resistance_min)
+            new_settings["active_timeframes"] = active_timeframes if active_timeframes else ["15M"]
             new_settings["spread_target_pct_of_premium"] = float(spread_target_pct_of_premium)
             new_settings["carry_forward_min_profit_pct"] = float(carry_forward_min_profit_pct)
             new_settings["naked_eod_hour"] = int(naked_eod_hour)
