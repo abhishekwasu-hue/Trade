@@ -31,18 +31,35 @@ cron window च्या आत बसावं म्हणून बफर ठ
 tick-by-tick निरीक्षण नाही — फक्त interval कमी केलेला — पूर्ण उपाय (broker-side resting SL order)
 स्वतंत्रपणे, नंतरच्या टप्प्यात (बघा trading_engine.py चं Phase 2 broker-side SL).
 
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली पुढची सुधारणा (TSL-only fast check) — Performance Report च्या
+SL/TSL Overshoot Tracker मध्ये आढळलं की स्पॉट%-आधारित सामान्य SL exits मध्ये slippage जवळपास शून्य
+आहे (~0.00-0.01%), पण Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे (उदा. एका
+trade मध्ये पूर्ण 1.0 premium point overshoot — त्या trade च्या संपूर्ण तोट्याइतकाच). त्यामुळे नुसता
+`--interval-seconds` आणखी घट्ट करणं (सगळ्या symbols/trades साठी blanket) योग्य उपाय नाही — त्याऐवजी
+आता प्रत्येक cycle नंतर `database.has_active_tsl_trades()` (हलकी, स्थानिक SQLite query — कुठलाही
+Upstox API कॉल नाही) तपासून, कुठल्याही monitored symbol वर सध्या TSL-locked (tsl_activated=1) असा
+trade असेल **तरच** पुढचा sleep `--tsl-interval-seconds` (डीफॉल्ट 5) इतका घट्ट केला जातो — नाहीतर
+नेहमीचाच `--interval-seconds` (डीफॉल्ट 15) वापरला जातो. exit-निर्णयाचं संपूर्ण logic अजूनही तेच,
+एकमेव अधिकृत `manage_open_trades()` — इथे फक्त *cadence* बदलतो, कुठलंही वेगळं/डुप्लिकेट TSL-तपासणी
+function नाही (त्यामुळे trading_engine.py च्या नाजूक, history-laden exit-logic ला धक्का लागण्याचा
+धोका शून्य). परिणाम: TSL सक्रिय नसताना नेहमीचाच API load, पण TSL सक्रिय झाल्यावर लगेच ~3x जास्त
+वारंवार तपासलं जातं (तेवढ्यापुरतंच).
+
 ⚠️ प्रत्येक cycle मध्ये प्रत्येक monitored symbol साठी API कॉल्स होतात (ATR candles + open trades ची
-LTP) — आता 60 सेकंदांत ~4x जास्त वेळा (पूर्वी 1, नंतर ~3, आता ~4) — Upstox rate-limit च्या आत
-राहण्यासाठी `--interval-seconds` गरज पडल्यास वाढवता येतो (कमी frequent, पण कमी API load).
+LTP) — सामान्य स्थितीत 60 सेकंदांत ~4x जास्त वेळा (पूर्वी 1, नंतर ~3, आता ~4), आणि TSL सक्रिय
+असलेल्या window मध्ये आणखी जास्त (~10x) — Upstox rate-limit च्या आत राहण्यासाठी `--interval-seconds`/
+`--tsl-interval-seconds` गरज पडल्यास वाढवता येतात (कमी frequent, पण कमी API load).
 
 चालवणे:
     python3 trade_monitor.py --token <UPSTOX_TOKEN>
     python3 trade_monitor.py --token <UPSTOX_TOKEN> --interval-seconds 30 --loop-seconds 50  # हळू
+    python3 trade_monitor.py --token <UPSTOX_TOKEN> --tsl-interval-seconds 3  # TSL सक्रिय असताना आणखी घट्ट
 """
 import argparse
 import time
 
 import cloud_db
+import database
 from engine_service import load_settings, compute_atr_points, MONITORED_SYMBOLS
 from notifications import notify_exit, notify_error, write_heartbeat
 from process_lock import ProcessLock, ProcessLockHeld
@@ -98,12 +115,20 @@ def run_monitor_cycle(access_token, product_type="D"):
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
 
 
-def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=50,
-                      cycle_fn=run_monitor_cycle, sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print):
+def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=50, tsl_interval_seconds=5,
+                      cycle_fn=run_monitor_cycle, sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print,
+                      has_active_tsl_fn=None):
     """एका cron invocation च्या आत, `interval_seconds`च्या अंतराने `loop_seconds` पर्यंत
     run_monitor_cycle() पुन्हा-पुन्हा चालवणे (SL slippage कमी करण्यासाठी — बघा वरची फाईल-टिप्पणी).
     प्रत्येक cycle चा वेळ वजा करूनच पुढचा sleep काढला जातो, जेणेकरून एकूण वेळ loop_seconds च्या आसपासच
-    राहील (cycle ला जास्त वेळ लागला, तर पुढचा sleep कमी/शून्य होतो, ओलांडत नाही)."""
+    राहील (cycle ला जास्त वेळ लागला, तर पुढचा sleep कमी/शून्य होतो, ओलांडत नाही).
+
+    🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (TSL-only fast check — बघा वरची फाईल-टिप्पणी) —
+    प्रत्येक cycle नंतर `has_active_tsl_fn()` (डीफॉल्ट `database.has_active_tsl_trades(MONITORED_SYMBOLS)`)
+    तपासून, कुठल्याही monitored symbol वर सध्या TSL-locked trade असेल तर पुढचा sleep `interval_seconds`
+    ऐवजी घट्ट `tsl_interval_seconds` इतका ठेवला जातो — exit-logic (manage_open_trades()) तेच, फक्त
+    cadence बदलतो."""
+    has_active_tsl_fn = has_active_tsl_fn or (lambda: database.has_active_tsl_trades(MONITORED_SYMBOLS))
     start = now_fn()
     cycles = 0
     while True:
@@ -115,7 +140,8 @@ def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=
         if remaining_in_budget <= 0:
             break
         cycle_duration = now_fn() - cycle_start
-        sleep_time = min(interval_seconds - cycle_duration, remaining_in_budget)
+        effective_interval = tsl_interval_seconds if has_active_tsl_fn() else interval_seconds
+        sleep_time = min(effective_interval - cycle_duration, remaining_in_budget)
         if sleep_time > 0:
             sleep_fn(sleep_time)
     return cycles
@@ -129,6 +155,8 @@ if __name__ == "__main__":
                          help="किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 15 — पूर्वीच्या दर-60-सेकंदांऐवजी, वापरकर्त्याने 20 वरून आणखी घट्ट केलेलं)")
     parser.add_argument("--loop-seconds", type=float, default=50,
                          help="एका cron invocation मध्ये किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 50 — 60-सेकंद cron window च्या आत बसावं म्हणून बफर)")
+    parser.add_argument("--tsl-interval-seconds", type=float, default=5,
+                         help="कुठल्याही monitored symbol वर TSL-locked (Entry/Breakeven) trade सक्रिय असेल तेव्हा किती घट्ट अंतराने तपासायचं (डीफॉल्ट 5 — नेहमीच्या --interval-seconds पेक्षा घट्ट, कारण TSL exits मध्येच खरी slippage आढळली)")
     args = parser.parse_args()
 
     token = cloud_db.get_effective_upstox_token(args.token)
@@ -136,4 +164,7 @@ if __name__ == "__main__":
         print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
         exit(1)
 
-    run_monitor_loop(token, args.product_type, args.interval_seconds, args.loop_seconds)
+    run_monitor_loop(
+        token, args.product_type, interval_seconds=args.interval_seconds,
+        loop_seconds=args.loop_seconds, tsl_interval_seconds=args.tsl_interval_seconds,
+    )

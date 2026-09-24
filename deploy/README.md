@@ -113,6 +113,15 @@ window च्या आत (`--loop-seconds 50`) पुन्हा-पुन्
 आता दर ~15 सेकंदांनी होते, दर 60 सेकंदांनी नाही. यामुळे प्रति-symbol API कॉल्स ~4x वाढतात
 (rate-limit वर लक्ष ठेवा — जास्त वाटल्यास `--interval-seconds 20`/`30`/`40` देऊन कमी करता येतं).
 
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली पुढची सुधारणा (TSL-only fast check) — Performance Report च्या
+SL/TSL Overshoot Tracker मध्ये आढळलं की slippage जवळपास संपूर्णपणे Trailing-SL (Entry/Breakeven-
+locked) exits मध्येच होतो, सामान्य Spot%-SL exits मध्ये नाही. त्यामुळे नुसता `--interval-seconds`
+आणखी घट्ट करण्याऐवजी (blanket, सगळ्या trades साठी API load वाढवणारा), आता कुठल्याही monitored
+symbol वर सध्या TSL-locked trade सक्रिय असेल **तरच** पुढचा interval घट्ट `--tsl-interval-seconds`
+(डीफॉल्ट 5) होतो — नाहीतर नेहमीचाच `--interval-seconds` (डीफॉल्ट 15). ही तपासणी (`database.
+has_active_tsl_trades()`) हलकी, स्थानिक SQLite query आहे (कुठलाही जादा Upstox API कॉल नाही). गरज
+पडल्यास `--tsl-interval-seconds 3`/`8` देऊन बदलता येतं.
+
 **सद्य crontab (VPS वर `crontab -l` ने पडताळलेलं, वेळा UTC मध्ये — VPS ची timezone
 `timedatectl`/`date` ने आधी खात्री करूनच बदल करा):**
 ```

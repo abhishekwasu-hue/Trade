@@ -260,14 +260,14 @@ class TestGetUnverifiedReconciledTradesTodayCount:
         assert database.get_unverified_reconciled_trades_today_count() == 0
 
 
-def seed_open_trade(tmpdb, trade_id, symbol, source, strategy="BULL_PUT_SPREAD"):
+def seed_open_trade(tmpdb, trade_id, symbol, source, strategy="BULL_PUT_SPREAD", tsl_activated=0, status="OPEN"):
     conn = sqlite3.connect(tmpdb)
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode,
-           trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           trading_style, source, tsl_activated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, "2026-09-19", symbol, strategy, 1, 75, 1000, 1000, 500, 250, 500,
-         "2026-09-19 10:00:00", "OPEN", json.dumps([]), "LIVE", "INTRADAY", source),
+         "2026-09-19 10:00:00", status, json.dumps([]), "LIVE", "INTRADAY", source, tsl_activated),
     )
     conn.commit()
     conn.close()
@@ -829,3 +829,33 @@ class TestGetTradeLegsWithPrices:
         seed_closed_trade(temp_db, "T7", 100.0, "TARGET", "2026-09-24")
         df = database.get_closed_trades_detail("NIFTY")
         assert df.iloc[0]["Legs (Strike/Entry/Exit Price)"] is None
+
+
+class TestHasActiveTslTrades:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (TSL-only fast check — trade_monitor.py चा adaptive
+    poll interval) — has_active_tsl_trades() हलकं, स्थानिक SQLite अस्तित्व-तपासणी आहे (कुठलाही API
+    कॉल नाही), trade_monitor.py प्रत्येक cycle नंतर याचा वापर sleep-interval निवडायला करतं."""
+
+    def test_no_open_trades_returns_false(self, temp_db):
+        assert database.has_active_tsl_trades(["NIFTY", "BANKNIFTY"]) is False
+
+    def test_open_trade_without_tsl_returns_false(self, temp_db):
+        seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant", tsl_activated=0)
+        assert database.has_active_tsl_trades(["NIFTY"]) is False
+
+    def test_open_trade_with_tsl_returns_true(self, temp_db):
+        seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant", tsl_activated=1)
+        assert database.has_active_tsl_trades(["NIFTY"]) is True
+
+    def test_tsl_trade_on_unmonitored_symbol_not_counted(self, temp_db):
+        seed_open_trade(temp_db, "T1", "SENSEX", "dynamic_sr_instant", tsl_activated=1)
+        assert database.has_active_tsl_trades(["NIFTY", "BANKNIFTY"]) is False
+
+    def test_closed_tsl_trade_not_counted(self, temp_db):
+        """tsl_activated=1 असला तरी status='CLOSED' असेल तर मोजू नये -- फक्त सध्या OPEN असलेलेच."""
+        seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant", tsl_activated=1, status="CLOSED")
+        assert database.has_active_tsl_trades(["NIFTY"]) is False
+
+    def test_empty_symbols_list_returns_false(self, temp_db):
+        seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant", tsl_activated=1)
+        assert database.has_active_tsl_trades([]) is False
