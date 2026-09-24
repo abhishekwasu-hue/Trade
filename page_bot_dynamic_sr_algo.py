@@ -379,6 +379,23 @@ def render():
                     min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
                 )
 
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
+            # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
+            # happen then take entry in the same direction") — max-2-hits च्या पलीकडचा, तिसरा trade.
+            st.markdown("---")
+            sub_header("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", HDR_AMBER)
+            entry_breakout_gate_enabled = st.checkbox(
+                "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
+                value=bool(settings.get("entry_breakout_gate_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
+            )
+            st.caption(
+                "त्याच level वर आजचे दोन्ही touch-trades (max-2-hits) आधीच CLOSED आणि दोन्ही SL/TSL लागून हरलेले असतील "
+                "(level सलग टिकला नाही — हाच \"buildup\") — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
+                "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
+                "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
+            )
+
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
@@ -675,6 +692,7 @@ def render():
             new_settings["iv_change_max_pct"] = float(iv_change_max_pct)
             new_settings["iv_lookback_days"] = int(iv_lookback_days)
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
+            new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

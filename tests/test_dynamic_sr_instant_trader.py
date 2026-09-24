@@ -176,6 +176,45 @@ class TestDetermineDirectionWithHysteresis:
             assert dsr.determine_direction_with_hysteresis(self.LEVEL, closes[:i]) == "BULLISH"
 
 
+class TestCheckBreakoutCandleClose:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Breakout buildup and 5 minute
+    candle closed happen then take entry in the same direction") — नुकताच पूर्ण झालेला 5-मिनिट
+    candle level च्या पलीकडे निर्णायकपणे close झाला आहे का (नुसता touch नाही)."""
+
+    LEVEL = 23900.0
+
+    def test_bullish_breakout_confirmed_when_close_above_level(self):
+        candles = [{"close": 23880.0}, {"close": 23920.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is True
+
+    def test_bullish_breakout_not_confirmed_when_close_still_below(self):
+        candles = [{"close": 23880.0}, {"close": 23895.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
+
+    def test_bearish_breakout_confirmed_when_close_below_level(self):
+        candles = [{"close": 23920.0}, {"close": 23880.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles) is True
+
+    def test_bearish_breakout_not_confirmed_when_close_still_above(self):
+        candles = [{"close": 23920.0}, {"close": 23905.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles) is False
+
+    def test_only_last_candle_matters(self):
+        """आधीचे candles पलीकडे गेलेले असले तरी, शेवटचाच (सर्वात अलीकडचा, पूर्ण झालेला) candle बघायचा."""
+        candles = [{"close": 23920.0}, {"close": 23930.0}, {"close": 23895.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
+
+    def test_empty_candles_returns_false(self):
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", []) is False
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", None) is False
+
+    def test_exactly_at_level_is_not_a_close_beyond(self):
+        """नेमकं level वरच close (पलीकडे नाही) -- confirm नाही, > / < strict."""
+        candles = [{"close": self.LEVEL}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles) is False
+
+
 def _fake_zones():
     """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 1m_instant चा
     डीफॉल्ट timeframe_choice आता "BOTH" ऐवजी "5M" आहे. हे fixture बहुतेक टेस्ट्समध्ये
@@ -1131,6 +1170,149 @@ class TestIvGate:
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
             mock_iv_gate.assert_called_once_with("NIFTY", 20.0, 5, 0.65)
+
+
+def _breakout_5m_candles(last_close, today_ist=None):
+    """5-मिनिट candles fixture (Breakout Entry च्या candle-close तपासणीसाठी) — फक्त शेवटच्या
+    candle चा close महत्त्वाचा (check_breakout_candle_close नुसार)."""
+    today_ist = (today_ist or dsr.get_ist_now()).replace(hour=10, minute=0, second=0, microsecond=0)
+    rows = [
+        {"open": 23950.0, "high": 23960.0, "low": 23940.0, "close": 23945.0},
+        {"open": 23945.0, "high": max(23945.0, last_close) + 5, "low": min(23945.0, last_close) - 5, "close": last_close},
+    ]
+    timestamps = pd.date_range(end=today_ist, periods=len(rows), freq="5min")
+    df = pd.DataFrame(rows)
+    df["timestamp"] = timestamps
+    return df
+
+
+class TestBreakoutEntry:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level hit,
+    he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
+    happen then take entry in the same direction") — established max-2-hits च्या पलीकडचा, तिसरा
+    trade. मूळ touch-signal (support, 23900) BULLISH आहे -- breakout confirm झाला तर BEARISH."""
+
+    def _touch_candles(self):
+        touch_rows = [
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ]
+        return _candles_with_rsi(touch_rows, declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+
+    def _breakout_gate_settings(self):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["entry_breakout_gate_enabled"] = True
+        return settings
+
+    def _fetch_candles_side_effect(self, breakout_close):
+        def _fake(token, symbol, current_spot=0, interval="1minute", lookback_days=1):
+            if interval == "5minute":
+                return _breakout_5m_candles(breakout_close, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+            return self._touch_candles()
+        return _fake
+
+    def test_disabled_by_default_still_skips_at_max_hits(self):
+        """डीफॉल्ट settings मध्ये entry_breakout_gate_enabled=False -- established वर्तन (skip)
+        तसंच राहायला हवं, check_breakout_buildup() अजिबात call व्हायला नको."""
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._touch_candles()), \
+             patch.object(dsr, "check_breakout_buildup") as mock_buildup, \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_buildup.called
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_enabled_but_no_buildup_skips(self):
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._touch_candles()), \
+             patch.object(dsr, "check_breakout_buildup", return_value=False), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_buildup_true_but_candle_not_closed_beyond_skips(self):
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(23905.0)), \
+             patch.object(dsr, "check_breakout_buildup", return_value=True), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_buildup_and_candle_close_confirmed_fires_breakout_trade(self):
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(23880.0)), \
+             patch.object(dsr, "check_breakout_buildup", return_value=True), \
+             patch.object(dsr, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(dsr, "check_pcr_gate") as mock_pcr_gate, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23880.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T95"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_rsi_gate.called
+            assert not mock_pcr_gate.called
+            # मूळ दिशा (support, 23900) BULLISH होती -- breakout confirm झाल्याने BEARISH
+            assert mock_select.call_args.args[1] == "BEARISH"
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            breakout_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Breakout Entry" in (e.get("reason") or "")]
+            assert len(breakout_entries) == 1
+
+    def test_breakout_trade_skips_30min_cooldown(self):
+        """established cooldown (last_trade_time वरून) breakout trade ला अडवता कामा नये -- मुद्दामच
+        लगेच यायला हवं (2ऱ्या SL/TSL नंतर लवकरच, 5-मिनिट candle close होताच)."""
+        recent_trade_time = datetime.datetime(2026, 9, 11, 9, 55, 0)  # फक्त 5 मिनिटांपूर्वी
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(23880.0)), \
+             patch.object(dsr, "check_breakout_buildup", return_value=True), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23880.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T96"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, recent_trade_time)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+    def test_breakout_trade_still_blocked_when_position_already_open(self):
+        """established has_open_trade_from_source() सुरक्षा-तपासणी breakout trade लाही लागू व्हायला
+        हवी (कुठल्याही overlapping position ला)."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(23880.0)), \
+             patch.object(dsr, "check_breakout_buildup", return_value=True), \
+             patch.object(dsr, "has_open_trade_from_source", return_value=True), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_PREVIOUS_POSITION_STILL_OPEN" in statuses
 
 
 class TestRunAllSymbols:
