@@ -1602,6 +1602,103 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
         return None
 
 
+def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, entry_level_price=None,
+                                         exit_reason=None, realized_pnl=None, width=680, height=230):
+    """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("संबंधित चार्ट सुद्धा प्रिंट झाला पाहिजे, ज्या
+    लेवलला एन्ट्री आणि एक्झिट झालेले आहे ते सुद्धा चार्ट वर दिसायला हवं, cross-verify करण्यासाठी मदत
+    व्हावी") — एका trade भोवतालचा candlestick chart, entry_time वर निळी उभी रेषा ("ENTRY"), exit_time
+    वर (दिलं असेल तर) नफा/तोटा-रंगीत उभी रेषा ("EXIT"), आणि entry_level_price (bot ने नेमका कुठला
+    S/R level touch केला) असेल तर तिथे जांभळी आडवी रेषा — सर्व एकाच नजरेत दिसावं म्हणून.
+    Returns image_bytes किंवा None (candles नसतील/kaleido अपयशी झाला तर, गोंधळ न होता — caller ने
+    त्या केसमध्ये फक्त "chart उपलब्ध नाही" असा मजकूर दाखवावा)."""
+    if candles_df is None or candles_df.empty:
+        return None
+    try:
+        fig = go.Figure(data=[go.Candlestick(
+            x=candles_df["timestamp"], open=candles_df["open"], high=candles_df["high"],
+            low=candles_df["low"], close=candles_df["close"],
+            increasing_line_color="#089981", decreasing_line_color="#F23645", showlegend=False,
+        )])
+        entry_dt = pd.to_datetime(entry_time)
+        fig.add_vline(
+            x=entry_dt, line_dash="dash", line_color="#2962FF", line_width=1.8,
+            annotation_text="ENTRY", annotation_position="top",
+            annotation_font_size=9, annotation_font_color="#2962FF",
+        )
+        if exit_time is not None:
+            exit_color = "#089981" if (realized_pnl or 0) >= 0 else "#F23645"
+            exit_label = f"EXIT ({exit_reason})" if exit_reason else "EXIT"
+            fig.add_vline(
+                x=pd.to_datetime(exit_time), line_dash="dash", line_color=exit_color, line_width=1.8,
+                annotation_text=exit_label, annotation_position="top",
+                annotation_font_size=9, annotation_font_color=exit_color,
+            )
+        if entry_level_price is not None:
+            fig.add_hline(
+                y=entry_level_price, line_dash="dot", line_color="#7E57C2", line_width=1.2,
+                annotation_text=f"Entry Level {entry_level_price:,.1f}", annotation_position="right",
+                annotation_font_size=8, annotation_font_color="#7E57C2",
+            )
+        fig.update_layout(
+            template="plotly_white", width=width, height=height,
+            margin=dict(l=10, r=95, t=28, b=10), xaxis_rangeslider_visible=False, showlegend=False,
+        )
+        fig.update_xaxes(rangebreaks=[
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[15.5, 9.25], pattern="hour"),
+        ])
+        return fig.to_image(format="png", scale=2)
+    except Exception:
+        return None
+
+
+def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trade one सोबत चा चार्ट, त्याचे एन्ट्री आणि त्याचे एक्झिट
+    असा एक नवीन मॉडेल") — प्रत्येक trade साठी वेगळा, स्वतंत्र विभाग: एक ओळीची caption (Trade ID,
+    Entry/Exit वेळ, Legs, Exit कारण, P&L — novice trader लाही लगेच कळावं म्हणून साधी भाषा) + त्याचाच
+    compact chart. PDF सुटसुटीत राहावा म्हणून जास्तीत जास्त max_charts trades च दाखवले जातात (सर्वात
+    अलीकडचे आधी — established Trade Log सारखाच क्रम), बाकीच्यांची फक्त एक नोंद."""
+    if not trade_charts:
+        return
+    shown = trade_charts[:max_charts]
+    caption_style = ParagraphStyle(
+        "trade_chart_caption", fontName=_RPT_FONT, fontSize=9, leading=12.5,
+        textColor=colors.HexColor("#333333"), spaceAfter=3,
+    )
+    for tc in shown:
+        chart_bytes = build_trade_entry_exit_chart_image(
+            tc.get("candles_df"), tc["entry_time"], exit_time=tc.get("exit_time"),
+            entry_level_price=tc.get("entry_level_price"), exit_reason=tc.get("exit_reason"),
+            realized_pnl=tc.get("realized_pnl"),
+        )
+        pnl = tc.get("realized_pnl")
+        pnl_str = f"Rs {pnl:,.0f}" if pnl is not None else "N/A"
+        pnl_color = "#089981" if (pnl or 0) >= 0 else "#F23645"
+        legs_text = tc.get("legs_text") or "N/A"
+        caption = (
+            f"<b>{_fix_missing_glyphs(str(tc.get('trade_id', '')))}</b>"
+            f" &nbsp;|&nbsp; Entry: {tc['entry_time']} &nbsp;→&nbsp; Exit: {tc.get('exit_time') or 'OPEN'}"
+            f" &nbsp;|&nbsp; {_fix_missing_glyphs(str(legs_text))}"
+            f" &nbsp;|&nbsp; Exit Reason: {_fix_missing_glyphs(str(tc.get('exit_reason') or 'N/A'))}"
+            f" &nbsp;|&nbsp; P&amp;L: <font color='{pnl_color}'><b>{pnl_str}</b></font>"
+        )
+        story.append(Paragraph(caption, caption_style))
+        if chart_bytes:
+            img_w = usable_width
+            img_h = img_w * 230 / 680
+            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
+        else:
+            story.append(Paragraph(
+                "Chart could not be generated for this trade (candle data unavailable).", _rpt_footer,
+            ))
+        story.append(Spacer(1, 10))
+    if len(trade_charts) > max_charts:
+        story.append(Paragraph(
+            f"(showing charts for the first {max_charts} of {len(trade_charts)} trades — see the Trade Log table above for all trades)",
+            _rpt_footer,
+        ))
+
+
 _REC_HEX = {"red": "#F23645", "green": "#089981", "amber": "#D68A00", "grey": "#787B86"}
 
 
@@ -1820,12 +1917,20 @@ def _trade_log_groups_by_timeframe(trade_log_df):
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
                                       by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations,
-                                      slippage_pairs_df=None, overshoot_df=None):
+                                      slippage_pairs_df=None, overshoot_df=None, trade_charts=None):
     """
     Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise, Timeframe-wise व
     Option Structure-wise (Credit Spread वि. Naked Option) P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं
     Entry व Exit कारण (Exit साठी — SL/Target नेमकं Spot% की Premium Points मुळे लागला, हे स्पष्ट
     सांगणारा detail), आणि rule-based शिफारसी.
+
+    🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("संबंधित चार्ट सुद्धा प्रिंट झाला पाहिजे, एन्ट्री-
+    एक्झिट लेवल त्यावर दिसायला हवं, cross-verify करण्यासाठी मदत व्हावी, नवशिक्या ट्रेडरलाही समजावं") —
+    trade_charts (ऐच्छिक) — [{"trade_id", "entry_time", "exit_time", "entry_level_price",
+    "realized_pnl", "exit_reason", "legs_text", "candles_df"}, ...] — प्रत्येक trade साठी त्याचाच
+    candlestick chart (underlying च्या, page_performance.py ने Upstox कडून आधीच मागवलेला) entry/exit
+    वेळ+पातळी मार्क करून, Trade Log नंतर स्वतंत्र विभागात दाखवला जातो. न दिल्यास (None/रिकामी यादी) हा
+    विभागच दिसत नाही — backward-compatible.
 
     summary — database.get_performance_summary() चा dict (निवडलेल्या तारीख-रेंजसाठी).
     pnl_totals — pnl_reports.generate_pnl_report() च्या totals dict (charges-सकट Net P&L साठी).
@@ -2069,6 +2174,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             story.append(Spacer(1, 4))
             story.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
             story.append(Spacer(1, 10))
+
+    if trade_charts:
+        story.append(PageBreak())
+        next_section(f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)")
+        story.append(Paragraph(
+            "Each chart below is the underlying's own price action around that trade — the blue line marks "
+            "when the bot entered, the green/red line marks when it exited (green = profit, red = loss), and the "
+            "purple dotted line (if shown) is the exact Support/Resistance level the bot's entry was based on. "
+            "Use this to visually confirm every entry and exit against the real market move at that time.",
+            ParagraphStyle("trade_chart_note", fontName=_RPT_FONT, fontSize=9.5, leading=13, textColor=colors.HexColor("#555555"), spaceAfter=8),
+        ))
+        _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10)
 
     story.append(Spacer(1, 10))
     story.append(Paragraph(
