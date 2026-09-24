@@ -854,6 +854,56 @@ def set_trading_pause(paused, reason=""):
     return save_strategy_settings(TRADING_PAUSE_STRATEGY_KEY, TRADING_PAUSE_SYMBOL_KEY, payload)
 
 
+# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस केली तर
+# त्या दिवशी NIFTY साठी bot ने automatic trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट
+# सांगितलं), फक्त LIVE (established Kill Switch पॅटर्नप्रमाणेच PAPER कधीच अडत नाही). % move आदल्या
+# दिवसाच्या VIX close च्या तुलनेत मोजला जातो (वापरकर्त्याने निवडलेला आधार — "खरंच किती वाढला" हेच
+# traders सहसा म्हणतात, आजच्या 9:15 open शी नाही), डीफॉल्ट threshold 5%. check_vix_spike_halt.py
+# (सकाळी 9:20 IST cron, बाजार उघडून ~5 मिनिटांनी) एकदाच तपासून आजचा निकाल इथेच साठवतो —
+# trading_engine.check_vix_spike_halt() हा फक्त तोच निकाल वाचतो, प्रत्येक trade attempt ला नवीन VIX
+# API कॉल करत नाही.
+VIX_SPIKE_HALT_STRATEGY_KEY = "__vix_spike_halt__"
+VIX_SPIKE_HALT_SYMBOL_KEY = "NIFTY"
+VIX_SPIKE_HALT_DEFAULTS = {"enabled": True, "threshold_pct": 5.0}
+
+
+def get_vix_spike_halt_settings():
+    """NIFTY-विशिष्ट VIX Spike Halt — enabled/threshold_pct (वापरकर्ता-निवडलेले, Dashboard वरून
+    बदलता येण्याजोगे), अधिक आजच्या दिवसाची स्थिती (halted/trade_date/prev_close/current_vix/
+    pct_change/checked_at — check_vix_spike_halt.py ने सकाळी साठवलेली, अजून तपासणी न झालेली असेल तर
+    सर्व None/False). Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट."""
+    settings = get_strategy_settings(VIX_SPIKE_HALT_STRATEGY_KEY, VIX_SPIKE_HALT_SYMBOL_KEY)
+    return {
+        "enabled": bool(settings.get("enabled", VIX_SPIKE_HALT_DEFAULTS["enabled"])),
+        "threshold_pct": settings.get("threshold_pct", VIX_SPIKE_HALT_DEFAULTS["threshold_pct"]),
+        "halted": bool(settings.get("halted", False)),
+        "trade_date": settings.get("trade_date"),
+        "prev_close": settings.get("prev_close"),
+        "current_vix": settings.get("current_vix"),
+        "pct_change": settings.get("pct_change"),
+        "checked_at": settings.get("checked_at"),
+    }
+
+
+def save_vix_spike_halt_settings(enabled, threshold_pct):
+    """वापरकर्त्याने Dashboard वरून बदलता येणारे — enabled (चालू/बंद) आणि threshold_pct (किती% वाढ
+    झाली तर थांबवायचं). आजच्या दिवसाच्या स्थितीला (save_vix_spike_halt_status()) हात लावत नाही —
+    save_strategy_settings() आंशिक (partial) merge करतं, त्यामुळे दोन्ही स्वतंत्रपणे बदलता येतात."""
+    return save_strategy_settings(VIX_SPIKE_HALT_STRATEGY_KEY, VIX_SPIKE_HALT_SYMBOL_KEY, {
+        "enabled": bool(enabled), "threshold_pct": float(threshold_pct),
+    })
+
+
+def save_vix_spike_halt_status(trade_date, halted, prev_close, current_vix, pct_change):
+    """check_vix_spike_halt.py (सकाळी 9:20 IST cron) रोज एकदाच कॉल करतं — आजचा निकाल साठवणे.
+    enabled/threshold_pct (वापरकर्त्याचे सेटिंग्ज) ला हात लावत नाही (आंशिक merge)."""
+    return save_strategy_settings(VIX_SPIKE_HALT_STRATEGY_KEY, VIX_SPIKE_HALT_SYMBOL_KEY, {
+        "halted": bool(halted), "trade_date": trade_date,
+        "prev_close": prev_close, "current_vix": current_vix, "pct_change": pct_change,
+        "checked_at": (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).isoformat(),
+    })
+
+
 def get_all_strategy_trading_modes():
     """
     🎓 वापरकर्त्याने मागितलेली सुधारणा (Bot Dynamic SR Algo — नवीन वापरकर्त्यालाही सहज वापरता यावं

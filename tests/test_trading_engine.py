@@ -1633,6 +1633,57 @@ class TestCheckMcxKillSwitch:
         assert reason is None
 
 
+class TestCheckVixSpikeHalt:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt — फक्त NIFTY, फक्त LIVE) —
+    check_vix_spike_halt() फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं."""
+
+    TODAY = trading_engine.get_ist_today().strftime("%Y-%m-%d")
+
+    def test_non_nifty_symbol_always_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("CRUDEOIL")
+        assert ok is True
+        assert reason is None
+
+    def test_disabled_always_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": False, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is True
+        assert reason is None
+
+    def test_stale_trade_date_fails_open(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": "2020-01-01", "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is True
+        assert reason is None
+
+    def test_missing_trade_date_fails_open(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": None, "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is True
+        assert reason is None
+
+    def test_not_halted_today_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": False, "trade_date": self.TODAY, "pct_change": 1.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is True
+        assert reason is None
+
+    def test_halted_today_blocks(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.3, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in reason
+        assert "+6.3%" in reason
+
+    def test_halted_today_unknown_pct_change_blocks_with_placeholder_reason(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": None, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in reason
+        assert "अज्ञात" in reason
+
+
 class TestOpenMultiLegTradeMcxKillSwitch:
     def _mcx_strategy_result(self):
         return {

@@ -615,6 +615,32 @@ def fetch_india_vix(access_token):
         _logger.exception("fetch_india_vix() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
+
+def fetch_india_vix_prev_close(access_token):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस
+    केली तर NIFTY साठी trading थांबवावी") — India VIX चा आदल्या ट्रेडिंग दिवसाचा close — त्याच
+    इंस्ट्रुमेंट-key वर, established fetch_candles_date_range() सारखाच v3 historical-candle
+    (daily) कॉल, पण फक्त एकाच index साठी थेट (चुकीच्या SYMBOLS mapping ची गरज नाही). शेवटचे 7
+    calendar दिवस मागवतो (weekend/सुट्टी सहज ओलांडण्यासाठी) आणि सर्वात अलीकडचा (आजच्या आधीचा,
+    कारण आजचा daily candle अजून पूर्ण झालेला नसतो) candle चा close परत करतो."""
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        key = urllib.parse.quote("NSE_INDEX|India VIX", safe="")
+        to_date = get_ist_today() - datetime.timedelta(days=1)
+        from_date = to_date - datetime.timedelta(days=7)
+        url = f"https://api.upstox.com/v3/historical-candle/{key}/days/1/{to_date.strftime('%Y-%m-%d')}/{from_date.strftime('%Y-%m-%d')}"
+        res = _get_with_retry(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            candles = res.json().get("data", {}).get("candles", [])
+            if candles:
+                # Upstox candles सर्वात अलीकडचा आधी देतो — पहिलाच candle म्हणजे शेवटचा पूर्ण झालेला ट्रेडिंग दिवस.
+                return float(candles[0][4])  # [timestamp, open, high, low, close, volume, oi]
+        return None
+    except Exception:
+        _logger.exception("fetch_india_vix_prev_close() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+
+
 def verify_token_live(access_token):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "मोबाईलवर Approve करूनही 401 चालूच" या तक्रारीचं

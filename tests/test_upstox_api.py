@@ -500,3 +500,64 @@ class TestCancelOrder:
             status_code, body = upstox_api.cancel_order("fake_token", "SL-O1")
         assert status_code is None
         assert "error" in body
+
+
+class TestFetchIndiaVix:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — fetch_india_vix() सध्याचा
+    LTP मिळवतं (established v3/market-quote/ltp, established 30-सेकंद cache)."""
+
+    def setup_method(self):
+        upstox_api.fetch_india_vix.clear()
+
+    def test_success_returns_last_price(self):
+        resp = _mock_get_response(200, {"NSE_INDEX:India VIX": {"instrument_token": "NSE_INDEX|India VIX", "last_price": 13.45}})
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.fetch_india_vix("fake_token")
+        assert result == 13.45
+
+    def test_non_200_returns_none(self):
+        resp = _mock_get_response(401)
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.fetch_india_vix("fake_token")
+        assert result is None
+
+    def test_exception_returns_none_not_raised(self):
+        with patch.object(upstox_api, "_get_with_retry", side_effect=Exception("connection reset")):
+            result = upstox_api.fetch_india_vix("fake_token")
+        assert result is None
+
+
+class TestFetchIndiaVixPrevClose:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("आदल्या दिवसाचा close vs 9:20 चा VIX, threshold
+    5%") — fetch_india_vix_prev_close() आदल्या ट्रेडिंग दिवसाचा close historical-candle API ने
+    मिळवतं (weekend/सुट्टी ओलांडण्यासाठी 7-दिवसांची विंडो, Upstox सर्वात अलीकडचा candle आधी देतो)."""
+
+    def test_success_returns_most_recent_candle_close(self):
+        candles = [
+            [ "2026-09-23T00:00:00+05:30", 13.0, 13.8, 12.9, 13.45, 0, 0],  # सर्वात अलीकडचा (आधी)
+            [ "2026-09-22T00:00:00+05:30", 12.5, 13.1, 12.3, 12.9, 0, 0],
+        ]
+        resp = _mock_get_response(200, {"candles": candles})
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp) as mock_get:
+            result = upstox_api.fetch_india_vix_prev_close("fake_token")
+        assert result == 13.45
+        url = mock_get.call_args.args[0]
+        assert "historical-candle" in url
+        assert "NSE_INDEX%7CIndia%20VIX" in url or "NSE_INDEX|India VIX" in url
+
+    def test_empty_candles_returns_none(self):
+        resp = _mock_get_response(200, {"candles": []})
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.fetch_india_vix_prev_close("fake_token")
+        assert result is None
+
+    def test_non_200_returns_none(self):
+        resp = _mock_get_response(401)
+        with patch.object(upstox_api, "_get_with_retry", return_value=resp):
+            result = upstox_api.fetch_india_vix_prev_close("fake_token")
+        assert result is None
+
+    def test_exception_returns_none_not_raised(self):
+        with patch.object(upstox_api, "_get_with_retry", side_effect=Exception("connection reset")):
+            result = upstox_api.fetch_india_vix_prev_close("fake_token")
+        assert result is None

@@ -1415,3 +1415,72 @@ class TestTradingPauseSettings:
         payload = mock_save.call_args[0][2]
         assert payload["paused"] is False
         assert payload["paused_at"] is None
+
+
+class TestVixSpikeHaltSettings:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt — फक्त NIFTY, फक्त LIVE) —
+    get/save_vix_spike_halt_settings() आणि save_vix_spike_halt_status() हे आधीच पूर्णपणे टेस्ट
+    केलेल्या get/save_strategy_settings() चेच पातळ wrapper आहेत (strategy_name="__vix_spike_halt__",
+    symbol="NIFTY" या स्थिर जोडीसह) — त्यामुळे इथे फक्त wrapping/डीफॉल्ट्स तपासले जातात."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_vix_spike_halt_settings()
+        assert settings == {
+            "enabled": True, "threshold_pct": 5.0, "halted": False, "trade_date": None,
+            "prev_close": None, "current_vix": None, "pct_change": None, "checked_at": None,
+        }
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={
+                "enabled": False, "threshold_pct": 7.5, "halted": True, "trade_date": "2026-09-24",
+                "prev_close": 13.5, "current_vix": 14.8, "pct_change": 9.6, "checked_at": "2026-09-24T09:20:00",
+            },
+        ) as mock_get:
+            settings = cloud_db.get_vix_spike_halt_settings()
+        mock_get.assert_called_once_with(cloud_db.VIX_SPIKE_HALT_STRATEGY_KEY, cloud_db.VIX_SPIKE_HALT_SYMBOL_KEY)
+        assert settings == {
+            "enabled": False, "threshold_pct": 7.5, "halted": True, "trade_date": "2026-09-24",
+            "prev_close": 13.5, "current_vix": 14.8, "pct_change": 9.6, "checked_at": "2026-09-24T09:20:00",
+        }
+
+    def test_save_settings_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_vix_spike_halt_settings(True, "6.0")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.VIX_SPIKE_HALT_STRATEGY_KEY, cloud_db.VIX_SPIKE_HALT_SYMBOL_KEY,
+            {"enabled": True, "threshold_pct": 6.0},
+        )
+
+    def test_save_settings_does_not_touch_status_fields(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            cloud_db.save_vix_spike_halt_settings(False, 5.0)
+        payload = mock_save.call_args[0][2]
+        assert "halted" not in payload
+        assert "trade_date" not in payload
+
+    def test_save_status_stamps_checked_at(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_vix_spike_halt_status("2026-09-24", True, 13.5, 14.8, 9.6)
+        assert ok is True
+        mock_save.assert_called_once()
+        args, _ = mock_save.call_args
+        assert args[0] == cloud_db.VIX_SPIKE_HALT_STRATEGY_KEY
+        assert args[1] == cloud_db.VIX_SPIKE_HALT_SYMBOL_KEY
+        payload = args[2]
+        assert payload["halted"] is True
+        assert payload["trade_date"] == "2026-09-24"
+        assert payload["prev_close"] == 13.5
+        assert payload["current_vix"] == 14.8
+        assert payload["pct_change"] == 9.6
+        assert payload["checked_at"] is not None  # वेळ नोंदवली गेली
+
+    def test_save_status_does_not_touch_settings_fields(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            cloud_db.save_vix_spike_halt_status("2026-09-24", False, 13.5, 13.6, 0.7)
+        payload = mock_save.call_args[0][2]
+        assert "enabled" not in payload
+        assert "threshold_pct" not in payload

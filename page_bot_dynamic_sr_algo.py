@@ -16,6 +16,7 @@ import streamlit as st
 import cloud_db
 import database
 import upstox_api
+from config import get_ist_today
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
@@ -150,12 +151,58 @@ def _render_kill_switch_panel():
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
 
+def _render_vix_spike_halt_panel():
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% level
+    क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने trading थांबवावी") — फक्त NIFTY साठी, फक्त LIVE
+    (PAPER trades वर परिणाम नाही). check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5
+    मिनिटांनी) रोज एकदा तपासून आजचा निकाल साठवतं — इथे तोच निकाल + enabled/threshold सेटिंग्ज
+    दाखवली/बदलता येतात (established Kill Switch पॅनेलसारखंच)."""
+    vh_settings = cloud_db.get_vix_spike_halt_settings()
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+
+    with st.expander("🌪️ India VIX Spike Halt (फक्त NIFTY, फक्त LIVE)", expanded=False):
+        st.caption(
+            "सकाळी 9:20 IST ला (बाजार उघडून ~5 मिनिटांनी) India VIX आदल्या दिवसाच्या close च्या "
+            "तुलनेत किती% बदलला हे एकदाच तपासलं जातं (check_vix_spike_halt.py cron) — मर्यादेपलीकडे "
+            "गेला, तर आजच्या उर्वरित दिवसासाठी फक्त NIFTY चे नवीन LIVE trades थांबतात (PAPER नेहमीप्रमाणेच "
+            "चालू राहतं, इतर symbols वर परिणाम नाही)."
+        )
+        if not vh_settings["enabled"]:
+            st.warning("⚪ VIX Spike Halt सध्या बंद आहे — VIX कितीही वाढला तरी NIFTY LIVE trading वर परिणाम नाही.")
+        elif vh_settings.get("trade_date") != today_str:
+            st.info("ℹ️ आजची तपासणी अजून झालेली नाही (cron अजून चालला नाही, किंवा बाजार उघडून 5 मिनिटं झालेली नाहीत).")
+        elif vh_settings.get("halted"):
+            pct = vh_settings.get("pct_change")
+            pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
+            st.error(
+                f"🔴 आज VIX Spike Halt ट्रिप झालं — India VIX {pct_str} बदलला (मर्यादा "
+                f"{vh_settings['threshold_pct']:.0f}%). NIFTY साठी नवीन LIVE trades ब्लॉक केले जात आहेत."
+            )
+        else:
+            pct = vh_settings.get("pct_change")
+            pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
+            st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). NIFTY LIVE trading नेहमीप्रमाणे चालू.")
+
+        vh_enabled = st.checkbox("VIX Spike Halt सक्रिय", value=vh_settings["enabled"], key="bdsr_vh_enabled")
+        vh_threshold = st.number_input(
+            "Threshold % (आदल्या दिवसाच्या VIX close च्या तुलनेत)", min_value=0.5, max_value=100.0,
+            value=float(vh_settings["threshold_pct"]), step=0.5, key="bdsr_vh_threshold",
+        )
+        if st.button("💾 VIX Spike Halt सेव्ह करा", key="bdsr_vh_save_btn"):
+            ok = cloud_db.save_vix_spike_halt_settings(vh_enabled, vh_threshold)
+            if ok:
+                st.success("✅ VIX Spike Halt सेटिंग्ज जतन झाल्या.")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("तिन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     _render_live_status_banner()
     _render_kill_switch_panel()
+    _render_vix_spike_halt_panel()
 
     with st.expander("❓ हे पान पहिल्यांदाच वापरताय? इथे क्लिक करा"):
         st.markdown(

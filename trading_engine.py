@@ -346,6 +346,34 @@ def check_mcx_kill_switch():
     return True, None
 
 
+def check_vix_spike_halt(symbol):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% (आदल्या
+    दिवसाच्या close च्या तुलनेत, threshold 5%) क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने automatic
+    trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट सांगितलं), फक्त LIVE (established
+    Kill Switch पॅटर्नप्रमाणेच PAPER trades कधीच अडत नाहीत). check_vix_spike_halt.py (सकाळी 9:20
+    IST cron, बाजार उघडून ~5 मिनिटांनी) आधीच ठरवलेला आजचा निकाल फक्त वाचतो — इथे प्रत्येक trade
+    attempt ला नवीन VIX API कॉल होत नाही (हलकं). आजची तपासणीच अजून झालेली नसेल (cron अजून चालला
+    नाही, किंवा 9:15-9:20 च्या मधलाच क्षण — पहिली 5 मिनिटं पूर्ण होण्याआधी निकाल असूच शकत नाही) तर
+    fail-open (अडवत नाही) — cron स्वतः त्याचा निकाल Telegram वर कळवतो.
+    रिटर्न: (ok: bool, reason: str|None)."""
+    if symbol != "NIFTY":
+        return True, None
+    settings = cloud_db.get_vix_spike_halt_settings()
+    if not settings.get("enabled", True):
+        return True, None
+    if settings.get("trade_date") != get_ist_today().strftime("%Y-%m-%d"):
+        return True, None
+    if not settings.get("halted"):
+        return True, None
+    pct_change = settings.get("pct_change")
+    pct_str = f"{pct_change:+.1f}%" if pct_change is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
+    threshold_pct = settings.get("threshold_pct", 5.0)
+    return False, (
+        f"VIX_SPIKE_HALT — आज सकाळी India VIX {pct_str} बदलला (मर्यादा {threshold_pct:.0f}%, आदल्या "
+        f"दिवसाच्या close च्या तुलनेत) — आजच्या उर्वरित दिवसासाठी NIFTY साठी नवीन LIVE trades थांबवले."
+    )
+
+
 def _alert_kill_switch_blocked(symbol, source, reason):
     """LIVE Kill Switch ट्रिप झाल्यावर, नवीन LIVE trade ब्लॉक केल्यावर Telegram अलर्ट — _alert_ltp_fetch_failure()
     सारखंच, cooldown नाही (गंभीर, पैशांशी संबंधित स्थिती असल्याने दर वेळी सूचना देणं चुकून दुर्लक्षित
@@ -660,6 +688,12 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             if not mcx_kill_switch_ok:
                 _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
                 return False, {"status": "error", "reason": mcx_kill_switch_reason}
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — फक्त NIFTY साठी.
+        vix_ok, vix_reason = check_vix_spike_halt(symbol)
+        if not vix_ok:
+            _alert_kill_switch_blocked(symbol, source, vix_reason)
+            return False, {"status": "error", "reason": vix_reason}
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
         # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).
