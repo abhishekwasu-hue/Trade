@@ -258,10 +258,15 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
         # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
         # happen then take entry in the same direction") — Breakout Entry — max-2-hits च्या
-        # पलीकडचा, तिसरा trade (दोन्ही आधीचे SL/TSL लागून हरलेले + 5-मिनिट candle त्या level च्या
-        # पलीकडे breakout-दिशेने close झाला तरच). डीफॉल्ट बंद — इतर नवीन gates सारखाच, वापरकर्त्याने
-        # स्वतः Dashboard वरून चालू करायचा.
+        # पलीकडचा, तिसरा trade. "buildup" पूर्णपणे price-data वरून (trade-outcome/live_trades वर
+        # अवलंबून नाही, त्यामुळे IV/RSI/PCR Gate ने आधीचे touches block केले तरी काम करतं) —
+        # breakout-candle च्या आधीच्या `breakout_lookback_candles` 5-मिनिट candles मध्ये price
+        # level च्या ±`breakout_tolerance_pct`% च्या आत consolidate झालेला असावा, आणि नंतर एक
+        # 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close झाला तरच. डीफॉल्ट बंद — इतर
+        # नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा.
         "entry_breakout_gate_enabled": False,
+        "breakout_lookback_candles": 6,
+        "breakout_tolerance_pct": 0.30,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,

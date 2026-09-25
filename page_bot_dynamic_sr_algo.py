@@ -390,11 +390,24 @@ def render():
                 key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
             )
             st.caption(
-                "त्याच level वर आजचे दोन्ही touch-trades (max-2-hits) आधीच CLOSED आणि दोन्ही SL/TSL लागून हरलेले असतील "
-                "(level सलग टिकला नाही — हाच \"buildup\") — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
+                "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
+                "5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) consolidate झालेला असावा "
+                "(हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, IV/RSI/PCR Gate ने "
+                "आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
                 "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
                 "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
             )
+            bo1, bo2 = st.columns(2)
+            with bo1:
+                breakout_lookback_candles = _number_input(
+                    "Consolidation window (5-मिनिट candles)", settings, "breakout_lookback_candles", strategy_key, symbol,
+                    min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
+                )
+            with bo2:
+                breakout_tolerance_pct = _number_input(
+                    "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", strategy_key, symbol,
+                    min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
+                )
 
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
@@ -693,6 +706,8 @@ def render():
             new_settings["iv_lookback_days"] = int(iv_lookback_days)
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
+            new_settings["breakout_lookback_candles"] = int(breakout_lookback_candles)
+            new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)
