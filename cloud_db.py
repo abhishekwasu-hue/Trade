@@ -452,6 +452,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "trailing_pct": 1.0,             # Trailing SL अंतर — सद्य किंमतीच्या % (trailing_sl_enabled सोबतच)
         "trading_mode": "PAPER",
         "broker_account_ids": [],
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add
+        # kra, Breakout buildup waril A and C mix logic") — 1m_instant मधलाच Breakout Entry
+        # (max-2-hits च्या पलीकडचा, तिसरा trade) आता MCX Futures साठीही — तेच price-consolidation
+        # (A: hit_count_so_far>=2, C: check_breakout_price_consolidation) लॉजिक, फक्त इथे स्वतंत्र
+        # 5-मिनिट candles fetch न करता, त्याच candidate च्या स्वतःच्याच timeframe (30M/60M) candles
+        # वर (todays_closes) चालवलेलं — MCX ची touch-granularity आधीच त्या timeframe इतकी असल्याने
+        # वेगळी finer-interval fetch ची गरज नाही. डीफॉल्ट बंद, Dashboard वरून बदलण्याजोगं.
+        "entry_breakout_gate_enabled": False,
+        "breakout_lookback_candles": 12,
+        "breakout_tolerance_pct": 0.30,
     },
 }
 
