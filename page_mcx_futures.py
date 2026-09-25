@@ -433,6 +433,35 @@ def render():
                 min_value=50, max_value=95, step=1, disabled=not entry_rsi_gate_enabled,
             )
 
+        st.markdown("---")
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add
+        # kra, Breakout buildup waril A and C mix logic") — dynamic_sr_instant_trader.py (NIFTY
+        # Bot Dynamic SR Algo) मधलाच Breakout Entry आता इथेही — max-2-hits च्या पलीकडचा, तिसरा trade.
+        sub_header("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", HDR_PINK)
+        entry_breakout_gate_enabled = st.checkbox(
+            "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
+            value=bool(settings.get("entry_breakout_gate_enabled", False)),
+            key=_widget_key(symbol, "entry_breakout_gate_enabled"),
+        )
+        st.caption(
+            "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
+            "(वरच्या Touch Timeframe च्याच — 30M/60M) candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) "
+            "consolidate झालेला असावा — आणि नंतर एक candle त्या level च्या पलीकडे (breakout-दिशेने — मूळ 2 trades च्या उलट) "
+            "निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
+            "RSI Gate (directional trade असल्याने) वगळलेला (MCX मध्ये PCR/IV Gate/Cooldown मुळातच नाहीत)."
+        )
+        bo1, bo2 = st.columns(2)
+        with bo1:
+            breakout_lookback_candles = _number_input(
+                "Consolidation window (candles, याच Touch Timeframe च्या)", settings, "breakout_lookback_candles", symbol,
+                min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
+            )
+        with bo2:
+            breakout_tolerance_pct = _number_input(
+                "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", symbol,
+                min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
+            )
+
         if st.button("💾 Entry Gate सेव्ह करा", key=_widget_key(symbol, "save_entry")):
             new_settings = dict(settings)
             new_settings.update({
@@ -440,6 +469,9 @@ def render():
                 "timeframe_choice": timeframe_choice,
                 "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
                 "rsi_support_max": int(rsi_support_max), "rsi_resistance_min": int(rsi_resistance_min),
+                "entry_breakout_gate_enabled": bool(entry_breakout_gate_enabled),
+                "breakout_lookback_candles": int(breakout_lookback_candles),
+                "breakout_tolerance_pct": float(breakout_tolerance_pct),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Entry Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")

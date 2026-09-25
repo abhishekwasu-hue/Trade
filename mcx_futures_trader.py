@@ -19,6 +19,12 @@ page_mcx_futures.py (Dashboard) वरून.
     यापेक्षा जास्त हवा).
   - Multi-Hit (एकाच S/R level वर दिवसातून कमाल 2 वेळाच entry) — cloud_db.get_zone_hits_today(),
     या project मधल्या इतर सर्व bots प्रमाणेच (वापरकर्त्याने स्पष्ट सांगितलेली सामायिक रचना).
+  - Breakout Entry (ऐच्छिक, `entry_breakout_gate_enabled`, डीफॉल्ट बंद) — dynamic_sr_instant_trader.py
+    मधलंच price-consolidation buildup लॉजिक (check_breakout_price_consolidation +
+    check_breakout_candle_close — इथेही import, स्वतंत्र कॉपी नाही) — max-2-hits च्या पलीकडचा, तिसरा
+    trade, त्याच candidate च्या स्वतःच्या (30M/60M) candles वर (वेगळी finer-interval fetch नाही —
+    MCX ची touch-granularity आधीच तितकी coarse आहे). RSI Gate directional trade असल्याने वगळला जातो
+    (MCX मध्ये cooldown/PCR/IV gate मुळातच नाहीत, त्यामुळे तेवढंच वगळायचं).
   - Instrument नेहमी resolve_mcx_futures_instruments.resolve_symbol() ने ताजा (current/continuous
     front-month contract) — प्रत्येक cycle ला पुन्हा resolve होतो, कुठलाही instrument_key/expiry
     कधीच hardcoded नाही (महिना बदलला/contract expire झाला तरी आपोआप पुढच्या contract वर roll होतो).
@@ -65,7 +71,7 @@ import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
-from dynamic_sr_instant_trader import check_instant_rsi_filter
+from dynamic_sr_instant_trader import check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
@@ -167,6 +173,9 @@ def process_symbol(access_token, symbol):
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
+    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
+    breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
+    breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     timeframe_choice = settings.get("timeframe_choice", "30M")
     active_suffixes = TIMEFRAME_SUFFIXES if timeframe_choice == "ALL" else [timeframe_choice]
 
@@ -189,6 +198,31 @@ def process_symbol(access_token, symbol):
         direction = determine_direction_with_hysteresis(level_price, todays_closes)
         level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
 
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add
+        # kra, Breakout buildup waril A and C mix logic") — dynamic_sr_instant_trader.py प्रमाणे
+        # role हा zone_type सारखा स्थिर database column नाही — इथे तो प्रत्येक cycle ला hysteresis-
+        # दिशेवरूनच (`level_type`, वर) ताजा काढला जातो, त्यामुळे breakout घडलाच असेल तर हा आधीच
+        # (नैसर्गिकपणे) नव्या दिशेकडे वळलेला असतो — वेगळी flip-logic लागत नाही (dynamic_sr_instant_
+        # trader.py च्या उलट, जिथे role स्थिर असल्याने breakout_direction स्वतंत्रपणे उलटवावी लागते).
+        # म्हणून buildup साठी "मूळ" (breakout-आधीची) role शोधायला — याच level वर उलट role
+        # (opposite_role) कडे आधीच 2 hits झालेल्या आहेत का, हे तपासायचं (हाच "A"). झाले असतील, आणि
+        # किंमत level च्या आधीच्या काही candles मध्ये जवळच consolidate होऊन (हाच "C") आता निर्णायकपणे
+        # (आताच्या, ताज्या) दिशेने close झाली, तरच हा breakout trade — `touched` (सद्य किंमत level
+        # च्या जवळच आहे का) ची अट breakout candle साठी खरीच ठरणार नाही (breakout म्हणजे किंमत level
+        # पासून निर्णायक दूर गेलेली), म्हणून इथे त्यापासून स्वतंत्रपणे तपासलं जातं.
+        role = level_type
+        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=role)
+        is_breakout_trade = False
+        if entry_breakout_gate_enabled:
+            opposite_role = "RESISTANCE" if role == "SUPPORT" else "SUPPORT"
+            opposite_hit_count, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=opposite_role)
+            if opposite_hit_count >= 2:
+                candles_for_breakout = [{"close": c} for c in todays_closes]
+                if (check_breakout_price_consolidation(level_price, candles_for_breakout, breakout_lookback_candles, breakout_tolerance_pct)
+                        and check_breakout_candle_close(level_price, direction, candles_for_breakout)):
+                    is_breakout_trade = True
+                    touched = True
+
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
             "level_price": level_price, "hit_type": "TOUCH" if touched else "NO_HIT",
@@ -201,8 +235,14 @@ def process_symbol(access_token, symbol):
             cloud_db.save_signal_log(log_entry)
             continue
 
+        if hit_count_so_far >= 2 and not is_breakout_trade:
+            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+
         rsi_value = None
-        if entry_rsi_gate_enabled:
+        if entry_rsi_gate_enabled and not is_breakout_trade:
             rsi_ok, rsi_value = check_instant_rsi_filter(candles_df, direction, rsi_support_max, rsi_resistance_min)
             if not rsi_ok:
                 log_entry["trade_status"] = "SKIPPED_RSI_FILTER"
@@ -212,13 +252,6 @@ def process_symbol(access_token, symbol):
                 )
                 cloud_db.save_signal_log(log_entry)
                 continue
-
-        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
-        if hit_count_so_far >= 2:
-            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
-            continue
 
         if has_open_trade_from_source(symbol, STRATEGY_KEY):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
@@ -283,13 +316,22 @@ def process_symbol(access_token, symbol):
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
 
-        rsi_display = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
+        if is_breakout_trade:
+            rsi_display = f"📈 Breakout Entry (price consolidation + candle close, {timeframe_suffix}) — RSI Gate वगळले."
+        elif entry_rsi_gate_enabled:
+            rsi_display = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास"
+        else:
+            rsi_display = f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
         log_entry["trade_status"] = trade_status
-        log_entry["reason"] = rsi_display
+        if is_breakout_trade:
+            log_entry["reason"] = f"Directional (trend-continuation) trade — Breakout Entry (price consolidation + candle close, {timeframe_suffix}), RSI Gate वगळले"
+        else:
+            log_entry["reason"] = rsi_display
         cloud_db.save_signal_log(log_entry)
 
+        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/2 वा hit)"
         message = (
-            f"🎯 <b>{symbol} MCX Futures ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/2 वा hit)\n"
+            f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"
             f"निकाल: {trade_status}\n"
             f"वेळ: {now.strftime('%H:%M:%S')}"

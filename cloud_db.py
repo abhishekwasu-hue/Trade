@@ -264,8 +264,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # level च्या ±`breakout_tolerance_pct`% च्या आत consolidate झालेला असावा, आणि नंतर एक
         # 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close झाला तरच. डीफॉल्ट बंद — इतर
         # नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा.
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Candle 5 minute chi asel tar kiman 12
+        # candle chi range calculator hawi") — डीफॉल्ट lookback 6 (30 मिनिट) वरून 12 (1 तास) —
+        # Dashboard वरून बदलण्याजोगंच (hardcoded नाही, already user-friendly number_input).
         "entry_breakout_gate_enabled": False,
-        "breakout_lookback_candles": 6,
+        "breakout_lookback_candles": 12,
         "breakout_tolerance_pct": 0.30,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
@@ -449,6 +452,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "trailing_pct": 1.0,             # Trailing SL अंतर — सद्य किंमतीच्या % (trailing_sl_enabled सोबतच)
         "trading_mode": "PAPER",
         "broker_account_ids": [],
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add
+        # kra, Breakout buildup waril A and C mix logic") — 1m_instant मधलाच Breakout Entry
+        # (max-2-hits च्या पलीकडचा, तिसरा trade) आता MCX Futures साठीही — तेच price-consolidation
+        # (A: hit_count_so_far>=2, C: check_breakout_price_consolidation) लॉजिक, फक्त इथे स्वतंत्र
+        # 5-मिनिट candles fetch न करता, त्याच candidate च्या स्वतःच्याच timeframe (30M/60M) candles
+        # वर (todays_closes) चालवलेलं — MCX ची touch-granularity आधीच त्या timeframe इतकी असल्याने
+        # वेगळी finer-interval fetch ची गरज नाही. डीफॉल्ट बंद, Dashboard वरून बदलण्याजोगं.
+        "entry_breakout_gate_enabled": False,
+        "breakout_lookback_candles": 12,
+        "breakout_tolerance_pct": 0.30,
     },
 }
 

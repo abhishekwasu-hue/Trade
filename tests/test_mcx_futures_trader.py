@@ -308,6 +308,188 @@ class TestProcessSymbolEntry:
             assert "कुठलेही ACTIVE Dynamic S/R levels" in result
 
 
+def _hits_side_effect(support_hits=0, resistance_hits=0):
+    """cloud_db.get_zone_hits_today() साठी role-अवलंबून fake -- MCX मध्ये role हा स्थिर
+    zone_type column नाही, प्रत्येक cycle ला hysteresis-दिशेवरून ताजा काढला जातो, त्यामुळे
+    SUPPORT/RESISTANCE दोन्ही role साठी स्वतंत्र hit-count देता यायला हवा."""
+    def _fake(symbol, level_price, trade_date, role=None):
+        if role == "SUPPORT":
+            return (support_hits, None, None)
+        return (resistance_hits, None, None)
+    return _fake
+
+
+class TestMcxBreakoutEntry:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add kra,
+    Breakout buildup waril A and C mix logic") — dynamic_sr_instant_trader.py (NIFTY) मधलाच
+    Breakout Entry आता MCX Futures साठीही. मूळ level (support, 6500) — support तुटून BEARISH
+    breakout झाला तर SELL.
+
+    🎓 MCX-विशिष्ट फरक (महत्त्वाचा) — role (level_type) हा स्थिर zone_type column नाही, प्रत्येक
+    cycle ला त्याच candidate च्या hysteresis-दिशेवरूनच ताजा काढला जातो. त्यामुळे खरा breakout
+    घडलाच असेल, तर hysteresis आधीच (नैसर्गिकपणे) नव्या दिशेकडे वळलेला असतो -- वेगळी flip-logic
+    लागत नाही. "buildup" साठी उलट role (opposite_role) कडे आधीच 2 hits झालेले आहेत का, हे
+    तपासलं जातं (support तुटला -> मूळ 2 touches "SUPPORT" role खालीच नोंदलेले असतील)."""
+
+    LEVEL = 6500.0
+    # 12 candles (30-मिनिट, 1 तास... प्रत्यक्षात 6 तास कारण डीफॉल्ट lookback=12) -- सगळे ±0.30%
+    # (≈19.5 points) च्या आत
+    CONSOLIDATED_WINDOW = [
+        6495.0, 6505.0, 6498.0, 6502.0, 6490.0, 6500.0,
+        6485.0, 6510.0, 6497.0, 6503.0, 6490.0, 6500.0,
+    ]
+    NOT_CONSOLIDATED_WINDOW = [
+        6495.0, 6505.0, 6498.0, 6502.0, 6490.0, 6500.0,
+        6485.0, 6300.0, 6497.0, 6503.0, 6490.0, 6500.0,
+    ]  # 6300 बाहेर
+
+    def _breakout_settings(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_breakout_gate_enabled"] = True
+        return settings
+
+    def _candles(self, window, final_close):
+        return _fake_candles_df(closes=window + [final_close])
+
+    def test_disabled_by_default_stays_no_hit(self):
+        """डीफॉल्ट settings मध्ये entry_breakout_gate_enabled=False -- सद्य किंमत level पासून दूर
+        (breakout candle) असल्याने साधी proximity-आधारित touch-तपासणीही अयशस्वी -- established
+        NO_HIT वर्तन (max-2-hits skip नाही, कारण तो touch च आढळला नाही)."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)) as mock_hits, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            hit_types = [c.args[0]["hit_type"] for c in mock_log.call_args_list]
+            assert "NO_HIT" in hit_types
+            # गेट बंद असल्याने opposite-role साठी दुसरी query अजिबात व्हायला नको
+            assert mock_hits.call_count == 1
+
+    def test_enabled_but_opposite_role_not_yet_hit_twice_stays_no_hit(self):
+        settings = self._breakout_settings()
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=1)), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            hit_types = [c.args[0]["hit_type"] for c in mock_log.call_args_list]
+            assert "NO_HIT" in hit_types
+
+    def test_enabled_but_no_consolidation_stays_no_hit(self):
+        settings = self._breakout_settings()
+        candles_df = self._candles(self.NOT_CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            hit_types = [c.args[0]["hit_type"] for c in mock_log.call_args_list]
+            assert "NO_HIT" in hit_types
+
+    def test_consolidated_but_candle_not_closed_beyond_falls_through_to_max_2_hits(self):
+        """Consolidation + opposite-role 2 hits दोन्ही खरे, पण शेवटचा candle level च्या पलीकडे
+        निर्णायकपणे close झाला नाही (नेमकं level वरच) -- breakout confirm नाही. सध्याचा role
+        (SUPPORT, कारण हा candle अजूनही raw तुलनेत level>=असल्याने BULLISH ठरतो) कडेही आधीच 2
+        hits (max-2-hits) -- म्हणून established SKIPPED_MAX_2_HITS_REACHED."""
+        settings = self._breakout_settings()
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, self.LEVEL)  # शेवटचा close नेमकं level वरच
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2, resistance_hits=2)), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_breakout_confirmed_fires_sell_and_skips_rsi_gate(self):
+        settings = self._breakout_settings()
+        settings["entry_rsi_gate_enabled"] = True  # मुद्दामच चालू -- तरी breakout trade साठी वगळला जायलाच हवा
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)  # निर्णायकपणे level (6500) च्या खाली
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T50"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True) as mock_telegram, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            result = mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called
+            assert not mock_rsi_gate.called
+            strategy_result = mock_trade.call_args.args[2]
+            # support तुटला (6500) -> breakout दिशा BEARISH -> SELL
+            assert strategy_result["legs"][0]["transaction_type"] == "SELL"
+            assert "SELL" in result
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            breakout_entries = [e for e in entries if "Breakout Entry" in (e.get("reason") or "")]
+            assert len(breakout_entries) == 1
+            assert breakout_entries[0]["hit_type"] == "TOUCH"
+            assert mock_telegram.called
+            assert "Breakout Entry" in mock_telegram.call_args.args[0]
+
+    def test_breakout_trade_still_blocked_when_position_already_open(self):
+        """established has_open_trade_from_source() सुरक्षा-तपासणी breakout trade लाही लागू व्हायला
+        हवी."""
+        settings = self._breakout_settings()
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=True), \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_PREVIOUS_POSITION_STILL_OPEN" in statuses
+
+    def test_uses_settings_lookback_and_tolerance(self):
+        """breakout_lookback_candles/breakout_tolerance_pct Dashboard settings वरून घेतले जायला
+        हवेत (hardcoded नाही)."""
+        settings = self._breakout_settings()
+        settings["breakout_lookback_candles"] = 2
+        settings["breakout_tolerance_pct"] = 0.20  # शेवटचे 2 (6490, 6500 -- 10 पॉइंट्स आत) च्या आत, पण 0.05% (3.25 पॉइंट्स) च्या बाहेर
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T51"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called
+
+
 class TestPercentMode:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("SL/Target/Trailing SL also on percentage, add other
     gate") — Points सोबतच Percentage mode. entry/सद्य किंमतीवरून points-समतुल्य आकडा काढून

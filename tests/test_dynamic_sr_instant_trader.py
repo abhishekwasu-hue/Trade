@@ -219,8 +219,10 @@ class TestCheckBreakoutPriceConsolidation:
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "buildup" साठी वेगळं, trade-
     outcome/live_trades-independent logic — "A" (touch-count, आधीच hit_count_so_far>=2 वरून
     established) सोबत "C" — price consolidation, breakout-candle च्या आधीच्या काही 5-मिनिट candles
-    मध्ये price level च्या जवळच राहिला होता का, याचा शुद्ध price-action पुरावा) — confirmed
-    lookback_candles=6, tolerance_pct=0.30 (वापरकर्त्याने कडवलेले)."""
+    मध्ये price level च्या जवळच राहिला होता का, याचा शुद्ध price-action पुरावा) — डीफॉल्ट
+    lookback_candles=12 (1 तास, "kiman 12 candle chi range" — वापरकर्त्याने कडवलेलं),
+    tolerance_pct=0.30 (वापरकर्त्याने कडवलेले). ही function-level tests खालच्या generic लॉजिकसाठी
+    वेगवेगळे lookback_candles पॅरामीटर वापरतात, डीफॉल्टवर अवलंबून नाहीत."""
 
     LEVEL = 23900.0
 
@@ -1251,11 +1253,19 @@ class TestBreakoutEntry:
     happen then take entry in the same direction") — established max-2-hits च्या पलीकडचा, तिसरा
     trade. मूळ touch-signal (support, 23900) BULLISH आहे -- breakout confirm झाला तर BEARISH.
     "buildup" ata purnpane price-data varun (A: hit_count_so_far>=2 आधीच given, C: price
-    consolidation — confirmed lookback_candles=6, tolerance_pct=0.30)."""
+    consolidation — confirmed lookback_candles=12 (1 तास, "kiman 12 candle chi range" — वापरकर्त्याने
+    कडवलेलं), tolerance_pct=0.30)."""
 
     LEVEL = 23900.0
-    CONSOLIDATED_WINDOW = [23880.0, 23910.0, 23895.0, 23905.0, 23890.0, 23900.0]  # सगळे ±0.30% च्या आत
-    NOT_CONSOLIDATED_WINDOW = [23880.0, 23910.0, 23700.0, 23905.0, 23890.0, 23900.0]  # 23700 बाहेर
+    # 12 candles (1 तास) -- सगळे ±0.30% (≈71.7 points) च्या आत
+    CONSOLIDATED_WINDOW = [
+        23880.0, 23910.0, 23895.0, 23905.0, 23890.0, 23900.0,
+        23885.0, 23915.0, 23898.0, 23902.0, 23890.0, 23900.0,
+    ]
+    NOT_CONSOLIDATED_WINDOW = [
+        23880.0, 23910.0, 23895.0, 23905.0, 23890.0, 23900.0,
+        23885.0, 23700.0, 23898.0, 23902.0, 23890.0, 23900.0,
+    ]  # 23700 बाहेर
 
     def _touch_candles(self):
         touch_rows = [
@@ -1379,7 +1389,7 @@ class TestBreakoutEntry:
 
     def test_uses_settings_lookback_and_tolerance(self):
         """breakout_lookback_candles/breakout_tolerance_pct Dashboard settings वरून घेतले जायला
-        हवेत (hardcoded नाही) -- कमी lookback (3) + tight tolerance मुळे 6-candle consolidated
+        हवेत (hardcoded नाही) -- कमी lookback (2) + tight tolerance मुळे 12-candle consolidated
         window सुद्धा वेगळ्या पद्धतीने evaluate व्हायला हवा."""
         settings = self._breakout_gate_settings()
         settings["breakout_lookback_candles"] = 2

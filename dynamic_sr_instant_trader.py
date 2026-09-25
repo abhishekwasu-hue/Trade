@@ -156,7 +156,7 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m):
     return last_close < level
 
 
-def check_breakout_price_consolidation(level, candles_5m, lookback_candles=6, tolerance_pct=0.30):
+def check_breakout_price_consolidation(level, candles_5m, lookback_candles=12, tolerance_pct=0.30):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "buildup" साठी वेगळं, gate/trade-
     outcome-independent logic — "A" (max-2-hits touch-count, आधीच hit_count_so_far>=2 वरून established)
     आणि "C" (price consolidation) एकत्र) — शेवटच्या (breakout-confirm करणाऱ्या) candle च्या **आधीच्या**
@@ -214,7 +214,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_lookback_days = settings.get("iv_lookback_days", 10)
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
-    breakout_lookback_candles = settings.get("breakout_lookback_candles", 6)
+    breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
