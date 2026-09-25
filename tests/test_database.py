@@ -26,16 +26,16 @@ def temp_db(monkeypatch):
 
 def seed_closed_trade(tmpdb, trade_id, realized_pnl, exit_reason, exit_date, symbol="NIFTY",
                        source="dynamic_sr_instant", entry_timeframe="15M", entry_level_price=23900.0,
-                       strategy="BULL_PUT_SPREAD", mode="LIVE", exit_reason_detail=None):
+                       strategy="BULL_PUT_SPREAD", mode="LIVE", exit_reason_detail=None, entry_reason_tag=None):
     conn = sqlite3.connect(tmpdb)
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
            max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, exit_time, exit_reason,
            exit_reason_detail, realized_pnl, status, legs_json, mode, trading_style, source,
-           entry_level_price, entry_timeframe) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           entry_level_price, entry_timeframe, entry_reason_tag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, exit_date, symbol, strategy, 1, 75, 1000, 1000, 500, 250, 500,
          f"{exit_date} 10:00:00", f"{exit_date} 14:00:00", exit_reason, exit_reason_detail, realized_pnl,
-         "CLOSED", json.dumps([]), mode, "INTRADAY", source, entry_level_price, entry_timeframe),
+         "CLOSED", json.dumps([]), mode, "INTRADAY", source, entry_level_price, entry_timeframe, entry_reason_tag),
     )
     conn.commit()
     conn.close()
@@ -96,6 +96,16 @@ class TestGetClosedTradesDetail:
         assert row["entry_timeframe"] == "15M"
         assert row["exit_reason"] == "TARGET"
         assert row["Realized P&L"] == 500.0
+
+    def test_entry_reason_tag_column_present(self, temp_db):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3
+        ha Breakout trade aahe") — Breakout Entry सारखा टॅग साठवलेला असेल तर तो परत मिळायला हवा,
+        नसेल तर None (जुन्या trades साठी backward-compatible)."""
+        seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-10", entry_reason_tag="BREAKOUT_ENTRY")
+        seed_closed_trade(temp_db, "T2", 300.0, "TARGET", "2026-09-10")
+        df = database.get_closed_trades_detail("NIFTY").set_index("Trade ID")
+        assert df.loc["T1", "entry_reason_tag"] == "BREAKOUT_ENTRY"
+        assert pd.isna(df.loc["T2", "entry_reason_tag"])
 
     def test_date_range_filters_by_exit_date(self, temp_db):
         seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-01")

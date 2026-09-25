@@ -134,13 +134,28 @@ def _exit_reason_label_with_tag(exit_reason, detail):
     return f"{label} ({tag})" if tag else label
 
 
+_ENTRY_REASON_TAG_LABELS_MR = {
+    "BREAKOUT_ENTRY": "💥 Breakout Entry (max-2-hits नंतरचा 3रा trade — buildup + 5-मिनिट candle close)",
+    "IV_BREAKOUT_DIRECTIONAL": "📈 IV Breakout Directional (trend-continuation, reversal नाही)",
+}
+_ENTRY_REASON_TAG_LABELS_EN = {
+    "BREAKOUT_ENTRY": "Breakout Entry (3rd trade after max-2-hits — buildup + 5-min candle close)",
+    "IV_BREAKOUT_DIRECTIONAL": "IV Breakout Directional (trend-continuation, not reversal)",
+}
+
+
 def _entry_reason_text(row):
     """source/entry_timeframe/entry_level_price/strategy या आधीपासूनच साठवलेल्या स्तंभांवरून, प्रत्येक
-    trade साठी वाचनीय 'Entry Reason' मजकूर तयार करणे (कारण एकच स्वतंत्र मजकूर-स्तंभ आधी साठवलेला नव्हता)."""
+    trade साठी वाचनीय 'Entry Reason' मजकूर तयार करणे (कारण एकच स्वतंत्र मजकूर-स्तंभ आधी साठवलेला नव्हता).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3 ha
+    Breakout trade aahe") — entry_reason_tag असेल (Breakout Entry/IV Breakout Directional — प्लेन
+    S/R touch पेक्षा वेगळा प्रकार) तर तो आधी दाखवला जातो, स्पष्टपणे वेगळा दिसावा म्हणून."""
     src = _SOURCE_LABELS.get(row["source"], row["source"])
     tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
     lvl = f"₹{row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
-    return f"{src} — {tf} S/R level ({lvl}) touch; रचना: {row['strategy']}"
+    tag = row.get("entry_reason_tag")
+    tag_prefix = f"{_ENTRY_REASON_TAG_LABELS_MR[tag]} — " if tag in _ENTRY_REASON_TAG_LABELS_MR else ""
+    return f"{tag_prefix}{src} — {tf} S/R level ({lvl}) touch; रचना: {row['strategy']}"
 
 
 def _entry_reason_text_en(row):
@@ -149,7 +164,9 @@ def _entry_reason_text_en(row):
     src = _SOURCE_LABELS.get(row["source"], row["source"])
     tf = row["entry_timeframe"] if row["entry_timeframe"] and row["entry_timeframe"] != "UNKNOWN" else "N/A"
     lvl = f"Rs {row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
-    return f"{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
+    tag = row.get("entry_reason_tag")
+    tag_prefix = f"{_ENTRY_REASON_TAG_LABELS_EN[tag]} - " if tag in _ENTRY_REASON_TAG_LABELS_EN else ""
+    return f"{tag_prefix}{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
 
 
 _CHARGE_BREAKDOWN_LABELS = {

@@ -614,7 +614,7 @@ def _maybe_cancel_broker_side_sl(access_token, adapter, legs):
             _logger.exception(f"[Broker-side SL] order_id={order_id} रद्द करताना अनपेक्षित चूक — Upstox app/website वर हाताने तपासा.")
 
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None, entry_reason_tag=None):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
@@ -635,6 +635,11 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     काही सेकंद/पॉइंट्स दूर झालेली असू शकते). manage_open_trades() मधलं Spot%-आधारित SL/TSL/Target आता
     entry_level_price ऐवजी हाच वापरतं (दिलेला असेल तर — न दिल्यास, जुन्या (entry_spot_price नसलेल्या)
     trades साठी entry_level_price वरच सुरक्षितपणे पडतं).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3 ha
+    Breakout trade aahe") — entry_reason_tag (ऐच्छिक, उदा. "BREAKOUT_ENTRY"/"IV_BREAKOUT_DIRECTIONAL")
+    — प्लेन S/R touch पेक्षा वेगळ्या प्रकारे ठरलेला entry असेल तर, तेच Performance Report च्या
+    "Entry Reason" स्तंभात दाखवता यावं म्हणून live_trades मध्ये कायमचं साठवलं जातं (न दिल्यास NULL,
+    म्हणजे प्लेन touch — जुन्या callers साठी backward-compatible).
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("LIVE" ऐवजी "LIVE+PAPER" mode) — trading_mode=="LIVE_PAPER"
     असेल तर हेच फंक्शन स्वतःला दोनदा, वेगळ्या trading_mode ने कॉल करतं — एकदा "LIVE" (खरा ऑर्डर,
     कुठल्याही सुरक्षा-तपासण्या/Kill Switch सकट) आणि एकदा "PAPER" (शुद्ध सिम्युलेशन, फक्त तुलनेसाठी लॉग
@@ -661,12 +666,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
+            entry_reason_tag=entry_reason_tag,
         )
         paper_ok, paper_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
+            entry_reason_tag=entry_reason_tag,
         )
         combined_resp = {
             "status": "success" if live_ok else "error",
@@ -850,8 +857,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
             legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe,
-            entry_margin_required, entry_spot_price)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            entry_margin_required, entry_spot_price, entry_reason_tag)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -869,7 +876,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             None, None,
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
-            entry_level_price, entry_timeframe, entry_margin_required, entry_spot_price,
+            entry_level_price, entry_timeframe, entry_margin_required, entry_spot_price, entry_reason_tag,
         ),
     )
     inserted = cur.rowcount > 0
@@ -1928,7 +1935,8 @@ def clear_manual_sl_override(trade_id):
 def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, sl_pct_of_max_loss,
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
                                    trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
-                                   entry_level_price=None, entry_timeframe=None, account_ids=None, entry_spot_price=None):
+                                   entry_level_price=None, entry_timeframe=None, account_ids=None, entry_spot_price=None,
+                                   entry_reason_tag=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -1962,7 +1970,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
             target_pct_of_max_profit=target_pct_of_max_profit, product_type=product_type,
             trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
             source=source, adapter=adapter, entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
-            entry_spot_price=entry_spot_price,
+            entry_spot_price=entry_spot_price, entry_reason_tag=entry_reason_tag,
         )
         results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
     return results, factory_errors

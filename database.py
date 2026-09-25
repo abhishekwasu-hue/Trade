@@ -132,7 +132,14 @@ def init_sqlite_db():
     # फक्त हाच एक (Rs P&L) threshold तपासतो — established trailing-SL च्या "कधीच सैल होत नाही" या
     # तत्त्वाला जाणीवपूर्वक अपवाद (वापरकर्त्याने स्पष्ट मागितल्याप्रमाणे), म्हणून प्रत्येक set/clear वर
     # Telegram अलर्ट अनिवार्य (trading_engine.set_manual_sl_override()/clear_manual_sl_override()).
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL", "manual_sl_override_pnl REAL"]:
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3 ha
+    # Breakout trade aahe") — Performance Report PDF च्या "Entry Reason" स्तंभात Breakout Entry
+    # (max-2-hits नंतरचा, buildup+5-मिनिट candle close आधारित 3रा trade) किंवा IV-Breakout
+    # directional trade प्लेन "touch" पेक्षा वेगळे दाखवले जात नव्हते — कारण हा भेद कुठेच साठवलाच
+    # जात नव्हता (फक्त Signal Log च्या `reason` मध्ये, जो live_trades शी कधीच जोडलेला नाही). नवीन
+    # entry_reason_tag (NULL=प्लेन S/R touch, "BREAKOUT_ENTRY"/"IV_BREAKOUT_DIRECTIONAL"=विशेष
+    # प्रकार) — trading_engine.open_multi_leg_trade() कडून entry-वेळीच साठवला जातो.
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL", "manual_sl_override_pnl REAL", "entry_reason_tag TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -1267,7 +1274,7 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
                       COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
-                      entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy,
+                      entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy, entry_reason_tag,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
                       realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
                FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
