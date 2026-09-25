@@ -329,3 +329,53 @@ def compute_charges(orders_df, start_date, end_date, broker_map=None):
         "breakdown": {c: round(daily_charges_df[c].sum(), 2) for c in charge_cols[:-1]},
     }
     return daily_charges_df, summary
+
+
+def compute_hypothetical_charges_by_broker(orders_df, start_date, end_date):
+    """
+    🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही, फक्त
+    Upstox चा दिलेला आहे") — Performance Report PDF चा "Broker-wise Charges" तक्ता आधी
+    `compute_charges()`च्या `per_broker` वरून बनायचा — तो प्रत्यक्ष *वापरलेल्या* ब्रोकरनुसारच गटवारी
+    करतो (account_id → broker_type), त्यामुळे खातं फक्त Upstox चंच असेल तर तक्त्यातही फक्त Upstoxच
+    दिसतो — जरी शीर्षकात "कोणता ब्रोकर परवडण्याजोगा आहे" असं तुलनात्मक आश्वासन असलं तरी. हे function
+    त्याऐवजी, त्याच प्रत्यक्ष झालेल्या orders साठी — प्रत्यक्ष कुठला ब्रोकर वापरला याकडे पूर्ण दुर्लक्ष
+    करून — **प्रत्येक ब्रोकरच्या (Upstox/Fyers/Shoonya/Stocko) स्वतःच्या दरांनुसार त्याच व्यवहारांना
+    किती शुल्क लागलं असतं** हे hypothetically मोजतं — खरी "same trades, different broker" तुलना.
+
+    orders_df: compute_charges() सारखाच (columns: placed_at/order_id/symbol/quantity/
+    transaction_type/fill_price किंवा price). account_id/broker_type इथे दुर्लक्षित (जाणूनबुजून).
+    start_date/end_date: datetime.date.
+
+    रिटर्न: {broker_type: {"orders", "charge"}} — Upstox/Fyers/Shoonya (प्रत्येक ऑर्डरवर
+    _accurate_row_charges()) + Stocko (प्रत्येक ऑर्डरवर _stocko_statutory_row_charges() + त्याच
+    "वापरलेला महिना = तो संपूर्ण महिना सक्रिय" अंदाजाने ₹1200/महिना, compute_charges() सारखाच नियम).
+    """
+    if orders_df is None or orders_df.empty:
+        return {}
+    df = orders_df.copy()
+    df["placed_at"] = pd.to_datetime(df["placed_at"])
+    df["date"] = df["placed_at"].dt.date
+    df = df[(df["date"] >= start_date) & (df["date"] <= end_date)]
+    if df.empty:
+        return {}
+
+    order_count = len(df)
+    result = {}
+    for broker_type in _BROKERAGE_RATES:
+        total_charge = 0.0
+        for _, row in df.iterrows():
+            r = _accurate_row_charges(row, broker_type) or _FLAT_ROW_CHARGE
+            total_charge += r["charge"]
+        result[broker_type] = {"orders": order_count, "charge": round(total_charge, 2)}
+
+    stocko_charge = sum(
+        (_stocko_statutory_row_charges(row) or {"charge": 0.0})["charge"] for _, row in df.iterrows()
+    )
+    for period in df["placed_at"].dt.to_period("M").unique():
+        range_start = max(period.start_time.date(), start_date)
+        range_end = min(period.end_time.date(), end_date)
+        days_in_range = (range_end - range_start).days + 1
+        stocko_charge += STOCKO_FLAT_MONTHLY / period.days_in_month * days_in_range
+    result["stocko"] = {"orders": order_count, "charge": round(stocko_charge, 2)}
+
+    return result

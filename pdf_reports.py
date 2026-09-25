@@ -2394,9 +2394,15 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     # म्हणून आधीच totals मध्ये उपलब्ध होतं, पण PDF मध्ये अजिबात वापरलेलं नव्हतं) — Broker, Orders,
     # Total Charges, Avg Charge/Order अशी वेगळी table, "Avg Charge/Order" नुसार चढत्या क्रमाने
     # (सर्वात स्वस्त ब्रोकर सर्वात वर) — जेणेकरून "कोणता ब्रोकर परवडतो" हे एका दृष्टिक्षेपात कळेल.
-    charges_by_broker = pnl_totals.get("charges_by_broker") if pnl_totals else None
+    # 🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही, फक्त
+    # Upstox चा दिलेला आहे") — वरचा charges_by_broker प्रत्यक्ष *वापरलेल्या* ब्रोकरनुसारच गटवारी
+    # करत होता (खातं फक्त Upstox चंच असल्याने तिथेही फक्त Upstoxच दिसायचा, जरी शीर्षकात तुलनात्मक
+    # आश्वासन होतं तरी). आता charges_by_broker_comparison — त्याच प्रत्यक्ष झालेल्या orders साठी,
+    # प्रत्येक ब्रोकरच्या (Upstox/Fyers/Shoonya/Stocko) स्वतःच्या दरांनुसार hypothetically काय शुल्क
+    # लागलं असतं — खरी "same trades, different broker" तुलना, प्रत्यक्ष खातं कुठलंही असो.
+    charges_by_broker = pnl_totals.get("charges_by_broker_comparison") if pnl_totals else None
     if charges_by_broker:
-        next_section("Broker-wise Charges (which broker is more cost-effective)", "ब्रोकरनुसार शुल्क (कोणता ब्रोकर परवडण्याजोगा आहे)")
+        next_section("Broker-wise Charges Comparison (same trades, different broker)", "ब्रोकरनुसार शुल्क तुलना (तेच व्यवहार, वेगवेगळा ब्रोकर)")
         _broker_display_names = {"upstox": "Upstox", "fyers": "Fyers", "shoonya": "Shoonya", "stocko": "Stocko"}
         broker_rows = sorted(
             (
@@ -2416,8 +2422,14 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         t = df_to_reportlab_table(broker_df, multicolour_header=True)
         story.extend(t if isinstance(t, list) else [t])
         story.append(_bi_line(
-            "Cheapest broker (per order) is listed first. This uses each broker's own real, published rates.",
-            "सर्वात स्वस्त ब्रोकर (प्रति ऑर्डर) सर्वात आधी दाखवला आहे. हे प्रत्येक ब्रोकरच्या स्वतःच्या खऱ्या, प्रकाशित दरांवरून आहे.",
+            "This is a hypothetical, what-if comparison -- what your actual trades from this period would have "
+            "cost under each broker's own real, published rates, regardless of which broker you actually used. "
+            "Cheapest broker (per order) is listed first. Stocko's brokerage is a flat monthly subscription "
+            "(not per-order), prorated here across the months this report's date range covers.",
+            "ही एक hypothetical, \"जर-तर\" तुलना आहे -- या कालावधीतले तुमचे प्रत्यक्ष व्यवहार, प्रत्यक्ष कुठला "
+            "ब्रोकर वापरला याकडे दुर्लक्ष करून, प्रत्येक ब्रोकरच्या स्वतःच्या खऱ्या, प्रकाशित दरांनुसार किती "
+            "पडले असते. सर्वात स्वस्त ब्रोकर (प्रति ऑर्डर) सर्वात आधी दाखवला आहे. Stocko चं ब्रोकरेज प्रति-ऑर्डर "
+            "नसून निश्चित मासिक सबस्क्रिप्शन आहे (या रिपोर्टच्या तारीख-रेंजमधल्या महिन्यांनुसार इथे वाटलेलं).",
             max_width_pt=usable_width, font_size=9,
         ))
         story.append(Spacer(1, 8))

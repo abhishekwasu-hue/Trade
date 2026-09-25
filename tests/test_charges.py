@@ -244,6 +244,59 @@ class TestStockoFlatMonthly:
         assert (stocko_daily.loc[stocko_daily["orders"] > 0, "brokerage"] == 0.0).all()
 
 
+class TestHypotheticalChargesByBroker:
+    """🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही, फक्त
+    Upstox चा दिलेला आहे") — compute_charges()चं per_broker प्रत्यक्ष *वापरलेल्या* ब्रोकरनुसारच
+    गटवारी करतं (खातं फक्त Upstox चंच असेल तर तिथेही फक्त Upstoxच दिसतो). नवीन
+    compute_hypothetical_charges_by_broker() त्याऐवजी, प्रत्यक्ष कुठला ब्रोकर वापरला याकडे दुर्लक्ष
+    करून, त्याच orders साठी सर्व चार ब्रोकर्सचं hypothetical शुल्क मोजतं."""
+
+    def test_returns_all_four_brokers_even_when_all_orders_are_upstox(self):
+        df = _orders_df([
+            {"order_id": "O1", "account_id": "acc_upstox", "symbol": "NIFTY", "quantity": 50,
+             "transaction_type": "SELL", "fill_price": 100.0},
+        ])
+        result = charges.compute_hypothetical_charges_by_broker(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert set(result.keys()) == {"upstox", "fyers", "shoonya", "stocko"}
+        assert all(v["orders"] == 1 for v in result.values())
+
+    def test_shoonya_is_cheapest_for_options_orders(self):
+        """Shoonya चं flat brokerage (₹5) Upstox/Fyers (₹20) पेक्षा कमी आहे -- statutory शुल्क सर्वांना
+        सारखेच असल्याने, Options ऑर्डर्ससाठी Shoonya चा एकूण charge सर्वात कमी यायला हवा."""
+        df = _orders_df([
+            {"order_id": "O1", "symbol": "NIFTY", "quantity": 5000, "transaction_type": "SELL", "fill_price": 100.0},
+        ])
+        result = charges.compute_hypothetical_charges_by_broker(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert result["shoonya"]["charge"] < result["upstox"]["charge"]
+        assert result["shoonya"]["charge"] < result["fyers"]["charge"]
+
+    def test_stocko_includes_prorated_monthly_fee(self):
+        df = _orders_df([
+            {"order_id": "O1", "symbol": "NIFTY", "quantity": 50, "transaction_type": "BUY", "fill_price": 100.0},
+        ])
+        result = charges.compute_hypothetical_charges_by_broker(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        # सप्टेंबर 2026 पूर्ण महिना (30 दिवस) रेंजमध्ये असल्याने, संपूर्ण STOCKO_FLAT_MONTHLY यायला हवं
+        assert result["stocko"]["charge"] > charges.STOCKO_FLAT_MONTHLY * 0.9
+
+    def test_empty_orders_df_returns_empty_dict(self):
+        assert charges.compute_hypothetical_charges_by_broker(pd.DataFrame(), datetime.date(2026, 9, 1), datetime.date(2026, 9, 30)) == {}
+
+    def test_ignores_actual_broker_used(self):
+        """account_id/broker_type काहीही असो (इथे नाहीच) -- सर्व चार ब्रोकर्ससाठी hypothetical गणित
+        सारखंच व्हायला हवं, प्रत्यक्ष वापरलेल्या ब्रोकरशी काही संबंध नाही."""
+        df_no_account = _orders_df([
+            {"order_id": "O1", "symbol": "NIFTY", "quantity": 50, "transaction_type": "SELL", "fill_price": 100.0},
+        ])
+        df_with_account = _orders_df([
+            {"order_id": "O1", "account_id": "acc_shoonya", "symbol": "NIFTY", "quantity": 50,
+             "transaction_type": "SELL", "fill_price": 100.0},
+        ])
+        r1 = charges.compute_hypothetical_charges_by_broker(df_no_account, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        r2 = charges.compute_hypothetical_charges_by_broker(df_with_account, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert r1["upstox"]["charge"] == pytest.approx(r2["upstox"]["charge"])
+        assert r1["shoonya"]["charge"] == pytest.approx(r2["shoonya"]["charge"])
+
+
 class TestEmptyAndMissingColumns:
     def test_empty_orders_df_returns_zero_summary(self):
         daily, summary = charges.compute_charges(pd.DataFrame(), datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))

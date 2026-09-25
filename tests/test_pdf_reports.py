@@ -58,16 +58,19 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
 
 class TestGeneratePerformanceReportPdfBrokerWiseCharges:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Performance report मध्ये या सर्व ब्रोकर नुसार charges
-    साठी एक table टाका, कोणता ब्रोकर परवडण्याजोगा आहे") — Broker-wise Charges section."""
+    साठी एक table टाका, कोणता ब्रोकर परवडण्याजोगा आहे") — Broker-wise Charges section.
+    🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही, फक्त
+    Upstox चा दिलेला आहे") — pnl_totals ची key आता charges_by_broker (प्रत्यक्ष वापरलेल्या
+    ब्रोकरनुसार) ऐवजी charges_by_broker_comparison (hypothetical, सर्व ब्रोकरसाठी)."""
 
     def test_multi_broker_charges_produces_valid_pdf(self):
         pnl_totals = {
             "gross_pnl": 878, "total_charges": 4490, "net_pnl": -3613, "total_orders": 80,
-            "charges_by_broker": {
+            "charges_by_broker_comparison": {
                 "upstox": {"orders": 40, "charge": 2200.0},
-                "fyers": {"orders": 20, "charge": 950.0},
-                "shoonya": {"orders": 15, "charge": 320.0},
-                "stocko": {"orders": 5, "charge": 1020.0},
+                "fyers": {"orders": 40, "charge": 1950.0},
+                "shoonya": {"orders": 40, "charge": 620.0},
+                "stocko": {"orders": 40, "charge": 1420.0},
             },
         }
         pdf_bytes = generate_performance_report_pdf(
@@ -78,9 +81,9 @@ class TestGeneratePerformanceReportPdfBrokerWiseCharges:
         assert len(pdf_bytes) > 1000
 
     def test_without_charges_by_broker_still_works(self):
-        """charges_by_broker key नसेल (जुना caller, किंवा या कालावधीत कुठलेही orders नाहीत) तरी
-        क्रॅश होता कामा नये -- फक्त हा संपूर्ण section गाळला जातो."""
-        pnl_totals = {"gross_pnl": 400, "total_charges": 0, "net_pnl": 400, "charges_by_broker": {}}
+        """charges_by_broker_comparison key नसेल (जुना caller, किंवा या कालावधीत कुठलेही orders
+        नाहीत) तरी क्रॅश होता कामा नये -- फक्त हा संपूर्ण section गाळला जातो."""
+        pnl_totals = {"gross_pnl": 400, "total_charges": 0, "net_pnl": 400, "charges_by_broker_comparison": {}}
         pdf_bytes = generate_performance_report_pdf(
             "NIFTY", "All", "2026-09-01", "2026-09-05", _SUMMARY, pnl_totals,
             None, None, None, None, [],
