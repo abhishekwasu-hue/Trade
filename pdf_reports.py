@@ -326,6 +326,19 @@ def _bi_key(en, mr, max_width_pt=None, font_size=9.5, color=colors.white, bold=F
         return img
     return Paragraph(_bi(en, mr), _rpt_kv_key_wrap_bi)
 
+def _mono_key(text, max_width_pt=None, font_size=11.5, color=colors.white, bold=False):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
+    `_bi_key()` सारखाच, पण single-language (Overshoot/Slippage Tracker सारख्या इंग्लिश-only key
+    सेल्ससाठी — इथे मराठी भाषांतर नाही, त्यामुळे बिलिंग्वल जोडणी नको)."""
+    img = _deva_image_flowable(text, font_size, max_width_pt=max_width_pt, color=color, bold=bold)
+    if img is not None:
+        return img
+    style = ParagraphStyle(
+        f"mono_key_{id(text)}", fontName=_RPT_FONT_BOLD if bold else _RPT_FONT, fontSize=font_size,
+        leading=font_size + 3, textColor=color,
+    )
+    return Paragraph(_xml_escape(str(text)), style)
+
 def _bi_para(en, mr, max_width_pt, font_size=11, text_color=None, space_after=0):
     """वापरकर्त्याने मागितलेली सुधारणा ("Explanation suddha devnagari marathi mdhe... font size
     wadhwa") — Performance Report मधल्या स्पष्टीकरणपर परिच्छेदांसाठी (overshoot/slippage/trade log/
@@ -814,13 +827,18 @@ def _table_font_size(ncols):
         return 9
     return 7.5
 
-def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None):
+def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None, multicolour_header=False):
     """
     Convert a pandas DataFrame to a reportlab Table (or a Paragraph if empty).
     color_columns: optional list of column names whose cells get a colour tint based on their
     text content (bullish/green, bearish/red, weakening/amber) — this is what makes the OI and
     signal tables visually informative rather than just black-on-white grids.
     font_name/font_size — पर्यायी, custom-styled reports साठी — दिलं नाही तर जुनाच डीफॉल्ट, backward-compatible.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
+    multicolour_header=True (डीफॉल्ट False, इतर सर्व existing callers अस्पर्श) — header row ची घन
+    काळी पार्श्वभूमी काढून पांढरी + प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा) —
+    Performance Report च्या Broker-wise Charges/Strategy-wise/Timeframe-wise/Option Structure-wise
+    तक्त्यांसाठीच फक्त वापरलेलं.
     """
     if df is None or df.empty:
         return Paragraph(empty_msg, _rpt_normal)
@@ -835,14 +853,20 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     style_cmds = [
         ("FONTNAME", (0, 0), (-1, -1), table_font),
         ("FONTNAME", (0, 0), (-1, 0), table_font_bold),
-        ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTSIZE", (0, 0), (-1, -1), computed_font_size),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
+    if multicolour_header:
+        style_cmds.append(("BACKGROUND", (0, 0), (-1, 0), colors.white))
+        for col_idx in range(len(columns)):
+            style_cmds.append(("TEXTCOLOR", (col_idx, 0), (col_idx, 0), _SECTION_COLORS[col_idx % len(_SECTION_COLORS)]))
+        style_cmds.append(("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK))
+    else:
+        style_cmds.append(("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK))
+        style_cmds.append(("TEXTCOLOR", (0, 0), (-1, 0), colors.white))
     if color_columns:
         for col_name in color_columns:
             if col_name not in columns:
@@ -872,16 +896,24 @@ def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=7):
     display_df = df.head(max_rows)
     columns = list(display_df.columns)
     cell_style = ParagraphStyle("wide_cell", fontName=_RPT_TABLE_FONT, fontSize=font_size, leading=font_size + 2)
-    header_style = ParagraphStyle(
-        "wide_header", fontName=_RPT_TABLE_FONT_BOLD, fontSize=font_size, leading=font_size + 2, textColor=colors.white,
-    )
-    data = [[Paragraph(_xml_escape(_fix_missing_glyphs(str(c))), header_style) for c in columns]]
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") — header
+    # ची घन काळी पार्श्वभूमी काढली, प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा) —
+    # हा helper फक्त Performance Report (Overshoot/LIVE-PAPER Slippage Tracker) साठीच वापरला जातो.
+    header_styles = [
+        ParagraphStyle(
+            f"wide_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=font_size, leading=font_size + 2,
+            textColor=_SECTION_COLORS[i % len(_SECTION_COLORS)],
+        )
+        for i in range(len(columns))
+    ]
+    data = [[Paragraph(_xml_escape(_fix_missing_glyphs(str(c))), header_styles[i]) for i, c in enumerate(columns)]]
     for row in display_df.astype(str).values.tolist():
         data.append([Paragraph(_xml_escape(_fix_missing_glyphs(v)), cell_style) for v in row])
     col_width = usable_width / len(columns)
     tbl = Table(data, colWidths=[col_width] * len(columns), repeatRows=1, hAlign="LEFT")
     tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -2073,7 +2105,13 @@ class _NumberedCanvas(_BaseCanvas):
 
 
 _TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=7.5, leading=9.5)
-_TRADE_LOG_HEADER_STYLE = ParagraphStyle("trade_log_header", fontName=_RPT_TABLE_FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") — Trade Log
+# च्या header row साठी, प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा), पांढऱ्या
+# पार्श्वभूमीवर — आधीची घन काळी पार्श्वभूमी + एकसुरी पांढरा मजकूर काढला.
+_TRADE_LOG_HEADER_STYLES = [
+    ParagraphStyle(f"trade_log_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=7.5, leading=9.5, textColor=c)
+    for i, c in enumerate(_SECTION_COLORS)
+]
 
 
 def _build_trade_log_table(df, usable_width, max_rows=250):
@@ -2096,7 +2134,10 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     col_widths = [usable_width * col_fracs.get(c, 1.0 / len(columns)) for c in columns]
     wrap_columns = {"Entry Reason", "Exit Reason", "Exit Reason Detail"}
 
-    header_row = [Paragraph(_fix_missing_glyphs(str(c)), _TRADE_LOG_HEADER_STYLE) for c in columns]
+    header_row = [
+        Paragraph(_fix_missing_glyphs(str(c)), _TRADE_LOG_HEADER_STYLES[i % len(_TRADE_LOG_HEADER_STYLES)])
+        for i, c in enumerate(columns)
+    ]
     data = [header_row]
     pnl_col_idx = columns.index("Realized P&L") if "Realized P&L" in columns else None
     exit_col_idx = columns.index("Exit Reason") if "Exit Reason" in columns else None
@@ -2121,7 +2162,8 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
 
     tbl = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     style_cmds = [
-        ("BACKGROUND", (0, 0), (-1, 0), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -2371,7 +2413,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         broker_df = pd.DataFrame(broker_rows)
         broker_df["Total Charges"] = broker_df["Total Charges"].apply(lambda v: f"Rs {v:,.0f}")
         broker_df["Avg Charge / Order"] = broker_df["Avg Charge / Order"].apply(lambda v: f"Rs {v:,.2f}")
-        t = df_to_reportlab_table(broker_df)
+        t = df_to_reportlab_table(broker_df, multicolour_header=True)
         story.extend(t if isinstance(t, list) else [t])
         story.append(_bi_line(
             "Cheapest broker (per order) is listed first. This uses each broker's own real, published rates.",
@@ -2393,7 +2435,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             img_h = img_w * 300 / 680
             story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
             story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_source_df)
+        t = df_to_reportlab_table(by_source_df, multicolour_header=True)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
@@ -2410,7 +2452,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             img_h = img_w * 300 / 680
             story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
             story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_timeframe_df)
+        t = df_to_reportlab_table(by_timeframe_df, multicolour_header=True)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
@@ -2427,7 +2469,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             img_h = img_w * 300 / 680
             story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
             story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_structure_df)
+        t = df_to_reportlab_table(by_structure_df, multicolour_header=True)
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
@@ -2447,12 +2489,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.append(Spacer(1, 6))
         _os_pts = overshoot_df["Overshoot (pts)"].dropna()
         _os_rs = overshoot_df["Overshoot (Rs)"].dropna()
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
+        # key column ची घन काळी पार्श्वभूमी काढून पांढरी + प्रत्येक ओळीचा स्वतःचा रंग (Summary
+        # टेबलासाठी आधीच वापरलेल्या _bk() पॅटर्नप्रमाणेच, पण single-language — _mono_key()).
+        _os_key_w = usable_width * 0.4 - 12
+        def _osk(text, ci):
+            return _mono_key(text, _os_key_w, font_size=12, color=_SECTION_COLORS[ci % len(_SECTION_COLORS)], bold=True)
         overshoot_summary_rows = [
-            ["SL/TSL Exits", str(len(overshoot_df))],
-            ["Avg Overshoot (Points)", f"{_os_pts.mean():.2f} pts" if not _os_pts.empty else "N/A"],
-            ["Avg Overshoot (Fixed Rs strategies)", f"Rs {_os_rs.mean():,.0f}" if not _os_rs.empty else "N/A"],
+            [_osk("SL/TSL Exits", 0), str(len(overshoot_df))],
+            [_osk("Avg Overshoot (Points)", 1), f"{_os_pts.mean():.2f} pts" if not _os_pts.empty else "N/A"],
+            [_osk("Avg Overshoot (Fixed Rs strategies)", 2), f"Rs {_os_rs.mean():,.0f}" if not _os_rs.empty else "N/A"],
         ]
-        story.append(_kv_table(overshoot_summary_rows, usable_width, key_ratio=0.4))
+        story.append(_kv_table(overshoot_summary_rows, usable_width, key_ratio=0.4, key_bg=colors.white))
         story.append(Spacer(1, 6))
         t = _wide_df_table_wrapped(overshoot_df, usable_width)
         story.extend(t if isinstance(t, list) else [t])
@@ -2477,13 +2525,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         avg_entry_slip = entry_slip_series.mean() if not entry_slip_series.empty else None
         avg_pnl_slip = pnl_slip_series.mean() if not pnl_slip_series.empty else None
         total_pnl_slip = pnl_slip_series.sum() if not pnl_slip_series.empty else 0
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
+        # Overshoot Tracker सारखाच, पांढरी key पार्श्वभूमी + फिरणारा रंग.
+        _slip_key_w = usable_width * 0.4 - 12
+        def _slipk(text, ci):
+            return _mono_key(text, _slip_key_w, font_size=12, color=_SECTION_COLORS[ci % len(_SECTION_COLORS)], bold=True)
         slip_summary_rows = [
-            ["LIVE+PAPER Pairs", str(len(slippage_pairs_df))],
-            ["Avg Entry Slippage", f"Rs {avg_entry_slip:,.1f}" if avg_entry_slip is not None else "N/A"],
-            ["Avg P&L Slippage / Trade", f"Rs {avg_pnl_slip:,.1f}" if avg_pnl_slip is not None else "N/A"],
-            ["Total P&L Slippage", f"Rs {total_pnl_slip:,.0f}"],
+            [_slipk("LIVE+PAPER Pairs", 0), str(len(slippage_pairs_df))],
+            [_slipk("Avg Entry Slippage", 1), f"Rs {avg_entry_slip:,.1f}" if avg_entry_slip is not None else "N/A"],
+            [_slipk("Avg P&L Slippage / Trade", 2), f"Rs {avg_pnl_slip:,.1f}" if avg_pnl_slip is not None else "N/A"],
+            [_slipk("Total P&L Slippage", 3), f"Rs {total_pnl_slip:,.0f}"],
         ]
-        story.append(_kv_table(slip_summary_rows, usable_width, key_ratio=0.4))
+        story.append(_kv_table(slip_summary_rows, usable_width, key_ratio=0.4, key_bg=colors.white))
         story.append(Spacer(1, 6))
         t = _wide_df_table_wrapped(slippage_pairs_df, usable_width)
         story.extend(t if isinstance(t, list) else [t])
