@@ -414,6 +414,25 @@ def render():
         )
 
         st.markdown("---")
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात).
+        sub_header("↕️ Bullish / Bearish Entry", HDR_GREEN)
+        be1, be2 = st.columns(2)
+        with be1:
+            bullish_entry_enabled = st.checkbox(
+                "📈 Bullish Entry सक्रिय (डीफॉल्ट चालू)",
+                value=bool(settings.get("bullish_entry_enabled", True)),
+                key=_widget_key(symbol, "bullish_entry_enabled"),
+            )
+        with be2:
+            bearish_entry_enabled = st.checkbox(
+                "📉 Bearish Entry सक्रिय (डीफॉल्ट चालू)",
+                value=bool(settings.get("bearish_entry_enabled", True)),
+                key=_widget_key(symbol, "bearish_entry_enabled"),
+            )
+        st.caption("बंद केलेल्या दिशेचे नवीन trades घेतले जाणार नाहीत (आधीच उघडलेल्या trades वर परिणाम नाही).")
+
+        st.markdown("---")
         sub_header("🧭 RSI Gate", HDR_ORANGE)
         entry_rsi_gate_enabled = st.checkbox(
             "RSI Gate सक्रिय (बंद केल्यास — फक्त S/R Touch वरच entry, RSI तपासला जाणार नाही)",
@@ -467,6 +486,7 @@ def render():
             new_settings.update({
                 "symbol_enabled": bool(symbol_enabled), "lots": int(lots),
                 "timeframe_choice": timeframe_choice,
+                "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
                 "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
                 "rsi_support_max": int(rsi_support_max), "rsi_resistance_min": int(rsi_resistance_min),
                 "entry_breakout_gate_enabled": bool(entry_breakout_gate_enabled),

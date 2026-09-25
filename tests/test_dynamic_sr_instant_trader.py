@@ -771,6 +771,70 @@ class TestMultiHitGating:
             assert "मिळाले नाहीत" in result
 
 
+class TestBullishBearishEntryToggle:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+    सुद्धा पाहिजे") — अंतिम (IV/Breakout-flip नंतरच्याही) direction वरच तपासलं जातं, फक्त नवीन
+    trades थांबतात."""
+
+    def test_bullish_entry_disabled_skips_bullish_touch(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["bullish_entry_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BULLISH_ENTRY_DISABLED" in statuses
+
+    def test_bearish_entry_disabled_skips_bearish_touch(self):
+        # gap-through, level (support 23900) च्या स्पष्टपणे खाली स्थिरावली -> direction=BEARISH
+        candles_gap = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["bearish_entry_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_gap), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BEARISH_ENTRY_DISABLED" in statuses
+
+    def test_defaults_both_enabled_allows_trade(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+
 class TestProcessSymbolMultiAccount:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
     नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी, settings मधल्याच broker_account_ids (वापरकर्त्याने

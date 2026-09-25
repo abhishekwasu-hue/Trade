@@ -325,6 +325,26 @@ def render():
                 min_value=30, max_value=70, step=1, disabled=not entry_rsi_gate_enabled,
             )
 
+        st.markdown("---")
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — सगळ्या strategies साठी सामायिक — फक्त त्या दिशेचे नवीन trades थांबतात
+        # (आधीच उघडलेले चालूच राहतात).
+        sub_header("↕️ Bullish / Bearish Entry", HDR_GREEN)
+        be1, be2 = st.columns(2)
+        with be1:
+            bullish_entry_enabled = st.checkbox(
+                "📈 Bullish Entry सक्रिय (डीफॉल्ट चालू)",
+                value=bool(settings.get("bullish_entry_enabled", True)),
+                key=_widget_key(strategy_key, symbol, "bullish_entry_enabled"),
+            )
+        with be2:
+            bearish_entry_enabled = st.checkbox(
+                "📉 Bearish Entry सक्रिय (डीफॉल्ट चालू)",
+                value=bool(settings.get("bearish_entry_enabled", True)),
+                key=_widget_key(strategy_key, symbol, "bearish_entry_enabled"),
+            )
+        st.caption("बंद केलेल्या दिशेचे नवीन trades घेतले जाणार नाहीत (आधीच उघडलेल्या trades वर परिणाम नाही).")
+
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — classic_sr_reversal साठी PCR गेट मुद्दामच नाही
         # ("फक्त शुद्ध classical S/R" कल्पना — RSI गेटच फक्त, backtest मध्येही तेच वापरलेलं).
         if strategy_key != "classic_sr_reversal":
@@ -673,6 +693,7 @@ def render():
         new_settings = {
             "symbol_enabled": bool(symbol_enabled),
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
+            "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
             "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),
             "spread_tsl_spot_pct": float(spread_tsl_spot_pct), "spread_tsl_premium_points": float(spread_tsl_premium_points),
