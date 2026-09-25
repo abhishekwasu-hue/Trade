@@ -288,7 +288,16 @@ def render():
                 st.warning("⚠️ किमान एक टाईमफ्रेम निवडायलाच हवा — काहीही निवडलं नसेल, तर जतन करताना आपोआप 15M निवडला जाईल.")
             st.markdown("---")
 
-        sub_header("🔻 Strike व Size निवड (Credit Spread — मुख्य ट्रेड)", HDR_PURPLE)
+        sub_header("🔻 Strike व Size निवड (Credit Spread)", HDR_PURPLE)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
+        # ऑप्शनल ठेवा — ज्या user कडे कमी कॅपिटल आहे तो नेकेड ऑप्शन बाय करणे पसंत करतो") — आधी Credit
+        # Spread नेहमीच (toggle शिवाय) चालायचा, फक्त Naked Option ऐच्छिक होता. आता दोन्ही स्वतंत्रपणे
+        # on/off करता येतात — कमी कॅपिटल असलेला वापरकर्ता फक्त Naked Option सक्रिय ठेवून, हा (जास्त
+        # margin लागणारा) Credit Spread बंद करू शकतो.
+        credit_spread_enabled = st.checkbox(
+            "Credit Spread Trade सक्रिय", value=bool(settings.get("credit_spread_enabled", True)),
+            key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
+        )
         st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -486,7 +495,7 @@ def render():
 
         st.markdown("---")
         sub_header("🔺 Long With Hedge (Naked Option Trade)", HDR_GREEN)
-        st.caption("त्याच सिग्नलवर, Credit Spread सोबतच, समांतर घेतला जातो. डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
+        st.caption("त्याच सिग्नलवर, Credit Spread सक्रिय असेल तर त्यासोबतच — दोन्ही स्वतंत्रपणे on/off करता येतात (वर बघा). डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
         n0, n1 = st.columns(2)
         with n0:
             naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
@@ -693,6 +702,7 @@ def render():
         new_settings = {
             "symbol_enabled": bool(symbol_enabled),
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
+            "credit_spread_enabled": bool(credit_spread_enabled),
             "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
             "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),

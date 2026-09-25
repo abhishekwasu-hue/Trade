@@ -101,18 +101,22 @@ def _deva_rl_color_to_rgb(color):
 
 
 def _deva_word_tokens(runs):
-    """runs: [(text, is_bold), ...] -> शब्द/रिकामी-जागा tokens ((tok, is_bold) प्रत्येक), जोडणी
-    क्रमानेच राहावी म्हणून spaces स्वतंत्र tokens म्हणून ठेवले."""
+    """runs: [(text, is_bold), ...] किंवा [(text, is_bold, color_rgb), ...] (color_rgb ऐच्छिक — न
+    दिल्यास caller च्या डीफॉल्ट रंगात) -> शब्द/रिकामी-जागा tokens ((tok, is_bold, color_rgb_or_None)
+    प्रत्येक), जोडणी क्रमानेच राहावी म्हणून spaces स्वतंत्र tokens म्हणून ठेवले."""
     tokens = []
-    for text, is_bold in runs:
+    for run in runs:
+        text, is_bold = run[0], run[1]
+        run_color = run[2] if len(run) > 2 else None
         for part in re.split(r"(\s+)", text):
             if part:
-                tokens.append((part, is_bold))
+                tokens.append((part, is_bold, run_color))
     return tokens
 
 
 def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), scale=4):
-    """runs: [(text, is_bold), ...] (mixed इंग्रजी+देवनागरी असू शकतं) — HarfBuzz-आधारित योग्य
+    """runs: [(text, is_bold), ...] किंवा [(text, is_bold, color_rgb), ...] (mixed इंग्रजी+देवनागरी
+    असू शकतं, प्रत्येक भागाचा रंगही वेगळा असू शकतो — उदा. दोन-रंगी title) — HarfBuzz-आधारित योग्य
     shaping (PIL raqm layout engine) वापरून, गरज असल्यास शब्दानुसार wrap करून, एक PNG image तयार
     करते. Returns (io.BytesIO PNG, width_pt, height_pt) — किंवा (_DEVA_PIL_SHAPING_OK False असल्यास,
     किंवा काहीही चूक झाल्यास) None."""
@@ -126,7 +130,7 @@ def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), sc
 
         tokens = _deva_word_tokens(runs)
         lines, cur_line, cur_w = [], [], 0
-        for tok_text, is_bold in tokens:
+        for tok_text, is_bold, tok_color in tokens:
             if tok_text.isspace() and not cur_line:
                 continue  # ओळीच्या सुरुवातीला रिकामी जागा नको
             f = font_bold if is_bold else font_reg
@@ -137,7 +141,7 @@ def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), sc
                 cur_line, cur_w = [], 0
                 if tok_text.isspace():
                     continue
-            cur_line.append((tok_text, is_bold))
+            cur_line.append((tok_text, is_bold, tok_color))
             cur_w += tw
         if cur_line:
             lines.append(cur_line)
@@ -149,7 +153,7 @@ def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), sc
         line_widths_px = []
         for line in lines:
             w = 0
-            for t, b in line:
+            for t, b, _c in line:
                 f = font_bold if b else font_reg
                 bbox = f.getbbox(t)
                 w += bbox[2] - bbox[0]
@@ -164,9 +168,9 @@ def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), sc
         y = 0
         for line in lines:
             x = 0
-            for t, b in line:
+            for t, b, tc in line:
                 f = font_bold if b else font_reg
-                draw.text((x, y), t, font=f, fill=color)
+                draw.text((x, y), t, font=f, fill=tc or color)
                 bbox = f.getbbox(t)
                 x += bbox[2] - bbox[0]
             y += line_h_px
@@ -182,10 +186,17 @@ def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), sc
 def _deva_image_flowable(text_or_runs, font_size_pt, max_width_pt=None, color=colors.black, bold=False):
     """वापरासाठी सोपा wrapper — _deva_render_rich() चा निकाल थेट reportlab Image flowable म्हणून
     परत करतो. text_or_runs plain string असेल तर एकाच (bold नुसार) weight मध्ये rendered होतो;
-    [(text, is_bold), ...] यादी दिली तर प्रत्येक भाग स्वतःच्या bold/regular मध्ये (उदा. trade_log_note
-    मधले <b>ठळक</b> शब्द). PIL/raqm उपलब्ध नसेल किंवा काही चुकलं तर None (caller ने जुन्या
+    [(text, is_bold), ...] किंवा [(text, is_bold, reportlab_color), ...] यादी दिली तर प्रत्येक भाग
+    स्वतःच्या bold/regular व (दिला असल्यास) स्वतःच्या रंगात (उदा. trade_log_note मधले <b>ठळक</b>
+    शब्द, किंवा दोन-रंगी title). PIL/raqm उपलब्ध नसेल किंवा काही चुकलं तर None (caller ने जुन्या
     Paragraph-आधारित मार्गाकडे परतावं)."""
-    runs = [(text_or_runs, bold)] if isinstance(text_or_runs, str) else text_or_runs
+    if isinstance(text_or_runs, str):
+        runs = [(text_or_runs, bold)]
+    else:
+        runs = [
+            (r[0], r[1], _deva_rl_color_to_rgb(r[2])) if len(r) > 2 else r
+            for r in text_or_runs
+        ]
     result = _deva_render_rich(runs, font_size_pt, max_width_pt, color=_deva_rl_color_to_rgb(color))
     if result is None:
         return None
@@ -279,6 +290,13 @@ _rpt_badge_grey = ParagraphStyle("rpt_badge_grey", fontName=_RPT_FONT_BOLD, font
 # background chya पट्टी nko") — घन-रंगाची पट्टी (पांढरा मजकूर लागणारी) पूर्णपणे काढली, त्याऐवजी
 # _section_header_accent (डावीकडे रंगीत accent bar + फिकट पार्श्वभूमी) — मजकूर आता गडद रंगात.
 _rpt_h2_accent_bi = ParagraphStyle("rpt_h2_accent_bi", fontName=_DEVANAGARI_FONT_BOLD, fontSize=15, leading=19, textColor=_C_BG_DARK, spaceBefore=0, spaceAfter=0)
+
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove solid black background... use other multiple colour")
+# — फक्त Performance Report च्या मुख्य title masthead साठी (बाकी report types चा _rpt_h1/_rpt_h1_sub
+# — पांढरा मजकूर, गडद पार्श्वभूमीसाठी — आधीसारखेच, अस्पर्श) — आता फिकट पार्श्वभूमीवर, दोन-रंगी ("AMW's
+# A1" निळं, "AlgoTrading System" जांभळं) ठळक title.
+_rpt_h1_pf = ParagraphStyle("rpt_h1_pf", fontName=_RPT_FONT_BOLD, fontSize=24, leading=28, textColor=_C_BG_DARK)
+_rpt_h1_sub_pf = ParagraphStyle("rpt_h1_sub_pf", fontName=_RPT_FONT, fontSize=12, leading=16, textColor=colors.HexColor("#555555"))
 
 # 🎓 इंग्लिश-only लेबल्सपेक्षा bilingual लेबल्स साधारण दुप्पट लांब असतात — plain string म्हणून
 # _kv_table च्या key column मध्ये दिली तर wrap न होता उजवीकडच्या value column वर overflow/overlap
@@ -2222,14 +2240,24 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         sec[0] += 1
         story.append(Spacer(1, 8))
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove solid black background... use other multiple
+    # colour") — आधी घन गडद (_C_BG_DARK) पार्श्वभूमी + पांढरा मजकूर होता (बाकी सर्व report types चा
+    # मूळ title style, अस्पर्श) — Performance Report साठी आता फिकट पार्श्वभूमी + दोन-रंगी ठळक title
+    # (PIL+raqm — योग्य असेल तर; अन्यथा जुना single-colour Paragraph fallback).
+    _title_img = _deva_image_flowable(
+        [("AMW's A1 ", True, _C_ACCENT), ("AlgoTrading System", True, colors.HexColor("#7E57C2"))],
+        24, max_width_pt=17 * cm,
+    )
+    if _title_img is None:
+        _title_img = Paragraph("AMW's A1 AlgoTrading System", _rpt_h1_pf)
     title_tbl = Table(
-        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
+        [[_title_img], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub_pf)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
-        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 4),
     ]))
     story.append(title_tbl)
     accent_bar = Table([[""]], colWidths=[18 * cm], rowHeights=[0.15 * cm])
