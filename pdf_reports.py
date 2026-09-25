@@ -52,13 +52,28 @@ except Exception:
 
 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — EOD Market Report मध्ये मराठी मजकूर आहे, जो
 # Times-Roman/Helvetica/DejaVuSans यापैकी कशातही दिसत नाही (काळे चौकोन दिसतात, glyphs नाहीत) —
-# Noto Sans Devanagari या समर्पित font ने दुरुस्त केलं (फक्त Regular weight उपलब्ध आहे).
+# Noto Sans Devanagari या समर्पित font ने दुरुस्त केलं (आता Regular + Bold दोन्ही weight उपलब्ध
+# आहेत — Google Fonts वरून आणलं; ह्याच font मध्ये इंग्रजी अक्षरंही व्यवस्थित दिसतात, त्यामुळे
+# "English / मराठी" असे combined single-line लेबल्ससाठी हाच एक font पुरतो, वेगळा font-switch
+# लागत नाही — Performance Report च्या dual-language headings/labels साठी हेच वापरलं आहे).
 _DEVANAGARI_FONT = "Helvetica"  # सुरक्षित fallback, font सापडला नाही तर
+_DEVANAGARI_FONT_BOLD = "Helvetica-Bold"  # सुरक्षित fallback, font सापडला नाही तर
 try:
     _deva_path = os.path.join(_font_dir, "NotoSansDevanagari-Regular.ttf")
+    _deva_bold_path = os.path.join(_font_dir, "NotoSansDevanagari-Bold.ttf")
     if os.path.exists(_deva_path):
         pdfmetrics.registerFont(TTFont("NotoSansDevanagari", _deva_path))
         _DEVANAGARI_FONT = "NotoSansDevanagari"
+    if os.path.exists(_deva_bold_path):
+        pdfmetrics.registerFont(TTFont("NotoSansDevanagari-Bold", _deva_bold_path))
+        _DEVANAGARI_FONT_BOLD = "NotoSansDevanagari-Bold"
+    if _DEVANAGARI_FONT == "NotoSansDevanagari":
+        # <b>/<i> सारखे Paragraph mark-up tags तेव्हाच बरोबर काम करतात जेव्हा font family
+        # स्पष्टपणे नोंदवलेली असते — नाहीतर <b> कुठलाच बदल न होता तशाच regular weight मध्ये दिसतो.
+        pdfmetrics.registerFontFamily(
+            "NotoSansDevanagari", normal="NotoSansDevanagari",
+            bold=_DEVANAGARI_FONT_BOLD, italic="NotoSansDevanagari", boldItalic=_DEVANAGARI_FONT_BOLD,
+        )
 except Exception:
     pass
 
@@ -136,6 +151,58 @@ _rpt_badge_red = ParagraphStyle("rpt_badge_red", fontName=_RPT_FONT_BOLD, fontSi
 
 _rpt_badge_grey = ParagraphStyle("rpt_badge_grey", fontName=_RPT_FONT_BOLD, fontSize=14, leading=18, textColor=_C_GREY, alignment=TA_CENTER)
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("पीडीएफ रिपोर्ट ड्युअल लँग्वेज मध्ये असायला पाहिजे इंग्लिश आणि
+# देवनागरी मराठी, शुद्ध मराठी भाषा वापरावी") — फक्त Performance Report पुरता वापरलेला bilingual
+# heading style — बाकीच्या report types (Signal Check/Backtest/Market Analysis) च्या _rpt_h2_bt ला
+# धक्का न लावता वेगळा ठेवला आहे, कारण त्या reports इंग्रजीतच राहणार आहेत (वापरकर्त्याने व्याप्ती
+# स्पष्टपणे "फक्त मुख्य मथळे + सारांश" इतकीच मर्यादित ठेवली).
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sub heading font size thod kami kra") — bilingual मथळे
+# इंग्लिश-only पेक्षा साधारण दुप्पट लांब असल्याने 18pt वर 2-3 ओळींत wrap व्हायचे (जागा जास्त
+# जायची) — आता 15pt, कमी जागेत बसतं, तरीही स्पष्ट वाचता येण्याइतकं मोठंच आहे.
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black colour nko... Adhi sarkhe kra [फिरणारे रंग], pn
+# background chya पट्टी nko") — घन-रंगाची पट्टी (पांढरा मजकूर लागणारी) पूर्णपणे काढली, त्याऐवजी
+# _section_header_accent (डावीकडे रंगीत accent bar + फिकट पार्श्वभूमी) — मजकूर आता गडद रंगात.
+_rpt_h2_accent_bi = ParagraphStyle("rpt_h2_accent_bi", fontName=_DEVANAGARI_FONT_BOLD, fontSize=15, leading=19, textColor=_C_BG_DARK, spaceBefore=0, spaceAfter=0)
+
+# 🎓 इंग्लिश-only लेबल्सपेक्षा bilingual लेबल्स साधारण दुप्पट लांब असतात — plain string म्हणून
+# _kv_table च्या key column मध्ये दिली तर wrap न होता उजवीकडच्या value column वर overflow/overlap
+# होतात (टेबलमधल्या plain string cells आपोआप wrap होत नाहीत). म्हणून हा wrap-होणारा Paragraph
+# style — फक्त Performance Report च्या Summary टेबलासाठी.
+_rpt_kv_key_wrap_bi = ParagraphStyle("rpt_kv_key_wrap_bi", fontName=_DEVANAGARI_FONT, fontSize=9.5, leading=12.5, textColor=colors.white)
+
+def _bi(en, mr):
+    """English आणि शुद्ध देवनागरी मराठी एकाच ओळीत जोडणारा helper — वापरकर्त्याने निवडलेलं फॉरमॅट
+    ("Total Trades / एकूण व्यवहार" — एकाच ओळीत, दोन वेगळ्या ओळी नकोत). फक्त Performance Report च्या
+    मुख्य मथळ्यांसाठी व Summary विभागासाठी वापरलं जातं.
+    🎓 result नेहमी Paragraph मध्येच जातो (_section_header/_stat_cards_row/_bi_key — तिन्ही ठिकाणी),
+    आणि Paragraph मजकूर mini-XML म्हणून parse होतो — म्हणून "P&L" सारखा raw "&" इथेच escape केला
+    नाही तर "&L" चुकीचा entity समजून अर्धवट/चुकीचा दिसतो (उदा. "Gross P&L" ऐवजी "Gross P&L;")."""
+    return f"{_xml_escape(str(en))} / {_xml_escape(str(mr))}"
+
+def _bi_key(en, mr):
+    """_bi() सारखंच, पण _kv_table च्या key column साठी — तो wrap-होणारा Paragraph (plain string
+    नाही) परत करतो, कारण bilingual लेबल्स इंग्लिश-only पेक्षा साधारण दुप्पट लांब असतात आणि plain
+    string cells column च्या रुंदीबाहेर wrap न होता overflow/overlap होतात."""
+    return Paragraph(_bi(en, mr), _rpt_kv_key_wrap_bi)
+
+def _bi_para(en, mr, font_size=11, leading=15, text_color=None, space_after=0):
+    """वापरकर्त्याने मागितलेली सुधारणा ("Explanation suddha devnagari marathi mdhe... font size
+    wadhwa") — Performance Report मधल्या स्पष्टीकरणपर परिच्छेदांसाठी (overshoot/slippage/trade log/
+    trade chart च्या notes, तळटीप) — लेबल्ससारखं एकाच ओळीत "इंग्लिश / मराठी" जोडणं इथे लांब
+    वाक्यांसाठी वाचायला अवघड होतं, म्हणून इंग्लिश आधी, मग रिकाम्या ओळीनंतर शुद्ध मराठी भाषांतर —
+    दोन्ही एकाच Paragraph मध्ये (वेगळा Spacer न लागता). font_size डीफॉल्ट आधीच्या 9.5/10 पेक्षा
+    मोठा (11) — वाचनीयता वाढवण्यासाठी."""
+    style = ParagraphStyle(
+        f"bi_para_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=leading,
+        textColor=text_color or colors.black, spaceAfter=space_after,
+    )
+    return Paragraph(f"{_xml_escape(str(en))}<br/><br/>{_xml_escape(str(mr))}", style)
+
+def _bi_line(en, mr, font_size=11):
+    """_bi() इतकाच लहान/एका-ओळीचा मजकूर (उदा. "No data in this period." सारखे रिकाम्या-स्थितीचे
+    संदेश) — पण Paragraph स्वरूपात, Devanagari-सुसंगत font सह."""
+    return Paragraph(_bi(en, mr), ParagraphStyle(f"bi_line_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=font_size + 4))
+
 def _section_header(text, idx, style=None):
     """Coloured full-width banner for each section heading — rotates through an accent palette."""
     color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
@@ -144,6 +211,24 @@ def _section_header(text, idx, style=None):
         ("BACKGROUND", (0, 0), (-1, -1), color),
         ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return tbl
+
+def _section_header_accent(text, idx, style):
+    """वापरकर्त्याने मागितलेली सुधारणा ("Adhi sarkhe kra [rotating रंग], pn background चया पट्टी
+    nko") — पूर्वीचाच फिरणारा रंग-क्रम (_SECTION_COLORS, idx नुसार) ठेवला, पण संपूर्ण-रुंदीची घन
+    रंगाची पट्टी (solid banner) काढून टाकली — आता पांढरी/फिकट पार्श्वभूमी + डावीकडे तेवढाच रंगीत
+    उभा accent bar, मथळ्याचा मजकूर गडद रंगात. फक्त Performance Report साठी (इतर report types चा
+    मूळ _section_header आधीसारखाच, अस्पर्श)."""
+    color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
+    bar_w = 0.28 * cm
+    tbl = Table([["", Paragraph(text, style)]], colWidths=[bar_w, 18 * cm - bar_w])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
+        ("LEFTPADDING", (1, 0), (1, -1), 12), ("RIGHTPADDING", (1, 0), (1, -1), 10),
+        ("LEFTPADDING", (0, 0), (0, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return tbl
 
@@ -711,7 +796,7 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
         story.append(Spacer(1, 8))
 
     title_tbl = Table(
-        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph(f"{strategy_name} — Signal Check Report", _rpt_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"{strategy_name} — Signal Check Report", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
@@ -877,7 +962,7 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "Generated by the AMW A1 Trading System (app.py). This is a signal-accuracy check for research "
+        "Generated by the AMW's A1 AlgoTrading System (app.py). This is a signal-accuracy check for research "
         "purposes, not investment advice.",
         _rpt_footer,
     ))
@@ -905,7 +990,7 @@ def generate_backtest_report_pdf_rr(symbol, trading_style_name, interval, from_d
         story.append(Spacer(1, 8))
 
     title_tbl = Table(
-        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph(f"{trading_style_name.title()} Signal Check Report", _rpt_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"{trading_style_name.title()} Signal Check Report", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
@@ -1073,7 +1158,7 @@ def generate_backtest_report_pdf_rr(symbol, trading_style_name, interval, from_d
 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "Generated by the AMW A1 Trading System (app.py). This is a signal-accuracy check for research "
+        "Generated by the AMW's A1 AlgoTrading System (app.py). This is a signal-accuracy check for research "
         "purposes, not investment advice.",
         _rpt_footer,
     ))
@@ -1100,7 +1185,7 @@ def generate_backtest_report_pdf(symbol, bt_timeframe, bt_forward_bars, bt_min_m
         story.append(Spacer(1, 8))
 
     title_tbl = Table(
-        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph("Signal Backtest Report", _rpt_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph("Signal Backtest Report", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
@@ -1220,7 +1305,7 @@ def generate_backtest_report_pdf(symbol, bt_timeframe, bt_forward_bars, bt_min_m
 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "Generated by the AMW A1 Trading System (app.py). This is a signal-accuracy backtest for research "
+        "Generated by the AMW's A1 AlgoTrading System (app.py). This is a signal-accuracy backtest for research "
         "purposes, not investment advice.",
         _rpt_footer,
     ))
@@ -1256,7 +1341,7 @@ def generate_market_analysis_report_pdf(
 
     # --- Title banner ---
     title_tbl = Table(
-        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph("Market Analysis Report", _rpt_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph("Market Analysis Report", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
@@ -1443,7 +1528,7 @@ def generate_market_analysis_report_pdf(
 
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        "This report was generated automatically by the AMW A1 Trading System (app.py) for personal "
+        "This report was generated automatically by the AMW's A1 AlgoTrading System (app.py) for personal "
         "record-keeping and as an audit trail for trading decisions. This is not investment advice.",
         _rpt_footer,
     ))
@@ -1476,7 +1561,7 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
         story.append(Spacer(1, 8))
 
     title_tbl = Table(
-        [[Paragraph("AMW A1 TRADING SYSTEM", _eod_h1)], [Paragraph("EOD Market Report for Tomorrow's Option Selling", _eod_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _eod_h1)], [Paragraph("EOD Market Report for Tomorrow's Option Selling", _eod_h1_sub)]],
         colWidths=[usable_width],
     )
     title_tbl.setStyle(TableStyle([
@@ -1565,7 +1650,7 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
         story.append(Spacer(1, 10))
 
     story.append(Paragraph(
-        "This report was generated automatically by the AMW A1 Trading System — for informational purposes only, not investment advice.",
+        "This report was generated automatically by the AMW's A1 AlgoTrading System — for informational purposes only, not investment advice.",
         _eod_footer,
     ))
 
@@ -1733,7 +1818,10 @@ def _rec_callout(rec_markdown, usable_width):
     return tbl
 
 
-_STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_RPT_FONT, leading=13, alignment=TA_LEFT)
+# 🎓 फक्त generate_performance_report_pdf() यातच वापरलं जातं (इतर कुठेही नाही), त्यामुळे इथे
+# थेट Devanagari-सुसंगत font — Performance Report च्या dual-language stat cards साठी (labels मध्ये
+# आता "TOTAL TRADES / एकूण व्यवहार" असा मजकूर असतो — Times-Roman मध्ये तो तुटक्या चौकोनांसारखा दिसायचा).
+_STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_DEVANAGARI_FONT, leading=13, alignment=TA_LEFT)
 
 
 def _stat_cards_row(items, usable_width):
@@ -1802,7 +1890,7 @@ class _NumberedCanvas(_BaseCanvas):
         self.line(1.4 * cm, 1.1 * cm, A4[0] - 1.4 * cm, 1.1 * cm)
         self.setFont(_RPT_TABLE_FONT, 8)
         self.setFillColor(colors.HexColor("#888888"))
-        self.drawString(1.4 * cm, 0.65 * cm, "A1 TRADING SYSTEM — Performance Report")
+        self.drawString(1.4 * cm, 0.65 * cm, "AMW's A1 AlgoTrading System — Performance Report")
         self.drawRightString(A4[0] - 1.4 * cm, 0.65 * cm, f"Page {self._pageNumber} of {total_pages}")
 
 
@@ -1962,12 +2050,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     sec = [0]
 
     def next_section(text):
-        story.append(_section_header(text, sec[0], style=_rpt_h2_bt))
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (dual-language PDF — इंग्रजी + शुद्ध देवनागरी मराठी) —
+        # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत font style.
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black colour nko, Adhi sarkhe kra [फिरणारे रंग], pn
+        # background chya पट्टी nko") — पहिला प्रयत्न (घन गडद पट्टी, सगळीकडे एकच रंग) नाकारला गेला —
+        # आता पूर्वीचाच फिरणारा रंग-क्रम (_section_header_accent, प्रत्येक विभागाचा वेगळा रंग) पण
+        # संपूर्ण-रुंदीची घन पट्टी नाही — फक्त डावीकडे तेवढा रंगीत accent bar, बाकी फिकट पार्श्वभूमी.
+        story.append(_section_header_accent(text, sec[0], style=_rpt_h2_accent_bi))
         sec[0] += 1
         story.append(Spacer(1, 8))
 
     title_tbl = Table(
-        [[Paragraph("A1 TRADING SYSTEM", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
@@ -1994,9 +2088,9 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(meta_tbl)
     story.append(Spacer(1, 8))
 
-    next_section("Summary")
+    next_section(_bi("Summary", "सारांश"))
     if not summary or summary.get("total_trades", 0) == 0:
-        story.append(Paragraph("No CLOSED trades in this period.", ParagraphStyle("no_data", fontName=_RPT_FONT, fontSize=11, leading=15)))
+        story.append(_bi_line("No CLOSED trades in this period.", "या कालावधीत कुठलेही बंद (CLOSED) व्यवहार नाहीत."))
     else:
         pf_str = f"{summary['profit_factor']}" if summary.get("profit_factor") is not None else "N/A"
         gross_pnl = pnl_totals.get("gross_pnl", summary["total_pnl"]) if pnl_totals else summary["total_pnl"]
@@ -2016,12 +2110,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         total_orders = pnl_totals.get("total_orders", 0) if pnl_totals else 0
         charges_breakdown = pnl_totals.get("charges_breakdown") if pnl_totals else None
         summary_rows = [
-            ["Total Trades", str(summary["total_trades"])],
-            ["Win Rate (pure SL/Target only)", win_rate_str],
-            ["Win Rate (all exits, reference)", f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
-            ["ROI % (on margin used)", f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
-            ["Gross P&L", f"Rs {gross_pnl:,.0f}"],
-            ["Total Charges", f"Rs {total_charges:,.0f} ({total_orders} orders)"],
+            [_bi_key("Total Trades", "एकूण व्यवहार"), str(summary["total_trades"])],
+            [_bi_key("Win Rate (pure SL/Target only)", "विजय दर (केवळ शुद्ध एसएल/टार्गेट)"), win_rate_str],
+            [_bi_key("Win Rate (all exits, reference)", "विजय दर (सर्व निर्गम, संदर्भासाठी)"), f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
+            [_bi_key("ROI % (on margin used)", "परतावा % (वापरलेल्या मार्जिनवर)"), f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
+            [_bi_key("Gross P&L", "एकूण नफा-तोटा"), f"Rs {gross_pnl:,.0f}"],
+            [_bi_key("Total Charges", "एकूण शुल्क"), f"Rs {total_charges:,.0f} ({total_orders} orders)"],
         ]
         if charges_breakdown and any(charges_breakdown.values()):
             _cb_labels = {"brokerage": "Brokerage", "stt": "STT", "exchange_txn": "Exchange Txn",
@@ -2029,13 +2123,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             _cb_line = " / ".join(f"{_cb_labels[k]} Rs {v:,.0f}" for k, v in charges_breakdown.items() if v)
             # प्लेन string cells wrap होत नाहीत (Table column च्या रुंदीबाहेर overflow/clipped) — इथे
             # ओळ बरीच लांब असू शकते (सहा घटकांपर्यंत), त्यामुळे Paragraph मध्ये wrap करून दिली आहे.
-            summary_rows.append(["  └ Charges Breakdown", Paragraph(_cb_line, _rpt_kv_wrap)])
+            summary_rows.append([_bi_key("  - Charges Breakdown", "शुल्क तपशील"), Paragraph(_cb_line, _rpt_kv_wrap)])
         net_pnl_row_idx = len(summary_rows)
-        summary_rows.append(["Net P&L (after charges)", f"Rs {net_pnl:,.0f}"])
+        summary_rows.append([_bi_key("Net P&L (after charges)", "निव्वळ नफा-तोटा (शुल्क वजा करून)"), f"Rs {net_pnl:,.0f}"])
         summary_rows.extend([
-            ["Profit Factor", pf_str],
-            ["Avg P&L / Trade", f"Rs {summary['avg_pnl']:,.0f}"],
-            ["Best / Worst Trade", f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
+            [_bi_key("Profit Factor", "नफा गुणांक"), pf_str],
+            [_bi_key("Avg P&L/Trade", "सरासरी नफा-तोटा/व्यवहार"), f"Rs {summary['avg_pnl']:,.0f}"],
+            [_bi_key("Best/Worst Trade", "सर्वोत्तम/सर्वांत वाईट व्यवहार"), f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
         ])
         force_colors = {
             4: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
@@ -2045,19 +2139,25 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         net_hex = "#089981" if net_pnl >= 0 else "#F23645"
         pf_hex = "#089981" if (summary.get("profit_factor") or 0) >= 1 else "#F23645"
         story.append(_stat_cards_row([
-            ("TOTAL TRADES", str(summary["total_trades"]), None),
-            ("WIN RATE (SL/TARGET)", win_rate_str, win_hex if win_rate is not None else None),
-            ("ROI % (MARGIN)", roi_str, None),
-            ("NET P&L (AFTER CHARGES)", f"Rs {net_pnl:,.0f}", net_hex),
-            ("PROFIT FACTOR", pf_str, pf_hex),
+            (_bi("TOTAL TRADES", "एकूण व्यवहार"), str(summary["total_trades"]), None),
+            (_bi("WIN RATE (SL/TARGET)", "विजय दर (एसएल/टार्गेट)"), win_rate_str, win_hex if win_rate is not None else None),
+            (_bi("ROI % (MARGIN)", "परतावा % (मार्जिन)"), roi_str, None),
+            (_bi("NET P&L (AFTER CHARGES)", "निव्वळ नफा-तोटा (शुल्कानंतर)"), f"Rs {net_pnl:,.0f}", net_hex),
+            (_bi("PROFIT FACTOR", "नफा गुणांक"), pf_str, pf_hex),
         ], usable_width))
         story.append(Spacer(1, 6))
-        story.append(_kv_table(summary_rows, usable_width, key_ratio=0.4, force_colors=force_colors))
+        # 🎓 dual-language Summary labels प्लेन strings नसून wrap-होणारे Paragraphs (_bi_key) आहेत,
+        # त्यामुळे इथे font_name पास करायची गरज नाही (Paragraph आपली स्वतःची font style घेऊनच येतो) —
+        # key_ratio 0.4 वरून 0.55 केला कारण bilingual लेबल्स इंग्लिश-only पेक्षा साधारण दुप्पट लांब असतात.
+        story.append(_kv_table(summary_rows, usable_width, key_ratio=0.55, force_colors=force_colors))
     story.append(Spacer(1, 8))
 
-    next_section("Strategy-wise Performance (which algo strategy is most profitable)")
+    next_section(_bi(
+        "Strategy-wise Performance (which algo strategy is most profitable)",
+        "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",
+    ))
     if by_source_df is None or by_source_df.empty:
-        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data2", fontName=_RPT_FONT, fontSize=11)))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_source_df, "Strategy-wise Total P&L")
         if chart_bytes:
@@ -2069,9 +2169,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
-    next_section("Timeframe-wise Performance (which entry timeframe is most profitable)")
+    next_section(_bi(
+        "Timeframe-wise Performance (which entry timeframe is most profitable)",
+        "कालावधीनिहाय कामगिरी (कोणता प्रवेश कालावधी सर्वाधिक नफादायक आहे)",
+    ))
     if by_timeframe_df is None or by_timeframe_df.empty:
-        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data3", fontName=_RPT_FONT, fontSize=11)))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_timeframe_df, "Timeframe-wise Total P&L")
         if chart_bytes:
@@ -2083,9 +2186,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
-    next_section("Option Structure-wise Performance (Credit Spread vs Naked Option)")
+    next_section(_bi(
+        "Option Structure-wise Performance (Credit Spread vs Naked Option)",
+        "ऑप्शन रचनेनुसार कामगिरी (क्रेडिट स्प्रेड वि. नेकेड ऑप्शन)",
+    ))
     if by_structure_df is None or by_structure_df.empty:
-        story.append(Paragraph("No data in this period.", ParagraphStyle("no_data4", fontName=_RPT_FONT, fontSize=11)))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_structure_df, "Option Structure-wise Total P&L")
         if chart_bytes:
@@ -2098,12 +2204,16 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(Spacer(1, 8))
 
     if overshoot_df is not None and not overshoot_df.empty:
-        next_section("SL/TSL Overshoot (Slippage) Tracker")
-        story.append(Paragraph(
+        next_section(_bi("SL/TSL Overshoot (Slippage) Tracker", "एसएल/टीएसएल ओव्हरशूट (स्लिपेज) ट्रॅकर"))
+        story.append(_bi_para(
             "For every SL/Trailing-SL exit, how far past its threshold the bot found the price before "
             "catching it — an inherent gap from polling-based monitoring (trade_monitor.py / "
             "mcx_futures_trader.py). Tracking this over time shows whether polling-interval speedups "
-            "actually reduced slippage.", ParagraphStyle("overshoot_note", fontName=_RPT_FONT, fontSize=10, leading=14),
+            "actually reduced slippage.",
+            "प्रत्येक एसएल/ट्रेलिंग-एसएल एक्झिटसाठी, बॉटला किंमत सापडेपर्यंत ती थ्रेशोल्डच्या किती पुढे "
+            "गेली होती हे दाखवतं — पोलिंग-आधारित मॉनिटरिंगमधील (trade_monitor.py / "
+            "mcx_futures_trader.py) हे एक अंगभूत अंतर आहे. वेळोवेळी याचा मागोवा घेतल्यास, "
+            "पोलिंग-अंतराल वेगवान केल्याने स्लिपेज खरोखर कमी झाला का हे कळतं.",
         ))
         story.append(Spacer(1, 6))
         _os_pts = overshoot_df["Overshoot (pts)"].dropna()
@@ -2120,12 +2230,16 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.append(Spacer(1, 8))
 
     if slippage_pairs_df is not None and not slippage_pairs_df.empty:
-        next_section("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)")
-        story.append(Paragraph(
+        next_section(_bi("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)", "लाइव्ह वि. शॅडो पेपर स्लिपेज (लाइव्ह+पेपर मोड)"))
+        story.append(_bi_para(
             "For every pair opened in LIVE+PAPER mode (a real LIVE order plus a shadow PAPER trade "
             "on the same signal), this shows how much real execution (slippage/spread) differed from "
-            "the pure simulation. A negative P&amp;L Slippage means the real LIVE result was worse "
-            "than PAPER.", ParagraphStyle("slippage_note", fontName=_RPT_FONT, fontSize=10, leading=14),
+            "the pure simulation. A negative P&L Slippage means the real LIVE result was worse "
+            "than PAPER.",
+            "LIVE+PAPER मोडमध्ये उघडलेल्या प्रत्येक जोडीसाठी (त्याच सिग्नलवरील खरी LIVE ऑर्डर व एक "
+            "शॅडो PAPER व्यवहार), प्रत्यक्ष अंमलबजावणी (स्लिपेज/स्प्रेड) शुद्ध सिम्युलेशनपेक्षा किती "
+            "वेगळी ठरली हे यातून दिसतं. ऋण (negative) नफा-तोटा स्लिपेज म्हणजे प्रत्यक्ष LIVE निकाल "
+            "PAPER पेक्षा वाईट ठरला.",
         ))
         story.append(Spacer(1, 6))
         entry_slip_series = slippage_pairs_df["Entry Slippage (Rs)"].dropna()
@@ -2145,11 +2259,11 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
         story.append(Spacer(1, 8))
 
-    next_section("Conclusion & Recommendations")
+    next_section(_bi("Conclusion & Recommendations", "निष्कर्ष आणि शिफारसी"))
     if not recommendations:
-        story.append(Paragraph(
+        story.append(_bi_line(
             "Not enough data in this period to draw conclusions (at least 5 trades/group needed).",
-            ParagraphStyle("no_rec", fontName=_RPT_FONT, fontSize=11),
+            "निष्कर्ष काढण्यासाठी या कालावधीत पुरेसा डेटा नाही (प्रत्येक गटासाठी किमान 5 व्यवहार आवश्यक).",
         ))
     else:
         for rec in recommendations:
@@ -2158,16 +2272,24 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(Spacer(1, 8))
 
     story.append(PageBreak())
-    next_section(f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)")
+    next_section(_bi(
+        f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)",
+        "व्यवहार नोंद — प्रत्येक व्यवहाराचे प्रवेश व निर्गमाचे कारण",
+    ))
     if trade_log_df is None or trade_log_df.empty:
-        story.append(Paragraph("No closed trades in this period.", ParagraphStyle("no_trades", fontName=_RPT_FONT, fontSize=11)))
+        story.append(_bi_line("No closed trades in this period.", "या कालावधीत कुठलेही बंद व्यवहार नाहीत."))
     else:
         story.append(Paragraph(
             "Every SL/Target Exit Reason below names the exact basis it was triggered on — "
             "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
             "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance. "
-            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables.",
-            ParagraphStyle("trade_log_note", fontName=_RPT_FONT, fontSize=9.5, leading=13, textColor=colors.HexColor("#555555"), spaceAfter=6),
+            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables."
+            "<br/><br/>"
+            "खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — "
+            "<b>स्पॉट %-आधारित</b>, <b>प्रीमियम पॉइंट्स-आधारित</b>, <b>स्पॉट %+प्रीमियम पॉइंट्स</b> (दोन्ही एकत्र गाठले गेले), "
+            "किंवा <b>निश्चित रुपये नफा-तोटा-आधारित</b> — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. "
+            "व्यवहार खाली प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.",
+            ParagraphStyle("trade_log_note", fontName=_DEVANAGARI_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555"), spaceAfter=6),
         ))
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
             story.append(_subsection_banner(group_label, usable_width, group_color))
@@ -2177,21 +2299,35 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
 
     if trade_charts:
         story.append(PageBreak())
-        next_section(f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)")
-        story.append(Paragraph(
+        next_section(_bi(
+            f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)",
+            "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी",
+        ))
+        story.append(_bi_para(
             "Each chart below is the underlying's own price action around that trade — the blue line marks "
             "when the bot entered, the green/red line marks when it exited (green = profit, red = loss), and the "
             "purple dotted line (if shown) is the exact Support/Resistance level the bot's entry was based on. "
             "Use this to visually confirm every entry and exit against the real market move at that time.",
-            ParagraphStyle("trade_chart_note", fontName=_RPT_FONT, fontSize=9.5, leading=13, textColor=colors.HexColor("#555555"), spaceAfter=8),
+            "खालील प्रत्येक चार्ट त्या व्यवहाराभोवतीची underlying ची स्वतःची किंमत हालचाल दाखवतो — "
+            "निळी रेषा बॉटने एंट्री कधी घेतली हे दाखवते, हिरवी/लाल रेषा एक्झिट कधी झाली हे दाखवते "
+            "(हिरवं = नफा, लाल = तोटा), आणि जांभळी ठिपकेदार रेषा (दाखवली असल्यास) बॉटच्या एंट्रीचा आधार "
+            "असलेली नेमकी सपोर्ट/रेझिस्टन्स पातळी आहे. त्या वेळच्या खऱ्या बाजार हालचालीशी प्रत्येक एंट्री "
+            "व एक्झिट दृश्यरित्या पडताळण्यासाठी याचा वापर करा.",
+            text_color=colors.HexColor("#555555"), space_after=8,
         ))
         _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10)
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph(
-        "This report was generated automatically by the AMW A1 Trading System — for informational purposes only, not investment advice. "
+    # 🎓 _rpt_footer (शेअर्ड style, बाकी सर्व report types च्या footers/captions साठीही वापरली जाते)
+    # इथे मुद्दाम वापरली नाही — ती Devanagari font नाही, आणि तिचा आकार बदलला तर इतर reports वरही
+    # परिणाम होईल. इथे फक्त Performance Report पुरता वेगळा _bi_para वापरला.
+    story.append(_bi_para(
+        "This report was generated automatically by the AMW's A1 AlgoTrading System — for informational purposes only, not investment advice. "
         "The Recommendations section is a rule-based, data-driven starting point, not financial advice — the final decision is always yours.",
-        _rpt_footer,
+        "हा रिपोर्ट AMW's A1 AlgoTrading System ने आपोआप तयार केला आहे — फक्त माहितीसाठी, गुंतवणूक सल्ला "
+        "नाही. शिफारसी विभाग हा नियम-आधारित, डेटा-चालित प्रारंभबिंदू आहे, आर्थिक सल्ला नाही — अंतिम निर्णय "
+        "नेहमी तुमचाच असतो.",
+        font_size=9, leading=12, text_color=colors.HexColor("#888888"),
     ))
 
     doc.build(story, canvasmaker=_NumberedCanvas)
