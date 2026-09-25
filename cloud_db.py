@@ -264,8 +264,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # level च्या ±`breakout_tolerance_pct`% च्या आत consolidate झालेला असावा, आणि नंतर एक
         # 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close झाला तरच. डीफॉल्ट बंद — इतर
         # नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा.
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Candle 5 minute chi asel tar kiman 12
+        # candle chi range calculator hawi") — डीफॉल्ट lookback 6 (30 मिनिट) वरून 12 (1 तास) —
+        # Dashboard वरून बदलण्याजोगंच (hardcoded नाही, already user-friendly number_input).
         "entry_breakout_gate_enabled": False,
-        "breakout_lookback_candles": 6,
+        "breakout_lookback_candles": 12,
         "breakout_tolerance_pct": 0.30,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
