@@ -6,7 +6,7 @@ Daily / Weekly / Monthly P&L Report — बंद झालेल्या trade
 """
 import pandas as pd
 
-from charges import compute_charges, get_account_broker_map
+from charges import compute_charges, compute_hypothetical_charges_by_broker, get_account_broker_map
 from database import get_closed_trades_for_report, get_orders_with_account
 
 PERIOD_FREQ = {"Daily": "D", "Weekly": "W", "Monthly": "MS"}
@@ -14,7 +14,7 @@ PERIOD_FREQ = {"Daily": "D", "Weekly": "W", "Monthly": "MS"}
 _EMPTY_REPORT_COLUMNS = ["Period", "Trades", "Gross P&L", "Charges", "Net P&L", "Orders"]
 _EMPTY_TOTALS = {
     "total_trades": 0, "gross_pnl": 0.0, "total_charges": 0.0, "net_pnl": 0.0,
-    "total_orders": 0, "charges_by_broker": {}, "charges_breakdown": {},
+    "total_orders": 0, "charges_by_broker": {}, "charges_by_broker_comparison": {}, "charges_breakdown": {},
 }
 
 
@@ -93,6 +93,12 @@ def generate_pnl_report(symbol, period, start_date, end_date, mode_filter=None):
         # केलं तर Stocko चे प्रत्यक्ष ऑर्डर्स मोजलेच जाणार नाहीत).
         "total_orders": charges_summary["total_orders"],
         "charges_by_broker": charges_summary["per_broker"],
+        # 🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही,
+        # फक्त Upstox चा दिलेला आहे") — वरचा charges_by_broker प्रत्यक्ष *वापरलेल्या* ब्रोकरनुसारच
+        # गटवारी करतो (खातं फक्त Upstox चंच असेल तर इथेही फक्त Upstoxच). हा नवीन key त्याच orders
+        # साठी, प्रत्येक ब्रोकरच्या (Upstox/Fyers/Shoonya/Stocko) स्वतःच्या दरांनुसार काय शुल्क लागलं
+        # असतं ते hypothetically मोजतो — खरी "same trades, different broker" तुलना.
+        "charges_by_broker_comparison": compute_hypothetical_charges_by_broker(orders_df, start_date, end_date),
         # 🎓 STT/Exchange Txn/SEBI Fee/Stamp Duty/GST यांचं ब्रेकडाऊन (charges.py) — फक्त flat brokerage
         # किती नाही, "एकूण Charges" नेमकं कशाचं बनलंय हे वापरकर्त्याला दिसावं म्हणून.
         "charges_breakdown": charges_summary["breakdown"],
