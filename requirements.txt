@@ -9,6 +9,13 @@ numpy~=2.4
 plotly~=7.0
 requests~=2.33
 reportlab~=5.0
+# 🎓 वापरकर्त्याने सापडवलेली गंभीर bug ("मराठी वाचता येत नाही, mistakes दिसतात") — reportlab ला
+# Devanagari matra-reordering/conjuncts जमत नाहीत (कुठलंही Indic complex-script shaping नाही),
+# त्यामुळे pdf_reports.py आता PIL (Pillow) + बंडल केलेलं libraqm (HarfBuzz-आधारित शेपिंग — PyPI च्या
+# आधुनिक manylinux wheels मध्ये आपोआप येतं, वेगळं system install लागत नाही) वापरून bilingual मजकूर
+# अचूक PNG image म्हणून काढतं. Pillow>=10 इथे स्पष्ट pin केलं (आधी फक्त reportlab चं transitive
+# dependency म्हणून अनिश्चित आवृत्ती यायची) — जुन्या आवृत्त्यांमध्ये raqm बंडल नसू शकतो.
+Pillow>=10.0.0
 kaleido>=1.0.0,<2.0.0
 yfinance~=1.7
 google-api-python-client~=2.200
