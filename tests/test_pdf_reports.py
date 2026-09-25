@@ -56,6 +56,38 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
         assert pdf_bytes[:4] == b"%PDF"
 
 
+class TestGeneratePerformanceReportPdfBrokerWiseCharges:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Performance report मध्ये या सर्व ब्रोकर नुसार charges
+    साठी एक table टाका, कोणता ब्रोकर परवडण्याजोगा आहे") — Broker-wise Charges section."""
+
+    def test_multi_broker_charges_produces_valid_pdf(self):
+        pnl_totals = {
+            "gross_pnl": 878, "total_charges": 4490, "net_pnl": -3613, "total_orders": 80,
+            "charges_by_broker": {
+                "upstox": {"orders": 40, "charge": 2200.0},
+                "fyers": {"orders": 20, "charge": 950.0},
+                "shoonya": {"orders": 15, "charge": 320.0},
+                "stocko": {"orders": 5, "charge": 1020.0},
+            },
+        }
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-17", "2026-09-18", _SUMMARY, pnl_totals,
+            None, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+        assert len(pdf_bytes) > 1000
+
+    def test_without_charges_by_broker_still_works(self):
+        """charges_by_broker key नसेल (जुना caller, किंवा या कालावधीत कुठलेही orders नाहीत) तरी
+        क्रॅश होता कामा नये -- फक्त हा संपूर्ण section गाळला जातो."""
+        pnl_totals = {"gross_pnl": 400, "total_charges": 0, "net_pnl": 400, "charges_by_broker": {}}
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-01", "2026-09-05", _SUMMARY, pnl_totals,
+            None, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+
 class TestFixMissingGlyphsNonString:
     """🎓 वापरकर्त्याने सापडवलेली bug (PDF generation क्रॅश — AttributeError: 'float' object has no
     attribute 'replace', pdf_reports.py:611) — df.astype(str) पांडासमध्ये फक्त non-NaN सेल्स स्ट्रिंग

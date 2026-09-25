@@ -2346,6 +2346,40 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.append(_kv_table(summary_rows, usable_width, key_ratio=0.55, force_colors=force_colors, key_bg=colors.white))
     story.append(Spacer(1, 8))
 
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Performance report मध्ये या सर्व ब्रोकर नुसार charges साठी
+    # एक table टाका, user ला समजेल की कोणत्या ब्रोकरमध्ये किती charges लागले, कोणता ब्रोकर परवडण्याजोगा
+    # आहे") — charges.py चं per_broker (pnl_reports.generate_pnl_report() मार्फत charges_by_broker
+    # म्हणून आधीच totals मध्ये उपलब्ध होतं, पण PDF मध्ये अजिबात वापरलेलं नव्हतं) — Broker, Orders,
+    # Total Charges, Avg Charge/Order अशी वेगळी table, "Avg Charge/Order" नुसार चढत्या क्रमाने
+    # (सर्वात स्वस्त ब्रोकर सर्वात वर) — जेणेकरून "कोणता ब्रोकर परवडतो" हे एका दृष्टिक्षेपात कळेल.
+    charges_by_broker = pnl_totals.get("charges_by_broker") if pnl_totals else None
+    if charges_by_broker:
+        next_section("Broker-wise Charges (which broker is more cost-effective)", "ब्रोकरनुसार शुल्क (कोणता ब्रोकर परवडण्याजोगा आहे)")
+        _broker_display_names = {"upstox": "Upstox", "fyers": "Fyers", "shoonya": "Shoonya", "stocko": "Stocko"}
+        broker_rows = sorted(
+            (
+                {
+                    "Broker": _broker_display_names.get(b, b.title()),
+                    "Orders": v["orders"],
+                    "Total Charges": v["charge"],
+                    "Avg Charge / Order": round(v["charge"] / v["orders"], 2) if v["orders"] else 0.0,
+                }
+                for b, v in charges_by_broker.items()
+            ),
+            key=lambda r: r["Avg Charge / Order"],
+        )
+        broker_df = pd.DataFrame(broker_rows)
+        broker_df["Total Charges"] = broker_df["Total Charges"].apply(lambda v: f"Rs {v:,.0f}")
+        broker_df["Avg Charge / Order"] = broker_df["Avg Charge / Order"].apply(lambda v: f"Rs {v:,.2f}")
+        t = df_to_reportlab_table(broker_df)
+        story.extend(t if isinstance(t, list) else [t])
+        story.append(_bi_line(
+            "Cheapest broker (per order) is listed first. This uses each broker's own real, published rates.",
+            "सर्वात स्वस्त ब्रोकर (प्रति ऑर्डर) सर्वात आधी दाखवला आहे. हे प्रत्येक ब्रोकरच्या स्वतःच्या खऱ्या, प्रकाशित दरांवरून आहे.",
+            max_width_pt=usable_width, font_size=9,
+        ))
+        story.append(Spacer(1, 8))
+
     next_section(
         "Strategy-wise Performance (which algo strategy is most profitable)",
         "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",
