@@ -698,7 +698,7 @@ class TestSymbolWhereClauseListSupport:
             ["CRUDEOIL", "GOLD", "SILVER"], dt.date(2026, 9, 1), dt.date(2026, 9, 30),
         )
         assert list(df.columns) == [
-            "order_id", "trade_id", "placed_at", "mode", "quantity", "fill_price", "price",
+            "order_id", "trade_id", "placed_at", "mode", "symbol", "quantity", "fill_price", "price",
             "transaction_type", "account_id",
         ]
 

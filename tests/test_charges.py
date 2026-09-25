@@ -1,9 +1,11 @@
 """
 tests/test_charges.py
 --------------------------------
-charges.py — प्रति-ऑर्डर ब्रोकर्सना (Upstox/Fyers/Shoonya) ढोबळ ₹25/ऑर्डर all-inclusive (FLAT_CHARGE_PER_ORDER)
-brokerage म्हणून लागतो का, Stocko चं निश्चित मासिक शुल्क आधीसारखंच वेगळं राहतं का, आणि stt/exchange_txn/
-sebi_fee/stamp_duty/gst हे breakdown-सुसंगततेसाठी नेहमी 0 राहतात का, याची पडताळणी.
+charges.py — 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual
+brokerage काढा") — Upstox ऑर्डर्ससाठी (symbol/quantity/price/transaction_type उपलब्ध असल्यास)
+आता वास्तविक brokerage+STT/CTT+Exchange+SEBI+Stamp+GST मोजलं जातं (segment नुसार वेगळे दर — NSE
+Options वि. MCX Commodity Futures), तपशील अपुरा असेल तिथेच जुना ढोबळ ₹25/ऑर्डर अंदाज. Fyers/Shoonya
+अजूनही जुनाच ढोबळ अंदाज. Stocko चं निश्चित मासिक शुल्क आधीसारखंच वेगळं.
 """
 import datetime
 
@@ -14,24 +16,110 @@ import charges
 
 
 def _orders_df(rows):
-    """rows: list of dicts — order_id/placed_at/account_id."""
+    """rows: list of dicts — order_id/placed_at/account_id/symbol/quantity/transaction_type/fill_price."""
     defaults = {"order_id": "O1", "placed_at": "2026-09-10 10:00:00", "account_id": None}
     return pd.DataFrame([dict(defaults, **r) for r in rows])
 
 
-class TestFlatChargePerOrder:
-    def test_single_upstox_order_flat_charge(self):
+class TestUpstoxAccurateOptionsCharges:
+    def test_options_sell_order_has_stt_exchange_sebi_gst_no_stamp(self):
+        """SELL leg: STT + Exchange + SEBI + GST लागतात, Stamp Duty (फक्त BUY) लागत नाही.
+        (मोठा quantity — जेणेकरून ₹10/crore सारखा अतिशय लहान SEBI fee summary च्या 2-दशांश-स्थळ
+        round() मध्ये पूर्णपणे नाहीसा होणार नाही.)"""
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "NIFTY", "quantity": 5000, "transaction_type": "SELL",
+            "fill_price": 100.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        b = summary["breakdown"]
+        turnover = 5000 * 100.0
+        assert b["brokerage"] == pytest.approx(20.0)
+        assert b["stt"] == pytest.approx(turnover * 0.001)
+        assert b["exchange_txn"] == pytest.approx(turnover * 0.00035)
+        assert b["sebi_fee"] == pytest.approx(turnover * 0.000001)
+        assert b["stamp_duty"] == pytest.approx(0.0)
+        assert b["gst"] == pytest.approx((20.0 + turnover * 0.00035 + turnover * 0.000001) * 0.18)
+
+    def test_options_buy_order_has_stamp_not_stt(self):
+        """BUY leg: Stamp Duty लागते, STT (फक्त SELL) लागत नाही."""
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "BANKNIFTY", "quantity": 15, "transaction_type": "BUY",
+            "fill_price": 200.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        b = summary["breakdown"]
+        turnover = 15 * 200.0
+        assert b["stt"] == pytest.approx(0.0)
+        assert b["stamp_duty"] == pytest.approx(turnover * 0.00003)
+
+    def test_options_brokerage_always_flat_20(self):
+        """Options brokerage फ्लॅट ₹20/order — मोठ्या turnover वरही टक्केवारी लागू होत नाही."""
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "NIFTY", "quantity": 5000, "transaction_type": "BUY",
+            "fill_price": 500.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert summary["breakdown"]["brokerage"] == pytest.approx(20.0)
+
+
+class TestUpstoxAccurateCommodityFuturesCharges:
+    def test_commodity_symbol_gets_ctt_not_options_stt(self):
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "CRUDEOIL", "quantity": 100, "transaction_type": "SELL",
+            "fill_price": 6000.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        b = summary["breakdown"]
+        turnover = 100 * 6000.0
+        assert b["stt"] == pytest.approx(turnover * 0.0001)  # CTT 0.01%, options STT (0.1%) नाही
+
+    def test_commodity_brokerage_is_lower_of_flat_or_percent(self):
+        """मोठा turnover — 0.05% हा ₹20 पेक्षा जास्त होतो, त्यामुळे फ्लॅट ₹20 लागायला हवं."""
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "GOLD", "quantity": 100, "transaction_type": "BUY",
+            "fill_price": 70000.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert summary["breakdown"]["brokerage"] == pytest.approx(20.0)
+
+    def test_commodity_small_turnover_uses_percent_brokerage(self):
+        """लहान turnover — 0.05% हा ₹20 पेक्षा कमी होतो, त्यामुळे percent-based brokerage लागायला हवं."""
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "SILVER", "quantity": 1, "transaction_type": "BUY",
+            "fill_price": 1000.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert summary["breakdown"]["brokerage"] == pytest.approx(1000.0 * 0.0005)
+
+
+class TestUpstoxFallsBackToFlatWhenDataMissing:
+    def test_upstox_order_without_symbol_falls_back_to_flat(self):
         df = _orders_df([{"order_id": "O1"}])
-        daily, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
         assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
+        assert summary["breakdown"]["stt"] == 0.0
         assert summary["per_broker"]["upstox"]["orders"] == 1
 
-    def test_flat_charge_applies_regardless_of_broker_map_for_non_stocko(self):
-        df = _orders_df([{"order_id": "O1", "account_id": "acc1"}])
-        daily, summary = charges.compute_charges(
+    def test_upstox_order_with_zero_quantity_falls_back_to_flat(self):
+        df = _orders_df([{
+            "order_id": "O1", "symbol": "NIFTY", "quantity": 0, "transaction_type": "BUY",
+            "fill_price": 100.0,
+        }])
+        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
+
+
+class TestNonUpstoxBrokersStillFlat:
+    def test_shoonya_order_uses_flat_charge_regardless_of_trade_detail(self):
+        df = _orders_df([{
+            "order_id": "O1", "account_id": "acc1", "symbol": "NIFTY", "quantity": 50,
+            "transaction_type": "SELL", "fill_price": 100.0,
+        }])
+        _, summary = charges.compute_charges(
             df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "shoonya"},
         )
         assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
+        assert summary["breakdown"]["stt"] == 0.0
         assert summary["per_broker"]["shoonya"]["orders"] == 1
 
     def test_multiple_orders_scale_linearly(self):
@@ -39,23 +127,6 @@ class TestFlatChargePerOrder:
         daily, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
         assert summary["breakdown"]["brokerage"] == pytest.approx(3 * charges.FLAT_CHARGE_PER_ORDER)
         assert summary["per_broker"]["upstox"]["orders"] == 3
-
-
-class TestStatutoryChargesAreZero:
-    def test_stt_exchange_sebi_stamp_gst_always_zero(self):
-        df = _orders_df([{"order_id": "O1"}])
-        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
-        b = summary["breakdown"]
-        assert b["stt"] == 0.0
-        assert b["exchange_txn"] == 0.0
-        assert b["sebi_fee"] == 0.0
-        assert b["stamp_duty"] == 0.0
-        assert b["gst"] == 0.0
-
-    def test_total_charge_equals_brokerage_only(self):
-        df = _orders_df([{"order_id": "O1"}])
-        _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
-        assert summary["total_charges"] == pytest.approx(summary["breakdown"]["brokerage"])
 
 
 class TestStockoFlatMonthly:

@@ -1,8 +1,9 @@
 """
 tests/test_pnl_reports.py
 --------------------------------
-pnl_reports.generate_pnl_report() — charges.py चं ढोबळ प्रति-ऑर्डर ₹25 (brokerage) breakdown
-"charges_breakdown" totals मधून वापरकर्त्यापर्यंत (page_performance.py) योग्यपणे पोचतं का, याची पडताळणी.
+pnl_reports.generate_pnl_report() — charges.py चं (🎓 "Upstox brokerage calculator वापरून actual
+brokerage काढा" नंतर) Upstox-अचूक brokerage+STT+Exchange+SEBI+Stamp+GST breakdown "charges_breakdown"
+totals मधून वापरकर्त्यापर्यंत (page_performance.py) योग्यपणे पोचतं का, याची पडताळणी.
 """
 import datetime
 import json
@@ -50,6 +51,10 @@ def _seed_order(tmpdb, order_id, trade_id, placed_at, transaction_type, quantity
 
 class TestGeneratePnlReportChargesBreakdown:
     def test_breakdown_present_and_matches_total_charges(self, temp_db):
+        """symbol="NIFTY" (options segment) + quantity/fill_price/transaction_type सर्व उपलब्ध —
+        त्यामुळे आता Upstox-अचूक दर लागतात (जुना सरसकट ₹25/ऑर्डर अंदाज नाही): SELL लेग (O1, qty=75,
+        price=100 -> turnover=7500) वर STT+Exchange+SEBI+GST, BUY लेग (O2) वर Stamp Duty+Exchange+
+        SEBI+GST — brokerage दोन्हीकडे फ्लॅट ₹20/executed order (options)."""
         _seed_closed_trade(temp_db, "T1", 500.0, "2026-09-10")
         _seed_order(temp_db, "O1", "T1", "2026-09-10 10:00:00", "SELL")
         _seed_order(temp_db, "O2", "T1", "2026-09-10 14:00:00", "BUY")
@@ -62,9 +67,12 @@ class TestGeneratePnlReportChargesBreakdown:
         breakdown = totals["charges_breakdown"]
         assert breakdown  # non-empty
         assert set(breakdown.keys()) == {"brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst"}
-        assert breakdown["brokerage"] == pytest.approx(2 * 25.0)  # 2 orders * ₹25 all-inclusive ढोबळ अंदाज
-        assert breakdown["stt"] == 0.0
-        assert breakdown["stamp_duty"] == 0.0
+        turnover = 75 * 100.0  # प्रत्येक लेग
+        assert breakdown["brokerage"] == pytest.approx(2 * 20.0)  # दोन्ही लेग — फ्लॅट ₹20/order (options)
+        assert breakdown["stt"] == pytest.approx(turnover * 0.001)  # फक्त SELL लेगवर (O1)
+        assert breakdown["stamp_duty"] == pytest.approx(turnover * 0.00003, abs=0.01)  # फक्त BUY लेगवर (O2) — summary 2-दशांश-स्थळी round होतो
+        assert breakdown["exchange_txn"] == pytest.approx(2 * turnover * 0.00035)  # दोन्ही लेग
+        assert breakdown["sebi_fee"] == pytest.approx(2 * turnover * 0.000001, abs=0.01)  # दोन्ही लेग — अतिशय लहान रक्कम, summary round होतो
         assert totals["total_charges"] == pytest.approx(sum(breakdown.values()), abs=0.1)
         # Net P&L = Gross - Charges
         assert totals["net_pnl"] == pytest.approx(totals["gross_pnl"] - totals["total_charges"], abs=0.1)

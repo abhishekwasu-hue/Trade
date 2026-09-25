@@ -159,10 +159,11 @@ _CHARGE_BREAKDOWN_LABELS = {
 
 
 def _render_charges_breakdown_caption(breakdown):
-    """charges.py आता per-order ब्रोकर्ससाठी ढोबळ ₹25/ऑर्डर (all-inclusive brokerage + सर्व सरकारी/एक्सचेंज शुल्क
-    मिळून) मोजतं, त्यामुळे stt/exchange_txn/sebi_fee/stamp_duty/gst नेहमी 0 राहतात (फक्त "brokerage"
-    मध्येच रक्कम दिसते) — पण breakdown-shape जुनीच ठेवलीये, त्यामुळे ही caption शून्य नसलेली मूल्यंच
-    (`if v`) दाखवते, न बदलता."""
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage
+    काढा") — charges.py आता Upstox ऑर्डर्ससाठी brokerage/stt/exchange_txn/sebi_fee/stamp_duty/gst
+    हे सर्व सहा घटक वेगवेगळे, वास्तविक दराने मोजतं (Fyers/Shoonya अजूनही फक्त "brokerage" मध्ये ढोबळ
+    ₹25/ऑर्डर, बाकी घटक 0). शून्य असलेला घटक (`if v`) दाखवला जात नाही — म्हणजे ज्या ब्रोकरसाठी
+    breakdown खरंच लागू आहे तेवढाच दिसतो."""
     if not breakdown or not any(breakdown.values()):
         return
     lines = " · ".join(
@@ -735,10 +736,11 @@ def render():
     with _perf_tab2:
         _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
         st.caption(
-            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − ढोबळ शुल्क अंदाज (Upstox/Fyers/"
-            "Shoonya ₹25/ऑर्डर all-inclusive — brokerage + STT/Exchange/SEBI/Stamp/GST सर्व मिळून, एकत्र; Stocko निश्चित "
-            "₹1200/महिना) = Net P&L. ⚠️ हा एक ढोबळ, सोपा अंदाज आहे, तंतोतंत नाही — प्रत्यक्ष रक्कम broker "
-            "च्या Contract Note शी पडताळून पाहा."
+            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Upstox — Upstox च्या "
+            "स्वतःच्या brokerage calculator प्रमाणे actual brokerage + STT/CTT + Exchange Txn + SEBI Fee + "
+            "Stamp Duty + GST, प्रत्येक ऑर्डरच्या turnover वरून; Fyers/Shoonya अजूनही ₹25/ऑर्डर ढोबळ "
+            "all-inclusive अंदाज; Stocko निश्चित ₹1200/महिना) = Net P&L. ⚠️ हे दर वेळोवेळी (Budget/SEBI "
+            "परिपत्रकाने) बदलू शकतात — प्रत्यक्ष रक्कम broker च्या Contract Note शी पडताळून पाहा."
         )
         rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
         repcol1, repcol2 = st.columns(2)

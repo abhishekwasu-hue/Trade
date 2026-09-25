@@ -281,6 +281,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_tsl_premium_points": 10,
         "spread_target_spot_pct": 0.20,
         "spread_target_premium_points": 15,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
+        # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
+        # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक
+        # होता. आता दोन्ही स्वतंत्रपणे on/off — डीफॉल्ट True (आधीच्याच वर्तनाशी सुसंगत).
+        "credit_spread_enabled": True,
         "naked_enabled": True,           # "on the same signal" -- डीफॉल्ट सक्रिय, Dashboard वरून बंद करता येईल
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच
         # "lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — पण दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
@@ -348,6 +353,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_tsl_premium_points": 25,
         "spread_target_pct_of_premium": 80,
         "carry_forward_min_profit_pct": 30,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
+        # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
+        # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक
+        # होता. आता दोन्ही स्वतंत्रपणे on/off — डीफॉल्ट True (आधीच्याच वर्तनाशी सुसंगत).
+        "credit_spread_enabled": True,
         "naked_enabled": True,
         "naked_lots": 1,                 # 🎓 1m_instant सारखीच सुधारणा — Credit Spread पासून स्वतंत्र lots
         "naked_hedge_enabled": False,
@@ -414,6 +424,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_tsl_premium_points": 10,
         "spread_target_spot_pct": 0.8,
         "spread_target_premium_points": 15,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
+        # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
+        # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक
+        # होता. आता दोन्ही स्वतंत्रपणे on/off — डीफॉल्ट True (आधीच्याच वर्तनाशी सुसंगत).
+        "credit_spread_enabled": True,
         "naked_enabled": True,
         "naked_lots": 1,                 # 🎓 1m_instant सारखीच सुधारणा — Credit Spread पासून स्वतंत्र lots
         "naked_hedge_enabled": False,

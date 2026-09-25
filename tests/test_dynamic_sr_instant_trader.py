@@ -1083,6 +1083,71 @@ class TestNakedOptionTrade:
             assert naked_call.kwargs.get("lots") == 5
 
 
+class TestCreditSpreadToggle:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
+    ऑप्शनल ठेवा — कमी कॅपिटल असलेला user फक्त naked करणं पसंत करतो") — Credit Spread आता Naked
+    Option प्रमाणेच स्वतंत्रपणे on/off करता येतो, डीफॉल्ट सक्रिय (backward-compatible)."""
+
+    def test_credit_spread_disabled_only_naked_fires(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        custom_settings["credit_spread_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm") as mock_spread_select, \
+             patch.object(dsr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T80"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_save_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_spread_select.called
+            assert mock_naked_select.called
+            assert mock_trade.call_count == 1  # फक्त Naked, Spread नाही
+            statuses = [c.args[0].get("trade_status") for c in mock_save_log.call_args_list]
+            assert "SKIPPED_CREDIT_SPREAD_DISABLED" in statuses
+
+    def test_both_disabled_no_trade_fires(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        custom_settings["credit_spread_enabled"] = False
+        custom_settings["naked_enabled"] = False
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm") as mock_spread_select, \
+             patch.object(dsr, "select_naked_option_itm") as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T81"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_spread_select.called
+            assert not mock_naked_select.called
+            assert not mock_trade.called
+
+    def test_credit_spread_enabled_by_default(self):
+        """डीफॉल्ट settings मध्ये credit_spread_enabled नसेल (जुनं stored settings row) तरी True
+        गृहीत धरलं जावं — backward-compatible."""
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        assert settings.get("credit_spread_enabled", True) is True
+
+
 class TestExpiryDayLogic:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) -- आज expiry असेल, तर पुढच्या
     आठवड्याची expiry (expiry_index=1) वापरायला हवी."""

@@ -430,7 +430,14 @@ def fetch_candles_date_range(access_token, symbol, interval, from_date, to_date)
     all_candles = []
     failed_chunks = 0
     chunk_end = to_date
-    while chunk_end > from_date:
+    # 🎓 वापरकर्त्याने सापडवलेली bug (Performance Report PDF मधले candlestick charts — token बरोबर
+    # असूनही सगळ्या trades साठी "candle data unavailable" दिसत होतं) — मूळ कारण token नव्हताच, तर हा
+    # `>` होता. Intraday trade (entry आणि exit एकाच दिवशी — बहुतेक सगळेच) साठी from_date==to_date
+    # असतो, आणि पहिलाच check (`chunk_end > from_date`) तेव्हा False ठरून loop कधीच चालायचाच नाही —
+    # रिकामा DataFrame मिळायचा, म्हणजे कुठलाही candle कधीच मागवला जात नव्हता. `>=` केल्याने single-day
+    # रेंजसाठीही किमान एक chunk मागवला जातो (multi-day रेंजच्या वर्तनावर परिणाम नाही — तिथे आधीच एका
+    # iteration मध्ये संपूर्ण रेंज मिळायची, इथे फक्त शेवटचा, एकच दिवस-रेंज असलेला edge case दुरुस्त होतो).
+    while chunk_end >= from_date:
         chunk_start = max(from_date, chunk_end - datetime.timedelta(days=chunk_days))
         url = f"https://api.upstox.com/v3/historical-candle/{encoded_key}/{unit}/{val}/{chunk_end.strftime('%Y-%m-%d')}/{chunk_start.strftime('%Y-%m-%d')}"
         try:

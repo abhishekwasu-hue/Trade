@@ -7,6 +7,8 @@ from xml.sax.saxutils import escape as _xml_escape
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from PIL import Image as _PILImage, ImageDraw as _PILImageDraw, ImageFont as _PILImageFont
+import PIL.features as _pil_features
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -77,6 +79,131 @@ try:
 except Exception:
     pass
 
+# 🎓 वापरकर्त्याने सापडवलेली गंभीर bug ("मराठी वाचता येत नाही, mistakes दिसतात") — फक्त योग्य font
+# असून पुरत नाही. reportlab चं Paragraph/Canvas text rendering pure Unicode codepoints सलग क्रमाने
+# काढतं, कुठलंही Indic complex-script shaping (matra reordering — उदा. "हि" मधली "ि" मात्रा प्रत्यक्षात
+# consonant च्या आधी दिसायला हवी, पण Unicode मध्ये ती नंतर एन्कोड होते; तसंच conjuncts/half-forms)
+# करत नाही — त्यामुळे "हिरवी" सारखे शब्द "हरिवी" सारखे चुकीचे दिसतात. यावर उपाय: PIL (Pillow) + libraqm
+# (HarfBuzz-आधारित शेपिंग इंजिन — आधुनिक Pillow wheels मध्ये आधीच बंडल केलेलं, वेगळं install लागत
+# नाही) वापरून मजकूर अचूक rendered PNG image म्हणून तयार करणे, मग ती image PDF मध्ये टाकणे — फक्त
+# Performance Report च्या bilingual भागांसाठी (खाली _deva_*/_bi_image इ. functions).
+_DEVA_PIL_SHAPING_OK = False
+try:
+    if _DEVANAGARI_FONT == "NotoSansDevanagari" and _pil_features.check("raqm"):
+        _DEVA_PIL_SHAPING_OK = True
+except Exception:
+    _DEVA_PIL_SHAPING_OK = False
+
+
+def _deva_rl_color_to_rgb(color):
+    """reportlab Color -> PIL-सुसंगत (r,g,b) 0-255 tuple."""
+    return (round(color.red * 255), round(color.green * 255), round(color.blue * 255))
+
+
+def _deva_word_tokens(runs):
+    """runs: [(text, is_bold), ...] किंवा [(text, is_bold, color_rgb), ...] (color_rgb ऐच्छिक — न
+    दिल्यास caller च्या डीफॉल्ट रंगात) -> शब्द/रिकामी-जागा tokens ((tok, is_bold, color_rgb_or_None)
+    प्रत्येक), जोडणी क्रमानेच राहावी म्हणून spaces स्वतंत्र tokens म्हणून ठेवले."""
+    tokens = []
+    for run in runs:
+        text, is_bold = run[0], run[1]
+        run_color = run[2] if len(run) > 2 else None
+        for part in re.split(r"(\s+)", text):
+            if part:
+                tokens.append((part, is_bold, run_color))
+    return tokens
+
+
+def _deva_render_rich(runs, font_size_pt, max_width_pt=None, color=(0, 0, 0), scale=4):
+    """runs: [(text, is_bold), ...] किंवा [(text, is_bold, color_rgb), ...] (mixed इंग्रजी+देवनागरी
+    असू शकतं, प्रत्येक भागाचा रंगही वेगळा असू शकतो — उदा. दोन-रंगी title) — HarfBuzz-आधारित योग्य
+    shaping (PIL raqm layout engine) वापरून, गरज असल्यास शब्दानुसार wrap करून, एक PNG image तयार
+    करते. Returns (io.BytesIO PNG, width_pt, height_pt) — किंवा (_DEVA_PIL_SHAPING_OK False असल्यास,
+    किंवा काहीही चूक झाल्यास) None."""
+    if not _DEVA_PIL_SHAPING_OK:
+        return None
+    try:
+        px_size = max(1, round(font_size_pt * scale))
+        font_reg = _PILImageFont.truetype(_deva_path, px_size, layout_engine=_PILImageFont.Layout.RAQM)
+        font_bold = _PILImageFont.truetype(_deva_bold_path, px_size, layout_engine=_PILImageFont.Layout.RAQM)
+        max_w_px = max_width_pt * scale if max_width_pt else None
+
+        tokens = _deva_word_tokens(runs)
+        lines, cur_line, cur_w = [], [], 0
+        for tok_text, is_bold, tok_color in tokens:
+            if tok_text.isspace() and not cur_line:
+                continue  # ओळीच्या सुरुवातीला रिकामी जागा नको
+            f = font_bold if is_bold else font_reg
+            bbox = f.getbbox(tok_text)
+            tw = bbox[2] - bbox[0]
+            if max_w_px and cur_line and (cur_w + tw) > max_w_px:
+                lines.append(cur_line)
+                cur_line, cur_w = [], 0
+                if tok_text.isspace():
+                    continue
+            cur_line.append((tok_text, is_bold, tok_color))
+            cur_w += tw
+        if cur_line:
+            lines.append(cur_line)
+        if not lines:
+            return None
+
+        ascent, descent = font_reg.getmetrics()
+        line_h_px = round((ascent + descent) * 1.3)
+        line_widths_px = []
+        for line in lines:
+            w = 0
+            for t, b, _c in line:
+                f = font_bold if b else font_reg
+                bbox = f.getbbox(t)
+                w += bbox[2] - bbox[0]
+            line_widths_px.append(w)
+        total_w_px = max(max(line_widths_px), 1)
+        if max_w_px:
+            total_w_px = min(total_w_px, round(max_w_px))
+        total_h_px = line_h_px * len(lines)
+
+        img = _PILImage.new("RGBA", (total_w_px, total_h_px), (255, 255, 255, 0))
+        draw = _PILImageDraw.Draw(img)
+        y = 0
+        for line in lines:
+            x = 0
+            for t, b, tc in line:
+                f = font_bold if b else font_reg
+                draw.text((x, y), t, font=f, fill=tc or color)
+                bbox = f.getbbox(t)
+                x += bbox[2] - bbox[0]
+            y += line_h_px
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf, total_w_px / scale, total_h_px / scale
+    except Exception:
+        return None
+
+
+def _deva_image_flowable(text_or_runs, font_size_pt, max_width_pt=None, color=colors.black, bold=False):
+    """वापरासाठी सोपा wrapper — _deva_render_rich() चा निकाल थेट reportlab Image flowable म्हणून
+    परत करतो. text_or_runs plain string असेल तर एकाच (bold नुसार) weight मध्ये rendered होतो;
+    [(text, is_bold), ...] किंवा [(text, is_bold, reportlab_color), ...] यादी दिली तर प्रत्येक भाग
+    स्वतःच्या bold/regular व (दिला असल्यास) स्वतःच्या रंगात (उदा. trade_log_note मधले <b>ठळक</b>
+    शब्द, किंवा दोन-रंगी title). PIL/raqm उपलब्ध नसेल किंवा काही चुकलं तर None (caller ने जुन्या
+    Paragraph-आधारित मार्गाकडे परतावं)."""
+    if isinstance(text_or_runs, str):
+        runs = [(text_or_runs, bold)]
+    else:
+        runs = [
+            (r[0], r[1], _deva_rl_color_to_rgb(r[2])) if len(r) > 2 else r
+            for r in text_or_runs
+        ]
+    result = _deva_render_rich(runs, font_size_pt, max_width_pt, color=_deva_rl_color_to_rgb(color))
+    if result is None:
+        return None
+    buf, w_pt, h_pt = result
+    return RLImage(buf, width=w_pt, height=h_pt)
+
+
 # EOD Market Report साठी मराठी-सुसंगत styles (इतर, इंग्रजी reports च्या styles ना धक्का न लावता, वेगळे)
 _deva_h1 = ParagraphStyle("deva_h1", fontName="Helvetica-Bold", fontSize=22, leading=26, textColor=colors.white)
 _deva_h1_sub = ParagraphStyle("deva_h1_sub", fontName=_DEVANAGARI_FONT, fontSize=12, leading=16, textColor=colors.HexColor("#B8BEC9"))
@@ -99,6 +226,12 @@ _eod_footer = ParagraphStyle("eod_footer", fontName=_EOD_FONT, fontSize=_EOD_FON
 
 
 _C_BG_DARK = colors.HexColor("#131722")
+
+# 🎓 वापरकर्त्याने वारंवार सांगितलेली सुधारणा ("Title la black background aahe remove it use
+# sky blue solid") — सर्व report types च्या title masthead साठी (आधी _C_BG_DARK, घन काळसर-नेव्ही,
+# वापरलं जायचं) — आता याच एका sky-blue रंगाने सगळीकडे बदललं आहे, जेणेकरून पुन्हा कुठेही काळी
+# पार्श्वभूमी उरणार नाही.
+_C_SKY_BLUE = colors.HexColor("#1CA7EC")
 
 _C_ACCENT = colors.HexColor("#2962FF")
 
@@ -179,28 +312,49 @@ def _bi(en, mr):
     नाही तर "&L" चुकीचा entity समजून अर्धवट/चुकीचा दिसतो (उदा. "Gross P&L" ऐवजी "Gross P&L;")."""
     return f"{_xml_escape(str(en))} / {_xml_escape(str(mr))}"
 
-def _bi_key(en, mr):
-    """_bi() सारखंच, पण _kv_table च्या key column साठी — तो wrap-होणारा Paragraph (plain string
-    नाही) परत करतो, कारण bilingual लेबल्स इंग्लिश-only पेक्षा साधारण दुप्पट लांब असतात आणि plain
-    string cells column च्या रुंदीबाहेर wrap न होता overflow/overlap होतात."""
+def _bi_key(en, mr, max_width_pt=None, font_size=9.5, color=colors.white, bold=False):
+    """_kv_table च्या key column साठी — वापरकर्त्याने सापडवलेली गंभीर bug ("मराठी वाचता येत नाही,
+    mistakes दिसतात" — reportlab ला Indic matra-reordering/conjuncts जमत नाहीत) टाळण्यासाठी, शक्य
+    असल्यास PIL+raqm ने योग्य-shaped image — अन्यथा (PIL/raqm उपलब्ध नसल्यास, दुर्मिळ पण शक्य) आधीचा
+    Paragraph-आधारित मार्ग (चुकीचं दिसू शकतं, तरी crash होत नाही).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black background nko... increase font size, multicolour
+    bold") — font_size/color/bold आता पर्यायी पॅरामीटर्स (आधी 9.5pt/पांढरा कायमचं ठरलेलं होतं, गडद
+    पार्श्वभूमीसाठी) — Performance Report च्या Summary टेबलात आता पांढरी पार्श्वभूमी + मोठा, प्रत्येक
+    ओळीचा वेगळा ठळक रंग (rotating palette) वापरला आहे."""
+    img = _deva_image_flowable(f"{en} / {mr}", font_size, max_width_pt=max_width_pt, color=color, bold=bold)
+    if img is not None:
+        return img
     return Paragraph(_bi(en, mr), _rpt_kv_key_wrap_bi)
 
-def _bi_para(en, mr, font_size=11, leading=15, text_color=None, space_after=0):
+def _bi_para(en, mr, max_width_pt, font_size=11, text_color=None, space_after=0):
     """वापरकर्त्याने मागितलेली सुधारणा ("Explanation suddha devnagari marathi mdhe... font size
     wadhwa") — Performance Report मधल्या स्पष्टीकरणपर परिच्छेदांसाठी (overshoot/slippage/trade log/
-    trade chart च्या notes, तळटीप) — लेबल्ससारखं एकाच ओळीत "इंग्लिश / मराठी" जोडणं इथे लांब
-    वाक्यांसाठी वाचायला अवघड होतं, म्हणून इंग्लिश आधी, मग रिकाम्या ओळीनंतर शुद्ध मराठी भाषांतर —
-    दोन्ही एकाच Paragraph मध्ये (वेगळा Spacer न लागता). font_size डीफॉल्ट आधीच्या 9.5/10 पेक्षा
-    मोठा (11) — वाचनीयता वाढवण्यासाठी."""
-    style = ParagraphStyle(
-        f"bi_para_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=leading,
-        textColor=text_color or colors.black, spaceAfter=space_after,
+    trade chart च्या notes, तळटीप) — इंग्लिश आधी (native, selectable Paragraph — शुद्ध इंग्लिश असल्याने
+    reportlab मध्ये आधीच बरोबर दिसतं), मग शुद्ध मराठी भाषांतर (PIL+raqm image — योग्य matra-reordering
+    साठी). Returns [Paragraph, Spacer, Image-किंवा-Paragraph] अशी यादी — story.extend() ने जोडायची."""
+    en_style = ParagraphStyle(
+        f"bi_para_en_{id(en)}", fontName=_RPT_FONT, fontSize=font_size, leading=font_size + 4,
+        textColor=text_color or colors.black, spaceAfter=0,
     )
-    return Paragraph(f"{_xml_escape(str(en))}<br/><br/>{_xml_escape(str(mr))}", style)
+    mr_img = _deva_image_flowable(mr, font_size, max_width_pt=max_width_pt, color=text_color or colors.black)
+    if mr_img is not None:
+        result = [Paragraph(_xml_escape(str(en)), en_style), Spacer(1, 3), mr_img]
+    else:
+        mr_style = ParagraphStyle(
+            f"bi_para_mr_{id(mr)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=font_size + 4,
+            textColor=text_color or colors.black,
+        )
+        result = [Paragraph(_xml_escape(str(en)), en_style), Spacer(1, 3), Paragraph(_xml_escape(str(mr)), mr_style)]
+    if space_after:
+        result.append(Spacer(1, space_after))
+    return result
 
-def _bi_line(en, mr, font_size=11):
+def _bi_line(en, mr, font_size=11, max_width_pt=None):
     """_bi() इतकाच लहान/एका-ओळीचा मजकूर (उदा. "No data in this period." सारखे रिकाम्या-स्थितीचे
-    संदेश) — पण Paragraph स्वरूपात, Devanagari-सुसंगत font सह."""
+    संदेश) — शक्य असल्यास योग्य-shaped image, अन्यथा जुना Paragraph मार्ग."""
+    img = _deva_image_flowable(f"{en} / {mr}", font_size, max_width_pt=max_width_pt)
+    if img is not None:
+        return img
     return Paragraph(_bi(en, mr), ParagraphStyle(f"bi_line_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=font_size + 4))
 
 def _section_header(text, idx, style=None):
@@ -214,15 +368,25 @@ def _section_header(text, idx, style=None):
     ]))
     return tbl
 
-def _section_header_accent(text, idx, style):
+# 🎓 _section_header_accent() च्या मजकूर स्तंभाची खरी रुंदी (18cm एकूण - डावी accent bar - डावी/उजवी
+# padding) — bilingual मथळ्याची image त्याच रुंदीत wrap व्हावी म्हणून, आधीच इथे स्थिर मोजलेली.
+_SECTION_HEADER_ACCENT_TEXT_WIDTH_PT = 18 * cm - 0.28 * cm - 12 - 10
+
+def _section_header_accent(en, mr, idx):
     """वापरकर्त्याने मागितलेली सुधारणा ("Adhi sarkhe kra [rotating रंग], pn background चया पट्टी
     nko") — पूर्वीचाच फिरणारा रंग-क्रम (_SECTION_COLORS, idx नुसार) ठेवला, पण संपूर्ण-रुंदीची घन
     रंगाची पट्टी (solid banner) काढून टाकली — आता पांढरी/फिकट पार्श्वभूमी + डावीकडे तेवढाच रंगीत
-    उभा accent bar, मथळ्याचा मजकूर गडद रंगात. फक्त Performance Report साठी (इतर report types चा
-    मूळ _section_header आधीसारखाच, अस्पर्श)."""
+    उभा accent bar, मथळ्याचा मजकूर गडद रंगात (PIL+raqm image — योग्य Devanagari shaping साठी, अन्यथा
+    जुना Paragraph मार्ग). फक्त Performance Report साठी (इतर report types चा मूळ _section_header
+    आधीसारखाच, अस्पर्श)."""
     color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
     bar_w = 0.28 * cm
-    tbl = Table([["", Paragraph(text, style)]], colWidths=[bar_w, 18 * cm - bar_w])
+    content = _deva_image_flowable(
+        f"{en} / {mr}", 15, max_width_pt=_SECTION_HEADER_ACCENT_TEXT_WIDTH_PT, color=_C_BG_DARK, bold=True,
+    )
+    if content is None:
+        content = Paragraph(_bi(en, mr), _rpt_h2_accent_bi)
+    tbl = Table([["", content]], colWidths=[bar_w, 18 * cm - bar_w])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
         ("LEFTPADDING", (1, 0), (1, -1), 12), ("RIGHTPADDING", (1, 0), (1, -1), 10),
@@ -744,11 +908,17 @@ def _force_colors_by_label(rows, label_color_map):
             force_colors[idx] = color_pair
     return force_colors
 
-def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_colors=None, font_name=None, font_size=None):
+def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_colors=None, font_name=None, font_size=None, key_bg=None, key_text_color=None):
     """Two-column key/value table with a dark key column — colours specific value rows either by
     keyword (color_value_rows, via _signal_style) or explicitly (force_colors={row_idx: (text_color, bg_color)},
     for values like Max Profit/Max Loss whose text doesn't contain BULLISH/BEARISH for keyword matching).
-    font_name/font_size — पर्यायी, custom-styled reports साठी — दिलं नाही तर जुनाच डीफॉल्ट, backward-compatible."""
+    font_name/font_size — पर्यायी, custom-styled reports साठी — दिलं नाही तर जुनाच डीफॉल्ट, backward-compatible.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black background nko... multicolour bold") — key_bg/key_text_color
+    पर्यायी — दिले नाहीत तर आधीचाच गडद-पार्श्वभूमी+पांढरा मजकूर डीफॉल्ट (इतर सर्व callers अस्पर्श),
+    Performance Report च्या Summary टेबलासाठीच फक्त white key_bg + per-row multicolour bold वापरलं आहे
+    (key cells आता plain strings नाहीत — bilingual असल्याने Image/Paragraph flowables — त्यामुळे हे
+    TEXTCOLOR स्टाईल फक्त त्या क्वचित plain-string key असलेल्या रांगांना (उदा. कुठलाही fallback) लागू
+    होतं, बाकी रंग image render वेळीच ठरतो)."""
     color_value_rows = color_value_rows or set()
     force_colors = force_colors or {}
     table_font = font_name or _RPT_TABLE_FONT
@@ -759,7 +929,7 @@ def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_c
     style_cmds = [
         ("FONTNAME", (0, 0), (-1, -1), table_font),
         ("FONTNAME", (0, 0), (0, -1), table_font_bold),
-        ("BACKGROUND", (0, 0), (0, -1), _C_BG_DARK), ("TEXTCOLOR", (0, 0), (0, -1), colors.white),
+        ("BACKGROUND", (0, 0), (0, -1), key_bg or _C_BG_DARK), ("TEXTCOLOR", (0, 0), (0, -1), key_text_color or colors.white),
         ("FONTSIZE", (0, 0), (-1, -1), table_font_size), ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -800,7 +970,7 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -994,7 +1164,7 @@ def generate_backtest_report_pdf_rr(symbol, trading_style_name, interval, from_d
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1189,7 +1359,7 @@ def generate_backtest_report_pdf(symbol, bt_timeframe, bt_forward_bars, bt_min_m
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1345,7 +1515,7 @@ def generate_market_analysis_report_pdf(
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1565,7 +1735,7 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
         colWidths=[usable_width],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1825,20 +1995,28 @@ _STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_DEVANAGARI_FONT, leadin
 
 
 def _stat_cards_row(items, usable_width):
-    """items: [(label, value_str, hex_color_or_None), ...] -> एक रांग समान-रुंदीच्या "dashboard"
-    कार्डांची (छोटं राखाडी लेबल वर, मोठा ठळक आकडा खाली) — Summary स्तंभात एका दृष्टिक्षेपात सर्वात
-    महत्त्वाचे आकडे (Total Trades/Win Rate/Net P&L/Profit Factor) दिसावेत म्हणून, प्लेन टेबलपेक्षा
-    जास्त आकर्षक/स्कॅन-करण्यायोग्य."""
+    """items: [(en_label, mr_label, value_str, hex_color_or_None), ...] -> एक रांग समान-रुंदीच्या
+    "dashboard" कार्डांची (छोटं राखाडी bilingual लेबल वर, मोठा ठळक आकडा खाली) — Summary स्तंभात एका
+    दृष्टिक्षेपात सर्वात महत्त्वाचे आकडे (Total Trades/Win Rate/Net P&L/Profit Factor) दिसावेत
+    म्हणून, प्लेन टेबलपेक्षा जास्त आकर्षक/स्कॅन-करण्यायोग्य.
+    🎓 लेबल (Devanagari) आता PIL+raqm image (योग्य shaping साठी); मोठा आकडा (फक्त अंक/Rs/%, Devanagari
+    नाही) आधीसारखाच native Paragraph — crisp दिसतो, आणि "&" सारखे विशेष अक्षर असल्यास escape केलं."""
     n = len(items)
     cell_w = usable_width / n
+    label_max_w = cell_w - 18  # डावी(12)+उजवी(6) padding वजा करून
     cells = []
-    for label, value, hex_color in items:
+    for en_label, mr_label, value, hex_color in items:
         value_color = hex_color or "#131722"
-        cells.append(Paragraph(
-            f'<font size=9 color="#666666">{label}</font><br/>'
-            f'<font size=17 color="{value_color}"><b>{value}</b></font>',
-            _STAT_CARD_STYLE,
-        ))
+        value_para = Paragraph(f'<font size=17 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>', _STAT_CARD_STYLE)
+        label_img = _deva_image_flowable(f"{en_label} / {mr_label}", 9, max_width_pt=label_max_w, color=colors.HexColor("#666666"))
+        if label_img is not None:
+            cells.append([label_img, Spacer(1, 3), value_para])
+        else:
+            cells.append(Paragraph(
+                f'<font size=9 color="#666666">{_xml_escape(en_label)} / {_xml_escape(mr_label)}</font><br/>'
+                f'<font size=17 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>',
+                _STAT_CARD_STYLE,
+            ))
     tbl = Table([cells], colWidths=[cell_w] * n)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG), ("GRID", (0, 0), (-1, -1), 0.75, colors.white),
@@ -2049,25 +2227,30 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story = []
     sec = [0]
 
-    def next_section(text):
+    def next_section(en, mr):
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (dual-language PDF — इंग्रजी + शुद्ध देवनागरी मराठी) —
-        # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत font style.
+        # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत, योग्य-shaped (PIL+raqm)
+        # image.
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black colour nko, Adhi sarkhe kra [फिरणारे रंग], pn
         # background chya पट्टी nko") — पहिला प्रयत्न (घन गडद पट्टी, सगळीकडे एकच रंग) नाकारला गेला —
         # आता पूर्वीचाच फिरणारा रंग-क्रम (_section_header_accent, प्रत्येक विभागाचा वेगळा रंग) पण
         # संपूर्ण-रुंदीची घन पट्टी नाही — फक्त डावीकडे तेवढा रंगीत accent bar, बाकी फिकट पार्श्वभूमी.
-        story.append(_section_header_accent(text, sec[0], style=_rpt_h2_accent_bi))
+        story.append(_section_header_accent(en, mr, sec[0]))
         sec[0] += 1
         story.append(Spacer(1, 8))
 
+    # 🎓 वापरकर्त्याने वारंवार सांगितलेली सुधारणा ("Title la black background aahe remove it use
+    # sky blue solid") — आता बाकी सर्व report types प्रमाणेच इथेही घन sky-blue पार्श्वभूमी +
+    # पांढरा मजकूर (आधीचा फिकट-पार्श्वभूमी + दोन-रंगी मजकूर प्रयोग मागे घेतला — sky-blue वर तेच
+    # निळे/जांभळे रंग नीट उठून दिसत नव्हते).
     title_tbl = Table(
         [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
-        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 4),
     ]))
     story.append(title_tbl)
     accent_bar = Table([[""]], colWidths=[18 * cm], rowHeights=[0.15 * cm])
@@ -2088,9 +2271,9 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(meta_tbl)
     story.append(Spacer(1, 8))
 
-    next_section(_bi("Summary", "सारांश"))
+    next_section("Summary", "सारांश")
     if not summary or summary.get("total_trades", 0) == 0:
-        story.append(_bi_line("No CLOSED trades in this period.", "या कालावधीत कुठलेही बंद (CLOSED) व्यवहार नाहीत."))
+        story.append(_bi_line("No CLOSED trades in this period.", "या कालावधीत कुठलेही बंद (CLOSED) व्यवहार नाहीत.", max_width_pt=usable_width))
     else:
         pf_str = f"{summary['profit_factor']}" if summary.get("profit_factor") is not None else "N/A"
         gross_pnl = pnl_totals.get("gross_pnl", summary["total_pnl"]) if pnl_totals else summary["total_pnl"]
@@ -2109,13 +2292,23 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         # brokerage/STT/Exchange/SEBI/Stamp/GST ब्रेकडाऊन आता इथेही.
         total_orders = pnl_totals.get("total_orders", 0) if pnl_totals else 0
         charges_breakdown = pnl_totals.get("charges_breakdown") if pnl_totals else None
+        # 🎓 _bi_key() ला image wrap करण्यासाठी key column ची खरी रुंदी हवी (खाली _kv_table(...,
+        # key_ratio=0.55) शीच जुळणारी) — डावी/उजवी padding (6pt प्रत्येकी, reportlab Table cell चा
+        # डीफॉल्ट) साठी थोडी जागा राखीव.
+        key_col_w = usable_width * 0.55 - 12
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black background nko... increase font size, multicolour
+        # bold") — key column ची घन गडद पार्श्वभूमी काढली (पांढरी, _kv_table(key_bg=colors.white)),
+        # आणि प्रत्येक लेबल आता मोठ्या (9.5→13pt), ठळक अक्षरात, विभाग-मथळ्यांशीच जुळणाऱ्या फिरणाऱ्या
+        # रंगात (_SECTION_COLORS) — एकाच रंगाऐवजी प्रत्येक ओळीचा स्वतःचा रंग.
+        def _bk(en, mr, ci):
+            return _bi_key(en, mr, key_col_w, font_size=13, color=_SECTION_COLORS[ci % len(_SECTION_COLORS)], bold=True)
         summary_rows = [
-            [_bi_key("Total Trades", "एकूण व्यवहार"), str(summary["total_trades"])],
-            [_bi_key("Win Rate (pure SL/Target only)", "विजय दर (केवळ शुद्ध एसएल/टार्गेट)"), win_rate_str],
-            [_bi_key("Win Rate (all exits, reference)", "विजय दर (सर्व निर्गम, संदर्भासाठी)"), f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
-            [_bi_key("ROI % (on margin used)", "परतावा % (वापरलेल्या मार्जिनवर)"), f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
-            [_bi_key("Gross P&L", "एकूण नफा-तोटा"), f"Rs {gross_pnl:,.0f}"],
-            [_bi_key("Total Charges", "एकूण शुल्क"), f"Rs {total_charges:,.0f} ({total_orders} orders)"],
+            [_bk("Total Trades", "एकूण व्यवहार", 0), str(summary["total_trades"])],
+            [_bk("Win Rate (pure SL/Target only)", "विजय दर (केवळ शुद्ध एसएल/टार्गेट)", 1), win_rate_str],
+            [_bk("Win Rate (all exits, reference)", "विजय दर (सर्व निर्गम, संदर्भासाठी)", 2), f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
+            [_bk("ROI % (on margin used)", "परतावा % (वापरलेल्या मार्जिनवर)", 3), f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
+            [_bk("Gross P&L", "एकूण नफा-तोटा", 4), f"Rs {gross_pnl:,.0f}"],
+            [_bk("Total Charges", "एकूण शुल्क", 0), f"Rs {total_charges:,.0f} ({total_orders} orders)"],
         ]
         if charges_breakdown and any(charges_breakdown.values()):
             _cb_labels = {"brokerage": "Brokerage", "stt": "STT", "exchange_txn": "Exchange Txn",
@@ -2123,13 +2316,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             _cb_line = " / ".join(f"{_cb_labels[k]} Rs {v:,.0f}" for k, v in charges_breakdown.items() if v)
             # प्लेन string cells wrap होत नाहीत (Table column च्या रुंदीबाहेर overflow/clipped) — इथे
             # ओळ बरीच लांब असू शकते (सहा घटकांपर्यंत), त्यामुळे Paragraph मध्ये wrap करून दिली आहे.
-            summary_rows.append([_bi_key("  - Charges Breakdown", "शुल्क तपशील"), Paragraph(_cb_line, _rpt_kv_wrap)])
+            summary_rows.append([_bk("  - Charges Breakdown", "शुल्क तपशील", 1), Paragraph(_cb_line, _rpt_kv_wrap)])
         net_pnl_row_idx = len(summary_rows)
-        summary_rows.append([_bi_key("Net P&L (after charges)", "निव्वळ नफा-तोटा (शुल्क वजा करून)"), f"Rs {net_pnl:,.0f}"])
+        summary_rows.append([_bk("Net P&L (after charges)", "निव्वळ नफा-तोटा (शुल्क वजा करून)", 2), f"Rs {net_pnl:,.0f}"])
         summary_rows.extend([
-            [_bi_key("Profit Factor", "नफा गुणांक"), pf_str],
-            [_bi_key("Avg P&L/Trade", "सरासरी नफा-तोटा/व्यवहार"), f"Rs {summary['avg_pnl']:,.0f}"],
-            [_bi_key("Best/Worst Trade", "सर्वोत्तम/सर्वांत वाईट व्यवहार"), f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
+            [_bk("Profit Factor", "नफा गुणांक", 3), pf_str],
+            [_bk("Avg P&L/Trade", "सरासरी नफा-तोटा/व्यवहार", 4), f"Rs {summary['avg_pnl']:,.0f}"],
+            [_bk("Best/Worst Trade", "सर्वोत्तम/सर्वांत वाईट व्यवहार", 0), f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
         ])
         force_colors = {
             4: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
@@ -2139,25 +2332,26 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         net_hex = "#089981" if net_pnl >= 0 else "#F23645"
         pf_hex = "#089981" if (summary.get("profit_factor") or 0) >= 1 else "#F23645"
         story.append(_stat_cards_row([
-            (_bi("TOTAL TRADES", "एकूण व्यवहार"), str(summary["total_trades"]), None),
-            (_bi("WIN RATE (SL/TARGET)", "विजय दर (एसएल/टार्गेट)"), win_rate_str, win_hex if win_rate is not None else None),
-            (_bi("ROI % (MARGIN)", "परतावा % (मार्जिन)"), roi_str, None),
-            (_bi("NET P&L (AFTER CHARGES)", "निव्वळ नफा-तोटा (शुल्कानंतर)"), f"Rs {net_pnl:,.0f}", net_hex),
-            (_bi("PROFIT FACTOR", "नफा गुणांक"), pf_str, pf_hex),
+            ("TOTAL TRADES", "एकूण व्यवहार", str(summary["total_trades"]), None),
+            ("WIN RATE (SL/TARGET)", "विजय दर (एसएल/टार्गेट)", win_rate_str, win_hex if win_rate is not None else None),
+            ("ROI % (MARGIN)", "परतावा % (मार्जिन)", roi_str, None),
+            ("NET P&L (AFTER CHARGES)", "निव्वळ नफा-तोटा (शुल्कानंतर)", f"Rs {net_pnl:,.0f}", net_hex),
+            ("PROFIT FACTOR", "नफा गुणांक", pf_str, pf_hex),
         ], usable_width))
         story.append(Spacer(1, 6))
-        # 🎓 dual-language Summary labels प्लेन strings नसून wrap-होणारे Paragraphs (_bi_key) आहेत,
-        # त्यामुळे इथे font_name पास करायची गरज नाही (Paragraph आपली स्वतःची font style घेऊनच येतो) —
-        # key_ratio 0.4 वरून 0.55 केला कारण bilingual लेबल्स इंग्लिश-only पेक्षा साधारण दुप्पट लांब असतात.
-        story.append(_kv_table(summary_rows, usable_width, key_ratio=0.55, force_colors=force_colors))
+        # 🎓 dual-language Summary labels प्लेन strings नसून wrap-होणाऱ्या images/Paragraphs (_bi_key)
+        # आहेत — key_ratio 0.4 वरून 0.55 केला कारण bilingual लेबल्स इंग्लिश-only पेक्षा साधारण दुप्पट
+        # लांब असतात. key_bg=white — वापरकर्त्याने मागितलेली सुधारणा ("Black background nko") — key
+        # column ची घन गडद पार्श्वभूमी काढली, लेबल्सचा रंगच आता वेगळेपण दाखवतो.
+        story.append(_kv_table(summary_rows, usable_width, key_ratio=0.55, force_colors=force_colors, key_bg=colors.white))
     story.append(Spacer(1, 8))
 
-    next_section(_bi(
+    next_section(
         "Strategy-wise Performance (which algo strategy is most profitable)",
         "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",
-    ))
+    )
     if by_source_df is None or by_source_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_source_df, "Strategy-wise Total P&L")
         if chart_bytes:
@@ -2169,12 +2363,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
-    next_section(_bi(
+    next_section(
         "Timeframe-wise Performance (which entry timeframe is most profitable)",
         "कालावधीनिहाय कामगिरी (कोणता प्रवेश कालावधी सर्वाधिक नफादायक आहे)",
-    ))
+    )
     if by_timeframe_df is None or by_timeframe_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_timeframe_df, "Timeframe-wise Total P&L")
         if chart_bytes:
@@ -2186,12 +2380,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
     story.append(Spacer(1, 8))
 
-    next_section(_bi(
+    next_section(
         "Option Structure-wise Performance (Credit Spread vs Naked Option)",
         "ऑप्शन रचनेनुसार कामगिरी (क्रेडिट स्प्रेड वि. नेकेड ऑप्शन)",
-    ))
+    )
     if by_structure_df is None or by_structure_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही."))
+        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
     else:
         chart_bytes = build_group_pnl_bar_chart(by_structure_df, "Option Structure-wise Total P&L")
         if chart_bytes:
@@ -2204,8 +2398,8 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(Spacer(1, 8))
 
     if overshoot_df is not None and not overshoot_df.empty:
-        next_section(_bi("SL/TSL Overshoot (Slippage) Tracker", "एसएल/टीएसएल ओव्हरशूट (स्लिपेज) ट्रॅकर"))
-        story.append(_bi_para(
+        next_section("SL/TSL Overshoot (Slippage) Tracker", "एसएल/टीएसएल ओव्हरशूट (स्लिपेज) ट्रॅकर")
+        story.extend(_bi_para(
             "For every SL/Trailing-SL exit, how far past its threshold the bot found the price before "
             "catching it — an inherent gap from polling-based monitoring (trade_monitor.py / "
             "mcx_futures_trader.py). Tracking this over time shows whether polling-interval speedups "
@@ -2214,6 +2408,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "गेली होती हे दाखवतं — पोलिंग-आधारित मॉनिटरिंगमधील (trade_monitor.py / "
             "mcx_futures_trader.py) हे एक अंगभूत अंतर आहे. वेळोवेळी याचा मागोवा घेतल्यास, "
             "पोलिंग-अंतराल वेगवान केल्याने स्लिपेज खरोखर कमी झाला का हे कळतं.",
+            usable_width,
         ))
         story.append(Spacer(1, 6))
         _os_pts = overshoot_df["Overshoot (pts)"].dropna()
@@ -2230,8 +2425,8 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.append(Spacer(1, 8))
 
     if slippage_pairs_df is not None and not slippage_pairs_df.empty:
-        next_section(_bi("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)", "लाइव्ह वि. शॅडो पेपर स्लिपेज (लाइव्ह+पेपर मोड)"))
-        story.append(_bi_para(
+        next_section("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)", "लाइव्ह वि. शॅडो पेपर स्लिपेज (लाइव्ह+पेपर मोड)")
+        story.extend(_bi_para(
             "For every pair opened in LIVE+PAPER mode (a real LIVE order plus a shadow PAPER trade "
             "on the same signal), this shows how much real execution (slippage/spread) differed from "
             "the pure simulation. A negative P&L Slippage means the real LIVE result was worse "
@@ -2240,6 +2435,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "शॅडो PAPER व्यवहार), प्रत्यक्ष अंमलबजावणी (स्लिपेज/स्प्रेड) शुद्ध सिम्युलेशनपेक्षा किती "
             "वेगळी ठरली हे यातून दिसतं. ऋण (negative) नफा-तोटा स्लिपेज म्हणजे प्रत्यक्ष LIVE निकाल "
             "PAPER पेक्षा वाईट ठरला.",
+            usable_width,
         ))
         story.append(Spacer(1, 6))
         entry_slip_series = slippage_pairs_df["Entry Slippage (Rs)"].dropna()
@@ -2259,11 +2455,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         story.extend(t if isinstance(t, list) else [t])
         story.append(Spacer(1, 8))
 
-    next_section(_bi("Conclusion & Recommendations", "निष्कर्ष आणि शिफारसी"))
+    next_section("Conclusion & Recommendations", "निष्कर्ष आणि शिफारसी")
     if not recommendations:
         story.append(_bi_line(
             "Not enough data in this period to draw conclusions (at least 5 trades/group needed).",
             "निष्कर्ष काढण्यासाठी या कालावधीत पुरेसा डेटा नाही (प्रत्येक गटासाठी किमान 5 व्यवहार आवश्यक).",
+            max_width_pt=usable_width,
         ))
     else:
         for rec in recommendations:
@@ -2272,25 +2469,43 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(Spacer(1, 8))
 
     story.append(PageBreak())
-    next_section(_bi(
+    next_section(
         f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)",
         "व्यवहार नोंद — प्रत्येक व्यवहाराचे प्रवेश व निर्गमाचे कारण",
-    ))
+    )
     if trade_log_df is None or trade_log_df.empty:
-        story.append(_bi_line("No closed trades in this period.", "या कालावधीत कुठलेही बंद व्यवहार नाहीत."))
+        story.append(_bi_line("No closed trades in this period.", "या कालावधीत कुठलेही बंद व्यवहार नाहीत.", max_width_pt=usable_width))
     else:
         story.append(Paragraph(
             "Every SL/Target Exit Reason below names the exact basis it was triggered on — "
             "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
             "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance. "
-            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables."
-            "<br/><br/>"
-            "खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — "
-            "<b>स्पॉट %-आधारित</b>, <b>प्रीमियम पॉइंट्स-आधारित</b>, <b>स्पॉट %+प्रीमियम पॉइंट्स</b> (दोन्ही एकत्र गाठले गेले), "
-            "किंवा <b>निश्चित रुपये नफा-तोटा-आधारित</b> — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. "
-            "व्यवहार खाली प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.",
-            ParagraphStyle("trade_log_note", fontName=_DEVANAGARI_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555"), spaceAfter=6),
+            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables.",
+            ParagraphStyle("trade_log_note_en", fontName=_RPT_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555")),
         ))
+        story.append(Spacer(1, 3))
+        _trade_log_note_mr_runs = [
+            ("खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — ", False),
+            ("स्पॉट %-आधारित", True), (", ", False), ("प्रीमियम पॉइंट्स-आधारित", True), (", ", False),
+            ("स्पॉट %+प्रीमियम पॉइंट्स", True), (" (दोन्ही एकत्र गाठले गेले), किंवा ", False),
+            ("निश्चित रुपये नफा-तोटा-आधारित", True),
+            (" — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. व्यवहार खाली "
+             "प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.", False),
+        ]
+        _trade_log_note_mr_img = _deva_image_flowable(
+            _trade_log_note_mr_runs, 11, max_width_pt=usable_width, color=colors.HexColor("#555555"),
+        )
+        if _trade_log_note_mr_img is not None:
+            story.append(_trade_log_note_mr_img)
+        else:
+            story.append(Paragraph(
+                "खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — "
+                "<b>स्पॉट %-आधारित</b>, <b>प्रीमियम पॉइंट्स-आधारित</b>, <b>स्पॉट %+प्रीमियम पॉइंट्स</b> (दोन्ही एकत्र गाठले गेले), "
+                "किंवा <b>निश्चित रुपये नफा-तोटा-आधारित</b> — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. "
+                "व्यवहार खाली प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.",
+                ParagraphStyle("trade_log_note_mr", fontName=_DEVANAGARI_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555")),
+            ))
+        story.append(Spacer(1, 6))
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
             story.append(_subsection_banner(group_label, usable_width, group_color))
             story.append(Spacer(1, 4))
@@ -2299,11 +2514,11 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
 
     if trade_charts:
         story.append(PageBreak())
-        next_section(_bi(
+        next_section(
             f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)",
             "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी",
-        ))
-        story.append(_bi_para(
+        )
+        story.extend(_bi_para(
             "Each chart below is the underlying's own price action around that trade — the blue line marks "
             "when the bot entered, the green/red line marks when it exited (green = profit, red = loss), and the "
             "purple dotted line (if shown) is the exact Support/Resistance level the bot's entry was based on. "
@@ -2313,7 +2528,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "(हिरवं = नफा, लाल = तोटा), आणि जांभळी ठिपकेदार रेषा (दाखवली असल्यास) बॉटच्या एंट्रीचा आधार "
             "असलेली नेमकी सपोर्ट/रेझिस्टन्स पातळी आहे. त्या वेळच्या खऱ्या बाजार हालचालीशी प्रत्येक एंट्री "
             "व एक्झिट दृश्यरित्या पडताळण्यासाठी याचा वापर करा.",
-            text_color=colors.HexColor("#555555"), space_after=8,
+            usable_width, text_color=colors.HexColor("#555555"), space_after=8,
         ))
         _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10)
 
@@ -2321,13 +2536,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     # 🎓 _rpt_footer (शेअर्ड style, बाकी सर्व report types च्या footers/captions साठीही वापरली जाते)
     # इथे मुद्दाम वापरली नाही — ती Devanagari font नाही, आणि तिचा आकार बदलला तर इतर reports वरही
     # परिणाम होईल. इथे फक्त Performance Report पुरता वेगळा _bi_para वापरला.
-    story.append(_bi_para(
+    story.extend(_bi_para(
         "This report was generated automatically by the AMW's A1 AlgoTrading System — for informational purposes only, not investment advice. "
         "The Recommendations section is a rule-based, data-driven starting point, not financial advice — the final decision is always yours.",
         "हा रिपोर्ट AMW's A1 AlgoTrading System ने आपोआप तयार केला आहे — फक्त माहितीसाठी, गुंतवणूक सल्ला "
         "नाही. शिफारसी विभाग हा नियम-आधारित, डेटा-चालित प्रारंभबिंदू आहे, आर्थिक सल्ला नाही — अंतिम निर्णय "
         "नेहमी तुमचाच असतो.",
-        font_size=9, leading=12, text_color=colors.HexColor("#888888"),
+        usable_width, font_size=9, text_color=colors.HexColor("#888888"),
     ))
 
     doc.build(story, canvasmaker=_NumberedCanvas)

@@ -419,52 +419,68 @@ def process_symbol(access_token, symbol, lot_size=65):
         atm_strike = round(underlying_price / strike_step) * strike_step
         log_entry["ltp_at_signal"] = underlying_price
 
-        spread_result = select_credit_spread_itm(
-            raw_chain, direction, atm_strike, step=strike_step,
-            itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
-        )
-        if spread_result is None:
-            log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
-            cloud_db.save_signal_log(log_entry)
-            continue
-
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही independently
+        # optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं पसंत करतो") — आधी credit
+        # spread नेहमीच (toggle शिवाय) चालायचा, फक्त naked ऐच्छिक होता (naked_enabled). आता दोन्ही
+        # स्वतंत्रपणे on/off करता येतात — हा नवीन credit_spread_enabled (डीफॉल्ट True, backward-compatible).
+        credit_spread_enabled = settings.get("credit_spread_enabled", True)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PAPER/LIVE टॉगल + per-strategy Broker Selection) — आधी
         # इथे "कुठलेही broker_accounts नोंदवलेले असतील तर सर्व सक्रिय accounts वर replicate" असं होतं
         # (म्हणजे कुठल्याही एका strategy साठी account जोडला की सगळ्याच bots ला लागू व्हायचं) — आता
         # settings मधल्याच trading_mode/broker_account_ids वरून (Bot Dynamic SR Algo वरून वापरकर्त्याने
         # याच strategy+symbol साठी स्पष्ट निवडलेले) — रिकामी यादी (डीफॉल्ट) = जुनंच शुद्ध Upstox वर्तन.
+        # credit_spread_enabled=False असतानाही naked trade ला हेच trading_mode/broker_account_ids
+        # लागतात, म्हणून आता credit-spread-specific block च्या आधीच वाचलेले.
         trading_mode = settings.get("trading_mode", "PAPER")
         broker_account_ids = settings.get("broker_account_ids") or []
-        if broker_account_ids:
-            from trading_engine import execute_trade_on_all_accounts
-            results, factory_errors = execute_trade_on_all_accounts(
-                symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=100,  # 🎓 Target आता trading_engine.py च्या evaluate_point_spot_exit मध्येच ठरतं
-                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                account_ids=broker_account_ids,
+
+        spread_result = None
+        trade_status = ""
+        if credit_spread_enabled:
+            spread_result = select_credit_spread_itm(
+                raw_chain, direction, atm_strike, step=strike_step,
+                itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
             )
-            trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
-            if factory_errors:
-                trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+            if spread_result is None:
+                log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
+                cloud_db.save_signal_log(log_entry)
+                continue
+
+            if broker_account_ids:
+                from trading_engine import execute_trade_on_all_accounts
+                results, factory_errors = execute_trade_on_all_accounts(
+                    symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=100,  # 🎓 Target आता trading_engine.py च्या evaluate_point_spot_exit मध्येच ठरतं
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="dynamic_sr_instant",
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    account_ids=broker_account_ids,
+                )
+                trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+                if factory_errors:
+                    trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+            else:
+                trade_result, trade_status = open_multi_leg_trade(
+                    access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="dynamic_sr_instant",
+                    entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                )
+            log_entry["trade_status"] = trade_status
+            # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
+            # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
+            # directional trades वेगळे शोधता यावेत.
+            if is_breakout_trade:
+                log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (price consolidation + 5-मिनिट candle close), RSI/PCR Gate वगळले"
+            elif is_directional_trade:
+                log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
+            cloud_db.save_signal_log(log_entry)
         else:
-            trade_result, trade_status = open_multi_leg_trade(
-                access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
-                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=100, source="dynamic_sr_instant",
-                entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-            )
-        log_entry["trade_status"] = trade_status
-        # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
-        # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
-        # directional trades वेगळे शोधता यावेत.
-        if is_breakout_trade:
-            log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (price consolidation + 5-मिनिट candle close), RSI/PCR Gate वगळले"
-        elif is_directional_trade:
-            log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
-        cloud_db.save_signal_log(log_entry)
+            log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
+            log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
+            cloud_db.save_signal_log(log_entry)
+            print(f"ℹ️ Credit Spread trade बंद आहे (credit_spread_enabled=False, settings — symbol={symbol}, strategy=1m_instant)")
 
         naked_status = ""
         naked_result = None
@@ -524,18 +540,24 @@ def process_symbol(access_token, symbol, lot_size=65):
         else:
             rsi_display = "RSI Gate बंद (तपासलं नाही)."
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
+        # 🎓 credit_spread_enabled=False असेल (spread_result=None) तर ही ओळच वगळली जाते — "Credit
+        # Spread बंद आहे" असं दाखवण्यापेक्षा, ती trade प्रकारच झालाच नाही हे संदेशातून स्पष्ट व्हावं.
+        credit_spread_line = f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n" if spread_result is not None else ""
         # 🎓 Breakout Entry हा max-2-hits च्या पलीकडचा, वेगळा (तिसरा) trade आहे -- "X/2 वा hit" हा
         # शीर्षक-भाग breakout साठी दिशाभूल करणारा ठरेल, म्हणून वेगळा हेडर.
         hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/2 वा hit)"
         message = (
             f"{hit_label_header} <b>{symbol} ({timeframe_suffix})!</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"
-            f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n"
+            + credit_spread_line
             + naked_line
             + f"वेळ: {now.strftime('%H:%M:%S')}"
         )
         send_telegram_message(message)
-        outcomes.append(f"{level_label} {row['zone_low']:.2f} ({timeframe_suffix}, {hit_type}) -> {trade_status}")
+        # 🎓 credit_spread_enabled=False असताना trade_status रिकामा असतो — naked_status (असल्यास)
+        # किंवा स्पष्ट "both disabled" संदेश दाखवला जातो, रिकामी ओळ नाही.
+        combined_status = trade_status or naked_status or "कुठलाही trade प्रकार सक्रिय नाही (credit_spread_enabled व naked_enabled दोन्ही बंद)"
+        outcomes.append(f"{level_label} {row['zone_low']:.2f} ({timeframe_suffix}, {hit_type}) -> {combined_status}")
 
     if not outcomes:
         return f"{symbol}: सद्य 1-मिनिट candles मध्ये कुठलाही साठवलेला Dynamic S/R level (1M/5M) cross झाला नाही"

@@ -1426,11 +1426,15 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     Trading Panel चे MANUAL_UNTRACKED/BASKET_UNTRACKED, जे कायम फक्त Upstox वापरतात) तर account_id
     NULL राहतो — charges.py मध्ये त्याचा अर्थ आपोआप "upstox" असा घेतला जातो.
     quantity/fill_price/price/transaction_type — charges.py ला STT/Exchange/SEBI/Stamp Duty सारखे
-    turnover-आधारित सरकारी/एक्सचेंज शुल्क अचूक मोजण्यासाठी लागतात (फक्त flat brokerage पुरेसं नाही)."""
+    turnover-आधारित सरकारी/एक्सचेंज शुल्क अचूक मोजण्यासाठी लागतात (फक्त flat brokerage पुरेसं नाही).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage काढा") —
+    o.symbol सुद्धा आता जोडलं आहे — charges.py ला प्रत्येक order Options (NIFTY/BANKNIFTY/SENSEX) आहे
+    की MCX Commodity Futures (CRUDEOIL/GOLD/...) हे ओळखून त्या-त्या प्रमाणे वेगळे (rate वेगळे असलेले)
+    STT/CTT/Exchange/Stamp Duty दर लावता येण्यासाठी."""
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
     symbol_clause = symbol_clause.replace("symbol", "o.symbol")
-    query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.quantity, o.fill_price, o.price,
+    query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.symbol, o.quantity, o.fill_price, o.price,
                       o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
                WHERE {symbol_clause} AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""

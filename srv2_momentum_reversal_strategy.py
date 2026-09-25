@@ -299,49 +299,65 @@ def process_symbol(access_token, symbol, lot_size=65):
         strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
         atm_strike = round(underlying_price / strike_step) * strike_step
 
-        spread_result = select_credit_spread_itm(
-            raw_chain, direction, atm_strike, step=strike_step,
-            itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
-        )
-        if spread_result is None:
-            log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
-            log_entry["reason"] = f"strike-निवड अयशस्वी ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
-            cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
-            return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
-
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही independently
+        # optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं पसंत करतो") — आधी credit
+        # spread नेहमीच (toggle शिवाय) चालायचा, फक्त naked ऐच्छिक होता (naked_enabled). आता दोन्ही
+        # स्वतंत्रपणे on/off करता येतात — हा नवीन credit_spread_enabled (डीफॉल्ट True, backward-compatible).
+        credit_spread_enabled = settings.get("credit_spread_enabled", True)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (PAPER/LIVE टॉगल + per-strategy Broker Selection) —
         # dynamic_sr_instant_trader.py प्रमाणेच — settings मधल्याच trading_mode/broker_account_ids
         # वरून, "कुठलेही broker_accounts नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी.
+        # credit_spread_enabled=False असतानाही naked trade ला हेच लागतात, म्हणून आधीच वाचलेले.
         trading_mode = settings.get("trading_mode", "PAPER")
         broker_account_ids = settings.get("broker_account_ids") or []
-        if broker_account_ids:
-            from trading_engine import execute_trade_on_all_accounts
-            results, factory_errors = execute_trade_on_all_accounts(
-                symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
-                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=100, source="srv2_momentum_reversal",
-                entry_level_price=level_price, entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                account_ids=broker_account_ids,
-            )
-            trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
-            if factory_errors:
-                trade_status += " | वगळलेले: " + "; ".join(factory_errors)
-        else:
-            trade_result, trade_status = open_multi_leg_trade(
-                access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
-                product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=100, source="srv2_momentum_reversal",
-                entry_level_price=level_price, entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-            )
 
-        rsi_reason = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
-        cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
-        log_entry["trade_status"] = trade_status
-        log_entry["reason"] = rsi_reason
-        cloud_db.save_signal_log(log_entry)
+        spread_result = None
+        trade_status = ""
+        if credit_spread_enabled:
+            spread_result = select_credit_spread_itm(
+                raw_chain, direction, atm_strike, step=strike_step,
+                itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"],
+            )
+            if spread_result is None:
+                log_entry["trade_status"] = "STRATEGY_SELECTION_FAILED"
+                log_entry["reason"] = f"strike-निवड अयशस्वी ({timeframe_suffix})"
+                cloud_db.save_signal_log(log_entry)
+                cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
+                return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
+
+            if broker_account_ids:
+                from trading_engine import execute_trade_on_all_accounts
+                results, factory_errors = execute_trade_on_all_accounts(
+                    symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                    entry_level_price=level_price, entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    account_ids=broker_account_ids,
+                )
+                trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+                if factory_errors:
+                    trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+            else:
+                trade_result, trade_status = open_multi_leg_trade(
+                    access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
+                    sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct_of_premium,
+                    product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
+                    sl_pct_of_credit=100, source="srv2_momentum_reversal",
+                    entry_level_price=level_price, entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                )
+
+            rsi_reason = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
+            cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
+            log_entry["trade_status"] = trade_status
+            log_entry["reason"] = rsi_reason
+            cloud_db.save_signal_log(log_entry)
+        else:
+            cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
+            log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
+            log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
+            cloud_db.save_signal_log(log_entry)
+            print(f"ℹ️ Credit Spread trade बंद आहे (credit_spread_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
 
         naked_status = ""
         naked_result = None
@@ -392,16 +408,18 @@ def process_symbol(access_token, symbol, lot_size=65):
 
         strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
+        credit_spread_line = f"Credit Spread: {strategy_label} — {trade_status}\n" if spread_result is not None else ""
         rsi_display = f"RSI {rsi_value} (फिल्टर पास)" if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)"
         message = (
             f"🎯 <b>{symbol} SRv2 Momentum-Reversal ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/2 वा hit)\n"
             f"{level_type} {level_price:.2f} — {rsi_display}.\n"
-            f"Credit Spread: {strategy_label} — {trade_status}\n"
+            + credit_spread_line
             + naked_line
             + f"वेळ: {now.strftime('%H:%M:%S')}"
         )
         send_telegram_message(message)
-        return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({timeframe_suffix}, {rsi_display}) -> {strategy_label} PAPER trade {trade_status}"
+        combined_status = trade_status or naked_status or "कुठलाही trade प्रकार सक्रिय नाही (credit_spread_enabled व naked_enabled दोन्ही बंद)"
+        return f"{symbol}: 🎯 {level_type} {level_price:.2f} ({timeframe_suffix}, {rsi_display}) -> {strategy_label} PAPER trade {combined_status}"
 
     return f"{symbol}: कुठलाही SRv2 level (15M/30M/60M, RSI+Multi-Hit मर्यादेसह) पात्र ठरला नाही"
 
