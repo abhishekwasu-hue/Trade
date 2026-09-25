@@ -159,7 +159,10 @@ _rpt_badge_grey = ParagraphStyle("rpt_badge_grey", fontName=_RPT_FONT_BOLD, font
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sub heading font size thod kami kra") — bilingual मथळे
 # इंग्लिश-only पेक्षा साधारण दुप्पट लांब असल्याने 18pt वर 2-3 ओळींत wrap व्हायचे (जागा जास्त
 # जायची) — आता 15pt, कमी जागेत बसतं, तरीही स्पष्ट वाचता येण्याइतकं मोठंच आहे.
-_rpt_h2_bt_bi = ParagraphStyle("rpt_h2_bt_bi", fontName=_DEVANAGARI_FONT_BOLD, fontSize=15, leading=19, textColor=colors.white, spaceBefore=0, spaceAfter=0)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black colour nko... Adhi sarkhe kra [फिरणारे रंग], pn
+# background chya पट्टी nko") — घन-रंगाची पट्टी (पांढरा मजकूर लागणारी) पूर्णपणे काढली, त्याऐवजी
+# _section_header_accent (डावीकडे रंगीत accent bar + फिकट पार्श्वभूमी) — मजकूर आता गडद रंगात.
+_rpt_h2_accent_bi = ParagraphStyle("rpt_h2_accent_bi", fontName=_DEVANAGARI_FONT_BOLD, fontSize=15, leading=19, textColor=_C_BG_DARK, spaceBefore=0, spaceAfter=0)
 
 # 🎓 इंग्लिश-only लेबल्सपेक्षा bilingual लेबल्स साधारण दुप्पट लांब असतात — plain string म्हणून
 # _kv_table च्या key column मध्ये दिली तर wrap न होता उजवीकडच्या value column वर overflow/overlap
@@ -200,16 +203,32 @@ def _bi_line(en, mr, font_size=11):
     संदेश) — पण Paragraph स्वरूपात, Devanagari-सुसंगत font सह."""
     return Paragraph(_bi(en, mr), ParagraphStyle(f"bi_line_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=font_size + 4))
 
-def _section_header(text, idx, style=None, color=None):
-    """Coloured full-width banner for each section heading — rotates through an accent palette by
-    default (idx % len), or uses a fixed `color` when given (e.g. Performance Report's consistent
-    dark banner, for a single-brand-color professional look instead of a rotating rainbow)."""
-    color = color or _SECTION_COLORS[idx % len(_SECTION_COLORS)]
+def _section_header(text, idx, style=None):
+    """Coloured full-width banner for each section heading — rotates through an accent palette."""
+    color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
     tbl = Table([[Paragraph(text, style or _rpt_h2)]], colWidths=[18 * cm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), color),
         ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return tbl
+
+def _section_header_accent(text, idx, style):
+    """वापरकर्त्याने मागितलेली सुधारणा ("Adhi sarkhe kra [rotating रंग], pn background चया पट्टी
+    nko") — पूर्वीचाच फिरणारा रंग-क्रम (_SECTION_COLORS, idx नुसार) ठेवला, पण संपूर्ण-रुंदीची घन
+    रंगाची पट्टी (solid banner) काढून टाकली — आता पांढरी/फिकट पार्श्वभूमी + डावीकडे तेवढाच रंगीत
+    उभा accent bar, मथळ्याचा मजकूर गडद रंगात. फक्त Performance Report साठी (इतर report types चा
+    मूळ _section_header आधीसारखाच, अस्पर्श)."""
+    color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
+    bar_w = 0.28 * cm
+    tbl = Table([["", Paragraph(text, style)]], colWidths=[bar_w, 18 * cm - bar_w])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
+        ("LEFTPADDING", (1, 0), (1, -1), 12), ("RIGHTPADDING", (1, 0), (1, -1), 10),
+        ("LEFTPADDING", (0, 0), (0, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return tbl
 
@@ -2032,15 +2051,12 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
 
     def next_section(text):
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (dual-language PDF — इंग्रजी + शुद्ध देवनागरी मराठी) —
-        # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत font style
-        # (_rpt_h2_bt_bi) — इतर report types (Signal Check/Backtest/Market Analysis) यापासून अस्पर्श.
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Professional look द्या") — आधी प्रत्येक विभागाचा banner
-        # वेगळ्या, ठळक रंगात (निळा/जांभळा/हिरवा/अंबर/लाल — क्रमानुसार फिरणारा) दिसायचा, जो अर्थहीन
-        # "इंद्रधनुष्य" सारखा दिसत होता. आता सगळे मुख्य मथळे एकाच, title bar शी जुळणाऱ्या गडद रंगात
-        # (_C_BG_DARK) — एकसंध, brand-सुसंगत, गंभीर आर्थिक रिपोर्टसाठी शोभेल असं दिसतं. (Trade Log
-        # आतले Timeframe-निहाय उप-मथळे — 1M/5M/इ. — मुद्दाम वेगळे रंगीत आहेत, ते फक्त सजावट नसून
-        # वेगवेगळे गट पटकन ओळखता यावेत म्हणून आहेत, त्यामुळे तसेच ठेवले.)
-        story.append(_section_header(text, sec[0], style=_rpt_h2_bt_bi, color=_C_BG_DARK))
+        # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत font style.
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Black colour nko, Adhi sarkhe kra [फिरणारे रंग], pn
+        # background chya पट्टी nko") — पहिला प्रयत्न (घन गडद पट्टी, सगळीकडे एकच रंग) नाकारला गेला —
+        # आता पूर्वीचाच फिरणारा रंग-क्रम (_section_header_accent, प्रत्येक विभागाचा वेगळा रंग) पण
+        # संपूर्ण-रुंदीची घन पट्टी नाही — फक्त डावीकडे तेवढा रंगीत accent bar, बाकी फिकट पार्श्वभूमी.
+        story.append(_section_header_accent(text, sec[0], style=_rpt_h2_accent_bi))
         sec[0] += 1
         story.append(Spacer(1, 8))
 
