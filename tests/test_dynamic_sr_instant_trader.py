@@ -407,6 +407,34 @@ class TestProcessSymbol:
             naked_diag = [e for e in logged_entries if e.get("trade_status") == "SKIPPED_NAKED_STRIKE_NOT_FOUND"]
             assert len(naked_diag) == 1
 
+    def test_level_type_in_log_follows_hysteresis_direction_not_stale_zone_type(self):
+        """🎓 वापरकर्त्याने सापडवलेली bug ("SR flip साठी hysteresis 0.10% ठेवला, त्यानुसार हा level
+        resistance व्हायलाच नको होता") — Signal Log चा level_type (आणि role, hit-counting/Breakout
+        Entry साठी) आता hysteresis-संरक्षित `direction` वरून ठरतो, `row["zone_type"]` (raw, DB-साठवलेला,
+        merge-cron ने वारंवार बदलणारा) वरून नाही. _fake_zones() मधला 23900 चा zone_type SUPPORT_5M
+        आहे, पण किंमत आता निर्णायकपणे त्याच्या खाली गॅप-डाऊन झालीये (जसं वरच्या gap-through टेस्ट मध्ये)
+        -- त्यामुळे level_type/role आता RESISTANCE असायला हवा, stale SUPPORT नाही."""
+        candles_gap = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_gap), \
+             patch.object(dsr, "check_instant_rsi_filter", return_value=(True, 65.0)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            dsr.process_symbol("fake_token", "NIFTY")
+            logged_entries = [c.args[0] for c in mock_log.call_args_list]
+            level_23900_entries = [e for e in logged_entries if e["level_price"] == 23900.0]
+            assert level_23900_entries
+            assert all(e["level_type"] == "DYNAMIC_SR_RESISTANCE_5M" for e in level_23900_entries)
+
     def test_short_leg_uses_itm_depth_from_settings(self):
         """वापरकर्त्याशी चर्चा करून सुधारित (Bot Dynamic SR Algo -- नवीन नियम-संच) -- Short leg
         आता ITM दिशेने (settings मधल्या itm_depth_points इतका, डीफॉल्ट 50) -- जुना ATM-आधारित

@@ -269,6 +269,16 @@ def process_symbol(access_token, symbol, lot_size=65):
         # (बघा determine_direction_with_hysteresis()) — किंमत level पासून ±0.10% च्या आतच wobble
         # करत असेल, तर आधीचीच निश्चित दिशा कायम राहते, प्रत्येक मिनिटाला उगाच फ्लिप होत नाही.
         direction = determine_direction_with_hysteresis(row["zone_low"], todays_closes)
+        # 🎓 वापरकर्त्याने सापडवलेली bug ("SR flip साठी hysteresis 0.10% ठेवला, त्यानुसार हा level
+        # resistance व्हायलाच नको होता") — role (SUPPORT/RESISTANCE, hit-counting आणि Breakout Entry
+        # च्या दिशेसाठी वापरला जाणारा) आधी वरच्या `direction` ला अजिबात न जुमानता, थेट `row["zone_type"]`
+        # (DB मध्ये साठवलेला, दर ५-मिनिटांच्या merge-cron ने वारंवार पुन्हा-गणना होणारा raw label)
+        # मधून यायचा — त्यामुळे किंमत level च्या अगदी जवळ wobble करत असतानाही role फ्लिप व्हायचा,
+        # जो नेमका hysteresis ने टाळायचा होता (तो फक्त इथल्याच RSI Gate/Telegram च्या `direction` ला
+        # जोडला गेला होता, इथे कधीच नाही). आता srv2_momentum_reversal_strategy.py सारखाच, वरच्याच
+        # hysteresis-संरक्षित `direction` वरून role/level_type काढला जातो — त्यामुळे hit-counting,
+        # Breakout Entry ची दिशा, आणि Signal Log — तिन्ही सुसंगत राहतात.
+        role = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
         # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
         # च्या आतच ठरायचा, पण खाली (यशस्वी trade नंतरच्या Telegram संदेशात) कायम वापरला जायचा — RSI Gate
         # Dashboard वरून बंद केला की इथे NameError येऊन entire script क्रॅश व्हायचा, अगदी order
@@ -276,7 +286,8 @@ def process_symbol(access_token, symbol, lot_size=65):
         # अर्धवट थांबायचं). आता आधीच None ने सुरुवात — गेट बंद असेल तर संदेशातही तेच स्पष्ट दिसेल.
         rsi_value = None
         log_entry = {
-            "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": row["zone_type"],
+            "symbol": symbol, "trade_date": trade_date, "signal_time": now,
+            "level_type": f"DYNAMIC_SR_{role}_{timeframe_suffix}",
             "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
             # 🎓 वापरकर्त्याने सापडवलेली bug — हा संदेश "level cross आढळला नाही" असायचा, पण प्रत्यक्ष
             # निकष (check_level_crossed वरचा docstring बघा) TOUCH किंवा GAP_THROUGH आहे — "cross" या
@@ -304,7 +315,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         # असेल आणि "buildup" (A: hit_count_so_far>=2 आधीच इथे, + C: price consolidation, बघा वरची
         # फाईल-टिप्पणी) + 5-मिनिट candle त्या level पलीकडे (breakout-दिशेने — मूळ 2 trades च्या उलट)
         # close झाला, तरच हा तिसरा, वेगळा (max-2 च्या पलीकडचा) trade घेतला जातो.
-        role = cloud_db.zone_role_from_type(row["zone_type"])
+        # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
         )
