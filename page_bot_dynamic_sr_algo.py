@@ -21,7 +21,7 @@ from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, 
 
 SYMBOLS = ["NIFTY", "BANKNIFTY", "SENSEX"]
 STRATEGY_LABELS = {
-    "1m_instant": "1-मिनिट Instant Trader (1M + 5M)",
+    "1m_instant": "5-मिनिट Instant Trader (1M + 5M)",
     "15m_dynamic_sr": "15M/30M/60M Dynamic SR Reversal",
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, नवीन स्वतंत्र तिसरी strategy — "Classical Support/Resistance
     # Reversal" (5M+15M pooled). आधीच्या दोन strategies पूर्णपणे अबाधित — फक्त हा नवीन पर्याय जोडलेला.
@@ -198,7 +198,7 @@ def _render_vix_spike_halt_panel():
 
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
-    st.caption("तिन्ही strategies (1-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
+    st.caption("तिन्ही strategies (5-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     _render_live_status_banner()
     _render_kill_switch_panel()
