@@ -80,154 +80,160 @@ def _render_strategy_builder():
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull-सारखं Ready-Made Templates,
         # एका क्लिकवर संपूर्ण रणनीती (योग्य strikes + live premium + instrument_key सह) लोड होते.
-        sub_header("🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)", HDR_BLUE)
-        rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
-        rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
-        for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
-            with rm_cols[rm_i]:
-                if st.button(rm_name, key=f"rm_{rm_name}", width="stretch"):
-                    template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
-                    new_legs = []
-                    for tleg in template_legs:
-                        matched = chain_by_strike.get(tleg["strike"])
-                        premium, instr_key = 0.0, None
-                        if matched:
-                            opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
-                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                            instr_key = opt_data.get("instrument_key")
-                        new_legs.append({**tleg, "premium": premium, "lot_size": int(lot_size), "instrument_key": instr_key})
-                    st.session_state["strategy_builder_legs"] = new_legs
-                    st.rerun()
+        with st.expander("🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)", expanded=False):
+            sub_header("🚀 Ready-Made Strategy (एका क्लिकवर लोड करा)", HDR_BLUE)
+            rm_category = st.radio("प्रकार", list(sp.READY_MADE_CATEGORIES.keys()), horizontal=True, key="rm_category")
+            rm_cols = st.columns(len(sp.READY_MADE_CATEGORIES[rm_category]))
+            for rm_i, rm_name in enumerate(sp.READY_MADE_CATEGORIES[rm_category]):
+                with rm_cols[rm_i]:
+                    if st.button(rm_name, key=f"rm_{rm_name}", width="stretch"):
+                        template_legs = sp.build_ready_made_strategy(rm_name, atm_strike, hedge_width=hedge_width_points)
+                        new_legs = []
+                        for tleg in template_legs:
+                            matched = chain_by_strike.get(tleg["strike"])
+                            premium, instr_key = 0.0, None
+                            if matched:
+                                opt_data = matched.get("call_options" if tleg["option_type"] == "CE" else "put_options", {})
+                                premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                                instr_key = opt_data.get("instrument_key")
+                            new_legs.append({**tleg, "premium": premium, "lot_size": int(lot_size), "instrument_key": instr_key})
+                        st.session_state["strategy_builder_legs"] = new_legs
+                        st.rerun()
         st.markdown("---")
 
         available_strikes = sorted({row["strike_price"] for row in raw_chain}) if raw_chain else []
         if not available_strikes:
             st.warning("Option chain डेटा उपलब्ध नाही.")
         else:
-            sub_header("➕ नवीन Leg जोडा", HDR_TEAL)
-            lc1, lc2, lc3, lc4 = st.columns(4)
-            with lc1:
-                leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
-            with lc2:
-                leg_option_type = st.selectbox("प्रकार", ["CE", "PE"], key="sb_option_type")
-            default_strike_idx = min(range(len(available_strikes)), key=lambda i: abs(available_strikes[i] - atm_strike)) if available_strikes else 0
-            with lc3:
-                leg_strike = st.selectbox("Strike", available_strikes, index=default_strike_idx, key="sb_strike")
-            with lc4:
-                leg_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_lots")
+            with st.expander("➕ नवीन Leg जोडा", expanded=False):
+                sub_header("➕ नवीन Leg जोडा", HDR_TEAL)
+                lc1, lc2, lc3, lc4 = st.columns(4)
+                with lc1:
+                    leg_direction = st.selectbox("दिशा", ["BUY", "SELL"], key="sb_direction")
+                with lc2:
+                    leg_option_type = st.selectbox("प्रकार", ["CE", "PE"], key="sb_option_type")
+                default_strike_idx = min(range(len(available_strikes)), key=lambda i: abs(available_strikes[i] - atm_strike)) if available_strikes else 0
+                with lc3:
+                    leg_strike = st.selectbox("Strike", available_strikes, index=default_strike_idx, key="sb_strike")
+                with lc4:
+                    leg_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_lots")
 
-            # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
-            auto_premium = 0.0
-            matched_row = chain_by_strike.get(leg_strike)
-            if matched_row:
-                opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
-                auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-            leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
-
-            if st.button("➕ Leg जोडा"):
-                instrument_key = None
+                # 🎓 Strike निवडल्यावर, त्याच strike/type ची सद्य LTP आपोआप premium म्हणून भरणे
+                auto_premium = 0.0
+                matched_row = chain_by_strike.get(leg_strike)
                 if matched_row:
                     opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
-                    instrument_key = opt_data.get("instrument_key")
-                st.session_state["strategy_builder_legs"].append({
-                    "direction": leg_direction, "option_type": leg_option_type, "strike": float(leg_strike),
-                    "premium": float(leg_premium), "lots": int(leg_lots), "lot_size": int(lot_size),
-                    "instrument_key": instrument_key,
-                })
-                st.rerun()
+                    auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
+
+                if st.button("➕ Leg जोडा"):
+                    instrument_key = None
+                    if matched_row:
+                        opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
+                        instrument_key = opt_data.get("instrument_key")
+                    st.session_state["strategy_builder_legs"].append({
+                        "direction": leg_direction, "option_type": leg_option_type, "strike": float(leg_strike),
+                        "premium": float(leg_premium), "lots": int(leg_lots), "lot_size": int(lot_size),
+                        "instrument_key": instrument_key,
+                    })
+                    st.rerun()
 
         legs = st.session_state["strategy_builder_legs"]
         if not legs:
             st.info("अजून कुठलेही legs जोडलेले नाहीत — वरून जोडा.")
         else:
-            sub_header("📜 सद्य Legs", HDR_PURPLE)
-            for i, leg in enumerate(legs):
-                lcol1, lcol2 = st.columns([5, 1])
-                with lcol1:
-                    st.write(f"{leg['direction']} {leg['option_type']} {leg['strike']:.0f} @ ₹{leg['premium']:.2f} × {leg['lots']} lot(s)")
-                with lcol2:
-                    if st.button("🗑️", key=f"sb_remove_{i}"):
-                        st.session_state["strategy_builder_legs"].pop(i)
-                        st.rerun()
+            with st.expander("📜 सद्य Legs", expanded=False):
+                sub_header("📜 सद्य Legs", HDR_PURPLE)
+                for i, leg in enumerate(legs):
+                    lcol1, lcol2 = st.columns([5, 1])
+                    with lcol1:
+                        st.write(f"{leg['direction']} {leg['option_type']} {leg['strike']:.0f} @ ₹{leg['premium']:.2f} × {leg['lots']} lot(s)")
+                    with lcol2:
+                        if st.button("🗑️", key=f"sb_remove_{i}"):
+                            st.session_state["strategy_builder_legs"].pop(i)
+                            st.rerun()
 
-            if st.button("🧹 सर्व Legs काढा"):
-                st.session_state["strategy_builder_legs"] = []
-                st.rerun()
+                if st.button("🧹 सर्व Legs काढा"):
+                    st.session_state["strategy_builder_legs"] = []
+                    st.rerun()
 
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
-            # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
-            # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
-            sub_header("🎛️ Strike Controls", HDR_ORANGE)
-            shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
-            if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
-                shifted_legs = []
-                for leg in legs:
-                    new_strike = leg["strike"] + shift_amount
-                    matched = chain_by_strike.get(new_strike)
-                    premium, instr_key = leg["premium"], leg.get("instrument_key")
-                    if matched:
-                        opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
-                        premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                        instr_key = opt_data.get("instrument_key")
-                    shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
-                st.session_state["strategy_builder_legs"] = shifted_legs
-                st.rerun()
+            with st.expander("🎛️ Strike Controls", expanded=False):
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या "Strike Controls" सारखं
+                # Shift control — सर्व legs चे strikes एकत्रितपणे वर/खाली हलवणे (नवीन premium/
+                # instrument_key त्याच strike वर live chain मधून पुन्हा भरून).
+                sub_header("🎛️ Strike Controls", HDR_ORANGE)
+                shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
+                if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
+                    shifted_legs = []
+                    for leg in legs:
+                        new_strike = leg["strike"] + shift_amount
+                        matched = chain_by_strike.get(new_strike)
+                        premium, instr_key = leg["premium"], leg.get("instrument_key")
+                        if matched:
+                            opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
+                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
+                            instr_key = opt_data.get("instrument_key")
+                        shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
+                    st.session_state["strategy_builder_legs"] = shifted_legs
+                    st.rerun()
 
-            # --- Payoff Diagram (OI Overlay सह) ---
-            price_range = sp.build_default_price_range(underlying_price, num_points=100, range_pct=5.0)
-            payoff_curve = sp.compute_strategy_payoff_curve(legs, price_range)
-            max_profit, max_loss = sp.compute_max_profit_loss(payoff_curve)
-            breakevens = sp.find_breakeven_points(price_range, payoff_curve)
+            with st.expander("📈 Payoff Diagram (P&L Chart + OI Overlay)", expanded=False):
+                # --- Payoff Diagram (OI Overlay सह) ---
+                price_range = sp.build_default_price_range(underlying_price, num_points=100, range_pct=5.0)
+                payoff_curve = sp.compute_strategy_payoff_curve(legs, price_range)
+                max_profit, max_loss = sp.compute_max_profit_loss(payoff_curve)
+                breakevens = sp.find_breakeven_points(price_range, payoff_curve)
 
-            gcol1, gcol2, gcol3 = st.columns(3)
-            gcol1.metric("कमाल नफा (या range मध्ये)", f"₹{max_profit:,.0f}")
-            gcol2.metric("कमाल तोटा (या range मध्ये)", f"₹{max_loss:,.0f}")
-            gcol3.metric("Breakeven", ", ".join(f"{b:,.0f}" for b in breakevens) if breakevens else "—")
+                gcol1, gcol2, gcol3 = st.columns(3)
+                gcol1.metric("कमाल नफा (या range मध्ये)", f"₹{max_profit:,.0f}")
+                gcol2.metric("कमाल तोटा (या range मध्ये)", f"₹{max_loss:,.0f}")
+                gcol3.metric("Breakeven", ", ".join(f"{b:,.0f}" for b in breakevens) if breakevens else "—")
 
-            import plotly.graph_objects as go
-            from plotly.subplots import make_subplots
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या payoff chart मागे दिसणारे
-            # OI bars (प्रत्येक strike ला किती Call/Put OI आहे) -- कुठल्या strikes ला जास्त
-            # "रोध"/"आधार" आहे हे दृश्य स्वरूपात कळण्यासाठी.
-            oi_strikes = [r["strike_price"] for r in raw_chain if price_range[0] <= r["strike_price"] <= price_range[-1]]
-            if oi_strikes:
-                # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
-                # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
-                # established chain_by_strike (वर एकदाच बांधलेलं) वापरून O(1) शोध -- आधी established
-                # प्रत्येक strike साठी संपूर्ण raw_chain पुन्हा स्कॅन व्हायचा (O(n²), संथपणाचं मुख्य कारण).
-                from oi_analysis import _extract_oi_ltp
-                ce_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "call_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
-                pe_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "put_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
-                fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
-                fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Sensibull च्या payoff chart मागे दिसणारे
+                # OI bars (प्रत्येक strike ला किती Call/Put OI आहे) -- कुठल्या strikes ला जास्त
+                # "रोध"/"आधार" आहे हे दृश्य स्वरूपात कळण्यासाठी.
+                oi_strikes = [r["strike_price"] for r in raw_chain if price_range[0] <= r["strike_price"] <= price_range[-1]]
+                if oi_strikes:
+                    # 🎓 established _extract_oi_ltp() च्याच defensive (.get()) पॅटर्नने -- direct
+                    # indexing (r["call_options"]["market_data"]) टाळून, गहाळ keys मुळे crash होऊ नये.
+                    # established chain_by_strike (वर एकदाच बांधलेलं) वापरून O(1) शोध -- आधी established
+                    # प्रत्येक strike साठी संपूर्ण raw_chain पुन्हा स्कॅन व्हायचा (O(n²), संथपणाचं मुख्य कारण).
+                    from oi_analysis import _extract_oi_ltp
+                    ce_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "call_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
+                    pe_oi_vals = [_extract_oi_ltp(chain_by_strike[s], "put_options")[0] if s in chain_by_strike else 0 for s in oi_strikes]
+                    fig.add_trace(go.Bar(x=oi_strikes, y=ce_oi_vals, name="Call OI", marker_color="#F23645", opacity=0.3), secondary_y=True)
+                    fig.add_trace(go.Bar(x=oi_strikes, y=pe_oi_vals, name="Put OI", marker_color="#089981", opacity=0.3), secondary_y=True)
 
-            fig.add_trace(go.Scatter(x=price_range, y=payoff_curve, mode="lines", name="P&L", line=dict(color="#2962ff", width=2), fill="tozeroy"), secondary_y=False)
-            fig.add_hline(y=0, line_dash="dash", line_color="#787b86")
-            fig.add_vline(x=underlying_price, line_dash="dot", line_color="#f0b90b", annotation_text="सद्य किंमत")
-            fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
-            fig.update_yaxes(title_text="P&L (₹)", secondary_y=False)
-            fig.update_yaxes(title_text="Open Interest", secondary_y=True)
-            st.plotly_chart(fig, use_container_width=True)
+                fig.add_trace(go.Scatter(x=price_range, y=payoff_curve, mode="lines", name="P&L", line=dict(color="#2962ff", width=2), fill="tozeroy"), secondary_y=False)
+                fig.add_hline(y=0, line_dash="dash", line_color="#787b86")
+                fig.add_vline(x=underlying_price, line_dash="dot", line_color="#f0b90b", annotation_text="सद्य किंमत")
+                fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10), barmode="group")
+                fig.update_yaxes(title_text="P&L (₹)", secondary_y=False)
+                fig.update_yaxes(title_text="Open Interest", secondary_y=True)
+                st.plotly_chart(fig, use_container_width=True)
 
-            # --- Combined Greeks (established fetch_option_greeks पुनर्वापर) ---
-            instrument_keys = [leg["instrument_key"] for leg in legs if leg.get("instrument_key")]
-            if instrument_keys and token_input.strip():
-                greeks_map = fetch_option_greeks(token_input, instrument_keys)
-                legs_with_greeks = []
-                for leg in legs:
-                    g = greeks_map.get(leg.get("instrument_key"), {})
-                    legs_with_greeks.append({**leg, **g})
-                combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
-                sub_header("🧮 Combined Greeks (संपूर्ण Strategy)", HDR_PINK)
-                ecol1, ecol2, ecol3, ecol4 = st.columns(4)
-                ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
-                ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
-                ecol3.metric("Theta", f"{combined_greeks['theta']:.2f}")
-                ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
-            else:
-                st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
+            with st.expander("🧮 Combined Greeks (संपूर्ण Strategy)", expanded=False):
+                # --- Combined Greeks (established fetch_option_greeks पुनर्वापर) ---
+                instrument_keys = [leg["instrument_key"] for leg in legs if leg.get("instrument_key")]
+                if instrument_keys and token_input.strip():
+                    greeks_map = fetch_option_greeks(token_input, instrument_keys)
+                    legs_with_greeks = []
+                    for leg in legs:
+                        g = greeks_map.get(leg.get("instrument_key"), {})
+                        legs_with_greeks.append({**leg, **g})
+                    combined_greeks = sp.compute_combined_greeks(legs_with_greeks)
+                    sub_header("🧮 Combined Greeks (संपूर्ण Strategy)", HDR_PINK)
+                    ecol1, ecol2, ecol3, ecol4 = st.columns(4)
+                    ecol1.metric("Delta", f"{combined_greeks['delta']:.2f}")
+                    ecol2.metric("Gamma", f"{combined_greeks['gamma']:.4f}")
+                    ecol3.metric("Theta", f"{combined_greeks['theta']:.2f}")
+                    ecol4.metric("Vega", f"{combined_greeks['vega']:.2f}")
+                else:
+                    st.caption("Greeks दाखवण्यासाठी वैध Token हवा.")
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Strategy Builder मधूनच थेट execution,
             # संपूर्ण strategy साठी एकत्रित (combined) SL/Target सह — प्रति-leg नाही.
@@ -238,130 +244,131 @@ def _render_strategy_builder():
             # LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही (फक्त data-fetch पडताळलेलं) —
             # वापरकर्त्याने स्वतः काळजीपूर्वक, लहान आकारात प्रत्यक्ष टेस्ट करण्याचं मान्य केलं आहे.
             st.markdown("---")
-            sub_header("🚀 Strategy Execute करा (Combined SL/Target)", HDR_GREEN)
+            with st.expander("🚀 Strategy Execute करा (Combined SL/Target)", expanded=False):
+                sub_header("🚀 Strategy Execute करा (Combined SL/Target)", HDR_GREEN)
 
-            import cloud_db
-            from broker_factory import get_broker_adapter
+                import cloud_db
+                from broker_factory import get_broker_adapter
 
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी कुठलाही account
-            # नोंदवलेला असेल, तर "डीफॉल्ट (Dashboard चा रोजचा Upstox token)" हा पर्यायच dropdown
-            # मधून पूर्णपणे गायब व्हायचा — म्हणजे established एकच खरं Upstox खातं असलेल्या
-            # वापरकर्त्याला (established वेगळं Multi-Account नकोच असताना) उगाच account नोंदवावं
-            # लागायचं. आता established डीफॉल्ट पर्याय **नेहमीच** उपलब्ध असतो, नोंदवलेल्या accounts
-            # सोबतच — आणि established LIVE साठीही चालतो (established Dashboard चा रोजचा token
-            # थेट adapter=None म्हणून वापरला जातो, established आधीच पूर्णपणे पडताळलेला मार्ग).
-            DEFAULT_ACCOUNT_LABEL = "डीफॉल्ट (Dashboard चा रोजचा Upstox token)"
-            accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
-            account_options = [DEFAULT_ACCOUNT_LABEL]
-            account_lookup = {}
-            if accounts_df is not None and not accounts_df.empty:
-                for _, row in accounts_df.iterrows():
-                    label = f"{row['account_id']} ({row['broker_type']})"
-                    account_options.append(label)
-                    account_lookup[label] = row
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — established आधी कुठलाही account
+                # नोंदवलेला असेल, तर "डीफॉल्ट (Dashboard चा रोजचा Upstox token)" हा पर्यायच dropdown
+                # मधून पूर्णपणे गायब व्हायचा — म्हणजे established एकच खरं Upstox खातं असलेल्या
+                # वापरकर्त्याला (established वेगळं Multi-Account नकोच असताना) उगाच account नोंदवावं
+                # लागायचं. आता established डीफॉल्ट पर्याय **नेहमीच** उपलब्ध असतो, नोंदवलेल्या accounts
+                # सोबतच — आणि established LIVE साठीही चालतो (established Dashboard चा रोजचा token
+                # थेट adapter=None म्हणून वापरला जातो, established आधीच पूर्णपणे पडताळलेला मार्ग).
+                DEFAULT_ACCOUNT_LABEL = "डीफॉल्ट (Dashboard चा रोजचा Upstox token)"
+                accounts_df = cloud_db.get_all_broker_accounts(active_only=True)
+                account_options = [DEFAULT_ACCOUNT_LABEL]
+                account_lookup = {}
+                if accounts_df is not None and not accounts_df.empty:
+                    for _, row in accounts_df.iterrows():
+                        label = f"{row['account_id']} ({row['broker_type']})"
+                        account_options.append(label)
+                        account_lookup[label] = row
 
-            sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
-            selected_account = account_lookup.get(sel_account_label)
+                sel_account_label = st.selectbox("Broker Account निवडा", account_options, key="sb_account_select")
+                selected_account = account_lookup.get(sel_account_label)
 
-            if selected_account is not None and selected_account["broker_type"] == "stocko":
-                st.warning("⚠️ Stocko वर अजून फक्त LIVE order-placement उपलब्ध आहे — PAPER mode साठी लागणारा LTP/Market Data API अजून जोडलेला नाही (वेगळा दस्तऐवज लागेल).")
+                if selected_account is not None and selected_account["broker_type"] == "stocko":
+                    st.warning("⚠️ Stocko वर अजून फक्त LIVE order-placement उपलब्ध आहे — PAPER mode साठी लागणारा LTP/Market Data API अजून जोडलेला नाही (वेगळा दस्तऐवज लागेल).")
 
-            trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
-            confirm_live = True
-            if trading_mode_choice == "LIVE":
-                if selected_account is not None and selected_account["broker_type"] in ("fyers", "shoonya", "stocko"):
-                    st.warning(f"⚠️ {selected_account['broker_type'].title()} वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
-                confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
-                if not confirm_live:
-                    st.info("LIVE trade करण्यासाठी वरचा confirmation आधी टिक करा.")
+                trading_mode_choice = st.radio("Trading Mode", ["PAPER", "LIVE"], horizontal=True, key="sb_trading_mode")
+                confirm_live = True
+                if trading_mode_choice == "LIVE":
+                    if selected_account is not None and selected_account["broker_type"] in ("fyers", "shoonya", "stocko"):
+                        st.warning(f"⚠️ {selected_account['broker_type'].title()} वर LIVE order-placement अजून व्यापक प्रमाणात पडताळलेलं नाही — स्वतःच्या जबाबदारीवर, लहान आकारात आधी टेस्ट करा.")
+                    confirm_live = st.checkbox("⚠️ मला समजतं — हा खरा पैशांचा व्यवहार असेल (LIVE), आणि मी याची जबाबदारी घेतो.", key="sb_confirm_live")
+                    if not confirm_live:
+                        st.info("LIVE trade करण्यासाठी वरचा confirmation आधी टिक करा.")
 
-            missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
-            if missing_keys:
-                st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
-            else:
-                ecol_sl, ecol_target = st.columns(2)
-                with ecol_sl:
-                    sl_pct = st.number_input(
-                        "SL % (Credit चा, किंवा Debit असल्यास Max Loss चा)",
-                        min_value=1, max_value=100, value=30, step=5, key="sb_sl_pct",
-                    )
-                with ecol_target:
-                    target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
-                exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
+                missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
+                if missing_keys:
+                    st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
+                else:
+                    ecol_sl, ecol_target = st.columns(2)
+                    with ecol_sl:
+                        sl_pct = st.number_input(
+                            "SL % (Credit चा, किंवा Debit असल्यास Max Loss चा)",
+                            min_value=1, max_value=100, value=30, step=5, key="sb_sl_pct",
+                        )
+                    with ecol_target:
+                        target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
+                    exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
 
-                execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
-                button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
-                if st.button(button_label, type="primary", disabled=execute_disabled):
-                    adapter = None
-                    exec_token = token_input
-                    if selected_account is not None:
-                        adapter, adapter_error = get_broker_adapter(selected_account["account_id"], selected_account["broker_type"])
-                        if adapter is None:
-                            st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
-                            st.stop()
+                    execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
+                    button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
+                    if st.button(button_label, type="primary", disabled=execute_disabled):
+                        adapter = None
+                        exec_token = token_input
+                        if selected_account is not None:
+                            adapter, adapter_error = get_broker_adapter(selected_account["account_id"], selected_account["broker_type"])
+                            if adapter is None:
+                                st.error(f"Broker Adapter तयार करता आला नाही: {adapter_error}")
+                                st.stop()
 
-                    # 🎓 वापरकर्त्याने सांगितल्याप्रमाणे — PAPER trading ला खऱ्या पैशांची गरजच नाही,
-                    # त्यामुळे Margin Check फक्त LIVE mode साठीच लागू — PAPER mode ला पूर्णपणे वगळलेलं.
-                    if trading_mode_choice == "LIVE":
-                        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — चुकीची
-                        # entry ब्रोकर अकाउंटला जाऊन order-reject/अर्धवट-fill होण्याआधीच, निवडलेल्या
-                        # account मध्ये पुरेशी मार्जिन आहे का तपासणे. Upstox असेल तर अधिकृत Margin
-                        # Calculator API (नेमकी, hedge-फायद्यासकट); अन्यथा (Fyers इ., जिथे ही अचूक API
-                        # उपलब्ध नाही) max_loss-आधारित सुरक्षित (worst-case) अंदाज.
-                        margin_check_orders = [
-                            {
-                                "instrument_token": leg["instrument_key"], "quantity": exec_lots * int(lot_size),
-                                "transaction_type": leg["direction"], "product": "D",
-                            }
-                            for leg in legs
-                        ]
-                        if adapter is not None:
-                            required_margin = adapter.get_required_margin(margin_check_orders)
-                            available_margin = adapter.get_funds()
+                        # 🎓 वापरकर्त्याने सांगितल्याप्रमाणे — PAPER trading ला खऱ्या पैशांची गरजच नाही,
+                        # त्यामुळे Margin Check फक्त LIVE mode साठीच लागू — PAPER mode ला पूर्णपणे वगळलेलं.
+                        if trading_mode_choice == "LIVE":
+                            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — चुकीची
+                            # entry ब्रोकर अकाउंटला जाऊन order-reject/अर्धवट-fill होण्याआधीच, निवडलेल्या
+                            # account मध्ये पुरेशी मार्जिन आहे का तपासणे. Upstox असेल तर अधिकृत Margin
+                            # Calculator API (नेमकी, hedge-फायद्यासकट); अन्यथा (Fyers इ., जिथे ही अचूक API
+                            # उपलब्ध नाही) max_loss-आधारित सुरक्षित (worst-case) अंदाज.
+                            margin_check_orders = [
+                                {
+                                    "instrument_token": leg["instrument_key"], "quantity": exec_lots * int(lot_size),
+                                    "transaction_type": leg["direction"], "product": "D",
+                                }
+                                for leg in legs
+                            ]
+                            if adapter is not None:
+                                required_margin = adapter.get_required_margin(margin_check_orders)
+                                available_margin = adapter.get_funds()
+                            else:
+                                required_margin = fetch_required_margin(exec_token, margin_check_orders)
+                                available_margin = get_available_margin(exec_token)
+
+                            strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
+                            if required_margin is None:
+                                # अचूक API उपलब्ध नाही (उदा. Fyers) — max_loss (worst-case तोटा) याच
+                                # रकमेपेक्षा जास्त मार्जिन प्रत्यक्षात लागतेच, म्हणून हा सुरक्षित
+                                # (conservative) किमान अंदाज.
+                                required_margin = abs(strategy_result["max_loss"]) * exec_lots * int(lot_size)
+                                margin_source_note = "(ढोबळ अंदाज — max_loss वरून, broker चं अचूक Margin API उपलब्ध नाही)"
+                            else:
+                                margin_source_note = "(broker च्या अचूक Margin Calculator वरून)"
+
+                            if available_margin is None:
+                                st.warning(f"⚠️ उपलब्ध मार्जिन तपासता आली नाही — काळजीपूर्वक पुढे जा. आवश्यक अंदाजे मार्जिन: ₹{required_margin:,.0f} {margin_source_note}")
+                            elif available_margin < required_margin:
+                                st.error(
+                                    f"❌ अपुरी मार्जिन — Trade घेतला जाणार नाही.\n\n"
+                                    f"आवश्यक: ₹{required_margin:,.0f} {margin_source_note}\n"
+                                    f"उपलब्ध: ₹{available_margin:,.0f}\n"
+                                    f"तूट: ₹{required_margin - available_margin:,.0f}"
+                                )
+                                st.stop()
+                            else:
+                                st.caption(f"✅ मार्जिन तपासली — आवश्यक ₹{required_margin:,.0f} {margin_source_note}, उपलब्ध ₹{available_margin:,.0f}")
                         else:
-                            required_margin = fetch_required_margin(exec_token, margin_check_orders)
-                            available_margin = get_available_margin(exec_token)
+                            strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
 
-                        strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
-                        if required_margin is None:
-                            # अचूक API उपलब्ध नाही (उदा. Fyers) — max_loss (worst-case तोटा) याच
-                            # रकमेपेक्षा जास्त मार्जिन प्रत्यक्षात लागतेच, म्हणून हा सुरक्षित
-                            # (conservative) किमान अंदाज.
-                            required_margin = abs(strategy_result["max_loss"]) * exec_lots * int(lot_size)
-                            margin_source_note = "(ढोबळ अंदाज — max_loss वरून, broker चं अचूक Margin API उपलब्ध नाही)"
-                        else:
-                            margin_source_note = "(broker च्या अचूक Margin Calculator वरून)"
-
-                        if available_margin is None:
-                            st.warning(f"⚠️ उपलब्ध मार्जिन तपासता आली नाही — काळजीपूर्वक पुढे जा. आवश्यक अंदाजे मार्जिन: ₹{required_margin:,.0f} {margin_source_note}")
-                        elif available_margin < required_margin:
-                            st.error(
-                                f"❌ अपुरी मार्जिन — Trade घेतला जाणार नाही.\n\n"
-                                f"आवश्यक: ₹{required_margin:,.0f} {margin_source_note}\n"
-                                f"उपलब्ध: ₹{available_margin:,.0f}\n"
-                                f"तूट: ₹{required_margin - available_margin:,.0f}"
+                        if strategy_result["is_credit_strategy"]:
+                            trade_result, trade_status = open_multi_leg_trade(
+                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
+                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
                             )
-                            st.stop()
                         else:
-                            st.caption(f"✅ मार्जिन तपासली — आवश्यक ₹{required_margin:,.0f} {margin_source_note}, उपलब्ध ₹{available_margin:,.0f}")
-                    else:
-                        strategy_result = sp.build_strategy_result_from_legs(legs, payoff_curve)
-
-                    if strategy_result["is_credit_strategy"]:
-                        trade_result, trade_status = open_multi_leg_trade(
-                            exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
-                            sl_pct_of_max_loss=None, target_pct_of_max_profit=target_pct,
-                            product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
-                            sl_pct_of_credit=sl_pct, source="strategy_builder", adapter=adapter,
-                        )
-                    else:
-                        trade_result, trade_status = open_multi_leg_trade(
-                            exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
-                            sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
-                            product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
-                            sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
-                        )
-                    st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
+                            trade_result, trade_status = open_multi_leg_trade(
+                                exec_token, symbol, strategy_result, lots=exec_lots, lot_size=int(lot_size),
+                                sl_pct_of_max_loss=sl_pct, target_pct_of_max_profit=target_pct,
+                                product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
+                                sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
+                            )
+                        st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
     except Exception as e:
         st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 
@@ -955,33 +962,34 @@ def _render_market_zones():
                 zones_with_role["current_role"] = zones_with_role.apply(
                     lambda r: compute_current_role(r["zone_low"], r["zone_high"], underlying_price), axis=1
                 )
-                sub_header(f"🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", HDR_GREEN)
-                st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
+                with st.expander("🎯 सद्य LTP च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", expanded=False):
+                    sub_header(f"🎯 सद्य LTP ({underlying_price:.2f}) च्या तुलनेत — खरी भूमिका (प्रकार काहीही असो)", HDR_GREEN)
+                    st.caption("Zone चा ऐतिहासिक प्रकार (Bullish/Bearish OB, Demand/Supply इ.) कसा तयार झाला ते दाखवतो — पण सद्य LTP च्या तुलनेत भूमिका (Resistance वि. Support) हीच खरी, कृतीयोग्य माहिती आहे.")
 
-                # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Date column गहाळ होता (वरच्या, प्रकारानुसार-
-                # गटवारीच्या टेबलमध्ये आहे, इथे नव्हता). तसंच LTP पासून जवळचा/लांबचा कोणता level
-                # हे स्पष्ट कळावं म्हणून — प्रत्येक टेबलमध्ये LTP च्या सर्वात जवळचा "1", नंतर "2", "3"
-                # असे क्रमांक (सर्वात आधीच LTP पासूनच्या अंतरानुसारच sort केलेले असल्याने, फक्त तोच
-                # क्रम numbering ला वापरला — वेगळी sort लागत नाही).
-                rcol1, rcol2 = st.columns(2)
-                with rcol1:
-                    st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
-                    resistance_zones = zones_with_role[zones_with_role["current_role"] == "RESISTANCE_SUPPLY"].sort_values("zone_mid")
-                    if resistance_zones.empty:
-                        st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
-                    else:
-                        resistance_display = resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
-                        resistance_display.insert(0, "Level", _category_wise_levels(resistance_zones["zone_type"]))
-                        st.dataframe(resistance_display, width="stretch", hide_index=True)
-                with rcol2:
-                    st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
-                    support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
-                    if support_zones.empty:
-                        st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
-                    else:
-                        support_display = support_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
-                        support_display.insert(0, "Level", _category_wise_levels(support_zones["zone_type"]))
-                        st.dataframe(support_display, width="stretch", hide_index=True)
+                    # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Date column गहाळ होता (वरच्या, प्रकारानुसार-
+                    # गटवारीच्या टेबलमध्ये आहे, इथे नव्हता). तसंच LTP पासून जवळचा/लांबचा कोणता level
+                    # हे स्पष्ट कळावं म्हणून — प्रत्येक टेबलमध्ये LTP च्या सर्वात जवळचा "1", नंतर "2", "3"
+                    # असे क्रमांक (सर्वात आधीच LTP पासूनच्या अंतरानुसारच sort केलेले असल्याने, फक्त तोच
+                    # क्रम numbering ला वापरला — वेगळी sort लागत नाही).
+                    rcol1, rcol2 = st.columns(2)
+                    with rcol1:
+                        st.markdown("**🔴 Resistance/Supply (LTP वर) — विक्री-दबावाची शक्यता**")
+                        resistance_zones = zones_with_role[zones_with_role["current_role"] == "RESISTANCE_SUPPLY"].sort_values("zone_mid")
+                        if resistance_zones.empty:
+                            st.caption("सद्य LTP च्या वर कुठलेही zones नाहीत.")
+                        else:
+                            resistance_display = resistance_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
+                            resistance_display.insert(0, "Level", _category_wise_levels(resistance_zones["zone_type"]))
+                            st.dataframe(resistance_display, width="stretch", hide_index=True)
+                    with rcol2:
+                        st.markdown("**🟢 Support/Demand (LTP खाली) — खरेदी-आधाराची शक्यता**")
+                        support_zones = zones_with_role[zones_with_role["current_role"] == "SUPPORT_DEMAND"].sort_values("zone_mid", ascending=False)
+                        if support_zones.empty:
+                            st.caption("सद्य LTP च्या खाली कुठलेही zones नाहीत.")
+                        else:
+                            support_display = support_zones[["zone_type", "zone_low", "zone_high", "strength", "formed_date", "status"]].copy()
+                            support_display.insert(0, "Level", _category_wise_levels(support_zones["zone_type"]))
+                            st.dataframe(support_display, width="stretch", hide_index=True)
 
                 sub_header("🗂️ प्रकारानुसार (ऐतिहासिक) — सर्व Zones", HDR_PURPLE)
                 st.caption("वरच्या 'खरी भूमिका' दृश्याइतकं तातडीचं नाही — zone मूळ कशामुळे (Order Block/Demand-Supply/Dynamic S/R इ.) तयार झाला, त्या ऐतिहासिक प्रकारानुसार गटवारी. प्रत्येक प्रकार आधीच स्वतःच्या collapse-होण्याजोग्या पट्टीत -- हवा तो उघडून बघा.")
@@ -989,7 +997,7 @@ def _render_market_zones():
                     subset = zones_df[zones_df["zone_type"] == zt]
                     if subset.empty:
                         continue
-                    with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=(status_arg == "ACTIVE")):
+                    with st.expander(f"{zone_labels.get(zt, zt)} ({len(subset)})", expanded=False):
                         display_cols = ["zone_low", "zone_high", "strength", "formed_date", "status"]
                         st.dataframe(subset[display_cols].sort_values("formed_date", ascending=False), width="stretch")
 
@@ -1127,93 +1135,94 @@ def render():
         st.markdown("---")
         mega_header(f"📊 {symbol} TradingView Style Chart ({timeframe_option})", HDR_PINK)
 
-        # --- ट्रेडिंगव्यू प्रो-चार्ट (Price + MA, Volume, RSI) ---
+        with st.expander("📊 मुख्य चार्ट (TradingView Style)", expanded=False):
+            # --- ट्रेडिंगव्यू प्रो-चार्ट (Price + MA, Volume, RSI) ---
 
-        # =========================================================
-        # ७.६ TradingView Chart (Lightweight Charts library) — खरं candle-रेंडरिंग, Drawing Tools
-        # (Trendline, H-Line, Fibonacci, Rectangle, Measure). जुना Plotly chart काढून, हाच आता एकमेव,
-        # डीफॉल्ट chart आहे.
-        # =========================================================
-        rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
-        # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
-        # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
-        # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
-        sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
+            # =========================================================
+            # ७.६ TradingView Chart (Lightweight Charts library) — खरं candle-रेंडरिंग, Drawing Tools
+            # (Trendline, H-Line, Fibonacci, Rectangle, Measure). जुना Plotly chart काढून, हाच आता एकमेव,
+            # डीफॉल्ट chart आहे.
+            # =========================================================
+            rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
+            # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
+            # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
+            # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
+            sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
 
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day, 1-Hour
-        # व 15-Minute Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). तिन्ही मुख्य
-        # chart च्या timeframe शी no-lookahead (merge_asof, backward) अलाइन केले जातात — established
-        # पद्धत, sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
-        st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
-        st15m_line_aligned = st15m_dir_aligned = None
-        pattern_markers_tv = []
-        if not df_candles.empty:
-            try:
-                # 🎓 Production-speed सुधारणा — हे तीन fetch_candles() कॉल्स (day/30min/15min) एकमेकांपासून
-                # पूर्णपणे स्वतंत्र आहेत, पण आधी sequentially (एकामागोमाग एक) चालायचे — cache-miss झाल्यावर
-                # (पहिलं load, किंवा दर ६० सेकंदांनी cache expire झाल्यावर) तिन्ही Upstox कॉल्सची वाट
-                # क्रमाने बघावी लागायची. आता ThreadPoolExecutor ने समांतर — एकूण वेळ जवळजवळ "सर्वात संथ
-                # एका कॉल इतका" होतो, तिन्हींच्या बेरजेइतका नाही. Streamlit च्या st.warning/st.error
-                # (fetch_candles च्या आतल्या error-path मध्ये) worker thread मधून योग्य काम करावं म्हणून
-                # add_script_run_ctx ने मुख्य thread चा context प्रत्येक worker ला जोडलेला आहे (Streamlit
-                # च्याच अधिकृत pattern नुसार — थेट raw threading वापरणं धोकादायक ठरतं).
-                from concurrent.futures import ThreadPoolExecutor
-                from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day, 1-Hour
+            # व 15-Minute Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). तिन्ही मुख्य
+            # chart च्या timeframe शी no-lookahead (merge_asof, backward) अलाइन केले जातात — established
+            # पद्धत, sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
+            st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
+            st15m_line_aligned = st15m_dir_aligned = None
+            pattern_markers_tv = []
+            if not df_candles.empty:
+                try:
+                    # 🎓 Production-speed सुधारणा — हे तीन fetch_candles() कॉल्स (day/30min/15min) एकमेकांपासून
+                    # पूर्णपणे स्वतंत्र आहेत, पण आधी sequentially (एकामागोमाग एक) चालायचे — cache-miss झाल्यावर
+                    # (पहिलं load, किंवा दर ६० सेकंदांनी cache expire झाल्यावर) तिन्ही Upstox कॉल्सची वाट
+                    # क्रमाने बघावी लागायची. आता ThreadPoolExecutor ने समांतर — एकूण वेळ जवळजवळ "सर्वात संथ
+                    # एका कॉल इतका" होतो, तिन्हींच्या बेरजेइतका नाही. Streamlit च्या st.warning/st.error
+                    # (fetch_candles च्या आतल्या error-path मध्ये) worker thread मधून योग्य काम करावं म्हणून
+                    # add_script_run_ctx ने मुख्य thread चा context प्रत्येक worker ला जोडलेला आहे (Streamlit
+                    # च्याच अधिकृत pattern नुसार — थेट raw threading वापरणं धोकादायक ठरतं).
+                    from concurrent.futures import ThreadPoolExecutor
+                    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
-                def _fetch_with_ctx(ctx, *args, **kwargs):
-                    add_script_run_ctx(ctx=ctx)
-                    return fetch_candles(*args, **kwargs)
+                    def _fetch_with_ctx(ctx, *args, **kwargs):
+                        add_script_run_ctx(ctx=ctx)
+                        return fetch_candles(*args, **kwargs)
 
-                _ctx = get_script_run_ctx()
-                with ThreadPoolExecutor(max_workers=3) as _executor:
-                    _f_1d = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="day")
-                    _f_30m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="30minute")
-                    _f_15m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="15minute")
-                    df_1d_tv = _f_1d.result()
-                    df_1h_tv = resample_to_1h(_f_30m.result())
-                    df_15m_tv = _f_15m.result()
+                    _ctx = get_script_run_ctx()
+                    with ThreadPoolExecutor(max_workers=3) as _executor:
+                        _f_1d = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="day")
+                        _f_30m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="30minute")
+                        _f_15m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="15minute")
+                        df_1d_tv = _f_1d.result()
+                        df_1h_tv = resample_to_1h(_f_30m.result())
+                        df_15m_tv = _f_15m.result()
 
-                if df_1d_tv is not None and not df_1d_tv.empty:
-                    st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
-                    df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
-                    aligned_1d = pd.merge_asof(
-                        df_candles[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
-                        on="timestamp", direction="backward",
-                    )
-                    st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
+                    if df_1d_tv is not None and not df_1d_tv.empty:
+                        st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
+                        df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
+                        aligned_1d = pd.merge_asof(
+                            df_candles[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
+                            on="timestamp", direction="backward",
+                        )
+                        st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
 
-                if df_1h_tv is not None and not df_1h_tv.empty:
-                    st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
-                    df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
-                    aligned_1h = pd.merge_asof(
-                        df_candles[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
-                        on="timestamp", direction="backward",
-                    )
-                    st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
+                    if df_1h_tv is not None and not df_1h_tv.empty:
+                        st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
+                        df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
+                        aligned_1h = pd.merge_asof(
+                            df_candles[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
+                            on="timestamp", direction="backward",
+                        )
+                        st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
 
-                if df_15m_tv is not None and not df_15m_tv.empty:
-                    st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
-                    df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()
-                    aligned_15m = pd.merge_asof(
-                        df_candles[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
-                        on="timestamp", direction="backward",
-                    )
-                    st15m_line_aligned, st15m_dir_aligned = aligned_15m["st_line"], aligned_15m["st_dir"]
-            except Exception:
-                pass  # 1D/1H/15M डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
+                    if df_15m_tv is not None and not df_15m_tv.empty:
+                        st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
+                        df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()
+                        aligned_15m = pd.merge_asof(
+                            df_candles[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
+                            on="timestamp", direction="backward",
+                        )
+                        st15m_line_aligned, st15m_dir_aligned = aligned_15m["st_line"], aligned_15m["st_dir"]
+                except Exception:
+                    pass  # 1D/1H/15M डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
 
-            # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
-            pattern_markers_tv = find_significant_reversal_candles(df_candles, lookback_compare=3)
+                # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
+                pattern_markers_tv = find_significant_reversal_candles(df_candles, lookback_compare=3)
 
-        tv_html = build_lightweight_chart_html(
-            df_candles, symbol=symbol, timeframe_label=timeframe_option,
-            supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
-            supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
-            supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
-            rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
-        )
-        st.components.v1.html(tv_html, height=700, scrolling=False)
-        st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
+            tv_html = build_lightweight_chart_html(
+                df_candles, symbol=symbol, timeframe_label=timeframe_option,
+                supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
+                supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
+                supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
+                rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
+            )
+            st.components.v1.html(tv_html, height=700, scrolling=False)
+            st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
 
         # =========================================================
         # ७.५ DIRECTION ENGINE — Intraday/Swing style नुसार टाईमफ्रेम बदलणारे → BULLISH / BEARISH
@@ -1242,70 +1251,71 @@ def render():
         supertrend_tf_label = "1H" if trading_style == "INTRADAY" else structure_tf_label
         mega_header(f"🧭 Direction Engine ({trading_style}) — Supertrend {supertrend_tf_label} + RSI-14 {rsi_tf_label}", HDR_GREEN)
 
-        df_structure_tf = fetch_timeframe_df(token_input, symbol, underlying_price, structure_interval)
+        with st.expander("🧭 Direction Engine निकाल (Supertrend + RSI)", expanded=False):
+            df_structure_tf = fetch_timeframe_df(token_input, symbol, underlying_price, structure_interval)
 
-        df_rsi_tf = df_structure_tf if rsi_interval == structure_interval else fetch_timeframe_df(
-            token_input, symbol, underlying_price, rsi_interval
-        )
-        rsi_series = calculate_rsi(df_rsi_tf, period=14) if not df_rsi_tf.empty else pd.Series(dtype=float)
+            df_rsi_tf = df_structure_tf if rsi_interval == structure_interval else fetch_timeframe_df(
+                token_input, symbol, underlying_price, rsi_interval
+            )
+            rsi_series = calculate_rsi(df_rsi_tf, period=14) if not df_rsi_tf.empty else pd.Series(dtype=float)
 
-        # df_1h पुढे चार्ट्स/रिपोर्टसाठी नेहमी लागतो (Style सेटिंग्जपासून स्वतंत्र) — आधीच fetch झाला असल्यास तोच वापरणे
-        if structure_interval == "1hour":
-            df_1h = df_structure_tf
-        elif rsi_interval == "1hour":
-            df_1h = df_rsi_tf
-        else:
-            df_1h = resample_to_1h(fetch_candles(token_input, symbol, underlying_price, interval="30minute"))
-
-        supertrend_source_df = df_1h if trading_style == "INTRADAY" else df_structure_tf
-        st_line, st_dir = calculate_supertrend(supertrend_source_df, period=10, multiplier=3)
-
-        supertrend_ok = len(st_dir) > 0
-        rsi_ok = len(rsi_series) > 0
-
-        if supertrend_ok and rsi_ok:
-            last_st_dir = int(st_dir.iloc[-1])          # 1 = up, -1 = down
-            last_st_val = float(st_line.iloc[-1])
-            last_rsi = float(rsi_series.iloc[-1])
-
-            st_label = "🟢 UP" if last_st_dir == 1 else "🔴 DOWN"
-
-            if trading_style == "INTRADAY":
-                # नवीन Signal Engine: दिशा फक्त 1H Supertrend वरून — RSI इथे दिशा-गेट म्हणून वापरलं जात नाही
-                # (RSI पुढे प्रत्येक रणनीतीच्या स्वतःच्या entry-तपासणीत वापरलं जातं — Indicator रणनीतीसाठी विशेषतः).
-                direction_final = "BULLISH" if last_st_dir == 1 else "BEARISH"
-                direction_color = "#089981" if last_st_dir == 1 else "#F23645"
-            elif last_st_dir == 1 and last_rsi > 50:
-                direction_final = "BULLISH"
-                direction_color = "#089981"
-            elif last_st_dir == -1 and last_rsi < 50:
-                direction_final = "BEARISH"
-                direction_color = "#F23645"
+            # df_1h पुढे चार्ट्स/रिपोर्टसाठी नेहमी लागतो (Style सेटिंग्जपासून स्वतंत्र) — आधीच fetch झाला असल्यास तोच वापरणे
+            if structure_interval == "1hour":
+                df_1h = df_structure_tf
+            elif rsi_interval == "1hour":
+                df_1h = df_rsi_tf
             else:
-                direction_final = "NEUTRAL / MIXED"
-                direction_color = "#d68a00"
+                df_1h = resample_to_1h(fetch_candles(token_input, symbol, underlying_price, interval="30minute"))
 
-            dcol1, dcol2, dcol3 = st.columns(3)
-            with dcol1:
-                st.metric(f"Supertrend ({supertrend_tf_label})", st_label, f"Level: {last_st_val:,.2f}")
-            with dcol2:
-                rsi_zone = "Overbought" if last_rsi >= 70 else ("Oversold" if last_rsi <= 30 else "Neutral zone")
-                st.metric(f"RSI-14 ({rsi_tf_label})", f"{last_rsi:.1f}", rsi_zone)
-            with dcol3:
-                st.markdown(
-                    f"""
-                    <div style="background-color:#1e222d;border:1px solid {direction_color};border-radius:6px;
-                                padding:14px;text-align:center;">
-                        <div style="font-size:12px;color:#787b86;">DIRECTION ENGINE OUTPUT</div>
-                        <div style="font-size:22px;font-weight:bold;color:{direction_color};">{direction_final}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info(f"Direction Engine साठी पुरेसा {structure_tf_label} / {rsi_tf_label} डेटा अजून उपलब्ध नाही (मार्केट सुरू झाल्यावर किंवा काही मिनिटांनी पुन्हा तपासा).")
+            supertrend_source_df = df_1h if trading_style == "INTRADAY" else df_structure_tf
+            st_line, st_dir = calculate_supertrend(supertrend_source_df, period=10, multiplier=3)
 
-        st.caption(f"**{trading_style}**: {structure_tf_label} Structure · {rsi_tf_label} RSI · {confirm_tf_label} Confirm")
+            supertrend_ok = len(st_dir) > 0
+            rsi_ok = len(rsi_series) > 0
+
+            if supertrend_ok and rsi_ok:
+                last_st_dir = int(st_dir.iloc[-1])          # 1 = up, -1 = down
+                last_st_val = float(st_line.iloc[-1])
+                last_rsi = float(rsi_series.iloc[-1])
+
+                st_label = "🟢 UP" if last_st_dir == 1 else "🔴 DOWN"
+
+                if trading_style == "INTRADAY":
+                    # नवीन Signal Engine: दिशा फक्त 1H Supertrend वरून — RSI इथे दिशा-गेट म्हणून वापरलं जात नाही
+                    # (RSI पुढे प्रत्येक रणनीतीच्या स्वतःच्या entry-तपासणीत वापरलं जातं — Indicator रणनीतीसाठी विशेषतः).
+                    direction_final = "BULLISH" if last_st_dir == 1 else "BEARISH"
+                    direction_color = "#089981" if last_st_dir == 1 else "#F23645"
+                elif last_st_dir == 1 and last_rsi > 50:
+                    direction_final = "BULLISH"
+                    direction_color = "#089981"
+                elif last_st_dir == -1 and last_rsi < 50:
+                    direction_final = "BEARISH"
+                    direction_color = "#F23645"
+                else:
+                    direction_final = "NEUTRAL / MIXED"
+                    direction_color = "#d68a00"
+
+                dcol1, dcol2, dcol3 = st.columns(3)
+                with dcol1:
+                    st.metric(f"Supertrend ({supertrend_tf_label})", st_label, f"Level: {last_st_val:,.2f}")
+                with dcol2:
+                    rsi_zone = "Overbought" if last_rsi >= 70 else ("Oversold" if last_rsi <= 30 else "Neutral zone")
+                    st.metric(f"RSI-14 ({rsi_tf_label})", f"{last_rsi:.1f}", rsi_zone)
+                with dcol3:
+                    st.markdown(
+                        f"""
+                        <div style="background-color:#1e222d;border:1px solid {direction_color};border-radius:6px;
+                                    padding:14px;text-align:center;">
+                            <div style="font-size:12px;color:#787b86;">DIRECTION ENGINE OUTPUT</div>
+                            <div style="font-size:22px;font-weight:bold;color:{direction_color};">{direction_final}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.info(f"Direction Engine साठी पुरेसा {structure_tf_label} / {rsi_tf_label} डेटा अजून उपलब्ध नाही (मार्केट सुरू झाल्यावर किंवा काही मिनिटांनी पुन्हा तपासा).")
+
+            st.caption(f"**{trading_style}**: {structure_tf_label} Structure · {rsi_tf_label} RSI · {confirm_tf_label} Confirm")
 
         # --- डेटाबेस बेसलाइनवरून OI Change कॅल्क्युलेट करणे ---
         # IST तारीख वापरणे (local सर्व्हर तारीख नाही — UTC सर्व्हरवर मध्यरात्रीच्या आसपास चुकीची तारीख येऊ शकते)
@@ -1382,19 +1392,20 @@ def render():
             total_pe_oi = df["PE Total OI"].sum()
             total_ce_chg = df["CE Chg OI"].sum()
             total_pe_chg = df["PE Chg OI"].sum()
-            pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
-            pcr_label = "🟢 Bullish (PCR>1)" if pcr > 1 else ("🔴 Bearish (PCR<1)" if pcr < 1 else "⚪ तटस्थ")
+            with st.expander("📊 PCR / Net OI Summary", expanded=False):
+                pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
+                pcr_label = "🟢 Bullish (PCR>1)" if pcr > 1 else ("🔴 Bearish (PCR<1)" if pcr < 1 else "⚪ तटस्थ")
 
-            pcol1, pcol2, pcol3, pcol4 = st.columns(4)
-            pcol1.metric("PCR (Put-Call Ratio)", f"{pcr:.2f}", pcr_label)
-            pcol2.metric("एकूण Call OI", f"{total_ce_oi:,.0f}")
-            pcol3.metric("एकूण Put OI", f"{total_pe_oi:,.0f}")
-            pcol4.metric(
-                "एकूण Net Diff (आजचा Chg OI: PE−CE)", f"{total_pe_chg - total_ce_chg:,.0f}",
-                help="हे 'Put OI − Call OI' नाही — आजच्या सुरुवातीच्या (baseline) OI पासून आत्तापर्यंत "
-                     "Put आणि Call च्या OI मध्ये किती बदल झाला, त्याचा फरक. बाजार उघडल्यावर लगेच (किंवा "
-                     "बंद असताना) हा 0 दिसणं सामान्यच आहे — अजून कुठलाही नवीन बदल नोंदवलेला नाही.",
-            )
+                pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                pcol1.metric("PCR (Put-Call Ratio)", f"{pcr:.2f}", pcr_label)
+                pcol2.metric("एकूण Call OI", f"{total_ce_oi:,.0f}")
+                pcol3.metric("एकूण Put OI", f"{total_pe_oi:,.0f}")
+                pcol4.metric(
+                    "एकूण Net Diff (आजचा Chg OI: PE−CE)", f"{total_pe_chg - total_ce_chg:,.0f}",
+                    help="हे 'Put OI − Call OI' नाही — आजच्या सुरुवातीच्या (baseline) OI पासून आत्तापर्यंत "
+                         "Put आणि Call च्या OI मध्ये किती बदल झाला, त्याचा फरक. बाजार उघडल्यावर लगेच (किंवा "
+                         "बंद असताना) हा 0 दिसणं सामान्यच आहे — अजून कुठलाही नवीन बदल नोंदवलेला नाही.",
+                )
 
             total_row = pd.DataFrame([{
                 "CE Chg OI": total_ce_chg, "CE Total OI": total_ce_oi, "CE LTP": None,
@@ -1407,41 +1418,42 @@ def render():
         st.markdown("---")
         mega_header("📋 Option Chain & Calculated Change in OI Table", HDR_AMBER)
 
-        def style_option_chain(val):
-            color = ""
-            if isinstance(val, (int, float)):
-                if val > 0:
-                    color = "color: #089981; font-weight: bold; font-size: 16px;"
-                elif val < 0:
-                    color = "color: #F23645; font-weight: bold; font-size: 16px;"
-            return color
+        with st.expander("📋 Option Chain टेबल (Click-to-Trade सह)", expanded=False):
+            def style_option_chain(val):
+                color = ""
+                if isinstance(val, (int, float)):
+                    if val > 0:
+                        color = "color: #089981; font-weight: bold; font-size: 16px;"
+                    elif val < 0:
+                        color = "color: #F23645; font-weight: bold; font-size: 16px;"
+                return color
 
-        styled_df = df.style.map(style_option_chain, subset=["CE Chg OI", "PE Chg OI", "Net Diff"]) \
-                            .set_properties(**{'font-size': '16px', 'font-weight': 'bold'})
+            styled_df = df.style.map(style_option_chain, subset=["CE Chg OI", "PE Chg OI", "Net Diff"]) \
+                                .set_properties(**{'font-size': '16px', 'font-weight': 'bold'})
 
-        # क्लिक-टू-ट्रेड: टेबलमधील कोणतीही row निवडल्यास तो strike खाली Manual Trading Panel मध्ये आपोआप भरला जातो.
-        # जुन्या Streamlit व्हर्जनमध्ये on_select उपलब्ध नसल्यास साध्या टेबलवर आपोआप fallback होतो.
-        try:
-            chain_select_event = st.dataframe(
-                styled_df, width='stretch', height=500,
-                on_select="rerun", selection_mode="single-row", key="chain_table_select",
-            )
-            selected_rows = chain_select_event.get("selection", {}).get("rows", []) if chain_select_event else []
-            if selected_rows:
-                sel_idx = selected_rows[0]
-                sel_strike_label = df.iloc[sel_idx]["Strike Price"]
-                _m = re.search(r"(\d+(?:\.\d+)?)", str(sel_strike_label))
-                if _m:
-                    st.session_state["clicked_strike_from_chain"] = float(_m.group(1))
-                    st.success(f"✅ निवडलेला Strike: {st.session_state['clicked_strike_from_chain']:.0f} — खाली Manual Trading Panel मध्ये आपोआप भरला.")
-        except TypeError:
-            st.dataframe(styled_df, width='stretch', height=500)
+            # क्लिक-टू-ट्रेड: टेबलमधील कोणतीही row निवडल्यास तो strike खाली Manual Trading Panel मध्ये आपोआप भरला जातो.
+            # जुन्या Streamlit व्हर्जनमध्ये on_select उपलब्ध नसल्यास साध्या टेबलवर आपोआप fallback होतो.
+            try:
+                chain_select_event = st.dataframe(
+                    styled_df, width='stretch', height=500,
+                    on_select="rerun", selection_mode="single-row", key="chain_table_select",
+                )
+                selected_rows = chain_select_event.get("selection", {}).get("rows", []) if chain_select_event else []
+                if selected_rows:
+                    sel_idx = selected_rows[0]
+                    sel_strike_label = df.iloc[sel_idx]["Strike Price"]
+                    _m = re.search(r"(\d+(?:\.\d+)?)", str(sel_strike_label))
+                    if _m:
+                        st.session_state["clicked_strike_from_chain"] = float(_m.group(1))
+                        st.success(f"✅ निवडलेला Strike: {st.session_state['clicked_strike_from_chain']:.0f} — खाली Manual Trading Panel मध्ये आपोआप भरला.")
+            except TypeError:
+                st.dataframe(styled_df, width='stretch', height=500)
 
         # =========================================================
         # ७.४ Static IP Proxy Diagnostics — UDAPI1154 (Static IP) सेटअप तपासण्यासाठी
         # =========================================================
         st.markdown("---")
-        with st.expander("🔌 Static IP Proxy Diagnostics (UDAPI1154 त्रुटीसाठी)"):
+        with st.expander("🔌 Static IP Proxy Diagnostics (UDAPI1154 त्रुटीसाठी)", expanded=False):
             st.caption(
                 "Upstox ला ऑर्डर-प्लेसमेंटसाठी नोंदणीकृत Static IP लागतो. खाली तपासा की तुमचा Proxy "
                 "प्रत्यक्षात कोणता IP दाखवतोय, आणि तो Upstox कडे नोंदवलेल्या IP शी जुळतो का."
@@ -1496,158 +1508,160 @@ def render():
         st.markdown("---")
         mega_header("🧭 Nifty OI Put-Call Diff Tracker (ATM ±6 strikes · दर १० मिनिटांनी)", HDR_CYAN)
 
-        # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
-        # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
-        # response) — त्यामुळे fetch_upstox_option_chain चं signature बदलावं लागलं नाही (५०+ ठिकाणी
-        # वापरलेलं, ते बदलणं धोकादायक ठरलं असतं). expiry सापडली नाही तर शांतपणे काहीच दाखवत नाही.
-        expiry_date, dte = compute_dte(raw_chain, get_ist_now().date())
-        if expiry_date is not None:
-            dte_label = "आजच Expiry! 🔥" if dte == 0 else f"{dte} दिवस उरले"
-            dte_color = "#F23645" if dte is not None and dte <= 1 else "#d1d4dc"
-            st.markdown(
-                f"<span style='color:{dte_color}; font-size:14px; font-weight:600;'>"
-                f"📅 Expiry: {expiry_date.strftime('%d-%b-%Y')} ({dte_label})</span>",
-                unsafe_allow_html=True,
-            )
+        with st.expander("🧭 सद्य OI स्थिती (DTE + Snapshot + Banner)", expanded=False):
+            # 🎓 वापरकर्त्याच्या विनंतीनुसार — Expiry पर्यंत किती दिवस उरले (DTE) हे table वर दाखवणे.
+            # raw_chain मधल्या प्रत्येक strike-item मध्ये स्वतःच 'expiry' field असते (Upstox चं standard
+            # response) — त्यामुळे fetch_upstox_option_chain चं signature बदलावं लागलं नाही (५०+ ठिकाणी
+            # वापरलेलं, ते बदलणं धोकादायक ठरलं असतं). expiry सापडली नाही तर शांतपणे काहीच दाखवत नाही.
+            expiry_date, dte = compute_dte(raw_chain, get_ist_now().date())
+            if expiry_date is not None:
+                dte_label = "आजच Expiry! 🔥" if dte == 0 else f"{dte} दिवस उरले"
+                dte_color = "#F23645" if dte is not None and dte <= 1 else "#d1d4dc"
+                st.markdown(
+                    f"<span style='color:{dte_color}; font-size:14px; font-weight:600;'>"
+                    f"📅 Expiry: {expiry_date.strftime('%d-%b-%Y')} ({dte_label})</span>",
+                    unsafe_allow_html=True,
+                )
 
-        # 🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — ही संपूर्ण गणना+साठवण आता एकाच, पुनर्वापर
-        # करण्याजोग्या function मध्ये आहे (oi_analysis.fetch_and_save_oi_snapshot) — तेच नवीन
-        # oi_snapshot_collector.py (browser बंद असतानाही चालणारी unattended script) वापरतं, त्यामुळे
-        # Dashboard उघडलं की मधल्या काळात collector ने साठवलेले सर्व snapshots आपोआप टेबलमध्ये दिसतील.
-        #
-        # 🎓 वापरकर्त्याने प्रत्यक्ष screenshot दाखवून निदर्शनास आणलेला खरा bug — unattended scripts
-        # साठी is_market_open() तपासणी जोडली होती, पण Dashboard चं स्वतःचं (browser उघडं असतानाचं)
-        # snapshot-घेणं त्याच तपासणीशिवाय राहिलं होतं — त्यामुळे बाजार उघडण्याआधीही (उदा. 08:10, 08:20)
-        # snapshots साठवले जात होते. आता इथेही तीच तपासणी.
-        if not is_market_open():
-            st.info(f"⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — नवीन snapshot घेतला जाणार नाही. खालचा इतिहास पाहू शकता.")
-            total_call_oi = total_put_oi = current_diff = 0
-            oi_price_direction, oi_price_message = "NEUTRAL", "⚪ बाजार बंद आहे"
-            put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
-        else:
-            snapshot_result, snapshot_status = fetch_and_save_oi_snapshot(
-                token_input, symbol, lambda t, s: (raw_chain, "OK"), get_ist_now, DB_PATH, atm_range=6,
-            )
-            if snapshot_result is None:
-                st.warning(f"⚠️ OI Snapshot घेता आला नाही: {snapshot_status}")
+            # 🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — ही संपूर्ण गणना+साठवण आता एकाच, पुनर्वापर
+            # करण्याजोग्या function मध्ये आहे (oi_analysis.fetch_and_save_oi_snapshot) — तेच नवीन
+            # oi_snapshot_collector.py (browser बंद असतानाही चालणारी unattended script) वापरतं, त्यामुळे
+            # Dashboard उघडलं की मधल्या काळात collector ने साठवलेले सर्व snapshots आपोआप टेबलमध्ये दिसतील.
+            #
+            # 🎓 वापरकर्त्याने प्रत्यक्ष screenshot दाखवून निदर्शनास आणलेला खरा bug — unattended scripts
+            # साठी is_market_open() तपासणी जोडली होती, पण Dashboard चं स्वतःचं (browser उघडं असतानाचं)
+            # snapshot-घेणं त्याच तपासणीशिवाय राहिलं होतं — त्यामुळे बाजार उघडण्याआधीही (उदा. 08:10, 08:20)
+            # snapshots साठवले जात होते. आता इथेही तीच तपासणी.
+            if not is_market_open():
+                st.info(f"⏸️ बाजार बंद आहे (वेळेबाहेर/सुट्टी) — नवीन snapshot घेतला जाणार नाही. खालचा इतिहास पाहू शकता.")
                 total_call_oi = total_put_oi = current_diff = 0
-                oi_price_direction, oi_price_message = "NEUTRAL", "⚪ Snapshot अयशस्वी"
+                oi_price_direction, oi_price_message = "NEUTRAL", "⚪ बाजार बंद आहे"
                 put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
             else:
-                total_call_oi = snapshot_result["total_call_oi"]
-                total_put_oi = snapshot_result["total_put_oi"]
-                current_diff = snapshot_result["diff"]
-                oi_price_direction = snapshot_result["oi_price_direction"]
-                oi_price_message = snapshot_result["oi_price_message"]
-                put_oi_price_class = snapshot_result["put_oi_price_class"]
-                call_oi_price_class = snapshot_result["call_oi_price_class"]
+                snapshot_result, snapshot_status = fetch_and_save_oi_snapshot(
+                    token_input, symbol, lambda t, s: (raw_chain, "OK"), get_ist_now, DB_PATH, atm_range=6,
+                )
+                if snapshot_result is None:
+                    st.warning(f"⚠️ OI Snapshot घेता आला नाही: {snapshot_status}")
+                    total_call_oi = total_put_oi = current_diff = 0
+                    oi_price_direction, oi_price_message = "NEUTRAL", "⚪ Snapshot अयशस्वी"
+                    put_oi_price_class = call_oi_price_class = "अपुरा डेटा"
+                else:
+                    total_call_oi = snapshot_result["total_call_oi"]
+                    total_put_oi = snapshot_result["total_put_oi"]
+                    current_diff = snapshot_result["diff"]
+                    oi_price_direction = snapshot_result["oi_price_direction"]
+                    oi_price_message = snapshot_result["oi_price_message"]
+                    put_oi_price_class = snapshot_result["put_oi_price_class"]
+                    call_oi_price_class = snapshot_result["call_oi_price_class"]
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + संबंधित संदेश आता ठळक banner वरच (आधी
-        # फक्त खालच्या "Advanced OI Analysis" च्या collapsed भागात होता, इथे लगेच दिसत नव्हता).
-        # 🎓 वापरकर्त्याने Dashboard वरून सापडवलेली bug — आधी खालचा pcr_messages dict established
-        # bias (फक्त BULLISH/BEARISH) बघून संदेश निवडायचा, त्यामुळे PCR 0.70-0.90 (सौम्य Bearish) लाही
-        # चुकून "Overbought" दिसायचं. आता compute_pcr_zone_label() established प्रत्यक्ष PCR किमतीवरून
-        # (५ वेगळ्या पट्ट्या) अचूक संदेश देतं.
-        pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
-        pcr_line = f"PCR: {pcr_val:.2f} — {compute_pcr_zone_label(pcr_val)}" if pcr_val is not None else "PCR: उपलब्ध नाही"
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — PCR + संबंधित संदेश आता ठळक banner वरच (आधी
+            # फक्त खालच्या "Advanced OI Analysis" च्या collapsed भागात होता, इथे लगेच दिसत नव्हता).
+            # 🎓 वापरकर्त्याने Dashboard वरून सापडवलेली bug — आधी खालचा pcr_messages dict established
+            # bias (फक्त BULLISH/BEARISH) बघून संदेश निवडायचा, त्यामुळे PCR 0.70-0.90 (सौम्य Bearish) लाही
+            # चुकून "Overbought" दिसायचं. आता compute_pcr_zone_label() established प्रत्यक्ष PCR किमतीवरून
+            # (५ वेगळ्या पट्ट्या) अचूक संदेश देतं.
+            pcr_val, pcr_bias = compute_pcr_signal(total_put_oi, total_call_oi)
+            pcr_line = f"PCR: {pcr_val:.2f} — {compute_pcr_zone_label(pcr_val)}" if pcr_val is not None else "PCR: उपलब्ध नाही"
 
-        # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
-        banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
-        banner_border = {"BULLISH": "#089981", "BEARISH": "#F23645", "MIXED": "#c9a227", "NEUTRAL": "#4b5563"}[oi_price_direction]
-        st.markdown(
-            f"""<div style="background-color:{banner_bg}; border-left: 5px solid {banner_border}; padding: 14px 18px;
-            border-radius: 6px; margin: 10px 0;">
-            <span style="font-size: 17px; font-weight: 700; color: #f0f0f0;">{oi_price_message}</span><br/>
-            <span style="font-size: 12px; color: #aaa;">Put: {put_oi_price_class} · Call: {call_oi_price_class}</span><br/>
-            <span style="font-size: 14px; font-weight: 600; color: #d0d0d0;">{pcr_line}</span>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-        st.caption("⚠️ पहिल्याच snapshot ला 'अपुरा डेटा' दिसेल — इतिहास लागतो.")
-
-
-
-        # आजच्या दिवसाचा संपूर्ण इतिहास दाखवणे (अलीकडचा वेळ सर्वात वर, स्क्रीनशॉटसारखे)
-        # 🎓 Cloud DB (Supabase) configured असेल तर तिथून वाचणे — local unattended collector ने
-        # साठवलेला डेटाही (browser बंद असतानाचा) इथे आपोआप दिसेल. नसेल तर जुन्याच local SQLite कडे वळणे.
-        from cloud_db import is_cloud_db_configured, get_oi_history_cloud
-        if is_cloud_db_configured():
-            cloud_rows = get_oi_history_cloud(symbol, today_str)
-            hist_df = pd.DataFrame([
-                {"Time": r["snapshot_time"], "Total Call OI": r["total_call_oi"], "Total Put OI": r["total_put_oi"],
-                 "Diff": r["diff"], "Δ Diff": r["delta_diff"], "Signal": r["signal"]}
-                for r in cloud_rows
-            ])
-        else:
-            conn3 = sqlite3.connect(DB_PATH)
-            hist_df = pd.read_sql_query(
-                """SELECT snapshot_time AS Time, total_call_oi AS "Total Call OI",
-                          total_put_oi AS "Total Put OI", diff AS Diff,
-                          delta_diff AS "Δ Diff", signal AS Signal
-                   FROM oi_diff_snapshots
-                   WHERE symbol=? AND trade_date=?
-                   ORDER BY snapshot_time DESC""",
-                conn3, params=(symbol, today_str)
+            # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
+            banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
+            banner_border = {"BULLISH": "#089981", "BEARISH": "#F23645", "MIXED": "#c9a227", "NEUTRAL": "#4b5563"}[oi_price_direction]
+            st.markdown(
+                f"""<div style="background-color:{banner_bg}; border-left: 5px solid {banner_border}; padding: 14px 18px;
+                border-radius: 6px; margin: 10px 0;">
+                <span style="font-size: 17px; font-weight: 700; color: #f0f0f0;">{oi_price_message}</span><br/>
+                <span style="font-size: 12px; color: #aaa;">Put: {put_oi_price_class} · Call: {call_oi_price_class}</span><br/>
+                <span style="font-size: 14px; font-weight: 600; color: #d0d0d0;">{pcr_line}</span>
+                </div>""",
+                unsafe_allow_html=True,
             )
-            conn3.close()
+            st.caption("⚠️ पहिल्याच snapshot ला 'अपुरा डेटा' दिसेल — इतिहास लागतो.")
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — collector आता ५-मिनिट granularity वर snapshots
-        # साठवतो — इथे वापरकर्त्याला 5/10/15-मिनिट यापैकी हवा तो view निवडता येईल (established
-        # aggregate_oi_history() — प्रत्येक bucket ची शेवटची value, OI च्या "cumulative" स्वरूपाला सुसंगत).
-        view_interval = st.radio("View Interval", [5, 10, 15], index=0, horizontal=True, format_func=lambda x: f"{x} मिनिट", key="oi_view_interval")
-        hist_df = aggregate_oi_history(hist_df, view_interval)
 
-        # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या KeyError सह दाखवलेला खरा bug — Supabase आत्ताच
-        # जोडलं गेलं असेल, पण आजचा पहिला OI snapshot अजून साठवलाच गेला नसेल (उदा. "OI Snapshot
-        # Collector" workflow अजून चालूच झालेला नाही, किंवा बाजार बंद आहे), तर hist_df पूर्णपणे रिकामी
-        # (कुठलेच columns नसलेली) बनते — आणि खालचं .style.map(subset=[...]) त्या न-अस्तित्वात
-        # असलेल्या columns साठी थेट क्रॅश व्हायचं. आता आधीच तपासून, स्पष्ट संदेश दाखवतो.
-        if hist_df.empty:
-            st.info("आज अजून कुठलाही OI snapshot साठवला गेलेला नाही — GitHub Actions 'OI Snapshot Collector' चालू आहे का तपासा, किंवा काही वेळ थांबा.")
-        else:
-            def style_oi_numeric(val):
-                if isinstance(val, (int, float)):
-                    if val > 0:
-                        return "color: #089981; font-weight: bold;"
-                    elif val < 0:
-                        return "color: #F23645; font-weight: bold;"
-                return ""
 
-            def style_oi_signal(val):
-                s = str(val)
-                if "BULLISH" in s and "Weak" not in s:
-                    return "color: #089981; font-weight: bold;"      # पूर्ण BULLISH → हिरवा
-                if "BEARISH" in s and "Weak" not in s:
-                    return "color: #F23645; font-weight: bold;"      # पूर्ण BEARISH → लाल
-                if "BULLISH" in s and "Weakening" in s:
-                    return "color: #F23645; font-weight: bold;"      # Bullish कमजोर होतोय → उलट (लाल) रंग, बेअरिशकडे झुकण्याचा इशारा
-                if "BEARISH" in s and "Weakening" in s:
-                    return "color: #089981; font-weight: bold;"      # Bearish कमजोर होतोय → उलट (हिरवा) रंग, बुलिशकडे झुकण्याचा इशारा
-                return "color: #9598a1; font-weight: bold;"
+        with st.expander("📜 आजच्या दिवसाचा OI इतिहास (History Table)", expanded=False):
+            # आजच्या दिवसाचा संपूर्ण इतिहास दाखवणे (अलीकडचा वेळ सर्वात वर, स्क्रीनशॉटसारखे)
+            # 🎓 Cloud DB (Supabase) configured असेल तर तिथून वाचणे — local unattended collector ने
+            # साठवलेला डेटाही (browser बंद असतानाचा) इथे आपोआप दिसेल. नसेल तर जुन्याच local SQLite कडे वळणे.
+            from cloud_db import is_cloud_db_configured, get_oi_history_cloud
+            if is_cloud_db_configured():
+                cloud_rows = get_oi_history_cloud(symbol, today_str)
+                hist_df = pd.DataFrame([
+                    {"Time": r["snapshot_time"], "Total Call OI": r["total_call_oi"], "Total Put OI": r["total_put_oi"],
+                     "Diff": r["diff"], "Δ Diff": r["delta_diff"], "Signal": r["signal"]}
+                    for r in cloud_rows
+                ])
+            else:
+                conn3 = sqlite3.connect(DB_PATH)
+                hist_df = pd.read_sql_query(
+                    """SELECT snapshot_time AS Time, total_call_oi AS "Total Call OI",
+                              total_put_oi AS "Total Put OI", diff AS Diff,
+                              delta_diff AS "Δ Diff", signal AS Signal
+                       FROM oi_diff_snapshots
+                       WHERE symbol=? AND trade_date=?
+                       ORDER BY snapshot_time DESC""",
+                    conn3, params=(symbol, today_str)
+                )
+                conn3.close()
 
-            # 🎓 वापरकर्त्याच्या विनंतीनुसार — मोठे आकडे वाचायला सोपे व्हावेत म्हणून लाखांत (1 लाख = 1,00,000)
-            # दाखवणे. .style.format() वापरल्याने फक्त DISPLAY बदलतो — रंग-कोडिंग (style_oi_numeric) अजूनही
-            # मूळ (न-बदललेल्या) संख्येवरच आधारित राहतं, त्यामुळे रंग बरोबरच राहतील.
-            def format_lakh_unsigned(val):
-                return f"{val/100000:,.2f} L" if isinstance(val, (int, float)) else val
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — collector आता ५-मिनिट granularity वर snapshots
+            # साठवतो — इथे वापरकर्त्याला 5/10/15-मिनिट यापैकी हवा तो view निवडता येईल (established
+            # aggregate_oi_history() — प्रत्येक bucket ची शेवटची value, OI च्या "cumulative" स्वरूपाला सुसंगत).
+            view_interval = st.radio("View Interval", [5, 10, 15], index=0, horizontal=True, format_func=lambda x: f"{x} मिनिट", key="oi_view_interval")
+            hist_df = aggregate_oi_history(hist_df, view_interval)
 
-            def format_lakh_signed(val):
-                return f"{val/100000:+,.2f} L" if isinstance(val, (int, float)) else val
+            # 🎓 वापरकर्त्याने प्रत्यक्ष Streamlit वरच्या KeyError सह दाखवलेला खरा bug — Supabase आत्ताच
+            # जोडलं गेलं असेल, पण आजचा पहिला OI snapshot अजून साठवलाच गेला नसेल (उदा. "OI Snapshot
+            # Collector" workflow अजून चालूच झालेला नाही, किंवा बाजार बंद आहे), तर hist_df पूर्णपणे रिकामी
+            # (कुठलेच columns नसलेली) बनते — आणि खालचं .style.map(subset=[...]) त्या न-अस्तित्वात
+            # असलेल्या columns साठी थेट क्रॅश व्हायचं. आता आधीच तपासून, स्पष्ट संदेश दाखवतो.
+            if hist_df.empty:
+                st.info("आज अजून कुठलाही OI snapshot साठवला गेलेला नाही — GitHub Actions 'OI Snapshot Collector' चालू आहे का तपासा, किंवा काही वेळ थांबा.")
+            else:
+                def style_oi_numeric(val):
+                    if isinstance(val, (int, float)):
+                        if val > 0:
+                            return "color: #089981; font-weight: bold;"
+                        elif val < 0:
+                            return "color: #F23645; font-weight: bold;"
+                    return ""
 
-            styled_hist = hist_df.style.map(style_oi_numeric, subset=["Diff", "Δ Diff"]) \
-                                        .map(style_oi_signal, subset=["Signal"]) \
-                                        .format({
-                                            "Total Call OI": format_lakh_unsigned, "Total Put OI": format_lakh_unsigned,
-                                            "Diff": format_lakh_signed, "Δ Diff": format_lakh_signed,
-                                        }) \
-                                        .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
+                def style_oi_signal(val):
+                    s = str(val)
+                    if "BULLISH" in s and "Weak" not in s:
+                        return "color: #089981; font-weight: bold;"      # पूर्ण BULLISH → हिरवा
+                    if "BEARISH" in s and "Weak" not in s:
+                        return "color: #F23645; font-weight: bold;"      # पूर्ण BEARISH → लाल
+                    if "BULLISH" in s and "Weakening" in s:
+                        return "color: #F23645; font-weight: bold;"      # Bullish कमजोर होतोय → उलट (लाल) रंग, बेअरिशकडे झुकण्याचा इशारा
+                    if "BEARISH" in s and "Weakening" in s:
+                        return "color: #089981; font-weight: bold;"      # Bearish कमजोर होतोय → उलट (हिरवा) रंग, बुलिशकडे झुकण्याचा इशारा
+                    return "color: #9598a1; font-weight: bold;"
 
-            st.dataframe(styled_hist, width='stretch', height=450)
+                # 🎓 वापरकर्त्याच्या विनंतीनुसार — मोठे आकडे वाचायला सोपे व्हावेत म्हणून लाखांत (1 लाख = 1,00,000)
+                # दाखवणे. .style.format() वापरल्याने फक्त DISPLAY बदलतो — रंग-कोडिंग (style_oi_numeric) अजूनही
+                # मूळ (न-बदललेल्या) संख्येवरच आधारित राहतं, त्यामुळे रंग बरोबरच राहतील.
+                def format_lakh_unsigned(val):
+                    return f"{val/100000:,.2f} L" if isinstance(val, (int, float)) else val
+
+                def format_lakh_signed(val):
+                    return f"{val/100000:+,.2f} L" if isinstance(val, (int, float)) else val
+
+                styled_hist = hist_df.style.map(style_oi_numeric, subset=["Diff", "Δ Diff"]) \
+                                            .map(style_oi_signal, subset=["Signal"]) \
+                                            .format({
+                                                "Total Call OI": format_lakh_unsigned, "Total Put OI": format_lakh_unsigned,
+                                                "Diff": format_lakh_signed, "Δ Diff": format_lakh_signed,
+                                            }) \
+                                            .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
+
+                st.dataframe(styled_hist, width='stretch', height=450)
 
         _render_advanced_oi_charts()
 
 
-        with st.expander("ℹ️ Signal Logic कसं काम करतं"):
+        with st.expander("ℹ️ Signal Logic कसं काम करतं", expanded=False):
             st.caption(
                 "Diff = एकूण Put OI − एकूण Call OI. धन (+) = Put जास्त लिहिले → बुल्स मजबूत. ऋण (−) = Call जास्त लिहिले → बेअर्स मजबूत.\n\n"
                 "**Strong vs Weakening** (मागच्या ~३० मिनिटांच्या तुलनेत):\n"
@@ -1984,112 +1998,113 @@ def render():
     with tab3:
         mega_header("📐 Strategy Selection & Risk Sizing", HDR_TEAL)
 
-        if sideways_info is not None:
-            st.markdown(
-                f"**Sideways Check (Range: {sideways_info['range_pct']}%):** "
-                f"Structure {'✅' if sideways_info['structure_ok'] else '❌'} · "
-                f"RSI 40-60 {'✅' if sideways_info['rsi_ok'] else '❌'} · "
-                f"No Break {'✅' if sideways_info['no_break'] else '❌'} · "
-                f"Range ≤ threshold {'✅' if sideways_info['range_ok'] else '❌'} · "
-                f"VIX {'✅' if sideways_info['vix_ok'] else '❌'}"
-                + (f" → **{sideways_info['strategy_type']}**" if sideways_info["is_sideways"] else "")
-            )
+        with st.expander("📐 Strategy Selection Output", expanded=False):
+            if sideways_info is not None:
+                st.markdown(
+                    f"**Sideways Check (Range: {sideways_info['range_pct']}%):** "
+                    f"Structure {'✅' if sideways_info['structure_ok'] else '❌'} · "
+                    f"RSI 40-60 {'✅' if sideways_info['rsi_ok'] else '❌'} · "
+                    f"No Break {'✅' if sideways_info['no_break'] else '❌'} · "
+                    f"Range ≤ threshold {'✅' if sideways_info['range_ok'] else '❌'} · "
+                    f"VIX {'✅' if sideways_info['vix_ok'] else '❌'}"
+                    + (f" → **{sideways_info['strategy_type']}**" if sideways_info["is_sideways"] else "")
+                )
 
-        sideways_qualified = bool(sideways_info and sideways_info["is_sideways"])
+            sideways_qualified = bool(sideways_info and sideways_info["is_sideways"])
 
-        if not all_gates_passed and not sideways_qualified:
-            st.info("🚫 **FINAL A1 SIGNAL: NO TRADE** — ना directional गेट्स पूर्ण झाले, ना Sideways अटी जुळल्या.")
-        elif strategy_result is None:
-            st.warning(f"🚫 **NO TRADE** — दिलेल्या PoP ≥ {pop_threshold_pct}% अटीनुसार योग्य स्ट्रॅटेजी सापडली नाही.")
-        else:
-            legs = normalize_legs(strategy_result)
-            pop_display = strategy_result.get("short_pop_pct", strategy_result.get("combined_pop_pct"))
-
-            scol1, scol2, scol3 = st.columns(3)
-            with scol1:
-                st.metric("Strategy", strategy_result["strategy"].replace("_", " "))
-                st.caption(f"PoP (approx): {pop_display}%")
-                for leg in legs:
-                    st.caption(f"{leg['role'].replace('_',' ').title()}: **{leg['strike']:.0f}** ({leg['transaction_type']})")
-            with scol2:
-                st.metric("Net Credit (per unit)", f"₹{strategy_result['net_credit']:.2f}")
-                st.metric("Max Profit / lot", f"₹{strategy_result['max_profit'] * lot_size:,.0f}")
-                st.metric("Max Loss / lot", f"₹{strategy_result['max_loss'] * lot_size:,.0f}")
-            with scol3:
-                margin_str = f"₹{available_margin:,.0f}" if available_margin is not None else "अनुपलब्ध"
-                st.metric("Available Margin", margin_str)
-                st.metric(f"Risk Amount ({risk_pct_per_trade}%)", f"₹{risk_amount:,.0f}")
-                st.metric("Position Size", f"{lots} lot(s)")
-
-            todays_pnl, todays_trade_count = get_todays_realized_pnl(symbol, trading_mode)
-            circuit_breaker_ok = (todays_pnl > -max_daily_loss) and (todays_trade_count < max_trades_per_day)
-
-            ist_now_time = get_ist_now().time()
-            entry_cutoff_ok = True
-            if trading_style == "INTRADAY" and entry_cutoff_time is not None:
-                entry_cutoff_ok = ist_now_time < entry_cutoff_time
-
-            st.caption(
-                f"आजचा वास्तविक P&L: ₹{todays_pnl:,.0f} · आजचे ट्रेड्स: {todays_trade_count}/{max_trades_per_day} · "
-                f"Circuit Breaker: {'🟢 OK' if circuit_breaker_ok else '🔴 BREACHED — नवीन ट्रेड ब्लॉक'} · "
-                f"Style: {trading_style}"
-            )
-
-            # 🎓 वापरकर्त्याने Order Log वरून सापडवलेली गंभीर bug — A1 Signal Engine कडे (इतर तिन्ही
-            # automated bot strategies — dynamic_sr_instant/srv2/classic_sr_reversal — च्या उलट)
-            # "आधीच याच source ची position उघडी आहे का" हा बिनशर्त check कधीच नव्हता. auto_refresh
-            # मुळे दर मिनिटाला हा संपूर्ण block पुन्हा चालतो — जुनी position SL/Target ला बंद झाल्या-
-            # बंद, तेवढ्याच rerun मध्ये तेच सिग्नल-गेट्स अजूनही पास होत असतील, तर लगेच नवीन trade
-            # आपोआप उघडली जायची (कुठलाही cooldown/gap नाही) — काही सेकंदातच whipsaw (उघड-बंद-पुन्हा
-            # उघड) होत राहायचं. आता इतर तिन्ही bots प्रमाणेच, आधीची position बंद होईपर्यंत
-            # नवीन A1 trade घेतली जात नाही.
-            already_open = has_open_trade_from_source(symbol, "DASHBOARD")
-
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — A1 Signal Engine ला आता (इतर तीन bot
-            # strategies प्रमाणेच) sidebar वरून स्पष्ट, डीफॉल्ट-बंद ON/OFF toggle आहे
-            # (shared_context.py, "a1_signal_engine_enabled"). वापरकर्त्याने मुद्दाम चालू
-            # केल्याशिवाय, PAPER mode मध्येही, इथून कधीच trade आपोआप घेतलं जात नाही.
-            if lots < 1:
-                st.warning("🚫 **NO TRADE** — दिलेल्या Risk % नुसार 1 लॉटसाठीही पुरेसे मार्जिन उपलब्ध नाही.")
-            elif not circuit_breaker_ok:
-                st.error("🚫 **NO TRADE** — दैनिक सर्किट ब्रेकर (कमाल तोटा / कमाल ट्रेड्स) गाठला गेला आहे.")
-            elif not entry_cutoff_ok:
-                st.warning(f"🚫 **NO TRADE** — Intraday एंट्री कटऑफ वेळ ({entry_cutoff_time.strftime('%H:%M')} IST) उलटून गेली आहे.")
-            elif already_open:
-                st.info("ℹ️ **NO NEW TRADE** — A1 Signal Engine ची आधीची position अजून उघडी आहे (बंद होईपर्यंत नवीन trade घेतली जाणार नाही).")
-            elif not a1_signal_engine_enabled:
-                st.warning("🚫 **NO TRADE** — A1 Signal Engine sidebar वरून बंद आहे (सिग्नल दिसतंय, पण trade घेतलं जाणार नाही — sidebar मधून \"A1 Signal Engine ऑटो-Execute सक्रिय\" टिक करा).")
+            if not all_gates_passed and not sideways_qualified:
+                st.info("🚫 **FINAL A1 SIGNAL: NO TRADE** — ना directional गेट्स पूर्ण झाले, ना Sideways अटी जुळल्या.")
+            elif strategy_result is None:
+                st.warning(f"🚫 **NO TRADE** — दिलेल्या PoP ≥ {pop_threshold_pct}% अटीनुसार योग्य स्ट्रॅटेजी सापडली नाही.")
             else:
-                mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
-                st.success(f"✅ **FINAL A1 SIGNAL: {mode_label}** — {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s), सर्व गेट्स पास.")
-                if enable_live_trading and confirm_live_trading:
-                    spinner_text = "Paper ऑर्डर सिम्युलेट होत आहे..." if trading_mode == "PAPER" else "लाईव्ह ऑर्डर प्लेस होत आहे..."
-                    with st.spinner(spinner_text):
-                        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator strategies
-                        # आहे तशाच (त्याच timeframes/logic सह) ठेवल्या, पण आता EOD Square-off होत नाही —
-                        # trading_style="SWING" पाठवलं जातं (manage_open_trades चा EOD check फक्त
-                        # trading_style=="INTRADAY" असेल तरच लागू होतो), जेणेकरून position दुसऱ्या
-                        # दिवशीही continue राहील. Sidebar वरचा "Intraday" label मात्र तसाच आहे (फक्त
-                        # timeframe/strategy निवडीसाठी वापरला जातो).
-                        # 🎓 नवीन risk management नियम (वापरकर्त्याशी चर्चा करून ठरवलेला) — SL = net_credit
-                        # च्या 30%, Target सुद्धा 30% (max_profit==net_credit असल्याने आपोआप). हे फक्त
-                        # BULL_PUT_SPREAD/BEAR_CALL_SPREAD (Price Action/Indicator) साठीच — Iron
-                        # Condor/Butterfly (sideways) असल्यास जुनीच sidebar-टक्केवारी पद्धत वापरली जाते.
-                        is_directional_2strategy = strategy_result["strategy"] in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
-                        ok, resp = open_multi_leg_trade(
-                            token_input, symbol, strategy_result, lots, lot_size,
-                            sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
-                            product_type, trading_mode=trading_mode, trading_style="SWING",
-                            sl_pct_of_credit=30 if is_directional_2strategy else None,
-                            source="DASHBOARD",
-                        )
-                    if ok:
-                        result_emoji = "📝" if trading_mode == "PAPER" else "🟢"
-                        st.success(f"{result_emoji} {mode_label} ऑर्डर प्लेस झाला — Trade ID: {resp['trade_id']}, Order IDs: {resp['order_ids']}")
-                    else:
-                        st.error(f"❌ ऑर्डर प्लेसमेंट अयशस्वी: {resp}")
+                legs = normalize_legs(strategy_result)
+                pop_display = strategy_result.get("short_pop_pct", strategy_result.get("combined_pop_pct"))
+
+                scol1, scol2, scol3 = st.columns(3)
+                with scol1:
+                    st.metric("Strategy", strategy_result["strategy"].replace("_", " "))
+                    st.caption(f"PoP (approx): {pop_display}%")
+                    for leg in legs:
+                        st.caption(f"{leg['role'].replace('_',' ').title()}: **{leg['strike']:.0f}** ({leg['transaction_type']})")
+                with scol2:
+                    st.metric("Net Credit (per unit)", f"₹{strategy_result['net_credit']:.2f}")
+                    st.metric("Max Profit / lot", f"₹{strategy_result['max_profit'] * lot_size:,.0f}")
+                    st.metric("Max Loss / lot", f"₹{strategy_result['max_loss'] * lot_size:,.0f}")
+                with scol3:
+                    margin_str = f"₹{available_margin:,.0f}" if available_margin is not None else "अनुपलब्ध"
+                    st.metric("Available Margin", margin_str)
+                    st.metric(f"Risk Amount ({risk_pct_per_trade}%)", f"₹{risk_amount:,.0f}")
+                    st.metric("Position Size", f"{lots} lot(s)")
+
+                todays_pnl, todays_trade_count = get_todays_realized_pnl(symbol, trading_mode)
+                circuit_breaker_ok = (todays_pnl > -max_daily_loss) and (todays_trade_count < max_trades_per_day)
+
+                ist_now_time = get_ist_now().time()
+                entry_cutoff_ok = True
+                if trading_style == "INTRADAY" and entry_cutoff_time is not None:
+                    entry_cutoff_ok = ist_now_time < entry_cutoff_time
+
+                st.caption(
+                    f"आजचा वास्तविक P&L: ₹{todays_pnl:,.0f} · आजचे ट्रेड्स: {todays_trade_count}/{max_trades_per_day} · "
+                    f"Circuit Breaker: {'🟢 OK' if circuit_breaker_ok else '🔴 BREACHED — नवीन ट्रेड ब्लॉक'} · "
+                    f"Style: {trading_style}"
+                )
+
+                # 🎓 वापरकर्त्याने Order Log वरून सापडवलेली गंभीर bug — A1 Signal Engine कडे (इतर तिन्ही
+                # automated bot strategies — dynamic_sr_instant/srv2/classic_sr_reversal — च्या उलट)
+                # "आधीच याच source ची position उघडी आहे का" हा बिनशर्त check कधीच नव्हता. auto_refresh
+                # मुळे दर मिनिटाला हा संपूर्ण block पुन्हा चालतो — जुनी position SL/Target ला बंद झाल्या-
+                # बंद, तेवढ्याच rerun मध्ये तेच सिग्नल-गेट्स अजूनही पास होत असतील, तर लगेच नवीन trade
+                # आपोआप उघडली जायची (कुठलाही cooldown/gap नाही) — काही सेकंदातच whipsaw (उघड-बंद-पुन्हा
+                # उघड) होत राहायचं. आता इतर तिन्ही bots प्रमाणेच, आधीची position बंद होईपर्यंत
+                # नवीन A1 trade घेतली जात नाही.
+                already_open = has_open_trade_from_source(symbol, "DASHBOARD")
+
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — A1 Signal Engine ला आता (इतर तीन bot
+                # strategies प्रमाणेच) sidebar वरून स्पष्ट, डीफॉल्ट-बंद ON/OFF toggle आहे
+                # (shared_context.py, "a1_signal_engine_enabled"). वापरकर्त्याने मुद्दाम चालू
+                # केल्याशिवाय, PAPER mode मध्येही, इथून कधीच trade आपोआप घेतलं जात नाही.
+                if lots < 1:
+                    st.warning("🚫 **NO TRADE** — दिलेल्या Risk % नुसार 1 लॉटसाठीही पुरेसे मार्जिन उपलब्ध नाही.")
+                elif not circuit_breaker_ok:
+                    st.error("🚫 **NO TRADE** — दैनिक सर्किट ब्रेकर (कमाल तोटा / कमाल ट्रेड्स) गाठला गेला आहे.")
+                elif not entry_cutoff_ok:
+                    st.warning(f"🚫 **NO TRADE** — Intraday एंट्री कटऑफ वेळ ({entry_cutoff_time.strftime('%H:%M')} IST) उलटून गेली आहे.")
+                elif already_open:
+                    st.info("ℹ️ **NO NEW TRADE** — A1 Signal Engine ची आधीची position अजून उघडी आहे (बंद होईपर्यंत नवीन trade घेतली जाणार नाही).")
+                elif not a1_signal_engine_enabled:
+                    st.warning("🚫 **NO TRADE** — A1 Signal Engine sidebar वरून बंद आहे (सिग्नल दिसतंय, पण trade घेतलं जाणार नाही — sidebar मधून \"A1 Signal Engine ऑटो-Execute सक्रिय\" टिक करा).")
                 else:
-                    st.info("ℹ️ लाईव्ह एक्झिक्युशनसाठी साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही टिक करा.")
+                    mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
+                    st.success(f"✅ **FINAL A1 SIGNAL: {mode_label}** — {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s), सर्व गेट्स पास.")
+                    if enable_live_trading and confirm_live_trading:
+                        spinner_text = "Paper ऑर्डर सिम्युलेट होत आहे..." if trading_mode == "PAPER" else "लाईव्ह ऑर्डर प्लेस होत आहे..."
+                        with st.spinner(spinner_text):
+                            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator strategies
+                            # आहे तशाच (त्याच timeframes/logic सह) ठेवल्या, पण आता EOD Square-off होत नाही —
+                            # trading_style="SWING" पाठवलं जातं (manage_open_trades चा EOD check फक्त
+                            # trading_style=="INTRADAY" असेल तरच लागू होतो), जेणेकरून position दुसऱ्या
+                            # दिवशीही continue राहील. Sidebar वरचा "Intraday" label मात्र तसाच आहे (फक्त
+                            # timeframe/strategy निवडीसाठी वापरला जातो).
+                            # 🎓 नवीन risk management नियम (वापरकर्त्याशी चर्चा करून ठरवलेला) — SL = net_credit
+                            # च्या 30%, Target सुद्धा 30% (max_profit==net_credit असल्याने आपोआप). हे फक्त
+                            # BULL_PUT_SPREAD/BEAR_CALL_SPREAD (Price Action/Indicator) साठीच — Iron
+                            # Condor/Butterfly (sideways) असल्यास जुनीच sidebar-टक्केवारी पद्धत वापरली जाते.
+                            is_directional_2strategy = strategy_result["strategy"] in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
+                            ok, resp = open_multi_leg_trade(
+                                token_input, symbol, strategy_result, lots, lot_size,
+                                sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
+                                product_type, trading_mode=trading_mode, trading_style="SWING",
+                                sl_pct_of_credit=30 if is_directional_2strategy else None,
+                                source="DASHBOARD",
+                            )
+                        if ok:
+                            result_emoji = "📝" if trading_mode == "PAPER" else "🟢"
+                            st.success(f"{result_emoji} {mode_label} ऑर्डर प्लेस झाला — Trade ID: {resp['trade_id']}, Order IDs: {resp['order_ids']}")
+                        else:
+                            st.error(f"❌ ऑर्डर प्लेसमेंट अयशस्वी: {resp}")
+                    else:
+                        st.info("ℹ️ लाईव्ह एक्झिक्युशनसाठी साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही टिक करा.")
 
         # (उघड्या ट्रेड्सचे SL/Target/EOD मॉनिटरिंग आता shared_context.py मध्ये हलवलेलं आहे — जेणेकरून हे
         # प्रत्येक page वर चालेल, फक्त Dashboard उघडी असतानाच नाही — आधीचा गंभीर gap इथेच होता.)
@@ -2111,11 +2126,13 @@ def render():
         conn_lt.close()
 
         if not open_df.empty:
-            sub_header("📂 सद्य उघडे (OPEN) ट्रेड्स", HDR_BLUE)
-            st.dataframe(open_df, width='stretch')
+            with st.expander("📂 सद्य उघडे (OPEN) ट्रेड्स", expanded=False):
+                sub_header("📂 सद्य उघडे (OPEN) ट्रेड्स", HDR_BLUE)
+                st.dataframe(open_df, width='stretch')
         if not closed_df.empty:
-            sub_header("📁 आजचे बंद झालेले ट्रेड्स", HDR_TEAL)
-            st.dataframe(closed_df, width='stretch')
+            with st.expander("📁 आजचे बंद झालेले ट्रेड्स", expanded=False):
+                sub_header("📁 आजचे बंद झालेले ट्रेड्स", HDR_TEAL)
+                st.dataframe(closed_df, width='stretch')
 
         # =========================================================
         # 10. Full Market Analysis Report — download button
@@ -2192,56 +2209,57 @@ def render():
         st.markdown("---")
 
         mega_header("📄 Full Market Analysis Report (PDF)", HDR_PINK)
-        st.caption(
-            "OI data, multi-timeframe (1 Day / 1H / style timeframe) market structure, charts, technical analysis, "
-            "VIX/strategy/risk sizing, and the live trades log — all in one PDF. "
-            "(Requires 'kaleido==0.2.1' in requirements.txt for charts to render.)"
-        )
-
-        if st.button("📊 Generate PDF Report"):
-            with st.spinner("Building PDF report — fetching daily chart & news..."):
-                df_day_report = fetch_candles(token_input, symbol, underlying_price, interval="day")
-                structure_day = classify_market_structure(df_day_report, order=3)
-                structure_1h_report = classify_market_structure(df_1h, order=3)
-                structure_style_tf_report = structure_info  # already computed above in the A1 Engine, for the current style's timeframe
-                news_data = fetch_market_news()
-
-                # Safe fallback if Direction Engine's Supertrend/RSI aren't available yet
-                report_st_label = st_label if "st_label" in locals() else "N/A"
-                report_st_val = last_st_val if "last_st_val" in locals() else 0.0
-                report_rsi = last_rsi if "last_rsi" in locals() else 0.0
-
-                if strategy_result and lots >= 1 and 'circuit_breaker_ok' in locals() and circuit_breaker_ok:
-                    mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
-                    final_signal_text = f"FINAL A1 SIGNAL: {mode_label} - {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s)"
-                elif strategy_result and lots < 1:
-                    final_signal_text = "NO TRADE - insufficient margin for even 1 lot (position size < 1 lot)"
-                elif (all_gates_passed or sideways_qualified) and strategy_result is None:
-                    final_signal_text = f"NO TRADE - no strategy found meeting the PoP >= {pop_threshold_pct}% condition"
-                else:
-                    final_signal_text = "NO TRADE - neither directional gates nor sideways conditions were met"
-
-                pdf_bytes = generate_market_analysis_report_pdf(
-                    symbol, underlying_price, atm_strike,
-                    df_day_report, df_1h, df_structure_tf, structure_tf_label,
-                    structure_day, structure_1h_report, structure_style_tf_report,
-                    pipeline_direction, sideways_info, report_st_label, report_st_val, report_rsi,
-                    broke, broken_level, pulled_back, retested, rsi_check, confirmed_5m, zone,
-                    india_vix, vix_ok, vix_max_threshold,
-                    strategy_result, lots, lot_size, risk_amount, available_margin, risk_pct_per_trade, pop_threshold_pct,
-                    final_signal_text,
-                    df, hist_df, open_df, closed_df,
-                    news_data,
-                )
-
-            report_filename = f"A1_Market_Report_{symbol}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            st.download_button(
-                label="📥 Download Full Market Analysis Report (.pdf)",
-                data=pdf_bytes,
-                file_name=report_filename,
-                mime="application/pdf",
+        with st.expander("📄 PDF Report तयार करा", expanded=False):
+            st.caption(
+                "OI data, multi-timeframe (1 Day / 1H / style timeframe) market structure, charts, technical analysis, "
+                "VIX/strategy/risk sizing, and the live trades log — all in one PDF. "
+                "(Requires 'kaleido==0.2.1' in requirements.txt for charts to render.)"
             )
-            st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
+
+            if st.button("📊 Generate PDF Report"):
+                with st.spinner("Building PDF report — fetching daily chart & news..."):
+                    df_day_report = fetch_candles(token_input, symbol, underlying_price, interval="day")
+                    structure_day = classify_market_structure(df_day_report, order=3)
+                    structure_1h_report = classify_market_structure(df_1h, order=3)
+                    structure_style_tf_report = structure_info  # already computed above in the A1 Engine, for the current style's timeframe
+                    news_data = fetch_market_news()
+
+                    # Safe fallback if Direction Engine's Supertrend/RSI aren't available yet
+                    report_st_label = st_label if "st_label" in locals() else "N/A"
+                    report_st_val = last_st_val if "last_st_val" in locals() else 0.0
+                    report_rsi = last_rsi if "last_rsi" in locals() else 0.0
+
+                    if strategy_result and lots >= 1 and 'circuit_breaker_ok' in locals() and circuit_breaker_ok:
+                        mode_label = "PAPER (Simulated)" if trading_mode == "PAPER" else "LIVE"
+                        final_signal_text = f"FINAL A1 SIGNAL: {mode_label} - {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s)"
+                    elif strategy_result and lots < 1:
+                        final_signal_text = "NO TRADE - insufficient margin for even 1 lot (position size < 1 lot)"
+                    elif (all_gates_passed or sideways_qualified) and strategy_result is None:
+                        final_signal_text = f"NO TRADE - no strategy found meeting the PoP >= {pop_threshold_pct}% condition"
+                    else:
+                        final_signal_text = "NO TRADE - neither directional gates nor sideways conditions were met"
+
+                    pdf_bytes = generate_market_analysis_report_pdf(
+                        symbol, underlying_price, atm_strike,
+                        df_day_report, df_1h, df_structure_tf, structure_tf_label,
+                        structure_day, structure_1h_report, structure_style_tf_report,
+                        pipeline_direction, sideways_info, report_st_label, report_st_val, report_rsi,
+                        broke, broken_level, pulled_back, retested, rsi_check, confirmed_5m, zone,
+                        india_vix, vix_ok, vix_max_threshold,
+                        strategy_result, lots, lot_size, risk_amount, available_margin, risk_pct_per_trade, pop_threshold_pct,
+                        final_signal_text,
+                        df, hist_df, open_df, closed_df,
+                        news_data,
+                    )
+
+                report_filename = f"A1_Market_Report_{symbol}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                st.download_button(
+                    label="📥 Download Full Market Analysis Report (.pdf)",
+                    data=pdf_bytes,
+                    file_name=report_filename,
+                    mime="application/pdf",
+                )
+                st.success("✅ रिपोर्ट तयार झाला — वरील बटणावर क्लिक करून डाऊनलोड करा.")
 
         # =========================================================
         # ९. Multi-Strategy Orchestrator आणि MTF Pullback + Gap Fill आता established वेगळ्या
