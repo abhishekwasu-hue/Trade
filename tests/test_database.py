@@ -41,6 +41,51 @@ def seed_closed_trade(tmpdb, trade_id, realized_pnl, exit_reason, exit_date, sym
     conn.close()
 
 
+class TestGetLastSlTslExitTime:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+    kiman 15 minute same level war trade ghewu naye, cooldown") — त्याच exact level वर आधीचा
+    SL/TSL-प्रकारचा exit केव्हा झाला, हे शोधणारी query."""
+
+    def test_sl_exit_returns_exit_time(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -500.0, "SL", "2026-09-25", entry_level_price=23038.1)
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result == datetime.datetime(2026, 9, 25, 14, 0, 0)
+
+    def test_tsl_sl_exit_also_matches(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 0.0, "TSL_SL", "2026-09-25", entry_level_price=23038.1)
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is not None
+
+    def test_target_exit_does_not_match(self, temp_db):
+        """फायदेशीर exit (TARGET) असेल तर cooldown लागू व्हायला नको."""
+        seed_closed_trade(temp_db, "T1", 5000.0, "TARGET", "2026-09-25", entry_level_price=23038.1)
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is None
+
+    def test_eod_squareoff_does_not_match(self):
+        """'EOD_SQUAREOFF' मध्ये 'SL' हा उपशब्द नाही — false positive चाचणी."""
+        assert "SL" not in "EOD_SQUAREOFF"
+
+    def test_different_level_does_not_match(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -500.0, "SL", "2026-09-25", entry_level_price=23000.0)
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is None
+
+    def test_different_source_does_not_match(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -500.0, "SL", "2026-09-25", entry_level_price=23038.1, source="classic_sr_reversal")
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is None
+
+    def test_different_date_does_not_match(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -500.0, "SL", "2026-09-24", entry_level_price=23038.1)
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is None
+
+    def test_no_matching_trade_returns_none(self, temp_db):
+        result = database.get_last_sl_tsl_exit_time("NIFTY", 23038.1, "dynamic_sr_instant", "2026-09-25")
+        assert result is None
+
+
 class TestGetClosedTradesDetail:
     def test_returns_entry_and_exit_columns(self, temp_db):
         seed_closed_trade(temp_db, "T1", 500.0, "TARGET", "2026-09-10")

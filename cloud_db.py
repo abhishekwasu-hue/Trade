@@ -275,6 +275,18 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_breakout_gate_enabled": False,
         "breakout_lookback_candles": 12,
         "breakout_tolerance_pct": 0.30,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+        # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
+        # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ
+        # शकतो (established generic 30-मिनिट cooldown established फक्त breakout trade साठी वगळलेला
+        # आहे, पण established दुसऱ्या (max-2-hits च्या आतल्याच) touch साठी established लागू व्हायला
+        # हवा होता — तरीही प्रत्यक्ष रिपोर्टमध्ये तो अवघ्या 1 मिनिटात bypass झालेला दिसला, त्यामुळे
+        # हा वेगळा, established exit-वेळेवर आधारित (entry-signal-वेळेऐवजी) गेट — established त्याच
+        # exact level वर established आधीचा SL/TSL-प्रकारचा exit किती मिनिटांपूर्वी झाला हे थेट
+        # live_trades वरून बघतो, established entry_level_price + exit_reason LIKE '%SL%' वरून).
+        # TARGET/EOD/इतर profitable/neutral exits यांना लागू होत नाही — फक्त whipsaw/fakeout नंतरचं
+        # संरक्षण. डीफॉल्ट 15 मिनिटं (वापरकर्त्याने तेच सांगितलं) — 0 केलं की हा गेट पूर्णपणे बंद.
+        "sl_tsl_cooldown_minutes": 15,
         "spread_sl_spot_pct": 0.05,
         "spread_sl_premium_points": 5,
         "spread_tsl_spot_pct": 0.10,
@@ -353,6 +365,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_tsl_premium_points": 25,
         "spread_target_pct_of_premium": 80,
         "carry_forward_min_profit_pct": 30,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+        # kiman 15 minute same level war trade ghewu naye, cooldown") — 1m_instant सारखीच (वरची
+        # टिप्पणी बघा) — त्याच exact level वर आधीचा SL/TSL-प्रकारचा exit किती मिनिटांपूर्वी झाला हे
+        # थेट live_trades वरून बघणारा गेट. डीफॉल्ट 15 मिनिटं — 0 केलं की बंद.
+        "sl_tsl_cooldown_minutes": 15,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
         # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
         # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक
@@ -424,6 +441,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "spread_tsl_premium_points": 10,
         "spread_target_spot_pct": 0.8,
         "spread_target_premium_points": 15,
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+        # kiman 15 minute same level war trade ghewu naye, cooldown") — 1m_instant सारखीच (बघा तिथली
+        # टिप्पणी) — त्याच exact level वर आधीचा SL/TSL-प्रकारचा exit किती मिनिटांपूर्वी झाला हे थेट
+        # live_trades वरून बघणारा गेट. डीफॉल्ट 15 मिनिटं — 0 केलं की बंद.
+        "sl_tsl_cooldown_minutes": 15,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही
         # independently optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं
         # पसंत करतो") — आधी credit spread नेहमीच चालायचा (toggle नव्हता), फक्त naked ऐच्छिक

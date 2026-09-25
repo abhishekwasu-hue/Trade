@@ -531,6 +531,82 @@ class TestCreditSpreadToggle:
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"].get("credit_spread_enabled", True) is True
 
 
+class TestSlTslCooldown:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+    kiman 15 minute same level war trade ghewu naye, cooldown") — dynamic_sr_instant_trader.py
+    सारखाच, exit-वेळेवर (live_trades.exit_time) आधारित, फक्त SL/TSL exits साठीच गेट."""
+
+    def _settings(self, **overrides):
+        s = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"])
+        s["symbol_enabled"] = True
+        s.update(overrides)
+        return s
+
+    def test_recent_sl_exit_on_same_level_blocks_trade(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        recent_sl_exit = datetime.datetime(2026, 9, 11, 10, 0, 0) - datetime.timedelta(minutes=1)
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings()), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(1, None, None)), \
+             patch.object(csr, "get_last_sl_tsl_exit_time", return_value=recent_sl_exit) as mock_sl_exit:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert mock_sl_exit.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_SL_TSL_COOLDOWN" in statuses
+
+    def test_no_prior_sl_exit_allows_trade(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings()), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(1, None, None)), \
+             patch.object(csr, "get_last_sl_tsl_exit_time", return_value=None):
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+    def test_zero_cooldown_setting_disables_gate(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        recent_sl_exit = datetime.datetime(2026, 9, 11, 10, 0, 0) - datetime.timedelta(minutes=1)
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(sl_tsl_cooldown_minutes=0)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(1, None, None)), \
+             patch.object(csr, "get_last_sl_tsl_exit_time", return_value=recent_sl_exit) as mock_sl_exit:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_sl_exit.called
+
+
 class TestBullishBearishEntryToggle:
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
     सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात, इतर सर्व gates च्याही आधी."""

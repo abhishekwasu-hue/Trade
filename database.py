@@ -506,6 +506,33 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
+def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
+    """
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("same level war pahilya trade cha sl tsl hit jhalyas kiman
+    15 minute same level war trade ghewu naye") — established त्याच symbol+source+entry_level_price
+    वरचा (आजच्याच दिवशीचा) सर्वात अलीकडचा **SL/TSL-प्रकारचा** exit केव्हा झाला — exit_reason मध्ये
+    "SL" शब्द असलेला (SL/TSL_SL/TRAILING_SL/PCT_TRAILING_SL/MANUAL_SL_OVERRIDE — पण TARGET/
+    PREMIUM_TARGET/EOD_SQUAREOFF/NEXT_LEVEL_EXIT/OI_REVERSAL/MANUAL_CLOSE नाही, यात "SL" शब्द नाही).
+    त्याच exact level वर whipsaw/fakeout नंतर लगेच पुन्हा trade घेतला जाऊ नये यासाठी (दुसऱ्या entry
+    bots नेही वापरता यावं म्हणून source parameter — त्याच bot च्या trades पुरतंच मर्यादित).
+    रिटर्न: datetime किंवा None (आजच्या दिवशी अजून तसा कुठलाही SL/TSL exit झालेला नसेल तर).
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT exit_time FROM live_trades
+           WHERE symbol=? AND source=? AND entry_level_price=? AND status='CLOSED'
+           AND exit_reason LIKE '%SL%' AND substr(exit_time,1,10)=?
+           ORDER BY exit_time DESC LIMIT 1""",
+        (symbol, source, level_price, trade_date),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if row is None or row[0] is None:
+        return None
+    return datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+
+
 def has_active_tsl_trades(symbols):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
     Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —

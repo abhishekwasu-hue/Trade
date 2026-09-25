@@ -54,7 +54,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
+from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate, check_iv_change_gate
@@ -402,6 +402,24 @@ def process_symbol(access_token, symbol, lot_size=65):
                 log_entry["reason"] = f"मागच्या trade ला फक्त {elapsed_minutes:.1f} मिनिटं झालीत (किमान 30 हवीत)"
                 cloud_db.save_signal_log(log_entry)
                 continue
+
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+        # kiman 15 minute same level war trade ghewu naye, cooldown") — वरचा 30-मिनिट cooldown
+        # entry-signal-वेळेवर आधारित आहे (max-2-hits च्या आतल्या दुसऱ्या touch साठीही लागू व्हायला
+        # हवा), पण याहून वेगळा, थेट exit-वेळेवर (live_trades.exit_time) आधारित हा गेट — त्याच exact
+        # level वर आधीचा SL/TSL-प्रकारचा exit नक्की किती मिनिटांपूर्वी झाला हे स्वतंत्रपणे तपासतो —
+        # whipsaw/fakeout नंतरचं आणखी एक थर संरक्षण. TARGET/इतर profitable exits ला लागू नाही.
+        # Breakout trade साठी वगळलेला (established कारण वरच्याच cooldown प्रमाणे).
+        sl_tsl_cooldown_minutes = settings.get("sl_tsl_cooldown_minutes", 15)
+        if sl_tsl_cooldown_minutes > 0 and not is_breakout_trade:
+            last_sl_tsl_exit = get_last_sl_tsl_exit_time(symbol, row["zone_low"], "dynamic_sr_instant", trade_date)
+            if last_sl_tsl_exit is not None:
+                elapsed_since_sl = (now - last_sl_tsl_exit).total_seconds() / 60
+                if elapsed_since_sl < sl_tsl_cooldown_minutes:
+                    log_entry["trade_status"] = "SKIPPED_SL_TSL_COOLDOWN"
+                    log_entry["reason"] = f"याच level वर मागचा SL/TSL फक्त {elapsed_since_sl:.1f} मिनिटांपूर्वी लागला (किमान {sl_tsl_cooldown_minutes} हवीत)"
+                    cloud_db.save_signal_log(log_entry)
+                    continue
 
         if has_open_trade_from_source(symbol, "dynamic_sr_instant"):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
