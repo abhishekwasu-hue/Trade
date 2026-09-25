@@ -170,6 +170,8 @@ def process_symbol(access_token, symbol):
     lot_size = resolved["lot_size"]
 
     lots = settings["lots"]
+    bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
+    bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
@@ -232,6 +234,20 @@ def process_symbol(access_token, symbol):
         }
 
         if not touched:
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — अंतिम (breakout-flip नंतरच्याही) direction वरच तपासलं जातं, जेणेकरून
+        # कुठल्याही उगमाची (reversal/breakout) या दिशेची trade अडवली जाईल. फक्त नवीन trades थांबतात.
+        if direction == "BULLISH" and not bullish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BULLISH_ENTRY_DISABLED"
+            log_entry["reason"] = f"Bullish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if direction == "BEARISH" and not bearish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BEARISH_ENTRY_DISABLED"
+            log_entry["reason"] = f"Bearish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
 

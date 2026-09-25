@@ -205,6 +205,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच lots
     # (वेगळं सेटिंगच नव्हतं) घ्यायचा — आता स्वतंत्र, Bot Dynamic SR Algo पानावरून बदलण्याजोगं.
     naked_lots = settings.get("naked_lots", lots)
+    bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
+    bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", RSI_SUPPORT_MAX)
     rsi_resistance_min = settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN)
@@ -344,6 +346,22 @@ def process_symbol(access_token, symbol, lot_size=65):
                 direction = "BEARISH" if direction == "BULLISH" else "BULLISH"
                 log_entry["direction"] = direction
                 is_directional_trade = True
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — इथे (सगळे direction-निश्चित करणारे टप्पे — मूळ touch + IV-flip +
+        # Breakout-flip — झाल्यावर, अंतिम `direction` वरच) तपासलं जातं, जेणेकरून कुठल्याही उगमाची
+        # (reversal/directional/breakout) या दिशेची trade अडवली जाईल — RSI/PCR Gate च्याही आधी. फक्त
+        # नवीन trades थांबतात, आधीच उघडलेले चालूच राहतात.
+        if direction == "BULLISH" and not bullish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BULLISH_ENTRY_DISABLED"
+            log_entry["reason"] = "Bullish Entry सेटिंग्जमधून बंद आहे"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if direction == "BEARISH" and not bearish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BEARISH_ENTRY_DISABLED"
+            log_entry["reason"] = "Bearish Entry सेटिंग्जमधून बंद आहे"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional

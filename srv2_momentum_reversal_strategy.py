@@ -168,6 +168,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच — Naked Option
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
+    bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
+    bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — dynamic_sr_instant_trader.py/
     # mcx_futures_trader.py सारखेच dual-threshold defaults (established single rsi_neutral_level=50
@@ -220,6 +222,20 @@ def process_symbol(access_token, symbol, lot_size=65):
         }
 
         if not touched:
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — इतर सर्व gates च्याही आधी (उगाच RSI/PCR API कॉल होऊ नयेत) — फक्त नवीन
+        # trades थांबतात, आधीच उघडलेले चालूच राहतात.
+        if direction == "BULLISH" and not bullish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BULLISH_ENTRY_DISABLED"
+            log_entry["reason"] = f"Bullish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if direction == "BEARISH" and not bearish_entry_enabled:
+            log_entry["trade_status"] = "SKIPPED_BEARISH_ENTRY_DISABLED"
+            log_entry["reason"] = f"Bearish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
 

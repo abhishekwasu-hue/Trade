@@ -470,6 +470,71 @@ class TestProcessSymbolCoreFlow:
             assert "मिळाले नाहीत" in result
 
 
+class TestBullishBearishEntryToggle:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+    सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात, इतर सर्व gates च्याही आधी."""
+
+    def _settings(self, **overrides):
+        s = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["classic_sr_reversal"])
+        s["symbol_enabled"] = True
+        s["entry_rsi_gate_enabled"] = False
+        s.update(overrides)
+        return s
+
+    def test_bullish_entry_disabled_skips_bullish_touch(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(bullish_entry_enabled=False)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BULLISH_ENTRY_DISABLED" in statuses
+
+    def test_bearish_entry_disabled_skips_bearish_touch(self):
+        # current_price (शेवटचा close, 23895) < zone_low (23900, support) -> direction=BEARISH
+        candles_touch = _candles_with_rsi([
+            {"open": 23890, "high": 23895, "low": 23880, "close": 23890},
+            {"open": 23895, "high": 23900, "low": 23890, "close": 23895},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(bearish_entry_enabled=False)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BEARISH_ENTRY_DISABLED" in statuses
+
+    def test_defaults_both_enabled_allows_trade(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings()), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value=None), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+
 class TestRunAllSymbols:
     """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — dynamic_sr_instant_trader.py प्रमाणेच इथेही — एका
     symbol मधल्या अनपेक्षित exception मुळे उरलेले symbols त्याच cycle मध्ये कधीच तपासलेच जायचे

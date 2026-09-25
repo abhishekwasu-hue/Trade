@@ -235,6 +235,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_rsi_gate_enabled": True,
         "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
         "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात) — इतर
+        # सर्व gates च्याही आधी तपासलं जातं. डीफॉल्ट दोन्ही चालू (जुनंच वर्तन).
+        "bullish_entry_enabled": True,
+        "bearish_entry_enabled": True,
         "entry_pcr_gate_enabled": True,
         # PCR < pcr_bullish_min -> Bullish trade नाही. PCR > pcr_bearish_max -> Bearish trade नाही.
         # डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe) — हे PCR गेट बंद असतानाही लागू होत नाही.
@@ -325,6 +330,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_rsi_gate_enabled": True,
         "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
         "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात). डीफॉल्ट
+        # दोन्ही चालू (जुनंच वर्तन).
+        "bullish_entry_enabled": True,
+        "bearish_entry_enabled": True,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("3 वेगवेगळे timeframe आहेत, selection user friendly
         # असू द्या, डीफॉल्ट 15 मिनिट ठेवा, 30 आणि 60 मिनिट optional राहील") — आधी तिन्ही (15M/30M/60M)
         # नेहमीच एकत्र तपासले जायचे, निवडीची सोयच नव्हती.
@@ -378,6 +388,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "timeframe_choice": "BOTH",      # "BOTH" | "5M" | "15M"
         "entry_rsi_gate_enabled": True,
         "rsi_neutral_level": 50,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात). डीफॉल्ट
+        # दोन्ही चालू (जुनंच वर्तन).
+        "bullish_entry_enabled": True,
+        "bearish_entry_enabled": True,
         # Entry Refinement — तिन्ही ऐच्छिक, स्वतंत्र (backtest.run_classic_sr_reversal_backtest()
         # मधल्याच गेट्सशी सुसंगत तर्क आणि डीफॉल्ट मूल्यं).
         "swing_confluence_enabled": False,
@@ -438,6 +453,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_rsi_gate_enabled": True,
         "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
         "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+        # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात). डीफॉल्ट
+        # दोन्ही चालू (जुनंच वर्तन).
+        "bullish_entry_enabled": True,
+        "bearish_entry_enabled": True,
         "sl_points": 20,                 # Stop Loss — underlying futures points (options premium नाही)
         "target_points": 40,             # Target — underlying futures points
         "trailing_sl_enabled": False,

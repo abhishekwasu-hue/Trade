@@ -532,6 +532,65 @@ class TestProcessSymbol:
             assert "सापडले नाहीत" in result
 
 
+class TestBullishBearishEntryToggle:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+    सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात, इतर सर्व gates च्याही आधी."""
+
+    def _bearish_candles(self):
+        """level=23900 (support_level, _fake_dyn_zones डीफॉल्ट) -- आधीची history स्पष्टपणे lower
+        buffer च्या खाली (23850), शेवटी बरोब्बर level ला स्पर्श -- hysteresis दिशा BEARISH ठरवते
+        (resistance सारखा खालून केलेला test)."""
+        end_ts = srv2.get_ist_now().replace(hour=15, minute=15, second=0, microsecond=0)
+        dates = pd.date_range(end=end_ts, periods=20, freq="15min")
+        closes = [24000 - i * 10 for i in range(18)] + [23850.0, 23900.0]
+        return pd.DataFrame({"timestamp": dates, "open": closes, "high": [c + 5 for c in closes],
+                              "low": [c - 5 for c in closes], "close": closes, "volume": 0, "oi": 0})
+
+    def test_bullish_entry_disabled_skips_bullish_touch(self):
+        candles_df = _fake_candles_df(last_close=23902)  # BULLISH (support bounce)
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["bullish_entry_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BULLISH_ENTRY_DISABLED" in statuses
+
+    def test_bearish_entry_disabled_skips_bearish_touch(self):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["bearish_entry_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=self._bearish_candles()), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "open_multi_leg_trade") as mock_trade, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BEARISH_ENTRY_DISABLED" in statuses
+
+    def test_bullish_entry_enabled_default_allows_trade(self):
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+
 class TestProcessSymbolMultiAccount:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
     नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी, settings मधल्याच broker_account_ids (वापरकर्त्याने

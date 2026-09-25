@@ -490,6 +490,68 @@ class TestMcxBreakoutEntry:
             assert mock_trade.called
 
 
+class TestBullishBearishEntryToggle:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
+    सुद्धा पाहिजे") — इतर सर्व gates च्याही आधी — फक्त नवीन trades थांबतात."""
+
+    def _bearish_candles(self):
+        """level=6500 (support, _fake_zones डीफॉल्ट) -- स्पष्टपणे lower buffer (1%, 6435) च्या खाली
+        जाऊन, शेवटी बरोब्बर level ला स्पर्श -- hysteresis दिशा BEARISH ठरवते."""
+        return _fake_candles_df(closes=[6600.0] * 17 + [6400.0, 6498.0])
+
+    def test_bullish_entry_disabled_skips_bullish_touch(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["bullish_entry_enabled"] = False
+        candles_df = _fake_candles_df(last_close=6500.0)  # BULLISH (support test from above)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BULLISH_ENTRY_DISABLED" in statuses
+
+    def test_bearish_entry_disabled_skips_bearish_touch(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["bearish_entry_enabled"] = False
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=self._bearish_candles()), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade, \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BEARISH_ENTRY_DISABLED" in statuses
+
+    def test_defaults_both_enabled_allows_trade(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called
+
+
 class TestPercentMode:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("SL/Target/Trailing SL also on percentage, add other
     gate") — Points सोबतच Percentage mode. entry/सद्य किंमतीवरून points-समतुल्य आकडा काढून
