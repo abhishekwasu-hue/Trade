@@ -116,11 +116,7 @@ def setup_shared_context():
             else:
                 st.warning("⚠️ आधी वरती Token टाका, मग Save करा.")
 
-    # 🎓 वापरकर्त्याने सापडवलेली bug — हा label जुनाच "1 Minute" राहिला होता, पण प्रत्यक्ष
-    # auto-refresh interval (app.py, st_autorefresh) आधीच ५ मिनिटांवर बदललेला आहे (Blink फिक्स —
-    # किंमत/P&L टिकर स्वतंत्रपणे दर ६० सेकंदाला ताजा होतो, त्यामुळे संपूर्ण पानाला दर मिनिटाला
-    # रिफ्रेश करायची गरज उरली नव्हती) — label आता प्रत्यक्ष वर्तनाशी जुळवला.
-    auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (5-Minute)", value=True)
+    auto_refresh = st.sidebar.checkbox("ऑटो-रिफ्रेश (1 Minute)", value=True)
 
     # --- ६.५ A1 स्ट्रॅटेजी व लाईव्ह एक्झिक्युशन सेटिंग्ज ---
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — आधी हे सर्व (Lot Size पासून Max Daily Loss पर्यंत)
