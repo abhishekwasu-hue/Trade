@@ -200,9 +200,11 @@ def _bi_line(en, mr, font_size=11):
     संदेश) — पण Paragraph स्वरूपात, Devanagari-सुसंगत font सह."""
     return Paragraph(_bi(en, mr), ParagraphStyle(f"bi_line_{id(en)}", fontName=_DEVANAGARI_FONT, fontSize=font_size, leading=font_size + 4))
 
-def _section_header(text, idx, style=None):
-    """Coloured full-width banner for each section heading — rotates through an accent palette."""
-    color = _SECTION_COLORS[idx % len(_SECTION_COLORS)]
+def _section_header(text, idx, style=None, color=None):
+    """Coloured full-width banner for each section heading — rotates through an accent palette by
+    default (idx % len), or uses a fixed `color` when given (e.g. Performance Report's consistent
+    dark banner, for a single-brand-color professional look instead of a rotating rainbow)."""
+    color = color or _SECTION_COLORS[idx % len(_SECTION_COLORS)]
     tbl = Table([[Paragraph(text, style or _rpt_h2)]], colWidths=[18 * cm])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), color),
@@ -2032,7 +2034,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (dual-language PDF — इंग्रजी + शुद्ध देवनागरी मराठी) —
         # या report च्या प्रत्येक मुख्य मथळ्यासाठी (banner) Devanagari-सुसंगत font style
         # (_rpt_h2_bt_bi) — इतर report types (Signal Check/Backtest/Market Analysis) यापासून अस्पर्श.
-        story.append(_section_header(text, sec[0], style=_rpt_h2_bt_bi))
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Professional look द्या") — आधी प्रत्येक विभागाचा banner
+        # वेगळ्या, ठळक रंगात (निळा/जांभळा/हिरवा/अंबर/लाल — क्रमानुसार फिरणारा) दिसायचा, जो अर्थहीन
+        # "इंद्रधनुष्य" सारखा दिसत होता. आता सगळे मुख्य मथळे एकाच, title bar शी जुळणाऱ्या गडद रंगात
+        # (_C_BG_DARK) — एकसंध, brand-सुसंगत, गंभीर आर्थिक रिपोर्टसाठी शोभेल असं दिसतं. (Trade Log
+        # आतले Timeframe-निहाय उप-मथळे — 1M/5M/इ. — मुद्दाम वेगळे रंगीत आहेत, ते फक्त सजावट नसून
+        # वेगवेगळे गट पटकन ओळखता यावेत म्हणून आहेत, त्यामुळे तसेच ठेवले.)
+        story.append(_section_header(text, sec[0], style=_rpt_h2_bt_bi, color=_C_BG_DARK))
         sec[0] += 1
         story.append(Spacer(1, 8))
 
