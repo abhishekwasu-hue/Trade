@@ -288,6 +288,23 @@ def render():
                 st.warning("⚠️ किमान एक टाईमफ्रेम निवडायलाच हवा — काहीही निवडलं नसेल, तर जतन करताना आपोआप 15M निवडला जाईल.")
             st.markdown("---")
 
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
+        # kiman 15 minute same level war trade ghewu naye, cooldown") — तिन्ही strategies साठी
+        # समान — पहिल्या trade चा SL/TSL लागल्यावर, त्याच exact level वर किती वेळ पुढचा trade
+        # थांबवायचा. established generic 30-मिनिट cooldown (कुठल्याही exit-प्रकारावर, entry-वेळेवर
+        # आधारित) आधीपासूनच आहे — हा त्यापेक्षा वेगळा, फक्त SL/TSL exits साठीच, exit-वेळेवर आधारित.
+        sub_header("🕐 SL/TSL Cooldown (त्याच level वर)", HDR_TEAL)
+        st.caption(
+            "पहिल्या trade चा SL किंवा TSL लागल्यावर, त्याच exact level वर किमान इतकी मिनिटं पुढचा "
+            "trade घेतला जाणार नाही (whipsaw/fakeout नंतरचं संरक्षण) — Target/इतर फायदेशीर exits ला "
+            "लागू नाही. 0 केलं की हा गेट पूर्णपणे बंद."
+        )
+        sl_tsl_cooldown_minutes = _number_input(
+            "Cooldown (मिनिटं)", settings, "sl_tsl_cooldown_minutes", strategy_key, symbol,
+            min_value=0, max_value=120, step=5,
+        )
+        st.markdown("---")
+
         sub_header("🔻 Strike व Size निवड (Credit Spread)", HDR_PURPLE)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
         # ऑप्शनल ठेवा — ज्या user कडे कमी कॅपिटल आहे तो नेकेड ऑप्शन बाय करणे पसंत करतो") — आधी Credit
@@ -715,6 +732,7 @@ def render():
             "spread_trailing_sl_enabled": bool(spread_trailing_sl_enabled), "spread_trailing_distance_points": float(spread_trailing_distance_points),
             "naked_trailing_sl_enabled": bool(naked_trailing_sl_enabled), "naked_trailing_distance_points": float(naked_trailing_distance_points),
             "broker_side_sl_enabled": bool(broker_side_sl_enabled),
+            "sl_tsl_cooldown_minutes": int(sl_tsl_cooldown_minutes),
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा — LIVE निवडलं तरी पुष्टीकरण टिक केलेलं नसेल, तर
             # सुरक्षिततेसाठी PAPER वरच जतन होतं (शांतपणे LIVE जतन होऊन खरे ऑर्डर्स सुरू होता कामा नयेत).
             "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",
