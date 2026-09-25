@@ -452,6 +452,12 @@ def process_symbol(access_token, symbol, lot_size=65):
         trading_mode = settings.get("trading_mode", "PAPER")
         broker_account_ids = settings.get("broker_account_ids") or []
 
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3
+        # ha Breakout trade aahe") — Performance Report च्या Entry Reason स्तंभात हा भेद दिसावा
+        # म्हणून live_trades मध्येच कायमचा साठवला जातो (आधी फक्त Signal Log च्या reason मध्ये होता,
+        # जो Trade Log/PDF शी कधीच जोडलेला नव्हता).
+        entry_reason_tag = "BREAKOUT_ENTRY" if is_breakout_trade else ("IV_BREAKOUT_DIRECTIONAL" if is_directional_trade else None)
+
         spread_result = None
         trade_status = ""
         if credit_spread_enabled:
@@ -472,7 +478,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    account_ids=broker_account_ids,
+                    account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
                 )
                 trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
                 if factory_errors:
@@ -484,6 +490,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    entry_reason_tag=entry_reason_tag,
                 )
             log_entry["trade_status"] = trade_status
             # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
@@ -535,7 +542,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    account_ids=broker_account_ids,
+                    account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
@@ -545,6 +552,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    entry_reason_tag=entry_reason_tag,
                 )
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"

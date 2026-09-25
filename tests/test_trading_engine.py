@@ -2110,6 +2110,49 @@ class TestEntryMarginRequiredStored:
         assert reason is None
 
 
+class TestEntryReasonTagStored:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade 3 ha
+    Breakout trade aahe") — Breakout Entry/IV Breakout Directional सारखे विशेष entry-प्रकार आता
+    live_trades.entry_reason_tag मध्ये कायमचे साठवले जातात, जेणेकरून Performance Report च्या Entry
+    Reason स्तंभात ते प्लेन S/R touch पेक्षा वेगळे दाखवता येतील."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_breakout_entry_tag_stored(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            entry_reason_tag="BREAKOUT_ENTRY",
+        )
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT entry_reason_tag FROM live_trades WHERE trade_id=?", (resp["trade_id"],)).fetchone()
+        conn.close()
+        assert row[0] == "BREAKOUT_ENTRY"
+
+    def test_no_tag_stored_as_null_for_plain_touch(self, temp_db, monkeypatch):
+        """प्लेन S/R touch trades साठी entry_reason_tag दिला नाही (डीफॉल्ट None) — backward-compatible,
+        जुन्या trades सारखाच NULL राहतो."""
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is True
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT entry_reason_tag FROM live_trades WHERE trade_id=?", (resp["trade_id"],)).fetchone()
+        conn.close()
+        assert row[0] is None
+
+
 class TestAlertCrossStrategyConflict:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check — फक्त अलर्ट, block नाही,
     वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय)."""

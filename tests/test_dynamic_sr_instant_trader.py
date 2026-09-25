@@ -479,12 +479,16 @@ class TestProcessSymbol:
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(dsr, "select_credit_spread_itm", return_value={"strategy_type": "BULL_PUT_SPREAD", "legs": []}), \
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
-             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True):
             result = dsr.process_symbol("fake_token", "NIFTY")
             assert "TOUCH" in result
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — प्लेन S/R touch trades साठी entry_reason_tag
+            # None च राहायला हवा (Breakout Entry/IV Breakout Directional सारखा विशेष टॅग फक्त
+            # त्या-त्या विशेष केसेससाठीच).
+            assert mock_trade.call_args.kwargs.get("entry_reason_tag") is None
 
     def test_direction_follows_current_price_not_stored_label(self):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "All levels above LTP will act as
@@ -1596,6 +1600,26 @@ class TestBreakoutEntry:
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, recent_trade_time)):
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
+
+    def test_breakout_trade_tagged_in_entry_reason(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade entry reason same disat aahe, actually trade
+        3 ha Breakout trade aahe") — Breakout Entry trade open_multi_leg_trade() ला
+        entry_reason_tag="BREAKOUT_ENTRY" सकट पास व्हायला हवा (Performance Report च्या Entry Reason
+        स्तंभात दाखवण्यासाठी)."""
+        recent_trade_time = datetime.datetime(2026, 9, 11, 9, 55, 0)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.CONSOLIDATED_WINDOW, 23800.0)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T97"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, recent_trade_time)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
 
     def test_breakout_trade_still_blocked_when_position_already_open(self):
         """established has_open_trade_from_source() सुरक्षा-तपासणी breakout trade लाही लागू व्हायला
