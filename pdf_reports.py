@@ -20,9 +20,11 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfgen.canvas import Canvas as _BaseCanvas
 
+from log_setup import get_logger
 from signals import add_price_action_overlays, describe_price_action, calculate_supertrend, calculate_rsi, analyze_chart_zones, check_price_action_strategy, find_swing_sr_levels_rolling, get_nearest_sr
 from trading_engine import normalize_legs
 
+_logger = get_logger("pdf_reports.py")
 
 _RPT_FONT = "Times-Roman"
 
@@ -884,13 +886,16 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     return [tbl, note] if note else tbl
 
 
-def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=7):
+def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=8.5):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER slippage PDF मध्ये) — df_to_reportlab_table()
     रुंद (10 स्तंभांच्या) DataFrame साठी वापरलं, तर colWidths न दिल्याने नैसर्गिक (auto) रुंदी पानाच्या
     रुंदीपेक्षा जास्त होऊन उजवीकडचे स्तंभ कापले जातात/दिसतच नाहीत — इथे प्रत्येक सेल Paragraph म्हणून
     wrap केलेला (लांब मजकूर पुढच्या ओळीत जातो) आणि colWidths=usable_width/स्तंभ-संख्या — त्यामुळे
     टेबल कधीच पानाबाहेर जात नाही. फक्त याच (रुंद) टेबलसाठी वापरलेलं — df_to_reportlab_table() इतर
-    सर्व existing कॉल्ससाठी जसंच्या तसं (बदल नाही)."""
+    सर्व existing कॉल्ससाठी जसंच्या तसं (बदल नाही).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("content font size is very small, difficult for reading") —
+    डीफॉल्ट फॉन्ट 7pt वरून 8.5pt (हा helper फक्त Performance Report च्या Overshoot/LIVE-PAPER
+    Slippage Tracker तक्त्यांसाठीच वापरला जातो)."""
     if df is None or df.empty:
         return Paragraph("No data available.", _rpt_normal)
     display_df = df.head(max_rows)
@@ -1897,7 +1902,14 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
     वर (दिलं असेल तर) नफा/तोटा-रंगीत उभी रेषा ("EXIT"), आणि entry_level_price (bot ने नेमका कुठला
     S/R level touch केला) असेल तर तिथे जांभळी आडवी रेषा — सर्व एकाच नजरेत दिसावं म्हणून.
     Returns image_bytes किंवा None (candles नसतील/kaleido अपयशी झाला तर, गोंधळ न होता — caller ने
-    त्या केसमध्ये फक्त "chart उपलब्ध नाही" असा मजकूर दाखवावा)."""
+    त्या केसमध्ये फक्त "chart उपलब्ध नाही" असा मजकूर दाखवावा).
+    🎓 वापरकर्त्याने सापडवलेली bug ("candle data unavailable" — candle डेटा प्रत्यक्ष उपलब्ध असूनही
+    सर्वच trades साठी कायम) — खरं कारण डेटा नव्हतंच, तर `fig.to_image()` (kaleido>=1.0 ला वेगळं,
+    स्वतंत्र Chrome install लागतं — जुन्या bundled-Chromium आवृत्तीसारखं आता नाही) अपयशी होत होता —
+    पण जुना `except Exception: return None` ती नेमकी चूक कुठेच लॉग न करता गिळून टाकायचा, त्यामुळे
+    "candle data unavailable" हा दिशाभूल करणारा संदेश दिसायचा (खरं कारण होतं: VPS वर Chrome install
+    नव्हता — बघा deploy/README.md चं "Performance Report PDF — Candlestick Charts" विभाग). आता ही
+    exception निदान लॉग तरी होते, जेणेकरून हा प्रकार पुन्हा घडला तर लगेच स्पष्ट दिसेल."""
     if candles_df is None or candles_df.empty:
         return None
     try:
@@ -1935,7 +1947,8 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
             dict(bounds=[15.5, 9.25], pattern="hour"),
         ])
         return fig.to_image(format="png", scale=2)
-    except Exception:
+    except Exception as e:
+        _logger.error(f"build_trade_entry_exit_chart_image(): candle data was present ({len(candles_df)} candles) but chart image export failed — {e}")
         return None
 
 
@@ -2104,12 +2117,15 @@ class _NumberedCanvas(_BaseCanvas):
         self.drawRightString(A4[0] - 1.4 * cm, 0.65 * cm, f"Page {self._pageNumber} of {total_pages}")
 
 
-_TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=7.5, leading=9.5)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("content font size is very small, difficult for reading") —
+# Trade Log चा फॉन्ट 7.5pt वरून 9pt (leading त्याच प्रमाणात 9.5→11.5) — सर्वात दाट, माहितीने भरलेला
+# तक्ता असल्याने वाचनासाठी सर्वात जास्त त्रासदायक होता.
+_TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=9, leading=11.5)
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") — Trade Log
 # च्या header row साठी, प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा), पांढऱ्या
 # पार्श्वभूमीवर — आधीची घन काळी पार्श्वभूमी + एकसुरी पांढरा मजकूर काढला.
 _TRADE_LOG_HEADER_STYLES = [
-    ParagraphStyle(f"trade_log_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=7.5, leading=9.5, textColor=c)
+    ParagraphStyle(f"trade_log_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=9, leading=11.5, textColor=c)
     for i, c in enumerate(_SECTION_COLORS)
 ]
 

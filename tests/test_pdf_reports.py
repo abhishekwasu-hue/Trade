@@ -7,6 +7,8 @@ SEBI/Stamp/GST चा ब्रेकडाऊनही दाखवला ज�
 column च्या रुंदीबाहेर overflow होऊ नये म्हणून Paragraph मध्ये wrap करून दिली आहे -- ती अजिबात न
 दाखवल्यास/चुकीच्या प्रकाराने दिल्यास PDF तयार होताना क्रॅश होईल, हेच इथे पडताळलं आहे.
 """
+from unittest.mock import patch
+
 import pandas as pd
 from reportlab.platypus import Paragraph
 
@@ -229,6 +231,20 @@ class TestBuildTradeEntryExitChartImage:
     def test_open_trade_without_exit_does_not_raise(self):
         result = build_trade_entry_exit_chart_image(self._candles(), entry_time="2026-09-24 10:00:00")
         assert result is None or result[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_image_export_failure_is_logged_not_silently_swallowed(self):
+        """🎓 वापरकर्त्याने सापडवलेली bug ("candle data unavailable" — candle डेटा प्रत्यक्ष उपलब्ध
+        असूनही कायम) — मूळ कारण होतं VPS वर kaleido>=1.0 ला लागणारा वेगळा Chrome install नसणं, पण जुना
+        `except Exception: return None` ती चूक कुठेच लॉग न करता गिळायचा. आता `fig.to_image()` अपयशी
+        झाला (इथे मुद्दाम mock करून) तरी `_logger.error` ला कळवलं जातं, आणि तरीही graceful None."""
+        with patch("plotly.graph_objects.Figure.to_image", side_effect=RuntimeError("Kaleido requires Google Chrome to be installed.")), \
+             patch("pdf_reports._logger") as mock_logger:
+            result = build_trade_entry_exit_chart_image(self._candles(), entry_time="2026-09-24 10:00:00")
+        assert result is None
+        assert mock_logger.error.called
+        logged_msg = mock_logger.error.call_args.args[0]
+        assert "chart image export failed" in logged_msg
+        assert "Kaleido requires Google Chrome" in logged_msg
 
 
 class TestGeneratePerformanceReportPdfTradeCharts:

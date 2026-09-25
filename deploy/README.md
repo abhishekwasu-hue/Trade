@@ -605,6 +605,35 @@ Browser मध्ये Dashboard उघडल्यावर आता सर�
 
 ---
 
+# PDF रिपोर्ट्समधले Candlestick Chart — kaleido ला वेगळा Chrome install लागतो (एकदाच सेटअप)
+
+🎓 वापरकर्त्याने सापडवलेली bug ("candlestick charts disat नाहीत") — सर्वच PDF रिपोर्ट्समधले
+candlestick chart images (Performance Report चे Trade Charts, Market Analysis/Signal Backtest/EOD
+Report चे चार्ट्स — सातही ठिकाणी) कायम "candle data unavailable"/रिकामे दिसायचे, candle डेटा प्रत्यक्ष
+उपलब्ध असूनही. मूळ कारण डेटाचं नव्हतंच — `requirements.txt` मधला `kaleido>=1.0.0` (Plotly चार्टचं PNG
+मध्ये रूपांतर करणारं library) आवृत्ती 1.0 पासून स्वतःचं bundled Chromium देत नाही — त्याला वेगळा, स्वतंत्र
+**Google Chrome install** लागतो. VPS वर तो install नसेल, तर `fig.to_image()` प्रत्येक वेळी अपयशी होतो
+(जुन्या कोडमध्ये हे silently गिळलं जायचं — आता किमान लॉग होतं, बघा `pdf_reports.py` मधली
+`_logger.error(...)` ओळ).
+
+## एकदाच सेटअप (droplet वर):
+
+```bash
+# फक्त एकदाच — self-contained Chrome download (कुठलाही root/system-wide apt install लागत नाही,
+# ~/.local/share/choreographer/ मध्ये उतरतं, त्याच user च्या home directory च्या आत)
+plotly_get_chrome -y
+```
+
+**कधी चालवायचं** — पहिल्यांदा deploy करतानाच, आणि VPS reset/नवीन droplet वर स्थलांतर केल्यास पुन्हा एकदा
+(Chrome-download `pip install -r requirements.txt` सोबत आपोआप होत नाही — हे वेगळं, एकदाच करायचं पाऊल आहे).
+
+तपासणी — खालचं काहीही न crash होता चालायला हवं:
+```bash
+python3 -c "import plotly.graph_objects as go; go.Figure(data=[go.Candlestick(x=['a'],open=[1],high=[2],low=[0],close=[1])]).to_image(format='png'); print('OK')"
+```
+
+---
+
 # ⚠️ Streamlit Dashboard — Duplicate systemd Unit मुळे Port Conflict (प्रत्यक्ष घडलेलं, २३-Sep-2026)
 
 🎓 वापरकर्त्याला प्रत्यक्ष आलेला अनुभव — Dashboard वर `AttributeError: module 'cloud_db' has no
