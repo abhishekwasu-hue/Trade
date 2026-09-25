@@ -6,6 +6,7 @@ tests/test_upstox_api.py
 "स्वीकारला गेला" इतकंच सांगतं, "प्रत्यक्ष भरला गेला" हे नाही. आता प्रत्येक leg चा order_id
 GET /v2/order/details ने पोल करून खरी (terminal) स्थिती तपासली जाते.
 """
+import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -561,3 +562,43 @@ class TestFetchIndiaVixPrevClose:
         with patch.object(upstox_api, "_get_with_retry", side_effect=Exception("connection reset")):
             result = upstox_api.fetch_india_vix_prev_close("fake_token")
         assert result is None
+
+
+class TestFetchCandlesDateRange:
+    """🎓 वापरकर्त्याने सापडवलेली bug (Performance Report PDF च्या Trade Charts मध्ये सर्वच trades
+    साठी "candle data unavailable" — token बरोबर असूनही) — मूळ कारण `while chunk_end > from_date`
+    होता: intraday trade (entry+exit एकाच दिवशी, म्हणजे from_date == to_date) साठी हा पहिलाच check
+    False ठरून loop कधीच चालायचाच नाही, कुठलाही API कॉल न होता रिकामा DataFrame मिळायचा."""
+
+    def _candle_row(self, ts="2026-09-24T09:20:00+05:30"):
+        return [ts, 100.0, 105.0, 98.0, 102.0, 1000, 0]
+
+    def test_same_day_range_still_fetches_one_chunk(self):
+        """entry_dt.date() == exit_dt.date() (सर्वसामान्य intraday trade) — आधी इथेच रिकामा DataFrame
+        मिळायचा, आता किमान एक chunk मागवला जातो."""
+        same_day = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(200, {"candles": [self._candle_row()]})
+        with patch.object(upstox_api.requests, "get", return_value=resp) as mock_get:
+            df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", same_day, same_day)
+        mock_get.assert_called_once()
+        assert not df.empty
+        assert len(df) == 1
+
+    def test_multi_day_range_unaffected(self):
+        """आधीपासूनच बरोबर काम करणारा multi-day case — fix मुळे मोडलेला नाही, अजूनही एकाच
+        iteration मध्ये संपूर्ण रेंज मागवली जाते."""
+        from_date = datetime.date(2026, 9, 20)
+        to_date = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(200, {"candles": [self._candle_row(), self._candle_row("2026-09-23T09:20:00+05:30")]})
+        with patch.object(upstox_api.requests, "get", return_value=resp) as mock_get:
+            df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", from_date, to_date)
+        mock_get.assert_called_once()
+        assert len(df) == 2
+
+    def test_no_candles_returns_empty_df_with_expected_columns(self):
+        same_day = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(200, {"candles": []})
+        with patch.object(upstox_api.requests, "get", return_value=resp):
+            df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", same_day, same_day)
+        assert df.empty
+        assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
