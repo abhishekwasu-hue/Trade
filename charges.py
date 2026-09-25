@@ -3,29 +3,41 @@ charges.py
 ------------------------------
 वास्तविक ट्रेडिंग शुल्क (brokerage + सरकारी/एक्सचेंज शुल्क) मोजण्यासाठी.
 
-🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage काढा") —
-आधी (rough अंदाज टप्प्यात) brokerage + STT + Exchange Txn Charge + SEBI Turnover Fee + Stamp Duty +
-GST हे सहा घटक असलेला अचूक हिशोब वापरकर्त्याला जास्त/अनपेक्षित वाटला आणि पडताळणं अवघड झालं होतं,
-त्यामुळे तेव्हा तात्पुरता एक निश्चित ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज वापरला गेला. आता वापरकर्त्याने
-स्पष्टपणे "Upstox चा brokerage calculator वापरून actual brokerage काढा" असं मागितलं आहे — त्यामुळे
-**Upstox** ऑर्डर्ससाठी (हाच DEFAULT_BROKER, आणि जवळजवळ सर्व ऑर्डर्स याच ब्रोकरचे असतात) आता Upstox च्या
-स्वतःच्या प्रकाशित brokerage calculator (upstox.com/brokerage-charges) + सरकारी/एक्सचेंज दरांवरून
-(ऑक्टोबर-2024 च्या STT/Exchange Transaction Charge फेरबदलानंतरचे, सद्यस्थितीतले सर्वात अलीकडचे ज्ञात
-दर) प्रत्येक ऑर्डरचं turnover (quantity × price) वापरून खरं शुल्क मोजलं जातं — segment नुसार (NSE
-Index/Equity Options वि. MCX Commodity Futures) वेगवेगळे दर, कारण ते खरोखरच वेगळे आहेत:
-  • Options (NIFTY/BANKNIFTY/SENSEX): brokerage फ्लॅट ₹20/executed order; STT 0.1% (फक्त SELL,
-    premium वर); Exchange Txn Charge 0.035% (दोन्ही बाजू, premium वर); SEBI Turnover Fee 0.0001%
-    (दोन्ही बाजू); Stamp Duty 0.003% (फक्त BUY); GST 18% (brokerage + exchange + SEBI वर).
-  • MCX Commodity Futures (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER): brokerage ₹20 किंवा ट्रेड
-    व्हॅल्यूच्या 0.05%, जे कमी असेल ते; CTT 0.01% (फक्त SELL); Exchange Txn Charge 0.0021% (दोन्ही
-    बाजू); SEBI Turnover Fee 0.0001% (दोन्ही बाजू); Stamp Duty 0.002% (फक्त BUY); GST 18%.
-हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) बदलू शकतात — बदलले तर फक्त खालचा _UPSTOX_RATES dict अद्ययावत
-करायचा आहे, बाकी लॉजिकला हात लावायची गरज नाही.
-आवश्यक तपशील (symbol/quantity/price/transaction_type) उपलब्ध नसतील (उदा. जुना/minimal caller) तेव्हाच
-त्या विशिष्ट ऑर्डरसाठी जुना ढोबळ ₹25/ऑर्डर अंदाजावर पडलं जातं — कधीही शुल्क शून्य दाखवलं जात नाही.
-Fyers/Shoonya (इतर per-order ब्रोकर) — अजूनही जुनाच ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज, कारण
-वापरकर्त्याने फक्त Upstox साठी अचूक आकडे मागितले — या इतर ब्रोकर्सचे प्रत्यक्ष दर अजून पडताळलेले नाहीत.
-Stocko — निश्चित ₹1200/महिना (per-order नाही, फिक्स्ड सबस्क्रिप्शन प्लॅन, आधीसारखाच) कायम.
+🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage काढा",
+नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का") — आधी (rough अंदाज टप्प्यात)
+brokerage + STT + Exchange Txn Charge + SEBI Turnover Fee + Stamp Duty + GST हे सहा घटक असलेला
+अचूक हिशोब वापरकर्त्याला जास्त/अनपेक्षित वाटला आणि पडताळणं अवघड झालं होतं, त्यामुळे तेव्हा तात्पुरता
+एक निश्चित ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज वापरला गेला. आता **Upstox, Fyers, आणि Stocko**
+ऑर्डर्ससाठी (Shoonya अजून बाकी — त्याचे actual दर अजून पडताळलेले नाहीत) प्रत्येक ऑर्डरचं turnover
+(quantity × price) वापरून, त्या-त्या ब्रोकरच्या स्वतःच्या प्रकाशित brokerage calculator (upstox.com/
+brokerage-charges, fyers.in/charges-list) + सरकारी/एक्सचेंज दरांवरून (ऑक्टोबर-2024 च्या STT/Exchange
+Transaction Charge फेरबदलानंतरचे, सद्यस्थितीतले सर्वात अलीकडचे ज्ञात दर) खरं शुल्क मोजलं जातं —
+segment नुसार (NSE Index/Equity Options वि. MCX Commodity Futures) वेगवेगळे दर, कारण ते खरोखरच
+वेगळे आहेत:
+  • STT/CTT, Exchange Txn Charge, SEBI Turnover Fee, Stamp Duty (_STATUTORY_RATES) — हे सरकारी/
+    एक्सचेंज-निर्धारित असल्याने **सर्व ब्रोकर्ससाठी सारखेच**:
+    - Options (NIFTY/BANKNIFTY/SENSEX): STT 0.1% (फक्त SELL, premium वर); Exchange Txn Charge
+      0.035% (दोन्ही बाजू); SEBI Turnover Fee 0.0001% (दोन्ही बाजू); Stamp Duty 0.003% (फक्त BUY).
+    - MCX Commodity Futures (CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER): CTT 0.01% (फक्त SELL);
+      Exchange Txn Charge 0.0021% (दोन्ही बाजू); SEBI Turnover Fee 0.0001% (दोन्ही बाजू); Stamp
+      Duty 0.002% (फक्त BUY).
+  • brokerage (_BROKERAGE_RATES) — हाच एक घटक ब्रोकरनुसार वेगळा:
+    - Upstox: Options फ्लॅट ₹20/executed order; Commodity Futures ₹20 किंवा 0.05% जे कमी.
+    - Fyers: Options फ्लॅट ₹20/executed order (Upstox सारखंच); Commodity Futures ₹20 किंवा 0.03%
+      जे कमी (Upstox पेक्षा किंचित कमी %).
+    - Stocko: प्रति-ऑर्डर brokerage नाहीच — निश्चित ₹1200/महिना सबस्क्रिप्शन (आधीसारखाच, वेगळा
+      हाताळलेला), पण वरचे STT/Exchange/SEBI/Stamp Duty त्यावरही (per-order) लागू होतातच — कुठलाही
+      "unlimited"/flat brokerage plan सरकारी शुल्क माफ करू शकत नाही.
+  • GST 18% — brokerage + exchange + SEBI वर (Stocko साठी फक्त exchange+SEBI वर, कारण brokerage
+    component इथे प्रति-ऑर्डर नाहीच).
+हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) बदलू शकतात — बदलले तर फक्त खालचे _STATUTORY_RATES/
+_BROKERAGE_RATES dicts अद्ययावत करायचे आहेत, बाकी लॉजिकला हात लावायची गरज नाही.
+आवश्यक तपशील (symbol/quantity/price/transaction_type) उपलब्ध नसतील (उदा. जुना/minimal caller)
+तेव्हाच Upstox/Fyers च्या ऑर्डरसाठी जुना ढोबळ ₹25/ऑर्डर अंदाजावर पडलं जातं (Stocko साठी तसा fallback
+नाही — brokerage आधीच मासिक सबस्क्रिप्शनमधून मोजला जातो, double-count टाळण्यासाठी); कधीही Upstox/
+Fyers चं शुल्क शून्य दाखवलं जात नाही.
+Shoonya — अजूनही जुनाच ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज, कारण त्याचे actual दर अजून पडताळलेले
+नाहीत (वापरकर्त्याने अजून विचारलेलं नाही).
 
 account_id → broker_type कसं ठरतं: order_log/live_trades मधला account_id सेट असेल तर cloud_db च्या
 broker_accounts table (Supabase, फक्त multi-broker सेटअपमध्ये existent) मधून broker_type शोधला जातो.
@@ -37,7 +49,7 @@ import datetime
 
 import pandas as pd
 
-FLAT_CHARGE_PER_ORDER = 25.0  # आता फक्त Fyers/Shoonya साठी (व Upstox रांगांना पुरेसा तपशील नसेल तरच) — ढोबळ अंदाज, all-inclusive
+FLAT_CHARGE_PER_ORDER = 25.0  # आता फक्त Shoonya साठी (व Upstox/Fyers रांगांना पुरेसा तपशील नसेल तरच) — ढोबळ अंदाज, all-inclusive
 STOCKO_FLAT_MONTHLY = 1200.0
 DEFAULT_BROKER = "upstox"
 
@@ -47,22 +59,40 @@ MCX_FUTURES_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
 
 _GST_RATE = 0.18
 
-# स्रोत: upstox.com/brokerage-charges (Upstox स्वतःचा brokerage calculator) + सरकारी/एक्सचेंज दर
-# (ऑक्टोबर-2024 STT/Exchange Transaction Charge फेरबदलानंतरचे — सर्वात अलीकडचे ज्ञात दर).
-_UPSTOX_RATES = {
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Stocko आणि Fyers साठी पण actual calculator लावता येईल का") —
+# STT/CTT, Exchange Txn Charge, SEBI Turnover Fee, Stamp Duty हे सरकारी/एक्सचेंज-निर्धारित दर आहेत —
+# ब्रोकर Upstox असो, Fyers असो वा Stocko, हे **सर्वांना सारखेच** लागू होतात (कुठलाही ब्रोकर हे माफ करू
+# शकत नाही — म्हणून यांना segment नुसार (Options वि. MCX Commodity Futures) फक्त एकदाच, ब्रोकर-निरपेक्ष
+# ठेवलं आहे). फक्त "brokerage" हा एकच घटक प्रत्येक ब्रोकरनुसार वेगळा असतो — तो खालच्या _BROKERAGE_RATES
+# मध्ये वेगळा दिला आहे. दर स्रोत: upstox.com/brokerage-charges, fyers.in/charges-list (ऑक्टोबर-2024
+# STT/Exchange Transaction Charge फेरबदलानंतरचे — सर्वात अलीकडचे ज्ञात दर).
+_STATUTORY_RATES = {
     "options": {
-        "brokerage_flat": 20.0, "brokerage_pct": None,  # फ्लॅट ₹20/executed order
         "stt_pct": 0.001, "stt_side": "sell",  # STT 0.1% premium वर, फक्त SELL
         "exch_pct": 0.00035, "exch_side": "both",  # NSE Exchange Txn Charge 0.035%, दोन्ही बाजू
         "sebi_pct": 0.000001, "sebi_side": "both",  # SEBI Turnover Fee 0.0001%, दोन्ही बाजू
         "stamp_pct": 0.00003, "stamp_side": "buy",  # Stamp Duty 0.003%, फक्त BUY
     },
     "commodity_futures": {
-        "brokerage_flat": 20.0, "brokerage_pct": 0.0005,  # ₹20 किंवा 0.05%, जे कमी
         "stt_pct": 0.0001, "stt_side": "sell",  # CTT 0.01% ट्रेड व्हॅल्यूवर, फक्त SELL
         "exch_pct": 0.000021, "exch_side": "both",  # MCX Exchange Txn Charge 0.0021%, दोन्ही बाजू
         "sebi_pct": 0.000001, "sebi_side": "both",  # SEBI Turnover Fee 0.0001%, दोन्ही बाजू
         "stamp_pct": 0.00002, "stamp_side": "buy",  # Stamp Duty 0.002%, फक्त BUY
+    },
+}
+
+# ब्रोकर-निहाय brokerage दर — इथेच फक्त फरक असतो (वरचे statutory दर सर्व ब्रोकर्ससाठी सारखेच).
+# "shoonya" इथे मुद्दाम नाही (त्याचे actual दर अजून पडताळलेले नाहीत — वापरकर्त्याने फक्त Upstox/Fyers/
+# Stocko साठी विचारलं); "stocko" इथेही नाही, कारण त्याचं brokerage प्रति-ऑर्डर नसून निश्चित मासिक
+# सबस्क्रिप्शन आहे (STOCKO_FLAT_MONTHLY, compute_charges() मध्ये वेगळं हाताळलेलं).
+_BROKERAGE_RATES = {
+    "upstox": {
+        "options": {"flat": 20.0, "pct": None},  # फ्लॅट ₹20/executed order
+        "commodity_futures": {"flat": 20.0, "pct": 0.0005},  # ₹20 किंवा 0.05%, जे कमी
+    },
+    "fyers": {
+        "options": {"flat": 20.0, "pct": None},  # फ्लॅट ₹20/executed order
+        "commodity_futures": {"flat": 20.0, "pct": 0.0003},  # ₹20 किंवा 0.03%, जे कमी (Upstox पेक्षा किंचित कमी %)
     },
 }
 
@@ -103,11 +133,10 @@ def _segment_for_symbol(symbol):
     return "commodity_futures" if symbol in MCX_FUTURES_SYMBOLS else "options"
 
 
-def _upstox_row_charges(row):
-    """एका order-row साठी Upstox चं वास्तविक brokerage + STT/CTT + Exchange Txn + SEBI + Stamp Duty +
-    GST (_UPSTOX_RATES, वरच्या module docstring मध्ये स्रोत/तारखेसह दस्तऐवजीकरण केलेले दर) मोजते.
-    आवश्यक तपशील (symbol/quantity/price/transaction_type) अपुरे/अवैध असतील तर None परत देते — कॉलर
-    (_add_order_charges) मग त्या रांगेसाठी जुन्या ढोबळ ₹25/ऑर्डर अंदाजावर पडतो."""
+def _row_turnover_details(row):
+    """quantity/price/symbol/side वाचून (quantity, price, symbol, side, turnover) परत देते, किंवा
+    तपशील अपुरा/अवैध असेल तर None — _accurate_row_charges() आणि _stocko_statutory_row_charges()
+    दोन्हीसाठी समान पडताळणी."""
     quantity = row.get("quantity")
     price = row.get("fill_price")
     if price is None or pd.isna(price) or price == 0:
@@ -124,19 +153,63 @@ def _upstox_row_charges(row):
     turnover = float(quantity) * float(price)
     if turnover <= 0:
         return None
+    return symbol, side, turnover
 
-    rates = _UPSTOX_RATES[_segment_for_symbol(symbol)]
-    brokerage = rates["brokerage_flat"]
-    if rates["brokerage_pct"] is not None:
-        brokerage = min(brokerage, turnover * rates["brokerage_pct"])
-    stt = turnover * rates["stt_pct"] if side == "SELL" else 0.0
-    exchange_txn = turnover * rates["exch_pct"]
-    sebi_fee = turnover * rates["sebi_pct"]
-    stamp_duty = turnover * rates["stamp_pct"] if side == "BUY" else 0.0
+
+def _accurate_row_charges(row, broker_type):
+    """एका order-row साठी ब्रोकरचं वास्तविक brokerage (_BROKERAGE_RATES[broker_type]) + सर्वांसाठी
+    सारखे असलेले STT/CTT + Exchange Txn + SEBI + Stamp Duty + GST (_STATUTORY_RATES) मोजते.
+    broker_type साठी दर माहीत नसतील (उदा. Shoonya) किंवा आवश्यक तपशील अपुरे/अवैध असतील तर None परत
+    देते — कॉलर (_add_order_charges) मग त्या रांगेसाठी जुन्या ढोबळ ₹25/ऑर्डर अंदाजावर पडतो."""
+    brokerage_rates = _BROKERAGE_RATES.get(broker_type)
+    if brokerage_rates is None:
+        return None
+    details = _row_turnover_details(row)
+    if details is None:
+        return None
+    symbol, side, turnover = details
+
+    segment = _segment_for_symbol(symbol)
+    seg_brokerage_rates = brokerage_rates[segment]
+    statutory = _STATUTORY_RATES[segment]
+    brokerage = seg_brokerage_rates["flat"]
+    if seg_brokerage_rates["pct"] is not None:
+        brokerage = min(brokerage, turnover * seg_brokerage_rates["pct"])
+    stt = turnover * statutory["stt_pct"] if side == "SELL" else 0.0
+    exchange_txn = turnover * statutory["exch_pct"]
+    sebi_fee = turnover * statutory["sebi_pct"]
+    stamp_duty = turnover * statutory["stamp_pct"] if side == "BUY" else 0.0
     gst = (brokerage + exchange_txn + sebi_fee) * _GST_RATE
     charge = brokerage + stt + exchange_txn + sebi_fee + stamp_duty + gst
     return {
         "brokerage": brokerage, "stt": stt, "exchange_txn": exchange_txn, "sebi_fee": sebi_fee,
+        "stamp_duty": stamp_duty, "gst": gst, "charge": charge,
+    }
+
+
+def _stocko_statutory_row_charges(row):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Stocko साठी पण actual calculator लावता येईल का") — Stocko चं
+    स्वतःचं brokerage प्रति-ऑर्डर नसून निश्चित मासिक सबस्क्रिप्शन आहे (STOCKO_FLAT_MONTHLY,
+    compute_charges() मध्ये वेगळं जोडलं जातं — म्हणून इथे brokerage नेहमी 0), पण STT/CTT/Exchange
+    Txn/SEBI Fee/Stamp Duty हे सरकारी/एक्सचेंज शुल्क आहेत — ते Stocko चं "unlimited"/flat plan
+    असूनही प्रत्येक प्रत्यक्ष order वर लागतातच (कुठलाही ब्रोकर हे माफ करू शकत नाही) — त्यामुळे तेवढेच
+    इथे मोजले जातात. GST फक्त exchange_txn+sebi_fee वर (ब्रोकरेज हा component इथे नसल्याने, त्यावरचा
+    GST subscription बिलात वेगळा येतो, इथे मोजलेला नाही). तपशील अपुरा असेल तर None (त्या रांगेसाठी
+    statutory शुल्क 0 राहतं — brokerage साठी जुना ढोबळ अंदाज इथे लागू नाही, कारण तो आधीच मासिक
+    सबस्क्रिप्शनमधून मोजला जातो, त्यामुळे double-count टाळण्यासाठी fallback दिलेला नाही)."""
+    details = _row_turnover_details(row)
+    if details is None:
+        return None
+    symbol, side, turnover = details
+    statutory = _STATUTORY_RATES[_segment_for_symbol(symbol)]
+    stt = turnover * statutory["stt_pct"] if side == "SELL" else 0.0
+    exchange_txn = turnover * statutory["exch_pct"]
+    sebi_fee = turnover * statutory["sebi_pct"]
+    stamp_duty = turnover * statutory["stamp_pct"] if side == "BUY" else 0.0
+    gst = (exchange_txn + sebi_fee) * _GST_RATE
+    charge = stt + exchange_txn + sebi_fee + stamp_duty + gst
+    return {
+        "brokerage": 0.0, "stt": stt, "exchange_txn": exchange_txn, "sebi_fee": sebi_fee,
         "stamp_duty": stamp_duty, "gst": gst, "charge": charge,
     }
 
@@ -150,21 +223,25 @@ _CHARGE_COLS = ["brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "g
 
 def _add_order_charges(df):
     """प्रत्येक ऑर्डर-रांगेला योग्य शुल्क जोडते:
-    - Upstox (DEFAULT_BROKER, जवळजवळ सर्व ऑर्डर्स) — शक्य असेल तिथे _upstox_row_charges() वरून
-      वास्तविक Upstox brokerage calculator दर; तपशील अपुरा असेल तिथेच जुना ढोबळ ₹25/ऑर्डर अंदाज.
-    - Fyers/Shoonya — अजूनही जुनाच ढोबळ ₹25/ऑर्डर अंदाज (वापरकर्त्याने फक्त Upstox साठी अचूक आकडे
-      मागितले होते).
-    - Stocko — प्रति-ऑर्डर शुल्क 0 (निश्चित मासिक शुल्क compute_charges() मध्ये वेगळं जोडलं जातं)."""
+    - Upstox/Fyers (_BROKERAGE_RATES मध्ये असलेले ब्रोकर) — शक्य असेल तिथे _accurate_row_charges()
+      वरून वास्तविक brokerage+STT/Exchange/SEBI/Stamp/GST; तपशील अपुरा असेल तिथेच जुना ढोबळ
+      ₹25/ऑर्डर अंदाज.
+    - Shoonya — अजूनही जुनाच ढोबळ ₹25/ऑर्डर अंदाज (actual दर अजून पडताळलेले नाहीत).
+    - Stocko — brokerage 0 (निश्चित मासिक शुल्क compute_charges() मध्ये वेगळं जोडलं जातं), पण
+      _stocko_statutory_row_charges() वरून वास्तविक STT/Exchange/SEBI/Stamp/GST (शक्य असेल तिथे)."""
     df = df.copy()
     for c in _CHARGE_COLS:
         df[c] = 0.0
     for idx, row in df.iterrows():
         broker_type = row["broker_type"]
         if broker_type == "stocko":
-            continue
-        result = _upstox_row_charges(row) if broker_type == "upstox" else None
-        if result is None:
-            result = _FLAT_ROW_CHARGE
+            result = _stocko_statutory_row_charges(row)
+            if result is None:
+                continue
+        else:
+            result = _accurate_row_charges(row, broker_type)
+            if result is None:
+                result = _FLAT_ROW_CHARGE
         for c in _CHARGE_COLS:
             df.at[idx, c] = result[c]
     return df
