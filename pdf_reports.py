@@ -227,6 +227,12 @@ _eod_footer = ParagraphStyle("eod_footer", fontName=_EOD_FONT, fontSize=_EOD_FON
 
 _C_BG_DARK = colors.HexColor("#131722")
 
+# 🎓 वापरकर्त्याने वारंवार सांगितलेली सुधारणा ("Title la black background aahe remove it use
+# sky blue solid") — सर्व report types च्या title masthead साठी (आधी _C_BG_DARK, घन काळसर-नेव्ही,
+# वापरलं जायचं) — आता याच एका sky-blue रंगाने सगळीकडे बदललं आहे, जेणेकरून पुन्हा कुठेही काळी
+# पार्श्वभूमी उरणार नाही.
+_C_SKY_BLUE = colors.HexColor("#1CA7EC")
+
 _C_ACCENT = colors.HexColor("#2962FF")
 
 _C_GREEN = colors.HexColor("#089981")
@@ -290,13 +296,6 @@ _rpt_badge_grey = ParagraphStyle("rpt_badge_grey", fontName=_RPT_FONT_BOLD, font
 # background chya पट्टी nko") — घन-रंगाची पट्टी (पांढरा मजकूर लागणारी) पूर्णपणे काढली, त्याऐवजी
 # _section_header_accent (डावीकडे रंगीत accent bar + फिकट पार्श्वभूमी) — मजकूर आता गडद रंगात.
 _rpt_h2_accent_bi = ParagraphStyle("rpt_h2_accent_bi", fontName=_DEVANAGARI_FONT_BOLD, fontSize=15, leading=19, textColor=_C_BG_DARK, spaceBefore=0, spaceAfter=0)
-
-# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove solid black background... use other multiple colour")
-# — फक्त Performance Report च्या मुख्य title masthead साठी (बाकी report types चा _rpt_h1/_rpt_h1_sub
-# — पांढरा मजकूर, गडद पार्श्वभूमीसाठी — आधीसारखेच, अस्पर्श) — आता फिकट पार्श्वभूमीवर, दोन-रंगी ("AMW's
-# A1" निळं, "AlgoTrading System" जांभळं) ठळक title.
-_rpt_h1_pf = ParagraphStyle("rpt_h1_pf", fontName=_RPT_FONT_BOLD, fontSize=24, leading=28, textColor=_C_BG_DARK)
-_rpt_h1_sub_pf = ParagraphStyle("rpt_h1_sub_pf", fontName=_RPT_FONT, fontSize=12, leading=16, textColor=colors.HexColor("#555555"))
 
 # 🎓 इंग्लिश-only लेबल्सपेक्षा bilingual लेबल्स साधारण दुप्पट लांब असतात — plain string म्हणून
 # _kv_table च्या key column मध्ये दिली तर wrap न होता उजवीकडच्या value column वर overflow/overlap
@@ -971,7 +970,7 @@ def generate_backtest_report_pdf_v2(symbol, strategy_name, interval, from_date, 
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1165,7 +1164,7 @@ def generate_backtest_report_pdf_rr(symbol, trading_style_name, interval, from_d
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1360,7 +1359,7 @@ def generate_backtest_report_pdf(symbol, bt_timeframe, bt_forward_bars, bt_min_m
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1516,7 +1515,7 @@ def generate_market_analysis_report_pdf(
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -1736,7 +1735,7 @@ def generate_eod_market_report_pdf(symbol_outlooks, generated_at=None):
         colWidths=[usable_width],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_BG_DARK),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 0),
     ]))
@@ -2240,22 +2239,16 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         sec[0] += 1
         story.append(Spacer(1, 8))
 
-    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove solid black background... use other multiple
-    # colour") — आधी घन गडद (_C_BG_DARK) पार्श्वभूमी + पांढरा मजकूर होता (बाकी सर्व report types चा
-    # मूळ title style, अस्पर्श) — Performance Report साठी आता फिकट पार्श्वभूमी + दोन-रंगी ठळक title
-    # (PIL+raqm — योग्य असेल तर; अन्यथा जुना single-colour Paragraph fallback).
-    _title_img = _deva_image_flowable(
-        [("AMW's A1 ", True, _C_ACCENT), ("AlgoTrading System", True, colors.HexColor("#7E57C2"))],
-        24, max_width_pt=17 * cm,
-    )
-    if _title_img is None:
-        _title_img = Paragraph("AMW's A1 AlgoTrading System", _rpt_h1_pf)
+    # 🎓 वापरकर्त्याने वारंवार सांगितलेली सुधारणा ("Title la black background aahe remove it use
+    # sky blue solid") — आता बाकी सर्व report types प्रमाणेच इथेही घन sky-blue पार्श्वभूमी +
+    # पांढरा मजकूर (आधीचा फिकट-पार्श्वभूमी + दोन-रंगी मजकूर प्रयोग मागे घेतला — sky-blue वर तेच
+    # निळे/जांभळे रंग नीट उठून दिसत नव्हते).
     title_tbl = Table(
-        [[_title_img], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub_pf)]],
+        [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
         colWidths=[18 * cm],
     )
     title_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG),
+        ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, 0), 14),
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 4),
     ]))
