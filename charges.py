@@ -4,16 +4,16 @@ charges.py
 वास्तविक ट्रेडिंग शुल्क (brokerage + सरकारी/एक्सचेंज शुल्क) मोजण्यासाठी.
 
 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage काढा",
-नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का") — आधी (rough अंदाज टप्प्यात)
-brokerage + STT + Exchange Txn Charge + SEBI Turnover Fee + Stamp Duty + GST हे सहा घटक असलेला
-अचूक हिशोब वापरकर्त्याला जास्त/अनपेक्षित वाटला आणि पडताळणं अवघड झालं होतं, त्यामुळे तेव्हा तात्पुरता
-एक निश्चित ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज वापरला गेला. आता **Upstox, Fyers, आणि Stocko**
-ऑर्डर्ससाठी (Shoonya अजून बाकी — त्याचे actual दर अजून पडताळलेले नाहीत) प्रत्येक ऑर्डरचं turnover
-(quantity × price) वापरून, त्या-त्या ब्रोकरच्या स्वतःच्या प्रकाशित brokerage calculator (upstox.com/
-brokerage-charges, fyers.in/charges-list) + सरकारी/एक्सचेंज दरांवरून (ऑक्टोबर-2024 च्या STT/Exchange
-Transaction Charge फेरबदलानंतरचे, सद्यस्थितीतले सर्वात अलीकडचे ज्ञात दर) खरं शुल्क मोजलं जातं —
-segment नुसार (NSE Index/Equity Options वि. MCX Commodity Futures) वेगवेगळे दर, कारण ते खरोखरच
-वेगळे आहेत:
+नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का", नंतर "Shoonya che pn kra update") —
+आधी (rough अंदाज टप्प्यात) brokerage + STT + Exchange Txn Charge + SEBI Turnover Fee + Stamp Duty +
+GST हे सहा घटक असलेला अचूक हिशोब वापरकर्त्याला जास्त/अनपेक्षित वाटला आणि पडताळणं अवघड झालं होतं,
+त्यामुळे तेव्हा तात्पुरता एक निश्चित ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज वापरला गेला. आता **Upstox,
+Fyers, Shoonya, आणि Stocko** — म्हणजे app मध्ये असलेले सर्वच ब्रोकर — ऑर्डर्ससाठी प्रत्येक ऑर्डरचं
+turnover (quantity × price) वापरून, त्या-त्या ब्रोकरच्या स्वतःच्या प्रकाशित brokerage calculator
+(upstox.com/brokerage-charges, fyers.in/charges-list, shoonya.com/pricing) + सरकारी/एक्सचेंज
+दरांवरून (ऑक्टोबर-2024 च्या STT/Exchange Transaction Charge फेरबदलानंतरचे, सद्यस्थितीतले सर्वात
+अलीकडचे ज्ञात दर) खरं शुल्क मोजलं जातं — segment नुसार (NSE Index/Equity Options वि. MCX Commodity
+Futures) वेगवेगळे दर, कारण ते खरोखरच वेगळे आहेत:
   • STT/CTT, Exchange Txn Charge, SEBI Turnover Fee, Stamp Duty (_STATUTORY_RATES) — हे सरकारी/
     एक्सचेंज-निर्धारित असल्याने **सर्व ब्रोकर्ससाठी सारखेच**:
     - Options (NIFTY/BANKNIFTY/SENSEX): STT 0.1% (फक्त SELL, premium वर); Exchange Txn Charge
@@ -25,6 +25,8 @@ segment नुसार (NSE Index/Equity Options वि. MCX Commodity Futures)
     - Upstox: Options फ्लॅट ₹20/executed order; Commodity Futures ₹20 किंवा 0.05% जे कमी.
     - Fyers: Options फ्लॅट ₹20/executed order (Upstox सारखंच); Commodity Futures ₹20 किंवा 0.03%
       जे कमी (Upstox पेक्षा किंचित कमी %).
+    - Shoonya: Options फ्लॅट ₹5/executed order; Commodity Futures ₹5 किंवा 0.03% जे कमी — डिसेंबर
+      2024 पासून (आधी zero-brokerage होतं, SEBI च्या exchange-rebate बंदीनंतर बदललं).
     - Stocko: प्रति-ऑर्डर brokerage नाहीच — निश्चित ₹1200/महिना सबस्क्रिप्शन (आधीसारखाच, वेगळा
       हाताळलेला), पण वरचे STT/Exchange/SEBI/Stamp Duty त्यावरही (per-order) लागू होतातच — कुठलाही
       "unlimited"/flat brokerage plan सरकारी शुल्क माफ करू शकत नाही.
@@ -33,11 +35,9 @@ segment नुसार (NSE Index/Equity Options वि. MCX Commodity Futures)
 हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) बदलू शकतात — बदलले तर फक्त खालचे _STATUTORY_RATES/
 _BROKERAGE_RATES dicts अद्ययावत करायचे आहेत, बाकी लॉजिकला हात लावायची गरज नाही.
 आवश्यक तपशील (symbol/quantity/price/transaction_type) उपलब्ध नसतील (उदा. जुना/minimal caller)
-तेव्हाच Upstox/Fyers च्या ऑर्डरसाठी जुना ढोबळ ₹25/ऑर्डर अंदाजावर पडलं जातं (Stocko साठी तसा fallback
-नाही — brokerage आधीच मासिक सबस्क्रिप्शनमधून मोजला जातो, double-count टाळण्यासाठी); कधीही Upstox/
-Fyers चं शुल्क शून्य दाखवलं जात नाही.
-Shoonya — अजूनही जुनाच ढोबळ ₹25/ऑर्डर (all-inclusive) अंदाज, कारण त्याचे actual दर अजून पडताळलेले
-नाहीत (वापरकर्त्याने अजून विचारलेलं नाही).
+तेव्हाच Upstox/Fyers/Shoonya च्या ऑर्डरसाठी जुना ढोबळ ₹25/ऑर्डर अंदाजावर पडलं जातं (Stocko साठी तसा
+fallback नाही — brokerage आधीच मासिक सबस्क्रिप्शनमधून मोजला जातो, double-count टाळण्यासाठी); कधीही
+Upstox/Fyers/Shoonya चं शुल्क शून्य दाखवलं जात नाही.
 
 account_id → broker_type कसं ठरतं: order_log/live_trades मधला account_id सेट असेल तर cloud_db च्या
 broker_accounts table (Supabase, फक्त multi-broker सेटअपमध्ये existent) मधून broker_type शोधला जातो.
@@ -49,7 +49,7 @@ import datetime
 
 import pandas as pd
 
-FLAT_CHARGE_PER_ORDER = 25.0  # आता फक्त Shoonya साठी (व Upstox/Fyers रांगांना पुरेसा तपशील नसेल तरच) — ढोबळ अंदाज, all-inclusive
+FLAT_CHARGE_PER_ORDER = 25.0  # आता फक्त _BROKERAGE_RATES मध्ये नसलेल्या ब्रोकरसाठी (व तपशील अपुरा असेल तरच) — ढोबळ अंदाज, all-inclusive
 STOCKO_FLAT_MONTHLY = 1200.0
 DEFAULT_BROKER = "upstox"
 
@@ -82,9 +82,10 @@ _STATUTORY_RATES = {
 }
 
 # ब्रोकर-निहाय brokerage दर — इथेच फक्त फरक असतो (वरचे statutory दर सर्व ब्रोकर्ससाठी सारखेच).
-# "shoonya" इथे मुद्दाम नाही (त्याचे actual दर अजून पडताळलेले नाहीत — वापरकर्त्याने फक्त Upstox/Fyers/
-# Stocko साठी विचारलं); "stocko" इथेही नाही, कारण त्याचं brokerage प्रति-ऑर्डर नसून निश्चित मासिक
-# सबस्क्रिप्शन आहे (STOCKO_FLAT_MONTHLY, compute_charges() मध्ये वेगळं हाताळलेलं).
+# "stocko" इथे नाही, कारण त्याचं brokerage प्रति-ऑर्डर नसून निश्चित मासिक सबस्क्रिप्शन आहे
+# (STOCKO_FLAT_MONTHLY, compute_charges() मध्ये वेगळं हाताळलेलं). स्रोत: upstox.com/brokerage-charges,
+# fyers.in/charges-list, shoonya.com/pricing (डिसेंबर-2024 पासून Shoonya चं zero-brokerage संपून
+# ₹5/0.03% लागू झालं — सर्वात अलीकडचं ज्ञात).
 _BROKERAGE_RATES = {
     "upstox": {
         "options": {"flat": 20.0, "pct": None},  # फ्लॅट ₹20/executed order
@@ -93,6 +94,10 @@ _BROKERAGE_RATES = {
     "fyers": {
         "options": {"flat": 20.0, "pct": None},  # फ्लॅट ₹20/executed order
         "commodity_futures": {"flat": 20.0, "pct": 0.0003},  # ₹20 किंवा 0.03%, जे कमी (Upstox पेक्षा किंचित कमी %)
+    },
+    "shoonya": {
+        "options": {"flat": 5.0, "pct": None},  # फ्लॅट ₹5/executed order (सर्वात कमी — Shoonya चं मुख्य वैशिष्ट्य)
+        "commodity_futures": {"flat": 5.0, "pct": 0.0003},  # ₹5 किंवा 0.03%, जे कमी
     },
 }
 
@@ -223,10 +228,9 @@ _CHARGE_COLS = ["brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "g
 
 def _add_order_charges(df):
     """प्रत्येक ऑर्डर-रांगेला योग्य शुल्क जोडते:
-    - Upstox/Fyers (_BROKERAGE_RATES मध्ये असलेले ब्रोकर) — शक्य असेल तिथे _accurate_row_charges()
-      वरून वास्तविक brokerage+STT/Exchange/SEBI/Stamp/GST; तपशील अपुरा असेल तिथेच जुना ढोबळ
-      ₹25/ऑर्डर अंदाज.
-    - Shoonya — अजूनही जुनाच ढोबळ ₹25/ऑर्डर अंदाज (actual दर अजून पडताळलेले नाहीत).
+    - Upstox/Fyers/Shoonya (_BROKERAGE_RATES मध्ये असलेले ब्रोकर) — शक्य असेल तिथे
+      _accurate_row_charges() वरून वास्तविक brokerage+STT/Exchange/SEBI/Stamp/GST; तपशील अपुरा
+      असेल तिथेच जुना ढोबळ ₹25/ऑर्डर अंदाज.
     - Stocko — brokerage 0 (निश्चित मासिक शुल्क compute_charges() मध्ये वेगळं जोडलं जातं), पण
       _stocko_statutory_row_charges() वरून वास्तविक STT/Exchange/SEBI/Stamp/GST (शक्य असेल तिथे)."""
     df = df.copy()

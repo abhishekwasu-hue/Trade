@@ -160,12 +160,12 @@ _CHARGE_BREAKDOWN_LABELS = {
 
 def _render_charges_breakdown_caption(breakdown):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual brokerage
-    काढा", नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का") — charges.py आता
-    Upstox/Fyers ऑर्डर्ससाठी brokerage/stt/exchange_txn/sebi_fee/stamp_duty/gst हे सर्व सहा घटक
-    वेगवेगळे, वास्तविक दराने मोजतं; Stocko साठी brokerage फिक्स्ड मासिक (इथे नेहमी 0, वेगळं दिसतं)
-    पण stt/exchange_txn/sebi_fee/stamp_duty/gst वास्तविक. Shoonya अजूनही फक्त "brokerage" मध्ये
-    ढोबळ ₹25/ऑर्डर, बाकी घटक 0. शून्य असलेला घटक (`if v`) दाखवला जात नाही — म्हणजे ज्या ब्रोकरसाठी
-    breakdown खरंच लागू आहे तेवढाच दिसतो."""
+    काढा", नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का", नंतर "Shoonya che pn
+    kra update") — charges.py आता Upstox/Fyers/Shoonya ऑर्डर्ससाठी brokerage/stt/exchange_txn/
+    sebi_fee/stamp_duty/gst हे सर्व सहा घटक वेगवेगळे, वास्तविक दराने मोजतं; Stocko साठी brokerage
+    फिक्स्ड मासिक (इथे नेहमी 0, वेगळं दिसतं) पण stt/exchange_txn/sebi_fee/stamp_duty/gst वास्तविक.
+    शून्य असलेला घटक (`if v`) दाखवला जात नाही — म्हणजे ज्या ब्रोकरसाठी breakdown खरंच लागू आहे
+    तेवढाच दिसतो."""
     if not breakdown or not any(breakdown.values()):
         return
     lines = " · ".join(
@@ -738,12 +738,12 @@ def render():
     with _perf_tab2:
         _mega_header("📅 Daily / Weekly / Monthly P&L Report (वास्तविक ब्रोकरेज शुल्कासहित)", _HDR_TEAL)
         st.caption(
-            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Upstox/Fyers — "
-            "त्या-त्या ब्रोकरच्या स्वतःच्या brokerage calculator प्रमाणे actual brokerage + STT/CTT + "
-            "Exchange Txn + SEBI Fee + Stamp Duty + GST, प्रत्येक ऑर्डरच्या turnover वरून; Stocko निश्चित "
-            "₹1200/महिना brokerage + त्यावरही वास्तविक STT/Exchange/SEBI/Stamp Duty/GST; Shoonya अजूनही "
-            "₹25/ऑर्डर ढोबळ all-inclusive अंदाज) = Net P&L. ⚠️ हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) "
-            "बदलू शकतात — प्रत्यक्ष रक्कम broker च्या Contract Note शी पडताळून पाहा."
+            "Gross P&L (बंद झालेल्या trades वरून, exit च्या तारखेनुसार) − वास्तविक शुल्क (Upstox/Fyers/"
+            "Shoonya — त्या-त्या ब्रोकरच्या स्वतःच्या brokerage calculator प्रमाणे actual brokerage + "
+            "STT/CTT + Exchange Txn + SEBI Fee + Stamp Duty + GST, प्रत्येक ऑर्डरच्या turnover वरून; "
+            "Stocko निश्चित ₹1200/महिना brokerage + त्यावरही वास्तविक STT/Exchange/SEBI/Stamp Duty/GST) "
+            "= Net P&L. ⚠️ हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) बदलू शकतात — प्रत्यक्ष रक्कम broker "
+            "च्या Contract Note शी पडताळून पाहा."
         )
         rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
         repcol1, repcol2 = st.columns(2)
