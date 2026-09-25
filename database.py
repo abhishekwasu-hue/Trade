@@ -506,28 +506,6 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
-def check_breakout_buildup(symbol, level_price, trade_date, source="dynamic_sr_instant"):
-    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level
-    hit, he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup ... then take entry")
-    — आज याच level वर (established max-2-hits framework च्या दोन्ही touches मधून आलेले) किमान 2
-    CLOSED trades आहेत का, आणि **सगळे** (spread + सक्रिय असल्यास naked, दोन्ही touches मिळून) SL/TSL
-    लागून (exit_reason "SL"/"TSL_SL") हरलेले आहेत का — हाच "buildup" चा पुरावा (level सलग टिकला नाही)
-    — वेगळं indicator/मेट्रिक लागत नाही. एकही Target/इतर कारणाने बंद झालेला (level निदान अंशतः तरी
-    टिकला) trade असेल, तर buildup नाही. रिटर्न: bool."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT exit_reason FROM live_trades
-           WHERE symbol=? AND trade_date=? AND entry_level_price=? AND source=? AND status='CLOSED'""",
-        (symbol, trade_date, level_price, source),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    if len(rows) < 2:
-        return False
-    return all(r[0] in ("SL", "TSL_SL") for r in rows)
-
-
 def has_active_tsl_trades(symbols):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
     Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —
