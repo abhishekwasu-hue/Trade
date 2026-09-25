@@ -2,10 +2,13 @@
 tests/test_charges.py
 --------------------------------
 charges.py — 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox brokerage calculator वापरून actual
-brokerage काढा") — Upstox ऑर्डर्ससाठी (symbol/quantity/price/transaction_type उपलब्ध असल्यास)
-आता वास्तविक brokerage+STT/CTT+Exchange+SEBI+Stamp+GST मोजलं जातं (segment नुसार वेगळे दर — NSE
-Options वि. MCX Commodity Futures), तपशील अपुरा असेल तिथेच जुना ढोबळ ₹25/ऑर्डर अंदाज. Fyers/Shoonya
-अजूनही जुनाच ढोबळ अंदाज. Stocko चं निश्चित मासिक शुल्क आधीसारखंच वेगळं.
+brokerage काढा", नंतर "Stocko आणि Fyers साठी पण actual calculator लावता येईल का", नंतर "Shoonya
+che pn kra update") — Upstox/Fyers/Shoonya ऑर्डर्ससाठी (symbol/quantity/price/transaction_type
+उपलब्ध असल्यास) आता वास्तविक brokerage+STT/CTT+Exchange+SEBI+Stamp+GST मोजलं जातं (segment नुसार
+वेगळे दर — NSE Options वि. MCX Commodity Futures; brokerage फॉर्म्युला ब्रोकरनुसार वेगळा, statutory
+दर तिघांना सारखेच), तपशील अपुरा असेल तिथेच जुना ढोबळ ₹25/ऑर्डर अंदाज. Stocko चं निश्चित मासिक
+brokerage आधीसारखंच वेगळं, पण आता त्याच्याही per-order STT/Exchange/SEBI/Stamp Duty वास्तविक दराने
+मोजले जातात.
 """
 import datetime
 
@@ -108,9 +111,20 @@ class TestUpstoxFallsBackToFlatWhenDataMissing:
         _, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
         assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
 
+    def test_multiple_orders_scale_linearly(self):
+        df = _orders_df([{"order_id": "O1"}, {"order_id": "O2"}, {"order_id": "O3"}])
+        daily, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
+        assert summary["breakdown"]["brokerage"] == pytest.approx(3 * charges.FLAT_CHARGE_PER_ORDER)
+        assert summary["per_broker"]["upstox"]["orders"] == 3
 
-class TestNonUpstoxBrokersStillFlat:
-    def test_shoonya_order_uses_flat_charge_regardless_of_trade_detail(self):
+
+class TestShoonyaAccurateCharges:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Shoonya che pn kra update") — Shoonya ऑर्डर्ससाठीही आता
+    Upstox/Fyers सारखंच वास्तविक brokerage+statutory शुल्क मोजलं जातं — brokerage सर्वात कमी
+    (फ्लॅट ₹5/order, किंवा Commodity Futures साठी ₹5 किंवा 0.03% जे कमी), statutory दर इतर
+    ब्रोकर्ससारखेच."""
+
+    def test_shoonya_options_brokerage_flat_5(self):
         df = _orders_df([{
             "order_id": "O1", "account_id": "acc1", "symbol": "NIFTY", "quantity": 50,
             "transaction_type": "SELL", "fill_price": 100.0,
@@ -118,15 +132,94 @@ class TestNonUpstoxBrokersStillFlat:
         _, summary = charges.compute_charges(
             df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "shoonya"},
         )
-        assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
-        assert summary["breakdown"]["stt"] == 0.0
+        turnover = 50 * 100.0
+        assert summary["breakdown"]["brokerage"] == pytest.approx(5.0)
+        assert summary["breakdown"]["stt"] == pytest.approx(turnover * 0.001)  # statutory दर इतर ब्रोकर्ससारखेच
         assert summary["per_broker"]["shoonya"]["orders"] == 1
 
-    def test_multiple_orders_scale_linearly(self):
-        df = _orders_df([{"order_id": "O1"}, {"order_id": "O2"}, {"order_id": "O3"}])
-        daily, summary = charges.compute_charges(df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30))
-        assert summary["breakdown"]["brokerage"] == pytest.approx(3 * charges.FLAT_CHARGE_PER_ORDER)
-        assert summary["per_broker"]["upstox"]["orders"] == 3
+    def test_shoonya_commodity_brokerage_lower_of_flat_or_percent(self):
+        df = _orders_df([{
+            "order_id": "O1", "account_id": "acc1", "symbol": "GOLD", "quantity": 1,
+            "transaction_type": "BUY", "fill_price": 50000.0,
+        }])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "shoonya"},
+        )
+        assert summary["breakdown"]["brokerage"] == pytest.approx(min(5.0, 50000.0 * 0.0003))
+
+    def test_shoonya_falls_back_to_flat_when_data_missing(self):
+        df = _orders_df([{"order_id": "O1", "account_id": "acc1"}])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "shoonya"},
+        )
+        assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
+
+
+class TestFyersAccurateCharges:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Stocko आणि Fyers साठी पण actual calculator लावता येईल
+    का") — Fyers ऑर्डर्ससाठीही आता Upstox सारखंच वास्तविक brokerage+statutory शुल्क मोजलं जातं,
+    फक्त brokerage दर वेगळे (Options ₹20 फ्लॅट — Upstox सारखंच; Commodity Futures ₹20 किंवा 0.03%,
+    Upstox च्या 0.05% पेक्षा कमी)."""
+
+    def test_fyers_options_brokerage_flat_20_same_as_upstox(self):
+        df = _orders_df([{
+            "order_id": "O1", "account_id": "acc1", "symbol": "NIFTY", "quantity": 50,
+            "transaction_type": "SELL", "fill_price": 100.0,
+        }])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "fyers"},
+        )
+        turnover = 50 * 100.0
+        assert summary["breakdown"]["brokerage"] == pytest.approx(20.0)
+        assert summary["breakdown"]["stt"] == pytest.approx(turnover * 0.001)  # statutory दर Upstox सारखेच
+
+    def test_fyers_commodity_brokerage_uses_lower_percent_than_upstox(self):
+        """मोठा turnover — Fyers चं 0.03% हे Upstox च्या 0.05% पेक्षा कमी रक्कम देतं (₹20 च्या आतच)."""
+        df = _orders_df([{
+            "order_id": "O1", "account_id": "acc1", "symbol": "GOLD", "quantity": 1,
+            "transaction_type": "BUY", "fill_price": 50000.0,
+        }])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "fyers"},
+        )
+        assert summary["breakdown"]["brokerage"] == pytest.approx(50000.0 * 0.0003)
+
+    def test_fyers_falls_back_to_flat_when_data_missing(self):
+        df = _orders_df([{"order_id": "O1", "account_id": "acc1"}])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "fyers"},
+        )
+        assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
+
+
+class TestStockoStatutoryCharges:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — Stocko चं brokerage निश्चित मासिक असलं तरी STT/Exchange/
+    SEBI/Stamp Duty हे सरकारी शुल्क त्यावरही (per-order) लागू होतातच."""
+
+    def test_stocko_order_gets_real_statutory_charges_not_zero(self):
+        df = _orders_df([{
+            "order_id": "O1", "account_id": "acc1", "symbol": "NIFTY", "quantity": 5000,
+            "transaction_type": "SELL", "fill_price": 100.0,
+        }])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "stocko"},
+        )
+        turnover = 5000 * 100.0
+        b = summary["breakdown"]
+        assert b["stt"] == pytest.approx(turnover * 0.001)
+        assert b["exchange_txn"] == pytest.approx(turnover * 0.00035)
+        expected_gst = (turnover * 0.00035 + turnover * 0.000001) * 0.18  # brokerage component नाही, फक्त exchange+SEBI वर
+        assert b["gst"] == pytest.approx(expected_gst, abs=0.01)
+
+    def test_stocko_order_without_trade_detail_gets_zero_statutory(self):
+        """तपशील नसेल तर statutory 0 राहतं — brokerage साठी जुना ढोबळ अंदाज इथे लागू होत नाही
+        (double-count टाळण्यासाठी, कारण brokerage आधीच मासिक सबस्क्रिप्शनमधून मोजला जातो)."""
+        df = _orders_df([{"order_id": "O1", "account_id": "acc1"}])
+        _, summary = charges.compute_charges(
+            df, datetime.date(2026, 9, 1), datetime.date(2026, 9, 30), broker_map={"acc1": "stocko"},
+        )
+        assert summary["breakdown"]["stt"] == 0.0
+        assert summary["breakdown"]["exchange_txn"] == 0.0
 
 
 class TestStockoFlatMonthly:
