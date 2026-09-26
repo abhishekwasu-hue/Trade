@@ -2069,14 +2069,17 @@ def _stat_cards_row(items, usable_width):
     cells = []
     for en_label, mr_label, value, hex_color in items:
         value_color = hex_color or "#131722"
-        value_para = Paragraph(f'<font size=17 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>', _STAT_CARD_STYLE)
-        label_img = _deva_image_flowable(f"{en_label} / {mr_label}", 9, max_width_pt=label_max_w, color=colors.HexColor("#666666"))
+        # 🎓 वापरकर्त्याने पुन्हा मागितलेली सुधारणा ("Compare font size, really increased, doughtfull") —
+        # आधीच्या फॉन्ट-वाढीत या top summary कार्डांचा label (9pt) आणि आकडा (17pt) सुटले होते —
+        # बाकी सर्व मजकूर मोठा झाला, पण ही कार्डं तशीच लहान राहिली, त्यामुळे "खरंच वाढलं का" शंका आली.
+        value_para = Paragraph(f'<font size=19 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>', _STAT_CARD_STYLE)
+        label_img = _deva_image_flowable(f"{en_label} / {mr_label}", 10.5, max_width_pt=label_max_w, color=colors.HexColor("#666666"))
         if label_img is not None:
             cells.append([label_img, Spacer(1, 3), value_para])
         else:
             cells.append(Paragraph(
-                f'<font size=9 color="#666666">{_xml_escape(en_label)} / {_xml_escape(mr_label)}</font><br/>'
-                f'<font size=17 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>',
+                f'<font size=10.5 color="#666666">{_xml_escape(en_label)} / {_xml_escape(mr_label)}</font><br/>'
+                f'<font size=19 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>',
                 _STAT_CARD_STYLE,
             ))
     tbl = Table([cells], colWidths=[cell_w] * n)
@@ -2464,7 +2467,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "ब्रोकर वापरला याकडे दुर्लक्ष करून, प्रत्येक ब्रोकरच्या स्वतःच्या खऱ्या, प्रकाशित दरांनुसार किती "
             "पडले असते. सर्वात स्वस्त ब्रोकर (प्रति ऑर्डर) सर्वात आधी दाखवला आहे. Stocko चं ब्रोकरेज प्रति-ऑर्डर "
             "नसून निश्चित मासिक सबस्क्रिप्शन आहे (या रिपोर्टच्या तारीख-रेंजमधल्या महिन्यांनुसार इथे वाटलेलं).",
-            max_width_pt=usable_width, font_size=9,
+            max_width_pt=usable_width, font_size=10.5,
         ))
         story.append(Spacer(1, 8))
 
@@ -2675,7 +2678,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         "हा रिपोर्ट AMW's A1 AlgoTrading System ने आपोआप तयार केला आहे — फक्त माहितीसाठी, गुंतवणूक सल्ला "
         "नाही. शिफारसी विभाग हा नियम-आधारित, डेटा-चालित प्रारंभबिंदू आहे, आर्थिक सल्ला नाही — अंतिम निर्णय "
         "नेहमी तुमचाच असतो.",
-        usable_width, font_size=9, text_color=colors.HexColor("#888888"),
+        usable_width, font_size=10.5, text_color=colors.HexColor("#888888"),
     ))
 
     doc.build(story, canvasmaker=_NumberedCanvas)
