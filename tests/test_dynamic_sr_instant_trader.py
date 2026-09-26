@@ -1180,6 +1180,123 @@ class TestCreditSpreadToggle:
         assert settings.get("credit_spread_enabled", True) is True
 
 
+class TestOtmShadowTrade:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "आधी 5-Min Instant Trader वर सुरू करा") —
+    otm_shadow_enabled चालू असेल आणि टच "5M" चा असेल तरच, खऱ्या ITM trade सोबतच, एक स्वतंत्र निव्वळ
+    PAPER trade (वेगळ्याच source ने) समांतर लॉग व्हायला हवा — डीफॉल्ट बंद असल्याने आणि 1M touches वर
+    कधीच न फिरल्याने, हे मूळ ITM trade च्या (LIVE/PAPER) वर्तनावर कधीच परिणाम करता कामा नये."""
+
+    def _settings_with_shadow(self, strikes_count=2):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["otm_shadow_enabled"] = True
+        settings["otm_shadow_strikes_count"] = strikes_count
+        return settings
+
+    def test_shadow_disabled_by_default_does_not_fire(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_fixed_strikes") as mock_otm_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_otm_select.called
+            assert mock_trade.call_count == 1  # फक्त खरा ITM trade, शॅडो नाही
+
+    def test_shadow_enabled_5m_touch_fires_paper_shadow_trade(self):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._settings_with_shadow()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_fixed_strikes",
+                          return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_otm_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_otm_select.called
+            assert mock_otm_select.call_args.kwargs.get("strikes_otm") == 2
+            assert mock_trade.call_count == 2  # खरा ITM trade + शॅडो OTM trade
+
+            shadow_call = mock_trade.call_args_list[-1]
+            assert shadow_call.kwargs.get("source") == "dynamic_sr_instant_otm_shadow"
+            assert shadow_call.kwargs.get("trading_mode") == "PAPER"
+            assert shadow_call.kwargs.get("entry_timeframe") == "5M"
+
+    def test_shadow_enabled_but_1m_touch_does_not_fire(self):
+        """वापरकर्त्याच्या स्पष्ट सूचनेनुसार — सुरुवातीला फक्त "5-Min Instant Trader" (5M touches),
+        1M touches वर शॅडो कधीच फिरता कामा नये."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._settings_with_shadow()
+        settings["timeframe_choice"] = "1M"
+        zones_1m = pd.DataFrame([
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": 23900.0, "zone_high": 23900.0,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones_1m), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_fixed_strikes") as mock_otm_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_otm_select.called
+            assert mock_trade.call_count == 1  # फक्त खरा ITM trade
+
+    def test_shadow_exception_does_not_break_real_trade(self):
+        """शॅडो trade मध्ये अपवाद (उदा. select_credit_spread_fixed_strikes क्रॅश) आला, तरी मूळ खरा
+        ITM trade (आधीच यशस्वीपणे उघडलेला) प्रभावित होता कामा नये — फक्त शॅडो अयशस्वी व्हावा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._settings_with_shadow()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_fixed_strikes", side_effect=RuntimeError("boom")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            result = dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # खरा ITM trade फक्त एकदाच, अपवादामुळे थांबला नाही
+            assert "OPENED" in result or "T1" in result
+
+
 class TestSlTslCooldown:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
     kiman 15 minute same level war trade ghewu naye, cooldown") — established generic 30-मिनिट

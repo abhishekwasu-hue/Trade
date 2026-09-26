@@ -299,6 +299,18 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # होता. आता दोन्ही स्वतंत्रपणे on/off — डीफॉल्ट True (आधीच्याच वर्तनाशी सुसंगत).
         "credit_spread_enabled": True,
         "naked_enabled": True,           # "on the same signal" -- डीफॉल्ट सक्रिय, Dashboard वरून बंद करता येईल
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Credit Spread ITM वि. OTM स्ट्राइक निवड —
+        # "profit loss आणि charges या सर्व गोष्टींचा विचार करून त्या स्ट्राइक प्राइस फायदेशीर वाटतात
+        # का की OTM स्ट्राइक निवडावा") — जुन्या expired तारखांचा actual option premium डेटा Upstox
+        # कडून मिळत नसल्याने खरा historical backtest शक्य नाही (बघा backtest.py ची स्वतःचीच मर्यादा-
+        # टिप्पणी); त्याऐवजी forward-test — याच सिग्नलवर, खऱ्या (ITM) trade सोबतच, एक स्वतंत्र, निव्वळ
+        # PAPER-only OTM पर्याय (select_credit_spread_fixed_strikes(), वेगळ्याच
+        # source="dynamic_sr_instant_otm_shadow" ने — मूळ strategy च्या PAPER/LIVE आकडेवारीत कधीच
+        # मिसळत नाही) समांतर लॉग होतो — काही काळानंतर Performance Report वर दोन्हींची प्रत्यक्ष तुलना
+        # करता येईल. डीफॉल्ट बंद, आणि सुरुवातीला (वापरकर्त्याच्या सूचनेनुसार) फक्त "5M" touches पुरतंच
+        # मर्यादित (timeframe_suffix तपासूनच, dynamic_sr_instant_trader.py मध्ये).
+        "otm_shadow_enabled": False,
+        "otm_shadow_strikes_count": 2,   # ATM पासून किती strikes OTM (select_credit_spread_fixed_strikes चा strikes_otm)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच
         # "lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — पण दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
         # trade-प्रकार असल्याने वापरकर्त्याला ते स्वतंत्रपणे ठरवता यायला हवं. डीफॉल्ट "lots" इतकाच

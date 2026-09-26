@@ -1831,3 +1831,31 @@ class TestVixSpikeHaltSettings:
         payload = mock_save.call_args[0][2]
         assert "enabled" not in payload
         assert "threshold_pct" not in payload
+
+
+class TestOtmShadowSettingsDefaults:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "Adhi 5-Min Instant Trader var suru kara") —
+    otm_shadow_enabled डीफॉल्ट बंद (backward-compatible, जुन्या वापरकर्त्यांसाठी वर्तन बदलत नाही) आणि
+    सुरुवातीला फक्त "1m_instant" (5-Min Instant Trader) साठीच उपलब्ध — इतर strategies ना हे सेटिंगच नाही."""
+
+    def test_otm_shadow_disabled_by_default(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["otm_shadow_enabled"] is False
+
+    def test_otm_shadow_strikes_count_default_is_2(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["otm_shadow_strikes_count"] == 2
+
+    def test_other_strategies_do_not_have_otm_shadow_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "otm_shadow_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+    def test_get_strategy_settings_merges_otm_shadow_override(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ({"otm_shadow_enabled": True, "otm_shadow_strikes_count": 4},)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+
+        result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        assert result["otm_shadow_enabled"] is True
+        assert result["otm_shadow_strikes_count"] == 4
