@@ -270,15 +270,18 @@ _rpt_h2_bt = ParagraphStyle("rpt_h2_bt", fontName=_RPT_FONT_BOLD, fontSize=18, l
 
 _rpt_h3 = ParagraphStyle("rpt_h3", fontName=_RPT_FONT_BOLD, fontSize=12, leading=15, textColor=colors.HexColor("#333333"), spaceBefore=6, spaceAfter=3)
 
-_rpt_normal = ParagraphStyle("rpt_normal", fontName=_RPT_FONT, fontSize=11.5, leading=15, alignment=TA_LEFT)
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Content chya font size wadhwa, वाचायला डोळ्यांना त्रास होत
+# आहे") — शरीरातला मजकूर, टेबल्स आणि तळटीप आणखी मोठे (आधीच्या PR #124 च्या वाढीनंतरही अजून लहान
+# वाटत होते) — मथळे (_rpt_h1/h2/h3, badges) आधीच मोठे असल्याने अस्पर्श ठेवले.
+_rpt_normal = ParagraphStyle("rpt_normal", fontName=_RPT_FONT, fontSize=13, leading=17, alignment=TA_LEFT)
 
-_rpt_meta = ParagraphStyle("rpt_meta", fontName=_RPT_FONT, fontSize=11.5, leading=15, textColor=colors.HexColor("#555555"))
+_rpt_meta = ParagraphStyle("rpt_meta", fontName=_RPT_FONT, fontSize=13, leading=17, textColor=colors.HexColor("#555555"))
 
-_rpt_kv_wrap = ParagraphStyle("rpt_kv_wrap", fontName=_RPT_FONT, fontSize=9.5, leading=12.5, textColor=colors.HexColor("#333333"))
+_rpt_kv_wrap = ParagraphStyle("rpt_kv_wrap", fontName=_RPT_FONT, fontSize=11, leading=14, textColor=colors.HexColor("#333333"))
 
 _rpt_value_big = ParagraphStyle("rpt_value_big", fontName=_RPT_FONT_BOLD, fontSize=18, leading=22, textColor=_C_BG_DARK)
 
-_rpt_footer = ParagraphStyle("rpt_footer", fontName=_RPT_FONT, fontSize=8, leading=11, textColor=colors.HexColor("#888888"))
+_rpt_footer = ParagraphStyle("rpt_footer", fontName=_RPT_FONT, fontSize=9.5, leading=12.5, textColor=colors.HexColor("#888888"))
 
 _rpt_badge_green = ParagraphStyle("rpt_badge_green", fontName=_RPT_FONT_BOLD, fontSize=14, leading=18, textColor=_C_GREEN, alignment=TA_CENTER)
 
@@ -314,7 +317,7 @@ def _bi(en, mr):
     नाही तर "&L" चुकीचा entity समजून अर्धवट/चुकीचा दिसतो (उदा. "Gross P&L" ऐवजी "Gross P&L;")."""
     return f"{_xml_escape(str(en))} / {_xml_escape(str(mr))}"
 
-def _bi_key(en, mr, max_width_pt=None, font_size=9.5, color=colors.white, bold=False):
+def _bi_key(en, mr, max_width_pt=None, font_size=11, color=colors.white, bold=False):
     """_kv_table च्या key column साठी — वापरकर्त्याने सापडवलेली गंभीर bug ("मराठी वाचता येत नाही,
     mistakes दिसतात" — reportlab ला Indic matra-reordering/conjuncts जमत नाहीत) टाळण्यासाठी, शक्य
     असल्यास PIL+raqm ने योग्य-shaped image — अन्यथा (PIL/raqm उपलब्ध नसल्यास, दुर्मिळ पण शक्य) आधीचा
@@ -328,7 +331,7 @@ def _bi_key(en, mr, max_width_pt=None, font_size=9.5, color=colors.white, bold=F
         return img
     return Paragraph(_bi(en, mr), _rpt_kv_key_wrap_bi)
 
-def _mono_key(text, max_width_pt=None, font_size=11.5, color=colors.white, bold=False):
+def _mono_key(text, max_width_pt=None, font_size=13, color=colors.white, bold=False):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
     `_bi_key()` सारखाच, पण single-language (Overshoot/Slippage Tracker सारख्या इंग्लिश-only key
     सेल्ससाठी — इथे मराठी भाषांतर नाही, त्यामुळे बिलिंग्वल जोडणी नको)."""
@@ -341,7 +344,7 @@ def _mono_key(text, max_width_pt=None, font_size=11.5, color=colors.white, bold=
     )
     return Paragraph(_xml_escape(str(text)), style)
 
-def _bi_para(en, mr, max_width_pt, font_size=11, text_color=None, space_after=0):
+def _bi_para(en, mr, max_width_pt, font_size=12.5, text_color=None, space_after=0):
     """वापरकर्त्याने मागितलेली सुधारणा ("Explanation suddha devnagari marathi mdhe... font size
     wadhwa") — Performance Report मधल्या स्पष्टीकरणपर परिच्छेदांसाठी (overshoot/slippage/trade log/
     trade chart च्या notes, तळटीप) — इंग्लिश आधी (native, selectable Paragraph — शुद्ध इंग्लिश असल्याने
@@ -364,7 +367,7 @@ def _bi_para(en, mr, max_width_pt, font_size=11, text_color=None, space_after=0)
         result.append(Spacer(1, space_after))
     return result
 
-def _bi_line(en, mr, font_size=11, max_width_pt=None):
+def _bi_line(en, mr, font_size=12.5, max_width_pt=None):
     """_bi() इतकाच लहान/एका-ओळीचा मजकूर (उदा. "No data in this period." सारखे रिकाम्या-स्थितीचे
     संदेश) — शक्य असल्यास योग्य-shaped image, अन्यथा जुना Paragraph मार्ग."""
     img = _deva_image_flowable(f"{en} / {mr}", font_size, max_width_pt=max_width_pt)
@@ -823,11 +826,12 @@ def _fix_devanagari_glyphs(s):
     return s.replace("→", "->").replace("↑", "^").replace("↓", "v")
 
 def _table_font_size(ncols):
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Content chya font size wadhwa") — प्रत्येक टप्पा वाढवला.
     if ncols <= 3:
-        return 10
+        return 11.5
     if ncols <= 5:
-        return 9
-    return 7.5
+        return 10.5
+    return 9
 
 def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None, multicolour_header=False):
     """
@@ -886,7 +890,7 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     return [tbl, note] if note else tbl
 
 
-def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=8.5):
+def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=10):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE+PAPER slippage PDF मध्ये) — df_to_reportlab_table()
     रुंद (10 स्तंभांच्या) DataFrame साठी वापरलं, तर colWidths न दिल्याने नैसर्गिक (auto) रुंदी पानाच्या
     रुंदीपेक्षा जास्त होऊन उजवीकडचे स्तंभ कापले जातात/दिसतच नाहीत — इथे प्रत्येक सेल Paragraph म्हणून
@@ -895,7 +899,8 @@ def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=8.5):
     सर्व existing कॉल्ससाठी जसंच्या तसं (बदल नाही).
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("content font size is very small, difficult for reading") —
     डीफॉल्ट फॉन्ट 7pt वरून 8.5pt (हा helper फक्त Performance Report च्या Overshoot/LIVE-PAPER
-    Slippage Tracker तक्त्यांसाठीच वापरला जातो)."""
+    Slippage Tracker तक्त्यांसाठीच वापरला जातो).
+    🎓 वापरकर्त्याने पुन्हा मागितलेली सुधारणा ("वाचायला डोळ्यांना त्रास होत आहे") — 8.5pt वरून 10pt."""
     if df is None or df.empty:
         return Paragraph("No data available.", _rpt_normal)
     display_df = df.head(max_rows)
@@ -960,7 +965,7 @@ def _kv_table(rows, usable_width, key_ratio=0.35, color_value_rows=None, force_c
     force_colors = force_colors or {}
     table_font = font_name or _RPT_TABLE_FONT
     table_font_bold = font_name or _RPT_TABLE_FONT_BOLD
-    table_font_size = font_size or 11.5
+    table_font_size = font_size or 13
     clean_rows = [[_fix_missing_glyphs(c) for c in row] for row in rows]
     tbl = Table(clean_rows, hAlign="LEFT", colWidths=[usable_width * key_ratio, usable_width * (1 - key_ratio)])
     style_cmds = [
@@ -1974,7 +1979,7 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
         return
     shown = trade_charts[:max_charts]
     caption_style = ParagraphStyle(
-        "trade_chart_caption", fontName=_RPT_FONT, fontSize=9, leading=12.5,
+        "trade_chart_caption", fontName=_RPT_FONT, fontSize=10.5, leading=14,
         textColor=colors.HexColor("#333333"), spaceAfter=3,
     )
     for tc in shown:
@@ -2030,7 +2035,7 @@ def _rec_callout(rec_markdown, usable_width):
         key, color, bg, tag = "grey", _C_GREY, _C_GREY_BG, "[-]"
     html_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
     body_style = ParagraphStyle(
-        "perf_rec", fontName=_RPT_FONT, fontSize=10.5, leading=14, textColor=colors.HexColor("#222222"),
+        "perf_rec", fontName=_RPT_FONT, fontSize=12, leading=15.5, textColor=colors.HexColor("#222222"),
     )
     para = Paragraph(f"<b><font color='{_REC_HEX[key]}'>{tag}</font></b> {html_text}", body_style)
     bar_w = 0.3 * cm
@@ -2132,12 +2137,13 @@ class _NumberedCanvas(_BaseCanvas):
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("content font size is very small, difficult for reading") —
 # Trade Log चा फॉन्ट 7.5pt वरून 9pt (leading त्याच प्रमाणात 9.5→11.5) — सर्वात दाट, माहितीने भरलेला
 # तक्ता असल्याने वाचनासाठी सर्वात जास्त त्रासदायक होता.
-_TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=9, leading=11.5)
+# 🎓 वापरकर्त्याने पुन्हा मागितलेली सुधारणा ("वाचायला डोळ्यांना त्रास होत आहे") — 9pt वरून 10.5pt.
+_TRADE_LOG_CELL_STYLE = ParagraphStyle("trade_log_cell", fontName=_RPT_TABLE_FONT, fontSize=10.5, leading=13.5)
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") — Trade Log
 # च्या header row साठी, प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा), पांढऱ्या
 # पार्श्वभूमीवर — आधीची घन काळी पार्श्वभूमी + एकसुरी पांढरा मजकूर काढला.
 _TRADE_LOG_HEADER_STYLES = [
-    ParagraphStyle(f"trade_log_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=9, leading=11.5, textColor=c)
+    ParagraphStyle(f"trade_log_header_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=10.5, leading=13.5, textColor=c)
     for i, c in enumerate(_SECTION_COLORS)
 ]
 
@@ -2223,7 +2229,7 @@ def _subsection_banner(text, usable_width, accent_color):
     """Trade Log आतल्या प्रत्येक Entry Timeframe गटासाठी स्वतःचं, ठळक (मुख्य section-header पेक्षा
     लहान) रंगीत heading — जेणेकरून 1M आणि 5M S/R touch trades एकाच मोठ्या टेबलमध्ये मिसळू नयेत,
     प्रत्येक गटाला स्वतःचं स्पष्ट शीर्षक मिळावं."""
-    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=11.5, leading=14, textColor=colors.white)
+    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=13, leading=16, textColor=colors.white)
     tbl = Table([[Paragraph(text, style)]], colWidths=[usable_width])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), accent_color),
@@ -2608,7 +2614,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
             "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance. "
             "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables.",
-            ParagraphStyle("trade_log_note_en", fontName=_RPT_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555")),
+            ParagraphStyle("trade_log_note_en", fontName=_RPT_FONT, fontSize=12.5, leading=16, textColor=colors.HexColor("#555555")),
         ))
         story.append(Spacer(1, 3))
         _trade_log_note_mr_runs = [
@@ -2620,7 +2626,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
              "प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.", False),
         ]
         _trade_log_note_mr_img = _deva_image_flowable(
-            _trade_log_note_mr_runs, 11, max_width_pt=usable_width, color=colors.HexColor("#555555"),
+            _trade_log_note_mr_runs, 12.5, max_width_pt=usable_width, color=colors.HexColor("#555555"),
         )
         if _trade_log_note_mr_img is not None:
             story.append(_trade_log_note_mr_img)
@@ -2630,7 +2636,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
                 "<b>स्पॉट %-आधारित</b>, <b>प्रीमियम पॉइंट्स-आधारित</b>, <b>स्पॉट %+प्रीमियम पॉइंट्स</b> (दोन्ही एकत्र गाठले गेले), "
                 "किंवा <b>निश्चित रुपये नफा-तोटा-आधारित</b> — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. "
                 "व्यवहार खाली प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.",
-                ParagraphStyle("trade_log_note_mr", fontName=_DEVANAGARI_FONT, fontSize=11, leading=15, textColor=colors.HexColor("#555555")),
+                ParagraphStyle("trade_log_note_mr", fontName=_DEVANAGARI_FONT, fontSize=12.5, leading=16, textColor=colors.HexColor("#555555")),
             ))
         story.append(Spacer(1, 6))
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
