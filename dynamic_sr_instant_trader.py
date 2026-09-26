@@ -59,7 +59,7 @@ from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate, check_iv_change_gate
 from process_lock import ProcessLock, ProcessLockHeld
-from strategy import select_credit_spread_itm, select_naked_option_itm
+from strategy import select_credit_spread_itm, select_credit_spread_fixed_strikes, select_naked_option_itm
 from trading_engine import open_multi_leg_trade
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
@@ -512,6 +512,36 @@ def process_symbol(access_token, symbol, lot_size=65):
             elif is_directional_trade:
                 log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
             cloud_db.save_signal_log(log_entry)
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (ITM वि. OTM Credit Spread — "profit loss
+            # आणि charges विचारात घेऊन कुठला strike फायदेशीर, OTM निवडावा का" यावर चर्चा, नंतर
+            # "आधी 5-Min Instant Trader वर सुरू करा") — जुन्या expired तारखांचा actual option
+            # premium डेटा Upstox कडून मिळत नसल्याने खरा historical backtest शक्य नाही (बघा
+            # backtest.py ची स्वतःचीच मर्यादा-टिप्पणी) — त्याऐवजी हे forward-test: खऱ्या (ITM) trade
+            # सोबतच, याच सिग्नलवर, एक स्वतंत्र निव्वळ PAPER-only OTM पर्याय
+            # (select_credit_spread_fixed_strikes()) समांतर लॉग होतो — पूर्णपणे वेगळ्याच
+            # source="dynamic_sr_instant_otm_shadow" ने, त्यामुळे मूळ strategy च्या PAPER/LIVE
+            # आकडेवारीत (Performance Report, Kill Switch, max-trades) कधीच मिसळत नाही — फक्त
+            # निरीक्षण/तुलनेसाठी. डीफॉल्ट बंद, आणि सुरुवातीला (वापरकर्त्याच्या स्पष्ट सूचनेनुसार)
+            # फक्त "5M" touches पुरतंच मर्यादित — 1M वर अजून नाही.
+            if settings.get("otm_shadow_enabled", False) and timeframe_suffix == "5M":
+                try:
+                    otm_spread_result = select_credit_spread_fixed_strikes(
+                        raw_chain, direction, atm_strike, step=strike_step,
+                        strikes_otm=int(settings.get("otm_shadow_strikes_count", 2)),
+                        hedge_width_points=settings["hedge_width_points"],
+                    )
+                    if otm_spread_result is not None:
+                        open_multi_leg_trade(
+                            access_token, symbol, otm_spread_result, lots=lots, lot_size=lot_size,
+                            sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                            product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                            sl_pct_of_credit=100, source="dynamic_sr_instant_otm_shadow",
+                            entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                            entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                        )
+                except Exception as exc:
+                    print(f"⚠️ OTM Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
         else:
             log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
             log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"

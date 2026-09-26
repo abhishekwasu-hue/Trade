@@ -359,6 +359,31 @@ def render():
         with c3:
             hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (ITM वि. OTM Credit Spread तुलना — "profit loss
+        # आणि charges विचारात घेऊन कुठला strike फायदेशीर") — जुन्या expired तारखांचा actual option
+        # premium डेटा मिळत नसल्याने खरा historical backtest शक्य नाही, त्यामुळे हे forward-test:
+        # खऱ्या (ITM) trade सोबतच, याच सिग्नलवर, एक स्वतंत्र निव्वळ PAPER-only OTM पर्याय समांतर लॉग
+        # होतो (वेगळ्याच source ने — मूळ strategy च्या आकडेवारीत कधीच मिसळत नाही). सुरुवातीला
+        # (वापरकर्त्याच्या सूचनेनुसार) फक्त "5-Min Instant Trader" (1m_instant, फक्त 5M touches) पुरतंच.
+        if strategy_key == "1m_instant":
+            otm_shadow_enabled = st.checkbox(
+                "🔬 OTM Shadow (फक्त 5M touches, तुलनेसाठी — निव्वळ PAPER, खऱ्या trade वर परिणाम नाही)",
+                value=bool(settings.get("otm_shadow_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "otm_shadow_enabled"),
+            )
+            st.caption(
+                "चालू केल्यास, वरच्याच ITM trade सोबत, त्याच सिग्नलवर, ATM पासून OTM स्ट्राइक्स "
+                "वापरून एक स्वतंत्र, निव्वळ PAPER trade समांतर नोंदवला जातो — Performance Report वर "
+                "वेगळ्या source ने (dynamic_sr_instant_otm_shadow) दोन्हींची तुलना करता येईल."
+            )
+            if otm_shadow_enabled:
+                otm_shadow_strikes_count = _number_input(
+                    "OTM Strikes (ATM पासून किती strikes दूर)", settings, "otm_shadow_strikes_count",
+                    strategy_key, symbol, min_value=1, max_value=10, step=1,
+                )
+            else:
+                otm_shadow_strikes_count = settings.get("otm_shadow_strikes_count", 2)
+
         st.markdown("---")
         sub_header("🧭 RSI Gate", HDR_ORANGE)
         entry_rsi_gate_enabled = st.checkbox(
@@ -792,6 +817,8 @@ def render():
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_lookback_candles"] = int(breakout_lookback_candles)
             new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
+            new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
+            new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

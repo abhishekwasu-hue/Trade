@@ -954,3 +954,118 @@ class TestHasActiveTslTrades:
         seed_open_trade(temp_db, "T1", "NIFTY", "dynamic_sr_instant", tsl_activated=1)
         assert database.has_active_tsl_trades([]) is False
 
+
+class TestOtmShadowSourceIsolation:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "5-Min Instant Trader" साठी, ITM वि. OTM
+    strike तुलना, "Adhi 5-Min Instant Trader var suru kara") — नवीन 'dynamic_sr_instant_otm_shadow'
+    source चे निव्वळ PAPER forward-test trades, portfolio-व्यापी एकत्रित आकडेवारीत (Summary/Equity
+    Curve/P&L Report/Timeframe-wise व Option-Structure-wise breakdown/Trade Log/Overshoot Tracker)
+    कधीच मिसळता कामा नयेत — फक्त 'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (Strategy-wise Performance)
+    स्वतःची वेगळी रांग म्हणून दिसायला हवेत, हाच तुलनेचा उद्देश आहे."""
+
+    def _seed_real_and_shadow(self, tmpdb, real_pnl=500.0, shadow_pnl=9999.0):
+        seed_closed_trade(tmpdb, "REAL1", real_pnl, "TARGET", "2026-09-20",
+                           source="dynamic_sr_instant", entry_timeframe="5M", strategy="BULL_PUT_SPREAD")
+        seed_closed_trade(tmpdb, "SHADOW1", shadow_pnl, "TARGET", "2026-09-20",
+                           source="dynamic_sr_instant_otm_shadow", entry_timeframe="5M", mode="PAPER",
+                           strategy="BULL_PUT_SPREAD")
+
+    def test_performance_summary_excludes_shadow(self, temp_db):
+        self._seed_real_and_shadow(temp_db)
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["total_trades"] == 1
+        assert summary["total_pnl"] == 500.0
+
+    def test_equity_curve_excludes_shadow(self, temp_db):
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_equity_curve_data("NIFTY")
+        assert len(df) == 1
+        assert list(df["cumulative_pnl"]) == [500.0]
+
+    def test_closed_trades_detail_excludes_shadow(self, temp_db):
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_closed_trades_detail("NIFTY")
+        assert set(df["Trade ID"]) == {"REAL1"}
+
+    def test_closed_trades_for_report_excludes_shadow(self, temp_db):
+        import datetime as dt
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_closed_trades_for_report("NIFTY", dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        assert set(df["trade_id"]) == {"REAL1"}
+
+    def test_sl_tsl_overshoot_excludes_shadow(self, temp_db):
+        detail = "Stop-Loss hit via Premium points — loss -3.8 points reached/exceeded the -3.0-point threshold."
+        seed_closed_trade(temp_db, "REAL1", -500.0, "SL", "2026-09-20", source="dynamic_sr_instant",
+                           exit_reason_detail=detail)
+        seed_closed_trade(temp_db, "SHADOW1", -700.0, "SL", "2026-09-20", source="dynamic_sr_instant_otm_shadow",
+                           mode="PAPER", exit_reason_detail=detail)
+        df = database.get_sl_tsl_overshoot("NIFTY")
+        assert set(df["Trade ID"]) == {"REAL1"}
+
+    def test_orders_with_account_excludes_shadow(self, temp_db):
+        import datetime as dt
+        self._seed_real_and_shadow(temp_db)
+        for trade_id in ("REAL1", "SHADOW1"):
+            conn = sqlite3.connect(temp_db)
+            conn.execute(
+                """INSERT INTO order_log (order_id, trade_id, symbol, mode, instrument_key, strike, option_type,
+                   transaction_type, quantity, fill_price, price, placed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (f"{trade_id}_E1", trade_id, "NIFTY", "PAPER", "PE24400", 24400, "PE", "SELL", 75, 38.0, 0.0,
+                 "2026-09-20 10:00:00"),
+            )
+            conn.commit()
+            conn.close()
+        df = database.get_orders_with_account("NIFTY", dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+        assert set(df["trade_id"]) == {"REAL1"}
+
+    def test_performance_by_group_by_timeframe_excludes_shadow(self, temp_db):
+        """group_col='entry_timeframe' (source नाही) असेल तर शॅडो त्याच '5M' रांगेत मिसळता कामा नये."""
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_performance_by_group("NIFTY", "entry_timeframe")
+        assert len(df) == 1
+        assert df.iloc[0]["Group"] == "5M"
+        assert df.iloc[0]["Total P&L"] == 500.0  # फक्त REAL1, SHADOW1 चा 9999 मिसळलेला नाही
+
+    def test_performance_by_group_by_structure_excludes_shadow(self, temp_db):
+        """OPTION_STRUCTURE_GROUP_SQL (source नाही) — दोन्ही trades चा strategy एकच (BULL_PUT_SPREAD)
+        असला तरी शॅडो CREDIT_SPREAD च्या खऱ्या P&L मध्ये मिसळता कामा नये."""
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_performance_by_group("NIFTY", database.OPTION_STRUCTURE_GROUP_SQL)
+        assert len(df) == 1
+        assert df.iloc[0]["Group"] == "CREDIT_SPREAD"
+        assert df.iloc[0]["Total P&L"] == 500.0
+
+    def test_performance_by_group_by_source_includes_shadow_as_own_row(self, temp_db):
+        """group_col='source' असेल तर मात्र शॅडो स्वतःची वेगळी रांग म्हणून दिसायलाच हवा — हाच उद्देश आहे."""
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_performance_by_group("NIFTY", "source")
+        assert set(df["Group"]) == {"dynamic_sr_instant", "dynamic_sr_instant_otm_shadow"}
+        shadow_row = df[df["Group"] == "dynamic_sr_instant_otm_shadow"].iloc[0]
+        assert shadow_row["Total P&L"] == 9999.0
+
+    def test_performance_by_two_groups_includes_shadow_as_own_row(self, temp_db):
+        """group_col1='source' असल्याने आपोआपच वेगळी रांग — इथेही वगळणी लावलेली नसावी."""
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_performance_by_two_groups("NIFTY", "source", "entry_timeframe")
+        assert len(df) == 2
+        combos = set(zip(df["Strategy"], df["Timeframe"]))
+        assert combos == {("dynamic_sr_instant", "5M"), ("dynamic_sr_instant_otm_shadow", "5M")}
+
+    def test_exit_reason_breakdown_by_timeframe_excludes_shadow(self, temp_db):
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_exit_reason_breakdown("NIFTY", "entry_timeframe")
+        assert len(df) == 1
+        assert df.iloc[0]["Trades"] == 1
+
+    def test_exit_reason_breakdown_by_source_includes_shadow(self, temp_db):
+        self._seed_real_and_shadow(temp_db)
+        df = database.get_exit_reason_breakdown("NIFTY", "source")
+        assert set(df["Group"]) == {"dynamic_sr_instant", "dynamic_sr_instant_otm_shadow"}
+
+    def test_shadow_exclusion_clause_does_not_over_exclude_similar_names(self, temp_db):
+        """SQLite LIKE मध्ये '_' वाइल्डकार्ड असल्याने ESCAPE आवश्यक — तो चुकीचा असेल तर
+        'dynamic_sr_instant' (मध्ये कुठेही 'otm_shadow' नाही) सुद्धा चुकून वगळला जाऊ शकतो."""
+        seed_closed_trade(temp_db, "REAL1", 500.0, "TARGET", "2026-09-20", source="dynamic_sr_instant")
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["total_trades"] == 1
+

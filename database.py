@@ -1026,6 +1026,20 @@ def _symbol_where_clause(symbol):
     return "symbol=?", [symbol]
 
 
+def _shadow_exclusion_clause(source_col="source"):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "5-Min Instant Trader" साठी, ITM वि. OTM
+    strike तुलना) — 'dynamic_sr_instant_otm_shadow' सारखे निव्वळ तुलनेसाठी असलेले PAPER-only
+    forward-test trades, portfolio-व्यापी एकत्रित आकडेवारीतून (Summary/Equity Curve/P&L Report/
+    Timeframe-wise व Option-Structure-wise breakdown/Trade Log/Overshoot Tracker) वगळण्यासाठी —
+    अन्यथा हे शॅडो trades मूळ रणनीतीच्या खऱ्या PAPER/LIVE आकड्यांत निमूटपणे मिसळले जातील. फक्त
+    'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (get_performance_by_group("source")/
+    get_performance_by_two_groups/get_exit_reason_breakdown("source") ज्यात एक गट "source" आहे)
+    ही वगळणी लावली जात नाही — तिथे शॅडो स्वतःची वेगळी रांग म्हणून दिसणं, हाच फीचरचा मूळ उद्देश आहे.
+    SQLite च्या LIKE मध्ये '_' वाइल्डकार्ड असल्याने (कुठलाही एक अक्षर) ESCAPE आवश्यक, नाहीतर
+    'dynamic_sr_instant_otm_shadow' हे नाव चुकीच्या पद्धतीने match/exclude होऊ शकतं."""
+    return f"COALESCE({source_col},'') NOT LIKE '%\\_otm\\_shadow' ESCAPE '\\'"
+
+
 def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):
     """
     बंद झालेल्या (CLOSED) ट्रेड्सवरून Win Rate, Avg P&L, Profit Factor, ROI% वगैरे मूळ कामगिरी आकडे
@@ -1044,7 +1058,7 @@ def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_d
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
     query = (f"SELECT realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
-             f"WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL")
+             f"WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND {_shadow_exclusion_clause()}")
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1098,7 +1112,8 @@ def get_equity_curve_data(symbol, mode_filter=None, style_filter=None, start_dat
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT exit_time, realized_pnl FROM live_trades
-               WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
+               WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
+                     AND {_shadow_exclusion_clause()}"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1244,6 +1259,11 @@ def get_performance_by_group(symbol, group_col, mode_filter=None, start_date=Non
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr} AS grp, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades
                 WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
+    if group_col != "source":
+        # 🎓 "source" नुसार गट केला तरच OTM Shadow ला स्वतःची वेगळी रांग दाखवायची असते (उद्देशच तोच
+        # आहे) — इतर कुठल्याही group_col (entry_timeframe/OPTION_STRUCTURE_GROUP_SQL/trading_style)
+        # साठी शॅडो वगळलं नाही, तर तो त्याच timeframe/structure च्या खऱ्या रांगेत मिसळून जाईल.
+        query += f" AND {_shadow_exclusion_clause()}"
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1281,6 +1301,8 @@ def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=No
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr1} AS grp1, {col_expr2} AS grp2, realized_pnl, exit_reason, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required
                 FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
+    if "source" not in (group_col1, group_col2):
+        query += f" AND {_shadow_exclusion_clause()}"  # 🎓 get_performance_by_group() प्रमाणेच कारण
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1316,7 +1338,8 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy, entry_reason_tag,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
                       realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
-               FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
+               FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
+                     AND {_shadow_exclusion_clause()}"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1403,7 +1426,8 @@ def get_sl_tsl_overshoot(symbol, mode_filter=None, start_date=None, end_date=Non
                       exit_reason_detail, realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS "Mode"
                FROM live_trades
                WHERE {symbol_clause} AND status='CLOSED' AND exit_reason_detail IS NOT NULL
-                     AND exit_reason IN ('SL', 'TSL_SL', 'TRAILING_SL', 'PCT_TRAILING_SL')"""
+                     AND exit_reason IN ('SL', 'TSL_SL', 'TRAILING_SL', 'PCT_TRAILING_SL')
+                     AND {_shadow_exclusion_clause()}"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1446,6 +1470,8 @@ def get_exit_reason_breakdown(symbol, group_col, mode_filter=None, start_date=No
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT {col_expr} AS grp, COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, realized_pnl
                 FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL"""
+    if group_col != "source":
+        query += f" AND {_shadow_exclusion_clause()}"  # 🎓 get_performance_by_group() प्रमाणेच कारण
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)
@@ -1510,7 +1536,8 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.symbol, o.quantity, o.fill_price, o.price,
                       o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
-               WHERE {symbol_clause} AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?"""
+               WHERE {symbol_clause} AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?
+                     AND {_shadow_exclusion_clause('lt.source')}"""
     params += [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
     if mode_filter:
         query += " AND o.mode=?"
@@ -1526,7 +1553,7 @@ def get_closed_trades_for_report(symbol, start_date, end_date, mode_filter=None)
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT trade_id, exit_time, realized_pnl FROM live_trades
                WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
-               AND date(exit_time) >= ? AND date(exit_time) <= ?"""
+               AND date(exit_time) >= ? AND date(exit_time) <= ? AND {_shadow_exclusion_clause()}"""
     params += [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
