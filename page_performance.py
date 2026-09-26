@@ -10,10 +10,10 @@ from database import (
     get_performance_summary, get_equity_curve_data, get_performance_by_group,
     get_performance_by_two_groups, get_closed_trades_detail, get_exit_reason_breakdown,
     get_live_vs_shadow_paper_pairs, get_sl_tsl_overshoot, SL_TYPE_EXIT_REASONS, TARGET_TYPE_EXIT_REASONS,
-    OPTION_STRUCTURE_GROUP_SQL,
+    OPTION_STRUCTURE_GROUP_SQL, get_trade_legs_with_prices,
 )
 from backtest import run_signal_backtest_rr, run_signal_backtest_v2, run_classic_sr_reversal_backtest
-from upstox_api import fetch_candles_date_range
+from upstox_api import fetch_candles_date_range, fetch_candles_date_range_by_instrument_key
 from signals import resample_to_1h
 from yfinance_source import fetch_yfinance_candles, get_yfinance_max_days
 from pdf_reports import generate_backtest_report_pdf_rr, generate_backtest_report_pdf_v2, generate_performance_report_pdf
@@ -728,7 +728,16 @@ def render():
                         # perf_symbol तेव्हा list असतो) हा विभागच वगळला जातो.
                         trade_charts = []
                         if not perf_all_mcx_combined and trade_log_df is not None and not trade_log_df.empty:
-                            for _, tr in trade_log_df.head(10).iterrows():
+                            shown_trades_df = trade_log_df.head(10)
+                            # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("एक चार्ट NIFTY चा, आणि प्रत्यक्ष घेतलेल्या
+                            # option strike चाही चार्ट, एन्ट्री/एक्झिट सकट") — सर्व trades इंट्राडे असल्याने
+                            # (entry-exit त्याच दिवशी) फक्त तोच एक दिवस पुरेसा; multi-day historical option
+                            # डेटाची गरजच नाही. Upstox एखाद्या (विशेषतः expire झालेल्या) option contract चा
+                            # इतिहास देतंच असं खात्रीशीर नाही — रिकामा DataFrame आला तर तिथेच (pdf_reports.py
+                            # मध्ये) "Option premium data not available" असा स्पष्ट संदेश दाखवला जातो, पूर्ण
+                            # PDF निर्मिती अडत नाही.
+                            legs_map = get_trade_legs_with_prices(shown_trades_df["Trade ID"].tolist())
+                            for _, tr in shown_trades_df.iterrows():
                                 entry_dt = pd.to_datetime(tr["Entry Time"], errors="coerce")
                                 exit_dt = pd.to_datetime(tr["Exit Time"], errors="coerce")
                                 if pd.isna(entry_dt) or pd.isna(exit_dt):
@@ -736,11 +745,25 @@ def render():
                                 candles_df = fetch_candles_date_range(
                                     token_input, perf_symbol, "5minute", entry_dt.date(), exit_dt.date(),
                                 )
+                                leg_charts = []
+                                for leg in legs_map.get(tr["Trade ID"], []):
+                                    ikey = leg.get("instrument_key")
+                                    if not ikey:
+                                        continue
+                                    leg_label = f"{leg.get('role') or 'leg'} {leg.get('strike', '?'):.0f}{leg.get('option_type') or ''}" \
+                                        if leg.get("strike") is not None else (leg.get("role") or "leg")
+                                    leg_candles_df = fetch_candles_date_range_by_instrument_key(
+                                        token_input, ikey, "5minute", entry_dt.date(), exit_dt.date(),
+                                    )
+                                    leg_charts.append({
+                                        "label": leg_label, "candles_df": leg_candles_df,
+                                        "entry_price": leg.get("entry_price"), "exit_price": leg.get("exit_price"),
+                                    })
                                 trade_charts.append({
                                     "trade_id": tr["Trade ID"], "entry_time": tr["Entry Time"], "exit_time": tr["Exit Time"],
                                     "entry_level_price": tr.get("entry_level_price"), "realized_pnl": tr.get("Realized P&L"),
                                     "exit_reason": tr.get("exit_reason"), "legs_text": tr.get("Legs (Strike/Entry/Exit Price)"),
-                                    "candles_df": candles_df,
+                                    "candles_df": candles_df, "leg_charts": leg_charts,
                                 })
                         perf_pdf_bytes = generate_performance_report_pdf(
                             perf_symbol_title, mode_label_en, an_from, an_to, an_summary, an_pnl_totals,

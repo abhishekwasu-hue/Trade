@@ -413,6 +413,27 @@ def fetch_candles_date_range(access_token, symbol, interval, from_date, to_date)
     Backtest मध्ये युजरने दिलेल्या date range साठी आवश्यक.
     """
     instrument_key = get_instrument_key(symbol)
+    return _fetch_candles_date_range_by_key(access_token, instrument_key, interval, from_date, to_date)
+
+
+def fetch_candles_date_range_by_instrument_key(access_token, instrument_key, interval, from_date, to_date):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("ट्रेड घेण्यात आलेल्या option strike चाही चार्ट (एन्ट्री/एक्झिट
+    सकट) PDF Report मध्ये हवा") — fetch_candles_date_range() सारखंच, पण get_instrument_key(symbol)
+    वापरत नाही (ते फक्त NIFTY/BANKNIFTY सारख्या ठराविक index/commodity नावांसाठीच काम करतं, कुठल्याही
+    option contract साठी नाही — दिलं तर चुकून NIFTY कडे परत जातं). इथे आधीच माहीत असलेला, प्रत्यक्ष
+    त्या trade च्या order_log मध्ये साठवलेला raw instrument_key थेट वापरला जातो.
+    सर्व trades इंट्राडे असल्याने (entry-exit त्याच दिवशी) from_date==to_date हाच नेहमीचा वापर,
+    पण कुठलीही रेंज चालेल. warn_on_failure=False (डीफॉल्ट, fetch_candles_date_range() पेक्षा वेगळं) —
+    PDF Report मध्ये अनेक trades च्या अनेक legs साठी वेगळे-वेगळे प्रयत्न होतात, प्रत्येक अयशस्वी fetch
+    साठी वेगळा Streamlit warning banner दाखवणं गोंधळाचं ठरेल. रिकामा DataFrame आला (उदा. तो option
+    contract आधीच expire झाल्याने Upstox कडे इतिहास नाही) तर caller ने त्या leg खाली नेमका "Option
+    premium data not available" संदेश दाखवावा."""
+    return _fetch_candles_date_range_by_key(access_token, instrument_key, interval, from_date, to_date, warn_on_failure=False)
+
+
+def _fetch_candles_date_range_by_key(access_token, instrument_key, interval, from_date, to_date, warn_on_failure=True):
+    """fetch_candles_date_range()/fetch_candles_date_range_by_instrument_key() दोघांचंही सामायिक
+    core -- instrument_key आधीच resolved गृहीत धरतं (symbol name resolution caller ची जबाबदारी)."""
     encoded_key = urllib.parse.quote(instrument_key, safe="")
     headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
 
@@ -451,7 +472,7 @@ def fetch_candles_date_range(access_token, symbol, interval, from_date, to_date)
             failed_chunks += 1  # हा chunk अयशस्वी झाला तरी बाकीचे चालू ठेवणे
         chunk_end = chunk_start - datetime.timedelta(days=1)
 
-    if failed_chunks > 0:
+    if failed_chunks > 0 and warn_on_failure:
         st.warning(f"⚠️ {interval} साठी {failed_chunks} historical chunk(s) मिळाले नाहीत — मागवलेल्या तारीख-रेंजचा काही भाग गहाळ असू शकतो.")
 
     if not all_candles:

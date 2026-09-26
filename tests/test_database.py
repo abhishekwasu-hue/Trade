@@ -878,6 +878,16 @@ class TestGetTradeLegsWithPrices:
         assert legs["long_hedge"]["lot_size"] == 75
         assert legs["long_hedge"]["qty"] == 75
 
+    def test_legs_include_instrument_key(self, temp_db):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("ट्रेड घेण्यात आलेल्या option strike चाही चार्ट PDF
+        Report मध्ये हवा") — प्रत्येक leg चा instrument_key सुद्धा रिटर्न व्हायला हवा, जेणेकरून
+        page_performance.py त्याच्यासाठी वेगळा historical-candle कॉल करू शकेल (fetch_candles_date_range_by_instrument_key)."""
+        self._seed_trade_with_legs(temp_db, "T1C", status="OPEN")
+        legs_map = database.get_trade_legs_with_prices(["T1C"])
+        legs = {leg["role"]: leg for leg in legs_map["T1C"]}
+        assert legs["short_leg"]["instrument_key"] == "PE24400"
+        assert legs["long_hedge"]["instrument_key"] == "PE24300"
+
     def test_closed_trade_has_both_entry_and_exit_price(self, temp_db):
         self._seed_trade_with_legs(temp_db, "T2", status="CLOSED")
         legs_map = database.get_trade_legs_with_prices(["T2"])

@@ -2010,7 +2010,49 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
             Paragraph("Chart could not be generated for this trade (candle data unavailable).", _rpt_footer)
         )
         story.append(KeepTogether([Paragraph(caption, caption_style), chart_flowable]))
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 4))
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("त्या trade मध्ये प्रत्यक्ष घेतलेल्या option strike चाही
+        # चार्ट, एन्ट्री/एक्झिट सकट, हवाय") — प्रत्येक leg साठी वेगळा compact चार्ट, वरच्या NIFTY chart
+        # खालीच. सर्व trades इंट्राडे असल्याने entry_time/exit_time तेच वापरले (legs एकाच वेळी उघडतात/
+        # बंद होतात). Upstox कडून त्या (कदाचित आधीच expire झालेल्या) option contract चा इतिहास मिळाला
+        # नाही (रिकामा candles_df) तर स्पष्ट संदेश -- पूर्ण PDF निर्मिती अडत नाही.
+        for leg in tc.get("leg_charts", []):
+            leg_candles_df = leg.get("candles_df")
+            leg_label_safe = _fix_missing_glyphs(str(leg.get("label", "Option leg")))
+            if leg_candles_df is None or leg_candles_df.empty:
+                story.append(Paragraph(
+                    f"&nbsp;&nbsp;- {leg_label_safe}: "
+                    "Option premium data not available for this leg (Upstox did not return historical candles — "
+                    "likely an already-expired contract).",
+                    _rpt_footer,
+                ))
+                story.append(Spacer(1, 6))
+                continue
+            leg_chart_bytes = build_trade_entry_exit_chart_image(
+                leg_candles_df, tc["entry_time"], exit_time=tc.get("exit_time"),
+                entry_level_price=leg.get("entry_price"), exit_reason=tc.get("exit_reason"),
+                realized_pnl=tc.get("realized_pnl"), trade_id=f"{tc.get('trade_id')}-{leg.get('label')}",
+                height=180,
+            )
+            if leg_chart_bytes is None:
+                story.append(Paragraph(
+                    f"&nbsp;&nbsp;- {leg_label_safe}: "
+                    "Option premium data not available for this leg (Upstox did not return historical candles — "
+                    "likely an already-expired contract).",
+                    _rpt_footer,
+                ))
+                story.append(Spacer(1, 6))
+                continue
+            entry_p, exit_p = leg.get("entry_price"), leg.get("exit_price")
+            leg_caption = f"&nbsp;&nbsp;- <b>{leg_label_safe}</b>"
+            if entry_p is not None:
+                leg_caption += f" &nbsp;|&nbsp; Entry Rs {entry_p:.2f}"
+            if exit_p is not None:
+                leg_caption += f" &nbsp;→&nbsp; Exit Rs {exit_p:.2f}"
+            leg_chart_flowable = RLImage(io.BytesIO(leg_chart_bytes), width=usable_width, height=usable_width * 180 / 680)
+            story.append(KeepTogether([Paragraph(leg_caption, caption_style), leg_chart_flowable]))
+            story.append(Spacer(1, 6))
+        story.append(Spacer(1, 6))
     if len(trade_charts) > max_charts:
         story.append(Paragraph(
             f"(showing charts for the first {max_charts} of {len(trade_charts)} trades — see the Trade Log table above for all trades)",

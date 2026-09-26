@@ -656,6 +656,7 @@ def get_trade_legs_with_prices(trade_ids):
                 "role": leg.get("role") or leg.get("transaction_type", "leg"),
                 "strike": leg.get("strike"), "option_type": leg.get("option_type"),
                 "transaction_type": leg.get("transaction_type"),
+                "instrument_key": ikey,
                 "entry_price": fills[0] if fills else None,
                 "exit_price": fills[-1] if len(fills) > 1 else None,
                 "lots": lots, "lot_size": lot_size,
