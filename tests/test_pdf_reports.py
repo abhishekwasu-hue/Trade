@@ -221,6 +221,20 @@ class TestBuildTradeEntryExitChartImage:
         assert build_trade_entry_exit_chart_image(pd.DataFrame(), entry_time="2026-09-24 10:00:00") is None
         assert build_trade_entry_exit_chart_image(None, entry_time="2026-09-24 10:00:00") is None
 
+    def test_empty_candles_is_logged_distinctly_from_export_failure(self):
+        """🎓 वापरकर्त्याने सापडवलेली bug (token आजच Supabase मध्ये साठवूनही chart अजून
+        "candle data unavailable") — candles_df रिकामा/None येणं (candle fetch अपयशी — token/network/
+        सुट्टी) आणि fig.to_image() अपयशी होणं (kaleido/Chrome) या दोन वेगळ्या कारणांसाठी आधी सारखाच
+        (कुठलाही) लॉग नव्हता — आता candles_df रिकामा असेल तेव्हा वेगळा, स्पष्ट `_logger.warning` येतो,
+        जेणेकरून पुढच्या वेळी नेमकं कारण (candle fetch की Chrome) लगेच कळेल."""
+        with patch("pdf_reports._logger") as mock_logger:
+            result = build_trade_entry_exit_chart_image(pd.DataFrame(), entry_time="2026-09-24 10:00:00", trade_id="T1")
+        assert result is None
+        assert mock_logger.warning.called
+        logged_msg = mock_logger.warning.call_args.args[0]
+        assert "T1" in logged_msg
+        assert "candle fetch" in logged_msg
+
     def test_full_trade_does_not_raise(self):
         result = build_trade_entry_exit_chart_image(
             self._candles(), entry_time="2026-09-24 10:00:00", exit_time="2026-09-24 10:30:00",

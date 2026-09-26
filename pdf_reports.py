@@ -1895,7 +1895,7 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
 
 
 def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, entry_level_price=None,
-                                         exit_reason=None, realized_pnl=None, width=680, height=230):
+                                         exit_reason=None, realized_pnl=None, width=680, height=230, trade_id=None):
     """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("संबंधित चार्ट सुद्धा प्रिंट झाला पाहिजे, ज्या
     लेवलला एन्ट्री आणि एक्झिट झालेले आहे ते सुद्धा चार्ट वर दिसायला हवं, cross-verify करण्यासाठी मदत
     व्हावी") — एका trade भोवतालचा candlestick chart, entry_time वर निळी उभी रेषा ("ENTRY"), exit_time
@@ -1909,8 +1909,20 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
     पण जुना `except Exception: return None` ती नेमकी चूक कुठेच लॉग न करता गिळून टाकायचा, त्यामुळे
     "candle data unavailable" हा दिशाभूल करणारा संदेश दिसायचा (खरं कारण होतं: VPS वर Chrome install
     नव्हता — बघा deploy/README.md चं "Performance Report PDF — Candlestick Charts" विभाग). आता ही
-    exception निदान लॉग तरी होते, जेणेकरून हा प्रकार पुन्हा घडला तर लगेच स्पष्ट दिसेल."""
+    exception निदान लॉग तरी होते, जेणेकरून हा प्रकार पुन्हा घडला तर लगेच स्पष्ट दिसेल.
+    🎓 वापरकर्त्याने सापडवलेली bug (वरचीच bug दुरुस्त झाल्यावरही — token Supabase मध्ये आजच साठवूनही —
+    काही trades साठी अजूनही "candle data unavailable" दिसणे) — वरचा fix फक्त `fig.to_image()`
+    (kaleido/Chrome) अपयशी झाल्याचं लॉग करत होता; candles_df स्वतःच रिकामा/None आला (उदा.
+    fetch_candles_date_range() ला token/network/rate-limit समस्या आली, किंवा तो trading day सुट्टीचा
+    निघाला) तर ती केस पूर्णपणे शांतपणे (कुठलाही लॉग न होता) None परत करायची — दोन्ही वेगळी कारणं
+    असूनही PDF मध्ये सारखाच "candle data unavailable" संदेश दिसायचा, त्यामुळे नेमकं कारण (Chrome
+    install हवं की candle fetch अपयशी) कधीच कळायचं नाही. आता ही केसही लॉग होते."""
     if candles_df is None or candles_df.empty:
+        _logger.warning(
+            f"build_trade_entry_exit_chart_image({trade_id or 'trade'}): candles_df रिकामा/None आला — "
+            "chart export (kaleido/Chrome) चा दोष नाही, candle fetch (token/network/rate-limit/सुट्टीचा "
+            "दिवस) कडे बघा."
+        )
         return None
     try:
         fig = go.Figure(data=[go.Candlestick(
@@ -1969,7 +1981,7 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
         chart_bytes = build_trade_entry_exit_chart_image(
             tc.get("candles_df"), tc["entry_time"], exit_time=tc.get("exit_time"),
             entry_level_price=tc.get("entry_level_price"), exit_reason=tc.get("exit_reason"),
-            realized_pnl=tc.get("realized_pnl"),
+            realized_pnl=tc.get("realized_pnl"), trade_id=tc.get("trade_id"),
         )
         pnl = tc.get("realized_pnl")
         pnl_str = f"Rs {pnl:,.0f}" if pnl is not None else "N/A"
