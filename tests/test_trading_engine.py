@@ -1523,6 +1523,66 @@ class TestCheckKillSwitch:
         assert ok is False
         assert "KILL_SWITCH_UNVERIFIED_PNL" in reason
 
+    def test_profit_lock_disabled_ignored_even_if_pnl_dropped_from_peak(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा
+        असेल, तर काही नफा नेहमी लॉक व्हावा") — profit_lock_enabled=False (डीफॉल्ट) असेल तर हा नवीन
+        गेट अजिबात लागू व्हायला नको, जुनं वर्तन तसंच राहायला हवं."""
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (1000, 2))
+        monkeypatch.setattr(trading_engine, "get_todays_live_peak_pnl", lambda: 50000)
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_profit_lock_enabled_blocks_when_pnl_drops_below_locked_floor(self, monkeypatch):
+        """आज सर्वोच्च नफा ₹50,000 होता, profit_lock_pct=50% -- म्हणजे ₹25,000 चा मजला. सद्य नफा
+        ₹20,000 (मजल्याखाली) -- नवीन LIVE trades थांबायला हव्यात, जरी अजून तोटा-मर्यादा किंवा
+        स्थिर नफा-लक्ष्य दोन्ही गाठलेले नसले तरी."""
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (20000, 3))
+        monkeypatch.setattr(trading_engine, "get_todays_live_peak_pnl", lambda: 50000)
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False
+        assert "KILL_SWITCH_PROFIT_LOCK" in reason
+
+    def test_profit_lock_enabled_ok_when_pnl_still_above_locked_floor(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (30000, 3))
+        monkeypatch.setattr(trading_engine, "get_todays_live_peak_pnl", lambda: 50000)
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_profit_lock_enabled_but_no_profit_peak_yet_does_not_block(self, monkeypatch):
+        """आज अजून कधीच नफा झाला नाही (peak_pnl_today<=0) -- लॉक करण्यासारखं काहीच नाही, हा गेट
+        उगाच अडवायला नको."""
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_daily_profit_pct": 10.0, "max_trades_per_day": 15,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (-500, 3))
+        monkeypatch.setattr(trading_engine, "get_todays_live_peak_pnl", lambda: 0)
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is True
+        assert reason is None
+
 
 class TestOpenMultiLegTradeKillSwitch:
     def _strategy_result(self):
@@ -1628,6 +1688,56 @@ class TestCheckMcxKillSwitch:
         self._mock_capital(monkeypatch)
         monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {"enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2})
         monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (-100, 1))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_profit_lock_disabled_ignored_even_if_pnl_dropped_from_peak(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "MCX साठीही हेच लगेच जोडायचं" — पण
+        profit_lock_enabled=False (डीफॉल्ट) असेल तर MCX kill switch वर याचा काहीही परिणाम नको."""
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_open_positions": 5,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (1000, 1))
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 50000)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_profit_lock_enabled_blocks_when_pnl_drops_below_locked_floor(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_open_positions": 5,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (20000, 1))
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 50000)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False
+        assert "MCX_KILL_SWITCH_PROFIT_LOCK" in reason
+
+    def test_profit_lock_enabled_ok_when_pnl_still_above_locked_floor(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_open_positions": 5,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (30000, 1))
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 50000)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is True
+        assert reason is None
+
+    def test_profit_lock_enabled_but_no_profit_peak_yet_does_not_block(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 5.0, "max_open_positions": 5,
+            "profit_lock_enabled": True, "profit_lock_pct": 50.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: (-500, 1))
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 0)
         ok, reason = trading_engine.check_mcx_kill_switch()
         assert ok is True
         assert reason is None

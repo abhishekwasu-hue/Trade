@@ -453,6 +453,45 @@ def get_todays_mcx_live_pnl_and_count():
     return total_pnl, open_positions
 
 
+def _todays_live_running_peak_pnl(extra_where="", extra_params=()):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock Kill Switch — "1 trade profit मध्ये
+    exit जाला, दुसरा उघडा असेल, तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") —
+    आजच्या सर्व LIVE trades चा exit_time नुसार क्रमवार cumulative P&L काढून, त्यातली सर्वोच्च
+    (running peak) पातळी परत देते — फक्त सद्य एकूण बेरीज नाही, कारण नंतरचा तोटा तो आधीचा उच्चांक
+    लपवून टाकतो (आणि नेमकं तेच शोधायचंय — "आज कमाल किती नफा झाला होता, त्यातला किती परत दिला गेला").
+    extra_where/extra_params — कॉलरने (get_todays_live_peak_pnl वि. get_todays_mcx_live_peak_pnl)
+    वेगळी WHERE अट (उदा. source='mcx_futures') जोडण्यासाठी, बाकी सर्व दोन्हींसाठी सारखंच."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT realized_pnl FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE' "
+        f"AND substr(exit_time,1,10)=?{extra_where} ORDER BY exit_time",
+        (today_str,) + tuple(extra_params),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    cumulative = 0.0
+    peak = 0.0
+    for (pnl,) in rows:
+        cumulative += pnl or 0.0
+        if cumulative > peak:
+            peak = cumulative
+    return peak
+
+
+def get_todays_live_peak_pnl():
+    """आजच्या सर्व LIVE (सर्व symbols/strategies, MCX सकट) trades चा running peak cumulative P&L —
+    ग्लोबल Profit-Lock Kill Switch (trading_engine.check_kill_switch()) साठी."""
+    return _todays_live_running_peak_pnl()
+
+
+def get_todays_mcx_live_peak_pnl():
+    """तेच, पण फक्त MCX (source='mcx_futures') पुरतं — MCX-विशिष्ट Profit-Lock Kill Switch
+    (trading_engine.check_mcx_kill_switch()) साठी."""
+    return _todays_live_running_peak_pnl(" AND source='mcx_futures'")
+
+
 def get_unverified_reconciled_trades_today_count():
     """🎓 वापरकर्त्याने पडताळणीत सापडवलेली, गंभीर bug (live trading आधी) — reconcile_open_trades_with_broker()
     ने (trading_engine.py) externally बंद झालेली LIVE position CLOSED मार्क करताना realized_pnl कधीच

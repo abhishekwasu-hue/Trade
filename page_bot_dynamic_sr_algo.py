@@ -110,20 +110,34 @@ def _render_kill_switch_panel():
         else:
             st.caption(f"सध्याचं एकूण capital (Upstox, available+used margin): ₹{total_capital:,.0f}")
 
+        peak_pnl_today = database.get_todays_live_peak_pnl()
+        locked_floor = (peak_pnl_today * ks_settings["profit_lock_pct"] / 100) if peak_pnl_today > 0 else None
+        profit_locked_tripped = (
+            ks_settings["profit_lock_enabled"] and locked_floor is not None and total_pnl < locked_floor
+        )
         tripped = ks_settings["enabled"] and (
             total_capital is None
             or total_pnl <= -max_daily_loss_amount
             or total_pnl >= max_daily_profit_amount
+            or profit_locked_tripped
             or total_trades >= ks_settings["max_trades_per_day"]
         )
         if not ks_settings["enabled"]:
             st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
         elif tripped:
-            st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन LIVE trade ब्लॉक केला जातोय.")
+            if profit_locked_tripped and not (total_capital is None or total_pnl <= -max_daily_loss_amount or total_pnl >= max_daily_profit_amount):
+                st.error(
+                    f"🔴 Profit-Lock Kill Switch ट्रिप झालं आहे — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
+                    f"त्यातला {ks_settings['profit_lock_pct']:.0f}% (₹{locked_floor:,.0f}) लॉक होता, सद्य नफा ₹{total_pnl:,.0f} "
+                    f"त्याखाली घसरला. नवीन LIVE trade ब्लॉक केला जातोय."
+                )
+            else:
+                st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन LIVE trade ब्लॉक केला जातोय.")
         else:
+            lock_caption = f", profit-lock मजला ₹{locked_floor:,.0f}" if ks_settings["profit_lock_enabled"] and locked_floor is not None else ""
             st.success(
                 f"🟢 Kill Switch OK — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f}, "
-                f"नफा-लक्ष्य ₹{max_daily_profit_amount:,.0f}), ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}."
+                f"नफा-लक्ष्य ₹{max_daily_profit_amount:,.0f}{lock_caption}), ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}."
             )
 
         ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
@@ -143,8 +157,29 @@ def _render_kill_switch_panel():
                 "कमाल दैनिक LIVE ट्रेड्स (सर्व bots मिळून)", min_value=1,
                 value=int(ks_settings["max_trades_per_day"]), step=1, key="bdsr_ks_max_trades",
             )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा
+        # असेल, तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — डीफॉल्ट बंद,
+        # वरच्या स्थिर नफा-लक्ष्यापेक्षा वेगळं, गतिशील (ratchet) संरक्षण.
+        st.caption(
+            "🔒 Profit-Lock (ऐच्छिक) — दिवसभरात कधीही गाठलेल्या सर्वोच्च नफ्यातला ठराविक % कायमचा "
+            "\"मजला\" म्हणून लॉक होतो (वरच्या स्थिर नफा-लक्ष्याआधीही) — सद्य नफा त्याखाली घसरला की "
+            "नवीन LIVE trades थांबतात. आधीच उघडे trades यामुळे कधीच जबरदस्तीने बंद होत नाहीत."
+        )
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            ks_profit_lock_enabled = st.checkbox(
+                "Profit-Lock सक्रिय", value=ks_settings["profit_lock_enabled"], key="bdsr_ks_profit_lock_enabled",
+            )
+        with pc2:
+            ks_profit_lock_pct = st.number_input(
+                "लॉक करायचा % (आजच्या सर्वोच्च नफ्यापैकी)", min_value=1.0, max_value=99.0,
+                value=float(ks_settings["profit_lock_pct"]), step=5.0, key="bdsr_ks_profit_lock_pct",
+            )
         if st.button("💾 Kill Switch सेव्ह करा", key="bdsr_ks_save_btn"):
-            ok = cloud_db.save_kill_switch_settings(ks_enabled, ks_max_loss_pct, ks_max_profit_pct, ks_max_trades)
+            ok = cloud_db.save_kill_switch_settings(
+                ks_enabled, ks_max_loss_pct, ks_max_profit_pct, ks_max_trades,
+                ks_profit_lock_enabled, ks_profit_lock_pct,
+            )
             if ok:
                 st.success("✅ Kill Switch सेटिंग्ज जतन झाल्या.")
             else:

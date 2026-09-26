@@ -1628,16 +1628,25 @@ class TestKillSwitchSettings:
     def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
         settings = cloud_db.get_kill_switch_settings()
-        assert settings == {"enabled": True, "max_daily_loss_pct": 2.0, "max_daily_profit_pct": 3.0, "max_trades_per_day": 15}
+        assert settings == {
+            "enabled": True, "max_daily_loss_pct": 2.0, "max_daily_profit_pct": 3.0, "max_trades_per_day": 15,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+        }
 
     def test_get_returns_saved_values(self, monkeypatch):
         with patch.object(
             cloud_db, "get_strategy_settings",
-            return_value={"enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8},
+            return_value={
+                "enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8,
+                "profit_lock_enabled": True, "profit_lock_pct": 60.0,
+            },
         ) as mock_get:
             settings = cloud_db.get_kill_switch_settings()
         mock_get.assert_called_once_with(cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY)
-        assert settings == {"enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8}
+        assert settings == {
+            "enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8,
+            "profit_lock_enabled": True, "profit_lock_pct": 60.0,
+        }
 
     def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
         with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
@@ -1645,7 +1654,71 @@ class TestKillSwitchSettings:
         assert ok is True
         mock_save.assert_called_once_with(
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
-            {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10},
+            {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10,
+             "profit_lock_enabled": False, "profit_lock_pct": 50.0},
+        )
+
+    def test_save_with_profit_lock_args(self, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा
+        असेल, तर काही नफा नेहमी लॉक व्हावा") — profit_lock_enabled/profit_lock_pct आर्ग्युमेंट्स
+        बरोबर पास होतात, डीफॉल्टवर न पडता."""
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_kill_switch_settings(True, "2.5", "5.0", "10", True, "40")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
+            {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10,
+             "profit_lock_enabled": True, "profit_lock_pct": 40.0},
+        )
+
+
+class TestMcxKillSwitchSettings:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी — "MCX साठी वेगळा Kill Switch") +
+    वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("MCX साठीही हेच लगेच जोडायचं" — Profit-Lock) —
+    get/save_mcx_kill_switch_settings() हे आधीच पूर्णपणे टेस्ट केलेल्या get/save_strategy_settings()
+    चेच पातळ wrapper आहेत (strategy_name="__mcx_kill_switch__", symbol="ALL" या स्थिर जोडीसह)."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_mcx_kill_switch_settings()
+        assert settings == {
+            "enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+        }
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={
+                "enabled": False, "max_daily_loss_pct": 2.0, "max_open_positions": 3,
+                "profit_lock_enabled": True, "profit_lock_pct": 70.0,
+            },
+        ) as mock_get:
+            settings = cloud_db.get_mcx_kill_switch_settings()
+        mock_get.assert_called_once_with(cloud_db.MCX_KILL_SWITCH_STRATEGY_KEY, cloud_db.MCX_KILL_SWITCH_SYMBOL_KEY)
+        assert settings == {
+            "enabled": False, "max_daily_loss_pct": 2.0, "max_open_positions": 3,
+            "profit_lock_enabled": True, "profit_lock_pct": 70.0,
+        }
+
+    def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_mcx_kill_switch_settings(True, "1.5", "3")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.MCX_KILL_SWITCH_STRATEGY_KEY, cloud_db.MCX_KILL_SWITCH_SYMBOL_KEY,
+            {"enabled": True, "max_daily_loss_pct": 1.5, "max_open_positions": 3,
+             "profit_lock_enabled": False, "profit_lock_pct": 50.0},
+        )
+
+    def test_save_with_profit_lock_args(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_mcx_kill_switch_settings(True, "1.5", "3", True, "35")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.MCX_KILL_SWITCH_STRATEGY_KEY, cloud_db.MCX_KILL_SWITCH_SYMBOL_KEY,
+            {"enabled": True, "max_daily_loss_pct": 1.5, "max_open_positions": 3,
+             "profit_lock_enabled": True, "profit_lock_pct": 35.0},
         )
 
 
