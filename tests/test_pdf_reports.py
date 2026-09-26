@@ -13,7 +13,7 @@ import pandas as pd
 from reportlab.platypus import Paragraph
 
 from pdf_reports import (
-    _fix_missing_glyphs, _rpt_kv_wrap, build_trade_entry_exit_chart_image,
+    _fix_missing_glyphs, _nearest_close_at_or_before, _rpt_kv_wrap, build_trade_entry_exit_chart_image,
     df_to_reportlab_table, generate_performance_report_pdf,
 )
 
@@ -121,6 +121,12 @@ class TestFixMissingGlyphsNonString:
         wrap व्हावा म्हणून) — _fix_missing_glyphs() ने ते बदलता/स्ट्रिंगमध्ये convert करता कामा नयेत."""
         para = Paragraph("Brokerage Rs 100", _rpt_kv_wrap)
         assert _fix_missing_glyphs(para) is para
+
+    def test_rupee_sign_becomes_rs(self):
+        """🎓 वापरकर्त्याने अपलोड केलेल्या PDF मध्ये सापडवलेली bug — database.py च्या
+        _format_legs_with_prices() मधून येणारा "Entry ₹38.00" सारखा मजकूर, PDF च्या मुख्य फॉन्टमध्ये
+        (Times-Roman, ₹ glyph नाही) रिकामा चौकोन (■) म्हणून दिसायचा. आता "Rs " ने बदलला जातो."""
+        assert _fix_missing_glyphs("Entry ₹38.00 → Exit ₹15.00") == "Entry Rs 38.00 → Exit Rs 15.00"
 
 
 class TestGeneratePerformanceReportPdfOvershootDf:
@@ -246,6 +252,62 @@ class TestBuildTradeEntryExitChartImage:
         result = build_trade_entry_exit_chart_image(self._candles(), entry_time="2026-09-24 10:00:00")
         assert result is None or result[:8] == b"\x89PNG\r\n\x1a\n"
 
+    def test_no_vertical_lines_drawn(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा (अपलोड केलेल्या PDF मध्ये दाखवलेली bug — काही trades
+        अवघे 30-60 सेकंद किंवा 1-2 मिनिटांचेच होते, त्यामुळे ENTRY/EXIT च्या दोन उभ्या रेषा जवळपास
+        एकाच जागी येऊन त्यांची लेबल्स एकावर एक चढून अवाच्य दिसायच्या) — "उभ्या रेषांची गरजच नाही, फक्त
+        आडव्या रेषाच हव्यात" — आता add_vline() कधीच वापरलं जात नाही."""
+        with patch("plotly.graph_objects.Figure.add_vline") as mock_add_vline, \
+             patch("plotly.graph_objects.Figure.to_image", return_value=b"fake_png"):
+            build_trade_entry_exit_chart_image(
+                self._candles(), entry_time="2026-09-24 10:00:34", exit_time="2026-09-24 10:00:52",
+                entry_level_price=23920.0, exit_level_price=23918.0,
+                exit_reason="SL", realized_pnl=-100.0,
+            )
+        assert not mock_add_vline.called
+
+    def test_entry_and_exit_horizontal_lines_both_drawn_with_correct_colors(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Horizontal Exit line त्यामुळे युजरला actual exit
+        price कळेल") — entry_level_price आणि exit_level_price दोन्ही दिले, तर दोन्हीसाठी वेगळी आडवी
+        रेषा (add_hline) यायला हवी — trade कितीही लहान कालावधीचा असो (वेळेवर अवलंबून नसल्याने कधीच
+        overlap होत नाही), आणि exit रेषेचा रंग P&L प्रमाणे (loss = red)."""
+        with patch("plotly.graph_objects.Figure.add_hline") as mock_add_hline, \
+             patch("plotly.graph_objects.Figure.to_image", return_value=b"fake_png"):
+            build_trade_entry_exit_chart_image(
+                self._candles(), entry_time="2026-09-24 10:00:34", exit_time="2026-09-24 10:00:52",
+                entry_level_price=23920.0, exit_level_price=23918.0,
+                exit_reason="SL", realized_pnl=-100.0,
+            )
+        assert mock_add_hline.call_count == 2
+        entry_call, exit_call = mock_add_hline.call_args_list
+        assert entry_call.kwargs["y"] == 23920.0
+        assert "Entry 23,920.0" in entry_call.kwargs["annotation_text"]
+        assert exit_call.kwargs["y"] == 23918.0
+        assert "Exit 23,918.0 (SL)" in exit_call.kwargs["annotation_text"]
+        assert exit_call.kwargs["line_color"] == "#F23645"  # loss -> red
+
+    def test_exit_horizontal_line_green_on_profit(self):
+        with patch("plotly.graph_objects.Figure.add_hline") as mock_add_hline, \
+             patch("plotly.graph_objects.Figure.to_image", return_value=b"fake_png"):
+            build_trade_entry_exit_chart_image(
+                self._candles(), entry_time="2026-09-24 10:00:34", exit_time="2026-09-24 10:00:52",
+                entry_level_price=23920.0, exit_level_price=23960.0,
+                exit_reason="TARGET", realized_pnl=500.0,
+            )
+        _, exit_call = mock_add_hline.call_args_list
+        assert exit_call.kwargs["line_color"] == "#089981"  # profit -> green
+
+    def test_exit_line_omitted_when_exit_level_price_not_given(self):
+        """exit_level_price दिला नाही (उदा. underlying candles_df रिकामा असल्याने अंदाजही काढता आला
+        नाही) — फक्त entry ची आडवी रेषा यायला हवी, क्रॅश नाही."""
+        with patch("plotly.graph_objects.Figure.add_hline") as mock_add_hline, \
+             patch("plotly.graph_objects.Figure.to_image", return_value=b"fake_png"):
+            build_trade_entry_exit_chart_image(
+                self._candles(), entry_time="2026-09-24 10:00:34", exit_time="2026-09-24 10:00:52",
+                entry_level_price=23920.0, exit_reason="SL", realized_pnl=-100.0,
+            )
+        assert mock_add_hline.call_count == 1
+
     def test_image_export_failure_is_logged_not_silently_swallowed(self):
         """🎓 वापरकर्त्याने सापडवलेली bug ("candle data unavailable" — candle डेटा प्रत्यक्ष उपलब्ध
         असूनही कायम) — मूळ कारण होतं VPS वर kaleido>=1.0 ला लागणारा वेगळा Chrome install नसणं, पण जुना
@@ -259,6 +321,31 @@ class TestBuildTradeEntryExitChartImage:
         logged_msg = mock_logger.error.call_args.args[0]
         assert "chart image export failed" in logged_msg
         assert "Kaleido requires Google Chrome" in logged_msg
+
+
+class TestNearestCloseAtOrBefore:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Horizontal Exit line त्यामुळे actual exit price कळेल") —
+    underlying (NIFTY) chart साठी exact exit spot price कुठेच साठवलेला नाही, त्यामुळे candles_df
+    वरून जवळचा close किंमत अंदाज काढणारा हा helper बरोबर काम करतो का."""
+
+    def _candles(self):
+        return pd.DataFrame({
+            "timestamp": pd.to_datetime(["2026-09-25 10:00", "2026-09-25 10:05", "2026-09-25 10:10"]),
+            "close": [100.0, 105.0, 110.0],
+        })
+
+    def test_exact_match_returns_that_candles_close(self):
+        assert _nearest_close_at_or_before(self._candles(), "2026-09-25 10:05") == 105.0
+
+    def test_between_candles_returns_earlier_ones_close(self):
+        assert _nearest_close_at_or_before(self._candles(), "2026-09-25 10:07") == 105.0
+
+    def test_before_first_candle_falls_back_to_first(self):
+        assert _nearest_close_at_or_before(self._candles(), "2026-09-25 09:00") == 100.0
+
+    def test_empty_or_none_returns_none(self):
+        assert _nearest_close_at_or_before(pd.DataFrame(), "2026-09-25 10:05") is None
+        assert _nearest_close_at_or_before(None, "2026-09-25 10:05") is None
 
 
 class TestGeneratePerformanceReportPdfTradeCharts:
