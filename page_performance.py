@@ -702,7 +702,13 @@ def render():
                 # perf_symbol/mode/तारीख-रेंज असूनही, दरवेळी संपूर्ण PDF (सर्व charts kaleido ने पुन्हा
                 # रेंडर करून) पुन्हा तयार व्हायचं — कुठलंही caching नव्हतं. आता तेच इनपुट असेल, तर आधीच
                 # तयार असलेला PDF पुन्हा वापरला जातो (फक्त काहीतरी बदललं — तारीख-रेंज/mode — तरच पुन्हा तयार होतं).
-                pdf_cache_key = (perf_symbol_label, mode_label_en, str(an_from), str(an_to))
+                # 🎓 वापरकर्त्याने सापडवलेली bug ("token आजच Supabase मध्ये साठवूनही candlestick chart
+                # print होत नाही") — token हा cache key चा भाग नव्हता, त्यामुळे token invalid/expired
+                # असताना एकदा (candle fetch अपयशी होऊन "candle data unavailable" सह) PDF तयार झाला, की
+                # नंतर token दुरुस्त करूनही (तीच symbol/mode/तारीख-रेंज असल्याने) तोच जुना, चुकीचा PDF
+                # cache मधून परत मिळत राहायचा — नवीन token सह कधीच पुन्हा तयार व्हायचाच नाही. आता token
+                # बदलला की cache आपोआप अवैध ठरतो.
+                pdf_cache_key = (perf_symbol_label, mode_label_en, str(an_from), str(an_to), token_input)
                 if st.session_state.get("perf_pdf_cache_key") == pdf_cache_key and st.session_state.get("perf_pdf_bytes"):
                     st.info("ℹ️ याच कालावधी/मोडसाठी PDF आधीच तयार आहे — खाली थेट डाऊनलोड करा (पुन्हा तयार करायची गरज नाही).")
                 else:
