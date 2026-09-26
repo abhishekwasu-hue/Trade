@@ -784,6 +784,14 @@ _MISSING_GLYPH_MAP = {
     "\U0001F7E2": "\u25B2", "\U0001F534": "\u25BC", "\U0001F7E1": "\u25B2", "\U0001F7E0": "\u25BC",
     "\u2705": "\u2713", "\U0001F6AB": "\u2717", "\u274C": "\u2717",
     "\U0001F3AF": "", "\U0001F9EC": "", "\U0001F4CA": "", "\U0001F4C4": "",
+    # \uD83C\uDF93 \u0935\u093E\u092A\u0930\u0915\u0930\u094D\u0924\u094D\u092F\u093E\u0928\u0947 \u0905\u092A\u0932\u094B\u0921 \u0915\u0947\u0932\u0947\u0932\u094D\u092F\u093E PDF \u092E\u0927\u094D\u092F\u0947 \u0938\u093E\u092A\u0921\u0932\u0947\u0932\u0940 bug \u2014 Trade Charts caption \u0906\u0923\u093F Trade Log
+    # \u091F\u0947\u092C\u0932\u092E\u0927\u0932\u093E "Legs (Strike/Entry/Exit Price)" \u092E\u091C\u0915\u0942\u0930 database.py \u091A\u094D\u092F\u093E _format_legs_with_prices()
+    # \u0915\u0921\u0942\u0928 \u092F\u0947\u0924\u094B, \u091C\u094B "Entry \u20B938.00" \u0905\u0938\u093E \u20B9 (Indian Rupee Sign) \u091A\u093F\u0928\u094D\u0939 \u0935\u093E\u092A\u0930\u0924\u094B \u2014 Streamlit Dashboard \u0935\u0930
+    # \u0939\u0947 \u092C\u0930\u094B\u092C\u0930 \u0926\u093F\u0938\u0924\u0902 (browser Unicode \u0938\u092A\u094B\u0930\u094D\u091F \u0915\u0930\u0924\u094B), \u092A\u0923 \u092F\u093E PDF \u091A\u094D\u092F\u093E \u092E\u0941\u0916\u094D\u092F \u092B\u0949\u0928\u094D\u091F\u092E\u0927\u094D\u092F\u0947 (_RPT_FONT =
+    # "Times-Roman", \u092B\u0915\u094D\u0924 Latin-1/WinAnsi) \u0939\u093E glyph \u0928\u0938\u0932\u094D\u092F\u093E\u0928\u0947 \u0930\u093F\u0915\u093E\u092E\u093E \u091A\u094C\u0915\u094B\u0928 (\u25A0) \u0926\u093F\u0938\u093E\u092F\u091A\u093E. \u0907\u0925\u0947\u091A
+    # (PDF-specific glyph-fix layer \u092E\u0927\u094D\u092F\u0947) \u092C\u0926\u0932\u0932\u094D\u092F\u093E\u0928\u0947 database.py/Streamlit UI \u0932\u093E \u0938\u094D\u092A\u0930\u094D\u0936 \u0939\u094B\u0924 \u0928\u093E\u0939\u0940 \u2014
+    # \u0924\u093F\u0925\u0947 \u20B9 \u0905\u091C\u0942\u0928\u0939\u0940 \u091C\u0938\u0902\u091A\u094D\u092F\u093E \u0924\u0938\u0902, \u092C\u093E\u0915\u0940 \u0938\u0917\u0933\u0940\u0915\u0921\u0947 PDF \u092E\u0927\u094D\u092F\u0947 \u0906\u0927\u0940\u092A\u093E\u0938\u0942\u0928\u091A \u0935\u093E\u092A\u0930\u0932\u0947\u0932\u094D\u092F\u093E "Rs" \u0936\u0940 \u0938\u0941\u0938\u0902\u0917\u0924.
+    "\u20B9": "Rs ",
 }
 
 def _fix_missing_glyphs(s):
@@ -1899,13 +1907,34 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
         return None
 
 
+def _nearest_close_at_or_before(candles_df, ts):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Horizontal Exit line — actual exit price कळेल") —
+    मूळ NIFTY/underlying chart साठी exact exit spot price कुठेच साठवलेला नाही (फक्त entry_spot_price
+    आहे, exit_spot_price नाही) — त्यामुळे candles_df मधूनच, दिलेल्या वेळेच्या (किंवा आधीच्या) सर्वात
+    जवळच्या candle चा close price वापरून एक वाजवी अंदाज काढतो. पूर्णपणे रिकामा candles_df किंवा ts
+    च्या आधीचा एकही candle नसेल (उदा. exit पहिल्याच candle च्या आधी) तर None."""
+    if candles_df is None or candles_df.empty:
+        return None
+    ts = pd.to_datetime(ts)
+    before = candles_df[candles_df["timestamp"] <= ts]
+    row = before.iloc[-1] if not before.empty else candles_df.iloc[0]
+    close = row.get("close")
+    return float(close) if pd.notna(close) else None
+
+
 def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, entry_level_price=None,
-                                         exit_reason=None, realized_pnl=None, width=680, height=230, trade_id=None):
+                                         exit_level_price=None, exit_reason=None, realized_pnl=None,
+                                         width=680, height=230, trade_id=None):
     """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("संबंधित चार्ट सुद्धा प्रिंट झाला पाहिजे, ज्या
     लेवलला एन्ट्री आणि एक्झिट झालेले आहे ते सुद्धा चार्ट वर दिसायला हवं, cross-verify करण्यासाठी मदत
-    व्हावी") — एका trade भोवतालचा candlestick chart, entry_time वर निळी उभी रेषा ("ENTRY"), exit_time
-    वर (दिलं असेल तर) नफा/तोटा-रंगीत उभी रेषा ("EXIT"), आणि entry_level_price (bot ने नेमका कुठला
-    S/R level touch केला) असेल तर तिथे जांभळी आडवी रेषा — सर्व एकाच नजरेत दिसावं म्हणून.
+    व्हावी") — एका trade भोवतालचा candlestick chart, entry_level_price वर जांभळी आडवी रेषा आणि
+    exit_level_price (दिलं असेल तर) वर नफा/तोटा-रंगीत आडवी रेषा — actual entry/exit किंमत लगेच कळावी.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा (अपलोड केलेल्या PDF मध्ये सापडलेली bug — काही trades अवघे
+    30-60 सेकंद किंवा 1-2 मिनिटांचेच होते, त्यामुळे ENTRY/EXIT या दोन उभ्या (vertical) रेषा जवळपास
+    एकाच जागी येऊन त्यांची लेबल्स एकावर एक चढून अवाच्य/गोंधळाची दिसायची) — "उभ्या रेषांची गरजच नाही,
+    फक्त आडव्या (horizontal) रेषाच हव्यात, त्यातून actual exit price कळेल" — आता उभ्या रेषा पूर्णपणे
+    काढून टाकल्या आहेत; entry_level_price/exit_level_price दोन्ही आडव्या रेषांनीच दाखवले जातात —
+    trade कितीही लहान कालावधीचा असो, दोन्ही किंमती (वेगळ्या y-उंचीवर असल्याने) नेहमीच स्पष्ट दिसतात.
     Returns image_bytes किंवा None (candles नसतील/kaleido अपयशी झाला तर, गोंधळ न होता — caller ने
     त्या केसमध्ये फक्त "chart उपलब्ध नाही" असा मजकूर दाखवावा).
     🎓 वापरकर्त्याने सापडवलेली bug ("candle data unavailable" — candle डेटा प्रत्यक्ष उपलब्ध असूनही
@@ -1935,29 +1964,23 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
             low=candles_df["low"], close=candles_df["close"],
             increasing_line_color="#089981", decreasing_line_color="#F23645", showlegend=False,
         )])
-        entry_dt = pd.to_datetime(entry_time)
-        fig.add_vline(
-            x=entry_dt, line_dash="dash", line_color="#2962FF", line_width=1.8,
-            annotation_text="ENTRY", annotation_position="top",
-            annotation_font_size=9, annotation_font_color="#2962FF",
-        )
-        if exit_time is not None:
-            exit_color = "#089981" if (realized_pnl or 0) >= 0 else "#F23645"
-            exit_label = f"EXIT ({exit_reason})" if exit_reason else "EXIT"
-            fig.add_vline(
-                x=pd.to_datetime(exit_time), line_dash="dash", line_color=exit_color, line_width=1.8,
-                annotation_text=exit_label, annotation_position="top",
-                annotation_font_size=9, annotation_font_color=exit_color,
-            )
         if entry_level_price is not None:
             fig.add_hline(
-                y=entry_level_price, line_dash="dot", line_color="#7E57C2", line_width=1.2,
-                annotation_text=f"Entry Level {entry_level_price:,.1f}", annotation_position="right",
-                annotation_font_size=8, annotation_font_color="#7E57C2",
+                y=entry_level_price, line_dash="dot", line_color="#7E57C2", line_width=1.5,
+                annotation_text=f"Entry {entry_level_price:,.1f}", annotation_position="right",
+                annotation_font_size=9, annotation_font_color="#7E57C2",
+            )
+        if exit_level_price is not None:
+            exit_color = "#089981" if (realized_pnl or 0) >= 0 else "#F23645"
+            exit_label = f"Exit {exit_level_price:,.1f} ({exit_reason})" if exit_reason else f"Exit {exit_level_price:,.1f}"
+            fig.add_hline(
+                y=exit_level_price, line_dash="dot", line_color=exit_color, line_width=1.5,
+                annotation_text=exit_label, annotation_position="right",
+                annotation_font_size=9, annotation_font_color=exit_color,
             )
         fig.update_layout(
             template="plotly_white", width=width, height=height,
-            margin=dict(l=10, r=95, t=28, b=10), xaxis_rangeslider_visible=False, showlegend=False,
+            margin=dict(l=10, r=95, t=42, b=10), xaxis_rangeslider_visible=False, showlegend=False,
         )
         fig.update_xaxes(rangebreaks=[
             dict(bounds=["sat", "mon"]),
@@ -1983,10 +2006,14 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
         textColor=colors.HexColor("#333333"), spaceAfter=3,
     )
     for tc in shown:
+        # 🎓 अंडरलायिंग (NIFTY/...) चा exact exit spot price कुठेच साठवलेला नाही (फक्त S/R
+        # entry_level_price आहे) -- candles_df वरूनच exit_time च्या जवळचा close अंदाज म्हणून वापरला.
+        underlying_exit_level = _nearest_close_at_or_before(tc.get("candles_df"), tc.get("exit_time")) \
+            if tc.get("exit_time") else None
         chart_bytes = build_trade_entry_exit_chart_image(
             tc.get("candles_df"), tc["entry_time"], exit_time=tc.get("exit_time"),
-            entry_level_price=tc.get("entry_level_price"), exit_reason=tc.get("exit_reason"),
-            realized_pnl=tc.get("realized_pnl"), trade_id=tc.get("trade_id"),
+            entry_level_price=tc.get("entry_level_price"), exit_level_price=underlying_exit_level,
+            exit_reason=tc.get("exit_reason"), realized_pnl=tc.get("realized_pnl"), trade_id=tc.get("trade_id"),
         )
         pnl = tc.get("realized_pnl")
         pnl_str = f"Rs {pnl:,.0f}" if pnl is not None else "N/A"
@@ -2030,9 +2057,9 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
                 continue
             leg_chart_bytes = build_trade_entry_exit_chart_image(
                 leg_candles_df, tc["entry_time"], exit_time=tc.get("exit_time"),
-                entry_level_price=leg.get("entry_price"), exit_reason=tc.get("exit_reason"),
-                realized_pnl=tc.get("realized_pnl"), trade_id=f"{tc.get('trade_id')}-{leg.get('label')}",
-                height=180,
+                entry_level_price=leg.get("entry_price"), exit_level_price=leg.get("exit_price"),
+                exit_reason=tc.get("exit_reason"), realized_pnl=tc.get("realized_pnl"),
+                trade_id=f"{tc.get('trade_id')}-{leg.get('label')}", height=180,
             )
             if leg_chart_bytes is None:
                 story.append(Paragraph(
