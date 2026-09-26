@@ -733,8 +733,10 @@ def render():
                                 exit_dt = pd.to_datetime(tr["Exit Time"], errors="coerce")
                                 if pd.isna(entry_dt) or pd.isna(exit_dt):
                                     continue
+                                # 1-minute candles — PDF chart आता फक्त entry-30 मि. ते exit+30 मि. दाखवतो;
+                                # 5-minute candles वर काही सेकंद/मिनिटांचा trade एकाच candle मध्ये लपायचा.
                                 candles_df = fetch_candles_date_range(
-                                    token_input, perf_symbol, "5minute", entry_dt.date(), exit_dt.date(),
+                                    token_input, perf_symbol, "1minute", entry_dt.date(), exit_dt.date(),
                                 )
                                 trade_charts.append({
                                     "trade_id": tr["Trade ID"], "entry_time": tr["Entry Time"], "exit_time": tr["Exit Time"],

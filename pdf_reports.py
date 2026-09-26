@@ -351,7 +351,7 @@ def _bi_para(en, mr, max_width_pt, font_size=12.5, text_color=None, space_after=
     reportlab मध्ये आधीच बरोबर दिसतं), मग शुद्ध मराठी भाषांतर (PIL+raqm image — योग्य matra-reordering
     साठी). Returns [Paragraph, Spacer, Image-किंवा-Paragraph] अशी यादी — story.extend() ने जोडायची."""
     en_style = ParagraphStyle(
-        f"bi_para_en_{id(en)}", fontName=_RPT_FONT, fontSize=font_size, leading=font_size + 4,
+        f"bi_para_en_{id(en)}", fontName=_PERF_FONT, fontSize=font_size, leading=font_size + 4,
         textColor=text_color or colors.black, spaceAfter=0,
     )
     mr_img = _deva_image_flowable(mr, font_size, max_width_pt=max_width_pt, color=text_color or colors.black)
@@ -388,7 +388,13 @@ def _section_header(text, idx, style=None):
 
 # 🎓 _section_header_accent() च्या मजकूर स्तंभाची खरी रुंदी (18cm एकूण - डावी accent bar - डावी/उजवी
 # padding) — bilingual मथळ्याची image त्याच रुंदीत wrap व्हावी म्हणून, आधीच इथे स्थिर मोजलेली.
-_SECTION_HEADER_ACCENT_TEXT_WIDTH_PT = 18 * cm - 0.28 * cm - 12 - 10
+# Performance Report ची खरी मजकूर-रुंदी (A4 - 1.4cm डावी/उजवी margin) — आधी 18cm घेतल्याने मथळे
+# खालच्या तक्त्यांपेक्षा (18.2cm) उजवीकडे 2mm आखूड दिसायचे.
+# 🎓 reportlab च्या SimpleDocTemplate frame ला डावी/उजवी 6pt padding असते — म्हणजे प्रत्यक्ष उपलब्ध
+# रुंदी (A4 - margins - 12pt). आधी usable_width मध्ये हे 12pt धरलेलेच नव्हते, त्यामुळे LEFT-aligned
+# तक्ते उजवीकडे 12pt बाहेर जायचे आणि centered मथळे 6pt डावीकडे सरकायचे (कडा जुळत नव्हत्या).
+_PERF_USABLE_W = A4[0] - 2.8 * cm - 12
+_SECTION_HEADER_ACCENT_TEXT_WIDTH_PT = _PERF_USABLE_W - 0.28 * cm - 12 - 10
 
 def _section_header_accent(en, mr, idx):
     """वापरकर्त्याने मागितलेली सुधारणा ("Adhi sarkhe kra [rotating रंग], pn background चया पट्टी
@@ -404,7 +410,7 @@ def _section_header_accent(en, mr, idx):
     )
     if content is None:
         content = Paragraph(_bi(en, mr), _rpt_h2_accent_bi)
-    tbl = Table([["", content]], colWidths=[bar_w, 18 * cm - bar_w])
+    tbl = Table([["", content]], colWidths=[bar_w, _PERF_USABLE_W - bar_w])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
         ("LEFTPADDING", (1, 0), (1, -1), 12), ("RIGHTPADDING", (1, 0), (1, -1), 10),
@@ -1888,12 +1894,18 @@ def build_group_pnl_bar_chart(df, title, width=680, height=300):
         bar_colors = ["#089981" if v >= 0 else "#F23645" for v in df["Total P&L"]]
         fig = go.Figure(go.Bar(
             x=df["Group"].astype(str), y=df["Total P&L"], marker_color=bar_colors,
-            text=[f"₹{v:,.0f}" for v in df["Total P&L"]], textposition="outside",
+            text=[f"Rs {v:,.0f}" for v in df["Total P&L"]], textposition="outside",
         ))
         fig.update_layout(
             title=title, template="plotly_white", width=width, height=height,
-            margin=dict(l=10, r=10, t=40, b=10), yaxis_title="Total P&L (₹)",
+            margin=dict(l=10, r=10, t=40, b=10), yaxis_title="Gross P&L (Rs)",
         )
+        # सर्वात उंच बारवरचा "outside" label plot area च्या वरच्या कडेला चिकटू/कापू नये म्हणून
+        # y-axis वर (आणि तोटा असल्यास खाली) 15% मोकळी जागा.
+        _vals = list(df["Total P&L"])
+        _hi, _lo = max(max(_vals), 0), min(min(_vals), 0)
+        _pad = (_hi - _lo) * 0.15 or 1
+        fig.update_yaxes(range=[_lo - (_pad if _lo < 0 else 0), _hi + _pad])
         return fig.to_image(format="png", scale=2)
     except Exception:
         return None
@@ -1930,24 +1942,42 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
         )
         return None
     try:
+        entry_dt = pd.to_datetime(entry_time)
+        exit_dt = pd.to_datetime(exit_time) if exit_time is not None else None
+        # पूर्ण दिवसाचा chart दाखवला तर काही सेकंद/मिनिटांचा trade (उदा. 36 सेकंदांचा SL) दिसतच
+        # नाही आणि ENTRY/EXIT रेषा एकमेकांवर येतात — म्हणून फक्त entry-30 मिनिटं ते exit+30 मिनिटं
+        # एवढाच भाग (त्या खिडकीत पुरेशा candles नसतील तर पूर्ण डेटा — graceful).
+        plot_df = candles_df
+        try:
+            _ts = pd.to_datetime(candles_df["timestamp"])
+            if getattr(_ts.dt, "tz", None) is not None:
+                _ts = _ts.dt.tz_localize(None)
+            _win_lo = entry_dt - pd.Timedelta(minutes=30)
+            _win_hi = (exit_dt if exit_dt is not None else entry_dt) + pd.Timedelta(minutes=30)
+            _mask = (_ts >= _win_lo) & (_ts <= _win_hi)
+            if _mask.sum() >= 5:
+                plot_df = candles_df[_mask.values]
+        except Exception:
+            plot_df = candles_df
         fig = go.Figure(data=[go.Candlestick(
-            x=candles_df["timestamp"], open=candles_df["open"], high=candles_df["high"],
-            low=candles_df["low"], close=candles_df["close"],
+            x=plot_df["timestamp"], open=plot_df["open"], high=plot_df["high"],
+            low=plot_df["low"], close=plot_df["close"],
             increasing_line_color="#089981", decreasing_line_color="#F23645", showlegend=False,
         )])
-        entry_dt = pd.to_datetime(entry_time)
+        # ENTRY label रेषेच्या डावीकडे, EXIT label उजवीकडे — दोन्ही वेळा जवळ असल्या तरी मजकूर
+        # एकमेकांवर चढत नाही ("ENTRYEXIT" असा गोंधळ टाळण्यासाठी).
         fig.add_vline(
             x=entry_dt, line_dash="dash", line_color="#2962FF", line_width=1.8,
-            annotation_text="ENTRY", annotation_position="top",
-            annotation_font_size=9, annotation_font_color="#2962FF",
+            annotation_text="ENTRY", annotation_position="top left",
+            annotation_font_size=10, annotation_font_color="#2962FF",
         )
-        if exit_time is not None:
+        if exit_dt is not None:
             exit_color = "#089981" if (realized_pnl or 0) >= 0 else "#F23645"
             exit_label = f"EXIT ({exit_reason})" if exit_reason else "EXIT"
             fig.add_vline(
-                x=pd.to_datetime(exit_time), line_dash="dash", line_color=exit_color, line_width=1.8,
-                annotation_text=exit_label, annotation_position="top",
-                annotation_font_size=9, annotation_font_color=exit_color,
+                x=exit_dt, line_dash="dash", line_color=exit_color, line_width=1.8,
+                annotation_text=exit_label, annotation_position="top right",
+                annotation_font_size=10, annotation_font_color=exit_color,
             )
         if entry_level_price is not None:
             fig.add_hline(
@@ -1969,54 +1999,143 @@ def build_trade_entry_exit_chart_image(candles_df, entry_time, exit_time=None, e
         return None
 
 
-def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10):
+# ---------------------------------------------------------------------------------------------
+# Performance Report — सामायिक (फक्त या report पुरते) helpers.
+# 🎓 मुख्य मजकुरासाठी Times-Roman (_RPT_FONT) वापरला जायचा — त्यात ₹ glyph नाही (PDF मध्ये "■"
+# दिसायचा) आणि बाकी report (DejaVu/Noto Sans) पेक्षा वेगळा serif font दिसायचा. Performance Report
+# मध्ये आता सगळीकडे एकच sans font (DejaVuSans — ₹ सकट सगळे glyphs आहेत), आणि पैशांसाठी सगळीकडे
+# एकसारखं "Rs" लिहिलं जातं.
+# ---------------------------------------------------------------------------------------------
+_PERF_FONT = _RPT_TABLE_FONT
+_PERF_FONT_BOLD = _RPT_TABLE_FONT_BOLD
+
+
+def _perf_text(val):
+    """PDF Paragraph साठी सुरक्षित मजकूर — NaN/None -> "N/A", ₹ -> "Rs " (एकसारखं चलन-चिन्ह),
+    आणि XML escape ("P&L" चा "P&L;" होऊ नये म्हणून)."""
+    s = _fix_missing_glyphs(val)
+    if not isinstance(s, str):
+        s = str(s)
+    s = s.replace("₹", "Rs ").replace("Rs  ", "Rs ")
+    return _xml_escape(s)
+
+
+def _perf_money(v, decimals=0):
+    """Rs 30,810 / Rs -8,531 — None/NaN असेल तर N/A."""
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return "N/A"
+        return f"Rs {float(v):,.{decimals}f}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _perf_fmt_date(d):
+    """2026-09-25 -> 25-Sep-2026 (Generated तारखेशी जुळणारा एकच format)."""
+    try:
+        return pd.to_datetime(d).strftime("%d-%b-%Y")
+    except Exception:
+        return str(d)
+
+
+def _perf_fmt_dt(val, with_date):
+    """Trade वेळ — एकाच दिवसाचा रिपोर्ट असेल तर फक्त HH:MM:SS (तारीख वरती आधीच आहे), नाहीतर
+    '25-Sep 12:56:31'. parse न झाल्यास मूळ मजकूर."""
+    if val is None or (isinstance(val, float) and val != val):
+        return "OPEN"
+    try:
+        dt = pd.to_datetime(val)
+        return dt.strftime("%d-%b %H:%M:%S") if with_date else dt.strftime("%H:%M:%S")
+    except Exception:
+        return str(val)
+
+
+def _perf_duration(entry, exit_):
+    try:
+        secs = int((pd.to_datetime(exit_) - pd.to_datetime(entry)).total_seconds())
+    except Exception:
+        return ""
+    if secs < 0:
+        return ""
+    h, rem = divmod(secs, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
+class _FitImage(RLImage):
+    """🎓 पानाच्या तळाशी chart पूर्ण बसत नसेल तर तो संपूर्ण पुढच्या पानावर ढकलला जायचा आणि मागे मोठी
+    रिकामी जागा राहायची. ही image उपलब्ध उंचीत बसेल इतकी (जास्तीत जास्त min_frac पर्यंत) प्रमाणात
+    लहान होते — त्यापेक्षाही जागा कमी असेल तरच पुढच्या पानावर जाते."""
+
+    def __init__(self, data, width, height, min_frac=0.7):
+        RLImage.__init__(self, io.BytesIO(data), width=width, height=height)
+        self._w0, self._h0, self._min_frac = width, height, min_frac
+        self.hAlign = "CENTER"
+
+    def wrap(self, availWidth, availHeight):
+        scale = 1.0
+        if self._h0 > availHeight > 0:
+            scale = max(self._min_frac, availHeight / self._h0)
+        if self._w0 * scale > availWidth > 0:
+            scale = availWidth / self._w0
+        self.drawWidth, self.drawHeight = self._w0 * scale, self._h0 * scale
+        return self.drawWidth, self.drawHeight
+
+
+def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10, lead=None, multi_day=True):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trade one सोबत चा चार्ट, त्याचे एन्ट्री आणि त्याचे एक्झिट
-    असा एक नवीन मॉडेल") — प्रत्येक trade साठी वेगळा, स्वतंत्र विभाग: एक ओळीची caption (Trade ID,
-    Entry/Exit वेळ, Legs, Exit कारण, P&L — novice trader लाही लगेच कळावं म्हणून साधी भाषा) + त्याचाच
-    compact chart. PDF सुटसुटीत राहावा म्हणून जास्तीत जास्त max_charts trades च दाखवले जातात (सर्वात
-    अलीकडचे आधी — established Trade Log सारखाच क्रम), बाकीच्यांची फक्त एक नोंद."""
+    असा एक नवीन मॉडेल") — प्रत्येक trade साठी caption (Trade ID, वेळ, Legs, Exit कारण, P&L) + त्याचाच
+    compact chart, दोन्ही KeepTogether मध्ये (caption एका पानावर, chart दुसऱ्यावर असं फाटू नये).
+    lead — (ऐच्छिक) विभागाचा मथळा + स्पष्टीकरण; ते पहिल्या chart सोबतच KeepTogether मध्ये जातात,
+    जेणेकरून मथळा पानाच्या तळाशी एकटा राहत नाही. आधी या विभागाआधी जबरदस्तीचा PageBreak होता —
+    त्यामुळे Trade Log नंतरचं अर्धं पान रिकामं राहायचं; तो काढला."""
     if not trade_charts:
+        if lead:
+            story.extend(lead)
         return
     shown = trade_charts[:max_charts]
     caption_style = ParagraphStyle(
-        "trade_chart_caption", fontName=_RPT_FONT, fontSize=10.5, leading=14,
+        "trade_chart_caption", fontName=_PERF_FONT, fontSize=10, leading=13.5,
         textColor=colors.HexColor("#333333"), spaceAfter=3,
     )
-    for tc in shown:
+    for i, tc in enumerate(shown):
         chart_bytes = build_trade_entry_exit_chart_image(
             tc.get("candles_df"), tc["entry_time"], exit_time=tc.get("exit_time"),
             entry_level_price=tc.get("entry_level_price"), exit_reason=tc.get("exit_reason"),
-            realized_pnl=tc.get("realized_pnl"), trade_id=tc.get("trade_id"),
+            realized_pnl=tc.get("realized_pnl"), trade_id=tc.get("trade_id"), height=210,
         )
         pnl = tc.get("realized_pnl")
-        pnl_str = f"Rs {pnl:,.0f}" if pnl is not None else "N/A"
         pnl_color = "#089981" if (pnl or 0) >= 0 else "#F23645"
-        legs_text = tc.get("legs_text") or "N/A"
+        legs_text = tc.get("legs_text")
+        legs_html = "<br/>".join(_perf_text(p.strip()) for p in str(legs_text).split("·")) if legs_text else "N/A"
+        dur = _perf_duration(tc["entry_time"], tc.get("exit_time"))
         caption = (
-            f"<b>{_fix_missing_glyphs(str(tc.get('trade_id', '')))}</b>"
-            f" &nbsp;|&nbsp; Entry: {tc['entry_time']} &nbsp;→&nbsp; Exit: {tc.get('exit_time') or 'OPEN'}"
-            f" &nbsp;|&nbsp; {_fix_missing_glyphs(str(legs_text))}"
-            f" &nbsp;|&nbsp; Exit Reason: {_fix_missing_glyphs(str(tc.get('exit_reason') or 'N/A'))}"
-            f" &nbsp;|&nbsp; P&amp;L: <font color='{pnl_color}'><b>{pnl_str}</b></font>"
+            f"<b>{_perf_text(tc.get('trade_id', ''))}</b>"
+            f" &nbsp;|&nbsp; {_perf_fmt_dt(tc['entry_time'], multi_day)} &#8594; {_perf_fmt_dt(tc.get('exit_time'), multi_day)}"
+            + (f" ({dur})" if dur else "")
+            + f" &nbsp;|&nbsp; Exit: {_perf_text(tc.get('exit_reason') or 'N/A')}"
+            f" &nbsp;|&nbsp; P&amp;L: <font color='{pnl_color}'><b>{_perf_money(pnl)}</b></font>"
+            f"<br/><font size=9 color='#555555'>{legs_html}</font>"
         )
-        # 🎓 वापरकर्त्याने सापडवलेली bug ("review whole pdf, render properly") — caption आणि त्याचाच
-        # chart वेगवेगळे story.append() केले जायचे, त्यामुळे मध्येच पान संपलं तर caption एका पानावर
-        # आणि त्याचाच chart पुढच्या पानावर (कुठलंही caption न दाखवता) असं फाटायचं — कुठला chart
-        # कुठल्या trade चा हे कळेनासं व्हायचं. आता दोन्ही KeepTogether मध्ये — एकत्रच राहतील, बसत
-        # नसतील तर (caption सकट) पुढच्या पानावर जातील.
         chart_flowable = (
-            RLImage(io.BytesIO(chart_bytes), width=usable_width, height=usable_width * 230 / 680)
+            _FitImage(chart_bytes, usable_width, usable_width * 210 / 680, min_frac=0.7)
             if chart_bytes else
-            Paragraph("Chart could not be generated for this trade (candle data unavailable).", _rpt_footer)
+            Paragraph("Chart could not be generated for this trade (candle data unavailable).", caption_style)
         )
-        story.append(KeepTogether([Paragraph(caption, caption_style), chart_flowable]))
-        story.append(Spacer(1, 10))
+        block = [Paragraph(caption, caption_style), chart_flowable]
+        if i == 0 and lead:
+            block = list(lead) + block
+        story.append(KeepTogether(block))
+        story.append(Spacer(1, 8))
     if len(trade_charts) > max_charts:
         story.append(Paragraph(
-            f"(showing charts for the first {max_charts} of {len(trade_charts)} trades — see the Trade Log table above for all trades)",
-            _rpt_footer,
+            f"(showing charts for the first {max_charts} of {len(trade_charts)} trades — see the Trade Log above for all trades)",
+            caption_style,
         ))
-
 
 _REC_HEX = {"red": "#F23645", "green": "#089981", "amber": "#D68A00", "grey": "#787B86"}
 
@@ -2037,7 +2156,7 @@ def _rec_callout(rec_markdown, usable_width):
         key, color, bg, tag = "grey", _C_GREY, _C_GREY_BG, "[-]"
     html_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
     body_style = ParagraphStyle(
-        "perf_rec", fontName=_RPT_FONT, fontSize=12, leading=15.5, textColor=colors.HexColor("#222222"),
+        "perf_rec", fontName=_PERF_FONT, fontSize=11, leading=15.5, textColor=colors.HexColor("#222222"),
     )
     para = Paragraph(f"<b><font color='{_REC_HEX[key]}'>{tag}</font></b> {html_text}", body_style)
     bar_w = 0.3 * cm
@@ -2246,7 +2365,7 @@ def _subsection_banner(text, usable_width, accent_color):
     उर्वरित रिपोर्टपेक्षा वेगळे दिसायचे. आता तोच accent-bar लूक — timeframe नुसार रंग अजूनही वेगवेगळाच
     (multicolour) राहतो, फक्त सादरीकरण एकसंध झालं."""
     bar_w = 0.22 * cm
-    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=13, leading=16, textColor=accent_color)
+    style = ParagraphStyle("tf_subheader", fontName=_PERF_FONT_BOLD, fontSize=12, leading=15, textColor=accent_color)
     tbl = Table([["", Paragraph(_fix_missing_glyphs(str(text)), style)]], colWidths=[bar_w, usable_width - bar_w])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), accent_color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
@@ -2274,6 +2393,211 @@ def _trade_log_groups_by_timeframe(trade_log_df):
         trade_word = "trade" if len(sub_df) == 1 else "trades"
         groups.append((f"{label} ({len(sub_df)} {trade_word})", color, sub_df))
     return groups
+
+
+def _perf_table(df, usable_width, weights=None, num_cols=(), money_cols=(), font_size=10, rename=None):
+    """Performance Report चे सगळे साधे तक्ते (Strategy/Timeframe/Structure-wise, Broker charges,
+    Overshoot) — 🎓 आधी df_to_reportlab_table() (कुठलंही colWidths नाही) वापरल्याने रुंद तक्ते पानाच्या
+    उजव्या कडेबाहेर कापले जायचे (ROI %/Total P&L/Avg P&L दिसतच नव्हते), आणि _wide_df_table_wrapped()
+    सगळ्या स्तंभांना सारखी रुंदी द्यायचा ("Oversho ot (pts)" असे शब्द तुटायचे). इथे: प्रत्येक स्तंभाची
+    weight-आधारित रुंदी (एकूण = usable_width, कधीच पानाबाहेर नाही), मजकूर wrap, आकडे उजवीकडे,
+    पैसे "Rs 45,419" असे, None/NaN -> N/A."""
+    if df is None or df.empty:
+        return Paragraph("No data available.", ParagraphStyle("perf_empty", fontName=_PERF_FONT, fontSize=font_size))
+    df = df.copy()
+    if rename:
+        df = df.rename(columns=rename)
+    columns = list(df.columns)
+    weights = weights or {}
+    num_cols, money_cols = set(num_cols), set(money_cols)
+    col_widths = _perf_col_widths(df, columns, usable_width, weights, num_cols, money_cols, font_size)
+    cell_l = ParagraphStyle("perf_cell_l", fontName=_PERF_FONT, fontSize=font_size, leading=font_size + 3)
+    cell_r = ParagraphStyle("perf_cell_r", parent=cell_l, alignment=2)
+    header_styles = [
+        ParagraphStyle(f"perf_hdr_{i}", fontName=_PERF_FONT_BOLD, fontSize=font_size - 1.5, leading=font_size + 1.5,
+                       textColor=_SECTION_COLORS[i % len(_SECTION_COLORS)], alignment=2 if (c in num_cols or c in money_cols) else 0)
+        for i, c in enumerate(columns)
+    ]
+    data = [[Paragraph(_perf_text(c), header_styles[i]) for i, c in enumerate(columns)]]
+    color_cmds = []
+    for r_idx, row in enumerate(df.itertuples(index=False), start=1):
+        cells = []
+        for c_idx, (c, v) in enumerate(zip(columns, row)):
+            if c in money_cols:
+                cells.append(Paragraph(_perf_money(v), cell_r))
+                try:
+                    if v is not None and v == v:
+                        color_cmds.append(("TEXTCOLOR", (c_idx, r_idx), (c_idx, r_idx), _C_GREEN if float(v) >= 0 else _C_RED))
+                except (TypeError, ValueError):
+                    pass
+            elif c in num_cols:
+                if v is None or (isinstance(v, float) and v != v):
+                    txt = "N/A"
+                elif isinstance(v, float):
+                    txt = f"{v:,.2f}".rstrip("0").rstrip(".") if abs(v) < 1000 else f"{v:,.0f}"
+                else:
+                    txt = str(v)
+                cells.append(Paragraph(_perf_text(txt), cell_r))
+            else:
+                cells.append(Paragraph(_perf_text(v), cell_l))
+        data.append(cells)
+    tbl = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#BBBBBB")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ] + color_cmds))
+    return tbl
+
+
+def _perf_cell_str(c, v, num_cols, money_cols):
+    if c in money_cols:
+        return _perf_money(v)
+    if v is None or (isinstance(v, float) and v != v):
+        return "N/A"
+    return str(v).replace("₹", "Rs ")
+
+
+def _perf_col_widths(df, columns, usable_width, weights, num_cols, money_cols, font_size):
+    """🎓 स्तंभांची रुंदी — प्रत्येक स्तंभाला किमान त्याच्या सर्वात लांब *न-तुटणाऱ्या* शब्दाइतकी
+    (header आणि सर्व cells मधला — उदा. "PAPER_1790321250_3fe53e", "13:23:06", "Overshoot") जागा,
+    उरलेली जागा weights प्रमाणे वाटली जाते. त्यामुळे "Oversho ot", "13:23:0 6", "Trade s" असे शब्द
+    मधेच तुटत नाहीत. किमान रुंदीच पानापेक्षा जास्त झाली तरच (दुर्मिळ) जुन्या weight-प्रमाणेच."""
+    pad = 8 + 2
+    hdr_fs = font_size - 1.5
+    mins = []
+    for c in columns:
+        m = max((pdfmetrics.stringWidth(t, _PERF_FONT_BOLD, hdr_fs) for t in str(c).split()), default=0)
+        for v in df[c].tolist():
+            txt = _perf_cell_str(c, v, num_cols, money_cols)
+            # पैसे/आकडे एकाच ओळीत राहावेत ("Rs 45,419" तुटू नये) — पूर्ण string; बाकी शब्द-निहाय
+            toks = [txt] if (c in money_cols or c in num_cols) else txt.split()
+            for t in toks:
+                m = max(m, pdfmetrics.stringWidth(t, _PERF_FONT, font_size))
+        mins.append(m + pad)
+    w = [weights.get(c, 1.0) for c in columns]
+    if sum(mins) > usable_width:
+        # सगळे किमान रुंदीत बसत नाहीत — प्रमाणात आकुंचन (सर्वात कमी शब्द-मोड)
+        return [usable_width * m / sum(mins) for m in mins]
+    # उरलेली जागा weights प्रमाणे — पण आधी weight-प्रमाणे मिळणाऱ्या रुंदीपेक्षा कमी असलेल्यांनाच
+    # वाढवून (water-filling), जेणेकरून एकूण = usable_width.
+    widths = list(mins)
+    for _ in range(20):
+        extra = usable_width - sum(widths)
+        if extra <= 0.5:
+            break
+        grow = [i for i in range(len(columns)) if widths[i] < usable_width * w[i] / sum(w) + 1e-6]
+        if not grow:
+            grow = list(range(len(columns)))
+        gw = sum(w[i] for i in grow)
+        for i in grow:
+            widths[i] += extra * w[i] / gw
+    return widths
+
+
+_GROUP_TABLE_RENAME = {
+    "Win Rate %": "Win Rate % (SL/Target)", "Win Rate % (All Exits)": "Win Rate % (all exits)",
+    "ROI %": "ROI % (gross)", "Total P&L": "Gross P&L", "Avg P&L": "Avg Gross P&L",
+}
+_GROUP_TABLE_WEIGHTS = {
+    "Group": 1.8, "Trades": 0.9, "Win Rate % (SL/Target)": 1.25, "SL/Target Trades": 1.15,
+    "Win Rate % (all exits)": 1.25, "ROI % (gross)": 1.05, "Gross P&L": 1.3, "Avg Gross P&L": 1.35,
+}
+
+
+def _perf_group_table(df, usable_width):
+    """Strategy/Timeframe/Option-Structure-wise तक्ता — 🎓 Total/Avg P&L आणि ROI % हे charges
+    वजा करण्याआधीचे (gross) आकडे आहेत, म्हणून स्तंभांच्या नावातच "Gross" स्पष्ट (Summary मधल्या
+    Net P&L शी गोंधळ होऊ नये)."""
+    return _perf_table(
+        df, usable_width, weights=_GROUP_TABLE_WEIGHTS, rename=_GROUP_TABLE_RENAME,
+        num_cols={"Trades", "Win Rate % (SL/Target)", "SL/Target Trades", "Win Rate % (all exits)", "ROI % (gross)"},
+        money_cols={"Gross P&L", "Avg Gross P&L"}, font_size=9.5,
+    )
+
+
+def _trade_card(row, usable_width, multi_day, show_mode):
+    """🎓 Trade Log — जुन्या 9-स्तंभी टेबलमध्ये प्रत्येक स्तंभ इतका अरुंद होता की "PA PE R",
+    "Rs 30 ,810", "Mo de" असे शब्द मोडायचे, एक-एक row अर्ध्या पानाएवढी उंच व्हायची, आणि पुढची row
+    बसत नसल्याने प्रत्येक पानाच्या तळाशी मोठी रिकामी जागा राहायची. आता प्रत्येक trade साठी एक
+    compact "card": वरच्या पट्टीत ID | वेळ (कालावधी) | Exit कारण | P&L, खाली तीन स्तंभ —
+    Entry कारण | Legs (Strike/Entry/Exit) | Exit चं नेमकं कारण. प्रत्येक card लहान स्वतंत्र flowable
+    असल्याने पानं पूर्ण भरतात."""
+    get = row.get
+    pnl = get("Realized P&L")
+    try:
+        pnl_f = float(pnl)
+    except (TypeError, ValueError):
+        pnl_f = 0.0
+    pnl_color = _C_GREEN if pnl_f >= 0 else _C_RED
+    exit_label = get("Exit Reason", "N/A")
+    ex_text_color, ex_bg = _exit_reason_color(exit_label)
+    ex_text_color = ex_text_color or _C_BG_DARK
+    ex_bg = ex_bg or _C_GREY_BG
+
+    top_style = ParagraphStyle("tc_top", fontName=_PERF_FONT, fontSize=10, leading=13, textColor=_C_BG_DARK)
+    top_bold = ParagraphStyle("tc_top_b", parent=top_style, fontName=_PERF_FONT_BOLD)
+    pnl_style = ParagraphStyle("tc_pnl", parent=top_bold, fontSize=11.5, leading=14, alignment=2, textColor=pnl_color)
+    ex_style = ParagraphStyle("tc_ex", parent=top_bold, fontSize=9.5, leading=12, textColor=ex_text_color)
+    lbl = ParagraphStyle("tc_lbl", fontName=_PERF_FONT_BOLD, fontSize=8, leading=10, textColor=colors.HexColor("#787B86"))
+    body = ParagraphStyle("tc_body", fontName=_PERF_FONT, fontSize=9, leading=11.5, textColor=colors.HexColor("#222222"))
+
+    id_txt = f"<b><font size=9.5>{_perf_text(get('Trade ID', ''))}</font></b>"
+    if show_mode and get("Mode"):
+        id_txt += f" <font size=8 color='#787B86'>[{_perf_text(get('Mode'))}]</font>"
+    dur = _perf_duration(get("Entry Time"), get("Exit Time"))
+    time_txt = f"{_perf_fmt_dt(get('Entry Time'), multi_day)} &#8594; {_perf_fmt_dt(get('Exit Time'), multi_day)}"
+    if dur:
+        time_txt += f"<br/><font size=8.5 color='#787B86'>duration {dur}</font>"
+    top = Table([[
+        Paragraph(id_txt, top_style), Paragraph(time_txt, top_style),
+        Paragraph(_perf_text(exit_label), ex_style), Paragraph(_perf_money(pnl), pnl_style),
+    ]], colWidths=[usable_width * f for f in (0.30, 0.24, 0.28, 0.18)])
+    top.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG), ("BACKGROUND", (2, 0), (2, 0), ex_bg),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+
+    legs = get("Legs (Strike/Entry/Exit Price)")
+    has_legs = "Legs (Strike/Entry/Exit Price)" in row
+    detail_cells, fracs = [], []
+    detail_cells.append([Paragraph("ENTRY REASON", lbl), Paragraph(_perf_text(get("Entry Reason", "N/A")), body)])
+    if has_legs:
+        legs_html = "<br/>".join(_perf_text(p.strip()) for p in str(legs).split("·")) if legs is not None and legs == legs else "N/A"
+        detail_cells.append([Paragraph("LEGS (STRIKE / ENTRY &#8594; EXIT PRICE)", lbl), Paragraph(legs_html, body)])
+        fracs = [0.30, 0.37, 0.33]
+    else:
+        fracs = [0.45, 0.55]
+    detail_cells.append([Paragraph("EXIT — EXACT REASON", lbl), Paragraph(_perf_text(get("Exit Reason Detail", "-")), body)])
+    bottom = Table([detail_cells], colWidths=[usable_width * f for f in fracs])
+    bottom.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.4, colors.HexColor("#DDDDDD")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    card = Table([[top], [bottom]], colWidths=[usable_width])
+    card.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#C8CBD3")),
+        ("LINEBEFORE", (0, 0), (0, -1), 3, pnl_color),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return card
+
+
+def _mode_summary(trade_log_df):
+    """Trade Log मधल्या Mode स्तंभावरून 'PAPER 6' / 'LIVE 2, PAPER 4' — None असल्यास None."""
+    if trade_log_df is None or trade_log_df.empty or "Mode" not in trade_log_df.columns:
+        return None
+    counts = trade_log_df["Mode"].fillna("N/A").astype(str).value_counts()
+    return ", ".join(f"{m} {n}" for m, n in counts.items())
 
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
@@ -2318,7 +2642,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     generated_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%d-%b-%Y %H:%M:%S IST")
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm, topMargin=1.2 * cm, bottomMargin=1.7 * cm)
-    usable_width = A4[0] - 2.8 * cm
+    usable_width = _PERF_USABLE_W
     story = []
     sec = [0]
 
@@ -2340,7 +2664,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     # निळे/जांभळे रंग नीट उठून दिसत नव्हते).
     title_tbl = Table(
         [[Paragraph("AMW's A1 AlgoTrading System", _rpt_h1)], [Paragraph(f"Performance Report — {symbol}", _rpt_h1_sub)]],
-        colWidths=[18 * cm],
+        colWidths=[usable_width],
     )
     title_tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _C_SKY_BLUE),
@@ -2348,16 +2672,25 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ("BOTTOMPADDING", (0, -1), (-1, -1), 14), ("TOPPADDING", (0, 1), (-1, 1), 4),
     ]))
     story.append(title_tbl)
-    accent_bar = Table([[""]], colWidths=[18 * cm], rowHeights=[0.15 * cm])
+    accent_bar = Table([[""]], colWidths=[usable_width], rowHeights=[0.15 * cm])
     accent_bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _C_ACCENT)]))
     story.append(accent_bar)
     story.append(Spacer(1, 10))
 
+    # 🎓 तारीख एकाच format मध्ये (25-Sep-2026 — Generated सारखीच); एकाच दिवसाचा रिपोर्ट असेल तर
+    # "X to X" ऐवजी एकच तारीख. Mode "All" फिल्टर असला तरी प्रत्यक्ष trades कुठल्या mode चे आहेत
+    # (उदा. सगळे PAPER) ते कंसात — "All" वरून सगळे LIVE आहेत असा गैरसमज होऊ नये.
+    _df_str, _dt_str = _perf_fmt_date(date_from), _perf_fmt_date(date_to)
+    date_range_str = _df_str if _df_str == _dt_str else f"{_df_str} to {_dt_str}"
+    multi_day = _df_str != _dt_str
+    _modes = _mode_summary(trade_log_df)
+    mode_str = f"{mode_label} ({_modes})" if _modes else str(mode_label)
+    _meta_style = ParagraphStyle("perf_meta", fontName=_PERF_FONT, fontSize=10, leading=14, textColor=colors.HexColor("#555555"))
     meta_tbl = Table([[
-        Paragraph(f"Symbol<br/><b>{symbol}</b>", _rpt_normal),
-        Paragraph(f"Mode<br/><b>{mode_label}</b>", _rpt_normal),
-        Paragraph(f"Date Range<br/><b>{date_from} to {date_to}</b>", _rpt_normal),
-        Paragraph(f"Generated<br/><b>{generated_at}</b>", _rpt_normal),
+        Paragraph(f"Symbol<br/><font color='#131722'><b>{_perf_text(symbol)}</b></font>", _meta_style),
+        Paragraph(f"Mode<br/><font color='#131722'><b>{_perf_text(mode_str)}</b></font>", _meta_style),
+        Paragraph(f"Date Range<br/><font color='#131722'><b>{date_range_str}</b></font>", _meta_style),
+        Paragraph(f"Generated<br/><font color='#131722'><b>{generated_at}</b></font>", _meta_style),
     ]], colWidths=[usable_width / 4] * 4)
     meta_tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _C_GREY_BG), ("GRID", (0, 0), (-1, -1), 0.4, colors.white),
@@ -2380,7 +2713,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         win_rate = summary.get("win_rate")
         win_rate_str = f"{win_rate}%" if win_rate is not None else "N/A"
         roi_pct = summary.get("roi_pct")
-        roi_str = f"{roi_pct}%" if roi_pct is not None else "N/A"
+        # 🎓 database.get_performance_summary() चा roi_pct = *gross* P&L / margin — पण तो Net P&L
+        # (charges वजा) शेजारी दाखवला जायचा, त्यामुळे ROI प्रत्यक्षापेक्षा जास्त दिसायचा (उदा. 1.98%
+        # ऐवजी खरा 1.78%). आता मुख्य ROI net (charges वजा करून), आणि gross फक्त संदर्भासाठी.
+        margin_used = summary.get("margin_used") or 0
+        roi_net = round(net_pnl / margin_used * 100, 2) if margin_used > 0 else None
+        roi_str = f"{roi_net}%" if roi_net is not None else "N/A"
+        roi_gross_str = f"{roi_pct}%" if roi_pct is not None else "N/A"
         # 🎓 वापरकर्त्याने विचारलेली तक्रार ("charges खूप जास्त वाटतायत") — आधी फक्त "Total Charges"
         # ही एकच निव्वळ बेरीज दिसायची, नेमकं कशाचं बनलंय ते कुठेच नाही — वापरकर्त्याला स्वतः पडताळता
         # यावं म्हणून (web UI च्या _render_charges_breakdown_caption() सारखीच) order-संख्या आणि
@@ -2401,7 +2740,8 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             [_bk("Total Trades", "एकूण व्यवहार", 0), str(summary["total_trades"])],
             [_bk("Win Rate (pure SL/Target only)", "विजय दर (केवळ शुद्ध एसएल/टार्गेट)", 1), win_rate_str],
             [_bk("Win Rate (all exits, reference)", "विजय दर (सर्व निर्गम, संदर्भासाठी)", 2), f"{summary['win_rate_all_exits']}%" if summary.get("win_rate_all_exits") is not None else "N/A"],
-            [_bk("ROI % (on margin used)", "परतावा % (वापरलेल्या मार्जिनवर)", 3), f"{roi_str} (margin Rs {summary.get('margin_used', 0):,.0f})"],
+            [_bk("ROI % on margin used (net / gross)", "परतावा % मार्जिनवर (निव्वळ / एकूण)", 3), f"{roi_str}  /  {roi_gross_str}"],
+            [_bk("Margin Used", "वापरलेलं मार्जिन", 4), f"Rs {margin_used:,.0f}"],
             [_bk("Gross P&L", "एकूण नफा-तोटा", 4), f"Rs {gross_pnl:,.0f}"],
             [_bk("Total Charges", "एकूण शुल्क", 0), f"Rs {total_charges:,.0f} ({total_orders} orders)"],
         ]
@@ -2411,27 +2751,28 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             _cb_line = " / ".join(f"{_cb_labels[k]} Rs {v:,.0f}" for k, v in charges_breakdown.items() if v)
             # प्लेन string cells wrap होत नाहीत (Table column च्या रुंदीबाहेर overflow/clipped) — इथे
             # ओळ बरीच लांब असू शकते (सहा घटकांपर्यंत), त्यामुळे Paragraph मध्ये wrap करून दिली आहे.
-            summary_rows.append([_bk("  - Charges Breakdown", "शुल्क तपशील", 1), Paragraph(_cb_line, _rpt_kv_wrap)])
+            summary_rows.append([_bk("  - Charges Breakdown", "शुल्क तपशील", 1), Paragraph(_cb_line, ParagraphStyle("perf_cb", fontName=_PERF_FONT, fontSize=10, leading=13, textColor=colors.HexColor("#333333")))])
         net_pnl_row_idx = len(summary_rows)
         summary_rows.append([_bk("Net P&L (after charges)", "निव्वळ नफा-तोटा (शुल्क वजा करून)", 2), f"Rs {net_pnl:,.0f}"])
         summary_rows.extend([
-            [_bk("Profit Factor", "नफा गुणांक", 3), pf_str],
-            [_bk("Avg P&L/Trade", "सरासरी नफा-तोटा/व्यवहार", 4), f"Rs {summary['avg_pnl']:,.0f}"],
+            [_bk("Profit Factor (gross)", "नफा गुणांक (शुल्कापूर्वी)", 3), pf_str],
+            [_bk("Avg Gross P&L/Trade", "सरासरी एकूण नफा-तोटा/व्यवहार", 4), f"Rs {summary['avg_pnl']:,.0f}"],
             [_bk("Best/Worst Trade", "सर्वोत्तम/सर्वांत वाईट व्यवहार", 0), f"Rs {summary['best_trade']:,.0f} / Rs {summary['worst_trade']:,.0f}"],
         ])
         force_colors = {
-            4: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
+            5: (_C_GREEN if gross_pnl >= 0 else _C_RED, _C_GREEN_BG if gross_pnl >= 0 else _C_RED_BG),
             net_pnl_row_idx: (_C_GREEN if net_pnl >= 0 else _C_RED, _C_GREEN_BG if net_pnl >= 0 else _C_RED_BG),
         }
         win_hex = "#089981" if (win_rate or 0) >= 50 else "#F23645"
         net_hex = "#089981" if net_pnl >= 0 else "#F23645"
         pf_hex = "#089981" if (summary.get("profit_factor") or 0) >= 1 else "#F23645"
+        roi_hex = ("#089981" if roi_net >= 0 else "#F23645") if roi_net is not None else None
         story.append(_stat_cards_row([
             ("TOTAL TRADES", "एकूण व्यवहार", str(summary["total_trades"]), None),
             ("WIN RATE (SL/TARGET)", "विजय दर (एसएल/टार्गेट)", win_rate_str, win_hex if win_rate is not None else None),
-            ("ROI % (MARGIN)", "परतावा % (मार्जिन)", roi_str, None),
+            ("ROI % (NET, ON MARGIN)", "परतावा % (निव्वळ)", roi_str, roi_hex),
             ("NET P&L (AFTER CHARGES)", "निव्वळ नफा-तोटा (शुल्कानंतर)", f"Rs {net_pnl:,.0f}", net_hex),
-            ("PROFIT FACTOR", "नफा गुणांक", pf_str, pf_hex),
+            ("PROFIT FACTOR (GROSS)", "नफा गुणांक", pf_str, pf_hex),
         ], usable_width))
         story.append(Spacer(1, 6))
         # 🎓 dual-language Summary labels प्लेन strings नसून wrap-होणाऱ्या images/Paragraphs (_bi_key)
@@ -2472,8 +2813,9 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         broker_df = pd.DataFrame(broker_rows)
         broker_df["Total Charges"] = broker_df["Total Charges"].apply(lambda v: f"Rs {v:,.0f}")
         broker_df["Avg Charge / Order"] = broker_df["Avg Charge / Order"].apply(lambda v: f"Rs {v:,.2f}")
-        t = df_to_reportlab_table(broker_df, multicolour_header=True)
-        story.extend(t if isinstance(t, list) else [t])
+        story.append(_perf_table(broker_df, usable_width, weights={"Broker": 1.4, "Orders": 0.8, "Total Charges": 1.2, "Avg Charge / Order": 1.2},
+                                 num_cols={"Orders", "Total Charges", "Avg Charge / Order"}, font_size=10))
+        story.append(Spacer(1, 4))
         story.append(_bi_line(
             "This is a hypothetical, what-if comparison -- what your actual trades from this period would have "
             "cost under each broker's own real, published rates, regardless of which broker you actually used. "
@@ -2483,70 +2825,63 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "ब्रोकर वापरला याकडे दुर्लक्ष करून, प्रत्येक ब्रोकरच्या स्वतःच्या खऱ्या, प्रकाशित दरांनुसार किती "
             "पडले असते. सर्वात स्वस्त ब्रोकर (प्रति ऑर्डर) सर्वात आधी दाखवला आहे. Stocko चं ब्रोकरेज प्रति-ऑर्डर "
             "नसून निश्चित मासिक सबस्क्रिप्शन आहे (या रिपोर्टच्या तारीख-रेंजमधल्या महिन्यांनुसार इथे वाटलेलं).",
-            max_width_pt=usable_width, font_size=10.5,
+            max_width_pt=usable_width, font_size=10,
         ))
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 6))
 
-    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Page no 5 येथे unused space aahe" + "review whole pdf, render
-    # properly") — Strategy/Timeframe/Option-Structure-wise या तिन्ही विभागांत आधी फक्त मथळाच पानाच्या
-    # तळाशी एकटा राहायचा (chart image कधीच त्याच्यासोबत बसत नसल्याने पूर्ण पुढच्या पानावर ढकललं जायचं) —
-    # मथळ्याखाली मोठी रिकामी जागा आणि chart-शिवाय अर्धवट दिसणारा विभाग असं दोन्ही व्हायचं. आता मथळा+chart
-    # KeepTogether मध्ये — दोन्ही एकत्रच राहतील, बसत नसतील तरच (मथळ्यासकट) पुढच्या पानावर जातील; टेबल
-    # मात्र वेगळाच (मोठा असू शकतो, त्याला नैसर्गिकरित्या पान ओलांडू देणं योग्य).
+    # 🎓 वापरकर्त्याने सापडवलेला मुद्दा ("Page 2, 5, 7 still having free unused space") — आधी
+    # मथळा + मोठा (8 cm) chart KeepTogether मध्ये होते; ते पानाच्या तळाशी बसत नसले की दोन्ही पुढच्या
+    # पानावर ढकलले जायचे आणि मागे अर्धं पान रिकामं राहायचं. आता: (1) मथळा + तक्ता एकत्र (तक्ता लहान,
+    # 1-3 ओळी), (2) chart त्यानंतर, आणि तो _FitImage — जागा कमी असेल तर लहान होऊन तिथेच बसतो,
+    # (3) फक्त एकच गट असेल तर chart दाखवत नाही — एकच बार नवीन काहीच सांगत नाही, तोच आकडा
+    # तक्त्यात आहे; उगाच अर्धं पान व्यापायचा.
     def _section_with_chart(en, mr, df, chart_title):
         header = _section_header_accent(en, mr, sec[0])
         sec[0] += 1
         if df is None or df.empty:
             story.append(KeepTogether([header, Spacer(1, 8), _bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width)]))
-        else:
-            chart_bytes = build_group_pnl_bar_chart(df, chart_title)
+            story.append(Spacer(1, 10))
+            return
+        story.append(KeepTogether([header, Spacer(1, 5), _perf_group_table(df, usable_width)]))
+        if len(df) >= 2:
+            chart_bytes = build_group_pnl_bar_chart(df, chart_title, height=260)
             if chart_bytes:
-                img_w = usable_width
-                img_h = img_w * 300 / 680
-                story.append(KeepTogether([header, Spacer(1, 8), RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h)]))
                 story.append(Spacer(1, 6))
-            else:
-                story.append(header)
-                story.append(Spacer(1, 8))
-            t = df_to_reportlab_table(df, multicolour_header=True)
-            story.extend(t if isinstance(t, list) else [t])
-        story.append(Spacer(1, 8))
+                story.append(_FitImage(chart_bytes, usable_width, usable_width * 260 / 680, min_frac=0.65))
+        story.append(Spacer(1, 12))
 
     _section_with_chart(
         "Strategy-wise Performance (which algo strategy is most profitable)",
         "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",
-        by_source_df, "Strategy-wise Total P&L",
+        by_source_df, "Strategy-wise Gross P&L",
     )
     _section_with_chart(
         "Timeframe-wise Performance (which entry timeframe is most profitable)",
         "कालावधीनिहाय कामगिरी (कोणता प्रवेश कालावधी सर्वाधिक नफादायक आहे)",
-        by_timeframe_df, "Timeframe-wise Total P&L",
+        by_timeframe_df, "Timeframe-wise Gross P&L",
     )
     _section_with_chart(
         "Option Structure-wise Performance (Credit Spread vs Naked Option)",
         "ऑप्शन रचनेनुसार कामगिरी (क्रेडिट स्प्रेड वि. नेकेड ऑप्शन)",
-        by_structure_df, "Option Structure-wise Total P&L",
+        by_structure_df, "Option Structure-wise Gross P&L",
     )
 
     if overshoot_df is not None and not overshoot_df.empty:
         next_section("SL/TSL Overshoot (Slippage) Tracker", "एसएल/टीएसएल ओव्हरशूट (स्लिपेज) ट्रॅकर")
+        # 🎓 आधी या स्पष्टीकरणात trade_monitor.py / mcx_futures_trader.py अशी अंतर्गत फाईल-नावं
+        # छापली जायची (NIFTY रिपोर्टमध्येही MCX ची फाईल) — वाचकासाठी निरर्थक; आता साधं वर्णन.
         story.extend(_bi_para(
-            "For every SL/Trailing-SL exit, how far past its threshold the bot found the price before "
-            "catching it — an inherent gap from polling-based monitoring (trade_monitor.py / "
-            "mcx_futures_trader.py). Tracking this over time shows whether polling-interval speedups "
-            "actually reduced slippage.",
-            "प्रत्येक एसएल/ट्रेलिंग-एसएल एक्झिटसाठी, बॉटला किंमत सापडेपर्यंत ती थ्रेशोल्डच्या किती पुढे "
-            "गेली होती हे दाखवतं — पोलिंग-आधारित मॉनिटरिंगमधील (trade_monitor.py / "
-            "mcx_futures_trader.py) हे एक अंगभूत अंतर आहे. वेळोवेळी याचा मागोवा घेतल्यास, "
-            "पोलिंग-अंतराल वेगवान केल्याने स्लिपेज खरोखर कमी झाला का हे कळतं.",
-            usable_width,
+            "For every SL/Trailing-SL exit, how far past its threshold the price had already moved when the "
+            "bot's periodic price check caught it. This gap is inherent to polling-based monitoring; tracking "
+            "it over time shows whether faster polling actually reduced slippage.",
+            "प्रत्येक एसएल/ट्रेलिंग-एसएल एक्झिटच्या वेळी, बॉटच्या नियमित किंमत-तपासणीने पकडेपर्यंत किंमत "
+            "थ्रेशोल्डच्या किती पुढे गेली होती हे यात दिसतं. पोलिंग-आधारित मॉनिटरिंगमध्ये हे अंतर "
+            "अपरिहार्य आहे; वेळोवेळी याचा मागोवा घेतल्यास पोलिंग वेगवान केल्याने स्लिपेज खरोखर कमी झाला का हे कळतं.",
+            usable_width, font_size=11, text_color=colors.HexColor("#444444"),
         ))
         story.append(Spacer(1, 6))
         _os_pts = overshoot_df["Overshoot (pts)"].dropna()
         _os_rs = overshoot_df["Overshoot (Rs)"].dropna()
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
-        # key column ची घन काळी पार्श्वभूमी काढून पांढरी + प्रत्येक ओळीचा स्वतःचा रंग (Summary
-        # टेबलासाठी आधीच वापरलेल्या _bk() पॅटर्नप्रमाणेच, पण single-language — _mono_key()).
         _os_key_w = usable_width * 0.4 - 12
         def _osk(text, ci):
             return _mono_key(text, _os_key_w, font_size=12, color=_SECTION_COLORS[ci % len(_SECTION_COLORS)], bold=True)
@@ -2557,9 +2892,20 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ]
         story.append(_kv_table(overshoot_summary_rows, usable_width, key_ratio=0.4, key_bg=colors.white))
         story.append(Spacer(1, 6))
-        t = _wide_df_table_wrapped(overshoot_df, usable_width)
-        story.extend(t if isinstance(t, list) else [t])
-        story.append(Spacer(1, 8))
+        _os_df = overshoot_df.copy()
+        if "Mode" in _os_df.columns and _os_df["Mode"].nunique(dropna=False) <= 1:
+            _os_df = _os_df.drop(columns=["Mode"])  # सगळे एकाच mode चे — वरच्या Mode माहितीत आधीच आहे
+        if "Basis" in _os_df.columns and "Exit Reason" in _os_df.columns:
+            _os_df = _os_df.drop(columns=["Exit Reason"])  # Basis मध्ये SL/TSL प्रकार आधीच आहे — डुप्लिकेट स्तंभ
+        if "Exit Time" in _os_df.columns:
+            _os_df["Exit Time"] = _os_df["Exit Time"].map(lambda v: _perf_fmt_dt(v, multi_day))
+        story.append(_perf_table(
+            _os_df, usable_width,
+            weights={"Trade ID": 2.3, "Exit Time": 1.0, "Exit Reason": 0.85, "Basis": 2.2, "Overshoot (pts)": 1.25,
+                     "Overshoot (%)": 1.25, "Overshoot (Rs)": 1.25, "Realized P&L": 1.1, "Mode": 0.8},
+            num_cols={"Overshoot (pts)", "Overshoot (%)", "Overshoot (Rs)"}, money_cols={"Realized P&L"}, font_size=9.5,
+        ))
+        story.append(Spacer(1, 12))
 
     if slippage_pairs_df is not None and not slippage_pairs_df.empty:
         next_section("LIVE vs Shadow PAPER Slippage (LIVE+PAPER mode)", "लाइव्ह वि. शॅडो पेपर स्लिपेज (लाइव्ह+पेपर मोड)")
@@ -2572,7 +2918,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "शॅडो PAPER व्यवहार), प्रत्यक्ष अंमलबजावणी (स्लिपेज/स्प्रेड) शुद्ध सिम्युलेशनपेक्षा किती "
             "वेगळी ठरली हे यातून दिसतं. ऋण (negative) नफा-तोटा स्लिपेज म्हणजे प्रत्यक्ष LIVE निकाल "
             "PAPER पेक्षा वाईट ठरला.",
-            usable_width,
+            usable_width, font_size=11, text_color=colors.HexColor("#444444"),
         ))
         story.append(Spacer(1, 6))
         entry_slip_series = slippage_pairs_df["Entry Slippage (Rs)"].dropna()
@@ -2580,8 +2926,6 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         avg_entry_slip = entry_slip_series.mean() if not entry_slip_series.empty else None
         avg_pnl_slip = pnl_slip_series.mean() if not pnl_slip_series.empty else None
         total_pnl_slip = pnl_slip_series.sum() if not pnl_slip_series.empty else 0
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Remove black solid background, use multicolour") —
-        # Overshoot Tracker सारखाच, पांढरी key पार्श्वभूमी + फिरणारा रंग.
         _slip_key_w = usable_width * 0.4 - 12
         def _slipk(text, ci):
             return _mono_key(text, _slip_key_w, font_size=12, color=_SECTION_COLORS[ci % len(_SECTION_COLORS)], bold=True)
@@ -2593,104 +2937,103 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ]
         story.append(_kv_table(slip_summary_rows, usable_width, key_ratio=0.4, key_bg=colors.white))
         story.append(Spacer(1, 6))
-        t = _wide_df_table_wrapped(slippage_pairs_df, usable_width)
-        story.extend(t if isinstance(t, list) else [t])
-        story.append(Spacer(1, 8))
-
-    next_section("Conclusion & Recommendations", "निष्कर्ष आणि शिफारसी")
-    if not recommendations:
-        story.append(_bi_line(
-            "Not enough data in this period to draw conclusions (at least 5 trades/group needed).",
-            "निष्कर्ष काढण्यासाठी या कालावधीत पुरेसा डेटा नाही (प्रत्येक गटासाठी किमान 5 व्यवहार आवश्यक).",
-            max_width_pt=usable_width,
+        _slip_money = {c for c in slippage_pairs_df.columns if "(Rs)" in str(c) or "P&L" in str(c)}
+        story.append(_perf_table(
+            slippage_pairs_df, usable_width, weights={c: (2.2 if "ID" in str(c) else 1.0) for c in slippage_pairs_df.columns},
+            money_cols=_slip_money, font_size=9,
         ))
-    else:
-        for rec in recommendations:
-            story.append(_rec_callout(rec, usable_width))
-            story.append(Spacer(1, 4))
-    story.append(Spacer(1, 8))
+        story.append(Spacer(1, 12))
 
-    # 🎓 वापरकर्त्याने सापडवलेला मुद्दा ("Page no 5 येथे unused space aahe, remove it") — इथे आधी
-    # बिनशर्त PageBreak() होता, त्यामुळे Conclusion & Recommendations संपल्यावर (बरेचदा छोटासा मजकूर —
-    # "पुरेसा डेटा नाही" एका ओळीचा संदेश, किंवा 1-2 शिफारसी) पानाचा उरलेला मोठा भाग रिकामाच राहून
-    # Trade Log जबरदस्तीने पुढच्या पानावर ढकललं जायचं. Trade Log चा टेबल आधीच repeatRows=1 सह
-    # बनलेला असल्याने (बघा _build_trade_log_table()), तो आपोआप, हेडर पुन्हा दाखवत, नैसर्गिकरित्या
-    # पान ओलांडून पुढे जातो — म्हणून हा जबरदस्तीचा PageBreak काढला, आता उरलेली जागा असेल तर वापरली
-    # जाईल, नसेल तरच नैसर्गिकपणे पुढच्या पानावर जाईल.
-    next_section(
-        f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)",
-        "व्यवहार नोंद — प्रत्येक व्यवहाराचे प्रवेश व निर्गमाचे कारण",
+    # --- Trade Log ---
+    _tl_count = len(trade_log_df) if trade_log_df is not None else 0
+    _tl_header = _section_header_accent(
+        f"Trade Log — Entry & Exit Reason for every trade ({_tl_count} {'trade' if _tl_count == 1 else 'trades'})",
+        "व्यवहार नोंद — प्रत्येक व्यवहाराचे प्रवेश व निर्गमाचे कारण", sec[0],
     )
+    sec[0] += 1
     if trade_log_df is None or trade_log_df.empty:
-        story.append(_bi_line("No closed trades in this period.", "या कालावधीत कुठलेही बंद व्यवहार नाहीत.", max_width_pt=usable_width))
+        story.append(KeepTogether([_tl_header, Spacer(1, 8), _bi_line("No closed trades in this period.", "या कालावधीत कुठलेही बंद व्यवहार नाहीत.", max_width_pt=usable_width)]))
+        story.append(Spacer(1, 12))
     else:
-        story.append(Paragraph(
-            "Every SL/Target Exit Reason below names the exact basis it was triggered on — "
-            "<b>Spot %-based</b>, <b>Premium pts-based</b>, <b>Spot %+Premium pts</b> (both reached together), "
-            "or <b>Fixed Rs P&amp;L-based</b> — so the exact cause of every win/loss is clear at a glance. "
-            "Trades are grouped below by Entry Timeframe (1M S/R touch, 5M S/R touch, etc.) into their own tables.",
-            ParagraphStyle("trade_log_note_en", fontName=_RPT_FONT, fontSize=12.5, leading=16, textColor=colors.HexColor("#555555")),
-        ))
-        story.append(Spacer(1, 3))
-        _trade_log_note_mr_runs = [
-            ("खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — ", False),
-            ("स्पॉट %-आधारित", True), (", ", False), ("प्रीमियम पॉइंट्स-आधारित", True), (", ", False),
-            ("स्पॉट %+प्रीमियम पॉइंट्स", True), (" (दोन्ही एकत्र गाठले गेले), किंवा ", False),
-            ("निश्चित रुपये नफा-तोटा-आधारित", True),
-            (" — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. व्यवहार खाली "
-             "प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.", False),
-        ]
-        _trade_log_note_mr_img = _deva_image_flowable(
-            _trade_log_note_mr_runs, 12.5, max_width_pt=usable_width, color=colors.HexColor("#555555"),
+        _note = _bi_para(
+            "One card per closed trade: entry → exit time (duration), exit reason with its exact basis "
+            "(Spot %, Premium pts, both, or Fixed Rs P&L), and realized P&L. Grouped by entry timeframe.",
+            "प्रत्येक बंद व्यवहारासाठी एक कार्ड: प्रवेश ते निर्गम वेळ (कालावधी), निर्गमाचं कारण व त्याचा नेमका आधार, "
+            "आणि प्रत्यक्ष नफा-तोटा. प्रवेश कालावधीनुसार गटबद्ध.",
+            usable_width, font_size=10.5, text_color=colors.HexColor("#555555"),
         )
-        if _trade_log_note_mr_img is not None:
-            story.append(_trade_log_note_mr_img)
-        else:
-            story.append(Paragraph(
-                "खालील प्रत्येक एसएल/टार्गेट एक्झिट कारण नेमक्या कोणत्या आधारावर सुरू झालं हे सांगतं — "
-                "<b>स्पॉट %-आधारित</b>, <b>प्रीमियम पॉइंट्स-आधारित</b>, <b>स्पॉट %+प्रीमियम पॉइंट्स</b> (दोन्ही एकत्र गाठले गेले), "
-                "किंवा <b>निश्चित रुपये नफा-तोटा-आधारित</b> — त्यामुळे प्रत्येक विजय/पराजयाचं नेमकं कारण एका दृष्टिक्षेपात स्पष्ट होतं. "
-                "व्यवहार खाली प्रवेश कालावधीनुसार (1M S/R स्पर्श, 5M S/R स्पर्श, इ.) स्वतंत्र तक्त्यांमध्ये गटबद्ध केले आहेत.",
-                ParagraphStyle("trade_log_note_mr", fontName=_DEVANAGARI_FONT, fontSize=12.5, leading=16, textColor=colors.HexColor("#555555")),
-            ))
-        story.append(Spacer(1, 6))
+        show_mode = "Mode" in trade_log_df.columns and trade_log_df["Mode"].nunique(dropna=False) > 1
+        first = True
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
-            story.append(_subsection_banner(group_label, usable_width, group_color))
+            banner = _subsection_banner(group_label, usable_width, group_color)
+            records = group_df.to_dict("records")
+            cards = [_trade_card(r, usable_width, multi_day, show_mode) for r in records]
+            if first:
+                # मथळा + स्पष्टीकरण एकत्र; timeframe-बॅनर पहिल्या card सोबत (बॅनर पानाच्या तळाशी
+                # एकटा राहू नये). तिन्ही एकाच block मध्ये ठेवले तर तो मोठा block बसत नसल्याने पानाचा
+                # मोठा भाग रिकामा राहायचा.
+                story.append(KeepTogether([_tl_header, Spacer(1, 6)] + _note + [Spacer(1, 8)]))
+            first = False
+            story.append(KeepTogether([banner, Spacer(1, 5)] + (cards[:1] or [])))
+            # प्रत्येक card स्वतःच्या KeepTogether मध्ये — card दोन पानांत फाटू नये (वरची पट्टी एका
+            # पानावर, तपशील पुढच्या पानावर). (KeepTogether एकमेकांत nest करू नये — reportlab मध्ये
+            # आतला KeepTogether "खूप उंच" असल्याचं सांगतो आणि बाहेरचा उगाच नवीन पान सुरू करतो.)
+            for c in cards[1:]:
+                story.append(Spacer(1, 5))
+                story.append(KeepTogether([c]))
+            story.append(Spacer(1, 12))
+
+    # --- Conclusion (Trade Log नंतर; Trade Charts हे शेवटी परिशिष्टासारखे) ---
+    _concl_header = _section_header_accent("Conclusion & Recommendations", "निष्कर्ष आणि शिफारसी", sec[0])
+    sec[0] += 1
+    if not recommendations:
+        # 🎓 आधीचा संदेश "at least 5 trades/group needed" असा होता — पण गटांत 6 trades असतानाही तोच
+        # दिसायचा (खरं कारण: कुठलाच नियम लागू झाला नाही). आता दोन्ही शक्यता अचूक सांगणारा संदेश.
+        _concl_body = [_bi_para(
+            "No rule-based recommendation was triggered in this period. Rules look only at groups with at least "
+            "5 trades and flag a clear pattern (SL-heavy with net loss, EOD losses, Target-heavy with net profit, "
+            "or Trailing-SL profits under half of Target profits).",
+            "या कालावधीत कुठलीही नियम-आधारित शिफारस लागू झाली नाही. नियम फक्त किमान 5 व्यवहार असलेल्या गटांचा "
+            "विचार करतात आणि स्पष्ट पॅटर्न असेल तरच सूचना देतात (तोट्यासह बहुतांश एसएल, EOD तोटा, नफ्यासह "
+            "बहुतांश टार्गेट, किंवा ट्रेलिंग-एसएल नफा टार्गेटच्या निम्म्याहून कमी).",
+            usable_width, font_size=10.5, text_color=colors.HexColor("#444444"),
+        )]
+        story.append(KeepTogether([_concl_header, Spacer(1, 8)] + _concl_body[0]))
+    else:
+        recs = [_rec_callout(rec, usable_width) for rec in recommendations]
+        story.append(KeepTogether([_concl_header, Spacer(1, 8), recs[0]]))
+        for r in recs[1:]:
             story.append(Spacer(1, 4))
-            story.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
-            story.append(Spacer(1, 10))
+            story.append(r)
+    story.append(Spacer(1, 14))
 
+    # --- Trade Charts (जबरदस्तीचा PageBreak नाही — मथळा पहिल्या chart सोबत) ---
     if trade_charts:
-        story.append(PageBreak())
-        next_section(
+        _tc_header = _section_header_accent(
             f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)",
-            "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी",
+            "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी", sec[0],
         )
-        story.extend(_bi_para(
-            "Each chart below is the underlying's own price action around that trade — the blue line marks "
-            "when the bot entered, the green/red line marks when it exited (green = profit, red = loss), and the "
-            "purple dotted line (if shown) is the exact Support/Resistance level the bot's entry was based on. "
-            "Use this to visually confirm every entry and exit against the real market move at that time.",
-            "खालील प्रत्येक चार्ट त्या व्यवहाराभोवतीची underlying ची स्वतःची किंमत हालचाल दाखवतो — "
-            "निळी रेषा बॉटने एंट्री कधी घेतली हे दाखवते, हिरवी/लाल रेषा एक्झिट कधी झाली हे दाखवते "
-            "(हिरवं = नफा, लाल = तोटा), आणि जांभळी ठिपकेदार रेषा (दाखवली असल्यास) बॉटच्या एंट्रीचा आधार "
-            "असलेली नेमकी सपोर्ट/रेझिस्टन्स पातळी आहे. त्या वेळच्या खऱ्या बाजार हालचालीशी प्रत्येक एंट्री "
-            "व एक्झिट दृश्यरित्या पडताळण्यासाठी याचा वापर करा.",
-            usable_width, text_color=colors.HexColor("#555555"), space_after=8,
-        ))
-        _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10)
+        sec[0] += 1
+        _tc_intro = _bi_para(
+            "Underlying price from 30 min before entry to 30 min after exit. Blue = entry, green/red = exit "
+            "(profit/loss), purple dotted = the S/R level the entry was based on.",
+            "प्रवेशाच्या 30 मि. आधीपासून निर्गमानंतर 30 मि. पर्यंत किंमत. निळी = प्रवेश, हिरवी/लाल = निर्गम "
+            "(नफा/तोटा), जांभळी ठिपकेदार = प्रवेशाचा आधार असलेली S/R पातळी.",
+            usable_width, font_size=10, text_color=colors.HexColor("#555555"), space_after=4,
+        )
+        _render_trade_charts_section(
+            story, trade_charts, usable_width, max_charts=10,
+            lead=[_tc_header, Spacer(1, 6)] + _tc_intro, multi_day=multi_day,
+        )
+        story.append(Spacer(1, 6))
 
-    story.append(Spacer(1, 10))
-    # 🎓 _rpt_footer (शेअर्ड style, बाकी सर्व report types च्या footers/captions साठीही वापरली जाते)
-    # इथे मुद्दाम वापरली नाही — ती Devanagari font नाही, आणि तिचा आकार बदलला तर इतर reports वरही
-    # परिणाम होईल. इथे फक्त Performance Report पुरता वेगळा _bi_para वापरला.
     story.extend(_bi_para(
         "This report was generated automatically by the AMW's A1 AlgoTrading System — for informational purposes only, not investment advice. "
         "The Recommendations section is a rule-based, data-driven starting point, not financial advice — the final decision is always yours.",
         "हा रिपोर्ट AMW's A1 AlgoTrading System ने आपोआप तयार केला आहे — फक्त माहितीसाठी, गुंतवणूक सल्ला "
         "नाही. शिफारसी विभाग हा नियम-आधारित, डेटा-चालित प्रारंभबिंदू आहे, आर्थिक सल्ला नाही — अंतिम निर्णय "
         "नेहमी तुमचाच असतो.",
-        usable_width, font_size=10.5, text_color=colors.HexColor("#888888"),
+        usable_width, font_size=9.5, text_color=colors.HexColor("#888888"),
     ))
 
     doc.build(story, canvasmaker=_NumberedCanvas)

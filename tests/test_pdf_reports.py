@@ -312,3 +312,91 @@ class TestGeneratePerformanceReportPdfTradeCharts:
             None, None, None, None, [], trade_charts=trade_charts,
         )
         assert pdf_bytes[:4] == b"%PDF"
+
+
+class TestPerformanceReportLayoutAndNumbers:
+    """🎓 वापरकर्त्याने सापडवलेल्या चुका (NIFTY 25-Sep-2026 Performance Report — "Page 2, 5, 7 still
+    having free unused space", आणि पूर्ण PDF review मध्ये सापडलेल्या) — प्रत्येकीसाठी regression guard:
+    रिकामी जागा (nested KeepTogether), कापले जाणारे तक्ते (स्तंभ-रुंदी), ₹ चा "■", "P&L;" escape,
+    gross-वर-आधारित ROI Net P&L शेजारी, आणि पूर्ण-दिवसाचा (न-झूम केलेला) trade chart."""
+
+    def test_trade_card_is_plain_table_not_nested_keeptogether(self):
+        # KeepTogether.wrap() नेहमी 0xffffff उंची परत करतो — तो दुसऱ्या KeepTogether मध्ये टाकला तर
+        # बाहेरचा block "बसत नाही" समजून नवीन पान सुरू करतो (पानाचा 3/4 भाग रिकामा राहिला होता).
+        from reportlab.platypus import Table
+        from pdf_reports import _trade_card
+        card = _trade_card(
+            {"Trade ID": "T1", "Entry Time": "2026-09-25 12:56:31", "Exit Time": "2026-09-25 12:57:07",
+             "Entry Reason": "x", "Legs (Strike/Entry/Exit Price)": "a · b", "Exit Reason": "Stop-Loss hit",
+             "Exit Reason Detail": "d", "Realized P&L": -11050.0, "Mode": "PAPER"},
+            515.0, multi_day=False, show_mode=False,
+        )
+        assert isinstance(card, Table)
+
+    def test_trade_card_without_legs_column_mcx_does_not_crash(self):
+        from pdf_reports import _trade_card
+        _trade_card({"Trade ID": "M1", "Entry Time": "2026-09-25 10:00:00", "Exit Time": None,
+                     "Entry Reason": "x", "Exit Reason": "EOD", "Exit Reason Detail": None,
+                     "Realized P&L": None, "Mode": "LIVE"}, 515.0, multi_day=True, show_mode=True)
+
+    def test_column_widths_fit_page_and_longest_token(self):
+        from reportlab.pdfbase import pdfmetrics
+        from pdf_reports import _perf_col_widths, _PERF_FONT
+        df = pd.DataFrame([["PAPER_1790321250_3fe53e", "13:23:06", "TSL Breakeven (Premium pts)", 0.0, None, -97.5]],
+                          columns=["Trade ID", "Exit Time", "Basis", "Overshoot (pts)", "Overshoot (%)", "Realized P&L"])
+        widths = _perf_col_widths(df, list(df.columns), 515.9, {}, {"Overshoot (pts)", "Overshoot (%)"}, {"Realized P&L"}, 9.5)
+        assert abs(sum(widths) - 515.9) < 1
+        assert widths[0] >= pdfmetrics.stringWidth("PAPER_1790321250_3fe53e", _PERF_FONT, 9.5)
+        assert widths[1] >= pdfmetrics.stringWidth("13:23:06", _PERF_FONT, 9.5)
+
+    def test_perf_text_rupee_and_ampersand(self):
+        from pdf_reports import _perf_text
+        assert _perf_text("Entry ₹57.00 → Exit ₹43.00") == "Entry Rs 57.00 → Exit Rs 43.00"
+        assert _perf_text("Realized P&L") == "Realized P&amp;L"
+        assert _perf_text(float("nan")) == "N/A"
+
+    def test_roi_shown_is_net_of_charges_and_dates_formatted(self):
+        pypdf = __import__("pytest").importorskip("pypdf")
+        import io as _io
+        summary = dict(_SUMMARY, total_trades=6, total_pnl=45418.75, margin_used=2298735.0, roi_pct=1.98)
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-25", "2026-09-25", summary,
+            {"gross_pnl": 45418.75, "total_charges": 4395.4, "net_pnl": 41023.35, "total_orders": 18},
+            None, None, None, None, [],
+        )
+        text = " ".join(p.extract_text() for p in pypdf.PdfReader(_io.BytesIO(pdf_bytes)).pages)
+        assert "1.78%" in text          # net ROI = 41,023 / 22,98,735
+        assert "25-Sep-2026" in text     # एकाच format मध्ये तारीख, "2026-09-25 to 2026-09-25" नाही
+        assert "2026-09-25 to" not in text
+        assert "P&L;" not in text
+
+    def test_empty_recommendations_message_does_not_claim_too_few_trades(self):
+        pypdf = __import__("pytest").importorskip("pypdf")
+        import io as _io
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-25", "2026-09-25", _SUMMARY,
+            {"gross_pnl": 300, "total_charges": 0, "net_pnl": 300}, None, None, None, None, [],
+        )
+        text = " ".join(p.extract_text() for p in pypdf.PdfReader(_io.BytesIO(pdf_bytes)).pages)
+        assert "Not enough data" not in text
+        assert "No rule-based recommendation was triggered" in text
+
+    def test_trade_chart_is_zoomed_to_trade_window(self):
+        import plotly.graph_objects as go
+        candles = pd.DataFrame({
+            "timestamp": pd.date_range("2026-09-25 09:15", "2026-09-25 15:29", freq="1min"),
+        })
+        n = len(candles)
+        candles["open"] = candles["high"] = candles["low"] = candles["close"] = [23000.0] * n
+        captured = []
+
+        def _fake_to_image(self, **kwargs):
+            captured.append(self)
+            return b"\x89PNG\r\n\x1a\n"
+
+        with patch.object(go.Figure, "to_image", autospec=True, side_effect=_fake_to_image):
+            build_trade_entry_exit_chart_image(candles, "2026-09-25 12:56:31", exit_time="2026-09-25 12:57:07",
+                                               exit_reason="SL", realized_pnl=-11050.0)
+        xs = pd.to_datetime(list(captured[0].data[0].x))
+        assert xs.min() >= pd.Timestamp("2026-09-25 12:26:00")
+        assert xs.max() <= pd.Timestamp("2026-09-25 13:27:07")
