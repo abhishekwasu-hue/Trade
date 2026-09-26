@@ -1916,7 +1916,18 @@ def _nearest_close_at_or_before(candles_df, ts):
     if candles_df is None or candles_df.empty:
         return None
     ts = pd.to_datetime(ts)
-    before = candles_df[candles_df["timestamp"] <= ts]
+    # 🎓 वापरकर्त्याने production मध्ये सापडवलेली bug (TypeError: Invalid comparison between
+    # dtype=datetime64[us, UTC+05:30] and Timestamp) -- candles_df["timestamp"] Upstox कडून
+    # timezone-aware (IST offset सकट) येतो, पण exit_time (trade_log_df मधला plain string) naive
+    # Timestamp म्हणून parse होतो -- pandas tz-aware वि. tz-naive तुलना करू देत नाही, PDF generation
+    # क्रॅश व्हायचं. दोन्ही आधीच त्याच IST wall-clock वेळा असल्याने, तुलनेआधी दोन्हींकडून फक्त tz
+    # लेबल काढून टाकलं (wall-clock आकडे तसेच राहतात, कुठलंही conversion नाही).
+    timestamps = candles_df["timestamp"]
+    if timestamps.dt.tz is not None:
+        timestamps = timestamps.dt.tz_localize(None)
+    if ts.tzinfo is not None:
+        ts = ts.tz_localize(None)
+    before = candles_df[timestamps <= ts]
     row = before.iloc[-1] if not before.empty else candles_df.iloc[0]
     close = row.get("close")
     return float(close) if pd.notna(close) else None

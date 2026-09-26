@@ -347,6 +347,18 @@ class TestNearestCloseAtOrBefore:
         assert _nearest_close_at_or_before(pd.DataFrame(), "2026-09-25 10:05") is None
         assert _nearest_close_at_or_before(None, "2026-09-25 10:05") is None
 
+    def test_timezone_aware_candles_do_not_crash(self):
+        """🎓 वापरकर्त्याने production मध्ये सापडवलेली bug (TypeError: Invalid comparison between
+        dtype=datetime64[us, UTC+05:30] and Timestamp) — Upstox कडून येणारा candles_df["timestamp"]
+        प्रत्यक्षात timezone-aware (IST offset सकट) असतो, पण exit_time (Trade Log मधला plain string)
+        naive Timestamp म्हणून parse होतो — आधी हे pandas मध्ये क्रॅश व्हायचं, संपूर्ण Performance
+        Report PDF तयारच व्हायचा नाही. आता दोन्हीकडून tz काढून (wall-clock तोच ठेवून) तुलना होते."""
+        tz_aware_candles = pd.DataFrame({
+            "timestamp": pd.to_datetime(["2026-09-25 10:00", "2026-09-25 10:05", "2026-09-25 10:10"]).tz_localize("Asia/Kolkata"),
+            "close": [100.0, 105.0, 110.0],
+        })
+        assert _nearest_close_at_or_before(tz_aware_candles, "2026-09-25 10:07") == 105.0
+
 
 class TestGeneratePerformanceReportPdfTradeCharts:
     """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Trade one सोबत चा चार्ट, त्याचे एन्ट्री आणि त्याचे
@@ -365,6 +377,27 @@ class TestGeneratePerformanceReportPdfTradeCharts:
             {"trade_id": "T2", "entry_time": "2026-09-24 11:00:00", "exit_time": "2026-09-24 11:30:00",
              "entry_level_price": None, "realized_pnl": -200.0, "exit_reason": "SL",
              "legs_text": None, "candles_df": pd.DataFrame()},  # candle data unavailable -> fallback text
+        ]
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
+            {"gross_pnl": 300, "total_charges": 0, "net_pnl": 300},
+            None, None, None, None, [], trade_charts=trade_charts,
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+    def test_timezone_aware_underlying_candles_do_not_crash_pdf_generation(self):
+        """🎓 वापरकर्त्याने प्रत्यक्ष production मध्ये सापडवलेली bug — Upstox कडून येणारा candles_df
+        timezone-aware (IST offset) असतो, त्यामुळे संपूर्ण Performance Report PDF निर्मितीच क्रॅश
+        व्हायची (TypeError: Invalid comparison between dtype=datetime64[us, UTC+05:30] and
+        Timestamp), वापरकर्त्याला PDF डाऊनलोडच करता येत नव्हता."""
+        tz_aware_candles = pd.DataFrame({
+            "timestamp": pd.date_range("2026-09-24 09:30", periods=20, freq="5min").tz_localize("Asia/Kolkata"),
+            "open": [23900] * 20, "high": [23905] * 20, "low": [23895] * 20, "close": [23902] * 20,
+        })
+        trade_charts = [
+            {"trade_id": "T1", "entry_time": "2026-09-24 10:00:00", "exit_time": "2026-09-24 14:00:00",
+             "entry_level_price": 23920.0, "realized_pnl": 500.0, "exit_reason": "TARGET",
+             "legs_text": "short_leg 24400PE Entry Rs38 -> Exit Rs15", "candles_df": tz_aware_candles},
         ]
         pdf_bytes = generate_performance_report_pdf(
             "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
