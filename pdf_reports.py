@@ -16,7 +16,7 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfgen.canvas import Canvas as _BaseCanvas
 
@@ -1999,15 +1999,17 @@ def _render_trade_charts_section(story, trade_charts, usable_width, max_charts=1
             f" &nbsp;|&nbsp; Exit Reason: {_fix_missing_glyphs(str(tc.get('exit_reason') or 'N/A'))}"
             f" &nbsp;|&nbsp; P&amp;L: <font color='{pnl_color}'><b>{pnl_str}</b></font>"
         )
-        story.append(Paragraph(caption, caption_style))
-        if chart_bytes:
-            img_w = usable_width
-            img_h = img_w * 230 / 680
-            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
-        else:
-            story.append(Paragraph(
-                "Chart could not be generated for this trade (candle data unavailable).", _rpt_footer,
-            ))
+        # 🎓 वापरकर्त्याने सापडवलेली bug ("review whole pdf, render properly") — caption आणि त्याचाच
+        # chart वेगवेगळे story.append() केले जायचे, त्यामुळे मध्येच पान संपलं तर caption एका पानावर
+        # आणि त्याचाच chart पुढच्या पानावर (कुठलंही caption न दाखवता) असं फाटायचं — कुठला chart
+        # कुठल्या trade चा हे कळेनासं व्हायचं. आता दोन्ही KeepTogether मध्ये — एकत्रच राहतील, बसत
+        # नसतील तर (caption सकट) पुढच्या पानावर जातील.
+        chart_flowable = (
+            RLImage(io.BytesIO(chart_bytes), width=usable_width, height=usable_width * 230 / 680)
+            if chart_bytes else
+            Paragraph("Chart could not be generated for this trade (candle data unavailable).", _rpt_footer)
+        )
+        story.append(KeepTogether([Paragraph(caption, caption_style), chart_flowable]))
         story.append(Spacer(1, 10))
     if len(trade_charts) > max_charts:
         story.append(Paragraph(
@@ -2053,7 +2055,12 @@ def _rec_callout(rec_markdown, usable_width):
 # 🎓 फक्त generate_performance_report_pdf() यातच वापरलं जातं (इतर कुठेही नाही), त्यामुळे इथे
 # थेट Devanagari-सुसंगत font — Performance Report च्या dual-language stat cards साठी (labels मध्ये
 # आता "TOTAL TRADES / एकूण व्यवहार" असा मजकूर असतो — Times-Roman मध्ये तो तुटक्या चौकोनांसारखा दिसायचा).
-_STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_DEVANAGARI_FONT, leading=13, alignment=TA_LEFT)
+# 🎓 वापरकर्त्याने सापडवलेली bug ("Page 1 वर NET P&L चा आकडा लेबलवर overlap होतोय") — या style चा
+# leading (13) मोठ्या मूल्य-फॉन्टसाठी (आधी 17pt, नंतर चुकून 19pt पर्यंत वाढवला) पुरेसा नव्हता —
+# अरुंद कार्डात "Rs 41,023" सारखा आकडा दोन ओळींत wrap झाला की 13pt leading मुळे दुसरी ओळ पहिलीवरच
+# (आणि वरच्या लेबलवरही) चढून यायची. आता leading मूल्य-फॉन्टला (18pt) साजेसा वाढवला, जेणेकरून कधी
+# wrap झालंच तरी ओळी एकमेकांवर चढणार नाहीत.
+_STAT_CARD_STYLE = ParagraphStyle("stat_card", fontName=_DEVANAGARI_FONT, leading=21, alignment=TA_LEFT)
 
 
 def _stat_cards_row(items, usable_width):
@@ -2072,14 +2079,14 @@ def _stat_cards_row(items, usable_width):
         # 🎓 वापरकर्त्याने पुन्हा मागितलेली सुधारणा ("Compare font size, really increased, doughtfull") —
         # आधीच्या फॉन्ट-वाढीत या top summary कार्डांचा label (9pt) आणि आकडा (17pt) सुटले होते —
         # बाकी सर्व मजकूर मोठा झाला, पण ही कार्डं तशीच लहान राहिली, त्यामुळे "खरंच वाढलं का" शंका आली.
-        value_para = Paragraph(f'<font size=19 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>', _STAT_CARD_STYLE)
+        value_para = Paragraph(f'<font size=18 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>', _STAT_CARD_STYLE)
         label_img = _deva_image_flowable(f"{en_label} / {mr_label}", 10.5, max_width_pt=label_max_w, color=colors.HexColor("#666666"))
         if label_img is not None:
-            cells.append([label_img, Spacer(1, 3), value_para])
+            cells.append([label_img, Spacer(1, 4), value_para])
         else:
             cells.append(Paragraph(
                 f'<font size=10.5 color="#666666">{_xml_escape(en_label)} / {_xml_escape(mr_label)}</font><br/>'
-                f'<font size=19 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>',
+                f'<font size=18 color="{value_color}"><b>{_xml_escape(str(value))}</b></font>',
                 _STAT_CARD_STYLE,
             ))
     tbl = Table([cells], colWidths=[cell_w] * n)
@@ -2231,13 +2238,22 @@ _TF_GROUP_COLORS = {
 def _subsection_banner(text, usable_width, accent_color):
     """Trade Log आतल्या प्रत्येक Entry Timeframe गटासाठी स्वतःचं, ठळक (मुख्य section-header पेक्षा
     लहान) रंगीत heading — जेणेकरून 1M आणि 5M S/R touch trades एकाच मोठ्या टेबलमध्ये मिसळू नयेत,
-    प्रत्येक गटाला स्वतःचं स्पष्ट शीर्षक मिळावं."""
-    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=13, leading=16, textColor=colors.white)
-    tbl = Table([[Paragraph(text, style)]], colWidths=[usable_width])
+    प्रत्येक गटाला स्वतःचं स्पष्ट शीर्षक मिळावं (प्रत्येक timeframe चा स्वतःचा रंग — _TF_GROUP_COLORS).
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Multicolour subheadings") — मुख्य section headers ना आधीच
+    (Broker-wise/Strategy-wise इ.) solid-रंगाची पार्श्वभूमी काढून डावीकडे तेवढाच रंगीत accent bar +
+    फिकट पार्श्वभूमी + रंगीत मजकूर असा एकसंध लूक दिलेला आहे (बघा _section_header_accent चं comment) —
+    हे उप-मथळे मात्र अजूनही जुन्याच घन-रंगाच्या पार्श्वभूमी + पांढरा मजकूर पद्धतीत राहिले होते,
+    उर्वरित रिपोर्टपेक्षा वेगळे दिसायचे. आता तोच accent-bar लूक — timeframe नुसार रंग अजूनही वेगवेगळाच
+    (multicolour) राहतो, फक्त सादरीकरण एकसंध झालं."""
+    bar_w = 0.22 * cm
+    style = ParagraphStyle("tf_subheader", fontName=_RPT_FONT_BOLD, fontSize=13, leading=16, textColor=accent_color)
+    tbl = Table([["", Paragraph(_fix_missing_glyphs(str(text)), style)]], colWidths=[bar_w, usable_width - bar_w])
     tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), accent_color),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0, 0), (0, -1), accent_color), ("BACKGROUND", (1, 0), (1, -1), _C_GREY_BG),
+        ("LEFTPADDING", (1, 0), (1, -1), 10), ("RIGHTPADDING", (1, 0), (1, -1), 8),
+        ("LEFTPADDING", (0, 0), (0, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return tbl
 
@@ -2471,56 +2487,46 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         ))
         story.append(Spacer(1, 8))
 
-    next_section(
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Page no 5 येथे unused space aahe" + "review whole pdf, render
+    # properly") — Strategy/Timeframe/Option-Structure-wise या तिन्ही विभागांत आधी फक्त मथळाच पानाच्या
+    # तळाशी एकटा राहायचा (chart image कधीच त्याच्यासोबत बसत नसल्याने पूर्ण पुढच्या पानावर ढकललं जायचं) —
+    # मथळ्याखाली मोठी रिकामी जागा आणि chart-शिवाय अर्धवट दिसणारा विभाग असं दोन्ही व्हायचं. आता मथळा+chart
+    # KeepTogether मध्ये — दोन्ही एकत्रच राहतील, बसत नसतील तरच (मथळ्यासकट) पुढच्या पानावर जातील; टेबल
+    # मात्र वेगळाच (मोठा असू शकतो, त्याला नैसर्गिकरित्या पान ओलांडू देणं योग्य).
+    def _section_with_chart(en, mr, df, chart_title):
+        header = _section_header_accent(en, mr, sec[0])
+        sec[0] += 1
+        if df is None or df.empty:
+            story.append(KeepTogether([header, Spacer(1, 8), _bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width)]))
+        else:
+            chart_bytes = build_group_pnl_bar_chart(df, chart_title)
+            if chart_bytes:
+                img_w = usable_width
+                img_h = img_w * 300 / 680
+                story.append(KeepTogether([header, Spacer(1, 8), RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h)]))
+                story.append(Spacer(1, 6))
+            else:
+                story.append(header)
+                story.append(Spacer(1, 8))
+            t = df_to_reportlab_table(df, multicolour_header=True)
+            story.extend(t if isinstance(t, list) else [t])
+        story.append(Spacer(1, 8))
+
+    _section_with_chart(
         "Strategy-wise Performance (which algo strategy is most profitable)",
         "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",
+        by_source_df, "Strategy-wise Total P&L",
     )
-    if by_source_df is None or by_source_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
-    else:
-        chart_bytes = build_group_pnl_bar_chart(by_source_df, "Strategy-wise Total P&L")
-        if chart_bytes:
-            img_w = usable_width
-            img_h = img_w * 300 / 680
-            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
-            story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_source_df, multicolour_header=True)
-        story.extend(t if isinstance(t, list) else [t])
-    story.append(Spacer(1, 8))
-
-    next_section(
+    _section_with_chart(
         "Timeframe-wise Performance (which entry timeframe is most profitable)",
         "कालावधीनिहाय कामगिरी (कोणता प्रवेश कालावधी सर्वाधिक नफादायक आहे)",
+        by_timeframe_df, "Timeframe-wise Total P&L",
     )
-    if by_timeframe_df is None or by_timeframe_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
-    else:
-        chart_bytes = build_group_pnl_bar_chart(by_timeframe_df, "Timeframe-wise Total P&L")
-        if chart_bytes:
-            img_w = usable_width
-            img_h = img_w * 300 / 680
-            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
-            story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_timeframe_df, multicolour_header=True)
-        story.extend(t if isinstance(t, list) else [t])
-    story.append(Spacer(1, 8))
-
-    next_section(
+    _section_with_chart(
         "Option Structure-wise Performance (Credit Spread vs Naked Option)",
         "ऑप्शन रचनेनुसार कामगिरी (क्रेडिट स्प्रेड वि. नेकेड ऑप्शन)",
+        by_structure_df, "Option Structure-wise Total P&L",
     )
-    if by_structure_df is None or by_structure_df.empty:
-        story.append(_bi_line("No data in this period.", "या कालावधीत डेटा नाही.", max_width_pt=usable_width))
-    else:
-        chart_bytes = build_group_pnl_bar_chart(by_structure_df, "Option Structure-wise Total P&L")
-        if chart_bytes:
-            img_w = usable_width
-            img_h = img_w * 300 / 680
-            story.append(RLImage(io.BytesIO(chart_bytes), width=img_w, height=img_h))
-            story.append(Spacer(1, 6))
-        t = df_to_reportlab_table(by_structure_df, multicolour_header=True)
-        story.extend(t if isinstance(t, list) else [t])
-    story.append(Spacer(1, 8))
 
     if overshoot_df is not None and not overshoot_df.empty:
         next_section("SL/TSL Overshoot (Slippage) Tracker", "एसएल/टीएसएल ओव्हरशूट (स्लिपेज) ट्रॅकर")
@@ -2604,7 +2610,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             story.append(Spacer(1, 4))
     story.append(Spacer(1, 8))
 
-    story.append(PageBreak())
+    # 🎓 वापरकर्त्याने सापडवलेला मुद्दा ("Page no 5 येथे unused space aahe, remove it") — इथे आधी
+    # बिनशर्त PageBreak() होता, त्यामुळे Conclusion & Recommendations संपल्यावर (बरेचदा छोटासा मजकूर —
+    # "पुरेसा डेटा नाही" एका ओळीचा संदेश, किंवा 1-2 शिफारसी) पानाचा उरलेला मोठा भाग रिकामाच राहून
+    # Trade Log जबरदस्तीने पुढच्या पानावर ढकललं जायचं. Trade Log चा टेबल आधीच repeatRows=1 सह
+    # बनलेला असल्याने (बघा _build_trade_log_table()), तो आपोआप, हेडर पुन्हा दाखवत, नैसर्गिकरित्या
+    # पान ओलांडून पुढे जातो — म्हणून हा जबरदस्तीचा PageBreak काढला, आता उरलेली जागा असेल तर वापरली
+    # जाईल, नसेल तरच नैसर्गिकपणे पुढच्या पानावर जाईल.
     next_section(
         f"Trade Log — Entry & Exit Reason for every trade ({len(trade_log_df) if trade_log_df is not None else 0} trades)",
         "व्यवहार नोंद — प्रत्येक व्यवहाराचे प्रवेश व निर्गमाचे कारण",
