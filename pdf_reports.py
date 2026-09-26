@@ -2654,10 +2654,17 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
                 ParagraphStyle("trade_log_note_mr", fontName=_DEVANAGARI_FONT, fontSize=12.5, leading=16, textColor=colors.HexColor("#555555")),
             ))
         story.append(Spacer(1, 6))
+        # 🎓 वापरकर्त्याने सापडवलेली bug ("Kahich sudharna zalya nahi" — page 5 वरची unused space
+        # परत, फक्त वेगळ्या जागी) — Conclusion→Trade Log मधली जुनी forced PageBreak काढली खरी, पण
+        # इथे प्रत्येक timeframe-गटाचा banner आणि त्याचाच टेबल वेगवेगळे story.append() होत होते —
+        # banner पानाच्या तळाशी बसायचा, पण खालचा संपूर्ण टेबल (repeatRows सकट) तिथे अजिबात न बसल्याने
+        # पूर्ण पुढच्या पानावर ढकलला जायचा — banner खालची उरलेली जागा रिकामीच राहायची. आता banner+टेबल
+        # KeepTogether मध्ये — दोन्ही एकत्रच राहतील (बसत नसतील तर दोन्ही पुढच्या पानावर); मोठा टेबल
+        # असेल तर तो पुढेही (repeatRows सह) आपला नैसर्गिक pagination करत राहतो.
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
-            story.append(_subsection_banner(group_label, usable_width, group_color))
-            story.append(Spacer(1, 4))
-            story.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
+            group_flowables = [_subsection_banner(group_label, usable_width, group_color), Spacer(1, 4)]
+            group_flowables.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
+            story.append(KeepTogether(group_flowables))
             story.append(Spacer(1, 10))
 
     if trade_charts:
