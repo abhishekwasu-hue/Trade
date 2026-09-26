@@ -30,7 +30,7 @@ from config import get_ist_today
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
     get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
-    OPTION_STRUCTURE_GROUP_SQL,
+    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
@@ -119,19 +119,31 @@ def _render_mcx_kill_switch_panel():
         else:
             st.caption(f"सध्याचं एकूण capital (Upstox): ₹{total_capital:,.0f}")
 
+        peak_pnl_today = get_todays_mcx_live_peak_pnl()
+        locked_floor = (peak_pnl_today * ks["profit_lock_pct"] / 100) if peak_pnl_today > 0 else None
+        profit_locked_tripped = ks["profit_lock_enabled"] and locked_floor is not None and total_pnl < locked_floor
         tripped = ks["enabled"] and (
             total_capital is None
             or open_positions >= ks["max_open_positions"]
             or total_pnl <= -(max_daily_loss_amount or 0)
+            or profit_locked_tripped
         )
         if not ks["enabled"]:
             st.warning("⚪ MCX Kill Switch सध्या बंद आहे — फक्त ग्लोबल Kill Switch लागू आहे.")
         elif tripped:
-            st.error(f"🔴 MCX Kill Switch ट्रिप झालं आहे — आजचा MCX LIVE P&L ₹{total_pnl:,.0f}, उघडी positions {open_positions}. नवीन MCX LIVE trade ब्लॉक केला जातोय.")
+            if profit_locked_tripped and not (total_capital is None or open_positions >= ks["max_open_positions"] or total_pnl <= -(max_daily_loss_amount or 0)):
+                st.error(
+                    f"🔴 MCX Profit-Lock Kill Switch ट्रिप झालं आहे — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
+                    f"होता, त्यातला {ks['profit_lock_pct']:.0f}% (₹{locked_floor:,.0f}) लॉक होता, सद्य नफा ₹{total_pnl:,.0f} "
+                    f"त्याखाली घसरला. नवीन MCX LIVE trade ब्लॉक केला जातोय."
+                )
+            else:
+                st.error(f"🔴 MCX Kill Switch ट्रिप झालं आहे — आजचा MCX LIVE P&L ₹{total_pnl:,.0f}, उघडी positions {open_positions}. नवीन MCX LIVE trade ब्लॉक केला जातोय.")
         else:
             # tripped=False इथे फक्त ks["enabled"] आणि total_capital दोन्ही असतील तरच पोहोचतं (वरच्या
             # `or` chain प्रमाणे) — म्हणजे max_daily_loss_amount इथे नेहमीच उपलब्ध असतो.
-            st.success(f"🟢 MCX Kill Switch OK — आजचा MCX LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f})")
+            lock_caption = f", profit-lock मजला ₹{locked_floor:,.0f}" if ks["profit_lock_enabled"] and locked_floor is not None else ""
+            st.success(f"🟢 MCX Kill Switch OK — आजचा MCX LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f}{lock_caption})")
             st.caption(f"उघडी positions {open_positions}/{ks['max_open_positions']}")
 
         mks_enabled = st.checkbox("MCX Kill Switch सक्रिय", value=ks["enabled"], key="mcx_ks_enabled")
@@ -146,8 +158,26 @@ def _render_mcx_kill_switch_panel():
                 "कमाल एकाच वेळी उघडी positions (सर्व 5 commodities मिळून)", min_value=1, max_value=5,
                 value=int(ks["max_open_positions"]), step=1, key="mcx_ks_max_open",
             )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — ग्लोबल Kill Switch (Bot Dynamic SR Algo पान)
+        # सारखंच Profit-Lock, पण फक्त MCX पुरतं. डीफॉल्ट बंद.
+        st.caption(
+            "🔒 Profit-Lock (ऐच्छिक) — आजचा MCX चा सर्वोच्च नफा गाठला की त्यातला ठराविक % कायमचा "
+            "\"मजला\" म्हणून लॉक होतो — सद्य MCX नफा त्याखाली घसरला की नवीन MCX LIVE trades थांबतात."
+        )
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            mks_profit_lock_enabled = st.checkbox(
+                "MCX Profit-Lock सक्रिय", value=ks["profit_lock_enabled"], key="mcx_ks_profit_lock_enabled",
+            )
+        with pc2:
+            mks_profit_lock_pct = st.number_input(
+                "लॉक करायचा % (आजच्या MCX सर्वोच्च नफ्यापैकी)", min_value=1.0, max_value=99.0,
+                value=float(ks["profit_lock_pct"]), step=5.0, key="mcx_ks_profit_lock_pct",
+            )
         if st.button("💾 MCX Kill Switch सेव्ह करा", key="mcx_ks_save_btn"):
-            ok = cloud_db.save_mcx_kill_switch_settings(mks_enabled, mks_max_loss_pct, mks_max_open)
+            ok = cloud_db.save_mcx_kill_switch_settings(
+                mks_enabled, mks_max_loss_pct, mks_max_open, mks_profit_lock_enabled, mks_profit_lock_pct,
+            )
             if ok:
                 st.success("✅ MCX Kill Switch सेटिंग्ज जतन झाल्या.")
             else:

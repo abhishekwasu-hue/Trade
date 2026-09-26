@@ -26,7 +26,8 @@ def temp_db(monkeypatch):
 
 def seed_closed_trade(tmpdb, trade_id, realized_pnl, exit_reason, exit_date, symbol="NIFTY",
                        source="dynamic_sr_instant", entry_timeframe="15M", entry_level_price=23900.0,
-                       strategy="BULL_PUT_SPREAD", mode="LIVE", exit_reason_detail=None, entry_reason_tag=None):
+                       strategy="BULL_PUT_SPREAD", mode="LIVE", exit_reason_detail=None, entry_reason_tag=None,
+                       exit_time=None):
     conn = sqlite3.connect(tmpdb)
     conn.execute(
         """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
@@ -34,7 +35,7 @@ def seed_closed_trade(tmpdb, trade_id, realized_pnl, exit_reason, exit_date, sym
            exit_reason_detail, realized_pnl, status, legs_json, mode, trading_style, source,
            entry_level_price, entry_timeframe, entry_reason_tag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (trade_id, exit_date, symbol, strategy, 1, 75, 1000, 1000, 500, 250, 500,
-         f"{exit_date} 10:00:00", f"{exit_date} 14:00:00", exit_reason, exit_reason_detail, realized_pnl,
+         f"{exit_date} 10:00:00", exit_time or f"{exit_date} 14:00:00", exit_reason, exit_reason_detail, realized_pnl,
          "CLOSED", json.dumps([]), mode, "INTRADAY", source, entry_level_price, entry_timeframe, entry_reason_tag),
     )
     conn.commit()
@@ -267,6 +268,44 @@ class TestGetTodaysMcxLivePnlAndCount:
         total_pnl, open_positions = database.get_todays_mcx_live_pnl_and_count()
         assert total_pnl == 0
         assert open_positions == 0
+
+
+class TestGetTodaysLivePeakPnl:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock Kill Switch — "1 trade profit मध्ये
+    exit जाला, दुसरा उघडा असेल, तर काही नफा नेहमी लॉक व्हावा") — आजच्या सर्व LIVE trades चा exit_time
+    नुसार क्रमवार cumulative P&L मधली सर्वोच्च (running peak) पातळी — फक्त सद्य एकूण बेरीज नाही."""
+
+    def test_peak_exceeds_final_total_when_later_trade_gives_back_profit(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "T1", 50000.0, "TARGET", today_str, exit_time=f"{today_str} 10:00:00")
+        seed_closed_trade(temp_db, "T2", -20000.0, "SL", today_str, exit_time=f"{today_str} 12:00:00")
+        # cumulative: 10:00 -> +50000 (peak), 12:00 -> +30000 (final, पण peak अजून 50000)
+        assert database.get_todays_live_peak_pnl() == 50000.0
+
+    def test_peak_equals_final_total_when_monotonically_increasing(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "T1", 1000.0, "TARGET", today_str, exit_time=f"{today_str} 10:00:00")
+        seed_closed_trade(temp_db, "T2", 2000.0, "TARGET", today_str, exit_time=f"{today_str} 11:00:00")
+        assert database.get_todays_live_peak_pnl() == 3000.0
+
+    def test_mcx_only_filtering_excludes_non_mcx_trades(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "M1", 40000.0, "TARGET", today_str, symbol="CRUDEOIL", source="mcx_futures", exit_time=f"{today_str} 10:00:00")
+        seed_closed_trade(temp_db, "M2", -10000.0, "SL", today_str, symbol="GOLD", source="mcx_futures", exit_time=f"{today_str} 12:00:00")
+        seed_closed_trade(temp_db, "N1", 90000.0, "TARGET", today_str, symbol="NIFTY", source="dynamic_sr_instant", exit_time=f"{today_str} 11:00:00")
+        # ग्लोबल peak मध्ये N1 सुद्धा धरला जातो -- cumulative: 10:00 +40000, 11:00 +130000 (peak), 12:00 +120000
+        assert database.get_todays_live_peak_pnl() == 130000.0
+        # MCX-only peak मध्ये फक्त M1+M2 (source='mcx_futures') -- 10:00 नंतर +40000 (peak), 12:00 नंतर +30000
+        assert database.get_todays_mcx_live_peak_pnl() == 40000.0
+
+    def test_paper_trades_excluded(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "P1", 99999.0, "TARGET", today_str, mode="PAPER", exit_time=f"{today_str} 10:00:00")
+        assert database.get_todays_live_peak_pnl() == 0.0
+
+    def test_empty_when_no_trades_today(self, temp_db):
+        assert database.get_todays_live_peak_pnl() == 0.0
+        assert database.get_todays_mcx_live_peak_pnl() == 0.0
 
 
 class TestGetUnverifiedReconciledTradesTodayCount:

@@ -11,6 +11,7 @@ from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
     log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
     get_unverified_reconciled_trades_today_count, get_todays_mcx_live_pnl_and_count,
+    get_todays_live_peak_pnl, get_todays_mcx_live_peak_pnl,
 )
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
@@ -299,6 +300,25 @@ def check_kill_switch():
             f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, एकूण capital "
             f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन LIVE trading थांबवलं (नफा टिकवण्यासाठी)"
         )
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा असेल,
+    # तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — वरचा max_daily_profit_pct
+    # एक स्थिर लक्ष्य आहे (गाठलं तरच थांबतं); हा profit-lock त्याहून वेगळा, गतिशील (ratchet) —
+    # लक्ष्य गाठण्याआधीही, दिवसभरात कधीही गाठलेल्या सर्वोच्च नफ्यातला ठराविक % कायमचा "मजला" म्हणून
+    # लॉक होतो. आधीच उघडे trades यामुळे कधीच बंद केले जात नाहीत (established pattern, वरच्या
+    # सर्व kill switches प्रमाणेच) — फक्त नवीन LIVE entries थांबतात.
+    profit_lock_enabled = settings.get("profit_lock_enabled", False)
+    if profit_lock_enabled:
+        profit_lock_pct = settings.get("profit_lock_pct", 50.0)
+        peak_pnl_today = get_todays_live_peak_pnl()
+        if peak_pnl_today > 0:
+            locked_floor = peak_pnl_today * profit_lock_pct / 100
+            if total_pnl < locked_floor:
+                return False, (
+                    f"KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
+                    f"त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — सद्य "
+                    f"एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला, नफ्यातून तोटा होऊ नये म्हणून नवीन "
+                    f"LIVE trades थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
+                )
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
     return True, None
@@ -343,6 +363,20 @@ def check_mcx_kill_switch():
             f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital "
             f"₹{total_capital:,.0f})"
         )
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock — बघा check_kill_switch() मधली टिप्पणी) —
+    # ग्लोबल Kill Switch सारखीच, पण फक्त MCX (source='mcx_futures') पुरतं मर्यादित.
+    profit_lock_enabled = settings.get("profit_lock_enabled", False)
+    if profit_lock_enabled:
+        profit_lock_pct = settings.get("profit_lock_pct", 50.0)
+        peak_pnl_today = get_todays_mcx_live_peak_pnl()
+        if peak_pnl_today > 0:
+            locked_floor = peak_pnl_today * profit_lock_pct / 100
+            if total_pnl < locked_floor:
+                return False, (
+                    f"MCX_KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
+                    f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
+                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX LIVE trades थांबवले"
+                )
     return True, None
 
 

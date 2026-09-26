@@ -864,26 +864,39 @@ KILL_SWITCH_DEFAULTS = {
     "max_daily_loss_pct": 2.0,
     "max_daily_profit_pct": 3.0,
     "max_trades_per_day": 15,
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा असेल,
+    # तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — max_daily_profit_pct (वरचं)
+    # एक स्थिर, ठराविक लक्ष्य आहे — profit_lock हे त्याहून वेगळं, गतिशील (ratchet): दिवसभरात कधीही
+    # गाठलेला सर्वोच्च नफा (peak, वरचं लक्ष्य गाठण्याआधीही) घेऊन, त्यातला profit_lock_pct% कायमचा
+    # "मजला" (floor) म्हणून लॉक — सद्य एकूण नफा त्या मजल्याखाली घसरला की नवीन LIVE trades थांबतात
+    # (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतात — established pattern, इतर सर्व
+    # kill switches प्रमाणेच). डीफॉल्ट बंद — जुनं वर्तन (फक्त max_daily_profit_pct) कायम राहतं.
+    "profit_lock_enabled": False,
+    "profit_lock_pct": 50.0,
 }
 
 
 def get_kill_switch_settings():
     """आजचा एकत्रित (सर्व symbols/strategies मिळून) LIVE Kill Switch — enabled/max_daily_loss_pct/
-    max_daily_profit_pct/max_trades_per_day. Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं)
-    डीफॉल्ट."""
+    max_daily_profit_pct/max_trades_per_day/profit_lock_enabled/profit_lock_pct. Supabase न
+    मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट."""
     settings = get_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY)
     return {
         "enabled": bool(settings.get("enabled", KILL_SWITCH_DEFAULTS["enabled"])),
         "max_daily_loss_pct": settings.get("max_daily_loss_pct", KILL_SWITCH_DEFAULTS["max_daily_loss_pct"]),
         "max_daily_profit_pct": settings.get("max_daily_profit_pct", KILL_SWITCH_DEFAULTS["max_daily_profit_pct"]),
         "max_trades_per_day": settings.get("max_trades_per_day", KILL_SWITCH_DEFAULTS["max_trades_per_day"]),
+        "profit_lock_enabled": bool(settings.get("profit_lock_enabled", KILL_SWITCH_DEFAULTS["profit_lock_enabled"])),
+        "profit_lock_pct": settings.get("profit_lock_pct", KILL_SWITCH_DEFAULTS["profit_lock_pct"]),
     }
 
 
-def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct, max_trades_per_day):
+def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct, max_trades_per_day,
+                               profit_lock_enabled=False, profit_lock_pct=50.0):
     return save_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY, {
         "enabled": bool(enabled), "max_daily_loss_pct": float(max_daily_loss_pct),
         "max_daily_profit_pct": float(max_daily_profit_pct), "max_trades_per_day": int(max_trades_per_day),
+        "profit_lock_enabled": bool(profit_lock_enabled), "profit_lock_pct": float(profit_lock_pct),
     })
 
 
@@ -898,25 +911,33 @@ MCX_KILL_SWITCH_DEFAULTS = {
     "enabled": True,
     "max_daily_loss_pct": 1.0,
     "max_open_positions": 2,
+    # 🎓 ग्लोबल KILL_SWITCH_DEFAULTS च्या profit_lock_enabled/profit_lock_pct सारखंच, पण फक्त MCX
+    # (source='mcx_futures') पुरतं — बघा तिथली टिप्पणी. डीफॉल्ट बंद.
+    "profit_lock_enabled": False,
+    "profit_lock_pct": 50.0,
 }
 
 
 def get_mcx_kill_switch_settings():
-    """MCX-विशिष्ट (5 commodities मिळून) Kill Switch — enabled/max_daily_loss_pct/max_open_positions.
-    Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट (ग्लोबलपेक्षा जाणीवपूर्वक कडक —
-    1% loss cap, कमाल 2 positions एकाच वेळी, brand-new रणनीतीसाठी)."""
+    """MCX-विशिष्ट (5 commodities मिळून) Kill Switch — enabled/max_daily_loss_pct/max_open_positions/
+    profit_lock_enabled/profit_lock_pct. Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट
+    (ग्लोबलपेक्षा जाणीवपूर्वक कडक — 1% loss cap, कमाल 2 positions एकाच वेळी, brand-new रणनीतीसाठी)."""
     settings = get_strategy_settings(MCX_KILL_SWITCH_STRATEGY_KEY, MCX_KILL_SWITCH_SYMBOL_KEY)
     return {
         "enabled": bool(settings.get("enabled", MCX_KILL_SWITCH_DEFAULTS["enabled"])),
         "max_daily_loss_pct": settings.get("max_daily_loss_pct", MCX_KILL_SWITCH_DEFAULTS["max_daily_loss_pct"]),
         "max_open_positions": settings.get("max_open_positions", MCX_KILL_SWITCH_DEFAULTS["max_open_positions"]),
+        "profit_lock_enabled": bool(settings.get("profit_lock_enabled", MCX_KILL_SWITCH_DEFAULTS["profit_lock_enabled"])),
+        "profit_lock_pct": settings.get("profit_lock_pct", MCX_KILL_SWITCH_DEFAULTS["profit_lock_pct"]),
     }
 
 
-def save_mcx_kill_switch_settings(enabled, max_daily_loss_pct, max_open_positions):
+def save_mcx_kill_switch_settings(enabled, max_daily_loss_pct, max_open_positions,
+                                   profit_lock_enabled=False, profit_lock_pct=50.0):
     return save_strategy_settings(MCX_KILL_SWITCH_STRATEGY_KEY, MCX_KILL_SWITCH_SYMBOL_KEY, {
         "enabled": bool(enabled), "max_daily_loss_pct": float(max_daily_loss_pct),
         "max_open_positions": int(max_open_positions),
+        "profit_lock_enabled": bool(profit_lock_enabled), "profit_lock_pct": float(profit_lock_pct),
     })
 
 
