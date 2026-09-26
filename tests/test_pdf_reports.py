@@ -295,6 +295,54 @@ class TestGeneratePerformanceReportPdfTradeCharts:
         )
         assert pdf_bytes[:4] == b"%PDF"
 
+    def test_trade_charts_without_leg_charts_key_still_works(self):
+        """🎓 backward-compatible — जुने callers (leg_charts की कधीच पाठवत नाहीत) क्रॅश न होता चालावेत."""
+        candles = pd.DataFrame({
+            "timestamp": pd.date_range("2026-09-24 09:30", periods=20, freq="5min"),
+            "open": [23900] * 20, "high": [23905] * 20, "low": [23895] * 20, "close": [23902] * 20,
+        })
+        trade_charts = [
+            {"trade_id": "T1", "entry_time": "2026-09-24 10:00:00", "exit_time": "2026-09-24 14:00:00",
+             "entry_level_price": 23920.0, "realized_pnl": 500.0, "exit_reason": "TARGET",
+             "legs_text": "short_leg 24400PE Entry Rs38 -> Exit Rs15", "candles_df": candles},
+        ]
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
+            {"gross_pnl": 300, "total_charges": 0, "net_pnl": 300},
+            None, None, None, None, [], trade_charts=trade_charts,
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+    def test_leg_chart_with_candle_data_and_without_both_render(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("ऑप्शन स्ट्राइक प्राइस वर ट्रेड घेण्यात आली त्यांचे सुद्धा
+        चार्ट PDF Report मध्ये घ्या, एन्ट्री-एक्झिट सकट") — प्रत्येक trade सोबत त्याच्या option legs चे
+        चार्ट (candle data असलेले) आणि ("इंट्राडे असल्याने historical ची गरज नाही, प्रीमियम उपलब्ध
+        नसल्यास तसा मेसेज द्या") — रिकाम्या candles_df असलेल्या leg साठी graceful "not available"
+        मजकूर, दोन्ही केसेस क्रॅश न होता चालतात का."""
+        candles = pd.DataFrame({
+            "timestamp": pd.date_range("2026-09-24 09:30", periods=20, freq="5min"),
+            "open": [23900] * 20, "high": [23905] * 20, "low": [23895] * 20, "close": [23902] * 20,
+        })
+        leg_candles = pd.DataFrame({
+            "timestamp": pd.date_range("2026-09-24 09:30", periods=20, freq="5min"),
+            "open": [38.0] * 20, "high": [40.0] * 20, "low": [14.0] * 20, "close": [15.0] * 20,
+        })
+        trade_charts = [
+            {"trade_id": "T1", "entry_time": "2026-09-24 10:00:00", "exit_time": "2026-09-24 14:00:00",
+             "entry_level_price": 23920.0, "realized_pnl": 500.0, "exit_reason": "TARGET",
+             "legs_text": "short_leg 24400PE Entry Rs38 -> Exit Rs15", "candles_df": candles,
+             "leg_charts": [
+                 {"label": "short_leg 24400PE", "candles_df": leg_candles, "entry_price": 38.0, "exit_price": 15.0},
+                 {"label": "long_hedge 24300PE", "candles_df": pd.DataFrame(), "entry_price": 8.0, "exit_price": None},
+             ]},
+        ]
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-24", "2026-09-24", _SUMMARY,
+            {"gross_pnl": 300, "total_charges": 0, "net_pnl": 300},
+            None, None, None, None, [], trade_charts=trade_charts,
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
     def test_more_than_max_charts_shows_truncation_note_and_does_not_crash(self):
         candles = pd.DataFrame({
             "timestamp": pd.date_range("2026-09-24 09:30", periods=20, freq="5min"),

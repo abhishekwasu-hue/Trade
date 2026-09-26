@@ -602,3 +602,52 @@ class TestFetchCandlesDateRange:
             df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", same_day, same_day)
         assert df.empty
         assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
+
+
+class TestFetchCandlesDateRangeByInstrumentKey:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("ट्रेड घेण्यात आलेल्या option strike चाही चार्ट, एन्ट्री/एक्झिट
+    सकट, PDF Report मध्ये हवा") — get_instrument_key(symbol) फक्त ठराविक index/commodity नावांसाठीच
+    काम करतं (option instrument_key दिला तर चुकून NIFTY कडे परत जातं), त्यामुळे हे वेगळं फंक्शन आधीच
+    resolved raw instrument_key थेट वापरतं -- कुठलाही चुकीचा silent fallback नाही."""
+
+    def _candle_row(self, ts="2026-09-24T09:20:00+05:30"):
+        return [ts, 38.0, 40.0, 14.0, 15.0, 500, 0]
+
+    def test_uses_given_instrument_key_directly_not_symbol_lookup(self):
+        same_day = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(200, {"candles": [self._candle_row()]})
+        with patch.object(upstox_api.requests, "get", return_value=resp) as mock_get:
+            df = upstox_api.fetch_candles_date_range_by_instrument_key(
+                "fake_token", "NSE_FO|44444", "5minute", same_day, same_day,
+            )
+        called_url = mock_get.call_args.args[0]
+        assert "NSE_FO%7C44444" in called_url  # instrument_key जसाच्या तसा (URL-encoded), NIFTY कडे fallback नाही
+        assert len(df) == 1
+
+    def test_failure_does_not_call_streamlit_warning(self):
+        """🎓 PDF मध्ये अनेक trades च्या अनेक legs साठी वेगळे-वेगळे प्रयत्न होतात -- fetch_candles_date_range()
+        प्रमाणे प्रत्येक अयशस्वी fetch साठी st.warning() दाखवणं गोंधळाचं ठरेल, म्हणून हे फंक्शन शांत
+        (warn_on_failure=False) आहे."""
+        same_day = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(404, None)
+        resp.status_code = 404
+        with patch.object(upstox_api.requests, "get", return_value=resp), \
+             patch.object(upstox_api, "st") as mock_st:
+            df = upstox_api.fetch_candles_date_range_by_instrument_key(
+                "fake_token", "NSE_FO|99999", "5minute", same_day, same_day,
+            )
+        assert df.empty
+        assert not mock_st.warning.called
+
+    def test_expired_contract_no_data_returns_empty_df_gracefully(self):
+        """एखादा (आधीच expire झालेला) option contract -- Upstox कडे इतिहास नसेल तर रिकामा DataFrame,
+        अपवाद नाही -- caller (page_performance.py/pdf_reports.py) याला "data unavailable" म्हणून
+        व्यवस्थित हाताळतो."""
+        same_day = datetime.date(2026, 9, 20)
+        resp = _mock_get_response(200, {"candles": []})
+        with patch.object(upstox_api.requests, "get", return_value=resp):
+            df = upstox_api.fetch_candles_date_range_by_instrument_key(
+                "fake_token", "NSE_FO|12345", "5minute", same_day, same_day,
+            )
+        assert df.empty
+        assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
