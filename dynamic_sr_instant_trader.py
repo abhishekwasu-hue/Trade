@@ -134,9 +134,14 @@ def count_consecutive_touch_minutes(level, candles, tolerance_pct=TOUCH_TOLERANC
     सद्य (चालू) candle स्वतःच बफरमध्ये overlap होत असेल, तर तोच पहिला मोजला जातो (सामान्य TOUCH साठी
     परिणाम नेहमी >=1, कधीच 0 नाही). फक्त GAP_THROUGH प्रकारच्या hit साठी (check_level_crossed()) चालू
     candle बफरच्या पूर्णपणे बाहेर असू शकतो (किंमत level च्याच पलीकडे एका झटक्यात गेलेली) — तेव्हाच हे
-    फंक्शन 0 परत करतं; कॉलिंग कोडने (process_symbol()) असा hit_type=="GAP_THROUGH" वेगळा हाताळावा,
-    कारण त्याला "level जवळ किती वेळ टिकून आहे" ही संकल्पनाच लागू होत नाही.
-    रिटर्न: int (सलग मिनिटांची संख्या — TOUCH साठी नेहमी >=1, GAP_THROUGH साठी 0 असू शकतं)."""
+    फंक्शन 0 परत करतं.
+    🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — GAP_THROUGH साठीही हा 0 result process_symbol() मध्ये
+    मुद्दामच वेगळा हाताळला जात नाही (सुरुवातीला तसं सुचवलं गेलं होतं, नंतर उलट ठरवलं) — सकाळी बाजार
+    उघडताच gap-down/gap-up होऊन आधीच साठवलेल्या level च्या पार गेलं, तर तो सगळ्यात अस्थिर, अपुष्ट
+    क्षण असतो — त्याला "निर्णायक" मानून लगेच entry देणं धोकादायक. त्यामुळे gate/shadow दोन्ही ठिकाणी
+    TOUCH आणि GAP_THROUGH एकाच नियमाने (held_minutes ची अटच) तपासले जातात — gap नंतर किंमत level
+    जवळ खरोखर टिकून (TOUCH होऊन) राहिल्याशिवाय entry होणार नाही.
+    रिटर्न: int (सलग मिनिटांची संख्या — TOUCH साठी नेहमी >=1, GAP_THROUGH साठी नेहमी 0)."""
     buffer = level * tolerance_pct / 100
     level_low, level_high = level - buffer, level + buffer
     count = 0
@@ -413,15 +418,17 @@ def process_symbol(access_token, symbol, lot_size=65):
         # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
         # held_minutes इथेच (गेट बंद असतानाही) कायम काढला जातो — पुढे Min-Hold Shadow ब्लॉकलाही
         # (बघा तिथली टिप्पणी) हाच वापरायचा आहे, entry_min_hold_gate_enabled वर अवलंबून नाही.
-        # 🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी (किंमत level च्याच पलीकडे एका
-        # झटक्यात गेलेली, कुठलाच candle बफरमध्ये overlap न होता) held_minutes कायम 0 च राहतो, कारण
-        # count_consecutive_touch_minutes() फक्त बफर-overlap मोजतं. गेट चालू असेल तर याचा अर्थ
-        # GAP_THROUGH चे सर्व सिग्नल्स threshold कितीही ठेवला तरी नेहमीच नाकारले जायचे — हे undocumented,
-        # धोरणापलीकडचं वर्तन होतं. आता hit_type=="GAP_THROUGH" स्वतंत्रपणे वगळलेला — असा निर्णायक gap
-        # हा "level जवळ किती वेळ टिकून आहे" या संकल्पनेला मुळातच लागू होत नाही (किंमत आधीच पलीकडे
-        # गेलेली आहे, अस्थिर हॉवरिंग नाही).
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय (मुद्दामच, code-review च्या सुरुवातीच्या सूचनेच्या
+        # उलट) — GAP_THROUGH ला मुद्दामच सूट दिली नव्हती, ती काढली. सकाळी बाजार उघडताच gap-down/
+        # gap-up झाला, तर तो आदल्या रात्रीच्या बातम्या/जागतिक संकेतांमुळे — पहिल्या काही मिनिटांत बाजार
+        # अजून स्थिरावलेलाच नसतो, त्यामुळे असा gap "निर्णायक" न मानता उलट सगळ्यात जास्त अस्थिर, अपुष्ट
+        # क्षण मानायला हवा — डेटाबेसमधल्या आधीच साठवलेल्या (मागच्या दिवसांच्या) level वर, कुठलीही
+        # पडताळणी न होता थेट entry देणं, हेच मूळ backtest मध्ये सापडलेल्या "शून्य-buildup, जलद SL"
+        # समस्येचीच पुनरावृत्ती ठरेल. म्हणून GAP_THROUGH साठीही held_minutes तोच (0, कारण hit candle
+        # स्वतःच बफरमध्ये कधीच overlap होत नाही) राहतो, आणि गेट तोच नियम एकसमान लावतो — gap नंतर
+        # किंमत त्या level जवळ खरोखर टिकून (TOUCH म्हणून) राहिल्याशिवाय entry होणारच नाही.
         held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
-        if (entry_min_hold_gate_enabled and not is_directional_trade and hit_type != "GAP_THROUGH"
+        if (entry_min_hold_gate_enabled and not is_directional_trade
                 and held_minutes < entry_min_hold_minutes):
             log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
             log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
@@ -625,8 +632,11 @@ def process_symbol(access_token, symbol, lot_size=65):
             # असेल तर पुन्हा stack होऊ नये म्हणून has_open_trade_from_source तपासणी — त्याच exact
             # spread_result (ITM structure) चा पुनर्वापर — इथे फक्त timing (कधी शिरायचं) वेगळी आहे,
             # strike-निवड नाही (त्यासाठी OTM Shadow, वर, वेगळाच आहे).
+            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — GAP_THROUGH ला इथेही सूट नाही (बघा वरच्या
+            # Gate च्या टिप्पणीतलं कारण — सकाळी market-open gap सारखा अस्थिर, अपुष्ट क्षण शॅडोतही
+            # "confirmed entry" म्हणून मोजला जाऊ नये).
             if (min_hold_shadow_enabled and real_trade_succeeded and not is_directional_trade
-                    and (hit_type == "GAP_THROUGH" or held_minutes >= entry_min_hold_minutes)
+                    and held_minutes >= entry_min_hold_minutes
                     and not has_open_trade_from_source(symbol, "dynamic_sr_instant_min_hold_shadow")):
                 try:
                     open_multi_leg_trade(

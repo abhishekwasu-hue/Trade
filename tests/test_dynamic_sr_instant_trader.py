@@ -987,12 +987,13 @@ class TestMinHoldDurationGate:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
-    def test_gap_through_bypasses_gate_despite_zero_held_minutes(self):
-        """🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी count_consecutive_touch_minutes()
-        कायम 0 परत करतो (किंमत level च्याच पलीकडे एका झटक्यात गेलेली, कुठलाच candle tolerance
-        बफरमध्ये overlap न होता) — गेट चालू असेल तर याचा अर्थ threshold कितीही ठेवला तरी सर्व
-        GAP_THROUGH सिग्नल्स कायम नाकारले जायचे. आता hit_type=="GAP_THROUGH" वेगळा वगळलेला असल्याने,
-        held=0 असूनही entry व्हायला हवी."""
+    def test_gap_through_also_blocked_when_held_zero(self):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — सकाळी बाजार उघडताच gap-down/gap-up होऊन
+        आधीच साठवलेल्या level च्या पार गेलं, तर तो सगळ्यात अस्थिर, अपुष्ट क्षण असतो — त्याला सूट न देता
+        TOUCH प्रमाणेच held_minutes ची अट लावायला हवी. GAP_THROUGH साठी held कायम 0 राहतो (hit candle
+        स्वतःच tolerance बफरमध्ये कधीच overlap होत नाही), त्यामुळे गेट चालू असताना threshold>=1 असेल
+        तर असा gap entry ला नेहमीच अडवायला हवा — जोपर्यंत किंमत level जवळ खरोखर टिकून (TOUCH होऊन)
+        राहत नाही तोपर्यंत."""
         candles_gap = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
@@ -1002,17 +1003,14 @@ class TestMinHoldDurationGate:
              patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
              patch.object(dsr, "fetch_candles", return_value=candles_gap), \
-             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
-             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
-             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
-             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
              patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
-            assert mock_trade.called
+            assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
-            assert "SKIPPED_MIN_HOLD_DURATION" not in statuses
+            assert "SKIPPED_MIN_HOLD_DURATION" in statuses
 
 
 class TestProcessSymbolMultiAccount:
@@ -1626,10 +1624,12 @@ class TestMinHoldShadowTrade:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_count == 1  # फक्त खरा (अयशस्वी) प्रयत्न, शॅडो फिरला नाही
 
-    def test_shadow_fires_on_gap_through_despite_zero_held_minutes(self):
-        """🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी held_minutes कायम 0 राहतो,
-        त्यामुळे shadow चा held_minutes>=threshold हा नियम त्याला कधीच जुळायचा नाही. आता
-        hit_type=="GAP_THROUGH" वेगळा वगळल्यामुळे, असा निर्णायक gap शॅडोतही योग्य दिसायला हवा."""
+    def test_shadow_does_not_fire_on_gap_through_despite_real_trade_succeeding(self):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — GAP_THROUGH साठी held_minutes कायम 0 राहतो
+        (hit candle स्वतःच tolerance बफरमध्ये कधीच overlap होत नाही), आणि आता शॅडोतही याला सूट नाही —
+        मूळ (blocking गेट बंद असल्याने अप्रभावित) खरा trade GAP_THROUGH वर नेहमीप्रमाणे उघडतो, पण
+        शॅडो (confirmed-entry comparison) साठी held>=threshold कधीच खरं न झाल्याने शॅडो फिरतच नाही —
+        सकाळचा अस्थिर gap शॅडोतही "confirmed" मानला जाऊ नये."""
         candles_gap = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
             {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
@@ -1647,8 +1647,7 @@ class TestMinHoldShadowTrade:
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
              patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
             dsr.process_symbol("fake_token", "NIFTY")
-            assert mock_trade.call_count == 2  # खरा + शॅडो, GAP_THROUGH असूनही
-            assert mock_trade.call_args_list[-1].kwargs.get("source") == "dynamic_sr_instant_min_hold_shadow"
+            assert mock_trade.call_count == 1  # फक्त खरा trade (blocking गेट बंद), शॅडो फिरलाच नाही
 
 
 class TestSlTslCooldown:
