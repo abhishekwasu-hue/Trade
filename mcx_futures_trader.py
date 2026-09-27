@@ -75,7 +75,7 @@ from dynamic_sr_instant_trader import check_instant_rsi_filter, check_breakout_p
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
-from trading_engine import open_multi_leg_trade, manage_open_trades
+from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
 from upstox_api import fetch_mcx_candles
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
@@ -324,13 +324,18 @@ def process_symbol(access_token, symbol):
             if factory_errors:
                 trade_status += " | वगळलेले: " + "; ".join(factory_errors)
         else:
-            _, trade_status = open_multi_leg_trade(
+            trade_ok, trade_response = open_multi_leg_trade(
                 access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
                 product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
                 sl_pct_of_credit=None, source=STRATEGY_KEY,
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
+            # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
+            # टिप्पणी) — open_multi_leg_trade() चं दुसरं मूल्य dict असतं, raw dict signal_log.
+            # trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी
+            # ठरायचा, आणि नेमकी entry-क्षणाचीच signal_log रांग हरवायची.
+            trade_status = format_trade_result(trade_ok, trade_response)
 
         if is_breakout_trade:
             rsi_display = f"📈 Breakout Entry (price consolidation + candle close, {timeframe_suffix}) — RSI Gate वगळले."

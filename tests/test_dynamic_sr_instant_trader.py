@@ -987,6 +987,33 @@ class TestMinHoldDurationGate:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_gap_through_bypasses_gate_despite_zero_held_minutes(self):
+        """🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी count_consecutive_touch_minutes()
+        कायम 0 परत करतो (किंमत level च्याच पलीकडे एका झटक्यात गेलेली, कुठलाच candle tolerance
+        बफरमध्ये overlap न होता) — गेट चालू असेल तर याचा अर्थ threshold कितीही ठेवला तरी सर्व
+        GAP_THROUGH सिग्नल्स कायम नाकारले जायचे. आता hit_type=="GAP_THROUGH" वेगळा वगळलेला असल्याने,
+        held=0 असूनही entry व्हायला हवी."""
+        candles_gap = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._base_settings(entry_min_hold_gate_enabled=True, entry_min_hold_minutes=5)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_gap), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
 
 class TestProcessSymbolMultiAccount:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
@@ -1417,6 +1444,33 @@ class TestOtmShadowTrade:
             assert mock_trade.call_count == 1  # खरा ITM trade फक्त एकदाच, अपवादामुळे थांबला नाही
             assert "OPENED" in result or "T1" in result
 
+    def test_shadow_does_not_fire_when_real_trade_fails(self):
+        """🎓 code-review द्वारे सापडवलेली bug — शॅडो आधी फक्त strike-selection यशस्वी झालं की पुरे
+        मानायचा, खऱ्या ITM trade चा प्रत्यक्ष broker-निकाल (यश/अपयश) कधीच तपासायचा नाही. आता real_
+        trade_succeeded तपासल्याशिवाय शॅडो फिरणारच नाही — खरा trade (उदा. Kill Switch मुळे) अयशस्वी
+        झाला, तर शॅडोही थांबायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._settings_with_shadow()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_credit_spread_fixed_strikes") as mock_otm_select, \
+             patch.object(dsr, "open_multi_leg_trade",
+                          return_value=(False, {"status": "error", "reason": "Kill Switch सक्रिय"})) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # फक्त खरा (अयशस्वी) प्रयत्न
+            assert not mock_otm_select.called  # शॅडो कधीच फिरला नाही
+
 
 class TestMinHoldShadowTrade:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10 दिवस
@@ -1553,6 +1607,48 @@ class TestMinHoldShadowTrade:
             result = dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.call_count == 2  # शॅडो call झाला (आणि क्रॅश झाला), पण खरा आधीच यशस्वी
             assert "OPENED" in result or "T1" in result
+
+    def test_shadow_does_not_fire_when_real_trade_fails(self):
+        """🎓 code-review द्वारे सापडवलेली bug — शॅडो आधी फक्त held_minutes थ्रेशोल्ड पूर्ण झाला की
+        पुरे मानायचा, खऱ्या ITM trade चा प्रत्यक्ष broker-निकाल कधीच तपासायचा नाही."""
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade",
+                          return_value=(False, {"status": "error", "reason": "Kill Switch सक्रिय"})) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # फक्त खरा (अयशस्वी) प्रयत्न, शॅडो फिरला नाही
+
+    def test_shadow_fires_on_gap_through_despite_zero_held_minutes(self):
+        """🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी held_minutes कायम 0 राहतो,
+        त्यामुळे shadow चा held_minutes>=threshold हा नियम त्याला कधीच जुळायचा नाही. आता
+        hit_type=="GAP_THROUGH" वेगळा वगळल्यामुळे, असा निर्णायक gap शॅडोतही योग्य दिसायला हवा."""
+        candles_gap = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 23750, "high": 23820, "low": 23700, "close": 23780},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=5)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_gap), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23780.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_market_zones", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2  # खरा + शॅडो, GAP_THROUGH असूनही
+            assert mock_trade.call_args_list[-1].kwargs.get("source") == "dynamic_sr_instant_min_hold_shadow"
 
 
 class TestSlTslCooldown:

@@ -60,7 +60,7 @@ from signals import calculate_rsi
 from oi_analysis import check_pcr_gate, check_iv_change_gate
 from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_credit_spread_fixed_strikes, select_naked_option_itm
-from trading_engine import open_multi_leg_trade
+from trading_engine import open_multi_leg_trade, format_trade_result
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
 RSI_SUPPORT_MAX = 40     # Support touch + 1-मिनिट RSI < 40 -> Bull Put Spread
@@ -129,7 +129,14 @@ def count_consecutive_touch_minutes(level, candles, tolerance_pct=TOUCH_TOLERANC
     (1-मिनिट) candles सतत आहेत हे मोजणे. candles: जुनं ते नवीन क्रमाने (todays_candles_df सारखे,
     प्रत्येक dict मध्ये किमान "low"/"high" key). मागे जाताना एकही candle बफरबाहेर सापडला की मोजणी
     थांबते — सलगपणा तुटल्यावर जुना (आधीचा, न-जोडलेला) इतिहास मोजला जात नाही.
-    रिटर्न: int (सलग मिनिटांची संख्या, 0 म्हणजे हा ताजाच/पहिलाच touch)."""
+    🎓 code-review द्वारे सापडवलेली दस्तऐवजीकरण-चूक (fix अगोदरची आवृत्ती "0 म्हणजे ताजाच touch" असं
+    सांगायची, पण चालू candle स्वतःच बफरमध्ये overlap होत असल्याने त्याचीही मोजणी होतेच) — स्पष्ट करून:
+    सद्य (चालू) candle स्वतःच बफरमध्ये overlap होत असेल, तर तोच पहिला मोजला जातो (सामान्य TOUCH साठी
+    परिणाम नेहमी >=1, कधीच 0 नाही). फक्त GAP_THROUGH प्रकारच्या hit साठी (check_level_crossed()) चालू
+    candle बफरच्या पूर्णपणे बाहेर असू शकतो (किंमत level च्याच पलीकडे एका झटक्यात गेलेली) — तेव्हाच हे
+    फंक्शन 0 परत करतं; कॉलिंग कोडने (process_symbol()) असा hit_type=="GAP_THROUGH" वेगळा हाताळावा,
+    कारण त्याला "level जवळ किती वेळ टिकून आहे" ही संकल्पनाच लागू होत नाही.
+    रिटर्न: int (सलग मिनिटांची संख्या — TOUCH साठी नेहमी >=1, GAP_THROUGH साठी 0 असू शकतं)."""
     buffer = level * tolerance_pct / 100
     level_low, level_high = level - buffer, level + buffer
     count = 0
@@ -406,8 +413,16 @@ def process_symbol(access_token, symbol, lot_size=65):
         # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
         # held_minutes इथेच (गेट बंद असतानाही) कायम काढला जातो — पुढे Min-Hold Shadow ब्लॉकलाही
         # (बघा तिथली टिप्पणी) हाच वापरायचा आहे, entry_min_hold_gate_enabled वर अवलंबून नाही.
+        # 🎓 code-review द्वारे सापडवलेली bug — GAP_THROUGH hit साठी (किंमत level च्याच पलीकडे एका
+        # झटक्यात गेलेली, कुठलाच candle बफरमध्ये overlap न होता) held_minutes कायम 0 च राहतो, कारण
+        # count_consecutive_touch_minutes() फक्त बफर-overlap मोजतं. गेट चालू असेल तर याचा अर्थ
+        # GAP_THROUGH चे सर्व सिग्नल्स threshold कितीही ठेवला तरी नेहमीच नाकारले जायचे — हे undocumented,
+        # धोरणापलीकडचं वर्तन होतं. आता hit_type=="GAP_THROUGH" स्वतंत्रपणे वगळलेला — असा निर्णायक gap
+        # हा "level जवळ किती वेळ टिकून आहे" या संकल्पनेला मुळातच लागू होत नाही (किंमत आधीच पलीकडे
+        # गेलेली आहे, अस्थिर हॉवरिंग नाही).
         held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
-        if entry_min_hold_gate_enabled and not is_directional_trade and held_minutes < entry_min_hold_minutes:
+        if (entry_min_hold_gate_enabled and not is_directional_trade and hit_type != "GAP_THROUGH"
+                and held_minutes < entry_min_hold_minutes):
             log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
             log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
             cloud_db.save_signal_log(log_entry)
@@ -520,6 +535,15 @@ def process_symbol(access_token, symbol, lot_size=65):
                 cloud_db.save_signal_log(log_entry)
                 continue
 
+            # 🎓 code-review द्वारे सापडवलेली bug (Min-Hold Shadow जोडताना, OTM Shadow मध्येही आधीपासूनच
+            # असलेली) — शॅडो trades (खाली, दोन्ही) खऱ्या ITM trade च्या प्रत्यक्ष यश/अपयशाची पर्वा न
+            # करता फायर व्हायचे — फक्त strike-selection (spread_result is not None) यशस्वी झालं की
+            # पुरे होतं, प्रत्यक्ष ऑर्डर broker-कडून नाकारला/अयशस्वी झाला तरीही. यामुळे "तात्काळ entry
+            # वि. confirmed entry" तुलना अशा सिग्नल्सनी दूषित व्हायची जिथे खरा trade मुळात उघडलाच नाही.
+            # आता real_trade_succeeded दोन्ही मार्गांसाठी (multi-account: किमान एक account यशस्वी;
+            # single-account: open_multi_leg_trade चा bool परिणाम) स्पष्टपणे काढून, खालच्या दोन्ही
+            # शॅडो ब्लॉक्सना त्यावरच अट घातलेली आहे.
+            real_trade_succeeded = False
             if broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 results, factory_errors = execute_trade_on_all_accounts(
@@ -533,8 +557,9 @@ def process_symbol(access_token, symbol, lot_size=65):
                 trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
                 if factory_errors:
                     trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+                real_trade_succeeded = any(r.get("ok") for r in results)
             else:
-                trade_result, trade_status = open_multi_leg_trade(
+                trade_result, trade_response = open_multi_leg_trade(
                     access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
@@ -542,6 +567,13 @@ def process_symbol(access_token, symbol, lot_size=65):
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     entry_reason_tag=entry_reason_tag,
                 )
+                real_trade_succeeded = trade_result
+                # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
+                # टिप्पणी) — open_multi_leg_trade() चं दुसरं मूल्य dict असतं, plain string नाही —
+                # raw dict signal_log.trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की
+                # DB insert चुपचाप अपयशी ठरायचा (except-सर्व-गिळणारं wrapper), आणि नेमकी entry-
+                # क्षणाचीच signal_log रांग हरवायची.
+                trade_status = format_trade_result(trade_result, trade_response)
             log_entry["trade_status"] = trade_status
             # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
             # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
@@ -563,7 +595,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             # आकडेवारीत (Performance Report, Kill Switch, max-trades) कधीच मिसळत नाही — फक्त
             # निरीक्षण/तुलनेसाठी. डीफॉल्ट बंद, आणि सुरुवातीला (वापरकर्त्याच्या स्पष्ट सूचनेनुसार)
             # फक्त "5M" touches पुरतंच मर्यादित — 1M वर अजून नाही.
-            if settings.get("otm_shadow_enabled", False) and timeframe_suffix == "5M":
+            if settings.get("otm_shadow_enabled", False) and timeframe_suffix == "5M" and real_trade_succeeded:
                 try:
                     otm_spread_result = select_credit_spread_fixed_strikes(
                         raw_chain, direction, atm_strike, step=strike_step,
@@ -593,8 +625,8 @@ def process_symbol(access_token, symbol, lot_size=65):
             # असेल तर पुन्हा stack होऊ नये म्हणून has_open_trade_from_source तपासणी — त्याच exact
             # spread_result (ITM structure) चा पुनर्वापर — इथे फक्त timing (कधी शिरायचं) वेगळी आहे,
             # strike-निवड नाही (त्यासाठी OTM Shadow, वर, वेगळाच आहे).
-            if (min_hold_shadow_enabled and not is_directional_trade
-                    and held_minutes >= entry_min_hold_minutes
+            if (min_hold_shadow_enabled and real_trade_succeeded and not is_directional_trade
+                    and (hit_type == "GAP_THROUGH" or held_minutes >= entry_min_hold_minutes)
                     and not has_open_trade_from_source(symbol, "dynamic_sr_instant_min_hold_shadow")):
                 try:
                     open_multi_leg_trade(
@@ -652,7 +684,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
-                _, naked_status = open_multi_leg_trade(
+                naked_ok, naked_response = open_multi_leg_trade(
                     access_token, symbol, naked_result, lots=naked_lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
@@ -660,6 +692,9 @@ def process_symbol(access_token, symbol, lot_size=65):
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     entry_reason_tag=entry_reason_tag,
                 )
+                # 🎓 बघा वरची credit-spread ब्लॉकमधली format_trade_result() ची टिप्पणी — इथेही तोच
+                # dict-as-string bug (Telegram संदेशात raw dict दिसायचा, DB write नसली तरी).
+                naked_status = format_trade_result(naked_ok, naked_response)
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"

@@ -2724,3 +2724,33 @@ class TestSpotPctSlTslRespectsActualEntrySpot:
         monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
         trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert next_level_calls == [23900.0]  # entry_level_price (zone level), entry_spot_price (24000) नव्हे
+
+
+class TestFormatTradeResult:
+    """🎓 code-review द्वारे सापडवलेली bug — चार बॉट फाईल्स (dynamic_sr_instant_trader.py,
+    classic_sr_reversal_trader.py, srv2_momentum_reversal_strategy.py, mcx_futures_trader.py) आणि
+    page_dashboard.py, सगळ्यांनीच open_multi_leg_trade() च्या दुसऱ्या (नेहमी dict असलेल्या) मूल्याला
+    थेट "trade_status" (plain string अपेक्षित) म्हणून वापरलं — signal_log.trade_status (TEXT column)
+    मध्ये raw dict साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी ठरायचा. format_trade_result() आता
+    (ok, response) जोडपं वाचनीय स्ट्रिंगमध्ये रूपांतरित करतं — सर्वांनी हेच वापरावं."""
+
+    def test_success_with_trade_id_dict(self):
+        result = trading_engine.format_trade_result(True, {"trade_id": "T123", "order_ids": ["O1"]})
+        assert result == "OPENED (trade_id=T123)"
+
+    def test_failure_with_reason_key(self):
+        result = trading_engine.format_trade_result(False, {"status": "error", "reason": "Kill Switch सक्रिय"})
+        assert result == "FAILED: Kill Switch सक्रिय"
+
+    def test_failure_with_message_key_fallback(self):
+        # काही अपयश-paths "reason" ऐवजी "message" key वापरतात (उदा. trade_id टक्कर)
+        result = trading_engine.format_trade_result(False, {"status": "error", "message": "DB मध्ये नोंदवता आला नाही"})
+        assert result == "FAILED: DB मध्ये नोंदवता आला नाही"
+
+    def test_non_dict_response_passed_through_as_string(self):
+        # जुन्या/mock केलेल्या callers साठी backward-compatible -- आधीच string असेल तर तसाच वापरायचा
+        assert trading_engine.format_trade_result(True, "trade_id_123") == "trade_id_123"
+
+    def test_dict_without_known_keys_falls_back_to_repr(self):
+        result = trading_engine.format_trade_result(False, {"status": "error"})
+        assert "status" in result and "FAILED" in result
