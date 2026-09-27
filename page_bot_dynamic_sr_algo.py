@@ -290,230 +290,223 @@ def render():
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — या strategies मध्ये दोन्ही टाईमफ्रेमचे
             # touch levels डीफॉल्ट एकत्र तपासले जातात — वापरकर्त्याला हवं असल्यास फक्त एकाच
             # टाईमफ्रेमवर मर्यादित ठेवता येईल.
-            sub_header("⏱️ Touch Timeframe", HDR_TEAL)
-            if strategy_key == "1m_instant":
-                _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
-            else:
-                _TF_OPTIONS = {"BOTH": "5M + 15M (दोन्ही, डीफॉल्ट)", "5M": "फक्त 5M", "15M": "फक्त 15M"}
-            _tf_keys = list(_TF_OPTIONS.keys())
-            timeframe_choice = st.radio(
-                "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
-                _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
-                index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")),
-                key=_widget_key(strategy_key, symbol, "timeframe_choice"),
-            )
-            st.markdown("---")
+            with st.expander("⏱️ Touch Timeframe", expanded=False):
+                if strategy_key == "1m_instant":
+                    _TF_OPTIONS = {"BOTH": "1M + 5M (दोन्ही, डीफॉल्ट)", "1M": "फक्त 1M", "5M": "फक्त 5M"}
+                else:
+                    _TF_OPTIONS = {"BOTH": "5M + 15M (दोन्ही, डीफॉल्ट)", "5M": "फक्त 5M", "15M": "फक्त 15M"}
+                _tf_keys = list(_TF_OPTIONS.keys())
+                timeframe_choice = st.radio(
+                    "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
+                    _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
+                    index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")),
+                    key=_widget_key(strategy_key, symbol, "timeframe_choice"),
+                )
         elif strategy_key == "15m_dynamic_sr":
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("3 वेगवेगळे timeframe आहेत, selection user friendly
             # असू द्या, डीफॉल्ट 15 मिनिट ठेवा, 30 आणि 60 मिनिट optional राहील") — इतर दोन strategies
             # च्या "दोन पैकी एक/दोन्ही" radio पेक्षा वेगळं (इथे 3 टाईमफ्रेम्स, कुठलंही combination
             # हवं असू शकतं) — प्रत्येक टाईमफ्रेमसाठी स्वतंत्र checkbox, 15M डीफॉल्ट चालू.
-            sub_header("⏱️ Touch Timeframe (एक किंवा अनेक निवडा)", HDR_TEAL)
-            st.caption("15M डीफॉल्ट सक्रिय — 30M आणि 60M ऐच्छिक (हव्या तितक्या एकत्र निवडता येतील, किमान एक हवाच).")
-            _srv2_active_tf = settings.get("active_timeframes", ["15M"])
-            tf1, tf2, tf3 = st.columns(3)
-            with tf1:
-                srv2_tf_15m = st.checkbox("15M (डीफॉल्ट)", value="15M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_15m"))
-            with tf2:
-                srv2_tf_30m = st.checkbox("30M (ऐच्छिक)", value="30M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_30m"))
-            with tf3:
-                srv2_tf_60m = st.checkbox("60M (ऐच्छिक)", value="60M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_60m"))
-            active_timeframes = [tf for tf, checked in [("15M", srv2_tf_15m), ("30M", srv2_tf_30m), ("60M", srv2_tf_60m)] if checked]
-            if not active_timeframes:
-                st.warning("⚠️ किमान एक टाईमफ्रेम निवडायलाच हवा — काहीही निवडलं नसेल, तर जतन करताना आपोआप 15M निवडला जाईल.")
-            st.markdown("---")
+            with st.expander("⏱️ Touch Timeframe (एक किंवा अनेक निवडा)", expanded=False):
+                st.caption("15M डीफॉल्ट सक्रिय — 30M आणि 60M ऐच्छिक (हव्या तितक्या एकत्र निवडता येतील, किमान एक हवाच).")
+                _srv2_active_tf = settings.get("active_timeframes", ["15M"])
+                tf1, tf2, tf3 = st.columns(3)
+                with tf1:
+                    srv2_tf_15m = st.checkbox("15M (डीफॉल्ट)", value="15M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_15m"))
+                with tf2:
+                    srv2_tf_30m = st.checkbox("30M (ऐच्छिक)", value="30M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_30m"))
+                with tf3:
+                    srv2_tf_60m = st.checkbox("60M (ऐच्छिक)", value="60M" in _srv2_active_tf, key=_widget_key(strategy_key, symbol, "tf_60m"))
+                active_timeframes = [tf for tf, checked in [("15M", srv2_tf_15m), ("30M", srv2_tf_30m), ("60M", srv2_tf_60m)] if checked]
+                if not active_timeframes:
+                    st.warning("⚠️ किमान एक टाईमफ्रेम निवडायलाच हवा — काहीही निवडलं नसेल, तर जतन करताना आपोआप 15M निवडला जाईल.")
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — तिन्ही strategies साठी
         # समान — पहिल्या trade चा SL/TSL लागल्यावर, त्याच exact level वर किती वेळ पुढचा trade
         # थांबवायचा. established generic 30-मिनिट cooldown (कुठल्याही exit-प्रकारावर, entry-वेळेवर
         # आधारित) आधीपासूनच आहे — हा त्यापेक्षा वेगळा, फक्त SL/TSL exits साठीच, exit-वेळेवर आधारित.
-        sub_header("🕐 SL/TSL Cooldown (त्याच level वर)", HDR_TEAL)
-        st.caption(
-            "पहिल्या trade चा SL किंवा TSL लागल्यावर, त्याच exact level वर किमान इतकी मिनिटं पुढचा "
-            "trade घेतला जाणार नाही (whipsaw/fakeout नंतरचं संरक्षण) — Target/इतर फायदेशीर exits ला "
-            "लागू नाही. 0 केलं की हा गेट पूर्णपणे बंद."
-        )
-        sl_tsl_cooldown_minutes = _number_input(
-            "Cooldown (मिनिटं)", settings, "sl_tsl_cooldown_minutes", strategy_key, symbol,
-            min_value=0, max_value=120, step=5,
-        )
         st.markdown("---")
+        with st.expander("🕐 SL/TSL Cooldown (त्याच level वर)", expanded=False):
+            st.caption(
+                "पहिल्या trade चा SL किंवा TSL लागल्यावर, त्याच exact level वर किमान इतकी मिनिटं पुढचा "
+                "trade घेतला जाणार नाही (whipsaw/fakeout नंतरचं संरक्षण) — Target/इतर फायदेशीर exits ला "
+                "लागू नाही. 0 केलं की हा गेट पूर्णपणे बंद."
+            )
+            sl_tsl_cooldown_minutes = _number_input(
+                "Cooldown (मिनिटं)", settings, "sl_tsl_cooldown_minutes", strategy_key, symbol,
+                min_value=0, max_value=120, step=5,
+            )
 
-        sub_header("🔻 Strike व Size निवड (Credit Spread)", HDR_PURPLE)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
         # ऑप्शनल ठेवा — ज्या user कडे कमी कॅपिटल आहे तो नेकेड ऑप्शन बाय करणे पसंत करतो") — आधी Credit
         # Spread नेहमीच (toggle शिवाय) चालायचा, फक्त Naked Option ऐच्छिक होता. आता दोन्ही स्वतंत्रपणे
         # on/off करता येतात — कमी कॅपिटल असलेला वापरकर्ता फक्त Naked Option सक्रिय ठेवून, हा (जास्त
         # margin लागणारा) Credit Spread बंद करू शकतो.
-        credit_spread_enabled = st.checkbox(
-            "Credit Spread Trade सक्रिय", value=bool(settings.get("credit_spread_enabled", True)),
-            key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
-        )
-        st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            lots = _number_input("Lots", settings, "lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
-        with c2:
-            itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
-        with c3:
-            hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
+        with st.expander("🔻 Strike व Size निवड (Credit Spread)", expanded=False):
+            credit_spread_enabled = st.checkbox(
+                "Credit Spread Trade सक्रिय", value=bool(settings.get("credit_spread_enabled", True)),
+                key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
+            )
+            st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                lots = _number_input("Lots", settings, "lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
+            with c2:
+                itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
+            with c3:
+                hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (ITM वि. OTM Credit Spread तुलना — "profit loss
-        # आणि charges विचारात घेऊन कुठला strike फायदेशीर") — जुन्या expired तारखांचा actual option
-        # premium डेटा मिळत नसल्याने खरा historical backtest शक्य नाही, त्यामुळे हे forward-test:
-        # खऱ्या (ITM) trade सोबतच, याच सिग्नलवर, एक स्वतंत्र निव्वळ PAPER-only OTM पर्याय समांतर लॉग
-        # होतो (वेगळ्याच source ने — मूळ strategy च्या आकडेवारीत कधीच मिसळत नाही). सुरुवातीला
-        # (वापरकर्त्याच्या सूचनेनुसार) फक्त "5-Min Instant Trader" (1m_instant, फक्त 5M touches) पुरतंच.
-        if strategy_key == "1m_instant":
-            otm_shadow_enabled = st.checkbox(
-                "🔬 OTM Shadow (फक्त 5M touches, तुलनेसाठी — निव्वळ PAPER, खऱ्या trade वर परिणाम नाही)",
-                value=bool(settings.get("otm_shadow_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "otm_shadow_enabled"),
-            )
-            st.caption(
-                "चालू केल्यास, वरच्याच ITM trade सोबत, त्याच सिग्नलवर, ATM पासून OTM स्ट्राइक्स "
-                "वापरून एक स्वतंत्र, निव्वळ PAPER trade समांतर नोंदवला जातो — Performance Report वर "
-                "वेगळ्या source ने (dynamic_sr_instant_otm_shadow) दोन्हींची तुलना करता येईल."
-            )
-            if otm_shadow_enabled:
-                otm_shadow_strikes_count = _number_input(
-                    "OTM Strikes (ATM पासून किती strikes दूर)", settings, "otm_shadow_strikes_count",
-                    strategy_key, symbol, min_value=1, max_value=10, step=1,
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (ITM वि. OTM Credit Spread तुलना — "profit loss
+            # आणि charges विचारात घेऊन कुठला strike फायदेशीर") — जुन्या expired तारखांचा actual option
+            # premium डेटा मिळत नसल्याने खरा historical backtest शक्य नाही, त्यामुळे हे forward-test:
+            # खऱ्या (ITM) trade सोबतच, याच सिग्नलवर, एक स्वतंत्र निव्वळ PAPER-only OTM पर्याय समांतर लॉग
+            # होतो (वेगळ्याच source ने — मूळ strategy च्या आकडेवारीत कधीच मिसळत नाही). सुरुवातीला
+            # (वापरकर्त्याच्या सूचनेनुसार) फक्त "5-Min Instant Trader" (1m_instant, फक्त 5M touches) पुरतंच.
+            if strategy_key == "1m_instant":
+                otm_shadow_enabled = st.checkbox(
+                    "🔬 OTM Shadow (फक्त 5M touches, तुलनेसाठी — निव्वळ PAPER, खऱ्या trade वर परिणाम नाही)",
+                    value=bool(settings.get("otm_shadow_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "otm_shadow_enabled"),
                 )
+                st.caption(
+                    "चालू केल्यास, वरच्याच ITM trade सोबत, त्याच सिग्नलवर, ATM पासून OTM स्ट्राइक्स "
+                    "वापरून एक स्वतंत्र, निव्वळ PAPER trade समांतर नोंदवला जातो — Performance Report वर "
+                    "वेगळ्या source ने (dynamic_sr_instant_otm_shadow) दोन्हींची तुलना करता येईल."
+                )
+                if otm_shadow_enabled:
+                    otm_shadow_strikes_count = _number_input(
+                        "OTM Strikes (ATM पासून किती strikes दूर)", settings, "otm_shadow_strikes_count",
+                        strategy_key, symbol, min_value=1, max_value=10, step=1,
+                    )
+                else:
+                    otm_shadow_strikes_count = settings.get("otm_shadow_strikes_count", 2)
+
+        with st.expander("🧭 RSI Gate", expanded=False):
+            entry_rsi_gate_enabled = st.checkbox(
+                "RSI Gate सक्रिय (बंद केल्यास — फक्त S/R Touch वरच entry, RSI तपासला जाणार नाही)",
+                value=bool(settings.get("entry_rsi_gate_enabled", True)),
+                key=_widget_key(strategy_key, symbol, "entry_rsi_gate_enabled"),
+            )
+            if strategy_key in ("1m_instant", "15m_dynamic_sr"):
+                st.caption("Support/Bullish → RSI यापेक्षा कमी हवा. Resistance/Bearish → RSI यापेक्षा जास्त हवा.")
+                r1, r2 = st.columns(2)
+                with r1:
+                    rsi_support_max = _number_input(
+                        "RSI Support Max (Bullish साठी यापेक्षा कमी)", settings, "rsi_support_max", strategy_key, symbol,
+                        min_value=5, max_value=50, step=1, disabled=not entry_rsi_gate_enabled,
+                    )
+                with r2:
+                    rsi_resistance_min = _number_input(
+                        "RSI Resistance Min (Bearish साठी यापेक्षा जास्त)", settings, "rsi_resistance_min", strategy_key, symbol,
+                        min_value=50, max_value=95, step=1, disabled=not entry_rsi_gate_enabled,
+                    )
             else:
-                otm_shadow_strikes_count = settings.get("otm_shadow_strikes_count", 2)
-
-        st.markdown("---")
-        sub_header("🧭 RSI Gate", HDR_ORANGE)
-        entry_rsi_gate_enabled = st.checkbox(
-            "RSI Gate सक्रिय (बंद केल्यास — फक्त S/R Touch वरच entry, RSI तपासला जाणार नाही)",
-            value=bool(settings.get("entry_rsi_gate_enabled", True)),
-            key=_widget_key(strategy_key, symbol, "entry_rsi_gate_enabled"),
-        )
-        if strategy_key in ("1m_instant", "15m_dynamic_sr"):
-            st.caption("Support/Bullish → RSI यापेक्षा कमी हवा. Resistance/Bearish → RSI यापेक्षा जास्त हवा.")
-            r1, r2 = st.columns(2)
-            with r1:
-                rsi_support_max = _number_input(
-                    "RSI Support Max (Bullish साठी यापेक्षा कमी)", settings, "rsi_support_max", strategy_key, symbol,
-                    min_value=5, max_value=50, step=1, disabled=not entry_rsi_gate_enabled,
+                st.caption("Support/Bullish → RSI या neutral level पेक्षा कमी हवा. Resistance/Bearish → यापेक्षा जास्त हवा.")
+                rsi_neutral_level = _number_input(
+                    "RSI Neutral Level", settings, "rsi_neutral_level", strategy_key, symbol,
+                    min_value=30, max_value=70, step=1, disabled=not entry_rsi_gate_enabled,
                 )
-            with r2:
-                rsi_resistance_min = _number_input(
-                    "RSI Resistance Min (Bearish साठी यापेक्षा जास्त)", settings, "rsi_resistance_min", strategy_key, symbol,
-                    min_value=50, max_value=95, step=1, disabled=not entry_rsi_gate_enabled,
-                )
-        else:
-            st.caption("Support/Bullish → RSI या neutral level पेक्षा कमी हवा. Resistance/Bearish → यापेक्षा जास्त हवा.")
-            rsi_neutral_level = _number_input(
-                "RSI Neutral Level", settings, "rsi_neutral_level", strategy_key, symbol,
-                min_value=30, max_value=70, step=1, disabled=not entry_rsi_gate_enabled,
-            )
 
-        st.markdown("---")
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
         # सुद्धा पाहिजे") — सगळ्या strategies साठी सामायिक — फक्त त्या दिशेचे नवीन trades थांबतात
         # (आधीच उघडलेले चालूच राहतात).
-        sub_header("↕️ Bullish / Bearish Entry", HDR_GREEN)
-        be1, be2 = st.columns(2)
-        with be1:
-            bullish_entry_enabled = st.checkbox(
-                "📈 Bullish Entry सक्रिय (डीफॉल्ट चालू)",
-                value=bool(settings.get("bullish_entry_enabled", True)),
-                key=_widget_key(strategy_key, symbol, "bullish_entry_enabled"),
-            )
-        with be2:
-            bearish_entry_enabled = st.checkbox(
-                "📉 Bearish Entry सक्रिय (डीफॉल्ट चालू)",
-                value=bool(settings.get("bearish_entry_enabled", True)),
-                key=_widget_key(strategy_key, symbol, "bearish_entry_enabled"),
-            )
-        st.caption("बंद केलेल्या दिशेचे नवीन trades घेतले जाणार नाहीत (आधीच उघडलेल्या trades वर परिणाम नाही).")
+        with st.expander("↕️ Bullish / Bearish Entry", expanded=False):
+            be1, be2 = st.columns(2)
+            with be1:
+                bullish_entry_enabled = st.checkbox(
+                    "📈 Bullish Entry सक्रिय (डीफॉल्ट चालू)",
+                    value=bool(settings.get("bullish_entry_enabled", True)),
+                    key=_widget_key(strategy_key, symbol, "bullish_entry_enabled"),
+                )
+            with be2:
+                bearish_entry_enabled = st.checkbox(
+                    "📉 Bearish Entry सक्रिय (डीफॉल्ट चालू)",
+                    value=bool(settings.get("bearish_entry_enabled", True)),
+                    key=_widget_key(strategy_key, symbol, "bearish_entry_enabled"),
+                )
+            st.caption("बंद केलेल्या दिशेचे नवीन trades घेतले जाणार नाहीत (आधीच उघडलेल्या trades वर परिणाम नाही).")
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय — classic_sr_reversal साठी PCR गेट मुद्दामच नाही
         # ("फक्त शुद्ध classical S/R" कल्पना — RSI गेटच फक्त, backtest मध्येही तेच वापरलेलं).
         if strategy_key != "classic_sr_reversal":
-            st.markdown("---")
-            sub_header("🚦 PCR Gate", HDR_PINK)
-            entry_pcr_gate_enabled = st.checkbox(
-                "PCR Gate सक्रिय (बंद केल्यास — PCR तपासला जाणार नाही, फक्त डेटा गहाळ/जुना असतानाचं सुरक्षा-कवचही बंद होईल)",
-                value=bool(settings.get("entry_pcr_gate_enabled", True)),
-                key=_widget_key(strategy_key, symbol, "entry_pcr_gate_enabled"),
-            )
-            st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
-            p1, p2 = st.columns(2)
-            with p1:
-                pcr_bullish_min = _number_input(
-                    "PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", strategy_key, symbol,
-                    min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+            with st.expander("🚦 PCR Gate", expanded=False):
+                entry_pcr_gate_enabled = st.checkbox(
+                    "PCR Gate सक्रिय (बंद केल्यास — PCR तपासला जाणार नाही, फक्त डेटा गहाळ/जुना असतानाचं सुरक्षा-कवचही बंद होईल)",
+                    value=bool(settings.get("entry_pcr_gate_enabled", True)),
+                    key=_widget_key(strategy_key, symbol, "entry_pcr_gate_enabled"),
                 )
-            with p2:
-                pcr_bearish_max = _number_input(
-                    "PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", strategy_key, symbol,
-                    min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
-                )
+                st.caption("दोन्ही trade-प्रकारांना (Credit Spread + Naked) एकत्र लागू — PCR डेटा गहाळ/जुना (>15 मिनिटं) असल्यास सुरक्षिततेसाठी trade थांबवला जातो (Gate सक्रिय असेल तरच).")
+                p1, p2 = st.columns(2)
+                with p1:
+                    pcr_bullish_min = _number_input(
+                        "PCR यापेक्षा कमी असेल तर Bullish नाही", settings, "pcr_bullish_min", strategy_key, symbol,
+                        min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+                    )
+                with p2:
+                    pcr_bearish_max = _number_input(
+                        "PCR यापेक्षा जास्त असेल तर Bearish नाही", settings, "pcr_bearish_max", strategy_key, symbol,
+                        min_value=0.10, max_value=2.0, step=0.05, format="%.2f", disabled=not entry_pcr_gate_enabled,
+                    )
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate, फक्त 1m_instant साठी (हीच strategy चर्चेत होती).
         if strategy_key == "1m_instant":
-            st.markdown("---")
-            sub_header("📈 Average IV Breakout Gate", HDR_CYAN)
-            entry_iv_gate_enabled = st.checkbox(
-                "IV Gate सक्रिय (डीफॉल्ट बंद — किमान काही दिवस iv_snapshot_collector.py चा इतिहास जमल्याशिवाय चालू करू नका)",
-                value=bool(settings.get("entry_iv_gate_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
-            )
-            st.caption("आजचा ATM IV, गेल्या N **sideways (Marubozu body_ratio<0.8 daily candle — trending दिवस वगळलेले)** दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा sideways-दिवसांचा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक). ⚠️ फक्त NIFTY साठी.")
-            iv1, iv2, iv3 = st.columns(3)
-            with iv1:
-                iv_change_max_pct = _number_input(
-                    "IV % वाढ मर्यादा (यापेक्षा जास्त वाढ = breakout)", settings, "iv_change_max_pct", strategy_key, symbol,
-                    min_value=5.0, max_value=100.0, step=1.0, format="%.1f", disabled=not entry_iv_gate_enabled,
+            with st.expander("📈 Average IV Breakout Gate", expanded=False):
+                entry_iv_gate_enabled = st.checkbox(
+                    "IV Gate सक्रिय (डीफॉल्ट बंद — किमान काही दिवस iv_snapshot_collector.py चा इतिहास जमल्याशिवाय चालू करू नका)",
+                    value=bool(settings.get("entry_iv_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_iv_gate_enabled"),
                 )
-            with iv2:
-                iv_lookback_days = _number_input(
-                    "सरासरीसाठी किती मागचे sideways दिवस", settings, "iv_lookback_days", strategy_key, symbol,
-                    min_value=1, max_value=30, step=1, disabled=not entry_iv_gate_enabled,
-                )
-            with iv3:
-                # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
-                # hardcoded") — Marubozu threshold (आधी module-level हार्डकोड 0.8) आता इथून बदलण्याजोगा.
-                iv_marubozu_threshold = _number_input(
-                    "Marubozu threshold (day trending कधी धरायचा — जास्त = कडक)", settings, "iv_marubozu_threshold", strategy_key, symbol,
-                    min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
-                )
+                st.caption("आजचा ATM IV, गेल्या N **sideways (Marubozu body_ratio<0.8 daily candle — trending दिवस वगळलेले)** दिवसांच्या सरासरीपेक्षा किती% वाढला (breakout) तर — reversal trade (मूळ S/R touch दिशा) थांबवून, त्याऐवजी उलट (breakout-following, directional) दिशेने trade घेतला जातो (RSI/PCR Gate त्या trade साठी वगळले जातात — ते reversal-साठीच tuned आहेत). IV डेटा गहाळ/जुना/अपुरा sideways-दिवसांचा इतिहास असल्यास मात्र सुरक्षिततेसाठी trade पूर्णपणे थांबवला जातो (regime माहीतच नसल्याने directional bet घेणं धोकादायक). ⚠️ फक्त NIFTY साठी.")
+                iv1, iv2, iv3 = st.columns(3)
+                with iv1:
+                    iv_change_max_pct = _number_input(
+                        "IV % वाढ मर्यादा (यापेक्षा जास्त वाढ = breakout)", settings, "iv_change_max_pct", strategy_key, symbol,
+                        min_value=5.0, max_value=100.0, step=1.0, format="%.1f", disabled=not entry_iv_gate_enabled,
+                    )
+                with iv2:
+                    iv_lookback_days = _number_input(
+                        "सरासरीसाठी किती मागचे sideways दिवस", settings, "iv_lookback_days", strategy_key, symbol,
+                        min_value=1, max_value=30, step=1, disabled=not entry_iv_gate_enabled,
+                    )
+                with iv3:
+                    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("All should be user friendly gate, no
+                    # hardcoded") — Marubozu threshold (आधी module-level हार्डकोड 0.8) आता इथून बदलण्याजोगा.
+                    iv_marubozu_threshold = _number_input(
+                        "Marubozu threshold (day trending कधी धरायचा — जास्त = कडक)", settings, "iv_marubozu_threshold", strategy_key, symbol,
+                        min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
+                    )
 
             # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
             # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
             # happen then take entry in the same direction") — max-2-hits च्या पलीकडचा, तिसरा trade.
-            st.markdown("---")
-            sub_header("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", HDR_AMBER)
-            entry_breakout_gate_enabled = st.checkbox(
-                "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
-                value=bool(settings.get("entry_breakout_gate_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
-            )
-            st.caption(
-                "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
-                "5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) consolidate झालेला असावा "
-                "(हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, IV/RSI/PCR Gate ने "
-                "आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
-                "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
-                "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
-            )
-            bo1, bo2 = st.columns(2)
-            with bo1:
-                breakout_lookback_candles = _number_input(
-                    "Consolidation window (5-मिनिट candles)", settings, "breakout_lookback_candles", strategy_key, symbol,
-                    min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
+            with st.expander("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", expanded=False):
+                entry_breakout_gate_enabled = st.checkbox(
+                    "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("entry_breakout_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
                 )
-            with bo2:
-                breakout_tolerance_pct = _number_input(
-                    "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", strategy_key, symbol,
-                    min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
+                st.caption(
+                    "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
+                    "5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) consolidate झालेला असावा "
+                    "(हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, IV/RSI/PCR Gate ने "
+                    "आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
+                    "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
+                    "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
                 )
+                bo1, bo2 = st.columns(2)
+                with bo1:
+                    breakout_lookback_candles = _number_input(
+                        "Consolidation window (5-मिनिट candles)", settings, "breakout_lookback_candles", strategy_key, symbol,
+                        min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
+                    )
+                with bo2:
+                    breakout_tolerance_pct = _number_input(
+                        "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", strategy_key, symbol,
+                        min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
+                    )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
             # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
@@ -522,39 +515,38 @@ def render():
             # 36-48 सेकंदातच लागले, तर तेच exact level नंतर काही मिनिटं टिकून राहिल्यावर मोठा विजयी
             # trade ठरला). पूर्ण खात्रीशीर उपाय नाही (एक मध्यम-buildup trade backtest मध्ये अजूनही
             # तोट्याचाच निघाला) — म्हणून डीफॉल्ट बंद, threshold वापरकर्त्याने स्वतः ठरवून forward-test करावा.
-            st.markdown("---")
-            sub_header("⏱️ Minimum Level-Hold Duration Before Entry", HDR_ORANGE)
-            entry_min_hold_gate_enabled = st.checkbox(
-                "Minimum Hold Duration Gate सक्रिय (डीफॉल्ट बंद)",
-                value=bool(settings.get("entry_min_hold_gate_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "entry_min_hold_gate_enabled"),
-            )
-            st.caption(
-                "Level ला touch होऊन किमान इतकी मिनिटं सलग टिकून राहिलेला असेल तरच entry घेतली जाते — "
-                "दिवसाचा अगदी पहिलाच, ताजा (शून्य-मिनिट जुना) touch गाळला जातो, कारण तो क्षणिक "
-                "noise/whipsaw असण्याची शक्यता जास्त असते. Directional (IV Breakout/Breakout Entry) "
-                "trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे."
-            )
-            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
-            # दिवस forward test करतो") — वरचा गेट प्रत्यक्ष चालू न करताही (मूळ बॉटचं वर्तन 100%
-            # तसंच), फक्त निरीक्षणासाठी — OTM Shadow सारखाच, स्वतंत्र, निव्वळ PAPER शॅडो trade.
-            min_hold_shadow_enabled = st.checkbox(
-                "🔬 Min-Hold Shadow (फक्त निरीक्षणासाठी, PAPER-only, डीफॉल्ट बंद)",
-                value=bool(settings.get("min_hold_shadow_enabled", False)),
-                key=_widget_key(strategy_key, symbol, "min_hold_shadow_enabled"),
-            )
-            st.caption(
-                "मूळ (ITM) trade सोबतच, त्याच सिग्नलवर — फक्त खालचा hold-duration threshold त्या क्षणी "
-                "आधीच पूर्ण झाला असेल तरच — एक स्वतंत्र PAPER-only trade (source: "
-                "dynamic_sr_instant_min_hold_shadow) समांतर नोंदवला जातो. वरचा Gate बंद असला तरी हा "
-                "चालू शकतो — मूळ बॉटवर काहीही परिणाम नाही. Performance Report वर 'Strategy-wise "
-                "Performance' (source नुसार) मध्ये स्वतःची वेगळी रांग म्हणून दिसतो, जेणेकरून काही "
-                "दिवसांनी \"तात्काळ entry\" वि. \"confirmed entry\" ची प्रत्यक्ष तुलना करता येईल."
-            )
-            entry_min_hold_minutes = _number_input(
-                "किमान किती मिनिटं level टिकून हवा (Gate + Shadow दोन्हींसाठी सामायिक)", settings, "entry_min_hold_minutes", strategy_key, symbol,
-                min_value=1, max_value=30, step=1, disabled=not (entry_min_hold_gate_enabled or min_hold_shadow_enabled),
-            )
+            with st.expander("⏱️ Minimum Level-Hold Duration Before Entry", expanded=False):
+                entry_min_hold_gate_enabled = st.checkbox(
+                    "Minimum Hold Duration Gate सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("entry_min_hold_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_min_hold_gate_enabled"),
+                )
+                st.caption(
+                    "Level ला touch होऊन किमान इतकी मिनिटं सलग टिकून राहिलेला असेल तरच entry घेतली जाते — "
+                    "दिवसाचा अगदी पहिलाच, ताजा (शून्य-मिनिट जुना) touch गाळला जातो, कारण तो क्षणिक "
+                    "noise/whipsaw असण्याची शक्यता जास्त असते. Directional (IV Breakout/Breakout Entry) "
+                    "trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे."
+                )
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
+                # दिवस forward test करतो") — वरचा गेट प्रत्यक्ष चालू न करताही (मूळ बॉटचं वर्तन 100%
+                # तसंच), फक्त निरीक्षणासाठी — OTM Shadow सारखाच, स्वतंत्र, निव्वळ PAPER शॅडो trade.
+                min_hold_shadow_enabled = st.checkbox(
+                    "🔬 Min-Hold Shadow (फक्त निरीक्षणासाठी, PAPER-only, डीफॉल्ट बंद)",
+                    value=bool(settings.get("min_hold_shadow_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "min_hold_shadow_enabled"),
+                )
+                st.caption(
+                    "मूळ (ITM) trade सोबतच, त्याच सिग्नलवर — फक्त खालचा hold-duration threshold त्या क्षणी "
+                    "आधीच पूर्ण झाला असेल तरच — एक स्वतंत्र PAPER-only trade (source: "
+                    "dynamic_sr_instant_min_hold_shadow) समांतर नोंदवला जातो. वरचा Gate बंद असला तरी हा "
+                    "चालू शकतो — मूळ बॉटवर काहीही परिणाम नाही. Performance Report वर 'Strategy-wise "
+                    "Performance' (source नुसार) मध्ये स्वतःची वेगळी रांग म्हणून दिसतो, जेणेकरून काही "
+                    "दिवसांनी \"तात्काळ entry\" वि. \"confirmed entry\" ची प्रत्यक्ष तुलना करता येईल."
+                )
+                entry_min_hold_minutes = _number_input(
+                    "किमान किती मिनिटं level टिकून हवा (Gate + Shadow दोन्हींसाठी सामायिक)", settings, "entry_min_hold_minutes", strategy_key, symbol,
+                    min_value=1, max_value=30, step=1, disabled=not (entry_min_hold_gate_enabled or min_hold_shadow_enabled),
+                )
 
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
@@ -611,65 +603,63 @@ def render():
                     min_value=3, max_value=8, step=1, disabled=not trendline_gate_enabled,
                 )
 
-        st.markdown("---")
-        sub_header("🔺 Long With Hedge (Naked Option Trade)", HDR_GREEN)
-        st.caption("त्याच सिग्नलवर, Credit Spread सक्रिय असेल तर त्यासोबतच — दोन्ही स्वतंत्रपणे on/off करता येतात (वर बघा). डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
-        n0, n1 = st.columns(2)
-        with n0:
-            naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
-        with n1:
-            naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key=_widget_key(strategy_key, symbol, "naked_hedge_enabled"))
-        n2, n3 = st.columns(2)
-        with n2:
-            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी Naked Option Trade नेहमी वरच्याच Credit Spread
-            # "Lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
-            # trade-प्रकार असल्याने आता स्वतंत्रपणे ठरवता येतं.
-            naked_lots = _number_input("Naked Option — Lots (Credit Spread पासून स्वतंत्र)", settings, "naked_lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
-        with n3:
-            naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
+        with st.expander("🔺 Long With Hedge (Naked Option Trade)", expanded=False):
+            st.caption("त्याच सिग्नलवर, Credit Spread सक्रिय असेल तर त्यासोबतच — दोन्ही स्वतंत्रपणे on/off करता येतात (वर बघा). डीफॉल्ट: hedge नाही (निव्वळ ITM खरेदी) — हवं असल्यास हेजिंग सक्रिय करा.")
+            n0, n1 = st.columns(2)
+            with n0:
+                naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
+            with n1:
+                naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key=_widget_key(strategy_key, symbol, "naked_hedge_enabled"))
+            n2, n3 = st.columns(2)
+            with n2:
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी Naked Option Trade नेहमी वरच्याच Credit Spread
+                # "Lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
+                # trade-प्रकार असल्याने आता स्वतंत्रपणे ठरवता येतं.
+                naked_lots = _number_input("Naked Option — Lots (Credit Spread पासून स्वतंत्र)", settings, "naked_lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
+            with n3:
+                naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     with tab_exit:
-        sub_header("🎯 SL / TSL / Target (Credit Spread)", HDR_AMBER)
-        if strategy_key in ("1m_instant", "classic_sr_reversal"):
-            st.caption("SL/TSL/Target — Spot% आणि Premium-Points दोन्ही एकत्र (जे आधी घडेल ते लागू).")
-            s1, s2 = st.columns(2)
-            with s1:
-                spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-                spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-                spread_target_spot_pct = _number_input("Target — Spot %", settings, "spread_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            with s2:
-                spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-                spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-                spread_target_premium_points = _number_input("Target — Premium Points", settings, "spread_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-            st.caption("TSL सक्रिय झाल्यावर SL Entry/Breakeven वर घट्ट होतो (एकदाच, कायमचा).")
-        else:
-            st.caption("SL/TSL — Spot% + Premium-Points एकत्र. Target मात्र निव्वळ प्रीमियमच्या % (उदा. 80%).")
-            s1, s2 = st.columns(2)
-            with s1:
-                spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-                spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            with s2:
-                spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-                spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-            s3, s4 = st.columns(2)
-            with s3:
-                spread_target_pct_of_premium = _number_input("Target — % of Net Premium", settings, "spread_target_pct_of_premium", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-            with s4:
-                carry_forward_min_profit_pct = _number_input("Carry-Forward किमान नफा %", settings, "carry_forward_min_profit_pct", strategy_key, symbol, min_value=1.0, max_value=100.0, step=1.0)
-            st.caption("3:10pm ला Target अजून गाठलेला नसेल — नफा वरील % पेक्षा जास्त तर पुढच्या दिवशी चालू, नाहीतर आजच बंद. Exit त्याच timeframe च्या पुढच्या level ला (entry_timeframe नुसार).")
+        with st.expander("🎯 SL / TSL / Target (Credit Spread)", expanded=False):
+            if strategy_key in ("1m_instant", "classic_sr_reversal"):
+                st.caption("SL/TSL/Target — Spot% आणि Premium-Points दोन्ही एकत्र (जे आधी घडेल ते लागू).")
+                s1, s2 = st.columns(2)
+                with s1:
+                    spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                    spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                    spread_target_spot_pct = _number_input("Target — Spot %", settings, "spread_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                with s2:
+                    spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                    spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                    spread_target_premium_points = _number_input("Target — Premium Points", settings, "spread_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                st.caption("TSL सक्रिय झाल्यावर SL Entry/Breakeven वर घट्ट होतो (एकदाच, कायमचा).")
+            else:
+                st.caption("SL/TSL — Spot% + Premium-Points एकत्र. Target मात्र निव्वळ प्रीमियमच्या % (उदा. 80%).")
+                s1, s2 = st.columns(2)
+                with s1:
+                    spread_sl_spot_pct = _number_input("SL — Spot %", settings, "spread_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                    spread_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "spread_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                with s2:
+                    spread_sl_premium_points = _number_input("SL — Premium Points", settings, "spread_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                    spread_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "spread_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                s3, s4 = st.columns(2)
+                with s3:
+                    spread_target_pct_of_premium = _number_input("Target — % of Net Premium", settings, "spread_target_pct_of_premium", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                with s4:
+                    carry_forward_min_profit_pct = _number_input("Carry-Forward किमान नफा %", settings, "carry_forward_min_profit_pct", strategy_key, symbol, min_value=1.0, max_value=100.0, step=1.0)
+                st.caption("3:10pm ला Target अजून गाठलेला नसेल — नफा वरील % पेक्षा जास्त तर पुढच्या दिवशी चालू, नाहीतर आजच बंद. Exit त्याच timeframe च्या पुढच्या level ला (entry_timeframe नुसार).")
 
-        st.markdown("---")
-        sub_header("🎯 SL / TSL / Target (Naked Option)", HDR_CYAN)
-        st.caption("Naked trade कधीच carry-forward नाही — नेहमी आजच (खालील EOD वेळेला) बंद.")
-        m1, m2 = st.columns(2)
-        with m1:
-            naked_sl_spot_pct = _number_input("SL — Spot %", settings, "naked_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            naked_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "naked_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-            naked_target_spot_pct = _number_input("Target — Spot %", settings, "naked_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
-        with m2:
-            naked_sl_premium_points = _number_input("SL — Premium Points", settings, "naked_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-            naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
-            naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+        with st.expander("🎯 SL / TSL / Target (Naked Option)", expanded=False):
+            st.caption("Naked trade कधीच carry-forward नाही — नेहमी आजच (खालील EOD वेळेला) बंद.")
+            m1, m2 = st.columns(2)
+            with m1:
+                naked_sl_spot_pct = _number_input("SL — Spot %", settings, "naked_sl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                naked_tsl_spot_pct = _number_input("TSL Activation — Spot %", settings, "naked_tsl_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+                naked_target_spot_pct = _number_input("Target — Spot %", settings, "naked_target_spot_pct", strategy_key, symbol, min_value=0.01, max_value=5.0, step=0.01, format="%.2f")
+            with m2:
+                naked_sl_premium_points = _number_input("SL — Premium Points", settings, "naked_sl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                naked_tsl_premium_points = _number_input("TSL Activation — Premium Points", settings, "naked_tsl_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
+                naked_target_premium_points = _number_input("Target — Premium Points", settings, "naked_target_premium_points", strategy_key, symbol, min_value=1.0, max_value=200.0, step=1.0)
 
         with st.expander("📈 Trailing Stop Loss (Premium Points, सतत, ऐच्छिक — डीफॉल्ट बंद)", expanded=False):
             # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("user defined trailing stop loss for all
