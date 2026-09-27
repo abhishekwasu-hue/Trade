@@ -1418,6 +1418,143 @@ class TestOtmShadowTrade:
             assert "OPENED" in result or "T1" in result
 
 
+class TestMinHoldShadowTrade:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10 दिवस
+    forward test करतो" — Min-Hold Duration Gate प्रत्यक्ष वापरण्याआधी, OTM Shadow च्याच सुरक्षित
+    पॅटर्नने forward-test) — min_hold_shadow_enabled चालू असेल आणि त्या क्षणी held_minutes आधीच
+    entry_min_hold_minutes इतका असेल तरच, खऱ्या ITM trade सोबतच, एक स्वतंत्र निव्वळ PAPER trade
+    (वेगळ्याच source ने) समांतर लॉग व्हायला हवा — मूळ trade च्या वर्तनावर (blocking gate बंद असो वा
+    चालू) कधीच परिणाम करता कामा नये."""
+
+    def _shadow_settings(self, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_pcr_gate_enabled"] = False
+        settings.update(overrides)
+        return settings
+
+    def _held_1_minute_touch(self):
+        # शेवटचाच candle touch करतो (held=1 मिनिट)
+        return _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+
+    def _held_3_minutes_touch(self):
+        # शेवटचे 3 candles सलग touch करतात (held=3 मिनिटं)
+        return _candles_with_rsi([
+            {"open": 23899.0, "high": 23901.0, "low": 23898.0, "close": 23900.0},
+            {"open": 23900.0, "high": 23902.0, "low": 23897.8, "close": 23899.0},
+            {"open": 23899.0, "high": 23901.5, "low": 23898.2, "close": 23900.5},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+
+    def test_shadow_disabled_by_default_does_not_fire(self):
+        settings = self._shadow_settings()  # min_hold_shadow_enabled डीफॉल्ट False च राहतो
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # फक्त खरा ITM trade, शॅडो नाही
+
+    def test_shadow_enabled_but_insufficient_hold_does_not_fire(self):
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_1_minute_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # held=1 < 3 -- शॅडो फिरला नाही
+
+    def test_shadow_enabled_and_sufficient_hold_fires_paper_shadow(self):
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2  # खरा ITM trade + शॅडो trade
+
+            shadow_call = mock_trade.call_args_list[-1]
+            assert shadow_call.kwargs.get("source") == "dynamic_sr_instant_min_hold_shadow"
+            assert shadow_call.kwargs.get("trading_mode") == "PAPER"
+
+    def test_shadow_fires_even_when_blocking_gate_also_enabled(self):
+        """entry_min_hold_gate_enabled (blocking) आणि min_hold_shadow_enabled दोन्ही चालू असले, तरी
+        शॅडो स्वतंत्रपणे काम करतो -- एकमेकांत हस्तक्षेप नाही."""
+        settings = self._shadow_settings(
+            min_hold_shadow_enabled=True, entry_min_hold_gate_enabled=True, entry_min_hold_minutes=3,
+        )
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2
+            assert mock_trade.call_args_list[-1].kwargs.get("source") == "dynamic_sr_instant_min_hold_shadow"
+
+    def test_shadow_does_not_stack_when_already_open(self):
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=3)
+
+        def _fake_has_open(symbol, source):
+            return source == "dynamic_sr_instant_min_hold_shadow"
+
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "has_open_trade_from_source", side_effect=_fake_has_open), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 1  # शॅडो आधीच उघडा -- नवीन stack झाला नाही
+
+    def test_shadow_exception_does_not_break_real_trade(self):
+        settings = self._shadow_settings(min_hold_shadow_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones_5m_only()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._held_3_minutes_touch()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade",
+                          side_effect=[({"trade_id": "T1"}, "OPENED"), RuntimeError("boom")]) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            result = dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.call_count == 2  # शॅडो call झाला (आणि क्रॅश झाला), पण खरा आधीच यशस्वी
+            assert "OPENED" in result or "T1" in result
+
+
 class TestSlTslCooldown:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
     kiman 15 minute same level war trade ghewu naye, cooldown") — established generic 30-मिनिट

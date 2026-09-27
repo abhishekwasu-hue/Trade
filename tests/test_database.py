@@ -1079,3 +1079,20 @@ class TestOtmShadowSourceIsolation:
         summary = database.get_performance_summary("NIFTY")
         assert summary["total_trades"] == 1
 
+    def test_min_hold_shadow_also_excluded_from_summary(self, temp_db):
+        """🎓 _shadow_exclusion_clause() आता कुठल्याही '_shadow'-अंत्य असलेल्या source ला (फक्त
+        'otm_shadow' नाही) वगळतो — Min-Hold Shadow साठीही तेच generic वगळणी वापरली जाते."""
+        seed_closed_trade(temp_db, "REAL1", 500.0, "TARGET", "2026-09-20", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "SHADOW1", 9999.0, "TARGET", "2026-09-20",
+                           source="dynamic_sr_instant_min_hold_shadow", mode="PAPER")
+        summary = database.get_performance_summary("NIFTY")
+        assert summary["total_trades"] == 1
+        assert summary["total_pnl"] == 500.0
+
+    def test_min_hold_shadow_shows_as_own_row_when_grouped_by_source(self, temp_db):
+        seed_closed_trade(temp_db, "REAL1", 500.0, "TARGET", "2026-09-20", source="dynamic_sr_instant")
+        seed_closed_trade(temp_db, "SHADOW1", 9999.0, "TARGET", "2026-09-20",
+                           source="dynamic_sr_instant_min_hold_shadow", mode="PAPER")
+        df = database.get_performance_by_group("NIFTY", "source")
+        assert set(df["Group"]) == {"dynamic_sr_instant", "dynamic_sr_instant_min_hold_shadow"}
+

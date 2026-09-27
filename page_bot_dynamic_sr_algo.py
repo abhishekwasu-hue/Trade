@@ -535,9 +535,25 @@ def render():
                 "noise/whipsaw असण्याची शक्यता जास्त असते. Directional (IV Breakout/Breakout Entry) "
                 "trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे."
             )
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
+            # दिवस forward test करतो") — वरचा गेट प्रत्यक्ष चालू न करताही (मूळ बॉटचं वर्तन 100%
+            # तसंच), फक्त निरीक्षणासाठी — OTM Shadow सारखाच, स्वतंत्र, निव्वळ PAPER शॅडो trade.
+            min_hold_shadow_enabled = st.checkbox(
+                "🔬 Min-Hold Shadow (फक्त निरीक्षणासाठी, PAPER-only, डीफॉल्ट बंद)",
+                value=bool(settings.get("min_hold_shadow_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "min_hold_shadow_enabled"),
+            )
+            st.caption(
+                "मूळ (ITM) trade सोबतच, त्याच सिग्नलवर — फक्त खालचा hold-duration threshold त्या क्षणी "
+                "आधीच पूर्ण झाला असेल तरच — एक स्वतंत्र PAPER-only trade (source: "
+                "dynamic_sr_instant_min_hold_shadow) समांतर नोंदवला जातो. वरचा Gate बंद असला तरी हा "
+                "चालू शकतो — मूळ बॉटवर काहीही परिणाम नाही. Performance Report वर 'Strategy-wise "
+                "Performance' (source नुसार) मध्ये स्वतःची वेगळी रांग म्हणून दिसतो, जेणेकरून काही "
+                "दिवसांनी \"तात्काळ entry\" वि. \"confirmed entry\" ची प्रत्यक्ष तुलना करता येईल."
+            )
             entry_min_hold_minutes = _number_input(
-                "किमान किती मिनिटं level टिकून हवा", settings, "entry_min_hold_minutes", strategy_key, symbol,
-                min_value=1, max_value=30, step=1, disabled=not entry_min_hold_gate_enabled,
+                "किमान किती मिनिटं level टिकून हवा (Gate + Shadow दोन्हींसाठी सामायिक)", settings, "entry_min_hold_minutes", strategy_key, symbol,
+                min_value=1, max_value=30, step=1, disabled=not (entry_min_hold_gate_enabled or min_hold_shadow_enabled),
             )
 
         if strategy_key == "classic_sr_reversal":
@@ -844,6 +860,7 @@ def render():
             new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
+            new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
         elif strategy_key == "classic_sr_reversal":

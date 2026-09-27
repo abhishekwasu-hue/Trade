@@ -257,6 +257,18 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
         "entry_min_hold_gate_enabled": False,
         "entry_min_hold_minutes": 3,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
+        # दिवस forward test करतो") — OTM Shadow च्याच पॅटर्नने (मूळ बॉटचं वर्तन 100% तसंच, फक्त
+        # समांतर PAPER-only निरीक्षण) — entry_min_hold_gate_enabled (वरचा, प्रत्यक्ष blocking गेट)
+        # बंदच ठेवून, हा वेगळा टॉगल चालू केल्यास, खरा (ITM) trade successfully झाला त्याच सिग्नलवर —
+        # RSI/PCR/Cooldown/Max-Hits सगळे गेट्स आधीच पार केलेले — फक्त entry_min_hold_minutes इतका वेळ
+        # level त्याच क्षणी आधीच टिकून होता तरच, एक स्वतंत्र, निव्वळ PAPER shadow trade
+        # (source="dynamic_sr_instant_min_hold_shadow") समांतर नोंदवला जातो. मूळ खऱ्या trade च्या
+        # PAPER/LIVE आकडेवारीत (_shadow_exclusion_clause() मुळे) कधीच मिसळत नाही — Performance
+        # Report वर "Strategy-wise Performance" (source नुसार गट) मध्ये स्वतःची वेगळी रांग म्हणून
+        # दिसतो, जेणेकरून काही दिवसांनी "तात्काळ entry" वि. "confirmed entry" ची प्रत्यक्ष तुलना
+        # करता येईल. डीफॉल्ट बंद.
+        "min_hold_shadow_enabled": False,
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या

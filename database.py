@@ -1029,16 +1029,19 @@ def _symbol_where_clause(symbol):
 
 def _shadow_exclusion_clause(source_col="source"):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "5-Min Instant Trader" साठी, ITM वि. OTM
-    strike तुलना) — 'dynamic_sr_instant_otm_shadow' सारखे निव्वळ तुलनेसाठी असलेले PAPER-only
-    forward-test trades, portfolio-व्यापी एकत्रित आकडेवारीतून (Summary/Equity Curve/P&L Report/
-    Timeframe-wise व Option-Structure-wise breakdown/Trade Log/Overshoot Tracker) वगळण्यासाठी —
-    अन्यथा हे शॅडो trades मूळ रणनीतीच्या खऱ्या PAPER/LIVE आकड्यांत निमूटपणे मिसळले जातील. फक्त
-    'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (get_performance_by_group("source")/
+    strike तुलना; नंतर Min-Hold Shadow — "level हिट होताच entry" वि. "किमान इतका वेळ टिकून राहिल्यावरच
+    entry" तुलना — दोन्ही याच सामायिक नियमाने ओळखले जातात) — 'dynamic_sr_instant_otm_shadow' किंवा
+    'dynamic_sr_instant_min_hold_shadow' सारखे निव्वळ तुलनेसाठी असलेले PAPER-only forward-test
+    trades, portfolio-व्यापी एकत्रित आकडेवारीतून (Summary/Equity Curve/P&L Report/Timeframe-wise व
+    Option-Structure-wise breakdown/Trade Log/Overshoot Tracker) वगळण्यासाठी — अन्यथा हे शॅडो trades
+    मूळ रणनीतीच्या खऱ्या PAPER/LIVE आकड्यांत निमूटपणे मिसळले जातील. "_shadow" ने संपणारं कुठलंही
+    source नाव आपोआप वगळलं जातं — भविष्यात नवीन शॅडो-प्रकार जोडला तरी हे function पुन्हा बदलावं लागत
+    नाही. फक्त 'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (get_performance_by_group("source")/
     get_performance_by_two_groups/get_exit_reason_breakdown("source") ज्यात एक गट "source" आहे)
     ही वगळणी लावली जात नाही — तिथे शॅडो स्वतःची वेगळी रांग म्हणून दिसणं, हाच फीचरचा मूळ उद्देश आहे.
     SQLite च्या LIKE मध्ये '_' वाइल्डकार्ड असल्याने (कुठलाही एक अक्षर) ESCAPE आवश्यक, नाहीतर
-    'dynamic_sr_instant_otm_shadow' हे नाव चुकीच्या पद्धतीने match/exclude होऊ शकतं."""
-    return f"COALESCE({source_col},'') NOT LIKE '%\\_otm\\_shadow' ESCAPE '\\'"
+    '..._shadow' हे नाव चुकीच्या पद्धतीने match/exclude होऊ शकतं."""
+    return f"COALESCE({source_col},'') NOT LIKE '%\\_shadow' ESCAPE '\\'"
 
 
 def get_performance_summary(symbol, mode_filter=None, style_filter=None, start_date=None, end_date=None):

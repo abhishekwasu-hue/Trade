@@ -1876,3 +1876,10 @@ class TestEntryMinHoldSettingsDefaults:
     def test_other_strategies_do_not_have_min_hold_setting(self):
         for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
             assert "entry_min_hold_gate_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+    def test_min_hold_shadow_disabled_by_default(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["min_hold_shadow_enabled"] is False
+
+    def test_other_strategies_do_not_have_min_hold_shadow_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "min_hold_shadow_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]

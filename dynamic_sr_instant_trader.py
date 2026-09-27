@@ -239,6 +239,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
+    min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -403,13 +404,14 @@ def process_symbol(access_token, symbol, lot_size=65):
         # touch झाला असेल (शून्य किंवा फार कमी आधीचा buildup), तर तो क्षणिक noise/whipsaw असण्याची
         # शक्यता जास्त — किमान entry_min_hold_minutes इतकी मिनिटं सलग टिकून राहिलेला असेल तरच entry.
         # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
-        if entry_min_hold_gate_enabled and not is_directional_trade:
-            held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
-            if held_minutes < entry_min_hold_minutes:
-                log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
-                log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
-                cloud_db.save_signal_log(log_entry)
-                continue
+        # held_minutes इथेच (गेट बंद असतानाही) कायम काढला जातो — पुढे Min-Hold Shadow ब्लॉकलाही
+        # (बघा तिथली टिप्पणी) हाच वापरायचा आहे, entry_min_hold_gate_enabled वर अवलंबून नाही.
+        held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
+        if entry_min_hold_gate_enabled and not is_directional_trade and held_minutes < entry_min_hold_minutes:
+            log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
+            log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional
@@ -579,6 +581,32 @@ def process_symbol(access_token, symbol, lot_size=65):
                         )
                 except Exception as exc:
                     print(f"⚠️ OTM Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
+
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
+            # दिवस forward test करतो" — Min-Hold Duration Gate प्रत्यक्ष वापरण्याआधी, OTM Shadow
+            # च्याच सुरक्षित पॅटर्नने forward-test) — मूळ (ITM) trade सोबतच, याच सिग्नलवर (RSI/PCR/
+            # Cooldown/Max-Hits आधीच पार केलेले, वर) — फक्त entry_min_hold_minutes इतका वेळ level
+            # त्याच क्षणी आधीच टिकून होता (held_minutes, वर) तरच, एक स्वतंत्र, निव्वळ PAPER shadow
+            # trade समांतर नोंदवला जातो. entry_min_hold_gate_enabled (blocking गेट, वर) पासून
+            # पूर्णपणे स्वतंत्र — तो बंद असला (जुनं वर्तन 100% तसंच) तरीही हा शॅडो चालू शकतो, फक्त
+            # निरीक्षणासाठी. Directional trades साठी वगळलेला (गेट प्रमाणेच). आधीच उघडलेला शॅडो trade
+            # असेल तर पुन्हा stack होऊ नये म्हणून has_open_trade_from_source तपासणी — त्याच exact
+            # spread_result (ITM structure) चा पुनर्वापर — इथे फक्त timing (कधी शिरायचं) वेगळी आहे,
+            # strike-निवड नाही (त्यासाठी OTM Shadow, वर, वेगळाच आहे).
+            if (min_hold_shadow_enabled and not is_directional_trade
+                    and held_minutes >= entry_min_hold_minutes
+                    and not has_open_trade_from_source(symbol, "dynamic_sr_instant_min_hold_shadow")):
+                try:
+                    open_multi_leg_trade(
+                        access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
+                        sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                        sl_pct_of_credit=100, source="dynamic_sr_instant_min_hold_shadow",
+                        entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                        entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                    )
+                except Exception as exc:
+                    print(f"⚠️ Min-Hold Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
         else:
             log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
             log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
