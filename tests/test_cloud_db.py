@@ -1859,3 +1859,27 @@ class TestOtmShadowSettingsDefaults:
         result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
         assert result["otm_shadow_enabled"] is True
         assert result["otm_shadow_strikes_count"] == 4
+
+
+class TestEntryMinHoldSettingsDefaults:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
+    Performance Report वरून सापडलेल्या "level हिट होताच SL उडणं" शंकेवरून, signal_log backtest
+    केल्यावर) — entry_min_hold_gate_enabled डीफॉल्ट बंद (backward-compatible), फक्त "1m_instant"
+    साठीच उपलब्ध."""
+
+    def test_min_hold_gate_disabled_by_default(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_min_hold_gate_enabled"] is False
+
+    def test_min_hold_minutes_default_is_3(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_min_hold_minutes"] == 3
+
+    def test_other_strategies_do_not_have_min_hold_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "entry_min_hold_gate_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+    def test_min_hold_shadow_disabled_by_default(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["min_hold_shadow_enabled"] is False
+
+    def test_other_strategies_do_not_have_min_hold_shadow_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "min_hold_shadow_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
