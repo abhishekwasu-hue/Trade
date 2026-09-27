@@ -47,6 +47,13 @@ _ALL_TIME_SUMMARY_START = datetime.date(2026, 9, 17)
 # live_trades.source कोडला वाचनीय नाव — जेणेकरून टेबल/चार्टमध्ये कच्चा internal कोड ऐवजी नाव दिसेल.
 _SOURCE_LABELS = {
     "dynamic_sr_instant": "1-Min Instant Trader (Dynamic S/R)",
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("त्यानुसार PDF update करा" — Min-Hold Shadow
+    # forward-test साठी) — दोन्ही शॅडो sources ना वाचनीय लेबल, जेणेकरून Strategy-wise Performance
+    # (Dashboard + Performance Report PDF, दोन्हीत हाच dict वापरला जातो) मध्ये raw source string
+    # ऐवजी स्पष्ट, ओळखता येईल असं नाव दिसेल — "खरा (तात्काळ entry)" वि. "शॅडो (confirmed entry)"
+    # लगेच वेगळं दिसावं म्हणून.
+    "dynamic_sr_instant_otm_shadow": "1-Min Instant Trader — OTM Shadow (PAPER, ITM vs OTM Strike)",
+    "dynamic_sr_instant_min_hold_shadow": "1-Min Instant Trader — Min-Hold Shadow (PAPER, Confirmed Entry)",
     "srv2_momentum_reversal": "SRv2 Momentum Reversal (15/30/60M)",
     "credit_spread_auto_trader": "Credit Spread Auto Trader",
     "oi_signal_auto_trader": "OI Signal Auto Trader",
