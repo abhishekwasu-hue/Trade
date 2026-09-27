@@ -16,7 +16,7 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfgen.canvas import Canvas as _BaseCanvas
 
@@ -2748,12 +2748,18 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             story.append(Spacer(1, 10))
 
     if trade_charts:
-        story.append(PageBreak())
-        next_section(
+        # 🎓 वापरकर्त्याने सापडवलेली bug ("remove free unused space") — इथे आधी बिनशर्त PageBreak()
+        # होता (Conclusion→Trade Log मध्ये आधी सापडलेल्याच जातीची चूक, बघा वरची "Page no 5" टिप्पणी) —
+        # Trade Log चा शेवटचा timeframe-गट पानाच्या वरच्या भागातच संपला तरी, उरलेली संपूर्ण जागा रिकामी
+        # ठेवून Trade Charts जबरदस्तीने पुढच्या (बहुतेक वेळा जवळपास रिकाम्याच) पानावर ढकललं जायचं. आता
+        # हा PageBreak काढला -- मथळा+परिचय-परिच्छेद KeepTogether मध्ये (मथळा एकटा तळाशी अडकू नये म्हणून),
+        # उरलेली जागा असेल तर तिथेच सुरू होईल, नसेल तरच नैसर्गिकपणे पुढच्या पानावर जाईल.
+        trade_charts_header = _section_header_accent(
             f"Trade Charts — Entry/Exit Cross-Verification ({min(len(trade_charts), 10)} of {len(trade_charts)} trades)",
-            "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी",
+            "व्यवहार तक्ते — प्रवेश/निर्गम पडताळणी", sec[0],
         )
-        story.extend(_bi_para(
+        sec[0] += 1
+        trade_charts_intro = _bi_para(
             "Each chart below is the underlying's own price action around that trade — the blue line marks "
             "when the bot entered, the green/red line marks when it exited (green = profit, red = loss), and the "
             "purple dotted line (if shown) is the exact Support/Resistance level the bot's entry was based on. "
@@ -2764,7 +2770,8 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             "असलेली नेमकी सपोर्ट/रेझिस्टन्स पातळी आहे. त्या वेळच्या खऱ्या बाजार हालचालीशी प्रत्येक एंट्री "
             "व एक्झिट दृश्यरित्या पडताळण्यासाठी याचा वापर करा.",
             usable_width, text_color=colors.HexColor("#555555"), space_after=8,
-        ))
+        )
+        story.append(KeepTogether([trade_charts_header, Spacer(1, 8)] + trade_charts_intro))
         _render_trade_charts_section(story, trade_charts, usable_width, max_charts=10)
 
     story.append(Spacer(1, 10))
