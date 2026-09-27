@@ -35,7 +35,7 @@ from oi_analysis import (
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
     fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
 )
-from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade
+from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade, format_trade_result
 from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
@@ -368,7 +368,11 @@ def _render_strategy_builder():
                                 product_type="D", trading_mode=trading_mode_choice, trading_style="INTRADAY",
                                 sl_pct_of_credit=None, source="strategy_builder", adapter=adapter,
                             )
-                        st.success(f"{trading_mode_choice} Trade: {trade_status}") if trade_result else st.error(f"अयशस्वी: {trade_status}")
+                        # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result()
+                        # ची टिप्पणी) — trade_status इथे raw dict असायचा, त्यामुळे संदेशात Python dict
+                        # repr दिसायचं ("{'trade_id': ..., 'order_ids': [...]}"), वाचनीय स्ट्रिंग नाही.
+                        trade_status_display = format_trade_result(trade_result, trade_status)
+                        st.success(f"{trading_mode_choice} Trade: {trade_status_display}") if trade_result else st.error(f"अयशस्वी: {trade_status_display}")
     except Exception as e:
         st.error(f"Strategy Builder मध्ये चूक: {type(e).__name__}: {e}")
 

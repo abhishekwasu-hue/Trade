@@ -921,6 +921,28 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         return False, {"status": "error", "message": f"Trade DB मध्ये नोंदवता आला नाही (trade_id टक्कर: {trade_id}). ऑर्डर प्रत्यक्षात प्लेस झाला असेल तर Reconciliation Check चालवून तपासा."}
     return True, {"trade_id": trade_id, "order_ids": order_ids}
 
+
+def format_trade_result(ok, response):
+    """🎓 code-review द्वारे सापडवलेली, चार बॉट फाईल्समध्ये (dynamic_sr_instant_trader.py,
+    classic_sr_reversal_trader.py, srv2_momentum_reversal_strategy.py, mcx_futures_trader.py)
+    सारखीच सापडलेली bug — single-account मार्गावर सगळे callers `trade_result, trade_status =
+    open_multi_leg_trade(...)` असं unpack करतात आणि नंतर थेट `log_entry["trade_status"] =
+    trade_status` करून cloud_db.save_signal_log() ला पाठवतात — पण open_multi_leg_trade() चं दुसरं
+    मूल्य कधीच plain string नसतं, नेहमी dict असतं (यशस्वी: {"trade_id":..,"order_ids":..}, अयशस्वी:
+    {"status":"error","reason":..} किंवा {"status":"error","message":..}). signal_log.trade_status
+    हा Postgres TEXT column असल्याने raw dict पाठवला की psycopg2 चा insert अपयशी ठरतो —
+    save_signal_log() चं except-सर्व-गिळणारं wrapper त्या क्षणी पूर्णपणे गप्प राहतं, आणि नेमक्या
+    त्या entry-क्षणाची signal_log रांगच कायमची हरवते (उत्पादन signal_log export च्या backtest
+    मध्ये हेच आधी सापडलं होतं — entry-वेळेची रांग गहाळ, आधी-नंतरच्या रांगा मात्र व्यवस्थित).
+    इथे तेच (ok, response) जोडपं वाचनीय स्ट्रिंगमध्ये रूपांतरित करतो — सर्व चार बॉट्सनी हेच वापरावं."""
+    if not isinstance(response, dict):
+        return str(response)
+    if ok:
+        return f"OPENED (trade_id={response.get('trade_id')})"
+    reason = response.get("reason") or response.get("message") or response
+    return f"FAILED: {reason}"
+
+
 def compute_trailing_sl_level(current_pnl, peak_pnl, atr_points, lot_size, lots, atr_multiplier=1.5, original_sl_level=None):
     """
     ATR-आधारित Trailing SL — पोझिशन नफ्यात असताना, ATR (बाजाराच्या अस्थिरतेवर आधारित) पटीत एक अंतर

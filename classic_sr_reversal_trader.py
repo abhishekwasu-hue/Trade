@@ -46,7 +46,7 @@ from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import calculate_rsi, find_swings, filter_major_swings, analyze_chart_zones, detect_trendline
 from strategy import select_credit_spread_itm, select_naked_option_itm
-from trading_engine import open_multi_leg_trade
+from trading_engine import open_multi_leg_trade, format_trade_result
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
 RSI_NEUTRAL_LEVEL = 50  # Support touch + RSI < neutral -> Bull Put Spread. Resistance touch + RSI > neutral -> Bear Call Spread
@@ -360,13 +360,18 @@ def process_symbol(access_token, symbol, lot_size=65):
                 if factory_errors:
                     trade_status += " | वगळलेले: " + "; ".join(factory_errors)
             else:
-                trade_result, trade_status = open_multi_leg_trade(
+                trade_ok, trade_response = open_multi_leg_trade(
                     access_token, symbol, spread_result, lots=lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 )
+                # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
+                # टिप्पणी) — open_multi_leg_trade() चं दुसरं मूल्य dict असतं, raw dict signal_log.
+                # trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी
+                # ठरायचा, आणि नेमकी entry-क्षणाचीच signal_log रांग हरवायची.
+                trade_status = format_trade_result(trade_ok, trade_response)
             log_entry["trade_status"] = trade_status
             cloud_db.save_signal_log(log_entry)
         else:
@@ -407,13 +412,14 @@ def process_symbol(access_token, symbol, lot_size=65):
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
-                _, naked_status = open_multi_leg_trade(
+                naked_ok, naked_response = open_multi_leg_trade(
                     access_token, symbol, naked_result, lots=naked_lots, lot_size=lot_size,
                     sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                 )
+                naked_status = format_trade_result(naked_ok, naked_response)
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
