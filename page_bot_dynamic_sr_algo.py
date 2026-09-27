@@ -515,6 +515,31 @@ def render():
                     min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
                 )
 
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
+            # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
+            # केल्यावर) — दिवसाच्या पहिल्याच, ताज्या touch वर लगेच entry घेतली की तो क्षणिक
+            # noise/whipsaw ठरण्याची शक्यता जास्त दिसली (backtest मध्ये पुरावा — काही SL trades
+            # 36-48 सेकंदातच लागले, तर तेच exact level नंतर काही मिनिटं टिकून राहिल्यावर मोठा विजयी
+            # trade ठरला). पूर्ण खात्रीशीर उपाय नाही (एक मध्यम-buildup trade backtest मध्ये अजूनही
+            # तोट्याचाच निघाला) — म्हणून डीफॉल्ट बंद, threshold वापरकर्त्याने स्वतः ठरवून forward-test करावा.
+            st.markdown("---")
+            sub_header("⏱️ Minimum Level-Hold Duration Before Entry", HDR_ORANGE)
+            entry_min_hold_gate_enabled = st.checkbox(
+                "Minimum Hold Duration Gate सक्रिय (डीफॉल्ट बंद)",
+                value=bool(settings.get("entry_min_hold_gate_enabled", False)),
+                key=_widget_key(strategy_key, symbol, "entry_min_hold_gate_enabled"),
+            )
+            st.caption(
+                "Level ला touch होऊन किमान इतकी मिनिटं सलग टिकून राहिलेला असेल तरच entry घेतली जाते — "
+                "दिवसाचा अगदी पहिलाच, ताजा (शून्य-मिनिट जुना) touch गाळला जातो, कारण तो क्षणिक "
+                "noise/whipsaw असण्याची शक्यता जास्त असते. Directional (IV Breakout/Breakout Entry) "
+                "trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे."
+            )
+            entry_min_hold_minutes = _number_input(
+                "किमान किती मिनिटं level टिकून हवा", settings, "entry_min_hold_minutes", strategy_key, symbol,
+                min_value=1, max_value=30, step=1, disabled=not entry_min_hold_gate_enabled,
+            )
+
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
@@ -817,6 +842,8 @@ def render():
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_lookback_candles"] = int(breakout_lookback_candles)
             new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
+            new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
+            new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
         elif strategy_key == "classic_sr_reversal":

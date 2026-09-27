@@ -273,6 +273,54 @@ class TestCheckBreakoutPriceConsolidation:
         assert dsr.check_breakout_price_consolidation(self.LEVEL, candles, lookback_candles=2, tolerance_pct=0.10) is False
 
 
+class TestCountConsecutiveTouchMinutes:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
+    signal_log backtest वरून सापडलेल्या "level हिट होताच SL उडणं" पॅटर्नवर) — सद्य क्षणापासून मागे
+    मोजत, level च्या touch-tolerance बफरमध्ये सलग किती (1-मिनिट) candles आहेत, हे मोजणारं शुद्ध
+    फंक्शन. candles: जुनं ते नवीन क्रमाने."""
+
+    LEVEL = 23900.0
+
+    def _candles(self, lows_highs):
+        return [{"low": lo, "high": hi} for lo, hi in lows_highs]
+
+    def test_zero_when_last_candle_does_not_touch(self):
+        candles = self._candles([(23895.0, 23905.0), (24000.0, 24010.0)])
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles) == 0
+
+    def test_counts_single_fresh_touch_as_one(self):
+        candles = self._candles([(24000.0, 24010.0), (23898.0, 23901.0)])
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles) == 1
+
+    def test_counts_back_from_most_recent_consecutive_touches(self):
+        candles = self._candles([
+            (24000.0, 24010.0),  # touch नाही -- इथेच थांबायला हवं
+            (23898.0, 23901.0),  # touch
+            (23897.7, 23902.0),  # touch
+            (23898.5, 23901.8),  # touch (सद्य क्षण)
+        ])
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles) == 3
+
+    def test_old_touches_before_a_gap_not_counted(self):
+        # सुरुवातीचे दोन touch जुने आहेत, मध्ये एक non-touch candle आल्याने सलगपणा तुटतो
+        candles = self._candles([
+            (23898.0, 23901.0),  # touch (जुना, सलग नाही -- मोजू नये)
+            (23898.0, 23901.0),  # touch (जुना, सलग नाही -- मोजू नये)
+            (24000.0, 24010.0),  # touch नाही -- सलगपणा तुटला
+            (23898.0, 23901.0),  # touch (सद्य क्षणापासून सलग)
+        ])
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles) == 1
+
+    def test_empty_candles_returns_zero(self):
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, []) == 0
+
+    def test_respects_custom_tolerance_pct(self):
+        # level पासून 50 points दूर -- 0.01% (2.39 pts) बाहेर, पण 0.30% (71.7 pts) आत
+        candles = self._candles([(23950.0, 23951.0)])
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles, tolerance_pct=0.01) == 0
+        assert dsr.count_consecutive_touch_minutes(self.LEVEL, candles, tolerance_pct=0.30) == 1
+
+
 def _fake_zones():
     """🎓 वापरकर्त्याने सांगितलेला निर्णय — 1M touches profitable नाहीत, त्यामुळे 1m_instant चा
     डीफॉल्ट timeframe_choice आता "BOTH" ऐवजी "5M" आहे. हे fixture बहुतेक टेस्ट्समध्ये
@@ -859,6 +907,79 @@ class TestBullishBearishEntryToggle:
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
              patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
              patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+
+class TestMinHoldDurationGate:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
+    Performance Report वरून सापडलेल्या "level हिट होताच SL उडणं" या शंकेवरून, 3-दिवसांचा signal_log
+    backtest केल्यावर) — RSI/PCR Gate दोन्ही मुद्दामच बंद ठेवून, फक्त या नवीन गेटचंच वर्तन तपासलं जातं."""
+
+    def _base_settings(self, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_pcr_gate_enabled"] = False
+        settings.update(overrides)
+        return settings
+
+    def test_fresh_single_touch_skipped_when_gate_enabled(self):
+        # शेवटचाच candle touch करतो (held=1 मिनिट), किमान 3 हवीत -- गेट skip करेल.
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._base_settings(entry_min_hold_gate_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_sufficiently_held_touch_allows_entry_when_gate_enabled(self):
+        # शेवटचे 3 candles सलग touch करतात (held=3 मिनिटं), किमान 3 हवीत -- गेट पास होईल.
+        candles_touch = _candles_with_rsi([
+            {"open": 23899.0, "high": 23901.0, "low": 23898.0, "close": 23900.0},
+            {"open": 23900.0, "high": 23902.0, "low": 23897.8, "close": 23899.0},
+            {"open": 23899.0, "high": 23901.5, "low": 23898.2, "close": 23900.5},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._base_settings(entry_min_hold_gate_enabled=True, entry_min_hold_minutes=3)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+    def test_disabled_by_default_does_not_block_fresh_touch(self):
+        # गेट डीफॉल्ट-बंद असल्याने, held=1 मिनिट असूनही (वरच्या पहिल्या test सारखाच touch) trade होतो.
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        settings = self._base_settings()  # entry_min_hold_gate_enabled डीफॉल्ट False च राहतो
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \

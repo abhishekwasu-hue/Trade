@@ -122,6 +122,25 @@ def check_level_crossed(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
     return False, None, None
 
 
+def count_consecutive_touch_minutes(level, candles, tolerance_pct=TOUCH_TOLERANCE_PCT):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
+    Performance Report वरून सापडलेल्या "level हिट होताच SL उडणं" या पॅटर्नवर, signal_log backtest
+    केल्यावर) — सद्य क्षणापासून मागे मोजत, level ±tolerance_pct% च्या बफरमध्ये सलग किती मिनिटांचे
+    (1-मिनिट) candles सतत आहेत हे मोजणे. candles: जुनं ते नवीन क्रमाने (todays_candles_df सारखे,
+    प्रत्येक dict मध्ये किमान "low"/"high" key). मागे जाताना एकही candle बफरबाहेर सापडला की मोजणी
+    थांबते — सलगपणा तुटल्यावर जुना (आधीचा, न-जोडलेला) इतिहास मोजला जात नाही.
+    रिटर्न: int (सलग मिनिटांची संख्या, 0 म्हणजे हा ताजाच/पहिलाच touch)."""
+    buffer = level * tolerance_pct / 100
+    level_low, level_high = level - buffer, level + buffer
+    count = 0
+    for c in reversed(candles):
+        if c["low"] <= level_high and c["high"] >= level_low:
+            count += 1
+        else:
+            break
+    return count
+
+
 def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (hysteresis, ±0.10%) — किंमत level पासून ±buffer_pct% च्या
     आतच (borderline) असेल, तर आधीचीच "निश्चित" दिशा कायम ठेवायची (उगाच फ्लिप नाही). closes (आजच्या
@@ -218,6 +237,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
+    entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
+    entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -251,6 +272,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (hysteresis) — सर्व levels साठी एकच, प्रति-symbol एकदाच
     # काढलेली आजच्या close किमतींची यादी (प्रत्येक level साठी पुन:पुन्हा tolist() करायची गरज नाही).
     todays_closes = todays_candles_df["close"].tolist()
+    # "Minimum Level-Hold Duration" गेटसाठी — सर्व levels साठी एकच, प्रति-symbol एकदाच काढलेले
+    # आजचे सर्व 1-मिनिट candles (low/high सकट) — count_consecutive_touch_minutes() ला हवेत.
+    todays_candle_records = todays_candles_df.to_dict("records")
 
     outcomes = []
     for row, timeframe_suffix in pooled_levels:
@@ -373,6 +397,19 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = "Bearish Entry सेटिंग्जमधून बंद आहे"
             cloud_db.save_signal_log(log_entry)
             continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
+        # बघा वरची count_consecutive_touch_minutes() ची टिप्पणी) — level ला दिवसाचा पहिलाच, ताजा
+        # touch झाला असेल (शून्य किंवा फार कमी आधीचा buildup), तर तो क्षणिक noise/whipsaw असण्याची
+        # शक्यता जास्त — किमान entry_min_hold_minutes इतकी मिनिटं सलग टिकून राहिलेला असेल तरच entry.
+        # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
+        if entry_min_hold_gate_enabled and not is_directional_trade:
+            held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
+            if held_minutes < entry_min_hold_minutes:
+                log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
+                log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
+                cloud_db.save_signal_log(log_entry)
+                continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional

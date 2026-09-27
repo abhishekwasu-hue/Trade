@@ -245,6 +245,18 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # डेटा गहाळ/जुना असल्यास trade थांबवणे (fail-safe) — हे PCR गेट बंद असतानाही लागू होत नाही.
         "pcr_bullish_min": 0.80,
         "pcr_bearish_max": 1.10,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Performance Report — "level हिट होताच स्टॉप
+        # लॉस उडण्याचे प्रमाण जास्त आहे" या शंकेवरून, signal_log चा 3-दिवसांचा backtest केल्यावर) —
+        # दिवसाचा पहिलाच (शून्य आधीचा buildup) touch झाल्या-झाल्याच entry घेतली, तर तो एक क्षणिक
+        # noise/whipsaw touch असण्याची शक्यता जास्त असते (उदा. 25-Sep 12:56 चा touch, entry नंतर
+        # फक्त 36-48 सेकंदातच SL लागला) — त्या तुलनेत, level आधीच काही मिनिटं सलग टिकून राहिलेला
+        # असेल तरच entry घेतली, तर तेच exact level नंतर (उदा. त्याच दिवशी 13:23 ला, ~27 मिनिटांच्या
+        # आधीच्या buildup नंतर) मोठा विजयी trade ठरला. संपूर्ण certainity नाही (backtest मध्ये एक
+        # मध्यम-buildup trade अजूनही तोट्याचाच निघाला, आणि एक कमी-buildup trade विजयी झाला) — म्हणून
+        # हे स्वतंत्र, डीफॉल्ट-बंद गेट आहे, threshold वापरकर्त्याने स्वतः ठरवून forward-test करावा.
+        # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
+        "entry_min_hold_gate_enabled": False,
+        "entry_min_hold_minutes": 3,
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या
