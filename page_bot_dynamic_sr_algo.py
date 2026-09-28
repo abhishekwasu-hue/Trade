@@ -231,11 +231,32 @@ def _render_vix_spike_halt_panel():
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
 
+def _render_vix_halt_alert_banner():
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("VIX gate ची कंडिशन फुल झाली असल्यास तसा मेसेज
+    डिस्प्ले व्हायला पाहिजे, जेणेकरून user ला समजेल की आज नवीन entry होणार नाही") — आधीचा "🔴 ट्रिप
+    झालं" मेसेज खालच्या 🌪️ India VIX Spike Halt expander च्या आतच (collapsed, डीफॉल्ट बंद) होता —
+    तिथे क्लिक करूनच बघावा लागायचा. आता, आज खरंच ट्रिप झालेलं असेल तरच (नाहीतर काहीही न दाखवता,
+    रोजची गर्दी टाळण्यासाठी) हाच इशारा वरतीच, न-collapse होणारा banner म्हणून लगेच दिसतो —
+    पानावर आल्या-आल्याच, खाली Strategy/Symbol निवडण्याआधीच."""
+    vh_settings = cloud_db.get_vix_spike_halt_settings()
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    if vh_settings["enabled"] and vh_settings.get("trade_date") == today_str and vh_settings.get("halted"):
+        pct = vh_settings.get("pct_change")
+        pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
+        st.error(
+            f"🌪️🔴 **India VIX Spike Halt सक्रिय** — आज India VIX {pct_str} बदलला (मर्यादा "
+            f"{vh_settings['threshold_pct']:.0f}%) — **NIFTY साठी आजचे उर्वरित सर्व नवीन LIVE trades "
+            f"(bullish आणि bearish, दोन्ही दिशा) थांबवलेले आहेत** (PAPER trades नेहमीप्रमाणेच चालू "
+            f"राहतील). तपशील/सेटिंग्ज खाली '🌪️ India VIX Spike Halt' मध्ये."
+        )
+
+
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("तिन्ही strategies (5-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
 
     _render_live_status_banner()
+    _render_vix_halt_alert_banner()
     _render_kill_switch_panel()
     _render_vix_spike_halt_panel()
 
