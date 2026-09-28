@@ -393,9 +393,9 @@ def render():
                 key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
             )
             st.caption(
-                "Short leg (आणि Naked Option चा buy leg) ATM पासून किती strikes दूर — धन (+) आकडा ITM "
-                "दिशेने (जास्त प्रीमियम, कमी अंतर), 0 म्हणजे ATM, ऋण (-) आकडा OTM दिशेने (कमी प्रीमियम, "
-                "जास्त सुरक्षित अंतर)."
+                "Short leg ATM पासून किती strikes दूर — धन (+) आकडा ITM दिशेने (जास्त प्रीमियम, कमी "
+                "अंतर), 0 म्हणजे ATM, ऋण (-) आकडा OTM दिशेने (कमी प्रीमियम, जास्त सुरक्षित अंतर). "
+                "Naked Option साठी स्वतंत्र सेटिंग खाली (🔺 Long With Hedge विभागात)."
             )
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -412,11 +412,15 @@ def render():
                 # निवड. साठवला मात्र आधीसारखाच "itm_depth_points" (raw points, strike_step ने गुणून) —
                 # बाकी कुठल्याही bot/strategy फाईलमध्ये (dynamic_sr_instant_trader.py/
                 # classic_sr_reversal_trader.py/srv2_momentum_reversal_strategy.py) कुठलाही बदल लागत नाही.
+                # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — रेंज -10/+20 वरून -5/+10 केली (+20 strikes
+                # म्हणजे NIFTY साठी 1000 points इतकं खोल ITM — तिथे premium जवळजवळ पूर्ण intrinsic, कमी
+                # liquidity, अव्यवहार्य). Naked Option साठी आता वेगळंच सेटिंग असल्याने (खाली), इथला
+                # caption मधला "Naked Option चा buy leg" उल्लेखही काढला.
                 strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
                 itm_depth_strikes_default = int(round(float(settings["itm_depth_points"]) / strike_step))
                 itm_depth_strikes = st.number_input(
-                    "Strike Offset from ATM (strikes; + ITM / 0 ATM / - OTM)",
-                    value=itm_depth_strikes_default, min_value=-10, max_value=20, step=1,
+                    "Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
+                    value=itm_depth_strikes_default, min_value=-5, max_value=10, step=1,
                     key=_widget_key(strategy_key, symbol, "itm_depth_strikes"),
                 )
                 itm_depth_points = itm_depth_strikes * strike_step
@@ -712,13 +716,26 @@ def render():
                 naked_enabled = st.checkbox("Naked Option Trade सक्रिय", value=bool(settings.get("naked_enabled", True)), key=_widget_key(strategy_key, symbol, "naked_enabled"))
             with n1:
                 naked_hedge_enabled = st.checkbox("Hedge जोडा (Debit Spread) — डीफॉल्ट बंद", value=bool(settings.get("naked_hedge_enabled", False)), key=_widget_key(strategy_key, symbol, "naked_hedge_enabled"))
-            n2, n3 = st.columns(2)
+            n2, n3, n4 = st.columns(3)
             with n2:
                 # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी Naked Option Trade नेहमी वरच्याच Credit Spread
                 # "Lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
                 # trade-प्रकार असल्याने आता स्वतंत्रपणे ठरवता येतं.
                 naked_lots = _number_input("Naked Option — Lots (Credit Spread पासून स्वतंत्र)", settings, "naked_lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
             with n3:
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Credit Spread ITM श्रेयस्कर, Naked
+                # Option OTM श्रेयस्कर — दोन्हीसाठी एकच setting चुकीचं") — आधी buy leg वरच्याच
+                # Credit Spread "Strikes from ATM" शी जोडलेला होता (एकच itm_depth_points). आता
+                # स्वतंत्र — Credit Spread ITM आणि Naked Option OTM असं एकाच वेळी निवडताही येईल.
+                naked_itm_depth_strikes_default = int(round(float(settings.get("naked_itm_depth_points", settings["itm_depth_points"])) / strike_step))
+                naked_itm_depth_strikes = st.number_input(
+                    "Naked Option — Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
+                    value=naked_itm_depth_strikes_default, min_value=-5, max_value=10, step=1,
+                    key=_widget_key(strategy_key, symbol, "naked_itm_depth_strikes"),
+                )
+                naked_itm_depth_points = naked_itm_depth_strikes * strike_step
+                st.caption(f"= {naked_itm_depth_points:+.0f} points (strike step {strike_step})")
+            with n4:
                 naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
     with tab_exit:
@@ -918,6 +935,7 @@ def render():
             "spread_sl_spot_pct": float(spread_sl_spot_pct), "spread_sl_premium_points": float(spread_sl_premium_points),
             "spread_tsl_spot_pct": float(spread_tsl_spot_pct), "spread_tsl_premium_points": float(spread_tsl_premium_points),
             "naked_enabled": bool(naked_enabled), "naked_lots": int(naked_lots), "naked_hedge_enabled": bool(naked_hedge_enabled),
+            "naked_itm_depth_points": float(naked_itm_depth_points),
             "naked_hedge_width_points": float(naked_hedge_width_points),
             "naked_sl_spot_pct": float(naked_sl_spot_pct), "naked_sl_premium_points": float(naked_sl_premium_points),
             "naked_tsl_spot_pct": float(naked_tsl_spot_pct), "naked_tsl_premium_points": float(naked_tsl_premium_points),
