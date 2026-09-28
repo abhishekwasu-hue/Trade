@@ -676,7 +676,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
             # directional trades वेगळे शोधता यावेत.
             if is_breakout_trade:
-                log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (price consolidation + 5-मिनिट candle close), RSI/PCR Gate वगळले"
+                log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (5-मिनिट candle close, buffer% सह), RSI/PCR Gate वगळले"
             elif is_directional_trade:
                 log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
             cloud_db.save_signal_log(log_entry)
@@ -802,7 +802,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
         if is_breakout_trade:
-            rsi_display = "📈 Breakout Entry (price consolidation + 5-मिनिट candle close) — RSI/PCR Gate वगळले."
+            rsi_display = "📈 Breakout Entry (5-मिनिट candle close, buffer% सह) — RSI/PCR Gate वगळले."
         elif is_directional_trade:
             rsi_display = f"📈 Directional trade (IV breakout {iv_change_pct:+.1f}%) — RSI/PCR Gate वगळले."
         elif entry_rsi_gate_enabled:

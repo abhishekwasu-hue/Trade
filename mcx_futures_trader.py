@@ -220,8 +220,14 @@ def process_symbol(access_token, symbol):
             opposite_hit_count, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=opposite_role)
             if opposite_hit_count >= 2:
                 candles_for_breakout = [{"close": c} for c in todays_closes]
+                # 🎓 code-review द्वारे सापडवलेली bug — dynamic_sr_instant_trader.py मध्ये NIFTY-विशिष्ट
+                # "5 minute candle close Breakout beyond 0.010%" सुधारणेसाठी check_breakout_candle_close()
+                # ला नवीन buffer_pct पॅरामीटर (डीफॉल्ट 0.010%) जोडला गेला — तो इथे (MCX, वेगळ्याच,
+                # कधीच न बदललेल्या मागणीसाठी) कधीच मागितला/तपासला गेला नव्हता, तरीही डीफॉल्ट मूल्यामुळे
+                # शांतपणे लागू झाला असता (आधीचा strict >/< नाही). इथे buffer_pct=0.0 स्पष्टपणे देऊन
+                # MCX चं established (या सुधारणेआधीचं) वर्तन जसंच्या तसं ठेवलं.
                 if (check_breakout_price_consolidation(level_price, candles_for_breakout, breakout_lookback_candles, breakout_tolerance_pct)
-                        and check_breakout_candle_close(level_price, direction, candles_for_breakout)):
+                        and check_breakout_candle_close(level_price, direction, candles_for_breakout, buffer_pct=0.0)):
                     is_breakout_trade = True
                     touched = True
 

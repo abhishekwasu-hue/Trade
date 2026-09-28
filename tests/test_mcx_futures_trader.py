@@ -452,6 +452,29 @@ class TestMcxBreakoutEntry:
             assert mock_telegram.called
             assert "Breakout Entry" in mock_telegram.call_args.args[0]
 
+    def test_candle_close_confirmation_uses_no_buffer_not_nifty_default(self):
+        """🎓 code-review द्वारे सापडवलेली bug — dynamic_sr_instant_trader.py मधल्या NIFTY-विशिष्ट
+        "5 minute candle close Breakout beyond 0.010%" सुधारणेने check_breakout_candle_close() ला
+        buffer_pct=0.010 (डीफॉल्ट) दिला — MCX साठी हे कधीच मागितलं/तपासलं गेलं नव्हतं, तरीही इथून
+        buffer_pct न दिल्याने शांतपणे लागू झालं असतं. आता स्पष्टपणे buffer_pct=0.0 दिलेला आहे --
+        हा टेस्ट तेच लॉक करतो (call बरोबर argument सह होतो)."""
+        settings = self._breakout_settings()
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft, "check_breakout_candle_close", wraps=mft.check_breakout_candle_close) as mock_close_check, \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T51"}, "OPENED")) as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called
+            assert mock_close_check.called
+            assert mock_close_check.call_args.kwargs.get("buffer_pct") == 0.0
+
     def test_breakout_trade_still_blocked_when_position_already_open(self):
         """established has_open_trade_from_source() सुरक्षा-तपासणी breakout trade लाही लागू व्हायला
         हवी."""
