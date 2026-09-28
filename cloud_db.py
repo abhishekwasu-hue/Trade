@@ -299,6 +299,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_breakout_gate_enabled": False,
         "breakout_lookback_candles": 12,
         "breakout_tolerance_pct": 0.30,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
+        # 0.010%") — breakout-confirm करणारा 5-मिनिट candle level पासून किमान इतक्या% तरी पलीकडे
+        # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close "buildup" मानला जाऊ नये) —
+        # Dashboard वरून बदलण्याजोगं (hardcoded नाही).
+        "breakout_close_buffer_pct": 0.010,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ

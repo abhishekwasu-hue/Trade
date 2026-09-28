@@ -175,19 +175,25 @@ def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYST
     return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
-def check_breakout_candle_close(level, breakout_direction, candles_5m):
+def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pct=0.010):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Breakout buildup and 5 minute
     candle closed happen then take entry in the same direction") — नुकताच पूर्ण झालेला (शेवटचा,
     आजच्याच दिवसाचा) 5-मिनिट candle त्या level च्या पलीकडे निर्णायकपणे **close** झाला आहे का (नुसता
     touch/wick नाही, candle close) — breakout_direction नुसार (BULLISH = level च्या वर close,
     BEARISH = level च्या खाली close). candles_5m: [{"close":..}, ...] (जुनं ते नवीन क्रमाने, फक्त
-    आजचेच). रिटर्न: bool"""
+    आजचेच).
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond 0.010%") —
+    फक्त level च्या अगदी काठावर (0.001 पॉइंटनेही) close होणं "निर्णायक" मानलं जाऊ नये (noise/whipsaw
+    असू शकतं) — आता close level पासून किमान `buffer_pct`% (Dashboard-configurable, डीफॉल्ट 0.010%)
+    तरी पलीकडे असावा लागतो. रिटर्न: bool"""
     if not candles_5m:
         return False
     last_close = candles_5m[-1]["close"]
+    buffer = level * buffer_pct / 100
     if breakout_direction == "BULLISH":
-        return last_close > level
-    return last_close < level
+        return last_close > level + buffer
+    return last_close < level - buffer
 
 
 def check_breakout_price_consolidation(level, candles_5m, lookback_candles=12, tolerance_pct=0.30):
@@ -252,6 +258,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
+    breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
@@ -371,7 +378,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
                 todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
             if (check_breakout_price_consolidation(row["zone_low"], todays_5m_candles, breakout_lookback_candles, breakout_tolerance_pct)
-                    and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles)):
+                    and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)):
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True

@@ -214,6 +214,28 @@ class TestCheckBreakoutCandleClose:
         assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
         assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles) is False
 
+    def test_barely_beyond_level_within_default_buffer_not_confirmed(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
+        0.010%") — नुसतं काठावर (level पासून buffer% पेक्षा कमी अंतरावर) close होणं पुरेसं नाही --
+        डीफॉल्ट buffer_pct=0.010% म्हणजे 23900 साठी ≈2.39 पॉइंट्स, त्यापेक्षा कमी अंतर confirm नाही."""
+        candles = [{"close": 23901.0}]  # फक्त 1.0 पॉइंट पलीकडे (buffer च्या आत)
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
+        candles_bearish = [{"close": 23899.0}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles_bearish) is False
+
+    def test_beyond_default_buffer_confirmed(self):
+        """buffer_pct (डीफॉल्ट 0.010%, ≈2.39 पॉइंट्स 23900 साठी) पेक्षा जास्त अंतराने close झाला
+        तर मात्र confirm व्हायला हवा."""
+        candles = [{"close": 23903.0}]  # 3.0 पॉइंट पलीकडे, buffer (≈2.39) पेक्षा जास्त
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is True
+
+    def test_custom_buffer_pct_used_not_hardcoded(self):
+        """buffer_pct Dashboard settings वरून घेतला जायला हवा (hardcoded नाही) -- buffer_pct=0
+        दिलं की जुनं (कुठलाही buffer नसलेलं) strict > / < वर्तन परत यायला हवं."""
+        candles = [{"close": 23900.5}]
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles, buffer_pct=0.0) is True
+        assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles, buffer_pct=0.010) is False
+
 
 class TestCheckBreakoutPriceConsolidation:
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "buildup" साठी वेगळं, trade-
