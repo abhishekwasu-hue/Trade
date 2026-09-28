@@ -791,8 +791,14 @@ def process_symbol(access_token, symbol, lot_size=65):
         # मध्ये (कुठल्याही log-access शिवाय) नेमकं कारण दिसेल.
         naked_diag_entry = dict(log_entry)
         if settings.get("naked_enabled", True):
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Credit Spread income strategy साठी ITM
+            # श्रेयस्कर, Naked Option स्वस्त 'lottery' buy साठी बरेचदा OTM श्रेयस्कर — दोन्हीसाठी एकच
+            # setting असणं चुकीचं") — आधी हेच itm_depth_points (Credit Spread चं) naked leg साठीही
+            # वापरलं जायचं. आता स्वतंत्र naked_itm_depth_points — नसेल (जुनी, अजून customize न केलेली
+            # नोंद) तर fallback म्हणून जुनाच itm_depth_points (backward-compatible, वर्तन बदलत नाही).
+            naked_itm_depth_points = settings.get("naked_itm_depth_points", settings["itm_depth_points"])
             naked_result = select_naked_option_itm(
-                raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"], step=strike_step,
+                raw_chain, direction, atm_strike, itm_depth_points=naked_itm_depth_points, step=strike_step,
                 hedge_enabled=settings.get("naked_hedge_enabled", False),
                 hedge_width_points=settings.get("naked_hedge_width_points", 150),
             )
@@ -800,7 +806,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 naked_diag_entry["trade_status"] = "SKIPPED_NAKED_STRIKE_NOT_FOUND"
                 naked_diag_entry["reason"] = (
                     f"Naked trade साठी आवश्यक ITM strike (atm={atm_strike}, डेप्थ "
-                    f"{settings['itm_depth_points']}) raw_chain मध्ये सापडला नाही"
+                    f"{naked_itm_depth_points}) raw_chain मध्ये सापडला नाही"
                 )
                 cloud_db.save_signal_log(naked_diag_entry)
                 print(f"⚠️ {naked_diag_entry['reason']} — symbol={symbol}, direction={direction}")

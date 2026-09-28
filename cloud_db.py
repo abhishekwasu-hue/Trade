@@ -221,7 +221,11 @@ CREATE TABLE IF NOT EXISTS strategy_settings (
 STRATEGY_SETTINGS_DEFAULTS = {
     "1m_instant": {
         "lots": 1,
-        "itm_depth_points": 50,          # Short leg — ATM पासून किती points ITM
+        "itm_depth_points": 50,          # Credit Spread short leg — ATM पासून किती points ITM
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Credit Spread ITM श्रेयस्कर, Naked Option
+        # OTM श्रेयस्कर — दोन्हीसाठी एकच setting चुकीचं") — Naked Option च्या buy leg साठी स्वतंत्र
+        # डेप्थ — डीफॉल्ट जुन्याच itm_depth_points इतकाच (backward-compatible, वर्तन बदलत नाही).
+        "naked_itm_depth_points": 50,
         "hedge_width_points": 150,       # Long hedge — short strike पासून किती दूर
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 1M touches प्रत्यक्षात profitable नाहीत असं
         # वापरकर्त्याने backtest/live track-record वरून सांगितलं, त्यामुळे डीफॉल्ट आता फक्त "5M"
@@ -395,6 +399,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
     "15m_dynamic_sr": {
         "lots": 1,
         "itm_depth_points": 100,
+        "naked_itm_depth_points": 100,
         "hedge_width_points": 150,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single,
         # सममित rsi_neutral_level (50, Support<50/Resistance>50) ऐवजी आता 1m_instant/mcx_futures
@@ -466,6 +471,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
     "classic_sr_reversal": {
         "lots": 1,
         "itm_depth_points": 50,
+        "naked_itm_depth_points": 50,
         "hedge_width_points": 150,
         "timeframe_choice": "BOTH",      # "BOTH" | "5M" | "15M"
         "entry_rsi_gate_enabled": True,
@@ -585,7 +591,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
 # मोठे/लहान करतात — फक्त वापरकर्त्याने अजून त्या symbol साठी स्वतः customize न केलेल्या डीफॉल्टवरच लागू
 # होतं (एकदा जतन केलं की तोच जतन केलेला आकडा कायम वापरला जातो, इथे काही बदलत नाही).
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100}
-_STRIKE_RELATIVE_FIELDS = ("itm_depth_points", "hedge_width_points", "naked_hedge_width_points")
+_STRIKE_RELATIVE_FIELDS = ("itm_depth_points", "naked_itm_depth_points", "hedge_width_points", "naked_hedge_width_points")
 
 
 def _scale_strike_relative_defaults(defaults, symbol):

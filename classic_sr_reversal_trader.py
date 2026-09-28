@@ -384,8 +384,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         naked_result = None
         naked_diag_entry = dict(log_entry)
         if settings.get("naked_enabled", True):
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Credit Spread वि. Naked Option — स्वतंत्र
+            # Strike Offset) — बघा dynamic_sr_instant_trader.py ची तीच टिप्पणी.
+            naked_itm_depth_points = settings.get("naked_itm_depth_points", settings["itm_depth_points"])
             naked_result = select_naked_option_itm(
-                raw_chain, direction, atm_strike, itm_depth_points=settings["itm_depth_points"], step=strike_step,
+                raw_chain, direction, atm_strike, itm_depth_points=naked_itm_depth_points, step=strike_step,
                 hedge_enabled=settings.get("naked_hedge_enabled", False),
                 hedge_width_points=settings.get("naked_hedge_width_points", 150),
             )
@@ -393,7 +396,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 naked_diag_entry["trade_status"] = "SKIPPED_NAKED_STRIKE_NOT_FOUND"
                 naked_diag_entry["reason"] = (
                     f"Naked trade साठी आवश्यक ITM strike (atm={atm_strike}, डेप्थ "
-                    f"{settings['itm_depth_points']}) raw_chain मध्ये सापडला नाही"
+                    f"{naked_itm_depth_points}) raw_chain मध्ये सापडला नाही"
                 )
                 cloud_db.save_signal_log(naked_diag_entry)
         else:

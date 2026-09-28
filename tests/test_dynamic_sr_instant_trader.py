@@ -1275,6 +1275,61 @@ class TestNakedOptionTrade:
             assert mock_naked_select.called
             assert mock_trade.call_count == 2  # स्प्रेड + Naked दोन्ही
 
+    def test_naked_option_uses_its_own_itm_depth_independent_of_credit_spread(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Credit Spread income strategy साठी ITM
+        श्रेयस्कर, Naked Option स्वस्त 'lottery' buy साठी बरेचदा OTM श्रेयस्कर — दोन्हीसाठी एकच
+        setting चुकीचं") — Credit Spread ITM (धन) आणि Naked Option त्याच वेळी OTM (ऋण) असं वेगवेगळं
+        सेट केलं तरी, प्रत्येक select_*() फंक्शनला त्याचाच स्वतंत्र itm_depth_points मिळायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        custom_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        custom_settings["itm_depth_points"] = 100          # Credit Spread -- ITM
+        custom_settings["naked_itm_depth_points"] = -50    # Naked Option -- OTM
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr.cloud_db, "get_strategy_settings", return_value=custom_settings), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}) as mock_spread_select, \
+             patch.object(dsr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T72"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_spread_select.call_args.kwargs.get("itm_depth_points") == 100
+            assert mock_naked_select.call_args.kwargs.get("itm_depth_points") == -50
+
+    def test_naked_option_falls_back_to_credit_spread_itm_depth_when_unset(self):
+        """जुनी (अजून customize न केलेली) settings नोंद — naked_itm_depth_points की नसेल, तर
+        backward-compatible fallback म्हणून जुनाच itm_depth_points वापरला जायला हवा (वर्तन बदलत नाही)."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        legacy_settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        legacy_settings["itm_depth_points"] = 75
+        del legacy_settings["naked_itm_depth_points"]
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr.cloud_db, "get_strategy_settings", return_value=legacy_settings), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "fetch_option_expiries", return_value=[]), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "buy_leg": {"strike": 23850, "instrument_key": "CE1", "ltp": 60}, "net_credit": -60}) as mock_naked_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T73"}, "OPENED")), \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_naked_select.call_args.kwargs.get("itm_depth_points") == 75
+
     def test_naked_trade_skipped_when_disabled_in_settings(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
