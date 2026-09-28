@@ -438,6 +438,47 @@ class TestProcessSymbolCoreFlow:
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
 
+    def test_max_hits_per_zone_configurable_higher_limit_allows_third_hit(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — max_hits_per_zone आता डॅशबोर्डवरून
+        बदलता येतो. इथे तो ३ ठेवला आहे, त्यामुळे hit_count_so_far=2 असतानाही trade घ्यायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(max_hits_per_zone=3)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value=None), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), None)):
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+    def test_max_hits_per_zone_configurable_lower_limit_skips_second_hit(self):
+        """🎓 max_hits_per_zone=1 ठेवल्यावर, डीफॉल्ट-२ लॉजिकमध्ये परवानगी असलेला दुसरा hit
+        (hit_count_so_far=1) सुद्धा आता नाकारला जायला हवा."""
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(max_hits_per_zone=1)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now(), get_ist_now())):
+            csr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
     def test_previous_open_position_blocks_entry(self):
         candles_touch = _candles_with_rsi([
             {"open": 24010, "high": 24015, "low": 24000, "close": 24005},

@@ -170,6 +170,9 @@ def process_symbol(access_token, symbol):
     lot_size = resolved["lot_size"]
 
     lots = settings["lots"]
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
+    # 2") — बघा dynamic_sr_instant_trader.py मधली टिप्पणी.
+    max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
     bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
@@ -257,9 +260,9 @@ def process_symbol(access_token, symbol):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        if hit_count_so_far >= 2 and not is_breakout_trade:
+        if hit_count_so_far >= max_hits_per_zone and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
 

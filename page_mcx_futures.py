@@ -425,9 +425,12 @@ def render():
             key=_widget_key(symbol, "symbol_enabled"),
         )
         lots = _number_input("Lots (× commodity चा स्वतःचा lot_size)", settings, "lots", symbol, min_value=1, max_value=50, step=1)
-        st.caption(
-            "🔁 Multi-Hit मर्यादा (या project च्या सर्व bots सारखीच, बदलण्याजोगी नाही) — एकाच S/R "
-            "level वर एका दिवसात जास्तीत जास्त 2 वेळाच entry घेतली जाईल."
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या,
+        # default 2") — आधी ही मर्यादा hardcoded (2) आणि "बदलण्याजोगी नाही" असं स्पष्ट म्हटलेलं होतं —
+        # आता इतर सर्व bots सारखीच Dashboard वरून बदलता येते, डीफॉल्ट मात्र आधीसारखाच 2.
+        max_hits_per_zone = _number_input(
+            "🔁 Max Trades on Same Level (एकाच S/R level वर एका दिवसात कमाल किती entries)",
+            settings, "max_hits_per_zone", symbol, min_value=1, max_value=10, step=1,
         )
 
         st.markdown("---")
@@ -515,6 +518,7 @@ def render():
             new_settings = dict(settings)
             new_settings.update({
                 "symbol_enabled": bool(symbol_enabled), "lots": int(lots),
+                "max_hits_per_zone": int(max_hits_per_zone),
                 "timeframe_choice": timeframe_choice,
                 "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
                 "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),

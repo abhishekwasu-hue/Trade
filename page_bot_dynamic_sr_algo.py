@@ -382,6 +382,21 @@ def render():
                 min_value=0, max_value=120, step=5,
             )
 
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या,
+        # default 2") — established "आजच्या या zone साठी कमाल इतक्या वेळाच trade" ही मर्यादा (role —
+        # support/resistance — नुसार वेगळी मोजली जाते) आधी सर्व बॉट्समध्ये hardcoded (2) होती.
+        # डीफॉल्ट अजूनही 2 च आहे (established वर्तन अबाधित) — फक्त आता Dashboard वरून बदलता येतं.
+        with st.expander("🔁 Max Trades on Same Level (Zone)", expanded=False):
+            st.caption(
+                "एकाच zone साठी (याच role — support किंवा resistance) आजच्या दिवसात जास्तीत जास्त किती "
+                "वेळा नवीन trade घ्यायचा — त्यानंतरचे touches वगळले जातात (Breakout Entry सक्रिय असेल तर "
+                "त्याला ही मर्यादा लागू नाही, तो स्वतंत्रपणे तपासला जातो)."
+            )
+            max_hits_per_zone = _number_input(
+                "कमाल Trades (त्याच zone/role वर)", settings, "max_hits_per_zone", strategy_key, symbol,
+                min_value=1, max_value=10, step=1,
+            )
+
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
         # ऑप्शनल ठेवा — ज्या user कडे कमी कॅपिटल आहे तो नेकेड ऑप्शन बाय करणे पसंत करतो") — आधी Credit
         # Spread नेहमीच (toggle शिवाय) चालायचा, फक्त Naked Option ऐच्छिक होता. आता दोन्ही स्वतंत्रपणे
@@ -968,6 +983,7 @@ def render():
             "naked_trailing_sl_enabled": bool(naked_trailing_sl_enabled), "naked_trailing_distance_points": float(naked_trailing_distance_points),
             "broker_side_sl_enabled": bool(broker_side_sl_enabled),
             "sl_tsl_cooldown_minutes": int(sl_tsl_cooldown_minutes),
+            "max_hits_per_zone": int(max_hits_per_zone),
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा — LIVE निवडलं तरी पुष्टीकरण टिक केलेलं नसेल, तर
             # सुरक्षिततेसाठी PAPER वरच जतन होतं (शांतपणे LIVE जतन होऊन खरे ऑर्डर्स सुरू होता कामा नयेत).
             "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",

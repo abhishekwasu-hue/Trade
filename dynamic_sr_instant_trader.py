@@ -310,6 +310,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_change_max_pct = settings.get("iv_change_max_pct", 15.0)
     iv_lookback_days = settings.get("iv_lookback_days", 10)
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
+    # 2") — established "आजच्या या zone साठी कमाल 2 वेळा" ही मर्यादा आधी hardcoded (2) होती.
+    max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
     breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
@@ -496,9 +499,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         if breakout_oi_signal_used is not None:
             breakout_detail_parts.append(f"OI Signal: {breakout_oi_signal_used}")
         breakout_detail_str = f" [{', '.join(breakout_detail_parts)}]" if breakout_detail_parts else ""
-        if hit_count_so_far >= 2 and not is_breakout_trade:
+        if hit_count_so_far >= max_hits_per_zone and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role — support/resistance) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली"
             cloud_db.save_signal_log(log_entry)
             continue
 

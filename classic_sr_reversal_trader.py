@@ -153,6 +153,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा — नवीन strategy असल्याने डीफॉल्ट निष्क्रिय)"
     lots = settings["lots"]
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
+    # 2") — बघा dynamic_sr_instant_trader.py मधली टिप्पणी.
+    max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच — Naked Option
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
@@ -274,9 +277,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=cloud_db.zone_role_from_type(row["zone_type"]),
         )
-        if hit_count_so_far >= 2:
+        if hit_count_so_far >= max_hits_per_zone:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role — support/resistance) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली"
             cloud_db.save_signal_log(log_entry)
             continue
 

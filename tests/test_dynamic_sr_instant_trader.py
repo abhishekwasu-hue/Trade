@@ -824,6 +824,47 @@ class TestMultiHitGating:
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
 
+    def test_max_hits_per_zone_configurable_higher_limit_allows_third_hit(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — max_hits_per_zone आता डॅशबोर्डवरून
+        बदलता येतो. इथे तो ३ ठेवला आहे, त्यामुळे आधीच्या (hardcoded २ असलेल्या) चाचणीत जो
+        तिसरा hit नाकारला जायचा, तोच आता (hit_count_so_far=2 असतानाही) trade घ्यायला हवा."""
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["max_hits_per_zone"] = 3
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, get_ist_now(), None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
+    def test_max_hits_per_zone_configurable_lower_limit_skips_second_hit(self):
+        """🎓 max_hits_per_zone=1 ठेवल्यावर, आधीच्या डीफॉल्ट-२ लॉजिकमध्ये परवानगी असलेला दुसरा
+        hit (hit_count_so_far=1) सुद्धा आता नाकारला जायला हवा."""
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["max_hits_per_zone"] = 1
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._touch_setup()), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr, "send_telegram_message") as mock_telegram, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(1, get_ist_now(), get_ist_now())):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert not mock_telegram.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
     def test_second_hit_within_30min_cooldown_skipped(self):
         recent_hit_time = get_ist_now() - datetime.timedelta(minutes=10)
         with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
