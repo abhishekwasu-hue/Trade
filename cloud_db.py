@@ -302,6 +302,15 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close पुरेसा नाही) — Dashboard वरून
         # बदलण्याजोगं (hardcoded नाही).
         "breakout_close_buffer_pct": 0.010,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
+        # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — breakout-candle चा
+        # volume त्याआधीच्या breakout_volume_lookback_candles candles च्या सरासरीपेक्षा किमान
+        # breakout_volume_multiplier पट जास्त असावा लागतो, नाहीतर candle-close अट पूर्ण असूनही
+        # breakout trade घेतला जात नाही — कमी-volume (fake/whipsaw असण्याची शक्यता जास्त) breakouts
+        # गाळण्यासाठी. डीफॉल्ट (वापरकर्त्याने निवडलेले): 1.5x, मागचे 10 candles.
+        "breakout_volume_confirm_enabled": False,
+        "breakout_volume_lookback_candles": 10,
+        "breakout_volume_multiplier": 1.5,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ

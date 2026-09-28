@@ -545,6 +545,30 @@ def render():
                     "Candle close buffer% (level पलीकडे किमान)", settings, "breakout_close_buffer_pct", strategy_key, symbol,
                     min_value=0.0, max_value=0.50, step=0.005, format="%.3f", disabled=not entry_breakout_gate_enabled,
                 )
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume
+                # ashi condition ठेवता yeil") — ऐच्छिक, डीफॉल्ट बंद — कमी-volume (संभाव्य fake/
+                # whipsaw) breakouts गाळण्यासाठी.
+                breakout_volume_confirm_enabled = st.checkbox(
+                    "Volume Confirmation सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_volume_confirm_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_volume_confirm_enabled"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "breakout-candle चा volume, त्याआधीच्या खालील N candles च्या सरासरी volume पेक्षा किमान खालील पट "
+                    "जास्त असेल तरच breakout trade घेतला जातो — कमी volume वरचा close अनेकदा खोटा/whipsaw breakout ठरतो."
+                )
+                bv1, bv2 = st.columns(2)
+                with bv1:
+                    breakout_volume_lookback_candles = _number_input(
+                        "Volume सरासरी साठी मागचे candles (N)", settings, "breakout_volume_lookback_candles", strategy_key, symbol,
+                        min_value=2, max_value=24, step=1, disabled=not (entry_breakout_gate_enabled and breakout_volume_confirm_enabled),
+                    )
+                with bv2:
+                    breakout_volume_multiplier = _number_input(
+                        "Volume multiplier (सरासरीच्या किती पट)", settings, "breakout_volume_multiplier", strategy_key, symbol,
+                        min_value=1.0, max_value=5.0, step=0.1, format="%.1f", disabled=not (entry_breakout_gate_enabled and breakout_volume_confirm_enabled),
+                    )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
             # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
@@ -885,6 +909,9 @@ def render():
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
+            new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)
+            new_settings["breakout_volume_lookback_candles"] = int(breakout_volume_lookback_candles)
+            new_settings["breakout_volume_multiplier"] = float(breakout_volume_multiplier)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)

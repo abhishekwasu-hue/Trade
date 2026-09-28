@@ -53,6 +53,13 @@ kra") — price consolidation ("buildup" — breakout-candle च्या आध
 जवळ टिकून होती का, `check_breakout_price_consolidation`) ही अट सुद्धा काढली — आता फक्त candle-close
 buffer% हाच एकमेव निकष उरलेला आहे (वरती). हे function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry
 साठी वापरलं जातं, फक्त इथे (5-Min Instant Trader) यापुढे कॉल होत नाही.
+
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi condition ठेवता
+yeil") — ऐच्छिक (`breakout_volume_confirm_enabled`, डीफॉल्ट बंद) Volume Confirmation —
+`check_breakout_volume_confirmation` — breakout-candle चा volume त्याआधीच्या
+`breakout_volume_lookback_candles` (डीफॉल्ट 10) candles च्या सरासरीपेक्षा किमान
+`breakout_volume_multiplier` (डीफॉल्ट 1.5) पट जास्त असावा लागतो — कमी-volume (संभाव्य fake/whipsaw)
+breakouts गाळण्यासाठी, candle-close अटीसोबतच (AND) तपासला जातो.
 """
 import argparse
 
@@ -199,6 +206,22 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
     return last_close < level - buffer
 
 
+def check_breakout_volume_confirmation(candles_5m, lookback_candles=10, multiplier=1.5):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi condition
+    ठेवता yeil") — breakout-confirm करणाऱ्या (शेवटच्या) 5-मिनिट candle चा volume, त्याआधीच्या
+    `lookback_candles` candles च्या सरासरी volume पेक्षा किमान `multiplier` पट जास्त असावा — कमी
+    volume वरचा close हा अनेकदा खोटा/whipsaw breakout ठरतो, जास्त volume खऱ्या सहभागाचा पुरावा.
+    candles_5m: [{"close":.., "volume":..}, ...] (जुनं ते नवीन क्रमाने, फक्त आजचेच). रिटर्न: bool"""
+    if not candles_5m or len(candles_5m) < lookback_candles + 1:
+        return False
+    window = candles_5m[-(lookback_candles + 1):-1]
+    avg_volume = sum(c.get("volume", 0) for c in window) / len(window)
+    if avg_volume <= 0:
+        return False
+    last_volume = candles_5m[-1].get("volume", 0)
+    return last_volume >= avg_volume * multiplier
+
+
 def check_breakout_price_consolidation(level, candles_5m, lookback_candles=12, tolerance_pct=0.30):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "buildup" साठी वेगळं, gate/trade-
     outcome-independent logic — "A" (max-2-hits touch-count, आधीच hit_count_so_far>=2 वरून established)
@@ -260,6 +283,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
+    breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
+    breakout_volume_lookback_candles = settings.get("breakout_volume_lookback_candles", 10)
+    breakout_volume_multiplier = settings.get("breakout_volume_multiplier", 1.5)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
@@ -366,11 +392,17 @@ def process_symbol(access_token, symbol, lot_size=65):
         # **न** आढळलेल्या (साध्या reversal) touches साठीच अजूनही लागू आहे (established behavior,
         # अपरिवर्तित).
         # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition pn
-        # remove kra") — price consolidation ("buildup") ही अट सुद्धा काढली — आता breakout फक्त एकाच,
-        # सर्वात साध्या निकषावर: 5-मिनिट candle level पासून किमान buffer_pct% तरी पलीकडे निर्णायकपणे
-        # close झाला का (`check_breakout_candle_close`). त्याआधीच्या candles मध्ये किंमत level जवळ
-        # किती वेळ "टिकून" होती याचा पुरावा (`check_breakout_price_consolidation`) आता या bot साठी
-        # गरजेचा नाही (हे function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी वापरलं जातं).
+        # remove kra") — price consolidation ("buildup") ही अट सुद्धा काढली — आता breakout मूळ
+        # निकषावर: 5-मिनिट candle level पासून किमान buffer_pct% तरी पलीकडे निर्णायकपणे close झाला का
+        # (`check_breakout_candle_close`). त्याआधीच्या candles मध्ये किंमत level जवळ किती वेळ "टिकून"
+        # होती याचा पुरावा (`check_breakout_price_consolidation`) आता या bot साठी गरजेचा नाही (हे
+        # function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी वापरलं जातं).
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
+        # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — चालू असेल तर,
+        # candle-close अटीसोबतच breakout-candle चा volume त्याआधीच्या breakout_volume_lookback_candles
+        # candles च्या सरासरीपेक्षा किमान breakout_volume_multiplier पट जास्त असावा लागतो
+        # (`check_breakout_volume_confirmation`) — कमी-volume (संभाव्य fake/whipsaw) breakouts
+        # गाळण्यासाठी.
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
@@ -384,7 +416,12 @@ def process_symbol(access_token, symbol, lot_size=65):
                 candles_5m_df = candles_5m_df.copy()
                 candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
                 todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
-            if check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct):
+            candle_close_confirmed = check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)
+            volume_confirmed = (
+                not breakout_volume_confirm_enabled
+                or check_breakout_volume_confirmation(todays_5m_candles, breakout_volume_lookback_candles, breakout_volume_multiplier)
+            )
+            if candle_close_confirmed and volume_confirmed:
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True
