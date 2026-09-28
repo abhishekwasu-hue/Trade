@@ -560,6 +560,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
+                    direction=direction, is_directional_trade=is_directional_trade,
                 )
                 trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
                 if factory_errors:
@@ -572,7 +573,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    entry_reason_tag=entry_reason_tag,
+                    entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
                 )
                 real_trade_succeeded = trade_result
                 # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
@@ -691,6 +692,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
+                    direction=direction, is_directional_trade=is_directional_trade,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
@@ -700,7 +702,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    entry_reason_tag=entry_reason_tag,
+                    entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
                 )
                 # 🎓 बघा वरची credit-spread ब्लॉकमधली format_trade_result() ची टिप्पणी — इथेही तोच
                 # dict-as-string bug (Telegram संदेशात raw dict दिसायचा, DB write नसली तरी).

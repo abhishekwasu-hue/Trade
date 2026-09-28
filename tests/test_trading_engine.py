@@ -1745,53 +1745,77 @@ class TestCheckMcxKillSwitch:
 
 class TestCheckVixSpikeHalt:
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt — फक्त NIFTY, फक्त LIVE) —
-    check_vix_spike_halt() फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं."""
+    check_vix_spike_halt() फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
+    झालेली आहे, bearish/directional trade चालूच राहतील") — आता फक्त plain bullish (non-directional)
+    trades अडतात, म्हणून ट्रिप-होणाऱ्या tests मध्ये direction="BULLISH" स्पष्टपणे द्यावं लागतं."""
 
     TODAY = trading_engine.get_ist_today().strftime("%Y-%m-%d")
 
     def test_non_nifty_symbol_always_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("CRUDEOIL")
+        ok, reason = trading_engine.check_vix_spike_halt("CRUDEOIL", direction="BULLISH")
         assert ok is True
         assert reason is None
 
     def test_disabled_always_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": False, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is True
         assert reason is None
 
     def test_stale_trade_date_fails_open(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": "2020-01-01", "pct_change": 6.0, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is True
         assert reason is None
 
     def test_missing_trade_date_fails_open(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": None, "pct_change": 6.0, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is True
         assert reason is None
 
     def test_not_halted_today_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": False, "trade_date": self.TODAY, "pct_change": 1.0, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is True
         assert reason is None
 
-    def test_halted_today_blocks(self, monkeypatch):
+    def test_halted_today_blocks_bullish(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.3, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is False
         assert "VIX_SPIKE_HALT" in reason
         assert "+6.3%" in reason
 
     def test_halted_today_unknown_pct_change_blocks_with_placeholder_reason(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": None, "threshold_pct": 5.0})
-        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
         assert ok is False
         assert "VIX_SPIKE_HALT" in reason
         assert "अज्ञात" in reason
+
+    def test_halted_today_bearish_not_blocked(self, monkeypatch):
+        """फक्त bullish trades अडतात — bearish trades VIX halt ट्रिप झालं तरी चालूच राहतात."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.3, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BEARISH")
+        assert ok is True
+        assert reason is None
+
+    def test_halted_today_directional_trade_not_blocked(self, monkeypatch):
+        """Directional (IV Breakout/Breakout Entry) trades — दिशा bullish असली तरीही — VIX halt ला वगळलेले आहेत."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.3, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH", is_directional_trade=True)
+        assert ok is True
+        assert reason is None
+
+    def test_halted_today_no_direction_not_blocked(self, monkeypatch):
+        """direction न दिल्यास (जुने callers, किंवा दिशा-अज्ञात मार्ग) fail-safe म्हणून अडवत नाही."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.3, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
+        assert ok is True
+        assert reason is None
 
 
 class TestOpenMultiLegTradeMcxKillSwitch:
