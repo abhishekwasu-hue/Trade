@@ -12,7 +12,7 @@ from tradingview_chart import build_lightweight_chart_html
 from sr_dynamic import compute_dynamic_sr
 import sqlite3
 from database import (
-    log_orders_batch, get_todays_realized_pnl, has_open_trade_from_source,
+    log_orders_batch, get_todays_realized_pnl, has_open_trade_from_source, _shadow_exclusion_clause,
 )
 from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
@@ -2114,11 +2114,13 @@ def render():
         # प्रत्येक page वर चालेल, फक्त Dashboard उघडी असतानाच नाही — आधीचा गंभीर gap इथेच होता.)
 
         conn_lt = sqlite3.connect(DB_PATH)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Shadow paper trade position मध्ये दिसायला नको") —
+        # Positions टॅब (database.get_live_positions_with_mtm()) प्रमाणेच इथेही Shadow trades वगळले.
         open_df = pd.read_sql_query(
-            """SELECT trade_id AS "Trade ID", mode AS "Mode", strategy AS Strategy, short_strike AS "Short", long_strike AS "Long",
+            f"""SELECT trade_id AS "Trade ID", mode AS "Mode", strategy AS Strategy, short_strike AS "Short", long_strike AS "Long",
                       lots AS Lots, net_credit AS "Credit/unit", max_profit AS "Max Profit",
                       max_loss AS "Max Loss", entry_time AS "Entry Time"
-               FROM live_trades WHERE symbol=? AND status='OPEN' ORDER BY entry_time DESC""",
+               FROM live_trades WHERE symbol=? AND status='OPEN' AND {_shadow_exclusion_clause()} ORDER BY entry_time DESC""",
             conn_lt, params=(symbol,),
         )
         closed_df = pd.read_sql_query(

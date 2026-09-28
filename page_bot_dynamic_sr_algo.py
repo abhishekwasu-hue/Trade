@@ -539,7 +539,9 @@ def render():
                     "एक 5-मिनिट candle त्या level पासून किमान खालील buffer% इतका तरी पलीकडे निर्णायकपणे close झाला "
                     "(नुसत्या काठावरचा close पुरेसा नाही), तरच breakout trade घेतला जातो — आजच्या level वर आधी किती "
                     "touches/hits झालेत यावर अवलंबून नाही (साध्या reversal trades साठीची कमाल-2 मर्यादा इथे लागू नाही). "
-                    "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
+                    "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले. "
+                    "**फक्त 5M Dynamic S/R levels ला लागू** — वरचा Timeframe \"BOTH\" असेल तरी 1M levels च्या touches वर "
+                    "हा गेट कधीच लागू होत नाही (confirmation candles कायमच 5-मिनिटाचे असतात)."
                 )
                 breakout_close_buffer_pct = _number_input(
                     "Candle close buffer% (level पलीकडे किमान)", settings, "breakout_close_buffer_pct", strategy_key, symbol,

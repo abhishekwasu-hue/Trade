@@ -694,9 +694,15 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     """
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    query = """SELECT trade_id, mode, trading_style, strategy, legs_json, lots, lot_size, net_credit,
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Shadow paper trade cha pnl, position मध्ये दिसायला नको,
+    # फक्त PDF रिपोर्ट मध्ये करण्यासाठी दिसायला पाहिजे, त्याचा एकूण MTM मध्ये ऍड झालेले असू नये") —
+    # OTM Shadow/Min-Hold Shadow trades सुद्धा 'live_trades' मध्ये status='OPEN' असतातच (त्यांचं
+    # SL/TSL/EOD व्यवस्थापन आवश्यक आहे म्हणून), पण Positions टॅब (आणि इथून काढलेला एकूण "MTM (Rs)"
+    # बेरीज) ही फक्त खऱ्या रणनीतीच्या पोझिशन्ससाठी असते — बाकी सगळीकडे (Summary/Equity Curve/P&L
+    # Report इ.) आधीच वापरलेला _shadow_exclusion_clause() इथेही तोच लावला.
+    query = f"""SELECT trade_id, mode, trading_style, strategy, legs_json, lots, lot_size, net_credit,
                       max_profit, max_loss, entry_time, strikes_summary, peak_pnl, source, manual_sl_override_pnl
-               FROM live_trades WHERE symbol=? AND status='OPEN'"""
+               FROM live_trades WHERE symbol=? AND status='OPEN' AND {_shadow_exclusion_clause()}"""
     params = [symbol]
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
@@ -811,7 +817,9 @@ def compute_per_position_greeks(access_token, symbol, mode_filter=None):
     import upstox_api
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    query = "SELECT trade_id, strategy, legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN'"
+    # 🎓 get_live_positions_with_mtm() प्रमाणेच — Shadow trades Positions टॅबच्या कुठल्याही
+    # (इथे per-position Greeks/Delta Health) आकडेवारीत मिसळू नयेत.
+    query = f"SELECT trade_id, strategy, legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN' AND {_shadow_exclusion_clause()}"
     params = [symbol]
     if mode_filter:
         query += " AND mode=?"
@@ -871,7 +879,9 @@ def compute_portfolio_greeks(access_token, symbol, mode_filter=None):
     import upstox_api
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    query = "SELECT legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN'"
+    # 🎓 get_live_positions_with_mtm() प्रमाणेच — Shadow trades Portfolio Greeks (aggregate
+    # Delta/Gamma/Theta/Vega) मध्ये मिसळू नयेत.
+    query = f"SELECT legs_json, lots, lot_size FROM live_trades WHERE symbol=? AND status='OPEN' AND {_shadow_exclusion_clause()}"
     params = [symbol]
     if mode_filter:
         query += " AND mode=?"
