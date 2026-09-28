@@ -523,21 +523,23 @@ def render():
                         min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
                     )
 
-            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
-            # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
-            # happen then take entry in the same direction") — max-2-hits च्या पलीकडचा, तिसरा trade.
-            with st.expander("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", expanded=False):
+            # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches
+            # aahet, kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition
+            # Breakout trade ka lagu kra, jast complex karu nka") — आधीची "आजचे दोन्ही touch आधीच
+            # झालेले असावेत" ही अट काढली — प्रत्येक Dynamic S/R zone आधीच बहुदिवसीय ऐतिहासिक
+            # price-clustering वरून तयार झालेला असल्याने, फक्त "level breakout झाला का" हाच निकष उरतो.
+            with st.expander("💥 Breakout Entry (स्वतंत्र, hit-count वर अवलंबून नाही)", expanded=False):
                 entry_breakout_gate_enabled = st.checkbox(
                     "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
                     value=bool(settings.get("entry_breakout_gate_enabled", False)),
                     key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
                 )
                 st.caption(
-                    "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
-                    "5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) consolidate झालेला असावा "
-                    "(हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, IV/RSI/PCR Gate ने "
-                    "आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
-                    "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
+                    "breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) "
+                    "consolidate झालेला असावा (हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, "
+                    "IV/RSI/PCR Gate ने आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
+                    "निर्णायकपणे close झाला, तरच breakout trade घेतला जातो — आजच्या level वर आधी किती touches/hits झालेत यावर "
+                    "अवलंबून नाही (साध्या reversal trades साठीची कमाल-2 मर्यादा इथे लागू नाही). "
                     "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
                 )
                 bo1, bo2 = st.columns(2)

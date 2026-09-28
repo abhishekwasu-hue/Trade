@@ -1976,13 +1976,19 @@ def _breakout_5m_candles(consolidation_closes, final_close, today_ist=None):
 
 
 class TestBreakoutEntry:
-    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level hit,
-    he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
-    happen then take entry in the same direction") — established max-2-hits च्या पलीकडचा, तिसरा
-    trade. मूळ touch-signal (support, 23900) BULLISH आहे -- breakout confirm झाला तर BEARISH.
-    "buildup" ata purnpane price-data varun (A: hit_count_so_far>=2 आधीच given, C: price
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry) — मूळ touch-signal (support, 23900)
+    BULLISH आहे -- breakout confirm झाला तर BEARISH. "buildup" पूर्णपणे price-data वरून (price
     consolidation — confirmed lookback_candles=12 (1 तास, "kiman 12 candle chi range" — वापरकर्त्याने
-    कडवलेलं), tolerance_pct=0.30)."""
+    सांगितलेलं), tolerance_pct=0.30).
+
+    🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet, kiwa
+    level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout trade ka lagu
+    kra, jast complex karu nka") — आधीची "आजचे दोन्ही touch (hit_count_so_far>=2) आधीच झालेले
+    असावेत" ही पूर्वअट काढली — breakout आता कुठल्याही hit_count वर स्वतंत्र, फक्त consolidation +
+    candle-close या दोन अटींवरच तपासला जातो. बहुतेक टेस्ट्स अजूनही hit_count_so_far=2 सह लिहिलेल्या
+    आहेत (established max-2-hits वर्तन breakout-नसलेल्या touches साठी अजूनही तसंच आहे हे दाखवण्यासाठी)
+    — त्याशिवाय खाली hit_count_so_far=0 सहचे स्वतंत्र टेस्ट्स (breakout hit-count-independent आहे
+    हे स्पष्टपणे सिद्ध करण्यासाठी)."""
 
     LEVEL = 23900.0
     # 12 candles (1 तास) -- सगळे ±0.30% (≈71.7 points) च्या आत
@@ -2156,6 +2162,44 @@ class TestBreakoutEntry:
             # lookback=2 -> फक्त शेवटचे 2 (23890, 23900) window मध्ये, दोन्ही level च्या अगदी जवळ
             # (0.05% tolerance मध्येही) -- त्यामुळे तरीही trade व्हायला हवा.
             assert mock_trade.called
+
+    def test_fires_even_when_hit_count_is_zero(self):
+        """🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("... ashi simple condition Breakout trade
+        ka lagu kra, jast complex karu nka") — आजचा या level वर पहिलाच touch (hit_count_so_far=0)
+        असला तरी, consolidation + candle-close या दोन्ही अटी पूर्ण असतील तर breakout trade घेतला
+        जायला हवा -- hit_count_so_far>=2 ची जुनी पूर्वअट आता लागू नाही."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.CONSOLIDATED_WINDOW, 23800.0)), \
+             patch.object(dsr, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(dsr, "check_pcr_gate") as mock_pcr_gate, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T98"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_rsi_gate.called
+            assert not mock_pcr_gate.called
+            assert mock_select.call_args.args[1] == "BEARISH"
+
+    def test_no_breakout_and_hit_count_below_two_falls_through_normally_not_skipped(self):
+        """🎓 hit_count_so_far < 2 असेल आणि breakout अटी (consolidation) पूर्णही झाल्या नसतील, तर
+        max-2-hits skip लागू होता कामा नये (established behavior फक्त hit_count>=2 साठीच) — trade
+        साधा (नेहमीच्या RSI/PCR gate मार्गे जाणारा) reversal touch म्हणून पुढे प्रोसेस व्हायला हवा."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.NOT_CONSOLIDATED_WINDOW, 23800.0)), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" not in statuses
 
 
 class TestRunAllSymbols:

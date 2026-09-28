@@ -33,20 +33,23 @@ continuation साठी उलटा/चुकीचा संकेत ठर
 माहीतच नाही) तरच पूर्वीसारखं trade skip होतं, flip नाही (अनिश्चित दिशेने directional bet घेणं
 धोकादायक).
 
-🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level hit, he
-honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed happen
-then take entry in the same direction") — `entry_breakout_gate_enabled` (डीफॉल्ट बंद) — established
-max-2-hits च्या पलीकडचा, तिसरा trade. अट: (१) आजचे दोन्ही touch (max-2-hits) आधीच झालेले (हाच "A" —
-signal_log वरचा hit_count), (२) breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level
-च्या जवळच (tolerance% च्या आत) consolidate झालेला — हाच "buildup" चा price-action पुरावा (हाच "C" —
-`check_breakout_price_consolidation`, कुठलाही trade-outcome/indicator लागत नाही, फक्त candle close
-किमती), आणि (३) एक 5-मिनिट candle त्या level च्या पलीकडे (breakout-दिशेने — मूळ 2 trades च्या
-**उलट**) निर्णायकपणे close झाला (नुसता touch नाही). 🎓 वापरकर्त्याने सापडवलेली मर्यादा — आधीची
-आवृत्ती `live_trades` मधले actual CLOSED SL/TSL trades शोधायची, त्यामुळे जर IV/RSI/PCR Gate ने आधीचे
-touches block केले (trade कधीच open न होता), तर buildup कधीच खरं ठरायचं नाही — आता पूर्णपणे
-price-data वरून (कुठल्याही gate/trade-outcome वर अवलंबून नाही), त्यामुळे हा problem राहत नाही. तिन्ही
-अटी पूर्ण झाल्या तरच breakout-दिशेने 3रा trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry) — `entry_breakout_gate_enabled` (डीफॉल्ट
+बंद) — simple, स्वतंत्र breakout-based trade, कुठल्याही आजच्या hit-count वर अवलंबून नाही. अट: (१)
+breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level च्या जवळच (tolerance% च्या आत)
+consolidate झालेला — हाच "buildup" चा price-action पुरावा (`check_breakout_price_consolidation`,
+कुठलाही trade-outcome/indicator लागत नाही, फक्त candle close किमती), आणि (२) एक 5-मिनिट candle त्या
+level च्या पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`). दोन्ही
+अटी पूर्ण झाल्या तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
 सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले.
+
+🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet, kiwa
+level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout trade ka lagu
+kra, jast complex karu nka") — आधी हा फक्त "आजचे दोन्ही touch (max-2-hits) आधीच झालेले" (established
+Multi-Hit counter, खाली) असतील तरच तपासला जायचा — प्रत्येक Dynamic S/R zone आधीच बहुदिवसीय ऐतिहासिक
+price-clustering वरून तयार झालेला असल्याने ("previous day touches" आधीच गृहीत), ही अतिरिक्त अट
+काढली — आता breakout फक्त वरच्या दोन (consolidation + candle-close) अटींवरच, स्वतंत्रपणे, प्रत्येक
+touch वर तपासला जातो. max-2-hits ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या साध्या reversal
+touches साठीच अजूनही लागू आहे.
 """
 import argparse
 
@@ -344,38 +347,39 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level
-        # hit, he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute
-        # candle closed happen then take entry in the same direction") — max-2-hits तपासणी आता
-        # इतर सर्व gates च्याही आधी (RSI/PCR/IV Gate ला लागू करायचं की वगळायचं हे ठरवण्यासाठी).
-        # hit_count_so_far>=2 असेल तर established behavior (skip) चालूच राहतो — Breakout Gate चालू
-        # असेल आणि "buildup" (A: hit_count_so_far>=2 आधीच इथे, + C: price consolidation, बघा वरची
-        # फाईल-टिप्पणी) + 5-मिनिट candle त्या level पलीकडे (breakout-दिशेने — मूळ 2 trades च्या उलट)
-        # close झाला, तरच हा तिसरा, वेगळा (max-2 च्या पलीकडचा) trade घेतला जातो.
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet,
+        # kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout
+        # trade ka lagu kra, jast complex karu nka") — आधी Breakout Entry फक्त hit_count_so_far>=2
+        # (आजचे दोन्ही touch आधीच झालेले) असेल तरच तपासला जायचा. पण प्रत्येक Dynamic S/R zone हा
+        # आधीच बहुदिवसीय ऐतिहासिक price-clustering वरून तयार झालेला ("previous day touches" आधीच
+        # गृहीत धरलेलं) — त्यामुळे "आजचे 2 hits आधी झालेच पाहिजेत" ही अतिरिक्त अट काढली. आता Breakout
+        # Entry (price consolidation + 5-मिनिट candle close, खालीच) प्रत्येक touch वर स्वतंत्रपणे
+        # तपासला जातो, hit_count_so_far कितीही असो — फक्त "level breakout झाला का" हाच निकष.
+        # max-2-hits ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या (साध्या reversal) touches साठीच
+        # अजूनही लागू आहे (established behavior, अपरिवर्तित).
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
         )
         is_breakout_trade = False
-        if hit_count_so_far >= 2:
-            if entry_breakout_gate_enabled:
-                breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
-                candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
-                todays_5m_candles = []
-                if candles_5m_df is not None and not candles_5m_df.empty:
-                    candles_5m_df = candles_5m_df.copy()
-                    candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
-                    todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
-                if (check_breakout_price_consolidation(row["zone_low"], todays_5m_candles, breakout_lookback_candles, breakout_tolerance_pct)
-                        and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles)):
-                    direction = breakout_direction
-                    log_entry["direction"] = direction
-                    is_breakout_trade = True
-            if not is_breakout_trade:
-                log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-                log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
-                cloud_db.save_signal_log(log_entry)
-                continue
+        if entry_breakout_gate_enabled:
+            breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
+            candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
+            todays_5m_candles = []
+            if candles_5m_df is not None and not candles_5m_df.empty:
+                candles_5m_df = candles_5m_df.copy()
+                candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
+                todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+            if (check_breakout_price_consolidation(row["zone_low"], todays_5m_candles, breakout_lookback_candles, breakout_tolerance_pct)
+                    and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles)):
+                direction = breakout_direction
+                log_entry["direction"] = direction
+                is_breakout_trade = True
+        if hit_count_so_far >= 2 and not is_breakout_trade:
+            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+            log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip on IV Breakout — बघा वरची
         # फाईल-टिप्पणी) — Breakout trade आधीच ठरलेला असेल (वर), तर हा block पूर्णपणे वगळला जातो
