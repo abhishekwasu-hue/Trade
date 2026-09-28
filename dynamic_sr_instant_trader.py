@@ -34,12 +34,10 @@ continuation साठी उलटा/चुकीचा संकेत ठर
 धोकादायक).
 
 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry) — `entry_breakout_gate_enabled` (डीफॉल्ट
-बंद) — simple, स्वतंत्र breakout-based trade, कुठल्याही आजच्या hit-count वर अवलंबून नाही. अट: (१)
-breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level च्या जवळच (tolerance% च्या आत)
-consolidate झालेला — हाच "buildup" चा price-action पुरावा (`check_breakout_price_consolidation`,
-कुठलाही trade-outcome/indicator लागत नाही, फक्त candle close किमती), आणि (२) एक 5-मिनिट candle त्या
-level च्या पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`). दोन्ही
-अटी पूर्ण झाल्या तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
+बंद) — simple, स्वतंत्र breakout-based trade, कुठल्याही आजच्या hit-count वर अवलंबून नाही. अट: एक
+5-मिनिट candle त्या level पासून किमान `breakout_close_buffer_pct`% (Dashboard-configurable, डीफॉल्ट
+0.010%) तरी पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`) — हीच
+एकमेव अट. अट पूर्ण झाली तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
 सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले.
 
 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet, kiwa
@@ -47,9 +45,14 @@ level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breako
 kra, jast complex karu nka") — आधी हा फक्त "आजचे दोन्ही touch (max-2-hits) आधीच झालेले" (established
 Multi-Hit counter, खाली) असतील तरच तपासला जायचा — प्रत्येक Dynamic S/R zone आधीच बहुदिवसीय ऐतिहासिक
 price-clustering वरून तयार झालेला असल्याने ("previous day touches" आधीच गृहीत), ही अतिरिक्त अट
-काढली — आता breakout फक्त वरच्या दोन (consolidation + candle-close) अटींवरच, स्वतंत्रपणे, प्रत्येक
-touch वर तपासला जातो. max-2-hits ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या साध्या reversal
-touches साठीच अजूनही लागू आहे.
+काढली — आता breakout फक्त candle-close अटीवरच, स्वतंत्रपणे, प्रत्येक touch वर तपासला जातो. max-2-hits
+ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या साध्या reversal touches साठीच अजूनही लागू आहे.
+
+🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition pn remove
+kra") — price consolidation ("buildup" — breakout-candle च्या आधीच्या काही candles मध्ये किंमत level
+जवळ टिकून होती का, `check_breakout_price_consolidation`) ही अट सुद्धा काढली — आता फक्त candle-close
+buffer% हाच एकमेव निकष उरलेला आहे (वरती). हे function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry
+साठी वापरलं जातं, फक्त इथे (5-Min Instant Trader) यापुढे कॉल होत नाही.
 """
 import argparse
 
@@ -256,8 +259,6 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_lookback_days = settings.get("iv_lookback_days", 10)
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
-    breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
-    breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
@@ -360,10 +361,16 @@ def process_symbol(access_token, symbol, lot_size=65):
         # (आजचे दोन्ही touch आधीच झालेले) असेल तरच तपासला जायचा. पण प्रत्येक Dynamic S/R zone हा
         # आधीच बहुदिवसीय ऐतिहासिक price-clustering वरून तयार झालेला ("previous day touches" आधीच
         # गृहीत धरलेलं) — त्यामुळे "आजचे 2 hits आधी झालेच पाहिजेत" ही अतिरिक्त अट काढली. आता Breakout
-        # Entry (price consolidation + 5-मिनिट candle close, खालीच) प्रत्येक touch वर स्वतंत्रपणे
-        # तपासला जातो, hit_count_so_far कितीही असो — फक्त "level breakout झाला का" हाच निकष.
-        # max-2-hits ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या (साध्या reversal) touches साठीच
-        # अजूनही लागू आहे (established behavior, अपरिवर्तित).
+        # Entry (5-मिनिट candle close, खालीच) प्रत्येक touch वर स्वतंत्रपणे तपासला जातो, hit_count_so_far
+        # कितीही असो — फक्त "level breakout झाला का" हाच निकष. max-2-hits ची जुनी मर्यादा फक्त breakout
+        # **न** आढळलेल्या (साध्या reversal) touches साठीच अजूनही लागू आहे (established behavior,
+        # अपरिवर्तित).
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition pn
+        # remove kra") — price consolidation ("buildup") ही अट सुद्धा काढली — आता breakout फक्त एकाच,
+        # सर्वात साध्या निकषावर: 5-मिनिट candle level पासून किमान buffer_pct% तरी पलीकडे निर्णायकपणे
+        # close झाला का (`check_breakout_candle_close`). त्याआधीच्या candles मध्ये किंमत level जवळ
+        # किती वेळ "टिकून" होती याचा पुरावा (`check_breakout_price_consolidation`) आता या bot साठी
+        # गरजेचा नाही (हे function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी वापरलं जातं).
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
@@ -377,8 +384,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 candles_5m_df = candles_5m_df.copy()
                 candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
                 todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
-            if (check_breakout_price_consolidation(row["zone_low"], todays_5m_candles, breakout_lookback_candles, breakout_tolerance_pct)
-                    and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)):
+            if check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct):
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True

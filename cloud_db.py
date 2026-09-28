@@ -287,22 +287,20 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
         # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
         # happen then take entry in the same direction") — Breakout Entry — max-2-hits च्या
-        # पलीकडचा, तिसरा trade. "buildup" पूर्णपणे price-data वरून (trade-outcome/live_trades वर
-        # अवलंबून नाही, त्यामुळे IV/RSI/PCR Gate ने आधीचे touches block केले तरी काम करतं) —
-        # breakout-candle च्या आधीच्या `breakout_lookback_candles` 5-मिनिट candles मध्ये price
-        # level च्या ±`breakout_tolerance_pct`% च्या आत consolidate झालेला असावा, आणि नंतर एक
-        # 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close झाला तरच. डीफॉल्ट बंद — इतर
-        # नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा.
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Candle 5 minute chi asel tar kiman 12
-        # candle chi range calculator hawi") — डीफॉल्ट lookback 6 (30 मिनिट) वरून 12 (1 तास) —
-        # Dashboard वरून बदलण्याजोगंच (hardcoded नाही, already user-friendly number_input).
+        # पलीकडचा, तिसरा trade. आधी एक 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close
+        # झाला तरच. डीफॉल्ट बंद — इतर नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू
+        # करायचा.
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition
+        # pn remove kra") — price consolidation ("buildup" — breakout_lookback_candles/
+        # breakout_tolerance_pct वरून तपासलं जायचं) ही अट काढली — आता फक्त candle-close buffer%
+        # हाच एकमेव निकष उरला आहे (हे सेटिंग्ज अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी
+        # वापरले जातात, त्यामुळे "mcx_futures" defaults मध्ये कायम आहेत — इथे "1m_instant" मध्येच
+        # काढलेले).
         "entry_breakout_gate_enabled": False,
-        "breakout_lookback_candles": 12,
-        "breakout_tolerance_pct": 0.30,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
         # 0.010%") — breakout-confirm करणारा 5-मिनिट candle level पासून किमान इतक्या% तरी पलीकडे
-        # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close "buildup" मानला जाऊ नये) —
-        # Dashboard वरून बदलण्याजोगं (hardcoded नाही).
+        # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close पुरेसा नाही) — Dashboard वरून
+        # बदलण्याजोगं (hardcoded नाही).
         "breakout_close_buffer_pct": 0.010,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits

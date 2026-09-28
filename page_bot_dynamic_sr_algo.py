@@ -525,9 +525,10 @@ def render():
 
             # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches
             # aahet, kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition
-            # Breakout trade ka lagu kra, jast complex karu nka") — आधीची "आजचे दोन्ही touch आधीच
-            # झालेले असावेत" ही अट काढली — प्रत्येक Dynamic S/R zone आधीच बहुदिवसीय ऐतिहासिक
-            # price-clustering वरून तयार झालेला असल्याने, फक्त "level breakout झाला का" हाच निकष उरतो.
+            # Breakout trade ka lagu kra, jast complex karu nka" + "Breakout sathi consolidation chi
+            # condition pn remove kra") — आधीची "आजचे दोन्ही touch आधीच झालेले असावेत" ही अट, आणि
+            # नंतर price consolidation ("buildup") ही अट — दोन्ही काढल्या. आता फक्त "level breakout
+            # झाला का" (candle close buffer%, खालीच) हाच एकमेव निकष उरतो.
             with st.expander("💥 Breakout Entry (स्वतंत्र, hit-count वर अवलंबून नाही)", expanded=False):
                 entry_breakout_gate_enabled = st.checkbox(
                     "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
@@ -535,30 +536,15 @@ def render():
                     key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
                 )
                 st.caption(
-                    "breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) "
-                    "consolidate झालेला असावा (हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, "
-                    "IV/RSI/PCR Gate ने आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level पासून किमान "
-                    "खालील buffer% इतका तरी पलीकडे निर्णायकपणे close झाला (नुसत्या काठावरचा close पुरेसा नाही), तरच breakout trade "
-                    "घेतला जातो — आजच्या level वर आधी किती touches/hits झालेत यावर अवलंबून नाही (साध्या reversal trades साठीची "
-                    "कमाल-2 मर्यादा इथे लागू नाही). RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच "
-                    "यायला हवं म्हणून) दोन्ही वगळलेले."
+                    "एक 5-मिनिट candle त्या level पासून किमान खालील buffer% इतका तरी पलीकडे निर्णायकपणे close झाला "
+                    "(नुसत्या काठावरचा close पुरेसा नाही), तरच breakout trade घेतला जातो — आजच्या level वर आधी किती "
+                    "touches/hits झालेत यावर अवलंबून नाही (साध्या reversal trades साठीची कमाल-2 मर्यादा इथे लागू नाही). "
+                    "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
                 )
-                bo1, bo2, bo3 = st.columns(3)
-                with bo1:
-                    breakout_lookback_candles = _number_input(
-                        "Consolidation window (5-मिनिट candles)", settings, "breakout_lookback_candles", strategy_key, symbol,
-                        min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
-                    )
-                with bo2:
-                    breakout_tolerance_pct = _number_input(
-                        "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", strategy_key, symbol,
-                        min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
-                    )
-                with bo3:
-                    breakout_close_buffer_pct = _number_input(
-                        "Candle close buffer% (level पलीकडे किमान)", settings, "breakout_close_buffer_pct", strategy_key, symbol,
-                        min_value=0.0, max_value=0.50, step=0.005, format="%.3f", disabled=not entry_breakout_gate_enabled,
-                    )
+                breakout_close_buffer_pct = _number_input(
+                    "Candle close buffer% (level पलीकडे किमान)", settings, "breakout_close_buffer_pct", strategy_key, symbol,
+                    min_value=0.0, max_value=0.50, step=0.005, format="%.3f", disabled=not entry_breakout_gate_enabled,
+                )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
             # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
@@ -898,8 +884,6 @@ def render():
             new_settings["iv_lookback_days"] = int(iv_lookback_days)
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
-            new_settings["breakout_lookback_candles"] = int(breakout_lookback_candles)
-            new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
