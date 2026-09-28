@@ -1043,12 +1043,16 @@ def _shadow_exclusion_clause(source_col="source"):
     entry" तुलना — दोन्ही याच सामायिक नियमाने ओळखले जातात) — 'dynamic_sr_instant_otm_shadow' किंवा
     'dynamic_sr_instant_min_hold_shadow' सारखे निव्वळ तुलनेसाठी असलेले PAPER-only forward-test
     trades, portfolio-व्यापी एकत्रित आकडेवारीतून (Summary/Equity Curve/P&L Report/Timeframe-wise व
-    Option-Structure-wise breakdown/Trade Log/Overshoot Tracker) वगळण्यासाठी — अन्यथा हे शॅडो trades
-    मूळ रणनीतीच्या खऱ्या PAPER/LIVE आकड्यांत निमूटपणे मिसळले जातील. "_shadow" ने संपणारं कुठलंही
+    Option-Structure-wise breakdown/Overshoot Tracker/Positions/MTM) वगळण्यासाठी — अन्यथा हे शॅडो
+    trades मूळ रणनीतीच्या खऱ्या PAPER/LIVE आकड्यांत निमूटपणे मिसळले जातील. "_shadow" ने संपणारं कुठलंही
     source नाव आपोआप वगळलं जातं — भविष्यात नवीन शॅडो-प्रकार जोडला तरी हे function पुन्हा बदलावं लागत
     नाही. फक्त 'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (get_performance_by_group("source")/
     get_performance_by_two_groups/get_exit_reason_breakdown("source") ज्यात एक गट "source" आहे)
     ही वगळणी लावली जात नाही — तिथे शॅडो स्वतःची वेगळी रांग म्हणून दिसणं, हाच फीचरचा मूळ उद्देश आहे.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("trade table mdhe shdow Trade disayla pahije") — Trade Log
+    (get_closed_trades_detail()) आता जाणीवपूर्वक या यादीतून वगळलेला — तिथे Shadow trades चं प्रत्यक्ष
+    entry/exit detail दिसावं म्हणून, "Entry Reason" स्तंभातल्या स्पष्ट लेबलमुळेच खऱ्या trades पासून
+    वेगळे ओळखता येतात.
     SQLite च्या LIKE मध्ये '_' वाइल्डकार्ड असल्याने (कुठलाही एक अक्षर) ESCAPE आवश्यक, नाहीतर
     '..._shadow' हे नाव चुकीच्या पद्धतीने match/exclude होऊ शकतं."""
     return f"COALESCE({source_col},'') NOT LIKE '%\\_shadow' ESCAPE '\\'"
@@ -1344,7 +1348,18 @@ def get_performance_by_two_groups(symbol, group_col1, group_col2, mode_filter=No
 
 def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date=None):
     """प्रत्येक बंद (CLOSED) trade चा तपशील — Entry (source/timeframe/level/option-structure) आणि
-    Exit (exit_reason) या दोन्हींसकट — Performance टॅबवरच्या 'Entry+Exit कारण' Trade Log साठी."""
+    Exit (exit_reason) या दोन्हींसकट — Performance टॅबवरच्या 'Entry+Exit कारण' Trade Log साठी.
+
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Pdf report mdhe trade table mdhe shdow Trade disayla
+    pahije, user la klnar कसे") — पूर्वी इथेही (Summary/Equity Curve सारख्याच पोर्टफोलिओ-व्यापी
+    आकडेवारीप्रमाणेच) _shadow_exclusion_clause() लावलेला होता, त्यामुळे Shadow trades चं प्रत्यक्ष
+    entry/exit detail (आणि त्यावरून बनणारा Trade Chart) Trade Log/PDF Report मध्ये कधीच दिसायचंच
+    नाही — फक्त Strategy-wise Performance च्या aggregate रांगेतच (Trades/Win Rate/Total P&L) दिसायचं.
+    आता तो फिल्टर काढला — Shadow trades सुद्धा या (प्रत्यक्ष trade-निहाय) Trade Log मध्ये दिसतात,
+    "Entry Reason" स्तंभातच established _SOURCE_LABELS मुळे स्पष्ट "... — OTM Shadow (PAPER, ITM
+    vs OTM Strike)" असं लेबल असल्याने खऱ्या trades पासून सहज वेगळे ओळखता येतात — कुठलाही नवीन स्तंभ
+    लागला नाही. Summary/Equity Curve/P&L Report/Positions/MTM वरचा shadow-exclusion मात्र जाणीवपूर्वक
+    अबाधित (ती aggregate आकडेवारी शॅडो trades मुळे दूषित होऊ नये, हाच मूळ उद्देश कायम)."""
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
     query = f"""SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
@@ -1352,8 +1367,7 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy, entry_reason_tag,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
                       realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
-               FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL
-                     AND {_shadow_exclusion_clause()}"""
+               FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"
         params.append(mode_filter)

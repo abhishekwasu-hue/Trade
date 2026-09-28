@@ -393,8 +393,11 @@ def render():
                 key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
             )
             st.caption(
-                "Short leg ATM पासून किती strikes दूर — धन (+) आकडा ITM दिशेने (जास्त प्रीमियम, कमी "
-                "अंतर), 0 म्हणजे ATM, ऋण (-) आकडा OTM दिशेने (कमी प्रीमियम, जास्त सुरक्षित अंतर). "
+                # 🎓 वापरकर्त्याने ठरवलेली अंतिम चिन्ह-पद्धत ("OTM la positive dakhwa धन, ITM la ऋण") —
+                # आधी धन=ITM/ऋण=OTM होतं, आता उलट — धन (+)=OTM, ऋण (-)=ITM (0=ATM कायम). हीच
+                # पद्धत Credit Spread आणि Naked Option दोन्हीकडे सुसंगत ठेवली आहे.
+                "Short leg ATM पासून किती strikes दूर — धन (+) आकडा OTM दिशेने (कमी प्रीमियम, जास्त "
+                "सुरक्षित अंतर), 0 म्हणजे ATM, ऋण (-) आकडा ITM दिशेने (जास्त प्रीमियम, कमी अंतर). "
                 "Naked Option साठी स्वतंत्र सेटिंग खाली (🔺 Long With Hedge विभागात)."
             )
             c1, c2, c3 = st.columns(3)
@@ -417,14 +420,21 @@ def render():
                 # liquidity, अव्यवहार्य). Naked Option साठी आता वेगळंच सेटिंग असल्याने (खाली), इथला
                 # caption मधला "Naked Option चा buy leg" उल्लेखही काढला.
                 strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
-                itm_depth_strikes_default = int(round(float(settings["itm_depth_points"]) / strike_step))
+                # 🎓 वापरकर्त्याने ठरवलेली अंतिम चिन्ह-पद्धत ("OTM la positive dakhwa धन, ITM la ऋण") —
+                # established strategy.py (select_credit_spread_itm) मधलं itm_offset/itm_depth_points
+                # अजूनही जुन्याच (धन=ITM) पद्धतीनेच काम करतं (तिथे बदल केलेला नाही, धोका टाळण्यासाठी) —
+                # फक्त इथला UI display आता उलटा (धन=OTM) दाखवतो/घेतो, नंतर साठवताना ऋण गुणून जुन्या
+                # (internal) पद्धतीत रूपांतरित होतो. widget key मुद्दामच नवीन ("itm_depth_strikes_otm_pos")
+                # — जुन्या key खाली आधीच साठवलेलं Streamlit session_state मूल्य (जुन्या, उलट चिन्ह-
+                # पद्धतीचं) चुकून तसंच (आता उलट अर्थाने) दाखवलं जाऊ नये म्हणून.
+                itm_depth_strikes_default = -int(round(float(settings["itm_depth_points"]) / strike_step))
                 itm_depth_strikes = st.number_input(
-                    "Credit Spread — Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
-                    value=itm_depth_strikes_default, min_value=-5, max_value=10, step=1,
-                    key=_widget_key(strategy_key, symbol, "itm_depth_strikes"),
+                    "Credit Spread — Strikes from ATM (धन=OTM, 0=ATM, ऋण=ITM)",
+                    value=itm_depth_strikes_default, min_value=-10, max_value=5, step=1,
+                    key=_widget_key(strategy_key, symbol, "itm_depth_strikes_otm_pos"),
                 )
-                itm_depth_points = itm_depth_strikes * strike_step
-                st.caption(f"= {itm_depth_points:+.0f} points (strike step {strike_step})")
+                itm_depth_points = -itm_depth_strikes * strike_step
+                st.caption(f"= {itm_depth_strikes * strike_step:+.0f} points (धन=OTM, ऋण=ITM; strike step {strike_step})")
             with c3:
                 hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
@@ -454,8 +464,12 @@ def render():
                     "दोन्हींची तुलना करता येईल."
                 )
                 if otm_shadow_enabled:
+                    # 🎓 वापरकर्त्याने ठरवलेली अंतिम चिन्ह-पद्धत ("OTM la positive dakhwa धन, ITM la
+                    # ऋण") — आता धन=OTM हाच सार्वत्रिक नियम असल्याने, OTM Shadow (जो कायमच फक्त OTM
+                    # दिशेनेच असतो) साठी साधा, नेहमीचा धन आकडाच पुरेसा आणि सुसंगत आहे — वेगळं ऋण-दाखवणं
+                    # (मागच्या राऊंडमध्ये तात्पुरतं जोडलेलं) आता गरजेचं राहिलं नाही.
                     otm_shadow_strikes_count = _number_input(
-                        "OTM Shadow — किती Strikes OTM (नेहमी OTM दिशेने)", settings, "otm_shadow_strikes_count",
+                        "OTM Shadow — किती Strikes OTM (नेहमी धन/OTM)", settings, "otm_shadow_strikes_count",
                         strategy_key, symbol, min_value=1, max_value=10, step=1,
                     )
                 else:
@@ -735,14 +749,16 @@ def render():
                 # Option OTM श्रेयस्कर — दोन्हीसाठी एकच setting चुकीचं") — आधी buy leg वरच्याच
                 # Credit Spread "Strikes from ATM" शी जोडलेला होता (एकच itm_depth_points). आता
                 # स्वतंत्र — Credit Spread ITM आणि Naked Option OTM असं एकाच वेळी निवडताही येईल.
-                naked_itm_depth_strikes_default = int(round(float(settings.get("naked_itm_depth_points", settings["itm_depth_points"])) / strike_step))
+                # 🎓 वापरकर्त्याने ठरवलेली अंतिम चिन्ह-पद्धत ("OTM la positive dakhwa धन, ITM la ऋण")
+                # — वरच्याच Credit Spread widget प्रमाणेच (बघा तिथली टिप्पणी) — नवीन widget key.
+                naked_itm_depth_strikes_default = -int(round(float(settings.get("naked_itm_depth_points", settings["itm_depth_points"])) / strike_step))
                 naked_itm_depth_strikes = st.number_input(
-                    "Naked Option — Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
-                    value=naked_itm_depth_strikes_default, min_value=-5, max_value=10, step=1,
-                    key=_widget_key(strategy_key, symbol, "naked_itm_depth_strikes"),
+                    "Naked Option — Strikes from ATM (धन=OTM, 0=ATM, ऋण=ITM)",
+                    value=naked_itm_depth_strikes_default, min_value=-10, max_value=5, step=1,
+                    key=_widget_key(strategy_key, symbol, "naked_itm_depth_strikes_otm_pos"),
                 )
-                naked_itm_depth_points = naked_itm_depth_strikes * strike_step
-                st.caption(f"= {naked_itm_depth_points:+.0f} points (strike step {strike_step})")
+                naked_itm_depth_points = -naked_itm_depth_strikes * strike_step
+                st.caption(f"= {naked_itm_depth_strikes * strike_step:+.0f} points (धन=OTM, ऋण=ITM; strike step {strike_step})")
             with n4:
                 naked_hedge_width_points = _number_input("Naked Hedge Width (points, hedge सक्रिय असेल तरच)", settings, "naked_hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
