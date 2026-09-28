@@ -40,6 +40,13 @@ continuation साठी उलटा/चुकीचा संकेत ठर
 एकमेव अट. अट पूर्ण झाली तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
 सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले.
 
+🎓 वापरकर्त्याशी चर्चा करून सापडवलेली/सुधारलेली विसंगती ("5minute dynamic sr Breakout jhalyanantr ch
+Breakout trade ghenyat yenar") — breakout confirm करणारे candles कायमच 5-मिनिट असतात, त्यामुळे
+Breakout Entry फक्त `timeframe_choice` मध्ये सक्रिय असलेल्या **5M** Dynamic S/R levels (`zone_type`
+मध्ये `_5M` असलेले) च्या touches वरच तपासला जातो — `timeframe_choice="BOTH"` (डीफॉल्ट) असताना
+pooled_levels मध्ये असलेल्या 1M levels च्या touches वर हा गेट पूर्णपणे वगळला जातो (5M candle close
+वरून 1M level "तुटला" ठरवणं विसंगत ठरलं असतं).
+
 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet, kiwa
 level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout trade ka lagu
 kra, jast complex karu nka") — आधी हा फक्त "आजचे दोन्ही touch (max-2-hits) आधीच झालेले" (established
@@ -421,11 +428,18 @@ def process_symbol(access_token, symbol, lot_size=65):
         # (indices ना Open Interest नसतोच) इथे वापरलेला नाही — हा signal option chain (Call+Put OI)
         # वरून येतो.
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
+        # 🎓 वापरकर्त्याशी चर्चा करून सापडवलेली/सुधारलेली विसंगती ("5minute dynamic sr Breakout
+        # jhalyanantr ch Breakout trade ghenyat yenar") — breakout confirm करणारे candles कायमच
+        # 5-मिनिट असतात (वर), पण timeframe_choice="BOTH" (डीफॉल्ट) असेल तर pooled_levels मध्ये 1M
+        # levels सुद्धा असतात — आधी त्यांच्यावरच्याही touch वर हाच 5-मिनिट-आधारित Breakout Entry
+        # चालायचा, जे विसंगत आहे (1M level "तुटला" हे 5M candle close वरून ठरवणं चुकीचं). आता फक्त
+        # timeframe_suffix=="5M" असलेल्या levels साठीच Breakout Entry तपासला जातो — 1M levels च्या
+        # touches वर हा गेट पूर्णपणे वगळला जातो (established साध्या reversal-touch मार्गानेच जातात).
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
         )
         is_breakout_trade = False
-        if entry_breakout_gate_enabled:
+        if entry_breakout_gate_enabled and timeframe_suffix == "5M":
             breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
             candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
             todays_5m_candles = []

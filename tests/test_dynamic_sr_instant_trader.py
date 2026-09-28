@@ -2427,6 +2427,53 @@ class TestBreakoutEntry:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_not_applied_to_1m_level_even_when_timeframe_choice_is_both(self):
+        """🎓 वापरकर्त्याशी चर्चा करून सापडवलेली/सुधारलेली विसंगती ("5minute dynamic sr Breakout
+        jhalyanantr ch Breakout trade ghenyat yenar") — breakout confirm करणारे candles कायमच
+        5-मिनिट असतात, त्यामुळे timeframe_choice="BOTH" असतानाही pooled झालेल्या 1M level च्या
+        touch वर Breakout Entry लागूच व्हायला नको -- candle-close अट (buffer% सह) पूर्ण असूनही,
+        max-2-hits skip established behavior प्रमाणेच लागू व्हायला हवं."""
+        zones_1m = pd.DataFrame([
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": self.LEVEL, "zone_high": self.LEVEL,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        settings = self._breakout_gate_settings()
+        settings["timeframe_choice"] = "BOTH"
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones_1m), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_applied_to_5m_level_when_timeframe_choice_is_both(self):
+        """वरच्याच टेस्टच्या उलट -- timeframe_choice="BOTH" असतानाही, 5M level च्या touch वर
+        Breakout Entry नेहमीप्रमाणेच लागू व्हायला हवं (फक्त 1M साठी वगळलेलं आहे, 5M साठी नाही)."""
+        zones_both = pd.concat([
+            _fake_zones(),
+            pd.DataFrame([{"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_RESISTANCE_1M", "zone_low": 24700.0, "zone_high": 24700.0,
+                            "strength": 1.0, "formed_date": "2026-09-01", "status": "ACTIVE"}]),
+        ], ignore_index=True)
+        settings = self._breakout_gate_settings()
+        settings["timeframe_choice"] = "BOTH"
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones_both), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T105"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
 
 class TestRunAllSymbols:
     """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — एका symbol मधल्या अनपेक्षित exception मुळे उरलेले
