@@ -392,12 +392,35 @@ def render():
                 "Credit Spread Trade सक्रिय", value=bool(settings.get("credit_spread_enabled", True)),
                 key=_widget_key(strategy_key, symbol, "credit_spread_enabled"),
             )
-            st.caption("Short leg ATM पासून ITM दिशेने (जास्त प्रीमियम, कमी अंतर) — OTM ऐवजी.")
+            st.caption(
+                "Short leg (आणि Naked Option चा buy leg) ATM पासून किती strikes दूर — धन (+) आकडा ITM "
+                "दिशेने (जास्त प्रीमियम, कमी अंतर), 0 म्हणजे ATM, ऋण (-) आकडा OTM दिशेने (कमी प्रीमियम, "
+                "जास्त सुरक्षित अंतर)."
+            )
             c1, c2, c3 = st.columns(3)
             with c1:
                 lots = _number_input("Lots", settings, "lots", strategy_key, symbol, min_value=1, max_value=50, step=1)
             with c2:
-                itm_depth_points = _number_input("ITM Depth (points)", settings, "itm_depth_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Strike 50 points chya proportionate असतात, Itm
+                # depth ase nko, user la sarv choise asawi otm Atm, itm, setting change kra ATM +-1")
+                # — आधी "ITM Depth (points)" फक्त धन (min_value=25) मूल्यंच स्वीकारायचा, म्हणजे नेहमीच
+                # किमान 1 strike ITM — ATM किंवा OTM कधीच निवडताच यायचं नाही. प्रत्यक्ष गणित
+                # (select_credit_spread_itm/select_naked_option_itm मधलं itm_offset) आधीपासूनच ऋण/शून्य/
+                # धन तिन्ही बरोबर हाताळतं (कुठलाही बदल न करता) — फक्त UI चा widget तेवढा मर्यादित होता.
+                # आता "strikes" (points ऐवजी, प्रत्यक्ष strike step नुसार — जसं OTM Shadow च्याच
+                # "OTM Strikes" फील्डसारखं) — ATM +N (ITM) पासून ATM -N (OTM) पर्यंत, वापरकर्त्याला पूर्ण
+                # निवड. साठवला मात्र आधीसारखाच "itm_depth_points" (raw points, strike_step ने गुणून) —
+                # बाकी कुठल्याही bot/strategy फाईलमध्ये (dynamic_sr_instant_trader.py/
+                # classic_sr_reversal_trader.py/srv2_momentum_reversal_strategy.py) कुठलाही बदल लागत नाही.
+                strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
+                itm_depth_strikes_default = int(round(float(settings["itm_depth_points"]) / strike_step))
+                itm_depth_strikes = st.number_input(
+                    "Strike Offset from ATM (strikes; + ITM / 0 ATM / - OTM)",
+                    value=itm_depth_strikes_default, min_value=-10, max_value=20, step=1,
+                    key=_widget_key(strategy_key, symbol, "itm_depth_strikes"),
+                )
+                itm_depth_points = itm_depth_strikes * strike_step
+                st.caption(f"= {itm_depth_points:+.0f} points (strike step {strike_step})")
             with c3:
                 hedge_width_points = _number_input("Hedge Width (points)", settings, "hedge_width_points", strategy_key, symbol, min_value=25.0, max_value=500.0, step=25.0)
 
