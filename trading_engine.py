@@ -380,15 +380,19 @@ def check_mcx_kill_switch():
     return True, None
 
 
+VIX_SPIKE_HALT_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
+
+
 def check_vix_spike_halt(symbol, direction=None, is_directional_trade=False):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% (आदल्या
-    दिवसाच्या close च्या तुलनेत, threshold 5%) क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने automatic
-    trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट सांगितलं), फक्त LIVE (established
-    Kill Switch पॅटर्नप्रमाणेच PAPER trades कधीच अडत नाहीत). check_vix_spike_halt.py (सकाळी 9:20
-    IST cron, बाजार उघडून ~5 मिनिटांनी) आधीच ठरवलेला आजचा निकाल फक्त वाचतो — इथे प्रत्येक trade
-    attempt ला नवीन VIX API कॉल होत नाही (हलकं). आजची तपासणीच अजून झालेली नसेल (cron अजून चालला
-    नाही, किंवा 9:15-9:20 च्या मधलाच क्षण — पहिली 5 मिनिटं पूर्ण होण्याआधी निकाल असूच शकत नाही) तर
-    fail-open (अडवत नाही) — cron स्वतः त्याचा निकाल Telegram वर कळवतो.
+    दिवसाच्या close च्या तुलनेत, threshold 5%) क्रॉस केली तर त्या दिवशी bot ने automatic trading
+    थांबवावी") — फक्त equity index symbols साठी (NIFTY/BANKNIFTY/SENSEX — India VIX हा सर्व तिन्हींना
+    लागू असलेला, मार्केट-व्यापी अस्थिरता निर्देशांक; MCX (commodity futures) कधीच अडत नाही).
+    check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5 मिनिटांनी) आधीच ठरवलेला आजचा निकाल
+    फक्त वाचतो — इथे प्रत्येक trade attempt ला नवीन VIX API कॉल होत नाही (हलकं). आजची तपासणीच अजून
+    झालेली नसेल (cron अजून चालला नाही, किंवा 9:15-9:20 च्या मधलाच क्षण — पहिली 5 मिनिटं पूर्ण
+    होण्याआधी निकाल असूच शकत नाही) तर fail-open (अडवत नाही) — cron स्वतः त्याचा निकाल Telegram वर
+    कळवतो.
     🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
     झालेली आहे, directional trade चालूच राहतील") — मूळ रचनेत हा गेट ट्रिप झाल्यावर दिशा-निरपेक्षपणे
     (bullish + bearish + directional, सर्व) अडवायचा — तो चुकीचा, जास्त कडक अंमल होता. आता फक्त plain
@@ -396,8 +400,13 @@ def check_vix_spike_halt(symbol, direction=None, is_directional_trade=False):
     येतो, म्हणजे bearish दिशेनेच जाणारा trade हा "पॅनिकच्या विरुद्ध पोझिशन" नाही) आणि कुठल्याही
     दिशेचे directional (IV Breakout flip / Breakout Entry — त्यांचं स्वतःचं वेगळं, आधीच तपासलेलं
     confirmation असतं) trades या गेटला पूर्णपणे वगळलेले आहेत.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    ani sensex la pn applicable aahe, Mcx la applicable nahi") — established Kill Switch/MCX Kill
+    Switch पॅटर्नच्या उलट, हा गेट PAPER trades लाही लागू आहे (फॉरवर्ड-टेस्ट डेटा त्या दिवशीचा VIX-प्रभाव
+    अचूक दाखवावा म्हणून) — LIVE/PAPER भेद इथे मुद्दामच नाही (caller — open_multi_leg_trade() —
+    trading_mode विचारातच घेत नाही, दोन्हींसाठी हाच check चालतो).
     रिटर्न: (ok: bool, reason: str|None)."""
-    if symbol != "NIFTY":
+    if symbol not in VIX_SPIKE_HALT_SYMBOLS:
         return True, None
     if is_directional_trade or direction != "BULLISH":
         return True, None
@@ -413,8 +422,8 @@ def check_vix_spike_halt(symbol, direction=None, is_directional_trade=False):
     threshold_pct = settings.get("threshold_pct", 5.0)
     return False, (
         f"VIX_SPIKE_HALT — आज सकाळी India VIX {pct_str} बदलला (मर्यादा {threshold_pct:.0f}%, आदल्या "
-        f"दिवसाच्या close च्या तुलनेत) — आजच्या उर्वरित दिवसासाठी NIFTY साठी नवीन bullish LIVE trades "
-        f"थांबवले (bearish आणि directional trades नेहमीप्रमाणेच चालू)."
+        f"दिवसाच्या close च्या तुलनेत) — आजच्या उर्वरित दिवसासाठी {symbol} चे नवीन bullish trades "
+        f"(PAPER + LIVE दोन्ही) थांबवले (bearish आणि directional trades नेहमीप्रमाणेच चालू)."
     )
 
 
@@ -710,14 +719,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
-            entry_reason_tag=entry_reason_tag,
+            entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
         )
         paper_ok, paper_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
-            entry_reason_tag=entry_reason_tag,
+            entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
         )
         combined_resp = {
             "status": "success" if live_ok else "error",
@@ -725,6 +734,20 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             "live": live_resp, "paper_shadow": paper_resp, "paper_shadow_ok": paper_ok,
         }
         return live_ok, combined_resp
+
+    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    # ani sensex la pn applicable aahe, Mcx la applicable nahi") — मूळ रचनेत हा गेट फक्त LIVE trades
+    # साठीच (established Kill Switch पॅटर्नप्रमाणे) आणि फक्त NIFTY साठीच होता. वापरकर्त्याने स्पष्ट
+    # केलं की हा (India VIX-आधारित, दिशा-विशिष्ट) गेट त्या पॅटर्नपेक्षा वेगळा आहे — PAPER trades
+    # सुद्धा (फॉरवर्ड-टेस्ट डेटाच त्या दिवशीचा "पॅनिक"चा प्रभाव अचूक दाखवावा म्हणून) आणि तिन्ही index
+    # symbols (NIFTY/BANKNIFTY/SENSEX — check_vix_spike_halt() मध्येच व्याप्ती) अडवायचे आहेत, फक्त
+    # MCX (source=="mcx_futures") वगळून. म्हणून हा check आता trading_mode=="LIVE" च्या आतमध्ये नाही
+    # — LIVE_PAPER चे दोन्ही recursive कॉल्स (वर) आणि plain PAPER दोन्ही इथूनच जातात.
+    vix_ok, vix_reason = check_vix_spike_halt(symbol, direction=direction, is_directional_trade=is_directional_trade)
+    if not vix_ok:
+        if trading_mode == "LIVE":
+            _alert_kill_switch_blocked(symbol, source, vix_reason)
+        return False, {"status": "error", "reason": vix_reason}
 
     if trading_mode == "LIVE":
         kill_switch_ok, kill_switch_reason = check_kill_switch()
@@ -739,12 +762,6 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             if not mcx_kill_switch_ok:
                 _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
                 return False, {"status": "error", "reason": mcx_kill_switch_reason}
-
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — फक्त NIFTY साठी.
-        vix_ok, vix_reason = check_vix_spike_halt(symbol, direction=direction, is_directional_trade=is_directional_trade)
-        if not vix_ok:
-            _alert_kill_switch_blocked(symbol, source, vix_reason)
-            return False, {"status": "error", "reason": vix_reason}
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
         # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).

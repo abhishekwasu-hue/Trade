@@ -1009,13 +1009,16 @@ def set_trading_pause(paused, reason=""):
 
 
 # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस केली तर
-# त्या दिवशी NIFTY साठी bot ने automatic trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट
-# सांगितलं), फक्त LIVE (established Kill Switch पॅटर्नप्रमाणेच PAPER कधीच अडत नाही). % move आदल्या
+# त्या दिवशी bot ने automatic trading थांबवावी") — India VIX हा एकच, मार्केट-व्यापी अस्थिरता निर्देशांक
+# असल्याने एकच daily निकाल NIFTY/BANKNIFTY/SENSEX तिन्हींना लागू होतो (MCX वगळून) — फक्त plain bullish
+# trades, PAPER + LIVE दोन्ही (established Kill Switch पॅटर्नच्या उलट — PAPER इथे अडतं). % move आदल्या
 # दिवसाच्या VIX close च्या तुलनेत मोजला जातो (वापरकर्त्याने निवडलेला आधार — "खरंच किती वाढला" हेच
 # traders सहसा म्हणतात, आजच्या 9:15 open शी नाही), डीफॉल्ट threshold 5%. check_vix_spike_halt.py
 # (सकाळी 9:20 IST cron, बाजार उघडून ~5 मिनिटांनी) एकदाच तपासून आजचा निकाल इथेच साठवतो —
 # trading_engine.check_vix_spike_halt() हा फक्त तोच निकाल वाचतो, प्रत्येक trade attempt ला नवीन VIX
-# API कॉल करत नाही.
+# API कॉल करत नाही. VIX_SPIKE_HALT_SYMBOL_KEY फक्त storage-key आहे (India VIX एकच असल्याने तीनही
+# symbols साठी हाच एक साठवलेला निकाल पुन्हा वापरला जातो) — प्रत्यक्ष कुठले symbols अडतात ते
+# trading_engine.VIX_SPIKE_HALT_SYMBOLS मध्ये.
 VIX_SPIKE_HALT_STRATEGY_KEY = "__vix_spike_halt__"
 VIX_SPIKE_HALT_SYMBOL_KEY = "NIFTY"
 VIX_SPIKE_HALT_DEFAULTS = {"enabled": True, "threshold_pct": 5.0}

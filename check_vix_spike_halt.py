@@ -8,9 +8,10 @@ check_vix_spike_halt.py
 बाजार उघडून (9:15 IST) ~5 मिनिटांनी (9:20 IST) एकदाच चालणारं, पूर्णपणे **READ-ONLY** script (कुठलाही
 order/trade टाकला जात नाही) — India VIX चा सध्याचा LTP आणि आदल्या ट्रेडिंग दिवसाचा close मागवून %
 बदल मोजतं, आणि तो cloud_db.save_vix_spike_halt_status() मध्ये साठवतं — trading_engine.
-check_vix_spike_halt() (फक्त NIFTY, फक्त LIVE — established Kill Switch पॅटर्नप्रमाणेच PAPER
-trades कधीच अडत नाहीत) हाच आधीच साठवलेला निकाल वाचून नवीन trade अडवतं/परवानगी देतं — त्यामुळे
-प्रत्येक trade attempt ला नवीन VIX API कॉल करावा लागत नाही.
+check_vix_spike_halt() (NIFTY/BANKNIFTY/SENSEX — India VIX सर्व तिन्हींना लागू; MCX वगळून — फक्त
+plain **bullish** trades, PAPER + LIVE दोन्ही; established Kill Switch पॅटर्नच्या उलट, इथे PAPER
+सुद्धा अडतं) हाच आधीच साठवलेला निकाल वाचून नवीन trade अडवतं/परवानगी देतं — त्यामुळे प्रत्येक trade
+attempt ला नवीन VIX API कॉल करावा लागत नाही.
 
 मॅन्युअली चालवलं (`python3 check_vix_spike_halt.py`) तरी काम करतं — नवीन threshold ठरवण्याआधी
 हातानेही चालवता येतं. नवीन crontab एंट्रीने (रोज सकाळी 9:20 IST) रोज आपोआप चालवलं, तर एका छोट्या

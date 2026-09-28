@@ -15,6 +15,7 @@ import streamlit as st
 
 import cloud_db
 import database
+import trading_engine
 import upstox_api
 from config import get_ist_today
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
@@ -188,28 +189,31 @@ def _render_kill_switch_panel():
 
 def _render_vix_spike_halt_panel():
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% level
-    क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने trading थांबवावी") — फक्त NIFTY साठी, फक्त LIVE
-    (PAPER trades वर परिणाम नाही). check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5
+    क्रॉस केली तर त्या दिवशी bot ने trading थांबवावी") — NIFTY/BANKNIFTY/SENSEX (India VIX सर्व
+    तिन्हींना लागू; MCX वगळून). check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5
     मिनिटांनी) रोज एकदा तपासून आजचा निकाल साठवतं — इथे तोच निकाल + enabled/threshold सेटिंग्ज
     दाखवली/बदलता येतात (established Kill Switch पॅनेलसारखंच).
     🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
     झालेली आहे, bearish/directional trade चालूच राहतील") — मूळ रचना दिशा-निरपेक्षपणे सर्व नवीन LIVE
     trades अडवायची, जे जास्त कडक होतं. आता trading_engine.check_vix_spike_halt() फक्त plain
     **bullish** (non-directional) trades अडवतं — bearish आणि directional (IV Breakout/Breakout
-    Entry) trades नेहमीप्रमाणेच चालू राहतात."""
+    Entry) trades नेहमीप्रमाणेच चालू राहतात.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    ani sensex la pn applicable aahe") — established Kill Switch पॅटर्नच्या उलट, हा गेट PAPER trades
+    लाही लागू आहे (फॉरवर्ड-टेस्ट डेटा त्या दिवशीचा VIX-प्रभाव अचूक दाखवावा म्हणून)."""
     vh_settings = cloud_db.get_vix_spike_halt_settings()
     today_str = get_ist_today().strftime("%Y-%m-%d")
+    symbols_str = "/".join(trading_engine.VIX_SPIKE_HALT_SYMBOLS)
 
-    with st.expander("🌪️ India VIX Spike Halt (फक्त NIFTY, फक्त bullish LIVE trades)", expanded=False):
+    with st.expander(f"🌪️ India VIX Spike Halt ({symbols_str}, फक्त bullish trades)", expanded=False):
         st.caption(
-            "सकाळी 9:20 IST ला (बाजार उघडून ~5 मिनिटांनी) India VIX आदल्या दिवसाच्या close च्या "
-            "तुलनेत किती% बदलला हे एकदाच तपासलं जातं (check_vix_spike_halt.py cron) — मर्यादेपलीकडे "
-            "गेला, तर आजच्या उर्वरित दिवसासाठी फक्त NIFTY चे नवीन **bullish** LIVE trades थांबतात "
-            "(bearish आणि directional trades नेहमीप्रमाणेच चालू; PAPER trades वर कधीच परिणाम नाही; "
-            "इतर symbols वर परिणाम नाही)."
+            f"सकाळी 9:20 IST ला (बाजार उघडून ~5 मिनिटांनी) India VIX आदल्या दिवसाच्या close च्या "
+            f"तुलनेत किती% बदलला हे एकदाच तपासलं जातं (check_vix_spike_halt.py cron) — मर्यादेपलीकडे "
+            f"गेला, तर आजच्या उर्वरित दिवसासाठी {symbols_str} चे नवीन **bullish** trades (PAPER + LIVE "
+            f"दोन्ही) थांबतात (bearish आणि directional trades नेहमीप्रमाणेच चालू; MCX वर कधीच परिणाम नाही)."
         )
         if not vh_settings["enabled"]:
-            st.warning("⚪ VIX Spike Halt सध्या बंद आहे — VIX कितीही वाढला तरी NIFTY LIVE trading वर परिणाम नाही.")
+            st.warning(f"⚪ VIX Spike Halt सध्या बंद आहे — VIX कितीही वाढला तरी {symbols_str} trading वर परिणाम नाही.")
         elif vh_settings.get("trade_date") != today_str:
             st.info("ℹ️ आजची तपासणी अजून झालेली नाही (cron अजून चालला नाही, किंवा बाजार उघडून 5 मिनिटं झालेली नाहीत).")
         elif vh_settings.get("halted"):
@@ -217,13 +221,13 @@ def _render_vix_spike_halt_panel():
             pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
             st.error(
                 f"🔴 आज VIX Spike Halt ट्रिप झालं — India VIX {pct_str} बदलला (मर्यादा "
-                f"{vh_settings['threshold_pct']:.0f}%). NIFTY साठी नवीन **bullish** LIVE trades ब्लॉक "
-                f"केले जात आहेत (bearish/directional trades नेहमीप्रमाणेच चालू)."
+                f"{vh_settings['threshold_pct']:.0f}%). {symbols_str} साठी नवीन **bullish** trades "
+                f"(PAPER + LIVE) ब्लॉक केले जात आहेत (bearish/directional trades नेहमीप्रमाणेच चालू)."
             )
         else:
             pct = vh_settings.get("pct_change")
             pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
-            st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). NIFTY LIVE trading नेहमीप्रमाणे चालू.")
+            st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). {symbols_str} trading नेहमीप्रमाणे चालू.")
 
         vh_enabled = st.checkbox("VIX Spike Halt सक्रिय", value=vh_settings["enabled"], key="bdsr_vh_enabled")
         vh_threshold = st.number_input(
@@ -246,18 +250,22 @@ def _render_vix_halt_alert_banner():
     रोजची गर्दी टाळण्यासाठी) हाच इशारा वरतीच, न-collapse होणारा banner म्हणून लगेच दिसतो —
     पानावर आल्या-आल्याच, खाली Strategy/Symbol निवडण्याआधीच.
     🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
-    झालेली आहे, bearish/directional trade चालूच राहतील") — trading_engine.check_vix_spike_halt()
-    आता फक्त plain bullish trades अडवतं — हा मेसेजही त्याच व्याप्तीशी जुळवला आहे."""
+    झालेली आहे, bearish/directional trade चालूच राहतील; Paper trade pn adwayla pahije, ani
+    banknifty ani sensex la pn applicable aahe, Mcx la applicable nahi") —
+    trading_engine.check_vix_spike_halt() आता फक्त plain bullish trades अडवतं, PAPER + LIVE दोन्ही
+    मोडमध्ये, NIFTY/BANKNIFTY/SENSEX (MCX वगळून) — हा मेसेजही त्याच व्याप्तीशी जुळवला आहे."""
     vh_settings = cloud_db.get_vix_spike_halt_settings()
     today_str = get_ist_today().strftime("%Y-%m-%d")
     if vh_settings["enabled"] and vh_settings.get("trade_date") == today_str and vh_settings.get("halted"):
         pct = vh_settings.get("pct_change")
         pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
+        symbols_str = "/".join(trading_engine.VIX_SPIKE_HALT_SYMBOLS)
         st.error(
             f"🌪️🔴 **India VIX Spike Halt सक्रिय** — आज India VIX {pct_str} बदलला (मर्यादा "
-            f"{vh_settings['threshold_pct']:.0f}%) — **NIFTY साठी आजचे उर्वरित नवीन bullish LIVE "
-            f"trades थांबवलेले आहेत** (bearish आणि directional trades, तसंच सर्व PAPER trades, "
-            f"नेहमीप्रमाणेच चालू राहतील). तपशील/सेटिंग्ज खाली '🌪️ India VIX Spike Halt' मध्ये."
+            f"{vh_settings['threshold_pct']:.0f}%) — **{symbols_str} साठी आजचे उर्वरित नवीन bullish "
+            f"trades (PAPER + LIVE दोन्ही) थांबवलेले आहेत** (bearish आणि directional trades "
+            f"नेहमीप्रमाणेच चालू राहतील; MCX वर कधीच परिणाम नाही). तपशील/सेटिंग्ज खाली '🌪️ India VIX "
+            f"Spike Halt' मध्ये."
         )
 
 

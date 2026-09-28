@@ -618,6 +618,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                             sl_pct_of_credit=100, source="dynamic_sr_instant_otm_shadow",
                             entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
                             entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                            direction=direction, is_directional_trade=is_directional_trade,
                         )
                 except Exception as exc:
                     print(f"⚠️ OTM Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
@@ -647,6 +648,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                         sl_pct_of_credit=100, source="dynamic_sr_instant_min_hold_shadow",
                         entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
                         entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                        direction=direction,
                     )
                 except Exception as exc:
                     print(f"⚠️ Min-Hold Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")

@@ -1744,19 +1744,35 @@ class TestCheckMcxKillSwitch:
 
 
 class TestCheckVixSpikeHalt:
-    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt — फक्त NIFTY, फक्त LIVE) —
-    check_vix_spike_halt() फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं.
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — check_vix_spike_halt()
+    फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं.
     🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
     झालेली आहे, bearish/directional trade चालूच राहतील") — आता फक्त plain bullish (non-directional)
-    trades अडतात, म्हणून ट्रिप-होणाऱ्या tests मध्ये direction="BULLISH" स्पष्टपणे द्यावं लागतं."""
+    trades अडतात, म्हणून ट्रिप-होणाऱ्या tests मध्ये direction="BULLISH" स्पष्टपणे द्यावं लागतं.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    ani sensex la pn applicable aahe, Mcx la applicable nahi") — NIFTY/BANKNIFTY/SENSEX तिन्हींना
+    लागू (MCX/CRUDEOIL वगळून) — आणि PAPER/LIVE दोन्ही trading_mode ला (check_vix_spike_halt() स्वतः
+    trading_mode विचारातच घेत नाही — तो भेद caller — open_multi_leg_trade() — मध्ये आहे)."""
 
     TODAY = trading_engine.get_ist_today().strftime("%Y-%m-%d")
 
-    def test_non_nifty_symbol_always_ok(self, monkeypatch):
+    def test_mcx_symbol_always_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
         ok, reason = trading_engine.check_vix_spike_halt("CRUDEOIL", direction="BULLISH")
         assert ok is True
         assert reason is None
+
+    def test_banknifty_blocked_same_as_nifty(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("BANKNIFTY", direction="BULLISH")
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in reason
+
+    def test_sensex_blocked_same_as_nifty(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
+        ok, reason = trading_engine.check_vix_spike_halt("SENSEX", direction="BULLISH")
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in reason
 
     def test_disabled_always_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": False, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
@@ -1816,6 +1832,94 @@ class TestCheckVixSpikeHalt:
         ok, reason = trading_engine.check_vix_spike_halt("NIFTY")
         assert ok is True
         assert reason is None
+
+
+class TestOpenMultiLegTradeVixHalt:
+    """🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije") —
+    established Kill Switch पॅटर्नच्या (PAPER कधीच अडत नाही) उलट, VIX Spike Halt आता PAPER trades
+    लाही लागू आहे — open_multi_leg_trade() स्तरावर integration-level पडताळणी."""
+
+    def _strategy_result(self):
+        return {
+            "strategy": "NAKED_CALL", "max_loss": 50, "max_profit": None, "net_credit": 0,
+            "legs": [
+                {"role": "naked_buy", "strike": 24400, "instrument_key": "CE24400", "transaction_type": "BUY", "option_type": "CE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def test_paper_mode_blocked_when_bullish_and_halted(self, temp_db, monkeypatch):
+        """PAPER mode — established Kill Switch च्या उलट — VIX halt ट्रिप झाल्यावर bullish trade अडतो."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": trading_engine.get_ist_today().strftime("%Y-%m-%d"), "pct_change": 6.3, "threshold_pct": 5.0})
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            direction="BULLISH",
+        )
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in resp["reason"]
+        assert not execute_calls  # ऑर्डरच पाठवला गेला नाही (PAPER असूनही)
+
+    def test_paper_mode_bearish_not_blocked(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": trading_engine.get_ist_today().strftime("%Y-%m-%d"), "pct_change": 6.3, "threshold_pct": 5.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            direction="BEARISH",
+        )
+        assert ok is True
+
+    def test_banknifty_paper_blocked_sensex_paper_blocked(self, temp_db, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": trading_engine.get_ist_today().strftime("%Y-%m-%d"), "pct_change": 6.3, "threshold_pct": 5.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+
+        for symbol in ("BANKNIFTY", "SENSEX"):
+            ok, resp = trading_engine.open_multi_leg_trade(
+                "fake_token", symbol, self._strategy_result(), lots=1, lot_size=75,
+                sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+                direction="BULLISH",
+            )
+            assert ok is False, f"{symbol} PAPER trade VIX halt ला अडायला हवा होता"
+
+    def test_mcx_paper_not_blocked(self, temp_db, monkeypatch):
+        """MCX (source="mcx_futures") VIX Spike Halt ला कधीच लागू नाही — PAPER असूनही."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": trading_engine.get_ist_today().strftime("%Y-%m-%d"), "pct_change": 6.3, "threshold_pct": 5.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
+
+        strategy_result = {
+            "strategy": "MCX_FUTURES", "max_loss": 500, "max_profit": 500, "net_credit": 0,
+            "legs": [
+                {"role": "futures_leg", "strike": 0, "instrument_key": "MCX_FUT_1", "transaction_type": "BUY", "option_type": None, "expiry": "2026-09-30"},
+            ],
+        }
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "CRUDEOIL", strategy_result, lots=1, lot_size=100,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            source="mcx_futures", direction="BULLISH",
+        )
+        assert ok is True
+
+    def test_live_paper_mode_both_legs_blocked_when_bullish_and_halted(self, temp_db, monkeypatch):
+        """LIVE_PAPER mode — recursive LIVE आणि PAPER दोन्ही sub-calls VIX halt ला अडतात."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": trading_engine.get_ist_today().strftime("%Y-%m-%d"), "pct_change": 6.3, "threshold_pct": 5.0})
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE_PAPER",
+            direction="BULLISH",
+        )
+        assert ok is False
+        assert "VIX_SPIKE_HALT" in resp["live"]["reason"]
+        assert resp["paper_shadow_ok"] is False
+        assert "VIX_SPIKE_HALT" in resp["paper_shadow"]["reason"]
+        assert not execute_calls
 
 
 class TestOpenMultiLegTradeMcxKillSwitch:
