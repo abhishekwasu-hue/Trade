@@ -142,11 +142,15 @@ def _exit_reason_label_with_tag(exit_reason, detail):
 
 
 _ENTRY_REASON_TAG_LABELS_MR = {
-    "BREAKOUT_ENTRY": "💥 Breakout Entry (max-2-hits नंतरचा 3रा trade — buildup + 5-मिनिट candle close)",
+    # 🎓 वापरकर्त्याने अपलोड केलेल्या Performance Report PDF मध्ये सापडलेली bug — "max-2-hits नंतरचा
+    # 3रा trade — buildup" ही जुनी अट (max-2-hits precondition Round 4 मध्ये, buildup/consolidation
+    # Round 6 मध्ये काढून टाकली — बघा dynamic_sr_instant_trader.py) — पण हे लेबल (Dashboard + PDF
+    # Trade Log दोन्हीत वापरलं जाणारं) कधीच अपडेट झालं नव्हतं, अजूनही जुनंच, दिशाभूल करणारं वर्तन दाखवत होतं.
+    "BREAKOUT_ENTRY": "💥 Breakout Entry (5-मिनिट candle close, buffer% सह)",
     "IV_BREAKOUT_DIRECTIONAL": "📈 IV Breakout Directional (trend-continuation, reversal नाही)",
 }
 _ENTRY_REASON_TAG_LABELS_EN = {
-    "BREAKOUT_ENTRY": "Breakout Entry (3rd trade after max-2-hits — buildup + 5-min candle close)",
+    "BREAKOUT_ENTRY": "Breakout Entry (5-min candle close, with buffer%)",
     "IV_BREAKOUT_DIRECTIONAL": "IV Breakout Directional (trend-continuation, not reversal)",
 }
 

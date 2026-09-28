@@ -603,6 +603,39 @@ class TestFetchCandlesDateRange:
         assert df.empty
         assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
 
+    def test_todays_range_also_calls_intraday_endpoint(self):
+        """🎓 वापरकर्त्याने अपलोड केलेल्या Performance Report PDF मध्ये सापडलेली bug ("Charts display
+        jhale nahit" -- त्याच दिवशीच्या trades साठी नेहमीच) -- `historical-candle` endpoint आजच्या
+        (अजून चालू) दिवसाचा डेटा कधीच परत देत नाही (establishment fetch_candles() जसं वेगळ्या
+        `/intraday/` endpoint नेच आजचा डेटा मिळवतं). to_date आजचाच असेल, तर दोन्ही endpoints कॉल
+        व्हायला हवेत आणि दोन्हीचे candles एकत्र यायला हवेत."""
+        today = datetime.date(2026, 9, 28)
+        hist_resp = _mock_get_response(200, {"candles": [self._candle_row("2026-09-27T09:20:00+05:30")]})
+        intraday_resp = _mock_get_response(200, {"candles": [self._candle_row("2026-09-28T09:20:00+05:30")]})
+
+        def _fake_get(url, headers=None, timeout=None):
+            return intraday_resp if "/intraday/" in url else hist_resp
+
+        with patch.object(upstox_api, "get_ist_today", return_value=today), \
+             patch.object(upstox_api.requests, "get", side_effect=_fake_get) as mock_get:
+            df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", today, today)
+        assert mock_get.call_count == 2
+        assert any("/intraday/" in c.args[0] for c in mock_get.call_args_list)
+        assert len(df) == 2
+
+    def test_past_range_does_not_call_intraday_endpoint(self):
+        """to_date आजपेक्षा जुना (पूर्ण झालेला ट्रेडिंग दिवस) असेल, तर established वर्तन (फक्त
+        historical-candle, /intraday/ नाही) अबाधित राहायला हवं."""
+        today = datetime.date(2026, 9, 28)
+        past_day = datetime.date(2026, 9, 24)
+        resp = _mock_get_response(200, {"candles": [self._candle_row()]})
+        with patch.object(upstox_api, "get_ist_today", return_value=today), \
+             patch.object(upstox_api.requests, "get", return_value=resp) as mock_get:
+            df = upstox_api.fetch_candles_date_range("fake_token", "NIFTY", "5minute", past_day, past_day)
+        mock_get.assert_called_once()
+        assert "/intraday/" not in mock_get.call_args.args[0]
+        assert len(df) == 1
+
 
 class TestFetchCandlesDateRangeByInstrumentKey:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("ट्रेड घेण्यात आलेल्या option strike चाही चार्ट, एन्ट्री/एक्झिट
@@ -651,3 +684,22 @@ class TestFetchCandlesDateRangeByInstrumentKey:
             )
         assert df.empty
         assert list(df.columns) == ["timestamp", "open", "high", "low", "close", "volume", "oi"]
+
+    def test_todays_option_leg_also_calls_intraday_endpoint(self):
+        """🎓 वापरकर्त्याने अपलोड केलेल्या PDF मधली bug -- आजच घेतलेल्या (अजून न expire झालेल्या)
+        option leg चाही चार्ट, आधी नेहमीच "already-expired contract" (चुकीचं कारण) सह अयशस्वी व्हायचा,
+        कारण आजचा दिवस मुळात कधीच योग्य (/intraday/) endpoint कडून मागवलाच जायचा नव्हता."""
+        today = datetime.date(2026, 9, 28)
+        hist_resp = _mock_get_response(200, {"candles": []})
+        intraday_resp = _mock_get_response(200, {"candles": [self._candle_row("2026-09-28T09:20:00+05:30")]})
+
+        def _fake_get(url, headers=None, timeout=None):
+            return intraday_resp if "/intraday/" in url else hist_resp
+
+        with patch.object(upstox_api, "get_ist_today", return_value=today), \
+             patch.object(upstox_api.requests, "get", side_effect=_fake_get) as mock_get:
+            df = upstox_api.fetch_candles_date_range_by_instrument_key(
+                "fake_token", "NSE_FO|44444", "5minute", today, today,
+            )
+        assert mock_get.call_count == 2
+        assert not df.empty

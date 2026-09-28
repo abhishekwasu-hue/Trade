@@ -472,6 +472,25 @@ def _fetch_candles_date_range_by_key(access_token, instrument_key, interval, fro
             failed_chunks += 1  # हा chunk अयशस्वी झाला तरी बाकीचे चालू ठेवणे
         chunk_end = chunk_start - datetime.timedelta(days=1)
 
+    # 🎓 वापरकर्त्याने अपलोड केलेल्या Performance Report PDF मध्ये सापडलेली bug ("Charts display jhale
+    # nahit" — त्याच दिवशीच्या (intraday) trades साठी नेहमीच) — `historical-candle` endpoint आजच्याच
+    # (अजून चालू असलेल्या ट्रेडिंग) दिवसाचा डेटा कधीच परत देत नाही, तो फक्त आधीच्या (पूर्ण झालेल्या)
+    # दिवसांसाठीच असतो — establishment `fetch_candles()` (bot च्या स्वतःच्याच live सिग्नलसाठी) यामुळेच
+    # वेगळा `/intraday/` endpoint सुद्धा कॉल करतं (वर बघा), पण इथे तो कधीच नव्हता. जवळपास सर्वच trades
+    # intraday असल्याने (entry-exit त्याच दिवशी), PDF च्या Trade Charts विभागासाठी हा प्रत्येक वेळी रिकामा
+    # DataFrame द्यायचा — "candle data unavailable"/"likely an already-expired contract" असे दिशाभूल
+    # करणारे संदेश दाखवायचे, प्रत्यक्ष कारण वेगळंच (आजचा दिवस चुकीच्या endpoint कडून मागवला जात होता) होतं.
+    if to_date >= get_ist_today():
+        intraday_url = f"https://api.upstox.com/v3/historical-candle/intraday/{encoded_key}/{unit}/{val}"
+        try:
+            res_intra = requests.get(intraday_url, headers=headers, timeout=20)
+            if res_intra.status_code == 200:
+                all_candles.extend(res_intra.json().get("data", {}).get("candles", []))
+            else:
+                failed_chunks += 1
+        except requests.exceptions.RequestException:
+            failed_chunks += 1
+
     if failed_chunks > 0 and warn_on_failure:
         st.warning(f"⚠️ {interval} साठी {failed_chunks} historical chunk(s) मिळाले नाहीत — मागवलेल्या तारीख-रेंजचा काही भाग गहाळ असू शकतो.")
 
