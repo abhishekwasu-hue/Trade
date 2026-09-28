@@ -209,6 +209,44 @@ class TestProcessSymbolGates:
             logged_statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_MAX_2_HITS_REACHED" in logged_statuses
 
+    def test_max_hits_per_zone_configurable_higher_limit_allows_third_hit(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — max_hits_per_zone आता डॅशबोर्डवरून
+        बदलता येतो. इथे तो ३ ठेवला आहे, त्यामुळे hit_count_so_far=2 असतानाही trade घ्यायला हवा."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["max_hits_per_zone"] = 3
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(2, mft.get_ist_now(), mft.get_ist_now())), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called
+
+    def test_max_hits_per_zone_configurable_lower_limit_skips_second_hit(self):
+        """🎓 max_hits_per_zone=1 ठेवल्यावर, डीफॉल्ट-२ लॉजिकमध्ये परवानगी असलेला दुसरा hit
+        (hit_count_so_far=1) सुद्धा आता नाकारला जायला हवा."""
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["max_hits_per_zone"] = 1
+        candles_df = _fake_candles_df(last_close=6500.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(1, mft.get_ist_now(), mft.get_ist_now())), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(mft, "open_multi_leg_trade") as mock_trade:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert not mock_trade.called
+            logged_statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in logged_statuses
+
     def test_previous_open_position_blocks_entry(self):
         settings = dict(_DEFAULT_SETTINGS)
         settings["symbol_enabled"] = True

@@ -165,6 +165,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         return f"{symbol}: Cooldown कालावधी चालू आहे (SL नंतर {COOLDOWN_MINUTES} मिनिटं विराम)"
 
     lots = settings["lots"]
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
+    # 2") — बघा dynamic_sr_instant_trader.py मधली टिप्पणी.
+    max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच — Naked Option
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
@@ -270,9 +273,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         # साठी स्वतंत्र कमाल-2 counter (role= दिलं) — तोच level भूमिका बदलून (support->resistance
         # किंवा उलट) दुसऱ्या दिशेने test झाला तर तो एक वेगळाच candidate मानला जातो.
         hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
-        if hit_count_so_far >= 2:
+        if hit_count_so_far >= max_hits_per_zone:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल 2 वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
+            log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
         if has_open_trade_from_source(symbol, "srv2_momentum_reversal"):
