@@ -2446,6 +2446,31 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
     story.append(meta_tbl)
     story.append(Spacer(1, 8))
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Pdf report mdhe shadow trade ksa dosto, ani
+    # explanation pn joda front page war") — Shadow trades (OTM Shadow/Min-Hold Shadow) Strategy-wise
+    # टेबलमध्ये स्वतःच्या वेगळ्या रांगेने दिसतातच (established, बघा by_source_df च्या टिप्पणीत) — पण
+    # ते नेमके काय आहेत (निव्वळ तुलनेसाठीचे PAPER-only forward-test, खऱ्या Positions/MTM चा भाग नाहीत)
+    # हे स्पष्ट करणारं कुठलंही वाक्य नव्हतं. या कालावधीत प्रत्यक्ष कुठलाही Shadow trade असेल तरच
+    # (by_source_df च्या "Group" स्तंभात "Shadow" शब्द सापडला तरच) हा स्पष्टीकरण-परिच्छेद front page वर,
+    # Summary च्याही आधी दाखवला जातो — नसेल तर (बहुतांश reports साठी) पूर्णपणे वगळला जातो.
+    if by_source_df is not None and not by_source_df.empty and by_source_df["Group"].astype(str).str.contains("Shadow", na=False).any():
+        story.append(_bi_line(
+            "Note on Shadow trades: rows labelled \"OTM Shadow\" or \"Min-Hold Shadow\" below are "
+            "PAPER-only forward-test comparisons that fire alongside the real strategy's own signal, "
+            "using an alternate parameter (e.g. an OTM strike instead of ITM, or a confirmed-entry delay "
+            "instead of an immediate one). They are never real LIVE/PAPER positions in their own right -- "
+            "they do not appear in Positions or count toward overall MTM -- and exist purely so this report "
+            "can compare \"what actually happened\" against \"what the alternate approach would have done\".",
+            "Shadow trades बद्दल टीप: खाली \"OTM Shadow\" किंवा \"Min-Hold Shadow\" असं लेबल असलेल्या रांगा "
+            "-- खऱ्या रणनीतीच्याच सिग्नलवर, समांतर, निव्वळ तुलनेसाठी चालणारे PAPER-only forward-test trades "
+            "आहेत (उदा. ITM ऐवजी OTM strike, किंवा तात्काळ entry ऐवजी confirmed-entry विलंब). हे कधीच स्वतंत्र "
+            "खरे LIVE/PAPER positions नसतात -- Positions टॅबमध्ये किंवा एकूण MTM मध्ये कधीच दिसत नाहीत -- "
+            "\"प्रत्यक्ष काय घडलं\" विरुद्ध \"पर्यायी पद्धतीने काय घडलं असतं\" याची तुलना करण्यासाठीच हे रिपोर्ट "
+            "यांचा वापर करतो.",
+            max_width_pt=usable_width, font_size=10.5,
+        ))
+        story.append(Spacer(1, 8))
+
     next_section("Summary", "सारांश")
     if not summary or summary.get("total_trades", 0) == 0:
         story.append(_bi_line("No CLOSED trades in this period.", "या कालावधीत कुठलेही बंद (CLOSED) व्यवहार नाहीत.", max_width_pt=usable_width))
