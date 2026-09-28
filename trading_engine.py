@@ -243,8 +243,12 @@ def _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product
 def check_kill_switch():
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L किंवा trade-count (सर्व symbols/bots
-    मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो. PAPER trades कधीच
-    अडवले जात नाहीत — फक्त LIVE (खरे पैसे) साठीच हा संरक्षक.
+    मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable aahe
+    tech gate Paper trade sathi suddha applicable kra") — पूर्वी PAPER trades कधीच अडवले जात
+    नव्हते (established pattern); आता ही अट (नेहमीच खऱ्या LIVE capital/PnL वरून ठरणारी — तेच
+    कायम आहे) ट्रिप झाल्यावर नवीन LIVE **आणि** PAPER दोन्ही trades थांबतात. आधीच उघडे trades
+    (PAPER/LIVE कुठलेही) यामुळे कधीच बंद केले जात नाहीत — फक्त नवीन entries थांबतात.
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit pahije ka discuss" -> "ekun
     capital chya respected te asayla pahije both loss and profit, certain profit book jhalyanantr,
     automatic trading stop karne awashyak") — max_daily_loss_pct/max_daily_profit_pct (दोन्ही %,
@@ -270,7 +274,7 @@ def check_kill_switch():
         return False, (
             f"KILL_SWITCH_UNVERIFIED_PNL — आज {unverified_count} LIVE trade(s) Upstox app/website "
             f"वरून थेट बंद झालेल्या दिसतात, पण त्यांचा खरा नफा/तोटा अजून नोंदवलेला नाही — आजचा एकूण "
-            f"तोटा अचूक मोजता येत नसल्याने नवीन LIVE trades थांबवले. कृपया Dashboard/Upstox वरून "
+            f"तोटा अचूक मोजता येत नसल्याने नवीन trades (LIVE + PAPER) थांबवले. कृपया Dashboard/Upstox वरून "
             f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
         )
 
@@ -279,8 +283,8 @@ def check_kill_switch():
     if not total_capital or total_capital <= 0:
         return False, (
             "KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन LIVE "
-            "trades थांबवले."
+            "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन trades "
+            "(LIVE + PAPER) थांबवले."
         )
 
     total_pnl, total_trades = get_todays_live_total_pnl_and_count()
@@ -298,7 +302,7 @@ def check_kill_switch():
         return False, (
             f"KILL_SWITCH_DAILY_PROFIT_TARGET — आजचा एकूण LIVE नफा ₹{total_pnl:,.0f} आधीच लक्ष्य "
             f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, एकूण capital "
-            f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन LIVE trading थांबवलं (नफा टिकवण्यासाठी)"
+            f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन trading (LIVE + PAPER) थांबवलं (नफा टिकवण्यासाठी)"
         )
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा असेल,
     # तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — वरचा max_daily_profit_pct
@@ -317,7 +321,7 @@ def check_kill_switch():
                     f"KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
                     f"त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — सद्य "
                     f"एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला, नफ्यातून तोटा होऊ नये म्हणून नवीन "
-                    f"LIVE trades थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
+                    f"trades (LIVE + PAPER) थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
                 )
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
@@ -331,8 +335,10 @@ def check_mcx_kill_switch():
     दिवसांचा LIVE इतिहास असलेली) रणनीती असल्याने, ग्लोबल मर्यादा अजून बरीच दूर असतानाही फक्त MCX
     मध्येच मोठा तोटा होत असेल किंवा एकाच वेळी खूप जास्त commodities उघडे राहत असतील तर लवकर थांबावं.
     दोन्ही Kill Switches (हे + ग्लोबल) स्वतंत्रपणे तपासले जातात — कुठलाही एक ट्रिप झाला तरी नवीन MCX
-    LIVE trade अडतो; open_multi_leg_trade() मध्ये फक्त source=="mcx_futures" असेल तेव्हाच, ग्लोबल
-    check_kill_switch() नंतर, जोडून तपासलं जातं.
+    trade (LIVE **आणि** PAPER दोन्ही — बघा check_kill_switch() मधली "Je gates live trade sathi
+    applicable aahe tech gate Paper trade sathi suddha applicable kra" टिप्पणी) अडतो;
+    open_multi_leg_trade() मध्ये फक्त source=="mcx_futures" असेल तेव्हाच, ग्लोबल check_kill_switch()
+    नंतर, जोडून तपासलं जातं.
     रिटर्न: (ok: bool, reason: str|None)."""
     settings = cloud_db.get_mcx_kill_switch_settings()
     if not settings.get("enabled", True):
@@ -352,8 +358,8 @@ def check_mcx_kill_switch():
     if not total_capital or total_capital <= 0:
         return False, (
             "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX LIVE trades "
-            "थांबवले."
+            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
+            "(LIVE + PAPER) थांबवले."
         )
     max_daily_loss_pct = settings.get("max_daily_loss_pct", 1.0)
     max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
@@ -375,22 +381,40 @@ def check_mcx_kill_switch():
                 return False, (
                     f"MCX_KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
                     f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
-                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX LIVE trades थांबवले"
+                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX trades (LIVE + PAPER) थांबवले"
                 )
     return True, None
 
 
-def check_vix_spike_halt(symbol):
+VIX_SPIKE_HALT_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
+
+
+def check_vix_spike_halt(symbol, direction=None, is_directional_trade=False):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% (आदल्या
-    दिवसाच्या close च्या तुलनेत, threshold 5%) क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने automatic
-    trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट सांगितलं), फक्त LIVE (established
-    Kill Switch पॅटर्नप्रमाणेच PAPER trades कधीच अडत नाहीत). check_vix_spike_halt.py (सकाळी 9:20
-    IST cron, बाजार उघडून ~5 मिनिटांनी) आधीच ठरवलेला आजचा निकाल फक्त वाचतो — इथे प्रत्येक trade
-    attempt ला नवीन VIX API कॉल होत नाही (हलकं). आजची तपासणीच अजून झालेली नसेल (cron अजून चालला
-    नाही, किंवा 9:15-9:20 च्या मधलाच क्षण — पहिली 5 मिनिटं पूर्ण होण्याआधी निकाल असूच शकत नाही) तर
-    fail-open (अडवत नाही) — cron स्वतः त्याचा निकाल Telegram वर कळवतो.
+    दिवसाच्या close च्या तुलनेत, threshold 5%) क्रॉस केली तर त्या दिवशी bot ने automatic trading
+    थांबवावी") — फक्त equity index symbols साठी (NIFTY/BANKNIFTY/SENSEX — India VIX हा सर्व तिन्हींना
+    लागू असलेला, मार्केट-व्यापी अस्थिरता निर्देशांक; MCX (commodity futures) कधीच अडत नाही).
+    check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5 मिनिटांनी) आधीच ठरवलेला आजचा निकाल
+    फक्त वाचतो — इथे प्रत्येक trade attempt ला नवीन VIX API कॉल होत नाही (हलकं). आजची तपासणीच अजून
+    झालेली नसेल (cron अजून चालला नाही, किंवा 9:15-9:20 च्या मधलाच क्षण — पहिली 5 मिनिटं पूर्ण
+    होण्याआधी निकाल असूच शकत नाही) तर fail-open (अडवत नाही) — cron स्वतः त्याचा निकाल Telegram वर
+    कळवतो.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
+    झालेली आहे, directional trade चालूच राहतील") — मूळ रचनेत हा गेट ट्रिप झाल्यावर दिशा-निरपेक्षपणे
+    (bullish + bearish + directional, सर्व) अडवायचा — तो चुकीचा, जास्त कडक अंमल होता. आता फक्त plain
+    **bullish** (non-directional reversal) trades अडतात — bearish trades (VIX स्पाईक सहसा घसरणीसोबतच
+    येतो, म्हणजे bearish दिशेनेच जाणारा trade हा "पॅनिकच्या विरुद्ध पोझिशन" नाही) आणि कुठल्याही
+    दिशेचे directional (IV Breakout flip / Breakout Entry — त्यांचं स्वतःचं वेगळं, आधीच तपासलेलं
+    confirmation असतं) trades या गेटला पूर्णपणे वगळलेले आहेत.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    ani sensex la pn applicable aahe, Mcx la applicable nahi") — established Kill Switch/MCX Kill
+    Switch पॅटर्नच्या उलट, हा गेट PAPER trades लाही लागू आहे (फॉरवर्ड-टेस्ट डेटा त्या दिवशीचा VIX-प्रभाव
+    अचूक दाखवावा म्हणून) — LIVE/PAPER भेद इथे मुद्दामच नाही (caller — open_multi_leg_trade() —
+    trading_mode विचारातच घेत नाही, दोन्हींसाठी हाच check चालतो).
     रिटर्न: (ok: bool, reason: str|None)."""
-    if symbol != "NIFTY":
+    if symbol not in VIX_SPIKE_HALT_SYMBOLS:
+        return True, None
+    if is_directional_trade or direction != "BULLISH":
         return True, None
     settings = cloud_db.get_vix_spike_halt_settings()
     if not settings.get("enabled", True):
@@ -404,7 +428,8 @@ def check_vix_spike_halt(symbol):
     threshold_pct = settings.get("threshold_pct", 5.0)
     return False, (
         f"VIX_SPIKE_HALT — आज सकाळी India VIX {pct_str} बदलला (मर्यादा {threshold_pct:.0f}%, आदल्या "
-        f"दिवसाच्या close च्या तुलनेत) — आजच्या उर्वरित दिवसासाठी NIFTY साठी नवीन LIVE trades थांबवले."
+        f"दिवसाच्या close च्या तुलनेत) — आजच्या उर्वरित दिवसासाठी {symbol} चे नवीन bullish trades "
+        f"(PAPER + LIVE दोन्ही) थांबवले (bearish आणि directional trades नेहमीप्रमाणेच चालू)."
     )
 
 
@@ -648,7 +673,7 @@ def _maybe_cancel_broker_side_sl(access_token, adapter, legs):
             _logger.exception(f"[Broker-side SL] order_id={order_id} रद्द करताना अनपेक्षित चूक — Upstox app/website वर हाताने तपासा.")
 
 
-def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None, entry_reason_tag=None):
+def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss, target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style="INTRADAY", sl_pct_of_credit=None, source="MANUAL", adapter=None, entry_level_price=None, entry_timeframe=None, entry_spot_price=None, entry_reason_tag=None, direction=None, is_directional_trade=False):
     """कोणतीही स्ट्रॅटेजी (2-leg क्रेडिट स्प्रेड किंवा 4-leg Iron Condor/Butterfly) उघडणे (LIVE किंवा PAPER) व DB मध्ये नोंद करणे.
     sl_pct_of_credit दिलं (Price Action/Indicator साठी, वापरकर्त्याशी चर्चा करून ठरवलेलं नवीन नियम) तर SL
     net_credit च्या % वर ठरतो (max_loss च्या % ऐवजी — Iron Condor/Butterfly साठी जुनीच पद्धत कायम).
@@ -700,14 +725,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             target_pct_of_max_profit, product_type, trading_mode="LIVE", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
-            entry_reason_tag=entry_reason_tag,
+            entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
         )
         paper_ok, paper_resp = open_multi_leg_trade(
             access_token, symbol, strategy_result, lots, lot_size, sl_pct_of_max_loss,
             target_pct_of_max_profit, product_type, trading_mode="PAPER", trading_style=trading_style,
             sl_pct_of_credit=sl_pct_of_credit, source=source, adapter=adapter,
             entry_level_price=entry_level_price, entry_timeframe=entry_timeframe, entry_spot_price=entry_spot_price,
-            entry_reason_tag=entry_reason_tag,
+            entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
         )
         combined_resp = {
             "status": "success" if live_ok else "error",
@@ -716,28 +741,47 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         }
         return live_ok, combined_resp
 
-    if trading_mode == "LIVE":
-        kill_switch_ok, kill_switch_reason = check_kill_switch()
-        if not kill_switch_ok:
-            _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
-            return False, {"status": "error", "reason": kill_switch_reason}
-
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
-        # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी.
-        if source == "mcx_futures":
-            mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
-            if not mcx_kill_switch_ok:
-                _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
-                return False, {"status": "error", "reason": mcx_kill_switch_reason}
-
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — फक्त NIFTY साठी.
-        vix_ok, vix_reason = check_vix_spike_halt(symbol)
-        if not vix_ok:
+    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    # ani sensex la pn applicable aahe, Mcx la applicable nahi") — मूळ रचनेत हा गेट फक्त LIVE trades
+    # साठीच (established Kill Switch पॅटर्नप्रमाणे) आणि फक्त NIFTY साठीच होता. वापरकर्त्याने स्पष्ट
+    # केलं की हा (India VIX-आधारित, दिशा-विशिष्ट) गेट त्या पॅटर्नपेक्षा वेगळा आहे — PAPER trades
+    # सुद्धा (फॉरवर्ड-टेस्ट डेटाच त्या दिवशीचा "पॅनिक"चा प्रभाव अचूक दाखवावा म्हणून) आणि तिन्ही index
+    # symbols (NIFTY/BANKNIFTY/SENSEX — check_vix_spike_halt() मध्येच व्याप्ती) अडवायचे आहेत, फक्त
+    # MCX (source=="mcx_futures") वगळून. म्हणून हा check आता trading_mode=="LIVE" च्या आतमध्ये नाही
+    # — LIVE_PAPER चे दोन्ही recursive कॉल्स (वर) आणि plain PAPER दोन्ही इथूनच जातात.
+    vix_ok, vix_reason = check_vix_spike_halt(symbol, direction=direction, is_directional_trade=is_directional_trade)
+    if not vix_ok:
+        if trading_mode == "LIVE":
             _alert_kill_switch_blocked(symbol, source, vix_reason)
-            return False, {"status": "error", "reason": vix_reason}
+        return False, {"status": "error", "reason": vix_reason}
 
+    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable aahe
+    # tech gate Paper trade sathi suddha applicable kra") — वापरकर्त्याने स्पष्ट केलं की LIVE साठीचे
+    # दोन्ही Kill Switches (ग्लोबल + MCX-विशिष्ट) आता PAPER trades लाही लागू व्हायला हवेत — खऱ्या
+    # capital/PnL वरून ठरणारी अट (check_kill_switch()/check_mcx_kill_switch() नेहमीच खऱ्या LIVE
+    # आकडेवारीवरूनच ठरतात, हे बदललेलं नाही) आता LIVE आणि PAPER दोन्हीसाठीचे नवीन trades अडवते —
+    # VIX Spike Halt च्याच तत्त्वाप्रमाणे (वर) — म्हणून हे दोन्ही checks आता trading_mode=="LIVE"
+    # च्या आतमध्ये नाहीत.
+    kill_switch_ok, kill_switch_reason = check_kill_switch()
+    if not kill_switch_ok:
+        if trading_mode == "LIVE":
+            _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
+        return False, {"status": "error", "reason": kill_switch_reason}
+
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
+    # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी. आता वरच्याच
+    # PAPER-सकट सुधारणेप्रमाणे LIVE आणि PAPER दोन्हीला लागू.
+    if source == "mcx_futures":
+        mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
+        if not mcx_kill_switch_ok:
+            if trading_mode == "LIVE":
+                _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
+            return False, {"status": "error", "reason": mcx_kill_switch_reason}
+
+    if trading_mode == "LIVE":
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
-        # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).
+        # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय) — फक्त LIVE साठीच अर्थपूर्ण
+        # (दोन strategies प्रत्यक्ष भांडवलावर परस्परविरोधी दिशेने trade घेत असतील तरच सूचना उपयोगी).
         other_source_trades = get_open_trades_by_other_sources(symbol, source)
         if other_source_trades:
             _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source_trades)
@@ -1992,7 +2036,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
                                    target_pct_of_max_profit, product_type, trading_mode="PAPER",
                                    trading_style="INTRADAY", sl_pct_of_credit=None, source="MULTI_ACCOUNT",
                                    entry_level_price=None, entry_timeframe=None, account_ids=None, entry_spot_price=None,
-                                   entry_reason_tag=None):
+                                   entry_reason_tag=None, direction=None, is_directional_trade=False):
     """
     🎓 वापरकर्त्याशी चर्चा करून बांधलेली — "Multi-Broker Multi-Account" रणनीती: established
     established broker_factory.get_all_active_adapters() कडून सर्व सक्रिय accounts मिळवून, established
@@ -2027,6 +2071,7 @@ def execute_trade_on_all_accounts(symbol, strategy_result, base_lots, lot_size, 
             trading_mode=trading_mode, trading_style=trading_style, sl_pct_of_credit=sl_pct_of_credit,
             source=source, adapter=adapter, entry_level_price=entry_level_price, entry_timeframe=entry_timeframe,
             entry_spot_price=entry_spot_price, entry_reason_tag=entry_reason_tag,
+            direction=direction, is_directional_trade=is_directional_trade,
         )
         results.append({"account_id": adapter.get_account_id(), "ok": ok, "result": result})
     return results, factory_errors

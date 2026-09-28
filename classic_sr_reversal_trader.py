@@ -354,7 +354,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    account_ids=broker_account_ids,
+                    account_ids=broker_account_ids, direction=direction,
                 )
                 trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
                 if factory_errors:
@@ -366,6 +366,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    direction=direction,
                 )
                 # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
                 # टिप्पणी) — open_multi_leg_trade() चं दुसरं मूल्य dict असतं, raw dict signal_log.
@@ -408,7 +409,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    account_ids=broker_account_ids,
+                    account_ids=broker_account_ids, direction=direction,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
@@ -418,6 +419,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="classic_sr_reversal",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
+                    direction=direction,
                 )
                 naked_status = format_trade_result(naked_ok, naked_response)
 

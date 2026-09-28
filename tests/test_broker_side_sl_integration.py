@@ -250,6 +250,7 @@ class TestBrokerSideSlEndToEndIntegration:
                              lambda t, o, m: (200, {"status": "success", "data": {"order_ids": ["T1"]}}))
         mock_place = MagicMock()
         monkeypatch.setattr(trading_engine, "upstox_place_stop_loss_order", mock_place)
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
 
         strategy_result = {
             "strategy": "NAKED_CALL",

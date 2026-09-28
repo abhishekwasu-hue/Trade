@@ -107,15 +107,15 @@ def _render_mcx_kill_switch_panel():
     total_capital = get_total_capital(token_input) if token_input else None
     max_daily_loss_amount = (total_capital * ks["max_daily_loss_pct"] / 100) if total_capital else None
 
-    with st.expander("🛑 MCX-विशिष्ट Kill Switch (5 Commodities मिळून, ग्लोबलपेक्षा स्वतंत्र/कडक)", expanded=False):
+    with st.expander("🛑 MCX-विशिष्ट Kill Switch (5 Commodities मिळून, ग्लोबलपेक्षा स्वतंत्र/कडक, LIVE + PAPER दोन्ही)", expanded=False):
         st.caption(
             "MCX ही brand-new रणनीती आहे (अजून एकही खरा LIVE order गेलेला नाही) — त्यामुळे ग्लोबल Kill "
             "Switch (Bot Dynamic SR Algo पान) सोबतच, इथे फक्त MCX साठीच स्वतंत्र, जास्त कडक मर्यादा — "
             "आजचा MCX-पुरताच तोटा किंवा एकाच वेळी उघडी असलेल्या commodities ची संख्या इथल्या मर्यादेपलीकडे "
-            "गेली, तर नवीन MCX LIVE trade आपोआप थांबतो (PAPER trades वर परिणाम नाही, बाकी bots वरही नाही)."
+            "गेली, तर नवीन MCX trade (LIVE आणि PAPER दोन्ही) आपोआप थांबतो (बाकी bots वर परिणाम नाही)."
         )
         if total_capital is None:
-            st.warning("⚠️ एकूण capital मिळालं नाही (token/नेटवर्क तपासा) — तोटा-मर्यादा मोजता येत नाही, यावेळी Kill Switch नवीन MCX LIVE trades आपोआप थांबवेल.")
+            st.warning("⚠️ एकूण capital मिळालं नाही (token/नेटवर्क तपासा) — तोटा-मर्यादा मोजता येत नाही, यावेळी Kill Switch नवीन MCX trades (LIVE + PAPER) आपोआप थांबवेल.")
         else:
             st.caption(f"सध्याचं एकूण capital (Upstox): ₹{total_capital:,.0f}")
 
@@ -135,10 +135,10 @@ def _render_mcx_kill_switch_panel():
                 st.error(
                     f"🔴 MCX Profit-Lock Kill Switch ट्रिप झालं आहे — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
                     f"होता, त्यातला {ks['profit_lock_pct']:.0f}% (₹{locked_floor:,.0f}) लॉक होता, सद्य नफा ₹{total_pnl:,.0f} "
-                    f"त्याखाली घसरला. नवीन MCX LIVE trade ब्लॉक केला जातोय."
+                    f"त्याखाली घसरला. नवीन MCX trade (LIVE + PAPER) ब्लॉक केला जातोय."
                 )
             else:
-                st.error(f"🔴 MCX Kill Switch ट्रिप झालं आहे — आजचा MCX LIVE P&L ₹{total_pnl:,.0f}, उघडी positions {open_positions}. नवीन MCX LIVE trade ब्लॉक केला जातोय.")
+                st.error(f"🔴 MCX Kill Switch ट्रिप झालं आहे — आजचा MCX LIVE P&L ₹{total_pnl:,.0f}, उघडी positions {open_positions}. नवीन MCX trade (LIVE + PAPER) ब्लॉक केला जातोय.")
         else:
             # tripped=False इथे फक्त ks["enabled"] आणि total_capital दोन्ही असतील तरच पोहोचतं (वरच्या
             # `or` chain प्रमाणे) — म्हणजे max_daily_loss_amount इथे नेहमीच उपलब्ध असतो.

@@ -287,18 +287,37 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
         # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
         # happen then take entry in the same direction") — Breakout Entry — max-2-hits च्या
-        # पलीकडचा, तिसरा trade. "buildup" पूर्णपणे price-data वरून (trade-outcome/live_trades वर
-        # अवलंबून नाही, त्यामुळे IV/RSI/PCR Gate ने आधीचे touches block केले तरी काम करतं) —
-        # breakout-candle च्या आधीच्या `breakout_lookback_candles` 5-मिनिट candles मध्ये price
-        # level च्या ±`breakout_tolerance_pct`% च्या आत consolidate झालेला असावा, आणि नंतर एक
-        # 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close झाला तरच. डीफॉल्ट बंद — इतर
-        # नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा.
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Candle 5 minute chi asel tar kiman 12
-        # candle chi range calculator hawi") — डीफॉल्ट lookback 6 (30 मिनिट) वरून 12 (1 तास) —
-        # Dashboard वरून बदलण्याजोगंच (hardcoded नाही, already user-friendly number_input).
+        # पलीकडचा, तिसरा trade. आधी एक 5-मिनिट candle त्या level च्या पलीकडे breakout-दिशेने close
+        # झाला तरच. डीफॉल्ट बंद — इतर नवीन gates सारखाच, वापरकर्त्याने स्वतः Dashboard वरून चालू
+        # करायचा.
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition
+        # pn remove kra") — price consolidation ("buildup" — breakout_lookback_candles/
+        # breakout_tolerance_pct वरून तपासलं जायचं) ही अट काढली — आता फक्त candle-close buffer%
+        # हाच एकमेव निकष उरला आहे (हे सेटिंग्ज अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी
+        # वापरले जातात, त्यामुळे "mcx_futures" defaults मध्ये कायम आहेत — इथे "1m_instant" मध्येच
+        # काढलेले).
         "entry_breakout_gate_enabled": False,
-        "breakout_lookback_candles": 12,
-        "breakout_tolerance_pct": 0.30,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
+        # 0.010%") — breakout-confirm करणारा 5-मिनिट candle level पासून किमान इतक्या% तरी पलीकडे
+        # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close पुरेसा नाही) — Dashboard वरून
+        # बदलण्याजोगं (hardcoded नाही).
+        "breakout_close_buffer_pct": 0.010,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
+        # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — breakout-candle चा
+        # volume त्याआधीच्या breakout_volume_lookback_candles candles च्या सरासरीपेक्षा किमान
+        # breakout_volume_multiplier पट जास्त असावा लागतो, नाहीतर candle-close अट पूर्ण असूनही
+        # breakout trade घेतला जात नाही — कमी-volume (fake/whipsaw असण्याची शक्यता जास्त) breakouts
+        # गाळण्यासाठी. डीफॉल्ट (वापरकर्त्याने निवडलेले): 1.5x, मागचे 10 candles.
+        "breakout_volume_confirm_enabled": False,
+        "breakout_volume_lookback_candles": 10,
+        "breakout_volume_multiplier": 1.5,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5
+        # minute save kele जातात tech yethe use krta yeil") — ऐच्छिक (डीफॉल्ट बंद) OI Confirmation —
+        # `oi_snapshot_collector.py` ने आधीच दर 5 मिनिटांनी साठवलेला Put/Call OI-Price signal
+        # breakout_direction शी जुळतो (established `oi_analysis.check_oi_diff_entry_gate`) तरच
+        # breakout trade घेतला जातो — कुठलेही नवीन threshold नाहीत (existing established gate चाच
+        # पुनर्वापर).
+        "breakout_oi_confirm_enabled": False,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ
@@ -1009,13 +1028,16 @@ def set_trading_pause(paused, reason=""):
 
 
 # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% क्रॉस केली तर
-# त्या दिवशी NIFTY साठी bot ने automatic trading थांबवावी") — फक्त NIFTY साठी (वापरकर्त्याने स्पष्ट
-# सांगितलं), फक्त LIVE (established Kill Switch पॅटर्नप्रमाणेच PAPER कधीच अडत नाही). % move आदल्या
+# त्या दिवशी bot ने automatic trading थांबवावी") — India VIX हा एकच, मार्केट-व्यापी अस्थिरता निर्देशांक
+# असल्याने एकच daily निकाल NIFTY/BANKNIFTY/SENSEX तिन्हींना लागू होतो (MCX वगळून) — फक्त plain bullish
+# trades, PAPER + LIVE दोन्ही (established Kill Switch पॅटर्नच्या उलट — PAPER इथे अडतं). % move आदल्या
 # दिवसाच्या VIX close च्या तुलनेत मोजला जातो (वापरकर्त्याने निवडलेला आधार — "खरंच किती वाढला" हेच
 # traders सहसा म्हणतात, आजच्या 9:15 open शी नाही), डीफॉल्ट threshold 5%. check_vix_spike_halt.py
 # (सकाळी 9:20 IST cron, बाजार उघडून ~5 मिनिटांनी) एकदाच तपासून आजचा निकाल इथेच साठवतो —
 # trading_engine.check_vix_spike_halt() हा फक्त तोच निकाल वाचतो, प्रत्येक trade attempt ला नवीन VIX
-# API कॉल करत नाही.
+# API कॉल करत नाही. VIX_SPIKE_HALT_SYMBOL_KEY फक्त storage-key आहे (India VIX एकच असल्याने तीनही
+# symbols साठी हाच एक साठवलेला निकाल पुन्हा वापरला जातो) — प्रत्यक्ष कुठले symbols अडतात ते
+# trading_engine.VIX_SPIKE_HALT_SYMBOLS मध्ये.
 VIX_SPIKE_HALT_STRATEGY_KEY = "__vix_spike_halt__"
 VIX_SPIKE_HALT_SYMBOL_KEY = "NIFTY"
 VIX_SPIKE_HALT_DEFAULTS = {"enabled": True, "threshold_pct": 5.0}

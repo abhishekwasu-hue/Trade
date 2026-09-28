@@ -15,6 +15,7 @@ import streamlit as st
 
 import cloud_db
 import database
+import trading_engine
 import upstox_api
 from config import get_ist_today
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN
@@ -78,15 +79,20 @@ def _render_kill_switch_panel():
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — तिन्ही bots साठी एकत्रित, संपूर्ण-खात्यासाठीचं (per-strategy/symbol
     नाही) सुरक्षा-सेटिंग. आजचा एकूण LIVE तोटा किंवा ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर पुढचे
-    सर्व LIVE trades (कुठल्याही bot/symbol चे) trading_engine.open_multi_leg_trade() कडूनच आपोआप
-    थांबतात (PAPER trades वर कुठलाही परिणाम नाही).
+    सर्व नवीन trades (कुठल्याही bot/symbol चे) trading_engine.open_multi_leg_trade() कडूनच आपोआप
+    थांबतात.
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit... ekun capital chya respected
     te asayla pahije both loss and profit, certain profit book jhalyanantr, automatic trading stop
     karne awashyak") — max_daily_loss/max_daily_profit आता flat ₹ ऐवजी **एकूण capital च्या %**
     (capital = Upstox कडून available_margin + used_margin, trading_engine.check_kill_switch() मध्येच
     प्रत्यक्ष वेळी काढलं जातं). इथे फक्त preview/display साठी तोच आकडा वापरला आहे. नवीन — नफ्याची
-    बाजूही (max_daily_profit_pct) — ठराविक नफा गाठल्यावर उरलेल्या दिवसासाठी नवीन LIVE trades आपोआप
-    थांबतात."""
+    बाजूही (max_daily_profit_pct) — ठराविक नफा गाठल्यावर उरलेल्या दिवसासाठी नवीन trades आपोआप
+    थांबतात.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable aahe
+    tech gate Paper trade sathi suddha applicable kra") — established "PAPER कधीच अडत नाही" पॅटर्न
+    इथे मुद्दामच मोडला — Kill Switch ट्रिप झाल्यावर आता PAPER trades सुद्धा (LIVE सोबतच) थांबतात,
+    कारण ट्रिगर करणारी अट (खरं LIVE capital/PnL) कायमच खरी आहे — त्यामुळे तेच बंधन PAPER
+    (forward-test) trading लाही तितकंच लागू व्हायला हवं."""
     ks_settings = cloud_db.get_kill_switch_settings()
     total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
     token_input = st.session_state.get("token_input", "")
@@ -94,18 +100,18 @@ def _render_kill_switch_panel():
     max_daily_loss_amount = (total_capital * ks_settings["max_daily_loss_pct"] / 100) if total_capital else None
     max_daily_profit_amount = (total_capital * ks_settings["max_daily_profit_pct"] / 100) if total_capital else None
 
-    with st.expander("🛑 LIVE Kill Switch (सर्व Bots + Dashboard साठी एकत्रित)", expanded=False):
+    with st.expander("🛑 Kill Switch (सर्व Bots + Dashboard साठी एकत्रित, LIVE + PAPER दोन्ही)", expanded=False):
         st.caption(
             "आजचा एकूण खऱ्या पैशांचा (LIVE) तोटा किंवा नफा (दोन्ही — एकूण capital च्या % म्हणून) किंवा "
             "ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर तिन्ही bots + Dashboard कडून पुढचे कुठलेही "
-            "नवीन LIVE trade घेतले जाणार नाहीत (PAPER trades नेहमीप्रमाणेच चालू राहतील) — जोपर्यंत "
-            "तुम्ही स्वतः इथून सेटिंग्ज बदलत नाही. नफ्याची मर्यादा मुद्दाम — आजचा नफा आधीच लक्ष्य "
-            "गाठलेला असेल, तर तो परत \"दिला\" जाऊ नये म्हणून."
+            "नवीन trade (LIVE आणि PAPER दोन्ही) घेतले जाणार नाहीत — जोपर्यंत तुम्ही स्वतः इथून "
+            "सेटिंग्ज बदलत नाही. नफ्याची मर्यादा मुद्दाम — आजचा नफा आधीच लक्ष्य गाठलेला असेल, तर तो "
+            "परत \"दिला\" जाऊ नये म्हणून."
         )
         if total_capital is None:
             st.warning(
                 "⚠️ एकूण capital (Upstox Funds & Margin वरून) सध्या मिळालं नाही — token/नेटवर्क तपासा. "
-                "खरी trading वेळी हेच कारण असेल, तर Kill Switch सुरक्षिततेसाठी नवीन LIVE trades आपोआप थांबवतो."
+                "खरी trading वेळी हेच कारण असेल, तर Kill Switch सुरक्षिततेसाठी नवीन trades (LIVE + PAPER) आपोआप थांबवतो."
             )
         else:
             st.caption(f"सध्याचं एकूण capital (Upstox, available+used margin): ₹{total_capital:,.0f}")
@@ -123,16 +129,16 @@ def _render_kill_switch_panel():
             or total_trades >= ks_settings["max_trades_per_day"]
         )
         if not ks_settings["enabled"]:
-            st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
+            st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE किंवा PAPER ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
         elif tripped:
             if profit_locked_tripped and not (total_capital is None or total_pnl <= -max_daily_loss_amount or total_pnl >= max_daily_profit_amount):
                 st.error(
                     f"🔴 Profit-Lock Kill Switch ट्रिप झालं आहे — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
                     f"त्यातला {ks_settings['profit_lock_pct']:.0f}% (₹{locked_floor:,.0f}) लॉक होता, सद्य नफा ₹{total_pnl:,.0f} "
-                    f"त्याखाली घसरला. नवीन LIVE trade ब्लॉक केला जातोय."
+                    f"त्याखाली घसरला. नवीन trade (LIVE + PAPER) ब्लॉक केला जातोय."
                 )
             else:
-                st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन LIVE trade ब्लॉक केला जातोय.")
+                st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन trade (LIVE + PAPER) ब्लॉक केला जातोय.")
         else:
             lock_caption = f", profit-lock मजला ₹{locked_floor:,.0f}" if ks_settings["profit_lock_enabled"] and locked_floor is not None else ""
             st.success(
@@ -163,7 +169,7 @@ def _render_kill_switch_panel():
         st.caption(
             "🔒 Profit-Lock (ऐच्छिक) — दिवसभरात कधीही गाठलेल्या सर्वोच्च नफ्यातला ठराविक % कायमचा "
             "\"मजला\" म्हणून लॉक होतो (वरच्या स्थिर नफा-लक्ष्याआधीही) — सद्य नफा त्याखाली घसरला की "
-            "नवीन LIVE trades थांबतात. आधीच उघडे trades यामुळे कधीच जबरदस्तीने बंद होत नाहीत."
+            "नवीन trades (LIVE + PAPER) थांबतात. आधीच उघडे trades यामुळे कधीच जबरदस्तीने बंद होत नाहीत."
         )
         pc1, pc2 = st.columns(2)
         with pc1:
@@ -188,22 +194,31 @@ def _render_kill_switch_panel():
 
 def _render_vix_spike_halt_panel():
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% level
-    क्रॉस केली तर त्या दिवशी NIFTY साठी bot ने trading थांबवावी") — फक्त NIFTY साठी, फक्त LIVE
-    (PAPER trades वर परिणाम नाही). check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5
+    क्रॉस केली तर त्या दिवशी bot ने trading थांबवावी") — NIFTY/BANKNIFTY/SENSEX (India VIX सर्व
+    तिन्हींना लागू; MCX वगळून). check_vix_spike_halt.py (सकाळी 9:20 IST cron, बाजार उघडून ~5
     मिनिटांनी) रोज एकदा तपासून आजचा निकाल साठवतं — इथे तोच निकाल + enabled/threshold सेटिंग्ज
-    दाखवली/बदलता येतात (established Kill Switch पॅनेलसारखंच)."""
+    दाखवली/बदलता येतात (established Kill Switch पॅनेलसारखंच).
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
+    झालेली आहे, bearish/directional trade चालूच राहतील") — मूळ रचना दिशा-निरपेक्षपणे सर्व नवीन LIVE
+    trades अडवायची, जे जास्त कडक होतं. आता trading_engine.check_vix_spike_halt() फक्त plain
+    **bullish** (non-directional) trades अडवतं — bearish आणि directional (IV Breakout/Breakout
+    Entry) trades नेहमीप्रमाणेच चालू राहतात.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
+    ani sensex la pn applicable aahe") — established Kill Switch पॅटर्नच्या उलट, हा गेट PAPER trades
+    लाही लागू आहे (फॉरवर्ड-टेस्ट डेटा त्या दिवशीचा VIX-प्रभाव अचूक दाखवावा म्हणून)."""
     vh_settings = cloud_db.get_vix_spike_halt_settings()
     today_str = get_ist_today().strftime("%Y-%m-%d")
+    symbols_str = "/".join(trading_engine.VIX_SPIKE_HALT_SYMBOLS)
 
-    with st.expander("🌪️ India VIX Spike Halt (फक्त NIFTY, फक्त LIVE)", expanded=False):
+    with st.expander(f"🌪️ India VIX Spike Halt ({symbols_str}, फक्त bullish trades)", expanded=False):
         st.caption(
-            "सकाळी 9:20 IST ला (बाजार उघडून ~5 मिनिटांनी) India VIX आदल्या दिवसाच्या close च्या "
-            "तुलनेत किती% बदलला हे एकदाच तपासलं जातं (check_vix_spike_halt.py cron) — मर्यादेपलीकडे "
-            "गेला, तर आजच्या उर्वरित दिवसासाठी फक्त NIFTY चे नवीन LIVE trades थांबतात (PAPER नेहमीप्रमाणेच "
-            "चालू राहतं, इतर symbols वर परिणाम नाही)."
+            f"सकाळी 9:20 IST ला (बाजार उघडून ~5 मिनिटांनी) India VIX आदल्या दिवसाच्या close च्या "
+            f"तुलनेत किती% बदलला हे एकदाच तपासलं जातं (check_vix_spike_halt.py cron) — मर्यादेपलीकडे "
+            f"गेला, तर आजच्या उर्वरित दिवसासाठी {symbols_str} चे नवीन **bullish** trades (PAPER + LIVE "
+            f"दोन्ही) थांबतात (bearish आणि directional trades नेहमीप्रमाणेच चालू; MCX वर कधीच परिणाम नाही)."
         )
         if not vh_settings["enabled"]:
-            st.warning("⚪ VIX Spike Halt सध्या बंद आहे — VIX कितीही वाढला तरी NIFTY LIVE trading वर परिणाम नाही.")
+            st.warning(f"⚪ VIX Spike Halt सध्या बंद आहे — VIX कितीही वाढला तरी {symbols_str} trading वर परिणाम नाही.")
         elif vh_settings.get("trade_date") != today_str:
             st.info("ℹ️ आजची तपासणी अजून झालेली नाही (cron अजून चालला नाही, किंवा बाजार उघडून 5 मिनिटं झालेली नाहीत).")
         elif vh_settings.get("halted"):
@@ -211,12 +226,13 @@ def _render_vix_spike_halt_panel():
             pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
             st.error(
                 f"🔴 आज VIX Spike Halt ट्रिप झालं — India VIX {pct_str} बदलला (मर्यादा "
-                f"{vh_settings['threshold_pct']:.0f}%). NIFTY साठी नवीन LIVE trades ब्लॉक केले जात आहेत."
+                f"{vh_settings['threshold_pct']:.0f}%). {symbols_str} साठी नवीन **bullish** trades "
+                f"(PAPER + LIVE) ब्लॉक केले जात आहेत (bearish/directional trades नेहमीप्रमाणेच चालू)."
             )
         else:
             pct = vh_settings.get("pct_change")
             pct_str = f"{pct:+.1f}%" if pct is not None else "N/A"
-            st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). NIFTY LIVE trading नेहमीप्रमाणे चालू.")
+            st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). {symbols_str} trading नेहमीप्रमाणे चालू.")
 
         vh_enabled = st.checkbox("VIX Spike Halt सक्रिय", value=vh_settings["enabled"], key="bdsr_vh_enabled")
         vh_threshold = st.number_input(
@@ -237,17 +253,24 @@ def _render_vix_halt_alert_banner():
     झालं" मेसेज खालच्या 🌪️ India VIX Spike Halt expander च्या आतच (collapsed, डीफॉल्ट बंद) होता —
     तिथे क्लिक करूनच बघावा लागायचा. आता, आज खरंच ट्रिप झालेलं असेल तरच (नाहीतर काहीही न दाखवता,
     रोजची गर्दी टाळण्यासाठी) हाच इशारा वरतीच, न-collapse होणारा banner म्हणून लगेच दिसतो —
-    पानावर आल्या-आल्याच, खाली Strategy/Symbol निवडण्याआधीच."""
+    पानावर आल्या-आल्याच, खाली Strategy/Symbol निवडण्याआधीच.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("आपली चर्चा फक्त bullish trade थांबविण्यावर
+    झालेली आहे, bearish/directional trade चालूच राहतील; Paper trade pn adwayla pahije, ani
+    banknifty ani sensex la pn applicable aahe, Mcx la applicable nahi") —
+    trading_engine.check_vix_spike_halt() आता फक्त plain bullish trades अडवतं, PAPER + LIVE दोन्ही
+    मोडमध्ये, NIFTY/BANKNIFTY/SENSEX (MCX वगळून) — हा मेसेजही त्याच व्याप्तीशी जुळवला आहे."""
     vh_settings = cloud_db.get_vix_spike_halt_settings()
     today_str = get_ist_today().strftime("%Y-%m-%d")
     if vh_settings["enabled"] and vh_settings.get("trade_date") == today_str and vh_settings.get("halted"):
         pct = vh_settings.get("pct_change")
         pct_str = f"{pct:+.1f}%" if pct is not None else "अज्ञात (VIX किंमत मिळाली नाही)"
+        symbols_str = "/".join(trading_engine.VIX_SPIKE_HALT_SYMBOLS)
         st.error(
             f"🌪️🔴 **India VIX Spike Halt सक्रिय** — आज India VIX {pct_str} बदलला (मर्यादा "
-            f"{vh_settings['threshold_pct']:.0f}%) — **NIFTY साठी आजचे उर्वरित सर्व नवीन LIVE trades "
-            f"(bullish आणि bearish, दोन्ही दिशा) थांबवलेले आहेत** (PAPER trades नेहमीप्रमाणेच चालू "
-            f"राहतील). तपशील/सेटिंग्ज खाली '🌪️ India VIX Spike Halt' मध्ये."
+            f"{vh_settings['threshold_pct']:.0f}%) — **{symbols_str} साठी आजचे उर्वरित नवीन bullish "
+            f"trades (PAPER + LIVE दोन्ही) थांबवलेले आहेत** (bearish आणि directional trades "
+            f"नेहमीप्रमाणेच चालू राहतील; MCX वर कधीच परिणाम नाही). तपशील/सेटिंग्ज खाली '🌪️ India VIX "
+            f"Spike Halt' मध्ये."
         )
 
 
@@ -500,34 +523,67 @@ def render():
                         min_value=0.3, max_value=0.95, step=0.05, format="%.2f", disabled=not entry_iv_gate_enabled,
                     )
 
-            # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Max 2 trade on same level hit, he honar
-            # donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed
-            # happen then take entry in the same direction") — max-2-hits च्या पलीकडचा, तिसरा trade.
-            with st.expander("💥 Breakout Entry (max-2-hits नंतरचा 3रा trade)", expanded=False):
+            # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches
+            # aahet, kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition
+            # Breakout trade ka lagu kra, jast complex karu nka" + "Breakout sathi consolidation chi
+            # condition pn remove kra") — आधीची "आजचे दोन्ही touch आधीच झालेले असावेत" ही अट, आणि
+            # नंतर price consolidation ("buildup") ही अट — दोन्ही काढल्या. आता फक्त "level breakout
+            # झाला का" (candle close buffer%, खालीच) हाच एकमेव निकष उरतो.
+            with st.expander("💥 Breakout Entry (स्वतंत्र, hit-count वर अवलंबून नाही)", expanded=False):
                 entry_breakout_gate_enabled = st.checkbox(
                     "Breakout Entry सक्रिय (डीफॉल्ट बंद)",
                     value=bool(settings.get("entry_breakout_gate_enabled", False)),
                     key=_widget_key(strategy_key, symbol, "entry_breakout_gate_enabled"),
                 )
                 st.caption(
-                    "त्याच level वर आजचे दोन्ही touch (max-2-hits) आधीच झालेले असतील, breakout-candle च्या आधीच्या काही "
-                    "5-मिनिट candles मध्ये price level च्या जवळच (खालील tolerance% च्या आत) consolidate झालेला असावा "
-                    "(हाच price-action \"buildup\" — trade प्रत्यक्ष open झाला/नाही यावर अवलंबून नाही, IV/RSI/PCR Gate ने "
-                    "आधीचे touches block केले तरी काम करतं) — आणि नंतर एक 5-मिनिट candle त्या level च्या पलीकडे "
-                    "(breakout-दिशेने — मूळ 2 trades च्या उलट) निर्णायकपणे close झाला, तरच तिसरा trade घेतला जातो. "
+                    "एक 5-मिनिट candle त्या level पासून किमान खालील buffer% इतका तरी पलीकडे निर्णायकपणे close झाला "
+                    "(नुसत्या काठावरचा close पुरेसा नाही), तरच breakout trade घेतला जातो — आजच्या level वर आधी किती "
+                    "touches/hits झालेत यावर अवलंबून नाही (साध्या reversal trades साठीची कमाल-2 मर्यादा इथे लागू नाही). "
                     "RSI/PCR Gate (directional trade असल्याने) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले."
                 )
-                bo1, bo2 = st.columns(2)
-                with bo1:
-                    breakout_lookback_candles = _number_input(
-                        "Consolidation window (5-मिनिट candles)", settings, "breakout_lookback_candles", strategy_key, symbol,
-                        min_value=2, max_value=24, step=1, disabled=not entry_breakout_gate_enabled,
+                breakout_close_buffer_pct = _number_input(
+                    "Candle close buffer% (level पलीकडे किमान)", settings, "breakout_close_buffer_pct", strategy_key, symbol,
+                    min_value=0.0, max_value=0.50, step=0.005, format="%.3f", disabled=not entry_breakout_gate_enabled,
+                )
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume
+                # ashi condition ठेवता yeil") — ऐच्छिक, डीफॉल्ट बंद — कमी-volume (संभाव्य fake/
+                # whipsaw) breakouts गाळण्यासाठी.
+                breakout_volume_confirm_enabled = st.checkbox(
+                    "Volume Confirmation सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_volume_confirm_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_volume_confirm_enabled"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "breakout-candle चा volume, त्याआधीच्या खालील N candles च्या सरासरी volume पेक्षा किमान खालील पट "
+                    "जास्त असेल तरच breakout trade घेतला जातो — कमी volume वरचा close अनेकदा खोटा/whipsaw breakout ठरतो."
+                )
+                bv1, bv2 = st.columns(2)
+                with bv1:
+                    breakout_volume_lookback_candles = _number_input(
+                        "Volume सरासरी साठी मागचे candles (N)", settings, "breakout_volume_lookback_candles", strategy_key, symbol,
+                        min_value=2, max_value=24, step=1, disabled=not (entry_breakout_gate_enabled and breakout_volume_confirm_enabled),
                     )
-                with bo2:
-                    breakout_tolerance_pct = _number_input(
-                        "Level पासून tolerance% (consolidation मानण्यासाठी)", settings, "breakout_tolerance_pct", strategy_key, symbol,
-                        min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
+                with bv2:
+                    breakout_volume_multiplier = _number_input(
+                        "Volume multiplier (सरासरीच्या किती पट)", settings, "breakout_volume_multiplier", strategy_key, symbol,
+                        min_value=1.0, max_value=5.0, step=0.1, format="%.1f", disabled=not (entry_breakout_gate_enabled and breakout_volume_confirm_enabled),
                     )
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot
+                # every 5 minute save kele जातात tech yethe use krta yeil") — ऐच्छिक, डीफॉल्ट बंद —
+                # established OI Confirmation Gate (A1 Engine मध्ये आधीच वापरलेला) चाच पुनर्वापर,
+                # कुठलेही नवीन threshold नाहीत.
+                breakout_oi_confirm_enabled = st.checkbox(
+                    "OI Confirmation सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_oi_confirm_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_oi_confirm_enabled"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "दर 5 मिनिटांनी साठवलेला Option Chain चा सर्वात अलीकडचा Put/Call OI-Price signal (Writing/Buying/"
+                    "Short-Covering/Long-Unwinding वरून) breakout च्या दिशेशी जुळतो (किंवा उलट दिशा कमकुवत होतेय) तरच "
+                    "breakout trade घेतला जातो."
+                )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
             # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
@@ -867,8 +923,11 @@ def render():
             new_settings["iv_lookback_days"] = int(iv_lookback_days)
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
-            new_settings["breakout_lookback_candles"] = int(breakout_lookback_candles)
-            new_settings["breakout_tolerance_pct"] = float(breakout_tolerance_pct)
+            new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
+            new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)
+            new_settings["breakout_volume_lookback_candles"] = int(breakout_volume_lookback_candles)
+            new_settings["breakout_volume_multiplier"] = float(breakout_volume_multiplier)
+            new_settings["breakout_oi_confirm_enabled"] = bool(breakout_oi_confirm_enabled)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)

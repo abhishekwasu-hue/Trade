@@ -33,20 +33,40 @@ continuation साठी उलटा/चुकीचा संकेत ठर
 माहीतच नाही) तरच पूर्वीसारखं trade skip होतं, flip नाही (अनिश्चित दिशेने directional bet घेणं
 धोकादायक).
 
-🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level hit, he
-honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute candle closed happen
-then take entry in the same direction") — `entry_breakout_gate_enabled` (डीफॉल्ट बंद) — established
-max-2-hits च्या पलीकडचा, तिसरा trade. अट: (१) आजचे दोन्ही touch (max-2-hits) आधीच झालेले (हाच "A" —
-signal_log वरचा hit_count), (२) breakout-candle च्या आधीच्या काही 5-मिनिट candles मध्ये price level
-च्या जवळच (tolerance% च्या आत) consolidate झालेला — हाच "buildup" चा price-action पुरावा (हाच "C" —
-`check_breakout_price_consolidation`, कुठलाही trade-outcome/indicator लागत नाही, फक्त candle close
-किमती), आणि (३) एक 5-मिनिट candle त्या level च्या पलीकडे (breakout-दिशेने — मूळ 2 trades च्या
-**उलट**) निर्णायकपणे close झाला (नुसता touch नाही). 🎓 वापरकर्त्याने सापडवलेली मर्यादा — आधीची
-आवृत्ती `live_trades` मधले actual CLOSED SL/TSL trades शोधायची, त्यामुळे जर IV/RSI/PCR Gate ने आधीचे
-touches block केले (trade कधीच open न होता), तर buildup कधीच खरं ठरायचं नाही — आता पूर्णपणे
-price-data वरून (कुठल्याही gate/trade-outcome वर अवलंबून नाही), त्यामुळे हा problem राहत नाही. तिन्ही
-अटी पूर्ण झाल्या तरच breakout-दिशेने 3रा trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
+🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry) — `entry_breakout_gate_enabled` (डीफॉल्ट
+बंद) — simple, स्वतंत्र breakout-based trade, कुठल्याही आजच्या hit-count वर अवलंबून नाही. अट: एक
+5-मिनिट candle त्या level पासून किमान `breakout_close_buffer_pct`% (Dashboard-configurable, डीफॉल्ट
+0.010%) तरी पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`) — हीच
+एकमेव अट. अट पूर्ण झाली तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
 सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले.
+
+🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet, kiwa
+level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout trade ka lagu
+kra, jast complex karu nka") — आधी हा फक्त "आजचे दोन्ही touch (max-2-hits) आधीच झालेले" (established
+Multi-Hit counter, खाली) असतील तरच तपासला जायचा — प्रत्येक Dynamic S/R zone आधीच बहुदिवसीय ऐतिहासिक
+price-clustering वरून तयार झालेला असल्याने ("previous day touches" आधीच गृहीत), ही अतिरिक्त अट
+काढली — आता breakout फक्त candle-close अटीवरच, स्वतंत्रपणे, प्रत्येक touch वर तपासला जातो. max-2-hits
+ची जुनी मर्यादा फक्त breakout **न** आढळलेल्या साध्या reversal touches साठीच अजूनही लागू आहे.
+
+🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition pn remove
+kra") — price consolidation ("buildup" — breakout-candle च्या आधीच्या काही candles मध्ये किंमत level
+जवळ टिकून होती का, `check_breakout_price_consolidation`) ही अट सुद्धा काढली — आता फक्त candle-close
+buffer% हाच एकमेव निकष उरलेला आहे (वरती). हे function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry
+साठी वापरलं जातं, फक्त इथे (5-Min Instant Trader) यापुढे कॉल होत नाही.
+
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi condition ठेवता
+yeil") — ऐच्छिक (`breakout_volume_confirm_enabled`, डीफॉल्ट बंद) Volume Confirmation —
+`check_breakout_volume_confirmation` — breakout-candle चा volume त्याआधीच्या
+`breakout_volume_lookback_candles` (डीफॉल्ट 10) candles च्या सरासरीपेक्षा किमान
+`breakout_volume_multiplier` (डीफॉल्ट 1.5) पट जास्त असावा लागतो — कमी-volume (संभाव्य fake/whipsaw)
+breakouts गाळण्यासाठी, candle-close अटीसोबतच (AND) तपासला जातो.
+
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5 minute save
+kele जातात tech yethe use krta yeil") — ऐच्छिक (`breakout_oi_confirm_enabled`, डीफॉल्ट बंद) OI
+Confirmation — established `oi_analysis.get_latest_oi_signal()`/`check_oi_diff_entry_gate()` (A1
+Engine मध्ये आधीच वापरलेलं, नवीन logic नाही) चाच पुनर्वापर — `oi_snapshot_collector.py` ने दर 5
+मिनिटांनी साठवलेला सर्वात अलीकडचा Put/Call OI-Price signal breakout_direction शी जुळतो (किंवा उलट
+दिशा "Weakening" असेल) तरच पास, candle-close/volume अटींसोबतच (AND) तपासला जातो.
 """
 import argparse
 
@@ -57,7 +77,7 @@ from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
-from oi_analysis import check_pcr_gate, check_iv_change_gate
+from oi_analysis import check_pcr_gate, check_iv_change_gate, get_latest_oi_signal, check_oi_diff_entry_gate
 from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_credit_spread_fixed_strikes, select_naked_option_itm
 from trading_engine import open_multi_leg_trade, format_trade_result
@@ -172,19 +192,41 @@ def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYST
     return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
-def check_breakout_candle_close(level, breakout_direction, candles_5m):
+def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pct=0.010):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Breakout buildup and 5 minute
     candle closed happen then take entry in the same direction") — नुकताच पूर्ण झालेला (शेवटचा,
     आजच्याच दिवसाचा) 5-मिनिट candle त्या level च्या पलीकडे निर्णायकपणे **close** झाला आहे का (नुसता
     touch/wick नाही, candle close) — breakout_direction नुसार (BULLISH = level च्या वर close,
     BEARISH = level च्या खाली close). candles_5m: [{"close":..}, ...] (जुनं ते नवीन क्रमाने, फक्त
-    आजचेच). रिटर्न: bool"""
+    आजचेच).
+
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond 0.010%") —
+    फक्त level च्या अगदी काठावर (0.001 पॉइंटनेही) close होणं "निर्णायक" मानलं जाऊ नये (noise/whipsaw
+    असू शकतं) — आता close level पासून किमान `buffer_pct`% (Dashboard-configurable, डीफॉल्ट 0.010%)
+    तरी पलीकडे असावा लागतो. रिटर्न: bool"""
     if not candles_5m:
         return False
     last_close = candles_5m[-1]["close"]
+    buffer = level * buffer_pct / 100
     if breakout_direction == "BULLISH":
-        return last_close > level
-    return last_close < level
+        return last_close > level + buffer
+    return last_close < level - buffer
+
+
+def check_breakout_volume_confirmation(candles_5m, lookback_candles=10, multiplier=1.5):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi condition
+    ठेवता yeil") — breakout-confirm करणाऱ्या (शेवटच्या) 5-मिनिट candle चा volume, त्याआधीच्या
+    `lookback_candles` candles च्या सरासरी volume पेक्षा किमान `multiplier` पट जास्त असावा — कमी
+    volume वरचा close हा अनेकदा खोटा/whipsaw breakout ठरतो, जास्त volume खऱ्या सहभागाचा पुरावा.
+    candles_5m: [{"close":.., "volume":..}, ...] (जुनं ते नवीन क्रमाने, फक्त आजचेच). रिटर्न: bool"""
+    if not candles_5m or len(candles_5m) < lookback_candles + 1:
+        return False
+    window = candles_5m[-(lookback_candles + 1):-1]
+    avg_volume = sum(c.get("volume", 0) for c in window) / len(window)
+    if avg_volume <= 0:
+        return False
+    last_volume = candles_5m[-1].get("volume", 0)
+    return last_volume >= avg_volume * multiplier
 
 
 def check_breakout_price_consolidation(level, candles_5m, lookback_candles=12, tolerance_pct=0.30):
@@ -247,8 +289,11 @@ def process_symbol(access_token, symbol, lot_size=65):
     iv_lookback_days = settings.get("iv_lookback_days", 10)
     iv_marubozu_threshold = settings.get("iv_marubozu_threshold", 0.8)
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
-    breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
-    breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
+    breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
+    breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
+    breakout_volume_lookback_candles = settings.get("breakout_volume_lookback_candles", 10)
+    breakout_volume_multiplier = settings.get("breakout_volume_multiplier", 1.5)
+    breakout_oi_confirm_enabled = settings.get("breakout_oi_confirm_enabled", False)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
@@ -344,38 +389,68 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Max 2 trade on same level
-        # hit, he honar donhi sl or tsl hit jhalet, ani nantr jar Breakout buildup and 5 minute
-        # candle closed happen then take entry in the same direction") — max-2-hits तपासणी आता
-        # इतर सर्व gates च्याही आधी (RSI/PCR/IV Gate ला लागू करायचं की वगळायचं हे ठरवण्यासाठी).
-        # hit_count_so_far>=2 असेल तर established behavior (skip) चालूच राहतो — Breakout Gate चालू
-        # असेल आणि "buildup" (A: hit_count_so_far>=2 आधीच इथे, + C: price consolidation, बघा वरची
-        # फाईल-टिप्पणी) + 5-मिनिट candle त्या level पलीकडे (breakout-दिशेने — मूळ 2 trades च्या उलट)
-        # close झाला, तरच हा तिसरा, वेगळा (max-2 च्या पलीकडचा) trade घेतला जातो.
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet,
+        # kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout
+        # trade ka lagu kra, jast complex karu nka") — आधी Breakout Entry फक्त hit_count_so_far>=2
+        # (आजचे दोन्ही touch आधीच झालेले) असेल तरच तपासला जायचा. पण प्रत्येक Dynamic S/R zone हा
+        # आधीच बहुदिवसीय ऐतिहासिक price-clustering वरून तयार झालेला ("previous day touches" आधीच
+        # गृहीत धरलेलं) — त्यामुळे "आजचे 2 hits आधी झालेच पाहिजेत" ही अतिरिक्त अट काढली. आता Breakout
+        # Entry (5-मिनिट candle close, खालीच) प्रत्येक touch वर स्वतंत्रपणे तपासला जातो, hit_count_so_far
+        # कितीही असो — फक्त "level breakout झाला का" हाच निकष. max-2-hits ची जुनी मर्यादा फक्त breakout
+        # **न** आढळलेल्या (साध्या reversal) touches साठीच अजूनही लागू आहे (established behavior,
+        # अपरिवर्तित).
+        # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Breakout sathi consolidation chi condition pn
+        # remove kra") — price consolidation ("buildup") ही अट सुद्धा काढली — आता breakout मूळ
+        # निकषावर: 5-मिनिट candle level पासून किमान buffer_pct% तरी पलीकडे निर्णायकपणे close झाला का
+        # (`check_breakout_candle_close`). त्याआधीच्या candles मध्ये किंमत level जवळ किती वेळ "टिकून"
+        # होती याचा पुरावा (`check_breakout_price_consolidation`) आता या bot साठी गरजेचा नाही (हे
+        # function अजूनही MCX Futures च्या स्वतंत्र Breakout Entry साठी वापरलं जातं).
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
+        # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — चालू असेल तर,
+        # candle-close अटीसोबतच breakout-candle चा volume त्याआधीच्या breakout_volume_lookback_candles
+        # candles च्या सरासरीपेक्षा किमान breakout_volume_multiplier पट जास्त असावा लागतो
+        # (`check_breakout_volume_confirmation`) — कमी-volume (संभाव्य fake/whipsaw) breakouts
+        # गाळण्यासाठी.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5
+        # minute save kele जातात tech yethe use krta yeil") — ऐच्छिक (डीफॉल्ट बंद) OI Confirmation —
+        # `oi_snapshot_collector.py` ने दर 5 मिनिटांनी साठवलेला सर्वात अलीकडचा OI-Price signal
+        # (`get_latest_oi_signal` — Put/Call Writing/Buying/Short-Covering/Long-Unwinding च्या
+        # संयोगातून आधीच ठरलेला BULLISH/BEARISH/MIXED/NEUTRAL) breakout_direction शी जुळतो (किंवा
+        # उलट दिशा "Weakening" असेल) तरच पास — established `check_oi_diff_entry_gate` (A1 Engine मध्ये
+        # आधीच वापरलेलं) चाच पुनर्वापर, नवीन logic नाही. Index candles चा स्वतःचा "oi" column
+        # (indices ना Open Interest नसतोच) इथे वापरलेला नाही — हा signal option chain (Call+Put OI)
+        # वरून येतो.
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
         )
         is_breakout_trade = False
-        if hit_count_so_far >= 2:
-            if entry_breakout_gate_enabled:
-                breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
-                candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
-                todays_5m_candles = []
-                if candles_5m_df is not None and not candles_5m_df.empty:
-                    candles_5m_df = candles_5m_df.copy()
-                    candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
-                    todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
-                if (check_breakout_price_consolidation(row["zone_low"], todays_5m_candles, breakout_lookback_candles, breakout_tolerance_pct)
-                        and check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles)):
-                    direction = breakout_direction
-                    log_entry["direction"] = direction
-                    is_breakout_trade = True
-            if not is_breakout_trade:
-                log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
-                log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
-                cloud_db.save_signal_log(log_entry)
-                continue
+        if entry_breakout_gate_enabled:
+            breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
+            candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
+            todays_5m_candles = []
+            if candles_5m_df is not None and not candles_5m_df.empty:
+                candles_5m_df = candles_5m_df.copy()
+                candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
+                todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+            candle_close_confirmed = check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)
+            volume_confirmed = (
+                not breakout_volume_confirm_enabled
+                or check_breakout_volume_confirmation(todays_5m_candles, breakout_volume_lookback_candles, breakout_volume_multiplier)
+            )
+            oi_confirmed = (
+                not breakout_oi_confirm_enabled
+                or check_oi_diff_entry_gate(breakout_direction, get_latest_oi_signal(symbol))
+            )
+            if candle_close_confirmed and volume_confirmed and oi_confirmed:
+                direction = breakout_direction
+                log_entry["direction"] = direction
+                is_breakout_trade = True
+        if hit_count_so_far >= 2 and not is_breakout_trade:
+            log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
+            log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Directional Flip on IV Breakout — बघा वरची
         # फाईल-टिप्पणी) — Breakout trade आधीच ठरलेला असेल (वर), तर हा block पूर्णपणे वगळला जातो
@@ -560,6 +635,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
+                    direction=direction, is_directional_trade=is_directional_trade,
                 )
                 trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
                 if factory_errors:
@@ -572,7 +648,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    entry_reason_tag=entry_reason_tag,
+                    entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
                 )
                 real_trade_succeeded = trade_result
                 # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
@@ -617,6 +693,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                             sl_pct_of_credit=100, source="dynamic_sr_instant_otm_shadow",
                             entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
                             entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                            direction=direction, is_directional_trade=is_directional_trade,
                         )
                 except Exception as exc:
                     print(f"⚠️ OTM Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
@@ -646,6 +723,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                         sl_pct_of_credit=100, source="dynamic_sr_instant_min_hold_shadow",
                         entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
                         entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag,
+                        direction=direction,
                     )
                 except Exception as exc:
                     print(f"⚠️ Min-Hold Shadow trade अयशस्वी (मूळ ITM trade वर परिणाम नाही) — {symbol}: {exc}")
@@ -691,6 +769,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
                     account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
+                    direction=direction, is_directional_trade=is_directional_trade,
                 )
                 naked_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in naked_results) or "कुठलाही account उपलब्ध नाही"
             else:
@@ -700,7 +779,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                     product_type="D", trading_mode=trading_mode, trading_style="INTRADAY",
                     sl_pct_of_credit=100, source="dynamic_sr_instant",
                     entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price,
-                    entry_reason_tag=entry_reason_tag,
+                    entry_reason_tag=entry_reason_tag, direction=direction, is_directional_trade=is_directional_trade,
                 )
                 # 🎓 बघा वरची credit-spread ब्लॉकमधली format_trade_result() ची टिप्पणी — इथेही तोच
                 # dict-as-string bug (Telegram संदेशात raw dict दिसायचा, DB write नसली तरी).
