@@ -419,7 +419,7 @@ def render():
                 strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
                 itm_depth_strikes_default = int(round(float(settings["itm_depth_points"]) / strike_step))
                 itm_depth_strikes = st.number_input(
-                    "Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
+                    "Credit Spread — Strikes from ATM (धन=ITM, 0=ATM, ऋण=OTM)",
                     value=itm_depth_strikes_default, min_value=-5, max_value=10, step=1,
                     key=_widget_key(strategy_key, symbol, "itm_depth_strikes"),
                 )
@@ -441,13 +441,21 @@ def render():
                     key=_widget_key(strategy_key, symbol, "otm_shadow_enabled"),
                 )
                 st.caption(
-                    "चालू केल्यास, वरच्याच ITM trade सोबत, त्याच सिग्नलवर, ATM पासून OTM स्ट्राइक्स "
-                    "वापरून एक स्वतंत्र, निव्वळ PAPER trade समांतर नोंदवला जातो — Performance Report वर "
-                    "वेगळ्या source ने (dynamic_sr_instant_otm_shadow) दोन्हींची तुलना करता येईल."
+                    # 🎓 वापरकर्त्याने स्क्रीनशॉट दाखवून सापडवलेली bug ("Create confusions OTM and
+                    # strike numbers+-") — हा caption "वरच्याच ITM trade सोबत" असं म्हणायचा, पण वरचा
+                    # Credit Spread trade आता ITM/ATM/OTM कुठलाही असू शकतो (Strikes from ATM ऋणही
+                    # असू शकतो) — जुनी गृहीतक. आता तटस्थ "वर सेट केलेल्या Credit Spread trade सोबत".
+                    # खालचा "OTM Strikes" (नेहमी धन, नेहमीच OTM दिशेने) हा वरच्या स्वाक्षरीयुक्त
+                    # (signed) "Credit Spread — Strikes from ATM" शी गोंधळ होऊ नये म्हणून लेबलमध्येच
+                    # "OTM Shadow —" उपसर्ग जोडला.
+                    "चालू केल्यास, वर सेट केलेल्या Credit Spread trade सोबत, त्याच सिग्नलवर, ATM पासून "
+                    "(नेहमी) OTM दिशेने स्ट्राइक्स वापरून एक स्वतंत्र, निव्वळ PAPER trade समांतर नोंदवला "
+                    "जातो — Performance Report वर वेगळ्या source ने (dynamic_sr_instant_otm_shadow) "
+                    "दोन्हींची तुलना करता येईल."
                 )
                 if otm_shadow_enabled:
                     otm_shadow_strikes_count = _number_input(
-                        "OTM Strikes (ATM पासून किती strikes दूर)", settings, "otm_shadow_strikes_count",
+                        "OTM Shadow — किती Strikes OTM (नेहमी OTM दिशेने)", settings, "otm_shadow_strikes_count",
                         strategy_key, symbol, min_value=1, max_value=10, step=1,
                     )
                 else:

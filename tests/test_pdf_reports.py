@@ -185,6 +185,51 @@ class TestGeneratePerformanceReportPdfCrudeoilRegression:
         assert pdf_bytes[:4] == b"%PDF"
 
 
+class TestGeneratePerformanceReportPdfShadowExplanation:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Pdf report mdhe shadow trade ksa dosto, ani explanation pn
+    joda front page war") — by_source_df मध्ये एखादी "Shadow" रांग (OTM Shadow/Min-Hold Shadow) असेल
+    तरच, front page वर (Summary च्याही आधी) एक स्पष्टीकरण-परिच्छेद जोडला जातो; नसेल तर तो भाग पूर्णपणे
+    वगळला जातो, PDF क्रॅश न होता तयार होतो."""
+
+    def test_shadow_row_present_still_produces_valid_pdf(self):
+        by_source_df = pd.DataFrame([
+            {"Group": "1-Min Instant Trader (Dynamic S/R)", "Trades": 2, "Win Rate %": 50.0,
+             "SL/Target Trades": 2, "Win Rate % (All Exits)": 50.0, "ROI %": 0.1, "Total P&L": 500.0, "Avg P&L": 250.0},
+            {"Group": "1-Min Instant Trader — OTM Shadow (PAPER, ITM vs OTM Strike)", "Trades": 1,
+             "Win Rate %": None, "SL/Target Trades": 0, "Win Rate % (All Exits)": 100.0,
+             "ROI %": None, "Total P&L": 200.0, "Avg P&L": 200.0},
+        ])
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-28", "2026-09-28", _SUMMARY,
+            {"gross_pnl": 700, "total_charges": 0, "net_pnl": 700},
+            by_source_df, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+        assert len(pdf_bytes) > 1000
+
+    def test_no_shadow_row_produces_valid_pdf_unaffected(self):
+        """नेहमीच्या (Shadow नसलेल्या) reports साठी हा नवीन भाग पूर्णपणे वगळला जातो -- established
+        वर्तन अबाधित."""
+        by_source_df = pd.DataFrame([
+            {"Group": "1-Min Instant Trader (Dynamic S/R)", "Trades": 2, "Win Rate %": 50.0,
+             "SL/Target Trades": 2, "Win Rate % (All Exits)": 50.0, "ROI %": 0.1, "Total P&L": 500.0, "Avg P&L": 250.0},
+        ])
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-28", "2026-09-28", _SUMMARY,
+            {"gross_pnl": 500, "total_charges": 0, "net_pnl": 500},
+            by_source_df, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+    def test_by_source_df_none_still_produces_valid_pdf(self):
+        pdf_bytes = generate_performance_report_pdf(
+            "NIFTY", "All", "2026-09-28", "2026-09-28", _SUMMARY,
+            {"gross_pnl": 0, "total_charges": 0, "net_pnl": 0},
+            None, None, None, None, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
+
 class TestGeneratePerformanceReportPdfTradeLogLegsColumn:
     """🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("actual strike price, entry price, exit price
     Performance Report मध्ये दिसायला हवं") — नवीन "Legs (Strike/Entry/Exit Price)" स्तंभासकट Trade Log
