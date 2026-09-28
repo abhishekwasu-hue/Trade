@@ -1029,9 +1029,14 @@ class TestOtmShadowSourceIsolation:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (OTM Shadow — "5-Min Instant Trader" साठी, ITM वि. OTM
     strike तुलना, "Adhi 5-Min Instant Trader var suru kara") — नवीन 'dynamic_sr_instant_otm_shadow'
     source चे निव्वळ PAPER forward-test trades, portfolio-व्यापी एकत्रित आकडेवारीत (Summary/Equity
-    Curve/P&L Report/Timeframe-wise व Option-Structure-wise breakdown/Trade Log/Overshoot Tracker)
-    कधीच मिसळता कामा नयेत — फक्त 'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (Strategy-wise Performance)
-    स्वतःची वेगळी रांग म्हणून दिसायला हवेत, हाच तुलनेचा उद्देश आहे."""
+    Curve/P&L Report/Timeframe-wise व Option-Structure-wise breakdown/Overshoot Tracker) कधीच
+    मिसळता कामा नयेत — फक्त 'source' नुसार स्पष्ट गट केलेल्या ठिकाणीच (Strategy-wise Performance)
+    स्वतःची वेगळी रांग म्हणून दिसायला हवेत, हाच तुलनेचा उद्देश आहे.
+
+    🎓 वापरकर्त्याने नंतर मागितलेली सुधारणा ("Pdf report mdhe trade table mdhe shdow Trade disayla
+    pahije") — Trade Log (get_closed_trades_detail()) आता जाणीवपूर्वक वेगळा — तिथे Shadow trades
+    दिसतातच (प्रत्यक्ष entry/exit detail पाहता यावा म्हणून), फक्त "Entry Reason" स्तंभातल्या स्पष्ट
+    लेबलमुळे खऱ्या trades पासून वेगळे ओळखता येतात."""
 
     def _seed_real_and_shadow(self, tmpdb, real_pnl=500.0, shadow_pnl=9999.0):
         seed_closed_trade(tmpdb, "REAL1", real_pnl, "TARGET", "2026-09-20",
@@ -1052,10 +1057,15 @@ class TestOtmShadowSourceIsolation:
         assert len(df) == 1
         assert list(df["cumulative_pnl"]) == [500.0]
 
-    def test_closed_trades_detail_excludes_shadow(self, temp_db):
+    def test_closed_trades_detail_includes_shadow_with_clear_label(self, temp_db):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा — Trade Log मध्ये आता Shadow trade सुद्धा (real trade
+        सोबतच) दिसायला हवा, आणि "Entry Reason" (source) स्तंभातूनच तो स्पष्टपणे "OTM Shadow" म्हणून
+        ओळखता यायला हवा — real trade शी गल्लत होऊ नये."""
         self._seed_real_and_shadow(temp_db)
         df = database.get_closed_trades_detail("NIFTY")
-        assert set(df["Trade ID"]) == {"REAL1"}
+        assert set(df["Trade ID"]) == {"REAL1", "SHADOW1"}
+        shadow_row = df[df["Trade ID"] == "SHADOW1"].iloc[0]
+        assert shadow_row["source"] == "dynamic_sr_instant_otm_shadow"
 
     def test_closed_trades_for_report_excludes_shadow(self, temp_db):
         import datetime as dt
