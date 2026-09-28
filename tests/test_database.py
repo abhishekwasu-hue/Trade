@@ -740,6 +740,66 @@ class TestGetLivePositionsWithMtmManualOverride:
         assert pd.isna(df.iloc[0]["Manual SL Override (Rs)"])
 
 
+class TestGetLivePositionsWithMtmExcludesShadow:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Shadow paper trade cha pnl, position मध्ये दिसायला नको,
+    केवळ PDF रिपोर्ट मध्ये करण्यासाठी दिसायला पाहिजे, त्याचा एकूण MTM मध्ये ऍड झालेले असू नये") —
+    OTM Shadow/Min-Hold Shadow trades सुद्धा status='OPEN' असतातच (SL/TSL/EOD व्यवस्थापनासाठी), पण
+    Positions टॅब (आणि त्याचा एकूण MTM) मध्ये त्या कधीच दिसता कामा नयेत."""
+
+    def _seed_open(self, tmpdb, trade_id, source, net_credit=30.0):
+        legs = [
+            {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL"},
+            {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY"},
+        ]
+        conn = sqlite3.connect(tmpdb)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json,
+               strikes_summary, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, "2026-09-24", "NIFTY", "BULL_PUT_SPREAD", 1, 75, net_credit, net_credit, 50.0,
+             -1125.0, 1125.0, "2026-09-24 10:00:00", "OPEN", json.dumps(legs), "test", "PAPER", "SWING", source),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_shadow_trade_excluded_from_positions(self, temp_db, monkeypatch):
+        self._seed_open(temp_db, "REAL1", "dynamic_sr_instant")
+        self._seed_open(temp_db, "SHADOW1", "dynamic_sr_instant_otm_shadow")
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert len(df) == 1
+        assert df.iloc[0]["Trade ID"] == "REAL1"
+
+    def test_min_hold_shadow_trade_excluded_from_positions(self, temp_db, monkeypatch):
+        self._seed_open(temp_db, "REAL1", "dynamic_sr_instant")
+        self._seed_open(temp_db, "SHADOW1", "dynamic_sr_instant_min_hold_shadow")
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert len(df) == 1
+        assert df.iloc[0]["Trade ID"] == "REAL1"
+
+    def test_only_shadow_trades_returns_empty(self, temp_db, monkeypatch):
+        self._seed_open(temp_db, "SHADOW1", "dynamic_sr_instant_otm_shadow")
+        monkeypatch.setattr(database, "fetch_ltp_map", lambda t, k: {"PE24400": 38.0, "PE24300": 0.0})
+        df = database.get_live_positions_with_mtm("fake_token", "NIFTY")
+        assert df.empty
+
+    def test_portfolio_greeks_excludes_shadow(self, temp_db, monkeypatch):
+        import upstox_api
+        self._seed_open(temp_db, "SHADOW1", "dynamic_sr_instant_otm_shadow")
+        monkeypatch.setattr(upstox_api, "fetch_option_greeks", lambda t, k: {})
+        greeks = database.compute_portfolio_greeks("fake_token", "NIFTY")
+        assert greeks["positions_included"] == 0
+
+    def test_per_position_greeks_excludes_shadow(self, temp_db, monkeypatch):
+        import upstox_api
+        self._seed_open(temp_db, "SHADOW1", "dynamic_sr_instant_otm_shadow")
+        monkeypatch.setattr(upstox_api, "fetch_option_greeks", lambda t, k: {})
+        results = database.compute_per_position_greeks("fake_token", "NIFTY")
+        assert results == []
+
+
 class TestSymbolWhereClauseListSupport:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("PDF मध्ये सर्व MCX commodity trades असायला हवेत, All
     Commodity Performance साठी वेगळं बटण द्या") — Performance/PnL Report च्या query functions आता

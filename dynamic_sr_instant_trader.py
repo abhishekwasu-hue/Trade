@@ -220,6 +220,21 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
     return last_close < level - buffer
 
 
+def get_breakout_volume_ratio(candles_5m, lookback_candles=10):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("candle-close %, volume ratio, OI signal Signal Log मध्ये
+    स्वतंत्रपणे दाखवायचे") — खालच्या check_breakout_volume_confirmation() मधलाच ratio, फक्त bool
+    ऐवजी नेमकी संख्या (लॉगिंग/audit साठी). रिटर्न: round केलेला float, किंवा पुरेसे candles नसतील/
+    सरासरी volume शून्य असेल तर None."""
+    if not candles_5m or len(candles_5m) < lookback_candles + 1:
+        return None
+    window = candles_5m[-(lookback_candles + 1):-1]
+    avg_volume = sum(c.get("volume", 0) for c in window) / len(window)
+    if avg_volume <= 0:
+        return None
+    last_volume = candles_5m[-1].get("volume", 0)
+    return round(last_volume / avg_volume, 2)
+
+
 def check_breakout_volume_confirmation(candles_5m, lookback_candles=10, multiplier=1.5):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi condition
     ठेवता yeil") — breakout-confirm करणाऱ्या (शेवटच्या) 5-मिनिट candle चा volume, त्याआधीच्या
@@ -439,6 +454,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             symbol, row["zone_low"], trade_date, role=role,
         )
         is_breakout_trade = False
+        breakout_actual_close_pct = breakout_actual_volume_ratio = breakout_oi_signal_used = None
         if entry_breakout_gate_enabled and timeframe_suffix == "5M":
             breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
             candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
@@ -448,18 +464,38 @@ def process_symbol(access_token, symbol, lot_size=65):
                 candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
                 todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
             candle_close_confirmed = check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा — प्रत्यक्ष मोजलेलं buffer% (gate चं bool निकाल नाही,
+            # Signal Log मध्ये नेमकं मूल्य दाखवण्यासाठी). level च्या ज्या बाजूला breakout अपेक्षित आहे
+            # त्याच बाजूने अंतर मोजलं — उलट दिशेला close झाल्यास ऋण (negative) दिसेल.
+            if todays_5m_candles:
+                last_close = todays_5m_candles[-1]["close"]
+                signed_diff = (last_close - row["zone_low"]) if breakout_direction == "BULLISH" else (row["zone_low"] - last_close)
+                breakout_actual_close_pct = round(signed_diff / row["zone_low"] * 100, 4)
             volume_confirmed = (
                 not breakout_volume_confirm_enabled
                 or check_breakout_volume_confirmation(todays_5m_candles, breakout_volume_lookback_candles, breakout_volume_multiplier)
             )
-            oi_confirmed = (
-                not breakout_oi_confirm_enabled
-                or check_oi_diff_entry_gate(breakout_direction, get_latest_oi_signal(symbol))
-            )
+            if breakout_volume_confirm_enabled:
+                breakout_actual_volume_ratio = get_breakout_volume_ratio(todays_5m_candles, breakout_volume_lookback_candles)
+            oi_confirmed = True
+            if breakout_oi_confirm_enabled:
+                breakout_oi_signal_used = get_latest_oi_signal(symbol)
+                oi_confirmed = check_oi_diff_entry_gate(breakout_direction, breakout_oi_signal_used)
             if candle_close_confirmed and volume_confirmed and oi_confirmed:
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("candle-close %, volume ratio, OI signal Signal Log
+        # मध्ये स्वतंत्रपणे दाखवायचे") — फक्त enabled असलेल्या sub-gates चीच मूल्यं दिसतील; इथेच एकदाच
+        # बनवलेला तयार तुकडा credit-spread आणि naked दोन्ही Breakout-reason ठिकाणी वापरला जातो.
+        breakout_detail_parts = []
+        if breakout_actual_close_pct is not None:
+            breakout_detail_parts.append(f"candle close {breakout_actual_close_pct:+.3f}% (किमान {breakout_close_buffer_pct:.3f}% हवं)")
+        if breakout_actual_volume_ratio is not None:
+            breakout_detail_parts.append(f"Volume {breakout_actual_volume_ratio:.2f}x (किमान {breakout_volume_multiplier:.1f}x हवं)")
+        if breakout_oi_signal_used is not None:
+            breakout_detail_parts.append(f"OI Signal: {breakout_oi_signal_used}")
+        breakout_detail_str = f" [{', '.join(breakout_detail_parts)}]" if breakout_detail_parts else ""
         if hit_count_so_far >= 2 and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = "आजच्या या zone साठी (याच role — support/resistance) कमाल 2 वेळा मर्यादा आधीच गाठलेली"
@@ -676,7 +712,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
             # directional trades वेगळे शोधता यावेत.
             if is_breakout_trade:
-                log_entry["reason"] = "Directional (trend-continuation) trade — Breakout Entry (5-मिनिट candle close, buffer% सह), RSI/PCR Gate वगळले"
+                log_entry["reason"] = f"Directional (trend-continuation) trade — Breakout Entry (5-मिनिट candle close, buffer% सह){breakout_detail_str}, RSI/PCR Gate वगळले"
             elif is_directional_trade:
                 log_entry["reason"] = f"Directional (trend-continuation) trade — IV breakout ({iv_change_pct:+.1f}%), RSI/PCR Gate वगळले"
             cloud_db.save_signal_log(log_entry)
@@ -802,7 +838,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
         if is_breakout_trade:
-            rsi_display = "📈 Breakout Entry (5-मिनिट candle close, buffer% सह) — RSI/PCR Gate वगळले."
+            rsi_display = f"📈 Breakout Entry (5-मिनिट candle close, buffer% सह){breakout_detail_str} — RSI/PCR Gate वगळले."
         elif is_directional_trade:
             rsi_display = f"📈 Directional trade (IV breakout {iv_change_pct:+.1f}%) — RSI/PCR Gate वगळले."
         elif entry_rsi_gate_enabled:

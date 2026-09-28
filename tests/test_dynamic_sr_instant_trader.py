@@ -2474,6 +2474,96 @@ class TestBreakoutEntry:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_reason_includes_actual_candle_close_pct(self):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("candle-close %, volume ratio, OI signal Signal Log
+        मध्ये स्वतंत्रपणे दाखवायचे") — फक्त gate चा bool निकाल नाही, तर प्रत्यक्ष मोजलेलं % अंतर
+        Signal Log च्या reason मध्ये दिसायला हवं. LEVEL=23900, final_close=23800 (support break,
+        BEARISH) -- (23900-23800)/23900*100 = 0.4184%."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T106"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            breakout_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Breakout Entry" in (e.get("reason") or "")]
+            assert len(breakout_entries) == 1
+            assert "candle close +0.418%" in breakout_entries[0]["reason"]
+            assert "Volume" not in breakout_entries[0]["reason"]
+            assert "OI Signal" not in breakout_entries[0]["reason"]
+
+    def test_reason_includes_volume_ratio_when_enabled(self):
+        """volume confirm enabled असताना, प्रत्यक्ष मोजलेला ratio (किमान multiplier सकट) reason मध्ये
+        दिसायला हवा."""
+        settings = self._breakout_gate_settings()
+        settings["breakout_volume_confirm_enabled"] = True
+        settings["breakout_volume_multiplier"] = 1.5
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect_with_volume(
+                 self.PRIOR_CANDLES, 23800.0, [100] * len(self.PRIOR_CANDLES), 200)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T107"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            breakout_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Breakout Entry" in (e.get("reason") or "")]
+            assert len(breakout_entries) == 1
+            assert "Volume 2.00x (किमान 1.5x हवं)" in breakout_entries[0]["reason"]
+
+    def test_reason_includes_oi_signal_when_enabled(self):
+        """OI confirm enabled असताना, वापरलेला OI signal reason मध्ये दिसायला हवा."""
+        settings = self._breakout_gate_settings()
+        settings["breakout_oi_confirm_enabled"] = True
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "get_latest_oi_signal", return_value="BEARISH"), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T108"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            breakout_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Breakout Entry" in (e.get("reason") or "")]
+            assert len(breakout_entries) == 1
+            assert "OI Signal: BEARISH" in breakout_entries[0]["reason"]
+
+
+class TestGetBreakoutVolumeRatio:
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा — check_breakout_volume_confirmation() मधलाच ratio, फक्त
+    bool ऐवजी नेमकं संख्यात्मक मूल्य (Signal Log मध्ये दाखवण्यासाठी)."""
+
+    def test_computes_ratio(self):
+        candles = [{"close": 100, "volume": 100}] * 10 + [{"close": 100, "volume": 250}]
+        assert dsr.get_breakout_volume_ratio(candles, lookback_candles=10) == 2.5
+
+    def test_not_enough_candles_returns_none(self):
+        candles = [{"close": 100, "volume": 100}] * 5
+        assert dsr.get_breakout_volume_ratio(candles, lookback_candles=10) is None
+
+    def test_empty_candles_returns_none(self):
+        assert dsr.get_breakout_volume_ratio([], lookback_candles=10) is None
+
+    def test_zero_avg_volume_returns_none(self):
+        candles = [{"close": 100, "volume": 0}] * 10 + [{"close": 100, "volume": 50}]
+        assert dsr.get_breakout_volume_ratio(candles, lookback_candles=10) is None
+
 
 class TestRunAllSymbols:
     """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — एका symbol मधल्या अनपेक्षित exception मुळे उरलेले
