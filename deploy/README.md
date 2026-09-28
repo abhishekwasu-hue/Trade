@@ -524,15 +524,89 @@ journalctl -u cloudflared_upstox_webhook -n 20 --no-pager | grep trycloudflare
 1. https://account.upstox.com/developer/apps वर जा, तुमचं App उघडा.
 2. "Notifier URL" (किंवा "Redirect/Webhook URL") field मध्ये वरची URL पेस्ट करा, Save करा.
 
-## ⚠️ URL बदलते (Quick Tunnel ची मर्यादा):
-ही "Quick Tunnel" पद्धत मोफत आहे, कुठलंही Cloudflare account/domain लागत नाही — पण
-`cloudflared_upstox_webhook.service` कधीही (re)start झाला (उदा. VPS reboot, क्रॅश) की **नवीन** URL
-मिळते. तेव्हा वरची "URL शोधणे" पायरी पुन्हा करून, Upstox Console मध्येही अपडेट करावी लागेल.
+## ⚠️ १७ एप्रिल २०२६ पासून — Quick Tunnel URL आता Upstox कडे नोंदवताच येत नाही!
 
-कायमस्वरूपी, कधीच न बदलणारी URL हवी असल्यास — तुमच्याकडे स्वतःचं domain असेल तर **Cloudflare Named
-Tunnel** वापरा (Cloudflare Dashboard → Zero Trust → Networks → Tunnels मधून एकदा तयार करून, एक
-कायमचा subdomain — उदा. `upstox-webhook.तुमचंdomain.com` — त्याला जोडता येतो; त्यानंतर हीच URL कधीच
-बदलत नाही, reboot झाला तरी).
+🎓 वापरकर्त्याने प्रत्यक्ष सापडवलेली, या संपूर्ण फीचरलाच थांबवणारी समस्या — Upstox ने १७ एप्रिल
+२०२६ पासून नवीन **Webhook URL Security Policy** आणली आहे
+(https://upstox.com/developer/api-documentation/announcements/webhook-url-security-policy/) —
+जी "Dynamic DNS" आणि "Proxy Avoidance" category च्या URLs स्पष्टपणे नाकारते. वरची Quick Tunnel
+पद्धत (`trycloudflare.com`) नेमकी याच category मध्ये मोडते — त्यामुळे "Notifier Webhook Endpoint"
+मध्ये ही URL टाकताच Upstox Developer Console लगेच "This URL isn't allowed by our security policy"
+असं दाखवून नाकारतं. **हा तात्पुरता glitch नाही — Quick Tunnel आता कधीच वापरता येणार नाही.**
+
+**एकच खरा उपाय — Cloudflare Named Tunnel + तुमचं स्वतःचं (विकत घेतलेलं) domain.** खरं, पडताळलेलं
+domain असल्याने security policy मध्ये पास होतं, आणि सोबत URL कायमची स्थिर राहते (reboot झाला तरी
+कधीच बदलत नाही — Quick Tunnel च्या "दर restart ला नवीन URL" या डोकेदुखीतूनही सुटका).
+
+### पायरी १ — स्वस्त domain विकत घेणे (जवळपास ₹800-1000/वर्ष)
+
+Cloudflare Registrar सगळ्यात सोपं — domain आणि tunnel दोन्ही एकाच Cloudflare account मध्ये राहतात,
+कुठलाही markup नाही (at-cost किंमत):
+1. https://dash.cloudflare.com वर account बनवा (मोफत).
+2. डाव्या मेनूतून "Domain Registration" → "Register a Domain" → कुठलंही स्वस्त, उपलब्ध नाव शोधा
+   (उदा. `.com` जवळपास $9-10/वर्ष) — हे फक्त webhook साठी वापरायचंय, कुठेही publicly दाखवायचं
+   नाहीये, त्यामुळे नाव अगदी साधं/छोटं चालेल.
+3. खरेदी पूर्ण झाली की तेच domain आपोआप त्याच Cloudflare account मध्ये "Active" दिसेल (वेगळं DNS
+   nameserver बदलायची गरज नाही — Cloudflare Registrar वरून घेतलं तर ते आधीच Cloudflare-managed
+   असतं).
+
+(आधीच दुसऱ्या registrar कडून — GoDaddy/Namecheap वगैरे — domain असेल, तरी चालेल: फक्त ते
+Cloudflare Dashboard मध्ये "Add a Site" करून, त्या registrar कडे जाऊन nameservers Cloudflare चे
+द्यावे लागतील.)
+
+### पायरी २ — VPS वर Named Tunnel तयार करणे
+
+```bash
+# 1. एकदाच — तुमचं Cloudflare account VPS ला जोडणे (एक लिंक टर्मिनलवर दिसेल, ती browser मध्ये उघडून
+#    Authorize करा — तुमचं domain याच account मध्ये असायला हवं)
+cloudflared tunnel login
+
+# 2. एकदाच — नावाने ओळखला जाणारा (कायमचा) tunnel तयार करणे (नाव तंतोतंत "upstox-webhook" ठेवा —
+#    खालचा systemd unit हेच नाव गृहीत धरतो)
+cloudflared tunnel create upstox-webhook
+
+# 3. एकदाच — DNS मध्ये subdomain जोडणे (तुमचं-domain.com बदला, आधी खरेदी केलेलं domain वापरा)
+cloudflared tunnel route dns upstox-webhook upstox-webhook.तुमचं-domain.com
+
+# 4. एकदाच — tunnel config file (localhost:8080 कडे रूट करणारी)
+mkdir -p /etc/cloudflared
+cat > /etc/cloudflared/config.yml << 'EOF'
+tunnel: upstox-webhook
+credentials-file: /root/.cloudflared/<tunnel-create-वेळी-दिसलेला-UUID>.json
+ingress:
+  - hostname: upstox-webhook.तुमचं-domain.com
+    service: http://localhost:8080
+  - service: http_status:404
+EOF
+```
+
+`<tunnel-create-वेळी-दिसलेला-UUID>` — पायरी २ (`tunnel create`) चालवल्यावर टर्मिनलवर दिसलेला
+credentials file चा नेमका path कॉपी करा (साधारण `/root/.cloudflared/xxxxxxxx-xxxx-....json` असा
+दिसतो).
+
+### पायरी ३ — systemd unit ला Quick Tunnel ऐवजी हा Named Tunnel वापरायला सांगणे
+
+`deploy/cloudflared_upstox_webhook.service` मधली `ExecStart` ओळ आता अशी आहे —
+```
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+```
+ती बदलून अशी करा (VPS वरच्या `/etc/systemd/system/cloudflared_upstox_webhook.service` मध्ये थेट
+संपादित करा, आणि इथल्या `deploy/` फाईलमध्येही तोच बदल पुढच्या वेळी नव्याने deploy करताना जपला जाईल):
+```
+ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
+```
+मग:
+```bash
+systemctl daemon-reload
+systemctl restart cloudflared_upstox_webhook.service
+systemctl status cloudflared_upstox_webhook.service   # "active (running)" दिसायला हवं
+```
+
+### पायरी ४ — Upstox Developer Console मध्ये (एकदाच, कायमची) URL नोंदवणे
+
+`https://upstox-webhook.तुमचं-domain.com/upstox-webhook` — हीच URL "Notifier Webhook Endpoint"
+मध्ये टाका. आता security policy मध्ये पास होईल (खरं, पडताळलेलं domain), आणि **कधीच बदलणार नाही** —
+VPS reboot झाला, service restart झाला, तरीही हीच URL कायम राहते.
 
 ## मॅन्युअली टेस्ट करायचं असेल:
 ```bash

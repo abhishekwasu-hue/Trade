@@ -26,12 +26,14 @@ RestartSec=30
 # ला हवं असणारं). cloudflared इथे TLS एका मोफत, विश्वासार्ह (publicly trusted) प्रमाणपत्रासह
 # स्वतः handle करतो, आणि आतून plain HTTP (localhost:8080) कडे पाठवतो — त्यामुळे Flask
 # app मध्ये कुठलाही SSL बदल करावा लागत नाही.
-# ⚠️ ही "Quick Tunnel" पद्धत आहे (मोफत, Cloudflare account/domain न लागता) — पण प्रत्येक वेळी
-# हा service (re)start झाला (उदा. VPS reboot) की मिळणारी URL बदलते. नवीन URL
-# journalctl -u cloudflared_upstox_webhook -n 20 मध्ये दिसेल — ती दरवेळी Upstox Developer
-# Console च्या Notifier URL मध्ये अपडेट करावी लागेल. कायमस्वरूपी, कधीच न बदलणारी URL हवी
-# असल्यास (आणि तुमच्याकडे स्वतःचं domain असल्यास), Cloudflare Named Tunnel वापरा —
-# त्यासाठी वेगळी सूचना README.md मध्ये.
+# ⚠️ १७ एप्रिल २०२६ पासून — खालची "Quick Tunnel" पद्धत (मोफत, कुठलंही domain न लागता) Upstox च्या
+# नवीन Webhook URL Security Policy मुळे यापुढे वापरताच येत नाही (trycloudflare.com ला "Dynamic
+# DNS"/"Proxy Avoidance" म्हणून नाकारलं जातं — Upstox Developer Console मध्ये नोंदवतानाच थेट
+# अयशस्वी होतं). त्याऐवजी आता Cloudflare Named Tunnel (स्वतःचं domain आवश्यक) वापरणं अनिवार्य आहे —
+# संपूर्ण, पायरी-निहाय सूचना README.md मध्ये ("Quick Tunnel URL आता Upstox कडे नोंदवताच येत नाही"
+# हा विभाग). त्या सूचनांप्रमाणे पायरी ३ पूर्ण केल्यावर, खालची ओळ अशी बदला:
+#   ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
+# जुनी Quick Tunnel ओळ (आता निष्क्रिय, फक्त संदर्भासाठी):
 ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
 
 [Install]
