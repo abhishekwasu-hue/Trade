@@ -243,8 +243,12 @@ def _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product
 def check_kill_switch():
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — LIVE Kill Switch / Daily Loss Limit,
     गंभीर यादीतला चौथा मुद्दा) — आजचा एकूण LIVE realized P&L किंवा trade-count (सर्व symbols/bots
-    मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो. PAPER trades कधीच
-    अडवले जात नाहीत — फक्त LIVE (खरे पैसे) साठीच हा संरक्षक.
+    मिळून, cloud_db.get_kill_switch_settings() च्या मर्यादेपलीकडे) तपासतो.
+    🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable aahe
+    tech gate Paper trade sathi suddha applicable kra") — पूर्वी PAPER trades कधीच अडवले जात
+    नव्हते (established pattern); आता ही अट (नेहमीच खऱ्या LIVE capital/PnL वरून ठरणारी — तेच
+    कायम आहे) ट्रिप झाल्यावर नवीन LIVE **आणि** PAPER दोन्ही trades थांबतात. आधीच उघडे trades
+    (PAPER/LIVE कुठलेही) यामुळे कधीच बंद केले जात नाहीत — फक्त नवीन entries थांबतात.
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("Kill switch madhe loss limit pahije ka discuss" -> "ekun
     capital chya respected te asayla pahije both loss and profit, certain profit book jhalyanantr,
     automatic trading stop karne awashyak") — max_daily_loss_pct/max_daily_profit_pct (दोन्ही %,
@@ -270,7 +274,7 @@ def check_kill_switch():
         return False, (
             f"KILL_SWITCH_UNVERIFIED_PNL — आज {unverified_count} LIVE trade(s) Upstox app/website "
             f"वरून थेट बंद झालेल्या दिसतात, पण त्यांचा खरा नफा/तोटा अजून नोंदवलेला नाही — आजचा एकूण "
-            f"तोटा अचूक मोजता येत नसल्याने नवीन LIVE trades थांबवले. कृपया Dashboard/Upstox वरून "
+            f"तोटा अचूक मोजता येत नसल्याने नवीन trades (LIVE + PAPER) थांबवले. कृपया Dashboard/Upstox वरून "
             f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
         )
 
@@ -279,8 +283,8 @@ def check_kill_switch():
     if not total_capital or total_capital <= 0:
         return False, (
             "KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन LIVE "
-            "trades थांबवले."
+            "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन trades "
+            "(LIVE + PAPER) थांबवले."
         )
 
     total_pnl, total_trades = get_todays_live_total_pnl_and_count()
@@ -298,7 +302,7 @@ def check_kill_switch():
         return False, (
             f"KILL_SWITCH_DAILY_PROFIT_TARGET — आजचा एकूण LIVE नफा ₹{total_pnl:,.0f} आधीच लक्ष्य "
             f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, एकूण capital "
-            f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन LIVE trading थांबवलं (नफा टिकवण्यासाठी)"
+            f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन trading (LIVE + PAPER) थांबवलं (नफा टिकवण्यासाठी)"
         )
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा असेल,
     # तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — वरचा max_daily_profit_pct
@@ -317,7 +321,7 @@ def check_kill_switch():
                     f"KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
                     f"त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — सद्य "
                     f"एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला, नफ्यातून तोटा होऊ नये म्हणून नवीन "
-                    f"LIVE trades थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
+                    f"trades (LIVE + PAPER) थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
                 )
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
@@ -331,8 +335,10 @@ def check_mcx_kill_switch():
     दिवसांचा LIVE इतिहास असलेली) रणनीती असल्याने, ग्लोबल मर्यादा अजून बरीच दूर असतानाही फक्त MCX
     मध्येच मोठा तोटा होत असेल किंवा एकाच वेळी खूप जास्त commodities उघडे राहत असतील तर लवकर थांबावं.
     दोन्ही Kill Switches (हे + ग्लोबल) स्वतंत्रपणे तपासले जातात — कुठलाही एक ट्रिप झाला तरी नवीन MCX
-    LIVE trade अडतो; open_multi_leg_trade() मध्ये फक्त source=="mcx_futures" असेल तेव्हाच, ग्लोबल
-    check_kill_switch() नंतर, जोडून तपासलं जातं.
+    trade (LIVE **आणि** PAPER दोन्ही — बघा check_kill_switch() मधली "Je gates live trade sathi
+    applicable aahe tech gate Paper trade sathi suddha applicable kra" टिप्पणी) अडतो;
+    open_multi_leg_trade() मध्ये फक्त source=="mcx_futures" असेल तेव्हाच, ग्लोबल check_kill_switch()
+    नंतर, जोडून तपासलं जातं.
     रिटर्न: (ok: bool, reason: str|None)."""
     settings = cloud_db.get_mcx_kill_switch_settings()
     if not settings.get("enabled", True):
@@ -352,8 +358,8 @@ def check_mcx_kill_switch():
     if not total_capital or total_capital <= 0:
         return False, (
             "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX LIVE trades "
-            "थांबवले."
+            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
+            "(LIVE + PAPER) थांबवले."
         )
     max_daily_loss_pct = settings.get("max_daily_loss_pct", 1.0)
     max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
@@ -375,7 +381,7 @@ def check_mcx_kill_switch():
                 return False, (
                     f"MCX_KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
                     f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
-                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX LIVE trades थांबवले"
+                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX trades (LIVE + PAPER) थांबवले"
                 )
     return True, None
 
@@ -749,22 +755,33 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             _alert_kill_switch_blocked(symbol, source, vix_reason)
         return False, {"status": "error", "reason": vix_reason}
 
-    if trading_mode == "LIVE":
-        kill_switch_ok, kill_switch_reason = check_kill_switch()
-        if not kill_switch_ok:
+    # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable aahe
+    # tech gate Paper trade sathi suddha applicable kra") — वापरकर्त्याने स्पष्ट केलं की LIVE साठीचे
+    # दोन्ही Kill Switches (ग्लोबल + MCX-विशिष्ट) आता PAPER trades लाही लागू व्हायला हवेत — खऱ्या
+    # capital/PnL वरून ठरणारी अट (check_kill_switch()/check_mcx_kill_switch() नेहमीच खऱ्या LIVE
+    # आकडेवारीवरूनच ठरतात, हे बदललेलं नाही) आता LIVE आणि PAPER दोन्हीसाठीचे नवीन trades अडवते —
+    # VIX Spike Halt च्याच तत्त्वाप्रमाणे (वर) — म्हणून हे दोन्ही checks आता trading_mode=="LIVE"
+    # च्या आतमध्ये नाहीत.
+    kill_switch_ok, kill_switch_reason = check_kill_switch()
+    if not kill_switch_ok:
+        if trading_mode == "LIVE":
             _alert_kill_switch_blocked(symbol, source, kill_switch_reason)
-            return False, {"status": "error", "reason": kill_switch_reason}
+        return False, {"status": "error", "reason": kill_switch_reason}
 
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
-        # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी.
-        if source == "mcx_futures":
-            mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
-            if not mcx_kill_switch_ok:
+    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
+    # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी. आता वरच्याच
+    # PAPER-सकट सुधारणेप्रमाणे LIVE आणि PAPER दोन्हीला लागू.
+    if source == "mcx_futures":
+        mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
+        if not mcx_kill_switch_ok:
+            if trading_mode == "LIVE":
                 _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
-                return False, {"status": "error", "reason": mcx_kill_switch_reason}
+            return False, {"status": "error", "reason": mcx_kill_switch_reason}
 
+    if trading_mode == "LIVE":
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade
-        # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय).
+        # कधीच अडवला जात नाही (वापरकर्त्याशी चर्चा करून ठरवलेला निर्णय) — फक्त LIVE साठीच अर्थपूर्ण
+        # (दोन strategies प्रत्यक्ष भांडवलावर परस्परविरोधी दिशेने trade घेत असतील तरच सूचना उपयोगी).
         other_source_trades = get_open_trades_by_other_sources(symbol, source)
         if other_source_trades:
             _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source_trades)

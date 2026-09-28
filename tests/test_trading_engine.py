@@ -1618,10 +1618,12 @@ class TestOpenMultiLegTradeKillSwitch:
         conn.close()
         assert row[0] == 0
 
-    def test_paper_mode_never_checks_kill_switch(self, temp_db, monkeypatch):
-        def _boom():
-            raise AssertionError("PAPER mode ने कधीच kill switch तपासायला नको")
-        monkeypatch.setattr(trading_engine, "check_kill_switch", _boom)
+    def test_paper_mode_ok_kill_switch_proceeds_normally(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable
+        aahe tech gate Paper trade sathi suddha applicable kra") — established "PAPER कधीच kill
+        switch तपासत नाही" पॅटर्न आता मुद्दामच मोडलेला आहे — PAPER trade सुद्धा check_kill_switch()
+        मधून जातो (Kill Switch OK असेल तर नेहमीप्रमाणे पुढे जातो)."""
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["PAPER-1"]}]}))
 
         ok, resp = trading_engine.open_multi_leg_trade(
@@ -1629,6 +1631,26 @@ class TestOpenMultiLegTradeKillSwitch:
             sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
         )
         assert ok is True
+
+    def test_paper_mode_blocked_by_kill_switch_no_telegram_alert(self, temp_db, monkeypatch):
+        """PAPER trade सुद्धा Kill Switch ट्रिप झाल्यावर अडतो — पण established Kill Switch पॅटर्नप्रमाणेच
+        (VIX Halt सारखं) Telegram अलर्ट फक्त LIVE साठीच (PAPER-blocked events ने रोजची Telegram गर्दी
+        वाढू नये)."""
+        import notifications
+        telegram_calls = []
+        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: telegram_calls.append(msg))
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (False, "KILL_SWITCH_DAILY_LOSS — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+        )
+        assert ok is False
+        assert "KILL_SWITCH_DAILY_LOSS" in resp["reason"]
+        assert not execute_calls
+        assert not telegram_calls
 
     def test_live_mode_kill_switch_ok_proceeds_normally(self, temp_db, monkeypatch):
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
@@ -1973,6 +1995,24 @@ class TestOpenMultiLegTradeMcxKillSwitch:
         )
         assert ok is True
 
+    def test_mcx_source_paper_also_blocked_by_mcx_kill_switch(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable
+        aahe tech gate Paper trade sathi suddha applicable kra") — MCX Kill Switch सुद्धा (ग्लोबल
+        Kill Switch/VIX Halt सारखंच) आता PAPER trades ला अडतो."""
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", lambda: (False, "MCX_KILL_SWITCH_DAILY_LOSS — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "CRUDEOIL", self._mcx_strategy_result(), lots=1, lot_size=100,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            source="mcx_futures",
+        )
+        assert ok is False
+        assert "MCX_KILL_SWITCH_DAILY_LOSS" in resp["reason"]
+        assert not execute_calls
+
 
 class TestOpenMultiLegTradeManualPause:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा trading stop button") —
@@ -2137,7 +2177,11 @@ class TestOpenMultiLegTradeLivePaperMode:
         conn.close()
         assert rows == [("LIVE", "dynamic_sr_instant"), ("PAPER", "dynamic_sr_instant")]
 
-    def test_live_paper_kill_switch_blocks_live_but_paper_leg_still_opens(self, temp_db, monkeypatch):
+    def test_live_paper_kill_switch_blocks_both_legs(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable
+        aahe tech gate Paper trade sathi suddha applicable kra") — established "PAPER shadow leg
+        Kill Switch ला वगळलेला" वर्तन आता मुद्दामच मोडलेलं आहे — Kill Switch ट्रिप झाल्यावर LIVE_PAPER
+        मोडमधले LIVE आणि शॅडो PAPER दोन्ही legs अडतात."""
         import notifications
         monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (False, "KILL_SWITCH_DAILY_LOSS — test"))
@@ -2154,38 +2198,34 @@ class TestOpenMultiLegTradeLivePaperMode:
             sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D",
             trading_mode="LIVE_PAPER",
         )
-        # LIVE leg ब्लॉक झाला (kill switch), त्यामुळे overall result अयशस्वी — पण शॅडो PAPER
-        # trade तरीही घेतला गेला (execute_order_leg_set फक्त "PAPER" साठीच कॉल झाला).
         assert ok is False
-        assert modes_called == ["PAPER"]
-        assert resp["paper_shadow_ok"] is True
+        assert not modes_called  # दोन्ही legs अडले — execute_order_leg_set कधीच कॉल झालं नाही
+        assert resp["paper_shadow_ok"] is False
+        assert "KILL_SWITCH_DAILY_LOSS" in resp["paper_shadow"]["reason"]
 
         conn = sqlite3.connect(temp_db)
         rows = conn.execute("SELECT mode FROM live_trades").fetchall()
         conn.close()
-        assert rows == [("PAPER",)]
+        assert rows == []
 
-    def test_live_paper_kill_switch_does_not_block_shadow_paper_leg(self, temp_db, monkeypatch):
-        """PAPER mode कधीच kill switch तपासत नाही (जुनाच नियम) — LIVE_PAPER मधल्या शॅडो leg लाही तेच लागू."""
+    def test_live_paper_kill_switch_checked_for_both_legs(self, temp_db, monkeypatch):
+        """check_kill_switch() आता LIVE_PAPER च्या दोन्ही recursive sub-calls (LIVE + PAPER) साठी
+        स्वतंत्रपणे कॉल होतं (एकूण 2 वेळा, आधीच्या "फक्त LIVE साठी 1 वेळा" च्या उलट)."""
         calls = {"n": 0}
-        real_check = trading_engine.check_kill_switch
 
         def counting_check():
             calls["n"] += 1
-            return False, "KILL_SWITCH_DAILY_LOSS — test"
+            return True, None
 
         monkeypatch.setattr(trading_engine, "check_kill_switch", counting_check)
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": {"order_ids": [f"{m}-1"]}}))
-        import notifications
-        monkeypatch.setattr(notifications, "send_telegram_message", lambda msg: None)
 
         trading_engine.open_multi_leg_trade(
             "fake_token", "NIFTY", self._strategy_result(), lots=1, lot_size=75,
             sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D",
             trading_mode="LIVE_PAPER",
         )
-        # फक्त LIVE leg साठीच check_kill_switch() कॉल झालं असायला हवं (एकूण 1 वेळा, 2 नाही)
-        assert calls["n"] == 1
+        assert calls["n"] == 2
 
 
 class TestCheckMarginAvailable:
