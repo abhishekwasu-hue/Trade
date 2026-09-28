@@ -311,6 +311,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "breakout_volume_confirm_enabled": False,
         "breakout_volume_lookback_candles": 10,
         "breakout_volume_multiplier": 1.5,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5
+        # minute save kele जातात tech yethe use krta yeil") — ऐच्छिक (डीफॉल्ट बंद) OI Confirmation —
+        # `oi_snapshot_collector.py` ने आधीच दर 5 मिनिटांनी साठवलेला Put/Call OI-Price signal
+        # breakout_direction शी जुळतो (established `oi_analysis.check_oi_diff_entry_gate`) तरच
+        # breakout trade घेतला जातो — कुठलेही नवीन threshold नाहीत (existing established gate चाच
+        # पुनर्वापर).
+        "breakout_oi_confirm_enabled": False,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ

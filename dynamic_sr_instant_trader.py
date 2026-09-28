@@ -60,6 +60,13 @@ yeil") — ऐच्छिक (`breakout_volume_confirm_enabled`, डीफॉ�
 `breakout_volume_lookback_candles` (डीफॉल्ट 10) candles च्या सरासरीपेक्षा किमान
 `breakout_volume_multiplier` (डीफॉल्ट 1.5) पट जास्त असावा लागतो — कमी-volume (संभाव्य fake/whipsaw)
 breakouts गाळण्यासाठी, candle-close अटीसोबतच (AND) तपासला जातो.
+
+🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5 minute save
+kele जातात tech yethe use krta yeil") — ऐच्छिक (`breakout_oi_confirm_enabled`, डीफॉल्ट बंद) OI
+Confirmation — established `oi_analysis.get_latest_oi_signal()`/`check_oi_diff_entry_gate()` (A1
+Engine मध्ये आधीच वापरलेलं, नवीन logic नाही) चाच पुनर्वापर — `oi_snapshot_collector.py` ने दर 5
+मिनिटांनी साठवलेला सर्वात अलीकडचा Put/Call OI-Price signal breakout_direction शी जुळतो (किंवा उलट
+दिशा "Weakening" असेल) तरच पास, candle-close/volume अटींसोबतच (AND) तपासला जातो.
 """
 import argparse
 
@@ -70,7 +77,7 @@ from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
-from oi_analysis import check_pcr_gate, check_iv_change_gate
+from oi_analysis import check_pcr_gate, check_iv_change_gate, get_latest_oi_signal, check_oi_diff_entry_gate
 from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_credit_spread_fixed_strikes, select_naked_option_itm
 from trading_engine import open_multi_leg_trade, format_trade_result
@@ -286,6 +293,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
     breakout_volume_lookback_candles = settings.get("breakout_volume_lookback_candles", 10)
     breakout_volume_multiplier = settings.get("breakout_volume_multiplier", 1.5)
+    breakout_oi_confirm_enabled = settings.get("breakout_oi_confirm_enabled", False)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
@@ -403,6 +411,15 @@ def process_symbol(access_token, symbol, lot_size=65):
         # candles च्या सरासरीपेक्षा किमान breakout_volume_multiplier पट जास्त असावा लागतो
         # (`check_breakout_volume_confirmation`) — कमी-volume (संभाव्य fake/whipsaw) breakouts
         # गाळण्यासाठी.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5
+        # minute save kele जातात tech yethe use krta yeil") — ऐच्छिक (डीफॉल्ट बंद) OI Confirmation —
+        # `oi_snapshot_collector.py` ने दर 5 मिनिटांनी साठवलेला सर्वात अलीकडचा OI-Price signal
+        # (`get_latest_oi_signal` — Put/Call Writing/Buying/Short-Covering/Long-Unwinding च्या
+        # संयोगातून आधीच ठरलेला BULLISH/BEARISH/MIXED/NEUTRAL) breakout_direction शी जुळतो (किंवा
+        # उलट दिशा "Weakening" असेल) तरच पास — established `check_oi_diff_entry_gate` (A1 Engine मध्ये
+        # आधीच वापरलेलं) चाच पुनर्वापर, नवीन logic नाही. Index candles चा स्वतःचा "oi" column
+        # (indices ना Open Interest नसतोच) इथे वापरलेला नाही — हा signal option chain (Call+Put OI)
+        # वरून येतो.
         # (role वर आधीच hysteresis-संरक्षित `direction` वरून ठरलेला आहे — बघा वरची टिप्पणी.)
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
             symbol, row["zone_low"], trade_date, role=role,
@@ -421,7 +438,11 @@ def process_symbol(access_token, symbol, lot_size=65):
                 not breakout_volume_confirm_enabled
                 or check_breakout_volume_confirmation(todays_5m_candles, breakout_volume_lookback_candles, breakout_volume_multiplier)
             )
-            if candle_close_confirmed and volume_confirmed:
+            oi_confirmed = (
+                not breakout_oi_confirm_enabled
+                or check_oi_diff_entry_gate(breakout_direction, get_latest_oi_signal(symbol))
+            )
+            if candle_close_confirmed and volume_confirmed and oi_confirmed:
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True

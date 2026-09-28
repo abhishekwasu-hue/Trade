@@ -569,6 +569,21 @@ def render():
                         "Volume multiplier (सरासरीच्या किती पट)", settings, "breakout_volume_multiplier", strategy_key, symbol,
                         min_value=1.0, max_value=5.0, step=0.1, format="%.1f", disabled=not (entry_breakout_gate_enabled and breakout_volume_confirm_enabled),
                     )
+                # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot
+                # every 5 minute save kele जातात tech yethe use krta yeil") — ऐच्छिक, डीफॉल्ट बंद —
+                # established OI Confirmation Gate (A1 Engine मध्ये आधीच वापरलेला) चाच पुनर्वापर,
+                # कुठलेही नवीन threshold नाहीत.
+                breakout_oi_confirm_enabled = st.checkbox(
+                    "OI Confirmation सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_oi_confirm_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_oi_confirm_enabled"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "दर 5 मिनिटांनी साठवलेला Option Chain चा सर्वात अलीकडचा Put/Call OI-Price signal (Writing/Buying/"
+                    "Short-Covering/Long-Unwinding वरून) breakout च्या दिशेशी जुळतो (किंवा उलट दिशा कमकुवत होतेय) तरच "
+                    "breakout trade घेतला जातो."
+                )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level हिट होताच SL उडण्याचे प्रमाण जास्त
             # आहे" या Performance Report वरून सापडलेल्या शंकेवरून, 3-दिवसांचा signal_log backtest
@@ -912,6 +927,7 @@ def render():
             new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)
             new_settings["breakout_volume_lookback_candles"] = int(breakout_volume_lookback_candles)
             new_settings["breakout_volume_multiplier"] = float(breakout_volume_multiplier)
+            new_settings["breakout_oi_confirm_enabled"] = bool(breakout_oi_confirm_enabled)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)

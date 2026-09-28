@@ -2343,6 +2343,90 @@ class TestBreakoutEntry:
             dsr.process_symbol("fake_token", "NIFTY")
             assert mock_trade.called
 
+    def test_oi_confirm_disabled_by_default_ignores_mismatched_signal(self):
+        """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("option chain analysis oi snapshot every 5
+        minute save kele जातात tech yethe use krta yeil") — breakout_oi_confirm_enabled डीफॉल्ट
+        बंद असल्याने, OI signal breakout दिशेशी जुळत नसला तरी trade अडायला नको (established
+        candle-close/volume-only वर्तन कायम)."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "get_latest_oi_signal", return_value="BULLISH") as mock_oi_signal, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T102"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_oi_signal.called
+
+    def test_oi_confirm_enabled_blocks_mismatched_signal(self):
+        """Breakout दिशा BEARISH आहे (role=SUPPORT); OI signal 'BULLISH' (जुळत नाही, weakening
+        सुद्धा नाही) असेल, तर candle-close अट पूर्ण असूनही breakout trade घेतला जायला नको."""
+        settings = self._breakout_gate_settings()
+        settings["breakout_oi_confirm_enabled"] = True
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "get_latest_oi_signal", return_value="BULLISH"), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_oi_confirm_enabled_fires_with_matching_signal(self):
+        """Breakout दिशा BEARISH आहे; OI signal 'BEARISH' (established check_oi_diff_entry_gate नुसार
+        जुळतो) असेल, तर candle-close + OI दोन्ही अटी पूर्ण -- breakout trade घेतला जायला हवा."""
+        settings = self._breakout_gate_settings()
+        settings["breakout_oi_confirm_enabled"] = True
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "get_latest_oi_signal", return_value="BEARISH") as mock_oi_signal, \
+             patch.object(dsr, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(dsr, "check_pcr_gate") as mock_pcr_gate, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T103"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert mock_oi_signal.called
+            assert mock_oi_signal.call_args.args[0] == "NIFTY"
+            assert not mock_rsi_gate.called
+            assert not mock_pcr_gate.called
+            assert mock_select.call_args.args[1] == "BEARISH"
+            assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
+
+    def test_oi_confirm_enabled_fires_when_opposite_direction_weakening(self):
+        """established check_oi_diff_entry_gate चा 'Weakening' नियम -- BEARISH breakout ला
+        'BULLISH (Weakening)' signal (bulls मागे हटतायत) सुद्धा वैध मानला जायला हवा."""
+        settings = self._breakout_gate_settings()
+        settings["breakout_oi_confirm_enabled"] = True
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect(self.PRIOR_CANDLES, 23800.0)), \
+             patch.object(dsr, "get_latest_oi_signal", return_value="BULLISH (Weakening)"), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T104"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+
 
 class TestRunAllSymbols:
     """🎓 पूर्व-live रिव्ह्यूत सापडवलेली bug — एका symbol मधल्या अनपेक्षित exception मुळे उरलेले
