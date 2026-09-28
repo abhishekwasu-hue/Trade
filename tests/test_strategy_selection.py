@@ -79,6 +79,28 @@ class TestITMCreditSpreadSelection:
         result = select_credit_spread_itm(sample_option_chain, "BULLISH", atm_strike=99999, itm_depth_points=100)
         assert result is None
 
+    def test_zero_itm_depth_selects_atm_strike(self, sample_option_chain):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा ("setting change kra ATM +-1", ATM/OTM पण निवडता यायला
+        हवं, फक्त ITM नाही) — itm_depth_points=0 दिला की short strike थेट ATM वरच यायला हवा, दोन्ही
+        दिशांसाठी. हे गणित (itm_offset = round(0/step)*step = 0) आधीपासूनच बरोबर होतं — फक्त
+        Dashboard चा widget 0 स्वीकारतच नव्हता."""
+        bull = select_credit_spread_itm(sample_option_chain, "BULLISH", atm_strike=24500,
+                                         itm_depth_points=0, hedge_width_points=150)
+        assert bull["short_leg"]["strike"] == 24500
+        bear = select_credit_spread_itm(sample_option_chain, "BEARISH", atm_strike=24500,
+                                         itm_depth_points=0, hedge_width_points=150)
+        assert bear["short_leg"]["strike"] == 24500
+
+    def test_negative_itm_depth_selects_otm_strike(self, sample_option_chain):
+        """ऋण itm_depth_points दिला की short strike ATM च्या OTM बाजूला जायला हवा (उलट दिशेने) —
+        BULLISH (Put): ATM पेक्षा खाली. BEARISH (Call): ATM पेक्षा वर."""
+        bull = select_credit_spread_itm(sample_option_chain, "BULLISH", atm_strike=24500,
+                                         itm_depth_points=-100, hedge_width_points=150)
+        assert bull["short_leg"]["strike"] == 24400  # ATM - 100 (Put OTM -- स्ट्राइक ATM पेक्षा खाली)
+        bear = select_credit_spread_itm(sample_option_chain, "BEARISH", atm_strike=24500,
+                                         itm_depth_points=-100, hedge_width_points=150)
+        assert bear["short_leg"]["strike"] == 24600  # ATM + 100 (Call OTM -- स्ट्राइक ATM पेक्षा वर)
+
 
 class TestNakedOptionSelection:
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Naked Option Trade / "Long With Hedge") —
@@ -111,3 +133,19 @@ class TestNakedOptionSelection:
 
     def test_invalid_direction_returns_none(self, sample_option_chain):
         assert select_naked_option_itm(sample_option_chain, "SIDEWAYS", atm_strike=24500, itm_depth_points=100) is None
+
+    def test_zero_itm_depth_selects_atm_strike(self, sample_option_chain):
+        """🎓 वापरकर्त्याने मागितलेली सुधारणा (ATM/OTM पण निवडता यायला हवं) — itm_depth_points=0
+        दिला की buy strike थेट ATM वरच यायला हवा."""
+        bull = select_naked_option_itm(sample_option_chain, "BULLISH", atm_strike=24500, itm_depth_points=0)
+        assert bull["buy_leg"]["strike"] == 24500
+        bear = select_naked_option_itm(sample_option_chain, "BEARISH", atm_strike=24500, itm_depth_points=0)
+        assert bear["buy_leg"]["strike"] == 24500
+
+    def test_negative_itm_depth_selects_otm_strike(self, sample_option_chain):
+        """ऋण itm_depth_points दिला की buy strike OTM बाजूला जायला हवा (उलट दिशेने) — BULLISH (Call):
+        ATM पेक्षा वर. BEARISH (Put): ATM पेक्षा खाली."""
+        bull = select_naked_option_itm(sample_option_chain, "BULLISH", atm_strike=24500, itm_depth_points=-100)
+        assert bull["buy_leg"]["strike"] == 24600  # ATM + 100 (Call OTM -- स्ट्राइक ATM पेक्षा वर)
+        bear = select_naked_option_itm(sample_option_chain, "BEARISH", atm_strike=24500, itm_depth_points=-100)
+        assert bear["buy_leg"]["strike"] == 24400  # ATM - 100 (Put OTM -- स्ट्राइक ATM पेक्षा खाली)
