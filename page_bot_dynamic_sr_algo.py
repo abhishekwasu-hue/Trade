@@ -192,6 +192,65 @@ def _render_kill_switch_panel():
                 st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
 
 
+def _render_portfolio_risk_cap_panel():
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरच्या Kill
+    Switch (आजचा *realized* P&L) पेक्षा वेगळा गेट — सध्या उघड्या असलेल्या सर्व LIVE positions चा
+    एकत्रित max-loss (worst-case, अजून न झालेला संभाव्य तोटा) दोन correlated-risk bucket पैकी
+    (Index-Options: NIFTY+BANKNIFTY+SENSEX एकत्र; MCX: सर्व commodities एकत्र) संबंधित bucket ची
+    मर्यादा ओलांडत नाही ना तपासतो — trading_engine.check_portfolio_risk_cap() मध्येच, नवीन trade
+    उघडण्याआधी. डीफॉल्ट बंद — वापरकर्ता स्वतः चालू करून cap% ठरवेपर्यंत जुनं वर्तन कायम."""
+    pr_settings = cloud_db.get_portfolio_risk_cap_settings()
+    token_input = st.session_state.get("token_input", "")
+    total_capital = upstox_api.get_total_capital(token_input) if token_input else None
+    index_open_max_loss = database.get_open_live_max_loss_total(symbols=trading_engine.VIX_SPIKE_HALT_SYMBOLS)
+    mcx_open_max_loss = database.get_open_live_max_loss_total(source="mcx_futures")
+
+    with st.expander("📊 Portfolio-wide Open-Risk Cap (सध्या उघड्या positions चा एकत्रित max-loss)", expanded=False):
+        st.caption(
+            "सध्या उघड्या असलेल्या सर्व LIVE positions चा एकत्रित max-loss (worst-case, अजून प्रत्यक्ष "
+            "तोटा न झालेला, फक्त संभाव्य) + नवीन trade गृहीत धरून, दोन correlated-risk bucket (Index-"
+            "Options: NIFTY+BANKNIFTY+SENSEX एकत्र — कारण एकाच India VIX झटक्याने तिन्ही एकत्र फटका "
+            "बसू शकतात; MCX: सर्व commodities एकत्र) पैकी संबंधित bucket ची मर्यादा ओलांडणारी नवीन "
+            "trade (LIVE + PAPER दोन्ही) थांबवली जाते. आधीच उघडे trades यामुळे कधीच बंद होत नाहीत."
+        )
+        if total_capital is None:
+            st.warning(
+                "⚠️ एकूण capital (Upstox Funds & Margin वरून) सध्या मिळालं नाही — token/नेटवर्क तपासा."
+            )
+        else:
+            st.caption(f"सध्याचं एकूण capital (Upstox, available+used margin): ₹{total_capital:,.0f}")
+            index_cap_amount = total_capital * pr_settings["max_portfolio_risk_pct_index"] / 100
+            mcx_cap_amount = total_capital * pr_settings["max_portfolio_risk_pct_mcx"] / 100
+            st.caption(
+                f"सध्याचा Index-Options bucket open max-loss: ₹{index_open_max_loss:,.0f} / मर्यादा ₹{index_cap_amount:,.0f} — "
+                f"MCX bucket open max-loss: ₹{mcx_open_max_loss:,.0f} / मर्यादा ₹{mcx_cap_amount:,.0f}"
+            )
+
+        if not pr_settings["enabled"]:
+            st.warning("⚪ Portfolio-wide Open-Risk Cap सध्या बंद आहे — उघड्या positions च्या एकत्रित max-loss वर कुठलीही स्वयंचलित मर्यादा नाही.")
+
+        pr_enabled = st.checkbox("Portfolio-wide Open-Risk Cap सक्रिय", value=pr_settings["enabled"], key="bdsr_pr_enabled")
+        prc1, prc2 = st.columns(2)
+        with prc1:
+            pr_max_index_pct = st.number_input(
+                "Index-Options bucket cap % (NIFTY+BANKNIFTY+SENSEX एकत्र, एकूण capital चा)",
+                min_value=0.5, max_value=100.0, value=float(pr_settings["max_portfolio_risk_pct_index"]),
+                step=0.5, key="bdsr_pr_max_index_pct",
+            )
+        with prc2:
+            pr_max_mcx_pct = st.number_input(
+                "MCX bucket cap % (सर्व commodities एकत्र, एकूण capital चा)",
+                min_value=0.5, max_value=100.0, value=float(pr_settings["max_portfolio_risk_pct_mcx"]),
+                step=0.5, key="bdsr_pr_max_mcx_pct",
+            )
+        if st.button("💾 Portfolio-wide Open-Risk Cap सेव्ह करा", key="bdsr_pr_save_btn"):
+            ok = cloud_db.save_portfolio_risk_cap_settings(pr_enabled, pr_max_index_pct, pr_max_mcx_pct)
+            if ok:
+                st.success("✅ Portfolio-wide Open-Risk Cap सेटिंग्ज जतन झाल्या.")
+            else:
+                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
+
+
 def _render_vix_spike_halt_panel():
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% level
     क्रॉस केली तर त्या दिवशी bot ने trading थांबवावी") — NIFTY/BANKNIFTY/SENSEX (India VIX सर्व
@@ -281,6 +340,7 @@ def render():
     _render_live_status_banner()
     _render_vix_halt_alert_banner()
     _render_kill_switch_panel()
+    _render_portfolio_risk_cap_panel()
     _render_vix_spike_halt_panel()
 
     with st.expander("❓ हे पान पहिल्यांदाच वापरताय? इथे क्लिक करा"):

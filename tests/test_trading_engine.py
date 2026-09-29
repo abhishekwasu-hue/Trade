@@ -1765,6 +1765,104 @@ class TestCheckMcxKillSwitch:
         assert reason is None
 
 
+class TestCheckPortfolioRiskCap:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरच्या दोन्ही
+    Kill Switches ("आजचा *realized* P&L") पेक्षा वेगळा — सध्या उघड्या असलेल्या LIVE positions चा
+    एकत्रित max-loss + नवीन trade, दोन correlated-risk bucket (Index-Options: NIFTY+BANKNIFTY+
+    SENSEX; MCX: सर्व commodities) पैकी संबंधित bucket ची मर्यादा ओलांडत नाही ना तपासतं."""
+
+    TOTAL_CAPITAL = 1_000_000.0
+
+    def _mock_capital(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "fake_token")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda access_token: self.TOTAL_CAPITAL)
+
+    def test_disabled_always_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": False, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        ok, reason = trading_engine.check_portfolio_risk_cap("NIFTY", "dynamic_sr_instant", 999999)
+        assert ok is True
+        assert reason is None
+
+    def test_non_bucket_symbol_and_source_always_ok(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        ok, reason = trading_engine.check_portfolio_risk_cap("SOMEOTHER", "some_other_source", 999999)
+        assert ok is True
+        assert reason is None
+
+    def test_index_bucket_blocks_when_cap_exceeded(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        # 6% of ₹10,00,000 = ₹60,000 -- सध्याच उघडा max-loss ₹55,000 + नवीन ₹10,000 = ₹65,000 (पलीकडे)
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", lambda **kw: 55000)
+        ok, reason = trading_engine.check_portfolio_risk_cap("BANKNIFTY", "dynamic_sr_instant", 10000)
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_EXCEEDED" in reason
+
+    def test_index_bucket_ok_within_cap(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", lambda **kw: 20000)
+        ok, reason = trading_engine.check_portfolio_risk_cap("SENSEX", "classic_sr_reversal", 10000)
+        assert ok is True
+        assert reason is None
+
+    def test_index_bucket_uses_bucket_scoped_call(self, monkeypatch):
+        """🎓 NIFTY साठीचा gate तपासताना get_open_live_max_loss_total() ला संपूर्ण
+        VIX_SPIKE_HALT_SYMBOLS bucket (NIFTY+BANKNIFTY+SENSEX एकत्र) च पास व्हायला हवा, फक्त NIFTY नाही."""
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        captured = {}
+
+        def _fake(**kwargs):
+            captured.update(kwargs)
+            return 0
+
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", _fake)
+        trading_engine.check_portfolio_risk_cap("NIFTY", "dynamic_sr_instant", 1000)
+        assert set(captured.get("symbols")) == {"NIFTY", "BANKNIFTY", "SENSEX"}
+
+    def test_mcx_bucket_blocks_when_cap_exceeded(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", lambda **kw: 58000)
+        ok, reason = trading_engine.check_portfolio_risk_cap("CRUDEOIL", "mcx_futures", 5000)
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_EXCEEDED" in reason
+        assert "MCX" in reason
+
+    def test_mcx_bucket_ok_within_cap(self, monkeypatch):
+        self._mock_capital(monkeypatch)
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", lambda **kw: 10000)
+        ok, reason = trading_engine.check_portfolio_risk_cap("CRUDEOIL", "mcx_futures", 5000)
+        assert ok is True
+        assert reason is None
+
+    def test_capital_unknown_blocks_fail_safe(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {
+            "enabled": True, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        })
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", lambda **kw: 0)
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: None)
+        ok, reason = trading_engine.check_portfolio_risk_cap("NIFTY", "dynamic_sr_instant", 1000)
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_CAPITAL_UNKNOWN" in reason
+
+
 class TestCheckVixSpikeHalt:
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (India VIX Spike Halt) — check_vix_spike_halt()
     फक्त check_vix_spike_halt.py cron ने आधीच साठवलेला निकाल वाचतं.
@@ -2012,6 +2110,93 @@ class TestOpenMultiLegTradeMcxKillSwitch:
         assert ok is False
         assert "MCX_KILL_SWITCH_DAILY_LOSS" in resp["reason"]
         assert not execute_calls
+
+
+class TestOpenMultiLegTradePortfolioRiskCap:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) —
+    open_multi_leg_trade() मधून check_portfolio_risk_cap() खरंच कॉल होतो, आणि तो (True) नाकारल्यास
+    order न पाठवताच (LIVE + PAPER दोन्ही) trade ब्लॉक होतो, हे सिद्ध करणाऱ्या चाचण्या."""
+
+    def _index_strategy_result(self):
+        return {
+            "strategy": "BULL_PUT_SPREAD", "max_loss": 50, "max_profit": 30, "net_credit": 30,
+            "legs": [
+                {"role": "short_leg", "strike": 24400, "instrument_key": "PE24400", "transaction_type": "SELL", "option_type": "PE", "expiry": "2026-08-28"},
+                {"role": "long_hedge", "strike": 24300, "instrument_key": "PE24300", "transaction_type": "BUY", "option_type": "PE", "expiry": "2026-08-28"},
+            ],
+        }
+
+    def _mcx_strategy_result(self):
+        return {
+            "strategy": "MCX_FUTURES", "max_loss": 500, "max_profit": 500, "net_credit": 0,
+            "legs": [
+                {"role": "futures_leg", "strike": 0, "instrument_key": "MCX_FUT_1", "transaction_type": "BUY", "option_type": None, "expiry": "2026-09-30"},
+            ],
+        }
+
+    def test_live_blocked_by_portfolio_risk_cap_skips_order(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._index_strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="dynamic_sr_instant",
+        )
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_EXCEEDED" in resp["reason"]
+        assert not execute_calls
+
+    def test_paper_also_blocked_by_portfolio_risk_cap(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Je gates live trade sathi applicable
+        aahe tech gate Paper trade sathi suddha applicable kra") — established पॅटर्नप्रमाणेच, हाही
+        नवीन गेट PAPER trades ला लागू."""
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._index_strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="PAPER",
+            source="dynamic_sr_instant",
+        )
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_EXCEEDED" in resp["reason"]
+        assert not execute_calls
+
+    def test_mcx_source_blocked_by_portfolio_risk_cap(self, temp_db, monkeypatch):
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        execute_calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "CRUDEOIL", self._mcx_strategy_result(), lots=1, lot_size=100,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="mcx_futures",
+        )
+        assert ok is False
+        assert "PORTFOLIO_RISK_CAP_EXCEEDED" in resp["reason"]
+        assert not execute_calls
+
+    def test_disabled_by_default_does_not_block_real_gate(self, temp_db, monkeypatch):
+        """🎓 वापरकर्त्याशी चर्चा करून ठरवलेला डीफॉल्ट — Portfolio-wide Open-Risk Cap डीफॉल्ट बंद
+        असल्याने, check_portfolio_risk_cap() ला मुद्दाम mock न करताही (खरं फंक्शन वापरून) trade
+        नेहमीप्रमाणेच पुढे जायला हवा."""
+        monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: dict(cloud_db.PORTFOLIO_RISK_CAP_DEFAULTS))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success", "data": [{"order_ids": ["LIVE-1"]}]}))
+
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "fake_token", "NIFTY", self._index_strategy_result(), lots=1, lot_size=75,
+            sl_pct_of_max_loss=50, target_pct_of_max_profit=100, product_type="D", trading_mode="LIVE",
+            source="dynamic_sr_instant",
+        )
+        assert ok is True
 
 
 class TestOpenMultiLegTradeManualPause:

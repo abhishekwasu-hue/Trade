@@ -1722,6 +1722,42 @@ class TestMcxKillSwitchSettings:
         )
 
 
+class TestPortfolioRiskCapSettings:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) —
+    get/save_portfolio_risk_cap_settings() हे आधीच पूर्णपणे टेस्ट केलेल्या get/save_strategy_settings()
+    चेच पातळ wrapper आहेत (strategy_name="__portfolio_risk_cap__", symbol="ALL" या स्थिर जोडीसह).
+    डीफॉल्ट enabled=False — वापरकर्ता स्वतः चालू करेपर्यंत गेट बंदच राहतो."""
+
+    def test_get_returns_defaults_when_nothing_saved(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        settings = cloud_db.get_portfolio_risk_cap_settings()
+        assert settings == {
+            "enabled": False, "max_portfolio_risk_pct_index": 6.0, "max_portfolio_risk_pct_mcx": 6.0,
+        }
+
+    def test_get_returns_saved_values(self, monkeypatch):
+        with patch.object(
+            cloud_db, "get_strategy_settings",
+            return_value={
+                "enabled": True, "max_portfolio_risk_pct_index": 10.0, "max_portfolio_risk_pct_mcx": 4.0,
+            },
+        ) as mock_get:
+            settings = cloud_db.get_portfolio_risk_cap_settings()
+        mock_get.assert_called_once_with(cloud_db.PORTFOLIO_RISK_CAP_STRATEGY_KEY, cloud_db.PORTFOLIO_RISK_CAP_SYMBOL_KEY)
+        assert settings == {
+            "enabled": True, "max_portfolio_risk_pct_index": 10.0, "max_portfolio_risk_pct_mcx": 4.0,
+        }
+
+    def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            ok = cloud_db.save_portfolio_risk_cap_settings(True, "8", "5")
+        assert ok is True
+        mock_save.assert_called_once_with(
+            cloud_db.PORTFOLIO_RISK_CAP_STRATEGY_KEY, cloud_db.PORTFOLIO_RISK_CAP_SYMBOL_KEY,
+            {"enabled": True, "max_portfolio_risk_pct_index": 8.0, "max_portfolio_risk_pct_mcx": 5.0},
+        )
+
+
 class TestTradingPauseSettings:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch पेक्षा वेगळा, मॅन्युअल trading stop button —
     PAPER trades लाही लागू व्हावा") — get/set_trading_pause() हे आधीच पूर्णपणे टेस्ट केलेल्या

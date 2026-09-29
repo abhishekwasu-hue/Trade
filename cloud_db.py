@@ -1010,6 +1010,44 @@ def save_mcx_kill_switch_settings(enabled, max_daily_loss_pct, max_open_position
     })
 
 
+# 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरचे Kill Switches
+# "आजचा realized P&L किती" पाहतात; हे त्याहून वेगळं — "सध्या उघड्या असलेल्या सर्व LIVE positions
+# चा एकत्रित max-loss (worst-case, अजून न झालेला तोटा) किती" यावर आधारित, नवीन trade उघडण्याआधीचा
+# स्वतंत्र गेट. दोन बादल्या (bucket): index-options (NIFTY+BANKNIFTY+SENSEX — trading_engine.
+# VIX_SPIKE_HALT_SYMBOLS सारखाच correlated-risk गट, कारण India VIX च्याच एका झटक्याने तिन्ही एकत्र
+# उलट दिशेने जाऊ शकतात) आणि MCX (सर्व commodities एकत्र, MCX Kill Switch सारखाच स्वतंत्र गट).
+# डीफॉल्ट **बंद** — जुनं वर्तन (कुठलाही portfolio-wide risk cap नाही) कायम राहतं, वापरकर्ता स्वतः
+# चालू करून cap% ठरवेपर्यंत.
+PORTFOLIO_RISK_CAP_STRATEGY_KEY = "__portfolio_risk_cap__"
+PORTFOLIO_RISK_CAP_SYMBOL_KEY = "ALL"
+PORTFOLIO_RISK_CAP_DEFAULTS = {
+    "enabled": False,
+    "max_portfolio_risk_pct_index": 6.0,
+    "max_portfolio_risk_pct_mcx": 6.0,
+}
+
+
+def get_portfolio_risk_cap_settings():
+    """Portfolio-wide Open-Risk Cap — enabled/max_portfolio_risk_pct_index/max_portfolio_risk_pct_mcx.
+    Supabase न मिळाल्यास (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट (enabled=False — गेट बंदच राहतो)."""
+    settings = get_strategy_settings(PORTFOLIO_RISK_CAP_STRATEGY_KEY, PORTFOLIO_RISK_CAP_SYMBOL_KEY)
+    return {
+        "enabled": bool(settings.get("enabled", PORTFOLIO_RISK_CAP_DEFAULTS["enabled"])),
+        "max_portfolio_risk_pct_index": settings.get(
+            "max_portfolio_risk_pct_index", PORTFOLIO_RISK_CAP_DEFAULTS["max_portfolio_risk_pct_index"]),
+        "max_portfolio_risk_pct_mcx": settings.get(
+            "max_portfolio_risk_pct_mcx", PORTFOLIO_RISK_CAP_DEFAULTS["max_portfolio_risk_pct_mcx"]),
+    }
+
+
+def save_portfolio_risk_cap_settings(enabled, max_portfolio_risk_pct_index, max_portfolio_risk_pct_mcx):
+    return save_strategy_settings(PORTFOLIO_RISK_CAP_STRATEGY_KEY, PORTFOLIO_RISK_CAP_SYMBOL_KEY, {
+        "enabled": bool(enabled),
+        "max_portfolio_risk_pct_index": float(max_portfolio_risk_pct_index),
+        "max_portfolio_risk_pct_mcx": float(max_portfolio_risk_pct_mcx),
+    })
+
+
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop
 # असा वेगळा button पाहिजे") — वरचा Kill Switch फक्त LIVE साठी, आपोआप (daily loss/trade-count
 # मर्यादेवरून) ट्रिप होतो — PAPER trades कधीच अडवत नाही. हे पूर्णपणे वेगळं, नवीन फीचर — वापरकर्ता

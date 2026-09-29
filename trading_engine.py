@@ -11,7 +11,7 @@ from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
     log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
     get_unverified_reconciled_trades_today_count, get_todays_mcx_live_pnl_and_count,
-    get_todays_live_peak_pnl, get_todays_mcx_live_peak_pnl,
+    get_todays_live_peak_pnl, get_todays_mcx_live_peak_pnl, get_open_live_max_loss_total,
 )
 from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
@@ -383,6 +383,56 @@ def check_mcx_kill_switch():
                     f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
                     f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX trades (LIVE + PAPER) थांबवले"
                 )
+    return True, None
+
+
+def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरच्या दोन्ही Kill
+    Switches ("आजचा *realized* P&L किती") पेक्षा पूर्णपणे वेगळा गेट — सध्या उघड्या असलेल्या सर्व LIVE
+    positions चा एकत्रित max-loss (worst-case, अजून प्रत्यक्ष तोटा न झालेला, फक्त संभाव्य) + ही नवीन
+    trade गृहीत धरून, दोन correlated-risk bucket पैकी संबंधित bucket ची मर्यादा ओलांडत नाही ना हे
+    तपासतो:
+    - Index-Options: NIFTY+BANKNIFTY+SENSEX एकत्र (VIX_SPIKE_HALT_SYMBOLS सारखाच गट — एकाच India VIX
+      झटक्याने तिन्ही एकत्र उलट दिशेने जाऊ शकतात, त्यामुळे correlated).
+    - MCX: सर्व commodities एकत्र (source=='mcx_futures', MCX Kill Switch सारखाच स्वतंत्र गट).
+    इतर कुठलाही symbol/source (वरच्या दोन्ही bucket मध्ये न बसणारा) या गेटमधून बाधित होत नाही.
+    डीफॉल्ट बंद (cloud_db.PORTFOLIO_RISK_CAP_DEFAULTS["enabled"]=False) — वापरकर्ता स्वतः चालू करून
+    cap% ठरवेपर्यंत जुनं वर्तन कायम. वरच्या दोन्ही Kill Switches प्रमाणेच नवीन LIVE **आणि** PAPER
+    दोन्ही trades ला लागू (established pattern — बघा check_kill_switch() मधली टिप्पणी).
+    रिटर्न: (ok: bool, reason: str|None)."""
+    settings = cloud_db.get_portfolio_risk_cap_settings()
+    if not settings.get("enabled", False):
+        return True, None
+
+    if symbol in VIX_SPIKE_HALT_SYMBOLS:
+        bucket_label = "Index-Options (NIFTY+BANKNIFTY+SENSEX एकत्र)"
+        cap_pct = settings.get("max_portfolio_risk_pct_index", 6.0)
+        existing_max_loss = get_open_live_max_loss_total(symbols=VIX_SPIKE_HALT_SYMBOLS)
+    elif source == "mcx_futures":
+        bucket_label = "MCX (सर्व commodities एकत्र)"
+        cap_pct = settings.get("max_portfolio_risk_pct_mcx", 6.0)
+        existing_max_loss = get_open_live_max_loss_total(source="mcx_futures")
+    else:
+        return True, None
+
+    upstox_token = cloud_db.get_effective_upstox_token(None)
+    total_capital = get_total_capital(upstox_token) if upstox_token else None
+    if not total_capital or total_capital <= 0:
+        return False, (
+            "PORTFOLIO_RISK_CAP_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं "
+            "नाही (token/नेटवर्क तपासा) — Portfolio-wide Open-Risk Cap मोजता येत नसल्याने नवीन trades "
+            "(LIVE + PAPER) थांबवले."
+        )
+
+    cap_amount = total_capital * cap_pct / 100
+    projected_total = existing_max_loss + (new_trade_max_loss_abs or 0)
+    if projected_total > cap_amount:
+        return False, (
+            f"PORTFOLIO_RISK_CAP_EXCEEDED — {bucket_label} bucket मध्ये सध्या उघड्या LIVE positions चा "
+            f"एकत्रित max-loss ₹{existing_max_loss:,.0f} + ही नवीन trade (₹{new_trade_max_loss_abs:,.0f}) "
+            f"= ₹{projected_total:,.0f}, जे मर्यादेपेक्षा ({cap_pct:.1f}% म्हणजे ₹{cap_amount:,.0f}, एकूण "
+            f"capital ₹{total_capital:,.0f}) जास्त आहे"
+        )
     return True, None
 
 
@@ -777,6 +827,18 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             if trading_mode == "LIVE":
                 _alert_kill_switch_blocked(symbol, source, mcx_kill_switch_reason)
             return False, {"status": "error", "reason": mcx_kill_switch_reason}
+
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरच्या दोन्ही Kill
+    # Switches प्रमाणेच LIVE आणि PAPER दोन्हीला लागू — बघा check_portfolio_risk_cap() मधली टिप्पणी.
+    # strategy_result["max_loss"] (per-share, धन magnitude) अजून fill-price ने adjust न झालेला
+    # chain-snapshot अंदाज आहे — पण order उघडण्याआधीच्याच गेटसाठी हाच पुरेसा (नंतरचा थोडासा फरक
+    # या ढोबळ portfolio-cap साठी अर्थपूर्ण नाही).
+    new_trade_max_loss_abs = abs(strategy_result.get("max_loss") or 0) * lots * lot_size
+    risk_cap_ok, risk_cap_reason = check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs)
+    if not risk_cap_ok:
+        if trading_mode == "LIVE":
+            _alert_kill_switch_blocked(symbol, source, risk_cap_reason)
+        return False, {"status": "error", "reason": risk_cap_reason}
 
     if trading_mode == "LIVE":
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Cross-Strategy Conflict Check) — फक्त सूचना, trade

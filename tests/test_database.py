@@ -270,6 +270,57 @@ class TestGetTodaysMcxLivePnlAndCount:
         assert open_positions == 0
 
 
+class TestGetOpenLiveMaxLossTotal:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — सध्या उघड्या
+    असलेल्या LIVE positions चा एकत्रित max-loss (₹, max_loss*lots*lot_size ची बेरीज), symbols
+    bucket किंवा source नुसार गाळून — trading_engine.check_portfolio_risk_cap() साठी."""
+
+    def _seed_open(self, tmpdb, trade_id, symbol, max_loss, lots=1, lot_size=100, mode="LIVE", source="dynamic_sr_instant"):
+        conn = sqlite3.connect(tmpdb)
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit,
+               max_profit, max_loss, sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode,
+               trading_style, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, today_str, symbol, "BULL_PUT_SPREAD", lots, lot_size, 0, None, max_loss, None, None,
+             f"{today_str} 10:00:00", "OPEN", json.dumps([]), mode, "INTRADAY", source),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_sums_across_given_symbols_bucket(self, temp_db):
+        self._seed_open(temp_db, "N1", "NIFTY", max_loss=50, lots=2, lot_size=75)  # 7500
+        self._seed_open(temp_db, "B1", "BANKNIFTY", max_loss=100, lots=1, lot_size=35)  # 3500
+        self._seed_open(temp_db, "M1", "CRUDEOIL", max_loss=500, lots=1, lot_size=100, source="mcx_futures")  # वगळलं जायला हवं
+        total = database.get_open_live_max_loss_total(symbols=("NIFTY", "BANKNIFTY", "SENSEX"))
+        assert total == 11000.0
+
+    def test_sums_by_source(self, temp_db):
+        self._seed_open(temp_db, "M1", "CRUDEOIL", max_loss=500, lots=1, lot_size=100, source="mcx_futures")  # 50000
+        self._seed_open(temp_db, "M2", "GOLD", max_loss=200, lots=1, lot_size=10, source="mcx_futures")  # 2000
+        self._seed_open(temp_db, "N1", "NIFTY", max_loss=50, lots=1, lot_size=75, source="dynamic_sr_instant")  # वगळलं जायला हवं
+        total = database.get_open_live_max_loss_total(source="mcx_futures")
+        assert total == 52000.0
+
+    def test_excludes_paper_trades(self, temp_db):
+        self._seed_open(temp_db, "N1", "NIFTY", max_loss=50, lots=1, lot_size=75, mode="PAPER")
+        total = database.get_open_live_max_loss_total(symbols=("NIFTY", "BANKNIFTY", "SENSEX"))
+        assert total == 0.0
+
+    def test_excludes_closed_trades(self, temp_db):
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        seed_closed_trade(temp_db, "N1", -1000.0, "SL", today_str, symbol="NIFTY", source="dynamic_sr_instant", mode="LIVE")
+        total = database.get_open_live_max_loss_total(symbols=("NIFTY", "BANKNIFTY", "SENSEX"))
+        assert total == 0.0
+
+    def test_no_symbols_and_no_source_returns_zero(self, temp_db):
+        self._seed_open(temp_db, "N1", "NIFTY", max_loss=50, lots=1, lot_size=75)
+        assert database.get_open_live_max_loss_total() == 0.0
+
+    def test_empty_when_no_trades(self, temp_db):
+        assert database.get_open_live_max_loss_total(symbols=("NIFTY", "BANKNIFTY", "SENSEX")) == 0.0
+
+
 class TestGetTodaysLivePeakPnl:
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock Kill Switch — "1 trade profit मध्ये
     exit जाला, दुसरा उघडा असेल, तर काही नफा नेहमी लॉक व्हावा") — आजच्या सर्व LIVE trades चा exit_time
