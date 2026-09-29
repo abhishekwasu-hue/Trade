@@ -184,7 +184,7 @@ class TestCheckBreakoutCandleClose:
     LEVEL = 23900.0
 
     def test_bullish_breakout_confirmed_when_close_above_level(self):
-        candles = [{"close": 23880.0}, {"close": 23920.0}]
+        candles = [{"close": 23880.0}, {"close": 23950.0}]
         assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is True
 
     def test_bullish_breakout_not_confirmed_when_close_still_below(self):
@@ -192,7 +192,7 @@ class TestCheckBreakoutCandleClose:
         assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
 
     def test_bearish_breakout_confirmed_when_close_below_level(self):
-        candles = [{"close": 23920.0}, {"close": 23880.0}]
+        candles = [{"close": 23920.0}, {"close": 23850.0}]
         assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles) is True
 
     def test_bearish_breakout_not_confirmed_when_close_still_above(self):
@@ -216,17 +216,18 @@ class TestCheckBreakoutCandleClose:
 
     def test_barely_beyond_level_within_default_buffer_not_confirmed(self):
         """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
-        0.010%") — नुसतं काठावर (level पासून buffer% पेक्षा कमी अंतरावर) close होणं पुरेसं नाही --
-        डीफॉल्ट buffer_pct=0.010% म्हणजे 23900 साठी ≈2.39 पॉइंट्स, त्यापेक्षा कमी अंतर confirm नाही."""
-        candles = [{"close": 23901.0}]  # फक्त 1.0 पॉइंट पलीकडे (buffer च्या आत)
+        0.10%") — नुसतं काठावर (level पासून buffer% पेक्षा कमी अंतरावर) close होणं पुरेसं नाही --
+        डीफॉल्ट buffer_pct=0.10% म्हणजे 23900 साठी ≈23.9 पॉइंट्स, त्यापेक्षा कमी अंतर confirm नाही
+        (0.010% वरून वाढवलेला, वापरकर्त्याशी चर्चा करून)."""
+        candles = [{"close": 23910.0}]  # फक्त 10.0 पॉइंट पलीकडे (buffer ≈23.9 च्या आत)
         assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is False
-        candles_bearish = [{"close": 23899.0}]
+        candles_bearish = [{"close": 23890.0}]
         assert dsr.check_breakout_candle_close(self.LEVEL, "BEARISH", candles_bearish) is False
 
     def test_beyond_default_buffer_confirmed(self):
-        """buffer_pct (डीफॉल्ट 0.010%, ≈2.39 पॉइंट्स 23900 साठी) पेक्षा जास्त अंतराने close झाला
+        """buffer_pct (डीफॉल्ट 0.10%, ≈23.9 पॉइंट्स 23900 साठी) पेक्षा जास्त अंतराने close झाला
         तर मात्र confirm व्हायला हवा."""
-        candles = [{"close": 23903.0}]  # 3.0 पॉइंट पलीकडे, buffer (≈2.39) पेक्षा जास्त
+        candles = [{"close": 23930.0}]  # 30.0 पॉइंट पलीकडे, buffer (≈23.9) पेक्षा जास्त
         assert dsr.check_breakout_candle_close(self.LEVEL, "BULLISH", candles) is True
 
     def test_custom_buffer_pct_used_not_hardcoded(self):
@@ -2639,6 +2640,151 @@ class TestBreakoutEntry:
             breakout_entries = [e for e in entries if e.get("direction") == "BEARISH" and "Breakout Entry" in (e.get("reason") or "")]
             assert len(breakout_entries) == 1
             assert "OI Signal: BEARISH" in breakout_entries[0]["reason"]
+
+
+class TestBreakoutEntryCatchup:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up) —
+    वापरकर्त्याने प्रत्यक्ष उदाहरणासह (28 सप्टें सकाळी 9:15-9:20 चा NIFTY candle, level 23038.1)
+    दाखवलेली स्थिती: 1-मिनिट touch (09:16/09:17) लवकर मिळाला, candle अजून बंदच झालेला नव्हता म्हणून
+    breakout तपासताच आला नाही -- आणि candle बंद (09:20) होईपर्यंत किंमत level पासून इतकी दूर
+    निघून गेली की नवीन 1-मिनिट touch-eventच मिळाला नाही -- खरा breakout कायमचा हुकला. आता,
+    1-मिनिट touch न सापडल्यास (फक्त 5M levels, entry_breakout_gate_enabled असेल तरच), शेवटच्या
+    दोन 5-मिनिट candles वरून स्वतंत्रपणे "level ओलांडला का" तपासलं जातं -- established
+    reversal-touch/max-hits मार्गाला अजिबात स्पर्श न करता (LEVEL/PRIOR_CANDLES/
+    _breakout_gate_settings() वरच्या TestBreakoutEntry सारखेच, इथे स्वतंत्रपणे — inherit केलं नाही,
+    जेणेकरून त्या class च्या चाचण्या इथे पुन्हा चालणार नाहीत)."""
+
+    LEVEL = 23900.0
+    PRIOR_CANDLES = [
+        23880.0, 23910.0, 23895.0, 23905.0, 23890.0, 23900.0,
+        23885.0, 23915.0, 23898.0, 23902.0, 23890.0, 23900.0,
+    ]
+
+    def _breakout_gate_settings(self):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["entry_breakout_gate_enabled"] = True
+        return settings
+
+    def _no_1min_touch_candles(self, today_ist=None):
+        """शेवटचे दोन 1-मिनिट candles मुद्दामच LEVEL (तंतोतंत, ±0.01% touch-buffer, ~2.4 पॉइंट्स)
+        पासून थोडे दूर, तरीही hysteresis च्या रुंद बँड (±0.10%, ~24 पॉइंट्स) च्या आतच ठेवले आहेत --
+        established check_level_crossed() नुसार यांच्यावर hit=False (touch किंवा gap-through
+        नाही), आणि हे दोन्ही candles hysteresis साठी अनिश्चित (ambiguous) असल्याने ती आधीच्या
+        (prepend केलेल्या declining trend च्या शेवटच्या, स्पष्टपणे LEVEL च्या वर असलेल्या) close
+        वरून दिशा ठरवते -- म्हणजे role अजूनही SUPPORT/BULLISH च राहतो (existing TestBreakoutEntry
+        च्याच LEVEL=23900 SUPPORT पॅटर्नशी सुसंगत — support level "तुटून" resistance मध्ये आधीच
+        role-flip व्हायच्या आतचीच स्थिती, जी वापरकर्त्याने दाखवलेल्या प्रत्यक्ष उदाहरणाशी जुळते)."""
+        touch_rows = [
+            {"open": 23895, "high": 23896, "low": 23880, "close": 23885},
+            {"open": 23885, "high": 23890, "low": 23878, "close": 23882},
+        ]
+        return _candles_with_rsi(touch_rows, declining=True, today_ist=today_ist or datetime.datetime(2026, 9, 11, 10, 0, 0))
+
+    def _fetch_candles_side_effect_catchup(self, prior_5m_closes, final_5m_close):
+        def _fake(token, symbol, current_spot=0, interval="1minute", lookback_days=1):
+            if interval == "5minute":
+                return _breakout_5m_candles(prior_5m_closes, final_5m_close, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+            return self._no_1min_touch_candles()
+        return _fake
+
+    def test_no_1min_touch_confirms_no_hit(self):
+        """🎓 sanity check -- वरचा _no_1min_touch_candles() fixture खरंच 1-मिनिट touch देत नाही,
+        हे स्वतंत्रपणे सिद्ध करण्यासाठी (breakout catch-up बंद असताना)."""
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._no_1min_touch_candles()) as mock_fetch, \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert all(c.kwargs.get("interval", "1minute") != "5minute" for c in mock_fetch.call_args_list)
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            level_entries = [e for e in entries if e["level_price"] == self.LEVEL]
+            assert level_entries and all(e["hit_type"] == "NO_HIT" for e in level_entries)
+
+    def test_catchup_fires_breakout_trade_when_5m_candle_crossed_and_closed_beyond_buffer(self):
+        """मुख्य केस -- 1-मिनिट touch नाही, पण शेवटचा 5-मिनिट candle LEVEL ओलांडून buffer% पलीकडे
+        निर्णायकपणे close झालेला आहे -- Breakout Entry trade घेतला जायला हवा."""
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect_catchup(self.PRIOR_CANDLES, 23640.0)) as mock_fetch, \
+             patch.object(dsr, "check_instant_rsi_filter") as mock_rsi_gate, \
+             patch.object(dsr, "check_pcr_gate") as mock_pcr_gate, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23640.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "TCU1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_trade.called
+            assert not mock_rsi_gate.called
+            assert not mock_pcr_gate.called
+            # मूळ दिशा (support, 23900) BULLISH होती -- breakout confirm झाल्याने BEARISH
+            assert mock_select.call_args.args[1] == "BEARISH"
+            assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
+            # 🎓 5-मिनिट candles आता प्रति-symbol एकदाच आणले जायला हवेत (दोन्ही _fake_zones()
+            # levels साठी मिळून), प्रत्येक level साठी वेगळे नाही (कार्यक्षमता सुधारणा).
+            five_min_calls = [c for c in mock_fetch.call_args_list if c.kwargs.get("interval") == "5minute"]
+            assert len(five_min_calls) == 1
+
+    def test_catchup_does_not_fire_when_5m_candle_close_within_buffer(self):
+        """5-मिनिट candle level ओलांडून गेला, पण buffer% इतका निर्णायक close झाला नाही -- trade
+        घेतला जायला नको, आणि साध्या reversal trade मध्येही (max-hits मार्गे) पडता कामा नये."""
+        settings = self._breakout_gate_settings()
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect_catchup(self.PRIOR_CANDLES, 23899.0)), \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            entries = [c.args[0] for c in mock_log.call_args_list]
+            level_entries = [e for e in entries if e["level_price"] == self.LEVEL]
+            assert level_entries
+            assert level_entries[0]["trade_status"] == "SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET"
+            statuses = [e["trade_status"] for e in level_entries]
+            assert "SKIPPED_MAX_2_HITS_REACHED" not in statuses
+
+    def test_catchup_disabled_when_breakout_gate_off(self):
+        """entry_breakout_gate_enabled=False (डीफॉल्ट) असेल तर catch-up कधीच चालायला नको -- 1-मिनिट
+        touch नसेल तर established NO_HIT वर्तनच कायम, 5-मिनिट candles साठी fetch_candles अजिबात
+        call व्हायला नको."""
+        with patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", return_value=self._no_1min_touch_candles()) as mock_fetch, \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            assert all(c.kwargs.get("interval", "1minute") != "5minute" for c in mock_fetch.call_args_list)
+
+    def test_catchup_disabled_for_1m_only_levels(self):
+        """timeframe_choice="1M" असेल (zone_type मध्ये _5M ऐवजी _1M) तर catch-up कधीच चालायला नको
+        -- established "Breakout Entry फक्त 5M levels साठीच" निर्बंध इथेही लागू."""
+        settings = self._breakout_gate_settings()
+        settings["timeframe_choice"] = "1M"
+        zones_1m = pd.DataFrame([
+            {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_1M", "zone_low": self.LEVEL, "zone_high": self.LEVEL,
+             "strength": 3.0, "formed_date": "2026-09-01", "status": "ACTIVE"},
+        ])
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones_1m), \
+             patch.object(dsr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_candles_side_effect_catchup(self.PRIOR_CANDLES, 23640.0)) as mock_fetch, \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            assert not mock_trade.called
+            # entry_breakout_gate_enabled=True असला तरी timeframe_choice="1M" असल्याने
+            # todays_5m_candles_all fetch सुद्धा होता कामा नये (active_timeframes मध्ये "5M" नाहीच).
+            assert all(c.kwargs.get("interval", "1minute") != "5minute" for c in mock_fetch.call_args_list)
 
 
 class TestGetBreakoutVolumeRatio:

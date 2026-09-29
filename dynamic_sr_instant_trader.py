@@ -36,7 +36,7 @@ continuation साठी उलटा/चुकीचा संकेत ठर
 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry) — `entry_breakout_gate_enabled` (डीफॉल्ट
 बंद) — simple, स्वतंत्र breakout-based trade, कुठल्याही आजच्या hit-count वर अवलंबून नाही. अट: एक
 5-मिनिट candle त्या level पासून किमान `breakout_close_buffer_pct`% (Dashboard-configurable, डीफॉल्ट
-0.010%) तरी पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`) — हीच
+0.10%) तरी पलीकडे निर्णायकपणे close झाला (नुसता touch नाही, `check_breakout_candle_close`) — हीच
 एकमेव अट. अट पूर्ण झाली तरच breakout-दिशेने trade — RSI/PCR Gate (directional trade असल्याने, IV-flip
 सारखंच) आणि 30-मिनिट Cooldown (मुद्दामच लगेच यायला हवं म्हणून) दोन्ही वगळलेले.
 
@@ -199,7 +199,7 @@ def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYST
     return "BULLISH" if closes[-1] >= level else "BEARISH"
 
 
-def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pct=0.010):
+def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pct=0.10):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (Breakout Entry — "Breakout buildup and 5 minute
     candle closed happen then take entry in the same direction") — नुकताच पूर्ण झालेला (शेवटचा,
     आजच्याच दिवसाचा) 5-मिनिट candle त्या level च्या पलीकडे निर्णायकपणे **close** झाला आहे का (नुसता
@@ -207,10 +207,10 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
     BEARISH = level च्या खाली close). candles_5m: [{"close":..}, ...] (जुनं ते नवीन क्रमाने, फक्त
     आजचेच).
 
-    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond 0.010%") —
+    🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond 0.10%") —
     फक्त level च्या अगदी काठावर (0.001 पॉइंटनेही) close होणं "निर्णायक" मानलं जाऊ नये (noise/whipsaw
-    असू शकतं) — आता close level पासून किमान `buffer_pct`% (Dashboard-configurable, डीफॉल्ट 0.010%)
-    तरी पलीकडे असावा लागतो. रिटर्न: bool"""
+    असू शकतं) — आता close level पासून किमान `buffer_pct`% (Dashboard-configurable, डीफॉल्ट 0.10%,
+    वापरकर्त्याशी चर्चा करून 0.010% वरून वाढवलेला) तरी पलीकडे असावा लागतो. रिटर्न: bool"""
     if not candles_5m:
         return False
     last_close = candles_5m[-1]["close"]
@@ -314,7 +314,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 2") — established "आजच्या या zone साठी कमाल 2 वेळा" ही मर्यादा आधी hardcoded (2) होती.
     max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
-    breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.010)
+    breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.10)
     breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
     breakout_volume_lookback_candles = settings.get("breakout_volume_lookback_candles", 10)
     breakout_volume_multiplier = settings.get("breakout_volume_multiplier", 1.5)
@@ -359,9 +359,38 @@ def process_symbol(access_token, symbol, lot_size=65):
     # आजचे सर्व 1-मिनिट candles (low/high सकट) — count_consecutive_touch_minutes() ला हवेत.
     todays_candle_records = todays_candles_df.to_dict("records")
 
+    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up, खाली
+    # पहा) — entry_breakout_gate_enabled असेल तर आजचे 5-मिनिट candles इथेच एकदाच (प्रति-symbol,
+    # प्रति-cycle) आणून ठेवले — प्रत्येक 5M level साठी खालच्या breakout तपासणीत पुन्हा वापरले जातात
+    # (आधी प्रत्येक level साठी हा API कॉल स्वतंत्रपणे व्हायचा — एकच किंमत असूनही).
+    todays_5m_candles_all = []
+    if entry_breakout_gate_enabled and "5M" in active_timeframes:
+        candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
+        if candles_5m_df is not None and not candles_5m_df.empty:
+            candles_5m_df = candles_5m_df.copy()
+            candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
+            todays_5m_candles_all = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+
     outcomes = []
     for row, timeframe_suffix in pooled_levels:
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up,
+        # फक्त Breakout साठीच, established reversal-touch मार्गाला अजिबात स्पर्श न करता) — साधारण
+        # परिस्थितीत 1-मिनिट touch आणि 5-मिनिट candle-close जवळजवळ एकाच वेळी येतात. पण अतिशय
+        # वेगवान, एकाच झटक्यातल्या हालचालीत (उदा. दिवसाच्या पहिल्याच 5-मिनिट candle मध्ये किंमत
+        # एकाच दिशेने खूप दूर निघून जाणे — वापरकर्त्याने प्रत्यक्ष उदाहरणासह दाखवलेली स्थिती) —
+        # 1-मिनिट touch लवकर मिळतो (candle अजून बंदच झालेला नसतो, breakout तपासताच येत नाही), आणि
+        # candle बंद होईपर्यंत किंमत आधीच level पासून खूप दूर निघून गेलेली असते — नवीन touch-eventच
+        # मिळत नाही, आणि पूर्ण झालेला breakout कायमचा हुकतो. हा catch-up — फक्त timeframe_suffix==
+        # "5M" आणि entry_breakout_gate_enabled असेल, आणि साधा 1-मिनिट touch सापडलाच नसेल, तरच —
+        # शेवटच्या दोन 5-मिनिट candles मध्येच स्वतंत्रपणे तपासतो (त्याच established
+        # check_level_crossed() ने) की level ओलांडला गेला का. सापडला, तरच खाली Breakout Entry ची
+        # पूर्ण अट (candle-close buffer%/Volume/OI) तपासली जाते — ती अपुरी पडली, तर हा "hit" साध्या
+        # reversal trade मध्ये कधीच वापरला जात नाही (खाली स्पष्ट guard, breakout_catchup_hit).
+        breakout_catchup_hit = False
+        if not hit and entry_breakout_gate_enabled and timeframe_suffix == "5M" and todays_5m_candles_all:
+            hit, hit_type, approx_price = check_level_crossed(row["zone_low"], todays_5m_candles_all[-2:])
+            breakout_catchup_hit = hit
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिशा आता row["zone_type"] च्या साठवलेल्या
         # (मागच्या रात्रीच्या/मागच्या merge-cron cycle च्या) SUPPORT/RESISTANCE label वरून नाही, तर
@@ -460,12 +489,9 @@ def process_symbol(access_token, symbol, lot_size=65):
         breakout_actual_close_pct = breakout_actual_volume_ratio = breakout_oi_signal_used = None
         if entry_breakout_gate_enabled and timeframe_suffix == "5M":
             breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
-            candles_5m_df = fetch_candles(access_token, symbol, current_spot=0, interval="5minute", lookback_days=1)
-            todays_5m_candles = []
-            if candles_5m_df is not None and not candles_5m_df.empty:
-                candles_5m_df = candles_5m_df.copy()
-                candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
-                todays_5m_candles = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+            # 🎓 आता वरती (loop च्या आधी) प्रति-symbol एकदाच आणलेले candles पुन्हा वापरले जातात —
+            # इथे स्वतंत्र API कॉल नाही (पहिल्यांदा वरचीच टिप्पणी बघा, breakout_catchup_hit).
+            todays_5m_candles = todays_5m_candles_all
             candle_close_confirmed = check_breakout_candle_close(row["zone_low"], breakout_direction, todays_5m_candles, breakout_close_buffer_pct)
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा — प्रत्यक्ष मोजलेलं buffer% (gate चं bool निकाल नाही,
             # Signal Log मध्ये नेमकं मूल्य दाखवण्यासाठी). level च्या ज्या बाजूला breakout अपेक्षित आहे
@@ -499,6 +525,21 @@ def process_symbol(access_token, symbol, lot_size=65):
         if breakout_oi_signal_used is not None:
             breakout_detail_parts.append(f"OI Signal: {breakout_oi_signal_used}")
         breakout_detail_str = f" [{', '.join(breakout_detail_parts)}]" if breakout_detail_parts else ""
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry catch-up — बघा वरची
+        # breakout_catchup_hit टिप्पणी) — हा "hit" खरा 1-मिनिट किंमत-स्पर्श नव्हता, फक्त breakout
+        # तपासणीपुरता (5-मिनिट candle वरून) होता. Breakout ची पूर्ण अट (candle-close buffer%/
+        # Volume/OI) शेवटी पूर्ण झाली नाही, तर हा "hit" कुठल्याही परिस्थितीत साध्या reversal
+        # trade मध्ये (max-hits/RSI/PCR मार्गाने) पुढे जाऊ द्यायचा नाही — किंमत आधीच level पासून
+        # दूर निघून गेलेली असू शकते, तिथे नुसता reversal-touch गृहीत धरणं चुकीचं ठरेल.
+        if breakout_catchup_hit and not is_breakout_trade:
+            log_entry["trade_status"] = "SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET"
+            log_entry["reason"] = (
+                "5-मिनिट candle मध्ये level ओलांडलेलं आढळलं (नवीन 1-मिनिट touch न मिळताही, "
+                f"catch-up तपासणी){breakout_detail_str}, पण Breakout Entry च्या पूर्ण अटी पूर्ण "
+                "झाल्या नाहीत — हा touch खरा किंमत-स्पर्श नसल्याने साधा reversal trade सुद्धा घेतला नाही"
+            )
+            cloud_db.save_signal_log(log_entry)
+            continue
         if hit_count_so_far >= max_hits_per_zone and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role — support/resistance) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली"
