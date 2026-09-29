@@ -185,6 +185,14 @@ st.markdown(
     /* Caption - छोटा, फिकट, जागा कमी घेणारा (जेणेकरून मुख्य डेटावर लक्ष केंद्रित राहील) */
     .stCaption, [data-testid="stCaptionContainer"] { font-size: 13px !important; color: #7a7f8a !important; line-height: 1.4 !important; }
 
+    /* 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Use white colour for information, वाचताना त्रास होत आहे")
+    — st.info/success/warning/error (चारही, Streamlit मध्ये सर्व एकाच [data-testid="stAlert"]
+    कंटेनरमधून रेंडर होतात) आधी त्यांच्याच डीफॉल्ट (light-theme साठी बनवलेल्या) गडद रंगातच
+    दिसायचे — या dark background (.stApp, वर) वर वाचायला त्रासदायक. आता text/icon (दोन्ही, `*`
+    सकट — icon typically `currentColor` वापरतो) धवल केले — background प्रत्येक प्रकारासाठी
+    (निळा/हिरवा/पिवळा/लाल) जसाच्या तसाच ठेवला आहे. */
+    [data-testid="stAlert"], [data-testid="stAlert"] * { color: #ffffff !important; }
+
     /* 🎓 वापरकर्त्याने मागितलेली सुधारणा ("sidebar catchy आणि attractive बनवा, गर्दी कमी करा") —
     मुख्य पानापेक्षा किंचित वेगळी (थोडी गडद) पार्श्वभूमी, उजवीकडे रंगीत सीमारेषा — sidebar एक
     वेगळा, दृष्टीस पडणारा "पॅनल" वाटावा म्हणून. Labels थोडे मोठे, अधिक वाचनीय. Expanders मधली
