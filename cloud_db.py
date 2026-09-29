@@ -307,10 +307,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # काढलेले).
         "entry_breakout_gate_enabled": False,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute candle close Breakout beyond
-        # 0.010%") — breakout-confirm करणारा 5-मिनिट candle level पासून किमान इतक्या% तरी पलीकडे
+        # 0.10%") — breakout-confirm करणारा 5-मिनिट candle level पासून किमान इतक्या% तरी पलीकडे
         # निर्णायकपणे close व्हायला हवा (नुसता काठावरचा close पुरेसा नाही) — Dashboard वरून
-        # बदलण्याजोगं (hardcoded नाही).
-        "breakout_close_buffer_pct": 0.010,
+        # बदलण्याजोगं (hardcoded नाही). 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — डीफॉल्ट आधी
+        # 0.010% (≈2.4 पॉइंट्स, NIFTY साठी) होता, आता 0.10% (≈24 पॉइंट्स) — जास्त निर्णायक/खात्रीशीर
+        # breakout साठी.
+        "breakout_close_buffer_pct": 0.10,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
         # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — breakout-candle चा
         # volume त्याआधीच्या breakout_volume_lookback_candles candles च्या सरासरीपेक्षा किमान
