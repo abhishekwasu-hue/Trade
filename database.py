@@ -453,6 +453,39 @@ def get_todays_mcx_live_pnl_and_count():
     return total_pnl, open_positions
 
 
+def get_open_live_max_loss_total(symbols=None, source=None):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — सध्या उघड्या
+    असलेल्या **LIVE** positions चा एकत्रित max-loss (₹, max_loss*lots*lot_size ची बेरीज) — एकतर
+    दिलेल्या symbols च्या bucket साठी (उदा. NIFTY+BANKNIFTY+SENSEX) किंवा दिलेल्या source साठी
+    (उदा. 'mcx_futures') — trading_engine.check_portfolio_risk_cap() साठी. max_loss column आधीच
+    धन (positive magnitude) साठवलेला असतो (बघा database.py च्या वरच्या "Max Loss (Rs)" रूपांतरणातली
+    टिप्पणी), त्यामुळे इथे ABS() ची गरज नाही — तरीही जुनी/चुकीची (ऋण) नोंद असेल तरी worst-case कमी
+    लेखली जाऊ नये म्हणून ABS() जोडलेलं आहे. symbols आणि source दोन्ही None असतील (चुकीचा वापर) तर
+    0.0 (काहीही अडवू नये, fail-open — हे फक्त bucket-scoping साठीचं फंक्शन आहे, स्वतंत्र सुरक्षा-गेट
+    नाही)."""
+    if not symbols and not source:
+        return 0.0
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    where_clauses = ["status='OPEN'", "COALESCE(mode,'LIVE')='LIVE'"]
+    params = []
+    if symbols:
+        placeholders = ",".join("?" * len(symbols))
+        where_clauses.append(f"symbol IN ({placeholders})")
+        params.extend(symbols)
+    if source:
+        where_clauses.append("source=?")
+        params.append(source)
+    query = (
+        "SELECT COALESCE(SUM(ABS(max_loss) * lots * lot_size), 0) FROM live_trades WHERE "
+        + " AND ".join(where_clauses)
+    )
+    cur.execute(query, tuple(params))
+    total = cur.fetchone()[0]
+    conn.close()
+    return float(total or 0.0)
+
+
 def _todays_live_running_peak_pnl(extra_where="", extra_params=()):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock Kill Switch — "1 trade profit मध्ये
     exit जाला, दुसरा उघडा असेल, तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") —
