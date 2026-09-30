@@ -309,3 +309,109 @@ class TestEmptyAndMissingColumns:
         assert summary["breakdown"]["brokerage"] == pytest.approx(charges.FLAT_CHARGE_PER_ORDER)
         assert summary["breakdown"]["stt"] == 0.0
         assert summary["breakdown"]["exchange_txn"] == 0.0
+
+
+class TestCompareWithUpstox:
+    """🎓 "Upstox चे खरे brokerage calculator" — charges.compare_with_upstox(): आपले दर विरुद्ध Upstox Brokerage API."""
+
+    @staticmethod
+    def _orders():
+        import pandas as pd
+        return pd.DataFrame([
+            {"order_id": "O1", "placed_at": "2026-09-10 10:00:00", "symbol": "CRUDEOIL", "instrument_key": "MCX_FO|1",
+             "quantity": 100, "fill_price": 6000.0, "price": 0.0, "transaction_type": "BUY", "account_id": None},
+            {"order_id": "O2", "placed_at": "2026-09-10 14:00:00", "symbol": "CRUDEOIL", "instrument_key": "MCX_FO|1",
+             "quantity": 100, "fill_price": 6000.0, "price": 0.0, "transaction_type": "SELL", "account_id": None},
+        ])
+
+    def test_identical_rates_give_zero_diff(self):
+        import charges
+        import pandas as pd
+
+        def fake_upstox(key, qty, price, side, product):
+            local = charges._accurate_row_charges(
+                pd.Series({"quantity": qty, "fill_price": price, "symbol": "CRUDEOIL", "transaction_type": side}), "upstox")
+            return {**{k: local[k] for k in ("brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst")},
+                    "total": local["charge"], "other": 0.0}
+
+        rows, summary = charges.compare_with_upstox(self._orders(), fake_upstox)
+        assert summary["checked"] == 2 and summary["compared"] == 2
+        assert summary["avg_abs_diff"] == 0.0 and summary["max_abs_diff"] == 0.0
+        assert rows[0]["Order ID"] == "O2"  # सर्वात अलीकडचा आधी
+
+    def test_difference_reported_and_other_charges_shown(self):
+        import charges
+        rows, summary = charges.compare_with_upstox(
+            self._orders().head(1),
+            lambda k, q, p, s, prod: {"total": 60.0, "brokerage": 20.0, "stt": 0.0, "exchange_txn": 12.6,
+                                      "sebi_fee": 0.6, "stamp_duty": 12.0, "gst": 5.98, "other": 8.82},
+        )
+        assert rows[0]["Local Total (Rs)"] == 51.18 and rows[0]["Upstox Total (Rs)"] == 60.0
+        assert rows[0]["Diff (Rs)"] == -8.82 and rows[0]["Upstox other (clearing/IPFT)"] == 8.82
+        assert summary["avg_abs_diff"] == 8.82
+
+    def test_api_failure_leaves_upstox_columns_empty(self):
+        import charges
+        rows, summary = charges.compare_with_upstox(self._orders(), lambda *a: None)
+        assert all(r["Upstox Total (Rs)"] is None and r["Diff (Rs)"] is None for r in rows)
+        assert summary["checked"] == 2 and summary["compared"] == 0 and summary["avg_abs_diff"] is None
+
+    def test_orders_without_instrument_key_or_price_skipped(self):
+        import charges
+        df = self._orders()
+        df.loc[0, "instrument_key"] = None
+        df.loc[1, "fill_price"] = 0.0
+        df.loc[1, "price"] = 0.0
+        rows, summary = charges.compare_with_upstox(df, lambda *a: None)
+        assert rows == [] and summary["checked"] == 0
+
+    def test_max_orders_limits_calls(self):
+        import charges
+        calls = []
+        charges.compare_with_upstox(self._orders(), lambda *a: calls.append(1), max_orders=1)
+        assert len(calls) == 1
+
+    def test_empty_orders(self):
+        import charges
+        rows, summary = charges.compare_with_upstox(None, lambda *a: None)
+        assert rows == [] and summary["checked"] == 0
+
+
+class TestFetchBrokerageCharges:
+    """upstox_api.fetch_brokerage_charges() — प्रतिसाद-parsing आणि सुरक्षित अपयश (None, अंदाज कधीच नाही)."""
+
+    @staticmethod
+    def _resp(status=200, body=None):
+        class R:
+            status_code = status
+            def json(self_inner):
+                return body
+        return R()
+
+    def test_parses_documented_shape(self, monkeypatch):
+        import upstox_api
+        body = {"status": "success", "data": {"charges": {
+            "total": 60.0, "brokerage": 20.0,
+            "taxes": {"gst": 5.98, "stt": 0.0, "stamp_duty": 12.0},
+            "other_taxes": {"sebi_turnover": 0.6, "transaction": 12.6, "clearing": 0.0, "ipft": 8.82},
+        }}}
+        monkeypatch.setattr(upstox_api, "_get_with_retry", lambda url, **kw: self._resp(200, body))
+        r = upstox_api.fetch_brokerage_charges("tok", "MCX_FO|1", 100, 6000.0, "BUY", "D")
+        assert r["total"] == 60.0 and r["brokerage"] == 20.0 and r["exchange_txn"] == 12.6 and r["stamp_duty"] == 12.0
+        assert r["other"] == 8.82  # total − ज्ञात घटक (clearing/IPFT)
+
+    def test_http_error_returns_none(self, monkeypatch):
+        import upstox_api
+        monkeypatch.setattr(upstox_api, "_get_with_retry", lambda url, **kw: self._resp(401, {}))
+        assert upstox_api.fetch_brokerage_charges("tok", "K", 1, 1.0, "BUY") is None
+
+    def test_unexpected_shape_returns_none(self, monkeypatch):
+        import upstox_api
+        monkeypatch.setattr(upstox_api, "_get_with_retry", lambda url, **kw: self._resp(200, {"data": {"charges": {}}}))
+        assert upstox_api.fetch_brokerage_charges("tok", "K", 1, 1.0, "BUY") is None
+
+    def test_missing_inputs_return_none_without_calling_api(self, monkeypatch):
+        import upstox_api
+        monkeypatch.setattr(upstox_api, "_get_with_retry", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
+        assert upstox_api.fetch_brokerage_charges("", "K", 1, 1.0, "BUY") is None
+        assert upstox_api.fetch_brokerage_charges("tok", "K", 0, 1.0, "BUY") is None

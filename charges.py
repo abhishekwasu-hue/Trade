@@ -395,3 +395,52 @@ def compute_hypothetical_charges_by_broker(orders_df, start_date, end_date):
     result["stocko"] = {"orders": order_count, "charge": round(stocko_charge, 2)}
 
     return result
+
+
+_COMPARE_COMPONENTS = ["brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst"]
+
+
+def compare_with_upstox(orders_df, fetch_fn, max_orders=10, product="D"):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox चे खरे brokerage calculator") — निवडलेल्या कालावधीतल्या
+    (सर्वात अलीकडच्या max_orders) orders साठी, आपल्या स्वतःच्या दरांनी (_accurate_row_charges, "upstox")
+    मोजलेले charges विरुद्ध Upstox च्या अधिकृत Brokerage API चे (fetch_fn = upstox_api.fetch_brokerage_charges
+    सारखं callable) — फरक दाखवण्यासाठी. दर बदलले (Budget/exchange परिपत्रक) तर इथे लगेच दिसेल.
+
+    orders_df — get_orders_with_account() चे स्तंभ (instrument_key सकट). fetch_fn(instrument_key, quantity,
+    price, transaction_type, product) -> dict | None. रिटर्न: (rows: list[dict], summary: dict). Upstox कडून
+    आकडा न आलेल्या orders साठी 'Upstox' रकाने None राहतात, त्या सरासरीत धरल्या जात नाहीत."""
+    rows = []
+    if orders_df is None or orders_df.empty:
+        return rows, {"checked": 0, "compared": 0, "avg_abs_diff": None, "max_abs_diff": None}
+    df = orders_df.sort_values("placed_at", ascending=False).head(max_orders)
+    for _, row in df.iterrows():
+        details = _row_turnover_details(row)
+        key = row.get("instrument_key")
+        if details is None or not key or pd.isna(key):
+            continue
+        symbol, side, turnover = details
+        local = _accurate_row_charges(row, "upstox")
+        if local is None:
+            continue
+        price = row.get("fill_price")
+        if price is None or pd.isna(price) or price == 0:
+            price = row.get("price")
+        remote = fetch_fn(key, row.get("quantity"), price, side, product)
+        rec = {
+            "Order ID": row.get("order_id"), "Symbol": symbol, "Side": side, "Qty": row.get("quantity"),
+            "Price": float(price), "Local Total (Rs)": round(local["charge"], 2),
+            "Upstox Total (Rs)": round(remote["total"], 2) if remote else None,
+            "Diff (Rs)": round(local["charge"] - remote["total"], 2) if remote else None,
+        }
+        for c in _COMPARE_COMPONENTS:
+            rec[f"Local {c}"] = round(local[c], 2)
+            rec[f"Upstox {c}"] = round(remote[c], 2) if remote else None
+        rec["Upstox other (clearing/IPFT)"] = round(remote["other"], 2) if remote else None
+        rows.append(rec)
+    diffs = [abs(r["Diff (Rs)"]) for r in rows if r["Diff (Rs)"] is not None]
+    summary = {
+        "checked": len(rows), "compared": len(diffs),
+        "avg_abs_diff": round(sum(diffs) / len(diffs), 2) if diffs else None,
+        "max_abs_diff": round(max(diffs), 2) if diffs else None,
+    }
+    return rows, summary

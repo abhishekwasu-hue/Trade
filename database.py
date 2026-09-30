@@ -1649,7 +1649,7 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
     symbol_clause = symbol_clause.replace("symbol", "o.symbol")
-    query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.symbol, o.quantity, o.fill_price, o.price,
+    query = f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.symbol, o.instrument_key, o.quantity, o.fill_price, o.price,
                       o.transaction_type, lt.account_id
                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
                WHERE {symbol_clause} AND date(o.placed_at) >= ? AND date(o.placed_at) <= ?
