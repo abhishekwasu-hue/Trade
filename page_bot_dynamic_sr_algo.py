@@ -751,6 +751,24 @@ def render():
                     min_value=1, max_value=30, step=1, disabled=not (entry_min_hold_gate_enabled or min_hold_shadow_enabled),
                 )
 
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
+            # ट्रेडिंग थांबवावे — आपला उद्देश प्रॉफिट कमावणे आहे, ट्रेड करणे नव्हे") — डीफॉल्ट बंद.
+            with st.expander("🎯 Target नंतर आजचे नवीन trades थांबवा", expanded=False):
+                stop_after_target_enabled = st.checkbox(
+                    "Target लागल्यावर आजचे पुढचे नवीन trades थांबवा (डीफॉल्ट बंद)",
+                    value=bool(settings.get("stop_after_target_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "stop_after_target_enabled"),
+                )
+                st.caption(
+                    "आजच्या दिवशी या bot चा (सर्व symbols मिळून) कुठलाही खरा trade — Credit Spread किंवा Naked — "
+                    "शुद्ध **Target** ने बंद झाला की उरलेल्या दिवसासाठी नवीन entries थांबतात (Breakout/Directional सकट). "
+                    "PAPER आणि LIVE प्रत्येक mode स्वतंत्र — PAPER चा Target LIVE थांबवत नाही. आधीच उघडे trades "
+                    "चालूच राहतात; Trailing SL / Premium Target / Next-Level Exit यांच्यामुळे हा नियम ट्रिगर होत नाही; "
+                    "Shadow trades ट्रिगर करत नाहीत. दुसऱ्या दिवशी आपोआप पुन्हा सुरू. थांबलेले signals Signal Log मध्ये "
+                    "SKIPPED_TARGET_ALREADY_HIT_TODAY म्हणून दिसतात. ही सेटिंग प्रत्येक symbol साठी स्वतंत्र आहे — "
+                    "ज्या symbols साठी चालू कराल त्यांच्यावरच नियम लागू होतो (ट्रिगर मात्र सर्व symbols च्या Target वरून)."
+                )
+
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
@@ -1074,6 +1092,7 @@ def render():
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)
+            new_settings["stop_after_target_enabled"] = bool(stop_after_target_enabled)
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
         elif strategy_key == "classic_sr_reversal":

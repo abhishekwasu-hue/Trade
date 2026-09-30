@@ -1919,3 +1919,15 @@ class TestEntryMinHoldSettingsDefaults:
     def test_other_strategies_do_not_have_min_hold_shadow_setting(self):
         for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
             assert "min_hold_shadow_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+
+class TestStopAfterTargetSettingDefault:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Target गाठल्यावर पुढचे trades थांबवा") — डीफॉल्ट बंद
+    (risk gates प्रमाणे), फक्त "1m_instant" (5-मिनिट Instant Trader) साठी, MCX/इतर bots साठी नाही."""
+
+    def test_disabled_by_default(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["stop_after_target_enabled"] is False
+
+    def test_other_strategies_do_not_have_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "stop_after_target_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]

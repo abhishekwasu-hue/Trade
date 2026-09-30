@@ -278,6 +278,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # दिसतो, जेणेकरून काही दिवसांनी "तात्काळ entry" वि. "confirmed entry" ची प्रत्यक्ष तुलना
         # करता येईल. डीफॉल्ट बंद.
         "min_hold_shadow_enabled": False,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
+        # ट्रेडिंग थांबवावे — आपला उद्देश प्रॉफिट कमावणे आहे, ट्रेड करणे नव्हे; न थांबवल्यास कमावलेला
+        # प्रॉफिटही गमावू शकतो") — आजच्या दिवशी या bot चा (सर्व symbols मिळून, त्याच trading_mode चा —
+        # PAPER/LIVE स्वतंत्र) कुठलाही खरा trade (Credit Spread किंवा Naked) शुद्ध 'TARGET' ने बंद झाला की
+        # उरलेल्या दिवसासाठी नवीन entries थांबतात. आधीच उघडे trades चालू राहतात. डीफॉल्ट बंद (risk gates
+        # प्रमाणे — वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा).
+        "stop_after_target_enabled": False,
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या

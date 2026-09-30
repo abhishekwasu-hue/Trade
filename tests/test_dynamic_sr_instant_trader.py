@@ -2841,3 +2841,63 @@ class TestRunAllSymbols:
 
         result = dsr.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY"])
         assert result is False  # heartbeat लिहू नये
+
+
+class TestStopAfterTargetGate:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
+    ट्रेडिंग थांबवावे") — RSI/PCR Gate मुद्दामच बंद, फक्त या नवीन नियमाचंच वर्तन तपासलं जातं."""
+
+    NOW = datetime.datetime(2026, 9, 11, 10, 0, 0)
+    HIT = ("PAPER_T1", "NIFTY", "2026-09-11 09:50:12", 1234.0)
+
+    def _settings(self, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_pcr_gate_enabled"] = False
+        settings.update(overrides)
+        return settings
+
+    def _run(self, settings, hit_row):
+        candles = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=self.NOW)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.NOW), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "get_first_target_exit_today", return_value=hit_row) as mock_hit, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+        return mock_trade, mock_log, mock_hit
+
+    def test_blocks_new_entry_after_target_when_enabled(self):
+        mock_trade, mock_log, mock_hit = self._run(self._settings(stop_after_target_enabled=True), self.HIT)
+        assert not mock_trade.called
+        entries = [c.args[0] for c in mock_log.call_args_list if c.args[0]["trade_status"] == "SKIPPED_TARGET_ALREADY_HIT_TODAY"]
+        assert entries
+        assert "PAPER_T1" in entries[0]["reason"] and "09:50" in entries[0]["reason"]
+
+    def test_lookup_uses_bot_source_trading_mode_and_today(self):
+        _, _, mock_hit = self._run(self._settings(stop_after_target_enabled=True, trading_mode="LIVE"), self.HIT)
+        mock_hit.assert_called_with("dynamic_sr_instant", "LIVE", "2026-09-11")
+
+    def test_allows_entry_when_no_target_yet(self):
+        mock_trade, mock_log, _ = self._run(self._settings(stop_after_target_enabled=True), None)
+        assert mock_trade.called
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        assert "SKIPPED_TARGET_ALREADY_HIT_TODAY" not in statuses
+
+    def test_disabled_by_default_ignores_target_and_skips_lookup(self):
+        mock_trade, _, mock_hit = self._run(self._settings(), self.HIT)
+        assert mock_trade.called
+        assert not mock_hit.called
+
+    def test_lookup_done_once_per_run_even_with_multiple_levels(self):
+        _, _, mock_hit = self._run(self._settings(stop_after_target_enabled=True), None)
+        assert mock_hit.call_count <= 1

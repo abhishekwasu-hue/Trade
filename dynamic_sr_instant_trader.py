@@ -81,7 +81,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
-from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
+from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due, get_first_target_exit_today
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from signals import calculate_rsi
 from oi_analysis import check_pcr_gate, check_iv_change_gate, get_latest_oi_signal, check_oi_diff_entry_gate
@@ -115,6 +115,7 @@ DIRECTION_HYSTERESIS_BUFFER_PCT = 0.10
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — 1M आता 5M सोबतच एकत्र, पूल केलेले (Instrument key/
 # zone_type suffix -> "timeframe" लेबल, entry_timeframe column साठी).
 POOLED_TIMEFRAMES = ["1M", "5M"]
+_NOT_CHECKED = object()  # 'Target नंतर थांबवा' तपासणी अजून झालेली नाही, याची खूण (None म्हणजे 'Target लागलेला नाही')
 
 
 def check_instant_rsi_filter(candles_df, direction, rsi_support_max=RSI_SUPPORT_MAX, rsi_resistance_min=RSI_RESISTANCE_MIN):
@@ -322,6 +323,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
+    stop_after_target_enabled = settings.get("stop_after_target_enabled", False)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -372,6 +374,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             todays_5m_candles_all = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
 
     outcomes = []
+    target_hit_today = _NOT_CHECKED
     for row, timeframe_suffix in pooled_levels:
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up,
@@ -442,6 +445,29 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = f"{NO_NEW_ENTRY_AFTER_HOUR}:{NO_NEW_ENTRY_AFTER_MINUTE:02d} नंतर नवीन entry नाही"
             cloud_db.save_signal_log(log_entry)
             continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
+        # ट्रेडिंग थांबवावे — आपला उद्देश प्रॉफिट कमावणे आहे, ट्रेड करणे नव्हे") — आज या bot चा (सर्व
+        # symbols मिळून, याच trading_mode चा — PAPER/LIVE स्वतंत्र) कुठलाही खरा trade (Credit Spread किंवा
+        # Naked) शुद्ध 'TARGET' ने बंद झाला असेल, तर उरलेल्या दिवसासाठी नवीन entry नाही (Breakout/
+        # Directional सकट कुठलीही) — इतर सर्व गेट्सच्या आधी, जेणेकरून बाकीचे API/DB कॉल्स वाया जात नाहीत.
+        # आधीच उघडे trades चालू राहतात. Shadow trades (source '_shadow' अंत्य) कधीच ट्रिगर होत नाहीत.
+        # DB मधून तपासलं जातं (memory वर नाही), त्यामुळे bot restart झाला तरी नियम कायम राहतो.
+        if stop_after_target_enabled:
+            if target_hit_today is _NOT_CHECKED:
+                target_hit_today = get_first_target_exit_today(
+                    "dynamic_sr_instant", settings.get("trading_mode", "PAPER"), trade_date,
+                )
+            if target_hit_today is not None:
+                hit_trade_id, hit_symbol, hit_exit_time, hit_pnl = target_hit_today
+                pnl_text = f" (P&L ₹{hit_pnl:,.0f})" if hit_pnl is not None else ""
+                log_entry["trade_status"] = "SKIPPED_TARGET_ALREADY_HIT_TODAY"
+                log_entry["reason"] = (
+                    f"आज {hit_symbol} चा trade {hit_trade_id} Target ने बंद झाला ({str(hit_exit_time)[11:16]}){pnl_text} — "
+                    "'Target नंतर थांबवा' नियमानुसार आजचे नवीन trades बंद"
+                )
+                cloud_db.save_signal_log(log_entry)
+                continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून सुधारलेला निर्णय ("Tya level war previous day che touches aahet,
         # kiwa level Breakout jhali mhanun trade hit jhala pahije, ashi simple condition Breakout
