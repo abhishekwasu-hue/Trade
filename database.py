@@ -1024,14 +1024,27 @@ def _compute_margin_used(df):
     (entry_margin_required NULL — त्या वेळी हे column नव्हतंच, किंवा API कॉल अयशस्वी झाला होता)
     fallback म्हणून.
     """
+    return _margin_used_details(df)["margin_used"]
+
+
+def _margin_used_details(df):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX ROI% चा 'margin used' अवास्तव मोठा — "Margin तपशील") —
+    _compute_margin_used() ची तीच गणना, पण निकाल पारदर्शक दिसावा म्हणून तपशीलासकट परत देते:
+    {"margin_used": float (नेहमीचाच आकडा), "peak_time": Timestamp|None, "peak_margin": float (timed
+    trades चा peak), "untimed_margin": float, "trades": DataFrame — प्रत्येक रांगेसाठी trade_margin,
+    margin_source ("API" = Upstox Margin Calculator ची साठवलेली खरी margin / "ESTIMATE" =
+    max_loss*lots*lot_size चा ढोबळ अंदाज), open_at_peak (bool)}. df मध्ये trade_id/symbol/source
+    असतील तर ते तसेच परत येणाऱ्या trades मध्ये राहतात."""
     max_loss = pd.to_numeric(df["max_loss"], errors="coerce").abs()
     lots = pd.to_numeric(df["lots"], errors="coerce")
     lot_size = pd.to_numeric(df["lot_size"], errors="coerce")
     estimated_margin = max_loss * lots * lot_size
     if "entry_margin_required" in df.columns:
         real_margin = pd.to_numeric(df["entry_margin_required"], errors="coerce")
-        trade_margin = real_margin.where(real_margin.notna() & (real_margin > 0), estimated_margin)
+        use_real = real_margin.notna() & (real_margin > 0)
+        trade_margin = real_margin.where(use_real, estimated_margin)
     else:
+        use_real = pd.Series(False, index=df.index)
         trade_margin = estimated_margin
 
     entry_time = pd.to_datetime(df["entry_time"], errors="coerce") if "entry_time" in df.columns else pd.Series(pd.NaT, index=df.index)
@@ -1039,10 +1052,18 @@ def _compute_margin_used(df):
 
     has_margin = trade_margin.notna() & (trade_margin > 0)
     timed = has_margin & entry_time.notna() & exit_time.notna() & (exit_time >= entry_time)
-    untimed_margin = trade_margin[has_margin & ~timed].sum()
+    untimed_margin = float(trade_margin[has_margin & ~timed].sum())
+
+    trades = df.copy()
+    trades["trade_margin"] = trade_margin
+    trades["margin_source"] = use_real.map({True: "API", False: "ESTIMATE"})
+    trades["open_at_peak"] = False
 
     if not timed.any():
-        return untimed_margin
+        return {
+            "margin_used": untimed_margin, "peak_time": None, "peak_margin": 0.0,
+            "untimed_margin": untimed_margin, "trades": trades,
+        }
 
     # sweep-line: प्रत्येक trade चे दोन events -- entry ला +margin, exit ला -margin. वेळेनुसार
     # क्रमवारी लावून cumulative sum चा कमाल आकडा हाच "कधीही एकाचवेळी जास्तीत जास्त किती भांडवल
@@ -1051,9 +1072,42 @@ def _compute_margin_used(df):
     events = pd.concat([
         pd.DataFrame({"time": exit_time[timed], "delta": -trade_margin[timed], "order": 0}),
         pd.DataFrame({"time": entry_time[timed], "delta": trade_margin[timed], "order": 1}),
-    ], ignore_index=True).sort_values(["time", "order"])
-    peak = events["delta"].cumsum().max()
-    return float(peak) + untimed_margin
+    ], ignore_index=True).sort_values(["time", "order"]).reset_index(drop=True)
+    running = events["delta"].cumsum()
+    peak_idx = running.idxmax()
+    peak = float(running.loc[peak_idx])
+    peak_time = events.loc[peak_idx, "time"]
+    trades["open_at_peak"] = timed & (entry_time <= peak_time) & (exit_time > peak_time)
+    return {
+        "margin_used": peak + untimed_margin, "peak_time": peak_time, "peak_margin": peak,
+        "untimed_margin": untimed_margin, "trades": trades,
+    }
+
+
+def get_margin_used_details(symbol, mode_filter=None, start_date=None, end_date=None):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX ROI% अवास्तव — "Margin तपशील" expander) —
+    get_performance_summary() सारखीच निवड (बंद, shadow वगळून, तीच तारीख/mode फिल्टर्स), पण
+    _margin_used_details() चा पारदर्शक निकाल परत देते; trades मध्ये trade_id/symbol/source सुद्धा.
+    रिकामा असेल तर None."""
+    conn = sqlite3.connect(DB_PATH)
+    symbol_clause, params = _symbol_where_clause(symbol)
+    query = (f"SELECT trade_id, symbol, source, realized_pnl, max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required "
+             f"FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL "
+             f"AND {_shadow_exclusion_clause()}")
+    if mode_filter:
+        query += " AND COALESCE(mode,'LIVE')=?"
+        params.append(mode_filter)
+    if start_date:
+        query += " AND date(exit_time) >= ?"
+        params.append(start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else start_date)
+    if end_date:
+        query += " AND date(exit_time) <= ?"
+        params.append(end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else end_date)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if df.empty:
+        return None
+    return _margin_used_details(df)
 
 
 def _symbol_where_clause(symbol):
