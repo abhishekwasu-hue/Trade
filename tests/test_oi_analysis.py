@@ -626,3 +626,70 @@ class TestCheckPCRGate:
         allowed, pcr, reason = check_pcr_gate("NIFTY", "BULLISH", pcr_bullish_min=0.80, pcr_bearish_max=1.10)
         assert allowed is False
         assert pcr is None
+
+
+class TestSnapshotStrikeWindowPerSymbol:
+    """🎓 "Sensex oi, getting confuse" — OI History चा Total आणि Option Chain चा TOTAL जुळत नव्हता कारण
+    snapshot सर्व symbols साठी step=50 वापरायचा; आता symbol-निहाय (cloud_db.STRIKE_STEP) — window 13 strikes."""
+
+    @staticmethod
+    def _db(monkeypatch):
+        import cloud_db
+        fd, path = tempfile.mkstemp(suffix=".db")
+        conn = sqlite3.connect(path)
+        conn.execute("""
+            CREATE TABLE oi_diff_snapshots (
+                symbol TEXT, trade_date TEXT, snapshot_time TEXT,
+                total_call_oi INTEGER, total_put_oi INTEGER, diff INTEGER, delta_diff INTEGER, signal TEXT,
+                underlying_price REAL, total_call_premium REAL, total_put_premium REAL,
+                PRIMARY KEY (symbol, trade_date, snapshot_time)
+            )
+        """)
+        conn.commit()
+        conn.close()
+        monkeypatch.setattr(cloud_db, "is_cloud_db_configured", lambda: False)
+        return path
+
+    @staticmethod
+    def _chain(start, step, n, spot):
+        return [
+            {"strike_price": start + i * step, "underlying_spot_price": spot,
+             "call_options": {"market_data": {"oi": 1000, "ltp": 1.0}},
+             "put_options": {"market_data": {"oi": 2000, "ltp": 1.0}}}
+            for i in range(n)
+        ]
+
+    def _run(self, path, symbol, chain):
+        import datetime as dt
+        return oi_analysis.fetch_and_save_oi_snapshot(
+            "tok", symbol, lambda t, s: (chain, "OK"), lambda: dt.datetime(2026, 9, 30, 12, 30), path, atm_range=6,
+        )
+
+    def test_sensex_window_is_13_strikes_not_7(self, monkeypatch):
+        path = self._db(monkeypatch)
+        chain = self._chain(72000, 100, 30, spot=72900.0)  # 72000..74900, ATM 72900
+        snap, status = self._run(path, "SENSEX", chain)
+        assert status == "OK"
+        assert snap["atm_strike"] == 72900
+        assert snap["total_call_oi"] == 13 * 1000 and snap["total_put_oi"] == 13 * 2000  # 72300..73500
+
+    def test_banknifty_uses_100_step(self, monkeypatch):
+        path = self._db(monkeypatch)
+        chain = self._chain(50000, 100, 30, spot=51000.0)
+        snap, _ = self._run(path, "BANKNIFTY", chain)
+        assert snap["total_call_oi"] == 13 * 1000
+
+    def test_nifty_still_50_step(self, monkeypatch):
+        path = self._db(monkeypatch)
+        chain = self._chain(24000, 50, 40, spot=24500.0)
+        snap, _ = self._run(path, "NIFTY", chain)
+        assert snap["total_call_oi"] == 13 * 1000
+
+    def test_explicit_step_still_respected(self, monkeypatch):
+        import datetime as dt
+        path = self._db(monkeypatch)
+        chain = self._chain(72000, 100, 30, spot=72900.0)
+        snap, _ = oi_analysis.fetch_and_save_oi_snapshot(
+            "tok", "SENSEX", lambda t, s: (chain, "OK"), lambda: dt.datetime(2026, 9, 30, 12, 30), path, atm_range=6, step=50,
+        )
+        assert snap["total_call_oi"] == 7 * 1000  # जुना 7-strike window, स्पष्ट step दिल्यास

@@ -671,7 +671,7 @@ def compute_dte(raw_chain, today_date):
     return expiry_date, dte
 
 
-def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now_fn, db_path, atm_range=6, step=50):
+def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now_fn, db_path, atm_range=6, step=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून काढलेली सुधारणा — OI Diff Snapshot (दर १० मिनिटांचा) पूर्वी फक्त
     Dashboard उघडं असतानाच (browser मध्ये) साठवला जायचा. आता हे पूर्ण, स्वतंत्र function आहे — Dashboard
@@ -696,6 +696,14 @@ def fetch_and_save_oi_snapshot(access_token, symbol, fetch_chain_fn, get_ist_now
     if not raw_chain:
         return None, f"Option chain मिळाला नाही: {status}"
 
+    # 🎓 वापरकर्त्याने निदर्शनास आणलेली विसंगती ("Sensex oi, getting confuse" — OI History चा Total आणि Option
+    # Chain चा TOTAL जुळत नव्हता): step आधी सर्व symbols साठी 50 (NIFTY चं) धरला जायचा — SENSEX/BANKNIFTY चे
+    # strikes 100 च्या अंतराने असल्याने ±6×50 = ±300 अंकांत फक्त 7 strikes मोजले जायचे, तर Option Chain चा
+    # तक्ता (page_dashboard.py) symbol-निहाय step (cloud_db.STRIKE_STEP) वरून 13 strikes दाखवतो. आता तोच
+    # symbol-निहाय step (step स्पष्ट दिला नसेल तर) — म्हणजे दोन्ही एकाच window वर. फक्त नवीन snapshots साठी.
+    if step is None:
+        import cloud_db
+        step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
     underlying_price = raw_chain[len(raw_chain) // 2].get("underlying_spot_price", 0)
     atm_strike = round(underlying_price / step) * step
 
