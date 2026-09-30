@@ -157,6 +157,23 @@ def _collect_touch_candidates(access_token, instrument_key, all_zones, active_su
 
 
 def process_symbol(access_token, symbol):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Crude oil hit log not working") — _process_symbol_core() चा wrapper: प्रत्येक
+    cycle ला निकाल-स्थितीसह "अखेरची तपासणी" (वेळ/भाव/जवळचा level) cloud_db.save_mcx_last_check() मध्ये साठवतो, जेणेकरून
+    Hit Log वर (NO_HIT dedup मुळे शांत काळातही) trader जिवंत असल्याचा पुरावा दिसेल. ही नोंद अयशस्वी झाली तरी
+    trading वर परिणाम नाही (सर्व अपवाद गिळले जातात)."""
+    check_info = {}
+    result = _process_symbol_core(access_token, symbol, check_info)
+    try:
+        cloud_db.save_mcx_last_check(
+            symbol, get_ist_now(), result, price=check_info.get("price"), nearest_level=check_info.get("nearest_level"),
+            nearest_level_type=check_info.get("nearest_level_type"), nearest_timeframe=check_info.get("nearest_timeframe"),
+        )
+    except Exception:
+        pass
+    return result
+
+
+def _process_symbol_core(access_token, symbol, check_info):
     """एका MCX commodity साठी — 30M/60M levels (settings-चालित), RSI dual-threshold gate,
     Multi-Hit, आणि आढळल्यास एकाच futures leg चं PAPER/LIVE trade (settings-चालित lots/SL/Target)."""
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
@@ -193,6 +210,13 @@ def process_symbol(access_token, symbol):
     candidates = _collect_touch_candidates(access_token, instrument_key, all_zones, active_suffixes, now)
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels ({'/'.join(active_suffixes)}) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
+
+    # heartbeat साठी — सद्य भाव आणि त्याच्या सर्वात जवळचा level (सर्व candidates चा भाव सारखाच असतो)
+    _nearest = min(candidates, key=lambda c: abs(c[3] - c[0]))
+    check_info.update({
+        "price": _nearest[3], "nearest_level": _nearest[0], "nearest_timeframe": _nearest[1],
+        "nearest_level_type": "RESISTANCE" if _nearest[0] >= _nearest[3] else "SUPPORT",
+    })
 
     for level_price, timeframe_suffix, candles_df, current_price, todays_closes in candidates:
         touched = abs(current_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100

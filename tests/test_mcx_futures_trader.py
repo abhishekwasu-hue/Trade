@@ -845,3 +845,71 @@ class TestRunExitMonitorLoop:
         sig = inspect.signature(mft.run_exit_monitor_loop)
         assert sig.parameters["loop_seconds"].default == 30
         assert sig.parameters["interval_seconds"].default == 15
+
+
+class TestLastCheckHeartbeat:
+    """🎓 "Crude oil hit log not working" / "Same problem silver gold" — Hit Log मध्ये NO_HIT dedup मुळे शांत काळात कोणतीच
+    नवीन ओळ येत नाही; म्हणून प्रत्येक cycle ला अखेरची तपासणी (वेळ/भाव/जवळचा level/स्थिती) वेगळी साठवली जाते."""
+
+    def _run(self, candles_df, settings_updates=None, zones=None, resolved=None):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings.update(settings_updates or {})
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=resolved or _fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=zones if zones is not None else _fake_zones()), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(mft.cloud_db, "save_mcx_last_check", return_value=True) as mock_hb:
+            result = mft.process_symbol("fake_token", "CRUDEOIL")
+        return result, mock_hb
+
+    def test_no_touch_records_price_and_nearest_level(self):
+        result, hb = self._run(_fake_candles_df(last_close=7500.0))
+        assert hb.call_count == 1
+        args, kwargs = hb.call_args
+        assert args[0] == "CRUDEOIL" and args[2] == result
+        assert kwargs["price"] == 7500.0 and kwargs["nearest_level"] == 6500.0
+        assert kwargs["nearest_level_type"] == "SUPPORT" and kwargs["nearest_timeframe"] == "30M"
+
+    def test_disabled_symbol_still_records_status(self):
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=dict(_DEFAULT_SETTINGS)), \
+             patch.object(mft.cloud_db, "save_mcx_last_check", return_value=True) as hb:
+            result = mft.process_symbol("fake_token", "CRUDEOIL")
+        assert "बंद आहे" in result and hb.call_args.args[2] == result
+        assert hb.call_args.kwargs["price"] is None
+
+    def test_heartbeat_failure_never_breaks_trading(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(mft, "fetch_mcx_candles", return_value=_fake_candles_df(last_close=7500.0)), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True), \
+             patch.object(mft.cloud_db, "save_mcx_last_check", side_effect=RuntimeError("db down")):
+            result = mft.process_symbol("fake_token", "CRUDEOIL")
+        assert "पात्र ठरला नाही" in result
+
+
+class TestMcxLastCheckStorage:
+    def test_save_and_get_round_trip(self):
+        store = {}
+
+        def fake_save(strategy, symbol, payload):
+            store[(strategy, symbol)] = payload
+            return True
+
+        def fake_get(strategy, symbol):
+            return dict(store.get((strategy, symbol), {}), symbol_enabled=False)
+
+        with patch.object(cloud_db, "save_strategy_settings", side_effect=fake_save), \
+             patch.object(cloud_db, "get_strategy_settings", side_effect=fake_get):
+            import datetime as dt
+            import numpy as np
+            assert cloud_db.get_mcx_last_check("GOLD") is None  # कधीच नोंद नाही
+            cloud_db.save_mcx_last_check("GOLD", dt.datetime(2026, 9, 30, 14, 42, 27), "स्थिती", price=np.float64(147623.0),
+                                         nearest_level=147828, nearest_level_type="RESISTANCE", nearest_timeframe="30M")
+            got = cloud_db.get_mcx_last_check("GOLD")
+        assert got["checked_at"] == "2026-09-30 14:42:27" and got["price"] == 147623.0 and got["nearest_level"] == 147828.0
+        assert got["nearest_level_type"] == "RESISTANCE" and got["status"] == "स्थिती"
