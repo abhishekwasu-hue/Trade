@@ -915,9 +915,9 @@ class TestSymbolWhereClauseListSupport:
             ["CRUDEOIL", "GOLD", "SILVER"], dt.date(2026, 9, 1), dt.date(2026, 9, 30),
         )
         assert list(df.columns) == [
-            "order_id", "trade_id", "placed_at", "mode", "symbol", "quantity", "fill_price", "price",
+            "order_id", "trade_id", "placed_at", "mode", "symbol", "instrument_key", "quantity", "fill_price", "price",
             "transaction_type", "account_id",
-        ]
+        ]  # instrument_key: Upstox Brokerage API तुलनेसाठी (charges.compare_with_upstox)
 
     def test_get_closed_trades_for_report_with_symbol_list(self, temp_db):
         import datetime as dt

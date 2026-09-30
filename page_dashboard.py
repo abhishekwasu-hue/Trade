@@ -1437,6 +1437,11 @@ def render():
 
             # क्लिक-टू-ट्रेड: टेबलमधील कोणतीही row निवडल्यास तो strike खाली Manual Trading Panel मध्ये आपोआप भरला जातो.
             # जुन्या Streamlit व्हर्जनमध्ये on_select उपलब्ध नसल्यास साध्या टेबलवर आपोआप fallback होतो.
+            st.caption(
+                "ℹ️ या तक्त्यातला **Chg OI** = आजच्या baseline पासूनचा बदल (अॅपने त्या strike ची त्या दिवशी पहिल्यांदा नोंद केलेली OI; "
+                "एक्स्चेंजचा मागच्या दिवसाचा बदल नाही). **Net Diff = PE Chg OI − CE Chg OI** (आज कुठे नवीन Put/Call OI आला), "
+                "तर वरच्या History तक्त्यातला Diff = Total Put − Total Call (पातळी) — दोन्ही वेगळे, थेट जुळवू नका."
+            )
             try:
                 chain_select_event = st.dataframe(
                     styled_df, width='stretch', height=500,
@@ -1661,6 +1666,15 @@ def render():
                                             .set_properties(**{'font-size': '15px', 'font-weight': 'bold'})
 
                 st.dataframe(styled_hist, width='stretch', height=450)
+                # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Sensex oi, getting confuse, explain total oi and change in oi")
+                st.caption(
+                    "ℹ️ **Total OI** = त्या क्षणी उघडे असलेले एकूण contracts (पातळी); **Change in OI** = आधीच्या वेळेपेक्षा वाढ/घट (हालचाल). "
+                    "या तक्त्यातला **Diff = Total Put OI − Total Call OI** (पातळी; Diff > 0 = Put जास्त = BULLISH कल), "
+                    "**Δ Diff = मागच्या नोंदीपेक्षा Diff किती बदलला**. भाव सरकला की ATM बदलतो आणि काही strikes window मध्ये येतात/जातात — "
+                    "म्हणून Total OI मध्ये मोठ्या उड्या दिसू शकतात (नवीन positions नसतानाही). 'Weakening' = दिशा अजून पक्की झालेली नाही "
+                    "(दिशा बदलायला सलग ३ नोंदी आणि Call/Put OI ची खरी उलट हालचाल हवी). "
+                    "Option Chain तक्त्यातला 'Net Diff' वेगळा आहे (खाली बघा)."
+                )
 
         _render_advanced_oi_charts()
 

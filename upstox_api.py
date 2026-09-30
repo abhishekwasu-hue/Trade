@@ -796,6 +796,46 @@ def fetch_required_margin(access_token, orders):
         _logger.exception("fetch_required_margin() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
+def fetch_brokerage_charges(access_token, instrument_key, quantity, price, transaction_type, product="D"):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Upstox चे खरे brokerage calculator") — Upstox चं अधिकृत Brokerage
+    API (`GET /v2/charges/brokerage`) एका काल्पनिक order साठी खरे charges देतं. charges.py चे स्वतःचे दर
+    (हाताने कोडमध्ये लिहिलेले) यांच्याशी ताडून पाहण्यासाठी — bot चे रोजचे P&L आकडे या API वर अवलंबून नाहीत.
+    रिटर्न: {"total", "brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst", "other"} (सर्व float) किंवा
+    काहीही अपेक्षेप्रमाणे नसेल (HTTP त्रुटी / प्रतिसाद-स्वरूप वेगळं) तर None — अंदाज कधीच परत येत नाही.
+    'other' = clearing/IPFT सारखे local calculator मध्ये नसलेले शुल्क."""
+    if not access_token or not instrument_key or not quantity or not price:
+        return None
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        params = {
+            "instrument_token": instrument_key, "quantity": int(quantity), "product": product,
+            "transaction_type": transaction_type, "price": float(price),
+        }
+        res = _get_with_retry("https://api.upstox.com/v2/charges/brokerage", headers=headers, params=params, timeout=10)
+        if res.status_code != 200:
+            return None
+        charges = (res.json().get("data") or {}).get("charges") or {}
+        taxes = charges.get("taxes") or {}
+        other_taxes = charges.get("other_taxes") or {}
+        total = charges.get("total")
+        if total is None:
+            return None
+
+        def f(v):
+            return float(v) if v is not None else 0.0
+
+        parsed = {
+            "total": f(total), "brokerage": f(charges.get("brokerage")), "stt": f(taxes.get("stt")),
+            "exchange_txn": f(other_taxes.get("transaction")), "sebi_fee": f(other_taxes.get("sebi_turnover")),
+            "stamp_duty": f(taxes.get("stamp_duty")), "gst": f(taxes.get("gst")),
+        }
+        parsed["other"] = round(parsed["total"] - sum(v for k, v in parsed.items() if k != "total"), 4)
+        return parsed
+    except Exception:
+        _logger.exception("fetch_brokerage_charges() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+
+
 def fetch_ltp_map_detailed(access_token, instrument_keys):
     """
     🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Token-Expiry/LTP-Fetch Silent Failure) —
