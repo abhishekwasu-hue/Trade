@@ -1151,7 +1151,11 @@ def render():
             # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
             # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
             # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
-            sr_for_tv = compute_dynamic_sr(df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2) if not df_candles.empty else None
+            # mintick: NIFTY/BANKNIFTY साठी 0.05 (TradingView च्या math.round_to_mintick सारखी गोलाई — लेबल तंतोतंत जुळावे)
+            sr_for_tv = compute_dynamic_sr(
+                df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2,
+                mintick=0.05 if symbol in ("NIFTY", "BANKNIFTY") else None,
+            ) if not df_candles.empty else None
 
             # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day, 1-Hour
             # व 15-Minute Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). तिन्ही मुख्य
