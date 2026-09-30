@@ -285,6 +285,16 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # उरलेल्या दिवसासाठी नवीन entries थांबतात. आधीच उघडे trades चालू राहतात. डीफॉल्ट बंद (risk gates
         # प्रमाणे — वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा).
         "stop_after_target_enabled": False,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute आणि 15 minute levels ओव्हरलॅप किंवा
+        # जवळ आले तर तिथे 15 मिनिट strategy execute व्हायला पाहिजे, 5 मिनिट थांबायला पाहिजे — 15 मिनिटमुळे
+        # जास्त reward मिळण्याची शक्यता") — या bot च्या 5M level च्या defer_to_15m_distance_pct% च्या आत
+        # एखादा ACTIVE 15M Dynamic S/R level असेल (आणि दिशा जुळत असेल, 15M strategy त्या symbol साठी
+        # सक्रिय आणि याच trading_mode मध्ये असेल) तर 5M entry घेतली जात नाही; 15M strategy
+        # (srv2_momentum_reversal_strategy.py) स्वतःच्या touch/नियमांनुसार तिथे trade घेते. त्याच वेळी: 5M थांबतो तेव्हा
+        # त्याचे उघडे trades लगेच बंद (YIELDED_TO_15M), 15M entry आधीही उघडे 5M trades बंद, आणि 15M ची position उघडी
+        # असताना 5M नवीन entry नाही ("एका वेळी एकच position"). डीफॉल्ट बंद.
+        "defer_to_15m_enabled": False,
+        "defer_to_15m_distance_pct": 0.10,
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या
@@ -1088,51 +1098,6 @@ def save_portfolio_risk_cap_settings(enabled, max_portfolio_risk_pct_index, max_
         "max_portfolio_risk_pct_index": float(max_portfolio_risk_pct_index),
         "max_portfolio_risk_pct_mcx": float(max_portfolio_risk_pct_mcx),
     })
-
-
-# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("प्रत्येक trader कडे मर्यादित भांडवल असते, तो एकाच दिवशी दोन
-# स्ट्रॅटेजी चालवू शकत नाही — 5 मिनिट Instant आणि 15 मिनिट SRv2 दोन्हीचे लॉजिक सारखेच, फक्त timeframe वेगळा;
-# 15 मिनिट levels 3-4 दिवसांतून एकदा हिट होतात; ज्या दिवशी 15 मिनिट सक्रिय त्या दिवशी 5 मिनिट पूर्ण बंद")
-# — "आजची सक्रिय strategy" स्विच (5M किंवा 15M, दोन्ही सर्व symbols साठी एकत्र; MCX नाही). हाताने ठरवला जातो.
-# 15M निवड फक्त निवडलेल्या तारखेपुरती (दुसऱ्या दिवशी आपोआप 5M). exclusive_enabled=False (डीफॉल्ट) -> कुठलाही
-# स्विच लागू नाही, दोन्ही strategies आधीसारख्याच स्वतःच्या symbol_enabled नुसार चालतात (जुनं वर्तन).
-# exclusive_enabled=True -> फक्त प्रभावी strategy नवीन entries घेते; दुसरीचे त्याच दिवशी उघडलेले trades
-# trading_engine.manage_open_trades() ने लगेच बंद (STRATEGY_SWITCH_SQUAREOFF); मागच्या दिवसांपासून carry
-# झालेले trades स्पर्शित नाहीत.
-ACTIVE_SR_STRATEGY_KEY = "__active_sr_strategy__"
-ACTIVE_SR_STRATEGY_SYMBOL_KEY = "ALL"
-ACTIVE_SR_STRATEGY_DEFAULTS = {"exclusive_enabled": False, "choice": "5M", "date": None}
-
-
-def get_active_sr_strategy_settings():
-    """{"exclusive_enabled": bool, "choice": "5M"|"15M", "date": "YYYY-MM-DD"|None}. Supabase न मिळाल्यास
-    (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट — exclusive_enabled=False (जुनं वर्तन)."""
-    settings = get_strategy_settings(ACTIVE_SR_STRATEGY_KEY, ACTIVE_SR_STRATEGY_SYMBOL_KEY)
-    choice = settings.get("choice", ACTIVE_SR_STRATEGY_DEFAULTS["choice"])
-    return {
-        "exclusive_enabled": bool(settings.get("exclusive_enabled", ACTIVE_SR_STRATEGY_DEFAULTS["exclusive_enabled"])),
-        "choice": choice if choice in ("5M", "15M") else "5M",
-        "date": settings.get("date", ACTIVE_SR_STRATEGY_DEFAULTS["date"]),
-    }
-
-
-def save_active_sr_strategy_settings(exclusive_enabled, choice, date_str):
-    return save_strategy_settings(ACTIVE_SR_STRATEGY_KEY, ACTIVE_SR_STRATEGY_SYMBOL_KEY, {
-        "exclusive_enabled": bool(exclusive_enabled),
-        "choice": choice if choice in ("5M", "15M") else "5M",
-        "date": date_str,
-    })
-
-
-def get_effective_active_sr_strategy(today_str):
-    """आजची प्रभावी strategy: None (स्विच बंद — कुठलेही बंधन नाही), "5M" किंवा "15M". स्विच चालू असताना
-    "15M" फक्त तेव्हाच जेव्हा निवड 15M आणि निवडलेली तारीख आजची; बाकी सर्व दिवस "5M"."""
-    settings = get_active_sr_strategy_settings()
-    if not settings["exclusive_enabled"]:
-        return None
-    if settings["choice"] == "15M" and settings["date"] == today_str:
-        return "15M"
-    return "5M"
 
 
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop

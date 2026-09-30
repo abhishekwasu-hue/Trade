@@ -3337,86 +3337,24 @@ class TestLiveExitUsesActualFills:
         assert ok is True and pnl == 1837.5
 
 
-class TestStrategySwitchSquareoff:
-    """🎓 "आजची सक्रिय strategy" स्विच — आज सक्रिय नसलेल्या strategy चे, आजच उघडलेले OPEN trades लगेच बंद
-    (STRATEGY_SWITCH_SQUAREOFF); सक्रिय strategy चे, मागच्या दिवसांचे (carry) आणि स्विच बंद असताना कुठलेच नाही."""
+class TestCloseTradeManuallyStoresDetail:
+    """close_trade_manually() ला आता ऐच्छिक exit_reason_detail (YIELDED_TO_15M साठी वापरलेलं)."""
 
-    @staticmethod
-    def _ltp(spot=23905.0):
-        def _fn(token, keys):
-            if keys == ["NSE_INDEX|Nifty 50"]:
-                return {"NSE_INDEX|Nifty 50": spot}
-            return {"PE24400": 28.0, "PE24300": 3.0}  # P&L ~ +375: SL/Target दोन्ही लागत नाही
-        return _fn
-
-    def _setup(self, monkeypatch, active):
-        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp())
+    def _close(self, temp_db, monkeypatch, **kw):
+        seed_trade(temp_db, "X1", net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
+                   source="dynamic_sr_instant", trading_style="INTRADAY", entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 28.0, "PE24300": 3.0})
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
-        monkeypatch.setattr(trading_engine, "get_latest_oi_signal", lambda symbol: None)
-        monkeypatch.setattr(trading_engine.cloud_db, "get_effective_active_sr_strategy", lambda today: active)
-        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
-        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
-
-    def _seed(self, temp_db, trade_id, source, entry_level_price=23900.0):
-        seed_trade(temp_db, trade_id, net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
-                   source=source, trading_style="INTRADAY", entry_level_price=entry_level_price)
-
-    def test_5m_trade_squared_off_when_15m_active(self, temp_db, monkeypatch):
-        self._seed(temp_db, "T5", "dynamic_sr_instant")
-        self._setup(monkeypatch, "15M")
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert len(closed) == 1 and closed[0]["reason"] == "STRATEGY_SWITCH_SQUAREOFF"
+        ok, _ = trading_engine.close_trade_manually("tok", "X1", "NIFTY", "D", **kw)
         conn = sqlite3.connect(temp_db)
-        row = conn.execute("SELECT status, exit_reason, exit_reason_detail FROM live_trades WHERE trade_id='T5'").fetchone()
+        row = conn.execute("SELECT status, exit_reason, exit_reason_detail FROM live_trades WHERE trade_id='X1'").fetchone()
         conn.close()
-        assert row[0] == "CLOSED" and row[1] == "STRATEGY_SWITCH_SQUAREOFF"
-        assert "15M" in row[2] and "5M trade" in row[2]
+        return ok, row
 
-    def test_15m_trade_squared_off_when_5m_active(self, temp_db, monkeypatch):
-        self._seed(temp_db, "T15", "srv2_momentum_reversal")
-        self._setup(monkeypatch, "5M")
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert len(closed) == 1 and closed[0]["reason"] == "STRATEGY_SWITCH_SQUAREOFF"
+    def test_detail_is_stored_when_given(self, temp_db, monkeypatch):
+        ok, row = self._close(temp_db, monkeypatch, exit_reason="YIELDED_TO_15M", exit_reason_detail="5M yielded")
+        assert ok and row == ("CLOSED", "YIELDED_TO_15M", "5M yielded")
 
-    def test_shadow_trades_follow_their_parent_strategy(self, temp_db, monkeypatch):
-        self._seed(temp_db, "SH1", "dynamic_sr_instant_otm_shadow")
-        self._seed(temp_db, "SH2", "dynamic_sr_instant_min_hold_shadow")
-        self._setup(monkeypatch, "15M")
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert {c["reason"] for c in closed} == {"STRATEGY_SWITCH_SQUAREOFF"} and len(closed) == 2
-
-    def test_active_strategys_trade_is_left_alone(self, temp_db, monkeypatch):
-        self._seed(temp_db, "T5", "dynamic_sr_instant")
-        self._setup(monkeypatch, "5M")
-        assert trading_engine.manage_open_trades("fake_token", "NIFTY", "D") == []
-
-    def test_switch_off_closes_nothing(self, temp_db, monkeypatch):
-        self._seed(temp_db, "T5", "dynamic_sr_instant")
-        self._seed(temp_db, "T15", "srv2_momentum_reversal")
-        self._setup(monkeypatch, None)
-        assert trading_engine.manage_open_trades("fake_token", "NIFTY", "D") == []
-
-    def test_previous_days_carried_trade_is_not_touched(self, temp_db, monkeypatch):
-        self._seed(temp_db, "OLD", "srv2_momentum_reversal")
-        conn = sqlite3.connect(temp_db)
-        conn.execute("UPDATE live_trades SET trade_date='2026-08-21' WHERE trade_id='OLD'")
-        conn.commit()
-        conn.close()
-        self._setup(monkeypatch, "5M")
-        assert trading_engine.manage_open_trades("fake_token", "NIFTY", "D") == []
-
-    def test_unrelated_sources_are_never_squared_off(self, temp_db, monkeypatch):
-        self._seed(temp_db, "MC", "mcx_futures")
-        self._seed(temp_db, "CL", "classic_sr_reversal")
-        self._setup(monkeypatch, "15M")
-        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
-        assert all(c["reason"] != "STRATEGY_SWITCH_SQUAREOFF" for c in closed)
-
-    def test_settings_failure_closes_nothing(self, temp_db, monkeypatch):
-        self._seed(temp_db, "T5", "dynamic_sr_instant")
-        self._setup(monkeypatch, None)
-
-        def _boom(today):
-            raise RuntimeError("supabase down")
-        monkeypatch.setattr(trading_engine.cloud_db, "get_effective_active_sr_strategy", _boom)
-        assert trading_engine.manage_open_trades("fake_token", "NIFTY", "D") == []
+    def test_default_behavior_unchanged_without_detail(self, temp_db, monkeypatch):
+        ok, row = self._close(temp_db, monkeypatch)
+        assert ok and row[0] == "CLOSED" and row[1] == "MANUAL_CLOSE" and row[2] is None

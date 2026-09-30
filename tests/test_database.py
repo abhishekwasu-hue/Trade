@@ -1361,3 +1361,24 @@ class TestGetFirstTargetExitToday:
     def test_other_source_is_ignored(self, temp_db):
         seed_closed_trade(temp_db, "M1", 500.0, "TARGET", "2026-09-30", mode="PAPER", source="mcx_futures")
         assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None
+
+
+class TestGetOpenTradesBrief:
+    def _seed_open(self, tmpdb, trade_id, source, mode="PAPER", symbol="NIFTY", status="OPEN"):
+        seed_closed_trade(tmpdb, trade_id, 0.0, None, "2026-09-30", symbol=symbol, source=source, mode=mode)
+        conn = sqlite3.connect(tmpdb)
+        conn.execute("UPDATE live_trades SET status=? WHERE trade_id=?", (status, trade_id))
+        conn.commit()
+        conn.close()
+
+    def test_returns_only_open_trades_of_given_sources_and_symbol(self, temp_db):
+        self._seed_open(temp_db, "A", "dynamic_sr_instant")
+        self._seed_open(temp_db, "B", "dynamic_sr_instant_otm_shadow")
+        self._seed_open(temp_db, "C", "srv2_momentum_reversal")
+        self._seed_open(temp_db, "D", "dynamic_sr_instant", status="CLOSED")
+        self._seed_open(temp_db, "E", "dynamic_sr_instant", symbol="BANKNIFTY")
+        rows = database.get_open_trades_brief("NIFTY", ("dynamic_sr_instant", "dynamic_sr_instant_otm_shadow"))
+        assert sorted(rows) == [("A", "dynamic_sr_instant", "PAPER"), ("B", "dynamic_sr_instant_otm_shadow", "PAPER")]
+
+    def test_empty_sources_returns_empty(self, temp_db):
+        assert database.get_open_trades_brief("NIFTY", ()) == []

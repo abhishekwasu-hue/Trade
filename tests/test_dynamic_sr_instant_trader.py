@@ -2903,25 +2903,205 @@ class TestStopAfterTargetGate:
         assert mock_hit.call_count <= 1
 
 
-class TestActiveStrategySwitchGate5M:
-    """🎓 "आजची सक्रिय strategy" स्विच — आज 15M सक्रिय असेल तर 5M Instant Trader पूर्णपणे बंद."""
+def _zones_with_15m(level_15m, status="ACTIVE", suffix="SUPPORT"):
+    zones = _fake_zones_5m_only()
+    extra = pd.DataFrame([{"symbol": "NIFTY", "zone_type": f"DYNAMIC_SR_{suffix}_15M", "zone_low": level_15m,
+                           "zone_high": level_15m, "strength": 4.0, "formed_date": "2026-09-01", "status": status}])
+    return pd.concat([zones, extra], ignore_index=True)
 
-    def test_5m_bot_stops_when_15m_is_active(self):
-        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
-        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
-             patch.object(dsr.cloud_db, "get_effective_active_sr_strategy", return_value="15M"), \
-             patch.object(dsr, "fetch_candles") as mock_candles, \
-             patch.object(dsr, "open_multi_leg_trade") as mock_trade:
-            msg = dsr.process_symbol("fake_token", "NIFTY")
-        assert "15M" in msg and "बंद" in msg
-        assert not mock_candles.called and not mock_trade.called
 
-    def test_5m_bot_runs_when_5m_active_or_switch_off(self):
+class TestFindOverlapping15mLevel:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5M आणि 15M levels ओव्हरलॅप/जवळ आले तर 15M strategy")."""
+
+    def test_finds_15m_level_within_distance_and_same_direction(self):
+        # 5M level 23900, 15M 23890 (0.042% खाली), किंमत 23902 (दोन्हीच्या वर -> दोन्ही Support/BULLISH)
+        result = dsr.find_overlapping_15m_level(_zones_with_15m(23890.0), 23900.0, 0.10, 23902.0, "BULLISH")
+        assert result is not None
+        assert result[0] == 23890.0
+        assert abs(result[1] - 10 / 23900 * 100) < 1e-9
+
+    def test_none_when_farther_than_distance(self):
+        assert dsr.find_overlapping_15m_level(_zones_with_15m(23850.0), 23900.0, 0.10, 23902.0, "BULLISH") is None
+
+    def test_none_when_15m_direction_differs(self):
+        # 15M level किमतीच्या वर (23910 > 23902) -> 15M दृष्टीने Resistance/BEARISH; 5M दिशा BULLISH -> जुळत नाही
+        assert dsr.find_overlapping_15m_level(_zones_with_15m(23910.0), 23900.0, 0.10, 23902.0, "BULLISH") is None
+
+    def test_ignores_non_active_15m_levels(self):
+        assert dsr.find_overlapping_15m_level(_zones_with_15m(23890.0, status="STALE"), 23900.0, 0.10, 23902.0, "BULLISH") is None
+
+    def test_ignores_non_15m_levels(self):
+        assert dsr.find_overlapping_15m_level(_fake_zones_5m_only(), 23900.0, 0.10, 23902.0, "BULLISH") is None
+
+    def test_picks_closest_of_multiple(self):
+        zones = pd.concat([_zones_with_15m(23880.0), _zones_with_15m(23895.0).iloc[[-1]]], ignore_index=True)
+        result = dsr.find_overlapping_15m_level(zones, 23900.0, 0.10, 23902.0, "BULLISH")
+        assert result[0] == 23895.0
+
+    def test_handles_empty_and_none(self):
+        assert dsr.find_overlapping_15m_level(None, 23900.0, 0.10, 23902.0, "BULLISH") is None
+        assert dsr.find_overlapping_15m_level(pd.DataFrame(columns=["zone_type", "zone_low", "status"]), 23900.0, 0.10, 23902.0, "BULLISH") is None
+
+
+class TestIs15mStrategyReady:
+    def _ready(self, s15, mode="PAPER", direction="BULLISH"):
+        base = {"symbol_enabled": True, "trading_mode": "PAPER", "active_timeframes": ["15M"],
+                "bullish_entry_enabled": True, "bearish_entry_enabled": True}
+        base.update(s15)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=base):
+            return dsr.is_15m_strategy_ready_for("NIFTY", direction, mode)
+
+    def test_ready_when_all_conditions_met(self):
+        assert self._ready({})[0] is True
+
+    def test_not_ready_when_symbol_disabled(self):
+        assert self._ready({"symbol_enabled": False})[0] is False
+
+    def test_not_ready_when_mode_differs(self):
+        assert self._ready({"trading_mode": "LIVE"}, mode="PAPER")[0] is False
+
+    def test_not_ready_when_15m_timeframe_not_selected(self):
+        assert self._ready({"active_timeframes": ["30M"]})[0] is False
+
+    def test_not_ready_when_direction_disabled(self):
+        assert self._ready({"bullish_entry_enabled": False}, direction="BULLISH")[0] is False
+        assert self._ready({"bearish_entry_enabled": False}, direction="BEARISH")[0] is False
+        assert self._ready({"bearish_entry_enabled": False}, direction="BULLISH")[0] is True
+
+    def test_settings_read_failure_is_fail_open(self):
+        with patch.object(dsr.cloud_db, "get_strategy_settings", side_effect=RuntimeError("db down")):
+            assert dsr.is_15m_strategy_ready_for("NIFTY", "BULLISH", "PAPER")[0] is False
+
+
+class TestDeferTo15mGate:
+    NOW = datetime.datetime(2026, 9, 11, 10, 0, 0)
+
+    def _run(self, s5, s15, zones):
+        candles = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=self.NOW)
+
+        def _settings(strategy_name, symbol):
+            return s15 if strategy_name == "15m_dynamic_sr" else s5
+
+        with patch.object(dsr.cloud_db, "get_strategy_settings", side_effect=_settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones), \
+             patch.object(dsr, "get_ist_now", return_value=self.NOW), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr, "get_open_trades_brief", return_value=self.open_trades), \
+             patch.object(dsr, "close_trade_manually", side_effect=lambda *a, **k: (True, 0.0)) as mock_close, \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+        self.mock_close = mock_close
+        return mock_trade, mock_log
+
+    open_trades = []
+
+    def _s5(self, **overrides):
         settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
-        for active in ("5M", None):
-            with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
-                 patch.object(dsr.cloud_db, "get_effective_active_sr_strategy", return_value=active), \
-                 patch.object(dsr.cloud_db, "get_market_zones", return_value=None) as mock_zones:
-                msg = dsr.process_symbol("fake_token", "NIFTY")
-            assert mock_zones.called  # गेट पास होऊन पुढच्या टप्प्यात (zones वाचणे) पोहोचला
-            assert "आज 15M strategy सक्रिय" not in str(msg)
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_pcr_gate_enabled"] = False
+        settings.update(overrides)
+        return settings
+
+    def _s15(self, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["symbol_enabled"] = True
+        settings.update(overrides)
+        return settings
+
+    def test_defers_to_15m_when_overlap_and_15m_ready(self):
+        mock_trade, mock_log = self._run(self._s5(defer_to_15m_enabled=True), self._s15(), _zones_with_15m(23890.0))
+        assert not mock_trade.called
+        entries = [c.args[0] for c in mock_log.call_args_list if c.args[0]["trade_status"] == "SKIPPED_DEFERRED_TO_15M"]
+        assert entries
+        assert "23890.00" in entries[0]["reason"]
+
+    def test_5m_trades_when_15m_strategy_disabled(self):
+        mock_trade, mock_log = self._run(self._s5(defer_to_15m_enabled=True), self._s15(symbol_enabled=False), _zones_with_15m(23890.0))
+        assert mock_trade.called
+
+    def test_5m_trades_when_modes_differ(self):
+        mock_trade, _ = self._run(self._s5(defer_to_15m_enabled=True), self._s15(trading_mode="LIVE"), _zones_with_15m(23890.0))
+        assert mock_trade.called
+
+    def test_5m_trades_when_15m_level_too_far(self):
+        mock_trade, _ = self._run(self._s5(defer_to_15m_enabled=True), self._s15(), _zones_with_15m(23850.0))
+        assert mock_trade.called
+
+    def test_5m_trades_when_15m_level_has_opposite_direction(self):
+        mock_trade, _ = self._run(self._s5(defer_to_15m_enabled=True), self._s15(), _zones_with_15m(23910.0, suffix="RESISTANCE"))
+        assert mock_trade.called
+
+    def test_disabled_by_default_ignores_overlap(self):
+        mock_trade, _ = self._run(self._s5(), self._s15(), _zones_with_15m(23890.0))
+        assert mock_trade.called
+
+    def test_distance_setting_is_respected(self):
+        # 0.03% मर्यादा -> 0.042% अंतरावरचा 15M level "जवळ" नाही -> 5M trade घेतो
+        mock_trade, _ = self._run(self._s5(defer_to_15m_enabled=True, defer_to_15m_distance_pct=0.03), self._s15(), _zones_with_15m(23890.0))
+        assert mock_trade.called
+
+
+class TestYieldTo15mClosesFiveMinuteTrades:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — 5M थांबतो तेव्हा त्याचे उघडे trades लगेच बंद (YIELDED_TO_15M),
+    आणि 15M ची position उघडी असताना 5M नवीन entry घेत नाही ("एका वेळी एकच position")."""
+
+    def test_deferral_closes_open_5m_family_trades(self):
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T5", "dynamic_sr_instant", "PAPER"), ("SH1", "dynamic_sr_instant_otm_shadow", "PAPER")]
+        mock_trade, _ = t._run(t._s5(defer_to_15m_enabled=True), t._s15(), _zones_with_15m(23890.0))
+        assert not mock_trade.called
+        closed = [c.args[1] for c in t.mock_close.call_args_list]
+        assert closed == ["T5", "SH1"]
+        assert all(c.kwargs["exit_reason"] == "YIELDED_TO_15M" for c in t.mock_close.call_args_list)
+
+    def test_no_close_when_not_deferring(self):
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T5", "dynamic_sr_instant", "PAPER")]
+        mock_trade, _ = t._run(t._s5(defer_to_15m_enabled=True), t._s15(symbol_enabled=False), _zones_with_15m(23890.0))
+        assert mock_trade.called
+        assert not t.mock_close.called
+
+    def test_no_close_when_feature_disabled(self):
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T5", "dynamic_sr_instant", "PAPER")]
+        t._run(t._s5(), t._s15(), _zones_with_15m(23890.0))
+        assert not t.mock_close.called
+
+    def test_5m_entry_blocked_while_15m_position_open(self):
+        # 15M level जवळ नाही (5M निर्णय स्वतःचा), पण 15M ची position उघडी -> 5M entry नाही
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T15", "srv2_momentum_reversal", "PAPER")]
+        mock_trade, mock_log = t._run(t._s5(defer_to_15m_enabled=True), t._s15(), _zones_with_15m(23850.0))
+        assert not mock_trade.called
+        assert any(c.args[0]["trade_status"] == "SKIPPED_15M_POSITION_OPEN" for c in mock_log.call_args_list)
+
+    def test_5m_entry_allowed_when_15m_position_is_other_mode(self):
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T15", "srv2_momentum_reversal", "LIVE")]
+        mock_trade, _ = t._run(t._s5(defer_to_15m_enabled=True), t._s15(), _zones_with_15m(23850.0))
+        assert mock_trade.called
+
+    def test_15m_position_does_not_block_5m_when_feature_disabled(self):
+        t = TestDeferTo15mGate()
+        t.open_trades = [("T15", "srv2_momentum_reversal", "PAPER")]
+        mock_trade, _ = t._run(t._s5(), t._s15(), _zones_with_15m(23850.0))
+        assert mock_trade.called
+
+    def test_close_open_5m_positions_reports_failures(self):
+        with patch.object(dsr, "get_open_trades_brief", return_value=[("A", "dynamic_sr_instant", "LIVE"), ("B", "dynamic_sr_instant", "LIVE")]), \
+             patch.object(dsr, "close_trade_manually", side_effect=[(True, 10.0), (False, "LTP नाही")]):
+            all_closed, closed, failed = dsr.close_open_5m_positions("tok", "NIFTY", "detail")
+        assert all_closed is False and closed == ["A"] and failed == [("B", "LTP नाही")]
+
+    def test_open_15m_position_exists_matches_mode(self):
+        with patch.object(dsr, "get_open_trades_brief", return_value=[("T", "srv2_momentum_reversal", "PAPER")]):
+            assert dsr.open_15m_position_exists("NIFTY", "PAPER") is True
+            assert dsr.open_15m_position_exists("NIFTY", "LIVE") is False

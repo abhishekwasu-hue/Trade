@@ -585,6 +585,23 @@ def has_open_trade_from_source(symbol, source):
     return count > 0
 
 
+def get_open_trades_brief(symbol, sources):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (5M+15M "एका वेळी एकच position") — दिलेल्या symbol चे,
+    दिलेल्या sources चे सध्या OPEN असलेले trades -> [(trade_id, source, mode), ...]."""
+    if not sources:
+        return []
+    placeholders = ",".join("?" for _ in sources)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT trade_id, source, COALESCE(mode,'LIVE') FROM live_trades WHERE symbol=? AND status='OPEN' AND source IN ({placeholders})",
+        (symbol, *sources),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
 def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
     """
     🎓 वापरकर्त्याने मागितलेली सुधारणा ("same level war pahilya trade cha sl tsl hit jhalyas kiman

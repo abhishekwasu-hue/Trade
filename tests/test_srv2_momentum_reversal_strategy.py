@@ -1105,31 +1105,6 @@ class TestRunAllSymbols:
         assert result is False
 
 
-class TestActiveStrategySwitchGate15M:
-    """🎓 "आजची सक्रिय strategy" स्विच — स्विच चालू असताना आज 5M सक्रिय असेल तर 15M SRv2 पूर्णपणे बंद."""
-
-    class _Reached(Exception):
-        pass
-
-    def _run(self, active):
-        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
-        settings["symbol_enabled"] = True
-        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
-             patch.object(srv2.cloud_db, "get_effective_active_sr_strategy", return_value=active), \
-             patch.object(srv2.cloud_db, "get_srv2_state", side_effect=self._Reached()):
-            return srv2.process_symbol("fake_token", "NIFTY")
-
-    def test_15m_bot_stops_when_5m_is_active(self):
-        msg = self._run("5M")
-        assert "5M" in msg and "बंद" in msg
-
-    def test_15m_bot_runs_when_15m_active_or_switch_off(self):
-        import pytest
-        for active in ("15M", None):
-            with pytest.raises(self._Reached):
-                self._run(active)
-
-
 def _one_min_df(rows, day=None):
     """आजचे 1-मिनिट candles: rows = [(open, high, low, close), ...] (जुनं ते नवीन), 12:00 पासून मिनिट-मिनिटाने."""
     base = (day or srv2.get_ist_now()).replace(hour=12, minute=0, second=0, microsecond=0)
@@ -1230,3 +1205,56 @@ class TestFetchRecent1mCandles:
             assert srv2._fetch_recent_1m_candles("tok", "NIFTY", now) == []
         with patch.object(srv2, "fetch_candles", return_value=pd.DataFrame()):
             assert srv2._fetch_recent_1m_candles("tok", "NIFTY", now) == []
+
+
+class TestYield5mBeforeEntry:
+    """🎓 15M ला प्राधान्य: entry आधी याच symbol चे उघडे 5M trades बंद (एका वेळी एकच position)."""
+
+    def _s5(self, **kw):
+        base = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        base.update(kw)
+        return base
+
+    def test_closes_5m_trades_when_enabled_and_modes_match(self):
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=self._s5(defer_to_15m_enabled=True, trading_mode="PAPER")), \
+             patch.object(srv2, "close_open_5m_positions", return_value=(True, ["T5"], [])) as mock_close:
+            ok, closed = srv2._yield_open_5m_positions("tok", "NIFTY", "PAPER")
+        assert ok is True and closed == ["T5"] and mock_close.called
+
+    def test_noop_when_feature_disabled(self):
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=self._s5(defer_to_15m_enabled=False)), \
+             patch.object(srv2, "close_open_5m_positions") as mock_close:
+            assert srv2._yield_open_5m_positions("tok", "NIFTY", "PAPER") == (True, [])
+        assert not mock_close.called
+
+    def test_noop_when_modes_differ(self):
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=self._s5(defer_to_15m_enabled=True, trading_mode="LIVE")), \
+             patch.object(srv2, "close_open_5m_positions") as mock_close:
+            assert srv2._yield_open_5m_positions("tok", "NIFTY", "PAPER") == (True, [])
+        assert not mock_close.called
+
+    def test_failed_close_blocks_entry(self):
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=self._s5(defer_to_15m_enabled=True, trading_mode="PAPER")), \
+             patch.object(srv2, "close_open_5m_positions", return_value=(False, [], [("T5", "x")])):
+            ok, _ = srv2._yield_open_5m_positions("tok", "NIFTY", "PAPER")
+        assert ok is False
+
+    def test_exception_blocks_entry(self):
+        with patch.object(srv2.cloud_db, "get_strategy_settings", side_effect=RuntimeError("db")):
+            assert srv2._yield_open_5m_positions("tok", "NIFTY", "PAPER") == (False, [])
+
+    def test_process_symbol_skips_entry_when_5m_positions_cannot_be_closed(self):
+        t = TestZeroBufferOneMinuteTouch()
+        df = _one_min_df([(23930, 23935, 23925, 23928), (23928, 23930, 23899.5, 23920)])
+        with patch.object(srv2, "_yield_open_5m_positions", return_value=(False, [])):
+            mock_trade, mock_log = t._run(df)
+        assert not mock_trade.called
+        assert any(c.args[0]["trade_status"] == "SKIPPED_5M_POSITION_NOT_CLOSED" for c in mock_log.call_args_list)
+
+    def test_process_symbol_enters_after_successful_yield(self):
+        t = TestZeroBufferOneMinuteTouch()
+        df = _one_min_df([(23930, 23935, 23925, 23928), (23928, 23930, 23899.5, 23920)])
+        with patch.object(srv2, "_yield_open_5m_positions", return_value=(True, ["T5"])), \
+             patch.object(srv2, "send_telegram_message", return_value=True):
+            mock_trade, _ = t._run(df)
+        assert mock_trade.called
