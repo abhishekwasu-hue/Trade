@@ -1316,3 +1316,48 @@ class TestOvershootParsesMcxFuturesDetail:
         d = ("Stop-Loss hit via Spot move — adverse move -0.07% reached/exceeded the -0.07% threshold "
              "[Actual exit fills used: realized P&L Rs -5,362 vs Rs -5,300 at trigger LTP]")
         assert database._parse_sl_tsl_overshoot_detail(d)["basis"] == "SL (Spot %)"
+
+
+class TestGetFirstTargetExitToday:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Target गाठल्यावर पुढचे trades थांबवा") — आजचा पहिला
+    शुद्ध 'TARGET' ने बंद झालेला खरा trade (सर्व symbols, mode स्वतंत्र, शॅडो नाही)."""
+
+    def test_returns_none_when_no_target_today(self, temp_db):
+        seed_closed_trade(temp_db, "T1", -500.0, "SL", "2026-09-30")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None
+
+    def test_target_exit_is_found_across_symbols(self, temp_db):
+        seed_closed_trade(temp_db, "T1", 800.0, "TARGET", "2026-09-30", symbol="BANKNIFTY", mode="PAPER",
+                          exit_time="2026-09-30 11:15:00")
+        row = database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30")
+        assert row == ("T1", "BANKNIFTY", "2026-09-30 11:15:00", 800.0)
+
+    def test_earliest_target_is_returned(self, temp_db):
+        seed_closed_trade(temp_db, "LATE", 500.0, "TARGET", "2026-09-30", mode="PAPER", exit_time="2026-09-30 13:00:00")
+        seed_closed_trade(temp_db, "EARLY", 300.0, "TARGET", "2026-09-30", mode="PAPER", exit_time="2026-09-30 10:30:00")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30")[0] == "EARLY"
+
+    def test_modes_are_independent(self, temp_db):
+        seed_closed_trade(temp_db, "P1", 500.0, "TARGET", "2026-09-30", mode="PAPER")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "LIVE", "2026-09-30") is None
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is not None
+
+    def test_other_days_are_ignored(self, temp_db):
+        seed_closed_trade(temp_db, "Y1", 500.0, "TARGET", "2026-09-29", mode="PAPER")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None
+
+    def test_shadow_source_never_triggers(self, temp_db):
+        seed_closed_trade(temp_db, "S1", 500.0, "TARGET", "2026-09-30", mode="PAPER",
+                          source="dynamic_sr_instant_min_hold_shadow")
+        seed_closed_trade(temp_db, "S2", 500.0, "TARGET", "2026-09-30", mode="PAPER",
+                          source="dynamic_sr_instant_otm_shadow")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None
+
+    def test_only_pure_target_counts(self, temp_db):
+        for i, reason in enumerate(("PREMIUM_TARGET", "NEXT_LEVEL_EXIT", "TSL_SL", "EOD_SQUAREOFF", "TARGET_HIT")):
+            seed_closed_trade(temp_db, f"X{i}", 500.0, reason, "2026-09-30", mode="PAPER")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None
+
+    def test_other_source_is_ignored(self, temp_db):
+        seed_closed_trade(temp_db, "M1", 500.0, "TARGET", "2026-09-30", mode="PAPER", source="mcx_futures")
+        assert database.get_first_target_exit_today("dynamic_sr_instant", "PAPER", "2026-09-30") is None

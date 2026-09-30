@@ -612,6 +612,28 @@ def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
     return datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
 
 
+def get_first_target_exit_today(source, mode, trade_date):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
+    ट्रेडिंग थांबवावे — आपला उद्देश प्रॉफिट कमावणे आहे, ट्रेड करणे नव्हे") — आजच्या (exit_time नुसार)
+    तारखेला, दिलेल्या source (उदा. 'dynamic_sr_instant') चा आणि दिलेल्या mode (PAPER/LIVE — प्रत्येक
+    mode स्वतंत्र) चा, सर्व symbols मिळून, **शुद्ध 'TARGET'** exit_reason ने बंद झालेला पहिला खरा trade.
+    Source अचूक जुळवला जातो, त्यामुळे '_shadow' अंत्य असलेले शॅडो trades कधीच ट्रिगर होत नाहीत.
+    PREMIUM_TARGET/NEXT_LEVEL_EXIT/TSL_SL वगैरे मुद्दामच मोजले जात नाहीत (वापरकर्त्याचा निर्णय — फक्त
+    TARGET). रिटर्न: (trade_id, symbol, exit_time_str, realized_pnl) किंवा None."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT trade_id, symbol, exit_time, realized_pnl FROM live_trades
+           WHERE source=? AND COALESCE(mode,'LIVE')=? AND status='CLOSED' AND exit_reason='TARGET'
+           AND substr(exit_time,1,10)=?
+           ORDER BY exit_time ASC LIMIT 1""",
+        (source, mode, trade_date),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
 def has_active_tsl_trades(symbols):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
     Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —
