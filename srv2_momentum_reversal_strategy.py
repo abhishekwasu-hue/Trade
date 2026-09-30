@@ -30,7 +30,7 @@ from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
 # rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.py/mcx_futures_trader.py सारखाच
 # dual-threshold RSI गेट (Support<40 / Resistance>60, established, सिद्ध तर्क — नवीन कॉपी नाही).
-from dynamic_sr_instant_trader import check_instant_rsi_filter, check_level_crossed
+from dynamic_sr_instant_trader import check_instant_rsi_filter, check_level_crossed, close_open_5m_positions
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
@@ -167,6 +167,25 @@ def _fetch_recent_1m_candles(access_token, symbol, now, count=2):
     df = df.copy()
     df = df[df["timestamp"].dt.date == now.date()]
     return df.tail(count).to_dict("records")
+
+
+def _yield_open_5m_positions(access_token, symbol, trading_mode):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा (5M+15M "एका वेळी एकच position"; 15M ला प्राधान्य) — 15M नवीन
+    entry घेण्याआधी, याच symbol चे उघडे 5M-कुटुंबातले trades लगेच बंद (भांडवल मोकळं). फक्त 5M चा
+    `defer_to_15m_enabled` चालू असेल आणि 5M चा trading_mode याच (15M च्या) mode शी जुळत असेल तरच; नाहीतर काहीच नाही.
+    रिटर्न: (पुढे entry घेता येईल: bool, बंद केलेले_ids: list). काहीही बंद होऊ शकलं नाही तर (False, ...) —
+    त्या cycle ला 15M entry घेत नाही (सुरक्षित)."""
+    try:
+        s5 = cloud_db.get_strategy_settings("1m_instant", symbol)
+        if not s5.get("defer_to_15m_enabled", False) or s5.get("trading_mode", "PAPER") != trading_mode:
+            return True, []
+        all_closed, closed_ids, _failed = close_open_5m_positions(
+            access_token, symbol,
+            "The 15M strategy is entering; its open 5M trades were closed first so only one position is held at a time.",
+        )
+    except Exception:
+        return False, []
+    return all_closed, closed_ids
 
 
 def process_symbol(access_token, symbol, lot_size=65):
@@ -311,6 +330,19 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = f"आधीची position (या strategy ची, कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
+
+        # 🎓 "एका वेळी एकच position (5M किंवा 15M)" — 15M ला प्राधान्य: entry घेण्याआधी याच symbol चे उघडे 5M trades
+        # बंद (वरची _yield_open_5m_positions चीच टिप्पणी). बंद होऊ शकले नाहीत तर आज हा entry नाही.
+        yield_ok, yielded_ids = _yield_open_5m_positions(access_token, symbol, settings.get("trading_mode", "PAPER"))
+        if not yield_ok:
+            log_entry["trade_status"] = "SKIPPED_5M_POSITION_NOT_CLOSED"
+            log_entry["reason"] = f"उघडे 5M trades बंद होऊ शकले नाहीत — 15M entry थांबवला ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if yielded_ids:
+            send_telegram_message(
+                f"🔀 <b>{symbol}: 15M ने पदभार घेतला</b>\n15M entry आधी उघडे {len(yielded_ids)} 5M trade(s) बंद केले (एका वेळी एकच position)."
+            )
 
         # --- सर्व अटी पूर्ण! Entry ---
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — आज expiry day असेल, तर

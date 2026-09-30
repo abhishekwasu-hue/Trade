@@ -1931,3 +1931,17 @@ class TestStopAfterTargetSettingDefault:
     def test_other_strategies_do_not_have_setting(self):
         for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
             assert "stop_after_target_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+
+class TestDeferTo15mSettingDefaults:
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5M आणि 15M ओव्हरलॅप -> 15M strategy") — डीफॉल्ट बंद,
+    0.10% अंतर, फक्त "1m_instant" साठी."""
+
+    def test_disabled_by_default_with_010_distance(self):
+        d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]
+        assert d["defer_to_15m_enabled"] is False
+        assert d["defer_to_15m_distance_pct"] == 0.10
+
+    def test_other_strategies_do_not_have_setting(self):
+        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+            assert "defer_to_15m_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]

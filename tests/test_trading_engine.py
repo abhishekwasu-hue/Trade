@@ -3335,3 +3335,26 @@ class TestLiveExitUsesActualFills:
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: self._live_resp({"PE24400": 6.0, "PE24300": 0.5}))
         ok, pnl = trading_engine.close_trade_manually("fake_token", "LM1", "NIFTY", "D")
         assert ok is True and pnl == 1837.5
+
+
+class TestCloseTradeManuallyStoresDetail:
+    """close_trade_manually() ला आता ऐच्छिक exit_reason_detail (YIELDED_TO_15M साठी वापरलेलं)."""
+
+    def _close(self, temp_db, monkeypatch, **kw):
+        seed_trade(temp_db, "X1", net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
+                   source="dynamic_sr_instant", trading_style="INTRADAY", entry_level_price=23900.0)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 28.0, "PE24300": 3.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        ok, _ = trading_engine.close_trade_manually("tok", "X1", "NIFTY", "D", **kw)
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute("SELECT status, exit_reason, exit_reason_detail FROM live_trades WHERE trade_id='X1'").fetchone()
+        conn.close()
+        return ok, row
+
+    def test_detail_is_stored_when_given(self, temp_db, monkeypatch):
+        ok, row = self._close(temp_db, monkeypatch, exit_reason="YIELDED_TO_15M", exit_reason_detail="5M yielded")
+        assert ok and row == ("CLOSED", "YIELDED_TO_15M", "5M yielded")
+
+    def test_default_behavior_unchanged_without_detail(self, temp_db, monkeypatch):
+        ok, row = self._close(temp_db, monkeypatch)
+        assert ok and row[0] == "CLOSED" and row[1] == "MANUAL_CLOSE" and row[2] is None

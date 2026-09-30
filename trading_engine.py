@@ -2068,7 +2068,7 @@ def track_manual_trade(symbol, legs, lots, lot_size, entry_ltps, trading_mode, t
     return True, trade_id, None
 
 
-def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reason="MANUAL_CLOSE"):
+def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reason="MANUAL_CLOSE", exit_reason_detail=None):
     """दिलेला specific trade_id बंद करणे — मोड (PAPER/LIVE) DB मधूनच वाचली जाते.
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — exit_reason आता parameter (डीफॉल्ट established
     'MANUAL_CLOSE', backward-compatible) — नवीन established trade_monitor.py यालाच पुनर्वापर करून
@@ -2137,8 +2137,8 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         # _maybe_cancel_broker_side_sl()/manage_open_trades() चीच टिप्पणी).
         _maybe_cancel_broker_side_sl(access_token, close_adapter, legs)
         cur.execute(
-            "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, realized_pnl=? WHERE trade_id=?",
-            (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, round(current_pnl, 2), trade_id),
+            "UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, exit_reason_detail=COALESCE(?, exit_reason_detail), realized_pnl=? WHERE trade_id=?",
+            (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, exit_reason_detail, round(current_pnl, 2), trade_id),
         )
         conn.commit()
         conn.close()
