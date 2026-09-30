@@ -369,31 +369,15 @@ def render():
     with _perf_tab1:
         _mega_header("📈 Performance Analytics", _HDR_BLUE)
 
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("PDF मध्ये सर्व MCX commodity trades असायला हवेत, All
-        # Commodity Performance साठी वेगळं बटण द्या") — फक्त MCX commodity (CRUDEOIL/GOLD/SILVER/
-        # NATURALGAS/COPPER) निवडलेली असतानाच हा checkbox दिसतो — चालू केला की या संपूर्ण टॅबमधली सर्व
-        # summary/breakdown/PDF आता एकट्या symbol ऐवजी सर्व 5 MCX commodities एकत्र (combined) दाखवते.
-        # खालचा `perf_symbol` (single string किंवा list) — database.py च्या query functions ला थेट
-        # जातो (नवीन `_symbol_where_clause()` list/tuple घेऊन "symbol IN (...)" करतं — established
-        # single-symbol वर्तन अबाधित). NIFTY/BANKNIFTY/SENSEX साठी हा checkbox दिसतच नाही — त्यांचं
-        # वर्तन जसंच्या तसं.
+        # 🎓 सर्व-MCX-एकत्र दृश्य आता MCX Futures पानाच्या स्वतःच्या "📊 Performance Report" टॅबमध्ये
+        # आहे (वापरकर्त्याची सुधारणा: "Mcx che performance Mcx tab madhech disayla pahije") — इथे फक्त
+        # निवडलेला single symbol.
         perf_all_mcx_combined = False
+        perf_symbol = symbol
+        perf_symbol_label = symbol
+        perf_symbol_title = symbol
         if symbol in MCX_FUTURES_SYMBOLS:
-            perf_all_mcx_combined = st.checkbox(
-                "🌐 सर्व MCX Commodities एकत्र दाखवा (CRUDEOIL+GOLD+SILVER+NATURALGAS+COPPER combined)",
-                key="perf_all_mcx_combined",
-                help="चालू केलं की खालचं संपूर्ण विश्लेषण (Summary/Strategy/Timeframe/PDF सकट) फक्त निवडलेल्या "
-                     "commodity ऐवजी सर्व 5 MCX commodities एकत्र दाखवेल.",
-            )
-        if perf_all_mcx_combined:
-            perf_symbol = MCX_FUTURES_SYMBOLS
-            perf_symbol_label = "ALL_MCX"
-            perf_symbol_title = "All MCX Commodities"
-            st.info(f"🌐 खालचं संपूर्ण विश्लेषण आता **सर्व 5 MCX commodities एकत्र** ({', '.join(MCX_FUTURES_SYMBOLS)}) दाखवतंय.")
-        else:
-            perf_symbol = symbol
-            perf_symbol_label = symbol
-            perf_symbol_title = symbol
+            st.info("ℹ️ MCX commodities (सर्व एकत्र सकट) चा Performance Report आणि PDF आता **MCX Futures Trader → 📊 Performance Report** टॅबमध्ये आहे.")
 
         perf_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="perf_mode_filter")
         perf_mode_f = None if perf_mode_choice == "सर्व" else ("LIVE" if "LIVE" in perf_mode_choice else "PAPER")

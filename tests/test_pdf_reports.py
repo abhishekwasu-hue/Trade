@@ -50,6 +50,24 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
         )
         assert pdf_bytes[:4] == b"%PDF"
 
+    def test_with_commodity_wise_section_produces_valid_pdf(self):
+        import pandas as pd
+        by_symbol = pd.DataFrame([
+            {"Group": "CRUDEOIL", "Trades": 5, "Win Rate %": 40.0, "Total P&L": 1200.0, "Avg P&L": 240.0},
+            {"Group": "GOLD", "Trades": 3, "Win Rate %": 33.3, "Total P&L": -800.0, "Avg P&L": -266.67},
+        ])
+        pnl_totals = {"gross_pnl": 400, "total_charges": 0, "net_pnl": 400}
+        with_sec = generate_performance_report_pdf(
+            "All MCX Commodities", "All", "2026-09-01", "2026-09-05", _SUMMARY, pnl_totals,
+            None, None, None, None, [], by_symbol_df=by_symbol,
+        )
+        without_sec = generate_performance_report_pdf(
+            "All MCX Commodities", "All", "2026-09-01", "2026-09-05", _SUMMARY, pnl_totals,
+            None, None, None, None, [],
+        )
+        assert with_sec[:4] == b"%PDF"
+        assert len(with_sec) > len(without_sec)
+
     def test_zero_trades_no_crash(self):
         pdf_bytes = generate_performance_report_pdf(
             "NIFTY", "All", "2026-09-01", "2026-09-05", {"total_trades": 0},

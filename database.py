@@ -1395,7 +1395,7 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
     अबाधित (ती aggregate आकडेवारी शॅडो trades मुळे दूषित होऊ नये, हाच मूळ उद्देश कायम)."""
     conn = sqlite3.connect(DB_PATH)
     symbol_clause, params = _symbol_where_clause(symbol)
-    query = f"""SELECT trade_id AS "Trade ID", entry_time AS "Entry Time", exit_time AS "Exit Time",
+    query = f"""SELECT trade_id AS "Trade ID", symbol AS "Symbol", entry_time AS "Entry Time", exit_time AS "Exit Time",
                       COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy, entry_reason_tag,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
