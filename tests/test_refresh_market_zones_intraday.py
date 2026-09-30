@@ -59,38 +59,28 @@ class TestRefreshSymbol:
             assert "पुरेसा" in msg
             assert not mock_save.called
 
-    def test_successful_refresh_calls_save_with_scoped_true(self):
-        df = _fake_candles_df(n=200)
+    def test_successful_refresh_merges_each_timeframe_and_never_replaces(self):
+        df = _fake_candles_df(n=500)  # 60M (1h resample) साठीही >=100 bars हवेत
 
-        def _fake_fetch(*args, **kwargs):
-            return df
-
-        with patch.object(rmzi, "fetch_candles", side_effect=_fake_fetch), \
-             patch.object(rmzi.cloud_db, "save_market_zones", return_value=True) as mock_save:
+        with patch.object(rmzi, "fetch_candles", return_value=df), \
+             patch.object(rmzi.cloud_db, "merge_dynamic_sr_zones", return_value=True) as mock_merge, \
+             patch.object(rmzi.cloud_db, "save_market_zones") as mock_save:
             ok, msg = rmzi.refresh_symbol("fake_token", "NIFTY")
             assert ok is True
             assert "NIFTY" in msg
-            assert mock_save.called
-            call = mock_save.call_args
-            saved_df, saved_symbol = call.args
-            assert saved_symbol == "NIFTY"
-            # हाच सगळ्यात महत्त्वाचा तपासणी-मुद्दा -- scoped=True नसेल तर 1M/5M live zones धोक्यात येतात.
-            assert call.kwargs.get("scoped") is True
-            zone_types = set(saved_df["zone_type"])
-            assert zone_types <= {
-                "DYNAMIC_SR_SUPPORT_15M", "DYNAMIC_SR_RESISTANCE_15M",
-                "DYNAMIC_SR_SUPPORT_30M", "DYNAMIC_SR_RESISTANCE_30M",
-                "DYNAMIC_SR_SUPPORT_60M", "DYNAMIC_SR_RESISTANCE_60M",
-            }
-            assert not any(zt.endswith("_1M") or zt.endswith("_5M") for zt in zone_types)
+            # हाच मुख्य तपासणी-मुद्दा -- delete+insert (level_price churn -> hit-counter/cooldown reset) नाही, फक्त merge.
+            assert not mock_save.called
+            suffixes = [c.args[2] for c in mock_merge.call_args_list]
+            assert suffixes == ["15M", "30M", "60M"]
+            assert all(c.args[0] == "NIFTY" for c in mock_merge.call_args_list)
 
-    def test_save_failure_returns_false(self):
-        df = _fake_candles_df(n=200)
+    def test_merge_failure_returns_false(self):
+        df = _fake_candles_df(n=500)
         with patch.object(rmzi, "fetch_candles", return_value=df), \
-             patch.object(rmzi.cloud_db, "save_market_zones", return_value=False):
+             patch.object(rmzi.cloud_db, "merge_dynamic_sr_zones", return_value=False):
             ok, msg = rmzi.refresh_symbol("fake_token", "NIFTY")
             assert ok is False
-            assert "साठवता आलं नाही" in msg
+            assert "merge अयशस्वी" in msg
 
     def test_default_symbols_are_nse_only(self):
         assert rmzi.INTRADAY_SR_SYMBOLS == ["NIFTY", "BANKNIFTY", "SENSEX"]
