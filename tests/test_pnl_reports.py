@@ -83,3 +83,46 @@ class TestGeneratePnlReportChargesBreakdown:
         )
         assert totals == pnl_reports._EMPTY_TOTALS
         assert totals["charges_breakdown"] == {}
+
+
+class TestAddChargesToTradesDf:
+    """🎓 "Mcx Trade che brokerage and other charges add kele nahit" — प्रति-trade Charges/Net P&L स्तंभ."""
+
+    def test_mcx_trade_charges_match_upstox_commodity_rates(self, temp_db):
+        # CRUDEOIL 100 bbl @ 6000: BUY = 51.18, SELL = 99.18 (brokerage ₹20 + CTT/exchange/SEBI/stamp + GST)
+        _seed_closed_trade(temp_db, "M1", 1000.0, "2026-09-10", symbol="CRUDEOIL")
+        _seed_order(temp_db, "MO1", "M1", "2026-09-10 10:00:00", "BUY", quantity=100, fill_price=6000.0, symbol="CRUDEOIL")
+        _seed_order(temp_db, "MO2", "M1", "2026-09-10 14:00:00", "SELL", quantity=100, fill_price=6000.0, symbol="CRUDEOIL")
+        trades = database.get_closed_trades_detail("CRUDEOIL")
+        out = pnl_reports.add_charges_to_trades_df(trades)
+        assert out.loc[0, "Charges"] == pytest.approx(150.36, abs=0.02)
+        assert out.loc[0, "Net P&L"] == pytest.approx(1000.0 - 150.36, abs=0.02)
+
+    def test_entry_order_before_range_is_still_counted(self, temp_db):
+        # entry order 2 दिवस आधी, exit रेंजमध्ये — get_orders_for_trades() trade_id नुसार असल्याने दोन्ही धरले जातात
+        _seed_closed_trade(temp_db, "M2", 500.0, "2026-09-10", symbol="GOLD")
+        _seed_order(temp_db, "GO1", "M2", "2026-09-08 10:00:00", "BUY", quantity=100, fill_price=70000.0, symbol="GOLD")
+        _seed_order(temp_db, "GO2", "M2", "2026-09-10 14:00:00", "SELL", quantity=100, fill_price=70000.0, symbol="GOLD")
+        trades = database.get_closed_trades_detail("GOLD", start_date=datetime.date(2026, 9, 10), end_date=datetime.date(2026, 9, 10))
+        out = pnl_reports.add_charges_to_trades_df(trades)
+        assert out.loc[0, "Charges"] > 40  # दोन orders चे brokerage (₹40) + statutory
+
+    def test_trade_without_orders_has_zero_charges(self, temp_db):
+        _seed_closed_trade(temp_db, "M3", 300.0, "2026-09-10", symbol="SILVER")
+        out = pnl_reports.add_charges_to_trades_df(database.get_closed_trades_detail("SILVER"))
+        assert out.loc[0, "Charges"] == 0.0
+        assert out.loc[0, "Net P&L"] == 300.0
+
+    def test_empty_df_gets_columns(self, temp_db):
+        out = pnl_reports.add_charges_to_trades_df(database.get_closed_trades_detail("COPPER"))
+        assert out.empty
+        assert "Charges" in out.columns and "Net P&L" in out.columns
+
+    def test_per_trade_charges_sum_matches_report_total(self, temp_db):
+        _seed_closed_trade(temp_db, "M4", 800.0, "2026-09-10", symbol="CRUDEOIL")
+        _seed_order(temp_db, "MO7", "M4", "2026-09-10 10:00:00", "BUY", quantity=100, fill_price=6000.0, symbol="CRUDEOIL")
+        _seed_order(temp_db, "MO8", "M4", "2026-09-10 14:00:00", "SELL", quantity=100, fill_price=6010.0, symbol="CRUDEOIL")
+        d = datetime.date(2026, 9, 10)
+        _, totals = pnl_reports.generate_pnl_report("CRUDEOIL", "Daily", d, d)
+        out = pnl_reports.add_charges_to_trades_df(database.get_closed_trades_detail("CRUDEOIL"))
+        assert out["Charges"].sum() == pytest.approx(totals["total_charges"], abs=0.02)

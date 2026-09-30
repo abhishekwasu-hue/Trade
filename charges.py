@@ -331,6 +331,22 @@ def compute_charges(orders_df, start_date, end_date, broker_map=None):
     return daily_charges_df, summary
 
 
+def compute_charges_by_trade(orders_df, broker_map=None):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX Trade-wise brokerage/charges) — प्रत्येक trade चं
+    (entry + exit दोन्ही orders मिळून) एकूण शुल्क: {trade_id: charge}. _add_order_charges() वरूनच —
+    म्हणजे Performance Report चे एकूण आकडे आणि हे प्रति-trade आकडे एकाच गणितावर आधारित.
+    Stocko चं निश्चित मासिक subscription कुठल्याही एका trade शी बांधलेलं नसल्याने इथे धरलेलं नाही
+    (फक्त त्याचे per-order statutory शुल्क). orders_df रिकामा असेल तर {}."""
+    if orders_df is None or orders_df.empty:
+        return {}
+    broker_map = broker_map if broker_map is not None else get_account_broker_map()
+    df = orders_df.copy()
+    df["broker_type"] = df["account_id"].apply(lambda a: resolve_broker_type(a, broker_map))
+    df = _add_order_charges(df)
+    df = df[df["trade_id"].notna()]
+    return {tid: round(float(v), 2) for tid, v in df.groupby("trade_id")["charge"].sum().items()}
+
+
 def compute_hypothetical_charges_by_broker(orders_df, start_date, end_date):
     """
     🎓 वापरकर्त्याने निदर्शनास आणलेली त्रुटी ("सर्व ब्रोकरचा तुलनात्मक तक्ता आपण दिलेला नाही, फक्त

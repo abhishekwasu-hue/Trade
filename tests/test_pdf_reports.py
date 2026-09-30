@@ -68,6 +68,19 @@ class TestGeneratePerformanceReportPdfChargesBreakdown:
         assert with_sec[:4] == b"%PDF"
         assert len(with_sec) > len(without_sec)
 
+    def test_trade_log_with_charges_and_net_columns(self):
+        import pandas as pd
+        trade_log = pd.DataFrame([{
+            "Trade ID": "T1", "Symbol": "CRUDEOIL", "Entry Time": "2026-09-10 10:00:00", "Entry Reason": "Support touch",
+            "Exit Time": "2026-09-10 14:00:00", "Exit Reason": "Target", "Exit Reason Detail": "-",
+            "Realized P&L": 1000.0, "Charges": 150.36, "Net P&L": 849.64, "Mode": "LIVE", "Entry Timeframe": "5M",
+        }])
+        pdf_bytes = generate_performance_report_pdf(
+            "All MCX Commodities", "All", "2026-09-01", "2026-09-05", _SUMMARY,
+            {"gross_pnl": 1000, "total_charges": 150.36, "net_pnl": 849.64}, None, None, None, trade_log, [],
+        )
+        assert pdf_bytes[:4] == b"%PDF"
+
     def test_zero_trades_no_crash(self):
         pdf_bytes = generate_performance_report_pdf(
             "NIFTY", "All", "2026-09-01", "2026-09-05", {"total_trades": 0},

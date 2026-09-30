@@ -6,8 +6,8 @@ Daily / Weekly / Monthly P&L Report — बंद झालेल्या trade
 """
 import pandas as pd
 
-from charges import compute_charges, compute_hypothetical_charges_by_broker, get_account_broker_map
-from database import get_closed_trades_for_report, get_orders_with_account
+from charges import compute_charges, compute_charges_by_trade, compute_hypothetical_charges_by_broker, get_account_broker_map
+from database import get_closed_trades_for_report, get_orders_for_trades, get_orders_with_account
 
 PERIOD_FREQ = {"Daily": "D", "Weekly": "W", "Monthly": "MS"}
 
@@ -104,3 +104,20 @@ def generate_pnl_report(symbol, period, start_date, end_date, mode_filter=None):
         "charges_breakdown": charges_summary["breakdown"],
     }
     return report_df, totals
+
+
+def add_charges_to_trades_df(df, trade_id_col="Trade ID", pnl_col="Realized P&L"):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX Trade-wise brokerage/charges) — बंद trades च्या
+    DataFrame ला प्रत्येक trade चे "Charges" (entry+exit orders, charges.py) आणि "Net P&L"
+    (Realized P&L − Charges) स्तंभ जोडते. order_log मध्ये ज्या trade चे orders नाहीत त्याचे Charges 0.
+    df रिकामा असेल तर तसाच (स्तंभांसकट) परत."""
+    df = df.copy()
+    if df.empty:
+        df["Charges"] = pd.Series(dtype=float)
+        df["Net P&L"] = pd.Series(dtype=float)
+        return df
+    orders_df = get_orders_for_trades(df[trade_id_col].tolist())
+    by_trade = compute_charges_by_trade(orders_df, broker_map=get_account_broker_map())
+    df["Charges"] = df[trade_id_col].map(lambda t: by_trade.get(t, 0.0)).astype(float)
+    df["Net P&L"] = (df[pnl_col] - df["Charges"]).round(2)
+    return df

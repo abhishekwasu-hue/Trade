@@ -34,7 +34,7 @@ from database import (
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
-from pnl_reports import generate_pnl_report
+from pnl_reports import generate_pnl_report, add_charges_to_trades_df
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override
@@ -343,16 +343,26 @@ def _render_all_commodities_positions():
     for sym in MCX_SYMBOLS:
         df = get_closed_trades_detail(sym, start_date=ex_from, end_date=ex_to)
         if not df.empty:
-            df.insert(0, "Symbol", sym)
             closed_frames.append(df)
 
     if not closed_frames:
         st.info("या कालावधीत कुठल्याही MCX commodity चा एकही trade बंद झालेला नाही.")
     else:
         combined_closed = pd.concat(closed_frames, ignore_index=True).sort_values("Exit Time", ascending=False)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Mcx Trade che brokerage and other charges add kele nahit,
+        # upstox brokerage calculator nusar") — प्रत्येक trade चे Charges (entry+exit, charges.py चे
+        # Upstox दर) आणि Net P&L स्तंभ.
+        combined_closed = add_charges_to_trades_df(combined_closed)
         st.dataframe(combined_closed, width="stretch", height=min(400, 60 + 35 * len(combined_closed)))
         total_realized = combined_closed["Realized P&L"].sum()
-        st.metric(f"{ex_from} ते {ex_to}: एकूण Realized P&L", f"₹{total_realized:,.0f}")
+        total_trade_charges = combined_closed["Charges"].sum()
+        tm1, tm2, tm3 = st.columns(3)
+        with tm1:
+            st.metric(f"{ex_from} ते {ex_to}: Gross Realized P&L", f"₹{total_realized:,.0f}")
+        with tm2:
+            st.metric("एकूण Charges", f"₹{total_trade_charges:,.0f}")
+        with tm3:
+            st.metric("Net P&L", f"₹{total_realized - total_trade_charges:,.0f}")
         st.caption(f"एकूण {len(combined_closed)} बंद झालेले trades (सर्व commodities मिळून, नवीनतम आधी).")
 
 
@@ -706,6 +716,38 @@ def render():
                 with scol4:
                     st.metric("ROI %", f"{summary['roi_pct']}%" if summary.get("roi_pct") is not None else "N/A")
 
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX brokerage/charges) — Upstox दरांनुसार (charges.py):
+            # Gross − Charges = Net, आणि Charges चं घटकनिहाय breakdown.
+            _, perf_pnl_totals = generate_pnl_report(perf_symbol, "Daily", perf_from, perf_to, mode_filter=perf_mode_f)
+            if perf_pnl_totals.get("total_orders", 0) > 0 or perf_pnl_totals.get("total_trades", 0) > 0:
+                ncol1, ncol2, ncol3 = st.columns(3)
+                with ncol1:
+                    st.metric("Gross P&L (charges आधी)", f"₹{perf_pnl_totals['gross_pnl']:,.0f}")
+                with ncol2:
+                    st.metric("एकूण Charges", f"₹{perf_pnl_totals['total_charges']:,.0f}")
+                with ncol3:
+                    st.metric("Net P&L (charges नंतर)", f"₹{perf_pnl_totals['net_pnl']:,.0f}")
+                _bd = perf_pnl_totals.get("charges_breakdown") or {}
+                if _bd:
+                    with st.expander("🧾 Charges चं breakdown (Upstox दरांनुसार)"):
+                        st.dataframe(
+                            pd.DataFrame([
+                                {"घटक": "Brokerage (₹20 किंवा 0.05%, जे कमी / order)", "रक्कम (₹)": _bd.get("brokerage", 0.0)},
+                                {"घटक": "CTT (0.01%, फक्त SELL)", "रक्कम (₹)": _bd.get("stt", 0.0)},
+                                {"घटक": "Exchange Txn Charge (MCX 0.0021%)", "रक्कम (₹)": _bd.get("exchange_txn", 0.0)},
+                                {"घटक": "SEBI Turnover Fee (0.0001%)", "रक्कम (₹)": _bd.get("sebi_fee", 0.0)},
+                                {"घटक": "Stamp Duty (0.002%, फक्त BUY)", "रक्कम (₹)": _bd.get("stamp_duty", 0.0)},
+                                {"घटक": "GST 18% (brokerage+exchange+SEBI वर)", "रक्कम (₹)": _bd.get("gst", 0.0)},
+                                {"घटक": "एकूण Charges", "रक्कम (₹)": perf_pnl_totals["total_charges"]},
+                            ]),
+                            width="stretch", hide_index=True,
+                        )
+                        st.caption(
+                            f"{perf_pnl_totals.get('total_orders', 0)} orders वर आधारित. दर: Upstox brokerage calculator "
+                            "(MCX Commodity Futures) — charges.py. निवडलेल्या कालावधीत ज्या दिवशी order झाले त्या "
+                            "दिवसांचे charges, आणि ज्या दिवशी trade बंद झाला त्या दिवसांचा Gross P&L मोजलेला आहे."
+                        )
+
             perf_by_symbol_pdf = None
             if perf_all_combined:
                 sub_header("🛢️ Commodity नुसार तुलना", HDR_TEAL)
@@ -729,6 +771,7 @@ def render():
 
             sub_header("📋 Trade Log — प्रत्येक Trade चं Entry व Exit कारण", HDR_PURPLE)
             perf_trade_log_df = get_closed_trades_detail(perf_symbol, mode_filter=perf_mode_f, start_date=perf_from, end_date=perf_to)
+            perf_trade_log_df = add_charges_to_trades_df(perf_trade_log_df)
             perf_trade_log_pdf_df = None
             if perf_trade_log_df.empty:
                 st.caption("या कालावधीत कोणतेही बंद ट्रेड्स नाहीत.")
@@ -739,7 +782,7 @@ def render():
                 perf_trade_log_display["Exit Reason (नेमकं कारण)"] = perf_trade_log_display["exit_reason_detail"].fillna("—")
                 perf_trade_log_display = perf_trade_log_display[[
                     "Trade ID", "Symbol", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason (नेमकं कारण)", "Realized P&L", "mode",
+                    "Exit Reason (नेमकं कारण)", "Realized P&L", "Charges", "Net P&L", "mode",
                 ]].rename(columns={"mode": "Mode"})
                 st.dataframe(perf_trade_log_display, width="stretch", height=350, hide_index=True)
                 perf_trade_log_csv = perf_trade_log_display.to_csv(index=False).encode("utf-8")
@@ -760,7 +803,7 @@ def render():
                 )
                 perf_trade_log_pdf_df = perf_trade_log_pdf_df[[
                     "Trade ID", "Symbol", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason Detail", "Realized P&L", "mode", "Entry Timeframe",
+                    "Exit Reason Detail", "Realized P&L", "Charges", "Net P&L", "mode", "Entry Timeframe",
                 ]].rename(columns={"mode": "Mode"})
 
             perf_slippage_pairs_df = (
@@ -778,7 +821,6 @@ def render():
                     st.info("ℹ️ याच कालावधी/मोडसाठी PDF आधीच तयार आहे — खाली थेट डाऊनलोड करा (पुन्हा तयार करायची गरज नाही).")
                 else:
                     with st.spinner("PDF तयार होत आहे..."):
-                        _, perf_pnl_totals = generate_pnl_report(perf_symbol, "Daily", perf_from, perf_to, mode_filter=perf_mode_f)
                         perf_recs_en = (
                             _build_recommendations(perf_symbol, "source", "Strategy", perf_mode_f, perf_from, perf_to, english=True)
                             + _build_recommendations(perf_symbol, "entry_timeframe", "Timeframe", perf_mode_f, perf_from, perf_to, english=True)

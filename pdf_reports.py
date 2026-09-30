@@ -2253,6 +2253,8 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
         "Trade ID": 0.09, "Entry Time": 0.075, "Entry Reason": 0.16,
         "Legs (Strike/Entry/Exit Price)": 0.20, "Exit Time": 0.075,
         "Exit Reason": 0.09, "Exit Reason Detail": 0.16, "Realized P&L": 0.07, "Mode": 0.05,
+        # MCX Performance Report (सर्व commodities एकत्र) साठी जोडलेले स्तंभ — Symbol, Charges, Net P&L.
+        "Symbol": 0.07, "Charges": 0.06, "Net P&L": 0.07,
     }
     columns = list(display_df.columns)
     col_widths = [usable_width * col_fracs.get(c, 1.0 / len(columns)) for c in columns]
@@ -2264,6 +2266,8 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     ]
     data = [header_row]
     pnl_col_idx = columns.index("Realized P&L") if "Realized P&L" in columns else None
+    net_col_idx = columns.index("Net P&L") if "Net P&L" in columns else None
+    net_row_colors = {}
     exit_col_idx = columns.index("Exit Reason") if "Exit Reason" in columns else None
     pnl_row_colors = {}
     exit_row_colors = {}
@@ -2272,6 +2276,11 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
         for col_idx, (col_name, val) in enumerate(zip(columns, row)):
             if col_name == "Realized P&L":
                 pnl_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
+                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
+            elif col_name == "Net P&L":
+                net_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
+                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
+            elif col_name == "Charges":
                 row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
             elif col_name == "Exit Reason":
                 text_color, bg_color = _exit_reason_color(val)
@@ -2297,6 +2306,9 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
     if pnl_col_idx is not None:
         for row_idx, color in pnl_row_colors.items():
             style_cmds.append(("TEXTCOLOR", (pnl_col_idx, row_idx), (pnl_col_idx, row_idx), color))
+    if net_col_idx is not None:
+        for row_idx, color in net_row_colors.items():
+            style_cmds.append(("TEXTCOLOR", (net_col_idx, row_idx), (net_col_idx, row_idx), color))
     if exit_col_idx is not None:
         for row_idx, (text_color, bg_color) in exit_row_colors.items():
             style_cmds.append(("TEXTCOLOR", (exit_col_idx, row_idx), (exit_col_idx, row_idx), text_color))
