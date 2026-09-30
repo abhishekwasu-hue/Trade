@@ -591,3 +591,19 @@ class TestPdfTableLayout:
         out = _format_group_df_for_pdf(g).iloc[0]
         assert out["Total P&L"] == "Rs 70,184" and out["Avg P&L"] == "Rs -1,526"
         assert out["Win Rate %"] == "N/A" and out["ROI %"] == "0.09%" and out["Trades"] == "3"
+
+
+def test_trade_log_block_shows_margin_used_line():
+    import pandas as pd
+    from pdf_reports import _build_trade_log_table
+    df = pd.DataFrame([
+        {"Trade ID": "T1", "Symbol": "GOLD", "Entry Time": "2026-09-25 21:42:22", "Entry Reason": "e", "Exit Time": "2026-09-25 21:57:21",
+         "Exit Reason": "Target hit", "Exit Reason Detail": "-", "Realized P&L": 10.0, "Charges": 1.0, "Net P&L": 9.0, "Margin": 123456.0, "Mode": "PAPER"},
+        {"Trade ID": "T2", "Symbol": "GOLD", "Entry Time": "2026-09-25 22:42:22", "Entry Reason": "e", "Exit Time": "2026-09-25 22:57:21",
+         "Exit Reason": "Target hit", "Exit Reason Detail": "-", "Realized P&L": 10.0, "Charges": 1.0, "Net P&L": 9.0, "Margin": float("nan"), "Mode": "PAPER"},
+    ])
+    tbl = _build_trade_log_table(df, usable_width=515)[0]
+    detail_1 = tbl._cellvalues[2][0].text
+    detail_2 = tbl._cellvalues[4][0].text
+    assert "Margin used:</b> Rs 123,456" in detail_1
+    assert "Margin used" not in detail_2  # NULL (जुनी नोंद) — ओळ वगळली

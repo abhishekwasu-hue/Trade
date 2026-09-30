@@ -35,11 +35,12 @@ from database import (
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
 from pnl_reports import generate_pnl_report, add_charges_to_trades_df
+from mcx_margin import compute_margin_rows, total_worst_case_margin, MARGIN_COLUMNS
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
-from upstox_api import fetch_mcx_candles, get_total_capital
+from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin
 from mcx_futures_trader import PRODUCT_TYPE
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
@@ -384,6 +385,44 @@ def _render_all_commodities_positions():
         st.caption(f"एकूण {len(combined_closed)} बंद झालेले trades (सर्व commodities मिळून, नवीनतम आधी).")
 
 
+@st.cache_data(ttl=60)
+def _margin_rows_cached(access_token, lots_tuple):
+    """Margin Calculator API कॉल्स (प्रत्येक commodity साठी BUY+SELL) 60 सेकंद cache — rerun वर पुन्हा-पुन्हा नाही."""
+    return compute_margin_rows(access_token, MCX_SYMBOLS, dict(lots_tuple), product=PRODUCT_TYPE)
+
+
+def _render_required_margin_panel():
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Commodity nusar Required Margin pn dakhwa") — प्रत्येक
+    commodity साठी (सेव्ह केलेल्या Lots नुसार) BUY आणि SELL दोन्हीची आवश्यक margin, Upstox च्या अधिकृत Margin
+    Calculator API वरून (bot trade उघडण्याआधी तोच वापरतो). बटण दाबल्यावरच API कॉल्स होतात."""
+    token = st.session_state.get("token_input", "")
+    if not token:
+        st.info("Upstox token उपलब्ध नाही — sidebar मधून token टाका.")
+        return
+    st.caption(
+        "प्रत्येक commodity चे सध्याचे (front-month) Futures contract, तिथे सेव्ह केलेल्या Lots नुसार — Upstox Margin "
+        "Calculator (SPAN + Exposure). API ने आकडा दिला नाही तर रिकामा राहतो; अंदाज दाखवला जात नाही."
+    )
+    if st.button("💰 Required Margin मोजा / रिफ्रेश करा", key="mcxf_margin_calc_btn"):
+        lots_by_symbol = {sym: int(cloud_db.get_strategy_settings(STRATEGY_KEY, sym).get("lots", 1)) for sym in MCX_SYMBOLS}
+        with st.spinner("Upstox Margin Calculator ला विचारत आहे..."):
+            rows = _margin_rows_cached(token, tuple(sorted(lots_by_symbol.items())))
+        st.session_state["mcxf_margin_rows"] = rows
+    rows = st.session_state.get("mcxf_margin_rows")
+    if not rows:
+        st.info("वरचं बटण दाबा.")
+        return
+    st.dataframe(pd.DataFrame(rows, columns=MARGIN_COLUMNS), width="stretch", hide_index=True)
+    total = total_worst_case_margin(rows)
+    available = get_available_margin(token)
+    m1, m2 = st.columns(2)
+    with m1:
+        st.metric("सर्व commodities एकाच वेळी (मोठी बाजू) — एकूण Margin", f"₹{total:,.0f}" if total is not None else "N/A")
+    with m2:
+        st.metric("Upstox मधील उपलब्ध Margin", f"₹{available:,.0f}" if available is not None else "N/A")
+    st.caption("एकूण = प्रत्येक commodity ची BUY/SELL पैकी मोठी margin जोडलेली (worst-case). Lots बदलल्यावर पुन्हा 'मोजा' दाबा.")
+
+
 def render():
     mega_header("🛢️ MCX Futures Trader", HDR_BLUE)
     st.caption(
@@ -407,6 +446,9 @@ def render():
     # न लागता.
     with st.expander("💼 सर्व Positions (सर्व Commodities एकत्र) — Live + Exit झालेले", expanded=True):
         _render_all_commodities_positions()
+
+    with st.expander("💰 Required Margin — Commodity नुसार (BUY + SELL)", expanded=False):
+        _render_required_margin_panel()
 
     st.markdown("---")
     symbol = st.selectbox("Commodity निवडा", MCX_SYMBOLS, key="mcxf_symbol")
@@ -453,6 +495,15 @@ def render():
             key=_widget_key(symbol, "symbol_enabled"),
         )
         lots = _number_input("Lots (× commodity चा स्वतःचा lot_size)", settings, "lots", symbol, min_value=1, max_value=50, step=1)
+        _mrow = next((r for r in (st.session_state.get("mcxf_margin_rows") or []) if r.get("Commodity") == symbol), None)
+        if _mrow and _mrow.get("BUY / lot (Rs)") is not None and _mrow.get("SELL / lot (Rs)") is not None:
+            st.caption(
+                f"💰 1 lot ≈ BUY ₹{_mrow['BUY / lot (Rs)']:,.0f} / SELL ₹{_mrow['SELL / lot (Rs)']:,.0f} — "
+                f"तुमचे {int(lots)} lots ≈ BUY ₹{_mrow['BUY / lot (Rs)'] * int(lots):,.0f} / SELL ₹{_mrow['SELL / lot (Rs)'] * int(lots):,.0f} "
+                "(वरच्या 'Required Margin' expander चा शेवटचा आकडा)."
+            )
+        else:
+            st.caption("💰 1 lot ला किती margin लागते हे बघण्यासाठी वरच्या 'Required Margin' expander मध्ये 'मोजा' दाबा.")
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या,
         # default 2") — आधी ही मर्यादा hardcoded (2) आणि "बदलण्याजोगी नाही" असं स्पष्ट म्हटलेलं होतं —
         # आता इतर सर्व bots सारखीच Dashboard वरून बदलता येते, डीफॉल्ट मात्र आधीसारखाच 2.
@@ -830,8 +881,8 @@ def render():
                 perf_trade_log_display["Exit Reason (नेमकं कारण)"] = perf_trade_log_display["exit_reason_detail"].fillna("—")
                 perf_trade_log_display = perf_trade_log_display[[
                     "Trade ID", "Symbol", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason (नेमकं कारण)", "Realized P&L", "Charges", "Net P&L", "mode",
-                ]].rename(columns={"mode": "Mode"})
+                    "Exit Reason (नेमकं कारण)", "Realized P&L", "Charges", "Net P&L", "Margin", "mode",
+                ]].rename(columns={"mode": "Mode", "Margin": "Margin (Rs)"})
                 st.dataframe(perf_trade_log_display, width="stretch", height=350, hide_index=True)
                 perf_trade_log_csv = perf_trade_log_display.to_csv(index=False).encode("utf-8")
                 st.download_button(
@@ -851,7 +902,7 @@ def render():
                 )
                 perf_trade_log_pdf_df = perf_trade_log_pdf_df[[
                     "Trade ID", "Symbol", "Entry Time", "Entry Reason", "Exit Time", "Exit Reason",
-                    "Exit Reason Detail", "Realized P&L", "Charges", "Net P&L", "mode", "Entry Timeframe",
+                    "Exit Reason Detail", "Realized P&L", "Charges", "Net P&L", "Margin", "mode", "Entry Timeframe",
                 ]].rename(columns={"mode": "Mode"})
 
             perf_slippage_pairs_df = (
