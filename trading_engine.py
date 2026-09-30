@@ -1255,6 +1255,44 @@ def _alert_ltp_fetch_failure(symbol, context_label, error_detail, has_live_trade
         _logger.exception("_alert_ltp_fetch_failure() मध्ये अनपेक्षित चूक (silently handled)")
 
 
+def _actual_exit_prices(resp, close_orders):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE trades चे खरे fill price) — Upstox LIVE close-order प्रतिसादातल्या
+    verified_legs (GET /v2/order/details वरून पडताळलेले, upstox_api._verify_and_annotate_fills) मधून प्रत्येक leg चा
+    प्रत्यक्ष average_price: {instrument_token: price}. फक्त तेव्हाच परत येतो जेव्हा close_orders चे **सर्व** legs
+    'complete', पूर्ण quantity भरलेले आणि average_price > 0 असतील — नाहीतर {} (म्हणजे आधीचा LTP-आधारित आकडाच वापरला
+    जातो, जुनं वर्तन). PAPER / adapter-routed (Shoonya/Stocko/Fyers) प्रतिसादांत verified_legs नसतात -> {}."""
+    verified = resp.get("verified_legs") if isinstance(resp, dict) else None
+    if not verified:
+        return {}
+    prices = {}
+    for leg in verified:
+        try:
+            avg = float(leg.get("average_price"))
+        except (TypeError, ValueError):
+            return {}
+        token = leg.get("instrument_token")
+        if leg.get("status") != "complete" or not token or avg <= 0:
+            return {}
+        filled, qty = leg.get("filled_quantity"), leg.get("quantity")
+        try:
+            if filled is not None and qty is not None and float(filled) < float(qty):
+                return {}
+        except (TypeError, ValueError):
+            return {}
+        prices[token] = avg
+    if any(o.get("instrument_token") not in prices for o in close_orders):
+        return {}
+    return prices
+
+
+def _realized_pnl_from_exit_prices(net_credit, legs, exit_prices, lots, lot_size):
+    """entry net_credit (आधीच खऱ्या entry fill वरून) विरुद्ध खरे exit fill भाव -> realized P&L (₹)."""
+    cost_to_close = sum(
+        exit_prices[leg["instrument_key"]] * (1 if leg["transaction_type"] == "SELL" else -1) for leg in legs
+    )
+    return (net_credit - cost_to_close) * lots * lot_size
+
+
 def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
@@ -1841,7 +1879,20 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                                   else execute_order_leg_set(access_token, close_orders, trade_mode))
             if status_code == 200 and resp.get("status") == "success":
                 order_ids = extract_order_ids(resp)
-                log_orders_batch(order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE", fill_prices=current_ltps)
+                # 🎓 LIVE trades चे खरे exit fill भाव (Upstox verified_legs) उपलब्ध असतील तर order log आणि
+                # realized P&L त्यावरून; नसतील (PAPER/इतर brokers/अपूर्ण माहिती) तर आधीचा LTP-आधारित आकडा.
+                actual_exit_prices = _actual_exit_prices(resp, close_orders)
+                realized_pnl_value = current_pnl
+                if actual_exit_prices and all(leg["instrument_key"] in actual_exit_prices for leg in legs):
+                    realized_pnl_value = _realized_pnl_from_exit_prices(net_credit, legs, actual_exit_prices, lots, lot_size)
+                    exit_reason_detail = (
+                        f"{exit_reason_detail or exit_reason} [Actual exit fills used: realized P&L Rs {realized_pnl_value:,.0f} "
+                        f"vs Rs {current_pnl:,.0f} at trigger LTP]"
+                    )
+                log_orders_batch(
+                    order_ids, trade_id, symbol, trade_mode, close_orders, status="COMPLETE",
+                    fill_prices={**current_ltps, **actual_exit_prices},
+                )
                 # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — trade
                 # आत्ताच (SL/TSL/Target/Next-Level/EOD/OI-Reversal/Carry-Forward यापैकी कुठल्याही
                 # कारणाने) प्रत्यक्ष बंद झाला — जर _maybe_place_broker_side_sl() ने आधी resting
@@ -1851,10 +1902,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 cur.execute(
                     """UPDATE live_trades SET status='CLOSED', exit_time=?, exit_reason=?, exit_reason_detail=?, realized_pnl=?
                        WHERE trade_id=?""",
-                    (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, exit_reason_detail, round(current_pnl, 2), trade_id),
+                    (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, exit_reason_detail, round(realized_pnl_value, 2), trade_id),
                 )
                 conn.commit()
-                closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(current_pnl, 2), "mode": trade_mode})
+                closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(realized_pnl_value, 2), "mode": trade_mode})
             else:
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली, महत्त्वाची सुरक्षा-सुधारणा — आधी close-order
                 # अयशस्वी झाल्यास कुठलीही नोंद (log/notification) होतच नव्हती — trade OPEN च
@@ -2074,7 +2125,13 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
                           else execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE"))
     if status_code == 200 and resp.get("status") == "success":
         order_ids = extract_order_ids(resp)
-        log_orders_batch(order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE", fill_prices=ltp_map)
+        actual_exit_prices = _actual_exit_prices(resp, close_orders)  # बघा manage_open_trades() मधली टिप्पणी
+        if actual_exit_prices and all(leg["instrument_key"] in actual_exit_prices for leg in legs):
+            current_pnl = _realized_pnl_from_exit_prices(net_credit, legs, actual_exit_prices, lots, lot_size)
+        log_orders_batch(
+            order_ids, trade_id, symbol, trade_mode or "LIVE", close_orders, status="COMPLETE",
+            fill_prices={**ltp_map, **actual_exit_prices},
+        )
         # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("Phase 2 — broker-side SL") — Dashboard वरून
         # मॅन्युअली बंद केला तरी, आधी ठेवलेला resting SL-M order इथेही रद्द करणे आवश्यक (वरच्या
         # _maybe_cancel_broker_side_sl()/manage_open_trades() चीच टिप्पणी).

@@ -1506,6 +1506,13 @@ _SL_TSL_OVERSHOOT_PATTERNS = [
     # SL — फक्त Spot% मुळे
     (re.compile(r"Stop-Loss hit via Spot move — adverse move (-?[\d.]+)% reached/exceeded the -([\d.]+)% threshold"),
      lambda m: {"basis": "SL (Spot %)", "overshoot_pct": abs(float(m.group(1))) - float(m.group(2))}),
+    # MCX Futures — SL/Trailing SL futures भावात ("futures price X hit/crossed the SL price Y") — overshoot points
+    (re.compile(
+        r"(?:Trailing SL|Stop-Loss) — futures price Rs ([\d,\.]+) hit/crossed the (?:\(profit-adjusted\) trailing )?SL price Rs ([\d,\.]+)"
+    ), lambda m: {
+        "basis": "SL/TSL (Futures pts)",
+        "overshoot_points": abs(float(m.group(1).replace(",", "")) - float(m.group(2).replace(",", ""))),
+    }),
     # जुनी/इतर रणनीतींची निव्वळ ₹ P&L-आधारित SL/Trailing-SL (Rs मध्ये negative असू शकतं, त्यामुळे optional "-")
     (re.compile(
         r"(?:Trailing SL|Stop-Loss) — total P&L Rs (-?[\d,]+) hit/crossed the (?:\(profit-adjusted\) )?"
