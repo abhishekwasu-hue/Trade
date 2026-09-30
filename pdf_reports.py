@@ -2358,7 +2358,7 @@ def _trade_log_groups_by_timeframe(trade_log_df):
 
 def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summary, pnl_totals,
                                       by_source_df, by_timeframe_df, by_structure_df, trade_log_df, recommendations,
-                                      slippage_pairs_df=None, overshoot_df=None, trade_charts=None):
+                                      slippage_pairs_df=None, overshoot_df=None, trade_charts=None, by_symbol_df=None):
     """
     Performance टॅबवरचा संपूर्ण, प्रिंट-योग्य PDF रिपोर्ट — Summary, Strategy-wise, Timeframe-wise व
     Option Structure-wise (Credit Spread वि. Naked Option) P&L (बार चार्ट्ससह), प्रत्येक बंद Trade चं
@@ -2617,6 +2617,14 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             story.extend(t if isinstance(t, list) else [t])
         story.append(Spacer(1, 8))
 
+    # 🎓 सर्व MCX commodities एकत्रित रिपोर्टसाठी (MCX Futures पानाचा Performance टॅब) — कोणती commodity
+    # फायद्यात/तोट्यात हे एका नजरेत दिसावं. by_symbol_df न दिल्यास (सिंगल-symbol रिपोर्ट) हा विभाग दिसत नाही.
+    if by_symbol_df is not None and not by_symbol_df.empty:
+        _section_with_chart(
+            "Commodity-wise Performance (which commodity is most profitable)",
+            "कमोडिटीनिहाय कामगिरी (कोणती कमोडिटी सर्वाधिक नफादायक आहे)",
+            by_symbol_df, "Commodity-wise Total P&L",
+        )
     _section_with_chart(
         "Strategy-wise Performance (which algo strategy is most profitable)",
         "रणनीतीनिहाय कामगिरी (कोणती अल्गो-रणनीती सर्वाधिक नफादायक आहे)",

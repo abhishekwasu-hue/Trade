@@ -890,6 +890,18 @@ class TestSymbolWhereClauseListSupport:
         assert "NIFTY" not in df["Trade ID"].str.cat()  # NIFTY trade ID "N1" कुठेच नाही, फक्त पुष्टीसाठी
         assert set(df["Trade ID"]) == {"C1", "G1", "S1"}
 
+    def test_get_closed_trades_detail_includes_symbol_column(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        df = database.get_closed_trades_detail(["CRUDEOIL", "GOLD", "SILVER"]).set_index("Trade ID")
+        assert df.loc["C1", "Symbol"] == "CRUDEOIL"
+        assert df.loc["G1", "Symbol"] == "GOLD"
+
+    def test_get_performance_by_group_symbol_gives_commodity_wise_rows(self, temp_db):
+        self._seed_multi_symbol(temp_db)
+        df = database.get_performance_by_group(["CRUDEOIL", "GOLD", "SILVER"], "symbol")
+        assert set(df["Group"]) == {"CRUDEOIL", "GOLD", "SILVER"}
+        assert (df["Trades"] == 1).all()
+
     def test_get_equity_curve_data_with_symbol_list(self, temp_db):
         self._seed_multi_symbol(temp_db)
         df = database.get_equity_curve_data(["CRUDEOIL", "GOLD", "SILVER"])
