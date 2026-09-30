@@ -25,6 +25,9 @@ def refresh_symbol_5m(access_token, symbol):
     df_5m = fetch_candles(access_token, symbol, current_spot=0, interval="5minute")  # Upstox चा स्वतःचा डीफॉल्ट lookback (5-मिनिटसाठी ~10 दिवस)
     if df_5m is None or len(df_5m) < 100:
         return False, f"{symbol}: पुरेसा 5-मिनिट डेटा नाही"
+    if df_5m.attrs.get("failed_chunks", 0) > 0:
+        # अर्धवट डेटावरून गणना केलेले levels जुन्या चांगल्या levels ला STALE करू नयेत — या वेळी काहीच साठवत नाही.
+        return False, f"{symbol}: 5-मिनिट इतिहासाचे {df_5m.attrs['failed_chunks']} chunk(s) मिळाले नाहीत — या वेळी levels अद्ययावत केले नाहीत (जुनेच कायम)"
 
     dyn_sr = compute_dynamic_sr(df_5m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
     ok = cloud_db.merge_dynamic_sr_zones(symbol, dyn_sr, "5M", formed_date=get_ist_now())

@@ -1838,6 +1838,12 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
     उघडल्या-उघडल्याच्या पहिल्या cycle पासूनच — ACTIVE यादी नेहमी ताज्या गणनेइतकीच राहते.
     रिटर्न: True/False (यशस्वी झालं की नाही).
     """
+    # 🎓 "Fix bug ... levels calculation by updating levels in database repeatedly" — रिकाम्या निकालावर
+    # merge केला तर सर्व ACTIVE levels 'STALE' होऊन bot ला एकही level दिसत नाही (उदा. candles तात्पुरते
+    # कमी/चुकीचे मिळाले, compute_dynamic_sr() ने काहीच दिलं नाही) — म्हणून रिकामा निकाल = काहीही न बदलता
+    # False (आधीचे ACTIVE levels तसेच राहतात, पुढच्या यशस्वी run मध्ये ताजे होतील).
+    if not dyn_sr_result or not (dyn_sr_result.get("support") or dyn_sr_result.get("resistance")):
+        return False
     conn = get_connection()
     if conn is None:
         return False

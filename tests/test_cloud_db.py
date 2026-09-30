@@ -1275,8 +1275,8 @@ class TestMergeDynamicSr1mZones:
         mock_conn, mock_cursor = self._mock_conn(existing_rows)
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
-        # दोन्ही आता नव्या गणनेत सापडतच नाहीत -- DELETE नाही, पण STALE व्हायला हवं
-        dyn_sr = {"support": [], "resistance": []}
+        # जुने दोन्ही आता नव्या गणनेत सापडतच नाहीत (फक्त खूप दूरचा नवा support) -- DELETE नाही, पण STALE व्हायला हवं
+        dyn_sr = {"support": [{"level": 26000.0, "touches": 3}], "resistance": []}
         result = cloud_db.merge_dynamic_sr_1m_zones("NIFTY", dyn_sr)
         assert result is True
 
@@ -1344,6 +1344,29 @@ class TestMergeDynamicSrZonesGeneric:
         select_calls = [c for c in mock_cursor.execute.call_args_list if "SELECT" in c[0][0]]
         assert "DYNAMIC_SR_SUPPORT_15M" in select_calls[0][0][1]
         assert "DYNAMIC_SR_SUPPORT_1M" not in select_calls[0][0][1]
+
+
+class TestMergeDynamicSrEmptyResultGuard:
+    """🎓 "levels calculation by updating levels in database repeatedly" audit — रिकामा निकाल (तात्पुरता
+    डेटा-दोष) आल्यास सर्व ACTIVE levels 'STALE' होऊ नयेत; काहीही न बदलता False."""
+
+    def test_empty_result_touches_nothing_and_returns_false(self, monkeypatch):
+        mock_conn = MagicMock()
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        assert cloud_db.merge_dynamic_sr_zones("NIFTY", {"support": [], "resistance": []}, "5M") is False
+        assert cloud_db.merge_dynamic_sr_zones("NIFTY", {}, "5M") is False
+        assert cloud_db.merge_dynamic_sr_zones("NIFTY", None, "5M") is False
+        assert not mock_conn.cursor.called  # DB ला हातही लागला नाही
+
+    def test_one_side_empty_is_still_merged(self, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        dyn_sr = {"support": [{"level": 24500.0, "touches": 3}], "resistance": []}
+        assert cloud_db.merge_dynamic_sr_zones("NIFTY", dyn_sr, "5M") is True
 
 
 class TestSrv2Settings:

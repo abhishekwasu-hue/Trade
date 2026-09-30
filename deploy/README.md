@@ -152,9 +152,10 @@ timer/service नाही).
 
 ⚠️ **`refresh_dynamic_sr_15m.py` हा file या repo मध्ये कधीच अस्तित्वातच नव्हता** — तो VPS crontab
 मध्ये चुकून जोडलेला होता, आणि दर 5 मिनिटांनी फक्त "No such file or directory" error देत होता,
-काहीही न करता (`refresh_15m.log` बघा). **15M/30M/60M Dynamic S/R फक्त रोज रात्री एकदाच
-`refresh_market_zones.py` द्वारे अपडेट होतात** (हीच रचना मुद्दाम आहे — खाली बघा) — त्यामुळे ती चुकीची
-crontab line VPS वरून **काढून टाका**, नवीन काही जोडायची गरज नाही.
+काहीही न करता (`refresh_15m.log` बघा). 15M/30M/60M Dynamic S/R रात्री
+`refresh_market_zones.py` द्वारे आणि बाजार सत्रात `refresh_market_zones_intraday.py` (merge-आधारित, दर
+15 मिनिटांनी — खालचा "Intraday Refresh" भाग बघा) द्वारे अपडेट होतात — त्यामुळे ती चुकीची
+`refresh_dynamic_sr_15m.py` crontab line VPS वरून **काढून टाका**.
 
 **शिफारस केलेला crontab (9:16 ऐवजी 9:15 पासून सुरू होणारा, खालच्या "टायमिंग-चूक" भागात सांगितलेला
 fix आधीच लागू केलेला — वेळा UTC मध्ये, `crontab -e` मध्ये पेस्ट करा):**
@@ -382,25 +383,31 @@ stale राहतात (MCX Market Zones प्रमाणेच सापड
 वेळी live-maintained 1M/5M zones सरसकट उडून नव्याने लिहिले गेले असते — real money trading मध्ये अचानक
 व्यत्यय येण्याचा धोका.
 
-त्यामुळे **नवीन, पूर्णपणे स्वतंत्र** `refresh_market_zones_intraday.py` script जोडलेला आहे —
-`market_zones.compute_intraday_sr_zones()` (फक्त 15M/30M/60M, compute_all_zones() ला अजिबात स्पर्श
-न करता) व `cloud_db.save_market_zones(..., scoped=True)` (फक्त तेच सहा zone_types replace — 1M/5M,
-SUPPORT/RESISTANCE, Order Blocks इ. पूर्णपणे अबाधित) वापरतो.
+त्यामुळे **नवीन, पूर्णपणे स्वतंत्र** `refresh_market_zones_intraday.py` script जोडलेला आहे — फक्त
+15M/30M/60M, compute_all_zones() ला अजिबात स्पर्श न करता.
 
-**जोडायचं crontab entry (`crontab -e`, वेळ UTC मध्ये — वरच्या once-daily entry सोबतच, ती न बदलता
-नवीन ओळ म्हणून; बाजार सत्रादरम्यान 4 वेळा + वरचा मूळचा close-नंतरचा run = एकूण 5 वेळा/दिवस):**
+🎓 **"levels DB मध्ये वारंवार अद्ययावत" audit मध्ये बदल:** हा script आधी `save_market_zones(scoped=True)`
+(delete+insert) वापरायचा — प्रत्येक run ला `level_price` थोडा बदलायचा, आणि Multi-Hit counter
+(`signal_log` मधला exact `level_price` match) व SL/TSL cooldown आपोआप reset व्हायचे (त्याच level वर पुन्हा
+entry शक्य). आता 5M/1M प्रमाणेच **merge** (`cloud_db.merge_dynamic_sr_zones`): ±0.02% मधला जुना
+`level_price` कायम, नवीन levels ACTIVE म्हणून जोडले जातात, गेलेले STALE होतात (कधीच DELETE नाही),
+रिकामा निकाल/अर्धवट डेटा (`failed_chunks`) आला तर जुने levels तसेच राहतात. म्हणून आता **दर 15 मिनिटांनी**
+चालवणंही सुरक्षित आहे.
+
+**VPS crontab मध्ये जुनी `5 5,6,8,9 ...` ओळ बदलून हीच ठेवा (`crontab -e`, वेळ UTC मध्ये — बाजार
+सत्र 9:15–15:30 IST ≈ 3:45–10:00 UTC; वरची रोजची `refresh_market_zones.py` ओळ न बदलता तशीच राहू द्या):**
 ```
-5 5,6,8,9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_intraday.py >> /root/Trade/market_zones_intraday_refresh.log 2>&1
+*/15 4-9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_intraday.py >> /root/Trade/market_zones_intraday_refresh.log 2>&1
 ```
-म्हणजे 10:35, 11:35, 13:35, 14:35 IST (नवीन 4, बाजार सत्रात 9:15 AM–3:30 PM च्या आतच) + वरचा मूळचा
-15:35 IST (close+5, अजूनही तोच, न बदललेला `refresh_market_zones.py` run) — एकूण 5 वेळा/दिवस.
+(रोजचा `refresh_market_zones.py` रात्री सर्व levels पूर्णपणे नव्याने लिहितो — तिथे `level_price` बदलणं
+अपेक्षितच आहे, कारण तो नवीन दिवसाची सुरुवात आहे.)
 
 **तपासणी:**
 ```bash
 tail -f /root/Trade/market_zones_intraday_refresh.log
 crontab -l | grep refresh_market_zones_intraday
 ```
-यशस्वी run नंतर log मध्ये प्रत्येक symbol साठी "✅ NIFTY: N zones साठवले (15M+30M+60M, इतर zone_types
+यशस्वी run नंतर log मध्ये प्रत्येक symbol साठी "✅ NIFTY: 15M+30M+60M levels merge यशस्वी (इतर zone_types
 अबाधित)" असं दिसायला हवं.
 
 ---

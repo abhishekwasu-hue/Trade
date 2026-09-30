@@ -26,7 +26,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now
-from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
+from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
 # rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.py/mcx_futures_trader.py सारखाच
 # dual-threshold RSI गेट (Support<40 / Resistance>60, established, सिद्ध तर्क — नवीन कॉपी नाही).
@@ -325,6 +325,21 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
+        # 🎓 "Fix bug if any ... all exit condition" audit — Dashboard चा "SL/TSL Cooldown (त्याच level वर)"
+        # सेटिंग तिन्ही strategies साठी दाखवला जातो, पण इथे तो कधीच वाचला जात नव्हता (जुना
+        # COOLDOWN_MINUTES state कधीच लिहिला जात नाही, म्हणून निष्क्रिय) — 15M वर SL/TSL लागल्यावर लगेच
+        # त्याच level वर पुन्हा entry शक्य होती. आता dynamic_sr_instant_trader.py प्रमाणेच exit-वेळेवर
+        # आधारित, त्याच exact level वर (0 = बंद). TARGET/इतर profitable exits ला लागू नाही.
+        sl_tsl_cooldown_minutes = settings.get("sl_tsl_cooldown_minutes", 15)
+        if sl_tsl_cooldown_minutes > 0:
+            last_sl_tsl_exit = get_last_sl_tsl_exit_time(symbol, level_price, "srv2_momentum_reversal", trade_date)
+            if last_sl_tsl_exit is not None:
+                elapsed_since_sl = (now - last_sl_tsl_exit).total_seconds() / 60
+                if elapsed_since_sl < sl_tsl_cooldown_minutes:
+                    log_entry["trade_status"] = "SKIPPED_SL_TSL_COOLDOWN"
+                    log_entry["reason"] = f"याच level वर मागचा SL/TSL फक्त {elapsed_since_sl:.1f} मिनिटांपूर्वी लागला (किमान {sl_tsl_cooldown_minutes} हवीत, {timeframe_suffix})"
+                    cloud_db.save_signal_log(log_entry)
+                    continue
         if has_open_trade_from_source(symbol, "srv2_momentum_reversal"):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
             log_entry["reason"] = f"आधीची position (या strategy ची, कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
