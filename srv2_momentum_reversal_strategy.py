@@ -30,7 +30,7 @@ from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
 # rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.py/mcx_futures_trader.py सारखाच
 # dual-threshold RSI गेट (Support<40 / Resistance>60, established, सिद्ध तर्क — नवीन कॉपी नाही).
-from dynamic_sr_instant_trader import check_instant_rsi_filter
+from dynamic_sr_instant_trader import check_instant_rsi_filter, check_level_crossed
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
@@ -39,7 +39,13 @@ from oi_analysis import check_pcr_gate
 from trading_engine import open_multi_leg_trade, format_trade_result
 from upstox_api import fetch_upstox_option_chain, fetch_candles, fetch_option_expiries
 
-TOUCH_TOLERANCE_PCT = 0.05
+# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("15 मिनिट लेवल हिट बफर remove करा", 1-मिनिट candles) —
+# आधी touch = शेवटच्या 15M candle च्या close किमतीचं level पासूनचं अंतर <= 0.05% (सुमारे 11 पॉइंट) होतं,
+# म्हणजे किंमत level ला प्रत्यक्ष न पोहोचताही "touch" मानला जायचा. आता buffer 0: शेवटच्या 2 (1-मिनिट)
+# candles ची [low,high] रेंज level ला प्रत्यक्ष स्पर्श करते (किंवा दोन candles मधल्या gap मधून level ओलांडला
+# जातो) तेव्हाच touch — dynamic_sr_instant_trader.check_level_crossed(). (साधं 0 tolerance वर आधीचं
+# 'सद्य किंमत == level' तपासणं कधीच पूर्ण झालं नसतं, म्हणून candle-रेंज पद्धत.)
+TOUCH_TOLERANCE_PCT = 0.0
 SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
 COOLDOWN_MINUTES = 30
@@ -148,6 +154,21 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now, active_timef
     return candidates
 
 
+def _fetch_recent_1m_candles(access_token, symbol, now, count=2):
+    """आजचे शेवटचे `count` 1-मिनिट candles (जुनं ते नवीन) [{"open","high","low","close",...}, ...] —
+    touch तपासण्यासाठी (buffer शिवाय, candle-रेंजवरून). मिळाले नाहीत / चूक झाली तर रिकामी यादी
+    (त्या cycle ला कुठलाच touch मानला जात नाही — सुरक्षित)."""
+    try:
+        df = fetch_candles(access_token, symbol, current_spot=0, interval="1minute", lookback_days=1)
+    except Exception:
+        return []
+    if df is None or df.empty:
+        return []
+    df = df.copy()
+    df = df[df["timestamp"].dt.date == now.date()]
+    return df.tail(count).to_dict("records")
+
+
 def process_symbol(access_token, symbol, lot_size=65):
     """एका symbol साठी — 15M/30M/60M levels एकत्र, RSI-फिल्टर, Multi-Hit/Cooldown, Expiry-Day
     Logic, आणि आढळल्यास PAPER trade (settings-चालित lots/hedge_width_points सह)."""
@@ -205,8 +226,12 @@ def process_symbol(access_token, symbol, lot_size=65):
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (15M/30M/60M) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
+    recent_1m_candles = _fetch_recent_1m_candles(access_token, symbol, now)
     for level_price, timeframe_suffix, candles_df, underlying_price, todays_closes in candidates:
-        touched = abs(underlying_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
+        touched, touch_type, _approx = (
+            check_level_crossed(level_price, recent_1m_candles, tolerance_pct=TOUCH_TOLERANCE_PCT)
+            if recent_1m_candles else (False, None, None)
+        )
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी दिशा फक्त सद्य किमतीच्या raw तुलनेवरून ठरायची
         # (dynamic_sr_instant_trader.py मध्ये आधी होतं तसंच) — आता तिथल्याच hysteresis logic ने,
@@ -222,10 +247,13 @@ def process_symbol(access_token, symbol, lot_size=65):
         # प्रत्येक तपासलेला candidate (NO_HIT सकट) इथे लगेच साठवला जातो.
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
-            "level_price": level_price, "hit_type": "TOUCH" if touched else "NO_HIT",
+            "level_price": level_price, "hit_type": (touch_type or "TOUCH") if touched else "NO_HIT",
             "direction": direction if touched else "NONE", "ltp_at_signal": underlying_price,
             "trade_status": None,
-            "reason": "" if touched else f"level ला स्पर्श (touch) आढळला नाही ({timeframe_suffix})",
+            "reason": "" if touched else (
+                f"level ला स्पर्श (touch) आढळला नाही ({timeframe_suffix})" if recent_1m_candles
+                else f"आजचे 1-मिनिट candles उपलब्ध नाहीत, touch तपासता आला नाही ({timeframe_suffix})"
+            ),
         }
 
         if not touched:
