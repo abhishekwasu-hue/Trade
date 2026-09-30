@@ -297,10 +297,6 @@ def process_symbol(access_token, symbol, lot_size=65):
     # symbol वर इथेच थांबतो, पुढचं काहीही (zones/candles fetch, trade) होत नाही.
     if not settings.get("symbol_enabled", symbol == "NIFTY"):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा)"
-    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("आजची सक्रिय strategy" स्विच — 5M वि. 15M, एका दिवशी एकच) —
-    # आज 15M सक्रिय असेल तर 5M Instant Trader पूर्णपणे बंद (त्याचे levels आज सक्रिय नाहीत).
-    if cloud_db.get_effective_active_sr_strategy(get_ist_now().strftime("%Y-%m-%d")) == "15M":
-        return f"{symbol}: बंद आहे (आज 15M strategy सक्रिय आहे — Bot Dynamic SR Algo -> 'आजची सक्रिय strategy')"
     lots = settings["lots"]
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच lots
     # (वेगळं सेटिंगच नव्हतं) घ्यायचा — आता स्वतंत्र, Bot Dynamic SR Algo पानावरून बदलण्याजोगं.

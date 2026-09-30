@@ -178,10 +178,6 @@ def process_symbol(access_token, symbol, lot_size=65):
     # symbol वर इथेच थांबतो, पुढचं काहीही (cooldown/state check, candles fetch, trade) होत नाही.
     if not settings.get("symbol_enabled", symbol == "NIFTY"):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा)"
-    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("आजची सक्रिय strategy" स्विच — 5M वि. 15M, एका दिवशी एकच) —
-    # स्विच चालू असताना आज 15M सक्रिय नसेल (म्हणजे 5M सक्रिय) तर 15M SRv2 आज पूर्णपणे बंद.
-    if cloud_db.get_effective_active_sr_strategy(get_ist_now().strftime("%Y-%m-%d")) == "5M":
-        return f"{symbol}: बंद आहे (आज 5M strategy सक्रिय आहे — Bot Dynamic SR Algo -> 'आजची सक्रिय strategy')"
 
     now = get_ist_now()
     state = cloud_db.get_srv2_state(symbol)

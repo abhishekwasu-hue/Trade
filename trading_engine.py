@@ -457,46 +457,6 @@ SHADOW_EXIT_PARENT_SOURCE = {
 }
 
 
-# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("आजची सक्रिय strategy" स्विच — 5M Instant वि. 15M SRv2, एका
-# दिवशी एकच) — कुठला source कुठल्या strategy चा. शॅडो sources आपोआप मूळ source च्या strategy चे (वरचा
-# SHADOW_EXIT_PARENT_SOURCE नकाशा).
-ACTIVE_SR_STRATEGY_BY_SOURCE = {"dynamic_sr_instant": "5M", "srv2_momentum_reversal": "15M"}
-
-
-def _strategy_switch_squareoff_details(parsed_trades, today_str):
-    """आजची प्रभावी strategy (cloud_db.get_effective_active_sr_strategy) आणि जी strategy आज सक्रिय नाही तिचे,
-    **आजच उघडलेले** OPEN trades (मागच्या दिवसांपासून carry झालेले नाहीत) -> {trade_id: कारण-मजकूर}.
-    स्विच बंद असेल (डीफॉल्ट), किंवा काहीही चूक झाली (DB/Supabase) तर रिकामं — कधीच चुकून काही बंद होत नाही."""
-    candidates = {}
-    for t in parsed_trades:
-        strategy = ACTIVE_SR_STRATEGY_BY_SOURCE.get(SHADOW_EXIT_PARENT_SOURCE.get(t[11], t[11]))
-        if strategy is not None:
-            candidates[t[0]] = strategy
-    if not candidates:
-        return {}
-    try:
-        active = cloud_db.get_effective_active_sr_strategy(today_str)
-        if active is None:
-            return {}
-        inactive_ids = [tid for tid, strategy in candidates.items() if strategy != active]
-        if not inactive_ids:
-            return {}
-        conn = sqlite3.connect(DB_PATH)
-        placeholders = ",".join("?" for _ in inactive_ids)
-        rows = conn.execute(
-            f"SELECT trade_id FROM live_trades WHERE trade_id IN ({placeholders}) AND trade_date=?",
-            (*inactive_ids, today_str),
-        ).fetchall()
-        conn.close()
-    except Exception:
-        return {}
-    return {
-        r[0]: (f"Strategy switched — today's active strategy is {active}; this {candidates[r[0]]} trade was "
-               f"squared off as configured (Bot Dynamic SR Algo -> आजची सक्रिय strategy).")
-        for r in rows
-    }
-
-
 def futures_price_for_pnl_level(net_credit, pnl_level, lots, lot_size):
     """एकाच futures leg च्या trade साठी — ₹ P&L पातळी (SL/Target/Trailing) → futures भाव. entry भाव =
     |net_credit| (SELL=धन, BUY=ऋण, बघा open_multi_leg_trade). Long (BUY): भाव = entry + level/qty;
@@ -1466,7 +1426,6 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             broker_pnl_by_key[key] = broker_pnl_by_key.get(key, 0) + pnl
 
     closed_summaries = []
-    strategy_switch_details = _strategy_switch_squareoff_details(parsed_trades, ist_now.strftime("%Y-%m-%d"))
     for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) in parsed_trades:
         exit_source = SHADOW_EXIT_PARENT_SOURCE.get(source, source)  # शॅडो -> मूळ strategy चे exit नियम (बघा वर)
         if not legs:
@@ -1895,12 +1854,6 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if trade_direction and not check_oi_diff_entry_gate(trade_direction, oi_signal_latest):
                     exit_reason = "OI_REVERSAL"
                     exit_reason_detail = "OI Diff Tracker signal reversed against the position — exited early for safety, ahead of SL/Target."
-
-        # 🎓 "आजची सक्रिय strategy" स्विच — आज सक्रिय नसलेल्या strategy चा, आजच उघडलेला trade लगेच बंद (वापरकर्त्याचा
-        # निर्णय); SL/Target/इ. आधीच लागू झालेला असेल तर तोच exit_reason कायम राहतो.
-        if exit_reason is None and trade_id in strategy_switch_details:
-            exit_reason = "STRATEGY_SWITCH_SQUAREOFF"
-            exit_reason_detail = strategy_switch_details[trade_id]
 
         if exit_reason:
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Trailing SL ha MTM pnl war") — या trade चं SL/Target/

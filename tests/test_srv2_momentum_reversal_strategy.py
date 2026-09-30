@@ -1105,31 +1105,6 @@ class TestRunAllSymbols:
         assert result is False
 
 
-class TestActiveStrategySwitchGate15M:
-    """🎓 "आजची सक्रिय strategy" स्विच — स्विच चालू असताना आज 5M सक्रिय असेल तर 15M SRv2 पूर्णपणे बंद."""
-
-    class _Reached(Exception):
-        pass
-
-    def _run(self, active):
-        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
-        settings["symbol_enabled"] = True
-        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
-             patch.object(srv2.cloud_db, "get_effective_active_sr_strategy", return_value=active), \
-             patch.object(srv2.cloud_db, "get_srv2_state", side_effect=self._Reached()):
-            return srv2.process_symbol("fake_token", "NIFTY")
-
-    def test_15m_bot_stops_when_5m_is_active(self):
-        msg = self._run("5M")
-        assert "5M" in msg and "बंद" in msg
-
-    def test_15m_bot_runs_when_15m_active_or_switch_off(self):
-        import pytest
-        for active in ("15M", None):
-            with pytest.raises(self._Reached):
-                self._run(active)
-
-
 def _one_min_df(rows, day=None):
     """आजचे 1-मिनिट candles: rows = [(open, high, low, close), ...] (जुनं ते नवीन), 12:00 पासून मिनिट-मिनिटाने."""
     base = (day or srv2.get_ist_now()).replace(hour=12, minute=0, second=0, microsecond=0)
