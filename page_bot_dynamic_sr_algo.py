@@ -769,6 +769,28 @@ def render():
                     "ज्या symbols साठी चालू कराल त्यांच्यावरच नियम लागू होतो (ट्रिगर मात्र सर्व symbols च्या Target वरून)."
                 )
 
+            # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5M आणि 15M levels ओव्हरलॅप/जवळ आले तर 15 मिनिट
+            # strategy execute व्हावी, 5 मिनिट थांबावी") — डीफॉल्ट बंद.
+            with st.expander("🔀 15M Level जवळ असल्यास 5M थांबवा (15M strategy ला संधी)", expanded=False):
+                defer_to_15m_enabled = st.checkbox(
+                    "5M level च्या जवळ 15M level असल्यास 5M entry थांबवा (डीफॉल्ट बंद)",
+                    value=bool(settings.get("defer_to_15m_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "defer_to_15m_enabled"),
+                )
+                defer_to_15m_distance_pct = _number_input(
+                    "'जवळ' म्हणजे किती % अंतराच्या आत", settings, "defer_to_15m_distance_pct", strategy_key, symbol,
+                    min_value=0.01, max_value=0.50, step=0.01, format="%.2f", disabled=not defer_to_15m_enabled,
+                )
+                st.caption(
+                    "5M level च्या वरच्या % अंतराच्या आत, तुमची दिशा जुळणारा ACTIVE 15M Dynamic S/R level असेल, तर या 5M "
+                    "level वर 5M entry घेतली जात नाही; 15M strategy (SRv2) स्वतःच्या touch आणि नियमांनुसार तिथे trade घेते — "
+                    "म्हणजे तिचे मोठे SL/TSL/Target. **अट:** 15M strategy या symbol साठी चालू, याच PAPER/LIVE mode मध्ये, 15M timeframe "
+                    "निवडलेला, आणि ती दिशा चालू असावी — नाहीतर 5M स्वतः trade घेतो (level वाया जात नाही). **लक्षात ठेवा:** "
+                    "5M आणि 15M level मधलं अंतर 15M च्या touch सहनशीलतेपेक्षा (0.05%) जास्त असेल तर 15M त्याच्या स्वतःच्या level वर "
+                    "किंमत पोहोचल्यावरच trade घेते — तोवर कुणीच नाही. Breakout/IV directional entries आणि 1M levels ना लागू नाही. "
+                    "थांबलेले signals Signal Log मध्ये SKIPPED_DEFERRED_TO_15M म्हणून दिसतात."
+                )
+
         if strategy_key == "classic_sr_reversal":
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Ya strategy mdhe swing high swing low,
             # demand supply, trend line he sarv concept include kra and entry refine kra" — तीन
@@ -1093,6 +1115,8 @@ def render():
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)
             new_settings["stop_after_target_enabled"] = bool(stop_after_target_enabled)
+            new_settings["defer_to_15m_enabled"] = bool(defer_to_15m_enabled)
+            new_settings["defer_to_15m_distance_pct"] = float(defer_to_15m_distance_pct)
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
         elif strategy_key == "classic_sr_reversal":

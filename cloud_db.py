@@ -285,6 +285,14 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # उरलेल्या दिवसासाठी नवीन entries थांबतात. आधीच उघडे trades चालू राहतात. डीफॉल्ट बंद (risk gates
         # प्रमाणे — वापरकर्त्याने स्वतः Dashboard वरून चालू करायचा).
         "stop_after_target_enabled": False,
+        # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute आणि 15 minute levels ओव्हरलॅप किंवा
+        # जवळ आले तर तिथे 15 मिनिट strategy execute व्हायला पाहिजे, 5 मिनिट थांबायला पाहिजे — 15 मिनिटमुळे
+        # जास्त reward मिळण्याची शक्यता") — या bot च्या 5M level च्या defer_to_15m_distance_pct% च्या आत
+        # एखादा ACTIVE 15M Dynamic S/R level असेल (आणि दिशा जुळत असेल, 15M strategy त्या symbol साठी
+        # सक्रिय आणि याच trading_mode मध्ये असेल) तर 5M entry घेतली जात नाही; 15M strategy
+        # (srv2_momentum_reversal_strategy.py) स्वतःच्या touch/नियमांनुसार तिथे trade घेते. डीफॉल्ट बंद.
+        "defer_to_15m_enabled": False,
+        "defer_to_15m_distance_pct": 0.10,
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("5 minute instant dynamic sr strategy work
         # better in sideways, low iv or average iv market, but in trending when Breakout happen it
         # books loss") — Average IV Breakout Gate — आजचा ATM IV गेल्या iv_lookback_days दिवसांच्या

@@ -288,6 +288,51 @@ def _collect_pooled_levels(all_zones, timeframes=None):
     return pooled
 
 
+def find_overlapping_15m_level(all_zones, level, distance_pct, current_price, direction):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (5M+15M ओव्हरलॅप -> 15M strategy) — दिलेल्या 5M `level`
+    च्या `distance_pct`% च्या आत असलेला, सर्वात जवळचा ACTIVE 15M Dynamic S/R level शोधतो, जर त्याची दिशा
+    `direction` शी जुळत असेल. 15M level ची दिशा (srv2_momentum_reversal_strategy.py सारखीच) सद्य
+    किमतीच्या त्या level च्या सापेक्ष स्थितीवरून: किंमत level च्या वर/बरोबर = Support/BULLISH, खाली =
+    Resistance/BEARISH (साठवलेल्या label वरून नाही). रिटर्न: (level_15m, अंतर_%) किंवा None."""
+    if all_zones is None or all_zones.empty or not level:
+        return None
+    zones_15m = all_zones[(all_zones["zone_type"].str.endswith("_15M")) & (all_zones["status"] == "ACTIVE")]
+    best = None
+    for _, zone in zones_15m.iterrows():
+        level_15m = float(zone["zone_low"])
+        distance = abs(level_15m - level) / level * 100
+        if distance > distance_pct:
+            continue
+        direction_15m = "BULLISH" if current_price >= level_15m else "BEARISH"
+        if direction_15m != direction:
+            continue
+        if best is None or distance < best[1]:
+            best = (level_15m, distance)
+    return best
+
+
+def is_15m_strategy_ready_for(symbol, direction, trading_mode):
+    """15M strategy (`15m_dynamic_sr`) या symbol साठी सक्रिय आहे का, याच trading_mode मध्ये आहे का,
+    15M timeframe निवडलेला आहे का, आणि या दिशेची entry चालू आहे का — तरच 5M ने बाजूला व्हावं (नाहीतर
+    कुणीच trade घेत नाही आणि level वाया जातो). settings वाचता आल्या नाहीत तर False (fail-open —
+    5M स्वतः trade घेतो). रिटर्न: (ready: bool, कारण: str)."""
+    try:
+        s15 = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
+    except Exception:
+        return False, "15M settings वाचता आल्या नाहीत"
+    if not s15.get("symbol_enabled", False):
+        return False, "15M strategy या symbol साठी बंद आहे"
+    if s15.get("trading_mode", "PAPER") != trading_mode:
+        return False, f"15M चा trading_mode ({s15.get('trading_mode', 'PAPER')}) 5M शी ({trading_mode}) जुळत नाही"
+    if "15M" not in (s15.get("active_timeframes") or ["15M"]):
+        return False, "15M timeframe 15M strategy मध्ये निवडलेला नाही"
+    if direction == "BULLISH" and not s15.get("bullish_entry_enabled", True):
+        return False, "15M चा Bullish Entry बंद आहे"
+    if direction == "BEARISH" and not s15.get("bearish_entry_enabled", True):
+        return False, "15M चा Bearish Entry बंद आहे"
+    return True, ""
+
+
 def process_symbol(access_token, symbol, lot_size=65):
     """एका symbol साठी — 1M+5M levels एकत्र, RSI-फिल्टर, Multi-Hit/Cooldown, Expiry-Day Logic, आणि
     आढळल्यास Credit-Spread (ITM) + (सक्रिय असल्यास) समांतर Naked Option PAPER trade."""
@@ -324,6 +369,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
     stop_after_target_enabled = settings.get("stop_after_target_enabled", False)
+    defer_to_15m_enabled = settings.get("defer_to_15m_enabled", False)
+    defer_to_15m_distance_pct = float(settings.get("defer_to_15m_distance_pct", 0.10))
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
@@ -622,6 +669,27 @@ def process_symbol(access_token, symbol, lot_size=65):
         # समस्येचीच पुनरावृत्ती ठरेल. म्हणून GAP_THROUGH साठीही held_minutes तोच (0, कारण hit candle
         # स्वतःच बफरमध्ये कधीच overlap होत नाही) राहतो, आणि गेट तोच नियम एकसमान लावतो — gap नंतर
         # किंमत त्या level जवळ खरोखर टिकून (TOUCH म्हणून) राहिल्याशिवाय entry होणारच नाही.
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5M आणि 15M levels ओव्हरलॅप/जवळ आले तर 15 मिनिट
+        # strategy execute व्हावी, 5 मिनिट थांबावी") — फक्त 5M levels ची साधी reversal entry (Breakout/IV
+        # directional नाही; 1M levels ना लागू नाही). 0.10% (डीफॉल्ट, Dashboard-configurable) च्या आत, दिशा
+        # जुळणारा ACTIVE 15M level असेल, आणि 15M strategy या symbol साठी सक्रिय + याच trading_mode मध्ये +
+        # ही दिशा चालू असेल, तरच 5M बाजूला होतो; 15M स्वतःच्या touch/नियमांनी तिथे trade घेतो (5M level आणि
+        # 15M level मधलं अंतर 15M च्या touch सहनशीलतेपेक्षा जास्त असेल तर 15M त्याच्या स्वतःच्या level
+        # वर किंमत पोहोचल्यावरच trade घेतो — तोवर कुणीच नाही, हे मान्य केलेलं). settings/DB वाचता आल्या
+        # नाहीत तर 5M स्वतः trade घेतो (fail-open).
+        if defer_to_15m_enabled and timeframe_suffix == "5M" and not is_directional_trade:
+            overlap = find_overlapping_15m_level(all_zones, row["zone_low"], defer_to_15m_distance_pct, current_price, direction)
+            if overlap is not None:
+                ready_15m, not_ready_reason = is_15m_strategy_ready_for(symbol, direction, settings.get("trading_mode", "PAPER"))
+                if ready_15m:
+                    log_entry["trade_status"] = "SKIPPED_DEFERRED_TO_15M"
+                    log_entry["reason"] = (
+                        f"5M level {row['zone_low']:.2f} च्या {overlap[1]:.3f}% अंतरावर 15M level {overlap[0]:.2f} आहे "
+                        f"(मर्यादा {defer_to_15m_distance_pct:.2f}%) — 15 मिनिट strategy स्वतःच्या touch/नियमांनुसार तिथे trade घेईल"
+                    )
+                    cloud_db.save_signal_log(log_entry)
+                    continue
+
         held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
         if (entry_min_hold_gate_enabled and not is_directional_trade
                 and held_minutes < entry_min_hold_minutes):
