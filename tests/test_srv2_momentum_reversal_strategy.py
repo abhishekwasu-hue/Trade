@@ -1258,3 +1258,62 @@ class TestYield5mBeforeEntry:
              patch.object(srv2, "send_telegram_message", return_value=True):
             mock_trade, _ = t._run(df)
         assert mock_trade.called
+
+
+class TestYieldHappensRightBeforeOrder:
+    """उघडे 5M trades बंद करणे entry order च्या अगदी आधी — chain/strike अयशस्वी झाल्यास 5M ला हात लागत नाही."""
+
+    LEVEL = 23900.0
+
+    def _run(self, chain=None, spread="ok", naked_enabled=False, yield_result=(True, ["T5"])):
+        candles_15m = _fake_candles_df(last_close=23902)
+        one_min = _one_min_df([(23930, 23935, 23925, 23928), (23928, 23930, 23899.5, 23920)])
+
+        def _fetch(token, symbol, current_spot=0, interval="15minute", lookback_days=5):
+            return one_min if interval == "1minute" else candles_15m
+
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["symbol_enabled"] = True
+        settings["naked_enabled"] = naked_enabled
+        spread_result = {"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0} if spread == "ok" else None
+        chain_value = (_fake_chain(23902.0), "SUCCESS") if chain is None else chain
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2, "fetch_candles", side_effect=_fetch), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones(support_level=self.LEVEL)), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=chain_value), \
+             patch.object(srv2, "select_credit_spread_itm", return_value=spread_result), \
+             patch.object(srv2, "select_naked_option_itm", return_value={"strategy": "NAKED_CALL", "legs": [], "net_credit": -80.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "_yield_open_5m_positions", return_value=yield_result) as mock_yield, \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True) as mock_tg, \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+        return mock_yield, mock_trade, mock_log, mock_tg
+
+    def test_no_yield_when_option_chain_missing(self):
+        mock_yield, mock_trade, _, _ = self._run(chain=(None, "ERR"))
+        assert not mock_yield.called and not mock_trade.called
+
+    def test_no_yield_when_strike_selection_fails(self):
+        mock_yield, mock_trade, _, _ = self._run(spread=None)
+        assert not mock_yield.called and not mock_trade.called
+
+    def test_yield_called_once_for_spread_and_naked(self):
+        mock_yield, mock_trade, _, _ = self._run(naked_enabled=True)
+        assert mock_yield.call_count == 1
+        assert mock_trade.call_count == 2
+
+    def test_failed_yield_blocks_both_orders(self):
+        mock_yield, mock_trade, mock_log, _ = self._run(naked_enabled=True, yield_result=(False, []))
+        assert mock_yield.call_count == 1
+        assert not mock_trade.called
+        assert any(c.args[0]["trade_status"] == "SKIPPED_5M_POSITION_NOT_CLOSED" for c in mock_log.call_args_list)
+
+    def test_telegram_notice_when_5m_trades_were_closed(self):
+        _, mock_trade, _, mock_tg = self._run()
+        assert mock_trade.called
+        assert any("पदभार" in str(c.args[0]) for c in mock_tg.call_args_list)

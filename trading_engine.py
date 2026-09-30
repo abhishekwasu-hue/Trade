@@ -1874,6 +1874,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 }
                 for leg in legs
             ]
+            # 🎓 code-review मध्ये सापडलेला race — दुसऱ्या प्रक्रियेने (उदा. 5M bot चं YIELDED_TO_15M बंद करणं, Positions
+            # पानावरचं Manual Close) याच trade साठी बंद-order आधीच पाठवून तो CLOSED केला असू शकतो; तसं असताना आणखी एक
+            # MARKET order गेला तर LIVE मध्ये उलटी (नवीन) position उघडते. order पाठवण्याच्या अगदी आधी status पुन्हा तपासतो.
+            cur.execute("SELECT status FROM live_trades WHERE trade_id=?", (trade_id,))
+            _status_row = cur.fetchone()
+            if _status_row is None or _status_row[0] != "OPEN":
+                continue
             close_adapter = _resolve_close_adapter(account_id)
             status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode) if close_adapter is not None
                                   else execute_order_leg_set(access_token, close_orders, trade_mode))
@@ -2121,6 +2128,13 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         import broker_factory
         adapters, _errors = broker_factory.get_adapters_for_accounts([account_id])
         close_adapter = adapters[0][0] if adapters else None
+    # 🎓 race-संरक्षण (बघा manage_open_trades() मधली तशीच टिप्पणी) — LTP/adapter मिळवण्यात गेलेल्या वेळात दुसऱ्या
+    # प्रक्रियेने हा trade बंद केला असू शकतो; order पाठवण्याच्या अगदी आधी पुन्हा तपासतो.
+    cur.execute("SELECT status FROM live_trades WHERE trade_id=?", (trade_id,))
+    _status_row = cur.fetchone()
+    if _status_row is None or _status_row[0] != "OPEN":
+        conn.close()
+        return False, "Trade आधीच दुसऱ्या प्रक्रियेने बंद केला आहे."
     status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode or "LIVE") if close_adapter is not None
                           else execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE"))
     if status_code == 200 and resp.get("status") == "success":

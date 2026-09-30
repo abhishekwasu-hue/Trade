@@ -3358,3 +3358,44 @@ class TestCloseTradeManuallyStoresDetail:
     def test_default_behavior_unchanged_without_detail(self, temp_db, monkeypatch):
         ok, row = self._close(temp_db, monkeypatch)
         assert ok and row[0] == "CLOSED" and row[1] == "MANUAL_CLOSE" and row[2] is None
+
+
+class TestNoDoubleCloseRace:
+    """दोन प्रक्रिया (उदा. 5M bot चं 'YIELDED_TO_15M' बंद करणं आणि trade_monitor चं SL/Target बंद) एकाच trade वर
+    जवळपास एकाच वेळी बंद-order पाठवू शकतात (LIVE मध्ये दुहेरी MARKET order = उलटी position). दुसऱ्याने trade आधीच
+    बंद केला असेल तर order पाठवण्याआधीच (शेवटच्या क्षणी पुन्हा तपासून) थांबायला हवं."""
+
+    @staticmethod
+    def _close_row_in_db(temp_db, trade_id):
+        conn = sqlite3.connect(temp_db)
+        conn.execute("UPDATE live_trades SET status='CLOSED', exit_reason='OTHER_PROCESS' WHERE trade_id=?", (trade_id,))
+        conn.commit()
+        conn.close()
+
+    def test_close_trade_manually_skips_when_closed_by_other_process_meanwhile(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "R1", net_credit=30, sl_level=-100000, target_level=100000)
+
+        def _ltp_then_other_process_closes(token, keys):
+            self._close_row_in_db(temp_db, "R1")  # LTP आणल्यानंतर, order आधी — दुसऱ्या प्रक्रियेने बंद केला
+            return {"PE24400": 5.0, "PE24300": 0.0}
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", _ltp_then_other_process_closes)
+        orders_sent = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: orders_sent.append(o) or (200, {"status": "success"}))
+        ok, msg = trading_engine.close_trade_manually("tok", "R1", "NIFTY", "D", exit_reason="YIELDED_TO_15M")
+        assert ok is False
+        assert orders_sent == []
+
+    def test_manage_open_trades_skips_when_closed_by_other_process_meanwhile(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "R2", net_credit=30, sl_level=-100000, target_level=1000, mode="LIVE")
+
+        def _ltp_then_other_process_closes(token, keys):
+            self._close_row_in_db(temp_db, "R2")
+            return {"PE24400": 5.0, "PE24300": 0.0}  # P&L ~ +1875 >= Target 1000 -> exit चा प्रयत्न
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", _ltp_then_other_process_closes)
+        orders_sent = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: orders_sent.append(o) or (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert closed == []
+        assert orders_sent == []

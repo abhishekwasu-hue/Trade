@@ -331,19 +331,6 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
-        # 🎓 "एका वेळी एकच position (5M किंवा 15M)" — 15M ला प्राधान्य: entry घेण्याआधी याच symbol चे उघडे 5M trades
-        # बंद (वरची _yield_open_5m_positions चीच टिप्पणी). बंद होऊ शकले नाहीत तर आज हा entry नाही.
-        yield_ok, yielded_ids = _yield_open_5m_positions(access_token, symbol, settings.get("trading_mode", "PAPER"))
-        if not yield_ok:
-            log_entry["trade_status"] = "SKIPPED_5M_POSITION_NOT_CLOSED"
-            log_entry["reason"] = f"उघडे 5M trades बंद होऊ शकले नाहीत — 15M entry थांबवला ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
-            continue
-        if yielded_ids:
-            send_telegram_message(
-                f"🔀 <b>{symbol}: 15M ने पदभार घेतला</b>\n15M entry आधी उघडे {len(yielded_ids)} 5M trade(s) बंद केले (एका वेळी एकच position)."
-            )
-
         # --- सर्व अटी पूर्ण! Entry ---
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — आज expiry day असेल, तर
         # पुढच्या आठवड्याचे strikes (expiry_index=1) — आजच्या expiry वर trade नाही (जास्त जोखीम).
@@ -374,6 +361,22 @@ def process_symbol(access_token, symbol, lot_size=65):
         trading_mode = settings.get("trading_mode", "PAPER")
         broker_account_ids = settings.get("broker_account_ids") or []
 
+        # 🎓 "एका वेळी एकच position (5M किंवा 15M)" — 15M ला प्राधान्य: उघडे 5M trades बंद करणे entry order च्या
+        # अगदी आधी (option chain मिळाल्यावर आणि strike-निवड यशस्वी झाल्यावरच) — आधी हे chain मिळण्याआधीच व्हायचं,
+        # त्यामुळे chain/strike अयशस्वी झाल्यास 5M trade बंद झाला पण 15M ने काहीच घेतलं नाही. एका cycle मध्ये
+        # फक्त एकदाच (spread आणि naked दोन्हीसाठी सामायिक), बंद न झाल्यास 15M entry (दोन्ही) थांबतात.
+        yield_state = {}
+
+        def _ensure_5m_yielded():
+            if "ok" not in yield_state:
+                yield_ok, yielded_ids = _yield_open_5m_positions(access_token, symbol, trading_mode)
+                yield_state["ok"] = yield_ok
+                if yield_ok and yielded_ids:
+                    send_telegram_message(
+                        f"🔀 <b>{symbol}: 15M ने पदभार घेतला</b>\n15M entry आधी उघडे {len(yielded_ids)} 5M trade(s) बंद केले (एका वेळी एकच position)."
+                    )
+            return yield_state["ok"]
+
         spread_result = None
         trade_status = ""
         if credit_spread_enabled:
@@ -388,7 +391,9 @@ def process_symbol(access_token, symbol, lot_size=65):
                 cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
                 return f"{symbol}: {level_type} {level_price:.2f} ({timeframe_suffix}) टेस्ट झाला, पण strike-निवड अयशस्वी"
 
-            if broker_account_ids:
+            if not _ensure_5m_yielded():
+                trade_status = "SKIPPED_5M_POSITION_NOT_CLOSED"
+            elif broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 results, factory_errors = execute_trade_on_all_accounts(
                     symbol=symbol, strategy_result=spread_result, base_lots=lots, lot_size=lot_size,
@@ -458,7 +463,9 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(naked_diag_entry)
             print(f"ℹ️ Naked trade बंद आहे (naked_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
         if naked_result is not None:
-            if broker_account_ids:
+            if not _ensure_5m_yielded():
+                naked_status = "SKIPPED_5M_POSITION_NOT_CLOSED"
+            elif broker_account_ids:
                 from trading_engine import execute_trade_on_all_accounts
                 naked_results, naked_factory_errors = execute_trade_on_all_accounts(
                     symbol=symbol, strategy_result=naked_result, base_lots=naked_lots, lot_size=lot_size,
