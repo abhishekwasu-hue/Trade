@@ -118,6 +118,8 @@ def _exit_basis_tag(exit_reason, detail):
     स्तंभातच दिसावं म्हणून (नुसत्या लांब Detail स्तंभात दडलेला मजकूर वाचायला लागू नये)."""
     if not detail or not isinstance(detail, str):
         return None
+    if "futures price" in detail and exit_reason in ("SL", "TRAILING_SL", "PCT_TRAILING_SL", "TARGET"):
+        return "Futures price-based"  # MCX Futures — SL/Target/Trailing futures भावावर (points) आधारित
     if "via Spot move" in detail:
         return "Spot %-based"
     if "via Premium points" in detail:
@@ -138,6 +140,8 @@ def _exit_reason_label_with_tag(exit_reason, detail):
     Exit Reason स्तंभासाठी (जुन्या, या feature आधीच्या trades साठी detail नसल्याने टॅगशिवायच राहतं)."""
     label = _EXIT_REASON_LABELS_PLAIN.get(exit_reason, exit_reason)
     tag = _exit_basis_tag(exit_reason, detail)
+    if tag == "Futures price-based":
+        label = label.replace("(ATR-based)", "(points-based)")  # MCX Trailing = points मागे, ATR नाही
     return f"{label} ({tag})" if tag else label
 
 

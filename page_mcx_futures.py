@@ -30,14 +30,14 @@ from config import get_ist_today
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
     get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
-    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL, get_margin_used_details,
+    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL, get_margin_used_details, get_open_trade_levels,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
 from pnl_reports import generate_pnl_report, add_charges_to_trades_df
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
-from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override
+from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital
 from mcx_futures_trader import PRODUCT_TYPE
@@ -212,6 +212,24 @@ def _render_all_commodities_positions():
         st.info("सध्या कुठल्याही MCX commodity ची उघडी (OPEN) position नाही.")
     else:
         combined_open = pd.concat(open_frames, ignore_index=True)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Mcx मध्ये stop loss fixed pnl based दिसतो, futures च्या price वर
+        # आधारित नाही का") — SL/Target futures भावातच: Entry भाव, SL भाव, Target भाव. (Trailing SL सक्रिय
+        # असेल तर तो dynamic असल्याने इथे दिसत नाही; Manual SL Override असेल तर SL भाव तोच.)
+        _levels = get_open_trade_levels(combined_open["Trade ID"].tolist())
+
+        def _level_price(tid, key):
+            lv = _levels.get(tid)
+            if not lv:
+                return None
+            level = lv["manual_sl_override_pnl"] if key == "sl_pnl_level" and lv.get("manual_sl_override_pnl") is not None else lv[key]
+            price = futures_price_for_pnl_level(lv["net_credit"], level, lv["lots"], lv["lot_size"])
+            return round(price, 2) if price is not None else None
+
+        combined_open["Entry भाव"] = combined_open["Trade ID"].map(
+            lambda t: round(abs(_levels[t]["net_credit"]), 2) if t in _levels and _levels[t]["net_credit"] is not None else None
+        )
+        combined_open["SL भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "sl_pnl_level"))
+        combined_open["Target भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "target_pnl_level"))
         st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
         total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
         st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")

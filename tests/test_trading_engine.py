@@ -3107,3 +3107,116 @@ class TestFormatTradeResult:
     def test_dict_without_known_keys_falls_back_to_repr(self):
         result = trading_engine.format_trade_result(False, {"status": "error"})
         assert "status" in result and "FAILED" in result
+
+
+class TestMcxFuturesFillAnchoredSl:
+    """🎓 "Mcx मध्ये stop loss fixed pnl based दिसतो, futures च्या price वर आधारित नाही का" — MCX Futures
+    चा SL/Target प्रत्यक्ष fill भावावरून (fill ∓ points), signal अंदाजावरून नाही; exit कारण futures भावातच."""
+
+    @staticmethod
+    def _strategy(direction="BUY", est=8000.0, sl=20.0, tg=40.0):
+        credit = est if direction == "SELL" else -est
+        return {
+            "strategy": "MCX_FUTURES_LONG" if direction == "BUY" else "MCX_FUTURES_SHORT",
+            "legs": [{
+                "role": "futures_long" if direction == "BUY" else "futures_short",
+                "instrument_key": "MCX_FO|FUT1", "transaction_type": direction, "ltp": est,
+                "strike": 0, "option_type": None,
+            }],
+            "net_credit": credit, "max_loss": sl, "max_profit": tg,
+        }
+
+    def _open(self, monkeypatch, source, direction, fill, strategy_symbol="CRUDEOIL"):
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {kk: fill for kk in k})
+        monkeypatch.setattr(
+            trading_engine, "execute_order_leg_set",
+            lambda t, o, m: (200, {"status": "success", "data": {"order_ids": ["T1"]}, "paper_fills": {"MCX_FO|FUT1": fill}}),
+        )
+        ok, _ = trading_engine.open_multi_leg_trade(
+            "fake_token", strategy_symbol, self._strategy(direction), lots=1, lot_size=100,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", source=source,
+        )
+        assert ok is True
+
+    @staticmethod
+    def _levels(tmpdb):
+        conn = sqlite3.connect(tmpdb)
+        row = conn.execute("SELECT net_credit, sl_pnl_level, target_pnl_level FROM live_trades ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        return row
+
+    def test_long_sl_and_target_anchor_to_actual_fill(self, temp_db, monkeypatch):
+        self._open(monkeypatch, "mcx_futures", "BUY", fill=8005.0)  # 5 pts adverse slippage
+        net_credit, sl, tg = self._levels(temp_db)
+        assert net_credit == -8005.0
+        assert sl == -2000.0  # ठराविक 20 pts × 100 — slippage मुळे बदलत नाही
+        assert tg == 4000.0
+
+    def test_short_sl_and_target_anchor_to_actual_fill(self, temp_db, monkeypatch):
+        self._open(monkeypatch, "mcx_futures", "SELL", fill=7995.0)
+        net_credit, sl, tg = self._levels(temp_db)
+        assert net_credit == 7995.0
+        assert sl == -2000.0 and tg == 4000.0
+
+    def test_other_sources_keep_signal_anchored_adjustment(self, temp_db, monkeypatch):
+        """options/इतर sources साठी जुनं slippage-समायोजित वर्तन अपरिवर्तित."""
+        self._open(monkeypatch, "some_other_bot", "BUY", fill=8005.0)
+        _, sl, _ = self._levels(temp_db)
+        assert sl == -2500.0  # (20 + 5) × 100
+
+    def test_futures_price_for_pnl_level(self):
+        f = trading_engine.futures_price_for_pnl_level
+        assert f(-8000.0, -2000.0, 1, 100) == 7980.0   # Long: SL entry − 20
+        assert f(-8000.0, 4000.0, 1, 100) == 8040.0    # Long: Target entry + 40
+        assert f(8000.0, -2000.0, 1, 100) == 8020.0    # Short: SL entry + 20
+        assert f(8000.0, 4000.0, 1, 100) == 7960.0     # Short: Target entry − 40
+        assert f(8000.0, None, 1, 100) is None
+
+    def test_mcx_exit_reason_detail_names_futures_price(self, temp_db, monkeypatch):
+        legs = [{"role": "futures_long", "strike": 0, "instrument_key": "FUT1", "transaction_type": "BUY"}]
+        seed_trade(temp_db, "M1", net_credit=-8000.0, sl_level=-1500.0, target_level=3000.0,
+                   strategy="MCX_FUTURES_LONG", source="mcx_futures", legs=legs)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"FUT1": 7979.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1 and closed[0]["reason"] == "SL"
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='M1'").fetchone()[0]
+        conn.close()
+        assert "futures price Rs 7,979.00" in detail
+        assert "SL price Rs 7,980.00" in detail
+        assert "Long entry Rs 8,000.00" in detail and "20.00 pts below entry" in detail
+
+    def test_non_mcx_exit_reason_detail_unchanged(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "N1", net_credit=30, sl_level=-100, target_level=1000)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 60.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert closed and closed[0]["reason"] == "SL"
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='N1'").fetchone()[0]
+        conn.close()
+        assert "total P&L Rs" in detail and "fixed SL level" in detail and "futures price" not in detail
+
+
+class TestFuturesExitLabelsAndLevels:
+    def test_exit_basis_tag_and_label_for_futures_price_detail(self):
+        import page_performance as pp
+        detail = "Trailing SL — futures price Rs 1.00 hit/crossed the (profit-adjusted) trailing SL price Rs 2.00 (Long entry Rs 1, 1 pts below entry); total P&L Rs 5."
+        assert pp._exit_basis_tag("TRAILING_SL", detail) == "Futures price-based"
+        label = pp._exit_reason_label_with_tag("TRAILING_SL", detail)
+        assert "points-based" in label and "ATR" not in label and label.endswith("(Futures price-based)")
+
+    def test_options_trailing_label_unchanged(self):
+        import page_performance as pp
+        detail = "Trailing SL — total P&L Rs 5 hit/crossed the (profit-adjusted) trailing SL level Rs 2."
+        assert pp._exit_basis_tag("TRAILING_SL", detail) == "Fixed Rs P&L-based"
+        assert "ATR-based" in pp._exit_reason_label_with_tag("TRAILING_SL", detail)
+
+    def test_get_open_trade_levels(self, temp_db):
+        seed_trade(temp_db, "L1", net_credit=-8000.0, sl_level=-1500.0, target_level=3000.0, source="mcx_futures", manual_sl_override_pnl=-1000.0)
+        lv = database.get_open_trade_levels(["L1", "missing"])
+        assert set(lv) == {"L1"}
+        assert lv["L1"]["sl_pnl_level"] == -1500.0 and lv["L1"]["manual_sl_override_pnl"] == -1000.0
+        assert database.get_open_trade_levels([]) == {}

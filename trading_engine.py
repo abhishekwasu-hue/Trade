@@ -438,6 +438,24 @@ def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs):
 
 VIX_SPIKE_HALT_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
 
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Mcx मध्ये stop loss fixed pnl based दिसतो, futures च्या price वर
+# आधारित नाही का, review") — या sources चा SL/Target प्रत्यक्ष fill (entry) भावावरून ठरतो: SL भाव =
+# fill ∓ sl_points. आधी सर्वांसाठी SL/Target signal-वेळच्या अंदाजित भावावरून anchor व्हायचा आणि
+# (fill − अंदाज) फरक (slippage) ₹ रकमेत मिसळायचा — त्यामुळे सेटिंग्ज एकच असूनही प्रत्येक trade चा SL
+# वेगळा (उदा. -200 ते -278) यायचा. options strategies चं वर्तन अपरिवर्तित (हा संच फक्त MCX Futures).
+FILL_ANCHORED_SL_SOURCES = ("mcx_futures",)
+
+
+def futures_price_for_pnl_level(net_credit, pnl_level, lots, lot_size):
+    """एकाच futures leg च्या trade साठी — ₹ P&L पातळी (SL/Target/Trailing) → futures भाव. entry भाव =
+    |net_credit| (SELL=धन, BUY=ऋण, बघा open_multi_leg_trade). Long (BUY): भाव = entry + level/qty;
+    Short (SELL): भाव = entry − level/qty. qty = lots × lot_size. वैध नसेल (level None / qty ≤ 0) तर None."""
+    if pnl_level is None or not lots or not lot_size or net_credit is None:
+        return None
+    qty = lots * lot_size
+    entry = abs(net_credit)
+    return entry - pnl_level / qty if net_credit > 0 else entry + pnl_level / qty
+
 
 def check_vix_spike_halt(symbol, direction=None, is_directional_trade=False):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("India VIX ने पहिल्या 5 मिनिटांत ठराविक% (आदल्या
@@ -938,6 +956,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # +delta आणि max_loss -delta ने सरकवला की दोन्ही परत सुसंगत होतात — खरी fill किंमत उपलब्ध
     # नसेल तर delta=0 (काहीही बदलत नाही, जुनंच वर्तन).
     net_credit_delta = net_credit - strategy_result["net_credit"]
+    if source in FILL_ANCHORED_SL_SOURCES:
+        net_credit_delta = 0.0  # SL/Target प्रत्यक्ष fill भावावरून (signal अंदाजावरून नाही) — बघा FILL_ANCHORED_SL_SOURCES
     max_profit_adj = (strategy_result["max_profit"] + net_credit_delta) if strategy_result["max_profit"] is not None else None
     max_loss_adj = strategy_result["max_loss"] - net_credit_delta
 
@@ -1731,16 +1751,40 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
             exit_reason = None
             exit_reason_detail = None
+            # 🎓 MCX Futures (एकच futures leg) साठी exit कारण futures भावातच सांगणे ("Fixed Rs P&L-based"
+            # ऐवजी) — तपासणीचं गणित तेच (₹ P&L = भावातील फरक × lots × lot_size, म्हणून SL/Target भाव-आधारितच),
+            # फक्त मजकूर futures भाव + points दाखवतो. इतर sources साठी जुना मजकूर अपरिवर्तित.
+            def _futures_exit_text(kind, level, phrase):
+                price_level = futures_price_for_pnl_level(net_credit, level, lots, lot_size)
+                if source not in FILL_ANCHORED_SL_SOURCES or price_level is None or len(legs) != 1:
+                    return None
+                entry_price = abs(net_credit)
+                is_long = net_credit < 0
+                ltp_now = current_ltps[legs[0]["instrument_key"]]
+                pts = abs(price_level - entry_price)
+                side = "above" if price_level > entry_price else "below"
+                return (
+                    f"{kind} — futures price Rs {ltp_now:,.2f} {phrase} Rs {price_level:,.2f} "
+                    f"({'Long' if is_long else 'Short'} entry Rs {entry_price:,.2f}, {pts:,.2f} pts {side} entry); "
+                    f"total P&L Rs {current_pnl:,.0f}."
+                )
+
             if effective_sl_level is not None and current_pnl <= effective_sl_level:
                 if is_trailing_active:
                     exit_reason = "PCT_TRAILING_SL" if is_pct_trailing_trade else "TRAILING_SL"
-                    exit_reason_detail = f"Trailing SL — total P&L Rs {current_pnl:,.0f} hit/crossed the (profit-adjusted) trailing SL level Rs {effective_sl_level:,.0f}."
+                    exit_reason_detail = _futures_exit_text("Trailing SL", effective_sl_level, "hit/crossed the (profit-adjusted) trailing SL price") or (
+                        f"Trailing SL — total P&L Rs {current_pnl:,.0f} hit/crossed the (profit-adjusted) trailing SL level Rs {effective_sl_level:,.0f}."
+                    )
                 else:
                     exit_reason = "SL"
-                    exit_reason_detail = f"Stop-Loss — total P&L Rs {current_pnl:,.0f} hit/crossed the fixed SL level Rs {effective_sl_level:,.0f}."
+                    exit_reason_detail = _futures_exit_text("Stop-Loss", effective_sl_level, "hit/crossed the SL price") or (
+                        f"Stop-Loss — total P&L Rs {current_pnl:,.0f} hit/crossed the fixed SL level Rs {effective_sl_level:,.0f}."
+                    )
             elif target_level is not None and current_pnl >= target_level:
                 exit_reason = "TARGET"  # Target गाठला की केव्हाही (वेळेची वाट न बघता) लगेच बंद
-                exit_reason_detail = f"Target — total P&L Rs {current_pnl:,.0f} reached/exceeded the Target level Rs {target_level:,.0f}."
+                exit_reason_detail = _futures_exit_text("Target", target_level, "reached/exceeded the Target price") or (
+                    f"Target — total P&L Rs {current_pnl:,.0f} reached/exceeded the Target level Rs {target_level:,.0f}."
+                )
             elif is_new_rule_trade and past_carry_forward_check_time:
                 # Target (वर तपासलेला) अजून गाठलेला नाही, आणि आता दुपारी ३:१० झालेली आहे --
                 # वेगळ्या, कमी उंबरठ्याशी (डीफॉल्ट 30% credit) पुरेसा नफा आहे का तपासणे -- असेल तर

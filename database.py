@@ -1661,6 +1661,31 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     conn.close()
     return df
 
+def get_open_trade_levels(trade_ids):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX SL futures भावातच दिसावा) — दिलेल्या OPEN trade_ids चे
+    {trade_id: {"net_credit", "lots", "lot_size", "sl_pnl_level", "target_pnl_level",
+    "manual_sl_override_pnl"}} — MCX पानाच्या Positions तक्त्यात SL/Target चे futures भाव काढण्यासाठी."""
+    trade_ids = [t for t in dict.fromkeys(trade_ids) if t]
+    if not trade_ids:
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    result = {}
+    for i in range(0, len(trade_ids), 500):
+        chunk = trade_ids[i:i + 500]
+        placeholders = ",".join("?" * len(chunk))
+        cur = conn.execute(
+            f"SELECT trade_id, net_credit, lots, lot_size, sl_pnl_level, target_pnl_level, manual_sl_override_pnl "
+            f"FROM live_trades WHERE trade_id IN ({placeholders})", chunk,
+        )
+        for tid, nc, lots, ls, sl, tg, ov in cur.fetchall():
+            result[tid] = {
+                "net_credit": nc, "lots": lots, "lot_size": ls, "sl_pnl_level": sl,
+                "target_pnl_level": tg, "manual_sl_override_pnl": ov,
+            }
+    conn.close()
+    return result
+
+
 def get_orders_for_trades(trade_ids):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX Trade-wise brokerage/charges) — दिलेल्या trade_id यादीचे
     सर्व orders (entry + exit दोन्ही, कुठल्याही तारखेचे), account_id सकट — get_orders_with_account()
