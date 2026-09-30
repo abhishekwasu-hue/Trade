@@ -1607,6 +1607,33 @@ def get_orders_with_account(symbol, start_date, end_date, mode_filter=None):
     conn.close()
     return df
 
+def get_orders_for_trades(trade_ids):
+    """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX Trade-wise brokerage/charges) — दिलेल्या trade_id यादीचे
+    सर्व orders (entry + exit दोन्ही, कुठल्याही तारखेचे), account_id सकट — get_orders_with_account()
+    सारखेच स्तंभ, फक्त तारीख-रेंज ऐवजी trade_id नुसार, कारण एका trade चा entry order निवडलेल्या
+    रेंजच्या आधीच्या दिवशी झालेला असू शकतो (exit रेंजमध्ये असला तरी). charges.py ला प्रत्येक trade चं
+    संपूर्ण शुल्क (entry+exit) मोजता यावं म्हणून."""
+    trade_ids = [t for t in dict.fromkeys(trade_ids) if t]
+    if not trade_ids:
+        return pd.DataFrame(columns=[
+            "order_id", "trade_id", "placed_at", "mode", "symbol", "quantity", "fill_price", "price",
+            "transaction_type", "account_id",
+        ])
+    conn = sqlite3.connect(DB_PATH)
+    frames = []
+    for i in range(0, len(trade_ids), 500):
+        chunk = trade_ids[i:i + 500]
+        placeholders = ",".join("?" * len(chunk))
+        frames.append(pd.read_sql_query(
+            f"""SELECT o.order_id, o.trade_id, o.placed_at, o.mode, o.symbol, o.quantity, o.fill_price, o.price,
+                       o.transaction_type, lt.account_id
+                FROM order_log o LEFT JOIN live_trades lt ON o.trade_id = lt.trade_id
+                WHERE o.trade_id IN ({placeholders})""",
+            conn, params=chunk,
+        ))
+    conn.close()
+    return pd.concat(frames, ignore_index=True)
+
 def get_closed_trades_for_report(symbol, start_date, end_date, mode_filter=None):
     """दिलेल्या तारीख-रेंजमध्ये बंद (CLOSED) झालेले trades — exit_time नुसार (P&L exit च्याच दिवशी
     'realized' मानला जातो, entry दिवशी नाही) — Daily/Weekly/Monthly P&L Report साठी."""
