@@ -1453,7 +1453,8 @@ def get_closed_trades_detail(symbol, mode_filter=None, start_date=None, end_date
                       COALESCE(source, 'UNKNOWN') AS source, COALESCE(entry_timeframe, 'UNKNOWN') AS entry_timeframe,
                       entry_level_price, COALESCE(strategy, 'UNKNOWN') AS strategy, entry_reason_tag,
                       COALESCE(exit_reason, 'UNKNOWN') AS exit_reason, exit_reason_detail,
-                      realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode
+                      realized_pnl AS "Realized P&L", COALESCE(mode, 'LIVE') AS mode,
+                      entry_margin_required AS "Margin"
                FROM live_trades WHERE {symbol_clause} AND status='CLOSED' AND realized_pnl IS NOT NULL AND exit_time IS NOT NULL"""
     if mode_filter:
         query += " AND COALESCE(mode,'LIVE')=?"

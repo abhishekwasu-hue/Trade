@@ -1284,3 +1284,16 @@ class TestMarginUsedDetails:
         d = database.get_margin_used_details(["CRUDEOIL", "GOLD"])
         assert d is not None and len(d["trades"]) == 1
         assert database.get_margin_used_details("SILVER") is None
+
+
+class TestClosedTradesDetailMarginColumn:
+    def test_margin_column_from_entry_margin_required(self, temp_db):
+        seed_closed_trade(temp_db, "MG1", 500.0, "TARGET", "2026-09-10", symbol="CRUDEOIL")
+        conn = sqlite3.connect(temp_db)
+        conn.execute("UPDATE live_trades SET entry_margin_required=123456.0 WHERE trade_id='MG1'")
+        conn.commit()
+        conn.close()
+        seed_closed_trade(temp_db, "MG2", 100.0, "SL", "2026-09-10", symbol="CRUDEOIL")  # margin NULL (जुनी नोंद)
+        df = database.get_closed_trades_detail("CRUDEOIL").set_index("Trade ID")
+        assert df.loc["MG1", "Margin"] == 123456.0
+        assert pd.isna(df.loc["MG2", "Margin"])

@@ -2437,6 +2437,9 @@ def _build_trade_log_table(df, usable_width, max_rows=250):
         lines = []
         if row.get("Entry Reason") not in (None, ""):
             lines.append(f"<b>Entry:</b> {_esc(row['Entry Reason'])}")
+        margin_v = row.get("Margin")
+        if margin_v is not None and not (isinstance(margin_v, float) and pd.isna(margin_v)):
+            lines.append(f"<b>Margin used:</b> Rs {float(margin_v):,.0f}")
         legs_key = "Legs (Strike/Entry/Exit Price)"
         if row.get(legs_key) not in (None, "", "-"):
             lines.append(f"<b>Legs:</b> {_esc(row[legs_key])}")
