@@ -1297,3 +1297,22 @@ class TestClosedTradesDetailMarginColumn:
         df = database.get_closed_trades_detail("CRUDEOIL").set_index("Trade ID")
         assert df.loc["MG1", "Margin"] == 123456.0
         assert pd.isna(df.loc["MG2", "Margin"])
+
+
+class TestOvershootParsesMcxFuturesDetail:
+    def test_stop_loss_futures_price_wording(self):
+        d = ("Stop-Loss — futures price Rs 7,979.00 hit/crossed the SL price Rs 7,980.00 "
+             "(Long entry Rs 8,000.00, 20.00 pts below entry); total P&L Rs -1,575.")
+        r = database._parse_sl_tsl_overshoot_detail(d)
+        assert r["basis"] == "SL/TSL (Futures pts)" and r["overshoot_points"] == 1.0
+
+    def test_trailing_futures_price_wording(self):
+        d = ("Trailing SL — futures price Rs 8,010.50 hit/crossed the (profit-adjusted) trailing SL price Rs 8,012.00 "
+             "(Long entry Rs 8,000.00, 12.00 pts above entry); total P&L Rs 1,050.")
+        r = database._parse_sl_tsl_overshoot_detail(d)
+        assert r["overshoot_points"] == 1.5
+
+    def test_actual_fill_suffix_does_not_break_parsing(self):
+        d = ("Stop-Loss hit via Spot move — adverse move -0.07% reached/exceeded the -0.07% threshold "
+             "[Actual exit fills used: realized P&L Rs -5,362 vs Rs -5,300 at trigger LTP]")
+        assert database._parse_sl_tsl_overshoot_detail(d)["basis"] == "SL (Spot %)"

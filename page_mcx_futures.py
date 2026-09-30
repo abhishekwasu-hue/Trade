@@ -26,7 +26,7 @@ import streamlit as st
 
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
-from config import get_ist_today
+from config import get_ist_today, get_ist_now
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
     get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
@@ -999,6 +999,36 @@ def render():
             "Dashboard च्या Market Zones टॅबवरच्या Signal Log सारखंच — प्रत्येक तपासलेला S/R level touch "
             "(trade झाला किंवा न झाला तरीही). `cloud_db.signal_log` symbol-निरपेक्ष table आहे, त्यामुळे "
             "mcx_futures_trader.py बांधल्यावर हीच table वापरेल — वेगळी table लागणार नाही."
+        )
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Crude oil hit log not working", "Same problem silver gold") — Hit Log
+        # मध्ये न-बदललेली NO_HIT स्थिती पुन्हा साठवली जात नाही (जुनी "repeat" तक्रार), म्हणून शांत काळात log स्थिर दिसतं.
+        # येथे trader ची अखेरची तपासणी (प्रत्येक cycle ला अद्ययावत) दाखवली जाते — bot जिवंत आहे हे कळावं म्हणून.
+        _lc = cloud_db.get_mcx_last_check(symbol)
+        if _lc is None:
+            st.info("ℹ️ या commodity साठी trader ची अखेरची तपासणी अजून नोंदली गेलेली नाही (VPS वर नवीन कोड आल्यानंतर पहिल्या cycle पासून दिसेल).")
+        else:
+            try:
+                _checked = datetime.datetime.strptime(_lc["checked_at"], "%Y-%m-%d %H:%M:%S")
+                _age_min = (get_ist_now().replace(tzinfo=None) - _checked).total_seconds() / 60
+            except Exception:
+                _checked, _age_min = None, None
+            _near = (
+                f" — सर्वात जवळचा level ₹{_lc['nearest_level']:,.1f} ({_lc.get('nearest_level_type')}, {_lc.get('nearest_timeframe')}), "
+                f"अंतर ₹{abs(_lc['nearest_level'] - _lc['price']):,.1f}"
+                if _lc.get("nearest_level") is not None and _lc.get("price") is not None else ""
+            )
+            _price = f" — भाव ₹{_lc['price']:,.1f}" if _lc.get("price") is not None else ""
+            _age_txt = f" ({_age_min:.0f} मिनिटांपूर्वी)" if _age_min is not None else ""
+            _line = f"🕒 अखेरची तपासणी: {_lc['checked_at']}{_age_txt}{_price}{_near}\n\nस्थिती: {_lc['status']}"
+            _market_hours = _checked is not None and 9 <= get_ist_now().hour < 23 and get_ist_now().weekday() < 5
+            if _age_min is not None and _age_min > 5 and _market_hours:
+                st.warning(_line + "\n\n⚠️ 5 मिनिटांपेक्षा जास्त वेळ तपासणी नाही — trader (VPS cron) चालू आहे का ते `mcx_futures.log` मध्ये तपासा.")
+            else:
+                st.success(_line)
+        st.caption(
+            "ℹ️ Hit Log मध्ये न-बदललेली NO_HIT स्थिती पुन्हा नोंदली जात नाही (एका दिवसात एका level ची एकच NO_HIT ओळ) — "
+            "म्हणून भाव level जवळ नसताना खालचा log स्थिर/रिकामा दिसणं सामान्य आहे. नवीन ओळ तेव्हाच येते जेव्हा स्थिती बदलते "
+            "(level ला स्पर्श, RSI/Max-hits मुळे skip, किंवा zones refresh होऊन नवीन level येतो)."
         )
         hit_log_today = get_ist_today()
         hit_log_range_choice = st.radio(

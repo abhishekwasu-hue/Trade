@@ -3268,3 +3268,70 @@ class TestShadowTradesUseParentExitRules:
         self._setup(monkeypatch)
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D", oi_reversal_exit_enabled=True)
         assert len(closed) == 1 and closed[0]["reason"] == "OI_REVERSAL"
+
+
+class TestLiveExitUsesActualFills:
+    """🎓 "LIVE trades चे खरे fill price" — Upstox verified_legs (खरा average_price) उपलब्ध असेल तर exit चा realized
+    P&L आणि order-log fill त्यावरून; नसेल तर आधीचा LTP-आधारित आकडा."""
+
+    @staticmethod
+    def _live_resp(prices, status="complete", filled=75):
+        return (200, {
+            "status": "success", "data": {"order_ids": ["C1", "C2"]},
+            "verified_legs": [
+                {"order_id": f"C{i}", "status": status, "filled_quantity": filled, "quantity": 75,
+                 "average_price": p, "instrument_token": tok}
+                for i, (tok, p) in enumerate(prices.items())
+            ],
+        })
+
+    def _run(self, temp_db, monkeypatch, execute_result, mode="LIVE"):
+        seed_trade(temp_db, "LX1", net_credit=30, sl_level=-100000, target_level=1000, mode=mode)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 5.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_result)
+        return trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+
+    def test_realized_pnl_uses_actual_exit_fills(self, temp_db, monkeypatch):
+        # LTP वर: cost=5-0=5 -> pnl=(30-5)*75=1875; खरे fills: 6.0/0.5 -> cost=5.5 -> (30-5.5)*75=1837.5
+        closed = self._run(temp_db, monkeypatch, self._live_resp({"PE24400": 6.0, "PE24300": 0.5}))
+        assert closed[0]["pnl"] == 1837.5
+        conn = sqlite3.connect(temp_db)
+        pnl, detail = conn.execute("SELECT realized_pnl, exit_reason_detail FROM live_trades WHERE trade_id='LX1'").fetchone()
+        fill = conn.execute("SELECT fill_price FROM order_log WHERE trade_id='LX1' AND instrument_key='PE24400'").fetchone()
+        conn.close()
+        assert pnl == 1837.5 and "Actual exit fills used" in detail and "Rs 1,838" in detail and "Rs 1,875" in detail
+        assert fill and fill[0] == 6.0  # order log मध्ये खरा भाव, LTP (5.0) नाही
+
+    def test_falls_back_to_ltp_when_no_verified_legs(self, temp_db, monkeypatch):
+        closed = self._run(temp_db, monkeypatch, (200, {"status": "success", "data": {"order_ids": ["C1", "C2"]}}))
+        assert closed[0]["pnl"] == 1875.0
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='LX1'").fetchone()[0]
+        conn.close()
+        assert "Actual exit fills" not in detail
+
+    def test_falls_back_when_a_leg_price_missing_or_partial(self, temp_db, monkeypatch):
+        for res in (
+            self._live_resp({"PE24400": 6.0, "PE24300": None}),
+            self._live_resp({"PE24400": 6.0, "PE24300": 0.0}),          # 0 किंमत अवैध
+            self._live_resp({"PE24400": 6.0, "PE24300": 0.5}, filled=10),  # अपूर्ण fill
+            self._live_resp({"PE24400": 6.0, "PE24300": 0.5}, status="pending"),
+        ):
+            assert trading_engine._actual_exit_prices(res[1], [{"instrument_token": "PE24400"}, {"instrument_token": "PE24300"}]) == {}
+
+    def test_paper_trade_unchanged(self, temp_db, monkeypatch):
+        closed = self._run(temp_db, monkeypatch, (200, {"status": "success", "data": {"order_ids": ["C1"]}, "paper_fills": {"PE24400": 5.0, "PE24300": 0.0}}), mode="PAPER")
+        assert closed[0]["pnl"] == 1875.0
+
+    def test_actual_exit_prices_requires_all_close_order_legs(self):
+        resp = self._live_resp({"PE24400": 6.0})[1]
+        need = [{"instrument_token": "PE24400"}, {"instrument_token": "PE24300"}]
+        assert trading_engine._actual_exit_prices(resp, need) == {}
+        assert trading_engine._actual_exit_prices(resp, need[:1]) == {"PE24400": 6.0}
+
+    def test_manual_close_uses_actual_fills(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "LM1", net_credit=30, sl_level=-100000, target_level=100000, mode="LIVE")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 5.0, "PE24300": 0.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: self._live_resp({"PE24400": 6.0, "PE24300": 0.5}))
+        ok, pnl = trading_engine.close_trade_manually("fake_token", "LM1", "NIFTY", "D")
+        assert ok is True and pnl == 1837.5

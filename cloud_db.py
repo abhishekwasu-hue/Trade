@@ -976,6 +976,39 @@ def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct,
 # brand-new (शून्य दिवसांचा LIVE इतिहास असलेली) रणनीती आहे — तिला स्वतःची, जास्त कडक, स्वतंत्र मर्यादा
 # हवी (ग्लोबल मर्यादा अजून बरीच दूर असतानाही, फक्त MCX मध्येच मोठा तोटा होत असेल तर लवकर थांबावं).
 # दोन्ही Kill Switches स्वतंत्रपणे तपासले जातात — कुठलाही एक ट्रिप झाला तरी नवीन MCX LIVE trade अडतो.
+# 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Crude oil hit log not working" / "Same problem silver gold") — signal_log मध्ये
+# न-बदललेली स्थिती (NO_HIT) पुन्हा साठवली जात नाही (वरची dedup, "repeat" तक्रारीसाठी) — त्यामुळे शांत काळात Hit Log
+# तासन्तास रिकामं/स्थिर दिसतं आणि MCX trader जिवंत आहे का ते कळत नाही. म्हणून प्रत्येक cycle ला प्रत्येक commodity ची
+# "अखेरची तपासणी" (वेळ, भाव, सर्वात जवळचा level, स्थिती) strategy_settings मध्येच (नवीन टेबल नाही) साठवली जाते; Hit Log
+# वर एक ओळ म्हणून दिसते. signal_log अपरिवर्तित (नवीन log ओळी नाहीत).
+MCX_LAST_CHECK_STRATEGY_KEY = "__mcx_last_check__"
+
+
+def save_mcx_last_check(symbol, checked_at, status, price=None, nearest_level=None, nearest_level_type=None,
+                        nearest_timeframe=None):
+    """MCX trader ची त्या commodity ची अखेरची तपासणी. checked_at — datetime किंवा ISO string. अपयश शांतपणे False."""
+    stamp = checked_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(checked_at, "strftime") else str(checked_at)
+    def _num(v):
+        try:
+            return None if v is None else float(v)  # numpy float64 सारखेही JSON-सुरक्षित होतात
+        except (TypeError, ValueError):
+            return None
+
+    payload = {
+        "checked_at": stamp, "status": str(status)[:300], "price": _num(price), "nearest_level": _num(nearest_level),
+        "nearest_level_type": nearest_level_type, "nearest_timeframe": nearest_timeframe,
+    }
+    return save_strategy_settings(MCX_LAST_CHECK_STRATEGY_KEY, symbol, payload)
+
+
+def get_mcx_last_check(symbol):
+    """अखेरची तपासणी dict (checked_at/status/price/nearest_level/...) किंवा कधीच नोंद नसेल तर None."""
+    settings = get_strategy_settings(MCX_LAST_CHECK_STRATEGY_KEY, symbol)
+    if not settings.get("checked_at"):
+        return None
+    return {k: settings.get(k) for k in ("checked_at", "status", "price", "nearest_level", "nearest_level_type", "nearest_timeframe")}
+
+
 MCX_KILL_SWITCH_STRATEGY_KEY = "__mcx_kill_switch__"
 MCX_KILL_SWITCH_SYMBOL_KEY = "ALL"
 MCX_KILL_SWITCH_DEFAULTS = {
