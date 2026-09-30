@@ -1090,6 +1090,51 @@ def save_portfolio_risk_cap_settings(enabled, max_portfolio_risk_pct_index, max_
     })
 
 
+# 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("प्रत्येक trader कडे मर्यादित भांडवल असते, तो एकाच दिवशी दोन
+# स्ट्रॅटेजी चालवू शकत नाही — 5 मिनिट Instant आणि 15 मिनिट SRv2 दोन्हीचे लॉजिक सारखेच, फक्त timeframe वेगळा;
+# 15 मिनिट levels 3-4 दिवसांतून एकदा हिट होतात; ज्या दिवशी 15 मिनिट सक्रिय त्या दिवशी 5 मिनिट पूर्ण बंद")
+# — "आजची सक्रिय strategy" स्विच (5M किंवा 15M, दोन्ही सर्व symbols साठी एकत्र; MCX नाही). हाताने ठरवला जातो.
+# 15M निवड फक्त निवडलेल्या तारखेपुरती (दुसऱ्या दिवशी आपोआप 5M). exclusive_enabled=False (डीफॉल्ट) -> कुठलाही
+# स्विच लागू नाही, दोन्ही strategies आधीसारख्याच स्वतःच्या symbol_enabled नुसार चालतात (जुनं वर्तन).
+# exclusive_enabled=True -> फक्त प्रभावी strategy नवीन entries घेते; दुसरीचे त्याच दिवशी उघडलेले trades
+# trading_engine.manage_open_trades() ने लगेच बंद (STRATEGY_SWITCH_SQUAREOFF); मागच्या दिवसांपासून carry
+# झालेले trades स्पर्शित नाहीत.
+ACTIVE_SR_STRATEGY_KEY = "__active_sr_strategy__"
+ACTIVE_SR_STRATEGY_SYMBOL_KEY = "ALL"
+ACTIVE_SR_STRATEGY_DEFAULTS = {"exclusive_enabled": False, "choice": "5M", "date": None}
+
+
+def get_active_sr_strategy_settings():
+    """{"exclusive_enabled": bool, "choice": "5M"|"15M", "date": "YYYY-MM-DD"|None}. Supabase न मिळाल्यास
+    (किंवा अजून कधीच जतन न केलेलं) डीफॉल्ट — exclusive_enabled=False (जुनं वर्तन)."""
+    settings = get_strategy_settings(ACTIVE_SR_STRATEGY_KEY, ACTIVE_SR_STRATEGY_SYMBOL_KEY)
+    choice = settings.get("choice", ACTIVE_SR_STRATEGY_DEFAULTS["choice"])
+    return {
+        "exclusive_enabled": bool(settings.get("exclusive_enabled", ACTIVE_SR_STRATEGY_DEFAULTS["exclusive_enabled"])),
+        "choice": choice if choice in ("5M", "15M") else "5M",
+        "date": settings.get("date", ACTIVE_SR_STRATEGY_DEFAULTS["date"]),
+    }
+
+
+def save_active_sr_strategy_settings(exclusive_enabled, choice, date_str):
+    return save_strategy_settings(ACTIVE_SR_STRATEGY_KEY, ACTIVE_SR_STRATEGY_SYMBOL_KEY, {
+        "exclusive_enabled": bool(exclusive_enabled),
+        "choice": choice if choice in ("5M", "15M") else "5M",
+        "date": date_str,
+    })
+
+
+def get_effective_active_sr_strategy(today_str):
+    """आजची प्रभावी strategy: None (स्विच बंद — कुठलेही बंधन नाही), "5M" किंवा "15M". स्विच चालू असताना
+    "15M" फक्त तेव्हाच जेव्हा निवड 15M आणि निवडलेली तारीख आजची; बाकी सर्व दिवस "5M"."""
+    settings = get_active_sr_strategy_settings()
+    if not settings["exclusive_enabled"]:
+        return None
+    if settings["choice"] == "15M" and settings["date"] == today_str:
+        return "15M"
+    return "5M"
+
+
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("kill switch paper trading la pn lagu aahe ka... trading stop
 # असा वेगळा button पाहिजे") — वरचा Kill Switch फक्त LIVE साठी, आपोआप (daily loss/trade-count
 # मर्यादेवरून) ट्रिप होतो — PAPER trades कधीच अडवत नाही. हे पूर्णपणे वेगळं, नवीन फीचर — वापरकर्ता

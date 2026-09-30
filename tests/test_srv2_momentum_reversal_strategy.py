@@ -1103,3 +1103,130 @@ class TestRunAllSymbols:
 
         result = srv2.run_all_symbols("fake_token", ["NIFTY", "BANKNIFTY"])
         assert result is False
+
+
+class TestActiveStrategySwitchGate15M:
+    """🎓 "आजची सक्रिय strategy" स्विच — स्विच चालू असताना आज 5M सक्रिय असेल तर 15M SRv2 पूर्णपणे बंद."""
+
+    class _Reached(Exception):
+        pass
+
+    def _run(self, active):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["symbol_enabled"] = True
+        with patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2.cloud_db, "get_effective_active_sr_strategy", return_value=active), \
+             patch.object(srv2.cloud_db, "get_srv2_state", side_effect=self._Reached()):
+            return srv2.process_symbol("fake_token", "NIFTY")
+
+    def test_15m_bot_stops_when_5m_is_active(self):
+        msg = self._run("5M")
+        assert "5M" in msg and "बंद" in msg
+
+    def test_15m_bot_runs_when_15m_active_or_switch_off(self):
+        import pytest
+        for active in ("15M", None):
+            with pytest.raises(self._Reached):
+                self._run(active)
+
+
+def _one_min_df(rows, day=None):
+    """आजचे 1-मिनिट candles: rows = [(open, high, low, close), ...] (जुनं ते नवीन), 12:00 पासून मिनिट-मिनिटाने."""
+    base = (day or srv2.get_ist_now()).replace(hour=12, minute=0, second=0, microsecond=0)
+    stamps = [base + datetime.timedelta(minutes=i) for i in range(len(rows))]
+    return pd.DataFrame({"timestamp": stamps, "open": [r[0] for r in rows], "high": [r[1] for r in rows],
+                         "low": [r[2] for r in rows], "close": [r[3] for r in rows], "volume": 0, "oi": 0})
+
+
+class TestZeroBufferOneMinuteTouch:
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("15 मिनिट लेवल हिट बफर remove करा", 1-मिनिट candles) —
+    touch = शेवटच्या 2 (1-मिनिट) candles ची [low,high] रेंज level ला प्रत्यक्ष स्पर्श करते (buffer 0), किंवा
+    दोन candles मधल्या gap मधून level ओलांडला जातो. आधी शेवटच्या 15M close चं level पासूनचं अंतर <= 0.05%."""
+
+    LEVEL = 23900.0
+
+    def _run(self, one_min_df):
+        candles_15m = _fake_candles_df(last_close=23902)
+
+        def _fetch(token, symbol, current_spot=0, interval="15minute", lookback_days=5):
+            return one_min_df if interval == "1minute" else candles_15m
+
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings["symbol_enabled"] = True
+        settings["naked_enabled"] = False
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2, "fetch_candles", side_effect=_fetch), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones(support_level=self.LEVEL)), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+        return mock_trade, mock_log
+
+    def test_tolerance_constant_is_zero(self):
+        assert srv2.TOUCH_TOLERANCE_PCT == 0.0
+
+    def test_near_but_not_touching_level_is_no_touch(self):
+        # सर्वात खालचा भाव 23905 -> level (23900) पासून 5 पॉइंट (0.021%) — जुन्या 0.05% buffer मध्ये "touch"
+        # मानला जायचा; आता candle-रेंज level ला पोहोचलीच नाही -> touch नाही, trade नाही.
+        df = _one_min_df([(23910, 23915, 23906, 23908), (23908, 23912, 23905, 23907)])
+        mock_trade, mock_log = self._run(df)
+        assert not mock_trade.called
+        assert any(c.args[0]["hit_type"] == "NO_HIT" for c in mock_log.call_args_list)
+
+    def test_range_touching_level_is_touch_even_if_price_moved_away(self):
+        # शेवटच्या candle ची low 23899.5 <= level <= high -> touch (सद्य close 23920 level पासून दूर असला तरी)
+        df = _one_min_df([(23930, 23935, 23925, 23928), (23928, 23930, 23899.5, 23920)])
+        mock_trade, _ = self._run(df)
+        assert mock_trade.called
+
+    def test_exact_level_low_counts_as_touch(self):
+        df = _one_min_df([(23930, 23935, 23925, 23928), (23928, 23930, 23900.0, 23920)])
+        mock_trade, _ = self._run(df)
+        assert mock_trade.called
+
+    def test_gap_through_level_counts_as_touch(self):
+        # मागच्या candle चा close 23890 < level < पुढच्या candle चा open 23910; दोन्ही candles ची रेंज level ला
+        # स्पर्श करत नाही (गॅप) -> GAP_THROUGH
+        df = _one_min_df([(23885, 23895, 23880, 23890), (23910, 23915, 23908, 23912)])
+        mock_trade, mock_log = self._run(df)
+        assert mock_trade.called
+        assert any(c.args[0]["hit_type"] == "GAP_THROUGH" for c in mock_log.call_args_list)
+
+    def test_only_last_two_candles_are_considered(self):
+        # 3ऱ्या-शेवटच्या candle ने level ला स्पर्श केला, पण शेवटचे दोन नाही -> touch नाही
+        df = _one_min_df([(23905, 23910, 23899, 23906), (23915, 23920, 23912, 23918), (23918, 23922, 23914, 23920)])
+        mock_trade, _ = self._run(df)
+        assert not mock_trade.called
+
+    def test_no_one_minute_candles_means_no_touch_and_clear_reason(self):
+        mock_trade, mock_log = self._run(pd.DataFrame())
+        assert not mock_trade.called
+        reasons = [c.args[0]["reason"] for c in mock_log.call_args_list]
+        assert any("1-मिनिट candles उपलब्ध नाहीत" in r for r in reasons)
+
+
+class TestFetchRecent1mCandles:
+    def test_returns_last_two_of_today_only(self):
+        now = srv2.get_ist_now()
+        yesterday = now - datetime.timedelta(days=1)
+        df = pd.concat([_one_min_df([(1, 2, 0, 1)] * 3, day=yesterday), _one_min_df([(10, 11, 9, 10), (20, 21, 19, 20), (30, 31, 29, 30)], day=now)],
+                       ignore_index=True)
+        with patch.object(srv2, "fetch_candles", return_value=df):
+            rows = srv2._fetch_recent_1m_candles("tok", "NIFTY", now)
+        assert [r["close"] for r in rows] == [20, 30]
+
+    def test_exception_or_empty_gives_empty_list(self):
+        now = srv2.get_ist_now()
+        with patch.object(srv2, "fetch_candles", side_effect=RuntimeError("api down")):
+            assert srv2._fetch_recent_1m_candles("tok", "NIFTY", now) == []
+        with patch.object(srv2, "fetch_candles", return_value=None):
+            assert srv2._fetch_recent_1m_candles("tok", "NIFTY", now) == []
+        with patch.object(srv2, "fetch_candles", return_value=pd.DataFrame()):
+            assert srv2._fetch_recent_1m_candles("tok", "NIFTY", now) == []

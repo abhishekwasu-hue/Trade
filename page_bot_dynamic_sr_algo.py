@@ -11,6 +11,8 @@ SL/TSL/Target Exit Gate, Naked Option Trade toggle) — एकाच पान�
 स्वतःचा on/off checkbox सह, अ‍ॅडजस्टेबल उंबरठे सकट. सगळे SL/TSL/Target (Credit Spread + Naked
 दोन्ही) आता स्वतंत्र "🚪 Exit Gate" tab मध्ये.
 """
+import datetime
+
 import streamlit as st
 
 import cloud_db
@@ -333,6 +335,52 @@ def _render_vix_halt_alert_banner():
         )
 
 
+def _render_active_strategy_panel():
+    # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("भांडवल मर्यादित असल्याने एका दिवशी 5M Instant किंवा 15M SRv2,
+    # दोन्हीपैकी फक्त एक; 15M सक्रिय असलेल्या दिवशी 5M पूर्ण बंद; 15M फक्त त्या तारखेपुरती; स्विचवर दुसरीचे
+    # उघडे trades लगेच बंद") — डीफॉल्ट बंद (कुठलेही बंधन नाही, दोन्ही आधीसारखे स्वतःच्या symbol_enabled नुसार).
+    settings = cloud_db.get_active_sr_strategy_settings()
+    today = get_ist_today()
+    today_str = today.strftime("%Y-%m-%d")
+    effective = cloud_db.get_effective_active_sr_strategy(today_str)
+    label = {None: "बंधन नाही (दोन्ही आपापल्या symbol_enabled नुसार)", "5M": "5-मिनिट Instant Trader", "15M": "15-मिनिट SRv2"}[effective]
+    with st.expander(f"🔀 आजची सक्रिय strategy (5M / 15M) — सध्या: {label}", expanded=effective == "15M"):
+        st.caption(
+            "भांडवल मर्यादित असल्याने एका दिवशी **एकच** strategy चालावी. स्विच चालू केल्यावर डीफॉल्ट रोज **5M**; "
+            "**15M** निवडली तर फक्त निवडलेल्या तारखेपुरती (दुसऱ्या दिवशी आपोआप 5M). सर्व symbols साठी (NIFTY/BANKNIFTY/SENSEX), MCX नाही."
+        )
+        exclusive_enabled = st.checkbox(
+            "एका वेळी एकच strategy (5M किंवा 15M) — स्विच चालू करा (डीफॉल्ट बंद)",
+            value=settings["exclusive_enabled"], key="active_sr_exclusive_enabled",
+        )
+        choice = st.radio(
+            "कोणती strategy सक्रिय?", options=["5M", "15M"], horizontal=True,
+            index=0 if settings["choice"] == "5M" else 1, key="active_sr_choice",
+            disabled=not exclusive_enabled,
+            format_func=lambda v: "5-मिनिट Instant Trader" if v == "5M" else "15-मिनिट SRv2 (Momentum-Reversal)",
+        )
+        try:
+            default_date = datetime.datetime.strptime(settings["date"], "%Y-%m-%d").date() if settings["date"] else today
+        except (TypeError, ValueError):
+            default_date = today
+        chosen_date = st.date_input(
+            "15M कोणत्या तारखेसाठी?", value=max(default_date, today), min_value=today, key="active_sr_date",
+            disabled=not (exclusive_enabled and choice == "15M"),
+        )
+        st.warning(
+            "⚠️ स्विच केल्यावर **आज सक्रिय नसलेल्या** strategy चे, **आजच उघडलेले** OPEN trades (PAPER आणि LIVE) पुढच्या monitor "
+            "cycle ला (साधारण १ मिनिटात) **लगेच बंद** होतात (LIVE मध्ये खऱ्या MARKET orders). मागच्या दिवसांपासून carry झालेले trades "
+            "स्पर्शित नाहीत. नवीन entries फक्त सक्रिय strategy घेते."
+        )
+        if st.button("💾 सेव्ह करा", key="active_sr_save"):
+            date_str = chosen_date.strftime("%Y-%m-%d") if (exclusive_enabled and choice == "15M") else None
+            if cloud_db.save_active_sr_strategy_settings(exclusive_enabled, choice if exclusive_enabled else "5M", date_str):
+                st.success("सेव्ह झाले. पुढच्या cycle पासून लागू.")
+                st.rerun()
+            else:
+                st.error("सेव्ह अयशस्वी (Supabase जोडणी तपासा).")
+
+
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("तिन्ही strategies (5-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
@@ -342,6 +390,7 @@ def render():
     _render_kill_switch_panel()
     _render_portfolio_risk_cap_panel()
     _render_vix_spike_halt_panel()
+    _render_active_strategy_panel()
 
     with st.expander("❓ हे पान पहिल्यांदाच वापरताय? इथे क्लिक करा"):
         st.markdown(

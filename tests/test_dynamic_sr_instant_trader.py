@@ -2901,3 +2901,27 @@ class TestStopAfterTargetGate:
     def test_lookup_done_once_per_run_even_with_multiple_levels(self):
         _, _, mock_hit = self._run(self._settings(stop_after_target_enabled=True), None)
         assert mock_hit.call_count <= 1
+
+
+class TestActiveStrategySwitchGate5M:
+    """🎓 "आजची सक्रिय strategy" स्विच — आज 15M सक्रिय असेल तर 5M Instant Trader पूर्णपणे बंद."""
+
+    def test_5m_bot_stops_when_15m_is_active(self):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_effective_active_sr_strategy", return_value="15M"), \
+             patch.object(dsr, "fetch_candles") as mock_candles, \
+             patch.object(dsr, "open_multi_leg_trade") as mock_trade:
+            msg = dsr.process_symbol("fake_token", "NIFTY")
+        assert "15M" in msg and "बंद" in msg
+        assert not mock_candles.called and not mock_trade.called
+
+    def test_5m_bot_runs_when_5m_active_or_switch_off(self):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        for active in ("5M", None):
+            with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+                 patch.object(dsr.cloud_db, "get_effective_active_sr_strategy", return_value=active), \
+                 patch.object(dsr.cloud_db, "get_market_zones", return_value=None) as mock_zones:
+                msg = dsr.process_symbol("fake_token", "NIFTY")
+            assert mock_zones.called  # गेट पास होऊन पुढच्या टप्प्यात (zones वाचणे) पोहोचला
+            assert "आज 15M strategy सक्रिय" not in str(msg)
