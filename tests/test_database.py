@@ -1229,3 +1229,58 @@ class TestOtmShadowSourceIsolation:
         df = database.get_performance_by_group("NIFTY", "source")
         assert set(df["Group"]) == {"dynamic_sr_instant", "dynamic_sr_instant_min_hold_shadow"}
 
+
+
+class TestMarginUsedDetails:
+    """🎓 "MCX ROI% चा margin used अवास्तव मोठा" — _margin_used_details() चा पारदर्शक निकाल."""
+
+    @staticmethod
+    def _df(rows):
+        return pd.DataFrame(rows, columns=[
+            "trade_id", "symbol", "max_loss", "lots", "lot_size", "entry_time", "exit_time", "entry_margin_required",
+        ])
+
+    def test_sequential_trades_use_single_largest_margin_not_sum(self):
+        df = self._df([
+            ("A", "CRUDEOIL", 10, 1, 100, "2026-09-10 10:00:00", "2026-09-10 11:00:00", 150000.0),
+            ("B", "CRUDEOIL", 10, 1, 100, "2026-09-10 12:00:00", "2026-09-10 13:00:00", 160000.0),
+            ("C", "GOLD", 10, 1, 100, "2026-09-11 10:00:00", "2026-09-11 11:00:00", 200000.0),
+        ])
+        d = database._margin_used_details(df)
+        assert d["margin_used"] == 200000.0
+        assert d["untimed_margin"] == 0.0
+
+    def test_overlapping_trades_sum_at_peak_and_report_open_trades(self):
+        df = self._df([
+            ("A", "CRUDEOIL", 10, 1, 100, "2026-09-10 10:00:00", "2026-09-10 12:00:00", 150000.0),
+            ("B", "GOLD", 10, 1, 100, "2026-09-10 11:00:00", "2026-09-10 13:00:00", 200000.0),
+            ("C", "SILVER", 10, 1, 30, "2026-09-10 14:00:00", "2026-09-10 15:00:00", 100000.0),
+        ])
+        d = database._margin_used_details(df)
+        assert d["margin_used"] == 350000.0
+        assert pd.Timestamp(d["peak_time"]) == pd.Timestamp("2026-09-10 11:00:00")
+        open_ids = set(d["trades"].loc[d["trades"]["open_at_peak"], "trade_id"])
+        assert open_ids == {"A", "B"}
+
+    def test_margin_source_api_vs_estimate(self):
+        df = self._df([
+            ("A", "CRUDEOIL", 10, 2, 100, "2026-09-10 10:00:00", "2026-09-10 11:00:00", 150000.0),
+            ("B", "GOLD", 5, 1, 100, "2026-09-11 10:00:00", "2026-09-11 11:00:00", None),
+        ])
+        d = database._margin_used_details(df).get("trades").set_index("trade_id")
+        assert d.loc["A", "margin_source"] == "API"
+        assert d.loc["B", "margin_source"] == "ESTIMATE"
+        assert d.loc["B", "trade_margin"] == 500.0  # max_loss 5 × 1 lot × 100
+
+    def test_compute_margin_used_unchanged_and_untimed_added_separately(self):
+        df = self._df([
+            ("A", "CRUDEOIL", 10, 1, 100, "2026-09-10 10:00:00", "2026-09-10 11:00:00", 150000.0),
+            ("B", "GOLD", 10, 1, 100, None, None, 50000.0),
+        ])
+        assert database._compute_margin_used(df) == 200000.0
+
+    def test_get_margin_used_details_from_db(self, temp_db):
+        seed_closed_trade(temp_db, "CR1", 500.0, "TARGET", "2026-09-10", symbol="CRUDEOIL")
+        d = database.get_margin_used_details(["CRUDEOIL", "GOLD"])
+        assert d is not None and len(d["trades"]) == 1
+        assert database.get_margin_used_details("SILVER") is None

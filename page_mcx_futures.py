@@ -30,14 +30,14 @@ from config import get_ist_today
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
     get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
-    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL,
+    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL, get_margin_used_details, get_open_trade_levels,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
 from pnl_reports import generate_pnl_report, add_charges_to_trades_df
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html
-from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override
+from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital
 from mcx_futures_trader import PRODUCT_TYPE
@@ -212,6 +212,24 @@ def _render_all_commodities_positions():
         st.info("सध्या कुठल्याही MCX commodity ची उघडी (OPEN) position नाही.")
     else:
         combined_open = pd.concat(open_frames, ignore_index=True)
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Mcx मध्ये stop loss fixed pnl based दिसतो, futures च्या price वर
+        # आधारित नाही का") — SL/Target futures भावातच: Entry भाव, SL भाव, Target भाव. (Trailing SL सक्रिय
+        # असेल तर तो dynamic असल्याने इथे दिसत नाही; Manual SL Override असेल तर SL भाव तोच.)
+        _levels = get_open_trade_levels(combined_open["Trade ID"].tolist())
+
+        def _level_price(tid, key):
+            lv = _levels.get(tid)
+            if not lv:
+                return None
+            level = lv["manual_sl_override_pnl"] if key == "sl_pnl_level" and lv.get("manual_sl_override_pnl") is not None else lv[key]
+            price = futures_price_for_pnl_level(lv["net_credit"], level, lv["lots"], lv["lot_size"])
+            return round(price, 2) if price is not None else None
+
+        combined_open["Entry भाव"] = combined_open["Trade ID"].map(
+            lambda t: round(abs(_levels[t]["net_credit"]), 2) if t in _levels and _levels[t]["net_credit"] is not None else None
+        )
+        combined_open["SL भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "sl_pnl_level"))
+        combined_open["Target भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "target_pnl_level"))
         st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
         total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
         st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")
@@ -747,6 +765,36 @@ def render():
                             "(MCX Commodity Futures) — charges.py. निवडलेल्या कालावधीत ज्या दिवशी order झाले त्या "
                             "दिवसांचे charges, आणि ज्या दिवशी trade बंद झाला त्या दिवसांचा Gross P&L मोजलेला आहे."
                         )
+
+            # 🎓 वापरकर्त्याने मागितलेली सुधारणा (ROI% साठी 'margin used' अवास्तव मोठा आला) — ROI% चा
+            # भाजक (peak concurrent margin) नेमका कसा आला हे पारदर्शक दिसावं म्हणून: peak ची वेळ, त्या क्षणी
+            # उघडे असलेले trades, आणि प्रत्येकाची margin Upstox API ची आहे की ढोबळ अंदाजाची.
+            _md = get_margin_used_details(perf_symbol, mode_filter=perf_mode_f, start_date=perf_from, end_date=perf_to)
+            if _md is not None:
+                with st.expander("🔍 Margin गणना तपशील (ROI% चा भाजक)"):
+                    mm1, mm2, mm3 = st.columns(3)
+                    with mm1:
+                        st.metric("वापरलेली Margin (peak)", f"₹{_md['margin_used']:,.0f}")
+                    with mm2:
+                        st.metric("Peak ची वेळ", str(_md["peak_time"])[:19] if _md["peak_time"] is not None else "N/A")
+                    with mm3:
+                        st.metric("त्या क्षणी उघडे trades", int(_md["trades"]["open_at_peak"].sum()))
+                    _mt = _md["trades"]
+                    st.caption(
+                        f"एकूण {len(_mt)} trades — Upstox Margin API ची margin: {int((_mt['margin_source'] == 'API').sum())}, "
+                        f"ढोबळ अंदाज (max_loss×lots×lot_size): {int((_mt['margin_source'] == 'ESTIMATE').sum())}. "
+                        "ROI% = Realized P&L ÷ Peak margin (एकाच वेळी उघड्या असलेल्या trades ची बेरीज)."
+                    )
+                    _cols = {"trade_id": "Trade ID", "symbol": "Symbol", "lots": "Lots", "lot_size": "Lot Size",
+                             "trade_margin": "Margin (₹)", "margin_source": "स्रोत", "entry_time": "Entry", "exit_time": "Exit"}
+                    st.markdown("**त्या Peak क्षणी उघडे असलेले trades**")
+                    _peak_df = _mt[_mt["open_at_peak"]][list(_cols)].rename(columns=_cols)
+                    st.dataframe(_peak_df, width="stretch", hide_index=True) if not _peak_df.empty else st.caption("—")
+                    st.markdown("**सर्वात मोठी margin असलेले 10 trades**")
+                    st.dataframe(
+                        _mt.sort_values("trade_margin", ascending=False).head(10)[list(_cols)].rename(columns=_cols),
+                        width="stretch", hide_index=True,
+                    )
 
             perf_by_symbol_pdf = None
             if perf_all_combined:

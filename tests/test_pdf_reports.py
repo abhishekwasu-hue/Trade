@@ -556,3 +556,38 @@ class TestGeneratePerformanceReportPdfTradeCharts:
             None, None, None, None, [], trade_charts=trade_charts,
         )
         assert pdf_bytes[:4] == b"%PDF"
+
+
+class TestPdfTableLayout:
+    """🎓 "Table suddha proper arrange kra, values break jhalelya disatat" — Trade Log 2-ओळी block आणि
+    group तक्ते पानाच्या रुंदीत (fit_width)."""
+
+    def test_trade_log_block_layout_has_no_split_ids_and_valid_pdf(self):
+        import pandas as pd
+        from pdf_reports import _build_trade_log_table
+        df = pd.DataFrame([{
+            "Trade ID": "PAPER_1790352742_4eb78a", "Symbol": "CRUDEOIL", "Entry Time": "2026-09-25 21:42:22",
+            "Entry Reason": "mcx_futures - 30M S/R level touch", "Exit Time": "2026-09-25 21:57:21",
+            "Exit Reason": "Trailing SL (ATR-based)", "Exit Reason Detail": "Trailing SL hit at Rs 2,800.",
+            "Realized P&L": 200.0, "Charges": 198.0, "Net P&L": 2.0, "Mode": "PAPER",
+        }])
+        result = _build_trade_log_table(df, usable_width=515)
+        tbl = result[0]
+        assert abs(sum(tbl._colWidths) - 515) < 1.0  # पानाच्या रुंदीतच
+        assert len(tbl._cellvalues) == 1 + 2  # header + (ओळ 1 + ओळ 2)
+
+    def test_group_table_fits_width(self):
+        import pandas as pd
+        from pdf_reports import df_to_reportlab_table, _format_group_df_for_pdf
+        g = pd.DataFrame([{"Group": "NATURALGAS", "Trades": 21, "Win Rate %": None, "SL/Target Trades": 0,
+                           "Win Rate % (All Exits)": 14.3, "ROI %": 0.01, "Total P&L": 13625.0, "Avg P&L": 648.81}])
+        t = df_to_reportlab_table(_format_group_df_for_pdf(g), multicolour_header=True, fit_width=515)
+        assert abs(sum(t._colWidths) - 515) < 1.0
+
+    def test_group_df_formatting_readable(self):
+        import pandas as pd
+        from pdf_reports import _format_group_df_for_pdf
+        g = pd.DataFrame([{"Group": "X", "Trades": 3, "Win Rate %": None, "ROI %": 0.09, "Total P&L": 70184.0, "Avg P&L": -1525.74}])
+        out = _format_group_df_for_pdf(g).iloc[0]
+        assert out["Total P&L"] == "Rs 70,184" and out["Avg P&L"] == "Rs -1,526"
+        assert out["Win Rate %"] == "N/A" and out["ROI %"] == "0.09%" and out["Trades"] == "3"

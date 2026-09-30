@@ -16,7 +16,7 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether, CondPageBreak
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfgen.canvas import Canvas as _BaseCanvas
 
@@ -841,7 +841,7 @@ def _table_font_size(ncols):
         return 10.5
     return 9
 
-def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None, multicolour_header=False):
+def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color_columns=None, font_name=None, font_size=None, multicolour_header=False, fit_width=None):
     """
     Convert a pandas DataFrame to a reportlab Table (or a Paragraph if empty).
     color_columns: optional list of column names whose cells get a colour tint based on their
@@ -853,9 +853,15 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     काळी पार्श्वभूमी काढून पांढरी + प्रत्येक स्तंभाचा स्वतःचा रंग (_SECTION_COLORS, फिरणारा) —
     Performance Report च्या Broker-wise Charges/Strategy-wise/Timeframe-wise/Option Structure-wise
     तक्त्यांसाठीच फक्त वापरलेलं.
+    🎓 वापरकर्त्याने मागितलेली सुधारणा ("Table suddha proper arrange kra, values break jhalelya disatat") —
+    fit_width (pt, पर्यायी) दिला तर स्तंभांची रुंदी मजकुराच्या लांबीनुसार ठरवून एकूण रुंदी नेमकी
+    fit_width मध्ये बसवली जाते, header आणि सेल Paragraph म्हणून wrap होतात — उजवीकडचे स्तंभ पानाबाहेर
+    कापले जात नाहीत, आणि मूल्यं मध्येच तुटत नाहीत. न दिल्यास जुनं वर्तन (सर्व इतर callers अस्पर्श).
     """
     if df is None or df.empty:
         return Paragraph(empty_msg, _rpt_normal)
+    if fit_width:
+        return _fit_width_df_table(df, fit_width, max_rows=max_rows)
     display_df = df.head(max_rows)
     computed_font_size = font_size or _table_font_size(len(display_df.columns))
     table_font = font_name or _RPT_TABLE_FONT
@@ -896,6 +902,80 @@ def df_to_reportlab_table(df, empty_msg="No data available.", max_rows=40, color
     if len(df) > max_rows:
         note = Paragraph(f"(showing first {max_rows} of {len(df)} rows)", _rpt_footer)
     return [tbl, note] if note else tbl
+
+
+def _fit_width_df_table(df, fit_width, max_rows=40, font_size=10):
+    """df_to_reportlab_table(fit_width=...) चा गाभा — स्तंभ-रुंदी = त्या स्तंभातल्या सर्वात लांब
+    मूल्याची (आणि header च्या सर्वात लांब शब्दाची) रुंदी, मग सर्व मिळून fit_width वर प्रमाणात
+    ताणली/आकुंचित केलेली (कुठलाही स्तंभ त्याच्या सर्वात लांब न-तुटणाऱ्या शब्दापेक्षा अरुंद होत नाही);
+    header-सेल Paragraph म्हणून wrap होतात, बहुरंगी header, संख्यात्मक स्तंभ उजवीकडे संरेखित."""
+    display_df = df.head(max_rows)
+    columns = list(display_df.columns)
+    str_rows = [[_fix_missing_glyphs(str(v)) for v in row] for row in display_df.values.tolist()]
+    pad = 10
+    natural, floor = [], []
+    for ci, col in enumerate(columns):
+        header_words = str(col).split() or [""]
+        header_min = max(pdfmetrics.stringWidth(w, _RPT_TABLE_FONT_BOLD, font_size) for w in header_words)
+        cell_w = max([pdfmetrics.stringWidth(r[ci], _RPT_TABLE_FONT, font_size) for r in str_rows] + [0])
+        header_full = pdfmetrics.stringWidth(str(col), _RPT_TABLE_FONT_BOLD, font_size)
+        natural.append(max(cell_w, header_full) + pad)
+        floor.append(max(cell_w, header_min) + pad)
+    total = sum(natural)
+    widths = [n * fit_width / total for n in natural]
+    for _ in range(4):  # floor पेक्षा कमी झालेल्या स्तंभांना floor देऊन, उरलेली रुंदी बाकीच्यांत वाटली जाते
+        low = [i for i, w in enumerate(widths) if w < floor[i]]
+        if not low:
+            break
+        fixed = sum(floor[i] for i in low)
+        rest = [i for i in range(len(widths)) if i not in low]
+        rest_natural = sum(natural[i] for i in rest) or 1
+        for i in low:
+            widths[i] = floor[i]
+        for i in rest:
+            widths[i] = natural[i] * max(fit_width - fixed, 0) / rest_natural
+    numeric_cols = {
+        ci for ci in range(len(columns))
+        if str_rows and all(re.fullmatch(r"[-+]?[\d,.]+%?|N/A", r[ci].replace("Rs ", "").strip()) for r in str_rows)
+    }
+    cell_style = ParagraphStyle("fit_cell", fontName=_RPT_TABLE_FONT, fontSize=font_size, leading=font_size + 2.5)
+    cell_num = ParagraphStyle("fit_cell_num", parent=cell_style, alignment=2)
+    data = [[
+        Paragraph(_xml_escape(_fix_missing_glyphs(str(c))), ParagraphStyle(
+            f"fit_head_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=font_size, leading=font_size + 2.5,
+            textColor=_SECTION_COLORS[i % len(_SECTION_COLORS)], alignment=2 if i in numeric_cols else 0,
+        ))
+        for i, c in enumerate(columns)
+    ]]
+    for r in str_rows:
+        data.append([Paragraph(_xml_escape(v), cell_num if ci in numeric_cols else cell_style) for ci, v in enumerate(r)])
+    tbl = Table(data, colWidths=widths, repeatRows=1, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    if len(df) > max_rows:
+        return [tbl, Paragraph(f"(showing first {max_rows} of {len(df)} rows)", _rpt_footer)]
+    return tbl
+
+
+def _format_group_df_for_pdf(df):
+    """Strategy/Timeframe/Structure/Commodity-wise तक्त्यासाठी मूल्यं वाचनीय स्वरूपात (Rs 70,184 / 20.0% /
+    N/A) — chart साठी मूळ df तसाच राहतो, हा फक्त तक्त्यासाठीचा प्रतिलिपी."""
+    out = df.copy()
+    for c in out.columns:
+        if c in ("Total P&L", "Avg P&L"):
+            out[c] = out[c].map(lambda v: f"Rs {v:,.0f}" if pd.notna(v) else "N/A")
+        elif c in ("Win Rate %", "Win Rate % (All Exits)", "ROI %"):
+            out[c] = out[c].map(lambda v: f"{v:g}%" if pd.notna(v) else "N/A")
+        elif c in ("Trades", "SL/Target Trades"):
+            out[c] = out[c].map(lambda v: f"{int(v)}" if pd.notna(v) else "N/A")
+    return out
 
 
 def _wide_df_table_wrapped(df, usable_width, max_rows=40, font_size=10):
@@ -2240,79 +2320,146 @@ _TRADE_LOG_HEADER_STYLES = [
 
 def _build_trade_log_table(df, usable_width, max_rows=250):
     """
-    Trade Log चा टेबल — df_to_reportlab_table() (plain strings, कुठलंही column-width control नाही)
-    वापरल्यास "Entry Reason"/"Exit Reason Detail" सारखे लांब मजकूराचे स्तंभ पानाच्या रुंदीबाहेर जाऊन
-    कापले जातात (उजवीकडचे स्तंभ दिसतच नाहीत) — हे टाळण्यासाठी इथे प्रत्येक स्तंभाची निश्चित रुंदी
-    आणि लांब स्तंभांसाठी Paragraph-wrapping (मजकूर अनेक ओळींत मावतो, रांग उंच होते पण कापली जात नाही).
+    Trade Log चा टेबल — 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Table suddha proper arrange kra, values break
+    jhalelya disatat, vachayla adchan yete") — आधी सर्व स्तंभ (Trade ID/Symbol/Entry/Exit/Reason/Detail/
+    P&L/Charges/Net/Mode = 11 स्तंभ) एकाच ओळीत पोर्ट्रेट पानावर कोंबले जायचे — त्यामुळे Trade ID मध्येच
+    तुटायचा ("PAPER_179035 / 2742_4eb78a"), रक्कम "Rs 1 / ,269" अशी मोडायची, आणि header मध्ये "P&L;"
+    (& चा XML entity म्हणून गैरअर्थ) दिसायचं. आता प्रत्येक trade 2 ओळींचा block:
+      ओळ 1 (लहान, मोजता येणारे मूल्य) — Trade ID (पूर्ण, न तुटता) | Symbol+Mode | Entry | Exit |
+        Realized P&L | Charges | Net P&L (रक्कम Rs शिवाय, header मध्ये "(Rs)").
+      ओळ 2 (संपूर्ण रुंदी, wrap होणारा मजकूर) — Entry कारण, (असल्यास) Legs, आणि Exit कारण + नेमका तपशील.
     """
     display_df = df.head(max_rows)
-    # 🎓 वापरकर्त्याने स्पष्टपणे मागितलेली सुधारणा ("actual strike price, entry price, exit price
-    # PDF मध्ये दिसायला हवं") — नवीन "Legs (Strike/Entry/Exit Price)" स्तंभासाठी जागा करून बाकीचे
-    # स्तंभ प्रमाणात आकुंचित केले (एकूण अजूनही 1.0 च्या आत, त्यामुळे टेबल पानाबाहेर जात नाही).
-    col_fracs = {
-        "Trade ID": 0.09, "Entry Time": 0.075, "Entry Reason": 0.16,
-        "Legs (Strike/Entry/Exit Price)": 0.20, "Exit Time": 0.075,
-        "Exit Reason": 0.09, "Exit Reason Detail": 0.16, "Realized P&L": 0.07, "Mode": 0.05,
-        # MCX Performance Report (सर्व commodities एकत्र) साठी जोडलेले स्तंभ — Symbol, Charges, Net P&L.
-        "Symbol": 0.07, "Charges": 0.06, "Net P&L": 0.07,
-    }
-    columns = list(display_df.columns)
-    col_widths = [usable_width * col_fracs.get(c, 1.0 / len(columns)) for c in columns]
-    wrap_columns = {"Entry Reason", "Exit Reason", "Exit Reason Detail"}
+    have = set(display_df.columns)
+
+    # (key, header, रुंदीचा वाटा) — जे स्तंभ df मध्ये आहेत तेच घेतले जातात, मग वाटे 100% मध्ये बसवले जातात.
+    spec = [("Trade ID", "Trade ID", 0.25)]
+    if "Symbol" in have:
+        spec.append(("Symbol", "Symbol / Mode" if "Mode" in have else "Symbol", 0.15))
+    elif "Mode" in have:
+        spec.append(("Mode", "Mode", 0.08))
+    spec += [("Entry Time", "Entry Time", 0.13), ("Exit Time", "Exit Time", 0.13)]
+    for key, header, frac in (
+        ("Realized P&L", "Realized P&L (Rs)", 0.11), ("Charges", "Charges (Rs)", 0.10), ("Net P&L", "Net P&L (Rs)", 0.11),
+    ):
+        if key in have:
+            spec.append((key, header, frac))
+    spec = [t for t in spec if t[0] in have or t[0] == "Symbol"]
+    n_cols = len(spec)
+
+    def _tok_w(text, font, size):
+        return pdfmetrics.stringWidth(_fix_missing_glyphs(str(text)), font, size)
+
+    # प्रत्येक स्तंभाची किमान रुंदी = त्यातला सर्वात लांब न-तुटणारा तुकडा (पूर्ण Trade ID, तारखेचा भाग,
+    # header चा सर्वात लांब शब्द, रक्कम) + padding — म्हणजे कुठलंही मूल्य मध्येच तुटत नाही. उरलेली रुंदी
+    # वरच्या पसंतीच्या वाट्यांप्रमाणे वाटली जाते.
+    min_w = []
+    for key, header, _ in spec:
+        header_min = max(_tok_w(w, _RPT_TABLE_FONT_BOLD, 10) for w in header.split())
+        vals = [r.get(key, "") for r in display_df.to_dict("records")]
+        if key == "Trade ID":
+            body_min = max([_tok_w(v, _RPT_TABLE_FONT, 8) for v in vals] + [0])
+        elif key in ("Entry Time", "Exit Time"):
+            body_min = max([_tok_w(str(v).split(" ")[0], _RPT_TABLE_FONT, 9.5) for v in vals] + [0])
+        elif key in ("Realized P&L", "Charges", "Net P&L"):
+            body_min = max([_tok_w(f"{float(v):,.0f}", _RPT_TABLE_FONT_BOLD, 9.5) for v in vals if pd.notna(v)] + [0])
+        else:
+            body_min = max([_tok_w(v, _RPT_TABLE_FONT_BOLD, 9.5) for v in vals] + [0])
+        min_w.append(max(header_min, body_min) + 10)
+    fracs = [t[2] for t in spec]
+    extra = usable_width - sum(min_w)
+    if extra >= 0:
+        col_widths = [m + extra * f / sum(fracs) for m, f in zip(min_w, fracs)]
+    else:  # अपवादात्मक (खूप लांब मूल्यं) — प्रमाणात आकुंचन
+        col_widths = [m * usable_width / sum(min_w) for m in min_w]
+
+    cell = ParagraphStyle("tl_cell", fontName=_RPT_TABLE_FONT, fontSize=9.5, leading=12)
+    cell_id = ParagraphStyle("tl_cell_id", fontName=_RPT_TABLE_FONT, fontSize=8, leading=10.5)
+    cell_num = ParagraphStyle("tl_cell_num", fontName=_RPT_TABLE_FONT_BOLD, fontSize=9.5, leading=12, alignment=2)
+    cell_small = ParagraphStyle("tl_cell_small", fontName=_RPT_TABLE_FONT, fontSize=9.5, leading=12.5, textColor=colors.HexColor("#333333"))
+
+    def _esc(v):
+        return _xml_escape(_fix_missing_glyphs(str(v)))
 
     header_row = [
-        Paragraph(_fix_missing_glyphs(str(c)), _TRADE_LOG_HEADER_STYLES[i % len(_TRADE_LOG_HEADER_STYLES)])
-        for i, c in enumerate(columns)
+        Paragraph(_esc(h), ParagraphStyle(
+            f"tl_head_{i}", fontName=_RPT_TABLE_FONT_BOLD, fontSize=10, leading=12.5,
+            textColor=_SECTION_COLORS[i % len(_SECTION_COLORS)], alignment=2 if k in ("Realized P&L", "Charges", "Net P&L") else 0,
+        ))
+        for i, (k, h, _) in enumerate(spec)
     ]
     data = [header_row]
-    pnl_col_idx = columns.index("Realized P&L") if "Realized P&L" in columns else None
-    net_col_idx = columns.index("Net P&L") if "Net P&L" in columns else None
-    net_row_colors = {}
-    exit_col_idx = columns.index("Exit Reason") if "Exit Reason" in columns else None
-    pnl_row_colors = {}
-    exit_row_colors = {}
-    for row_idx, row in enumerate(display_df.itertuples(index=False), start=1):
-        row_cells = []
-        for col_idx, (col_name, val) in enumerate(zip(columns, row)):
-            if col_name == "Realized P&L":
-                pnl_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
-                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
-            elif col_name == "Net P&L":
-                net_row_colors[row_idx] = _C_GREEN if val >= 0 else _C_RED
-                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
-            elif col_name == "Charges":
-                row_cells.append(Paragraph(f"Rs {val:,.0f}", _TRADE_LOG_CELL_STYLE))
-            elif col_name == "Exit Reason":
-                text_color, bg_color = _exit_reason_color(val)
-                if text_color is not None:
-                    exit_row_colors[row_idx] = (text_color, bg_color)
-                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
-            elif col_name in wrap_columns:
-                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
-            else:
-                row_cells.append(Paragraph(_fix_missing_glyphs(str(val)), _TRADE_LOG_CELL_STYLE))
-        data.append(row_cells)
-
-    tbl = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.white),
         ("LINEBELOW", (0, 0), (-1, 0), 1.2, _C_BG_DARK),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f9")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]
-    if pnl_col_idx is not None:
-        for row_idx, color in pnl_row_colors.items():
-            style_cmds.append(("TEXTCOLOR", (pnl_col_idx, row_idx), (pnl_col_idx, row_idx), color))
-    if net_col_idx is not None:
-        for row_idx, color in net_row_colors.items():
-            style_cmds.append(("TEXTCOLOR", (net_col_idx, row_idx), (net_col_idx, row_idx), color))
-    if exit_col_idx is not None:
-        for row_idx, (text_color, bg_color) in exit_row_colors.items():
-            style_cmds.append(("TEXTCOLOR", (exit_col_idx, row_idx), (exit_col_idx, row_idx), text_color))
-            style_cmds.append(("BACKGROUND", (exit_col_idx, row_idx), (exit_col_idx, row_idx), bg_color))
+
+    def _time_cell(v):
+        parts = str(v).split(" ", 1)
+        return Paragraph(f"{_esc(parts[0])}<br/>{_esc(parts[1])}" if len(parts) == 2 else _esc(v), cell)
+
+    def _money(v):
+        try:
+            return f"{float(v):,.0f}"
+        except (TypeError, ValueError):
+            return _esc(v)
+
+    for i, row in enumerate(display_df.to_dict("records")):
+        r1 = 1 + 2 * i
+        r2 = r1 + 1
+        cells = []
+        for key, _, _ in spec:
+            v = row.get(key, "")
+            if key == "Trade ID":
+                cells.append(Paragraph(_esc(v), cell_id))
+            elif key == "Symbol":
+                mode_line = f"<br/>{_esc(row['Mode'])}" if "Mode" in row else ""
+                cells.append(Paragraph(f"<b>{_esc(v)}</b>{mode_line}", cell))
+            elif key in ("Entry Time", "Exit Time"):
+                cells.append(_time_cell(v))
+            elif key in ("Realized P&L", "Charges", "Net P&L"):
+                cells.append(Paragraph(_money(v), cell_num))
+                col_idx = len(cells) - 1
+                if key != "Charges":
+                    try:
+                        style_cmds.append(("TEXTCOLOR", (col_idx, r1), (col_idx, r1), _C_GREEN if float(v) >= 0 else _C_RED))
+                    except (TypeError, ValueError):
+                        pass
+            else:
+                cells.append(Paragraph(_esc(v), cell))
+        data.append(cells)
+
+        exit_label = row.get("Exit Reason", "")
+        text_color, bg_color = _exit_reason_color(exit_label)
+        lines = []
+        if row.get("Entry Reason") not in (None, ""):
+            lines.append(f"<b>Entry:</b> {_esc(row['Entry Reason'])}")
+        legs_key = "Legs (Strike/Entry/Exit Price)"
+        if row.get(legs_key) not in (None, "", "-"):
+            lines.append(f"<b>Legs:</b> {_esc(row[legs_key])}")
+        if exit_label not in (None, ""):
+            label_html = _esc(exit_label)
+            if text_color is not None:
+                label_html = f'<font color="#{text_color.hexval()[2:]}"><b>{label_html}</b></font>'
+            else:
+                label_html = f"<b>{label_html}</b>"
+            detail = row.get("Exit Reason Detail")
+            detail_html = f" — {_esc(detail)}" if detail not in (None, "", "-") else ""
+            lines.append(f"<b>Exit:</b> {label_html}{detail_html}")
+        data.append([Paragraph("<br/>".join(lines) or "-", cell_small)] + [""] * (n_cols - 1))
+
+        style_cmds.append(("SPAN", (0, r2), (-1, r2)))
+        style_cmds.append(("NOSPLIT", (0, r1), (-1, r2)))
+        style_cmds.append(("BACKGROUND", (0, r1), (-1, r1), colors.HexColor("#f7f7f9") if i % 2 == 0 else colors.white))
+        style_cmds.append(("BACKGROUND", (0, r2), (-1, r2), bg_color if bg_color is not None else (colors.HexColor("#f7f7f9") if i % 2 == 0 else colors.white)))
+        style_cmds.append(("LINEBELOW", (0, r2), (-1, r2), 0.6, colors.grey))
+        style_cmds.append(("LINEBEFORE", (0, r1), (0, r2), 0.4, colors.grey))
+        style_cmds.append(("LINEAFTER", (-1, r1), (-1, r2), 0.4, colors.grey))
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     tbl.setStyle(TableStyle(style_cmds))
     result = [tbl]
     if len(df) > max_rows:
@@ -2625,7 +2772,7 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
             else:
                 story.append(header)
                 story.append(Spacer(1, 8))
-            t = df_to_reportlab_table(df, multicolour_header=True)
+            t = df_to_reportlab_table(_format_group_df_for_pdf(df), multicolour_header=True, fit_width=usable_width)
             story.extend(t if isinstance(t, list) else [t])
         story.append(Spacer(1, 8))
 
@@ -2787,9 +2934,13 @@ def generate_performance_report_pdf(symbol, mode_label, date_from, date_to, summ
         # KeepTogether मध्ये — दोन्ही एकत्रच राहतील (बसत नसतील तर दोन्ही पुढच्या पानावर); मोठा टेबल
         # असेल तर तो पुढेही (repeatRows सह) आपला नैसर्गिक pagination करत राहतो.
         for group_label, group_color, group_df in _trade_log_groups_by_timeframe(trade_log_df):
-            group_flowables = [_subsection_banner(group_label, usable_width, group_color), Spacer(1, 4)]
-            group_flowables.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
-            story.append(KeepTogether(group_flowables))
+            # 🎓 आधी banner+पूर्ण टेबल KeepTogether मध्ये होतं — मोठा टेबल (अनेक पानं) एका पानात बसत नसल्याने
+            # तो पूर्ण पुढच्या पानावर ढकलला जायचा आणि मागचं पान बहुतेक रिकामं राही. आता फक्त banner + पहिले
+            # काही trade-blocks सुरुवातीला बसण्याइतकी जागा (CondPageBreak) बघितली जाते, टेबल नैसर्गिकपणे पुढे वाहतो.
+            story.append(CondPageBreak(170))
+            story.append(_subsection_banner(group_label, usable_width, group_color))
+            story.append(Spacer(1, 4))
+            story.extend(_build_trade_log_table(group_df, usable_width, max_rows=250))
             story.append(Spacer(1, 10))
 
     if trade_charts:
