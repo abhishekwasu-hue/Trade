@@ -3220,3 +3220,51 @@ class TestFuturesExitLabelsAndLevels:
         assert set(lv) == {"L1"}
         assert lv["L1"]["sl_pnl_level"] == -1500.0 and lv["L1"]["manual_sl_override_pnl"] == -1000.0
         assert database.get_open_trade_levels([]) == {}
+
+
+class TestShadowTradesUseParentExitRules:
+    """🎓 "Shadow trade exit reason is wrong, review" — OTM/Min-Hold Shadow trades मूळ dynamic_sr_instant सारख्याच
+    नियमांनी (Spot%/Premium points) बंद व्हायला हवेत; generic शाखेचा 'OI Reversal' / -100% credit SL नाही."""
+
+    @staticmethod
+    def _ltp(spot, ce, pe):
+        def _fn(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": spot}
+            return {"PE24400": ce, "PE24300": pe}
+        return _fn
+
+    def _setup(self, monkeypatch, spot=23905.0, ce=28.0, pe=3.0, oi_reversal=True):
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._ltp(spot, ce, pe))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        # खरी OI दिशा BULLISH trade च्या विरुद्ध (BEARISH Strong) — generic शाखा यावरून 'OI_REVERSAL' exit करायची
+        monkeypatch.setattr(trading_engine, "get_latest_oi_signal", lambda symbol: {"signal": "🔴 BEARISH (Strong)"} if oi_reversal else None)
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+
+    def test_shadow_not_closed_by_oi_reversal_like_parent(self, temp_db, monkeypatch):
+        for tid, src in (("SH1", "dynamic_sr_instant_otm_shadow"), ("SH2", "dynamic_sr_instant_min_hold_shadow"), ("PAR", "dynamic_sr_instant")):
+            seed_trade(temp_db, tid, net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
+                       source=src, trading_style="INTRADAY", entry_level_price=23900.0)
+        self._setup(monkeypatch)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D", oi_reversal_exit_enabled=True)
+        assert closed == []  # मूळ trade तसेच शॅडो — OI reversal ने कोणीच बंद नाही
+
+    def test_shadow_exits_on_spot_sl_like_parent(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "SH3", net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
+                   source="dynamic_sr_instant_otm_shadow", trading_style="INTRADAY", entry_level_price=23900.0)
+        self._setup(monkeypatch, spot=23880.0, oi_reversal=False)  # स्पॉट SL threshold (23888.05) च्या खाली
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1 and closed[0]["reason"] == "SL"
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='SH3'").fetchone()[0]
+        conn.close()
+        assert "Spot" in detail  # 'via Spot move' — generic 'total P&L' मजकूर नाही
+
+    def test_unknown_source_still_uses_generic_branch(self, temp_db, monkeypatch):
+        """शॅडो नसलेला दुसरा source आधीसारखाच generic शाखेत (OI reversal लागू)."""
+        seed_trade(temp_db, "OT1", net_credit=30, sl_level=-1125, target_level=1125, strategy="BULL_PUT_SPREAD",
+                   source="some_other_bot", trading_style="INTRADAY", entry_level_price=23900.0)
+        self._setup(monkeypatch)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D", oi_reversal_exit_enabled=True)
+        assert len(closed) == 1 and closed[0]["reason"] == "OI_REVERSAL"

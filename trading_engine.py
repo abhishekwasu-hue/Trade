@@ -445,6 +445,17 @@ VIX_SPIKE_HALT_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
 # वेगळा (उदा. -200 ते -278) यायचा. options strategies चं वर्तन अपरिवर्तित (हा संच फक्त MCX Futures).
 FILL_ANCHORED_SL_SOURCES = ("mcx_futures",)
 
+# 🎓 वापरकर्त्याने निदर्शनास आणलेली bug ("Shadow trade exit reason is wrong, review") — Shadow trades (OTM Shadow /
+# Min-Hold Shadow) हे मूळ strategy चे PAPER-only forward-test आहेत; तुलना तेव्हाच बरोबर जेव्हा त्यांचे exit नियम मूळ
+# strategy सारखेच (Spot% + Premium points SL/Target/Trailing, Next-Level) असतात. पण manage_open_trades() मध्ये
+# शाखा `source == "dynamic_sr_instant"` वरून निवडली जाते — शॅडोचा source वेगळा असल्याने ते generic (जुन्या) शाखेत
+# जायचे: ₹ SL = -100% credit, "OI Reversal signal" exit (काही सेकंदांत!) आणि EOD — म्हणजे शॅडो आणि खरा trade
+# वेगवेगळ्या नियमांनी बंद व्हायचे. आता शॅडो source → मूळ source, फक्त exit-नियम निवडण्यासाठी.
+SHADOW_EXIT_PARENT_SOURCE = {
+    "dynamic_sr_instant_otm_shadow": "dynamic_sr_instant",
+    "dynamic_sr_instant_min_hold_shadow": "dynamic_sr_instant",
+}
+
 
 def futures_price_for_pnl_level(net_credit, pnl_level, lots, lot_size):
     """एकाच futures leg च्या trade साठी — ₹ P&L पातळी (SL/Target/Trailing) → futures भाव. entry भाव =
@@ -1340,7 +1351,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # exit branch मध्ये पोहोचायचेच नाहीत (entry_level_price असूनही underlying_spot नेहमी None) —
     # शांतपणे चुकीच्या generic (A1/manual) exit-लॉजिककडे पडायचे. आता जोडला.
     underlying_spot = None
-    if any(t[11] in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal") for t in parsed_trades):
+    if any(SHADOW_EXIT_PARENT_SOURCE.get(t[11], t[11]) in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal") for t in parsed_trades):
         spot_key = get_instrument_key(symbol)
         spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
         # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("exit condition match झाली तरी exit झाला नाही") सोडवण्यासाठी
@@ -1378,6 +1389,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
     closed_summaries = []
     for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) in parsed_trades:
+        exit_source = SHADOW_EXIT_PARENT_SOURCE.get(source, source)  # शॅडो -> मूळ strategy चे exit नियम (बघा वर)
         if not legs:
             continue
         current_ltps = {leg["instrument_key"]: ltp_map.get(leg["instrument_key"]) for leg in legs}
@@ -1440,7 +1452,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
         # घडेल ते लागू. (🎓 Next-Level-Exit आधी इथून पूर्णपणे काढला होता, पण वापरकर्त्याने पुन्हा
         # मागितल्यावर — फक्त 5M-touch entries साठी, Credit Spread + Naked दोन्हींसाठी — खाली परत जोडला.)
-        elif source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
+        elif exit_source == "dynamic_sr_instant" and entry_level_price is not None and underlying_spot is not None:
             # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
             # जुना %-आधारित SL/Target/Trailing पूर्णपणे बदलला — आता Spot% + Premium-Points combined
             # (settings-चालित, hardcode-मुक्त) — Credit Spread आणि Naked (समांतर trade-प्रकार)
@@ -1519,7 +1531,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if dynamic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
                     exit_reason_detail = f"Auto-closed at EOD Square-off ({DYNAMIC_SR_EOD_HOUR}:{DYNAMIC_SR_EOD_MINUTE:02d}) — neither SL nor Target was hit."
-        elif source == "classic_sr_reversal" and entry_level_price is not None and underlying_spot is not None:
+        elif exit_source == "classic_sr_reversal" and entry_level_price is not None and underlying_spot is not None:
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Classical Support/Resistance Reversal"
             # (नवीन, स्वतंत्र तिसरी strategy, 5M+15M pooled) — dynamic_sr_instant सारखीच रचना
             # (Spot%+Premium-Points+TSL-to-Breakeven, केंद्रीकृत evaluate_point_spot_exit()) — फक्त
@@ -1581,7 +1593,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 if classic_sr_past_eod_cutoff:
                     exit_reason = "EOD_SQUAREOFF"
                     exit_reason_detail = f"Auto-closed at EOD Square-off ({CLASSIC_SR_EOD_HOUR}:{CLASSIC_SR_EOD_MINUTE:02d}) — neither SL nor Target was hit."
-        elif source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
+        elif exit_source == "srv2_momentum_reversal" and entry_level_price is not None and underlying_spot is not None:
             settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
             is_naked = strategy_name in ("NAKED_CALL", "NAKED_PUT")
             direction_bullish = strategy_name in ("BULL_PUT_SPREAD", "NAKED_CALL")
@@ -1744,7 +1756,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             # इथेही स्पष्ट वगळलेले).
             is_new_rule_trade = (
                 strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
-                and source not in ("dynamic_sr_instant", "srv2_momentum_reversal")
+                and exit_source not in ("dynamic_sr_instant", "srv2_momentum_reversal")
             )
             past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
             carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
