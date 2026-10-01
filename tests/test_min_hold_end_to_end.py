@@ -223,3 +223,39 @@ class TestNakedOnlyModeIsLoggedAsRealTrade:
         assert "SKIPPED_CREDIT_SPREAD_DISABLED" in _statuses(signal_db)
         hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
         assert hits == 0 and last_trade is None
+
+
+class TestBreakoutEvalNoteInSignalLog:
+    """`breakout_eval` reason च्या सुरुवातीला जोडला जातो; dedup फक्त `[BRK:...]` निकाल-तुकड्यावर."""
+    NOW = datetime.datetime(2026, 9, 11, 11, 0, 0)
+
+    def _entry(self, note, status="SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET", reason="r"):
+        return {"symbol": "NIFTY", "trade_date": "2026-09-11", "signal_time": self.NOW, "level_type": "DYNAMIC_SR_SUPPORT_5M",
+                "level_price": 23900.0, "hit_type": "TOUCH", "direction": "BEARISH", "ltp_at_signal": None,
+                "trade_status": status, "reason": reason, "breakout_eval": note}
+
+    def _reasons(self, raw):
+        return [r[0] for r in raw.execute("SELECT reason FROM signal_log ORDER BY rowid").fetchall()]
+
+    def test_note_is_prefixed_to_reason(self, signal_db):
+        cloud_db.save_signal_log(self._entry("[BRK:BEARISH C✓ V- O- S✗(15M=BULLISH,1H=BEARISH) => NO] तपशील"))
+        assert self._reasons(signal_db) == ["[BRK:BEARISH C✓ V- O- S✗(15M=BULLISH,1H=BEARISH) => NO] तपशील | r"]
+
+    def test_same_outcome_is_deduped_but_changed_outcome_is_stored(self, signal_db):
+        a = "[BRK:BEARISH C✓ V- O- S✗(15M=BULLISH,1H=BEARISH) => NO] close -0.02%"
+        cloud_db.save_signal_log(self._entry(a))
+        cloud_db.save_signal_log(self._entry(a.replace("-0.02%", "-0.03%")))   # फक्त आकडा बदलला -> dedup
+        assert len(self._reasons(signal_db)) == 1
+        cloud_db.save_signal_log(self._entry("[BRK:BEARISH C✓ V- O- S✓(15M=BEARISH,1H=BEARISH) => BREAKOUT] x"))
+        assert len(self._reasons(signal_db)) == 2   # निकाल बदलला -> नवीन नोंद
+
+    def test_entries_without_a_note_behave_as_before(self, signal_db):
+        e = self._entry(None, status="SKIPPED_MAX_2_HITS_REACHED")
+        cloud_db.save_signal_log(e)
+        cloud_db.save_signal_log(dict(e))
+        assert self._reasons(signal_db) == ["r"]
+
+    def test_note_does_not_create_extra_hits(self, signal_db):
+        cloud_db.save_signal_log(self._entry("[BRK:BEARISH C✗ V- O- S- => NO] x"))
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11")
+        assert last_trade is None

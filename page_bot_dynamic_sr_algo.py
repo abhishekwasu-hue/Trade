@@ -784,24 +784,34 @@ def render():
                     "दिशा शेवटच्या **पूर्ण झालेल्या** candle ची घेतली जाते. Breakout/IV (directional) trades साठी वगळलेला. "
                     "Supertrend चा डेटा मिळाला नाही तर trade अडवला जात नाही."
                 )
+                breakout_supertrend_filter_enabled = st.checkbox(
+                    "Breakout trade फक्त Supertrend (15M + 1H) च्या दिशेनेच (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_supertrend_filter_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_supertrend_filter_enabled"),
+                )
+                st.caption(
+                    "Bullish Breakout = 15M **आणि** 1H दोन्ही Supertrend BULLISH (किंमत दोन्हीच्या वर); "
+                    "Bearish Breakout = दोन्ही BEARISH (किंमत दोन्हीच्या खाली). एकही सहमत नसेल, किंवा Supertrend चा "
+                    "डेटा मिळाला नाही, तर Breakout trade घेतला जात नाही. वरचा reversal filter आणि हा — दोन्ही स्वतंत्र."
+                )
                 stc1, stc2 = st.columns(2)
                 with stc1:
                     supertrend_15m_period = _number_input(
                         "15M ATR Period", settings, "supertrend_15m_period", strategy_key, symbol,
-                        min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+                        min_value=2, max_value=50, step=1, disabled=not (entry_supertrend_filter_enabled or breakout_supertrend_filter_enabled),
                     )
                     supertrend_1h_period = _number_input(
                         "1H ATR Period", settings, "supertrend_1h_period", strategy_key, symbol,
-                        min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+                        min_value=2, max_value=50, step=1, disabled=not (entry_supertrend_filter_enabled or breakout_supertrend_filter_enabled),
                     )
                 with stc2:
                     supertrend_15m_multiplier = _number_input(
                         "15M Multiplier", settings, "supertrend_15m_multiplier", strategy_key, symbol,
-                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not (entry_supertrend_filter_enabled or breakout_supertrend_filter_enabled),
                     )
                     supertrend_1h_multiplier = _number_input(
                         "1H Multiplier", settings, "supertrend_1h_multiplier", strategy_key, symbol,
-                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not (entry_supertrend_filter_enabled or breakout_supertrend_filter_enabled),
                     )
 
             with st.expander("⏱️ Minimum Level-Hold Duration Before Entry", expanded=False):
@@ -1206,6 +1216,7 @@ def render():
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
             new_settings["entry_supertrend_filter_enabled"] = bool(entry_supertrend_filter_enabled)
+            new_settings["breakout_supertrend_filter_enabled"] = bool(breakout_supertrend_filter_enabled)
             new_settings["supertrend_15m_period"] = int(supertrend_15m_period)
             new_settings["supertrend_15m_multiplier"] = float(supertrend_15m_multiplier)
             new_settings["supertrend_1h_period"] = int(supertrend_1h_period)

@@ -414,7 +414,7 @@ class TestSignalLog:
         साठवली जाऊ नये."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "जुनं reason")
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
@@ -435,7 +435,7 @@ class TestSignalLog:
         वेगळा (उदा. वेगळी cooldown वेळ) असला तरी dedup व्हायलाच हवं."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "जुनं reason")
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 
@@ -452,7 +452,7 @@ class TestSignalLog:
         नवीन नोंद व्हायलाच हवी — हा खरा, अर्थपूर्ण state-transition आहे."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN")
+        mock_cursor.fetchone.return_value = ("TOUCH", "SKIPPED_COOLDOWN_30MIN", "जुनं reason")
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
         monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
 

@@ -2937,6 +2937,40 @@ class TestBreakdownMissedBecauseOfRoleFlip:
         assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
         assert all(e["trade_status"] != "SKIPPED_TREND_FILTER" for e in entries)
 
+    def test_breakout_supertrend_filter_allows_when_both_agree(self):
+        mock_trade, _, entries = self._run(
+            from_close=True, extra_settings={"breakout_supertrend_filter_enabled": True}, directions=("BEARISH", "BEARISH"))
+        assert mock_trade.called
+        opened = [e for e in entries if e.get("breakout_eval")]
+        assert opened and "=> BREAKOUT]" in opened[-1]["breakout_eval"]
+        assert "S✓(15M=BEARISH,1H=BEARISH)" in opened[-1]["breakout_eval"]
+
+    def test_breakout_supertrend_filter_blocks_when_only_one_agrees(self):
+        mock_trade, _, entries = self._run(
+            from_close=True, extra_settings={"breakout_supertrend_filter_enabled": True}, directions=("BEARISH", "BULLISH"))
+        assert not mock_trade.called
+        blocked = [e for e in entries if e["trade_status"] == "SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET"]
+        assert blocked and "S✗(15M=BEARISH,1H=BULLISH)" in blocked[-1]["breakout_eval"]
+        assert "=> NO]" in blocked[-1]["breakout_eval"]
+
+    def test_breakout_supertrend_filter_blocks_when_data_missing(self):
+        mock_trade, _, entries = self._run(
+            from_close=True, extra_settings={"breakout_supertrend_filter_enabled": True}, directions=(None, "BEARISH"))
+        assert not mock_trade.called
+        assert any("S✗(15M=N/A,1H=BEARISH)" in e.get("breakout_eval", "") for e in entries)
+
+    def test_breakout_supertrend_filter_off_by_default_and_does_not_fetch(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["breakout_supertrend_filter_enabled"] is False
+        mock_trade, _, entries = self._run(from_close=True, directions=("BULLISH", "BULLISH"))
+        assert mock_trade.called
+        assert any("S-" in e.get("breakout_eval", "") for e in entries)
+
+    def test_every_breakout_evaluation_is_described_in_the_log(self):
+        # candle-close अट अपूर्ण असतानाही (breakout झालाच नाही) नोंदीत कारण दिसतं
+        _, _, entries = self._run(from_close=True, extra_settings={"breakout_close_buffer_pct": 5.0})
+        notes = [e["breakout_eval"] for e in entries if e.get("breakout_eval")]
+        assert notes and all(n.startswith("[BRK:") and "=> NO]" in n for n in notes)
+
     def test_enabled_but_price_was_already_below_does_not_trigger(self):
         # मागचे सर्व close आधीच level च्या खाली -> ओलांडलेलं नाही -> जुनं वर्तन (breakout नाही)
         mock_trade, _, entries = self._run(from_close=True, prior_5m=[23860.0, 23870.0, 23880.0, 23890.0])
@@ -3376,3 +3410,16 @@ class TestYieldTo15mClosesFiveMinuteTrades:
         with patch.object(dsr, "get_open_trades_brief", return_value=[("T", "srv2_momentum_reversal", "PAPER")]):
             assert dsr.open_15m_position_exists("NIFTY", "PAPER") is True
             assert dsr.open_15m_position_exists("NIFTY", "LIVE") is False
+
+
+class TestBreakoutSupertrendAlignmentHelper:
+    def test_requires_both_to_match_direction(self):
+        assert dsr.check_breakout_supertrend_alignment("BULLISH", "BULLISH", "BULLISH") == (True, None)
+        assert dsr.check_breakout_supertrend_alignment("BEARISH", "BEARISH", "BEARISH") == (True, None)
+        assert dsr.check_breakout_supertrend_alignment("BULLISH", "BULLISH", "BEARISH")[0] is False
+        assert dsr.check_breakout_supertrend_alignment("BEARISH", "BULLISH", "BULLISH")[0] is False
+
+    def test_missing_data_blocks(self):
+        ok, reason = dsr.check_breakout_supertrend_alignment("BULLISH", None, "BULLISH")
+        assert ok is False and "डेटा" in reason
+        assert dsr.check_breakout_supertrend_alignment("BULLISH", "BULLISH", None)[0] is False
