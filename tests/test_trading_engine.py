@@ -234,6 +234,75 @@ class TestManualSlOverride:
         assert len(closed) == 1
         assert closed[0]["reason"] == "MANUAL_SL_OVERRIDE"
 
+    def _seed_intraday_override(self, temp_db, trade_id, source, override=-5000, **kw):
+        seed_trade(
+            temp_db, trade_id, net_credit=30, sl_level=-1125, target_level=100000, manual_sl_override_pnl=override,
+            source=source, trading_style="INTRADAY", entry_level_price=25000.0, **kw,
+        )
+
+    def _run_at(self, temp_db, monkeypatch, utc_time):
+        # P&L neutral (pnl=+75): override (-5000) आणि Target (1e5) दोन्ही ट्रिगर होत नाहीत -- फक्त EOD-वेळ तपासली जाते.
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 27.5, "PE24300": 0.0, "NSE_INDEX|Nifty 50": 25000.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = utc_time
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        return trading_engine.manage_open_trades("fake_token", "NIFTY", "D", eod_squareoff_hour=15, eod_squareoff_minute=15)
+
+    def test_override_does_not_disable_eod_squareoff_for_5m_trade(self, temp_db, monkeypatch):
+        """🎓 bug-review -- manual SL override लावलेला INTRADAY 5M (dynamic_sr_instant) trade, override ट्रिगर न होता,
+        15:00 EOD नंतरही उघडाच राहायचा (override शाखा EOD तपासतच नव्हती) -> product 'D' मुळे LIVE position रात्रभर."""
+        self._seed_intraday_override(temp_db, "O1", "dynamic_sr_instant")
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 35))  # IST 15:05
+        assert len(closed) == 1 and closed[0]["reason"] == "EOD_SQUAREOFF"
+
+    def test_override_does_not_disable_eod_squareoff_for_classic_trade(self, temp_db, monkeypatch):
+        self._seed_intraday_override(temp_db, "O2", "classic_sr_reversal")
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 35))  # IST 15:05
+        assert len(closed) == 1 and closed[0]["reason"] == "EOD_SQUAREOFF"
+
+    def test_override_before_eod_keeps_trade_open(self, temp_db, monkeypatch):
+        self._seed_intraday_override(temp_db, "O3", "dynamic_sr_instant")
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 8, 30))  # IST 14:00
+        assert closed == []
+
+    def test_override_eod_for_generic_intraday_trade_uses_function_cutoff(self, temp_db, monkeypatch):
+        self._seed_intraday_override(temp_db, "O4", None, strategy="CUSTOM_STRATEGY")
+        assert self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 35)) == []  # IST 15:05 < 15:15
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 46))  # IST 15:16
+        assert len(closed) == 1 and closed[0]["reason"] == "EOD_SQUAREOFF"
+
+    def test_override_generic_credit_spread_follows_carry_forward_rule(self, temp_db, monkeypatch):
+        """Price Action Credit Spread (generic शाखा) -- override असतानाही 15:10 Carry-Forward तपासणी (नफा < 30% credit -> बंद)."""
+        self._seed_intraday_override(temp_db, "O4b", None)  # डीफॉल्ट strategy BULL_PUT_SPREAD, pnl +75 < 30% of 3000
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 41))  # IST 15:11
+        assert len(closed) == 1 and closed[0]["reason"] == "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+
+    def test_override_srv2_naked_closes_at_naked_eod(self, temp_db, monkeypatch):
+        self._seed_intraday_override(temp_db, "O6", "srv2_momentum_reversal", strategy="NAKED_PUT")
+        assert self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 8, 30)) == []  # IST 14:00
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 35))  # IST 15:05 (naked_eod डीफॉल्ट 15:00)
+        assert len(closed) == 1 and closed[0]["reason"] == "EOD_SQUAREOFF"
+
+    def test_override_srv2_spread_with_enough_profit_carries_forward(self, temp_db, monkeypatch):
+        """srv2 Credit Spread: नेहमीच्या नियमाप्रमाणे 15:10 ला पुरेसा नफा (>=30% credit) असेल तर पुढच्या दिवशी चालू; override असतानाही."""
+        self._seed_intraday_override(temp_db, "O7", "srv2_momentum_reversal")
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 5.0, "PE24300": 0.0, "NSE_INDEX|Nifty 50": 25000.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 9, 41)  # IST 15:11; pnl=(30-5)*lots*lot_size >= 30%
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        assert trading_engine.manage_open_trades("fake_token", "NIFTY", "D") == []
+
+    def test_override_srv2_spread_with_low_profit_closes_at_carry_forward_check(self, temp_db, monkeypatch):
+        self._seed_intraday_override(temp_db, "O8", "srv2_momentum_reversal")
+        closed = self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 41))  # IST 15:11, pnl +75 < 30%
+        assert len(closed) == 1 and closed[0]["reason"] == "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT"
+
+    def test_override_swing_trade_is_not_squared_off(self, temp_db, monkeypatch):
+        """SWING/Carry-forward trade (trading_style != INTRADAY) -- override असतानाही EOD ने बंद होऊ नये."""
+        seed_trade(temp_db, "O5", net_credit=30, sl_level=-1125, target_level=100000, manual_sl_override_pnl=-5000,
+                   source=None, trading_style="SWING", entry_level_price=25000.0)
+        assert self._run_at(temp_db, monkeypatch, datetime.datetime(2026, 8, 24, 9, 46)) == []
+
     def test_no_override_leaves_normal_sl_behaviour_unchanged(self, temp_db, monkeypatch):
         """Regression — manual_sl_override_pnl=None (डीफॉल्ट) असेल, तर established वर्तन तंतोतंत
         आधीसारखंच (test_sl_hit_closes_regardless_of_time चीच पुनरावृत्ती, override नसताना)."""

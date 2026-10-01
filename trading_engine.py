@@ -1398,6 +1398,55 @@ def _realized_pnl_from_exit_prices(net_credit, legs, exit_prices, lots, lot_size
 _UNSET_POSITIONS = object()  # `positions`/`broker_positions` पॅरामीटरसाठी sentinel — None (caller ने आधीच प्रयत्न करून अयशस्वी झाल्याचं कळवलं) आणि "दिलंच नाही" (स्वतः fetch कर) यांतला फरक ओळखण्यासाठी.
 
 
+def _manual_override_eod_exit(exit_source, strategy_name, trade_style, ist_now, past_eod_cutoff,
+                              symbol, current_pnl, net_credit_total):
+    """🎓 bug-review -- manual SL override लावलेल्या trade साठी established per-source शाखा (EOD सकट) पूर्णपणे वगळल्या जातात,
+    म्हणून override ट्रिगर न होता EOD उलटलं तरी INTRADAY trade उघडाच राहायचा (product 'D' मुळे LIVE position रात्रभर).
+    Override फक्त SL बाजूचा आहे -- EOD हा वेगळा सुरक्षा-नियम, तो कायम लागू. प्रत्येक source साठी तोच कटऑफ/नियम जो त्याची
+    नेहमीची शाखा वापरते: dynamic_sr_instant/classic = 15:00, srv2 Naked = settings चा naked_eod, srv2 Spread = 15:10
+    Carry-Forward तपासणी (पुरेसा नफा असेल तर पुढच्या दिवशी चालू), बाकी = function चा eod_squareoff cutoff.
+    रिटर्न: (exit_reason, detail) किंवा (None, None). SWING/non-INTRADAY trades ला कधीच लागू नाही."""
+    if trade_style != "INTRADAY":
+        return None, None
+    hm = (ist_now.hour, ist_now.minute)
+
+    def _eod(hour, minute):
+        if hm >= (hour, minute):
+            return "EOD_SQUAREOFF", f"Auto-closed at EOD Square-off ({hour}:{minute:02d}) — manual SL override was set but neither SL override nor Target was hit."
+        return None, None
+
+    if exit_source == "dynamic_sr_instant":
+        return _eod(DYNAMIC_SR_EOD_HOUR, DYNAMIC_SR_EOD_MINUTE)
+    if exit_source == "classic_sr_reversal":
+        return _eod(CLASSIC_SR_EOD_HOUR, CLASSIC_SR_EOD_MINUTE)
+    if exit_source == "srv2_momentum_reversal":
+        settings_15m = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
+        if strategy_name in ("NAKED_CALL", "NAKED_PUT"):
+            return _eod(settings_15m["naked_eod_hour"], settings_15m["naked_eod_minute"])
+        if hm >= (15, 10):
+            min_profit = net_credit_total * (settings_15m["carry_forward_min_profit_pct"] / 100.0)
+            if current_pnl < min_profit:
+                return "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT", (
+                    f"Insufficient profit at 3:10pm (P&L Rs {current_pnl:,.0f} < minimum Rs {min_profit:,.0f}) — "
+                    "closed today instead of carrying forward (manual SL override was set)."
+                )
+        return None, None
+    is_new_rule_trade = (
+        strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
+    )
+    if is_new_rule_trade and hm >= (15, 10):
+        min_profit = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)
+        if current_pnl < min_profit:
+            return "CARRY_FORWARD_CHECK_INSUFFICIENT_PROFIT", (
+                f"Insufficient profit at 3:10pm (P&L Rs {current_pnl:,.0f} < minimum Rs {min_profit:,.0f}) — "
+                "closed today instead of carrying forward (manual SL override was set)."
+            )
+        return None, None
+    if past_eod_cutoff:
+        return "EOD_SQUAREOFF", "Auto-closed at EOD Square-off — manual SL override was set but neither SL override nor Target was hit."
+    return None, None
+
+
 def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5, broker_positions=_UNSET_POSITIONS, record_timing=False, live_prices=None, live_price_age=None):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
@@ -1613,6 +1662,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             elif target_level is not None and current_pnl >= target_level:
                 exit_reason = "TARGET"
                 exit_reason_detail = f"Target — total P&L Rs {current_pnl:,.0f} reached/exceeded the Target level Rs {target_level:,.0f}."
+            else:
+                exit_reason, exit_reason_detail = _manual_override_eod_exit(
+                    exit_source, strategy_name, trade_style, ist_now, past_eod_cutoff, symbol, current_pnl, net_credit_total,
+                )
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — `dynamic_sr_instant` साठी आता स्पॉट-आधारित
         # (entry_level_price पासून) आणि निव्वळ प्रीमियम-आधारित (Trailing सह) — दोन्ही एकत्र, जे आधी
