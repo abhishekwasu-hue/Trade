@@ -288,6 +288,22 @@ IST 9:15-4:29) इथे वापरता येत नाही — वेग
 cron ओळीत आधीच `sleep 60` stagger असल्याने प्रत्यक्ष कामासाठी उरलेला budget कमी असतो; जास्त
 loop_seconds दिला तर पुढची invocation ProcessLockHeld मुळे वगळली जाऊ शकते (उलट परिणाम).
 
+🎓 MCX exit slippage (Oct) — **वेगळा exit-monitor (`--mode exit`), पूर्ण मिनिट, ५ सेकंद cadence.**
+वरच्या एकत्रित ओळीत (`--mode both`, डीफॉल्ट) cron `sleep 60` नंतर entry-तपासणी आणि मग फक्त ~30 s exit-loop चालतो,
+म्हणजे प्रत्येक मिनिटात ~२५-३० s कुठलीच SL तपासणी होत नाही. उपाय: entry आणि exit वेगळ्या cron ओळींत (NSE च्या
+`trade_monitor.py` प्रमाणे). exit ओळीत `sleep` नाही आणि loop 62 s (पुढच्या invocation शी मिनिट-मिनिट जोडलेला):
+```
+45-59 3 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py --mode entry >> /root/Trade/mcx_futures.log 2>&1
+* 4-18 * * 1-5 cd /root/Trade && sleep 60 && python3 mcx_futures_trader.py --mode entry >> /root/Trade/mcx_futures.log 2>&1
+45-59 3 * * 1-5 cd /root/Trade && python3 mcx_futures_trader.py --mode exit >> /root/Trade/mcx_exit_monitor.log 2>&1
+* 4-18 * * 1-5 cd /root/Trade && python3 mcx_futures_trader.py --mode exit >> /root/Trade/mcx_exit_monitor.log 2>&1
+```
+(आधीच्या दोन `mcx_futures_trader.py` ओळी या चार ओळींनी **बदलायच्या**, वरती नाही.) exit-mode: कुठलाही MCX trade OPEN
+असताना दर 5 s (`--open-interval-seconds`), नसताना 15 s (`--interval-seconds`); फक्त OPEN trade असलेल्या commodities
+साठी Upstox कॉल्स; positions एकदाच (फक्त LIVE trade असेल तर); प्रत्येक cycle भोवती `mcx_exit_monitor` lock, म्हणून
+overlap सुरक्षित. Heartbeat: `mcx_exit_monitor`. Exit-logic स्वतः (`manage_open_trades()`) अजिबात बदललेलं नाही.
+`--mode` न दिल्यास जुनंच वर्तन (both), फक्त cycle हलकी आणि open trade असताना 5 s.
+
 🎓 वापरकर्त्याने सापडवलेली bug (22-Sep) — तिसरी ओळ आधी दिवसातून **एकदाच** (फक्त `35 18 * * 1-5`, म्हणजे
 MCX बंद झाल्यावर) चालायची — त्यामुळे Market Zones (bot प्रत्यक्ष trading साठी वापरत असलेले साठवलेले
 zones) दिवसभर stale राहायचे, चार्टच्या नेहमी-ताज्या live गणनेशी न जुळणारे. आता त्याच स्क्रिप्टला MCX
