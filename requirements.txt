@@ -29,3 +29,6 @@ psycopg2-binary~=2.9
 flask~=3.1
 pyotp~=2.9
 cryptography~=50.0
+# 🎓 रिअल-टाइम position price feed (price_stream.py): Upstox Market Data Feed V3 WebSocket क्लायंट. protobuf streamlit
+# मार्फत आधीच येतं (upstox_feed_pb2.py हे official SDK चं vendored generated code, पूर्ण SDK नको).
+websocket-client>=1.7,<2.0

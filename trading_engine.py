@@ -1398,7 +1398,7 @@ def _realized_pnl_from_exit_prices(net_credit, legs, exit_prices, lots, lot_size
 _UNSET_POSITIONS = object()  # `positions`/`broker_positions` पॅरामीटरसाठी sentinel — None (caller ने आधीच प्रयत्न करून अयशस्वी झाल्याचं कळवलं) आणि "दिलंच नाही" (स्वतः fetch कर) यांतला फरक ओळखण्यासाठी.
 
 
-def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5, broker_positions=_UNSET_POSITIONS, record_timing=False):
+def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5, broker_positions=_UNSET_POSITIONS, record_timing=False, live_prices=None, live_price_age=None):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
     Intraday ट्रेड्ससाठी EOD Square-off (डीफॉल्ट 15:15 IST) आपोआप लागू होतो — ब्रोकरचा MIS
@@ -1483,7 +1483,12 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             all_keys.add(leg["instrument_key"])
         parsed_trades.append((trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode or "LIVE", trade_style or "INTRADAY", strategy_name or "", peak_pnl, source or "", entry_level_price, bool(tsl_activated), entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl))
 
-    ltp_map = fetch_ltp_map(access_token, list(all_keys))
+    # 🎓 रिअल-टाइम WebSocket feed (position_stream_monitor.py) -- `live_prices` ({instrument_key: ltp}) मध्ये सर्व
+    # legs ची किंमत असेल तर REST कॉल पूर्ण वगळला; एकही गहाळ असेल तर नेहमीप्रमाणे REST (सुरक्षित fallback).
+    if live_prices is not None and all_keys and all(k in live_prices for k in all_keys):
+        ltp_map = {k: live_prices[k] for k in all_keys}
+    else:
+        ltp_map = fetch_ltp_map(access_token, list(all_keys))
     if not ltp_map and all_keys:
         # 🎓 फक्त अपयशाच्या (रिकाम्या निकालाच्याच) मार्गावरच fetch_ltp_map_detailed() ला वेगळा कॉल —
         # जेणेकरून वरचा मुख्य fetch_ltp_map() कॉल (आणि त्याला monkeypatch करणाऱ्या established टेस्ट्स)
@@ -1502,7 +1507,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     underlying_spot = None
     if any(SHADOW_EXIT_PARENT_SOURCE.get(t[11], t[11]) in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal") for t in parsed_trades):
         spot_key = get_instrument_key(symbol)
-        spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
+        if live_prices is not None and spot_key in live_prices:
+            spot_ltp_map = {spot_key: live_prices[spot_key]}
+        else:
+            spot_ltp_map = fetch_ltp_map(access_token, [spot_key])
         # 🎓 वापरकर्त्याने विचारलेला प्रश्न ("exit condition match झाली तरी exit झाला नाही") सोडवण्यासाठी
         # जोडलेली, तात्पुरती diagnostic नोंद — underlying_spot None आलं (म्हणजे संपूर्ण स्पॉट-आधारित
         # SL/Target branch वगळला जाऊन जुन्या प्रीमियम-आधारित मार्गाकडे पडेल) तर, नेमकं काय मिळालं ते
@@ -1985,6 +1993,8 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 import monitor_timing
                 exit_reason_detail = (exit_reason_detail or exit_reason) + monitor_timing.format_lag_note(
                     prev_check, check_epoch, underlying_spot)
+                if live_prices is not None and live_price_age is not None:
+                    exit_reason_detail += f" [Price source: WebSocket feed, oldest tick {max(live_price_age.values(), default=0):.1f}s]"
             # 🎓 GOLD: DB चा lot_size P&L साठी ×गुणक असतो — broker ला खरी quantity (बघा open_multi_leg_trade).
             qty = int(round(lots * lot_size / (pnl_multiplier_by_trade.get(trade_id) or 1)))
             close_orders = [

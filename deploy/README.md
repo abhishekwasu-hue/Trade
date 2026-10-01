@@ -133,6 +133,35 @@ has_active_tsl_trades()`) हलकी, स्थानिक SQLite query आ�
 Exit होताना `exit_reason_detail` मध्ये `[Monitor lag: previous check Ns earlier (spot A -> B, ±X pts)]` जोडला जातो — उशीर
 तपासणीच्या अंतराचा की बाजाराच्या उडीचा हे Performance Report/Trade Log मध्ये दिसेल (फाईल `data/monitor_timing.json`).
 
+## 🎓 रिअल-टाइम position price feed (WebSocket) — `position_stream_monitor.py` (ऐच्छिक, ADDITIVE)
+
+आजचा तोटा ~३०% स्लिपेजमुळे झाला (SL -0.07% असताना exit -0.12% वर). REST polling (दर ५ सेकंद) ची मर्यादा Upstox rate-limits
+आहे; म्हणून OPEN positions च्या किमती Upstox Market Data Feed V3 (WebSocket) वरून tick-by-tick घेऊन, प्रत्येक बदलावर (कमाल दर ०.५
+सेकंदाला) तोच एकमेव अधिकृत exit-logic (`trade_monitor.run_monitor_cycle` -> `manage_open_trades`) चालवला जातो.
+
+**सुरक्षा-रचना (कृपया वाचा):**
+- **ADDITIVE:** cron चा `trade_monitor.py` (REST, दर ५ सेकंद) जसाच्या तसा चालू ठेवा. Feed तुटला/जुना झाला/ही service बंद असली तरी
+  SL/Target/EOD तपासणी थांबत नाही. दोघे एकाच वेळी exit करू शकत नाहीत (`position_exit_monitor` ProcessLock + order आधी DB status तपासणी).
+- Feed "healthy" तेव्हाच जेव्हा connected, शेवटचा संदेश <= ५ सेकंद, आणि OPEN trades चे सर्व legs + स्पॉट index साठी किंमत आलेली; नाहीतर
+  stream monitor काहीच करत नाही (REST monitor करतो).
+- LIVE positions ची reconciliation/broker-MTM अजूनही फक्त REST monitor करतो; stream cycle किमतींवरून internal P&L वापरतो.
+- OPEN trade नसताना किंवा बाजार बंद असताना कुठलीही subscription/कृती नाही.
+- ⚠️ **हे sandbox मधून प्रत्यक्ष Upstox feed वर तपासलेलं नाही** (token/नेटवर्क नाही) — स्थानिक fake server विरुद्ध खऱ्या WebSocket client ची
+  चाचणी झाली (subscribe, ticks, reconnect). म्हणून **आधी PAPER trades वर काही दिवस चालवा**, Trade Log मध्ये exit detail मधला
+  `[Price source: WebSocket feed, oldest tick X.Xs]` आणि `[Monitor lag: ...]` तपासा, मगच LIVE वर भरवसा ठेवा.
+
+**स्थापना (VPS वर):**
+```
+cd /root/Trade && git pull && pip3 install -r requirements.txt     # websocket-client जोडलं गेलं
+sudo cp deploy/position_stream_monitor.service /etc/systemd/system/   # आतले paths तुमच्या VPS प्रमाणे बदला
+sudo systemctl daemon-reload && sudo systemctl enable --now position_stream_monitor
+journalctl -u position_stream_monitor -f        # "status: cycle / idle / feed-unhealthy ..." ओळी दिसतील
+```
+थांबवायचं असेल तर `sudo systemctl disable --now position_stream_monitor` — बाकी काहीही बदलायची गरज नाही.
+
+तसेच दोन्ही monitor प्रोसेसमध्ये (`trade_monitor.py` आणि हा) प्रत्येक trade साठी प्रत्येक cycle ला नवा Supabase connection (settings,
+next level) उघडला जात असे — आता १०/३० सेकंदांचा TTL-cache (Dashboard मधून exit-सेटिंग बदलल्यास १० सेकंदांत लागू होते).
+
 **सद्य crontab (VPS वर `crontab -l` ने पडताळलेलं, वेळा UTC मध्ये — VPS ची timezone
 `timedatectl`/`date` ने आधी खात्री करूनच बदल करा):**
 ```
