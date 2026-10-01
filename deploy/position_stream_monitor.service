@@ -1,0 +1,18 @@
+[Unit]
+Description=AMW A1 - Position price stream monitor (Upstox WebSocket feed, रिअल-टाइम SL/Target तपासणी)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 🎓 WorkingDirectory, python3 चा पूर्ण मार्ग आणि EnvironmentFile -- engine_service.service प्रमाणेच तुमच्या VPS वरच्या
+# actual paths प्रमाणे बदला (हा unit repo मध्ये commit केला तरी secrets लीक होऊ नयेत म्हणून env file वेगळी).
+WorkingDirectory=/root/Trade
+ExecStart=/usr/bin/python3 /root/Trade/position_stream_monitor.py
+EnvironmentFile=/root/Trade/.env
+# Feed/प्रोसेस कोसळली तर लगेच पुन्हा सुरू; ती बंद असतानाही cron चा `trade_monitor.py` (REST, दर ५ सेकंद) SL/Target तपासत राहतो.
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

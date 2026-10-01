@@ -772,6 +772,30 @@ def get_open_trade_modes_by_symbol(symbols):
     return result
 
 
+def get_open_trade_instrument_keys(symbols):
+    """🎓 रिअल-टाइम price feed -- दिलेल्या symbols वरच्या सर्व OPEN trades च्या सर्व legs चे instrument_key (एका संचात).
+    हलकी, स्थानिक SQLite query; legs_json न समजणारी नोंद शांतपणे वगळली जाते."""
+    if not symbols:
+        return set()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(symbols))
+    cur.execute(
+        f"SELECT legs_json FROM live_trades WHERE status='OPEN' AND symbol IN ({placeholders})",
+        list(symbols),
+    )
+    keys = set()
+    for (legs_json_str,) in cur.fetchall():
+        try:
+            for leg in (json.loads(legs_json_str) if legs_json_str else []):
+                if leg.get("instrument_key"):
+                    keys.add(leg["instrument_key"])
+        except (ValueError, TypeError, AttributeError):
+            continue
+    conn.close()
+    return keys
+
+
 def has_active_tsl_trades(symbols):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
     Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —

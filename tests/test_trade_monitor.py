@@ -309,3 +309,19 @@ class TestOpenTradeCadence:
         monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", boom)
         sleeps = self._sleeps(has_active_tsl_fn=lambda: False)
         assert sleeps == [15.0, 15.0]
+
+
+class TestLivePricesCycle:
+    def test_live_prices_are_forwarded_and_positions_not_fetched_even_with_live_trades(self, monkeypatch):
+        manage = MagicMock(return_value=[])
+        positions = MagicMock()
+        beats = []
+        monkeypatch.setattr(trade_monitor, "manage_open_trades", manage)
+        monkeypatch.setattr(trade_monitor, "fetch_broker_positions", positions)
+        monkeypatch.setattr(trade_monitor, "write_heartbeat", lambda name: beats.append(name))
+        monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", lambda syms: {"NIFTY": {"LIVE"}})
+        trade_monitor.run_monitor_cycle("tok", live_prices={"K": 1.0}, live_price_age={"K": 0.1}, heartbeat=False)
+        assert not positions.called and beats == []
+        kw = manage.call_args.kwargs
+        assert kw["live_prices"] == {"K": 1.0} and kw["live_price_age"] == {"K": 0.1}
+        assert kw["broker_positions"] == [] and kw["record_timing"] is True

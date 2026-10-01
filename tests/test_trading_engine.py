@@ -3625,6 +3625,47 @@ class TestSlippageMonitoring:
         parsed = database._parse_sl_tsl_overshoot_detail(detail)
         assert parsed is not None and parsed["overshoot_points"] is not None
 
+    def test_live_prices_replace_rest_calls_and_tag_the_exit(self, temp_db, monkeypatch):
+        """WebSocket feed (live_prices) मध्ये सर्व legs + स्पॉट असतील तर कुठलाही REST LTP कॉल होत नाही; exit detail मध्ये स्रोत."""
+        import json as _json
+        legs = [{"role": "naked_buy", "strike": 22500, "option_type": "CE", "instrument_key": "CE1", "transaction_type": "BUY"}]
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit, max_profit, max_loss,
+               sl_pnl_level, target_pnl_level, entry_time, status, legs_json, strikes_summary, mode, trading_style, source,
+               entry_level_price, entry_spot_price) VALUES ('W1','2026-10-01','NIFTY','NAKED_CALL',1,975,-160,NULL,10,-9750,NULL,
+               '2026-10-01 12:07:46','OPEN',?, 'x','PAPER','INTRADAY','dynamic_sr_instant',22538.8,22548.0)""",
+            (_json.dumps(legs),),
+        )
+        conn.commit(); conn.close()
+        FakeTime._fixed = datetime.datetime(2026, 10, 1, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        monkeypatch.setattr(trading_engine, "get_instrument_key", lambda s: "NSE_INDEX|Nifty 50")
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+
+        def no_rest(*a, **k):
+            raise AssertionError("REST LTP कॉल व्हायला नको होता")
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", no_rest)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map_detailed", no_rest)
+        closed = trading_engine.manage_open_trades(
+            "tok", "NIFTY", "D", broker_positions=[], record_timing=True,
+            live_prices={"CE1": 140.0, "NSE_INDEX|Nifty 50": 22520.5}, live_price_age={"CE1": 0.4, "NSE_INDEX|Nifty 50": 0.2})
+        assert closed and closed[0]["reason"] == "SL"
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='W1'").fetchone()[0]
+        conn.close()
+        assert "[Price source: WebSocket feed, oldest tick 0.4s]" in detail
+
+    def test_missing_leg_in_live_prices_falls_back_to_rest(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "N1", net_credit=30, sl_level=-100, target_level=1000)
+        FakeTime._fixed = datetime.datetime(2026, 10, 1, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        rest_calls = []
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: rest_calls.append(list(k)) or {"PE24400": 30.0, "PE24300": 0.0})
+        trading_engine.manage_open_trades("tok", "NIFTY", "D", broker_positions=[], live_prices={"PE24400": 30.0})
+        assert rest_calls            # एक leg (PE24300) गहाळ -> सुरक्षित REST fallback
+
     def test_open_trade_modes_by_symbol(self, temp_db):
         seed_trade(temp_db, "A", net_credit=30, sl_level=-100, target_level=1000, mode="LIVE")
         seed_trade(temp_db, "B", net_credit=30, sl_level=-100, target_level=1000, mode="PAPER")

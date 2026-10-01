@@ -79,7 +79,7 @@ from upstox_api import fetch_broker_positions
 SCRIPT_NAME = "trade_monitor"
 
 
-def run_monitor_cycle(access_token, product_type="D"):
+def run_monitor_cycle(access_token, product_type="D", live_prices=None, live_price_age=None, heartbeat=True):
     """प्रत्येक symbol साठी, manage_open_trades() मार्फत सर्व OPEN trades तपासून, आवश्यक असल्यास
     बंद करणे (SL/TSL/Target/EOD/Carry-Forward/Next-Level-Exit/OI-reversal-exit/Trailing-SL —
     सर्व एकाच, अधिकृत ठिकाणाहून). एका symbol मध्ये त्रुटी आली तरी बाकीचे symbols तपासले जातच राहतात.
@@ -105,7 +105,10 @@ def run_monitor_cycle(access_token, product_type="D"):
             modes_by_symbol = database.get_open_trade_modes_by_symbol(MONITORED_SYMBOLS)
             symbols_to_check = [s for s in MONITORED_SYMBOLS if s in modes_by_symbol]
             shared_positions = []
-            if any("LIVE" in modes for modes in modes_by_symbol.values()):
+            # `live_prices` (WebSocket feed, position_stream_monitor.py) दिलेले असतील तर किमती तिथूनच; positions REST
+            # ने आणत नाही ([] -> reconciliation/broker-MTM फक्त cron चा REST monitor करतो; [] मुळे कुठलीही trade
+            # चुकून CLOSED होत नाही, कारण त्यासाठी legs ची quantity स्पष्टपणे 0 कळवलेली असावी लागते).
+            if live_prices is None and any("LIVE" in modes for modes in modes_by_symbol.values()):
                 shared_positions = fetch_broker_positions(access_token)
             for symbol in symbols_to_check:
                 try:
@@ -119,6 +122,7 @@ def run_monitor_cycle(access_token, product_type="D"):
                         atr_points=atr_points,
                         atr_multiplier=settings.get("atr_multiplier", 1.5),
                         broker_positions=shared_positions, record_timing=True,
+                        live_prices=live_prices, live_price_age=live_price_age,
                     )
                     any_symbol_succeeded = True
                     for c in closed:
@@ -128,7 +132,7 @@ def run_monitor_cycle(access_token, product_type="D"):
                     notify_error(SCRIPT_NAME, f"{symbol}: {e}")
                     results.append(f"{symbol}: त्रुटी — {e}")
 
-            if any_symbol_succeeded or not symbols_to_check:
+            if heartbeat and (any_symbol_succeeded or not symbols_to_check):
                 write_heartbeat(SCRIPT_NAME)  # OPEN trade नसतानाही monitor जिवंत आहे (heartbeat कायम)
 
             return "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
@@ -194,6 +198,11 @@ if __name__ == "__main__":
     parser.add_argument("--tsl-interval-seconds", type=float, default=5,
                          help="कुठल्याही monitored symbol वर TSL-locked (Entry/Breakeven) trade सक्रिय असेल तेव्हा किती घट्ट अंतराने तपासायचं (डीफॉल्ट 5 — नेहमीच्या --interval-seconds पेक्षा घट्ट, कारण TSL exits मध्येच खरी slippage आढळली)")
     args = parser.parse_args()
+
+    # 🎓 Slippage -- प्रत्येक OPEN trade साठी प्रत्येक cycle ला नवा Supabase connection (settings, next level) उघडला जायचा;
+    # आता या प्रोसेसपुरता छोटा TTL-cache (Dashboard बदल १० सेकंदांत लागू).
+    from read_cache import install_monitor_read_cache
+    install_monitor_read_cache(cloud_db)
 
     token = cloud_db.get_effective_upstox_token(args.token)
     if not token:
