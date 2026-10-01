@@ -390,13 +390,19 @@ def get_todays_realized_pnl(symbol, trading_mode="LIVE"):
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    # 🎓 वापरकर्त्याने सापडवलेली त्रुटी ("Paper MTM मध्ये shadow trade चा P&L include दिसतो, असे नको") —
+    # OTM/Min-Hold Shadow हे निव्वळ निरीक्षणाचे PAPER trades आहेत; Positions/Summary/P&L Report मध्ये ते आधीच
+    # वगळलेले आहेत (`_shadow_exclusion_clause`), पण हे function (Dashboard वरच्या "आजचा MTM (Exit सह)" बॉक्सचा
+    # realized भाग) ते वगळत नव्हतं — म्हणून PAPER आकडा फुगलेला/चुकीचा दिसायचा. आता P&L आणि trade-count दोन्ही
+    # शॅडो वगळून.
     cur.execute(
-        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE symbol=? AND status='CLOSED' AND COALESCE(mode,'LIVE')=? AND substr(exit_time,1,10)=?",
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE symbol=? AND status='CLOSED' AND COALESCE(mode,'LIVE')=? "
+        f"AND {_shadow_exclusion_clause()} AND substr(exit_time,1,10)=?",
         (symbol, trading_mode, today_str),
     )
     total_pnl = cur.fetchone()[0]
     cur.execute(
-        "SELECT COUNT(*) FROM live_trades WHERE symbol=? AND trade_date=? AND COALESCE(mode,'LIVE')=?",
+        f"SELECT COUNT(*) FROM live_trades WHERE symbol=? AND trade_date=? AND COALESCE(mode,'LIVE')=? AND {_shadow_exclusion_clause()}",
         (symbol, today_str, trading_mode),
     )
     total_trades_today = cur.fetchone()[0]
@@ -429,6 +435,46 @@ def get_todays_live_total_pnl_and_count():
     total_trades_today = cur.fetchone()[0]
     conn.close()
     return total_pnl, total_trades_today
+
+
+def get_todays_pnl_for_mode(mode):
+    """🎓 वापरकर्त्याने सापडवलेली त्रुटी ("Kill switch ne trade band kele nahi", आजचा Net P&L ₹-45,061 पण
+    Kill Switch 'OK — LIVE P&L ₹0') — Kill Switch आधी फक्त LIVE trades चा P&L मोजायचा, PAPER तोटा त्याला
+    दिसतच नव्हता. आजचा (exit_time वरून) realized P&L, दिलेल्या mode ("LIVE"/"PAPER") साठी स्वतंत्र. Shadow
+    (OTM/Min-Hold — निव्वळ निरीक्षणाचे PAPER trades) वगळलेले. LIVE+PAPER मोडमध्ये एकाच signal चे LIVE आणि PAPER
+    दोन trades होतात, म्हणून mode एकत्र न करता स्वतंत्र मोजतात (दुहेरी गणना टाळण्यासाठी)."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')=? "
+        f"AND {_shadow_exclusion_clause()} AND substr(exit_time,1,10)=?",
+        (mode, today_str),
+    )
+    pnl = cur.fetchone()[0]
+    conn.close()
+    return float(pnl or 0.0)
+
+
+def get_todays_peak_margin_used(mode):
+    """🎓 "Trade साठी वापरलेला margin" हाच Kill Switch चा % चा आधार (वापरकर्त्याचा निर्णय) — आजच्या (दिलेल्या
+    mode च्या, shadow वगळून) trades चा सर्वोच्च एकाच वेळी वापरलेला margin. Performance च्या ROI भाजकाचीच
+    व्याख्या (`_margin_used_details`, sweep-line) — फरक एवढाच की इथे अजून उघडे (OPEN) trades सुद्धा मोजले जातात
+    (exit_time नसल्याने ते आजच्या शेवटपर्यंत उघडे धरले जातात). आज entry झालेले, आज बंद झालेले, किंवा अजून उघडे
+    trades. काहीच नसेल तर 0.0."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query(
+        "SELECT max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
+        f"WHERE COALESCE(mode,'LIVE')=? AND {_shadow_exclusion_clause()} "
+        "AND (status='OPEN' OR trade_date=? OR substr(exit_time,1,10)=?)",
+        conn, params=(mode, today_str, today_str),
+    )
+    conn.close()
+    if df.empty:
+        return 0.0
+    df["exit_time"] = df["exit_time"].fillna("2999-01-01 00:00:00")
+    return float(_margin_used_details(df)["margin_used"] or 0.0)
 
 
 def get_todays_mcx_live_pnl_and_count():

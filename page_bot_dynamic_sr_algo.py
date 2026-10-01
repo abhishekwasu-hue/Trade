@@ -95,56 +95,49 @@ def _render_kill_switch_panel():
     (forward-test) trading लाही तितकंच लागू व्हायला हवं."""
     ks_settings = cloud_db.get_kill_switch_settings()
     total_pnl, total_trades = database.get_todays_live_total_pnl_and_count()
+    paper_pnl = database.get_todays_pnl_for_mode("PAPER")
+    live_margin = database.get_todays_peak_margin_used("LIVE")
+    paper_margin = database.get_todays_peak_margin_used("PAPER")
     token_input = st.session_state.get("token_input", "")
-    total_capital = upstox_api.get_total_capital(token_input) if token_input else None
-    max_daily_loss_amount = (total_capital * ks_settings["max_daily_loss_pct"] / 100) if total_capital else None
-    max_daily_profit_amount = (total_capital * ks_settings["max_daily_profit_pct"] / 100) if total_capital else None
+    upstox_capital = upstox_api.get_total_capital(token_input) if token_input else None
+
+    def _limits(margin):
+        """(आधार रक्कम, आधाराचं नाव) — check_kill_switch() सारखाच नियम."""
+        if ks_settings["capital_from_margin_used"]:
+            base = max(margin, ks_settings["min_capital_floor"])
+            if base > 0:
+                return base, "वापरलेला margin"
+        return upstox_capital, "एकूण capital (Upstox)"
 
     with st.expander("🛑 Kill Switch (सर्व Bots + Dashboard साठी एकत्रित, LIVE + PAPER दोन्ही)", expanded=False):
         st.caption(
-            "आजचा एकूण खऱ्या पैशांचा (LIVE) तोटा किंवा नफा (दोन्ही — एकूण capital च्या % म्हणून) किंवा "
-            "ट्रेड-संख्या इथल्या मर्यादेपलीकडे गेली, तर तिन्ही bots + Dashboard कडून पुढचे कुठलेही "
-            "नवीन trade (LIVE आणि PAPER दोन्ही) घेतले जाणार नाहीत — जोपर्यंत तुम्ही स्वतः इथून "
-            "सेटिंग्ज बदलत नाही. नफ्याची मर्यादा मुद्दाम — आजचा नफा आधीच लक्ष्य गाठलेला असेल, तर तो "
+            "आजचा तोटा किंवा नफा (दोन्ही — भांडवलाच्या % म्हणून) किंवा LIVE ट्रेड-संख्या इथल्या मर्यादेपलीकडे "
+            "गेली, तर तिन्ही bots + Dashboard कडून पुढचे कुठलेही नवीन trade (LIVE आणि PAPER दोन्ही) घेतले जाणार "
+            "नाहीत — जोपर्यंत तुम्ही स्वतः इथून सेटिंग्ज बदलत नाही. LIVE आणि PAPER चा P&L **स्वतंत्र** तपासला "
+            "जातो (Shadow trades वगळून). नफ्याची मर्यादा मुद्दाम — आजचा नफा आधीच लक्ष्य गाठलेला असेल, तर तो "
             "परत \"दिला\" जाऊ नये म्हणून."
         )
-        if total_capital is None:
-            st.warning(
-                "⚠️ एकूण capital (Upstox Funds & Margin वरून) सध्या मिळालं नाही — token/नेटवर्क तपासा. "
-                "खरी trading वेळी हेच कारण असेल, तर Kill Switch सुरक्षिततेसाठी नवीन trades (LIVE + PAPER) आपोआप थांबवतो."
-            )
-        else:
-            st.caption(f"सध्याचं एकूण capital (Upstox, available+used margin): ₹{total_capital:,.0f}")
 
-        peak_pnl_today = database.get_todays_live_peak_pnl()
-        locked_floor = (peak_pnl_today * ks_settings["profit_lock_pct"] / 100) if peak_pnl_today > 0 else None
-        profit_locked_tripped = (
-            ks_settings["profit_lock_enabled"] and locked_floor is not None and total_pnl < locked_floor
-        )
-        tripped = ks_settings["enabled"] and (
-            total_capital is None
-            or total_pnl <= -max_daily_loss_amount
-            or total_pnl >= max_daily_profit_amount
-            or profit_locked_tripped
-            or total_trades >= ks_settings["max_trades_per_day"]
-        )
+        # खरा गेट आणि पॅनेल कधीच वेगळे दिसू नयेत म्हणून स्थिती थेट trading_engine.check_kill_switch() कडून.
+        gate_ok, gate_reason = trading_engine.check_kill_switch() if ks_settings["enabled"] else (True, None)
         if not ks_settings["enabled"]:
             st.warning("⚪ Kill Switch सध्या बंद आहे — LIVE किंवा PAPER ट्रेड्सवर कुठलीही स्वयंचलित मर्यादा नाही.")
-        elif tripped:
-            if profit_locked_tripped and not (total_capital is None or total_pnl <= -max_daily_loss_amount or total_pnl >= max_daily_profit_amount):
-                st.error(
-                    f"🔴 Profit-Lock Kill Switch ट्रिप झालं आहे — आजचा सर्वोच्च LIVE नफा ₹{peak_pnl_today:,.0f} होता, "
-                    f"त्यातला {ks_settings['profit_lock_pct']:.0f}% (₹{locked_floor:,.0f}) लॉक होता, सद्य नफा ₹{total_pnl:,.0f} "
-                    f"त्याखाली घसरला. नवीन trade (LIVE + PAPER) ब्लॉक केला जातोय."
+        elif not gate_ok:
+            st.error(f"🔴 Kill Switch ट्रिप झालं आहे — नवीन trade (LIVE + PAPER) ब्लॉक केला जातोय.\n\n{gate_reason}")
+        else:
+            st.success("🟢 Kill Switch OK — कुठलीही मर्यादा ओलांडलेली नाही.")
+
+        for mode_label, mode_pnl, mode_margin in (("LIVE", total_pnl, live_margin), ("PAPER", paper_pnl, paper_margin)):
+            base, base_name = _limits(mode_margin)
+            if base:
+                st.caption(
+                    f"**{mode_label}** — आजचा P&L ₹{mode_pnl:,.0f} | {base_name} ₹{base:,.0f} → तोटा-मर्यादा "
+                    f"₹{-base * ks_settings['max_daily_loss_pct'] / 100:,.0f}, नफा-लक्ष्य "
+                    f"₹{base * ks_settings['max_daily_profit_pct'] / 100:,.0f}"
                 )
             else:
-                st.error(f"🔴 Kill Switch ट्रिप झालं आहे — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f}, ट्रेड्स {total_trades}. नवीन trade (LIVE + PAPER) ब्लॉक केला जातोय.")
-        else:
-            lock_caption = f", profit-lock मजला ₹{locked_floor:,.0f}" if ks_settings["profit_lock_enabled"] and locked_floor is not None else ""
-            st.success(
-                f"🟢 Kill Switch OK — आजचा एकूण LIVE P&L ₹{total_pnl:,.0f} (तोटा-मर्यादा ₹{-max_daily_loss_amount:,.0f}, "
-                f"नफा-लक्ष्य ₹{max_daily_profit_amount:,.0f}{lock_caption}), ट्रेड्स {total_trades}/{ks_settings['max_trades_per_day']}."
-            )
+                st.caption(f"**{mode_label}** — आजचा P&L ₹{mode_pnl:,.0f} | आधार (margin/capital) अजून उपलब्ध नाही")
+        st.caption(f"LIVE ट्रेड्स आज: {total_trades}/{ks_settings['max_trades_per_day']}")
 
         ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
         c1, c2, c3 = st.columns(3)
@@ -181,10 +174,27 @@ def _render_kill_switch_panel():
                 "लॉक करायचा % (आजच्या सर्वोच्च नफ्यापैकी)", min_value=1.0, max_value=99.0,
                 value=float(ks_settings["profit_lock_pct"]), step=5.0, key="bdsr_ks_profit_lock_pct",
             )
+        st.caption(
+            "📐 **भांडवल आणि PAPER** — % कशावर मोजायचे आणि PAPER तोटा मोजायचा का, ते इथे ठरवा."
+        )
+        ks_count_paper = st.checkbox(
+            "PAPER trades चा P&L सुद्धा मोजा (Shadow trades वगळून)", value=ks_settings["count_paper_pnl"],
+            key="bdsr_ks_count_paper_pnl",
+        )
+        ks_capital_from_margin = st.checkbox(
+            "% हे 'trade साठी वापरलेल्या margin' वर मोजा (आजचा सर्वोच्च एकाच वेळी वापरलेला margin) — बंद केलं तर Upstox खात्यातलं भांडवल",
+            value=ks_settings["capital_from_margin_used"], key="bdsr_ks_capital_from_margin_used",
+        )
+        ks_capital_floor = st.number_input(
+            "किमान भांडवल (₹) — सुरुवातीला margin कमी असताना मर्यादा अति-कमी होऊ नये म्हणून (0 = नको)",
+            min_value=0.0, value=float(ks_settings["min_capital_floor"]), step=100000.0, key="bdsr_ks_min_capital_floor",
+            disabled=not ks_capital_from_margin,
+        )
         if st.button("💾 Kill Switch सेव्ह करा", key="bdsr_ks_save_btn"):
             ok = cloud_db.save_kill_switch_settings(
                 ks_enabled, ks_max_loss_pct, ks_max_profit_pct, ks_max_trades,
                 ks_profit_lock_enabled, ks_profit_lock_pct,
+                ks_count_paper, ks_capital_from_margin, ks_capital_floor,
             )
             if ok:
                 st.success("✅ Kill Switch सेटिंग्ज जतन झाल्या.")

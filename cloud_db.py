@@ -971,6 +971,14 @@ KILL_SWITCH_DEFAULTS = {
     # kill switches प्रमाणेच). डीफॉल्ट बंद — जुनं वर्तन (फक्त max_daily_profit_pct) कायम राहतं.
     "profit_lock_enabled": False,
     "profit_lock_pct": 50.0,
+    # 🎓 वापरकर्त्याने सापडवलेली त्रुटी ("Kill switch ne trade band kele nahi", आजचा तोटा ₹-45,061 तरी
+    # Kill Switch 'OK — LIVE P&L ₹0') — दोन कारणं: (१) फक्त LIVE trades मोजले जायचे, (२) % चा आधार फक्त Upstox
+    # खात्यातलं भांडवल (~₹97,400) होता. वापरकर्त्याचे निर्णय: (१) LIVE + PAPER (shadow वगळून), प्रत्येक mode
+    # स्वतंत्र तपासला जातो; (२) % हा "trade साठी वापरलेल्या margin" (आजचा सर्वोच्च एकाच वेळी वापरलेला margin) वर.
+    "count_paper_pnl": True,
+    "capital_from_margin_used": True,
+    # किमान भांडवल (₹) — सुरुवातीला margin कमी असताना मर्यादा अति-कमी होऊ नये म्हणून ऐच्छिक मजला. 0 = मजला नाही.
+    "min_capital_floor": 0.0,
 }
 
 
@@ -986,15 +994,21 @@ def get_kill_switch_settings():
         "max_trades_per_day": settings.get("max_trades_per_day", KILL_SWITCH_DEFAULTS["max_trades_per_day"]),
         "profit_lock_enabled": bool(settings.get("profit_lock_enabled", KILL_SWITCH_DEFAULTS["profit_lock_enabled"])),
         "profit_lock_pct": settings.get("profit_lock_pct", KILL_SWITCH_DEFAULTS["profit_lock_pct"]),
+        "count_paper_pnl": bool(settings.get("count_paper_pnl", KILL_SWITCH_DEFAULTS["count_paper_pnl"])),
+        "capital_from_margin_used": bool(settings.get("capital_from_margin_used", KILL_SWITCH_DEFAULTS["capital_from_margin_used"])),
+        "min_capital_floor": float(settings.get("min_capital_floor", KILL_SWITCH_DEFAULTS["min_capital_floor"]) or 0.0),
     }
 
 
 def save_kill_switch_settings(enabled, max_daily_loss_pct, max_daily_profit_pct, max_trades_per_day,
-                               profit_lock_enabled=False, profit_lock_pct=50.0):
+                               profit_lock_enabled=False, profit_lock_pct=50.0,
+                               count_paper_pnl=True, capital_from_margin_used=True, min_capital_floor=0.0):
     return save_strategy_settings(KILL_SWITCH_STRATEGY_KEY, KILL_SWITCH_SYMBOL_KEY, {
         "enabled": bool(enabled), "max_daily_loss_pct": float(max_daily_loss_pct),
         "max_daily_profit_pct": float(max_daily_profit_pct), "max_trades_per_day": int(max_trades_per_day),
         "profit_lock_enabled": bool(profit_lock_enabled), "profit_lock_pct": float(profit_lock_pct),
+        "count_paper_pnl": bool(count_paper_pnl), "capital_from_margin_used": bool(capital_from_margin_used),
+        "min_capital_floor": float(min_capital_floor or 0.0),
     })
 
 

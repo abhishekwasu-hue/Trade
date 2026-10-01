@@ -1654,6 +1654,7 @@ class TestKillSwitchSettings:
         assert settings == {
             "enabled": True, "max_daily_loss_pct": 2.0, "max_daily_profit_pct": 3.0, "max_trades_per_day": 15,
             "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+            "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0,
         }
 
     def test_get_returns_saved_values(self, monkeypatch):
@@ -1669,6 +1670,7 @@ class TestKillSwitchSettings:
         assert settings == {
             "enabled": False, "max_daily_loss_pct": 4.0, "max_daily_profit_pct": 6.0, "max_trades_per_day": 8,
             "profit_lock_enabled": True, "profit_lock_pct": 60.0,
+            "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0,
         }
 
     def test_save_delegates_with_fixed_strategy_symbol_key(self, monkeypatch):
@@ -1678,7 +1680,8 @@ class TestKillSwitchSettings:
         mock_save.assert_called_once_with(
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
             {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10,
-             "profit_lock_enabled": False, "profit_lock_pct": 50.0},
+             "profit_lock_enabled": False, "profit_lock_pct": 50.0,
+             "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0},
         )
 
     def test_save_with_profit_lock_args(self, monkeypatch):
@@ -1691,8 +1694,16 @@ class TestKillSwitchSettings:
         mock_save.assert_called_once_with(
             cloud_db.KILL_SWITCH_STRATEGY_KEY, cloud_db.KILL_SWITCH_SYMBOL_KEY,
             {"enabled": True, "max_daily_loss_pct": 2.5, "max_daily_profit_pct": 5.0, "max_trades_per_day": 10,
-             "profit_lock_enabled": True, "profit_lock_pct": 40.0},
+             "profit_lock_enabled": True, "profit_lock_pct": 40.0,
+             "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0},
         )
+
+    def test_save_with_new_basis_args(self, monkeypatch):
+        with patch.object(cloud_db, "save_strategy_settings", return_value=True) as mock_save:
+            cloud_db.save_kill_switch_settings(True, 1.5, 3.0, 8, False, 50.0, False, False, "2300000")
+        saved = mock_save.call_args.args[2]
+        assert saved["count_paper_pnl"] is False and saved["capital_from_margin_used"] is False
+        assert saved["min_capital_floor"] == 2300000.0
 
 
 class TestMcxKillSwitchSettings:

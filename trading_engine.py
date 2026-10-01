@@ -10,6 +10,7 @@ import cloud_db
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
     log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
+    get_todays_pnl_for_mode, get_todays_peak_margin_used,
     get_unverified_reconciled_trades_today_count, get_todays_mcx_live_pnl_and_count,
     get_todays_live_peak_pnl, get_todays_mcx_live_peak_pnl, get_open_live_max_loss_total,
 )
@@ -278,32 +279,76 @@ def check_kill_switch():
             f"प्रत्यक्ष स्थिती तपासून, गरज असल्यास त्या trade(s) चा realized_pnl हाताने नोंदवा."
         )
 
-    upstox_token = cloud_db.get_effective_upstox_token(None)
-    total_capital = get_total_capital(upstox_token) if upstox_token else None
+    max_daily_loss_pct = settings.get("max_daily_loss_pct", 2.0)
+    max_daily_profit_pct = settings.get("max_daily_profit_pct", 3.0)
+    max_trades_per_day = settings.get("max_trades_per_day", 15)
+    count_paper = settings.get("count_paper_pnl", True)
+    use_margin_basis = settings.get("capital_from_margin_used", True)
+    capital_floor = float(settings.get("min_capital_floor", 0) or 0)
+
+    # 🎓 वापरकर्त्याने सापडवलेली त्रुटी ("Kill switch ne trade band kele nahi", आजचा तोटा ₹-45,061 तरी Kill
+    # Switch 'OK — LIVE P&L ₹0') — (१) PAPER तोटा दिसायचाच नाही, (२) % फक्त Upstox खात्याच्या भांडवलावर
+    # (~₹97,400) होते. आता % चा आधार = "trade साठी वापरलेला margin" (त्या mode चा आजचा सर्वोच्च एकाच वेळी वापरलेला
+    # margin, किमान-भांडवल मजल्यासकट); तो अजून 0 असेल (आज अजून कुठलाही trade नाही) तर आधीसारखंच Upstox भांडवल.
+    upstox_capital_cache = []
+
+    def _upstox_capital():
+        if not upstox_capital_cache:
+            token = cloud_db.get_effective_upstox_token(None)
+            upstox_capital_cache.append(get_total_capital(token) if token else None)
+        return upstox_capital_cache[0]
+
+    def _capital_base(mode):
+        """(रक्कम, आधाराचं नाव) — margin-आधार चालू असेल आणि त्या mode चा margin/मजला > 0 असेल तर तोच."""
+        if use_margin_basis:
+            margin_base = max(get_todays_peak_margin_used(mode), capital_floor)
+            if margin_base > 0:
+                return margin_base, "वापरलेला margin"
+        return _upstox_capital(), "एकूण capital"
+
+    total_pnl, total_trades = get_todays_live_total_pnl_and_count()
+    total_capital, basis_label = _capital_base("LIVE")
     if not total_capital or total_capital <= 0:
         return False, (
             "KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
             "(token/नेटवर्क तपासा) — %-आधारित Loss/Profit मर्यादा मोजता येत नसल्याने नवीन trades "
             "(LIVE + PAPER) थांबवले."
         )
-
-    total_pnl, total_trades = get_todays_live_total_pnl_and_count()
-    max_daily_loss_pct = settings.get("max_daily_loss_pct", 2.0)
-    max_daily_profit_pct = settings.get("max_daily_profit_pct", 3.0)
-    max_trades_per_day = settings.get("max_trades_per_day", 15)
     max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
     max_daily_profit_amount = total_capital * max_daily_profit_pct / 100
     if total_pnl <= -max_daily_loss_amount:
         return False, (
             f"KILL_SWITCH_DAILY_LOSS — आजचा एकूण LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा {max_daily_loss_pct:.1f}% "
-            f"म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital ₹{total_capital:,.0f})"
+            f"म्हणजे ₹{max_daily_loss_amount:,.0f}, {basis_label} ₹{total_capital:,.0f})"
         )
     if total_pnl >= max_daily_profit_amount:
         return False, (
             f"KILL_SWITCH_DAILY_PROFIT_TARGET — आजचा एकूण LIVE नफा ₹{total_pnl:,.0f} आधीच लक्ष्य "
-            f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, एकूण capital "
+            f"({max_daily_profit_pct:.1f}% म्हणजे ₹{max_daily_profit_amount:,.0f}, {basis_label} "
             f"₹{total_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन trading (LIVE + PAPER) थांबवलं (नफा टिकवण्यासाठी)"
         )
+    if count_paper:
+        # PAPER स्वतंत्र तपासला जातो (LIVE+PAPER मोडमध्ये एकाच signal चे दोन trades होतात — एकत्र केले तर तोटा दुप्पट
+        # मोजला जाईल). Shadow trades वगळलेले (get_todays_pnl_for_mode). आधार मिळाला नाही तर PAPER तपासणी वगळली जाते
+        # (PAPER साठी "भांडवल अज्ञात" म्हणून थांबवत नाही).
+        paper_pnl = get_todays_pnl_for_mode("PAPER")
+        if paper_pnl != 0:
+            paper_capital, paper_basis_label = _capital_base("PAPER")
+            if paper_capital and paper_capital > 0:
+                paper_loss_amount = paper_capital * max_daily_loss_pct / 100
+                paper_profit_amount = paper_capital * max_daily_profit_pct / 100
+                if paper_pnl <= -paper_loss_amount:
+                    return False, (
+                        f"KILL_SWITCH_DAILY_LOSS_PAPER — आजचा एकूण PAPER तोटा ₹{-paper_pnl:,.0f} (मर्यादा "
+                        f"{max_daily_loss_pct:.1f}% म्हणजे ₹{paper_loss_amount:,.0f}, {paper_basis_label} "
+                        f"₹{paper_capital:,.0f}) — नवीन trades (LIVE + PAPER) थांबवले (आधीच उघडे trades चालू राहतील)"
+                    )
+                if paper_pnl >= paper_profit_amount:
+                    return False, (
+                        f"KILL_SWITCH_DAILY_PROFIT_TARGET_PAPER — आजचा एकूण PAPER नफा ₹{paper_pnl:,.0f} आधीच लक्ष्य "
+                        f"({max_daily_profit_pct:.1f}% म्हणजे ₹{paper_profit_amount:,.0f}, {paper_basis_label} "
+                        f"₹{paper_capital:,.0f}) गाठलाय — आजच्यापुरतं नवीन trading (LIVE + PAPER) थांबवलं"
+                    )
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 trade profit मध्ये exit जाला, दुसरा उघडा असेल,
     # तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") — वरचा max_daily_profit_pct
     # एक स्थिर लक्ष्य आहे (गाठलं तरच थांबतं); हा profit-lock त्याहून वेगळा, गतिशील (ratchet) —
