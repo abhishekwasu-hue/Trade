@@ -9,11 +9,21 @@ from unittest.mock import MagicMock, patch
 
 import datetime
 
+import pytest
+
 import pandas as pd
 
 import srv2_momentum_reversal_strategy as srv2
 import cloud_db
 from config import get_ist_now
+
+
+@pytest.fixture(autouse=True)
+def _disable_late_entry_cutoff_by_default(monkeypatch):
+    """srv2 आता 14:45 नंतर नवीन entry करत नाही; बाकीचे tests खऱ्या घड्याळावर (get_ist_now()) अवलंबून
+    असल्याने cutoff इथे निष्क्रिय — ते फक्त TestLateEntryCutoff मध्ये स्पष्टपणे तपासलं जातं."""
+    monkeypatch.setattr(srv2, "NO_NEW_ENTRY_AFTER_HOUR", 23)
+    monkeypatch.setattr(srv2, "NO_NEW_ENTRY_AFTER_MINUTE", 59)
 
 
 class TestSrv2UsesSharedDualThresholdRsiFilter:
@@ -880,7 +890,9 @@ class TestCreditSpreadToggle:
             assert mock_naked_select.called
             assert mock_trade.call_count == 1  # फक्त Naked, Spread नाही
             statuses = [c.args[0].get("trade_status") for c in mock_save_log.call_args_list]
-            assert "SKIPPED_CREDIT_SPREAD_DISABLED" in statuses
+            # naked चा खरा निकाल signal_log मध्ये (cooldown/hit मोजणीसाठी), 'SKIPPED_*' शिक्का नाही
+            assert "OPENED" in statuses
+            assert "SKIPPED_CREDIT_SPREAD_DISABLED" not in statuses
 
     def test_both_disabled_no_trade_fires(self):
         candles_df = _fake_candles_df(last_close=23902)
@@ -1454,3 +1466,39 @@ class TestSrv2MinHoldDuration:
         mock_trade, statuses = self._run(self.HELD_1, hits=(1, t, t), entry_min_hold_first_trade_only=False)
         assert not mock_trade.called
         assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+
+class TestLateEntryCutoff:
+    """entry-gate review मध्ये सापडलेली bug — 15M SRv2 मध्ये 14:45 नंतर नवीन entry थांबवणारा कट-ऑफ नव्हता
+    (5M Instant / Classic मध्ये होता)."""
+
+    def _run(self, monkeypatch, hour, minute):
+        monkeypatch.setattr(srv2, "NO_NEW_ENTRY_AFTER_HOUR", 14)
+        monkeypatch.setattr(srv2, "NO_NEW_ENTRY_AFTER_MINUTE", 45)
+        now = srv2.get_ist_now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+        candles_df = _fake_candles_df(last_close=23902)
+        with patch.object(srv2, "get_ist_now", return_value=now), \
+             patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2, "fetch_candles", return_value=candles_df), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones()), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            srv2.process_symbol("fake_token", "NIFTY")
+        return mock_trade.called, [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+
+    def test_blocked_at_and_after_cutoff(self, monkeypatch):
+        for hm in ((14, 45), (15, 10)):
+            called, statuses = self._run(monkeypatch, *hm)
+            assert called is False
+            assert "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" in statuses
+
+    def test_allowed_just_before_cutoff(self, monkeypatch):
+        called, statuses = self._run(monkeypatch, 14, 44)
+        assert called is True
+        assert "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses

@@ -49,6 +49,11 @@ TOUCH_TOLERANCE_PCT = 0.0
 SL_PCT_OF_CREDIT = 30
 TARGET_PCT_OF_PREMIUM = 80
 COOLDOWN_MINUTES = 30
+# 🎓 entry-gate review मध्ये सापडलेली bug — 5M Instant Trader व Classic SR मध्ये 14:45 नंतर नवीन entry
+# नाही (EOD exit जवळ आल्यावर उघडलेला trade लगेचच बंद व्हायचा), पण या 15M SRv2 मध्ये हा कट-ऑफ नव्हताच
+# (cron 15:59 IST पर्यंत चालतो) — त्यामुळे 15:00 EOD च्या काही मिनिटं आधीही नवीन trade उघडू शकायचा.
+NO_NEW_ENTRY_AFTER_HOUR = 14
+NO_NEW_ENTRY_AFTER_MINUTE = 45
 LEVEL_REPEAT_TOLERANCE_PCT = 0.05
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py मधलाच hysteresis-आधारित
 # direction-निर्णय (बघा determine_direction_with_hysteresis()) आता इथेही, पण 15M/30M/60M चे
@@ -298,6 +303,12 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
             continue
 
+        if (now.hour, now.minute) >= (NO_NEW_ENTRY_AFTER_HOUR, NO_NEW_ENTRY_AFTER_MINUTE):
+            log_entry["trade_status"] = "SKIPPED_TOO_LATE_FOR_NEW_ENTRY"
+            log_entry["reason"] = f"{NO_NEW_ENTRY_AFTER_HOUR}:{NO_NEW_ENTRY_AFTER_MINUTE:02d} नंतर नवीन entry नाही"
+            cloud_db.save_signal_log(log_entry)
+            continue
+
         # 🎓 Execution-testing मध्ये सापडवलेली गंभीर bug — rsi_value आधी फक्त "if entry_rsi_gate_enabled:"
         # च्या आतच ठरायचा, पण खाली (save_signal_log आणि Telegram संदेशात, यशस्वी trade नंतर लगेचच)
         # कायम वापरला जायचा — RSI Gate बंद केला की इथे NameError येऊन order प्लेस झाल्यानंतरही
@@ -412,6 +423,7 @@ def process_symbol(access_token, symbol, lot_size=65):
             return yield_state["ok"]
 
         spread_result = None
+        defer_spread_disabled_log = False
         trade_status = ""
         if credit_spread_enabled:
             spread_result = select_credit_spread_itm(
@@ -464,7 +476,13 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])
             log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
             log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
-            cloud_db.save_signal_log(log_entry)
+            # 🎓 entry-gate review मध्ये सापडलेली bug — naked-only मोडमध्ये (credit_spread_enabled=False)
+            # naked trade चा निकाल कधीच signal_log मध्ये जायचा नाही, फक्त हा SKIPPED_* 'no-action' शिक्का
+            # जायचा — त्यामुळे 30-मिनिट cooldown / "पहिला trade" गेट / max-hits ला खरा trade दिसायचाच
+            # नाही. naked चालणार असेल तर ही नोंद खाली naked निकालासह (खरा trade_status घेऊन) साठवली जाते.
+            defer_spread_disabled_log = bool(settings.get("naked_enabled", True))
+            if not defer_spread_disabled_log:
+                cloud_db.save_signal_log(log_entry)
             print(f"ℹ️ Credit Spread trade बंद आहे (credit_spread_enabled=False, settings — symbol={symbol}, strategy=15m_dynamic_sr)")
 
         naked_status = ""
@@ -522,6 +540,15 @@ def process_symbol(access_token, symbol, lot_size=65):
                 naked_status = format_trade_result(naked_ok, naked_response)
 
         strategy_label = "Bull Put Spread (Support Bounce)" if direction == "BULLISH" else "Bear Call Spread (Resistance Bounce)"
+        # 🎓 naked-only मोड (बघा वरची टिप्पणी) — naked trade ने प्रत्यक्ष order प्रयत्न केला असेल तर तोच
+        # निकाल (उदा. "OPENED") खरा trade_status म्हणून signal_log मध्ये; नाहीतर (strike सापडला नाही / naked
+        # बंद) पूर्वीचाच SKIPPED_CREDIT_SPREAD_DISABLED शिक्का, पण naked निदान-नोंदीनंतर.
+        if defer_spread_disabled_log:
+            if naked_result is not None and naked_status:
+                log_entry["trade_status"] = naked_status
+                log_entry["reason"] = "credit_spread_enabled=False — फक्त Naked Option trade (निकाल trade_status मध्ये)"
+            cloud_db.save_signal_log(log_entry)
+
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         credit_spread_line = f"Credit Spread: {strategy_label} — {trade_status}\n" if spread_result is not None else ""
         rsi_display = f"RSI {rsi_value} (फिल्टर पास)" if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)"

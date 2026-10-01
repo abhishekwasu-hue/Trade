@@ -338,6 +338,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         broker_account_ids = settings.get("broker_account_ids") or []
 
         spread_result = None
+        defer_spread_disabled_log = False
         trade_status = ""
         if credit_spread_enabled:
             spread_result = select_credit_spread_itm(
@@ -381,7 +382,13 @@ def process_symbol(access_token, symbol, lot_size=65):
         else:
             log_entry["trade_status"] = "SKIPPED_CREDIT_SPREAD_DISABLED"
             log_entry["reason"] = "credit_spread_enabled=False (Bot Dynamic SR Algo सेटिंग्जमध्ये बंद)"
-            cloud_db.save_signal_log(log_entry)
+            # 🎓 entry-gate review मध्ये सापडलेली bug — naked-only मोडमध्ये (credit_spread_enabled=False)
+            # naked trade चा निकाल कधीच signal_log मध्ये जायचा नाही, फक्त हा SKIPPED_* 'no-action' शिक्का
+            # जायचा — त्यामुळे 30-मिनिट cooldown / "पहिला trade" गेट / max-hits ला खरा trade दिसायचाच
+            # नाही. naked चालणार असेल तर ही नोंद खाली naked निकालासह (खरा trade_status घेऊन) साठवली जाते.
+            defer_spread_disabled_log = bool(settings.get("naked_enabled", True))
+            if not defer_spread_disabled_log:
+                cloud_db.save_signal_log(log_entry)
 
         naked_status = ""
         naked_result = None
@@ -428,6 +435,15 @@ def process_symbol(access_token, symbol, lot_size=65):
                     direction=direction,
                 )
                 naked_status = format_trade_result(naked_ok, naked_response)
+
+        # 🎓 naked-only मोड (बघा वरची टिप्पणी) — naked trade ने प्रत्यक्ष order प्रयत्न केला असेल तर तोच
+        # निकाल (उदा. "OPENED") खरा trade_status म्हणून signal_log मध्ये; नाहीतर (strike सापडला नाही / naked
+        # बंद) पूर्वीचाच SKIPPED_CREDIT_SPREAD_DISABLED शिक्का, पण naked निदान-नोंदीनंतर.
+        if defer_spread_disabled_log:
+            if naked_result is not None and naked_status:
+                log_entry["trade_status"] = naked_status
+                log_entry["reason"] = "credit_spread_enabled=False — फक्त Naked Option trade (निकाल trade_status मध्ये)"
+            cloud_db.save_signal_log(log_entry)
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
         hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
