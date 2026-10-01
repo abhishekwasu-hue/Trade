@@ -70,13 +70,14 @@ import time
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
+import database
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from dynamic_sr_instant_trader import check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
 from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
-from upstox_api import fetch_mcx_candles
+from upstox_api import fetch_mcx_candles, fetch_broker_positions
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
 STRATEGY_KEY = "mcx_futures"
@@ -396,27 +397,55 @@ def _process_symbol_core(access_token, symbol, check_info):
     return f"{symbol}: कुठलाही MCX level ({'/'.join(active_suffixes)}, RSI+Multi-Hit मर्यादेसह) पात्र ठरला नाही"
 
 
-def monitor_symbol(access_token, symbol):
+# 🎓 Slippage -- trailing %-mode मध्ये प्रत्येक cycle ला resolve_symbol() + 30-मिनिट candles (२ Upstox कॉल्स) लागतात.
+# ५ सेकंदांच्या cadence वर हेच खरा उशीर ठरतं. trailing distance = किंमत × pct असल्याने २० सेकंदांत किंमत
+# थोडीच बदलते, म्हणून ती "points-समतुल्य" संख्या थोडा वेळ पुन्हा वापरतो (ताजी किंमत बहुतेक वेळा आधी
+# मागवलेलीच असते). exit-निर्णयाचं logic बदलत नाही.
+TRAILING_PRICE_CACHE_TTL_SECONDS = 20.0
+_trailing_price_cache = {}
+
+
+def _get_trailing_reference_price(access_token, symbol, now_fn=time.monotonic):
+    """सद्य किंमत (30M candle close) -- TTL-cached; मिळाली नाही तर None (त्या cycle ला trailing वगळणे, सुरक्षित)."""
+    now = now_fn()
+    hit = _trailing_price_cache.get(symbol)
+    if hit is not None and now - hit[0] < TRAILING_PRICE_CACHE_TTL_SECONDS:
+        return hit[1]
+    ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
+    if not ok:
+        return None
+    df_current = fetch_mcx_candles(access_token, resolved["instrument_key"], interval="30minute", lookback_days=1)
+    if df_current is None or df_current.empty:
+        return None
+    price = float(df_current["close"].iloc[-1])
+    _trailing_price_cache[symbol] = (now, price)
+    return price
+
+
+def monitor_symbol(access_token, symbol, broker_positions=None, record_timing=False):
     """उघड्या MCX Futures positions चं SL/Target/Trailing/EOD — established trading_engine.
     manage_open_trades() (कुठलाही बदल न करता, generic "else" branch) — trade_monitor.py चं
-    MONITORED_SYMBOLS इथे बदललेलं नाही, त्यामुळे हीच script स्वतःच monitoring करते."""
+    MONITORED_SYMBOLS इथे बदललेलं नाही, त्यामुळे हीच script स्वतःच monitoring करते.
+
+    `broker_positions` (असेल तर) -- run_exit_monitor_cycle() ने एकदाच आणलेले positions सर्व symbols ना शेअर केलेले
+    (नाहीतर manage_open_trades() स्वतः प्रत्येक symbol साठी fetch करतं -- जुनं वर्तन). `record_timing=True` ->
+    exit होताना '[Monitor lag: ...]' तुकडा."""
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
     trailing_sl_enabled = bool(settings.get("trailing_sl_enabled", False))
     trailing_distance_points = settings.get("trailing_distance_points") if trailing_sl_enabled else None
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — trailing_pct असेल तर
-    # सद्य किंमतीवरून (प्रत्येक monitoring cycle ला ताजी, resolve_symbol()/fetch_mcx_candles()
-    # कडून) points-समतुल्य अंतर काढलं जातं — compute_trailing_sl_level() ला अजिबात हात न लावता.
+    # सद्य किंमतीवरून points-समतुल्य अंतर काढलं जातं — compute_trailing_sl_level() ला अजिबात हात न लावता.
     if trailing_sl_enabled and settings.get("sl_target_mode", "POINTS") == "PERCENT":
-        ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
-        if ok:
-            df_current = fetch_mcx_candles(access_token, resolved["instrument_key"], interval="30minute", lookback_days=1)
-            if df_current is not None and not df_current.empty:
-                current_price = float(df_current["close"].iloc[-1])
-                trailing_distance_points = current_price * float(settings.get("trailing_pct", 1.0)) / 100
-            else:
-                trailing_distance_points = None  # सद्य किंमत मिळाली नाही — या cycle ला trailing वगळणे (सुरक्षित)
+        current_price = _get_trailing_reference_price(access_token, symbol)
+        if current_price is not None:
+            trailing_distance_points = current_price * float(settings.get("trailing_pct", 1.0)) / 100
         else:
-            trailing_distance_points = None
+            trailing_distance_points = None  # सद्य किंमत मिळाली नाही — या cycle ला trailing वगळणे (सुरक्षित)
+    extra = {}
+    if broker_positions is not None:
+        extra["broker_positions"] = broker_positions
+    if record_timing:
+        extra["record_timing"] = True
     return manage_open_trades(
         access_token, symbol, PRODUCT_TYPE,
         eod_squareoff_hour=MCX_EOD_HOUR, eod_squareoff_minute=MCX_EOD_MINUTE,
@@ -427,6 +456,7 @@ def monitor_symbol(access_token, symbol):
         # lot_size * lots * atr_multiplier, atr_multiplier=1.0 दिल्याने ते नेमकं
         # trailing_distance_points इतकंच राहतं).
         atr_points=trailing_distance_points, atr_multiplier=1.0,
+        **extra,
     )
 
 
@@ -446,37 +476,79 @@ def run_all_symbols(token, symbols):
     return any_symbol_succeeded
 
 
-def run_exit_monitor_cycle(token, symbols):
+EXIT_MONITOR_LOCK_NAME = "mcx_exit_monitor"
+
+
+def run_exit_monitor_cycle(token, symbols, heartbeat=False):
     """प्रत्येक symbol साठी monitor_symbol() (SL/Target/Trailing/EOD) — एकाच cycle मध्ये सर्व
-    commodities, एकाच्या अपयशाने बाकीच्यांना न अडवता (established 3 bots च्या पॅटर्नप्रमाणेच)."""
+    commodities, एकाच्या अपयशाने बाकीच्यांना न अडवता (established 3 bots च्या पॅटर्नप्रमाणेच).
+
+    🎓 Slippage -- cycle हलकी (trade_monitor.py प्रमाणेच): (१) OPEN trade नसलेल्या symbols साठी कुठलेही Upstox/Supabase
+    कॉल्स नाहीत (आधी पाचही commodities साठी प्रत्येक cycle ला); (२) positions एकदाच आणून सर्व symbols ना दिले, आणि तेही
+    फक्त LIVE trade असेल तरच. (३) प्रत्येक cycle फक्त `mcx_exit_monitor` lock धरतो -- दोन invocations overlap झाल्या
+    तरी एका वेळी एकच cycle चालतो (डुप्लिकेट-exit टाळतो). symbol-नुसार OPEN यादी मिळाली नाही (DB त्रुटी) तर सगळे
+    symbols तपासले जातात (सुरक्षित, जुनं वर्तन)."""
+    try:
+        with ProcessLock(EXIT_MONITOR_LOCK_NAME):
+            return _run_exit_monitor_cycle_locked(token, symbols, heartbeat)
+    except ProcessLockHeld:
+        return ["⏭️ दुसरी MCX exit-monitor cycle अजून चालू आहे — डुप्लिकेट-exit टाळण्यासाठी वगळली."], False
+
+
+def _run_exit_monitor_cycle_locked(token, symbols, heartbeat):
+    symbols = [s.strip() for s in symbols]
+    modes_by_symbol = None
+    try:
+        modes_by_symbol = database.get_open_trade_modes_by_symbol(symbols)
+    except Exception:
+        modes_by_symbol = None  # DB त्रुटी -- खाली सगळे symbols तपासले जातील
+    symbols_to_check = symbols if modes_by_symbol is None else [s for s in symbols if s in modes_by_symbol]
+
+    shared_positions = None
+    if modes_by_symbol is not None and any("LIVE" in modes for modes in modes_by_symbol.values()):
+        shared_positions = fetch_broker_positions(token)
+
     results = []
     any_symbol_succeeded = False
-    for symbol in symbols:
-        symbol = symbol.strip()
+    for symbol in symbols_to_check:
         try:
-            closed = monitor_symbol(token, symbol)
+            closed = monitor_symbol(token, symbol, broker_positions=shared_positions, record_timing=True)
             any_symbol_succeeded = True
             if closed:
                 results.append(f"{symbol}: 🔔 {len(closed)} position(s) बंद झाल्या — {closed}")
         except Exception as e:
             notify_error("mcx_futures_trader", f"{symbol}: monitor त्रुटी — {e}")
             results.append(f"⚠️ {symbol}: monitor अनपेक्षित त्रुटी — {e}")
-    return results, any_symbol_succeeded
+    # OPEN trade नसतानाही monitor जिवंत आहे (heartbeat कायम)
+    return results, (any_symbol_succeeded or not symbols_to_check)
+
+
+def _any_open_mcx_trades(symbols):
+    try:
+        return bool(database.get_open_trade_modes_by_symbol([s.strip() for s in symbols]))
+    except Exception:
+        return False  # DB त्रुटीने loop थांबू नये -- नेहमीचा interval वापरला जाईल
 
 
 def run_exit_monitor_loop(token, symbols, interval_seconds=15, loop_seconds=30,
-                           sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print):
+                           sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print,
+                           open_interval_seconds=5, has_open_trades_fn=None):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("exit slippage") — trade_monitor.py च्याच
-    run_monitor_loop() पॅटर्नची MCX आवृत्ती — एका cron invocation च्या आत, interval_seconds च्या
+    run_monitor_loop() पॅटर्नची MCX आवृत्ती — एका invocation च्या आत, interval_seconds च्या
     अंतराने loop_seconds पर्यंत run_exit_monitor_cycle() पुन्हा-पुन्हा चालवणे, जेणेकरून SL/Target
-    ओलांडल्यानंतर बॉटला कळायला आधीच्या (दर मिनिटाला फक्त एकदा) ऐवजी जास्तीत जास्त
-    interval_seconds इतकाच वेळ लागेल. प्रत्येक cycle चा वेळ वजा करूनच पुढचा sleep काढला जातो,
-    जेणेकरून एकूण वेळ loop_seconds च्या आसपासच राहील.
-    ⚠️ loop_seconds डीफॉल्ट trade_monitor.py च्या 50 पेक्षा मुद्दामच कमी (30) ठेवला — VPS crontab
-    मधली MCX ची ओळ स्वतःच आधी `sleep 60` (stampede टाळण्यासाठीचा stagger) करते, म्हणजे प्रत्यक्ष
-    काम सुरू व्हायलाच cron-tick नंतर जवळपास पूर्ण मिनिट जातं. entry-तपासणी + हा loop मिळून जर
-    उरलेल्या ~60-सेकंद budget पेक्षा जास्त वेळ घेतला, तर पुढची invocation ProcessLockHeld मुळे
-    सरळ वगळली जाईल (उलट परिणाम — cycles आणखी विरळ). 30 सेकंद यात सुरक्षित बसतो."""
+    ओलांडल्यानंतर बॉटला कळायला आधीच्या (दर मिनिटाला फक्त एकदा) ऐवजी कमी वेळ लागेल. प्रत्येक cycle चा वेळ
+    वजा करूनच पुढचा sleep काढला जातो, जेणेकरून एकूण वेळ loop_seconds च्या आसपासच राहील.
+
+    कुठलाही MCX trade OPEN असेल तर पुढचा sleep `open_interval_seconds` (डीफॉल्ट 5) इतका घट्ट, नाहीतर
+    `interval_seconds` (15) -- trade_monitor.py प्रमाणेच.
+
+    ⚠️ जुन्या एकत्रित मोडमध्ये (`--mode both`: entry + exit एकाच प्रोसेसमध्ये, crontab ओळीत `sleep 60`) loop_seconds
+    डीफॉल्ट 30 मुद्दामच कमी -- entry-तपासणी + हा loop मिळून उरलेल्या ~60-सेकंद budget पेक्षा जास्त वेळ घेतला तर पुढची
+    invocation ProcessLockHeld मुळे वगळली जाते. पूर्ण मिनिट (62 s) अखंड तपासणीसाठी `--mode exit` वेगळ्या cron ओळीत
+    (sleep शिवाय) वापरा -- deploy/README.md बघा."""
+    if has_open_trades_fn is None:
+        def has_open_trades_fn():
+            return _any_open_mcx_trades(symbols)
     start = now_fn()
     any_succeeded_overall = False
     while True:
@@ -490,7 +562,8 @@ def run_exit_monitor_loop(token, symbols, interval_seconds=15, loop_seconds=30,
         if remaining_in_budget <= 0:
             break
         cycle_duration = now_fn() - cycle_start
-        sleep_time = min(interval_seconds - cycle_duration, remaining_in_budget)
+        effective_interval = open_interval_seconds if has_open_trades_fn() else interval_seconds
+        sleep_time = min(effective_interval - cycle_duration, remaining_in_budget)
         if sleep_time > 0:
             sleep_fn(sleep_time)
     return any_succeeded_overall
@@ -500,35 +573,67 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", required=False, default=None, help="Upstox Access Token (न दिल्यास Supabase मधून आपोआप)")
     parser.add_argument("--symbols", default=",".join(MCX_FUTURES_SYMBOLS))
+    parser.add_argument("--mode", choices=["both", "entry", "exit"], default="both",
+                         help="both (डीफॉल्ट, जुनं वर्तन: entry-तपासणी + exit-monitoring एकाच प्रोसेसमध्ये), entry (फक्त नवीन "
+                              "trade शोधणे), exit (फक्त SL/Target/Trailing/EOD -- वेगळ्या cron ओळीत, sleep शिवाय, पूर्ण मिनिट)")
     parser.add_argument("--interval-seconds", type=float, default=15,
-                         help="exit-monitoring किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 15, trade_monitor.py सारखंच)")
-    parser.add_argument("--loop-seconds", type=float, default=30,
-                         help="एका cron invocation मध्ये exit-monitoring किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 30 — MCX crontab च्या आधीच्या sleep 60 stagger नंतरच्या उरलेल्या budget मध्ये सुरक्षित बसावं म्हणून, trade_monitor.py च्या 50 पेक्षा कमी)")
+                         help="कुठलाही trade OPEN नसताना exit-monitoring किती सेकंदांच्या अंतराने तपासायचं (डीफॉल्ट 15)")
+    parser.add_argument("--open-interval-seconds", type=float, default=5,
+                         help="कुठलाही MCX trade OPEN असताना किती सेकंदांच्या अंतराने तपासायचं (डीफॉल्ट 5)")
+    parser.add_argument("--loop-seconds", type=float, default=None,
+                         help="एका invocation मध्ये exit-monitoring किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट: --mode both "
+                              "मध्ये 30 -- crontab च्या आधीच्या sleep 60 stagger नंतरच्या उरलेल्या budget मध्ये सुरक्षित बसावं म्हणून; "
+                              "--mode exit मध्ये 62 -- cron दर 60 सेकंदांनी नवी प्रोसेस सुरू करतो, मध्ये अंतर पडू नये म्हणून)")
     args = parser.parse_args()
+    loop_seconds = args.loop_seconds if args.loop_seconds is not None else (62 if args.mode == "exit" else 30)
+
+    # 🎓 Slippage -- exit loop असलेल्या मोड्समध्ये प्रत्येक cycle ला settings साठी नवा Supabase connection उघडू नये म्हणून
+    # या प्रोसेसपुरता छोटा TTL-cache (Dashboard बदल १० सेकंदांत लागू). entry मोडमध्ये गरज नाही.
+    if args.mode in ("both", "exit"):
+        from read_cache import install_monitor_read_cache
+        install_monitor_read_cache(cloud_db)
 
     # 🎓 established 3 bots प्रमाणेच — Duplicate-Order Protection (VPS crontab वर मंद network/retry
     # मुळे मागची invocation अजून चालू असू शकते; अशा वेळी नवीन invocation डुप्लिकेट ऑर्डर टाळण्यासाठी थांबते).
+    # `--mode exit` मध्ये हा process-lock वापरत नाही -- तिथे प्रत्येक cycle भोवतीचा `mcx_exit_monitor` lock आहे, त्यामुळे
+    # entry प्रोसेसशी टक्कर होत नाही आणि दोन exit invocations overlap झाल्या तरी सुरक्षित.
     try:
-        with ProcessLock("mcx_futures_trader"):
-            init_sqlite_db()
-            cloud_db.init_cloud_table()
+        init_sqlite_db()
+        if args.mode == "exit":
             token = cloud_db.get_effective_upstox_token(args.token)
             if not token:
                 msg = "कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही)."
                 print(f"❌ {msg}")
-                # 🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE readiness — "token-missing वर Telegram
-                # अलर्ट") — याआधी हा path पूर्णपणे गप्प राहायचा (फक्त cron log मध्ये print, कुठलाही
-                # अलर्ट नाही) — बाकी सर्व failure-paths (kill switch/margin/order-failure) आधीच
-                # Telegram अलर्ट पाठवतात, पण नेमकं इथेच (सकाळी token expire झालेला असेल तर) गप्प राहणं
-                # सर्वात धोकादायक होतं — संपूर्ण दिवसभर बॉट काहीच न करता शांतपणे थांबून राहू शकायचा,
-                # कुणालाच न कळता.
                 notify_error("mcx_futures_trader", msg)
                 exit(1)
             symbols_list = args.symbols.split(",")
-            entry_succeeded = run_all_symbols(token, symbols_list)
-            exit_succeeded = run_exit_monitor_loop(token, symbols_list, args.interval_seconds, args.loop_seconds)
-            if entry_succeeded or exit_succeeded:
-                write_heartbeat("mcx_futures_trader")
-            run_auto_backup_if_due(interval_minutes=60)
+            exit_succeeded = run_exit_monitor_loop(
+                token, symbols_list, args.interval_seconds, loop_seconds,
+                open_interval_seconds=args.open_interval_seconds,
+            )
+            if exit_succeeded:
+                write_heartbeat("mcx_exit_monitor")
+        else:
+            with ProcessLock("mcx_futures_trader"):
+                cloud_db.init_cloud_table()
+                token = cloud_db.get_effective_upstox_token(args.token)
+                if not token:
+                    msg = "कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही)."
+                    print(f"❌ {msg}")
+                    # 🎓 वापरकर्त्याने मागितलेली सुधारणा (LIVE readiness — "token-missing वर Telegram
+                    # अलर्ट") — सकाळी token expire झालेला असेल तर बॉट शांतपणे थांबू नये.
+                    notify_error("mcx_futures_trader", msg)
+                    exit(1)
+                symbols_list = args.symbols.split(",")
+                entry_succeeded = run_all_symbols(token, symbols_list)
+                exit_succeeded = False
+                if args.mode == "both":
+                    exit_succeeded = run_exit_monitor_loop(
+                        token, symbols_list, args.interval_seconds, loop_seconds,
+                        open_interval_seconds=args.open_interval_seconds,
+                    )
+                if entry_succeeded or exit_succeeded:
+                    write_heartbeat("mcx_futures_trader")
+                run_auto_backup_if_due(interval_minutes=60)
     except ProcessLockHeld as e:
         print(f"⏭️ मागची invocation अजून चालू आहे, ही वगळली — डुप्लिकेट ऑर्डर टाळण्यासाठी ({e})")

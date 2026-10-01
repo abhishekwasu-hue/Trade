@@ -9,6 +9,8 @@ BUY/SELL बरोबर ठरतं का, हेच सर्वात ज�
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import pandas as pd
 
 import cloud_db
@@ -666,6 +668,12 @@ class TestPercentMode:
             assert strategy_result["max_loss"] == 20.0
             assert strategy_result["max_profit"] == 40.0
 
+    @pytest.fixture(autouse=True)
+    def _clear_trailing_price_cache(self):
+        mft._trailing_price_cache.clear()
+        yield
+        mft._trailing_price_cache.clear()
+
     def test_monitor_symbol_converts_trailing_pct_to_points_using_current_price(self):
         settings = dict(_DEFAULT_SETTINGS)
         settings["trailing_sl_enabled"] = True
@@ -750,10 +758,17 @@ class TestRunExitMonitorCycle:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("exit slippage") — established 3 bots च्या पॅटर्नप्रमाणेच,
     एका symbol चं monitor_symbol() अपयशी झालं तरी बाकीचे symbols तपासलेच जायला हवेत."""
 
+    @pytest.fixture(autouse=True)
+    def _all_symbols_have_open_paper_trades(self, monkeypatch):
+        monkeypatch.setattr(
+            mft.database, "get_open_trade_modes_by_symbol",
+            lambda symbols: {s: {"PAPER"} for s in symbols},
+        )
+
     def test_one_symbol_exception_does_not_block_others_in_cycle(self, monkeypatch):
         calls = []
 
-        def fake_monitor(token, symbol):
+        def fake_monitor(token, symbol, **kwargs):
             calls.append(symbol)
             if symbol == "GOLD":
                 raise RuntimeError("boom")
@@ -768,7 +783,7 @@ class TestRunExitMonitorCycle:
         assert any("GOLD" in r for r in results)
 
     def test_closed_positions_reported_in_results(self, monkeypatch):
-        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: [{"trade_id": "T1", "reason": "SL"}])
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [{"trade_id": "T1", "reason": "SL"}])
         results, any_succeeded = mft.run_exit_monitor_cycle("tok", ["CRUDEOIL"])
         assert any_succeeded is True
         assert any("CRUDEOIL" in r and "बंद" in r for r in results)
@@ -779,6 +794,13 @@ class TestRunExitMonitorLoop:
     run_monitor_loop() पॅटर्नची MCX आवृत्ती (बघा tests/test_trade_monitor.py::TestRunMonitorLoop) —
     fake clock/sleep वापरून वेळ न घालवता चाचणी. आधी हे monitoring cron invocation मध्ये फक्त
     एकदाच व्हायचं, आता interval_seconds च्या अंतराने loop_seconds पर्यंत पुन्हा-पुन्हा."""
+
+    @pytest.fixture(autouse=True)
+    def _all_symbols_have_open_paper_trades(self, monkeypatch):
+        monkeypatch.setattr(
+            mft.database, "get_open_trade_modes_by_symbol",
+            lambda symbols: {s: {"PAPER"} for s in symbols},
+        )
 
     def _fake_clock(self, start=0.0):
         state = {"now": start}
@@ -794,11 +816,12 @@ class TestRunExitMonitorLoop:
     def test_runs_multiple_cycles_within_loop_budget(self, monkeypatch):
         now_fn, sleep_fn, _ = self._fake_clock()
         calls = []
-        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: calls.append(s) or [])
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(s) or [])
 
         any_succeeded = mft.run_exit_monitor_loop(
             "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=30,
             sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+            has_open_trades_fn=lambda: False,
         )
         # instant fake-cycle (0 सेकंद घेतो) -> 0, 15, 30 सेकंदांना cycle चालतो (शेवटचा तंतोतंत
         # loop_seconds च्या सीमेवर), नंतर बजेट संपलेलं दिसून थांबतं.
@@ -809,7 +832,7 @@ class TestRunExitMonitorLoop:
         now_fn, sleep_fn, state = self._fake_clock()
         calls = []
 
-        def slow_monitor(token, symbol):
+        def slow_monitor(token, symbol, **kwargs):
             calls.append(symbol)
             state["now"] += 100  # loop_seconds (30) पेक्षा जास्त
             return []
@@ -818,6 +841,7 @@ class TestRunExitMonitorLoop:
         mft.run_exit_monitor_loop(
             "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=30,
             sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+            has_open_trades_fn=lambda: False,
         )
         assert calls == ["CRUDEOIL"]
 
@@ -829,10 +853,11 @@ class TestRunExitMonitorLoop:
             sleep_calls.append(seconds)
             state["now"] += seconds
 
-        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s: [])
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [])
         mft.run_exit_monitor_loop(
             "tok", ["CRUDEOIL"], interval_seconds=15, loop_seconds=28,
             sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
+            has_open_trades_fn=lambda: False,
         )
         assert sum(sleep_calls) <= 28
         assert all(s >= 0 for s in sleep_calls)
@@ -845,6 +870,147 @@ class TestRunExitMonitorLoop:
         sig = inspect.signature(mft.run_exit_monitor_loop)
         assert sig.parameters["loop_seconds"].default == 30
         assert sig.parameters["interval_seconds"].default == 15
+
+    def test_open_trade_uses_tight_open_interval(self, monkeypatch):
+        """कुठलाही MCX trade OPEN असताना cadence 5 s (idle 15 s ऐवजी)."""
+        now_fn, sleep_fn, _ = self._fake_clock()
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(s) or [])
+        mft.run_exit_monitor_loop(
+            "tok", ["GOLD"], interval_seconds=15, loop_seconds=30, open_interval_seconds=5,
+            sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+            has_open_trades_fn=lambda: True,
+        )
+        assert len(calls) == 7  # 0,5,10,...,30
+
+    def test_idle_uses_normal_interval(self, monkeypatch):
+        now_fn, sleep_fn, _ = self._fake_clock()
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {})
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(s) or [])
+        mft.run_exit_monitor_loop(
+            "tok", ["GOLD"], interval_seconds=15, loop_seconds=30,
+            sleep_fn=sleep_fn, now_fn=now_fn, print_fn=lambda x: None,
+        )
+        assert calls == []  # OPEN trade नाही -> कुठलाही monitor_symbol() कॉल नाही
+
+    def test_open_interval_default_is_5(self):
+        import inspect
+        assert inspect.signature(mft.run_exit_monitor_loop).parameters["open_interval_seconds"].default == 5
+
+
+class TestLightExitCycle:
+    """🎓 Slippage -- trade_monitor.py प्रमाणेच हलकी cycle: idle symbols वगळणे, positions एकदाच, overlap-safe lock."""
+
+    def test_idle_symbols_are_skipped(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {"GOLD": {"PAPER"}})
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(s) or [])
+        results, ok = mft.run_exit_monitor_cycle("tok", ["CRUDEOIL", "GOLD", "SILVER"])
+        assert calls == ["GOLD"]
+        assert ok is True
+
+    def test_no_open_trades_is_alive_not_failure(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {})
+        fetch = MagicMock()
+        monkeypatch.setattr(mft, "fetch_broker_positions", fetch)
+        monkeypatch.setattr(mft, "monitor_symbol", MagicMock())
+        results, ok = mft.run_exit_monitor_cycle("tok", ["GOLD"])
+        assert ok is True and results == []
+        fetch.assert_not_called()
+        mft.monitor_symbol.assert_not_called()
+
+    def test_positions_fetched_once_only_when_live_trade_exists(self, monkeypatch):
+        monkeypatch.setattr(
+            mft.database, "get_open_trade_modes_by_symbol",
+            lambda symbols: {"GOLD": {"LIVE"}, "SILVER": {"PAPER"}},
+        )
+        fetch = MagicMock(return_value=[{"instrument_token": "X", "pnl": 1}])
+        monkeypatch.setattr(mft, "fetch_broker_positions", fetch)
+        seen = []
+        monkeypatch.setattr(
+            mft, "monitor_symbol",
+            lambda t, s, broker_positions=None, record_timing=False: seen.append((s, broker_positions, record_timing)) or [],
+        )
+        mft.run_exit_monitor_cycle("tok", ["GOLD", "SILVER"])
+        assert fetch.call_count == 1
+        assert seen == [("GOLD", fetch.return_value, True), ("SILVER", fetch.return_value, True)]
+
+    def test_paper_only_does_not_fetch_positions(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {"GOLD": {"PAPER"}})
+        fetch = MagicMock()
+        monkeypatch.setattr(mft, "fetch_broker_positions", fetch)
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [])
+        mft.run_exit_monitor_cycle("tok", ["GOLD"])
+        fetch.assert_not_called()
+
+    def test_db_error_falls_back_to_checking_all_symbols(self, monkeypatch):
+        def boom(symbols):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", boom)
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(s) or [])
+        mft.run_exit_monitor_cycle("tok", ["GOLD", "SILVER"])
+        assert calls == ["GOLD", "SILVER"]
+
+    def test_cycle_skipped_when_exit_lock_held(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {"GOLD": {"PAPER"}})
+        monitor = MagicMock(return_value=[])
+        monkeypatch.setattr(mft, "monitor_symbol", monitor)
+        with mft.ProcessLock(mft.EXIT_MONITOR_LOCK_NAME):
+            results, ok = mft.run_exit_monitor_cycle("tok", ["GOLD"])
+        monitor.assert_not_called()
+        assert ok is False
+        assert any("वगळली" in r for r in results)
+
+    def test_monitor_symbol_passes_shared_positions_and_timing_to_manage(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("tok", "GOLD", broker_positions=[{"x": 1}], record_timing=True)
+            kwargs = mock_manage.call_args.kwargs
+            assert kwargs["broker_positions"] == [{"x": 1}]
+            assert kwargs["record_timing"] is True
+
+    def test_monitor_symbol_default_keeps_old_manage_call(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("tok", "GOLD")
+            kwargs = mock_manage.call_args.kwargs
+            assert "broker_positions" not in kwargs and "record_timing" not in kwargs
+
+
+class TestTrailingPriceCache:
+    @pytest.fixture(autouse=True)
+    def _clear(self):
+        mft._trailing_price_cache.clear()
+        yield
+        mft._trailing_price_cache.clear()
+
+    def test_reference_price_cached_within_ttl(self):
+        calls = {"n": 0}
+
+        def fake_fetch(*a, **k):
+            calls["n"] += 1
+            return _fake_candles_df(last_close=6500.0)
+
+        with patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft, "fetch_mcx_candles", side_effect=fake_fetch):
+            t = [100.0]
+            p1 = mft._get_trailing_reference_price("tok", "GOLD", now_fn=lambda: t[0])
+            t[0] = 110.0
+            p2 = mft._get_trailing_reference_price("tok", "GOLD", now_fn=lambda: t[0])
+            assert p1 == p2 == 6500.0 and calls["n"] == 1
+            t[0] = 125.0  # TTL (20 s) संपला
+            mft._get_trailing_reference_price("tok", "GOLD", now_fn=lambda: t[0])
+            assert calls["n"] == 2
+
+    def test_failure_is_not_cached(self):
+        with patch.object(mft.mcx_resolver, "resolve_symbol", return_value=(False, "x")):
+            assert mft._get_trailing_reference_price("tok", "GOLD") is None
+        assert "GOLD" not in mft._trailing_price_cache
 
 
 class TestLastCheckHeartbeat:
