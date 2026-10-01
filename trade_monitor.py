@@ -50,6 +50,16 @@ LTP) — सामान्य स्थितीत 60 सेकंदांत
 असलेल्या window मध्ये आणखी जास्त (~10x) — Upstox rate-limit च्या आत राहण्यासाठी `--interval-seconds`/
 `--tsl-interval-seconds` गरज पडल्यास वाढवता येतात (कमी frequent, पण कमी API load).
 
+🎓 "Huge slippages" (Performance Report: SL -0.07% असताना exit -0.12% वर, ~11 NIFTY पॉइंट पुढे, वेगवान घसरणीत) —
+तीन बदल: (१) cycle हलकी -- OPEN trade नसलेल्या symbols साठी Upstox कॉल्स वगळले आणि positions एकदाच आणले
+(आधी तिन्ही symbols साठी प्रत्येक cycle ला, ज्यामुळे खरं अंतर १५ सेकंदांपेक्षा जास्त व्हायचं); (२) कुठलाही OPEN
+trade असताना `--open-interval-seconds` (डीफॉल्ट 5) cadence -- आधी जलद cadence फक्त TSL-locked trade असतानाच
+होता, साध्या SL साठी नाही; (३) `--loop-seconds` डीफॉल्ट 50 -> 62: cron दर 60 सेकंदांनी नवी प्रोसेस सुरू करतो,
+50 वर थांबल्याने प्रत्येक मिनिटाला ~10 सेकंद कुठलीही तपासणी होतच नव्हती. ProcessLock फक्त प्रत्येक cycle भोवती
+असल्याने दोन overlapping invocations सुरक्षित (एकावेळी एकच cycle). Exit होताना `[Monitor lag: ...]` तुकडा
+exit_reason_detail मध्ये जोडला जातो (मागची तपासणी किती सेकंद आधी, तेव्हा आणि आता स्पॉट) -- उशीर तपासणीचा की
+बाजाराच्या उडीचा हे कळण्यासाठी.
+
 चालवणे:
     python3 trade_monitor.py --token <UPSTOX_TOKEN>
     python3 trade_monitor.py --token <UPSTOX_TOKEN> --interval-seconds 30 --loop-seconds 50  # हळू
@@ -64,6 +74,7 @@ from engine_service import load_settings, compute_atr_points, MONITORED_SYMBOLS
 from notifications import notify_exit, notify_error, write_heartbeat
 from process_lock import ProcessLock, ProcessLockHeld
 from trading_engine import manage_open_trades
+from upstox_api import fetch_broker_positions
 
 SCRIPT_NAME = "trade_monitor"
 
@@ -87,7 +98,16 @@ def run_monitor_cycle(access_token, product_type="D"):
         with ProcessLock("position_exit_monitor"):
             results = []
             any_symbol_succeeded = False
-            for symbol in MONITORED_SYMBOLS:
+            # 🎓 "Huge slippages" -- cycle हलकी: (१) OPEN trade नसलेल्या symbols साठी Upstox कॉल्स पूर्ण वगळले
+            # (आधी तिन्ही symbols साठी प्रत्येक cycle ला positions + reconciliation चालायचं), (२) positions
+            # एकदाच आणून सर्व symbols ना दिले (आणि तेही फक्त LIVE trade असेल तरच -- PAPER ला खरी position नसते).
+            # त्यामुळे तपासणीचं खरं अंतर कमी होतं. exit-निर्णयाचं logic तेच.
+            modes_by_symbol = database.get_open_trade_modes_by_symbol(MONITORED_SYMBOLS)
+            symbols_to_check = [s for s in MONITORED_SYMBOLS if s in modes_by_symbol]
+            shared_positions = []
+            if any("LIVE" in modes for modes in modes_by_symbol.values()):
+                shared_positions = fetch_broker_positions(access_token)
+            for symbol in symbols_to_check:
                 try:
                     atr_points = compute_atr_points(access_token, symbol, settings)
                     closed = manage_open_trades(
@@ -98,6 +118,7 @@ def run_monitor_cycle(access_token, product_type="D"):
                         trailing_sl_enabled=settings.get("trailing_sl_enabled", False),
                         atr_points=atr_points,
                         atr_multiplier=settings.get("atr_multiplier", 1.5),
+                        broker_positions=shared_positions, record_timing=True,
                     )
                     any_symbol_succeeded = True
                     for c in closed:
@@ -107,17 +128,17 @@ def run_monitor_cycle(access_token, product_type="D"):
                     notify_error(SCRIPT_NAME, f"{symbol}: {e}")
                     results.append(f"{symbol}: त्रुटी — {e}")
 
-            if any_symbol_succeeded:
-                write_heartbeat(SCRIPT_NAME)
+            if any_symbol_succeeded or not symbols_to_check:
+                write_heartbeat(SCRIPT_NAME)  # OPEN trade नसतानाही monitor जिवंत आहे (heartbeat कायम)
 
             return "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
     except ProcessLockHeld:
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
 
 
-def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=50, tsl_interval_seconds=5,
+def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=62, tsl_interval_seconds=5,
                       cycle_fn=run_monitor_cycle, sleep_fn=time.sleep, now_fn=time.monotonic, print_fn=print,
-                      has_active_tsl_fn=None):
+                      has_active_tsl_fn=None, open_interval_seconds=5, has_open_trades_fn=None):
     """एका cron invocation च्या आत, `interval_seconds`च्या अंतराने `loop_seconds` पर्यंत
     run_monitor_cycle() पुन्हा-पुन्हा चालवणे (SL slippage कमी करण्यासाठी — बघा वरची फाईल-टिप्पणी).
     प्रत्येक cycle चा वेळ वजा करूनच पुढचा sleep काढला जातो, जेणेकरून एकूण वेळ loop_seconds च्या आसपासच
@@ -129,6 +150,12 @@ def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=
     ऐवजी घट्ट `tsl_interval_seconds` इतका ठेवला जातो — exit-logic (manage_open_trades()) तेच, फक्त
     cadence बदलतो."""
     has_active_tsl_fn = has_active_tsl_fn or (lambda: database.has_active_tsl_trades(MONITORED_SYMBOLS))
+    if has_open_trades_fn is None:
+        def has_open_trades_fn():
+            try:
+                return bool(database.get_open_trade_modes_by_symbol(MONITORED_SYMBOLS))
+            except Exception:
+                return False  # DB त्रुटीने monitoring loop थांबू नये -- नेहमीचा interval वापरला जाईल
     start = now_fn()
     cycles = 0
     while True:
@@ -140,7 +167,14 @@ def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=
         if remaining_in_budget <= 0:
             break
         cycle_duration = now_fn() - cycle_start
-        effective_interval = tsl_interval_seconds if has_active_tsl_fn() else interval_seconds
+        # 🎓 "Huge slippages" -- आधी जलद cadence फक्त TSL-locked trade असतानाच होता; साध्या SL चे exits (आजचे
+        # मोठे तोटे) १५ सेकंदांवरच तपासले जायचे. आता कुठलाही OPEN trade असेल तर `open_interval_seconds` (डीफॉल्ट ५).
+        if has_active_tsl_fn():
+            effective_interval = tsl_interval_seconds
+        elif has_open_trades_fn():
+            effective_interval = open_interval_seconds
+        else:
+            effective_interval = interval_seconds
         sleep_time = min(effective_interval - cycle_duration, remaining_in_budget)
         if sleep_time > 0:
             sleep_fn(sleep_time)
@@ -153,7 +187,9 @@ if __name__ == "__main__":
     parser.add_argument("--product-type", default="D")
     parser.add_argument("--interval-seconds", type=float, default=15,
                          help="किती सेकंदांच्या अंतराने पुन्हा तपासायचं (डीफॉल्ट 15 — पूर्वीच्या दर-60-सेकंदांऐवजी, वापरकर्त्याने 20 वरून आणखी घट्ट केलेलं)")
-    parser.add_argument("--loop-seconds", type=float, default=50,
+    parser.add_argument("--open-interval-seconds", type=float, default=5,
+                         help="कुठलाही OPEN trade असताना किती सेकंदांच्या अंतराने तपासायचं (डीफॉल्ट 5).")
+    parser.add_argument("--loop-seconds", type=float, default=62,
                          help="एका cron invocation मध्ये किती सेकंद पुन्हा-पुन्हा तपासत राहायचं (डीफॉल्ट 50 — 60-सेकंद cron window च्या आत बसावं म्हणून बफर)")
     parser.add_argument("--tsl-interval-seconds", type=float, default=5,
                          help="कुठल्याही monitored symbol वर TSL-locked (Entry/Breakeven) trade सक्रिय असेल तेव्हा किती घट्ट अंतराने तपासायचं (डीफॉल्ट 5 — नेहमीच्या --interval-seconds पेक्षा घट्ट, कारण TSL exits मध्येच खरी slippage आढळली)")
@@ -167,4 +203,5 @@ if __name__ == "__main__":
     run_monitor_loop(
         token, args.product_type, interval_seconds=args.interval_seconds,
         loop_seconds=args.loop_seconds, tsl_interval_seconds=args.tsl_interval_seconds,
+        open_interval_seconds=args.open_interval_seconds,
     )

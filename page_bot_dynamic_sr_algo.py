@@ -772,6 +772,30 @@ def render():
             # 36-48 सेकंदातच लागले, तर तेच exact level नंतर काही मिनिटं टिकून राहिल्यावर मोठा विजयी
             # trade ठरला). पूर्ण खात्रीशीर उपाय नाही (एक मध्यम-buildup trade backtest मध्ये अजूनही
             # तोट्याचाच निघाला) — म्हणून डीफॉल्ट बंद, threshold वापरकर्त्याने स्वतः ठरवून forward-test करावा.
+            with st.expander("⚡ Fast-Move Guard (वेगवान हालचालीत reversal entry नाही)", expanded=False):
+                entry_fast_move_guard_enabled = st.checkbox(
+                    "Fast-Move Guard सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("entry_fast_move_guard_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_fast_move_guard_enabled"),
+                )
+                st.caption(
+                    "किंमत level कडे खूप वेगाने येत असेल (मागच्या N मिनिटांत ठरलेल्या %पेक्षा जास्त — support कडे खाली, "
+                    "resistance कडे वर) तर साधा reversal entry घेतला जात नाही; अशा वेळी level टिकण्याची शक्यता कमी असते "
+                    "आणि SL लागताना slippage जास्त. Breakout/IV (directional) trades वर परिणाम नाही. Signal Log मध्ये "
+                    "`SKIPPED_FAST_MOVE` दिसेल (हा max-hits/cooldown मोजत नाही)."
+                )
+                fmg1, fmg2 = st.columns(2)
+                with fmg1:
+                    fast_move_lookback_minutes = _number_input(
+                        "मागच्या किती मिनिटांत", settings, "fast_move_lookback_minutes", strategy_key, symbol,
+                        min_value=1, max_value=30, step=1, disabled=not entry_fast_move_guard_enabled,
+                    )
+                with fmg2:
+                    fast_move_threshold_pct = _number_input(
+                        "किमान हालचाल (%)", settings, "fast_move_threshold_pct", strategy_key, symbol,
+                        min_value=0.02, max_value=2.0, step=0.01, format="%.2f", disabled=not entry_fast_move_guard_enabled,
+                    )
+
             with st.expander("🧱 Level Strength Gate (कमकुवत नवीन levels)", expanded=False):
                 entry_min_level_strength_enabled = st.checkbox(
                     "Level Strength Gate सक्रिय (डीफॉल्ट बंद)",
@@ -1243,6 +1267,9 @@ def render():
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
             new_settings["entry_supertrend_filter_enabled"] = bool(entry_supertrend_filter_enabled)
+            new_settings["entry_fast_move_guard_enabled"] = bool(entry_fast_move_guard_enabled)
+            new_settings["fast_move_lookback_minutes"] = int(fast_move_lookback_minutes)
+            new_settings["fast_move_threshold_pct"] = float(fast_move_threshold_pct)
             new_settings["entry_min_level_strength_enabled"] = bool(entry_min_level_strength_enabled)
             new_settings["min_level_strength"] = int(min_level_strength)
             new_settings["level_strength_new_levels_only"] = bool(level_strength_new_levels_only)

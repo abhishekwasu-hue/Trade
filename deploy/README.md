@@ -122,6 +122,17 @@ symbol वर सध्या TSL-locked trade सक्रिय असेल *
 has_active_tsl_trades()`) हलकी, स्थानिक SQLite query आहे (कुठलाही जादा Upstox API कॉल नाही). गरज
 पडल्यास `--tsl-interval-seconds 3`/`8` देऊन बदलता येतं.
 
+🎓 "Huge slippages" (Performance Report: SL -0.07% असताना exit -0.12% वर, वेगवान घसरणीत ~11 NIFTY पॉइंट पुढे) —
+तीन बदल, **crontab ओळीत काहीही बदल नको** (नवीन डीफॉल्ट आपोआप लागू होतात):
+१. **हलकी cycle** — OPEN trade नसलेल्या symbols साठी Upstox कॉल्स पूर्ण वगळले; positions एकदाच आणले (आणि फक्त LIVE trade
+   असेल तरच). आधी तिन्ही symbols साठी प्रत्येक cycle ला, ज्यामुळे खरं अंतर १५ सेकंदांपेक्षा जास्त व्हायचं.
+२. **कुठलाही OPEN trade असताना ५ सेकंदांची तपासणी** (`--open-interval-seconds 5`) — आधी जलद cadence फक्त TSL-locked trade
+   असतानाच होता, साध्या SL साठी नाही. OPEN trade नसताना जुनाच १५ सेकंद.
+३. **`--loop-seconds` ५० -> ६२** — cron दर ६० सेकंदांनी नवी प्रोसेस सुरू करतो, ५० वर थांबल्याने प्रत्येक मिनिटाला ~१०
+   सेकंद कुठलीही तपासणी होतच नव्हती. ProcessLock फक्त प्रत्येक cycle भोवती असल्याने दोन overlapping invocations सुरक्षित.
+Exit होताना `exit_reason_detail` मध्ये `[Monitor lag: previous check Ns earlier (spot A -> B, ±X pts)]` जोडला जातो — उशीर
+तपासणीच्या अंतराचा की बाजाराच्या उडीचा हे Performance Report/Trade Log मध्ये दिसेल (फाईल `data/monitor_timing.json`).
+
 **सद्य crontab (VPS वर `crontab -l` ने पडताळलेलं, वेळा UTC मध्ये — VPS ची timezone
 `timedatectl`/`date` ने आधी खात्री करूनच बदल करा):**
 ```

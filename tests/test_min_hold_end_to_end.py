@@ -312,3 +312,42 @@ class TestLevelStrengthGateEndToEnd:
         assert hits == 0 and last_trade is None
         # 5 मिनिटांनी level पुन्हा टिकला -> strength 3 -> trade
         assert self._run(3.0, "2026-09-11 09:40:00", now=self.T0 + datetime.timedelta(minutes=5)) is True
+
+
+class TestFastMoveGuardEndToEnd:
+    T0 = datetime.datetime(2026, 9, 11, 10, 0, 0)
+
+    def _run(self, closes, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False, naked_enabled=False,
+                        entry_min_hold_gate_enabled=False, entry_fast_move_guard_enabled=True,
+                        fast_move_lookback_minutes=5, fast_move_threshold_pct=0.12)
+        settings.update(overrides)
+        rows = [{"open": c, "high": c + 1, "low": c - 1, "close": c} for c in closes]
+        candles = _candles_with_rsi(rows, declining=True, today_ist=self.T0)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.T0), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+        return mock_trade.called
+
+    FAST = [23935.0, 23925.0, 23915.0, 23907.0, 23903.0, 23900.0]      # 5 मिनिटांत -0.146% खाली, level 23900 वर
+    SLOW = [23904.0, 23903.0, 23902.0, 23901.0, 23900.5, 23900.0]
+
+    def test_fast_fall_into_support_is_skipped_and_is_not_a_hit(self, signal_db):
+        assert self._run(self.FAST) is False
+        assert "SKIPPED_FAST_MOVE" in _statuses(signal_db)
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
+        assert hits == 0 and last_trade is None
+
+    def test_slow_approach_trades(self, signal_db):
+        assert self._run(self.SLOW) is True
+
+    def test_guard_off_by_default(self, signal_db):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_fast_move_guard_enabled"] is False
+        assert self._run(self.FAST, entry_fast_move_guard_enabled=False) is True

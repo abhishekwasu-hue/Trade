@@ -321,6 +321,30 @@ def check_level_strength_gate(strength, formed_date, now, min_strength, new_leve
                    f"(पुन्हा टिकून strength वाढेपर्यंत trade नाही)")
 
 
+def check_fast_move_into_level(direction, closes, lookback_minutes, threshold_pct):
+    """🎓 "Huge slippages" -- किंमत level कडे खूप वेगाने येत असेल (मागच्या `lookback_minutes` 1-मिनिट closes मध्ये
+    `threshold_pct`% पेक्षा जास्त हालचाल, level च्या दिशेने) तर reversal (bounce) entry घेऊ नये: BULLISH (support वर
+    बाउन्स) साठी किंमत जोरात खाली आली असेल, BEARISH (resistance वरून परतणे) साठी जोरात वर. अशा वेळी level
+    टिकण्याची शक्यता कमी आणि SL लागताना slippage जास्त. closes कमी असतील / पुरेशी माहिती नसेल तर अडवत नाही.
+    रिटर्न: (ok: bool, reason: str|None)."""
+    try:
+        lookback = int(lookback_minutes)
+        if lookback < 1 or not closes or len(closes) < lookback + 1:
+            return True, None
+        start, end = float(closes[-(lookback + 1)]), float(closes[-1])
+        if start <= 0:
+            return True, None
+    except (TypeError, ValueError):
+        return True, None
+    move_pct = (end - start) / start * 100
+    toward_level_pct = -move_pct if direction == "BULLISH" else move_pct
+    if toward_level_pct >= threshold_pct:
+        word = "खाली" if direction == "BULLISH" else "वर"
+        return False, (f"मागच्या {lookback} मिनिटांत किंमत {toward_level_pct:.2f}% वेगाने level कडे {word} आली "
+                       f"(मर्यादा {threshold_pct}%) -- वेगवान हालचालीत reversal entry टाळला")
+    return True, None
+
+
 def check_breakout_supertrend_alignment(direction, dir_15m, dir_1h):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Breakout दोन्ही Supertrend च्या दिशेनेच झालेला असावा") —
     Breakout trade फक्त तेव्हा जेव्हा 15M **आणि** 1H दोन्ही Supertrend ची दिशा breakout च्या दिशेशी जुळते
@@ -560,6 +584,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
     breakout_supertrend_filter_enabled = settings.get("breakout_supertrend_filter_enabled", False)
     entry_min_level_strength_enabled = settings.get("entry_min_level_strength_enabled", False)
+    entry_fast_move_guard_enabled = settings.get("entry_fast_move_guard_enabled", False)
+    fast_move_lookback_minutes = settings.get("fast_move_lookback_minutes", 5)
+    fast_move_threshold_pct = settings.get("fast_move_threshold_pct", 0.12)
     min_level_strength = settings.get("min_level_strength", 3)
     level_strength_new_levels_only = settings.get("level_strength_new_levels_only", True)
     supertrend_15m_period = settings.get("supertrend_15m_period", 10)
@@ -906,6 +933,17 @@ def process_symbol(access_token, symbol, lot_size=65):
             if not strength_ok:
                 log_entry["trade_status"] = "SKIPPED_WEAK_LEVEL"
                 log_entry["reason"] = strength_reason
+                cloud_db.save_signal_log(log_entry)
+                continue
+
+        # 🎓 "Huge slippages" -- Fast-Move Guard (Dashboard, डीफॉल्ट बंद): किंमत level कडे वेगाने येत असेल तर
+        # साधा reversal entry नाही. Breakout/IV (directional) वगळलेले. SKIPPED_FAST_MOVE no-hit status.
+        if entry_fast_move_guard_enabled and not is_directional_trade:
+            fast_ok, fast_reason = check_fast_move_into_level(
+                direction, todays_closes, fast_move_lookback_minutes, fast_move_threshold_pct)
+            if not fast_ok:
+                log_entry["trade_status"] = "SKIPPED_FAST_MOVE"
+                log_entry["reason"] = fast_reason
                 cloud_db.save_signal_log(log_entry)
                 continue
 

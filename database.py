@@ -752,6 +752,26 @@ def get_first_target_exit_today(source, mode, trade_date):
     return row
 
 
+def get_open_trade_modes_by_symbol(symbols):
+    """🎓 Slippage -- trade_monitor.py ने फक्त ज्या symbols वर OPEN trade आहे त्यांचीच तपासणी (आणि Upstox कॉल्स)
+    करावी, बाकीच्यांसाठी नाही. रिटर्न: {symbol: {"LIVE", "PAPER", ...}} (OPEN trades असलेले symbols फक्त;
+    shadow trades सुद्धा मोजले जातात -- त्यांचेही exit तपासायचे असतात). हलकी, स्थानिक SQLite query."""
+    if not symbols:
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(symbols))
+    cur.execute(
+        f"SELECT symbol, COALESCE(mode, 'LIVE') FROM live_trades WHERE status='OPEN' AND symbol IN ({placeholders})",
+        list(symbols),
+    )
+    result = {}
+    for symbol, mode in cur.fetchall():
+        result.setdefault(symbol, set()).add(mode)
+    conn.close()
+    return result
+
+
 def has_active_tsl_trades(symbols):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("TSL slippage — Performance Report मध्ये दिसलं की
     Trailing-SL (Entry/Breakeven-locked) exits मध्येच खरी slippage आहे, बाकी SL exits मध्ये नाही") —

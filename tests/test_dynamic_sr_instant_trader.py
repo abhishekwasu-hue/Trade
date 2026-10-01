@@ -3449,3 +3449,28 @@ class TestLevelStrengthGateHelpers:
         assert g(2.0, "2026-09-01 10:00:00", self.NOW, 3, new_levels_only=False)[0] is False
         assert g(None, "2026-09-11 10:00:00", self.NOW, 3)[0] is True                     # strength माहीत नाही
         assert g(float("nan"), "2026-09-11 10:00:00", self.NOW, 3)[0] is True
+
+
+class TestFastMoveGuardHelper:
+    def _closes(self, start, end, n=6):
+        step = (end - start) / (n - 1)
+        return [start + step * i for i in range(n)]
+
+    def test_bullish_blocked_when_price_fell_fast_into_support(self):
+        # 22,570 -> 22,540 (-0.13%) 5 मिनिटांत
+        ok, reason = dsr.check_fast_move_into_level("BULLISH", self._closes(22570.0, 22540.0), 5, 0.12)
+        assert ok is False and "वेगाने" in reason
+
+    def test_bullish_allowed_when_move_is_slow_or_away(self):
+        assert dsr.check_fast_move_into_level("BULLISH", self._closes(22550.0, 22540.0), 5, 0.12)[0] is True
+        assert dsr.check_fast_move_into_level("BULLISH", self._closes(22540.0, 22570.0), 5, 0.12)[0] is True   # वर जातेय
+
+    def test_bearish_blocked_when_price_rose_fast_into_resistance(self):
+        assert dsr.check_fast_move_into_level("BEARISH", self._closes(22500.0, 22530.0), 5, 0.12)[0] is False
+        assert dsr.check_fast_move_into_level("BEARISH", self._closes(22530.0, 22500.0), 5, 0.12)[0] is True
+
+    def test_not_enough_data_or_bad_values_never_block(self):
+        assert dsr.check_fast_move_into_level("BULLISH", [100.0, 90.0], 5, 0.12)[0] is True
+        assert dsr.check_fast_move_into_level("BULLISH", [], 5, 0.12)[0] is True
+        assert dsr.check_fast_move_into_level("BULLISH", [0, 0, 0, 0, 0, 0], 5, 0.12)[0] is True
+        assert dsr.check_fast_move_into_level("BULLISH", self._closes(22570.0, 22540.0), 0, 0.12)[0] is True

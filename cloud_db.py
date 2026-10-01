@@ -369,6 +369,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 "5 minute mdhe intraday new form support resistance strength 2x asalyas, kase trade krayche, karan te
         # high probability che nasatat" -- डीफॉल्ट बंद. चालू असेल तर आज (बाजार चालू झाल्यावर) नव्याने तयार झालेला
         # आणि strength < min_level_strength असलेला level reversal trade घेत नाही, तो पुन्हा टिकून strength वाढेपर्यंत.
+        # 🎓 "Huge slippages" -- Fast-Move Guard, डीफॉल्ट बंद: मागच्या fast_move_lookback_minutes मिनिटांत किंमत
+        # fast_move_threshold_pct% पेक्षा जास्त level कडे (support साठी खाली / resistance साठी वर) आली असेल तर
+        # साधा reversal entry नाही.
+        "entry_fast_move_guard_enabled": False,
+        "fast_move_lookback_minutes": 5,
+        "fast_move_threshold_pct": 0.12,
         "entry_min_level_strength_enabled": False,
         "min_level_strength": 3,
         "level_strength_new_levels_only": True,
@@ -1346,6 +1352,8 @@ _NON_HIT_TRADE_STATUSES = (
     "SKIPPED_CREDIT_SPREAD_DISABLED",
     # Level Strength Gate ने थांबवलेला touch -- level नंतर मजबूत झाल्यावर max-hits/cooldown खर्च झालेले नसावेत.
     "SKIPPED_WEAK_LEVEL",
+    # Fast-Move Guard ने थांबवलेला touch -- तात्पुरती स्थिती, level ची खरी नाकारणी नाही.
+    "SKIPPED_FAST_MOVE",
 )
 _NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
