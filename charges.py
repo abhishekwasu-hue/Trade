@@ -49,6 +49,8 @@ import datetime
 
 import pandas as pd
 
+from mcx_contract_specs import get_price_multiplier
+
 FLAT_CHARGE_PER_ORDER = 25.0  # आता फक्त _BROKERAGE_RATES मध्ये नसलेल्या ब्रोकरसाठी (व तपशील अपुरा असेल तरच) — ढोबळ अंदाज, all-inclusive
 STOCKO_FLAT_MONTHLY = 1200.0
 DEFAULT_BROKER = "upstox"
@@ -155,7 +157,9 @@ def _row_turnover_details(row):
         or side not in ("BUY", "SELL")
     ):
         return None
-    turnover = float(quantity) * float(price)
+    # 🎓 GOLD: भाव प्रति 10g, lot 1kg => quantity × भाव ला ×100 (बघा mcx_contract_specs) — नाहीतर CTT/Exchange/
+    # SEBI/Stamp शुल्क 100 पट कमी मोजले जातात. इतर सर्व symbols साठी गुणक 1 (वर्तन अपरिवर्तित).
+    turnover = float(quantity) * float(price) * get_price_multiplier(symbol)
     if turnover <= 0:
         return None
     return symbol, side, turnover

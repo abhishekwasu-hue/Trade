@@ -3399,3 +3399,154 @@ class TestNoDoubleCloseRace:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert closed == []
         assert orders_sent == []
+
+
+class TestMcxGoldPriceUnitMultiplier:
+    """"Mcx gold margin and pnl is wrong compare from fyers pnl calculators" — GOLD: भाव प्रति 10g, lot 1kg
+    (Upstox lot_size=1) => ₹1 भाव-हालचाल = 1 lot वर ₹100. P&L/SL/Target/DB lot_size ×100; broker order quantity
+    मात्र खरी (lots × Upstox lot_size) राहते."""
+
+    @staticmethod
+    def _strategy(est=150000.0, sl=20.0, tg=40.0):
+        return {
+            "strategy": "MCX_FUTURES_LONG",
+            "legs": [{"role": "futures_long", "instrument_key": "MCX_FO|GOLD1", "transaction_type": "BUY",
+                      "ltp": est, "strike": 0, "option_type": None}],
+            "net_credit": -est, "max_loss": sl, "max_profit": tg,
+        }
+
+    def _open(self, monkeypatch, symbol, lot_size, fill=150000.0):
+        sent_orders = []
+
+        def fake_execute(token, orders, mode):
+            sent_orders.extend(orders)
+            return 200, {"status": "success", "data": {"order_ids": ["T1"]}, "paper_fills": {"MCX_FO|GOLD1": fill}}
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {kk: fill for kk in k})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        ok, _ = trading_engine.open_multi_leg_trade(
+            "fake_token", symbol, self._strategy(est=fill), lots=2, lot_size=lot_size,
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100, product_type="D",
+            trading_mode="PAPER", trading_style="INTRADAY", source="mcx_futures",
+        )
+        assert ok is True
+        return sent_orders
+
+    @staticmethod
+    def _row(tmpdb):
+        conn = sqlite3.connect(tmpdb)
+        row = conn.execute("SELECT lots, lot_size, pnl_multiplier, sl_pnl_level, target_pnl_level, trade_id FROM live_trades "
+                           "ORDER BY rowid DESC LIMIT 1").fetchone()
+        conn.close()
+        return row
+
+    def test_gold_stores_hundredfold_pnl_size_but_sends_real_quantity(self, temp_db, monkeypatch):
+        orders = self._open(monkeypatch, "GOLD", lot_size=1)
+        lots, lot_size, mult, sl, tg, _ = self._row(temp_db)
+        assert (lots, lot_size, mult) == (2, 100, 100)
+        assert sl == -20.0 * 2 * 100 and tg == 40.0 * 2 * 100   # 20 pts × 2 lots × ₹100
+        assert [o["quantity"] for o in orders] == [2]            # broker ला 2 lots × lot_size 1
+
+    def test_other_commodities_are_unchanged(self, temp_db, monkeypatch):
+        orders = self._open(monkeypatch, "SILVER", lot_size=30)
+        lots, lot_size, mult, sl, _, _ = self._row(temp_db)
+        assert (lot_size, mult) == (30, 1)
+        assert sl == -20.0 * 2 * 30
+        assert [o["quantity"] for o in orders] == [60]
+
+    def test_gold_pnl_matches_fyers_style_calculation_and_exit_sends_real_quantity(self, temp_db, monkeypatch):
+        self._open(monkeypatch, "GOLD", lot_size=1, fill=150000.0)
+        # भाव 25 points खाली (150000 -> 149975): SL (-20 pts => ₹4000) ओलांडला; P&L = -25 × 2 lots × ₹100 = -5000
+        sent = []
+
+        def fake_execute(token, orders, mode):
+            sent.extend(orders)
+            return 200, {"status": "success"}
+
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {kk: 149975.0 for kk in k})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", fake_execute)
+        # symbol column: open_multi_leg_trade ने "GOLD" साठवला; manage_open_trades symbol नुसार शोधतो
+        closed = trading_engine.manage_open_trades("fake_token", "GOLD", "D")
+        assert len(closed) == 1 and closed[0]["reason"] == "SL"
+        assert closed[0]["pnl"] == pytest.approx(-5000.0)
+        assert [o["quantity"] for o in sent] == [2]   # exit-ऑर्डर: खरी quantity, 200 नाही
+
+    def test_legacy_trade_without_multiplier_is_untouched(self, temp_db, monkeypatch):
+        legs = [{"role": "futures_long", "strike": 0, "instrument_key": "FUT1", "transaction_type": "BUY"}]
+        seed_trade(temp_db, "L1", net_credit=-8000.0, sl_level=-1500.0, target_level=3000.0,
+                   strategy="MCX_FUTURES_LONG", source="mcx_futures", legs=legs)
+        sent = []
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"FUT1": 7979.0})
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (sent.extend(o) or 200, {"status": "success"}))
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert closed and [o["quantity"] for o in sent] == [75]   # lots 1 × lot_size 75, गुणक नाही
+
+
+class TestMcxContractSpecs:
+    def test_multiplier_table(self):
+        from mcx_contract_specs import get_price_multiplier
+        assert get_price_multiplier("GOLD") == 100
+        assert get_price_multiplier("gold") == 100
+        for sym in ("CRUDEOIL", "NATURALGAS", "SILVER", "COPPER", "NIFTY", None):
+            assert get_price_multiplier(sym) == 1
+
+    def test_charges_turnover_uses_gold_multiplier_only_for_gold(self):
+        import charges
+        gold = charges._row_turnover_details({"quantity": 1, "fill_price": 150000.0, "symbol": "GOLD", "transaction_type": "BUY"})
+        silver = charges._row_turnover_details({"quantity": 30, "fill_price": 1000.0, "symbol": "SILVER", "transaction_type": "BUY"})
+        assert gold[2] == 150000.0 * 100
+        assert silver[2] == 30 * 1000.0
+
+    def test_margin_panel_contract_value_uses_multiplier(self):
+        import mcx_margin
+        rows = mcx_margin.compute_margin_rows(
+            "t", ["GOLD", "SILVER"], {"GOLD": 1, "SILVER": 1},
+            resolve_fn=lambda tok, sym: (True, {"instrument_key": f"K_{sym}", "lot_size": 1 if sym == "GOLD" else 30, "trading_symbol": sym}),
+            ltp_fn=lambda tok, keys: {keys[0]: 150000.0 if keys[0] == "K_GOLD" else 1000.0},
+            margin_fn=lambda tok, orders: 900000.0,
+        )
+        by = {r["Commodity"]: r for r in rows}
+        assert by["GOLD"]["Contract Value (Rs)"] == 150000.0 * 1 * 100
+        assert by["SILVER"]["Contract Value (Rs)"] == 1000.0 * 30
+
+
+class TestMcxChargesMatchZerodhaCalculator:
+    """वापरकर्त्याने दिलेले Zerodha MCX calculator चे आकडे (reference): GOLD buy 147500 / sell 147700, 1 lot =>
+    Turnover 29,520,000; Total charges 2585.54; Net P&L 17414.46. SILVER buy 226000 / sell 227000, 1 lot (30kg) =>
+    Turnover 13,590,000; Total 1217.00 (Zerodha stamp duty ₹136 ला round करतो; आपण 135.6 ठेवतो); Net P&L 28783."""
+
+    @staticmethod
+    def _charges(symbol, qty, buy, sell):
+        import datetime as _dt
+        import pandas as _pd
+        import charges
+        df = _pd.DataFrame([
+            {"order_id": "B", "account_id": "a", "symbol": symbol, "quantity": qty, "transaction_type": "BUY",
+             "fill_price": buy, "price": buy, "placed_at": "2026-09-10 10:00:00", "mode": "LIVE"},
+            {"order_id": "S", "account_id": "a", "symbol": symbol, "quantity": qty, "transaction_type": "SELL",
+             "fill_price": sell, "price": sell, "placed_at": "2026-09-10 11:00:00", "mode": "LIVE"},
+        ])
+        _, summary = charges.compute_charges(df, _dt.date(2026, 9, 1), _dt.date(2026, 9, 30), broker_map={"a": "upstox"})
+        return summary
+
+    def test_gold_one_lot_matches_zerodha_exactly(self):
+        s = self._charges("GOLD", 1, 147500.0, 147700.0)
+        b = s["breakdown"]
+        assert b["stt"] == pytest.approx(1477.0)          # CTT
+        assert b["exchange_txn"] == pytest.approx(619.92)
+        assert b["sebi_fee"] == pytest.approx(29.52)
+        assert b["stamp_duty"] == pytest.approx(295.0)
+        assert b["gst"] == pytest.approx(124.10)
+        assert s["total_charges"] == pytest.approx(2585.54)
+        gross = (147700.0 - 147500.0) * 1 * 1 * 100        # diff × lots × Upstox lot_size(1) × ×100
+        assert gross - s["total_charges"] == pytest.approx(17414.46)
+
+    def test_silver_one_lot_matches_zerodha_within_rounding(self):
+        s = self._charges("SILVER", 30, 226000.0, 227000.0)
+        b = s["breakdown"]
+        assert b["stt"] == pytest.approx(681.0)
+        assert b["exchange_txn"] == pytest.approx(285.39)
+        assert b["sebi_fee"] == pytest.approx(13.59)
+        assert b["gst"] == pytest.approx(61.02)
+        assert s["total_charges"] == pytest.approx(1217.0, abs=0.5)
+        assert (227000.0 - 226000.0) * 30 - s["total_charges"] == pytest.approx(28783.0, abs=0.5)

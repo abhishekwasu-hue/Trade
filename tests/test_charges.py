@@ -176,7 +176,7 @@ class TestFyersAccurateCharges:
     def test_fyers_commodity_brokerage_uses_lower_percent_than_upstox(self):
         """मोठा turnover — Fyers चं 0.03% हे Upstox च्या 0.05% पेक्षा कमी रक्कम देतं (₹20 च्या आतच)."""
         df = _orders_df([{
-            "order_id": "O1", "account_id": "acc1", "symbol": "GOLD", "quantity": 1,
+            "order_id": "O1", "account_id": "acc1", "symbol": "SILVER", "quantity": 1,
             "transaction_type": "BUY", "fill_price": 50000.0,
         }])
         _, summary = charges.compute_charges(

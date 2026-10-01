@@ -6,6 +6,7 @@ import time
 import uuid
 
 import cloud_db
+from mcx_contract_specs import get_price_multiplier
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
@@ -912,6 +913,14 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         }
         return live_ok, combined_resp
 
+    # 🎓 GOLD (भाव प्रति 10g, lot 1kg => ×100, बघा mcx_contract_specs) — `order_lot_size` = broker ला जाणारी खरी
+    # quantity (lots × Upstox lot_size) आणि ती कधीच बदलत नाही; `lot_size` मात्र आतापासून P&L/SL/Target/margin-
+    # अंदाज/DB साठीचा 'प्रभावी' आकार (lot_size × गुणक) — अशा प्रकारे खालचं सर्व `* lots * lot_size` गणित बरोबर ₹
+    # देतं. गुणक live_trades.pnl_multiplier मध्ये साठवला जातो (exit-order ची खरी quantity परत काढण्यासाठी).
+    pnl_multiplier = get_price_multiplier(symbol) if source == "mcx_futures" else 1
+    order_lot_size = lot_size
+    lot_size = lot_size * pnl_multiplier
+
     # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
     # ani sensex la pn applicable aahe, Mcx la applicable nahi") — मूळ रचनेत हा गेट फक्त LIVE trades
     # साठीच (established Kill Switch पॅटर्नप्रमाणे) आणि फक्त NIFTY साठीच होता. वापरकर्त्याने स्पष्ट
@@ -970,7 +979,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             _alert_cross_strategy_conflict(symbol, source, strategy_result, other_source_trades)
 
     legs = normalize_legs(strategy_result)
-    qty = lots * lot_size
+    qty = lots * order_lot_size
 
     orders = [
         {
@@ -1107,7 +1116,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # PAPER भाग) च्या recursive कॉल मध्ये trading_mode=="PAPER" च असतो, त्यामुळे इथेही आपोआप dry-run
     # (खरा order नाही, फक्त trigger price ची गणना/लॉग) — वेगळं काही हाताळायची गरज नाही.
     _maybe_place_broker_side_sl(
-        access_token, adapter, trading_mode, source, symbol, legs, entry_fill_prices, lots, lot_size,
+        access_token, adapter, trading_mode, source, symbol, legs, entry_fill_prices, lots, order_lot_size,
         strategy_result["strategy"], product_type,
     )
     log_orders_batch(order_ids, trade_id, symbol, trading_mode, orders, status="COMPLETE", fill_prices=entry_fill_prices)
@@ -1120,8 +1129,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             lots, lot_size, net_credit, max_profit, max_loss, sl_pnl_level, target_pnl_level,
             entry_time, exit_time, exit_reason, realized_pnl, status, short_order_id, long_order_id,
             legs_json, strikes_summary, mode, trading_style, source, account_id, entry_level_price, entry_timeframe,
-            entry_margin_required, entry_spot_price, entry_reason_tag)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            entry_margin_required, entry_spot_price, entry_reason_tag, pnl_multiplier)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trade_id, get_ist_today().strftime("%Y-%m-%d"), symbol, strategy_result["strategy"],
             None, None, None, None,
@@ -1140,6 +1149,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             json.dumps(legs), strikes_summary, trading_mode, trading_style, source,
             adapter.get_account_id() if adapter is not None else None,
             entry_level_price, entry_timeframe, entry_margin_required, entry_spot_price, entry_reason_tag,
+            pnl_multiplier,
         ),
     )
     inserted = cur.rowcount > 0
@@ -1439,6 +1449,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     if not open_trades:
         conn.close()
         return []
+    pnl_multiplier_by_trade = dict(cur.execute(
+        "SELECT trade_id, COALESCE(pnl_multiplier, 1) FROM live_trades WHERE symbol=? AND status='OPEN'", (symbol,),
+    ).fetchall())
 
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — account_id दिलेला
     # (म्हणजे हा trade निवडलेल्या broker account वर उघडलेला) असेल, तर बंद करतानाही तोच account/broker
@@ -1953,7 +1966,8 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             # Performance Report/Signal तपासताना स्पष्ट दिसावं म्हणून detail मध्येच नोंद.
             if broker_mtm_used:
                 exit_reason_detail = (exit_reason_detail or exit_reason) + " [Broker MTM]"
-            qty = lots * lot_size
+            # 🎓 GOLD: DB चा lot_size P&L साठी ×गुणक असतो — broker ला खरी quantity (बघा open_multi_leg_trade).
+            qty = int(round(lots * lot_size / (pnl_multiplier_by_trade.get(trade_id) or 1)))
             close_orders = [
                 {
                     "quantity": qty, "product": product_type, "validity": "DAY", "price": 0,
@@ -2175,7 +2189,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT legs_json, lots, lot_size, net_credit, mode, account_id FROM live_trades WHERE trade_id=? AND status='OPEN'",
+        "SELECT legs_json, lots, lot_size, net_credit, mode, account_id, COALESCE(pnl_multiplier, 1) FROM live_trades WHERE trade_id=? AND status='OPEN'",
         (trade_id,),
     )
     row = cur.fetchone()
@@ -2183,7 +2197,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         conn.close()
         return False, "Trade सापडला नाही किंवा आधीच बंद आहे."
 
-    legs_json_str, lots, lot_size, net_credit, trade_mode, account_id = row
+    legs_json_str, lots, lot_size, net_credit, trade_mode, account_id, pnl_multiplier = row
     legs = json.loads(legs_json_str) if legs_json_str else []
     if not legs:
         conn.close()
@@ -2203,7 +2217,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
 
     close_orders = [
         {
-            "quantity": lots * lot_size, "product": product_type, "validity": "DAY",
+            "quantity": int(round(lots * lot_size / (pnl_multiplier or 1))), "product": product_type, "validity": "DAY",
             "tag": f"MANUAL_CLOSE_{str(leg.get('role', 'LEG'))[:12]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
             "disclosed_quantity": 0, "trigger_price": 0, "price": 0, "is_amo": False,
