@@ -1300,6 +1300,13 @@ def zone_role_from_type(zone_type):
     return None
 
 
+# 🎓 "3 मिनिट level hold" end-to-end पडताळ्यात सापडलेली bug — signal_log मधल्या ज्या नोंदी 'level ची खरी hit /
+# नाकारणी' नसून तात्पुरत्या प्रतीक्षा-स्थिती किंवा त्याच touch च्या दुय्यम (naked-leg) निदान-नोंदी आहेत, त्या
+# max-hits / cooldown मोजणीतून वगळल्या जातात — नाहीतर एका trade ला 2 hits लागून (प्रतीक्षा-नोंद + OPENED, किंवा
+# OPENED + SKIPPED_NAKED_DISABLED) त्याच level चा 2रा trade कधीच व्हायचा नाही.
+_NON_HIT_TRADE_STATUSES = ("SKIPPED_MIN_HOLD_DURATION", "SKIPPED_NAKED_DISABLED", "SKIPPED_NAKED_STRIKE_NOT_FOUND")
+
+
 def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकाच zone ला
@@ -1322,6 +1329,13 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     trade attempt** (`_is_no_action_trade_status()` False असलेल्या, उदा. "OPENED") च्या वेळेवरून —
     cooldown साठी हेच वापरायचं (max-2-hits चा `hit_count`/`last_hit_time` मात्र आधीसारखाच touch-आधारित
     राहतो, तो बदललेला नाही).
+
+    🎓 "3 मिनिट level hold" end-to-end पडताळ्यात सापडलेली bug — Minimum Level-Hold गेटने थांबवलेला touch
+    (`SKIPPED_MIN_HOLD_DURATION`) सुद्धा hit म्हणून मोजला जायचा, त्यामुळे पहिला trade (प्रतीक्षा-touch +
+    OPENED = 2 rows) झाल्यावर max-2-hits लगेच भरायचा आणि त्याच level चा 2रा trade कधीच व्हायचा नाही.
+    हा 'थांब, अजून टिकून नाही' असा तात्पुरता स्थिती-शिक्का आहे, level ची खरी नाकारणी नाही — म्हणून
+    hit_count/last_hit_time/last_trade_time तिन्हीतून वगळला जातो. त्याच कारणाने naked-leg च्या दुय्यम
+    निदान-नोंदी (`SKIPPED_NAKED_DISABLED`/`SKIPPED_NAKED_STRIKE_NOT_FOUND`) सुद्धा — बघा `_NON_HIT_TRADE_STATUSES`.
     """
     conn = get_connection()
     if conn is None:
@@ -1332,16 +1346,18 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
+                       AND COALESCE(trade_status, '') NOT IN (%s, %s, %s)
                        AND level_type LIKE %s
                        ORDER BY signal_time DESC""",
-                    (symbol, trade_date, level_price, f"%{role}%"),
+                    (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES, f"%{role}%"),
                 )
             else:
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
+                       AND COALESCE(trade_status, '') NOT IN (%s, %s, %s)
                        ORDER BY signal_time DESC""",
-                    (symbol, trade_date, level_price),
+                    (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES),
                 )
             rows = cur.fetchall()
             if not rows:

@@ -692,7 +692,7 @@ class TestGetZoneHitsToday:
         cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         sql, params = mock_cursor.execute.call_args[0]
         assert "level_type" not in sql
-        assert params == ("NIFTY", "2026-09-08", 23900.0)
+        assert params == ("NIFTY", "2026-09-08", 23900.0, *cloud_db._NON_HIT_TRADE_STATUSES)
 
     def test_role_given_adds_level_type_filter(self, monkeypatch):
         """role="SUPPORT" दिलं की फक्त support-role च्या hits मोजल्या जाव्यात — तोच level नंतर
@@ -706,7 +706,7 @@ class TestGetZoneHitsToday:
         cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
         sql, params = mock_cursor.execute.call_args[0]
         assert "level_type LIKE" in sql
-        assert params == ("NIFTY", "2026-09-08", 23900.0, "%SUPPORT%")
+        assert params == ("NIFTY", "2026-09-08", 23900.0, *cloud_db._NON_HIT_TRADE_STATUSES, "%SUPPORT%")
 
     def test_support_and_resistance_hits_counted_independently(self, monkeypatch):
         """एकाच किंमतीला support म्हणून 2 hits, resistance म्हणून 0 -- role="RESISTANCE" ने
