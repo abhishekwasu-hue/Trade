@@ -170,3 +170,247 @@ class TestCheckKillSwitchPaperAndMargin:
         monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: None)
         ok, reason = trading_engine.check_kill_switch()
         assert ok is False and "KILL_SWITCH_CAPITAL_UNKNOWN" in reason
+
+
+class TestPaperParityOfRemainingGates:
+    """🎓 "Kill switch paper trade la pn asawe adhich sangitle hote" — Profit-Lock, कमाल दैनिक ट्रेड्स, MCX Kill Switch आणि
+    Portfolio Open-Risk Cap सुद्धा PAPER (shadow वगळून) साठी, LIVE सारखेच."""
+
+    # ---- DB helpers
+    def test_trade_count_for_mode_excludes_shadow_and_other_mode(self, temp_db):  # noqa: F811
+        seed_closed_trade(temp_db, "P1", -10.0, "SL", TODAY, mode="PAPER")
+        seed_closed_trade(temp_db, "P2", -10.0, "SL", TODAY, mode="PAPER")
+        seed_closed_trade(temp_db, "SH", -10.0, "SL", TODAY, mode="PAPER", source="dynamic_sr_instant_otm_shadow")
+        seed_closed_trade(temp_db, "L1", -10.0, "SL", TODAY, mode="LIVE")
+        assert database.get_todays_trade_count_for_mode("PAPER") == 2
+        assert database.get_todays_trade_count_for_mode("LIVE") == 1
+
+    def test_peak_pnl_for_mode(self, temp_db):  # noqa: F811
+        seed_closed_trade(temp_db, "P1", 1000.0, "TARGET", TODAY, mode="PAPER", exit_time=f"{TODAY} 10:30:00")
+        seed_closed_trade(temp_db, "P2", -600.0, "SL", TODAY, mode="PAPER", exit_time=f"{TODAY} 11:30:00")
+        seed_closed_trade(temp_db, "SH", 9000.0, "TARGET", TODAY, mode="PAPER", source="dynamic_sr_instant_otm_shadow",
+                          exit_time=f"{TODAY} 12:00:00")
+        assert database.get_todays_peak_pnl_for_mode("PAPER") == 1000.0  # शॅडोचे ₹9,000 नाहीत
+        assert database.get_todays_peak_pnl_for_mode("LIVE") == 0.0
+
+    def test_live_peak_unchanged(self, temp_db):  # noqa: F811
+        seed_closed_trade(temp_db, "L1", 700.0, "TARGET", TODAY, mode="LIVE", exit_time=f"{TODAY} 10:30:00")
+        seed_closed_trade(temp_db, "P1", 5000.0, "TARGET", TODAY, mode="PAPER", exit_time=f"{TODAY} 10:40:00")
+        assert database.get_todays_live_peak_pnl() == 700.0
+
+    def test_mcx_pnl_and_count_for_mode(self, temp_db):  # noqa: F811
+        seed_closed_trade(temp_db, "M1", -500.0, "SL", TODAY, mode="PAPER", source="mcx_futures", symbol="CRUDEOIL")
+        seed_closed_trade(temp_db, "M2", -300.0, "SL", TODAY, mode="LIVE", source="mcx_futures", symbol="CRUDEOIL")
+        _seed_open(temp_db, "MO", mode="PAPER", source="mcx_futures")
+        pnl, open_n = database.get_todays_mcx_pnl_and_count_for_mode("PAPER")
+        assert pnl == -500.0 and open_n == 1
+        assert database.get_todays_mcx_pnl_and_count_for_mode("LIVE") == (-300.0, 0)
+
+    def test_open_max_loss_total_is_mode_aware(self, temp_db):  # noqa: F811
+        _seed_open(temp_db, "PO", mode="PAPER")
+        _seed_open(temp_db, "LO", mode="LIVE")
+        _seed_open(temp_db, "SHO", mode="PAPER", source="dynamic_sr_instant_otm_shadow")
+        syms = ("NIFTY", "BANKNIFTY", "SENSEX")
+        # प्रत्येकी max_loss 500 * 1 * 75 = 37,500
+        assert database.get_open_live_max_loss_total(symbols=syms) == 37500.0  # LIVE (जुनं वर्तन)
+        assert database.get_open_live_max_loss_total(symbols=syms, mode="PAPER") == 37500.0  # शॅडो वगळून
+
+    # ---- global kill switch
+    def _ks(self, monkeypatch, **kw):
+        base = {"enabled": True, "max_daily_loss_pct": 1.5, "max_daily_profit_pct": 3.0, "max_trades_per_day": 3,
+                "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0,
+                "profit_lock_enabled": True, "profit_lock_pct": 50.0}
+        base.update(kw.pop("settings", {}))
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: base)
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: 1_000_000.0)
+        monkeypatch.setattr(trading_engine, "get_unverified_reconciled_trades_today_count", lambda: 0)
+        monkeypatch.setattr(trading_engine, "get_todays_live_total_pnl_and_count", lambda: (0.0, 0))
+        monkeypatch.setattr(trading_engine, "get_todays_live_peak_pnl", lambda: 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_peak_margin_used", lambda mode: 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_pnl_for_mode", lambda mode: kw.get("paper_pnl", 0.0) if mode == "PAPER" else 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_peak_pnl_for_mode", lambda mode, mcx_only=False: kw.get("paper_peak", 0.0))
+        monkeypatch.setattr(trading_engine, "get_todays_trade_count_for_mode", lambda mode: kw.get("paper_trades", 0))
+
+    def test_paper_profit_lock_trips(self, monkeypatch):
+        # PAPER चा peak ₹10,000 झाला होता, आता फक्त ₹3,000 -> 50% floor ₹5,000 खाली -> ट्रिप
+        self._ks(monkeypatch, paper_pnl=3000.0, paper_peak=10000.0)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False and "PROFIT_LOCK_PAPER" in reason
+
+    def test_paper_profit_lock_ok_when_above_floor(self, monkeypatch):
+        self._ks(monkeypatch, paper_pnl=6000.0, paper_peak=10000.0)
+        assert trading_engine.check_kill_switch() == (True, None)
+
+    def test_paper_profit_lock_off_when_disabled(self, monkeypatch):
+        self._ks(monkeypatch, paper_pnl=3000.0, paper_peak=10000.0, settings={"profit_lock_enabled": False})
+        assert trading_engine.check_kill_switch() == (True, None)
+
+    def test_paper_max_trades_trips(self, monkeypatch):
+        self._ks(monkeypatch, paper_trades=3)
+        ok, reason = trading_engine.check_kill_switch()
+        assert ok is False and "MAX_TRADES_PAPER" in reason
+
+    def test_paper_max_trades_not_counted_when_setting_off(self, monkeypatch):
+        self._ks(monkeypatch, paper_trades=50, settings={"count_paper_pnl": False})
+        assert trading_engine.check_kill_switch() == (True, None)
+
+    # ---- MCX kill switch
+    def _mcx(self, monkeypatch, live=(0.0, 0), paper=(0.0, 0), count_paper=True, lock=False, paper_peak=0.0):
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 2,
+            "profit_lock_enabled": lock, "profit_lock_pct": 50.0})
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: {"count_paper_pnl": count_paper})
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: 1_000_000.0)  # 1% = ₹10,000
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: live)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_pnl_and_count_for_mode", lambda mode: paper)
+        monkeypatch.setattr(trading_engine, "get_todays_peak_pnl_for_mode", lambda mode, mcx_only=False: paper_peak)
+
+    def test_mcx_paper_loss_trips(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-12000.0, 0))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "DAILY_LOSS" in reason and "PAPER" in reason
+
+    def test_mcx_paper_open_positions_trips(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(0.0, 2))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "MAX_OPEN_POSITIONS" in reason and "PAPER" in reason
+
+    def test_mcx_paper_ignored_when_setting_off(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-12000.0, 5), count_paper=False)
+        assert trading_engine.check_mcx_kill_switch() == (True, None)
+
+    def test_mcx_paper_profit_lock_trips(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(2000.0, 0), lock=True, paper_peak=10000.0)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "PROFIT_LOCK" in reason and "PAPER" in reason
+
+    def test_mcx_live_message_unchanged(self, monkeypatch):
+        self._mcx(monkeypatch, live=(-12000.0, 0))
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "MCX LIVE तोटा" in reason
+
+    # ---- portfolio cap
+    def test_portfolio_cap_uses_mode_specific_open_risk(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_portfolio_risk_cap_settings", lambda: {"enabled": True, "max_portfolio_risk_pct_index": 6.0})
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: 1_000_000.0)  # cap = ₹60,000
+        seen = {}
+
+        def _open(**kw):
+            seen.update(kw)
+            return 55000.0 if kw.get("mode") == "PAPER" else 0.0
+
+        monkeypatch.setattr(trading_engine, "get_open_live_max_loss_total", _open)
+        ok_paper, reason = trading_engine.check_portfolio_risk_cap("NIFTY", "dynamic_sr_instant", 10000, trading_mode="PAPER")
+        assert ok_paper is False and "PAPER positions" in reason and seen["mode"] == "PAPER"
+        ok_live, _ = trading_engine.check_portfolio_risk_cap("NIFTY", "dynamic_sr_instant", 10000)
+        assert ok_live is True  # LIVE exposure 0 (जुनं वर्तन: डीफॉल्ट mode LIVE)
+
+
+class TestPaperEntryIsActuallyBlocked:
+    """प्रत्यक्ष entry मार्ग (open_multi_leg_trade) — असली DB मधला PAPER तोटा/margin वापरून; नवीन PAPER trade अडतो आणि
+    कुठलीही order (PAPER सिम्युलेशनसुद्धा) पाठवली जात नाही."""
+
+    STRATEGY = {"strategy": "BULL_PUT_SPREAD", "net_credit": 30.0, "max_loss": 70.0, "max_profit": 30.0,
+                "short_leg": {"strike": 23900, "instrument_key": "PE1", "ltp": 120.0, "option_type": "PE", "expiry": "2026-10-06"},
+                "long_leg": {"strike": 23750, "instrument_key": "PE2", "ltp": 90.0, "option_type": "PE", "expiry": "2026-10-06"}}
+
+    def _env(self, monkeypatch, temp_db, **ks):  # noqa: F811
+        settings = {"enabled": True, "max_daily_loss_pct": 1.5, "max_daily_profit_pct": 3.0, "max_trades_per_day": 50,
+                    "count_paper_pnl": True, "capital_from_margin_used": True, "min_capital_floor": 0.0,
+                    "profit_lock_enabled": False, "profit_lock_pct": 50.0}
+        settings.update(ks)
+        # trading_engine स्वतःचा `DB_PATH` (config वरून) वापरतो — temp DB कडे वळवला नाही तर test खऱ्या DB मध्ये OPEN
+        # trade टाकून बाकी tests बिघडवतो (हेच आधी झालं होतं).
+        monkeypatch.setattr(trading_engine, "DB_PATH", temp_db)
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings", lambda: settings)
+        monkeypatch.setattr(cloud_db, "get_trading_pause_settings", lambda: {"paused": False})
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: 97400.0)
+        monkeypatch.setattr(trading_engine, "check_vix_spike_halt", lambda *a, **k: (True, None))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda *a, **k: (True, None))
+        monkeypatch.setattr(trading_engine, "_resolve_required_margin", lambda *a, **k: None)  # खरा Upstox कॉल नको
+        calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda *a, **k: calls.append(a) or (200, {"status": "success"}))
+        return calls
+
+    def test_paper_entry_blocked_when_paper_loss_exceeds_margin_based_limit(self, monkeypatch, temp_db):  # noqa: F811
+        calls = self._env(monkeypatch, temp_db)
+        # आजचे बंद PAPER trades: एकूण ₹-45,000; margin (entry_margin_required) ₹23,00,000 -> 1.5% = ₹34,500
+        for i in range(3):
+            seed_closed_trade(temp_db, f"P{i}", -15000.0, "SL", TODAY, mode="PAPER")
+        conn = sqlite3.connect(temp_db)
+        conn.execute("UPDATE live_trades SET entry_margin_required=2300000.0 WHERE trade_id='P0'")
+        conn.commit()
+        conn.close()
+        ok, resp = trading_engine.open_multi_leg_trade(
+            "tok", "NIFTY", dict(self.STRATEGY), 1, 75, 100.0, 80.0, "I", trading_mode="PAPER", source="dynamic_sr_instant")
+        assert ok is False
+        assert "KILL_SWITCH_DAILY_LOSS_PAPER" in resp["reason"]
+        assert calls == []  # कुठलीही order गेली नाही
+
+    def test_shadow_loss_alone_does_not_block_paper_entry(self, monkeypatch, temp_db):  # noqa: F811
+        calls = self._env(monkeypatch, temp_db)
+        for i in range(3):
+            seed_closed_trade(temp_db, f"S{i}", -50000.0, "SL", TODAY, mode="PAPER", source="dynamic_sr_instant_otm_shadow")
+        trading_engine.open_multi_leg_trade(
+            "tok", "NIFTY", dict(self.STRATEGY), 1, 75, 100.0, 80.0, "I", trading_mode="PAPER", source="dynamic_sr_instant")
+        assert len(calls) == 1  # शॅडो तोट्यामुळे Kill Switch लागला नाही -> PAPER order (सिम्युलेशन) गेली
+
+
+class TestMcxKillSwitchMarginBase:
+    """"Margin used is the capital" — MCX Kill Switch चा % सुद्धा MCX trades च्या वापरलेल्या margin वर (0 असेल तर Upstox)."""
+
+    def _mcx(self, monkeypatch, live=(0.0, 0), paper=(0.0, 0), margin=None, use_margin=True, upstox=97400.0):
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 5,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0})
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings",
+                            lambda: {"count_paper_pnl": True, "capital_from_margin_used": use_margin})
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: upstox)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: live)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_pnl_and_count_for_mode", lambda mode: paper)
+        monkeypatch.setattr(trading_engine, "get_todays_peak_pnl_for_mode", lambda mode, mcx_only=False: 0.0)
+        seen = []
+
+        def _margin(mode, source=None):
+            seen.append((mode, source))
+            return (margin or {}).get(mode, 0.0)
+
+        monkeypatch.setattr(trading_engine, "get_todays_peak_margin_used", _margin)
+        return seen
+
+    def test_margin_base_is_used_and_scoped_to_mcx(self, monkeypatch):
+        # PAPER MCX margin ₹50,00,000 -> 1% = ₹50,000; तोटा ₹30,000 -> OK (Upstox ₹97,400 वर ₹974 असता तर ट्रिप झालं असतं)
+        seen = self._mcx(monkeypatch, paper=(-30000.0, 0), margin={"PAPER": 5_000_000.0})
+        assert trading_engine.check_mcx_kill_switch() == (True, None)
+        assert ("PAPER", "mcx_futures") in seen
+
+    def test_loss_over_margin_limit_trips_and_names_the_base(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-60000.0, 0), margin={"PAPER": 5_000_000.0})
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "वापरलेला margin" in reason and "PAPER" in reason
+
+    def test_no_margin_falls_back_to_upstox_capital(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-2000.0, 0))  # 1% of 97,400 = ₹974
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "एकूण capital" in reason
+
+    def test_setting_off_uses_upstox_even_with_margin(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-30000.0, 0), margin={"PAPER": 5_000_000.0}, use_margin=False)
+        assert trading_engine.check_mcx_kill_switch()[0] is False
+
+    def test_live_capital_unknown_still_blocks(self, monkeypatch):
+        self._mcx(monkeypatch, upstox=None)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "MCX_KILL_SWITCH_CAPITAL_UNKNOWN" in reason
+
+    def test_paper_without_any_base_is_skipped_not_blocked(self, monkeypatch):
+        # LIVE कडे margin आहे, PAPER कडे margin नाही आणि Upstox अज्ञात -> PAPER वगळला, थांबवला नाही
+        self._mcx(monkeypatch, paper=(-500.0, 0), margin={"LIVE": 2_000_000.0}, upstox=None)
+        assert trading_engine.check_mcx_kill_switch() == (True, None)

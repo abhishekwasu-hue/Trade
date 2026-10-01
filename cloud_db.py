@@ -334,6 +334,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 0.010% (≈2.4 पॉइंट्स, NIFTY साठी) होता, आता 0.10% (≈24 पॉइंट्स) — जास्त निर्णायक/खात्रीशीर
         # breakout साठी.
         "breakout_close_buffer_pct": 0.10,
+        # 🎓 "22538 support Breakout trade ka execute jhala nahi" -> "Breakout ची दिशा 5M close च्या बाजूवरून ठरवा" —
+        # डीफॉल्ट बंद (नवीन entry-trigger). चालू केल्यास: शेवटचा 5M close level पासून buffer% पलीकडे असेल आणि मागच्या
+        # `breakout_cross_lookback_candles` candles मध्ये किंमत level च्या दुसऱ्या बाजूला होती => तिकडची दिशा (level ची
+        # १-मिनिट भूमिका बदलली असली तरी). बंद = जुनं भूमिका-आधारित वर्तन.
+        "breakout_direction_from_close": False,
+        "breakout_cross_lookback_candles": 3,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
         # condition ठेवता yeil") — ऐच्छिक (डीफॉल्ट बंद) Volume Confirmation — breakout-candle चा
         # volume त्याआधीच्या breakout_volume_lookback_candles candles च्या सरासरीपेक्षा किमान

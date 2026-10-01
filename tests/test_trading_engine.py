@@ -2136,7 +2136,7 @@ class TestOpenMultiLegTradePortfolioRiskCap:
 
     def test_live_blocked_by_portfolio_risk_cap_skips_order(self, temp_db, monkeypatch):
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
-        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml, **kw: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
         execute_calls = []
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
 
@@ -2154,7 +2154,7 @@ class TestOpenMultiLegTradePortfolioRiskCap:
         aahe tech gate Paper trade sathi suddha applicable kra") — established पॅटर्नप्रमाणेच, हाही
         नवीन गेट PAPER trades ला लागू."""
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
-        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml, **kw: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
         execute_calls = []
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
 
@@ -2170,7 +2170,7 @@ class TestOpenMultiLegTradePortfolioRiskCap:
     def test_mcx_source_blocked_by_portfolio_risk_cap(self, temp_db, monkeypatch):
         monkeypatch.setattr(trading_engine, "check_kill_switch", lambda: (True, None))
         monkeypatch.setattr(trading_engine, "check_mcx_kill_switch", lambda: (True, None))
-        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
+        monkeypatch.setattr(trading_engine, "check_portfolio_risk_cap", lambda symbol, source, ml, **kw: (False, "PORTFOLIO_RISK_CAP_EXCEEDED — test"))
         execute_calls = []
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: execute_calls.append(1) or (200, {"status": "success"}))
 

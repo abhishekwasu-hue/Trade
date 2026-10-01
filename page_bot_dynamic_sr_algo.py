@@ -137,7 +137,11 @@ def _render_kill_switch_panel():
                 )
             else:
                 st.caption(f"**{mode_label}** — आजचा P&L ₹{mode_pnl:,.0f} | आधार (margin/capital) अजून उपलब्ध नाही")
-        st.caption(f"LIVE ट्रेड्स आज: {total_trades}/{ks_settings['max_trades_per_day']}")
+        paper_trades_today = database.get_todays_trade_count_for_mode("PAPER")
+        st.caption(
+            f"ट्रेड्स आज (कमाल {ks_settings['max_trades_per_day']}, LIVE आणि PAPER स्वतंत्र): "
+            f"LIVE {total_trades} | PAPER {paper_trades_today}"
+        )
 
         ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
         c1, c2, c3 = st.columns(3)
@@ -178,7 +182,8 @@ def _render_kill_switch_panel():
             "📐 **भांडवल आणि PAPER** — % कशावर मोजायचे आणि PAPER तोटा मोजायचा का, ते इथे ठरवा."
         )
         ks_count_paper = st.checkbox(
-            "PAPER trades चा P&L सुद्धा मोजा (Shadow trades वगळून)", value=ks_settings["count_paper_pnl"],
+            "PAPER ला सुद्धा सर्व मर्यादा लागू करा — तोटा, नफा-लक्ष्य, Profit-Lock, कमाल ट्रेड्स, MCX Kill Switch (Shadow trades वगळून)",
+            value=ks_settings["count_paper_pnl"],
             key="bdsr_ks_count_paper_pnl",
         )
         ks_capital_from_margin = st.checkbox(
@@ -706,6 +711,23 @@ def render():
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume
                 # ashi condition ठेवता yeil") — ऐच्छिक, डीफॉल्ट बंद — कमी-volume (संभाव्य fake/
                 # whipsaw) breakouts गाळण्यासाठी.
+                breakout_direction_from_close = st.checkbox(
+                    "Breakout ची दिशा 5M close च्या बाजूवरून ठरवा (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_direction_from_close", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_direction_from_close"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "बंद असताना: breakout ची दिशा level च्या भूमिकेवरून (Support तुटला => Bearish, Resistance तुटला => Bullish) "
+                    "ठरते, आणि वेगवान घसरणीत ही भूमिका (±0.10% hysteresis मुळे) breakout confirm व्हायच्या आधीच उलटते — "
+                    "म्हणून खरा breakdown हुकतो. चालू असताना: शेवटचा 5M close level पासून वरचा buffer% पलीकडे असेल आणि "
+                    "मागच्या N candles मध्ये किंमत level च्या दुसऱ्या बाजूला होती, तर त्याच बाजूची दिशा घेतली जाते."
+                )
+                breakout_cross_lookback_candles = _number_input(
+                    "मागचे किती 5M candles तपासायचे (किंमत दुसऱ्या बाजूला होती का)", settings, "breakout_cross_lookback_candles",
+                    strategy_key, symbol, min_value=1, max_value=12, step=1,
+                    disabled=not (entry_breakout_gate_enabled and breakout_direction_from_close),
+                )
                 breakout_volume_confirm_enabled = st.checkbox(
                     "Volume Confirmation सक्रिय (डीफॉल्ट बंद)",
                     value=bool(settings.get("breakout_volume_confirm_enabled", False)),
@@ -1151,6 +1173,8 @@ def render():
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
+            new_settings["breakout_direction_from_close"] = bool(breakout_direction_from_close)
+            new_settings["breakout_cross_lookback_candles"] = int(breakout_cross_lookback_candles)
             new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)
             new_settings["breakout_volume_lookback_candles"] = int(breakout_volume_lookback_candles)
             new_settings["breakout_volume_multiplier"] = float(breakout_volume_multiplier)

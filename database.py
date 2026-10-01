@@ -456,7 +456,7 @@ def get_todays_pnl_for_mode(mode):
     return float(pnl or 0.0)
 
 
-def get_todays_peak_margin_used(mode):
+def get_todays_peak_margin_used(mode, source=None):
     """🎓 "Trade साठी वापरलेला margin" हाच Kill Switch चा % चा आधार (वापरकर्त्याचा निर्णय) — आजच्या (दिलेल्या
     mode च्या, shadow वगळून) trades चा सर्वोच्च एकाच वेळी वापरलेला margin. Performance च्या ROI भाजकाचीच
     व्याख्या (`_margin_used_details`, sweep-line) — फरक एवढाच की इथे अजून उघडे (OPEN) trades सुद्धा मोजले जातात
@@ -464,17 +464,65 @@ def get_todays_peak_margin_used(mode):
     trades. काहीच नसेल तर 0.0."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(
+    query = (
         "SELECT max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
         f"WHERE COALESCE(mode,'LIVE')=? AND {_shadow_exclusion_clause()} "
-        "AND (status='OPEN' OR trade_date=? OR substr(exit_time,1,10)=?)",
-        conn, params=(mode, today_str, today_str),
+        "AND (status='OPEN' OR trade_date=? OR substr(exit_time,1,10)=?)"
     )
+    params = [mode, today_str, today_str]
+    if source:  # उदा. 'mcx_futures' — MCX Kill Switch साठी फक्त MCX trades चा margin
+        query += " AND source=?"
+        params.append(source)
+    df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     if df.empty:
         return 0.0
     df["exit_time"] = df["exit_time"].fillna("2999-01-01 00:00:00")
     return float(_margin_used_details(df)["margin_used"] or 0.0)
+
+
+def get_todays_peak_pnl_for_mode(mode, mcx_only=False):
+    """🎓 "Kill switch paper trade la pn asawe" — Profit-Lock साठी, दिलेल्या mode (PAPER, shadow वगळून) चा आजचा
+    running peak cumulative P&L. mcx_only=True तर फक्त source='mcx_futures'. LIVE साठी जुनी
+    get_todays_live_peak_pnl()/get_todays_mcx_live_peak_pnl() आहेतच."""
+    return _todays_live_running_peak_pnl(" AND source='mcx_futures'" if mcx_only else "", (), mode=mode)
+
+
+def get_todays_trade_count_for_mode(mode):
+    """दिलेल्या mode चे आज entry झालेले (trade_date) trades, shadow वगळून — 'कमाल दैनिक ट्रेड्स' मर्यादेसाठी
+    (LIVE साठी जुनं get_todays_live_total_pnl_and_count() चं दुसरं मूल्य)."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT COUNT(*) FROM live_trades WHERE trade_date=? AND COALESCE(mode,'LIVE')=? AND {_shadow_exclusion_clause()}",
+        (today_str, mode),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return int(count or 0)
+
+
+def get_todays_mcx_pnl_and_count_for_mode(mode):
+    """get_todays_mcx_live_pnl_and_count() चीच mode-aware आवृत्ती (PAPER साठी) — आजचा MCX realized P&L आणि सध्या
+    उघड्या positions ची संख्या, शॅडो वगळून."""
+    today_str = get_ist_today().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(SUM(realized_pnl),0) FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')=? "
+        f"AND source='mcx_futures' AND {_shadow_exclusion_clause()} AND substr(exit_time,1,10)=?",
+        (mode, today_str),
+    )
+    total_pnl = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM live_trades WHERE status='OPEN' AND COALESCE(mode,'LIVE')=? AND source='mcx_futures' "
+        f"AND {_shadow_exclusion_clause()}",
+        (mode,),
+    )
+    open_positions = cur.fetchone()[0]
+    conn.close()
+    return float(total_pnl or 0.0), int(open_positions or 0)
 
 
 def get_todays_mcx_live_pnl_and_count():
@@ -499,7 +547,7 @@ def get_todays_mcx_live_pnl_and_count():
     return total_pnl, open_positions
 
 
-def get_open_live_max_loss_total(symbols=None, source=None):
+def get_open_live_max_loss_total(symbols=None, source=None, mode="LIVE"):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — सध्या उघड्या
     असलेल्या **LIVE** positions चा एकत्रित max-loss (₹, max_loss*lots*lot_size ची बेरीज) — एकतर
     दिलेल्या symbols च्या bucket साठी (उदा. NIFTY+BANKNIFTY+SENSEX) किंवा दिलेल्या source साठी
@@ -513,8 +561,12 @@ def get_open_live_max_loss_total(symbols=None, source=None):
         return 0.0
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    where_clauses = ["status='OPEN'", "COALESCE(mode,'LIVE')='LIVE'"]
-    params = []
+    # 🎓 "Kill switch paper trade la pn asawe" — mode (डीफॉल्ट "LIVE" = जुनं वर्तन) दिला तर तोच mode; PAPER साठी
+    # Shadow trades वगळून (ते निरीक्षणाचे आहेत, खरी exposure नाही).
+    where_clauses = ["status='OPEN'", "COALESCE(mode,'LIVE')=?"]
+    params = [mode]
+    if mode != "LIVE":
+        where_clauses.append(_shadow_exclusion_clause())
     if symbols:
         placeholders = ",".join("?" * len(symbols))
         where_clauses.append(f"symbol IN ({placeholders})")
@@ -532,7 +584,7 @@ def get_open_live_max_loss_total(symbols=None, source=None):
     return float(total or 0.0)
 
 
-def _todays_live_running_peak_pnl(extra_where="", extra_params=()):
+def _todays_live_running_peak_pnl(extra_where="", extra_params=(), mode="LIVE"):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock Kill Switch — "1 trade profit मध्ये
     exit जाला, दुसरा उघडा असेल, तर काही नफा नेहमी लॉक व्हावा, जेणेकरून नफ्यातून तोटा होणार नाही") —
     आजच्या सर्व LIVE trades चा exit_time नुसार क्रमवार cumulative P&L काढून, त्यातली सर्वोच्च
@@ -543,10 +595,13 @@ def _todays_live_running_peak_pnl(extra_where="", extra_params=()):
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    # 🎓 "Kill switch paper trade la pn asawe" — mode दिलेला असेल (PAPER) तर तोच mode, आणि PAPER साठी Shadow
+    # (निव्वळ निरीक्षणाचे trades) वगळून. डीफॉल्ट "LIVE" = जुनं वर्तन अबाधित.
+    shadow_clause = f" AND {_shadow_exclusion_clause()}" if mode != "LIVE" else ""
     cur.execute(
-        "SELECT realized_pnl FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')='LIVE' "
-        f"AND substr(exit_time,1,10)=?{extra_where} ORDER BY exit_time",
-        (today_str,) + tuple(extra_params),
+        "SELECT realized_pnl FROM live_trades WHERE status='CLOSED' AND COALESCE(mode,'LIVE')=? "
+        f"AND substr(exit_time,1,10)=?{extra_where}{shadow_clause} ORDER BY exit_time",
+        (mode, today_str) + tuple(extra_params),
     )
     rows = cur.fetchall()
     conn.close()

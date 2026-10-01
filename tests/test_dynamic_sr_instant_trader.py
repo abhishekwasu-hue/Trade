@@ -2842,6 +2842,95 @@ class TestBreakoutEntryCatchup:
             assert all(c.kwargs.get("interval", "1minute") != "5minute" for c in mock_fetch.call_args_list)
 
 
+class TestDetermineBreakoutDirectionFromClose:
+    LEVEL = 23900.0  # 0.010% buffer = 2.39 pts
+
+    def _c(self, closes):
+        return [{"close": c} for c in closes]
+
+    def test_support_broken_downwards_is_bearish(self):
+        # मागे level च्या वर (23915) होतो, आता 23868 -> BEARISH
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, self._c([23930, 23915, 23890, 23868]), 0.010, 3) == "BEARISH"
+
+    def test_resistance_broken_upwards_is_bullish(self):
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, self._c([23870, 23885, 23895, 23935]), 0.010, 3) == "BULLISH"
+
+    def test_no_cross_when_previous_closes_all_on_same_side(self):
+        # आधीपासूनच खाली होता, आता पुन्हा खाली -> ओलांडलेलं नाही (साधं reversal/retest)
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, self._c([23850, 23860, 23870, 23868]), 0.010, 3) is None
+
+    def test_lookback_excludes_older_candles(self):
+        # 23930 (वर) फक्त lookback=2 च्या बाहेर -> None; lookback=3 मध्ये आलं तर BEARISH
+        closes = self._c([23930, 23880, 23870, 23868])
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, closes, 0.010, 2) is None
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, closes, 0.010, 3) == "BEARISH"
+
+    def test_last_close_within_buffer_is_none(self):
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, self._c([23930, 23915, 23901, 23899]), 0.010, 3) is None
+
+    def test_too_few_candles(self):
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, [], 0.010, 3) is None
+        assert dsr.determine_breakout_direction_from_close(self.LEVEL, self._c([23868]), 0.010, 3) is None
+
+
+class TestBreakdownMissedBecauseOfRoleFlip:
+    """🎓 "22538 support Breakout trade ka execute jhala nahi" (01-Oct, 12:11-12:15) — किंमत support (वरून) खाली गेल्यावर
+    १-मिनिट hysteresis ने level ची भूमिका RESISTANCE झाली, म्हणून breakout ची दिशा BULLISH शोधली गेली आणि खरा breakdown
+    हुकला (SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET). LEVEL=23900 (support), 1-मिनिट close 23868 (< 23876.1 = hysteresis
+    खालची मर्यादा) => भूमिका RESISTANCE/BEARISH; 5M: मागचे candles 23915/23905 वर, शेवटचा 23868."""
+
+    LEVEL = 23900.0
+    NOW = datetime.datetime(2026, 9, 11, 10, 0, 0)
+    PRIOR_5M = [23930.0, 23915.0, 23905.0, 23890.0]
+
+    def _one_min(self):
+        rows = [
+            {"open": 23880, "high": 23885, "low": 23868, "close": 23872},
+            {"open": 23872, "high": 23878, "low": 23865, "close": 23868},
+        ]
+        return _candles_with_rsi(rows, declining=True, today_ist=self.NOW)
+
+    def _run(self, from_close, prior_5m=None, final_close=23868.0):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_breakout_gate_enabled=True, breakout_close_buffer_pct=0.010,
+                        breakout_direction_from_close=from_close, naked_enabled=False)
+
+        def _fetch(token, symbol, current_spot=0, interval="1minute", lookback_days=1):
+            if interval == "5minute":
+                return _breakout_5m_candles(prior_5m or self.PRIOR_5M, final_close, today_ist=self.NOW)
+            return self._one_min()
+
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.NOW), \
+             patch.object(dsr, "fetch_candles", side_effect=_fetch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23868.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "TB1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+        level_entries = [c.args[0] for c in mock_log.call_args_list if c.args[0]["level_price"] == self.LEVEL]
+        return mock_trade, mock_select, level_entries
+
+    def test_default_off_reproduces_the_missed_breakdown(self):
+        mock_trade, _, entries = self._run(from_close=False)
+        assert not mock_trade.called
+        assert any(e["trade_status"] == "SKIPPED_BREAKOUT_CATCHUP_CONDITIONS_NOT_MET" for e in entries)
+
+    def test_enabled_takes_the_bearish_breakdown_trade(self):
+        mock_trade, mock_select, entries = self._run(from_close=True)
+        assert mock_trade.called
+        assert mock_select.call_args.args[1] == "BEARISH"
+        assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
+
+    def test_enabled_but_price_was_already_below_does_not_trigger(self):
+        # मागचे सर्व close आधीच level च्या खाली -> ओलांडलेलं नाही -> जुनं वर्तन (breakout नाही)
+        mock_trade, _, entries = self._run(from_close=True, prior_5m=[23860.0, 23870.0, 23880.0, 23890.0])
+        assert not mock_trade.called
+
+
 class TestGetBreakoutVolumeRatio:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा — check_breakout_volume_confirmation() मधलाच ratio, फक्त
     bool ऐवजी नेमकं संख्यात्मक मूल्य (Signal Log मध्ये दाखवण्यासाठी)."""

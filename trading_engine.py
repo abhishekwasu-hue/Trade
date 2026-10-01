@@ -10,7 +10,8 @@ import cloud_db
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
     log_orders_batch, get_todays_live_total_pnl_and_count, get_open_trades_by_other_sources,
-    get_todays_pnl_for_mode, get_todays_peak_margin_used,
+    get_todays_pnl_for_mode, get_todays_peak_margin_used, get_todays_peak_pnl_for_mode,
+    get_todays_trade_count_for_mode, get_todays_mcx_pnl_and_count_for_mode,
     get_unverified_reconciled_trades_today_count, get_todays_mcx_live_pnl_and_count,
     get_todays_live_peak_pnl, get_todays_mcx_live_peak_pnl, get_open_live_max_loss_total,
 )
@@ -356,8 +357,8 @@ def check_kill_switch():
     # लॉक होतो. आधीच उघडे trades यामुळे कधीच बंद केले जात नाहीत (established pattern, वरच्या
     # सर्व kill switches प्रमाणेच) — फक्त नवीन LIVE entries थांबतात.
     profit_lock_enabled = settings.get("profit_lock_enabled", False)
+    profit_lock_pct = settings.get("profit_lock_pct", 50.0)
     if profit_lock_enabled:
-        profit_lock_pct = settings.get("profit_lock_pct", 50.0)
         peak_pnl_today = get_todays_live_peak_pnl()
         if peak_pnl_today > 0:
             locked_floor = peak_pnl_today * profit_lock_pct / 100
@@ -368,6 +369,23 @@ def check_kill_switch():
                     f"एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला, नफ्यातून तोटा होऊ नये म्हणून नवीन "
                     f"trades (LIVE + PAPER) थांबवले (आधीच उघडे trades मात्र त्यांच्याच SL/Target नुसार चालू राहतील)"
                 )
+    if count_paper:
+        # 🎓 "Kill switch paper trade la pn asawe" — Profit-Lock आणि कमाल-दैनिक-ट्रेड्स मर्यादा सुद्धा PAPER ला (स्वतंत्रपणे,
+        # shadow वगळून) — आधी हे दोन्ही फक्त LIVE ला मोजायचे.
+        if profit_lock_enabled:
+            paper_peak = get_todays_peak_pnl_for_mode("PAPER")
+            if paper_peak > 0:
+                paper_floor = paper_peak * profit_lock_pct / 100
+                paper_now = get_todays_pnl_for_mode("PAPER")
+                if paper_now < paper_floor:
+                    return False, (
+                        f"KILL_SWITCH_PROFIT_LOCK_PAPER — आजचा सर्वोच्च PAPER नफा ₹{paper_peak:,.0f} होता, त्यातला "
+                        f"{profit_lock_pct:.0f}% (₹{paper_floor:,.0f}) कायमचा लॉक केलेला — सद्य PAPER नफा ₹{paper_now:,.0f} "
+                        f"त्याखाली घसरला — नवीन trades (LIVE + PAPER) थांबवले"
+                    )
+        paper_trades = get_todays_trade_count_for_mode("PAPER")
+        if paper_trades >= max_trades_per_day:
+            return False, f"KILL_SWITCH_MAX_TRADES_PAPER — आजचे एकूण PAPER ट्रेड्स {paper_trades} (मर्यादा {max_trades_per_day})"
     if total_trades >= max_trades_per_day:
         return False, f"KILL_SWITCH_MAX_TRADES — आजचे एकूण LIVE ट्रेड्स {total_trades} (मर्यादा {max_trades_per_day})"
     return True, None
@@ -389,49 +407,78 @@ def check_mcx_kill_switch():
     if not settings.get("enabled", True):
         return True, None
 
-    total_pnl, open_positions = get_todays_mcx_live_pnl_and_count()
+    # 🎓 "Kill switch paper trade la pn asawe" — MCX Kill Switch सुद्धा LIVE आणि PAPER (shadow वगळून) साठी स्वतंत्रपणे:
+    # (mode, P&L, उघड्या positions, peak-P&L देणारं function). PAPER मोजणी count_paper_pnl (ग्लोबल Kill Switch
+    # सेटिंग) बंद केल्यास वगळली जाते.
+    mode_inputs = [("LIVE", *get_todays_mcx_live_pnl_and_count(), get_todays_mcx_live_peak_pnl)]
+    global_ks_settings = cloud_db.get_kill_switch_settings()
+    if global_ks_settings.get("count_paper_pnl", True):
+        mode_inputs.append(("PAPER", *get_todays_mcx_pnl_and_count_for_mode("PAPER"),
+                            lambda: get_todays_peak_pnl_for_mode("PAPER", mcx_only=True)))
 
     max_open_positions = settings.get("max_open_positions", 2)
-    if open_positions >= max_open_positions:
-        return False, (
-            f"MCX_KILL_SWITCH_MAX_OPEN_POSITIONS — सध्या {open_positions} MCX LIVE positions आधीच "
-            f"उघडी आहेत (मर्यादा {max_open_positions}, सर्व 5 commodities मिळून)"
-        )
+    for mode_label, total_pnl, open_positions, _peak_fn in mode_inputs:
+        if open_positions >= max_open_positions:
+            return False, (
+                f"MCX_KILL_SWITCH_MAX_OPEN_POSITIONS — सध्या {open_positions} MCX {mode_label} positions आधीच "
+                f"उघडी आहेत (मर्यादा {max_open_positions}, सर्व 5 commodities मिळून)"
+            )
 
-    upstox_token = cloud_db.get_effective_upstox_token(None)
-    total_capital = get_total_capital(upstox_token) if upstox_token else None
-    if not total_capital or total_capital <= 0:
-        return False, (
-            "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
-            "(LIVE + PAPER) थांबवले."
-        )
+    # 🎓 "Margin used is the capital" (वापरकर्त्याचा निर्णय) — ग्लोबल Kill Switch प्रमाणेच MCX साठी सुद्धा % चा आधार = त्या
+    # mode चा आजचा सर्वोच्च एकाच वेळी वापरलेला MCX margin; तो 0 असेल (आज अजून MCX trade नाही) तर Upstox भांडवल.
+    # (ग्लोबलचा 'किमान भांडवल' मजला MCX ला लावला जात नाही — तो index options साठीचा रुपयातला आकडा आहे.)
+    mcx_use_margin = global_ks_settings.get("capital_from_margin_used", True)
+    upstox_capital_cache = []
+
+    def _upstox_capital():
+        if not upstox_capital_cache:
+            token = cloud_db.get_effective_upstox_token(None)
+            upstox_capital_cache.append(get_total_capital(token) if token else None)
+        return upstox_capital_cache[0]
+
+    def _mcx_base(mode):
+        if mcx_use_margin:
+            margin_base = get_todays_peak_margin_used(mode, source="mcx_futures")
+            if margin_base > 0:
+                return margin_base, "वापरलेला margin"
+        return _upstox_capital(), "एकूण capital"
+
     max_daily_loss_pct = settings.get("max_daily_loss_pct", 1.0)
-    max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
-    if total_pnl <= -max_daily_loss_amount:
-        return False, (
-            f"MCX_KILL_SWITCH_DAILY_LOSS — आजचा एकूण MCX LIVE तोटा ₹{-total_pnl:,.0f} (मर्यादा "
-            f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital "
-            f"₹{total_capital:,.0f})"
-        )
-    # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock — बघा check_kill_switch() मधली टिप्पणी) —
-    # ग्लोबल Kill Switch सारखीच, पण फक्त MCX (source='mcx_futures') पुरतं मर्यादित.
     profit_lock_enabled = settings.get("profit_lock_enabled", False)
-    if profit_lock_enabled:
-        profit_lock_pct = settings.get("profit_lock_pct", 50.0)
-        peak_pnl_today = get_todays_mcx_live_peak_pnl()
-        if peak_pnl_today > 0:
-            locked_floor = peak_pnl_today * profit_lock_pct / 100
-            if total_pnl < locked_floor:
+    profit_lock_pct = settings.get("profit_lock_pct", 50.0)
+    for mode_label, total_pnl, _open_positions, peak_fn in mode_inputs:
+        base_capital, base_label = _mcx_base(mode_label)
+        if not base_capital or base_capital <= 0:
+            if mode_label == "LIVE":
                 return False, (
-                    f"MCX_KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च MCX LIVE नफा ₹{peak_pnl_today:,.0f} "
-                    f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
-                    f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX trades (LIVE + PAPER) थांबवले"
+                    "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
+                    "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
+                    "(LIVE + PAPER) थांबवले."
                 )
+            continue  # PAPER: आधार नाही -> त्या mode ची तपासणी वगळली (PAPER साठी 'अज्ञात' म्हणून थांबवत नाही)
+        max_daily_loss_amount = base_capital * max_daily_loss_pct / 100
+        if total_pnl <= -max_daily_loss_amount:
+            return False, (
+                f"MCX_KILL_SWITCH_DAILY_LOSS — आजचा एकूण MCX {mode_label} तोटा ₹{-total_pnl:,.0f} (मर्यादा "
+                f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, {base_label} "
+                f"₹{base_capital:,.0f})"
+            )
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock — बघा check_kill_switch() मधली टिप्पणी) —
+        # ग्लोबल Kill Switch सारखीच, पण फक्त MCX (source='mcx_futures') पुरतं मर्यादित.
+        if profit_lock_enabled:
+            peak_pnl_today = peak_fn()
+            if peak_pnl_today > 0:
+                locked_floor = peak_pnl_today * profit_lock_pct / 100
+                if total_pnl < locked_floor:
+                    return False, (
+                        f"MCX_KILL_SWITCH_PROFIT_LOCK — आजचा सर्वोच्च MCX {mode_label} नफा ₹{peak_pnl_today:,.0f} "
+                        f"होता, त्यातला {profit_lock_pct:.0f}% (₹{locked_floor:,.0f}) कायमचा लॉक केलेला — "
+                        f"सद्य एकूण नफा ₹{total_pnl:,.0f} त्याखाली घसरला — नवीन MCX trades (LIVE + PAPER) थांबवले"
+                    )
     return True, None
 
 
-def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs):
+def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs, trading_mode="LIVE"):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Portfolio-wide Open-Risk Cap) — वरच्या दोन्ही Kill
     Switches ("आजचा *realized* P&L किती") पेक्षा पूर्णपणे वेगळा गेट — सध्या उघड्या असलेल्या सर्व LIVE
     positions चा एकत्रित max-loss (worst-case, अजून प्रत्यक्ष तोटा न झालेला, फक्त संभाव्य) + ही नवीन
@@ -452,11 +499,11 @@ def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs):
     if symbol in VIX_SPIKE_HALT_SYMBOLS:
         bucket_label = "Index-Options (NIFTY+BANKNIFTY+SENSEX एकत्र)"
         cap_pct = settings.get("max_portfolio_risk_pct_index", 6.0)
-        existing_max_loss = get_open_live_max_loss_total(symbols=VIX_SPIKE_HALT_SYMBOLS)
+        existing_max_loss = get_open_live_max_loss_total(symbols=VIX_SPIKE_HALT_SYMBOLS, mode=trading_mode)
     elif source == "mcx_futures":
         bucket_label = "MCX (सर्व commodities एकत्र)"
         cap_pct = settings.get("max_portfolio_risk_pct_mcx", 6.0)
-        existing_max_loss = get_open_live_max_loss_total(source="mcx_futures")
+        existing_max_loss = get_open_live_max_loss_total(source="mcx_futures", mode=trading_mode)
     else:
         return True, None
 
@@ -473,7 +520,7 @@ def check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs):
     projected_total = existing_max_loss + (new_trade_max_loss_abs or 0)
     if projected_total > cap_amount:
         return False, (
-            f"PORTFOLIO_RISK_CAP_EXCEEDED — {bucket_label} bucket मध्ये सध्या उघड्या LIVE positions चा "
+            f"PORTFOLIO_RISK_CAP_EXCEEDED — {bucket_label} bucket मध्ये सध्या उघड्या {trading_mode} positions चा "
             f"एकत्रित max-loss ₹{existing_max_loss:,.0f} + ही नवीन trade (₹{new_trade_max_loss_abs:,.0f}) "
             f"= ₹{projected_total:,.0f}, जे मर्यादेपेक्षा ({cap_pct:.1f}% म्हणजे ₹{cap_amount:,.0f}, एकूण "
             f"capital ₹{total_capital:,.0f}) जास्त आहे"
@@ -908,7 +955,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # chain-snapshot अंदाज आहे — पण order उघडण्याआधीच्याच गेटसाठी हाच पुरेसा (नंतरचा थोडासा फरक
     # या ढोबळ portfolio-cap साठी अर्थपूर्ण नाही).
     new_trade_max_loss_abs = abs(strategy_result.get("max_loss") or 0) * lots * lot_size
-    risk_cap_ok, risk_cap_reason = check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs)
+    risk_cap_ok, risk_cap_reason = check_portfolio_risk_cap(symbol, source, new_trade_max_loss_abs, trading_mode=trading_mode)
     if not risk_cap_ok:
         if trading_mode == "LIVE":
             _alert_kill_switch_blocked(symbol, source, risk_cap_reason)
