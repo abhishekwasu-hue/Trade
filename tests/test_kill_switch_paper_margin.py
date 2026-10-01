@@ -359,3 +359,58 @@ class TestPaperEntryIsActuallyBlocked:
         trading_engine.open_multi_leg_trade(
             "tok", "NIFTY", dict(self.STRATEGY), 1, 75, 100.0, 80.0, "I", trading_mode="PAPER", source="dynamic_sr_instant")
         assert len(calls) == 1  # शॅडो तोट्यामुळे Kill Switch लागला नाही -> PAPER order (सिम्युलेशन) गेली
+
+
+class TestMcxKillSwitchMarginBase:
+    """"Margin used is the capital" — MCX Kill Switch चा % सुद्धा MCX trades च्या वापरलेल्या margin वर (0 असेल तर Upstox)."""
+
+    def _mcx(self, monkeypatch, live=(0.0, 0), paper=(0.0, 0), margin=None, use_margin=True, upstox=97400.0):
+        monkeypatch.setattr(cloud_db, "get_mcx_kill_switch_settings", lambda: {
+            "enabled": True, "max_daily_loss_pct": 1.0, "max_open_positions": 5,
+            "profit_lock_enabled": False, "profit_lock_pct": 50.0})
+        monkeypatch.setattr(cloud_db, "get_kill_switch_settings",
+                            lambda: {"count_paper_pnl": True, "capital_from_margin_used": use_margin})
+        monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *a, **k: "tok")
+        monkeypatch.setattr(trading_engine, "get_total_capital", lambda t: upstox)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_pnl_and_count", lambda: live)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_live_peak_pnl", lambda: 0.0)
+        monkeypatch.setattr(trading_engine, "get_todays_mcx_pnl_and_count_for_mode", lambda mode: paper)
+        monkeypatch.setattr(trading_engine, "get_todays_peak_pnl_for_mode", lambda mode, mcx_only=False: 0.0)
+        seen = []
+
+        def _margin(mode, source=None):
+            seen.append((mode, source))
+            return (margin or {}).get(mode, 0.0)
+
+        monkeypatch.setattr(trading_engine, "get_todays_peak_margin_used", _margin)
+        return seen
+
+    def test_margin_base_is_used_and_scoped_to_mcx(self, monkeypatch):
+        # PAPER MCX margin ₹50,00,000 -> 1% = ₹50,000; तोटा ₹30,000 -> OK (Upstox ₹97,400 वर ₹974 असता तर ट्रिप झालं असतं)
+        seen = self._mcx(monkeypatch, paper=(-30000.0, 0), margin={"PAPER": 5_000_000.0})
+        assert trading_engine.check_mcx_kill_switch() == (True, None)
+        assert ("PAPER", "mcx_futures") in seen
+
+    def test_loss_over_margin_limit_trips_and_names_the_base(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-60000.0, 0), margin={"PAPER": 5_000_000.0})
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "वापरलेला margin" in reason and "PAPER" in reason
+
+    def test_no_margin_falls_back_to_upstox_capital(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-2000.0, 0))  # 1% of 97,400 = ₹974
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "एकूण capital" in reason
+
+    def test_setting_off_uses_upstox_even_with_margin(self, monkeypatch):
+        self._mcx(monkeypatch, paper=(-30000.0, 0), margin={"PAPER": 5_000_000.0}, use_margin=False)
+        assert trading_engine.check_mcx_kill_switch()[0] is False
+
+    def test_live_capital_unknown_still_blocks(self, monkeypatch):
+        self._mcx(monkeypatch, upstox=None)
+        ok, reason = trading_engine.check_mcx_kill_switch()
+        assert ok is False and "MCX_KILL_SWITCH_CAPITAL_UNKNOWN" in reason
+
+    def test_paper_without_any_base_is_skipped_not_blocked(self, monkeypatch):
+        # LIVE कडे margin आहे, PAPER कडे margin नाही आणि Upstox अज्ञात -> PAPER वगळला, थांबवला नाही
+        self._mcx(monkeypatch, paper=(-500.0, 0), margin={"LIVE": 2_000_000.0}, upstox=None)
+        assert trading_engine.check_mcx_kill_switch() == (True, None)

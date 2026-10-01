@@ -456,7 +456,7 @@ def get_todays_pnl_for_mode(mode):
     return float(pnl or 0.0)
 
 
-def get_todays_peak_margin_used(mode):
+def get_todays_peak_margin_used(mode, source=None):
     """🎓 "Trade साठी वापरलेला margin" हाच Kill Switch चा % चा आधार (वापरकर्त्याचा निर्णय) — आजच्या (दिलेल्या
     mode च्या, shadow वगळून) trades चा सर्वोच्च एकाच वेळी वापरलेला margin. Performance च्या ROI भाजकाचीच
     व्याख्या (`_margin_used_details`, sweep-line) — फरक एवढाच की इथे अजून उघडे (OPEN) trades सुद्धा मोजले जातात
@@ -464,12 +464,16 @@ def get_todays_peak_margin_used(mode):
     trades. काहीच नसेल तर 0.0."""
     today_str = get_ist_today().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(
+    query = (
         "SELECT max_loss, lots, lot_size, entry_time, exit_time, entry_margin_required FROM live_trades "
         f"WHERE COALESCE(mode,'LIVE')=? AND {_shadow_exclusion_clause()} "
-        "AND (status='OPEN' OR trade_date=? OR substr(exit_time,1,10)=?)",
-        conn, params=(mode, today_str, today_str),
+        "AND (status='OPEN' OR trade_date=? OR substr(exit_time,1,10)=?)"
     )
+    params = [mode, today_str, today_str]
+    if source:  # उदा. 'mcx_futures' — MCX Kill Switch साठी फक्त MCX trades चा margin
+        query += " AND source=?"
+        params.append(source)
+    df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     if df.empty:
         return 0.0

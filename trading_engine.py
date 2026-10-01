@@ -411,7 +411,8 @@ def check_mcx_kill_switch():
     # (mode, P&L, उघड्या positions, peak-P&L देणारं function). PAPER मोजणी count_paper_pnl (ग्लोबल Kill Switch
     # सेटिंग) बंद केल्यास वगळली जाते.
     mode_inputs = [("LIVE", *get_todays_mcx_live_pnl_and_count(), get_todays_mcx_live_peak_pnl)]
-    if cloud_db.get_kill_switch_settings().get("count_paper_pnl", True):
+    global_ks_settings = cloud_db.get_kill_switch_settings()
+    if global_ks_settings.get("count_paper_pnl", True):
         mode_inputs.append(("PAPER", *get_todays_mcx_pnl_and_count_for_mode("PAPER"),
                             lambda: get_todays_peak_pnl_for_mode("PAPER", mcx_only=True)))
 
@@ -423,24 +424,44 @@ def check_mcx_kill_switch():
                 f"उघडी आहेत (मर्यादा {max_open_positions}, सर्व 5 commodities मिळून)"
             )
 
-    upstox_token = cloud_db.get_effective_upstox_token(None)
-    total_capital = get_total_capital(upstox_token) if upstox_token else None
-    if not total_capital or total_capital <= 0:
-        return False, (
-            "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
-            "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
-            "(LIVE + PAPER) थांबवले."
-        )
+    # 🎓 "Margin used is the capital" (वापरकर्त्याचा निर्णय) — ग्लोबल Kill Switch प्रमाणेच MCX साठी सुद्धा % चा आधार = त्या
+    # mode चा आजचा सर्वोच्च एकाच वेळी वापरलेला MCX margin; तो 0 असेल (आज अजून MCX trade नाही) तर Upstox भांडवल.
+    # (ग्लोबलचा 'किमान भांडवल' मजला MCX ला लावला जात नाही — तो index options साठीचा रुपयातला आकडा आहे.)
+    mcx_use_margin = global_ks_settings.get("capital_from_margin_used", True)
+    upstox_capital_cache = []
+
+    def _upstox_capital():
+        if not upstox_capital_cache:
+            token = cloud_db.get_effective_upstox_token(None)
+            upstox_capital_cache.append(get_total_capital(token) if token else None)
+        return upstox_capital_cache[0]
+
+    def _mcx_base(mode):
+        if mcx_use_margin:
+            margin_base = get_todays_peak_margin_used(mode, source="mcx_futures")
+            if margin_base > 0:
+                return margin_base, "वापरलेला margin"
+        return _upstox_capital(), "एकूण capital"
+
     max_daily_loss_pct = settings.get("max_daily_loss_pct", 1.0)
-    max_daily_loss_amount = total_capital * max_daily_loss_pct / 100
     profit_lock_enabled = settings.get("profit_lock_enabled", False)
     profit_lock_pct = settings.get("profit_lock_pct", 50.0)
     for mode_label, total_pnl, _open_positions, peak_fn in mode_inputs:
+        base_capital, base_label = _mcx_base(mode_label)
+        if not base_capital or base_capital <= 0:
+            if mode_label == "LIVE":
+                return False, (
+                    "MCX_KILL_SWITCH_CAPITAL_UNKNOWN — एकूण capital (Upstox Funds & Margin वरून) मिळालं नाही "
+                    "(token/नेटवर्क तपासा) — MCX-विशिष्ट Loss मर्यादा मोजता येत नसल्याने नवीन MCX trades "
+                    "(LIVE + PAPER) थांबवले."
+                )
+            continue  # PAPER: आधार नाही -> त्या mode ची तपासणी वगळली (PAPER साठी 'अज्ञात' म्हणून थांबवत नाही)
+        max_daily_loss_amount = base_capital * max_daily_loss_pct / 100
         if total_pnl <= -max_daily_loss_amount:
             return False, (
                 f"MCX_KILL_SWITCH_DAILY_LOSS — आजचा एकूण MCX {mode_label} तोटा ₹{-total_pnl:,.0f} (मर्यादा "
-                f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, एकूण capital "
-                f"₹{total_capital:,.0f})"
+                f"{max_daily_loss_pct:.1f}% म्हणजे ₹{max_daily_loss_amount:,.0f}, {base_label} "
+                f"₹{base_capital:,.0f})"
             )
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Profit-Lock — बघा check_kill_switch() मधली टिप्पणी) —
         # ग्लोबल Kill Switch सारखीच, पण फक्त MCX (source='mcx_futures') पुरतं मर्यादित.
