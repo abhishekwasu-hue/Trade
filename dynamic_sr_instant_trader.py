@@ -83,7 +83,7 @@ import cloud_db
 from config import get_ist_now, DB_PATH
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due, get_first_target_exit_today, get_open_trades_brief
 from notifications import send_telegram_message, write_heartbeat, notify_error
-from signals import calculate_rsi
+from signals import calculate_rsi, calculate_supertrend, resample_to_1h
 from oi_analysis import check_pcr_gate, check_iv_change_gate, get_latest_oi_signal, check_oi_diff_entry_gate
 from process_lock import ProcessLock, ProcessLockHeld
 from strategy import select_credit_spread_itm, select_credit_spread_fixed_strikes, select_naked_option_itm
@@ -219,6 +219,71 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
     if breakout_direction == "BULLISH":
         return last_close > level + buffer
     return last_close < level - buffer
+
+
+def _completed_bars_only(df, bar_minutes, now):
+    """शेवटचा bar अजून पूर्ण झालेला (त्याचा कालावधी संपलेला) नसेल तर तो वगळतो — Supertrend दिशा फक्त पूर्ण
+    झालेल्या candle ची घ्यायची (चालू candle वारंवार फिरते). timestamp = bar ची सुरुवात (IST)."""
+    if df is None or df.empty:
+        return df
+    last_ts = pd.Timestamp(df["timestamp"].iloc[-1])
+    now_ts = pd.Timestamp(now)
+    if last_ts.tzinfo is not None:
+        last_ts = last_ts.tz_localize(None)
+    if now_ts.tzinfo is not None:
+        now_ts = now_ts.tz_localize(None)
+    if last_ts + pd.Timedelta(minutes=bar_minutes) > now_ts:
+        return df.iloc[:-1]
+    return df
+
+
+def get_supertrend_direction(df, period, multiplier):
+    """df चा (शेवटच्या bar वरचा) Supertrend दिशा: "BULLISH" (किंमत Supertrend च्या वर) / "BEARISH" (खाली) / None."""
+    if df is None or df.empty:
+        return None
+    _, direction = calculate_supertrend(df, period=int(period), multiplier=float(multiplier))
+    if direction is None or len(direction) == 0:
+        return None
+    return "BULLISH" if int(direction.iloc[-1]) == 1 else "BEARISH"
+
+
+def fetch_trend_filter_directions(access_token, symbol, now, st15_period=10, st15_multiplier=3.0,
+                                  st1h_period=10, st1h_multiplier=3.0):
+    """🎓 "1 hr Supertrend and 15 Minute Supertrend price donhi supertrend chya khali aslyas stop Bullish trade" —
+    (15M दिशा, 1H दिशा), दोन्ही शेवटच्या **पूर्ण झालेल्या** candle ची. 1H candles 30M वरून resample (बाकी
+    प्रोजेक्ट प्रमाणेच). डेटा मिळाला नाही/चूक झाली तर त्या टाईमफ्रेमसाठी None (गेट fail-open)."""
+    dir_15m = dir_1h = None
+    try:
+        df15 = fetch_candles(access_token, symbol, current_spot=0, interval="15minute", lookback_days=5)
+        if df15 is not None and not df15.empty:
+            dir_15m = get_supertrend_direction(_completed_bars_only(df15, 15, now), st15_period, st15_multiplier)
+    except Exception:
+        dir_15m = None
+    try:
+        df30 = fetch_candles(access_token, symbol, current_spot=0, interval="30minute", lookback_days=10)
+        if df30 is not None and not df30.empty:
+            df30 = df30.copy()
+            for col in ("volume", "oi"):
+                if col not in df30.columns:
+                    df30[col] = 0
+            df1h = resample_to_1h(df30)
+            dir_1h = get_supertrend_direction(_completed_bars_only(df1h, 60, now), st1h_period, st1h_multiplier)
+    except Exception:
+        dir_1h = None
+    return dir_15m, dir_1h
+
+
+def check_supertrend_trend_filter(direction, dir_15m, dir_1h):
+    """Bullish trade फक्त तेव्हा थांबतो जेव्हा 15M **आणि** 1H दोन्ही Supertrend BEARISH (किंमत दोन्हीच्या खाली);
+    Bearish trade फक्त तेव्हा जेव्हा दोन्ही BULLISH (किंमत दोन्हीच्या वर). एक सहमत नसेल, किंवा डेटा नसेल
+    (None) तर काहीच अडवत नाही (fail-open). रिटर्न: (ok: bool, reason: str|None)."""
+    if dir_15m is None or dir_1h is None:
+        return True, None
+    if direction == "BULLISH" and dir_15m == "BEARISH" and dir_1h == "BEARISH":
+        return False, "किंमत 15M आणि 1H दोन्ही Supertrend च्या खाली आहे (दोन्ही BEARISH) — Bullish trade थांबवला"
+    if direction == "BEARISH" and dir_15m == "BULLISH" and dir_1h == "BULLISH":
+        return False, "किंमत 15M आणि 1H दोन्ही Supertrend च्या वर आहे (दोन्ही BULLISH) — Bearish trade थांबवला"
+    return True, None
 
 
 def determine_breakout_direction_from_close(level, candles_5m, buffer_pct, lookback_candles=3):
@@ -410,6 +475,12 @@ def process_symbol(access_token, symbol, lot_size=65):
     max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.10)
+    entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
+    supertrend_15m_period = settings.get("supertrend_15m_period", 10)
+    supertrend_15m_multiplier = settings.get("supertrend_15m_multiplier", 3.0)
+    supertrend_1h_period = settings.get("supertrend_1h_period", 10)
+    supertrend_1h_multiplier = settings.get("supertrend_1h_multiplier", 3.0)
+    supertrend_directions_cache = []  # प्रति-symbol, प्रति-cycle एकदाच (सर्व levels साठी सारखं) — lazily
     breakout_direction_from_close = settings.get("breakout_direction_from_close", False)
     breakout_cross_lookback_candles = int(settings.get("breakout_cross_lookback_candles", 3))
     breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
@@ -774,6 +845,24 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"
             cloud_db.save_signal_log(log_entry)
             continue
+
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("1 hr Supertrend and 15 Minute Supertrend price donhi
+        # supertrend chya khali aslyas stop Bullish trade, and vice versa") — Trend Filter, डीफॉल्ट बंद. फक्त साध्या
+        # reversal trades साठी; Directional (Breakout/IV) trades वगळलेले (RSI/PCR प्रमाणेच). Supertrend दिशा
+        # शेवटच्या पूर्ण candle ची; डेटा न मिळाल्यास trade अडवत नाही (fail-open).
+        if entry_supertrend_filter_enabled and not is_directional_trade:
+            if not supertrend_directions_cache:
+                supertrend_directions_cache.append(fetch_trend_filter_directions(
+                    access_token, symbol, now, supertrend_15m_period, supertrend_15m_multiplier,
+                    supertrend_1h_period, supertrend_1h_multiplier,
+                ))
+            st_dir_15m, st_dir_1h = supertrend_directions_cache[0]
+            st_ok, st_reason = check_supertrend_trend_filter(direction, st_dir_15m, st_dir_1h)
+            if not st_ok:
+                log_entry["trade_status"] = "SKIPPED_TREND_FILTER"
+                log_entry["reason"] = f"{st_reason} [15M: {st_dir_15m}, 1H: {st_dir_1h}]"
+                cloud_db.save_signal_log(log_entry)
+                continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Entry Gate — on/off) — RSI Gate आता Dashboard
         # वरून पूर्णपणे बंद करता येतो (उदा. फक्त S/R touch वरच trade घ्यायचं असेल तर). Directional

@@ -772,6 +772,38 @@ def render():
             # 36-48 सेकंदातच लागले, तर तेच exact level नंतर काही मिनिटं टिकून राहिल्यावर मोठा विजयी
             # trade ठरला). पूर्ण खात्रीशीर उपाय नाही (एक मध्यम-buildup trade backtest मध्ये अजूनही
             # तोट्याचाच निघाला) — म्हणून डीफॉल्ट बंद, threshold वापरकर्त्याने स्वतः ठरवून forward-test करावा.
+            with st.expander("📈 Supertrend Trend Filter (1H + 15M)", expanded=False):
+                entry_supertrend_filter_enabled = st.checkbox(
+                    "Supertrend Trend Filter सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("entry_supertrend_filter_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_supertrend_filter_enabled"),
+                )
+                st.caption(
+                    "किंमत 15-मिनिट **आणि** 1-तास दोन्ही Supertrend च्या **खाली** असेल तर Bullish trades थांबतात; "
+                    "दोन्हीच्या **वर** असेल तर Bearish trades थांबतात. एक टाईमफ्रेम सहमत नसेल तर काहीच अडवत नाही. "
+                    "दिशा शेवटच्या **पूर्ण झालेल्या** candle ची घेतली जाते. Breakout/IV (directional) trades साठी वगळलेला. "
+                    "Supertrend चा डेटा मिळाला नाही तर trade अडवला जात नाही."
+                )
+                stc1, stc2 = st.columns(2)
+                with stc1:
+                    supertrend_15m_period = _number_input(
+                        "15M ATR Period", settings, "supertrend_15m_period", strategy_key, symbol,
+                        min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+                    )
+                    supertrend_1h_period = _number_input(
+                        "1H ATR Period", settings, "supertrend_1h_period", strategy_key, symbol,
+                        min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+                    )
+                with stc2:
+                    supertrend_15m_multiplier = _number_input(
+                        "15M Multiplier", settings, "supertrend_15m_multiplier", strategy_key, symbol,
+                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+                    )
+                    supertrend_1h_multiplier = _number_input(
+                        "1H Multiplier", settings, "supertrend_1h_multiplier", strategy_key, symbol,
+                        min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+                    )
+
             with st.expander("⏱️ Minimum Level-Hold Duration Before Entry", expanded=False):
                 entry_min_hold_gate_enabled = st.checkbox(
                     "Minimum Hold Duration Gate सक्रिय (डीफॉल्ट बंद)",
@@ -1173,6 +1205,11 @@ def render():
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
+            new_settings["entry_supertrend_filter_enabled"] = bool(entry_supertrend_filter_enabled)
+            new_settings["supertrend_15m_period"] = int(supertrend_15m_period)
+            new_settings["supertrend_15m_multiplier"] = float(supertrend_15m_multiplier)
+            new_settings["supertrend_1h_period"] = int(supertrend_1h_period)
+            new_settings["supertrend_1h_multiplier"] = float(supertrend_1h_multiplier)
             new_settings["breakout_direction_from_close"] = bool(breakout_direction_from_close)
             new_settings["breakout_cross_lookback_candles"] = int(breakout_cross_lookback_candles)
             new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)

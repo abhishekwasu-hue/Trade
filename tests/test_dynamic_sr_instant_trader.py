@@ -2890,10 +2890,11 @@ class TestBreakdownMissedBecauseOfRoleFlip:
         ]
         return _candles_with_rsi(rows, declining=True, today_ist=self.NOW)
 
-    def _run(self, from_close, prior_5m=None, final_close=23868.0):
+    def _run(self, from_close, prior_5m=None, final_close=23868.0, extra_settings=None, directions=None):
         settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
         settings.update(entry_breakout_gate_enabled=True, breakout_close_buffer_pct=0.010,
                         breakout_direction_from_close=from_close, naked_enabled=False)
+        settings.update(extra_settings or {})
 
         def _fetch(token, symbol, current_spot=0, interval="1minute", lookback_days=1):
             if interval == "5minute":
@@ -2904,6 +2905,7 @@ class TestBreakdownMissedBecauseOfRoleFlip:
              patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
              patch.object(dsr, "get_ist_now", return_value=self.NOW), \
              patch.object(dsr, "fetch_candles", side_effect=_fetch), \
+             patch.object(dsr, "fetch_trend_filter_directions", return_value=directions or (None, None)), \
              patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23868.0), "SUCCESS")), \
              patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}) as mock_select, \
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "TB1"}, "OPENED")) as mock_trade, \
@@ -2925,10 +2927,133 @@ class TestBreakdownMissedBecauseOfRoleFlip:
         assert mock_select.call_args.args[1] == "BEARISH"
         assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
 
+    def test_supertrend_filter_does_not_block_breakout_trades(self):
+        # Bearish breakdown, पण 15M+1H दोन्ही BULLISH (फिल्टर साध्या Bearish reversal ला अडवला असता) -> breakout वगळलेला
+        mock_trade, _, entries = self._run(
+            from_close=True, extra_settings={"entry_supertrend_filter_enabled": True}, directions=("BULLISH", "BULLISH"))
+        assert mock_trade.called
+        assert mock_trade.call_args.kwargs.get("entry_reason_tag") == "BREAKOUT_ENTRY"
+        assert all(e["trade_status"] != "SKIPPED_TREND_FILTER" for e in entries)
+
     def test_enabled_but_price_was_already_below_does_not_trigger(self):
         # मागचे सर्व close आधीच level च्या खाली -> ओलांडलेलं नाही -> जुनं वर्तन (breakout नाही)
         mock_trade, _, entries = self._run(from_close=True, prior_5m=[23860.0, 23870.0, 23880.0, 23890.0])
         assert not mock_trade.called
+
+
+def _trend_df(start, step, n=60, bar_minutes=15, end=None):
+    """सतत चढणारा (step>0) किंवा उतरणारा (step<0) OHLC series — Supertrend दिशेची चाचणी."""
+    end = end or datetime.datetime(2026, 9, 11, 12, 0, 0)
+    stamps = pd.date_range(end=end, periods=n, freq=f"{bar_minutes}min")
+    closes = [start + step * i for i in range(n)]
+    return pd.DataFrame({
+        "timestamp": stamps, "open": [c - step for c in closes],
+        "high": [max(c, c - step) + 2 for c in closes], "low": [min(c, c - step) - 2 for c in closes],
+        "close": closes, "volume": 100, "oi": 0,
+    })
+
+
+class TestSupertrendTrendFilterHelpers:
+    def test_direction_of_rising_and_falling_series(self):
+        assert dsr.get_supertrend_direction(_trend_df(23000, 10), 10, 3.0) == "BULLISH"
+        assert dsr.get_supertrend_direction(_trend_df(24000, -10), 10, 3.0) == "BEARISH"
+
+    def test_direction_none_when_too_few_bars(self):
+        assert dsr.get_supertrend_direction(_trend_df(23000, 10, n=5), 10, 3.0) is None
+        assert dsr.get_supertrend_direction(pd.DataFrame(), 10, 3.0) is None
+
+    def test_incomplete_last_bar_is_dropped(self):
+        df = _trend_df(23000, 10, n=10, bar_minutes=15, end=datetime.datetime(2026, 9, 11, 12, 0, 0))  # शेवटचा bar 12:00-12:15
+        assert len(dsr._completed_bars_only(df, 15, datetime.datetime(2026, 9, 11, 12, 10, 0))) == 9   # अजून चालू
+        assert len(dsr._completed_bars_only(df, 15, datetime.datetime(2026, 9, 11, 12, 15, 0))) == 10  # पूर्ण झाला
+
+    def test_check_blocks_bullish_only_when_both_bearish(self):
+        assert dsr.check_supertrend_trend_filter("BULLISH", "BEARISH", "BEARISH")[0] is False
+        assert dsr.check_supertrend_trend_filter("BULLISH", "BEARISH", "BULLISH")[0] is True
+        assert dsr.check_supertrend_trend_filter("BULLISH", "BULLISH", "BEARISH")[0] is True
+        assert dsr.check_supertrend_trend_filter("BULLISH", "BULLISH", "BULLISH")[0] is True
+
+    def test_check_blocks_bearish_only_when_both_bullish(self):
+        assert dsr.check_supertrend_trend_filter("BEARISH", "BULLISH", "BULLISH")[0] is False
+        assert dsr.check_supertrend_trend_filter("BEARISH", "BULLISH", "BEARISH")[0] is True
+        assert dsr.check_supertrend_trend_filter("BEARISH", "BEARISH", "BEARISH")[0] is True
+
+    def test_check_fails_open_when_data_missing(self):
+        assert dsr.check_supertrend_trend_filter("BULLISH", None, "BEARISH") == (True, None)
+        assert dsr.check_supertrend_trend_filter("BULLISH", "BEARISH", None) == (True, None)
+
+    def test_fetch_directions_end_to_end_with_synthetic_candles(self):
+        now = datetime.datetime(2026, 9, 11, 12, 0, 0)
+
+        def _fetch(token, symbol, current_spot=0, interval="15minute", lookback_days=5):
+            if interval == "15minute":
+                return _trend_df(24000, -10, n=80, bar_minutes=15, end=now)
+            return _trend_df(23000, 10, n=120, bar_minutes=30, end=now)
+
+        with patch.object(dsr, "fetch_candles", side_effect=_fetch):
+            d15, d1h = dsr.fetch_trend_filter_directions("tok", "NIFTY", now)
+        assert d15 == "BEARISH" and d1h == "BULLISH"
+
+    def test_fetch_directions_failure_gives_none(self):
+        with patch.object(dsr, "fetch_candles", side_effect=RuntimeError("boom")):
+            assert dsr.fetch_trend_filter_directions("tok", "NIFTY", datetime.datetime(2026, 9, 11, 12, 0, 0)) == (None, None)
+
+
+class TestSupertrendTrendFilterInProcessSymbol:
+    """Support (23900) वर Bullish touch; फिल्टर चालू असताना 15M+1H दोन्ही BEARISH => SKIPPED_TREND_FILTER."""
+
+    NOW = datetime.datetime(2026, 9, 11, 10, 0, 0)
+
+    def _run(self, directions, enabled=True, breakout=False):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=self.NOW)
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False, naked_enabled=False,
+                        entry_supertrend_filter_enabled=enabled)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.NOW), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_trend_filter_directions", return_value=directions) as mock_dirs, \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        return mock_trade, mock_dirs, statuses, mock_log
+
+    def test_default_off_never_fetches_or_blocks(self):
+        mock_trade, mock_dirs, statuses, _ = self._run(("BEARISH", "BEARISH"), enabled=False)
+        assert mock_trade.called and not mock_dirs.called
+        assert "SKIPPED_TREND_FILTER" not in statuses
+
+    def test_both_bearish_blocks_bullish_trade(self):
+        mock_trade, _, statuses, mock_log = self._run(("BEARISH", "BEARISH"))
+        assert not mock_trade.called
+        assert "SKIPPED_TREND_FILTER" in statuses
+        reason = [c.args[0]["reason"] for c in mock_log.call_args_list if c.args[0]["trade_status"] == "SKIPPED_TREND_FILTER"][0]
+        assert "15M: BEARISH" in reason and "1H: BEARISH" in reason
+
+    def test_mixed_timeframes_allow_trade(self):
+        mock_trade, _, statuses, _ = self._run(("BEARISH", "BULLISH"))
+        assert mock_trade.called and "SKIPPED_TREND_FILTER" not in statuses
+
+    def test_both_bullish_does_not_block_bullish_trade(self):
+        mock_trade, _, _, _ = self._run(("BULLISH", "BULLISH"))
+        assert mock_trade.called
+
+    def test_missing_data_fails_open(self):
+        mock_trade, _, _, _ = self._run((None, None))
+        assert mock_trade.called
+
+    def test_directions_fetched_once_per_cycle_for_all_levels(self):
+        _, mock_dirs, _, _ = self._run(("BEARISH", "BULLISH"))
+        assert mock_dirs.call_count <= 1
 
 
 class TestGetBreakoutVolumeRatio:
