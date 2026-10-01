@@ -1376,3 +1376,81 @@ class TestSlTslCooldownOnSameLevel:
         mock_trade, _, mock_last_sl = self._run(recent, cooldown_minutes=0)
         assert mock_trade.called
         assert not mock_last_sl.called
+
+
+class TestSrv2MinHoldDuration:
+    """🎓 15M SRv2 साठी "Minimum Level-Hold Duration" (1-मिनिट candles, बफर शिवाय) + "फक्त पहिल्या trade ला"."""
+
+    LEVEL = 23900.0
+    EARLIER_TRADE = None  # _run() मध्ये ठरतं
+
+    def _run(self, one_min_rows, hits=(0, None, None), **setting_overrides):
+        candles_15m = _fake_candles_df(last_close=23902)
+        one_min_df = _one_min_df(one_min_rows)
+
+        def _fetch(token, symbol, current_spot=0, interval="15minute", lookback_days=5):
+            return one_min_df if interval == "1minute" else candles_15m
+
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"])
+        settings.update(symbol_enabled=True, naked_enabled=False, entry_min_hold_gate_enabled=True, entry_min_hold_minutes=3)
+        settings.update(setting_overrides)
+        with patch.object(srv2.cloud_db, "get_srv2_state", return_value={"last_tested_level": None, "last_sl_hit_time": None}), \
+             patch.object(srv2.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(srv2, "fetch_candles", side_effect=_fetch), \
+             patch.object(srv2.cloud_db, "get_market_zones", return_value=_fake_dyn_zones(support_level=self.LEVEL)), \
+             patch.object(srv2.cloud_db, "get_zone_hits_today", return_value=hits), \
+             patch.object(srv2, "get_last_sl_tsl_exit_time", return_value=None), \
+             patch.object(srv2, "fetch_option_expiries", return_value=[]), \
+             patch.object(srv2, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(srv2, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": [], "net_credit": 35.0}), \
+             patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
+             patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(srv2, "send_telegram_message", return_value=True), \
+             patch.object(srv2.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+            srv2.process_symbol("fake_token", "NIFTY")
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        return mock_trade, statuses
+
+    # शेवटचे 3 candles level (23900) ची रेंज ओलांडतात -> held=3
+    HELD_3 = [(23905, 23910, 23899, 23904), (23904, 23908, 23898, 23902), (23902, 23906, 23899.5, 23903)]
+    # फक्त शेवटचा candle level ला स्पर्श करतो -> held=1
+    HELD_1 = [(23930, 23935, 23925, 23928), (23928, 23932, 23924, 23926), (23926, 23930, 23899.5, 23920)]
+
+    def test_defaults(self):
+        d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]
+        assert d["entry_min_hold_gate_enabled"] is False
+        assert d["entry_min_hold_minutes"] == 3
+        assert d["entry_min_hold_first_trade_only"] is True
+
+    def test_gate_disabled_by_default_does_not_block(self):
+        mock_trade, _ = self._run(self.HELD_1, entry_min_hold_gate_enabled=False)
+        assert mock_trade.called
+
+    def test_fresh_touch_blocked_when_gate_enabled(self):
+        mock_trade, statuses = self._run(self.HELD_1)
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_held_long_enough_allows_entry(self):
+        mock_trade, statuses = self._run(self.HELD_3)
+        assert mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
+    def test_second_trade_on_level_bypasses_gate(self):
+        t = srv2.get_ist_now().replace(tzinfo=None) - datetime.timedelta(hours=2)
+        mock_trade, statuses = self._run(self.HELD_1, hits=(1, t, t))
+        assert mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
+    def test_rejected_touch_does_not_count_as_first_trade(self):
+        t = srv2.get_ist_now().replace(tzinfo=None) - datetime.timedelta(hours=2)
+        mock_trade, statuses = self._run(self.HELD_1, hits=(1, t, None))
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_first_trade_only_off_gates_second_trade(self):
+        t = srv2.get_ist_now().replace(tzinfo=None) - datetime.timedelta(hours=2)
+        mock_trade, statuses = self._run(self.HELD_1, hits=(1, t, t), entry_min_hold_first_trade_only=False)
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses

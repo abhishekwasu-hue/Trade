@@ -266,6 +266,10 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # Directional (IV/Breakout) trades साठी वगळलेला — त्यांचं स्वतःचं वेगळं confirmation आधीच आहे.
         "entry_min_hold_gate_enabled": False,
         "entry_min_hold_minutes": 3,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("level ला आज पहिल्यांदा touch झाल्यावर 3 मिनिट hold
+        # अट, त्याच level च्या 2ऱ्या trade साठी नको") — True असल्यास वरचा गेट फक्त त्या level (+role) वर आज
+        # पहिला खरा trade होईपर्यंत लागू; पहिला trade झाल्यावर त्याच level चा 2रा trade गेटशिवाय.
+        "entry_min_hold_first_trade_only": True,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Shadow entry PDF मध्ये दिसायला पाहिजे, 10
         # दिवस forward test करतो") — OTM Shadow च्याच पॅटर्नने (मूळ बॉटचं वर्तन 100% तसंच, फक्त
         # समांतर PAPER-only निरीक्षण) — entry_min_hold_gate_enabled (वरचा, प्रत्यक्ष blocking गेट)
@@ -437,6 +441,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # दोन्ही चालू (जुनंच वर्तन).
         "bullish_entry_enabled": True,
         "bearish_entry_enabled": True,
+        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (15M साठी "Minimum Level-Hold Duration", 5M सारखाच पण
+        # 1-मिनिट candles वरून, बफर शिवाय — TOUCH_TOLERANCE_PCT) — डीफॉल्ट बंद. `first_trade_only` True =
+        # फक्त त्या level वर आज पहिला खरा trade होईपर्यंत; 2रा trade गेटशिवाय.
+        "entry_min_hold_gate_enabled": False,
+        "entry_min_hold_minutes": 3,
+        "entry_min_hold_first_trade_only": True,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("3 वेगवेगळे timeframe आहेत, selection user friendly
         # असू द्या, डीफॉल्ट 15 मिनिट ठेवा, 30 आणि 60 मिनिट optional राहील") — आधी तिन्ही (15M/30M/60M)
         # नेहमीच एकत्र तपासले जायचे, निवडीची सोयच नव्हती.

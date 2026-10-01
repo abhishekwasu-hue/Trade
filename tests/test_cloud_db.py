@@ -1933,8 +1933,10 @@ class TestEntryMinHoldSettingsDefaults:
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_min_hold_minutes"] == 3
 
     def test_other_strategies_do_not_have_min_hold_setting(self):
-        for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
+        # 15M SRv2 ला आता स्वतःचा (डीफॉल्ट-बंद) गेट आहे -- बघा TestSrv2MinHoldDuration; बाकी दोन ला नाही.
+        for key in ("classic_sr_reversal", "mcx_futures"):
             assert "entry_min_hold_gate_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["15m_dynamic_sr"]["entry_min_hold_gate_enabled"] is False
 
     def test_min_hold_shadow_disabled_by_default(self):
         assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["min_hold_shadow_enabled"] is False

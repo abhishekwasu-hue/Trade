@@ -442,6 +442,28 @@ def render():
                 min_value=0, max_value=120, step=5,
             )
 
+        if strategy_key == "15m_dynamic_sr":
+            with st.expander("⏱️ Minimum Level-Hold Duration Before Entry", expanded=False):
+                entry_min_hold_gate_enabled = st.checkbox(
+                    "Minimum Hold Duration Gate सक्रिय (डीफॉल्ट बंद)",
+                    value=bool(settings.get("entry_min_hold_gate_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "entry_min_hold_gate_enabled"),
+                )
+                st.caption(
+                    "Level ला touch झाल्यावर (1-मिनिट candles, बफर शिवाय) किमान इतकी मिनिटं तो सलग टिकून "
+                    "राहिलेला असेल तरच entry घेतली जाते — ताजा, क्षणिक touch गाळला जातो."
+                )
+                entry_min_hold_minutes = _number_input(
+                    "किमान किती मिनिटं level टिकून हवा", settings, "entry_min_hold_minutes", strategy_key, symbol,
+                    min_value=1, max_value=30, step=1, disabled=not entry_min_hold_gate_enabled,
+                )
+                entry_min_hold_first_trade_only = st.checkbox(
+                    "फक्त पहिल्या trade ला लागू (त्याच level चा 2रा trade या अटीशिवाय) — डीफॉल्ट चालू",
+                    value=bool(settings.get("entry_min_hold_first_trade_only", True)),
+                    key=_widget_key(strategy_key, symbol, "entry_min_hold_first_trade_only"),
+                    disabled=not entry_min_hold_gate_enabled,
+                )
+
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या,
         # default 2") — established "आजच्या या zone साठी कमाल इतक्या वेळाच trade" ही मर्यादा (role —
         # support/resistance — नुसार वेगळी मोजली जाते) आधी सर्व बॉट्समध्ये hardcoded (2) होती.
@@ -749,6 +771,17 @@ def render():
                 entry_min_hold_minutes = _number_input(
                     "किमान किती मिनिटं level टिकून हवा (Gate + Shadow दोन्हींसाठी सामायिक)", settings, "entry_min_hold_minutes", strategy_key, symbol,
                     min_value=1, max_value=30, step=1, disabled=not (entry_min_hold_gate_enabled or min_hold_shadow_enabled),
+                )
+                entry_min_hold_first_trade_only = st.checkbox(
+                    "फक्त पहिल्या trade ला लागू (त्याच level चा 2रा trade या अटीशिवाय) — डीफॉल्ट चालू",
+                    value=bool(settings.get("entry_min_hold_first_trade_only", True)),
+                    key=_widget_key(strategy_key, symbol, "entry_min_hold_first_trade_only"),
+                    disabled=not entry_min_hold_gate_enabled,
+                )
+                st.caption(
+                    "चालू असल्यास वरचा Hold-Duration गेट त्या level (+Support/Resistance भूमिका) वर आज पहिला खरा "
+                    "trade होईपर्यंतच लागू; पहिला trade झाल्यावर त्याच level चा पुढचा (2रा) trade गेटशिवाय. "
+                    "गेटने नाकारलेला touch 'पहिला trade' मानला जात नाही."
                 )
 
             # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
@@ -1114,6 +1147,7 @@ def render():
             new_settings["breakout_oi_confirm_enabled"] = bool(breakout_oi_confirm_enabled)
             new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
             new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
+            new_settings["entry_min_hold_first_trade_only"] = bool(entry_min_hold_first_trade_only)
             new_settings["min_hold_shadow_enabled"] = bool(min_hold_shadow_enabled)
             new_settings["stop_after_target_enabled"] = bool(stop_after_target_enabled)
             new_settings["defer_to_15m_enabled"] = bool(defer_to_15m_enabled)
@@ -1143,6 +1177,9 @@ def render():
             new_settings["carry_forward_min_profit_pct"] = float(carry_forward_min_profit_pct)
             new_settings["naked_eod_hour"] = int(naked_eod_hour)
             new_settings["naked_eod_minute"] = int(naked_eod_minute)
+            new_settings["entry_min_hold_gate_enabled"] = bool(entry_min_hold_gate_enabled)
+            new_settings["entry_min_hold_minutes"] = int(entry_min_hold_minutes)
+            new_settings["entry_min_hold_first_trade_only"] = bool(entry_min_hold_first_trade_only)
 
         ok = cloud_db.save_strategy_settings(strategy_key, symbol, new_settings)
         if ok:
