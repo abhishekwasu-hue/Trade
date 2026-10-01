@@ -139,7 +139,7 @@ def init_sqlite_db():
     # जात नव्हता (फक्त Signal Log च्या `reason` मध्ये, जो live_trades शी कधीच जोडलेला नाही). नवीन
     # entry_reason_tag (NULL=प्लेन S/R touch, "BREAKOUT_ENTRY"/"IV_BREAKOUT_DIRECTIONAL"=विशेष
     # प्रकार) — trading_engine.open_multi_leg_trade() कडून entry-वेळीच साठवला जातो.
-    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL", "manual_sl_override_pnl REAL", "entry_reason_tag TEXT"]:
+    for col_def in ["legs_json TEXT", "strikes_summary TEXT", "mode TEXT", "trading_style TEXT", "peak_pnl REAL", "source TEXT", "account_id TEXT", "entry_level_price REAL", "tsl_activated INTEGER DEFAULT 0", "entry_timeframe TEXT", "exit_reason_detail TEXT", "entry_margin_required REAL", "entry_spot_price REAL", "manual_sl_override_pnl REAL", "entry_reason_tag TEXT", "pnl_multiplier REAL DEFAULT 1"]:
         try:
             cursor.execute(f"ALTER TABLE live_trades ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
@@ -807,7 +807,7 @@ def get_trade_legs_with_prices(trade_ids):
     conn = sqlite3.connect(DB_PATH)
     placeholders = ",".join("?" * len(trade_ids))
     legs_rows = conn.execute(
-        f"SELECT trade_id, legs_json, lots, lot_size FROM live_trades WHERE trade_id IN ({placeholders})", trade_ids,
+        f"SELECT trade_id, legs_json, lots, lot_size, pnl_multiplier FROM live_trades WHERE trade_id IN ({placeholders})", trade_ids,
     ).fetchall()
     orders_df = pd.read_sql_query(
         f"""SELECT trade_id, instrument_key, fill_price, placed_at FROM order_log
@@ -818,7 +818,7 @@ def get_trade_legs_with_prices(trade_ids):
     conn.close()
 
     result = {}
-    for trade_id, legs_json_str, lots, lot_size in legs_rows:
+    for trade_id, legs_json_str, lots, lot_size, pnl_multiplier in legs_rows:
         legs = json.loads(legs_json_str) if legs_json_str else []
         trade_orders = orders_df[orders_df["trade_id"] == trade_id]
         leg_rows = []
@@ -833,7 +833,9 @@ def get_trade_legs_with_prices(trade_ids):
                 "entry_price": fills[0] if fills else None,
                 "exit_price": fills[-1] if len(fills) > 1 else None,
                 "lots": lots, "lot_size": lot_size,
-                "qty": (lots * lot_size) if (lots is not None and lot_size is not None) else None,
+                # 🎓 GOLD: DB मधला lot_size P&L-साठी ×100 केलेला असतो (mcx_contract_specs) — दाखवायचा qty
+                # मात्र broker ला गेलेला खरा (lots × Upstox lot_size).
+                "qty": int(round(lots * lot_size / (pnl_multiplier or 1))) if (lots is not None and lot_size is not None) else None,
             })
         result[trade_id] = leg_rows
     return result

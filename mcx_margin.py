@@ -9,6 +9,7 @@ Streamlit-मुक्त (page_mcx_futures.py कॅश/UI सांभाळ�
 कुठलाही अंदाज दाखवला जात नाही: Margin API ने आकडा दिला नाही तर स्तंभ रिकामा (None) राहतो.
 """
 import resolve_mcx_futures_instruments as mcx_resolver
+from mcx_contract_specs import get_price_multiplier
 from upstox_api import fetch_ltp_map, fetch_required_margin
 
 MARGIN_COLUMNS = [
@@ -50,7 +51,8 @@ def compute_margin_rows(access_token, symbols, lots_by_symbol, product="D",
         except Exception:
             ltp = None
         row["LTP"] = ltp
-        row["Contract Value (Rs)"] = round(ltp * qty, 2) if ltp else None
+        # 🎓 GOLD: भाव प्रति 10g, lot 1kg => Contract Value = भाव × qty × 100 (बघा mcx_contract_specs)
+        row["Contract Value (Rs)"] = round(ltp * qty * get_price_multiplier(sym), 2) if ltp else None
         buy = margin_fn(access_token, _one_order(key, qty, "BUY", product))
         sell = margin_fn(access_token, _one_order(key, qty, "SELL", product))
         row["BUY Margin (Rs)"] = round(buy, 2) if buy is not None else None
