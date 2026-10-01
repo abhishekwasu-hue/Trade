@@ -338,6 +338,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # डीफॉल्ट बंद (नवीन entry-trigger). चालू केल्यास: शेवटचा 5M close level पासून buffer% पलीकडे असेल आणि मागच्या
         # `breakout_cross_lookback_candles` candles मध्ये किंमत level च्या दुसऱ्या बाजूला होती => तिकडची दिशा (level ची
         # १-मिनिट भूमिका बदलली असली तरी). बंद = जुनं भूमिका-आधारित वर्तन.
+        # 🎓 "1 hr Supertrend and 15 Minute Supertrend price donhi supertrend chya khali aslyas stop Bullish trade, and
+        # vice versa" — Trend Filter, डीफॉल्ट बंद. फक्त 5M Instant Trader; Breakout/IV (directional) trades वगळलेले.
+        "entry_supertrend_filter_enabled": False,
+        "supertrend_15m_period": 10,
+        "supertrend_15m_multiplier": 3.0,
+        "supertrend_1h_period": 10,
+        "supertrend_1h_multiplier": 3.0,
         "breakout_direction_from_close": False,
         "breakout_cross_lookback_candles": 3,
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume ashi
