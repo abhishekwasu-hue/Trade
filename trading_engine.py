@@ -1395,7 +1395,10 @@ def _realized_pnl_from_exit_prices(net_credit, legs, exit_prices, lots, lot_size
     return (net_credit - cost_to_close) * lots * lot_size
 
 
-def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5):
+_UNSET_POSITIONS = object()  # `positions`/`broker_positions` पॅरामीटरसाठी sentinel — None (caller ने आधीच प्रयत्न करून अयशस्वी झाल्याचं कळवलं) आणि "दिलंच नाही" (स्वतः fetch कर) यांतला फरक ओळखण्यासाठी.
+
+
+def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15, eod_squareoff_minute=15, oi_reversal_exit_enabled=False, trailing_sl_enabled=False, atr_points=None, atr_multiplier=1.5, broker_positions=_UNSET_POSITIONS, record_timing=False):
     """
     उघड्या (OPEN) ट्रेड्सचे (कोणत्याही leg-संख्येचे) सद्य P&L तपासून SL / Target वर आपोआप बंद करणे.
     Intraday ट्रेड्ससाठी EOD Square-off (डीफॉल्ट 15:15 IST) आपोआप लागू होतो — ब्रोकरचा MIS
@@ -1435,7 +1438,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # reconcile_open_trades_with_broker() ला दिलं जातं (पूर्वी हे function स्वतःच वेगळा API कॉल
     # करायचं — आता तोच एक कॉल दोन्हीसाठी पुनर्वापरलेला, प्रत्येक cycle ला Upstox कडे एक जास्तीचा
     # कॉल टाळण्यासाठी).
-    broker_positions = fetch_broker_positions(access_token)
+    # 🎓 Slippage -- trade_monitor.py आता positions एकदाच आणून सर्व symbols ना देतो (आधी प्रत्येक symbol साठी वेगळा
+    # Upstox कॉल, म्हणजे cycle जड आणि तपासणीचं अंतर वाढायचं). न दिल्यास जुनं वर्तन: इथेच fetch.
+    if broker_positions is _UNSET_POSITIONS:
+        broker_positions = fetch_broker_positions(access_token)
     reconcile_open_trades_with_broker(access_token, symbol, positions=broker_positions)
 
     conn = sqlite3.connect(DB_PATH)
@@ -1523,6 +1529,15 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     # PAPER trades ला खरी Upstox position कधीच नसते, त्यामुळे त्यांच्यासाठी आणि broker data गहाळ/अपुरं
     # असेल तर (कुठलाही leg सापडला नाही) — जुनाच internal-calc मार्ग सुरक्षितपणे (silently) वापरला जातो,
     # कधीच अडत/तुटत नाही. (वरच्याच broker_positions चा पुनर्वापर — वेगळा जादा API कॉल नाही.)
+    # 🎓 Slippage मोजमाप (record_timing=True, म्हणजे फक्त trade_monitor.py कडून) -- या symbol ची मागची तपासणी
+    # आणि तेव्हाचा स्पॉट वाचून, आताची नोंदवतो; exit होताना 'Monitor lag' तुकडा detail मध्ये जोडला जातो.
+    prev_check = None
+    check_epoch = None
+    if record_timing:
+        import monitor_timing
+        check_epoch = time.time()
+        prev_check = monitor_timing.record_check(symbol, underlying_spot, check_epoch)
+
     broker_pnl_by_key = {}
     for pos in (broker_positions or []):
         key = pos.get("instrument_token")
@@ -1966,6 +1981,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             # Performance Report/Signal तपासताना स्पष्ट दिसावं म्हणून detail मध्येच नोंद.
             if broker_mtm_used:
                 exit_reason_detail = (exit_reason_detail or exit_reason) + " [Broker MTM]"
+            if record_timing and "SL" in str(exit_reason):
+                import monitor_timing
+                exit_reason_detail = (exit_reason_detail or exit_reason) + monitor_timing.format_lag_note(
+                    prev_check, check_epoch, underlying_spot)
             # 🎓 GOLD: DB चा lot_size P&L साठी ×गुणक असतो — broker ला खरी quantity (बघा open_multi_leg_trade).
             qty = int(round(lots * lot_size / (pnl_multiplier_by_trade.get(trade_id) or 1)))
             close_orders = [
@@ -2046,7 +2065,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
     return closed_summaries
 
 
-_UNSET_POSITIONS = object()  # reconcile_open_trades_with_broker() च्या `positions` पॅरामीटरसाठी sentinel — None (caller ने आधीच प्रयत्न करून अयशस्वी झाल्याचं कळवलं) आणि "दिलंच नाही" (स्वतः fetch कर) यांतला फरक ओळखण्यासाठी.
+# _UNSET_POSITIONS -- वर (manage_open_trades च्या आधी) परिभाषित; reconcile_open_trades_with_broker() आणि manage_open_trades() दोघांचा `positions` sentinel.
 
 
 def reconcile_open_trades_with_broker(access_token, symbol, positions=_UNSET_POSITIONS):

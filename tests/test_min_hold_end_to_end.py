@@ -259,3 +259,95 @@ class TestBreakoutEvalNoteInSignalLog:
         cloud_db.save_signal_log(self._entry("[BRK:BEARISH C✗ V- O- S- => NO] x"))
         hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11")
         assert last_trade is None
+
+
+class TestLevelStrengthGateEndToEnd:
+    """"5 minute mdhe intraday new form support resistance strength 2x asalyas ... high probability che nasatat" --
+    Level Strength Gate (Dashboard, डीफॉल्ट बंद): आज नवीन तयार झालेला आणि strength < N असलेला level reversal trade घेत नाही."""
+    T0 = datetime.datetime(2026, 9, 11, 10, 0, 0)
+
+    def _run(self, strength, formed_date, now=None, **overrides):
+        import pandas as pd
+        zones = pd.DataFrame([{"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 23900.0,
+                               "zone_high": 23900.0, "strength": strength, "formed_date": formed_date, "status": "ACTIVE"}])
+        now = now or self.T0
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False, naked_enabled=False,
+                        entry_min_hold_gate_enabled=False, entry_min_level_strength_enabled=True, min_level_strength=3)
+        settings.update(overrides)
+        candles = _candles_with_rsi(_hover(1), declining=True, today_ist=now)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=zones), \
+             patch.object(dsr, "get_ist_now", return_value=now), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+        return mock_trade.called
+
+    def test_new_weak_level_is_skipped(self, signal_db):
+        assert self._run(2.0, "2026-09-11 09:40:00") is False
+        assert "SKIPPED_WEAK_LEVEL" in _statuses(signal_db)
+
+    def test_new_level_with_enough_strength_trades(self, signal_db):
+        assert self._run(3.0, "2026-09-11 09:40:00") is True
+
+    def test_old_weak_level_still_trades_when_new_levels_only(self, signal_db):
+        assert self._run(2.0, "2026-09-01 15:00:00") is True
+        # आज सकाळी पूर्व-बाजार (09:15 आधी) तयार झालेला level 'intraday नवीन' नाही
+        assert self._run(2.0, "2026-09-11 08:30:00", now=self.T0 + datetime.timedelta(hours=1)) is True
+
+    def test_old_weak_level_blocked_when_scope_is_all_levels(self, signal_db):
+        assert self._run(2.0, "2026-09-01 15:00:00", level_strength_new_levels_only=False) is False
+
+    def test_gate_is_off_by_default(self, signal_db):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_min_level_strength_enabled"] is False
+        assert self._run(2.0, "2026-09-11 09:40:00", entry_min_level_strength_enabled=False) is True
+
+    def test_skipped_touch_does_not_use_up_hits_and_trades_once_level_strengthens(self, signal_db):
+        assert self._run(2.0, "2026-09-11 09:40:00") is False
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
+        assert hits == 0 and last_trade is None
+        # 5 मिनिटांनी level पुन्हा टिकला -> strength 3 -> trade
+        assert self._run(3.0, "2026-09-11 09:40:00", now=self.T0 + datetime.timedelta(minutes=5)) is True
+
+
+class TestFastMoveGuardEndToEnd:
+    T0 = datetime.datetime(2026, 9, 11, 10, 0, 0)
+
+    def _run(self, closes, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False, naked_enabled=False,
+                        entry_min_hold_gate_enabled=False, entry_fast_move_guard_enabled=True,
+                        fast_move_lookback_minutes=5, fast_move_threshold_pct=0.12)
+        settings.update(overrides)
+        rows = [{"open": c, "high": c + 1, "low": c - 1, "close": c} for c in closes]
+        candles = _candles_with_rsi(rows, declining=True, today_ist=self.T0)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.T0), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+        return mock_trade.called
+
+    FAST = [23935.0, 23925.0, 23915.0, 23907.0, 23903.0, 23900.0]      # 5 मिनिटांत -0.146% खाली, level 23900 वर
+    SLOW = [23904.0, 23903.0, 23902.0, 23901.0, 23900.5, 23900.0]
+
+    def test_fast_fall_into_support_is_skipped_and_is_not_a_hit(self, signal_db):
+        assert self._run(self.FAST) is False
+        assert "SKIPPED_FAST_MOVE" in _statuses(signal_db)
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
+        assert hits == 0 and last_trade is None
+
+    def test_slow_approach_trades(self, signal_db):
+        assert self._run(self.SLOW) is True
+
+    def test_guard_off_by_default(self, signal_db):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_fast_move_guard_enabled"] is False
+        assert self._run(self.FAST, entry_fast_move_guard_enabled=False) is True

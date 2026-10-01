@@ -1346,6 +1346,33 @@ class TestMergeDynamicSrZonesGeneric:
         assert "DYNAMIC_SR_SUPPORT_1M" not in select_calls[0][0][1]
 
 
+class TestMergeUpdatesStrengthOfExistingLevels:
+    """Level पुन्हा टिकला तर DB मधली strength वाढते (कधीच कमी होत नाही) -- Level Strength Gate साठी."""
+
+    def _run(self, existing_strength, new_touches, monkeypatch):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [(7, "DYNAMIC_SR_SUPPORT_5M", 23900.0, existing_strength)]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        cloud_db.merge_dynamic_sr_zones("NIFTY", {"support": [{"level": 23901.0, "touches": new_touches}], "resistance": []}, "5M")
+        return [c for c in mock_cursor.execute.call_args_list if "SET strength" in c[0][0]]
+
+    def test_strength_increases_on_match(self, monkeypatch):
+        calls = self._run(2.0, 4, monkeypatch)
+        assert len(calls) == 1 and calls[0][0][1] == (4.0, 7)
+
+    def test_strength_never_decreases(self, monkeypatch):
+        assert self._run(5.0, 3, monkeypatch) == []
+
+    def test_equal_strength_not_rewritten(self, monkeypatch):
+        assert self._run(3.0, 3, monkeypatch) == []
+
+    def test_missing_old_strength_is_filled(self, monkeypatch):
+        assert len(self._run(None, 3, monkeypatch)) == 1
+
+
 class TestMergeDynamicSrEmptyResultGuard:
     """🎓 "levels calculation by updating levels in database repeatedly" audit — रिकामा निकाल (तात्पुरता
     डेटा-दोष) आल्यास सर्व ACTIVE levels 'STALE' होऊ नयेत; काहीही न बदलता False."""

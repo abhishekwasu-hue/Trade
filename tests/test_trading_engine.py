@@ -3550,3 +3550,106 @@ class TestMcxChargesMatchZerodhaCalculator:
         assert b["gst"] == pytest.approx(61.02)
         assert s["total_charges"] == pytest.approx(1217.0, abs=0.5)
         assert (227000.0 - 226000.0) * 30 - s["total_charges"] == pytest.approx(28783.0, abs=0.5)
+
+
+class TestSlippageMonitoring:
+    """"Huge slippages" -- (१) positions बाहेरून दिले तर manage_open_trades पुन्हा fetch करत नाही; (२) record_timing=True
+    असेल तर SL exit च्या detail मध्ये [Monitor lag: ...]; (३) DB helper फक्त OPEN trades असलेले symbols देतो."""
+
+    @pytest.fixture(autouse=True)
+    def _timing_file(self, tmp_path, monkeypatch):
+        import monitor_timing
+        monkeypatch.setattr(monitor_timing, "_PATH", str(tmp_path / "monitor_timing.json"))
+        monkeypatch.setattr(monitor_timing, "DATA_DIR", str(tmp_path))
+
+    def test_given_positions_are_not_refetched(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "N1", net_credit=30, sl_level=-100, target_level=1000)
+        fetches = []
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: fetches.append(1) or [])
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", lambda t, k: {"PE24400": 30.0, "PE24300": 0.0})
+        trading_engine.manage_open_trades("tok", "NIFTY", "D", broker_positions=[])
+        assert fetches == []
+        trading_engine.manage_open_trades("tok", "NIFTY", "D")      # जुनं वर्तन: न दिल्यास fetch
+        assert fetches == [1]
+
+    def _sl_exit_detail(self, temp_db, monkeypatch, record_timing, first_spot, second_spot):
+        import json as _json
+        legs = [{"role": "naked_buy", "strike": 22500, "option_type": "CE", "instrument_key": "CE1", "transaction_type": "BUY"}]
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit, max_profit, max_loss,
+               sl_pnl_level, target_pnl_level, entry_time, status, legs_json, strikes_summary, mode, trading_style, source,
+               entry_level_price, entry_spot_price) VALUES ('S1','2026-10-01','NIFTY','NAKED_CALL',1,975,-160,NULL,10,-9750,NULL,
+               '2026-10-01 12:07:46','OPEN',?, 'x','PAPER','INTRADAY','dynamic_sr_instant',22538.8,22548.0)""",
+            (_json.dumps(legs),),
+        )
+        conn.commit(); conn.close()
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [])
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 10, 1, 5, 0)  # UTC 5:00 = IST 10:30 (EOD आधी, खऱ्या घड्याळावर अवलंबून नाही)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        spots = iter([first_spot, second_spot])
+        premiums = iter([158.0, 140.0])      # पहिली तपासणी: थोडा तोटा; दुसरी: SL ओलांडला
+        monkeypatch.setattr(trading_engine, "get_instrument_key", lambda s: "NSE_INDEX|Nifty 50")
+
+        def fake_ltp(token, keys):
+            if keys == ["NSE_INDEX|Nifty 50"]:
+                return {"NSE_INDEX|Nifty 50": next_spot[0]}
+            return {"CE1": next_prem[0]}
+
+        next_spot, next_prem = [None], [None]
+        closed = []
+        for _ in range(2):
+            next_spot[0], next_prem[0] = next(spots), next(premiums)
+            monkeypatch.setattr(trading_engine, "fetch_ltp_map", fake_ltp)
+            closed = trading_engine.manage_open_trades("tok", "NIFTY", "D", broker_positions=[], record_timing=record_timing)
+            if closed:
+                break
+        conn = sqlite3.connect(temp_db)
+        detail = conn.execute("SELECT exit_reason_detail FROM live_trades WHERE trade_id='S1'").fetchone()[0]
+        conn.close()
+        return closed, detail
+
+    def test_sl_exit_detail_carries_monitor_lag_when_recording(self, temp_db, monkeypatch):
+        closed, detail = self._sl_exit_detail(temp_db, monkeypatch, True, 22545.0, 22520.5)
+        assert closed and closed[0]["reason"] == "SL"
+        assert "[Monitor lag: previous check" in detail
+        assert "spot 22545.0 -> 22520.5" in detail and "-24.5 pts" in detail
+
+    def test_no_lag_note_without_record_timing(self, temp_db, monkeypatch):
+        closed, detail = self._sl_exit_detail(temp_db, monkeypatch, False, 22545.0, 22520.5)
+        assert closed and "Monitor lag" not in detail
+
+    def test_lag_note_does_not_break_overshoot_parser(self, temp_db, monkeypatch):
+        closed, detail = self._sl_exit_detail(temp_db, monkeypatch, True, 22545.0, 22520.5)
+        parsed = database._parse_sl_tsl_overshoot_detail(detail)
+        assert parsed is not None and parsed["overshoot_points"] is not None
+
+    def test_open_trade_modes_by_symbol(self, temp_db):
+        seed_trade(temp_db, "A", net_credit=30, sl_level=-100, target_level=1000, mode="LIVE")
+        seed_trade(temp_db, "B", net_credit=30, sl_level=-100, target_level=1000, mode="PAPER")
+        conn = sqlite3.connect(temp_db)
+        conn.execute("INSERT INTO live_trades (trade_id, trade_date, symbol, lots, lot_size, status, mode) "
+                     "VALUES ('C','2026-10-01','SENSEX',1,10,'CLOSED','LIVE')")
+        conn.commit(); conn.close()
+        assert database.get_open_trade_modes_by_symbol(["NIFTY", "SENSEX", "BANKNIFTY"]) == {"NIFTY": {"LIVE", "PAPER"}}
+        assert database.get_open_trade_modes_by_symbol([]) == {}
+
+
+class TestMonitorTimingModule:
+    def test_record_and_format(self, tmp_path, monkeypatch):
+        import monitor_timing
+        monkeypatch.setattr(monitor_timing, "_PATH", str(tmp_path / "t.json"))
+        monkeypatch.setattr(monitor_timing, "DATA_DIR", str(tmp_path))
+        assert monitor_timing.record_check("NIFTY", 100.0, 1000.0) is None
+        prev = monitor_timing.record_check("NIFTY", 90.0, 1012.0)
+        assert prev == (1000.0, 100.0)
+        note = monitor_timing.format_lag_note(prev, 1012.0, 90.0)
+        assert "12s earlier" in note and "-10.0 pts" in note
+        assert "not recorded" in monitor_timing.format_lag_note(None, 1.0, 1.0)
+
+    def test_unwritable_location_never_raises(self, monkeypatch):
+        import monitor_timing
+        monkeypatch.setattr(monitor_timing, "_PATH", "/proc/definitely/not/writable.json")
+        monkeypatch.setattr(monitor_timing, "DATA_DIR", "/proc/definitely/not")
+        assert monitor_timing.record_check("NIFTY", 1.0, 5.0) is None

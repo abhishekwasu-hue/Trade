@@ -31,6 +31,7 @@ class TestRunMonitorCycleProcessLock:
     def test_acquires_lock_and_calls_manage_open_trades(self, monkeypatch):
         mock_manage = MagicMock(return_value=[])
         monkeypatch.setattr(trade_monitor, "manage_open_trades", mock_manage)
+        monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", lambda syms: {"NIFTY": {"PAPER"}})
         trade_monitor.run_monitor_cycle("fake_token")
         assert mock_manage.called
 
@@ -39,6 +40,7 @@ class TestRunMonitorCycleProcessLock:
         manage_open_trades() अजिबात चालवला जाऊ नये — क्रॅशही होता कामा नये, फक्त स्पष्ट संदेश यावा."""
         mock_manage = MagicMock(return_value=[])
         monkeypatch.setattr(trade_monitor, "manage_open_trades", mock_manage)
+        monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", lambda syms: {"NIFTY": {"PAPER"}})
 
         class _FakeLock:
             def __init__(self, name):
@@ -161,7 +163,7 @@ class TestRunMonitorLoopTslFastCheck:
         trade_monitor.run_monitor_loop(
             "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
             cycle_fn=lambda t, p: "ok", sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
-            has_active_tsl_fn=lambda: False,
+            has_active_tsl_fn=lambda: False, has_open_trades_fn=lambda: False,
         )
         # 0 -> 20 -> 40 (पूर्ण 20-sec sleeps), नंतर उरलेल्या 10-sec budget पुरताच शेवटचा sleep (ओलांडत नाही)
         assert sleep_calls == [20.0, 20.0, 10.0]
@@ -177,7 +179,7 @@ class TestRunMonitorLoopTslFastCheck:
         trade_monitor.run_monitor_loop(
             "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
             cycle_fn=lambda t, p: "ok", sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
-            has_active_tsl_fn=lambda: True,
+            has_active_tsl_fn=lambda: True, has_open_trades_fn=lambda: False,
         )
         assert all(s == 5.0 for s in sleep_calls)
         assert len(sleep_calls) > 2  # 20-sec ऐवजी 5-sec interval मुळे जास्त cycles व्हायला हवेत
@@ -204,7 +206,7 @@ class TestRunMonitorLoopTslFastCheck:
         trade_monitor.run_monitor_loop(
             "tok", "D", interval_seconds=20, tsl_interval_seconds=5, loop_seconds=50,
             cycle_fn=cycle_fn, sleep_fn=tracking_sleep, now_fn=now_fn, print_fn=lambda x: None,
-            has_active_tsl_fn=lambda: state["tsl_active"],
+            has_active_tsl_fn=lambda: state["tsl_active"], has_open_trades_fn=lambda: False,
         )
         assert sleep_calls[0] == 5.0  # पहिल्या cycle नंतर लगेच घट्ट interval
 
@@ -227,3 +229,83 @@ class TestRunMonitorLoopTslFastCheck:
     def test_cli_default_tsl_interval_seconds_is_5(self):
         source = inspect.getsource(trade_monitor)
         assert '"--tsl-interval-seconds", type=float, default=5' in source
+
+
+class TestLighterMonitorCycle:
+    """"Huge slippages" -- OPEN trade नसलेल्या symbols साठी Upstox कॉल्स वगळले; positions एकदाच (आणि फक्त LIVE
+    trade असेल तरच) आणले; record_timing=True पाठवला."""
+
+    def _setup(self, monkeypatch, modes):
+        manage = MagicMock(return_value=[])
+        positions = MagicMock(return_value=[{"instrument_token": "X", "pnl": 1}])
+        monkeypatch.setattr(trade_monitor, "manage_open_trades", manage)
+        monkeypatch.setattr(trade_monitor, "fetch_broker_positions", positions)
+        monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", lambda syms: modes)
+        return manage, positions
+
+    def test_only_symbols_with_open_trades_are_checked(self, monkeypatch):
+        manage, positions = self._setup(monkeypatch, {"NIFTY": {"PAPER"}})
+        trade_monitor.run_monitor_cycle("tok")
+        assert [c.args[1] for c in manage.call_args_list] == ["NIFTY"]
+        assert not positions.called                        # PAPER ला खरी position नसते
+        assert manage.call_args.kwargs["broker_positions"] == []
+        assert manage.call_args.kwargs["record_timing"] is True
+
+    def test_positions_fetched_once_when_live_trades_exist(self, monkeypatch):
+        manage, positions = self._setup(monkeypatch, {"NIFTY": {"LIVE"}, "SENSEX": {"LIVE", "PAPER"}})
+        trade_monitor.run_monitor_cycle("tok")
+        assert positions.call_count == 1
+        assert [c.args[1] for c in manage.call_args_list] == ["NIFTY", "SENSEX"]
+        assert all(c.kwargs["broker_positions"] == [{"instrument_token": "X", "pnl": 1}] for c in manage.call_args_list)
+
+    def test_no_open_trades_makes_no_calls_but_keeps_heartbeat(self, monkeypatch):
+        manage, positions = self._setup(monkeypatch, {})
+        beats = []
+        monkeypatch.setattr(trade_monitor, "write_heartbeat", lambda name: beats.append(name))
+        result = trade_monitor.run_monitor_cycle("tok")
+        assert not manage.called and not positions.called
+        assert beats == [trade_monitor.SCRIPT_NAME]
+        assert "OPEN" in result
+
+
+class TestOpenTradeCadence:
+    def _clock(self):
+        state = {"now": 0.0}
+        return (lambda: state["now"]), (lambda s: state.__setitem__("now", state["now"] + s))
+
+    def _sleeps(self, **kw):
+        now_fn, sleep_fn = self._clock()
+        sleeps = []
+        trade_monitor.run_monitor_loop(
+            "tok", "D", interval_seconds=15, loop_seconds=30, tsl_interval_seconds=3,
+            cycle_fn=lambda t, p: "ok", sleep_fn=lambda s: (sleeps.append(s), sleep_fn(s)), now_fn=now_fn,
+            print_fn=lambda x: None, **kw,
+        )
+        return sleeps
+
+    def test_open_trade_uses_open_interval(self):
+        sleeps = self._sleeps(has_active_tsl_fn=lambda: False, has_open_trades_fn=lambda: True, open_interval_seconds=5)
+        assert sleeps and all(s == 5.0 for s in sleeps)
+
+    def test_no_open_trade_uses_normal_interval(self):
+        sleeps = self._sleeps(has_active_tsl_fn=lambda: False, has_open_trades_fn=lambda: False, open_interval_seconds=5)
+        assert sleeps == [15.0, 15.0]
+
+    def test_tsl_interval_has_priority(self):
+        sleeps = self._sleeps(has_active_tsl_fn=lambda: True, has_open_trades_fn=lambda: True, open_interval_seconds=5)
+        assert all(s == 3.0 for s in sleeps)
+
+    def test_defaults(self):
+        sig = inspect.signature(trade_monitor.run_monitor_loop)
+        assert sig.parameters["open_interval_seconds"].default == 5
+        assert sig.parameters["loop_seconds"].default == 62        # cron दर 60 सेकंदांनी -- 50 वर 10s चा blind window होता
+        source = inspect.getsource(trade_monitor)
+        assert '"--loop-seconds", type=float, default=62' in source
+        assert '"--open-interval-seconds", type=float, default=5' in source
+
+    def test_database_error_in_default_open_check_falls_back_to_normal_interval(self, monkeypatch):
+        def boom(symbols):
+            raise RuntimeError("db locked")
+        monkeypatch.setattr(trade_monitor.database, "get_open_trade_modes_by_symbol", boom)
+        sleeps = self._sleeps(has_active_tsl_fn=lambda: False)
+        assert sleeps == [15.0, 15.0]
