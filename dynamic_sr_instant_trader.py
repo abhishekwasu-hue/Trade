@@ -286,6 +286,41 @@ def check_supertrend_trend_filter(direction, dir_15m, dir_1h):
     return True, None
 
 
+def is_level_formed_in_session(formed_date, now):
+    """🎓 "intraday new form" level -- zone आज बाजार चालू झाल्यानंतर (09:15 नंतर) तयार झाला का. रात्रीचा/सकाळच्या
+    पूर्व-बाजार refresh चे levels (जुने, आधीच अनेक तासांचे) 'नवीन' मानले जात नाहीत. formed_date समजला नाही
+    (None/अवैध) तर False (म्हणजे level जुना समजला जातो -- fail-open, trade अडवला जात नाही)."""
+    if formed_date is None:
+        return False
+    try:
+        ts = pd.to_datetime(formed_date)
+        if pd.isna(ts):
+            return False
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("Asia/Kolkata").tz_localize(None)
+    except Exception:
+        return False
+    return ts.date() == now.date() and (ts.hour, ts.minute) >= (9, 15)
+
+
+def check_level_strength_gate(strength, formed_date, now, min_strength, new_levels_only=True):
+    """🎓 Level Strength Gate -- strength (एकत्र आलेल्या pivots ची संख्या) < min_strength असलेल्या कमकुवत level वर
+    reversal trade नाही. new_levels_only=True (डीफॉल्ट) असेल तर फक्त आज intraday तयार झालेल्या कमकुवत levels ला
+    लागू -- जुने बहुदिवसीय levels strength 2 असले तरी आधीच टिकलेले आहेत, ते चालतात. strength समजली नाही (None)
+    तर अडवत नाही. रिटर्न: (ok: bool, reason: str|None)."""
+    try:
+        strength_value = float(strength)
+    except (TypeError, ValueError):
+        return True, None
+    if pd.isna(strength_value) or strength_value >= min_strength:
+        return True, None
+    if new_levels_only and not is_level_formed_in_session(formed_date, now):
+        return True, None
+    kind = "आज नवीन तयार झालेला" if new_levels_only else "कमकुवत"
+    return False, (f"{kind} level -- strength {strength_value:.0f} < किमान {min_strength} "
+                   f"(पुन्हा टिकून strength वाढेपर्यंत trade नाही)")
+
+
 def check_breakout_supertrend_alignment(direction, dir_15m, dir_1h):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Breakout दोन्ही Supertrend च्या दिशेनेच झालेला असावा") —
     Breakout trade फक्त तेव्हा जेव्हा 15M **आणि** 1H दोन्ही Supertrend ची दिशा breakout च्या दिशेशी जुळते
@@ -524,6 +559,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.10)
     entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
     breakout_supertrend_filter_enabled = settings.get("breakout_supertrend_filter_enabled", False)
+    entry_min_level_strength_enabled = settings.get("entry_min_level_strength_enabled", False)
+    min_level_strength = settings.get("min_level_strength", 3)
+    level_strength_new_levels_only = settings.get("level_strength_new_levels_only", True)
     supertrend_15m_period = settings.get("supertrend_15m_period", 10)
     supertrend_15m_multiplier = settings.get("supertrend_15m_multiplier", 3.0)
     supertrend_1h_period = settings.get("supertrend_1h_period", 10)
@@ -857,6 +895,19 @@ def process_symbol(access_token, symbol, lot_size=65):
             log_entry["reason"] = "Bearish Entry सेटिंग्जमधून बंद आहे"
             cloud_db.save_signal_log(log_entry)
             continue
+
+        # 🎓 "5 minute mdhe intraday new form support resistance strength 2x asalyas ... high probability che
+        # nasatat" -- Level Strength Gate (Dashboard, डीफॉल्ट बंद). फक्त साध्या reversal trades साठी; Breakout/IV
+        # (directional) वगळलेले. SKIPPED_WEAK_LEVEL हा no-hit status (cloud_db._NON_HIT_TRADE_STATUSES) --
+        # level नंतर मजबूत झाल्यावर max-hits/cooldown आधीच खर्च झालेले नसावेत.
+        if entry_min_level_strength_enabled and not is_directional_trade:
+            strength_ok, strength_reason = check_level_strength_gate(
+                row.get("strength"), row.get("formed_date"), now, min_level_strength, level_strength_new_levels_only)
+            if not strength_ok:
+                log_entry["trade_status"] = "SKIPPED_WEAK_LEVEL"
+                log_entry["reason"] = strength_reason
+                cloud_db.save_signal_log(log_entry)
+                continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Minimum Level-Hold Duration Before Entry" —
         # बघा वरची count_consecutive_touch_minutes() ची टिप्पणी) — level ला दिवसाचा पहिलाच, ताजा

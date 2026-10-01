@@ -366,6 +366,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 "Breakout दोन्ही Supertrend (15M + 1H) च्या दिशेनेच झालेला असावा" — डीफॉल्ट बंद; चालू असेल तर
         # Bullish breakout साठी दोन्ही BULLISH, Bearish साठी दोन्ही BEARISH हवं; डेटा नसेल तर Breakout थांबतो.
         "breakout_supertrend_filter_enabled": False,
+        # 🎓 "5 minute mdhe intraday new form support resistance strength 2x asalyas, kase trade krayche, karan te
+        # high probability che nasatat" -- डीफॉल्ट बंद. चालू असेल तर आज (बाजार चालू झाल्यावर) नव्याने तयार झालेला
+        # आणि strength < min_level_strength असलेला level reversal trade घेत नाही, तो पुन्हा टिकून strength वाढेपर्यंत.
+        "entry_min_level_strength_enabled": False,
+        "min_level_strength": 3,
+        "level_strength_new_levels_only": True,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ
@@ -1338,6 +1344,8 @@ _NON_HIT_TRADE_STATUSES = (
     "SKIPPED_MIN_HOLD_DURATION", "SKIPPED_NAKED_DISABLED", "SKIPPED_NAKED_STRIKE_NOT_FOUND",
     # naked-only मोडमध्ये naked ही चालला नाही तर (strike नाही / बंद) — कुठलाच order प्रयत्न नाही, म्हणून hit नाही.
     "SKIPPED_CREDIT_SPREAD_DISABLED",
+    # Level Strength Gate ने थांबवलेला touch -- level नंतर मजबूत झाल्यावर max-hits/cooldown खर्च झालेले नसावेत.
+    "SKIPPED_WEAK_LEVEL",
 )
 _NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
@@ -1930,17 +1938,18 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
         resistance_type = f"DYNAMIC_SR_RESISTANCE_{timeframe_suffix}"
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, zone_type, zone_low FROM market_zones WHERE symbol = %s "
+                "SELECT id, zone_type, zone_low, strength FROM market_zones WHERE symbol = %s "
                 "AND zone_type IN (%s, %s) AND status = 'ACTIVE'",
                 (symbol, support_type, resistance_type),
             )
-            existing = cur.fetchall()  # [(id, zone_type, zone_low), ...]
+            existing = cur.fetchall()  # [(id, zone_type, zone_low, strength), ...]
 
             for zone_type, candidates in [
                 (support_type, dyn_sr_result.get("support", [])),
                 (resistance_type, dyn_sr_result.get("resistance", [])),
             ]:
-                existing_of_type = [(row_id, zone_low) for (row_id, zt, zone_low) in existing if zt == zone_type]
+                existing_of_type = [(row[0], row[2]) for row in existing if row[1] == zone_type]
+                existing_strength = {row[0]: (row[3] if len(row) > 3 else None) for row in existing}
                 matched_existing_ids = set()
 
                 for cand in candidates:
@@ -1952,7 +1961,19 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
                         None,
                     )
                     if matched is not None:
-                        matched_existing_ids.add(matched)  # जुनाच level_price कायम -- काहीही न बदलता
+                        matched_existing_ids.add(matched)  # जुनाच level_price कायम
+                        # 🎓 "Level नंतर पुन्हा टिकला तर strength अपडेट" (entry-level strength gate साठी) --
+                        # आधी strength फक्त level पहिल्यांदा तयार झाल्याच्या क्षणीच साठवली जायची आणि कधीच बदलायची
+                        # नाही, त्यामुळे नंतर पुन्हा टिकून मजबूत झालेला level DB मध्ये कायम "2" च दिसायचा.
+                        # फक्त वाढवतो (कधीच कमी नाही) -- जुने pivots window मधून बाहेर गेल्याने मोजणी तात्पुरती घटली
+                        # तरी एकदा मिळवलेली मजबुती जात नाही.
+                        try:
+                            old_strength = existing_strength.get(matched)
+                            new_strength = float(cand["touches"])
+                            if old_strength is None or new_strength > float(old_strength):
+                                cur.execute("UPDATE market_zones SET strength = %s WHERE id = %s", (new_strength, matched))
+                        except (TypeError, ValueError):
+                            pass
                     else:
                         cur.execute(
                             """INSERT INTO market_zones (symbol, zone_type, zone_low, zone_high, strength, formed_date, status)

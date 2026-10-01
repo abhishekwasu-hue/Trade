@@ -3423,3 +3423,29 @@ class TestBreakoutSupertrendAlignmentHelper:
         ok, reason = dsr.check_breakout_supertrend_alignment("BULLISH", None, "BULLISH")
         assert ok is False and "डेटा" in reason
         assert dsr.check_breakout_supertrend_alignment("BULLISH", "BULLISH", None)[0] is False
+
+
+class TestLevelStrengthGateHelpers:
+    NOW = datetime.datetime(2026, 9, 11, 11, 0, 0)
+
+    def test_formed_in_session(self):
+        f = dsr.is_level_formed_in_session
+        assert f("2026-09-11 09:40:00", self.NOW) is True
+        assert f(datetime.datetime(2026, 9, 11, 9, 15), self.NOW) is True
+        assert f("2026-09-11 08:59:00", self.NOW) is False     # पूर्व-बाजार
+        assert f("2026-09-10 21:00:00", self.NOW) is False     # कालचा
+        assert f(None, self.NOW) is False and f("garbage", self.NOW) is False
+
+    def test_timezone_aware_timestamp_is_converted_to_ist(self):
+        # 04:30 UTC = 10:00 IST (आज, बाजार चालू) => नवीन; 03:00 UTC = 08:30 IST => पूर्व-बाजार
+        assert dsr.is_level_formed_in_session(pd.Timestamp("2026-09-11 04:30:00", tz="UTC"), self.NOW) is True
+        assert dsr.is_level_formed_in_session(pd.Timestamp("2026-09-11 03:00:00", tz="UTC"), self.NOW) is False
+
+    def test_gate_decisions(self):
+        g = dsr.check_level_strength_gate
+        assert g(2.0, "2026-09-11 10:00:00", self.NOW, 3)[0] is False
+        assert g(3.0, "2026-09-11 10:00:00", self.NOW, 3)[0] is True
+        assert g(2.0, "2026-09-01 10:00:00", self.NOW, 3)[0] is True                      # जुना level
+        assert g(2.0, "2026-09-01 10:00:00", self.NOW, 3, new_levels_only=False)[0] is False
+        assert g(None, "2026-09-11 10:00:00", self.NOW, 3)[0] is True                     # strength माहीत नाही
+        assert g(float("nan"), "2026-09-11 10:00:00", self.NOW, 3)[0] is True
