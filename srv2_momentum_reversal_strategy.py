@@ -30,7 +30,7 @@ from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
 # rsi_neutral_level (50) ऐवजी आता dynamic_sr_instant_trader.py/mcx_futures_trader.py सारखाच
 # dual-threshold RSI गेट (Support<40 / Resistance>60, established, सिद्ध तर्क — नवीन कॉपी नाही).
-from dynamic_sr_instant_trader import check_instant_rsi_filter, check_level_crossed, close_open_5m_positions
+from dynamic_sr_instant_trader import check_instant_rsi_filter, check_level_crossed, close_open_5m_positions, count_consecutive_touch_minutes
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
@@ -154,10 +154,9 @@ def _collect_touch_candidates(access_token, symbol, all_zones, now, active_timef
     return candidates
 
 
-def _fetch_recent_1m_candles(access_token, symbol, now, count=2):
-    """आजचे शेवटचे `count` 1-मिनिट candles (जुनं ते नवीन) [{"open","high","low","close",...}, ...] —
-    touch तपासण्यासाठी (buffer शिवाय, candle-रेंजवरून). मिळाले नाहीत / चूक झाली तर रिकामी यादी
-    (त्या cycle ला कुठलाच touch मानला जात नाही — सुरक्षित)."""
+def _fetch_todays_1m_candles(access_token, symbol, now):
+    """आजचे सर्व 1-मिनिट candles (जुनं ते नवीन) [{"open","high","low","close",...}, ...]. मिळाले नाहीत /
+    चूक झाली तर रिकामी यादी (त्या cycle ला कुठलाच touch मानला जात नाही — सुरक्षित)."""
     try:
         df = fetch_candles(access_token, symbol, current_spot=0, interval="1minute", lookback_days=1)
     except Exception:
@@ -166,7 +165,13 @@ def _fetch_recent_1m_candles(access_token, symbol, now, count=2):
         return []
     df = df.copy()
     df = df[df["timestamp"].dt.date == now.date()]
-    return df.tail(count).to_dict("records")
+    return df.to_dict("records")
+
+
+def _fetch_recent_1m_candles(access_token, symbol, now, count=2):
+    """आजचे शेवटचे `count` 1-मिनिट candles (जुनं ते नवीन) — touch तपासण्यासाठी (buffer शिवाय,
+    candle-रेंजवरून). मिळाले नाहीत / चूक झाली तर रिकामी यादी."""
+    return _fetch_todays_1m_candles(access_token, symbol, now)[-count:]
 
 
 def _yield_open_5m_positions(access_token, symbol, trading_mode):
@@ -231,6 +236,9 @@ def process_symbol(access_token, symbol, lot_size=65):
     # वाचलंच जायचं नाही — नेहमी हार्डकोडेड TARGET_PCT_OF_PREMIUM (80%) वापरला जायचा. वापरकर्त्याने
     # 40% सेट केलं तरी bot शांतपणे 80% वरच थांबत राहायचा.
     target_pct_of_premium = settings.get("spread_target_pct_of_premium", TARGET_PCT_OF_PREMIUM)
+    entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
+    entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
+    entry_min_hold_first_trade_only = settings.get("entry_min_hold_first_trade_only", True)
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -241,7 +249,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels (15M/30M/60M) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
-    recent_1m_candles = _fetch_recent_1m_candles(access_token, symbol, now)
+    todays_1m_candles = _fetch_todays_1m_candles(access_token, symbol, now)
+    recent_1m_candles = todays_1m_candles[-2:]
     for level_price, timeframe_suffix, candles_df, underlying_price, todays_closes in candidates:
         touched, touch_type, _approx = (
             check_level_crossed(level_price, recent_1m_candles, tolerance_pct=TOUCH_TOLERANCE_PCT)
@@ -319,7 +328,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         # Multi-Hit — बिनशर्त position-check (कुठल्याही level/timeframe साठी). support/resistance
         # साठी स्वतंत्र कमाल-2 counter (role= दिलं) — तोच level भूमिका बदलून (support->resistance
         # किंवा उलट) दुसऱ्या दिशेने test झाला तर तो एक वेगळाच candidate मानला जातो.
-        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
+        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=level_type)
         if hit_count_so_far >= max_hits_per_zone:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
@@ -340,6 +349,16 @@ def process_symbol(access_token, symbol, lot_size=65):
                     log_entry["reason"] = f"याच level वर मागचा SL/TSL फक्त {elapsed_since_sl:.1f} मिनिटांपूर्वी लागला (किमान {sl_tsl_cooldown_minutes} हवीत, {timeframe_suffix})"
                     cloud_db.save_signal_log(log_entry)
                     continue
+        # 🎓 "Minimum Level-Hold Duration" (5M सारखाच, 1-मिनिट candles वरून, बफर शिवाय) — level ला touch होऊन
+        # किमान entry_min_hold_minutes सलग टिकलेला असेल तरच entry; `first_trade_only` असल्यास फक्त त्या level
+        # (+role) वर आज पहिला खरा trade होईपर्यंत (last_trade_time — नाकारलेला touch मोजला जात नाही).
+        if entry_min_hold_gate_enabled and not (entry_min_hold_first_trade_only and last_trade_time is not None):
+            held_minutes = count_consecutive_touch_minutes(level_price, todays_1m_candles, tolerance_pct=TOUCH_TOLERANCE_PCT)
+            if held_minutes < entry_min_hold_minutes:
+                log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
+                log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch ({timeframe_suffix})"
+                cloud_db.save_signal_log(log_entry)
+                continue
         if has_open_trade_from_source(symbol, "srv2_momentum_reversal"):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
             log_entry["reason"] = f"आधीची position (या strategy ची, कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"

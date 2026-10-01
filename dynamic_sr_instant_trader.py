@@ -392,6 +392,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     breakout_oi_confirm_enabled = settings.get("breakout_oi_confirm_enabled", False)
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", False)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 3)
+    entry_min_hold_first_trade_only = settings.get("entry_min_hold_first_trade_only", True)
     min_hold_shadow_enabled = settings.get("min_hold_shadow_enabled", False)
     stop_after_target_enabled = settings.get("stop_after_target_enabled", False)
     defer_to_15m_enabled = settings.get("defer_to_15m_enabled", False)
@@ -730,7 +731,11 @@ def process_symbol(access_token, symbol, lot_size=65):
                     continue
 
         held_minutes = count_consecutive_touch_minutes(row["zone_low"], todays_candle_records)
-        if (entry_min_hold_gate_enabled and not is_directional_trade
+        # 🎓 "level ला आज पहिल्यांदा touch झाल्यावर 3 मिनिट hold अट, त्याच level च्या 2ऱ्या trade साठी नको" —
+        # last_trade_time = याच level+role वर आज झालेला शेवटचा **खरा** trade attempt (नाकारलेला touch नाही,
+        # म्हणून गेटने नाकारलेला touch "पहिला trade" मोजला जात नाही — पुढच्या मिनिटांतही गेट लागू राहतो).
+        min_hold_applies = not (entry_min_hold_first_trade_only and last_trade_time is not None)
+        if (entry_min_hold_gate_enabled and min_hold_applies and not is_directional_trade
                 and held_minutes < entry_min_hold_minutes):
             log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
             log_entry["reason"] = f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch"

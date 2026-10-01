@@ -1126,6 +1126,61 @@ class TestMinHoldDurationGate:
             assert "SKIPPED_MIN_HOLD_DURATION" in statuses
 
 
+class TestMinHoldFirstTradeOnly:
+    """🎓 "level ला आज पहिल्यांदा touch झाल्यावर 3 मिनिट hold अट, त्याच level च्या 2ऱ्या trade साठी नको" —
+    गेट फक्त त्या level (+role) वर आज पहिला खरा trade होईपर्यंत; नाकारलेला touch 'पहिला trade' नाही."""
+
+    NOW = datetime.datetime(2026, 9, 11, 10, 0, 0)
+    EARLIER_TRADE = datetime.datetime(2026, 9, 11, 9, 20, 0)  # 40 मिनिटं आधी (30-मिनिट cooldown पार)
+
+    def _run(self, hits, **setting_overrides):
+        candles_touch = _candles_with_rsi([
+            {"open": 24010, "high": 24015, "low": 24000, "close": 24005},
+            {"open": 24000, "high": 24005, "low": 23895, "close": 23902},
+        ], declining=True, today_ist=self.NOW)  # held=1 मिनिट
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False,
+                        entry_min_hold_gate_enabled=True, entry_min_hold_minutes=3)
+        settings.update(setting_overrides)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=self.NOW), \
+             patch.object(dsr, "fetch_candles", return_value=candles_touch), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23902.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=hits):
+            dsr.process_symbol("fake_token", "NIFTY")
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        return mock_trade, statuses
+
+    def test_default_is_first_trade_only(self):
+        assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["entry_min_hold_first_trade_only"] is True
+
+    def test_first_trade_on_level_still_gated(self):
+        mock_trade, statuses = self._run((0, None, None))
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_rejected_touch_is_not_a_first_trade(self):
+        # touch झाला (hit_count=1) पण खरा trade कधीच झाला नाही (last_trade_time=None) -> गेट अजूनही लागू
+        mock_trade, statuses = self._run((1, self.EARLIER_TRADE, None))
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_second_trade_on_same_level_bypasses_gate(self):
+        mock_trade, statuses = self._run((1, self.EARLIER_TRADE, self.EARLIER_TRADE))
+        assert mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
+    def test_flag_off_gates_second_trade_too(self):
+        mock_trade, statuses = self._run((1, self.EARLIER_TRADE, self.EARLIER_TRADE), entry_min_hold_first_trade_only=False)
+        assert not mock_trade.called
+        assert "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+
 class TestProcessSymbolMultiAccount:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (per-strategy Broker Selection) — आता "कुठलेही broker_accounts
     नोंदवलेले असतील तर सर्व सक्रिय accounts" ऐवजी, settings मधल्याच broker_account_ids (वापरकर्त्याने
