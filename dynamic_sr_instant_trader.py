@@ -221,6 +221,30 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
     return last_close < level - buffer
 
 
+def determine_breakout_direction_from_close(level, candles_5m, buffer_pct, lookback_candles=3):
+    """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("22538 support Breakout trade ka execute jhala nahi" ->
+    "Breakout ची दिशा 5M close च्या बाजूवरून ठरवा") — आधी breakout ची दिशा नेहमी level च्या *भूमिकेवरून*
+    (SUPPORT => BEARISH, RESISTANCE => BULLISH) ठरायची, आणि ती भूमिका १-मिनिट close च्या ±०.१०% hysteresis ने
+    ठरते. पण breakout confirm मात्र ५-मिनिट close फक्त `buffer_pct` (उदा. ०.०१०%) पलीकडे गेला की होतो. वेगवान
+    घसरणीत (उदा. ३ मिनिटांत ०.१२%) भूमिका SUPPORT -> RESISTANCE अशी आधीच बदलते, मग breakout ची दिशा उलटून
+    BULLISH शोधली जाते — आणि खरा breakdown कधीच पकडला जात नाही.
+
+    आता: शेवटचा ५-मिनिट close level पेक्षा `buffer_pct` इतका खाली असेल आणि मागच्या `lookback_candles` candles
+    पैकी कोणताही एक close level च्या वर असेल => BEARISH (support तुटला). उलट बाजूसाठी BULLISH. म्हणजे
+    "level खरोखर ओलांडला गेला" हे ५-मिनिट close वरूनच ठरतं, १-मिनिट भूमिकेवरून नाही. ओलांडलेलं नसेल (किंवा
+    आधीचे candles नसतील) तर None — caller जुनी भूमिका-आधारित दिशा वापरतो. रिटर्न: "BULLISH"/"BEARISH"/None."""
+    if not candles_5m or len(candles_5m) < 2:
+        return None
+    last_close = candles_5m[-1]["close"]
+    buffer = level * buffer_pct / 100
+    previous_closes = [c["close"] for c in candles_5m[-(lookback_candles + 1):-1]]
+    if last_close < level - buffer and any(c > level for c in previous_closes):
+        return "BEARISH"
+    if last_close > level + buffer and any(c < level for c in previous_closes):
+        return "BULLISH"
+    return None
+
+
 def get_breakout_volume_ratio(candles_5m, lookback_candles=10):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("candle-close %, volume ratio, OI signal Signal Log मध्ये
     स्वतंत्रपणे दाखवायचे") — खालच्या check_breakout_volume_confirmation() मधलाच ratio, फक्त bool
@@ -386,6 +410,8 @@ def process_symbol(access_token, symbol, lot_size=65):
     max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.10)
+    breakout_direction_from_close = settings.get("breakout_direction_from_close", False)
+    breakout_cross_lookback_candles = int(settings.get("breakout_cross_lookback_candles", 3))
     breakout_volume_confirm_enabled = settings.get("breakout_volume_confirm_enabled", False)
     breakout_volume_lookback_candles = settings.get("breakout_volume_lookback_candles", 10)
     breakout_volume_multiplier = settings.get("breakout_volume_multiplier", 1.5)
@@ -588,6 +614,13 @@ def process_symbol(access_token, symbol, lot_size=65):
         breakout_actual_close_pct = breakout_actual_volume_ratio = breakout_oi_signal_used = None
         if entry_breakout_gate_enabled and timeframe_suffix == "5M":
             breakout_direction = "BEARISH" if role == "SUPPORT" else "BULLISH"
+            # 🎓 "Breakout ची दिशा 5M close च्या बाजूवरून" (Dashboard सेटिंग, डीफॉल्ट बंद) — बघा
+            # determine_breakout_direction_from_close(). ओलांडलं गेल्याचं आढळलं नाही तर वरची जुनी भूमिका-आधारित दिशा.
+            if breakout_direction_from_close:
+                crossed_direction = determine_breakout_direction_from_close(
+                    row["zone_low"], todays_5m_candles_all, breakout_close_buffer_pct, breakout_cross_lookback_candles)
+                if crossed_direction is not None:
+                    breakout_direction = crossed_direction
             # 🎓 आता वरती (loop च्या आधी) प्रति-symbol एकदाच आणलेले candles पुन्हा वापरले जातात —
             # इथे स्वतंत्र API कॉल नाही (पहिल्यांदा वरचीच टिप्पणी बघा, breakout_catchup_hit).
             todays_5m_candles = todays_5m_candles_all

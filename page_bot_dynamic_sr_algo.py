@@ -711,6 +711,23 @@ def render():
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("5 minute Breakout candle + Volume
                 # ashi condition ठेवता yeil") — ऐच्छिक, डीफॉल्ट बंद — कमी-volume (संभाव्य fake/
                 # whipsaw) breakouts गाळण्यासाठी.
+                breakout_direction_from_close = st.checkbox(
+                    "Breakout ची दिशा 5M close च्या बाजूवरून ठरवा (डीफॉल्ट बंद)",
+                    value=bool(settings.get("breakout_direction_from_close", False)),
+                    key=_widget_key(strategy_key, symbol, "breakout_direction_from_close"),
+                    disabled=not entry_breakout_gate_enabled,
+                )
+                st.caption(
+                    "बंद असताना: breakout ची दिशा level च्या भूमिकेवरून (Support तुटला => Bearish, Resistance तुटला => Bullish) "
+                    "ठरते, आणि वेगवान घसरणीत ही भूमिका (±0.10% hysteresis मुळे) breakout confirm व्हायच्या आधीच उलटते — "
+                    "म्हणून खरा breakdown हुकतो. चालू असताना: शेवटचा 5M close level पासून वरचा buffer% पलीकडे असेल आणि "
+                    "मागच्या N candles मध्ये किंमत level च्या दुसऱ्या बाजूला होती, तर त्याच बाजूची दिशा घेतली जाते."
+                )
+                breakout_cross_lookback_candles = _number_input(
+                    "मागचे किती 5M candles तपासायचे (किंमत दुसऱ्या बाजूला होती का)", settings, "breakout_cross_lookback_candles",
+                    strategy_key, symbol, min_value=1, max_value=12, step=1,
+                    disabled=not (entry_breakout_gate_enabled and breakout_direction_from_close),
+                )
                 breakout_volume_confirm_enabled = st.checkbox(
                     "Volume Confirmation सक्रिय (डीफॉल्ट बंद)",
                     value=bool(settings.get("breakout_volume_confirm_enabled", False)),
@@ -1156,6 +1173,8 @@ def render():
             new_settings["iv_marubozu_threshold"] = float(iv_marubozu_threshold)
             new_settings["entry_breakout_gate_enabled"] = bool(entry_breakout_gate_enabled)
             new_settings["breakout_close_buffer_pct"] = float(breakout_close_buffer_pct)
+            new_settings["breakout_direction_from_close"] = bool(breakout_direction_from_close)
+            new_settings["breakout_cross_lookback_candles"] = int(breakout_cross_lookback_candles)
             new_settings["breakout_volume_confirm_enabled"] = bool(breakout_volume_confirm_enabled)
             new_settings["breakout_volume_lookback_candles"] = int(breakout_volume_lookback_candles)
             new_settings["breakout_volume_multiplier"] = float(breakout_volume_multiplier)
