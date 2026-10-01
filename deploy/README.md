@@ -395,9 +395,9 @@ entry शक्य). आता 5M/1M प्रमाणेच **merge** (`cloud_
 चालवणंही सुरक्षित आहे.
 
 **VPS crontab मध्ये जुनी `5 5,6,8,9 ...` ओळ बदलून हीच ठेवा (`crontab -e`, वेळ UTC मध्ये — बाजार
-सत्र 9:15–15:30 IST ≈ 3:45–10:00 UTC; वरची रोजची `refresh_market_zones.py` ओळ न बदलता तशीच राहू द्या):**
+सत्र 9:15–15:30 IST ≈ 3:45–10:00 UTC (3:00–3:30 UTC चे pre-market runs निरुपद्रवी — तीच merge, बदल नाही; 5M/1M cron प्रमाणेच 3-10 तास); वरची रोजची `refresh_market_zones.py` ओळ न बदलता तशीच राहू द्या):**
 ```
-*/15 4-9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_intraday.py >> /root/Trade/market_zones_intraday_refresh.log 2>&1
+*/15 3-10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_zones_intraday.py >> /root/Trade/market_zones_intraday_refresh.log 2>&1
 ```
 (रोजचा `refresh_market_zones.py` रात्री सर्व levels पूर्णपणे नव्याने लिहितो — तिथे `level_price` बदलणं
 अपेक्षितच आहे, कारण तो नवीन दिवसाची सुरुवात आहे.)
