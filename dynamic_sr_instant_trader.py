@@ -286,6 +286,53 @@ def check_supertrend_trend_filter(direction, dir_15m, dir_1h):
     return True, None
 
 
+def check_breakout_supertrend_alignment(direction, dir_15m, dir_1h):
+    """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("Breakout दोन्ही Supertrend च्या दिशेनेच झालेला असावा") —
+    Breakout trade फक्त तेव्हा जेव्हा 15M **आणि** 1H दोन्ही Supertrend ची दिशा breakout च्या दिशेशी जुळते
+    (Bullish breakout => दोन्ही BULLISH; Bearish breakout => दोन्ही BEARISH). reversal filter
+    (`check_supertrend_trend_filter`, fail-open) पेक्षा उलट — इथे डेटा नसेल (None) तर trade **थांबतो**
+    (वापरकर्त्याचा निर्णय). रिटर्न: (ok: bool, reason: str|None)."""
+    if dir_15m is None or dir_1h is None:
+        return False, f"Supertrend डेटा उपलब्ध नाही (15M={dir_15m or 'N/A'}, 1H={dir_1h or 'N/A'}) — Breakout थांबवला"
+    if dir_15m == direction and dir_1h == direction:
+        return True, None
+    return False, f"Supertrend दिशा जुळत नाही (15M={dir_15m}, 1H={dir_1h}; breakout={direction}) — Breakout थांबवला"
+
+
+def build_breakout_eval_note(direction, level, last_close, close_pct, buffer_pct, candle_close_ok,
+                             volume_enabled, volume_ratio, volume_multiplier, volume_ok,
+                             oi_enabled, oi_signal, oi_ok, st_enabled, st_dir_15m, st_dir_1h, st_ok,
+                             direction_from_close, final_ok):
+    """🎓 "Breakout ची नोंद सविस्तर करा" — प्रत्येक Breakout तपासणीची (Breakout झाला किंवा नाही) नोंद.
+    `[BRK:...]` हा सुरुवातीचा तुकडा फक्त स्थिर निकाल-चिन्हं (✓/✗/-) असतो, जिवंत आकडे नाहीत —
+    `cloud_db.save_signal_log()` च्या dedup मध्ये तोच वापरला जातो (अटींचा निकाल बदलला तरच नवीन नोंद);
+    त्यापुढे वाचनीय तपशील (आकडे सकट). ✓ = अट पूर्ण, ✗ = अपूर्ण, - = सेटिंग बंद / तपासलीच नाही."""
+    def mark(enabled, ok):
+        if not enabled:
+            return "-"
+        return "-" if ok is None else ("✓" if ok else "✗")
+    sig = (f"[BRK:{direction} C{mark(True, candle_close_ok)} V{mark(volume_enabled, volume_ok)} "
+           f"O{mark(oi_enabled, oi_ok)} S{mark(st_enabled, st_ok)}"
+           + (f"(15M={st_dir_15m or 'N/A'},1H={st_dir_1h or 'N/A'})" if st_enabled and st_ok is not None else "")
+           + f" => {'BREAKOUT' if final_ok else 'NO'}]")
+    parts = [f"दिशा {direction}" + (" (5M close वरून)" if direction_from_close else " (level भूमिकेवरून)"),
+             f"level {level:.2f}"]
+    if close_pct is not None:
+        parts.append(f"5M close {last_close:.2f} ({close_pct:+.3f}% पलीकडे; किमान {buffer_pct:.3f}% हवं) "
+                     f"{'✓' if candle_close_ok else '✗'}")
+    if volume_enabled:
+        parts.append(f"Volume {volume_ratio if volume_ratio is not None else 'N/A'}x (किमान {volume_multiplier:.1f}x) "
+                     f"{mark(True, volume_ok)}")
+    if oi_enabled:
+        parts.append(f"OI Signal {oi_signal or 'N/A'} {mark(True, oi_ok)}")
+    if st_enabled:
+        if st_ok is None:
+            parts.append("Supertrend तपासलं नाही (वरच्या अटी आधीच अपूर्ण)")
+        else:
+            parts.append(f"Supertrend 15M={st_dir_15m or 'N/A'}, 1H={st_dir_1h or 'N/A'} {mark(True, st_ok)}")
+    return sig + " " + "; ".join(parts) + f" => {'Breakout trade' if final_ok else 'Breakout नाही'}."
+
+
 def determine_breakout_direction_from_close(level, candles_5m, buffer_pct, lookback_candles=3):
     """🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("22538 support Breakout trade ka execute jhala nahi" ->
     "Breakout ची दिशा 5M close च्या बाजूवरून ठरवा") — आधी breakout ची दिशा नेहमी level च्या *भूमिकेवरून*
@@ -476,6 +523,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_close_buffer_pct = settings.get("breakout_close_buffer_pct", 0.10)
     entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
+    breakout_supertrend_filter_enabled = settings.get("breakout_supertrend_filter_enabled", False)
     supertrend_15m_period = settings.get("supertrend_15m_period", 10)
     supertrend_15m_multiplier = settings.get("supertrend_15m_multiplier", 3.0)
     supertrend_1h_period = settings.get("supertrend_1h_period", 10)
@@ -713,7 +761,34 @@ def process_symbol(access_token, symbol, lot_size=65):
             if breakout_oi_confirm_enabled:
                 breakout_oi_signal_used = get_latest_oi_signal(symbol)
                 oi_confirmed = check_oi_diff_entry_gate(breakout_direction, breakout_oi_signal_used)
-            if candle_close_confirmed and volume_confirmed and oi_confirmed:
+            # 🎓 "Breakout दोन्ही Supertrend च्या दिशेनेच" (Dashboard सेटिंग, डीफॉल्ट बंद) — बाकीच्या सर्व
+            # अटी पूर्ण झाल्या असतील तरच (अनावश्यक API कॉल टाळण्यासाठी) 15M + 1H दिशा आणली जाते; दोन्ही
+            # breakout च्या दिशेशी जुळाव्या, डेटा नसेल तर Breakout थांबतो.
+            st_breakout_ok = True
+            st_dir_15m = st_dir_1h = None
+            if breakout_supertrend_filter_enabled:
+                if candle_close_confirmed and volume_confirmed and oi_confirmed:
+                    if not supertrend_directions_cache:
+                        supertrend_directions_cache.append(fetch_trend_filter_directions(
+                            access_token, symbol, now, supertrend_15m_period, supertrend_15m_multiplier,
+                            supertrend_1h_period, supertrend_1h_multiplier,
+                        ))
+                    st_dir_15m, st_dir_1h = supertrend_directions_cache[0]
+                    st_breakout_ok, _st_breakout_reason = check_breakout_supertrend_alignment(
+                        breakout_direction, st_dir_15m, st_dir_1h)
+                else:
+                    st_breakout_ok = None  # तपासलंच नाही
+            breakout_final_ok = bool(candle_close_confirmed and volume_confirmed and oi_confirmed
+                                     and st_breakout_ok is True)
+            log_entry["breakout_eval"] = build_breakout_eval_note(
+                breakout_direction, row["zone_low"], todays_5m_candles[-1]["close"] if todays_5m_candles else None,
+                breakout_actual_close_pct, breakout_close_buffer_pct, candle_close_confirmed,
+                breakout_volume_confirm_enabled, breakout_actual_volume_ratio, breakout_volume_multiplier, volume_confirmed,
+                breakout_oi_confirm_enabled, breakout_oi_signal_used, oi_confirmed,
+                breakout_supertrend_filter_enabled, st_dir_15m, st_dir_1h, st_breakout_ok,
+                breakout_direction_from_close, breakout_final_ok,
+            )
+            if breakout_final_ok:
                 direction = breakout_direction
                 log_entry["direction"] = direction
                 is_breakout_trade = True

@@ -363,6 +363,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # breakout trade घेतला जातो — कुठलेही नवीन threshold नाहीत (existing established gate चाच
         # पुनर्वापर).
         "breakout_oi_confirm_enabled": False,
+        # 🎓 "Breakout दोन्ही Supertrend (15M + 1H) च्या दिशेनेच झालेला असावा" — डीफॉल्ट बंद; चालू असेल तर
+        # Bullish breakout साठी दोन्ही BULLISH, Bearish साठी दोन्ही BEARISH हवं; डेटा नसेल तर Breakout थांबतो.
+        "breakout_supertrend_filter_enabled": False,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Same level war pahilya trade cha sl tsl hit jhalyas
         # kiman 15 minute same level war trade ghewu naye, cooldown") — established (max-2-hits
         # असूनही) आजचा दुसरा touch त्याच level वर पहिल्या touch नंतर अवघ्या 1 मिनिटातच entry घेऊ
@@ -1411,6 +1414,13 @@ def _is_no_action_trade_status(trade_status):
     return trade_status is None or trade_status == "STRATEGY_SELECTION_FAILED" or str(trade_status).startswith("SKIPPED_")
 
 
+def _breakout_signature(reason):
+    """reason च्या सुरुवातीचा `[BRK:...]` स्थिर निकाल-तुकडा (Breakout तपासणी झाली असेल तर), नाहीतर None."""
+    if reason and str(reason).startswith("[BRK:"):
+        return str(reason).split("]", 1)[0]
+    return None
+
+
 def save_signal_log(entry):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — High-Frequency 1-मिनिट S/R रणनीतीचा प्रत्येक शोधलेला
@@ -1446,15 +1456,24 @@ def save_signal_log(entry):
     try:
         with conn.cursor() as cur:
             trade_status = entry.get("trade_status")
+            # 🎓 "Breakout ची नोंद सविस्तर करा" — 5M Instant Trader प्रत्येक Breakout तपासणीचा तपशील
+            # `breakout_eval` मध्ये देतो ("[BRK:...] तपशील..."); तो reason च्या सुरुवातीला जोडला जातो
+            # (वेगळी row नाही — म्हणून max-hits/cooldown वर काहीच परिणाम नाही). dedup साठी फक्त
+            # `[BRK:...]` हा स्थिर निकाल-तुकडा वापरला जातो: अटींचा निकाल बदलला तरच नवीन नोंद.
+            breakout_eval = entry.get("breakout_eval")
+            reason = entry.get("reason")
+            if breakout_eval:
+                reason = f"{breakout_eval} | {reason}" if reason else breakout_eval
             if _is_no_action_trade_status(trade_status):
                 cur.execute(
-                    """SELECT hit_type, trade_status FROM signal_log
+                    """SELECT hit_type, trade_status, reason FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_type=%s AND level_price=%s
                        ORDER BY signal_time DESC LIMIT 1""",
                     (entry["symbol"], entry["trade_date"], entry["level_type"], entry["level_price"]),
                 )
                 last = cur.fetchone()
-                if last is not None and last[0] == entry["hit_type"] and last[1] == trade_status:
+                if (last is not None and last[0] == entry["hit_type"] and last[1] == trade_status
+                        and _breakout_signature(last[2]) == _breakout_signature(reason)):
                     return True  # आधीच्याच स्थितीची नोंद -- पुन्हा साठवली नाही, पण हे अपयश नाही
             cur.execute(
                 """INSERT INTO signal_log (symbol, trade_date, signal_time, level_type, level_price,
@@ -1462,7 +1481,7 @@ def save_signal_log(entry):
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (entry["symbol"], entry["trade_date"], entry["signal_time"], entry["level_type"],
                  entry["level_price"], entry["hit_type"], entry["direction"], entry.get("ltp_at_signal"),
-                 trade_status, entry.get("reason")),
+                 trade_status, reason),
             )
         conn.commit()
         return True
