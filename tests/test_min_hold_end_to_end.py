@@ -175,3 +175,51 @@ class TestFifteenMinuteMinHoldEndToEnd:
         assert self._run(self.T0 + datetime.timedelta(minutes=3), 3) is True
         # तासाभराने पुन्हा ताजा touch (held=1): 2रा trade गेटशिवाय, आणि प्रतीक्षा-नोंदीने max-hits भरला नाही
         assert self._run(self.T0 + datetime.timedelta(hours=1), 1) is True
+
+
+class TestNakedOnlyModeIsLoggedAsRealTrade:
+    """entry-gate review मध्ये सापडलेली bug — credit_spread_enabled=False (naked-only) मोडमध्ये naked trade चा
+    निकाल signal_log मध्ये कधीच जायचा नाही; फक्त 'SKIPPED_CREDIT_SPREAD_DISABLED' (no-action) जायचा, त्यामुळे
+    30-मिनिट cooldown ला खरा trade दिसायचाच नाही आणि त्याच level वर पुन्हा पुन्हा entry व्हायची."""
+    T0 = datetime.datetime(2026, 9, 11, 10, 0, 0)
+    NAKED = {"strategy": "LONG_PUT", "legs": []}
+
+    def _run(self, now, naked_result=NAKED, **overrides):
+        settings = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"])
+        settings.update(entry_rsi_gate_enabled=False, entry_pcr_gate_enabled=False, naked_enabled=True,
+                        credit_spread_enabled=False, entry_min_hold_gate_enabled=False)
+        settings.update(overrides)
+        candles = _candles_with_rsi(_hover(1), declining=True, today_ist=now)
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=now), \
+             patch.object(dsr, "fetch_candles", return_value=candles), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23900.0), "SUCCESS")), \
+             patch.object(dsr, "select_naked_option_itm", return_value=naked_result), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True):
+            dsr.process_symbol("fake_token", "NIFTY")
+        return mock_trade.call_count
+
+    def test_naked_result_is_saved_as_the_trade_status(self, signal_db):
+        assert self._run(self.T0) == 1
+        statuses = _statuses(signal_db)
+        assert any(s and not s.startswith("SKIPPED_") for s in statuses), statuses
+        assert "SKIPPED_CREDIT_SPREAD_DISABLED" not in statuses
+
+    def test_cooldown_applies_after_a_naked_only_trade(self, signal_db):
+        assert self._run(self.T0) == 1
+        # 10 मिनिटांनी त्याच level वर पुन्हा touch — 30-मिनिट cooldown ने थांबवायला हवं
+        assert self._run(self.T0 + datetime.timedelta(minutes=10)) == 0
+        assert "SKIPPED_COOLDOWN_30MIN" in _statuses(signal_db)
+
+    def test_naked_strike_not_found_leaves_no_hit(self, signal_db):
+        assert self._run(self.T0, naked_result=None) == 0
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
+        assert hits == 0 and last_trade is None
+
+    def test_both_disabled_still_logs_a_skip_row_that_is_not_a_hit(self, signal_db):
+        assert self._run(self.T0, naked_enabled=False) == 0
+        assert "SKIPPED_CREDIT_SPREAD_DISABLED" in _statuses(signal_db)
+        hits, _h, last_trade = cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-11", role="SUPPORT")
+        assert hits == 0 and last_trade is None

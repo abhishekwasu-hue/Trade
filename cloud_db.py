@@ -1331,7 +1331,12 @@ def zone_role_from_type(zone_type):
 # नाकारणी' नसून तात्पुरत्या प्रतीक्षा-स्थिती किंवा त्याच touch च्या दुय्यम (naked-leg) निदान-नोंदी आहेत, त्या
 # max-hits / cooldown मोजणीतून वगळल्या जातात — नाहीतर एका trade ला 2 hits लागून (प्रतीक्षा-नोंद + OPENED, किंवा
 # OPENED + SKIPPED_NAKED_DISABLED) त्याच level चा 2रा trade कधीच व्हायचा नाही.
-_NON_HIT_TRADE_STATUSES = ("SKIPPED_MIN_HOLD_DURATION", "SKIPPED_NAKED_DISABLED", "SKIPPED_NAKED_STRIKE_NOT_FOUND")
+_NON_HIT_TRADE_STATUSES = (
+    "SKIPPED_MIN_HOLD_DURATION", "SKIPPED_NAKED_DISABLED", "SKIPPED_NAKED_STRIKE_NOT_FOUND",
+    # naked-only मोडमध्ये naked ही चालला नाही तर (strike नाही / बंद) — कुठलाच order प्रयत्न नाही, म्हणून hit नाही.
+    "SKIPPED_CREDIT_SPREAD_DISABLED",
+)
+_NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
 
 def get_zone_hits_today(symbol, level_price, trade_date, role=None):
@@ -1373,7 +1378,7 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
-                       AND COALESCE(trade_status, '') NOT IN (%s, %s, %s)
+                       AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)
                        AND level_type LIKE %s
                        ORDER BY signal_time DESC""",
                     (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES, f"%{role}%"),
@@ -1382,7 +1387,7 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
-                       AND COALESCE(trade_status, '') NOT IN (%s, %s, %s)
+                       AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)
                        ORDER BY signal_time DESC""",
                     (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES),
                 )

@@ -1514,7 +1514,9 @@ class TestCreditSpreadToggle:
             assert mock_naked_select.called
             assert mock_trade.call_count == 1  # फक्त Naked, Spread नाही
             statuses = [c.args[0].get("trade_status") for c in mock_save_log.call_args_list]
-            assert "SKIPPED_CREDIT_SPREAD_DISABLED" in statuses
+            # naked चा खरा निकाल signal_log मध्ये (cooldown/hit मोजणीसाठी), 'SKIPPED_*' शिक्का नाही
+            assert "OPENED" in statuses
+            assert "SKIPPED_CREDIT_SPREAD_DISABLED" not in statuses
 
     def test_both_disabled_no_trade_fires(self):
         candles_touch = _candles_with_rsi([
