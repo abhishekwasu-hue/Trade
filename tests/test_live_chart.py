@@ -115,6 +115,25 @@ class TestHtmlIsSentOnlyWhenNeeded:
         live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
         assert calls[1]["html"] == "<html>A</html>"
 
+    def test_one_request_resends_html_exactly_once(self, env):
+        # component ची value पुढच्या रनमध्येही तशीच राहते -- एकाच विनंतीमुळे html प्रत्येक tick ला पुन्हा पाठवला जाऊ नये (नाहीतर चार्ट सतत reload होतो)
+        st, calls, comp = env
+        live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        st.session_state["_lc_k"] = "need_html:abc:1000"
+        for _ in range(4):
+            live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        assert [bool(c["html"]) for c in calls] == [True, True, False, False, False]
+
+    def test_a_second_distinct_request_resends_again(self, env):
+        st, calls, comp = env
+        live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        st.session_state["_lc_k"] = "need_html:abc:1000"
+        live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        st.session_state["_lc_k"] = "need_html:abc:2000"          # शेल पुन्हा remount झाला
+        live_chart.live_chart("<html>A</html>", None, "k", 400, component_fn=comp)
+        assert [bool(c["html"]) for c in calls] == [True, True, False, True]
+
     def test_charts_are_tracked_independently(self, env):
         st, calls, comp = env
         live_chart.live_chart("<html>A</html>", None, "k1", 400, component_fn=comp)
@@ -154,7 +173,7 @@ class TestComponentShell:
     def test_shell_speaks_the_streamlit_protocol(self):
         with open("live_chart_component/index.html", encoding="utf-8") as f:
             shell = f.read()
-        for needle in ("streamlit:componentReady", "streamlit:render", "streamlit:setFrameHeight", "streamlit:setComponentValue", "need_html", "srcdoc"):
+        for needle in ("streamlit:componentReady", "streamlit:render", "streamlit:setFrameHeight", "streamlit:setComponentValue", "need_html", "srcdoc", "askedForHash", "askedAt", "Date.now()"):
             assert needle in shell
 
 

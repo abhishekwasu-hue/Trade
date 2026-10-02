@@ -20,6 +20,8 @@
   const frame = document.getElementById("chart_frame");
   let currentHash = null;
   let pendingTick = null;
+  let askedForHash = null;
+  let askedAt = 0;
 
   function send(type, data) {
     window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
@@ -42,8 +44,12 @@
     } else if (a.html_hash === currentHash && currentHash !== null) {
       pendingTick = a.tick || null;
       forwardTick(a.tick);
-    } else {
-      send("streamlit:setComponentValue", { value: "need_html:" + a.html_hash, dataType: "json" });
+    } else if (askedForHash !== a.html_hash || Date.now() - askedAt > 4000) {
+      // html माहित नाही (शेल नवीन) -- अद्वितीय value सह मागतो (Python प्रत्येक वेगळी विनंती एकदाच हाताळतो). दोन चार्ट एकाच वेळी मागितल्यास
+      // एक विनंती हरवू शकते, म्हणून html ४ सेकंदांत न आल्यास पुन्हा मागतो (html आल्यावर थांबतो).
+      askedForHash = a.html_hash;
+      askedAt = Date.now();
+      send("streamlit:setComponentValue", { value: "need_html:" + a.html_hash + ":" + Date.now(), dataType: "json" });
     }
     send("streamlit:setFrameHeight", { height: height });
   });
