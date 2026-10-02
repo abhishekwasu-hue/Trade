@@ -725,6 +725,49 @@ def is_displacement_candle(df, index, direction, body_atr_multiplier=1.5, atr_pe
     return bool(is_big_body and is_directional)
 
 
+def calculate_ema(series, period):
+    """EMA (TradingView `ta.ema` प्रमाणे: span=period, adjust=False) -- पहिल्या `period` bars ला NaN."""
+    return series.ewm(span=period, adjust=False, min_periods=period).mean()
+
+
+def calculate_bollinger(close, period=20, std_mult=2.0):
+    """Bollinger Bands -- (middle, upper, lower). TradingView `ta.bb` प्रमाणे population std (ddof=0)."""
+    middle = close.rolling(period).mean()
+    std = close.rolling(period).std(ddof=0)
+    return middle, middle + std_mult * std, middle - std_mult * std
+
+
+def calculate_vwap(df):
+    """Intraday VWAP -- TradingView प्रमाणे typical price (H+L+C)/3 वर, **रोज नव्याने** (त्या दिवसाच्या पहिल्या bar पासून).
+    Index candles (उदा. NIFTY spot) मध्ये volume नसतो => त्या दिवसाचा cumulative volume 0 असेल तर VWAP अनिश्चित (NaN) --
+    खोटी 0 किंमत दाखवत नाही. Daily/त्यापेक्षा मोठ्या bars वर (दिवसाला एकच bar) अर्थहीन असल्याने कॉलरने तो वगळायचा."""
+    volume = df["volume"].fillna(0) if "volume" in df.columns else pd.Series(0.0, index=df.index)
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    trade_date = df["timestamp"].dt.date
+    cum_pv = (typical * volume).groupby(trade_date).cumsum()
+    cum_vol = volume.groupby(trade_date).cumsum()
+    return cum_pv / cum_vol.where(cum_vol > 0)
+
+
+def calculate_adx(df, period=14):
+    """ADX + DI (Wilder's smoothing, TradingView `ta.dmi` प्रमाणे) -- (adx, plus_di, minus_di). ADX साठी साधारण 2*period bars लागतात."""
+    high, low, close = df["high"], df["low"], df["close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    prev_close = close.shift(1)
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    alpha = 1 / period
+    atr = tr.ewm(alpha=alpha, min_periods=period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=alpha, min_periods=period, adjust=False).mean() / atr
+    minus_di = 100 * minus_dm.ewm(alpha=alpha, min_periods=period, adjust=False).mean() / atr
+    di_sum = (plus_di + minus_di).where(lambda s: s > 0)
+    dx = 100 * (plus_di - minus_di).abs() / di_sum
+    adx = dx.ewm(alpha=alpha, min_periods=period, adjust=False).mean()
+    return adx, plus_di, minus_di
+
+
 def compute_atr(df, period=14):
     """
     दिलेल्या OHLC डेटाच्या शेवटच्या bar साठी Average True Range (ATR) काढणे — Trailing SL साठी वापरला जातो.

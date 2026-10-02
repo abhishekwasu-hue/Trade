@@ -38,7 +38,7 @@ from pnl_reports import generate_pnl_report, add_charges_to_trades_df
 from charges import compare_with_upstox
 from mcx_margin import compute_margin_rows, total_worst_case_margin, MARGIN_COLUMNS
 from sr_dynamic import compute_dynamic_sr
-from tradingview_chart import build_lightweight_chart_html
+from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
@@ -479,9 +479,12 @@ def render():
                 else:
                     rsi_series = df_mcx["rsi"] if "rsi" in df_mcx.columns else None
                     sr_levels = compute_dynamic_sr(df_mcx, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+                    # 🎓 EMA / VWAP / Bollinger / ADX -- chart toolbar वर on/off बटणं (डीफॉल्ट सर्व बंद); periods इथे बदलता येतात.
+                    ind_params = chart_indicator_controls(_widget_key(symbol, "chart_ind"))
+                    chart_indicators = compute_chart_indicators(df_mcx, intraday=chart_tf != "day", **ind_params)
                     tv_html = build_lightweight_chart_html(
                         df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
-                        rsi_series=rsi_series, sr_levels=sr_levels, height=550,
+                        rsi_series=rsi_series, sr_levels=sr_levels, height=550, indicators=chart_indicators,
                     )
                     st.components.v1.html(tv_html, height=600, scrolling=False)
                     st.caption(
