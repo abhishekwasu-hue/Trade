@@ -645,6 +645,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "entry_breakout_gate_enabled": False,
         "breakout_lookback_candles": 12,
         "breakout_tolerance_pct": 0.30,
+        # 🎓 "add Supertrend entry gate for MCX futures" -- किंमत 4H **आणि** 1H दोन्ही Supertrend च्या खाली असेल तर Bullish trade
+        # नाही; दोन्हींच्या वर असेल तर Bearish trade नाही (एक सहमत नसेल / डेटा नसेल तर काहीच अडवत नाही). डीफॉल्ट बंद.
+        "entry_supertrend_filter_enabled": False,
+        "supertrend_1h_period": 10,
+        "supertrend_1h_multiplier": 3.0,
+        "supertrend_4h_period": 10,
+        "supertrend_4h_multiplier": 3.0,
     },
 }
 
@@ -1354,6 +1361,8 @@ _NON_HIT_TRADE_STATUSES = (
     "SKIPPED_WEAK_LEVEL",
     # Fast-Move Guard ने थांबवलेला touch -- तात्पुरती स्थिती, level ची खरी नाकारणी नाही.
     "SKIPPED_FAST_MOVE",
+    # MCX Supertrend Trend Filter (1H+4H) ने थांबवलेला touch -- तात्पुरती स्थिती, trend बदलल्यावर तोच level पुन्हा पात्र होऊ शकतो.
+    "SKIPPED_MCX_TREND_FILTER",
 )
 _NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
