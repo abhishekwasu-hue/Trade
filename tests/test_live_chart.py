@@ -156,3 +156,56 @@ class TestComponentShell:
             shell = f.read()
         for needle in ("streamlit:componentReady", "streamlit:render", "streamlit:setFrameHeight", "streamlit:setComponentValue", "need_html", "srcdoc"):
             assert needle in shell
+
+
+class TestLinesFnRidesOnTheTick:
+    @pytest.fixture
+    def env(self, monkeypatch):
+        import contextlib
+
+        sent = []
+        fake_st = types.SimpleNamespace(
+            session_state={}, container=lambda: contextlib.nullcontext(), columns=lambda n: [contextlib.nullcontext() for _ in range(n)],
+        )
+        monkeypatch.setattr(live_chart, "st", fake_st)
+        monkeypatch.setattr(live_chart, "live_chart", lambda html, tick, key, height, component_fn=None: sent.append((key, tick)))
+        monkeypatch.setattr(live_chart, "fetch_group_ticks", lambda token, market, keys, **kw: {"K": live_chart.build_tick(24000.5, "live")})
+        return fake_st, sent
+
+    def _group(self, st, **chart):
+        st.session_state["_live_group_g"] = {"token": "tok", "market": "NSE", "side_by_side": False,
+                                             "charts": [{"key": "c", "html": "<html/>", "instrument_key": "K", "height": 400, **chart}]}
+        live_chart._render_group("g")
+
+    def test_lines_are_added_to_the_tick_with_the_live_price(self, env):
+        st, sent = env
+        seen = []
+        self._group(st, lines_fn=lambda price: seen.append(price) or [{"title": "SL", "price": 1.0}])
+        assert seen == [24000.5] and sent[0][1]["lines"] == [{"title": "SL", "price": 1.0}] and sent[0][1]["price"] == 24000.5
+
+    def test_no_lines_fn_means_no_lines_key(self, env):
+        st, sent = env
+        self._group(st)
+        assert "lines" not in sent[0][1]
+
+    def test_failing_lines_fn_does_not_break_the_chart(self, env):
+        st, sent = env
+
+        def boom(price):
+            raise RuntimeError("db locked")
+
+        self._group(st, lines_fn=boom)
+        assert len(sent) == 1 and "lines" not in sent[0][1]
+
+    def test_lines_still_sent_when_there_is_no_tick(self, env, monkeypatch):
+        st, sent = env
+        monkeypatch.setattr(live_chart, "fetch_group_ticks", lambda *a, **k: {})
+        self._group(st, lines_fn=lambda price: [{"title": "SL", "price": 2.0}])
+        assert sent[0][1]["status"] == "stale" and sent[0][1]["lines"] == [{"title": "SL", "price": 2.0}]
+
+
+class TestChartHtmlLineSync:
+    def test_sync_machinery_is_present_and_hooked_to_ticks(self):
+        html = build_lightweight_chart_html(_df("5min"), symbol="X", timeframe_label="5M", live_tf_seconds=300,
+                                            trade_lines=[{"price": 24000, "title": "SL", "color": "#F23645"}])
+        assert "function syncTradeLines" in html and "m.lines" in html and "removePriceLine" in html

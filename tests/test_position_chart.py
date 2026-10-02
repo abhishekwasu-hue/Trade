@@ -140,3 +140,112 @@ class TestMiniChartHtml:
     def test_only_last_bars_are_sent(self):
         html = build_mini_chart_html(_df(n=400, days=2), "NIFTY", max_bars=50)
         assert html.count('"open":') == 50
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 🎓 Trailing SL -- MCX: engine चंच compute_trailing_sl_level() वापरून futures भावात (live हलणारी रेषा); NSE: premium आधारित => स्थिती-ओळ.
+# ---------------------------------------------------------------------------------------------------------------------
+from position_chart import mcx_trailing_distance_points, nse_trailing_status
+from trading_engine import compute_trailing_sl_level, futures_price_for_pnl_level
+
+
+def _mcx_info(net_credit=-8000.0, peak=None, sl=-1500.0, override=None):
+    return {"net_credit": net_credit, "lots": 1, "lot_size": 100, "sl_pnl_level": sl, "target_pnl_level": 3000.0,
+            "manual_sl_override_pnl": override, "peak_pnl": peak}
+
+
+class TestMcxTrailingDistance:
+    def test_off_or_missing(self):
+        assert mcx_trailing_distance_points(None, 100) is None
+        assert mcx_trailing_distance_points({"trailing_sl_enabled": False, "trailing_distance_points": 10}, 100) is None
+
+    def test_points_mode(self):
+        assert mcx_trailing_distance_points({"trailing_sl_enabled": True, "trailing_distance_points": 10}, None) == 10.0
+        assert mcx_trailing_distance_points({"trailing_sl_enabled": True}, None) is None
+
+    def test_percent_mode_uses_the_reference_price(self):
+        s = {"trailing_sl_enabled": True, "sl_target_mode": "PERCENT", "trailing_pct": 1.5}
+        assert mcx_trailing_distance_points(s, 8000.0) == pytest.approx(120.0)
+        assert mcx_trailing_distance_points(s, None) is None
+
+
+class TestFuturesTrailingLine:
+    S = {"trailing_sl_enabled": True, "trailing_distance_points": 10}
+
+    def test_long_trade_trailing_replaces_base_sl(self):
+        # peak ₹2000, अंतर 10 pts x qty 100 = ₹1000 => trailing level ₹1000 => भाव 8000 + 1000/100 = 8010
+        lines = futures_lines(_mcx_info(peak=2000.0), self.S)
+        t = _titles(lines)
+        assert t["SL (Trailing)"] == 8010.0 and "SL" not in t and t["Entry"] == 8000.0 and t["Target"] == 8030.0
+        assert [l for l in lines if l["title"] == "SL (Trailing)"][0]["color"] == "#ffd54f"
+
+    def test_short_trade_is_mirrored(self):
+        t = _titles(futures_lines(_mcx_info(net_credit=8000.0, peak=2000.0), self.S))
+        assert t["SL (Trailing)"] == 7990.0
+
+    def test_matches_the_engine_formula_exactly(self):
+        info = _mcx_info(peak=2345.0)
+        _, effective = compute_trailing_sl_level(2345.0, 2345.0, 10.0, 100, 1, atr_multiplier=1.0, original_sl_level=-1500.0)
+        expected = round(futures_price_for_pnl_level(-8000.0, effective, 1, 100), 2)
+        assert _titles(futures_lines(info, self.S))["SL (Trailing)"] == expected
+
+    def test_base_sl_when_trailing_not_active(self):
+        for info, settings in (
+            (_mcx_info(peak=None), self.S),                        # peak अजून नोंदलेला नाही
+            (_mcx_info(peak=0.0), self.S),                          # कधीच नफ्यात नाही
+            (_mcx_info(peak=2000.0), {"trailing_sl_enabled": False, "trailing_distance_points": 10}),
+            (_mcx_info(peak=2000.0), None),
+        ):
+            t = _titles(futures_lines(info, settings))
+            assert "SL" in t and "SL (Trailing)" not in t and t["SL"] == 7985.0
+
+    def test_trailing_worse_than_base_sl_is_not_shown(self):
+        # peak ₹100, अंतर 50 pts x 100 = ₹5000 => trailing -4900 < base -1500 => engine मूळ SL च ठेवतो
+        t = _titles(futures_lines(_mcx_info(peak=100.0), {"trailing_sl_enabled": True, "trailing_distance_points": 50}))
+        assert "SL" in t and "SL (Trailing)" not in t
+
+    def test_manual_override_wins_over_trailing(self):
+        t = _titles(futures_lines(_mcx_info(peak=2000.0, override=-500.0), self.S))
+        assert t["SL (Manual Override)"] == 7995.0 and "SL (Trailing)" not in t
+
+    def test_percent_mode_uses_ref_price(self):
+        s = {"trailing_sl_enabled": True, "sl_target_mode": "PERCENT", "trailing_pct": 0.1}
+        # 8000 x 0.1% = 8 pts => 800 => peak 2000 - 800 = 1200 => 8012
+        assert _titles(futures_lines(_mcx_info(peak=2000.0), s, ref_price=8000.0))["SL (Trailing)"] == 8012.0
+        assert "SL (Trailing)" not in _titles(futures_lines(_mcx_info(peak=2000.0), s, ref_price=None))
+
+
+class TestNseTrailingStatus:
+    BASE = {"source": "dynamic_sr_instant", "strategy": "BULL_PUT_SPREAD", "lots": 2, "lot_size": 75, "tsl_activated": 1, "peak_pnl": 12.0}
+
+    def _status(self, settings, **over):
+        info = {**self.BASE, **over}
+        return nse_trailing_status("NIFTY", info, get_settings=lambda n, s: settings)
+
+    def test_active_trailing_shows_peak_and_floor(self):
+        text = self._status({"spread_trailing_sl_enabled": True, "spread_trailing_distance_points": 5})
+        assert "TSL (Breakeven) सक्रिय" in text and "peak +12.0 pts − 5 = +7.0 pts" in text and "₹1,050" in text    # 7 x 2 x 75
+
+    def test_naked_uses_naked_distance(self):
+        text = self._status({"naked_trailing_sl_enabled": True, "naked_trailing_distance_points": 10, "spread_trailing_sl_enabled": False}, strategy="NAKED_CALL")
+        assert "= +2.0 pts" in text
+
+    def test_trailing_off(self):
+        assert "Trailing SL बंद" in self._status({"spread_trailing_sl_enabled": False})
+
+    def test_tsl_not_activated_yet(self):
+        text = self._status({"spread_trailing_sl_enabled": True, "spread_trailing_distance_points": 5}, tsl_activated=0)
+        assert "अजून सक्रिय नाही" in text and "सुरू होईल" in text and "floor" not in text
+
+    def test_activated_but_no_peak_recorded(self):
+        assert "peak अजून नोंदलेला नाही" in self._status({"spread_trailing_sl_enabled": True, "spread_trailing_distance_points": 5}, peak_pnl=None)
+
+    def test_other_sources_and_failures_give_none(self):
+        assert self._status({}, source="MANUAL") is None
+        assert self._status({}, strategy="IRON_CONDOR") is None
+        assert nse_trailing_status("NIFTY", self.BASE, get_settings=lambda n, s: (_ for _ in ()).throw(RuntimeError("down"))) is None
+
+    def test_namespace_follows_source(self):
+        seen = []
+        nse_trailing_status("NIFTY", {**self.BASE, "source": "srv2_momentum_reversal"}, get_settings=lambda n, s: seen.append(n) or {})
+        assert seen == ["15m_dynamic_sr"]

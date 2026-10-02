@@ -522,6 +522,7 @@ function setLiveBadge(m) {{
 }}
 function applyLiveTick(m) {{
     setLiveBadge(m);
+    if (Array.isArray(m.lines) && typeof syncTradeLines === 'function') syncTradeLines(m.lines);
     if (!LIVE_TF || !lastCandle || m.status !== 'live' || !(m.price > 0)) return;
     const slot = lastCandle.time + Math.floor((m.time - lastCandle.time) / LIVE_TF) * LIVE_TF;
     if (slot < lastCandle.time) return;
@@ -584,20 +585,41 @@ if (rsiData.length > 0) {{
 // च्या वेळी दोन अदृश्य बिंदू (किमान/कमाल रेषा-भाव) टाकून scale रेषांपर्यंत ताणतो.
 const tradeLines = {json.dumps(trade_lines_js)};
 const tradeLineBounds = {json.dumps(trade_line_bounds)};
-if (tradeLines.length > 0 && tradeLineBounds) {{
+const tradePriceLines = {{}};      // title -> price line (live_tick च्या `lines` ने हलवायला / बदलायला)
+const tradeHelpers = {{}};         // 'lo' / 'hi' अदृश्य autoscale मालिका
+function tradeLineOptions(l) {{
+    return {{
+        price: l.price, color: l.color, lineWidth: l.width, title: l.title, axisLabelVisible: true,
+        lineStyle: l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+    }};
+}}
+function stretchTradeBounds(lines) {{
+    if (!lines.length || !lastTimeForBounds) return;
+    const prices = lines.map(l => l.price);
     ['lo', 'hi'].forEach(k => {{
-        const helper = chart.addSeries(LightweightCharts.LineSeries, {{
-            color: 'rgba(0,0,0,0)', lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
-            crosshairMarkerVisible: false, title: '',
+        if (!tradeHelpers[k]) tradeHelpers[k] = chart.addSeries(LightweightCharts.LineSeries, {{
+            color: 'rgba(0,0,0,0)', lineWidth: 1, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, title: '',
         }});
-        helper.setData([{{ time: tradeLineBounds.time, value: tradeLineBounds[k] }}]);
+        tradeHelpers[k].setData([{{ time: lastTimeForBounds, value: k === 'lo' ? Math.min(...prices) : Math.max(...prices) }}]);
     }});
-    tradeLines.forEach(l => {{
-        candleSeries.createPriceLine({{
-            price: l.price, color: l.color, lineWidth: l.width, title: l.title, axisLabelVisible: true,
-            lineStyle: l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
-        }});
+}}
+const lastTimeForBounds = candleData.length ? candleData[candleData.length - 1].time : null;
+if (tradeLines.length > 0 && tradeLineBounds) {{
+    stretchTradeBounds(tradeLines);
+    tradeLines.forEach(l => {{ tradePriceLines[l.title] = candleSeries.createPriceLine(tradeLineOptions(l)); }});
+}}
+// 🎓 Positions चार्टवरच्या रेषा live हलतात (उदा. MCX Trailing SL -- peak वाढला की): live_tick बरोबर `lines` (पूर्ण सद्य यादी) आली की title नुसार:
+// असलेली रेषा हलते, नवीन तयार होते, यादीत नसलेली काढली जाते. `lines` नसेल (बाकी चार्ट) तर काहीच बदलत नाही.
+function syncTradeLines(lines) {{
+    const wanted = new Set(lines.map(l => l.title));
+    Object.keys(tradePriceLines).forEach(t => {{
+        if (!wanted.has(t)) {{ candleSeries.removePriceLine(tradePriceLines[t]); delete tradePriceLines[t]; }}
     }});
+    lines.forEach(l => {{
+        if (tradePriceLines[l.title]) tradePriceLines[l.title].applyOptions(tradeLineOptions(l));
+        else tradePriceLines[l.title] = candleSeries.createPriceLine(tradeLineOptions(l));
+    }});
+    stretchTradeBounds(lines);
 }}
 
 // 🎓 EMA / VWAP / Bollinger / ADX -- सर्व डीफॉल्ट लपलेले (visible:false), toolbar बटणाने on/off. ADX चा pane बटण दाबल्यावरच तयार
