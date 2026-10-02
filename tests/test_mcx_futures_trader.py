@@ -1041,6 +1041,133 @@ class TestStreamLivePrices:
             assert "live_prices" not in mock_manage.call_args.kwargs
 
 
+def _trend_30m_df(days=8, direction="up"):
+    """30-मिनिट candles (MCX सत्र ९:००-२३:०० IST) -- सलग `days` दिवस, सतत वर किंवा सतत खाली जाणारी किंमत; शेवटचा दिवस दुपारपर्यंत."""
+    rows = []
+    price = 6000.0
+    step = 4.0 if direction == "up" else -4.0
+    base = mft.get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0) - pd.Timedelta(days=days - 1)
+    for d in range(days):
+        day = base + pd.Timedelta(days=d)
+        for slot in range(29):  # ९:०० ते २३:०० = २९ x 30 मिनिट
+            ts = day + pd.Timedelta(hours=9) + pd.Timedelta(minutes=30 * slot)
+            o, c = price, price + step
+            rows.append({"timestamp": ts, "open": o, "high": max(o, c) + 1, "low": min(o, c) - 1, "close": c, "volume": 1, "oi": 0})
+            price = c
+    return pd.DataFrame(rows)
+
+
+class TestResampleTo4h:
+    def test_bins_start_at_mcx_session_hours(self):
+        from signals import resample_to_4h
+        df = _trend_30m_df(days=2)
+        out = resample_to_4h(df)
+        hours = sorted(set(out["timestamp"].dt.hour))
+        assert hours == [9, 13, 17, 21]
+        first = out.iloc[0]
+        assert first["timestamp"].hour == 9
+        assert first["open"] == df.iloc[0]["open"] and first["close"] == df.iloc[7]["close"]   # ९:०० ते १२:३० = ८ x 30 मिनिट
+
+    def test_empty_input(self):
+        from signals import resample_to_4h
+        assert resample_to_4h(pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])).empty
+
+
+class TestFetchMcxTrendFilterDirections:
+    NOW = None
+
+    def _now(self):
+        return mft.get_ist_now().replace(hour=23, minute=59)
+
+    def test_uptrend_gives_bullish_both(self):
+        with patch.object(mft, "fetch_mcx_candles", return_value=_trend_30m_df(direction="up")):
+            assert mft.fetch_mcx_trend_filter_directions("tok", "MCX_FO|1", self._now()) == ("BULLISH", "BULLISH")
+
+    def test_downtrend_gives_bearish_both(self):
+        with patch.object(mft, "fetch_mcx_candles", return_value=_trend_30m_df(direction="down")):
+            assert mft.fetch_mcx_trend_filter_directions("tok", "MCX_FO|1", self._now()) == ("BEARISH", "BEARISH")
+
+    def test_no_data_or_error_gives_none(self):
+        with patch.object(mft, "fetch_mcx_candles", return_value=pd.DataFrame()):
+            assert mft.fetch_mcx_trend_filter_directions("tok", "MCX_FO|1", self._now()) == (None, None)
+        with patch.object(mft, "fetch_mcx_candles", side_effect=RuntimeError("api down")):
+            assert mft.fetch_mcx_trend_filter_directions("tok", "MCX_FO|1", self._now()) == (None, None)
+
+    def test_too_little_history_for_4h_gives_none_for_4h_only(self):
+        df = _trend_30m_df(days=1, direction="down")   # एका दिवसात ४H चे फक्त ४ bars -- ATR(10) साठी अपुरे
+        with patch.object(mft, "fetch_mcx_candles", return_value=df):
+            d1h, d4h = mft.fetch_mcx_trend_filter_directions("tok", "MCX_FO|1", self._now())
+        assert d1h == "BEARISH" and d4h is None
+
+
+class TestSupertrendEntryGate:
+    """🎓 "add Supertrend entry gate for MCX futures" -- 1H आणि 4H दोन्ही Supertrend च्या खाली => Bullish नाही; दोन्हींच्या वर => Bearish नाही."""
+
+    def _run(self, directions, bullish=True, enabled=True):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["symbol_enabled"] = True
+        settings["entry_rsi_gate_enabled"] = False
+        settings["entry_supertrend_filter_enabled"] = enabled
+        if bullish:
+            candles_df = _fake_candles_df(last_close=6500.0)
+            zones = _fake_zones(support_level=6500.0)
+        else:
+            candles_df = _fake_candles_df(closes=[6300.0] * 19 + [6400.0])
+            zones = _fake_zones(support_level=6402.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=zones), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft, "fetch_mcx_trend_filter_directions", return_value=directions) as mock_dirs, \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        return mock_trade, mock_dirs, statuses
+
+    def test_bullish_blocked_when_price_below_both(self):
+        trade, _, statuses = self._run(("BEARISH", "BEARISH"), bullish=True)
+        assert not trade.called and "SKIPPED_MCX_TREND_FILTER" in statuses
+
+    def test_bullish_allowed_when_only_one_is_bearish(self):
+        trade, _, _ = self._run(("BEARISH", "BULLISH"), bullish=True)
+        assert trade.called
+        trade, _, _ = self._run(("BULLISH", "BEARISH"), bullish=True)
+        assert trade.called
+
+    def test_bullish_allowed_when_price_above_both(self):
+        trade, _, _ = self._run(("BULLISH", "BULLISH"), bullish=True)
+        assert trade.called
+
+    def test_bearish_blocked_when_price_above_both(self):
+        trade, _, statuses = self._run(("BULLISH", "BULLISH"), bullish=False)
+        assert not trade.called and "SKIPPED_MCX_TREND_FILTER" in statuses
+
+    def test_bearish_allowed_when_price_below_both_or_mixed(self):
+        trade, _, _ = self._run(("BEARISH", "BEARISH"), bullish=False)
+        assert trade.called
+        trade, _, _ = self._run(("BULLISH", "BEARISH"), bullish=False)
+        assert trade.called
+
+    def test_missing_data_does_not_block(self):
+        trade, _, _ = self._run((None, "BEARISH"), bullish=True)
+        assert trade.called
+        trade, _, _ = self._run((None, None), bullish=False)
+        assert trade.called
+
+    def test_disabled_by_default_never_fetches_or_blocks(self):
+        assert _DEFAULT_SETTINGS["entry_supertrend_filter_enabled"] is False
+        trade, dirs, statuses = self._run(("BEARISH", "BEARISH"), bullish=True, enabled=False)
+        assert trade.called and not dirs.called and "SKIPPED_MCX_TREND_FILTER" not in statuses
+
+    def test_blocked_touch_is_not_counted_as_a_hit(self):
+        import cloud_db as cdb
+        assert "SKIPPED_MCX_TREND_FILTER" in cdb._NON_HIT_TRADE_STATUSES
+
+
 class TestTrailingPriceCache:
     @pytest.fixture(autouse=True)
     def _clear(self):

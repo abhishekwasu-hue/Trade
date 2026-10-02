@@ -79,6 +79,17 @@ def resample_to_1h(df_30m):
     d_1h = d.resample("1h", label="left", closed="left").agg(agg).dropna(subset=["open"]).reset_index()
     return d_1h
 
+def resample_to_4h(df_30m):
+    """🎓 MCX Supertrend Trend Filter (1H + 4H) -- 30-मिनिट candles वरून 4-तासाचे candles. MCX सत्र सकाळी ९:०० ला सुरू होतं, म्हणून
+    bins ९:००/१३:००/१७:००/२१:०० ला सुरू होतात (चार्टवरच्या MCX 4H प्रमाणे; शेवटचा २१:०० चा bar रात्री बंद होईपर्यंत छोटा).
+    timestamp = bar ची सुरुवात."""
+    if df_30m.empty:
+        return df_30m
+    d = df_30m.set_index("timestamp")
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "oi": "last"}
+    return d.resample("4h", label="left", closed="left", offset="1h").agg(agg).dropna(subset=["open"]).reset_index()
+
+
 def find_swings(df, order=3):
     """साधी fractal swing high/low शोध पद्धत."""
     if df.empty or len(df) < order * 2 + 1:

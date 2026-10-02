@@ -72,10 +72,13 @@ import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
 import database
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
-from dynamic_sr_instant_trader import check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close
+from dynamic_sr_instant_trader import (
+    check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close,
+    check_supertrend_trend_filter, get_supertrend_direction, _completed_bars_only,
+)
 from notifications import send_telegram_message, write_heartbeat, notify_error, notify_exit
 from process_lock import ProcessLock, ProcessLockHeld
-from signals import resample_to_1h
+from signals import resample_to_1h, resample_to_4h
 from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
 from upstox_api import fetch_mcx_candles, fetch_broker_positions
 
@@ -157,6 +160,33 @@ def _collect_touch_candidates(access_token, instrument_key, all_zones, active_su
     return candidates
 
 
+def fetch_mcx_trend_filter_directions(access_token, instrument_key, now, st1h_period=10, st1h_multiplier=3.0,
+                                      st4h_period=10, st4h_multiplier=3.0):
+    """🎓 "add Supertrend entry gate for MCX futures" -- (1H दिशा, 4H दिशा), दोन्ही शेवटच्या **पूर्ण झालेल्या** candle ची. दोन्ही 30-मिनिट
+    candles (MCX साठी Upstox ने verified) वरून resample (1H, आणि ९:००-आधारित 4H). डेटा मिळाला नाही/चूक झाली तर त्या टाईमफ्रेमसाठी None
+    (gate fail-open, trade अडवत नाही)."""
+    dir_1h = dir_4h = None
+    try:
+        df30 = fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=20)
+    except Exception:
+        return dir_1h, dir_4h
+    if df30 is None or df30.empty:
+        return dir_1h, dir_4h
+    df30 = df30.copy()
+    for col in ("volume", "oi"):
+        if col not in df30.columns:
+            df30[col] = 0
+    try:
+        dir_1h = get_supertrend_direction(_completed_bars_only(resample_to_1h(df30), 60, now), st1h_period, st1h_multiplier)
+    except Exception:
+        dir_1h = None
+    try:
+        dir_4h = get_supertrend_direction(_completed_bars_only(resample_to_4h(df30), 240, now), st4h_period, st4h_multiplier)
+    except Exception:
+        dir_4h = None
+    return dir_1h, dir_4h
+
+
 def process_symbol(access_token, symbol):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Crude oil hit log not working") — _process_symbol_core() चा wrapper: प्रत्येक
     cycle ला निकाल-स्थितीसह "अखेरची तपासणी" (वेळ/भाव/जवळचा level) cloud_db.save_mcx_last_check() मध्ये साठवतो, जेणेकरून
@@ -199,6 +229,12 @@ def _process_symbol_core(access_token, symbol, check_info):
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
+    entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
+    supertrend_1h_period = settings.get("supertrend_1h_period", 10)
+    supertrend_1h_multiplier = settings.get("supertrend_1h_multiplier", 3.0)
+    supertrend_4h_period = settings.get("supertrend_4h_period", 10)
+    supertrend_4h_multiplier = settings.get("supertrend_4h_multiplier", 3.0)
+    supertrend_directions_cache = []  # प्रति-symbol, प्रति-cycle एकदाच (सर्व levels साठी सारखं) -- lazily
     timeframe_choice = settings.get("timeframe_choice", "30M")
     active_suffixes = TIMEFRAME_SUFFIXES if timeframe_choice == "ALL" else [timeframe_choice]
 
@@ -299,6 +335,25 @@ def _process_symbol_core(access_token, symbol, check_info):
                 log_entry["reason"] = (
                     f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही "
                     f"(Support<{rsi_support_max} / Resistance>{rsi_resistance_min} हवं होतं)"
+                )
+                cloud_db.save_signal_log(log_entry)
+                continue
+
+        # 🎓 "add Supertrend entry gate for MCX futures" -- किंमत 1H **आणि** 4H दोन्ही Supertrend च्या खाली => Bullish trade नाही; दोन्हींच्या
+        # वर => Bearish trade नाही. Breakout सकट सर्व entries ला लागू. SKIPPED_MCX_TREND_FILTER no-hit status (max-hits मोजत नाही).
+        if entry_supertrend_filter_enabled:
+            if not supertrend_directions_cache:
+                supertrend_directions_cache.append(fetch_mcx_trend_filter_directions(
+                    access_token, instrument_key, now, supertrend_1h_period, supertrend_1h_multiplier,
+                    supertrend_4h_period, supertrend_4h_multiplier,
+                ))
+            st_dir_1h, st_dir_4h = supertrend_directions_cache[0]
+            st_ok, st_reason = check_supertrend_trend_filter(direction, st_dir_1h, st_dir_4h)
+            if not st_ok:
+                log_entry["trade_status"] = "SKIPPED_MCX_TREND_FILTER"
+                log_entry["reason"] = (
+                    f"किंमत {'1H आणि 4H दोन्ही Supertrend च्या खाली (दोन्ही BEARISH) -- Bullish trade थांबवला' if direction == 'BULLISH' else '1H आणि 4H दोन्ही Supertrend च्या वर (दोन्ही BULLISH) -- Bearish trade थांबवला'}"
+                    f" [1H: {st_dir_1h}, 4H: {st_dir_4h}] ({timeframe_suffix})"
                 )
                 cloud_db.save_signal_log(log_entry)
                 continue

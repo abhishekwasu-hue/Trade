@@ -594,6 +594,41 @@ def render():
                 min_value=0.05, max_value=1.0, step=0.05, format="%.2f", disabled=not entry_breakout_gate_enabled,
             )
 
+        st.markdown("---")
+        sub_header("📊 Supertrend Trend Filter (1H + 4H)", HDR_ORANGE)
+        entry_supertrend_filter_enabled = st.checkbox(
+            "Supertrend Trend Filter सक्रिय (डीफॉल्ट बंद)",
+            value=bool(settings.get("entry_supertrend_filter_enabled", False)),
+            key=_widget_key(symbol, "entry_supertrend_filter_enabled"),
+        )
+        st.caption(
+            "किंमत 1H **आणि** 4H दोन्ही Supertrend च्या **खाली** असेल तर Bullish trade नाही; दोन्हींच्या **वर** असेल तर Bearish trade नाही "
+            "(Breakout सकट सर्व entries ला लागू). दिशा शेवटच्या **पूर्ण झालेल्या** 1H/4H candle ची (4H candles सकाळी ९:०० पासून). "
+            "एक Supertrend सहमत नसेल किंवा डेटा मिळाला नाही तर काहीच अडवलं जात नाही. थांबवलेला touch Signal Log मध्ये "
+            "`SKIPPED_MCX_TREND_FILTER` दिसेल (हा max-hits मोजत नाही)."
+        )
+        st1, st2, st3, st4 = st.columns(4)
+        with st1:
+            supertrend_1h_period = _number_input(
+                "1H ATR Period", settings, "supertrend_1h_period", symbol,
+                min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+            )
+        with st2:
+            supertrend_1h_multiplier = _number_input(
+                "1H Multiplier", settings, "supertrend_1h_multiplier", symbol,
+                min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+            )
+        with st3:
+            supertrend_4h_period = _number_input(
+                "4H ATR Period", settings, "supertrend_4h_period", symbol,
+                min_value=2, max_value=50, step=1, disabled=not entry_supertrend_filter_enabled,
+            )
+        with st4:
+            supertrend_4h_multiplier = _number_input(
+                "4H Multiplier", settings, "supertrend_4h_multiplier", symbol,
+                min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
+            )
+
         if st.button("💾 Entry Gate सेव्ह करा", key=_widget_key(symbol, "save_entry")):
             new_settings = dict(settings)
             new_settings.update({
@@ -606,6 +641,9 @@ def render():
                 "entry_breakout_gate_enabled": bool(entry_breakout_gate_enabled),
                 "breakout_lookback_candles": int(breakout_lookback_candles),
                 "breakout_tolerance_pct": float(breakout_tolerance_pct),
+                "entry_supertrend_filter_enabled": bool(entry_supertrend_filter_enabled),
+                "supertrend_1h_period": int(supertrend_1h_period), "supertrend_1h_multiplier": float(supertrend_1h_multiplier),
+                "supertrend_4h_period": int(supertrend_4h_period), "supertrend_4h_multiplier": float(supertrend_4h_multiplier),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Entry Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
