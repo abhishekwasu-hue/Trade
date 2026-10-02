@@ -42,6 +42,10 @@ from upstox_api import fetch_market_news
 from live_ticker import render_live_ticker
 from mini_chart import render_mini_charts
 from live_chart import infer_tf_seconds, render_live_charts
+from bot_view import (
+    BOT_VIEWS, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
+    supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
+)
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 
 
@@ -1158,7 +1162,7 @@ def render():
             # निवड sidebar सारखीच असेल तर वरचेच df_candles वापरले जातात (अतिरिक्त Upstox fetch नाही).
             _chart_symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
             _chart_tfs = ["1minute", "5minute", "15minute", "30minute", "1hour", "day"]
-            _cs1, _cs2 = st.columns(2)
+            _cs1, _cs2, _cs3 = st.columns(3)
             with _cs1:
                 chart_symbol = st.selectbox(
                     "चार्ट Symbol:", _chart_symbols, index=_chart_symbols.index(symbol) if symbol in _chart_symbols else 0,
@@ -1169,6 +1173,9 @@ def render():
                     "चार्ट Timeframe:", _chart_tfs, index=_chart_tfs.index(timeframe_option) if timeframe_option in _chart_tfs else 1,
                     key=f"tv_chart_tf_{timeframe_option}",
                 )
+            with _cs3:
+                # 🎓 "Bot view" -- निवडलेल्या bot चे प्रत्यक्ष ACTIVE levels (+आजचे hits), त्याचे RSI/Supertrend आणि गेट-स्थिती; डीफॉल्ट: काहीच नाही (जुना चार्ट).
+                bot_choice = st.selectbox("Bot view:", [NO_BOT] + list(NSE_BOTS), index=0, key=f"tv_bot_view_{symbol}")
             ind_params = chart_indicator_controls("tv_chart_ind")
             if chart_symbol == symbol and chart_tf == timeframe_option:
                 chart_df, chart_spot = df_candles, underlying_price
@@ -1196,6 +1203,7 @@ def render():
             # पद्धत, sr_bounce/multi_strategy_backtest मध्ये आधीच वापरलेली.
             st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
             st15m_line_aligned = st15m_dir_aligned = None
+            df_15m_tv = df_1h_tv = None
             pattern_markers_tv = []
             if not chart_df.empty:
                 try:
@@ -1255,6 +1263,49 @@ def render():
                 # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
                 pattern_markers_tv = find_significant_reversal_candles(chart_df, lookback_compare=3)
 
+            # 🎓 Bot view -- bot चे ACTIVE levels (Supabase market_zones; चार्टचा स्वतःचा compute_dynamic_sr वेगळा), त्याचे RSI उंबरठे / Supertrend timeframes
+            # आणि "आत्ता entry का थांबेल" गेट-स्थिती. फक्त दाखवतो; काही अयशस्वी झालं तरी साधा चार्ट दिसत राहतो.
+            bot_lines, bot_gate_lines, bot_rsi_levels, bot_note = [], [], (40, 60), None
+            if bot_choice != NO_BOT and not chart_df.empty:
+                try:
+                    import cloud_db as _cdb
+                    _bs = _cdb.get_strategy_settings(BOT_VIEWS[bot_choice]["strategy_key"], chart_symbol)
+                    _suffixes = zone_suffixes(bot_choice, _bs)
+                    _zones = _cdb.get_market_zones(chart_symbol, status="ACTIVE")
+                    _hits = _cdb.get_zone_hits_today_bulk(chart_symbol, get_ist_today().strftime("%Y-%m-%d"))
+                    bot_lines = level_lines(_zones, _suffixes, _hits, int(_bs.get("max_hits_per_zone", 2)), price=float(chart_df["close"].iloc[-1]), max_distance_pct=2.0)
+                    bot_rsi_levels = tuple(rsi_threshold_values(bot_choice, _bs))
+                    sr_for_tv = None      # चार्टचे स्वतःचे S/R नकोत -- bot चे प्रत्यक्ष levels दाखवतो
+                    st1d_line_aligned = st1d_dir_aligned = st15m_line_aligned = st15m_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
+                    _specs = supertrend_specs(bot_choice, _bs)
+                    _frames = {"15M": df_15m_tv, "1H": df_1h_tv}
+                    for _sp in _specs:
+                        _ln, _dr = align_supertrend(chart_df, _frames.get(_sp["label"]), _sp["period"], _sp["multiplier"])
+                        if _sp["label"] == "15M":
+                            st15m_line_aligned, st15m_dir_aligned = _ln, _dr
+                        elif _sp["label"] == "1H":
+                            st1h_line_aligned, st1h_dir_aligned = _ln, _dr
+                    _rsi_by_tf = {}
+                    for _sfx in _suffixes[:3]:
+                        _iv = TF_INTERVAL.get(_sfx)
+                        _tf_df = (
+                            fetch_candles(token_input, chart_symbol, chart_spot, interval=_iv, lookback_days=5) if _iv
+                            else resample_to_1h(fetch_candles(token_input, chart_symbol, chart_spot, interval="30minute", lookback_days=10))
+                        )
+                        _rsi_by_tf[_sfx] = last_rsi(_tf_df)
+                    bot_gate_lines = [
+                        ln for ln in (
+                            rsi_gate_line(bot_choice, _bs, _rsi_by_tf),
+                            supertrend_gate_line(bot_choice, _bs, supertrend_directions(_frames, _specs, get_ist_now()), _specs),
+                        ) if ln
+                    ]
+                    bot_note = (
+                        f"Bot view: **{bot_choice}** ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे hits/कमाल. फिके = आजचे max-hits संपलेले; किंमतीपासून ±2% बाहेरचे लपवले. "
+                        "हे Supabase मधले bot चे प्रत्यक्ष levels आहेत. गेट-ओळीत फक्त RSI आणि Supertrend; PCR / Min-Hold / Breakout इ. गेट्स इथे नाहीत."
+                        + ("" if bot_lines else " ⚠️ या bot चे ACTIVE levels सापडले नाहीत.")
+                    )
+                except Exception as _bve:
+                    bot_note = f"Bot view लोड करता आला नाही ({type(_bve).__name__}) — साधा चार्ट दाखवला आहे."
             # 🎓 EMA / VWAP / Bollinger / ADX -- chart toolbar वर on/off बटणं (डीफॉल्ट सर्व बंद); periods वरच्या ओळीत बदलता येतात.
             chart_indicators = compute_chart_indicators(chart_df, intraday=chart_tf != "day", **ind_params) if not chart_df.empty else {}
             tv_html = build_lightweight_chart_html(
@@ -1264,6 +1315,7 @@ def render():
                 supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
                 rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
                 indicators=chart_indicators, live_tf_seconds=infer_tf_seconds(chart_df),
+                trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels,
             )
             # 🎓 Live updates -- दर 3 सेकंदांनी शेवटची candle (REST LTP; बघा live_chart.py). Daily/डेटा नसेल तर साधा स्थिर चार्ट.
             if infer_tf_seconds(chart_df) and token_input:
@@ -1273,6 +1325,10 @@ def render():
                 )
             else:
                 st.components.v1.html(tv_html, height=700, scrolling=False)
+            for _gl in bot_gate_lines:
+                st.caption(_gl)
+            if bot_note:
+                st.caption(bot_note)
             st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
 
         # =========================================================

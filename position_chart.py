@@ -29,6 +29,17 @@ def _line(price, title, color, dashed=True, width=2):
     return {"price": round(float(price), 2), "title": title, "color": color, "dashed": dashed, "width": width}
 
 
+LEVEL_COLOR = "#b0bec5"
+
+
+def _trigger_level_line(info, reference_price):
+    """trade ज्या S/R level मुळे घेतला गेला (entry_level_price) -- Entry भावापासून वेगळा असेल तरच एक अतिरिक्त रेषा."""
+    level = info.get("entry_level_price")
+    if level is None or (reference_price is not None and abs(float(level) - float(reference_price)) < 0.005):
+        return []
+    return [_line(level, "Level (trade जिथून घेतला)", LEVEL_COLOR, dashed=True, width=1)]
+
+
 def futures_lines(info):
     """MCX futures trade -> [Entry, SL, Target] रेषा (futures भावात). Manual Override सेट असेल तर तोच SL (वेगळ्या रंगात)."""
     net_credit, lots, lot_size = info.get("net_credit"), info.get("lots"), info.get("lot_size")
@@ -43,7 +54,7 @@ def futures_lines(info):
     target_price = futures_price_for_pnl_level(net_credit, info.get("target_pnl_level"), lots, lot_size)
     if target_price is not None:
         lines.append(_line(target_price, "Target", TARGET_COLOR))
-    return lines
+    return lines + _trigger_level_line(info, abs(net_credit))
 
 
 def spot_rule_lines(symbol, info, get_settings=None):
@@ -52,7 +63,7 @@ def spot_rule_lines(symbol, info, get_settings=None):
     anchor = info.get("entry_spot_price") if info.get("entry_spot_price") is not None else info.get("entry_level_price")
     if anchor is None:
         return [], "या trade ला entry spot भाव साठवलेला नाही -- चार्टवर रेषा काढता येत नाहीत."
-    lines = [_line(anchor, "Entry (spot)", ENTRY_COLOR, dashed=False)]
+    lines = [_line(anchor, "Entry (spot)", ENTRY_COLOR, dashed=False)] + _trigger_level_line(info, anchor)
     source, strategy = info.get("source"), info.get("strategy")
     namespace = SPOT_RULE_NAMESPACE.get(source)
     if namespace is None or strategy not in _BULLISH_STRATEGIES + _BEARISH_STRATEGIES:

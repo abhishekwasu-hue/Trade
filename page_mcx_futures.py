@@ -41,6 +41,11 @@ from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
 from position_chart import futures_lines
 from live_chart import infer_tf_seconds, render_live_charts
+from bot_view import (
+    TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
+    supertrend_gate_line, supertrend_specs, zone_suffixes,
+)
+from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
@@ -519,13 +524,58 @@ def render():
                 else:
                     rsi_series = df_mcx["rsi"] if "rsi" in df_mcx.columns else None
                     sr_levels = compute_dynamic_sr(df_mcx, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+                    # 🎓 Bot view (MCX Futures bot) -- bot चे प्रत्यक्ष ACTIVE levels (+आजचे hits), 1H/4H Supertrend, RSI उंबरठे, गेट-स्थिती. डीफॉल्ट बंद.
+                    bot_on = st.checkbox(
+                        "Bot view: MCX Futures bot चे levels / Supertrend 1H+4H / गेट-स्थिती", value=False, key=_widget_key(symbol, "chart_bot_view"),
+                    )
+                    bot_lines, bot_gate_lines, bot_rsi_levels, bot_note = [], [], (40, 60), None
+                    bot_st = {"1H": (None, None), "4H": (None, None)}
+                    if bot_on:
+                        try:
+                            _bs = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
+                            _suffixes = zone_suffixes("MCX Futures", _bs)
+                            _zones = cloud_db.get_market_zones(symbol, status="ACTIVE")
+                            _hits = cloud_db.get_zone_hits_today_bulk(symbol, get_ist_today().strftime("%Y-%m-%d"))
+                            _price = float(df_mcx["close"].iloc[-1])
+                            bot_lines = level_lines(
+                                _zones, _suffixes, _hits, int(_bs.get("max_hits_per_zone", 2)), price=_price, role_by_price=True, max_distance_pct=4.0,
+                            )
+                            bot_rsi_levels = tuple(rsi_threshold_values("MCX Futures", _bs))
+                            _df30 = fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=20)
+                            _frames, _rsi_by_tf = {}, {}
+                            if _df30 is not None and not _df30.empty:
+                                _df30 = _df30.copy()
+                                for _c in ("volume", "oi"):
+                                    if _c not in _df30.columns:
+                                        _df30[_c] = 0
+                                _frames = {"1H": resample_to_1h(_df30), "4H": resample_to_4h(_df30)}
+                                for _sfx in _suffixes[:2]:
+                                    _rsi_by_tf[_sfx] = last_rsi(_df30 if TF_INTERVAL.get(_sfx) else _frames["1H"])
+                            _specs = supertrend_specs("MCX Futures", _bs)
+                            for _sp in _specs:
+                                bot_st[_sp["label"]] = align_supertrend(df_mcx, _frames.get(_sp["label"]), _sp["period"], _sp["multiplier"])
+                            bot_gate_lines = [
+                                ln for ln in (
+                                    rsi_gate_line("MCX Futures", _bs, _rsi_by_tf),
+                                    supertrend_gate_line("MCX Futures", _bs, supertrend_directions(_frames, _specs, get_ist_now()), _specs),
+                                ) if ln
+                            ]
+                            bot_note = (
+                                f"Bot view: MCX Futures bot ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे hits/कमाल (role किंमत-बाजूवरून). "
+                                "फिके = आजचे max-hits संपलेले; किंमतीपासून ±4% बाहेरचे लपवले. गेट-ओळीत फक्त RSI आणि Supertrend (Breakout / Min-Hold इ. नाहीत)."
+                                + ("" if bot_lines else " ⚠️ ACTIVE levels सापडले नाहीत (आधी refresh_market_zones_mcx.py चालवा).")
+                            )
+                        except Exception as _bve:
+                            bot_note = f"Bot view लोड करता आला नाही ({type(_bve).__name__}) — साधा चार्ट दाखवला आहे."
                     # 🎓 EMA / VWAP / Bollinger / ADX -- chart toolbar वर on/off बटणं (डीफॉल्ट सर्व बंद); periods इथे बदलता येतात.
                     ind_params = chart_indicator_controls(_widget_key(symbol, "chart_ind"))
                     chart_indicators = compute_chart_indicators(df_mcx, intraday=chart_tf != "day", **ind_params)
                     tv_html = build_lightweight_chart_html(
                         df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
-                        rsi_series=rsi_series, sr_levels=sr_levels, height=550, indicators=chart_indicators,
-                        live_tf_seconds=infer_tf_seconds(df_mcx),
+                        rsi_series=rsi_series, sr_levels=None if bot_on else sr_levels, height=550, indicators=chart_indicators,
+                        live_tf_seconds=infer_tf_seconds(df_mcx), trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels,
+                        supertrend_1h_series=bot_st["1H"][0], supertrend_1h_direction=bot_st["1H"][1],
+                        supertrend_4h_series=bot_st["4H"][0], supertrend_4h_direction=bot_st["4H"][1],
                     )
                     # 🎓 Live updates (REST LTP, दर 3 सेकंदांनी; बघा live_chart.py). Daily असेल तर स्थिर चार्ट.
                     if infer_tf_seconds(df_mcx):
@@ -535,6 +585,10 @@ def render():
                         )
                     else:
                         st.components.v1.html(tv_html, height=600, scrolling=False)
+                    for _gl in bot_gate_lines:
+                        st.caption(_gl)
+                    if bot_note:
+                        st.caption(bot_note)
                     st.caption(
                         f"📄 Contract: **{resolved['trading_symbol']}** (expiry {resolved['expiry']}) — Upstox च्या "
                         "Search Instruments API कडून थेट, कायम आपोआप current/continuous front-month."
