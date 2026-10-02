@@ -784,9 +784,25 @@ class TestRunExitMonitorCycle:
 
     def test_closed_positions_reported_in_results(self, monkeypatch):
         monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [{"trade_id": "T1", "reason": "SL"}])
+        monkeypatch.setattr(mft, "notify_exit", MagicMock())
         results, any_succeeded = mft.run_exit_monitor_cycle("tok", ["CRUDEOIL"])
         assert any_succeeded is True
         assert any("CRUDEOIL" in r and "बंद" in r for r in results)
+
+    def test_exit_sends_telegram_notification(self, monkeypatch):
+        """🎓 "Roj entri exit che sandesh" -- MCX exit वर Telegram (NSE च्या trade_monitor.py प्रमाणे)."""
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [{"trade_id": "T9", "reason": "TARGET", "pnl": 1234.5}])
+        notify = MagicMock()
+        monkeypatch.setattr(mft, "notify_exit", notify)
+        mft.run_exit_monitor_cycle("tok", ["GOLD"])
+        notify.assert_called_once_with("mcx_futures_trader", "GOLD", "T9", "TARGET", 1234.5)
+
+    def test_telegram_failure_does_not_break_exit_cycle(self, monkeypatch):
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: [{"trade_id": "T9", "reason": "SL", "pnl": -10.0}] if s == "GOLD" else [])
+        monkeypatch.setattr(mft, "notify_exit", MagicMock(side_effect=RuntimeError("telegram down")))
+        results, ok = mft.run_exit_monitor_cycle("tok", ["GOLD", "SILVER"])
+        assert ok is True
+        assert any("GOLD" in r and "बंद" in r for r in results)
 
 
 class TestRunExitMonitorLoop:

@@ -772,6 +772,23 @@ def get_open_trade_modes_by_symbol(symbols):
     return result
 
 
+def count_open_trades(symbols):
+    """🎓 EOD सारांश (eod_trade_summary.py) -- दिलेल्या symbols वर सध्या OPEN असलेल्या खऱ्या (shadow वगळून) trades ची संख्या.
+    हलकी, स्थानिक SQLite query (वाचन-फक्त)."""
+    if not symbols:
+        return 0
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(symbols))
+    cur.execute(
+        f"SELECT COUNT(*) FROM live_trades WHERE status='OPEN' AND symbol IN ({placeholders}) AND {_shadow_exclusion_clause()}",
+        list(symbols),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
 def get_open_trade_instrument_keys(symbols):
     """🎓 रिअल-टाइम price feed -- दिलेल्या symbols वरच्या सर्व OPEN trades च्या सर्व legs चे instrument_key (एका संचात).
     हलकी, स्थानिक SQLite query; legs_json न समजणारी नोंद शांतपणे वगळली जाते."""

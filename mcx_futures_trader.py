@@ -73,7 +73,7 @@ from config import get_ist_now
 import database
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from dynamic_sr_instant_trader import check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close
-from notifications import send_telegram_message, write_heartbeat, notify_error
+from notifications import send_telegram_message, write_heartbeat, notify_error, notify_exit
 from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h
 from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
@@ -516,6 +516,13 @@ def _run_exit_monitor_cycle_locked(token, symbols, heartbeat):
             any_symbol_succeeded = True
             if closed:
                 results.append(f"{symbol}: 🔔 {len(closed)} position(s) बंद झाल्या — {closed}")
+                # 🎓 "Roj entri exit che sandesh aale pahije" -- NSE चा trade_monitor.py exit वर Telegram पाठवतो, पण MCX exit loop
+                # फक्त print करायचा, Telegram कधीच नाही. Telegram अपयशी झालं तरी exit-loop थांबता कामा नये.
+                for c in closed:
+                    try:
+                        notify_exit("mcx_futures_trader", symbol, c.get("trade_id"), c.get("reason"), c.get("pnl"))
+                    except Exception:
+                        pass
         except Exception as e:
             notify_error("mcx_futures_trader", f"{symbol}: monitor त्रुटी — {e}")
             results.append(f"⚠️ {symbol}: monitor अनपेक्षित त्रुटी — {e}")
