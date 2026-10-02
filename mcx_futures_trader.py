@@ -110,6 +110,10 @@ DIRECTION_HYSTERESIS_BUFFER_PCT = 1.0
 # strategies (15:15 IST, exchange-close 15:30 च्या आधी) सारखाच सुरक्षित मार्जिन ठेवणारा डीफॉल्ट.
 MCX_EOD_HOUR = 23
 MCX_EOD_MINUTE = 15
+# 🎓 bug-review -- MCX बॉटला "नवीन entry बंद" वेळ नव्हती (NSE चे 3 bots 14:45 ला बंद करतात). EOD square-off (वर) 23:15 ला असल्याने
+# 23:15 ते 23:59 मधल्या touch वर उघडलेली position पुढच्याच exit-cycle ला (~५ सेकंदांत) EOD_SQUAREOFF ने लगेच बंद व्हायची -- फुकट
+# brokerage/slippage (LIVE मध्ये खरे orders). म्हणून EOD वेळेपासून नवीन entry नाही (जास्त मार्जिन हवं असल्यास हा tuple बदला).
+MCX_NO_NEW_ENTRY_AFTER = (MCX_EOD_HOUR, MCX_EOD_MINUTE)
 
 
 def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
@@ -324,6 +328,12 @@ def _process_symbol_core(access_token, symbol, check_info):
         }
 
         if not touched:
+            cloud_db.save_signal_log(log_entry)
+            continue
+
+        if (now.hour, now.minute) >= MCX_NO_NEW_ENTRY_AFTER:
+            log_entry["trade_status"] = "SKIPPED_TOO_LATE_FOR_NEW_ENTRY"
+            log_entry["reason"] = f"{MCX_NO_NEW_ENTRY_AFTER[0]}:{MCX_NO_NEW_ENTRY_AFTER[1]:02d} (EOD square-off) नंतर नवीन entry नाही ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
 
