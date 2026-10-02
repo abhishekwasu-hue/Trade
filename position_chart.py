@@ -53,25 +53,37 @@ def mcx_trailing_distance_points(settings, ref_price):
     return float(distance) if distance is not None else None
 
 
-def futures_lines(info, settings=None, ref_price=None):
-    """MCX futures trade -> [Entry, SL, Target (+ Level)] रेषा (futures भावात). Manual Override सेट असेल तर तोच SL (वेगळ्या रंगात; engine मध्ये override trailing
-    ला वगळतो). settings दिले आणि trailing चालू + peak_pnl > 0 असेल तर engine चंच compute_trailing_sl_level() वापरून 'SL (Trailing)' (मूळ SL पेक्षा सुधारलेली)."""
+SL_KIND_LABELS = {"SL": "मूळ SL", "TRAILING": "Trailing", "OVERRIDE": "Manual Override"}
+
+
+def mcx_sl_price(info, settings=None, ref_price=None):
+    """MCX futures trade चा **सध्या लागू** SL भाव आणि प्रकार -> (price | None, kind). kind: "OVERRIDE" (Manual Override -- engine मध्ये trailing ला वगळतो) / "TRAILING"
+    (engine चंच compute_trailing_sl_level(): trailing चालू + peak_pnl > 0 + मूळ SL पेक्षा चांगला) / "SL" (मूळ). Chart आणि Positions तक्ता दोघे हेच वापरतात."""
     net_credit, lots, lot_size = info.get("net_credit"), info.get("lots"), info.get("lot_size")
     if net_credit is None:
-        return []
-    lines = [_line(abs(net_credit), "Entry", ENTRY_COLOR, dashed=False)]
+        return None, "SL"
     override = info.get("manual_sl_override_pnl")
     sl_level = override if override is not None else info.get("sl_pnl_level")
-    title, color = ("SL (Manual Override)", OVERRIDE_COLOR) if override is not None else ("SL", SL_COLOR)
+    kind = "OVERRIDE" if override is not None else "SL"
     if override is None:
         distance = mcx_trailing_distance_points(settings, ref_price)
         peak = info.get("peak_pnl")
         if distance is not None and peak is not None and lots and lot_size:
             _, effective = compute_trailing_sl_level(peak, peak, distance, lot_size, lots, atr_multiplier=1.0, original_sl_level=sl_level)
             if effective is not None and effective != sl_level:       # engine चा is_trailing_active
-                sl_level, title, color = effective, "SL (Trailing)", TRAIL_COLOR
-    sl_price = futures_price_for_pnl_level(net_credit, sl_level, lots, lot_size)
+                sl_level, kind = effective, "TRAILING"
+    return futures_price_for_pnl_level(net_credit, sl_level, lots, lot_size), kind
+
+
+def futures_lines(info, settings=None, ref_price=None):
+    """MCX futures trade -> [Entry, SL, Target (+ Level)] रेषा (futures भावात). SL रेषा = mcx_sl_price(): Manual Override (नारिंगी) / Trailing (पिवळी, 'SL (Trailing)') / मूळ SL."""
+    net_credit, lots, lot_size = info.get("net_credit"), info.get("lots"), info.get("lot_size")
+    if net_credit is None:
+        return []
+    lines = [_line(abs(net_credit), "Entry", ENTRY_COLOR, dashed=False)]
+    sl_price, kind = mcx_sl_price(info, settings, ref_price)
     if sl_price is not None:
+        title, color = {"OVERRIDE": ("SL (Manual Override)", OVERRIDE_COLOR), "TRAILING": ("SL (Trailing)", TRAIL_COLOR)}.get(kind, ("SL", SL_COLOR))
         lines.append(_line(sl_price, title, color))
     target_price = futures_price_for_pnl_level(net_credit, info.get("target_pnl_level"), lots, lot_size)
     if target_price is not None:
