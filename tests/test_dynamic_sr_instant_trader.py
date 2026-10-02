@@ -2188,7 +2188,8 @@ def _breakout_5m_candles(prior_closes, final_close, today_ist=None, volumes=None
     (breakout-confirm) candle चाच close तपासला जातो, prior_closes फक्त filler/context आहेत.
     final_close: शेवटचा (breakout-confirm) candle चा close. volumes: दिलं नाही तर सगळे 100
     (Volume Confirmation डीफॉल्ट बंद असल्याने बहुतेक टेस्ट्ससाठी अप्रस्तुत)."""
-    today_ist = (today_ist or dsr.get_ist_now()).replace(hour=10, minute=0, second=0, microsecond=0)
+    # शेवटचा candle 09:55 ला सुरू होऊन 10:00 ला पूर्ण झालेला (test चा 'now' = 10:00) -- Breakout फक्त पूर्ण झालेल्या candles वर.
+    today_ist = (today_ist or dsr.get_ist_now()).replace(hour=9, minute=55, second=0, microsecond=0)
     all_closes = list(prior_closes) + [final_close]
     volumes = volumes or [100] * len(all_closes)
     rows = []
@@ -2283,6 +2284,44 @@ class TestBreakoutEntry:
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def _fetch_with_forming_candle(self, forming_close):
+        """पूर्ण झालेले candles (शेवटचा 09:55, close 23905 = breakout नाही) + 10:00 ला सुरू झालेला चालू candle."""
+        def _fake(token, symbol, current_spot=0, interval="1minute", lookback_days=1):
+            if interval == "5minute":
+                df = _breakout_5m_candles(self.PRIOR_CANDLES, 23905.0, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+                forming = {"open": 23905.0, "high": 23910.0, "low": min(23905.0, forming_close) - 5, "close": forming_close,
+                           "volume": 100, "timestamp": pd.Timestamp("2026-09-11 10:00:00")}
+                return pd.concat([df, pd.DataFrame([forming])], ignore_index=True)
+            return self._touch_candles()
+        return _fake
+
+    def _run_forming(self, now, forming_close=23800.0):
+        with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \
+             patch.object(dsr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(dsr, "get_ist_now", return_value=now), \
+             patch.object(dsr, "fetch_candles", side_effect=self._fetch_with_forming_candle(forming_close)), \
+             patch.object(dsr, "fetch_upstox_option_chain", return_value=(_fake_chain(23800.0), "SUCCESS")), \
+             patch.object(dsr, "select_credit_spread_itm", return_value={"strategy": "BEAR_CALL_SPREAD", "legs": []}), \
+             patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T96"}, "OPENED")) as mock_trade, \
+             patch.object(dsr, "send_telegram_message", return_value=True), \
+             patch.object(dsr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(2, None, None)):
+            dsr.process_symbol("fake_token", "NIFTY")
+            return mock_trade, mock_log
+
+    def test_forming_5m_candle_is_not_used_for_breakout_confirmation(self):
+        """🎓 bug-review -- 10:00 ला सुरू झालेला 5M candle (now=10:00:30, अजून पूर्ण नाही) breakout दाखवत असला तरी
+        त्यावर entry होऊ नये; शेवटचा पूर्ण candle (09:55, close 23905) breakout नाही."""
+        mock_trade, mock_log = self._run_forming(datetime.datetime(2026, 9, 11, 10, 0, 30))
+        assert not mock_trade.called
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        assert "SKIPPED_MAX_2_HITS_REACHED" in statuses
+
+    def test_same_candle_counts_once_it_is_completed(self):
+        """तोच 10:00 candle, now=10:05:00 (candle पूर्ण) -- आता breakout वैध, trade होतो."""
+        mock_trade, _ = self._run_forming(datetime.datetime(2026, 9, 11, 10, 5, 0))
+        assert mock_trade.called
 
     def test_candle_close_confirmed_fires_breakout_trade(self):
         with patch.object(dsr.cloud_db, "get_strategy_settings", return_value=self._breakout_gate_settings()), \

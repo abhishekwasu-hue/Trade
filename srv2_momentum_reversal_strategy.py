@@ -553,7 +553,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         credit_spread_line = f"Credit Spread: {strategy_label} — {trade_status}\n" if spread_result is not None else ""
         rsi_display = f"RSI {rsi_value} (फिल्टर पास)" if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)"
         message = (
-            f"🎯 <b>{symbol} SRv2 Momentum-Reversal ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/2 वा hit)\n"
+            f"🎯 <b>{symbol} SRv2 Momentum-Reversal ({timeframe_suffix})</b> (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा hit)\n"
             f"{level_type} {level_price:.2f} — {rsi_display}.\n"
             + credit_spread_line
             + naked_line

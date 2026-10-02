@@ -654,7 +654,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         if candles_5m_df is not None and not candles_5m_df.empty:
             candles_5m_df = candles_5m_df.copy()
             candles_5m_df["_date"] = candles_5m_df["timestamp"].dt.date
-            todays_5m_candles_all = candles_5m_df[candles_5m_df["_date"] == today_date].to_dict("records")
+            todays_5m_df = candles_5m_df[candles_5m_df["_date"] == today_date]
+            # 🎓 bug-review (वापरकर्त्याचा निर्णय: "नेहमी पूर्ण झालेला candle") -- Upstox चा intraday डेटा चालू (अजून न
+            # संपलेला) 5-मिनिट candle सुद्धा देतो. "5-मिनिट candle close" म्हणून तो वापरला तर breakout candle संपण्याआधीच
+            # मध्येच entry होऊ शकते आणि volume अर्धवट मोजला जातो. आता फक्त पूर्ण झालेले candles (Supertrend प्रमाणेच).
+            todays_5m_candles_all = _completed_bars_only(todays_5m_df, 5, now).to_dict("records")
 
     outcomes = []
     target_hit_today = _NOT_CHECKED
@@ -1349,7 +1353,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         credit_spread_line = f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n" if spread_result is not None else ""
         # 🎓 Breakout Entry हा max-2-hits च्या पलीकडचा, वेगळा (तिसरा) trade आहे -- "X/2 वा hit" हा
         # शीर्षक-भाग breakout साठी दिशाभूल करणारा ठरेल, म्हणून वेगळा हेडर.
-        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/2 वा hit)"
+        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा hit)"
         message = (
             f"{hit_label_header} <b>{symbol} ({timeframe_suffix})!</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"
