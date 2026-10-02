@@ -25,8 +25,38 @@ HEARTBEAT_DIR = os.path.join(_BASE_DIR, "data", "heartbeats")
 LOG_PATH = os.path.join(_BASE_DIR, "data", "notifications_log.txt")
 
 
+ENV_FILE_PATH = os.path.join(_BASE_DIR, ".env")
+
+
+def _read_telegram_from_env_file(path=None):
+    """🎓 "Telegram sandesh yetach nahi" -- VPS crontab च्या ओळी (trade_monitor / entry bots / MCX) `.env` source करत नाहीत,
+    आणि data/notification_config.json मध्ये telegram_bot_token/telegram_chat_id keys नव्हत्या -- म्हणजे cron-बॉट्सना Telegram
+    credentials कधीच मिळत नव्हते आणि सर्व संदेश फक्त local log मध्ये जात होते. आता, इतर कुठेही नसतील तर, प्रोजेक्ट फोल्डरमधली `.env`
+    (KEY=VALUE, `export ` आणि अवतरण चालतात) थेट वाचली जाते -- crontab बदलावा लागत नाही. (None, None) जर फाईल/keys नसतील."""
+    path = path or ENV_FILE_PATH
+    if not os.path.exists(path):
+        return None, None
+    values = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+                key, _, value = line.partition("=")
+                key = key.strip()
+                if key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+                    values[key] = value.strip().strip('"').strip("'")
+    except OSError:
+        return None, None
+    return values.get("TELEGRAM_BOT_TOKEN") or None, values.get("TELEGRAM_CHAT_ID") or None
+
+
 def _load_telegram_credentials():
-    """पर्यावरण चलं आधी तपासणे, नंतर config फाईल — दोन्हीपैकी काहीच नसेल तर (None, None)."""
+    """पर्यावरण चलं आधी तपासणे, नंतर config फाईल (दोन्ही keys असतील तरच), शेवटी प्रोजेक्टची `.env` फाईल —
+    कशातच नसतील तर (None, None)."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if token and chat_id:
@@ -35,10 +65,12 @@ def _load_telegram_credentials():
         try:
             with open(CONFIG_PATH) as f:
                 cfg = json.load(f)
-            return cfg.get("telegram_bot_token"), cfg.get("telegram_chat_id")
-        except (json.JSONDecodeError, OSError):
+            cfg_token, cfg_chat = cfg.get("telegram_bot_token"), cfg.get("telegram_chat_id")
+            if cfg_token and cfg_chat:
+                return cfg_token, cfg_chat
+        except (json.JSONDecodeError, OSError, AttributeError):
             pass
-    return None, None
+    return _read_telegram_from_env_file()
 
 
 def send_telegram_message(message, timeout=10):
