@@ -422,7 +422,7 @@ def _get_trailing_reference_price(access_token, symbol, now_fn=time.monotonic):
     return price
 
 
-def monitor_symbol(access_token, symbol, broker_positions=None, record_timing=False):
+def monitor_symbol(access_token, symbol, broker_positions=None, record_timing=False, live_prices=None, live_price_age=None):
     """उघड्या MCX Futures positions चं SL/Target/Trailing/EOD — established trading_engine.
     manage_open_trades() (कुठलाही बदल न करता, generic "else" branch) — trade_monitor.py चं
     MONITORED_SYMBOLS इथे बदललेलं नाही, त्यामुळे हीच script स्वतःच monitoring करते.
@@ -446,6 +446,9 @@ def monitor_symbol(access_token, symbol, broker_positions=None, record_timing=Fa
         extra["broker_positions"] = broker_positions
     if record_timing:
         extra["record_timing"] = True
+    if live_prices is not None:
+        extra["live_prices"] = live_prices
+        extra["live_price_age"] = live_price_age
     return manage_open_trades(
         access_token, symbol, PRODUCT_TYPE,
         eod_squareoff_hour=MCX_EOD_HOUR, eod_squareoff_minute=MCX_EOD_MINUTE,
@@ -479,7 +482,7 @@ def run_all_symbols(token, symbols):
 EXIT_MONITOR_LOCK_NAME = "mcx_exit_monitor"
 
 
-def run_exit_monitor_cycle(token, symbols, heartbeat=False):
+def run_exit_monitor_cycle(token, symbols, heartbeat=False, live_prices=None, live_price_age=None):
     """प्रत्येक symbol साठी monitor_symbol() (SL/Target/Trailing/EOD) — एकाच cycle मध्ये सर्व
     commodities, एकाच्या अपयशाने बाकीच्यांना न अडवता (established 3 bots च्या पॅटर्नप्रमाणेच).
 
@@ -490,12 +493,12 @@ def run_exit_monitor_cycle(token, symbols, heartbeat=False):
     symbols तपासले जातात (सुरक्षित, जुनं वर्तन)."""
     try:
         with ProcessLock(EXIT_MONITOR_LOCK_NAME):
-            return _run_exit_monitor_cycle_locked(token, symbols, heartbeat)
+            return _run_exit_monitor_cycle_locked(token, symbols, heartbeat, live_prices, live_price_age)
     except ProcessLockHeld:
         return ["⏭️ दुसरी MCX exit-monitor cycle अजून चालू आहे — डुप्लिकेट-exit टाळण्यासाठी वगळली."], False
 
 
-def _run_exit_monitor_cycle_locked(token, symbols, heartbeat):
+def _run_exit_monitor_cycle_locked(token, symbols, heartbeat, live_prices=None, live_price_age=None):
     symbols = [s.strip() for s in symbols]
     modes_by_symbol = None
     try:
@@ -505,14 +508,19 @@ def _run_exit_monitor_cycle_locked(token, symbols, heartbeat):
     symbols_to_check = symbols if modes_by_symbol is None else [s for s in symbols if s in modes_by_symbol]
 
     shared_positions = None
-    if modes_by_symbol is not None and any("LIVE" in modes for modes in modes_by_symbol.values()):
+    if live_prices is not None:
+        # 🎓 WebSocket feed (position_stream_monitor.py --market mcx) -- किमती आधीच live_prices मध्ये; positions REST ने आणत नाही
+        # ([] -> reconciliation/broker-MTM फक्त cron चा REST monitor करतो; [] मुळे कुठलीही trade चुकून CLOSED होत नाही).
+        shared_positions = []
+    elif modes_by_symbol is not None and any("LIVE" in modes for modes in modes_by_symbol.values()):
         shared_positions = fetch_broker_positions(token)
 
     results = []
     any_symbol_succeeded = False
     for symbol in symbols_to_check:
         try:
-            closed = monitor_symbol(token, symbol, broker_positions=shared_positions, record_timing=True)
+            stream_kwargs = {"live_prices": live_prices, "live_price_age": live_price_age} if live_prices is not None else {}
+            closed = monitor_symbol(token, symbol, broker_positions=shared_positions, record_timing=True, **stream_kwargs)
             any_symbol_succeeded = True
             if closed:
                 results.append(f"{symbol}: 🔔 {len(closed)} position(s) बंद झाल्या — {closed}")

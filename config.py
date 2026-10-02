@@ -74,6 +74,16 @@ def is_trading_day(now_dt=None):
     return True
 
 
+def is_mcx_market_open(now_dt=None, open_time=datetime.time(9, 0), close_time=datetime.time(23, 59, 59)):
+    """🎓 MCX Futures साठी WebSocket stream monitor -- MCX सत्र सोमवार-शुक्रवार सकाळी ९:०० पासून रात्री ११:३०/११:५५ (हंगामानुसार)
+    पर्यंत. exact बंद-वेळ/MCX सुट्ट्या इथे गृहीत धरल्या नाहीत (२३:५९ पर्यंत 'उघडा' समजतो) -- OPEN trade नसेल तर काहीच subscribe होत
+    नाही, आणि feed ला ticks न आल्यास stream monitor काहीच करत नाही (REST monitor सुरक्षित fallback)."""
+    now_dt = now_dt or get_ist_now()
+    if now_dt.weekday() >= 5:
+        return False
+    return open_time <= now_dt.time() <= close_time
+
+
 def is_market_open(now_dt=None, open_time=datetime.time(9, 15), close_time=datetime.time(15, 30)):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — NSE बाजार वेळेत आहे का (सोमवार ते शुक्रवार, डीफॉल्ट

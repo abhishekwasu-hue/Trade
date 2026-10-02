@@ -20,13 +20,14 @@ Data Feed V3 (WebSocket) वरून tick-by-tick किमती; प्रत
 चालवणे (VPS वर, systemd: deploy/position_stream_monitor.service):
     python3 position_stream_monitor.py
     python3 position_stream_monitor.py --min-cycle-interval 0.5 --max-feed-age 5
+    python3 position_stream_monitor.py --market mcx     # MCX Futures साठी (वेगळी service: position_stream_monitor_mcx)
 """
 import argparse
 import time
 
 import cloud_db
 import database
-from config import is_market_open
+from config import is_market_open, is_mcx_market_open
 from engine_service import MONITORED_SYMBOLS
 from notifications import notify_error, write_heartbeat
 from price_stream import FeedClient, PriceStore
@@ -42,19 +43,51 @@ def collect_needed_keys(symbols, keys_fn=None, spot_key_fn=None):
     keys_fn = keys_fn or database.get_open_trade_instrument_keys
     spot_key_fn = spot_key_fn or get_instrument_key
     keys = set(keys_fn(list(symbols)))
-    keys.update(spot_key_fn(s) for s in symbols)
+    keys.update(k for k in (spot_key_fn(s) for s in symbols) if k)  # MCX futures ला वेगळा स्पॉट index नाही (None)
     return keys
+
+
+def _make_mcx_cycle():
+    """🎓 "mcx open trade sathi real time websocket use kra" -- MCX Futures साठी तोच stream monitor (--market mcx): OPEN MCX trades
+    च्या futures legs च्या किमती WebSocket वरून, आणि तोच एकमेव अधिकृत MCX exit-logic (`mcx_futures_trader.run_exit_monitor_cycle`
+    -> `manage_open_trades`) `live_prices` देऊन. रिटर्न: (MCX symbols, cycle_fn)."""
+    import mcx_futures_trader
+
+    symbols = list(mcx_futures_trader.MCX_FUTURES_SYMBOLS)
+
+    def cycle(token, product_type, live_prices=None, live_price_age=None, heartbeat=False):
+        results, _ok = mcx_futures_trader.run_exit_monitor_cycle(
+            token, symbols, live_prices=live_prices, live_price_age=live_price_age,
+        )
+        return "\n".join(results)
+
+    return symbols, cycle
+
+
+def build_market(market):
+    """--market nse (डीफॉल्ट, जुनं वर्तन) किंवा mcx. रिटर्न: StreamMonitor/main साठी सेटिंग्जची dict."""
+    if market == "mcx":
+        symbols, cycle = _make_mcx_cycle()
+        return {
+            "symbols": symbols, "cycle_fn": cycle, "market_open_fn": is_mcx_market_open, "spot_key_fn": lambda s: None,
+            "script_name": "position_stream_monitor_mcx", "lock_name": "position_stream_monitor_mcx_singleton",
+        }
+    return {
+        "symbols": list(MONITORED_SYMBOLS), "cycle_fn": None, "market_open_fn": None, "spot_key_fn": None,
+        "script_name": SCRIPT_NAME, "lock_name": "position_stream_monitor_singleton",
+    }
 
 
 class StreamMonitor:
     def __init__(self, token_provider, client, store, cycle_fn=None, modes_fn=None, market_open_fn=None,
                  keys_fn=None, spot_key_fn=None, min_cycle_interval=0.5, force_interval=2.0, max_feed_age=5.0,
-                 clock=time.monotonic, log=print):
+                 clock=time.monotonic, log=print, symbols=None):
+        self._symbols = list(symbols) if symbols else list(MONITORED_SYMBOLS)
         self._token_provider = token_provider
         self.client = client
         self.store = store
         self._cycle_fn = cycle_fn or trade_monitor.run_monitor_cycle
-        self._modes_fn = modes_fn or (lambda: database.get_open_trade_modes_by_symbol(MONITORED_SYMBOLS))
+        self._modes_fn = modes_fn or (lambda: database.get_open_trade_modes_by_symbol(self._symbols))
         self._market_open_fn = market_open_fn or is_market_open
         self._keys_fn = keys_fn
         self._spot_key_fn = spot_key_fn
@@ -73,7 +106,7 @@ class StreamMonitor:
             self.client.set_subscriptions([])
             return "market-closed"
         modes = self._modes_fn()
-        symbols = [s for s in MONITORED_SYMBOLS if s in modes]
+        symbols = [s for s in self._symbols if s in modes]
         if not symbols:
             self.client.set_subscriptions([])
             return "idle"
@@ -98,7 +131,7 @@ class StreamMonitor:
         self._last_cycle_at = now
         result = self._cycle_fn(token, "D", live_prices=prices, live_price_age=ages, heartbeat=False)
         self.cycles += 1
-        if result and "बंद झाला" in str(result):
+        if result and "बंद" in str(result):
             self._log(result)
         return "cycle"
 
@@ -112,7 +145,10 @@ def main():
                         help="किंमत न बदलताही (वेळेवर आधारित नियम, उदा. EOD, साठी) किमान इतक्या सेकंदांनी तपासणी. डीफॉल्ट 2.")
     parser.add_argument("--max-feed-age", type=float, default=5.0,
                         help="feed कडून शेवटचा संदेश यापेक्षा जुना असेल तर feed 'unhealthy'. डीफॉल्ट 5.")
+    parser.add_argument("--market", choices=["nse", "mcx"], default="nse",
+                        help="nse (डीफॉल्ट: NIFTY/BANKNIFTY/SENSEX) किंवा mcx (MCX Futures: CRUDEOIL/NATURALGAS/GOLD/SILVER/COPPER).")
     args = parser.parse_args()
+    market_cfg = build_market(args.market)
 
     from read_cache import install_monitor_read_cache
     install_monitor_read_cache(cloud_db)
@@ -125,25 +161,27 @@ def main():
         raise SystemExit(1)
 
     try:
-        with ProcessLock("position_stream_monitor_singleton"):
+        with ProcessLock(market_cfg["lock_name"]):
             store = PriceStore()
             client = FeedClient(token_provider, store)
-            monitor = StreamMonitor(token_provider, client, store, min_cycle_interval=args.min_cycle_interval,
+            monitor = StreamMonitor(token_provider, client, store, cycle_fn=market_cfg["cycle_fn"],
+                                    market_open_fn=market_cfg["market_open_fn"], spot_key_fn=market_cfg["spot_key_fn"],
+                                    symbols=market_cfg["symbols"], min_cycle_interval=args.min_cycle_interval,
                                     force_interval=args.force_interval, max_feed_age=args.max_feed_age)
             client.start()
             last_status, last_beat = None, 0.0
-            print("▶️ Position stream monitor सुरू (WebSocket feed)")
+            print(f"▶️ Position stream monitor सुरू (WebSocket feed, {args.market.upper()})")
             while True:
                 try:
                     status = monitor.step()
                 except Exception as exc:  # एका चुकीमुळे service थांबू नये
                     status = "error"
-                    notify_error(SCRIPT_NAME, str(exc))
+                    notify_error(market_cfg["script_name"], str(exc))
                 if status != last_status:
                     print(f"[{time.strftime('%H:%M:%S')}] status: {status}")
                     last_status = status
                 if time.time() - last_beat > 30:
-                    write_heartbeat(SCRIPT_NAME)
+                    write_heartbeat(market_cfg["script_name"])
                     last_beat = time.time()
                 time.sleep(0.2)
     except ProcessLockHeld:

@@ -159,6 +159,22 @@ journalctl -u position_stream_monitor -f        # "status: cycle / idle / feed-u
 ```
 थांबवायचं असेल तर `sudo systemctl disable --now position_stream_monitor` — बाकी काहीही बदलायची गरज नाही.
 
+🎓 **MCX Futures साठी WebSocket** ("mcx open trade sathi real time websocket use kra") — तोच `position_stream_monitor.py`, फक्त `--market mcx`:
+OPEN MCX trades च्या futures legs च्या किमती Upstox Market Data Feed V3 वरून, आणि तोच MCX exit-logic (`mcx_futures_trader.run_exit_monitor_cycle`
+-> `manage_open_trades`) `live_prices` देऊन. वेगळी service (`position_stream_monitor_mcx`, वेगळा lock, वेगळा heartbeat). सत्र
+सोमवार-शुक्रवार 09:00-23:59 IST; OPEN MCX trade नसताना काहीच subscribe होत नाही. **ADDITIVE** — cron चा `mcx_futures_trader.py --mode exit`
+(REST, 5 s) जसाच्या तसा चालू; feed तुटला/service बंद असली तरी SL/Target/EOD तपासणी थांबत नाही; दोघे एकाच वेळी exit करू शकत नाहीत
+(`mcx_exit_monitor` lock). LIVE reconciliation/broker-MTM फक्त REST monitor करतो.
+⚠️ sandbox मधून खऱ्या Upstox MCX feed वर तपासलेलं नाही (MCX_FO keys feed मध्ये येतात का हे पहिल्या दिवशी `journalctl` मध्ये बघा —
+`status: cycle` येत असेल तर चालतंय; `feed-unhealthy`/`waiting-first-ticks` सतत दिसलं तर stream चालत नाही, REST monitor सुरक्षित काम करत राहतो).
+⚠️ Upstox ची एका user साठी WebSocket connections ची मर्यादा (माझ्या आठवणीनुसार २, पण पडताळलेली नाही) — NSE आणि MCX मिळून दोन connections होतात.
+```
+sudo cp deploy/position_stream_monitor_mcx.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now position_stream_monitor_mcx
+journalctl -u position_stream_monitor_mcx -f
+```
+थांबवायला: `sudo systemctl disable --now position_stream_monitor_mcx`.
+
 तसेच दोन्ही monitor प्रोसेसमध्ये (`trade_monitor.py` आणि हा) प्रत्येक trade साठी प्रत्येक cycle ला नवा Supabase connection (settings,
 next level) उघडला जात असे — आता १०/३० सेकंदांचा TTL-cache (Dashboard मधून exit-सेटिंग बदलल्यास १० सेकंदांत लागू होते).
 
