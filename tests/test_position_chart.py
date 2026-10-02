@@ -249,3 +249,32 @@ class TestNseTrailingStatus:
         seen = []
         nse_trailing_status("NIFTY", {**self.BASE, "source": "srv2_momentum_reversal"}, get_settings=lambda n, s: seen.append(n) or {})
         assert seen == ["15m_dynamic_sr"]
+
+
+from position_chart import SL_KIND_LABELS, mcx_sl_price
+
+
+class TestMcxSlPrice:
+    S = {"trailing_sl_enabled": True, "trailing_distance_points": 10}
+
+    def test_base_sl_kind(self):
+        assert mcx_sl_price(_mcx_info(), None) == (7985.0, "SL")
+        assert mcx_sl_price(_mcx_info(peak=2000.0), {"trailing_sl_enabled": False}) == (7985.0, "SL")
+
+    def test_trailing_kind_and_price(self):
+        assert mcx_sl_price(_mcx_info(peak=2000.0), self.S) == (8010.0, "TRAILING")
+
+    def test_override_beats_trailing(self):
+        assert mcx_sl_price(_mcx_info(peak=2000.0, override=-500.0), self.S) == (7995.0, "OVERRIDE")
+
+    def test_no_net_credit(self):
+        assert mcx_sl_price({"net_credit": None}, self.S) == (None, "SL")
+
+    def test_every_kind_has_a_label(self):
+        assert set(SL_KIND_LABELS) == {"SL", "TRAILING", "OVERRIDE"}
+
+    def test_chart_line_and_table_agree(self):
+        for info in (_mcx_info(peak=2000.0), _mcx_info(), _mcx_info(peak=2000.0, override=-500.0)):
+            price, _ = mcx_sl_price(info, self.S)
+            sl_line = [l for l in futures_lines(info, self.S) if l["title"].startswith("SL")][0]
+            assert sl_line["price"] == round(price, 2)

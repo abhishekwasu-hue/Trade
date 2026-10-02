@@ -39,7 +39,7 @@ from charges import compare_with_upstox
 from mcx_margin import compute_margin_rows, total_worst_case_margin, MARGIN_COLUMNS
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
-from position_chart import futures_lines
+from position_chart import SL_KIND_LABELS, futures_lines, mcx_sl_price
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
@@ -48,7 +48,7 @@ from bot_view import (
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
-from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
+from upstox_api import fetch_ltp_map, fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
 from mcx_futures_trader import PRODUCT_TYPE
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
@@ -222,8 +222,7 @@ def _render_all_commodities_positions():
     else:
         combined_open = pd.concat(open_frames, ignore_index=True)
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Mcx मध्ये stop loss fixed pnl based दिसतो, futures च्या price वर
-        # आधारित नाही का") — SL/Target futures भावातच: Entry भाव, SL भाव, Target भाव. (Trailing SL सक्रिय
-        # असेल तर तो dynamic असल्याने इथे दिसत नाही; Manual SL Override असेल तर SL भाव तोच.)
+        # आधारित नाही का") — SL/Target futures भावातच: Entry भाव, SL भाव, Target भाव. (SL भाव = सध्या लागू SL: Manual Override > Trailing > मूळ SL, खाली.)
         _levels = get_open_trade_levels(combined_open["Trade ID"].tolist())
 
         def _level_price(tid, key):
@@ -237,7 +236,40 @@ def _render_all_commodities_positions():
         combined_open["Entry भाव"] = combined_open["Trade ID"].map(
             lambda t: round(abs(_levels[t]["net_credit"]), 2) if t in _levels and _levels[t]["net_credit"] is not None else None
         )
-        combined_open["SL भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "sl_pnl_level"))
+        # 🎓 "MCX SL भाव मध्ये trailing पण दाखवा" -- सध्या लागू SL (Manual Override > Trailing > मूळ SL), chart सारखाच position_chart.mcx_sl_price(); "SL प्रकार" स्तंभात कोणता ते.
+        _sl_info = get_open_trade_chart_info(combined_open["Trade ID"].tolist())
+        _sl_settings, _sl_refs = {}, {}
+
+        def _sl_ref_price(sym):
+            # PERCENT mode मध्ये trailing अंतर = सद्य किंमत x % (engine सारखं) -- फक्त तेव्हाच LTP आणतो; आणता आला नाही तर None (trailing दाखवत नाही).
+            if sym not in _sl_refs:
+                price = None
+                try:
+                    ok, resolved = _resolve_mcx_instrument_cached(token, sym)
+                    if ok:
+                        price = fetch_ltp_map(token, [resolved["instrument_key"]]).get(resolved["instrument_key"])
+                except Exception:
+                    price = None
+                _sl_refs[sym] = price
+            return _sl_refs[sym]
+
+        def _sl_for(tid, sym):
+            info = _sl_info.get(tid)
+            if not info:
+                return None, "SL"
+            if sym not in _sl_settings:
+                try:
+                    _sl_settings[sym] = cloud_db.get_strategy_settings(STRATEGY_KEY, sym)
+                except Exception:
+                    _sl_settings[sym] = {}
+            settings = _sl_settings[sym]
+            needs_ref = settings.get("trailing_sl_enabled") and settings.get("sl_target_mode", "POINTS") == "PERCENT" and info.get("peak_pnl")
+            price, kind = mcx_sl_price(info, settings, _sl_ref_price(sym) if needs_ref else None)
+            return (round(price, 2) if price is not None else None), kind
+
+        _sl_results = [_sl_for(tid, sym) for tid, sym in zip(combined_open["Trade ID"], combined_open["Symbol"])]
+        combined_open["SL भाव"] = [r[0] for r in _sl_results]
+        combined_open["SL प्रकार"] = [SL_KIND_LABELS.get(r[1], "") for r in _sl_results]
         combined_open["Target भाव"] = combined_open["Trade ID"].map(lambda t: _level_price(t, "target_pnl_level"))
         st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
         total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
