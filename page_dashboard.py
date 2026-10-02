@@ -18,7 +18,7 @@ from upstox_api import (
     fetch_candles, fetch_timeframe_df, fetch_india_vix, get_available_margin,
     execute_order_leg_set, get_static_ip_proxy_url, check_proxy_egress_ip,
     get_registered_static_ips, fetch_ltp_map, fetch_next_expiry_option_chain,
-    fetch_option_greeks, extract_order_ids, fetch_required_margin,
+    fetch_option_greeks, extract_order_ids, fetch_required_margin, get_instrument_key,
 )
 from signals import (
     calculate_rsi, calculate_supertrend, resample_to_1h, find_support_resistance_levels,
@@ -41,6 +41,7 @@ from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
 from live_ticker import render_live_ticker
 from mini_chart import render_mini_charts
+from live_chart import infer_tf_seconds, render_live_charts
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 
 
@@ -1262,9 +1263,16 @@ def render():
                 supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
                 supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
                 rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
-                indicators=chart_indicators,
+                indicators=chart_indicators, live_tf_seconds=infer_tf_seconds(chart_df),
             )
-            st.components.v1.html(tv_html, height=700, scrolling=False)
+            # 🎓 Live updates -- दर 3 सेकंदांनी शेवटची candle (REST LTP; बघा live_chart.py). Daily/डेटा नसेल तर साधा स्थिर चार्ट.
+            if infer_tf_seconds(chart_df) and token_input:
+                render_live_charts(
+                    "dash_main", [{"key": "dash_main", "html": tv_html, "instrument_key": get_instrument_key(chart_symbol), "height": 700}],
+                    token_input, "NSE",
+                )
+            else:
+                st.components.v1.html(tv_html, height=700, scrolling=False)
             st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")
 
         # =========================================================

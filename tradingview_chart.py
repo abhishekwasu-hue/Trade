@@ -35,8 +35,14 @@ def _load_library_js():
 
 
 def _to_unix_time(ts):
-    """pandas Timestamp -> Unix seconds (lightweight-charts ला हेच हवं)."""
-    return int(pd.Timestamp(ts).timestamp())
+    """pandas Timestamp -> Unix seconds (lightweight-charts ला हेच हवं).
+    🎓 Upstox चे candle timestamps timezone-aware (+05:30) असतात, आणि lightweight-charts वेळ UTC म्हणून दाखवतो -- खरा epoch दिला तर अक्ष IST पेक्षा
+    5:30 तास मागे दिसायचा (9:15 चा candle 3:45 वर; Daily candle आदल्या दिवशी). म्हणून tz-aware असेल तर त्या tz मधली wall-clock वेळच (tz काढून)
+    वापरतो -- म्हणजे अक्षावर IST दिसते. Naive timestamps आधीसारखेच."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is not None:
+        t = t.tz_localize(None)
+    return int(t.timestamp())
 
 
 def _price_binned_profile(df, value_column, num_bins=24):
@@ -234,7 +240,7 @@ def build_lightweight_chart_html(
     supertrend_1d_series=None, supertrend_1d_direction=None,
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
-    rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None,
+    rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None, live_tf_seconds=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -252,6 +258,9 @@ def build_lightweight_chart_html(
 
     trade_lines: Positions चार्टसाठी आडव्या रेषा -- [{"price", "title", "color", "dashed"(bool, default True), "width"(default 2)}]. या रेषा
     किंमत-scale मध्ये बसाव्यात म्हणून (SL/Target भावापासून दूर असले तरी दिसावेत) न दिसणाऱ्या दोन बिंदूंनी autoscale ताणला जातो.
+
+    live_tf_seconds: candle चा कालावधी (सेकंद) -- दिला तर चार्ट बाहेरून येणारे `live_tick` संदेश (live_chart.py) ऐकतो: शेवटची candle बदलतो /
+    वेळ झाली की नवीन सुरू करतो + कोपऱ्यात LIVE badge. None => काहीच बदल नाही (स्थिर चार्ट).
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -445,6 +454,10 @@ def build_lightweight_chart_html(
     border: 1px solid {BORDER_COLOR}; border-radius: 4px; padding: 5px 10px; font-size: 10.5px;
     color: {TEXT_COLOR}; pointer-events: none;
   }}
+  #live_badge {{
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 5; background: rgba(13,16,23,0.85); border: 1px solid {BORDER_COLOR};
+    border-radius: 4px; padding: 2px 8px; font-size: 10.5px; color: {TEXT_COLOR}; pointer-events: none; display: none;
+  }}
   #st_legend .st-line {{ display: inline-block; width: 16px; height: 0; border-top-style: solid; margin-right: 4px; vertical-align: middle; }}
 </style>
 </head>
@@ -465,6 +478,7 @@ def build_lightweight_chart_html(
   </div>
   <div id="chart_container">
     <div id="ohlc_box"></div>
+    <div id="live_badge"></div>
     {st_legend_html}
   </div>
 {sr_table_section}
@@ -485,7 +499,33 @@ const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {{
     borderUpColor: '#089981', borderDownColor: '#F23645',
     wickUpColor: '#089981', wickDownColor: '#F23645',
 }});
-candleSeries.setData({json.dumps(candle_data)});
+const candleData = {json.dumps(candle_data)};
+candleSeries.setData(candleData);
+
+// 🎓 Live tick (live_chart.py) -- बाहेरचा Python दर काही सेकंदांनी आतल्या चार्टला {{type:'live_tick', status, price, time, label}} पाठवतो.
+// शेवटची candle बदलतो; वेळ पुढच्या candle मध्ये गेली की नवीन सुरू करतो (आधीच्या शेवटच्या candle च्या वेळेपासून LIVE_TF च्या पटीत -- बाजार
+// उघडण्याच्या वेळा (9:15/9:00) सर्व intraday timeframes साठी या पटीत बसतात). बाजार बंद / जुना डेटा असेल तर फक्त badge बदलतो.
+const LIVE_TF = {int(live_tf_seconds) if live_tf_seconds else 0};
+let lastCandle = candleData.length ? candleData[candleData.length - 1] : null;
+const liveBadge = document.getElementById('live_badge');
+function setLiveBadge(m) {{
+    if (!liveBadge || !LIVE_TF) return;
+    liveBadge.style.display = 'block';
+    liveBadge.textContent = m.status === 'live' ? ('🟢 LIVE · ' + m.label) : (m.status === 'closed' ? '⚪ बाजार बंद' : ('🟠 जुना डेटा · ' + m.label));
+}}
+function applyLiveTick(m) {{
+    setLiveBadge(m);
+    if (!LIVE_TF || !lastCandle || m.status !== 'live' || !(m.price > 0)) return;
+    const slot = lastCandle.time + Math.floor((m.time - lastCandle.time) / LIVE_TF) * LIVE_TF;
+    if (slot < lastCandle.time) return;
+    lastCandle = (slot === lastCandle.time)
+        ? {{ time: lastCandle.time, open: lastCandle.open, high: Math.max(lastCandle.high, m.price), low: Math.min(lastCandle.low, m.price), close: m.price }}
+        : {{ time: slot, open: m.price, high: m.price, low: m.price, close: m.price }};
+    candleSeries.update(lastCandle);
+}}
+window.addEventListener('message', ev => {{
+    if (ev.data && ev.data.type === 'live_tick') applyLiveTick(ev.data);
+}});
 
 const markerData = {json.dumps(marker_data)};
 if (markerData.length > 0) {{
@@ -896,15 +936,17 @@ function clearAllDrawings() {{
     return html
 
 
-def build_mini_chart_html(df, symbol, height=220, max_bars=120):
+def build_mini_chart_html(df, symbol, height=220, max_bars=120, live_tf_seconds=None):
     """🎓 Dashboard वरचा लहान candlestick चार्ट -- toolbar/pane/indicators काहीच नाही, फक्त candles + वर symbol, सद्य भाव आणि आदल्या दिवसाच्या
-    close पासूनचा बदल%. शेवटचे `max_bars` candles. डेटा नसेल तर साधा संदेश."""
+    close पासूनचा बदल%. शेवटचे `max_bars` candles. डेटा नसेल तर साधा संदेश. live_tf_seconds दिला तर `live_tick` संदेशांवर शेवटची candle + वरचा
+    भाव/बदल% लाइव्ह बदलतो (बघा build_lightweight_chart_html)."""
     if df is None or df.empty:
         return f"<div style='color:#888;padding:12px;font-family:sans-serif;'>{_html.escape(str(symbol))}: चार्टसाठी डेटा उपलब्ध नाही.</div>"
     last_close = float(df["close"].iloc[-1])
     last_date = df["timestamp"].iloc[-1].date()
     prev = df[df["timestamp"].dt.date < last_date]
     change_html = ""
+    prev_close = 0.0
     if not prev.empty and float(prev["close"].iloc[-1]) > 0:
         prev_close = float(prev["close"].iloc[-1])
         chg = (last_close - prev_close) / prev_close * 100
@@ -930,7 +972,7 @@ def build_mini_chart_html(df, symbol, height=220, max_bars=120):
 </style>
 </head>
 <body>
-  <div id="hdr"><b>{_html.escape(str(symbol))}</b> &nbsp; {last_close:,.2f} &nbsp; {change_html}</div>
+  <div id="hdr"><b>{_html.escape(str(symbol))}</b> &nbsp; <span id="px">{last_close:,.2f}</span> &nbsp; <span id="chg">{change_html}</span> &nbsp; <span id="live" style="font-size:10px;color:#787b86;"></span></div>
   <div id="chart_container"></div>
 <script>
 const chart = LightweightCharts.createChart(document.getElementById('chart_container'), {{
@@ -944,8 +986,32 @@ const series = chart.addSeries(LightweightCharts.CandlestickSeries, {{
     upColor: '#089981', downColor: '#F23645', borderUpColor: '#089981', borderDownColor: '#F23645',
     wickUpColor: '#089981', wickDownColor: '#F23645',
 }});
-series.setData({json.dumps(candle_data)});
+const candleData = {json.dumps(candle_data)};
+series.setData(candleData);
 chart.timeScale().fitContent();
+
+const LIVE_TF = {int(live_tf_seconds) if live_tf_seconds else 0};
+const PREV_CLOSE = {prev_close};
+let lastCandle = candleData[candleData.length - 1];
+window.addEventListener('message', ev => {{
+    const m = ev.data;
+    if (!m || m.type !== 'live_tick' || !LIVE_TF) return;
+    document.getElementById('live').textContent = m.status === 'live' ? ('🟢 ' + m.label) : (m.status === 'closed' ? '⚪ बाजार बंद' : '🟠 ' + m.label);
+    if (m.status !== 'live' || !(m.price > 0)) return;
+    const slot = lastCandle.time + Math.floor((m.time - lastCandle.time) / LIVE_TF) * LIVE_TF;
+    if (slot < lastCandle.time) return;
+    lastCandle = (slot === lastCandle.time)
+        ? {{ time: lastCandle.time, open: lastCandle.open, high: Math.max(lastCandle.high, m.price), low: Math.min(lastCandle.low, m.price), close: m.price }}
+        : {{ time: slot, open: m.price, high: m.price, low: m.price, close: m.price }};
+    series.update(lastCandle);
+    document.getElementById('px').textContent = m.price.toLocaleString('en-IN', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+    if (PREV_CLOSE > 0) {{
+        const chg = (m.price - PREV_CLOSE) / PREV_CLOSE * 100;
+        const el = document.getElementById('chg');
+        el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+        el.style.color = chg >= 0 ? '#089981' : '#F23645';
+    }}
+}});
 </script>
 </body>
 </html>"""

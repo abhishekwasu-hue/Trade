@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  #chart_frame { width: 100%; border: 0; display: block; }
+</style>
+</head>
+<body>
+<!--
+  🎓 Live चार्टचा "शेल" (Streamlit custom component, बिल्ड-स्टेपशिवाय -- Streamlit चा component protocol हाताने).
+  चार्ट स्वतः आतल्या iframe (srcdoc) मध्ये राहतो; Python प्रत्येक काही सेकंदांनी फक्त `tick` पाठवतो, आणि `html_hash` बदलला नसेल
+  तर चार्ट पुन्हा बनत नाही (zoom / Drawing Tools / indicator बटणांची स्थिती कायम). html मोठा (~200KB) असल्याने तो फक्त बदलल्यावरच
+  येतो; शेलला html नसताना hash माहित नसेल (पान पुन्हा उघडलं) तर तो "need_html" value परत पाठवतो आणि Python पुढच्या रनला html पाठवतो.
+-->
+<iframe id="chart_frame" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+<script>
+(function () {
+  const frame = document.getElementById("chart_frame");
+  let currentHash = null;
+  let pendingTick = null;
+
+  function send(type, data) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+  }
+  function forwardTick(tick) {
+    if (!tick) return;
+    try { frame.contentWindow.postMessage(tick, "*"); } catch (e) { /* iframe अजून तयार नाही */ }
+  }
+  frame.addEventListener("load", function () { forwardTick(pendingTick); });
+
+  window.addEventListener("message", function (ev) {
+    if (!ev.data || ev.data.type !== "streamlit:render") return;
+    const a = ev.data.args || {};
+    const height = a.height || 500;
+    frame.style.height = height + "px";
+    if (a.html) {
+      currentHash = a.html_hash;
+      pendingTick = a.tick || null;
+      frame.srcdoc = a.html;
+    } else if (a.html_hash === currentHash && currentHash !== null) {
+      pendingTick = a.tick || null;
+      forwardTick(a.tick);
+    } else {
+      send("streamlit:setComponentValue", { value: "need_html:" + a.html_hash, dataType: "json" });
+    }
+    send("streamlit:setFrameHeight", { height: height });
+  });
+
+  send("streamlit:componentReady", { apiVersion: 1 });
+  send("streamlit:setFrameHeight", { height: 500 });
+})();
+</script>
+</body>
+</html>
