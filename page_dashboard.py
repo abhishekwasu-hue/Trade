@@ -40,6 +40,7 @@ from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
 from live_ticker import render_live_ticker
+from mini_chart import render_mini_charts
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 
 
@@ -1117,6 +1118,10 @@ def render():
     # वेगळे आकडे दाखवणारे. आता हाच headline कार्ड त्याच fast fragment चा भाग — एकच, नेहमी ताजी
     # (जास्तीत जास्त १५ सेकंद जुनी) किंमत, कुठलाही duplicate display उरलेला नाही.
     render_live_ticker()
+
+    # 🎓 "Dashboard वर mini NIFTY/BANKNIFTY chart" -- लहान candlestick चार्ट, दर 60 सेकंदांनी (स्वतंत्र fragment) ताजे; बघा mini_chart.py.
+    with st.expander("📈 NIFTY · BANKNIFTY (mini चार्ट)", expanded=True):
+        render_mini_charts()
 
     # निवडलेल्या टाइमफ्रेमनुसार डेटा फेच करणे
     # 🎓 वापरकर्त्याने TradingView च्या याच Dynamic S/R indicator (sr_for_tv, खाली) शी थेट पडताळून

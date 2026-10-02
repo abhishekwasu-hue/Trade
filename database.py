@@ -1897,6 +1897,26 @@ def get_open_trade_levels(trade_ids):
     return result
 
 
+def get_open_trade_chart_info(trade_ids):
+    """🎓 Positions चार्टसाठी ("Entry / SL / Target रेषा") -- दिलेल्या trade_ids चे {trade_id: {...}}: source, strategy, entry_time, entry_spot_price,
+    entry_level_price, net_credit, lots, lot_size, sl_pnl_level, target_pnl_level, manual_sl_override_pnl. फक्त वाचतं."""
+    trade_ids = [t for t in dict.fromkeys(trade_ids) if t]
+    if not trade_ids:
+        return {}
+    cols = ["source", "strategy", "entry_time", "entry_spot_price", "entry_level_price", "net_credit", "lots", "lot_size",
+            "sl_pnl_level", "target_pnl_level", "manual_sl_override_pnl"]
+    conn = sqlite3.connect(DB_PATH)
+    result = {}
+    for i in range(0, len(trade_ids), 500):
+        chunk = trade_ids[i:i + 500]
+        placeholders = ",".join("?" * len(chunk))
+        cur = conn.execute(f"SELECT trade_id, {', '.join(cols)} FROM live_trades WHERE trade_id IN ({placeholders})", chunk)
+        for row in cur.fetchall():
+            result[row[0]] = dict(zip(cols, row[1:]))
+    conn.close()
+    return result
+
+
 def get_orders_for_trades(trade_ids):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX Trade-wise brokerage/charges) — दिलेल्या trade_id यादीचे
     सर्व orders (entry + exit दोन्ही, कुठल्याही तारखेचे), account_id सकट — get_orders_with_account()

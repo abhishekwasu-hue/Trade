@@ -234,7 +234,7 @@ def build_lightweight_chart_html(
     supertrend_1d_series=None, supertrend_1d_direction=None,
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
-    rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None,
+    rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -249,6 +249,9 @@ def build_lightweight_chart_html(
 
     indicators: compute_chart_indicators() चा निकाल (EMA/VWAP/Bollinger/ADX) -- प्रत्येकासाठी toolbar वर on/off बटण, सर्व डीफॉल्ट बंद.
     ADX चा वेगळा pane बटण दाबल्यावरच तयार होतो (बंद केल्यावर काढला जातो). None => काहीच बदल नाही (जुनं वर्तन).
+
+    trade_lines: Positions चार्टसाठी आडव्या रेषा -- [{"price", "title", "color", "dashed"(bool, default True), "width"(default 2)}]. या रेषा
+    किंमत-scale मध्ये बसाव्यात म्हणून (SL/Target भावापासून दूर असले तरी दिसावेत) न दिसणाऱ्या दोन बिंदूंनी autoscale ताणला जातो.
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -396,6 +399,20 @@ def build_lightweight_chart_html(
         for key in ("ema", "vwap", "bb", "adx") if key in indicators
     )
 
+    trade_lines_js = []
+    for tl in (trade_lines or []):
+        try:
+            trade_lines_js.append({
+                "price": round(float(tl["price"]), 2), "title": str(tl.get("title", "")), "color": tl.get("color", "#2962FF"),
+                "dashed": bool(tl.get("dashed", True)), "width": int(tl.get("width", 2)),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    trade_line_bounds = None
+    if trade_lines_js:
+        prices = [t["price"] for t in trade_lines_js]
+        trade_line_bounds = {"time": candle_data[-1]["time"], "lo": min(prices), "hi": max(prices)}
+
     library_js = _load_library_js()
     html = f"""
 <!DOCTYPE html>
@@ -514,6 +531,26 @@ if (rsiData.length > 0) {{
     rsiSeries.createPriceLine({{ price: 60, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
     rsiSeries.createPriceLine({{ price: 40, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
     rsiPane.setHeight(100);
+}}
+
+// 🎓 Positions चार्ट: Entry / SL / Target / Manual-Override आडव्या रेषा. Price line autoscale मध्ये धरल्या जात नाहीत, म्हणून शेवटच्या candle
+// च्या वेळी दोन अदृश्य बिंदू (किमान/कमाल रेषा-भाव) टाकून scale रेषांपर्यंत ताणतो.
+const tradeLines = {json.dumps(trade_lines_js)};
+const tradeLineBounds = {json.dumps(trade_line_bounds)};
+if (tradeLines.length > 0 && tradeLineBounds) {{
+    ['lo', 'hi'].forEach(k => {{
+        const helper = chart.addSeries(LightweightCharts.LineSeries, {{
+            color: 'rgba(0,0,0,0)', lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+            crosshairMarkerVisible: false, title: '',
+        }});
+        helper.setData([{{ time: tradeLineBounds.time, value: tradeLineBounds[k] }}]);
+    }});
+    tradeLines.forEach(l => {{
+        candleSeries.createPriceLine({{
+            price: l.price, color: l.color, lineWidth: l.width, title: l.title, axisLabelVisible: true,
+            lineStyle: l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+        }});
+    }});
 }}
 
 // 🎓 EMA / VWAP / Bollinger / ADX -- सर्व डीफॉल्ट लपलेले (visible:false), toolbar बटणाने on/off. ADX चा pane बटण दाबल्यावरच तयार
@@ -857,3 +894,58 @@ function clearAllDrawings() {{
 </html>
 """
     return html
+
+
+def build_mini_chart_html(df, symbol, height=220, max_bars=120):
+    """🎓 Dashboard वरचा लहान candlestick चार्ट -- toolbar/pane/indicators काहीच नाही, फक्त candles + वर symbol, सद्य भाव आणि आदल्या दिवसाच्या
+    close पासूनचा बदल%. शेवटचे `max_bars` candles. डेटा नसेल तर साधा संदेश."""
+    if df is None or df.empty:
+        return f"<div style='color:#888;padding:12px;font-family:sans-serif;'>{_html.escape(str(symbol))}: चार्टसाठी डेटा उपलब्ध नाही.</div>"
+    last_close = float(df["close"].iloc[-1])
+    last_date = df["timestamp"].iloc[-1].date()
+    prev = df[df["timestamp"].dt.date < last_date]
+    change_html = ""
+    if not prev.empty and float(prev["close"].iloc[-1]) > 0:
+        prev_close = float(prev["close"].iloc[-1])
+        chg = (last_close - prev_close) / prev_close * 100
+        change_html = f'<span style="color:{"#089981" if chg >= 0 else "#F23645"};">{chg:+.2f}%</span>'
+    tail = df.tail(max_bars)
+    candle_data = [
+        {"time": _to_unix_time(r.timestamp), "open": round(float(r.open), 2), "high": round(float(r.high), 2),
+         "low": round(float(r.low), 2), "close": round(float(r.close), 2)}
+        for r in tail.itertuples()
+    ]
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<script>
+{_load_library_js()}
+</script>
+<style>
+  body {{ margin: 0; padding: 0; background: {BG_COLOR}; font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif; }}
+  #hdr {{ position: absolute; top: 6px; left: 8px; z-index: 5; color: {TEXT_COLOR}; font-size: 12px; pointer-events: none; }}
+  #chart_container {{ width: 100%; height: {height}px; }}
+</style>
+</head>
+<body>
+  <div id="hdr"><b>{_html.escape(str(symbol))}</b> &nbsp; {last_close:,.2f} &nbsp; {change_html}</div>
+  <div id="chart_container"></div>
+<script>
+const chart = LightweightCharts.createChart(document.getElementById('chart_container'), {{
+    layout: {{ background: {{ type: 'solid', color: '{BG_COLOR}' }}, textColor: '{TEXT_COLOR}', fontSize: 10 }},
+    grid: {{ vertLines: {{ visible: false }}, horzLines: {{ visible: false }} }},
+    timeScale: {{ timeVisible: true, secondsVisible: false, borderColor: '{BORDER_COLOR}' }},
+    rightPriceScale: {{ borderColor: '{BORDER_COLOR}' }},
+    autoSize: true,
+}});
+const series = chart.addSeries(LightweightCharts.CandlestickSeries, {{
+    upColor: '#089981', downColor: '#F23645', borderUpColor: '#089981', borderDownColor: '#F23645',
+    wickUpColor: '#089981', wickDownColor: '#F23645',
+}});
+series.setData({json.dumps(candle_data)});
+chart.timeScale().fitContent();
+</script>
+</body>
+</html>"""
