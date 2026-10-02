@@ -1437,6 +1437,35 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
         conn.close()
 
 
+def get_zone_hits_today_bulk(symbol, trade_date):
+    """🎓 "Bot view" (चार्टवर bot चे levels + आजचे hits) -- get_zone_hits_today() चाच नियम (NO_HIT आणि _NON_HIT_TRADE_STATUSES वगळून), पण सर्व levels साठी
+    एकाच query मध्ये. रिटर्न: {(round(level_price, 2), 'SUPPORT'|'RESISTANCE'): hit_count}. Supabase नसेल / त्रुटी => {} (चार्टवर hits दिसत नाहीत)."""
+    conn = get_connection()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT level_price, level_type FROM signal_log
+                   WHERE symbol=%s AND trade_date=%s AND hit_type != 'NO_HIT'
+                   AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)""",
+                (symbol, trade_date, *_NON_HIT_TRADE_STATUSES),
+            )
+            counts = {}
+            for level_price, level_type in cur.fetchall():
+                role = zone_role_from_type(level_type)
+                if role is None or level_price is None:
+                    continue
+                key = (round(float(level_price), 2), role)
+                counts[key] = counts.get(key, 0) + 1
+            return counts
+    except Exception:
+        _logger.exception("get_zone_hits_today_bulk() मध्ये अनपेक्षित चूक (silently handled)")
+        return {}
+    finally:
+        conn.close()
+
+
 def _is_no_action_trade_status(trade_status):
     """कधीच खरा order attempt न झालेली स्थिती — None (अजून NO_HIT), STRATEGY_SELECTION_FAILED,
     किंवा कुठलंही SKIPPED_* (RSI/PCR/Cooldown/Max-Hits/इ. गेट). प्रत्यक्ष trade attempt चा निकाल

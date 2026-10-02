@@ -241,6 +241,7 @@ def build_lightweight_chart_html(
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
     rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None, live_tf_seconds=None,
+    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60),
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -261,6 +262,8 @@ def build_lightweight_chart_html(
 
     live_tf_seconds: candle चा कालावधी (सेकंद) -- दिला तर चार्ट बाहेरून येणारे `live_tick` संदेश (live_chart.py) ऐकतो: शेवटची candle बदलतो /
     वेळ झाली की नवीन सुरू करतो + कोपऱ्यात LIVE badge. None => काहीच बदल नाही (स्थिर चार्ट).
+
+    supertrend_4h_*: 4H Supertrend रेषा (MCX Bot view). rsi_levels: RSI pane वरच्या आडव्या रेषा (डीफॉल्ट 40/60; Bot view मध्ये bot च्या settings प्रमाणे).
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -290,6 +293,7 @@ def build_lightweight_chart_html(
     st1d_segments = _build_supertrend_segments(supertrend_1d_series, supertrend_1d_direction)
     st1h_segments = _build_supertrend_segments(supertrend_1h_series, supertrend_1h_direction)
     st15m_segments = _build_supertrend_segments(supertrend_15m_series, supertrend_15m_direction)
+    st4h_segments = _build_supertrend_segments(supertrend_4h_series, supertrend_4h_direction)
 
     rsi_data = []
     if rsi_series is not None and not rsi_series.empty:
@@ -389,8 +393,11 @@ def build_lightweight_chart_html(
     has_1d = len(st1d_segments) > 0
     has_1h = len(st1h_segments) > 0
     has_15m = len(st15m_segments) > 0
-    if has_1d or has_1h or has_15m:
+    has_4h = len(st4h_segments) > 0
+    if has_1d or has_1h or has_15m or has_4h:
         legend_lines = []
+        if has_4h:
+            legend_lines.append('<div><span class="st-line" style="border-top-width:3px; border-top-color:#9598a1;"></span>4H Supertrend</div>')
         if has_1d:
             legend_lines.append('<div><span class="st-line" style="border-top-width:3px; border-top-color:#9598a1;"></span>1D Supertrend</div>')
         if has_1h:
@@ -554,6 +561,7 @@ function addSupertrendSegments(segments, widthPx) {{
 addSupertrendSegments({json.dumps(st1d_segments)}, 3);
 addSupertrendSegments({json.dumps(st1h_segments)}, 2);
 addSupertrendSegments({json.dumps(st15m_segments)}, 1);
+addSupertrendSegments({json.dumps(st4h_segments)}, 3);
 
 const volumeData = {json.dumps(volume_data)};
 if (volumeData.length > 0) {{
@@ -568,8 +576,7 @@ if (rsiData.length > 0) {{
     const rsiPane = chart.addPane();
     const rsiSeries = rsiPane.addSeries(LightweightCharts.LineSeries, {{ color: '#7e57c2', lineWidth: 1.5, title: 'RSI-14', lastValueVisible: true }});
     rsiSeries.setData(rsiData);
-    rsiSeries.createPriceLine({{ price: 60, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
-    rsiSeries.createPriceLine({{ price: 40, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
+    {json.dumps([float(v) for v in (rsi_levels or [])])}.forEach(v => rsiSeries.createPriceLine({{ price: v, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }}));
     rsiPane.setHeight(100);
 }}
 
