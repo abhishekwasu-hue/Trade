@@ -78,9 +78,13 @@ def live_chart(html, tick, key, height, component_fn=None):
     component_fn = component_fn or _component_fn()
     html_hash = hashlib.md5(html.encode("utf-8")).hexdigest()
     sent = st.session_state.setdefault("_live_chart_sent", {})
+    handled = st.session_state.setdefault("_live_chart_need_handled", {})
     previous_value = st.session_state.get(f"_lc_{key}")
-    if isinstance(previous_value, str) and previous_value.startswith("need_html"):
-        sent.pop(key, None)          # शेल remount झाला / hash माहित नाही -- html पुन्हा पाठवा
+    # शेल remount झाला / hash माहित नाही => तो प्रत्येक विनंतीला नवीन (अद्वितीय) "need_html:..." value पाठवतो. component ची value पुढच्या रनमध्ये तशीच राहते, म्हणून
+    # प्रत्येक विनंती **एकदाच** हाताळतो (handled मध्ये नोंद) -- नाहीतर प्रत्येक tick ला html पुन्हा पाठवला जाऊन चार्ट सतत reload होतो (zoom / drawings जातात).
+    if isinstance(previous_value, str) and previous_value.startswith("need_html") and handled.get(key) != previous_value:
+        handled[key] = previous_value
+        sent.pop(key, None)
     send_html = sent.get(key) != html_hash
     if send_html:
         sent[key] = html_hash
