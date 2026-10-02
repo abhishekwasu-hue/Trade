@@ -40,6 +40,7 @@ from mcx_margin import compute_margin_rows, total_worst_case_margin, MARGIN_COLU
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
 from position_chart import futures_lines
+from live_chart import infer_tf_seconds, render_live_charts
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
@@ -262,11 +263,17 @@ def _render_all_commodities_positions():
                     if _pc_df is None or _pc_df.empty:
                         st.info("चार्टसाठी candle डेटा मिळाला नाही.")
                     else:
-                        st.components.v1.html(
-                            build_lightweight_chart_html(
-                                _pc_df, symbol=_pc_sym, timeframe_label=_pc_tf, height=450, trade_lines=futures_lines(_pc_info),
-                            ), height=500, scrolling=False,
+                        _pc_html = build_lightweight_chart_html(
+                            _pc_df, symbol=_pc_sym, timeframe_label=_pc_tf, height=450, trade_lines=futures_lines(_pc_info),
+                            live_tf_seconds=infer_tf_seconds(_pc_df),
                         )
+                        if infer_tf_seconds(_pc_df):
+                            render_live_charts(
+                                "mcx_pos", [{"key": "mcx_pos", "html": _pc_html, "instrument_key": _pc_resolved["instrument_key"], "height": 500}],
+                                _pc_token, "MCX",
+                            )
+                        else:
+                            st.components.v1.html(_pc_html, height=500, scrolling=False)
                         st.caption(f"Entry वेळ: {_pc_info.get('entry_time')} · Contract: {_pc_resolved['trading_symbol']}. Trailing SL इथे दाखवलेला नाही.")
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Algo bot ni घेतलेले trade Position tab मधून manually
@@ -518,8 +525,16 @@ def render():
                     tv_html = build_lightweight_chart_html(
                         df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
                         rsi_series=rsi_series, sr_levels=sr_levels, height=550, indicators=chart_indicators,
+                        live_tf_seconds=infer_tf_seconds(df_mcx),
                     )
-                    st.components.v1.html(tv_html, height=600, scrolling=False)
+                    # 🎓 Live updates (REST LTP, दर 3 सेकंदांनी; बघा live_chart.py). Daily असेल तर स्थिर चार्ट.
+                    if infer_tf_seconds(df_mcx):
+                        render_live_charts(
+                            f"mcx_chart_{symbol}", [{"key": f"mcx_chart_{symbol}", "html": tv_html, "instrument_key": resolved["instrument_key"], "height": 600}],
+                            token, "MCX",
+                        )
+                    else:
+                        st.components.v1.html(tv_html, height=600, scrolling=False)
                     st.caption(
                         f"📄 Contract: **{resolved['trading_symbol']}** (expiry {resolved['expiry']}) — Upstox च्या "
                         "Search Instruments API कडून थेट, कायम आपोआप current/continuous front-month."

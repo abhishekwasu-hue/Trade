@@ -8,7 +8,8 @@ from trading_engine import close_trade_manually, reconcile_open_trades_with_brok
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
 from position_chart import spot_rule_lines
 from tradingview_chart import build_lightweight_chart_html
-from upstox_api import fetch_candles
+from upstox_api import fetch_candles, get_instrument_key
+from live_chart import infer_tf_seconds, render_live_charts
 
 
 def render():
@@ -137,8 +138,15 @@ def render():
                 else:
                     html = build_lightweight_chart_html(
                         chart_df, symbol=symbol, timeframe_label=chart_tf, height=450, trade_lines=lines,
+                        live_tf_seconds=infer_tf_seconds(chart_df),
                     )
-                    st.components.v1.html(html, height=500, scrolling=False)
+                    if infer_tf_seconds(chart_df):
+                        render_live_charts(
+                            "pos_nse", [{"key": "pos_nse", "html": html, "instrument_key": get_instrument_key(symbol), "height": 500}],
+                            token_input, "NSE",
+                        )
+                    else:
+                        st.components.v1.html(html, height=500, scrolling=False)
                     st.caption(f"Entry वेळ: {info.get('entry_time')} · Strategy: {info.get('strategy')} · Source: {info.get('source') or 'DASHBOARD'}")
                     st.caption(note)
 
