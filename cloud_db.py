@@ -652,6 +652,12 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "supertrend_1h_multiplier": 3.0,
         "supertrend_4h_period": 10,
         "supertrend_4h_multiplier": 3.0,
+        # 🎓 "First time level hit, level hold Minimum period for 1st trade, hi condition mcx future sathi lagu kra, default on thewa"
+        # -- level ला किंमत टेकल्यावर किमान entry_min_hold_minutes (1-मिनिट candles वर) सलग level जवळ टिकली तरच entry; first_trade_only
+        # असेल तर फक्त त्या level+role वरच्या आजच्या पहिल्या खऱ्या trade ला (Breakout ला लागू नाही). 5M/15M च्या उलट, MCX साठी डीफॉल्ट चालू.
+        "entry_min_hold_gate_enabled": True,
+        "entry_min_hold_minutes": 5,
+        "entry_min_hold_first_trade_only": True,
     },
 }
 

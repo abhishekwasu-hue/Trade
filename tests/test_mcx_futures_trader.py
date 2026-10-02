@@ -43,7 +43,9 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
     }
 
 
-_DEFAULT_SETTINGS = dict(cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"])
+# Min-Hold गेट डीफॉल्ट चालू आहे (बघा TestMinHoldGate::test_enabled_by_default) -- बाकी टेस्ट्स आपापल्या विषयावरच लक्ष ठेवतात,
+# म्हणून इथे तो बंद; TestMinHoldGate मध्ये तो स्पष्टपणे चालू केला जातो.
+_DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False}
 
 
 class TestDetermineDirectionWithHysteresis:
@@ -491,6 +493,24 @@ class TestMcxBreakoutEntry:
             assert breakout_entries[0]["hit_type"] == "TOUCH"
             assert mock_telegram.called
             assert "Breakout Entry" in mock_telegram.call_args.args[0]
+
+    def test_breakout_is_exempt_from_min_hold_gate(self):
+        """Breakout म्हणजे किंमत level पासून दूर -- 'टिकली का' मोजलं तर नेहमी 0; म्हणून Min-Hold गेट breakout ला लागू नाही (1-मिनिट fetch सुद्धा नाही)."""
+        settings = self._breakout_settings()
+        settings["entry_min_hold_gate_enabled"] = True
+        candles_df = self._candles(self.CONSOLIDATED_WINDOW, 6300.0)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft, "fetch_mcx_todays_1m_candles", return_value=[{"low": 6290.0, "high": 6310.0}]) as mock_1m, \
+             patch.object(mft.cloud_db, "get_zone_hits_today", side_effect=_hits_side_effect(support_hits=2)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T51"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True):
+            mft.process_symbol("fake_token", "CRUDEOIL")
+            assert mock_trade.called and not mock_1m.called
 
     def test_candle_close_confirmation_uses_no_buffer_not_nifty_default(self):
         """🎓 code-review द्वारे सापडवलेली bug — dynamic_sr_instant_trader.py मधल्या NIFTY-विशिष्ट
@@ -1166,6 +1186,108 @@ class TestSupertrendEntryGate:
     def test_blocked_touch_is_not_counted_as_a_hit(self):
         import cloud_db as cdb
         assert "SKIPPED_MCX_TREND_FILTER" in cdb._NON_HIT_TRADE_STATUSES
+
+
+class TestMinHoldGate:
+    """🎓 "First time level hit, level hold Minimum period for 1st trade, hi condition mcx future sathi lagu kra, default on thewa" --
+    level ला किंमत टेकल्यावर किमान N मिनिटं (1-मिनिट candles वर) सलग level जवळ टिकली तरच entry; फक्त त्या level+role वरच्या पहिल्या खऱ्या trade ला."""
+
+    LEVEL = 6500.0
+
+    @staticmethod
+    def _candles_1m(touching, far=0):
+        """जुनं ते नवीन: आधी `far` candles level पासून दूर, मग `touching` candles level ला overlap करणारे."""
+        return [{"low": 6400.0, "high": 6410.0}] * far + [{"low": 6498.0, "high": 6502.0}] * touching
+
+    def _run(self, candles_1m, enabled=True, last_trade_time=None, first_trade_only=True, minutes=5):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings.update({
+            "symbol_enabled": True, "entry_rsi_gate_enabled": False, "entry_min_hold_gate_enabled": enabled,
+            "entry_min_hold_minutes": minutes, "entry_min_hold_first_trade_only": first_trade_only,
+        })
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=_fake_candles_df(last_close=self.LEVEL)), \
+             patch.object(mft, "fetch_mcx_todays_1m_candles", return_value=candles_1m) as mock_1m, \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0 if last_trade_time is None else 1, None, last_trade_time)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+        statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+        return mock_trade, mock_1m, statuses, mock_log
+
+    def test_enabled_by_default_with_5_minutes_first_trade_only(self):
+        d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
+        assert d["entry_min_hold_gate_enabled"] is True
+        assert d["entry_min_hold_minutes"] == 5
+        assert d["entry_min_hold_first_trade_only"] is True
+
+    def test_fresh_touch_is_blocked(self):
+        trade, _, statuses, log = self._run(self._candles_1m(touching=2, far=10))
+        assert not trade.called and "SKIPPED_MIN_HOLD_DURATION" in statuses
+        reason = [c.args[0]["reason"] for c in log.call_args_list if c.args[0]["trade_status"] == "SKIPPED_MIN_HOLD_DURATION"][0]
+        assert "फक्त 2 मिनिटं" in reason and "किमान 5" in reason
+
+    def test_held_long_enough_trades(self):
+        trade, _, statuses, _ = self._run(self._candles_1m(touching=5, far=10))
+        assert trade.called and "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
+    def test_minutes_setting_is_respected(self):
+        trade, _, _, _ = self._run(self._candles_1m(touching=3, far=10), minutes=3)
+        assert trade.called
+        trade, _, _, _ = self._run(self._candles_1m(touching=3, far=10), minutes=4)
+        assert not trade.called
+
+    def test_second_trade_on_same_level_skips_the_gate_when_first_trade_only(self):
+        trade, mock_1m, _, _ = self._run(self._candles_1m(touching=1, far=10), last_trade_time=mft.get_ist_now())
+        assert trade.called and not mock_1m.called
+
+    def test_second_trade_still_gated_when_first_trade_only_is_off(self):
+        trade, _, statuses, _ = self._run(self._candles_1m(touching=1, far=10), last_trade_time=mft.get_ist_now(), first_trade_only=False)
+        assert not trade.called and "SKIPPED_MIN_HOLD_DURATION" in statuses
+
+    def test_missing_one_minute_data_does_not_block(self):
+        trade, _, _, _ = self._run(None)
+        assert trade.called
+        trade, _, _, _ = self._run([])
+        assert trade.called
+
+    def test_disabled_never_fetches_or_blocks(self):
+        trade, mock_1m, statuses, _ = self._run(self._candles_1m(touching=1, far=10), enabled=False)
+        assert trade.called and not mock_1m.called and "SKIPPED_MIN_HOLD_DURATION" not in statuses
+
+    def test_blocked_touch_is_not_counted_as_a_hit(self):
+        import cloud_db as cdb
+        assert "SKIPPED_MIN_HOLD_DURATION" in cdb._NON_HIT_TRADE_STATUSES
+
+
+class TestFetchMcxTodays1mCandles:
+    def _now(self):
+        return mft.get_ist_now().replace(hour=15, minute=30)
+
+    def _df(self, days_back_rows=3, today_rows=4):
+        now = self._now()
+        old = pd.date_range(end=now - pd.Timedelta(days=1), periods=days_back_rows, freq="1min")
+        today = pd.date_range(end=now, periods=today_rows, freq="1min")
+        ts = list(old) + list(today)
+        return pd.DataFrame({"timestamp": ts, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 0, "oi": 0})
+
+    def test_returns_only_todays_candles_as_low_high_records(self):
+        with patch.object(mft, "fetch_mcx_candles", return_value=self._df()) as m:
+            out = mft.fetch_mcx_todays_1m_candles("tok", "MCX_FO|1", self._now())
+        assert m.call_args.kwargs["interval"] == "1minute"
+        assert out == [{"low": 0.5, "high": 2.0}] * 4
+
+    def test_none_on_empty_error_or_no_candles_today(self):
+        with patch.object(mft, "fetch_mcx_candles", return_value=pd.DataFrame()):
+            assert mft.fetch_mcx_todays_1m_candles("tok", "k", self._now()) is None
+        with patch.object(mft, "fetch_mcx_candles", side_effect=RuntimeError("api down")):
+            assert mft.fetch_mcx_todays_1m_candles("tok", "k", self._now()) is None
+        with patch.object(mft, "fetch_mcx_candles", return_value=self._df(today_rows=0)):
+            assert mft.fetch_mcx_todays_1m_candles("tok", "k", self._now()) is None
 
 
 class TestTrailingPriceCache:
