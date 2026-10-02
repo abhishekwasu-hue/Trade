@@ -244,7 +244,7 @@ def _render_all_commodities_positions():
         st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")
 
         # 🎓 "Positions पानावर चार्ट: entry, stop, target ... रेषा" -- निवडलेल्या MCX position साठी futures चार्टवर Entry / SL / Target (futures भावात,
-        # अचूक; Manual Override सेट असेल तर तोच SL, नारिंगी). Trailing SL जाणूनबुजून नाही (बघा position_chart.py).
+        # अचूक; Manual Override सेट असेल तर तोच SL, नारिंगी). Trailing SL (settings चालू असेल तर) 'SL (Trailing)' रेषा, live (बघा position_chart.py).
         with st.expander("📈 Position चार्ट (Entry / SL / Target रेषा)", expanded=False):
             _pc_tid = st.selectbox(
                 "Position निवडा", options=combined_open["Trade ID"].tolist(),
@@ -268,18 +268,28 @@ def _render_all_commodities_positions():
                     if _pc_df is None or _pc_df.empty:
                         st.info("चार्टसाठी candle डेटा मिळाला नाही.")
                     else:
+                        # 🎓 Trailing SL (settings चालू असेल तर) -- engine चंच compute_trailing_sl_level() वापरून; peak वाढला की रेषा live हलते (lines_fn, दर 3 सेकंदांनी).
+                        _pc_settings = cloud_db.get_strategy_settings(STRATEGY_KEY, _pc_sym)
+                        _pc_ref = float(_pc_df["close"].iloc[-1])
+
+                        def _pc_lines(price, _tid=_pc_tid, _settings=_pc_settings, _ref=_pc_ref, _fallback=_pc_info):
+                            fresh = get_open_trade_chart_info([_tid]).get(_tid) or _fallback
+                            return futures_lines(fresh, _settings, price or _ref)
+
                         _pc_html = build_lightweight_chart_html(
-                            _pc_df, symbol=_pc_sym, timeframe_label=_pc_tf, height=450, trade_lines=futures_lines(_pc_info),
+                            _pc_df, symbol=_pc_sym, timeframe_label=_pc_tf, height=450, trade_lines=futures_lines(_pc_info, _pc_settings, _pc_ref),
                             live_tf_seconds=infer_tf_seconds(_pc_df),
                         )
                         if infer_tf_seconds(_pc_df):
                             render_live_charts(
-                                "mcx_pos", [{"key": "mcx_pos", "html": _pc_html, "instrument_key": _pc_resolved["instrument_key"], "height": 500}],
+                                "mcx_pos", [{
+                                    "key": "mcx_pos", "html": _pc_html, "instrument_key": _pc_resolved["instrument_key"], "height": 500, "lines_fn": _pc_lines,
+                                }],
                                 _pc_token, "MCX",
                             )
                         else:
                             st.components.v1.html(_pc_html, height=500, scrolling=False)
-                        st.caption(f"Entry वेळ: {_pc_info.get('entry_time')} · Contract: {_pc_resolved['trading_symbol']}. Trailing SL इथे दाखवलेला नाही.")
+                        st.caption(f"Entry वेळ: {_pc_info.get('entry_time')} · Contract: {_pc_resolved['trading_symbol']}. Trailing SL: settings मध्ये चालू असेल तर पिवळ्या 'SL (Trailing)' रेषेत (peak वाढला की हलते).")
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Algo bot ni घेतलेले trade Position tab मधून manually
         # close करता यायला पाहिजे") — page_positions.py (NIFTY/BANKNIFTY/SENSEX) मध्ये हे आधीच आहे,

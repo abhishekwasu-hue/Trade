@@ -1899,12 +1899,13 @@ def get_open_trade_levels(trade_ids):
 
 def get_open_trade_chart_info(trade_ids):
     """🎓 Positions चार्टसाठी ("Entry / SL / Target रेषा") -- दिलेल्या trade_ids चे {trade_id: {...}}: source, strategy, entry_time, entry_spot_price,
-    entry_level_price, net_credit, lots, lot_size, sl_pnl_level, target_pnl_level, manual_sl_override_pnl. फक्त वाचतं."""
+    entry_level_price, net_credit, lots, lot_size, sl_pnl_level, target_pnl_level, manual_sl_override_pnl, peak_pnl, tsl_activated
+    (Trailing SL साठी). फक्त वाचतं."""
     trade_ids = [t for t in dict.fromkeys(trade_ids) if t]
     if not trade_ids:
         return {}
     cols = ["source", "strategy", "entry_time", "entry_spot_price", "entry_level_price", "net_credit", "lots", "lot_size",
-            "sl_pnl_level", "target_pnl_level", "manual_sl_override_pnl"]
+            "sl_pnl_level", "target_pnl_level", "manual_sl_override_pnl", "peak_pnl", "tsl_activated"]
     conn = sqlite3.connect(DB_PATH)
     result = {}
     for i in range(0, len(trade_ids), 500):

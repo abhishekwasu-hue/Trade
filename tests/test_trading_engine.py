@@ -3292,12 +3292,13 @@ class TestFuturesExitLabelsAndLevels:
 
     def test_get_open_trade_chart_info(self, temp_db):
         seed_trade(temp_db, "C1", net_credit=30, sl_level=-100, target_level=500, source="dynamic_sr_instant",
-                   entry_level_price=24400.0, entry_spot_price=24410.5)
+                   entry_level_price=24400.0, entry_spot_price=24410.5, peak_pnl=12.5, tsl_activated=1)
         info = database.get_open_trade_chart_info(["C1", "missing", None])
         assert set(info) == {"C1"}
         assert info["C1"]["source"] == "dynamic_sr_instant" and info["C1"]["strategy"] == "BULL_PUT_SPREAD"
         assert info["C1"]["entry_spot_price"] == 24410.5 and info["C1"]["entry_level_price"] == 24400.0
         assert info["C1"]["net_credit"] == 30 and info["C1"]["sl_pnl_level"] == -100
+        assert info["C1"]["peak_pnl"] == 12.5 and info["C1"]["tsl_activated"] == 1
         assert database.get_open_trade_chart_info([]) == {}
 
 

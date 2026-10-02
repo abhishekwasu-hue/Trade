@@ -106,8 +106,18 @@ def _render_group(group_id):
             html = chart.get("html")
         if not html:
             continue
+        tick = ticks.get(chart["instrument_key"])
+        # lines_fn(price) -> Positions चार्टच्या सद्य रेषा (उदा. MCX Trailing SL) -- tick बरोबर पाठवल्या जातात, आतला चार्ट रेषा हलवतो (html बदलत नाही => zoom/drawings कायम).
+        lines_fn = chart.get("lines_fn")
+        if lines_fn is not None:
+            try:
+                lines = lines_fn(tick.get("price") if tick else None)
+            except Exception:
+                lines = None
+            if lines is not None:
+                tick = {**(tick or build_tick(None, "stale")), "lines": lines}
         with slot:
-            live_chart(html, ticks.get(chart["instrument_key"]), chart["key"], chart["height"])
+            live_chart(html, tick, chart["key"], chart["height"])
 
 
 if hasattr(st, "fragment"):
@@ -120,6 +130,7 @@ else:
 
 
 def render_live_charts(group_id, charts, token, market, side_by_side=False):
-    """charts: [{"key", "html" (किंवा "html_fn"), "instrument_key", "height"}]. सर्व charts मिळून एकच fragment आणि एकच LTP कॉल (दर 3 सेकंदांनी)."""
+    """charts: [{"key", "html" (किंवा "html_fn"), "instrument_key", "height", "lines_fn" (वैकल्पिक: price -> सद्य रेषांची यादी)}].
+    सर्व charts मिळून एकच fragment आणि एकच LTP कॉल (दर 3 सेकंदांनी)."""
     st.session_state[f"_live_group_{group_id}"] = {"charts": charts, "token": token, "market": market, "side_by_side": side_by_side}
     _live_group_fragment(group_id)

@@ -6,7 +6,7 @@ from config import get_ist_now
 from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks, get_open_trade_chart_info
 from trading_engine import close_trade_manually, reconcile_open_trades_with_broker, set_manual_sl_override, clear_manual_sl_override
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
-from position_chart import spot_rule_lines
+from position_chart import nse_trailing_status, spot_rule_lines
 from tradingview_chart import build_lightweight_chart_html
 from upstox_api import fetch_candles, get_instrument_key
 from live_chart import infer_tf_seconds, render_live_charts
@@ -149,6 +149,9 @@ def render():
                         st.components.v1.html(html, height=500, scrolling=False)
                     st.caption(f"Entry वेळ: {info.get('entry_time')} · Strategy: {info.get('strategy')} · Source: {info.get('source') or 'DASHBOARD'}")
                     st.caption(note)
+                    _trail = nse_trailing_status(symbol, info)
+                    if _trail:
+                        st.caption("Trailing SL: " + _trail)
 
         positions_csv = positions_df.to_csv(index=False).encode("utf-8")
         st.download_button(
