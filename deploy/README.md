@@ -304,6 +304,17 @@ loop_seconds दिला तर पुढची invocation ProcessLockHeld म�
 overlap सुरक्षित. Heartbeat: `mcx_exit_monitor`. Exit-logic स्वतः (`manage_open_trades()`) अजिबात बदललेलं नाही.
 `--mode` न दिल्यास जुनंच वर्तन (both), फक्त cycle हलकी आणि open trade असताना 5 s.
 
+🎓 **EOD ट्रेड सारांश (Telegram)** — "Market closed झाल्यानंतर एकूण trade, P&L, charges चा short message" —
+`eod_trade_summary.py` (वाचन-फक्त) दिवसाचे बंद झालेले trades (जिंक/हर), Gross P&L, Charges आणि Net P&L, LIVE/PAPER स्वतंत्र
+ओळींत (shadow वगळून), आणि अजून OPEN trade असेल तर त्याची सूचना पाठवतो. दोन स्वतंत्र संदेश — NSE (15:35 IST) आणि
+MCX (23:58 IST, MCX 23:30/23:55 ला बंद होतो). `.env` source केलेलं असल्याने (refresh ओळींप्रमाणेच) Telegram token/chat id मिळतात:
+```
+5 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 eod_trade_summary.py --market nse >> /root/Trade/eod_trade_summary.log 2>&1
+28 18 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 eod_trade_summary.py --market mcx >> /root/Trade/eod_trade_summary.log 2>&1
+```
+हाताने तपासायला: `python3 eod_trade_summary.py --market nse --date 2026-10-01`. NSE सुट्टीच्या दिवशी NSE संदेश जात नाही.
+MCX exit वर आता Telegram "Position बंद" संदेश पण येतो (आधी फक्त NSE ला येत होता).
+
 🎓 वापरकर्त्याने सापडवलेली bug (22-Sep) — तिसरी ओळ आधी दिवसातून **एकदाच** (फक्त `35 18 * * 1-5`, म्हणजे
 MCX बंद झाल्यावर) चालायची — त्यामुळे Market Zones (bot प्रत्यक्ष trading साठी वापरत असलेले साठवलेले
 zones) दिवसभर stale राहायचे, चार्टच्या नेहमी-ताज्या live गणनेशी न जुळणारे. आता त्याच स्क्रिप्टला MCX
