@@ -998,6 +998,49 @@ class TestLightExitCycle:
             assert "broker_positions" not in kwargs and "record_timing" not in kwargs
 
 
+class TestStreamLivePrices:
+    """🎓 WebSocket (position_stream_monitor.py --market mcx) -- live_prices exit cycle आणि monitor_symbol मार्गे manage_open_trades पर्यंत."""
+
+    def test_cycle_passes_live_prices_and_skips_rest_positions(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {"GOLD": {"LIVE"}})
+        fetch = MagicMock()
+        monkeypatch.setattr(mft, "fetch_broker_positions", fetch)
+        seen = []
+        monkeypatch.setattr(
+            mft, "monitor_symbol",
+            lambda t, s, broker_positions=None, record_timing=False, live_prices=None, live_price_age=None:
+            seen.append((s, broker_positions, live_prices, live_price_age)) or [],
+        )
+        mft.run_exit_monitor_cycle("tok", ["GOLD", "SILVER"], live_prices={"K": 1.0}, live_price_age={"K": 0.3})
+        fetch.assert_not_called()       # stream मार्गात positions REST ने नाहीत (REST monitor reconciliation करतो)
+        assert seen == [("GOLD", [], {"K": 1.0}, {"K": 0.3})]
+
+    def test_cycle_without_live_prices_unchanged(self, monkeypatch):
+        monkeypatch.setattr(mft.database, "get_open_trade_modes_by_symbol", lambda symbols: {"GOLD": {"LIVE"}})
+        fetch = MagicMock(return_value=[{"x": 1}])
+        monkeypatch.setattr(mft, "fetch_broker_positions", fetch)
+        calls = []
+        monkeypatch.setattr(mft, "monitor_symbol", lambda t, s, **kw: calls.append(kw) or [])
+        mft.run_exit_monitor_cycle("tok", ["GOLD"])
+        fetch.assert_called_once()
+        assert "live_prices" not in calls[0] and calls[0]["broker_positions"] == [{"x": 1}]
+
+    def test_monitor_symbol_forwards_live_prices_to_manage_open_trades(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("tok", "GOLD", live_prices={"K": 5.0}, live_price_age={"K": 0.1})
+            kwargs = mock_manage.call_args.kwargs
+            assert kwargs["live_prices"] == {"K": 5.0} and kwargs["live_price_age"] == {"K": 0.1}
+
+    def test_monitor_symbol_default_has_no_live_prices_kwarg(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("tok", "GOLD")
+            assert "live_prices" not in mock_manage.call_args.kwargs
+
+
 class TestTrailingPriceCache:
     @pytest.fixture(autouse=True)
     def _clear(self):

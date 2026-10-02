@@ -335,3 +335,81 @@ class TestRealWebSocketRoundTrip:
         finally:
             client.stop()
             loop_holder["loop"].call_soon_threadsafe(loop_holder["stop"].set)
+
+
+class TestMcxStreamMonitor:
+    """🎓 "mcx open trade sathi real time websocket use kra" -- position_stream_monitor.py --market mcx."""
+
+    def test_collect_needed_keys_skips_missing_spot_key(self):
+        keys = psm.collect_needed_keys(["GOLD", "SILVER"], keys_fn=lambda s: {"MCX_FO|1", "MCX_FO|2"}, spot_key_fn=lambda s: None)
+        assert keys == {"MCX_FO|1", "MCX_FO|2"}
+
+    def _monitor(self, modes, cycle):
+        store = PriceStore()
+        client = MagicMock()
+        client.healthy.return_value = True
+        mon = psm.StreamMonitor(
+            lambda: "tok", client, store, cycle_fn=cycle, modes_fn=lambda: modes, market_open_fn=lambda: True,
+            keys_fn=lambda syms: {"MCX_FO|GOLD1"}, spot_key_fn=lambda s: None, clock=lambda: 0.0,
+            log=lambda *a: None, symbols=["CRUDEOIL", "GOLD"])
+        return mon, client, store
+
+    def test_only_mcx_symbols_count_and_no_spot_subscription(self):
+        cycle = _Cycle()
+        mon, client, store = self._monitor({"NIFTY": {"PAPER"}}, cycle)   # NSE symbol -- MCX monitor साठी idle
+        assert mon.step() == "idle"
+        mon, client, store = self._monitor({"GOLD": {"PAPER"}}, cycle)
+        assert mon.step() == "waiting-first-ticks"
+        assert client.set_subscriptions.call_args.args[0] == {"MCX_FO|GOLD1"}
+
+    def test_runs_cycle_with_live_prices(self):
+        cycle = _Cycle()
+        mon, client, store = self._monitor({"GOLD": {"PAPER"}}, cycle)
+        store.update({"MCX_FO|GOLD1": 75000.0})
+        assert mon.step() == "cycle"
+        assert cycle.calls[0]["live_prices"] == {"MCX_FO|GOLD1": 75000.0}
+
+    def test_close_result_is_logged_for_mcx_wording(self):
+        logged = []
+        store = PriceStore()
+        client = MagicMock()
+        client.healthy.return_value = True
+        mon = psm.StreamMonitor(
+            lambda: "tok", client, store, cycle_fn=lambda *a, **k: "GOLD: 🔔 1 position(s) बंद झाल्या",
+            modes_fn=lambda: {"GOLD": {"PAPER"}}, market_open_fn=lambda: True, keys_fn=lambda syms: {"K"},
+            spot_key_fn=lambda s: None, clock=lambda: 0.0, log=logged.append, symbols=["GOLD"])
+        store.update({"K": 1.0})
+        mon.step()
+        assert logged and "बंद" in logged[0]
+
+    def test_build_market_mcx_wires_live_prices_into_mcx_exit_cycle(self, monkeypatch):
+        import mcx_futures_trader as mft
+        seen = {}
+
+        def fake_cycle(token, symbols, heartbeat=False, live_prices=None, live_price_age=None):
+            seen.update(token=token, symbols=symbols, live_prices=live_prices, age=live_price_age)
+            return ["GOLD: 🔔 1 position(s) बंद झाल्या"], True
+
+        monkeypatch.setattr(mft, "run_exit_monitor_cycle", fake_cycle)
+        cfg = psm.build_market("mcx")
+        assert cfg["script_name"] == "position_stream_monitor_mcx" and cfg["lock_name"] != psm.build_market("nse")["lock_name"]
+        assert set(cfg["symbols"]) == set(mft.MCX_FUTURES_SYMBOLS)
+        out = cfg["cycle_fn"]("tok", "D", live_prices={"K": 1.0}, live_price_age={"K": 0.2}, heartbeat=False)
+        assert seen["live_prices"] == {"K": 1.0} and seen["age"] == {"K": 0.2} and seen["token"] == "tok"
+        assert "बंद" in out
+
+    def test_build_market_nse_keeps_old_behaviour(self):
+        cfg = psm.build_market("nse")
+        assert cfg["cycle_fn"] is None and cfg["market_open_fn"] is None and cfg["script_name"] == "position_stream_monitor"
+        assert "NIFTY" in cfg["symbols"] and "GOLD" not in cfg["symbols"]
+
+
+class TestMcxMarketOpen:
+    def test_weekday_session_and_weekend(self):
+        import datetime
+        from config import is_mcx_market_open
+        assert is_mcx_market_open(datetime.datetime(2026, 10, 1, 9, 0))          # गुरुवार सकाळ
+        assert is_mcx_market_open(datetime.datetime(2026, 10, 1, 23, 20))        # रात्री अजून सुरू
+        assert not is_mcx_market_open(datetime.datetime(2026, 10, 1, 8, 59))
+        assert not is_mcx_market_open(datetime.datetime(2026, 10, 3, 12, 0))     # शनिवार
+
