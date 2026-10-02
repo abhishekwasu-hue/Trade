@@ -74,7 +74,7 @@ import database
 from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
 from dynamic_sr_instant_trader import (
     check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close,
-    check_supertrend_trend_filter, get_supertrend_direction, _completed_bars_only,
+    check_supertrend_trend_filter, get_supertrend_direction, _completed_bars_only, count_consecutive_touch_minutes,
 )
 from notifications import send_telegram_message, write_heartbeat, notify_error, notify_exit
 from process_lock import ProcessLock, ProcessLockHeld
@@ -187,6 +187,22 @@ def fetch_mcx_trend_filter_directions(access_token, instrument_key, now, st1h_pe
     return dir_1h, dir_4h
 
 
+def fetch_mcx_todays_1m_candles(access_token, instrument_key, now):
+    """🎓 "level hold Minimum period" गेटसाठी -- आजचे 1-मिनिट candles ([{"low","high"}, ...], जुनं ते नवीन) किंवा None (डेटा मिळाला नाही /
+    त्रुटी -- गेट fail-open, trade अडवत नाही). MCX बॉट बाकी सगळीकडे 30-मिनिट candles वापरतो; हा 1-मिनिटाचा fetch फक्त गेट तपासायची वेळ
+    आली (बाकी सर्व गेट्स पार) तेव्हाच, प्रति-symbol प्रति-cycle एकदाच केला जातो."""
+    try:
+        df = fetch_mcx_candles(access_token, instrument_key, interval="1minute", lookback_days=1)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+    todays = df[df["timestamp"].dt.date == now.date()]
+    if todays.empty:
+        return None
+    return todays[["low", "high"]].to_dict("records")
+
+
 def process_symbol(access_token, symbol):
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Crude oil hit log not working") — _process_symbol_core() चा wrapper: प्रत्येक
     cycle ला निकाल-स्थितीसह "अखेरची तपासणी" (वेळ/भाव/जवळचा level) cloud_db.save_mcx_last_check() मध्ये साठवतो, जेणेकरून
@@ -235,6 +251,10 @@ def _process_symbol_core(access_token, symbol, check_info):
     supertrend_4h_period = settings.get("supertrend_4h_period", 10)
     supertrend_4h_multiplier = settings.get("supertrend_4h_multiplier", 3.0)
     supertrend_directions_cache = []  # प्रति-symbol, प्रति-cycle एकदाच (सर्व levels साठी सारखं) -- lazily
+    entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", True)
+    entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 5)
+    entry_min_hold_first_trade_only = settings.get("entry_min_hold_first_trade_only", True)
+    todays_1m_cache = []  # प्रति-symbol, प्रति-cycle एकदाच -- lazily
     timeframe_choice = settings.get("timeframe_choice", "30M")
     active_suffixes = TIMEFRAME_SUFFIXES if timeframe_choice == "ALL" else [timeframe_choice]
 
@@ -277,7 +297,7 @@ def _process_symbol_core(access_token, symbol, check_info):
         # च्या जवळच आहे का) ची अट breakout candle साठी खरीच ठरणार नाही (breakout म्हणजे किंमत level
         # पासून निर्णायक दूर गेलेली), म्हणून इथे त्यापासून स्वतंत्रपणे तपासलं जातं.
         role = level_type
-        hit_count_so_far, _, _ = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=role)
+        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=role)
         is_breakout_trade = False
         if entry_breakout_gate_enabled:
             opposite_role = "RESISTANCE" if role == "SUPPORT" else "SUPPORT"
@@ -338,6 +358,26 @@ def _process_symbol_core(access_token, symbol, check_info):
                 )
                 cloud_db.save_signal_log(log_entry)
                 continue
+
+        # 🎓 "First time level hit, level hold Minimum period for 1st trade" (5M/15M सारखाच, 1-मिनिट candles वरून, MCX च्या 0.10% touch
+        # buffer सकट) -- level ला किंमत टेकल्यावर किमान entry_min_hold_minutes सलग टिकली तरच entry. first_trade_only असल्यास फक्त त्या
+        # level+role वरच्या आजच्या पहिल्या **खऱ्या** trade ला (last_trade_time -- नाकारलेला touch "पहिला" मोजला जात नाही). Breakout ला
+        # लागू नाही (किंमत level पासून दूर गेलेली असते, टिकण्याचा प्रश्नच नाही; त्याचं स्वतःचं confirmation आधीच आहे). 1-मिनिट डेटा
+        # नसेल/त्रुटी आली तर fail-open. SKIPPED_MIN_HOLD_DURATION no-hit status (max-hits मोजत नाही).
+        if (entry_min_hold_gate_enabled and not is_breakout_trade
+                and not (entry_min_hold_first_trade_only and last_trade_time is not None)):
+            if not todays_1m_cache:
+                todays_1m_cache.append(fetch_mcx_todays_1m_candles(access_token, instrument_key, now))
+            candles_1m = todays_1m_cache[0]
+            if candles_1m:
+                held_minutes = count_consecutive_touch_minutes(level_price, candles_1m, tolerance_pct=TOUCH_TOLERANCE_PCT)
+                if held_minutes < entry_min_hold_minutes:
+                    log_entry["trade_status"] = "SKIPPED_MIN_HOLD_DURATION"
+                    log_entry["reason"] = (
+                        f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch ({timeframe_suffix})"
+                    )
+                    cloud_db.save_signal_log(log_entry)
+                    continue
 
         # 🎓 "add Supertrend entry gate for MCX futures" -- किंमत 1H **आणि** 4H दोन्ही Supertrend च्या खाली => Bullish trade नाही; दोन्हींच्या
         # वर => Bearish trade नाही. Breakout सकट सर्व entries ला लागू. SKIPPED_MCX_TREND_FILTER no-hit status (max-hits मोजत नाही).

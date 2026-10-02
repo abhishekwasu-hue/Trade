@@ -629,6 +629,32 @@ def render():
                 min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
             )
 
+        st.markdown("---")
+        sub_header("⏱️ Minimum Level-Hold Duration (पहिल्या trade साठी)", HDR_ORANGE)
+        entry_min_hold_gate_enabled = st.checkbox(
+            "Minimum Level-Hold सक्रिय (डीफॉल्ट चालू)",
+            value=bool(settings.get("entry_min_hold_gate_enabled", True)),
+            key=_widget_key(symbol, "entry_min_hold_gate_enabled"),
+        )
+        st.caption(
+            "किंमत level ला पहिल्यांदा टेकल्यावर लगेच trade नाही -- किमान खालील मिनिटं (1-मिनिट candles वर) level जवळ सलग टिकली तरच entry. "
+            "Breakout trades ला लागू नाही. 1-मिनिट डेटा मिळाला नाही तर काहीच अडवलं जात नाही. थांबवलेला touch Signal Log मध्ये "
+            "`SKIPPED_MIN_HOLD_DURATION` दिसेल (हा max-hits मोजत नाही)."
+        )
+        mh1, mh2 = st.columns(2)
+        with mh1:
+            entry_min_hold_minutes = _number_input(
+                "किमान मिनिटं (level जवळ टिकणं)", settings, "entry_min_hold_minutes", symbol,
+                min_value=1, max_value=30, step=1, disabled=not entry_min_hold_gate_enabled,
+            )
+        with mh2:
+            entry_min_hold_first_trade_only = st.checkbox(
+                "फक्त पहिल्या trade ला लागू (त्याच level+role वर आज खरा trade झाल्यावर नाही)",
+                value=bool(settings.get("entry_min_hold_first_trade_only", True)),
+                key=_widget_key(symbol, "entry_min_hold_first_trade_only"),
+                disabled=not entry_min_hold_gate_enabled,
+            )
+
         if st.button("💾 Entry Gate सेव्ह करा", key=_widget_key(symbol, "save_entry")):
             new_settings = dict(settings)
             new_settings.update({
@@ -644,6 +670,9 @@ def render():
                 "entry_supertrend_filter_enabled": bool(entry_supertrend_filter_enabled),
                 "supertrend_1h_period": int(supertrend_1h_period), "supertrend_1h_multiplier": float(supertrend_1h_multiplier),
                 "supertrend_4h_period": int(supertrend_4h_period), "supertrend_4h_multiplier": float(supertrend_4h_multiplier),
+                "entry_min_hold_gate_enabled": bool(entry_min_hold_gate_enabled),
+                "entry_min_hold_minutes": int(entry_min_hold_minutes),
+                "entry_min_hold_first_trade_only": bool(entry_min_hold_first_trade_only),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Entry Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
