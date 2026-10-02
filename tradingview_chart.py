@@ -9,9 +9,12 @@ component म्हणून embed केलेला. Plotly ऐवजी — �
   - EMA20/EMA50 काढले — त्याऐवजी 1-Day व 1-Hour Supertrend overlay (डीफॉल्ट, period=10, multiplier=3)
   - मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star मार्कर्सने ठळक
 """
+import html as _html
 import json
 import os
 import pandas as pd
+
+from signals import calculate_adx, calculate_bollinger, calculate_ema, calculate_vwap
 
 _LIB_PATH = os.path.join(os.path.dirname(__file__), "lib", "lightweight-charts.js")
 
@@ -158,12 +161,80 @@ def build_supertrend_segments(timestamps, line_series, dir_series):
     return segments
 
 
+def _series_points(timestamps, values):
+    """[(time, value)] -> lightweight-charts line data; NaN बिंदू वगळून."""
+    return [{"time": _to_unix_time(t), "value": round(float(v), 2)} for t, v in zip(timestamps, values) if pd.notna(v)]
+
+
+def compute_chart_indicators(df, ema_fast=20, ema_slow=50, bb_period=20, bb_std=2.0, adx_period=14, intraday=True):
+    """🎓 "EMA, VWAP, Bollinger, ADX चार्टवर" -- toolbar बटणाने on/off होणाऱ्या indicators चा डेटा ({key: {...}}). सर्व डीफॉल्ट चार्टवर **लपलेले**
+    (बटण दाबल्यावर दिसतात). डेटा मिळाला नाही/गणना अयशस्वी झालेला indicator dict मध्ये येतच नाही => त्याचं बटणही दिसत नाही.
+    intraday=False (Daily bars) असेल तर VWAP वगळला जातो (दिवसाला एकच bar => अर्थहीन). Index candles मध्ये volume नसल्याने VWAP NaN => तोही वगळला."""
+    if df is None or df.empty or "timestamp" not in df.columns:
+        return {}
+    ts, close = df["timestamp"], df["close"]
+    out = {}
+    try:
+        fast, slow = _series_points(ts, calculate_ema(close, int(ema_fast))), _series_points(ts, calculate_ema(close, int(ema_slow)))
+        if fast or slow:
+            out["ema"] = {"label": f"EMA {int(ema_fast)}/{int(ema_slow)}", "fast": fast, "slow": slow}
+    except Exception:
+        pass
+    if intraday:
+        try:
+            vwap = _series_points(ts, calculate_vwap(df))
+            if vwap:
+                out["vwap"] = {"label": "VWAP", "line": vwap}
+        except Exception:
+            pass
+    try:
+        mid, upper, lower = calculate_bollinger(close, int(bb_period), float(bb_std))
+        pts_u = _series_points(ts, upper)
+        if pts_u:
+            out["bb"] = {
+                "label": f"BB {int(bb_period)},{float(bb_std):g}",
+                "upper": pts_u, "middle": _series_points(ts, mid), "lower": _series_points(ts, lower),
+            }
+    except Exception:
+        pass
+    try:
+        adx, plus_di, minus_di = calculate_adx(df, int(adx_period))
+        pts_adx = _series_points(ts, adx)
+        if pts_adx:
+            out["adx"] = {
+                "label": f"ADX {int(adx_period)}", "adx": pts_adx,
+                "plus_di": _series_points(ts, plus_di), "minus_di": _series_points(ts, minus_di),
+            }
+    except Exception:
+        pass
+    return out
+
+
+def chart_indicator_controls(key_prefix):
+    """चार्टच्या वर indicator periods चं एक ओळ (Dashboard आणि MCX पान दोन्ही वापरतात) -- EMA fast/slow, Bollinger period/std, ADX period.
+    डीफॉल्ट 20/50, 20/2, 14. फक्त त्या browser session पुरते (पान पुन्हा उघडल्यावर डीफॉल्टला परत). compute_chart_indicators() चे kwargs परत करतो."""
+    import streamlit as st
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        ema_fast = st.number_input("EMA fast", min_value=2, max_value=200, value=20, step=1, key=f"{key_prefix}_ema_fast")
+    with c2:
+        ema_slow = st.number_input("EMA slow", min_value=2, max_value=400, value=50, step=1, key=f"{key_prefix}_ema_slow")
+    with c3:
+        bb_period = st.number_input("BB period", min_value=2, max_value=200, value=20, step=1, key=f"{key_prefix}_bb_period")
+    with c4:
+        bb_std = st.number_input("BB std", min_value=0.5, max_value=5.0, value=2.0, step=0.5, format="%.1f", key=f"{key_prefix}_bb_std")
+    with c5:
+        adx_period = st.number_input("ADX period", min_value=2, max_value=100, value=14, step=1, key=f"{key_prefix}_adx_period")
+    return {"ema_fast": int(ema_fast), "ema_slow": int(ema_slow), "bb_period": int(bb_period), "bb_std": float(bb_std), "adx_period": int(adx_period)}
+
+
 def build_lightweight_chart_html(
     df, symbol="NIFTY", timeframe_label="15M",
     supertrend_1d_series=None, supertrend_1d_direction=None,
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
-    rsi_series=None, sr_levels=None, pattern_markers=None, height=650,
+    rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -175,6 +246,9 @@ def build_lightweight_chart_html(
 
     supertrend_*_series/direction: pandas Series, df च्याच timestamps शी आधीच अलाइन केलेले (no-lookahead
     merge_asof ने) — इथे फक्त रेंडर केले जातात, अलाइनमेंट page_dashboard.py मध्ये होते.
+
+    indicators: compute_chart_indicators() चा निकाल (EMA/VWAP/Bollinger/ADX) -- प्रत्येकासाठी toolbar वर on/off बटण, सर्व डीफॉल्ट बंद.
+    ADX चा वेगळा pane बटण दाबल्यावरच तयार होतो (बंद केल्यावर काढला जातो). None => काहीच बदल नाही (जुनं वर्तन).
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -316,6 +390,12 @@ def build_lightweight_chart_html(
             '<div style="margin-top:3px; font-size:9.5px; color:#787b86;">🟢 हिरवा=Bullish · 🔴 लाल=Bearish (एकाच रेषेची दिशा)</div></div>'
         )
 
+    indicators = indicators or {}
+    indicator_buttons_html = "".join(
+        f'<button class="tool-btn" id="btn_ind_{key}" onclick="toggleIndicator(\'{key}\')">{_html.escape(str(indicators[key].get("label", key)))}</button>'
+        for key in ("ema", "vwap", "bb", "adx") if key in indicators
+    )
+
     library_js = _load_library_js()
     html = f"""
 <!DOCTYPE html>
@@ -363,6 +443,7 @@ def build_lightweight_chart_html(
     <button class="tool-btn" onclick="clearAllDrawings()">🗑️ सर्व मिटवा</button>
     <button class="tool-btn" id="btn_volprofile" onclick="toggleVolumeProfile()">📊 Vol Profile</button>
     <button class="tool-btn" id="btn_oiprofile" onclick="toggleOIProfile()">📶 OI Profile</button>
+    {indicator_buttons_html}
     <span id="status" style="align-self:center;"></span>
   </div>
   <div id="chart_container">
@@ -433,6 +514,63 @@ if (rsiData.length > 0) {{
     rsiSeries.createPriceLine({{ price: 60, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
     rsiSeries.createPriceLine({{ price: 40, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }});
     rsiPane.setHeight(100);
+}}
+
+// 🎓 EMA / VWAP / Bollinger / ADX -- सर्व डीफॉल्ट लपलेले (visible:false), toolbar बटणाने on/off. ADX चा pane बटण दाबल्यावरच तयार
+// होतो आणि बंद केल्यावर काढला जातो (रिकामी जागा राहत नाही).
+const indicatorData = {json.dumps(indicators)};
+const indicatorSeries = {{}};
+function addIndicatorLine(key, points, color, width, style) {{
+    if (!points || points.length === 0) return;
+    const s = chart.addSeries(LightweightCharts.LineSeries, {{
+        color: color, lineWidth: width, lineStyle: style, title: '', visible: false,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    }});
+    s.setData(points);
+    (indicatorSeries[key] = indicatorSeries[key] || []).push(s);
+}}
+const SOLID = LightweightCharts.LineStyle.Solid, DASHED = LightweightCharts.LineStyle.Dashed;
+if (indicatorData.ema) {{
+    addIndicatorLine('ema', indicatorData.ema.fast, '#fdd835', 1.5, SOLID);
+    addIndicatorLine('ema', indicatorData.ema.slow, '#29b6f6', 1.5, SOLID);
+}}
+if (indicatorData.vwap) {{
+    addIndicatorLine('vwap', indicatorData.vwap.line, '#ff7043', 1.5, SOLID);
+}}
+if (indicatorData.bb) {{
+    addIndicatorLine('bb', indicatorData.bb.upper, '#90a4ae', 1, SOLID);
+    addIndicatorLine('bb', indicatorData.bb.middle, '#90a4ae', 1, DASHED);
+    addIndicatorLine('bb', indicatorData.bb.lower, '#90a4ae', 1, SOLID);
+}}
+let adxPane = null;
+function toggleADXPane(btn) {{
+    if (adxPane) {{
+        chart.removePane(adxPane.paneIndex());
+        adxPane = null;
+        btn.classList.remove('active');
+        return;
+    }}
+    const d = indicatorData.adx;
+    adxPane = chart.addPane();
+    const mk = (points, color, width) => {{
+        const s = adxPane.addSeries(LightweightCharts.LineSeries, {{ color: color, lineWidth: width, title: '', lastValueVisible: false, priceLineVisible: false }});
+        s.setData(points);
+        return s;
+    }};
+    mk(d.plus_di, '#089981', 1);
+    mk(d.minus_di, '#F23645', 1);
+    const adxSeries = mk(d.adx, '#e0e0e0', 2);
+    adxSeries.createPriceLine({{ price: 25, color: '#787b86', lineWidth: 1, lineStyle: DASHED }});
+    adxPane.setHeight(100);
+    btn.classList.add('active');
+}}
+function toggleIndicator(key) {{
+    const btn = document.getElementById('btn_ind_' + key);
+    if (!btn) return;
+    if (key === 'adx') {{ toggleADXPane(btn); return; }}
+    const turnOn = !btn.classList.contains('active');
+    (indicatorSeries[key] || []).forEach(s => s.applyOptions({{ visible: turnOn }}));
+    btn.classList.toggle('active', turnOn);
 }}
 
 const srLines = {json.dumps(sr_lines_js)};

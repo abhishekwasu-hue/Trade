@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TIMEFRAME_CONFIG, DB_PATH, get_ist_now, get_ist_today, is_market_open
-from tradingview_chart import build_lightweight_chart_html
+from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
 from sr_dynamic import compute_dynamic_sr
 import sqlite3
 from database import (
@@ -1147,15 +1147,42 @@ def render():
             # (Trendline, H-Line, Fibonacci, Rectangle, Measure). जुना Plotly chart काढून, हाच आता एकमेव,
             # डीफॉल्ट chart आहे.
             # =========================================================
-            rsi_for_tv = calculate_rsi(df_candles, period=14) if not df_candles.empty else pd.Series(dtype=float)
+            # 🎓 "Timeframe + symbol switcher चार्टवर" -- फक्त चार्टपुरतं (sidebar चे symbol/timeframe आणि बाकी Dashboard — Direction/Signal
+            # Engine — अजिबात बदलत नाहीत). widget key मध्ये sidebar ची निवड असल्याने, sidebar बदलल्यावर हे आपोआप त्या मूल्याला परत येतात.
+            # निवड sidebar सारखीच असेल तर वरचेच df_candles वापरले जातात (अतिरिक्त Upstox fetch नाही).
+            _chart_symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
+            _chart_tfs = ["1minute", "5minute", "15minute", "30minute", "1hour", "day"]
+            _cs1, _cs2 = st.columns(2)
+            with _cs1:
+                chart_symbol = st.selectbox(
+                    "चार्ट Symbol:", _chart_symbols, index=_chart_symbols.index(symbol) if symbol in _chart_symbols else 0,
+                    key=f"tv_chart_symbol_{symbol}",
+                )
+            with _cs2:
+                chart_tf = st.selectbox(
+                    "चार्ट Timeframe:", _chart_tfs, index=_chart_tfs.index(timeframe_option) if timeframe_option in _chart_tfs else 1,
+                    key=f"tv_chart_tf_{timeframe_option}",
+                )
+            ind_params = chart_indicator_controls("tv_chart_ind")
+            if chart_symbol == symbol and chart_tf == timeframe_option:
+                chart_df, chart_spot = df_candles, underlying_price
+            else:
+                chart_spot = underlying_price if chart_symbol == symbol else 0  # current_spot फक्त cache key आहे (fetch मध्ये वापरत नाही)
+                chart_df = fetch_candles(
+                    token_input, chart_symbol, chart_spot, interval=chart_tf, lookback_days=_CHART_LOOKBACK_DAYS.get(chart_tf),
+                )
+                if chart_df is None:
+                    chart_df = pd.DataFrame()
+                st.caption(f"ℹ️ हा चार्ट {chart_symbol} ({chart_tf}) दाखवतो — बाकी Dashboard sidebar च्या {symbol} ({timeframe_option}) वरच आहे.")
+            rsi_for_tv = calculate_rsi(chart_df, period=14) if not chart_df.empty else pd.Series(dtype=float)
             # 🎓 वापरकर्त्याने दिलेल्या TradingView Pine Script ("Support Resistance - Dynamic v2" by
             # LonesomeTheBlue) च्याच तर्कानुसार — Pivot High/Low clustering वरून dynamic S/R (आधीच्या
             # साध्या rolling-window S/R ऐवजी, जास्त अचूक व त्याच indicator शी जुळणारं)
             # mintick: NIFTY/BANKNIFTY साठी 0.05 (TradingView च्या math.round_to_mintick सारखी गोलाई — लेबल तंतोतंत जुळावे)
             sr_for_tv = compute_dynamic_sr(
-                df_candles, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2,
-                mintick=0.05 if symbol in ("NIFTY", "BANKNIFTY") else None,
-            ) if not df_candles.empty else None
+                chart_df, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2,
+                mintick=0.05 if chart_symbol in ("NIFTY", "BANKNIFTY") else None,
+            ) if not chart_df.empty else None
 
             # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — EMA20/EMA50 काढून, त्याऐवजी डीफॉल्ट 1-Day, 1-Hour
             # व 15-Minute Supertrend (period=10, multiplier=3, आपल्याच A1 Engine सारखेच). तिन्ही मुख्य
@@ -1164,7 +1191,7 @@ def render():
             st1d_line_aligned = st1d_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
             st15m_line_aligned = st15m_dir_aligned = None
             pattern_markers_tv = []
-            if not df_candles.empty:
+            if not chart_df.empty:
                 try:
                     # 🎓 Production-speed सुधारणा — हे तीन fetch_candles() कॉल्स (day/30min/15min) एकमेकांपासून
                     # पूर्णपणे स्वतंत्र आहेत, पण आधी sequentially (एकामागोमाग एक) चालायचे — cache-miss झाल्यावर
@@ -1183,9 +1210,9 @@ def render():
 
                     _ctx = get_script_run_ctx()
                     with ThreadPoolExecutor(max_workers=3) as _executor:
-                        _f_1d = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="day")
-                        _f_30m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="30minute")
-                        _f_15m = _executor.submit(_fetch_with_ctx, _ctx, token_input, symbol, underlying_price, interval="15minute")
+                        _f_1d = _executor.submit(_fetch_with_ctx, _ctx, token_input, chart_symbol, chart_spot, interval="day")
+                        _f_30m = _executor.submit(_fetch_with_ctx, _ctx, token_input, chart_symbol, chart_spot, interval="30minute")
+                        _f_15m = _executor.submit(_fetch_with_ctx, _ctx, token_input, chart_symbol, chart_spot, interval="15minute")
                         df_1d_tv = _f_1d.result()
                         df_1h_tv = resample_to_1h(_f_30m.result())
                         df_15m_tv = _f_15m.result()
@@ -1194,7 +1221,7 @@ def render():
                         st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
                         df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
                         aligned_1d = pd.merge_asof(
-                            df_candles[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
+                            chart_df[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
                             on="timestamp", direction="backward",
                         )
                         st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
@@ -1203,7 +1230,7 @@ def render():
                         st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
                         df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
                         aligned_1h = pd.merge_asof(
-                            df_candles[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
+                            chart_df[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
                             on="timestamp", direction="backward",
                         )
                         st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
@@ -1212,7 +1239,7 @@ def render():
                         st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
                         df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()
                         aligned_15m = pd.merge_asof(
-                            df_candles[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
+                            chart_df[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
                             on="timestamp", direction="backward",
                         )
                         st15m_line_aligned, st15m_dir_aligned = aligned_15m["st_line"], aligned_15m["st_dir"]
@@ -1220,14 +1247,17 @@ def render():
                     pass  # 1D/1H/15M डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
 
                 # 🎓 मागच्या 2-3 candles पेक्षा मोठे Hammer/Shooting Star — chart वर मार्करने ठळक
-                pattern_markers_tv = find_significant_reversal_candles(df_candles, lookback_compare=3)
+                pattern_markers_tv = find_significant_reversal_candles(chart_df, lookback_compare=3)
 
+            # 🎓 EMA / VWAP / Bollinger / ADX -- chart toolbar वर on/off बटणं (डीफॉल्ट सर्व बंद); periods वरच्या ओळीत बदलता येतात.
+            chart_indicators = compute_chart_indicators(chart_df, intraday=chart_tf != "day", **ind_params) if not chart_df.empty else {}
             tv_html = build_lightweight_chart_html(
-                df_candles, symbol=symbol, timeframe_label=timeframe_option,
+                chart_df, symbol=chart_symbol, timeframe_label=chart_tf,
                 supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
                 supertrend_1h_series=st1h_line_aligned, supertrend_1h_direction=st1h_dir_aligned,
                 supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
                 rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
+                indicators=chart_indicators,
             )
             st.components.v1.html(tv_html, height=700, scrolling=False)
             st.caption("⚠️ Drawing Tools चा डेटा browser मध्येच राहतो — refresh झाल्यावर मिटतो.")

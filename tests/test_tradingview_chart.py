@@ -188,3 +188,110 @@ class TestBuildLightweightChartHtmlWithVolumeProfile:
     def test_empty_df_returns_placeholder_not_crash(self):
         html = build_lightweight_chart_html(pd.DataFrame())
         assert "चार्टसाठी डेटा उपलब्ध नाही" in html
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 🎓 "EMA, VWAP, Bollinger, ADX चार्टवर" -- toolbar बटणाने on/off, सर्व डीफॉल्ट बंद.
+# ---------------------------------------------------------------------------------------------------------------------
+import numpy as np
+
+from signals import calculate_adx, calculate_bollinger, calculate_ema, calculate_vwap
+from tradingview_chart import compute_chart_indicators
+
+
+def _ohlcv(n=120, step=0.0, volume=1000, days=1, seed=3):
+    """5-मिनिट candles; step>0 => सतत वाढता (trend), step=0 => आडव्या रेंजमध्ये."""
+    rng = np.random.default_rng(seed)
+    per_day = n // days
+    ts = []
+    for d in range(days):
+        ts += list(pd.date_range(f"2026-09-{28 + d} 09:15", periods=per_day, freq="5min"))
+    close = 100 + np.arange(len(ts)) * step + rng.normal(0, 0.3, len(ts))
+    return pd.DataFrame({
+        "timestamp": ts, "open": close - 0.1, "high": close + 0.5, "low": close - 0.5, "close": close,
+        "volume": volume, "oi": 0,
+    })
+
+
+class TestIndicatorMath:
+    def test_ema_first_values_are_nan_then_follows_price(self):
+        s = pd.Series(np.arange(1.0, 31.0))
+        ema = calculate_ema(s, 10)
+        assert ema.iloc[:9].isna().all() and ema.iloc[9:].notna().all()
+        assert ema.iloc[-1] < s.iloc[-1]          # वाढत्या मालिकेत EMA मागे राहतो
+
+    def test_bollinger_bands_are_symmetric_around_the_mean(self):
+        close = pd.Series(np.sin(np.arange(60) / 5.0) * 5 + 100)
+        mid, upper, lower = calculate_bollinger(close, 20, 2.0)
+        assert mid.iloc[:19].isna().all()
+        diff_up, diff_dn = (upper - mid).dropna(), (mid - lower).dropna()
+        assert np.allclose(diff_up, diff_dn) and (diff_up > 0).all()
+
+    def test_bollinger_uses_population_std(self):
+        close = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+        mid, upper, _ = calculate_bollinger(close, 5, 1.0)
+        assert upper.iloc[-1] - mid.iloc[-1] == pytest.approx(np.std([1, 2, 3, 4, 5]))   # ddof=0
+
+    def test_vwap_resets_every_day(self):
+        df = _ohlcv(n=120, days=2)
+        vwap = calculate_vwap(df)
+        day2_first = df.index[df["timestamp"].dt.day == 29][0]
+        typical = (df["high"] + df["low"] + df["close"]) / 3
+        assert vwap.iloc[day2_first] == pytest.approx(typical.iloc[day2_first])   # नव्या दिवसाचा पहिला bar = त्याचाच typical price
+        assert vwap.iloc[0] == pytest.approx(typical.iloc[0])
+
+    def test_vwap_is_nan_without_volume_not_zero(self):
+        vwap = calculate_vwap(_ohlcv(volume=0))
+        assert vwap.isna().all()
+
+    def test_adx_high_in_strong_trend_low_in_range(self):
+        trend = calculate_adx(_ohlcv(n=200, step=0.5))[0].iloc[-1]
+        rng = calculate_adx(_ohlcv(n=200, step=0.0))[0].iloc[-1]
+        assert trend > 40 and rng < 25 and 0 <= rng <= 100 and trend <= 100
+
+    def test_adx_plus_di_dominates_in_uptrend(self):
+        _, plus_di, minus_di = calculate_adx(_ohlcv(n=200, step=0.5))
+        assert plus_di.iloc[-1] > minus_di.iloc[-1]
+
+
+class TestComputeChartIndicators:
+    def test_all_four_present_with_labels(self):
+        ind = compute_chart_indicators(_ohlcv(n=200), ema_fast=9, ema_slow=21, bb_period=20, bb_std=2.0, adx_period=14)
+        assert set(ind) == {"ema", "vwap", "bb", "adx"}
+        assert ind["ema"]["label"] == "EMA 9/21" and ind["bb"]["label"] == "BB 20,2" and ind["adx"]["label"] == "ADX 14"
+        assert ind["ema"]["fast"] and ind["ema"]["slow"] and ind["vwap"]["line"]
+        assert all(set(p) == {"time", "value"} for p in ind["ema"]["fast"][:3])
+
+    def test_no_volume_drops_vwap_only(self):
+        ind = compute_chart_indicators(_ohlcv(n=200, volume=0))
+        assert "vwap" not in ind and {"ema", "bb", "adx"} <= set(ind)
+
+    def test_daily_timeframe_drops_vwap(self):
+        assert "vwap" not in compute_chart_indicators(_ohlcv(n=200), intraday=False)
+
+    def test_too_little_data_drops_indicators_that_cannot_be_computed(self):
+        ind = compute_chart_indicators(_ohlcv(n=10), ema_fast=20, ema_slow=50)
+        assert "ema" not in ind and "bb" not in ind and "adx" not in ind
+
+    def test_empty_or_none(self):
+        assert compute_chart_indicators(None) == {} and compute_chart_indicators(pd.DataFrame()) == {}
+
+
+class TestChartHtmlIndicatorButtons:
+    def _html(self, **kw):
+        return build_lightweight_chart_html(_ohlcv(n=200), symbol="NIFTY", timeframe_label="5M", **kw)
+
+    def test_no_indicators_means_no_buttons_old_behaviour(self):
+        assert 'id="btn_ind_' not in self._html()
+        assert 'id="btn_ind_' not in self._html(indicators={})
+
+    def test_buttons_exist_only_for_available_indicators(self):
+        ind = compute_chart_indicators(_ohlcv(n=200, volume=0))     # VWAP नाही
+        html = self._html(indicators=ind)
+        for key in ("ema", "bb", "adx"):
+            assert f'id="btn_ind_{key}"' in html
+        assert 'id="btn_ind_vwap"' not in html
+
+    def test_indicator_lines_start_hidden(self):
+        html = self._html(indicators=compute_chart_indicators(_ohlcv(n=200)))
+        assert "visible: false" in html and "toggleIndicator" in html and "removePane" in html
