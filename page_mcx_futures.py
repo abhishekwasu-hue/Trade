@@ -30,7 +30,7 @@ from config import get_ist_today, get_ist_now
 from database import (
     get_order_log_full, get_performance_summary, get_closed_trades_detail,
     get_live_vs_shadow_paper_pairs, get_live_positions_with_mtm, get_todays_mcx_live_pnl_and_count,
-    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL, get_margin_used_details, get_open_trade_levels, get_orders_with_account,
+    get_todays_mcx_live_peak_pnl, OPTION_STRUCTURE_GROUP_SQL, get_margin_used_details, get_open_trade_levels, get_open_trade_chart_info, get_orders_with_account,
 )
 from page_performance import _render_group_breakdown, _build_recommendations, _entry_reason_text, _entry_reason_text_en, _EXIT_REASON_LABELS, _exit_reason_label_with_tag
 from pdf_reports import generate_performance_report_pdf
@@ -39,6 +39,7 @@ from charges import compare_with_upstox
 from mcx_margin import compute_margin_rows, total_worst_case_margin, MARGIN_COLUMNS
 from sr_dynamic import compute_dynamic_sr
 from tradingview_chart import build_lightweight_chart_html, chart_indicator_controls, compute_chart_indicators
+from position_chart import futures_lines
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
@@ -235,6 +236,38 @@ def _render_all_commodities_positions():
         st.dataframe(combined_open, width="stretch", height=min(400, 60 + 35 * len(combined_open)))
         total_open_mtm = combined_open["MTM (Rs)"].dropna().sum()
         st.metric("सर्व Commodities मिळून एकूण Open MTM", f"₹{total_open_mtm:,.0f}")
+
+        # 🎓 "Positions पानावर चार्ट: entry, stop, target ... रेषा" -- निवडलेल्या MCX position साठी futures चार्टवर Entry / SL / Target (futures भावात,
+        # अचूक; Manual Override सेट असेल तर तोच SL, नारिंगी). Trailing SL जाणूनबुजून नाही (बघा position_chart.py).
+        with st.expander("📈 Position चार्ट (Entry / SL / Target रेषा)", expanded=False):
+            _pc_tid = st.selectbox(
+                "Position निवडा", options=combined_open["Trade ID"].tolist(),
+                format_func=lambda tid: f"{combined_open.loc[combined_open['Trade ID'] == tid, 'Symbol'].values[0]} — {tid}",
+                key="mcx_pos_chart_trade",
+            )
+            _pc_tf = st.radio("Timeframe", ["5minute", "15minute", "30minute"], index=0, horizontal=True, key="mcx_pos_chart_tf")
+            _pc_sym = combined_open.loc[combined_open["Trade ID"] == _pc_tid, "Symbol"].values[0]
+            _pc_token = st.session_state.get("token_input", "")
+            _pc_info = get_open_trade_chart_info([_pc_tid]).get(_pc_tid)
+            if not _pc_token:
+                st.info("Upstox token उपलब्ध नाही -- चार्टसाठी वैध token लागतो.")
+            elif _pc_info is None:
+                st.info("या trade ची माहिती मिळाली नाही.")
+            else:
+                _pc_ok, _pc_resolved = _resolve_mcx_instrument_cached(_pc_token, _pc_sym)
+                if not _pc_ok:
+                    st.warning(f"⚠️ {_pc_sym} चा सध्याचा Futures contract सापडला नाही: {_pc_resolved}")
+                else:
+                    _pc_df = fetch_mcx_candles(_pc_token, _pc_resolved["instrument_key"], interval=_pc_tf, lookback_days=5)
+                    if _pc_df is None or _pc_df.empty:
+                        st.info("चार्टसाठी candle डेटा मिळाला नाही.")
+                    else:
+                        st.components.v1.html(
+                            build_lightweight_chart_html(
+                                _pc_df, symbol=_pc_sym, timeframe_label=_pc_tf, height=450, trade_lines=futures_lines(_pc_info),
+                            ), height=500, scrolling=False,
+                        )
+                        st.caption(f"Entry वेळ: {_pc_info.get('entry_time')} · Contract: {_pc_resolved['trading_symbol']}. Trailing SL इथे दाखवलेला नाही.")
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Algo bot ni घेतलेले trade Position tab मधून manually
         # close करता यायला पाहिजे") — page_positions.py (NIFTY/BANKNIFTY/SENSEX) मध्ये हे आधीच आहे,

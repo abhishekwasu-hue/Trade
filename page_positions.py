@@ -3,9 +3,12 @@ import streamlit as st
 import pandas as pd
 
 from config import get_ist_now
-from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks
+from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks, get_open_trade_chart_info
 from trading_engine import close_trade_manually, reconcile_open_trades_with_broker, set_manual_sl_override, clear_manual_sl_override
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
+from position_chart import spot_rule_lines
+from tradingview_chart import build_lightweight_chart_html
+from upstox_api import fetch_candles
 
 
 def render():
@@ -112,6 +115,33 @@ def render():
             "**Peak P&L**: Trailing SL चालू असल्यास, या पोझिशनने आतापर्यंत गाठलेला सर्वोच्च नफा — "
             "SL याच्यापासून ATR-अंतर मागे राहून सतत वर सरकतो."
         )
+        # 🎓 "Positions पानावर चार्ट: entry, stop, target ... रेषा" -- निवडलेल्या position साठी underlying चार्टवर Entry / SL / Target (बघा
+        # position_chart.py: Spot% नियमाच्या रेषा सध्याच्या settings वरून, अंदाजित). Trailing SL जाणूनबुजून नाही.
+        with st.expander("📈 Position चार्ट (Entry / SL / Target रेषा)", expanded=False):
+            chart_trade_id = st.selectbox(
+                "Position निवडा", options=positions_df["Trade ID"].tolist(),
+                format_func=lambda tid: f"{tid} — {positions_df.loc[positions_df['Trade ID'] == tid, 'Strategy'].values[0]}",
+                key="pos_chart_trade",
+            )
+            chart_tf = st.radio("Timeframe", ["1minute", "5minute", "15minute"], index=1, horizontal=True, key="pos_chart_tf")
+            info = get_open_trade_chart_info([chart_trade_id]).get(chart_trade_id)
+            if info is None:
+                st.info("या trade ची माहिती मिळाली नाही.")
+            elif not token_input:
+                st.info("Upstox token उपलब्ध नाही -- चार्टसाठी वैध token लागतो.")
+            else:
+                chart_df = fetch_candles(token_input, symbol, st.session_state.get("underlying_price", 0), interval=chart_tf, lookback_days=5)
+                lines, note = spot_rule_lines(symbol, info)
+                if chart_df is None or chart_df.empty:
+                    st.info("चार्टसाठी candle डेटा मिळाला नाही.")
+                else:
+                    html = build_lightweight_chart_html(
+                        chart_df, symbol=symbol, timeframe_label=chart_tf, height=450, trade_lines=lines,
+                    )
+                    st.components.v1.html(html, height=500, scrolling=False)
+                    st.caption(f"Entry वेळ: {info.get('entry_time')} · Strategy: {info.get('strategy')} · Source: {info.get('source') or 'DASHBOARD'}")
+                    st.caption(note)
+
         positions_csv = positions_df.to_csv(index=False).encode("utf-8")
         st.download_button(
             "📥 Positions CSV डाऊनलोड करा", data=positions_csv,
