@@ -1524,6 +1524,41 @@ class TestStrategySettings:
         expected["symbol_enabled"] = True
         assert result == expected
 
+    def _conn_returning(self, stored):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (stored,)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        return mock_conn
+
+    def test_transient_connection_failure_returns_last_good_settings_not_defaults(self, monkeypatch):
+        """🎓 bug-review -- Dashboard वरून बदललेलं settings (lots=5) एकदा वाचलं गेल्यावर, पुढच्या वाचनात Supabase जोडणी क्षणभर अयशस्वी झाली,
+        तर डीफॉल्ट नव्हे तर तेच शेवटचं चांगलं settings परत यायला हवं (चालू trade चे exit उंबरठे बदलू नयेत)."""
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: self._conn_returning({"lots": 5, "symbol_enabled": False}))
+        assert cloud_db.get_strategy_settings("1m_instant", "NIFTY")["lots"] == 5
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        result = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        assert result["lots"] == 5 and result["symbol_enabled"] is False
+
+    def test_query_exception_returns_last_good_settings(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: self._conn_returning({"lots": 7}))
+        cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
+        bad_conn = MagicMock()
+        bad_conn.cursor.side_effect = RuntimeError("connection reset")
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: bad_conn)
+        assert cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")["lots"] == 7
+
+    def test_last_good_is_per_strategy_and_symbol_and_returned_as_a_copy(self, monkeypatch):
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: self._conn_returning({"lots": 9}))
+        cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: None)
+        other = cloud_db.get_strategy_settings("1m_instant", "BANKNIFTY")  # कधीच न वाचलेलं => डीफॉल्ट
+        assert other["lots"] == cloud_db.STRATEGY_SETTINGS_DEFAULTS["1m_instant"]["lots"]
+        mutated = cloud_db.get_strategy_settings("1m_instant", "NIFTY")
+        mutated["lots"] = 123
+        assert cloud_db.get_strategy_settings("1m_instant", "NIFTY")["lots"] == 9
+
     def test_save_settings_calls_upsert_with_json(self, monkeypatch):
         mock_cursor = MagicMock()
         mock_conn = MagicMock()

@@ -945,6 +945,13 @@ def save_srv2_settings(symbol, lots, hedge_width_points):
         conn.close()
 
 
+# 🎓 bug-review -- शेवटचं यशस्वीरित्या वाचलेलं (Dashboard वरून बदललेलं) settings, (strategy_name, symbol) नुसार, याच प्रोसेसमध्ये. Supabase ला क्षणिक
+# अडचण (जोडणी/query अयशस्वी) आली तर आधी शांतपणे **डीफॉल्ट** settings परत जायचे -- म्हणजे चालू LIVE trade चे SL/TSL/Target उंबरठे (exit) एका cycle
+# पुरते वापरकर्त्याच्या नव्हे, डीफॉल्ट आकड्यांवरून तपासले जायचे (किंवा वापरकर्त्याने बंद केलेला NIFTY क्षणभर "चालू" दिसायचा). आता शेवटचं चांगलं
+# settings परत येतं (असेल तर); प्रोसेसमध्ये कधीच यशस्वी वाचन झालेलं नसेल तरच डीफॉल्ट.
+_LAST_GOOD_STRATEGY_SETTINGS = {}
+
+
 def get_strategy_settings(strategy_name, symbol):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Bot Dynamic SR Algo — नवीन नियम-संच) —
     strategy_name ("1m_instant" किंवा "15m_dynamic_sr") + symbol साठी settings. Supabase मध्ये
@@ -961,9 +968,15 @@ def get_strategy_settings(strategy_name, symbol):
     # (NIFTY सकट) डीफॉल्ट निष्क्रियच — वापरकर्त्याने Bot Dynamic SR Algo वरून स्वतः, जाणीवपूर्वक
     # सक्रिय केल्याशिवाय कुठलाही (अगदी PAPER) trade घेतला जाऊ नये.
     defaults["symbol_enabled"] = (symbol == "NIFTY") if strategy_name != "classic_sr_reversal" else False
+    cache_key = (strategy_name, symbol)
+
+    def _fallback():
+        last_good = _LAST_GOOD_STRATEGY_SETTINGS.get(cache_key)
+        return dict(last_good) if last_good is not None else defaults
+
     conn = get_connection()
     if conn is None:
-        return defaults
+        return _fallback()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -972,13 +985,16 @@ def get_strategy_settings(strategy_name, symbol):
             )
             row = cur.fetchone()
             if row is None:
+                _LAST_GOOD_STRATEGY_SETTINGS[cache_key] = dict(defaults)
                 return defaults
             stored = row[0] if isinstance(row[0], dict) else json.loads(row[0])
             merged = dict(defaults)
             merged.update(stored)
+            _LAST_GOOD_STRATEGY_SETTINGS[cache_key] = dict(merged)
             return merged
     except Exception:
-        return defaults
+        _logger.exception("get_strategy_settings() मध्ये अनपेक्षित चूक (शेवटचं चांगलं settings / डीफॉल्ट वापरलं)")
+        return _fallback()
     finally:
         conn.close()
 

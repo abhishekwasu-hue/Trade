@@ -3836,3 +3836,18 @@ class TestMonitorTimingModule:
         monkeypatch.setattr(monitor_timing, "_PATH", "/proc/definitely/not/writable.json")
         monkeypatch.setattr(monitor_timing, "DATA_DIR", "/proc/definitely/not")
         assert monitor_timing.record_check("NIFTY", 1.0, 5.0) is None
+
+
+class TestUniformBasketLots:
+    """Basket चे सर्व legs एकाच Lots चे असतील तरच tracking (P&L / Manual Close quantity) बरोबर -- नाहीतर None => ऑर्डर प्लेस होत नाही."""
+
+    def test_same_lots_returns_that_value(self):
+        assert trading_engine.uniform_basket_lots([2, 2, 2]) == 2
+        assert trading_engine.uniform_basket_lots([1]) == 1
+
+    def test_different_lots_returns_none(self):
+        assert trading_engine.uniform_basket_lots([1, 2]) is None
+        assert trading_engine.uniform_basket_lots([3, 3, 1]) is None
+
+    def test_numeric_types_are_normalised(self):
+        assert trading_engine.uniform_basket_lots([2, 2.0, "2"]) == 2
