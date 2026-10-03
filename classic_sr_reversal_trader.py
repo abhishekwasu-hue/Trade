@@ -41,6 +41,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now, DB_PATH
+from dynamic_sr_instant_trader import determine_direction_with_hysteresis
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 from notifications import send_telegram_message, write_heartbeat, notify_error
 from process_lock import ProcessLock, ProcessLockHeld
@@ -196,6 +197,7 @@ def process_symbol(access_token, symbol, lot_size=65):
 
     recent_candles = todays_candles_df.tail(2).to_dict("records")  # फक्त शेवटचे 2 (सद्य किंमत + gap-check)
     current_price = recent_candles[-1]["close"]
+    todays_closes = todays_candles_df["close"].tolist()  # hysteresis साठी (आजच्या सर्व 5-मिनिट candles चे close)
 
     now = get_ist_now()
     trade_date = now.strftime("%Y-%m-%d")
@@ -204,12 +206,15 @@ def process_symbol(access_token, symbol, lot_size=65):
     for row, timeframe_suffix in pooled_levels:
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
 
-        # दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून ठरते (साठवलेल्या ऐतिहासिक label वरून
-        # नाही) — इतर दोन्ही strategies प्रमाणेच.
-        direction = "BULLISH" if current_price >= row["zone_low"] else "BEARISH"
+        # दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून ठरते (साठवलेल्या ऐतिहासिक label वरून नाही) — 5M/15M/MCX प्रमाणेच hysteresis
+        # (±0.10%) सह: किंमत level पासून त्या बँडच्या आतच wobble करत असेल तर आधीचीच निश्चित दिशा कायम राहते, उगाच फ्लिप नाही.
+        # 🎓 bug-review (वापरकर्त्याचा निर्णय: "5M सारखंच") — role (SUPPORT/RESISTANCE, hit-counting आणि Signal Log चा level_type) आधी
+        # DB मधल्या साठवलेल्या (दर ५ मिनिटांनी पुन्हा-गणना होणाऱ्या) label वरून यायचा, म्हणून दिशेशी विसंगत ठरू शकायचा; आता दिशेवरूनच.
+        direction = determine_direction_with_hysteresis(row["zone_low"], todays_closes)
+        role = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
         rsi_value = None
         log_entry = {
-            "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": row["zone_type"],
+            "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": f"DYNAMIC_SR_{role}_{timeframe_suffix}",
             "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
             "ltp_at_signal": None, "trade_status": None, "reason": "level ला स्पर्श (touch) आढळला नाही (शेवटच्या candles मध्ये)" if not hit else "",
         }
@@ -275,7 +280,7 @@ def process_symbol(access_token, symbol, lot_size=65):
                 continue
 
         hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(
-            symbol, row["zone_low"], trade_date, role=cloud_db.zone_role_from_type(row["zone_type"]),
+            symbol, row["zone_low"], trade_date, role=role,
         )
         if hit_count_so_far >= max_hits_per_zone:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"

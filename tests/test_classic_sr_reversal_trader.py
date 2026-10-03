@@ -678,10 +678,10 @@ class TestBullishBearishEntryToggle:
             assert "SKIPPED_BULLISH_ENTRY_DISABLED" in statuses
 
     def test_bearish_entry_disabled_skips_bearish_touch(self):
-        # current_price (शेवटचा close, 23895) < zone_low (23900, support) -> direction=BEARISH
+        # current_price (शेवटचा close, 23870) level (23900) च्या ०.१०% बँडच्या (23876.1) स्पष्टपणे खाली -> hysteresis सह direction=BEARISH
         candles_touch = _candles_with_rsi([
-            {"open": 23890, "high": 23895, "low": 23880, "close": 23890},
-            {"open": 23895, "high": 23900, "low": 23890, "close": 23895},
+            {"open": 23890, "high": 23895, "low": 23860, "close": 23860},
+            {"open": 23865, "high": 23900, "low": 23860, "close": 23870},
         ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
         with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(bearish_entry_enabled=False)), \
              patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
@@ -693,6 +693,54 @@ class TestBullishBearishEntryToggle:
             assert not mock_trade.called
             statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
             assert "SKIPPED_BEARISH_ENTRY_DISABLED" in statuses
+
+    def test_wobble_inside_hysteresis_band_keeps_previous_direction(self):
+        """🎓 bug-review -- level (23900) च्या ०.१०% बँडच्या आत (23895) क्षणभर खाली गेल्यावर दिशा BEARISH वर फ्लिप होऊ नये;
+        शेवटची निश्चित दिशा (बँडच्या वर close = BULLISH) कायम -- म्हणून BEARISH बंद असला तरी BULLISH touch चालतो."""
+        candles_touch = _candles_with_rsi([
+            {"open": 23890, "high": 23895, "low": 23880, "close": 23890},
+            {"open": 23895, "high": 23900, "low": 23890, "close": 23895},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings(bearish_entry_enabled=False)), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23890.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value=None), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+            csr.process_symbol("fake_token", "NIFTY")
+            statuses = [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+            assert "SKIPPED_BEARISH_ENTRY_DISABLED" not in statuses
+            assert mock_trade.called
+
+    def test_role_and_level_type_follow_the_direction_not_the_stored_label(self):
+        """DB मधला label SUPPORT (DYNAMIC_SR_SUPPORT_5M) असला तरी किंमत बँडच्या खाली => direction BEARISH => role RESISTANCE
+        (hit-counting आणि Signal Log चा level_type दोन्ही), जसं 5M bot मध्ये."""
+        candles_touch = _candles_with_rsi([
+            {"open": 23890, "high": 23895, "low": 23860, "close": 23860},
+            {"open": 23865, "high": 23900, "low": 23860, "close": 23870},
+        ], declining=True, today_ist=datetime.datetime(2026, 9, 11, 10, 0, 0))
+        with patch.object(csr.cloud_db, "get_strategy_settings", return_value=self._settings()), \
+             patch.object(csr.cloud_db, "get_market_zones", return_value=_fake_zones()), \
+             patch.object(csr, "get_ist_now", return_value=datetime.datetime(2026, 9, 11, 10, 0, 0)), \
+             patch.object(csr, "fetch_candles", return_value=candles_touch), \
+             patch.object(csr, "fetch_option_expiries", return_value=[]), \
+             patch.object(csr, "fetch_upstox_option_chain", return_value=(_fake_chain(23890.0), "SUCCESS")), \
+             patch.object(csr, "select_credit_spread_itm", return_value={"strategy": "BULL_PUT_SPREAD", "legs": []}), \
+             patch.object(csr, "select_naked_option_itm", return_value=None), \
+             patch.object(csr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(csr, "send_telegram_message", return_value=True), \
+             patch.object(csr.cloud_db, "save_signal_log", return_value=True) as mock_log, \
+             patch.object(csr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)) as mock_hits:
+            csr.process_symbol("fake_token", "NIFTY")
+            assert mock_hits.call_args.kwargs.get("role") == "RESISTANCE"
+            touched = [c.args[0] for c in mock_log.call_args_list if c.args[0]["level_price"] == 23900.0 and c.args[0]["hit_type"] != "NO_HIT"]
+            assert touched and all(e["level_type"] == "DYNAMIC_SR_RESISTANCE_5M" for e in touched)
 
     def test_defaults_both_enabled_allows_trade(self):
         candles_touch = _candles_with_rsi([
