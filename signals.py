@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from htf_alignment import compute_bar_end
 from sr_dynamic import compute_dynamic_sr
 
 def calculate_rsi(df, period=14):
@@ -77,6 +78,10 @@ def resample_to_1h(df_30m):
     d = df_30m.set_index("timestamp")
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "oi": "last"}
     d_1h = d.resample("1h", label="left", closed="left").agg(agg).dropna(subset=["open"]).reset_index()
+    # 🎓 lookahead audit (fix/completed-bars-1h) -- `timestamp` (label) नेहमी bin चा सुरुवात-बिंदू असतो, पण NSE वर तो खऱ्या bar च्या सुरुवातीपेक्षा
+    # 15 मिनिटं आधीचा (09:00, 10:00…) आणि bar प्रत्यक्षात :15 ला संपतो (Upstox 30M bars 09:15 ला सुरू होतात). म्हणून bar खरा कधी पूर्ण होतो
+    # तो `bar_end` column मध्ये -- _completed_bars_only() आणि htf_alignment.align_asof() तोच वापरतात. बाकी columns/values जशाच्या तशा.
+    d_1h["bar_end"] = compute_bar_end(d_1h["timestamp"], d.index, 60)
     return d_1h
 
 def resample_to_4h(df_30m):
@@ -87,7 +92,9 @@ def resample_to_4h(df_30m):
         return df_30m
     d = df_30m.set_index("timestamp")
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "oi": "last"}
-    return d.resample("4h", label="left", closed="left", offset="1h").agg(agg).dropna(subset=["open"]).reset_index()
+    d_4h = d.resample("4h", label="left", closed="left", offset="1h").agg(agg).dropna(subset=["open"]).reset_index()
+    d_4h["bar_end"] = compute_bar_end(d_4h["timestamp"], d.index, 240)    # 🎓 बघा resample_to_1h()
+    return d_4h
 
 
 def find_swings(df, order=3):

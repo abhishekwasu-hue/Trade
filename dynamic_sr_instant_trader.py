@@ -223,16 +223,25 @@ def check_breakout_candle_close(level, breakout_direction, candles_5m, buffer_pc
 
 def _completed_bars_only(df, bar_minutes, now):
     """शेवटचा bar अजून पूर्ण झालेला (त्याचा कालावधी संपलेला) नसेल तर तो वगळतो — Supertrend दिशा फक्त पूर्ण
-    झालेल्या candle ची घ्यायची (चालू candle वारंवार फिरते). timestamp = bar ची सुरुवात (IST)."""
+    झालेल्या candle ची घ्यायची (चालू candle वारंवार फिरते).
+
+    🎓 fix/completed-bars-1h -- bar चा शेवट आधी नेहमी `timestamp + bar_minutes` मानला जायचा (timestamp = bar ची सुरुवात). पण NSE वर
+    `resample_to_1h(30M)` चे label `09:00, 10:00…` असतात आणि bar प्रत्यक्षात `:15` ला संपतो (Upstox 30M bars 09:15 ला सुरू होतात) --
+    म्हणजे प्रत्येक तासातल्या `:00–:15` या वेळेत *अपूर्ण* 1H bar पूर्ण मानला जायचा. आता df मध्ये `bar_end` column असेल (resample_to_1h/4h देतात)
+    तर तोच वापरला जातो; नसेल (थेट Upstox 5M/15M/30M bars, label = खरी सुरुवात) तर `timestamp + bar_minutes` (जुनं वर्तन, बरोबर).
+    MCX चे 1H/4H bars बदलत नाहीत (तिथे grid 09:00 वरच आहे, म्हणून bar_end == label + कालावधी)."""
     if df is None or df.empty:
         return df
-    last_ts = pd.Timestamp(df["timestamp"].iloc[-1])
     now_ts = pd.Timestamp(now)
-    if last_ts.tzinfo is not None:
-        last_ts = last_ts.tz_localize(None)
     if now_ts.tzinfo is not None:
         now_ts = now_ts.tz_localize(None)
-    if last_ts + pd.Timedelta(minutes=bar_minutes) > now_ts:
+    if "bar_end" in df.columns:
+        last_end = pd.Timestamp(df["bar_end"].iloc[-1])
+    else:
+        last_end = pd.Timestamp(df["timestamp"].iloc[-1]) + pd.Timedelta(minutes=bar_minutes)
+    if last_end.tzinfo is not None:
+        last_end = last_end.tz_localize(None)
+    if last_end > now_ts:
         return df.iloc[:-1]
     return df
 
