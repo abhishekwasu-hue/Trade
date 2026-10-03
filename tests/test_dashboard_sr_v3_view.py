@@ -2,18 +2,21 @@
 निवडल्यावर आधीची सगळी drawings (जुना S/R तक्ता+रेषा, Supertrend, Hammer/Star मार्कर्स, bot ओळी) निघून फक्त V3 रेषा दिसाव्यात.
 page_dashboard.py चा चार्ट-ब्लॉक (symbol/timeframe/Bot-view निवडीपासून tv_html पर्यंत) कृत्रिम candles सह AppTest मध्ये चालवतो."""
 import json
+import os
 import re
 
 from streamlit.testing.v1 import AppTest
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 SCRIPT = '''
-import sys, textwrap
-sys.path.insert(0, "/home/user/Trade")
+import os, sys, textwrap
+sys.path.insert(0, __ROOT__)
 import numpy as np, pandas as pd
 import streamlit as st
 import page_dashboard as pdash
 
-src = open("/home/user/Trade/page_dashboard.py", encoding="utf-8").read()
+src = open(os.path.join(__ROOT__, "page_dashboard.py"), encoding="utf-8").read()
 a = src.index("            # 🎓 \\"Timeframe + symbol switcher चार्टवर\\"")
 b = src.index("            # 🎓 Live updates -- दर 3 सेकंदांनी शेवटची candle")
 block = textwrap.dedent(src[a:b])
@@ -70,7 +73,7 @@ def _segments(html):
 
 
 def _run():
-    at = AppTest.from_string(SCRIPT, default_timeout=120)
+    at = AppTest.from_string(SCRIPT.replace("__ROOT__", repr(ROOT)), default_timeout=120)
     at.run()
     assert not at.exception, [e.value[:300] for e in at.exception]
     return at
