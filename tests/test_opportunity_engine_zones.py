@@ -235,3 +235,26 @@ def test_build_levels_end_to_end_is_deterministic_and_explains_rejections():
     assert all(z["quality_grade"] in ("A", "B", "C") for z in a["levels"])
     assert a["rejected"] and all(z["reject_reason"] for z in a["rejected"])                # तुटलेला demand "का नाकारला" सकट
     assert all({"clean", "body_core", "origin", "reaction", "density", "mtf"} == set(z["quality_components"]) for z in a["levels"] + a["rejected"])
+
+
+def test_previous_week_levels_after_a_friday_close_are_the_week_just_ended():
+    rows = [("2025-01-06", 100, 110, 95, 105), ("2025-01-07", 105, 120, 101, 108), ("2025-01-10", 108, 109, 100, 101)]     # सोम, मंगळ, शुक्र
+    keys = {z["source"]: z for z in Z.key_levels(_daily(rows), pd.Timestamp("2025-01-10 16:00"), 24000.0)}
+    assert keys["PWH"]["low"] == 120 and keys["PWL"]["low"] == 95                      # पुढचा session सोमवार => नुकताच संपलेला आठवडा
+    mid_week = {z["source"]: z for z in Z.key_levels(_daily(rows[:2]), pd.Timestamp("2025-01-07 16:00"), 24000.0)}
+    assert "PWH" not in mid_week                                                       # आठवड्याच्या मध्यात (आधीचा आठवडा डेटात नाही)
+
+
+def test_filled_gap_is_rejected_with_a_reason_in_build_levels():
+    c = cfg(pivot_n={"15m": 2, "1d": 2}, swing_k={"15m": 1.0, "1d": 1.0})
+    tr = tracker_from_bars(quiet(30, 100.0), c)
+    frame = _frames_from(tr, "15m")
+    day = _daily([("2025-01-06", 100, 101, 99, 100), ("2025-01-07", 103, 104, 103.0, 103.5), ("2025-01-08", 102, 103, 99.5, 100.5)])
+    day["bar_end"] = [T0 + pd.Timedelta(days=1 + i, hours=-1) for i in range(3)]
+    day["bar_end"] = tr.bar_end[-1] - pd.Timedelta(minutes=1)
+    day["bar_start"] = day["bar_end"] - pd.Timedelta(hours=6)
+    j = Journal(c, tfs=("15m",)).run({"15m": frame})
+    out = Z.build_levels(j, {"15m": frame, "1d": day}, "NIFTY", 100.0, c, tfs=("15m",), fine=frame)
+    gaps = [z for z in out["levels"] + out["rejected"] if z["kind"] == "GAP"]
+    assert all(z["gap_status"] == "FILLED" for z in gaps if z["low"] == 100.0)
+    assert all(z["reject_reason"] for z in gaps if z["gap_status"] == "FILLED")

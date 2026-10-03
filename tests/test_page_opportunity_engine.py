@@ -102,3 +102,10 @@ def test_report_helpers_chart_lines_and_tables():
     per_tf, short = R.quality_report(frames)
     assert len(per_tf) == 5 and (per_tf["Bars"] > 0).all()
     assert R.chart_lines(result["levels"], None) == ([], [])
+
+
+def test_unsupported_symbol_like_mcx_shows_a_clear_warning_and_nothing_else():
+    at = _run(symbol="CRUDEOIL")
+    assert not at.exception and not at.error
+    assert any("फक्त NIFTY" in w.value and "CRUDEOIL" in w.value for w in at.warning)
+    assert not at.dataframe

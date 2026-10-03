@@ -162,7 +162,11 @@ def key_levels(daily, t, price, symbol="NIFTY", round_band_pct=3.0):
             last = d.iloc[-1]
             for name, val in (("PDH", last["high"]), ("PDL", last["low"]), ("PDC", last["close"])):
                 out.append((name, float(val), last["bar_end"]))
-            week_start = last["date"] - pd.Timedelta(days=int(last["date"].weekday()))
+            # "आजचा/पुढचा session" = शेवटच्या बंद दिवसानंतरचा weekday; मागचा आठवडा = त्या session च्या आठवड्याआधीचा (शुक्रवार बंद झाल्यावर => नुकताच संपलेला आठवडा)
+            ref = last["date"] + pd.Timedelta(days=1)
+            while ref.weekday() >= 5:
+                ref += pd.Timedelta(days=1)
+            week_start = ref - pd.Timedelta(days=int(ref.weekday()))
             prev = d[(d["date"] >= week_start - pd.Timedelta(days=7)) & (d["date"] < week_start)]
             if len(prev):
                 out.append(("PWH", float(prev["high"].max()), prev["bar_end"].iloc[-1]))

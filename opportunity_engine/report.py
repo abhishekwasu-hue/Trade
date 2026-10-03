@@ -31,14 +31,23 @@ def bundle_from_fine(df_fine, daily_extra=None, cfg=None, tfs=("1d", "4h", "1h",
     return frames, journal
 
 
-def bundle_from_live(df_5m, df_daily, cfg=None, tfs=("1d", "4h", "1h", "15m", "5m")):
-    """Upstox 5M + Daily -> (frames, journal). Daily हे Upstox चेच (पूर्ण इतिहास), 5M वरून intraday TFs."""
+def _ist_now():
+    return pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None)
+
+
+def bundle_from_live(df_5m, df_daily, cfg=None, tfs=("1d", "4h", "1h", "15m", "5m"), now=None):
+    """Upstox 5M + Daily -> (frames, journal). Daily हे Upstox चेच (पूर्ण इतिहास), 5M वरून intraday TFs.
+    🎓 no-lookahead: `now` (naive IST; डीफॉल्ट सध्याची वेळ) पर्यंत *बंद* झालेले 5M bars (start + 5 मि ≤ now) आणि बंद झालेला Daily bar फक्त वापरतो —
+    Upstox चा सध्या चालू (forming) candle वगळला जातो."""
     cfg = cfg or EngineConfig()
+    now = _ist_now() if now is None else pd.Timestamp(now)
     fine = to_engine_frame(df_5m)
+    if len(fine):
+        fine = fine[fine["timestamp"] + pd.Timedelta(minutes=5) <= now].reset_index(drop=True)
     frames = sessions.build_frames(fine)
     daily = to_engine_frame(df_daily)
     if len(daily):
-        frames["1d"] = sessions.daily_from_daily_bars(daily.assign(volume=daily["volume"] if "volume" in daily.columns else 0.0))
+        frames["1d"] = sessions.daily_from_daily_bars(daily.assign(volume=daily["volume"] if "volume" in daily.columns else 0.0), now=now)
     journal = Journal(cfg).run({tf: frames[tf] for tf in tfs if tf in frames})
     return frames, journal
 

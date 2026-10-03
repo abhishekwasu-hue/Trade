@@ -28,10 +28,15 @@ class Journal:
 
     # ---- batch (backtest/refresh) ----
     def run(self, frames):
-        """frames = {tf: engine frame (bar_end, open, high, low, close, bar_is_full)}. प्रत्येक TF चे bars क्रमाने."""
+        """frames = {tf: engine frame (bar_end, open, high, low, close, bar_is_full, bar_closed)}. प्रत्येक TF चे bars क्रमाने.
+        🎓 `bar_closed == False` (अजून चालू/अपूर्ण) bars Journal ला दिले जात नाहीत — live मध्ये forming bar वरून निर्णय होऊ नये."""
         for tf, df in frames.items():
             if tf not in self.trackers or df is None or df.empty:
                 continue
+            if "bar_closed" in df.columns:
+                df = df[df["bar_closed"].astype(bool)]
+                if df.empty:
+                    continue
             tr = self.trackers[tf]
             be = df["bar_end"].tolist()
             ov, hv, lv, cv = (df[x].to_numpy(dtype="float64") for x in ("open", "high", "low", "close"))
