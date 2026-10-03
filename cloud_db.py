@@ -1371,26 +1371,14 @@ def zone_role_from_type(zone_type):
     return None
 
 
-# 🎓 "3 मिनिट level hold" end-to-end पडताळ्यात सापडलेली bug — signal_log मधल्या ज्या नोंदी 'level ची खरी hit /
-# नाकारणी' नसून तात्पुरत्या प्रतीक्षा-स्थिती किंवा त्याच touch च्या दुय्यम (naked-leg) निदान-नोंदी आहेत, त्या
-# max-hits / cooldown मोजणीतून वगळल्या जातात — नाहीतर एका trade ला 2 hits लागून (प्रतीक्षा-नोंद + OPENED, किंवा
-# OPENED + SKIPPED_NAKED_DISABLED) त्याच level चा 2रा trade कधीच व्हायचा नाही.
-_NON_HIT_TRADE_STATUSES = (
-    "SKIPPED_MIN_HOLD_DURATION", "SKIPPED_NAKED_DISABLED", "SKIPPED_NAKED_STRIKE_NOT_FOUND",
-    # naked-only मोडमध्ये naked ही चालला नाही तर (strike नाही / बंद) — कुठलाच order प्रयत्न नाही, म्हणून hit नाही.
-    "SKIPPED_CREDIT_SPREAD_DISABLED",
-    # Level Strength Gate ने थांबवलेला touch -- level नंतर मजबूत झाल्यावर max-hits/cooldown खर्च झालेले नसावेत.
-    "SKIPPED_WEAK_LEVEL",
-    # Fast-Move Guard ने थांबवलेला touch -- तात्पुरती स्थिती, level ची खरी नाकारणी नाही.
-    "SKIPPED_FAST_MOVE",
-    # MCX Supertrend Trend Filter (1H+4H) ने थांबवलेला touch -- तात्पुरती स्थिती, trend बदलल्यावर तोच level पुन्हा पात्र होऊ शकतो.
-    "SKIPPED_MCX_TREND_FILTER",
-    # RSI / PCR / IV गेटने थांबवलेला touch -- हेही तात्पुरत्या (बदलत राहणाऱ्या) स्थिती आहेत; "एका level वर कमाल 2 entry" या नियमात फक्त
-    # खरे entry-प्रयत्न मोजले जावेत, गेटने अडवलेले touch नाही (वापरकर्त्याशी चर्चा करून ठरवलेलं) — नाहीतर दोन अडवलेल्या touches
-    # नंतर RSI/PCR अनुकूल झाल्यावरही तो level त्या दिवशी कधीच वापरता येत नाही.
-    "SKIPPED_RSI_FILTER", "SKIPPED_PCR_GATE", "SKIPPED_IV_GATE",
+# 🎓 "Level hit" आणि "entry" या दोन वेगळ्या गोष्टी आहेत (वापरकर्त्याशी चर्चा करून स्पष्ट केलेलं तर्कशास्त्र):
+#   • Level hit = किंमत level ला भिडली — प्रत्येक touch signal_log मध्ये नोंदवला जातो (hit_type != 'NO_HIT'), त्याचा entry शी संबंध नाही.
+#   • Entry = सर्व गेट्स पास होऊन खरा trade-प्रयत्न झाला (trade_status: "OPENED" इ.). "एका level (role) वर दिवसातून कमाल N trades"
+#     ही मर्यादा फक्त **entry** मोजते — गेटने/cooldown ने/max-limit ने नाकारलेला कुठलाही touch (कुठलाही SKIPPED_*) मोजला जात नाही.
+# खालचा SQL-तुकडा "खरा trade-प्रयत्न" दर्शवणाऱ्या rows निवडतो (`_is_no_action_trade_status()` चा उलट). `%%` — psycopg2 साठी literal %.
+_ENTRY_ATTEMPT_SQL = (
+    "AND trade_status IS NOT NULL AND trade_status <> 'STRATEGY_SELECTION_FAILED' AND trade_status NOT LIKE 'SKIPPED%%'"
 )
-_NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
 
 def get_zone_hits_today(symbol, level_price, trade_date, role=None):
@@ -1398,7 +1386,9 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Hit Dynamic S/R) — established एकाच zone ला
     दिवसातून जास्तीत जास्त किती वेळा (आणि केव्हा शेवटचं) hit झालाय, हे established signal_log वरूनच
     काढणे (वेगळं table/column लागत नाही — प्रत्येक hit आधीच इथे साठवलेला असतो).
-    रिटर्न: (hit_count: int, last_hit_time: datetime किंवा None, last_trade_time: datetime किंवा None)
+    रिटर्न: (entry_count: int, last_entry_time: datetime किंवा None, last_trade_time: datetime किंवा None)
+    🎓 पहिली किंमत आता **आजचे खरे entries (trade-प्रयत्न)** आहेत, फक्त touches नाही — "एका level वर कमाल 2 trades" ही
+    मर्यादा entry वर आहे; level-hit (touch) हा वेगळा आकडा आहे आणि प्रत्येक touch signal_log मध्ये नोंदलाच जातो. (नाव जुनंच ठेवलं.)
 
     🎓 वापरकर्त्याशी चर्चा करून जोडलेला `role` पर्याय — आधी हा counter फक्त (symbol, price, day)
     वर होता, support/resistance वेगळे मोजायचा नाही — त्यामुळे एखादा level support म्हणून 2 वेळा hit
@@ -1408,20 +1398,9 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
     शब्द असलेल्या — hits मोजल्या जातात) — एकाच किंमतीवर दिवसातून जास्तीत जास्त 2+2=4 trades शक्य.
     `role=None` (डीफॉल्ट) दिलं तर आधीचंच वर्तन (दोन्ही मिळून एकत्र मोजणी) — backward compatible.
 
-    🎓 वापरकर्त्याशी चर्चा करून जोडलेला `last_trade_time` (वेगळा, `last_hit_time` पासून स्वतंत्र) —
-    वापरकर्त्याने CSV export मधून दाखवून दिलं: 30-मिनिटांचा cooldown आधी **कुठल्याही touch** पासून
-    (RSI/PCR gate ने नाकारलेला touch सुद्धा) मोजला जायचा — त्यामुळे सलग RSI-नाकारलेले touches
-    (प्रत्यक्ष trade कधीच न होता) घड्याळ सतत रीसेट करत राहायचे. आता `last_trade_time` फक्त **खऱ्या
-    trade attempt** (`_is_no_action_trade_status()` False असलेल्या, उदा. "OPENED") च्या वेळेवरून —
-    cooldown साठी हेच वापरायचं (max-2-hits चा `hit_count`/`last_hit_time` मात्र आधीसारखाच touch-आधारित
-    राहतो, तो बदललेला नाही).
-
-    🎓 "3 मिनिट level hold" end-to-end पडताळ्यात सापडलेली bug — Minimum Level-Hold गेटने थांबवलेला touch
-    (`SKIPPED_MIN_HOLD_DURATION`) सुद्धा hit म्हणून मोजला जायचा, त्यामुळे पहिला trade (प्रतीक्षा-touch +
-    OPENED = 2 rows) झाल्यावर max-2-hits लगेच भरायचा आणि त्याच level चा 2रा trade कधीच व्हायचा नाही.
-    हा 'थांब, अजून टिकून नाही' असा तात्पुरता स्थिती-शिक्का आहे, level ची खरी नाकारणी नाही — म्हणून
-    hit_count/last_hit_time/last_trade_time तिन्हीतून वगळला जातो. त्याच कारणाने naked-leg च्या दुय्यम
-    निदान-नोंदी (`SKIPPED_NAKED_DISABLED`/`SKIPPED_NAKED_STRIKE_NOT_FOUND`) सुद्धा — बघा `_NON_HIT_TRADE_STATUSES`.
+    `last_trade_time` — खऱ्या trade attempt (`_is_no_action_trade_status()` False) ची शेवटची वेळ; 30-मिनिटांच्या cooldown साठी वापरतात.
+    entries मोजताना सर्व SKIPPED_* (RSI/PCR/IV/Min-Hold/Weak-level/Fast-move/Cooldown/Max-limit/naked-diagnostic इ.) वगळले जातात,
+    त्यामुळे एका trade ला दोन rows (प्रतीक्षा-touch + OPENED) असले तरी तो 1 entry च गणला जातो.
     """
     conn = get_connection()
     if conn is None:
@@ -1432,18 +1411,18 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
-                       AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)
+                       """ + _ENTRY_ATTEMPT_SQL + """
                        AND level_type LIKE %s
                        ORDER BY signal_time DESC""",
-                    (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES, f"%{role}%"),
+                    (symbol, trade_date, level_price, f"%{role}%"),
                 )
             else:
                 cur.execute(
                     """SELECT signal_time, trade_status FROM signal_log
                        WHERE symbol=%s AND trade_date=%s AND level_price=%s AND hit_type != 'NO_HIT'
-                       AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)
+                       """ + _ENTRY_ATTEMPT_SQL + """
                        ORDER BY signal_time DESC""",
-                    (symbol, trade_date, level_price, *_NON_HIT_TRADE_STATUSES),
+                    (symbol, trade_date, level_price),
                 )
             rows = cur.fetchall()
             if not rows:
@@ -1458,8 +1437,8 @@ def get_zone_hits_today(symbol, level_price, trade_date, role=None):
 
 
 def get_zone_hits_today_bulk(symbol, trade_date):
-    """🎓 "Bot view" (चार्टवर bot चे levels + आजचे hits) -- get_zone_hits_today() चाच नियम (NO_HIT आणि _NON_HIT_TRADE_STATUSES वगळून), पण सर्व levels साठी
-    एकाच query मध्ये. रिटर्न: {(round(level_price, 2), 'SUPPORT'|'RESISTANCE'): hit_count}. Supabase नसेल / त्रुटी => {} (चार्टवर hits दिसत नाहीत)."""
+    """🎓 "Bot view" (चार्टवर bot चे levels + आजचे trades/कमाल) -- get_zone_hits_today() चाच नियम (फक्त खरे entries, कुठलाही SKIPPED_* नाही),
+    पण सर्व levels साठी एकाच query मध्ये. रिटर्न: {(round(level_price, 2), 'SUPPORT'|'RESISTANCE'): entry_count}. Supabase नसेल / त्रुटी => {}."""
     conn = get_connection()
     if conn is None:
         return {}
@@ -1468,8 +1447,8 @@ def get_zone_hits_today_bulk(symbol, trade_date):
             cur.execute(
                 """SELECT level_price, level_type FROM signal_log
                    WHERE symbol=%s AND trade_date=%s AND hit_type != 'NO_HIT'
-                   AND COALESCE(trade_status, '') NOT IN (""" + _NON_HIT_PLACEHOLDERS + """)""",
-                (symbol, trade_date, *_NON_HIT_TRADE_STATUSES),
+                   """ + _ENTRY_ATTEMPT_SQL,
+                (symbol, trade_date),
             )
             counts = {}
             for level_price, level_type in cur.fetchall():

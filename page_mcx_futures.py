@@ -603,7 +603,7 @@ def render():
                                 ) if ln
                             ]
                             bot_note = (
-                                f"Bot view: MCX Futures bot ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे hits/कमाल (role किंमत-बाजूवरून). "
+                                f"Bot view: MCX Futures bot ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; role किंमत-बाजूवरून). "
                                 "फिके = आजचे max-hits संपलेले; किंमतीपासून ±4% बाहेरचे लपवले. गेट-ओळीत फक्त RSI आणि Supertrend (Breakout / Min-Hold इ. नाहीत)."
                                 + ("" if bot_lines else " ⚠️ ACTIVE levels सापडले नाहीत (आधी refresh_market_zones_mcx.py चालवा).")
                             )

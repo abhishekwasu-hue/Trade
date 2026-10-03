@@ -456,7 +456,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         credit_spread_line = f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n" if spread_result is not None else ""
         message = (
-            f"🎯 <b>{symbol} Classical S/R Reversal Cross ({timeframe_suffix})! (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा hit)</b>\n"
+            f"🎯 <b>{symbol} Classical S/R Reversal Cross ({timeframe_suffix})! (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"
             + credit_spread_line
             + naked_line

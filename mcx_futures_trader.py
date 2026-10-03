@@ -489,7 +489,7 @@ def _process_symbol_core(access_token, symbol, check_info):
             log_entry["reason"] = rsi_display
         cloud_db.save_signal_log(log_entry)
 
-        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा hit)"
+        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
         message = (
             f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"

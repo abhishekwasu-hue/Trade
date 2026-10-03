@@ -1340,7 +1340,7 @@ def render():
                         ) if ln
                     ]
                     bot_note = (
-                        f"Bot view: **{bot_choice}** ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे hits/कमाल. फिके = आजचे max-hits संपलेले; किंमतीपासून ±2% बाहेरचे लपवले. "
+                        f"Bot view: **{bot_choice}** ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; level touch नाही). फिके = आजचे max-trades संपलेले; किंमतीपासून ±2% बाहेरचे लपवले. "
                         "हे Supabase मधले bot चे प्रत्यक्ष levels आहेत. गेट-ओळीत फक्त RSI आणि Supertrend; PCR / Min-Hold / Breakout इ. गेट्स इथे नाहीत."
                         + ("" if bot_lines else " ⚠️ या bot चे ACTIVE levels सापडले नाहीत.")
                     )
