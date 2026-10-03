@@ -25,6 +25,7 @@ import pandas as pd
 import streamlit as st
 
 import cloud_db
+from safe_widgets import safe_number_input
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today, get_ist_now
 from database import (
@@ -87,9 +88,7 @@ def _resolve_mcx_instrument_cached(access_token, symbol):
 
 
 def _number_input(label, settings, key, symbol, **kwargs):
-    is_float = isinstance(kwargs.get("step"), float) or isinstance(kwargs.get("min_value"), float) or isinstance(kwargs.get("max_value"), float)
-    value = float(settings[key]) if is_float else int(settings[key])
-    return st.number_input(label, value=value, key=_widget_key(symbol, key), **kwargs)
+    return safe_number_input(label, value=settings.get(key), key=_widget_key(symbol, key), **kwargs)
 
 
 def _render_status_banner():
@@ -158,12 +157,12 @@ def _render_mcx_kill_switch_panel():
         mks_enabled = st.checkbox("MCX Kill Switch सक्रिय", value=ks["enabled"], key="mcx_ks_enabled")
         c1, c2 = st.columns(2)
         with c1:
-            mks_max_loss_pct = st.number_input(
+            mks_max_loss_pct = safe_number_input(
                 "कमाल दैनिक तोटा % (एकूण capital चा, फक्त MCX)", min_value=0.1, max_value=100.0,
                 value=float(ks["max_daily_loss_pct"]), step=0.25, key="mcx_ks_max_loss_pct",
             )
         with c2:
-            mks_max_open = st.number_input(
+            mks_max_open = safe_number_input(
                 "कमाल एकाच वेळी उघडी positions (सर्व 5 commodities मिळून)", min_value=1, max_value=5,
                 value=int(ks["max_open_positions"]), step=1, key="mcx_ks_max_open",
             )
@@ -179,7 +178,7 @@ def _render_mcx_kill_switch_panel():
                 "MCX Profit-Lock सक्रिय", value=ks["profit_lock_enabled"], key="mcx_ks_profit_lock_enabled",
             )
         with pc2:
-            mks_profit_lock_pct = st.number_input(
+            mks_profit_lock_pct = safe_number_input(
                 "लॉक करायचा % (आजच्या MCX सर्वोच्च नफ्यापैकी)", min_value=1.0, max_value=99.0,
                 value=float(ks["profit_lock_pct"]), step=5.0, key="mcx_ks_profit_lock_pct",
             )
@@ -401,7 +400,7 @@ def _render_all_commodities_positions():
             with mocol2:
                 st.metric("सध्याचा Manual Override", f"₹{current_override:,.0f}" if has_override else "नाही (established logic लागू)")
 
-            mcx_new_override_level = st.number_input(
+            mcx_new_override_level = safe_number_input(
                 "नवीन SL पातळी (₹ एकूण trade P&L)",
                 value=float(current_override) if has_override else 0.0, step=100.0, key="mcx_tsl_override_new_level",
             )

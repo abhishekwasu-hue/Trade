@@ -14,6 +14,7 @@ SL/TSL/Target Exit Gate, Naked Option Trade toggle) — एकाच पान�
 import streamlit as st
 
 import cloud_db
+from safe_widgets import safe_number_input
 import database
 import trading_engine
 import upstox_api
@@ -46,9 +47,9 @@ def _number_input(label, settings, key, strategy_key, symbol, **kwargs):
     # व्हायचं, पण caller ने दिलेले min_value/max_value/step मात्र नेहमी float — Streamlit ला हे
     # दोन्ही एकाच प्रकारचे (सर्व int किंवा सर्व float) हवेत, नाहीतर StreamlitMixedNumericTypesError.
     # आता caller च्या kwargs वरूनच (साठवलेल्या value च्या प्रकारावरून नाही) ठरवतो.
-    is_float = isinstance(kwargs.get("step"), float) or isinstance(kwargs.get("min_value"), float) or isinstance(kwargs.get("max_value"), float)
-    value = float(settings[key]) if is_float else int(settings[key])
-    return st.number_input(label, value=value, key=_widget_key(strategy_key, symbol, key), **kwargs)
+    # safe_number_input आता int/float एकसारखे करतं आणि साठवलेली value min/max मध्ये आणतं — जुनी/चुकीची
+    # साठवलेली value आल्यास पान कोसळत नाही.
+    return safe_number_input(label, value=settings.get(key), key=_widget_key(strategy_key, symbol, key), **kwargs)
 
 
 def _render_live_status_banner():
@@ -146,17 +147,17 @@ def _render_kill_switch_panel():
         ks_enabled = st.checkbox("Kill Switch सक्रिय", value=ks_settings["enabled"], key="bdsr_ks_enabled")
         c1, c2, c3 = st.columns(3)
         with c1:
-            ks_max_loss_pct = st.number_input(
+            ks_max_loss_pct = safe_number_input(
                 "कमाल दैनिक तोटा % (एकूण capital चा)", min_value=0.1, max_value=100.0,
                 value=float(ks_settings["max_daily_loss_pct"]), step=0.5, key="bdsr_ks_max_loss_pct",
             )
         with c2:
-            ks_max_profit_pct = st.number_input(
+            ks_max_profit_pct = safe_number_input(
                 "दैनिक नफा-लक्ष्य % (एकूण capital चा)", min_value=0.1, max_value=100.0,
                 value=float(ks_settings["max_daily_profit_pct"]), step=0.5, key="bdsr_ks_max_profit_pct",
             )
         with c3:
-            ks_max_trades = st.number_input(
+            ks_max_trades = safe_number_input(
                 "कमाल दैनिक LIVE ट्रेड्स (सर्व bots मिळून)", min_value=1,
                 value=int(ks_settings["max_trades_per_day"]), step=1, key="bdsr_ks_max_trades",
             )
@@ -174,7 +175,7 @@ def _render_kill_switch_panel():
                 "Profit-Lock सक्रिय", value=ks_settings["profit_lock_enabled"], key="bdsr_ks_profit_lock_enabled",
             )
         with pc2:
-            ks_profit_lock_pct = st.number_input(
+            ks_profit_lock_pct = safe_number_input(
                 "लॉक करायचा % (आजच्या सर्वोच्च नफ्यापैकी)", min_value=1.0, max_value=99.0,
                 value=float(ks_settings["profit_lock_pct"]), step=5.0, key="bdsr_ks_profit_lock_pct",
             )
@@ -190,7 +191,7 @@ def _render_kill_switch_panel():
             "% हे 'trade साठी वापरलेल्या margin' वर मोजा (आजचा सर्वोच्च एकाच वेळी वापरलेला margin) — बंद केलं तर Upstox खात्यातलं भांडवल",
             value=ks_settings["capital_from_margin_used"], key="bdsr_ks_capital_from_margin_used",
         )
-        ks_capital_floor = st.number_input(
+        ks_capital_floor = safe_number_input(
             "किमान भांडवल (₹) — सुरुवातीला margin कमी असताना मर्यादा अति-कमी होऊ नये म्हणून (0 = नको)",
             min_value=0.0, value=float(ks_settings["min_capital_floor"]), step=100000.0, key="bdsr_ks_min_capital_floor",
             disabled=not ks_capital_from_margin,
@@ -247,13 +248,13 @@ def _render_portfolio_risk_cap_panel():
         pr_enabled = st.checkbox("Portfolio-wide Open-Risk Cap सक्रिय", value=pr_settings["enabled"], key="bdsr_pr_enabled")
         prc1, prc2 = st.columns(2)
         with prc1:
-            pr_max_index_pct = st.number_input(
+            pr_max_index_pct = safe_number_input(
                 "Index-Options bucket cap % (NIFTY+BANKNIFTY+SENSEX एकत्र, एकूण capital चा)",
                 min_value=0.5, max_value=100.0, value=float(pr_settings["max_portfolio_risk_pct_index"]),
                 step=0.5, key="bdsr_pr_max_index_pct",
             )
         with prc2:
-            pr_max_mcx_pct = st.number_input(
+            pr_max_mcx_pct = safe_number_input(
                 "MCX bucket cap % (सर्व commodities एकत्र, एकूण capital चा)",
                 min_value=0.5, max_value=100.0, value=float(pr_settings["max_portfolio_risk_pct_mcx"]),
                 step=0.5, key="bdsr_pr_max_mcx_pct",
@@ -309,7 +310,7 @@ def _render_vix_spike_halt_panel():
             st.success(f"🟢 आजची तपासणी OK — India VIX {pct_str} बदलला (मर्यादा {vh_settings['threshold_pct']:.0f}%). {symbols_str} trading नेहमीप्रमाणे चालू.")
 
         vh_enabled = st.checkbox("VIX Spike Halt सक्रिय", value=vh_settings["enabled"], key="bdsr_vh_enabled")
-        vh_threshold = st.number_input(
+        vh_threshold = safe_number_input(
             "Threshold % (आदल्या दिवसाच्या VIX close च्या तुलनेत)", min_value=0.5, max_value=100.0,
             value=float(vh_settings["threshold_pct"]), step=0.5, key="bdsr_vh_threshold",
         )
@@ -418,7 +419,7 @@ def render():
                 timeframe_choice = st.radio(
                     "कोणत्या टाईमफ्रेमचे touch levels तपासायचे?",
                     _tf_keys, format_func=lambda k: _TF_OPTIONS[k], horizontal=True,
-                    index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")),
+                    index=_tf_keys.index(settings.get("timeframe_choice", "BOTH")) if settings.get("timeframe_choice", "BOTH") in _tf_keys else 0,
                     key=_widget_key(strategy_key, symbol, "timeframe_choice"),
                 )
         elif strategy_key == "15m_dynamic_sr":
@@ -540,7 +541,7 @@ def render():
                 # — जुन्या key खाली आधीच साठवलेलं Streamlit session_state मूल्य (जुन्या, उलट चिन्ह-
                 # पद्धतीचं) चुकून तसंच (आता उलट अर्थाने) दाखवलं जाऊ नये म्हणून.
                 itm_depth_strikes_default = -int(round(float(settings["itm_depth_points"]) / strike_step))
-                itm_depth_strikes = st.number_input(
+                itm_depth_strikes = safe_number_input(
                     "Credit Spread — Strikes from ATM (धन=OTM, 0=ATM, ऋण=ITM)",
                     value=itm_depth_strikes_default, min_value=-10, max_value=5, step=1,
                     key=_widget_key(strategy_key, symbol, "itm_depth_strikes_otm_pos"),
@@ -1026,7 +1027,7 @@ def render():
                 # 🎓 वापरकर्त्याने ठरवलेली अंतिम चिन्ह-पद्धत ("OTM la positive dakhwa धन, ITM la ऋण")
                 # — वरच्याच Credit Spread widget प्रमाणेच (बघा तिथली टिप्पणी) — नवीन widget key.
                 naked_itm_depth_strikes_default = -int(round(float(settings.get("naked_itm_depth_points", settings["itm_depth_points"])) / strike_step))
-                naked_itm_depth_strikes = st.number_input(
+                naked_itm_depth_strikes = safe_number_input(
                     "Naked Option — Strikes from ATM (धन=OTM, 0=ATM, ऋण=ITM)",
                     value=naked_itm_depth_strikes_default, min_value=-10, max_value=5, step=1,
                     key=_widget_key(strategy_key, symbol, "naked_itm_depth_strikes_otm_pos"),
