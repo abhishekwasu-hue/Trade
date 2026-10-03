@@ -308,15 +308,52 @@ def get_db_backup_bytes():
         _logger.exception("get_db_backup_bytes() मध्ये अनपेक्षित चूक (silently handled)")
         return None
 
+def _validate_backup_bytes(uploaded_bytes):
+    """अपलोड केलेली फाईल खरंच वैध SQLite backup (integrity ठीक + live_trades table आहे) आहे का तपासतो — चुकीची/खराब/रिकामी
+    फाईल चालू DB वर लिहिली गेली तर सर्व bots बिघडतात. (ok, संदेश) परत देतो; temp फाईल नेहमी काढून टाकतो."""
+    import tempfile
+    if not uploaded_bytes or not bytes(uploaded_bytes[:16]).startswith(b"SQLite format 3\x00"):
+        return False, "ही वैध SQLite backup फाईल नाही."
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(uploaded_bytes)
+        conn = sqlite3.connect(tmp_path)
+        try:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()
+            if not integrity or integrity[0] != "ok":
+                return False, f"Backup फाईल खराब आहे (integrity check: {integrity[0] if integrity else 'अपयश'})."
+            has_trades = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_trades'").fetchone()
+            if not has_trades:
+                return False, "या backup मध्ये live_trades table नाही — हा या app चा backup दिसत नाही."
+        finally:
+            conn.close()
+        return True, "ok"
+    except sqlite3.DatabaseError as e:
+        return False, f"Backup फाईल वाचता आली नाही: {e}"
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 def restore_db_from_bytes(uploaded_bytes):
-    """अपलोड केलेल्या backup वरून DB बदलणे — आधी सद्य DB चा स्वतःचा सुरक्षा-backup घेऊन मगच बदलणे."""
+    """अपलोड केलेल्या backup वरून DB बदलणे — आधी फाईल वैध आहे का तपासतो, मग सद्य DB चा स्वतःचा सुरक्षा-backup घेऊन मगच बदलतो
+    (बदल temp फाईलमधून atomic os.replace ने, अर्धवट लिहिलेली DB कधीच उरत नाही)."""
+    ok, msg = _validate_backup_bytes(uploaded_bytes)
+    if not ok:
+        return False, f"Restore नाकारला — {msg} सद्य DB अबाधित आहे."
     try:
         if os.path.exists(DB_PATH):
             safety_backup_path = DB_PATH + ".before_restore.bak"
             with open(DB_PATH, "rb") as src, open(safety_backup_path, "wb") as dst:
                 dst.write(src.read())
-        with open(DB_PATH, "wb") as f:
+        tmp_new = DB_PATH + ".restore_tmp"
+        with open(tmp_new, "wb") as f:
             f.write(uploaded_bytes)
+        os.replace(tmp_new, DB_PATH)
         return True, "Restore यशस्वी झाला."
     except Exception as e:
         return False, f"Restore अयशस्वी: {e}"
