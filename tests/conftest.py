@@ -54,3 +54,16 @@ def sample_option_chain():
             },
         })
     return chain
+
+
+@pytest.fixture(autouse=True)
+def _clear_last_good_strategy_settings():
+    """cloud_db._LAST_GOOD_STRATEGY_SETTINGS हा प्रोसेस-पातळीचा cache आहे -- एका टेस्टचं settings दुसऱ्या टेस्टमध्ये (Supabase नसताना) डीफॉल्टऐवजी
+    दिसू नये म्हणून प्रत्येक टेस्टच्या आधी/नंतर रिकामा."""
+    try:
+        import cloud_db
+        getattr(cloud_db, "_LAST_GOOD_STRATEGY_SETTINGS", {}).clear()
+        yield
+        getattr(cloud_db, "_LAST_GOOD_STRATEGY_SETTINGS", {}).clear()
+    except ImportError:
+        yield

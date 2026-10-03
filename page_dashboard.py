@@ -35,7 +35,7 @@ from oi_analysis import (
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
     fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
 )
-from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade, format_trade_result
+from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade, format_trade_result, uniform_basket_lots
 from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
 from upstox_api import fetch_market_news
@@ -735,6 +735,10 @@ def _render_manual_trading_panel():
                 if st.button(basket_btn_label):
                     if not (enable_live_trading and confirm_live_trading):
                         st.error("साईडबारमध्ये 'ENABLE LIVE TRADING' + पुष्टीकरण दोन्ही आधी टिक करा.")
+                    elif uniform_basket_lots([leg["Lots"] for leg in st.session_state.order_basket]) is None:
+                        # 🎓 bug-review -- tracking (Positions / SL / Manual Close) एकाच Lots वर चालतं; वेगळे Lots असल्यास ऑर्डर प्लेसच करत नाही.
+                        st.error("Basket मधल्या सर्व legs चे Lots सारखे असावेत (Positions tracking आणि Manual Close एकाच Lots वर चालतं). "
+                                 "वेगळ्या Lots साठी legs एक-एक करून 'Single Order' ने प्लेस करा.")
                     else:
                         basket_orders = [
                             {
@@ -762,7 +766,7 @@ def _render_manual_trading_panel():
                                 }
                                 for leg in st.session_state.order_basket
                             ]
-                            basket_lots = st.session_state.order_basket[0]["Lots"] if st.session_state.order_basket else 1
+                            basket_lots = uniform_basket_lots([leg["Lots"] for leg in st.session_state.order_basket]) or 1
                             track_ok, track_trade_id, track_err = track_manual_trade(
                                 symbol, legs_for_tracking, basket_lots, lot_size, entry_ltps, trading_mode, trading_style,
                                 sl_amount=basket_sl_amount, target_amount=basket_target_amount, tag_prefix="BASKET",

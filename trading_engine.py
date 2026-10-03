@@ -2228,6 +2228,14 @@ def reconcile_open_trades_with_broker(access_token, symbol, positions=_UNSET_POS
     return reconciled, ""
 
 
+def uniform_basket_lots(lots_values):
+    """🎓 bug-review -- track_manual_trade() एकाच `lots` वर संपूर्ण basket चा P&L / SL / Manual Close ची quantity मोजतो. Basket मध्ये legs चे Lots वेगळे
+    असतील (उदा. 1 lot SELL + 2 lots BUY) तर पहिल्या leg चे Lots सर्व legs ना लागून MTM चुकतो, आणि 'Manual Close' चुकीची quantity पाठवून LIVE मध्ये
+    काही position उघडीच ठेवते किंवा उलटी करते. सर्व सारखे असतील तर ते Lots परत, नाहीतर None (caller ने ऑर्डरच प्लेस करू नये)."""
+    unique = {int(v) for v in lots_values}
+    return unique.pop() if len(unique) == 1 else None
+
+
 def track_manual_trade(symbol, legs, lots, lot_size, entry_ltps, trading_mode, trading_style, sl_amount=None, target_amount=None, tag_prefix="MANUAL"):
     """
     Manually प्लेस केलेले (Single किंवा Basket) ऑर्डर्स live_trades मध्ये नोंदवणे — जेणेकरून Positions
