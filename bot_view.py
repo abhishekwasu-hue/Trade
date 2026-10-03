@@ -10,6 +10,7 @@ Dashboard चार्टचा स्वतःचा compute_dynamic_sr() व�
 import pandas as pd
 
 from dynamic_sr_instant_trader import _completed_bars_only, check_supertrend_trend_filter, get_supertrend_direction
+from htf_alignment import align_asof
 from signals import calculate_rsi, calculate_supertrend
 
 NO_BOT = "—"
@@ -94,16 +95,21 @@ def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=Fa
 
 
 def align_supertrend(chart_df, source_df, period, multiplier):
-    """source_df (उदा. 1H) चा Supertrend chart_df च्या timestamps शी no-lookahead (merge_asof, backward) अलाइन -> (line, direction) Series, किंवा (None, None)."""
+    """source_df (उदा. 1H) चा Supertrend chart_df शी no-lookahead अलाइन (HTF bar फक्त bar_end नंतर; htf_alignment.align_asof) -> (line, direction) Series, किंवा (None, None)."""
     if source_df is None or source_df.empty or chart_df is None or chart_df.empty:
         return None, None
     line, direction = calculate_supertrend(source_df, period=int(period), multiplier=float(multiplier))
     if len(line) == 0:
         return None, None
-    st_df = pd.DataFrame({"timestamp": source_df["timestamp"], "st_line": line, "st_dir": direction}).dropna()
+    cols = {"timestamp": source_df["timestamp"], "st_line": line, "st_dir": direction}
+    if "bar_end" in source_df.columns:
+        cols["bar_end"] = source_df["bar_end"]
+    st_df = pd.DataFrame(cols).dropna(subset=["st_line", "st_dir"])
     if st_df.empty:
         return None, None
-    aligned = pd.merge_asof(chart_df[["timestamp"]].sort_values("timestamp"), st_df.sort_values("timestamp"), on="timestamp", direction="backward")
+    # 🎓 fix/completed-bars-1h -- HTF bar चार्टच्या bar ला फक्त त्याच्या bar_end नंतरच जोडला जातो (आधी label वर merge_asof: चालू/अपूर्ण HTF bar चा अंतिम
+    # Supertrend आधीच दिसायचा -- भविष्यातला डेटा). आता bot ज्या "शेवटच्या पूर्ण candle" ची दिशा वापरतो तीच चार्टवरही दिसते.
+    aligned = align_asof(chart_df, st_df, ["st_line", "st_dir"])
     return aligned["st_line"], aligned["st_dir"]
 
 

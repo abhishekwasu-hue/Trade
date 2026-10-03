@@ -2,6 +2,7 @@
 import datetime
 import pandas as pd
 
+from htf_alignment import align_asof
 from signals import (
     classify_market_structure, detect_break, detect_pullback_retest,
     calculate_supertrend, calculate_rsi, check_pattern_rsi_gate,
@@ -104,7 +105,7 @@ def run_signal_backtest_rr(df, structure_order=3, lookback_swings=4, tolerance_p
 
     df_direction (ऐच्छिक): वेगळी (उदा. 1H) टाईमफ्रेम — दिली तर दिशा तिच्यावरील Supertrend वरून ठरते
     (Live pipeline शी सुसंगत), Market Structure (HH/HL) वरून नाही. no-lookahead राखण्यासाठी प्रत्येक df
-    च्या बारला merge_asof (direction='backward') ने फक्त त्या क्षणी आधीच बंद झालेला शेवटचा df_direction
+    च्या बारला (htf_alignment.align_asof, bar_end वर) फक्त त्या क्षणी आधीच बंद झालेला शेवटचा df_direction
     बार जोडला जातो. दिली नाही तर आधीचंच वर्तन (Market Structure वरून दिशा) — मागील टेस्ट्सशी सुसंगत.
 
     use_pattern_rsi_gate: True असेल तर Break+Pullback+Retest नंतर, अतिरिक्त गेट म्हणून Candlestick
@@ -128,12 +129,11 @@ def run_signal_backtest_rr(df, structure_order=3, lookback_swings=4, tolerance_p
     direction_series = None
     if df_direction is not None and not df_direction.empty:
         st_line_dir, st_dir_dir = calculate_supertrend(df_direction, period=10, multiplier=3)
-        dir_lookup = pd.DataFrame({"timestamp": df_direction["timestamp"].values, "st_dir": st_dir_dir.values})
-        primary_ts = pd.DataFrame({"timestamp": df["timestamp"].values})
-        aligned = pd.merge_asof(
-            primary_ts.sort_values("timestamp"), dir_lookup.sort_values("timestamp"),
-            on="timestamp", direction="backward",
-        )
+        dir_lookup = df_direction.reset_index(drop=True).copy()
+        dir_lookup["st_dir"] = st_dir_dir.values
+        # 🎓 fix/completed-bars-1h (lookahead audit) -- df_direction चा bar फक्त त्याच्या bar_end नंतरच df च्या bar ला जोडला जातो (आधी: label वर
+        # merge_asof, म्हणजे चालू/अपूर्ण 1H bar चा अंतिम Supertrend भविष्यातून मिळायचा).
+        aligned = align_asof(df, dir_lookup, ["st_dir"])
         direction_series = aligned["st_dir"]
 
     # --- Pattern+RSI गेटसाठी RSI (df वरूनच, जी टाईमफ्रेम पास केली तीच वापरली जाते) ---
@@ -300,11 +300,10 @@ def run_signal_backtest_v2(df, df_direction, strategy="price_action", sl_pct=0.5
         start_idx = end_idx - max_bars
 
     st_line_dir, st_dir_dir = calculate_supertrend(df_direction, period=10, multiplier=3)
-    dir_lookup = pd.DataFrame({"timestamp": df_direction["timestamp"].values, "st_dir": st_dir_dir.values})
-    primary_ts = pd.DataFrame({"timestamp": df["timestamp"].values})
-    aligned = pd.merge_asof(
-        primary_ts.sort_values("timestamp"), dir_lookup.sort_values("timestamp"), on="timestamp", direction="backward",
-    )
+    dir_lookup = df_direction.reset_index(drop=True).copy()
+    dir_lookup["st_dir"] = st_dir_dir.values
+    # 🎓 fix/completed-bars-1h (lookahead audit) -- बघा run_signal_backtest_rr(): HTF bar फक्त bar_end नंतर.
+    aligned = align_asof(df, dir_lookup, ["st_dir"])
     direction_series = aligned["st_dir"]
 
     rsi_series_full = calculate_rsi(df, period=14)  # दोन्ही रणनीतींना आता RSI लागतो

@@ -19,6 +19,8 @@ extension मध्ये फक्त एक दैनिक candle प्र�
 import os
 import pandas as pd
 
+from htf_alignment import compute_bar_end
+
 _DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "nifty50_1min.parquet")
 _DAILY_EXT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "nifty50_daily_extension.parquet")
 
@@ -51,7 +53,11 @@ def resample_ohlc(df, interval_minutes):
     rule = f"{interval_minutes}min"
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     resampled = df.resample(rule, label="left", closed="left").agg(agg).dropna(subset=["open"])
-    return resampled.reset_index()
+    resampled = resampled.reset_index()
+    # 🎓 lookahead audit (fix/completed-bars-1h) -- bar कधी पूर्ण होतो (source 1M bars च्या grid वरून). clock-hour bins असल्याने 60M चा पहिला bar
+    # (label 09:00) प्रत्यक्षात 09:15–10:00 आणि bar_end 10:00. htf_alignment.align_asof() याच column वर HTF ला कमी TF शी जोडतो.
+    resampled["bar_end"] = compute_bar_end(resampled["timestamp"], df.index, interval_minutes)
+    return resampled
 
 
 def resample_daily(df):

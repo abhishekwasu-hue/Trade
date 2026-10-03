@@ -1272,32 +1272,13 @@ def render():
                         df_1h_tv = resample_to_1h(_f_30m.result())
                         df_15m_tv = _f_15m.result()
 
-                    if df_1d_tv is not None and not df_1d_tv.empty:
-                        st1d_line, st1d_dir = calculate_supertrend(df_1d_tv, period=10, multiplier=3)
-                        df_1d_st = pd.DataFrame({"timestamp": df_1d_tv["timestamp"], "st_line": st1d_line, "st_dir": st1d_dir}).dropna()
-                        aligned_1d = pd.merge_asof(
-                            chart_df[["timestamp"]].sort_values("timestamp"), df_1d_st.sort_values("timestamp"),
-                            on="timestamp", direction="backward",
-                        )
-                        st1d_line_aligned, st1d_dir_aligned = aligned_1d["st_line"], aligned_1d["st_dir"]
-
-                    if df_1h_tv is not None and not df_1h_tv.empty:
-                        st1h_line, st1h_dir = calculate_supertrend(df_1h_tv, period=10, multiplier=3)
-                        df_1h_st = pd.DataFrame({"timestamp": df_1h_tv["timestamp"], "st_line": st1h_line, "st_dir": st1h_dir}).dropna()
-                        aligned_1h = pd.merge_asof(
-                            chart_df[["timestamp"]].sort_values("timestamp"), df_1h_st.sort_values("timestamp"),
-                            on="timestamp", direction="backward",
-                        )
-                        st1h_line_aligned, st1h_dir_aligned = aligned_1h["st_line"], aligned_1h["st_dir"]
-
-                    if df_15m_tv is not None and not df_15m_tv.empty:
-                        st15m_line, st15m_dir = calculate_supertrend(df_15m_tv, period=10, multiplier=3)
-                        df_15m_st = pd.DataFrame({"timestamp": df_15m_tv["timestamp"], "st_line": st15m_line, "st_dir": st15m_dir}).dropna()
-                        aligned_15m = pd.merge_asof(
-                            chart_df[["timestamp"]].sort_values("timestamp"), df_15m_st.sort_values("timestamp"),
-                            on="timestamp", direction="backward",
-                        )
-                        st15m_line_aligned, st15m_dir_aligned = aligned_15m["st_line"], aligned_15m["st_dir"]
+                    # 🎓 fix/completed-bars-1h (lookahead audit) -- तीन Supertrend (1D/1H/15M, period=10, multiplier=3) आधी इथे तीन वेळा लिहिलेले आणि
+                    # `merge_asof` ने HTF bar च्या label (सुरुवात) वर जोडलेले होते: चार्टच्या bar ला चालू/अपूर्ण HTF bar चा अंतिम Supertrend (भविष्य)
+                    # दिसायचा. आता तिन्ही bot_view.align_supertrend() मधून -- HTF bar फक्त त्याच्या bar_end नंतर (bots ज्या "शेवटच्या पूर्ण candle"
+                    # ची दिशा वापरतात तीच). गणित (period/multiplier/dropna) जसंच्या तसं.
+                    st1d_line_aligned, st1d_dir_aligned = align_supertrend(chart_df, df_1d_tv, 10, 3)
+                    st1h_line_aligned, st1h_dir_aligned = align_supertrend(chart_df, df_1h_tv, 10, 3)
+                    st15m_line_aligned, st15m_dir_aligned = align_supertrend(chart_df, df_15m_tv, 10, 3)
                 except Exception:
                     pass  # 1D/1H/15M डेटा मिळाला नाही तरी मुख्य chart दाखवत राहणे (सुरक्षित fallback)
 

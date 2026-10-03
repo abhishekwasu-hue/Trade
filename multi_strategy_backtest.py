@@ -13,6 +13,7 @@ import datetime
 import pandas as pd
 
 from strategies.base import MarketSnapshot
+from htf_alignment import align_asof
 from market_data_adapter import prepare_structure_data, apply_manual_sl_target
 from signals import calculate_supertrend, find_support_resistance_levels
 
@@ -21,17 +22,17 @@ FUTURES_ONLY_STRATEGY_IDS = ("ict_fvg", "bb_squeeze", "vwap", "sr_bounce")
 
 def _align_1h_direction(df_15m, df_1h):
     """
-    df_1h वरून 1H Supertrend दिशा काढून, प्रत्येक df_15m बार ला no-lookahead पद्धतीने (merge_asof,
-    direction='backward') जोडणे — आपल्याच मुख्य backtest.py मधल्याच established पद्धतीने.
+    df_1h वरून 1H Supertrend दिशा काढून, प्रत्येक df_15m बार ला no-lookahead पद्धतीने (HTF bar फक्त
+    bar_end नंतर -- htf_alignment.align_asof) जोडणे — आपल्याच मुख्य backtest.py मधल्याच established पद्धतीने.
     """
     if df_1h is None or df_1h.empty:
         return pd.Series([None] * len(df_15m))
     st_line, st_dir = calculate_supertrend(df_1h, period=10, multiplier=3)
-    dir_lookup = pd.DataFrame({"timestamp": df_1h["timestamp"].values, "st_dir": st_dir.values})
-    primary_ts = pd.DataFrame({"timestamp": df_15m["timestamp"].values})
-    aligned = pd.merge_asof(
-        primary_ts.sort_values("timestamp"), dir_lookup.sort_values("timestamp"), on="timestamp", direction="backward",
-    )
+    dir_lookup = df_1h.reset_index(drop=True).copy()
+    dir_lookup["st_dir"] = st_dir.values
+    # 🎓 fix/completed-bars-1h (lookahead audit) -- आधी `merge_asof` 1H bar च्या label (सुरुवात) वर व्हायची: 15M bar ला चालू (अपूर्ण) 1H bar चा
+    # अंतिम Supertrend मिळायचा. आता 1H bar फक्त त्याच्या bar_end नंतर (htf_alignment.align_asof) -- bar_end <= 15M bar चा स्वतःचा bar_end.
+    aligned = align_asof(df_15m, dir_lookup, ["st_dir"])
     return aligned["st_dir"].map(lambda x: "LONG" if x == 1 else ("SHORT" if x == -1 else None))
 
 
@@ -60,11 +61,10 @@ def _align_1h_sr_levels(df_15m, df_1h, min_touches=3, sr_lookback_1h_bars=100):
         }
         sr_at_1h.append((df_1h["timestamp"].iloc[i], filtered))
 
-    sr_lookup_df = pd.DataFrame({"timestamp": [t for t, _ in sr_at_1h], "idx": range(len(sr_at_1h))})
-    primary_ts = pd.DataFrame({"timestamp": df_15m["timestamp"].values})
-    aligned = pd.merge_asof(
-        primary_ts.sort_values("timestamp"), sr_lookup_df.sort_values("timestamp"), on="timestamp", direction="backward",
-    )
+    sr_lookup_df = df_1h.reset_index(drop=True)[[c for c in ("timestamp", "bar_end") if c in df_1h.columns]].copy()
+    sr_lookup_df["idx"] = range(len(sr_at_1h))
+    # 🎓 fix/completed-bars-1h -- i-व्या 1H bar च्या S/R (त्या bar च्या high/low/close सकट मोजलेले) 15M bar ला त्या 1H bar च्या bar_end नंतरच (आधी: label वर)
+    aligned = align_asof(df_15m, sr_lookup_df, ["idx"])
     return [sr_at_1h[int(idx)][1] if pd.notna(idx) else None for idx in aligned["idx"]]
 
 
