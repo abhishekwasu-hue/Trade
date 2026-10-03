@@ -6,40 +6,14 @@ import pandas as pd
 import streamlit as st
 
 from safe_widgets import safe_number_input
-from signals import resample_to_1h
 from sr_dynamic import compute_dynamic_sr
 from sr_levels_v3 import SRConfig, TF_SHORT, compute_sr_v3, select_display_levels, to_chart_lines
+from sr_v3_chart import CHART_TFS, load_frames
 from tradingview_chart import build_lightweight_chart_html
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 from upstox_api import fetch_candles
 
-CHART_TFS = ["5minute", "15minute", "30minute"]
-# Upstox मधून किती कॅलेंडर दिवस मागवायचे (pivot lookback + आठवड्याच्या शेवटचा/सुट्ट्यांचा फरक भरून काढायला जास्त)
-FETCH_DAYS = {"5minute": 8, "15minute": 12, "30minute": 16, "day": 30}
 ROLE_LABEL = {"SUPPORT": "Support", "RESISTANCE": "Resistance", "ZONE": "झोनमध्ये"}
-
-
-def _with_extra_columns(df):
-    out = df.copy()
-    for col in ("volume", "oi"):
-        if col not in out.columns:
-            out[col] = 0
-    return out
-
-
-def _load_frames(token_input, symbol, spot):
-    """V3 इंजिनला हवे ते सर्व TF. 1H हे 30M वरून resample (बाकी प्रोजेक्ट प्रमाणेच)."""
-    # `spot` हा fetch_candles मध्ये फक्त cache key आहे (वापरला जात नाही); बदलत्या किंमतीमुळे प्रत्येक rerun ला cache चुकू नये म्हणून 0
-    spot = 0
-    frames = {}
-    for tf in CHART_TFS:
-        df = fetch_candles(token_input, symbol, spot, interval=tf, lookback_days=FETCH_DAYS[tf])
-        if df is not None and not df.empty:
-            frames[tf] = df
-    if "30minute" in frames:
-        frames["1hour"] = resample_to_1h(_with_extra_columns(frames["30minute"]))
-    daily = fetch_candles(token_input, symbol, spot, interval="day", lookback_days=FETCH_DAYS["day"])
-    return frames, (daily if daily is not None and not daily.empty else None)
 
 
 def _levels_table(levels):
@@ -105,7 +79,7 @@ def render():
 
     try:
         with st.spinner("5M/15M/30M/1H/Daily डेटा आणि levels मोजत आहे..."):
-            frames, daily_df = _load_frames(token_input, symbol, underlying_price)
+            frames, daily_df = load_frames(fetch_candles, token_input, symbol)
             if chart_tf not in frames:
                 st.warning(f"{chart_tf} चा डेटा मिळाला नाही.")
                 return
