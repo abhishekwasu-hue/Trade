@@ -1,5 +1,6 @@
 """tests/test_page_sr_levels_v3.py -- SR Levels V3 पानाचा AppTest (नेटवर्कशिवाय, कृत्रिम candles)."""
 import numpy as np
+import pytest
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
@@ -89,3 +90,24 @@ def test_page_survives_extreme_parameter_values():
     at.number_input(key="srv3_max_levels").set_value(2).run()
     at.number_input(key="srv3_half_life").set_value(0.5).run()
     assert not at.exception and not at.error, [e.value for e in at.error]
+
+
+def test_page_manual_level_comparison_and_csv_downloads():
+    at = _run()
+    at.number_input(key="srv3_manual_level").set_value(24100.0).run()
+    assert not at.exception and not at.error, [e.value for e in at.error]
+    assert any("तुमची level vs इंजिन" in m.label for m in at.metric)
+
+
+def test_csv_helpers_and_nearest_level_distance():
+    import page_sr_levels_v3 as page
+    import sr_levels_v3 as sr
+    frames = _frames()
+    out = sr.compute_sr_v3(frames, daily_df=frames["day"], current_price=24100.0)
+    csv = page.levels_csv(out["levels"])
+    assert csv.splitlines()[0].startswith("Level,") and "Rejections" in csv.splitlines()[0] and len(csv.splitlines()) == len(out["levels"]) + 1
+    assert len(page.candles_csv(frames["15minute"], 50).splitlines()) == 51
+    near = page.nearest_level_distance(out["levels"], 24101.0)
+    assert near and abs(near["points"]) == pytest.approx(min(abs(z["level"] - 24101.0) for z in out["levels"]), abs=0.01)
+    assert page.nearest_level_distance([], 24100.0) is None and page.nearest_level_distance(out["levels"], 0) is None
+    assert page.nearest_level_distance(out["levels"], "abc") is None
