@@ -43,3 +43,49 @@ class EngineConfig:
     grade_a: float = 0.70
     grade_b: float = 0.50
     grade_c: float = 0.30
+    # ---- Bias / Gate (bias.py) ----
+    primary_htf: str = "4h"                  # "4h" (डीफॉल्ट: bias) | "1d". Daily = veto, 1H = पुष्टी
+    daily_veto: bool = True
+    veto_zone_r: float = 1.5                 # entry Daily FRESH supply / grade A/B resistance च्या इतक्या R आत => veto (c)
+    daily_range_location_r: float = 2.5      # Daily RANGE: range edge पासून किमान इतके R
+    room_min_r: float = 1.5                  # HTF opposing zone पर्यंत किमान R (location rule)
+    weak_half_size: bool = False             # True => primary HTF WEAK मध्ये NO_TRADE ऐवजी (trend-दिशेचे) setups अर्ध्या साइजने
+    range_edge_frac: float = 0.25            # RANGE_EDGES_ONLY: range उंचीच्या इतक्या अंशातच entry (कडेजवळ)
+    pullback_end_setups: tuple = ("D2", "D3", "D4", "D6", "D10")      # WAIT_PULLBACK_END मध्ये चालणारे (breakouts नाहीत)
+    breakout_setups: tuple = ("D1", "D5", "D7", "D8", "D9")
+    # ---- Validation (validation.py) ----
+    val_body_min: float = 0.6
+    val_close_loc: float = 0.25
+    val_expansion_k: float = 1.2
+    val_beyond_k: float = 0.1
+    val_volume_mult: float = 1.5
+    val_exhaustion_k: float = 2.5
+    val_pass: float = 60.0
+    val_weights: dict = field(default_factory=lambda: {"body": 20, "close_loc": 15, "expansion": 15, "beyond": 10, "volume": 20, "room": 10, "exhaustion": 10})
+    # ---- Scoring (scoring.py) ----
+    score_full: float = 75.0
+    score_half: float = 60.0
+    setup_thresholds: dict = field(default_factory=dict)     # {"D6": {"full": 80, "half": 65}} — setup-निहाय override
+    rr_zero: float = 1.5                     # RR component: इथे 0 गुण
+    rr_full: float = 3.0                     # RR component: इथे/यापेक्षा जास्त = 10 गुण
+    confluence_bonus: float = 5.0
+    # ---- Selector (selector.py) ----
+    max_trades_per_day: int = 2
+    max_sl_per_day: int = 2
+    cooldown_minutes: int = 30
+    opening_window_end: str = "09:30"
+    opening_setups: tuple = ("D1", "D2")
+    no_entry_after: str = "14:45"
+    eod_exit: str = "15:15"
+    # ---- Risk (risk.py) ----
+    adr_min_frac: float = 0.1
+    adr_max_frac: float = 0.6
+    sl_buffer_k: float = 0.25                # SL = structural level पलीकडे 0.25 × ref_range
+    t1_r: float = 1.0
+    t1_book_frac: float = 0.5
+    t2_default_r: float = 2.0
+    time_stop_bars: int = 6
+    time_stop_r: float = 0.5
+    followthrough_bars: int = 2
+    slippage_pts: dict = field(default_factory=lambda: {"NIFTY": 1.0, "BANKNIFTY": 3.0, "SENSEX": 3.0})
+

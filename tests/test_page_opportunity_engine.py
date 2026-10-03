@@ -57,7 +57,7 @@ def _run(symbol="NIFTY", token="x", live=False):
 def test_offline_page_renders_all_tabs_without_error():
     at = _run()
     assert not at.exception and not at.error, [e.value for e in at.error]
-    assert len(at.tabs) == 4
+    assert len(at.tabs) == 5
     assert at.dataframe, "Structure वही / levels चे तक्ते दिसले पाहिजेत"
 
 
@@ -109,3 +109,15 @@ def test_unsupported_symbol_like_mcx_shows_a_clear_warning_and_nothing_else():
     assert not at.exception and not at.error
     assert any("फक्त NIFTY" in w.value and "CRUDEOIL" in w.value for w in at.warning)
     assert not at.dataframe
+
+
+def test_bias_tab_and_candidate_tester_respond_to_inputs_without_error():
+    at = _run()
+    assert any(m.label == "Bias" for m in at.metric)
+    for direction in ("SHORT", "LONG"):
+        at.selectbox(key="oe_t_dir").set_value(direction).run()
+        assert not at.exception and not at.error, [e.value for e in at.error]
+    at.selectbox(key="oe_t_kind").set_value("BREAKOUT").run()
+    at.number_input(key="oe_t_entry").set_value(21000.0).run()
+    assert not at.exception and not at.error, [e.value for e in at.error]
+    assert any("Gate:" in w.value for w in list(at.warning) + list(at.success))

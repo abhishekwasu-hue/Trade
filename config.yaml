@@ -69,3 +69,10 @@ strategies:
     min_gap_pct: 0.30     # overnight gap ची किमान रुंदी (टक्केवारी) -- क्षुल्लक gaps वगळण्यासाठी
     sl_pct: 0.25          # SL -- gap-fill entry किमतीच्या 0.25%
     target_pct: 0.70      # Target -- gap-fill entry किमतीच्या 0.70% (RR≈1:2.8)
+
+  opportunity_engine:
+    enabled: false              # 🎓 PR-1b: structure/bias/gate/score पाया तयार; detectors (D1–D3) PR-1c मध्ये — तोपर्यंत बंद. Orchestrator फक्त दाखवतो, order नाही.
+    weight: 1.0
+    max_positions: 1
+    primary_htf: "4h"           # bias = 4H, Daily = veto, 1H = पुष्टी ("1d" ने Daily primary)
+    daily_veto: true
