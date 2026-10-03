@@ -9,7 +9,8 @@
 
 प्रत्येक bar चे columns:
   timestamp = bar_start (खरी सुरुवात — `:00` label नाही) · bar_start · bar_end (bar पूर्ण होण्याची वेळ; session-close ला मर्यादित) ·
-  bar_is_full (bar चा नामित कालावधी पूर्ण आणि source डेटाने त्याला पूर्ण व्यापला) · open/high/low/close/volume.
+  bar_is_full (bar चा नामित कालावधी पूर्ण आणि source डेटाने त्याला पूर्ण व्यापला) · bar_closed (source डेटाने bar_end पर्यंतचा पूर्ण कालावधी व्यापला —
+  नाहीतर bar अजून चालू/अपूर्ण; Journal असे bars घेत नाही) · open/high/low/close/volume.
   Journal bar फक्त `bar_end ≤ t` झाल्यावरच वापरतो. `bar_is_full == False` bars (15:15 चा 30M/1H bar, 13:15 चा 4H bar, अपूर्ण/लहान session चा शेवट)
   ref_range/ADR च्या window मध्ये येत नाहीत, पण structure/zones मध्ये सामान्य candle म्हणून वापरले जातात.
 Session quality: regular hours (09:15–15:29) बाहेरचे bars (Muhurat संध्याकाळ, 16:59 पर्यंत चालणारे दिवस) वगळले जातात; ज्या दिवशी डेटा 09:20 नंतर सुरू किंवा
@@ -62,7 +63,7 @@ def session_quality(df, min_start_min=_OPEN_MIN + 5, min_end_min=_CLOSE_MIN - 5)
 def resample_nse(df, minutes):
     """NSE session-anchored (09:15) resample; bins दिवस ओलांडत नाहीत. df = कुठल्याही बारीक TF चा (1M/5M/15M/30M) OHLC.
     रिटर्न: timestamp(=bar_start), bar_start, bar_end, bar_is_full, open, high, low, close[, volume]."""
-    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "open", "high", "low", "close", _VOLUME]
+    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "bar_closed", "open", "high", "low", "close", _VOLUME]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     minutes = int(minutes)
@@ -89,6 +90,7 @@ def resample_nse(df, minutes):
         "timestamp": start.astype("datetime64[ns]"), "bar_start": start.astype("datetime64[ns]"),
         "bar_end": nominal_end.astype("datetime64[ns]"),
         "bar_is_full": (full_length & (out["src_end"] >= nominal_end)).values,
+        "bar_closed": (out["src_end"] >= nominal_end).values,
         "open": out["open"], "high": out["high"], "low": out["low"], "close": out["close"],
     })
     result[_VOLUME] = out[_VOLUME].values if _VOLUME in out.columns else 0.0
@@ -105,7 +107,7 @@ def resample_nse_4h(df):
 
 def resample_nse_daily(df):
     """प्रत्येक session चा एक bar: timestamp = तारीख (00:00), bar_start 09:15, bar_end 15:30, bar_is_full = डेटाने पूर्ण session (09:20 पर्यंत सुरू, 15:25 पर्यंत शेवट) व्यापला."""
-    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "open", "high", "low", "close", _VOLUME]
+    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "bar_closed", "open", "high", "low", "close", _VOLUME]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     d = filter_regular_hours(df)
@@ -122,14 +124,16 @@ def resample_nse_daily(df):
     g["bar_start"] = g["timestamp"] + pd.Timedelta(minutes=_OPEN_MIN)
     g["bar_end"] = g["timestamp"] + pd.Timedelta(minutes=_CLOSE_MIN)
     g["bar_is_full"] = ~g["timestamp"].map(quality["short"]).fillna(True).astype(bool)
+    g["bar_closed"] = (g["timestamp"].map(quality["last_end"]) >= g["timestamp"] + pd.Timedelta(minutes=_CLOSE_MIN)).fillna(False).astype(bool)    # शेवटचा bar 15:30 ला संपलेला
     for c in ("timestamp", "bar_start", "bar_end"):
         g[c] = g[c].astype("datetime64[ns]")
     return g[cols].reset_index(drop=True)
 
 
-def daily_from_daily_bars(daily):
-    """ज्या स्रोतात फक्त दैनिक candles आहेत (उदा. NSE bhav-copy extension) — engine चे Daily bar columns जोडा."""
-    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "open", "high", "low", "close", _VOLUME]
+def daily_from_daily_bars(daily, now=None):
+    """ज्या स्रोतात फक्त दैनिक candles आहेत (उदा. NSE bhav-copy extension, Upstox daily) — engine चे Daily bar columns जोडा.
+    `now` (naive IST) दिला तर `bar_end > now` असलेला (आजचा अजून चालू) दैनिक bar bar_closed=False."""
+    cols = ["timestamp", "bar_start", "bar_end", "bar_is_full", "bar_closed", "open", "high", "low", "close", _VOLUME]
     if daily is None or daily.empty:
         return pd.DataFrame(columns=cols)
     g = daily.copy()
@@ -137,6 +141,7 @@ def daily_from_daily_bars(daily):
     g["bar_start"] = (g["timestamp"] + pd.Timedelta(minutes=_OPEN_MIN)).astype("datetime64[ns]")
     g["bar_end"] = (g["timestamp"] + pd.Timedelta(minutes=_CLOSE_MIN)).astype("datetime64[ns]")
     g["bar_is_full"] = True
+    g["bar_closed"] = True if now is None else (g["bar_end"] <= pd.Timestamp(now))
     if _VOLUME not in g.columns:
         g[_VOLUME] = 0.0
     return g[cols].reset_index(drop=True)

@@ -210,3 +210,37 @@ def test_real_data_no_lookahead_4h_and_daily():
         a = [(e["bar_idx"], e["type"], e["price"]) for e in full.trackers[tf].events if e["bar_idx"] < cut]
         b = [(e["bar_idx"], e["type"], e["price"]) for e in part.trackers[tf].events]
         assert a == b and len(a) > 20, tf
+
+
+# ---- review-fix: चालू (forming) bars वरून निर्णय नाही -----------------------------------------------------------------------------------
+def test_bar_closed_marks_bins_not_fully_covered_by_source_data():
+    d = _fine(("2024-03-12",), end="11:40")                                  # डेटा 11:40 पर्यंतच (11:15–12:15 चा 1H bar अजून चालू)
+    h1 = sessions.resample_nse_1h(d)
+    assert _hm(h1["bar_start"]) == ["09:15", "10:15", "11:15"]
+    assert h1["bar_closed"].tolist() == [True, True, False]
+    full = sessions.resample_nse_1h(_fine())
+    assert full["bar_closed"].all()                                          # पूर्ण दिवस: 15:15 चा लहान bar सुद्धा बंद (bar_is_full नसला तरी)
+    assert sessions.resample_nse_daily(d)["bar_closed"].tolist() == [False]
+    assert sessions.resample_nse_daily(_fine())["bar_closed"].tolist() == [True]
+
+
+def test_journal_skips_unclosed_bars():
+    d = _fine(("2024-03-11", "2024-03-12"), end="15:29")
+    partial = pd.concat([d[d["timestamp"].dt.date == pd.Timestamp("2024-03-11").date()], d[d["timestamp"] <= pd.Timestamp("2024-03-12 11:40")]])
+    frames = sessions.build_frames(partial)
+    j = Journal().run({"1h": frames["1h"]})
+    assert len(j.trackers["1h"].c) == int(frames["1h"]["bar_closed"].sum()) == len(frames["1h"]) - 1
+
+
+def test_live_bundle_drops_the_forming_candle_and_todays_daily_bar():
+    from opportunity_engine import report
+    fine = _fine(("2024-03-11", "2024-03-12"))
+    five = sessions.resample_nse(fine, 5)[["timestamp", "open", "high", "low", "close", "volume"]]
+    daily = pd.DataFrame({"timestamp": pd.to_datetime(["2024-03-11", "2024-03-12"]), "open": [1.0, 2.0], "high": [2.0, 3.0], "low": [0.5, 1.5],
+                          "close": [1.5, 2.5], "volume": [1, 2]})
+    now = pd.Timestamp("2024-03-12 11:42")                                   # 11:40 चा 5M bar अजून चालू (11:45 ला बंद)
+    frames, journal = report.bundle_from_live(five, daily, now=now)
+    assert frames["5m"]["bar_end"].max() <= now and frames["5m"]["bar_end"].max() == pd.Timestamp("2024-03-12 11:40")
+    assert frames["1d"]["bar_closed"].tolist() == [True, False]             # आजचा daily bar चालू
+    assert len(journal.trackers["1d"].c) == 1
+    assert journal.trackers["1h"].bar_end[-1] <= now

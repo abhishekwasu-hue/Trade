@@ -18,6 +18,7 @@ from upstox_api import fetch_candles
 SRC_OFFLINE = "Offline NIFTY (खरा डेटा, 2015 → 2024-03-27)"
 SRC_LIVE = "Upstox (लाईव्ह, सध्याचा symbol)"
 CHART_TFS = ["1d", "4h", "1h", "15m", "5m"]
+SUPPORTED_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")        # NSE/BSE index session (09:15–15:30); MCX (09:00–23:30) साठी session वेगळं — PR-1a मध्ये नाही
 
 
 @st.cache_resource(show_spinner=False, max_entries=4)
@@ -54,6 +55,9 @@ def render():
         "कुठलाही trade/order होत नाही, कुठलाही bot हे वापरत नाही. Indicator-मुक्त (EMA/RSI/ATR/Supertrend नाही). "
         "पाया (trend state) चार्टवर तुम्ही पडताळल्यावरच पुढचे टप्पे."
     )
+    if symbol not in SUPPORTED_SYMBOLS:
+        st.warning(f"Opportunity Engine (PR-1a) फक्त {', '.join(SUPPORTED_SYMBOLS)} साठी (NSE/BSE session 09:15–15:30). {symbol} साठी session वेगळं असल्याने इथे दाखवलं जात नाही.")
+        return
     c1, c2 = st.columns([2, 3])
     with c1:
         source = st.radio("डेटा स्रोत", [SRC_OFFLINE, SRC_LIVE], key="oe_source")
