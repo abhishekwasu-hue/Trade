@@ -100,16 +100,23 @@ def build_strategy_result_from_legs(legs, payoff_curve):
     कुठलेही ठराविक (Credit Spread सारखे) सूत्र लागू होत नाही, संपूर्ण, अचूक payoff-गणनाच वापरायला हवी.
     """
     lot_size = legs[0]["lot_size"]
+    # payoff_curve प्रत्येक leg च्या स्वतःच्या lots ने गुणलेला असतो, पण execution सर्व legs वर एकच `lots`
+    # वापरतो — म्हणून सर्व legs चे lots सारखे हवेत, आणि "प्रति-lot" आकडे त्या lots ने भागून काढायचे
+    # (नाहीतर Lots=2 असलेल्या legs चा max_loss/SL आधार दुप्पट फुगतो).
+    lots_set = {int(leg["lots"]) for leg in legs}
+    if len(lots_set) != 1:
+        raise ValueError("सर्व legs चे Lots सारखे हवेत (वेगळे Lots असलेली strategy execute करता येत नाही)")
+    leg_lots = lots_set.pop()
     net_credit_per_lot = sum(
         (leg["premium"] if leg["direction"] == "SELL" else -leg["premium"]) * leg["lots"]
         for leg in legs
-    )
+    ) / leg_lots
     max_profit_total, max_loss_total = max(payoff_curve), min(payoff_curve)
-    max_profit_per_lot = max_profit_total / lot_size
+    max_profit_per_lot = max_profit_total / (lot_size * leg_lots)
     # 🎓 established convention (select_credit_spread_fixed_strikes()) मध्ये max_loss नेहमी **धन**
     # (नुकसानाची रक्कम) असतो, payoff-curve चं raw किमान मूल्य (जे ऋण असतं) नाही — trading_engine.py चं
     # sl_pnl_level = -(max_loss * sl_pct/100) हे सूत्र धन max_loss गृहीत धरतं. इथे abs() ने दुरुस्त.
-    max_loss_per_lot = abs(max_loss_total) / lot_size
+    max_loss_per_lot = abs(max_loss_total) / (lot_size * leg_lots)
 
     result_legs = [
         {"role": f"LEG{i + 1}_{leg['direction']}_{leg['option_type']}", "strike": leg["strike"],
