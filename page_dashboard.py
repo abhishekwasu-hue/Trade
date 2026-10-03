@@ -48,6 +48,7 @@ from bot_view import (
     supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
+from sr_v3_chart import V3_VIEW, v3_chart_lines
 
 
 
@@ -1215,7 +1216,7 @@ def render():
                 )
             with _cs3:
                 # 🎓 "Bot view" -- निवडलेल्या bot चे प्रत्यक्ष ACTIVE levels (+आजचे hits), त्याचे RSI/Supertrend आणि गेट-स्थिती; डीफॉल्ट: काहीच नाही (जुना चार्ट).
-                bot_choice = st.selectbox("Bot view:", [NO_BOT] + list(NSE_BOTS), index=0, key=f"tv_bot_view_{symbol}")
+                bot_choice = st.selectbox("Bot view:", [NO_BOT] + list(NSE_BOTS) + [V3_VIEW], index=0, key=f"tv_bot_view_{symbol}")
             ind_params = chart_indicator_controls("tv_chart_ind")
             if chart_symbol == symbol and chart_tf == timeframe_option:
                 chart_df, chart_spot = df_candles, underlying_price
@@ -1306,7 +1307,20 @@ def render():
             # 🎓 Bot view -- bot चे ACTIVE levels (Supabase market_zones; चार्टचा स्वतःचा compute_dynamic_sr वेगळा), त्याचे RSI उंबरठे / Supertrend timeframes
             # आणि "आत्ता entry का थांबेल" गेट-स्थिती. फक्त दाखवतो; काही अयशस्वी झालं तरी साधा चार्ट दिसत राहतो.
             bot_lines, bot_gate_lines, bot_rsi_levels, bot_note = [], [], (40, 60), None
-            if bot_choice != NO_BOT and not chart_df.empty:
+            if bot_choice == V3_VIEW and not chart_df.empty:
+                # 🎓 "ही strategy निवडल्यावरच आधीची सगळी drawings निघून फक्त हिचे levels" -- जुना S/R, Supertrend रेषा, Hammer/Star मार्कर्स आणि
+                # bot ओळी सर्व काढतो; फक्त SR Levels V3 च्या (गुणांकित) रेषा. फक्त दाखवतो -- कुठलाही trade होत नाही.
+                sr_for_tv = None
+                st1d_line_aligned = st1d_dir_aligned = st15m_line_aligned = st15m_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
+                pattern_markers_tv = []
+                with st.spinner("SR Levels V3 मोजत आहे..."):
+                    bot_lines, _v3_problem = v3_chart_lines(fetch_candles, token_input, chart_symbol, float(chart_df["close"].iloc[-1]))
+                bot_note = _v3_problem or (
+                    "SR Levels V3 निवडला आहे — चार्टवर **फक्त** हेच levels आहेत (जुने S/R, Supertrend, Hammer/Star मार्कर्स आणि bot ओळी काढल्या). "
+                    "रेषेचं नाव: S/R + ग्रेड/Score + स्रोत (TF / PDH-PDL-PWH-PWL / GAP / FLIP). जाड = जास्त Score. तपशील आणि पॅरामीटर्स: ANALYZE → SR Levels V3. "
+                    "इतर चार्ट दाखवायचा असेल तर Bot view मध्ये '—' निवडा."
+                )
+            elif bot_choice != NO_BOT and not chart_df.empty:
                 try:
                     import cloud_db as _cdb
                     _bs = _cdb.get_strategy_settings(BOT_VIEWS[bot_choice]["strategy_key"], chart_symbol)
