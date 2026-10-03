@@ -829,3 +829,18 @@ sudo systemctl daemon-reload
 अस्तित्वात नाही ना (`systemctl list-units --type=service --all | grep -i <keyword>`) — विशेषतः
 Dashboard सारख्या एकाच पोर्टवर bind होणाऱ्या service साठी. `deploy/streamlit_dashboard.service` शिवाय
 दुसरं कुठलंही unit file `app.py`/Dashboard साठी तयार करू नका.
+
+---
+
+# Opportunity Engine — डेटा उपलब्धता तपासणी (PR-0, एकदाच, फक्त वाचन)
+
+`verify_opportunity_data_availability.py` Upstox वरून **फक्त GET** करतं (कुठलाही order नाही, कुठलाही DB write नाही, token print होत नाही) आणि सांगतं:
+NIFTY/BANKNIFTY चा 1M/5M/15M/30M/Daily इतिहास किती मागे मिळतो; index candles मध्ये volume असतो का; सध्याच्या futures मध्ये volume/OI आहे का;
+**expired futures** चा ऐतिहासिक volume मिळतो का (Upstox "Expired Instruments" API — Upstox Plus plan चा असल्याचं सांगितलं जातं; plan नसेल तर HTTP 401/403 दिसेल).
+या निकालावर BANKNIFTY आणि volume-सकट backtest ठरतात. cron मध्ये टाकायचं नाही; एकदा हाताने चालवा आणि संपूर्ण print पाठवा.
+
+```bash
+cd /root/Trade && git pull origin main
+python3 verify_opportunity_data_availability.py --quick          # ~1 मिनिट: फक्त 5M/15M, कमी expiry नमुने
+python3 verify_opportunity_data_availability.py --json /tmp/oe_data.json   # पूर्ण (2–4 मिनिटं)
+```
