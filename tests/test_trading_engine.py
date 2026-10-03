@@ -3595,6 +3595,7 @@ class TestMcxGoldPriceUnitMultiplier:
         assert (lot_size, mult) == (30, 1)
         assert sl == -20.0 * 2 * 30
         assert [o["quantity"] for o in orders] == [60]
+        assert [o["broker_quantity"] for o in orders] == [2]     # Upstox MCX quantity = lots (units 60 फक्त log/charges साठी)
 
     def test_gold_pnl_matches_fyers_style_calculation_and_exit_sends_real_quantity(self, temp_db, monkeypatch):
         self._open(monkeypatch, "GOLD", lot_size=1, fill=150000.0)
@@ -3612,6 +3613,7 @@ class TestMcxGoldPriceUnitMultiplier:
         assert len(closed) == 1 and closed[0]["reason"] == "SL"
         assert closed[0]["pnl"] == pytest.approx(-5000.0)
         assert [o["quantity"] for o in sent] == [2]   # exit-ऑर्डर: खरी quantity, 200 नाही
+        assert [o["broker_quantity"] for o in sent] == [2]  # MCX: Upstox ला lots
 
     def test_legacy_trade_without_multiplier_is_untouched(self, temp_db, monkeypatch):
         legs = [{"role": "futures_long", "strike": 0, "instrument_key": "FUT1", "transaction_type": "BUY"}]
@@ -3622,6 +3624,7 @@ class TestMcxGoldPriceUnitMultiplier:
         monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (sent.extend(o) or 200, {"status": "success"}))
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert closed and [o["quantity"] for o in sent] == [75]   # lots 1 × lot_size 75, गुणक नाही
+        assert [o["broker_quantity"] for o in sent] == [1]        # source=mcx_futures => lots
 
 
 class TestMcxContractSpecs:

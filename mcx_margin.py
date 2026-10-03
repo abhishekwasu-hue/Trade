@@ -18,8 +18,9 @@ MARGIN_COLUMNS = [
 ]
 
 
-def _one_order(instrument_key, quantity, side, product):
-    return [{"instrument_token": instrument_key, "quantity": quantity, "transaction_type": side, "product": product}]
+def _one_order(instrument_key, lots, side, product):
+    # Upstox चा MCX `quantity` lots मध्ये आहे (बघा upstox_api.broker_order_quantity) — units (lots × lot_size) पाठवल्यास margin lot_size पट येतो.
+    return [{"instrument_token": instrument_key, "quantity": lots, "transaction_type": side, "product": product}]
 
 
 def compute_margin_rows(access_token, symbols, lots_by_symbol, product="D",
@@ -53,8 +54,8 @@ def compute_margin_rows(access_token, symbols, lots_by_symbol, product="D",
         row["LTP"] = ltp
         # 🎓 GOLD: भाव प्रति 10g, lot 1kg => Contract Value = भाव × qty × 100 (बघा mcx_contract_specs)
         row["Contract Value (Rs)"] = round(ltp * qty * get_price_multiplier(sym), 2) if ltp else None
-        buy = margin_fn(access_token, _one_order(key, qty, "BUY", product))
-        sell = margin_fn(access_token, _one_order(key, qty, "SELL", product))
+        buy = margin_fn(access_token, _one_order(key, lots, "BUY", product))
+        sell = margin_fn(access_token, _one_order(key, lots, "SELL", product))
         row["BUY Margin (Rs)"] = round(buy, 2) if buy is not None else None
         row["SELL Margin (Rs)"] = round(sell, 2) if sell is not None else None
         row["BUY / lot (Rs)"] = round(buy / lots, 2) if buy is not None else None

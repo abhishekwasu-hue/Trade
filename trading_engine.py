@@ -922,14 +922,23 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     order_lot_size = lot_size
     lot_size = lot_size * pnl_multiplier
 
-    # 🎓 MCX LIVE सुरक्षा-गेट — broker ला जाणारी quantity (lots × Upstox lot_size) Upstox च्या MCX साठी units
-    # मानते की lots, हे अजून पडताळलेलं नाही (lots असल्यास SILVER चा 1 lot = 30 lots जाईल!). verify_mcx_order_quantity_units.py
-    # ने खात्री करून मार्कर लिहीपर्यंत MCX चा LIVE order नाकारला जातो. PAPER वर परिणाम नाही. बघा mcx_quantity_check.py.
-    if trading_mode == "LIVE" and source == "mcx_futures" and not is_mcx_live_quantity_verified():
-        reason = (
-            "MCX LIVE अडवला — Upstox च्या MCX order quantity चं एकक (units/lots) अजून पडताळलेलं नाही; चुकीचं असल्यास "
-            "1 lot ऐवजी lot_size पट मोठा order जाईल. VPS वर `python3 verify_mcx_order_quantity_units.py` चालवा."
-        )
+    # 🎓 MCX LIVE सुरक्षा-गेट — Upstox चा MCX `quantity` lots मध्ये आहे (Margin API वरून पडताळलेलं; आपला order आता lots
+    # पाठवतो, बघा broker_quantity). verify_mcx_order_quantity_units.py ने हे पुन्हा खात्री करून मार्कर लिहीपर्यंत MCX चा LIVE order
+    # नाकारला जातो; तसंच फक्त Upstox वर. PAPER वर परिणाम नाही. बघा mcx_quantity_check.py.
+    mcx_live_blocker = None
+    if trading_mode == "LIVE" and source == "mcx_futures":
+        if not is_mcx_live_quantity_verified():
+            mcx_live_blocker = (
+                "MCX LIVE अडवला — Upstox च्या MCX order quantity चं एकक (units/lots) अजून पडताळलेलं नाही; चुकीचं असल्यास "
+                "1 lot ऐवजी lot_size पट मोठा order जाईल. VPS वर `python3 verify_mcx_order_quantity_units.py` चालवा."
+            )
+        elif adapter is not None and type(adapter).__name__ != "UpstoxBrokerAdapter":
+            mcx_live_blocker = (
+                "MCX LIVE अडवला — MCX साठी quantity-एकक फक्त Upstox वर पडताळलेलं आहे (lots); निवडलेल्या दुसऱ्या broker "
+                "(Fyers/Shoonya/Stocko) साठी ते पडताळलेलं नाही. MCX साठी broker account रिकामं ठेवा (डीफॉल्ट Upstox)."
+            )
+    if mcx_live_blocker:
+        reason = mcx_live_blocker
         try:
             from notifications import send_telegram_message
             send_telegram_message(f"🛑 <b>{symbol} (mcx_futures) — LIVE order अडवला</b>\n{reason}")
@@ -1000,6 +1009,8 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     orders = [
         {
             "quantity": qty, "product": product_type, "validity": "DAY", "price": 0,
+            # MCX: Upstox ला quantity lots मध्ये जाते (बघा upstox_api.broker_order_quantity); `quantity` (units) फक्त log/charges साठी.
+            **({"broker_quantity": lots} if source == "mcx_futures" else {}),
             "tag": f"A1_{leg['role'].upper()[:16]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": leg["transaction_type"],
             "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
@@ -2084,6 +2095,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             close_orders = [
                 {
                     "quantity": qty, "product": product_type, "validity": "DAY", "price": 0,
+                    **({"broker_quantity": lots} if source == "mcx_futures" else {}),  # MCX: Upstox ला lots (बघा entry order)
                     "tag": f"A1_CLOSE_{leg['role'].upper()[:12]}", "instrument_token": leg["instrument_key"],
                     "order_type": "MARKET",
                     "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
@@ -2310,7 +2322,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT legs_json, lots, lot_size, net_credit, mode, account_id, COALESCE(pnl_multiplier, 1) FROM live_trades WHERE trade_id=? AND status='OPEN'",
+        "SELECT legs_json, lots, lot_size, net_credit, mode, account_id, COALESCE(pnl_multiplier, 1), source FROM live_trades WHERE trade_id=? AND status='OPEN'",
         (trade_id,),
     )
     row = cur.fetchone()
@@ -2318,7 +2330,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         conn.close()
         return False, "Trade सापडला नाही किंवा आधीच बंद आहे."
 
-    legs_json_str, lots, lot_size, net_credit, trade_mode, account_id, pnl_multiplier = row
+    legs_json_str, lots, lot_size, net_credit, trade_mode, account_id, pnl_multiplier, trade_source = row
     legs = json.loads(legs_json_str) if legs_json_str else []
     if not legs:
         conn.close()
@@ -2339,6 +2351,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     close_orders = [
         {
             "quantity": int(round(lots * lot_size / (pnl_multiplier or 1))), "product": product_type, "validity": "DAY",
+            **({"broker_quantity": lots} if trade_source == "mcx_futures" else {}),  # MCX: Upstox ला lots
             "tag": f"MANUAL_CLOSE_{str(leg.get('role', 'LEG'))[:12]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
             "disclosed_quantity": 0, "trigger_price": 0, "price": 0, "is_amo": False,
