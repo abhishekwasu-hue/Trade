@@ -1353,7 +1353,7 @@ def process_symbol(access_token, symbol, lot_size=65):
         credit_spread_line = f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n" if spread_result is not None else ""
         # 🎓 Breakout Entry हा max-2-hits च्या पलीकडचा, वेगळा (तिसरा) trade आहे -- "X/2 वा hit" हा
         # शीर्षक-भाग breakout साठी दिशाभूल करणारा ठरेल, म्हणून वेगळा हेडर.
-        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा hit)"
+        hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
         message = (
             f"{hit_label_header} <b>{symbol} ({timeframe_suffix})!</b>\n"
             f"{level_label} {row['zone_low']:.2f} (strength {row['strength']:.0f}) — {hit_label} (≈{approx_price:.2f}). {rsi_display}\n"

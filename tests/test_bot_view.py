@@ -201,7 +201,7 @@ class TestHitsBulk:
         assert out == {(24000.0, "SUPPORT"): 2, (24000.0, "RESISTANCE"): 1, (24100.0, "RESISTANCE"): 1}
         assert len(conn.cur.executed) == 1 and conn.closed
         sql, params = conn.cur.executed[0]
-        assert "NO_HIT" in sql and params[:2] == ("NIFTY", "2026-10-02") and "SKIPPED_MIN_HOLD_DURATION" in params
+        assert "NO_HIT" in sql and params == ("NIFTY", "2026-10-02") and "NOT LIKE 'SKIPPED%%'" in sql  # फक्त खरे entries
 
     def test_no_database_gives_empty(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_connection", lambda: None)

@@ -1190,9 +1190,9 @@ class TestSupertrendEntryGate:
         trade, dirs, statuses = self._run(("BEARISH", "BEARISH"), bullish=True, enabled=False)
         assert trade.called and not dirs.called and "SKIPPED_MCX_TREND_FILTER" not in statuses
 
-    def test_blocked_touch_is_not_counted_as_a_hit(self):
+    def test_blocked_touch_is_not_counted_as_an_entry(self):
         import cloud_db as cdb
-        assert "SKIPPED_MCX_TREND_FILTER" in cdb._NON_HIT_TRADE_STATUSES
+        assert cdb._is_no_action_trade_status("SKIPPED_MCX_TREND_FILTER")  # SKIPPED_* => entry नाही, level-quota खर्च होत नाही
 
 
 class TestMinHoldGate:
@@ -1266,9 +1266,9 @@ class TestMinHoldGate:
         trade, mock_1m, statuses, _ = self._run(self._candles_1m(touching=1, far=10), enabled=False)
         assert trade.called and not mock_1m.called and "SKIPPED_MIN_HOLD_DURATION" not in statuses
 
-    def test_blocked_touch_is_not_counted_as_a_hit(self):
+    def test_blocked_touch_is_not_counted_as_an_entry(self):
         import cloud_db as cdb
-        assert "SKIPPED_MIN_HOLD_DURATION" in cdb._NON_HIT_TRADE_STATUSES
+        assert cdb._is_no_action_trade_status("SKIPPED_MIN_HOLD_DURATION")  # SKIPPED_* => entry नाही, level-quota खर्च होत नाही
 
 
 class TestFetchMcxTodays1mCandles:

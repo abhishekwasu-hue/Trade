@@ -12,6 +12,7 @@ import datetime
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 import cloud_db
 from upstox_api import get_instrument_key
 
@@ -692,7 +693,8 @@ class TestGetZoneHitsToday:
         cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
         sql, params = mock_cursor.execute.call_args[0]
         assert "level_type" not in sql
-        assert params == ("NIFTY", "2026-09-08", 23900.0, *cloud_db._NON_HIT_TRADE_STATUSES)
+        assert params == ("NIFTY", "2026-09-08", 23900.0)
+        assert "SKIPPED%%" in sql  # फक्त खरे entries; कुठलाही SKIPPED_* नाही
 
     def test_role_given_adds_level_type_filter(self, monkeypatch):
         """role="SUPPORT" दिलं की फक्त support-role च्या hits मोजल्या जाव्यात — तोच level नंतर
@@ -706,7 +708,7 @@ class TestGetZoneHitsToday:
         cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08", role="SUPPORT")
         sql, params = mock_cursor.execute.call_args[0]
         assert "level_type LIKE" in sql
-        assert params == ("NIFTY", "2026-09-08", 23900.0, *cloud_db._NON_HIT_TRADE_STATUSES, "%SUPPORT%")
+        assert params == ("NIFTY", "2026-09-08", 23900.0, "%SUPPORT%")
 
     def test_support_and_resistance_hits_counted_independently(self, monkeypatch):
         """एकाच किंमतीला support म्हणून 2 hits, resistance म्हणून 0 -- role="RESISTANCE" ने
@@ -2046,25 +2048,36 @@ class TestDeferTo15mSettingDefaults:
             assert "defer_to_15m_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
 
 
-class TestGateBlockedTouchesDoNotUseUpLevelQuota:
-    """"एका level वर कमाल 2 entry" — RSI/PCR/IV गेटने अडवलेले touch (ट्रेड नाही) hit म्हणून मोजले जाऊ नयेत."""
+class TestLevelQuotaCountsOnlyRealEntries:
+    """"एका level वर कमाल 2 trades" — मर्यादा entry वर आहे; touch (level hit) वर नाही. कुठलाही SKIPPED_* entry नाही."""
 
-    GATE_STATUSES = ("SKIPPED_RSI_FILTER", "SKIPPED_PCR_GATE", "SKIPPED_IV_GATE")
+    @pytest.mark.parametrize("status", [
+        None, "STRATEGY_SELECTION_FAILED", "SKIPPED_RSI_FILTER", "SKIPPED_PCR_GATE", "SKIPPED_IV_GATE", "SKIPPED_MIN_HOLD_DURATION",
+        "SKIPPED_WEAK_LEVEL", "SKIPPED_FAST_MOVE", "SKIPPED_COOLDOWN_30MIN", "SKIPPED_SL_TSL_COOLDOWN", "SKIPPED_MAX_2_HITS_REACHED",
+        "SKIPPED_NAKED_DISABLED", "SKIPPED_DEMAND_SUPPLY_GATE", "SKIPPED_TREND_FILTER",
+    ])
+    def test_blocked_or_skipped_touches_are_not_entries(self, status):
+        assert cloud_db._is_no_action_trade_status(status) is True
 
-    def test_gate_statuses_are_excluded_from_hit_counting(self):
-        for status in self.GATE_STATUSES:
-            assert status in cloud_db._NON_HIT_TRADE_STATUSES
+    @pytest.mark.parametrize("status", ["OPENED", "A1:OPENED; A2:FAILED", "FAILED: margin"])
+    def test_real_trade_attempts_are_entries(self, status):
+        assert cloud_db._is_no_action_trade_status(status) is False
 
-    def test_status_names_match_what_the_bots_actually_write(self):
+    def test_sql_selects_only_entry_rows_for_single_and_bulk_queries(self, monkeypatch):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        monkeypatch.setattr(cloud_db, "get_connection", lambda: mock_conn)
+        cloud_db.get_zone_hits_today("NIFTY", 23900.0, "2026-09-08")
+        cloud_db.get_zone_hits_today_bulk("NIFTY", "2026-09-08")
+        for call in mock_cursor.execute.call_args_list:
+            sql = call[0][0]
+            assert "trade_status IS NOT NULL" in sql and "NOT LIKE 'SKIPPED%%'" in sql and "STRATEGY_SELECTION_FAILED" in sql
+
+    def test_alert_headers_say_trade_not_hit(self):
         import os
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        sources = "".join(
-            open(os.path.join(root, f), encoding="utf-8").read()
-            for f in ("dynamic_sr_instant_trader.py", "srv2_momentum_reversal_strategy.py", "classic_sr_reversal_trader.py")
-        )
-        for status in self.GATE_STATUSES:
-            assert f'"{status}"' in sources, f"{status} कुठल्याही bot मध्ये लिहिला जात नाही — नाव चुकलं असेल"
-
-    def test_real_entries_and_max_hits_skips_still_count(self):
-        for status in ("OPENED", "SKIPPED_MAX_2_HITS_REACHED", "SKIPPED_COOLDOWN_30MIN", "SKIPPED_SL_TSL_COOLDOWN"):
-            assert status not in cloud_db._NON_HIT_TRADE_STATUSES
+        for f in ("dynamic_sr_instant_trader.py", "srv2_momentum_reversal_strategy.py", "classic_sr_reversal_trader.py", "mcx_futures_trader.py"):
+            src = open(os.path.join(root, f), encoding="utf-8").read()
+            assert "वा hit)" not in src and "वा trade)" in src
