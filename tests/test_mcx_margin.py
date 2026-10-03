@@ -26,7 +26,7 @@ class TestComputeMarginRows:
         assert r["BUY Margin (Rs)"] == 300000.0 and r["SELL Margin (Rs)"] == 320000.0
         assert r["BUY / lot (Rs)"] == 150000.0 and r["SELL / lot (Rs)"] == 160000.0
         assert r["स्थिती"] == "OK"
-        assert calls == [("BUY", 200, "D"), ("SELL", 200, "D")]  # qty = lots × lot_size
+        assert calls == [("BUY", 2, "D"), ("SELL", 2, "D")]  # Upstox MCX quantity = lots (units नाही)
 
     def test_missing_margin_stays_none_not_estimated(self):
         rows = mcx_margin.compute_margin_rows(

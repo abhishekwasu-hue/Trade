@@ -756,6 +756,24 @@ def get_total_capital(access_token):
         return None
 
 
+def broker_order_quantity(order):
+    """Upstox ला जाणारी खरी quantity. MCX commodity साठी Upstox API `quantity` **lots** मध्ये घेतं (Margin API वरून
+    पडताळलेलं: SILVER quantity=30 => 30 lots), म्हणून MCX orders मध्ये `broker_quantity` (= lots) असतं; आपली
+    `quantity` (units = lots × lot_size) Order Log / charges साठीच राहते. बाकी सर्व instruments साठी `quantity`."""
+    return order.get("broker_quantity", order.get("quantity"))
+
+
+def _broker_payload_orders(orders):
+    """Upstox च्या JSON body साठी orders ची प्रत — `quantity` = broker_order_quantity(), `broker_quantity` key काढलेली."""
+    payload = []
+    for o in orders:
+        p = dict(o)
+        p["quantity"] = broker_order_quantity(o)
+        p.pop("broker_quantity", None)
+        payload.append(p)
+    return payload
+
+
 def fetch_required_margin(access_token, orders):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Pre-Trade Margin Check) — established Upstox च्या
@@ -779,7 +797,7 @@ def fetch_required_margin(access_token, orders):
         }
         instruments = [
             {
-                "instrument_key": o["instrument_token"], "quantity": o["quantity"],
+                "instrument_key": o["instrument_token"], "quantity": broker_order_quantity(o),
                 "transaction_type": o["transaction_type"], "product": o.get("product", "D"),
             }
             for o in orders
@@ -1041,7 +1059,7 @@ def place_multi_leg_order(access_token, orders):
         proxy_url = get_static_ip_proxy_url()
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
         url = "https://api.upstox.com/v2/order/multi/place"
-        res = _post_with_retry_429_only(url, headers=headers, json=orders, timeout=15, proxies=proxies)
+        res = _post_with_retry_429_only(url, headers=headers, json=_broker_payload_orders(orders), timeout=15, proxies=proxies)
         try:
             body = res.json()
         except Exception:
@@ -1211,7 +1229,7 @@ def _verify_and_annotate_fills(access_token, orders, resp):
             "average_price": details.get("average_price"),
             "instrument_token": original_order.get("instrument_token"),
             "transaction_type": original_order.get("transaction_type"),
-            "quantity": original_order.get("quantity"),
+            "quantity": broker_order_quantity(original_order),
             "product": original_order.get("product"),
         })
     resp["verified_legs"] = verified_legs
