@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 
 from config import get_ist_now
-from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks, get_open_trade_chart_info
+from database import get_live_positions_with_mtm, compute_portfolio_risk_summary, compute_portfolio_greeks, compute_per_position_greeks, get_open_trade_chart_info, count_open_trades_by_symbol
 from trading_engine import close_trade_manually, reconcile_open_trades_with_broker, set_manual_sl_override, clear_manual_sl_override
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE
 from position_chart import nse_trailing_status, spot_rule_lines
@@ -33,6 +33,21 @@ def render():
             st.rerun()
         else:
             st.info("सर्व काही जुळलेलंच आहे — database आणि Upstox मध्ये फरक नाही.")
+
+    # 🎓 bug-review -- हे पान sidebar मध्ये निवडलेल्या एकाच symbol साठी आहे; इतर symbols (किंवा MCX) वर उघड्या positions असतील तर त्या दिसत
+    # नाहीत आणि "सर्व positions" असं वाटू शकतं. म्हणून त्यांची संख्या इथेच सांगतो (अयशस्वी झालं तरी पान चालू राहतं).
+    try:
+        from charges import MCX_FUTURES_SYMBOLS
+        from engine_service import MONITORED_SYMBOLS
+        others = count_open_trades_by_symbol([s for s in MONITORED_SYMBOLS if s != symbol])
+        mcx_open = count_open_trades_by_symbol(MCX_FUTURES_SYMBOLS)
+        notes = [f"{s}: {n}" for s, n in others.items()]
+        if mcx_open:
+            notes.append(f"MCX: {sum(mcx_open.values())} (MCX Futures Trader पानावर)")
+        if notes:
+            st.warning(f"ℹ️ हे पान फक्त **{symbol}** च्या positions दाखवतं. इतर उघड्या positions — " + " · ".join(notes) + " (sidebar मध्ये symbol बदला).")
+    except Exception:
+        pass
 
     pos_mode_choice = st.radio("दाखवा:", ["सर्व", "फक्त LIVE", "फक्त PAPER"], horizontal=True, key="pos_mode_filter")
     pos_mode_f = None if pos_mode_choice == "सर्व" else ("LIVE" if "LIVE" in pos_mode_choice else "PAPER")
@@ -110,7 +125,7 @@ def render():
             return ""
 
         styled_positions = positions_df.style.map(_style_mtm_positions, subset=["MTM (Rs)", "MTM (%)"])
-        st.dataframe(styled_positions, width='stretch', height=350)
+        st.dataframe(styled_positions, width='stretch', height=min(350, 45 + 36 * len(positions_df)))  # रिकामी जागा नको: positions च्या संख्येनुसार उंची
         st.caption(
             "🔄 दर रनला आपोआप अपडेट होते — किंमती थेट Upstox च्या सद्य LTP वरून. "
             "**Peak P&L**: Trailing SL चालू असल्यास, या पोझिशनने आतापर्यंत गाठलेला सर्वोच्च नफा — "
@@ -245,9 +260,18 @@ def render():
                 "नवीन SL पातळी (₹ एकूण trade P&L)",
                 value=float(current_override) if has_override else 0.0, step=100.0, key="tsl_override_new_level",
             )
+            # 🎓 bug-review -- default 0.0 आणि "सेट" दाबल्यास (किंवा MTM पेक्षा वरची पातळी दिल्यास) हा override पुढच्याच monitor cycle ला लगेच ट्रिगर होऊन
+            # trade बंद करतो (P&L <= पातळी). चुकून होऊ नये म्हणून अशा वेळी स्पष्ट इशारा + पुष्टी-टिक आवश्यक.
+            confirm_immediate = True
+            if pd.notna(mtm_val) and float(new_override_level) >= float(mtm_val):
+                st.warning(
+                    f"⚠️ ही पातळी (₹{new_override_level:,.0f}) सद्य MTM (₹{float(mtm_val):,.0f}) पेक्षा वर/बरोबर आहे — सेट करताच "
+                    "पुढच्या तपासणीत हा trade **लगेच बंद होईल**."
+                )
+                confirm_immediate = st.checkbox("मला समजतं, trade लगेच बंद झाला तरी चालेल", key=f"tsl_override_confirm_{override_trade_id}")
             oc1, oc2 = st.columns(2)
             with oc1:
-                if st.button("⚠️ SL Override सेट करा", key="tsl_override_set_btn"):
+                if st.button("⚠️ SL Override सेट करा", key="tsl_override_set_btn", disabled=not confirm_immediate):
                     ok, err = set_manual_sl_override(override_trade_id, new_override_level)
                     if ok:
                         st.success(f"✅ {override_trade_id} चा SL आता ₹{new_override_level:,.0f} वर सेट झाला — Telegram अलर्ट पाठवला.")

@@ -923,6 +923,38 @@ def _format_legs_with_prices(leg_rows, include_exit):
     return " · ".join(parts)
 
 
+_BULLISH_STRATEGIES = {"BULL_PUT_SPREAD", "NAKED_CALL", "MCX_FUTURES_LONG"}
+_BEARISH_STRATEGIES = {"BEAR_CALL_SPREAD", "NAKED_PUT", "MCX_FUTURES_SHORT"}
+
+
+def position_direction(strategy):
+    """🎓 bug-review -- Positions / Portfolio Risk Summary साठी दिशा. आधी फक्त BULL_PUT_SPREAD / BEAR_CALL_SPREAD ला दिशा मिळायची आणि बाकी सर्व
+    (NAKED_CALL = Bullish, NAKED_PUT = Bearish, MCX futures LONG/SHORT) 'NEUTRAL' दिसायचे -- म्हणून सर्व bots चे naked buys 'दिशाहीन' गणले जाऊन
+    एकतर्फी (correlated) जोखमीचा इशारा (concentration warning) चुकायचा. bots चाच नियम: BULL_PUT_SPREAD/NAKED_CALL = Bullish."""
+    if strategy in _BULLISH_STRATEGIES:
+        return "BULLISH"
+    if strategy in _BEARISH_STRATEGIES:
+        return "BEARISH"
+    return "NEUTRAL"
+
+
+def count_open_trades_by_symbol(symbols):
+    """{symbol: OPEN खऱ्या (shadow वगळून) trades ची संख्या} -- फक्त ज्यांचा count > 0 आहे ते. Positions पान sidebar मध्ये निवडलेल्या एकाच symbol साठी असतं,
+    म्हणून इतर symbols वर उघड्या positions असतील तर तसं सांगण्यासाठी (हलकी, वाचन-फक्त SQLite query)."""
+    if not symbols:
+        return {}
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    placeholders = ",".join("?" * len(symbols))
+    cur.execute(
+        f"SELECT symbol, COUNT(*) FROM live_trades WHERE status='OPEN' AND symbol IN ({placeholders}) AND {_shadow_exclusion_clause()} GROUP BY symbol",
+        list(symbols),
+    )
+    result = {sym: cnt for sym, cnt in cur.fetchall() if cnt}
+    conn.close()
+    return result
+
+
 def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
     """
     सर्व OPEN पोझिशन्ससाठी सद्य LTP आणून खरा (real) MTM P&L काढणे — Positions टॅबसाठी,
@@ -986,7 +1018,7 @@ def get_live_positions_with_mtm(access_token, symbol, mode_filter=None):
                     )
         # 🎓 Portfolio-level Risk Dashboard साठी — max_loss/net_credit/Direction आधीच query मध्ये
         # fetch होत होते, पण output मध्ये नव्हते. जोडलं (backward-compatible, फक्त नवीन columns).
-        direction = "BULLISH" if strategy == "BULL_PUT_SPREAD" else ("BEARISH" if strategy == "BEAR_CALL_SPREAD" else "NEUTRAL")
+        direction = position_direction(strategy)
         records.append({
             "Trade ID": trade_id, "Mode": mode or "LIVE", "Style": style or "INTRADAY",
             "Strategy": strategy, "Direction": direction, "Legs": strikes_summary,

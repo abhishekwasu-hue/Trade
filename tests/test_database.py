@@ -1382,3 +1382,53 @@ class TestGetOpenTradesBrief:
 
     def test_empty_sources_returns_empty(self, temp_db):
         assert database.get_open_trades_brief("NIFTY", ()) == []
+
+
+class TestPositionDirection:
+    """Positions / Portfolio Risk Summary ची दिशा -- naked options आणि MCX futures सकट (आधी ते 'NEUTRAL' दिसायचे)."""
+
+    def test_directional_strategies(self):
+        for s in ("BULL_PUT_SPREAD", "NAKED_CALL", "MCX_FUTURES_LONG"):
+            assert database.position_direction(s) == "BULLISH"
+        for s in ("BEAR_CALL_SPREAD", "NAKED_PUT", "MCX_FUTURES_SHORT"):
+            assert database.position_direction(s) == "BEARISH"
+
+    def test_neutral_strategies(self):
+        for s in ("IRON_CONDOR", "IRON_BUTTERFLY", "MANUAL", None, ""):
+            assert database.position_direction(s) == "NEUTRAL"
+
+    def test_concentration_warning_now_sees_naked_buys(self):
+        import pandas as pd
+        df = pd.DataFrame([
+            {"Direction": database.position_direction("NAKED_CALL"), "MTM (Rs)": 10.0, "Max Loss (Rs)": 100.0, "Net Credit (Rs)": 0.0},
+            {"Direction": database.position_direction("BULL_PUT_SPREAD"), "MTM (Rs)": 5.0, "Max Loss (Rs)": 100.0, "Net Credit (Rs)": 30.0},
+        ])
+        summary = database.compute_portfolio_risk_summary(df)
+        assert summary["bullish_count"] == 2 and summary["neutral_count"] == 0
+        assert summary["concentration_warning"]
+
+
+class TestCountOpenTradesBySymbol:
+    def _seed(self, tmpdb, trade_id, symbol, source="dynamic_sr_instant", status="OPEN"):
+        conn = sqlite3.connect(tmpdb)
+        today_str = database.get_ist_today().strftime("%Y-%m-%d")
+        conn.execute(
+            """INSERT INTO live_trades (trade_id, trade_date, symbol, strategy, lots, lot_size, net_credit, max_profit, max_loss,
+               sl_pnl_level, target_pnl_level, entry_time, status, legs_json, mode, trading_style, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (trade_id, today_str, symbol, "BULL_PUT_SPREAD", 1, 75, 10, 10, 50, None, None, f"{today_str} 10:00:00", status,
+             json.dumps([]), "PAPER", "INTRADAY", source),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_counts_only_open_real_trades_per_symbol(self, temp_db):
+        self._seed(temp_db, "A", "BANKNIFTY")
+        self._seed(temp_db, "B", "BANKNIFTY")
+        self._seed(temp_db, "C", "SENSEX")
+        self._seed(temp_db, "D", "SENSEX", status="CLOSED")
+        self._seed(temp_db, "E", "BANKNIFTY", source="dynamic_sr_instant_otm_shadow")  # shadow वगळला
+        assert database.count_open_trades_by_symbol(["BANKNIFTY", "SENSEX", "NIFTY"]) == {"BANKNIFTY": 2, "SENSEX": 1}
+
+    def test_empty_symbols(self, temp_db):
+        assert database.count_open_trades_by_symbol([]) == {}
