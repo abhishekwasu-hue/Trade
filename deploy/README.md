@@ -844,3 +844,11 @@ cd /root/Trade && git pull origin main
 python3 verify_opportunity_data_availability.py --quick          # ~1 मिनिट: फक्त 5M/15M, कमी expiry नमुने
 python3 verify_opportunity_data_availability.py --json /tmp/oe_data.json   # पूर्ण (2–4 मिनिटं)
 ```
+
+
+## Opportunity Engine (PR-1a: Structure + Levels, फक्त वाचन)
+
+- पान: **ANALYZE → Opportunity Engine (प्रयोगिक)** (`page_opportunity_engine.py`). कुठलाही cron/service/DB write नाही; कुठलाही bot हे वापरत नाही.
+- डेटा स्रोत: *Offline NIFTY* (repo मधला खरा 1M डेटा 2015-01-09 → 2024-03-27 + दैनिक extension) किंवा *Upstox* (सध्याचा symbol, 5M + Daily).
+- **Structure accuracy CSV** (Daily/4H/1H): पानावरील "Events / CSV" टॅबमधून डाउनलोड; चार्टवर तारीखा पडताळा. PR-1b (bias/gate/DB) तुमच्या पडताळणीनंतरच.
+- VPS: `git pull` + `systemctl restart streamlit_dashboard` इतकंच (नवीन service/crontab नाही).
