@@ -2044,3 +2044,27 @@ class TestDeferTo15mSettingDefaults:
     def test_other_strategies_do_not_have_setting(self):
         for key in ("classic_sr_reversal", "15m_dynamic_sr", "mcx_futures"):
             assert "defer_to_15m_enabled" not in cloud_db.STRATEGY_SETTINGS_DEFAULTS[key]
+
+
+class TestGateBlockedTouchesDoNotUseUpLevelQuota:
+    """"एका level वर कमाल 2 entry" — RSI/PCR/IV गेटने अडवलेले touch (ट्रेड नाही) hit म्हणून मोजले जाऊ नयेत."""
+
+    GATE_STATUSES = ("SKIPPED_RSI_FILTER", "SKIPPED_PCR_GATE", "SKIPPED_IV_GATE")
+
+    def test_gate_statuses_are_excluded_from_hit_counting(self):
+        for status in self.GATE_STATUSES:
+            assert status in cloud_db._NON_HIT_TRADE_STATUSES
+
+    def test_status_names_match_what_the_bots_actually_write(self):
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sources = "".join(
+            open(os.path.join(root, f), encoding="utf-8").read()
+            for f in ("dynamic_sr_instant_trader.py", "srv2_momentum_reversal_strategy.py", "classic_sr_reversal_trader.py")
+        )
+        for status in self.GATE_STATUSES:
+            assert f'"{status}"' in sources, f"{status} कुठल्याही bot मध्ये लिहिला जात नाही — नाव चुकलं असेल"
+
+    def test_real_entries_and_max_hits_skips_still_count(self):
+        for status in ("OPENED", "SKIPPED_MAX_2_HITS_REACHED", "SKIPPED_COOLDOWN_30MIN", "SKIPPED_SL_TSL_COOLDOWN"):
+            assert status not in cloud_db._NON_HIT_TRADE_STATUSES
