@@ -67,3 +67,14 @@ def _clear_last_good_strategy_settings():
         getattr(cloud_db, "_LAST_GOOD_STRATEGY_SETTINGS", {}).clear()
     except ImportError:
         yield
+
+
+@pytest.fixture(autouse=True)
+def _mcx_live_quantity_gate_open_by_default(monkeypatch):
+    """MCX LIVE सुरक्षा-गेट (mcx_quantity_check) डीफॉल्टला उघडा — बाकीच्या MCX LIVE टेस्ट्स ना त्याची गरज नाही; गेटच्या स्वतःच्या टेस्ट्स
+    (tests/test_mcx_quantity_check.py) हे monkeypatch स्वतः उलटवतात."""
+    try:
+        import trading_engine
+        monkeypatch.setattr(trading_engine, "is_mcx_live_quantity_verified", lambda: True)
+    except ImportError:
+        pass
