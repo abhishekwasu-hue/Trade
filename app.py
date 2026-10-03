@@ -372,6 +372,7 @@ if context_ok:
     import page_multi_strategy
     import page_mtf_pullback
     import page_sr_levels_v3
+    import page_opportunity_engine
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
     import page_mcx_futures
@@ -394,6 +395,7 @@ if context_ok:
             st.Page(page_multi_strategy.render, title="Multi-Strategy", icon="🧩", url_path="multi-strategy"),
             st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
             st.Page(page_sr_levels_v3.render, title="SR Levels V3 (प्रयोगिक)", icon="🧭", url_path="sr-levels-v3"),
+            st.Page(page_opportunity_engine.render, title="Opportunity Engine (प्रयोगिक)", icon="🎯", url_path="opportunity-engine"),
         ],
         "SYSTEM": [
             st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),
