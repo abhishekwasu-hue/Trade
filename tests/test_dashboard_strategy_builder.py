@@ -105,3 +105,35 @@ def test_execute_panel_blocks_uneven_leg_lots():
     at.run()
     assert not at.exception
     assert any("Lots सारखे हवेत" in w.value for w in at.warning)
+
+
+class TestOpenDashboardTradeOnce:
+    """A1 auto-execute: दोन browser sessions एकाच वेळी डुप्लिकेट ऑर्डर टाकू नयेत."""
+
+    def test_opens_when_nothing_open(self, monkeypatch):
+        import page_dashboard as page
+        monkeypatch.setattr(page, "has_open_trade_from_source", lambda s, src: False)
+        calls = []
+        assert page.open_dashboard_trade_once("NIFTY", lambda: (calls.append(1) or (True, {"trade_id": "T"}))) == (True, {"trade_id": "T"})
+        assert calls == [1]
+
+    def test_skips_when_position_appeared_before_lock(self, monkeypatch):
+        import page_dashboard as page
+        monkeypatch.setattr(page, "has_open_trade_from_source", lambda s, src: True)
+        calls = []
+        assert page.open_dashboard_trade_once("NIFTY", lambda: calls.append(1)) == (None, None)
+        assert calls == []
+
+    def test_skips_when_another_session_holds_the_lock(self, monkeypatch):
+        import page_dashboard as page
+        from process_lock import ProcessLock
+        monkeypatch.setattr(page, "has_open_trade_from_source", lambda s, src: False)
+        calls = []
+        with ProcessLock("a1_dashboard_entry_NIFTY"):
+            assert page.open_dashboard_trade_once("NIFTY", lambda: calls.append(1)) == (None, None)
+        assert calls == []
+
+    def test_failure_result_is_passed_through(self, monkeypatch):
+        import page_dashboard as page
+        monkeypatch.setattr(page, "has_open_trade_from_source", lambda s, src: False)
+        assert page.open_dashboard_trade_once("NIFTY", lambda: (False, {"reason": "x"})) == (False, {"reason": "x"})
