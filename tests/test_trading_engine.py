@@ -3077,6 +3077,68 @@ class TestBrokerMtmOverridesPremiumPnl:
         closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
         assert len(closed) == 0  # आंशिक broker data -- सुरक्षित fallback (internal calc, profitable)
 
+    def _run_with_positions(self, temp_db, monkeypatch, positions):
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: positions)
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", self._mock_ltp_map(23905.0, 18.0, 0.0))
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 5, 0)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        return trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+
+    def test_broker_mtm_not_used_when_another_open_live_trade_shares_the_instrument(self, temp_db, monkeypatch):
+        """दोन OPEN LIVE trades (उदा. 5M + 15M bot) चा एकच strike / hedge leg असेल तर Upstox चा प्रति-instrument `pnl` दोघांचा मिळून असतो --
+        तो प्रत्येक trade ला देणं चुकीचं; म्हणून internal LTP calc (profitable) वापरला जातो आणि कुणीच बंद होत नाही."""
+        for tid in ("BM5", "BM6"):
+            seed_trade(temp_db, tid, net_credit=30, sl_level=-1125, target_level=1125,
+                       strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                       entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE")
+        closed = self._run_with_positions(temp_db, monkeypatch, [
+            {"instrument_token": "PE24400", "quantity": -150, "pnl": -200.0},
+            {"instrument_token": "PE24300", "quantity": 150, "pnl": 50.0},
+        ])
+        assert closed == []
+
+    def test_broker_mtm_not_used_when_instrument_has_realised_pnl_from_an_earlier_trade_today(self, temp_db, monkeypatch):
+        """आज त्याच instrument वर आधीचा बंद झालेला trade असेल (realised != 0) तर Upstox `pnl` मध्ये त्याचा जुना नफा/तोटा मिसळलेला असतो --
+        नवीन trade चा MTM म्हणून वापरू नये."""
+        seed_trade(temp_db, "BM7", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE")
+        closed = self._run_with_positions(temp_db, monkeypatch, [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -900.0, "realised": -800.0},
+            {"instrument_token": "PE24300", "quantity": 75, "pnl": 25.0, "realised": 0.0},
+        ])
+        assert closed == []
+
+    def test_broker_mtm_still_used_when_realised_is_zero_and_instrument_not_shared(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "BM8", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="dynamic_sr_instant", trading_style="INTRADAY",
+                   entry_level_price=23900.0, tsl_activated=1, peak_pnl=0, mode="LIVE")
+        closed = self._run_with_positions(temp_db, monkeypatch, [
+            {"instrument_token": "PE24400", "quantity": -75, "pnl": -100.0, "realised": 0.0},
+            {"instrument_token": "PE24300", "quantity": 75, "pnl": 25.0, "realised": 0.0},
+        ])
+        assert len(closed) == 1 and closed[0]["reason"] == "TSL_SL"
+
+
+class TestClassicTradeNeverCarriesForwardInFallbackBranch:
+    """classic_sr_reversal ही pure-intraday strategy आहे (EOD 15:00). entry_level_price/underlying_spot गहाळ झाल्यामुळे ती generic fallback
+    शाखेत गेली, तर 3:10pm Carry-Forward नियम (पुरेसा नफा => पुढच्या दिवशी चालू) तिला लागू होऊन LIVE position रात्रभर उघडी राहायची."""
+
+    def test_classic_trade_is_squared_off_at_eod_not_carried_forward(self, temp_db, monkeypatch):
+        seed_trade(temp_db, "CF1", net_credit=30, sl_level=-1125, target_level=1125,
+                   strategy="BULL_PUT_SPREAD", source="classic_sr_reversal", trading_style="INTRADAY",
+                   entry_level_price=None, mode="PAPER")
+        def _ltp(token, keys):
+            return {"PE24400": 18.0, "PE24300": 0.0}
+        monkeypatch.setattr(trading_engine, "fetch_ltp_map", _ltp)
+        monkeypatch.setattr(trading_engine, "fetch_broker_positions", lambda t: [])
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (200, {"status": "success"}))
+        FakeTime._fixed = datetime.datetime(2026, 8, 24, 9, 50)  # 15:20 IST, profit 900 > 30% of credit (675)
+        monkeypatch.setattr(trading_engine.datetime, "datetime", FakeTime)
+        closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(closed) == 1 and closed[0]["reason"] == "EOD_SQUAREOFF"
+
 
 class TestSpotPctSlTslRespectsActualEntrySpot:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा ("Break even TSL activation condition calculation respect

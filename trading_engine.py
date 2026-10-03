@@ -1596,11 +1596,23 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         prev_check = monitor_timing.record_check(symbol, underlying_spot, check_epoch)
 
     broker_pnl_by_key = {}
+    broker_realised_by_key = {}
     for pos in (broker_positions or []):
         key = pos.get("instrument_token")
         pnl = pos.get("pnl", pos.get("unrealised"))
         if key and pnl is not None:
             broker_pnl_by_key[key] = broker_pnl_by_key.get(key, 0) + pnl
+            broker_realised_by_key[key] = broker_realised_by_key.get(key, 0) + (pos.get("realised") or 0)
+    # 🎓 bug-review -- Broker MTM फक्त तेव्हाच विश्वासार्ह जेव्हा instrument चा broker-P&L (Upstox चा `pnl` = आजचा realised + unrealised, प्रति
+    # instrument, सर्व trades मिळून) **या एकाच trade** चा असेल: (१) त्याच instrument वर आणखी एक OPEN LIVE trade (उदा. 5M + 15M bot चा सारखा
+    # ATM strike / सारखा hedge leg) असेल तर दोघांचा P&L एकत्र येऊन प्रत्येक trade चा P&L फुगतो/चुकतो; (२) आज त्याच instrument वर आधीचा
+    # बंद झालेला trade (realised != 0) असेल तर तो जुना नफा/तोटा नवीन trade च्या P&L मध्ये मिसळतो -- दोन्ही स्थितीत SL/TSL/Target चुकीच्या
+    # वेळी लागू शकतात. म्हणून अशा instruments साठी जुना (LTP-आधारित) मार्ग वापरतो.
+    live_open_trades_per_key = {}
+    for t in parsed_trades:
+        if t[7] == "LIVE" and t[15] is None:
+            for leg in t[1]:
+                live_open_trades_per_key[leg["instrument_key"]] = live_open_trades_per_key.get(leg["instrument_key"], 0) + 1
 
     closed_summaries = []
     for (trade_id, legs, lots, lot_size, net_credit, sl_level, target_level, trade_mode, trade_style, strategy_name, peak_pnl, source, entry_level_price, tsl_activated, entry_timeframe, account_id, entry_spot_price, manual_sl_override_pnl) in parsed_trades:
@@ -1622,7 +1634,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
         broker_mtm_used = False
         if trade_mode == "LIVE" and account_id is None and broker_pnl_by_key:
             leg_keys = [leg["instrument_key"] for leg in legs]
-            if all(k in broker_pnl_by_key for k in leg_keys):
+            if all(
+                k in broker_pnl_by_key and live_open_trades_per_key.get(k, 0) == 1 and abs(broker_realised_by_key.get(k, 0)) < 1e-9
+                for k in leg_keys
+            ):
                 current_pnl = sum(broker_pnl_by_key[k] for k in leg_keys)
                 broker_mtm_used = True
         net_credit_total = net_credit * lots * lot_size
@@ -1975,7 +1990,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             # इथेही स्पष्ट वगळलेले).
             is_new_rule_trade = (
                 strategy_name in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY")
-                and exit_source not in ("dynamic_sr_instant", "srv2_momentum_reversal")
+                and exit_source not in ("dynamic_sr_instant", "srv2_momentum_reversal", "classic_sr_reversal")
             )
             past_carry_forward_check_time = (ist_now.hour, ist_now.minute) >= (15, 10)
             carry_forward_min_profit_level = net_credit_total * (CARRY_FORWARD_MIN_PROFIT_PCT / 100.0)

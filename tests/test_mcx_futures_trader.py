@@ -48,6 +48,13 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 _DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False}
 
 
+@pytest.fixture(autouse=True)
+def _no_entry_cutoff_by_default(monkeypatch):
+    """"नवीन entry बंद" वेळ (23:15) टेस्ट चालवण्याच्या खऱ्या घड्याळावर अवलंबून असू नये -- डीफॉल्ट: कधीच लागू नाही.
+    TestNoNewEntryAfterEod मध्ये ती स्पष्टपणे परत चालू करून वेळ ठरवली जाते."""
+    monkeypatch.setattr(mft, "MCX_NO_NEW_ENTRY_AFTER", (24, 0))
+
+
 class TestDetermineDirectionWithHysteresis:
     """🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py/srv2_momentum_reversal_
     strategy.py मधलीच hysteresis पद्धत इथेही. वापरकर्त्याने पुढे स्पष्टपणे MCX साठी वेगळा, रुंद
@@ -1387,3 +1394,49 @@ class TestMcxLastCheckStorage:
             got = cloud_db.get_mcx_last_check("GOLD")
         assert got["checked_at"] == "2026-09-30 14:42:27" and got["price"] == 147623.0 and got["nearest_level"] == 147828.0
         assert got["nearest_level_type"] == "RESISTANCE" and got["status"] == "स्थिती"
+
+
+class TestNoNewEntryAfterEod:
+    """EOD square-off (23:15) च्या ३० मिनिटं आधी (22:45) नंतर नवीन entry नको -- नाहीतर position उघडून पुढच्याच cycle ला EOD ने बंद व्हायची."""
+
+    def _run(self, hour, minute):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings.update({"symbol_enabled": True, "entry_rsi_gate_enabled": False})
+        fixed_now = mft.get_ist_now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+        with patch.object(mft, "MCX_NO_NEW_ENTRY_AFTER", (22, 45)), \
+             patch.object(mft, "get_ist_now", return_value=fixed_now), \
+             patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+             patch.object(mft.cloud_db, "get_market_zones", return_value=_fake_zones(support_level=6500.0)), \
+             patch.object(mft, "fetch_mcx_candles", return_value=_fake_candles_df(last_close=6500.0)), \
+             patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch.object(mft, "has_open_trade_from_source", return_value=False), \
+             patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as mock_trade, \
+             patch.object(mft, "send_telegram_message", return_value=True), \
+             patch.object(mft.cloud_db, "save_signal_log", return_value=True) as mock_log:
+            mft.process_symbol("fake_token", "CRUDEOIL")
+        return mock_trade, [c.args[0]["trade_status"] for c in mock_log.call_args_list]
+
+    def test_default_cutoff_is_30_minutes_before_eod_squareoff(self):
+        """autouse fixture ने मॉड्यूलचा constant बदललेला असतो -- म्हणून स्रोतातली खरी डीफॉल्ट किंमत वाचतो."""
+        import datetime, re
+        src = open(mft.__file__, encoding="utf-8").read()
+        h, m = map(int, re.search(r"^MCX_NO_NEW_ENTRY_AFTER = \((\d+), (\d+)\)$", src, re.M).groups())
+        eod = datetime.datetime(2026, 1, 1, mft.MCX_EOD_HOUR, mft.MCX_EOD_MINUTE)
+        assert (h, m) == (22, 45) and eod - datetime.datetime(2026, 1, 1, h, m) == datetime.timedelta(minutes=30)
+
+    def test_cutoff_minute_is_inclusive(self):
+        trade, statuses = self._run(22, 45)
+        assert not trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" in statuses
+
+    def test_one_minute_before_cutoff_still_trades(self):
+        trade, statuses = self._run(22, 44)
+        assert trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses
+
+    def test_touch_after_eod_does_not_open_a_trade(self):
+        trade, statuses = self._run(23, 20)
+        assert not trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" in statuses
+
+    def test_touch_before_eod_still_trades(self):
+        trade, statuses = self._run(22, 30)
+        assert trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses
