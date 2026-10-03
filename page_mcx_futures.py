@@ -51,6 +51,7 @@ from trading_engine import close_trade_manually, set_manual_sl_override, clear_m
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_GREEN, HDR_AMBER, HDR_PINK
 from upstox_api import fetch_ltp_map, fetch_mcx_candles, get_total_capital, get_available_margin, fetch_brokerage_charges
 from mcx_futures_trader import PRODUCT_TYPE
+from mcx_quantity_check import is_mcx_live_quantity_verified
 
 MCX_SYMBOLS = ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER", "COPPER"]
 STRATEGY_KEY = "mcx_futures"
@@ -1302,6 +1303,12 @@ def render():
         else:
             trading_mode_selected = "PAPER"
 
+        if trading_mode_selected in ("LIVE", "LIVE_PAPER") and not is_mcx_live_quantity_verified():
+            st.error(
+                "🛑 MCX LIVE अजून बंद आहे (सुरक्षा-गेट): Upstox च्या MCX order quantity चं एकक (units की lots) पडताळलेलं नाही — "
+                "चुकीचं असल्यास 1 lot ऐवजी lot_size पट मोठा order जाईल. VPS वर `python3 verify_mcx_order_quantity_units.py` चालवा; "
+                "तो OK म्हणेपर्यंत LIVE order नाकारले जातील (PAPER वर परिणाम नाही)."
+            )
         live_confirmed = True
         if trading_mode_selected in ("LIVE", "LIVE_PAPER"):
             live_confirmed = st.checkbox(

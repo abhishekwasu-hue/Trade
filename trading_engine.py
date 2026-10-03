@@ -7,6 +7,7 @@ import uuid
 
 import cloud_db
 from mcx_contract_specs import get_price_multiplier
+from mcx_quantity_check import is_mcx_live_quantity_verified
 
 from config import DB_PATH, get_ist_now, get_ist_today
 from database import (
@@ -920,6 +921,21 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     pnl_multiplier = get_price_multiplier(symbol) if source == "mcx_futures" else 1
     order_lot_size = lot_size
     lot_size = lot_size * pnl_multiplier
+
+    # 🎓 MCX LIVE सुरक्षा-गेट — broker ला जाणारी quantity (lots × Upstox lot_size) Upstox च्या MCX साठी units
+    # मानते की lots, हे अजून पडताळलेलं नाही (lots असल्यास SILVER चा 1 lot = 30 lots जाईल!). verify_mcx_order_quantity_units.py
+    # ने खात्री करून मार्कर लिहीपर्यंत MCX चा LIVE order नाकारला जातो. PAPER वर परिणाम नाही. बघा mcx_quantity_check.py.
+    if trading_mode == "LIVE" and source == "mcx_futures" and not is_mcx_live_quantity_verified():
+        reason = (
+            "MCX LIVE अडवला — Upstox च्या MCX order quantity चं एकक (units/lots) अजून पडताळलेलं नाही; चुकीचं असल्यास "
+            "1 lot ऐवजी lot_size पट मोठा order जाईल. VPS वर `python3 verify_mcx_order_quantity_units.py` चालवा."
+        )
+        try:
+            from notifications import send_telegram_message
+            send_telegram_message(f"🛑 <b>{symbol} (mcx_futures) — LIVE order अडवला</b>\n{reason}")
+        except Exception:
+            pass
+        return False, {"status": "error", "reason": reason}
 
     # 🎓 वापरकर्त्याशी चर्चा करून स्पष्ट केलेली सुधारणा ("Paper trade pn adwayla pahije, ani banknifty
     # ani sensex la pn applicable aahe, Mcx la applicable nahi") — मूळ रचनेत हा गेट फक्त LIVE trades
