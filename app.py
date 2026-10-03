@@ -375,27 +375,28 @@ if context_ok:
     import page_bot_dynamic_sr_algo
     import page_mcx_futures
 
-    pages = [
-        st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
-        st.Page(page_positions.render, title="Positions", icon="💰", url_path="positions"),
-        st.Page(page_orders.render, title="Orders", icon="📝", url_path="orders"),
-        st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Dashboard वरची tab-गर्दी कमी करण्यासाठी, हे
-        # तीन (आधी page_dashboard.py चे tabs) आता Positions/Orders/Performance सारखेच स्वतंत्र
-        # sidebar pages आहेत.
-        st.Page(page_multi_strategy.render, title="Multi-Strategy", icon="🧩", url_path="multi-strategy"),
-        st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं नवीन page (Bot Dynamic SR Algo — नवीन नियम-संच) —
-        # 1M Instant Trader आणि 15M/30M/60M Dynamic SR Reversal या दोन्ही strategies चे सर्व
-        # settings (Lots, ITM Depth, Hedge Width, SL/TSL/Target, Naked Option Trade toggle).
-        st.Page(page_bot_dynamic_sr_algo.render, title="Bot Dynamic SR Algo", icon="🤖", url_path="bot-dynamic-sr-algo"),
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेलं नवीन, स्वतंत्र page — MCX Futures Trader (वरच्या
-        # NIFTY/BANKNIFTY/SENSEX bots पासून पूर्णपणे वेगळं — options नाही, सरळ Futures).
-        st.Page(page_mcx_futures.render, title="MCX Futures Trader", icon="🛢️", url_path="mcx-futures"),
-        # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — "Broker Accounts" हे स्वतंत्र नाव sidebar मधून
-        # काढून "Settings" केलं (आतलं काम तेच — पान/फाईल तीच आहे, फक्त नाव/जागा बदलली).
-        st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),
-    ]
+    # 🎓 वापरकर्त्याशी चर्चा करून (Production-grade page arrangement) — ९ पानं आता ४ विभागांत: TRADE (रोजचं ट्रेडिंग), BOTS (automation
+    # settings), ANALYZE (विश्लेषण/रिपोर्ट), SYSTEM. url_path आणि render functions तेच — फक्त sidebar ची मांडणी. Dashboard हे default पान
+    # (URL: "/"), बाकीची आपापल्या url_path वर.
+    pages = {
+        "TRADE": [
+            st.Page(page_dashboard.render, title="Dashboard", icon="📊", default=True, url_path="dashboard"),
+            st.Page(page_positions.render, title="Positions", icon="💰", url_path="positions"),
+            st.Page(page_orders.render, title="Orders", icon="📝", url_path="orders"),
+        ],
+        "BOTS": [
+            st.Page(page_bot_dynamic_sr_algo.render, title="Bot Dynamic SR Algo", icon="🤖", url_path="bot-dynamic-sr-algo"),
+            st.Page(page_mcx_futures.render, title="MCX Futures Trader", icon="🛢️", url_path="mcx-futures"),
+        ],
+        "ANALYZE": [
+            st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),
+            st.Page(page_multi_strategy.render, title="Multi-Strategy", icon="🧩", url_path="multi-strategy"),
+            st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
+        ],
+        "SYSTEM": [
+            st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),
+        ],
+    }
     pg = st.navigation(pages)
     pg.run()
 else:
