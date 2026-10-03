@@ -29,6 +29,8 @@ def _with_extra_columns(df):
 
 def _load_frames(token_input, symbol, spot):
     """V3 इंजिनला हवे ते सर्व TF. 1H हे 30M वरून resample (बाकी प्रोजेक्ट प्रमाणेच)."""
+    # `spot` हा fetch_candles मध्ये फक्त cache key आहे (वापरला जात नाही); बदलत्या किंमतीमुळे प्रत्येक rerun ला cache चुकू नये म्हणून 0
+    spot = 0
     frames = {}
     for tf in CHART_TFS:
         df = fetch_candles(token_input, symbol, spot, interval=tf, lookback_days=FETCH_DAYS[tf])

@@ -19,6 +19,7 @@ market_zones **अजिबात बदललेले नाहीत**; इ�
 इनपुट: {timeframe: DataFrame} — "5minute", "15minute", "30minute", "1hour"; प्रत्येकात timestamp/open/high/low/close
 (volume ऐच्छिक). इनपुट DataFrames कधीच बदलले जात नाहीत.
 """
+import datetime
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -159,6 +160,18 @@ def _daily_from_intraday(df):
         return pd.DataFrame(columns=["date", "high", "low", "close"])
     d = df.assign(date=df["timestamp"].dt.date)
     return d.groupby("date").agg(high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index()
+
+
+def session_reference_date(now):
+    """"मागचा दिवस" कोणत्या दिवसाच्या सापेक्ष मोजायचा. सत्र चालू असताना = आजची तारीख. शेवटचा candle सत्राच्या अखेरचा (15:15 किंवा
+    नंतर) असेल (बाजार बंद / रात्र / सकाळपूर्वी), तर *पुढच्या* trading दिवसाची तारीख (शनिवार-रविवार वगळून) — म्हणजे बाजार बंद
+    झाल्यावर किंवा पुढच्या सकाळी बघितलं तरी PDH/PDL = नुकताच संपलेला दिवस, आणि शुक्रवारनंतर PWH/PWL = नुकताच संपलेला आठवडा."""
+    ref = now.date()
+    if now.time() >= datetime.time(15, 15):
+        ref += datetime.timedelta(days=1)
+        while ref.weekday() >= 5:
+            ref += datetime.timedelta(days=1)
+    return ref
 
 
 def compute_key_levels(daily_df, fallback_df, now_date):
@@ -371,9 +384,13 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
 
     now = max(df["timestamp"].iloc[-1] for df in prepared.values())
     finest = next(tf for tf in TF_ORDER if tf in prepared)
-    if current_price is None or not np.isfinite(float(current_price)) or float(current_price) <= 0:
-        current_price = float(prepared[finest]["close"].iloc[-1])
-    price = float(current_price)
+    try:
+        price = float(current_price)
+        valid_price = np.isfinite(price) and price > 0
+    except (TypeError, ValueError):
+        valid_price = False
+    if not valid_price:
+        price = float(prepared[finest]["close"].iloc[-1])
 
     ref_tf = "15minute" if "15minute" in prepared else finest
     atr_ref = compute_atr(prepared[ref_tf], cfg.atr_period)
@@ -383,7 +400,7 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
     for tf, df in prepared.items():
         items += extract_pivots(df, tf, cfg, now)
     key_source = prepared.get("15minute", prepared[finest])
-    for key in compute_key_levels(daily_df, key_source, now.date()):
+    for key in compute_key_levels(daily_df, key_source, session_reference_date(now)):
         items.append({"price": key["price"], "kind": "KEY", "name": key["name"], "tf": None, "weight": 1.0})
     zones = [_build_zone(c, cfg) for c in cluster_items(items, tol)] if items else []
 

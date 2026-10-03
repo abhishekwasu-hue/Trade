@@ -281,7 +281,7 @@ def test_key_levels_appear_as_tagged_zones_in_end_to_end():
 
 def test_standalone_gap_zone_uses_near_edge_as_line_level():
     day1 = _frame(np.linspace(100, 91, 25), start="2026-09-14 09:15", spread=0.5)
-    day2 = _frame(np.linspace(112, 130, 25), start="2026-09-15 09:15", spread=0.5)      # pivots नसलेली सरळ चाल
+    day2 = _frame(np.linspace(112, 130, 20), start="2026-09-15 09:15", spread=0.5)      # pivots नसलेली सरळ चाल; सत्र चालू (15:15 आधी)
     df = pd.concat([day1, day2], ignore_index=True)
     gap = sr.find_unfilled_gaps(sr._prep(df), 0.2, 10)[0]
     out = sr.compute_sr_v3({"15minute": df}, current_price=130.0)
@@ -335,3 +335,33 @@ def test_old_modules_are_untouched_by_v3_import():
     import sr_dynamic
     df = _frame(_triangle(120, 60, slope=2.0))
     assert set(sr_dynamic.compute_dynamic_sr(df)) == {"support", "resistance"}
+
+
+# ---- review मधून सापडलेले दोष ------------------------------------------------------------------------------------------
+def test_session_reference_date_in_session_after_close_and_over_weekend():
+    assert sr.session_reference_date(pd.Timestamp("2026-09-16 11:00")) == datetime.date(2026, 9, 16)      # सत्र चालू
+    assert sr.session_reference_date(pd.Timestamp("2026-09-16 15:15")) == datetime.date(2026, 9, 17)      # बंद झाल्यावर -> उद्याचं सत्र
+    assert sr.session_reference_date(pd.Timestamp("2026-09-18 15:25")) == datetime.date(2026, 9, 21)      # शुक्रवारनंतर -> सोमवार
+
+
+def test_key_levels_after_close_use_the_session_just_finished():
+    """बाजार बंद झाल्यावर (शेवटचा candle 15:15+) PDH/PDL = आजचा संपलेला दिवस, मागचा नव्हे."""
+    frames = _market(days=6)
+    last_day = frames["5minute"]["timestamp"].iloc[-1].date()
+    today = frames["5minute"][frames["5minute"]["timestamp"].dt.date == last_day]
+    out = sr.compute_sr_v3(frames, current_price=float(frames["5minute"]["close"].iloc[-1]))
+    pdh_zone = [z for z in out["levels"] if "PDH" in z["tags"]]
+    assert pdh_zone and pdh_zone[0]["low"] <= float(today["high"].max()) <= pdh_zone[0]["high"] + 1e-6
+    # सत्र चालू असताना (शेवटचा candle 11:00 ला कापून) PDH = आधीचा दिवस, आजचा नव्हे
+    cut = {k: v[v["timestamp"] <= pd.Timestamp(f"{last_day} 11:00")] for k, v in frames.items()}
+    mid = sr.compute_sr_v3(cut, current_price=float(cut["5minute"]["close"].iloc[-1]))
+    prev_day = frames["5minute"][frames["5minute"]["timestamp"].dt.date == frames["5minute"]["timestamp"].dt.date.unique()[-2]]
+    pdh_mid = [z for z in mid["levels"] if "PDH" in z["tags"]]
+    assert pdh_mid and pdh_mid[0]["low"] <= float(prev_day["high"].max()) <= pdh_mid[0]["high"] + 1e-6
+
+
+@pytest.mark.parametrize("bad_price", ["abc", float("nan"), 0, -5, float("inf"), None])
+def test_invalid_current_price_falls_back_to_last_close(bad_price):
+    frames = _market(days=6)
+    out = sr.compute_sr_v3(frames, current_price=bad_price)
+    assert out["levels"] and out["meta"]["price"] == pytest.approx(float(frames["5minute"]["close"].iloc[-1]))
