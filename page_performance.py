@@ -55,6 +55,9 @@ _SOURCE_LABELS = {
     "dynamic_sr_instant_otm_shadow": "1-Min Instant Trader — OTM Shadow (PAPER, ITM vs OTM Strike)",
     "dynamic_sr_instant_min_hold_shadow": "1-Min Instant Trader — Min-Hold Shadow (PAPER, Confirmed Entry)",
     "srv2_momentum_reversal": "SRv2 Momentum Reversal (15/30/60M)",
+    # 🎓 bug-review -- या दोन bots चे trades Strategy-wise tables / charts / PDF मध्ये कच्च्या internal कोडसह (classic_sr_reversal / mcx_futures) दिसायचे.
+    "classic_sr_reversal": "Classical S/R Reversal (5M+15M)",
+    "mcx_futures": "MCX Futures Trader",
     "credit_spread_auto_trader": "Credit Spread Auto Trader",
     "oi_signal_auto_trader": "OI Signal Auto Trader",
     "oi_greeks_vix_strategy": "OI + Greeks + VIX Strategy",
@@ -160,6 +163,10 @@ _ENTRY_REASON_TAG_LABELS_EN = {
     "IV_BREAKOUT_DIRECTIONAL": "IV Breakout Directional (trend-continuation, not reversal)",
 }
 
+# 🎓 bug-review -- या sources चे trades S/R level touch वरून येत नाहीत (manual / builder / copy), म्हणून त्यांच्या Entry Reason मध्ये "N/A S/R level touch"
+# हा दिशाभूल करणारा मजकूर नको.
+_NON_SR_SOURCES = {"MANUAL", "DASHBOARD", "strategy_builder", "MULTI_ACCOUNT", "UNKNOWN", "credit_spread_auto_trader", "oi_signal_auto_trader", "oi_greeks_vix_strategy"}
+
 
 def _entry_reason_text(row):
     """source/entry_timeframe/entry_level_price/strategy या आधीपासूनच साठवलेल्या स्तंभांवरून, प्रत्येक
@@ -172,6 +179,8 @@ def _entry_reason_text(row):
     lvl = f"₹{row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
     tag = row.get("entry_reason_tag")
     tag_prefix = f"{_ENTRY_REASON_TAG_LABELS_MR[tag]} — " if tag in _ENTRY_REASON_TAG_LABELS_MR else ""
+    if row["source"] in _NON_SR_SOURCES:
+        return f"{tag_prefix}{src}; रचना: {row['strategy']}"
     return f"{tag_prefix}{src} — {tf} S/R level ({lvl}) touch; रचना: {row['strategy']}"
 
 
@@ -183,6 +192,8 @@ def _entry_reason_text_en(row):
     lvl = f"Rs {row['entry_level_price']:,.1f}" if pd.notna(row.get("entry_level_price")) else "N/A"
     tag = row.get("entry_reason_tag")
     tag_prefix = f"{_ENTRY_REASON_TAG_LABELS_EN[tag]} - " if tag in _ENTRY_REASON_TAG_LABELS_EN else ""
+    if row["source"] in _NON_SR_SOURCES:
+        return f"{tag_prefix}{src}; structure: {row['strategy']}"
     return f"{tag_prefix}{src} - {tf} S/R level ({lvl}) touch; structure: {row['strategy']}"
 
 
@@ -362,6 +373,18 @@ def _build_recommendations(symbol, group_col, group_label, mode_filter, start_da
                         "सुचवलेली दुरुस्ती: Trailing SL चं ATR गुणक (किंवा % अंतर) थोडं सैल करून नफा जास्त वाढू द्या."
                     )
     return recs
+
+
+def _stored_data_blocked(symbol, use_stored):
+    """🎓 bug-review -- "📦 खरा साठवलेला डेटा" (पहिला/डीफॉल्ट पर्याय) फक्त NIFTY50 चा आहे. BANKNIFTY/SENSEX निवडलेलं असताना तो वापरला तर backtest NIFTY डेटावर
+    चालून निकाल, CSV आणि PDF निवडलेल्या symbol च्या नावाने (चुकीचे) दिसायचे. म्हणून तसं असेल तर इशारा दाखवून चालवणं (बटण) बंद."""
+    if use_stored and symbol != "NIFTY":
+        st.warning(
+            f"⚠️ साठवलेला डेटा फक्त **NIFTY** चा आहे; निवडलेला symbol **{symbol}** आहे. {symbol} साठी वरून 'Upstox' किंवा "
+            "'Yahoo Finance' स्रोत निवडा (नाहीतर निकाल NIFTY चे असूनही {0} म्हणून दिसले असते).".format(symbol)
+        )
+        return True
+    return False
 
 
 def render():
@@ -792,6 +815,9 @@ def render():
             "= Net P&L. ⚠️ हे दर वेळोवेळी (Budget/SEBI परिपत्रकाने) बदलू शकतात — प्रत्यक्ष रक्कम broker "
             "च्या Contract Note शी पडताळून पाहा."
         )
+        # 🎓 bug-review -- या tab वर mode filter चं स्वतःचं नियंत्रण नाही; तो '📈 Performance Analytics' tab मधल्या 'दाखवा' निवडीवरून येतो. आधी ते कुठेच दिसत
+        # नव्हतं (उदा. 'फक्त LIVE' निवडलेलं असताना इथली आकडेवारी शांतपणे फक्त LIVE ची असायची).
+        st.caption(f"🔎 दाखवलेला Mode: **{perf_mode_choice}** — बदलण्यासाठी '📈 Performance Analytics' tab मधला 'दाखवा' निवडा.")
         rep_period = st.radio("कालावधी", ["Daily", "Weekly", "Monthly"], horizontal=True, key="pnl_report_period")
         repcol1, repcol2 = st.columns(2)
         with repcol1:
@@ -866,6 +892,7 @@ def render():
                 )
                 use_stored_data = "साठवलेला" in data_source
                 use_yfinance = "Yahoo" in data_source
+                bt_blocked = _stored_data_blocked(symbol, use_stored_data)
                 if use_stored_data:
                     if bt_interval == "day":
                         st.caption(
@@ -967,7 +994,7 @@ def render():
                                 "Funnel मध्ये सिग्नल्स कमी दिसत असतील तर Retest Tolerance वाढवा किंवा RSI मर्यादा सैल करा."
                             )
 
-                        if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run"):
+                        if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run", disabled=bt_blocked):
                             yf_error = None
                             with st.spinner(f"{bt_from} ते {bt_to} चा {bt_interval} + 1H डेटा फेच करून तपासत आहे..."):
                                 if use_stored_data:
@@ -1075,7 +1102,7 @@ def render():
                             "Pullback/Retest Tolerance %", min_value=0.1, value=0.4, step=0.1, key=f"{bt_key_prefix}_tol",
                         )
 
-                        if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run"):
+                        if st.button(f"🔍 {range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key=f"{bt_key_prefix}_run", disabled=bt_blocked):
                             yf_error = None
                             with st.spinner(f"{bt_from} ते {bt_to} चा {bt_interval} डेटा फेच करून तपासत आहे..."):
                                 if use_stored_data:
@@ -1208,6 +1235,7 @@ def render():
             )
             csr_use_stored = "साठवलेला" in csr_source
             csr_use_yfinance = "Yahoo" in csr_source
+            csr_blocked = _stored_data_blocked(symbol, csr_use_stored)
             csr_today = get_ist_today()
             if csr_use_stored:
                 csr_min_date, csr_max_date = datetime.date(2015, 1, 9), datetime.date(2024, 3, 27)
@@ -1283,7 +1311,7 @@ def render():
                     disabled=not (csr_swing_gate or csr_ds_gate or csr_tl_gate),
                 )
 
-                if st.button(f"🔍 {csr_range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key="csr_run"):
+                if st.button(f"🔍 {csr_range_days} दिवसांत किती सिग्नल्स आले ते तपासा", key="csr_run", disabled=csr_blocked):
                     yf_error = None
                     with st.spinner(f"{csr_from} ते {csr_to} चा 5-मिनिट + 15-मिनिट डेटा फेच करून तपासत आहे..."):
                         if csr_use_stored:
@@ -1387,6 +1415,7 @@ def render():
         )
         ms_use_stored_data = "साठवलेला" in ms_data_source
         ms_use_yfinance = "Yahoo" in ms_data_source
+        ms_blocked = _stored_data_blocked(ms_symbol, ms_use_stored_data)
         if ms_use_stored_data:
             if ms_is_intraday:
                 st.caption(
@@ -1418,7 +1447,7 @@ def render():
         with mscol2:
             ms_target_points = st.number_input("Target (पॉइंट्स)", min_value=1, value=ms_def_target, step=1, key=f"ms_bt_target_{ms_strategy_choice}")
 
-        if st.button("🔍 Multi-Strategy Backtest चालवा", key="ms_bt_run"):
+        if st.button("🔍 Multi-Strategy Backtest चालवा", key="ms_bt_run", disabled=ms_blocked):
             yf_error = None
             ms_data_interval = 15 if ms_is_intraday else "day"
             with st.spinner("डेटा फेच करून backtest चालवत आहे..."):
