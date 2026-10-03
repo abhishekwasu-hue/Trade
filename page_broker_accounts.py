@@ -14,43 +14,18 @@ import streamlit as st
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 
 
-def render():
-    mega_header("⚙️ Settings", HDR_BLUE)
-
+def _render_broker_accounts():
     try:
         import cloud_db
 
-        sub_header("🎯 SRv2 Momentum-Reversal Settings (15M/30M/60M)", HDR_TEAL)
-        st.caption(
-            "Lots आणि Hedge Width Points — इथून बदलले की लगेच पुढच्या cycle पासून लागू होतील "
-            "(hardcoded नाहीत — कधीही, वेळोवेळी बदलता येतील)."
-        )
-        srv2_settings_symbol = st.selectbox(
-            "Symbol", ["NIFTY", "BANKNIFTY", "SENSEX"], key="srv2_settings_symbol",
-        )
-        current_srv2_settings = cloud_db.get_srv2_settings(srv2_settings_symbol)
-        srv2_col1, srv2_col2 = st.columns(2)
-        with srv2_col1:
-            new_srv2_lots = st.number_input(
-                "Lots", min_value=1, max_value=50, value=int(current_srv2_settings["lots"]),
-                step=1, key="srv2_lots_input",
-            )
-        with srv2_col2:
-            new_srv2_hedge_width = st.number_input(
-                "Hedge Width Points", min_value=25.0, max_value=1000.0,
-                value=float(current_srv2_settings["hedge_width_points"]), step=25.0,
-                key="srv2_hedge_width_input",
-            )
-        if st.button("💾 SRv2 Settings जतन करा", key="save_srv2_settings_btn"):
-            ok = cloud_db.save_srv2_settings(srv2_settings_symbol, int(new_srv2_lots), float(new_srv2_hedge_width))
-            if ok:
-                st.success(f"✅ {srv2_settings_symbol} साठी जतन झालं — Lots: {int(new_srv2_lots)}, Hedge Width: {float(new_srv2_hedge_width)}")
-            else:
-                st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")
-
-        st.markdown("---")
         sub_header("🏦 Broker Accounts (Multi-Broker Multi-Account)", HDR_PURPLE)
-        st.caption("इथे नोंदवलेले, सक्रिय (Active) accounts SRv2/Dynamic-S/R सारख्या रणनींतींनी एकाच वेळी (replicated) वापरले जातील.")
+        # 🎓 bug-review -- जुनं caption ("सर्व Active accounts वर bots replicate करतात") आता चुकीचं: bots फक्त त्यांच्या स्वतःच्या पानावर
+        # (Bot Dynamic SR Algo / MCX -> Mode & Broker) निवडलेल्या accounts वरच trade करतात, आणि तिथे is_active तपासला जात नाही.
+        st.caption(
+            "इथे account नोंदवा. **Bots** (Bot Dynamic SR Algo / MCX Futures) फक्त त्यांच्या स्वतःच्या पानावर 'Mode & Broker' मध्ये "
+            "निवडलेल्या accounts वर trade करतात — तिथे निवडलेला account इथे Inactive असला तरी वापरला जातो (बॉट थांबवायचा तर त्या पानावरून "
+            "account काढा). Active/Inactive फक्त Dashboard च्या 'Strategy Execute' (Multi-Account) साठी लागू."
+        )
 
 
         with st.expander("➕ नवीन Account जोडा (Login सह — एकाच वेळी, शिफारस केलेली पद्धत)", expanded=False):
@@ -300,9 +275,36 @@ def render():
                     if st.button(toggle_label, key=f"toggle_{acc['account_id']}"):
                         cloud_db.set_broker_account_active(acc["account_id"], not acc["is_active"])
                         st.rerun()
-                if st.button(f"🗑️ '{acc['account_id']}' काढून टाका", key=f"delete_{acc['account_id']}"):
-                    cloud_db.delete_broker_account(acc["account_id"])
-                    st.rerun()
+                # 🎓 Production-grade -- खातं काढणं परत न येणारं (नोंद + token) असल्याने एका clicks मध्ये होऊ नये: आधी पुष्टी टिक.
+                dcol_a, dcol_b = st.columns([3, 2])
+                with dcol_a:
+                    delete_ok = st.checkbox(f"'{acc['account_id']}' काढायचं याची मला खात्री आहे", key=f"confirm_delete_{acc['account_id']}")
+                with dcol_b:
+                    if st.button(f"🗑️ '{acc['account_id']}' काढून टाका", key=f"delete_{acc['account_id']}", disabled=not delete_ok):
+                        cloud_db.delete_broker_account(acc["account_id"])
+                        st.rerun()
                 st.markdown("---")
     except Exception as e:
         st.error(f"Broker Accounts मध्ये चूक: {type(e).__name__}: {e}")
+
+
+def render():
+    mega_header("⚙️ Settings", HDR_BLUE)
+    st.info(
+        "🤖 Strategy चे Lots / Hedge Width / SL / Target वगैरे settings **Bot Dynamic SR Algo** पानावर (NSE bots) आणि "
+        "**MCX Futures Trader** पानावर आहेत — इथे फक्त Broker Accounts आणि सिस्टीम-साधनं."
+    )
+    tab_accounts, tab_diag, tab_safety, tab_history = st.tabs([
+        "🏦 Broker Accounts", "🩺 System Diagnostics", "🛡️ Data Safety", "☁️ Data Backup",
+    ])
+    with tab_accounts:
+        _render_broker_accounts()
+    with tab_diag:
+        import page_system_tools
+        page_system_tools.render_system_diagnostics()
+    with tab_safety:
+        import page_system_tools
+        page_system_tools.render_data_safety()
+    with tab_history:
+        import page_system_tools
+        page_system_tools.render_history_backup()
