@@ -58,6 +58,21 @@ class SRConfig:
     w_flip: float = 10.0
     w_retest: float = 5.0
     w_gap: float = 10.0
+    # 🎓 V3.1: Rejections (level जवळ किंमत नाकारली गेली) — गुण आणि मोजणीचे नियम
+    w_reject: float = 10.0
+    reject_full: float = 4.0              # (rejections + 0.5×strong) इतके = पूर्ण गुण
+    reject_band_frac: float = 0.5         # touch-band = हा अंश × tolerance
+    reject_depart_atr: float = 0.5        # swing नंतर किंमत band + इतक्या ATR दूर गेल्यावरच परत येणारे touches मोजायचे
+    reject_follow_atr: float = 1.0        # नाकारल्यानंतर इतक्या ATR ची चाल = "strong"
+    reject_follow_bars: int = 4
+    key_anchor_score: float = 1.5         # PDH/PDL/PWH/PWL ला रेषेचा anchor बनण्याचा प्राधान्य-गुण (ताज्या 1H pivot=2.0, 15M=1.0)
+    # Flip (acceptance ratio)
+    flip_accept_ratio: float = 0.6
+    flip_min_beyond: int = 2
+    flip_band_frac: float = 0.5           # flip चा "पलीकडे" = level ± (हा अंश × tolerance)
+    # ZONE भूमिका: किंमत झोनच्या इतक्या जवळ (pts) असेल तर "झोनमध्ये"
+    zone_touch_pts: float = 5.0
+    zone_touch_tol_frac: float = 0.15
     # Gaps
     gap_min_pct: float = 0.20
     gap_max_age_days: int = 10
@@ -137,17 +152,19 @@ def extract_pivots(df, tf, cfg, now):
             continue
         is_high = value == highs[idx]
         n_after = min(2 * prd, len(df) - 1 - idx)
-        reaction = 0.0
+        reaction, reaction_raw = 0.0, 0.0
         if n_after > 0 and atr > 0:
             if is_high:
                 move = float(value) - float(lows[idx + 1: idx + 1 + n_after].min())
             else:
                 move = float(highs[idx + 1: idx + 1 + n_after].max()) - float(value)
-            reaction = _clamp(move / atr / cfg.reaction_atr_full, 0.0, 1.0)
+            reaction_raw = max(move / atr / cfg.reaction_atr_full, 0.0)       # cap न केलेला — रेषेचा anchor ठरवताना मोठी चाल जास्त निर्णायक
+            reaction = _clamp(reaction_raw, 0.0, 1.0)
         age_days = (now - ts).total_seconds() / 86400.0
         out.append({
             "price": float(value), "kind": "H" if is_high else "L", "ts": ts, "tf": tf,
             "weight": recency_weight(age_days, cfg.recency_half_life_days), "reaction": float(reaction),
+            "reaction_raw": float(reaction_raw),
         })
     return out
 
@@ -292,6 +309,76 @@ def detect_role_reversal(zone_low, zone_high, origin, df, since_ts, buffer_pct=0
     return {"flipped": True, "retested": retested}
 
 
+def detect_flip_acceptance(level, band, origin, df, since_ts, min_ratio=0.6, min_beyond=2):
+    """V3.1 — "स्वीकृती गुणोत्तर" (acceptance ratio) वर आधारित role reversal. जुन्या `detect_role_reversal` (सलग N closes) ऐवजी
+    गडबडीचा (choppy) breakdown/breakout सुद्धा पकडतो: पहिल्या "पलीकडच्या" close पासून आतापर्यंतच्या closes पैकी ≥ `min_ratio`
+    (60%) level च्या पलीकडे (level ± band) बंद झालेले असावेत, किमान `min_beyond` असे closes, आणि शेवटचा close अजूनही
+    पलीकडच्या बाजूला (किंवा band मध्ये) टिकलेला. `origin` 'R'/'S' (मूळ भूमिका). रिटर्न: flipped, retested, accept_ratio."""
+    none = {"flipped": False, "retested": False, "accept_ratio": 0.0}
+    if origin not in ("R", "S") or df is None or df.empty or since_ts is None:
+        return none
+    after = df[df["timestamp"] > since_ts]
+    if after.empty:
+        return none
+    close, high, low = after["close"].values, after["high"].values, after["low"].values
+    beyond = close > level + band if origin == "R" else close < level - band
+    if not beyond.any():
+        return none
+    first = int(np.argmax(beyond))
+    seg = beyond[first:]
+    ratio = float(seg.mean())
+    result = {"flipped": False, "retested": False, "accept_ratio": round(ratio, 2)}
+    if int(seg.sum()) < max(int(min_beyond), 1) or ratio < min_ratio:
+        return result
+    holding = close[-1] > level - band if origin == "R" else close[-1] < level + band
+    if not holding:
+        return result
+    result["flipped"] = True
+    for j in range(first + 1, len(close)):
+        if origin == "R" and low[j] <= level + band and close[j] >= level - band:
+            result["retested"] = True
+            break
+        if origin == "S" and high[j] >= level - band and close[j] <= level + band:
+            result["retested"] = True
+            break
+    return result
+
+
+def count_rejections(df, level, band, since_ts, atr, cfg):
+    """V3.1 — `since_ts` नंतर किंमत level (± band) ला स्पर्श करून **नाकारली गेली** अशा वेगळ्या घटनांची संख्या.
+    Resistance-नाकार: bar चा high ≥ level−band, close ≤ level−band, open ≤ level+band (वरून उघडला नाही).
+    Support-नाकार: उलट. सलग qualifying bars = एकच घटना. swing नंतर किंमत आधी band + 0.5 ATR दूर गेली पाहिजे (swing चा स्वतःचा
+    लगेचचा उलटा bar नाकार मोजला जात नाही). नाकारल्यानंतर `reject_follow_bars` bars मध्ये ≥ `reject_follow_atr` ATR ची चाल = strong.
+    रिटर्न: {"count", "strong"}."""
+    out = {"count": 0, "strong": 0}
+    if df is None or df.empty or since_ts is None or band <= 0:
+        return out
+    after = df[df["timestamp"] > since_ts]
+    if after.empty:
+        return out
+    o, h, l, c = (after[k].values for k in ("open", "high", "low", "close"))
+    depart = band + cfg.reject_depart_atr * max(atr, 0.0)
+    departed, prev_hit, n = False, False, len(after)
+    for i in range(n):
+        if not departed:
+            departed = abs(c[i] - level) >= depart
+            prev_hit = False
+            continue
+        r_rej = h[i] >= level - band and c[i] <= level - band and o[i] <= level + band
+        s_rej = l[i] <= level + band and c[i] >= level + band and o[i] >= level - band
+        hit = bool(r_rej or s_rej)
+        if hit and not prev_hit:
+            out["count"] += 1
+            window = slice(i + 1, i + 1 + int(cfg.reject_follow_bars))
+            if atr > 0 and window.start < n:
+                if r_rej and float(l[window].min()) <= level - cfg.reject_follow_atr * atr:
+                    out["strong"] += 1
+                elif s_rej and float(h[window].max()) >= level + cfg.reject_follow_atr * atr:
+                    out["strong"] += 1
+        prev_hit = hit
+    return out
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Clustering + scoring
 # ---------------------------------------------------------------------------------------------------------------------
@@ -308,7 +395,35 @@ def cluster_items(items, tol):
     return clusters
 
 
-def _build_zone(members, cfg):
+def _pivot_anchor_score(p, cfg):
+    """रेषा कुठल्या pivot वर ठेवायची त्याचा निर्णायकपणा = TF-वजन × (0.5 + 0.5×reaction). 🎓 ताजेपणा (recency) इथे जाणीवपूर्वक वापरलेला
+    नाही — तो फक्त Score ठरवतो. कारण: level "जिथे जन्मली" तो मूळ swing; नंतरचे pivots त्याचेच retests/टप्पे असतात."""
+    raw = _clamp(p.get("reaction_raw", p["reaction"]), 0.0, 3.0)         # 3× पूर्ण-reaction (≈ 9 ATR) पर्यंत चाल जास्त निर्णायक
+    return cfg.tf_factor.get(p["tf"], 1.0) * (0.5 + 0.5 * raw)
+
+
+def _ts_key(ts):
+    try:
+        return -pd.Timestamp(ts).value if ts is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _pick_anchor(members, cfg):
+    """V3.1 — झोनची रेषा सरासरीवर नाही, सर्वात निर्णायक एका swing/key level च्या **अचूक** किंमतीवर. बरोबरीत मोठा TF, मग **सर्वात जुना**
+    (मूळ swing). PDH/PDL/PWH/PWL चा स्वतःचा प्राधान्य-गुण `key_anchor_score`."""
+    best, best_key = None, None
+    for m in members:
+        if m["kind"] in ("H", "L"):
+            key = (_pivot_anchor_score(m, cfg), cfg.tf_factor.get(m["tf"], 1.0), _ts_key(m.get("ts")))
+        else:
+            key = (cfg.key_anchor_score, 99.0, 0)
+        if best_key is None or key > best_key:
+            best, best_key = m, key
+    return best
+
+
+def _build_zone(members, cfg, tol=None):
     pivots = [m for m in members if m["kind"] in ("H", "L")]
     keys = [m for m in members if m["kind"] == "KEY"]
     key_names = sorted({k["name"] for k in keys})
@@ -323,8 +438,22 @@ def _build_zone(members, cfg):
     best_tf = max(per_tf, key=lambda tf: sum(p["weight"] for p in per_tf[tf]) * cfg.tf_factor.get(tf, 1.0)) if per_tf else None
     n_high = sum(1 for p in pivots if p["kind"] == "H")
     n_low = sum(1 for p in pivots if p["kind"] == "L")
+    anchor = _pick_anchor(members, cfg)
+    level = float(anchor["price"]) if anchor is not None else mid
+    if tol:
+        core_prices = [p for p in prices if abs(p - level) <= 0.5 * tol] or [level]
+    else:
+        core_prices = prices
+    if anchor is not None and anchor["kind"] in ("H", "L"):
+        origin = "R" if anchor["kind"] == "H" else "S"
+    else:
+        origin = "R" if n_high > n_low else "S" if n_low > n_high else None
     return {
-        "low": float(min(prices)), "high": float(max(prices)), "mid": mid, "level": mid,
+        "low": float(min(prices)), "high": float(max(prices)), "mid": mid, "level": level,
+        "core_low": float(min(core_prices)), "core_high": float(max(core_prices)),
+        "anchor": None if anchor is None else {"price": float(anchor["price"]), "tf": anchor.get("tf"), "kind": anchor["kind"],
+                                               "ts": anchor.get("ts"), "name": anchor.get("name")},
+        "origin": origin, "rejections": 0, "rej_strong": 0, "accept_ratio": 0.0,
         "tfs": [tf for tf in TF_ORDER if tf in per_tf],
         "pivot_count": len(per_tf[best_tf]) if best_tf else 0,
         "n_high": n_high, "n_low": n_low,
@@ -346,6 +475,7 @@ def _score_zone(zone, cfg):
         "polarity": cfg.w_polarity if zone["polarity"] else 0.0,
         "role_reversal": (cfg.w_flip if zone["flipped"] else 0.0) + (cfg.w_retest if zone["flipped"] and zone["retested"] else 0.0),
         "gap": cfg.w_gap if zone["gap"] else 0.0,
+        "rejections": cfg.w_reject * _clamp((zone.get("rejections", 0) + 0.5 * zone.get("rej_strong", 0)) / cfg.reject_full, 0.0, 1.0),
     }
     if zone["gap"] and not zone["tfs"] and not zone["keys"]:
         comp["gap"] = 30.0                                  # स्वतंत्र gap झोनचा पाया (इतर कुठलाच आधार नाही)
@@ -361,6 +491,8 @@ def _tags(zone):
         tags.append("GAP↑" if zone["gap"]["kind"] == "UP_GAP" else "GAP↓")
     if zone["flipped"]:
         tags.append("FLIP✓" if zone["retested"] else "FLIP")
+    if zone.get("rejections", 0) >= 2:
+        tags.append(f"REJ×{zone['rejections']}")
     if zone["polarity"] and not zone["flipped"]:
         tags.append("दोन्ही-बाजू")
     return tags
@@ -402,16 +534,20 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
     key_source = prepared.get("15minute", prepared[finest])
     for key in compute_key_levels(daily_df, key_source, session_reference_date(now)):
         items.append({"price": key["price"], "kind": "KEY", "name": key["name"], "tf": None, "weight": 1.0})
-    zones = [_build_zone(c, cfg) for c in cluster_items(items, tol)] if items else []
+    zones = [_build_zone(c, cfg, tol) for c in cluster_items(items, tol)] if items else []
 
     flip_df = prepared.get(cfg.flip_frame, prepared[finest])
+    flip_atr = compute_atr(flip_df, cfg.atr_period)
+    band = cfg.flip_band_frac * tol
     for z in zones:
-        if z["last_pivot_ts"] is None or z["n_high"] == z["n_low"]:
+        anchor = z["anchor"]
+        since = anchor["ts"] if anchor and anchor.get("ts") is not None else z["last_pivot_ts"]
+        if since is None or z["origin"] is None:
             continue
-        origin = "R" if z["n_high"] > z["n_low"] else "S"
-        verdict = detect_role_reversal(z["low"], z["high"], origin, flip_df, z["last_pivot_ts"],
-                                       cfg.break_buffer_pct, cfg.break_confirm_bars)
-        z["flipped"], z["retested"] = verdict["flipped"], verdict["retested"]
+        verdict = detect_flip_acceptance(z["level"], band, z["origin"], flip_df, since, cfg.flip_accept_ratio, cfg.flip_min_beyond)
+        z["flipped"], z["retested"], z["accept_ratio"] = verdict["flipped"], verdict["retested"], verdict["accept_ratio"]
+        rej = count_rejections(flip_df, z["level"], cfg.reject_band_frac * tol, since, flip_atr, cfg)
+        z["rejections"], z["rej_strong"] = rej["count"], rej["strong"]
 
     gap_source = prepared.get("15minute", prepared[finest])
     for gap in find_unfilled_gaps(gap_source, cfg.gap_min_pct, cfg.gap_max_age_days, now):
@@ -433,12 +569,15 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
             "level": (gap["low"] + gap["high"]) / 2.0 if in_gap else near_edge,
             "tfs": [], "pivot_count": 0, "n_high": 0, "n_low": 0, "touches_raw": 0.0, "reaction": 0.0,
             "keys": [], "gap": gap, "flipped": False, "retested": False, "polarity": False, "last_pivot_ts": None,
+            "core_low": gap["low"], "core_high": gap["high"], "anchor": None, "origin": None,
+            "rejections": 0, "rej_strong": 0, "accept_ratio": 0.0,
         })
 
     levels = []
     for z in zones:
         _score_zone(z, cfg)
-        z["role"] = "RESISTANCE" if price < z["low"] else "SUPPORT" if price > z["high"] else "ZONE"
+        zt = min(max(cfg.zone_touch_pts, cfg.zone_touch_tol_frac * tol), tol)       # किंमत झोनच्या ~५ pts आत = "झोनमध्ये"
+        z["role"] = "RESISTANCE" if price < z["low"] - zt else "SUPPORT" if price > z["high"] + zt else "ZONE"
         z["distance_pct"] = round((z["level"] - price) / price * 100.0, 2)
         z["tags"] = _tags(z)
         z["gap_kind"] = z["gap"]["kind"] if z["gap"] else None
@@ -473,8 +612,10 @@ _ROLE_COLORS = {
 }
 
 
-def to_chart_lines(levels):
-    """select_display_levels() ची यादी -> tradingview_chart.build_lightweight_chart_html(trade_lines=...) चा फॉरमॅट."""
+def to_chart_lines(levels, edge_max_distance_pct=1.0):
+    """select_display_levels() ची यादी -> tradingview_chart.build_lightweight_chart_html(trade_lines=...) चा फॉरमॅट.
+    V3.1: मुख्य रेषा = अचूक swing किंमत. A/B ग्रेडच्या, किंमतीजवळच्या (≤ edge_max_distance_pct%) झोनची दुसरी (outer) किनार
+    बारीक ठिपक्यांच्या रेषेत — म्हणजे "किंमत नेमकी रेषेवर आली नाही तरी झोनमध्ये आली" ते दिसतं."""
     lines = []
     for z in levels:
         letter = {"SUPPORT": "S", "RESISTANCE": "R"}.get(z["role"], "Z")
@@ -484,4 +625,9 @@ def to_chart_lines(levels):
             "color": _ROLE_COLORS[z["role"]][z["grade"]], "dashed": z["grade"] == "C" or bool(z["gap"] and not z["tfs"]),
             "width": {"A": 3, "B": 2, "C": 1}[z["grade"]],
         })
+        if z["grade"] in ("A", "B") and abs(z.get("distance_pct", 0.0)) <= edge_max_distance_pct and not (z["gap"] and not z["tfs"]):
+            edge = z["high"] if abs(z["high"] - z["level"]) >= abs(z["low"] - z["level"]) else z["low"]
+            if abs(edge - z["level"]) >= z["level"] * 0.0002:          # ≥ ~5 pts (NIFTY) — नाहीतर रेषा एकमेकांवर येतात
+                lines.append({"price": edge, "title": f"{letter} {z['grade']}{int(round(z['score']))} ↔ झोन किनार", "color": _ROLE_COLORS[z["role"]][z["grade"]],
+                              "dashed": True, "width": 1})
     return lines

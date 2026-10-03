@@ -27,8 +27,36 @@ def _levels_table(levels):
             "Touch": z["components"]["touches"], "Reaction": z["components"]["reaction"],
             "MTF": z["components"]["confluence"], "Key": z["components"]["key_level"],
             "Polarity": z["components"]["polarity"], "Flip": z["components"]["role_reversal"], "Gap": z["components"]["gap"],
+            "Rejections": z.get("rejections", 0), "Rej गुण": z["components"].get("rejections", 0.0),
+            "Core झोन": f"{z['core_low']:.2f} – {z['core_high']:.2f}" if "core_low" in z else "—",
+            "Anchor": (f"{z['anchor']['kind']} {TF_SHORT.get(z['anchor']['tf'], z['anchor']['tf'] or '')} {z['anchor']['name'] or ''}".strip()
+                       if z.get("anchor") else "—"),
         })
     return pd.DataFrame(rows)
+
+
+def levels_csv(levels):
+    """सर्व levels (फिल्टरपूर्वीचे) CSV मजकूर — तपासणी/शेअर करण्यासाठी (pure function, चाचणीयोग्य)."""
+    return _levels_table(levels).to_csv(index=False)
+
+
+def candles_csv(df, max_rows=1500):
+    """चार्टवरचे शेवटचे `max_rows` candles CSV मजकूर (timestamp, OHLC, volume)."""
+    cols = [c for c in ("timestamp", "open", "high", "low", "close", "volume") if c in df.columns]
+    return df[cols].tail(int(max_rows)).to_csv(index=False)
+
+
+def nearest_level_distance(levels, manual_price):
+    """तुमच्या हाताने काढलेल्या level जवळची इंजिन level आणि अंतर (pts). levels रिकामी किंवा manual_price<=0 => None."""
+    try:
+        manual = float(manual_price)
+    except (TypeError, ValueError):
+        return None
+    if not levels or not manual > 0:
+        return None
+    nearest = min(levels, key=lambda z: abs(z["level"] - manual))
+    return {"level": nearest["level"], "points": round(nearest["level"] - manual, 2), "zone": (nearest["low"], nearest["high"]),
+            "inside_zone": nearest["low"] <= manual <= nearest["high"], "grade": nearest["grade"], "score": nearest["score"]}
 
 
 def render():
@@ -127,6 +155,21 @@ def render():
             f"({TF_SHORT.get(meta['ref_tf'], meta['ref_tf'])} ATR {meta['atr_ref']}) · एकूण pivots: {meta['pivot_count']} · एकूण levels: {len(levels)}"
         )
 
+        sub_header("📏 तुमच्या हाताच्या level शी तुलना", HDR_TEAL)
+        manual_price = safe_number_input("तुम्ही हाताने काढलेली level (0 = वापरू नका)", value=0.0, min_value=0.0, step=0.05, key="srv3_manual_level")
+        near = nearest_level_distance(levels, manual_price)
+        if near:
+            x1, x2, x3 = st.columns(3)
+            x1.metric("इंजिनची जवळची level", f"{near['level']:,.2f}", f"{near['grade']}{near['score']:.0f}")
+            x2.metric("तुमची level vs इंजिन (pts)", f"{near['points']:+.2f}")
+            x3.metric("तुमची level इंजिनच्या झोनमध्ये?", "होय" if near["inside_zone"] else "नाही",
+                      f"झोन {near['zone'][0]:.2f} – {near['zone'][1]:.2f}")
+        d1, d2 = st.columns(2)
+        with d1:
+            st.download_button("⬇️ Levels CSV", data=levels_csv(levels), file_name=f"sr_v3_levels_{symbol}_{chart_tf}.csv", mime="text/csv", key="srv3_dl_levels")
+        with d2:
+            st.download_button("⬇️ Candles CSV", data=candles_csv(chart_df), file_name=f"sr_v3_candles_{symbol}_{chart_tf}.csv", mime="text/csv", key="srv3_dl_candles")
+
         sub_header("📋 Levels (दाखवलेले)", HDR_BLUE)
         st.dataframe(_levels_table(sorted(shown, key=lambda z: -z["score"])), width="stretch", hide_index=True)
         with st.expander("सर्व levels (फिल्टर करण्याआधीचे)", expanded=False):
@@ -139,7 +182,10 @@ def render():
                 "- **Key (40 पर्यंत):** PDH/PDL=30, PDC=15, PWH/PWL=35.\n"
                 "- **Polarity (5):** झोनवर आधी high आणि low दोन्ही pivots झालेले (दोन्ही बाजूंनी पाळलेला).\n"
                 "- **Flip (10 + 5):** Resistance तुटून वर टिकला (आता Support) / उलट; retest झाला तर +5.\n"
-                "- **Gap (10):** न भरलेल्या gap ची किनार या झोनवर. स्वतंत्र Gap झोनला 30 पाया.\n\n"
+                "- **Gap (10):** न भरलेल्या gap ची किनार या झोनवर. स्वतंत्र Gap झोनला 30 पाया.\n"
+                "- **Rejections (10):** swing नंतर किंमत दूर जाऊन परत level जवळ आली आणि नाकारली गेली — वेगळ्या घटनांची संख्या (नाकारल्यानंतर ≥1 ATR चाल = strong).\n\n"
+                "**रेषा कुठे?** झोनमधल्या सर्वात निर्णायक (मोठा TF × मोठी reaction; बरोबरीत सर्वात जुना) swing च्या **अचूक** किंमतीवर — सरासरीवर नाही. "
+                "झोनची दुसरी किनार A/B साठी बारीक ठिपक्यांच्या रेषेत. किंमत झोनच्या ~5 pts आत असेल तर भूमिका \"झोनमध्ये\".\n\n"
                 "ग्रेड: **A** ≥ 65 · **B** ≥ 45 · **C** बाकी. हा गुण *क्रमवारीसाठी* आहे — नफ्याची हमी/संभाव्यता नव्हे."
             )
     except Exception as e:

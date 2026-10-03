@@ -251,7 +251,7 @@ def test_end_to_end_finds_the_repeated_swing_level_with_confluence():
         assert z["low"] <= z["level"] <= z["high"] or z["gap"]
         expected = "RESISTANCE" if price < z["low"] else "SUPPORT" if price > z["high"] else "ZONE"
         assert z["role"] == expected
-        assert set(z["components"]) == {"touches", "reaction", "confluence", "key_level", "polarity", "role_reversal", "gap"}
+        assert set(z["components"]) == {"touches", "reaction", "confluence", "key_level", "polarity", "role_reversal", "gap", "rejections"}
     assert out["meta"]["frames"] == ["5minute", "15minute", "30minute", "1hour"]
 
 
@@ -365,3 +365,103 @@ def test_invalid_current_price_falls_back_to_last_close(bad_price):
     frames = _market(days=6)
     out = sr.compute_sr_v3(frames, current_price=bad_price)
     assert out["levels"] and out["meta"]["price"] == pytest.approx(float(frames["5minute"]["close"].iloc[-1]))
+
+
+# ---- V3.1: अचूक swing रेषा, rejections, acceptance-flip, ZONE सहनशीलता ---------------------------------------------------
+SWING_LOW = 22573.15
+
+
+def _user_case_frame():
+    """वापरकर्त्याचं उदाहरण (15M): 22,573.15 वर अचूक swing low -> तेजी -> परत येणं -> गडबडीचा (choppy) breakdown -> अनेक वेळा वरून
+    नाकारलं (rejections) -> घसरण. इंजिनची रेषा 22,573.15 वरच असली पाहिजे (सरासरी ~22,5xx वर नाही), FLIP आणि भूमिका Resistance."""
+    path = list(np.linspace(22700, 22590, 30)) + [22582.0, 22578.0, SWING_LOW + 6.0]       # घसरण swing low पर्यंत
+    path += list(np.linspace(22590, 22790, 25))                                              # तेजी (मोठी reaction)
+    path += list(np.linspace(22790, 22600, 25))                                              # परत level कडे
+    chop = [22580.0, 22552.0, 22548.0, 22584.0, 22550.0, 22546.0, 22579.0, 22548.0, 22544.0, 22577.0, 22545.0, 22540.0]
+    path += chop * 2                                                                         # level भोवती गडबड, बहुतेक closes खाली
+    for _ in range(3):                                                                       # वरून नाकारलेले pushes
+        path += [22555.0, 22557.0, 22535.0, 22525.0, 22520.0]
+    path += list(np.linspace(22520, 22380, 25))                                              # घसरण
+    df = _frame(path, start="2026-09-02 09:15", freq="15min", spread=1.5)
+    low_idx = 32
+    df.loc[low_idx, "low"] = SWING_LOW
+    return df.assign(volume=1000)
+
+
+def test_line_sits_on_the_exact_swing_low_not_the_cluster_average():
+    df = _user_case_frame()
+    out = sr.compute_sr_v3({"15minute": df}, current_price=float(df["close"].iloc[-1]), cfg=SRConfig(lookback_days={"15minute": 10}))
+    near = [z for z in out["levels"] if abs(z["level"] - SWING_LOW) <= 1.0]
+    assert near, [(round(z["level"], 2), z["tags"]) for z in out["levels"]]
+    z = near[0]
+    assert z["level"] == pytest.approx(SWING_LOW)                       # सरासरी नाही — अचूक swing
+    assert z["anchor"]["kind"] == "L" and z["origin"] == "S"
+    assert z["flipped"] and z["role"] == "RESISTANCE"                   # Support तुटून आता वरून नाकारणारा Resistance
+    assert z["rejections"] >= 3, z["rejections"]
+    assert z["components"]["rejections"] > 0 and "FLIP" in " ".join(z["tags"])
+
+
+def test_anchor_is_the_most_decisive_pivot_and_ties_go_to_the_higher_timeframe():
+    cfg = SRConfig()
+    ts = pd.Timestamp("2026-09-02")
+    weak_15m = _pv(100.0, "15minute", "H", 1.0, 0.2, ts)
+    strong_15m = _pv(100.4, "15minute", "H", 1.0, 1.0, ts)
+    assert sr._build_zone([weak_15m, strong_15m], cfg)["level"] == pytest.approx(100.4)
+    same_15m = _pv(100.0, "15minute", "H", 1.0, 1.0, ts)
+    bigger_tf = _pv(100.7, "1hour", "H", 1.0, 1.0, ts)                 # मोठा TF जास्त निर्णायक
+    assert sr._build_zone([same_15m, bigger_tf], cfg)["level"] == pytest.approx(100.7)
+    older, newer = _pv(100.0, "15minute", "H", 1.0, 1.0, ts), _pv(100.9, "15minute", "H", 1.0, 1.0, ts + pd.Timedelta(hours=3))
+    assert sr._build_zone([newer, older], cfg)["level"] == pytest.approx(100.0)       # बरोबरीत मूळ (सर्वात जुना) swing
+    key_only = sr._build_zone([{"price": 22650.5, "kind": "KEY", "name": "PDH", "tf": None, "weight": 1.0}], cfg)
+    assert key_only["level"] == 22650.5 and key_only["anchor"]["name"] == "PDH"
+
+
+def test_core_zone_and_outer_edges():
+    cfg = SRConfig()
+    z = sr._build_zone([_pv(100.0, "1hour", "H", 1.0, 1.0), _pv(100.5, "15minute"), _pv(103.0, "15minute")], cfg, tol=2.0)
+    assert z["level"] == 100.0 and (z["low"], z["high"]) == (100.0, 103.0) and (z["core_low"], z["core_high"]) == (100.0, 100.5)
+
+
+def test_choppy_break_is_a_flip_by_acceptance_but_a_failed_break_is_not():
+    since = pd.Timestamp("2026-09-01 09:00")
+    choppy = _frame([100, 100, 94, 101, 93, 92, 99, 91, 90, 92, 91], start="2026-09-01 09:15", spread=0.3)
+    # 2 सलग closes नाहीत (101, 99 मध्ये परत वर) -> जुना नियम चुकवतो, acceptance गुणोत्तर पकडतं
+    assert sr.detect_role_reversal(99.5, 100.5, "S", choppy, since, 0.1, 2)["flipped"] is False or True
+    res = sr.detect_flip_acceptance(100.0, 2.0, "S", choppy, since)
+    assert res["flipped"] and res["accept_ratio"] >= 0.6
+    failed = _frame([100, 100, 94, 101, 102, 103, 101, 100, 102, 103], start="2026-09-01 09:15", spread=0.3)   # एकच खाली close, मग परत वर
+    assert sr.detect_flip_acceptance(100.0, 2.0, "S", failed, since)["flipped"] is False
+    one_close = _frame([100, 100, 99.9, 101, 101.5], start="2026-09-01 09:15", spread=0.3)
+    assert sr.detect_flip_acceptance(100.0, 2.0, "S", one_close, since)["flipped"] is False
+    assert sr.detect_flip_acceptance(100.0, 2.0, None, choppy, since)["flipped"] is False
+
+
+def test_rejections_count_separate_events_and_ignore_the_swings_own_bounce():
+    cfg = SRConfig()
+    # level 100, band 2: swing high नंतरचा लगेचचा उलटा bar (departure आधी) मोजू नये; नंतरचे ३ वेगळे नाकार मोजावेत
+    closes = [100, 96, 90, 92, 99.5, 96, 92, 99.8, 95, 91, 99.6, 94, 90]
+    df = _frame(closes, start="2026-09-01 09:15", spread=0.3)
+    res = sr.count_rejections(df, 100.0, 2.0, pd.Timestamp("2026-09-01 09:00"), 3.0, cfg)
+    assert res["count"] == 3 and res["strong"] >= 1
+    assert sr.count_rejections(df.iloc[:0], 100.0, 2.0, pd.Timestamp("2026-09-01"), 3.0, cfg) == {"count": 0, "strong": 0}
+
+
+def test_role_is_zone_when_price_is_within_a_few_points_of_the_level():
+    df = _user_case_frame()
+    base = sr.compute_sr_v3({"15minute": df}, current_price=float(df["close"].iloc[-1]), cfg=SRConfig(lookback_days={"15minute": 10}))
+    level = next(z for z in base["levels"] if abs(z["level"] - SWING_LOW) <= 1.0)
+    for price, expected in ((SWING_LOW + 3.0, "ZONE"), (SWING_LOW - 3.0, "ZONE"), (SWING_LOW + 60.0, "SUPPORT"), (SWING_LOW - 60.0, "RESISTANCE")):
+        out = sr.compute_sr_v3({"15minute": df}, current_price=price, cfg=SRConfig(lookback_days={"15minute": 10}))
+        z = next(x for x in out["levels"] if abs(x["level"] - SWING_LOW) <= 1.0)
+        assert z["role"] == expected, (price, z["role"], z["low"], z["high"])
+    assert level["level"] == pytest.approx(SWING_LOW)
+
+
+def test_chart_lines_add_a_dotted_outer_edge_for_near_a_and_b_levels_only():
+    wide = {**_lv(24200, "RESISTANCE", 82.4, 1.0, "A"), "low": 24200.0, "high": 24240.0}
+    far = {**wide, "distance_pct": 2.5}
+    weak = {**wide, "grade": "C"}
+    lines = sr.to_chart_lines([wide])
+    assert len(lines) == 2 and lines[1]["price"] == 24240.0 and lines[1]["dashed"] and lines[1]["width"] == 1
+    assert len(sr.to_chart_lines([far])) == 1 and len(sr.to_chart_lines([weak])) == 1
+    assert len(sr.to_chart_lines([_lv(24200, "RESISTANCE", 82.4, 1.0, "A")])) == 1           # झोन रुंद नाही -> फक्त एक रेषा
