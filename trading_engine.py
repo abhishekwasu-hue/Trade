@@ -102,18 +102,27 @@ def reconcile_positions(access_token, symbol):
         if key:
             broker_qty_map[key] = broker_qty_map.get(key, 0) + qty
 
+    # symbol एक नाव (str) किंवा अनेक नावांची यादी (उदा. निवडलेला index + MCX commodities) असू शकते.
+    symbols = [symbol] if isinstance(symbol, str) else list(symbol)
+    placeholders = ",".join("?" for _ in symbols)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
-        "SELECT trade_id, legs_json, strikes_summary FROM live_trades WHERE symbol=? AND status='OPEN' AND COALESCE(mode,'LIVE')='LIVE'",
-        (symbol,),
+        f"SELECT trade_id, legs_json, strikes_summary, symbol FROM live_trades WHERE symbol IN ({placeholders}) AND status='OPEN' AND COALESCE(mode,'LIVE')='LIVE'",
+        symbols,
     )
     local_open = cur.fetchall()
+    # "ट्रॅक न केलेली" broker position ठरवताना कुठल्याही symbol चा OPEN LIVE trade धरतो — नाहीतर इतर symbol चे (उदा. MCX) legs चुकून "अज्ञात" दिसतात.
+    cur.execute("SELECT legs_json FROM live_trades WHERE status='OPEN' AND COALESCE(mode,'LIVE')='LIVE'")
+    all_local_keys = set()
+    for (legs_json_all,) in cur.fetchall():
+        for leg in (json.loads(legs_json_all) if legs_json_all else []):
+            all_local_keys.add(leg.get("instrument_key"))
     conn.close()
 
     mismatches = []
     local_keys = set()
-    for trade_id, legs_json_str, strikes_summary in local_open:
+    for trade_id, legs_json_str, strikes_summary, trade_symbol in local_open:
         legs = json.loads(legs_json_str) if legs_json_str else []
         for leg in legs:
             key = leg.get("instrument_key")
@@ -121,8 +130,8 @@ def reconcile_positions(access_token, symbol):
             broker_qty = broker_qty_map.get(key, 0)
             if broker_qty == 0:
                 mismatches.append({
-                    "trade_id": trade_id, "strikes_summary": strikes_summary, "leg_role": leg.get("role"),
-                    "instrument_key": key,
+                    "trade_id": trade_id, "symbol": trade_symbol, "strikes_summary": strikes_summary,
+                    "leg_role": leg.get("role"), "instrument_key": key,
                 })
 
     # उलट दिशा — Broker कडे उघडी पोझिशन आहे, पण त्या instrument_key शी संबंधित कोणताही स्थानिक OPEN trade नाही.
@@ -130,7 +139,7 @@ def reconcile_positions(access_token, symbol):
     # खाली दिसणाऱ्या सर्व नोंदी या app शी संबंधित नसतीलही, ते युजरने स्वतः पडताळावं.)
     unexplained_broker_positions = [
         {"instrument_key": key, "quantity": qty}
-        for key, qty in broker_qty_map.items() if qty != 0 and key not in local_keys
+        for key, qty in broker_qty_map.items() if qty != 0 and key not in all_local_keys
     ]
 
     return {

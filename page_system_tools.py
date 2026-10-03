@@ -10,6 +10,7 @@ import streamlit as st
 from config import get_ist_now, get_ist_today
 from database import get_db_backup_bytes, restore_db_from_bytes
 from diagnostics import run_system_diagnostics
+from charges import MCX_FUTURES_SYMBOLS
 from trading_engine import reconcile_positions
 from upstox_api import fetch_long_history, upload_to_google_drive
 from ui_headers import sub_header, HDR_TEAL, HDR_PURPLE
@@ -97,12 +98,12 @@ def render_data_safety():
     st.markdown("---")
     sub_header("🔄 Broker Reconciliation (फक्त LIVE ट्रेड्ससाठी)", HDR_PURPLE)
     st.caption(
-        "स्थानिक DB मधील OPEN LIVE ट्रेड्सची तुलना Upstox कडील खऱ्या पोझिशन्सशी करणे — तुम्ही Upstox "
-        "app मधून manually एखादी पोझिशन बंद केली असेल, तर ती इथे लगेच दिसेल."
+        "स्थानिक DB मधील OPEN LIVE ट्रेड्सची (निवडलेला index + MCX commodities) तुलना Upstox कडील खऱ्या पोझिशन्सशी करणे — "
+        "तुम्ही Upstox app मधून manually एखादी पोझिशन बंद केली असेल, तर ती इथे लगेच दिसेल."
     )
     if st.button("🔍 Reconciliation Check चालवा"):
         with st.spinner("Broker positions तपासत आहे..."):
-            recon_result = reconcile_positions(token_input, symbol)
+            recon_result = reconcile_positions(token_input, [symbol] + list(MCX_FUTURES_SYMBOLS))  # निवडलेला index + MCX commodities
         if recon_result["status"] == "error":
             st.error(f"❌ {recon_result['message']}")
         else:
