@@ -3,6 +3,7 @@
 हे (established page_dashboard.py चं जुनं tab6) आता एक स्वतंत्र sidebar page आहे."""
 import streamlit as st
 
+from safe_widgets import safe_number_input
 from upstox_api import fetch_candles, fetch_timeframe_df
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 
@@ -23,16 +24,29 @@ def render():
             import mtf_pullback_strategy as mtf
 
             mtf_strategy_choice = st.radio("रणनीती निवडा", ["gap_fill", "fib_pullback"], horizontal=True, key="mtf_strategy")
+            is_gap = mtf_strategy_choice == "gap_fill"
             col1, col2, col3 = st.columns(3)
             with col1:
-                mtf_sl_pct = st.number_input("SL %", value=0.25, step=0.05, key="mtf_sl")
-                mtf_target_pct = st.number_input("Target %", value=0.70, step=0.05, key="mtf_target")
+                mtf_sl_pct = safe_number_input("SL %", value=0.25, min_value=0.05, max_value=10.0, step=0.05, key="mtf_sl")
+                mtf_target_pct = safe_number_input("Target %", value=0.70, min_value=0.05, max_value=20.0, step=0.05, key="mtf_target")
             with col2:
-                mtf_min_swing_pct = st.number_input("किमान Swing %", value=1.0, step=0.1, key="mtf_swing")
-                mtf_min_gap_pct = st.number_input("किमान Gap %", value=0.30, step=0.05, key="mtf_gap")
+                mtf_min_swing_pct = safe_number_input("किमान Swing %", value=1.0, min_value=0.1, max_value=10.0, step=0.1, key="mtf_swing")
+                mtf_min_gap_pct = safe_number_input(
+                    "किमान Gap %", value=0.30, min_value=0.05, max_value=5.0, step=0.05, key="mtf_gap",
+                    disabled=not is_gap, help="फक्त Gap Fill रणनीतीला लागू.",
+                )
             with col3:
-                mtf_fib_low = st.number_input("Fib Low", value=0.50, step=0.01, key="mtf_fib_lo")
-                mtf_fib_high = st.number_input("Fib High", value=0.80, step=0.01, key="mtf_fib_hi")
+                mtf_fib_low = safe_number_input(
+                    "Fib Low", value=0.50, min_value=0.0, max_value=1.0, step=0.01, key="mtf_fib_lo",
+                    disabled=is_gap, help="फक्त Fibonacci Pullback रणनीतीला लागू.",
+                )
+                mtf_fib_high = safe_number_input(
+                    "Fib High", value=0.80, min_value=0.0, max_value=1.0, step=0.01, key="mtf_fib_hi",
+                    disabled=is_gap, help="फक्त Fibonacci Pullback रणनीतीला लागू.",
+                )
+            if not is_gap and mtf_fib_low >= mtf_fib_high:
+                st.warning("⚠️ Fib Low हा Fib High पेक्षा लहान हवा — मूल्य दुरुस्त करा.")
+                st.stop()
 
             df_1h_mtf = fetch_timeframe_df(token_input, symbol, underlying_price, "1hour")
             df_15m_mtf = fetch_candles(token_input, symbol, underlying_price, interval="15minute")
@@ -52,7 +66,7 @@ def render():
                         st.info("सध्या कुठलेही उघडे (unfilled) gaps नाहीत.")
                     else:
                         st.dataframe(open_gaps, width="stretch")
-                        st.caption("किंमत 'FillTriggerPrice' पर्यंत पोहोचली की, गोल्ड लगेच Entry घेतली जाईल.")
+                        st.caption("किंमत 'FillTriggerPrice' पर्यंत पोहोचली की, लगेच Entry घेतली जाईल.")
                     sig_mtf = mtf.make_gap_fill_signals(h1_mtf, m15_mtf, ps_mtf, mtf_sl_pct, mtf_target_pct, min_gap_pct=mtf_min_gap_pct)
                 else:
                     sig_mtf = mtf.make_signals(h1_mtf, m15_mtf, ps_mtf, mtf_fib_low, mtf_fib_high, mtf_sl_pct, mtf_target_pct)

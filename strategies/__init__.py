@@ -14,6 +14,7 @@ from .ict_fvg import ICTFVGStrategy
 from .bb_squeeze import BBSqueezeStrategy
 from .vwap import VWAPStrategy
 from .sr_bounce import SRBounceStrategy
+from .mtf_gap_fill import MTFGapFillStrategy
 
 STRATEGY_REGISTRY = {
     OIPCRStrategy.strategy_id: OIPCRStrategy,
@@ -21,10 +22,11 @@ STRATEGY_REGISTRY = {
     BBSqueezeStrategy.strategy_id: BBSqueezeStrategy,
     VWAPStrategy.strategy_id: VWAPStrategy,
     SRBounceStrategy.strategy_id: SRBounceStrategy,
+    MTFGapFillStrategy.strategy_id: MTFGapFillStrategy,
 }
 
 __all__ = [
     "StrategyBase", "SignalResult", "MarketSnapshot", "Direction", "InstrumentType",
-    "OIPCRStrategy", "ICTFVGStrategy", "BBSqueezeStrategy", "VWAPStrategy", "SRBounceStrategy",
+    "OIPCRStrategy", "ICTFVGStrategy", "BBSqueezeStrategy", "VWAPStrategy", "SRBounceStrategy", "MTFGapFillStrategy",
     "STRATEGY_REGISTRY",
 ]
