@@ -1,4 +1,4 @@
-"""tests/test_app_navigation.py -- sidebar मांडणी (4 विभाग, 9 पानं) आणि Orders -> Settings साधनांची हालचाल जशीच्या तशी टिकावी म्हणून.
+"""tests/test_app_navigation.py -- sidebar मांडणी (4 विभाग, 10 पानं) आणि Orders -> Settings साधनांची हालचाल जशीच्या तशी टिकावी म्हणून.
 app.py streamlit चालवल्याशिवाय import होत नाही, म्हणून स्रोत-मजकूर तपासतो."""
 import ast
 import re
@@ -10,7 +10,7 @@ APP_SRC = (ROOT / "app.py").read_text(encoding="utf-8")
 EXPECTED_SECTIONS = {
     "TRADE": ["page_dashboard", "page_positions", "page_orders"],
     "BOTS": ["page_bot_dynamic_sr_algo", "page_mcx_futures"],
-    "ANALYZE": ["page_performance", "page_multi_strategy", "page_mtf_pullback"],
+    "ANALYZE": ["page_performance", "page_multi_strategy", "page_mtf_pullback", "page_sr_levels_v3"],
     "SYSTEM": ["page_broker_accounts"],
 }
 
@@ -31,7 +31,7 @@ def test_sections_and_pages_are_exactly_as_agreed():
             current = header.group(1)
             parsed[current] = []
             continue
-        page = re.search(r"st\.Page\((page_[a-z_]+)\.render", line)
+        page = re.search(r"st\.Page\((page_[a-z0-9_]+)\.render", line)
         if page and current:
             parsed[current].append(page.group(1))
     assert parsed == EXPECTED_SECTIONS
@@ -39,8 +39,8 @@ def test_sections_and_pages_are_exactly_as_agreed():
 
 def test_every_page_has_a_unique_url_path_and_exactly_one_default():
     block = _navigation_block()
-    urls = re.findall(r'url_path="([a-z-]+)"', block)
-    assert len(urls) == 9 and len(set(urls)) == 9
+    urls = re.findall(r'url_path="([a-z0-9-]+)"', block)
+    assert len(urls) == 10 and len(set(urls)) == 10
     assert block.count("default=True") == 1
 
 
