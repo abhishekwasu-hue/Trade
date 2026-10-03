@@ -43,7 +43,7 @@ from live_ticker import render_live_ticker
 from mini_chart import render_mini_charts
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
-    BOT_VIEWS, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
+    BOT_VIEWS, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
     supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
@@ -130,7 +130,12 @@ def _render_strategy_builder():
                 if matched_row:
                     opt_data = matched_row.get("call_options" if leg_option_type == "CE" else "put_options", {})
                     auto_premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                leg_premium = st.number_input("Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=auto_premium, step=0.05, key="sb_premium")
+                # widget key मध्ये strike+प्रकार — नाहीतर Streamlit जुनी (आधीच्या strike ची) किंमत तशीच ठेवतं
+                # आणि "आपोआप भरलेला" premium नवीन strike साठी अपडेट होत नाही.
+                leg_premium = st.number_input(
+                    "Premium (आपोआप भरलेला, हवं तर बदला)", min_value=0.0, value=max(auto_premium, 0.0), step=0.05,
+                    key=f"sb_premium_{leg_option_type}_{leg_strike}",
+                )
 
                 if st.button("➕ Leg जोडा"):
                     instrument_key = None
@@ -170,18 +175,28 @@ def _render_strategy_builder():
                 sub_header("🎛️ Strike Controls", HDR_ORANGE)
                 shift_amount = st.number_input("Shift (सर्व strikes एकत्र हलवा, पॉइंट्समध्ये)", value=0, step=50, key="sb_shift")
                 if shift_amount != 0 and st.button("↔️ Shift लागू करा"):
-                    shifted_legs = []
-                    for leg in legs:
-                        new_strike = leg["strike"] + shift_amount
-                        matched = chain_by_strike.get(new_strike)
-                        premium, instr_key = leg["premium"], leg.get("instrument_key")
-                        if matched:
-                            opt_data = matched.get("call_options" if leg["option_type"] == "CE" else "put_options", {})
-                            premium = float(opt_data.get("market_data", {}).get("ltp") or 0.0)
-                            instr_key = opt_data.get("instrument_key")
-                        shifted_legs.append({**leg, "strike": new_strike, "premium": premium, "instrument_key": instr_key})
-                    st.session_state["strategy_builder_legs"] = shifted_legs
-                    st.rerun()
+                    # नवीन strike option chain मध्ये नसेल (उदा. strike-step च्या पटीत नसलेला shift), तर
+                    # जुन्या strike ची premium/instrument_key नव्या strike सोबत ठेवणं धोकादायक (चुकीचा
+                    # instrument execute होईल) — म्हणून अशा वेळी shift लागू केलाच जात नाही.
+                    missing_strikes = [leg["strike"] + shift_amount for leg in legs if (leg["strike"] + shift_amount) not in chain_by_strike]
+                    if missing_strikes:
+                        st.error(
+                            "❌ Shift लागू केला नाही — या strikes option chain मध्ये नाहीत: "
+                            + ", ".join(f"{s:,.0f}" for s in missing_strikes)
+                            + ". Strike-step च्या पटीत (उदा. NIFTY 50, BANKNIFTY/SENSEX 100) shift निवडा."
+                        )
+                    else:
+                        shifted_legs = []
+                        for leg in legs:
+                            new_strike = leg["strike"] + shift_amount
+                            opt_data = chain_by_strike[new_strike].get("call_options" if leg["option_type"] == "CE" else "put_options", {})
+                            shifted_legs.append({
+                                **leg, "strike": new_strike,
+                                "premium": float(opt_data.get("market_data", {}).get("ltp") or 0.0),
+                                "instrument_key": opt_data.get("instrument_key"),
+                            })
+                        st.session_state["strategy_builder_legs"] = shifted_legs
+                        st.rerun()
 
             with st.expander("📈 Payoff Diagram (P&L Chart + OI Overlay)", expanded=False):
                 # --- Payoff Diagram (OI Overlay सह) ---
@@ -291,7 +306,13 @@ def _render_strategy_builder():
                 missing_keys = [i for i, leg in enumerate(legs) if not leg.get("instrument_key")]
                 if missing_keys:
                     st.warning(f"Leg क्र. {[i+1 for i in missing_keys]} ला वैध instrument_key नाही — execute करता येणार नाही (Ready-Made Template पुन्हा लोड करा, किंवा तो leg काढून पुन्हा जोडा).")
+                elif uniform_basket_lots([leg["lots"] for leg in legs]) is None:
+                    st.warning(
+                        "⚠️ सर्व legs चे Lots सारखे हवेत — execution सर्व legs वर एकच Lots वापरतं, त्यामुळे वेगळे Lots "
+                        "असल्यास SL/Target/Margin चुकीचे येतील. Legs काढून सारख्या Lots ने पुन्हा जोडा."
+                    )
                 else:
+                    strategy_lots = uniform_basket_lots([leg["lots"] for leg in legs])
                     ecol_sl, ecol_target = st.columns(2)
                     with ecol_sl:
                         sl_pct = st.number_input(
@@ -300,7 +321,7 @@ def _render_strategy_builder():
                         )
                     with ecol_target:
                         target_pct = st.number_input("Target % (Max Profit चा)", min_value=1, max_value=100, value=50, step=5, key="sb_target_pct")
-                    exec_lots = st.number_input("Lots", min_value=1, value=1, step=1, key="sb_exec_lots")
+                    exec_lots = st.number_input("Lots", min_value=1, value=max(int(strategy_lots), 1), step=1, key=f"sb_exec_lots_{strategy_lots}")
 
                     execute_disabled = trading_mode_choice == "LIVE" and not confirm_live
                     button_label = "✅ PAPER Trade Execute करा" if trading_mode_choice == "PAPER" else "🔴 LIVE Trade Execute करा (खरे पैसे)"
@@ -929,7 +950,7 @@ def _render_market_zones():
                     signal_log_df = None
                 else:
                     signal_log_df = cloud_db.get_signal_log_range(symbol, sig_log_from, sig_log_to)
-                instant_log_df = signal_log_df[signal_log_df["level_type"].str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
+                instant_log_df = signal_log_df[signal_log_df["level_type"].astype(str).str.startswith("DYNAMIC_SR_")] if signal_log_df is not None and not signal_log_df.empty else signal_log_df
 
                 # 🎓 वापरकर्त्याने निदर्शनास आणलेली सुधारणा — हा header आधी कायमचा "1-मिनिट" दाखवत होता,
                 # पण `dynamic_sr_instant_trader.py`चा `timeframe_choice` सेटिंग (डीफॉल्ट आता 5-मिनिट,
@@ -941,7 +962,7 @@ def _render_market_zones():
                     else:
                         log_filter = st.radio("दाखवा", ["सर्व", "फक्त Hit झालेले"], horizontal=True, key="signal_log_filter")
                         display_log = instant_log_df if log_filter == "सर्व" else instant_log_df[instant_log_df["hit_type"] != "NO_HIT"]
-                        st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला.")
+                        st.caption(f"एकूण {len(instant_log_df)} तपासण्या — {(instant_log_df['hit_type'] != 'NO_HIT').sum()} वेळा level ला स्पर्श (touch) झाला. (Classical S/R Reversal (5M+15M) चेही तपासण्या इथेच दिसतात — त्याचा level_type पण DYNAMIC_SR_* असतो.)")
                         _render_signal_log_by_date(display_log)
 
                 # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — SRv2 (15M/30M/60M Momentum-Reversal)
@@ -1296,7 +1317,7 @@ def render():
                             fetch_candles(token_input, chart_symbol, chart_spot, interval=_iv, lookback_days=5) if _iv
                             else resample_to_1h(fetch_candles(token_input, chart_symbol, chart_spot, interval="30minute", lookback_days=10))
                         )
-                        _rsi_by_tf[_sfx] = last_rsi(_tf_df)
+                        _rsi_by_tf[_sfx] = bot_last_rsi(_tf_df)
                     bot_gate_lines = [
                         ln for ln in (
                             rsi_gate_line(bot_choice, _bs, _rsi_by_tf),
@@ -2288,11 +2309,15 @@ def render():
                     ("engine_service", "Engine Service (SL/Target/EOD)", 10),
                     ("dynamic_sr_instant_trader", "Dynamic S/R Instant Trader", 10),
                     ("srv2_momentum_reversal", "SRv2 Momentum-Reversal", 10),
+                    ("classic_sr_reversal_trader", "Classical S/R Reversal", 10),
+                    ("trade_monitor", "Trade Monitor (SL/TSL/Target)", 10),
+                    ("mcx_futures_trader", "MCX Futures Trader", 10),
                     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — eod_market_report दिवसातून फक्त एकदाच
                     # (दुपारी ४ वाजता) चालतो, त्यामुळे इतरांसारखी ३०-मिनिट मर्यादा इथे उगाचच सतत
                     # "स्टेल/लाल" दाखवत राहील — या एका script साठी वेगळी, जास्त वेळेची मर्यादा (२५ तास).
                     ("eod_market_report", "EOD Market Report (4pm)", 25 * 60),
                 ]
+                st.caption("बाजार बंद असताना (रात्री/सुट्टीला) संबंधित bots 🔴 दिसणं स्वाभाविक आहे — बाजार चालू असताना 🔴 दिसलं तरच तपासा.")
                 hb_cols = st.columns(4)
                 for idx, (script_name, label, max_age_min) in enumerate(hb_specs):
                     with hb_cols[idx % 4]:
