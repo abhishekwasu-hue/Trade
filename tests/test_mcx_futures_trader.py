@@ -1397,13 +1397,13 @@ class TestMcxLastCheckStorage:
 
 
 class TestNoNewEntryAfterEod:
-    """EOD square-off (23:15) नंतर नवीन entry नको -- नाहीतर position उघडून पुढच्याच cycle ला EOD ने बंद व्हायची."""
+    """EOD square-off (23:15) च्या ३० मिनिटं आधी (22:45) नंतर नवीन entry नको -- नाहीतर position उघडून पुढच्याच cycle ला EOD ने बंद व्हायची."""
 
     def _run(self, hour, minute):
         settings = dict(_DEFAULT_SETTINGS)
         settings.update({"symbol_enabled": True, "entry_rsi_gate_enabled": False})
         fixed_now = mft.get_ist_now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-        with patch.object(mft, "MCX_NO_NEW_ENTRY_AFTER", (mft.MCX_EOD_HOUR, mft.MCX_EOD_MINUTE)), \
+        with patch.object(mft, "MCX_NO_NEW_ENTRY_AFTER", (22, 45)), \
              patch.object(mft, "get_ist_now", return_value=fixed_now), \
              patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
              patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
@@ -1417,11 +1417,21 @@ class TestNoNewEntryAfterEod:
             mft.process_symbol("fake_token", "CRUDEOIL")
         return mock_trade, [c.args[0]["trade_status"] for c in mock_log.call_args_list]
 
-    def test_default_cutoff_is_the_eod_squareoff_time(self):
-        import importlib
-        assert importlib.import_module("mcx_futures_trader").MCX_EOD_HOUR == 23
-        with patch.object(mft, "MCX_NO_NEW_ENTRY_AFTER", (mft.MCX_EOD_HOUR, mft.MCX_EOD_MINUTE)):
-            assert mft.MCX_NO_NEW_ENTRY_AFTER == (23, 15)
+    def test_default_cutoff_is_30_minutes_before_eod_squareoff(self):
+        """autouse fixture ने मॉड्यूलचा constant बदललेला असतो -- म्हणून स्रोतातली खरी डीफॉल्ट किंमत वाचतो."""
+        import datetime, re
+        src = open(mft.__file__, encoding="utf-8").read()
+        h, m = map(int, re.search(r"^MCX_NO_NEW_ENTRY_AFTER = \((\d+), (\d+)\)$", src, re.M).groups())
+        eod = datetime.datetime(2026, 1, 1, mft.MCX_EOD_HOUR, mft.MCX_EOD_MINUTE)
+        assert (h, m) == (22, 45) and eod - datetime.datetime(2026, 1, 1, h, m) == datetime.timedelta(minutes=30)
+
+    def test_cutoff_minute_is_inclusive(self):
+        trade, statuses = self._run(22, 45)
+        assert not trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" in statuses
+
+    def test_one_minute_before_cutoff_still_trades(self):
+        trade, statuses = self._run(22, 44)
+        assert trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses
 
     def test_touch_after_eod_does_not_open_a_trade(self):
         trade, statuses = self._run(23, 20)
