@@ -993,7 +993,14 @@ def render():
                 with scol1:
                     st.metric("बंद ट्रेड्स", summary["total_trades"])
                 with scol2:
-                    st.metric("Win Rate", f"{summary['win_rate']}%" if summary.get("win_rate") is not None else "N/A")
+                    st.metric(
+                        "Win Rate (शुद्ध SL/Target)",
+                        f"{summary['win_rate']}%" if summary.get("win_rate") is not None else "N/A",
+                        help="फक्त शुद्ध SL/Target ने बंद झालेल्या trades वर. Trailing SL/Breakeven/EOD/Manual ने बंद झालेले "
+                             "यात धरत नाहीत — म्हणून असे trades असतील तर 'N/A' दिसतं (बग नाही).",
+                    )
+                    if summary.get("win_rate") is None and summary.get("win_rate_all_exits") is not None:
+                        st.caption(f"सर्व exits धरून: {summary['win_rate_all_exits']}% ({summary['win_count']} नफ्यात / {summary['loss_count']} तोट्यात)")
                 with scol3:
                     st.metric("Gross P&L", f"₹{summary['total_pnl']:,.0f}")
                 with scol4:
