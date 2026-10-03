@@ -35,6 +35,7 @@ from oi_analysis import (
     compute_oi_signal_with_hysteresis, classify_oi_price_action, generate_oi_price_signal,
     fetch_and_save_oi_snapshot, compute_dte, aggregate_oi_history,
 )
+from process_lock import ProcessLock, ProcessLockHeld
 from trading_engine import normalize_legs, open_multi_leg_trade, track_manual_trade, format_trade_result, uniform_basket_lots
 from entry_engine import evaluate_intraday_signal
 from pdf_reports import generate_market_analysis_report_pdf
@@ -48,6 +49,20 @@ from bot_view import (
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 
+
+
+def open_dashboard_trade_once(symbol, open_fn):
+    """🎓 एकापेक्षा जास्त browser session (मोबाईल + PC) एकाच वेळी उघडे असतील, तर दोन्ही rerun मध्ये "आधीची
+    position उघडी नाही" दिसून डुप्लिकेट (LIVE) ऑर्डर जाऊ शकतो — bots प्रमाणेच OS file-lock, आणि lock आत
+    पुन्हा तपासणी. रिटर्न: open_fn() चा (ok, resp), किंवा (None, None) जर दुसरा session आधीच trade
+    घेत असेल / घेऊन झाला असेल."""
+    try:
+        with ProcessLock(f"a1_dashboard_entry_{symbol}"):
+            if has_open_trade_from_source(symbol, "DASHBOARD"):
+                return None, None
+            return open_fn()
+    except ProcessLockHeld:
+        return None, None
 
 
 @st.fragment
@@ -1702,8 +1717,8 @@ def render():
             pcr_line = f"PCR: {pcr_val:.2f} — {compute_pcr_zone_label(pcr_val)}" if pcr_val is not None else "PCR: उपलब्ध नाही"
 
             # 🎓 नवीन — ठळक, रंगीत Banner (Put/Call Writing/Buying/Covering वरून actionable संदेश)
-            banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}[oi_price_direction]
-            banner_border = {"BULLISH": "#089981", "BEARISH": "#F23645", "MIXED": "#c9a227", "NEUTRAL": "#4b5563"}[oi_price_direction]
+            banner_bg = {"BULLISH": "#0d3320", "BEARISH": "#3a0d12", "MIXED": "#3a3410", "NEUTRAL": "#1e222d"}.get(oi_price_direction, "#1e222d")
+            banner_border = {"BULLISH": "#089981", "BEARISH": "#F23645", "MIXED": "#c9a227", "NEUTRAL": "#4b5563"}.get(oi_price_direction, "#4b5563")
             st.markdown(
                 f"""<div style="background-color:{banner_bg}; border-left: 5px solid {banner_border}; padding: 14px 18px;
                 border-radius: 6px; margin: 10px 0;">
@@ -2225,7 +2240,7 @@ def render():
                     st.success(f"✅ **FINAL A1 SIGNAL: {mode_label}** — {strategy_result['strategy'].replace('_',' ')}, {lots} lot(s), सर्व गेट्स पास.")
                     if enable_live_trading and confirm_live_trading:
                         spinner_text = "Paper ऑर्डर सिम्युलेट होत आहे..." if trading_mode == "PAPER" else "लाईव्ह ऑर्डर प्लेस होत आहे..."
-                        with st.spinner(spinner_text):
+                        def _do_a1_open():
                             # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा — Price Action/Indicator strategies
                             # आहे तशाच (त्याच timeframes/logic सह) ठेवल्या, पण आता EOD Square-off होत नाही —
                             # trading_style="SWING" पाठवलं जातं (manage_open_trades चा EOD check फक्त
@@ -2237,14 +2252,19 @@ def render():
                             # BULL_PUT_SPREAD/BEAR_CALL_SPREAD (Price Action/Indicator) साठीच — Iron
                             # Condor/Butterfly (sideways) असल्यास जुनीच sidebar-टक्केवारी पद्धत वापरली जाते.
                             is_directional_2strategy = strategy_result["strategy"] in ("BULL_PUT_SPREAD", "BEAR_CALL_SPREAD")
-                            ok, resp = open_multi_leg_trade(
-                                token_input, symbol, strategy_result, lots, lot_size,
-                                sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
-                                product_type, trading_mode=trading_mode, trading_style="SWING",
-                                sl_pct_of_credit=30 if is_directional_2strategy else None,
-                                source="DASHBOARD",
-                            )
-                        if ok:
+                            with st.spinner(spinner_text):
+                                return open_multi_leg_trade(
+                                    token_input, symbol, strategy_result, lots, lot_size,
+                                    sl_pct_of_max_loss, 30 if is_directional_2strategy else target_pct_of_max_profit,
+                                    product_type, trading_mode=trading_mode, trading_style="SWING",
+                                    sl_pct_of_credit=30 if is_directional_2strategy else None,
+                                    source="DASHBOARD",
+                                )
+
+                        ok, resp = open_dashboard_trade_once(symbol, _do_a1_open)
+                        if ok is None:
+                            st.info("ℹ️ दुसऱ्या session मधून A1 trade आत्ताच घेतला गेला (किंवा घेतला जात आहे) — डुप्लिकेट ऑर्डर टाळण्यासाठी हा थांबवला.")
+                        elif ok:
                             result_emoji = "📝" if trading_mode == "PAPER" else "🟢"
                             st.success(f"{result_emoji} {mode_label} ऑर्डर प्लेस झाला — Trade ID: {resp['trade_id']}, Order IDs: {resp['order_ids']}")
                         else:
