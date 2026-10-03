@@ -24,6 +24,8 @@ LIVE trading on any symbol/broker whose gating item below is unresolved.
 | 14 | Stocko: same-second multi-leg orders could get an identical `user_order_id` and get rejected as duplicates | #47 |
 | 15 | Stocko: missing `STOCKO_BASE_URL` crashed order placement with an unhandled `AttributeError` instead of a clean error | #47 |
 | 16 | `numpy.float64` values (from pandas-derived `level_price`/`zone_low`) silently corrupted every `cloud_db.py` write via `psycopg2` under NumPy 2.x's changed `repr()` — every `save_signal_log()` call for MCX (and almost certainly NIFTY/BANKNIFTY/SENSEX too, same code path) was failing silently, logged only to `data/app.log`, never surfaced on the Dashboard | #85 |
+| 17 | `_completed_bars_only` treated NSE 1H bars as complete 15 min early: `resample_to_1h(30M)` labels are `09:00, 10:00…` but the bars run `09:15–10:15, …`, so the 5M Instant bot's 1H Supertrend trend-filter (and the Dashboard Bot-view gate line) could use a still-forming 1H candle during `:00–:15` of every hour | fix/completed-bars-1h |
+| 18 | Lookahead: backtests and the Dashboard chart joined 1H/Daily Supertrend / S-R to lower-TF bars with `merge_asof(backward)` on the HTF bar's *start* label, so a lower-TF bar saw the final value of a still-running HTF bar — now joined on `bar_end` (see §6) | fix/completed-bars-1h |
 
 Every row above has a unit test asserting the specific failure mode is closed.
 None of them have been confirmed against a live market session.
@@ -208,3 +210,70 @@ session, ahead of the user's plan to go LIVE on all 5 commodities:
   (TradingView) for GOLD/SILVER/COPPER/NATURALGAS (only CRUDEOIL has any
   PAPER track record at all, and that's only ~1-2 days old). Run it and
   read the report before enabling `symbol_enabled`/LIVE for each commodity.
+
+
+## 6. Lookahead audit — HTF bar completion (fix/completed-bars-1h)
+
+**What was wrong.** (a) `_completed_bars_only()` assumed a bar ends at `timestamp + minutes`. On NSE the 1H bars built by
+`resample_to_1h(30M)` are *labelled* `09:00, 10:00 …` but really span `09:15–10:15 …` (Upstox 30M bars start at 09:15), so for
+`:00–:15` of every hour a still-forming 1H bar counted as complete. (b) Every place that attached a 1H/Daily indicator to a
+lower-timeframe bar used `merge_asof(direction="backward")` on the HTF bar's **start** label — a 15M bar therefore saw the
+**final** Supertrend / S-R of the 1H bar it sits *inside* (up to ~1h15m of future).
+
+**Fix.** Resamplers (`signals.resample_to_1h/4h`, `real_nifty_data.resample_ohlc`) now add an exact `bar_end` column
+(`htf_alignment.compute_bar_end`, from the source-bar grid — correct for NSE-30M-sourced, 1M-sourced and MCX bars, and for a
+still-forming last bar). `_completed_bars_only` uses it; every join now goes through `htf_alignment.align_asof`: an HTF bar is
+available to a lower-TF bar only when `htf bar_end <= lower-TF bar_end`. No strategy parameter was changed.
+
+**Live/paper/display users of `_completed_bars_only`** (each has a test in `tests/test_completed_bars_1h_fix.py`):
+
+| User | Venue | Effect of the fix |
+|---|---|---|
+| `dynamic_sr_instant_trader.fetch_trend_filter_directions` (5M Instant, `1m_instant`) | NSE | **1H trend filter now ignores the forming 1H bar** (15M unchanged) |
+| `dynamic_sr_instant_trader.process_symbol` (5M candles) | NSE | unchanged (raw start-labelled bars) |
+| `bot_view.supertrend_directions` (Dashboard "Bot view" gate line) | NSE + MCX | NSE 1H fixed; MCX unchanged |
+| `mcx_futures_trader.fetch_mcx_trend_filter_directions` | MCX | unchanged (MCX grid is 09:00-anchored: `bar_end == label + duration`) |
+
+**Joins fixed (all `merge_asof(backward)` on a start label):** `backtest.run_signal_backtest_rr`, `backtest.run_signal_backtest_v2`,
+`multi_strategy_backtest._align_1h_direction` (vwap), `multi_strategy_backtest._align_1h_sr_levels` (sr_bounce),
+`bot_view.align_supertrend`, and the three Supertrend joins (1D/1H/15M) in the Dashboard chart (now via `align_supertrend`).
+Visible side-effect: the Dashboard chart's HTF Supertrend lines now step one HTF bar later (they show what the bots see).
+
+**Before → after** (real NIFTY 15M + 1H from the stored 1M data, default parameters, nothing tuned; produced by running the same
+script on `main` and on this branch):
+
+| 2023-01-02 → 2023-12-29 | Signals | Win % | P&L (pts) |
+|---|---|---|---|
+| V2 `price_action` (1H direction) | 17 → 17 | 50.0 → 50.0 | 667.5 → 667.5 |
+| V2 `indicator` (1H direction) | 222 → 230 | 16.7 → 15.8 | 207.8 → **-457.9** |
+| RR backtest (`df_direction`=1H) | 1451 → 1352 | 32.5 → 31.7 | -1,615.6 → **-3,455.7** |
+| `sr_bounce` (1H S/R) | 298 → 290 | 26.0 → **13.9** | 4,008.2 → **625.1** |
+| `vwap` (1H direction) | 0 → 0 | — | — |
+| `ict_fvg` (no HTF — control) | 280 → 280 | 27.6 → 27.6 | 1,362.2 → 1,362.2 |
+| `bb_squeeze` (no HTF — control) | 282 → 282 | 23.8 → 23.8 | -281.0 → -281.0 |
+
+| 2021-01-04 → 2022-12-30 | Signals | Win % | P&L (pts) |
+|---|---|---|---|
+| V2 `price_action` | 27 → 25 | 0.0 → 0.0 | 525.0 → 145.0 |
+| V2 `indicator` | 428 → 447 | 23.6 → 21.9 | 2,818.9 → 1,917.8 |
+| RR backtest (1H direction) | 2474 → 2359 | 39.5 → 38.8 | 34,678.9 → 29,886.4 |
+| `sr_bounce` | 361 → 365 | 22.8 → **12.7** | 2,584.1 → **-1,222.0** |
+| `vwap` | 0 → 0 | — | — |
+| `ict_fvg` (control) | 648 → 648 | 30.7 → 30.7 | 4,539.4 → 4,539.4 |
+| `bb_squeeze` (control) | 591 → 591 | 27.8 → 27.8 | 2,097.9 → 2,097.9 |
+
+The two controls (no HTF join) are bit-for-bit identical, i.e. the change touches only HTF-dependent logic. `vwap` produces
+no signals on this data either way: the stored 1M history has **no volume**, so VWAP is undefined — its alignment is covered by
+unit tests only, not by a backtest.
+
+**Consequence:** any backtest number for V2 (`price_action`/`indicator`), the RR backtest with `df_direction`, `vwap` or
+`sr_bounce` that was produced before this fix included future information and must be re-run before it is relied on
+(notably `sr_bounce`'s apparent edge largely disappears). `ict_fvg`/`bb_squeeze` numbers are unaffected.
+
+**Found but deliberately NOT changed (report only).** These read `iloc[-1]` of a 1H series that *includes the still-forming
+bar* (a design choice for "current state", not a time-alignment join), so they were out of scope: `entry_engine.py` /
+Dashboard Direction Engine, `credit_spread_auto_trader.get_current_direction`, `oi_signal_auto_trader`,
+`weekly_dual_expiry_option_seller`, and the 60M RSI/price in `srv2_momentum_reversal_strategy` and `mcx_futures_trader`.
+The new `bar_end` column makes it a one-line change if completed-bar semantics are wanted there. The last bar of a day gets a
+deliberately late (conservative) `bar_end` (e.g. 16:15) — it can never be early, and no lower-TF bar exists after 15:30.
+Not verified against a live market session.
