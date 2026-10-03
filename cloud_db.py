@@ -1385,6 +1385,10 @@ _NON_HIT_TRADE_STATUSES = (
     "SKIPPED_FAST_MOVE",
     # MCX Supertrend Trend Filter (1H+4H) ने थांबवलेला touch -- तात्पुरती स्थिती, trend बदलल्यावर तोच level पुन्हा पात्र होऊ शकतो.
     "SKIPPED_MCX_TREND_FILTER",
+    # RSI / PCR / IV गेटने थांबवलेला touch -- हेही तात्पुरत्या (बदलत राहणाऱ्या) स्थिती आहेत; "एका level वर कमाल 2 entry" या नियमात फक्त
+    # खरे entry-प्रयत्न मोजले जावेत, गेटने अडवलेले touch नाही (वापरकर्त्याशी चर्चा करून ठरवलेलं) — नाहीतर दोन अडवलेल्या touches
+    # नंतर RSI/PCR अनुकूल झाल्यावरही तो level त्या दिवशी कधीच वापरता येत नाही.
+    "SKIPPED_RSI_FILTER", "SKIPPED_PCR_GATE", "SKIPPED_IV_GATE",
 )
 _NON_HIT_PLACEHOLDERS = ", ".join(["%s"] * len(_NON_HIT_TRADE_STATUSES))
 
