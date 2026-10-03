@@ -852,3 +852,25 @@ python3 verify_opportunity_data_availability.py --json /tmp/oe_data.json   # प
 - डेटा स्रोत: *Offline NIFTY* (repo मधला खरा 1M डेटा 2015-01-09 → 2024-03-27 + दैनिक extension) किंवा *Upstox* (सध्याचा symbol, 5M + Daily).
 - **Structure accuracy CSV** (Daily/4H/1H): पानावरील "Events / CSV" टॅबमधून डाउनलोड; चार्टवर तारीखा पडताळा. PR-1b (bias/gate/DB) तुमच्या पडताळणीनंतरच.
 - VPS: `git pull` + `systemctl restart streamlit_dashboard` इतकंच (नवीन service/crontab नाही).
+
+### PR-1b: Structure Journal साठवणं + 09:00 brief (Supabase, फक्त स्वतःचे tables)
+
+`refresh_market_structure.py` (EOD) आणि `refresh_market_structure_intraday.py` (बाजार सत्रात, प्रत्येक closed 15M bar नंतर) Opportunity Engine चा Structure Journal
+(Daily/4H/1H/15M trend state, events, zones + Level Quality) **फक्त** `market_structure_state`, `market_structure_events`, `opportunity_zones` या स्वतःच्या tables मध्ये साठवतात
+(पहिल्या run ला tables आपोआप तयार होतात). `market_zones` आणि live bots ला हात लागत नाही. कुठलाही order होत नाही.
+
+VPS crontab (वेळा UTC; IST = UTC + 5:30) — `crontab -e`:
+
+```
+# 09:00 IST ला मराठी structure वही Telegram वर (आणि साठवणंही): 03:30 UTC
+30 3 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_structure.py --brief >> /root/Trade/market_structure_refresh.log 2>&1
+# EOD (बाजार बंद झाल्यावर, 15:50 IST): 10:20 UTC
+20 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_structure.py >> /root/Trade/market_structure_refresh.log 2>&1
+# बाजार सत्रात दर 15 मिनिटांनी (09:31 → 15:31 IST): 04:01–10:01 UTC, :01/:16/:31/:46
+1,16,31,46 4-9 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 refresh_market_structure_intraday.py >> /root/Trade/market_structure_refresh.log 2>&1
+```
+
+तपासणी: `python3 refresh_market_structure.py --dry-run` (साठवत नाही; फक्त सारांश), `tail -f /root/Trade/market_structure_refresh.log`.
+GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त मॅन्युअल/backup.
+`config.yaml` मध्ये `opportunity_engine` strategy डीफॉल्ट `enabled: false` — detectors (D1–D3) PR-1c मध्ये आल्यावरच विचार.
+

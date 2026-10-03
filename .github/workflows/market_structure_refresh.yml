@@ -1,0 +1,28 @@
+name: Market Structure Refresh (Opportunity Engine — Structure Journal, फक्त वाचन)
+
+# 🎓 Structure Journal (Daily/4H/1H/15M trend state, events, zones) रोज EOD ला VPS crontab वरून चालतो (deploy/README.md "Opportunity Engine" विभाग बघा).
+# `workflow_dispatch` फक्त मॅन्युअल/backup साठी — scheduled workflows best-effort असतात (trigger_upstox_token_request.yml / market_zones_refresh.yml चा धडा).
+# हा job फक्त opportunity_zones / market_structure_* tables लिहितो; market_zones आणि कुठलाही order/bot अबाधित.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  refresh-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: Structure Journal गणना करून Supabase मध्ये साठवणे
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python3 refresh_market_structure.py

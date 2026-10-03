@@ -11,7 +11,7 @@ FILES = sorted(glob.glob(os.path.join(ROOT, "opportunity_engine", "**", "*.py"),
 FORBIDDEN_NAMES = {"calculate_ema", "calculate_rsi", "calculate_adx", "calculate_supertrend", "calculate_bollinger", "calculate_vwap",
                    "calculate_atr", "compute_atr", "prepare_futures_ohlcv", "compute_trend_direction_1h", "supertrend", "calculate_macd",
                    "compute_dynamic_sr", "compute_sr_v3"}
-FORBIDDEN_MODULES = {"cloud_db", "upstox_api", "requests", "psycopg2", "psycopg", "supabase", "streamlit", "trading_engine", "broker_factory",
+FORBIDDEN_MODULES = {"cloud_db", "notifications", "upstox_api", "requests", "psycopg2", "psycopg", "supabase", "streamlit", "trading_engine", "broker_factory",
                      "dynamic_sr_instant_trader", "mcx_futures_trader", "market_zones", "sr_dynamic", "sr_levels_v3", "database"}
 BANNED_PANDAS_AGG = {"rolling", "ewm", "expanding", "cumsum", "diff", "shift", "mean", "cumprod", "pct_change"}
 MEASURE_CALLS = {"ref_range", "adr", "ref_range_from_ranges"}
@@ -32,7 +32,8 @@ def _parents(tree):
 
 def test_package_files_exist():
     names = {os.path.basename(f) for f in FILES}
-    assert {"config.py", "measures.py", "sessions.py", "adapters.py", "structure.py", "zones.py", "level_quality.py", "journal.py"} <= names
+    assert {"config.py", "measures.py", "sessions.py", "adapters.py", "structure.py", "zones.py", "level_quality.py", "journal.py", "context.py", "bias.py",
+            "validation.py", "scoring.py", "selector.py", "risk.py", "commentary.py", "engine.py", "store.py", "refresh.py"} <= names
 
 
 def test_no_indicator_function_is_imported_or_called():
@@ -49,7 +50,8 @@ def test_no_indicator_function_is_imported_or_called():
     assert not bad, bad
 
 
-def test_pr1a_has_no_db_network_ui_or_bot_imports():
+def test_package_has_no_db_network_ui_or_bot_imports_except_the_store():
+    """DB फक्त store.py (lazy `import cloud_db`); बाकी package मध्ये DB/network/UI/bot import नाही (notifications/upstox_api scripts मध्ये)."""
     bad = []
     for path in FILES:
         for node in ast.walk(_tree(path)):
@@ -58,7 +60,8 @@ def test_pr1a_has_no_db_network_ui_or_bot_imports():
                 mods = [a.name for a in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 mods = [node.module]
-            bad += [(path, m) for m in mods if m.split(".")[0] in FORBIDDEN_MODULES]
+            allowed = {"cloud_db"} if os.path.basename(path) == "store.py" else set()
+            bad += [(path, m) for m in mods if m.split(".")[0] in FORBIDDEN_MODULES and m.split(".")[0] not in allowed]
     assert not bad, bad
 
 
@@ -118,6 +121,7 @@ def test_old_modules_are_untouched_by_the_package_import():
     import sr_dynamic
     import sr_levels_v3
     before = (sr_dynamic.compute_dynamic_sr, sr_levels_v3.compute_sr_v3)
-    for name in ("config", "measures", "sessions", "adapters", "structure", "zones", "level_quality", "journal"):
+    for name in ("config", "measures", "sessions", "adapters", "structure", "zones", "level_quality", "journal", "context", "bias", "validation", "scoring",
+                 "selector", "risk", "commentary", "engine", "store", "refresh"):
         importlib.import_module(f"opportunity_engine.{name}")
     assert before == (sr_dynamic.compute_dynamic_sr, sr_levels_v3.compute_sr_v3)

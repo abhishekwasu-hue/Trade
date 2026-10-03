@@ -98,8 +98,13 @@ def test_every_strategy_in_config_is_registered_and_built():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cfg_path = os.path.join(root, "config.yaml")
     with open(cfg_path, encoding="utf-8") as f:
-        configured = set(yaml.safe_load(f)["strategies"])
+        strategies = yaml.safe_load(f)["strategies"]
+    configured = set(strategies)
+    # 🎓 `enabled: false` strategies (उदा. opportunity_engine — PR-1b, detectors PR-1c नंतरच चालू) Orchestrator मध्ये बांधल्या जात नाहीत, पण registry मध्ये असल्याच पाहिजेत
+    from strategies import STRATEGY_REGISTRY
+    assert configured <= set(STRATEGY_REGISTRY)
+    enabled = {k for k, v in strategies.items() if v.get("enabled", True)}
     built = {s.strategy_id for s in build_orchestrator(cfg_path).strategies}
-    assert built == configured
+    assert built == enabled
     assert not os.path.exists(os.path.join(root, "mtf_gap_fill.py")), "strategy फाईल strategies/ मध्येच हवी"
 
