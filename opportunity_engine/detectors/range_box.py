@@ -1,8 +1,9 @@
-"""opportunity_engine/detectors/range_box.py — D10 FAILED_BREAKOUT_TRAP (spec §4). (D7 RANGE_BOX_BREAKOUT आणि box-आधारित trap PR-3 मध्ये.) कुठलाही indicator नाही.
+"""opportunity_engine/detectors/range_box.py — D10 FAILED_BREAKOUT_TRAP (spec §4). (D7 RANGE_BOX_BREAKOUT `box_triangle.py` मध्ये.) कुठलाही indicator नाही.
 
 🎓 नियम (वापरकर्त्याने मंजूर केलेले डीफॉल्ट — PR-2 मध्ये फक्त swing/zone-आधारित trap):
   • दिशा = primary HTF trend (UP ⇒ long trap, DOWN ⇒ short trap); primary RANGE ⇒ दोन्ही (gate चा RANGE_LOCATION कडेजवळच परवानगी देतो); INIT ⇒ नाही.
-  • Level (long; short आरशात): आजचे confirmed 5M swing lows (`signals.find_swings`, sweep bar आधी confirm झालेले) · 1H/4H/Daily demand/support zone चा
+  • Level (long; short आरशात): **PR-3: sweep आधी तयार झालेल्या 5M range box चा तळ** (`patterns.find_box`, सर्वोच्च प्राधान्य; target hint = box चा माथा) ·
+    आजचे confirmed 5M swing lows (`signals.find_swings`, sweep bar आधी confirm झालेले) · 1H/4H/Daily demand/support zone चा
     खालचा किनारा (तुटलेला नाही) · PDL/PWL (KEY) · PDL (DayInfo).
   • Trap: bar j चा low level खाली गेला (त्याआधी आज level अबाधित होता), आणि `d10_reclaim_bars` (2) bars च्या आत close परत level वर —
     j == आत्ताचा bar (wick sweep, `signals.detect_liquidity_sweep` सारखा) किंवा j..आधीचे bars level खाली close आणि आत्ताचा bar वर close.
@@ -15,6 +16,7 @@ from signals import find_swings
 
 from ..context import trend_sign
 from .base import Candidate, Detector, KIND_REVERSAL
+from .patterns import find_box
 
 GRADE_Q = {"A": 15.0, "B": 10.0, "C": 5.0}
 HTF_TFS = ("1h", "4h", "1d")
@@ -55,6 +57,16 @@ def trap_levels(ctx, info, df5_before, sign, cfg):
         elif sign < 0 and (kind in ("SUPPLY", "RESISTANCE") or (kind == "KEY" and src in ("PDH", "PWH"))):
             out.append({"price": float(lv["high"]), "type": "KEY" if kind == "KEY" else "ZONE", "key": lv.get("level_id") or f"{kind}:{lv['high']:.2f}",
                         "level": lv, "since": 0, "confirmed": -1})
+    adr = getattr(ctx, "adr", None)
+    k = len(df5_before)
+    for e in range(max(0, k - cfg.d10_reclaim_bars), k + 1):        # box = sweep bar (e) आधीचे bars; sweep e..k मध्ये
+        box = find_box(df5_before["high"].to_numpy(float)[:e], df5_before["low"].to_numpy(float)[:e], adr, cfg.box_min_bars, cfg.box_max_bars,
+                       cfg.box_max_adr, cfg.box_touch_frac, cfg.box_min_touches)
+        if box is None:
+            continue
+        p = box.bottom if sign > 0 else box.top
+        out.append({"price": float(p), "type": "BOX", "key": f"BOX:{p:.2f}", "level": None, "since": box.start, "confirmed": e - 1,
+                    "target": float(box.top if sign > 0 else box.bottom)})
     if info is not None:
         p = info.pdl if sign > 0 else info.pdh
         if p:
@@ -121,7 +133,7 @@ class FailedBreakoutTrap(Detector):
                 j = find_trap(lo, hi, cl, lv, s, cfg.d10_reclaim_bars)
                 if j is None or lv["confirmed"] >= j:
                     continue                                       # 5M swing sweep आधीच confirm झालेला हवा
-                rank = {"ZONE": 3, "KEY": 2, "SWING_5M": 1}[lv["type"]]
+                rank = {"BOX": 4, "ZONE": 3, "KEY": 2, "SWING_5M": 1}[lv["type"]]
                 if best is None or rank > best[0][0]:
                     best = ((rank, j), lv)
             if best is None:
@@ -134,6 +146,8 @@ class FailedBreakoutTrap(Detector):
             entry = float(row["close"])
             pre = df5.iloc[max(0, j - cfg.d10_range_bars):j]
             hints = []
+            if lv.get("target") is not None and ((lv["target"] > entry) if long else (lv["target"] < entry)):
+                hints.append(lv["target"])                         # box trap: box चा विरुद्ध किनारा
             if len(pre):
                 edge = float(pre["high"].max()) if long else float(pre["low"].min())
                 if (edge > entry) if long else (edge < entry):
@@ -147,12 +161,13 @@ class FailedBreakoutTrap(Detector):
                 hints.append(nxt[0])
             L = lv["price"]
             src = lv["level"]
-            quality = 50.0 + ((GRADE_Q.get(src.get("quality_grade"), 0.0) + 5.0) if lv["type"] == "ZONE" and src else 10.0 if lv["type"] == "KEY" else 5.0) + \
+            quality = 50.0 + ((GRADE_Q.get(src.get("quality_grade"), 0.0) + 5.0) if lv["type"] == "ZONE" and src else 15.0 if lv["type"] == "BOX" else
+                             10.0 if lv["type"] == "KEY" else 5.0) + \
                 (5.0 if j == k else 0.0)
             st4 = ctx.get("4h")
             if st4 is not None and trend_sign(st4.state) == s:
                 quality += 10.0
-            zone = dict(src) if src else {"kind": lv["type"], "low": L, "high": L, "tf": "5m" if lv["type"] == "SWING_5M" else "1d", "quality_grade": "—"}
+            zone = dict(src) if src else {"kind": lv["type"], "low": L, "high": L, "tf": "5m" if lv["type"] in ("SWING_5M", "BOX") else "1d", "quality_grade": "—"}
             trig = {"open": float(row["open"]), "high": float(row["high"]), "low": float(row["low"]), "close": float(row["close"]),
                     "prev_high": float(prev["high"]), "prev_low": float(prev["low"]), "ref_range": bars_by_tf.get("rr5"), "level": L}
             out.append(Candidate(setup_id="D10", direction="LONG" if long else "SHORT", time=now, entry=entry, sl_ref=sweep_ext, kind=KIND_REVERSAL,

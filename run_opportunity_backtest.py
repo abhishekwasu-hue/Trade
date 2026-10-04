@@ -33,7 +33,7 @@ def main(argv=None):
     parser.add_argument("--start", default=None, help="trading सुरू तारीख (warm-up आधीपासूनच)")
     parser.add_argument("--end", default=None)
     parser.add_argument("--variants", default="V1,V2,V3")
-    parser.add_argument("--detectors", default="D1,D2,D3,D6,D10")
+    parser.add_argument("--detectors", default="D1,D2,D3,D6,D7,D8,D10")
     parser.add_argument("--out", default="oe_backtest_out")
     parser.add_argument("--diagnostics", action="store_true", help="निदान तक्ते पण (फक्त अहवाल; नियम/parameters बदलत नाही)")
     parser.add_argument("--index-5m", default=None, help="offline 1M ऐवजी हा index 5M parquet (collector चा) वापरा; Daily इतिहास offline/extension मधून")

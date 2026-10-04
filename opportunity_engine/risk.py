@@ -56,6 +56,9 @@ def plan_trade(cand, ctx, cfg, rr, adr=None, symbol="NIFTY"):
         elif risk > cfg.adr_max_frac * adr:
             plan.rejects.append("SL_TOO_WIDE")
     plan.t1 = entry + sign * cfg.t1_r * risk
+    t1_hint = (cand.meta or {}).get("t1_hint")                     # setup-विशिष्ट T1 (उदा. D7: 1 × box उंची) — entry च्या पुढे असेल तरच
+    if t1_hint is not None and np.isfinite(float(t1_hint)) and (float(t1_hint) - entry) * sign > 0:
+        plan.t1 = float(t1_hint)
     base_t2 = entry + sign * cfg.t2_default_r * risk
     hints = [t for t in cand.targets_hint if (t - plan.t1) * sign > 0]
     t2 = min(hints, key=lambda t: abs(t - entry)) if hints else base_t2

@@ -121,4 +121,25 @@ class EngineConfig:
     d10_range_bars: int = 20                 # target: sweep आधीच्या इतक्या 5M bars च्या range चा विरुद्ध किनारा
     d10_window_start: str = "09:30"
     d10_window_end: str = "14:45"
+    # ---- D7 Range Box / D8 Triangle (detectors/box_triangle.py, PR-3) — spec §4 चे डीफॉल्ट; वेळ-खिडकी मी ठरवलेली ----
+    pattern_tfs: tuple = ("5m", "15m")      # box/triangle शोधायचे TF
+    box_min_bars: int = 12
+    box_max_bars: int = 36
+    box_max_adr: float = 0.35               # box उंची ≤ 0.35 × ADR
+    box_touch_frac: float = 0.15            # कडेपासून box उंचीच्या 15% आत = touch
+    box_min_touches: int = 2                # वर आणि खाली प्रत्येकी
+    box_break_frac: float = 0.10            # box पलीकडे close ≥ 0.1 × box उंची
+    d7_entry_mode: str = "aggressive"       # "aggressive" (breakout close) | "retest" (6 bars मध्ये edge retest + confirmation candle)
+    d7_retest_bars: int = 6
+    d7_sl_mode: str = "mid"                 # "mid" | "opposite"
+    d7_window_start: str = "09:30"
+    d7_window_end: str = "14:45"
+    tri_max_bars: int = 40
+    tri_swing_order: int = 2
+    tri_flat_k: float = 0.05                # सपाट रेषा: |slope| ≤ 0.05 × ref_range प्रति bar
+    tri_min_convergence: float = 0.40       # रुंदी ≥ 40% कमी
+    tri_max_apex_frac: float = 0.75         # apex च्या मार्गाच्या 75% आधी breakout
+    d8_sl_mode: str = "swing"               # "swing" (शेवटचा आतला swing) | "line" (विरुद्ध रेषा)
+    d8_window_start: str = "09:30"
+    d8_window_end: str = "14:45"
 

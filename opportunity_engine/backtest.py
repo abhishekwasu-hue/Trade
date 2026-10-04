@@ -22,6 +22,7 @@ from .config import EngineConfig
 from .context import Context, IncrementalTFState, TFState
 from .detectors.gap import DayInfo, GapFade, GapGo, GapRetestReversal, classify_gap
 from .detectors.range_box import FailedBreakoutTrap
+from .detectors.box_triangle import RangeBoxBreakout, TriangleBreakout
 from .detectors.zone_pullback import ZonePullback
 from .engine import _rr_of, _validate, evaluate
 from .journal import Journal
@@ -39,7 +40,8 @@ VARIANTS = {
     "V3": {"primary_htf": "4h", "daily_veto": False},
 }
 VARIANT_TEXT = {"V1": "4H bias + Daily veto (डीफॉल्ट)", "V2": "Daily primary (veto लागू नाही)", "V3": "4H bias, veto नाही"}
-DETECTORS = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal, "D6": ZonePullback, "D10": FailedBreakoutTrap}
+DETECTORS = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal, "D6": ZonePullback, "D7": RangeBoxBreakout, "D8": TriangleBreakout,
+             "D10": FailedBreakoutTrap}
 SHIFT_EVENTS = ("CHOCH", "RECOVERY", "REVERSAL_CONFIRMED", "RANGE_EXIT_UP", "RANGE_EXIT_DOWN")     # 15M structure-shift events (D6 trigger)
 IS_END = pd.Timestamp("2021-12-31")
 OOS_START = pd.Timestamp("2022-01-01")
@@ -51,7 +53,7 @@ class BacktestConfig:
     symbol: str = "NIFTY"
     start: Any = None                       # trading सुरू (warm-up आधीपासूनच; None => सर्व)
     end: Any = None
-    detectors: tuple = ("D1", "D2", "D3", "D6", "D10")
+    detectors: tuple = ("D1", "D2", "D3", "D6", "D7", "D8", "D10")
     variants: tuple = ("V1", "V2", "V3")
     engine: EngineConfig = field(default_factory=EngineConfig)
     levels_every_day: bool = True
