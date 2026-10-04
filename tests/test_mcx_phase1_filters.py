@@ -57,7 +57,7 @@ def _statuses(logs):
 def test_defaults():
     d = cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]
     assert d["sl_cooldown_minutes"] == 60 and d["sl_level_direction_block_enabled"] is True
-    assert d["supertrend_filter_mode"] == "off" and d["cascade_filter_enabled"] is False
+    assert d["supertrend_filter_mode"] == "htf_against" and d["cascade_filter_enabled"] is False     # वापरकर्त्याचा निर्णय: सर्व MCX
     for st in ("SKIPPED_SL_COOLDOWN", "SKIPPED_SL_LEVEL_SAME_DIRECTION", "SKIPPED_CASCADE_NO_CHOCH", "SKIPPED_MCX_TREND_FILTER"):
         assert cloud_db._is_no_action_trade_status(st)                   # max-hits मध्ये मोजले जात नाहीत
 
@@ -97,7 +97,10 @@ def test_supertrend_mode_htf_against():
     trade, _, _ = _run(directions=("BULLISH", "BEARISH"), supertrend_filter_mode="both_against")
     assert trade.called                                                  # जुना नियम: एकच विरुद्ध ⇒ चालेल
     trade, _, m = _run(directions=("BEARISH", "BEARISH"))
-    assert trade.called and not m["dirs"].called                         # डीफॉल्ट off
+    assert trade.called and not m["dirs"].called                         # tests चा _DEFAULT_SETTINGS = off
+    raw = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False}
+    trade, logs, m = _run(directions=("BULLISH", "BEARISH"), **raw)       # खरा डीफॉल्ट: 4H BEARISH ⇒ LONG नाही
+    assert not trade.called and m["dirs"].called and "SKIPPED_MCX_TREND_FILTER" in _statuses(logs)
 
 
 def test_effective_supertrend_mode_backward_compat():
