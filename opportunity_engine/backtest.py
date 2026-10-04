@@ -38,6 +38,7 @@ VARIANTS = {
 VARIANT_TEXT = {"V1": "4H bias + Daily veto (डीफॉल्ट)", "V2": "Daily primary (veto लागू नाही)", "V3": "4H bias, veto नाही"}
 IS_END = pd.Timestamp("2021-12-31")
 OOS_START = pd.Timestamp("2022-01-01")
+PERIODS = ("IS 2015→2021", "OOS 2022→")
 
 
 @dataclass
@@ -209,7 +210,7 @@ def _trade_row(variant, day, o, closed_time):
     plan = p.plan
     row = {"variant": variant, "date": day.date, "entry_time": c.time, "exit_time": closed_time, "setup": c.setup_id, "direction": c.direction, "kind": c.kind,
            "entry": plan.entry, "sl": plan.sl, "t1": plan.t1, "t2": plan.t2, "risk": plan.risk, "exit_reason": p.exit_reason, "pnl_pts": p.pnl_pts, "r": p.r_multiple,
-           "t1_hit": p.t1_done, "bars": p.bars, "mfe_r": p.mfe_r, "virtual": o.virtual, "gate_rejected": o.virtual, "gate_codes": o.meta.get("gate_codes", ""),
+           "t1_hit": p.t1_done, "bars": p.bars, "mfe_r": p.mfe_r, "level": p.level, "virtual": o.virtual, "gate_rejected": o.virtual, "gate_codes": o.meta.get("gate_codes", ""),
            "size_factor": 0.0 if o.virtual else d.size_factor, "score": o.meta.get("score"), "bias": o.meta.get("bias"), "gap_type": c.meta.get("gap_type", ""),
            "state_1d": o.meta.get("state_1d"), "state_4h": o.meta.get("state_4h"), "state_1h": o.meta.get("state_1h"), "commentary": o.meta.get("commentary", "")}
     row["r_weighted"] = row["r"] * row["size_factor"]
@@ -352,6 +353,18 @@ def breakdown(trades, by, col="r_weighted"):
     return pd.DataFrame(rows)
 
 
+def breakdown_split(trades, by, col="r_weighted"):
+    """`breakdown` पण IS आणि OOS वेगळे (पहिला column `period`) — एकत्रित (IS+OOS) तक्त्यावरून tuning म्हणजे OOS leakage, म्हणून breakdowns नेहमी वेगळे."""
+    if trades is None or len(trades) == 0:
+        return pd.DataFrame()
+    parts = []
+    for label, part in zip(PERIODS, split_is_oos(trades)):
+        b = breakdown(part, by, col)
+        if len(b):
+            parts.append(b.assign(period=label)[["period"] + list(b.columns)])
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
 def verdicts(trades, min_oos=30):
     """setup-निहाय: OOS मध्ये ≥ 30 trades ∧ expectancy > 0 ⇒ KEEP, नाहीतर REVIEW (फक्त अहवाल)."""
     rows = []
@@ -413,7 +426,7 @@ class BacktestResult:
                                         {"scope": "OOS 2022→", **summarize(split_is_oos(tr)[1])}]),
                "verdicts": verdicts(tr), "aligned_vs_counter": aligned_vs_counter(tr, r["virtual"])}
         for by in ("setup", "bias", "state_1d", "score_bucket", "tod", "year", "gap_type", "exit_reason"):
-            out[f"by_{by}"] = breakdown(tr, by) if len(tr) else pd.DataFrame()
+            out[f"by_{by}"] = breakdown_split(tr, by)                     # IS आणि OOS वेगळे
         return out
 
 
