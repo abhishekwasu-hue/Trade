@@ -282,6 +282,22 @@ class TestImportantFarLevels:
         lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=288.1, role_by_price=True, max_distance_pct=4.0, nearest_n=3,
                                info_suffixes=bv.mcx_info_suffixes(["30M"]))
         info = [l for l in lines if "माहिती" in l["title"]]
-        assert [l["price"] for l in info] == [301.0] and info[0]["color"].startswith("rgba(158,158,158")
+        assert [l["price"] for l in info] == [301.0] and info[0]["color"] == "rgba(255,23,68,0.4)" and info[0]["dotted"]
         assert 310.0 in {l["price"] for l in lines}                       # माहितीचा 301 trade होणाऱ्या 310 ला बाहेर ढकलत नाही
         assert bv.mcx_info_suffixes(["30M", "60M"]) == () and bv.mcx_info_suffixes(["60M"]) == ("30M",)
+
+    def test_red_resistance_green_support_dotted_and_far_bounds(self):
+        lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=288.1, role_by_price=True, max_distance_pct=4.0, nearest_n=3)
+        by = {l["price"]: l for l in lines}
+        assert by[293.65]["color"] == "rgba(255,23,68,0.95)" and by[286.4]["color"] == "rgba(0,200,83,0.95)"
+        assert all(l["dotted"] for l in lines)
+        assert by[300.0]["bounds"] and by[305.5]["bounds"] is False and by[270.0]["bounds"] is False   # >6% दूर ⇒ scale ताणत नाही
+
+
+def test_chart_dotted_style_and_bounds_ignore_far_lines():
+    import tradingview_chart as tvc
+    df = pd.DataFrame({"timestamp": pd.date_range("2026-10-01 09:00", periods=30, freq="30min"), "open": 288.0, "high": 289.0,
+                       "low": 287.0, "close": 288.0, "volume": 1})
+    html = tvc.build_lightweight_chart_html(df, trade_lines=[{"price": 293.65, "title": "R", "color": "red", "dotted": True},
+                                                             {"price": 330.0, "title": "far", "color": "red", "dotted": True, "bounds": False}])
+    assert "LineStyle.Dotted" in html and '"hi": 293.65' in html

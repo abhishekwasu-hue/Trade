@@ -24,7 +24,9 @@ NSE_BOTS = ("5M Instant", "15M SRv2", "Classic")
 
 # timeframe suffix -> (Upstox interval, रेषेचा रंग). 60M साठी 30-मिनिट candles वरून 1H resample करावं लागतं (interval None).
 TF_INTERVAL = {"1M": "1minute", "5M": "5minute", "15M": "15minute", "30M": "30minute", "60M": None}
-TF_COLORS = {"1M": (176, 190, 197), "5M": (255, 183, 77), "15M": (79, 195, 247), "30M": (186, 104, 200), "60M": (129, 199, 132)}
+SUPPORT_RGB = (0, 200, 83)          # हिरवा
+RESISTANCE_RGB = (255, 23, 68)      # लाल
+AUTOSCALE_MAX_PCT = 6.0             # यापेक्षा दूरच्या S/R रेषा चार्टचा scale ताणत नाहीत
 
 
 def zone_suffixes(bot, settings):
@@ -101,18 +103,19 @@ def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=Fa
             role = "SUPPORT" if price >= level else "RESISTANCE"
         strength = float(row.strength) if row.strength is not None and not pd.isna(row.strength) else 0.0
         tag = "S" if role == "SUPPORT" else "R"
+        r, g, b = SUPPORT_RGB if role == "SUPPORT" else RESISTANCE_RGB
+        far_note = f" · दूर {dist_pct:.1f}%" if is_far else ""
+        # 🎓 वापरकर्त्याची मागणी: resistance = लाल ठिपक्यांची रेषा, support = हिरवी ठिपक्यांची रेषा. timeframe title मध्ये ("R 30M ★4 · 0/2").
+        # खूप दूरच्या (> AUTOSCALE_MAX_PCT) रेषा autoscale ताणत नाहीत -- candles दबू नयेत.
+        common = {"price": level, "dotted": True, "dashed": True, "bounds": not (is_far and dist_pct > AUTOSCALE_MAX_PCT)}
         if info:
-            lines.append({"price": level, "title": f"{tag} {suffix} ★{strength:g} · माहिती" + (f" · दूर {dist_pct:.1f}%" if is_far else ""),
-                          "color": "rgba(158,158,158,0.55)", "dashed": True, "width": 1})
+            lines.append({**common, "title": f"{tag} {suffix} ★{strength:g} · माहिती" + far_note, "color": f"rgba({r},{g},{b},0.4)", "width": 1})
             continue
         count = int(hits.get((round(level, 2), role), 0)) if hits else 0
         exhausted = count >= max_hits
-        r, g, b = TF_COLORS.get(suffix, (200, 200, 200))
         alpha = 0.35 if exhausted else (0.6 if is_far else 0.95)
-        lines.append({
-            "price": level, "title": f"{tag} {suffix} ★{strength:g} · {count}/{max_hits}" + (f" · दूर {dist_pct:.1f}%" if is_far else ""),
-            "color": f"rgba({r},{g},{b},{alpha})", "dashed": exhausted or role == "RESISTANCE", "width": 1 if (exhausted or is_far) else 2,
-        })
+        lines.append({**common, "title": f"{tag} {suffix} ★{strength:g} · {count}/{max_hits}" + far_note,
+                      "color": f"rgba({r},{g},{b},{alpha})", "width": 1 if (exhausted or is_far) else 2})
     return lines
 
 

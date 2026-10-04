@@ -257,7 +257,8 @@ def build_lightweight_chart_html(
     indicators: compute_chart_indicators() चा निकाल (EMA/VWAP/Bollinger/ADX) -- प्रत्येकासाठी toolbar वर on/off बटण, सर्व डीफॉल्ट बंद.
     ADX चा वेगळा pane बटण दाबल्यावरच तयार होतो (बंद केल्यावर काढला जातो). None => काहीच बदल नाही (जुनं वर्तन).
 
-    trade_lines: Positions चार्टसाठी आडव्या रेषा -- [{"price", "title", "color", "dashed"(bool, default True), "width"(default 2)}]. या रेषा
+    trade_lines: Positions चार्टसाठी आडव्या रेषा -- [{"price", "title", "color", "dashed"(bool, default True), "width"(default 2),
+                 "dotted"(bool, default False -- dashed पेक्षा प्राधान्य), "bounds"(bool, default True -- False ⇒ autoscale मध्ये धरत नाही)}]. या रेषा
     किंमत-scale मध्ये बसाव्यात म्हणून (SL/Target भावापासून दूर असले तरी दिसावेत) न दिसणाऱ्या दोन बिंदूंनी autoscale ताणला जातो.
 
     live_tf_seconds: candle चा कालावधी (सेकंद) -- दिला तर चार्ट बाहेरून येणारे `live_tick` संदेश (live_chart.py) ऐकतो: शेवटची candle बदलतो /
@@ -421,13 +422,16 @@ def build_lightweight_chart_html(
             trade_lines_js.append({
                 "price": round(float(tl["price"]), 2), "title": str(tl.get("title", "")), "color": tl.get("color", "#2962FF"),
                 "dashed": bool(tl.get("dashed", True)), "width": int(tl.get("width", 2)),
+                "dotted": bool(tl.get("dotted", False)), "bounds": bool(tl.get("bounds", True)),
             })
         except (KeyError, TypeError, ValueError):
             continue
     trade_line_bounds = None
     if trade_lines_js:
-        prices = [t["price"] for t in trade_lines_js]
-        trade_line_bounds = {"time": candle_data[-1]["time"], "lo": min(prices), "hi": max(prices)}
+        # "bounds": False असलेल्या (उदा. खूप दूरच्या S/R) रेषा autoscale ताणत नाहीत -- candles दबू नयेत; zoom/scroll केल्यावर दिसतात.
+        prices = [t["price"] for t in trade_lines_js if t["bounds"]]
+        if prices:
+            trade_line_bounds = {"time": candle_data[-1]["time"], "lo": min(prices), "hi": max(prices)}
 
     library_js = _load_library_js()
     html = f"""
@@ -590,7 +594,7 @@ const tradeHelpers = {{}};         // 'lo' / 'hi' अदृश्य autoscale �
 function tradeLineOptions(l) {{
     return {{
         price: l.price, color: l.color, lineWidth: l.width, title: l.title, axisLabelVisible: true,
-        lineStyle: l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+        lineStyle: l.dotted ? LightweightCharts.LineStyle.Dotted : (l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid),
     }};
 }}
 function stretchTradeBounds(lines) {{
