@@ -892,3 +892,21 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 
 - काही आठवडे/महिने डेटा जमल्यावर volume सकट वि. शिवाय तुलना: `python3 run_opportunity_backtest.py --index-5m data/oe_index_5min_NIFTY.parquet --futures-volume data/oe_futures_5min_NIFTY.parquet --variants V1 --out /root/oe_bt_vol` → `volume_comparison.csv`.
 
+### PR-V: Visual Audit + Dual-Eye Consensus
+
+- काय: Daily / 1H / 15M chart वरचे engine levels (L1, L2…) vision model तपासतो (VALID / SPURIOUS / SHIFT + कारण, सुटलेले पट्टे), त्याच chart चं levels-शिवाय स्वतंत्र
+  वाचन, आणि दोन्हीचा consensus (CONSENSUS / MATH_ONLY / VISUAL_ONLY / CONFLICT). `consensus_mode` डीफॉल्ट **off** (फक्त माहिती). Live intraday मध्ये API call नाही.
+- आवश्यक: `.env` मध्ये `ANTHROPIC_API_KEY=…`, `VISUAL_AUDIT_MODEL=<vision-capable model id>`, `VISUAL_AUDIT_ENABLED=1` (ऐच्छिक `VISUAL_AUDIT_EFFORT=low|medium|high`,
+  `VISUAL_AUDIT_REPEAT=2`, `VISUAL_AUDIT_FEWSHOT=<n>`). खर्च: NIFTY + BANKNIFTY × 3 TF × 2 calls = 12 calls/दिवस.
+- पहिल्यांदा फक्त dry-run (API call नाही; charts `data/visual_audit/<date>/` मध्ये): `python3 run_visual_audit.py --dry-run`
+- EOD crontab (रोज 16:20 IST = 10:50 UTC, सोम–शुक्र; refresh_market_structure.py नंतर):
+
+```
+50 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 run_visual_audit.py >> /root/Trade/visual_audit.log 2>&1
+```
+
+- पान: **Opportunity Engine → 👁️ Visual Audit** — chart, levels तक्ता (engine grade, model verdict + कारण, consensus), तुमचा feedback (✅/❌/↕), मतभेद, few-shot उदाहरण जतन, agreement matrix.
+- Historical backfill (2022-01 → 2024-03, NIFTY Daily + 1H; **आधी फक्त अंदाज**): `python3 run_visual_backfill.py --price-in <$/1M input> --price-out <$/1M output> --sample-exact`
+  → मंजुरीनंतर `python3 run_visual_backfill.py --run --yes --mode batch` (Batches API, 50% स्वस्त; साधारण 1 तासाने पुन्हा तीच command चालवल्यावर निकाल गोळा) →
+  `python3 run_opportunity_backtest.py --visual-cache data/oe_visual_backfill_NIFTY.jsonl --start 2022-01-01 --variants V1` (off/score/gate तुलना + level reaction).
+

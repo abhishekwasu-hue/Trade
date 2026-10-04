@@ -105,6 +105,10 @@ class EngineConfig:
     d3_sl_buffer_k: float = 0.1              # zone च्या लांबच्या किनाऱ्यापलीकडे 0.1 × ref_range(15M)
     d3_max_age_sessions: int = 20
     weak_exit: str = "be"                    # trade चालू असताना primary HTF WEAK झाला: "be" (SL BE ला) | "exit"
+    # ---- Dual-Eye Consensus (visual_audit, spec §17.8) — डीफॉल्ट off: फक्त माहिती; तुलना अहवालानंतर वापरकर्ता mode बदलेल ----
+    consensus_mode: str = "off"              # "off" | "score" (CONSENSUS +bonus, MATH_ONLY −penalty location score मध्ये) | "gate" (detectors ला फक्त CONSENSUS zones)
+    consensus_bonus: float = 10.0
+    consensus_penalty: float = 10.0
     # ---- D6 HTF Zone Pullback (detectors/zone_pullback.py) — वापरकर्त्याने मंजूर केलेले सुरुवातीचे डीफॉल्ट ----
     d6_zone_tfs: tuple = ("1h", "4h")        # FRESH/TESTED_1 demand (short: supply) आणि flip zones या TFs चे
     d6_retrace: tuple = (0.50, 0.62)         # primary HTF च्या शेवटच्या impulse leg (protected → last swing) चा 50–62% retracement (शुद्ध किंमत)

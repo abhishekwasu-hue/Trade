@@ -9,6 +9,8 @@ Opportunity Engine चा backtest (D1–D3, तिन्ही variants V1/V2/V
     python3 run_opportunity_backtest.py --diagnostics --variants V1       # + निदान (exit/MAE-MFE/counterfactual/मोठे losses/funnel/D2), सर्व IS-OOS वेगळे
     # volume सकट वि. volume शिवाय (collect_index_futures_volume.py ने गोळा केलेला डेटा; त्याच काळाचे Upstox index 5M):
     python3 run_opportunity_backtest.py --index-5m data/oe_index_5min_NIFTY.parquet --futures-volume data/oe_futures_5min_NIFTY.parquet --variants V1
+    # Dual-Eye consensus: visual backfill (run_visual_backfill.py) नंतर तिन्ही modes चा तुलना तक्ता (फक्त backfill कालावधी):
+    python3 run_opportunity_backtest.py --visual-cache data/oe_visual_backfill_NIFTY.jsonl --start 2022-01-01 --variants V1
 """
 import argparse
 import os
@@ -21,6 +23,8 @@ import real_nifty_data
 from opportunity_engine import sessions
 from opportunity_engine import diagnostics as DG
 from opportunity_engine import volume as VOL
+from opportunity_engine.visual_audit import compare as VCMP
+from opportunity_engine.visual_audit import store as VSTORE
 from opportunity_engine.backtest import PERIODS, BacktestConfig, VARIANT_TEXT, run_backtest, split_is_oos, summarize
 
 
@@ -34,6 +38,8 @@ def main(argv=None):
     parser.add_argument("--diagnostics", action="store_true", help="निदान तक्ते पण (फक्त अहवाल; नियम/parameters बदलत नाही)")
     parser.add_argument("--index-5m", default=None, help="offline 1M ऐवजी हा index 5M parquet (collector चा) वापरा; Daily इतिहास offline/extension मधून")
     parser.add_argument("--futures-volume", default=None, help="futures 5M parquet — volume जोडून आणि volume शिवाय असे दोन्ही backtest")
+    parser.add_argument("--visual-cache", default=None, help="visual audit JSONL (backfill) — consensus modes off/score/gate तुलना")
+    parser.add_argument("--consensus-modes", default="off,score,gate")
     args = parser.parse_args(argv)
 
     t0 = time.time()
@@ -105,6 +111,22 @@ def main(argv=None):
                 if name in diag and len(diag[name]):
                     print(f"\n--- {name} ---")
                     print(diag[name].to_string(index=False))
+    if args.visual_cache:
+        recs = VSTORE.records_by_date(VSTORE.read_jsonl(args.visual_cache))
+        if not recs:
+            print(f"⚠️ {args.visual_cache} मध्ये visual records नाहीत — consensus तुलना वगळली.")
+        else:
+            modes = tuple(m.strip() for m in args.consensus_modes.split(",") if m.strip())
+            for v in res.results:
+                table, _ = VCMP.modes_table(res.timeline, bcfg, recs, modes, v)
+                table.to_csv(os.path.join(args.out, f"{v}_consensus_modes.csv"), index=False)
+                print(f"\n=== {v}: Dual-Eye consensus modes ({min(recs):%Y-%m-%d} → {max(recs):%Y-%m-%d}; R साइज-विना) ===")
+                print(table.to_string(index=False))
+            rt, rx = VCMP.reaction_by_class(res.timeline, frames, recs)
+            rt.to_csv(os.path.join(args.out, "consensus_level_reaction.csv"), index=False)
+            rx.to_csv(os.path.join(args.out, "consensus_level_reaction_rows.csv"), index=False)
+            print("\n=== Level reaction (पुढच्या 10 sessions, 1H) — consensus वर्गानुसार ===")
+            print(rt.to_string(index=False))
     print(f"\nनिकाल CSV: {os.path.abspath(args.out)}  (एकूण {time.time() - t0:.0f}s)")
     return 0
 

@@ -57,7 +57,7 @@ def _run(symbol="NIFTY", token="x", live=False):
 def test_offline_page_renders_all_tabs_without_error():
     at = _run()
     assert not at.exception and not at.error, [e.value for e in at.error]
-    assert len(at.tabs) == 6
+    assert len(at.tabs) == 7
     assert at.dataframe, "Structure वही / levels चे तक्ते दिसले पाहिजेत"
 
 
