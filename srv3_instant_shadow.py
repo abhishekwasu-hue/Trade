@@ -55,14 +55,15 @@ REFRESH_STATE = os.path.join("data", "srv3_shadow_refresh.json")
 def v3_levels(df5, df15, daily, price):
     """SR V3 (5M + 15M, key levels, gaps) -> merge_dynamic_sr_zones() चा फॉरमॅट: {"support": [{level, touches}], "resistance": [...]}.
     फक्त grade A/B, किंमतीपासून ≤ 3%. Support/Resistance = सध्याच्या किंमतीच्या खाली/वर (bot दिशा पुन्हा किंमतीवरूनच ठरवतो)."""
-    frames = {}
-    if df5 is not None and len(df5):
-        frames["5minute"] = df5
-    if df15 is not None and len(df15):
-        frames["15minute"] = df15
+    return v3_levels_from_frames({"5minute": df5, "15minute": df15}, daily, price)
+
+
+def v3_levels_from_frames(frames, daily, price, cfg=None):
+    """कुठल्याही TF-संचासाठी (उदा. MCX: 15M + 30M + 1H, `cfg.session_end="23:30"`) — `v3_levels` सारखाच फॉरमॅट आणि filter."""
+    frames = {tf: df for tf, df in (frames or {}).items() if df is not None and len(df)}
     if not frames:
         return {"support": [], "resistance": []}
-    res = compute_sr_v3(frames, daily_df=daily, current_price=price)
+    res = compute_sr_v3(frames, daily_df=daily, current_price=price, cfg=cfg)
     out = {"support": [], "resistance": []}
     for z in res["levels"]:
         if z["grade"] not in GRADES or abs(z["distance_pct"]) > MAX_DISTANCE_PCT:

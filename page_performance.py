@@ -54,6 +54,7 @@ _SOURCE_LABELS = {
     # लगेच वेगळं दिसावं म्हणून.
     "dynamic_sr_instant_otm_shadow": "1-Min Instant Trader — OTM Shadow (PAPER, ITM vs OTM Strike)",
     "dynamic_sr_instant_srv3_shadow": "5-Min Instant Trader — SR V3 Levels Shadow (PAPER)",
+    "mcx_futures_srv3_shadow": "MCX Futures — SR V3 Levels Shadow (PAPER)",
     "dynamic_sr_instant_min_hold_shadow": "1-Min Instant Trader — Min-Hold Shadow (PAPER, Confirmed Entry)",
     "srv2_momentum_reversal": "SRv2 Momentum Reversal (15/30/60M)",
     # 🎓 bug-review -- या दोन bots चे trades Strategy-wise tables / charts / PDF मध्ये कच्च्या internal कोडसह (classic_sr_reversal / mcx_futures) दिसायचे.

@@ -616,6 +616,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("30 minute candle", नंतर explicit केलं — हा MCX strategy
         # साठीच, existing NIFTY bots साठी नाही) — डीफॉल्ट फक्त 30M, 15M हा पर्यायच नाही (कधीच नाही).
         "timeframe_choice": "30M",       # "30M" | "60M" | "ALL" (30M+60M दोन्ही — 15M कधीच नाही)
+        # 🎓 वापरकर्त्याचा निर्णय (SR V3 levels — setting ने निवड): "DYNAMIC" (जुना, डीफॉल्ट) | "SRV3_SHADOW" (मूळ जुन्याच levels वर +
+        # शेजारी SR V3 वर निव्वळ PAPER तुलना) | "SRV3" (मूळ bot च SR V3 levels वर). बघा mcx_futures_trader.LEVEL_ENGINES.
+        "level_engine": "DYNAMIC",
         "entry_rsi_gate_enabled": True,
         "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
         "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा
