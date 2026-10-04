@@ -11,7 +11,7 @@ run_visual_audit.py
     python3 run_visual_audit.py                       # EOD (बाजार बंद झाल्यावर): audit_date = पुढचा trading दिवस
     python3 run_visual_audit.py --pre-market          # 08:45: audit_date = आज (आदल्या दिवसापर्यंतच्या डेटावर)
     python3 run_visual_audit.py --dry-run             # फक्त charts + खर्चाचा अंदाज (API call नाही)
-खर्च: प्रति symbol × 3 TF × 2 calls (overlay + स्वतंत्र) — NIFTY + BANKNIFTY = 12 calls/दिवस.
+खर्च: प्रति symbol × TF × 2 calls (overlay + स्वतंत्र) — डीफॉल्ट NIFTY + BANKNIFTY × Daily + 1H = 8 calls/दिवस (`--tfs 1d,1h,15m` ⇒ 12).
 """
 import argparse
 import datetime
@@ -116,7 +116,7 @@ def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
     p = argparse.ArgumentParser()
     p.add_argument("--token", default=None)
     p.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
-    p.add_argument("--tfs", default=",".join(J.CHART_TFS))
+    p.add_argument("--tfs", default="1d,1h", help="खर्च कमी ठेवण्यासाठी डीफॉल्ट Daily + 1H (15M हवा असेल तर 1d,1h,15m)")
     p.add_argument("--pre-market", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="फक्त charts + खर्चाचा अंदाज; API call नाही")
     p.add_argument("--no-telegram", action="store_true")

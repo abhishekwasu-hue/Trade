@@ -897,7 +897,7 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - काय: Daily / 1H / 15M chart वरचे engine levels (L1, L2…) vision model तपासतो (VALID / SPURIOUS / SHIFT + कारण, सुटलेले पट्टे), त्याच chart चं levels-शिवाय स्वतंत्र
   वाचन, आणि दोन्हीचा consensus (CONSENSUS / MATH_ONLY / VISUAL_ONLY / CONFLICT). `consensus_mode` डीफॉल्ट **off** (फक्त माहिती). Live intraday मध्ये API call नाही.
 - आवश्यक: `.env` मध्ये `ANTHROPIC_API_KEY=…`, `VISUAL_AUDIT_MODEL=<vision-capable model id>`, `VISUAL_AUDIT_ENABLED=1` (ऐच्छिक `VISUAL_AUDIT_EFFORT=low|medium|high`,
-  `VISUAL_AUDIT_REPEAT=2`, `VISUAL_AUDIT_FEWSHOT=<n>`). खर्च: NIFTY + BANKNIFTY × 3 TF × 2 calls = 12 calls/दिवस.
+  `VISUAL_AUDIT_REPEAT=2`, `VISUAL_AUDIT_FEWSHOT=<n>`). खर्च: डीफॉल्ट NIFTY + BANKNIFTY × Daily + 1H × 2 calls = 8 calls/दिवस (`--tfs 1d,1h,15m` ⇒ 12).
 - पहिल्यांदा फक्त dry-run (API call नाही; charts `data/visual_audit/<date>/` मध्ये): `python3 run_visual_audit.py --dry-run`
 - EOD crontab (रोज 16:20 IST = 10:50 UTC, सोम–शुक्र; refresh_market_structure.py नंतर):
 
@@ -906,7 +906,10 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 ```
 
 - पान: **Opportunity Engine → 👁️ Visual Audit** — chart, levels तक्ता (engine grade, model verdict + कारण, consensus), तुमचा feedback (✅/❌/↕), मतभेद, few-shot उदाहरण जतन, agreement matrix.
-- Historical backfill (2022-01 → 2024-03, NIFTY Daily + 1H; **आधी फक्त अंदाज**): `python3 run_visual_backfill.py --price-in <$/1M input> --price-out <$/1M output> --sample-exact`
+- **Forward testing (वापरकर्त्याचा निर्णय — historical backfill चालवायचा नाही, खर्च टाळण्यासाठी):** रोजचा EOD audit + collector चा index 5M यावरून
+  आठवड्याला अहवाल (API call नाही): `python3 run_visual_forward_report.py --symbol NIFTY --price-in <$/1M in> --price-out <$/1M out>` (आणि `--symbol BANKNIFTY`)
+  → तयारी (≥ 4 आठवडे, 200+ levels), agreement, verdict/consensus नुसार level reaction, off/score/gate तुलना, खर्च.
+- (फक्त संदर्भासाठी — चालवायचा नाही) Historical backfill (2022-01 → 2024-03, NIFTY Daily + 1H; आधी फक्त अंदाज): `python3 run_visual_backfill.py --price-in <$/1M input> --price-out <$/1M output> --sample-exact`
   → मंजुरीनंतर `python3 run_visual_backfill.py --run --yes --mode batch` (Batches API, 50% स्वस्त; साधारण 1 तासाने पुन्हा तीच command चालवल्यावर निकाल गोळा) →
   `python3 run_opportunity_backtest.py --visual-cache data/oe_visual_backfill_NIFTY.jsonl --start 2022-01-01 --variants V1` (off/score/gate तुलना + level reaction).
 
