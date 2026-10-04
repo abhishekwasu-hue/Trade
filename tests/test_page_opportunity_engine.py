@@ -135,3 +135,17 @@ def test_backtest_tab_runs_on_synthetic_data_and_shows_tables():
     assert not at.exception and not at.error, [e.value for e in at.error]
     assert any("Variants तुलना" in str(m.value) for m in at.markdown) or at.dataframe
     assert any("V1" in str(h.value) for h in at.markdown)
+
+
+def test_backtest_tab_with_diagnostics_renders_tables():
+    import builtins
+    at = _run()
+    builtins._OE_FINE = _fine_1m(days=90, seed=4, start="2023-10-02")
+    at.run()
+    at.date_input(key="oe_bt_start").set_value(pd.Timestamp("2024-01-15").date())
+    at.date_input(key="oe_bt_end").set_value(pd.Timestamp("2024-03-27").date())
+    at.checkbox(key="oe_bt_diag").check()
+    at.button(key="oe_bt_run").click().run(timeout=300)
+    assert not at.exception and not at.error, [e.value for e in at.error]
+    assert any("निदान" in str(e.label) for e in at.expander)
+    assert any("Funnel" in str(m.value) for m in at.markdown)

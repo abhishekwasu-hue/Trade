@@ -6,6 +6,7 @@ Opportunity Engine चा backtest (D1–D3, तिन्ही variants V1/V2/V
 
     python3 run_opportunity_backtest.py --out /tmp/oe_bt                 # पूर्ण (≈ 10–15 मिनिटं)
     python3 run_opportunity_backtest.py --start 2022-01-01 --variants V1  # जलद
+    python3 run_opportunity_backtest.py --diagnostics --variants V1       # + निदान (exit/MAE-MFE/counterfactual/मोठे losses/funnel/D2), सर्व IS-OOS वेगळे
 """
 import argparse
 import os
@@ -16,6 +17,7 @@ import pandas as pd
 
 import real_nifty_data
 from opportunity_engine import sessions
+from opportunity_engine import diagnostics as DG
 from opportunity_engine.backtest import BacktestConfig, VARIANT_TEXT, run_backtest
 
 
@@ -26,6 +28,7 @@ def main(argv=None):
     parser.add_argument("--variants", default="V1,V2,V3")
     parser.add_argument("--detectors", default="D1,D2,D3")
     parser.add_argument("--out", default="oe_backtest_out")
+    parser.add_argument("--diagnostics", action="store_true", help="निदान तक्ते पण (फक्त अहवाल; नियम/parameters बदलत नाही)")
     args = parser.parse_args(argv)
 
     t0 = time.time()
@@ -54,6 +57,16 @@ def main(argv=None):
         print(t["summary"].to_string(index=False))
         print(t["verdicts"].to_string(index=False))
         print(t["aligned_vs_counter"].to_string(index=False))
+    if args.diagnostics:
+        for v in res.results:
+            print(f"\n=== {v}: निदान (shadow detection चालू…) ===", flush=True)
+            diag = DG.run_diagnostics(res.timeline, res.results[v], v, bcfg, progress=lambda i, n, d: print(f"  {i}/{n} {d}", flush=True) if i % 500 == 0 else None)
+            for name, table in diag.items():
+                table.to_csv(os.path.join(args.out, f"{v}_diag_{name}.csv"), index=False)
+            for name in ("check_resim", "A_exit_breakdown", "A_win_composition", "B_counterfactual", "C_loss_size", "D_funnel"):
+                if name in diag and len(diag[name]):
+                    print(f"\n--- {name} ---")
+                    print(diag[name].to_string(index=False))
     print(f"\nनिकाल CSV: {os.path.abspath(args.out)}  (एकूण {time.time() - t0:.0f}s)")
     return 0
 

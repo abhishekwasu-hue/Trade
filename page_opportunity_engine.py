@@ -10,6 +10,7 @@ import real_nifty_data
 from opportunity_engine import report as R
 from opportunity_engine import risk as RISK
 from opportunity_engine import backtest as BT
+from opportunity_engine import diagnostics as DG
 from opportunity_engine import sessions as OE_SESSIONS
 from opportunity_engine.bias import apply_gate, resolve_bias
 from opportunity_engine.config import EngineConfig
@@ -57,6 +58,35 @@ def _run_backtest(start, end, variants, detectors):
     return BT.run_backtest(frames, bcfg)
 
 
+@st.cache_resource(show_spinner=False, max_entries=4)
+def _run_diagnostics(start, end, variants, detectors, variant):
+    """निदान (फक्त अहवाल) — त्याच cached backtest निकालावर."""
+    result = _run_backtest(start, end, variants, detectors)
+    if result is None:
+        return None
+    bcfg = BT.BacktestConfig(start=start, end=end, variants=tuple(variants), detectors=tuple(detectors))
+    return DG.run_diagnostics(result.timeline, result.results[variant], variant, bcfg)
+
+
+DIAG_TABLES = (
+    ("check_resim", "तपासणी: exit-management पुन्हा चालवून मूळ R हुबेहूब आला का"),
+    ("A_exit_breakdown", "A. Exit प्रकार वितरण (setup-निहाय, सरासरी R)"),
+    ("A_win_composition", "A. Wins ची रचना (T1→BE / T1→TRAIL / T1→T2) आणि T2 चं अंतर (R)"),
+    ("B_mae_mfe", "B. MAE / MFE (hold दरम्यान आणि EOD पर्यंत, R)"),
+    ("B_counterfactual", "B. Counterfactual (फक्त अहवाल): BE न हलवता · partial + BE नाही"),
+    ("B_be_followup", "B. BE/TRAIL exit नंतर: मूळ SL आधी T2 गाठलं का"),
+    ("C_loss_size", "C. Loss आकार (SL risk pts, slippage वाटा)"),
+    ("C_big_losses", "C. −1R पेक्षा मोठे losses — कारणासह"),
+    ("D_funnel", "D. Funnel: पूर्वअट → trigger → वेळ-खिडकी → raw → gate → risk → validation → score → selector → घेतलेले"),
+    ("D_gate_codes", "D. Gate कोड (सर्व कोड, candidates/दिवस)"),
+    ("D_by_year", "D. वर्षनिहाय: पूर्वअट दिवस → raw-candidate दिवस → trades"),
+    ("E_d2_by_gap_type", "E. D2: gap प्रकारानुसार"),
+    ("E_d2_by_bias", "E. D2: bias नुसार"),
+    ("E_d2_time_to_sl", "E. D2: trigger नंतर SL किती वेळात"),
+    ("E_d2_virtual_by_gap_type", "E. D2 (gate ने नाकारलेले, virtual): gap प्रकारानुसार"),
+)
+
+
 def _render_backtest_tab(symbol):
     sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest) — खरा offline NIFTY डेटा", HDR_ORANGE)
     st.caption("Live आणि backtest साठी एकच निर्णय-साखळी (gate → risk → validation → score → selector). R-आधारित (spot points; option P&L नाही). Index डेटात volume नाही ⇒ volume 'N/A'. "
@@ -70,6 +100,7 @@ def _render_backtest_tab(symbol):
     variants = c3.multiselect("Variants", list(BT.VARIANTS), default=["V1"], key="oe_bt_variants", format_func=lambda v: f"{v}: {BT.VARIANT_TEXT[v]}")
     detectors = c4.multiselect("Detectors", ["D1", "D2", "D3"], default=["D1", "D2", "D3"], key="oe_bt_detectors")
     st.caption("⏱️ लांब कालावधी (उदा. 2015→2024, तिन्ही variants) ≈ 10–15 मिनिटं घेतो. जलद तपासणीसाठी कमी कालावधी/एक variant. पूर्ण निकाल CLI: `python3 run_opportunity_backtest.py`.")
+    want_diag = st.checkbox("🔬 निदान पण दाखवा (exit / MAE-MFE / counterfactual / मोठे losses / funnel / D2 — IS आणि OOS वेगळे; वेळ आणखी लागतो)", key="oe_bt_diag")
     if not st.button("▶️ Backtest चालवा", key="oe_bt_run"):
         return
     if not variants or not detectors:
@@ -117,6 +148,15 @@ def _render_backtest_tab(symbol):
                          for k, label, color in (("entry", "Entry", "#2962ff"), ("sl", "SL", "#ff1744"), ("t1", "T1", "#00c853"), ("t2", "T2", "#00bfa5"))]
                 st.components.v1.html(build_lightweight_chart_html(dfc, symbol=symbol, timeframe_label="5M", height=500, trade_lines=lines), height=550, scrolling=False)
                 st.write(row.get("commentary", ""))
+        if want_diag:
+            with st.spinner(f"{v}: निदान चालू आहे…"):
+                diag = _run_diagnostics(pd.Timestamp(start), pd.Timestamp(end), tuple(variants), tuple(detectors), v)
+            with st.expander(f"🔬 {v}: निदान (फक्त अहवाल — नियम/parameters बदलले नाहीत)", expanded=False):
+                for key, title in DIAG_TABLES:
+                    table = (diag or {}).get(key)
+                    if table is not None and len(table):
+                        st.markdown(f"**{title}**")
+                        st.dataframe(table, width="stretch", hide_index=True)
 
 
 def _chart_df(frames, tf, bars):
