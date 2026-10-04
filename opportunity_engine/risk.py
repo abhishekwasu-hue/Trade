@@ -131,7 +131,8 @@ def on_bar(pos, bar, cfg, time=None, trail_stop=None):
     h, l, c = float(bar["high"]), float(bar["low"]), float(bar["close"])
     # 1. SL आधी (एकाच bar मध्ये SL आणि target दोन्ही असतील तरी)
     if (l <= pos.sl) if s > 0 else (h >= pos.sl):
-        _close_all(pos, pos.sl, "BE" if pos.t1_done and abs(pos.sl - p.entry) < 1e-9 else "SL", time)
+        reason = "SL" if not pos.t1_done else ("BE" if abs(pos.sl - p.entry) < 1e-9 else "TRAIL_SL")       # T1 नंतरचा stop: BE किंवा trailing (नफ्यात)
+        _close_all(pos, pos.sl, reason, time)
         return pos.events[n0:]
     # 2. T1: 50% बुक, SL BE ला
     if not pos.t1_done and ((h >= p.t1) if s > 0 else (l <= p.t1)):
@@ -147,8 +148,8 @@ def on_bar(pos, bar, cfg, time=None, trail_stop=None):
     if pos.t1_done and trail_stop is not None and (trail_stop - pos.sl) * s > 0 and (trail_stop - c) * s < 0:
         pos.sl = float(trail_stop)
         pos.events.append({"time": time, "reason": "TRAIL", "price": float(trail_stop), "frac": 0.0})
-    # 5. time stop
-    if not pos.t1_done and pos.bars >= cfg.time_stop_bars and pos.mfe_r < cfg.time_stop_r:
+    # 5. time stop — spec: "breakout नंतर 6 bars मध्ये +0.5R गाठलं नाही तर exit" => फक्त breakout setups (reversal setups ना target पर्यंत वेळ लागतो)
+    if pos.kind in cfg.time_stop_kinds and not pos.t1_done and pos.bars >= cfg.time_stop_bars and pos.mfe_r < cfg.time_stop_r:
         _close_all(pos, c, "TIME_STOP", time)
         return pos.events[n0:]
     # 6. failed breakout: पुढचे `followthrough_bars` bars level च्या आत close

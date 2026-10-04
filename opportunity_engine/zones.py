@@ -39,7 +39,7 @@ def _finite(x):
 # ---------------------------------------------------------------------------------------------------------------------
 # स्रोत १: displacement zones
 # ---------------------------------------------------------------------------------------------------------------------
-def displacement_zones(tr, cfg=None, upto=None):
+def displacement_zones(tr, cfg=None, upto=None, start=0):
     """एका TF चे supply/demand zones (evaluate() आधी — status/freshness नाही). `upto` = शेवटचा वापरायचा bar index (as-of)."""
     cfg = cfg or tr.cfg
     n = len(tr.c) if upto is None else min(len(tr.c), upto + 1)
@@ -58,7 +58,7 @@ def displacement_zones(tr, cfg=None, upto=None):
             return False
         return rng >= k_mult * rr
 
-    i = 0
+    i = max(int(start), 0)                       # `start`: फक्त अलीकडच्या bars मधले zones हवे असतील तर मागचा इतिहास वगळून (backtest ची गती)
     while i < n:
         direction = 1 if c[i] > o[i] else -1 if c[i] < o[i] else 0
         if direction == 0 or not qualifies(i, direction, cfg.displacement_k):
@@ -321,7 +321,7 @@ def build_levels(journal, frames, symbol="NIFTY", price=None, cfg=None, lookback
         t_now = tr.bar_end[-1] if t_now is None else max(t_now, tr.bar_end[-1])
         floor_idx = max(len(tr.c) - int(lookback.get(tf, 1000)), 0)
         for builder in (displacement_zones, sr_clusters):
-            zs, sw = builder(tr, cfg)
+            zs, sw = builder(tr, cfg, start=max(floor_idx - 8, 0)) if builder is displacement_zones else builder(tr, cfg)
             for z in zs:
                 if z["formed_idx"] < floor_idx:
                     continue

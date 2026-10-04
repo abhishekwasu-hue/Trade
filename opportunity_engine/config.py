@@ -86,6 +86,23 @@ class EngineConfig:
     t2_default_r: float = 2.0
     time_stop_bars: int = 6
     time_stop_r: float = 0.5
+    time_stop_kinds: tuple = ("BREAKOUT",)           # time stop फक्त breakout setups ला (spec: "breakout नंतर 6 bars")
     followthrough_bars: int = 2
     slippage_pts: dict = field(default_factory=lambda: {"NIFTY": 1.0, "BANKNIFTY": 3.0, "SENSEX": 3.0})
+    # ---- Gap detectors D1–D3 (detectors/gap.py) ----
+    gap_small_pct: float = 0.30
+    gap_exhaustion_zone_pct: float = 0.15
+    gap_exhaustion_adr: float = 2.5          # आदल्या 3 दिवसांत एकाच दिशेने इतकी × ADR हालचाल => EXHAUSTION
+    or_bars: int = 3                         # Opening Range = पहिले 3 × 5M (15 मिनिटं)
+    d1_sl_mode: str = "mid"                  # "mid" | "opposite"
+    d1_window_end: str = "11:00"             # (मी ठरवलेला डीफॉल्ट — spec मध्ये नाही) OR breakout साठी शेवटची वेळ
+    d2_window_end: str = "12:00"             # (मी ठरवलेला डीफॉल्ट) fade trigger साठी शेवटची वेळ
+    d2_min_rr: float = 1.5
+    d2_patterns_long: tuple = ("BULLISH_ENGULFING", "HAMMER", "MORNING_STAR")
+    d2_patterns_short: tuple = ("BEARISH_ENGULFING", "SHOOTING_STAR", "EVENING_STAR")
+    d3_window_start: str = "09:45"
+    d3_window_end: str = "14:30"
+    d3_sl_buffer_k: float = 0.1              # zone च्या लांबच्या किनाऱ्यापलीकडे 0.1 × ref_range(15M)
+    d3_max_age_sessions: int = 20
+    weak_exit: str = "be"                    # trade चालू असताना primary HTF WEAK झाला: "be" (SL BE ला) | "exit"
 
