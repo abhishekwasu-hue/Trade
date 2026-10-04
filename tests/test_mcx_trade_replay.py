@@ -151,3 +151,20 @@ def test_main_end_to_end_offline(tmp_path, capsys):
     assert rc == 0 and "सारांश" in out and (tmp_path / "o" / "replay_GOLD.csv").exists()
     tbl = pd.read_csv(tmp_path / "o" / "replay_GOLD.csv")
     assert bool(tbl.loc[tbl["trade_id"] == "B", "d_cooldown"].iloc[0]) and not bool(tbl.loc[tbl["trade_id"] == "A", "d_cooldown"].iloc[0])
+
+
+def test_forensics_trailing_searches_after_peak_and_reports_gap():
+    # 1 Oct GOLD SHORT प्रमाणे: entry 147,911 (level 147,250 च्या वर — जुना कोड लगेच 'ओलांडला' म्हणायचा), भाव 146,950 पर्यंत खाली,
+    # मग एकाच minute मध्ये 147,693 वर उडी.
+    detail = ("Trailing SL — futures price Rs 147,693.00 hit/crossed the (profit-adjusted) trailing SL price Rs 147,250.00 "
+              "(Short entry Rs 147,911.00, 661.00 pts below entry); total P&L Rs 21,800.")
+    tr = {"trade_id": "S2", "direction": "BEARISH", "entry_time": "2026-10-01 11:24:40", "exit_time": "2026-10-01 16:37:03",
+          "exit_reason": "TRAILING_SL", "exit_reason_detail": detail, "peak_pnl": 96100}
+    t = pd.date_range("2026-10-01 11:24", "2026-10-01 16:39", freq="1min")
+    px = np.where(t < pd.Timestamp("2026-10-01 16:26"), 147800.0, 146950.0)
+    px = np.where(t >= pd.Timestamp("2026-10-01 16:35"), 147693.0, px)
+    df1m = pd.DataFrame({"timestamp": t, "open": px, "high": px, "low": px, "close": px})
+    fz = R.forensics(tr, df1m)
+    assert fz["peak_price"] == 146950.0 and fz["peak_time"] == "2026-10-01 16:26:00"
+    assert fz["first_cross_time"] == "2026-10-01 16:35:00" and abs(fz["minutes_cross_to_exit"] - 2.05) <= 0.06
+    assert fz["price_before_cross"] == 146950.0 and fz["cross_open"] == 147693.0 and fz["gap_points"] == 743.0

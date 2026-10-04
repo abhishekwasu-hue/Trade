@@ -178,25 +178,42 @@ def parse_exit_prices(detail):
 
 
 def forensics(trade, df1m, level=None):
-    """exit भोवतीचे 1-मिनिट candles: level प्रत्यक्ष पहिल्यांदा कधी ओलांडला (SHORT: high ≥ level; LONG: low ≤ level) वि. exit_time."""
+    """exit भोवतीचे 1-मिनिट candles: level प्रत्यक्ष पहिल्यांदा कधी ओलांडला (SHORT: high ≥ level; LONG: low ≤ level) वि. exit_time.
+    Trailing SL चा level entry पासून नसतो — तो peak नंतरच तयार होतो. म्हणून TRAILING exit साठी शोध peak (SHORT: सर्वात कमी low,
+    LONG: सर्वात जास्त high) च्या minute पासून. `gap_points` = ओलांडण्याआधीचा शेवटचा close ते ओलांडणाऱ्या minute चा open — मोठा gap ⇒
+    भावच उडी मारून level च्या पलीकडे गेला (monitor उशीर नव्हे)."""
     exit_px, lvl = parse_exit_prices(trade.get("exit_reason_detail"))
     lvl = level if level is not None else lvl
     out = {"trade_id": trade["trade_id"], "exit_reason": trade.get("exit_reason"), "exit_time": trade.get("exit_time"),
            "detail": trade.get("exit_reason_detail"), "peak_pnl": trade.get("peak_pnl"), "exit_price_in_detail": exit_px, "level": lvl,
-           "first_cross_time": None, "minutes_cross_to_exit": None, "candles": None}
+           "peak_time": None, "peak_price": None, "first_cross_time": None, "minutes_cross_to_exit": None,
+           "price_before_cross": None, "cross_open": None, "gap_points": None, "candles": None}
     if df1m is None or not len(df1m) or lvl is None or trade.get("exit_time") is None:
         return out
     d = df1m.copy()
     d["timestamp"] = naive(d["timestamp"])
+    d = d.sort_values("timestamp").reset_index(drop=True)
     ex = pd.Timestamp(trade["exit_time"])
     ent = pd.Timestamp(trade["entry_time"])
-    win = d[(d["timestamp"] >= ent) & (d["timestamp"] <= ex + pd.Timedelta(minutes=2))]
     short = trade["direction"] == "BEARISH"
+    win = d[(d["timestamp"] >= ent.floor("min")) & (d["timestamp"] <= ex)]
+    if "TRAILING" in str(trade.get("exit_reason") or "").upper() and len(win):
+        pk = win["low"].idxmin() if short else win["high"].idxmax()
+        out["peak_time"] = str(d.loc[pk, "timestamp"])
+        out["peak_price"] = float(d.loc[pk, "low"] if short else d.loc[pk, "high"])
+        win = d[(d.index >= pk) & (d["timestamp"] <= ex + pd.Timedelta(minutes=2))]
+    else:
+        win = d[(d["timestamp"] >= ent.floor("min")) & (d["timestamp"] <= ex + pd.Timedelta(minutes=2))]
     crossed = win[win["high"] >= lvl] if short else win[win["low"] <= lvl]
     if len(crossed):
-        first = crossed["timestamp"].iloc[0]
+        i = crossed.index[0]
+        first = d.loc[i, "timestamp"]
         out["first_cross_time"] = str(first)
         out["minutes_cross_to_exit"] = round((ex - first).total_seconds() / 60, 1)
+        out["cross_open"] = float(d.loc[i, "open"])
+        if i > 0:
+            out["price_before_cross"] = float(d.loc[i - 1, "close"])
+            out["gap_points"] = round(abs(out["cross_open"] - out["price_before_cross"]), 2)
     out["candles"] = d[(d["timestamp"] >= ex - pd.Timedelta(minutes=12)) & (d["timestamp"] <= ex + pd.Timedelta(minutes=2))][
         ["timestamp", "open", "high", "low", "close"]]
     return out
@@ -306,10 +323,11 @@ def main(argv=None, fetch=None, token=None, db_path=None, settings=None, today=N
         print("\nकारणं:")
         for r in rows:
             print(f"  {r['trade_id']}: {r.get('reasons') or '— (कुठलाही नियम अडवत नाही)'}")
-        summ = summarize([r for r in rows if "a_both_against" in r])
+        summ_rows = [r for r in rows if "a_both_against" in r]
+        summ = summarize(summ_rows)
         if len(summ):
             summ.to_csv(os.path.join(args.out, f"replay_{sym}_summary.csv"), index=False)
-            print("\n=== सारांश (9 trades इतका लहान sample — फक्त दिशादर्शक) ===")
+            print(f"\n=== सारांश ({len(summ_rows)} trades — लहान sample, फक्त दिशादर्शक) ===")
             print(summ.to_string(index=False))
 
     for tr in (trades if args.trade_id else []):
@@ -319,9 +337,14 @@ def main(argv=None, fetch=None, token=None, db_path=None, settings=None, today=N
         print(f"\n=== Forensics: {tr['trade_id']} ({tr.get('exit_reason')}, exit {tr.get('exit_time')}) ===")
         print(f"exit_reason_detail: {fz['detail']}")
         print(f"peak_pnl: {fz['peak_pnl']} | detail मधला exit भाव: {fz['exit_price_in_detail']} | level: {fz['level']}")
+        if fz["peak_time"]:
+            print(f"peak (सर्वात फायद्याचा भाव): {fz['peak_price']:,.2f} @ {fz['peak_time']} — trailing level यानंतरच तयार झाला")
         if fz["first_cross_time"]:
             print(f"level प्रत्यक्ष पहिल्यांदा ओलांडला: {fz['first_cross_time']} → exit {fz['exit_time']} "
-                  f"(अंतर {fz['minutes_cross_to_exit']} मिनिटं — मोठं अंतर ⇒ monitor उशिरा/बंद होता)")
+                  f"(अंतर {fz['minutes_cross_to_exit']} मिनिटं)")
+            if fz["gap_points"] is not None:
+                print(f"ओलांडण्याआधीचा शेवटचा भाव {fz['price_before_cross']:,.2f} → पुढच्या minute चा open {fz['cross_open']:,.2f} "
+                      f"(उडी {fz['gap_points']:,.2f} pts). उडी level पलीकडे असेल तर SL-M order लावला असता तरी fill याच भावाजवळ झालं असतं.")
         else:
             print("1-मिनिट candles मध्ये level ओलांडल्याचं दिसलं नाही (किंवा डेटा/level उपलब्ध नाही) — --level देऊन पुन्हा चालवा.")
         if fz["candles"] is not None and len(fz["candles"]):
