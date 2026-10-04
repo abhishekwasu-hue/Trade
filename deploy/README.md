@@ -945,3 +945,11 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
   **नवीन crontab ओळ लागत नाही**. SR V3 levels दर 5 मिनिटांनी `market_zones` मध्ये `SRV3_SUPPORT`/`SRV3_RESISTANCE` नावाने.
 - चालू करा: Bot Dynamic SR Algo → 5-Min Instant Trader → symbol → "🧪 SR V3 PAPER Shadow" ✅ → Save. नेहमी PAPER
   (broker accounts कधीच नाहीत), source `dynamic_sr_instant_srv3_shadow` — Performance Report वर मूळ bot शी तुलना. मूळ bot बदलत नाही.
+
+### MCX Futures — SR V3 levels ("Level engine")
+
+- MCX पान → Commodity → Entry Gate → "🧱 Level engine": **जुने Dynamic** (डीफॉल्ट) / **🧪 जुने + SR V3 PAPER shadow** / **SR V3 (मुख्य)** → Save.
+- SR V3 (MCX): 15M + 30M + 1H pivots, PDH/PDL/PDC/PWH/PWL (सत्र-अंत 23:30), gaps; फक्त grade A/B, किंमतीपासून 3% आत; दर 5 मिनिटांनी
+  `market_zones` मध्ये `SRV3_SUPPORT`/`SRV3_RESISTANCE`. नवीन cron ओळ लागत नाही (MCX bot च्याच cycle मध्ये).
+- Shadow: source `mcx_futures_srv3_shadow`, नेहमी PAPER, exit नियम मूळ MCX bot चेच; Performance वर "MCX Futures — SR V3 Levels Shadow (PAPER)".
+- MCX चा जुना डेटा नसल्याने backtest झालेला नाही — आधी shadow ने काही आठवडे तुलना करा, मगच "SR V3 (मुख्य)".

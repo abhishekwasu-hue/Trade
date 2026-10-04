@@ -65,13 +65,16 @@ page_mcx_futures.py (Dashboard) वरून.
     # किंवा स्वतःचा token देऊन: python3 mcx_futures_trader.py --token <UPSTOX_TOKEN>
 """
 import argparse
+import os
 import time
+
+import pandas as pd
 
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
 import database
-from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due
+from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, count_entries_at_level_today
 from dynamic_sr_instant_trader import (
     check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close,
     check_supertrend_trend_filter, get_supertrend_direction, _completed_bars_only, count_consecutive_touch_minutes,
@@ -81,6 +84,8 @@ from process_lock import ProcessLock, ProcessLockHeld
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
 from upstox_api import fetch_mcx_candles, fetch_broker_positions
+import srv3_instant_shadow as SRV3
+from sr_levels_v3 import SRConfig
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
 STRATEGY_KEY = "mcx_futures"
@@ -114,6 +119,20 @@ MCX_EOD_MINUTE = 15
 # 23:15 ला असल्याने त्यानंतरच्या touch वर उघडलेली position पुढच्याच exit-cycle ला (~५ सेकंदांत) EOD_SQUAREOFF ने लगेच बंद व्हायची --
 # फुकट brokerage/slippage (LIVE मध्ये खरे orders). वापरकर्त्याने ठरवलेलं: EOD च्या ३० मिनिटं आधी, 22:45 पासून नवीन entry नाही.
 MCX_NO_NEW_ENTRY_AFTER = (22, 45)
+
+# 🎓 वापरकर्त्याचा निर्णय ("MCX bot मध्ये सुद्धा SR V3 levels — Setting ने निवड") — `level_engine` (MCX पान, symbol-निहाय):
+#   "DYNAMIC"     — जुनेच 30M/60M Dynamic S/R levels (डीफॉल्ट, वर्तन अपरिवर्तित)
+#   "SRV3_SHADOW" — मूळ bot जुन्याच levels वर; शेजारी SR V3 levels वर तेच नियम, निव्वळ PAPER, वेगळा source (तुलनेसाठी)
+#   "SRV3"        — मूळ bot च SR V3 levels वर (settings चा trading_mode जसा आहे तसा — PAPER/LIVE तुमच्या निवडीने)
+# SR V3 (MCX): 15M + 30M + 1H pivots, PDH/PDL/PDC/PWH/PWL (सत्र-अंत 23:30), gaps, फक्त grade A/B, किंमतीपासून ≤ 3%, फक्त पूर्ण
+# झालेले candles; दर 5 मिनिटांनी market_zones मध्ये `SRV3_SUPPORT`/`SRV3_RESISTANCE` (शेवटी "_30M"/"_60M" नाही ⇒ जुन्या
+# Dynamic candidates मध्ये कधीच मिसळत नाहीत). MCX चा historical backtest शक्य नाही (ऐतिहासिक MCX डेटा नाही) — म्हणून
+# आधी SRV3_SHADOW ने forward PAPER तुलना करण्याची शिफारस.
+LEVEL_ENGINES = ("DYNAMIC", "SRV3_SHADOW", "SRV3")
+SRV3_SHADOW_SOURCE = "mcx_futures_srv3_shadow"
+SRV3_TIMEFRAME_LABEL = "SRV3"
+SRV3_CFG = SRConfig(session_end="23:30")
+SRV3_REFRESH_STATE = os.path.join("data", "mcx_srv3_refresh.json")
 
 
 def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
@@ -191,6 +210,56 @@ def fetch_mcx_trend_filter_directions(access_token, instrument_key, now, st1h_pe
     return dir_1h, dir_4h
 
 
+def _drop_today_and_later(daily, now):
+    """Daily candles मधून आजचा (अपूर्ण) आणि पुढचे दिवस वगळणे — PDH/PDL फक्त पूर्ण झालेल्या दिवसांवरून."""
+    if daily is None or daily.empty:
+        return daily
+    return daily[(SRV3._naive(daily["timestamp"]).dt.normalize() < pd.Timestamp(now).normalize()).to_numpy()]
+
+
+def refresh_mcx_srv3_levels_if_due(access_token, symbol, instrument_key, now, fetch=fetch_mcx_candles, state_path=SRV3_REFRESH_STATE):
+    """शेवटच्या यशस्वी गणनेला ≥ 5 मिनिटं झाली असतील तर MCX साठी SR V3 पुन्हा मोजून merge. रिटर्न: संदेश किंवा None (गरज नव्हती)."""
+    state = SRV3._load_state(state_path)
+    last = state.get(symbol)
+    if last is not None and (pd.Timestamp(now) - pd.Timestamp(last)).total_seconds() < SRV3.REFRESH_MINUTES * 60:
+        return None
+    df15 = fetch(access_token, instrument_key, interval="15minute", lookback_days=10)
+    df30 = fetch(access_token, instrument_key, interval="30minute", lookback_days=20)
+    daily = fetch(access_token, instrument_key, interval="day", lookback_days=60)
+    if df30 is None or df30.empty:
+        return f"{symbol}: SR V3 — 30-मिनिट डेटा मिळाला नाही (जुने SR V3 levels कायम)"
+    df30 = _completed_bars_only(df30, 30, now)
+    df15 = _completed_bars_only(df15, 15, now) if df15 is not None and not df15.empty else df15
+    df60 = _completed_bars_only(resample_to_1h(df30), 60, now) if len(df30) else None
+    price = float(df30["close"].iloc[-1])
+    levels = SRV3.v3_levels_from_frames({"15minute": df15, "30minute": df30, "1hour": df60}, _drop_today_and_later(daily, now), price, SRV3_CFG)
+    ok = cloud_db.merge_dynamic_sr_zones(symbol, levels, "", formed_date=now, type_prefix=SRV3.ZONE_PREFIX)
+    if ok:
+        state[symbol] = pd.Timestamp(now).isoformat()
+        SRV3._save_state(state, state_path)
+    n = len(levels["support"]) + len(levels["resistance"])
+    return f"{symbol}: SR V3 levels {'merge झाले' if ok else 'नाहीत / merge अयशस्वी — जुने कायम'} ({n} A/B)"
+
+
+def _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now):
+    """SR V3 levels (ACTIVE `SRV3_*`) — touch/RSI साठी candles जुन्या मार्गाप्रमाणेच निवडलेल्या पहिल्या TF चे (30M डीफॉल्ट; 60M निवडल्यास 1H).
+    रिटर्न `_collect_touch_candidates` सारखाच फॉरमॅट, timeframe label "SRV3"."""
+    rows = all_zones[(all_zones["zone_type"].isin(SRV3.ZONE_TYPES)) & (all_zones["status"] == "ACTIVE")]
+    if rows.empty:
+        return []
+    df_30m = fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=5)
+    candles_df = resample_to_1h(df_30m) if active_suffixes and active_suffixes[0] == "60M" and df_30m is not None and not df_30m.empty else df_30m
+    if candles_df is None or candles_df.empty or len(candles_df) < 12:
+        return []
+    candles_df = candles_df.copy()
+    candles_df["_date"] = candles_df["timestamp"].dt.date
+    todays = candles_df[candles_df["_date"] == now.date()]
+    if todays.empty:
+        return []
+    current_price, closes = todays["close"].iloc[-1], todays["close"].tolist()
+    return [(float(lv), SRV3_TIMEFRAME_LABEL, candles_df, current_price, closes) for lv in sorted(set(rows["zone_low"]))]
+
+
 def fetch_mcx_todays_1m_candles(access_token, instrument_key, now):
     """🎓 "level hold Minimum period" गेटसाठी -- आजचे 1-मिनिट candles ([{"low","high"}, ...], जुनं ते नवीन) किंवा None (डेटा मिळाला नाही /
     त्रुटी -- गेट fail-open, trade अडवत नाही). MCX बॉट बाकी सगळीकडे 30-मिनिट candles वापरतो; हा 1-मिनिटाचा fetch फक्त गेट तपासायची वेळ
@@ -213,7 +282,14 @@ def process_symbol(access_token, symbol):
     Hit Log वर (NO_HIT dedup मुळे शांत काळातही) trader जिवंत असल्याचा पुरावा दिसेल. ही नोंद अयशस्वी झाली तरी
     trading वर परिणाम नाही (सर्व अपवाद गिळले जातात)."""
     check_info = {}
-    result = _process_symbol_core(access_token, symbol, check_info)
+    engine = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol).get("level_engine", "DYNAMIC")
+    result = _process_symbol_core(access_token, symbol, check_info, level_source="SRV3" if engine == "SRV3" else "DYNAMIC")
+    if engine == "SRV3_SHADOW":
+        # 🎓 SR V3 PAPER shadow — मूळ cycle नंतर, स्वतंत्र try/except: इथली कुठलीही चूक मूळ bot ला अडवत नाही.
+        try:
+            result += " | 🧪 " + _process_symbol_core(access_token, symbol, {}, level_source="SRV3", shadow=True)
+        except Exception as e:
+            result += f" | 🧪 SR V3 shadow त्रुटी (मूळ bot वर परिणाम नाही) — {e}"
     try:
         cloud_db.save_mcx_last_check(
             symbol, get_ist_now(), result, price=check_info.get("price"), nearest_level=check_info.get("nearest_level"),
@@ -224,9 +300,18 @@ def process_symbol(access_token, symbol):
     return result
 
 
-def _process_symbol_core(access_token, symbol, check_info):
+def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC", shadow=False):
     """एका MCX commodity साठी — 30M/60M levels (settings-चालित), RSI dual-threshold gate,
-    Multi-Hit, आणि आढळल्यास एकाच futures leg चं PAPER/LIVE trade (settings-चालित lots/SL/Target)."""
+    Multi-Hit, आणि आढळल्यास एकाच futures leg चं PAPER/LIVE trade (settings-चालित lots/SL/Target).
+    `level_source="SRV3"` ⇒ levels SR V3 (बघा LEVEL_ENGINES). `shadow=True` ⇒ निव्वळ PAPER, source SRV3_SHADOW_SOURCE, signal_log मध्ये
+    नोंद नाही (मूळ bot च्या hit-count/Hit Log मध्ये मिसळू नये — म्हणून "एका level वर कमाल N" live_trades वरून), Breakout Entry नाही
+    (तो signal_log च्या उलट-role hits वर अवलंबून)."""
+    source = SRV3_SHADOW_SOURCE if shadow else STRATEGY_KEY
+
+    def _log(entry):
+        if not shadow:
+            cloud_db.save_signal_log(entry)
+
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, MCX Futures Trader सेटिंग्जमधून सक्रिय करा)"
@@ -246,7 +331,7 @@ def _process_symbol_core(access_token, symbol, check_info):
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
-    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False)
+    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False) and not shadow
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
@@ -268,7 +353,18 @@ def _process_symbol_core(access_token, symbol, check_info):
 
     now = get_ist_now()
     trade_date = now.strftime("%Y-%m-%d")
-    candidates = _collect_touch_candidates(access_token, instrument_key, all_zones, active_suffixes, now)
+    if level_source == "SRV3":
+        refresh_msg = refresh_mcx_srv3_levels_if_due(access_token, symbol, instrument_key, now)
+        if refresh_msg:
+            print(refresh_msg)
+            all_zones = cloud_db.get_market_zones(symbol)
+            if all_zones is None or all_zones.empty:
+                return f"{symbol}: SR V3 — zones वाचता आले नाहीत"
+        candidates = _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now)
+        if not candidates:
+            return f"{symbol}: कुठलेही ACTIVE SR V3 (A/B) levels सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
+    else:
+        candidates = _collect_touch_candidates(access_token, instrument_key, all_zones, active_suffixes, now)
     if not candidates:
         return f"{symbol}: कुठलेही ACTIVE Dynamic S/R levels ({'/'.join(active_suffixes)}) सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
 
@@ -301,7 +397,11 @@ def _process_symbol_core(access_token, symbol, check_info):
         # च्या जवळच आहे का) ची अट breakout candle साठी खरीच ठरणार नाही (breakout म्हणजे किंमत level
         # पासून निर्णायक दूर गेलेली), म्हणून इथे त्यापासून स्वतंत्रपणे तपासलं जातं.
         role = level_type
-        hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=role)
+        if shadow:
+            hit_count_so_far = count_entries_at_level_today(symbol, level_price, source, trade_date)
+            last_trade_time = None if hit_count_so_far == 0 else now
+        else:
+            hit_count_so_far, _, last_trade_time = cloud_db.get_zone_hits_today(symbol, level_price, trade_date, role=role)
         is_breakout_trade = False
         if entry_breakout_gate_enabled:
             opposite_role = "RESISTANCE" if role == "SUPPORT" else "SUPPORT"
@@ -328,13 +428,13 @@ def _process_symbol_core(access_token, symbol, check_info):
         }
 
         if not touched:
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
 
         if (now.hour, now.minute) >= MCX_NO_NEW_ENTRY_AFTER:
             log_entry["trade_status"] = "SKIPPED_TOO_LATE_FOR_NEW_ENTRY"
             log_entry["reason"] = f"{MCX_NO_NEW_ENTRY_AFTER[0]}:{MCX_NO_NEW_ENTRY_AFTER[1]:02d} नंतर नवीन entry नाही (EOD square-off आधीची मार्जिन) ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
@@ -343,18 +443,18 @@ def _process_symbol_core(access_token, symbol, check_info):
         if direction == "BULLISH" and not bullish_entry_enabled:
             log_entry["trade_status"] = "SKIPPED_BULLISH_ENTRY_DISABLED"
             log_entry["reason"] = f"Bullish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
         if direction == "BEARISH" and not bearish_entry_enabled:
             log_entry["trade_status"] = "SKIPPED_BEARISH_ENTRY_DISABLED"
             log_entry["reason"] = f"Bearish Entry सेटिंग्जमधून बंद आहे ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
 
         if hit_count_so_far >= max_hits_per_zone and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
 
         rsi_value = None
@@ -366,7 +466,7 @@ def _process_symbol_core(access_token, symbol, check_info):
                     f"RSI {rsi_value} ({timeframe_suffix}) दिशेशी जुळत नाही "
                     f"(Support<{rsi_support_max} / Resistance>{rsi_resistance_min} हवं होतं)"
                 )
-                cloud_db.save_signal_log(log_entry)
+                _log(log_entry)
                 continue
 
         # 🎓 "First time level hit, level hold Minimum period for 1st trade" (5M/15M सारखाच, 1-मिनिट candles वरून, MCX च्या 0.10% touch
@@ -386,7 +486,7 @@ def _process_symbol_core(access_token, symbol, check_info):
                     log_entry["reason"] = (
                         f"Level फक्त {held_minutes} मिनिटं टिकून आहे (किमान {entry_min_hold_minutes} हवीत) — ताजा/अस्थिर touch ({timeframe_suffix})"
                     )
-                    cloud_db.save_signal_log(log_entry)
+                    _log(log_entry)
                     continue
 
         # 🎓 "add Supertrend entry gate for MCX futures" -- किंमत 1H **आणि** 4H दोन्ही Supertrend च्या खाली => Bullish trade नाही; दोन्हींच्या
@@ -405,13 +505,13 @@ def _process_symbol_core(access_token, symbol, check_info):
                     f"किंमत {'1H आणि 4H दोन्ही Supertrend च्या खाली (दोन्ही BEARISH) -- Bullish trade थांबवला' if direction == 'BULLISH' else '1H आणि 4H दोन्ही Supertrend च्या वर (दोन्ही BULLISH) -- Bearish trade थांबवला'}"
                     f" [1H: {st_dir_1h}, 4H: {st_dir_4h}] ({timeframe_suffix})"
                 )
-                cloud_db.save_signal_log(log_entry)
+                _log(log_entry)
                 continue
 
-        if has_open_trade_from_source(symbol, STRATEGY_KEY):
+        if has_open_trade_from_source(symbol, source):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
             log_entry["reason"] = f"आधीची MCX Futures position (कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
-            cloud_db.save_signal_log(log_entry)
+            _log(log_entry)
             continue
 
         # --- सर्व अटी पूर्ण! Entry — एकच futures leg (options concepts काहीच नाहीत) ---
@@ -447,8 +547,8 @@ def _process_symbol_core(access_token, symbol, check_info):
             "max_loss": sl_points_effective, "max_profit": target_points_effective,
         }
 
-        trading_mode = settings.get("trading_mode", "PAPER")
-        broker_account_ids = settings.get("broker_account_ids") or []
+        trading_mode = "PAPER" if shadow else settings.get("trading_mode", "PAPER")
+        broker_account_ids = [] if shadow else (settings.get("broker_account_ids") or [])
         if broker_account_ids:
             from trading_engine import execute_trade_on_all_accounts
             results, factory_errors = execute_trade_on_all_accounts(
@@ -467,7 +567,7 @@ def _process_symbol_core(access_token, symbol, check_info):
                 access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
                 sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
                 product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=None, source=STRATEGY_KEY,
+                sl_pct_of_credit=None, source=source,
                 entry_level_price=level_price, entry_timeframe=timeframe_suffix,
             )
             # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
@@ -487,9 +587,13 @@ def _process_symbol_core(access_token, symbol, check_info):
             log_entry["reason"] = f"Directional (trend-continuation) trade — Breakout Entry (price consolidation + candle close, {timeframe_suffix}), RSI Gate वगळले"
         else:
             log_entry["reason"] = rsi_display
-        cloud_db.save_signal_log(log_entry)
+        _log(log_entry)
 
         hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
+        if shadow:
+            hit_label_header = f"🧪 [SR V3 PAPER shadow] (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
+        elif level_source == "SRV3":
+            hit_label_header += " — SR V3 levels"
         message = (
             f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"

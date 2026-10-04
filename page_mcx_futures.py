@@ -674,6 +674,28 @@ def render():
         )
 
         st.markdown("---")
+        # 🎓 वापरकर्त्याचा निर्णय ("MCX bot मध्ये सुद्धा SR V3 levels — Setting ने निवड") — बघा mcx_futures_trader.LEVEL_ENGINES.
+        sub_header("🧱 Level engine (levels कुठून)", HDR_TEAL)
+        _LE_OPTIONS = {
+            "DYNAMIC": "जुने Dynamic S/R (30M/60M) — डीफॉल्ट",
+            "SRV3_SHADOW": "🧪 जुने + SR V3 PAPER shadow (तुलना)",
+            "SRV3": "SR V3 levels (मुख्य bot)",
+        }
+        _le_keys = list(_LE_OPTIONS.keys())
+        _le_stored = settings.get("level_engine", "DYNAMIC")
+        level_engine = st.radio(
+            "Bot कोणत्या levels वर touch तपासेल?", _le_keys, format_func=lambda k: _LE_OPTIONS[k], horizontal=True,
+            index=_le_keys.index(_le_stored) if _le_stored in _le_keys else 0, key=_widget_key(symbol, "level_engine"),
+        )
+        st.caption(
+            "SR V3 (MCX): 15M+30M+1H swing pivots, PDH/PDL/PWH/PWL (सत्र-अंत 23:30), gaps — फक्त grade A/B, किंमतीपासून 3% आत, "
+            "दर 5 मिनिटांनी ताजे. 'PAPER shadow' मध्ये मूळ bot जुन्याच levels वर चालतो आणि शेजारी SR V3 levels वर तेच नियम निव्वळ "
+            "PAPER (वेगळा source, Performance वर तुलना). MCX चा जुना डेटा नसल्याने backtest झालेला नाही — आधी shadow ने तपासा."
+        )
+        if level_engine == "SRV3" and settings.get("trading_mode", "PAPER") != "PAPER":
+            st.warning("⚠️ SR V3 levels backtest न झालेले आहेत आणि या symbol चा trading mode PAPER नाही — खरे orders SR V3 levels वर जातील.")
+
+        st.markdown("---")
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Bullish and Bearish Entry off करण्याचे Button
         # सुद्धा पाहिजे") — फक्त त्या दिशेचे नवीन trades थांबतात (आधीच उघडलेले चालूच राहतात).
         sub_header("↕️ Bullish / Bearish Entry", HDR_GREEN)
@@ -808,6 +830,7 @@ def render():
                 "symbol_enabled": bool(symbol_enabled), "lots": int(lots),
                 "max_hits_per_zone": int(max_hits_per_zone),
                 "timeframe_choice": timeframe_choice,
+                "level_engine": level_engine,
                 "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
                 "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
                 "rsi_support_max": int(rsi_support_max), "rsi_resistance_min": int(rsi_resistance_min),

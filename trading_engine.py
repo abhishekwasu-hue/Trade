@@ -546,7 +546,10 @@ VIX_SPIKE_HALT_SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
 # fill ∓ sl_points. आधी सर्वांसाठी SL/Target signal-वेळच्या अंदाजित भावावरून anchor व्हायचा आणि
 # (fill − अंदाज) फरक (slippage) ₹ रकमेत मिसळायचा — त्यामुळे सेटिंग्ज एकच असूनही प्रत्येक trade चा SL
 # वेगळा (उदा. -200 ते -278) यायचा. options strategies चं वर्तन अपरिवर्तित (हा संच फक्त MCX Futures).
-FILL_ANCHORED_SL_SOURCES = ("mcx_futures",)
+FILL_ANCHORED_SL_SOURCES = ("mcx_futures", "mcx_futures_srv3_shadow")
+# 🎓 MCX futures चे sources — मूळ bot आणि त्याचा SR V3 PAPER shadow (mcx_futures_trader.py, level_engine="SRV3_SHADOW"). futures-विशिष्ट
+# गणित (GOLD सारखा price-multiplier, broker quantity lots मध्ये, MCX LIVE quantity-gate, MCX Kill Switch) दोन्हींना सारखंच लागतं.
+MCX_SOURCES = ("mcx_futures", "mcx_futures_srv3_shadow")
 
 # 🎓 वापरकर्त्याने निदर्शनास आणलेली bug ("Shadow trade exit reason is wrong, review") — Shadow trades (OTM Shadow /
 # Min-Hold Shadow) हे मूळ strategy चे PAPER-only forward-test आहेत; तुलना तेव्हाच बरोबर जेव्हा त्यांचे exit नियम मूळ
@@ -558,6 +561,7 @@ SHADOW_EXIT_PARENT_SOURCE = {
     "dynamic_sr_instant_otm_shadow": "dynamic_sr_instant",
     "dynamic_sr_instant_min_hold_shadow": "dynamic_sr_instant",
     "dynamic_sr_instant_srv3_shadow": "dynamic_sr_instant",      # SR V3 levels PAPER shadow (srv3_instant_shadow.py)
+    "mcx_futures_srv3_shadow": "mcx_futures",                     # MCX SR V3 levels PAPER shadow (mcx_futures_trader.py)
 }
 
 
@@ -928,7 +932,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # quantity (lots × Upstox lot_size) आणि ती कधीच बदलत नाही; `lot_size` मात्र आतापासून P&L/SL/Target/margin-
     # अंदाज/DB साठीचा 'प्रभावी' आकार (lot_size × गुणक) — अशा प्रकारे खालचं सर्व `* lots * lot_size` गणित बरोबर ₹
     # देतं. गुणक live_trades.pnl_multiplier मध्ये साठवला जातो (exit-order ची खरी quantity परत काढण्यासाठी).
-    pnl_multiplier = get_price_multiplier(symbol) if source == "mcx_futures" else 1
+    pnl_multiplier = get_price_multiplier(symbol) if source in MCX_SOURCES else 1
     order_lot_size = lot_size
     lot_size = lot_size * pnl_multiplier
 
@@ -936,7 +940,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # पाठवतो, बघा broker_quantity). verify_mcx_order_quantity_units.py ने हे पुन्हा खात्री करून मार्कर लिहीपर्यंत MCX चा LIVE order
     # नाकारला जातो; तसंच फक्त Upstox वर. PAPER वर परिणाम नाही. बघा mcx_quantity_check.py.
     mcx_live_blocker = None
-    if trading_mode == "LIVE" and source == "mcx_futures":
+    if trading_mode == "LIVE" and source in MCX_SOURCES:
         if not is_mcx_live_quantity_verified():
             mcx_live_blocker = (
                 "MCX LIVE अडवला — Upstox च्या MCX order quantity चं एकक (units/lots) अजून पडताळलेलं नाही; चुकीचं असल्यास "
@@ -986,7 +990,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (MCX LIVE करण्याआधी) — ग्लोबल kill switch सोबतच, फक्त MCX
     # साठीच (source=="mcx_futures") स्वतंत्र, जास्त कडक Kill Switch — brand-new रणनीतीसाठी. आता वरच्याच
     # PAPER-सकट सुधारणेप्रमाणे LIVE आणि PAPER दोन्हीला लागू.
-    if source == "mcx_futures":
+    if source in MCX_SOURCES:
         mcx_kill_switch_ok, mcx_kill_switch_reason = check_mcx_kill_switch()
         if not mcx_kill_switch_ok:
             if trading_mode == "LIVE":
@@ -1020,7 +1024,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
         {
             "quantity": qty, "product": product_type, "validity": "DAY", "price": 0,
             # MCX: Upstox ला quantity lots मध्ये जाते (बघा upstox_api.broker_order_quantity); `quantity` (units) फक्त log/charges साठी.
-            **({"broker_quantity": lots} if source == "mcx_futures" else {}),
+            **({"broker_quantity": lots} if source in MCX_SOURCES else {}),
             "tag": f"A1_{leg['role'].upper()[:16]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": leg["transaction_type"],
             "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False,
@@ -2105,7 +2109,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             close_orders = [
                 {
                     "quantity": qty, "product": product_type, "validity": "DAY", "price": 0,
-                    **({"broker_quantity": lots} if source == "mcx_futures" else {}),  # MCX: Upstox ला lots (बघा entry order)
+                    **({"broker_quantity": lots} if source in MCX_SOURCES else {}),  # MCX: Upstox ला lots (बघा entry order)
                     "tag": f"A1_CLOSE_{leg['role'].upper()[:12]}", "instrument_token": leg["instrument_key"],
                     "order_type": "MARKET",
                     "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
@@ -2361,7 +2365,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     close_orders = [
         {
             "quantity": int(round(lots * lot_size / (pnl_multiplier or 1))), "product": product_type, "validity": "DAY",
-            **({"broker_quantity": lots} if trade_source == "mcx_futures" else {}),  # MCX: Upstox ला lots
+            **({"broker_quantity": lots} if trade_source in MCX_SOURCES else {}),  # MCX: Upstox ला lots
             "tag": f"MANUAL_CLOSE_{str(leg.get('role', 'LEG'))[:12]}", "instrument_token": leg["instrument_key"],
             "order_type": "MARKET", "transaction_type": ("SELL" if leg["transaction_type"] == "BUY" else "BUY"),
             "disclosed_quantity": 0, "trigger_price": 0, "price": 0, "is_amo": False,

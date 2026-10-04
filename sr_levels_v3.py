@@ -86,6 +86,8 @@ class SRConfig:
     min_score: float = 25.0
     max_levels: int = 12
     max_distance_pct: float = 3.0
+    # सत्र कधी संपतं ("मागचा दिवस" ठरवण्यासाठी) — NSE 15:15 (डीफॉल्ट); MCX साठी "23:30" (बघा mcx_futures_trader.py)
+    session_end: str = "15:15"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -179,12 +181,13 @@ def _daily_from_intraday(df):
     return d.groupby("date").agg(high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index()
 
 
-def session_reference_date(now):
+def session_reference_date(now, session_end="15:15"):
     """"मागचा दिवस" कोणत्या दिवसाच्या सापेक्ष मोजायचा. सत्र चालू असताना = आजची तारीख. शेवटचा candle सत्राच्या अखेरचा (15:15 किंवा
     नंतर) असेल (बाजार बंद / रात्र / सकाळपूर्वी), तर *पुढच्या* trading दिवसाची तारीख (शनिवार-रविवार वगळून) — म्हणजे बाजार बंद
     झाल्यावर किंवा पुढच्या सकाळी बघितलं तरी PDH/PDL = नुकताच संपलेला दिवस, आणि शुक्रवारनंतर PWH/PWL = नुकताच संपलेला आठवडा."""
     ref = now.date()
-    if now.time() >= datetime.time(15, 15):
+    end_h, end_m = (int(x) for x in str(session_end).split(":"))
+    if now.time() >= datetime.time(end_h, end_m):
         ref += datetime.timedelta(days=1)
         while ref.weekday() >= 5:
             ref += datetime.timedelta(days=1)
@@ -532,7 +535,7 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
     for tf, df in prepared.items():
         items += extract_pivots(df, tf, cfg, now)
     key_source = prepared.get("15minute", prepared[finest])
-    for key in compute_key_levels(daily_df, key_source, session_reference_date(now)):
+    for key in compute_key_levels(daily_df, key_source, session_reference_date(now, cfg.session_end)):
         items.append({"price": key["price"], "kind": "KEY", "name": key["name"], "tf": None, "weight": 1.0})
     zones = [_build_zone(c, cfg, tol) for c in cluster_items(items, tol)] if items else []
 
