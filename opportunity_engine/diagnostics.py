@@ -356,8 +356,9 @@ def _in_window(setup, t, ecfg):
         return hm(ecfg.d3_window_start) <= m <= hm(ecfg.d3_window_end)
     if setup == "D6":
         return hm(ecfg.d6_window_start) <= m <= hm(ecfg.d6_window_end)
-    if setup == "D10":
-        return hm(ecfg.d10_window_start) <= m <= hm(ecfg.d10_window_end)
+    if setup in ("D7", "D8", "D10"):
+        key = setup.lower()
+        return hm(getattr(ecfg, f"{key}_window_start")) <= m <= hm(getattr(ecfg, f"{key}_window_end"))
     return True
 
 
@@ -368,7 +369,8 @@ def shadow_detect(tl, variant, bcfg, progress=None):
     रिटर्न (days DataFrame, shadow candidates DataFrame; column `source` = orig/wide)."""
     ecfg = _ecfg(bcfg, variant)
     wide = replace(ecfg, d1_window_end="15:30", d2_window_end="15:30", d3_window_start="09:15", d3_window_end="15:30", d2_min_rr=0.0,
-                   d6_window_start="09:15", d6_window_end="15:30", d10_window_start="09:15", d10_window_end="15:30")
+                   d6_window_start="09:15", d6_window_end="15:30", d10_window_start="09:15", d10_window_end="15:30",
+                   d7_window_start="09:15", d7_window_end="15:30", d8_window_start="09:15", d8_window_end="15:30")
     orig = replace(ecfg, d2_min_rr=0.0)
     sets = {"orig": make_detectors(bcfg.detectors, orig), "wide": make_detectors(bcfg.detectors, wide)}
     day_rows, cand_rows = [], []

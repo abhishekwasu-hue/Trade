@@ -94,7 +94,7 @@ DIAG_TABLES = (
 
 
 def _render_backtest_tab(symbol):
-    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest · D6 HTF Zone Pullback · D10 Trap) — खरा offline NIFTY डेटा", HDR_ORANGE)
+    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest · D6 HTF Zone Pullback · D7 Range Box · D8 Triangle · D10 Trap) — खरा offline NIFTY डेटा", HDR_ORANGE)
     st.caption("Live आणि backtest साठी एकच निर्णय-साखळी (gate → risk → validation → score → selector). R-आधारित (spot points; option P&L नाही). Index डेटात volume नाही ⇒ volume 'N/A'. "
                "निकाल जसे आले तसे — ट्यूनिंग नाही. IS = 2015→2021, OOS = 2022→; verdict फक्त अहवाल (OOS ≥30 trades ∧ expectancy>0 ⇒ KEEP).")
     if symbol != "NIFTY":

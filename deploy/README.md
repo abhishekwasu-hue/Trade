@@ -913,3 +913,13 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
   → मंजुरीनंतर `python3 run_visual_backfill.py --run --yes --mode batch` (Batches API, 50% स्वस्त; साधारण 1 तासाने पुन्हा तीच command चालवल्यावर निकाल गोळा) →
   `python3 run_opportunity_backtest.py --visual-cache data/oe_visual_backfill_NIFTY.jsonl --start 2022-01-01 --variants V1` (off/score/gate तुलना + level reaction).
 
+
+### PR-3: D7 Range-Box Breakout + D8 Triangle Breakout + D10 box trap
+
+- **D7**: आजच्या 5M/15M bars मधला घट्ट box (12–36 bars, उंची ≤ 0.35 × ADR, दोन्ही कडांना ≥ 2 touches; 5M वर box नसेल तर Opening Range) — close
+  box पलीकडे ≥ 0.1 × उंची ⇒ breakout. SL box मध्य, T1 = 1 × box उंची, T2 hint = 2 × उंची. `d7_entry_mode="retest"` ने कडेला retest ची वाट.
+- **D8**: swing highs/lows वरच्या रेषांचे ascending / descending / symmetrical triangle (रुंदी ≥ 40% कमी, apex च्या 75% आधी) — रेषेपलीकडे close ⇒ breakout,
+  SL शेवटचा आतला swing, target = सुरुवातीची रुंदी (measured move). फक्त आजचे bars (15M वर मोठे triangle दिसत नाहीत).
+- **D10**: sweep आधीच्या 5M box चा तळ/माथा हा सर्वोच्च प्राधान्याचा trap level (target = box ची दुसरी कड).
+- Backtest डीफॉल्ट detectors आता D1, D2, D3, D6, D7, D8, D10. सर्व निकाल IS/OOS वेगळे.
+- Visual audit: `.env` मध्ये `ANTHROPIC_API_KEY` नसेल तर रोजचा cron शांतपणे वगळतो (exit 0, खर्च नाही) — key जोडल्यावर आपोआप सुरू.

@@ -132,6 +132,9 @@ def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
     if not token:
         print("❌ कुठलाही Upstox token उपलब्ध नाही.")
         return 1
+    if not args.dry_run and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        print("ℹ️ ANTHROPIC_API_KEY अजून .env मध्ये नाही — आजचा visual audit वगळला (खर्च नाही, error नाही). Key जोडल्यावर आपोआप चालेल.")
+        return 0
     client = None if args.dry_run else client_factory()
     now = pd.Timestamp(get_ist_now())
     now = now.tz_localize(None) if now.tzinfo is None else now.tz_convert("Asia/Kolkata").tz_localize(None)

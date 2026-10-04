@@ -270,7 +270,7 @@ def test_variant_tables_setup_tod_and_wait_pullback():
 
 
 def test_default_detectors_include_d6_d10_and_registry():
-    assert BT.BacktestConfig().detectors == ("D1", "D2", "D3", "D6", "D10")
+    assert {"D6", "D10"} <= set(BT.BacktestConfig().detectors)
     ds = BT.make_detectors(("D6", "D10", "D99"), CFG)
     assert [d.setup_id for d in ds] == ["D6", "D10"]
 
