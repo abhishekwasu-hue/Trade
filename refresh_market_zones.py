@@ -12,6 +12,8 @@ import argparse
 import sys
 
 import cloud_db
+import level_memory as LM
+from config import get_ist_now
 from market_zones import compute_all_zones
 from notifications import notify_error
 from signals import resample_to_1h
@@ -110,6 +112,16 @@ def refresh_symbol(access_token, symbol, lookback_days=365):
     )
     if zones_df.empty:
         return False, f"{symbol}: पुरेसा इतिहास नाही (किमान २० candles प्रति timeframe हवेत) -- कुठलेही zones सापडले नाहीत."
+    # 🎓 Level memory (डीफॉल्ट चालू) -- पूर्ण replace आधी DYNAMIC_SR_* (1M/5M/15M/30M/60M) रांगा स्मरणासह: जुने levels त्याच किंमतीवर, formed_date
+    # जुनीच (बघा level_memory.py). इतर zone_types (Order Block/Demand-Supply/Gap इ.) जसेच्या तसे.
+    try:
+        _existing = cloud_db.get_market_zones(symbol, status="ACTIVE")
+        _frames = {"1M": df_1m_recent, "5M": df_5m_recent, "15M": df_15m_recent if df_15m_recent is not None and not df_15m_recent.empty else df_15m,
+                   "30M": df_30m_recent, "60M": df_60m_recent}
+        zones_df = LM.apply_memory_to_zone_rows(zones_df, _existing, _frames, get_ist_now(),
+                                                lambda sfx: LM.memory_enabled(symbol, sfx, cloud_db.get_strategy_settings), symbol=symbol)
+    except Exception as exc:                                     # स्मरण अयशस्वी झालं तरी नेहमीचा refresh चालू राहावा
+        print(f"{symbol}: level memory वगळली ({exc})")
     saved = cloud_db.save_market_zones(zones_df, symbol)
     if not saved:
         return False, f"{symbol}: Supabase मध्ये साठवता आलं नाही (जोडणी तपासा)"

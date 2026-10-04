@@ -22,6 +22,7 @@ import argparse
 import sys
 
 import cloud_db
+import level_memory as LM
 from config import get_ist_now
 from sr_dynamic import compute_dynamic_sr
 from signals import resample_to_1h
@@ -50,11 +51,17 @@ def refresh_symbol(access_token, symbol, lookback_days=180):
     # (त्याच level वर पुन्हा entry शक्य). आता 5M/1M प्रमाणेच merge — जुळणारा (±0.02%) जुना level_price
     # कायम, नवीन जोडले जातात, गेलेले STALE होतात (कधीच DELETE नाही) — म्हणून दर 15 मिनिटांनीही सुरक्षित.
     merged, skipped = [], []
+    existing_zones = None
     for tf_label, df_tf in (("15M", df_15m), ("30M", df_30m), ("60M", df_60m)):
         if df_tf is None or len(df_tf) < 100:
             skipped.append(tf_label)
             continue
         dyn_sr = compute_dynamic_sr(df_tf, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+        # 🎓 Level memory (डीफॉल्ट चालू) -- जुने levels त्याच किंमतीवर (बघा level_memory.py)
+        if LM.memory_enabled(symbol, tf_label, cloud_db.get_strategy_settings):
+            if existing_zones is None:
+                existing_zones = cloud_db.get_market_zones(symbol, status="ACTIVE")
+            dyn_sr = LM.remember_dyn_sr(dyn_sr, existing_zones, tf_label, df_tf, get_ist_now())
         if not cloud_db.merge_dynamic_sr_zones(symbol, dyn_sr, tf_label, formed_date=get_ist_now()):
             return False, f"{symbol}: {tf_label} levels merge अयशस्वी (रिकामा निकाल किंवा Supabase जोडणी) — जुने levels कायम"
         merged.append(tf_label)

@@ -16,6 +16,8 @@ from tests.test_mcx_futures_trader import _DEFAULT_SETTINGS, _fake_candles_df, _
 @pytest.fixture(autouse=True)
 def _no_closed_trades(monkeypatch):
     monkeypatch.setattr(mft, "get_closed_trades_on_date", lambda *a, **k: [])
+    # "नवीन entry बंद" वेळ (22:45 IST) खऱ्या घड्याळावर अवलंबून नको -- नाहीतर रात्री उशिरा चालवल्यावर हे tests अयशस्वी होतात
+    monkeypatch.setattr(mft, "MCX_NO_NEW_ENTRY_AFTER", (24, 0))
 
 
 @pytest.fixture(autouse=True)

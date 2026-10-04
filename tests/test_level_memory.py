@@ -104,3 +104,71 @@ def test_refresh_symbol_reset_and_disabled_forget_old_levels():
              patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
             ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", **kwargs)
         assert ok and note in msg and 299.5 not in set(save.call_args.args[0]["zone_low"])
+
+
+# ---- NIFTY (स्थिर भूमिका) ----------------------------------------------------------------------------------------------
+def _nifty_df(prices, start="2026-10-01 09:15"):
+    return _df(prices, start=start, spread=3.0)
+
+
+def test_role_kept_for_remembered_levels_when_not_by_price():
+    df = _nifty_df(list(np.linspace(24550, 24480, 80)))                         # 24500 ला 1 Oct ला स्पर्श, आता भाव 24480 (खाली)
+    existing = [{"level": 24500.0, "strength": 3, "formed_date": "2026-09-30", "role": "SUPPORT"}]
+    out = LM.merge_levels(existing, [], df, 24480.0, pd.Timestamp("2026-10-01 15:00"), retire_days=5, role_by_price=False)
+    assert [(z["level"], z["role"]) for z in out] == [(24500.0, "SUPPORT")]      # role DB मध्ये स्थिर (by-price नसता तर RESISTANCE)
+
+
+def test_remember_dyn_sr_feeds_merge_format():
+    df = _nifty_df(list(np.linspace(24600, 24500, 80)))
+    zones = pd.DataFrame([{"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 24580.0, "strength": 4, "formed_date": "2026-09-30",
+                           "status": "ACTIVE"},
+                          {"zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 24400.0, "strength": 4, "formed_date": "2026-09-30",
+                           "status": "ACTIVE"}])
+    dyn = {"support": [{"level": 24498.0, "touches": 2}], "resistance": [{"level": 24581.5, "touches": 5}]}
+    out = LM.remember_dyn_sr(dyn, zones, "5M", df, pd.Timestamp("2026-10-01 15:00"))
+    assert out["resistance"] == [{"level": 24580.0, "touches": 5.0}]             # जुनी किंमत, जास्त strength
+    assert out["support"] == [{"level": 24498.0, "touches": 2.0}]                # 15M चा level 5M मध्ये मिसळत नाही
+
+
+def test_memory_enabled_reads_bot_settings():
+    calls = []
+
+    def gs(key, sym):
+        calls.append(key)
+        return {"level_memory_enabled": key != "15m_dynamic_sr"}
+    assert LM.memory_enabled("NIFTY", "5M", gs) is True and LM.memory_enabled("NIFTY", "15M", gs) is False
+    assert calls == ["1m_instant", "15m_dynamic_sr"]
+    assert LM.memory_enabled("NIFTY", "5M", lambda *a: (_ for _ in ()).throw(RuntimeError())) is True
+
+
+def test_nightly_apply_keeps_formed_date_and_other_zone_types():
+    df5 = _nifty_df(list(np.linspace(24600, 24500, 80)))
+    zones_df = pd.DataFrame([
+        {"symbol": "NIFTY", "zone_type": "DYNAMIC_SR_SUPPORT_5M", "zone_low": 24498.0, "zone_high": 24498.0, "strength": 2,
+         "formed_date": "2026-10-01", "status": "ACTIVE"},
+        {"symbol": "NIFTY", "zone_type": "ORDER_BLOCK_BULLISH", "zone_low": 24300.0, "zone_high": 24320.0, "strength": 1,
+         "formed_date": "2026-10-01", "status": "ACTIVE"}])
+    existing = pd.DataFrame([{"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 24580.0, "strength": 4, "formed_date": "2026-09-30",
+                              "status": "ACTIVE"}])
+    out = LM.apply_memory_to_zone_rows(zones_df, existing, {"5M": df5, "15M": None}, pd.Timestamp("2026-10-01 15:30"), lambda s: True,
+                                       symbol="NIFTY")
+    by = {(r.zone_type, r.zone_low): r for r in out.itertuples()}
+    assert ("ORDER_BLOCK_BULLISH", 24300.0) in by and ("DYNAMIC_SR_SUPPORT_5M", 24498.0) in by
+    assert by[("DYNAMIC_SR_RESISTANCE_5M", 24580.0)].formed_date == "2026-09-30"
+    off = LM.apply_memory_to_zone_rows(zones_df, existing, {"5M": df5}, pd.Timestamp("2026-10-01 15:30"), lambda s: False)
+    assert off.equals(zones_df)
+
+
+def test_refresh_5m_uses_memory_when_enabled():
+    import refresh_dynamic_sr_5m as r5
+    df = _nifty_df([24500 + (8 if i % 6 < 3 else -8) for i in range(300)], start="2026-09-25 09:15")
+    df.attrs["failed_chunks"] = 0
+    zones = pd.DataFrame([{"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 24509.0, "strength": 3, "formed_date": "2026-09-30",
+                           "status": "ACTIVE"}])
+    with patch.object(r5, "fetch_candles", return_value=df), \
+         patch.object(r5.cloud_db, "get_strategy_settings", return_value={}), \
+         patch.object(r5.cloud_db, "get_market_zones", return_value=zones), \
+         patch.object(r5.cloud_db, "merge_dynamic_sr_zones", return_value=True) as merge:
+        ok, _ = r5.refresh_symbol_5m("tok", "NIFTY")
+    passed = merge.call_args.args[1]
+    assert ok and 24509.0 in [z["level"] for z in passed["resistance"] + passed["support"]]

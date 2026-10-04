@@ -343,7 +343,7 @@ def build_lightweight_chart_html(
             if lvl is not None:
                 width, opacity = _width_and_opacity(touches)
                 sr_lines_js.append({
-                    "price": round(float(lvl), 2), "color": f"rgba(242,54,69,{opacity})",
+                    "price": round(float(lvl), 2), "color": f"rgba(255,23,68,{opacity})",
                     "title": f"R ({touches}x)", "width": width,
                 })
                 sr_table_rows.append({"type": "Resistance", "level": round(float(lvl), 2), "touches": touches})
@@ -353,7 +353,7 @@ def build_lightweight_chart_html(
             if lvl is not None:
                 width, opacity = _width_and_opacity(touches)
                 sr_lines_js.append({
-                    "price": round(float(lvl), 2), "color": f"rgba(8,153,129,{opacity})",
+                    "price": round(float(lvl), 2), "color": f"rgba(0,200,83,{opacity})",
                     "title": f"S ({touches}x)", "width": width,
                 })
                 sr_table_rows.append({"type": "Support", "level": round(float(lvl), 2), "touches": touches})
@@ -687,7 +687,7 @@ const srLines = {json.dumps(sr_lines_js)};
 srLines.forEach(l => {{
     candleSeries.createPriceLine({{
         price: l.price, color: l.color, lineWidth: l.width,
-        lineStyle: LightweightCharts.LineStyle.Dashed, title: l.title,
+        lineStyle: LightweightCharts.LineStyle.Dotted, title: l.title,       // वापरकर्त्याची मागणी: S/R = ठिपक्यांची रेषा (लाल R, हिरवी S)
     }});
 }});
 

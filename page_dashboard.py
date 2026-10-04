@@ -44,11 +44,12 @@ from live_ticker import render_live_ticker
 from mini_chart import render_mini_charts
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
-    BOT_VIEWS, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
+    BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
     mcx_info_suffixes, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 from sr_v3_chart import V3_VIEW, tf_set_label, v3_chart_lines
+from level_memory import NSE_SETTINGS_KEY
 
 
 
@@ -1302,6 +1303,27 @@ def render():
                     "रेषेचं नाव: S/R + ग्रेड/Score + स्रोत (TF / PDH-PDL-PWH-PWL / GAP / FLIP). जाड = जास्त Score. तपशील आणि पॅरामीटर्स: ANALYZE → SR Levels V3. "
                     "इतर चार्ट दाखवायचा असेल तर Bot view मध्ये '—' निवडा."
                 )
+            elif bot_choice == NO_BOT and not chart_df.empty and chart_tf in CHART_TF_DYN_SUFFIX:
+                # 🎓 वापरकर्त्याची मागणी: "5-Min Instant 5M levels वर, 15M Reversal 15M levels वर trade करतो -- NIFTY chart वर त्या TF चे Dynamic
+                # levels दिसलेच पाहिजेत" -- chart च्या TF चे (1M/5M/15M/30M/1H) Supabase मधले bot चे ACTIVE Dynamic S/R levels (तेच जे bot trade
+                # करतो; level memory सकट). DB मध्ये नसतील तर आधीसारखे chart वरून मोजलेले.
+                try:
+                    import cloud_db as _cdb
+                    _sfx = CHART_TF_DYN_SUFFIX[chart_tf]
+                    _owner = NSE_SETTINGS_KEY.get(_sfx, "15m_dynamic_sr")
+                    _bs = _cdb.get_strategy_settings(_owner, chart_symbol)
+                    _zones = _cdb.get_market_zones(chart_symbol, status="ACTIVE")
+                    _hits = _cdb.get_zone_hits_today_bulk(chart_symbol, get_ist_today().strftime("%Y-%m-%d"))
+                    _lines = level_lines(_zones, [_sfx], _hits, int(_bs.get("max_hits_per_zone", 2)), price=float(chart_df["close"].iloc[-1]),
+                                         max_distance_pct=2.0, nearest_n=3)
+                    if _lines:
+                        bot_lines, sr_for_tv = _lines, None
+                        bot_note = (f"Dynamic S/R **{_sfx}** — bot चे प्रत्यक्ष (Supabase) levels: लाल ठिपके = resistance, हिरवे = support; "
+                                    "· आजचे trades/कमाल; फिके = दूर (±2% बाहेरचे जवळचे 3+3) किंवा आजचे max संपलेले.")
+                    else:
+                        bot_note = f"Supabase मध्ये {_sfx} चे ACTIVE Dynamic levels सापडले नाहीत — chart वरून मोजलेले levels दाखवले."
+                except Exception:
+                    pass                                         # chart वरून मोजलेले levels (sr_for_tv) तसेच राहतात
             elif bot_choice != NO_BOT and not chart_df.empty:
                 try:
                     import cloud_db as _cdb
