@@ -27,8 +27,10 @@ import pandas as pd
 
 from sr_dynamic import find_pivots_indexed
 
-TF_ORDER = ("5minute", "15minute", "30minute", "1hour")
-TF_SHORT = {"5minute": "5M", "15minute": "15M", "30minute": "30M", "1hour": "1H"}
+# 🎓 "chart च्या TF नुसार levels" -- मोठे TF (4H/Daily/Weekly) फक्त तेव्हाच वापरले जातात जेव्हा caller ते frames देतो (sr_v3_chart.frames_for_chart_tf);
+# जुने callers (MCX bot: 15M+30M+1H, 5-Min shadow) बदलत नाहीत.
+TF_ORDER = ("5minute", "15minute", "30minute", "1hour", "4hour", "day", "week")
+TF_SHORT = {"5minute": "5M", "15minute": "15M", "30minute": "30M", "1hour": "1H", "4hour": "4H", "day": "D", "week": "W"}
 
 KEY_LEVEL_POINTS = {"PDH": 30.0, "PDL": 30.0, "PDC": 15.0, "PWH": 35.0, "PWL": 35.0}
 
@@ -36,12 +38,17 @@ KEY_LEVEL_POINTS = {"PDH": 30.0, "PDL": 30.0, "PDC": 15.0, "PWH": 35.0, "PWL": 3
 @dataclass
 class SRConfig:
     # TF-नुसार pivot window (दोन्ही बाजूला किती candles) आणि किती दिवसांचे pivots विचारात घ्यायचे
-    prd: dict = field(default_factory=lambda: {"5minute": 10, "15minute": 10, "30minute": 10, "1hour": 10})
-    lookback_days: dict = field(default_factory=lambda: {"5minute": 3, "15minute": 5, "30minute": 8, "1hour": 10})
+    prd: dict = field(default_factory=lambda: {"5minute": 10, "15minute": 10, "30minute": 10, "1hour": 10, "4hour": 5, "day": 5, "week": 3})
+    lookback_days: dict = field(default_factory=lambda: {"5minute": 3, "15minute": 5, "30minute": 8, "1hour": 10, "4hour": 45, "day": 250,
+                                                         "week": 1100})
     # मोठ्या TF चा pivot जास्त वजनाचा (touches साठी) आणि confluence मध्ये जास्त गुण
-    tf_factor: dict = field(default_factory=lambda: {"5minute": 0.6, "15minute": 1.0, "30minute": 1.4, "1hour": 2.0})
-    tf_confluence_points: dict = field(default_factory=lambda: {"5minute": 3.0, "15minute": 5.0, "30minute": 7.0, "1hour": 10.0})
+    tf_factor: dict = field(default_factory=lambda: {"5minute": 0.6, "15minute": 1.0, "30minute": 1.4, "1hour": 2.0, "4hour": 2.5, "day": 3.0,
+                                                     "week": 3.5})
+    tf_confluence_points: dict = field(default_factory=lambda: {"5minute": 3.0, "15minute": 5.0, "30minute": 7.0, "1hour": 10.0, "4hour": 12.0,
+                                                                "day": 14.0, "week": 16.0})
     recency_half_life_days: float = 2.5
+    # मोठ्या TF चे pivots जास्त काळ महत्त्वाचे -- त्यांचा ताजेपणा जास्त हळू घटतो (नसलेल्या TF साठी वरचा recency_half_life_days)
+    recency_half_life_by_tf: dict = field(default_factory=lambda: {"4hour": 7.0, "day": 30.0, "week": 120.0})
     atr_period: int = 14
     reaction_atr_full: float = 3.0        # इतक्या ATR ची उलटी चाल = reaction चे पूर्ण गुण
     # झोन बनवण्याची tolerance = tol_atr_mult × (15M) ATR, किंमतीच्या [tol_min_pct, tol_max_pct]% मध्ये बांधलेली
@@ -165,7 +172,7 @@ def extract_pivots(df, tf, cfg, now):
         age_days = (now - ts).total_seconds() / 86400.0
         out.append({
             "price": float(value), "kind": "H" if is_high else "L", "ts": ts, "tf": tf,
-            "weight": recency_weight(age_days, cfg.recency_half_life_days), "reaction": float(reaction),
+            "weight": recency_weight(age_days, cfg.recency_half_life_by_tf.get(tf, cfg.recency_half_life_days)), "reaction": float(reaction),
             "reaction_raw": float(reaction_raw),
         })
     return out

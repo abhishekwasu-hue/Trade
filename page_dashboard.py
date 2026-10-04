@@ -48,7 +48,7 @@ from bot_view import (
     mcx_info_suffixes, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
-from sr_v3_chart import V3_VIEW, v3_chart_lines
+from sr_v3_chart import V3_VIEW, tf_set_label, v3_chart_lines
 
 
 
@@ -1295,8 +1295,9 @@ def render():
                 st1d_line_aligned = st1d_dir_aligned = st15m_line_aligned = st15m_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
                 pattern_markers_tv = []
                 with st.spinner("SR Levels V3 मोजत आहे..."):
-                    bot_lines, _v3_problem = v3_chart_lines(fetch_candles, token_input, chart_symbol, float(chart_df["close"].iloc[-1]))
+                    bot_lines, _v3_problem = v3_chart_lines(fetch_candles, token_input, chart_symbol, float(chart_df["close"].iloc[-1]), chart_tf=chart_tf)
                 bot_note = _v3_problem or (
+                    f"Levels या chart च्या TF ({chart_tf}) नुसार: **{tf_set_label(chart_tf)}** pivots + PDH/PDL/PWH/PWL. "
                     "SR Levels V3 निवडला आहे — चार्टवर **फक्त** हेच levels आहेत (जुने S/R, Supertrend, Hammer/Star मार्कर्स आणि bot ओळी काढल्या). "
                     "रेषेचं नाव: S/R + ग्रेड/Score + स्रोत (TF / PDH-PDL-PWH-PWL / GAP / FLIP). जाड = जास्त Score. तपशील आणि पॅरामीटर्स: ANALYZE → SR Levels V3. "
                     "इतर चार्ट दाखवायचा असेल तर Bot view मध्ये '—' निवडा."
