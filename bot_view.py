@@ -68,31 +68,57 @@ def _role(zone_type):
     return "SUPPORT" if "SUPPORT" in str(zone_type) else ("RESISTANCE" if "RESISTANCE" in str(zone_type) else None)
 
 
-def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=False, max_distance_pct=3.0):
+def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=False, max_distance_pct=3.0, nearest_n=0, info_suffixes=()):
     """bot चे ACTIVE Dynamic S/R levels -> चार्टच्या आडव्या रेषा. title: 'S 5M ★3 · 1/2' (S/R, timeframe, strength, आजचे hits/max). max-hits संपलेले
     फिके + बारीक. role_by_price (MCX: role प्रत्येक cycle ला किंमत-बाजूवरून ठरतो) असेल तर किंमत >= level => SUPPORT.
-    price दिली तर किंमतीपासून max_distance_pct% पेक्षा दूरचे levels वगळले जातात (चार्टचा scale त्यांच्यामुळे ताणला जाऊन candles दबू नयेत; bot तिथे आत्ता trade करणारच नाही)."""
+    price दिली तर किंमतीपासून max_distance_pct% पेक्षा दूरचे levels वगळले जातात (चार्टचा scale त्यांच्यामुळे ताणला जाऊन candles दबू नयेत).
+    🎓 "chart war important level disaylach pahije" (NG: 299–300 चा resistance ±4% च्या बाहेर म्हणून लपत होता) -- `nearest_n` > 0 असेल तर त्या
+    अंतराबाहेरचेही किंमतीच्या **वरचे n आणि खालचे n** सर्वात जवळचे levels दाखवले जातात (थोडे फिके, title मध्ये "· दूर X%"). bot ते levels
+    नेहमीप्रमाणेच trade करतो -- हे बंधन फक्त चार्टसाठी. `info_suffixes` = bot trade **न** करत असलेल्या timeframes चे levels (उदा. MCX "30M"
+    निवडलेलं असताना 60M) -- राखाडी, ठिपक्यांची रेषा, title "· माहिती" (फक्त पाहण्यासाठी)."""
     if zones_df is None or getattr(zones_df, "empty", True):
         return []
-    lines = []
-    for suffix in suffixes:
+    cands = []
+    for suffix, info in [(s_, False) for s_ in suffixes] + [(s_, True) for s_ in info_suffixes if s_ not in suffixes]:
         rows = zones_df[(zones_df["zone_type"].str.startswith("DYNAMIC_SR_")) & (zones_df["zone_type"].str.endswith(f"_{suffix}")) & (zones_df["status"] == "ACTIVE")]
         for row in rows.itertuples():
-            level = float(row.zone_low)
-            if price and max_distance_pct and abs(level - price) / price * 100 > max_distance_pct:
-                continue
-            role = _role(row.zone_type)
-            if role_by_price and price is not None:
-                role = "SUPPORT" if price >= level else "RESISTANCE"
-            count = int(hits.get((round(level, 2), role), 0)) if hits else 0
-            exhausted = count >= max_hits
-            r, g, b = TF_COLORS.get(suffix, (200, 200, 200))
-            strength = float(row.strength) if row.strength is not None and not pd.isna(row.strength) else 0.0
-            lines.append({
-                "price": level, "title": f"{'S' if role == 'SUPPORT' else 'R'} {suffix} ★{strength:g} · {count}/{max_hits}",
-                "color": f"rgba({r},{g},{b},{0.35 if exhausted else 0.95})", "dashed": exhausted or role == "RESISTANCE", "width": 1 if exhausted else 2,
-            })
+            cands.append((float(row.zone_low), suffix, info, row))
+    far_keep = set()                                     # (level, info) -- trade होणारे आणि माहितीचे levels स्वतंत्रपणे (माहितीचे trade होणाऱ्यांना ढकलू नयेत)
+    if price and max_distance_pct and nearest_n:
+        for grp in (False, True):
+            far = [c for c in cands if c[2] is grp and abs(c[0] - price) / price * 100 > max_distance_pct]
+            above = sorted({c[0] for c in far if c[0] > price})[:nearest_n]
+            below = sorted({c[0] for c in far if c[0] <= price}, reverse=True)[:nearest_n]
+            far_keep |= {(lv, grp) for lv in above + below}
+    lines = []
+    for level, suffix, info, row in cands:
+        dist_pct = abs(level - price) / price * 100 if price else 0.0
+        is_far = bool(price and max_distance_pct and dist_pct > max_distance_pct)
+        if is_far and (level, info) not in far_keep:
+            continue
+        role = _role(row.zone_type)
+        if role_by_price and price is not None:
+            role = "SUPPORT" if price >= level else "RESISTANCE"
+        strength = float(row.strength) if row.strength is not None and not pd.isna(row.strength) else 0.0
+        tag = "S" if role == "SUPPORT" else "R"
+        if info:
+            lines.append({"price": level, "title": f"{tag} {suffix} ★{strength:g} · माहिती" + (f" · दूर {dist_pct:.1f}%" if is_far else ""),
+                          "color": "rgba(158,158,158,0.55)", "dashed": True, "width": 1})
+            continue
+        count = int(hits.get((round(level, 2), role), 0)) if hits else 0
+        exhausted = count >= max_hits
+        r, g, b = TF_COLORS.get(suffix, (200, 200, 200))
+        alpha = 0.35 if exhausted else (0.6 if is_far else 0.95)
+        lines.append({
+            "price": level, "title": f"{tag} {suffix} ★{strength:g} · {count}/{max_hits}" + (f" · दूर {dist_pct:.1f}%" if is_far else ""),
+            "color": f"rgba({r},{g},{b},{alpha})", "dashed": exhausted or role == "RESISTANCE", "width": 1 if (exhausted or is_far) else 2,
+        })
     return lines
+
+
+def mcx_info_suffixes(suffixes):
+    """MCX: bot trade करत नसलेले Dynamic S/R timeframes (30M/60M पैकी) -- चार्टवर फक्त माहितीसाठी."""
+    return tuple(s_ for s_ in ("30M", "60M") if s_ not in suffixes)
 
 
 def align_supertrend(chart_df, source_df, period, multiplier):

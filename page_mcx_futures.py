@@ -45,7 +45,7 @@ from position_chart import SL_KIND_LABELS, futures_lines, mcx_sl_price
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
-    supertrend_gate_line, supertrend_specs, zone_suffixes,
+    mcx_info_suffixes, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
@@ -582,6 +582,7 @@ def render():
                             _price = float(df_mcx["close"].iloc[-1])
                             bot_lines = level_lines(
                                 _zones, _suffixes, _hits, int(_bs.get("max_hits_per_zone", 2)), price=_price, role_by_price=True, max_distance_pct=4.0,
+                                nearest_n=3, info_suffixes=mcx_info_suffixes(_suffixes),
                             )
                             bot_rsi_levels = tuple(rsi_threshold_values("MCX Futures", _bs))
                             _df30 = fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=20)

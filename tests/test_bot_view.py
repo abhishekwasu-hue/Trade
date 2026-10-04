@@ -251,3 +251,37 @@ class TestTriggerLevelLine:
         assert titles["Level (trade जिथून घेतला)"] == 7990.0 and titles["Entry"] == 8000.0
         info["entry_level_price"] = None
         assert "Level (trade जिथून घेतला)" not in {l["title"] for l in futures_lines(info)}
+
+
+class TestImportantFarLevels:
+    """🎓 "chart war important level disaylach pahije" -- NG 288 वर 299–300 चा resistance ±4% बाहेर म्हणून लपत होता."""
+    Z = pd.DataFrame([
+        {"zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": 286.4, "strength": 5, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 293.65, "strength": 4, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 300.0, "strength": 3, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 305.5, "strength": 2, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 310.0, "strength": 2, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 318.0, "strength": 2, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": 270.0, "strength": 3, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_60M", "zone_low": 301.0, "strength": 4, "status": "ACTIVE"},
+    ])
+
+    def test_default_still_hides_far_levels(self):
+        lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=288.1, max_distance_pct=4.0)
+        assert sorted(l["price"] for l in lines) == [286.4, 293.65]
+
+    def test_nearest_three_each_side_shown_faint(self):
+        lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=288.1, role_by_price=True, max_distance_pct=4.0, nearest_n=3)
+        by = {l["price"]: l for l in lines}
+        assert sorted(by) == [270.0, 286.4, 293.65, 300.0, 305.5, 310.0]          # 318 (4था वरचा) नाही
+        assert by[300.0]["title"].startswith("R 30M ★3 · 0/2 · दूर 4.1%") and by[300.0]["color"].endswith(",0.6)") and by[300.0]["width"] == 1
+        assert by[293.65]["title"] == "R 30M ★4 · 0/2" and by[293.65]["width"] == 2      # जवळचे पूर्वीसारखेच
+        assert by[270.0]["title"].startswith("S 30M")
+
+    def test_info_suffix_levels_are_grey_and_marked(self):
+        lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=288.1, role_by_price=True, max_distance_pct=4.0, nearest_n=3,
+                               info_suffixes=bv.mcx_info_suffixes(["30M"]))
+        info = [l for l in lines if "माहिती" in l["title"]]
+        assert [l["price"] for l in info] == [301.0] and info[0]["color"].startswith("rgba(158,158,158")
+        assert 310.0 in {l["price"] for l in lines}                       # माहितीचा 301 trade होणाऱ्या 310 ला बाहेर ढकलत नाही
+        assert bv.mcx_info_suffixes(["30M", "60M"]) == () and bv.mcx_info_suffixes(["60M"]) == ("30M",)
