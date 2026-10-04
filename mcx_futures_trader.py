@@ -228,7 +228,8 @@ def check_contract_roll(access_token, symbol, resolved, notify=None, refresh=Non
     state_path = state_path or CONTRACT_STATE
     if refresh is None:
         import refresh_market_zones_mcx
-        refresh = refresh_market_zones_mcx.refresh_symbol
+        def refresh(token, sym):                         # नवा contract ⇒ जुन्या contract चे levels विसरायचे (level memory reset)
+            return refresh_market_zones_mcx.refresh_symbol(token, sym, reset=True)
     state = SRV3._load_state(state_path)
     rec = dict(state.get(symbol) or {})
     cur = resolved.get("trading_symbol") or resolved.get("instrument_key")

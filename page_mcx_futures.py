@@ -854,6 +854,26 @@ def render():
         )
 
         st.markdown("---")
+        sub_header("📌 Level Memory (महत्त्वाचे levels त्याच किंमतीवर)", HDR_ORANGE)
+        lm1, lm2 = st.columns(2)
+        with lm1:
+            level_memory_enabled = st.checkbox(
+                "Level memory चालू (डीफॉल्ट चालू)", value=bool(settings.get("level_memory_enabled", True)),
+                key=_widget_key(symbol, "level_memory_enabled"),
+            )
+        with lm2:
+            level_memory_retire_days = _number_input(
+                "इतके दिवस किंमत जवळ आली नाही तर जुना level निवृत्त", settings, "level_memory_retire_days", symbol,
+                min_value=5, max_value=120, step=5, disabled=not level_memory_enabled,
+            )
+        st.caption(
+            "रोजच्या Dynamic S/R refresh मध्ये जुने levels **त्याच किंमतीवर** ठेवले जातात. ताजी गणना जुन्या level च्या जवळ आली (साधारण 0.5×ATR, "
+            "किंमतीच्या 0.08–0.40%) तर जुनीच किंमत कायम राहते. ताज्या top-5 मध्ये नसलेला level पण ठेवला जातो, जर किंमत गेल्या इतक्या दिवसांत "
+            "त्याच्याजवळ आली असेल. तुटलेला support resistance बनतो, तो पुसला जात नाही. भावापासून 15% पेक्षा दूरचे levels निवृत्त होतात. "
+            "प्रत्येक timeframe साठी कमाल 12 levels. Contract roll झाल्यावर जुने levels विसरले जातात. बदल पुढच्या रात्रीच्या refresh पासून लागू होतो."
+        )
+
+        st.markdown("---")
         sub_header("⏱️ Minimum Level-Hold Duration (पहिल्या trade साठी)", HDR_ORANGE)
         entry_min_hold_gate_enabled = st.checkbox(
             "Minimum Level-Hold सक्रिय (डीफॉल्ट चालू)",
@@ -898,6 +918,8 @@ def render():
                 "sl_level_direction_block_enabled": bool(sl_level_direction_block_enabled),
                 "cascade_filter_enabled": bool(cascade_filter_enabled),
                 "roll_trading_days_before_expiry": int(roll_trading_days_before_expiry),
+                "level_memory_enabled": bool(level_memory_enabled),
+                "level_memory_retire_days": int(level_memory_retire_days),
                 "supertrend_1h_period": int(supertrend_1h_period), "supertrend_1h_multiplier": float(supertrend_1h_multiplier),
                 "supertrend_4h_period": int(supertrend_4h_period), "supertrend_4h_multiplier": float(supertrend_4h_multiplier),
                 "entry_min_hold_gate_enabled": bool(entry_min_hold_gate_enabled),

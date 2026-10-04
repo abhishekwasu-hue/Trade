@@ -672,6 +672,11 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 Contract roll (सर्व MCX commodities) — front-month चे उरलेले ट्रेडिंग दिवस (आज ते expiry, दोन्ही धरून) ≤ इतके झाले की पुढचा
         # contract. resolver हा आकडा staggered delivery period + 1 पेक्षा कधीच कमी होऊ देत नाही (GOLD/SILVER/COPPER: किमान 4).
         "roll_trading_days_before_expiry": 6,
+        # 🎓 Level memory (वापरकर्त्याचा निर्णय: "महत्त्वाचे levels तिथेच राहावेत, बदलू नयेत" — थेट मुख्य bot वर, PAPER) — रोजच्या Dynamic S/R
+        # refresh मध्ये जुने levels त्यांच्याच किंमतीवर ठेवले जातात (बघा level_memory.py). जुना level, किंमत त्याच्याजवळ शेवटच्या इतक्या दिवसांत
+        # आली नसेल (आणि ताज्या गणनेत नसेल) तर निवृत्त.
+        "level_memory_enabled": True,
+        "level_memory_retire_days": 30,
         # 🎓 "First time level hit, level hold Minimum period for 1st trade, hi condition mcx future sathi lagu kra, default on thewa"
         # -- level ला किंमत टेकल्यावर किमान entry_min_hold_minutes (1-मिनिट candles वर) सलग level जवळ टिकली तरच entry; first_trade_only
         # असेल तर फक्त त्या level+role वरच्या आजच्या पहिल्या खऱ्या trade ला (Breakout ला लागू नाही). 5M/15M च्या उलट, MCX साठी डीफॉल्ट चालू.
@@ -2078,7 +2083,7 @@ def merge_dynamic_sr_1m_zones(symbol, dyn_sr_result, tolerance_pct=0.02, formed_
     return merge_dynamic_sr_zones(symbol, dyn_sr_result, "1M", tolerance_pct, formed_date)
 
 
-def save_market_zones(zones_df, symbol, scoped=False):
+def save_market_zones(zones_df, symbol, scoped=False, zone_types=None):
     """
     🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिलेल्या symbol चे जुने zones काढून, नवीन गणना केलेले
     zones साठवणे (replace-on-refresh — market_zones हे "सद्य स्थिती" दाखवतं, वाढत जाणारा इतिहास नाही).
@@ -2109,7 +2114,8 @@ def save_market_zones(zones_df, symbol, scoped=False):
     try:
         with conn.cursor() as cur:
             if scoped:
-                zone_types = zones_df["zone_type"].dropna().unique().tolist()
+                # 🎓 MCX level memory -- `zone_types` दिले तर तेच प्रकार पुसले जातात (zones_df मध्ये एखाद्या प्रकाराची एकही रांग नसली तरी).
+                zone_types = list(zone_types) if zone_types else zones_df["zone_type"].dropna().unique().tolist()
                 if zone_types:
                     cur.execute(
                         "DELETE FROM market_zones WHERE symbol = %s AND zone_type = ANY(%s)",

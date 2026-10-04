@@ -27,17 +27,60 @@ import pandas as pd
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from signals import resample_to_1h
+from level_memory import merge_levels
 from sr_dynamic import compute_dynamic_sr
 from upstox_api import fetch_mcx_candles
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
 
 
-def refresh_symbol(access_token, symbol, lookback_days=180):
+DYNAMIC_TYPES = ("DYNAMIC_SR_SUPPORT_30M", "DYNAMIC_SR_RESISTANCE_30M", "DYNAMIC_SR_SUPPORT_60M", "DYNAMIC_SR_RESISTANCE_60M")
+
+
+def _memory_settings(symbol):
+    try:
+        st = cloud_db.get_strategy_settings("mcx_futures", symbol)
+    except Exception:
+        st = {}
+    return bool(st.get("level_memory_enabled", True)), int(st.get("level_memory_retire_days", 30) or 30)
+
+
+def _existing_levels(symbol, suffix):
+    """त्या TF चे सध्याचे ACTIVE Dynamic S/R levels (support+resistance एकत्र) -- level memory साठी. वाचता आलं नाही ⇒ []."""
+    try:
+        zones = cloud_db.get_market_zones(symbol, status="ACTIVE")
+    except Exception:
+        return []
+    if zones is None or getattr(zones, "empty", True):
+        return []
+    rows = zones[zones["zone_type"].isin([f"DYNAMIC_SR_SUPPORT_{suffix}", f"DYNAMIC_SR_RESISTANCE_{suffix}"])]
+    return [{"level": float(r.zone_low), "strength": r.strength, "formed_date": r.formed_date} for r in rows.itertuples()]
+
+
+def _rows_for(suffix, dyn_sr, df, symbol, now_date, use_memory, retire_days):
+    """एका TF च्या zone रांगा. use_memory ⇒ level_memory.merge_levels (जुने levels त्याच किंमतीवर); नाहीतर फक्त ताजी गणना (जुनं वर्तन)."""
+    fresh = [{"level": z["level"], "touches": z["touches"]} for z in dyn_sr.get("support", []) + dyn_sr.get("resistance", [])]
+    price = float(df["close"].iloc[-1])
+    if use_memory:
+        merged = merge_levels(_existing_levels(symbol, suffix), fresh, df, price, now_date, retire_days=retire_days)
+        return [{"zone_type": f"DYNAMIC_SR_{z['role']}_{suffix}", "zone_low": z["level"], "zone_high": z["level"], "strength": z["strength"],
+                 "formed_date": z["formed_date"], "status": "ACTIVE"} for z in merged], sum(1 for z in merged if not z["fresh"])
+    rows = []
+    for role, key in (("SUPPORT", "support"), ("RESISTANCE", "resistance")):
+        for z in dyn_sr.get(key, []):
+            rows.append({"zone_type": f"DYNAMIC_SR_{role}_{suffix}", "zone_low": z["level"], "zone_high": z["level"],
+                         "strength": z["touches"], "formed_date": now_date, "status": "ACTIVE"})
+    return rows, 0
+
+
+def refresh_symbol(access_token, symbol, lookback_days=180, reset=False):
     """एका MCX commodity साठी DYNAMIC_SR_*_30M/*_60M zones — resolve_symbol() ने current
     continuous contract शोधून, त्याचेच 30M candles (व त्यांच्याच resample वरून 60M) वापरून.
     lookback_days=180 — refresh_market_zones.py च्या df_30m_recent/df_60m_recent इतकाच (TradingView
-    च्या लोड झालेल्या इतिहासाच्या जास्त जवळ जाण्यासाठी, established निर्णय)."""
+    च्या लोड झालेल्या इतिहासाच्या जास्त जवळ जाण्यासाठी, established निर्णय).
+    🎓 Level memory (`level_memory_enabled`, डीफॉल्ट चालू) — जुने levels त्याच किंमतीवर ठेवले जातात (बघा level_memory.py). `reset=True`
+    (contract roll नंतर) ⇒ जुने levels विसरले जातात (जुन्या contract चे भाव calendar spread मुळे वेगळे). फक्त DYNAMIC_SR_*_30M/*_60M
+    प्रकारच पुसले/लिहिले जातात (आधी symbol चे सर्व zones पुसले जायचे — SR V3 चे levels सकट)."""
     ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
     if not ok:
         return False, f"{symbol}: सध्याचा (current/continuous) Futures contract सापडला नाही ({resolved})"
@@ -51,35 +94,31 @@ def refresh_symbol(access_token, symbol, lookback_days=180):
         return False, f"{symbol}: पुरेसा 30-मिनिट इतिहास नाही (किमान 100 candles हवेत) — zones साठवले नाहीत"
 
     df_60m = resample_to_1h(df_30m)
-
-    rows = []
     now_date = df_30m["timestamp"].iloc[-1]
+    memory_on, retire_days = _memory_settings(symbol)
+    use_memory = memory_on and not reset
 
+    rows, remembered = [], 0
     dyn_sr_30m = compute_dynamic_sr(df_30m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
-    for s in dyn_sr_30m.get("support", []):
-        rows.append({"zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": s["level"], "zone_high": s["level"],
-                     "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
-    for r in dyn_sr_30m.get("resistance", []):
-        rows.append({"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": r["level"], "zone_high": r["level"],
-                     "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
-
+    r30, k30 = _rows_for("30M", dyn_sr_30m, df_30m, symbol, now_date, use_memory, retire_days)
+    rows += r30
+    remembered += k30
     if df_60m is not None and len(df_60m) >= 100:
         dyn_sr_60m = compute_dynamic_sr(df_60m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
-        for s in dyn_sr_60m.get("support", []):
-            rows.append({"zone_type": "DYNAMIC_SR_SUPPORT_60M", "zone_low": s["level"], "zone_high": s["level"],
-                         "strength": s["touches"], "formed_date": now_date, "status": "ACTIVE"})
-        for r in dyn_sr_60m.get("resistance", []):
-            rows.append({"zone_type": "DYNAMIC_SR_RESISTANCE_60M", "zone_low": r["level"], "zone_high": r["level"],
-                         "strength": r["touches"], "formed_date": now_date, "status": "ACTIVE"})
+        r60, k60 = _rows_for("60M", dyn_sr_60m, df_60m, symbol, now_date, use_memory, retire_days)
+        rows += r60
+        remembered += k60
 
     if not rows:
         return False, f"{symbol}: कुठलेही Dynamic S/R levels सापडले नाहीत (पुरेसा pivot-डेटा नाही)"
 
     zones_df = pd.DataFrame(rows)
-    saved = cloud_db.save_market_zones(zones_df, symbol)
+    saved = cloud_db.save_market_zones(zones_df, symbol, scoped=True, zone_types=list(DYNAMIC_TYPES))
     if not saved:
         return False, f"{symbol}: Supabase मध्ये साठवता आलं नाही (जोडणी तपासा)"
-    return True, f"{symbol} ({resolved['trading_symbol']}): {len(zones_df)} zones साठवले (30M+60M)"
+    mem = (f"; level memory: {remembered} जुने levels त्याच किंमतीवर ठेवले" if use_memory
+           else ("; contract roll — जुने levels विसरले" if reset else "; level memory बंद"))
+    return True, f"{symbol} ({resolved['trading_symbol']}): {len(zones_df)} zones साठवले (30M+60M){mem}"
 
 
 if __name__ == "__main__":
