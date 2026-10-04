@@ -1,0 +1,106 @@
+"""tests/test_level_memory.py -- MCX Dynamic S/R level memory: महत्त्वाचे levels त्याच किंमतीवर राहतात (network/DB-मुक्त)."""
+from unittest.mock import patch
+
+import numpy as np
+import pandas as pd
+
+import level_memory as LM
+import refresh_market_zones_mcx as rmzm
+
+
+def _df(prices, start="2026-09-01 09:00", spread=1.0):
+    t = pd.date_range(start, periods=len(prices), freq="30min")
+    p = np.asarray(prices, float)
+    return pd.DataFrame({"timestamp": t, "open": p, "high": p + spread, "low": p - spread, "close": p, "volume": 0, "oi": 0})
+
+
+NOW = pd.Timestamp("2026-10-02 23:00")
+
+
+def test_tolerance_bounded_by_pct():
+    flat = _df([288.0] * 50, spread=0.01)
+    assert abs(LM.zone_tolerance(flat, 288.0) - 288 * 0.0008) < 1e-9          # किमान 0.08%
+    wild = _df([288.0] * 50, spread=20.0)
+    assert abs(LM.zone_tolerance(wild, 288.0) - 288 * 0.004) < 1e-9          # कमाल 0.40%
+
+
+def test_fresh_level_near_old_keeps_old_price_and_max_strength():
+    df = _df([290.0] * 60, start="2026-09-30 09:00")
+    existing = [{"level": 300.0, "strength": 5, "formed_date": "2026-09-10"}]
+    out = LM.merge_levels(existing, [{"level": 300.4, "touches": 3}], df, 290.0, NOW)
+    assert [(z["level"], z["strength"], z["role"], z["fresh"]) for z in out] == [(300.0, 5.0, "RESISTANCE", True)]
+    assert out[0]["formed_date"] == "2026-09-10"
+
+
+def test_old_level_kept_if_touched_recently_retired_if_not():
+    recent = _df(list(np.linspace(300, 288, 60)), start="2026-09-28 09:00")      # 300 ला 28 Sep ला स्पर्श
+    existing = [{"level": 300.0, "strength": 3, "formed_date": "2026-08-01"},
+                {"level": 330.0, "strength": 4, "formed_date": "2026-08-01"}]      # 330 ला शेवटच्या 30 दिवसांत स्पर्श नाही
+    out = LM.merge_levels(existing, [{"level": 286.4, "touches": 5}], recent, 288.1, NOW)
+    levels = {z["level"]: z for z in out}
+    assert 300.0 in levels and not levels[300.0]["fresh"] and 330.0 not in levels
+    assert levels[286.4]["role"] == "SUPPORT" and levels[300.0]["role"] == "RESISTANCE"
+
+
+def test_recently_formed_untouched_level_kept_far_level_dropped():
+    df = _df([288.0] * 60, start="2026-09-28 09:00")
+    existing = [{"level": 305.0, "strength": 2, "formed_date": "2026-09-25"},
+                {"level": 340.0, "strength": 6, "formed_date": "2026-09-25"}]      # 18% दूर
+    out = LM.merge_levels(existing, [], df, 288.0, NOW)
+    assert [z["level"] for z in out] == [305.0]
+
+
+def test_broken_support_becomes_resistance_not_deleted():
+    df = _df(list(np.linspace(292, 284, 60)), start="2026-09-30 09:00")
+    out = LM.merge_levels([{"level": 290.0, "strength": 4, "formed_date": "2026-09-20"}], [], df, 284.0, NOW)
+    assert out[0]["level"] == 290.0 and out[0]["role"] == "RESISTANCE"
+
+
+def test_crowded_levels_deduped_and_capped():
+    df = _df([300.0] * 60, start="2026-09-30 09:00", spread=0.01)                 # tol = 0.08% = 0.24
+    fresh = [{"level": 300.0 + i, "touches": 2} for i in range(15)] + [{"level": 300.1, "touches": 9}]
+    out = LM.merge_levels([], fresh, df, 300.0, NOW, max_levels=12)
+    lv = [z["level"] for z in out]
+    assert len(out) == 12 and 300.1 in lv and 300.0 not in lv                   # जवळचे दोन ⇒ जास्त strength चा एक
+
+
+def _resolved():
+    return True, {"symbol": "NATURALGAS", "trading_symbol": "NATURALGAS FUT 27 OCT 26", "instrument_key": "MCX_FO|NG", "lot_size": 1250,
+                  "tick_size": 0.1, "expiry": "2026-10-27"}
+
+
+def _osc(n=300, base=288.0):
+    c = [base + (3 if i % 8 < 4 else -3) for i in range(n)]
+    df = _df(c, start="2026-08-01 09:00", spread=1.5)
+    df.attrs["failed_chunks"] = 0
+    return df
+
+
+def test_refresh_symbol_keeps_remembered_level_and_scopes_delete():
+    df = _osc()
+    old = pd.DataFrame([{"symbol": "NATURALGAS", "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 299.5, "zone_high": 299.5, "strength": 4,
+                         "formed_date": pd.Timestamp(df["timestamp"].iloc[-20]), "status": "ACTIVE"}])
+    with patch.object(rmzm.mcx_resolver, "resolve_symbol", return_value=_resolved()), \
+         patch.object(rmzm, "fetch_mcx_candles", return_value=df), \
+         patch.object(rmzm.cloud_db, "get_strategy_settings", return_value={}), \
+         patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
+         patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
+        ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS")
+    saved = save.call_args.args[0]
+    assert ok and "level memory" in msg
+    assert 299.5 in set(saved.loc[saved["zone_type"] == "DYNAMIC_SR_RESISTANCE_30M", "zone_low"])
+    assert save.call_args.kwargs["scoped"] is True and set(save.call_args.kwargs["zone_types"]) == set(rmzm.DYNAMIC_TYPES)
+
+
+def test_refresh_symbol_reset_and_disabled_forget_old_levels():
+    df = _osc()
+    old = pd.DataFrame([{"symbol": "NATURALGAS", "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 299.5, "zone_high": 299.5, "strength": 4,
+                         "formed_date": pd.Timestamp(df["timestamp"].iloc[-20]), "status": "ACTIVE"}])
+    for kwargs, settings, note in (({"reset": True}, {}, "contract roll"), ({}, {"level_memory_enabled": False}, "level memory बंद")):
+        with patch.object(rmzm.mcx_resolver, "resolve_symbol", return_value=_resolved()), \
+             patch.object(rmzm, "fetch_mcx_candles", return_value=df), \
+             patch.object(rmzm.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
+             patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
+            ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", **kwargs)
+        assert ok and note in msg and 299.5 not in set(save.call_args.args[0]["zone_low"])

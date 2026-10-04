@@ -169,3 +169,11 @@ def test_get_open_trade_contracts(tmp_path, monkeypatch):
     conn.close()
     monkeypatch.setattr(database, "DB_PATH", path)
     assert database.get_open_trade_contracts("GOLD", ("mcx_futures", "mcx_futures_srv3_shadow")) == ["OCT", "DEC"]
+
+
+def test_check_contract_roll_default_refresh_resets_level_memory(tmp_path):
+    import refresh_market_zones_mcx
+    with patch.object(refresh_market_zones_mcx, "refresh_symbol", return_value=(True, "ok")) as rs:
+        ok, _ = mft.check_contract_roll("t", "GOLD", _res("GOLD FUT 04 DEC 26", rolled=True, front="GOLD FUT 05 OCT 26"),
+                                        notify=MagicMock(), state_path=str(tmp_path / "s.json"))
+    assert ok and rs.call_args.kwargs == {"reset": True}
