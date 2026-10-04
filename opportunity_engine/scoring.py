@@ -64,7 +64,8 @@ def structure_context(cand, bias, ctx, cfg):
     return pts, detail
 
 
-def location_score(cand):
+def location_score(cand, cfg=None):
+    """Location (कमाल 25). `cfg.consensus_mode == "score"` असेल तर Dual-Eye consensus: CONSENSUS zone +bonus, MATH_ONLY −penalty (0..25 मध्येच) — डीफॉल्ट off ⇒ बदल नाही."""
     z = cand.zone
     if not z:
         return 0.0, {"zone": None}
@@ -73,7 +74,13 @@ def location_score(cand):
     mtf = z.get("mtf_count", 1)
     confluence = 5.0 if mtf >= 3 else 3.0 if mtf == 2 else 0.0
     overlap = 4.0 if (z.get("status") == "BROKEN" or z.get("flipped") or cand.meta.get("gap_overlap") or cand.meta.get("trendline_overlap")) else 0.0
-    return grade + fresh + confluence + overlap, {"grade": grade, "freshness": fresh, "confluence": confluence, "overlap": overlap}
+    detail = {"grade": grade, "freshness": fresh, "confluence": confluence, "overlap": overlap}
+    total = grade + fresh + confluence + overlap
+    if cfg is not None and getattr(cfg, "consensus_mode", "off") == "score" and z.get("consensus"):
+        adj = cfg.consensus_bonus if z["consensus"] == "CONSENSUS" else -cfg.consensus_penalty if z["consensus"] == "MATH_ONLY" else 0.0
+        detail["consensus"] = adj
+        total = max(0.0, min(25.0, total + adj))
+    return total, detail
 
 
 def rr_score(rr_value, cfg):
@@ -91,7 +98,7 @@ def thresholds(setup_id, cfg):
 def score_candidate(cand, validation, plan, bias, ctx, cfg):
     sc = Score()
     ctx_pts, ctx_detail = structure_context(cand, bias, ctx, cfg)
-    loc_pts, loc_detail = location_score(cand)
+    loc_pts, loc_detail = location_score(cand, cfg)
     sc.components = {
         "structure": round(ctx_pts, 2), "location": round(loc_pts, 2),
         "setup": round(0.2 * max(0.0, min(100.0, cand.setup_quality)), 2),

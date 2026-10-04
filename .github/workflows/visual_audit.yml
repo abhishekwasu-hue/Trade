@@ -1,0 +1,36 @@
+name: Visual Audit (Opportunity Engine — Dual-Eye, फक्त वाचन)
+
+# 🎓 PR-V: EOD visual audit VPS crontab वरून चालतो (deploy/README.md "PR-V" विभाग). हा workflow फक्त मॅन्युअल/backup (workflow_dispatch).
+# फक्त level_audit / level_audit_suggestions / visual_levels / visual_audit_runs tables लिहितो; कुठलाही order/bot नाही.
+# आवश्यक secrets: ANTHROPIC_API_KEY, VISUAL_AUDIT_MODEL (vision model id), SUPABASE_DB_URL. Chart images इथे runner वरच राहतात (persistent नाहीत).
+
+on:
+  workflow_dispatch:
+    inputs:
+      pre_market:
+        description: "pre-market run (audit_date = आज)"
+        type: boolean
+        default: false
+
+jobs:
+  visual-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo checkout करणे
+        uses: actions/checkout@v4
+
+      - name: Python सेटअप करणे
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies स्थापित करणे
+        run: pip install -r requirements.txt
+
+      - name: Visual audit चालवणे
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VISUAL_AUDIT_MODEL: ${{ secrets.VISUAL_AUDIT_MODEL }}
+          VISUAL_AUDIT_ENABLED: "1"
+        run: python3 run_visual_audit.py ${{ inputs.pre_market && '--pre-market' || '' }}

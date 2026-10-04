@@ -76,3 +76,4 @@ strategies:
     max_positions: 1
     primary_htf: "4h"           # bias = 4H, Daily = veto, 1H = पुष्टी ("1d" ने Daily primary)
     daily_veto: true
+    consensus_mode: "off"       # 🎓 PR-V Dual-Eye: off (फक्त माहिती) | score | gate — backfill + 3 modes तुलना अहवालानंतरच बदला. Visual audit स्वतः env VISUAL_AUDIT_ENABLED ने चालू.

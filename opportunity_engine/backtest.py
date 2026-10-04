@@ -29,6 +29,7 @@ from .measures import adr as measure_adr
 from .measures import ref_range_from_ranges
 from .risk import _close_all, on_bar, open_position, plan_trade
 from .selector import DayState, day_block_reason
+from .visual_audit import consensus as CONS
 from .zones import build_levels
 
 HTF = ("1d", "4h", "1h")
@@ -54,6 +55,7 @@ class BacktestConfig:
     variants: tuple = ("V1", "V2", "V3")
     engine: EngineConfig = field(default_factory=EngineConfig)
     levels_every_day: bool = True
+    visual_records: Any = None               # {pd.Timestamp(date): [visual audit records]} — Dual-Eye consensus (engine.consensus_mode off नसेल तेव्हाच वापर)
 
 
 @dataclass
@@ -73,6 +75,7 @@ class DayPack:
     info: DayInfo
     adr: float
     ev15: list = field(default_factory=list)  # आजचे 15M structure-shift events (time = 15M bar_end; त्या वेळेपासूनच दिसतात)
+    pool: list = field(default_factory=list)  # नाकारलेले (LOW_SCORE) zones — visual audit चा "missing" पट्टा snap करण्यासाठी (detectors ना दिसत नाहीत)
 
 
 @dataclass
@@ -86,6 +89,7 @@ class Timeline:
     full15: np.ndarray
     cfg: Any = None
     v5: Any = None                               # 5M volume (index डेटात 0 ⇒ N/A; futures volume जोडल्यास खरा)
+    journal: Any = None                          # पूर्ण चाललेला journal (visual backfill: swings `confirmed_time` नुसार as-of फिल्टर करून)
 
     def htf_state(self, tf, t):
         i = bisect.bisect_right(self.times[tf], t) - 1
@@ -165,17 +169,18 @@ def prepare_timeline(frames, bcfg=None, progress=None):
             continue
         pdc, pdh, pdl = float(f1d["close"].iloc[i_d]), float(f1d["high"].iloc[i_d]), float(f1d["low"].iloc[i_d])
         daily_adr = measure_adr(f1d.iloc[max(0, i_d - 40):i_d + 1], cfg.adr_days)
-        levels = []
+        levels, pool = [], []
         if len(journal.trackers["1d"].c) >= 30 and len(journal.trackers["4h"].c) >= 30 and bcfg.levels_every_day:
             g0 = int(g.index[0])
             fine = f5.iloc[max(0, g0 - 1500):g0]
             res = build_levels(journal, {"1d": f1d, "5m": fine}, bcfg.symbol, pdc, cfg, fine=fine, tfs=("15m", "1h", "4h", "1d"))
             levels = res["levels"] + [z for z in res["rejected"] if z.get("status") == "BROKEN"]
+            pool = [z for z in res["rejected"] if z.get("status") != "BROKEN" and z.get("kind") in ("DEMAND", "SUPPLY", "SUPPORT", "RESISTANCE")]
         info = DayInfo(date=d, open=float(g["open"].iloc[0]), pdc=pdc, pdh=pdh, pdl=pdl, close_3d_ago=float(f1d["close"].iloc[i_d - 3]), adr=daily_adr)
         g15 = day15.get(d, f15.iloc[0:0])
         days.append(DayPack(date=d, open_t=open_t, df5=g.reset_index(drop=True), df15=g15.reset_index(drop=True), o=g["open"].to_numpy(float), h=g["high"].to_numpy(float),
                             l=g["low"].to_numpy(float), c=g["close"].to_numpy(float), be=g["bar_end"].tolist(), g5=int(g.index[0]),
-                            g15=int(g15.index[0]) if len(g15) else 0, levels=levels, info=info, adr=daily_adr))
+                            g15=int(g15.index[0]) if len(g15) else 0, levels=levels, info=info, adr=daily_adr, pool=pool))
         if progress and n % 50 == 0:
             progress(n, len(dates), d)
     feed_until(pd.Timestamp.max)
@@ -188,7 +193,7 @@ def prepare_timeline(frames, bcfg=None, progress=None):
         dp.ev15 = by_day.get(dp.date, [])
     vol = f5["volume"].fillna(0.0).to_numpy(float) if "volume" in f5.columns else None
     return Timeline(days=days, times=times, states=states, r5=(f5["high"] - f5["low"]).to_numpy(float), full5=f5["bar_is_full"].to_numpy(bool),
-                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg, v5=vol)
+                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg, v5=vol, journal=journal)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -245,7 +250,8 @@ def _trade_row(variant, day, o, closed_time):
            "entry": plan.entry, "sl": plan.sl, "t1": plan.t1, "t2": plan.t2, "risk": plan.risk, "exit_reason": p.exit_reason, "pnl_pts": p.pnl_pts, "r": p.r_multiple,
            "t1_hit": p.t1_done, "bars": p.bars, "mfe_r": p.mfe_r, "level": p.level, "virtual": o.virtual, "gate_rejected": o.virtual, "gate_codes": o.meta.get("gate_codes", ""),
            "size_factor": 0.0 if o.virtual else d.size_factor, "score": o.meta.get("score"), "bias": o.meta.get("bias"), "gap_type": c.meta.get("gap_type", ""), "setup_detail": _detail(c.meta),
-           "state_1d": o.meta.get("state_1d"), "state_4h": o.meta.get("state_4h"), "state_1h": o.meta.get("state_1h"), "commentary": o.meta.get("commentary", "")}
+           "state_1d": o.meta.get("state_1d"), "state_4h": o.meta.get("state_4h"), "state_1h": o.meta.get("state_1h"), "commentary": o.meta.get("commentary", ""),
+           "zone_id": (c.zone or {}).get("level_id"), "zone_consensus": (c.zone or {}).get("consensus")}
     row["r_weighted"] = row["r"] * row["size_factor"]
     return row
 
@@ -263,8 +269,14 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
         dets = list(detector_factory(ecfg))
     else:
         dets = make_detectors(bcfg.detectors, ecfg)
-    trades, virtual_rows, decisions = [], [], []
+    trades, virtual_rows, decisions, cons_rows = [], [], [], []
+    vis = bcfg.visual_records if ecfg.consensus_mode != "off" else None
     for di, day in enumerate(tl.days):
+        if vis is not None:                                  # Dual-Eye consensus: दिवस D चे records फक्त D−1 पर्यंतच्या chart वरून
+            lv, cinfo = CONS.apply(day.levels, day.pool, vis.get(pd.Timestamp(day.date).normalize(), []), ecfg.consensus_mode)
+            cons_rows.append({"date": day.date, "mode_used": cinfo.get("mode_used", ecfg.consensus_mode), "fallback": cinfo["fallback"],
+                              "levels_before": len(day.levels), "levels_after": len(lv), **{f"n_{k}": v for k, v in cinfo.get("counts", {}).items()}})
+            day = replace(day, levels=lv)
         info = replace(day.info)
         ctx0 = tl.context(day.open_t, day, info.open)
         bias0 = resolve_bias(ctx0, ecfg)
@@ -343,7 +355,10 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
                             virt.append(_Open(open_position(plan, d.candidate.kind, d.candidate.trigger.get("level")), d.candidate, d, k, True, meta))
         if progress and di % 100 == 0:
             progress(di, len(tl.days), day.date)
-    return {"trades": pd.DataFrame(trades), "virtual": pd.DataFrame(virtual_rows), "decisions": pd.DataFrame(decisions)}
+    out = {"trades": pd.DataFrame(trades), "virtual": pd.DataFrame(virtual_rows), "decisions": pd.DataFrame(decisions)}
+    if vis is not None:
+        out["consensus"] = pd.DataFrame(cons_rows)
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------

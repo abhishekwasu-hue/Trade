@@ -14,6 +14,7 @@ from . import store
 from .bias import pullback_watch_zone, resolve_bias
 from .config import EngineConfig, TF_LABEL
 from .context import build_context
+from .visual_audit import consensus as CONS
 from .zones import build_levels
 
 SYMBOLS = ("NIFTY", "BANKNIFTY", "SENSEX")
@@ -33,20 +34,28 @@ class Snapshot:
     watch: Any
     price: float
     symbol: str
+    consensus: Any = None
 
 
-def compute_snapshot(df_5m, df_daily, symbol, cfg=None, now=None):
-    """Upstox 5M + Daily -> Snapshot. बंद झालेल्या bars फक्त (`now` नंतरचे वगळले)."""
+def compute_snapshot(df_5m, df_daily, symbol, cfg=None, now=None, visual_records=None, feedback=None):
+    """Upstox 5M + Daily -> Snapshot. बंद झालेल्या bars फक्त (`now` नंतरचे वगळले).
+    `cfg.consensus_mode` off नसेल तर आजचे visual audit records (EOD/pre-market run चे; इथे API call नाही) + feedback वरून Dual-Eye consensus levels."""
     cfg = cfg or EngineConfig()
     frames, journal = R.bundle_from_live(df_5m, df_daily, cfg, now=now)
     if "5m" not in frames or frames["5m"].empty:
         raise ValueError("5M डेटा रिकामा आहे")
     price = float(frames["5m"][frames["5m"]["bar_closed"]]["close"].iloc[-1])
     res = build_levels(journal, frames, symbol, price, cfg, fine=frames["5m"])
-    ctx = build_context(journal, levels=res["levels"], daily_df=frames.get("1d"), price=price, cfg=cfg, flips=res["rejected"])
+    levels, consensus_info = res["levels"], None
+    if cfg.consensus_mode != "off":
+        pool = [z for z in res["rejected"] if z.get("status") != "BROKEN" and z.get("kind") in ("DEMAND", "SUPPLY", "SUPPORT", "RESISTANCE")]
+        levels, consensus_info = CONS.apply(res["levels"], pool, visual_records or [], cfg.consensus_mode, feedback)
+    ctx = build_context(journal, levels=levels, daily_df=frames.get("1d"), price=price, cfg=cfg, flips=res["rejected"])
     bias = resolve_bias(ctx, cfg)
     watch = pullback_watch_zone(ctx, bias.direction) if bias.direction else None
-    return Snapshot(frames, journal, res["levels"], res["rejected"], res["sweeps"], ctx, bias, watch, price, symbol)
+    snap = Snapshot(frames, journal, res["levels"], res["rejected"], res["sweeps"], ctx, bias, watch, price, symbol)
+    snap.consensus = consensus_info
+    return snap
 
 
 def recent_events(snap, tfs=STORED_TFS):
@@ -91,6 +100,20 @@ def brief_text(snap, now=None):
     return "\n".join(lines)
 
 
+VISUAL_CACHE = "data/oe_visual_audit.jsonl"
+
+
+def _visual_inputs(symbol, cfg, now):
+    """consensus_mode off नसेल तेव्हाच: आजचे visual records (स्थानिक JSONL — run_visual_audit.py चा) + Supabase feedback."""
+    if cfg.consensus_mode == "off":
+        return None, None
+    from .visual_audit import store as VS
+    day = pd.Timestamp(now if now is not None else pd.Timestamp.now()).normalize()
+    recs = [r for r in VS.read_jsonl(VISUAL_CACHE) if r.get("symbol") == symbol and pd.Timestamp(r["audit_date"]).normalize() == day]
+    fb, _ = VS.load_feedback(symbol)
+    return recs, fb
+
+
 def _failed(df):
     return df is not None and getattr(df, "attrs", {}).get("failed_chunks", 0) > 0
 
@@ -107,7 +130,10 @@ def refresh_symbol(symbol, token, fetch, store_mod=store, cfg=None, now=None, mo
     if _failed(df5) or _failed(daily):
         return False, f"{symbol}: इतिहासाचे काही chunks मिळाले नाहीत — या वेळचं साठवणं वगळलं (जुनंच कायम राहील)"
     try:
-        snap = compute_snapshot(df5, daily, symbol, cfg, now=now)
+        vis, fb = _visual_inputs(symbol, cfg, now)
+        snap = compute_snapshot(df5, daily, symbol, cfg, now=now, visual_records=vis, feedback=fb)
+        if snap.consensus and snap.consensus.get("fallback") and notify is not None:
+            notify(f"⚠️ {symbol}: consensus_mode=gate पण आजचा visual run उपलब्ध नाही — आज score mode वर fallback.")
     except Exception as exc:                                            # अपुरा/विचित्र डेटा — exception बाहेर नाही
         return False, f"{symbol}: गणना अयशस्वी ({type(exc).__name__}: {exc})"
     summary = f"{symbol}: bias {snap.bias.label}; levels {len(snap.levels)} (नाकारलेले {len(snap.rejected)}); " + ", ".join(

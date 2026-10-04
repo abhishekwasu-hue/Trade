@@ -2,7 +2,10 @@
 🎓 फक्त वाचन आणि प्रदर्शन: कुठलाही trade/order/DB write नाही, कुठलाही bot हे वापरत नाही; indicator-मुक्त (फक्त किंमत + ref_range मोजपट्टी).
 PR-1a मध्ये पाया (trend state) बरोबर आहे का ते तुम्ही चार्टवर पडताळता — त्यानंतरच bias/detectors/backtest (PR-1b/1c)."""
 import hashlib
+import json
+import os
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -11,6 +14,9 @@ from opportunity_engine import report as R
 from opportunity_engine import risk as RISK
 from opportunity_engine import backtest as BT
 from opportunity_engine import diagnostics as DG
+from opportunity_engine.visual_audit import auditor as VA
+from opportunity_engine.visual_audit import evaluate as VEV
+from opportunity_engine.visual_audit import store as VS
 from opportunity_engine import sessions as OE_SESSIONS
 from opportunity_engine.bias import apply_gate, resolve_bias
 from opportunity_engine.config import EngineConfig
@@ -174,6 +180,95 @@ def _chart_df(frames, tf, bars):
     return df[["timestamp", "open", "high", "low", "close", "volume", "oi"]]
 
 
+VISUAL_PNG_ROOT = os.path.join("data", "visual_audit")
+VISUAL_CACHE = os.path.join("data", "oe_visual_audit.jsonl")
+FEWSHOT_DIR = os.path.join("data", "visual_fewshot")
+
+
+def _visual_record(cache, audit_date, symbol, tf):
+    key = f"{audit_date}|{symbol}|{tf}"
+    return next((r for r in VS.read_jsonl(cache) if VS.cache_key(r) == key), None)
+
+
+def _fewshot_example(rec, feedback, png_path):
+    """audit record + वापरकर्त्याचा feedback -> few-shot उदाहरण (chart + योग्य उत्तर). CORRECT ⇒ VALID, WRONG ⇒ SPURIOUS; SHIFT ची दिशा माहीत नाही ⇒ model चंच उत्तर."""
+    data = (rec.get("overlay") or {}).get("data") or {}
+    verdicts = []
+    for v in data.get("verdicts", []):
+        lid = next((l["level_id"] for l in rec["labels"] if l["label"] == v["label"]), None)
+        fb = feedback.get(lid)
+        verdict = "VALID" if fb == "CORRECT" else "SPURIOUS" if fb == "WRONG" else v["verdict"]
+        verdicts.append({**v, "verdict": verdict})
+    with open(png_path, "rb") as fh:
+        img = VA.b64(fh.read())
+    return {"image_b64": img, "prompt": VA.overlay_text(rec["symbol"], rec["tf"], rec["labels"], rec.get("engine_state")),
+            "answer": {"verdicts": verdicts, "missing": data.get("missing", []), "trend_state": data.get("trend_state", "UNCLEAR"),
+                       "agrees_with_engine_state": bool(data.get("agrees_with_engine_state"))}}
+
+
+def _render_visual_tab(symbol):
+    """👁️ Visual Audit (spec §17.6): chart image + levels तक्ता (engine grade, model verdict + कारण, consensus) + feedback + मतभेद + date picker."""
+    sub_header("👁️ Visual Audit — गणिताचे levels वि. vision model ची नजर (Dual-Eye)", HDR_PURPLE)
+    st.caption("EOD/pre-market run (`run_visual_audit.py`) चे निकाल. `consensus_mode` डीफॉल्ट **off** — फक्त माहिती; तुलना अहवाल (backfill + 3 modes) पाहून तुम्ही mode बदलाल. "
+               "Live intraday loop मध्ये API call नाही.")
+    dates = VS.load_dates(symbol)
+    if not dates:
+        st.info("अजून कुठलाही visual audit साठवलेला नाही (किंवा Supabase जोडणी नाही). VPS वर `run_visual_audit.py` चालल्यावर इथे दिसेल.")
+        return
+    c1, c2 = st.columns(2)
+    audit_date = c1.selectbox("तारीख (audit_date)", dates, key="oe_va_date", format_func=lambda d: pd.Timestamp(d).strftime("%d %b %Y"))
+    tf = c2.radio("Chart", ["1d", "1h", "15m"], horizontal=True, key="oe_va_tf", format_func=lambda t: TF_LABEL[t])
+    df = VS.load_audit(symbol, audit_date)
+    feedback, fb_df = VS.load_feedback(symbol)
+    png = os.path.join(VISUAL_PNG_ROOT, str(pd.Timestamp(audit_date).date()), f"{symbol}_{tf}_overlay.png")
+    if os.path.exists(png):
+        st.image(png, caption=f"{symbol} {TF_LABEL[tf]} — engine levels (L1…)", width="stretch")
+    else:
+        st.caption("Chart image या सर्व्हरवर नाही (images VPS च्या data/visual_audit/ मध्ये साठतात).")
+    rows = df[df["tf"] == tf].copy() if df is not None and len(df) else pd.DataFrame()
+    if not len(rows):
+        st.info("या तारखेला/या chart साठी audit rows नाहीत.")
+        return
+    rows["तुमचा निर्णय"] = rows["level_id"].map(feedback)
+    rows["मतभेद"] = np.where((rows["engine_grade"] == "A") & (rows["model_verdict"] == "SPURIOUS"), "⚠️ A-grade पण model SPURIOUS",
+                             np.where((rows["model_verdict"] == "VALID") & (rows["तुमचा निर्णय"] == "WRONG"), "⚠️ model VALID पण तुम्ही WRONG", ""))
+    show = rows[["label", "kind", "zone_low", "zone_high", "engine_grade", "model_verdict", "model_reason", "consensus_class", "तुमचा निर्णय", "मतभेद"]]
+    st.dataframe(show.sort_values("label"), width="stretch", hide_index=True)
+    sub_header("तुमचा feedback (✅ बरोबर / ❌ चूक / ↕ shift)", HDR_TEAL)
+    f1, f2 = st.columns([2, 3])
+    pick = f1.selectbox("Level", list(rows["level_id"]), key="oe_va_level",
+                        format_func=lambda lid: f"{rows.set_index('level_id').loc[lid, 'label']} — {rows.set_index('level_id').loc[lid, 'kind']} "
+                                                f"{rows.set_index('level_id').loc[lid, 'zone_low']:,.0f}–{rows.set_index('level_id').loc[lid, 'zone_high']:,.0f}")
+    verdict = f1.radio("निर्णय", ["CORRECT", "WRONG", "SHIFT"], horizontal=True, key="oe_va_verdict",
+                       format_func=lambda v: {"CORRECT": "✅ बरोबर", "WRONG": "❌ चूक", "SHIFT": "↕ shift"}[v])
+    note = f2.text_input("टीप (ऐच्छिक)", key="oe_va_note")
+    if f2.button("💾 Feedback साठवा", key="oe_va_save"):
+        ok = VS.save_feedback(pick, symbol, tf, verdict, note)
+        (st.success if ok else st.error)("Feedback साठवला — पुढच्या दिवसांच्या consensus मध्ये प्राधान्याने." if ok else "Feedback साठवता आला नाही (Supabase?).")
+    rec = _visual_record(VISUAL_CACHE, pd.Timestamp(audit_date).date(), symbol, tf)
+    if rec is not None and os.path.exists(png) and st.button("📌 हे chart few-shot उदाहरण म्हणून जतन करा (तुमच्या feedback सह)", key="oe_va_fewshot"):
+        os.makedirs(FEWSHOT_DIR, exist_ok=True)
+        path = os.path.join(FEWSHOT_DIR, f"{pd.Timestamp(audit_date).date()}_{symbol}_{tf}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(_fewshot_example(rec, feedback, png), fh, ensure_ascii=False)
+        st.success(f"उदाहरण जतन: {path}. VISUAL_AUDIT_FEWSHOT=<n> ने वापरात (प्रत्येक उदाहरण ≈ 1,200 image + ~400 text input tokens).")
+    with st.expander("📈 Evaluate (agreement matrix, तयारी)", expanded=False):
+        all_rows = VS.load_audit(symbol)
+        ok, msg = VEV.readiness(all_rows)
+        (st.success if ok else st.info)(msg)
+        mats = VEV.agreement_matrix(all_rows, feedback)
+        if len(mats["grade_vs_model"]):
+            st.markdown("**Engine grade × model verdict**")
+            st.dataframe(mats["grade_vs_model"], width="stretch")
+        if mats["model_vs_user"] is not None:
+            st.markdown("**Model verdict × तुमचा निर्णय**")
+            st.dataframe(mats["model_vs_user"], width="stretch")
+        runs = VS.load_runs(symbol, 60)
+        if runs is not None and len(runs):
+            st.markdown("**Runs (calls / tokens)**")
+            st.dataframe(runs, width="stretch", hide_index=True)
+
+
 def _render_bias_tab(ctx, symbol, price):
     """आजचा bias, Daily veto स्थिती, pullback watch, आणि "candidate tester" (detectors PR-1c मध्ये; तोपर्यंत गृहीत candidate वर gate/risk तपासा)."""
     cfg = EngineConfig()
@@ -262,7 +357,8 @@ def render():
         price = float(frames["15m"]["close"].iloc[-1]) if len(frames.get("15m", [])) else float(frames["5m"]["close"].iloc[-1])
         result = build_levels(journal, frames, symbol, price, fine=frames.get("5m"))
         ctx = build_context(journal, levels=result["levels"], daily_df=frames.get("1d"), price=price, flips=result["rejected"])
-        tab_state, tab_bias, tab_chart, tab_events, tab_quality, tab_bt = st.tabs(["🧭 Structure वही", "🎯 Bias / Gate", "📊 चार्ट + Levels", "📋 Events / CSV", "🔎 डेटा गुणवत्ता", "🧪 Backtest"])
+        tab_state, tab_bias, tab_chart, tab_events, tab_quality, tab_bt, tab_visual = st.tabs(
+            ["🧭 Structure वही", "🎯 Bias / Gate", "📊 चार्ट + Levels", "📋 Events / CSV", "🔎 डेटा गुणवत्ता", "🧪 Backtest", "👁️ Visual Audit"])
 
         with tab_state:
             sub_header("प्रत्येक Timeframe चा सद्य trend state", HDR_TEAL)
@@ -312,6 +408,9 @@ def render():
 
         with tab_bt:
             _render_backtest_tab(symbol)
+
+        with tab_visual:
+            _render_visual_tab(symbol)
 
         with tab_quality:
             sub_header("डेटा गुणवत्ता", HDR_TEAL)
