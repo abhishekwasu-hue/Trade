@@ -53,6 +53,8 @@ def _no_entry_cutoff_by_default(monkeypatch):
     """"नवीन entry बंद" वेळ (23:15) टेस्ट चालवण्याच्या खऱ्या घड्याळावर अवलंबून असू नये -- डीफॉल्ट: कधीच लागू नाही.
     TestNoNewEntryAfterEod मध्ये ती स्पष्टपणे परत चालू करून वेळ ठरवली जाते."""
     monkeypatch.setattr(mft, "MCX_NO_NEW_ENTRY_AFTER", (24, 0))
+    # टप्पा 1 SL cooldown/level-direction (डीफॉल्ट चालू) स्थानिक SQLite वाचतात -- tests खऱ्या data/ DB वर अवलंबू नयेत.
+    monkeypatch.setattr(mft, "get_closed_trades_on_date", lambda *a, **k: [])
 
 
 class TestDetermineDirectionWithHysteresis:

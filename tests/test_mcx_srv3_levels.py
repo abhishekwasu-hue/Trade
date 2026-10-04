@@ -4,12 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import cloud_db
 import mcx_futures_trader as mft
 import trading_engine
 from sr_levels_v3 import session_reference_date
 from tests.test_mcx_futures_trader import _DEFAULT_SETTINGS, _fake_candles_df, _fake_resolved
+
+
+@pytest.fixture(autouse=True)
+def _no_closed_trades(monkeypatch):
+    monkeypatch.setattr(mft, "get_closed_trades_on_date", lambda *a, **k: [])
 
 
 def _zones(rows):

@@ -74,10 +74,11 @@ import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
 import database
-from database import init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, count_entries_at_level_today
+from database import (init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, count_entries_at_level_today,
+                      get_closed_trades_on_date)
 from dynamic_sr_instant_trader import (
     check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close,
-    check_supertrend_trend_filter, get_supertrend_direction, _completed_bars_only, count_consecutive_touch_minutes,
+    get_supertrend_direction, _completed_bars_only, count_consecutive_touch_minutes,
 )
 from notifications import send_telegram_message, write_heartbeat, notify_error, notify_exit
 from process_lock import ProcessLock, ProcessLockHeld
@@ -85,6 +86,7 @@ from signals import resample_to_1h, resample_to_4h
 from trading_engine import open_multi_leg_trade, manage_open_trades, format_trade_result
 from upstox_api import fetch_mcx_candles, fetch_broker_positions
 import srv3_instant_shadow as SRV3
+import mcx_filters as MF
 from sr_levels_v3 import SRConfig
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
@@ -300,6 +302,26 @@ def process_symbol(access_token, symbol):
     return result
 
 
+effective_supertrend_mode = MF.effective_supertrend_mode
+
+
+def fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=15):
+    """cascade filter साठी -- `now` पर्यंत **पूर्ण** झालेले 30M bars (timestamp + 30 मि ≤ now, IST tz-शिवाय). चूक/डेटा नाही ⇒ None (fail-open)."""
+    try:
+        df = fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=lookback_days)
+    except Exception:
+        return None
+    if df is None or df.empty:
+        return None
+    df = df.copy()
+    ts = pd.to_datetime(df["timestamp"])
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    df["timestamp"] = ts
+    now_ts = pd.Timestamp(now).tz_localize(None) if pd.Timestamp(now).tzinfo else pd.Timestamp(now)
+    return df[df["timestamp"] + pd.Timedelta(minutes=30) <= now_ts].reset_index(drop=True)
+
+
 def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC", shadow=False):
     """एका MCX commodity साठी — 30M/60M levels (settings-चालित), RSI dual-threshold gate,
     Multi-Hit, आणि आढळल्यास एकाच futures leg चं PAPER/LIVE trade (settings-चालित lots/SL/Target).
@@ -334,12 +356,17 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False) and not shadow
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
-    entry_supertrend_filter_enabled = settings.get("entry_supertrend_filter_enabled", False)
     supertrend_1h_period = settings.get("supertrend_1h_period", 10)
     supertrend_1h_multiplier = settings.get("supertrend_1h_multiplier", 3.0)
     supertrend_4h_period = settings.get("supertrend_4h_period", 10)
     supertrend_4h_multiplier = settings.get("supertrend_4h_multiplier", 3.0)
     supertrend_directions_cache = []  # प्रति-symbol, प्रति-cycle एकदाच (सर्व levels साठी सारखं) -- lazily
+    supertrend_filter_mode = effective_supertrend_mode(settings)
+    sl_cooldown_minutes = int(settings.get("sl_cooldown_minutes", 60) or 0)
+    sl_level_direction_block_enabled = settings.get("sl_level_direction_block_enabled", True)
+    cascade_filter_enabled = settings.get("cascade_filter_enabled", False)
+    closed_today_cache = []           # आजचे बंद trades (cooldown/level-direction) -- lazily, प्रति-cycle एकदाच
+    completed_30m_cache = []          # cascade साठी entry आधीचे पूर्ण 30M bars -- lazily
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", True)
     entry_min_hold_minutes = settings.get("entry_min_hold_minutes", 5)
     entry_min_hold_first_trade_only = settings.get("entry_min_hold_first_trade_only", True)
@@ -451,6 +478,33 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             _log(log_entry)
             continue
 
+        # 🎓 MCX टप्पा 1 (mcx_filters.py, replay सारखेच नियम) -- SL/Trailing-SL **तोट्याने** बंद झाल्यावर sl_cooldown_minutes नवीन entry नाही;
+        # आणि आज ज्या level वर ज्या दिशेने SL लागला त्या level वर त्याच दिशेने आज पुन्हा नाही. दोन्ही SKIPPED_* (max-hits मोजत नाहीत).
+        # Breakout सकट सर्व entries ना लागू. DB वाचता आलं नाही तर fail-open (जुन्या gates प्रमाणे).
+        if sl_cooldown_minutes > 0 or sl_level_direction_block_enabled:
+            if not closed_today_cache:
+                try:
+                    closed_today_cache.append(get_closed_trades_on_date(symbol, source, trade_date))
+                except Exception as exc:
+                    print(f"{symbol}: आजचे बंद trades वाचता आले नाहीत ({exc}) — cooldown/level-direction तपासणी वगळली")
+                    closed_today_cache.append([])
+            prior = closed_today_cache[0]
+            now_naive = now.replace(tzinfo=None)
+            if sl_cooldown_minutes > 0:
+                blocked, why = MF.sl_cooldown_block(prior, now_naive, sl_cooldown_minutes)
+                if blocked:
+                    log_entry["trade_status"] = "SKIPPED_SL_COOLDOWN"
+                    log_entry["reason"] = f"{why} ({timeframe_suffix})"
+                    _log(log_entry)
+                    continue
+            if sl_level_direction_block_enabled:
+                blocked, why = MF.sl_level_direction_block(prior, now_naive, level_price, direction)
+                if blocked:
+                    log_entry["trade_status"] = "SKIPPED_SL_LEVEL_SAME_DIRECTION"
+                    log_entry["reason"] = f"{why} ({timeframe_suffix})"
+                    _log(log_entry)
+                    continue
+
         if hit_count_so_far >= max_hits_per_zone and not is_breakout_trade:
             log_entry["trade_status"] = "SKIPPED_MAX_2_HITS_REACHED"
             log_entry["reason"] = f"आजच्या या zone साठी (याच role) कमाल {max_hits_per_zone} वेळा मर्यादा आधीच गाठलेली ({timeframe_suffix})"
@@ -489,22 +543,33 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                     _log(log_entry)
                     continue
 
-        # 🎓 "add Supertrend entry gate for MCX futures" -- किंमत 1H **आणि** 4H दोन्ही Supertrend च्या खाली => Bullish trade नाही; दोन्हींच्या
-        # वर => Bearish trade नाही. Breakout सकट सर्व entries ला लागू. SKIPPED_MCX_TREND_FILTER no-hit status (max-hits मोजत नाही).
-        if entry_supertrend_filter_enabled:
+        # 🎓 "add Supertrend entry gate for MCX futures" -- supertrend_filter_mode (बघा effective_supertrend_mode): "both_against" = किंमत 1H
+        # **आणि** 4H दोन्ही Supertrend च्या खाली => Bullish नाही, दोन्हींच्या वर => Bearish नाही (जुना नियम); "htf_against" = 4H विरुद्ध असला
+        # तरी नाही (MCX टप्पा 1). Breakout सकट सर्व entries ला लागू. SKIPPED_MCX_TREND_FILTER no-hit status (max-hits मोजत नाही).
+        if supertrend_filter_mode != "off":
             if not supertrend_directions_cache:
                 supertrend_directions_cache.append(fetch_mcx_trend_filter_directions(
                     access_token, instrument_key, now, supertrend_1h_period, supertrend_1h_multiplier,
                     supertrend_4h_period, supertrend_4h_multiplier,
                 ))
             st_dir_1h, st_dir_4h = supertrend_directions_cache[0]
-            st_ok, st_reason = check_supertrend_trend_filter(direction, st_dir_1h, st_dir_4h)
-            if not st_ok:
+            blocked, why = MF.supertrend_block(supertrend_filter_mode, direction, st_dir_1h, st_dir_4h)
+            if blocked:
                 log_entry["trade_status"] = "SKIPPED_MCX_TREND_FILTER"
-                log_entry["reason"] = (
-                    f"किंमत {'1H आणि 4H दोन्ही Supertrend च्या खाली (दोन्ही BEARISH) -- Bullish trade थांबवला' if direction == 'BULLISH' else '1H आणि 4H दोन्ही Supertrend च्या वर (दोन्ही BULLISH) -- Bearish trade थांबवला'}"
-                    f" [1H: {st_dir_1h}, 4H: {st_dir_4h}] ({timeframe_suffix})"
-                )
+                log_entry["reason"] = f"{why} [mode {supertrend_filter_mode}; 1H: {st_dir_1h}, 4H: {st_dir_4h}] ({timeframe_suffix})"
+                _log(log_entry)
+                continue
+
+        # 🎓 MCX टप्पा 1 -- "broken-support cascade" (mcx_filters.cascade_block, pure price action, 30M): मागच्या 2 sessions मध्ये 30M close ने
+        # तुटलेल्या support खालच्या level वर LONG फक्त 30M bullish CHoCH नंतर (resistance साठी उलट). फक्त पूर्ण 30M bars. Breakout ला लागू नाही
+        # (तो reversal नाही, trend-continuation). डेटा नसेल तर fail-open. डीफॉल्ट बंद.
+        if cascade_filter_enabled and not is_breakout_trade:
+            if not completed_30m_cache:
+                completed_30m_cache.append(fetch_completed_30m_bars(access_token, instrument_key, now))
+            blocked, why, _info = MF.cascade_block(completed_30m_cache[0], direction, level_price)
+            if blocked:
+                log_entry["trade_status"] = "SKIPPED_CASCADE_NO_CHOCH"
+                log_entry["reason"] = f"{why} ({timeframe_suffix})"
                 _log(log_entry)
                 continue
 

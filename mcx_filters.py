@@ -20,6 +20,17 @@ from signals import find_swings
 SUPERTREND_MODES = ("off", "both_against", "htf_against")
 
 
+def effective_supertrend_mode(settings):
+    """settings -> supertrend_filter_mode ("off"/"both_against"/"htf_against"). जुनी सेटिंग entry_supertrend_filter_enabled=True आणि mode "off"
+    असेल तर "both_against" (आधीचं वर्तन जसंच्या तसं). अनोळखी मूल्य ⇒ "off"."""
+    mode = settings.get("supertrend_filter_mode", "off")
+    if mode not in SUPERTREND_MODES:
+        mode = "off"
+    if mode == "off" and settings.get("entry_supertrend_filter_enabled", False):
+        mode = "both_against"
+    return mode
+
+
 def supertrend_block(mode, direction, dir_1h, dir_4h):
     """रिटर्न (blocked, कारण). डेटा नसेल (None) ⇒ block नाही (fail-open, जुन्या gate प्रमाणे)."""
     if mode == "both_against":
