@@ -40,6 +40,25 @@ def _shift_target(lv, direction, candidates):
     return best
 
 
+def match_label(lab, levels, by_id):
+    """label -> दिवसाचा level: आधी level_id; नसेल तर (forward testing — live run आणि नंतरच्या backtest ची डेटा-खिडकी वेगळी असल्याने id बदलू शकतो)
+    त्याच kind + TF चा, outer band सर्वात जास्त overlap होणारा (≥ 50% लहान पट्ट्याच्या) level."""
+    lv = by_id.get(lab.get("level_id"))
+    if lv is not None or lab.get("outer_low") is None or lab.get("outer_high") is None:
+        return lv
+    lo, hi = float(lab["outer_low"]), float(lab["outer_high"])
+    best, best_ov = None, 0.0
+    for z in levels:
+        if z.get("kind") != lab.get("kind") or (lab.get("tf") and z.get("tf") != lab.get("tf")) or not z.get("level_id"):
+            continue
+        zl, zh = _outer(z)
+        ov = min(hi, zh) - max(lo, zl)
+        need = 0.5 * max(min(hi - lo, zh - zl), 1e-9)
+        if ov >= need and ov > best_ov:
+            best, best_ov = z, ov
+    return best
+
+
 def _as_c(z, tag):
     out = dict(z)
     out.update({"quality_grade": "C", "reject_reason": None, "consensus": tag, "visual_source": True})
@@ -63,7 +82,7 @@ def classify(levels, pool, records, feedback=None):
             continue                                                       # या chart चं वाचन अयशस्वी — माहिती नाही
         labelled = []
         for lab in rec.get("labels") or []:
-            lv = by_id.get(lab["level_id"])
+            lv = match_label(lab, levels, by_id)
             if lv is None:
                 continue
             labelled.append(lv)
