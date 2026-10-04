@@ -923,3 +923,16 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - **D10**: sweep आधीच्या 5M box चा तळ/माथा हा सर्वोच्च प्राधान्याचा trap level (target = box ची दुसरी कड).
 - Backtest डीफॉल्ट detectors आता D1, D2, D3, D6, D7, D8, D10. सर्व निकाल IS/OOS वेगळे.
 - Visual audit: `.env` मध्ये `ANTHROPIC_API_KEY` नसेल तर रोजचा cron शांतपणे वगळतो (exit 0, खर्च नाही) — key जोडल्यावर आपोआप सुरू.
+
+### PR-4: D4/D5 Trendline + D9 Flag/Double + Positional mode
+
+- **D4 Trendline 3rd touch**: 1H swing lows (uptrend) / highs (downtrend) वरची trend-दिशेची line (A–B ≥ 5 bars, slope ≤ 0.5 × ref_range(1H), A नंतर line पलीकडे
+  close नाही). आत्ताचा तिसरा (किंवा चौथा) touch + 5M reversal candle ⇒ pullback-end entry. SL line − 0.25 × ref_range(1H) / touch low, target A–B मधला high.
+- **D5 Trendline break-retest**: trend मधल्या pullback ची counter-line (≥ 3 touches) 15M close ने तुटली (§5 validation पास) ⇒ नोंद; 10 × 15M bars मध्ये
+  retest + confirmation candle ⇒ entry.
+- **D9**: 1H/Daily bull/bear flag (फक्त trend दिशेने; target = pole) आणि double bottom/top (neckline चा 15M close-breakout; target = pattern उंची).
+- Detectors ना 1H/4H/Daily इतिहास `Timeline.hist()` मधून — फक्त त्या क्षणापर्यंत *बंद* bars (no-lookahead). Backtest डीफॉल्ट: D1–D10 सर्व.
+- **Positional mode** (`opportunity_engine/positional.py`): Daily + 4H UPTREND ⇒ Bull Put, DOWNTREND ⇒ Bear Call, दोन्ही RANGE ⇒ Iron Condor, WEAK ⇒ नवीन spread
+  नाही (adjustment alert). Short strike = जवळचा protected level / FRESH zone पलीकडे 0.25 × ADR (STRIKE_STEP ने round), hedge 4 strikes दूर.
+  09:00 brief आणि पानाच्या "Bias / Gate" tab मध्ये सूचना; backtest `positional_summary.csv` (hold 5 दिवस: expiry-close win % आणि touch %, IS/OOS वेगळे;
+  index-level — premium/IV नाही). `--no-positional` ने वगळता येतं.

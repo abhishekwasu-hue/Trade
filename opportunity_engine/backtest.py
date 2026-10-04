@@ -23,6 +23,8 @@ from .context import Context, IncrementalTFState, TFState
 from .detectors.gap import DayInfo, GapFade, GapGo, GapRetestReversal, classify_gap
 from .detectors.range_box import FailedBreakoutTrap
 from .detectors.box_triangle import RangeBoxBreakout, TriangleBreakout
+from .detectors.chart_pattern import ChartPatternBreakout
+from .detectors.trendline import TrendlineBreakRetest, TrendlineThirdTouch
 from .detectors.zone_pullback import ZonePullback
 from .engine import _rr_of, _validate, evaluate
 from .journal import Journal
@@ -40,8 +42,8 @@ VARIANTS = {
     "V3": {"primary_htf": "4h", "daily_veto": False},
 }
 VARIANT_TEXT = {"V1": "4H bias + Daily veto (डीफॉल्ट)", "V2": "Daily primary (veto लागू नाही)", "V3": "4H bias, veto नाही"}
-DETECTORS = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal, "D6": ZonePullback, "D7": RangeBoxBreakout, "D8": TriangleBreakout,
-             "D10": FailedBreakoutTrap}
+DETECTORS = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal, "D4": TrendlineThirdTouch, "D5": TrendlineBreakRetest, "D6": ZonePullback,
+             "D7": RangeBoxBreakout, "D8": TriangleBreakout, "D9": ChartPatternBreakout, "D10": FailedBreakoutTrap}
 SHIFT_EVENTS = ("CHOCH", "RECOVERY", "REVERSAL_CONFIRMED", "RANGE_EXIT_UP", "RANGE_EXIT_DOWN")     # 15M structure-shift events (D6 trigger)
 IS_END = pd.Timestamp("2021-12-31")
 OOS_START = pd.Timestamp("2022-01-01")
@@ -53,7 +55,7 @@ class BacktestConfig:
     symbol: str = "NIFTY"
     start: Any = None                       # trading सुरू (warm-up आधीपासूनच; None => सर्व)
     end: Any = None
-    detectors: tuple = ("D1", "D2", "D3", "D6", "D7", "D8", "D10")
+    detectors: tuple = ("D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10")
     variants: tuple = ("V1", "V2", "V3")
     engine: EngineConfig = field(default_factory=EngineConfig)
     levels_every_day: bool = True
@@ -92,6 +94,15 @@ class Timeline:
     cfg: Any = None
     v5: Any = None                               # 5M volume (index डेटात 0 ⇒ N/A; futures volume जोडल्यास खरा)
     journal: Any = None                          # पूर्ण चाललेला journal (visual backfill: swings `confirmed_time` नुसार as-of फिल्टर करून)
+    htf: Dict[str, Any] = field(default_factory=dict)   # {"1h"/"4h"/"1d": (closed frame, bar_end ns array)} — D4/D5/D9 साठी as-of इतिहास
+
+    def hist(self, tf, t, n):
+        """`t` पर्यंत *बंद* झालेले `tf` चे शेवटचे n bars (bar_end ≤ t) — no-lookahead. tf नसेल तर None."""
+        if tf not in self.htf:
+            return None
+        f, be = self.htf[tf]
+        i = int(np.searchsorted(be, np.datetime64(pd.Timestamp(t)), side="right"))
+        return f.iloc[max(0, i - n):i]
 
     def htf_state(self, tf, t):
         i = bisect.bisect_right(self.times[tf], t) - 1
@@ -195,7 +206,8 @@ def prepare_timeline(frames, bcfg=None, progress=None):
         dp.ev15 = by_day.get(dp.date, [])
     vol = f5["volume"].fillna(0.0).to_numpy(float) if "volume" in f5.columns else None
     return Timeline(days=days, times=times, states=states, r5=(f5["high"] - f5["low"]).to_numpy(float), full5=f5["bar_is_full"].to_numpy(bool),
-                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg, v5=vol, journal=journal)
+                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg, v5=vol, journal=journal,
+                    htf={tf: (f, f["bar_end"].to_numpy("datetime64[ns]")) for tf, f in (("1h", f1h), ("4h", f4h), ("1d", f1d))})
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -329,7 +341,8 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
             ctx = tl.context(t, day, price)
             vol, vol_med = tl.volume(day.g5 + k)
             bars = {"5m": day.df5.iloc[:k + 1], "15m": day.df15[day.df15["bar_end"] <= t], "info": info, "state": detmem,
-                    "rr5": tl.rr(5, day.g5 + k), "rr15": None, "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med}
+                    "rr5": tl.rr(5, day.g5 + k), "rr15": None, "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med,
+                    "hist": (lambda tf, n, _t=t: tl.hist(tf, _t, n))}
             if len(bars["15m"]):
                 bars["rr15"] = tl.rr(15, day.g15 + len(bars["15m"]) - 1)
             cands = []
