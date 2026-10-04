@@ -836,6 +836,23 @@ def render():
         )
 
         st.markdown("---")
+        sub_header("🔄 Contract Roll (expiry आधी पुढचा contract)", HDR_ORANGE)
+        roll_trading_days_before_expiry = _number_input(
+            "उरलेले ट्रेडिंग दिवस ≤ इतके झाले की पुढचा contract", settings, "roll_trading_days_before_expiry", symbol,
+            min_value=1, max_value=15, step=1,
+        )
+        _stag = mcx_resolver.STAGGERED_DELIVERY_TRADING_DAYS.get(symbol, 0)
+        st.caption(
+            "ट्रेडिंग दिवस म्हणजे आज ते expiry (दोन्ही धरून) सोम–शुक्र. MCX सुट्ट्या वजा केलेल्या नाहीत, म्हणून 1-2 दिवसांची सवलत ठेवा. "
+            + (f"{symbol} compulsory-delivery आहे: MCX चा staggered delivery period हे expiry धरून शेवटचे **{_stag}** ट्रेडिंग दिवस. "
+               "त्या काळात delivery-period margin (किमान 25%) लागतो, आणि broker positions square-off करतात. म्हणून इथे कितीही कमी आकडा दिला, "
+               f"तरी roll किमान **{_stag + 1}** दिवसांवर होतो (period सुरू होण्याआधी 1 ट्रेडिंग दिवस). "
+               if _stag else f"{symbol} cash-settled आहे (delivery नाही). फक्त expiry च्या आधी liquidity पुढच्या contract कडे सरकते, म्हणून roll. ")
+            + "Roll झाल्यावर Telegram सूचना येते. नव्या contract चे zones तयार होईपर्यंत त्या symbol वर नवीन entry घेतली जात नाही. "
+            "उघड्या positions चे exits त्यांच्याच contract वर होतात."
+        )
+
+        st.markdown("---")
         sub_header("⏱️ Minimum Level-Hold Duration (पहिल्या trade साठी)", HDR_ORANGE)
         entry_min_hold_gate_enabled = st.checkbox(
             "Minimum Level-Hold सक्रिय (डीफॉल्ट चालू)",
@@ -879,6 +896,7 @@ def render():
                 "sl_cooldown_minutes": int(sl_cooldown_minutes),
                 "sl_level_direction_block_enabled": bool(sl_level_direction_block_enabled),
                 "cascade_filter_enabled": bool(cascade_filter_enabled),
+                "roll_trading_days_before_expiry": int(roll_trading_days_before_expiry),
                 "supertrend_1h_period": int(supertrend_1h_period), "supertrend_1h_multiplier": float(supertrend_1h_multiplier),
                 "supertrend_4h_period": int(supertrend_4h_period), "supertrend_4h_multiplier": float(supertrend_4h_multiplier),
                 "entry_min_hold_gate_enabled": bool(entry_min_hold_gate_enabled),

@@ -953,3 +953,21 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
   `market_zones` मध्ये `SRV3_SUPPORT`/`SRV3_RESISTANCE`. नवीन cron ओळ लागत नाही (MCX bot च्याच cycle मध्ये).
 - Shadow: source `mcx_futures_srv3_shadow`, नेहमी PAPER, exit नियम मूळ MCX bot चेच; Performance वर "MCX Futures — SR V3 Levels Shadow (PAPER)".
 - MCX चा जुना डेटा नसल्याने backtest झालेला नाही — आधी shadow ने काही आठवडे तुलना करा, मगच "SR V3 (मुख्य)".
+
+### MCX contract roll — ट्रेडिंग दिवसांत (सर्व commodities)
+
+- नियम: front-month contract चे उरलेले **ट्रेडिंग** दिवस ≤ `roll_trading_days_before_expiry` (डीफॉल्ट 6) झाले की पुढचा contract.
+  उरलेले दिवस म्हणजे आज ते expiry (दोन्ही धरून) सोम–शुक्र; MCX सुट्ट्या वजा केलेल्या नाहीत.
+  हा नियम `resolve_mcx_futures_instruments.resolve_symbol` मध्ये आहे. Trader, zones refresh, margin, MCX पान आणि readiness check सगळे हाच
+  resolver वापरतात, त्यामुळे सगळीकडे तोच contract दिसतो.
+- Staggered delivery period: GOLD/SILVER/COPPER compulsory-delivery आहेत. त्यांच्यासाठी हा period expiry धरून शेवटचे 3 ट्रेडिंग दिवस.
+  स्रोत: MCX circular MCX/TRD/383/2025 (GOLD Aug-2026 पासून, SILVER Sep-2026 पासून) आणि Base Metals (COPPER Jan-2025 पासून).
+  या काळात delivery-period margin लागतो (higher of 25% किंवा 3% + 5-day VaR). Roll दिवस कधीच `period + 1` पेक्षा कमी होत नाहीत.
+  CRUDEOIL/NATURALGAS cash-settled आहेत, त्यांना हा period नाही.
+- उदाहरण: GOLD FUT 05 OCT 26 (सोम) साठी 28 Sep पासून उरलेले दिवस 6 होतात (28, 29, 30 Sep, 1, 2, 5 Oct), म्हणून 28 Sep पासून
+  GOLD FUT 04 DEC 26 वापरला जातो. Staggered period 1 Oct ला सुरू होतो, किंवा 2 Oct सुट्टी असेल तर 30 Sep ला.
+- Roll झाल्याच्या पहिल्या cycle ला Telegram: "🔄 <SYMBOL> MCX contract roll: जुना → नवा". त्याच वेळी त्या symbol चे zones नव्या contract
+  च्या candles वरून पुन्हा मोजले जातात. ते तयार होईपर्यंत त्या symbol वर नवीन entry नाही.
+- उघड्या positions चे exits त्यांच्याच contract वर होतात. Trailing (% mode) चा reference भावही त्याच contract वरून घेतला जातो.
+- स्थिती `data/mcx_contract_state.json` मध्ये ठेवली जाते (git मध्ये नाही).
+- तपासणी: `python3 resolve_mcx_futures_instruments.py` (roll झाला असेल तर 🔄 ओळ दिसते) किंवा `python3 mcx_open_positions_check.py`.

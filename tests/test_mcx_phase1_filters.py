@@ -13,8 +13,9 @@ from tests.test_mcx_futures_trader import _DEFAULT_SETTINGS, _fake_candles_df, _
 
 
 @pytest.fixture(autouse=True)
-def _no_entry_cutoff(monkeypatch):
+def _no_entry_cutoff(monkeypatch, tmp_path):
     monkeypatch.setattr(mft, "MCX_NO_NEW_ENTRY_AFTER", (24, 0))
+    monkeypatch.setattr(mft, "CONTRACT_STATE", str(tmp_path / "mcx_contract_state.json"))     # repo च्या data/ मध्ये state नको
 
 
 def _run(prior=(), bullish=True, directions=("BULLISH", "BULLISH"), cascade=None, **kw):

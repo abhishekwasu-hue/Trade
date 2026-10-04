@@ -767,6 +767,31 @@ def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
     return datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
 
 
+def get_open_trade_contracts(symbol, sources):
+    """🎓 MCX contract roll — त्या symbol च्या दिलेल्या sources च्या OPEN trades चे स्वतःचे instrument_key (legs_json मधला पहिला leg),
+    जवळच्या expiry पासून, duplicate शिवाय. roll नंतर resolver पुढचा contract देतो, पण उघड्या trade चं trailing त्याच्याच contract वरून."""
+    if not sources:
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT legs_json FROM live_trades WHERE symbol=? AND status='OPEN' AND source IN ({','.join('?' for _ in sources)})",
+        (symbol, *sources),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    found = {}
+    for (legs_json,) in rows:
+        try:
+            leg = (json.loads(legs_json or "[]") or [{}])[0]
+        except (ValueError, TypeError, IndexError):
+            continue
+        key = leg.get("instrument_key")
+        if key and key not in found:
+            found[key] = str(leg.get("expiry") or "9999")
+    return sorted(found, key=lambda k: found[k])
+
+
 def get_closed_trades_on_date(symbol, source, trade_date):
     """🎓 MCX टप्पा 1 (SL cooldown + same-level/direction block, mcx_filters.py) — त्या symbol+source चे आज (exit_time च्या तारखेनुसार)
     बंद झालेले trades: [{exit_time, exit_reason, realized_pnl, entry_level_price, direction}] (direction = strategy मधल्या LONG/SHORT वरून)."""
