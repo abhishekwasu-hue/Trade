@@ -145,3 +145,51 @@ def test_get_closed_trades_on_date(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", path)
     rows = database.get_closed_trades_on_date("GOLD", "mcx_futures", "2026-10-01")
     assert [(r["exit_reason"], r["direction"]) for r in rows] == [("SL", "BULLISH"), ("TARGET", "BEARISH")]
+
+
+# ---- Target = पुढचा S/R level ------------------------------------------------------------------------------------------
+def test_next_level_target_pure():
+    import mcx_filters as F
+    lv = [286.4, 293.65, 300.0, 305.5]
+    assert F.next_level_target(lv, 286.6, "BULLISH", 0.6) == 293.65
+    assert F.next_level_target(lv, 293.5, "BEARISH", 0.6) == 286.4
+    assert F.next_level_target(lv, 293.5, "BULLISH", 7.0) == 305.5                 # 300 फार जवळ ⇒ पुढचा
+    assert F.next_level_target(lv, 306.0, "BULLISH", 0.6) is None
+
+
+def _zones_multi(levels):
+    rows = [{"symbol": "CRUDEOIL", "zone_type": f"DYNAMIC_SR_{'SUPPORT' if lv <= 6500 else 'RESISTANCE'}_30M", "zone_low": lv, "zone_high": lv,
+             "strength": 3, "formed_date": "2026-09-01", "status": "ACTIVE"} for lv in levels]
+    rows.append({"symbol": "CRUDEOIL", "zone_type": "DYNAMIC_SR_RESISTANCE_60M", "zone_low": 6540.0, "zone_high": 6540.0, "strength": 3,
+                 "formed_date": "2026-09-01", "status": "ACTIVE"})                  # 60M निवडलेला नाही ⇒ विचारात नाही
+    return pd.DataFrame(rows)
+
+
+def _run_target(**kw):
+    settings = {**_DEFAULT_SETTINGS, "symbol_enabled": True, "entry_rsi_gate_enabled": False, "sl_points": 20, "target_points": 40, **kw}
+    with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+         patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
+         patch.object(mft.cloud_db, "get_market_zones", return_value=_zones_multi([6500.0, 6580.0, 6650.0])), \
+         patch.object(mft, "fetch_mcx_candles", return_value=_fake_candles_df(last_close=6500.0)), \
+         patch.object(mft, "get_closed_trades_on_date", return_value=[]), \
+         patch.object(mft.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+         patch.object(mft, "has_open_trade_from_source", return_value=False), \
+         patch.object(mft, "open_multi_leg_trade", return_value=(True, {"trade_id": "T1"})) as trade, \
+         patch.object(mft, "send_telegram_message", return_value=True) as tg, \
+         patch.object(mft.cloud_db, "save_mcx_last_check", return_value=True), \
+         patch.object(mft.cloud_db, "save_signal_log", return_value=True) as log:
+        mft.process_symbol("tok", "CRUDEOIL")
+    return trade, tg, [c.args[0] for c in log.call_args_list]
+
+
+def test_next_level_target_off_by_default_uses_points():
+    assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]["next_level_target_enabled"] is False
+    trade, _, _ = _run_target()
+    assert trade.call_args.args[2]["max_profit"] == 40.0
+
+
+def test_next_level_target_on_sets_target_to_next_level():
+    trade, tg, logs = _run_target(next_level_target_enabled=True)
+    assert trade.call_args.args[2]["max_profit"] == 80.0                          # LONG 6500 ⇒ 6580 (60M चा 6540 नाही)
+    assert "पुढचा level 6580.00" in tg.call_args.args[0]
+    assert any("पुढचा level 6580.00" in (e.get("reason") or "") for e in logs)

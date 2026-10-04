@@ -137,3 +137,14 @@ def cascade_block(df30, direction, level, sessions=2, swing_order=3, lookback_se
     return True, (f"{'Support' if long else 'Resistance'} {p:,.2f} 30M close ने तुटला ({df['timestamp'].iloc[j]:%d %b %H:%M}) — शेवटचा "
                   f"{'lower-high' if long else 'higher-low'} {lvl:,.2f} अजून 30M close ने {'वर' if long else 'खाली'} तुटलेला नाही (CHoCH नाही) ⇒ "
                   f"{'LONG' if long else 'SHORT'} थांबवला"), info
+
+
+def next_level_target(levels, entry_price, direction, min_distance):
+    """🎓 वापरकर्त्याची निवड "Target = पुढचा level": LONG ⇒ entry च्या वर किमान `min_distance` अंतरावरचा सर्वात जवळचा level; SHORT ⇒ खालचा.
+    levels = किंमतींची यादी (bot चे ACTIVE levels). रिटर्न level किंवा None (नसेल तर caller नेहमीचा points/% target वापरतो)."""
+    entry = float(entry_price)
+    if direction == "BULLISH":
+        above = sorted(float(lv) for lv in levels if float(lv) - entry >= min_distance)
+        return above[0] if above else None
+    below = sorted((float(lv) for lv in levels if entry - float(lv) >= min_distance), reverse=True)
+    return below[0] if below else None

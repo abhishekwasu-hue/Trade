@@ -104,9 +104,11 @@ def _pv(price, tf, kind="H", weight=1.0, reaction=0.5, ts=None):
 
 def test_same_swing_in_many_timeframes_does_not_multiply_touches():
     cfg = SRConfig()
-    one_tf = sr._build_zone([_pv(100, "1hour")], cfg)
+    one_tf = sr._build_zone([_pv(100, "week")], cfg)
     four_tf = sr._build_zone([_pv(100, tf) for tf in sr.TF_ORDER], cfg)
-    assert four_tf["touches_raw"] == pytest.approx(one_tf["touches_raw"])        # 1H (सर्वात मोठा factor) च निर्णायक
+    assert four_tf["touches_raw"] == pytest.approx(one_tf["touches_raw"])        # सर्वात मोठा factor (Weekly) च निर्णायक
+    intraday = sr._build_zone([_pv(100, tf) for tf in ("5minute", "15minute", "30minute", "1hour")], cfg)
+    assert intraday["touches_raw"] == pytest.approx(sr._build_zone([_pv(100, "1hour")], cfg)["touches_raw"])
     assert four_tf["tfs"] == list(sr.TF_ORDER)
 
 
