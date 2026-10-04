@@ -60,7 +60,8 @@ def supertrend_specs(bot, settings):
 
 
 def supertrend_filter_enabled(bot, settings):
-    return bool(BOT_VIEWS[bot]["supertrend"]) and bool(settings.get("entry_supertrend_filter_enabled", False))
+    return bool(BOT_VIEWS[bot]["supertrend"]) and (bool(settings.get("entry_supertrend_filter_enabled", False))
+                                                    or settings.get("supertrend_filter_mode", "off") != "off")
 
 
 def _role(zone_type):

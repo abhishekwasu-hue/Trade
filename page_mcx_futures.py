@@ -26,6 +26,7 @@ import streamlit as st
 
 import cloud_db
 from safe_widgets import safe_number_input
+import mcx_filters
 import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_today, get_ist_now
 from database import (
@@ -765,16 +766,25 @@ def render():
 
         st.markdown("---")
         sub_header("📊 Supertrend Trend Filter (1H + 4H)", HDR_ORANGE)
-        entry_supertrend_filter_enabled = st.checkbox(
-            "Supertrend Trend Filter सक्रिय (डीफॉल्ट बंद)",
-            value=bool(settings.get("entry_supertrend_filter_enabled", False)),
-            key=_widget_key(symbol, "entry_supertrend_filter_enabled"),
+        _ST_MODES = {
+            "off": "बंद (डीफॉल्ट)",
+            "both_against": "1H आणि 4H दोन्ही विरुद्ध असतील तर थांबव (जुना नियम)",
+            "htf_against": "4H विरुद्ध असेल तर थांबव (कडक)",
+        }
+        _st_keys = list(_ST_MODES.keys())
+        _st_stored = mcx_filters.effective_supertrend_mode(settings)
+        supertrend_filter_mode = st.radio(
+            "Supertrend Filter mode", _st_keys, format_func=lambda k: _ST_MODES[k],
+            index=_st_keys.index(_st_stored) if _st_stored in _st_keys else 0, key=_widget_key(symbol, "supertrend_filter_mode"),
         )
+        entry_supertrend_filter_enabled = supertrend_filter_mode != "off"
         st.caption(
-            "किंमत 1H **आणि** 4H दोन्ही Supertrend च्या **खाली** असेल तर Bullish trade नाही; दोन्हींच्या **वर** असेल तर Bearish trade नाही "
-            "(Breakout सकट सर्व entries ला लागू). दिशा शेवटच्या **पूर्ण झालेल्या** 1H/4H candle ची (4H candles सकाळी ९:०० पासून). "
-            "एक Supertrend सहमत नसेल किंवा डेटा मिळाला नाही तर काहीच अडवलं जात नाही. थांबवलेला touch Signal Log मध्ये "
-            "`SKIPPED_MCX_TREND_FILTER` दिसेल (हा max-hits मोजत नाही)."
+            "**दोन्ही विरुद्ध:** किंमत 1H **आणि** 4H दोन्ही Supertrend च्या **खाली** असेल तर Bullish trade नाही. दोन्हींच्या **वर** असेल तर "
+            "Bearish trade नाही. **4H विरुद्ध:** फक्त 4H Supertrend उलट दिशेला असला तरी trade नाही. "
+            "हा filter Breakout सकट सर्व entries ला लागू होतो. दिशा शेवटच्या **पूर्ण झालेल्या** 1H/4H candle ची घेतली जाते "
+            "(4H candles सकाळी ९:०० पासून). डेटा मिळाला नाही तर काहीच अडवलं जात नाही. "
+            "थांबवलेला touch Signal Log मध्ये `SKIPPED_MCX_TREND_FILTER` दिसेल (हा max-hits मोजत नाही). "
+            "कुठला mode निवडायचा ते ठरवण्याआधी `mcx_trade_replay.py` चा निकाल पाहा."
         )
         st1, st2, st3, st4 = st.columns(4)
         with st1:
@@ -797,6 +807,33 @@ def render():
                 "4H Multiplier", settings, "supertrend_4h_multiplier", symbol,
                 min_value=0.5, max_value=10.0, step=0.5, format="%.1f", disabled=not entry_supertrend_filter_enabled,
             )
+
+        st.markdown("---")
+        sub_header("🧊 SL नंतरचा Cooldown आणि Cascade Filter", HDR_ORANGE)
+        cd1, cd2 = st.columns(2)
+        with cd1:
+            sl_cooldown_minutes = _number_input(
+                "SL तोट्यानंतर cooldown (मिनिटं, 0 = बंद)", settings, "sl_cooldown_minutes", symbol, min_value=0, max_value=240, step=15,
+            )
+        with cd2:
+            sl_level_direction_block_enabled = st.checkbox(
+                "आज SL लागलेल्या level वर त्याच दिशेने पुन्हा entry नाही (डीफॉल्ट चालू)",
+                value=bool(settings.get("sl_level_direction_block_enabled", True)),
+                key=_widget_key(symbol, "sl_level_direction_block_enabled"),
+            )
+        cascade_filter_enabled = st.checkbox(
+            "Broken-support cascade filter (डीफॉल्ट बंद)",
+            value=bool(settings.get("cascade_filter_enabled", False)),
+            key=_widget_key(symbol, "cascade_filter_enabled"),
+        )
+        st.caption(
+            "**Cooldown:** SL किंवा Trailing-SL **तोट्याने** बंद झाल्यावर या symbol वर इतकी मिनिटं नवीन entry घेतली जात नाही. "
+            "**त्याच level/दिशा:** आज ज्या level वर ज्या दिशेने SL लागला, त्या level वर (±0.05%) त्याच दिशेने आज पुन्हा entry नाही. "
+            "**Cascade:** मागच्या 2 sessions मध्ये एखादा support 30M close ने तुटला असेल, तर त्याच्या खालच्या level वर LONG फक्त "
+            "30M bullish CHoCH नंतर घेतला जातो. CHoCH म्हणजे break नंतरचा शेवटचा lower-high 30M close ने वर तुटणं. Resistance साठी उलट. "
+            "Breakout trades ना cascade लागू नाही. Signal Log मध्ये हे touch `SKIPPED_SL_COOLDOWN` / "
+            "`SKIPPED_SL_LEVEL_SAME_DIRECTION` / `SKIPPED_CASCADE_NO_CHOCH` म्हणून दिसतील. यातलं कुठलंही max-hits मध्ये मोजलं जात नाही."
+        )
 
         st.markdown("---")
         sub_header("⏱️ Minimum Level-Hold Duration (पहिल्या trade साठी)", HDR_ORANGE)
@@ -838,6 +875,10 @@ def render():
                 "breakout_lookback_candles": int(breakout_lookback_candles),
                 "breakout_tolerance_pct": float(breakout_tolerance_pct),
                 "entry_supertrend_filter_enabled": bool(entry_supertrend_filter_enabled),
+                "supertrend_filter_mode": supertrend_filter_mode,
+                "sl_cooldown_minutes": int(sl_cooldown_minutes),
+                "sl_level_direction_block_enabled": bool(sl_level_direction_block_enabled),
+                "cascade_filter_enabled": bool(cascade_filter_enabled),
                 "supertrend_1h_period": int(supertrend_1h_period), "supertrend_1h_multiplier": float(supertrend_1h_multiplier),
                 "supertrend_4h_period": int(supertrend_4h_period), "supertrend_4h_multiplier": float(supertrend_4h_multiplier),
                 "entry_min_hold_gate_enabled": bool(entry_min_hold_gate_enabled),

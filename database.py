@@ -767,6 +767,23 @@ def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
     return datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
 
 
+def get_closed_trades_on_date(symbol, source, trade_date):
+    """🎓 MCX टप्पा 1 (SL cooldown + same-level/direction block, mcx_filters.py) — त्या symbol+source चे आज (exit_time च्या तारखेनुसार)
+    बंद झालेले trades: [{exit_time, exit_reason, realized_pnl, entry_level_price, direction}] (direction = strategy मधल्या LONG/SHORT वरून)."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT exit_time, exit_reason, realized_pnl, entry_level_price, strategy FROM live_trades
+           WHERE symbol=? AND source=? AND status='CLOSED' AND exit_time IS NOT NULL AND substr(exit_time,1,10)=?
+           ORDER BY exit_time""",
+        (symbol, source, trade_date),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{"exit_time": r[0], "exit_reason": r[1], "realized_pnl": r[2], "entry_level_price": r[3],
+             "direction": "BULLISH" if "LONG" in str(r[4] or "").upper() else "BEARISH"} for r in rows]
+
+
 def count_entries_at_level_today(symbol, level_price, source, trade_date):
     """🎓 SR V3 PAPER shadow (srv3_instant_shadow.py) — त्या source चे आज त्याच entry_level_price वर किती *entries* झाले
     (Credit Spread + Naked एकाच क्षणी उघडले तर ते एकच entry — म्हणून entry_time च्या मिनिटानुसार वेगळे मोजले जातात).
