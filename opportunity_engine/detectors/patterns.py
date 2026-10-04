@@ -133,3 +133,155 @@ def or_box(df, or_bars, adr, max_adr=0.35) -> Optional[Box]:
     if top - bottom <= 0 or top - bottom > max_adr * adr:
         return None
     return Box(top=top, bottom=bottom, start=0, end=or_bars - 1, touches_top=1, touches_bottom=1, kind="OR")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# PR-4: trendline (D4/D5), flag आणि double top/bottom (D9)
+# ---------------------------------------------------------------------------------------------------------------------
+@dataclass
+class Trendline:
+    side: str                   # "support" (swing lows वर; line खाली close ⇒ तुटली) | "resistance" (swing highs वर)
+    m: float                    # slope (प्रति bar)
+    b: float                    # x = 0 वरचं मूल्य (दिलेल्या df च्या index मध्ये)
+    a: int                      # पहिला anchor swing
+    b_idx: int                  # दुसरा anchor swing
+    touches: int                # anchors सकट line ला स्पर्श करणारे swings
+    after_b: int                # B नंतरचे touches (D4: 0 ⇒ आत्ताचा तिसरा touch)
+    between_ext: float          # A–B मधला विरुद्ध टोक (support: सर्वोच्च high) — target hint
+
+    def at(self, x):
+        return self.m * x + self.b
+
+
+def find_trendline(df, rr, side, slope_sign, order=3, min_gap=5, max_slope_k=0.5, tol=None, min_touches=2):
+    """df = बंद bars (high/low/close). `side` support|resistance, `slope_sign` +1 (वाढती) / −1 (घटती).
+    नियम: A < B confirmed swings, B − A ≥ min_gap, 0 < slope·sign ≤ max_slope_k × rr, A पासून शेवटपर्यंत एकही close line पलीकडे नाही,
+    touches ≥ min_touches. सर्वात नवीन B, आणि त्यासाठी सर्वात जुना (लांब line) वैध A. नसेल तर None."""
+    if rr is None or not np.isfinite(rr) or rr <= 0 or len(df) < 2 * order + min_gap + 2:
+        return None
+    n = len(df)
+    hi, lo, cl = df["high"].to_numpy(float), df["low"].to_numpy(float), df["close"].to_numpy(float)
+    sh, sl = find_swings(df, order=order)
+    idx = [i for i in (sl if side == "support" else sh) if i <= n - 1 - order]
+    y = lo if side == "support" else hi
+    tol = 0.25 * rr if tol is None else tol
+    for bi in range(len(idx) - 1, 0, -1):
+        B = idx[bi]
+        for A in idx[:bi]:
+            if B - A < min_gap:
+                break
+            m = (y[B] - y[A]) / (B - A)
+            if not (0 < m * slope_sign <= max_slope_k * rr):
+                continue
+            b0 = y[A] - m * A
+            xs = np.arange(A, n)
+            line = m * xs + b0
+            broken = (cl[A:] < line - 1e-9).any() if side == "support" else (cl[A:] > line + 1e-9).any()
+            if broken:
+                continue
+            pts = [i for i in idx if i >= A and abs(y[i] - (m * i + b0)) <= tol]
+            if len(pts) < min_touches:
+                continue
+            ext = float(hi[A:B + 1].max()) if side == "support" else float(lo[A:B + 1].min())
+            return Trendline(side=side, m=float(m), b=float(b0), a=int(A), b_idx=int(B), touches=len(pts), after_b=sum(1 for i in pts if i > B),
+                             between_ext=ext)
+    return None
+
+
+@dataclass
+class Flag:
+    sign: int                   # +1 bull flag, −1 bear flag
+    pole_start: int
+    pole_end: int               # pole चे टोक (flag सुरू होण्याआधीचा bar)
+    pole_len: float
+    m: float                    # flag च्या वरच्या (bull) / खालच्या (bear) कडेची रेषा — breakout रेषा
+    b: float
+    flag_ext: float             # flag चा विरुद्ध टोक (bull: flag low) — SL
+    bars: int
+
+    def at(self, x):
+        return self.m * x + self.b
+
+
+def find_flag(df, rr, sign, pole_max=8, pole_k=2.0, min_bars=5, max_bars=20, max_retrace=0.5):
+    """शेवटचे bars = flag (min_bars..max_bars), त्याआधी ≤ pole_max bars चा pole: हालचाल ≥ pole_k × rr × √bars (sign दिशेने).
+    Flag: pole विरुद्ध (किंवा सपाट) channel — flag highs वरची रेषा slope ≤ 0 (bull), retracement ≤ max_retrace × pole, आणि flag मध्ये pole चं टोक
+    ओलांडलं नाही. Breakout रेषा = flag highs (bull) / lows (bear) वरची fit. नसेल तर None."""
+    if rr is None or not np.isfinite(rr) or rr <= 0:
+        return None
+    n = len(df)
+    hi, lo = df["high"].to_numpy(float), df["low"].to_numpy(float)
+    for fb in range(min_bars, max_bars + 1):
+        pe = n - fb - 1                                          # pole चं टोक
+        if pe < 1:
+            break
+        top = hi[pe] if sign > 0 else lo[pe]
+        f_hi, f_lo = hi[pe + 1:], lo[pe + 1:]
+        if (f_hi.max() > top) if sign > 0 else (f_lo.min() < top):
+            continue                                             # flag मध्ये pole चं टोक ओलांडलं ⇒ flag नाही
+        for pb in range(1, pole_max + 1):
+            ps = pe - pb
+            if ps < 0:
+                break
+            start = lo[ps:pe + 1].min() if sign > 0 else hi[ps:pe + 1].max()
+            pole = (top - start) * sign
+            if pole < pole_k * rr * np.sqrt(pb + 1):
+                continue
+            retr = (top - f_lo.min()) / pole if sign > 0 else (f_hi.max() - top) / pole
+            if retr > max_retrace:
+                continue
+            xs = np.arange(pe + 1, n, dtype=float)
+            m, b0 = np.polyfit(xs, f_hi if sign > 0 else f_lo, 1)
+            if m * sign > 0.05 * rr:
+                continue                                         # channel pole च्याच दिशेने चढतोय ⇒ flag नाही
+            return Flag(sign=sign, pole_start=int(ps), pole_end=int(pe), pole_len=float(pole), m=float(m), b=float(b0),
+                        flag_ext=float(f_lo.min() if sign > 0 else f_hi.max()), bars=int(fb))
+    return None
+
+
+@dataclass
+class Double:
+    sign: int                   # +1 double bottom, −1 double top
+    first: int
+    second: int
+    level: float                # दोन lows/highs पैकी टोकाचा (SL त्याच्या पलीकडे)
+    neckline: float             # मधला peak (bottom) / trough (top)
+
+    @property
+    def height(self):
+        return abs(self.neckline - self.level)
+
+
+def find_double(df, rr, sign, tol_pct=0.003, min_gap=10, peak_k=1.5, order=3):
+    """शेवटचे दोन confirmed swing lows (bottom) / highs (top): 0.3% आत, ≥ min_gap bars अंतर, मधला peak ≥ peak_k × rr; दुसऱ्या swing नंतर
+    neckline पलीकडे close झालेला नाही (pattern अजून उघडा) आणि level तुटलेला नाही. नसेल तर None."""
+    if rr is None or not np.isfinite(rr) or rr <= 0:
+        return None
+    n = len(df)
+    hi, lo, cl = df["high"].to_numpy(float), df["low"].to_numpy(float), df["close"].to_numpy(float)
+    sh, sl = find_swings(df, order=order)
+    idx = [i for i in (sl if sign > 0 else sh) if i <= n - 1 - order]
+    if len(idx) < 2:
+        return None
+    y = lo if sign > 0 else hi
+    s2 = idx[-1]
+    for s1 in reversed(idx[:-1]):
+        if s2 - s1 < min_gap:
+            continue
+        if abs(y[s1] - y[s2]) > tol_pct * max(abs(y[s1]), 1e-9):
+            continue
+        level = min(y[s1], y[s2]) if sign > 0 else max(y[s1], y[s2])
+        neck = float(hi[s1:s2 + 1].max()) if sign > 0 else float(lo[s1:s2 + 1].min())
+        if abs(neck - level) < peak_k * rr:
+            continue
+        after_c = cl[s2 + 1:]
+        if len(after_c) and ((after_c > neck).any() if sign > 0 else (after_c < neck).any()):
+            return None                                          # neckline आधीच तुटली (जुनी गोष्ट)
+        between = y[s1 + 1:s2]
+        if len(between) and ((between < level).any() if sign > 0 else (between > level).any()):
+            continue
+        after = (lo[s2 + 1:] < level).any() if sign > 0 else (hi[s2 + 1:] > level).any()
+        if after:
+            return None
+        return Double(sign=sign, first=int(s1), second=int(s2), level=float(level), neckline=neck)
+    return None

@@ -356,7 +356,7 @@ def _in_window(setup, t, ecfg):
         return hm(ecfg.d3_window_start) <= m <= hm(ecfg.d3_window_end)
     if setup == "D6":
         return hm(ecfg.d6_window_start) <= m <= hm(ecfg.d6_window_end)
-    if setup in ("D7", "D8", "D10"):
+    if setup in ("D4", "D5", "D7", "D8", "D9", "D10"):
         key = setup.lower()
         return hm(getattr(ecfg, f"{key}_window_start")) <= m <= hm(getattr(ecfg, f"{key}_window_end"))
     return True
@@ -370,7 +370,9 @@ def shadow_detect(tl, variant, bcfg, progress=None):
     ecfg = _ecfg(bcfg, variant)
     wide = replace(ecfg, d1_window_end="15:30", d2_window_end="15:30", d3_window_start="09:15", d3_window_end="15:30", d2_min_rr=0.0,
                    d6_window_start="09:15", d6_window_end="15:30", d10_window_start="09:15", d10_window_end="15:30",
-                   d7_window_start="09:15", d7_window_end="15:30", d8_window_start="09:15", d8_window_end="15:30")
+                   d7_window_start="09:15", d7_window_end="15:30", d8_window_start="09:15", d8_window_end="15:30",
+                   d4_window_start="09:15", d4_window_end="15:30", d5_window_start="09:15", d5_window_end="15:30",
+                   d9_window_start="09:15", d9_window_end="15:30")
     orig = replace(ecfg, d2_min_rr=0.0)
     sets = {"orig": make_detectors(bcfg.detectors, orig), "wide": make_detectors(bcfg.detectors, wide)}
     day_rows, cand_rows = [], []
@@ -392,7 +394,8 @@ def shadow_detect(tl, variant, bcfg, progress=None):
             df15 = day.df15[day.df15["bar_end"] <= t]
             vol, vol_med = tl.volume(day.g5 + k)
             base = {"5m": day.df5.iloc[:k + 1], "15m": df15, "info": info, "rr5": tl.rr(5, day.g5 + k), "rr15": None,
-                    "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med}             # run_variant सारखाच इनपुट
+                    "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med,
+                    "hist": (lambda tf, n, _t=t: tl.hist(tf, _t, n))}                                                      # run_variant सारखाच इनपुट
             if len(df15):
                 base["rr15"] = tl.rr(15, day.g15 + len(df15) - 1)
             bias_now = resolve_bias(ctx, ecfg)

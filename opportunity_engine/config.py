@@ -131,7 +131,7 @@ class EngineConfig:
     box_break_frac: float = 0.10            # box पलीकडे close ≥ 0.1 × box उंची
     d7_entry_mode: str = "aggressive"       # "aggressive" (breakout close) | "retest" (6 bars मध्ये edge retest + confirmation candle)
     d7_retest_bars: int = 6
-    d7_sl_mode: str = "mid"                 # "mid" | "opposite"
+    d7_sl_mode: str = "mid"                 # "mid" | "edge" (विरुद्ध कड)
     d7_window_start: str = "09:30"
     d7_window_end: str = "14:45"
     tri_max_bars: int = 40
@@ -142,4 +142,37 @@ class EngineConfig:
     d8_sl_mode: str = "swing"               # "swing" (शेवटचा आतला swing) | "line" (विरुद्ध रेषा)
     d8_window_start: str = "09:30"
     d8_window_end: str = "14:45"
+    # ---- D4 Trendline 3rd touch / D5 Break-Retest (detectors/trendline.py, PR-4) — spec §4 ----
+    tl_tf: str = "1h"                       # trendline TF
+    tl_lookback_bars: int = 120             # इतके शेवटचे बंद 1H bars
+    tl_swing_order: int = 3
+    tl_min_gap: int = 5                     # A आणि B मध्ये किमान bars
+    tl_max_slope_k: float = 0.5             # |slope| ≤ 0.5 × ref_range(1H) प्रति bar
+    tl_touch_pct: float = 0.001             # touch सहनशीलता = max(0.1% × किंमत, 0.25 × ref_range(1H))
+    tl_touch_k: float = 0.25
+    d4_touch_bars: int = 12                 # 5M: touch शेवटच्या इतक्या bars मध्ये
+    d4_window_start: str = "09:30"
+    d4_window_end: str = "14:45"
+    d5_min_touches: int = 3
+    d5_retest_bars: int = 10                # 15M: break नंतर इतक्या bars मध्ये retest
+    d5_window_start: str = "09:30"
+    d5_window_end: str = "14:45"
+    # ---- D9 Flag / Double top-bottom (detectors/chart_pattern.py, PR-4) — spec §4 ----
+    d9_tfs: tuple = ("1h", "1d")            # pattern TF; breakout trigger 15M close
+    d9_lookback_bars: int = 80
+    flag_pole_max_bars: int = 8
+    flag_pole_k: float = 2.0                # pole हालचाल ≥ 2 × ref_range(tf) × √bars
+    flag_min_bars: int = 5
+    flag_max_bars: int = 20
+    flag_max_retrace: float = 0.5
+    dbl_tol_pct: float = 0.003              # दोन lows/highs 0.3% आत
+    dbl_min_gap: int = 10
+    dbl_peak_k: float = 1.5                 # मधला peak ≥ 1.5 × ref_range(tf)
+    dbl_swing_order: int = 3
+    d9_window_start: str = "09:30"
+    d9_window_end: str = "14:45"
+    # ---- Positional mode (positional.py, PR-4) — spec §9 ----
+    pos_strike_buffer_adr: float = 0.25     # short strike = anchor पलीकडे 0.25 × ADR, किंमतीपासून दूर round
+    pos_hedge_steps: int = 4                # long (hedge) strike = short ± 4 strike steps
+    pos_hold_days: int = 5
 

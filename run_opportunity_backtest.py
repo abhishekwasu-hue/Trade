@@ -22,6 +22,7 @@ import pandas as pd
 import real_nifty_data
 from opportunity_engine import sessions
 from opportunity_engine import diagnostics as DG
+from opportunity_engine import positional as POS
 from opportunity_engine import volume as VOL
 from opportunity_engine.visual_audit import compare as VCMP
 from opportunity_engine.visual_audit import store as VSTORE
@@ -33,13 +34,14 @@ def main(argv=None):
     parser.add_argument("--start", default=None, help="trading सुरू तारीख (warm-up आधीपासूनच)")
     parser.add_argument("--end", default=None)
     parser.add_argument("--variants", default="V1,V2,V3")
-    parser.add_argument("--detectors", default="D1,D2,D3,D6,D7,D8,D10")
+    parser.add_argument("--detectors", default="D1,D2,D3,D4,D5,D6,D7,D8,D9,D10")
     parser.add_argument("--out", default="oe_backtest_out")
     parser.add_argument("--diagnostics", action="store_true", help="निदान तक्ते पण (फक्त अहवाल; नियम/parameters बदलत नाही)")
     parser.add_argument("--index-5m", default=None, help="offline 1M ऐवजी हा index 5M parquet (collector चा) वापरा; Daily इतिहास offline/extension मधून")
     parser.add_argument("--futures-volume", default=None, help="futures 5M parquet — volume जोडून आणि volume शिवाय असे दोन्ही backtest")
     parser.add_argument("--visual-cache", default=None, help="visual audit JSONL (backfill) — consensus modes off/score/gate तुलना")
     parser.add_argument("--consensus-modes", default="off,score,gate")
+    parser.add_argument("--no-positional", action="store_true", help="positional (spread सूचना) backtest वगळा")
     args = parser.parse_args(argv)
 
     t0 = time.time()
@@ -101,6 +103,13 @@ def main(argv=None):
         if len(t["wait_pullback"]):
             print("--- WAIT_PULLBACK_END bias मध्ये ---")
             print(t["wait_pullback"].to_string(index=False))
+    if not args.no_positional:
+        pos = POS.backtest(res.timeline, bcfg.engine, bcfg.symbol)
+        pos.to_csv(os.path.join(args.out, "positional_rows.csv"), index=False)
+        ps = POS.summary(pos)
+        ps.to_csv(os.path.join(args.out, "positional_summary.csv"), index=False)
+        print(f"\n=== Positional सूचना (hold {bcfg.engine.pos_hold_days} दिवस; index-level, premium नाही) — IS / OOS वेगळे ===")
+        print(ps.to_string(index=False) if len(ps) else "(सूचना नाहीत)")
     if args.diagnostics:
         for v in res.results:
             print(f"\n=== {v}: निदान (shadow detection चालू…) ===", flush=True)

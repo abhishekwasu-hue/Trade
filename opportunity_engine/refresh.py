@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
+from . import positional as POS
 from . import report as R
 from . import store
 from .bias import pullback_watch_zone, resolve_bias
@@ -96,6 +97,7 @@ def brief_text(snap, now=None):
     if snap.watch:
         w = snap.watch
         lines.append(f"Pullback watch zone: {w['zone_low']:,.0f}–{w['zone_high']:,.0f} ({w['reason']})")
+    lines.append(POS.suggestion_text(POS.suggest(ctx, price, EngineConfig(), snap.symbol)))
     lines.append("⚠️ फक्त माहिती — कुठलाही trade होत नाही.")
     return "\n".join(lines)
 

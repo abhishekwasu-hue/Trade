@@ -170,7 +170,7 @@ def test_plan_trade_uses_t1_hint_only_when_ahead():
 
 # ---- registry / diagnostics / replay ---------------------------------------------------------------------------------------------------------
 def test_registry_defaults_and_diag_windows():
-    assert BT.BacktestConfig().detectors == ("D1", "D2", "D3", "D6", "D7", "D8", "D10")
+    assert {"D7", "D8"} <= set(BT.BacktestConfig().detectors)
     assert [d.setup_id for d in BT.make_detectors(("D7", "D8"), CFG)] == ["D7", "D8"]
     t = pd.Timestamp("2025-01-08 15:00")
     assert not DG._in_window("D7", t, CFG) and not DG._in_window("D8", t, CFG) and DG._in_window("D7", pd.Timestamp("2025-01-08 11:00"), CFG)

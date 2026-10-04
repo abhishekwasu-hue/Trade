@@ -14,6 +14,7 @@ from opportunity_engine import report as R
 from opportunity_engine import risk as RISK
 from opportunity_engine import backtest as BT
 from opportunity_engine import diagnostics as DG
+from opportunity_engine import positional as POS
 from opportunity_engine.visual_audit import auditor as VA
 from opportunity_engine.visual_audit import evaluate as VEV
 from opportunity_engine.visual_audit import store as VS
@@ -94,7 +95,7 @@ DIAG_TABLES = (
 
 
 def _render_backtest_tab(symbol):
-    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest · D6 HTF Zone Pullback · D7 Range Box · D8 Triangle · D10 Trap) — खरा offline NIFTY डेटा", HDR_ORANGE)
+    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest · D4/D5 Trendline · D6 HTF Zone Pullback · D7 Range Box · D8 Triangle · D9 Flag/Double · D10 Trap) — खरा offline NIFTY डेटा", HDR_ORANGE)
     st.caption("Live आणि backtest साठी एकच निर्णय-साखळी (gate → risk → validation → score → selector). R-आधारित (spot points; option P&L नाही). Index डेटात volume नाही ⇒ volume 'N/A'. "
                "निकाल जसे आले तसे — ट्यूनिंग नाही. IS = 2015→2021, OOS = 2022→; verdict फक्त अहवाल (OOS ≥30 trades ∧ expectancy>0 ⇒ KEEP).")
     if symbol != "NIFTY":
@@ -288,6 +289,10 @@ def _render_bias_tab(ctx, symbol, price):
         watch = pullback_watch_zone(ctx, bias.direction)
     if watch:
         st.caption(f"Pullback watch zone (counter-trend breakout आला तर इथे वाट): {watch['zone_low']:,.2f} – {watch['zone_high']:,.2f} ({watch['reason']})")
+    sub_header("📐 Positional सूचना (पुढचा session; spec §9)", HDR_ORANGE)
+    st.write(POS.suggestion_text(POS.suggest(ctx, price, cfg, symbol)))
+    st.caption("Daily + 4H UPTREND ⇒ Bull Put, DOWNTREND ⇒ Bear Call, दोन्ही RANGE ⇒ Iron Condor; WEAK ⇒ नवीन spread नाही. Short strike = जवळचा protected level / "
+               "FRESH zone पलीकडे 0.25 × ADR. फक्त सूचना — premium/IV तपासा, order होत नाही.")
     sub_header("🧪 Candidate tester (गृहीत trade वर gate + risk plan)", HDR_PURPLE)
     st.caption("Detectors (Gap/Trendline/Zone-Pullback…) PR-1c मध्ये येतील; तोपर्यंत एखादा गृहीत trade टाकून Bias/Gate/Daily-veto/Risk नियम तपासा. कुठलाही order होत नाही.")
     c1, c2, c3, c4, c5 = st.columns(5)
