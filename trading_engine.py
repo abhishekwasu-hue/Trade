@@ -557,6 +557,7 @@ FILL_ANCHORED_SL_SOURCES = ("mcx_futures",)
 SHADOW_EXIT_PARENT_SOURCE = {
     "dynamic_sr_instant_otm_shadow": "dynamic_sr_instant",
     "dynamic_sr_instant_min_hold_shadow": "dynamic_sr_instant",
+    "dynamic_sr_instant_srv3_shadow": "dynamic_sr_instant",      # SR V3 levels PAPER shadow (srv3_instant_shadow.py)
 }
 
 

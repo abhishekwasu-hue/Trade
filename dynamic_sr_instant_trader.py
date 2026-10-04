@@ -537,7 +537,8 @@ def is_15m_strategy_ready_for(symbol, direction, trading_mode):
     return True, ""
 
 
-FIVE_MIN_FAMILY_SOURCES = ("dynamic_sr_instant", "dynamic_sr_instant_otm_shadow", "dynamic_sr_instant_min_hold_shadow")
+FIVE_MIN_FAMILY_SOURCES = ("dynamic_sr_instant", "dynamic_sr_instant_otm_shadow", "dynamic_sr_instant_min_hold_shadow",
+                           "dynamic_sr_instant_srv3_shadow")
 
 
 def close_open_5m_positions(access_token, symbol, detail):
@@ -1398,6 +1399,15 @@ def run_all_symbols(token, symbols):
         except Exception as e:
             notify_error("dynamic_sr_instant_trader", f"{symbol.strip()}: {e}")
             print(f"⚠️ {symbol.strip()}: अनपेक्षित त्रुटी — {e}")
+        # 🎓 SR V3 PAPER shadow (वापरकर्त्याचा निर्णय) — मूळ trade नंतर, स्वतंत्र try/except मध्ये: shadow मधली कुठलीही चूक मूळ bot
+        # किंवा पुढच्या symbols ला अडवत नाही. setting (srv3_shadow_enabled) बंद असेल तर shadow काहीच करत नाही.
+        try:
+            import srv3_instant_shadow
+            msg = srv3_instant_shadow.run_shadow(token, symbol.strip())
+            if msg:
+                print(msg)
+        except Exception as e:
+            print(f"⚠️ {symbol.strip()}: SR V3 shadow त्रुटी (मूळ bot वर परिणाम नाही) — {e}")
     return any_symbol_succeeded
 
 

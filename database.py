@@ -767,6 +767,22 @@ def get_last_sl_tsl_exit_time(symbol, level_price, source, trade_date):
     return datetime.datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
 
 
+def count_entries_at_level_today(symbol, level_price, source, trade_date):
+    """🎓 SR V3 PAPER shadow (srv3_instant_shadow.py) — त्या source चे आज त्याच entry_level_price वर किती *entries* झाले
+    (Credit Spread + Naked एकाच क्षणी उघडले तर ते एकच entry — म्हणून entry_time च्या मिनिटानुसार वेगळे मोजले जातात).
+    shadow signal_log मध्ये लिहीत नाही, म्हणून "एका level वर कमाल N trades" हा नियम live_trades वरून."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT COUNT(DISTINCT substr(entry_time,1,16)) FROM live_trades
+           WHERE symbol=? AND source=? AND entry_level_price=? AND substr(entry_time,1,10)=?""",
+        (symbol, source, level_price, trade_date),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return int(row[0] or 0) if row else 0
+
+
 def get_first_target_exit_today(source, mode, trade_date):
     """🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("कोणताही एक सिग्नल ... टार्गेट गाठल्यास बॉटने पुढील
     ट्रेडिंग थांबवावे — आपला उद्देश प्रॉफिट कमावणे आहे, ट्रेड करणे नव्हे") — आजच्या (exit_time नुसार)

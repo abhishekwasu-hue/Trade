@@ -587,6 +587,17 @@ def render():
                     )
                 else:
                     otm_shadow_strikes_count = settings.get("otm_shadow_strikes_count", 2)
+                # 🎓 वापरकर्त्याचा निर्णय ("फक्त 5-Min bot ला SR V3 देऊन PAPER मध्ये चाचणी") — srv3_instant_shadow.py.
+                srv3_shadow_enabled = st.checkbox(
+                    "🧪 SR V3 PAPER Shadow (SR V3 A/B levels वर याच strategy चे नियम — निव्वळ PAPER, खऱ्या trade वर परिणाम नाही)",
+                    value=bool(settings.get("srv3_shadow_enabled", False)),
+                    key=_widget_key(strategy_key, symbol, "srv3_shadow_enabled"),
+                )
+                st.caption(
+                    "चालू केल्यास, मूळ bot सोबतच, जुन्या Dynamic levels ऐवजी SR V3 (grade A/B, 5M+15M, PDH/PDL/PWH/PWL, gaps) levels "
+                    "वर याच entry/exit नियमांनी स्वतंत्र PAPER trades नोंदवले जातात (source dynamic_sr_instant_srv3_shadow) — Performance "
+                    "Report वर दोन्हींची तुलना करा. मूळ bot चे levels आणि trades बदलत नाहीत."
+                )
 
         with st.expander("🧭 RSI Gate", expanded=False):
             entry_rsi_gate_enabled = st.checkbox(
@@ -1294,6 +1305,7 @@ def render():
             new_settings["defer_to_15m_distance_pct"] = float(defer_to_15m_distance_pct)
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
+            new_settings["srv3_shadow_enabled"] = bool(srv3_shadow_enabled)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

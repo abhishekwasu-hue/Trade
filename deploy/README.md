@@ -936,3 +936,12 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
   नाही (adjustment alert). Short strike = जवळचा protected level / FRESH zone पलीकडे 0.25 × ADR (STRIKE_STEP ने round), hedge 4 strikes दूर.
   09:00 brief आणि पानाच्या "Bias / Gate" tab मध्ये सूचना; backtest `positional_summary.csv` (hold 5 दिवस: expiry-close win % आणि touch %, IS/OOS वेगळे;
   index-level — premium/IV नाही). `--no-positional` ने वगळता येतं.
+
+### SR V3 PAPER Shadow — 5-Min Instant Trader
+
+- Backtest (`python3 run_sr_bot_level_backtest.py`) मध्ये 5-Min Instant साठी SR V3 (A/B) levels चा OOS निकाल जुन्या Dynamic levels
+  इतकाच (≈ शून्य फरक) आला; 15M Reversal साठी V3 वाईट — म्हणून फक्त 5-Min bot वर forward PAPER चाचणी.
+- `srv3_instant_shadow.py` मूळ `dynamic_sr_instant_trader.py` च्याच cron cycle मध्ये (प्रत्येक symbol नंतर, स्वतंत्र try/except) चालतो —
+  **नवीन crontab ओळ लागत नाही**. SR V3 levels दर 5 मिनिटांनी `market_zones` मध्ये `SRV3_SUPPORT`/`SRV3_RESISTANCE` नावाने.
+- चालू करा: Bot Dynamic SR Algo → 5-Min Instant Trader → symbol → "🧪 SR V3 PAPER Shadow" ✅ → Save. नेहमी PAPER
+  (broker accounts कधीच नाहीत), source `dynamic_sr_instant_srv3_shadow` — Performance Report वर मूळ bot शी तुलना. मूळ bot बदलत नाही.
