@@ -88,7 +88,7 @@ DIAG_TABLES = (
 
 
 def _render_backtest_tab(symbol):
-    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest) — खरा offline NIFTY डेटा", HDR_ORANGE)
+    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest · D6 HTF Zone Pullback · D10 Trap) — खरा offline NIFTY डेटा", HDR_ORANGE)
     st.caption("Live आणि backtest साठी एकच निर्णय-साखळी (gate → risk → validation → score → selector). R-आधारित (spot points; option P&L नाही). Index डेटात volume नाही ⇒ volume 'N/A'. "
                "निकाल जसे आले तसे — ट्यूनिंग नाही. IS = 2015→2021, OOS = 2022→; verdict फक्त अहवाल (OOS ≥30 trades ∧ expectancy>0 ⇒ KEEP).")
     if symbol != "NIFTY":
@@ -98,7 +98,7 @@ def _render_backtest_tab(symbol):
     start = c1.date_input("पासून", value=pd.Timestamp("2022-01-01").date(), min_value=pd.Timestamp("2015-06-01").date(), max_value=pd.Timestamp("2024-03-27").date(), key="oe_bt_start")
     end = c2.date_input("पर्यंत", value=pd.Timestamp("2024-03-27").date(), min_value=pd.Timestamp("2015-06-01").date(), max_value=pd.Timestamp("2024-03-27").date(), key="oe_bt_end")
     variants = c3.multiselect("Variants", list(BT.VARIANTS), default=["V1"], key="oe_bt_variants", format_func=lambda v: f"{v}: {BT.VARIANT_TEXT[v]}")
-    detectors = c4.multiselect("Detectors", ["D1", "D2", "D3"], default=["D1", "D2", "D3"], key="oe_bt_detectors")
+    detectors = c4.multiselect("Detectors", list(BT.DETECTORS), default=list(BT.DETECTORS), key="oe_bt_detectors")
     st.caption("⏱️ लांब कालावधी (उदा. 2015→2024, तिन्ही variants) ≈ 10–15 मिनिटं घेतो. जलद तपासणीसाठी कमी कालावधी/एक variant. पूर्ण निकाल CLI: `python3 run_opportunity_backtest.py`.")
     want_diag = st.checkbox("🔬 निदान पण दाखवा (exit / MAE-MFE / counterfactual / मोठे losses / funnel / D2 — IS आणि OOS वेगळे; वेळ आणखी लागतो)", key="oe_bt_diag")
     if not st.button("▶️ Backtest चालवा", key="oe_bt_run"):
@@ -113,6 +113,11 @@ def _render_backtest_tab(symbol):
         return
     sub_header("Variants तुलना", HDR_BLUE)
     st.dataframe(result.comparison, width="stretch", hide_index=True)
+    vt = result.variant_tables()
+    st.markdown("**§3.4: variants — IS आणि OOS वेगळे** (R साइज-विना; शेवटचा column साइज-सह)")
+    st.dataframe(vt["variants_is_oos"], width="stretch", hide_index=True)
+    st.markdown("**वर्षनिहाय expectancy R (trades)**")
+    st.dataframe(vt["variants_yearwise"], width="stretch", hide_index=True)
     for v in variants:
         tables = result.tables(v)
         r = result.results[v]
@@ -126,10 +131,13 @@ def _render_backtest_tab(symbol):
         if len(tr):
             eq = tr.sort_values("exit_time").assign(equity_R=lambda d: d["r_weighted"].cumsum()).set_index("exit_time")["equity_R"]
             st.line_chart(eq)
-        with st.expander("Breakdowns (setup / bias / Daily state / score / वेळ / वर्ष / exit / gap प्रकार)", expanded=False):
-            for key in ("by_setup", "by_bias", "by_state_1d", "by_score_bucket", "by_tod", "by_year", "by_gap_type", "by_exit_reason"):
+        if len(tables["wait_pullback"]):
+            st.markdown("**`WAIT_PULLBACK_END` bias असताना** — candidates, टप्पे, घेतलेल्यांचा आणि नाकारलेल्यांचा (virtual) निकाल (IS/OOS वेगळे)")
+            st.dataframe(tables["wait_pullback"], width="stretch", hide_index=True)
+        with st.expander("Breakdowns — सर्व IS आणि OOS वेगळे (setup / setup×वेळ / bias / Daily state / score / वेळ / वर्ष / exit / gap प्रकार / HTF_WAIT_PULLBACK breakouts)", expanded=False):
+            for key in ("by_setup", "by_setup_tod", "by_bias", "by_state_1d", "by_score_bucket", "by_tod", "by_year", "by_gap_type", "by_exit_reason", "wait_pullback_breakouts"):
                 if len(tables[key]):
-                    st.markdown(f"*{key[3:]}*")
+                    st.markdown(f"*{key[3:] if key.startswith('by_') else key}*")
                     st.dataframe(tables[key], width="stretch", hide_index=True)
         with st.expander(f"Trades ({len(tr)})", expanded=False):
             st.dataframe(tr.drop(columns=["commentary"], errors="ignore"), width="stretch", hide_index=True)

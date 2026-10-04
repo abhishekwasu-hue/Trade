@@ -105,4 +105,16 @@ class EngineConfig:
     d3_sl_buffer_k: float = 0.1              # zone च्या लांबच्या किनाऱ्यापलीकडे 0.1 × ref_range(15M)
     d3_max_age_sessions: int = 20
     weak_exit: str = "be"                    # trade चालू असताना primary HTF WEAK झाला: "be" (SL BE ला) | "exit"
+    # ---- D6 HTF Zone Pullback (detectors/zone_pullback.py) — वापरकर्त्याने मंजूर केलेले सुरुवातीचे डीफॉल्ट ----
+    d6_zone_tfs: tuple = ("1h", "4h")        # FRESH/TESTED_1 demand (short: supply) आणि flip zones या TFs चे
+    d6_retrace: tuple = (0.50, 0.62)         # primary HTF च्या शेवटच्या impulse leg (protected → last swing) चा 50–62% retracement (शुद्ध किंमत)
+    d6_touch_bars: int = 12                  # zone ला स्पर्श शेवटच्या इतक्या 5M bars मध्ये (1 तास) झालेला हवा
+    d6_window_start: str = "09:45"
+    d6_window_end: str = "14:45"
+    # ---- D10 Failed-breakout trap (detectors/range_box.py) ----
+    d10_reclaim_bars: int = 2                # level खाली break नंतर इतक्या bars च्या आत परत आत close
+    d10_swing_order: int = 2                 # 5M swing lows/highs (signals.find_swings, फक्त confirmed)
+    d10_range_bars: int = 20                 # target: sweep आधीच्या इतक्या 5M bars च्या range चा विरुद्ध किनारा
+    d10_window_start: str = "09:30"
+    d10_window_end: str = "14:45"
 

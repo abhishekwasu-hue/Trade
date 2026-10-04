@@ -123,7 +123,8 @@ class GapGo(Detector):
             return []
         mid = (or_hi + or_lo) / 2.0
         sl_ref = mid if cfg.d1_sl_mode == "mid" else (or_lo if long else or_hi)
-        trig = {**_trigger(row, prev, bars_by_tf.get("rr5")), "level": level, "volume": None}
+        trig = {**_trigger(row, prev, bars_by_tf.get("rr5")), "level": level,
+                "volume": bars_by_tf.get("vol5"), "volume_median": bars_by_tf.get("vol_med5")}   # futures volume जोडलेला नसेल तर None ⇒ validation मध्ये N/A
         quality = 80.0 if info.gap_type == BREAKAWAY else 65.0
         return [Candidate(setup_id="D1", direction="LONG" if long else "SHORT", time=now, entry=float(row["close"]), sl_ref=float(sl_ref), kind=KIND_BREAKOUT,
                           tf="15m", trigger_tf="5m", setup_quality=quality, trigger=trig,

@@ -16,9 +16,10 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from .backtest import HTF, IS_END, OOS_START, PERIODS, VARIANTS, _trail_stop, split_is_oos, summarize
+from .backtest import HTF, IS_END, OOS_START, PERIODS, VARIANTS, _trail_stop, make_detectors, split_is_oos, summarize
 from .bias import resolve_bias
-from .detectors.gap import BREAKAWAY, RUNAWAY, GapFade, GapGo, GapRetestReversal, classify_gap
+from .context import trend_sign
+from .detectors.gap import BREAKAWAY, RUNAWAY, classify_gap
 from .risk import TradePlan, _close_all, _hhmm, _time_of, on_bar, open_position
 
 GO_TYPES = (BREAKAWAY, RUNAWAY)
@@ -353,6 +354,10 @@ def _in_window(setup, t, ecfg):
         return m <= hm(ecfg.d2_window_end)
     if setup == "D3":
         return hm(ecfg.d3_window_start) <= m <= hm(ecfg.d3_window_end)
+    if setup == "D6":
+        return hm(ecfg.d6_window_start) <= m <= hm(ecfg.d6_window_end)
+    if setup == "D10":
+        return hm(ecfg.d10_window_start) <= m <= hm(ecfg.d10_window_end)
     return True
 
 
@@ -362,10 +367,10 @@ def shadow_detect(tl, variant, bcfg, progress=None):
     दोन प्रती वेगळ्या कारण D3 एकदा signal दिल्यावर zone "used" करतो — खिडकीबाहेरच्या signal ने खिडकीतला signal लपू नये.
     रिटर्न (days DataFrame, shadow candidates DataFrame; column `source` = orig/wide)."""
     ecfg = _ecfg(bcfg, variant)
-    wide = replace(ecfg, d1_window_end="15:30", d2_window_end="15:30", d3_window_start="09:15", d3_window_end="15:30", d2_min_rr=0.0)
-    makers = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal}
+    wide = replace(ecfg, d1_window_end="15:30", d2_window_end="15:30", d3_window_start="09:15", d3_window_end="15:30", d2_min_rr=0.0,
+                   d6_window_start="09:15", d6_window_end="15:30", d10_window_start="09:15", d10_window_end="15:30")
     orig = replace(ecfg, d2_min_rr=0.0)
-    sets = {"orig": [makers[d](orig) for d in bcfg.detectors if d in makers], "wide": [makers[d](wide) for d in bcfg.detectors if d in makers]}
+    sets = {"orig": make_detectors(bcfg.detectors, orig), "wide": make_detectors(bcfg.detectors, wide)}
     day_rows, cand_rows = [], []
     for di, day in enumerate(tl.days):
         info = replace(day.info)
@@ -376,13 +381,16 @@ def shadow_detect(tl, variant, bcfg, progress=None):
         if info.gap_dir != 0:
             hit = np.nonzero(day.l <= info.pdc)[0] if info.gap_dir > 0 else np.nonzero(day.h >= info.pdc)[0]
             fill_time = day.be[int(hit[0])] if len(hit) else None
-        day_rows.append({"date": day.date, "gap_type": info.gap_type, "gap_dir": info.gap_dir, "gap_pct": info.gap_pct, "has_gap_zone": has_gap_zone, "gap_fill_time": fill_time})
+        day_rows.append({"date": day.date, "gap_type": info.gap_type, "gap_dir": info.gap_dir, "gap_pct": info.gap_pct, "has_gap_zone": has_gap_zone, "gap_fill_time": fill_time,
+                         "primary_state": ctx0.state_name(ecfg.primary_htf)})
         mems = {"orig": {}, "wide": {}}
         for k in range(ecfg.or_bars, len(day.be)):
             t = day.be[k]
             ctx = tl.context(t, day, day.c[k])
             df15 = day.df15[day.df15["bar_end"] <= t]
-            base = {"5m": day.df5.iloc[:k + 1], "15m": df15, "info": info, "rr5": tl.rr(5, day.g5 + k), "rr15": None}
+            vol, vol_med = tl.volume(day.g5 + k)
+            base = {"5m": day.df5.iloc[:k + 1], "15m": df15, "info": info, "rr5": tl.rr(5, day.g5 + k), "rr15": None,
+                    "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med}             # run_variant सारखाच इनपुट
             if len(df15):
                 base["rr15"] = tl.rr(15, day.g15 + len(df15) - 1)
             bias_now = resolve_bias(ctx, ecfg)
@@ -407,10 +415,15 @@ def _precondition(setup, days):
         return ~days["gap_type"].isin(GO_TYPES) & (days["gap_dir"] != 0)
     if setup == "D3":
         return days["has_gap_zone"].astype(bool)
+    if setup == "D6" and "primary_state" in days.columns:
+        return days["primary_state"].map(trend_sign).fillna(0) != 0
+    if setup == "D10" and "primary_state" in days.columns:
+        return (days["primary_state"].map(trend_sign).fillna(0) != 0) | (days["primary_state"] == "RANGE")
     return pd.Series(True, index=days.index)
 
 
-PRECOND_TEXT = {"D1": "gap BREAKAWAY/RUNAWAY (bias-दिशेचा)", "D2": "gap SMALL/EXHAUSTION/COMMON (gap ≠ 0)", "D3": "UNFILLED/PARTIAL gap zone उपलब्ध"}
+PRECOND_TEXT = {"D1": "gap BREAKAWAY/RUNAWAY (bias-दिशेचा)", "D2": "gap SMALL/EXHAUSTION/COMMON (gap ≠ 0)", "D3": "UNFILLED/PARTIAL gap zone उपलब्ध",
+                "D6": "09:15 ला primary HTF trend (UP/DOWN)", "D10": "09:15 ला primary HTF trend किंवा RANGE"}
 
 
 def _primary_reason(row):

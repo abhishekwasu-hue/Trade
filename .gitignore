@@ -44,3 +44,7 @@ venv/
 
 # Opportunity Engine backtest निकाल (run_opportunity_backtest.py)
 oe_backtest_out/
+
+# Opportunity Engine: index futures volume collector चा साठा (collect_index_futures_volume.py)
+data/oe_futures_5min_*.parquet
+data/oe_index_5min_*.parquet
