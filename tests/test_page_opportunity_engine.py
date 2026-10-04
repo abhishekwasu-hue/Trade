@@ -57,7 +57,7 @@ def _run(symbol="NIFTY", token="x", live=False):
 def test_offline_page_renders_all_tabs_without_error():
     at = _run()
     assert not at.exception and not at.error, [e.value for e in at.error]
-    assert len(at.tabs) == 5
+    assert len(at.tabs) == 6
     assert at.dataframe, "Structure वही / levels चे तक्ते दिसले पाहिजेत"
 
 
@@ -121,3 +121,17 @@ def test_bias_tab_and_candidate_tester_respond_to_inputs_without_error():
     at.number_input(key="oe_t_entry").set_value(21000.0).run()
     assert not at.exception and not at.error, [e.value for e in at.error]
     assert any("Gate:" in w.value for w in list(at.warning) + list(at.success))
+
+
+def test_backtest_tab_runs_on_synthetic_data_and_shows_tables():
+    import builtins
+    at = _run()
+    builtins._OE_FINE = _fine_1m(days=90, seed=4, start="2023-10-02")
+    at.run()
+    at.date_input(key="oe_bt_start").set_value(pd.Timestamp("2024-01-15").date())
+    at.date_input(key="oe_bt_end").set_value(pd.Timestamp("2024-03-27").date())
+    at.multiselect(key="oe_bt_variants").set_value(["V1", "V3"])
+    at.button(key="oe_bt_run").click().run(timeout=300)
+    assert not at.exception and not at.error, [e.value for e in at.error]
+    assert any("Variants तुलना" in str(m.value) for m in at.markdown) or at.dataframe
+    assert any("V1" in str(h.value) for h in at.markdown)

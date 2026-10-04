@@ -104,16 +104,22 @@ def validate_reversal(trigger, direction, prev, zone, rr, cfg):
     touched = None
     if zone and _num(zone.get("low")) is not None:
         touched = (l <= zone["high"]) if long else (h >= zone["low"])
+    pts = {"wick_rejection": 30.0, "body_confirm": 25.0, "trigger_break": 25.0, "at_zone": 20.0}
+    if touched is None:                                   # zone लागू नाही (उदा. D2 gap-fade) => N/A; त्याचे गुण उरलेल्यांना प्रमाणात (volume N/A प्रमाणेच)
+        scale = 100.0 / (100.0 - pts["at_zone"])
+        pts = {k: (v * scale if k != "at_zone" else 0.0) for k, v in pts.items()}
     checks = {
-        "wick_rejection": {"pass": wick_ratio >= 0.4 and wick >= 0.3 * rr, "value": round(wick_ratio, 3), "need": 0.4, "points": 30},
-        "body_confirm": {"pass": bool(confirm), "value": None, "need": None, "points": 25},
-        "trigger_break": {"pass": bool(broke), "value": None, "need": None, "points": 25},
-        "at_zone": {"pass": bool(touched), "value": touched, "need": True, "points": 20},
+        "wick_rejection": {"pass": wick_ratio >= 0.4 and wick >= 0.3 * rr, "value": round(wick_ratio, 3), "need": 0.4, "points": pts["wick_rejection"]},
+        "body_confirm": {"pass": bool(confirm), "value": None, "need": None, "points": pts["body_confirm"]},
+        "trigger_break": {"pass": bool(broke), "value": None, "need": None, "points": pts["trigger_break"]},
+        "at_zone": {"pass": None if touched is None else bool(touched), "value": touched, "need": True, "points": pts["at_zone"]},
     }
     out.checks = checks
     out.score = float(sum(ch["points"] for ch in checks.values() if ch["pass"]))
     for name, ch in checks.items():
-        if not ch["pass"]:
+        if ch["pass"] is False:
             out.reasons.append(f"{name} नाही")
+    if touched is None:
+        out.reasons.append("zone लागू नाही — त्याचे गुण उरलेल्या तपासण्यांना")
     out.passed = out.score >= cfg.val_pass
     return out

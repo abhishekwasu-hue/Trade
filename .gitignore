@@ -41,3 +41,6 @@ __pycache__/
 # --- Virtual environments ---
 .venv/
 venv/
+
+# Opportunity Engine backtest निकाल (run_opportunity_backtest.py)
+oe_backtest_out/

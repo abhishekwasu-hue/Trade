@@ -330,3 +330,44 @@ def test_engine_gate_rejection_pullback_commentary_and_each_failure_stage():
 def test_engine_with_no_candidates_and_no_trade_bias():
     res = evaluate([], ctx_of({"1d": "UPTREND", "4h": "UPTREND_WEAK", "1h": "UPTREND"}), CFG, now=NOW)
     assert res.selection.chosen is None and res.bias.label == "NO_TRADE" and "NO_TRADE" in cm.summary(res)
+
+
+# ---- PR-1c: पहिल्या backtest नंतर सापडलेले दोन तर्क-दोष (सुधारणा + चाचण्या) ----------------------------------------------------------------------
+def test_trailing_stop_exit_is_labelled_trail_sl_not_sl():
+    pos, plan = pos_long()
+    R.on_bar(pos, bar(plan.t1 + 1, plan.entry + 5, plan.t1), CFG, NOW + pd.Timedelta(minutes=5))
+    R.on_bar(pos, bar(plan.t1 + 8, plan.t1 - 2, plan.t1 + 4), CFG, NOW + pd.Timedelta(minutes=10), trail_stop=plan.entry + 10)
+    R.on_bar(pos, bar(plan.t1, plan.entry + 5, plan.entry + 8), CFG, NOW + pd.Timedelta(minutes=15))              # trail stop (entry+10) ला स्पर्श
+    assert pos.closed and pos.exit_reason == "TRAIL_SL" and pos.pnl_pts > 0
+
+
+def test_time_stop_applies_to_breakouts_only_by_default():
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    rev = R.open_position(plan, "REVERSAL", None)
+    for i in range(CFG.time_stop_bars + 3):
+        R.on_bar(rev, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1), CFG, NOW + pd.Timedelta(minutes=5 * (i + 1)))
+    assert not rev.closed                                                           # reversal ला time stop नाही
+    brk = R.open_position(plan, "BREAKOUT", None)
+    for i in range(CFG.time_stop_bars):
+        R.on_bar(brk, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1), CFG, NOW + pd.Timedelta(minutes=5 * (i + 1)))
+    assert brk.closed and brk.exit_reason == "TIME_STOP"
+    both = EngineConfig(time_stop_kinds=("BREAKOUT", "REVERSAL", "PULLBACK_END"))
+    rev2 = R.open_position(plan, "REVERSAL", None)
+    for i in range(both.time_stop_bars):
+        R.on_bar(rev2, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1), both, NOW + pd.Timedelta(minutes=5 * (i + 1)))
+    assert rev2.closed and rev2.exit_reason == "TIME_STOP"
+
+
+def test_reversal_validation_without_a_zone_redistributes_the_zone_points():
+    bar_ = {"open": 24290.0, "high": 24312.0, "low": 24270.0, "close": 24308.0}
+    prev = {"high": 24300.0, "low": 24285.0}
+    v = V.validate_reversal(bar_, "LONG", prev, None, 10.0, CFG)
+    assert v.score == pytest.approx(100.0) and v.passed and v.checks["at_zone"]["pass"] is None and any("zone लागू नाही" in r for r in v.reasons)
+    two_of_three = V.validate_reversal({"open": 24300.0, "high": 24312.0, "low": 24298.0, "close": 24310.0}, "LONG", {"high": 24305.0}, None, 10.0, CFG)
+    assert two_of_three.score == pytest.approx(62.5) and two_of_three.passed                    # body + break (wick नाही)
+    one = V.validate_reversal({"open": 24300.0, "high": 24302.0, "low": 24290.0, "close": 24291.0}, "LONG", {"high": 24310.0}, None, 10.0, CFG)
+    assert not one.passed
+    with_zone = V.validate_reversal(bar_, "LONG", prev, {"low": 24265.0, "high": 24285.0}, 10.0, CFG)
+    assert with_zone.checks["at_zone"]["pass"] is True and with_zone.score == 100.0
+    missed_zone = V.validate_reversal(bar_, "LONG", prev, {"low": 24100.0, "high": 24150.0}, 10.0, CFG)
+    assert missed_zone.checks["at_zone"]["pass"] is False and missed_zone.score == 80.0

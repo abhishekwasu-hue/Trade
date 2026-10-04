@@ -9,6 +9,8 @@ import streamlit as st
 import real_nifty_data
 from opportunity_engine import report as R
 from opportunity_engine import risk as RISK
+from opportunity_engine import backtest as BT
+from opportunity_engine import sessions as OE_SESSIONS
 from opportunity_engine.bias import apply_gate, resolve_bias
 from opportunity_engine.config import EngineConfig
 from opportunity_engine.context import build_context
@@ -41,6 +43,80 @@ def _live_bundle(token_hash, token, symbol, days):
     if df5 is None or df5.empty:
         return None, None
     return R.bundle_from_live(df5, daily)
+
+
+@st.cache_resource(show_spinner=False, max_entries=2)
+def _run_backtest(start, end, variants, detectors):
+    """offline NIFTY 1M -> backtest (warm-up के लिए start से ~2 वर्षं आधीपासून डेटा). जड (cached)."""
+    warm = max(pd.Timestamp("2015-01-09"), pd.Timestamp(start) - pd.Timedelta(days=730))
+    df = real_nifty_data.load_nifty_1min(warm, end)
+    if df is None or df.empty:
+        return None
+    frames = OE_SESSIONS.build_frames(df)
+    bcfg = BT.BacktestConfig(start=start, end=end, variants=tuple(variants), detectors=tuple(detectors))
+    return BT.run_backtest(frames, bcfg)
+
+
+def _render_backtest_tab(symbol):
+    sub_header("🧪 Backtest (D1 Gap-Go · D2 Gap-Fade · D3 Gap-Retest) — खरा offline NIFTY डेटा", HDR_ORANGE)
+    st.caption("Live आणि backtest साठी एकच निर्णय-साखळी (gate → risk → validation → score → selector). R-आधारित (spot points; option P&L नाही). Index डेटात volume नाही ⇒ volume 'N/A'. "
+               "निकाल जसे आले तसे — ट्यूनिंग नाही. IS = 2015→2021, OOS = 2022→; verdict फक्त अहवाल (OOS ≥30 trades ∧ expectancy>0 ⇒ KEEP).")
+    if symbol != "NIFTY":
+        st.warning("Backtest साठी offline डेटा फक्त NIFTY चा आहे.")
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    start = c1.date_input("पासून", value=pd.Timestamp("2022-01-01").date(), min_value=pd.Timestamp("2015-06-01").date(), max_value=pd.Timestamp("2024-03-27").date(), key="oe_bt_start")
+    end = c2.date_input("पर्यंत", value=pd.Timestamp("2024-03-27").date(), min_value=pd.Timestamp("2015-06-01").date(), max_value=pd.Timestamp("2024-03-27").date(), key="oe_bt_end")
+    variants = c3.multiselect("Variants", list(BT.VARIANTS), default=["V1"], key="oe_bt_variants", format_func=lambda v: f"{v}: {BT.VARIANT_TEXT[v]}")
+    detectors = c4.multiselect("Detectors", ["D1", "D2", "D3"], default=["D1", "D2", "D3"], key="oe_bt_detectors")
+    st.caption("⏱️ लांब कालावधी (उदा. 2015→2024, तिन्ही variants) ≈ 10–15 मिनिटं घेतो. जलद तपासणीसाठी कमी कालावधी/एक variant. पूर्ण निकाल CLI: `python3 run_opportunity_backtest.py`.")
+    if not st.button("▶️ Backtest चालवा", key="oe_bt_run"):
+        return
+    if not variants or not detectors:
+        st.warning("किमान एक variant आणि एक detector निवडा.")
+        return
+    with st.spinner("Timeline + replay चालू आहे…"):
+        result = _run_backtest(pd.Timestamp(start), pd.Timestamp(end), tuple(variants), tuple(detectors))
+    if result is None:
+        st.warning("या कालावधीचा डेटा मिळाला नाही.")
+        return
+    sub_header("Variants तुलना", HDR_BLUE)
+    st.dataframe(result.comparison, width="stretch", hide_index=True)
+    for v in variants:
+        tables = result.tables(v)
+        r = result.results[v]
+        sub_header(f"{v}: {BT.VARIANT_TEXT[v]}", HDR_PURPLE)
+        st.dataframe(tables["summary"], width="stretch", hide_index=True)
+        st.markdown("**Setup verdict** (OOS ≥ 30 trades ∧ expectancy > 0 ⇒ KEEP; नाहीतर REVIEW — फक्त अहवाल)")
+        st.dataframe(tables["verdicts"], width="stretch", hide_index=True)
+        st.markdown("**Aligned vs counter-trend (gate ने नाकारलेले, size=0 simulate)**")
+        st.dataframe(tables["aligned_vs_counter"], width="stretch", hide_index=True)
+        tr = r["trades"]
+        if len(tr):
+            eq = tr.sort_values("exit_time").assign(equity_R=lambda d: d["r_weighted"].cumsum()).set_index("exit_time")["equity_R"]
+            st.line_chart(eq)
+        with st.expander("Breakdowns (setup / bias / Daily state / score / वेळ / वर्ष / exit / gap प्रकार)", expanded=False):
+            for key in ("by_setup", "by_bias", "by_state_1d", "by_score_bucket", "by_tod", "by_year", "by_gap_type", "by_exit_reason"):
+                if len(tables[key]):
+                    st.markdown(f"*{key[3:]}*")
+                    st.dataframe(tables[key], width="stretch", hide_index=True)
+        with st.expander(f"Trades ({len(tr)})", expanded=False):
+            st.dataframe(tr.drop(columns=["commentary"], errors="ignore"), width="stretch", hide_index=True)
+            st.download_button("⬇️ Trades CSV", data=tr.to_csv(index=False), file_name=f"oe_{v}_trades.csv", mime="text/csv", key=f"oe_bt_dl_trades_{v}")
+        with st.expander(f"Decisions — का घेतलं / का नाकारलं ({len(r['decisions'])})", expanded=False):
+            st.dataframe(r["decisions"].drop(columns=["commentary"], errors="ignore"), width="stretch", hide_index=True)
+            st.download_button("⬇️ Decisions CSV", data=r["decisions"].to_csv(index=False), file_name=f"oe_{v}_decisions.csv", mime="text/csv", key=f"oe_bt_dl_dec_{v}")
+        if len(tr):
+            pick = st.selectbox("Trade निवडा (दिवसाचा चार्ट + entry/SL/T1/T2)", list(range(len(tr))), key=f"oe_bt_pick_{v}",
+                                format_func=lambda i: f"{tr.iloc[i]['date']:%Y-%m-%d} {tr.iloc[i]['setup']} {tr.iloc[i]['direction']} R={tr.iloc[i]['r']:.2f} ({tr.iloc[i]['exit_reason']})")
+            row = tr.iloc[pick]
+            day = next((d for d in result.timeline.days if d.date == row["date"]), None)
+            if day is not None:
+                dfc = day.df5.assign(timestamp=day.df5["bar_start"], volume=0, oi=0)[["timestamp", "open", "high", "low", "close", "volume", "oi"]]
+                lines = [{"price": float(row[k]), "title": label, "color": color, "dashed": k != "entry", "width": 2}
+                         for k, label, color in (("entry", "Entry", "#2962ff"), ("sl", "SL", "#ff1744"), ("t1", "T1", "#00c853"), ("t2", "T2", "#00bfa5"))]
+                st.components.v1.html(build_lightweight_chart_html(dfc, symbol=symbol, timeframe_label="5M", height=500, trade_lines=lines), height=550, scrolling=False)
+                st.write(row.get("commentary", ""))
 
 
 def _chart_df(frames, tf, bars):
@@ -138,7 +214,7 @@ def render():
         price = float(frames["15m"]["close"].iloc[-1]) if len(frames.get("15m", [])) else float(frames["5m"]["close"].iloc[-1])
         result = build_levels(journal, frames, symbol, price, fine=frames.get("5m"))
         ctx = build_context(journal, levels=result["levels"], daily_df=frames.get("1d"), price=price, flips=result["rejected"])
-        tab_state, tab_bias, tab_chart, tab_events, tab_quality = st.tabs(["🧭 Structure वही", "🎯 Bias / Gate", "📊 चार्ट + Levels", "📋 Events / CSV", "🔎 डेटा गुणवत्ता"])
+        tab_state, tab_bias, tab_chart, tab_events, tab_quality, tab_bt = st.tabs(["🧭 Structure वही", "🎯 Bias / Gate", "📊 चार्ट + Levels", "📋 Events / CSV", "🔎 डेटा गुणवत्ता", "🧪 Backtest"])
 
         with tab_state:
             sub_header("प्रत्येक Timeframe चा सद्य trend state", HDR_TEAL)
@@ -185,6 +261,9 @@ def render():
             table = table[table["event"] != "SWEEP"].sort_values("time", ascending=False)
             st.dataframe(table.head(300), width="stretch", hide_index=True)
             st.download_button("⬇️ Structure CSV (Daily/4H/1H)", data=R.structure_csv(journal), file_name=f"opportunity_structure_{symbol}.csv", mime="text/csv", key="oe_dl_structure")
+
+        with tab_bt:
+            _render_backtest_tab(symbol)
 
         with tab_quality:
             sub_header("डेटा गुणवत्ता", HDR_TEAL)

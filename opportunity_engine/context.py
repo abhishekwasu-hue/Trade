@@ -97,3 +97,25 @@ def build_context(journal, levels=None, daily_df=None, price=None, now=None, cfg
     adr_value = measure_adr(daily_df, cfg.adr_days) if daily_df is not None else float("nan")
     extra = [z for z in (flips or []) if z.get("status") == "BROKEN"]
     return Context(time=now, price=price, states=states, levels=list(levels or []) + extra, adr=adr_value)
+
+
+class IncrementalTFState:
+    """tracker च्या events वर "शेवटचा break आणि त्यानंतरचे pullbacks" O(1) amortised ठेवणारा (backtest/live: प्रत्येक bar ला पूर्ण events scan नाही)."""
+
+    def __init__(self, tr):
+        self.tr, self._i, self._last_break, self._pullbacks = tr, 0, None, 0
+
+    def state(self):
+        tr = self.tr
+        evs = tr.events
+        while self._i < len(evs):
+            e = evs[self._i]
+            if e["type"] in BREAK_EVENTS:
+                self._last_break, self._pullbacks = e["time"], 0
+            elif e["type"] == "PULLBACK_START" and self._last_break is not None:
+                self._pullbacks += 1
+            self._i += 1
+        snap = tr.snapshot()
+        return TFState(tf=tr.tf, state=snap["trend_state"], protected=snap["protected_level"], last_sh=snap["last_sh"], last_sl=snap["last_sl"],
+                       range_high=snap["range_high"], range_low=snap["range_low"], ref_range=snap["ref_range"], last_break_time=self._last_break,
+                       pullbacks_since_break=self._pullbacks, updated_at=snap["updated_at"])

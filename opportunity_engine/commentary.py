@@ -52,9 +52,13 @@ def taken(cand, plan, score, validation, ctx, bias):
     zone_txt = ""
     if z:
         zone_txt = f" {TF_LABEL.get(z.get('tf'), z.get('tf'))} {z.get('freshness', '')} {z.get('kind', '')} zone ({_px(z.get('low'))}–{_px(z.get('high'))}, grade {z.get('quality_grade', '?')}) मध्ये."
-    vol = "Volume N/A" if validation.volume_na else f"volume {validation.checks['volume']['value']}×"
-    body = validation.checks.get("body", {}).get("value")
-    trig = f"body {body}, {vol}" if body is not None else vol
+    if validation.kind == "REVERSAL":
+        ok = [name for name, ch in validation.checks.items() if ch.get("pass")]
+        trig = f"reversal ({', '.join(ok) or '—'}) score {validation.score:.0f}"
+    else:
+        vol = "Volume N/A" if validation.volume_na else f"volume {validation.checks['volume']['value']}×"
+        body = validation.checks.get("body", {}).get("value")
+        trig = f"body {body}, {vol}" if body is not None else vol
     rr = "" if plan.rr_to_opposing is None else f" पुढचा HTF अडथळा {plan.rr_to_opposing:.1f}R वर."
     size = "पूर्ण साइज" if score.decision == "FULL" else "अर्धी साइज"
     return (f"{states_line(ctx)}.{zone_txt} {name} {DIR_MR[cand.direction]} — entry {_px(plan.entry)}, SL {_px(plan.sl)}, T1 {_px(plan.t1)}, T2 {_px(plan.t2)}. "

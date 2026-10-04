@@ -874,3 +874,9 @@ VPS crontab (वेळा UTC; IST = UTC + 5:30) — `crontab -e`:
 GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त मॅन्युअल/backup.
 `config.yaml` मध्ये `opportunity_engine` strategy डीफॉल्ट `enabled: false` — detectors (D1–D3) PR-1c मध्ये आल्यावरच विचार.
 
+### PR-1c: D1–D3 gap detectors + Backtest
+
+- पान: **ANALYZE → Opportunity Engine → 🧪 Backtest** (offline NIFTY; कालावधी/variants/detectors निवडून चालवा) — Variants तुलना (V1 = 4H bias + Daily veto, V2 = Daily primary, V3 = 4H, veto नाही), IS/OOS, verdict (KEEP/REVIEW — फक्त अहवाल), aligned vs counter-trend (gate ने नाकारलेले, size=0), breakdowns, trades/decisions CSV, trade निवडून दिवसाचा चार्ट.
+- CLI (संपूर्ण 2015→2024-03 तिन्ही variants ≈ 12 मिनिटं; कुठलाही order/DB/network नाही): `cd /root/Trade && python3 run_opportunity_backtest.py --out /root/oe_bt` (जलद: `--start 2022-01-01 --variants V1`).
+- Index डेटात volume नाही ⇒ validation मध्ये volume "N/A" (त्याचे गुण range expansion ला). निकाल R-आधारित (spot points; option P&L नाही).
+
