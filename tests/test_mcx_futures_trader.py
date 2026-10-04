@@ -51,7 +51,9 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 
 # Min-Hold गेट डीफॉल्ट चालू आहे (बघा TestMinHoldGate::test_enabled_by_default) -- बाकी टेस्ट्स आपापल्या विषयावरच लक्ष ठेवतात,
 # म्हणून इथे तो बंद; TestMinHoldGate मध्ये तो स्पष्टपणे चालू केला जातो.
-_DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False}
+# Supertrend filter (डीफॉल्ट "htf_against") पण तसाच -- त्याचे स्वतःचे tests TestSupertrendEntryGate / test_mcx_phase1_filters मध्ये.
+_DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False,
+                     "supertrend_filter_mode": "off"}
 
 
 @pytest.fixture(autouse=True)

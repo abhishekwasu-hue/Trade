@@ -767,9 +767,9 @@ def render():
         st.markdown("---")
         sub_header("📊 Supertrend Trend Filter (1H + 4H)", HDR_ORANGE)
         _ST_MODES = {
-            "off": "बंद (डीफॉल्ट)",
+            "off": "बंद",
             "both_against": "1H आणि 4H दोन्ही विरुद्ध असतील तर थांबव (जुना नियम)",
-            "htf_against": "4H विरुद्ध असेल तर थांबव (कडक)",
+            "htf_against": "4H विरुद्ध असेल तर थांबव (डीफॉल्ट — trend च्या विरुद्ध trade नाही)",
         }
         _st_keys = list(_ST_MODES.keys())
         _st_stored = mcx_filters.effective_supertrend_mode(settings)

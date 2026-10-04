@@ -660,8 +660,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "supertrend_4h_multiplier": 3.0,
         # 🎓 MCX टप्पा 1 (GOLD 22 Sep–1 Oct: 6 LONG पडत्या बाजारात support touch वर, सर्व SL) — नियम mcx_filters.py मध्ये (replay सारखेच).
         # supertrend_filter_mode: "off" | "both_against" (वरचा जुना नियम — entry_supertrend_filter_enabled=True असल्यास हाच) | "htf_against"
-        # (4H Supertrend विरुद्ध ⇒ block). डीफॉल्ट off — replay निकाल पाहून वापरकर्ता ठरवेल.
-        "supertrend_filter_mode": "off",
+        # (4H Supertrend विरुद्ध ⇒ block). वापरकर्त्याचा निर्णय (replay नंतर, 4 Oct 2026): सर्व MCX commodities साठी डीफॉल्ट "htf_against" —
+        # "trend च्या विरुद्ध trade नको", PAPER forward test. (replay: GOLD +1,53,400; पण GOLD वगळता बाकी symbols वर −36,050 — लहान sample.)
+        "supertrend_filter_mode": "htf_against",
         # SL/Trailing-SL **तोट्याने** बंद झाल्यावर त्या symbol वर इतकी मिनिटं नवीन entry नाही (0 = बंद). डीफॉल्ट चालू.
         "sl_cooldown_minutes": 60,
         # आज ज्या level वर ज्या दिशेने SL (तोटा) लागला, त्या level वर (±0.05%) त्याच दिशेने आज पुन्हा entry नाही. डीफॉल्ट चालू.
