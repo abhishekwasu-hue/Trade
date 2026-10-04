@@ -988,6 +988,16 @@ def render():
             trailing_distance_points = float(settings["trailing_distance_points"])
             trailing_pct = float(settings["trailing_pct"])
 
+        next_level_target_enabled = st.checkbox(
+            "🎯 Target = पुढचा S/R level (डीफॉल्ट बंद)", value=bool(settings.get("next_level_target_enabled", False)),
+            key=_widget_key(symbol, "next_level_target_enabled"),
+        )
+        st.caption(
+            "चालू केल्यास LONG चा target = entry च्या **वरचा** पुढचा level, SHORT चा = **खालचा** पुढचा level. Bot ज्या levels वर trade करतो तेच "
+            "(Level engine प्रमाणे). पुढचा level entry पासून किमान 0.2% आणि SL च्या निम्म्याइतका दूर हवा. तसा नसेल तर वरचा नेहमीचा target वापरला "
+            "जातो. SL आणि Trailing बदलत नाहीत. Telegram आणि Signal Log मध्ये target चा level दिसतो."
+        )
+
         if st.button("💾 Exit Gate सेव्ह करा", key=_widget_key(symbol, "save_exit")):
             new_settings = dict(settings)
             new_settings.update({
@@ -997,6 +1007,7 @@ def render():
                 "trailing_sl_enabled": bool(trailing_sl_enabled),
                 "trailing_distance_points": float(trailing_distance_points),
                 "trailing_pct": float(trailing_pct),
+                "next_level_target_enabled": bool(next_level_target_enabled),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Exit Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")

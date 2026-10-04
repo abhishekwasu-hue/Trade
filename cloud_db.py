@@ -675,6 +675,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "महत्त्वाचे levels तिथेच राहावेत, बदलू नयेत" — थेट मुख्य bot वर, PAPER) — रोजच्या Dynamic S/R
         # refresh मध्ये जुने levels त्यांच्याच किंमतीवर ठेवले जातात (बघा level_memory.py). जुना level, किंमत त्याच्याजवळ शेवटच्या इतक्या दिवसांत
         # आली नसेल (आणि ताज्या गणनेत नसेल) तर निवृत्त.
+        # 🎓 "Target = पुढचा level" (वापरकर्त्याची निवड, डीफॉल्ट बंद) — LONG चा target = वरचा पुढचा S/R level, SHORT चा = खालचा. पुढचा level
+        # entry पासून किमान max(0.2% किंमत, 0.5 × SL) दूर हवा; नसेल तर नेहमीचा points/% target. SL/trailing बदलत नाहीत.
+        "next_level_target_enabled": False,
         "level_memory_enabled": True,
         "level_memory_retire_days": 30,
         # 🎓 "First time level hit, level hold Minimum period for 1st trade, hi condition mcx future sathi lagu kra, default on thewa"

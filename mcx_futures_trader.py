@@ -362,6 +362,18 @@ def process_symbol(access_token, symbol):
 effective_supertrend_mode = MF.effective_supertrend_mode
 
 
+def _bot_level_prices(all_zones, active_suffixes, level_source):
+    """bot प्रत्यक्ष वापरत असलेले ACTIVE levels (DYNAMIC ⇒ निवडलेल्या TF चे DYNAMIC_SR_*; SRV3 ⇒ SRV3_*) -- पुढचा-level target साठी."""
+    if all_zones is None or all_zones.empty:
+        return []
+    z = all_zones[all_zones["status"] == "ACTIVE"]
+    if level_source == "SRV3":
+        z = z[z["zone_type"].isin(SRV3.ZONE_TYPES)]
+    else:
+        z = z[z["zone_type"].str.startswith("DYNAMIC_SR_") & z["zone_type"].str.endswith(tuple(f"_{sfx}" for sfx in active_suffixes))]
+    return [float(v) for v in z["zone_low"]]
+
+
 def fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=15):
     """cascade filter साठी -- `now` पर्यंत **पूर्ण** झालेले 30M bars (timestamp + 30 मि ≤ now, IST tz-शिवाय). चूक/डेटा नाही ⇒ None (fail-open)."""
     try:
@@ -668,6 +680,15 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         else:
             sl_points_effective = float(settings["sl_points"])
             target_points_effective = float(settings["target_points"])
+        target_note = ""
+        if settings.get("next_level_target_enabled", False):
+            nl = MF.next_level_target(_bot_level_prices(all_zones, active_suffixes, level_source), entry_price_estimate, direction,
+                                      max(entry_price_estimate * 2 * TOUCH_TOLERANCE_PCT / 100, 0.5 * sl_points_effective))
+            if nl is not None:
+                target_points_effective = abs(nl - entry_price_estimate)
+                target_note = f"🎯 Target = पुढचा level {nl:.2f} ({target_points_effective:.2f} pts)"
+            else:
+                target_note = f"Target: पुढचा level सापडला नाही — नेहमीचा {target_points_effective:.2f} pts"
         strategy_result = {
             "strategy": "MCX_FUTURES_LONG" if direction == "BULLISH" else "MCX_FUTURES_SHORT",
             "legs": [leg], "net_credit": net_credit_estimate,
@@ -714,6 +735,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             log_entry["reason"] = f"Directional (trend-continuation) trade — Breakout Entry (price consolidation + candle close, {timeframe_suffix}), RSI Gate वगळले"
         else:
             log_entry["reason"] = rsi_display
+        if target_note:
+            log_entry["reason"] += f" | {target_note}"
         _log(log_entry)
 
         hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
@@ -724,6 +747,7 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         message = (
             f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"
+            + (f"{target_note}\n" if target_note else "") +
             f"निकाल: {trade_status}\n"
             f"वेळ: {now.strftime('%H:%M:%S')}"
         )
