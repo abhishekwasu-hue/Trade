@@ -26,7 +26,9 @@ NSE_BOTS = ("5M Instant", "15M SRv2", "Classic")
 TF_INTERVAL = {"1M": "1minute", "5M": "5minute", "15M": "15minute", "30M": "30minute", "60M": None}
 SUPPORT_RGB = (0, 200, 83)          # हिरवा
 RESISTANCE_RGB = (255, 23, 68)      # लाल
-AUTOSCALE_MAX_PCT = 6.0             # यापेक्षा दूरच्या S/R रेषा चार्टचा scale ताणत नाहीत
+AUTOSCALE_MAX_PCT = 6.0
+# chart चा interval -> त्या TF चे Dynamic S/R zone suffix (NIFTY Dashboard चा "—" view: chart च्या TF चे bot चे DB levels)
+CHART_TF_DYN_SUFFIX = {"1minute": "1M", "5minute": "5M", "15minute": "15M", "30minute": "30M", "1hour": "60M"}             # यापेक्षा दूरच्या S/R रेषा चार्टचा scale ताणत नाहीत
 
 
 def zone_suffixes(bot, settings):
