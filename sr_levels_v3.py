@@ -626,6 +626,8 @@ def to_chart_lines(levels, edge_max_distance_pct=1.0):
         lines.append({
             "price": z["level"], "title": f"{letter} {z['grade']}{int(round(z['score']))} {tags}".strip(),
             "color": _ROLE_COLORS[z["role"]][z["grade"]], "dashed": z["grade"] == "C" or bool(z["gap"] and not z["tfs"]),
+            # 🎓 वापरकर्त्याची मागणी: resistance लाल, support हिरवी -- ठिपक्यांची रेषा (ग्रेड जाडीतून दिसतो; ZONE नारिंगी तशीच)
+            "dotted": z["role"] in ("SUPPORT", "RESISTANCE"),
             "width": {"A": 3, "B": 2, "C": 1}[z["grade"]],
         })
         if z["grade"] in ("A", "B") and abs(z.get("distance_pct", 0.0)) <= edge_max_distance_pct and not (z["gap"] and not z["tfs"]):
