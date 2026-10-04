@@ -21,6 +21,8 @@ from .bias import resolve_bias
 from .config import EngineConfig
 from .context import Context, IncrementalTFState, TFState
 from .detectors.gap import DayInfo, GapFade, GapGo, GapRetestReversal, classify_gap
+from .detectors.range_box import FailedBreakoutTrap
+from .detectors.zone_pullback import ZonePullback
 from .engine import _rr_of, _validate, evaluate
 from .journal import Journal
 from .measures import adr as measure_adr
@@ -36,6 +38,8 @@ VARIANTS = {
     "V3": {"primary_htf": "4h", "daily_veto": False},
 }
 VARIANT_TEXT = {"V1": "4H bias + Daily veto (डीफॉल्ट)", "V2": "Daily primary (veto लागू नाही)", "V3": "4H bias, veto नाही"}
+DETECTORS = {"D1": GapGo, "D2": GapFade, "D3": GapRetestReversal, "D6": ZonePullback, "D10": FailedBreakoutTrap}
+SHIFT_EVENTS = ("CHOCH", "RECOVERY", "REVERSAL_CONFIRMED", "RANGE_EXIT_UP", "RANGE_EXIT_DOWN")     # 15M structure-shift events (D6 trigger)
 IS_END = pd.Timestamp("2021-12-31")
 OOS_START = pd.Timestamp("2022-01-01")
 PERIODS = ("IS 2015→2021", "OOS 2022→")
@@ -46,7 +50,7 @@ class BacktestConfig:
     symbol: str = "NIFTY"
     start: Any = None                       # trading सुरू (warm-up आधीपासूनच; None => सर्व)
     end: Any = None
-    detectors: tuple = ("D1", "D2", "D3")
+    detectors: tuple = ("D1", "D2", "D3", "D6", "D10")
     variants: tuple = ("V1", "V2", "V3")
     engine: EngineConfig = field(default_factory=EngineConfig)
     levels_every_day: bool = True
@@ -68,6 +72,7 @@ class DayPack:
     levels: List[dict]
     info: DayInfo
     adr: float
+    ev15: list = field(default_factory=list)  # आजचे 15M structure-shift events (time = 15M bar_end; त्या वेळेपासूनच दिसतात)
 
 
 @dataclass
@@ -80,6 +85,7 @@ class Timeline:
     r15: np.ndarray
     full15: np.ndarray
     cfg: Any = None
+    v5: Any = None                               # 5M volume (index डेटात 0 ⇒ N/A; futures volume जोडल्यास खरा)
 
     def htf_state(self, tf, t):
         i = bisect.bisect_right(self.times[tf], t) - 1
@@ -87,6 +93,16 @@ class Timeline:
 
     def context(self, t, day, price):
         return Context(time=t, price=price, states={tf: self.htf_state(tf, t) for tf in HTF}, levels=day.levels, adr=day.adr)
+
+    def volume(self, g, n=20, min_bars=10):
+        """5M bar g चा volume आणि त्याआधीच्या n bars चा median (फक्त >0 values; कमी असतील तर None ⇒ validation मध्ये N/A)."""
+        if self.v5 is None or g >= len(self.v5):
+            return None, None
+        v = float(self.v5[g])
+        prev = self.v5[max(0, g - n):g]
+        prev = prev[prev > 0]
+        med = float(np.median(prev)) if len(prev) >= min_bars else None
+        return (v if v > 0 else None), med
 
     def rr(self, which, g):
         r, full = (self.r5, self.full5) if which == 5 else (self.r15, self.full15)
@@ -163,8 +179,16 @@ def prepare_timeline(frames, bcfg=None, progress=None):
         if progress and n % 50 == 0:
             progress(n, len(dates), d)
     feed_until(pd.Timestamp.max)
+    by_day = {}
+    for e in journal.trackers["15m"].events:                  # event time = 15M bar_end (तो bar बंद झाल्यावरच) — no-lookahead
+        if e["type"] in SHIFT_EVENTS:
+            by_day.setdefault(pd.Timestamp(e["time"]).normalize(), []).append(
+                {"time": e["time"], "type": e["type"], "to_state": e.get("to_state"), "price": e.get("price")})
+    for dp in days:
+        dp.ev15 = by_day.get(dp.date, [])
+    vol = f5["volume"].fillna(0.0).to_numpy(float) if "volume" in f5.columns else None
     return Timeline(days=days, times=times, states=states, r5=(f5["high"] - f5["low"]).to_numpy(float), full5=f5["bar_is_full"].to_numpy(bool),
-                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg)
+                    r15=(f15["high"] - f15["low"]).to_numpy(float), full15=f15["bar_is_full"].to_numpy(bool), cfg=bcfg, v5=vol)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -193,12 +217,21 @@ def _states_text(ctx):
     return {f"state_{tf}": ctx.state_name(tf) for tf in HTF}
 
 
+DETAIL_KEYS = ("zone_type", "zone_tf", "trigger_type", "level_type", "pattern")
+
+
+def _detail(meta):
+    """detector चा तपशील (D6 zone/trigger प्रकार, D10 level प्रकार …) — analysis साठी एका column मध्ये."""
+    return " | ".join(f"{k}={meta[k]}" for k in DETAIL_KEYS if meta.get(k) is not None)
+
+
 def _decision_row(variant, day, d, ctx):
     c = d.candidate
     row = {"variant": variant, "date": day.date, "time": c.time, "setup": c.setup_id, "direction": c.direction, "kind": c.kind, "entry": c.entry, "sl_ref": c.sl_ref,
            "status": d.status, "reasons": " | ".join(d.reasons), "bias": d.bias.label, "gate_codes": ",".join(d.gate.codes) if d.gate else "",
            "score": None if d.score is None else d.score.total, "validation": None if d.validation is None else d.validation.score,
-           "size_factor": d.size_factor, "gap_type": c.meta.get("gap_type", ""), "setup_quality": c.setup_quality, "commentary": d.commentary}
+           "size_factor": d.size_factor, "gap_type": c.meta.get("gap_type", ""), "setup_detail": _detail(c.meta), "setup_quality": c.setup_quality,
+           "commentary": d.commentary}
     row.update(_states_text(ctx))
     if d.score is not None:
         row.update({f"score_{k}": v for k, v in d.score.components.items()})
@@ -211,26 +244,25 @@ def _trade_row(variant, day, o, closed_time):
     row = {"variant": variant, "date": day.date, "entry_time": c.time, "exit_time": closed_time, "setup": c.setup_id, "direction": c.direction, "kind": c.kind,
            "entry": plan.entry, "sl": plan.sl, "t1": plan.t1, "t2": plan.t2, "risk": plan.risk, "exit_reason": p.exit_reason, "pnl_pts": p.pnl_pts, "r": p.r_multiple,
            "t1_hit": p.t1_done, "bars": p.bars, "mfe_r": p.mfe_r, "level": p.level, "virtual": o.virtual, "gate_rejected": o.virtual, "gate_codes": o.meta.get("gate_codes", ""),
-           "size_factor": 0.0 if o.virtual else d.size_factor, "score": o.meta.get("score"), "bias": o.meta.get("bias"), "gap_type": c.meta.get("gap_type", ""),
+           "size_factor": 0.0 if o.virtual else d.size_factor, "score": o.meta.get("score"), "bias": o.meta.get("bias"), "gap_type": c.meta.get("gap_type", ""), "setup_detail": _detail(c.meta),
            "state_1d": o.meta.get("state_1d"), "state_4h": o.meta.get("state_4h"), "state_1h": o.meta.get("state_1h"), "commentary": o.meta.get("commentary", "")}
     row["r_weighted"] = row["r"] * row["size_factor"]
     return row
+
+
+def make_detectors(names, ecfg):
+    """detector नावं ("D1", "D6" …) -> instances (registry `DETECTORS`)."""
+    return [DETECTORS[n](ecfg) for n in names if n in DETECTORS]
 
 
 def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
     """एक variant चं पूर्ण replay. रिटर्न dict: trades, virtual (gate-rejected counterfactual), decisions (DataFrames)."""
     bcfg = bcfg or tl.cfg or BacktestConfig()
     ecfg = replace(bcfg.engine, **VARIANTS[variant])
-    dets = []
     if detector_factory is not None:                       # चाचणी/विस्तारासाठी: factory(ecfg) -> [Detector...]
         dets = list(detector_factory(ecfg))
     else:
-        if "D1" in bcfg.detectors:
-            dets.append(GapGo(ecfg))
-        if "D2" in bcfg.detectors:
-            dets.append(GapFade(ecfg))
-        if "D3" in bcfg.detectors:
-            dets.append(GapRetestReversal(ecfg))
+        dets = make_detectors(bcfg.detectors, ecfg)
     trades, virtual_rows, decisions = [], [], []
     for di, day in enumerate(tl.days):
         info = replace(day.info)
@@ -281,8 +313,9 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
                 continue
             price = day.c[k]
             ctx = tl.context(t, day, price)
+            vol, vol_med = tl.volume(day.g5 + k)
             bars = {"5m": day.df5.iloc[:k + 1], "15m": day.df15[day.df15["bar_end"] <= t], "info": info, "state": detmem,
-                    "rr5": tl.rr(5, day.g5 + k), "rr15": None}
+                    "rr5": tl.rr(5, day.g5 + k), "rr15": None, "ev15": [e for e in day.ev15 if e["time"] <= t], "vol5": vol, "vol_med5": vol_med}
             if len(bars["15m"]):
                 bars["rr15"] = tl.rr(15, day.g15 + len(bars["15m"]) - 1)
             cands = []
@@ -341,15 +374,17 @@ def breakdown(trades, by, col="r_weighted"):
     if trades is None or len(trades) == 0:
         return pd.DataFrame()
     t = trades.copy()
-    if by == "year":
+    bys = [by] if isinstance(by, str) else list(by)                 # एक किंवा अनेक (उदा. ["setup", "tod"])
+    if "year" in bys:
         t["year"] = pd.to_datetime(t["date"]).dt.year
-    elif by == "tod":
+    if "tod" in bys:
         t["tod"] = pd.to_datetime(t["entry_time"]).dt.strftime("%H:") + np.where(pd.to_datetime(t["entry_time"]).dt.minute < 30, "00", "30")
-    elif by == "score_bucket":
+    if "score_bucket" in bys:
         t["score_bucket"] = pd.cut(t["score"].astype(float), [0, 60, 75, 101], labels=["<60", "60-74", "75+"], right=False).astype(str)
     rows = []
-    for key, g in t.groupby(by, dropna=False):
-        rows.append({by: key, **summarize(g, col)})
+    for key, g in t.groupby(bys if len(bys) > 1 else bys[0], dropna=False):
+        keys = key if isinstance(key, tuple) else (key,)
+        rows.append({**dict(zip(bys, keys)), **summarize(g, col)})
     return pd.DataFrame(rows)
 
 
@@ -390,6 +425,15 @@ def aligned_vs_counter(trades, virtual):
     return pd.DataFrame(rows)
 
 
+def aligned_vs_counter_split(trades, virtual):
+    """aligned_vs_counter, IS आणि OOS वेगळे."""
+    parts = []
+    for label, (t, v) in zip(PERIODS, zip(*(split_is_oos(x) if x is not None and len(x) else (x, x) for x in (trades, virtual)))):
+        parts.append(aligned_vs_counter(t, v).assign(period=label))
+    out = pd.concat(parts, ignore_index=True)
+    return out[["period"] + [c for c in out.columns if c != "period"]]
+
+
 def compare_variants(results):
     """प्रत्येक variant: metrics + (त्याने नाकारलेले पण दुसऱ्याने घेतलेले) trades चा expectancy. results = {variant: run_variant dict}."""
     rows = []
@@ -413,6 +457,73 @@ def compare_variants(results):
     return pd.DataFrame(rows)
 
 
+def _period_rows(trades, extra=None, col="r"):
+    rows = []
+    for label, part in zip(PERIODS, split_is_oos(trades) if trades is not None and len(trades) else (trades, trades)):
+        m = summarize(part, col)
+        mw = summarize(part, "r_weighted")
+        rows.append({**(extra or {}), "period": label, "trades": m["trades"], "win_pct": m["win_pct"], "avg_win_r": m["avg_win_r"], "avg_loss_r": m["avg_loss_r"],
+                     "expectancy_r": m["expectancy_r"], "expectancy_r_साइज_सह": mw["expectancy_r"], "total_r": m["total_r"]})
+    return rows
+
+
+def variants_is_oos(results):
+    """§3.4 तक्ता: प्रत्येक variant — IS आणि OOS वेगळे (trades, win %, avg win/loss R, expectancy साइज-विना आणि साइज-सह)."""
+    rows = []
+    for v, r in results.items():
+        rows += _period_rows(r["trades"], {"variant": v, "वर्णन": VARIANT_TEXT.get(v, "")})
+    return pd.DataFrame(rows)
+
+
+def variants_yearwise(results, col="r"):
+    """वर्षनिहाय expectancy (trades) — प्रत्येक variant एक column; period column सह (IS/OOS)."""
+    years = {}
+    for v, r in results.items():
+        tr = r["trades"]
+        if tr is None or not len(tr):
+            continue
+        for y, g in tr.groupby(pd.to_datetime(tr["date"]).dt.year):
+            years.setdefault(int(y), {})[v] = f"{g[col].mean():+.3f} ({len(g)})"
+    rows = [{"वर्ष": y, "period": PERIODS[0] if y <= IS_END.year else PERIODS[1], **{v: years[y].get(v, "—") for v in results}} for y in sorted(years)]
+    return pd.DataFrame(rows)
+
+
+def wait_pullback_table(result):
+    """bias `*_WAIT_PULLBACK_END` असताना: setup-निहाय (IS/OOS वेगळे) candidates किती, कोणत्या टप्प्यावर थांबले, घेतलेल्यांचा निकाल,
+    आणि gate ने नाकारलेल्यांचा virtual (size=0) निकाल. + `HTF_WAIT_PULLBACK` ने नाकारलेले breakouts (virtual). R साइज-विना."""
+    dec, tr, vt = result["decisions"], result["trades"], result["virtual"]
+    is_wait = lambda df: df["bias"].astype(str).str.endswith("WAIT_PULLBACK_END") if len(df) and "bias" in df.columns else pd.Series([], dtype=bool)   # noqa: E731
+    rows = []
+    if dec is None or not len(dec):
+        return pd.DataFrame()
+    d = dec[is_wait(dec)]
+    t = tr[is_wait(tr)] if tr is not None and len(tr) else pd.DataFrame(columns=["date", "setup", "r"])
+    v = vt[is_wait(vt)] if vt is not None and len(vt) else pd.DataFrame(columns=["date", "setup", "r", "gate_codes"])
+    for label, (dp, tp, vp) in zip(PERIODS, zip(split_is_oos(d), split_is_oos(t) if len(t) else (t, t), split_is_oos(v) if len(v) else (v, v))):
+        for setup in sorted(set(dp["setup"]) | set(tp.get("setup", []))):
+            ds, ts, vs = dp[dp["setup"] == setup], tp[tp["setup"] == setup] if len(tp) else tp, vp[vp["setup"] == setup] if len(vp) else vp
+            st = ds["status"].value_counts()
+            mt, mv = summarize(ts, "r"), summarize(vs, "r")
+            rows.append({"period": label, "setup": setup, "candidates": len(ds), "दिवस": ds["date"].nunique(),
+                         "gate_reject": int(st.get("REJECTED_GATE", 0)), "risk_reject": int(st.get("REJECTED_RISK", 0)), "validation_reject": int(st.get("REJECTED_VALIDATION", 0)),
+                         "score_reject": int(st.get("REJECTED_SCORE", 0)), "selector_reject": int(st.get("DROPPED", 0)), "taken": int(st.get("TAKEN", 0)),
+                         "घेतलेले_trades": mt["trades"], "घेतलेले_win_pct": mt["win_pct"], "घेतलेले_expectancy_r": mt["expectancy_r"], "घेतलेले_total_r": mt["total_r"],
+                         "नाकारलेले_virtual_trades": mv["trades"], "नाकारलेले_virtual_expectancy_r": mv["expectancy_r"]})
+    return pd.DataFrame(rows)
+
+
+def wait_pullback_breakouts(result):
+    """`HTF_WAIT_PULLBACK` ने नाकारलेले breakouts (pullback-end ची वाट असताना) — virtual निकाल, IS/OOS वेगळे."""
+    vt = result["virtual"]
+    if vt is None or not len(vt):
+        return pd.DataFrame()
+    w = vt[vt["gate_codes"].astype(str).str.contains("HTF_WAIT_PULLBACK", na=False)]
+    rows = []
+    for setup in sorted(set(w["setup"])) or ["—"]:
+        rows += _period_rows(w[w["setup"] == setup] if len(w) else w, {"setup": setup})
+    return pd.DataFrame(rows)
+
+
 @dataclass
 class BacktestResult:
     results: Dict[str, dict]
@@ -424,10 +535,17 @@ class BacktestResult:
         tr = r["trades"]
         out = {"summary": pd.DataFrame([{"scope": "सर्व", **summarize(tr)}, {"scope": "IS 2015→2021", **summarize(split_is_oos(tr)[0])},
                                         {"scope": "OOS 2022→", **summarize(split_is_oos(tr)[1])}]),
-               "verdicts": verdicts(tr), "aligned_vs_counter": aligned_vs_counter(tr, r["virtual"])}
+               "verdicts": verdicts(tr), "aligned_vs_counter": aligned_vs_counter_split(tr, r["virtual"])}
         for by in ("setup", "bias", "state_1d", "score_bucket", "tod", "year", "gap_type", "exit_reason"):
             out[f"by_{by}"] = breakdown_split(tr, by)                     # IS आणि OOS वेगळे
+        out["by_setup_tod"] = breakdown_split(tr, ["setup", "tod"], col="r")        # setup × 30-मिनिट वेळ (R साइज-विना)
+        out["wait_pullback"] = wait_pullback_table(r)
+        out["wait_pullback_breakouts"] = wait_pullback_breakouts(r)
         return out
+
+    def variant_tables(self):
+        """§3.4 तुलना: variants IS/OOS वेगळे + वर्षनिहाय expectancy."""
+        return {"variants_is_oos": variants_is_oos(self.results), "variants_yearwise": variants_yearwise(self.results)}
 
 
 def run_backtest(frames, bcfg=None, progress=None, timeline=None):

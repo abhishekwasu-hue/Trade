@@ -880,3 +880,15 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - CLI (संपूर्ण 2015→2024-03 तिन्ही variants ≈ 12 मिनिटं; कुठलाही order/DB/network नाही): `cd /root/Trade && python3 run_opportunity_backtest.py --out /root/oe_bt` (जलद: `--start 2022-01-01 --variants V1`). निदान (exit प्रकार, MAE/MFE, counterfactual, मोठे losses, funnel, D2 — सर्व IS/OOS वेगळे; फक्त अहवाल): `--diagnostics` जोडा → `V1_diag_*.csv`.
 - Index डेटात volume नाही ⇒ validation मध्ये volume "N/A" (त्याचे गुण range expansion ला). निकाल R-आधारित (spot points; option P&L नाही).
 
+### PR-2: D6 HTF Zone Pullback + D10 Trap + futures volume
+
+- Backtest मध्ये आता डीफॉल्ट detectors D1, D2, D3, D6, D10. नवीन तक्ते: §3.4 variants IS/OOS वेगळे + वर्षनिहाय (`variants_is_oos.csv`, `variants_yearwise.csv`), setup × 30-मिनिट वेळ (`V1_by_setup_tod.csv`, IS/OOS वेगळे), `WAIT_PULLBACK_END` bias मधले candidates आणि निकाल (`V1_wait_pullback.csv`, `V1_wait_pullback_breakouts.csv`).
+- Front-month futures contract पाहणे (फक्त वाचन): `cd /root/Trade && python3 resolve_index_futures_instruments.py`
+- Futures volume collector (फक्त वाचन; `data/oe_futures_5min_*.parquet` आणि `data/oe_index_5min_*.parquet` मध्ये साठवतो, git मध्ये नाही). Expired futures चा जुना volume Upstox Plus शिवाय मिळत नाही, म्हणून आजपासून रोज गोळा करायचा. crontab (रोज 16:10 IST = 10:40 UTC, सोम–शुक्र):
+
+```
+40 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 collect_index_futures_volume.py >> /root/Trade/futures_volume_collector.log 2>&1
+```
+
+- काही आठवडे/महिने डेटा जमल्यावर volume सकट वि. शिवाय तुलना: `python3 run_opportunity_backtest.py --index-5m data/oe_index_5min_NIFTY.parquet --futures-volume data/oe_futures_5min_NIFTY.parquet --variants V1 --out /root/oe_bt_vol` → `volume_comparison.csv`.
+
