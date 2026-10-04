@@ -17,6 +17,12 @@ import cloud_db
 import mcx_futures_trader as mft
 
 
+
+@pytest.fixture(autouse=True)
+def _isolated_contract_state(tmp_path, monkeypatch):
+    """contract-roll state फाईल (data/mcx_contract_state.json) टेस्टमध्ये tmp मध्ये — repo मध्ये फाईल नको, टेस्ट्स एकमेकांवर अवलंबून नकोत."""
+    monkeypatch.setattr(mft, "CONTRACT_STATE", str(tmp_path / "mcx_contract_state.json"))
+
 def _fake_candles_df(n=20, last_close=6500.0, closes=None):
     """closes दिलं तर तेच वापरलं जातं (n/last_close दुर्लक्षित) -- hysteresis-संवेदनशील टेस्ट्ससाठी
     (उदा. test_bearish_touch_places_sell) आजची संपूर्ण candle-मालिका नियंत्रित करायला हवी असते."""
@@ -710,24 +716,38 @@ class TestPercentMode:
         settings["trailing_pct"] = 1.0
         candles_df = _fake_candles_df(last_close=6500.0)
         with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
-             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=_fake_resolved()), \
-             patch.object(mft, "fetch_mcx_candles", return_value=candles_df), \
+             patch.object(mft, "get_open_trade_contracts", return_value=["MCX_FO|OLD"]), \
+             patch.object(mft.mcx_resolver, "resolve_symbol") as mock_resolve, \
+             patch.object(mft, "fetch_mcx_candles", return_value=candles_df) as mock_fetch, \
              patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
             mft.monitor_symbol("fake_token", "CRUDEOIL")
             kwargs = mock_manage.call_args.kwargs
             assert abs(kwargs["atr_points"] - 6500.0 * 0.01) < 1.0
             assert kwargs["atr_multiplier"] == 1.0
+            # roll नंतरही trade च्या स्वतःच्या contract चा भाव -- resolver (पुढचा contract) नाही
+            assert mock_fetch.call_args.args[1] == "MCX_FO|OLD" and not mock_resolve.called
 
-    def test_monitor_symbol_percent_mode_resolve_failure_disables_trailing_safely(self):
+    def test_monitor_symbol_percent_mode_no_price_disables_trailing_safely(self):
         settings = dict(_DEFAULT_SETTINGS)
         settings["trailing_sl_enabled"] = True
         settings["sl_target_mode"] = "PERCENT"
         with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
-             patch.object(mft.mcx_resolver, "resolve_symbol", return_value=(False, "सापडला नाही")), \
+             patch.object(mft, "get_open_trade_contracts", return_value=["MCX_FO|OLD"]), \
+             patch.object(mft, "fetch_mcx_candles", return_value=pd.DataFrame()), \
              patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
             mft.monitor_symbol("fake_token", "CRUDEOIL")
-            kwargs = mock_manage.call_args.kwargs
-            assert kwargs["atr_points"] is None
+            assert mock_manage.call_args.kwargs["atr_points"] is None
+
+    def test_monitor_symbol_percent_mode_no_open_trade_skips_price_fetch(self):
+        settings = dict(_DEFAULT_SETTINGS)
+        settings["trailing_sl_enabled"] = True
+        settings["sl_target_mode"] = "PERCENT"
+        with patch.object(mft.cloud_db, "get_strategy_settings", return_value=settings), \
+             patch.object(mft, "get_open_trade_contracts", return_value=[]), \
+             patch.object(mft, "fetch_mcx_candles") as mock_fetch, \
+             patch.object(mft, "manage_open_trades", return_value=[]) as mock_manage:
+            mft.monitor_symbol("fake_token", "CRUDEOIL")
+            assert mock_manage.call_args.kwargs["atr_points"] is None and not mock_fetch.called
 
 
 class TestProcessSymbolMultiAccount:

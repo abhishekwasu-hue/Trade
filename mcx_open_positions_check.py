@@ -21,17 +21,7 @@ import sys
 
 MCX_SOURCES = ("mcx_futures", "mcx_futures_srv3_shadow")
 
-
-def trading_days_left(today, expiry):
-    """[today, expiry] मधले सोम–शुक्र दिवस (दोन्ही टोकं धरून; आज weekend असेल तर तो मोजला जात नाही). expiry गेलेली ⇒ 0."""
-    if expiry is None or expiry < today:
-        return 0
-    n, d = 0, today
-    while d <= expiry:
-        if d.weekday() < 5:
-            n += 1
-        d += datetime.timedelta(days=1)
-    return n
+from resolve_mcx_futures_instruments import trading_days_left  # noqa: E402  (roll नियम जिथे, तिथलंच मोजमाप)
 
 
 def _date(s):

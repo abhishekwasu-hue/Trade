@@ -668,6 +668,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "sl_level_direction_block_enabled": True,
         # 30M close ने तुटलेल्या support खालच्या level वर LONG (resistance वरच्या level वर SHORT) फक्त 30M CHoCH नंतर. डीफॉल्ट बंद.
         "cascade_filter_enabled": False,
+        # 🎓 Contract roll (सर्व MCX commodities) — front-month चे उरलेले ट्रेडिंग दिवस (आज ते expiry, दोन्ही धरून) ≤ इतके झाले की पुढचा
+        # contract. resolver हा आकडा staggered delivery period + 1 पेक्षा कधीच कमी होऊ देत नाही (GOLD/SILVER/COPPER: किमान 4).
+        "roll_trading_days_before_expiry": 6,
         # 🎓 "First time level hit, level hold Minimum period for 1st trade, hi condition mcx future sathi lagu kra, default on thewa"
         # -- level ला किंमत टेकल्यावर किमान entry_min_hold_minutes (1-मिनिट candles वर) सलग level जवळ टिकली तरच entry; first_trade_only
         # असेल तर फक्त त्या level+role वरच्या आजच्या पहिल्या खऱ्या trade ला (Breakout ला लागू नाही). 5M/15M च्या उलट, MCX साठी डीफॉल्ट चालू.

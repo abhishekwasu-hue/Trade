@@ -18,6 +18,12 @@ def _no_closed_trades(monkeypatch):
     monkeypatch.setattr(mft, "get_closed_trades_on_date", lambda *a, **k: [])
 
 
+@pytest.fixture(autouse=True)
+def _isolated_contract_state(tmp_path, monkeypatch):
+    """contract-roll state फाईल (data/mcx_contract_state.json) टेस्टमध्ये tmp मध्ये — repo मध्ये फाईल नको, टेस्ट्स एकमेकांवर अवलंबून नकोत."""
+    monkeypatch.setattr(mft, "CONTRACT_STATE", str(tmp_path / "mcx_contract_state.json"))
+
+
 def _zones(rows):
     return pd.DataFrame([{"symbol": "CRUDEOIL", "zone_type": zt, "zone_low": lv, "zone_high": lv, "strength": 60.0,
                           "formed_date": "2026-09-01", "status": "ACTIVE"} for zt, lv in rows])

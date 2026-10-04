@@ -75,7 +75,7 @@ import resolve_mcx_futures_instruments as mcx_resolver
 from config import get_ist_now
 import database
 from database import (init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, count_entries_at_level_today,
-                      get_closed_trades_on_date)
+                      get_closed_trades_on_date, get_open_trade_contracts)
 from dynamic_sr_instant_trader import (
     check_instant_rsi_filter, check_breakout_price_consolidation, check_breakout_candle_close,
     get_supertrend_direction, _completed_bars_only, count_consecutive_touch_minutes,
@@ -132,9 +132,18 @@ MCX_NO_NEW_ENTRY_AFTER = (22, 45)
 # आधी SRV3_SHADOW ने forward PAPER तुलना करण्याची शिफारस.
 LEVEL_ENGINES = ("DYNAMIC", "SRV3_SHADOW", "SRV3")
 SRV3_SHADOW_SOURCE = "mcx_futures_srv3_shadow"
+MCX_TRADE_SOURCES = (STRATEGY_KEY, SRV3_SHADOW_SOURCE)   # trading_engine.MCX_SOURCES सारखेच
 SRV3_TIMEFRAME_LABEL = "SRV3"
 SRV3_CFG = SRConfig(session_end="23:30")
 SRV3_REFRESH_STATE = os.path.join("data", "mcx_srv3_refresh.json")
+
+# 🎓 Contract roll (वापरकर्त्याचा निर्णय, सर्व commodities) — नियम resolver मध्ये: front-month चे उरलेले **ट्रेडिंग** दिवस ≤
+# roll_trading_days_before_expiry (डीफॉल्ट 6, आणि staggered delivery period + 1 पेक्षा कधीच कमी नाही — बघा resolve_mcx_futures_instruments.
+# effective_roll_days) झाले की पुढचा contract. इथे फक्त: contract बदलल्याचं ओळखून Telegram सूचना, आणि त्या symbol चे zones नव्या contract
+# च्या candles वरून लगेच पुन्हा मोजणे (जुन्या contract चे levels calendar-spread मुळे चुकीच्या भावावर असतात) — zones नव्या contract चे
+# होईपर्यंत त्या symbol वर नवीन entry नाही. उघड्या positions चे exits (आणि trailing चा reference भाव) त्यांच्या स्वतःच्या (trade मध्ये
+# साठवलेल्या) instrument वरच.
+CONTRACT_STATE = os.path.join("data", "mcx_contract_state.json")
 
 
 def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
@@ -210,6 +219,53 @@ def fetch_mcx_trend_filter_directions(access_token, instrument_key, now, st1h_pe
     except Exception:
         dir_4h = None
     return dir_1h, dir_4h
+
+
+def check_contract_roll(access_token, symbol, resolved, notify=None, refresh=None, state_path=None):
+    """contract बदलला का ते तपासणे (state: data/mcx_contract_state.json). बदलला ⇒ Telegram सूचना (एकदाच) आणि zones refresh.
+    रिटर्न (entries_ok, संदेश किंवा None) — zones नव्या contract चे होईपर्यंत entries_ok=False."""
+    notify = notify or send_telegram_message
+    state_path = state_path or CONTRACT_STATE
+    if refresh is None:
+        import refresh_market_zones_mcx
+        refresh = refresh_market_zones_mcx.refresh_symbol
+    state = SRV3._load_state(state_path)
+    rec = dict(state.get(symbol) or {})
+    cur = resolved.get("trading_symbol") or resolved.get("instrument_key")
+    prev = rec.get("contract")
+    msg = None
+    if prev != cur:
+        if prev is not None or resolved.get("rolled"):
+            old_name = prev or resolved.get("front_trading_symbol")
+            msg = (f"🔄 <b>{symbol} MCX contract roll</b>: {old_name} → {cur} (expiry {resolved.get('expiry')}). "
+                   f"नियम: जुन्या contract चे उरलेले ट्रेडिंग दिवस ≤ {resolved.get('roll_trading_days_before_expiry')} "
+                   f"(MCX staggered delivery period: शेवटचे {resolved.get('staggered_delivery_trading_days', 0)} ट्रेडिंग दिवस). "
+                   "नव्या contract चे levels पुन्हा मोजले जात आहेत; ते तयार होईपर्यंत नवीन entry नाही.")
+            try:
+                notify(msg)
+            except Exception:
+                pass
+        rec["contract"] = cur
+    if rec.get("levels_contract") != cur:
+        if prev is None and not resolved.get("rolled"):
+            rec["levels_contract"] = cur          # पहिलीच नोंद आणि roll नाही — रात्रीचा refresh याच resolver ने ⇒ zones याच contract चे
+        else:
+            try:
+                ok, refresh_msg = refresh(access_token, symbol)
+            except Exception as exc:
+                ok, refresh_msg = False, str(exc)
+            if not ok:
+                state[symbol] = rec
+                SRV3._save_state(state, state_path)
+                return False, f"{symbol}: contract roll ({cur}) — नव्या contract चे zones अजून तयार नाहीत ({refresh_msg}); नवीन entry नाही"
+            rec["levels_contract"] = cur
+            msg = (msg + " | " if msg else "") + f"zones: {refresh_msg}"
+    state[symbol] = rec
+    SRV3._save_state(state, state_path)
+    if resolved.get("roll_pending"):
+        msg = (msg + " | " if msg else "") + (f"⚠️ {symbol}: {resolved.get('front_trading_symbol')} ची expiry जवळ आहे पण पुढचा contract Upstox "
+                                              "यादीत मिळाला नाही — जवळचाच वापरला")
+    return True, msg
 
 
 def _drop_today_and_later(daily, now):
@@ -343,6 +399,11 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         return f"{symbol}: सध्याचा (current/continuous) Futures contract सापडला नाही ({resolved})"
     instrument_key = resolved["instrument_key"]
     lot_size = resolved["lot_size"]
+    roll_ok, roll_msg = check_contract_roll(access_token, symbol, resolved)
+    if roll_msg:
+        print(roll_msg)
+    if not roll_ok:
+        return roll_msg
 
     lots = settings["lots"]
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
@@ -679,20 +740,25 @@ TRAILING_PRICE_CACHE_TTL_SECONDS = 20.0
 _trailing_price_cache = {}
 
 
-def _get_trailing_reference_price(access_token, symbol, now_fn=time.monotonic):
-    """सद्य किंमत (30M candle close) -- TTL-cached; मिळाली नाही तर None (त्या cycle ला trailing वगळणे, सुरक्षित)."""
+def _get_trailing_reference_price(access_token, symbol, instrument_key=None, now_fn=time.monotonic):
+    """सद्य किंमत (30M candle close) -- TTL-cached; मिळाली नाही तर None (त्या cycle ला trailing वगळणे, सुरक्षित).
+    `instrument_key` = उघड्या trade चा स्वतःचा contract (roll नंतर resolver पुढचा contract देतो, पण जुन्या contract वरच्या trade चं
+    trailing अंतर त्याच्याच भावावरून हवं). न दिल्यास resolver चा सध्याचा contract (जुनं वर्तन)."""
     now = now_fn()
-    hit = _trailing_price_cache.get(symbol)
+    cache_key = (symbol, instrument_key)
+    hit = _trailing_price_cache.get(cache_key)
     if hit is not None and now - hit[0] < TRAILING_PRICE_CACHE_TTL_SECONDS:
         return hit[1]
-    ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
-    if not ok:
-        return None
-    df_current = fetch_mcx_candles(access_token, resolved["instrument_key"], interval="30minute", lookback_days=1)
+    if instrument_key is None:
+        ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
+        if not ok:
+            return None
+        instrument_key = resolved["instrument_key"]
+    df_current = fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=1)
     if df_current is None or df_current.empty:
         return None
     price = float(df_current["close"].iloc[-1])
-    _trailing_price_cache[symbol] = (now, price)
+    _trailing_price_cache[cache_key] = (now, price)
     return price
 
 
@@ -710,7 +776,10 @@ def monitor_symbol(access_token, symbol, broker_positions=None, record_timing=Fa
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — trailing_pct असेल तर
     # सद्य किंमतीवरून points-समतुल्य अंतर काढलं जातं — compute_trailing_sl_level() ला अजिबात हात न लावता.
     if trailing_sl_enabled and settings.get("sl_target_mode", "POINTS") == "PERCENT":
-        current_price = _get_trailing_reference_price(access_token, symbol)
+        open_keys = get_open_trade_contracts(symbol, MCX_TRADE_SOURCES)
+        # उघडा trade नसेल तर trailing ची गरजच नाही (API call वाचतो). एकापेक्षा जास्त contracts (roll च्या आसपास मूळ + shadow) असतील तर
+        # सर्वात जवळच्या expiry चा -- अंतर हे किमतीच्या % मध्ये असल्याने दोन contracts मधला फरक (calendar spread) नगण्य.
+        current_price = (_get_trailing_reference_price(access_token, symbol, instrument_key=open_keys[0]) if open_keys else None)
         if current_price is not None:
             trailing_distance_points = current_price * float(settings.get("trailing_pct", 1.0)) / 100
         else:
