@@ -414,6 +414,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # मर्यादित (timeframe_suffix तपासूनच, dynamic_sr_instant_trader.py मध्ये).
         "otm_shadow_enabled": False,
         "otm_shadow_strikes_count": 2,   # ATM पासून किती strikes OTM (select_credit_spread_fixed_strikes चा strikes_otm)
+        # 🎓 वापरकर्त्याचा निर्णय ("फक्त 5-Min bot ला SR V3 देऊन PAPER मध्ये चाचणी") — srv3_instant_shadow.py: SR V3 (grade A/B)
+        # levels वर याच strategy चे entry नियम, निव्वळ PAPER, वेगळ्या source ने (dynamic_sr_instant_srv3_shadow). डीफॉल्ट बंद.
+        "srv3_shadow_enabled": False,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच
         # "lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — पण दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
         # trade-प्रकार असल्याने वापरकर्त्याला ते स्वतंत्रपणे ठरवता यायला हवं. डीफॉल्ट "lots" इतकाच
@@ -1954,7 +1957,7 @@ def get_iv_change_from_average(symbol, lookback_days=10, max_age_minutes=20, mar
     }
 
 
-def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pct=0.02, formed_date=None):
+def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pct=0.02, formed_date=None, type_prefix="DYNAMIC_SR"):
     """
     हलका (5-मिनिट/10-मिनिट) Dynamic S/R refresh — save_market_zones() (पूर्ण replace) च्या उलट, इथे
     फक्त DYNAMIC_SR_*_{timeframe_suffix} (उदा. "1M" किंवा "15M") प्रकारचे zones merge केले जातात:
@@ -1985,8 +1988,12 @@ def merge_dynamic_sr_zones(symbol, dyn_sr_result, timeframe_suffix, tolerance_pc
         return False
     try:
         formed_date = formed_date or datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
-        support_type = f"DYNAMIC_SR_SUPPORT_{timeframe_suffix}"
-        resistance_type = f"DYNAMIC_SR_RESISTANCE_{timeframe_suffix}"
+        # 🎓 SR V3 PAPER shadow (5-Min Instant) — तेच merge-नियम, पण वेगळ्या नावाने: type_prefix="SRV3" आणि
+        # timeframe_suffix="" ⇒ "SRV3_SUPPORT"/"SRV3_RESISTANCE" (शेवटी "_5M"/"_15M" नाही — त्यामुळे `endswith("_5M")`
+        # ने levels निवडणाऱ्या कुठल्याही bot ला हे levels चुकूनही दिसत नाहीत). डीफॉल्ट — जुनंच नाव, वर्तन अपरिवर्तित.
+        tf_part = f"_{timeframe_suffix}" if timeframe_suffix else ""
+        support_type = f"{type_prefix}_SUPPORT{tf_part}"
+        resistance_type = f"{type_prefix}_RESISTANCE{tf_part}"
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, zone_type, zone_low, strength FROM market_zones WHERE symbol = %s "
