@@ -221,6 +221,9 @@ CREATE TABLE IF NOT EXISTS strategy_settings (
 STRATEGY_SETTINGS_DEFAULTS = {
     "1m_instant": {
         "lots": 1,
+        # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
+        # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
+        "level_memory_enabled": True,
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या,
         # default 2") — established "आजच्या या zone साठी कमाल 2 वेळा" ही मर्यादा आधी सर्व बॉट्समध्ये
         # hardcoded (2) होती — आता Dashboard वरून बदलता येते, डीफॉल्ट मात्र आधीसारखाच 2 (वर्तन बदलत
@@ -457,6 +460,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
     },
     "15m_dynamic_sr": {
         "lots": 1,
+        # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
+        # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
+        "level_memory_enabled": True,
         "max_hits_per_zone": 2,   # बघा 1m_instant मधली टिप्पणी
         "itm_depth_points": 100,
         "naked_itm_depth_points": 100,

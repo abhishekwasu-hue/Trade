@@ -15,6 +15,7 @@ refresh_dynamic_sr_5m.py
 import argparse
 
 import cloud_db
+import level_memory as LM
 from config import get_ist_now
 from sr_dynamic import compute_dynamic_sr
 from upstox_api import fetch_candles
@@ -30,6 +31,9 @@ def refresh_symbol_5m(access_token, symbol):
         return False, f"{symbol}: 5-मिनिट इतिहासाचे {df_5m.attrs['failed_chunks']} chunk(s) मिळाले नाहीत — या वेळी levels अद्ययावत केले नाहीत (जुनेच कायम)"
 
     dyn_sr = compute_dynamic_sr(df_5m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
+    # 🎓 Level memory (डीफॉल्ट चालू) -- जुने levels त्याच किंमतीवर, अलीकडे टेकलेले top-5 बाहेरचेही ठेवले (बघा level_memory.py)
+    if LM.memory_enabled(symbol, "5M", cloud_db.get_strategy_settings):
+        dyn_sr = LM.remember_dyn_sr(dyn_sr, cloud_db.get_market_zones(symbol, status="ACTIVE"), "5M", df_5m, get_ist_now())
     ok = cloud_db.merge_dynamic_sr_zones(symbol, dyn_sr, "5M", formed_date=get_ist_now())
     if not ok:
         return False, f"{symbol}: Supabase मध्ये merge अयशस्वी (जोडणी तपासा)"

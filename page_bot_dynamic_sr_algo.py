@@ -494,6 +494,18 @@ def render():
                 "कमाल Trades (त्याच zone/role वर)", settings, "max_hits_per_zone", strategy_key, symbol,
                 min_value=1, max_value=10, step=1,
             )
+        # 🎓 Level memory (5-Min Instant + 15M SRv2, डीफॉल्ट चालू) -- बघा level_memory.py
+        level_memory_enabled = settings.get("level_memory_enabled", True)
+        if strategy_key in ("1m_instant", "15m_dynamic_sr"):
+            level_memory_enabled = st.checkbox(
+                "📌 Level memory — महत्त्वाचे Dynamic S/R levels त्याच किंमतीवर ठेवा (डीफॉल्ट चालू)",
+                value=bool(settings.get("level_memory_enabled", True)), key=_widget_key(strategy_key, symbol, "level_memory_enabled"),
+            )
+            st.caption(
+                "Logic तोच Dynamic S/R. ताजी गणना जुन्या level च्या जवळ आली तर जुनीच किंमत राहते. ताज्या top-5 मध्ये नसलेला level पण "
+                "ठेवला जातो, जर किंमत अलीकडे (1M: 2, 5M: 5, 15M: 15, 30M/60M: 30 दिवसांत) त्याच्याजवळ आली असेल. Level ची भूमिका "
+                "(support/resistance) जशी आहे तशीच राहते. 5-Min Instant साठी 1M/5M, 15M SRv2 साठी 15M/30M/60M. बंद केल्यास जुनं वर्तन."
+            )
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("नेकेड ऑप्शन बाय हे ऑप्शनल आहे... क्रेडिट स्प्रेड सुद्धा
         # ऑप्शनल ठेवा — ज्या user कडे कमी कॅपिटल आहे तो नेकेड ऑप्शन बाय करणे पसंत करतो") — आधी Credit
@@ -1255,6 +1267,7 @@ def render():
             "broker_side_sl_enabled": bool(broker_side_sl_enabled),
             "sl_tsl_cooldown_minutes": int(sl_tsl_cooldown_minutes),
             "max_hits_per_zone": int(max_hits_per_zone),
+            "level_memory_enabled": bool(level_memory_enabled),
             # 🎓 वापरकर्त्याने मागितलेली सुधारणा — LIVE निवडलं तरी पुष्टीकरण टिक केलेलं नसेल, तर
             # सुरक्षिततेसाठी PAPER वरच जतन होतं (शांतपणे LIVE जतन होऊन खरे ऑर्डर्स सुरू होता कामा नयेत).
             "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",
