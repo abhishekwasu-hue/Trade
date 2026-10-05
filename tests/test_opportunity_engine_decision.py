@@ -417,3 +417,10 @@ def test_d1_or_reentry_exits_on_close_back_inside_or_and_disables_time_stop():
     sp = R.open_position(short_plan, "BREAKOUT", 24310.0, "D1")
     R.on_bar(sp, bar(24312.0, 24298.0, 24311.0), cfg, t("10:35"))
     assert sp.closed and sp.exit_reason == "OR_REENTRY"
+
+
+def test_unknown_d1_exit_rule_is_rejected():
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    pos = R.open_position(plan, "BREAKOUT", None, "D1")
+    with pytest.raises(ValueError):
+        R.on_bar(pos, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1), EngineConfig(d1_exit_rule="or-reentry"), t("10:35"))

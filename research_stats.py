@@ -68,10 +68,10 @@ def deflated_sharpe(r, trial_sharpes):
     sr0 = expected_max_sharpe(nt, var_sr)
     skew, kurt = moments(a)
     if n < 3:
-        return {"sr": sr, "sr0": sr0, "dsr": None, "n": n, "n_trials": nt}
+        return {"sr": round(sr, 4), "sr0": round(sr0, 4), "dsr": None, "n": n, "n_trials": nt}
     denom = 1 - skew * sr + (kurt - 1) / 4.0 * sr * sr
     if denom <= 0:
-        return {"sr": sr, "sr0": sr0, "dsr": None, "n": n, "n_trials": nt}
+        return {"sr": round(sr, 4), "sr0": round(sr0, 4), "dsr": None, "n": n, "n_trials": nt}
     z = (sr - sr0) * math.sqrt(n - 1) / math.sqrt(denom)
     return {"sr": round(sr, 4), "sr0": round(sr0, 4), "dsr": round(float(_N.cdf(z)), 4), "n": n, "n_trials": nt}
 

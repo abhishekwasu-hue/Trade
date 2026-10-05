@@ -44,6 +44,7 @@ TRIALS = {
     "H4b_12bars": {"d1_exit_rule": "bars", "d1_time_stop_bars": 12},
     "H4c_or_reentry": {"d1_exit_rule": "or_reentry"},
 }
+VAL_END = pd.Timestamp("2024-03-31")      # sealed holdout (2024-04 →) कधीही VAL मध्ये येऊ नये — parquet मध्ये नवा डेटा जोडला तरी
 H3_KEYS, H4_KEYS = ("H3_020", "H3_025"), ("H4a_none", "H4b_12bars", "H4c_or_reentry")
 SCORE_BINS = [-np.inf, 50, 60, 70, 80, np.inf]
 SCORE_LABELS = ["<50", "50–60", "60–70", "70–80", "≥80"]
@@ -53,7 +54,7 @@ def split(df, col="date"):
     if df is None or len(df) == 0:
         return df, df
     d = pd.to_datetime(df[col])
-    return df[d <= IS_END], df[d >= OOS_START]
+    return df[d <= IS_END], df[(d >= OOS_START) & (d <= VAL_END)]
 
 
 def daily_r(trades, dates, col="r"):
@@ -156,6 +157,8 @@ def run(frames, out, report=None, start=None, end=None, log=print, jobs=1):
     base_cfg = BacktestConfig(start=start, end=end, variants=(VARIANT,))
     tl = _TL = prepare_timeline(frames, base_cfg)
     dates = [pd.Timestamp(d.date) for d in tl.days]
+    if dates and max(dates) > VAL_END:
+        raise ValueError(f"डेटा {max(dates):%Y-%m-%d} पर्यंत — sealed holdout (2024-04 →) G4 पूर्वी वापरायचा नाही; --end {VAL_END:%Y-%m-%d} द्या")
     is_dates = [d for d in dates if d <= IS_END]
     log(f"timeline तयार: {len(dates)} दिवस ({time.time() - t0:.0f}s)")
     results, rows = {}, []

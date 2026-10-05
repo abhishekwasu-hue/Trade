@@ -16,6 +16,9 @@ import numpy as np
 from .bias import nearest_opposing
 
 
+D1_EXIT_RULES = ("default", "none", "bars", "or_reentry")
+
+
 @dataclass
 class TradePlan:
     direction: str
@@ -155,6 +158,8 @@ def on_bar(pos, bar, cfg, time=None, trail_stop=None):
     # 5. time stop — spec: "breakout नंतर 6 bars मध्ये +0.5R गाठलं नाही तर exit" => फक्त breakout setups (reversal setups ना target पर्यंत वेळ लागतो)
     # 🎓 T1/H4: D1 साठी पर्यायी नियम (cfg.d1_exit_rule; डीफॉल्ट "default" ⇒ जुनंच)
     d1_rule = getattr(cfg, "d1_exit_rule", "default") if pos.setup == "D1" else "default"
+    if d1_rule not in D1_EXIT_RULES:
+        raise ValueError(f"अज्ञात d1_exit_rule: {d1_rule!r} (वैध: {D1_EXIT_RULES})")
     if d1_rule == "or_reentry":
         if not pos.t1_done and pos.level is not None and ((c < pos.level) if s > 0 else (c > pos.level)):
             _close_all(pos, c, "OR_REENTRY", time)

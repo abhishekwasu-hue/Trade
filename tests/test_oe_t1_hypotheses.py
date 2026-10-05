@@ -55,3 +55,9 @@ def test_run_end_to_end_small_grid(tmp_path, monkeypatch):
     assert st["best"] in out["results"] and "d2_allowed_biases" in st["choice"]["h5_knobs"]
     assert os.path.exists(tmp_path / "o" / "t1_trials.csv") and "PBO" in rep.read_text(encoding="utf-8")
     assert np.isfinite(st["is_daily_sharpe"]["BASE"])
+
+
+def test_val_split_never_includes_sealed_holdout():
+    df = pd.DataFrame({"date": ["2024-03-28", "2024-04-01", "2025-01-02"], "r": [1.0, 2.0, 3.0]})
+    _, val = T1.split(df)
+    assert list(val["r"]) == [1.0]

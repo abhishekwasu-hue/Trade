@@ -22,7 +22,7 @@ import sys
 
 import pandas as pd
 
-HOLDOUT_DIR = os.path.join("data", "holdout")
+HOLDOUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "holdout")     # repo च्या gitignored folder मध्येच, कुठूनही चालवलं तरी
 HOLDOUT_START = datetime.date(2024, 4, 1)
 CHUNK_DAYS = 28
 
@@ -113,7 +113,7 @@ def main(argv=None):
     if not token:
         print("❌ Upstox token उपलब्ध नाही (--token नाही, Supabase मध्येही नाही).")
         return 1
-    today = get_ist_today()
+    today = get_ist_today() - datetime.timedelta(days=1)          # चालू (अपूर्ण) दिवस नको — फक्त पूर्ण सत्रे
     print(f"Sealed holdout cache — {HOLDOUT_START} → {today} (फक्त संख्या; डेटा G4 पर्यंत वापरायचा नाही)")
     _, bad = cache([s.strip().upper() for s in a.symbols.split(",") if s.strip()], token, today, V.fetch_candles_window, SYMBOL_INSTRUMENT_KEYS, a.data_dir)
     return 1 if bad else 0
