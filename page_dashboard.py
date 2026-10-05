@@ -45,7 +45,7 @@ from mini_chart import render_mini_charts
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
-    mcx_info_suffixes, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
+    mcx_level_suffixes, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 from sr_v3_chart import V3_VIEW, tf_set_label, v3_chart_lines
@@ -1332,9 +1332,9 @@ def render():
                     _zones = _cdb.get_market_zones(chart_symbol, status="ACTIVE")
                     _hits = _cdb.get_zone_hits_today_bulk(chart_symbol, get_ist_today().strftime("%Y-%m-%d"))
                     _is_mcx = bot_choice == "MCX Futures"
-                    bot_lines = level_lines(_zones, _suffixes, _hits, int(_bs.get("max_hits_per_zone", 2)), price=float(chart_df["close"].iloc[-1]),
-                                            max_distance_pct=2.0, nearest_n=3, role_by_price=_is_mcx,
-                                            info_suffixes=mcx_info_suffixes(_suffixes) if _is_mcx else ())
+                    _lv_sfx, _info_sfx = mcx_level_suffixes(_bs) if _is_mcx else (_suffixes, ())   # MCX SRV3 engine ⇒ SR V3 levels
+                    bot_lines = level_lines(_zones, _lv_sfx, _hits, int(_bs.get("max_hits_per_zone", 2)), price=float(chart_df["close"].iloc[-1]),
+                                            max_distance_pct=2.0, nearest_n=3, role_by_price=_is_mcx, info_suffixes=_info_sfx)
                     bot_rsi_levels = tuple(rsi_threshold_values(bot_choice, _bs))
                     sr_for_tv = None      # चार्टचे स्वतःचे S/R नकोत -- bot चे प्रत्यक्ष levels दाखवतो
                     st1d_line_aligned = st1d_dir_aligned = st15m_line_aligned = st15m_dir_aligned = st1h_line_aligned = st1h_dir_aligned = None
@@ -1361,7 +1361,7 @@ def render():
                         ) if ln
                     ]
                     bot_note = (
-                        f"Bot view: **{bot_choice}** ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; level touch नाही). फिके = आजचे max-trades संपलेले; किंमतीपासून ±2% बाहेरचे लपवले. "
+                        f"Bot view: **{bot_choice}** ({'/'.join(_lv_sfx)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; level touch नाही). फिके = आजचे max-trades संपलेले; किंमतीपासून ±2% बाहेरचे लपवले. "
                         "हे Supabase मधले bot चे प्रत्यक्ष levels आहेत. गेट-ओळीत फक्त RSI आणि Supertrend; PCR / Min-Hold / Breakout इ. गेट्स इथे नाहीत."
                         + ("" if bot_lines else " ⚠️ या bot चे ACTIVE levels सापडले नाहीत.")
                     )
