@@ -98,6 +98,12 @@ class EngineConfig:
     d1_window_end: str = "11:00"             # (मी ठरवलेला डीफॉल्ट — spec मध्ये नाही) OR breakout साठी शेवटची वेळ
     d2_window_end: str = "12:00"             # (मी ठरवलेला डीफॉल्ट) fade trigger साठी शेवटची वेळ
     d2_min_rr: float = 1.5
+    # 🎓 T1 (diagnostic hypotheses, फक्त backtest साठी; डीफॉल्ट = जुनं वर्तन): H1 — D2 फक्त या bias मध्ये (रिकामं = सर्व bias मध्ये)
+    d2_allowed_biases: tuple = ()
+    # H4 — D1 चा exit नियम: "default" (time_stop_kinds/bars प्रमाणे, जुनं) | "none" (D1 ला time stop नाही) | "bars" (d1_time_stop_bars)
+    #      | "or_reentry" (time stop ऐवजी: T1 आधी 5M close परत Opening Range च्या आत ⇒ exit "OR_REENTRY")
+    d1_exit_rule: str = "default"
+    d1_time_stop_bars: int = 12
     d2_patterns_long: tuple = ("BULLISH_ENGULFING", "HAMMER", "MORNING_STAR")
     d2_patterns_short: tuple = ("BEARISH_ENGULFING", "SHOOTING_STAR", "EVENING_STAR")
     d3_window_start: str = "09:45"
