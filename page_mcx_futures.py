@@ -45,7 +45,7 @@ from position_chart import SL_KIND_LABELS, futures_lines, mcx_sl_price
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
-    mcx_level_suffixes, rejection_markers, supertrend_gate_line, supertrend_specs, zone_suffixes,
+    mcx_level_suffixes, mcx_trendline_overlay, rejection_markers, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
@@ -572,7 +572,7 @@ def render():
                         "Bot view: MCX Futures bot चे levels / Supertrend 1H+4H / गेट-स्थिती", value=False, key=_widget_key(symbol, "chart_bot_view"),
                     )
                     bot_lines, bot_gate_lines, bot_rsi_levels, bot_note = [], [], (40, 60), None
-                    bot_markers = []
+                    bot_markers, bot_trend_lines, bot_tl_note = [], [], None
                     bot_st = {"1H": (None, None), "4H": (None, None)}
                     if bot_on:
                         try:
@@ -589,6 +589,10 @@ def render():
                             bot_rsi_levels = tuple(rsi_threshold_values("MCX Futures", _bs))
                             # 🕯️ rejection markers (score) — दाखवलेल्या TF च्या candles वर; bot चा निर्णय मात्र level च्या TF वर
                             bot_markers = rejection_markers(df_mcx, [ln["price"] for ln in bot_lines], _bs)
+                            # 📐 तिरक्या trendlines (60M, 45 दिवस) — टप्पा 1: फक्त दाखवण्यासाठी, bot त्यावर trade करत नाही
+                            if chart_tf != "day":
+                                bot_trend_lines, bot_tl_note = mcx_trendline_overlay(
+                                    fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=45), df_mcx, get_ist_now())
                             _df30 = fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=20)
                             _frames, _rsi_by_tf = {}, {}
                             if _df30 is not None and not _df30.empty:
@@ -622,7 +626,7 @@ def render():
                         df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
                         rsi_series=rsi_series, sr_levels=None if bot_on else sr_levels, height=550, indicators=chart_indicators,
                         live_tf_seconds=infer_tf_seconds(df_mcx), trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels,
-                        pattern_markers=bot_markers or None,
+                        pattern_markers=bot_markers or None, trend_lines=bot_trend_lines or None,
                         supertrend_1h_series=bot_st["1H"][0], supertrend_1h_direction=bot_st["1H"][1],
                         supertrend_4h_series=bot_st["4H"][0], supertrend_4h_direction=bot_st["4H"][1],
                     )
@@ -638,6 +642,8 @@ def render():
                         st.caption(_gl)
                     if bot_note:
                         st.caption(bot_note)
+                    if bot_tl_note:
+                        st.caption(bot_tl_note)
                     st.caption(
                         f"📄 Contract: **{resolved['trading_symbol']}** (expiry {resolved['expiry']}) — Upstox च्या "
                         "Search Instruments API कडून थेट, कायम आपोआप current/continuous front-month."

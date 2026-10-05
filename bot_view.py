@@ -224,3 +224,22 @@ def rejection_markers(chart_df, level_prices, settings):
     s = settings or {}
     return PA.scan_markers(chart_df.iloc[:-1].reset_index(drop=True), level_prices, k=max(1.0, float(s.get("candle_k", 1.2))),
                            min_score=float(s.get("candle_min_score", 60)))
+
+
+def mcx_trendline_overlay(df30_long, chart_df, now, min_touches=2):
+    """🎓 तिरक्या trendlines (टप्पा 1 — फक्त दाखवण्यासाठी): 45 दिवसांच्या 30M वरून पूर्ण 60M candles, त्यावर उतरती resistance / चढती support
+    (price_action.trendlines). रिटर्न (chart segments, caption). चार्ट daily असेल किंवा डेटा नसेल तर ([], None)."""
+    from price_action import trendlines as TL
+    if df30_long is None or len(df30_long) == 0 or chart_df is None or len(chart_df) == 0:
+        return [], None
+    df60 = TL.completed_hours(df30_long, now)
+    lines = TL.detect_trendlines(df60, min_touches=min_touches)
+    if not lines:
+        return [], "Trendline (60M, 45 दिवस): सध्या वैध तिरकी रेषा नाही."
+    start = pd.Timestamp(pd.to_datetime(chart_df["timestamp"]).min())
+    start = start.tz_convert("Asia/Kolkata").tz_localize(None) if start.tzinfo else start     # df60 naive IST
+    segs = TL.chart_segments(lines, df60, chart_start=start)
+    cap = "Trendline (60M, 45 दिवस, फक्त माहिती — trading नाही): " + "; ".join(
+        f"{'उतरती resistance' if ln['side'] == 'resistance' else 'चढती support'} {ln['touches']} touches "
+        f"({ln['a_ts']:%d %b} → {ln['b_ts']:%d %b}), आत्ता ≈ {ln['next_price']:,.2f}" for ln in lines)
+    return segs, cap
