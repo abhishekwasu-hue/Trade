@@ -28,6 +28,8 @@ SUPPORT_RGB = (0, 200, 83)          # हिरवा
 RESISTANCE_RGB = (255, 23, 68)      # लाल
 AUTOSCALE_MAX_PCT = 6.0
 # chart चा interval -> त्या TF चे Dynamic S/R zone suffix (NIFTY Dashboard चा "—" view: chart च्या TF चे bot चे DB levels)
+SRV3_SUFFIX = "SRV3"                                   # MCX SR V3 levels चं चार्टवरचं नाव (zone_type मध्ये TF suffix नसतो)
+SRV3_ZONE_TYPES = ("SRV3_SUPPORT", "SRV3_RESISTANCE")  # srv3_instant_shadow.ZONE_TYPES सारखेच
 CHART_TF_DYN_SUFFIX = {"1minute": "1M", "5minute": "5M", "15minute": "15M", "30minute": "30M", "1hour": "60M"}             # यापेक्षा दूरच्या S/R रेषा चार्टचा scale ताणत नाहीत
 
 
@@ -84,7 +86,11 @@ def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=Fa
         return []
     cands = []
     for suffix, info in [(s_, False) for s_ in suffixes] + [(s_, True) for s_ in info_suffixes if s_ not in suffixes]:
-        rows = zones_df[(zones_df["zone_type"].str.startswith("DYNAMIC_SR_")) & (zones_df["zone_type"].str.endswith(f"_{suffix}")) & (zones_df["status"] == "ACTIVE")]
+        if suffix == SRV3_SUFFIX:                        # MCX level_engine SRV3 -- `SRV3_SUPPORT`/`SRV3_RESISTANCE` (TF suffix नसतो)
+            kind = zones_df["zone_type"].isin(SRV3_ZONE_TYPES)
+        else:
+            kind = (zones_df["zone_type"].str.startswith("DYNAMIC_SR_")) & (zones_df["zone_type"].str.endswith(f"_{suffix}"))
+        rows = zones_df[kind & (zones_df["status"] == "ACTIVE")]
         for row in rows.itertuples():
             cands.append((float(row.zone_low), suffix, info, row))
     far_keep = set()                                     # (level, info) -- trade होणारे आणि माहितीचे levels स्वतंत्रपणे (माहितीचे trade होणाऱ्यांना ढकलू नयेत)
@@ -124,6 +130,17 @@ def level_lines(zones_df, suffixes, hits, max_hits, price=None, role_by_price=Fa
 def mcx_info_suffixes(suffixes):
     """MCX: bot trade करत नसलेले Dynamic S/R timeframes (30M/60M पैकी) -- चार्टवर फक्त माहितीसाठी."""
     return tuple(s_ for s_ in ("30M", "60M") if s_ not in suffixes)
+
+
+def mcx_level_suffixes(settings):
+    """MCX चार्टवर कोणते levels bot चे (hits सकट) आणि कोणते फक्त माहितीचे -- symbol च्या `level_engine` प्रमाणे -> (traded, info).
+    🎓 "1402 hi level chart war nahi disat" -- COPPER चा bot SR V3 levels वर trade करत होता, पण चार्ट नेहमी Dynamic 30M/60M दाखवायचा.
+    SRV3 = bot SR V3 levels वर (Dynamic 30M/60M माहितीसाठी); SRV3_SHADOW = bot Dynamic वर, SR V3 (shadow) माहितीसाठी; DYNAMIC = आधीसारखं."""
+    engine = settings.get("level_engine", "DYNAMIC")
+    if engine == "SRV3":
+        return [SRV3_SUFFIX], ("30M", "60M")
+    dyn = zone_suffixes("MCX Futures", settings)
+    return dyn, mcx_info_suffixes(dyn) + ((SRV3_SUFFIX,) if engine == "SRV3_SHADOW" else ())
 
 
 def align_supertrend(chart_df, source_df, period, multiplier):

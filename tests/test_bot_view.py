@@ -294,6 +294,35 @@ class TestImportantFarLevels:
         assert by[300.0]["bounds"] and by[305.5]["bounds"] is False and by[270.0]["bounds"] is False   # >6% दूर ⇒ scale ताणत नाही
 
 
+class TestMcxSrv3EngineLevels:
+    """🎓 "1402 hi level chart war nahi disat" -- COPPER (level_engine SRV3) ने SRV3 1402.2 वर SHORT घेतला, पण चार्ट फक्त Dynamic 30M दाखवत होता."""
+    Z = pd.DataFrame([
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 1409.1, "strength": 6, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_SUPPORT_30M", "zone_low": 1395.55, "strength": 3, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_60M", "zone_low": 1410.42, "strength": 4, "status": "ACTIVE"},
+        {"zone_type": "SRV3_SUPPORT", "zone_low": 1402.2, "strength": 61.6, "status": "ACTIVE"},
+        {"zone_type": "SRV3_RESISTANCE", "zone_low": 1407.85, "strength": 81.8, "status": "ACTIVE"},
+    ])
+
+    def test_srv3_engine_draws_srv3_levels_with_hits_and_dynamic_as_info(self):
+        traded, info = bv.mcx_level_suffixes({"level_engine": "SRV3", "timeframe_choice": "30M"})
+        assert traded == ["SRV3"] and info == ("30M", "60M")
+        lines = bv.level_lines(self.Z, traded, {(1402.2, "RESISTANCE"): 1}, 2, price=1401.0, role_by_price=True,
+                               max_distance_pct=4.0, nearest_n=3, info_suffixes=info)
+        by = {l["price"]: l for l in lines}
+        assert by[1402.2]["title"] == "R SRV3 ★61.6 · 1/2" and by[1402.2]["color"] == "rgba(255,23,68,0.95)"
+        assert by[1407.85]["title"].startswith("R SRV3 ★81.8")
+        assert all("माहिती" in by[p]["title"] for p in (1409.1, 1395.55, 1410.42))
+
+    def test_dynamic_engine_unchanged_and_shadow_shows_srv3_as_info(self):
+        assert bv.mcx_level_suffixes({"timeframe_choice": "30M"}) == (["30M"], ("60M",))
+        assert bv.mcx_level_suffixes({"level_engine": "DYNAMIC", "timeframe_choice": "ALL"}) == (["30M", "60M"], ())
+        traded, info = bv.mcx_level_suffixes({"level_engine": "SRV3_SHADOW", "timeframe_choice": "30M"})
+        assert traded == ["30M"] and info == ("60M", "SRV3")
+        lines = bv.level_lines(self.Z, ["30M"], {}, 2, price=1401.0, role_by_price=True, max_distance_pct=4.0)
+        assert 1402.2 not in {l["price"] for l in lines}                  # DYNAMIC ⇒ SRV3 रेषा नाहीत (आधीसारखं)
+
+
 def test_chart_dotted_style_and_bounds_ignore_far_lines():
     import tradingview_chart as tvc
     df = pd.DataFrame({"timestamp": pd.date_range("2026-10-01 09:00", periods=30, freq="30min"), "open": 288.0, "high": 289.0,

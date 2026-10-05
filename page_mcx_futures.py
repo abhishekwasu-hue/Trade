@@ -45,7 +45,7 @@ from position_chart import SL_KIND_LABELS, futures_lines, mcx_sl_price
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
-    mcx_info_suffixes, supertrend_gate_line, supertrend_specs, zone_suffixes,
+    mcx_level_suffixes, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
@@ -580,9 +580,10 @@ def render():
                             _zones = cloud_db.get_market_zones(symbol, status="ACTIVE")
                             _hits = cloud_db.get_zone_hits_today_bulk(symbol, get_ist_today().strftime("%Y-%m-%d"))
                             _price = float(df_mcx["close"].iloc[-1])
+                            _lv_sfx, _info_sfx = mcx_level_suffixes(_bs)      # level_engine SRV3 ⇒ bot चे SR V3 levels (Dynamic माहितीसाठी)
                             bot_lines = level_lines(
-                                _zones, _suffixes, _hits, int(_bs.get("max_hits_per_zone", 2)), price=_price, role_by_price=True, max_distance_pct=4.0,
-                                nearest_n=3, info_suffixes=mcx_info_suffixes(_suffixes),
+                                _zones, _lv_sfx, _hits, int(_bs.get("max_hits_per_zone", 2)), price=_price, role_by_price=True, max_distance_pct=4.0,
+                                nearest_n=3, info_suffixes=_info_sfx,
                             )
                             bot_rsi_levels = tuple(rsi_threshold_values("MCX Futures", _bs))
                             _df30 = fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=20)
@@ -605,7 +606,7 @@ def render():
                                 ) if ln
                             ]
                             bot_note = (
-                                f"Bot view: MCX Futures bot ({'/'.join(_suffixes)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; role किंमत-बाजूवरून). "
+                                f"Bot view: MCX Futures bot ({'/'.join(_lv_sfx)}) चे ACTIVE levels — S/R, timeframe, ★strength, · आजचे trades/कमाल (फक्त खरे entries; role किंमत-बाजूवरून). "
                                 "फिके = आजचे max-hits संपलेले; किंमतीपासून ±4% बाहेरचे लपवले. गेट-ओळीत फक्त RSI आणि Supertrend (Breakout / Min-Hold इ. नाहीत)."
                                 + ("" if bot_lines else " ⚠️ ACTIVE levels सापडले नाहीत (आधी refresh_market_zones_mcx.py चालवा).")
                             )
