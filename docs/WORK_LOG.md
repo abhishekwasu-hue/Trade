@@ -55,7 +55,7 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
   - approach नियम (REACTION / BREAK candidate);
   - घटना SWEEP / BREAK / BREAK_CASCADE / FAILED_BREAKOUT (`known_at` = break + n_reclaim).
 
-**Tests:** 2413 → 2441 (legs 18, level_strength 10). Full suite हिरवा.
+**Tests:** full suite 2427 हिरवा (legs 18, level_strength 10 नवे).
 
 **निर्णय (कारणासह):**
 - **G1 वर थांबलो नाही** (वापरकर्त्याची रात्रीची सूचना): 10 नमुना दिवसांचे चार्ट report मध्ये तयार ठेवले.
@@ -84,3 +84,32 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
 **उघडे प्रश्न (सकाळी):**
 - G1 — लेबल्स चार्टवर पटतात का?
 - "धोकादायक = ≥ 2 अटी" हे नवं गृहीतक तपासायचं का?
+
+## 2026-10-06 · T3 — Leg आणि Level validation (Osler पद्धत) → **G2 वर थांबलो**
+
+**काय केलं:**
+- `price_action/level_validation.py`: bounce outcome, random zones, option breach, numpy logistic.
+- `leg_level_validation.py` → `docs/reports/leg_level_validation.md` (+ CSV/JSON).
+- Level engines: sr_dynamic (15M, ±0.10% band), SR V3 (15M+1H+D), OE zones (OE timeline as-of), OE + T2.4 ताकद ≥ IS median.
+  प्रत्येक दिवशी open पासून ±1.5% मधले zones. प्रत्येक खऱ्या zone मागे 3 random zones (एकूण ~4.5 लाख).
+- Leg tests (label-shuffle permutation, 2000), PBO (leg grid 81 आणि engines 4), DSR, option-seller (5 सत्र).
+
+**Tests:** 2427 → 2434 (level_validation 7: bounce नियम, random zones, option breach, logistic, verdict, holdout guard).
+
+**निर्णय (कारणासह):**
+- फक्त NIFTY: BANKNIFTY/MCX चा offline डेटा repo मध्ये नाही.
+  Upstox वरचा 2024-04 नंतरचा डेटा sealed holdout आहे, आणि त्याआधीचा sandbox मधून मिळत नाही. Runner मध्ये 2024-03-31 नंतरचा डेटा hard-cut.
+- Bounce व्याख्या आधीच ठरवली: पहिल्या स्पर्शानंतर 8 bars मध्ये close-अंतर ≥ 1 × median range, दूरच्या कडेपलीकडे close होण्याआधी. स्पर्श-bar स्वतः मोजत नाही.
+- Random अंतर-वितरण त्या engine च्या **IS** खऱ्या अंतरांवरून (VAL चा वापर नाही).
+- Option-seller: प्रत्येक (engine, दिवस, बाजू) साठी किंमतीच्या सर्वात जवळचा मजबूत zone. कारण: एकाच दिवशी अनेक सारख्या strikes ने आकडे फुगू नयेत; हा बदल वेगासाठीही आवश्यक होता.
+- Verdict नियम: PBO > 0.05 ⇒ REJECT; कोणत्याही गटाचा n < 30 ⇒ REVIEW; IS edge > 0 आणि z ≥ 2 आणि VAL edge > 0 ⇒ KEEP.
+
+**निकाल:** एकाही level engine ला random पेक्षा edge नाही (|z| < 1.8). T2.4 ताकद मदत करत नाही. Option strikes zone मुळे सुरक्षित नाहीत. STRONG/WEAK leg REJECT. HEALTHY pullback REVIEW (नमुना लहान).
+
+**CI नोंद:** PR #243 चा एक CI run IST मध्यरात्री (23:59→00:05) fail झाला; त्याच code वरचा re-run हिरवा.
+Log blob मिळत नाही ⇒ कोणती test ते कळलं नाही. Date-rollover वर अवलंबून असलेली एखादी जुनी test असावी — **उघडा प्रश्न**.
+
+**G2 — तुमचा निर्णय हवा:**
+- (1) T4 (one level truth / approach gate / credit-spread filter) थांबवायचा का? माझी शिफारस: होय — पुरावा नाही.
+- (2) HEALTHY-pullback आणि "retested zone" ही दोन गृहीतकं मोठ्या डेटावर तपासायची का?
+- (3) T5 (order-type तपासणी, फक्त अहवाल + default-off marketable-LIMIT) G2 पासून स्वतंत्र आहे — सुरू करायचा का?

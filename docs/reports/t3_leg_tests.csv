@@ -1,0 +1,3 @@
+period,n_strong,fwd_strong,n_weak,fwd_weak,fwd_random_momentum,strong_minus_weak,p_perm,n_healthy,resume_healthy,n_danger,resume_danger,healthy_minus_danger,p_perm_pullback
+IS,519,0.194,529,-0.148,0.18,0.342,0.055,22,0.909,1501,0.658,0.251,0.007
+VAL,180,-0.1,166,-0.09,0.088,-0.01,0.5297,5,1.0,496,0.651,,
