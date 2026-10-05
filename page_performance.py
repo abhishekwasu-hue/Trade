@@ -159,14 +159,14 @@ _ENTRY_REASON_TAG_LABELS_MR = {
     # Trade Log दोन्हीत वापरलं जाणारं) कधीच अपडेट झालं नव्हतं, अजूनही जुनंच, दिशाभूल करणारं वर्तन दाखवत होतं.
     "BREAKOUT_ENTRY": "💥 Breakout Entry (5-मिनिट candle close, buffer% सह)",
     "IV_BREAKOUT_DIRECTIONAL": "📈 IV Breakout Directional (trend-continuation, reversal नाही)",
-    "CANDLE_CONFIRM": "MCX Candlestick Confirmation (Hammer/Engulfing) — लगेचचा भाग",
-    "CANDLE_PULLBACK_50": "MCX Candlestick Confirmation — भाग 2 (confirmation candle चा 50% pullback)",
+    "CANDLE_CONFIRM": "MCX Candle Confirmation (rejection score) — लगेचचा भाग",
+    "CANDLE_PULLBACK_50": "MCX Candle Confirmation — भाग 2 (rejection candle चा 50% pullback)",
 }
 _ENTRY_REASON_TAG_LABELS_EN = {
     "BREAKOUT_ENTRY": "Breakout Entry (5-min candle close, with buffer%)",
     "IV_BREAKOUT_DIRECTIONAL": "IV Breakout Directional (trend-continuation, not reversal)",
-    "CANDLE_CONFIRM": "MCX Candlestick Confirmation (Hammer/Engulfing) - immediate part",
-    "CANDLE_PULLBACK_50": "MCX Candlestick Confirmation - part 2 (50% pullback of the confirmation candle)",
+    "CANDLE_CONFIRM": "MCX Candle Confirmation (rejection score) - immediate part",
+    "CANDLE_PULLBACK_50": "MCX Candle Confirmation - part 2 (50% pullback of the rejection candle)",
 }
 
 # 🎓 bug-review -- या sources चे trades S/R level touch वरून येत नाहीत (manual / builder / copy), म्हणून त्यांच्या Entry Reason मध्ये "N/A S/R level touch"

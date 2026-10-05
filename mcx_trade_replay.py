@@ -29,6 +29,7 @@ import sys
 import pandas as pd
 
 import mcx_filters as F
+from price_action import candles as PA
 
 MCX_SOURCES = ("mcx_futures", "mcx_futures_srv3_shadow")
 TRADE_COLS = ("trade_id", "symbol", "mode", "source", "strategy", "legs_json", "lots", "lot_size", "net_credit", "entry_time", "exit_time",
@@ -130,12 +131,20 @@ def evaluate_trade(trade, df30, df_day, prior, settings=None):
     c, c_why, c_info = F.cascade_block(d30, direction, level)
     d1, d1_why = F.sl_cooldown_block(prior, t, 60)
     d2, d2_why = F.sl_level_direction_block(prior, t, level, direction)
-    # (e) Candlestick Confirmation: entry च्या वेळी level ला लागून शेवटच्या 2 पूर्ण candles पैकी एकावर दिशेचा pattern होता का (bot सारखाच नियम)
-    tf_choice = s.get("candle_confirm_tf", "ANY")
-    frames = {k: v for k, v in (("30M", d30), ("60M", h1)) if tf_choice in (k, "ANY")}
-    conf = F.find_candle_confirmation(frames, direction, level, 0.10, 2, tuple(s.get("candle_confirm_patterns") or F.CANDLE_PATTERN_GROUPS))
-    e = conf is None
-    e_why = "(e) level ला लागून Hammer/Engulfing confirmation candle नव्हती" if e else None
+    # (e) Candle confirmation (LOGIC-BASED, bot सारखाच नियम): entry च्या वेळी पूर्ण झालेल्या candles वर level ला rejection होतं का.
+    # settings चा mode/k = मुख्य कॉलम; सोबत k = 1.0/1.5 आणि TF 30M/60M variants (replay तुलनेसाठी).
+    frames = {"30M": d30, "60M": h1}
+    trade_tf = trade.get("entry_timeframe")
+
+    def _rej(mode, k):
+        return F.rejection_confirmation(frames, F.candle_tf_for(mode, trade_tf, s), direction, level, dict(s, candle_k=k))
+
+    base_mode, base_k = s.get("candle_tf_mode", "chart"), max(1.0, float(s.get("candle_k", 1.2)))
+    rej = _rej(base_mode, base_k)
+    e = not rej["ok"]
+    e_why = f"(e) candle confirmation नाही — {rej['tf']} {rej['reason']} ({PA.describe(rej)})" if e else None
+    e_variants = {f"e_k{str(kk).replace('.', '')}": not _rej(base_mode, kk)["ok"] for kk in (1.0, 1.2, 1.5)}
+    e_variants.update({f"e_tf_{m}": not _rej(m, base_k)["ok"] for m in ("chart", "30M", "60M")})
     daily_trend = None
     if dd is not None and len(dd) >= 6:
         last5 = dd.tail(6)["close"].to_numpy(float)
@@ -145,7 +154,8 @@ def evaluate_trade(trade, df30, df_day, prior, settings=None):
         "exit_reason": trade.get("exit_reason"), "pnl": trade.get("realized_pnl"), "bars_30m": len(d30),
         "st_1h": dir_1h, "st_4h": dir_4h, "daily_5d": daily_trend,
         "a_both_against": a, "b_htf_against": b, "c_cascade": c, "d_cooldown": d1 or d2,
-        "e_candle": e, "e_pattern": None if conf is None else f"{conf['pattern']} {conf['tf']} {conf['ts']:%H:%M}",
+        "e_candle": e, "e_score": rej["score"], "e_n": rej["n"], "e_sweep": bool(rej.get("sweep")), "e_label": rej.get("label"),
+        "e_tf": rej["tf"], "e_reason": rej["reason"], **e_variants,
         "c_broken_level": c_info.get("broken_level"), "c_choch_level": c_info.get("choch_level"),
         "reasons": " | ".join(x for x in (a_why, b_why if b and not a else None, c_why, d1_why, d2_why, e_why) if x),
     }
@@ -170,6 +180,48 @@ def summarize(rows):
                 "वाचलेला तोटा ₹": round(float(-df.loc[blk & loss, "pnl"].astype(float).sum()), 0),
                 "गमावलेला नफा ₹": round(float(df.loc[blk & ~loss, "pnl"].astype(float).sum()), 0)})
     return pd.DataFrame(out)
+
+
+def _is_oos_split(df, is_frac=0.6):
+    """तारखेनुसार: पहिले is_frac दिवस IS, उरलेले OOS (एकाच दिवसाचे trades एकाच बाजूला)."""
+    days = sorted(pd.to_datetime(df["entry_time"]).dt.normalize().unique())
+    cut = days[max(0, int(round(len(days) * is_frac)) - 1)] if days else None
+    return pd.to_datetime(df["entry_time"]).dt.normalize().le(cut).map({True: "IS", False: "OOS"}) if cut is not None else "IS"
+
+
+def _agg(part):
+    pnl = part["pnl"].astype(float)
+    return {"trades": int(len(part)), "win%": round(float((pnl > 0).mean() * 100), 1) if len(part) else None, "P&L ₹": round(float(pnl.sum()), 0)}
+
+
+def candle_report(rows):
+    """(e) candle confirmation चे replay तक्ते — IS/OOS वेगळे. रिटर्न {नाव: DataFrame}. लहान sample — फक्त दिशादर्शक."""
+    df = pd.DataFrame([r for r in rows if "e_candle" in r])
+    if df.empty:
+        return {}
+    df["set"] = _is_oos_split(df)
+    out = {}
+    var = []
+    for name, blk in (("candle gate एकटा", df["e_candle"]), ("4H trend filter एकटा", df["b_htf_against"]),
+                      ("दोन्ही एकत्र", df["e_candle"].astype(bool) | df["b_htf_against"].astype(bool)), ("कुठलाही filter नाही", pd.Series(False, index=df.index))):
+        for st in ("IS", "OOS"):
+            part = df[(df["set"] == st) & ~blk.astype(bool)]
+            var.append({"variant": name, "set": st, **_agg(part), "अडले": int(((df["set"] == st) & blk.astype(bool)).sum())})
+    out["variants (शिल्लक trades)"] = pd.DataFrame(var)
+    passed = df[~df["e_candle"].astype(bool)].copy()
+    if len(passed):
+        passed["score bucket"] = pd.cut(passed["e_score"].astype(float), [0, 74.999, 101], labels=["60–74", "75+"])
+        passed["sweep"] = passed["e_sweep"].map({True: "sweep", False: "sweep नाही"})
+        for col in ("score bucket", "e_n", "sweep"):
+            rows_ = [{col: key, "set": st, **_agg(g)} for (key, st), g in passed.groupby([col, "set"], observed=True)]
+            out[f"पास झालेले — {col}"] = pd.DataFrame(rows_)
+    for prefix, label in (("e_k", "k"), ("e_tf_", "TF mode")):
+        rows_ = []
+        for col in [c for c in df.columns if c.startswith(prefix)]:
+            for st in ("IS", "OOS"):
+                rows_.append({label: col[len(prefix):], "set": st, **_agg(df[(df["set"] == st) & ~df[col].astype(bool)])})
+        out[f"{label} variants (पास झालेले)"] = pd.DataFrame(rows_)
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -338,6 +390,10 @@ def main(argv=None, fetch=None, token=None, db_path=None, settings=None, today=N
             print(summ.to_string(index=False))
             print("(e) फक्त 'जुने trades या gate मधून गेले असते का' हे सांगतो; gate मुळे उशिरा होणाऱ्या entries आणि 50/50 pullback चा "
                   "परिणाम इथे दिसत नाही — तो फक्त पुढच्या PAPER trading मधून.")
+            for idx, (name, tbl) in enumerate(candle_report(summ_rows).items(), start=1):
+                print(f"\n=== (e{idx}) {name} — IS = पहिले 60% दिवस, OOS = उरलेले ===")
+                print(tbl.to_string(index=False))
+                tbl.to_csv(os.path.join(args.out, f"replay_{sym}_candle_{idx}.csv"), index=False)
 
     for tr in (trades if args.trade_id else []):
         back = (pd.Timestamp(today) - pd.Timestamp(tr["exit_time"] or tr["entry_time"]).normalize()).days + 2

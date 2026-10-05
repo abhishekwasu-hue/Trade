@@ -311,6 +311,13 @@ def build_lightweight_chart_html(
             if idx >= len(df):
                 continue
             row = df.iloc[idx]
+            if isinstance(pattern, dict):     # 🎓 rejection-score marker (price_action.candles.scan_markers): {"bullish", "text"}
+                marker_data.append({
+                    "time": _to_unix_time(row["timestamp"]), "position": "belowBar" if pattern.get("bullish") else "aboveBar",
+                    "color": "#089981" if pattern.get("bullish") else "#F23645",
+                    "shape": "arrowUp" if pattern.get("bullish") else "arrowDown", "text": str(pattern.get("text", "")),
+                })
+                continue
             if pattern == "HAMMER":
                 marker_data.append({
                     "time": _to_unix_time(row["timestamp"]), "position": "belowBar",

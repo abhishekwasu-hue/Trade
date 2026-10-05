@@ -676,12 +676,13 @@ STRATEGY_SETTINGS_DEFAULTS = {
         "sl_level_direction_block_enabled": True,
         # 30M close ने तुटलेल्या support खालच्या level वर LONG (resistance वरच्या level वर SHORT) फक्त 30M CHoCH नंतर. डीफॉल्ट बंद.
         "cascade_filter_enabled": False,
-        # 🎓 Candlestick Confirmation (वापरकर्त्याचा plan, 5 Oct): level ला लागून शेवटच्या 2 पूर्ण candles पैकी एकावर Hammer/Bullish Engulfing
-        # (support) किंवा Shooting Star/Bearish Engulfing (resistance) झाला तरच entry. lots ≥ 2 ⇒ 50% लगेच + 50% त्या candle च्या 50% pullback
-        # वर (मुदत पुढच्या 2 candles). डीफॉल्ट बंद. TF: "30M" | "60M" | "ANY" (कोणताही एक). patterns: "HAMMER" (Hammer/Shooting Star), "ENGULFING".
+        # 🎓 Candle confirmation gate — LOGIC-BASED (price_action/candles.py): level ला लागून शेवटच्या N=1–3 पूर्ण candles च्या composite candle
+        # ने किंमत नाकारली (touch + reclaim + strength + rejection_score ≥ candle_min_score) तरच entry. SL = composite low − 0.05% (कमाल = settings
+        # SL); lots ≥ 2 ⇒ 50% लगेच + 50% composite च्या 50% pullback वर. डीफॉल्ट बंद. candle_tf_mode: "chart" (level च्या TF वर) | "30M" | "60M".
         "candle_confirm_enabled": False,
-        "candle_confirm_tf": "ANY",
-        "candle_confirm_patterns": ["HAMMER", "ENGULFING"],
+        "candle_tf_mode": "chart",
+        "candle_k": 1.2,                 # range ≥ k × median_range (किमान 1.0)
+        "candle_min_score": 60,
         # 🎓 Contract roll (सर्व MCX commodities) — front-month चे उरलेले ट्रेडिंग दिवस (आज ते expiry, दोन्ही धरून) ≤ इतके झाले की पुढचा
         # contract. resolver हा आकडा staggered delivery period + 1 पेक्षा कधीच कमी होऊ देत नाही (GOLD/SILVER/COPPER: किमान 4).
         "roll_trading_days_before_expiry": 6,
