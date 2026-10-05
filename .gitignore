@@ -56,5 +56,6 @@ data/oe_visual_*.jsonl
 data/oe_visual_*.jsonl.batches.json
 # MCX contract-roll / SR V3 refresh state (स्थानिक, प्रत्येक VPS चं स्वतःचं)
 data/mcx_contract_state.json
+data/mcx_levels_contract.json
 data/mcx_srv3_refresh.json
 data/srv3_shadow_refresh.json

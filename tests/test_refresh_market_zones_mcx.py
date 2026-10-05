@@ -9,8 +9,14 @@ refresh_market_zones_mcx.py — tests/test_refresh_market_zones.py (TestFetchCan
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 import refresh_market_zones_mcx as rmzm
+
+
+@pytest.fixture(autouse=True)
+def _isolated_levels_contract_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(rmzm, "LEVELS_CONTRACT_STATE", str(tmp_path / "levels_contract.json"))   # repo च्या data/ मध्ये फाईल नको
 
 
 def _fake_candles_df(n=150, base=6500.0):
