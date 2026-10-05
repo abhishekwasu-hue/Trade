@@ -20,6 +20,8 @@ cloud_db.save_market_zones()/get_market_zones() दोन्ही symbol-scoped
     python3 refresh_market_zones_mcx.py --token <UPSTOX_TOKEN>
 """
 import argparse
+import json
+import os
 import sys
 
 import pandas as pd
@@ -32,6 +34,29 @@ from sr_dynamic import compute_dynamic_sr
 from upstox_api import fetch_mcx_candles
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
+
+
+# 🎓 Level memory सुरक्षितता: कोणत्या contract वरून levels साठवले ते (symbol -> trading_symbol). contract बदलला (roll) किंवा नोंदच नाही
+# (पहिली run) ⇒ memory reset — जुन्या contract चे levels calendar spread मुळे नव्या contract वर चुकीच्या किंमतीवर पडतात. bot चा
+# check_contract_roll symbol बंद असताना चालत नाही, म्हणून ही तपासणी refresh मध्येच.
+LEVELS_CONTRACT_STATE = os.path.join("data", "mcx_levels_contract.json")
+
+
+def _load_contract_state(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_contract_state(state, path):
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=1)
+    except OSError:
+        pass
 
 
 DYNAMIC_TYPES = ("DYNAMIC_SR_SUPPORT_30M", "DYNAMIC_SR_RESISTANCE_30M", "DYNAMIC_SR_SUPPORT_60M", "DYNAMIC_SR_RESISTANCE_60M")
@@ -73,7 +98,7 @@ def _rows_for(suffix, dyn_sr, df, symbol, now_date, use_memory, retire_days):
     return rows, 0
 
 
-def refresh_symbol(access_token, symbol, lookback_days=180, reset=False):
+def refresh_symbol(access_token, symbol, lookback_days=180, reset=False, state_path=None):
     """एका MCX commodity साठी DYNAMIC_SR_*_30M/*_60M zones — resolve_symbol() ने current
     continuous contract शोधून, त्याचेच 30M candles (व त्यांच्याच resample वरून 60M) वापरून.
     lookback_days=180 — refresh_market_zones.py च्या df_30m_recent/df_60m_recent इतकाच (TradingView
@@ -96,7 +121,11 @@ def refresh_symbol(access_token, symbol, lookback_days=180, reset=False):
     df_60m = resample_to_1h(df_30m)
     now_date = df_30m["timestamp"].iloc[-1]
     memory_on, retire_days = _memory_settings(symbol)
-    use_memory = memory_on and not reset
+    state_path = state_path or LEVELS_CONTRACT_STATE
+    contract_state = _load_contract_state(state_path)
+    contract = resolved.get("trading_symbol") or instrument_key
+    contract_changed = contract_state.get(symbol) != contract          # roll किंवा पहिली नोंद ⇒ memory reset
+    use_memory = memory_on and not reset and not contract_changed
 
     rows, remembered = [], 0
     dyn_sr_30m = compute_dynamic_sr(df_30m, prd=10, maxnumpp=20, channel_w_pct=10, maxnumsr=5, min_strength=2)
@@ -116,8 +145,12 @@ def refresh_symbol(access_token, symbol, lookback_days=180, reset=False):
     saved = cloud_db.save_market_zones(zones_df, symbol, scoped=True, zone_types=list(DYNAMIC_TYPES))
     if not saved:
         return False, f"{symbol}: Supabase मध्ये साठवता आलं नाही (जोडणी तपासा)"
+    contract_state[symbol] = contract
+    _save_contract_state(contract_state, state_path)
     mem = (f"; level memory: {remembered} जुने levels त्याच किंमतीवर ठेवले" if use_memory
-           else ("; contract roll — जुने levels विसरले" if reset else "; level memory बंद"))
+           else ("; contract roll — जुने levels विसरले" if reset else
+                 (f"; contract {contract} (नवा/पहिली नोंद) — जुने levels विसरले, memory पुढच्या refresh पासून" if contract_changed
+                  else "; level memory बंद")))
     return True, f"{symbol} ({resolved['trading_symbol']}): {len(zones_df)} zones साठवले (30M+60M){mem}"
 
 

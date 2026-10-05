@@ -1,8 +1,11 @@
 """tests/test_level_memory.py -- MCX Dynamic S/R level memory: महत्त्वाचे levels त्याच किंमतीवर राहतात (network/DB-मुक्त)."""
 from unittest.mock import patch
 
+import json
+
 import numpy as np
 import pandas as pd
+import pytest
 
 import level_memory as LM
 import refresh_market_zones_mcx as rmzm
@@ -76,7 +79,15 @@ def _osc(n=300, base=288.0):
     return df
 
 
-def test_refresh_symbol_keeps_remembered_level_and_scopes_delete():
+@pytest.fixture
+def mcx_state(tmp_path):
+    path = str(tmp_path / "levels_contract.json")
+    with open(path, "w") as f:
+        json.dump({"NATURALGAS": "NATURALGAS FUT 27 OCT 26"}, f)
+    return path
+
+
+def test_refresh_symbol_keeps_remembered_level_and_scopes_delete(mcx_state):
     df = _osc()
     old = pd.DataFrame([{"symbol": "NATURALGAS", "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 299.5, "zone_high": 299.5, "strength": 4,
                          "formed_date": pd.Timestamp(df["timestamp"].iloc[-20]), "status": "ACTIVE"}])
@@ -85,14 +96,14 @@ def test_refresh_symbol_keeps_remembered_level_and_scopes_delete():
          patch.object(rmzm.cloud_db, "get_strategy_settings", return_value={}), \
          patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
          patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
-        ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS")
+        ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", state_path=mcx_state)
     saved = save.call_args.args[0]
     assert ok and "level memory" in msg
     assert 299.5 in set(saved.loc[saved["zone_type"] == "DYNAMIC_SR_RESISTANCE_30M", "zone_low"])
     assert save.call_args.kwargs["scoped"] is True and set(save.call_args.kwargs["zone_types"]) == set(rmzm.DYNAMIC_TYPES)
 
 
-def test_refresh_symbol_reset_and_disabled_forget_old_levels():
+def test_refresh_symbol_reset_and_disabled_forget_old_levels(mcx_state):
     df = _osc()
     old = pd.DataFrame([{"symbol": "NATURALGAS", "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 299.5, "zone_high": 299.5, "strength": 4,
                          "formed_date": pd.Timestamp(df["timestamp"].iloc[-20]), "status": "ACTIVE"}])
@@ -102,7 +113,7 @@ def test_refresh_symbol_reset_and_disabled_forget_old_levels():
              patch.object(rmzm.cloud_db, "get_strategy_settings", return_value=settings), \
              patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
              patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
-            ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", **kwargs)
+            ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", state_path=mcx_state, **kwargs)
         assert ok and note in msg and 299.5 not in set(save.call_args.args[0]["zone_low"])
 
 
@@ -172,3 +183,33 @@ def test_refresh_5m_uses_memory_when_enabled():
         ok, _ = r5.refresh_symbol_5m("tok", "NIFTY")
     passed = merge.call_args.args[1]
     assert ok and 24509.0 in [z["level"] for z in passed["resistance"] + passed["support"]]
+
+
+def test_refresh_symbol_resets_memory_when_contract_changes_or_first_run(tmp_path):
+    df = _osc()
+    old = pd.DataFrame([{"symbol": "NATURALGAS", "zone_type": "DYNAMIC_SR_RESISTANCE_30M", "zone_low": 299.5, "zone_high": 299.5, "strength": 4,
+                         "formed_date": pd.Timestamp(df["timestamp"].iloc[-20]), "status": "ACTIVE"}])
+    path = str(tmp_path / "s.json")
+    with open(path, "w") as f:
+        json.dump({"NATURALGAS": "NATURALGAS FUT 25 SEP 26"}, f)                    # जुना contract ⇒ roll झाला
+    for _ in range(2):                                                              # 1: roll ⇒ reset; 2: त्याच contract ⇒ memory
+        with patch.object(rmzm.mcx_resolver, "resolve_symbol", return_value=_resolved()), \
+             patch.object(rmzm, "fetch_mcx_candles", return_value=df), \
+             patch.object(rmzm.cloud_db, "get_strategy_settings", return_value={}), \
+             patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
+             patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
+            ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", state_path=path)
+        levels = set(save.call_args.args[0]["zone_low"])
+        if _ == 0:
+            assert ok and "जुने levels विसरले" in msg and 299.5 not in levels
+        else:
+            assert ok and "त्याच किंमतीवर" in msg and 299.5 in levels
+    assert json.load(open(path))["NATURALGAS"] == "NATURALGAS FUT 27 OCT 26"
+    first = str(tmp_path / "none.json")                                             # नोंदच नाही ⇒ reset
+    with patch.object(rmzm.mcx_resolver, "resolve_symbol", return_value=_resolved()), \
+         patch.object(rmzm, "fetch_mcx_candles", return_value=df), \
+         patch.object(rmzm.cloud_db, "get_strategy_settings", return_value={}), \
+         patch.object(rmzm.cloud_db, "get_market_zones", return_value=old), \
+         patch.object(rmzm.cloud_db, "save_market_zones", return_value=True) as save:
+        ok, msg = rmzm.refresh_symbol("tok", "NATURALGAS", state_path=first)
+    assert 299.5 not in set(save.call_args.args[0]["zone_low"])
