@@ -44,7 +44,7 @@ from live_ticker import render_live_ticker
 from mini_chart import render_mini_charts
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
-    BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, level_lines, rsi_gate_line, rsi_threshold_values,
+    BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, leg_overlay, level_lines, rsi_gate_line, rsi_threshold_values,
     mcx_level_suffixes, rejection_markers, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
@@ -1219,6 +1219,8 @@ def render():
                 # 🎓 "Bot view" -- निवडलेल्या bot चे प्रत्यक्ष ACTIVE levels (+आजचे hits), त्याचे RSI/Supertrend आणि गेट-स्थिती; डीफॉल्ट: काहीच नाही (जुना चार्ट).
                 bot_choice = st.selectbox("Bot view:", [NO_BOT] + list(NSE_BOTS) + [V3_VIEW], index=0, key=f"tv_bot_view_{symbol}")
             ind_params = chart_indicator_controls("tv_chart_ind")
+            # 🎓 T2 legs overlay (डीफॉल्ट बंद; फक्त दाखवण्यासाठी — bots वर परिणाम नाही)
+            show_legs = st.checkbox("Legs (impulse / pullback लेबल)", value=False, key=f"tv_legs_{symbol}")
             if chart_symbol == symbol and chart_tf == timeframe_option:
                 chart_df, chart_spot = df_candles, underlying_price
             else:
@@ -1371,6 +1373,14 @@ def render():
                     bot_note = f"Bot view लोड करता आला नाही ({type(_bve).__name__}) — साधा चार्ट दाखवला आहे."
             # 🎓 EMA / VWAP / Bollinger / ADX -- chart toolbar वर on/off बटणं (डीफॉल्ट सर्व बंद); periods वरच्या ओळीत बदलता येतात.
             chart_indicators = compute_chart_indicators(chart_df, intraday=chart_tf != "day", **ind_params) if not chart_df.empty else {}
+            leg_segs = []
+            if show_legs and not chart_df.empty:
+                try:
+                    leg_segs, leg_cap = leg_overlay(chart_df, chart_tf, get_ist_now())
+                    if leg_cap:
+                        st.caption(leg_cap)
+                except Exception as _lge:          # overlay अयशस्वी ⇒ साधा चार्ट (कारण दाखवून)
+                    st.caption(f"Legs overlay तयार करता आला नाही ({type(_lge).__name__}).")
             tv_html = build_lightweight_chart_html(
                 chart_df, symbol=chart_symbol, timeframe_label=chart_tf,
                 supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
@@ -1378,7 +1388,7 @@ def render():
                 supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
                 rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
                 indicators=chart_indicators, live_tf_seconds=infer_tf_seconds(chart_df),
-                trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels,
+                trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels, legs=leg_segs or None,
             )
             # 🎓 Live updates -- दर 3 सेकंदांनी शेवटची candle (REST LTP; बघा live_chart.py). Daily/डेटा नसेल तर साधा स्थिर चार्ट.
             if infer_tf_seconds(chart_df) and token_input:
