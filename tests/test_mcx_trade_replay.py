@@ -170,15 +170,19 @@ def test_forensics_trailing_searches_after_peak_and_reports_gap():
     assert fz["price_before_cross"] == 146950.0 and fz["cross_open"] == 147693.0 and fz["gap_points"] == 743.0
 
 
-def test_candle_confirmation_column_uses_only_bars_before_entry():
-    df30 = _df30([105.0] * 10, start="2026-10-05 09:00")
-    # 12:30 लाल candle + 13:00 Hammer (low 94, close 101) — support 100 ला लागून
-    df30.loc[7, ["open", "high", "low", "close"]] = [104.0, 105.0, 100.5, 101.0]
-    df30.loc[8, ["open", "high", "low", "close"]] = [100.0, 101.5, 94.0, 101.0]
-    tr = {"trade_id": "X", "entry_time": "2026-10-05 13:40:00", "direction": "BULLISH", "entry_level_price": 100.0,
-          "exit_reason": "SL", "realized_pnl": -10}
-    row = R.evaluate_trade(tr, df30, None, [], {"candle_confirm_tf": "30M"})
-    assert row["e_candle"] is False and row["e_pattern"].startswith("HAMMER 30M 13:00")
-    early = R.evaluate_trade({**tr, "entry_time": "2026-10-05 13:20:00"}, df30, None, [], {"candle_confirm_tf": "30M"})
-    assert early["e_candle"] is True and "(e)" in early["reasons"]          # 13:00 ची candle 13:30 ला पूर्ण -- आधी दिसू नये
+def test_candle_confirmation_columns_and_report_use_only_bars_before_entry():
+    # 22 base candles (range 2, level पासून दूर) + 13:30 ला support 100 वर खोल wick ची rejection candle (low 97.5, close 100.6)
+    base = [(105.0, 106.0, 104.0, 105.2)] * 22 + [(100.2, 100.8, 97.5, 100.6)] + [(100.6, 101.0, 100.2, 100.8)] * 3
+    ts = pd.date_range("2026-10-05 09:00", periods=len(base), freq="30min")
+    df30 = pd.DataFrame([{"timestamp": t, "open": o, "high": h, "low": l, "close": c, "volume": 0, "oi": 0} for t, (o, h, l, c) in zip(ts, base)])
+    t_rej = ts[22]
+    tr = {"trade_id": "X", "entry_time": str(t_rej + pd.Timedelta(minutes=31)), "direction": "BULLISH", "entry_level_price": 100.0,
+          "entry_timeframe": "30M", "exit_reason": "SL", "realized_pnl": -10}
+    row = R.evaluate_trade(tr, df30, None, [], {})
+    assert row["e_candle"] is False and row["e_n"] == 1 and row["e_tf"] == "30M" and row["e_score"] >= 60
+    assert {"e_k10", "e_k12", "e_k15", "e_tf_chart", "e_tf_30M", "e_tf_60M"} <= set(row)
+    early = R.evaluate_trade({**tr, "trade_id": "Y", "entry_time": str(t_rej + pd.Timedelta(minutes=20)), "realized_pnl": 5}, df30, None, [], {})
+    assert early["e_candle"] is True and "(e)" in early["reasons"]          # ती candle अजून पूर्ण नव्हती — दिसू नये (no-lookahead)
+    rep = R.candle_report([row, early])
+    assert "variants (शिल्लक trades)" in rep and set(rep["variants (शिल्लक trades)"]["set"]) <= {"IS", "OOS"}
     assert "(e) candle confirmation" in set(R.summarize([row, early])["नियम"])

@@ -213,3 +213,14 @@ def supertrend_gate_line(bot, settings, dirs, specs=None):
         f"Supertrend filter: {state} · {shown} → Bullish {'✅' if ok_bull else '❌ थांबेल'} · Bearish {'✅' if ok_bear else '❌ थांबेल'}"
         + ("" if supertrend_filter_enabled(bot, settings) else " (filter बंद असल्याने प्रत्यक्षात काहीही थांबत नाही)")
     )
+
+
+def rejection_markers(chart_df, level_prices, settings):
+    """🎓 Candle confirmation (MCX): **दाखवलेल्या** chart TF च्या पूर्ण candles वर bot च्या levels जवळचे rejection markers + score
+    (price_action.candles.scan_markers). चार्टची शेवटची (चालू) candle वगळली. फक्त दाखवण्यासाठी — bot चा निर्णय नेहमी level च्या TF वर."""
+    from price_action import candles as PA
+    if chart_df is None or len(chart_df) < 2 or not level_prices:
+        return []
+    s = settings or {}
+    return PA.scan_markers(chart_df.iloc[:-1].reset_index(drop=True), level_prices, k=max(1.0, float(s.get("candle_k", 1.2))),
+                           min_score=float(s.get("candle_min_score", 60)))

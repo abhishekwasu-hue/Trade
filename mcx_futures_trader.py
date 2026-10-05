@@ -87,6 +87,7 @@ from trading_engine import open_multi_leg_trade, manage_open_trades, format_trad
 from upstox_api import fetch_mcx_candles, fetch_broker_positions
 import srv3_instant_shadow as SRV3
 import mcx_filters as MF
+from price_action import candles as PA
 from sr_levels_v3 import SRConfig
 
 MCX_FUTURES_SYMBOLS = mcx_resolver.MCX_FUTURES_SYMBOLS
@@ -397,11 +398,11 @@ def fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=15
     return df[df["timestamp"] + pd.Timedelta(minutes=30) <= now_ts].reset_index(drop=True)
 
 
-# 🎓 Candlestick Confirmation (वापरकर्त्याचा plan, 5 Oct) — बघा mcx_filters.find_candle_confirmation. State: वापरलेले patterns (एकच pattern
-# दोनदा trade नाही) आणि प्रतीक्षेतला "भाग 2" (confirmation candle च्या 50% pullback वर उरलेले lots). फक्त entry-process वाचतो/लिहितो.
+# 🎓 Candle confirmation gate (LOGIC-BASED; नियम price_action/candles.py, बघा mcx_filters.rejection_confirmation). State: वापरलेल्या
+# rejection windows (एकच rejection दोनदा trade नाही — overlap झाली तरी) आणि प्रतीक्षेतला "भाग 2" (composite candle च्या 50% pullback वर
+# उरलेले lots, भाग 1 चाच structure SL). फक्त entry-process वाचतो/लिहितो.
 CANDLE_STATE = os.path.join("data", "mcx_candle_confirm.json")
-CANDLE_LOOKBACK = 2                 # शेवटच्या 2 पूर्ण candles पैकी
-CANDLE_PULLBACK_EXPIRY_CANDLES = 2  # भाग 2 ची मुदत: confirmation candle नंतर पुढच्या 2 candles (त्याच TF च्या)
+CANDLE_PULLBACK_EXPIRY_CANDLES = 2  # भाग 2 ची मुदत: composite window च्या शेवटच्या candle नंतर पुढच्या 2 candles (त्याच TF च्या)
 
 
 def _candle_state_load(path=None):
@@ -417,12 +418,26 @@ def _candle_key(symbol, source):
 
 
 def _candle_used_id(level_price, conf):
-    return f"{round(float(level_price), 2)}|{conf['tf']}|{pd.Timestamp(conf['ts']).isoformat()}"
+    comp = conf["composite"]
+    return f"{round(float(level_price), 2)}|{conf['tf']}|{pd.Timestamp(comp['ts_start']).isoformat()}|{pd.Timestamp(comp['ts_end']).isoformat()}"
+
+
+def _candle_already_used(used_ids, level_price, conf):
+    """त्याच level+TF वरची आधी trade झालेली window या window शी overlap होते का (नवी window नेहमी सर्वात शेवटच्या candle ला संपते,
+    म्हणून overlap ⇔ नव्या window ची सुरुवात ≤ जुन्या window चा शेवट) — N=1 नंतर N=2 मध्ये तोच rejection पुन्हा trade नको."""
+    prefix = f"{round(float(level_price), 2)}|{conf['tf']}|"
+    start = pd.Timestamp(conf["composite"]["ts_start"])
+    for uid in used_ids or []:
+        if uid.startswith(prefix):
+            parts = uid.split("|")
+            if len(parts) == 4 and start <= pd.Timestamp(parts[3]):
+                return True
+    return False
 
 
 def fetch_candle_confirm_frames(access_token, instrument_key, now, tf_choice):
     """Candle confirmation साठी `now` पर्यंत **पूर्ण** झालेले 30M (आणि त्यावरून 60M, 09:00 पासूनचे तास) bars. डेटा नाही ⇒ {}."""
-    df30 = fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=3)
+    df30 = fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=6)      # median_range साठी ≥ 20 + 4 candles
     if df30 is None or df30.empty:
         return {}
     frames = {}
@@ -493,8 +508,9 @@ def _open_futures_trade(access_token, symbol, settings, resolved, direction, pri
 
 
 def process_candle_pending(access_token, symbol, source, settings, resolved, now, shadow=False, state_path=None):
-    """प्रतीक्षेतला "भाग 2" (confirmation candle च्या 50% pullback वर उरलेले lots). रिटर्न (still_pending: bool, message|None).
-    रद्द: मुदत संपली / नवीन-entry वेळ संपली / भाग 1 बंद झाला / 30M close ने level तुटला. भरला: भाव pullback पर्यंत आला ⇒ स्वतंत्र SL/Target सह trade."""
+    """प्रतीक्षेतला "भाग 2" (composite rejection candle च्या 50% pullback वर उरलेले lots). रिटर्न (still_pending: bool, message|None).
+    रद्द: मुदत संपली / नवीन-entry वेळ संपली / भाग 1 बंद झाला / भाव structure SL पलीकडे / 30M close ने level तुटला. भरला: भाव pullback पर्यंत
+    आला ⇒ भाग 1 चाच SL **भाव** (अंतर नव्या entry पासून), target settings प्रमाणे स्वतःच्या entry पासून."""
     state = _candle_state_load(state_path)
     key = _candle_key(symbol, source)
     p = (state.get("pending") or {}).get(key)
@@ -507,6 +523,8 @@ def process_candle_pending(access_token, symbol, source, settings, resolved, now
         send_telegram_message(f"🕯️ {symbol} MCX — भाग 2 रद्द: {msg}")
         return False, f"{symbol}: 🕯️ भाग 2 रद्द — {msg}"
 
+    if "sl" not in p:                                    # जुन्या (pattern-नाव) gate चा pending — नव्या नियमांत SL भाव नाही
+        return _drop("जुन्या gate चा pending — नव्या rejection-score नियमांनुसार रद्द")
     now_naive = pd.Timestamp(now).tz_localize(None) if pd.Timestamp(now).tzinfo else pd.Timestamp(now)
     if now_naive >= pd.Timestamp(p["expires"]):
         return _drop(f"मुदत संपली ({pd.Timestamp(p['expires']):%H:%M}) — भाव {p['pullback']:.2f} पर्यंत परत आला नाही")
@@ -518,6 +536,8 @@ def process_candle_pending(access_token, symbol, source, settings, resolved, now
     if df is None or df.empty:
         return True, f"{symbol}: 🕯️ भाग 2 प्रतीक्षेत ({p['lots']} lot @ {p['pullback']:.2f}) — भाव मिळाला नाही"
     price = float(df["close"].iloc[-1])
+    if PA.sl_distance(price, p["sl"], p["direction"]) <= 0:
+        return _drop(f"भाव {price:.2f} ने structure SL {p['sl']:.2f} ओलांडला")
     done = fetch_completed_30m_bars(access_token, resolved["instrument_key"], now, lookback_days=2)
     band = float(p["level"]) * TOUCH_TOLERANCE_PCT / 100
     if done is not None and not done.empty and pd.Timestamp(done["timestamp"].iloc[-1]) >= pd.Timestamp(p["candle_ts"]):
@@ -526,13 +546,13 @@ def process_candle_pending(access_token, symbol, source, settings, resolved, now
             return _drop(f"30M close {last_close:.2f} ने level {p['level']:.2f} तोडला")
     if not MF.pullback_reached(p["direction"], price, p["pullback"]):
         return True, f"{symbol}: 🕯️ भाग 2 प्रतीक्षेत ({p['lots']} lot @ {p['pullback']:.2f}, भाव {price:.2f}, मुदत {pd.Timestamp(p['expires']):%H:%M})"
-    sl_pts, tgt_pts = _sl_target_points(settings, price)
+    sl_pts, tgt_pts = PA.sl_distance(price, p["sl"], p["direction"]), _sl_target_points(settings, price)[1]
     status = _open_futures_trade(access_token, symbol, settings, resolved, p["direction"], price, int(p["lots"]), sl_pts, tgt_pts,
                                  float(p["level"]), p["timeframe_suffix"], source, shadow, entry_reason_tag="CANDLE_PULLBACK_50")
     state.get("pending", {}).pop(key, None)
     _candle_state_save(state, state_path)
     msg = (f"🕯️ {symbol} MCX — भाग 2 (50% pullback {p['pullback']:.2f}) {'BUY' if p['direction'] == 'BULLISH' else 'SELL'} "
-           f"{p['lots']} lot @≈{price:.2f} | {p['pattern']} {p['tf']} @ level {p['level']:.2f} | निकाल: {status}")
+           f"{p['lots']} lot @≈{price:.2f} (SL {p['sl']:.2f}) | {p.get('label') or ''} {p['tf']} @ level {p['level']:.2f} | निकाल: {status}")
     send_telegram_message(msg)
     return False, f"{symbol}: {msg}"
 
@@ -585,8 +605,7 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     sl_level_direction_block_enabled = settings.get("sl_level_direction_block_enabled", True)
     cascade_filter_enabled = settings.get("cascade_filter_enabled", False)
     candle_gate_enabled = bool(settings.get("candle_confirm_enabled", False))
-    candle_tf = settings.get("candle_confirm_tf", "ANY")
-    candle_patterns = tuple(settings.get("candle_confirm_patterns") or MF.CANDLE_PATTERN_GROUPS)
+    candle_tf_mode = settings.get("candle_tf_mode", "chart")
     candle_frames_cache = []          # candle confirmation साठी पूर्ण 30M/60M bars -- lazily, प्रति-cycle एकदाच
     closed_today_cache = []           # आजचे बंद trades (cooldown/level-direction) -- lazily, प्रति-cycle एकदाच
     completed_30m_cache = []          # cascade साठी entry आधीचे पूर्ण 30M bars -- lazily
@@ -680,15 +699,16 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
 
         # 🎓 Candlestick Confirmation: level ला लागून शेवटच्या 2 पूर्ण candles पैकी एकावर दिशेचा pattern असेल तर (भाव आत्ता level जवळ
         # नसला तरी) हा "hit" -- पुढे सर्व gates तसेच लागू. आधीच वापरलेला pattern पुन्हा नाही. Breakout ला लागू नाही.
-        candle_conf = None
+        candle_conf, candle_res, candle_tf = None, None, None
         if candle_gate_enabled and not is_breakout_trade:
             if not candle_frames_cache:
-                candle_frames_cache.append(fetch_candle_confirm_frames(access_token, instrument_key, now, candle_tf))
-            candle_conf = MF.find_candle_confirmation(candle_frames_cache[0], direction, level_price, TOUCH_TOLERANCE_PCT,
-                                                      CANDLE_LOOKBACK, candle_patterns)
-            if candle_conf is not None and _candle_used_id(level_price, candle_conf) in \
-                    (_candle_state_load().get("used") or {}).get(_candle_key(symbol, source), []):
-                candle_conf = None
+                candle_frames_cache.append(fetch_candle_confirm_frames(access_token, instrument_key, now, "ANY"))
+            candle_tf = MF.candle_tf_for(candle_tf_mode, timeframe_suffix, settings)     # bot चा निर्णय नेहमी level च्या TF वर
+            candle_res = MF.rejection_confirmation(candle_frames_cache[0], candle_tf, direction, level_price, settings)
+            if candle_res["ok"] and _candle_already_used((_candle_state_load().get("used") or {}).get(_candle_key(symbol, source)),
+                                                         level_price, candle_res):
+                candle_res = dict(candle_res, ok=False, reason="CANDLE_ALREADY_TRADED")
+            candle_conf = candle_res if candle_res["ok"] else None
             if candle_conf is not None:
                 touched = True
 
@@ -820,24 +840,38 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                 _log(log_entry)
                 continue
 
-        # 🎓 Candlestick Confirmation gate + 50/50: lots ≥ 2 ⇒ ceil(50%) लगेच (भाव confirmation candle च्या range मध्ये असेल तरच) आणि उरलेले
-        # candle च्या 50% pullback वर (process_candle_pending). lots = 1 ⇒ split नाही, पूर्ण quantity लगेच (range मध्ये असेल तरच).
-        lots_now, lots_later = lots, 0
+        # 🎓 Candle confirmation gate (LOGIC-BASED) + 50/50: rejection पास नसेल तर SKIPPED_<कारण>. SL = composite low − 0.05% (bearish: high
+        # + 0.05%), कधीही level च्या चुकीच्या बाजूला नाही; SL अंतर settings च्या SL पेक्षा जास्त ⇒ SKIPPED_CANDLE_SL_TOO_WIDE. lots ≥ 2 ⇒ ceil(50%)
+        # लगेच (chase नियम: entry चं level पासूनचं अंतर ≤ 0.5 × SL अंतर) + उरलेले composite candle च्या 50% pullback वर, दोन्हींचा SL एकच भाव.
+        # lots = 1 ⇒ split नाही; chase अपयशी ⇒ SKIPPED_CANDLE_CHASE.
+        lots_now, lots_later, candle_sl = lots, 0, None
         if candle_gate_enabled and not is_breakout_trade:
+            cdesc = f"{candle_tf} {PA.describe(candle_res)}"
             if candle_conf is None:
-                log_entry["trade_status"] = "SKIPPED_CANDLE_CONFIRMATION"
-                log_entry["reason"] = (f"{'/'.join(['30M', '60M'] if candle_tf == 'ANY' else [candle_tf])}: level ला लागून "
-                                       f"{'Hammer/Bullish Engulfing' if direction == 'BULLISH' else 'Shooting Star/Bearish Engulfing'} "
-                                       f"नाही (शेवटच्या {CANDLE_LOOKBACK} पूर्ण candles) ({timeframe_suffix})")
+                log_entry["trade_status"] = "SKIPPED_" + str(candle_res["reason"])
+                log_entry["reason"] = f"Candle confirmation: {cdesc} ({timeframe_suffix})"
+                _log(log_entry)
+                continue
+            candle_sl = PA.structure_sl(candle_conf)
+            sl_dist = PA.sl_distance(current_price, candle_sl, direction)
+            if sl_dist <= 0:
+                log_entry["trade_status"] = "SKIPPED_CANDLE_INVALIDATED"
+                log_entry["reason"] = f"भाव {current_price:.2f} structure SL {candle_sl:.2f} च्या पलीकडे — {cdesc} ({timeframe_suffix})"
+                _log(log_entry)
+                continue
+            max_sl = _sl_target_points(settings, float(current_price))[0]
+            if sl_dist > max_sl:
+                log_entry["trade_status"] = "SKIPPED_CANDLE_SL_TOO_WIDE"
+                log_entry["reason"] = (f"structure SL {candle_sl:.2f} = {sl_dist:.2f} pts > settings SL {max_sl:.2f} — {cdesc} ({timeframe_suffix})")
                 _log(log_entry)
                 continue
             split = MF.split_lots(lots)
             lots_now, lots_later = split if split else (lots, 0)
-            if not MF.price_inside_candle(current_price, candle_conf):
+            if not PA.chase_ok(current_price, level_price, candle_sl, direction):
                 if not lots_later:
-                    log_entry["trade_status"] = "SKIPPED_CANDLE_PRICE_MOVED_AWAY"
-                    log_entry["reason"] = (f"{candle_conf['pattern']} {candle_conf['tf']} आहे, पण भाव {current_price:.2f} confirmation candle च्या "
-                                           f"range ({candle_conf['low']:.2f}–{candle_conf['high']:.2f}) बाहेर — मागे धावत नाही ({timeframe_suffix})")
+                    log_entry["trade_status"] = "SKIPPED_CANDLE_CHASE"
+                    log_entry["reason"] = (f"entry {current_price:.2f} level पासून {abs(current_price - level_price):.2f} > 0.5 × SL अंतर "
+                                           f"{sl_dist:.2f} — मागे धावत नाही — {cdesc} ({timeframe_suffix})")
                     _log(log_entry)
                     continue
                 lots_now = 0                  # फक्त भाग 2 (pullback) प्रतीक्षेत
@@ -853,6 +887,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         transaction_type = "BUY" if direction == "BULLISH" else "SELL"
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — PERCENT असेल तर entry किंमतीच्या % वरून points-समतुल्य आकडा.
         sl_points_effective, target_points_effective = _sl_target_points(settings, entry_price_estimate)
+        if candle_sl is not None:
+            sl_points_effective = PA.sl_distance(entry_price_estimate, candle_sl, direction)    # structure SL (भाव), settings SL ही कमाल
         target_note = ""
         if settings.get("next_level_target_enabled", False):
             nl = MF.next_level_target(_bot_level_prices(all_zones, active_suffixes, level_source), entry_price_estimate, direction,
@@ -865,8 +901,9 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
 
         candle_note = ""
         if candle_conf is not None:
-            candle_note = (f"🕯️ {candle_conf['pattern']} {candle_conf['tf']} ({pd.Timestamp(candle_conf['ts']):%H:%M}, "
-                           f"{candle_conf['low']:.2f}–{candle_conf['high']:.2f})")
+            _cc = candle_conf["composite"]
+            candle_note = (f"🕯️ {candle_tf} {PA.describe(candle_conf)} ({_cc['ts_start']:%H:%M}–{_cc['ts_end']:%H:%M}, "
+                           f"{_cc['low']:.2f}–{_cc['high']:.2f}) | SL {candle_sl:.2f}")
         if lots_now > 0:
             trade_status = _open_futures_trade(access_token, symbol, settings, resolved, direction, entry_price_estimate, lots_now,
                                                sl_points_effective, target_points_effective, level_price, timeframe_suffix, source, shadow,
@@ -878,14 +915,16 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             cstate.setdefault("used", {}).setdefault(_candle_key(symbol, source), [])
             cstate["used"][_candle_key(symbol, source)] = (cstate["used"][_candle_key(symbol, source)] + [_candle_used_id(level_price, candle_conf)])[-50:]
             if lots_later > 0:
-                tf_min = 60 if candle_conf["tf"] == "60M" else 30
-                expires = pd.Timestamp(candle_conf["end"]) + pd.Timedelta(minutes=tf_min * CANDLE_PULLBACK_EXPIRY_CANDLES)
+                tf_min = 60 if candle_tf == "60M" else 30
+                expires = pd.Timestamp(candle_conf["composite"]["ts_end"]) + pd.Timedelta(minutes=tf_min * (1 + CANDLE_PULLBACK_EXPIRY_CANDLES))
+                pullback = PA.pullback_price(candle_conf)
                 cstate.setdefault("pending", {})[_candle_key(symbol, source)] = {
-                    "direction": direction, "level": float(level_price), "lots": int(lots_later), "pullback": float(candle_conf["pullback"]),
-                    "pattern": candle_conf["pattern"], "tf": candle_conf["tf"], "candle_ts": pd.Timestamp(candle_conf["ts"]).isoformat(),
+                    "direction": direction, "level": float(level_price), "lots": int(lots_later), "pullback": float(pullback),
+                    "sl": float(candle_sl), "label": candle_conf.get("label"), "tf": candle_tf,
+                    "candle_ts": pd.Timestamp(candle_conf["composite"]["ts_end"]).isoformat(),
                     "expires": expires.isoformat(), "part1_opened": lots_now > 0, "timeframe_suffix": timeframe_suffix,
                 }
-                candle_note += f" | भाग 2: {lots_later} lot @ {candle_conf['pullback']:.2f} (50% pullback, मुदत {expires:%H:%M})"
+                candle_note += f" | भाग 2: {lots_later} lot @ {pullback:.2f} (50% pullback, मुदत {expires:%H:%M})"
             _candle_state_save(cstate)
 
         if is_breakout_trade:

@@ -330,3 +330,15 @@ def test_chart_dotted_style_and_bounds_ignore_far_lines():
     html = tvc.build_lightweight_chart_html(df, trade_lines=[{"price": 293.65, "title": "R", "color": "red", "dotted": True},
                                                              {"price": 330.0, "title": "far", "color": "red", "dotted": True, "bounds": False}])
     assert "LineStyle.Dotted" in html and '"hi": 293.65' in html
+
+
+def test_rejection_markers_on_displayed_tf_skip_live_candle():
+    """🕯️ MCX bot view: दाखवलेल्या chart TF च्या पूर्ण candles वर rejection markers (score सह); शेवटची (चालू) candle वगळली."""
+    from tests.test_price_action_candles import _df
+    df = _df([(100.2, 100.8, 97.5, 100.6)])
+    assert bv.rejection_markers(df, [100.0], {}) == []                              # rejection candle शेवटची (चालू) ⇒ marker नाही
+    live = pd.concat([df, df.tail(1)], ignore_index=True)
+    marks = bv.rejection_markers(live, [100.0], {"candle_min_score": 60})
+    assert len(marks) == 1 and marks[0][0] == len(df) - 1 and marks[0][1]["bullish"] and marks[0][1]["text"].startswith("≈")
+    html = build_lightweight_chart_html(live, symbol="X", timeframe_label="30M", pattern_markers=marks)
+    assert '"arrowUp"' in html and marks[0][1]["text"].lstrip("≈") in html          # JSON मध्ये ≈ escape होतो

@@ -45,7 +45,7 @@ from position_chart import SL_KIND_LABELS, futures_lines, mcx_sl_price
 from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     TF_INTERVAL, align_supertrend, last_rsi, level_lines, rsi_gate_line, rsi_threshold_values, supertrend_directions,
-    mcx_level_suffixes, supertrend_gate_line, supertrend_specs, zone_suffixes,
+    mcx_level_suffixes, rejection_markers, supertrend_gate_line, supertrend_specs, zone_suffixes,
 )
 from signals import resample_to_1h, resample_to_4h
 from trading_engine import close_trade_manually, set_manual_sl_override, clear_manual_sl_override, futures_price_for_pnl_level
@@ -572,6 +572,7 @@ def render():
                         "Bot view: MCX Futures bot चे levels / Supertrend 1H+4H / गेट-स्थिती", value=False, key=_widget_key(symbol, "chart_bot_view"),
                     )
                     bot_lines, bot_gate_lines, bot_rsi_levels, bot_note = [], [], (40, 60), None
+                    bot_markers = []
                     bot_st = {"1H": (None, None), "4H": (None, None)}
                     if bot_on:
                         try:
@@ -586,6 +587,8 @@ def render():
                                 nearest_n=3, info_suffixes=_info_sfx,
                             )
                             bot_rsi_levels = tuple(rsi_threshold_values("MCX Futures", _bs))
+                            # 🕯️ rejection markers (score) — दाखवलेल्या TF च्या candles वर; bot चा निर्णय मात्र level च्या TF वर
+                            bot_markers = rejection_markers(df_mcx, [ln["price"] for ln in bot_lines], _bs)
                             _df30 = fetch_mcx_candles(token, resolved["instrument_key"], interval="30minute", lookback_days=20)
                             _frames, _rsi_by_tf = {}, {}
                             if _df30 is not None and not _df30.empty:
@@ -619,6 +622,7 @@ def render():
                         df_mcx, symbol=symbol, timeframe_label=CHART_TIMEFRAME_OPTIONS[chart_tf],
                         rsi_series=rsi_series, sr_levels=None if bot_on else sr_levels, height=550, indicators=chart_indicators,
                         live_tf_seconds=infer_tf_seconds(df_mcx), trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels,
+                        pattern_markers=bot_markers or None,
                         supertrend_1h_series=bot_st["1H"][0], supertrend_1h_direction=bot_st["1H"][1],
                         supertrend_4h_series=bot_st["4H"][0], supertrend_4h_direction=bot_st["4H"][1],
                     )
@@ -843,34 +847,35 @@ def render():
         )
 
         st.markdown("---")
-        sub_header("🕯️ Candlestick Confirmation", HDR_PURPLE)
+        sub_header("🕯️ Candle Confirmation (rejection score)", HDR_PURPLE)
         candle_confirm_enabled = st.checkbox(
-            "Level ला लागून Hammer / Engulfing confirmation candle झाल्यावरच entry (डीफॉल्ट बंद)",
+            "Level ला लागून किंमत खरंच नाकारली गेली (rejection candle) तरच entry (डीफॉल्ट बंद)",
             value=bool(settings.get("candle_confirm_enabled", False)), key=_widget_key(symbol, "candle_confirm_enabled"),
         )
-        _CTF = {"ANY": "कोणताही एक (30M किंवा 60M)", "30M": "फक्त 30M", "60M": "फक्त 60M"}
-        _ctf_stored = settings.get("candle_confirm_tf", "ANY")
-        candle_confirm_tf = st.radio(
-            "Confirmation candle चा timeframe", list(_CTF), format_func=lambda k: _CTF[k], horizontal=True,
-            index=list(_CTF).index(_ctf_stored) if _ctf_stored in _CTF else 0, key=_widget_key(symbol, "candle_confirm_tf"),
+        _CTF = {"chart": "Level च्या TF वर (डीफॉल्ट)", "30M": "नेहमी 30M", "60M": "नेहमी 60M"}
+        _ctf_stored = settings.get("candle_tf_mode", "chart")
+        candle_tf_mode = st.radio(
+            "कोणत्या timeframe च्या candles तपासायच्या", list(_CTF), format_func=lambda k: _CTF[k], horizontal=True,
+            index=list(_CTF).index(_ctf_stored) if _ctf_stored in _CTF else 0, key=_widget_key(symbol, "candle_tf_mode"),
             disabled=not candle_confirm_enabled,
         )
-        _CPAT = {"HAMMER": "Hammer (support) / Shooting Star (resistance)", "ENGULFING": "Bullish / Bearish Engulfing"}
-        candle_confirm_patterns = st.multiselect(
-            "Patterns", list(_CPAT), default=[p for p in (settings.get("candle_confirm_patterns") or list(_CPAT)) if p in _CPAT],
-            format_func=lambda k: _CPAT[k], key=_widget_key(symbol, "candle_confirm_patterns"), disabled=not candle_confirm_enabled,
-        )
-        if candle_confirm_enabled and not candle_confirm_patterns:
-            st.warning("⚠️ एकही pattern निवडलेला नाही — Save केल्यावर दोन्ही (Hammer/Shooting Star + Engulfing) वापरले जातील.")
+        _cc1, _cc2 = st.columns(2)
+        with _cc1:
+            candle_k = _number_input("k — candle चा range ≥ k × median range", settings, "candle_k", symbol,
+                                     min_value=1.0, max_value=2.5, step=0.1, disabled=not candle_confirm_enabled)
+        with _cc2:
+            candle_min_score = _number_input("किमान rejection score (0–100)", settings, "candle_min_score", symbol,
+                                             min_value=0, max_value=100, step=5, disabled=not candle_confirm_enabled)
         if candle_confirm_enabled and int(settings.get("lots", 1)) < 2:
-            st.info("ℹ️ Lots = 1 — 50/50 split होणार नाही; confirmation नंतर पूर्ण quantity लगेच (भाव confirmation candle च्या range मध्ये असेल तरच).")
+            st.info("ℹ️ Lots = 1 — 50/50 split होणार नाही; chase नियम अपयशी ठरला तर entry नाही (SKIPPED_CANDLE_CHASE).")
         st.caption(
-            "फक्त **पूर्ण** झालेल्या candles (शेवटच्या 2 पैकी एक); candle चा low (support) / high (resistance) level च्या ±0.10% मध्ये येऊन "
-            "close level च्या योग्य बाजूला हवा. **Lots ≥ 2:** अर्धे (वरच्या बाजूला गोल) लगेच — भाव confirmation candle च्या range मध्ये असेल तरच; "
-            "उरलेले त्या candle च्या range च्या 50% पर्यंत भाव परत आल्यावर (bot दर मिनिटाला पाहतो; LIVE मध्ये त्या क्षणी market order). "
-            "भाग 2 रद्द: पुढच्या 2 candles मध्ये न भरल्यास, भाग 1 बंद झाल्यास, किंवा 30M close ने level तुटल्यास. दोन्ही भागांचे SL/Target "
-            "स्वतंत्र (स्वतःच्या entry पासून). Breakout trades ना लागू नाही. Signal Log: `SKIPPED_CANDLE_CONFIRMATION`, "
-            "`SKIPPED_CANDLE_PRICE_MOVED_AWAY`, `PENDING_PULLBACK_50`."
+            "शेवटच्या 1/2/3 **पूर्ण** candles एकत्र (composite: पहिल्याचा open, max high, min low, शेवटच्याचा close). अनिवार्य: low level च्या "
+            "+0.10% पर्यंत आला, close level च्या वर परत (resistance साठी उलट), 2–3 candles असतील तर शेवटची दिशेने बंद, range k × median ते "
+            "2.5 × median (median = आधीच्या 20 candles). Score: wick 30 + close-स्थान 20 + bounce 20 + sweep 15 + वेग 15/10/5. close-स्थान "
+            "40–60% (indecision) ⇒ नाही. **SL** = composite low − 0.05% (कधीही level च्या वर नाही); settings SL पेक्षा रुंद ⇒ skip. **Lots ≥ 2:** "
+            "अर्धे लगेच (entry चं level पासूनचं अंतर ≤ 0.5 × SL अंतर असेल तरच), उरलेले composite candle च्या 50% pullback वर — दोन्हींचा SL एकच. "
+            "Label (≈ Hammer इ.) फक्त माहितीसाठी. Breakout trades ना लागू नाही. Signal Log: `SKIPPED_REJECTION_*`, `SKIPPED_CANDLE_CHASE`, "
+            "`SKIPPED_CANDLE_SL_TOO_WIDE`, `PENDING_PULLBACK_50`."
         )
 
         st.markdown("---")
@@ -954,8 +959,8 @@ def render():
                 "sl_cooldown_minutes": int(sl_cooldown_minutes),
                 "sl_level_direction_block_enabled": bool(sl_level_direction_block_enabled),
                 "cascade_filter_enabled": bool(cascade_filter_enabled),
-                "candle_confirm_enabled": bool(candle_confirm_enabled), "candle_confirm_tf": candle_confirm_tf,
-                "candle_confirm_patterns": list(candle_confirm_patterns) or ["HAMMER", "ENGULFING"],
+                "candle_confirm_enabled": bool(candle_confirm_enabled), "candle_tf_mode": candle_tf_mode,
+                "candle_k": float(candle_k), "candle_min_score": int(candle_min_score),
                 "roll_trading_days_before_expiry": int(roll_trading_days_before_expiry),
                 "level_memory_enabled": bool(level_memory_enabled),
                 "level_memory_retire_days": int(level_memory_retire_days),
