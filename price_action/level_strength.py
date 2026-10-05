@@ -138,12 +138,13 @@ def strength_features(zone, df, t, symbol="NIFTY", legs=None, df_fine=None, tau_
     # role reversal: दूरच्या कडेपलीकडे close (तुटला) आणि नंतर उलट्या बाजूने visit होऊन त्या बाजूला close
     rr = False
     seg_c = c[start:t + 1]
-    if side != 0 and len(seg_c):
-        broke = np.flatnonzero(seg_c < lo) if side > 0 else np.flatnonzero(seg_c > hi)
+    side0 = side_of(zone, c[oi]) if oi is not None else side_of(zone, c[max(start - 1, 0)])   # मूळ भूमिका (उगमावेळची) — KEY/ROUND साठी आत्ताच्या close वरून नव्हे
+    if side0 != 0 and len(seg_c):
+        broke = np.flatnonzero(seg_c < lo) if side0 > 0 else np.flatnonzero(seg_c > hi)
         if len(broke):
             k0 = int(broke[0])
             after_h, after_l, after_c = h[start + k0 + 1:t + 1], l[start + k0 + 1:t + 1], c[start + k0 + 1:t + 1]
-            if side > 0:                                             # support तुटला ⇒ आता resistance म्हणून वरून नाकारतो का
+            if side0 > 0:                                            # support तुटला ⇒ आता resistance म्हणून वरून नाकारतो का
                 rr = bool(((after_h >= lo) & (after_c < lo)).any())
             else:
                 rr = bool(((after_l <= hi) & (after_c > hi)).any())

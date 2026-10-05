@@ -111,3 +111,12 @@ def test_break_cascade_on_displacement():
     df = frame(c, spread=0.3)
     ev = S.zone_events(sup, df, 20, len(df) - 1, n_reclaim=2)
     assert ev and ev[-1]["type"] == S.BREAK_CASCADE
+
+
+def test_role_reversal_for_key_zone_uses_origin_side():
+    """review: KEY zone दोनदा support म्हणून टिकला, मग तुटला आणि retest नाही ⇒ role reversal नाही."""
+    c = [110, 108, 104, 102.5, 106, 108, 104, 102.6, 107, 109, 103, 100, 97, 95, 93, 92]
+    df = frame(c, spread=0.4)
+    key = {"low": 99.0, "high": 102.0, "kind": "KEY", "formed_at": df["timestamp"].iloc[0]}
+    f = S.strength_features(key, df, len(df) - 1)
+    assert f["side"] == -1 and f["role_reversal"] is False

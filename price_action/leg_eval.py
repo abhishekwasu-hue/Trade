@@ -29,11 +29,11 @@ MIN_SHARE = 0.10
 MAX_STRONG_SHARE = 0.60
 
 
-def outcomes(df, legs, horizon=HORIZON):
+def outcomes(df, legs, horizon=HORIZON, n_median=20):
     """legs -> DataFrame: label, role, direction, known_time, fwd_mr, resume (pullback साठी) + features."""
     df = df.reset_index(drop=True)
     c = df["close"].to_numpy(float)
-    mr = LG.median_range(df)
+    mr = LG.median_range(df, n_median)
     ts = pd.to_datetime(df["timestamp"])
     rows = []
     for i, lg in enumerate(legs):

@@ -85,7 +85,8 @@ def _legs_with(net_seq, feats=None):
         f = {"bars": 5, "net_mr": n, "eff_close": 0.5, "eff_range": 0.5, "dir_pct": 0.6, "max_consec": 2, "alternation": 0.4, "body_pct": 0.5, "clv": 0.2,
              "overlap": 0.4, "fvg_n": 1, "fvg_mr": 0.5, "fvg_against": 0, "body_gaps": 0, "disp_n": 1, "disp_against": 0, "speed": n / 5, "spread": 1.0, "mr": 1.0}
         f.update((feats or {}).get(i, {}))
-        out.append(L.Leg(i * 5, i * 5 + 5, i * 5 + 6, d, 0.0, 0.0, f))
+        start = out[-1].end_price if out else 1000.0
+        out.append(L.Leg(i * 5, i * 5 + 5, i * 5 + 6, d, start, start + d * n, f))                 # mr = 1 ⇒ किंमत-हालचाल = net_mr
     return out
 
 
@@ -189,3 +190,23 @@ def test_chart_html_renders_legs_only_when_given_and_overlay_skips_forming_bar()
     html = build_lightweight_chart_html(df, legs=segs)
     assert "legInfoAt" in html and json.dumps(segs[0]["info"])[1:30] in html            # JSON मराठी \\u escape करतो
     assert leg_overlay(df.head(10), "15minute", now) == ([], None)
+
+
+def test_depth_uses_raw_price_move_not_mr_units():
+    """review: वेगवेगळ्या mr चे legs — 100 pts (mr 10) नंतर 120 pts (mr 20) = 120% retrace ⇒ REVERSAL (mr-ratio 0.6 नव्हे)."""
+    legs = _legs_with([10, 6])
+    legs[0].start_price, legs[0].end_price = 1000.0, 1100.0
+    legs[1].start_price, legs[1].end_price = 1100.0, 980.0
+    legs[1].features["net_mr"] = 6.0
+    out = L.classify(legs)
+    assert out[1].features["depth"] == pytest.approx(1.2) and out[1].label == L.REVERSAL
+
+
+def test_daily_overlay_drops_todays_forming_candle():
+    from bot_view import leg_overlay
+    df = frame(zig([100, 130, 115, 150, 120, 140, 125]), freq="1D", start="2026-01-01")
+    df["volume"] = 0
+    today = df["timestamp"].iloc[-1]
+    segs_open, _ = leg_overlay(df, "day", today + pd.Timedelta(hours=11))           # बाजार चालू
+    segs_closed, _ = leg_overlay(df, "day", today + pd.Timedelta(hours=16))         # बाजार बंद
+    assert max(s["end"] for s in segs_open) < today and max(s["end"] for s in segs_closed) == today

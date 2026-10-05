@@ -55,7 +55,7 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
   - approach नियम (REACTION / BREAK candidate);
   - घटना SWEEP / BREAK / BREAK_CASCADE / FAILED_BREAKOUT (`known_at` = break + n_reclaim).
 
-**Tests:** 2413 → 2438 (legs 16, level_strength 9). Full suite हिरवा.
+**Tests:** 2413 → 2441 (legs 18, level_strength 10). Full suite हिरवा.
 
 **निर्णय (कारणासह):**
 - **G1 वर थांबलो नाही** (वापरकर्त्याची रात्रीची सूचना): 10 नमुना दिवसांचे चार्ट report मध्ये तयार ठेवले.
@@ -68,10 +68,18 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
 - Pullback grid मध्ये एकही trial अट (HEALTHY आणि DANGEROUS दोन्ही ≥ 10%) पूर्ण करत नाही ⇒ डीफॉल्ट ठेवले; नियम post-hoc सैल केले नाहीत.
 - Level touches: zone सोडेपर्यंतचे उगमानंतरचे bars departure मानले, touch नाही.
 
-**निकाल:**
-- STRONG वि. WEAK impulse: IS t = 1.21, VAL उलट ⇒ पुरावा नाही.
+- Independent review (subagent): blocker नाही. केलेल्या दुरुस्त्या:
+  - depth आता खरा किंमत-retrace — आधी legs च्या वेगवेगळ्या mr मुळे mixed units होते;
+  - KEY/ROUND zone चा role reversal उगमावेळच्या बाजूवरून;
+  - Daily चार्टवर आजचा अपूर्ण candle 15:30 पूर्वी वगळला;
+  - `</script>` escape; NaN median fallback; outcomes मध्ये n_median param.
+  - Nit जसा ठेवला: `fvg_min` pullback grid मध्ये impulse FVG मोजणीवरही परिणाम करतो — फक्त IS मध्ये, grid आधीच ठरलेला असल्याने बदलला नाही.
+  - Nit जसा ठेवला: FAILED_BREAKOUT नंतर reclaim खिडकीतले sweeps नोंदवत नाही.
+
+**निकाल (दुरुस्तीनंतर):**
+- STRONG वि. WEAK impulse: IS t = 1.62, VAL ≈ 0 ⇒ पुरावा नाही.
 - ~96% pullbacks DANGEROUS (spec चे OR-नियम).
-- HEALTHY दुर्मिळ (IS n = 19, resume 89.5% वि. 66%).
+- HEALTHY दुर्मिळ (IS n = 22, resume 90.9% वि. 65.8%).
 
 **उघडे प्रश्न (सकाळी):**
 - G1 — लेबल्स चार्टवर पटतात का?

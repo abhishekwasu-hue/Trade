@@ -165,13 +165,18 @@ def _max_run(mask):
     return best
 
 
+def _fallback_mr(h, l):
+    m = float(np.nanmedian(h - l)) if len(h) else float("nan")
+    return m if np.isfinite(m) and m > 0 else 1.0
+
+
 def leg_features(df, a, b, direction, start_price, end_price, mr_ref, cfg=None):
     """bars a..b (समाविष्ट) वरचे features. `mr_ref` = median_range (leg च्या शेवटी माहीत असलेला). सर्व आकार ÷ mr_ref."""
     cfg = cfg or LegConfig()
     o, h, l, c = (x[a:b + 1] for x in _arr(df))
     s = direction
     m = max(int(b - a + 1), 1)
-    mr_ref = float(mr_ref) if mr_ref and np.isfinite(mr_ref) and mr_ref > 0 else float(np.nanmedian(h - l) or 1.0)
+    mr_ref = float(mr_ref) if mr_ref and np.isfinite(mr_ref) and mr_ref > 0 else _fallback_mr(h, l)
     net = abs(end_price - start_price)
     rng = np.maximum(h - l, 1e-12)
     pc = np.concatenate([[c[0]], c[:-1]])                       # leg मधला मागचा close (पहिल्या bar ला स्वतःचा)
@@ -269,7 +274,8 @@ def classify(legs, df=None, internal=None, cfg=None):
     prev = None
     for lg in legs:
         f = lg.features
-        depth = (f["net_mr"] / prev.features["net_mr"]) if prev is not None and prev.features.get("net_mr") else None
+        prev_move = abs(prev.end_price - prev.start_price) if prev is not None else 0.0
+        depth = (abs(lg.end_price - lg.start_price) / prev_move) if prev_move > 0 else None    # खरा किंमत-retrace (दोन legs चे mr वेगळे असू शकतात)
         f["depth"] = None if depth is None else round(depth, 3)
         if depth is None or (depth > 1.0 and prev_role == ROLE_PULLBACK):
             role = ROLE_IMPULSE

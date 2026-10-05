@@ -441,6 +441,7 @@ def build_lightweight_chart_html(
             legs_js.append({"t0": t0, "t1": t1, "p0": round(float(lg["start_price"]), 2), "p1": round(float(lg["end_price"]), 2),
                             "color": str(lg.get("color", "#90a4ae")), "width": int(lg.get("width", 2)), "dashed": bool(lg.get("dashed", False)),
                             "info": str(lg.get("info", ""))})
+    legs_json = json.dumps(legs_js).replace("</", "<\\/")          # info मजकुरातला "</script>" script ब्लॉक तोडू नये
     trade_lines_js = []
     for tl in (trade_lines or []):
         try:
@@ -621,7 +622,7 @@ if (rsiData.length > 0) {{
     s.setData(tl.points);
 }});
 // 🎓 Price-action legs (price_action.legs) -- impulse गडद, pullback फिकट, range राखाडी; चालू leg तुटक रेषा
-const legsData = {json.dumps(legs_js)};
+const legsData = {legs_json};
 legsData.forEach(lg => {{
     const s = chart.addSeries(LightweightCharts.LineSeries, {{
         color: lg.color, lineWidth: lg.width, lineStyle: lg.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
