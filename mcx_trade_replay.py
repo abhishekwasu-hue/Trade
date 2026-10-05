@@ -130,6 +130,12 @@ def evaluate_trade(trade, df30, df_day, prior, settings=None):
     c, c_why, c_info = F.cascade_block(d30, direction, level)
     d1, d1_why = F.sl_cooldown_block(prior, t, 60)
     d2, d2_why = F.sl_level_direction_block(prior, t, level, direction)
+    # (e) Candlestick Confirmation: entry च्या वेळी level ला लागून शेवटच्या 2 पूर्ण candles पैकी एकावर दिशेचा pattern होता का (bot सारखाच नियम)
+    tf_choice = s.get("candle_confirm_tf", "ANY")
+    frames = {k: v for k, v in (("30M", d30), ("60M", h1)) if tf_choice in (k, "ANY")}
+    conf = F.find_candle_confirmation(frames, direction, level, 0.10, 2, tuple(s.get("candle_confirm_patterns") or F.CANDLE_PATTERN_GROUPS))
+    e = conf is None
+    e_why = "(e) level ला लागून Hammer/Engulfing confirmation candle नव्हती" if e else None
     daily_trend = None
     if dd is not None and len(dd) >= 6:
         last5 = dd.tail(6)["close"].to_numpy(float)
@@ -139,8 +145,9 @@ def evaluate_trade(trade, df30, df_day, prior, settings=None):
         "exit_reason": trade.get("exit_reason"), "pnl": trade.get("realized_pnl"), "bars_30m": len(d30),
         "st_1h": dir_1h, "st_4h": dir_4h, "daily_5d": daily_trend,
         "a_both_against": a, "b_htf_against": b, "c_cascade": c, "d_cooldown": d1 or d2,
+        "e_candle": e, "e_pattern": None if conf is None else f"{conf['pattern']} {conf['tf']} {conf['ts']:%H:%M}",
         "c_broken_level": c_info.get("broken_level"), "c_choch_level": c_info.get("choch_level"),
-        "reasons": " | ".join(x for x in (a_why, b_why if b and not a else None, c_why, d1_why, d2_why) if x),
+        "reasons": " | ".join(x for x in (a_why, b_why if b and not a else None, c_why, d1_why, d2_why, e_why) if x),
     }
 
 
@@ -152,7 +159,7 @@ def summarize(rows):
         return pd.DataFrame()
     loss = df["pnl"].astype(float) < 0
     for col, name in (("a_both_against", "(a) Supertrend both_against"), ("b_htf_against", "(b) 4H htf_against"),
-                      ("c_cascade", "(c) cascade"), ("d_cooldown", "(d) cooldown")):
+                      ("c_cascade", "(c) cascade"), ("d_cooldown", "(d) cooldown"), ("e_candle", "(e) candle confirmation")):
         blk = df[col].astype(bool)
         out.append({"नियम": name, "अडलेले": int(blk.sum()), "तोट्यातले अडले": int((blk & loss).sum()), "एकूण तोट्यातले": int(loss.sum()),
                     "फायद्याचे चुकून अडले": int((blk & ~loss).sum()), "वाचलेला तोटा ₹": round(float(-df.loc[blk & loss, "pnl"].astype(float).sum()), 0),
@@ -329,6 +336,8 @@ def main(argv=None, fetch=None, token=None, db_path=None, settings=None, today=N
             summ.to_csv(os.path.join(args.out, f"replay_{sym}_summary.csv"), index=False)
             print(f"\n=== सारांश ({len(summ_rows)} trades — लहान sample, फक्त दिशादर्शक) ===")
             print(summ.to_string(index=False))
+            print("(e) फक्त 'जुने trades या gate मधून गेले असते का' हे सांगतो; gate मुळे उशिरा होणाऱ्या entries आणि 50/50 pullback चा "
+                  "परिणाम इथे दिसत नाही — तो फक्त पुढच्या PAPER trading मधून.")
 
     for tr in (trades if args.trade_id else []):
         back = (pd.Timestamp(today) - pd.Timestamp(tr["exit_time"] or tr["entry_time"]).normalize()).days + 2

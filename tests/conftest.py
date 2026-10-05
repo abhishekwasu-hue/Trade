@@ -78,3 +78,11 @@ def _mcx_live_quantity_gate_open_by_default(monkeypatch):
         monkeypatch.setattr(trading_engine, "is_mcx_live_quantity_verified", lambda: True)
     except ImportError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _isolated_mcx_candle_state(tmp_path, monkeypatch):
+    """🎓 MCX Candlestick Confirmation state (data/mcx_candle_confirm.json -- प्रतीक्षेतला भाग 2 / वापरलेले patterns) प्रत्येक टेस्टमध्ये
+    tmp मध्ये: repo/VPS वरची खरी फाईल tests वर परिणाम करू नये आणि tests ती लिहू नयेत."""
+    import mcx_futures_trader
+    monkeypatch.setattr(mcx_futures_trader, "CANDLE_STATE", str(tmp_path / "mcx_candle_confirm.json"))

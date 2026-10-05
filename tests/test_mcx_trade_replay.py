@@ -168,3 +168,17 @@ def test_forensics_trailing_searches_after_peak_and_reports_gap():
     assert fz["peak_price"] == 146950.0 and fz["peak_time"] == "2026-10-01 16:26:00"
     assert fz["first_cross_time"] == "2026-10-01 16:35:00" and abs(fz["minutes_cross_to_exit"] - 2.05) <= 0.06
     assert fz["price_before_cross"] == 146950.0 and fz["cross_open"] == 147693.0 and fz["gap_points"] == 743.0
+
+
+def test_candle_confirmation_column_uses_only_bars_before_entry():
+    df30 = _df30([105.0] * 10, start="2026-10-05 09:00")
+    # 12:30 लाल candle + 13:00 Hammer (low 94, close 101) — support 100 ला लागून
+    df30.loc[7, ["open", "high", "low", "close"]] = [104.0, 105.0, 100.5, 101.0]
+    df30.loc[8, ["open", "high", "low", "close"]] = [100.0, 101.5, 94.0, 101.0]
+    tr = {"trade_id": "X", "entry_time": "2026-10-05 13:40:00", "direction": "BULLISH", "entry_level_price": 100.0,
+          "exit_reason": "SL", "realized_pnl": -10}
+    row = R.evaluate_trade(tr, df30, None, [], {"candle_confirm_tf": "30M"})
+    assert row["e_candle"] is False and row["e_pattern"].startswith("HAMMER 30M 13:00")
+    early = R.evaluate_trade({**tr, "entry_time": "2026-10-05 13:20:00"}, df30, None, [], {"candle_confirm_tf": "30M"})
+    assert early["e_candle"] is True and "(e)" in early["reasons"]          # 13:00 ची candle 13:30 ला पूर्ण -- आधी दिसू नये
+    assert "(e) candle confirmation" in set(R.summarize([row, early])["नियम"])
