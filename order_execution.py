@@ -31,22 +31,37 @@ class LimitConfig:
     max_buffer_pct: float = 3.0
     retries: int = 3
     wait_sec: float = 2.0            # प्रत्येक प्रयत्नानंतर fill साठी किती थांबायचं
-    poll_sec: float = 0.5
+    poll_sec: float = 0.5            # किमान 0.2s (rate-limit संरक्षण)
     tick: float = 0.05
     market_protection_pct: int = 2   # MARKET_PROTECTION शैलीसाठी (1–25)
 
 
+SIDES = ("BUY", "SELL")
+
+
+def _check_side(side):
+    if side not in SIDES:
+        raise ValueError(f"transaction_type BUY/SELL हवा, मिळाला {side!r}")
+
+
+def _decimals(tick):
+    s = f"{tick:.10f}".rstrip("0")
+    return max(len(s.split(".")[1]) if "." in s else 0, 2)
+
+
 def round_to_tick(price, tick, side):
     """BUY ⇒ वर गोल (marketable राहावं), SELL ⇒ खाली गोल. किमान एक tick."""
+    _check_side(side)
     if tick <= 0:
         return round(price, 2)
     n = price / tick
     n = math.ceil(n - 1e-9) if side == "BUY" else math.floor(n + 1e-9)
-    return round(max(n, 1) * tick, 2)
+    return round(max(n, 1) * tick, _decimals(tick))
 
 
 def marketable_limit_price(ltp, side, buffer_pct, tick=0.05):
     """LTP ± buffer% (BUY वर, SELL खाली), tick ला गोल. ltp ≤ 0 ⇒ ValueError."""
+    _check_side(side)
     if ltp is None or not (ltp > 0):
         raise ValueError("LTP उपलब्ध नाही — marketable limit किंमत ठरवता येत नाही")
     sign = 1 if side == "BUY" else -1
@@ -96,6 +111,8 @@ class LimitResult:
     avg_price: Optional[float] = None
     order_ids: List[str] = field(default_factory=list)
     log: List[str] = field(default_factory=list)
+    unresolved_order_id: Optional[str] = None   # cancel निश्चित झाला नाही ⇒ broker वर अजून live असू शकतो (caller ने तपासावं)
+    overfill_qty: int = 0                       # broker ने उरलेल्यापेक्षा जास्त भरलं असं सांगितलं तर
 
     @property
     def complete(self):
@@ -110,9 +127,11 @@ def run_marketable_limit(order, place: Callable, status: Callable, cancel: Calla
     रिटर्न LimitResult (filled / remaining / attempts / सरासरी किंमत / log). Network नाही — सर्व functions caller चे."""
     cfg = cfg or LimitConfig()
     side = order.get("transaction_type")
+    _check_side(side)
     total = int(order.get("quantity") or 0)
     res = LimitResult(remaining_qty=total)
-    notional = 0.0
+    notional, priced_qty = 0.0, 0
+    poll = max(cfg.poll_sec, 0.2)
     buffer = cfg.buffer_pct
     for attempt in range(cfg.retries + 1):
         if res.remaining_qty <= 0:
@@ -138,19 +157,28 @@ def run_marketable_limit(order, place: Callable, status: Callable, cancel: Calla
             s = str(st.get("status", "")).lower()
             if s in TERMINAL_OK or s in TERMINAL_BAD or clock() - t0 >= cfg.wait_sec:
                 break
-            sleep(cfg.poll_sec)
+            sleep(poll)
         s = str(st.get("status", "")).lower()
         if s not in TERMINAL_OK and s not in TERMINAL_BAD:
-            cancel(oid)                                           # उरलेलं रद्द करून नवीन किंमतीने पुन्हा
+            ok = cancel(oid)                                      # उरलेलं रद्द करून नवीन किंमतीने पुन्हा
             st = status(oid) or st                                # cancel नंतरचा अंतिम filled आकडा
-        filled = int(st.get("filled_quantity") or 0)
-        filled = max(0, min(filled, res.remaining_qty))
+            s = str(st.get("status", "")).lower()
+            if not ok or (s not in TERMINAL_OK and s not in TERMINAL_BAD):
+                res.unresolved_order_id = oid                     # order अजून live असू शकतो ⇒ पुढे retry नाही (दुहेरी position टाळण्यासाठी)
+        raw = int(st.get("filled_quantity") or 0)
+        if raw > res.remaining_qty:
+            res.overfill_qty += raw - res.remaining_qty
+        filled = max(0, min(raw, res.remaining_qty))
         if filled and st.get("average_price") is not None:
             notional += filled * float(st["average_price"])
+            priced_qty += filled
         res.filled_qty += filled
         res.remaining_qty -= filled
         res.log.append(f"प्रयत्न {attempt + 1}: LIMIT {limit} ⇒ {s or 'unknown'}, भरले {filled}, उरले {res.remaining_qty}")
+        if res.unresolved_order_id:
+            res.log.append(f"⚠️ order {oid} चा cancel निश्चित झाला नाही — थांबलो; broker वर तपासा")
+            break
         buffer = min(buffer + cfg.buffer_step_pct, cfg.max_buffer_pct)
-    if res.filled_qty:
-        res.avg_price = round(notional / res.filled_qty, 4) if notional else None
+    if priced_qty:
+        res.avg_price = round(notional / priced_qty, 4)                 # फक्त किंमत माहीत असलेल्या fills वर
     return res

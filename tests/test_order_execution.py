@@ -41,8 +41,8 @@ def test_marketable_limit_style_converts_market_only():
 
 class FakeBroker:
     """प्रत्येक प्रयत्नात किती भरायचं ते script नुसार; ltp क्रमाने."""
-    def __init__(self, fills, ltps, final="complete"):
-        self.fills, self.ltps, self.final = list(fills), list(ltps), final
+    def __init__(self, fills, ltps, cancel_ok=True):
+        self.fills, self.ltps, self.cancel_ok = list(fills), list(ltps), cancel_ok
         self.placed, self.cancelled, self.st = [], [], {}
 
     def place(self, o):
@@ -60,8 +60,9 @@ class FakeBroker:
 
     def cancel(self, oid):
         self.cancelled.append(oid)
-        self.st[oid] = {**self.st[oid], "status": "cancelled"}
-        return True
+        if self.cancel_ok:
+            self.st[oid] = {**self.st[oid], "status": "cancelled"}
+        return self.cancel_ok
 
     def ltp(self, _):
         return self.ltps.pop(0) if len(self.ltps) > 1 else self.ltps[0]
@@ -101,3 +102,31 @@ def test_rejected_placement_and_missing_ltp():
     b2 = FakeBroker([100], [None])
     r2 = run(b2)
     assert r2.attempts == 0 and r2.remaining_qty == 100 and "LTP" in r2.log[0]
+
+
+def test_failed_cancel_stops_retries_and_flags_live_order():
+    b = FakeBroker([40, 60, 60], [100.0], cancel_ok=False)
+    r = run(b)
+    assert r.attempts == 1 and r.filled_qty == 40 and r.remaining_qty == 60 and r.unresolved_order_id == "O0"
+    assert any("cancel" in line for line in r.log)
+
+
+def test_side_validation_and_fine_tick():
+    with pytest.raises(ValueError):
+        OX.marketable_limit_price(100.0, "buy", 0.5)
+    with pytest.raises(ValueError):
+        run(FakeBroker([100], [100.0]), side="B")
+    assert OX.round_to_tick(1.0001, 0.005, "BUY") == 1.005
+
+
+def test_overfill_is_flagged_and_avg_price_uses_priced_fills_only():
+    b = FakeBroker([100], [100.0])
+    orig_status = b.status
+    b.status = lambda oid: {**orig_status(oid), "filled_quantity": 120}
+    r = run(b)
+    assert r.filled_qty == 100 and r.overfill_qty == 20
+    b2 = FakeBroker([40, 60], [100.0])
+    orig2 = b2.status
+    b2.status = lambda oid: {**orig2(oid), "average_price": None} if oid == "O1" else orig2(oid)
+    r2 = run(b2)
+    assert r2.complete and r2.avg_price == 100.5

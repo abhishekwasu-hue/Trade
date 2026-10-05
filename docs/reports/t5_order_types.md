@@ -32,7 +32,7 @@
 | 2 | `trading_engine.py:2114` `manage_open_trades` | **SL / Target / TSL exit** | **सर्वात गंभीर**: exit न झाल्यास position उघडी राहते |
 | 3 | `trading_engine.py:2370` manual close | Positions पानावरचं Manual Close | exit अयशस्वी — वापरकर्त्याला संदेश मिळतो |
 | 4 | `trading_engine.py:220` `_auto_reverse_filled_legs` | partial fill नंतर भरलेले legs उलटवणे | unhedged leg उघडा राहू शकतो |
-| 5 | `trading_engine.py:820` → `upstox_api.place_stop_loss_order` | broker-side **SL-M** (resting) | SL-M ही market_protection खाली येतो; नाकारला तर broker-side SL नाही (polling exit तरी चालू) |
+| 5 | `trading_engine.py:820/822` → `upstox_api.place_stop_loss_order` | broker-side **SL-M** (resting) | SL-M ही market_protection खाली येतो; नाकारला तर broker-side SL नाही (polling exit तरी चालू) |
 | 6 | `page_dashboard.py:637` | मॅन्युअल order फॉर्म (MARKET/LIMIT/SL/SL-M) | वापरकर्ता स्वतः निवडतो |
 | 7 | `stocko_api.py:139` | `market_protection_percentage: 0` | Stocko साठी 0 ⇒ नियमांनुसार नाकारला जाण्याची शक्यता |
 | 8 | `shoonya_api.py:236` | MARKET ⇒ `prctyp: MKT` | broker-निहाय नियम लागू |
@@ -48,7 +48,7 @@
 cd /root/Trade && python3 - <<'EOF'
 import sqlite3
 from config import DB_PATH
-c = sqlite3.connect(DB_PATH)
+c = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)   # फक्त वाचन; चुकीचा path असल्यास नवी फाईल तयार होत नाही
 for r in c.execute("SELECT mode, order_type, status, COUNT(*) FROM order_log WHERE placed_at >= '2025-10-01' GROUP BY 1,2,3 ORDER BY 1,2,3"):
     print(r)
 EOF
@@ -65,6 +65,7 @@ EOF
   - ठराविक वेळेत न भरल्यास उरलेलं cancel करतो, नवीन LTP ± वाढीव buffer ने पुन्हा पाठवतो (कमाल retries).
   - शेवटी filled / remaining / सरासरी किंमत / log परत देतो.
   - Broker functions injectable आहेत (network नाही).
+  - Cancel निश्चित न झाल्यास पुढे retry करत नाही आणि `unresolved_order_id` देतो (दुहेरी position टाळण्यासाठी). Over-fill वेगळा नोंदवतो. BUY/SELL व्यतिरिक्त side नाकारतो.
 
 ## 5. G3 — तुमचा निर्णय हवा
 
