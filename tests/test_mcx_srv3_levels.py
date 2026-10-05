@@ -138,3 +138,78 @@ def test_refresh_mcx_srv3_throttled_with_srv3_prefix(tmp_path, monkeypatch):
     assert all(x["touches"] >= 45 for x in merged[0][3]["support"] + merged[0][3]["resistance"])
     assert mft.refresh_mcx_srv3_levels_if_due("tok", "CRUDEOIL", "MCX_FO|1", now + datetime.timedelta(minutes=3), fetch=fetch, state_path=state) is None
     assert len(merged) == 1
+
+
+# 🎓 SR V3.2 ("1402.2 हा level chart war yayalach nko" -- COPPER 5 Oct): range च्या मधल्या chop-किंमतीला खोटे गुण.
+def _range_frames(seed=7):
+    from signals import resample_to_1h
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2026-09-24 09:00", periods=8 * 58, freq="15min")
+    t = np.arange(len(idx))
+    c = 1400 + 7 * np.sin(t / 23.0) + 4 * np.sin(t / 4.3) + rng.normal(0, 1.0, len(t))
+    o = np.r_[c[0], c[:-1]]
+    h, l = np.maximum(o, c) + rng.uniform(0.3, 1.5, len(t)), np.minimum(o, c) - rng.uniform(0.3, 1.5, len(t))
+    d15 = pd.DataFrame({"timestamp": idx, "open": o, "high": h, "low": l, "close": c, "volume": 1, "oi": 0})
+    d30 = d15.set_index("timestamp").resample("30min").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "oi": "last"}).dropna().reset_index()
+    return {"15minute": d15, "30minute": d30, "1hour": resample_to_1h(d30)}, float(c[-1]), float(l.min()), float(h.max())
+
+
+def test_v32_demotes_mid_range_chop_levels_but_keeps_range_edges():
+    from sr_levels_v3 import SRConfig, compute_sr_v3
+    frames, price, lo, hi = _range_frames()
+    old = compute_sr_v3(frames, current_price=price, cfg=SRConfig(session_end="23:30"))["levels"]
+    new = compute_sr_v3(frames, current_price=price, cfg=mft.SRV3_CFG)["levels"]
+    mid = lambda z: lo + 0.2 * (hi - lo) < z["level"] < hi - 0.2 * (hi - lo)
+    assert any(mid(z) and z["grade"] in "AB" for z in old)                      # जुनं: range-मधले levels A/B (हीच तक्रार)
+    assert not any(mid(z) and z["grade"] in "AB" for z in new)                  # V3.2: सगळे मधले C (bot trade करत नाही)
+    assert all(z["crossings"] > mft.SRV3_CFG.chop_max_crossings and "CHOP" in " ".join(z["tags"]) for z in new if mid(z) and z["tfs"])
+    edges = sorted(z["level"] for z in new if z["grade"] == "A")
+    assert len(edges) == 2 and edges[0] - lo < 2.0 and hi - edges[1] < 2.0       # range च्या दोन्ही कडा A राहतात
+
+
+def test_v32_flags_off_by_default_so_nifty_unchanged():
+    from sr_levels_v3 import SRConfig
+    d = SRConfig()
+    assert (d.chop_filter, d.reject_redepart, d.flip_min_break_atr, d.min_base_points) == (False, False, 0.0, 0.0)
+    c = mft.SRV3_CFG
+    assert c.chop_filter and c.reject_redepart and c.flip_min_break_atr == 0.5 and c.min_base_points == 10.0 and c.reject_follow_atr == 1.5
+
+
+def test_count_crossings_ignores_wobble_inside_band():
+    from sr_levels_v3 import count_crossings
+    df = pd.DataFrame({"timestamp": pd.date_range("2026-10-01", periods=8, freq="15min"),
+                       "close": [99.0, 100.1, 101.0, 100.05, 99.0, 101.0, 100.0, 101.2]})
+    assert count_crossings(df, 100.0, 0.2, pd.Timestamp("2026-09-30")) == 3     # 99→101→99→101 (100.1/100.05/100.0 band मध्ये)
+
+
+def test_reject_redepart_counts_one_rejection_per_excursion():
+    from sr_levels_v3 import SRConfig, count_rejections
+    # दूर (90) -> level ला तीनदा wick करून परत, पण मध्ये दूर न जाता (chop) -> नवीन नियमात 1 नकार
+    rows = [(90, 90.5, 89.5, 90)] + [(99, 100.2, 98.8, 99)] + [(99, 99.2, 98.6, 99)] + [(99, 100.2, 98.8, 99)] + [(99, 99.2, 98.6, 99)] \
+        + [(99, 100.2, 98.8, 99)]
+    df = pd.DataFrame([{"timestamp": pd.Timestamp("2026-10-01 09:00") + pd.Timedelta(minutes=15 * i), "open": o, "high": h, "low": l, "close": c}
+                       for i, (o, h, l, c) in enumerate(rows)])
+    since = pd.Timestamp("2026-09-30")
+    assert count_rejections(df, 100.0, 0.5, since, 2.0, SRConfig())["count"] == 3
+    assert count_rejections(df, 100.0, 0.5, since, 2.0, SRConfig(reject_redepart=True))["count"] == 1
+
+
+def test_min_base_points_drops_bonuses_for_weak_pivot():
+    from sr_levels_v3 import SRConfig, _score_zone
+    z = {"touches_raw": 0.63, "reaction": 0.7, "tfs": ["15minute", "30minute"], "keys": [], "polarity": True, "flipped": True,
+         "retested": True, "gap": None, "rejections": 8, "rej_strong": 8}
+    a, b = dict(z), dict(z)
+    _score_zone(a, SRConfig()); _score_zone(b, SRConfig(min_base_points=10.0))
+    assert a["grade"] == "B" and b["grade"] == "C"                               # COPPER 1402.2 सारखा: touches 6.3 => bonus नाहीत
+    assert b["components"]["role_reversal"] == b["components"]["rejections"] == b["components"]["polarity"] == 0.0
+
+
+def test_srv3_grade_a_only_setting_filters_b_levels():
+    zones = pd.DataFrame([{"symbol": "CRUDEOIL", "zone_type": "SRV3_SUPPORT", "zone_low": 6500.0, "zone_high": 6500.0, "strength": 62.0,
+                           "formed_date": "2026-09-01", "status": "ACTIVE"}])
+    assert cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"]["srv3_grade_a_only"] is False
+    _, trade, _ = _run(_settings(level_engine="SRV3"), zones)
+    assert trade.call_count == 1                                                  # डीफॉल्ट: B (62) वरही trade
+    result, trade2, _ = _run(_settings(level_engine="SRV3", srv3_grade_a_only=True), zones)
+    assert not trade2.called and "SR V3" in result

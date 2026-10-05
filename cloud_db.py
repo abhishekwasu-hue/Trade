@@ -625,6 +625,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याचा निर्णय (SR V3 levels — setting ने निवड): "DYNAMIC" (जुना, डीफॉल्ट) | "SRV3_SHADOW" (मूळ जुन्याच levels वर +
         # शेजारी SR V3 वर निव्वळ PAPER तुलना) | "SRV3" (मूळ bot च SR V3 levels वर). बघा mcx_futures_trader.LEVEL_ENGINES.
         "level_engine": "DYNAMIC",
+        "srv3_grade_a_only": False,      # SR V3 engine: फक्त grade A (score ≥ 65) levels वर trade (डीफॉल्ट A+B)
         "entry_rsi_gate_enabled": True,
         "rsi_support_max": 40,           # Support/Bullish साठी RSI यापेक्षा कमी हवा
         "rsi_resistance_min": 60,        # Resistance/Bearish साठी RSI यापेक्षा जास्त हवा

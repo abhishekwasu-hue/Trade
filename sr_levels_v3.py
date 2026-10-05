@@ -95,6 +95,14 @@ class SRConfig:
     max_distance_pct: float = 3.0
     # सत्र कधी संपतं ("मागचा दिवस" ठरवण्यासाठी) — NSE 15:15 (डीफॉल्ट); MCX साठी "23:30" (बघा mcx_futures_trader.py)
     session_end: str = "15:15"
+    # 🎓 V3.2 ("1402.2 हा level chart war yayalach nko" -- COPPER 5 Oct): range च्या मधल्या, भावाने वारंवार ओलांडलेल्या किंमतीला
+    # chop मुळे खोटे flip/rejections/polarity गुण मिळून grade B मिळायचा. चारही नियम डीफॉल्ट बंद (NIFTY अपरिवर्तित); MCX चालू करतो.
+    chop_filter: bool = False             # (B) मागच्या chop_lookback_days मध्ये 15M closes ने level च्या बाजू इतक्यांदा बदलल्या => "चुंबक"
+    chop_lookback_days: float = 5.0
+    chop_max_crossings: int = 6           # यापेक्षा जास्त बाजू-बदल => score grade C पर्यंत मर्यादित (bot trade करत नाही)
+    reject_redepart: bool = False         # (A) प्रत्येक नकारानंतर किंमत पुन्हा दूर गेल्यावरच पुढचा नकार मोजायचा (chop मधले wicks नाहीत)
+    flip_min_break_atr: float = 0.0       # (C) flip साठी "पलीकडे" = level पासून किमान इतके ATR (0 = जुनं: फक्त band)
+    min_base_points: float = 0.0          # (D) touches + key_level गुण इतके नसतील तर flip/rejection/polarity bonus नाहीत (0 = बंद)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -354,6 +362,22 @@ def detect_flip_acceptance(level, band, origin, df, since_ts, min_ratio=0.6, min
     return result
 
 
+def count_crossings(df, level, band, since_ts):
+    """V3.2 — `since_ts` नंतर candle-closes ने level च्या बाजू किती वेळा बदलल्या (level ± band च्या आतले closes दुर्लक्षित, म्हणजे
+    level वरची नुसती थरथर मोजली जात नाही). खरा S/R क्वचितच ओलांडला जातो; range च्या मधली "चुंबक" किंमत वारंवार."""
+    if df is None or df.empty:
+        return 0
+    closes = df.loc[df["timestamp"] > since_ts, "close"].values
+    last, n = 0, 0
+    for c in closes:
+        side = 1 if c > level + band else -1 if c < level - band else 0
+        if side and last and side != last:
+            n += 1
+        if side:
+            last = side
+    return n
+
+
 def count_rejections(df, level, band, since_ts, atr, cfg):
     """V3.1 — `since_ts` नंतर किंमत level (± band) ला स्पर्श करून **नाकारली गेली** अशा वेगळ्या घटनांची संख्या.
     Resistance-नाकार: bar चा high ≥ level−band, close ≤ level−band, open ≤ level+band (वरून उघडला नाही).
@@ -378,6 +402,8 @@ def count_rejections(df, level, band, since_ts, atr, cfg):
         s_rej = l[i] <= level + band and c[i] >= level + band and o[i] >= level - band
         hit = bool(r_rej or s_rej)
         if hit and not prev_hit:
+            if cfg.reject_redepart:
+                departed = False                         # V3.2: पुढचा नकार किंमत पुन्हा `depart` दूर गेल्यावरच
             out["count"] += 1
             window = slice(i + 1, i + 1 + int(cfg.reject_follow_bars))
             if atr > 0 and window.start < n:
@@ -489,7 +515,12 @@ def _score_zone(zone, cfg):
     }
     if zone["gap"] and not zone["tfs"] and not zone["keys"]:
         comp["gap"] = 30.0                                  # स्वतंत्र gap झोनचा पाया (इतर कुठलाच आधार नाही)
+    if cfg.min_base_points and comp["touches"] + comp["key_level"] < cfg.min_base_points:
+        comp["role_reversal"] = comp["rejections"] = comp["polarity"] = 0.0     # V3.2 (D): पाया नसेल तर bonus नाहीत
     score = _clamp(sum(comp.values()), 0.0, 100.0)
+    if cfg.chop_filter and zone.get("crossings", 0) > cfg.chop_max_crossings:
+        comp["chop"] = round(min(score, cfg.grade_b - 0.1) - score, 1)          # V3.2 (B): "चुंबक" => जास्तीत जास्त grade C
+        score = min(score, cfg.grade_b - 0.1)
     zone["components"] = {k: round(v, 1) for k, v in comp.items()}
     zone["score"] = round(score, 1)
     zone["grade"] = "A" if score >= cfg.grade_a else "B" if score >= cfg.grade_b else "C"
@@ -505,6 +536,8 @@ def _tags(zone):
         tags.append(f"REJ×{zone['rejections']}")
     if zone["polarity"] and not zone["flipped"]:
         tags.append("दोन्ही-बाजू")
+    if zone.get("components", {}).get("chop"):
+        tags.append(f"CHOP×{zone['crossings']}")
     return tags
 
 
@@ -548,8 +581,11 @@ def compute_sr_v3(frames, daily_df=None, current_price=None, cfg=None):
 
     flip_df = prepared.get(cfg.flip_frame, prepared[finest])
     flip_atr = compute_atr(flip_df, cfg.atr_period)
-    band = cfg.flip_band_frac * tol
+    band = max(cfg.flip_band_frac * tol, cfg.flip_min_break_atr * flip_atr)      # V3.2 (C): ठाम break
+    chop_since = now - pd.Timedelta(days=float(cfg.chop_lookback_days))
     for z in zones:
+        if cfg.chop_filter:
+            z["crossings"] = count_crossings(flip_df, z["level"], cfg.reject_band_frac * tol, chop_since)
         anchor = z["anchor"]
         since = anchor["ts"] if anchor and anchor.get("ts") is not None else z["last_pivot_ts"]
         if since is None or z["origin"] is None:
