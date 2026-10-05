@@ -94,7 +94,7 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
   प्रत्येक दिवशी open पासून ±1.5% मधले zones. प्रत्येक खऱ्या zone मागे 3 random zones (एकूण ~4.5 लाख).
 - Leg tests (label-shuffle permutation, 2000), PBO (leg grid 81 आणि engines 4), DSR, option-seller (5 सत्र).
 
-**Tests:** 2427 → 2434 (level_validation 7: bounce नियम, random zones, option breach, logistic, verdict, holdout guard).
+**Tests:** 2427 → 2435 (level_validation 8: bounce नियम, random zones, option breach, logistic, verdict, holdout guard, accuracy स्तंभ).
 
 **निर्णय (कारणासह):**
 - फक्त NIFTY: BANKNIFTY/MCX चा offline डेटा repo मध्ये नाही.
@@ -103,8 +103,15 @@ sealed holdout = Upstox 2024-04 → (फक्त G4 ला, एकदाच).
 - Random अंतर-वितरण त्या engine च्या **IS** खऱ्या अंतरांवरून (VAL चा वापर नाही).
 - Option-seller: प्रत्येक (engine, दिवस, बाजू) साठी किंमतीच्या सर्वात जवळचा मजबूत zone. कारण: एकाच दिवशी अनेक सारख्या strikes ने आकडे फुगू नयेत; हा बदल वेगासाठीही आवश्यक होता.
 - Verdict नियम: PBO > 0.05 ⇒ REJECT; कोणत्याही गटाचा n < 30 ⇒ REVIEW; IS edge > 0 आणि z ≥ 2 आणि VAL edge > 0 ⇒ KEEP.
+- Engines मधल्या निवडीचा PBO वेगळ्या ओळीत दिला, प्रत्येक engine वर लावला नाही (review नुसार). Engine वि. random ⇒ REVIEW.
+- हाताने लिहिलेले निष्कर्ष `leg_level_validation_conclusions.md` मध्ये. कारण: runner पुन्हा चालवल्यावर ते पुसले जाऊ नयेत.
+- Independent review: blocker नाही. केलेल्या दुरुस्त्या: random break दर + zone-रुंदी स्तंभ, touches-buckets engine-निहाय, leg rows ची एकके. z च्या स्वतंत्रता-गृहीतकाची मर्यादा अहवालात नोंदवली.
 
-**निकाल:** एकाही level engine ला random पेक्षा edge नाही (|z| < 1.8). T2.4 ताकद मदत करत नाही. Option strikes zone मुळे सुरक्षित नाहीत. STRONG/WEAK leg REJECT. HEALTHY pullback REVIEW (नमुना लहान).
+**निकाल:**
+- एकाही level engine ला random पेक्षा edge नाही (|z| < 1.8 ⇒ REVIEW). Engine निवड overfit (PBO 0.18).
+- T2.4 ताकद मदत करत नाही. Option strikes zone मुळे सुरक्षित नाहीत.
+- STRONG/WEAK leg REJECT. HEALTHY pullback REVIEW (नमुना लहान).
+- OE मध्ये न-retest zones कमी टिकतात (27% वि. 40–47%).
 
 **CI नोंद:** PR #243 चा एक CI run IST मध्यरात्री (23:59→00:05) fail झाला; त्याच code वरचा re-run हिरवा.
 Log blob मिळत नाही ⇒ कोणती test ते कळलं नाही. Date-rollover वर अवलंबून असलेली एखादी जुनी test असावी — **उघडा प्रश्न**.

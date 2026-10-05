@@ -26,9 +26,11 @@
 
 ## 3. T3 — Levels खरंच काम करतात का? (`docs/reports/leg_level_validation.md`)
 - **sr_dynamic, SR V3, OE zones, OE + ताकद — एकाही engine चे levels random levels पेक्षा जास्त bounce देत नाहीत** (फरक ±3pp, संख्याशास्त्रीय महत्त्व नाही).
-- SR V3 levels जास्त तुटतात (66%) कारण ते फार अरुंद आहेत. त्याच रुंदीचे random levels सुद्धा तितकेच तुटतात.
+- SR V3 levels जास्त तुटतात (~66%) कारण ते फार अरुंद आहेत. त्याच engine चे random levels सुद्धा तितकेच (66.5%) तुटतात.
+- प्रत्येक engine चा निर्णय: REVIEW (edge नाही). "कोणता engine सर्वोत्तम" ही IS वरची निवड overfit (PBO 0.18).
 - Option seller साठी: "मजबूत zone च्या पलीकडे strike" ही strike random strike इतकीच तुटते ⇒ सुरक्षा नाही.
-- एक मनोरंजक निरीक्षण: **कधीच retest न झालेले zones कमी टिकतात (27%) — एकदा तरी retest झालेले जास्त (37–43%)**, IS आणि VAL दोन्हींत. पुढचं गृहीतक म्हणून.
+- एक मनोरंजक निरीक्षण (OE zones, engine-निहाय): **कधीच retest न झालेले zones कमी टिकतात (27%); एकदा तरी retest झालेले जास्त (40–47%)**, IS आणि VAL दोन्हींत.
+  अजून random baseline शी तुलना नाही ⇒ पुढचं गृहीतक, निष्कर्ष नाही.
 
 ## 4. तुमचे निर्णय हवेत (G1 + G2)
 1. **G1:** report मधले 10 चार्ट पाहून leg लेबल्स पटतात का?

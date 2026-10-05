@@ -180,6 +180,9 @@ def accuracy_table(allrows):
                      "random_touched": nn, "random_bounce_pct": round(100 * kn / nn, 1) if nn else None,
                      "edge_pp": round(100 * (kr / nr - kn / nn), 1) if nr and nn else None, "z": round(V.two_prop_z(kr, nr, kn, nn), 2),
                      "real_break_pct": round(100 * float((real["outcome"] == V.BREAK).mean()), 1) if nr else None,
+                     "random_break_pct": round(100 * float((rnd["outcome"] == V.BREAK).mean()), 1) if nn else None,
+                     "real_width_pct_med": round(float((real["width"] / real["price0"] * 100).median()), 3) if nr else None,
+                     "random_width_pct_med": round(float((rnd["width"] / rnd["price0"] * 100).median()), 3) if nn else None,
                      "real_react_mr": round(float(real["react_mr"].mean()), 3) if nr else None, "random_react_mr": round(float(rnd["react_mr"].mean()), 3) if nn else None})
     return pd.DataFrame(rows)
 
@@ -192,14 +195,16 @@ def touches_fit(real):
     t = real[(real["kind"] == "REAL") & real["touched"] & (real["engine"].isin(["DYN", "SRV3", "OE"]))].copy()
     if not len(t):
         return pd.DataFrame(), pd.DataFrame()
-    X = t[list(FEATS)].astype(float).fillna(0.0)
+    X = t[list(FEATS)].astype(float).fillna(0.0)                       # उगम माहीत नसेल (DYN) तर departure/base = 0 — मर्यादा, अहवालात नोंद
     y = (t["outcome"] == V.BOUNCE).astype(float)
     is_m = t["period"] == "IS"
     mu, sd = X[is_m].mean(), X[is_m].std().replace(0, 1.0)
     coef, b0 = V.logistic_fit(((X[is_m] - mu) / sd).to_numpy(), y[is_m].to_numpy())
     fit = pd.DataFrame({"feature": FEATS, "coef_IS(standardised)": np.round(coef, 3)})
     t["touch_bucket"] = pd.cut(t["f_touches"], [-1, 0, 1, 2, 4, 1e9], labels=["0", "1", "2", "3–4", "5+"]).astype(str)
-    bk = t.groupby(["period", "touch_bucket"]).apply(lambda g: pd.Series({"n": len(g), "bounce_pct": round(100 * float((g["outcome"] == V.BOUNCE).mean()), 1)}), include_groups=False).reset_index()
+    bk = t.groupby(["engine", "period", "touch_bucket"]).apply(lambda g: pd.Series({"n": int(len(g)), "bounce_pct": round(100 * float((g["outcome"] == V.BOUNCE).mean()), 1)}),
+                                                                include_groups=False).reset_index()            # engine-निहाय (engines चे base rates वेगळे)
+    bk["n"] = bk["n"].astype(int)
     return fit, bk
 
 
@@ -393,15 +398,20 @@ def main(argv=None):
         z_is = g.loc["IS", "z"] if "IS" in g.index else None
         e_val = g.loc["VAL", "edge_pp"] if "VAL" in g.index else None
         n_min = min(int(g.loc[p, "real_touched"]) if p in g.index else 0 for p in ("IS", "VAL"))
-        ver.append({"घटक": f"Level engine {eng}", "IS edge (pp)": e_is, "IS z": z_is, "VAL edge (pp)": e_val, "निर्णय": verdict(e_is, z_is, e_val, en_pbo.get("pbo"), n_min)})
+        ver.append({"घटक": f"Level engine {eng} (वि. random)", "IS edge": f"{e_is} pp", "IS z / p": z_is, "VAL edge": f"{e_val} pp", "निर्णय": verdict(e_is, z_is, e_val, None, n_min)})
+    ep = en_pbo.get("pbo")
+    ver.append({"घटक": "Engines मधून IS-सर्वोत्तम निवड", "IS edge": f"सर्वोत्तम {en_pbo.get('best')}", "IS z / p": f"PBO={ep}", "VAL edge": "",
+                "निर्णय": "REJECT (PBO > 0.05)" if ep is not None and ep > 0.05 else "KEEP"})
     lis, lval = lt.set_index("period").loc["IS"], lt.set_index("period").loc["VAL"]
-    ver.append({"घटक": "Leg: STRONG वि. WEAK impulse", "IS edge (pp)": lis["strong_minus_weak"], "IS z": f"p={lis['p_perm']}", "VAL edge (pp)": lval["strong_minus_weak"],
+    ver.append({"घटक": "Leg: STRONG वि. WEAK impulse (fwd, × range)", "IS edge": lis["strong_minus_weak"], "IS z / p": f"p={lis['p_perm']}", "VAL edge": lval["strong_minus_weak"],
                 "निर्णय": verdict(lis["strong_minus_weak"], 2.0 if (lis["p_perm"] or 1) < 0.05 else 0.0, lval["strong_minus_weak"], lg_pbo["pbo"],
                                  min(lis["n_strong"], lis["n_weak"], lval["n_strong"], lval["n_weak"]))})
-    ver.append({"घटक": "Leg: HEALTHY वि. DANGEROUS pullback", "IS edge (pp)": lis["healthy_minus_danger"], "IS z": f"p={lis['p_perm_pullback']}", "VAL edge (pp)": lval["healthy_minus_danger"],
+    ver.append({"घटक": "Leg: HEALTHY वि. DANGEROUS pullback (resume दर)", "IS edge": lis["healthy_minus_danger"], "IS z / p": f"p={lis['p_perm_pullback']}", "VAL edge": lval["healthy_minus_danger"],
                 "निर्णय": verdict(lis["healthy_minus_danger"], 2.0 if (lis["p_perm_pullback"] or 1) < 0.05 else 0.0, lval["healthy_minus_danger"],
                                  n_min=min(lis["n_healthy"], lis["n_danger"], lval["n_healthy"], lval["n_danger"]))})
     if a.report:
+        cpath = os.path.splitext(a.report)[0] + "_conclusions.md"          # हाताने लिहिलेले निष्कर्ष वेगळ्या फाईलमध्ये — पुन्हा चालवल्यावर पुसले जात नाहीत
+        conclusions = open(cpath, encoding="utf-8").read() if os.path.exists(cpath) else "_(निष्कर्ष: `" + os.path.basename(cpath) + "` अजून लिहिलेला नाही.)_\n"
         txt = ["# T3 — Leg आणि Level validation (Osler पद्धत, NIFTY)\n",
                f"डेटा: NIFTY offline 1M → 15M ({len(d15)} bars), IS 2015→2021, VAL 2022→2024-03. Sealed holdout वापरलेला नाही. BANKNIFTY/MCX offline डेटा उपलब्ध नाही ⇒ फक्त NIFTY.",
                f"Bounce = पहिल्या स्पर्शानंतर {N_BARS} bars (15M) मध्ये close दूरच्या कडेपलीकडे जाण्याआधी zone पासून ≥ {BOUNCE_MR} × median_range close-अंतर. zones दिवसाच्या open पासून ±{MAX_DIST_PCT}%.",
@@ -414,7 +424,7 @@ def main(argv=None):
                f"- Leg impulse grid (81 trials, IS दैनिक signal-R): PBO = **{lg_pbo['pbo']}**, IS-सर्वोत्तम {lg_pbo['best']}, DSR = {lg_pbo['dsr'].get('dsr')}",
                f"- Level engines (trials = {en_pbo.get('engines')}, IS दैनिक react-R): PBO = **{en_pbo.get('pbo')}**, सर्वोत्तम {en_pbo.get('best')}, Sharpe {en_pbo.get('sharpe')}, DSR = {(en_pbo.get('dsr') or {}).get('dsr')}\n",
                "## 4. Option-seller चाचणी (5 सत्र hold; ZONE = मजबूत zone ची दूरची कड, RANDOM = त्याच % अंतरावर यादृच्छिक दिवस)\n", _md(opt),
-               "\n## 5. निष्कर्ष\n", "_(`docs/WORK_LOG.md` आणि सकाळचा अहवाल पाहा.)_\n"]
+               "\n## 5. निष्कर्ष\n", conclusions]
         os.makedirs(os.path.dirname(a.report) or ".", exist_ok=True)
         with open(a.report, "w", encoding="utf-8") as fh:
             fh.write("\n".join(map(str, txt)))

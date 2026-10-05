@@ -70,3 +70,11 @@ def test_period_never_includes_holdout_and_verdict_rules():
     assert T3.verdict(5.0, 3.0, 2.0, n_min=10).startswith("REVIEW")
     assert T3.verdict(-1.0, -1.0, -2.0, n_min=100) == "REJECT"
     assert T3.verdict(5.0, 1.0, 2.0, n_min=100) == "REVIEW"
+
+
+def test_accuracy_table_reports_random_break_and_widths():
+    rows = pd.DataFrame([
+        {"engine": "E", "period": "IS", "kind": k, "touched": True, "outcome": o, "react_mr": 0.0, "width": w, "price0": 100.0}
+        for k, o, w in [("REAL", V.BOUNCE, 1.0), ("REAL", V.BREAK, 1.0), ("RANDOM", V.BREAK, 1.0), ("RANDOM", V.BREAK, 1.0), ("RANDOM", V.BOUNCE, 1.0)]])
+    acc = T3.accuracy_table(rows).iloc[0]
+    assert acc["real_bounce_pct"] == 50.0 and acc["random_break_pct"] == pytest.approx(66.7) and acc["real_width_pct_med"] == 1.0
