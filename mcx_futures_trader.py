@@ -397,6 +397,146 @@ def fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=15
     return df[df["timestamp"] + pd.Timedelta(minutes=30) <= now_ts].reset_index(drop=True)
 
 
+# 🎓 Candlestick Confirmation (वापरकर्त्याचा plan, 5 Oct) — बघा mcx_filters.find_candle_confirmation. State: वापरलेले patterns (एकच pattern
+# दोनदा trade नाही) आणि प्रतीक्षेतला "भाग 2" (confirmation candle च्या 50% pullback वर उरलेले lots). फक्त entry-process वाचतो/लिहितो.
+CANDLE_STATE = os.path.join("data", "mcx_candle_confirm.json")
+CANDLE_LOOKBACK = 2                 # शेवटच्या 2 पूर्ण candles पैकी
+CANDLE_PULLBACK_EXPIRY_CANDLES = 2  # भाग 2 ची मुदत: confirmation candle नंतर पुढच्या 2 candles (त्याच TF च्या)
+
+
+def _candle_state_load(path=None):
+    return SRV3._load_state(path or CANDLE_STATE) or {}
+
+
+def _candle_state_save(state, path=None):
+    SRV3._save_state(state, path or CANDLE_STATE)
+
+
+def _candle_key(symbol, source):
+    return f"{symbol}|{source}"
+
+
+def _candle_used_id(level_price, conf):
+    return f"{round(float(level_price), 2)}|{conf['tf']}|{pd.Timestamp(conf['ts']).isoformat()}"
+
+
+def fetch_candle_confirm_frames(access_token, instrument_key, now, tf_choice):
+    """Candle confirmation साठी `now` पर्यंत **पूर्ण** झालेले 30M (आणि त्यावरून 60M, 09:00 पासूनचे तास) bars. डेटा नाही ⇒ {}."""
+    df30 = fetch_completed_30m_bars(access_token, instrument_key, now, lookback_days=3)
+    if df30 is None or df30.empty:
+        return {}
+    frames = {}
+    if tf_choice in ("30M", "ANY"):
+        frames["30M"] = df30
+    if tf_choice in ("60M", "ANY"):
+        d = df30.copy()
+        for col in ("volume", "oi"):
+            if col not in d.columns:
+                d[col] = 0
+        h = resample_to_1h(d)
+        now_ts = pd.Timestamp(now).tz_localize(None) if pd.Timestamp(now).tzinfo else pd.Timestamp(now)
+        frames["60M"] = h[h["timestamp"] + pd.Timedelta(minutes=60) <= now_ts].reset_index(drop=True)
+    return frames
+
+
+def _sl_target_points(settings, entry_price):
+    if settings.get("sl_target_mode", "POINTS") == "PERCENT":
+        return entry_price * float(settings.get("sl_pct", 2.0)) / 100, entry_price * float(settings.get("target_pct", 4.0)) / 100
+    return float(settings["sl_points"]), float(settings["target_points"])
+
+
+def _open_futures_trade(access_token, symbol, settings, resolved, direction, price, lots, sl_points, target_points, level_price,
+                        timeframe_suffix, source, shadow, entry_reason_tag=None):
+    """एकच futures leg (BUY/SELL) PAPER/LIVE मध्ये उघडणे (एक किंवा अनेक broker accounts). रिटर्न trade_status मजकूर."""
+    transaction_type = "BUY" if direction == "BULLISH" else "SELL"
+    entry_price_estimate = float(price)
+    # 🎓 net_credit चिन्ह-नियम (trading_engine.open_multi_leg_trade() च्या Naked Option पॅटर्नशी सुसंगत) — SELL (credit) = धन, BUY (debit)
+    # = ऋण. फक्त bookkeeping साठी; प्रत्यक्ष fill किंमत आल्यावर trading_engine.py स्वतःच पुन्हा-गणना करतो.
+    net_credit_estimate = entry_price_estimate if transaction_type == "SELL" else -entry_price_estimate
+    leg = {
+        "role": "futures_long" if direction == "BULLISH" else "futures_short",
+        "instrument_key": resolved["instrument_key"], "transaction_type": transaction_type,
+        "ltp": entry_price_estimate,
+        # "strike": 0 — dummy, फक्त trading_engine.py च्या strikes_summary display-स्ट्रिंगसाठी.
+        "strike": 0, "option_type": None, "expiry": resolved.get("expiry"),
+    }
+    strategy_result = {
+        "strategy": "MCX_FUTURES_LONG" if direction == "BULLISH" else "MCX_FUTURES_SHORT",
+        "legs": [leg], "net_credit": net_credit_estimate,
+        "max_loss": sl_points, "max_profit": target_points,
+    }
+    trading_mode = "PAPER" if shadow else settings.get("trading_mode", "PAPER")
+    broker_account_ids = [] if shadow else (settings.get("broker_account_ids") or [])
+    if broker_account_ids:
+        from trading_engine import execute_trade_on_all_accounts
+        results, factory_errors = execute_trade_on_all_accounts(
+            symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=resolved["lot_size"],
+            sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
+            product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
+            sl_pct_of_credit=None, source=STRATEGY_KEY,
+            entry_level_price=level_price, entry_timeframe=timeframe_suffix,
+            account_ids=broker_account_ids, entry_reason_tag=entry_reason_tag,
+        )
+        trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
+        if factory_errors:
+            trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+        return trade_status
+    trade_ok, trade_response = open_multi_leg_trade(
+        access_token, symbol, strategy_result, lots=lots, lot_size=resolved["lot_size"],
+        sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
+        product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
+        sl_pct_of_credit=None, source=source,
+        entry_level_price=level_price, entry_timeframe=timeframe_suffix, entry_reason_tag=entry_reason_tag,
+    )
+    # 🎓 code-review bug — open_multi_leg_trade() चं दुसरं मूल्य dict; raw dict signal_log.trade_status (TEXT) मध्ये गेला तर insert अपयशी.
+    return format_trade_result(trade_ok, trade_response)
+
+
+def process_candle_pending(access_token, symbol, source, settings, resolved, now, shadow=False, state_path=None):
+    """प्रतीक्षेतला "भाग 2" (confirmation candle च्या 50% pullback वर उरलेले lots). रिटर्न (still_pending: bool, message|None).
+    रद्द: मुदत संपली / नवीन-entry वेळ संपली / भाग 1 बंद झाला / 30M close ने level तुटला. भरला: भाव pullback पर्यंत आला ⇒ स्वतंत्र SL/Target सह trade."""
+    state = _candle_state_load(state_path)
+    key = _candle_key(symbol, source)
+    p = (state.get("pending") or {}).get(key)
+    if not p:
+        return False, None
+
+    def _drop(msg):
+        state.get("pending", {}).pop(key, None)
+        _candle_state_save(state, state_path)
+        send_telegram_message(f"🕯️ {symbol} MCX — भाग 2 रद्द: {msg}")
+        return False, f"{symbol}: 🕯️ भाग 2 रद्द — {msg}"
+
+    now_naive = pd.Timestamp(now).tz_localize(None) if pd.Timestamp(now).tzinfo else pd.Timestamp(now)
+    if now_naive >= pd.Timestamp(p["expires"]):
+        return _drop(f"मुदत संपली ({pd.Timestamp(p['expires']):%H:%M}) — भाव {p['pullback']:.2f} पर्यंत परत आला नाही")
+    if (now.hour, now.minute) >= MCX_NO_NEW_ENTRY_AFTER:
+        return _drop("नवीन entry ची वेळ संपली")
+    if p.get("part1_opened") and not has_open_trade_from_source(symbol, source):
+        return _drop("भाग 1 आधीच बंद झाला (SL/Target/Trailing)")
+    df = fetch_mcx_candles(access_token, resolved["instrument_key"], interval="30minute", lookback_days=2)
+    if df is None or df.empty:
+        return True, f"{symbol}: 🕯️ भाग 2 प्रतीक्षेत ({p['lots']} lot @ {p['pullback']:.2f}) — भाव मिळाला नाही"
+    price = float(df["close"].iloc[-1])
+    done = fetch_completed_30m_bars(access_token, resolved["instrument_key"], now, lookback_days=2)
+    band = float(p["level"]) * TOUCH_TOLERANCE_PCT / 100
+    if done is not None and not done.empty and pd.Timestamp(done["timestamp"].iloc[-1]) >= pd.Timestamp(p["candle_ts"]):
+        last_close = float(done["close"].iloc[-1])
+        if (p["direction"] == "BULLISH" and last_close < p["level"] - band) or (p["direction"] == "BEARISH" and last_close > p["level"] + band):
+            return _drop(f"30M close {last_close:.2f} ने level {p['level']:.2f} तोडला")
+    if not MF.pullback_reached(p["direction"], price, p["pullback"]):
+        return True, f"{symbol}: 🕯️ भाग 2 प्रतीक्षेत ({p['lots']} lot @ {p['pullback']:.2f}, भाव {price:.2f}, मुदत {pd.Timestamp(p['expires']):%H:%M})"
+    sl_pts, tgt_pts = _sl_target_points(settings, price)
+    status = _open_futures_trade(access_token, symbol, settings, resolved, p["direction"], price, int(p["lots"]), sl_pts, tgt_pts,
+                                 float(p["level"]), p["timeframe_suffix"], source, shadow, entry_reason_tag="CANDLE_PULLBACK_50")
+    state.get("pending", {}).pop(key, None)
+    _candle_state_save(state, state_path)
+    msg = (f"🕯️ {symbol} MCX — भाग 2 (50% pullback {p['pullback']:.2f}) {'BUY' if p['direction'] == 'BULLISH' else 'SELL'} "
+           f"{p['lots']} lot @≈{price:.2f} | {p['pattern']} {p['tf']} @ level {p['level']:.2f} | निकाल: {status}")
+    send_telegram_message(msg)
+    return False, f"{symbol}: {msg}"
+
+
 def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC", shadow=False):
     """एका MCX commodity साठी — 30M/60M levels (settings-चालित), RSI dual-threshold gate,
     Multi-Hit, आणि आढळल्यास एकाच futures leg चं PAPER/LIVE trade (settings-चालित lots/SL/Target).
@@ -417,7 +557,6 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     if not ok:
         return f"{symbol}: सध्याचा (current/continuous) Futures contract सापडला नाही ({resolved})"
     instrument_key = resolved["instrument_key"]
-    lot_size = resolved["lot_size"]
     roll_ok, roll_msg = check_contract_roll(access_token, symbol, resolved)
     if roll_msg:
         print(roll_msg)
@@ -445,6 +584,10 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     sl_cooldown_minutes = int(settings.get("sl_cooldown_minutes", 60) or 0)
     sl_level_direction_block_enabled = settings.get("sl_level_direction_block_enabled", True)
     cascade_filter_enabled = settings.get("cascade_filter_enabled", False)
+    candle_gate_enabled = bool(settings.get("candle_confirm_enabled", False))
+    candle_tf = settings.get("candle_confirm_tf", "ANY")
+    candle_patterns = tuple(settings.get("candle_confirm_patterns") or MF.CANDLE_PATTERN_GROUPS)
+    candle_frames_cache = []          # candle confirmation साठी पूर्ण 30M/60M bars -- lazily, प्रति-cycle एकदाच
     closed_today_cache = []           # आजचे बंद trades (cooldown/level-direction) -- lazily, प्रति-cycle एकदाच
     completed_30m_cache = []          # cascade साठी entry आधीचे पूर्ण 30M bars -- lazily
     entry_min_hold_gate_enabled = settings.get("entry_min_hold_gate_enabled", True)
@@ -453,6 +596,14 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     todays_1m_cache = []  # प्रति-symbol, प्रति-cycle एकदाच -- lazily
     timeframe_choice = settings.get("timeframe_choice", "30M")
     active_suffixes = TIMEFRAME_SUFFIXES if timeframe_choice == "ALL" else [timeframe_choice]
+
+    # 🎓 Candlestick Confirmation: प्रतीक्षेतला "भाग 2" आधी (gate नंतर बंद केला तरी आधीचा pending पूर्ण/रद्द होतो). प्रतीक्षेत असताना त्या
+    # symbol वर नवीन signal नाही (एकाच signal चे दोन भाग).
+    still_pending, pending_msg = process_candle_pending(access_token, symbol, source, settings, resolved, get_ist_now(), shadow=shadow)
+    if pending_msg:
+        print(pending_msg)
+    if still_pending:
+        return pending_msg
 
     all_zones = cloud_db.get_market_zones(symbol)
     if all_zones is None or all_zones.empty:
@@ -526,6 +677,20 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                         and check_breakout_candle_close(level_price, direction, candles_for_breakout, buffer_pct=0.0)):
                     is_breakout_trade = True
                     touched = True
+
+        # 🎓 Candlestick Confirmation: level ला लागून शेवटच्या 2 पूर्ण candles पैकी एकावर दिशेचा pattern असेल तर (भाव आत्ता level जवळ
+        # नसला तरी) हा "hit" -- पुढे सर्व gates तसेच लागू. आधीच वापरलेला pattern पुन्हा नाही. Breakout ला लागू नाही.
+        candle_conf = None
+        if candle_gate_enabled and not is_breakout_trade:
+            if not candle_frames_cache:
+                candle_frames_cache.append(fetch_candle_confirm_frames(access_token, instrument_key, now, candle_tf))
+            candle_conf = MF.find_candle_confirmation(candle_frames_cache[0], direction, level_price, TOUCH_TOLERANCE_PCT,
+                                                      CANDLE_LOOKBACK, candle_patterns)
+            if candle_conf is not None and _candle_used_id(level_price, candle_conf) in \
+                    (_candle_state_load().get("used") or {}).get(_candle_key(symbol, source), []):
+                candle_conf = None
+            if candle_conf is not None:
+                touched = True
 
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
@@ -609,7 +774,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         # level+role वरच्या आजच्या पहिल्या **खऱ्या** trade ला (last_trade_time -- नाकारलेला touch "पहिला" मोजला जात नाही). Breakout ला
         # लागू नाही (किंमत level पासून दूर गेलेली असते, टिकण्याचा प्रश्नच नाही; त्याचं स्वतःचं confirmation आधीच आहे). 1-मिनिट डेटा
         # नसेल/त्रुटी आली तर fail-open. SKIPPED_MIN_HOLD_DURATION no-hit status (max-hits मोजत नाही).
-        if (entry_min_hold_gate_enabled and not is_breakout_trade
+        # Candlestick confirmation असेल तर min-hold लागू नाही -- पूर्ण candle हाच level टिकल्याचा पुरावा (भाव आता level पासून दूर असू शकतो).
+        if (entry_min_hold_gate_enabled and not is_breakout_trade and candle_conf is None
                 and not (entry_min_hold_first_trade_only and last_trade_time is not None)):
             if not todays_1m_cache:
                 todays_1m_cache.append(fetch_mcx_todays_1m_candles(access_token, instrument_key, now))
@@ -654,6 +820,28 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                 _log(log_entry)
                 continue
 
+        # 🎓 Candlestick Confirmation gate + 50/50: lots ≥ 2 ⇒ ceil(50%) लगेच (भाव confirmation candle च्या range मध्ये असेल तरच) आणि उरलेले
+        # candle च्या 50% pullback वर (process_candle_pending). lots = 1 ⇒ split नाही, पूर्ण quantity लगेच (range मध्ये असेल तरच).
+        lots_now, lots_later = lots, 0
+        if candle_gate_enabled and not is_breakout_trade:
+            if candle_conf is None:
+                log_entry["trade_status"] = "SKIPPED_CANDLE_CONFIRMATION"
+                log_entry["reason"] = (f"{'/'.join(['30M', '60M'] if candle_tf == 'ANY' else [candle_tf])}: level ला लागून "
+                                       f"{'Hammer/Bullish Engulfing' if direction == 'BULLISH' else 'Shooting Star/Bearish Engulfing'} "
+                                       f"नाही (शेवटच्या {CANDLE_LOOKBACK} पूर्ण candles) ({timeframe_suffix})")
+                _log(log_entry)
+                continue
+            split = MF.split_lots(lots)
+            lots_now, lots_later = split if split else (lots, 0)
+            if not MF.price_inside_candle(current_price, candle_conf):
+                if not lots_later:
+                    log_entry["trade_status"] = "SKIPPED_CANDLE_PRICE_MOVED_AWAY"
+                    log_entry["reason"] = (f"{candle_conf['pattern']} {candle_conf['tf']} आहे, पण भाव {current_price:.2f} confirmation candle च्या "
+                                           f"range ({candle_conf['low']:.2f}–{candle_conf['high']:.2f}) बाहेर — मागे धावत नाही ({timeframe_suffix})")
+                    _log(log_entry)
+                    continue
+                lots_now = 0                  # फक्त भाग 2 (pullback) प्रतीक्षेत
+
         if has_open_trade_from_source(symbol, source):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
             log_entry["reason"] = f"आधीची MCX Futures position (कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
@@ -661,32 +849,10 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             continue
 
         # --- सर्व अटी पूर्ण! Entry — एकच futures leg (options concepts काहीच नाहीत) ---
-        transaction_type = "BUY" if direction == "BULLISH" else "SELL"
         entry_price_estimate = float(current_price)
-        # 🎓 net_credit चिन्ह-नियम (trading_engine.open_multi_leg_trade() च्या Naked Option पॅटर्नशी
-        # सुसंगत) — SELL (credit) = धन, BUY (debit) = ऋण. फक्त bookkeeping साठी; प्रत्यक्ष fill
-        # किंमत आल्यावर trading_engine.py स्वतःच त्याच सूत्राने पुन्हा-गणना करून delta नुसार
-        # max_loss/max_profit समायोजित करतो (slippage-सुरक्षित, कुठलाही बदल न करता established वर्तन).
-        net_credit_estimate = entry_price_estimate if transaction_type == "SELL" else -entry_price_estimate
-        leg = {
-            "role": "futures_long" if direction == "BULLISH" else "futures_short",
-            "instrument_key": instrument_key, "transaction_type": transaction_type,
-            "ltp": entry_price_estimate,
-            # "strike": 0 — dummy, फक्त trading_engine.py च्या strikes_summary display-स्ट्रिंगसाठी
-            # (f"{leg['role']}:{leg['strike']:.0f}") — trading_engine.py ला अजिबात हात न लावता,
-            # पूर्णपणे futures-side workaround.
-            "strike": 0, "option_type": None, "expiry": resolved.get("expiry"),
-        }
-        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — sl_target_mode=="PERCENT"
-        # असेल तर entry_price_estimate च्या % वरून points-समतुल्य आकडा काढला जातो — पुढे trading_engine.
-        # open_multi_leg_trade() ला नेहमीच points (max_loss/max_profit) च मिळतात, mode तिथे कधीच जात
-        # नाही (trading_engine.py ला अजिबात हात न लावता).
-        if settings.get("sl_target_mode", "POINTS") == "PERCENT":
-            sl_points_effective = entry_price_estimate * float(settings.get("sl_pct", 2.0)) / 100
-            target_points_effective = entry_price_estimate * float(settings.get("target_pct", 4.0)) / 100
-        else:
-            sl_points_effective = float(settings["sl_points"])
-            target_points_effective = float(settings["target_points"])
+        transaction_type = "BUY" if direction == "BULLISH" else "SELL"
+        # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Points सोबतच Percentage mode) — PERCENT असेल तर entry किंमतीच्या % वरून points-समतुल्य आकडा.
+        sl_points_effective, target_points_effective = _sl_target_points(settings, entry_price_estimate)
         target_note = ""
         if settings.get("next_level_target_enabled", False):
             nl = MF.next_level_target(_bot_level_prices(all_zones, active_suffixes, level_source), entry_price_estimate, direction,
@@ -696,40 +862,31 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                 target_note = f"🎯 Target = पुढचा level {nl:.2f} ({target_points_effective:.2f} pts)"
             else:
                 target_note = f"Target: पुढचा level सापडला नाही — नेहमीचा {target_points_effective:.2f} pts"
-        strategy_result = {
-            "strategy": "MCX_FUTURES_LONG" if direction == "BULLISH" else "MCX_FUTURES_SHORT",
-            "legs": [leg], "net_credit": net_credit_estimate,
-            "max_loss": sl_points_effective, "max_profit": target_points_effective,
-        }
 
-        trading_mode = "PAPER" if shadow else settings.get("trading_mode", "PAPER")
-        broker_account_ids = [] if shadow else (settings.get("broker_account_ids") or [])
-        if broker_account_ids:
-            from trading_engine import execute_trade_on_all_accounts
-            results, factory_errors = execute_trade_on_all_accounts(
-                symbol=symbol, strategy_result=strategy_result, base_lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
-                product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=None, source=STRATEGY_KEY,
-                entry_level_price=level_price, entry_timeframe=timeframe_suffix,
-                account_ids=broker_account_ids,
-            )
-            trade_status = "; ".join(f"{r['account_id']}:{r['result']}" for r in results) or "कुठलाही account उपलब्ध नाही"
-            if factory_errors:
-                trade_status += " | वगळलेले: " + "; ".join(factory_errors)
+        candle_note = ""
+        if candle_conf is not None:
+            candle_note = (f"🕯️ {candle_conf['pattern']} {candle_conf['tf']} ({pd.Timestamp(candle_conf['ts']):%H:%M}, "
+                           f"{candle_conf['low']:.2f}–{candle_conf['high']:.2f})")
+        if lots_now > 0:
+            trade_status = _open_futures_trade(access_token, symbol, settings, resolved, direction, entry_price_estimate, lots_now,
+                                               sl_points_effective, target_points_effective, level_price, timeframe_suffix, source, shadow,
+                                               entry_reason_tag="CANDLE_CONFIRM" if candle_conf is not None else None)
         else:
-            trade_ok, trade_response = open_multi_leg_trade(
-                access_token, symbol, strategy_result, lots=lots, lot_size=lot_size,
-                sl_pct_of_max_loss=100, target_pct_of_max_profit=100,
-                product_type=PRODUCT_TYPE, trading_mode=trading_mode, trading_style="INTRADAY",
-                sl_pct_of_credit=None, source=source,
-                entry_level_price=level_price, entry_timeframe=timeframe_suffix,
-            )
-            # 🎓 code-review द्वारे सापडवलेली bug (बघा trading_engine.format_trade_result() ची
-            # टिप्पणी) — open_multi_leg_trade() चं दुसरं मूल्य dict असतं, raw dict signal_log.
-            # trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी
-            # ठरायचा, आणि नेमकी entry-क्षणाचीच signal_log रांग हरवायची.
-            trade_status = format_trade_result(trade_ok, trade_response)
+            trade_status = "PENDING_PULLBACK_50"
+        if candle_conf is not None:
+            cstate = _candle_state_load()
+            cstate.setdefault("used", {}).setdefault(_candle_key(symbol, source), [])
+            cstate["used"][_candle_key(symbol, source)] = (cstate["used"][_candle_key(symbol, source)] + [_candle_used_id(level_price, candle_conf)])[-50:]
+            if lots_later > 0:
+                tf_min = 60 if candle_conf["tf"] == "60M" else 30
+                expires = pd.Timestamp(candle_conf["end"]) + pd.Timedelta(minutes=tf_min * CANDLE_PULLBACK_EXPIRY_CANDLES)
+                cstate.setdefault("pending", {})[_candle_key(symbol, source)] = {
+                    "direction": direction, "level": float(level_price), "lots": int(lots_later), "pullback": float(candle_conf["pullback"]),
+                    "pattern": candle_conf["pattern"], "tf": candle_conf["tf"], "candle_ts": pd.Timestamp(candle_conf["ts"]).isoformat(),
+                    "expires": expires.isoformat(), "part1_opened": lots_now > 0, "timeframe_suffix": timeframe_suffix,
+                }
+                candle_note += f" | भाग 2: {lots_later} lot @ {candle_conf['pullback']:.2f} (50% pullback, मुदत {expires:%H:%M})"
+            _candle_state_save(cstate)
 
         if is_breakout_trade:
             rsi_display = f"📈 Breakout Entry (price consolidation + candle close, {timeframe_suffix}) — RSI Gate वगळले."
@@ -744,6 +901,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             log_entry["reason"] = rsi_display
         if target_note:
             log_entry["reason"] += f" | {target_note}"
+        if candle_note:
+            log_entry["reason"] += f" | {candle_note}" + (f" | भाग 1: {lots_now} lot" if lots_now and lots_later else "")
         _log(log_entry)
 
         hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
@@ -755,6 +914,7 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"
             + (f"{target_note}\n" if target_note else "") +
+            (f"{candle_note}\n" if candle_note else "") +
             f"निकाल: {trade_status}\n"
             f"वेळ: {now.strftime('%H:%M:%S')}"
         )

@@ -148,3 +148,87 @@ def next_level_target(levels, entry_price, direction, min_distance):
         return above[0] if above else None
     below = sorted((float(lv) for lv in levels if entry - float(lv) >= min_distance), reverse=True)
     return below[0] if below else None
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 🎓 Candlestick Confirmation (वापरकर्त्याचा plan, 5 Oct): level ला लागून **पूर्ण** 30M/60M candle वर Hammer/Bullish Engulfing (support) किंवा
+# Shooting Star/Bearish Engulfing (resistance) झाला तरच entry; lots ≥ 2 ⇒ 50% लगेच + 50% confirmation candle च्या 50% pullback वर.
+# ---------------------------------------------------------------------------------------------------------------------
+CANDLE_TFS = ("30M", "60M", "ANY")
+CANDLE_PATTERN_GROUPS = ("HAMMER", "ENGULFING")          # HAMMER = Hammer (bullish) / Shooting Star (bearish)
+BULLISH_PATTERNS = {"HAMMER": "HAMMER", "ENGULFING": "BULLISH_ENGULFING"}
+BEARISH_PATTERNS = {"HAMMER": "SHOOTING_STAR", "ENGULFING": "BEARISH_ENGULFING"}
+
+
+def candle_pattern(prev, cur):
+    """दोन candles (dict/Series: open/high/low/close) -> "BULLISH_ENGULFING" | "BEARISH_ENGULFING" | "HAMMER" | "SHOOTING_STAR" | None.
+    Engulfing: आधीची उलट रंगाची, आताच्या body ने आधीची संपूर्ण body झाकली (आताची body मोठी). Hammer: खालचा wick ≥ 2×body, वरचा ≤ 0.5×body;
+    Shooting Star: उलट. Engulfing आधी तपासतो (दोन्ही लागू असतील तर)."""
+    o, h, l, c = (float(cur[k]) for k in ("open", "high", "low", "close"))
+    body, rng = abs(c - o), h - l
+    if rng <= 0:
+        return None
+    if prev is not None:
+        po, pc = float(prev["open"]), float(prev["close"])
+        pbody = abs(pc - po)
+        if pc < po and c > o and o <= pc and c >= po and body > pbody:
+            return "BULLISH_ENGULFING"
+        if pc > po and c < o and o >= pc and c <= po and body > pbody:
+            return "BEARISH_ENGULFING"
+    if body <= 0:
+        return None
+    upper, lower = h - max(o, c), min(o, c) - l
+    if lower >= 2 * body and upper <= 0.5 * body:
+        return "HAMMER"
+    if upper >= 2 * body and lower <= 0.5 * body:
+        return "SHOOTING_STAR"
+    return None
+
+
+def find_candle_confirmation(frames, direction, level, tol_pct=0.10, lookback=2, patterns=CANDLE_PATTERN_GROUPS):
+    """frames = {"30M": df, "60M": df} -- फक्त **पूर्ण** झालेले candles (no-lookahead caller ची जबाबदारी), जुनं ते नवं.
+    शेवटच्या `lookback` candles पैकी (नवी आधी) `direction` चा pattern, आणि ती candle level ला लागून परत फिरलेली हवी:
+    BULLISH ⇒ low ≤ level+band आणि close ≥ level−band; BEARISH ⇒ high ≥ level−band आणि close ≤ level+band (band = level × tol_pct%).
+    रिटर्न: {"tf","pattern","ts","end","open","high","low","close","pullback"} (pullback = candle range चा 50%; अनेक TF मध्ये सापडला
+    तर ज्याची candle सर्वात उशिरा पूर्ण झाली तो) किंवा None."""
+    wanted = {(BULLISH_PATTERNS if direction == "BULLISH" else BEARISH_PATTERNS)[g] for g in patterns if g in BULLISH_PATTERNS}
+    band = float(level) * tol_pct / 100.0
+    best = None
+    for tf, df in (frames or {}).items():
+        if df is None or len(df) < 2:
+            continue
+        n = len(df)
+        for i in range(n - 1, max(n - 1 - int(lookback), 0), -1):
+            cur, prev = df.iloc[i], df.iloc[i - 1]
+            pat = candle_pattern(prev, cur)
+            if pat not in wanted:
+                continue
+            lo, hi, cl = float(cur["low"]), float(cur["high"]), float(cur["close"])
+            touched = (lo <= level + band and cl >= level - band) if direction == "BULLISH" else (hi >= level - band and cl <= level + band)
+            if not touched:
+                continue
+            ts = pd.Timestamp(cur["timestamp"])
+            found = {"tf": tf, "pattern": pat, "ts": ts, "end": ts + pd.Timedelta(minutes=60 if tf == "60M" else 30),
+                     "open": float(cur["open"]), "high": hi, "low": lo, "close": cl, "pullback": round((hi + lo) / 2.0, 4)}
+            if best is None or found["end"] > best["end"]:
+                best = found
+            break
+    return best
+
+
+def split_lots(lots):
+    """50/50 split: lots ≥ 2 ⇒ (लगेच, pullback) = (ceil, floor); lots < 2 ⇒ None (split नाही — पूर्ण quantity लगेच)."""
+    lots = int(lots)
+    if lots < 2:
+        return None
+    return lots - lots // 2, lots // 2
+
+
+def pullback_reached(direction, price, pullback):
+    """भाग 2: BULLISH ⇒ भाव pullback पर्यंत खाली आला; BEARISH ⇒ वर आला."""
+    return float(price) <= pullback if direction == "BULLISH" else float(price) >= pullback
+
+
+def price_inside_candle(price, conf):
+    """भाग 1 (लगेच) फक्त भाव confirmation candle च्या range मध्ये असेल तर -- खूप पुढे गेलेल्या भावामागे धावायचं नाही."""
+    return conf["low"] <= float(price) <= conf["high"]
