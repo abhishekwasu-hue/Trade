@@ -134,7 +134,11 @@ LEVEL_ENGINES = ("DYNAMIC", "SRV3_SHADOW", "SRV3")
 SRV3_SHADOW_SOURCE = "mcx_futures_srv3_shadow"
 MCX_TRADE_SOURCES = (STRATEGY_KEY, SRV3_SHADOW_SOURCE)   # trading_engine.MCX_SOURCES सारखेच
 SRV3_TIMEFRAME_LABEL = "SRV3"
-SRV3_CFG = SRConfig(session_end="23:30")
+# 🎓 SR V3.2 ("1402.2 chart war yayalach nko" -- COPPER 5 Oct): range च्या मधल्या chop-किंमतीला खोटे flip/rejection गुण मिळून grade B
+# मिळायचा. MCX साठी: 5 दिवसांत 15M closes ने 6+ वेळा बाजू बदलली => grade C (trade नाही); नकारांमध्ये पुन्हा दूर जाणं; flip ला 0.5 ATR चा
+# ठाम break; touches+key गुण < 10 असतील तर flip/rejection/polarity bonus नाहीत; "strong" नकार = 1.5 ATR. NIFTY चा SR V3 अपरिवर्तित.
+SRV3_CFG = SRConfig(session_end="23:30", chop_filter=True, chop_lookback_days=5.0, chop_max_crossings=6, reject_redepart=True,
+                    flip_min_break_atr=0.5, min_base_points=10.0, reject_follow_atr=1.5)
 SRV3_REFRESH_STATE = os.path.join("data", "mcx_srv3_refresh.json")
 
 # 🎓 Contract roll (वापरकर्त्याचा निर्णय, सर्व commodities) — नियम resolver मध्ये: front-month चे उरलेले **ट्रेडिंग** दिवस ≤
@@ -300,10 +304,12 @@ def refresh_mcx_srv3_levels_if_due(access_token, symbol, instrument_key, now, fe
     return f"{symbol}: SR V3 levels {'merge झाले' if ok else 'नाहीत / merge अयशस्वी — जुने कायम'} ({n} A/B)"
 
 
-def _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now):
+def _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now, grade_a_only=False):
     """SR V3 levels (ACTIVE `SRV3_*`) — touch/RSI साठी candles जुन्या मार्गाप्रमाणेच निवडलेल्या पहिल्या TF चे (30M डीफॉल्ट; 60M निवडल्यास 1H).
-    रिटर्न `_collect_touch_candidates` सारखाच फॉरमॅट, timeframe label "SRV3"."""
+    `grade_a_only` ⇒ फक्त score ≥ grade A (strength column = SR V3 score). रिटर्न `_collect_touch_candidates` सारखाच फॉरमॅट, label "SRV3"."""
     rows = all_zones[(all_zones["zone_type"].isin(SRV3.ZONE_TYPES)) & (all_zones["status"] == "ACTIVE")]
+    if grade_a_only:
+        rows = rows[pd.to_numeric(rows["strength"], errors="coerce").fillna(0) >= SRV3_CFG.grade_a]
     if rows.empty:
         return []
     df_30m = fetch_mcx_candles(access_token, instrument_key, interval="30minute", lookback_days=5)
@@ -461,7 +467,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             all_zones = cloud_db.get_market_zones(symbol)
             if all_zones is None or all_zones.empty:
                 return f"{symbol}: SR V3 — zones वाचता आले नाहीत"
-        candidates = _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now)
+        candidates = _collect_srv3_candidates(access_token, instrument_key, all_zones, active_suffixes, now,
+                                              grade_a_only=bool(settings.get("srv3_grade_a_only", False)))
         if not candidates:
             return f"{symbol}: कुठलेही ACTIVE SR V3 (A/B) levels सापडले नाहीत, किंवा आजचे candles अजून तयार नाहीत"
     else:

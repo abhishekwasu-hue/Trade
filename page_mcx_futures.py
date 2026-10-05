@@ -693,7 +693,12 @@ def render():
         st.caption(
             "SR V3 (MCX): 15M+30M+1H swing pivots, PDH/PDL/PWH/PWL (सत्र-अंत 23:30), gaps — फक्त grade A/B, किंमतीपासून 3% आत, "
             "दर 5 मिनिटांनी ताजे. 'PAPER shadow' मध्ये मूळ bot जुन्याच levels वर चालतो आणि शेजारी SR V3 levels वर तेच नियम निव्वळ "
-            "PAPER (वेगळा source, Performance वर तुलना). MCX चा जुना डेटा नसल्याने backtest झालेला नाही — आधी shadow ने तपासा."
+            "PAPER (वेगळा source, Performance वर तुलना). MCX चा जुना डेटा नसल्याने backtest झालेला नाही — आधी shadow ने तपासा. "
+            "V3.2: मागच्या 5 दिवसांत भावाने 6 पेक्षा जास्त वेळा ओलांडलेला (range च्या मधला, 'चुंबक') level grade C — त्यावर trade नाही."
+        )
+        srv3_grade_a_only = st.checkbox(
+            "SR V3: फक्त grade A levels वर trade (score ≥ 65; बंद = A+B)", value=bool(settings.get("srv3_grade_a_only", False)),
+            key=_widget_key(symbol, "srv3_grade_a_only"), disabled=level_engine == "DYNAMIC",
         )
         if level_engine == "SRV3" and settings.get("trading_mode", "PAPER") != "PAPER":
             st.warning("⚠️ SR V3 levels backtest न झालेले आहेत आणि या symbol चा trading mode PAPER नाही — खरे orders SR V3 levels वर जातील.")
@@ -906,7 +911,7 @@ def render():
                 "symbol_enabled": bool(symbol_enabled), "lots": int(lots),
                 "max_hits_per_zone": int(max_hits_per_zone),
                 "timeframe_choice": timeframe_choice,
-                "level_engine": level_engine,
+                "level_engine": level_engine, "srv3_grade_a_only": bool(srv3_grade_a_only),
                 "bullish_entry_enabled": bool(bullish_entry_enabled), "bearish_entry_enabled": bool(bearish_entry_enabled),
                 "entry_rsi_gate_enabled": bool(entry_rsi_gate_enabled),
                 "rsi_support_max": int(rsi_support_max), "rsi_resistance_min": int(rsi_resistance_min),
