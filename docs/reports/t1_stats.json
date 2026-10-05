@@ -1,0 +1,31 @@
+{
+ "pbo": {
+  "pbo": 0.0002,
+  "n_splits": 12870,
+  "N": 8,
+  "T": 1716
+ },
+ "best": "H5",
+ "dsr": {
+  "sr": -0.0121,
+  "sr0": 0.0539,
+  "dsr": 0.0032,
+  "n": 1716,
+  "n_trials": 8
+ },
+ "is_daily_sharpe": {
+  "BASE": -0.0891,
+  "H1": -0.0878,
+  "H3_020": -0.0284,
+  "H3_025": -0.0126,
+  "H4a_none": -0.0879,
+  "H4b_12bars": -0.0895,
+  "H4c_or_reentry": -0.0877,
+  "H5": -0.0121
+ },
+ "choice": {
+  "h3": "H3_025",
+  "h4": "H4c_or_reentry",
+  "h5_knobs": "{\"d2_allowed_biases\": [\"LONG_ONLY\", \"SHORT_ONLY\"], \"adr_min_frac\": 0.25, \"d1_exit_rule\": \"or_reentry\"}"
+ }
+}
