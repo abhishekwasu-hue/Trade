@@ -241,7 +241,7 @@ def build_lightweight_chart_html(
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
     rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None, live_tf_seconds=None,
-    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60),
+    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60), trend_lines=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -265,6 +265,8 @@ def build_lightweight_chart_html(
     वेळ झाली की नवीन सुरू करतो + कोपऱ्यात LIVE badge. None => काहीच बदल नाही (स्थिर चार्ट).
 
     supertrend_4h_*: 4H Supertrend रेषा (MCX Bot view). rsi_levels: RSI pane वरच्या आडव्या रेषा (डीफॉल्ट 40/60; Bot view मध्ये bot च्या settings प्रमाणे).
+
+    trend_lines: तिरक्या (sloping) trendlines -- [{"points": [(timestamp, price), ...], "color", "title"}] (price_action.trendlines.chart_segments).
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -423,6 +425,12 @@ def build_lightweight_chart_html(
         for key in ("ema", "vwap", "bb", "adx") if key in indicators
     )
 
+    trend_lines_js = []
+    for tl in trend_lines or []:
+        pts = sorted({_to_unix_time(t): round(float(v), 2) for t, v in tl.get("points", [])}.items())
+        if len(pts) >= 2:
+            trend_lines_js.append({"color": tl.get("color", "#ff1744"), "title": tl.get("title", ""),
+                                   "points": [{"time": t, "value": v} for t, v in pts]})
     trade_lines_js = []
     for tl in (trade_lines or []):
         try:
@@ -594,6 +602,14 @@ if (rsiData.length > 0) {{
 
 // 🎓 Positions चार्ट: Entry / SL / Target / Manual-Override आडव्या रेषा. Price line autoscale मध्ये धरल्या जात नाहीत, म्हणून शेवटच्या candle
 // च्या वेळी दोन अदृश्य बिंदू (किमान/कमाल रेषा-भाव) टाकून scale रेषांपर्यंत ताणतो.
+// 🎓 तिरक्या trendlines (price_action.trendlines) -- ठिपक्यांची रेषा, उजवीकडे आत्ताचा भाव
+{json.dumps(trend_lines_js)}.forEach(tl => {{
+    const s = chart.addSeries(LightweightCharts.LineSeries, {{
+        color: tl.color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, title: tl.title,
+        lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
+    }});
+    s.setData(tl.points);
+}});
 const tradeLines = {json.dumps(trade_lines_js)};
 const tradeLineBounds = {json.dumps(trade_line_bounds)};
 const tradePriceLines = {{}};      // title -> price line (live_tick च्या `lines` ने हलवायला / बदलायला)
