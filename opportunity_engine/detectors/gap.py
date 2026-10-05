@@ -144,6 +144,8 @@ class GapFade(Detector):
         info, df5, cfg = bars_by_tf["info"], bars_by_tf["5m"], self.cfg
         if info.gap_type in (BREAKAWAY, RUNAWAY) or info.gap_dir == 0 or len(df5) <= cfg.or_bars:
             return []
+        if cfg.d2_allowed_biases and getattr(bias, "label", bias) not in cfg.d2_allowed_biases:     # T1/H1 (डीफॉल्ट रिकामं ⇒ सर्व)
+            return []
         if _minutes(now) > _hm(cfg.d2_window_end):
             return []
         state = bars_by_tf["state"]

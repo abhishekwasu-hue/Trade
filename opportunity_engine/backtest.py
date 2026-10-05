@@ -358,7 +358,7 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
                         "commentary": d.commentary, **{k2: v for k2, v in _states_text(ctx).items()}}
                 meta = {**meta, "state_1d": ctx.state_name("1d"), "state_4h": ctx.state_name("4h"), "state_1h": ctx.state_name("1h")}
                 if d.status == "TAKEN" and real is None:
-                    real = _Open(open_position(d.plan, d.candidate.kind, d.candidate.trigger.get("level")), d.candidate, d, k, False, meta)
+                    real = _Open(open_position(d.plan, d.candidate.kind, d.candidate.trigger.get("level"), d.candidate.setup_id), d.candidate, d, k, False, meta)
                     dstate.trades_today += 1
                     dstate.open_positions = 1
                 elif d.status == "REJECTED_GATE" and (d.candidate.setup_id, d.candidate.direction) not in virt_seen:
@@ -367,7 +367,7 @@ def run_variant(tl, variant, bcfg=None, progress=None, detector_factory=None):
                         val = _validate(d.candidate, plan.rr_to_opposing, ecfg)
                         if val.passed:
                             virt_seen.add((d.candidate.setup_id, d.candidate.direction))
-                            virt.append(_Open(open_position(plan, d.candidate.kind, d.candidate.trigger.get("level")), d.candidate, d, k, True, meta))
+                            virt.append(_Open(open_position(plan, d.candidate.kind, d.candidate.trigger.get("level"), d.candidate.setup_id), d.candidate, d, k, True, meta))
         if progress and di % 100 == 0:
             progress(di, len(tl.days), day.date)
     out = {"trades": pd.DataFrame(trades), "virtual": pd.DataFrame(virtual_rows), "decisions": pd.DataFrame(decisions)}

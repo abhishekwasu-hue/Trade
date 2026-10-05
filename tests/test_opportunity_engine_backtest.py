@@ -167,6 +167,17 @@ def test_d2_long_fade_for_gap_down():
     assert all(x.direction == "LONG" for x in c)
 
 
+def test_d2_allowed_biases_filter_default_off():
+    """T1/H1: d2_allowed_biases रिकामं (डीफॉल्ट) ⇒ जुनंच; भरलं असेल तर फक्त त्या bias मध्ये D2."""
+    rows = bars(FADE_BASE[:3] + [(24128, 24140, 24125, 24138)] + [(24140, 24141, 24105, 24110)])
+    ctx = ctx_of()
+    assert bias_of(ctx).label == "LONG_ONLY"
+    assert CFG.d2_allowed_biases == ()
+    assert len(run_detector(G.GapFade(CFG), d2_info(), rows, ctx=ctx)) == 1
+    assert len(run_detector(G.GapFade(EngineConfig(d2_allowed_biases=("LONG_ONLY", "SHORT_ONLY"))), d2_info(), rows, ctx=ctx)) == 1
+    assert run_detector(G.GapFade(EngineConfig(d2_allowed_biases=("SHORT_ONLY",))), d2_info(), rows, ctx=ctx) == []
+
+
 # ---- D3 --------------------------------------------------------------------------------------------------------------------------------
 GAP_UP = {"kind": "GAP", "source": "GAP_UP", "low": 24000.0, "high": 24050.0, "gap_status": "UNFILLED", "level_id": "g1", "tf": "1d", "formed_at": DAY - pd.Timedelta(days=3),
           "quality_grade": "B", "mtf_count": 2, "freshness": "FRESH", "status": "ACTIVE", "core_low": 24000.0, "core_high": 24050.0, "reject_reason": None}

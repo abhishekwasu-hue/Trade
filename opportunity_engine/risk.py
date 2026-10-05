@@ -16,6 +16,9 @@ import numpy as np
 from .bias import nearest_opposing
 
 
+D1_EXIT_RULES = ("default", "none", "bars", "or_reentry")
+
+
 @dataclass
 class TradePlan:
     direction: str
@@ -80,6 +83,7 @@ class Position:
     plan: TradePlan
     kind: str = "BREAKOUT"
     level: Optional[float] = None                # breakout चा level (failed-breakout साठी)
+    setup: Optional[str] = None                  # setup_id (T1/H4: D1-विशिष्ट exit नियम); None ⇒ जुनं वर्तन
     sl: float = 0.0
     remaining: float = 1.0
     t1_done: bool = False
@@ -99,8 +103,8 @@ class Position:
         return self.pnl_pts / self.plan.risk if self.plan.risk else 0.0
 
 
-def open_position(plan, kind="BREAKOUT", level=None):
-    return Position(plan=plan, kind=kind, level=level)
+def open_position(plan, kind="BREAKOUT", level=None, setup=None):
+    return Position(plan=plan, kind=kind, level=level, setup=setup)
 
 
 def _book(pos, price, frac, reason, time):
@@ -152,9 +156,19 @@ def on_bar(pos, bar, cfg, time=None, trail_stop=None):
         pos.sl = float(trail_stop)
         pos.events.append({"time": time, "reason": "TRAIL", "price": float(trail_stop), "frac": 0.0})
     # 5. time stop — spec: "breakout नंतर 6 bars मध्ये +0.5R गाठलं नाही तर exit" => फक्त breakout setups (reversal setups ना target पर्यंत वेळ लागतो)
-    if pos.kind in cfg.time_stop_kinds and not pos.t1_done and pos.bars >= cfg.time_stop_bars and pos.mfe_r < cfg.time_stop_r:
-        _close_all(pos, c, "TIME_STOP", time)
-        return pos.events[n0:]
+    # 🎓 T1/H4: D1 साठी पर्यायी नियम (cfg.d1_exit_rule; डीफॉल्ट "default" ⇒ जुनंच)
+    d1_rule = getattr(cfg, "d1_exit_rule", "default") if pos.setup == "D1" else "default"
+    if d1_rule not in D1_EXIT_RULES:
+        raise ValueError(f"अज्ञात d1_exit_rule: {d1_rule!r} (वैध: {D1_EXIT_RULES})")
+    if d1_rule == "or_reentry":
+        if not pos.t1_done and pos.level is not None and ((c < pos.level) if s > 0 else (c > pos.level)):
+            _close_all(pos, c, "OR_REENTRY", time)
+            return pos.events[n0:]
+    elif d1_rule != "none":
+        stop_bars = cfg.d1_time_stop_bars if d1_rule == "bars" else cfg.time_stop_bars
+        if pos.kind in cfg.time_stop_kinds and not pos.t1_done and pos.bars >= stop_bars and pos.mfe_r < cfg.time_stop_r:
+            _close_all(pos, c, "TIME_STOP", time)
+            return pos.events[n0:]
     # 6. failed breakout: पुढचे `followthrough_bars` bars level च्या आत close
     if pos.kind == "BREAKOUT" and pos.level is not None and pos.bars <= cfg.followthrough_bars:
         inside = (c < pos.level) if s > 0 else (c > pos.level)

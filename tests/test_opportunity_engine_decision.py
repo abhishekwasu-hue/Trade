@@ -371,3 +371,56 @@ def test_reversal_validation_without_a_zone_redistributes_the_zone_points():
     assert with_zone.checks["at_zone"]["pass"] is True and with_zone.score == 100.0
     missed_zone = V.validate_reversal(bar_, "LONG", prev, {"low": 24100.0, "high": 24150.0}, 10.0, CFG)
     assert missed_zone.checks["at_zone"]["pass"] is False and missed_zone.score == 80.0
+
+
+# ---- T1/H4: D1 exit नियम (डीफॉल्ट बदलत नाही) -------------------------------------------------------------------------------------------
+def _flat_bars(pos, plan, cfg, n, close=None):
+    for i in range(n):
+        R.on_bar(pos, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1 if close is None else close), cfg, NOW + pd.Timedelta(minutes=5 * (i + 1)))
+
+
+def test_d1_exit_rule_default_matches_old_time_stop_for_all_setups():
+    assert CFG.d1_exit_rule == "default"
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    for setup in (None, "D1", "D7"):
+        pos = R.open_position(plan, "BREAKOUT", None, setup)
+        _flat_bars(pos, plan, CFG, CFG.time_stop_bars)
+        assert pos.closed and pos.exit_reason == "TIME_STOP"
+
+
+def test_d1_exit_rule_none_and_bars_only_touch_d1():
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    none = EngineConfig(d1_exit_rule="none")
+    d1 = R.open_position(plan, "BREAKOUT", None, "D1")
+    _flat_bars(d1, plan, none, CFG.time_stop_bars + 6)
+    assert not d1.closed                                                            # D1 ला time stop नाही
+    other = R.open_position(plan, "BREAKOUT", None, "D7")
+    _flat_bars(other, plan, none, CFG.time_stop_bars)
+    assert other.closed and other.exit_reason == "TIME_STOP"                       # इतर setups जुन्याप्रमाणे
+    bars12 = EngineConfig(d1_exit_rule="bars", d1_time_stop_bars=12)
+    d1b = R.open_position(plan, "BREAKOUT", None, "D1")
+    _flat_bars(d1b, plan, bars12, 11)
+    assert not d1b.closed
+    _flat_bars(d1b, plan, bars12, 1)
+    assert d1b.closed and d1b.exit_reason == "TIME_STOP" and d1b.bars == 12
+
+
+def test_d1_or_reentry_exits_on_close_back_inside_or_and_disables_time_stop():
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    cfg = EngineConfig(d1_exit_rule="or_reentry")
+    pos = R.open_position(plan, "BREAKOUT", 24300.0, "D1")                         # OR high 24300 (entry 24316 च्या खाली)
+    _flat_bars(pos, plan, cfg, CFG.time_stop_bars + 4)
+    assert not pos.closed                                                           # OR च्या वर ⇒ time stop नाही
+    R.on_bar(pos, bar(plan.entry, 24297.0, 24299.0), cfg, t("11:30"))
+    assert pos.closed and pos.exit_reason == "OR_REENTRY" and pos.pnl_pts < 0
+    short_plan = R.plan_trade(cand("SHORT", entry=24300.0, sl=24320.0), ctx_of(), CFG, rr=10.0, adr=200.0)
+    sp = R.open_position(short_plan, "BREAKOUT", 24310.0, "D1")
+    R.on_bar(sp, bar(24312.0, 24298.0, 24311.0), cfg, t("10:35"))
+    assert sp.closed and sp.exit_reason == "OR_REENTRY"
+
+
+def test_unknown_d1_exit_rule_is_rejected():
+    plan = R.plan_trade(cand(), ctx_of(), CFG, rr=10.0, adr=200.0)
+    pos = R.open_position(plan, "BREAKOUT", None, "D1")
+    with pytest.raises(ValueError):
+        R.on_bar(pos, bar(plan.entry + 2, plan.entry - 3, plan.entry + 1), EngineConfig(d1_exit_rule="or-reentry"), t("10:35"))

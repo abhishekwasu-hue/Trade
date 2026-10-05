@@ -52,14 +52,14 @@ def _day_map(tl):
 # ---------------------------------------------------------------------------------------------------------------------
 # B. Exit-management पुन्हा चालवणे (actual / counterfactual)
 # ---------------------------------------------------------------------------------------------------------------------
-def resimulate(tl, day, k, plan, kind, level, ecfg, mode="actual"):
+def resimulate(tl, day, k, plan, kind, level, ecfg, mode="actual", setup=None):
     """entry bar `k` नंतर exit-management bar-by-bar (run_variant सारखंच). mode:
     actual = मूळ नियम (T1 50% + BE, structure trail, HTF WEAK ⇒ BE) · no_be = T1 partial तसाच पण SL मूळ जागीच (BE/trail/WEAK-BE नाही) ·
     no_partial_no_be = T1 ला काहीच बुक नाही, SL मूळ जागीच (पूर्ण position SL/T2/EOD; time stop/failed-breakout तसेच) ·
     plain = T1 + BE, पण trail/WEAK-BE नाही (backtest मधील gate-rejected virtual positions असेच simulate होतात).
     रिटर्न (Position, exit bar index)."""
     cfg = replace(ecfg, t1_book_frac=0.0) if mode == "no_partial_no_be" else ecfg
-    pos = open_position(plan, kind, level)
+    pos = open_position(plan, kind, level, setup)
     n = len(day.be)
     direction = plan.direction
     for j in range(k + 1, n):
@@ -155,7 +155,7 @@ def enrich_trades(tl, trades, variant, bcfg):
         level = row.get("level")
         level = None if level is None or (isinstance(level, float) and np.isnan(level)) else float(level)
         base_mode = "plain" if bool(row.get("virtual")) else "actual"           # virtual (gate-rejected) positions backtest मध्ये trail/WEAK-BE शिवाय चालतात
-        res = {m: resimulate(tl, day, k, plan, row["kind"], level, ecfg, base_mode if m == "actual" else m) for m in CF_MODES}
+        res = {m: resimulate(tl, day, k, plan, row["kind"], level, ecfg, base_mode if m == "actual" else m, row.get("setup")) for m in CF_MODES}
         pos, xj = res["actual"]
         exit_price = pos.events[-1]["price"] if pos.events else float("nan")
         eod_j = _eod_index(day, ecfg)
