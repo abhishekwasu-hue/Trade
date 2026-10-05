@@ -1,0 +1,8 @@
+feature,coef_IS(standardised)
+f_touches,-0.016
+f_departure_mr,0.015
+f_base_bars,-0.006
+f_recency,-0.048
+f_round_dist_mr,0.032
+f_role_reversal,0.118
+f_width_mr,0.207
