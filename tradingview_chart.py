@@ -241,7 +241,7 @@ def build_lightweight_chart_html(
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
     rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None, live_tf_seconds=None,
-    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60), trend_lines=None,
+    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60), trend_lines=None, legs=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -267,6 +267,9 @@ def build_lightweight_chart_html(
     supertrend_4h_*: 4H Supertrend रेषा (MCX Bot view). rsi_levels: RSI pane वरच्या आडव्या रेषा (डीफॉल्ट 40/60; Bot view मध्ये bot च्या settings प्रमाणे).
 
     trend_lines: तिरक्या (sloping) trendlines -- [{"points": [(timestamp, price), ...], "color", "title"}] (price_action.trendlines.chart_segments).
+
+    legs: price-action legs (price_action.legs.chart_legs) -- [{"start", "start_price", "end", "end_price", "color", "width", "dashed", "info"}];
+          प्रत्येक leg एक सरळ रेषा, crosshair त्या leg च्या काळात असताना माहिती-पेटीत leg ची माहिती. None => काहीच बदल नाही.
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -431,6 +434,13 @@ def build_lightweight_chart_html(
         if len(pts) >= 2:
             trend_lines_js.append({"color": tl.get("color", "#ff1744"), "title": tl.get("title", ""),
                                    "points": [{"time": t, "value": v} for t, v in pts]})
+    legs_js = []
+    for lg in legs or []:
+        t0, t1 = _to_unix_time(lg["start"]), _to_unix_time(lg["end"])
+        if t1 > t0:
+            legs_js.append({"t0": t0, "t1": t1, "p0": round(float(lg["start_price"]), 2), "p1": round(float(lg["end_price"]), 2),
+                            "color": str(lg.get("color", "#90a4ae")), "width": int(lg.get("width", 2)), "dashed": bool(lg.get("dashed", False)),
+                            "info": str(lg.get("info", ""))})
     trade_lines_js = []
     for tl in (trade_lines or []):
         try:
@@ -610,6 +620,21 @@ if (rsiData.length > 0) {{
     }});
     s.setData(tl.points);
 }});
+// 🎓 Price-action legs (price_action.legs) -- impulse गडद, pullback फिकट, range राखाडी; चालू leg तुटक रेषा
+const legsData = {json.dumps(legs_js)};
+legsData.forEach(lg => {{
+    const s = chart.addSeries(LightweightCharts.LineSeries, {{
+        color: lg.color, lineWidth: lg.width, lineStyle: lg.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    }});
+    s.setData([{{ time: lg.t0, value: lg.p0 }}, {{ time: lg.t1, value: lg.p1 }}]);
+}});
+function legInfoAt(t) {{
+    for (let i = legsData.length - 1; i >= 0; i--) {{
+        if (t >= legsData[i].t0 && t <= legsData[i].t1) return legsData[i].info;
+    }}
+    return '';
+}}
 const tradeLines = {json.dumps(trade_lines_js)};
 const tradeLineBounds = {json.dumps(trade_line_bounds)};
 const tradePriceLines = {{}};      // title -> price line (live_tick च्या `lines` ने हलवायला / बदलायला)
@@ -846,6 +871,13 @@ chart.subscribeCrosshairMove((param) => {{
     ohlcBox.innerHTML = `<b>{symbol} · {timeframe_label}</b> &nbsp; O <span class="${{up ? 'up' : 'down'}}">${{d.open.toFixed(2)}}</span> ` +
         `H <span class="${{up ? 'up' : 'down'}}">${{d.high.toFixed(2)}}</span> L <span class="${{up ? 'up' : 'down'}}">${{d.low.toFixed(2)}}</span> ` +
         `C <span class="${{up ? 'up' : 'down'}}">${{d.close.toFixed(2)}}</span>`;
+    const legTxt = legsData.length ? legInfoAt(param.time) : '';
+    if (legTxt) {{
+        const el = document.createElement('div');
+        el.style.maxWidth = '560px'; el.style.whiteSpace = 'normal'; el.style.marginTop = '2px';
+        el.textContent = legTxt;
+        ohlcBox.appendChild(el);
+    }}
     ohlcBox.style.display = 'block';
 }});
 

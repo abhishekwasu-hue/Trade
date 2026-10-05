@@ -243,3 +243,26 @@ def mcx_trendline_overlay(df30_long, chart_df, now, min_touches=2):
         f"{'उतरती resistance' if ln['side'] == 'resistance' else 'चढती support'} {ln['touches']} touches "
         f"({ln['a_ts']:%d %b} → {ln['b_ts']:%d %b}), आत्ता ≈ {ln['next_price']:,.2f}" for ln in lines)
     return segs, cap
+
+
+LEG_TF_MINUTES = {"1minute": 1, "5minute": 5, "15minute": 15, "30minute": 30, "1hour": 60}
+
+
+def leg_overlay(chart_df, chart_tf, now, cfg=None):
+    """🎓 T2 legs (फक्त माहिती): चार्टच्या **पूर्ण** candles वरून swings → legs → लेबल (price_action.legs). चालू (provisional) leg तुटक रेषा.
+    रिटर्न (chart legs, caption). डेटा अपुरा ⇒ ([], None). Daily चार्टवर शेवटचा bar पूर्ण झाला की नाही हे तपासत नाही (EOD डेटा)."""
+    from price_action import legs as LG
+    if chart_df is None or len(chart_df) < 30:
+        return [], None
+    mins = LEG_TF_MINUTES.get(chart_tf)
+    df = _completed_bars_only(chart_df, mins, now) if mins else chart_df
+    df = df.reset_index(drop=True)
+    legs, swing, internal = LG.build_legs(df, cfg)
+    cur = LG.current_leg(df, cfg, legs, swing, internal)
+    segs = LG.chart_legs(df, legs, cur)
+    if not segs:
+        return [], "Legs: पुरेसे confirmed swings नाहीत."
+    last = legs[-1] if legs else None
+    cap = ("Legs (T2, फक्त माहिती — trading नाही): गडद = impulse, फिकट = pullback, राखाडी = range, जांभळा = उलटफेर, तुटक = चालू leg. "
+           + (f"शेवटचा पूर्ण leg: {LG.leg_info(last)}" if last else "") + (f" · चालू: {LG.LABEL_MR.get(cur.label, cur.label)}" if cur else ""))
+    return segs, cap
