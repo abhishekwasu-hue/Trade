@@ -56,6 +56,8 @@ def test_full_failure_only_when_definite():
     assert not OS.is_full_failure({"status": "error"}, 500)
     assert OS.is_full_failure({"status": "error", "errors": [{"message": "bad"}]}, 400)
     assert not OS.is_full_failure({"status": "error", "data": {"order_ids": ["X"]}}, 400)
+    assert not OS.is_full_failure({"status": "error", "verified_legs": [{"status": "cancelled", "filled_quantity": 25}, {"status": "rejected"}]}, 200)
+    assert not OS.is_full_failure({"status": "error", "partial_order_ids": ["P1"]}, 400)
 
 
 def test_html_is_escaped_in_alerts():

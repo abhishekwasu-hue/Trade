@@ -82,8 +82,16 @@ def is_full_failure(resp, status_code=None):
     network error, 5xx, unknown) ⇒ False ⇒ retry नाही (दुहेरी exit / उलटी position टाळण्यासाठी)."""
     legs = (resp or {}).get("verified_legs") if isinstance(resp, dict) else None
     if legs:
-        return all(str(lg.get("status", "")).lower() in TERMINAL_NOFILL for lg in legs)
+        def _nofill(lg):
+            try:
+                fq = float(lg.get("filled_quantity") or 0)
+            except (TypeError, ValueError):
+                return False                                   # अनिश्चित ⇒ भरलेला असू शकतो
+            return str(lg.get("status", "")).lower() in TERMINAL_NOFILL and fq == 0   # cancelled पण अंशतः भरलेला ⇒ नाही
+        return all(_nofill(lg) for lg in legs)
     if not isinstance(resp, dict) or not isinstance(status_code, int) or not 400 <= status_code < 500:
+        return False
+    if resp.get("partial_order_ids"):
         return False
     data = resp.get("data")
     has_ids = bool(data.get("order_ids")) if isinstance(data, dict) else bool(data)
@@ -104,7 +112,7 @@ def _save_counts(counts):
     _FAIL_COUNTS.update(counts)
     try:
         os.makedirs(os.path.dirname(FAIL_COUNTS_PATH), exist_ok=True)
-        tmp = FAIL_COUNTS_PATH + ".tmp"
+        tmp = f"{FAIL_COUNTS_PATH}.{os.getpid()}.tmp"
         with open(tmp, "w") as f:
             json.dump(counts, f)
         os.replace(tmp, FAIL_COUNTS_PATH)

@@ -175,6 +175,8 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
   - इशारा तयार/पाठवणं try मध्ये (exit loop थांबू नये).
 - Nits: sidebar मध्ये अवैध मूल्य clamp, widget keys prefix, खऱ्या settings-loader ची test, डीफॉल्ट exit तीच list ची test.
 - उघडं: Fyers/Shoonya/Stocko adapters `market_protection` key दुर्लक्षित करतात का हे तपासलेलं नाही. Setting डीफॉल्ट बंद; Upstox व्यतिरिक्त broker वर चालू करू नये.
+- Re-review (दुसरा subagent): मूळ BLOCKER दुरुस्त. आणखी एक SHOULD-FIX केला: `cancelled` पण अंशतः भरलेला leg (filled_quantity > 0) ⇒ आता "पूर्ण अपयश" नाही ⇒ retry नाही.
+  Nits केले: `partial_order_ids` असल्यास retry नाही; counts temp-file process-id सह; retry तपासणी try मध्ये; trade आधीच बंद असेल तर "उघडी" इशारा पाठवत नाही.
 
 **महत्त्वाचा निष्कर्ष (तुमचा निर्णय हवा):** partial exit (काही legs भरले, काही नाकारले) झाल्यास trade OPEN राहतो.
 पुढच्या monitor cycle ला **सर्व** legs चा close order पुन्हा जातो ⇒ आधीच बंद झालेल्या leg वर उलटी नवी position उघडू शकते.

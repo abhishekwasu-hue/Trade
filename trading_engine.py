@@ -2147,7 +2147,10 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
             status_code, resp = _send_close()
             # 🎓 G3: **निश्चित** पूर्ण अपयश असेल आणि `exit_retry_on_fail` ON असेल तरच, 2s नंतर (trade अजून OPEN असेल तर) एकदा पुन्हा (डीफॉल्ट OFF)
-            status_code, resp, _retried = retry_full_failure_once(_send_close, status_code, resp, still_open=_still_open)
+            try:
+                status_code, resp, _retried = retry_full_failure_once(_send_close, status_code, resp, still_open=_still_open)
+            except Exception:
+                _logger.exception("exit retry तपासणी अयशस्वी (silently handled) — पहिल्या प्रयत्नाचाच निकाल वापरला")
             if status_code == 200 and resp.get("status") == "success":
                 try:
                     _prev_fails = record_exit_success(trade_id)
@@ -2196,7 +2199,7 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # spam टाळण्यासाठी पहिल्या आणि नंतर दर 5व्या सलग अपयशाला (order मध्ये काहीही बदल नाही).
                 try:                                                 # इशारा कधीही exit loop थांबवू नये (उरलेले trades / commit)
                     _fail_count = record_exit_failure(trade_id)
-                    if exit_alert_enabled() and should_alert_exit(_fail_count):
+                    if exit_alert_enabled() and should_alert_exit(_fail_count) and _still_open():   # दुसऱ्या process ने आधीच बंद केला असेल तर "उघडी" इशारा चुकीचा
                         send_exit_alert(exit_failure_message(symbol, trade_id, exit_reason, _fail_count, status_code, resp))
                 except Exception:
                     _logger.exception("exit अपयश इशारा तयार/पाठवता आला नाही (silently handled)")
