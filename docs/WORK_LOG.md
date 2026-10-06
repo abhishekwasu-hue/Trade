@@ -202,7 +202,13 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 **निकाल:**
 - (a) level-आधारित strikes random इतक्याच तुटतात; breach अंतरावर अवलंबून.
 - (b) HEALTHY नमुना वाढला नाही (15M IS 22, 1H IS 4).
-- (c) random baseline सह retested-zone फायदा नाहीसा; fresh OE zones random पेक्षाही कमकुवत (IS z −5.1).
+- (c) random baseline सह retested-zone फायदा नाहीसा. Fresh OE zones random पेक्षा कमकुवत दिसतात (IS cluster z −4.65; VAL −1.12 ⇒ फक्त निरीक्षण).
+- Review दुरुस्त्या:
+  - SR V3 PDH/PDL एक दिवस जुने होते → सत्र-अखेर stamp.
+  - साधा two-proportion z → महिना-cluster bootstrap (rows स्वतंत्र नाहीत).
+  - Hold-window IS/VAL सीमा ओलांडत नाही.
+  - OE 1d मधले BROKEN zones वगळले.
+  - Random zones साठी "उगमानंतरचा पहिला overlap वगळणे" नियम तसाच ठेवला (दोन्ही बाजूंना सारखा, परिणाम नगण्य).
 - एकूण: कोणताही gate/engine चालू करण्याची शिफारस नाही.
 
 **उघडे प्रश्न:**
