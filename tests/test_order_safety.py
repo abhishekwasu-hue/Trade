@@ -44,16 +44,50 @@ def test_failure_message_partial_and_full():
     assert "POSITION अजून उघडी आहे" in m and "PARTIAL EXIT" in m and "PE24400" in m
     full = OS.failure_message("NIFTY", "T1", "SL", 1, 400, {"status": "error", "errors": [{"message": "market order not allowed"}]})
     assert "PARTIAL" not in full and "market order not allowed" in full
-    assert OS.is_full_failure({"status": "error"}) and not OS.is_full_failure(PARTIAL)
+    assert not OS.is_full_failure(PARTIAL)
+
+
+def test_full_failure_only_when_definite():
+    rej = {"status": "error", "verified_legs": [{"status": "rejected"}, {"status": "cancelled"}]}
+    assert OS.is_full_failure(rej, 200)
+    assert not OS.is_full_failure({"status": "error", "verified_legs": [{"status": "rejected"}, {"status": "open"}]}, 200)   # pending
+    assert not OS.is_full_failure({"status": "error", "verified_legs": [{"status": "unknown"}]}, 200)
+    assert not OS.is_full_failure({"error": "ReadTimeout"}, None)                    # request पोचली असू शकते
+    assert not OS.is_full_failure({"status": "error"}, 500)
+    assert OS.is_full_failure({"status": "error", "errors": [{"message": "bad"}]}, 400)
+    assert not OS.is_full_failure({"status": "error", "data": {"order_ids": ["X"]}}, 400)
+
+
+def test_html_is_escaped_in_alerts():
+    m = OS.failure_message("NIFTY<x>", "T&1", "SL", 1, 400, {"status": "error", "message": "<RMS> limit & block"})
+    assert "&lt;RMS&gt; limit &amp; block" in m and "NIFTY&lt;x&gt;" in m and "<RMS>" not in m
+
+
+def test_fail_counts_survive_new_process(tmp_path, monkeypatch):
+    monkeypatch.setattr(OS, "FAIL_COUNTS_PATH", str(tmp_path / "c.json"))
+    assert OS.record_failure("T9") == 1
+    OS._FAIL_COUNTS.clear()                                                          # नवी process
+    assert OS.record_failure("T9") == 2
+    OS._FAIL_COUNTS.clear()
+    assert OS.record_success("T9") == 2 and OS.record_success("T9") == 0
+
+
+def test_real_settings_loader_defaults_when_file_missing(tmp_path, monkeypatch):
+    import engine_service
+    monkeypatch.setattr(engine_service, "SETTINGS_PATH", str(tmp_path / "none.json"))
+    monkeypatch.setattr(OS, "_settings", engine_service.load_settings)               # conftest चा रिकामा-dict patch उलटवून खरा loader
+    assert OS.market_protection_pct() is None and OS.exit_alert_enabled() is True and OS.exit_retry_enabled() is False
 
 
 def test_retry_only_on_full_failure_and_only_when_enabled():
     calls = []
-    send = lambda: (calls.append(1), (200, {"status": "success"}))[1]                              # noqa: E731
+    send = lambda fresh=False: (calls.append(fresh), (200, {"status": "success"}))[1]                # noqa: E731
     on = {"exit_retry_on_fail": True}
-    assert OS.retry_full_failure_once(send, 500, {"status": "error"}, {}, sleep=lambda s: None)[2] is False
-    sc, rs, retried = OS.retry_full_failure_once(send, 500, {"status": "error"}, on, sleep=lambda s: None)
-    assert retried and sc == 200 and len(calls) == 1
+    assert OS.retry_full_failure_once(send, 400, {"status": "error"}, {}, sleep=lambda s: None)[2] is False
+    assert OS.retry_full_failure_once(send, 500, {"status": "error"}, on, sleep=lambda s: None)[2] is False      # 5xx ⇒ अनिश्चित
+    assert OS.retry_full_failure_once(send, 400, {"status": "error"}, on, sleep=lambda s: None, still_open=lambda: False)[2] is False
+    sc, rs, retried = OS.retry_full_failure_once(send, 400, {"status": "error"}, on, sleep=lambda s: None)
+    assert retried and sc == 200 and calls == [True]
     assert OS.retry_full_failure_once(send, 200, PARTIAL, on, sleep=lambda s: None)[2] is False      # partial ⇒ retry नाही
     assert OS.retry_full_failure_once(send, 200, {"status": "success"}, on, sleep=lambda s: None)[2] is False
 
@@ -120,10 +154,32 @@ def test_retry_and_market_protection_when_enabled(sl_setup, monkeypatch):
 
     def send(t, orders, m):
         calls.append(orders)
-        return (500, {"status": "error"}) if len(calls) == 1 else (200, {"status": "success"})
+        return (400, {"status": "error", "errors": [{"message": "rejected"}]}) if len(calls) == 1 else (200, {"status": "success"})
     monkeypatch.setattr(trading_engine, "execute_order_leg_set", send)
     closed = trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
     assert len(calls) == 2 and len(closed) == 1 and all(o["market_protection"] == 3 for o in calls[1])
+    assert {o["correlation_id"] for o in calls[0]}.isdisjoint({o["correlation_id"] for o in calls[1]})      # नवीन ids
+
+
+def test_pending_or_timeout_exit_is_never_retried(sl_setup, monkeypatch):
+    monkeypatch.setattr(OS, "_settings", lambda: {"exit_retry_on_fail": True})
+    monkeypatch.setattr(OS.time, "sleep", lambda s: None)
+    for resp in ({"status": "error", "verified_legs": [{"instrument_token": "PE24400", "status": "open"}, {"instrument_token": "PE24300", "status": "open"}]},
+                 {"error": "ReadTimeout"}):
+        calls = []
+        monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m, _r=resp: (calls.append(o), (None if "error" in _r else 200, _r))[1])
+        trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+        assert len(calls) == 1
+
+
+def test_default_exit_sends_identical_order_list_object(sl_setup, monkeypatch):
+    seen = []
+    orig = OS.apply_market_protection
+    monkeypatch.setattr(trading_engine, "apply_market_protection", lambda orders, settings=None: (seen.append(orders), orig(orders, settings))[1])
+    sent = []
+    monkeypatch.setattr(trading_engine, "execute_order_leg_set", lambda t, o, m: (sent.append(o), (500, {"status": "error"}))[1])
+    trading_engine.manage_open_trades("fake_token", "NIFTY", "D")
+    assert sent and sent[0] is seen[0]
 
 
 def test_partial_failure_is_never_retried_in_cycle(sl_setup, monkeypatch):

@@ -89,11 +89,12 @@ def _isolated_mcx_candle_state(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolated_order_safety(monkeypatch):
+def _isolated_order_safety(monkeypatch, tmp_path):
     """🎓 G3 order_safety: exit-अपयश मोजणी (प्रोसेस-पातळीची dict) प्रत्येक टेस्टला रिकामी, आणि settings repo/VPS च्या
     data/engine_settings.json वरून नव्हे तर रिकाम्या dict वरून (डीफॉल्ट वर्तन) — टेस्ट्स स्वतः monkeypatch करून बदलतात."""
     import order_safety
     order_safety._FAIL_COUNTS.clear()
+    monkeypatch.setattr(order_safety, "FAIL_COUNTS_PATH", str(tmp_path / "exit_fail_counts.json"))
     monkeypatch.setattr(order_safety, "_settings", lambda: {})
     yield
     order_safety._FAIL_COUNTS.clear()

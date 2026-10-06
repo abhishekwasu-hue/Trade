@@ -281,17 +281,21 @@ def setup_shared_context():
     except Exception:
         _eng_prev = {}
     with st.sidebar.expander("🧾 Order सुरक्षा (market protection / exit इशारा)", expanded=False):
-        _mp_prev = _eng_prev.get("order_market_protection_pct")
-        _mp_on = st.checkbox("MARKET orders मध्ये market_protection स्पष्ट पाठवा", value=bool(_mp_prev), key="order_mp_on",
+        try:                                                       # हाताने टाकलेलं अवैध मूल्य sidebar क्रॅश करू नये
+            _mp_prev = int(_eng_prev.get("order_market_protection_pct"))
+            _mp_prev = _mp_prev if 1 <= _mp_prev <= 25 else None
+        except (TypeError, ValueError):
+            _mp_prev = None
+        _mp_on = st.checkbox("MARKET orders मध्ये market_protection स्पष्ट पाठवा", value=bool(_mp_prev), key="ordsafe_mp_on",
                              help="बंद (डीफॉल्ट) = field पाठवत नाही — Upstox चा auto protection. चालू = entry आणि exit दोन्ही orders मध्ये हा %.")
         order_market_protection_pct = None
         if _mp_on:
             order_market_protection_pct = int(st.number_input("market_protection %", min_value=1, max_value=25,
-                                                              value=int(_mp_prev) if _mp_prev else 2, step=1, key="order_mp_pct"))
-        exit_fail_alert = st.checkbox("Exit order अयशस्वी झाल्यास Telegram इशारा", value=bool(_eng_prev.get("exit_fail_alert", True)), key="exit_fail_alert")
+                                                              value=_mp_prev or 2, step=1, key="ordsafe_mp_pct"))
+        exit_fail_alert = st.checkbox("Exit order अयशस्वी झाल्यास Telegram इशारा", value=bool(_eng_prev.get("exit_fail_alert", True)), key="ordsafe_exit_alert")
         exit_retry_on_fail = st.checkbox("Exit पूर्ण अयशस्वी झाल्यास त्याच cycle मध्ये 2s नंतर एकदा पुन्हा प्रयत्न",
-                                         value=bool(_eng_prev.get("exit_retry_on_fail", False)), key="exit_retry_on_fail",
-                                         help="फक्त एकही leg भरला नसेल तर. Partial exit वर कधीच retry नाही (उलटी position टाळण्यासाठी).")
+                                         value=bool(_eng_prev.get("exit_retry_on_fail", False)), key="ordsafe_exit_retry",
+                                         help="फक्त निश्चित पूर्ण अपयशावर (सर्व legs rejected/cancelled). Timeout/partial वर कधीच नाही (दुहेरी exit टाळण्यासाठी).")
 
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("sidebar खूप crowd आहे, user क्लिक करून गरजेनुसार
     # उघडेल") — Trading Mode आता (इतर settings groups सारखाच) collapsed expander मध्ये, पण पैशांशी

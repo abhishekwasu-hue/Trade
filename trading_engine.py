@@ -7,7 +7,7 @@ import uuid
 from order_safety import (
     apply_market_protection, exit_alert_enabled, failure_message as exit_failure_message, record_failure as record_exit_failure,
     record_success as record_exit_success, recovered_message as exit_recovered_message, retry_full_failure_once,
-    send_alert as send_exit_alert, should_alert as should_alert_exit,
+    send_alert as send_exit_alert, should_alert as should_alert_exit, with_fresh_correlation_ids,
 )
 
 import cloud_db
@@ -2136,16 +2136,25 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             close_adapter = _resolve_close_adapter(account_id)
             close_orders = apply_market_protection(close_orders)    # 🎓 G3: setting नसेल तर तीच list
 
-            def _send_close(_a=close_adapter, _o=close_orders, _m=trade_mode):
-                return (_a.execute_order_leg_set(_o, _m) if _a is not None else execute_order_leg_set(access_token, _o, _m))
+            def _send_close(fresh=False, _a=close_adapter, _o=close_orders, _m=trade_mode):
+                _orders = with_fresh_correlation_ids(_o) if fresh else _o
+                return (_a.execute_order_leg_set(_orders, _m) if _a is not None else execute_order_leg_set(access_token, _orders, _m))
+
+            def _still_open(_tid=trade_id):
+                cur.execute("SELECT status FROM live_trades WHERE trade_id=?", (_tid,))
+                _r = cur.fetchone()
+                return _r is not None and _r[0] == "OPEN"
 
             status_code, resp = _send_close()
-            # 🎓 G3: पूर्ण अपयश (एकही leg भरला नाही) असेल आणि `exit_retry_on_fail` ON असेल तरच, 2s नंतर एकदा पुन्हा (डीफॉल्ट OFF)
-            status_code, resp, _retried = retry_full_failure_once(_send_close, status_code, resp)
+            # 🎓 G3: **निश्चित** पूर्ण अपयश असेल आणि `exit_retry_on_fail` ON असेल तरच, 2s नंतर (trade अजून OPEN असेल तर) एकदा पुन्हा (डीफॉल्ट OFF)
+            status_code, resp, _retried = retry_full_failure_once(_send_close, status_code, resp, still_open=_still_open)
             if status_code == 200 and resp.get("status") == "success":
-                _prev_fails = record_exit_success(trade_id)
-                if _prev_fails and exit_alert_enabled():
-                    send_exit_alert(exit_recovered_message(symbol, trade_id, exit_reason, _prev_fails))
+                try:
+                    _prev_fails = record_exit_success(trade_id)
+                    if _prev_fails and exit_alert_enabled():
+                        send_exit_alert(exit_recovered_message(symbol, trade_id, exit_reason, _prev_fails))
+                except Exception:
+                    _logger.exception("exit recovery इशारा अयशस्वी (silently handled)")
                 order_ids = extract_order_ids(resp)
                 # 🎓 LIVE trades चे खरे exit fill भाव (Upstox verified_legs) उपलब्ध असतील तर order log आणि
                 # realized P&L त्यावरून; नसतील (PAPER/इतर brokers/अपूर्ण माहिती) तर आधीचा LTP-आधारित आकडा.
@@ -2185,9 +2194,12 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 )
                 # 🎓 G3 (वापरकर्त्याचा निर्णय): इशारा डीफॉल्ट ON — leg-निहाय स्थिती, "position उघडी" स्पष्ट, partial-exit धोका;
                 # spam टाळण्यासाठी पहिल्या आणि नंतर दर 5व्या सलग अपयशाला (order मध्ये काहीही बदल नाही).
-                _fail_count = record_exit_failure(trade_id)
-                if exit_alert_enabled() and should_alert_exit(_fail_count):
-                    send_exit_alert(exit_failure_message(symbol, trade_id, exit_reason, _fail_count, status_code, resp))
+                try:                                                 # इशारा कधीही exit loop थांबवू नये (उरलेले trades / commit)
+                    _fail_count = record_exit_failure(trade_id)
+                    if exit_alert_enabled() and should_alert_exit(_fail_count):
+                        send_exit_alert(exit_failure_message(symbol, trade_id, exit_reason, _fail_count, status_code, resp))
+                except Exception:
+                    _logger.exception("exit अपयश इशारा तयार/पाठवता आला नाही (silently handled)")
 
     # Trailing SL मुळे peak_pnl अपडेट झालेला असू शकतो, जरी या रनला कोणताही trade प्रत्यक्ष बंद झाला नसला तरी —
     # तो बदल इथे न चुकता commit करणे आवश्यक (नाहीतर वर फक्त trade बंद झाल्यावरच commit होतो).
