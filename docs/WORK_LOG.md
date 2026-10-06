@@ -252,3 +252,34 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - positions नाहीत; throttle; PAPER अबाधित; manual close.
 
 **VPS:** वापरकर्ता 15:30 नंतर pull करणार.
+
+**स्वतंत्र review नंतरच्या दुरुस्त्या (त्याच PR मध्ये):**
+- **In-flight नोंद:** पाठवण्याआधीच नोंद होते. Process मध्येच थांबली, प्रतिसाद हरवला किंवा state save अयशस्वी झाला तरी पुढचा प्रयत्न "पहिला" समजला जात नाही.
+- **Order book तपासणी:** मागच्या प्रयत्नाचा निकाल अज्ञात असेल (timeout, order_ids नाहीत, in-flight), तर Upstox order book (`fetch_order_book`, GET /v2/order/retrieve-all) मध्ये तेच instrument + बाजू + tag चे orders (प्रयत्नाच्या वेळेपासून) शोधले जातात.
+  - Non-terminal order सापडला, किंवा order book मिळाला नाही ⇒ थांबा.
+  - ⚠️ हा endpoint sandbox मधून तपासता आला नाही (Upstox docs प्रमाणे).
+- **Shared instrument:** दुसरा OPEN LIVE trade त्याच instrument वर असेल तर broker net qty कोणाची ते कळत नाही ⇒ थांबा. फक्त पुढच्या (resend) प्रयत्नात लागू; पहिला प्रयत्न जुनाच.
+- **Locks:**
+  - `exit_state.json` fcntl lock खाली.
+  - प्रत्येक trade साठी non-blocking exit-lock: monitor आणि manual close एकाच वेळी पाठवत नाहीत. दुसरी process पाठवत असेल ⇒ "busy", काही पाठवत नाही.
+  - Lock मिळाल्यावर trade OPEN आहे का पुन्हा तपासलं जातं.
+- **आधीच्या दिवसाचा प्रयत्न:** DAY orders संपलेले असतात ⇒ pending/book तपासणी नाही, थेट positions.
+- **खराब state नोंद** ⇒ थांबा.
+- **अनपेक्षित चूक** ⇒ 'blocked' + इशारा. Monitor loop आणि इतर trades चालू राहतात.
+- **Realized P&L:** आधीच्या अयशस्वी प्रयत्नांतले प्रत्यक्ष fills साठवले जातात आणि शेवटी realized P&L त्यावरून मोजला जातो.
+- **Reconciliation:** त्याने trade बंद केला तर exit-state साफ होते.
+- **Operator escape:** `clear_exit_state.py --trade-id … [--clear | --mark-closed]`. Blocked इशाऱ्यात ही ओळ दिसते. Adapter trades आणि कायमचे अडकलेले trades यासाठी.
+- **उरलेलं (बदललं नाही):** monitor वि. manual close मध्ये DB-स्तरावर atomic "CLOSING" claim नाही. Exit-lock + lock नंतरची OPEN तपासणी हा धोका बंद करतात; DB claim हा मोठा बदल ⇒ पुढे गरज वाटल्यास.
+
+**Tests:** +11 (एकूण 32):
+- crash before save → order book;
+- timeout/no ids;
+- shared instrument;
+- आधीच्या दिवसाचा pending;
+- corrupt state;
+- lock busy;
+- internal error;
+- fills मधून P&L;
+- reconciliation clear;
+- adapter path;
+- CLI.

@@ -9,6 +9,7 @@ from order_safety import (
     record_success as record_exit_success, recovered_message as exit_recovered_message, retry_full_failure_once,
     send_alert as send_exit_alert, should_alert as should_alert_exit, with_fresh_correlation_ids,
     load_exit_state, save_exit_state, plan_exit_resend, blocked_message as exit_blocked_message, blocked_key as exit_blocked_key,
+    mark_inflight as mark_exit_inflight, exit_lock, merged_exit_prices, record_success as _clear_exit_tracking,
 )
 
 import cloud_db
@@ -27,7 +28,7 @@ from upstox_api import (
     execute_order_leg_set, fetch_ltp_map, fetch_ltp_map_detailed, fetch_broker_positions,
     extract_order_ids, get_instrument_key, get_available_margin, get_total_capital, fetch_required_margin,
     place_stop_loss_order as upstox_place_stop_loss_order, cancel_order as upstox_cancel_order,
-    get_order_details as upstox_get_order_details,
+    get_order_details as upstox_get_order_details, fetch_order_book as upstox_fetch_order_book,
 )
 from oi_analysis import get_latest_oi_signal, check_oi_diff_entry_gate, infer_direction_from_strategy
 
@@ -1409,37 +1410,76 @@ def _alert_ltp_fetch_failure(symbol, context_label, error_detail, has_live_trade
 
 EXIT_BLOCKED = "blocked"
 EXIT_FLAT = "flat"
+EXIT_BUSY = "busy"
 
 
-def _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade_mode, fresh=False):
-    """🎓 Partial-exit safety fix (वापरकर्त्याचा निर्णय, 2026-10-06, flag शिवाय) — exit orders पाठवण्याचा एकच मार्ग
-    (manage_open_trades + close_trade_manually). त्या trade चा आधीचा exit प्रयत्न अयशस्वी झाला असेल (LIVE) तर सर्व legs आंधळेपणाने
-    पुन्हा न पाठवता `order_safety.plan_exit_resend`: pending orders terminal आहेत का, broker positions मधली खरी उघडी qty ⇒ फक्त उरलेले
-    legs. स्थिती अनिश्चित ⇒ काहीही पाठवत नाही (resp status 'blocked'). अयशस्वी LIVE प्रयत्नाची स्थिती पुढच्या प्रयत्नासाठी नोंदवतो.
-    पहिला प्रयत्न / PAPER ⇒ जुनं वर्तन. रिटर्न (status_code, resp, प्रत्यक्ष पाठवलेले orders)."""
-    orders = close_orders
-    if trade_mode == "LIVE":
-        prior = load_exit_state(trade_id)
-        if prior:
-            if close_adapter is None:
-                positions = fetch_broker_positions(access_token)
-                status_fn = lambda oid: upstox_get_order_details(access_token, oid)     # noqa: E731
-            else:
-                positions, status_fn = None, None           # adapters ला positions/order-status API नाही ⇒ फक्त निश्चित no-fill नंतरच resend
-            orders, why = plan_exit_resend(close_orders, positions, prior, order_status=status_fn)
-            if why:
-                return None, {"status": EXIT_BLOCKED, "reason": why}, []
-            if not orders:
-                return None, {"status": EXIT_FLAT, "reason": "broker positions मध्ये सर्व legs आधीच flat"}, []
-    sent = with_fresh_correlation_ids(orders) if fresh else orders
-    status_code, resp = (close_adapter.execute_order_leg_set(sent, trade_mode) if close_adapter is not None
-                         else execute_order_leg_set(access_token, sent, trade_mode))
-    if trade_mode == "LIVE" and not (status_code == 200 and isinstance(resp, dict) and resp.get("status") == "success"):
+def _other_open_live_tokens(trade_id):
+    """इतर OPEN LIVE trades चे instrument tokens — त्याच instrument वर दुसरा trade असेल तर broker net qty संदिग्ध."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT legs_json FROM live_trades WHERE status='OPEN' AND mode='LIVE' AND trade_id != ?", (trade_id,)).fetchall()
+    finally:
+        conn.close()
+    toks = set()
+    for (lj,) in rows:
         try:
-            save_exit_state(trade_id, sent, status_code, resp)
-        except Exception:
-            _logger.exception("exit-state नोंदवता आली नाही (silently handled)")
-    return status_code, resp, sent
+            toks.update(leg.get("instrument_key") for leg in (json.loads(lj) if lj else []))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return toks
+
+
+def _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade_mode, fresh=False, still_open=None):
+    """🎓 Partial-exit safety fix (वापरकर्त्याचा निर्णय, 2026-10-06, flag शिवाय) — exit orders पाठवण्याचा एकच मार्ग
+    (manage_open_trades + close_trade_manually). LIVE मध्ये:
+      • त्या trade चा exit-lock (दुसरी process आत्ता पाठवत असेल ⇒ 'busy', काहीही पाठवत नाही);
+      • lock मिळाल्यावर trade अजून OPEN आहे का (`still_open`);
+      • आधीचा प्रयत्न अयशस्वी / अपूर्ण असेल तर `order_safety.plan_exit_resend` (pending orders, order book, इतर trades चे instruments,
+        broker positions ⇒ फक्त उरलेले legs; स्थिती अनिश्चित ⇒ 'blocked');
+      • पाठवण्याआधी in-flight नोंद; अयशस्वी झाल्यास त्या प्रयत्नाची स्थिती नोंद.
+    पहिला प्रयत्न / PAPER ⇒ जुनं वर्तन. कोणतीही अनपेक्षित चूक ⇒ 'blocked' (monitor loop थांबू नये). रिटर्न (status_code, resp, पाठवलेले orders)."""
+    def _send(orders):
+        sent = with_fresh_correlation_ids(orders) if fresh else orders
+        sc, rs = (close_adapter.execute_order_leg_set(sent, trade_mode) if close_adapter is not None
+                  else execute_order_leg_set(access_token, sent, trade_mode))
+        return sc, rs, sent
+
+    if trade_mode != "LIVE":
+        return _send(close_orders)
+    try:
+        with exit_lock(trade_id) as got:
+            if not got:
+                return None, {"status": EXIT_BUSY, "reason": "दुसरी process आत्ता याच trade चा exit पाठवत आहे"}, []
+            if still_open is not None and not still_open():
+                return None, {"status": EXIT_BUSY, "reason": "trade आधीच बंद झाला"}, []
+            orders = close_orders
+            prior = load_exit_state(trade_id)
+            if prior:
+                if close_adapter is None:
+                    positions = fetch_broker_positions(access_token)
+                    status_fn = lambda oid: upstox_get_order_details(access_token, oid)     # noqa: E731
+                    book_fn = lambda: upstox_fetch_order_book(access_token)                 # noqa: E731
+                else:
+                    positions, status_fn, book_fn = None, None, None   # adapters ला positions/order-status/order-book नाही
+                orders, why = plan_exit_resend(close_orders, positions, prior, order_status=status_fn, order_book=book_fn,
+                                               shared_tokens=_other_open_live_tokens(trade_id))
+                if why:
+                    return None, {"status": EXIT_BLOCKED, "reason": why}, []
+                if not orders:
+                    return None, {"status": EXIT_FLAT, "reason": "broker positions मध्ये सर्व legs आधीच flat"}, []
+            sent = with_fresh_correlation_ids(orders) if fresh else orders
+            mark_exit_inflight(trade_id, sent)
+            status_code, resp = (close_adapter.execute_order_leg_set(sent, trade_mode) if close_adapter is not None
+                                 else execute_order_leg_set(access_token, sent, trade_mode))
+            if not (status_code == 200 and isinstance(resp, dict) and resp.get("status") == "success"):
+                try:
+                    save_exit_state(trade_id, sent, status_code, resp)
+                except Exception:
+                    _logger.exception("exit-state नोंदवता आली नाही (silently handled) — in-flight नोंद तशीच राहते")
+            return status_code, resp, sent
+    except Exception as e:                                             # noqa: BLE001
+        _logger.exception("_send_exit_orders मध्ये अनपेक्षित चूक — exit थांबवला")
+        return None, {"status": EXIT_BLOCKED, "reason": f"आंतरिक चूक: {type(e).__name__}: {e}"}, []
 
 
 def _actual_exit_prices(resp, close_orders):
@@ -2175,16 +2215,16 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
 
             _sent_box = [close_orders]
 
-            def _send_close(fresh=False, _a=close_adapter, _o=close_orders, _m=trade_mode, _tid=trade_id, _box=_sent_box):
-                _sc, _rs, _sent = _send_exit_orders(access_token, _tid, _o, _a, _m, fresh=fresh)
-                if _sent:
-                    _box[0] = _sent
-                return _sc, _rs
-
             def _still_open(_tid=trade_id):
                 cur.execute("SELECT status FROM live_trades WHERE trade_id=?", (_tid,))
                 _r = cur.fetchone()
                 return _r is not None and _r[0] == "OPEN"
+
+            def _send_close(fresh=False, _a=close_adapter, _o=close_orders, _m=trade_mode, _tid=trade_id, _box=_sent_box, _so=_still_open):
+                _sc, _rs, _sent = _send_exit_orders(access_token, _tid, _o, _a, _m, fresh=fresh, still_open=_so)
+                if _sent:
+                    _box[0] = _sent
+                return _sc, _rs
 
             status_code, resp = _send_close()
             # 🎓 G3: **निश्चित** पूर्ण अपयश असेल आणि `exit_retry_on_fail` ON असेल तरच, 2s नंतर (trade अजून OPEN असेल तर) एकदा पुन्हा (डीफॉल्ट OFF)
@@ -2193,6 +2233,12 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             except Exception:
                 _logger.exception("exit retry तपासणी अयशस्वी (silently handled) — पहिल्या प्रयत्नाचाच निकाल वापरला")
             if status_code == 200 and resp.get("status") == "success":
+                close_orders = _sent_box[0]                          # partial-exit नंतर फक्त उरलेले legs पाठवले असू शकतात
+                try:
+                    actual_exit_prices = merged_exit_prices(trade_id, _actual_exit_prices(resp, close_orders), close_orders)
+                except Exception:
+                    _logger.exception("exit fills एकत्र करता आले नाहीत (silently handled)")
+                    actual_exit_prices = _actual_exit_prices(resp, close_orders)
                 try:
                     _prev_fails = record_exit_success(trade_id)
                     if _prev_fails and exit_alert_enabled():
@@ -2202,8 +2248,6 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 order_ids = extract_order_ids(resp)
                 # 🎓 LIVE trades चे खरे exit fill भाव (Upstox verified_legs) उपलब्ध असतील तर order log आणि
                 # realized P&L त्यावरून; नसतील (PAPER/इतर brokers/अपूर्ण माहिती) तर आधीचा LTP-आधारित आकडा.
-                close_orders = _sent_box[0]                          # partial-exit नंतर फक्त उरलेले legs पाठवले असू शकतात
-                actual_exit_prices = _actual_exit_prices(resp, close_orders)
                 realized_pnl_value = current_pnl
                 if actual_exit_prices and all(leg["instrument_key"] in actual_exit_prices for leg in legs):
                     realized_pnl_value = _realized_pnl_from_exit_prices(net_credit, legs, actual_exit_prices, lots, lot_size)
@@ -2228,9 +2272,9 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 )
                 conn.commit()
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(realized_pnl_value, 2), "mode": trade_mode})
-            elif isinstance(resp, dict) and resp.get("status") in (EXIT_BLOCKED, EXIT_FLAT):
+            elif isinstance(resp, dict) and resp.get("status") in (EXIT_BLOCKED, EXIT_FLAT, EXIT_BUSY):
                 # 🎓 Partial-exit safety fix — स्थिती अनिश्चित ⇒ order पाठवला नाही; Telegram इशारा (exit_fail_alert setting असला तरी — सुरक्षा-इशारा).
-                # flat ⇒ broker कडे सर्व legs आधीच बंद; पुढच्या cycle चं reconciliation DB बंद करेल (इशारा नाही).
+                # flat ⇒ broker कडे सर्व legs आधीच बंद; पुढच्या cycle चं reconciliation DB बंद करेल (इशारा नाही). busy ⇒ दुसरी process पाठवत आहे.
                 print(f"⚠️ EXIT {resp.get('status').upper()} — trade_id={trade_id}, symbol={symbol}, reason={exit_reason}: {resp.get('reason')}")
                 if resp.get("status") == EXIT_BLOCKED:
                     try:
@@ -2343,6 +2387,10 @@ def reconcile_open_trades_with_broker(access_token, symbol, positions=_UNSET_POS
                    WHERE trade_id=?""",
                 (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), trade_id),
             )
+            try:
+                _clear_exit_tracking(trade_id)                          # partial-exit state / blocked मोजणी साफ
+            except Exception:
+                _logger.exception("exit-state साफ करता आली नाही (silently handled)")
             reconciled.append(trade_id)
     conn.commit()
     conn.close()
@@ -2470,7 +2518,15 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         return False, "Trade आधीच दुसऱ्या प्रक्रियेने बंद केला आहे."
     close_orders = apply_market_protection(close_orders)            # 🎓 G3: setting नसेल तर तीच list
     # 🎓 Partial-exit safety fix — आधीचा exit अयशस्वी असेल तर broker positions पाहून फक्त उरलेले legs (बघा _send_exit_orders).
-    status_code, resp, sent_orders = _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade_mode or "LIVE")
+    def _still_open_manual():
+        cur.execute("SELECT status FROM live_trades WHERE trade_id=?", (trade_id,))
+        _r = cur.fetchone()
+        return _r is not None and _r[0] == "OPEN"
+    status_code, resp, sent_orders = _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade_mode or "LIVE",
+                                                       still_open=_still_open_manual)
+    if isinstance(resp, dict) and resp.get("status") == EXIT_BUSY:
+        conn.close()
+        return False, f"Exit आत्ता पाठवला नाही — {resp.get('reason')}. थोड्या वेळाने पुन्हा पाहा."
     if isinstance(resp, dict) and resp.get("status") == EXIT_BLOCKED:
         conn.close()
         try:
@@ -2484,11 +2540,15 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     if status_code == 200 and resp.get("status") == "success":
         close_orders = sent_orders
         try:
+            actual_exit_prices = merged_exit_prices(trade_id, _actual_exit_prices(resp, close_orders), close_orders)
+        except Exception:
+            _logger.exception("exit fills एकत्र करता आले नाहीत (silently handled)")
+            actual_exit_prices = _actual_exit_prices(resp, close_orders)
+        try:
             record_exit_success(trade_id)                               # exit-state / अपयश मोजणी साफ
         except Exception:
             _logger.exception("exit-state साफ करता आली नाही (silently handled)")
         order_ids = extract_order_ids(resp)
-        actual_exit_prices = _actual_exit_prices(resp, close_orders)  # बघा manage_open_trades() मधली टिप्पणी
         if actual_exit_prices and all(leg["instrument_key"] in actual_exit_prices for leg in legs):
             current_pnl = _realized_pnl_from_exit_prices(net_credit, legs, actual_exit_prices, lots, lot_size)
         log_orders_batch(
