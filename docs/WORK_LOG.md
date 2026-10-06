@@ -376,3 +376,41 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - Candles (symbol, tf) ने keyed.
 
 **Tests:** `tests/test_major_levels.py` (+18). यात non-circular planted-level चाचणी, asof सीमा, MCX सत्र, min_levels, role-reversal क्रम, prominence, extreme mode, trendline violation आणि LOCO.
+
+## 2026-10-06 · Pullback Credit Spread — योजना (नियम 1; spec: `docs/PULLBACK_CREDIT_SPREAD_PROMPT.md`)
+
+**PR यादी (एक PR = एक टप्पा; थांबा फक्त G1/G2/G3):**
+- **PCS-1 core (हा PR)** — `pullback_credit_spread/settings.py` + `core.py`:
+  - सर्व settings एका schema मध्ये: 11 विभाग, मराठी label + ⓘ मदत, min/max/पर्याय, डीफॉल्ट. Mode डीफॉल्ट **OFF**; पर्याय फक्त OFF/PAPER.
+  - Presets: Conservative/Balanced/Aggressive. Validation, diff (इतिहासासाठी), snapshot (trade सोबत).
+  - Expiry: instrument master च्या तारखांवरून (वार hard-code नाही). आज expiry ⇒ पुढची; min_dte; monthly.
+  - Strike step chain वरून. Short strike चे 5 modes + min/max distance guards; rounding नेहमी दूर बाजूला. Long strike (points/strikes).
+  - Credit guards, lots (risk%, max_lots, event गुणक), capacity, blackout.
+  - Exits: hard stop **सर्वात आधी**, मग target → spot stop → खरा break (false break वर नाही) → time exit.
+- **PCS-2 signal pipeline** — `pullback_credit_spread/signal.py`, क्रमाने, प्रत्येक पायरीचं skip कारण:
+  - blackout → trend (StructureTracker, trend_tf + HTF veto);
+  - level (srv3 / major_levels / oe_zones, trend-दिशेचा);
+  - pullback quality (`price_action/legs`);
+  - logical reversal (`price_action/candles.evaluate_rejection`);
+  - breakout guard (real break ⇒ idea रद्द);
+  - expiry → strike → credit → lots.
+  - No-lookahead (फक्त पूर्ण bars, HTF bar_end नंतर). MCX वर्तन अबाधित (MCX modules ला हात नाही; test).
+- **PCS-3 dashboard** — नवीन पान "Pullback Credit Spread":
+  - 11 expanders, एका column चा layout (mobile).
+  - Presets; per-symbol settings (NIFTY/BANKNIFTY/SENSEX) + "सगळ्यांना लागू करा"; Reset.
+  - Supabase `strategy_settings` (strategy "pullback_credit_spread") + नवीन change-history table.
+  - Live preview (फक्त वाचन): expiry, strikes, credit, max loss, lots, ✅/❌ checklist.
+  - → **G1:** mobile + desktop screenshots.
+- **PCS-4 PAPER runner** (डीफॉल्ट OFF):
+  - Orders: hedge-first + `order_safety` (market_protection, partial-exit fix).
+  - Settings snapshot प्रत्येक trade सोबत.
+  - Exits कधीच अडवत नाही.
+- **PCS-5 backtest/replay** (तेच code):
+  - NIFTY IS/VAL; premium model (मर्यादा अहवालात).
+  - Random-entry baseline, sensitivity, PBO.
+  - → **G2.**
+
+**निर्णय (कारणासह):**
+- **Level engine डीफॉल्ट `srv3`:** Major Level engine अजून ground truth शी पडताळलेलं नाही (टप्पा (a) चालू). प्रमाणित झाल्यावर डीफॉल्ट बदलण्याचा निर्णय वापरकर्त्याचा.
+- **`adjustment_mode`:** setting आहे, पण v1 मध्ये फक्त `close` अंमलात. Roll/add_hedge नंतर, कारण त्यात नवीन order मार्ग आहेत.
+- **DTE:** कॅलेंडर-दिवस (expiry − आज). आज expiry ⇒ min_dte काहीही असो, पुढची.
