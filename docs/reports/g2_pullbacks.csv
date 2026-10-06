@@ -1,0 +1,5 @@
+TF,period,pullbacks,n_healthy,resume_healthy%,n_dangerous,resume_dangerous%,n_mixed,resume_mixed%,resume_सर्व%,p_perm
+15M,IS,1576,22,90.9,1501,65.8,43,86.0,66.6,0.0075
+15M,VAL,520,5,100.0,496,65.1,13,92.3,66.5,
+1H,IS,479,4,100.0,456,66.4,17,82.4,67.4,
+1H,VAL,156,1,0.0,148,70.9,6,66.7,70.3,
