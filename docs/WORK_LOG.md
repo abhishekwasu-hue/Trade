@@ -215,3 +215,40 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - "NOT DANGEROUS वि. DANGEROUS" हे नवं, आधीच ठरवलेलं गृहीतक तपासायचं का?
 - BANKNIFTY डेटा वापरायचा का?
 - Partial-exit नंतर फक्त न भरलेले legs पाठवण्याचा प्रस्ताव (G3 नोंद)?
+
+## 2026-10-06 · Partial-exit safety fix (वापरकर्त्याचा निर्णय: flag शिवाय)
+
+**काय केलं:**
+- `order_safety.py`:
+  - exit-state (`data/exit_state.json`, gitignored): मागच्या अयशस्वी प्रयत्नात काय पाठवलं, तो निश्चित no-fill होता का, कोणते orders pending होते.
+  - `plan_exit_resend`, `blocked_message`.
+- `trading_engine._send_exit_orders`: `manage_open_trades` (same-cycle retry सकट) आणि `close_trade_manually` दोन्ही याच मार्गाने.
+- पहिला प्रयत्न आणि PAPER: जुनंच वर्तन (सर्व legs, तीच list).
+
+**नियम (पुढचा प्रयत्न, LIVE):**
+1. मागचे pending order ids → Upstox order details. Terminal नसतील / मिळाले नाहीत ⇒ थांबा.
+2. Broker positions (ताजे fetch) → प्रत्येक leg ची net qty (instrument + product):
+   - 0 ⇒ leg वगळा;
+   - पूर्ण ⇒ पूर्ण qty;
+   - कमी ⇒ फक्त उरलेली qty;
+   - गहाळ / उलटी बाजू / जास्त qty / MCX अंशतः ⇒ थांबा.
+3. Positions मिळाल्या नाहीत (Upstox अपयश, किंवा Fyers/Shoonya/Stocko adapters ज्यांना positions API नाही) ⇒ मागचा प्रयत्न निश्चित no-fill असेल तरच **तेच** orders पुन्हा, नाहीतर थांबा.
+4. सर्व legs flat ⇒ काही पाठवत नाही (reconciliation पुढच्या cycle ला DB बंद करते).
+
+**निर्णय (कारणासह):**
+- "थांबा" इशारा `exit_fail_alert` setting बंद असतानाही जातो — सुरक्षा-इशारा; वापरकर्त्याने "Telegram alert द्या" सांगितलं.
+- त्याची मोजणी वेगळी (`<trade>#blocked`): पहिल्या प्रसंगाला लगेच, मग दर 5व्या cycle ला.
+- गहाळ leg = बंद नाही (reconciliation चाच नियम).
+- जास्त qty ⇒ दुसरा trade त्याच instrument वर असू शकतो ⇒ आंधळेपणाने बंद करणं धोकादायक ⇒ थांबा.
+- MCX: positions मधली qty units की lots ते अस्पष्ट ⇒ पूर्ण leg (units किंवा lots जुळले) चालेल, अंशतः ⇒ थांबा.
+- Adapters (Fyers/Shoonya/Stocko): partial नंतर आता थांबून इशारा देतात (आधी सर्व legs पुन्हा जायचे).
+- उरलेला धोका: पहिल्या प्रयत्नाचा प्रतिसाद order_ids शिवाय हरवला (network) आणि order नंतर भरला, तर positions मध्ये तो दिसेपर्यंत दुहेरी exit शक्य. MARKET orders ~सेकंदात भरतात आणि पुढचा cycle 60s नंतर ⇒ शक्यता कमी. order-book तपासणी पुढे जोडता येईल.
+
+**Tests:** `tests/test_partial_exit_safety.py` (+21):
+- partial-fill: पुढच्या cycle ला फक्त hedge; leg मधली अंशतः qty;
+- double-retry: रोज फक्त उरलेला leg;
+- broker-mismatch: उलटी बाजू / जास्त qty / गहाळ;
+- pending → थांबा → terminal झाल्यावर पुढे;
+- positions नाहीत; throttle; PAPER अबाधित; manual close.
+
+**VPS:** वापरकर्ता 15:30 नंतर pull करणार.
