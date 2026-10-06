@@ -308,7 +308,7 @@ def main(argv=None):
                "डेटा: NIFTY offline 1M (2015 → 2024-03). IS 2015–2021, VAL 2022 → 2024-03. Sealed holdout बंद. कोणताही gate चालू नाही.\n",
                f"## (a) Positional short strike — {HOLD} सत्र hold (Daily/Weekly levels वि. यादृच्छिक दिवस, तेच अंतर)\n",
                f"Strike = किंमतीपासून {DIST_MIN}–{DIST_MAX}% मधल्या सर्वात जवळच्या level ची दूरची कड (put: support चा low, call: resistance चा high). "
-               f"touch = {HOLD} सत्रांत कधीही पलीकडे; close = {HOLD}व्या सत्राचा close पलीकडे. RANDOM = त्याच period चे {K_RANDOM} यादृच्छिक दिवस, तेच % अंतर, तीच बाजू."
+               f"touch = {HOLD} सत्रांत कधीही पलीकडे; close = {HOLD}व्या सत्राचा close पलीकडे. RANDOM = त्याच period चे {K_RANDOM} यादृच्छिक दिवस, तेच % अंतर, तीच बाजू. "
                f"z = cluster-bootstrap (कॅलेंडर महिना, {N_BOOT} पुनरावृत्ती) — लगतच्या दिवसांचे hold-windows एकमेकांवर येतात म्हणून साधा two-proportion z फुगतो. "
                f"Hold-window IS/VAL सीमा ओलांडत नाही. OE 1d मध्ये BROKEN zones वगळले. levels काढता न आलेले दिवस: {FAILS or 'नाहीत'}.\n",
                _md(pos), "\n## (b) HEALTHY वि. DANGEROUS pullback — trend resume (15M आणि 1H)\n",
