@@ -215,3 +215,83 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - "NOT DANGEROUS वि. DANGEROUS" हे नवं, आधीच ठरवलेलं गृहीतक तपासायचं का?
 - BANKNIFTY डेटा वापरायचा का?
 - Partial-exit नंतर फक्त न भरलेले legs पाठवण्याचा प्रस्ताव (G3 नोंद)?
+
+## 2026-10-06 · Partial-exit safety fix (वापरकर्त्याचा निर्णय: flag शिवाय)
+
+**काय केलं:**
+- `order_safety.py`:
+  - exit-state (`data/exit_state.json`, gitignored): मागच्या अयशस्वी प्रयत्नात काय पाठवलं, तो निश्चित no-fill होता का, कोणते orders pending होते.
+  - `plan_exit_resend`, `blocked_message`.
+- `trading_engine._send_exit_orders`: `manage_open_trades` (same-cycle retry सकट) आणि `close_trade_manually` दोन्ही याच मार्गाने.
+- पहिला प्रयत्न आणि PAPER: जुनंच वर्तन (सर्व legs, तीच list).
+
+**नियम (पुढचा प्रयत्न, LIVE):**
+1. मागचे pending order ids → Upstox order details. Terminal नसतील / मिळाले नाहीत ⇒ थांबा.
+2. Broker positions (ताजे fetch) → प्रत्येक leg ची net qty (instrument + product):
+   - 0 ⇒ leg वगळा;
+   - पूर्ण ⇒ पूर्ण qty;
+   - कमी ⇒ फक्त उरलेली qty;
+   - गहाळ / उलटी बाजू / जास्त qty / MCX अंशतः ⇒ थांबा.
+3. Positions मिळाल्या नाहीत (Upstox अपयश, किंवा Fyers/Shoonya/Stocko adapters ज्यांना positions API नाही) ⇒ मागचा प्रयत्न निश्चित no-fill असेल तरच **तेच** orders पुन्हा, नाहीतर थांबा.
+4. सर्व legs flat ⇒ काही पाठवत नाही (reconciliation पुढच्या cycle ला DB बंद करते).
+
+**निर्णय (कारणासह):**
+- "थांबा" इशारा `exit_fail_alert` setting बंद असतानाही जातो — सुरक्षा-इशारा; वापरकर्त्याने "Telegram alert द्या" सांगितलं.
+- त्याची मोजणी वेगळी (`<trade>#blocked`): पहिल्या प्रसंगाला लगेच, मग दर 5व्या cycle ला.
+- गहाळ leg = बंद नाही (reconciliation चाच नियम).
+- जास्त qty ⇒ दुसरा trade त्याच instrument वर असू शकतो ⇒ आंधळेपणाने बंद करणं धोकादायक ⇒ थांबा.
+- MCX: positions मधली qty units की lots ते अस्पष्ट ⇒ पूर्ण leg (units किंवा lots जुळले) चालेल, अंशतः ⇒ थांबा.
+- Adapters (Fyers/Shoonya/Stocko): partial नंतर आता थांबून इशारा देतात (आधी सर्व legs पुन्हा जायचे).
+- उरलेला धोका: पहिल्या प्रयत्नाचा प्रतिसाद order_ids शिवाय हरवला (network) आणि order नंतर भरला, तर positions मध्ये तो दिसेपर्यंत दुहेरी exit शक्य. MARKET orders ~सेकंदात भरतात आणि पुढचा cycle 60s नंतर ⇒ शक्यता कमी. order-book तपासणी पुढे जोडता येईल.
+
+**Tests:** `tests/test_partial_exit_safety.py` (+21):
+- partial-fill: पुढच्या cycle ला फक्त hedge; leg मधली अंशतः qty;
+- double-retry: रोज फक्त उरलेला leg;
+- broker-mismatch: उलटी बाजू / जास्त qty / गहाळ;
+- pending → थांबा → terminal झाल्यावर पुढे;
+- positions नाहीत; throttle; PAPER अबाधित; manual close.
+
+**VPS:** वापरकर्ता 15:30 नंतर pull करणार.
+
+**स्वतंत्र review नंतरच्या दुरुस्त्या (त्याच PR मध्ये):**
+- **In-flight नोंद:** पाठवण्याआधीच नोंद होते. Process मध्येच थांबली, प्रतिसाद हरवला किंवा state save अयशस्वी झाला तरी पुढचा प्रयत्न "पहिला" समजला जात नाही.
+- **Order book तपासणी:** मागच्या प्रयत्नाचा निकाल अज्ञात असेल (timeout, order_ids नाहीत, in-flight), तर Upstox order book (`fetch_order_book`, GET /v2/order/retrieve-all) मध्ये तेच instrument + बाजू + tag चे orders (प्रयत्नाच्या वेळेपासून) शोधले जातात.
+  - Non-terminal order सापडला, किंवा order book मिळाला नाही ⇒ थांबा.
+  - ⚠️ हा endpoint sandbox मधून तपासता आला नाही (Upstox docs प्रमाणे).
+- **Shared instrument:** दुसरा OPEN LIVE trade त्याच instrument वर असेल तर broker net qty कोणाची ते कळत नाही ⇒ थांबा. फक्त पुढच्या (resend) प्रयत्नात लागू; पहिला प्रयत्न जुनाच.
+- **Locks:**
+  - `exit_state.json` fcntl lock खाली.
+  - प्रत्येक trade साठी non-blocking exit-lock: monitor आणि manual close एकाच वेळी पाठवत नाहीत. दुसरी process पाठवत असेल ⇒ "busy", काही पाठवत नाही.
+  - Lock मिळाल्यावर trade OPEN आहे का पुन्हा तपासलं जातं.
+- **आधीच्या दिवसाचा प्रयत्न:** DAY orders संपलेले असतात ⇒ pending/book तपासणी नाही, थेट positions.
+- **खराब state नोंद** ⇒ थांबा.
+- **अनपेक्षित चूक** ⇒ 'blocked' + इशारा. Monitor loop आणि इतर trades चालू राहतात.
+- **Realized P&L:** आधीच्या अयशस्वी प्रयत्नांतले प्रत्यक्ष fills साठवले जातात आणि शेवटी realized P&L त्यावरून मोजला जातो.
+- **Reconciliation:** त्याने trade बंद केला तर exit-state साफ होते.
+- **Operator escape:** `clear_exit_state.py --trade-id … [--clear | --mark-closed]`. Blocked इशाऱ्यात ही ओळ दिसते. Adapter trades आणि कायमचे अडकलेले trades यासाठी.
+- **दुसऱ्या review नंतर:**
+  - (BLOCKER) exit-state आता DB मध्ये CLOSED + commit झाल्यानंतरच साफ होते. मधल्या वेळेत manual close आलं, तर ते in-flight नोंद पाहतं, order book / positions तपासतं आणि flat पाहून काही पाठवत नाही.
+  - Order book मध्ये tag ने गाळणं काढलं: Upstox tag कापू शकतो, आणि जास्त जुळणं ही सुरक्षित बाजू.
+  - State फाईल वाचता/लिहिता आली नाही ⇒ fail-closed. पहिला प्रयत्नही थांबतो + इशारा; खराब फाईल ओव्हरराइट होत नाही.
+  - Book-window साठी पाठवण्याची (in-flight) वेळ ठेवली जाते.
+  - `at` नसेल तर आजचाच प्रयत्न मानला जातो.
+  - Lock फाईल handle leak बंद केला.
+  - Tests +6: manual close race, tag mismatch, जुने orders, खराब फाईल, खरी flock contention, in-flight वेळ.
+- **वापरकर्त्याचा निर्णय (merge आधी):**
+  - exit_state.json वाचता न आल्याने exits blocked असतील तर "EXITS BLOCKED" इशारा प्रत्येक cycle ला येतो. Throttle 5 मिनिटं (सर्व trades मिळून एक), आणि इशाऱ्यात नेमकी `clear_exit_state.py --reset-file` command असते.
+  - `--reset-file` खराब फाईल `.corrupt-<वेळ>` नावाने बाजूला ठेवतो.
+  - Runbook: `PRE_LIVE_CHECKLIST.md` §7 (3 ओळी).
+- **उरलेलं (बदललं नाही):** monitor वि. manual close मध्ये DB-स्तरावर atomic "CLOSING" claim नाही. Exit-lock + lock नंतरची OPEN तपासणी हा धोका बंद करतात; DB claim हा मोठा बदल ⇒ पुढे गरज वाटल्यास.
+
+**Tests:** +11 (एकूण 32):
+- crash before save → order book;
+- timeout/no ids;
+- shared instrument;
+- आधीच्या दिवसाचा pending;
+- corrupt state;
+- lock busy;
+- internal error;
+- fills मधून P&L;
+- reconciliation clear;
+- adapter path;
+- CLI.

@@ -89,4 +89,7 @@ EOF
 - **Exit अपयश इशारा** (डीफॉल्ट ON, फक्त सूचना): leg-निहाय स्थिती, "POSITION अजून उघडी", partial-exit धोका, throttle, recovery संदेश.
 - **Exit retry** (डीफॉल्ट OFF): फक्त पूर्ण अपयशावर, त्याच cycle मध्ये एकदा. Partial exit वर नाही.
 - **MARKETABLE_LIMIT:** फक्त entries; अजूनही जोडलेला नाही.
-- **उघडा धोका:** partial exit नंतर पुढच्या cycle ला सर्व legs पुन्हा पाठवले जातात — `docs/WORK_LOG.md` मधला प्रस्ताव पाहा.
+- ~~**उघडा धोका:** partial exit नंतर पुढच्या cycle ला सर्व legs पुन्हा पाठवले जातात.~~ **दुरुस्त (2026-10-06, flag शिवाय):**
+  - आधीचा exit प्रयत्न अयशस्वी झाला असेल, तर पुढचा प्रयत्न (पुढचा cycle, same-cycle retry, manual/monitor close) broker positions तपासतो आणि फक्त उरलेले legs, उरलेल्या qty ने पाठवतो.
+  - स्थिती अनिश्चित असेल तर काहीही पाठवत नाही आणि Telegram इशारा देतो: pending order, positions मिळाल्या नाहीत, leg गहाळ/उलटा/जास्त qty, किंवा MCX अंशतः.
+  - Code: `order_safety.plan_exit_resend`, `trading_engine._send_exit_orders`.

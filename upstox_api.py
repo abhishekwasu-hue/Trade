@@ -1161,6 +1161,23 @@ def cancel_order(access_token, order_id):
 ORDER_TERMINAL_STATUSES = {"complete", "rejected", "cancelled"}
 
 
+def fetch_order_book(access_token):
+    """आजचे सर्व orders (GET /v2/order/retrieve-all) — list किंवा None (नेटवर्क/एरर). 🎓 Partial-exit safety fix: मागचा exit प्रयत्न अज्ञात
+    स्थितीत संपला (timeout / order_ids नाहीत / process मध्येच थांबली) तर पुन्हा पाठवण्याआधी त्यातले orders अजून live आहेत का हे पाहण्यासाठी."""
+    try:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {access_token.strip()}"}
+        proxy_url = get_static_ip_proxy_url()
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        res = _get_with_retry("https://api.upstox.com/v2/order/retrieve-all", headers=headers, timeout=10, proxies=proxies)
+        if res.status_code == 200:
+            data = res.json().get("data")
+            return data if isinstance(data, list) else None
+        return None
+    except Exception:
+        _logger.exception("fetch_order_book() मध्ये अनपेक्षित चूक (silently handled)")
+        return None
+
+
 def get_order_details(access_token, order_id):
     """एका specific order_id ची सद्य स्थिती (status/filled_quantity/average_price) — Upstox च्या
     GET /v2/order/details वरून. मिळाली नाही (नेटवर्क/एरर) तर None — caller ने पुन्हा पोल करावं."""

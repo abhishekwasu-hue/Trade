@@ -95,6 +95,10 @@ def _isolated_order_safety(monkeypatch, tmp_path):
     import order_safety
     order_safety._FAIL_COUNTS.clear()
     monkeypatch.setattr(order_safety, "FAIL_COUNTS_PATH", str(tmp_path / "exit_fail_counts.json"))
+    order_safety._EXIT_STATE.clear()
+    monkeypatch.setattr(order_safety, "EXIT_STATE_PATH", str(tmp_path / "exit_state.json"))
+    monkeypatch.setattr(order_safety, "EXIT_LOCK_DIR", str(tmp_path / "exit_locks"))
     monkeypatch.setattr(order_safety, "_settings", lambda: {})
     yield
     order_safety._FAIL_COUNTS.clear()
+    order_safety._EXIT_STATE.clear()
