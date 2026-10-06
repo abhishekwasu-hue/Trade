@@ -4,6 +4,11 @@ import json
 import sqlite3
 import time
 import uuid
+from order_safety import (
+    apply_market_protection, exit_alert_enabled, failure_message as exit_failure_message, record_failure as record_exit_failure,
+    record_success as record_exit_success, recovered_message as exit_recovered_message, retry_full_failure_once,
+    send_alert as send_exit_alert, should_alert as should_alert_exit,
+)
 
 import cloud_db
 from mcx_contract_specs import get_price_multiplier
@@ -224,6 +229,7 @@ def _auto_reverse_filled_legs(access_token, adapter, resp, trading_mode, product
         }
         for leg in filled_legs
     ]
+    reversal_orders = apply_market_protection(reversal_orders)      # 🎓 G3: setting नसेल तर तीच list (जुनं वर्तन)
     reversal_status, reversal_resp = (adapter.execute_order_leg_set(reversal_orders, trading_mode) if adapter is not None
                                        else execute_order_leg_set(access_token, reversal_orders, trading_mode))
     reversal_ok = reversal_status == 200 and reversal_resp.get("status") == "success"
@@ -1055,6 +1061,7 @@ def open_multi_leg_trade(access_token, symbol, strategy_result, lots, lot_size, 
             _alert_margin_insufficient(symbol, source, margin_reason)
             return False, {"status": "error", "reason": margin_reason}
 
+    orders = apply_market_protection(orders)                        # 🎓 G3: `order_market_protection_pct` नसेल तर काहीच बदल नाही
     status_code, resp = (adapter.execute_order_leg_set(orders, trading_mode) if adapter is not None
                           else execute_order_leg_set(access_token, orders, trading_mode))
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा (Production-Grade — Partial-Leg Failure Handling, गंभीर
@@ -2127,9 +2134,18 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
             if _status_row is None or _status_row[0] != "OPEN":
                 continue
             close_adapter = _resolve_close_adapter(account_id)
-            status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode) if close_adapter is not None
-                                  else execute_order_leg_set(access_token, close_orders, trade_mode))
+            close_orders = apply_market_protection(close_orders)    # 🎓 G3: setting नसेल तर तीच list
+
+            def _send_close(_a=close_adapter, _o=close_orders, _m=trade_mode):
+                return (_a.execute_order_leg_set(_o, _m) if _a is not None else execute_order_leg_set(access_token, _o, _m))
+
+            status_code, resp = _send_close()
+            # 🎓 G3: पूर्ण अपयश (एकही leg भरला नाही) असेल आणि `exit_retry_on_fail` ON असेल तरच, 2s नंतर एकदा पुन्हा (डीफॉल्ट OFF)
+            status_code, resp, _retried = retry_full_failure_once(_send_close, status_code, resp)
             if status_code == 200 and resp.get("status") == "success":
+                _prev_fails = record_exit_success(trade_id)
+                if _prev_fails and exit_alert_enabled():
+                    send_exit_alert(exit_recovered_message(symbol, trade_id, exit_reason, _prev_fails))
                 order_ids = extract_order_ids(resp)
                 # 🎓 LIVE trades चे खरे exit fill भाव (Upstox verified_legs) उपलब्ध असतील तर order log आणि
                 # realized P&L त्यावरून; नसतील (PAPER/इतर brokers/अपूर्ण माहिती) तर आधीचा LTP-आधारित आकडा.
@@ -2167,16 +2183,11 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     f"⚠️ CLOSE ORDER FAILED — trade_id={trade_id}, symbol={symbol}, reason={exit_reason}, "
                     f"status_code={status_code}, response={resp}"
                 )
-                try:
-                    from notifications import send_telegram_message
-                    send_telegram_message(
-                        f"🔴 <b>{symbol} — Position बंद करण्याचा प्रयत्न अयशस्वी!</b>\n"
-                        f"Trade {trade_id} (कारण: {exit_reason}) — broker कडून अयशस्वी उत्तर.\n"
-                        f"कृपया Dashboard/Upstox app उघडून प्रत्यक्ष स्थिती तपासा."
-                    )
-                except Exception:
-                    _logger.exception("manage_open_trades() मध्ये अनपेक्षित चूक (silently handled)")
-                    pass  # Telegram पाठवताना चूक झाली तरी मुख्य loop थांबता कामा नये
+                # 🎓 G3 (वापरकर्त्याचा निर्णय): इशारा डीफॉल्ट ON — leg-निहाय स्थिती, "position उघडी" स्पष्ट, partial-exit धोका;
+                # spam टाळण्यासाठी पहिल्या आणि नंतर दर 5व्या सलग अपयशाला (order मध्ये काहीही बदल नाही).
+                _fail_count = record_exit_failure(trade_id)
+                if exit_alert_enabled() and should_alert_exit(_fail_count):
+                    send_exit_alert(exit_failure_message(symbol, trade_id, exit_reason, _fail_count, status_code, resp))
 
     # Trailing SL मुळे peak_pnl अपडेट झालेला असू शकतो, जरी या रनला कोणताही trade प्रत्यक्ष बंद झाला नसला तरी —
     # तो बदल इथे न चुकता commit करणे आवश्यक (नाहीतर वर फक्त trade बंद झाल्यावरच commit होतो).
@@ -2389,6 +2400,7 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     if _status_row is None or _status_row[0] != "OPEN":
         conn.close()
         return False, "Trade आधीच दुसऱ्या प्रक्रियेने बंद केला आहे."
+    close_orders = apply_market_protection(close_orders)            # 🎓 G3: setting नसेल तर तीच list
     status_code, resp = (close_adapter.execute_order_leg_set(close_orders, trade_mode or "LIVE") if close_adapter is not None
                           else execute_order_leg_set(access_token, close_orders, trade_mode or "LIVE"))
     if status_code == 200 and resp.get("status") == "success":

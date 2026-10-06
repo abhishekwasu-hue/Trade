@@ -47,6 +47,10 @@ DEFAULT_SETTINGS = {
     "atr_multiplier": 1.5,
     "eod_squareoff_hour": 15,
     "eod_squareoff_minute": 15,
+    # 🎓 G3: order सुरक्षा (order_safety.py) — डीफॉल्ट जुनं वर्तन: market_protection पाठवत नाही, इशारा ON, retry OFF
+    "order_market_protection_pct": None,
+    "exit_fail_alert": True,
+    "exit_retry_on_fail": False,
 }
 
 

@@ -8,7 +8,8 @@ order_execution.py
 तीन शैली (`order_style` setting — डीफॉल्ट "MARKET" ⇒ काहीच बदल नाही):
   • "MARKET"            — जुनं वर्तन.
   • "MARKET_PROTECTION" — MARKET / SL-M orders मध्ये Upstox चा `market_protection` (1–25 %) स्पष्टपणे भरतो (न भरल्यास Upstox चा डीफॉल्ट −1 = auto).
-  • "MARKETABLE_LIMIT"  — LIMIT order @ LTP ± buffer (tick ला गोल); ठराविक वेळेत पूर्ण न भरल्यास उरलेल्या quantity साठी cancel → नवीन LTP ± वाढीव
+  • "MARKETABLE_LIMIT"  — **फक्त entries साठी** (G3 निर्णय; exit साठी ValueError). setting `entry_order_style` डीफॉल्ट "MARKET", कुठेही जोडलेला नाही.
+                          LIMIT order @ LTP ± buffer (tick ला गोल); ठराविक वेळेत पूर्ण न भरल्यास उरलेल्या quantity साठी cancel → नवीन LTP ± वाढीव
                           buffer ने पुन्हा (कमाल `retries`); शेवटी उरलेलं unfilled ⇒ स्पष्ट निकाल (caller ठरवेल — उदा. exit साठी अलर्ट).
 
 सर्व broker कॉल्स injectable functions (place/status/cancel/ltp) — म्हणजे tests मध्ये network शिवाय तपासता येतं.
@@ -82,12 +83,14 @@ def with_market_protection(orders, pct):
     return out
 
 
-def apply_order_style(orders, style=DEFAULT_ORDER_STYLE, cfg=None, ltp_map=None):
+def apply_order_style(orders, style=DEFAULT_ORDER_STYLE, cfg=None, ltp_map=None, purpose="entry"):
     """orders (trading_engine चे dicts) -> नवीन शैलीतले orders. "MARKET" ⇒ अगदी तेच (प्रत) — डीफॉल्ट वर्तन बदलत नाही.
     "MARKETABLE_LIMIT" साठी `ltp_map` {instrument_token: ltp} लागतो; पहिल्या प्रयत्नाची limit किंमत भरतो."""
     cfg = cfg or LimitConfig()
     if style not in ORDER_STYLES:
         raise ValueError(f"अज्ञात order_style: {style!r}")
+    if style == "MARKETABLE_LIMIT" and purpose != "entry":
+        raise ValueError("MARKETABLE_LIMIT फक्त entries साठी — exits (SL/Target/TSL) साठी नाही (वापरकर्त्याचा G3 निर्णय)")
     if style == "MARKET":
         return [dict(o) for o in orders]
     if style == "MARKET_PROTECTION":
