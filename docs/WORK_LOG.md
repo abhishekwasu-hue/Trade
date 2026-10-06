@@ -295,3 +295,41 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - reconciliation clear;
 - adapter path;
 - CLI.
+
+## 2026-10-06 · Strike breach probability model (NIFTY) + BANKNIFTY स्वतंत्र चाचण्या + pre-registration
+
+**काय केलं:**
+- **`strike_breach_model.py` (report-only, level filter नाही):**
+  - Strike अंतर z = |ln(K/open)| ÷ (σ20·√h) मध्ये मोजलं. ATR14 version वेगळं.
+  - घटक: ADX regime × बाजू, OE StructureTracker("1d"), ln h + 0DTE, entry weekday, बाजू.
+  - Numpy IRLS logistic (ridge 1, निश्चित). NIFTY IS वर fit, VAL वर calibration.
+  - Coefs वर महिना-cluster bootstrap CI.
+  - Calibrated "X% धोका ⇒ किती दूर" तक्ता: DTE 0–4 × put/call, close आणि touch.
+  - गोठवलेले coefs: `docs/reports/strike_breach_model_coef.json`.
+  - अहवाल: `docs/reports/strike_breach_model.md`.
+- **`docs/reports/preregistered_hypotheses.md`:** BANKNIFTY चालवण्याआधी लिहिलेलं.
+  - H-PB1: NOT-DANGEROUS वि. DANGEROUS, 15M.
+  - H-POS1: BANKNIFTY positional, levels वि. random.
+  - H-BR1: NIFTY-fit model BANKNIFTY वर calibrated आहे का.
+- **`banknifty_positional.py`:** loader + H-POS1 runner.
+- **`research/banknifty_independent_test.py`:** VPS वर चालवायची script.
+  - फक्त CSV वाचते. Network, orders आणि DB write नाही.
+  - stdout वर ≤ 40 ओळी; CSVs `data/research/banknifty_results/` मध्ये. `data/research/` gitignored.
+
+**निर्णय (कारणासह):**
+- **H-PB1 daily वर चालवलं नाही:** ते 15M साठी नोंदवलं आहे. Daily legs वेगळ्या TF चे; तिथे चालवणं म्हणजे नवीन, न नोंदवलेलं गृहीतक. Script हे स्पष्ट छापते.
+- **BANKNIFTY साठी model पुन्हा fit केलं नाही:** NIFTY चे गोठवलेले coefs वापरले. त्यामुळे BANKNIFTY चे IS आणि VAL दोन्ही खरे out-of-sample आहेत.
+- **Weekly expiry:** NIFTY सारखाच गुरुवार नियम ठेवला, पद्धत एकच राहावी म्हणून. BANKNIFTY ची प्रत्यक्ष expiry 2023-09 पासून बुधवार होती; हा फरक नोंदवला.
+- **H-POS1 डेटा-स्रोत:** niftyindices वरून वापरकर्त्याच्या Upstox V3 CSV वर बदलला. चाचणीआधी नोंदवलं; पद्धत तशीच.
+- **Synthetic run मधली चूक (दुरुस्त):** loader ISO तारखा day-first वाचत होता (2021-09-01 → 9 Jan). आता आधी ISO, नाहीतर day-first. Tests सह.
+
+**NIFTY निकाल (`strike_breach_model_conclusions.md`):**
+- अंतर z हीच मुख्य माहिती. Regime/वार/structure जोडून log-loss फक्त 0.3298 → 0.3289.
+- ATR-आधारित model थोडं चांगलं: 0.3243.
+- VAL calibration चांगलं.
+- 10% expiry-close धोका ⇒ z ≈ 1.05 (DTE 0) ते 1.3 (DTE 4).
+
+**Tests:**
+- `test_strike_breach_model.py` (+7)
+- `test_banknifty_positional.py` (+7)
+- `test_banknifty_independent_test.py` (+4)

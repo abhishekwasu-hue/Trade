@@ -34,6 +34,7 @@ data/exit_locks/
 
 # --- Sealed holdout (Upstox 2024-04 →) — G4 पर्यंत बंद; कधीही commit नाही ---
 data/holdout/
+data/research/
 
 # --- Python ---
 __pycache__/
