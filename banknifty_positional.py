@@ -19,7 +19,7 @@ import g2_followups as G
 import leg_level_validation as T3
 
 ENGINES = ("SRV3_DW", "DYN_D")                                  # OE_1D नाही (daily-only डेटा)
-_ALIASES = {"date": "timestamp", "index date": "timestamp", "open": "open", "high": "high", "low": "low", "close": "close",
+_ALIASES = {"date": "timestamp", "timestamp": "timestamp", "index date": "timestamp", "open": "open", "high": "high", "low": "low", "close": "close",
             "open index value": "open", "high index value": "high", "low index value": "low", "closing index value": "close"}
 
 
@@ -27,9 +27,14 @@ def parse_dates(col):
     """तारखा → IST तारीख (naive, मध्यरात्र). आधी ISO (2015-01-01, 2015-01-01T00:00:00+05:30) — 90%+ जुळल्या तर तेच; नाहीतर day-first
     (niftyindices: "01 Jan 2015", "01-01-2015"). ⚠️ ISO तारखा day-first ने वाचल्यास 2021-09-01 → 9 Jan होतो (review: synthetic run मध्ये सापडलं)."""
     s = col.astype(str).str.strip()
-    iso = pd.to_datetime(s, format="ISO8601", errors="coerce", utc=True)
+    has_tz = s.str.contains(r"(?:[+-]\d{2}:?\d{2}|Z)$", regex=True)
+    if has_tz.mean() >= 0.9:                                            # offset सह ⇒ IST मध्ये
+        iso = pd.to_datetime(s, format="ISO8601", errors="coerce", utc=True)
+        if iso.notna().mean() >= 0.9:
+            return iso.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None).dt.normalize()
+    iso = pd.to_datetime(s, format="ISO8601", errors="coerce")           # offset नाही ⇒ आधीच IST (UTC मानत नाही)
     if iso.notna().mean() >= 0.9:
-        return iso.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None).dt.normalize()
+        return iso.dt.normalize()
     return pd.to_datetime(s, dayfirst=True, errors="coerce", format="mixed").dt.normalize()
 
 

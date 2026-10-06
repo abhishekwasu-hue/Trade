@@ -68,3 +68,9 @@ def test_upstox_v3_timestamp_with_offset(tmp_path):
     rows = ["2015-01-01T00:00:00+05:30,100,110,95,105", "2015-01-02T00:00:00+05:30,105,112,101,110"]
     df = B.load_banknifty_daily(_csv(tmp_path, rows, header="date,open,high,low,close"))
     assert list(df["timestamp"].dt.strftime("%Y-%m-%d")) == ["2015-01-01", "2015-01-02"]
+
+
+def test_naive_timestamps_are_ist_not_utc(tmp_path):
+    rows = ["2021-09-01 20:00:00,100,110,95,105", "2021-09-02 20:00:00,105,112,101,110"]
+    df = B.load_banknifty_daily(_csv(tmp_path, rows, header="timestamp,open,high,low,close"))
+    assert list(df["timestamp"].dt.strftime("%Y-%m-%d")) == ["2021-09-01", "2021-09-02"]

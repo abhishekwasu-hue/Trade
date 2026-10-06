@@ -33,8 +33,8 @@ BIN_MIN_N, BIN_TOL = 300, 0.05                                     # H-BR1 न�
 MODEL = "M_RV (पूर्ण)"
 
 
-def positional(dd):
-    tab, rows = B.run(dd)
+def positional(dd, log=None):
+    tab, rows = B.run(dd, log=log)
     return tab, rows, B.level_edge_cells(tab)
 
 
@@ -120,10 +120,12 @@ def main(argv=None):
         print(f"CSV सापडली नाही: {a.csv}")
         return 2
     np.seterr(all="ignore")
+    raw_n = len(pd.read_csv(a.csv))
     dd = B.load_banknifty_daily(a.csv)
     with open(a.coef, encoding="utf-8") as f:
         frozen = json.load(f)
-    tab, pos_rows, edges = positional(dd)
+    print(f"चालू… (≈15 मिनिटं लागू शकतात; प्रगती stderr वर) — CSV ओळी {raw_n}, वापरल्या {len(dd)}", file=sys.stderr, flush=True)
+    tab, pos_rows, edges = positional(dd, log=lambda m: print(m, file=sys.stderr, flush=True))
     rows, summary, rel = breach_calibration(dd, frozen)
     ok, why = hbr1_verdict(summary, rel)
     os.makedirs(a.out, exist_ok=True)
@@ -133,6 +135,8 @@ def main(argv=None):
     rel.to_csv(os.path.join(a.out, "c_breach_reliability.csv"), index=False)
     rows.to_csv(os.path.join(a.out, "c_breach_rows.csv.gz"), index=False, compression="gzip")
     lines = report_lines(dd, tab, edges, summary, rel, ok, why, a.out)
+    wk = int((dd["timestamp"].dt.weekday >= 5).sum())
+    lines.insert(1, f"CSV ओळी {raw_n} → वापरल्या {len(dd)} (holdout/अवैध OHLC/duplicate वगळले); शनिवार-रविवार सत्रे {wk}; SRV3 अपयश {B.G.FAILS or 0}")
     print("\n".join(lines[:40]))
     return 0
 

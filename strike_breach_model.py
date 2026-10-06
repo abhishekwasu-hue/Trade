@@ -232,8 +232,8 @@ def reliability(y, p, months):
     return pd.DataFrame(out)
 
 
-def required_z(b, names, target, h, weekday, regime, struct=0, call=0, zmax=6.0):
-    """model invert: दिलेल्या घटकांवर P(breach) = target होईल असा z (bisection; z वाढला की p कमी). सापडला नाही ⇒ NaN."""
+def required_z(b, names, target, h, weekday, regime, struct=0, call=0, zmax=3.0):
+    """model invert: दिलेल्या घटकांवर P(breach) = target होईल असा z (bisection; z वाढला की p कमी). grid (≤ 3) बाहेर extrapolation नाही ⇒ सापडला नाही तर NaN."""
     def p_at(z):
         x = {"const": 1.0, "z": z, "z2": z * z, "ln_h": math.log(h), "dte0": float(h == 1), "call": float(call),
              "struct_with": float(struct > 0), "struct_against": float(struct < 0)}
