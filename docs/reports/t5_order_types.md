@@ -76,3 +76,17 @@ EOF
    - (c) entries साठी marketable-LIMIT हा पर्याय (setting, डीफॉल्ट MARKET) PAPER मध्ये आधी तपासावा.
 3. Stocko चा `market_protection_percentage: 0` बदलायचा का? (Stocko वापरत असाल तरच.)
 4. MCX API orders चालू आहेत का, हे Upstox कडून/VPS logs मधून पडताळावं.
+
+
+## 6. G3 नंतर (2026-10-06) — काय लागू केलं
+
+वापरकर्त्याचा VPS पुरावा: 2026-09-10 ची NIFTY LIVE spread entry (MARKET, `market_protection` शिवाय) Upstox API वर COMPLETE ⇒ Upstox चा डीफॉल्ट auto protection काम करतो.
+
+- **`order_market_protection_pct`** (Dashboard sidebar → "🧾 Order सुरक्षा"):
+  - डीफॉल्ट बंद ⇒ field पाठवत नाही, सध्याचं वर्तन.
+  - चालू केल्यास (1–25%) entry आणि सर्व exits (SL/Target/TSL, manual close, auto-reverse) मध्ये लागू.
+  - LIVE वर चालू करण्याचा निर्णय वापरकर्त्याचा.
+- **Exit अपयश इशारा** (डीफॉल्ट ON, फक्त सूचना): leg-निहाय स्थिती, "POSITION अजून उघडी", partial-exit धोका, throttle, recovery संदेश.
+- **Exit retry** (डीफॉल्ट OFF): फक्त पूर्ण अपयशावर, त्याच cycle मध्ये एकदा. Partial exit वर नाही.
+- **MARKETABLE_LIMIT:** फक्त entries; अजूनही जोडलेला नाही.
+- **उघडा धोका:** partial exit नंतर पुढच्या cycle ला सर्व legs पुन्हा पाठवले जातात — `docs/WORK_LOG.md` मधला प्रस्ताव पाहा.

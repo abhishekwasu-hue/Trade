@@ -130,3 +130,9 @@ def test_overfill_is_flagged_and_avg_price_uses_priced_fills_only():
     b2.status = lambda oid: {**orig2(oid), "average_price": None} if oid == "O1" else orig2(oid)
     r2 = run(b2)
     assert r2.complete and r2.avg_price == 100.5
+
+
+def test_marketable_limit_is_entry_only():
+    with pytest.raises(ValueError):
+        OX.apply_order_style(ORDERS, "MARKETABLE_LIMIT", ltp_map={"A": 200.0}, purpose="exit")
+    assert OX.apply_order_style(ORDERS, "MARKET_PROTECTION", purpose="exit")[0]["market_protection"] == 2

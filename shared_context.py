@@ -273,6 +273,30 @@ def setup_shared_context():
                     "कधीच वाईट होत नाही. ATR 15M underlying candles वरून काढला जातो."
                 )
 
+    # 🎓 G3 (वापरकर्त्याचा निर्णय, 2026-10-06) — order सुरक्षा settings. डीफॉल्ट: market_protection पाठवत नाही (Upstox auto),
+    # exit-अपयश इशारा ON (फक्त सूचना), त्याच cycle मधला retry OFF. आधीची निवड engine_settings.json मधून (rerun मध्ये टिकावी).
+    try:
+        from engine_service import load_settings as _load_engine_settings
+        _eng_prev = _load_engine_settings()
+    except Exception:
+        _eng_prev = {}
+    with st.sidebar.expander("🧾 Order सुरक्षा (market protection / exit इशारा)", expanded=False):
+        try:                                                       # हाताने टाकलेलं अवैध मूल्य sidebar क्रॅश करू नये
+            _mp_prev = int(_eng_prev.get("order_market_protection_pct"))
+            _mp_prev = _mp_prev if 1 <= _mp_prev <= 25 else None
+        except (TypeError, ValueError):
+            _mp_prev = None
+        _mp_on = st.checkbox("MARKET orders मध्ये market_protection स्पष्ट पाठवा", value=bool(_mp_prev), key="ordsafe_mp_on",
+                             help="बंद (डीफॉल्ट) = field पाठवत नाही — Upstox चा auto protection. चालू = entry आणि exit दोन्ही orders मध्ये हा %.")
+        order_market_protection_pct = None
+        if _mp_on:
+            order_market_protection_pct = int(st.number_input("market_protection %", min_value=1, max_value=25,
+                                                              value=_mp_prev or 2, step=1, key="ordsafe_mp_pct"))
+        exit_fail_alert = st.checkbox("Exit order अयशस्वी झाल्यास Telegram इशारा", value=bool(_eng_prev.get("exit_fail_alert", True)), key="ordsafe_exit_alert")
+        exit_retry_on_fail = st.checkbox("Exit पूर्ण अयशस्वी झाल्यास त्याच cycle मध्ये 2s नंतर एकदा पुन्हा प्रयत्न",
+                                         value=bool(_eng_prev.get("exit_retry_on_fail", False)), key="ordsafe_exit_retry",
+                                         help="फक्त निश्चित पूर्ण अपयशावर (सर्व legs rejected/cancelled). Timeout/partial वर कधीच नाही (दुहेरी exit टाळण्यासाठी).")
+
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा ("sidebar खूप crowd आहे, user क्लिक करून गरजेनुसार
     # उघडेल") — Trading Mode आता (इतर settings groups सारखाच) collapsed expander मध्ये, पण पैशांशी
     # संबंधित असल्याने सद्य स्थिती (PAPER/LIVE, आणि LIVE असेल तर सक्रिय/पुष्टी झालेली का) expander च्या
@@ -403,6 +427,9 @@ def setup_shared_context():
             "atr_multiplier": atr_multiplier,
             "eod_squareoff_hour": eod_squareoff_time.hour if eod_squareoff_time else 15,
             "eod_squareoff_minute": eod_squareoff_time.minute if eod_squareoff_time else 15,
+            "order_market_protection_pct": order_market_protection_pct,
+            "exit_fail_alert": exit_fail_alert,
+            "exit_retry_on_fail": exit_retry_on_fail,
         }
         with open(os.path.join("data", "engine_settings.json"), "w") as f:
             json.dump(engine_settings, f)
