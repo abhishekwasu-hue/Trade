@@ -333,3 +333,46 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - `test_strike_breach_model.py` (+7)
 - `test_banknifty_positional.py` (+7)
 - `test_banknifty_independent_test.py` (+4)
+
+## 2026-10-06 · Major Level (Trader's Eye) engine v1 — टप्पा (a) ची तयारी (report-only, gate नाही)
+
+**काय केलं:**
+- `docs/reports/ground_truth_levels.csv`: वापरकर्त्याचे हाताने काढलेले levels. NIFTY 15m, GOLD/COPPER 30m, SILVER 30m (+ उतरती trendline; anchor तारखा अंदाजे).
+- `price_action/major_levels.py`:
+  - HTF (240 मिनिट, सत्राच्या सुरुवातीपासून; NSE 09:15, MCX 09:00), फक्त पूर्ण bars.
+  - Fractal pivots (r = 2), confirmed झाल्यावरच.
+  - Prominence: दोन्ही बाजूंना ≥ s × median HTF range. यामुळे range च्या आतले minor swings वगळले जातात.
+  - Clusters: gap ≤ tol, span ≤ 2·tol; tol = k × median range.
+  - Score = reactions + 2 × role-reversal + 1 × range-edge.
+  - Level = wick extremes चा median, किंवा extreme (grid).
+  - 2–4 levels, एकमेकांपासून > 2·tol.
+  - Trendline: ≥ 3 pivots ± tol, पहिल्या anchor नंतर एकही HTF close पलीकडे नाही.
+  - `match_levels`: precision/recall ±0.15%.
+- `research/major_levels_eval.py`:
+  - `--export` (VPS; फक्त candles वाचतो) → `data/research/major_levels_candles/` (gitignored).
+  - `--eval`:
+    - grid 3 lookback × 3 k × 2 min_react × 2 prominence × 2 price-mode = **72 संयोजनं** (≤ 81);
+    - निवड: चार charts वर सरासरी F1. बरोबरी ⇒ लहान lookback, लहान k;
+    - leave-one-chart-out F1 (प्रामाणिक अंदाज);
+    - overlay PNGs आणि CSVs → `docs/reports/major_levels/`.
+
+**निर्णय (कारणासह):**
+- Sandbox मधून Upstox ला पोहोचता येत नाही (403), आणि repo मध्ये 2024-03 नंतरचा NIFTY/MCX डेटा नाही. म्हणून candles VPS वर काढले जातात आणि **वेगळ्या branch** वर (git worktree मधून) push होतात. चालू checkout आणि bots ला धक्का लागत नाही. Overlays इथे बनवले जातात.
+- Weights (role reversal 2, edge 1) आधीच ठरवले, grid मध्ये नाहीत. 4 charts / 10 levels वर जास्त parameters ⇒ overfit. म्हणून LOCO नोंदवला.
+- MCX साठी front-month contract (`resolve_symbol` डीफॉल्ट). वापरकर्त्याचा chart वेगळ्या contract चा असेल, तर levels जुळणार नाहीत; export contract चं नाव छापतं.
+- SILVER trendline जुळणी = त्याच प्रकारची algo रेषा, जिचे anchors ≥ 2 GT तारखांपासून ±1.5 दिवसांत.
+- टप्पा (b) (NIFTY IS/VAL edge test) वापरकर्त्याने overlays पाहिल्यानंतरच.
+
+**स्वतंत्र review नंतर:**
+- **Holdout धोरण:** 2026 चे NIFTY/MCX candles holdout काळातले आहेत. ते **वेगळ्या data branch** वर राहतील आणि main मध्ये कधीच merge होणार नाहीत. ते फक्त टप्पा (a) मध्ये, वापरकर्त्याच्या स्पष्ट विनंतीने, डोळा-जुळणीसाठी वापरले जातात. पुढच्या G4 holdout चाचणीतून NIFTY 2026-07 → 2026-10-06 हा भाग वगळावा, कारण engine चे params त्यावर निवडले गेले.
+- `asof`: फक्त संपलेले bars (timestamp + TF ≤ asof). आधी एका bar चा lookahead होता.
+- MCX सत्र-अखेर तारखेनुसार: नोव्हेंबर–मार्च 23:55.
+- Lookback दिवसाच्या सुरुवातीपासून घेतला जातो.
+- Edge ओळख index ने होते.
+- Role-reversal levels क्रमवारीत आधी (नियम 4).
+- 2 पेक्षा कमी levels असतील तर range edges "weak" म्हणून भरले जातात (`below_min`).
+- Trendline गणित chart-TF bar-index वर, anchor = प्रत्यक्ष wick चा bar. Overlay engine ने fit केलेली रेषाच काढतो.
+- MCX contract: bot चा आणि सर्वात जवळचा, दोन्ही export होतात. Eval मध्ये ज्याच्या किंमत-पट्ट्यात GT levels बसतात तो निवडला जातो (डेटा-निवड, params fitting नाही).
+- Candles (symbol, tf) ने keyed.
+
+**Tests:** `tests/test_major_levels.py` (+18). यात non-circular planted-level चाचणी, asof सीमा, MCX सत्र, min_levels, role-reversal क्रम, prominence, extreme mode, trendline violation आणि LOCO.
