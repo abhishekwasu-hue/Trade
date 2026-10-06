@@ -373,6 +373,7 @@ if context_ok:
     import page_mtf_pullback
     import page_sr_levels_v3
     import page_opportunity_engine
+    import page_pullback_credit_spread
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
     import page_mcx_futures
@@ -389,6 +390,7 @@ if context_ok:
         "BOTS": [
             st.Page(page_bot_dynamic_sr_algo.render, title="Bot Dynamic SR Algo", icon="🤖", url_path="bot-dynamic-sr-algo"),
             st.Page(page_mcx_futures.render, title="MCX Futures Trader", icon="🛢️", url_path="mcx-futures"),
+            st.Page(page_pullback_credit_spread.render, title="Pullback Credit Spread", icon="🧲", url_path="pullback-credit-spread"),
         ],
         "ANALYZE": [
             st.Page(page_performance.render, title="Performance", icon="📈", url_path="performance"),

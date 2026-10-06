@@ -31,6 +31,8 @@ data/exit_fail_counts.json
 data/exit_state.json
 data/exit_state.json.lock
 data/exit_locks/
+data/pcs_settings.json
+data/pcs_settings_history.jsonl
 
 # --- Sealed holdout (Upstox 2024-04 →) — G4 पर्यंत बंद; कधीही commit नाही ---
 data/holdout/

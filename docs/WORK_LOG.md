@@ -414,3 +414,50 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - **Level engine डीफॉल्ट `srv3`:** Major Level engine अजून ground truth शी पडताळलेलं नाही (टप्पा (a) चालू). प्रमाणित झाल्यावर डीफॉल्ट बदलण्याचा निर्णय वापरकर्त्याचा.
 - **`adjustment_mode`:** setting आहे, पण v1 मध्ये फक्त `close` अंमलात. Roll/add_hedge नंतर, कारण त्यात नवीन order मार्ग आहेत.
 - **DTE:** कॅलेंडर-दिवस (expiry − आज). आज expiry ⇒ min_dte काहीही असो, पुढची.
+
+## 2026-10-06 · Pullback Credit Spread PCS-3 — dashboard पान + live preview → G1
+
+**काय केलं:**
+- `page_pullback_credit_spread.py` — BOTS विभागात नवीन पान "Pullback Credit Spread":
+  - 11 expanders; प्रत्येक setting साठी मराठी label, ⓘ मदत, डीफॉल्ट दाखवलेला, min/max;
+  - Presets;
+  - per-symbol settings (NIFTY/BANKNIFTY/SENSEX) + "सगळ्यांना लागू करा";
+  - Save, Reset (खात्री checkbox सह), बदलांचा इतिहास;
+  - एका column चा layout.
+- `pullback_credit_spread/store.py`:
+  - Supabase `strategy_settings` ("pullback_credit_spread", symbol); पूर्ण dict बदलतो (merge नाही), म्हणजे Reset खरा.
+  - नवीन `pcs_settings_history` table (CREATE IF NOT EXISTS).
+  - Supabase नसेल तर स्थानिक फाईल (gitignored).
+- `pullback_credit_spread/levels_source.py`: srv3 / major_levels → एकसारखं level स्वरूप. oe_zones v1 मध्ये उपलब्ध नाही (कारण दाखवतो).
+- `pullback_credit_spread/preview.py` — "आत्ता signal आला तर", फक्त वाचन:
+  - offline NIFTY डेटा (holdout-cut) निवडलेल्या वेळी, तोच `evaluate_entry`;
+  - premium = Black-Scholes **अंदाज** (IV ≈ σ20; स्पष्ट लेबल);
+  - trend नसेल तर दोन्ही बाजूंचा hypothetical plan.
+
+**निर्णय (कारणासह):**
+- Live (Upstox) preview PAPER runner (PCS-4) सोबत, कारण तिथेच chain/expiry/positions fetching लागतं. Sandbox मधून Upstox पोहोचत नाही, म्हणून G1 screenshots offline preview चे.
+- Offline expiries = त्या आठवड्याचे गुरुवार (अंदाज). Live मध्ये instrument master.
+
+**Tests:** `tests/test_pcs_dashboard.py` (+17: store local fallback/इतिहास/reset/LIVE नाकार, BS model, offline preview read-only + holdout, AppTest render + mode OFF, navigation, review नंतरचे 7). `test_app_navigation` अपडेट.
+
+**स्वतंत्र review नंतर दुरुस्त्या (कारणासह):**
+- दुसऱ्या पानावर जाऊन परत आल्यावर Streamlit widget मूल्यं पुसतो, त्यामुळे Save जुनी/चुकीची मूल्यं साठवू शकत होता. म्हणून मूल्यांची widget-बाहेरची प्रत (`pcs_values`) ठेवली आणि हरवलेली मूल्यं परत भरली. Test आधी फेल होतो, दुरुस्तीनंतर पास होतो.
+- Supabase मिळालं पण save फेल झालं, तर source "error" + rollback होतो. आधी अशा वेळी गुपचूप स्थानिक फाईलमध्ये साठवलं जायचं; पण load नंतर जुनी Supabase नोंद वाचतो, म्हणून ते चुकीचं होतं. स्थानिक fallback आता फक्त connection नसतानाच वापरला जातो.
+- Validation चुका असताना Save बंद; इतिहासासाठी नावाचं input.
+- "सगळ्यांना लागू करा" आता `mode` / `symbol_enabled` कॉपी करत नाही, म्हणजे चुकून BANKNIFTY/SENSEX PAPER होणार नाहीत.
+- इतिहास `st.cache_data` (30s) मध्ये; save/reset नंतर cache साफ. History table DDL प्रत्येक process मध्ये एकदाच. Local file लिहिताना `mkstemp` + lock.
+- Preview मध्ये:
+  - intraday resample 09:15 ला anchored;
+  - BS वेळ trading-year (/252) मध्ये;
+  - त्या तारखेचा NIFTY lot (2021-07→2024-04 = 50), जो बदलता येतो;
+  - exception आल्यास पान क्रॅश होत नाही.
+- दुसऱ्या review नंतर (2 Medium + Low):
+  - Save नंतर widgets store मधून पुन्हा भरत नाही. आधी अयशस्वी save नंतरच्या retry मध्ये बदल पुसले जायचे आणि खोटं "0 बदल साठवले" यश दिसायचं; यशस्वी save नंतरचा पहिला बदल पण हरवायचा.
+  - पान बदलल्यावर निवडलेला symbol टिकतो.
+  - Supabase वाचन फेल ⇒ source "error", Save/Reset बंद, "पुन्हा वाचा" बटण. जुन्या/डीफॉल्ट मूल्यांनी खरी नोंद overwrite होत नाही.
+  - DDL flag फक्त commit यशस्वी झाल्यावर लागतो. Reset अयशस्वी झाल्यास error दिसतो.
+  - इतिहासातील old/new str मध्ये (Arrow चूक टाळतो).
+  - Offline expiries 10 आठवडे (monthly + मोठा min_dte).
+  - 2015-11 पूर्वी lot 25.
+  - डेटा load अपयश cache होत नाही.
+
