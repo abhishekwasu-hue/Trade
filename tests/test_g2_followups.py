@@ -22,3 +22,20 @@ def test_weekly_labels_monday_and_complete_weeks_only():
     d = pd.DataFrame({"timestamp": pd.bdate_range("2024-01-01", periods=10), "open": range(10), "high": range(1, 11), "low": range(10), "close": range(10)})
     w = G.weekly(d)
     assert list(w["timestamp"].dt.dayofweek) == [0, 0] and w["high"].iloc[0] == 5 and w["open"].iloc[1] == 5
+
+
+def test_month_key():
+    assert G.month_key("2021-12-31") == 202112
+
+
+def test_cluster_z_wider_than_naive_for_duplicated_rows():
+    import numpy as np
+    rng = np.random.default_rng(0)
+    a = rng.random(40) < 0.6
+    b = rng.random(40) < 0.4
+    a_cl, b_cl = np.arange(40), np.arange(40)
+    z1 = G.cluster_z(a, a_cl, b, b_cl)
+    # तेच rows 10 वेळा (एकाच cluster मध्ये) ⇒ cluster z बदलू नये (साधा z √10 पट फुगला असता)
+    z10 = G.cluster_z(np.repeat(a, 10), np.repeat(a_cl, 10), np.repeat(b, 10), np.repeat(b_cl, 10))
+    assert abs(z10 - z1) < 0.35 * abs(z1)
+    assert np.isnan(G.cluster_z([1, 0], [1, 2], [1, 0, 1, 0, 1], [1, 2, 3, 4, 5]))
