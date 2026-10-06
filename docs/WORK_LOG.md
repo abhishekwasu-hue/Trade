@@ -182,3 +182,30 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 पुढच्या monitor cycle ला **सर्व** legs चा close order पुन्हा जातो ⇒ आधीच बंद झालेल्या leg वर उलटी नवी position उघडू शकते.
 हे जुनं वर्तन आहे. ते बदलणं म्हणजे LIVE exit logic बदल ⇒ केलं नाही; आता इशाऱ्यात हा धोका स्पष्ट लिहिला जातो.
 प्रस्ताव: partial exit नंतर फक्त न भरलेले legs पुन्हा पाठवणे (भरलेल्या legs ची नोंद DB मध्ये). Default-off setting सह, PAPER/fake-broker tests सह.
+
+## 2026-10-06 · G2 नंतरच्या report-only चाचण्या (वापरकर्त्याचा निर्णय (a)(b)(c))
+
+**काय केलं:** `g2_followups.py` → `docs/reports/g2_followups.md` (+ CSV). NIFTY 2015 → 2024-03; holdout hard-cut.
+- (a) Positional short strike: SR V3 (day+week), sr_dynamic (daily), OE 1d.
+  - दर दिवशी प्रत्येक बाजूचा 0.5–4% मधला सर्वात जवळचा level; strike = दूरची कड; 5 सत्र hold.
+  - Random-दिवस baseline (तेच % अंतर, तीच बाजू, तोच period). अंतर-buckets वेगळे.
+- (b) HEALTHY वि. DANGEROUS, 15M आणि 1H, T2.3 चा calibrated LegConfig (नवीन tuning नाही), permutation.
+- (c) Retested वि. fresh (OE): random zones चे touches त्याच उगम-खिडकीत मोजून touches-bucket-निहाय तुलना.
+
+**Tests:** +3 (`tests/test_g2_followups.py`).
+
+**निर्णय (कारणासह):**
+- (a) मधले engines आणि अंतर-buckets आधीच ठरवले. दर दिवशी प्रत्येक बाजूला एकच strike (सर्वात जवळचा level), कारण एका दिवशी अनेक सारख्या strikes ने नमुना फुगू नये.
+- (b) मध्ये नवीन व्याख्या (उदा. "≥ 2 धोके") वापरली नाही — वापरकर्त्याची मंजुरी नाही; post-hoc निरीक्षण फक्त गृहीतक म्हणून नोंदवलं.
+- BANKNIFTY: सार्वजनिक third-party डेटा उपलब्ध (Kaggle/GitHub); download केला नाही (गुणवत्ता अनिश्चित; holdout भाग) — निर्णय वापरकर्त्याचा.
+
+**निकाल:**
+- (a) level-आधारित strikes random इतक्याच तुटतात; breach अंतरावर अवलंबून.
+- (b) HEALTHY नमुना वाढला नाही (15M IS 22, 1H IS 4).
+- (c) random baseline सह retested-zone फायदा नाहीसा; fresh OE zones random पेक्षाही कमकुवत (IS z −5.1).
+- एकूण: कोणताही gate/engine चालू करण्याची शिफारस नाही.
+
+**उघडे प्रश्न:**
+- "NOT DANGEROUS वि. DANGEROUS" हे नवं, आधीच ठरवलेलं गृहीतक तपासायचं का?
+- BANKNIFTY डेटा वापरायचा का?
+- Partial-exit नंतर फक्त न भरलेले legs पाठवण्याचा प्रस्ताव (G3 नोंद)?
