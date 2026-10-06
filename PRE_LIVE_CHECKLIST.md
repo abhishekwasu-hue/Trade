@@ -277,3 +277,10 @@ Dashboard Direction Engine, `credit_spread_auto_trader.get_current_direction`, `
 The new `bar_end` column makes it a one-line change if completed-bar semantics are wanted there. The last bar of a day gets a
 deliberately late (conservative) `bar_end` (e.g. 16:15) — it can never be early, and no lower-TF bar exists after 15:30.
 Not verified against a live market session.
+
+
+## 7. "EXIT थांबवला" / "EXITS BLOCKED" Telegram इशारा आल्यास (partial-exit safety, 2026-10-06)
+
+1. लगेच Upstox app मध्ये त्या trade चे **positions आणि orders** तपासा. उघडे legs हाताने बंद करा. Bot स्वतः काहीही पाठवणार नाही.
+2. सर्व legs बंद झाले असतील तर VPS वर: `cd /root/Trade && python3 clear_exit_state.py --trade-id <ID> --mark-closed`. "EXITS BLOCKED — exit_state.json वाचता येत नाही" इशारा असेल तर: `python3 clear_exit_state.py --reset-file`.
+3. Broker वर काहीच भरलं नसेल आणि सर्व legs अजून उघडे असतील, तरच `--trade-id <ID> --clear` वापरा. यात bot पुढच्या cycle ला सर्व legs पुन्हा पाठवतो, म्हणून शंका असल्यास 2) वापरा.

@@ -501,6 +501,32 @@ def plan_exit_resend(close_orders, positions, prior, order_status=None, order_bo
     return out, None
 
 
+STATE_ALERT_KEY = "#state_unreadable_last_alert"
+STATE_ALERT_EVERY_SEC = 300
+RESET_CMD = "cd /root/Trade && python3 clear_exit_state.py --reset-file"
+
+
+def should_alert_state_unreadable(now=None):
+    """exit_state.json वाचता येत नाही ⇒ exits blocked: इशारा प्रत्येक cycle ला, पण किमान 5 मिनिटांच्या अंतराने (सर्व trades/processes मिळून एकच)."""
+    now = time.time() if now is None else now
+    counts = _load_counts()
+    if now - float(counts.get(STATE_ALERT_KEY, 0)) < STATE_ALERT_EVERY_SEC:
+        return False
+    counts[STATE_ALERT_KEY] = int(now)
+    _save_counts(counts)
+    return True
+
+
+def state_unreadable_message(symbol, trade_id, exit_reason, reason):
+    symbol, trade_id, exit_reason, reason = _e(symbol), _e(trade_id), _e(exit_reason), _e(reason)
+    return "\n".join([f"🛑 <b>EXITS BLOCKED — exit_state.json वाचता येत नाही</b> ({symbol}, trade {trade_id}, कारण: {exit_reason})",
+                      f"का: {reason}",
+                      "⚠️ फाईल दुरुस्त होईपर्यंत bot **कुठलाही** LIVE exit पाठवणार नाही (उलटी/दुहेरी position टाळण्यासाठी). हा इशारा दर 5 मिनिटांनी येत राहील.",
+                      "1) Upstox app मध्ये सर्व positions/orders तपासा; गरज असल्यास हाताने बंद करा.",
+                      f"2) मग VPS वर: <code>{RESET_CMD}</code>",
+                      "   (खराब फाईल बाजूला ठेवते; पुढचा cycle पहिल्या प्रयत्नासारखा सर्व legs पाठवतो — म्हणून आधी 1) नक्की करा)."])
+
+
 def blocked_message(symbol, trade_id, exit_reason, count, reason):
     symbol, trade_id, exit_reason, reason = _e(symbol), _e(trade_id), _e(exit_reason), _e(reason)
     return "\n".join([f"🛑 <b>{symbol} — EXIT थांबवला: स्थिती अनिश्चित (प्रयत्न #{count})</b>",

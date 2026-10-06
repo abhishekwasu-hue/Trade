@@ -433,7 +433,7 @@ def test_unreadable_state_file_fails_closed_even_on_first_attempt(live_sl):
     with open(OS.EXIT_STATE_PATH, "w") as f:
         f.write("{not json")
     trading_engine.manage_open_trades("tok", "NIFTY", "D")
-    assert st["calls"] == [] and any("EXIT थांबवला" in m and "वाचता येत नाही" in m for m in msgs)
+    assert st["calls"] == [] and any("EXITS BLOCKED" in m and "वाचता येत नाही" in m for m in msgs)
     with open(OS.EXIT_STATE_PATH) as f:
         assert f.read() == "{not json"                                   # खराब फाईल ओव्हरराइट केली नाही
 
@@ -461,3 +461,38 @@ def test_inflight_send_time_is_kept_for_book_window(live_sl, monkeypatch):
     monkeypatch.setattr(trading_engine, "execute_order_leg_set", slow)
     trading_engine.manage_open_trades("tok", "NIFTY", "D")
     assert OS.load_exit_state("TX")["at"] == 1_800_000_000.0
+
+
+def test_unreadable_state_alerts_every_cycle_with_5min_throttle_and_command(live_sl, monkeypatch):
+    db, st, msgs = live_sl
+    with open(OS.EXIT_STATE_PATH, "w") as f:
+        f.write("{not json")
+    t = {"now": 1_800_000_000.0}
+    monkeypatch.setattr(OS.time, "time", lambda: t["now"])
+
+    def state_alerts():
+        return [m for m in msgs if "EXITS BLOCKED" in m]
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")
+    assert len(state_alerts()) == 1 and "clear_exit_state.py --reset-file" in state_alerts()[0]
+    t["now"] += 60
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")             # 1 मिनिट ⇒ throttle
+    assert len(state_alerts()) == 1
+    for _ in range(5):                                                 # पुढची 5 मिनिटं ⇒ पुन्हा
+        t["now"] += 60
+        trading_engine.manage_open_trades("tok", "NIFTY", "D")
+    assert len(state_alerts()) == 2 and st["calls"] == []
+    ok, msg = trading_engine.close_trade_manually("tok", "TX", "NIFTY", "D")
+    assert not ok and "--reset-file" in msg
+
+
+def test_reset_file_moves_corrupt_state_aside(live_sl, tmp_path):
+    db, st, msgs = live_sl
+    import os
+    import clear_exit_state
+    with open(OS.EXIT_STATE_PATH, "w") as f:
+        f.write("{not json")
+    assert clear_exit_state.main(["--reset-file"]) == 0
+    assert not os.path.exists(OS.EXIT_STATE_PATH)
+    assert any(n.startswith("exit_state.json.corrupt-") for n in os.listdir(os.path.dirname(OS.EXIT_STATE_PATH)))
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")             # आता exit पुन्हा चालतो
+    assert len(st["calls"]) == 1 and _status(db) == "CLOSED"

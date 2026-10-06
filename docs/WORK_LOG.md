@@ -277,6 +277,10 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
   - `at` नसेल तर आजचाच प्रयत्न मानला जातो.
   - Lock फाईल handle leak बंद केला.
   - Tests +6: manual close race, tag mismatch, जुने orders, खराब फाईल, खरी flock contention, in-flight वेळ.
+- **वापरकर्त्याचा निर्णय (merge आधी):**
+  - exit_state.json वाचता न आल्याने exits blocked असतील तर "EXITS BLOCKED" इशारा प्रत्येक cycle ला येतो. Throttle 5 मिनिटं (सर्व trades मिळून एक), आणि इशाऱ्यात नेमकी `clear_exit_state.py --reset-file` command असते.
+  - `--reset-file` खराब फाईल `.corrupt-<वेळ>` नावाने बाजूला ठेवतो.
+  - Runbook: `PRE_LIVE_CHECKLIST.md` §7 (3 ओळी).
 - **उरलेलं (बदललं नाही):** monitor वि. manual close मध्ये DB-स्तरावर atomic "CLOSING" claim नाही. Exit-lock + lock नंतरची OPEN तपासणी हा धोका बंद करतात; DB claim हा मोठा बदल ⇒ पुढे गरज वाटल्यास.
 
 **Tests:** +11 (एकूण 32):

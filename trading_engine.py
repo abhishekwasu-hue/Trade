@@ -10,6 +10,7 @@ from order_safety import (
     send_alert as send_exit_alert, should_alert as should_alert_exit, with_fresh_correlation_ids,
     load_exit_state, save_exit_state, plan_exit_resend, blocked_message as exit_blocked_message, blocked_key as exit_blocked_key,
     mark_inflight as mark_exit_inflight, exit_lock, merged_exit_prices, record_success as _clear_exit_tracking,
+    StateUnreadable, should_alert_state_unreadable, state_unreadable_message,
 )
 
 import cloud_db
@@ -1464,7 +1465,7 @@ def _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade
                 orders, why = plan_exit_resend(close_orders, positions, prior, order_status=status_fn, order_book=book_fn,
                                                shared_tokens=_other_open_live_tokens(trade_id))
                 if why:
-                    return None, {"status": EXIT_BLOCKED, "reason": why}, []
+                    return None, {"status": EXIT_BLOCKED, "reason": why, "state_unreadable": bool(prior.get("corrupt") and prior.get("why"))}, []
                 if not orders:
                     return None, {"status": EXIT_FLAT, "reason": "broker positions मध्ये सर्व legs आधीच flat"}, []
             sent = with_fresh_correlation_ids(orders) if fresh else orders
@@ -1477,6 +1478,8 @@ def _send_exit_orders(access_token, trade_id, close_orders, close_adapter, trade
                 except Exception:
                     _logger.exception("exit-state नोंदवता आली नाही (silently handled) — in-flight नोंद तशीच राहते")
             return status_code, resp, sent
+    except StateUnreadable as e:
+        return None, {"status": EXIT_BLOCKED, "reason": str(e), "state_unreadable": True}, []
     except Exception as e:                                             # noqa: BLE001
         _logger.exception("_send_exit_orders मध्ये अनपेक्षित चूक — exit थांबवला")
         return None, {"status": EXIT_BLOCKED, "reason": f"आंतरिक चूक: {type(e).__name__}: {e}"}, []
@@ -2278,7 +2281,13 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 # 🎓 Partial-exit safety fix — स्थिती अनिश्चित ⇒ order पाठवला नाही; Telegram इशारा (exit_fail_alert setting असला तरी — सुरक्षा-इशारा).
                 # flat ⇒ broker कडे सर्व legs आधीच बंद; पुढच्या cycle चं reconciliation DB बंद करेल (इशारा नाही). busy ⇒ दुसरी process पाठवत आहे.
                 print(f"⚠️ EXIT {resp.get('status').upper()} — trade_id={trade_id}, symbol={symbol}, reason={exit_reason}: {resp.get('reason')}")
-                if resp.get("status") == EXIT_BLOCKED:
+                if resp.get("status") == EXIT_BLOCKED and resp.get("state_unreadable"):
+                    try:                                             # वापरकर्त्याचा निर्णय: प्रत्येक cycle ला, 5 मिनिटांचा throttle, नेमकी command सह
+                        if should_alert_state_unreadable():
+                            send_exit_alert(state_unreadable_message(symbol, trade_id, exit_reason, resp.get("reason")))
+                    except Exception:
+                        _logger.exception("state-unreadable इशारा पाठवता आला नाही (silently handled)")
+                elif resp.get("status") == EXIT_BLOCKED:
                     try:
                         _blk = record_exit_failure(exit_blocked_key(trade_id))
                         if should_alert_exit(_blk) and _still_open():
@@ -2529,6 +2538,15 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
     if isinstance(resp, dict) and resp.get("status") == EXIT_BUSY:
         conn.close()
         return False, f"Exit आत्ता पाठवला नाही — {resp.get('reason')}. थोड्या वेळाने पुन्हा पाहा."
+    if isinstance(resp, dict) and resp.get("status") == EXIT_BLOCKED and resp.get("state_unreadable"):
+        conn.close()
+        try:
+            if should_alert_state_unreadable():
+                send_exit_alert(state_unreadable_message(symbol, trade_id, exit_reason, resp.get("reason")))
+        except Exception:
+            _logger.exception("state-unreadable इशारा पाठवता आला नाही (silently handled)")
+        return False, ("Exit थांबवला — data/exit_state.json वाचता येत नाही. Upstox app मध्ये positions तपासा, मग VPS वर: "
+                       "cd /root/Trade && python3 clear_exit_state.py --reset-file")
     if isinstance(resp, dict) and resp.get("status") == EXIT_BLOCKED:
         conn.close()
         try:
