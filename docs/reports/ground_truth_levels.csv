@@ -1,0 +1,12 @@
+symbol,tf,type,price,window_start,window_end,anchor_dates,notes
+NIFTY,15m,horizontal,23027.40,2026-09-25,2026-10-06,,वापरकर्त्याने हाताने काढलेला (2026-10-06 पर्यंतचा डेटा)
+NIFTY,15m,horizontal,22801.00,2026-09-25,2026-10-06,,वापरकर्त्याने हाताने काढलेला
+NIFTY,15m,horizontal,22580.00,2026-09-25,2026-10-06,,वापरकर्त्याने हाताने काढलेला
+GOLD,30m,horizontal,157057,2026-09-01,2026-10-06,,MCX front-month; वापरकर्त्याने हाताने काढलेला
+GOLD,30m,horizontal,154564,2026-09-01,2026-10-06,,MCX front-month
+GOLD,30m,horizontal,149665,2026-09-01,2026-10-06,,MCX front-month
+COPPER,30m,horizontal,1427.60,2026-09-03,2026-10-06,,MCX front-month
+COPPER,30m,horizontal,1410.15,2026-09-03,2026-10-06,,MCX front-month
+COPPER,30m,horizontal,1394.80,2026-09-03,2026-10-06,,MCX front-month
+SILVER,30m,horizontal,229018,2026-08-01,2026-10-06,,MCX front-month
+SILVER,30m,trendline_desc,,2026-08-01,2026-10-06,2026-08-24;2026-09-10;2026-09-18,उतरती trendline — lower highs (~24 Aug ~10 Sep ~18 Sep) मधून; तारखा अंदाजे (±1 दिवस)
