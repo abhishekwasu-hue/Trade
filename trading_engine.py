@@ -2239,12 +2239,6 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                 except Exception:
                     _logger.exception("exit fills एकत्र करता आले नाहीत (silently handled)")
                     actual_exit_prices = _actual_exit_prices(resp, close_orders)
-                try:
-                    _prev_fails = record_exit_success(trade_id)
-                    if _prev_fails and exit_alert_enabled():
-                        send_exit_alert(exit_recovered_message(symbol, trade_id, exit_reason, _prev_fails))
-                except Exception:
-                    _logger.exception("exit recovery इशारा अयशस्वी (silently handled)")
                 order_ids = extract_order_ids(resp)
                 # 🎓 LIVE trades चे खरे exit fill भाव (Upstox verified_legs) उपलब्ध असतील तर order log आणि
                 # realized P&L त्यावरून; नसतील (PAPER/इतर brokers/अपूर्ण माहिती) तर आधीचा LTP-आधारित आकडा.
@@ -2271,6 +2265,14 @@ def manage_open_trades(access_token, symbol, product_type, eod_squareoff_hour=15
                     (get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), exit_reason, exit_reason_detail, round(realized_pnl_value, 2), trade_id),
                 )
                 conn.commit()
+                # 🎓 review BLOCKER: exit-state DB मध्ये CLOSED झाल्यानंतरच साफ — मधल्या वेळेत दुसरी process (manual close) आली तर in-flight नोंद
+                # पाहून order book / positions तपासते आणि flat पाहून काहीच पाठवत नाही (state आधी साफ केल्यास "पहिला प्रयत्न" समजून सर्व legs!).
+                try:
+                    _prev_fails = record_exit_success(trade_id)
+                    if _prev_fails and exit_alert_enabled():
+                        send_exit_alert(exit_recovered_message(symbol, trade_id, exit_reason, _prev_fails))
+                except Exception:
+                    _logger.exception("exit recovery इशारा अयशस्वी (silently handled)")
                 closed_summaries.append({"trade_id": trade_id, "reason": exit_reason, "pnl": round(realized_pnl_value, 2), "mode": trade_mode})
             elif isinstance(resp, dict) and resp.get("status") in (EXIT_BLOCKED, EXIT_FLAT, EXIT_BUSY):
                 # 🎓 Partial-exit safety fix — स्थिती अनिश्चित ⇒ order पाठवला नाही; Telegram इशारा (exit_fail_alert setting असला तरी — सुरक्षा-इशारा).
@@ -2544,10 +2546,6 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         except Exception:
             _logger.exception("exit fills एकत्र करता आले नाहीत (silently handled)")
             actual_exit_prices = _actual_exit_prices(resp, close_orders)
-        try:
-            record_exit_success(trade_id)                               # exit-state / अपयश मोजणी साफ
-        except Exception:
-            _logger.exception("exit-state साफ करता आली नाही (silently handled)")
         order_ids = extract_order_ids(resp)
         if actual_exit_prices and all(leg["instrument_key"] in actual_exit_prices for leg in legs):
             current_pnl = _realized_pnl_from_exit_prices(net_credit, legs, actual_exit_prices, lots, lot_size)
@@ -2565,6 +2563,10 @@ def close_trade_manually(access_token, trade_id, symbol, product_type, exit_reas
         )
         conn.commit()
         conn.close()
+        try:
+            record_exit_success(trade_id)                               # exit-state / अपयश मोजणी साफ — DB CLOSED झाल्यानंतरच (बघा manage_open_trades)
+        except Exception:
+            _logger.exception("exit-state साफ करता आली नाही (silently handled)")
         return True, round(current_pnl, 2)
 
     conn.close()

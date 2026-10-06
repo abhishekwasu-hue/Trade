@@ -185,6 +185,34 @@ def _load_json(path, fallback):
         return dict(fallback)
 
 
+class StateUnreadable(Exception):
+    """exit_state.json आहे पण वाचता येत नाही — fail-closed (review): सर्व resend थांबवा, फाईल हाताने तपासा."""
+
+
+def _load_state_strict():
+    try:
+        with open(EXIT_STATE_PATH) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError, TypeError) as e:
+        raise StateUnreadable(f"{EXIT_STATE_PATH} वाचता येत नाही ({type(e).__name__}) — फाईल तपासा/हटवा") from e
+    if not isinstance(data, dict):
+        raise StateUnreadable(f"{EXIT_STATE_PATH} चं स्वरूप अनपेक्षित — फाईल तपासा/हटवा")
+    return data
+
+
+def _save_state_strict(data):
+    """mark_inflight साठी: लिहिता आलं नाही तर OSError (caller ने order पाठवू नये)."""
+    _EXIT_STATE.clear()
+    _EXIT_STATE.update(data)
+    os.makedirs(os.path.dirname(EXIT_STATE_PATH), exist_ok=True)
+    tmp = f"{EXIT_STATE_PATH}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, EXIT_STATE_PATH)
+
+
 def _save_json(path, data, mirror):
     mirror.clear()
     mirror.update(data)
@@ -208,6 +236,8 @@ def _state_lock():
             fh = open(EXIT_STATE_PATH + ".lock", "a")
             fcntl.flock(fh, fcntl.LOCK_EX)
     except OSError:
+        if fh is not None:
+            fh.close()
         fh = None
     try:
         yield
@@ -296,28 +326,32 @@ def mark_inflight(trade_id, sent_orders):
     """पाठवण्याच्या **आधी** नोंद: process मध्येच थांबली / प्रतिसाद हरवला तरी पुढचा प्रयत्न order book तपासल्याशिवाय पाठवणार नाही.
     आधीचे fills जपले जातात."""
     with _state_lock():
-        st = _load_json(EXIT_STATE_PATH, _EXIT_STATE)
+        st = _load_state_strict()                                        # वाचता आली नाही ⇒ StateUnreadable ⇒ caller पाठवत नाही
         prev = st.get(str(trade_id)) if isinstance(st.get(str(trade_id)), dict) else {}
         st[str(trade_id)] = {"last_sent": [_slim(o) for o in (sent_orders or [])], "nofill": False, "pending_ids": [], "inflight": True,
                              "needs_book": True, "at": time.time(), "fills": prev.get("fills") or {}}
-        _save_json(EXIT_STATE_PATH, st, _EXIT_STATE)
+        _save_state_strict(st)                                           # लिहिता आली नाही ⇒ OSError ⇒ caller पाठवत नाही
 
 
 def save_exit_state(trade_id, sent_orders, status_code, resp):
     """अयशस्वी exit प्रयत्नाची स्थिती (पुढच्या प्रयत्नासाठी). needs_book = fill माहिती नाही (verified_legs नाहीत) आणि निश्चित no-fill नाही."""
     with _state_lock():
-        st = _load_json(EXIT_STATE_PATH, _EXIT_STATE)
+        st = _load_state_strict()                                        # खराब फाईल ओव्हरराइट करून इतर trades ची नोंद गमावू नये
         prev = st.get(str(trade_id)) if isinstance(st.get(str(trade_id)), dict) else {}
         nofill = bool(is_full_failure(resp, status_code))
         has_legs = bool((resp or {}).get("verified_legs")) if isinstance(resp, dict) else False
         st[str(trade_id)] = {"last_sent": [_slim(o) for o in (sent_orders or [])], "nofill": nofill, "pending_ids": pending_order_ids(resp),
-                             "inflight": False, "needs_book": (not nofill) and not has_legs, "at": time.time(),
+                             "inflight": False, "needs_book": (not nofill) and not has_legs,
+                             "at": prev.get("at") if prev.get("inflight") and prev.get("at") else time.time(),   # पाठवण्याची वेळ (book window)
                              "fills": _accumulate_fills(prev.get("fills"), resp)}
         _save_json(EXIT_STATE_PATH, st, _EXIT_STATE)
 
 
 def load_exit_state(trade_id):
-    v = _load_json(EXIT_STATE_PATH, _EXIT_STATE).get(str(trade_id))
+    try:
+        v = _load_state_strict().get(str(trade_id))
+    except StateUnreadable as e:
+        return {"corrupt": True, "why": str(e)}                          # fail-closed: पहिला प्रयत्नही थांबतो
     if v is None:
         return None
     return v if isinstance(v, dict) else {"corrupt": True}            # खराब नोंद ⇒ unknown (plan मध्ये थांबा)
@@ -325,7 +359,10 @@ def load_exit_state(trade_id):
 
 def clear_exit_state(trade_id):
     with _state_lock():
-        st = _load_json(EXIT_STATE_PATH, _EXIT_STATE)
+        try:
+            st = _load_state_strict()
+        except StateUnreadable:
+            return                                                       # खराब फाईल तशीच ठेवा (operator तपासेल)
         if st.pop(str(trade_id), None) is not None:
             _save_json(EXIT_STATE_PATH, st, _EXIT_STATE)
 
@@ -357,18 +394,16 @@ def _net_qty(positions, token, product):
 
 
 def _live_in_book(book, prior):
-    """order book मध्ये मागच्या प्रयत्नाशी जुळणारे (instrument + बाजू + tag, वेळ ≥ प्रयत्न − सहनशीलता) आणि अजून terminal नसलेले orders."""
+    """order book मध्ये मागच्या प्रयत्नाशी जुळणारे (instrument + बाजू, वेळ ≥ प्रयत्न − सहनशीलता) आणि अजून terminal नसलेले orders.
+    tag ने गाळत नाही (review: Upstox tag कापू/बदलू शकतो ⇒ live order सुटू नये; जास्त जुळणं ही सुरक्षित बाजू)."""
     sent = prior.get("last_sent") or []
     keys = {(o.get("instrument_token"), str(o.get("transaction_type", "")).upper()) for o in sent}
-    tags = {o.get("tag") for o in sent if o.get("tag")}
     t0 = float(prior.get("at") or 0) - BOOK_WINDOW_SEC
     live = []
     for od in book:
         if not isinstance(od, dict):
             continue
         if (od.get("instrument_token"), str(od.get("transaction_type", "")).upper()) not in keys:
-            continue
-        if tags and od.get("tag") and od.get("tag") not in tags:
             continue
         ts = od.get("order_timestamp")
         try:
@@ -388,10 +423,10 @@ def plan_exit_resend(close_orders, positions, prior, order_status=None, order_bo
     if not prior:
         return close_orders, None
     if prior.get("corrupt"):
-        return None, "exit-state नोंद खराब — स्थिती अज्ञात"
+        return None, f"exit-state नोंद खराब — स्थिती अज्ञात{(' (' + str(prior.get('why')) + ')') if prior.get('why') else ''}"
     today = today or _ist_date(time.time())
     try:
-        stale = _ist_date(prior.get("at") or 0) < today                # मागचा प्रयत्न आधीच्या दिवशी ⇒ DAY orders संपलेले
+        stale = bool(prior.get("at")) and _ist_date(prior["at"]) < today   # मागचा प्रयत्न आधीच्या दिवशी ⇒ DAY orders संपलेले; at नाही ⇒ आजचाच मानतो
     except (TypeError, ValueError, OverflowError, OSError):
         stale = False
     if not stale:

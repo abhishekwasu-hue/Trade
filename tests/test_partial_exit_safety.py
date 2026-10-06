@@ -397,3 +397,67 @@ def test_clear_exit_state_cli_mark_closed(live_sl, monkeypatch):
     assert clear_exit_state.main(["--trade-id", "TX"]) == 0 and OS.load_exit_state("TX") is not None     # फक्त दाखवतो
     clear_exit_state.main(["--trade-id", "TX", "--mark-closed"])
     assert _status(db) == "CLOSED" and OS.load_exit_state("TX") is None
+
+
+# ---- दुसऱ्या review नंतर ------------------------------------------------------------------------------------------------------------------
+def test_manual_close_between_monitor_fill_and_db_commit_sends_nothing(live_sl, monkeypatch):
+    db, st, msgs = live_sl
+    manual = []
+
+    def log_then_manual(*a, **k):                                      # monitor चा exit भरला, DB अजून CLOSED नाही — तेव्हाच Manual Close
+        st["positions"] = _pos(0, 0)
+        manual.append(trading_engine.close_trade_manually("tok", "TX", "NIFTY", "D"))
+    monkeypatch.setattr(trading_engine, "log_orders_batch", log_then_manual)
+    closed = trading_engine.manage_open_trades("tok", "NIFTY", "D")
+    assert len(st["calls"]) == 1 and manual and manual[0][0] is False      # manual ने काहीच पाठवलं नाही
+    assert len(closed) == 1 and _status(db) == "CLOSED" and OS.load_exit_state("TX") is None
+
+
+def test_order_book_tag_mismatch_still_blocks():
+    prior = {"last_sent": _close_orders(), "nofill": False, "pending_ids": [], "needs_book": True, "at": time.time()}
+    book = [_book_row("PE24400", "BUY", "open", tag="A1_CLOSE_SHORT")]   # tag कापलेला
+    out, why = OS.plan_exit_resend(_close_orders(), _pos(0, 75), prior, order_book=lambda: book)
+    assert out is None and "live" in why
+
+
+def test_order_book_older_orders_are_ignored():
+    prior = {"last_sent": _close_orders(), "nofill": False, "pending_ids": [], "needs_book": True, "at": time.time()}
+    old = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + 19800 - 3600))           # तासापूर्वीचा (दुसरा प्रसंग)
+    book = [{"order_id": "OLD", "instrument_token": "PE24400", "transaction_type": "BUY", "status": "open", "order_timestamp": old}]
+    out, why = OS.plan_exit_resend(_close_orders(), _pos(0, 75), prior, order_book=lambda: book)
+    assert why is None and [o["instrument_token"] for o in out] == ["PE24300"]
+
+
+def test_unreadable_state_file_fails_closed_even_on_first_attempt(live_sl):
+    db, st, msgs = live_sl
+    with open(OS.EXIT_STATE_PATH, "w") as f:
+        f.write("{not json")
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")
+    assert st["calls"] == [] and any("EXIT थांबवला" in m and "वाचता येत नाही" in m for m in msgs)
+    with open(OS.EXIT_STATE_PATH) as f:
+        assert f.read() == "{not json"                                   # खराब फाईल ओव्हरराइट केली नाही
+
+
+def test_real_flock_contention_returns_busy(live_sl):
+    db, st, msgs = live_sl
+    with OS.exit_lock("TX") as got:
+        assert got
+        trading_engine.manage_open_trades("tok", "NIFTY", "D")
+        ok, msg = trading_engine.close_trade_manually("tok", "TX", "NIFTY", "D")
+    assert st["calls"] == [] and not ok and "दुसरी process" in msg
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")               # lock सुटल्यावर नेहमीप्रमाणे
+    assert len(st["calls"]) == 1 and _status(db) == "CLOSED"
+
+
+def test_inflight_send_time_is_kept_for_book_window(live_sl, monkeypatch):
+    db, st, msgs = live_sl
+    t = {"now": 1_800_000_000.0}
+    monkeypatch.setattr(OS.time, "time", lambda: t["now"])
+
+    def slow(tk, orders, m):
+        st["calls"].append(1)
+        t["now"] += 150                                                   # 429 retries मुळे उशिरा प्रतिसाद
+        return None, {"error": "ReadTimeout"}
+    monkeypatch.setattr(trading_engine, "execute_order_leg_set", slow)
+    trading_engine.manage_open_trades("tok", "NIFTY", "D")
+    assert OS.load_exit_state("TX")["at"] == 1_800_000_000.0
