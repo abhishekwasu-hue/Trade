@@ -15,7 +15,6 @@ import os
 import sys
 import time
 
-import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -32,7 +31,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--every", type=int, default=6)
     a = ap.parse_args(argv)
-    d = pd.read_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))
+    d = DP.load_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))                # F11: holdout files नकार + filter
     d = DP.filter_allowed(d, "research")
     d = d[d["timestamp"] <= DP.IS_END].reset_index(drop=True)
     s = S.DEFAULTS

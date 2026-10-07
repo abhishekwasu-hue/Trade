@@ -81,6 +81,7 @@ class CountEngine:
         self.atr = {d: W.atr(md[d]["frame"], s["atr_len"]) for d in self.degrees}
         self.prev = None
         self.log = []
+        self._why = {}                  # (degree, pattern, origin ts) → पूर्ण-wave नियम (F5 log)
         # confirmed pivots confirm क्रमाने ⇒ confirmed_at वाढतं; "t ला माहीत" = prefix (bisect)
         self._conf_at = {d: np.array([p.confirmed_at for p in md[d]["confirmed"]], dtype="datetime64[ns]") for d in self.degrees}
         self._piv_ts = {d: np.array([p.ts for p in md[d]["confirmed"]], dtype="datetime64[ns]") for d in self.degrees}
@@ -104,6 +105,18 @@ class CountEngine:
             return abs(a.bar_idx - b.bar_idx) <= tol
         step = max(W.TF_MIN.get(a.tf, 5), W.TF_MIN.get(b.tf, 5))
         return abs((a.ts - b.ts).total_seconds()) <= tol * step * 60
+
+    def _completed_break(self, d, pts, fr):
+        """F5: पूर्ण waves चे नियम (R1/R6/R9) count_inv_basis वर — pivot a च्या level चा खरा break pivot a नंतर ते pivot b
+        confirm होईपर्यंत झाला का. ConfirmTF असेल तर count/trade सारखाच TF."""
+        def broke(level, side, a, b):
+            ws, pb = pts[b - 1], pts[b]                               # review H1: violating wave च्या सुरुवातीपासून — _valid सारखंच
+            end_idx = pb.confirmed_idx if pb.confirmed_idx is not None else pb.bar_idx
+            if self.confirm is not None:
+                t_end = fr["bar_end"].iloc[min(end_idx, len(fr) - 1)]
+                return self.confirm.broken(d, ws.ts, level, side, t_end)
+            return self.cache[d].confirm_index(ws.bar_idx + 1, level, side, end_idx) is not None
+        return broke
 
     def _valid(self, d, node, t_idx, t=None):
         if self.confirm is not None and t is not None:
@@ -133,7 +146,13 @@ class CountEngine:
             for pat in PATTERNS:
                 if len(pts) - 1 >= len(LABELS[pat]):
                     continue
-                n = build(d, pat, pts, tent, s, subs, atr_now, t_idx, atr_arr=self.atr[d], mr_arr=self.cache[d].mr)
+                why = []
+                n = build(d, pat, pts, tent, s, subs, atr_now, t_idx, atr_arr=self.atr[d], mr_arr=self.cache[d].mr,
+                          broke=self._completed_break(d, pts, fr), why=why)
+                if n is None and why:
+                    if len(self._why) > 50_000:
+                        self._why.clear()                                   # फक्त log साठी — मर्यादा
+                    self._why[(d, pat, pts[0].ts)] = why[0]
                 if n is not None and self._valid(d, n, t_idx, t):
                     out.append(n)
         return out, t_idx, True
@@ -218,5 +237,11 @@ class CountEngine:
                     lvl, rule, c = min(broken, key=lambda x: x[2])
                     e = {"t": snap.t, "break_at": c, "degree": d, "pattern": n.pattern,
                          "current_wave": n.current_wave, "level": lvl, "rule": rule, "origin": n.points[0].ts, "key": n.key}
-                    snap.invalidated.append(e)
-                    self.log.append(e)
+                else:                                                       # F5: पूर्ण-wave नियमाने गायब ⇒ कारणासह log
+                    rule = self._why.pop((d, n.pattern, n.points[0].ts), None)
+                    if rule is None:
+                        continue                                            # beam/hysteresis मुळे बाहेर — invalidation नाही
+                    e = {"t": snap.t, "break_at": None, "degree": d, "pattern": n.pattern, "current_wave": n.current_wave,
+                         "level": None, "rule": f"{rule}_completed", "origin": n.points[0].ts, "key": n.key}
+                snap.invalidated.append(e)
+                self.log.append(e)

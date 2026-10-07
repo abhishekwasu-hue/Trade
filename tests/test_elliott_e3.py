@@ -249,6 +249,7 @@ def state(sg=None, credit=10.0, lots=4, short_k=22150):
 
 
 BAR = (22420.0, 22440.0, 22400.0, 22430.0)
+LEG = _cfg(progress_mode="legacy")
 
 
 def test_priority_order():
@@ -297,17 +298,43 @@ def test_tier_a_partial_then_progressive_inv():
     assert EX.evaluate(state(sg), {"bar": (22400, 22455, 22390, 22450)}, _cfg(tierA_target_action="exit_all"))["exit"] == "tierA_target"
 
 
+def test_progress_off_by_default_and_correction_time():
+    st = state()
+    for _ in range(10):
+        assert EX.evaluate(st, {"bar": BAR}, S0)["exit"] is None                    # F2: default off ⇒ वेळेवरून exit नाही
+    sg = sig(corr_bars=6, bars_from_extreme=1, prev_leg_bars=10)
+    ct = _cfg(progress_mode="correction_time", progress_bars_mult=1.0)
+    st = state(sg)
+    for _ in range(6):                                                              # 1 + 6 ≥ 6 bars पण spread नफ्यात, नवीन टोक नाही
+        assert EX.evaluate(st, {"bar": BAR, "mark": 8.0}, ct)["exit"] is None
+    assert EX.evaluate(st, {"bar": BAR, "mark": 12.0}, ct)["exit"] == "progress_time"   # मुदत संपली + तोट्यात
+    st = state(sg)
+    for _ in range(4):
+        EX.evaluate(st, {"bar": BAR, "mark": 8.0}, ct)
+    assert EX.evaluate(st, {"bar": (22400, 22410, 22390, 22400), "mark": 8.0}, ct)["exit"] == "progress_time"  # मुदत संपली + नवीन टोक (22,390 < 22,396)
+    st = state(sg)
+    assert EX.evaluate(st, {"bar": (22400, 22410, 22380, 22400), "mark": 8.0}, ct)["exit"] is None  # नवीन टोक पण मुदत बाकी
+    for _ in range(4):
+        EX.evaluate(st, {"bar": BAR, "mark": 8.0}, ct)
+    assert EX.evaluate(st, {"bar": BAR, "mark": 8.0}, ct)["exit"] == "progress_time"     # मुदत संपली + आधी नवीन टोक
+    wave1 = _cfg(progress_mode="correction_time", progress_ref="wave1")
+    st = state(sg)
+    for _ in range(8):
+        assert EX.evaluate(st, {"bar": BAR, "mark": 12.0}, wave1)["exit"] is None   # मुदत 10 bars
+    assert EX.evaluate(st, {"bar": BAR, "mark": 12.0}, wave1)["exit"] == "progress_time"
+
+
 def test_profit_progress_expiry_thesis():
     assert EX.evaluate(state(), {"bar": BAR, "mark": 4.9}, S0)["exit"] == "profit_pct"          # Tier B 50%
     assert EX.evaluate(state(), {"bar": BAR, "mark": 5.1}, S0)["exit"] is None
     st = state()
     for _ in range(3):
-        assert EX.evaluate(st, {"bar": BAR}, S0)["exit"] is None
-    assert EX.evaluate(st, {"bar": BAR}, S0)["exit"] == "progress_time"            # 4 bars, H (22,522) ओलांडला नाही
+        assert EX.evaluate(st, {"bar": BAR}, LEG)["exit"] is None
+    assert EX.evaluate(st, {"bar": BAR}, LEG)["exit"] == "progress_time"            # 4 bars, H (22,522) ओलांडला नाही
     st2 = state()
-    EX.evaluate(st2, {"bar": (22500, 22540, 22490, 22530)}, S0)                      # H ओलांडला
+    EX.evaluate(st2, {"bar": (22500, 22540, 22490, 22530)}, LEG)                      # H ओलांडला
     for _ in range(5):
-        assert EX.evaluate(st2, {"bar": BAR}, S0)["exit"] is None
+        assert EX.evaluate(st2, {"bar": BAR}, LEG)["exit"] is None
     near = {"bar": (22200, 22210, 22180, 22190), "expiry_day": True, "past_exit_time": True, "minutes_left": 120, "iv": 0.13}
     assert EX.evaluate(state(), near, _cfg(progress_bars_mult=0.0))["exit"] == "expiry_day_risk"
     far = {**near, "bar": (22600, 22610, 22590, 22600)}
@@ -343,8 +370,8 @@ def test_bear_call_exit_branches():
     assert r["partial_lots"] == 2
     st2 = state(sg, short_k=23150)
     for _ in range(3):
-        EX.evaluate(st2, {"bar": (22800, 22810, 22790, 22800)}, S0)
-    assert EX.evaluate(st2, {"bar": (22800, 22810, 22790, 22800)}, S0)["exit"] == "progress_time"
+        EX.evaluate(st2, {"bar": (22800, 22810, 22790, 22800)}, _cfg(progress_mode="legacy"))
+    assert EX.evaluate(st2, {"bar": (22800, 22810, 22790, 22800)}, _cfg(progress_mode="legacy"))["exit"] == "progress_time"
     ex = {"bar": (23160, 23195, 23140, 23190), "expiry_day": True, "past_exit_time": True, "minutes_left": 30, "iv": 0.13}
     assert EX.evaluate(state(sg, short_k=23200), ex, _cfg(progress_bars_mult=0.0))["exit"] == "expiry_day_risk"
 

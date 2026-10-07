@@ -36,7 +36,7 @@ def main(argv=None):
     ap.add_argument("--end", default=str(DP.IS_END.date()))
     ap.add_argument("--out", default=OUT)
     a = ap.parse_args(argv)
-    d = pd.read_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))
+    d = DP.load_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))                # F11: holdout files नकार + filter
     d = DP.filter_allowed(d, "research")
     d = d[(d["timestamp"] >= a.start) & (d["timestamp"] <= min(pd.Timestamp(a.end) + pd.Timedelta("23:59:59"), DP.IS_END))]
     d = d.reset_index(drop=True)

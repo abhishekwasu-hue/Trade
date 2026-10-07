@@ -126,7 +126,7 @@ class Backtest:
         self.trade_from = None if trade_from is None else pd.Timestamp(trade_from)
         self.entry_until = None if entry_until is None else pd.Timestamp(entry_until)
         self.filters = entry_filters
-        self.cal = cal or CT.TradingCalendar.from_spot(df1m)
+        self.cal = cal or CT.TradingCalendar.from_spot(df1m, min_bars=s.get("full_session_min_bars", CT.FULL_SESSION_MIN_BARS))
         self.book = book or CT.ExpiryBook(self.cal)
         self.pricer = pricer or ModelPricer(df1m, s, self.cal)
         self.shadow = shadow

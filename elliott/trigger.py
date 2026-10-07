@@ -67,6 +67,9 @@ class Signal:
     parent_pattern: str = ""
     parent_wave: str = ""
     parent_points: list = field(default_factory=list)
+    corr_bars: int = 0                                  # F2: correction चे TTF bars (wave start → टोक)
+    prev_leg_bars: int = 0                              # F2: correction आधीच्या leg चे TTF bars
+    bars_from_extreme: int = 0                          # F2: signal bar − टोक bar
     inv_degree: int = None                              # F4: hard inv चा मालक count (degree, wave start)
     inv_start_ts: object = None
     parent_start_ts: object = None
@@ -260,6 +263,10 @@ class Scanner:
                      st.parent.pattern if st.parent is not None else "", st.parent.current_wave if st.parent is not None else "",
                      [p.price for p in st.parent.points] if st.parent is not None else [])
         sig.inv_degree, sig.inv_start_ts = self._inv_owner(st)
+        sig.corr_bars, sig.bars_from_extreme = max(ext_idx - ws_idx, 1), j - ext_idx
+        pts = [p.ts for p in st.node.points]
+        k = pts.index(st.wave_start.ts) if st.wave_start.ts in pts else -1
+        sig.prev_leg_bars = max(ws_idx - self._idx_of(tf, pts[k - 1]), 1) if k >= 1 else sig.corr_bars   # S7 (k=0) ⇒ correction
         sig.parent_start_ts = getattr(st, "parent_start_ts", None)
         sig.wave_ctx = {"setup": st.code, "degree": st.degree, "tier": st.tier, "vote": round(st.vote, 4),
                         "opp_max": round(st.opp_max, 4), "n_alt_invs": len(st.alt_invs), "zone": [min(st.levels), max(st.levels)],

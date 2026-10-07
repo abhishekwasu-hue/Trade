@@ -38,6 +38,7 @@ class TradeState:
     hard_inv: float
     bars: int = 0                        # entry नंतर बंद झालेले TTF bars
     crossed_h: bool = False              # spot close ने sub-leg origin ओलांडला
+    new_extreme: bool = False            # entry नंतर correction चं टोक ओलांडलं (progress_mode correction_time)
     partial_done: bool = False
     inv_moved: bool = False
     soft_reduced: bool = False           # reduce एकदाच (ctx flags "या bar पर्यंत" — cumulative)
@@ -117,6 +118,8 @@ def evaluate(st: TradeState, ctx, s):
     st.bars += 1
     if (c > sig.sub_origin) if d > 0 else (c < sig.sub_origin):
         st.crossed_h = True
+    if (l < sig.extreme) if d > 0 else (h > sig.extreme):
+        st.new_extreme = True
     short_k = st.plan["short_k"]
     # 0 — emergency (intrabar)
     if s["emergency_spot_cross_short"] and emergency_check(st, l if d > 0 else h):
@@ -187,10 +190,19 @@ def evaluate(st: TradeState, ctx, s):
         captured = (st.entry_credit - mark) / st.entry_credit * 100.0
         if captured >= s["tp_pct_credit"][TIER_IDX[tier]]:
             return done("profit_pct", 5)
-    # 6 — progress time
-    pb = s["progress_bars_mult"] * sig.bars_last_subleg
-    if pb > 0 and st.bars >= math.ceil(pb) and not st.crossed_h:
-        return done("progress_time", 6)
+    # 6 — progress time (F2: default off)
+    mode = s.get("progress_mode", "off")
+    if mode == "legacy":
+        pb = s["progress_bars_mult"] * sig.bars_last_subleg
+        if pb > 0 and st.bars >= math.ceil(pb) and not st.crossed_h:
+            return done("progress_time", 6)
+    elif mode == "correction_time":
+        ref = getattr(sig, "prev_leg_bars", 0) if s["progress_ref"] == "wave1" else getattr(sig, "corr_bars", 0)
+        pb = s["progress_bars_mult"] * (ref or 0)
+        elapsed = getattr(sig, "bars_from_extreme", 0) + st.bars                  # correction च्या टोकापासून
+        losing = mark is not None and mark > st.entry_credit
+        if pb > 0 and elapsed >= math.ceil(pb) and (losing or st.new_extreme):
+            return done("progress_time", 6)
     # 7 — expiry day
     if ctx.get("expiry_day") and ctx.get("past_exit_time"):
         itm = (c < short_k) if d > 0 else (c > short_k)

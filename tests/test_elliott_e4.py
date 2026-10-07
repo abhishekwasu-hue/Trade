@@ -130,6 +130,12 @@ def test_golden_matcher_levels():
     assert miss["T7"]["status"] == "FAIL"
     gap = {r["id"]: r for r in GD.evaluate(good + [gsig("2026-09-28 09:30", "bull_put", 22700.0)], exp)}
     assert gap["R-gap-0928"]["status"] == "FAIL"
+    assert rows["T5"]["status"] == "REPORT"                                          # F9: sizing माहिती नाही ⇒ report
+    c = gsig("2026-10-01 14:00", "bear_call", 22500.0, "S4", "C")
+    sized_all = {r["id"]: r for r in GD.evaluate(good + [c], exp, sized=lambda s: True)}
+    assert sized_all["T5"]["status"] == "FAIL" and sized_all["T4"]["status"] == "PASS"   # sized Tier C bear call ⇒ FAIL
+    zero_c = {r["id"]: r for r in GD.evaluate(good + [c], exp, sized=lambda s: s.tier != "C")}
+    assert zero_c["T5"]["status"] == "PASS"                                           # Tier C 0 lot ⇒ नकार पाळला
 
 
 @pytest.mark.skipif(GD.golden_csv() is None, reason="golden 1m data (trade-data) अजून नाही — VPS export नंतर")

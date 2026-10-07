@@ -79,6 +79,17 @@ def filter_allowed(df, purpose="research", col="timestamp"):
     return df[keep.to_numpy()].reset_index(drop=True)
 
 
+HOLDOUT_FILES = {"nifty50_daily_extension.parquet"}      # 2024-03-28 → 2026-08-20 (#225) — पूर्ण holdout काळ
+
+
+def load_parquet(path, purpose="research", col="timestamp"):
+    """Elliott / research loader: holdout-only files वाचायलाच नकार (HoldoutError), बाकी वाचून filter_allowed (F11)."""
+    import os
+    if os.path.basename(str(path)) in HOLDOUT_FILES:
+        raise HoldoutError(f"{os.path.basename(str(path))} हा sealed holdout काळ आहे — elliott/research मध्ये वाचायचा नाही")
+    return filter_allowed(pd.read_parquet(path), purpose, col)
+
+
 def final_holdout_mask(ts):
     """अंतिम holdout चाचणीसाठी वापरायच्या वेळा: HOLDOUT पण CONTAMINATED नाही (Abhi: contaminated काळ तिथूनही वगळा)."""
     t = pd.to_datetime(pd.Series(ts))

@@ -141,7 +141,7 @@ def main(argv=None):
         raise SystemExit("--start 2019-02-11 आधी नाही: weekly options नव्हते (spec §13 — त्या काळात फक्त spot-structure चाचण्या)")
     end = min(pd.Timestamp(a.end) + pd.Timedelta("23:59:59"), DP.IS_END)
     DP.check_range(a.warmup, end, "research")
-    d = pd.read_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))
+    d = DP.load_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))                # F11: holdout files नकार + filter
     d = d[(d["timestamp"] >= a.warmup) & (d["timestamp"] <= end)]
     d = DP.filter_allowed(d, "research").reset_index(drop=True)
     entry_until = end - pd.Timedelta(days=7)                                       # split सीमेवर एका weekly expiry चं embargo

@@ -49,9 +49,10 @@ C = {
     "c5_path_n3": {"path_checks": True, "n3_penalty": 0.05},
     "c6_body_fix": {"body_term_mode": "body_or_reclaim", "min_body_or_reclaim": True},
     "c7_followthrough": {"followthrough_mode": "addendum"},
+    "c7b_followthrough_gate": {"followthrough_mode": "addendum", "followthrough_score_gate": True},
     "c8_c_leg_exhaustion": {"c_leg_exhaustion_required": True},
 }
-C_ALL = {k: v for d in C.values() for k, v in d.items() if k != "c_leg_exhaustion_required"}
+C_ALL = {k: v for n, d in C.items() if n not in ("c8_c_leg_exhaustion", "c7b_followthrough_gate") for k, v in d.items()}
 VARIANTS = {"a_generic": {}, "b_profile": {"candle_profile_mode": "on"}, **C, "c_all": C_ALL,
             "d_profile_c_all": {"candle_profile_mode": "on", **C_ALL}}
 
@@ -62,7 +63,7 @@ LEG_KIND = {"impulse": {("impulse", w): ("impulsive" if w in "135" else "correct
 
 
 def _data():
-    d = pd.read_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))
+    d = DP.load_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))                # F11: holdout files नकार + filter
     d = d[(d["timestamp"] >= WARM) & (d["timestamp"] <= END)]
     return DP.filter_allowed(d, "research").reset_index(drop=True)
 

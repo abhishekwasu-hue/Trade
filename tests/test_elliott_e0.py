@@ -301,7 +301,7 @@ def test_main_returns_nonzero_on_failure(repo, monkeypatch):
 def test_golden_expectations_structure():
     g = json.load(open(os.path.join(ROOT, "docs", "reports", "elliott_golden_expectations.json"), encoding="utf-8"))
     lv = {t["id"]: t["level"] for t in g["trades"]}
-    assert lv["T6"] == "must_not" and lv["T5"] == lv["T9"] == "report" and lv["T1"] == "verify"
+    assert lv["T6"] == lv["T5"] == "must_not" and lv["T9"] == "report" and lv["T1"] == "verify"   # T5: review F9 (sizing स्तर)
     assert {k for k, v in lv.items() if v == "must"} == {"T2", "T3", "T4", "T7", "T8"}
     for t in g["trades"] + g["rejections"]:
         assert DP.allowed(t["date"], "golden") and not DP.allowed(t["date"], "research")

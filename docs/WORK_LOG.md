@@ -939,3 +939,31 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - Snapshot पुन्हा: 33 signals (sticky + मालक बदलानंतर संख्या तीच), gray 9,032, no_count 14,863, hard_broken_no_reentry 5.
 
 **Tests:** `tests/test_elliott_fixes.py` (+8: F3 no-origin skip / fractal origin; F4 displacement 5m वि. false break 15m; acceptance (दोन कमकुवत closes); level_tf TF बदलूनही sticky; खऱ्या ConfirmTF वर count `_valid` आणि backtest `_hard_broken` प्रत्येक bar ला सारखे; fixed trigger mode; count/trade दोघे inv मालकाची degree/start वापरतात), `tests/test_elliott_e3.py` (sizing: tier_of_A A 1 / B 1 / C 0, risk_budget जुनं, era-wise lot 25/50/75/65 गुणोत्तर, floor कारणे, shadow min_one_lot).
+
+## 2026-10-07 · E4 review fixes — PR 2: F2, F5, F6, F7, F9, F10, F11
+
+**F2 — Progress / time exit (High):** नवीन `progress_mode` = **`off`** (default, तुमचा निर्णय — IS calibration पर्यंत) / `correction_time` / `legacy`. `correction_time`: घड्याळ correction च्या **टोकापासून** (Signal मध्ये `bars_from_extreme`), मुदत = `progress_ref` (correction = wave start → टोक TTF bars `corr_bars`; wave1 = correction आधीचा leg `prev_leg_bars`) × `progress_bars_mult`; exit **फक्त** spread तोट्यात असेल (mark > entry credit) **किंवा** entry नंतर नवीन टोक झालं असेल तर. `legacy` = जुनं (bars_last_subleg × mult; 5m वर 20–30 मि.). Soft stop real-break वरच लागतो (`cache.confirm_index` — एका close वर नाही) हे तपासलं; soft-stop exits चं hold-time वितरण व "नंतर नफ्यात गेले असते का" — F8 report मध्ये (खरे premiums सोबत).
+
+**F5 — पूर्ण waves वर wick-basis (Medium):** R1 / R6 / R9 पूर्ण waves ना सुद्धा `count_inv_basis` (default real_break): wick पलीकडे पण खरा break नाही ⇒ count जिवंत; `wick` पर्याय काटेकोर. Equality ⇒ violation नाही (double bottom चालतो; आधी `<= 0`). पूर्ण-wave नियमाने count गायब झाला तर invalidation log मध्ये `R1_completed` / `R6_completed` / `R9_completed` (break_at नाही). Beam/hysteresis मुळे बाहेर गेलेले counts invalidation नाहीत ⇒ log नाही (नोंद). Break तपासणी F4 च्या ConfirmTF वर.
+
+**F6 — Hard-coded आकडे settings मध्ये (defaults तेच ⇒ वर्तन तेच):** `w3_fib_targets`, `w3_not_short_ratio`, `w2_depth_band`, `w4_depth_max`, `alternation_min`, `flat_expanded_min`, `flat_b_classic_max`, `indecision_band`, `min_body_frac`, `widen_widths`, `full_session_min_bars`; **`similarity_balance_min` आता खरंच वापरला जातो** (आधी 1/3 hard-coded — default तोच). Dashboard (E5) वर हे settings दिसतील.
+
+**F7 — Contract master (Medium):** `elliott/contract_master.py`: Upstox option contracts (`/v2/option/contract`) ⇒ expiries, lot (contract-wise — एका expiry मध्ये दोन lots ⇒ error), strike step. `expiry_book_for(mode)`: **paper / live ⇒ contract master अनिवार्य** (`ContractMasterMissing`), weekday नियम + holiday table फक्त backtest. Network fetch फक्त live/PAPER loop मधून (E6). **SENSEX** (BSE, Thursday) v1 मध्ये नाही — E5 dashboard वर स्पष्ट; नंतरचं काम.
+
+**F9 — Golden (Medium):** T5 (1 Oct (iv)→(v) of 5, Tier C) `report` ⇒ **`must_not`** (Master §4 अपेक्षित नकार). त्याच दिवशी T4 (must) bear call असल्याने T5 ला `match_on: ["tier"]` — फक्त Tier C bear call FAIL. Golden regression data आल्यावर पहिलं काम (T1–T8, 5 Oct 09:50/10:15 A-end).
+
+**F10 — C1 (Low):** S6c ⇒ counter (G2 PR मध्ये). Follow-through score अट पर्याय `followthrough_score_gate` (default बंद) + `followthrough_score_relax` (0.05): merged (N+k) window चा score ≥ rejection_min − relax. C3 मध्ये `c7b_followthrough_gate` variant (F8 run मध्ये दोन्ही मोजणार). ARMED फक्त log — E5 dashboard वर तसं लिहू.
+
+**F11 — इतर (Low):** `tests/conftest.py` चे MCX / order_safety autouse fixtures app deps नसतील तर काही करत नाहीत ⇒ elliott tests स्वतंत्र. `data_policy.load_parquet` + `HOLDOUT_FILES`: `nifty50_daily_extension.parquet` वाचायला `HoldoutError`; test: elliott/research loaders हा file वाचत नाहीत. `docs/DATA_SOURCES.md` (1m CSV चा licence वापरकर्त्याकडून नोंद बाकी — अंदाज लिहिला नाही). Live loop मधले `same_setup_open` / `no_reentry` guards E6 (PAPER) मध्ये backtest चेच वापरणार — नोंद.
+
+**F1 पूरक:** Dashboard (E5) वर "Tier A partial needs ≥ 2 lots".
+
+**स्वतंत्र review (1 High + 4 Medium + Low) — दुरुस्त्या:**
+- **H1 (F5):** पूर्ण-wave तपासणी pivot `lv_i` (origin) पासूनच्या TF spans वर होत होती, तर चालू wave असताना `_valid` violating wave च्या सुरुवातीपासून — auto-TF मध्ये वेगळे TF ⇒ 5m वर मेलेला count pivot confirm झाल्यावर 15m वर "जिवंत" (2019 H1: ~5.5k calls). आता दोन्ही **violating wave च्या सुरुवातीपासून** (pts[b−1]) — एकच निर्णय; test.
+- **M1:** wick-only R1/R6/R9 (count जिवंत) नंतर तो level पुढच्या waves साठी सुद्धा inv (R1 origin, zigzag C मध्ये R6 origin, diag R9, wxy X_W_origin) ⇒ नंतर खरा break ⇒ count मेला. wxy "X ≯ W origin" सुद्धा `count_inv_basis` वर.
+- **M2:** S7 ला (wave start = points[0]) `progress_ref = wave1` मध्ये आधीचा leg नाही ⇒ correction कालावधी (आधी 0 ⇒ exit कधीच नाही). "wave1" = correction आधीचा leg (S3/S6 मध्ये wave 3 / A) — नाव तसंच, अर्थ नोंदवला.
+- **M3 (F9):** Master §4 चा Tier C नकार **sizing स्तरावर** (Tier C 0 lot) ⇒ T5 ला `check: "sized"`: golden evaluate ला `sized(sig)` दिलं तरच must_not; नाहीतर REPORT (signal स्तरावर खोटा FAIL नाही). F8 मध्ये plan सह golden चालवताना sized देणार.
+- **M4 (F7):** mode case-insensitive + अज्ञात mode ⇒ error; book `source = contract_master`; `lot_for(master, expiry)` (table fallback नाही). Live/PAPER loop (E6) मध्ये `expiry_book_for` / `lot_for` / `strike_step` वापरणार — आत्ता backtest मध्ये नियम-book (नोंद). Upstox `weekly` flag असेल तर तोच.
+- **Low:** F10 merged window आधीच नापास ⇒ gate नापास; settings validate: पट्टे उलटे नकोत, w3 Fib रिकामे नको, widen widths strike step च्या पटीत; conftest `ModuleNotFoundError` फक्त; research loaders `DP.load_parquet` मधून; `_why` मर्यादित. **नोंद (बदल नाही):** `new_extreme` sticky (तुमच्या "तोट्यात **किंवा** नवीन टोक" शब्दांनुसार); random baselines structure-free exits ⇒ progress exit नाहीच; `indecision_band` trigger विभागात (real-break retest मध्येही वापरतो — calibrate करताना लक्षात ठेवा); beam बाहेरचे counts log होत नाहीत; spec §9/§11 मधला progress मजकूर जुना (spec doc तुमचा — बदल केला नाही).
+
+**Snapshot:** 2019 H1 पुन्हा (F5 + review): 33 → 36 signals; gray 9,032 → 9,057. `*_completed` invalidations 2019 H1 मध्ये नाहीत (चालू-wave तपासणी आधीच पकडते — आता सुसंगत).

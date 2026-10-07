@@ -86,6 +86,15 @@ SCHEMA += [
     _s("flat_b_max_ratio", "counts", "Flat B कमाल (× A)", "B > इतका × A ⇒ flat count सोडा [अनुमान].", "float", 2.0, 1.05, 5.0),
     _s("barrier_d_tol_atr", "counts", "Barrier triangle D सहनशीलता (× ATR)", "Barrier triangle मध्ये D, B च्या पलीकडे इतका जाऊ शकतो.",
        "float", 0.25, 0.0, 2.0),
+    # F6: आधी code मध्ये hard-coded guideline आकडे (फक्त score/उपप्रकार; defaults तेच)
+    _s("w3_fib_targets", "counts", "Wave 3 Fib (× wave 1)", "g_w3_fib guideline.", "list_float", [1.0, 1.618, 2.618], 0.3, 5.0),
+    _s("w3_not_short_ratio", "counts", "Wave 3 'आखूड नाही' (× wave 1)", "आत्तापर्यंतचा wave 3 ≥ इतका × wave 1.", "float", 0.95, 0.5, 1.5),
+    _s("w2_depth_band", "counts", "Wave 2 खोली (× wave 1)", "g_w2_depth पट्टा.", "list_float", [0.382, 0.786], 0.1, 1.0),
+    _s("w4_depth_max", "counts", "Wave 4 कमाल खोली (× wave 3)", "g_w4_depth.", "float", 0.5, 0.1, 1.0),
+    _s("alternation_min", "counts", "Alternation किमान फरक", "wave 2 वि. wave 4 खोलीच्या ratio मधला फरक (किंवा वेळ उलट).", "float", 0.15,
+       0.0, 1.0),
+    _s("flat_expanded_min", "counts", "Expanded flat (B ≥ × A)", "B > इतका × A ⇒ flat_exp उपप्रकार.", "float", 1.05, 1.0, 1.5),
+    _s("flat_b_classic_max", "counts", "Flat B classic कमाल (× A)", "g_b_classic.", "float", 1.382, 1.0, 3.0),
     _s("fib_tol", "counts", "Fibonacci सहनशीलता", "Ratio guideline 'जुळलं' मानण्यासाठी सापेक्ष सहनशीलता (फक्त score).", "float", 0.10, 0.01, 0.5),
     _s("guideline_prior", "counts", "Score smoothing", "score = (hits + prior) / (n + 2·prior). कमी guidelines असलेल्या counts ना अति-score टाळतो.",
        "float", 1.0, 0.0, 10.0),
@@ -148,6 +157,8 @@ SCHEMA += [
     _s("reclaim_ref", "trigger", "Reclaim संदर्भ", "touched_level: शिवलेल्या zone level वर परत close; zone_high: zone च्या टोकावर. (आधीच्या "
        "candle चा high / sub-wave break निषिद्ध — breakout.)", "choice", "touched_level", choices=("touched_level", "zone_high"),
        calibrate=False),
+    _s("indecision_band", "trigger", "Indecision पट्टा (close location)", "Composite CL या पट्ट्यात ⇒ अनिर्णयी (follow-through पहा) (F6).",
+       "list_float", [0.40, 0.60], 0.0, 1.0),
     _s("touch_reclaim_window", "trigger", "Composite candles (N कमाल)", "शेवटच्या 1–N बंद candles एकत्र (hammer / engulfing / star). "
        "अनिर्णय असल्यास follow-through ने N+1.", "int", 3, 1, 3, calibrate=False),
     _s("rsi_len", "trigger", "RSI लांबी", "फक्त divergence weight > 0 असेल तर.", "int", 14, 2, 100),
@@ -200,6 +211,10 @@ SCHEMA += [
     _s("strike_step", "strike", "Strike step (points)", "Contract master मधून (NIFTY weekly 50).", "int", 50, 5, 500, calibrate=False),
     _s("iv_source", "strike", "IV स्रोत", "atm_iv: निवडलेल्या expiry चा ATM IV (bhavcopy/option chain); vix: India VIX (fallback).",
        "choice", "atm_iv", choices=("atm_iv", "vix"), calibrate=False),
+    _s("widen_widths", "strike", "Widen widths (points)", "credit_fail_action = widen_width मध्ये पुढचे widths (F6).", "list_int",
+       [100, 150, 200], 50, 1000),
+    _s("full_session_min_bars", "strike", "पूर्ण session किमान 1m bars", "यापेक्षा कमी (मुहूर्त / अर्धे sessions) ⇒ trading day नाही "
+       "(expiry calendar).", "int", 300, 60, 375, calibrate=False),
     _s("min_one_lot", "strike", "Budget कमी तरी 1 lot", "true ⇒ size 0 येत असला तरी (गुणक > 0) 1 lot (risk% ओलांडतो). Default बंद; "
        "backtest shadow trades साठी वापरतो.",
        "bool", False, calibrate=False),
@@ -221,8 +236,14 @@ SCHEMA += [
        "choice", "exit_50pct_trail_rest", choices=("exit_50pct_trail_rest", "exit_all"), calibrate=False),
     _s("tierA_target_fibs", "manage", "Tier A targets (× (i))", "(ii) end पासून.", "list_float", [1.0, 1.618], 0.3, 5.0),
     _s("target_tol_atr", "manage", "Target सहनशीलता (× ATR)", "", "float", 0.25, 0.0, 2.0),
-    _s("progress_bars_mult", "manage", "Progress time exit (× bars_last_subleg)", "इतक्या TTF bars मध्ये spot ने शेवटच्या sub-leg चा "
-       "origin ओलांडला नाही ⇒ exit.", "float", 1.0, 0.0, 20.0),
+    _s("progress_mode", "manage", "Progress / time exit", "off (default, F2 — IS calibration पर्यंत); correction_time: घड्याळ correction "
+       "च्या टोकापासून, मुदत = progress_ref × progress_bars_mult (TTF bars), आणि exit फक्त spread तोट्यात असेल **किंवा** नवीन टोक "
+       "झालं तर; legacy: bars_last_subleg × mult मध्ये sub-leg origin ओलांडला नाही ⇒ exit (जुनं, 5m वर 20–30 मि.).", "choice", "off",
+       choices=("off", "correction_time", "legacy"), calibrate=False),
+    _s("progress_ref", "manage", "Progress मुदत संदर्भ", "correction: संपूर्ण correction चा कालावधी; wave1: correction आधीचा leg.",
+       "choice", "correction", choices=("correction", "wave1"), calibrate=False),
+    _s("progress_bars_mult", "manage", "Progress मुदत गुणक", "legacy: × bars_last_subleg; correction_time: × progress_ref (TTF bars).",
+       "float", 1.0, 0.0, 20.0),
     _s("expiry_exit_time", "manage", "Expiry दिवशी तपासणी वेळ", "", "time", "14:45", calibrate=False),
     _s("expiry_hold_min_dist_sd", "manage", "Expiry hold किमान अंतर (SD)", "Expiry दिवशी spot short strike पासून < इतके SD ⇒ exit.",
        "float", 0.5, 0.0, 3.0),
@@ -268,6 +289,8 @@ SCHEMA += [
     _s("n3_penalty", "candle", "N = 3 penalty", "3 candles लागल्या तर score मधून वजा (सुचवलेलं 0.05). 0 ⇒ बंद.", "float", 0.0, 0.0, 0.3),
     _s("body_term_mode", "candle", "Body घटक", "bull_body: |C−O|·[trade दिशा] (सध्याचं); body_or_reclaim: trade दिशेची body **किंवा** "
        "पहिल्या candle च्या body मध्ये ≥ 50% reclaim (piercing).", "choice", "bull_body", choices=("bull_body", "body_or_reclaim")),
+    _s("min_body_frac", "candle", "किमान body (× range)", "min_body_or_reclaim साठी: trade दिशेची body < इतका ⇒ body नाही (F6).",
+       "float", 0.10, 0.0, 0.5),
     _s("min_body_or_reclaim", "candle", "Body / reclaim किमान", "Trade दिशेची body < 10% range (dragonfly/gravestone) आणि reclaim < 50% ⇒ "
        "एकट्याने pass नाही.",
        "bool", False),
@@ -276,6 +299,9 @@ SCHEMA += [
        "choice", "legacy", choices=("legacy", "addendum")),
     _s("followthrough_max_bars", "candle", "Follow-through कमाल bars", "addendum mode: अनिर्णयी composite नंतर इतक्या बंद candles पर्यंत "
        "follow-through पाहतो.", "int", 1, 1, 3),
+    _s("followthrough_score_gate", "candle", "Follow-through score अट", "addendum follow-through मध्ये merged (N+k) window चा score ≥ "
+       "rejection_min − followthrough_score_relax हवा (F10 पर्याय; default बंद = addendum शब्दशः).", "bool", False),
+    _s("followthrough_score_relax", "candle", "Follow-through score सवलत", "", "float", 0.05, 0.0, 0.5),
     _s("c_leg_exhaustion_required", "candle", "C-leg displacement चालू ⇒ थांबा", "Correction चा शेवटचा leg अजून displacement candles ने "
        "(शेवटच्या 2 bars पैकी) येत असेल तर पहिली reversal candle नाही.", "bool", False),
     _s("opposite_candle_action", "candle", "उलट reversal candle (position विरुद्ध)", "watch: फक्त log/alert, exit नाही; "
@@ -409,10 +435,20 @@ def validate(raw):
         if not clean[k]:
             errors.append(f"{BY_KEY[k]['label']}: रिकामी — डीफॉल्ट वापरला")
             clean[k] = list(DEFAULTS[k])
-    for k, n in (("tier_mult", 3), ("tp_pct_credit", 3), ("c_min_by_dte", 5)):
+    for k, n in (("tier_mult", 3), ("tp_pct_credit", 3), ("c_min_by_dte", 5), ("w2_depth_band", 2), ("indecision_band", 2)):
         if len(clean[k]) != n:
             errors.append(f"{BY_KEY[k]['label']}: {n} मूल्यं हवीत — डीफॉल्ट वापरला")
             clean[k] = list(DEFAULTS[k])
+    for k in ("w2_depth_band", "indecision_band"):                      # F6: पट्टा उलटा नको
+        if clean[k][0] > clean[k][1]:
+            errors.append(f"{BY_KEY[k]['label']}: [कमी, जास्त] क्रम हवा — डीफॉल्ट वापरला")
+            clean[k] = list(DEFAULTS[k])
+    if not clean["w3_fib_targets"]:
+        errors.append("Wave 3 Fib: किमान एक मूल्य हवं — डीफॉल्ट वापरला")
+        clean["w3_fib_targets"] = list(DEFAULTS["w3_fib_targets"])
+    if any(w % clean["strike_step"] for w in clean["widen_widths"]):
+        errors.append("Widen widths strike step च्या पटीत हव्यात — डीफॉल्ट वापरला")
+        clean["widen_widths"] = list(DEFAULTS["widen_widths"])
     if clean["width_pts"] % clean["strike_step"]:
         errors.append("Spread width strike step च्या पटीत हवी — डीफॉल्ट वापरला")
         clean["width_pts"] = DEFAULTS["width_pts"]

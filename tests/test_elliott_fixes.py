@@ -141,3 +141,104 @@ def test_f4_count_engine_and_trade_exit_use_the_same_confirm():
     node = types.SimpleNamespace(points=[types.SimpleNamespace(ts=T0, bar_idx=0)], invs=[(98.0, "below", "R1")])
     assert not CountEngine._valid(eng, 1, node, 10, T0 + pd.Timedelta(hours=1))      # count तोच निर्णय (broken ⇒ invalid)
     assert calls[-1] == ("broken", 1, T0)
+
+
+def test_f5_completed_wave_rules_use_count_inv_basis():
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location("tc", os.path.join(os.path.dirname(__file__), "test_elliott_counts.py"))
+    TC = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TC)
+    from elliott import patterns as P
+    s0 = _cfg()
+    pts = TC.piv([100, 120, 99.5])                                                   # wave 2 चा wick origin खाली 0.5
+    no_break = lambda lvl, side, a, b: False                                         # noqa: E731 — close आत
+    real = lambda lvl, side, a, b: True                                              # noqa: E731
+    assert P.build(1, "impulse", pts, TC.tent(130, 30), s0, broke=no_break) is not None   # real_break: wick ⇒ count जिवंत
+    why = []
+    assert P.build(1, "impulse", pts, TC.tent(130, 30), s0, broke=real, why=why) is None and why == ["R1"]
+    assert P.build(1, "impulse", pts, TC.tent(130, 30), _cfg(count_inv_basis="wick"), broke=no_break) is None
+    assert P.build(1, "impulse", TC.piv([100, 120, 100]), TC.tent(130, 30), _cfg(count_inv_basis="wick")) is not None  # double bottom
+    zz = TC.piv([200, 170, 200.4])                                                   # zigzag B चा wick A origin पलीकडे
+    assert P.build(1, "zigzag", zz, TC.tent(160, 30), s0, broke=no_break) is not None
+    assert P.build(1, "zigzag", zz, TC.tent(160, 30), s0, broke=real) is None
+
+
+def test_f11_holdout_extension_file_is_refused():
+    import os
+    import pytest
+    from elliott import data_policy as DP
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with pytest.raises(DP.HoldoutError):
+        DP.load_parquet(os.path.join(root, "data", "nifty50_daily_extension.parquet"))
+    with pytest.raises(DP.HoldoutError):
+        DP.check_range("2024-03-28", "2026-08-20")
+    for folder in ("elliott", "research"):                                           # elliott/research loaders हा file वाचत नाहीत
+        for f in os.listdir(os.path.join(root, folder)):
+            if f.endswith(".py") and (folder == "elliott" or f.startswith("elliott_")):
+                src = open(os.path.join(root, folder, f), encoding="utf-8").read()
+                assert "daily_extension" not in src or f == "data_policy.py", f
+
+
+def test_f7_contract_master_lot_step_and_paper_requires_master():
+    import pytest
+    from elliott import contract_master as CM
+    from elliott import contracts as CT
+    rows = [{"expiry": e, "strike_price": k, "lot_size": lot, "instrument_type": t}
+            for e, lot in (("2024-11-14", 25), ("2024-11-21", 75), ("2024-11-28", 75)) for k in range(23000, 23300, 50) for t in ("CE", "PE")]
+    cm = CM.ContractMaster(rows)
+    assert cm.lots()[pd.Timestamp("2024-11-14").date()] == 25 and cm.lots()[pd.Timestamp("2024-11-21").date()] == 75   # contract-wise
+    assert cm.strike_step() == 50
+    fr = cm.expiry_frame("2024-11-10")
+    assert list(fr["kind"]) == ["weekly", "weekly", "monthly"]
+    cal = CT.TradingCalendar(pd.bdate_range("2024-11-01", "2024-12-31"))
+    with pytest.raises(CM.ContractMasterMissing):
+        CM.expiry_book_for("paper", cal)
+    book = CM.expiry_book_for("paper", cal, cm, listed_on="2024-11-10")
+    assert book.source == "contract_master" and book.choose("2024-11-12", _cfg())[0] == pd.Timestamp("2024-11-14").date()
+    assert CM.lot_for(cm, "2024-11-21") == 75
+    with pytest.raises(CM.ContractMasterMissing):
+        CM.lot_for(cm, "2024-12-05")                                                  # table fallback नाही
+    with pytest.raises(CM.ContractMasterMissing):
+        CM.expiry_book_for("PAPER", cal)                                              # case-insensitive
+    with pytest.raises(ValueError):
+        CM.expiry_book_for("papr", cal)
+    assert CM.expiry_book_for("backtest", cal).source == "rule"
+    with pytest.raises(ValueError):
+        CM.ContractMaster([{"expiry": "2024-11-14", "strike_price": 1, "lot_size": 25, "instrument_type": "CE"},
+                           {"expiry": "2024-11-14", "strike_price": 2, "lot_size": 75, "instrument_type": "PE"}]).lots()
+
+
+def test_f10_followthrough_score_gate_option():
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location("c1", os.path.join(os.path.dirname(__file__), "test_elliott_c1.py"))
+    C1 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(C1)
+    from elliott import reversal as RV
+    rows = [(100, 101, 88, 95), (95, 97, 93, 94), (94, 98, 93, 95.5), (95.5, 104, 95, 103)]
+    b = C1.bars_of(C1.frame(rows))
+    assert RV.evaluate(b, 33, 1, [94.0], 0.0, _cfg(followthrough_mode="addendum"))["ok"]
+    strict = _cfg(followthrough_mode="addendum", followthrough_score_gate=True, followthrough_score_relax=0.0, rejection_min=0.95)
+    assert not RV.evaluate(b, 33, 1, [94.0], 0.0, strict).get("followthrough")
+
+
+def test_f5_completed_check_uses_violating_wave_start_and_keeps_origin_inv():
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location("tc2", os.path.join(os.path.dirname(__file__), "test_elliott_counts.py"))
+    TC = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TC)
+    from elliott import patterns as P
+    from elliott.counts import CountEngine
+    pts = TC.piv([100, 120, 99.5])
+    seen = []
+
+    class Spy:
+        def broken(self, d, st, lvl, side, t, tf=None, since=None):
+            seen.append(st)
+            return False
+    eng = CountEngine.__new__(CountEngine)
+    eng.confirm = Spy()
+    fr = pd.DataFrame({"bar_end": [T0 + pd.Timedelta(minutes=5 * (i + 1)) for i in range(200)]})
+    eng._completed_break(1, pts, fr)(100.0, "below", 0, 2)
+    assert seen == [pts[1].ts]                                                       # wave 2 ची सुरुवात — _valid सारखीच (review H1)
+    n = P.build(1, "impulse", pts, TC.tent(130, 30), _cfg(), broke=lambda *a: False)
+    assert (100.0, "below", "R1") in n.invs                                          # M1: wick-only R1 ⇒ origin inv कायम
