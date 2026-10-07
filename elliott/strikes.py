@@ -35,9 +35,10 @@ def strikes_for(sig, spot, dist, width, step=CT.STRIKE_STEP):
     return "CE", k, k + width
 
 
-def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=None, bhav_lots=None):
+def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=None, bhav_lots=None, slip_pts=0.0):
     """dict (trade plan) किंवा कारण (str). iv = float किंवा callable(expiry) (§11: निवडलेल्या expiry चा ATM IV).
-    delta_fn नसेल ⇒ BS delta (risk_free_rate, त्या expiry चा IV) — max_short_delta guard कधीच गुपचूप बंद नाही."""
+    delta_fn नसेल ⇒ BS delta (risk_free_rate, त्या expiry चा IV) — max_short_delta guard कधीच गुपचूप बंद नाही.
+    slip_pts = प्रति leg slippage (points) — guard आणि sizing **fill नंतरच्या** credit वर (short − slip, long + slip)."""
     tries = [0, 1] if s["credit_fail_action"] == "try_next_weekly" else [0]
     last = "no_expiry"
     for skip in tries:
@@ -64,7 +65,7 @@ def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=Non
             if ps is None or pl is None:
                 last = "no_price"
                 break
-            credit = ps - pl
+            credit = ps - pl - 2.0 * slip_pts
             cmin = s["c_min_by_dte"][min(max(dd, 1), 5) - 1]
             if delta_fn is not None:
                 dl = abs(delta_fn(opt, sk, expiry))
