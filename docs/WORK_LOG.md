@@ -886,3 +886,27 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 **स्वतंत्र review (5 Medium + Low) — दुरुस्त्या:** path check खरा "शेवटच्या candle चा give-back"; follow-through addendum प्रमाणे (re-gate नाही, gap-up चालतो, max_bars setting); reduce-only dedup पळवाट; admitted अपवाद family वर; C-leg कायमचा block; time_slot window-start + 15m + session-median; reclaim depth मध्ये stab; cap logic risk guard; EXPIRED → re-ARM, TRIGGERED नंतर WAIT नाही, WAIT → ARMED; break/exit मध्ये C1 settings गळती (`core_candle`); shadow profile log; opposite candle नोंद वेगळी व एकदाच; `calibrate = False`; body दिशा. कमकुवत tests मजबूत केले.
 
 **Tests:** `tests/test_elliott_c1.py` (13): defaults byte-identity (E2 snapshot), contexts + state transitions (परवानगी असलेले संच), profile shadow/on (extras फक्त w4/tri_e admitted), path/n3/cap logic/guard, body/reclaim/dragonfly, weights, follow-through (gap-up, max_bars, legacy वेगळं), labels, C-leg, opposite candle (exits byte-same, एकदाच नोंद, tighten), time_slot/own_correction causality, profile families, `core_candle`. MCX (#241) candle code ला हात लावला नाही.
+
+## 2026-10-07 · Elliott C2/C3 — candle merge variants, random-in-ARMED baseline, सांख्यिकी → **G2 वर थांबलो**
+
+**काय केलं:** `research/elliott_candle_merge_report.py` → `docs/reports/elliott_candle_merge.md`. फक्त IS weekly काळ (11 Feb 2019 → 31 Dec 2021; script मध्ये IS assert), **model premium** (options data नाही), VAL / holdout उघडले नाहीत. Trading settings सगळ्या variants ना सारखे (credit guard बंद = E4 variant B, पूर्ण exits) — फरक फक्त candle settings चा.
+- Variants: (a) generic, (b) profile on, c1 time_slot, c2 cap logic, c3 reclaim depth 0.10, c4 overlap 0.10, c5 path + n3 0.05, c6 body fix, c7 follow-through addendum, c8 C-leg wait, c_all (c1–c7), (d) b + c_all. Variant निकाल cache मध्ये (key = settings + trading settings + काळ + code hash) — container restart नंतर पुढे चालू.
+- (r) random baseline: (a) चे सगळे ARMED episodes (re-arm सह; ARMED → पुढचा TRIGGERED/EXPIRED, कमाल 3 दिवस) — त्या setup च्या trigger TF वर 09:30–14:45 चे bars (episode ला कमाल 12), प्रत्येक bar ला **त्या वेळचा** setup (extreme / inv / alt invs) ⇒ strike, structure-free exits. तुलना **फक्त Elliott ने trigger केलेल्या episodes** वर; Elliott व random दोन्ही resample करून फरकाचा bootstrap CI.
+- सांख्यिकी numpy मध्ये (scipy नाही): day-block bootstrap CI, PBO (CSCV, S = 16), White Reality Check (प्रति-trade R), Mann-Whitney (ties correction), score quintiles, blended label, bull/bear, tier, setup.
+- C2: preferred counts चे completed legs (leg चं शेवटचं label) — impulsive वि. corrective; `disp_per_bar` (लांबी-निरपेक्ष) सह.
+
+**IS निकाल (model premium — अंदाज):**
+- (a) 199 signals, 145 trades, R −0.019 (95% CI −0.025 … −0.014). सगळे variants −0.018 … −0.020 — (a) शी फरक ±0.0013 R च्या आत.
+- **PBO 0.62** (> 0.05), **Reality Check p 0.35** ⇒ कुठलाही variant योगायोगापेक्षा चांगला नाही.
+- **Random तुलना (trigger झालेले 143 episodes):** Elliott (a) R −0.022 वि. random −0.010 ⇒ फरक −0.0125 (95% CI −0.033 … +0.008) ⇒ **Elliott entry random पेक्षा चांगली नाही** (वाईट असल्याचंही सिद्ध नाही). सगळ्या variants चं तेच.
+- Score quintiles monotonic नाहीत (Q4 −0.013, Q5 −0.022). Profile on: 7 admitted signals, परिणाम नगण्य.
+- **C2:** preferred counts मध्ये पूर्ण झालेली wave 5 / C जवळजवळ नाही ⇒ impulsive ≈ 1, 3, A; corrective ≈ 2, 4, B. Impulsive legs लांब (bars rank-biserial 0.36–0.63). Displacement **प्रति bar** फक्त D0 वर वेगळा (0.33), D1 कमकुवत (0.15), D2/D3 फरक नाही ⇒ "impulsive legs मध्ये displacement जास्त" हा मुख्यतः लांबीचा परिणाम. D0 overlap कमी. फक्त report.
+
+**निर्णय (कारणासह):**
+- **KEEP नाही:** KEEP = (a) पेक्षा (फरक > 0, PBO ≤ 0.05, RC p < 0.05) **आणि** random पेक्षा (फरकाचा CI > 0) चांगला **आणि** VAL मध्ये टिकला. एकही variant पहिल्या दोन अटी पूर्ण करत नाही ⇒ सगळे candle settings **off**. VAL चालवला नाही (§13: फक्त G2 ला तुम्ही निवडलेल्या ≤ 3 configurations).
+- Random तुलना structure-free exits वर (दोन्ही बाजूंना सारखे); variant तुलना पूर्ण exits वर.
+- Golden regression चालवता आला नाही (trade-data मध्ये golden 1m data नाही) — checker तयार.
+
+**स्वतंत्र review (1 High + 5 Medium + Low) — दुरुस्त्या:** random baseline मध्ये trigger न झालेले episodes मिसळले होते आणि 95th percentile Elliott चा sampling noise धरत नव्हता (आता trigger झालेले episodes + दोन्ही बाजू resample); C2 displacement लांबीचा परिणाम (`disp_per_bar`, bars दाखवले) आणि 5/C legs नसल्याचं चुकीचं वर्णन; KEEP मध्ये PBO/RC; cache key मध्ये trading settings / code hash; random signals ला त्या वेळचा setup व trigger TF; re-arm episodes; MW ties; IS assert; report मजकूर (episodes, win%, रिकामे tiers). पहिल्या आवृत्तीत Reality Check रिकाम्या दिवसांना 0 भरल्याने p = 0.000 येत होता — प्रति-trade R वर दुरुस्त.
+
+**Tests:** `tests/test_elliott_c3.py` (+7): Mann-Whitney (ties सह), day-block CI, PBO (खरा विजेता / noise), Reality Check (कमी trades ने फसत नाही), random तुलना (दोन्ही noise), LEG_KIND.
