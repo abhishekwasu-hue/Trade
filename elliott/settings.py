@@ -23,6 +23,7 @@ SECTIONS = (
     ("strike", "Strike / expiry / sizing"),
     ("manage", "Trade management (exits)"),
     ("costs", "खर्च (backtest)"),
+    ("candle", "Candle trigger (C1 — experimental, G2 pending)"),
 )
 SETUP_CODES = ("S1", "S2", "S3", "S4", "S5", "S6a", "S6b", "S6c", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S14")
 
@@ -224,6 +225,57 @@ SCHEMA += [
        calibrate=False),
     _s("slippage_ticks", "costs", "Slippage (ticks प्रति leg)", "Tick ₹0.05.", "int", 2, 0, 50),
 ]
+SCHEMA += [
+    # ---------------------------------------------------------------- C1: Elliott + candle merge (addendum §2–§5) — सगळे default OFF
+    _s("candle_profile_mode", "candle", "Wave-profile mode", "off: सगळ्या setups ना generic score; shadow: profile चा निर्णय फक्त log; "
+       "on: profile (reduce-only — wave 4/triangle own_correction मुळे pass झालेले profile_admitted tag; बाकी families फक्त कमी करतात).", "choice", "off",
+       choices=("off", "shadow", "on")),
+    _s("profile_ref_w4", "candle", "Profile: wave 4 strength संदर्भ", "own_correction = त्या wave च्या bars चा median range.", "choice",
+       "own_correction", choices=("last_20", "own_correction", "time_slot")),
+    _s("profile_ref_flat_c", "candle", "Profile: expanded flat C संदर्भ", "", "choice", "own_correction",
+       choices=("last_20", "own_correction", "time_slot")),
+    _s("profile_ref_tri_e", "candle", "Profile: triangle E संदर्भ", "", "choice", "own_correction",
+       choices=("last_20", "own_correction", "time_slot")),
+    _s("profile_ref_default", "candle", "Profile: बाकी setups संदर्भ", "", "choice", "last_20",
+       choices=("last_20", "own_correction", "time_slot")),
+    _s("profile_counter_extra", "candle", "Profile: B-end (counter) अतिरिक्त score", "S6a/S6b/S12: rejection_min + इतका.", "float", 0.05,
+       0.0, 0.5),
+    _s("strength_ref", "candle", "Strength संदर्भ (generic)", "last_20 (सध्याचं) / time_slot: max(median20, त्याच 15m slot चा मागच्या "
+       "sessions चा median). Profile मध्ये last_20 = हा generic संदर्भ.", "choice", "last_20", choices=("last_20", "time_slot")),
+    _s("slot_median_sessions", "candle", "Slot median sessions", "time_slot साठी.", "int", 20, 5, 100),
+    _s("strength_cap_mode", "candle", "Strength कमाल नियम", "fixed: > strength_max ⇒ reject (सध्याचं); logic: रुंद candle ने level परत "
+       "मिळवला (close-location ≥ 0.6) ⇒ pass, नाहीतर reject.", "choice", "fixed", choices=("fixed", "logic")),
+    _s("strength_risk_guard_mult", "candle", "Logic mode: risk guard (× median)", "strength_cap_mode = logic मध्येही range यापेक्षा मोठी ⇒ "
+       "reject (soft stop फार दूर). 0 ⇒ guard नाही.", "float", 0.0, 0.0, 10.0),
+    _s("w_reclaim_depth", "candle", "Reclaim depth weight", "Level पलीकडे किती stab आणि किती आत close (दोन्ही × median range, सरासरी) — "
+       "score घटक. 0 ⇒ बंद.", "float",
+       0.0, 0.0, 1.0),
+    _s("w_overlap", "candle", "Overlap weight", "आधीच्या 1–3 candles शी कमी overlap = खरा ताबा बदल — score घटक. 0 ⇒ बंद.", "float", 0.0,
+       0.0, 1.0),
+    _s("path_checks", "candle", "Composite path checks", "N ≥ 2: शेवटच्या candle ने (स्वतःच्या high/आधीच्या close पासून) merged range चा "
+       "अर्ध्यापेक्षा जास्त परत दिला ⇒ reject.",
+       "bool", False),
+    _s("n3_penalty", "candle", "N = 3 penalty", "3 candles लागल्या तर score मधून वजा (सुचवलेलं 0.05). 0 ⇒ बंद.", "float", 0.0, 0.0, 0.3),
+    _s("body_term_mode", "candle", "Body घटक", "bull_body: |C−O|·[trade दिशा] (सध्याचं); body_or_reclaim: trade दिशेची body **किंवा** "
+       "पहिल्या candle च्या body मध्ये ≥ 50% reclaim (piercing).", "choice", "bull_body", choices=("bull_body", "body_or_reclaim")),
+    _s("min_body_or_reclaim", "candle", "Body / reclaim किमान", "Trade दिशेची body < 10% range (dragonfly/gravestone) आणि reclaim < 50% ⇒ "
+       "एकट्याने pass नाही.",
+       "bool", False),
+    _s("followthrough_mode", "candle", "Follow-through व्याख्या", "legacy: N=3 अनिर्णयी + पुढची candle दिशेने ⇒ N+1 (सध्याचं); addendum: "
+       "कुठलाही N अनिर्णयी ⇒ पुढच्या बंद candle चा close composite close पलीकडे (T7 कायम; stop-entry नाही), कमाल 1 bar.",
+       "choice", "legacy", choices=("legacy", "addendum")),
+    _s("followthrough_max_bars", "candle", "Follow-through कमाल bars", "addendum mode: अनिर्णयी composite नंतर इतक्या बंद candles पर्यंत "
+       "follow-through पाहतो.", "int", 1, 1, 3),
+    _s("c_leg_exhaustion_required", "candle", "C-leg displacement चालू ⇒ थांबा", "Correction चा शेवटचा leg अजून displacement candles ने "
+       "(शेवटच्या 2 bars पैकी) येत असेल तर पहिली reversal candle नाही.", "bool", False),
+    _s("opposite_candle_action", "candle", "उलट reversal candle (position विरुद्ध)", "watch: फक्त log/alert, exit नाही; "
+       "tighten_profit_target: profit target निम्मा. **कधीच थेट exit नाही.**", "choice", "watch",
+       choices=("watch", "tighten_profit_target")),
+]
+for _x in SCHEMA:                                                               # C1 candle settings: निर्णय G2 ला तुमचा — calibrator नाही
+    if _x["section"] == "candle":
+        _x["calibrate"] = False
+CANDLE_KEYS = tuple(x["key"] for x in SCHEMA if x["section"] == "candle")
 BY_KEY = {s["key"]: s for s in SCHEMA}
 DEFAULTS = {s["key"]: (list(s["default"]) if isinstance(s["default"], list) else s["default"]) for s in SCHEMA}
 
@@ -365,6 +417,14 @@ def validate(raw):
         errors.append(f"Trade degrees {bad} अस्तित्वात नाहीत — वगळल्या")
         clean["trade_degrees_enabled"] = [d for d in clean["trade_degrees_enabled"] if d < clean["degree_levels"]]
     return clean, errors
+
+
+def core_candle(settings):
+    """C1 candle settings defaults वर — real-break (failed retest) आणि Tier B C-zone reversal exit साठी: candle प्रयोग counts,
+    setups आणि exits बदलत नाहीत (ablation स्वच्छ)."""
+    if all(settings.get(k) == DEFAULTS[k] for k in CANDLE_KEYS):
+        return settings
+    return {**settings, **{k: DEFAULTS[k] for k in CANDLE_KEYS}}
 
 
 def snapshot(settings):

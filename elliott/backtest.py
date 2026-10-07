@@ -26,6 +26,7 @@ from . import contracts as CT
 from . import costs as CO
 from . import exits as EX
 from . import pricing as PR
+from . import reversal as RV
 from . import strikes as SK
 from .breaks import frame_index_at
 from .settings import TF_MIN
@@ -86,7 +87,10 @@ class Trade:
     opp_flag: bool = False              # मागच्या TTF close पासून उलट (same degree) signal आला
     exp_checked: bool = False           # expiry-day 14:45 तपासणी झाली
     deferred: int = 0                   # premium नाही म्हणून पुढे ढकललेले exits
+    tp_tight: bool = False              # opposite_candle_action = tighten_profit_target
     events: list = field(default_factory=list)
+    notes: list = field(default_factory=list)           # log-only घटना (opposite_candle) — fills नाहीत
+    opp_on: bool = False
 
 
 def _dte_bucket(n):
@@ -293,7 +297,16 @@ class Backtest:
             ctx["trail_level"] = self._trail(tr, t)
             ctx["opposite_signal"] = tr.opp_flag
             tr.opp_flag = False
-            r = EX.evaluate(tr.st, ctx, s)
+            # addendum §5: position विरुद्ध reversal composite (pullback origin H वर नकार) — **कधीच थेट exit नाही**
+            opp = RV.evaluate(self.sc.bars[tr.tf], j, -d, [sig.sub_origin], s["zone_tol_atr"] * ctx["atr"], s,
+                              min_start=tr.entry_idx)["ok"]
+            if opp and not tr.opp_on:                                                   # सलग bars वर एकदाच नोंद
+                tr.notes.append((t, "opposite_candle"))
+                if s["opposite_candle_action"] == "tighten_profit_target":
+                    tr.tp_tight = True
+            tr.opp_on = opp
+            se = {**s, "tp_pct_credit": [x / 2.0 for x in s["tp_pct_credit"]]} if tr.tp_tight else s
+            r = EX.evaluate(tr.st, ctx, se)
         else:
             # structure-free (baseline तुलना): फक्त emergency, premium stop, profit %
             r = EX.evaluate(tr.st, ctx, {**s, "progress_bars_mult": 0.0, "progressive_inv": False, "tierB_exit_mode": "fixed_mult",

@@ -66,6 +66,8 @@ class Signal:
     parent_pattern: str = ""
     parent_wave: str = ""
     parent_points: list = field(default_factory=list)
+    wave_ctx: dict = field(default_factory=dict)        # addendum §6
+    candle_ctx: dict = field(default_factory=dict)
 
     @property
     def key(self):
@@ -107,6 +109,10 @@ class Scanner:
         self.fired = {}                 # setup key → (tf, idx, hard_inv, side) — आधीच्या signal चा hard inv (re-entry बंदी)
         self.signals = []
         self.reasons = []               # (t, degree, setup|None, reason) — report साठी
+        self.state, self.transitions = {}, []          # ARMED state machine (log)
+        self._slot = {}
+        self._gen_last, self._gen_fired = {}, {}      # generic (profile off) निर्णयाचं bookkeeping — reduce-only (profile on)
+        self.profile_log = []                         # (t, key, generic ok, generic reason, profile dict) — shadow/on
 
     # ------------------------------------------------------------------------------------------------------------
     def _tf_for(self, st, t):
@@ -174,9 +180,11 @@ class Scanner:
         j = frame_index_at(self.frames[tf], t)
         if j < 0 or self._end[tf][j] != np.datetime64(pd.Timestamp(t), "ns"):
             return "not_ttf_close"
-        prev = self.fired.get((st.degree, st.code, st.trade_dir, st.wave_start.ts))
-        if prev is not None and self.cache[prev[0]].broken_by(prev[1] + 1, prev[2], prev[3], frame_index_at(self.frames[prev[0]], t)):
-            return "hard_broken_no_reentry"                                       # §7: hard inv तुटल्यावर त्या setup ला re-entry नाही
+        key = (st.degree, st.code, st.trade_dir, st.wave_start.ts)
+        for fired in (self.fired, self._gen_fired):                               # profile on: generic ने fire केलं असतं तरी
+            prev = fired.get(key)
+            if prev is not None and self.cache[prev[0]].broken_by(prev[1] + 1, prev[2], prev[3], frame_index_at(self.frames[prev[0]], t)):
+                return "hard_broken_no_reentry"                                   # §7: hard inv तुटल्यावर त्या setup ला re-entry नाही
         end = pd.Timestamp(self._end[tf][j])
         mins = end.hour * 60 + end.minute
         if not _hm(s["entry_start"]) <= mins <= _hm(s["entry_end"]):
@@ -199,11 +207,40 @@ class Scanner:
         atr = self.atr[tf][j]
         tol = s["zone_tol_atr"] * (atr if np.isfinite(atr) else 0.0)
         bls = max(ext_idx - h_idx, 1)
-        r = RV.evaluate(b, j, st.trade_dir, st.levels, tol, s, inv=st.hard_inv, min_start=max(a0, ws_idx + 1),
-                        extreme_idx=ext_idx, bars_last_subleg=bls, div_ok=self._div_ok(st, tf, ext_idx, t),
-                        reclaim_ref=s["reclaim_ref"])
+        if s["c_leg_exhaustion_required"] and j - ext_idx <= 1 and self._c_leg_displacing(st, tf, ext_idx):
+            return "C_leg_displacement"
+        kw = dict(inv=st.hard_inv, min_start=max(a0, ws_idx + 1), extreme_idx=ext_idx, bars_last_subleg=bls,
+                  div_ok=self._div_ok(st, tf, ext_idx, t), reclaim_ref=s["reclaim_ref"])
+        gen_mr = self._strength_mr(tf, s["strength_ref"], ws_idx, ext_idx)
+        r = RV.evaluate(b, j, st.trade_dir, st.levels, tol, s, mr_override=gen_mr, **kw)
+        gen_ok, gen_dup = r["ok"], False
+        if gen_ok:                                                                # generic निर्णयाचं dedup / re-entry bookkeeping
+            last = self._gen_last.get(key)
+            gen_dup = last is not None and pd.Timestamp(self._ts[tf][j - r["n"] + 1]) < last
+            if not gen_dup:
+                self._gen_last[key] = end
+                self._gen_fired[key] = (tf, j, st.hard_inv, side)
+        prof = None
+        if s["candle_profile_mode"] != "off":
+            fam, ref, rmin = self._profile(st)
+            pr = RV.evaluate(b, j, st.trade_dir, st.levels, tol, s, mr_override=self._strength_mr(tf, ref, ws_idx, ext_idx), rmin=rmin, **kw)
+            may_admit = fam in ("w4", "tri_e") and ref == "own_correction"        # §2: अपवाद फक्त wave 4 / triangle E
+            prof = {"name": fam, "ref": ref, "ok": pr["ok"], "reason": pr["reason"], "score": round(pr["score"], 4),
+                    "admitted": bool(pr["ok"] and not gen_ok and may_admit)}
+            self.profile_log.append((pd.Timestamp(t), key, gen_ok, r["reason"], prof))
+            if s["candle_profile_mode"] == "on":
+                if pr["ok"] and not gen_ok and not may_admit:
+                    pr = dict(pr, ok=False, reason="profile_not_reduce_only")      # reduce-only
+                r = pr
         if not r["ok"]:
+            ft = s["followthrough_mode"] == "addendum" or r["n"] == s["touch_reclaim_window"]
+            if r["reason"] == RV.INDECISIVE and ft:
+                self._transition(st, t, "WAIT_FOLLOWTHROUGH", "indecision")
+            elif self.state.get(key) == "WAIT_FOLLOWTHROUGH" and r["reason"] != RV.INDECISIVE:
+                self._transition(st, t, "ARMED", "follow-through नाही")
             return f"T_{r['reason']}"
+        if gen_ok and gen_dup:
+            return "dup_same_rejection"                                          # generic ने हाच नकार आधी वापरला
         o, h, l, c = r["comp"]
         soft = l - s["soft_buffer_pts"] if st.trade_dir > 0 else h + s["soft_buffer_pts"]
         sig = Signal(pd.Timestamp(t), st.degree, st.code, st.tier, st.direction, st.trade_dir, tf, j, list(st.levels), r["touched"],
@@ -212,22 +249,125 @@ class Scanner:
                      st.node.current_wave, self.hash, [p.price for p in st.node.points],
                      st.parent.pattern if st.parent is not None else "", st.parent.current_wave if st.parent is not None else "",
                      [p.price for p in st.parent.points] if st.parent is not None else [])
+        sig.wave_ctx = {"setup": st.code, "degree": st.degree, "tier": st.tier, "vote": round(st.vote, 4),
+                        "opp_max": round(st.opp_max, 4), "n_alt_invs": len(st.alt_invs), "zone": [min(st.levels), max(st.levels)],
+                        "hard_inv": st.hard_inv, "pattern": st.node.pattern, "wave": st.node.current_wave, "recount": st.recount,
+                        "zone_known_at": max((p.confirmed_at for p in st.node.points), default=None)}
+        sig.candle_ctx = {"n": r["n"], "comp": r["comp"], "touched": r["touched"], "strength": round(r["rng_ratio"], 4),
+                          "close_loc": round(r["close_loc"], 4), "parts": r.get("parts", {}), "label": r.get("label"),
+                          "followthrough": bool(r.get("followthrough")), "profile": prof, "strength_ref": s["strength_ref"]}
         win_start = pd.Timestamp(self._ts[tf][j - r["n"] + 1])
-        last = self.last_window.get(sig.key)
+        last = self.last_window.get(key)
         if last is not None and win_start < last:
             return "dup_same_rejection"                                          # तोच नकार (TF बदलला तरी वेळेवरून)
-        self.last_window[sig.key] = end
-        self.fired[sig.key] = (tf, j, st.hard_inv, side)
+        self.last_window[key] = end
+        self.fired[key] = (tf, j, st.hard_inv, side)
+        self._transition(st, t, "TRIGGERED", f"{sig.setup} n={r['n']} score={r['score']:.2f}")
         return sig
+
+    # ------------------------------------------------------------------------------------------------ C1 helpers
+    PROFILE = {"S3": "w4", "S4": "w4", "S5": "w4", "S14": "w4", "S6c": "tri_e", "S9": "tri_e", "S6a": "counter", "S6b": "counter",
+               "S12": "counter"}
+
+    def _profile(self, st):
+        """(profile नाव, strength_ref, rejection_min) — addendum §2 तक्ता."""
+        s = self.s
+        fam = self.PROFILE.get(st.code, "default")
+        if st.code == "S7" and st.node.pattern == "flat" and getattr(st.node, "subtype", "") == "flat_exp":
+            fam = "flat_c"
+        ref = {"w4": s["profile_ref_w4"], "tri_e": s["profile_ref_tri_e"], "flat_c": s["profile_ref_flat_c"]}.get(fam, s["profile_ref_default"])
+        if ref == "last_20":
+            ref = s["strength_ref"]                                              # profile चा last_20 = generic संदर्भ (time_slot असेल तर तो)
+        rmin = s["rejection_min"] + (s["profile_counter_extra"] if fam == "counter" else 0.0)
+        return fam, ref, rmin
+
+    def _strength_mr(self, tf, ref, ws_idx, ext_idx):
+        """None ⇒ सध्याचं (window आधीचा median20). own_correction ⇒ correction च्या bars चा median range (ws..ext, causal);
+        time_slot ⇒ window-start a ला max(median20[a], त्याच 15m slot चा मागच्या sessions चा median) — callable(a)."""
+        if ref == "last_20":
+            return None
+        b = self.bars[tf]
+        if ref == "own_correction":
+            seg = (b.h[ws_idx:ext_idx + 1] - b.l[ws_idx:ext_idx + 1])
+            return float(np.median(seg)) if len(seg) >= 3 else None
+        slot = self._slot_median(tf)
+
+        def at(a):
+            v, m20 = slot[a], b.mr[a]
+            if not np.isfinite(v):
+                return None                                                      # slot इतिहास अपुरा ⇒ median20
+            return float(max(v, m20)) if np.isfinite(m20) else float(v)
+        return at
+
+    def _slot_median(self, tf):
+        """प्रत्येक bar साठी: त्याच 15m slot ची मागच्या `slot_median_sessions` sessions मधली (प्रत्येक session चा त्या slot मधला
+        median bar range) median — चालू session वगळून (shift 1 session) ⇒ भविष्यातली/आजची candle नाही."""
+        key = (tf, self.s["slot_median_sessions"])
+        if key not in self._slot:
+            fr = self.frames[tf]
+            rng = (fr["high"] - fr["low"]).astype(float)
+            ts = pd.to_datetime(fr["timestamp"])
+            d = pd.DataFrame({"day": ts.dt.normalize(), "slot": ts.dt.floor("15min").dt.strftime("%H:%M"), "rng": rng})
+            per = d.groupby(["slot", "day"])["rng"].median().reset_index().sort_values(["slot", "day"])
+            per["ref"] = per.groupby("slot")["rng"].transform(
+                lambda x: x.shift(1).rolling(self.s["slot_median_sessions"], min_periods=5).median())
+            self._slot[key] = d.merge(per[["slot", "day", "ref"]], on=["slot", "day"], how="left")["ref"].to_numpy(float)
+        return self._slot[key]
+
+    def _c_leg_displacing(self, st, tf, ext_idx):
+        """C-leg अजून displacement candles ने: extreme पर्यंतच्या शेवटच्या 2 bars पैकी एक pullback दिशेने displacement."""
+        b, s, d = self.bars[tf], self.s, st.trade_dir
+        for k in (ext_idx, ext_idx - 1):
+            if k < 1 or not np.isfinite(b.mr[k]):
+                continue
+            rng = b.h[k] - b.l[k]
+            if rng <= 0 or rng < s["strength_min"] * b.mr[k]:
+                continue
+            loc = (b.c[k] - b.l[k]) / rng if d > 0 else (b.h[k] - b.c[k]) / rng      # pullback दिशेच्या टोकापासून
+            if loc <= s["break_close_loc"]:
+                return True
+        return False
+
+    def _arm(self, st, t):
+        """Correction चं टोक zone मध्ये पोचलं ⇒ ARMED. त्याआधी candle evaluation चा अर्थ नाही (log)."""
+        key = (st.degree, st.code, st.trade_dir, st.wave_start.ts)
+        if self.state.get(key, "IDLE") not in ("IDLE", "EXPIRED"):
+            return
+        x = st.extreme.price                                                     # correction चं टोक (t पर्यंत) zone मध्ये पोचलं
+        if (x <= max(st.levels)) if st.trade_dir > 0 else (x >= min(st.levels)):
+            self._transition(st, t, "ARMED", "price in zone")
+
+    def _expire(self, d, t, st):
+        """त्या degree वर आधीचा ARMED/WAIT setup आता नाही (count बदलला / inv तुटला / gray) ⇒ EXPIRED."""
+        cur = None if st is None else (st.degree, st.code, st.trade_dir, st.wave_start.ts)
+        for key, state in list(self.state.items()):
+            if key[0] == d and key != cur and state in ("ARMED", "WAIT_FOLLOWTHROUGH"):
+                self.state[key] = "EXPIRED"
+                self.transitions.append((pd.Timestamp(t), key, state, "EXPIRED", "setup गेला"))
+
+    def _transition(self, st, t, to, why):
+        """ARMED state machine (addendum §1): IDLE → ARMED → (WAIT_FOLLOWTHROUGH) → TRIGGERED; ARMED → EXPIRED. Log फक्त."""
+        key = (st.degree, st.code, st.trade_dir, st.wave_start.ts)
+        prev = self.state.get(key, "IDLE")
+        if prev == "TRIGGERED" and to in ("ARMED", "WAIT_FOLLOWTHROUGH"):
+            return                                                               # signal झाल्यावर (re-entry सह) फक्त EXPIRED
+        if prev in ("IDLE", "EXPIRED") and to != "ARMED":                                     # zone tolerance मध्ये touch ⇒ आधी ARMED
+            self.transitions.append((pd.Timestamp(t), key, prev, "ARMED", "zone tolerance मध्ये touch"))
+            prev = "ARMED"
+        if prev != to:
+            self.state[key] = to
+            self.transitions.append((pd.Timestamp(t), key, prev, to, why))
 
     def step(self, t):
         snap = self.eng.snapshot(t)
         out = []
         for d in self.s["trade_degrees_enabled"]:
             st = degree_setup(self.eng, snap, d, t)
+            self._expire(d, t, None if isinstance(st, str) else st)
             if isinstance(st, str):
                 self.reasons.append((t, d, None, st))
                 continue
+            self._arm(st, t)
             res = self.trigger(st, t)
             if isinstance(res, str):
                 self.reasons.append((t, d, st.code, res))
