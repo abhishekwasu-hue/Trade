@@ -555,3 +555,23 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 | E4 | Backtest (golden-file regression, baselines 1–7, WRC/SPA, Deflated Sharpe, PBO CSCV S=16). अहवाल setup × degree × tier × DTE, ₹ + R + % मध्ये → `docs/reports/elliott_pullback_backtest.md` | **G2** |
 | E5 | Dashboard "Elliott Pullback Credit Spread": settings (विभाग 11 + 14), presets, live preview, wave-label chart, इतिहास + snapshot, Signal Log | **G1** |
 | E6 | PAPER wiring, default OFF. 1-Min Instant Trader ला हात नाही | **G3** |
+
+## 2026-10-07 · Elliott E0.1 — VPS export: Abhi चा deploy key alias, 15:30 पहारा, push सारांश
+
+**Abhi (2026-10-07):**
+- `trade-data` private repo तयार आहे आणि Claude GitHub App ला त्याचा access दिला. मी तो session मध्ये जोडला.
+- VPS push deploy key ने: ssh alias `github-trade-data`, IdentityFile `~/.ssh/trade_data_key`, remote `git@github-trade-data:abhishekwasu-hue/trade-data.git`.
+- `trade-data` मध्ये काय ठेवायचं: golden candles, major-levels candles, BANKNIFTY daily, Upstox probe निकाल, NSE bhavcopy.
+- Export block read-only, 15:30 नंतर, एकाच copy-paste मध्ये, आणि शेवटी काय push झालं याचा सारांश.
+
+**बदल (`scripts/elliott_e0_vps.sh`):**
+- Abhi चा आधीपासूनचा alias आणि key वापरतो; script स्वतः key तयार करत नाही.
+  - Alias नसेल पण key असेल ⇒ alias जोडतो.
+  - दोन्ही नसतील ⇒ नेमक्या पायऱ्या सांगून थांबतो.
+- Weekday ला 09:00–15:30 IST मध्ये चालवला तर थांबतो (`FORCE=1` ने override).
+- BANKNIFTY daily CSV `trade-data/banknifty/` मध्ये copy करतो.
+- शेवटी push सारांश छापतो: या run चे commits, फाइल्सची संख्या, आणि folder-निहाय आकार. Background मधला bhavcopy सुद्धा संपल्यावर स्वतःचा सारांश log मध्ये लिहितो.
+- `REMOTE`, `DATA`, `TRADE`, `KEY` env ने बदलता येतात (चाचणीसाठी).
+- Sandbox मध्ये local bare repo आणि डमी scripts वापरून पूर्ण वाट चालवून पाहिली: push, सारांश, background push. दुसऱ्यांदा चालवल्यावर "नवीन काही नाही".
+
+**`trade-data` README** (push केला): folders ची रचना आणि data-use नियम (IS / VAL / CONTAMINATED / sealed HOLDOUT).
