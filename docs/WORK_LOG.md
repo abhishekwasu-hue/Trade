@@ -967,3 +967,34 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - **Low:** F10 merged window आधीच नापास ⇒ gate नापास; settings validate: पट्टे उलटे नकोत, w3 Fib रिकामे नको, widen widths strike step च्या पटीत; conftest `ModuleNotFoundError` फक्त; research loaders `DP.load_parquet` मधून; `_why` मर्यादित. **नोंद (बदल नाही):** `new_extreme` sticky (तुमच्या "तोट्यात **किंवा** नवीन टोक" शब्दांनुसार); random baselines structure-free exits ⇒ progress exit नाहीच; `indecision_band` trigger विभागात (real-break retest मध्येही वापरतो — calibrate करताना लक्षात ठेवा); beam बाहेरचे counts log होत नाहीत; spec §9/§11 मधला progress मजकूर जुना (spec doc तुमचा — बदल केला नाही).
 
 **Snapshot:** 2019 H1 पुन्हा (F5 + review): 33 → 36 signals; gray 9,032 → 9,057. `*_completed` invalidations 2019 H1 मध्ये नाहीत (चालू-wave तपासणी आधीच पकडते — आता सुसंगत).
+
+## 2026-10-07 · Golden-file regression (खरा data) — T1–T8 + rejections, सगळे variants
+
+**Data:** `trade-data/upstox/NIFTY_1m_2026-07-01_2026-10-06.csv.gz` (17:52 IST push; contaminated काळ — फक्त golden). `research/elliott_golden_report.py` → `docs/reports/elliott_golden.md`: E4 default + C3 चे सगळे 12 candle variants.
+
+**निकाल (सगळ्या 13 variants मध्ये सारखाच):**
+- **must T2, T3, T4, T7, T8 — FAIL** (जुळणारा signal नाही).
+- must_not **T5 PASS, T6 (5 Oct 09:50/10:15 A-end) PASS**, R-gap-0928 / R-gap-1006 / R-1006-0940 PASS. T1 (verify), T9 (report) — signal नाही.
+- Golden काळात (25 Sep – 6 Oct) E4 default ने एकच signal दिला: 29 Sep 14:35 D1 S9 Tier A bear call (golden यादीत नाही).
+- T6 PASS चं कारण "A-end नियम" नाही तर त्या वेळी सगळ्या degrees gray (D0/D1/D2) / D0 S6b tf_bars_min — म्हणजे नकार योग्य, पण **कारण वेगळं**.
+
+**निदान (bot ची बाजू — screenshot वाचनाची चूक नाही):**
+- **कारणं must नुसार वेगळी:**
+  - T2 आणि T3 ला मुख्यतः `D2:next_not_motive` आणि `D0/D1:no_count` — count आहे पण पुढची motive trade दिशेने नाही, किंवा count च नाही.
+  - T4, T7 आणि T8 ला मुख्यतः gray (vote < 0.5).
+- **D3 चा preferred count सगळ्या must वेळांना खाली-दिशेचा** (pattern दिशा −1):
+  - T2: impulse / wave 3;
+  - T3 आणि T8: flat / B;
+  - T4 आणि T7: wxy / Y.
+  - त्यामुळे तुमचं "5 संपली, A-B-C वर" वाचन engine कडे त्या वेळी parent म्हणून उपलब्धच नाही.
+- **संभाव्य मूळ कारण: वरच्या degrees चा pivot confirm lag आणि strict cross-degree.**
+  - 1 Oct 14:05 चा 22,217 low D1 ला 14:35 ला, D2 ला 15:10 ला, पण D3 ला 5 Oct 13:40 ला confirm झाला (T7 12:15 नंतर).
+  - 30 Sep चा 22,809 high D3 ला 1 Oct 11:15 ला confirm झाला.
+- **Review नोंदी (non-blocking, पुढच्या golden run मध्ये सुधारायच्या):**
+  - (a) T5 चा `sized` तपास credit 0 धरतो. Tier C ला हा सर्वात कमी lots चा (PASS कडे झुकणारा) अंदाज आहे; खऱ्या credit ≥ ~23 points ला Tier C = 1 lot होऊ शकतो.
+    या run मध्ये 1 Oct ला signal च नाही, म्हणून निकाल बदलत नाही.
+  - (b) §2 मधली "5 Oct 09:45–10:20" कारणांची खिडकी T6 च्या grading खिडकीपेक्षा (09:30–10:55) लहान आहे.
+  - (c) T5 चा तपशील sizing filter नंतर लिहिला जातो, त्यामुळे sizing ने वगळलेला signal "जुळणारा signal नाही" असा दिसेल.
+(तपशीलवार degree views आणि pivot confirm वेळा अहवालाच्या §3 मध्ये.)
+
+**निर्णय:** फक्त golden pass करण्यासाठी logic / swing settings (swing_atr_mult [1.5, 3, 6, 12], fractal r, cross_degree_mode, vote_min) बदलले **नाहीत** (master नियम). हा **G-निर्णय** तुमचा: degree scaling / confirm lag / cross-degree mode बदलायचा का, आणि कसा (IS वर calibrate, golden फक्त तपासणीसाठी). `tests/test_elliott_e4.py::test_golden_regression_on_real_data` आता trade-data असताना **FAIL** होतो (CI मध्ये data नाही ⇒ skip) — test skip/disable केला नाही.
