@@ -373,6 +373,7 @@ if context_ok:
     import page_mtf_pullback
     import page_sr_levels_v3
     import page_opportunity_engine
+    import page_vision_human_eye
     import page_pullback_credit_spread
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
@@ -398,6 +399,7 @@ if context_ok:
             st.Page(page_mtf_pullback.render, title="MTF Pullback + Gap Fill", icon="🌉", url_path="mtf-pullback"),
             st.Page(page_sr_levels_v3.render, title="SR Levels V3 (प्रयोगिक)", icon="🧭", url_path="sr-levels-v3"),
             st.Page(page_opportunity_engine.render, title="Opportunity Engine (प्रयोगिक)", icon="🎯", url_path="opportunity-engine"),
+            st.Page(page_vision_human_eye.render, title="Vision & Human Eye", icon="👁", url_path="vision-human-eye"),
         ],
         "SYSTEM": [
             st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),

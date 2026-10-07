@@ -111,3 +111,10 @@ def _isolated_order_safety(monkeypatch, tmp_path):
     yield
     order_safety._FAIL_COUNTS.clear()
     order_safety._EXIT_STATE.clear()
+
+
+@pytest.fixture(autouse=True)
+def _vision_db_isolated(tmp_path, monkeypatch):
+    """Vision V0 hook (bots) खरी data/vision.db भरू नये — नाहीतर नंतर worker / smoke ला खोटे signals दिसतील (Telegram + API खर्च)."""
+    monkeypatch.setenv("VISION_DB_PATH", str(tmp_path / "vision_test.db"))
+    monkeypatch.setenv("VISION_IMAGE_DIR", str(tmp_path / "vision_img"))

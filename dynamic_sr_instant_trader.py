@@ -1115,6 +1115,16 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
+        # 🎓 Vision V0 (shadow / notify) — फक्त नोंद: signal queue मध्ये जातो, chart + vision + Telegram वेगळा worker करतो. Trade चा निर्णय,
+        # size आणि exits यावर कुठलाच परिणाम नाही (submit_signal नेहमी None, कधीच raise नाही). LIVE ⇒ hook काहीच करत नाही.
+        try:
+            from vision.hook import submit_signal as _vision_submit
+            _vision_submit("dynamic_sr_instant", symbol, settings.get("trading_mode", "PAPER"), direction, row["zone_low"], role,
+                           timeframe_suffix, now, spot=current_price,
+                           tags={"breakout_entry": bool(is_breakout_trade), "directional": bool(is_directional_trade), "hit": hit_type},
+                           last_bar=recent_candles[-1] if recent_candles else None)
+        except Exception as exc:
+            print(f"⚠️ vision hook त्रुटी (trade वर परिणाम नाही): {exc}")
         expiry_index = 1 if is_todays_expiry_day(access_token, symbol) else 0
         raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol, expiry_index=expiry_index)
         if not raw_chain:

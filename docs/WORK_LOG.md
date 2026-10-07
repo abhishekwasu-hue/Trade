@@ -998,3 +998,97 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 (तपशीलवार degree views आणि pivot confirm वेळा अहवालाच्या §3 मध्ये.)
 
 **निर्णय:** फक्त golden pass करण्यासाठी logic / swing settings (swing_atr_mult [1.5, 3, 6, 12], fractal r, cross_degree_mode, vote_min) बदलले **नाहीत** (master नियम). हा **G-निर्णय** तुमचा: degree scaling / confirm lag / cross-degree mode बदलायचा का, आणि कसा (IS वर calibrate, golden फक्त तपासणीसाठी). `tests/test_elliott_e4.py::test_golden_regression_on_real_data` आता trade-data असताना **FAIL** होतो (CI मध्ये data नाही ⇒ skip) — test skip/disable केला नाही.
+
+## 2026-10-07 · Vision + Human-Eye — V0 (shadow / notify) → **G-V0 वर थांबणार** (पहिल्या दिवसाचा Telegram screenshot)
+
+**काय केलं:**
+- नवीन `vision/` package:
+  - `store` (SQLite `data/vision.db`: signals, usage, settings + इतिहास, kv);
+  - `config` (bot-निहाय settings, validation, `effective_mode`: LIVE ⇒ off);
+  - `chart` (2-panel ~1000×700, signal पर्यंतच);
+  - `signal_audit` (`signal_check_v1` structured JSON, cached system prompt, verdict नियम code मध्ये, 2रा audit फक्त confidence < 0.6, खर्च);
+  - `hook` (bots साठी — फक्त QUEUED row, नेहमी None);
+  - `worker` (cron, 55 s loop: expire → render → 15-मिनिट reuse → budget → audit → नोंद → notify).
+- `notifications.send_telegram_photo` (outbound, कधीच raise नाही).
+- Hook: `dynamic_sr_instant_trader.py`, `srv2_momentum_reversal_strategy.py` — सगळे gates पास झाल्यावर, entry च्या आधी, स्वतंत्र try/except मध्ये.
+- `scripts/vision_v0_smoke.py` (खोटा TEST signal, order नाही), `docs/VISION_HUMAN_EYE.md`, deploy/README (cron ओळी).
+- **§11 (PNG जतन, तुमचा 2रा prompt — सर्वोच्च प्राधान्य):**
+  - `vision/images.py`: `_sent.png` आणि `_outcome.png` नावं, overwrite नाही (O_EXCL), sha256.
+  - Worker आधी फाईल लिहितो, मग तीच परत वाचून vision आणि Telegram ला पाठवतो.
+  - `vision/outcome.py`: POST-HOC chart, vision कडे नाही.
+  - `scripts/vision_archive.py`: trade-data push, पडताळणी, marker, 90-दिवस cleanup, disk इशारा.
+  - Dashboard पान `page_vision_human_eye.py` (ANALYZE).
+
+**Tests:** `tests/test_vision_v0.py` (29) + `tests/test_vision_images.py` (12). Full suite: खाली commit मध्ये.
+- reduce-only: hook नेहमी None; bots hook चा परिणाम वापरत नाहीत (AST).
+- `vision/` कधीच order / exit modules import करत नाही, आणि exit modules मध्ये vision नाही.
+- no-lookahead: भविष्यातला spike chart मध्ये नाही; चालू minute चा bar नाही.
+- LIVE ⇒ off; V1 modes V0 मध्ये नाकारले.
+- verdict नियम; API fail / refusal / अवैध enum ⇒ unavailable.
+- budget संपलं ⇒ API call नाही, आणि Telegram इशारा फक्त एकदा. Key / model नाही ⇒ call नाही.
+- 15-मिनिट reuse; stale ⇒ EXPIRED; smoke script end-to-end.
+
+**निर्णय (कारणासह):**
+- **Async worker, inline call नाही:** bot cron दर मिनिटाला ProcessLock सह चालतो. 20 s चा vision call inline केला तर entry उशिरा होते आणि पुढचा cycle अडतो.
+  V0 मध्ये मताचा trade वर परिणाम नसल्याने तो वेगळ्या worker मध्ये. V1 मध्ये PENDING state याच queue वर बसेल.
+- **Data स्थानिक SQLite (Supabase नाही):** bots, worker आणि dashboard एकाच VPS वर. V1 चा conditional `WHERE status='PENDING'` इथे सोपा आणि atomic.
+  Trade repo public असल्याने DB आणि images `data/` मध्ये (gitignored).
+- **V0 defaults:** NIFTY 5-Min Instant आणि 15M = notify, कारण G-V0 साठी पहिल्या दिवसाचा Telegram हवा. Pullback Credit Spread = off, कारण तो अजून फक्त preview पान आहे
+  (PAPER bot म्हणून चालत नाही ⇒ hook ला जागा नाही). MCX आणि Elliott = off (तुमचा निर्णय).
+- **Chart साठी Upstox 1m (14 दिवस) worker मध्ये fetch करून स्वतः resample:** bot कडचे candles पाठवले तर queue मोठी होते आणि 15M bot कडे 1H नसतो.
+  1m वरून कापल्याने no-lookahead सिद्ध करता येतो (test).
+- **Breakout tag:** 5-Min bot चे Breakout Entry trades सुद्धा vision कडे जातात (tag `breakout_entry`). तुमच्या नियमानुसार vision तिथे बहुधा disagree देईल —
+  V0 मध्ये फक्त माहिती.
+- **Outcome साठी trade जोडणी:** live_trades (local SQLite) मध्ये source = bot, symbol, entry_time signal च्या −1…+10 मिनिटांत, mode PAPER.
+  Spot मध्ये SL / target साठवलेले नाहीत (ते P&L ₹ स्तरावर) ⇒ chart वर ₹ मजकूर म्हणून, रेषा म्हणून नाही.
+- **Archive marker:** push नंतर `git fetch` करून remote मध्ये फाईल असल्याची खात्री झाल्यावरच. Cleanup marker मधल्या यादीशी जुळवतो — marker नंतर आलेली
+  फाईल (उदा. उशिरा तयार झालेला outcome chart) असेल तर delete नाही.
+- **Image मधला मजकूर इंग्रजीत:** kaleido मध्ये Devanagari font नसतो. Telegram caption मराठीत.
+- **System prompt cache:** ~570 tokens, किमान 512 च्या जवळ ⇒ cache होईलच असं नाही. खर्च नेहमी `usage` वरून मोजला जातो. `python3 -m vision.worker --usage` ⇒ पहिल्या दिवसाचं खरं मोजमाप (G-COST).
+
+**Independent review (subagent):** blocking नाही. Should-fix सगळे केले:
+- tests आता खरी `data/vision.db` भरत नाहीत (conftest autouse tmp DB);
+- smoke फक्त स्वतःची row claim करतो;
+- reuse साठी bot, role आणि breakout / directional प्रकार सारखा हवा;
+- budget अंदाज `max_tokens` वरून, आणि API अपयशालाही सावध खर्च नोंद;
+- `*.db-wal` आणि `*.db-shm` gitignore मध्ये; images आता `data/visual_audit/` (आधीपासून gitignored);
+- bot ने पाहिलेली चालू 1m candle (`last_bar`) chart वर, त्यामुळे trigger touch दिसतो.
+Nits:
+- caption मध्ये setup प्रकार;
+- hook चा DB timeout 2 s;
+- Telegram HTML 400 ⇒ साधा caption;
+- THINKING / EFFORT मूल्यांची नोंद;
+- worker tests Chrome शिवाय.
+
+**§11 independent review (2रा subagent):** blocking नाही. Should-fix सगळे केले:
+- archive रोज सगळे अपूर्ण दिवस + मागचे 3 दिवस;
+- outcome साठी DB चूक ⇒ error (no_trade नाही), read-only DB;
+- trade जुळणी: entry ≥ signal, एक trade एकाच signal ला, मध्ये दुसरा signal असेल तर नाही;
+- trade-data repo ची खात्री (`check_repo`);
+- push आधी rebase;
+- marker मध्ये sha256, blob-id पडताळणी, temp → link लेखन.
+Nits:
+- folder नसलेले दिवस वगळले; commit फक्त आपल्या फाईल्स; `ls-tree -z`;
+- FAILED row मध्येही image path;
+- reuse मध्ये मूळ image sha;
+- पानावर IST तारीख आणि n/a निकाल;
+- `mode='PAPER'`.
+- **Model नावं repo मध्ये नाहीत:** किंमत तक्ता model family (haiku / sonnet / opus) नुसार; अचूक नावं फक्त VPS `.env` मध्ये.
+
+**खर्च अंदाज (G-COST):** मध्यम model ⇒ ≈ $0.005–0.01 प्रति audit, ≈ $1.4–2.9 / महिना (10 signals/दिवस धरून). मर्यादा: $0.30 / दिवस, $5 / महिना.
+
+**उघडे / पुढे:**
+- G-V0: पहिल्या दिवसाचा Telegram screenshot आणि `--usage` आकडे.
+- मग V1 (veto_then_confirm, inbound service, HMAC, drift guard, dry-run → G-V1), V2 (08:00 level audit), V3 (पान + अहवाल).
+- F8 (bhavcopy pricer, stash `f8-wip`) V1 नंतर.
+
+## 2026-10-07 · Elliott — कुठे थांबलो (तुमच्या सूचनेनुसार थांबवलं: golden regression, F8, golden निदान, count बदल)
+
+- **Golden regression:** PR #265 (report-only: research script, अहवाल, WORK_LOG) तुमचा "थांबा" संदेश येण्याआधीच merge झाला होता. त्यात logic बदल नाही.
+  त्यावर review च्या 3 non-blocking नोंदी आहेत: T5 sizing credit 0 धरतो, T6 कारणांची खिडकी अरुंद आहे, T5 तपशील sizing नंतर लिहिला जातो — वरच्या golden नोंदीत आहेत.
+  5 must FAIL (T2, T3, T4, T7, T8) वरचा degree scaling / confirm lag / cross-degree चा G-निर्णय उघडा आहे.
+- **F8 (bhavcopy premiums):** `elliott/bhav_pricer.py` (previous-day smile IV + BS) आणि `elliott/backtest.py` (emergency 1m cross minute) अर्धवट आहेत.
+  **Trade main वर नाहीत.** ते private trade-data मध्ये `wip/elliott_f8_2026-10-07/` (README सह) जतन केले आहेत.
+  बाकी: F8 report (bull put / bear call वेगळे, P&L ÷ credit, ₹ प्रति lot, random ≥ 1000), C3 real premiums वर, golden sized plan.
+- **Count बदल / golden निदानावर पुढचं काम:** सुरू केलेलं नाही.
+- **पुन्हा सुरू:** Vision V0 → V1 नंतर. क्रम: F8 (wip मधून) → G2 → E5.
