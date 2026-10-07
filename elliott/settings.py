@@ -4,7 +4,8 @@ elliott/settings.py
 🎓 Elliott Pullback Credit Spread चे सगळे settings — एकाच schema मध्ये (dashboard E5 हाच schema वापरेल; code मध्ये आकडा hard-code नाही).
 प्रत्येक phase आपापला विभाग जोडतो. Defaults = spec विभाग 11 + 14 (बहुतेक "[अनुमान] — IS मध्ये calibration आवश्यक").
 
-प्रकार: int / float / bool / choice / time / list_float / list_int / list_tf (comma-separated).
+प्रकार: int / float / bool / choice / time ("HH:MM") / list_float / list_int / list_tf / list_str (comma-separated; list_str चे
+प्रत्येक मूल्य choices पैकी).
 """
 import hashlib
 import json
@@ -17,7 +18,10 @@ SECTIONS = (
     ("degrees", "Degrees / swings"),
     ("counts", "Count engine"),
     ("breaks", "Real break (count आणि exits)"),
+    ("setups", "Setups (S1–S14)"),
+    ("trigger", "Entry trigger (T1–T7)"),
 )
+SETUP_CODES = ("S1", "S2", "S3", "S4", "S5", "S6a", "S6b", "S6c", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S14")
 
 
 def _s(key, section, label, help_, kind, default, lo=None, hi=None, choices=None, step=None, calibrate=True):
@@ -102,6 +106,51 @@ SCHEMA += [
        calibrate=False),
     _s("break_no_reclaim_bars", "breaks", "Acceptance bars", "कमकुवत breaking close नंतर इतके bars reclaim नाही ⇒ खरा break. 0 ⇒ एका close वर "
        "(तुमच्या नियमाविरुद्ध, फक्त तुलनेसाठी).", "int", 1, 0, 5),
+    _s("break_retest_confirm", "breaks", "Failed retest ने break", "Break नंतर reclaim झाला, पण लगेच (trigger window मध्ये) level ला "
+       "उलट logical reversal ने नाकारलं ⇒ खरा break (role reversal, §14 Q1 c).", "bool", True, calibrate=False),
+]
+SCHEMA += [
+    # ---------------------------------------------------------------- E2: setups (spec §4 tiers, §5 catalogue, §11 "Setups", §14 Q6)
+    _s("setups_enabled", "setups", "चालू setups", "S5, S8, S11, S14 default बंद (spec §11).", "list_str",
+       ["S1", "S2", "S3", "S4", "S6a", "S6b", "S6c", "S7", "S9", "S10", "S12", "S13"], choices=SETUP_CODES, calibrate=False),
+    _s("htf_gate_enabled", "setups", "HTF gate", "true ⇒ Tier B setups block (जुनं वर्तन; दुरुस्ती 1). Default बंद.", "bool", False,
+       calibrate=False),
+    _s("min_corrective_legs", "setups", "Correction किमान sub-legs", "ज्या corrective wave च्या शेवटी entry, तिच्या आत किमान इतके lower-degree "
+       "legs (A-B-C = 3). A-end ban (R4).", "int", 3, 2, 9, calibrate=False),
+    _s("zone_fibs_w2", "setups", "Zone: wave 2 / (ii) (× wave 1)", "Wave 1 च्या टोकापासून retrace (S1, S2, S10, S11, S13).", "list_float",
+       [0.382, 0.5, 0.618, 0.786], 0.0, 3.0),
+    _s("zone_fibs_w4", "setups", "Zone: wave 4 / (iv) (× wave 3)", "Wave 3 च्या टोकापासून retrace (S3, S4, S5, S14).", "list_float",
+       [0.236, 0.382, 0.5], 0.0, 3.0),
+    _s("zone_fibs_zz_b", "setups", "Zone: zigzag B (× A)", "A च्या टोकापासून retrace (S6a, S12).", "list_float", [0.382, 0.5, 0.618, 0.786],
+       0.0, 3.0),
+    _s("zone_fibs_flat_b", "setups", "Zone: flat B (× A)", "A च्या टोकापासून retrace; regular ≈ 0.9–1.05, expanded > 1.05 (S6b).",
+       "list_float", [0.9, 1.0, 1.236, 1.382], 0.0, 3.0),
+    _s("zone_fibs_tri_e", "setups", "Zone: triangle E (× D)", "D च्या टोकापासून retrace (S6c, S9).", "list_float", [0.5, 0.618, 0.786],
+       0.0, 3.0),
+    _s("zone_fibs_c", "setups", "Zone: C / Y (× A किंवा W)", "B (किंवा X) च्या टोकापासून projection (S7).", "list_float", [0.618, 1.0, 1.618],
+       0.0, 5.0),
+    _s("zone_fibs_x", "setups", "Zone: X (× W)", "W च्या टोकापासून retrace (S8).", "list_float", [0.382, 0.5, 0.618, 0.786], 0.0, 3.0),
+    _s("zone_tol_atr", "setups", "Zone सहनशीलता (× ATR)", "प्रत्येक zone level ± इतका × ATR (trigger TF).", "float", 0.5, 0.0, 3.0),
+    _s("wick_beyond_inv_action", "setups", "Wick inv पलीकडे (close आत)", "recount: तो count सोडून त्याच दिशेचा दुसरा valid count (उदा. expanded "
+       "flat) — नवीन inv = wick टोक; skip: त्या degree वर entry नाही (§14 Q6).", "choice", "recount", choices=("recount", "skip"),
+       calibrate=False),
+    # ---------------------------------------------------------------- E2: entry trigger (spec §6, §14 Q2)
+    _s("trigger_tf_mode", "trigger", "Trigger TF पद्धत", "level_tf: candle TF = setup च्या corrective wave चा TF (auto/fixed degree TF); "
+       "fixed: खालचा TF.", "choice", "level_tf", choices=("level_tf", "fixed"), calibrate=False),
+    _s("trigger_tf_fixed", "trigger", "Trigger TF (fixed)", "फक्त fixed mode मध्ये.", "choice", "5m", choices=TFS),
+    _s("reclaim_ref", "trigger", "Reclaim संदर्भ", "touched_level: शिवलेल्या zone level वर परत close; zone_high: zone च्या टोकावर. (आधीच्या "
+       "candle चा high / sub-wave break निषिद्ध — breakout.)", "choice", "touched_level", choices=("touched_level", "zone_high"),
+       calibrate=False),
+    _s("touch_reclaim_window", "trigger", "Composite candles (N कमाल)", "शेवटच्या 1–N बंद candles एकत्र (hammer / engulfing / star). "
+       "अनिर्णय असल्यास follow-through ने N+1.", "int", 3, 1, 3, calibrate=False),
+    _s("rsi_len", "trigger", "RSI लांबी", "फक्त divergence weight > 0 असेल तर.", "int", 14, 2, 100),
+    _s("rejection_weights", "trigger", "Rejection weights", "wick, close-location, body, time, divergence (बेरीज 1).", "list_float",
+       [0.30, 0.30, 0.20, 0.20, 0.00], 0.0, 1.0),
+    _s("rejection_min", "trigger", "Rejection score किमान", "0–1.", "float", 0.60, 0.0, 1.0),
+    _s("entry_start", "trigger", "Entry सुरुवात", "पहिली 15 मिनिटं टाळा (gap). Composite चे सगळे candles यानंतर सुरू झालेले हवेत.", "time",
+       "09:30", calibrate=False),
+    _s("entry_end", "trigger", "Entry शेवट", "यानंतर बंद होणाऱ्या candle वर नवीन entry नाही (exits चालू).", "time", "14:45", calibrate=False),
+    _s("soft_buffer_pts", "trigger", "Soft stop buffer (points)", "Soft stop = reversal composite चं टोक ± इतके points.", "float", 5.0, 0.0, 100.0),
 ]
 BY_KEY = {s["key"]: s for s in SCHEMA}
 DEFAULTS = {s["key"]: (list(s["default"]) if isinstance(s["default"], list) else s["default"]) for s in SCHEMA}
@@ -118,8 +167,18 @@ def _coerce(spec, v):
         if not math.isfinite(f):
             raise ValueError("NaN/inf")
         return int(round(f)) if t == "int" else f
+    if t == "time":
+        hh, mm = str(v).strip().split(":")[:2]
+        if not (hh.isdigit() and mm.isdigit() and 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+            raise ValueError("HH:MM हवं")
+        return f"{int(hh):02d}:{int(mm):02d}"
     if t.startswith("list_"):
         items = v if isinstance(v, (list, tuple)) else [x for x in str(v).split(",") if x.strip()]
+        if t == "list_str":
+            out = [str(x).strip() for x in items]
+            if any(x not in spec["choices"] for x in out):
+                raise ValueError("अज्ञात मूल्य")
+            return list(dict.fromkeys(out))
         if t == "list_tf":
             out = [str(x).strip() for x in items]
             if any(x not in TFS for x in out):
@@ -139,7 +198,7 @@ def _coerce(spec, v):
 
 def _in_range(spec, val):
     vals = val if isinstance(val, list) else [val]
-    if spec["type"] == "list_tf":
+    if spec["type"] in ("list_tf", "list_str", "time"):
         return True
     return all((spec["min"] is None or x >= spec["min"]) and (spec["max"] is None or x <= spec["max"]) for x in vals)
 
@@ -156,7 +215,7 @@ def validate(raw):
         except (TypeError, ValueError):
             errors.append(f"{spec['label']}: अवैध मूल्य {v!r} — डीफॉल्ट वापरला")
             continue
-        if spec["choices"] and val not in spec["choices"]:
+        if spec["choices"] and spec["type"] != "list_str" and val not in spec["choices"]:
             errors.append(f"{spec['label']}: {val!r} पर्यायांत नाही — डीफॉल्ट वापरला")
             continue
         if not _in_range(spec, val):
@@ -199,6 +258,23 @@ def validate(raw):
     if clean["strength_min"] >= clean["strength_max"]:
         errors.append("Strength किमान ≥ कमाल — दोन्ही डीफॉल्ट")
         clean["strength_min"], clean["strength_max"] = DEFAULTS["strength_min"], DEFAULTS["strength_max"]
+    w = clean["rejection_weights"]
+    if len(w) != 5 or sum(w) <= 0:
+        errors.append("Rejection weights: 5 मूल्यं (बेरीज > 0) हवीत — डीफॉल्ट वापरला")
+        clean["rejection_weights"] = list(DEFAULTS["rejection_weights"])
+    if sum(clean["rejection_weights"][:3]) <= 0:
+        errors.append("Rejection weights: wick/close/body पैकी किमान एक > 0 हवा — डीफॉल्ट वापरला")
+        clean["rejection_weights"] = list(DEFAULTS["rejection_weights"])
+    if clean["entry_start"] < "09:30":
+        errors.append("Entry सुरुवात 09:30 आधी नाही (पहिली 15 मिनिटं / gap) — 09:30 केली")
+        clean["entry_start"] = "09:30"
+    if clean["entry_start"] >= clean["entry_end"]:
+        errors.append("Entry सुरुवात ≥ शेवट — दोन्ही डीफॉल्ट")
+        clean["entry_start"], clean["entry_end"] = DEFAULTS["entry_start"], DEFAULTS["entry_end"]
+    for k in ("zone_fibs_w2", "zone_fibs_w4", "zone_fibs_zz_b", "zone_fibs_flat_b", "zone_fibs_tri_e", "zone_fibs_c", "zone_fibs_x"):
+        if not clean[k]:
+            errors.append(f"{BY_KEY[k]['label']}: रिकामी — डीफॉल्ट वापरला")
+            clean[k] = list(DEFAULTS[k])
     bad = [d for d in clean["trade_degrees_enabled"] if d >= clean["degree_levels"]]
     if bad:
         errors.append(f"Trade degrees {bad} अस्तित्वात नाहीत — वगळल्या")
