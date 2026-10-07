@@ -62,7 +62,8 @@ def _setup_code(e):
 
 def match(signals, e, tol, strict=True):
     """एका अपेक्षेशी जुळणारे signals. strict (must/verify/report): वेळ + दिशा + किंमत (correction extreme ±tol) + JSON मध्ये
-    दिलेले असतील तर setup code आणि tier. must_not: फक्त वेळ + दिशा (किंमत filter नाही — review: नाहीतर खोटा PASS)."""
+    दिलेले असतील तर setup code आणि tier. must_not: फक्त वेळ + दिशा (किंमत filter नाही — review: नाहीतर खोटा PASS); JSON मध्ये
+    `match_on: ["tier"]` असेल तर tier सुद्धा (त्याच दिवशी must असलेल्या दुसऱ्या trade शी गोंधळ टाळायला)."""
     wins = _windows(e["date"], e.get("time"))
     code, tier = _setup_code(e), e.get("tier")
     out = []
@@ -78,12 +79,15 @@ def match(signals, e, tol, strict=True):
                 continue
             if tier and s.tier != tier:
                 continue
+        elif "tier" in e.get("match_on", ()) and tier and s.tier != tier:
+            continue                                                         # must_not ला स्पष्ट निकष (उदा. T5 फक्त Tier C)
         out.append(s)
     return out
 
 
-def evaluate(signals, exp=None, reasons=None):
+def evaluate(signals, exp=None, reasons=None, sized=None):
     """[{id, level, status, detail}] — status: PASS / FAIL / REPORT. reasons = scanner.reasons (FAIL चं कारण शोधायला).
+    sized(sig) ⇒ trade प्रत्यक्ष lots > 0 (JSON `check: sized` असलेल्या अपेक्षांसाठी; नसेल तर त्या REPORT).
     Invalidation (JSON) gating नाही (screenshot ±) — detail मध्ये फरक दाखवतो."""
     exp = exp or load_expectations()
     tol = exp.get("tolerance_pts", 15)
@@ -91,6 +95,13 @@ def evaluate(signals, exp=None, reasons=None):
     for e in exp["trades"]:
         lvl = e["level"]
         m = match(signals, e, tol, strict=lvl != "must_not")
+        if e.get("check") == "sized":                                    # F9: नकार sizing स्तरावर (उदा. Tier C 0 lot)
+            if sized is None:
+                rows.append({"id": e["id"], "level": lvl, "status": "REPORT",
+                             "detail": "sizing माहिती नाही (signal स्तरावर फक्त report) — " + (
+                                 "; ".join(f"{pd.Timestamp(s.t):%m-%d %H:%M} {s.setup}/{s.tier}" for s in m) or "जुळणारा signal नाही")})
+                continue
+            m = [s for s in m if sized(s)]
         if lvl == "must":
             st = "PASS" if m else "FAIL"
         elif lvl == "must_not":

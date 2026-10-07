@@ -24,7 +24,7 @@ OUT = os.path.join(ROOT, "docs", "reports", "elliott_e1a_swings.md")
 
 
 def main():
-    d = pd.read_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))
+    d = DP.load_parquet(os.path.join(ROOT, "data", "nifty50_1min.parquet"))                # F11: holdout files नकार + filter
     d = DP.filter_allowed(d, "research")
     d = d[d["timestamp"] <= DP.IS_END].reset_index(drop=True)                 # फक्त IS
     s = S.DEFAULTS

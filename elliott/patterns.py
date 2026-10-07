@@ -119,11 +119,14 @@ def _score(hits, prior):
     return (sum(vals) + prior) / (len(vals) + 2 * prior) if (vals or prior) else 0.0
 
 
-def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_idx=None, atr_arr=None, mr_arr=None):
+def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_idx=None, atr_arr=None, mr_arr=None,
+          broke=None, why=None):
     """pts = [origin, confirmed pivots…] (len ≥ 1), tentative = चालू wave चा extreme (Pivot). नियम मोडले ⇒ None.
     subcounts[i] = leg i (pts[i]→pts[i+1]) चे lower-degree sub-legs (किंवा None). now_idx = चालू (शेवटचा बंद) bar —
     चालू wave ची वेळ (t(c) इ.) इथपर्यंत मोजतो. atr_arr / mr_arr दिल्यास tolerance संबंधित pivot च्या **confirm bar** वरचा
-    (गोठवलेला) — त्यामुळे पूर्ण झालेल्या wave चा निर्णय/level bar-दर-bar बदलत नाही (R11: मेलेला count परत येत नाही)."""
+    (गोठवलेला) — त्यामुळे पूर्ण झालेल्या wave चा निर्णय/level bar-दर-bar बदलत नाही (R11: मेलेला count परत येत नाही).
+    broke(level, side, from_pt, to_pt) ⇒ pivots from_pt → to_pt दरम्यान level चा खरा break झाला का (F5: पूर्ण waves ना सुद्धा
+    count_inv_basis; None ⇒ wick). why (list) ⇒ नकाराचं कारण (invalidation log साठी)."""
     labels = LABELS[pattern]
     nc = len(pts) - 1                                     # पूर्ण legs
     if nc >= len(labels) or tentative is None:
@@ -146,6 +149,17 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
     def P(i):
         return pr[i]
 
+    def beyond(lv_i, at_i, rule):
+        """पूर्ण wave: pivot at_i ने pivot lv_i चा level ओलांडला (R1/R6/R9). Equality (double bottom) ⇒ violation नाही.
+        count_inv_basis = real_break ⇒ wick पलीकडे पण खरा break नाही ⇒ violation नाही (F5)."""
+        if (P(at_i) - P(lv_i)) * d >= 0:
+            return False
+        if s["count_inv_basis"] != "wick" and broke is not None and not broke(P(lv_i), below_if(d), lv_i, at_i):
+            return False                                                    # wick पलीकडे, close आत ⇒ count जिवंत
+        if why is not None:
+            why.append(rule)
+        return True
+
     def frozen(arr, i, fallback):
         """pivot i च्या confirm bar वरचं मूल्य (नसेल ⇒ fallback; NaN — डेटाची सुरुवात — ⇒ 0, म्हणजे tolerance नाही)."""
         if arr is None or i >= len(pts) or pts[i].confirmed_idx is None:
@@ -156,7 +170,7 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
     # ---------------------------------------------------------------- motive patterns
     if pattern in MOTIVE_PATTERNS:
         diag = pattern != "impulse"
-        if nc >= 2 and (P(2) - P(0)) * d <= 0:
+        if nc >= 2 and beyond(0, 2, "R1"):
             return None                                                     # R1
         if nc >= 3 and not diag and s["wave4_overlap_strict"] and (P(3) - P(1)) * d <= 0:
             return None                                                     # wave 3 wave 1 च्या टोकापलीकडे नाही ⇒ कुठलाही wave 4 R3 मोडेल
@@ -167,21 +181,22 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
                 if gap <= 0 if s["wave4_overlap_strict"] else gap < -allow:
                     return None                                             # R3
             else:
-                if (P(4) - P(2)) * d <= 0:
+                if beyond(2, 4, "R9"):
                     return None                                             # R9: w4 ≯ w2 end
                 hits["g_diag_overlap"] = int((P(4) - P(1)) * d < 0)
                 hits["g_diag_converge"] = int(L[3] < L[1] and L[2] < L[0]) if nc >= 4 else None
         if nc >= 3:
             hits["g_w3_beyond_w1"] = int((P(3) - P(1)) * d > 0)
-            hits["g_w3_fib"] = _ratio_hit(L[2] / L[0], (1.0, 1.618, 2.618), tol)
+            hits["g_w3_fib"] = _ratio_hit(L[2] / L[0], tuple(s["w3_fib_targets"]), tol)
             if not diag:
-                hits["g_w3_not_short_so_far"] = int(L[2] >= L[0] * 0.95)
+                hits["g_w3_not_short_so_far"] = int(L[2] >= L[0] * s["w3_not_short_ratio"])
         if nc >= 2:
-            hits["g_w2_depth"] = int(0.382 - tol <= L[1] / L[0] <= 0.786 + tol)
-            hits["g_sim_12"] = int(min(L[0], L[1]) >= max(L[0], L[1]) / 3 or min(T[0], T[1]) >= max(T[0], T[1]) / 3)
+            hits["g_w2_depth"] = int(s["w2_depth_band"][0] - tol <= L[1] / L[0] <= s["w2_depth_band"][1] + tol)
+            hits["g_sim_12"] = int(min(L[0], L[1]) >= max(L[0], L[1]) * s["similarity_balance_min"]
+                                  or min(T[0], T[1]) >= max(T[0], T[1]) * s["similarity_balance_min"])
         if nc >= 4:
-            hits["g_w4_depth"] = int(L[3] / L[2] <= 0.5 + tol)
-            hits["g_alternation"] = int(abs(L[1] / L[0] - L[3] / L[2]) >= 0.15 or (T[1] > T[0]) != (T[3] > T[2]))
+            hits["g_w4_depth"] = int(L[3] / L[2] <= s["w4_depth_max"] + tol)
+            hits["g_alternation"] = int(abs(L[1] / L[0] - L[3] / L[2]) >= s["alternation_min"] or (T[1] > T[0]) != (T[3] > T[2]))
             ok_time = T[1] > T[0] or T[3] > T[2]
             flags["impulse_time_ok"] = bool(ok_time)
             if not diag and s["impulse_time_rule"] == "filter" and not ok_time:
@@ -208,21 +223,26 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
             invs.append((P(4), below_if(d), "start-of-5"))
             if L[2] < L[0]:                                                 # R2 / R9: w3 < w1 ⇒ w5 ≤ w3 (diagonals सुद्धा)
                 invs.append((P(4) + d * L[2], below_if(-d), "R2"))
+        # F5 review M1: पूर्ण wave चा wick पलीकडे गेला (खरा break नाही) ⇒ तो level पुढेही inv (नंतर खरा break ⇒ count मेला)
+        if nc >= 2 and (P(2) - P(0)) * d < 0:
+            invs.append((P(0), below_if(d), "R1"))
+        if diag and nc >= 4 and (P(4) - P(2)) * d < 0:
+            invs.append((P(2), below_if(d), "R9"))
 
     # ---------------------------------------------------------------- corrective patterns
     elif pattern in ("zigzag", "flat"):
         if nc >= 2:
             b = L[1] / L[0]
             if pattern == "zigzag":
-                if (P(2) - P(0)) * d <= 0:
+                if beyond(0, 2, "R6"):
                     return None                                             # R6: B ≯ A origin
                 lo, hi = s["zigzag_b_band"]
                 hits["g_b_band"] = int(lo <= b <= hi)
             else:
                 if b < s["flat_b_min_ratio"] or b > s["flat_b_max_ratio"]:
                     return None                                             # R7 + [अनुमान]
-                subtype = "flat_exp" if b > 1.05 else "flat_reg"
-                hits["g_b_classic"] = int(b <= 1.382 + tol)
+                subtype = "flat_exp" if b > s["flat_expanded_min"] else "flat_reg"
+                hits["g_b_classic"] = int(b <= s["flat_b_classic_max"] + tol)
             hits["g_time_ab"] = int(T[1] >= T[0])                           # Neely QOW 509: t(B) ≥ t(A) ⇒ flat/zigzag
         hits["g_sub_A"] = _sub_hit(subs[0], pattern == "zigzag") if nc >= 1 else None
         hits["g_sub_B"] = _sub_hit(subs[1], False) if nc >= 2 else None
@@ -235,6 +255,8 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
                 invs.append((P(1) - d * s["flat_b_max_ratio"] * L[0], below_if(d), "flat_b_max"))
         elif cur == "C":
             invs.append((P(2), below_if(d), "start-of-C"))
+            if pattern == "zigzag" and (P(2) - P(0)) * d < 0:                # F5 M1: B चा wick A origin पलीकडे ⇒ origin inv कायम
+                invs.append((P(0), below_if(d), "R6"))
             tc = max(1, (now_idx if now_idx is not None else tentative.bar_idx) - pts[2].bar_idx)
             viol = tc > T[0] + T[1]
             flags["c_time_violation"] = bool(viol)
@@ -278,8 +300,10 @@ def build(degree, pattern, pts, tentative, s, subcounts=None, atr_now=None, now_
             invs.append((P(nc), "below" if cur_dir > 0 else "above", "start"))
 
     elif pattern == "wxy":
-        if nc >= 2 and (P(2) - P(0)) * d <= 0:
-            return None                                                     # X ≯ W origin [अनुमान]
+        if nc >= 2 and beyond(0, 2, "X_W_origin"):
+            return None                                                     # X ≯ W origin [अनुमान] (F5: count_inv_basis)
+        if nc >= 2 and (P(2) - P(0)) * d < 0:
+            invs.append((P(0), below_if(d), "X_W_origin"))
         hits["g_sub_W"] = _sub_hit(subs[0], False) if nc >= 1 else None
         if cur == "W":
             invs.append((P(0), below_if(d), "origin"))

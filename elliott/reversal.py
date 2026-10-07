@@ -137,7 +137,7 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     body_v = body_bull
     if s.get("body_term_mode", "bull_body") == "body_or_reclaim" and depth >= 0.5:
         body_v = max(body_bull, depth)
-    if s.get("min_body_or_reclaim") and (c - o) / rng < MIN_BODY and depth < 0.5:     # trade दिशेची body (mirror)
+    if s.get("min_body_or_reclaim") and (c - o) / rng < s.get("min_body_frac", MIN_BODY) and depth < 0.5:     # trade दिशेची body (mirror)
         out["reason"] = NO_BODY
         return out
     comps = [("wick", w[0], (min(o, c) - l) / rng), ("close_loc", w[1], (c - l) / rng), ("body", w[2], body_v)]
@@ -159,7 +159,8 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     if n >= 3 and s.get("n3_penalty", 0.0) > 0:
         out["score"] -= s["n3_penalty"]
     out["parts"] = {k: round(float(v), 4) for k, _, v in comps}
-    if INDECISION[0] <= out["close_loc"] <= INDECISION[1]:
+    band = s.get("indecision_band", INDECISION)
+    if band[0] <= out["close_loc"] <= band[1]:
         out["reason"] = INDECISIVE
         return out
     if out["score"] < (s["rejection_min"] if rmin is None else rmin):
@@ -214,6 +215,10 @@ def _followthrough(b, j, dirn, levels, tol, s, nmax, kw):
             prev = evaluate_window(b, e, n, dirn, levels, tol, s, rmin=rmin, **kw)
             if prev["reason"] != INDECISIVE:                         # touch/reclaim/strength आधीच पास; CL 0.40–0.60
                 continue
+            if s.get("followthrough_score_gate"):                    # F10 पर्याय: merged window चा score अट (सवलतीसह)
+                mw = evaluate_window(b, j, n + k, dirn, levels, tol, s, rmin=rmin, **kw)
+                if not mw["parts"] or mw["score"] < (s["rejection_min"] if rmin is None else rmin) - s["followthrough_score_relax"]:
+                    continue                                         # merged window आधीच नापास ⇒ अट पूर्ण नाही
             a = e - n + 1
             r = dict(prev, ok=True, reason=None, n=n + k, followthrough=True,
                      comp=(float(b.o[a]), float(b.h[a:j + 1].max()), float(b.l[a:j + 1].min()), float(b.c[j])))

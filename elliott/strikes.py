@@ -87,7 +87,7 @@ def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=Non
         dist = max(d_inv, d_vol, s["min_dist_pts"])
         widths = [s["width_pts"]]
         if s["credit_fail_action"] == "widen_width":                                # फक्त min_credit साठी उपयोगी (credit/width घटतो)
-            widths += [w for w in (100, 150, 200) if w > s["width_pts"]]
+            widths += [w for w in s.get("widen_widths", (100, 150, 200)) if w > s["width_pts"]]
         for width in widths:
             opt, sk, lk = strikes_for(sig, spot, dist, width, s["strike_step"])
             ps, pl = price_fn(opt, sk, expiry), price_fn(opt, lk, expiry)

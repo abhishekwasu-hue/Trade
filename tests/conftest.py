@@ -83,16 +83,25 @@ def _mcx_live_quantity_gate_open_by_default(monkeypatch):
 @pytest.fixture(autouse=True)
 def _isolated_mcx_candle_state(tmp_path, monkeypatch):
     """🎓 MCX Candlestick Confirmation state (data/mcx_candle_confirm.json -- प्रतीक्षेतला भाग 2 / वापरलेले patterns) प्रत्येक टेस्टमध्ये
-    tmp मध्ये: repo/VPS वरची खरी फाईल tests वर परिणाम करू नये आणि tests ती लिहू नयेत."""
-    import mcx_futures_trader
+    tmp मध्ये: repo/VPS वरची खरी फाईल tests वर परिणाम करू नये आणि tests ती लिहू नयेत.
+    App deps (plotly इ.) नसतील तर (उदा. फक्त elliott tests) — काही करत नाही (review F11)."""
+    try:
+        import mcx_futures_trader
+    except ModuleNotFoundError:
+        return
     monkeypatch.setattr(mcx_futures_trader, "CANDLE_STATE", str(tmp_path / "mcx_candle_confirm.json"))
 
 
 @pytest.fixture(autouse=True)
 def _isolated_order_safety(monkeypatch, tmp_path):
     """🎓 G3 order_safety: exit-अपयश मोजणी (प्रोसेस-पातळीची dict) प्रत्येक टेस्टला रिकामी, आणि settings repo/VPS च्या
-    data/engine_settings.json वरून नव्हे तर रिकाम्या dict वरून (डीफॉल्ट वर्तन) — टेस्ट्स स्वतः monkeypatch करून बदलतात."""
-    import order_safety
+    data/engine_settings.json वरून नव्हे तर रिकाम्या dict वरून (डीफॉल्ट वर्तन) — टेस्ट्स स्वतः monkeypatch करून बदलतात.
+    App deps नसतील तर काही करत नाही (F11)."""
+    try:
+        import order_safety
+    except ModuleNotFoundError:
+        yield
+        return
     order_safety._FAIL_COUNTS.clear()
     monkeypatch.setattr(order_safety, "FAIL_COUNTS_PATH", str(tmp_path / "exit_fail_counts.json"))
     order_safety._EXIT_STATE.clear()
