@@ -399,7 +399,7 @@ def _t7_scanner(rev, after=None, reflect=False):
     ts0 = pd.Timestamp("2019-01-08 09:30")
     k = -1 if reflect else 1
     lv = [100.0, 102.0] if reflect else [100.0, 98.0]
-    st = SU.Setup("S1", 0, "A", k, NS(pattern="impulse", current_wave="2"), None, lv, 110.0 if reflect else 90.0, "R1",
+    st = SU.Setup("S1", 0, "A", k, NS(pattern="impulse", current_wave="2", points=[]), None, lv, 110.0 if reflect else 90.0, "R1",
                   NS(ts=ts0, price=200 - 120.0 if reflect else 120.0),
                   NS(ts=ts0 + pd.Timedelta(minutes=25), price=104.0 if reflect else 96.0), 1.0, 0.0)
     return sc, st, pd.Timestamp("2019-01-08 10:05")
