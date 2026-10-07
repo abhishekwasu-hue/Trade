@@ -266,7 +266,8 @@ class Scanner:
         return sig
 
     # ------------------------------------------------------------------------------------------------ C1 helpers
-    PROFILE = {"S3": "w4", "S4": "w4", "S5": "w4", "S14": "w4", "S6c": "tri_e", "S9": "tri_e", "S6a": "counter", "S6b": "counter",
+    # G2 (तुमचा निर्णय): S6c (B wave मधला triangle E) = B-end / counter ⇒ counter_extra लागू
+    PROFILE = {"S3": "w4", "S4": "w4", "S5": "w4", "S14": "w4", "S6c": "counter", "S9": "tri_e", "S6a": "counter", "S6b": "counter",
                "S12": "counter"}
 
     def _profile(self, st):

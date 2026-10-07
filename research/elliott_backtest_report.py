@@ -123,6 +123,12 @@ def run_golden(s):
     return L
 
 
+G2_NOTE = ("> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. याची दोन कारणं आहेत: progress-time exit "
+           "बहुतेक trades 20–30 मिनिटांत बंद करतो, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. त्यामुळे निष्कर्ष "
+           "\"Elliott/candle मध्ये edge नाही\" असा **नाही**, तर **\"अजून मोजता आलं नाही\"** असा आहे. सगळे candle settings off/shadow; VAL नंतर "
+           "(खरे premiums + E4 review fixes).")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2019-02-11")
@@ -166,7 +172,7 @@ def main(argv=None):
     rb.run(times)
     sec = time.time() - t0
 
-    L = [f"# Elliott Pullback Credit Spread — E4 backtest (NIFTY, IS {a.start} – {end.date()})", "",
+    L = [f"# Elliott Pullback Credit Spread — E4 backtest (NIFTY, IS {a.start} – {end.date()})", "", G2_NOTE, "",
          "> ⚠️ **Model premium.** trade-data मध्ये अजून options data (bhavcopy / Upstox expired) नाही. सगळे premiums "
          "**Black-Scholes, IV = आधीच्या 20 दिवसांचा realized vol** (उत्तर 4 (b)). Realized vol सहसा IV पेक्षा कमी ⇒ credit कमी दिसतो. "
          "₹ आकडे **अंदाज** आहेत; निर्णय R-multiples आणि तुलनांवरून, आणि खऱ्या data वर पुन्हा चालवल्यानंतरच.", "",

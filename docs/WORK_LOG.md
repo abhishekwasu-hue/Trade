@@ -910,3 +910,11 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 **स्वतंत्र review (1 High + 5 Medium + Low) — दुरुस्त्या:** random baseline मध्ये trigger न झालेले episodes मिसळले होते आणि 95th percentile Elliott चा sampling noise धरत नव्हता (आता trigger झालेले episodes + दोन्ही बाजू resample); C2 displacement लांबीचा परिणाम (`disp_per_bar`, bars दाखवले) आणि 5/C legs नसल्याचं चुकीचं वर्णन; KEEP मध्ये PBO/RC; cache key मध्ये trading settings / code hash; random signals ला त्या वेळचा setup व trigger TF; re-arm episodes; MW ties; IS assert; report मजकूर (episodes, win%, रिकामे tiers). पहिल्या आवृत्तीत Reality Check रिकाम्या दिवसांना 0 भरल्याने p = 0.000 येत होता — प्रति-trade R वर दुरुस्त.
 
 **Tests:** `tests/test_elliott_c3.py` (+7): Mann-Whitney (ties सह), day-block CI, PBO (खरा विजेता / noise), Reality Check (कमी trades ने फसत नाही), random तुलना (दोन्ही noise), LEG_KIND.
+
+## 2026-10-07 · G2 निर्णय (तुमचे) — नोंद + S6c
+
+1. **Candle settings:** एकही on नाही, सगळे off/shadow. कारण (तुमचं): progress-time exit (20–30 मि.) आणि model premium (IV = RV) मुळे ही चाचणी entry quality मधला फरक पकडूच शकत नाही. ⇒ E4 व C3 अहवालांचा निष्कर्ष **"Elliott/candle मध्ये edge नाही" असा नाही, "अजून मोजता आलं नाही"** असा. दोन्ही अहवालांच्या सुरुवातीला (आणि scripts मध्ये, पुन्हा चालवल्यावरही) ही टीप.
+2. **VAL:** आत्ता नाही — खरे premiums आणि E4 review fixes नंतर.
+3. **S6c** (B wave मधला triangle E) ⇒ B-end / counter profile गट (`counter_extra` लागू). C1 मधला माझा "triangle E" निर्णय बदलला; test सह.
+4. **पुढचा क्रम:** (a) TRADE_E4_REVIEW_FIXES.md मधले F1–F7, F9–F11 (data नको) — defaults: `sizing_mode = tier_of_A` (Tier B किमान 1 lot), `progress_mode = off`, `break_confirm_tf = degree TF`, H fallback ⇒ skip; (b) VPS export नंतर F8: bhavcopy premiums/IV वर E4 + C3 + golden पुन्हा, bull put / bear call स्वतंत्र, random baseline ≥ 1,000 त्याच ARMED zones मध्ये; (c) मग G2 पुन्हा; E5 dashboard त्यानंतर. LIVE ला हात नाही, PAPER default, VAL/holdout बंद.
+- **थांबा:** TRADE_E4_REVIEW_FIXES.md हा file या session मध्ये पोचला नाही (uploads मध्ये नाही) ⇒ F1–F11 चे नेमके तपशील मिळेपर्यंत (a) सुरू केलं नाही.

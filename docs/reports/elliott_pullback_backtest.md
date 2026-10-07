@@ -1,5 +1,7 @@
 # Elliott Pullback Credit Spread — E4 backtest (NIFTY, IS 2019-02-11 – 2021-12-31)
 
+> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. याची दोन कारणं आहेत: progress-time exit बहुतेक trades 20–30 मिनिटांत बंद करतो, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. त्यामुळे निष्कर्ष "Elliott/candle मध्ये edge नाही" असा **नाही**, तर **"अजून मोजता आलं नाही"** असा आहे. सगळे candle settings off/shadow; VAL नंतर (खरे premiums + E4 review fixes).
+
 > ⚠️ **Model premium.** trade-data मध्ये अजून options data (bhavcopy / Upstox expired) नाही. सगळे premiums **Black-Scholes, IV = आधीच्या 20 दिवसांचा realized vol** (उत्तर 4 (b)). Realized vol सहसा IV पेक्षा कमी ⇒ credit कमी दिसतो. ₹ आकडे **अंदाज** आहेत; निर्णय R-multiples आणि तुलनांवरून, आणि खऱ्या data वर पुन्हा चालवल्यानंतरच.
 
 Signals (E2) या काळात: **199**. Scan + backtest वेळ 6.5 मि (signals 6.1 मि). Settings hash `37fb6a7f9038`. Capital ₹1,000,000, risk 1.0% × tier (A 1.0 / B 0.5 / C 0.25).

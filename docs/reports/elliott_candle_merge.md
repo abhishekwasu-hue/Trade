@@ -1,5 +1,7 @@
 # Elliott + candle merge — C2/C3 अहवाल (NIFTY, IS 11 Feb 2019 – 31 Dec 2021)
 
+> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. याची दोन कारणं आहेत: progress-time exit बहुतेक trades 20–30 मिनिटांत बंद करतो, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. त्यामुळे निष्कर्ष "Elliott/candle मध्ये edge नाही" असा **नाही**, तर **"अजून मोजता आलं नाही"** असा आहे. सगळे candle settings off/shadow; VAL नंतर (खरे premiums + E4 review fixes).
+
 > ⚠️ **Model premium** (BS, IV = 20 दिवस realized vol) — options data अजून नाही. ₹/R अंदाज; निर्णय खऱ्या premium वर पुन्हा चालवल्यानंतरच. Trading settings सगळ्या variants ना सारखे: credit guard बंद (E4 variant B) + पूर्ण exits. VAL / holdout उघडले नाहीत.
 
 Variants: 12 (6 cache मधून; cache key = settings + trading settings + काळ + code hash) · वेळ 13.1 मि. · `c_all` = c1–c7 (c8 C-leg wait वेगळा).
