@@ -1043,7 +1043,7 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
   Spot मध्ये SL / target साठवलेले नाहीत (ते P&L ₹ स्तरावर) ⇒ chart वर ₹ मजकूर म्हणून, रेषा म्हणून नाही.
 - **Archive marker:** push नंतर `git fetch` करून remote मध्ये फाईल असल्याची खात्री झाल्यावरच. Cleanup marker मधल्या यादीशी जुळवतो — marker नंतर आलेली
   फाईल (उदा. उशिरा तयार झालेला outcome chart) असेल तर delete नाही.
-- **Image मधला मजकूर इंग्रजीत:** kaleido मध्ये Devanagari font नसतो. Telegram caption मराठीत.
+- **Image मधला मजकूर इंग्रजीत:** vision ला जाणारा chart इंग्रजीत (font वर अवलंबून नको). Telegram caption मराठीत. (पुढच्या नोंदीत दुरुस्ती: Devanagari font असेल तर outcome chart मराठीत.)
 - **System prompt cache:** ~570 tokens, किमान 512 च्या जवळ ⇒ cache होईलच असं नाही. खर्च नेहमी `usage` वरून मोजला जातो. `python3 -m vision.worker --usage` ⇒ पहिल्या दिवसाचं खरं मोजमाप (G-COST).
 
 **Independent review (subagent):** blocking नाही. Should-fix सगळे केले:
@@ -1092,3 +1092,28 @@ Nits:
   बाकी: F8 report (bull put / bear call वेगळे, P&L ÷ credit, ₹ प्रति lot, random ≥ 1000), C3 real premiums वर, golden sized plan.
 - **Count बदल / golden निदानावर पुढचं काम:** सुरू केलेलं नाही.
 - **पुन्हा सुरू:** Vision V0 → V1 नंतर. क्रम: F8 (wip मधून) → G2 → E5.
+
+## 2026-10-07 · Vision §11 — पूर्तता तपासणी + outcome chart मध्ये भर
+
+**तुमचा §11 संदेश पुन्हा आला; बहुतेक भाग PR #266 मध्ये आधीच आहे:**
+- `_sent.png` (O_EXCL, overwrite नाही) + sha256; vision आणि Telegram ला तेच bytes.
+- Audit record सगळे fields सह. Human निर्णय, वेळ आणि drift guard चे कॉलम आहेत; ते V1 मध्ये भरतील.
+- `_outcome.png` POST-HOC आहे आणि vision कडे जात नाही.
+- Dashboard पान, filters आणि CSV.
+- trade-data archive रोज रात्री, remote पडताळणी, 90 दिवसांनी cleanup फक्त पडताळलेल्या marker नंतर.
+- Disk इशारा > 80%.
+- Tests: unique नावं, sha, outcome ≠ vision, push आधी delete नाही.
+
+**या PR मध्ये भर:**
+- **Outcome chart वर मराठी "POST-HOC: vision ला पाठवलेली नाही":** फक्त machine वर Devanagari font (`fc-list :lang=mr`) असेल तर; नाहीतर इंग्रजी.
+  आधीची नोंद "kaleido मध्ये Devanagari font नसतो" **चुकीची** होती — font machine वर अवलंबून असतो (sandbox मध्ये FreeSans ने नीट दिसलं).
+- **SL / target खुणा:** SL / target P&L (₹) स्तरावर आहेत, spot मध्ये नाहीत ⇒ अंदाजाने spot रेषा काढल्या नाहीत (खोटी अचूकता टाळली).
+  त्याऐवजी legs चे strikes (`legs_json`: SELL / BUY) रेषा म्हणून — credit spread चा नफा / तोटा याच सीमांवर ठरतो. ₹ SL / target मजकुरात.
+- **Review (subagent):** blocking नाही. केलेले बदल:
+  - strike 0 / NaN (MCX futures) वगळला;
+  - y-range candles + जवळचे strikes पुरता; लांबचे strikes कडेला ↑ / ↓ खुणेने;
+  - एकाच strike चे legs एका label मध्ये;
+  - तारीख दुरुस्त केली.
+
+**अजून बाकी (V2):** `morning_<symbol>_<tf>.png` — path helper (`vision/images.morning_path`) तयार आहे; सकाळचा audit V2 मध्ये.
+**PNG आकार:** आपले charts ~90 KB (< 150 KB). Archive मूळ PNG जशीच्या तशी ठेवतो, compression नाही.

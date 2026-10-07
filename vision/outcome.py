@@ -4,11 +4,12 @@
 
 🎓 प्रत्येक DONE signal (outcome नसलेला, मागचे 3 दिवस): त्याच bot (source) + symbol चा live_trades (local SQLite) मधला trade — entry_time
 signal च्या −1…+10 मिनिटांत, सर्वात आधीचा. Trade CLOSED ⇒ signal च्या 30 मिनिटं आधीपासून exit नंतर 15 मिनिटांपर्यंत 1m (5m candles) chart:
-signal वेळ, entry (वेळ + spot), exit (वेळ + त्या minute चा close), level रेषा, SL / target (₹, P&L स्तरावर — spot मध्ये नाहीत) मजकुरात,
+signal वेळ, entry (वेळ + spot), exit (वेळ + त्या minute चा close), level रेषा, SL / target (₹, P&L स्तरावर — spot मध्ये नाहीत) मजकुरात, legs चे strikes रेषा म्हणून,
 आणि ठळक "POST-HOC" शीर्षक. No-lookahead नियम फक्त `_sent.png` ला. Trade सापडला नाही आणि signal 1 दिवसापेक्षा जुना ⇒ outcome = no_trade.
 V1 मध्ये नाकारलेल्या signals चे shadow trades याच मार्गाने (source = <bot>_vision_shadow).
 """
 import argparse
+import math
 import os
 import sqlite3
 import sys
@@ -22,6 +23,44 @@ from . import store as VS
 
 WIDTH, HEIGHT = 1000, 700
 POST_HOC = "POST-HOC: NOT SENT TO VISION (outcome after the trade, for cross-check only)"
+POST_HOC_MR = "POST-HOC: vision ला पाठवलेली नाही · NOT SENT TO VISION"
+_DEVA = None
+
+
+def devanagari_available():
+    """Chromium (kaleido) ला Devanagari font दिसतो का (`fc-list :lang=mr`) — नसेल तर मराठी अक्षरं डबे दिसतात, म्हणून मग फक्त इंग्रजी."""
+    global _DEVA
+    if _DEVA is None:
+        try:
+            import subprocess
+            _DEVA = bool(subprocess.run(["fc-list", ":lang=mr"], capture_output=True, text=True, timeout=5).stdout.strip())
+        except Exception:
+            _DEVA = False
+    return _DEVA
+
+
+def post_hoc_label():
+    return POST_HOC_MR if devanagari_available() else POST_HOC
+
+
+def strike_lines(trade):
+    """live_trades.legs_json → [(strike, label)] (उदा. "SELL 25000 PE"). नसेल / चुकीचं ⇒ []."""
+    import json
+    try:
+        legs = json.loads(trade.get("legs_json") or "[]")
+    except (TypeError, ValueError):
+        return []
+    by_k = {}
+    for leg in legs if isinstance(legs, list) else []:
+        try:
+            k = float(leg.get("strike"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not math.isfinite(k) or k <= 0:                               # MCX futures चा dummy strike 0 / NaN
+            continue
+        side = str(leg.get("transaction_type") or leg.get("role") or "").upper()
+        by_k.setdefault(k, []).append(f"{side} {k:,.0f} {leg.get('option_type') or ''}".strip())
+    return [(k, " / ".join(v)) for k, v in by_k.items()]                  # एकाच strike चे legs (butterfly) एका label मध्ये
 
 
 def find_trade(row, trades_db=None, path=None):
@@ -83,6 +122,24 @@ def build_outcome_figure(df1m, row, trade):
         fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=row["level"], y1=row["level"], line=dict(color="#90a4ae", width=1, dash="dot"))
     fig.add_shape(type="line", x0=xi(t_sig), x1=xi(t_sig), y0=0, y1=1, yref="paper", line=dict(color="#ffd54f", width=1, dash="dash"))
     fig.add_annotation(x=xi(t_sig), y=1, yref="paper", text="signal", showarrow=False, font=dict(color="#ffd54f"), yshift=8)
+    lo, hi = float(bars["low"].min()), float(bars["high"].max())
+    span = max(hi - lo, 1.0)
+    if row.get("level") is not None:
+        lo, hi = min(lo, float(row["level"])), max(hi, float(row["level"]))
+    allow = max(span, 0.006 * hi)                                        # candles चा आकार टिकावा: फक्त जवळचे strikes (range किंवा ~0.6%) range मध्ये
+    near = [(k, lab) for k, lab in strike_lines(trade) if lo - allow <= k <= hi + allow]
+    for k, _ in near:
+        lo, hi = min(lo, k), max(hi, k)
+    pad = 0.05 * (hi - lo or 1.0)
+    for k, lab in strike_lines(trade):                                   # SL / target ₹ स्तरावर ⇒ chart वर legs चे strikes (नफा / तोटा सीमा)
+        sell = lab.startswith("SELL") or "SHORT" in lab
+        if (k, lab) in near:
+            fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=k, y1=k, line=dict(color="#ef9a9a" if sell else "#80cbc4", width=1, dash="dash"))
+            fig.add_annotation(x=n - 1, y=k, text=lab, showarrow=False, xanchor="right", yshift=8, font=dict(size=10, color="#eceff1"))
+        else:                                                            # लांबचा strike ⇒ कडेला खूण
+            up = k > hi
+            fig.add_annotation(x=n - 1, y=(hi + pad * 0.5) if up else (lo - pad * 0.5), text=("↑ " if up else "↓ ") + lab, showarrow=False,
+                               xanchor="right", font=dict(size=10, color="#ef9a9a" if sell else "#80cbc4"))
     p_in = float(trade.get("entry_spot_price") or close_at(t_in))
     p_out = close_at(t_out)
     pnl = trade.get("realized_pnl")
@@ -101,10 +158,10 @@ def build_outcome_figure(df1m, row, trade):
     step = max(1, n // 8)
     fig.update_xaxes(tickvals=list(range(0, n, step)), ticktext=[bars["start"].iloc[k].strftime("%H:%M") for k in range(0, n, step)],
                      rangeslider_visible=False, showgrid=False, color="#b0bec5")
-    fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
+    fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1", range=[lo - pad, hi + pad])
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT, margin=dict(l=10, r=60, t=80, b=30), paper_bgcolor="#1a0f0f",
                       plot_bgcolor="#0e1117",
-                      title=dict(text=f"<b>{POST_HOC}</b><br>{row['symbol']} · {row['bot']} · {row.get('direction')} · signal {t_sig:%d %b %H:%M}",
+                      title=dict(text=f"<b>{post_hoc_label()}</b><br>{row['symbol']} · {row['bot']} · {row.get('direction')} · signal {t_sig:%d %b %H:%M}",
                                  font=dict(size=14, color="#ff8a65")))
     return fig, {"entry_spot": p_in, "exit_close": p_out, "win": win}
 
