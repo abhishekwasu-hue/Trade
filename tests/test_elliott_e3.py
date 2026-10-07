@@ -190,14 +190,35 @@ def test_delta_guard_uses_bs_without_delta_fn_and_min_one_lot():
     assert SK.plan_spread(sig(), 22410.0, t, None, 50.0, cal, book, S0, lambda o, k, e: 20.0) == "no_iv"
 
 
-def test_default_tier_b_size_zero_is_reported():
-    # ₹10L × 1% × 0.5 = ₹5,000 < 1 lot max loss (100 − 8) × 65 = ₹5,980 ⇒ size_zero (E4 report मध्ये ठळक)
+def test_sizing_tier_of_A_default_and_risk_budget_legacy():
+    # F1: lot 65, credit 8 ⇒ प्रति-lot तोटा (100 − 8) × 65 = ₹5,980. tier_of_A: A = max(1, 10,000 // 5,980) = 1 ⇒ B = round(0.5) → किमान 1,
+    # C = round(0.25) = 0 (किमान 0 ⇒ size_zero). risk_budget (जुनं): B budget ₹5,000 < ₹5,980 ⇒ size_zero.
     cal, book = _book()
-    r = SK.plan_spread(sig(), 22410.0, pd.Timestamp("2026-10-05 12:30"), 0.13, 50.0, cal, book, S0,
-                       lambda o, k, e: 20.0 if k == 22150 else 12.0)
-    assert r == "size_zero"
-    assert SK.plan_spread(sig(tier="C"), 22410.0, pd.Timestamp("2026-10-05 12:30"), 0.13, 50.0, cal, book,
-                          _cfg(tier_mult=[1.0, 0.5, 0.0]), lambda o, k, e: 20.0 if k == 22150 else 12.0) == "size_zero"
+    t = pd.Timestamp("2026-10-05 12:30")
+    px = lambda o, k, e: 20.0 if k == 22150 else 12.0                               # noqa: E731
+    lots = {tier: SK.plan_spread(sig(tier=tier), 22410.0, t, 0.13, 50.0, cal, book, S0, px) for tier in "ABC"}
+    assert lots["A"]["lots"] == 1 and lots["B"]["lots"] == 1 and lots["C"] == "size_zero"
+    assert lots["B"]["over_budget"]                                                 # Tier B किमान 1 lot ⇒ budget ओलांडतो (नोंद)
+    old = _cfg(sizing_mode="risk_budget")
+    assert SK.plan_spread(sig(), 22410.0, t, 0.13, 50.0, cal, book, old, px) == "size_zero"
+    assert SK.plan_spread(sig(tier="C"), 22410.0, t, 0.13, 50.0, cal, book, _cfg(tier_mult=[1.0, 0.5, 0.0]), px) == "size_zero"
+
+
+def test_sizing_tier_ratio_survives_lot_eras():
+    # Era-wise lot (25/50/75/65): मोठ्या capital वर A:B:C ≈ 1 : 0.5 : 0.25 टिकतं
+    for lot in (25, 50, 75, 65):
+        per_lot = 92.0 * lot
+        base = 1e7 * 0.01
+        a = SK.size_lots("A", 1.0, base, per_lot, S0)
+        b = SK.size_lots("B", 0.5, base, per_lot, S0)
+        c = SK.size_lots("C", 0.25, base, per_lot, S0)
+        assert a >= 4 and abs(b - a * 0.5) <= 0.5 and abs(c - a * 0.25) <= 0.5
+    assert SK.size_lots("B", 0.5, 1e4, 5980.0, _cfg(tierB_min_lots=2)) == 1             # किमान A पेक्षा जास्त नाही
+    assert SK.size_lots("B", 0.5, 3e4, 5980.0, _cfg(tierB_min_lots=2)) == 3              # A 5 ⇒ round(2.5) = 3 (half-up)
+    assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(min_one_lot=True)) == (1, "min_one_lot")   # shadow trades
+    assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(tierC_min_lots=1)) == (1, "tier_floor")
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, S0) == (1, "a_min_one")
+    assert SK.size_lots("C", 0.0, 1e6, 5980.0, S0) == 0                             # गुणक 0 ⇒ skip
 
 
 def test_guard_fail_actions():

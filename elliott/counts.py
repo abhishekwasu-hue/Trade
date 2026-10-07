@@ -73,8 +73,9 @@ def _lineage(n):
 class CountEngine:
     """md = swings.multi_degree(...) (पूर्ण उपलब्ध डेटा); snapshot(t) फक्त t पर्यंत माहीत असलेलं वापरतो."""
 
-    def __init__(self, md, s):
-        self.md, self.s = md, s
+    def __init__(self, md, s, confirm=None):
+        """confirm = ConfirmTF (Scanner पुरवतो) ⇒ count invalidation `break_confirm_tf` वर (trade exit सारखं); None ⇒ degree frame."""
+        self.md, self.s, self.confirm = md, s, confirm
         self.degrees = sorted(md)
         self.cache = {d: BreakCache(md[d]["frame"], s) for d in self.degrees}
         self.atr = {d: W.atr(md[d]["frame"], s["atr_len"]) for d in self.degrees}
@@ -104,7 +105,10 @@ class CountEngine:
         step = max(W.TF_MIN.get(a.tf, 5), W.TF_MIN.get(b.tf, 5))
         return abs((a.ts - b.ts).total_seconds()) <= tol * step * 60
 
-    def _valid(self, d, node, t_idx):
+    def _valid(self, d, node, t_idx, t=None):
+        if self.confirm is not None and t is not None:
+            st = node.points[-1].ts
+            return not any(self.confirm.broken(d, st, lvl, side, t) for lvl, side, _ in node.invs)
         start = node.points[-1].bar_idx + 1
         return not any(self.cache[d].broken_by(start, lvl, side, t_idx) for lvl, side, _ in node.invs)
 
@@ -130,7 +134,7 @@ class CountEngine:
                 if len(pts) - 1 >= len(LABELS[pat]):
                     continue
                 n = build(d, pat, pts, tent, s, subs, atr_now, t_idx, atr_arr=self.atr[d], mr_arr=self.cache[d].mr)
-                if n is not None and self._valid(d, n, t_idx):
+                if n is not None and self._valid(d, n, t_idx, t):
                     out.append(n)
         return out, t_idx, True
 
@@ -202,12 +206,17 @@ class CountEngine:
             for n in pv.nodes:
                 if n.key in cur_keys:
                     continue
-                start = n.points[-1].bar_idx + 1
-                broken = [(lvl, rule, c) for lvl, side, rule in n.invs
-                          for c in [self.cache[d].confirm_index(start, lvl, side, t_idx)] if c is not None]
+                if self.confirm is not None:
+                    st = n.points[-1].ts
+                    broken = [(lvl, rule, c[1]) for lvl, side, rule in n.invs
+                              for c in [self.confirm.confirm(d, st, lvl, side, snap.t)] if c is not None]
+                else:
+                    start = n.points[-1].bar_idx + 1
+                    broken = [(lvl, rule, fr["bar_end"].iloc[c]) for lvl, side, rule in n.invs
+                              for c in [self.cache[d].confirm_index(start, lvl, side, t_idx)] if c is not None]
                 if broken:
                     lvl, rule, c = min(broken, key=lambda x: x[2])
-                    e = {"t": snap.t, "break_at": fr["bar_end"].iloc[c], "degree": d, "pattern": n.pattern,
+                    e = {"t": snap.t, "break_at": c, "degree": d, "pattern": n.pattern,
                          "current_wave": n.current_wave, "level": lvl, "rule": rule, "origin": n.points[0].ts, "key": n.key}
                     snap.invalidated.append(e)
                     self.log.append(e)

@@ -209,7 +209,9 @@ def random_pool(d, sc, st, times, ref_bt, per_ep=PER_EP):
                             sub_origin=stp.extreme.price, bars_last_subleg=1, extreme=stp.extreme.price,
                             extreme_ts=stp.extreme.ts, wave_start_ts=stp.wave_start.ts + pd.Timedelta(microseconds=n),
                             comp=(o, h, l, c), n=1, score=0.0, vote=stp.vote, opp_max=stp.opp_max, alt_invs=list(stp.alt_invs),
-                            pattern=stp.node.pattern, current_wave=stp.node.current_wave)
+                            pattern=stp.node.pattern, current_wave=stp.node.current_wave,
+                            inv_degree=getattr(stp, "inv_degree", None), inv_start_ts=getattr(stp, "inv_start_ts", None),
+                            parent_start_ts=getattr(stp, "parent_start_ts", None))
             replay[tj].append(sig)
             ep_of[sig.wave_start_ts] = e
     bt = BT.Backtest(d, st, scanner=sc, replay=dict(replay), structure_free_exits=True, entry_filters=False, pricer=ref_bt.pricer,

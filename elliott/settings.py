@@ -110,6 +110,9 @@ SCHEMA += [
        calibrate=False),
     _s("break_no_reclaim_bars", "breaks", "Acceptance bars", "कमकुवत breaking close नंतर इतके bars reclaim नाही ⇒ खरा break. 0 ⇒ एका close वर "
        "(तुमच्या नियमाविरुद्ध, फक्त तुलनेसाठी).", "int", 1, 0, 5),
+    _s("break_confirm_tf", "breaks", "Break confirmation TF", "level_tf (default, F4): count आणि trade exit दोन्ही त्या wave च्या TF वर "
+       "(fixed mode ⇒ degree_tf; auto ⇒ wave start → आत्ता चा auto TF, trigger TF सारखा नियम) — 5m वरच्या कमकुवत closes ने 15m trade चा "
+       "count मरत नाही. 5m / 15m ⇒ ठराविक.", "choice", "level_tf", choices=("level_tf", "5m", "15m"), calibrate=False),
     _s("break_retest_confirm", "breaks", "Failed retest ने break", "Break नंतर reclaim झाला, पण लगेच (trigger window मध्ये) level ला "
        "उलट logical reversal ने नाकारलं ⇒ खरा break (role reversal, §14 Q1 c).", "bool", True, calibrate=False),
 ]
@@ -164,6 +167,12 @@ SCHEMA += [
     _s("risk_per_trade_pct", "strike", "Risk प्रति trade (% capital)", "Max loss = (width − credit) × lot × lots ≤ हा % × tier गुणक.",
        "float", 1.0, 0.05, 10.0),
     _s("tier_mult", "strike", "Tier size गुणक (A, B, C)", "C = 0 ⇒ Tier C skip.", "list_float", [1.0, 0.5, 0.25], 0.0, 2.0),
+    _s("sizing_mode", "strike", "Sizing पद्धत", "tier_of_A (default, F1): आधी Tier A lots (risk budget वरून, किमान 1), मग lots = "
+       "round(A × tier गुणक), Tier B/C किमान खालीलप्रमाणे; risk_budget: प्रत्येक tier चा budget ÷ प्रति-lot तोटा (जुनं — lot 65/75 वर "
+       "Tier B कायम 0).", "choice", "tier_of_A", choices=("tier_of_A", "risk_budget"), calibrate=False),
+    _s("tierB_min_lots", "strike", "Tier B किमान lots", "tier_of_A मध्ये.", "int", 1, 0, 50, calibrate=False),
+    _s("tierC_min_lots", "strike", "Tier C किमान lots", "tier_of_A मध्ये (0 ⇒ A 1 lot असताना C skip).", "int", 0, 0, 50,
+       calibrate=False),
     _s("leading_diag_mult", "strike", "Leading diagonal गुणक", "S10 (Neely leading diagonals नाकारतो).", "float", 0.75, 0.0, 1.0),
     _s("max_open_spreads", "strike", "एकाच वेळी कमाल spreads", "फक्त नवीन entries थांबवतो, exits नाही.", "int", 2, 1, 20),
     _s("max_daily_loss_pct", "strike", "दैनिक कमाल तोटा (% capital)", "गाठला ⇒ त्या दिवशी नवीन entry नाही (exits चालू).", "float", 2.0,
@@ -191,7 +200,8 @@ SCHEMA += [
     _s("strike_step", "strike", "Strike step (points)", "Contract master मधून (NIFTY weekly 50).", "int", 50, 5, 500, calibrate=False),
     _s("iv_source", "strike", "IV स्रोत", "atm_iv: निवडलेल्या expiry चा ATM IV (bhavcopy/option chain); vix: India VIX (fallback).",
        "choice", "atm_iv", choices=("atm_iv", "vix"), calibrate=False),
-    _s("min_one_lot", "strike", "Budget कमी तरी 1 lot", "true ⇒ risk budget < 1 lot चा तोटा असला तरी 1 lot (risk% ओलांडतो). Default बंद.",
+    _s("min_one_lot", "strike", "Budget कमी तरी 1 lot", "true ⇒ size 0 येत असला तरी (गुणक > 0) 1 lot (risk% ओलांडतो). Default बंद; "
+       "backtest shadow trades साठी वापरतो.",
        "bool", False, calibrate=False),
     # ---------------------------------------------------------------- E3: trade management (spec §9, §14 Q4/Q5)
     _s("emergency_spot_cross_short", "manage", "Emergency: spot short strike ओलांडतो", "Intrabar लगेच exit (क्रम 0).", "bool", True,
