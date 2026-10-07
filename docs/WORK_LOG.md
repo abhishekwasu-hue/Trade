@@ -978,6 +978,23 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - Golden काळात (25 Sep – 6 Oct) E4 default ने एकच signal दिला: 29 Sep 14:35 D1 S9 Tier A bear call (golden यादीत नाही).
 - T6 PASS चं कारण "A-end नियम" नाही तर त्या वेळी सगळ्या degrees gray (D0/D1/D2) / D0 S6b tf_bars_min — म्हणजे नकार योग्य, पण **कारण वेगळं**.
 
-**निदान (bot ची बाजू — screenshot वाचनाची चूक नाही):** must वेळांना बहुतेक degrees **gray** (vote < 0.5) किंवा preferred count ची दिशा तुमच्या वाचनाच्या उलट. मूळ कारण **वरच्या degrees चा pivot confirm lag + cross-degree strict**: 1 Oct 14:05 चा 22,217 low D1 ला 14:35, D2 ला 15:10, पण **D3 ला 5 Oct 13:40** ला confirm (T7 12:15 नंतर); 30 Sep चा 22,809 high D3 ला 1 Oct 11:15 ला. त्यामुळे D3 "wave 5 अजून चालू" मानतो, D2/D1 त्याच्या मुलांप्रमाणे खाली-दिशेचे counts ठेवतात ⇒ तुमचं "5 संपली, A-B-C वर" वाचन engine कडे त्या वेळी उपलब्धच नाही; उलट बाजूचे counts ⇒ vote फुटतो ⇒ gray. (तपशीलवार degree views आणि pivot confirm वेळा अहवालाच्या §3 मध्ये.)
+**निदान (bot ची बाजू — screenshot वाचनाची चूक नाही):**
+- **कारणं must नुसार वेगळी:**
+  - T2 आणि T3 ला मुख्यतः `D2:next_not_motive` आणि `D0/D1:no_count` — count आहे पण पुढची motive trade दिशेने नाही, किंवा count च नाही.
+  - T4, T7 आणि T8 ला मुख्यतः gray (vote < 0.5).
+- **D3 चा preferred count सगळ्या must वेळांना खाली-दिशेचा** (pattern दिशा −1):
+  - T2: impulse / wave 3;
+  - T3 आणि T8: flat / B;
+  - T4 आणि T7: wxy / Y.
+  - त्यामुळे तुमचं "5 संपली, A-B-C वर" वाचन engine कडे त्या वेळी parent म्हणून उपलब्धच नाही.
+- **संभाव्य मूळ कारण: वरच्या degrees चा pivot confirm lag आणि strict cross-degree.**
+  - 1 Oct 14:05 चा 22,217 low D1 ला 14:35 ला, D2 ला 15:10 ला, पण D3 ला 5 Oct 13:40 ला confirm झाला (T7 12:15 नंतर).
+  - 30 Sep चा 22,809 high D3 ला 1 Oct 11:15 ला confirm झाला.
+- **Review नोंदी (non-blocking, पुढच्या golden run मध्ये सुधारायच्या):**
+  - (a) T5 चा `sized` तपास credit 0 धरतो. Tier C ला हा सर्वात कमी lots चा (PASS कडे झुकणारा) अंदाज आहे; खऱ्या credit ≥ ~23 points ला Tier C = 1 lot होऊ शकतो.
+    या run मध्ये 1 Oct ला signal च नाही, म्हणून निकाल बदलत नाही.
+  - (b) §2 मधली "5 Oct 09:45–10:20" कारणांची खिडकी T6 च्या grading खिडकीपेक्षा (09:30–10:55) लहान आहे.
+  - (c) T5 चा तपशील sizing filter नंतर लिहिला जातो, त्यामुळे sizing ने वगळलेला signal "जुळणारा signal नाही" असा दिसेल.
+(तपशीलवार degree views आणि pivot confirm वेळा अहवालाच्या §3 मध्ये.)
 
 **निर्णय:** फक्त golden pass करण्यासाठी logic / swing settings (swing_atr_mult [1.5, 3, 6, 12], fractal r, cross_degree_mode, vote_min) बदलले **नाहीत** (master नियम). हा **G-निर्णय** तुमचा: degree scaling / confirm lag / cross-degree mode बदलायचा का, आणि कसा (IS वर calibrate, golden फक्त तपासणीसाठी). `tests/test_elliott_e4.py::test_golden_regression_on_real_data` आता trade-data असताना **FAIL** होतो (CI मध्ये data नाही ⇒ skip) — test skip/disable केला नाही.
