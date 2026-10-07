@@ -1,6 +1,6 @@
 # Elliott E1b — count engine (NIFTY spot, IS 2015–2021, default settings, दर 6 × 5m bars snapshot)
 
-Snapshots: 21,401; सरासरी 5.7 ms/snapshot. फक्त वर्णन — edge चा दावा नाही (तो E4 मध्ये).
+Snapshots: 21,401; सरासरी 6.2 ms/snapshot. फक्त वर्णन — edge चा दावा नाही (तो E4 मध्ये).
 
 | Degree | count नाही | vote स्पष्ट (≥ vote_min) | पुढे motive वर | पुढे motive खाली |
 |---|---|---|---|---|
@@ -59,14 +59,14 @@ Snapshots: 21,401; सरासरी 5.7 ms/snapshot. फक्त वर्ण
 | D1 | R8 | 52 |
 | D1 | R2 | 47 |
 | D1 | R1 | 41 |
-| D1 | R3 | 38 |
+| D1 | R3 | 39 |
 | D1 | flat_b_max | 4 |
 | D1 | tri_b_max | 2 |
 | D0 | start-of-C | 345 |
 | D0 | origin | 250 |
 | D0 | R1-lower | 184 |
 | D0 | start-of-Y | 180 |
-| D0 | R3 | 114 |
+| D0 | R3 | 115 |
 | D0 | start-of-5 | 111 |
 | D0 | start | 102 |
 | D0 | R6 | 97 |

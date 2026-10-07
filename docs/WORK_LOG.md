@@ -727,3 +727,59 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - Cross-degree (parent कुटुंब, शेवटच्या wave ची दिशा, रिकामा parent).
 - Hysteresis (margin 1 आणि 0) आणि log.
 - Mutation checks: tentative ला भविष्य दिलं, break ला भविष्य दिलं, किंवा parent-vote काढला, तर tests fail होतात.
+
+## 2026-10-07 · Elliott E2 — setups S1–S14, composite entry trigger T1–T7, failed-retest break, invalidation hierarchy
+
+**काय केलं:**
+- **`elliott/reversal.py` — composite "logical reversal" (spec §6 T1–T4, §14 Q2):** शेवटच्या 1–3 बंद candles चा composite. Touch, reclaim, शेवटची candle trade दिशेने, strength (1.2–2.5 × median range), अनिर्णय ⇒ follow-through (N = 4), score (wick / close-location / body / time / divergence). Bear call = किंमत उलटी करून तेच नियम (mirror test).
+- **`elliott/breaks.py` — (c) failed retest:** break नंतर reclaim झाला, पण लगेच (trigger window मध्ये) level ला उलट बाजूने logical reversal मिळाला ⇒ खरा break. (a)/(b)/(c) पैकी जे आधी. `break_retest_confirm` (default true).
+- **`elliott/setups.py` — count → setup:** trade degree वर preferred count "चालू wave corrective, पुढची motive" म्हणतो तेव्हाच. Pattern / चालू wave आणि parent ची चालू wave यावरून S1–S14, tier (A/B/C), zone (Fib levels), hard invalidation.
+  - Block: count नाही, `parent_missing`, gray, पुढची wave corrective (A-end R4, triangle/X आत), parent च्या B/X/triangle आत, उलट count ≥ `alt_block_weight`, setup बंद, HTF gate.
+  - §14 Q6: preferred चा inv wick ने ओलांडला (real break नाही) ⇒ `recount`: त्याच दिशेचा दुसरा valid count (उदा. expanded flat, inv = wick टोक); `skip`: entry नाही.
+- **`elliott/trigger.py` — Scanner:** दर बंद 5m bar ला snapshot → setup → trigger TF चा bar नेमका तेव्हा बंद झाला तरच तपासणी.
+  - Trigger TF = corrective wave 8–40 बंद candles मध्ये दिसेल असा सर्वात लहान TF (§14 Q3).
+  - C2 (hard inv TTF वर तुटलेला नाही), R4 (correction मध्ये ≥ 3 sub-legs), T7 (close शेवटच्या sub-leg च्या origin च्या आतच — breakout ban), T1–T4, T5 (09:30–14:45; composite चे सगळे candles त्याच session चे आणि 09:30 नंतर सुरू झालेले ⇒ opening gap candle composite मध्ये नाही), T6 (vote).
+  - Signal = TTF bar close (knowable_at); fill पुढच्या bar च्या open वर (E3/E4). एकाच setup वर नवीन signal फक्त नवीन composite वर.
+- **`elliott/invalidation.py`:** signal नंतर hard / parent (cascade) / soft levels चा real break (TTF वर) — E3 चे exits याच्यावर.
+- **Settings:** "Setups" आणि "Entry trigger" विभाग (spec §11, §14) — सगळे dashboard साठी. नवीन प्रकार: `time`, `list_str`.
+- **`research/elliott_signals_report.py` → `docs/reports/elliott_e2_signals.md`** (फक्त IS, फक्त वर्णन). `docs/reports/elliott_e1b_counts.md` retest बदलानंतर पुन्हा तयार केला (फरक: 2 invalidation आकडे).
+
+**IS निकाल (2015–2021, default, review दुरुस्त्यांनंतर, P&L नाही):** 510 signals (0.30 प्रति दिवस); bull put 281 / bear call 229.
+- Setup: S7 (correction संपली) 162, S3 (wave 4) 142 (त्यापैकी 110 Tier C — leading diagonal wave 4), S2 ((ii) of 3/5) 113, S6b 21, S12 18, S13 18, S6a 14, S6c 9, S4 7, S9 4, S1 2.
+- Degree: D1 258, D2 142, D0 110. Trigger TF: 5m 412, 15m 97, 30m 1.
+- Entry न होण्याची मुख्य कारणं: count नाही / gray (D0 91%, D1 88%, D2 88% bars).
+- **नोंद:** review च्या दुरुस्तीआधी 566 signals होते; S1 25 → 2 आणि S10 10 → 0 झाले — ते बहुतेक "preferred block झाल्यावर दुसऱ्या count वरून" आलेले चुकीचे signals होते. S1/S10 इतके कमी का (wave 1 नंतरचा wave 2 बहुतेक वेळा parent च्या wave 3/5 म्हणून S2 मध्ये जातो, की cross-degree मुळे count च नसतो) हे E4 मध्ये trade-स्तरावर तपासेन. Tuning नाही.
+
+**निर्णय (कारणासह):**
+- **"Touched level" = शिवलेल्या levels पैकी सर्वात खोल.** §6 मध्ये "सर्वात वरचा" लिहिलं आहे, पण §10 चं उदाहरण (B low 22,396, reversal close ~22,410, zone 22,419–22,371) फक्त सर्वात खोल level नेच जुळतं. सर्वात उथळ level (22,467) वर close मागितला तर T7 (sub-leg origin च्या आत close) शी विसंगत.
+- **MCX चं `price_action/candles.py` बदललं नाही.** त्याचे weights/score (0–100, sweep, speed) वेगळे आहेत; फक्त composite चं logic तेच ठेवून `elliott/reversal.py` नवीन. त्यामुळे MCX वर्तनाला धोका शून्य.
+- **D0 च्या sub-legs (R4, T7 चा H):** D0 खाली degree नाही ⇒ trigger TF चे 1-bar fractals (सर्वात लहान दिसणारी रचना). D ≥ 1 ला D−1 चे confirmed pivots; ते अपुरे असतील तर हेच fallback. [अनुमान]
+- **Wave 4 zone:** spec मध्ये "आधीच्या lesser-degree 4 चा span" (मोजायला sub-pattern माहिती लागते) ⇒ wave 3 चा 0.236/0.382/0.5 retrace [मार्गदर्शक]; flat B zone 0.9/1.0/1.236/1.382 × A; triangle E 0.5/0.618/0.786 × D. सगळे dashboard वर.
+- **(ii) of 5 = S2, Tier C** (late stage, §4). S3 चा parent wave 5 असेल तर तो S5 (default बंद).
+- **S7 चा parent B/X मध्ये** ⇒ तो parent चा C/Y trade ⇒ Tier B; parent flat B ⇒ inv = B टोक ∓ buffer (S6b नियम), flat_b_max नाही (पहिल्या smoke run मध्ये हे दूरचं level येत होतं — दुरुस्त).
+- **S11 ओळख:** wave 2/B चा origin = degree D किंवा D+1 वरच्या contracting ending diagonal चं टोक (overlap + converging legs). S11 default बंद ⇒ diagonal नंतरचा pullback trade नाही.
+- **Tier:** parent wave 5 ⇒ C; parent C/Y (corrective) ⇒ B; D+2 च्या चालू दिशेविरुद्ध ⇒ B; lead_diag wave 4 ⇒ C.
+- **Gap नियम:** composite मध्ये 09:30 आधीचा candle नाही (1h TTF ला पहिला 09:15–10:15 bar composite मध्ये येत नाही).
+- **C3 (`c_time_rule = delay`):** zigzag/flat C-end (S7) वर t(c) > t(a)+t(b) ⇒ entry नाही; C स्वतः ending diagonal (D−1 चा preferred count) असेल तर सूट (Neely Terminal C).
+- **अजून नाही (E3):** fill, strike, expiry, cost, exits.
+
+**स्वतंत्र review (2 High + 6 Medium + Low) — सगळे दुरुस्त:**
+- **High — preferred count block झाला तरी दुसऱ्या count वरून setup:** आता setup फक्त preferred count वरून (C0). दुसरा count फक्त §14 Q6 मध्ये (preferred चा inv wick ने ओलांडला) आणि तोही **त्याच चालू wave** चा (उदा. expanded flat). (2019 मध्ये 86 पैकी 12 signals चुकीने "recount" होते.)
+- **High — X-end trade S7 म्हणून निसटत होता:** parent wxy च्या X चा शेवट ⇒ S8 (default बंद), §5 S7 नोंदीप्रमाणे.
+- **Failed retest कडक:** composite तुटलेल्या बाजूने सुरू (पहिला open L पलीकडे) आणि नकाराचा close buffer पलीकडे; प्रत्येक window स्वतंत्र तपासली. आधी वरून आलेला आणि buffer आत close होणारा bar सुद्धा "break" ठरत होता — false-break नियमाविरुद्ध.
+- **Ending diagonal च्या आत pullback** (parent end_diag) ⇒ block (§5 निषिद्ध #5).
+- **S7 चा parent सुद्धा संपतोय (wxy Y)** ⇒ grandparent चा नियम-स्तर inv (आधी कधीच fire होत नव्हता).
+- **Dedup TF-निरपेक्ष** (composite च्या वेळेवरून; auto-TF 5m → 15m बदलल्यावर नवीन नकार चुकीने अडत होता).
+- **Scan वेळा** = सगळ्या TFs च्या bar_end चा union (`Scanner.times()`; structure TF मोठा असला तरी प्रत्येक trigger-TF close तपासला जातो).
+- **Hard inv तुटल्यावर त्या setup ला re-entry नाही** (S6b चा inv B सोबत हलतो, म्हणून आधीच्या signal चा inv लक्षात ठेवतो).
+- Low: Terminal C सूट फक्त **याच** C च्या origin वरून सुरू होणाऱ्या D−1 ending diagonal ला; S11 चा inv = diagonal टोक; S7 चा TF/sub-legs पूर्ण correction वरून (§14 Q3); wick = inv अचूक बरोबर ⇒ पलीकडे नाही; settings: `entry_start` ≥ 09:30, wick/close/body weights पैकी एक > 0, `datetime.time` चालतो.
+- नोंद (बदल नाही): 1d trigger TF चा bar 15:30 ला बंद ⇒ T5 कधीच पास नाही, म्हणजे फक्त daily वर दिसणाऱ्या wave वर intraday entry नाही — spec शी सुसंगत. रिकामा `setups_enabled` चालतो (सगळे setups बंद).
+
+**Tests:** `tests/test_elliott_e2.py` (+49):
+- Reversal: hammer score, bull/bear mirror, touch/reclaim/weak/exhaustion, inv पलीकडे (low आणि मधला close), सर्वात खोल touched level + `zone_high`, शेवटची candle उलट, N = 4 follow-through (फक्त N=4 पास होणारा case), min_start.
+- Failed retest: confirm, setting बंद, causal (truncation); वरून आलेला/buffer आत close ⇒ नाही; false-break मार्ग (wick, reclaim, acceptance) तसेच; नंतरचा retest वि. आधीचा displacement ⇒ आधीचा.
+- Setup table (19 प्रकार), tier (D+2 विरुद्ध, 4 of 5), zones, hard inv (S6a, S6b, S7, S7-in-flat-B, S7-under-Y).
+- Blocks: no count, gray, parent_missing, A-end, alt block, B आत (fall-through नाही), ending diagonal आत, S8 leak, wick recount/skip, C3 (+ Terminal C फक्त याच C ला), setup बंद, HTF gate.
+- Real data (2019 Q1): प्रत्येक signal वर breakout ban — H **स्वतंत्रपणे** D−1 pivots वरून, inv आत, reclaim, soft stop, TTF close, gap candle नाही, वेळ, vote; truncation invariance.
+- Synthetic T7 bull आणि bear (mirror); hard break ⇒ level_events (causal) आणि re-entry बंदी.
+- Mutation checks: T7 काढला, gap नियम काढला, touched = सर्वात उथळ — तिन्ही tests fail होतात.

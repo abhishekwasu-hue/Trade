@@ -10,8 +10,8 @@ elliott/breaks.py — "खरा break" (spec §7, §14 Q1): count invalidation 
         ⇒ t वर confirm (break_displacement_confirm).
     (b) Acceptance: पुढचे break_no_reclaim_bars bars सुद्धा level च्या पलीकडेच close (reclaim नाही) ⇒ शेवटच्या bar वर confirm.
         (0 ⇒ एका close वर — तुलनेसाठीच.)
-    (c) Failed retest: break नंतर level चा retest उलट logical reversal ने नाकारला ⇒ confirm — logical reversal (E2) लागतो, म्हणून
-        `retest_fn` hook (E2 मध्ये जोडतो; तोपर्यंत None).
+    (c) Failed retest: break नंतर reclaim, पण लगेच level चा retest उलट logical reversal ने नाकारला ⇒ confirm
+        (`retest_fn` = elliott.reversal.retest_fn; BreakCache मध्ये break_retest_confirm नुसार आपोआप). (a)/(b)/(c) पैकी जे आधी.
   अन्यथा (wick, किंवा कमकुवत close मग reclaim) ⇒ false break: candidate रद्द, exit/invalidation नाही.
 Causal: confirm index c ठरवायला फक्त bars ≤ c वापरतो ⇒ "t ला तुटलेलं?" = c ≤ t (truncation invariant).
 """
@@ -44,7 +44,10 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
     mr = median_range(frame, s["median_range_n"]) if mr is None else mr
     k = s["break_no_reclaim_bars"]
     t = max(start, 0)
+    best_r = None                                                                     # (c) failed retest — "जे आधी" साठी लक्षात
     while t <= end:
+        if best_r is not None and t > best_r:
+            return best_r
         m = mr[t]
         if not np.isfinite(m) or not _beyond(c[t], level, s["break_buffer_mr"] * m, side):
             t += 1
@@ -53,13 +56,13 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
         if s["break_displacement_confirm"] and rng >= s["strength_min"] * m and rng > 0:
             loc = (c[t] - l[t]) / rng if side == "below" else (h[t] - c[t]) / rng     # break-दिशेच्या टोकापासून अंतर
             if loc <= s["break_close_loc"]:
-                return t                                                              # (a) displacement
+                return _first(t, best_r)                                              # (a) displacement
         if k == 0:
-            return t
+            return _first(t, best_r)
         ok, j = True, t
         for j in range(t + 1, t + k + 1):
             if j > end:
-                return None                                                           # अजून ठरलं नाही (भविष्य नाही)
+                return best_r                                                         # अजून ठरलं नाही (भविष्य नाही)
             if _back_inside(c[j], level, side):
                 ok = False
                 break
@@ -67,15 +70,19 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
             if (s["break_displacement_confirm"] and np.isfinite(mj) and rj > 0 and rj >= s["strength_min"] * mj
                     and _beyond(c[j], level, s["break_buffer_mr"] * mj, side)
                     and ((c[j] - l[j]) / rj if side == "below" else (h[j] - c[j]) / rj) <= s["break_close_loc"]):
-                return j                                                              # window मधली displacement — "जे आधी"
+                return _first(j, best_r)                                              # window मधली displacement — "जे आधी"
         if ok:
-            return t + k                                                              # (b) acceptance
+            return _first(t + k, best_r)                                              # (b) acceptance
         if retest_fn is not None:
             r = retest_fn(frame, t, level, side, end)
             if r is not None:
-                return r                                                              # (c) failed retest (E2)
+                best_r = _first(r, best_r)                                            # (c) failed retest — पण आधीचा confirm जिंकतो
         t = j + 1 if not ok else t + 1                                                # false break ⇒ reclaim नंतरपासून पुन्हा
-    return None
+    return best_r
+
+
+def _first(x, y):
+    return x if y is None else min(x, y)
 
 
 def first_wick_break(frame, start, level, side, end=None):
@@ -96,6 +103,10 @@ class BreakCache:
     def __init__(self, frame, s):
         self.frame, self.s = frame, s
         self.mr = median_range(frame, s["median_range_n"])
+        self.retest = None
+        if s.get("break_retest_confirm") and s["count_inv_basis"] != "wick":
+            from .reversal import retest_fn                                           # circular import टाळण्यासाठी इथे
+            self.retest = retest_fn(frame, s, self.mr)
         self._found = {}           # key → confirm index
         self._clear = {}           # key → इथपर्यंत तपासलं, break नाही
 
@@ -113,7 +124,7 @@ class BreakCache:
         if self.s["count_inv_basis"] == "wick":
             c = first_wick_break(self.frame, start, level, side, end=t_idx)
         else:
-            c = first_real_break(self.frame, start, level, side, self.s, mr=self.mr, end=t_idx)
+            c = first_real_break(self.frame, start, level, side, self.s, mr=self.mr, end=t_idx, retest_fn=self.retest)
         if c is None:
             self._clear[key] = t_idx
             return None
