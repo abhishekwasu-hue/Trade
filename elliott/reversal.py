@@ -23,7 +23,9 @@ INDECISION = (0.40, 0.60)
 # कारणे — "सर्वात जवळची" अपयशी window निवडण्याचा क्रम
 NO_DATA, NO_TOUCH, INV, NO_RECLAIM, LAST_AGAINST = "no_data", "no_touch", "beyond_inv", "no_reclaim", "last_against"
 WEAK, EXHAUSTION, INDECISIVE, LOW_SCORE = "weak", "exhaustion", "indecision", "low_score"
-_STAGE = {NO_DATA: -1, NO_TOUCH: 0, INV: 1, NO_RECLAIM: 2, LAST_AGAINST: 3, WEAK: 4, EXHAUSTION: 4, INDECISIVE: 5, LOW_SCORE: 6}
+PATH, NO_BODY = "path_retrace", "no_body"
+_STAGE = {NO_DATA: -1, NO_TOUCH: 0, INV: 1, NO_RECLAIM: 2, LAST_AGAINST: 3, PATH: 3, WEAK: 4, EXHAUSTION: 4, NO_BODY: 4,
+          INDECISIVE: 5, LOW_SCORE: 6}
 
 
 class Bars:
@@ -43,15 +45,45 @@ def _window(b, a, j, dirn):
     return -b.o[a], -b.l[a:j + 1].min(), -b.h[a:j + 1].max(), -b.c[j], -b.c[a:j + 1]
 
 
+def _label(n, o, h, l, c, fo, fc, mo, mc, dirn):
+    """Blended classic नाव — **फक्त log/अहवाल**, निर्णयात वापर नाही (addendum §3.8). Mirror केलेल्या (bullish) किमतींवर.
+    fo/fc = पहिली candle, mo/mc = दुसरी (N=2) / मधली (N=3)."""
+    rng = h - l
+    if rng <= 0:
+        return "other"
+    wick, cl, body = (min(o, c) - l) / rng, (c - l) / rng, abs(c - o) / rng
+    bull = dirn > 0
+    if n == 1:
+        if wick >= 0.5 and cl >= 0.6:
+            return "hammer-like" if bull else "shooting-star-like"
+        if body >= 0.6 and cl >= 0.8:
+            return "marubozu-like"
+        return "other"
+    lo1, hi1 = min(fo, fc), max(fo, fc)
+    if n == 2:
+        if fc < fo and mo <= fc + 1e-12 and mc >= fo:
+            return "engulfing-like"
+        if fc < fo and hi1 > lo1 and lo1 + 0.5 * (hi1 - lo1) <= c <= hi1:
+            return "piercing-like" if bull else "dark-cloud-like"
+        return "other"
+    if fc < fo and abs(mc - mo) <= 0.3 * max(hi1 - lo1, 1e-12) and c >= lo1 + 0.5 * (hi1 - lo1):
+        return "star-like"
+    return "other"
+
+
 def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extreme_idx=None, bars_last_subleg=None,
-                    div_ok=None, reclaim_ref="touched_level"):
+                    div_ok=None, reclaim_ref="touched_level", mr_override=None, rmin=None):
     """Window = bars [j−n+1, j]. levels = zone levels (किंमत); inv = hard invalidation (किंवा None).
-    रिटर्न dict: ok, reason, n, score, touched, comp (o,h,l,c — खरी किंमत), close_loc, rng_ratio."""
-    out = {"ok": False, "reason": NO_DATA, "n": n, "score": 0.0, "touched": None, "comp": None, "close_loc": None, "rng_ratio": None}
+    mr_override = strength संदर्भ (own_correction / time_slot — C1); rmin = rejection_min (profile). दोन्ही None ⇒ सध्याचं वर्तन.
+    रिटर्न dict: ok, reason, n, score, touched, comp (o,h,l,c — खरी किंमत), close_loc, rng_ratio, parts, label."""
+    out = {"ok": False, "reason": NO_DATA, "n": n, "score": 0.0, "touched": None, "comp": None, "close_loc": None, "rng_ratio": None,
+           "parts": {}, "label": None}
     a = j - n + 1
     if a < max(min_start, 0) or j >= b.n or not levels:
         return out
-    m = b.mr[a]
+    m = b.mr[a] if mr_override is None else (mr_override(a) if callable(mr_override) else mr_override)
+    if m is None:
+        m = b.mr[a]
     if not np.isfinite(m) or m <= 0:
         return out
     o, h, l, c, closes = _window(b, a, j, dirn)
@@ -60,6 +92,9 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     rng = h - l
     out["close_loc"] = (c - l) / rng if rng > 0 else 0.0
     out["rng_ratio"] = rng / m
+    fo, fc = (b.o[a], b.c[a]) if dirn > 0 else (-b.o[a], -b.c[a])                # पहिली candle (mirror)
+    mo, mc = ((b.o[a + 1], b.c[a + 1]) if dirn > 0 else (-b.o[a + 1], -b.c[a + 1])) if n >= 2 else (fo, fc)   # दुसरी candle
+    out["label"] = _label(n, o, h, l, c, fo, fc, mo, mc, dirn)
     if not l <= lv[-1] + tol:
         out["reason"] = NO_TOUCH
         return out
@@ -79,42 +114,111 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
         if not last_c > last_o:
             out["reason"] = LAST_AGAINST
             return out
+        if s.get("path_checks"):                                     # शेवटच्या candle ने स्वतः किती परत दिलं (त्याचा high / आधीचा close पासून)
+            last_h, prev_c = (b.h[j], b.c[j - 1]) if dirn > 0 else (-b.l[j], -b.c[j - 1])
+            if (max(last_h, prev_c) - c) / rng > 0.5:
+                out["reason"] = PATH
+                return out
     if rng < s["strength_min"] * m:
         out["reason"] = WEAK
         return out
     if rng > s["strength_max"] * m:
-        out["reason"] = EXHAUSTION
-        return out
+        if s.get("strength_cap_mode", "fixed") == "fixed" or out["close_loc"] < 0.6:
+            out["reason"] = EXHAUSTION                                   # logic: pullback दिशेने close (climax extension)
+            return out
+        guard = s.get("strength_risk_guard_mult", 0.0)
+        if guard > 0 and rng > guard * m:
+            out["reason"] = EXHAUSTION                                   # logic mode मधला पर्यायी risk guard
+            return out
     w = s["rejection_weights"]
-    comps = [(w[0], (min(o, c) - l) / rng), (w[1], (c - l) / rng), (w[2], abs(c - o) / rng * (c > o))]
+    body_bull = abs(c - o) / rng * (c > o)
+    hi1, lo1 = max(fo, fc), min(fo, fc)
+    depth = float(np.clip((c - lo1) / (hi1 - lo1), 0.0, 1.0)) if n >= 2 and hi1 > lo1 and fc < fo else 0.0
+    body_v = body_bull
+    if s.get("body_term_mode", "bull_body") == "body_or_reclaim" and depth >= 0.5:
+        body_v = max(body_bull, depth)
+    if s.get("min_body_or_reclaim") and (c - o) / rng < MIN_BODY and depth < 0.5:     # trade दिशेची body (mirror)
+        out["reason"] = NO_BODY
+        return out
+    comps = [("wick", w[0], (min(o, c) - l) / rng), ("close_loc", w[1], (c - l) / rng), ("body", w[2], body_v)]
     if extreme_idx is not None and bars_last_subleg is not None:
-        comps.append((w[3], float(j - extreme_idx <= bars_last_subleg)))
+        comps.append(("time", w[3], float(j - extreme_idx <= bars_last_subleg)))
     if div_ok is not None:
-        comps.append((w[4], float(div_ok)))
-    tw = sum(x for x, _ in comps)
-    out["score"] = sum(x * v for x, v in comps) / tw if tw > 0 else 0.0
+        comps.append(("div", w[4], float(div_ok)))
+    if s.get("w_reclaim_depth", 0.0) > 0:
+        rec, stab = float(np.clip((c - touched) / m, 0.0, 1.0)), float(np.clip((touched - l) / m, 0.0, 1.0))
+        comps.append(("reclaim_depth", s["w_reclaim_depth"], 0.5 * (rec + stab)))   # level पलीकडे stab + आत close (× median)
+    if s.get("w_overlap", 0.0) > 0:
+        p0 = max(a - 3, 0)
+        if p0 < a:
+            ph, pl = (b.h[p0:a].max(), b.l[p0:a].min()) if dirn > 0 else (-b.l[p0:a].min(), -b.h[p0:a].max())
+            ov = max(0.0, min(h, ph) - max(l, pl)) / rng
+            comps.append(("low_overlap", s["w_overlap"], 1.0 - min(ov, 1.0)))
+    tw = sum(x for _, x, _ in comps)
+    out["score"] = sum(x * v for _, x, v in comps) / tw if tw > 0 else 0.0
+    if n >= 3 and s.get("n3_penalty", 0.0) > 0:
+        out["score"] -= s["n3_penalty"]
+    out["parts"] = {k: round(float(v), 4) for k, _, v in comps}
     if INDECISION[0] <= out["close_loc"] <= INDECISION[1]:
         out["reason"] = INDECISIVE
         return out
-    if out["score"] < s["rejection_min"]:
+    if out["score"] < (s["rejection_min"] if rmin is None else rmin):
         out["reason"] = LOW_SCORE
         return out
     out.update(ok=True, reason=None)
     return out
 
 
+MIN_BODY = 0.10                                                      # min_body_or_reclaim: trade दिशेची body / range
+
+
 def evaluate(b, j, dirn, levels, tol, s, **kw):
     """N = 1…touch_reclaim_window (+ indecision follow-through) — पास झालेल्यांपैकी सर्वोच्च score (समान ⇒ लहान N);
-    नाहीतर "सर्वात जवळची" अपयशी window. Window नेहमी bar j वर संपते."""
+    नाहीतर "सर्वात जवळची" अपयशी window. Window नेहमी bar j वर संपते.
+    Follow-through: legacy — N=3 (j−1) अनिर्णयी + bar j दिशेने बंद ⇒ N=4; addendum — `_followthrough` (अनिर्णयी composite नंतर
+    close पलीकडे ⇒ trigger; T7 trigger मध्ये; signal high stop-entry नाही)."""
     nmax = s["touch_reclaim_window"]
     res = [evaluate_window(b, j, n, dirn, levels, tol, s, **kw) for n in range(1, nmax + 1)]
-    prev = evaluate_window(b, j - 1, nmax, dirn, levels, tol, s, **kw) if j >= 1 else None
-    if prev is not None and prev["reason"] == INDECISIVE and j < b.n and dirn * (b.c[j] - b.o[j]) > 0:
-        res.append(evaluate_window(b, j, nmax + 1, dirn, levels, tol, s, **kw))
+    if j >= 1 and j < b.n:
+        if s.get("followthrough_mode", "legacy") == "legacy":
+            prev = evaluate_window(b, j - 1, nmax, dirn, levels, tol, s, **kw)
+            if prev["reason"] == INDECISIVE and dirn * (b.c[j] - b.o[j]) > 0:
+                res.append(evaluate_window(b, j, nmax + 1, dirn, levels, tol, s, **kw))
+        else:
+            res += _followthrough(b, j, dirn, levels, tol, s, nmax, kw)
     ok = [r for r in res if r["ok"]]
     if ok:
         return max(ok, key=lambda r: (r["score"], -r["n"]))
     return max(res, key=lambda r: (_STAGE.get(r["reason"], -1), r["score"], -r["n"]))
+
+
+def _followthrough(b, j, dirn, levels, tol, s, nmax, kw):
+    """Addendum §3.7: bar j−k (k ≤ followthrough_max_bars) वर संपलेली composite अनिर्णयी (CL 0.40–0.60; touch/reclaim/strength पास);
+    मधल्या candles नी trigger दिलं नाही / hard_inv पलीकडे close नाही; bar j चा close त्या composite च्या close पलीकडे trade दिशेने
+    ⇒ trigger. Score = अनिर्णयी composite चा; composite (soft stop साठी) = j पर्यंत. T7 trigger() मध्ये; stop-entry नाही."""
+    out = []
+    rmin = kw.get("rmin")
+    kw = {k: v for k, v in kw.items() if k != "rmin"}
+    inv = kw.get("inv")
+    for k in range(1, s.get("followthrough_max_bars", 1) + 1):
+        e = j - k
+        if e < 0:
+            break
+        if inv is not None and any(dirn * b.c[x] <= dirn * float(inv) for x in range(e + 1, j + 1)):
+            break
+        if dirn * (b.c[j] - b.c[e]) <= 0:
+            continue
+        if any(evaluate_window(b, x, n, dirn, levels, tol, s, rmin=rmin, **kw)["ok"] for x in range(e + 1, j) for n in range(1, nmax + 1)):
+            break                                                    # मधेच trigger झाला असता ⇒ तो signal, follow-through नाही
+        for n in range(1, nmax + 1):
+            prev = evaluate_window(b, e, n, dirn, levels, tol, s, rmin=rmin, **kw)
+            if prev["reason"] != INDECISIVE:                         # touch/reclaim/strength आधीच पास; CL 0.40–0.60
+                continue
+            a = e - n + 1
+            r = dict(prev, ok=True, reason=None, n=n + k, followthrough=True,
+                     comp=(float(b.o[a]), float(b.h[a:j + 1].max()), float(b.l[a:j + 1].min()), float(b.c[j])))
+            out.append(r)
+    return out
 
 
 def retest_fn(frame, s, mr):
@@ -123,6 +227,8 @@ def retest_fn(frame, s, mr):
     Window चे सगळे candles t नंतरचे (breaking candle composite मध्ये नाही); composite level च्या **तुटलेल्या बाजूने** सुरू
     (पहिला open L पलीकडे) आणि नकाराचा close L ∓ buffer पलीकडे — म्हणजे भाव खरंच खालून L ला लागून परत फेकला गेला.
     Time/div घटक नाहीत (score उरलेल्या weights वर)."""
+    from .settings import core_candle
+    s = core_candle(s)                                               # C1 candle प्रयोग real-break बदलत नाहीत
     b = Bars(frame, mr)
 
     def fn(_frame, t, level, side, end):

@@ -208,7 +208,8 @@ def evaluate(st: TradeState, ctx, s):
 def c_zone_reversal(bars, j, sig, s, tol, min_start=0):
     """Tier B exit चा पुरावा: C zone मध्ये **उलट** दिशेचा logical reversal (entry सारखेच नियम, mirror) — bar j वर."""
     from .reversal import evaluate as rev
+    from .settings import core_candle
     zone = c_zone(sig, s)
     if not zone:
         return False
-    return bool(rev(bars, j, -sig.trade_dir, zone, tol, s, min_start=min_start)["ok"])
+    return bool(rev(bars, j, -sig.trade_dir, zone, tol, core_candle(s), min_start=min_start)["ok"])   # C1 candle प्रयोग exit बदलत नाहीत
