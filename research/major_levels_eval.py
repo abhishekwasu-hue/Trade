@@ -8,8 +8,9 @@ Report-only; कुठलाही bot gate नाही.
   1) --export (VPS वर; Upstox token लागतो, फक्त candles **वाचतो** — order/DB write नाही):
        NIFTY 15m (fetch_candles, 70 दिवस) आणि GOLD/COPPER/SILVER 30m (front-month, fetch_mcx_candles, 110 दिवस) →
        data/research/major_levels_candles/<SYMBOL>_<tf>.csv (gitignored). MCX साठी bot चा (roll) contract आणि सर्वात जवळचा न-expire contract
-       वेगळे असतील तर दोन्ही (`__near`). मग VPS command ते वेगळ्या **data branch** वर (git worktree मधून; main मध्ये कधीच merge नाही — 2026 चा डेटा
-       holdout काळातला) docs/reports/major_levels/candles/ मध्ये push करते; चालू checkout अबाधित.
+       वेगळे असतील तर दोन्ही (`__near`). **बदल (Abhi, 2026-10-06):** Trade repo public आहे ⇒ Upstox candles इथे push करायचे नाहीत.
+       Export आता `research/elliott_vps_data.py --repo <trade-data> major-levels` मधून **private trade-data repo** मध्ये
+       (major_levels_candles/); --eval ला `--candles <त्या checkout चा major_levels_candles>` द्या.
   2) --eval (कुठेही; network नाही): ground-truth window च्या शेवटापर्यंतच्या candles वर (no-lookahead) algo levels, लहान grid
      (lookback × k × min_react × prominence × price-mode = 72 संयोजनं), precision/recall/F1 (±0.15%), leave-one-chart-out, आणि
      चार charts चे overlay PNGs (algo वि. वापरकर्ता) → docs/reports/major_levels/
