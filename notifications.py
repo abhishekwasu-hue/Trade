@@ -94,6 +94,36 @@ def send_telegram_message(message, timeout=10):
         return False
 
 
+def send_telegram_photo(png_bytes, caption, timeout=20):
+    """Chart image + caption (HTML, Telegram मर्यादा 1024 chars) — Vision V0 साठी. send_telegram_message सारखंच: कधीच raise नाही,
+    credentials नसतील तर फक्त local log. Image नसेल (None) तर फक्त text संदेश."""
+    if not png_bytes:
+        return send_telegram_message(caption, timeout=timeout)
+    token, chat_id = _load_telegram_credentials()
+    _log_locally("[photo] " + caption)
+    if not token or not chat_id:
+        return False
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id, "caption": caption[:1024], "parse_mode": "HTML"},
+            files={"photo": ("chart.png", png_bytes, "image/png")},
+            timeout=timeout,
+        )
+        if resp.status_code == 400:                                     # HTML parse चूक ⇒ एकदा साध्या text caption सह
+            import re
+            plain = re.sub(r"<[^>]+>", "", caption).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": chat_id, "caption": plain[:1024]},
+                files={"photo": ("chart.png", png_bytes, "image/png")},
+                timeout=timeout,
+            )
+        return resp.status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def _log_locally(message):
     """Telegram पाठवता आलं की नाही, याची पर्वा न करता — प्रत्येक सूचना स्थानिक फाईलमध्येही नोंदवली जाते."""
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

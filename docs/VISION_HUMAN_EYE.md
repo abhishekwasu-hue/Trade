@@ -1,0 +1,106 @@
+# Vision + Human-Eye — PAPER signals ची chart तपासणी
+
+> स्रोत: TRADE_VISION_HUMAN_CONFIRM_PROMPT.md (§10 तुमचे निर्णय आणि §11 PNG जतन — विरोध असेल तर हे जिंकतात) + 2026-10-07 चे निर्णय. टप्पे V0 → V1 → V2 → V3. **हे पान V0 पर्यंत अद्ययावत.**
+
+## अटळ नियम
+1. Vision / AI कधीच order देत नाही, size वाढवत नाही (reduce-only). **V0 मध्ये trading वर शून्य परिणाम** — hook नेहमी `None`, bot त्याचा परिणाम वापरत नाही (test).
+2. Exits पूर्ण automatic — `trade_monitor.py` / `trading_engine.py` / `engine_service.py` मध्ये vision नाही (test).
+3. किंमती image वरून नाहीत — level / spot bot च्या OHLC मधून; vision फक्त enum मत देतो.
+4. फक्त PAPER. LIVE bot ⇒ `effective_mode = off` (कुठलाही mode लागू नाही).
+5. No-lookahead: chart फक्त signal च्या क्षणापर्यंत **पूर्ण** झालेल्या 1m bars वरून (चालू minute चा bar नाही), मोठे TF त्याच कापलेल्या data वरून (test: भविष्यातला spike chart मध्ये नाही).
+6. Secrets फक्त VPS `.env`: `ANTHROPIC_API_KEY`, Telegram token. Log / repo मध्ये नाहीत.
+
+## V0 — shadow / notify (हा PR)
+
+```
+Bot (cron, दर मिनिट) — सगळे gates पास, entry च्या आधी
+   └─ vision.hook.submit_signal(...)  → data/vision.db: vision_signals (QUEUED)      ← फक्त नोंद, ~ms, कधीच raise नाही
+Bot नेहमीप्रमाणे trade करतो (निर्णय / size / exits बदलत नाहीत)
+
+vision worker (cron, दर मिनिट, 55 s loop, दर 5 s तपासणी, ProcessLock)
+   1. 15 मिनिटांपेक्षा जुने QUEUED ⇒ EXPIRED
+   2. Upstox 1m (14 दिवस) → signal पर्यंत कापून 2-panel chart (setup TF + मोठा TF), ~1000×700 PNG
+      → data/visual_audit/YYYY-MM-DD/<bot>_<symbol>_<signal_id>_<HHMM>_sent.png (overwrite नाही) + sha256; vision आणि Telegram ला हीच फाईल
+   3. तोच symbol / दिशा / TF / level (±0.05%) 15 मिनिटांत आधी तपासलेला ⇒ तेच मत (API call नाही)
+   4. Budget (आज ≤ $0.30, महिना ≤ $5) / model / key नाही ⇒ verdict unavailable, fail action = ignore (algorithm चा निर्णय) + दिवसातून एकदा Telegram इशारा
+   5. Audit: 1 call; confidence < 0.6 ⇒ दुसरा (budget असेल तर)
+   6. नोंद: verdict, JSON, latency, tokens, $
+   7. mode = notify ⇒ Telegram: chart + मत + कारण (बटणं नाहीत). shadow ⇒ फक्त नोंद.
+```
+
+| Bot | key | V0 default | कारण |
+|---|---|---|---|
+| NIFTY 5-Min Instant | `dynamic_sr_instant` | **notify** | G-V0 ला पहिल्या दिवसाचा Telegram हवा |
+| NIFTY 15M Dynamic SR | `srv2_momentum_reversal` | **notify** | तसंच |
+| Pullback Credit Spread | `pullback_credit_spread` | off | §10.1: "PAPER चालू असेल तर" — तो सध्या फक्त preview पान आहे, PAPER bot म्हणून चालत नाही (hook ला जागा नाही). PAPER runner आला की याच hook ने notify |
+| MCX Futures | `mcx_futures` | off | तुमचा निर्णय: MCX off |
+| Elliott | `elliott` | off | E6 PAPER wiring नंतर |
+
+`algo_decision = ENTER` म्हणजे bot चे सगळे gates पास झाले. पण option chain / strike-निवड नंतर अपयशी झाली तर प्रत्यक्ष trade होत नाही
+⇒ outcome साठी नेहमी `live_trades` शी (bot source, symbol, वेळ) जोडून पाहायचं (V3).
+Chart वरचा शेवटचा bar: bot ने signal च्या क्षणी पाहिलेली चालू 1m candle (`last_bar`) — ती bot कडची त्या क्षणीची माहिती आहे, भविष्य नाही; signal नंतरची candle नाकारली जाते (test).
+
+Setup TF → chart: 1M/5M level ⇒ 5m + 15m; 15M ⇒ 15m + 1H; 30M ⇒ 30m + 1H; 60M ⇒ 1H + Daily.
+
+### Vision प्रश्न (`signal_check_v1`, structured JSON)
+`level_real` yes/no/unclear · `trend_context` with/against/range/unclear · `reversal_valid` yes/no/unclear · `is_breakout_entry` yes/no ·
+`false_break_risk` low/medium/high · `elliott_note` · `verdict` agree/gray/disagree · `reason` (मराठी, ≤ 160) · `confidence` 0–1.
+System prompt मध्ये तुमचे नियम: pullback-only (breakout कधीच नाही), reversal = touch → reclaim → strength → close location, level खरा हवा, A-end entry नाही.
+
+**Verdict code मध्ये:** breakout = yes किंवा reversal = no ⇒ disagree; कुठलंही unclear ⇒ gray; 2 audits असहमत ⇒ gray; enum अवैध / API अपयश / refusal ⇒ unavailable.
+
+### खर्च (G-COST)
+- Model नाव फक्त env मध्ये: `VISION_SIGNAL_MODEL` (signals — मध्यम model), `VISION_LEVEL_MODEL` (V2 सकाळचा audit — सर्वात स्वस्त). ऐच्छिक `VISION_SIGNAL_EFFORT`, `VISION_SIGNAL_THINKING`, `VISION_SIGNAL_MAX_TOKENS` (2000).
+- एका audit चा अंदाज (मध्यम model, $2 / $10 प्रति 1M): input ≈ 900 (image) + ≈ 570 (system) + ≈ 70 = ~1.6k ⇒ $0.003; output JSON ~150–500 ⇒ $0.002–0.005.
+  **≈ $0.005–0.01 प्रति audit.** 10 signals/दिवस × 1.3 audits × 22 दिवस ⇒ **≈ $1.4–2.9 / महिना** (< $5). दैनिक मर्यादा $0.30 हा कठोर ब्रेक.
+- System prompt `cache_control` सह. तो ~570 tokens (अंदाज) — नव्या models चं किमान 512 च्या अगदी जवळ, त्यामुळे cache होईलच असं नाही; सर्वात स्वस्त model वर किमान 4096 असल्याने होत नाही. शिवाय signals मध्ये 5 मिनिटांपेक्षा जास्त अंतर असेल तर cache संपतो. एकूण परिणाम लहान (system चा खर्च प्रति audit ~$0.001) — म्हणून खर्च नेहमी API च्या `usage` वरून मोजला जातो, अंदाजावरून नाही.
+- Budget तपासणी सावध: प्रत्येक call आधी अंदाज = input ~2k + output = `VISION_SIGNAL_MAX_TOKENS` (thinking सुद्धा output मध्ये मोजलं जातं). API timeout / network अपयश
+  (usage मिळाला नाही) ⇒ हाच अंदाज खर्च म्हणून नोंद (billed झाला असू शकतो).
+- `VISION_SIGNAL_EFFORT=low` शिफारस (कमी thinking ⇒ कमी खर्च, 20 s timeout मध्ये उत्तर). `VISION_SIGNAL_THINKING` फक्त तो model स्वीकारत असलेला प्रकार असेल तरच
+  (उदा. काही models वर `disabled` 400 देतो) — शंका असेल तर रिकामा ठेवा. चुकीचं मूल्य ⇒ प्रत्येक audit unavailable (खर्च 0) — `--usage` / log मध्ये दिसेल.
+- **पहिल्या दिवसाचं खरं मोजमाप:** `python3 -m vision.worker --usage` (calls, input / cache-read / cache-write / output tokens, $).
+
+### Settings
+`python3 -m vision.config show` · `python3 -m vision.config set dynamic_sr_instant vision_mode shadow --by abhishek` (बदल-इतिहास `vision_settings_history` मध्ये, `python3 -m vision.config history`).
+Keys: `vision_mode`, `symbols`, `vision_gray_action`, `vision_disagree_action`, `vision_fail_action`, `timeout_action`, `approve_window_min`, `max_drift_mr`,
+`exit_advice`, `vision_timeout_sec` (20), `second_audit_below_conf` (0.6), `reuse_window_min` (15), `level_gate`; `_global`: `vision_daily_budget_usd` (0.30),
+`vision_monthly_budget_usd` (5), `morning_audit_time` (08:00). V0 मध्ये `auto_veto` / `human_confirm` / `veto_then_confirm` निवडता येत नाहीत (ValueError "V1 मध्ये").
+
+### Telegram user ID (V1 approver साठी — आत्ताच काढून ठेवा)
+1. Telegram मध्ये **@userinfobot** ला कुठलाही संदेश पाठवा → तो `Id: 123456789` असं उत्तर देतो. हाच तुमचा user ID.
+2. (पर्याय) तुमच्या trading bot ला संदेश पाठवा, मग `https://api.telegram.org/bot<TOKEN>/getUpdates` उघडा → `"from":{"id": …}`. खाजगी chat मध्ये `chat.id` = तोच आकडा.
+3. V1 मध्ये VPS `.env`: `TELEGRAM_APPROVER_IDS=123456789` (फक्त तुमचा). Token कुठेही paste करू नका.
+
+## Chart images कायमस्वरूपी (§11)
+- **`_sent.png`**: vision ला गेलेली आणि Telegram वरची हीच फाईल. आधी disk वर `O_EXCL` ने लिहिली जाते (नाव असेल तर `_2`; overwrite कधीच नाही),
+  temp फाईल → `os.link` (अर्धवट फाईल अंतिम नावाने कधीच नाही), मग परत वाचून sha256 तपासला जातो. Record मध्ये path + sha256, prompt_version, model, vision JSON (tokens), cost, algo निर्णय, अंतिम निर्णय
+  (V0 = algo), (V1) माझा निर्णय + वेळ आणि drift guard.
+- **`_outcome.png`** (`python3 -m vision.outcome`, दर 15 मिनिटं 09:30–16:15 IST): trade बंद झाल्यावर.
+  - जुळणी: live_trades (read-only) मध्ये त्याच bot चा source, PAPER, entry signal नंतर 0–10 मिनिटांत.
+  - आधीच दुसऱ्या signal ला जोडलेला trade पुन्हा नाही. Signal आणि entry च्या मध्ये त्याच bot चा दुसरा signal असेल तर तो trade नंतरच्या signal चा.
+  - DB चूक ⇒ error, पुढच्या run ला पुन्हा (चुकून no_trade नाही).
+  - Signal पासून exit पर्यंत 5m candles; signal / ENTRY / EXIT खुणा, level रेषा, P&L, SL / target (₹).
+  - ठळक शीर्षक "POST-HOC: NOT SENT TO VISION" (kaleido मध्ये Devanagari font नसल्याने इंग्रजीत).
+  - हा chart vision कडे कधीच जात नाही — `outcome.py` मध्ये vision / API चा import नाही (test).
+  - Trade सापडला नाही आणि 1 दिवस झाला ⇒ `no_trade`.
+- **Dashboard → ANALYZE → 👁 Vision & Human Eye:**
+  - दोन्ही images शेजारी, मत, निर्णय, निकाल;
+  - filters: तारीख, bot, verdict, win / loss / open / no_trade;
+  - CSV export, disk वापर.
+- **Archive** (`scripts/vision_archive.py`, रोज 23:50 IST):
+  - `data/visual_audit/<day>/` → private `trade-data/visual_audit/YYYY-MM/<day>/`, सोबत `vision_records_<day>.jsonl`;
+  - आधी destination खरंच trade-data checkout आहे याची खात्री (public repo कधीच नाही).
+  - रोज: marker नसलेले / marker शी न जुळणारे सगळे दिवस (आधीचा अयशस्वी push, उशिरा आलेला outcome) + मागचे 3 दिवस (records ताजे).
+  - copy नंतर sha256 तपासणी. Push आधी `fetch` + `rebase`.
+  - push नंतर remote blob id = local `hash-object` ⇒ तरच `.archived` marker ({नाव: sha256}).
+  - 90 दिवसांनंतरचे local folders फक्त marker असेल आणि प्रत्येक local फाईलचा sha256 marker शी जुळत असेल तरच delete.
+  - Push अयशस्वी ⇒ Telegram इशारा, delete नाही, पुढच्या रात्री पुन्हा.
+  - Disk > 80% ⇒ Telegram इशारा. PNG > 150 KB ⇒ यादी. आपले charts ~90 KB.
+  - `data/visual_audit/` gitignored — public repo मध्ये images कधीच नाहीत.
+
+## पुढचे टप्पे
+- **V1** `veto_then_confirm` (NIFTY default): disagree ⇒ auto skip (माहिती); agree / gray ⇒ Approve / Reject बटणं (gray ⇒ अर्धा size); 10 मिनिटांत उत्तर नाही ⇒ `timeout_action = auto_veto`;
+  vision unavailable ⇒ तुम्हाला विचारणे, timeout ⇒ algorithm. Inbound long-polling service (webhook नाही), chat.id + from.id whitelist, HMAC single-use callbacks,
+  conditional `WHERE status='PENDING'`, drift guard (4 नियम), restart ⇒ PENDING expire, नाकारलेल्यांचं shadow tracking, `scripts/vision_dryrun.py`. G-V1: dry-run screenshot.
+- **V2** 08:00 level audit (NIFTY, 1 image, सर्वात स्वस्त model), `level_gate` off.
+- **V3** "Vision & Human Eye" पान + साप्ताहिक `docs/reports/vision_human_eye.md` (random-veto baseline ≥ 1000).

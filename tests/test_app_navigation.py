@@ -10,7 +10,8 @@ APP_SRC = (ROOT / "app.py").read_text(encoding="utf-8")
 EXPECTED_SECTIONS = {
     "TRADE": ["page_dashboard", "page_positions", "page_orders"],
     "BOTS": ["page_bot_dynamic_sr_algo", "page_mcx_futures", "page_pullback_credit_spread"],
-    "ANALYZE": ["page_performance", "page_multi_strategy", "page_mtf_pullback", "page_sr_levels_v3", "page_opportunity_engine"],
+    "ANALYZE": ["page_performance", "page_multi_strategy", "page_mtf_pullback", "page_sr_levels_v3", "page_opportunity_engine",
+                "page_vision_human_eye"],
     "SYSTEM": ["page_broker_accounts"],
 }
 
@@ -40,7 +41,7 @@ def test_sections_and_pages_are_exactly_as_agreed():
 def test_every_page_has_a_unique_url_path_and_exactly_one_default():
     block = _navigation_block()
     urls = re.findall(r'url_path="([a-z0-9-]+)"', block)
-    assert len(urls) == 12 and len(set(urls)) == 12
+    assert len(urls) == 13 and len(set(urls)) == 13
     assert block.count("default=True") == 1
 
 

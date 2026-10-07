@@ -377,6 +377,14 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
+        # 🎓 Vision V0 (shadow / notify) — फक्त नोंद (dynamic_sr_instant_trader.py प्रमाणेच). Trade निर्णय / size / exits वर परिणाम नाही.
+        try:
+            from vision.hook import submit_signal as _vision_submit
+            _vision_submit("srv2_momentum_reversal", symbol, settings.get("trading_mode", "PAPER"), direction, level_price, level_type,
+                           timeframe_suffix, now, spot=underlying_price, tags={"hit": touch_type or "TOUCH"},
+                           last_bar=recent_1m_candles[-1] if recent_1m_candles else None)
+        except Exception as exc:
+            print(f"⚠️ vision hook त्रुटी (trade वर परिणाम नाही): {exc}")
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — आज expiry day असेल, तर
         # पुढच्या आठवड्याचे strikes (expiry_index=1) — आजच्या expiry वर trade नाही (जास्त जोखीम).
         expiry_index = 1 if is_todays_expiry_day(access_token, symbol) else 0

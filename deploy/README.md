@@ -971,3 +971,26 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - उघड्या positions चे exits त्यांच्याच contract वर होतात. Trailing (% mode) चा reference भावही त्याच contract वरून घेतला जातो.
 - स्थिती `data/mcx_contract_state.json` मध्ये ठेवली जाते (git मध्ये नाही).
 - तपासणी: `python3 resolve_mcx_futures_instruments.py` (roll झाला असेल तर 🔄 ओळ दिसते) किंवा `python3 mcx_open_positions_check.py`.
+
+### Vision + Human-Eye — V0 (shadow / notify)
+
+- काय: NIFTY PAPER bots (5-Min Instant, 15M) चा प्रत्येक entry signal → 2-panel chart (signal पर्यंतच) → vision मत → `data/vision.db` नोंद →
+  `notify` mode मध्ये Telegram वर chart + मत (बटणं नाहीत). **Trade, size आणि exits बदलत नाहीत.** LIVE ⇒ vision off. तपशील: `docs/VISION_HUMAN_EYE.md`.
+- `.env` (आधीच नसतील तेवढ्याच ओळी): `ANTHROPIC_API_KEY=…`, `VISION_SIGNAL_MODEL=<मध्यम vision model id>`, ऐच्छिक `VISION_SIGNAL_EFFORT=low`.
+  Key / model नसेल तर worker vision शिवाय फक्त chart + "vision उपलब्ध नाही" पाठवतो (खर्च 0).
+- Deploy फक्त 23:30 नंतर किंवा 08:00–09:00 (bots cron वर — `git pull` पुरे, restart नाही). नवीन crontab ओळ (09:00–16:29 IST, सोम–शुक्र):
+
+```
+* 3-10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 -m vision.worker --loop-seconds 55 >> /root/Trade/vision_worker.log 2>&1
+```
+
+- Outcome chart (दर 15 मिनिटं, 09:30–16:15 IST) आणि रात्रीचा archive (23:50 IST → private trade-data; `TRADE_DATA_DIR`, डीफॉल्ट /root/trade-data):
+
+```
+*/15 4-10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 -m vision.outcome >> /root/Trade/vision_outcome.log 2>&1
+20 18 * * * cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 scripts/vision_archive.py >> /root/Trade/vision_archive.log 2>&1
+```
+
+- तपासणी: `python3 scripts/vision_v0_smoke.py --no-vision` (chart + Telegram, खर्च 0) → `python3 scripts/vision_v0_smoke.py` (1 vision call, tokens/$ छापतो).
+- Images: `data/visual_audit/YYYY-MM-DD/*_sent.png` (vision ला गेलेली) आणि `*_outcome.png` (POST-HOC). पान: ANALYZE → 👁 Vision & Human Eye.
+- दिवसाचा वापर: `python3 -m vision.worker --usage` · settings: `python3 -m vision.config show` / `set <bot> vision_mode shadow --by <नाव>`.
