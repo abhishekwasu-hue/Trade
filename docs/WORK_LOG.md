@@ -783,3 +783,47 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - Real data (2019 Q1): प्रत्येक signal वर breakout ban — H **स्वतंत्रपणे** D−1 pivots वरून, inv आत, reclaim, soft stop, TTF close, gap candle नाही, वेळ, vote; truncation invariance.
 - Synthetic T7 bull आणि bear (mirror); hard break ⇒ level_events (causal) आणि re-entry बंदी.
 - Mutation checks: T7 काढला, gap नियम काढला, touched = सर्वात उथळ — तिन्ही tests fail होतात.
+
+## 2026-10-07 · Elliott E3 — expiry, strike, credit guard, sizing, खर्च, exits (§8, §9)
+
+**स्थिती:** trade-data मध्ये options data अजून नाही (VPS block चालायचा आहे). म्हणून E3 = data-निरपेक्ष, तपासलेले भाग (pure functions); bhavcopy/Upstox premium जोडणी आणि golden-file regression E4 मध्ये.
+
+**काय केलं:**
+- **`elliott/contracts.py`:**
+  - Expiry स्रोत: bhavcopy calendar (फक्त fill दिवसापर्यंत listed contracts — causal; सुट्टीमुळे सरकलेली प्रत्यक्ष expiry). तो नसेल तर नियम-calendar: Thursday (1 Sep 2025 पासून Tuesday), monthly = महिन्याचा शेवटचा, holiday ⇒ आधीचा trading day, weekly फक्त 11 Feb 2019 पासून.
+  - Expiry निवड (दुरुस्ती 2): fill दिवसानंतरची पहिली; आज expiry असेल तर पुढची. `min_dte_override` (default बंद).
+  - DTE: Monday → Tuesday = 1; `session_fraction` = (आजची उरलेली मिनिटं + पूर्ण sessions × 375) / 375.
+  - Lot: bhavcopy (UDiFF) असेल तर तो; नाहीतर तारीखनिहाय table.
+- **`elliott/pricing.py`:** Black-Scholes price / delta / implied vol (T = dte_frac / 252, spec चा convention).
+- **`elliott/costs.py`:** तारीखनिहाय दर — STT (sell premium) 0.017% → 0.05% (1 Jun 2016) → 0.0625% (1 Apr 2023) → 0.1% (1 Oct 2024) → 0.15% (1 Apr 2026); exchange, SEBI, stamp, GST/service tax, brokerage प्रति order; slippage ticks fill किंमतीत.
+- **`elliott/strikes.py`:** spec §8 सूत्र — सर्वात दूरचा same-direction inv + 0.5 × MR, volatility अंतर, किमान 100 pts; 50-grid; credit/width, किमान credit, delta guard; fail ⇒ skip / widen_width / try_next_weekly; lots = capital × risk% × tier गुणक (S10 × 0.75) ÷ (width − credit) × lot.
+- **`elliott/exits.py`:** §9 क्रम 0–8 (emergency strike cross → hard / parent cascade → premium stop (bar close) → soft → target → profit % → progress → expiry-day → thesis), Tier A T1 वर निम्मे lots + progressive inv, Tier B C zone मध्ये उलट logical reversal (§14 Q4) / fixed_mult, lower-degree warning. Entry settings चा कुठेही संदर्भ नाही (exits कधीच block नाहीत — test).
+- **E2 `Signal`:** count आणि parent चे points (targets साठी).
+- **Settings:** "Strike / expiry / sizing", "Trade management", "खर्च" विभाग (spec §11; ₹10 लाख capital — उत्तर 9).
+
+**Spec §10 worked example (test):** S6a spot 22,410, inv 22,217, IV 13%, Monday 12:30 ⇒ dist_inv 218, dist_vol ≈ 223 ⇒ short **22,150 PE**, long 22,050, expiry 6 Oct (1 DTE). S13 spot 22,500 ⇒ short **22,250 PE**; alternate inv 22,217 मोजल्यास ⇒ 22,150 PE. तिन्ही spec शी जुळतात.
+
+**महत्त्वाचा शोध (default बदलला नाही — E4 report मध्ये ठळक):** ₹10 लाख × 1% risk × Tier B 0.5 = ₹5,000, पण 100-width spread चा एका lot चा कमाल तोटा ≈ (100 − credit) × 65 ≈ ₹6,000 ⇒ **default वर Tier B (आणि C) trades 0 lot ⇒ skip**. Tier A ला ₹10,000 ⇒ 1 lot. E4 मध्ये निकाल R-multiples (प्रति lot) मध्येही देणार, त्यामुळे setup ची गुणवत्ता sizing शिवाय दिसेल; risk% / width बदलायचा निर्णय तुमचा.
+
+**निर्णय (कारणासह):**
+- **2019 आधी (weekly नव्हते)** "current weekly" ⇒ सर्वात जवळची listed expiry (monthly). IS चा मोठा भाग (2015–2018) यात येतो; E4 मध्ये weekly-काळ (2019+) वेगळा report करेन.
+- **Lot / exchange / stamp दर** [अनुमान, secondary स्रोत]: फक्त ₹ निकालांवर परिणाम; bhavcopy UDiFF lot असेल तेव्हा तो वापरतो. E4 मध्ये bhavcopy वरून पडताळणी.
+- **widen_width:** 50 च्या पावलांनी 200 पर्यंत; **try_next_weekly:** एकदाच पुढची weekly (तुमच्या नियमापेक्षा वेगळं — default बंद).
+- **Tier A target चा (i):** wave-2/4 setups ना count चा पहिला leg; S7 ला parent motive चा पहिला leg. **Tier B C zone:** S6a/S6b/S12/S11 = B end + × count चा A; S6c/S7(B)/S8 = extreme + × parent चा पहिला leg; S13/S14 = parent B end + × parent A.
+- **Expiry दिवस:** 14:45 नंतर short ITM किंवा < 0.5 SD (उरलेल्या मिनिटांवरून) ⇒ exit; ITM leg कधीच expire होऊ देत नाही.
+
+**स्वतंत्र review (1 High + 7 Medium + Low) — दुरुस्त्या:**
+- **High — मुहूर्त / weekend special sessions पूर्ण trading day धरले जात होते** (spot data मध्ये 1-तासाचे sessions) ⇒ नियम-calendar ने 4 Nov 2021 (दिवाळी) ही expiry मानली आणि DTE चुकले. आता `TradingCalendar.from_spot`: फक्त weekday + ≥ 300 bars चे दिवस; data नंतरचे दिवस config च्या सुट्ट्या वगळून. Test: 3 Nov 2021 expiry, 4 Nov नाही.
+- **Lot:** 26 Apr 2024 → 25 जोडलं; lot आता **expiry** वरून (बदल contract series नुसार लागतात; 6 Jan 2026 पासूनच्या expiries ⇒ 65).
+- **Delta guard** `delta_fn` नसताना BS delta ने (risk_free_rate, त्या expiry चा IV) — आधी गुपचूप बंद होता. IV आता प्रत्येक expiry साठी (callable) — IV नाही ⇒ "no_iv".
+- **Reduce एकदाच** (soft / lower), **tick वर फक्त `emergency_check`** (pure — evaluate फक्त TTF bar close वर), **strike "ओलांडला" = पलीकडे** (स्पर्श नव्हे).
+- **Tier B:** C zone acceptance ने ओलांडला ⇒ target नाही, hold + trailing (शेवटचा confirmed sub-wave, फक्त trade च्या बाजूने); C zone नसलेले Tier B (D+2 विरुद्ध झालेले S1–S4/S9/S10) ⇒ T1 वर पूर्ण exit (bounded). S8 ⇒ Y ≈ स्वतःचा W.
+- **Expiry दिवशी IV / उरलेली मिनिटं नसतील** ⇒ सुरक्षित बाजू: exit (आधी फक्त ITM वर).
+- **try_next_weekly:** पुढची listed नसेल तर खरं guard कारण; no_price वरही पुढची weekly तपासते. **widen_width** फक्त min_credit साठी उपयोगी (credit/width घटतो) — नोंद.
+- **खर्च:** exchange txn टप्पे (0.05% → 0.053% Apr 2023 → 0.0495% Jan 2024 → 0.03503% Oct 2024), service tax इतिहास (12.36% → 14% → 14.5% → 15% → GST 18%), exercise STT **long** (exercise करणाऱ्या) leg वर, 2016 आधी notional वर [अनुमान].
+- **Rule-mode listing:** 11 Feb 2019 आधीचा fill weekly निवडत नाही.
+- **Settings:** `strike_step`, `iv_source`, `min_one_lot` (default **बंद**; चालू केल्यास budget < 1 lot तरी 1 lot, plan मध्ये `over_budget`); रिकामी Tier A targets ⇒ error message.
+- **Golden test साठी निर्णय (M7):** T2/T7/T8 (must) Tier B आहेत आणि default sizing वर 0 lot. E4 मध्ये golden test signal + strike plan स्तरावर ("bot ने trade निवडला") तपासेल; sizing (₹) स्वतंत्रपणे report — default risk% बदलणार नाही (तुमचा निर्णय). `min_one_lot` ने ₹ परिणामही दाखवेन.
+- नोंद (बदल नाही): `max_reentries`, `reentry_after_premium_stop`, `max_open_spreads`, `max_daily_loss_pct`, `expiry_exit_time` हे E4 backtest loop मध्ये वापरले जातील; premium stop अशक्य (hard_stop_mult × credit ≥ width) असेल तर plan मध्ये `premium_stop_reachable = false`.
+
+**Tests:** `tests/test_elliott_e3.py` (+28): expiry calendar (Tuesday/Thursday काळ, holiday shift, 2019 आधी monthly, मुहूर्त/weekend sessions, listing), golden दिवसांच्या expiries (T1/T2/T7/T9), DTE, lot सीमा, BS parity / IV, STT तारखा व बाजू, spec §10 strikes (22,150 / 22,250 / alternate ⇒ 22,150), bear call, sizing (Tier B default 0 lot), guard fail actions, BS delta guard, exit क्रम, premium stop bar close वि. intrabar, soft/lower reduce एकदाच, Tier A partial + progressive inv, Tier B C zone / fixed / acceptance trailing, bear call exits, expiry IV नसताना, exits entry settings ने block नाहीत.

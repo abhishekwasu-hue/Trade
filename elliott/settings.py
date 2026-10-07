@@ -20,6 +20,9 @@ SECTIONS = (
     ("breaks", "Real break (count आणि exits)"),
     ("setups", "Setups (S1–S14)"),
     ("trigger", "Entry trigger (T1–T7)"),
+    ("strike", "Strike / expiry / sizing"),
+    ("manage", "Trade management (exits)"),
+    ("costs", "खर्च (backtest)"),
 )
 SETUP_CODES = ("S1", "S2", "S3", "S4", "S5", "S6a", "S6b", "S6c", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S14")
 
@@ -152,6 +155,75 @@ SCHEMA += [
     _s("entry_end", "trigger", "Entry शेवट", "यानंतर बंद होणाऱ्या candle वर नवीन entry नाही (exits चालू).", "time", "14:45", calibrate=False),
     _s("soft_buffer_pts", "trigger", "Soft stop buffer (points)", "Soft stop = reversal composite चं टोक ± इतके points.", "float", 5.0, 0.0, 100.0),
 ]
+SCHEMA += [
+    # ---------------------------------------------------------------- E3: strike / expiry / sizing (spec §8, §9 Sizing, §11)
+    _s("underlying", "strike", "Underlying", "v1 फक्त NIFTY (वापरकर्त्याचं उत्तर 5).", "choice", "NIFTY", choices=("NIFTY",), calibrate=False),
+    _s("capital", "strike", "Capital (₹)", "Sizing आणि % निकालांसाठी (उत्तर 9: ₹10 लाख).", "float", 1_000_000.0, 10_000.0, 1e9,
+       calibrate=False),
+    _s("risk_per_trade_pct", "strike", "Risk प्रति trade (% capital)", "Max loss = (width − credit) × lot × lots ≤ हा % × tier गुणक.",
+       "float", 1.0, 0.05, 10.0),
+    _s("tier_mult", "strike", "Tier size गुणक (A, B, C)", "C = 0 ⇒ Tier C skip.", "list_float", [1.0, 0.5, 0.25], 0.0, 2.0),
+    _s("leading_diag_mult", "strike", "Leading diagonal गुणक", "S10 (Neely leading diagonals नाकारतो).", "float", 0.75, 0.0, 1.0),
+    _s("max_open_spreads", "strike", "एकाच वेळी कमाल spreads", "फक्त नवीन entries थांबवतो, exits नाही.", "int", 2, 1, 20),
+    _s("max_daily_loss_pct", "strike", "दैनिक कमाल तोटा (% capital)", "गाठला ⇒ त्या दिवशी नवीन entry नाही (exits चालू).", "float", 2.0,
+       0.1, 20.0),
+    _s("expiry_rule", "strike", "Expiry नियम", "current_unless_today_expiry: पहिली weekly; आज expiry असेल तर पुढची (दुरुस्ती 2). "
+       "Weekly नसलेल्या काळात (2019 आधी) सर्वात जवळची listed expiry.", "choice", "current_unless_today_expiry",
+       choices=("current_unless_today_expiry",), calibrate=False),
+    _s("min_dte_override", "strike", "किमान DTE (override)", "0 ⇒ बंद (default). >0 ⇒ इतके DTE नसलेली expiry वगळा.", "int", 0, 0, 10,
+       calibrate=False),
+    _s("inv_buffer_mr", "strike", "Inv buffer (× median range)", "Short strike invalidation च्या पलीकडे इतका; ≥ break buffer हवा.",
+       "float", 0.5, 0.0, 5.0),
+    _s("k_sd", "strike", "Volatility अंतर (× SD)", "dist_vol = k × spot × IV × √(dte/252).", "float", 1.0, 0.5, 3.0),
+    _s("dte_mode", "strike", "DTE पद्धत", "session_fraction: आजची उरलेली मिनिटं + पूर्ण sessions; whole_days: पूर्ण sessions.",
+       "choice", "session_fraction", choices=("session_fraction", "whole_days"), calibrate=False),
+    _s("min_dist_pts", "strike", "किमान अंतर (points)", "Short strike spot पासून किमान इतका दूर.", "float", 100.0, 0.0, 2000.0),
+    _s("width_pts", "strike", "Spread width (points)", "Long leg = short ∓ width (50 / 100 / 150 / 200; strike step च्या पटीत).",
+       "int", 100, 50, 500, step=50),
+    _s("c_min_by_dte", "strike", "किमान credit/width (DTE 1,2,3,4,5+)", "Credit guard. **Data वरून calibrate** (E4, फक्त IS).",
+       "list_float", [0.06, 0.08, 0.10, 0.12, 0.12], 0.0, 1.0),
+    _s("min_credit_pts", "strike", "किमान credit (points)", "", "float", 3.0, 0.0, 100.0),
+    _s("max_short_delta", "strike", "Short leg कमाल |delta|", "", "float", 0.30, 0.01, 0.5),
+    _s("credit_fail_action", "strike", "Guard fail ⇒", "skip (default) / widen_width / try_next_weekly (तुमच्या नियमापेक्षा वेगळा — "
+       "backtest मध्ये वेगळा नोंदवा).", "choice", "skip", choices=("skip", "widen_width", "try_next_weekly"), calibrate=False),
+    _s("risk_free_rate", "strike", "Risk-free rate", "Black-Scholes साठी (वार्षिक; delta guard, model premium).", "float", 0.065, 0.0, 0.2),
+    _s("strike_step", "strike", "Strike step (points)", "Contract master मधून (NIFTY weekly 50).", "int", 50, 5, 500, calibrate=False),
+    _s("iv_source", "strike", "IV स्रोत", "atm_iv: निवडलेल्या expiry चा ATM IV (bhavcopy/option chain); vix: India VIX (fallback).",
+       "choice", "atm_iv", choices=("atm_iv", "vix"), calibrate=False),
+    _s("min_one_lot", "strike", "Budget कमी तरी 1 lot", "true ⇒ risk budget < 1 lot चा तोटा असला तरी 1 lot (risk% ओलांडतो). Default बंद.",
+       "bool", False, calibrate=False),
+    # ---------------------------------------------------------------- E3: trade management (spec §9, §14 Q4/Q5)
+    _s("emergency_spot_cross_short", "manage", "Emergency: spot short strike ओलांडतो", "Intrabar लगेच exit (क्रम 0).", "bool", True,
+       calibrate=False),
+    _s("hard_stop_mult", "manage", "Premium stop (× credit)", "Spread MTM debit ≥ इतका × credit.", "float", 2.0, 1.0, 10.0),
+    _s("hard_stop_eval", "manage", "Premium stop तपासणी", "bar_close (default — 1 DTE gamma wicks टाळतो) / intrabar.", "choice",
+       "bar_close", choices=("bar_close", "intrabar"), calibrate=False),
+    _s("soft_stop_action", "manage", "Soft stop ⇒", "exit / reduce (निम्मे) / alert.", "choice", "exit", choices=("exit", "reduce", "alert")),
+    _s("max_reentries", "manage", "कमाल re-entries", "फक्त soft stop नंतर, hard inv अबाधित असेल तर.", "int", 1, 0, 5),
+    _s("reentry_after_premium_stop", "manage", "Premium stop नंतर re-entry", "", "bool", False, calibrate=False),
+    _s("tierB_exit_mode", "manage", "Tier B exit", "opposite_reversal: C zone मध्ये उलट logical reversal ⇒ पूर्ण exit (§14 Q4); "
+       "fixed_mult: spot ≥ B end + mult × A (तुलनेसाठी).", "choice", "opposite_reversal", choices=("opposite_reversal", "fixed_mult"),
+       calibrate=False),
+    _s("tierB_target_mult", "manage", "Tier B fixed target (× A)", "फक्त fixed_mult mode.", "float", 1.0, 0.3, 3.0),
+    _s("tp_pct_credit", "manage", "Profit exit (% credit: A, B, C)", "Captured ≥ इतका ⇒ exit.", "list_float", [65.0, 50.0, 40.0], 5.0, 100.0),
+    _s("tierA_target_action", "manage", "Tier A target ⇒", "exit_50pct_trail_rest: निम्मे बंद, उरलेले progressive inv ने; exit_all.",
+       "choice", "exit_50pct_trail_rest", choices=("exit_50pct_trail_rest", "exit_all"), calibrate=False),
+    _s("tierA_target_fibs", "manage", "Tier A targets (× (i))", "(ii) end पासून.", "list_float", [1.0, 1.618], 0.3, 5.0),
+    _s("target_tol_atr", "manage", "Target सहनशीलता (× ATR)", "", "float", 0.25, 0.0, 2.0),
+    _s("progress_bars_mult", "manage", "Progress time exit (× bars_last_subleg)", "इतक्या TTF bars मध्ये spot ने शेवटच्या sub-leg चा "
+       "origin ओलांडला नाही ⇒ exit.", "float", 1.0, 0.0, 20.0),
+    _s("expiry_exit_time", "manage", "Expiry दिवशी तपासणी वेळ", "", "time", "14:45", calibrate=False),
+    _s("expiry_hold_min_dist_sd", "manage", "Expiry hold किमान अंतर (SD)", "Expiry दिवशी spot short strike पासून < इतके SD ⇒ exit.",
+       "float", 0.5, 0.0, 3.0),
+    _s("progressive_inv", "manage", "Progressive inv", "(i) टोक ओलांडल्यावर hard inv = correction end (S1/S2/S10/S13).", "bool", True,
+       calibrate=False),
+    _s("lower_inv_action", "manage", "Lower degree inv तुटला ⇒", "alert (default) / reduce / exit.", "choice", "alert",
+       choices=("alert", "reduce", "exit")),
+    # ---------------------------------------------------------------- E3: खर्च (spec §8 India facts, §11 Backtest)
+    _s("brokerage_per_order", "costs", "Brokerage प्रति order (₹)", "Discount broker flat (Upstox ₹20).", "float", 20.0, 0.0, 100.0,
+       calibrate=False),
+    _s("slippage_ticks", "costs", "Slippage (ticks प्रति leg)", "Tick ₹0.05.", "int", 2, 0, 50),
+]
 BY_KEY = {s["key"]: s for s in SCHEMA}
 DEFAULTS = {s["key"]: (list(s["default"]) if isinstance(s["default"], list) else s["default"]) for s in SCHEMA}
 
@@ -275,6 +347,19 @@ def validate(raw):
         if not clean[k]:
             errors.append(f"{BY_KEY[k]['label']}: रिकामी — डीफॉल्ट वापरला")
             clean[k] = list(DEFAULTS[k])
+    for k, n in (("tier_mult", 3), ("tp_pct_credit", 3), ("c_min_by_dte", 5)):
+        if len(clean[k]) != n:
+            errors.append(f"{BY_KEY[k]['label']}: {n} मूल्यं हवीत — डीफॉल्ट वापरला")
+            clean[k] = list(DEFAULTS[k])
+    if clean["width_pts"] % clean["strike_step"]:
+        errors.append("Spread width strike step च्या पटीत हवी — डीफॉल्ट वापरला")
+        clean["width_pts"] = DEFAULTS["width_pts"]
+    if not clean["tierA_target_fibs"]:
+        errors.append("Tier A targets: रिकामी — डीफॉल्ट वापरला")
+        clean["tierA_target_fibs"] = list(DEFAULTS["tierA_target_fibs"])
+    if clean["inv_buffer_mr"] < clean["break_buffer_mr"]:
+        errors.append("Inv buffer < break buffer — strike count मरण्याआधी गाठला जाईल; inv buffer = break buffer केला")
+        clean["inv_buffer_mr"] = clean["break_buffer_mr"]
     bad = [d for d in clean["trade_degrees_enabled"] if d >= clean["degree_levels"]]
     if bad:
         errors.append(f"Trade degrees {bad} अस्तित्वात नाहीत — वगळल्या")

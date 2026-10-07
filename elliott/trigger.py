@@ -62,6 +62,10 @@ class Signal:
     pattern: str = ""
     current_wave: str = ""
     settings_hash: str = ""
+    points: list = field(default_factory=list)         # count चे completed pivots (किंमत) — targets (E3)
+    parent_pattern: str = ""
+    parent_wave: str = ""
+    parent_points: list = field(default_factory=list)
 
     @property
     def key(self):
@@ -205,7 +209,9 @@ class Scanner:
         sig = Signal(pd.Timestamp(t), st.degree, st.code, st.tier, st.direction, st.trade_dir, tf, j, list(st.levels), r["touched"],
                      st.hard_inv, st.inv_rule, soft, H, bls, st.extreme.price, st.extreme.ts, st.wave_start.ts, r["comp"], r["n"],
                      r["score"], st.vote, st.opp_max, list(st.alt_invs), list(st.parent_invs), st.recount, st.node.pattern,
-                     st.node.current_wave, self.hash)
+                     st.node.current_wave, self.hash, [p.price for p in st.node.points],
+                     st.parent.pattern if st.parent is not None else "", st.parent.current_wave if st.parent is not None else "",
+                     [p.price for p in st.parent.points] if st.parent is not None else [])
         win_start = pd.Timestamp(self._ts[tf][j - r["n"] + 1])
         last = self.last_window.get(sig.key)
         if last is not None and win_start < last:
