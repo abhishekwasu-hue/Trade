@@ -646,3 +646,84 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - Similarity & Balance.
 - Auto-TF (फक्त बंद candles).
 - Settings validation.
+
+## 2026-10-07 · Elliott E1b — count tree: नियम R1–R11, patterns, real break, cross-degree, vote
+
+**काय केलं:**
+- **`elliott/breaks.py` — "खरा break" (spec §7, §14 Q1):** count invalidation आणि (E3) exits दोन्ही याच व्याख्येवर.
+  - buffer = 0.25 × median range. Median range = मागच्या बंद bars चा, चालू bar वगळून.
+  - Break खरा तेव्हाच, जेव्हा यापैकी जे आधी घडेल:
+    - displacement candle (त्याच bar वर);
+    - acceptance (पुढचे bars reclaim नाहीत; window मधली displacement सुद्धा चालते).
+  - नाहीतर false break.
+  - Failed retest (c) साठी logical reversal लागतो, म्हणून त्याचा hook E2 मध्ये.
+  - `BreakCache` फक्त चालू वेळेपर्यंत scan करतो (causal). पूर्वी तो पूर्ण उपलब्ध frame scan करायचा, ज्यामुळे पूर्ण IS वर तो खूप हळू होता.
+- **`elliott/patterns.py`:** impulse, leading/ending diagonal, zigzag, flat (regular/expanded), triangle (contracting/barrier/expanding), WXY.
+  - नियम म्हणजे pass/fail: R1, R2 (wave 5 ची मर्यादा, diagonals सुद्धा), R3 (strict), R6, R7, R8, R9.
+  - Guidelines फक्त score म्हणून (Fibonacci, depth, alternation, sub-counts, Neely time).
+  - प्रत्येक count साठी चालू wave नुसार hard invalidation (level + बाजू + नियम).
+  - "पुढची wave motive असेल तर तिची दिशा":
+    - A नंतर B येतो ⇒ 0 (R4: A-end ban).
+    - Ending diagonal आणि expanding triangle ⇒ 0 (spec §5 निषिद्ध #5, P8).
+  - पूर्ण झालेल्या waves चे नियम फक्त confirmed pivots वर (tentative ban).
+  - Tolerances संबंधित pivot च्या confirm bar वर गोठवलेले, म्हणजे मेलेला count परत येत नाही (R11).
+- **`elliott/counts.py`:** प्रत्येक degree वर दिलेल्या वेळेपर्यंत माहीत डेटावरून counts.
+  - Cross-degree (वरून खाली): लहान degree चा count मोठ्या degree च्या count च्या **चालू wave** चा कायदेशीर भाग असेल तरच. Origin, दिशा आणि pattern-कुटुंब जुळायला हवं (R5: triangle wave 2 नाही).
+  - Pattern ची शेवटची wave (5/C/E/Y) चालू असेल तर पुढची दिशा parent ठरवतो (S7).
+  - Beam, vote, hysteresis ("वंश" जुळल्यास) आणि invalidation log (break confirm झाल्याच्या वेळेसह).
+- **Settings:** "Count engine" आणि "Real break" विभाग (spec §11, §14).
+  - काही नवीन [अनुमान] parameters, सगळे dashboard वर: `fib_tol`, `guideline_prior`, `cross_degree_*`, `orphan_position_penalty`.
+- **`research/elliott_counts_report.py` → `docs/reports/elliott_e1b_counts.md`:** फक्त IS, फक्त वर्णन.
+
+**IS निकाल (2015–2021, दर 30 मिनिटांनी snapshot, 5.7 ms/snapshot):**
+
+| Degree | count नाही | vote स्पष्ट | पुढे motive वर | पुढे motive खाली |
+|---|---|---|---|---|
+| D3 | 0% | 40.2% | 16.5% | 23.7% |
+| D2 | 28.2% | 12.4% | 6.0% | 6.4% |
+| D1 | 55.8% | 12.1% | 6.1% | 6.0% |
+| D0 | 71.1% | 8.9% | 4.3% | 4.6% |
+
+- D3 चे preferred counts: flat/C 27%, impulse/3 24%, flat/B 18%, wxy/Y 13%.
+- लहान degrees वर अनेकदा count नसतो. हे spec च्या strict nesting मुळे आहे (लहान degree चा count फक्त मोठ्या degree च्या चालू wave चा भाग म्हणूनच). याचा trade-संख्येवरचा परिणाम E4 मध्ये मोजेन; penalty mode हा पर्याय आहे.
+
+**निर्णय (कारणासह):**
+- **Count दर snapshot ला pivots वरून पुन्हा मांडला जातो** (stateless; causal आणि सोपा). "Evolve forward" चा हेतू preferred वर hysteresis लावून पाळला. Hysteresis count च्या वंशावर (degree + pattern + दिशा + origin) लागतो, म्हणजे नवीन pivot confirm झाल्यावर बदलणाऱ्या key ला अडथळा येत नाही.
+- **Vote beam वर:** §11 नुसार `beam_k` हीच "valid counts" ची संख्या. सगळ्या कच्च्या उमेदवारांवर vote घेतल्यास D3 वर स्पष्ट vote 40% वरून 1.4% वर येतो.
+- **Sub-count = 1** (leg च्या आत lower pivot नाही) म्हणजे पुरावा नाही. आधी तो 3/5 दोन्हीत "चूक" धरला जायचा; IS मध्ये असे 42% legs आहेत.
+- **स्थान-बंधित patterns** (diagonals, triangle) ना parent नसताना score × 0.5 (`orphan_position_penalty`). R5/R9 नुसार ते फक्त ठराविक wave म्हणून येतात, आणि सर्वात वरच्या degree वर स्थान तपासता येत नाही. याआधी D3 वर ending diagonal सुमारे 48% वेळा preferred होता.
+- **Triangle B:** flat सारखी मर्यादा, म्हणजे B ≤ 2 × A. पूर्ण B आणि चालू B चा invalidation दोन्हींना हीच, त्यामुळे दोन्ही सुसंगत आणि expanding triangle शक्य. चालू C ला "C ची सुरुवात" हाच invalidation, कारण contracting की expanding हे C संपल्यावरच ठरतं.
+- **`count_lookback_pivots` ची कमाल 5:** कुठल्याही pattern मध्ये 5 पेक्षा जास्त legs नाहीत. Parent च्या चालू wave ची सुरुवात lookback बाहेर असली तरी origin म्हणून घेतली जाते.
+- **Strict मोड:** मोठ्या degree कडे डेटा आहे पण एकही count नाही ⇒ लहान degree ला पण count नाही (gray). मोठ्या degree कडे डेटाच नसेल तेव्हाच लहान degree मुक्त (`parent_missing`; E2 ते block करेल).
+- **अजून नाही (नोंद):**
+  - Neely "Terminal C" सूट (C ending diagonal असल्याचं child वरून समजेल; E2).
+  - R10 (combination मध्ये एकच zigzag; sub-pattern माहिती लागते).
+  - Failed-retest break (E2).
+
+**स्वतंत्र review (High नाही; 6 Medium + Low) — सगळे दुरुस्त:**
+- k ≥ 2 मध्ये window मधली displacement.
+- शेवटच्या wave चा vote parent वरून.
+- Ending diagonal 2/4 ⇒ 0.
+- Diagonal R2 मर्यादा.
+- Running आणि completed नियम सुसंगत (triangle B/C, गोठवलेले ATR/MR).
+- Parent रिकामा ⇒ child रिकामा.
+- Low मुद्दे: wave 3 wave 1 च्या आत ⇒ नकार (strict), expanding triangle E ⇒ entry नाही, flat B मध्ये triangle चालतो, vote 50/50 ⇒ gray, log मध्ये break ची वेळ, fixed-TF origins.
+
+**दुसरा review (blocking नाही; 1 Medium regression + Low) — दुरुस्त:**
+- **Regression:** expanding triangle चा E चालू असताना child parent ची दिशा घेत होता. आता ending diagonal आणि expanding triangle कधीच parent ची दिशा घेत नाहीत ⇒ 0.
+- **Spec मधला अंतर्गत विरोध — निर्णय S11:** ending diagonal संपल्यावर लगेच C-end entry (S7) नाही. आधी उलटा leg, मग त्याचा retrace (S11).
+- **Non-strict R3:** चालू wave 4 च्या level ला सुद्धा तितकीच सवलत (wave 3 च्या confirm वर गोठलेली MR), म्हणजे completed check आणि running level एकच.
+- **`frozen()`:** NaN ⇒ 0 (units मिसळत नाहीत, आणि मूल्य bar-दर-bar बदलत नाही).
+- **Origin scan:** लवकर थांबतो (वेगासाठी).
+- **Vote संच = beam:** spec §4 पासूनचा हा जाणूनबुजून घेतलेला फरक आहे. E2 मधल्या `alt_block_weight` आणि strike च्या `alt_weight_min` तपासण्या याच beam संचावर करायच्या.
+
+**Tests:** `tests/test_elliott_counts.py` (+19):
+- प्रत्येक pattern चे नियम आणि invalidation ची बाजू.
+- R2/R3/R9, triangle (B मर्यादा, गोठवलेला tolerance, expanding).
+- Neely flags.
+- Real break: false break, acceptance, displacement (दोन्ही बाजू), k = 2.
+- Cache causal.
+- Truncation invariance (real_break आणि wick; nodes, preferred, vote, gray).
+- Cross-degree (parent कुटुंब, शेवटच्या wave ची दिशा, रिकामा parent).
+- Hysteresis (margin 1 आणि 0) आणि log.
+- Mutation checks: tentative ला भविष्य दिलं, break ला भविष्य दिलं, किंवा parent-vote काढला, तर tests fail होतात.
