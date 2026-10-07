@@ -575,3 +575,74 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
 - Sandbox मध्ये local bare repo आणि डमी scripts वापरून पूर्ण वाट चालवून पाहिली: push, सारांश, background push. दुसऱ्यांदा चालवल्यावर "नवीन काही नाही".
 
 **`trade-data` README** (push केला): folders ची रचना आणि data-use नियम (IS / VAL / CONTAMINATED / sealed HOLDOUT).
+
+## 2026-10-07 · Elliott E1a — causal multi-degree swings (D0–D3)
+
+**काय केलं:**
+- **`elliott/settings.py`:** Elliott चा एकच settings schema (dashboard E5 हाच वापरेल). Code मध्ये आकडा hard-code नाही.
+  - प्रकार: int, float, choice, list_float, list_int, list_tf.
+  - Validation:
+    - यादीची लांबी = degrees ची संख्या.
+    - Degree वाढताना threshold वाढायला हवा.
+    - `tf_bars_min < tf_bars_max`.
+    - अस्तित्वात नसलेल्या trade degrees वगळतो.
+  - प्रत्येक trade सोबत settings चा snapshot hash.
+  - E1a चा विभाग "Degrees / swings" (spec §11) आहे; पुढचे phases पुढचे विभाग जोडतील.
+- **`elliott/swings.py`:**
+  - **Frames:** NIFTY spot 1m → NSE 09:15-anchored TF bars. फक्त **बंद** bars (`opportunity_engine.sessions.resample_nse` reuse).
+  - **Threshold (प्रति degree):** atr (पट × ATR), pct (% × भाव), किंवा fractal (r, आलटून-पालटून, causal).
+  - **ZigZag core:** `price_action/legs.zigzag_pivots` reuse केलं.
+  - **Confirmed pivot:** `confirmed_at` = confirm bar चा `bar_end` (knowable_at). एकदा confirm झालेला pivot कधीच बदलत नाही.
+  - **Tentative pivot:** फक्त चालू wave साठी.
+  - **Degree → TF:** `degree_tf_mode = auto_by_bars` (default) मध्ये pivots structure TF (5m) वर; `fixed` मध्ये degree-निहाय TF.
+  - **Auto-TF (§14 Q3):** corrective wave जितक्या **बंद** candles मध्ये दिसते, त्यावरून `tf_bars_min`–`tf_bars_max` मध्ये बसणारा सर्वात लहान TF.
+  - **Similarity & Balance (Neely 1/3, price किंवा time):** degree assignment च्या गुणवत्तेसाठी.
+- **`research/elliott_swings_report.py` → `docs/reports/elliott_e1a_swings.md`:** फक्त IS, फक्त वर्णन.
+
+**IS निकाल (default settings, NIFTY 5m, 2015–2021):**
+
+| Degree | pivots/दिवस | leg median (points) | leg median (bars) | Similarity & Balance |
+|---|---|---|---|---|
+| D0 | 14.2 | 25 | 5 | 0.94 |
+| D1 | 4.2 | 53 | 15 | 0.91 |
+| D2 | 1.2 | 114 | 50 | 0.90 |
+| D3 | 0.4 | 206 | 155 | 0.90 |
+
+Degrees स्पष्टपणे वेगळ्या आकाराच्या आहेत. Leg चे bars दोन्ही टोकं धरून मोजले आहेत (auto-TF च्या मोजणीसारखे). D0 चे legs ~5 bars चे आहेत, त्यामुळे 5m वरही त्यांची आतली रचना दिसत नाही; म्हणून auto-TF मध्ये D0 वर entry फक्त पुरेशी लांब correction असतानाच.
+
+**निर्णय (कारणासह):**
+- **Auto mode मध्ये सगळ्या degrees चे pivots एकाच structure TF (5m) वर**, फक्त threshold वेगळा. Spec नुसार pivots/counts structure TF वर आणि TF निवड फक्त trigger साठी (§6), आणि एकाच TF मुळे cross-degree nesting सोपं आणि causal राहतं. Fixed mode पर्याय म्हणून ठेवला.
+- **ATR मध्ये रात्रीचा gap (आधीचा close) TR मध्ये धरला** (standard TR). सकाळी थोडा वेळ threshold मोठा राहतो, म्हणजे gap वर खोटे swings कमी. Gap वर entry नसल्याचा नियम (E2) वेगळा.
+- **Fractal mode causal ठेवला:** सलग समान प्रकाराचा अधिक टोकाचा pivot आला, तर आधीचा pivot न बदलता मधला उलट extreme नवीन confirmed pivot म्हणून घालतो.
+- **Auto-TF चा fallback:** कुठलाच TF 8–40 मध्ये नसेल, तर ≥ 8 candles असलेल्यांपैकी सर्वात मोठा (रचना दिसते आणि noise कमी); कुठलाच ≥ 8 नसेल तर सर्वात लहान.
+
+**स्वतंत्र review नंतर दुरुस्त्या (High नाही; 2 Medium + Low):**
+- **Settings:** आधी "degree वाढताना वाढायला हवं" हा नियम तपासतो आणि मगच यादीची लांबी. आधी या क्रमामुळे reset झालेल्या 4-मूल्यांच्या यादीसोबत `degree_levels = 5` राहून engine `IndexError` देत होतं.
+  - फक्त चालू पद्धतीत वापरली जाणारी यादी तपासली जाते.
+  - Fixed mode मध्ये degree_tf degree सोबत लहान होऊ नये.
+  - Trade degrees मधले duplicates काढले.
+  - `list_int` मध्ये पूर्णांकच चालतो.
+  - TF यादीत फक्त 3m–1d.
+- **Fractal mode:** उलट प्रकारचा pivot त्याच्या दिशेने खरंच पुढे असेल तरच घेतो. आधी 2018 च्या डेटावर काही "वर" legs प्रत्यक्षात खाली जात होते. हे फक्त fractal mode मध्ये होतं, default नाही.
+- **Tentative pivot:**
+  - समान भाव आल्यास शेवटचा bar घेतो (confirm करताना zigzag तोच निवडतो).
+  - `upto` पर्यंत माहीत असलेल्या pivots वरूनच तयार होतो.
+- **`auto_tf`:**
+  - आता `in_range` flag सुद्धा देतो. E2 मध्ये < 8 candles ⇒ रचना दिसत नाही ⇒ entry नाही.
+  - `auto_tfs` मधला TF frames मध्ये नसेल तर गुपचूप वगळत नाही, ValueError देतो.
+- **Bars मोजण्याची एकच पद्धत:** दोन्ही टोकं धरून.
+- **1m frame** ला regular-hours filter लावला.
+- **नोंद:** NSE outage च्या दिवशी (2021-02-24) सत्र लवकर संपल्याने त्या दिवसाचे काही bars "बंद" मानले जात नाहीत, म्हणजे वगळले जातात. हे causal आहे आणि repaint होत नाही. IS मध्ये असे 13 5m bars आहेत.
+
+**Tests:** `tests/test_elliott_swings.py` (+14):
+- Truncation invariance: atr / pct / fractal आणि fixed mode (15m/1h/1d). Cuts सत्रातल्या, 5m grid बाहेरच्या random मिनिटांवर. `now=` path आणि tentative pivot सुद्धा हुबेहूब जुळतात.
+  - Mutation check: `bar_closed` filter काढल्यावर 4 tests fail होतात.
+- Fractal mode मध्ये प्रत्येक leg योग्य दिशेने जातो.
+- समान भावाचा tentative pivot.
+- Pivots कधीच बदलत नाहीत (immutability).
+- Pivot semantics आणि tentative pivot (फक्त upto पर्यंतचे bars).
+- अपूर्ण bar वगळतो; ATR causal.
+- Fixed TF mode.
+- Similarity & Balance.
+- Auto-TF (फक्त बंद candles).
+- Settings validation.
