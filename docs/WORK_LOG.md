@@ -461,3 +461,97 @@ Log blob मिळत नाही ⇒ कोणती test ते कळलं 
   - 2015-11 पूर्वी lot 25.
   - डेटा load अपयश cache होत नाही.
 
+
+## 2026-10-06 · Elliott Pullback Credit Spread — E0: plan, data धोरण, VPS data scripts
+
+**Spec:**
+- `docs/ELLIOTT_WAVE_SPEC.md` हाच strategy logic चा एकमेव प्रमाण. त्यातला विभाग 14 अंतिम.
+- प्रक्रिया: `docs/ELLIOTT_MASTER_PROMPT.md`.
+- दोन्ही Abhi ने दिले (2026-10-06).
+
+**Abhi चे निर्णय (2026-10-06, एकदाच विचारलेले प्रश्न):**
+1. **PCS थांबवला.** PCS ला G1 वर गोठवलं; PCS-4 (PAPER runner) आणि PCS-5 (backtest) रद्द.
+   - त्याचे भाग (settings store/इतिहास, expiry/strike guards, preview, dashboard रचना) Elliott मध्ये reuse करायचे.
+   - PCS पान OFF स्थितीत तसंच राहील.
+2. **Golden-file काळ 2026-07-01 → 2026-10-06 "contaminated".**
+   - Logic याच काळावरून ठरलं. फक्त regression साठी वापरायचा, tuning किंवा आकडेवारीसाठी नाही.
+   - **अंतिम holdout चाचणीतूनही वगळायचा** (`elliott/data_policy.py: final_holdout_mask`).
+   - बाकी 2024-04 नंतरचा holdout बंदच.
+3. **Upstox candles public Trade repo मध्ये नाहीत.**
+   - Private `trade-data` repo मध्ये जातात (Abhi तयार करेल आणि session access देईल).
+   - VPS script फक्त read-only आहे, आणि destination remote "trade-data" नसेल तर थांबतो.
+   - तपासलं: public repo मध्ये आधी कुठलाही candles branch push झालेला नाही.
+   - Major-levels export सुद्धा आता इथूनच जातो.
+4. **Options premium चा क्रम:**
+   - (a) Upstox expired-options API probe.
+   - (a2) NSE F&O bhavcopy (2019 पासून, VPS वरून, private repo मध्ये). त्या दिवसाच्या bhavcopy वरून IV काढून intraday entry/exit साठी BS.
+   - (b) शुद्ध BS फक्त शेवटचा पर्याय; अहवालात ठळक "model premium".
+   - (c) TrueData/GDFL चे पर्याय समांतर शोधायचे; विकत घेणं Abhi च्या निर्णयानंतरच (G-PAID).
+   - तपशील: `docs/reports/options_data_sources.md`. दोघांचेही दर sandbox मधून सापडले नाहीत, quote मागवावा लागेल.
+5. **v1 फक्त NIFTY.** SENSEX फक्त settings मधला पर्याय; replication डेटा मिळाल्यावर.
+6. **Branch:** याच branch वर, एक phase = एक PR, PR title `[Elliott E#]`.
+7. **Phase क्रम:** E0 → E1 → E2 → E3 → E4 (G2) → E5 (G1) → E6 (G3).
+8. **Golden expectations** (`docs/reports/elliott_golden_expectations.json`):
+
+   | Trade | पातळी | अर्थ |
+   |---|---|---|
+   | T2, T3, T4, T7, T8 | must | घेतला नाही तर test FAIL |
+   | T1 | verify | मध्यम खात्री; आधी reversal candle पडताळा |
+   | T6 (5 Oct A-end bear calls) | must_not | नियम R4; bot ने घेतला तर test FAIL |
+   | T5, T9 | report | Tier C, 0.25×; घेतला किंवा नाही दोन्ही चालतं |
+
+   - इतर must_not: 28 Sep आणि 6 Oct च्या gaps वर entry नाही; 6 Oct 09:40 ला 22,614 वर bear call नाही.
+9. **Backtest capital:** ₹10 लाख default, dashboard setting म्हणून. निकाल ₹ सोबत R-multiples आणि % मध्येही.
+
+**माझे निर्णय (कारणासह):**
+- **T1 "verify" पातळीवर.** Master prompt मध्ये तो "मध्यम खात्री, reversal candle पडताळा" असा आहे. म्हणून तो जुळला नाही तर FAIL नाही; कारणासह report.
+- **T9 report-only, पण 09:40 / 22,614 bear call must_not.** Master prompt मध्ये 6 Oct 09:15–09:45 नकार आहे, तर Abhi चं उत्तर T9 ला report-only म्हणतं. दोन्ही पाळण्यासाठी: त्या window मधला Tier C trade चालतो, पण तो विशिष्ट bear call नाही.
+- **Bhavcopy सगळ्या calendar दिवसांसाठी मागवतो.** म्हणजे Budget/Muhurat सारखे weekend special sessions चुकत नाहीत.
+  - फक्त सगळीकडे 404 आलं तरच तो दिवस "नाही" (सुट्टी) मानतो.
+  - 403 किंवा timeout आला तर "चूक", आणि पुढच्या run ला पुन्हा प्रयत्न.
+- **Bhavcopy ची श्रेणी:** 2018-12 → 2024-03 (weekly options कधी सुरू झाले याचा data-पुरावा मिळावा म्हणून थोडा आधीचा भाग) + golden काळ. Sealed holdout चा एकही दिवस नाही.
+- **Upstox probe चा candle sample** ≤ 2024-03 च्या expiry चा. नसेल तर golden काळातला. Holdout चा कधीच नाही.
+- **ऐतिहासिक expiry calendar** bhavcopy वरूनच (अधिकृत). Weekday hard-code नाही. Live साठी फक्त Upstox contract master.
+- **Lot size bhavcopy मधून फक्त UDiFF काळात** (8 Jul 2024 नंतर = आपल्यासाठी फक्त golden काळ). जुन्या format मध्ये lot column नाही, म्हणून IS/VAL चा lot इतिहास E3 मध्ये स्रोतासह वेगळ्या तक्त्यातून.
+- **Major-levels साठी MCX candles** (GOLD/COPPER/SILVER, 110 दिवस) sealed-holdout नियमाखाली नाहीत, कारण तो नियम NIFTY साठी आहे. NSE index candles मात्र आपोआप filter होतात (फक्त IS/VAL + golden काळ).
+
+**E0 मध्ये काय आहे:**
+- `elliott/data_policy.py`: IS / VAL / CONTAMINATED / HOLDOUT, `check_range`, `filter_allowed`, `final_holdout_mask`.
+- `elliott/bhavcopy.py`: NSE F&O bhavcopy parser (जुना format आणि UDiFF), NIFTY options + futures, expiry calendar, पहिली weekly listing.
+- `research/elliott_vps_data.py` (VPS, read-only): `probe-expired`, `golden`, `major-levels`, `bhavcopy`, `all`. Resume होतो, token छापत नाही, public repo नाकारतो.
+- `scripts/elliott_e0_vps.sh`: VPS वरचा एकच idempotent command. पहिल्यांदा deploy key तयार करून थांबतो; key जोडल्यावर clone → probe → golden → major-levels → push → data check + BANKNIFTY अहवाल → bhavcopy background मध्ये (संपल्यावर push).
+- `research/elliott_data_check.py`: data उपलब्धतेचा ≤ 40 ओळींचा अहवाल. Offline निकाल: NIFTY 1m 2015-01-09 → 2024-03-27, IS 1727 दिवस, VAL 555 दिवस.
+- `docs/reports/options_data_sources.md`, `docs/reports/elliott_golden_expectations.json`.
+- `tests/test_elliott_e0.py` (+20).
+
+**स्वतंत्र review नंतर दुरुस्त्या (High नाही; 4 Medium + Low):**
+- **Bhavcopy "सुट्टी" आता कायमची लपवली जात नाही.**
+  - आजचा/कालचा दिवस ⇒ `pending`.
+  - Weekday 404 ⇒ offline NIFTY डेटा/2026 सुट्टी-यादीनुसार ठरतं: सुट्टी, "फाईल हवीच" (चूक), किंवा माहीत नाही (`missing_weekday`). शेवटच्या दोन्ही बाबतीत पुढच्या run ला पुन्हा प्रयत्न.
+  - जुन्या फाइल्ससाठी तिसरा URL (nsearchives historical path) जोडला.
+  - Parse न होणारी (HTML) फाईल आली तर पुढचा URL प्रयत्न; 0 NIFTY ओळींची फाईल = चूक.
+- **Major-levels:** NSE index candles मधून sealed holdout काढला. आजपासून चालवलं तरी 2026-10-07 नंतरचे candles लिहिले जात नाहीत.
+- **Golden 1m पूर्णता तपासणी:** अपेक्षित trading दिवस (weekday − NSE 2026 सुट्ट्या) गहाळ किंवा अपूर्ण असतील तर ✅ नाही, exit ≠ 0. 6 Oct चा बाजार बंद होण्याआधी चालवलं तर नकार.
+- **Bhavcopy parser:**
+  - प्रत्यक्ष expiry (`FininstrmActlXpryDt`) वापरतो.
+  - Volume चं एकक `volume_unit` मध्ये नोंदवलं.
+  - सगळे संख्या-columns float64, म्हणजे प्रत्येक महिन्याचा parquet schema एकच.
+- **Golden bhavcopy वेगळ्या folder मध्ये** (`NIFTY_golden/`). त्यामुळे research loader चुकून contaminated डेटा उचलत नाही.
+- **`data_policy` च्या सीमा exclusive**, म्हणजे sub-second फरकाने उत्तर बदलत नाही.
+- **Probe:** candle window सुद्धा `check_range` ने तपासतो, आणि `instrument_key` नसेल तर पुढचा contract घेतो.
+- **`check_repo`** fetch आणि सगळे push URLs तपासतो.
+- **`main()`** कुठलीही पायरी फेल किंवा अपूर्ण असेल तर exit ≠ 0 आणि ⚠️. जे मिळालं ते (manifest सह) push होतं, आणि पुढच्या run ला resume.
+
+**`trade-data` access:** Abhi ने repo तयार केला (2026-10-07). पण session ला जोडताना GitHub ने "no access" दिलं, म्हणजे Claude GitHub App त्या repo वर अजून install नाही. VPS push deploy key ने होतो, त्यामुळे इथे काही अडत नाही. फक्त मला तो डेटा वाचण्यासाठी access लागेल.
+
+**पुढचे PRs (प्रत्येकात tests, full suite, CI, स्वतंत्र review, WORK_LOG):**
+
+| PR | काम | थांबा-बिंदू |
+|---|---|---|
+| E1a | Causal multi-degree pivots D0–D3 (confirmed/tentative, `confirmed_at`), Similarity & Balance, auto-TF (8–40 बंद candles). No-repaint tests: truncation invariance, tentative-ban | — |
+| E1b | Count tree: patterns, नियम R1–R11, guideline score, beam, hysteresis, vote; Neely time flags; invalidation चा degree-प्रसार (relabel → parent cascade); `count_inv_basis` | — |
+| E2 | Setups S1–S14 (S5/S8/S11/S14 default off); composite trigger T1–T7 (`price_action/candles.py` generic, MCX वर्तन tests ने अबाधित); real break / false break; `wick_beyond_inv_action = recount` | — |
+| E3 | Contract layer (live: Upstox master; इतिहास: bhavcopy), काळानुसार STT/lot, strike सूत्र, DTE-निहाय credit guard, exits क्रम 0–8, sizing (₹10 लाख default). Exit कधीच अडत नाही याची test | — |
+| E4 | Backtest (golden-file regression, baselines 1–7, WRC/SPA, Deflated Sharpe, PBO CSCV S=16). अहवाल setup × degree × tier × DTE, ₹ + R + % मध्ये → `docs/reports/elliott_pullback_backtest.md` | **G2** |
+| E5 | Dashboard "Elliott Pullback Credit Spread": settings (विभाग 11 + 14), presets, live preview, wave-label chart, इतिहास + snapshot, Signal Log | **G1** |
+| E6 | PAPER wiring, default OFF. 1-Min Instant Trader ला हात नाही | **G3** |

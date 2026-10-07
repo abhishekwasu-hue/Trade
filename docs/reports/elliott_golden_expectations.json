@@ -1,0 +1,41 @@
+{
+  "about": "Elliott Pullback Credit Spread — golden-file regression (NIFTY, 25 Sep – 6 Oct 2026). स्रोत: docs/ELLIOTT_MASTER_PROMPT.md §4 + Abhi चं उत्तर 8 (2026-10-06). किमती screenshots वरून, ±tolerance_pts. हा काळ CONTAMINATED (elliott/data_policy.py): logic याच काळावरून ठरलं, म्हणून अंतिम holdout मधूनही वगळला.",
+  "tolerance_pts": 15,
+  "levels": {
+    "must": "bot ने हा trade घ्यायलाच हवा; न घेतल्यास test FAIL आणि कारण report (bot ची चूक की screenshot वाचनाची चूक). फक्त pass करण्यासाठी logic बदलायचं नाही.",
+    "verify": "मध्यम खात्री: जुळलं नाही तर आधी reversal candle प्रत्यक्ष data वर पडताळा; fail नाही, कारणासह report.",
+    "must_not": "bot ने हा trade घेतला तर test FAIL.",
+    "report": "Tier C (0.25×) — घेतला/नाही दोन्ही चालतं; फक्त report."
+  },
+  "trades": [
+    {"id": "T1", "level": "verify", "date": "2026-09-28", "time": null, "when": "flag चं टोक", "price": 22870,
+     "setup": "(iv) of 3 -> (v)", "spread": "bear_call", "tier": null, "invalidation": [23027], "invalidation_note": "23,027 + flag चं टोक",
+     "expiry": "2026-09-29", "note": "मध्यम खात्री: reversal candle पडताळा"},
+    {"id": "T2", "level": "must", "date": "2026-09-29", "time": "afternoon", "when": "b चा शेवट", "price": 22625,
+     "setup": "b -> c of wave 4", "spread": "bull_put", "tier": "B", "invalidation": [22570], "expiry": "2026-10-06",
+     "expected_exit": {"date": "2026-09-30", "price": 22805, "reason": "उलट logical reversal (Tier B C-zone exit)"}},
+    {"id": "T3", "level": "must", "date": "2026-09-30", "time": null, "when": "22,801–22,805 वर reversal", "price": 22803,
+     "setup": "wave 4 end -> 5", "spread": "bear_call", "tier": "A", "invalidation": [23030], "expiry": "2026-10-06"},
+    {"id": "T4", "level": "must", "date": "2026-10-01", "time": "morning", "when": "22,591–22,608 खाली नकार", "price": 22600,
+     "setup": "(ii) of 5 -> (iii)", "spread": "bear_call", "tier": null, "invalidation": [22805], "expiry": "2026-10-06"},
+    {"id": "T5", "level": "report", "date": "2026-10-01", "time": null, "when": "(iv) -> (v) of 5", "price": null,
+     "setup": "(iv) -> (v) of 5", "spread": "bear_call", "tier": "C", "invalidation": [], "expiry": "2026-10-06",
+     "note": "Tier C, default 0.25× मुळे घेतला जाऊ शकतो"},
+    {"id": "T6", "level": "must_not", "date": "2026-10-05", "time": ["09:50", "10:15"], "when": "A चा शेवट", "price": 22600,
+     "setup": "A-end", "spread": "bear_call", "tier": null, "invalidation": [], "expiry": null,
+     "note": "नियम R4 (A-end ban). जुन्या Instant Trader ने इथेच bear calls घेतले होते."},
+    {"id": "T7", "level": "must", "date": "2026-10-05", "time": ["12:15", "12:30"], "when": "B चा शेवट", "price": 22398,
+     "setup": "B -> C (S6a)", "spread": "bull_put", "tier": "B", "invalidation": [22217], "expiry": "2026-10-06"},
+    {"id": "T8", "level": "must", "date": "2026-10-05", "time": ["13:30"], "when": "C-(ii) चा शेवट", "price": null,
+     "setup": "(ii) -> (iii) of C (S13)", "spread": "bull_put", "tier": "B", "invalidation": [22396], "expiry": "2026-10-06"},
+    {"id": "T9", "level": "report", "date": "2026-10-06", "time": ["09:15", "09:45"], "when": "expiry दिवस सकाळ", "price": null,
+     "setup": "Tier C", "spread": null, "tier": "C", "invalidation": [], "expiry": "2026-10-13",
+     "note": "Tier C, report-only. पण खालचा 09:40/22,614 bear call must_not लागू राहतो."}
+  ],
+  "rejections": [
+    {"id": "R-gap-0928", "level": "must_not", "date": "2026-09-28", "rule": "gap वर entry नाही (opening gap candle/window)"},
+    {"id": "R-gap-1006", "level": "must_not", "date": "2026-10-06", "rule": "gap वर entry नाही (opening gap candle/window)"},
+    {"id": "R-1006-0940", "level": "must_not", "date": "2026-10-06", "time": ["09:40"], "price": 22614, "spread": "bear_call",
+     "rule": "level भावाच्या खाली होता = support; इथे bear call नाही (Instant Trader ने −51k घेतले होते)"}
+  ]
+}
