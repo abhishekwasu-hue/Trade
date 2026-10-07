@@ -827,3 +827,36 @@ Degrees स्पष्टपणे वेगळ्या आकाराच्�
 - नोंद (बदल नाही): `max_reentries`, `reentry_after_premium_stop`, `max_open_spreads`, `max_daily_loss_pct`, `expiry_exit_time` हे E4 backtest loop मध्ये वापरले जातील; premium stop अशक्य (hard_stop_mult × credit ≥ width) असेल तर plan मध्ये `premium_stop_reachable = false`.
 
 **Tests:** `tests/test_elliott_e3.py` (+28): expiry calendar (Tuesday/Thursday काळ, holiday shift, 2019 आधी monthly, मुहूर्त/weekend sessions, listing), golden दिवसांच्या expiries (T1/T2/T7/T9), DTE, lot सीमा, BS parity / IV, STT तारखा व बाजू, spec §10 strikes (22,150 / 22,250 / alternate ⇒ 22,150), bear call, sizing (Tier B default 0 lot), guard fail actions, BS delta guard, exit क्रम, premium stop bar close वि. intrabar, soft/lower reduce एकदाच, Tier A partial + progressive inv, Tier B C zone / fixed / acceptance trailing, bear call exits, expiry IV नसताना, exits entry settings ने block नाहीत.
+
+## 2026-10-07 · Elliott E4 — backtest, baseline, golden checker, report → **G2 वर थांबलो**
+
+**स्थिती:** trade-data मध्ये options data (bhavcopy / Upstox expired / golden 1m) **अजून नाही** ⇒ सगळे premiums **model premium** (Black-Scholes, IV = आधीच्या 20 पूर्ण sessions चा realized vol; उत्तर 4 (b)). Golden regression चालवता आला नाही (checker + test तयार, data आल्यावर आपोआप).
+
+**काय केलं:**
+- **`elliott/backtest.py`:** E2 signals → E3 plan → E3 exits. Entry fill = पुढच्या trigger-TF bar चा open; exit निर्णय bar close वर, fill पुढच्या bar च्या open वर (15:30 नंतर ⇒ पुढच्या session चा open, gap सह); emergency (strike cross) intrabar, gap असेल तर open वर; expiry-day तपासणी 5m घड्याळावर; उलट signal ची नोंद पुढच्या TTF close पर्यंत; premium मिळाला नाही ⇒ exit पुढे ढकल (खोटा नफा नाही); expiry close ला intrinsic settle (+ exercise STT); data संपताना उघडे trades "end_of_data". Entry filters (फक्त नवीन entries): max_open_spreads, daily loss (sized trades), एक trade प्रति setup-instance, soft/premium stop नंतर re-entry (max_reentries). Default sizing वर 0 lot ⇒ **shadow** 1-lot (₹ portfolio बाहेर, R तक्त्यांत). Guard आणि sizing slippage नंतरच्या credit वर. Signals एकदाच, variants replay.
+- **`elliott/golden.py`:** expectations JSON नुसार must / must_not / verify / report आणि gap rejections; वेळ-खिडकी + दिशा + correction extreme ±15 + setup code / tier (JSON मध्ये असतील तर); must_not फक्त वेळ + दिशा.
+- **`research/elliott_backtest_report.py` → `docs/reports/elliott_pullback_backtest.md`:** IS weekly काळ (11 Feb 2019 → 31 Dec 2021; 2015–2018 मध्ये weekly options नव्हते ⇒ फक्त spot-structure, E2 report). शेवटचे 7 दिवस entry embargo. VAL / holdout उघडले नाहीत.
+
+**IS निकाल (model premium — अंदाज):** 199 signals.
+
+| Variant | trades (sized) | win% | R सरासरी | CVaR5% R | ₹ (sized) |
+|---|---|---|---|---|---|
+| A default | 53 (16) | 22.6 | −0.019 | −0.09 | −1,526 |
+| B guard बंद (निदान) | 145 (58) | 13.1 | −0.019 | −0.09 | −7,006 |
+| C guard + progress बंद (निदान) | 151 (61) | 35.1 | −0.016 | −0.11 | −6,165 |
+
+- **Default मध्ये 199 पैकी 127 signals credit guard ने अडले** (model premium वर credit/width बहुतेक 0.05–0.10 < c_min 0.06–0.12). c_min खऱ्या premiums वरूनच calibrate करता येईल (spec §8).
+- **Progress-time exit** (mult 1.0 × शेवटच्या sub-leg चे bars) बहुतेक trades काही bars मध्येच लहान तोट्यात बंद करतो (A: 53 पैकी 37).
+- **Entry तुलना (त्याच structure-free exits, filters बंद):** Elliott 197 trades R −0.022, win 62% वि. random 952 trades R −0.011, win 67%. **Model premium वर Elliott entry ला random entry पेक्षा फायदा दिसत नाही.**
+- n < 30 मुळे setup/degree/DTE cells वर निष्कर्ष नाही.
+
+**निर्णय (कारणासह):**
+- **VAL चालवला नाही:** spec §13 — VAL फक्त IS मध्ये निवडलेल्या ≤ 3 configurations साठी; निवड G2 ला तुमची.
+- **Variants B/C** pre-registered निदान — tuning/निवड नाही.
+- **Golden = signal + strike-plan स्तर** (Tier B sizing 0 lot — E3 शोध — golden चा भाग नाही).
+- **Random baseline:** inv-अंतर जुळवलं (spec चं "same delta/DTE" नाही) — नोंद.
+- **अजून नाही (नोंद):** lower-degree inv warning आणि "पुढची motive पूर्ण" (thesis) ctx backtest मध्ये पुरवलेले नाहीत; D0 trades चा trailing D0 pivots वर (खाली degree नाही); calendar चा "पूर्ण session" निकष दिवसाच्या एकूण bars वरून (outage दिवसांवर 1-दिवस lookahead — नगण्य).
+
+**स्वतंत्र review (1 High + 6 Medium + Low) — दुरुस्त्या:** gap मधलं emergency pricing; premium नसताना खोटा नफा (आता defer; लहान sessions ला आधीचा IV); exits पुढच्या open वर; expiry check 5m वर; उलट signal sticky; baseline दोन्ही बाजूंना सारखे filters; golden खोटे PASS (setup/tier, ±15, must_not किंमत-निरपेक्ष, gap 09:45); re-entry मर्यादा premium stop लाही; partial न झाल्यास परत; intrabar premium stop stop-level वर; end-of-data trades; slippage-नंतरचा guard/sizing; report मध्ये n<30, R mean/sd, §13 grid, start ≥ 11 Feb 2019, data policy filter.
+
+**Tests:** `tests/test_elliott_e4.py` (+12; 1 golden-data test data नसल्याने skip): fill/exit वेळा (exit पुढच्या bar च्या open वर, 15:30 नाही), P&L/R मर्यादा, shadow ₹ बाहेर, truncation invariance, IV causal + बदलतो + लहान session, emergency gap pricing, daily loss ⇒ entries थांबतात पण exits चालू, re-entry नियम, random baseline, golden matcher (levels + कडकपणा).
