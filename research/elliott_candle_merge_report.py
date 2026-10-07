@@ -209,7 +209,9 @@ def random_pool(d, sc, st, times, ref_bt, per_ep=PER_EP):
                             sub_origin=stp.extreme.price, bars_last_subleg=1, extreme=stp.extreme.price,
                             extreme_ts=stp.extreme.ts, wave_start_ts=stp.wave_start.ts + pd.Timedelta(microseconds=n),
                             comp=(o, h, l, c), n=1, score=0.0, vote=stp.vote, opp_max=stp.opp_max, alt_invs=list(stp.alt_invs),
-                            pattern=stp.node.pattern, current_wave=stp.node.current_wave)
+                            pattern=stp.node.pattern, current_wave=stp.node.current_wave,
+                            inv_degree=getattr(stp, "inv_degree", None), inv_start_ts=getattr(stp, "inv_start_ts", None),
+                            parent_start_ts=getattr(stp, "parent_start_ts", None))
             replay[tj].append(sig)
             ep_of[sig.wave_start_ts] = e
     bt = BT.Backtest(d, st, scanner=sc, replay=dict(replay), structure_free_exits=True, entry_filters=False, pricer=ref_bt.pricer,
@@ -360,6 +362,12 @@ def table(rows, cols):
     return L
 
 
+G2_NOTE = ("> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. याची दोन कारणं आहेत: progress-time exit "
+           "बहुतेक trades 20–30 मिनिटांत बंद करतो, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. त्यामुळे निष्कर्ष "
+           "\"Elliott/candle मध्ये edge नाही\" असा **नाही**, तर **\"अजून मोजता आलं नाही\"** असा आहे. सगळे candle settings off/shadow; VAL नंतर "
+           "(खरे premiums + E4 review fixes).")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=4)
@@ -371,7 +379,7 @@ def main(argv=None):
     with mp.get_context("fork").Pool(a.workers) as pool:
         res = {r["name"]: r for r in pool.map(run_variant, list(vs.items()))}
     base = res["a_generic"]
-    L = ["# Elliott + candle merge — C2/C3 अहवाल (NIFTY, IS 11 Feb 2019 – 31 Dec 2021)", "",
+    L = ["# Elliott + candle merge — C2/C3 अहवाल (NIFTY, IS 11 Feb 2019 – 31 Dec 2021)", "", G2_NOTE, "",
          "> ⚠️ **Model premium** (BS, IV = 20 दिवस realized vol) — options data अजून नाही. ₹/R अंदाज; निर्णय खऱ्या premium वर पुन्हा "
          "चालवल्यानंतरच. Trading settings सगळ्या variants ना सारखे: credit guard बंद (E4 variant B) + पूर्ण exits. VAL / holdout उघडले नाहीत.",
          "", f"Variants: {len(res)} ({sum(1 for r in res.values() if r.get('cached'))} cache मधून; cache key = settings + trading "

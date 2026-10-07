@@ -10,8 +10,9 @@ elliott/strikes.py — E3: expiry + strike + credit guard + sizing (spec §8 str
   short     bull put PE floor(spot − dist) · bear call CE ceil(spot + dist)  (50-grid);  long = short ∓ width
   guard     credit/width ≥ c_min(dte_days) · credit ≥ min_credit_pts · |delta short| ≤ max_short_delta
             fail ⇒ credit_fail_action: skip | widen_width (50 ने, 200 पर्यंत) | try_next_weekly (एकदा)
-  lots      floor(capital × risk% × tier गुणक [× leading_diag_mult S10] / ((width − credit) × lot)); 0 ⇒ skip
-            (min_one_lot = true ⇒ 1 lot, risk budget ओलांडून — default बंद; plan मध्ये over_budget)
+  lots      sizing_mode = tier_of_A (default, F1): A = max(1, floor(capital × risk% / ((width − credit) × lot))), B/C =
+            round(A × tier गुणक [× leading_diag_mult S10]) पण किमान tierB/C_min_lots (≤ A); risk_budget: floor(tier budget /
+            प्रति-lot तोटा). 0 ⇒ skip. min_one_lot (shadow) ⇒ किमान 1. plan मध्ये over_budget + size_floor (कारण).
 price_fn(opt, strike, expiry) ⇒ premium (mid) किंवा None (data नाही ⇒ skip "no_price"); delta_fn(opt, strike, expiry) ⇒ delta.
 """
 import math
@@ -33,6 +34,34 @@ def strikes_for(sig, spot, dist, width, step=CT.STRIKE_STEP):
         return "PE", k, k - width
     k = CT.ceil_grid(spot + dist, step)
     return "CE", k, k + width
+
+
+def size_lots(tier, mult, base_budget, per_lot, s):
+    return size_lots_detail(tier, mult, base_budget, per_lot, s)[0]
+
+
+def size_lots_detail(tier, mult, base_budget, per_lot, s):
+    """(lots, floor कारण) — F1. tier_of_A: Tier A lots = budget ÷ प्रति-lot तोटा (किमान 1 — "a_min_one"); बाकी tiers = round(A × गुणक),
+    किमान tierB_min_lots / tierC_min_lots पण A पेक्षा जास्त नाही ("tier_floor"); गुणक 0 ⇒ 0. risk_budget: tier budget ÷ प्रति-lot
+    तोटा (जुनं). दोन्हीत `min_one_lot` (shadow trades) ⇒ गुणक > 0 असताना किमान 1 ("min_one_lot")."""
+    if per_lot <= 0 or mult <= 0:
+        return 0, ""
+    why = ""
+    if s.get("sizing_mode", "tier_of_A") == "risk_budget":
+        lots = int(base_budget * mult // per_lot)
+    else:
+        raw_a = int(base_budget // per_lot)
+        lots_a = max(1, raw_a)
+        if tier == "A":
+            lots, why = lots_a, ("a_min_one" if raw_a < 1 else "")
+        else:
+            lots = int(math.floor(lots_a * mult + 0.5 + 1e-9))                         # सामान्य rounding (0.5 ⇒ वर)
+            floor_ = min({"B": s["tierB_min_lots"], "C": s["tierC_min_lots"]}.get(tier, 0), lots_a)
+            if lots < floor_:
+                lots, why = floor_, "tier_floor"
+    if lots < 1 and s["min_one_lot"]:
+        lots, why = 1, "min_one_lot"                                                # budget ओलांडतो — report मध्ये वेगळं
+    return lots, why
 
 
 def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=None, bhav_lots=None, slip_pts=0.0):
@@ -83,15 +112,14 @@ def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=Non
             lot = CT.lot_size(expiry, bhav_lots)
             mult = s["tier_mult"][TIER_IDX[sig.tier]] * (s["leading_diag_mult"] if sig.setup == "S10" else 1.0)
             per_lot = (width - credit) * lot
-            budget = s["capital"] * s["risk_per_trade_pct"] / 100.0 * mult
-            lots = int(budget // per_lot) if per_lot > 0 else 0
-            if lots < 1 and s["min_one_lot"] and mult > 0:
-                lots = 1                                                            # budget ओलांडतो — report मध्ये वेगळं
+            base = s["capital"] * s["risk_per_trade_pct"] / 100.0
+            budget = base * mult
+            lots, floor_why = size_lots_detail(sig.tier, mult, base, per_lot, s)
             if lots < 1:
                 return "size_zero"
             return {"expiry": expiry, "expiry_kind": kind, "dte_days": dd, "dte_frac": df_, "opt": opt, "short_k": sk,
                     "long_k": lk, "width": width, "credit": credit, "short_px": ps, "long_px": pl, "lots": lots, "lot": lot,
-                    "qty": lots * lot, "max_loss": per_lot * lots, "risk_budget": budget, "over_budget": per_lot * lots > budget,
+                    "qty": lots * lot, "max_loss": per_lot * lots, "risk_budget": budget, "over_budget": per_lot * lots > budget, "size_floor": floor_why,
                     "dist_inv": d_inv, "dist_vol": d_vol, "dist": dist, "inv_far": far, "iv": vol, "short_delta": dl,
                     "next_weekly": skip > 0, "premium_stop_reachable": s["hard_stop_mult"] * credit < width}
     return last

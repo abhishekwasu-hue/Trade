@@ -26,6 +26,7 @@ import pandas as pd
 from . import reversal as RV
 from . import swings as W
 from .breaks import BreakCache, frame_index_at
+from .confirm import ConfirmTF
 from .counts import CountEngine
 from .settings import snapshot as settings_snapshot
 from .setups import Setup, degree_setup
@@ -66,6 +67,9 @@ class Signal:
     parent_pattern: str = ""
     parent_wave: str = ""
     parent_points: list = field(default_factory=list)
+    inv_degree: int = None                              # F4: hard inv चा मालक count (degree, wave start)
+    inv_start_ts: object = None
+    parent_start_ts: object = None
     wave_ctx: dict = field(default_factory=dict)        # addendum §6
     candle_ctx: dict = field(default_factory=dict)
 
@@ -93,20 +97,21 @@ class Scanner:
     def __init__(self, df1m, s, md=None):
         self.s = s
         self.md = md if md is not None else W.multi_degree(df1m, s)
-        self.eng = CountEngine(self.md, s)
-        tfs = set(s["auto_tfs"]) | {s["trigger_tf_fixed"]} | set(s["degree_tf"])
+        tfs = set(s["auto_tfs"]) | {s["trigger_tf_fixed"]} | set(s["degree_tf"]) | {"5m", "15m"}
         self.frames = {tf: W.build_frame(df1m, tf) for tf in tfs}
         self.bars, self.atr, self.cache = {}, {}, {}
         for tf, fr in self.frames.items():
             self.cache[tf] = BreakCache(fr, s)
             self.bars[tf] = RV.Bars(fr, self.cache[tf].mr)
             self.atr[tf] = W.atr(fr, s["atr_len"])
+        self.confirm = ConfirmTF(self.frames, s, caches=self.cache)    # F4: count आणि trade exit एकाच TF वर
+        self.eng = CountEngine(self.md, s, confirm=self.confirm)
         self._ts = {tf: fr["timestamp"].to_numpy("datetime64[ns]") for tf, fr in self.frames.items()}
         self._end = {tf: fr["bar_end"].to_numpy("datetime64[ns]") for tf, fr in self.frames.items()}
         self._rsi = {}
         self.hash = settings_snapshot(s)["hash"]
         self.last_window = {}           # setup key → आधीच्या signal च्या composite चा शेवट (bar_end — TF-निरपेक्ष)
-        self.fired = {}                 # setup key → (tf, idx, hard_inv, side) — आधीच्या signal चा hard inv (re-entry बंदी)
+        self.fired = {}                 # setup key → (inv degree, inv start, hard_inv, side) — re-entry बंदी (F4: count सारखाच TF)
         self.signals = []
         self.reasons = []               # (t, degree, setup|None, reason) — report साठी
         self.state, self.transitions = {}, []          # ARMED state machine (log)
@@ -131,7 +136,8 @@ class Scanner:
         return int(np.searchsorted(self._ts[tf], np.datetime64(pd.Timestamp(ts), "ns"), "right")) - 1
 
     def _sub_structure(self, st, t, tf, ws_idx, ext_idx):
-        """(legs, H, H_idx) — corrective wave च्या आतली रचना. D ≥ 1 ⇒ D−1 confirmed pivots (t ला माहीत); नाहीतर/अपुरे ⇒ TTF fractals."""
+        """(legs, H, H_idx) — corrective wave च्या आतली रचना. D ≥ 1 ⇒ D−1 confirmed pivots (t ला माहीत); नाहीतर/अपुरे ⇒ TTF चे
+        confirmed fractal pivots. H = शेवटच्या sub-leg चा confirmed origin; सापडला नाही ⇒ (legs, None, None) ⇒ skip (F3)."""
         nm = st.trade_dir
         want = "H" if nm > 0 else "L"                                    # bull put: correction खाली ⇒ sub-leg origin = high
         if st.degree >= 1:
@@ -141,18 +147,20 @@ class Scanner:
             if opp:
                 hi = max(self._idx_of(tf, opp[-1].ts), ws_idx)
                 return len(inside) + 1, opp[-1].price, hi
-        b = self.bars[tf]
         seg = self.frames[tf].iloc[ws_idx:ext_idx + 1]
         piv = [p for p in W._alternating_fractals(seg, 1) if 0 < p[1] < len(seg) - 1] if len(seg) >= 3 else []
         legs = len(piv) + 1
-        k = ext_idx
-        if nm > 0:
-            while k - 1 >= ws_idx and b.h[k - 1] >= b.h[k]:
-                k -= 1
-            return legs, float(b.h[k]), k
-        while k - 1 >= ws_idx and b.l[k - 1] <= b.l[k]:
-            k -= 1
-        return legs, float(b.l[k]), k
+        opp = [p for p in piv if p[0] == want]                          # शेवटच्या sub-leg चा confirmed origin (TTF fractal)
+        if not opp:
+            return legs, None, None                                     # F3: fallback नाही ⇒ signal skip (no_subleg_origin)
+        return legs, float(opp[-1][3]), ws_idx + int(opp[-1][1])
+
+    @staticmethod
+    def _inv_owner(st):
+        """(degree, wave start) — hard inv ज्या count चा (F4). जुने/हाताने बनवलेले Setup ⇒ setup ची degree व wave start."""
+        if getattr(st, "inv_degree", None) is not None and getattr(st, "inv_start_ts", None) is not None:
+            return st.inv_degree, st.inv_start_ts
+        return st.degree, st.wave_start.ts
 
     def _div_ok(self, st, tf, ext_idx, t):
         if self.s["rejection_weights"][4] <= 0 or st.degree < 1:
@@ -183,7 +191,7 @@ class Scanner:
         key = (st.degree, st.code, st.trade_dir, st.wave_start.ts)
         for fired in (self.fired, self._gen_fired):                               # profile on: generic ने fire केलं असतं तरी
             prev = fired.get(key)
-            if prev is not None and self.cache[prev[0]].broken_by(prev[1] + 1, prev[2], prev[3], frame_index_at(self.frames[prev[0]], t)):
+            if prev is not None and self.confirm.broken(*prev, t):
                 return "hard_broken_no_reentry"                                   # §7: hard inv तुटल्यावर त्या setup ला re-entry नाही
         end = pd.Timestamp(self._end[tf][j])
         mins = end.hour * 60 + end.minute
@@ -196,11 +204,13 @@ class Scanner:
         if ext_idx < ws_idx or ext_idx > j:
             return "extreme_outside"
         side = st.inv_side
-        if self.cache[tf].broken_by(ws_idx + 1, st.hard_inv, side, j):
-            return "C2_inv_broken"
+        if self.confirm.broken(*self._inv_owner(st), st.hard_inv, side, t):
+            return "C2_inv_broken"                                                # F4: count सारखाच confirmation TF
         legs, H, h_idx = self._sub_structure(st, t, tf, ws_idx, ext_idx)
         if legs < s["min_corrective_legs"]:
             return "R4_legs"
+        if H is None:
+            return "no_subleg_origin"                                             # F3: H = confirmed sub-leg origin, नाहीतर skip
         b = self.bars[tf]
         if not (b.c[j] < H if st.trade_dir > 0 else b.c[j] > H):
             return "T7_breakout"
@@ -219,7 +229,7 @@ class Scanner:
             gen_dup = last is not None and pd.Timestamp(self._ts[tf][j - r["n"] + 1]) < last
             if not gen_dup:
                 self._gen_last[key] = end
-                self._gen_fired[key] = (tf, j, st.hard_inv, side)
+                self._gen_fired[key] = (*self._inv_owner(st), st.hard_inv, side)
         prof = None
         if s["candle_profile_mode"] != "off":
             fam, ref, rmin = self._profile(st)
@@ -249,6 +259,8 @@ class Scanner:
                      st.node.current_wave, self.hash, [p.price for p in st.node.points],
                      st.parent.pattern if st.parent is not None else "", st.parent.current_wave if st.parent is not None else "",
                      [p.price for p in st.parent.points] if st.parent is not None else [])
+        sig.inv_degree, sig.inv_start_ts = self._inv_owner(st)
+        sig.parent_start_ts = getattr(st, "parent_start_ts", None)
         sig.wave_ctx = {"setup": st.code, "degree": st.degree, "tier": st.tier, "vote": round(st.vote, 4),
                         "opp_max": round(st.opp_max, 4), "n_alt_invs": len(st.alt_invs), "zone": [min(st.levels), max(st.levels)],
                         "hard_inv": st.hard_inv, "pattern": st.node.pattern, "wave": st.node.current_wave, "recount": st.recount,
@@ -261,12 +273,13 @@ class Scanner:
         if last is not None and win_start < last:
             return "dup_same_rejection"                                          # तोच नकार (TF बदलला तरी वेळेवरून)
         self.last_window[key] = end
-        self.fired[key] = (tf, j, st.hard_inv, side)
+        self.fired[key] = (*self._inv_owner(st), st.hard_inv, side)
         self._transition(st, t, "TRIGGERED", f"{sig.setup} n={r['n']} score={r['score']:.2f}")
         return sig
 
     # ------------------------------------------------------------------------------------------------ C1 helpers
-    PROFILE = {"S3": "w4", "S4": "w4", "S5": "w4", "S14": "w4", "S6c": "tri_e", "S9": "tri_e", "S6a": "counter", "S6b": "counter",
+    # G2 (तुमचा निर्णय): S6c (B wave मधला triangle E) = B-end / counter ⇒ counter_extra लागू
+    PROFILE = {"S3": "w4", "S4": "w4", "S5": "w4", "S14": "w4", "S6c": "counter", "S9": "tri_e", "S6a": "counter", "S6b": "counter",
                "S12": "counter"}
 
     def _profile(self, st):

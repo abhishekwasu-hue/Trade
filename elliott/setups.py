@@ -60,6 +60,9 @@ class Setup:
     alt_invs: list = field(default_factory=list)      # same-direction counts (≥ alt_weight_min) चे hard_inv — strike (E3)
     parent_invs: list = field(default_factory=list)   # D+1 चे invs — cascade exit (§7 प्रसार 4)
     recount: bool = False             # §14 Q6: preferred चा inv wick ने ओलांडला ⇒ दुसरा count
+    inv_degree: int = None            # F4: hard_inv कोणत्या count चा (degree, त्या wave ची सुरुवात) — count engine तिथेच तपासतो
+    inv_start_ts: object = None
+    parent_start_ts: object = None    # parent (D+1) च्या चालू wave ची सुरुवात — parent cascade त्याच confirmation TF वर
 
     @property
     def direction(self):
@@ -219,6 +222,12 @@ def _make(eng, snap, d, t, node, up, mr_now, lows, highs, t_idx):
     return code, tier, inv, parent
 
 
+def _wave_start_ts(n):
+    """Count च्या चालू wave ची सुरुवात (शेवटचा confirmed point); नसेल ⇒ None."""
+    pts = getattr(n, "points", None) if n is not None else None
+    return pts[-1].ts if pts else None
+
+
 def degree_setup(eng, snap, d, t):
     """Degree d वर t ला setup (Setup) किंवा कारण (str). Preferred count वरूनच (C0); फक्त §14 Q6 (wick inv पलीकडे, close आत)
     मध्ये त्याच चालू wave चा दुसरा valid count (उदा. expanded flat) — recount."""
@@ -275,5 +284,18 @@ def degree_setup(eng, snap, d, t):
                 alt.append(iv2[0])
     # S7 (correction पूर्ण): §14 Q3 — TF आणि sub-legs पूर्ण correction वरून (origin पासून); बाकी चालू wave वरून
     start = node.points[0] if code == "S7" else node.points[-1]
+    inv_deg, inv_start = d, _wave_start_ts(node)                                     # hard inv चा मालक count (F4)
+    if code == "S7" and inv[2] != "B_extreme" and parent is not None:
+        inv_deg, owner = d + 1, parent
+        if parent.current_wave == LAST_WAVE.get(parent.pattern):
+            gp = _find(snap.degrees.get(d + 2), parent.parent_key)
+            if gp is not None:
+                inv_deg, owner = d + 2, gp
+        if _wave_start_ts(owner) is not None:
+            inv_start = _wave_start_ts(owner)
+        else:
+            inv_deg = d
     return Setup(code, d, tier, nm, node, parent, zone_levels(node, code, s), float(inv[0]), inv[2], start, node.tentative,
-                 float(vote), float(opp_max), alt, list(parent.invs) if parent is not None else [], node is not pref)
+                 float(vote), float(opp_max), alt, list(parent.invs) if parent is not None else [], node is not pref,
+                 inv_degree=inv_deg, inv_start_ts=inv_start,
+                 parent_start_ts=_wave_start_ts(parent))

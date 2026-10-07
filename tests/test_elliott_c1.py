@@ -242,6 +242,8 @@ def test_profile_families_and_reduce_only_helpers(data_h1):
     assert fam == "counter" and ref == "time_slot" and rmin == pytest.approx(S0["rejection_min"] + 0.05)
     St.code = "S3"
     assert sc._profile(St())[:2] == ("w4", "own_correction")
+    St.code = "S6c"                                                                  # G2: B-end / counter
+    assert sc._profile(St())[0] == "counter" and sc._profile(St())[2] == pytest.approx(S0["rejection_min"] + 0.05)
 
 
 def test_core_candle_strips_c1_for_breaks_and_exits():

@@ -223,6 +223,29 @@ class Backtest:
         self.open.append(Trade(sig, plan, st, sig.ttf, j, fill_ts, spot, sized, sig.ttf_idx + 1, cost))
 
     # ------------------------------------------------------------------------------------------------ exits
+    def _hard_broken(self, tr, t, j, side):
+        """Hard inv (count मेला) — count engine सारख्याच confirmation TF वर (F4, `break_confirm_tf`). Progressive inv नंतर
+        (inv_from) फक्त त्या bar पासूनचे bars."""
+        conf = getattr(self.sc, "confirm", None)
+        if conf is None:
+            return self.sc.cache[tr.tf].confirm_index(tr.inv_from, tr.st.hard_inv, side, j) is not None
+        sig = tr.sig
+        deg, start = (sig.inv_degree, sig.inv_start_ts) if getattr(sig, "inv_start_ts", None) is not None \
+            else (sig.degree, sig.wave_start_ts)
+        if tr.inv_from > tr.entry_idx:                                    # progressive inv: नवा level, त्या bar पासूनचे bars
+            fr = self.sc.frames[tr.tf]                                     # (TF निवड मूळ count च्या wave start वरूनच)
+            since = pd.Timestamp(fr["timestamp"].iloc[min(tr.inv_from, len(fr) - 1)])
+            return conf.broken(deg, start, tr.st.hard_inv, side, t, since=since)
+        return conf.broken(deg, start, tr.st.hard_inv, side, t)
+
+    def _parent_broken(self, tr, t, j, side):
+        """§7 प्रसार 4: parent (D+1) चा inv तुटला — parent count सारख्याच confirmation TF वर (F4). Parent start नसेल ⇒ trade TF."""
+        sig, conf = tr.sig, getattr(self.sc, "confirm", None)
+        levels = [lv for lv, sd, _ in sig.parent_invs if sd == side]
+        if conf is None or getattr(sig, "parent_start_ts", None) is None:
+            return any(self.sc.cache[tr.tf].confirm_index(tr.entry_idx, lv, side, j) is not None for lv in levels)
+        return any(conf.broken(sig.degree + 1, sig.parent_start_ts, lv, side, t) for lv in levels)
+
     def _trail(self, tr, t):
         d = max(tr.sig.degree - 1, 0)                     # D0 ला खाली degree नाही ⇒ D0 चेच pivots (नोंद)
         piv, _ = self.sc.eng.known(d, t)
@@ -284,9 +307,8 @@ class Backtest:
         if s["hard_stop_eval"] == "intrabar":
             ctx["mark_worst"] = self._debit(tr, t, l if d > 0 else h)
         if not self.sfe:
-            ctx["hard_broken"] = cache.confirm_index(tr.inv_from, tr.st.hard_inv, side, j) is not None
-            ctx["parent_broken"] = any(cache.confirm_index(tr.entry_idx, lv, side, j) is not None
-                                       for lv, sd, _ in sig.parent_invs if sd == side)
+            ctx["hard_broken"] = self._hard_broken(tr, t, j, side)
+            ctx["parent_broken"] = self._parent_broken(tr, t, j, side)
             ctx["soft_broken"] = cache.confirm_index(tr.entry_idx, sig.soft_stop, side, j) is not None
             zone = EX.c_zone(sig, s)
             if zone and sig.tier == "B":
