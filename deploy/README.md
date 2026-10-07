@@ -992,5 +992,6 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 ```
 
 - तपासणी: `python3 scripts/vision_v0_smoke.py --no-vision` (chart + Telegram, खर्च 0) → `python3 scripts/vision_v0_smoke.py` (1 vision call, tokens/$ छापतो).
-- Images: `data/visual_audit/YYYY-MM-DD/*_sent.png` (vision ला गेलेली) आणि `*_outcome.png` (POST-HOC). पान: ANALYZE → 👁 Vision & Human Eye.
+- Images: `data/visual_audit/YYYY-MM-DD/*_sent.png` (vision ला गेलेली) आणि `*_outcome.png` (POST-HOC). Outcome chart वर मराठी
+  "POST-HOC: vision ला पाठवलेली नाही" साठी Devanagari font: `sudo apt-get install -y fonts-noto-core` (नसेल तर इंग्रजी शीर्षक). पान: ANALYZE → 👁 Vision & Human Eye.
 - दिवसाचा वापर: `python3 -m vision.worker --usage` · settings: `python3 -m vision.config show` / `set <bot> vision_mode shadow --by <नाव>`.

@@ -3,8 +3,8 @@
 🎓 नियम:
   • फक्त signal च्या क्षणापर्यंत पूर्ण झालेले 1-मिनिट bars (`cut_1m`: bar start + 1 मिनिट ≤ signal_ts). मोठे TF हे त्याच कापलेल्या 1m वरून
     NSE session (09:15) anchored resample — त्यामुळे शेवटचा (चालू) bar सुद्धा फक्त signal पर्यंतच्या माहितीचा. पुढची candle कधीच नाही.
-  • Overlay: signal level (role नुसार रंग), दिशेचा बाण शेवटच्या bar वर, invalidation (असेल तर). Image मधला मजकूर इंग्रजीत (kaleido मध्ये
-    Devanagari font नसतो). किंमती image वरून कधीच घेतल्या जात नाहीत — vision फक्त enum मत देतो.
+  • Overlay: signal level (role नुसार रंग), दिशेचा बाण शेवटच्या bar वर, invalidation (असेल तर). Image मधला मजकूर इंग्रजीत (vision साठी; machine
+    वरच्या Devanagari font वर अवलंबून नको). किंमती image वरून कधीच घेतल्या जात नाहीत — vision फक्त enum मत देतो.
   • Plain (overlay नसलेली) image पाठवत नाही (G-COST: एकच image).
 """
 import numpy as np

@@ -242,3 +242,34 @@ def test_worker_only_sends_sent_png_to_vision():
     src = open(os.path.join(ROOT, "vision", "worker.py"), encoding="utf-8").read()
     assert "IM.SENT" in src and "IM.OUTCOME" not in src and "outcome" not in src.split("def process_row")[1].split("def run_once")[0].lower()
     _ = VW  # import ठेवतो
+
+
+def test_outcome_label_marathi_only_with_font_and_strike_lines(monkeypatch):
+    monkeypatch.setattr(VO, "_DEVA", True)
+    assert VO.post_hoc_label().startswith("POST-HOC: vision ला पाठवलेली नाही")
+    monkeypatch.setattr(VO, "_DEVA", False)
+    assert VO.post_hoc_label() == VO.POST_HOC                                                   # font नाही ⇒ डबे नकोत, इंग्रजी
+    legs = json.dumps([{"strike": 25050, "option_type": "PE", "transaction_type": "SELL"},
+                       {"strike": 24900, "option_type": "PE", "transaction_type": "BUY"}, {"strike": "x"}])
+    assert VO.strike_lines({"legs_json": legs}) == [(25050.0, "SELL 25,050 PE"), (24900.0, "BUY 24,900 PE")]
+    assert VO.strike_lines({"legs_json": "not json"}) == [] and VO.strike_lines({}) == []
+    assert VO.strike_lines({"legs_json": json.dumps([{"strike": 0, "transaction_type": "BUY"}, {"strike": float("nan")}])}) == []
+    fly = json.dumps([{"strike": 25000, "option_type": "CE", "transaction_type": "SELL"}, {"strike": 25000, "option_type": "PE", "transaction_type": "SELL"}])
+    assert VO.strike_lines({"legs_json": fly}) == [(25000.0, "SELL 25,000 CE / SELL 25,000 PE")]
+    row = {"signal_id": "x", "bot": "dynamic_sr_instant", "symbol": "NIFTY", "direction": "BULLISH", "level": 25000.0,
+           "signal_ts": "2026-10-06T10:42:20"}
+    fig, _ = VO.build_outcome_figure(m1_frame(), row, {"entry_time": "2026-10-06 10:43:05", "exit_time": "2026-10-06 11:30:00",
+                                                       "realized_pnl": 900, "legs_json": legs})
+    ys = {round(s.y0) for s in fig.layout.shapes}
+    assert {25050, 24900} <= ys and any("SELL 25,050 PE" == a.text for a in fig.layout.annotations)
+
+
+def test_outcome_far_strike_does_not_squash_candles():
+    row = {"signal_id": "x", "bot": "dynamic_sr_instant", "symbol": "NIFTY", "direction": "BULLISH", "level": 25000.0,
+           "signal_ts": "2026-10-06T10:42:20"}
+    legs = json.dumps([{"strike": 25000, "option_type": "PE", "transaction_type": "SELL"}, {"strike": 23000, "option_type": "PE", "transaction_type": "BUY"}])
+    fig, _ = VO.build_outcome_figure(m1_frame(), row, {"entry_time": "2026-10-06 10:43:05", "exit_time": "2026-10-06 11:30:00", "legs_json": legs})
+    lo, hi = fig.layout.yaxis.range
+    assert lo > 24000 and hi < 25500                                                            # 23000 range मध्ये नाही
+    assert any(a.text == "↓ BUY 23,000 PE" for a in fig.layout.annotations)
+    assert not any(round(s.y0) == 23000 for s in fig.layout.shapes)

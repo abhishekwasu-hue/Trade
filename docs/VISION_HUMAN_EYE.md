@@ -80,7 +80,10 @@ Keys: `vision_mode`, `symbols`, `vision_gray_action`, `vision_disagree_action`, 
   - आधीच दुसऱ्या signal ला जोडलेला trade पुन्हा नाही. Signal आणि entry च्या मध्ये त्याच bot चा दुसरा signal असेल तर तो trade नंतरच्या signal चा.
   - DB चूक ⇒ error, पुढच्या run ला पुन्हा (चुकून no_trade नाही).
   - Signal पासून exit पर्यंत 5m candles; signal / ENTRY / EXIT खुणा, level रेषा, P&L, SL / target (₹).
-  - ठळक शीर्षक "POST-HOC: NOT SENT TO VISION" (kaleido मध्ये Devanagari font नसल्याने इंग्रजीत).
+  - ठळक शीर्षक "POST-HOC: vision ला पाठवलेली नाही · NOT SENT TO VISION". VPS वर Devanagari font (`fc-list :lang=mr`) नसेल तर फक्त इंग्रजी,
+    कारण font शिवाय मराठी अक्षरं डबे दिसतात. Font: `apt-get install -y fonts-noto-core`.
+  - Legs चे strikes (`legs_json`) डॅश रेषा म्हणून: SELL लाल, BUY हिरवट-निळी. लांबचे strikes (candles च्या range पेक्षा / ~0.6% पेक्षा दूर) कडेला ↑ / ↓ खुणेने — candles लहान होऊ नयेत म्हणून. Credit spread मध्ये नफा / तोटा याच सीमांवर ठरतो.
+    SL / target P&L (₹) स्तरावर असतात (spot मध्ये नाहीत), म्हणून ते मजकुरात.
   - हा chart vision कडे कधीच जात नाही — `outcome.py` मध्ये vision / API चा import नाही (test).
   - Trade सापडला नाही आणि 1 दिवस झाला ⇒ `no_trade`.
 - **Dashboard → ANALYZE → 👁 Vision & Human Eye:**
