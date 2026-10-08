@@ -897,12 +897,22 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - काय: Daily / 1H / 15M chart वरचे engine levels (L1, L2…) vision model तपासतो (VALID / SPURIOUS / SHIFT + कारण, सुटलेले पट्टे), त्याच chart चं levels-शिवाय स्वतंत्र
   वाचन, आणि दोन्हीचा consensus (CONSENSUS / MATH_ONLY / VISUAL_ONLY / CONFLICT). `consensus_mode` डीफॉल्ट **off** (फक्त माहिती). Live intraday मध्ये API call नाही.
 - आवश्यक: `.env` मध्ये `ANTHROPIC_API_KEY=…`, `VISUAL_AUDIT_MODEL=<vision-capable model id>`, `VISUAL_AUDIT_ENABLED=1` (ऐच्छिक `VISUAL_AUDIT_EFFORT=low|medium|high`,
-  `VISUAL_AUDIT_REPEAT=2`, `VISUAL_AUDIT_FEWSHOT=<n>`). खर्च: डीफॉल्ट NIFTY + BANKNIFTY × Daily + 1H × 2 calls = 8 calls/दिवस (`--tfs 1d,1h,15m` ⇒ 12).
+  `VISUAL_AUDIT_REPEAT=2`, `VISUAL_AUDIT_FEWSHOT=<n>`). खर्च: डीफॉल्ट **फक्त NIFTY** × Daily + 1H × 2 calls = 4 calls/दिवस (`--tfs 1d,1h,15m` ⇒ 6).
+- Symbols (2026-10-08, Abhi: vision फक्त NIFTY): dashboard **Vision & Human Eye → ⚙️ settings → Visual audit symbols** (vision `_global`
+  `visual_audit_symbols`, default `["NIFTY"]`); env `VISUAL_AUDIT_SYMBOLS` किंवा `--symbols` ने तात्पुरता बदल.
+- **Budget (signals ला प्राधान्य):** हा खर्च vision चाच — प्रत्येक chart नंतर लगेच `vision_usage` (task `visual_audit`) मध्ये नोंद. प्रत्येक chart आधी
+  तपासणी: audit आज + अंदाज ≤ min(`visual_audit_daily_cap` $0.10, दैनिक $0.30 − `signals_daily_reserve_usd` $0.20) · आजचा एकूण ≤ दैनिक ·
+  महिना + अंदाज ≤ $5 − $0.20 × महिन्यात उरलेले weekdays. ओलांडत असेल तर **तो chart** वगळला (Telegram वर कारण; अपयश नाही). अंदाज =
+  max(1.5 × मागच्या खऱ्या नोंदींची सरासरी, 3,000 output tokens/call) ⇒ ओलांडणं जास्तीत जास्त एका chart चं. Vision DB वाचता न आल्यास audit
+  नाही (fail closed). Dashboard वर signals / visual audit / एकूण खर्च; symbols रिकामे ⇒ audit बंद.
+- अपयश: Telegram सारांश आणि error संदेशात नेमका chart (symbol, TF, overlay / स्वतंत्र / Supabase) आणि कारण; render अपयशाचं कारण log मध्ये `⚠️ render …`.
+  Render: एकच Chrome (kaleido server, warm-up तपासणीसह), प्रत्येक render ≤ `VISUAL_AUDIT_RENDER_TIMEOUT` (90 s); अडकलं / Chrome मेलं ⇒ oneshot
+  पद्धत. Crontab ओळीत `timeout 1800` (job कधीच कायमचा अडकत नाही).
 - पहिल्यांदा फक्त dry-run (API call नाही; charts `data/visual_audit/<date>/` मध्ये): `python3 run_visual_audit.py --dry-run`
 - EOD crontab (रोज 16:20 IST = 10:50 UTC, सोम–शुक्र; refresh_market_structure.py नंतर):
 
 ```
-50 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 run_visual_audit.py >> /root/Trade/visual_audit.log 2>&1
+50 10 * * 1-5 cd /root/Trade && set -a && . /root/Trade/.env && set +a && timeout 1800 python3 run_visual_audit.py >> /root/Trade/visual_audit.log 2>&1
 ```
 
 - पान: **Opportunity Engine → 👁️ Visual Audit** — chart, levels तक्ता (engine grade, model verdict + कारण, consensus), तुमचा feedback (✅/❌/↕), मतभेद, few-shot उदाहरण जतन, agreement matrix.

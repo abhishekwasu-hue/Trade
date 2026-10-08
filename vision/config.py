@@ -72,7 +72,11 @@ GLOBAL_DEFAULTS = {
     "vision_monthly_budget_usd": 5.0,
     "morning_audit_time": "08:00",
     "event_days": [],                      # ["YYYY-MM-DD:नाव", …] — event दिवस (policy / budget / मोठा data), dashboard वरून
+    "visual_audit_symbols": ["NIFTY"],     # EOD visual audit (run_visual_audit.py) — Abhi 2026-10-08: फक्त NIFTY (खर्च कमी); खर्च याच budget मध्ये
+    "visual_audit_daily_cap": 0.10,        # visual audit ची दैनिक उप-मर्यादा ($) — signals ला प्राधान्य (Abhi 2026-10-08)
+    "signals_daily_reserve_usd": 0.20,     # signals साठी राखीव ($/दिवस): audit कधीच (दैनिक budget − हे) पलीकडे जात नाही
 }
+VISUAL_AUDIT_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
@@ -80,7 +84,8 @@ ENUMS = {
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
           "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
-          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0)}
+          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0),
+          "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0)}
 
 
 def defaults(bot):
@@ -106,6 +111,11 @@ def validate(bot, s):
                 raise ValueError(f"{k} = {v} — [{lo}, {hi}] मध्ये हवं")
         if k in ("exit_advice", "vision_wait_for_bar_close"):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
+        if k == "visual_audit_symbols":
+            v = [str(x).strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
+            bad = [x for x in v if x not in VISUAL_AUDIT_SYMBOLS]
+            if bad:
+                raise ValueError(f"visual_audit_symbols: {bad} — {VISUAL_AUDIT_SYMBOLS} पैकी")
         if k == "symbols":
             v = [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if x.strip()]
         if k == "event_days":
@@ -121,6 +131,9 @@ def validate(bot, s):
             if bad:
                 raise ValueError(f"{k}: अज्ञात नियम {bad} — {RULE_IDS[k]} पैकी")
         out[k] = v
+    if bot == "_global" and 0 < float(out["vision_daily_budget_usd"]) < float(out["signals_daily_reserve_usd"]):
+        raise ValueError(f"signals_daily_reserve_usd ({out['signals_daily_reserve_usd']}) ≤ vision_daily_budget_usd "
+                         f"({out['vision_daily_budget_usd']}) हवा — नाहीतर visual audit नेहमी गुपचूप वगळला जातो")
     return out
 
 

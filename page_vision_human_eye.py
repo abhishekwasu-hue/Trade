@@ -122,9 +122,55 @@ def render_settings():
                 st.success("event दिवस साठवले")
             except ValueError as exc:
                 st.error(str(exc))
+        b1, b2, b3 = st.columns([3, 3, 2])
+        cap = b1.number_input("Visual audit दैनिक cap ($)", value=float(g["visual_audit_daily_cap"]), step=0.01, key="v_va_cap")
+        res = b2.number_input("Signals राखीव ($/दिवस)", value=float(g["signals_daily_reserve_usd"]), step=0.01, key="v_sig_res")
+        if b3.button("Budget Save", key="v_budget_save"):
+            try:
+                VC.save("_global", {"visual_audit_daily_cap": cap, "signals_daily_reserve_usd": res}, "dashboard")
+                st.success("visual audit cap / signals राखीव साठवले")
+            except ValueError as exc:
+                st.error(str(exc))
+        a1, a2 = st.columns([6, 2])
+        vas = a1.multiselect("Visual audit symbols (EOD run_visual_audit — खर्च याच vision budget मध्ये)", list(VC.VISUAL_AUDIT_SYMBOLS),
+                             default=g.get("visual_audit_symbols") or ["NIFTY"], key="v_va_symbols")
+        if a2.button("Visual audit Save", key="v_va_save"):
+            try:
+                VC.save("_global", {"visual_audit_symbols": vas}, "dashboard")
+                st.success(f"visual audit: {', '.join(vas) or '— (बंद)'}")
+            except ValueError as exc:
+                st.error(str(exc))
         hist = VC.history()
         if hist:
             st.dataframe(pd.DataFrame(hist)[["ts", "bot", "by", "new_json"]].tail(20), use_container_width=True, hide_index=True)
+
+
+def spend_rows(by_task):
+    """{task: (आज $, महिना $, आज calls)} ⇒ (एकूण आज, एकूण महिना, ओळी) — signal audits + visual audit एकाच vision budget मध्ये."""
+    names = {"signal": "Signal audit", "visual_audit": "Visual audit (EOD)"}
+    day = sum(v[0] for v in by_task.values())
+    month = sum(v[1] for v in by_task.values())
+    rows = [{"काम": names.get(k, k), "आज $": round(v[0], 4), "आज calls": v[2], "महिना $": round(v[1], 3)} for k, v in sorted(by_task.items())]
+    rows.append({"काम": "एकूण", "आज $": round(day, 4), "आज calls": sum(v[2] for v in by_task.values()), "महिना $": round(month, 3)})
+    return day, month, rows
+
+
+def render_spend():
+    from vision import config as VC
+    try:
+        g = VC.load("_global")
+        by = VS.spent_by_task()
+        day, month, rows = spend_rows(by)
+    except Exception as exc:
+        st.caption(f"खर्च वाचता आला नाही: {exc}")
+        return
+    sig, va = (by.get("signal") or (0.0, 0.0, 0))[0], (by.get("visual_audit") or (0.0, 0.0, 0))[0]
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Signals आज", f"${sig:.3f}", help=f"signals साठी राखीव किमान ${g['signals_daily_reserve_usd']}/दिवस")
+    s2.metric("Visual audit आज", f"${va:.3f} / ${g['visual_audit_daily_cap']}", help="उप-मर्यादा; signals चा राखीव भाग audit कधीच वापरत नाही")
+    s3.metric("एकूण आज", f"${day:.3f} / ${g['vision_daily_budget_usd']}")
+    s4.metric("या महिन्यात (एकूण)", f"${month:.2f} / ${g['vision_monthly_budget_usd']}")
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 def render():
@@ -137,6 +183,7 @@ def render():
         st.error(f"vision DB वाचता आली नाही: {exc}")
         return
     render_settings()
+    render_spend()
     pct, mb = disk_usage(IM.base_dir())
     c1, c2, c3 = st.columns(3)
     c1.metric("Signals (एकूण)", len(df))
