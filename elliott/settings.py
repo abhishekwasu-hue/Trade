@@ -15,6 +15,7 @@ TFS = ("3m", "5m", "15m", "30m", "1h", "1d")
 TF_MIN = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "1d": 1440}
 
 SECTIONS = (
+    ("mode", "Mode (PAPER / LIVE)"),
     ("degrees", "Degrees / swings"),
     ("counts", "Count engine"),
     ("breaks", "Real break (count आणि exits)"),
@@ -34,6 +35,11 @@ def _s(key, section, label, help_, kind, default, lo=None, hi=None, choices=None
 
 
 SCHEMA = [
+    # ---------------------------------------------------------------- mode (spec D / B7 — E6 wiring आधी; review fix 4)
+    _s("trading_mode", "mode", "Trading mode", "PAPER (default) / LIVE. LIVE फक्त `live_approved` = true असेल तरच — नाहीतर PAPER.",
+       "choice", "PAPER", choices=("PAPER", "LIVE"), calibrate=False),
+    _s("live_approved", "mode", "LIVE मंजुरी", "तुमची स्पष्ट मंजुरी (G3 नंतर). false ⇒ trading_mode LIVE असला तरी PAPER.", "bool", False,
+       calibrate=False),
     # ---------------------------------------------------------------- E1a: degrees / swings (spec §11 "Degrees / swings", §12, §14 Q3)
     _s("structure_tf", "degrees", "Structure timeframe", "Pivots/counts या TF वर (NIFTY spot). लहान TF ⇒ जास्त तपशील, जास्त noise.",
        "choice", "5m", choices=("3m", "5m", "15m")),
@@ -215,8 +221,11 @@ SCHEMA += [
        [100, 150, 200], 50, 1000),
     _s("full_session_min_bars", "strike", "पूर्ण session किमान 1m bars", "यापेक्षा कमी (मुहूर्त / अर्धे sessions) ⇒ trading day नाही "
        "(expiry calendar).", "int", 300, 60, 375, calibrate=False),
+    _s("tierA_min_one_lot", "strike", "Tier A: budget कमी तरी 1 lot", "backtest_only (default): फक्त backtest मध्ये Tier A किमान 1 lot "
+       "(over_budget नोंद); PAPER / LIVE मध्ये 1 lot चा कमाल तोटा capital × risk% पेक्षा जास्त ⇒ 0 lots (risk cap मोडत नाही). "
+       "always / never ⇒ सगळीकडे.", "choice", "backtest_only", choices=("backtest_only", "always", "never"), calibrate=False),
     _s("min_one_lot", "strike", "Budget कमी तरी 1 lot", "true ⇒ size 0 येत असला तरी (गुणक > 0) 1 lot (risk% ओलांडतो). Default बंद; "
-       "backtest shadow trades साठी वापरतो.",
+       "फक्त backtest shadow trades साठी — PAPER / LIVE मध्ये लागू होत नाही.",
        "bool", False, calibrate=False),
     # ---------------------------------------------------------------- E3: trade management (spec §9, §14 Q4/Q5)
     _s("emergency_spot_cross_short", "manage", "Emergency: spot short strike ओलांडतो", "Intrabar लगेच exit (क्रम 0).", "bool", True,
@@ -370,6 +379,8 @@ def validate(raw):
         spec = BY_KEY.get(k)
         if spec is None:
             continue
+        if k == "trading_mode" and isinstance(v, str):
+            v = v.strip().upper()                                       # spec मध्ये paper / live (lowercase) ⇒ स्वीकारतो
         try:
             val = _coerce(spec, v)
         except (TypeError, ValueError):
@@ -462,7 +473,16 @@ def validate(raw):
     if bad:
         errors.append(f"Trade degrees {bad} अस्तित्वात नाहीत — वगळल्या")
         clean["trade_degrees_enabled"] = [d for d in clean["trade_degrees_enabled"] if d < clean["degree_levels"]]
+    if clean["trading_mode"] == "LIVE" and not clean["live_approved"]:
+        errors.append("Trading mode LIVE पण live_approved = false — PAPER केला")
+        clean["trading_mode"] = "PAPER"
     return clean, errors
+
+
+def effective_trading_mode(settings):
+    """PAPER / LIVE — LIVE फक्त live_approved खरं असेल तर (validate न केलेल्या dict साठीही सुरक्षित)."""
+    m = str(settings.get("trading_mode", "PAPER")).upper()
+    return "LIVE" if m == "LIVE" and settings.get("live_approved") is True else "PAPER"
 
 
 def core_candle(settings):

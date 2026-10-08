@@ -185,7 +185,7 @@ def test_delta_guard_uses_bs_without_delta_fn_and_min_one_lot():
                                                                                                     max_short_delta=0.2), bs)
     assert p == "guard_delta"                                                     # BS delta ≈ 0.22 > 0.2 — guard गुपचूप बंद नाही
     r = SK.plan_spread(sig(), 22410.0, t, 0.13, 50.0, cal, book, _cfg(min_one_lot=True),
-                       lambda o, k, e: 20.0 if k == 22150 else 12.0)
+                       lambda o, k, e: 20.0 if k == 22150 else 12.0, context="backtest")
     assert r["lots"] == 1 and r["over_budget"] and 0 < r["short_delta"] < 0.3
     assert SK.plan_spread(sig(), 22410.0, t, None, 50.0, cal, book, S0, lambda o, k, e: 20.0) == "no_iv"
 
@@ -215,10 +215,43 @@ def test_sizing_tier_ratio_survives_lot_eras():
         assert a >= 4 and abs(b - a * 0.5) <= 0.5 and abs(c - a * 0.25) <= 0.5
     assert SK.size_lots("B", 0.5, 1e4, 5980.0, _cfg(tierB_min_lots=2)) == 1             # किमान A पेक्षा जास्त नाही
     assert SK.size_lots("B", 0.5, 3e4, 5980.0, _cfg(tierB_min_lots=2)) == 3              # A 5 ⇒ round(2.5) = 3 (half-up)
-    assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(min_one_lot=True)) == (1, "min_one_lot")   # shadow trades
+    assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(min_one_lot=True), context="backtest") == (1, "min_one_lot")   # shadow
+    assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(min_one_lot=True)) == (0, "")                 # PAPER / LIVE: risk cap
     assert SK.size_lots_detail("C", 0.25, 1e4, 5980.0, _cfg(tierC_min_lots=1)) == (1, "tier_floor")
-    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, S0) == (1, "a_min_one")
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, S0, context="backtest") == (1, "a_min_one")
     assert SK.size_lots("C", 0.0, 1e6, 5980.0, S0) == 0                             # गुणक 0 ⇒ skip
+
+
+def test_tierA_min_one_lot_only_in_backtest_by_default():
+    """Review fix 3: 1 lot चा तोटा (₹5,980) budget (₹1,000) पेक्षा जास्त ⇒ PAPER / LIVE मध्ये 0 lots (risk cap); backtest मध्ये 1 (over_budget)."""
+    assert S0["tierA_min_one_lot"] == "backtest_only"
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, S0) == (0, "")                                   # default context = paper
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, S0, context="live") == (0, "")
+    assert SK.size_lots_detail("B", 0.5, 1e3, 5980.0, _cfg(tierB_min_lots=1)) == (0, "")              # floor ≤ A = 0
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, _cfg(tierA_min_one_lot="always")) == (1, "a_min_one")
+    assert SK.size_lots_detail("A", 1.0, 1e3, 5980.0, _cfg(tierA_min_one_lot="never"), context="backtest") == (0, "")
+    assert SK.size_lots_detail("A", 1.0, 1e4, 5980.0, S0) == (1, "")                                   # budget मध्ये बसतो ⇒ बदल नाही
+    cal, book = _book()
+    t = pd.Timestamp("2026-10-05 12:30")
+    px = lambda o, k, e: 20.0 if k == 22150 else 12.0                               # noqa: E731
+    tiny = _cfg(capital=1e5)                                                        # budget ₹1,000 < प्रति-lot ₹5,980
+    for tier in "ABC":
+        assert SK.plan_spread(sig(tier=tier), 22410.0, t, 0.13, 50.0, cal, book, tiny, px) == "size_zero"
+    p = SK.plan_spread(sig(tier="A"), 22410.0, t, 0.13, 50.0, cal, book, tiny, px, context="backtest")
+    assert p["lots"] == 1 and p["over_budget"] and p["size_floor"] == "a_min_one"
+
+
+def test_trading_mode_and_live_approved_settings():
+    """Review fix 4 (spec B7): default PAPER; LIVE फक्त live_approved सह."""
+    assert S0["trading_mode"] == "PAPER" and S0["live_approved"] is False
+    c, e = S.validate({"trading_mode": "LIVE"})
+    assert c["trading_mode"] == "PAPER" and any("live_approved" in x for x in e)
+    c, e = S.validate({"trading_mode": "LIVE", "live_approved": True})
+    assert c["trading_mode"] == "LIVE" and not e
+    assert S.validate({"trading_mode": "paper"}) == (S0, [])                                          # spec चं lowercase
+    assert S.effective_trading_mode({"trading_mode": "LIVE"}) == "PAPER"
+    assert S.effective_trading_mode({"trading_mode": "live", "live_approved": "true"}) == "PAPER"      # string "true" ≠ मंजुरी
+    assert S.effective_trading_mode(c) == "LIVE" and S.effective_trading_mode({}) == "PAPER"
 
 
 def test_guard_fail_actions():

@@ -5,7 +5,8 @@ research/elliott_backtest_report.py — Elliott E4: IS backtest + baseline + gol
 तुमच्या निवडीने). Signals एकदाच (Scanner), मग variants फक्त trading settings बदलून replay:
   A  default (spec §11/§14 जसं)
   B  निदान: credit guard बंद (c_min 0, min_credit 0) — model premium वर guard ~90% signals अडवतो; signal ची अर्थव्यवस्था दिसावी
-  C  निदान: B + progress-time exit बंद
+  C  निदान: B + progress-time exit **चालू** (`progress_mode = correction_time`). F2 पासून default `progress_mode = off` आहे, त्यामुळे
+     जुना C ("B + progress बंद") B सारखाच झाला होता — आता C हा progress exit चा परिणाम दाखवतो (review fix 5).
   "निदान" = pre-registered, निवड/tuning नाही. Baselines (spec §13 #1): त्याच exits (structure-free: emergency, premium stop,
   profit %, expiry) वर (i) EW entries आणि (ii) random entries (त्याच TTF, 09:30–14:45, तीच दिशा व strike अंतर; seed 7, 5 पट).
 Premium: trade-data मध्ये options data नसेल तर **model premium** (BS, IV = 20 दिवस realized vol) — ठळक इशारा.
@@ -35,7 +36,7 @@ OUT = os.path.join(ROOT, "docs", "reports", "elliott_pullback_backtest.md")
 VARIANTS = {
     "A_default": {},
     "B_guard_off": {"c_min_by_dte": [0.0] * 5, "min_credit_pts": 0.0},
-    "C_guard_off_no_progress": {"c_min_by_dte": [0.0] * 5, "min_credit_pts": 0.0, "progress_bars_mult": 0.0},
+    "C_guard_off_progress_on": {"c_min_by_dte": [0.0] * 5, "min_credit_pts": 0.0, "progress_mode": "correction_time"},
 }
 
 
@@ -123,10 +124,11 @@ def run_golden(s):
     return L
 
 
-G2_NOTE = ("> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. याची दोन कारणं आहेत: progress-time exit "
-           "बहुतेक trades 20–30 मिनिटांत बंद करतो, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. त्यामुळे निष्कर्ष "
-           "\"Elliott/candle मध्ये edge नाही\" असा **नाही**, तर **\"अजून मोजता आलं नाही\"** असा आहे. सगळे candle settings off/shadow; VAL नंतर "
-           "(खरे premiums + E4 review fixes).")
+G2_NOTE = ("> **G2 निर्णय (7 Oct 2026):** हा अहवाल entry quality मधला फरक **मोजू शकत नाही**. त्या वेळी दोन कारणं होती: तेव्हाचा "
+           "progress-time exit बहुतेक trades 20–30 मिनिटांत बंद करायचा, आणि model premium (IV = realized vol) मध्ये खरी skew/IV माहिती नाही. "
+           "त्यामुळे निष्कर्ष \"Elliott/candle मध्ये edge नाही\" असा **नाही**, तर **\"अजून मोजता आलं नाही\"** असा आहे. सगळे candle settings "
+           "off/shadow; VAL नंतर (खरे premiums + E4 review fixes).\n>\n> **आता (F2 नंतर):** `progress_mode` default **off** — A आणि B मध्ये "
+           "progress exit नाही; त्याचा परिणाम फक्त variant C (`correction_time`) मध्ये. Model premium ची मर्यादा अजून तशीच.")
 
 
 def main(argv=None):
@@ -198,6 +200,12 @@ def main(argv=None):
           f"strike-अंतर (inv पासून; spec चा 'same delta/DTE' नाही — फरक नोंद), {2 if a.quick else 5} पट, seed 7.", ""]
     L += table([{"entry": "Elliott (E2 signals)", **summarize(ew_sfe.results())}, {"entry": "Random", **summarize(rb.results())}],
                ["entry", "n", "win%", "R सरासरी", "R median", "R mean/sd", "CVaR5% R", "breach%", "max-loss%", "n<30"])
+    for lab, b in (("Elliott", ew_sfe), ("Random", rb)):
+        r_ = b.results()
+        if len(r_):
+            src = r_.loc[r_["exit_price_src"] != "", "exit_price_src"].value_counts()
+            L += ["", f"{lab} — exit कारणं: " + ", ".join(f"{k} {v}" for k, v in r_["reason"].value_counts().items())
+                  + ". Forced exit premium स्रोत: " + (", ".join(f"{k} {v}" for k, v in src.items()) or "—") + "."]
     for name, df in res.items():
         if df.empty:
             continue
@@ -209,7 +217,9 @@ def main(argv=None):
         df = df.assign(year=pd.to_datetime(df["t"]).dt.year)
         L += [""] + table(grouped(df, ["year"]), ["गट", "n", "win%", "R सरासरी", "CVaR5% R", "निष्कर्ष"])
         rc = df["reason"].value_counts()
-        L += ["", "Exit कारणं: " + ", ".join(f"{k} {v}" for k, v in rc.items()),
+        src = df.loc[df["exit_price_src"] != "", "exit_price_src"].value_counts()
+        L += ["", "Exit कारणं: " + ", ".join(f"{k} {v}" for k, v in rc.items())
+              + ". Forced exit (emergency / end_of_data) premium स्रोत: " + (", ".join(f"{k} {v}" for k, v in src.items()) or "—") + ".",
               f"Premium नसल्याने पुढे ढकललेले exits: {int(df['deferred'].sum())}."]
         L += ["", f"### {name} — spec §13 grid (setup × degree × tier × DTE)", ""]
         L += table(grouped(df, ["setup", "degree", "tier", "dte_b"]), ["गट", "n", "R सरासरी", "₹ सरासरी", "breach%", "निष्कर्ष"])
@@ -217,6 +227,8 @@ def main(argv=None):
     L += ["", "## 5. वाचताना", "",
           "- n < 30 असलेल्या cells वर निष्कर्ष नाही (spec §13). Win rate > 60% **आणि** Sharpe > 2 दिसलं तर आधी bug शोधायचा.",
           "- Variants B/C निदानासाठी — VAL साठी ≤ 3 configurations **तुम्ही** निवडायच्या (G2).",
+          "- Forced exits (emergency / end_of_data) ला premium नसेल तर model price, तोही नसेल तर पूर्ण width (intrinsic नाही); emergency "
+          "bar च्या सुरुवातीच्या वेळी priced (review fixes 1–2). Tier A किमान 1 lot फक्त backtest मध्ये (fix 3).",
           "- खऱ्या premiums (bhavcopy) शिवाय c_min calibration करता येत नाही (spec §8)."]
     with open(a.out, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")

@@ -42,7 +42,7 @@ def sized_fn(s):
         lot = CT.lot_size(pd.Timestamp(sig.t).date() + pd.Timedelta(days=7))
         mult = s["tier_mult"][TIER_IDX.get(sig.tier, 2)]
         base = s["capital"] * s["risk_per_trade_pct"] / 100.0
-        return SK.size_lots(sig.tier, mult, base, s["width_pts"] * lot, s) > 0
+        return SK.size_lots(sig.tier, mult, base, s["width_pts"] * lot, s, context="backtest") > 0
     return sized
 
 
