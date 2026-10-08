@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from tests.test_vision_v0 import GOOD, m1_frame, msg, run
+from tests.test_vision_v0 import CTX_OK, GOOD, m1_frame, msg, run
 from vision import config as VC
 from vision import decide as VD
 from vision import gate as VG
@@ -231,6 +231,8 @@ def test_gate_applies_timeouts_when_worker_is_down(db):
     sid = gate().signal_id
     assert VS.expire_stale(0) == 0                                                                # V0 चा stale-expiry V1 row ला लागत नाही
     tick(db, 11)
+    assert VG.forced_levels("dynamic_sr_instant", "NIFTY", "PAPER") == []                          # 5M bar 10:45 ला बंद ⇒ timeout 10:55 पासून (B1)
+    tick(db, 2)
     assert VG.forced_levels("dynamic_sr_instant", "NIFTY", "PAPER") == [(25000.0, "5M", "SUPPORT")]
     g = fgate()
     r = VS.get_signal(sid)
@@ -495,7 +497,7 @@ def test_dryrun_end_to_end_no_order(db, monkeypatch, press, drift, want):
     from vision import tg as TG
     mod = _dryrun_mod()
     monkeypatch.setattr(VW, "default_fetch", lambda sym, daily: (m1_frame(), None))
-    monkeypatch.setattr(CH, "render", lambda df, s, daily=None: (b"\x89PNGfake", {"error": None, "median_range": 10.0}))
+    monkeypatch.setattr(CH, "render", lambda df, s, daily=None: (b"\x89PNGfake", {"error": None, "median_range": 10.0, "ctx": CTX_OK}))
 
     def updates(offset, timeout=50):
         if press is None:

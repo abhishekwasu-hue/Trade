@@ -80,6 +80,18 @@ def _same_setup(row, direction, tags):
             and bool(_row_tags(row).get("breakout_entry")) == bool((tags or {}).get("breakout_entry")))
 
 
+def stale_base(row, s):
+    """QUEUED / RUNNING timeout कुठून मोजायचा: created_at, आणि bar-close wait चालू असेल तर signal bar बंद होण्याची वेळ (जे नंतर) — नाहीतर 15M / 30M /
+    60M signals bar बंद होण्याआधीच "unavailable" ठरत (review B1)."""
+    base = pd.Timestamp(row["created_at"])
+    if s.get("vision_wait_for_bar_close", True):
+        from . import context as CX
+        be = CX.bar_end_of(row)
+        if be is not None and be > base:
+            base = be
+    return base
+
+
 def resolve_due(row, s, now=None, path=None, timeout=DB_TIMEOUT):
     """मुदत संपलेल्या V1 rows ला नियम लावणे (worker असो वा नसो). रिटर्न (ताजी row, बदलला status | None).
       PENDING_HUMAN, deadline गेली ⇒ timeout_status / timeout_factor.
@@ -93,7 +105,7 @@ def resolve_due(row, s, now=None, path=None, timeout=DB_TIMEOUT):
                          decision_reason=f"timeout ⇒ {'skip' if to == 'REJECTED' else f'×{f}'}", final_decision="ENTER" if f > 0 else "SKIP"):
             return VS.get_signal(sid, path), to
     elif (st in ("QUEUED", "RUNNING") and row.get("mode") in VC.V1_MODES and row.get("created_at")
-          and pd.Timestamp(row["created_at"]) + pd.Timedelta(minutes=int(s["approve_window_min"])) <= now):
+          and stale_base(row, s) + pd.Timedelta(minutes=int(s["approve_window_min"])) <= now):
         d = VD.decide(row["mode"], "unavailable", s)
         to, f = (d.timeout_status, d.timeout_factor) if d.ask_human else (d.status, d.factor)
         if VS.transition(sid, ("QUEUED", "RUNNING"), to, path, timeout, verdict="unavailable", factor=f, decided_at=VS._iso(now),
@@ -197,7 +209,7 @@ def forced_levels(bot, symbol, trading_mode="PAPER", path=None):
             elif st == "PENDING_HUMAN":
                 ok = bool(r.get("deadline")) and pd.Timestamp(r["deadline"]) <= now
             else:
-                ok = bool(r.get("created_at")) and pd.Timestamp(r["created_at"]) + pd.Timedelta(minutes=int(s["approve_window_min"])) <= now
+                ok = bool(r.get("created_at")) and stale_base(r, s) + pd.Timedelta(minutes=int(s["approve_window_min"])) <= now
             if ok:
                 out.append((float(r["level"]), r["setup_tf"], r["role"]))
         return out

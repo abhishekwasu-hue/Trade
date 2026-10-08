@@ -1241,3 +1241,121 @@ LIVE अप्रभावित, notify लगेच, नाकारल्य�
   auto_veto ला बटणं / `vision_telegram` service लागत नाही.
 
 **उघडे प्रश्न (G-V1 ला):** dry-run screenshot (approve / reject / timeout); मग कोणत्या bots वर `veto_then_confirm`. त्यानंतर V2 (08:00 level audit).
+
+## 2026-10-08 · Vision prompt v2 + v2.1 (`signal_check_v2_1`) — chart overlays + gap संदर्भ + line panel + playbook prompt + JSON + code verdict नियम
+
+**काय केलं (TRADE_VISION_PROMPT_V2):**
+- `vision/context.py` (नवीन, causal): major levels (`price_action/major_levels.py`, asof = signal), PDH / PDL / PDC, PWH / PWL (आधीचा पूर्ण दिवस / आठवडा),
+  open + opening range, confirmed swings, room, वेळ flag, gap, expiry, जवळचे overlays एका label मध्ये.
+- `vision/chart.py`: v2 overlays (labels इंग्रजीत, collision टाळून, बाहेरचे ▲ / ▼), meta मध्ये `ctx`.
+- `vision/signal_audit.py`: `signal_check_v2` playbook system prompt (cached), JSON v2 schema, signal text v2 (अचूक किंमती), नियम-आधारित verdict
+  (`DISAGREE_RULES` / `GRAY_RULES`, settings ने on/off), `max_tokens` 1200.
+- `vision/config.py`: `v2_disagree_rules`, `v2_gray_rules` (validated). `vision/worker.py`: 21 दिवस 1m (major levels साठी), expiry list, v2 caption,
+  `vision_json` मध्ये `context` + `rule_hits`; reuse फक्त त्याच prompt version चं. Dashboard: v2 fields, version filter / गट, नियम on/off.
+- `scripts/vision_v2_samples.py` (नवीन): शेवटचे 3 signals v2 ने पुन्हा (JSON + code verdict), vision_signals ला हात नाही.
+
+**Tests:** `tests/test_vision_v2.py` 40 — context no-lookahead (भविष्यातला spike ⇒ संदर्भ तसाच), PDH / PWH आधीच्या पूर्ण दिवस / आठवड्याचे (आजचा spike
+नाही), OR पूर्ण / अपूर्ण, swings confirmation, वेळ flags, प्रत्येक disagree (8) आणि gray (8) नियम (vision agree असला तरी; नियम बंद ⇒ लागू नाही),
+अवैध enum ⇒ unavailable ⇒ auto_veto skip, request v2 + cached + text मध्ये अचूक किंमती, v1 records reuse नाहीत, labels merge, caption, dashboard,
+samples script. जुने v0 / images tests v2 JSON वर अद्ययावत.
+
+**निर्णय (कारणासह):**
+- **v2 थेट auto_veto वर** (तुमचा निर्णय: पहिला दिवस, v1 data नाही; v1 + v2 shadow म्हणजे दुप्पट खर्च).
+- Major levels 15m bars वरून (worker कडे 1m आहे; 15m हा bot चा swing TF) आणि 21 दिवस (spec 2–8 आठवडे; Upstox 1m fetch हलका ठेवायला).
+  नसतील तर "bot चे इतर levels" — worker कडे ते नाहीत ⇒ तेवढे overlays कमी (text मध्ये दिसतं).
+- Composite reversal box नाही: bots trigger चा N सांगत नाहीत (spec: "N कळत असेल तर").
+- `level_real = no` हा नियम-यादीत नाही (spec प्रमाणे) — vision चा स्वतःचा verdict तो पकडतो.
+- **नमुना JSON sandbox मधून नाही:** इथे API key / network नाही. 3 charts + signal text (2021 IS data) दाखवले; खरे v2 JSON VPS वर
+  `vision_v2_samples.py` ने (≈ $0.03), auto_veto चालू करण्याआधी त्याच block मध्ये.
+- **Samples script exit 2** (model असूनही एकही वैध JSON नाही) ⇒ deploy block auto_veto चालू करत नाही — नाहीतर key / model / max_tokens चूक असताना
+  fail_action = skip मुळे सगळे PAPER signals skip झाले असते.
+
+**Independent review (subagent):** 1 BLOCKER + 7 SHOULD-FIX — दुरुस्त (प्रत्येकाला test):
+- **B1 gap दिवशी agree ⇒ unavailable ⇒ skip:** `gap.filled` numpy bool ⇒ `vision_json` JSON चूक ⇒ worker चा except. आता `bool()` + `store.finish` ला
+  numpy-safe `default`; gap-down / gap-up (भरलेला / न भरलेला) सह worker-level test (agree ⇒ APPROVED, ctx request मध्ये).
+- **S1** ≥ 10 जवळचे labels ⇒ `StopIteration` ⇒ chart नाही ⇒ skip. आता शेवटचा slot. **S3** tz-aware signal_ts ⇒ naive IST.
+- **S2** संदर्भ (ctx) अपयशी ⇒ text "Room: no opposing level" म्हणायचा (agree कडे झुकवणारं). आता "Context unavailable" आणि room = unclear ⇒ gray.
+- **S4** नियम model ने तथ्य पुन्हा लिहिण्यावर अवलंबून होते. आता code ची तथ्यं लादली जातात (`apply_facts`, फक्त कडक दिशेने): पहिली 15 मिनिटं ⇒
+  time_risk = opening (disagree); पुढचा विरोधी level < 1 × median range ⇒ room = tight (gray). `code_overrides` नोंद.
+- **S5** कमी-confidence agree + दुसरा audit अयशस्वी ⇒ आधी agree (entry). आता gray.
+- **S6** caption 1024 वर कापताना ENTRY ओळ / HTML तुटू शकत होती ⇒ निर्णयाची ओळ दुसऱ्या ओळीत, कापणी पूर्ण ओळींनी.
+- **S7** `max_tokens` 1200 + thinking ⇒ max_tokens संपले ⇒ unavailable: deploy block thinking env दाखवतो आणि samples step (exit 2) हे पकडतो; docs 2000 → 1200.
+- Nits: `L+PDL+PWL` label ("PDPWL" bug), बिघडलेली settings row ⇒ defaults (कुठलीही चूक), reuse मध्ये context या signal चा, samples मध्ये फक्त खरे bots.
+- तसेच राहिलं (कारण): swing शेवटच्या अपूर्ण setup bar ने "confirmed" होऊ शकतो — causal (भविष्य नाही), बदल नाही; "दोन audits असहमत ⇒ gray"
+  settings मध्ये बंद करता येत नाही (सुरक्षित बाजू); system prompt ~1.6k tokens — काही models चं किमान cache prefix यापेक्षा मोठं असू शकतं ⇒ cache नाही,
+  budget cache न धरता मोजतं (सुरक्षित).
+
+**v2.1 + तुमच्या दुरुस्त्या (3 नमुने पाहून) — याच PR मध्ये (v2 अजून merge झाला नव्हता):**
+- TRADE_VISION_V2_1_GAP_LINE: `vision/gap_context.py`, line panel (C), gap पट्टा / opening window / UG, playbook §9–10, JSON v2.1, gap नियम, event दिवस.
+  `signal_check_v2_1`. G0 सीमा IS वरून मोजली (|gap_atr| p50 = 0.247 ⇒ 0.25; p90 = 0.628 ⇒ मोठा gap 0.63) — फक्त IS 2015–2021 वाचलं.
+- तुमच्या दुरुस्त्या: today_role (levels तक्ता + chart labels), L ची ओळ, एकाच किमतीचे levels एका ओळीत, room फक्त न तुटलेले + tight नाव, INV नेहमी,
+  composite box, sH / sL, gap पट्टा + line panel, नियम 4.
+- **नियम 4 बद्दल निर्णय (कारणासह):** "broken_down + bear call ⇒ breakout" शब्दशः लावला तर (अ) नमुना 2 पकडला जात नाही — signal च्या क्षणी PDH खाली real
+  break (buffer सह close) झालेलाच नव्हता (शेवटचा close 15,729.3 वि. 15,730.55); आणि (ब) नमुना 3 (PDL खाली गेला, मग 10:00 ला परत वर = spring) "broken_up +
+  bull put ⇒ breakout ⇒ disagree" होतो — तुमच्या वाचनाविरुद्ध. म्हणून: (1) उघडण्याच्या बाजूकडे परतणारा break = reclaim, breakout नाही; (2) bear call पण किंमत L वर
+  **वरून** आली (bull put खालून) = pullback नाही ⇒ breakout. परिणाम (vision काहीही म्हणो): नमुना 2 ⇒ code disagree ✓; नमुने 1 आणि 3 vision च्या मतावर
+  (code त्यांना जबरदस्ती disagree करत नाही — तुमचं वाचन disagree / gray हे vision ने पकडायचं; JSON VPS वर `--historical`).
+- **Bug (स्वतः सापडलेला):** `validate` सगळे enums lowercase करत होता ⇒ gap_setup "A/B/C" उत्तर ⇒ unavailable ⇒ auto_veto skip. Case-insensitive केलं (test).
+- **Gap-module prompt (TRADE_GAP_CONTEXT_MODULE_PROMPT) अजून नाही:** त्याचा क्रम "vision v2 / v2.1 deploy नंतर" — पुढचा टप्पा (G-GAP1 पासून).
+- **नमुन्यांचं vision JSON sandbox मध्ये नाही** (API key / network नाही) — VPS block `--historical` ने 3 JSON छापतो आणि auto_veto आधी तुमचं "yes" मागतो.
+
+**v2.1 independent review (subagent):** lookahead नाही; 1 BLOCKER + 7 SHOULD-FIX — दुरुस्त:
+- **B1 daily trend बहुतेक "unclear"** (1m फक्त 21 दिवस ⇒ < 15 पूर्ण sessions ~61% दिवस) ⇒ G2 / G3 / G5 आणि gap_chase / gap_b_pdc_accept कधीच नाहीत. आता worker
+  daily candles (120 दिवस, एक call) नेहमी आणतो; ATR14 / trend / leg त्यावरून (आजचा अपूर्ण daily candle वगळून). `trend_source` नोंद.
+- **S1 setup A ला नियम 4 disagree देत होता** (gap-down, PDL वर परत, मग PDL ला वरून pullback). नियम 4 परिष्कृत: break **आणि** किंमत break च्या मूळ बाजूने
+  L वर येत आहे (chase) ⇒ breakout; break नंतर उलट बाजूने retest = pullback. ⚠️ हा तुमच्या शब्दशः नियम 4 पेक्षा वेगळा — तुमचा निर्णय हवा.
+- **S2 break अपूर्ण शेवटच्या bar वर ठरत होता** (उदा. नमुना 1: PWL फक्त 10:30 च्या 1-मिनिटाने "broken" ⇒ room मधून गायब ⇒ tight room चुकला).
+  आता break / PDC acceptance फक्त पूर्ण bars वर; अपूर्ण bar फक्त reclaim नाही हे पुष्टी करतो. परिणाम: नमुना 1 ⇒ PWL held, room 0.30× ⇒ code gray;
+  नमुना 3 (10:01) ⇒ 10:00 चा reclaim bar अपूर्ण ⇒ L "broken_down at 09:45", पण text मध्ये "price is now above L".
+- **S3 room मधून flip झालेले levels गायब:** तुमच्या सूचनेप्रमाणे room फक्त न तुटलेले, पण आता text मध्ये वेगळी ओळ "Broken (flipped) level in the trade direction".
+- **S4** today_role आता आजच्या सगळ्या bars वरून (09:15 पासून), chart च्या शेवटच्या 60 bars वरून नाही.
+- **S5** "कोणतंही unclear ⇒ gray" मधून line_structure / gap_class_agrees / line_vs_candles वगळले (skip दर विनाकारण वाढू नये).
+- **S6** 15-मिनिट reuse मध्ये code तथ्यं (L break, PDC acceptance) नव्या संदर्भावर पुन्हा — जुनं agree आता कडक होऊ शकतं.
+- **S7** samples script model नसतानाही exit 2 (deploy block auto_veto चालू करत नाही).
+- Nits: prompt "three panels", विभाग क्रमांक, ATR नसल्यास "ATR unavailable" (G0 नाही), gap_undecided_early model च्या उत्तरानेही, line panel labels
+  slots, OPEN = level असताना बाजू पहिल्या close वरून, dashboard वर gap सीमा, muhurat / opening-bar tests खरे केले.
+
+**तुमच्या 4 दुरुस्त्या (v2.1 नमुने पाहून) — याच PR मध्ये:**
+1. Room: तुटलेले (flip) आणि untested levels सुद्धा, फक्त magnet (आज ≥ 4 crossings) वगळून ⇒ नमुना 1 PWL 0.30× (tight), नमुना 3 PDC 1.89× ✓.
+2. Deterministic नियम: `wrong_approach` (2a), 2b (signal bar / मागचे 3 bars नी trade दिशेने real break ⇒ breakout; signal bar अपूर्ण असला तरी — veto साठी
+   आक्रमक, reduce-only), `role_conflict` (2c). आधीचा माझा "नियम 4 परिष्कृत / approach" logic काढला — तुमचे नियम त्याची जागा घेतात.
+   **निर्णय:** 2b मध्ये उघडण्याच्या बाजूकडे परत येणारे breaks (reclaim) मोजत नाही — नाहीतर नमुना 3 मधला ORL चा 09:50 चा reclaim (spring चा भाग)
+   breakout ठरून नमुना 3 disagree झाला असता (तुमचं वाचन gray). 2c फक्त held_* विरोध (तुमचा शब्द "held_as_support") — broken_* नाही, कारण नमुना 3 मध्ये
+   PDL पूर्ण bars वर broken_down आहे (10:00 चा reclaim bar 10:01 ला अपूर्ण).
+3. Gap वर्ग GX-inside / GX-beyond; text WITH / AGAINST / no clear trend; opening behaviour प्रत्येक बंद bar वर, इतिहासासह ⇒ नमुना 2: acceptance ✓.
+4. `vision_v0_smoke.py --sample` (⇒ `vision_v2_samples.py --historical`): JSON + code verdict + खर्च + सारांश (तुमच्या अपेक्षेसह).
+
+**Code-floor (vision "सगळं ठीक / agree" म्हणाला असता तरी):** नमुना 1 ⇒ gray (tight room), नमुना 2 ⇒ disagree (breakout ORL 13:10, wrong_approach,
+role_conflict), नमुना 3 ⇒ agree. म्हणजे तुमचं अपेक्षित 1 disagree / 3 gray हे vision च्या मतावर — खरं JSON VPS वर पाहायचं.
+
+**शेवटच्या 3 दुरुस्त्या (round 3) — याच PR मध्ये:**
+1. Signal bar बंद नसणे: text मध्ये bar स्थिती; तक्त्यात "held until <शेवटचा पूर्ण bar>; current open bar is breaking it"; code: bar बंद नाही ⇒ reversal unclear ⇒
+   gray; `vision_wait_for_bar_close` (default on) — worker bar बंद होईपर्यंत row QUEUED (क्लेम पुन्हा 5 s loop मध्ये), मग asof = bar close.
+   Scripts (smoke / dry-run / samples) थांबत नाहीत (`wait_for_bar=False`) — नमुने मुद्दाम signal क्षणीच (तुमच्या अपेक्षेप्रमाणे "bar बंद नाही").
+2. today_role "reclaimed" (break नंतर पूर्ण bar चा close परत opening side ला); role_conflict reclaimed ला लागू नाही. नमुना 3: L+PDL reclaimed at 09:55.
+3. Code-only pre-verdict (`pre_verdict`): नमुना 1 = gray (unclear: bar बंद नाही, tight_room PWL 0.30×); नमुना 2 = disagree (breakout ORL 13:10,
+   wrong_approach, role_conflict); नमुना 3 = gray (फक्त bar बंद नाही — live मध्ये wait_for_bar_close मुळे bar बंद झाल्यावर vision ठरवेल).
+   `vision_v0_smoke.py --sample` output: code pre-verdict + vision JSON + अंतिम verdict + खर्च + सारांश.
+
+**"Live प्रमाणे" नमुने (bar close नंतर):** `vision_v0_smoke.py --sample --bar-close [--no-telegram]` — मूल्यमापन signal bar बंद झाल्यावर (10:35 / 13:15 /
+10:05), chart व संदर्भ तिथपर्यंत, आणि entry च्या क्षणीचा drift guard (signal spot वि. bar close spot). Code pre-verdict: नमुना 1 = gray (room tight
+0.18× — bar close spot वरून, drift ✅), नमुना 2 = disagree (L+PDH आणि ORL 13:10 ला पूर्ण bar वर तुटले ⇒ breakout; wrong_approach; drift ❌ 15,702 वि. 15,729), नमुना 3 =
+agree (L reclaimed 09:55, bar बंद, drift ✅ ⇒ vision ठरवेल). VPS वर हे फक्त वेगळ्या `git worktree` मधून, तात्पुरत्या DB / image dir सह चालवायचं
+(live checkout / bots / worker ला हात नाही, Telegram नाही) — फक्त 3 vision calls.
+
+**Independent review (round-3 code) च्या दुरुस्त्या — याच PR मध्ये:**
+- **B1 (blocking):** bar-close wait चालू असताना V1 चा QUEUED/RUNNING timeout `created_at` पासून मोजला जात होता ⇒ 15M/30M/60M signal bar बंद होण्याआधीच
+  "vision unavailable" ठरून (veto_then_confirm मध्ये) vision शिवाय entry. आता `gate.stale_base` = max(created_at, signal bar बंद) — `resolve_due` आणि
+  `forced_levels` दोन्हीत. V0 चा `expire_stale` सुद्धा bar-aware.
+- Signal bar 15:30 ला clamp (60M 15:15 bar ⇒ 15:30, 16:15 नाही); bot ने दिलेल्या चालू candle (`last_bar`) वरून bar ठरवणं (signal_ts 10:35:05 ⇒ 10:35 bar).
+- Bar बंद झाल्यावर शेवटची 1m candle data मध्ये नसेल तर कमाल +2 मिनिटं पुन्हा थांबणं (मग जे आहे त्यावर).
+- Bar-close मूल्यमापनात spot = bar close (levels / room त्यावरून; text मध्ये signal spot वि. evaluation spot दोन्ही). ⇒ नमुना 1 room 0.18×.
+- Reclaimed level "recent breakout" यादीत नाही (signal text आणि breakout नियम सुसंगत).
+- Deferral ⇒ `store.requeue` (RUNNING→QUEUED, event / Telegram नाही — आधी प्रत्येक 5 s ला event row); claim_queued limit 20.
+- Tests: 15M stale timeout bar-aware, 60M expire_stale, 15:30 clamp, last_bar, data-completeness re-defer, quiet requeue, reclaimed ≠ breakout.
+- दुसरा review (या दुरुस्त्यांवर): tz-aware `signal_ts` ⇒ worker मध्ये naive वि. aware तुलना crash (⇒ unavailable ⇒ vision शिवाय entry) — दुरुस्त + test;
+  bar-close spot फक्त data bar close पर्यंत असेल तर (नाहीतर signal spot); `claim_queued` आधी bar बंद झालेल्या rows (थांबलेल्या ≥ 20 rows नवीन rows
+  उपाशी ठेवत नाहीत) + test; `expire_stale` मध्ये खराब created_at ⇒ crash नाही.
+  **निर्णय (बदल नाही):** drift guard signal spot वरूनच मोजतो (तुमचं "signal spot वि. bar close spot" — नमुना 2 ❌); 60M वर bar बंद होईपर्यंतची हालचाल
+  मोठी असेल तर entry drift मुळे नाकारली जाईल — हे reduce-only दिशेने, म्हणून ठेवलं. Bot च्या चालू candle (last_bar) वरून signal bar ठरतो (touch चालू
+  candle वर होतो). `approve_window_min` ≥ 4 ठेवावा (bar close नंतर data साठी कमाल 2 मिनिटं + vision call).

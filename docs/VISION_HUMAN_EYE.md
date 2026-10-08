@@ -1,6 +1,6 @@
 # Vision + Human-Eye — PAPER signals ची chart तपासणी
 
-> स्रोत: TRADE_VISION_HUMAN_CONFIRM_PROMPT.md (§10 तुमचे निर्णय आणि §11 PNG जतन — विरोध असेल तर हे जिंकतात) + 2026-10-07 चे निर्णय. टप्पे V0 → V1 → V2 → V3. **हे पान V1 पर्यंत अद्ययावत.**
+> स्रोत: TRADE_VISION_HUMAN_CONFIRM_PROMPT.md (§10 तुमचे निर्णय आणि §11 PNG जतन — विरोध असेल तर हे जिंकतात) + 2026-10-07 चे निर्णय. टप्पे V0 → V1 → V2 → V3. **हे पान V1 + prompt v2.1 (`signal_check_v2_1`) पर्यंत अद्ययावत.**
 
 ## अटळ नियम
 1. Vision / AI कधीच order देत नाही, size वाढवत नाही (reduce-only). **V0 modes (shadow / notify) मध्ये trading वर शून्य परिणाम.** V1 modes मध्ये
@@ -51,7 +51,7 @@ System prompt मध्ये तुमचे नियम: pullback-only (break
 **Verdict code मध्ये:** breakout = yes किंवा reversal = no ⇒ disagree; कुठलंही unclear ⇒ gray; 2 audits असहमत ⇒ gray; enum अवैध / API अपयश / refusal ⇒ unavailable.
 
 ### खर्च (G-COST)
-- Model नाव फक्त env मध्ये: `VISION_SIGNAL_MODEL` (signals — मध्यम model), `VISION_LEVEL_MODEL` (V2 सकाळचा audit — सर्वात स्वस्त). ऐच्छिक `VISION_SIGNAL_EFFORT`, `VISION_SIGNAL_THINKING`, `VISION_SIGNAL_MAX_TOKENS` (2000).
+- Model नाव फक्त env मध्ये: `VISION_SIGNAL_MODEL` (signals — मध्यम model), `VISION_LEVEL_MODEL` (V2 सकाळचा audit — सर्वात स्वस्त). ऐच्छिक `VISION_SIGNAL_EFFORT`, `VISION_SIGNAL_THINKING`, `VISION_SIGNAL_MAX_TOKENS` (v2 पासून 1200; thinking off ठेवा).
 - एका audit चा अंदाज (मध्यम model, $2 / $10 प्रति 1M): input ≈ 900 (image) + ≈ 570 (system) + ≈ 70 = ~1.6k ⇒ $0.003; output JSON ~150–500 ⇒ $0.002–0.005.
   **≈ $0.005–0.01 प्रति audit.** 10 signals/दिवस × 1.3 audits × 22 दिवस ⇒ **≈ $1.4–2.9 / महिना** (< $5). दैनिक मर्यादा $0.30 हा कठोर ब्रेक.
 - System prompt `cache_control` सह. तो ~570 tokens (अंदाज) — नव्या models चं किमान 512 च्या अगदी जवळ, त्यामुळे cache होईलच असं नाही; सर्वात स्वस्त model वर किमान 4096 असल्याने होत नाही. शिवाय signals मध्ये 5 मिनिटांपेक्षा जास्त अंतर असेल तर cache संपतो. एकूण परिणाम लहान (system चा खर्च प्रति audit ~$0.001) — म्हणून खर्च नेहमी API च्या `usage` वरून मोजला जातो, अंदाजावरून नाही.
@@ -122,6 +122,96 @@ Worker:      APPROVED / REJECTED ला exec_window_min (5) मध्ये bot 
 `python3 scripts/vision_dryrun.py [--no-vision] [--window 3] [--drift] [--mode auto_veto]` — शेवटच्या 1m candle वर TEST signal (bot `vision_dryrun`) ⇒ chart + बटणं ⇒
 तुम्ही ✅ / ❌ / काहीच नाही ⇒ drift guard ⇒ Telegram वर "🧪 DRY-RUN निकाल — कोणताही order नाही". Script मध्ये `trading_engine` चा import नाही (test).
 Telegram service चालू नसेल तर script स्वतः getUpdates वाचतो.
+
+## Prompt v2 — "knowledgeable" vision (`signal_check_v2`, TRADE_VISION_PROMPT_V2)
+- **Chart v2** (`vision/chart.py` + `vision/context.py`, सगळं signal पर्यंतच): traded level L (जाड), major levels प्रत्येक बाजूला 2 (`M1↑ / M1↓`,
+  role reversal ⇒ `F`; `price_action/major_levels.py`, asof = signal, 15m bars, ~3 आठवडे), PDH / PDL / PDC आणि PWH / PWL (आधीचा **पूर्ण** दिवस /
+  आठवडा, dotted), आजचा OPEN + opening range (पहिली 15 मिनिटं, फिकट पट्टा), confirmed swing H / L, session separators. 0.1 × median range
+  पेक्षा जवळचे overlays ⇒ एक label (`PDH+M1↑`); y-range बाहेरचे ⇒ कडेला ▲ / ▼. Labels इंग्रजीत, जवळचे labels एकमेकांवर येत नाहीत.
+  Composite reversal box: bot N सांगत नाही ⇒ नाही.
+- **Signal text v2:** levels चा तक्ता (नाव, अचूक किंमत, median range च्या पटीत अंतर, role), room (पुढचा विरोधी level), invalidation अंतर, open पासून मिनिटं
+  (पहिली 15 मिनिटं / शेवटचा तास flag), gap % + भरला का, weekly expiry किती दिवसांवर (contract master), bot tags.
+- **System prompt v2:** trader's playbook (entry philosophy, levels, real vs false break, trend, Elliott, reversal candle, time) — इंग्रजीत,
+  ~1.6k tokens, `cache_control`. फक्त `reason` मराठीत. `max_tokens` default 1200 (`VISION_SIGNAL_MAX_TOKENS`), `VISION_SIGNAL_EFFORT=low`.
+- **JSON v2** (schema-enforced): htf_trend, setup_structure, trend_context, level_real, level_kind, confluence, wave_position,
+  correction_complete, false_break_reclaim, reversal_touch / reclaim / strength / close_location, reversal_valid, is_breakout_entry,
+  room_to_next_level, time_risk, false_break_risk, elliott_note (≤ 100), verdict, reason (≤ 160), confidence. अवैध enum / field गायब ⇒ unavailable.
+- **Verdict नियम (code मध्ये, vision चं मत यांपेक्षा positive कधीच नाही)** — settings `v2_disagree_rules` / `v2_gray_rules`, dashboard वर on/off:
+
+| नियम | प्रकार | अट |
+|---|---|---|
+| `breakout` | disagree | is_breakout_entry = yes |
+| `reversal_invalid` | disagree | reversal_valid = no |
+| `weak_level` | disagree | level_kind ∈ {mid_range, magnet} |
+| `bad_wave` | disagree | wave_position ∈ {a_end, inside_b_or_triangle} |
+| `bad_close` | disagree | reversal_close_location = bad |
+| `opening` | disagree | time_risk = opening |
+| `unclear` | gray | कोणतंही unclear (htf_trend वगळून) |
+| `correction_incomplete` | gray | correction_complete = no |
+| `tight_room` | gray | room_to_next_level = tight |
+| `middle_close` | gray | reversal_close_location = middle |
+| `impulse_running` | gray | wave_position = impulse_running |
+| — | gray | दोन audits असहमत |
+
+- **auto_veto (तुमचा नियम):** agree ⇒ entry; gray / disagree / unavailable ⇒ skip (`vision_gray_action = skip`, `vision_fail_action = skip`).
+- **Caption:** ✅ ENTRY मंजूर / ❌ ENTRY नाकारली (कारण) + trend (HTF / setup), level प्रकार, wave position, reversal 4 टप्पे ✓ / ✗, room,
+  false-break risk, लागलेले नियम.
+- **Dashboard:** v2 fields चे columns, `prompt_version` filter + गट (v1 / v2 वेगळे), कुठल्याही v2 field वर filter, नियम on/off.
+- **जुने records** `signal_check_v1` म्हणूनच; 15-मिनिट reuse फक्त त्याच prompt version चं मत.
+- **नमुने:** `python3 scripts/vision_v2_samples.py` — शेवटचे 3 signals पुन्हा v2 ने (JSON + code verdict छापतो, Telegram वर "trade नाही"),
+  vision_signals ला हात नाही. `--no-vision` ⇒ फक्त chart + text (खर्च 0).
+- **खर्च:** एका audit ला ≈ 900 (image) + ~1.6k (system, cache read नंतर स्वस्त) + ~450 (text) input, ~400 output ⇒ cache नसताना ≈ $0.01, cache read सह
+  कमी (≤ $0.015 / signal). दैनिक $0.30 तसाच. आठवड्यात सरासरी > 20 signals / दिवस दिसले तर कळवणे.
+- **Evaluation:** 30 signals नंतर `docs/reports/vision_human_eye.md` — field × outcome (उदा. level_kind = flip वि. बाकी, room = tight), नाकारलेल्यांचा
+  shadow P&L, random-veto baseline. Few-shot (v3) फक्त तुम्ही label केल्यानंतर.
+
+## v2.1 — gap संदर्भ + line chart + तुमच्या दुरुस्त्या (`signal_check_v2_1`)
+- **Image ~1000×900:** A setup candles · B higher candles · **C line chart** (15m closes, `line_lookback_sessions` = 5; L / M / PDC / PDH / PDL,
+  swing ठिपके, session separators, signal क्षणी उभी रेषा — त्यानंतर काहीच नाही). Image tokens ≈ w × h / 750 ≈ 1.2k.
+- **Panel A:** [PDC, Open] gap पट्टा (भरलेला भाग गडद), opening window (09:15–09:30) छटा, जुने unfilled gaps (`UG`), composite reversal candles
+  (1–3) भोवती dotted box, swing `sH` / `sL` ("L" फक्त traded level), **INV** रेषा नेहमी (bot ने न दिल्यास L ∓ `inv_buffer_mr` × median range).
+  Level labels वर आजचं वागणं: `held S` / `held R` / `broken↓` / `broken↑` / `reclaimed`.
+- **`vision/gap_context.py`** (causal): gap_atr = (Open − PDC) / ATR14, वर्ग G0–G5 + E, fill %, PDC touch / पलीकडे acceptance, पहिल्या 2–6 पूर्ण
+  15m bars चं वर्तन (acceptance / rejection / undecided, code ने), जुने unfilled gaps, event दिवस (`_global.event_days`, dashboard).
+  G0 सीमा `gap_g0_atr` = 0.25 (IS 2015–2021 |gap_atr| p50 = 0.247), मोठा gap `gap_large_atr` = 0.63 (p90), G5 leg `gap_stretch_atr` = 3.
+  Muhurat / special (< 200 bars) sessions PDC / ATR मधून वगळले. पुढच्या gap-module PR मध्ये `price_action/gap_context.py` मध्ये हलवायचा.
+- **Signal text:** levels तक्ता = नाव (एकाच किमतीचे एकत्र, उदा. `M1↑+PWH`) | किंमत | position (spot च्या वर / खाली, median range पट) |
+  **today_role** (held_as_support / held_as_resistance / broken_down / broken_up + वेळ / untested; reclaim असेल तर तसं). **L ची ओळ:** किंमत L वर कुठून
+  आली, आज कुठल्या बाजूला उघडला, आधी (शेवटच्या 3 bars आधी) L कसा वागला, real break झाला का / reclaim. **Room:** फक्त न तुटलेले विरोधी levels; < 1 × median range
+  ⇒ "ROOM TIGHT (नाव)". Gap विभाग (वरचे सगळे आकडे) आणि event.
+- **today_role व्याख्या:** बाजू = आजच्या पहिल्या open ची बाजू. Real break = बाजू बदलणारा close, buffer (0.25 × median range) सह, पुढच्या bar ने reclaim नाही
+  (शेवटचा bar ⇒ अजून reclaim नाही). Break चिकटतो (retest सुद्धा "broken"). उघडण्याच्या बाजूकडे परतणारा break = **reclaim** (false break / spring).
+- **Code तथ्यं (`apply_facts`, फक्त कडक दिशेने):** पहिली 15 मिनिटं ⇒ time_risk = opening; room < 1× ⇒ tight; संदर्भ नाही ⇒ room unclear;
+  **L तुटला (reclaim नाही) आणि त्याच दिशेने spread** (broken_down + bear call / broken_up + bull put) ⇒ is_breakout_entry = yes (तुमचा नियम 4);
+  **bear call पण किंमत L वर वरून आली** (किंवा bull put खालून) आणि L held / untested / त्याच दिशेने broken ⇒ pullback नाही ⇒ breakout. नमुना 3 सारखा
+  reclaim (spring) breakout नाही.
+- **नवीन नियम (settings मध्ये on/off):** disagree — `gap_disallowed` (model: gap_setup = disallowed), `gap_chase` (code: G3 / G5, gap दिशेने, fill < 25%,
+  L PDC / gap edge जवळ नाही), `gap_b_pdc_accept` (code: G3 / G5, PDC पलीकडे acceptance, gap दिशेने). gray — `gap_undecided_early` (code: undecided आणि
+  < 6 पूर्ण 15m bars), `line_conflict` (model), `event_day` (code), `gap_c_alone` (model: setup C, confluence नाही).
+- **JSON v2.1:** v2 + gap_class_agrees, gap_behaviour, gap_setup (A / B / C / none / disallowed), line_structure, line_vs_candles.
+- **नमुने:** `python3 scripts/vision_v2_samples.py --historical` — तुम्हाला दाखवलेले तेच 3 (2021 IS, repo मधला parquet) + त्यांचं JSON.
+
+### v2.1 — तुमच्या 4 दुरुस्त्या (नमुने पाहून, अंतिम)
+- **Room:** trade दिशेने पुढचा कोणताही level — आज तुटलेला (flip: broken support ⇒ आता resistance, text मध्ये "flip") आणि untested सुद्धा; फक्त
+  magnet वगळा (आज closes ने ≥ 4 वेळा ओलांडलेला). < 1 × median range ⇒ "ROOM TIGHT (नाव)" ⇒ gray. (नमुना 1: PWL 0.30×; नमुना 3: PDC 1.89×.)
+- **Deterministic code नियम (disagree, settings मध्ये on/off):** `wrong_approach` — bear call ⇒ किंमत L कडे खालून, bull put ⇒ वरून; उलट ⇒ disagree.
+  2b — signal bar (अपूर्ण असला तरी) किंवा मागच्या 3 bars नी trade दिशेने कोणताही level real-break ने तोडला (उघडण्याच्या बाजूपासून दूर; परत येणारा
+  reclaim मोजत नाही) ⇒ is_breakout_entry = yes ⇒ `breakout`. `role_conflict` — bot-role RESISTANCE पण L held_as_support (किंवा SUPPORT पण
+  held_as_resistance) ⇒ disagree. (आधीचा "नियम 4" / approach-logic यांनी बदलला.)
+- **Gap वर्ग:** daily trend range / unclear ⇒ `GX-inside` / `GX-beyond` (G1 / G3 / G4 नाही); text: WITH / AGAINST / "no clear daily trend".
+- **Opening behaviour** (प्रत्येक बंद 15m bar वर पुन्हा, lock नाही, इतिहासासह — उदा. "09:15 test, 09:30 acceptance (open-test-drive)"):
+  rejection = gap दिशेने नवीन extreme न होता open ओलांडून PDC कडे buffer पेक्षा जास्त; acceptance = open-test-drive (नवीन extreme + PDH / PDL पलीकडे
+  टिकाव; inside gap ⇒ open पलीकडे buffer सह); acceptance नंतर परत open खाली ⇒ undecided ("failed drive").
+- **नमुने VPS वर:** `python3 scripts/vision_v0_smoke.py --sample` — 3 नमुने खऱ्या vision call सह, JSON + code verdict + खर्च + सारांश.
+
+### v2.1 — शेवटच्या 3 दुरुस्त्या
+- **Signal bar बंद नसणे:** Instant bot चा signal 5m bar च्या मधे येतो. Text: "Signal bar 10:30-10:35: NOT CLOSED yet (1/5 min)". Levels तक्ता:
+  "held_as_support until 13:05; the current OPEN (unfinished) bar is breaking it down" (breakout ओळीशी विरोध नाही). Code: bar बंद नाही ⇒
+  reversal_valid = unclear ⇒ gray. **`vision_wait_for_bar_close` (default on):** worker signal चा setup bar बंद होईपर्यंत row QUEUED ठेवतो
+  (fetch / खर्च नाही), मग chart आणि संदर्भ bar च्या close पर्यंत (title: "evaluated at bar close HH:MM"), मग निर्णय; entry च्या क्षणी drift guard.
+- **today_role "reclaimed":** आधी real break, नंतर पूर्ण bar चा close परत आजच्या उघडण्याच्या बाजूला. Reclaimed ⇒ role_conflict नियम लागू नाही.
+  Chart label "PDL · reclaimed".
+- **Code-only pre-verdict:** vision शिवाय, फक्त OHLC तथ्यं + नियम (`signal_audit.pre_verdict`) — samples output मध्ये प्रत्येक नमुन्यासाठी.
 
 ## Chart images कायमस्वरूपी (§11)
 - **`_sent.png`**: vision ला गेलेली आणि Telegram वरची हीच फाईल. आधी disk वर `O_EXCL` ने लिहिली जाते (नाव असेल तर `_2`; overwrite कधीच नाही),
