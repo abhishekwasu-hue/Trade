@@ -1415,3 +1415,20 @@ Deploy आधी 2 code दुरुस्त्या (Abhi चा नियम
   जाणीवपूर्वक ठेवलं: `legs.py` r_warn 0.80 (KB) ⇒ `level_strength` / `bot_view` / `leg_level_validation` च्या default LegConfig मध्ये 75–80% pullback आता
   MIXED (आधी DANGEROUS); PCS signal r_warn स्वतः देतो ⇒ बदल नाही. Roll नंतर 20-दिवस baseline जुन्या contract चा (खरा volume सलग ⇒ परिणाम लहान).
 **उघडे प्रश्न:** thresholds (60/45) वितरणानुसार; IS उदाहरणांमध्ये (flat/triangle) entry नसलेले A (R:R < 3) — target नियम योग्य वाटतो का.
+
+## 2026-10-08 · Visual audit: अपयशाचं कारण, vision budget, फक्त NIFTY
+- **2026-10-08 चं अपयश (VPS log):** NIFTY 1H — overlay OK, पण त्याच frame चा levels-शिवाय (plain) chart render झाला नाही ⇒ स्वतंत्र वाचन FAILED
+  "chart image नाही" (calls 1 ⇒ एकूण 7). Code path तोच ⇒ kaleido / Chrome चं तात्पुरतं अपयश (1 GB VPS). दुरुस्ती: render एकदा पुन्हा (2 s नंतर) +
+  प्रत्येक प्रयत्नाचं कारण log मध्ये. बाकी 3 charts चा अहवाल गेला (वर्तन तसंच).
+- आधीचा "काही charts चा audit अयशस्वी — log बघा" संदेश कोणता chart / का हे सांगत नव्हता. आता प्रत्येक अपयश (symbol, TF, overlay /
+  स्वतंत्र / Supabase save, status, कारण) log, Telegram सारांश आणि error संदेशात. Render अपयश आधी शांत `None` ("chart image नाही") होतं — आता कारण log मध्ये.
+  एका chart चं अपयश ⇒ बाकींचा अहवाल जातो (वर्तन तसंच). Chart न बनलेले TFs सुद्धा नोंदवले.
+- खर्च: visual audit आधी vision budget मध्ये मोजला जात नव्हता. आता प्रत्येक chart चा खर्च `vision_usage` (task `visual_audit`) मध्ये.
+  **Signals ला प्राधान्य (Abhi):** प्रत्येक chart आधी तपासणी — audit आज + अंदाज ≤ min(`visual_audit_daily_cap` $0.10, दैनिक budget −
+  `signals_daily_reserve_usd` $0.20), आणि एकूण दैनिक ($0.30) / मासिक ($5). ओलांडत असेल तर chart वगळला (अपयश नाही). अंदाज = मागच्या खऱ्या chart
+  खर्चाची सरासरी. Dashboard वर signals / visual audit वेगवेगळे + एकत्र, cap आणि राखीव dashboard वरून.
+- Render (kaleido v1): आधी प्रत्येक `to_image` नवा Chrome सुरू करून बंद करायचा (8 charts ⇒ 8 launches). आता `KaleidoSession` — एकच Chrome server सगळ्या
+  charts साठी, शेवटी (चुकीतही) cleanup; render अपयश ⇒ server restart + एकदा पुन्हा. Model claude-opus-5-5 तसाच (Abhi).
+- Abhi चा निर्णय: visual audit मध्ये BANKNIFTY बंद — setting `visual_audit_symbols` (vision `_global`, default ["NIFTY"], dashboard वरून).
+- 2026-10-08 चा run: 7 calls, 19,403 / 4,982 tokens ⇒ model claude-opus-5-5 (repo दर 4 / 20 $ per 1M) ≈ **$0.177** — आजच्या $0.30 पैकी 59%.
+  NIFTY-only ⇒ साधारण निम्मा.

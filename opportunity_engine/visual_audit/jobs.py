@@ -48,10 +48,20 @@ def prepare_chart(frames, journal, levels, tf, symbol, cutoff, bars=None, render
     return out
 
 
-def audit_day(client, vcfg, symbol, audit_date, frames, journal, levels, pool, states, cutoff, tfs=CHART_TFS, fewshot=None, png_dir=None, log=None):
-    """एका दिवसाचे सर्व TF charts audit. states = {tf: engine trend state}. रिटर्न records (JSON-योग्य)."""
+def audit_day(client, vcfg, symbol, audit_date, frames, journal, levels, pool, states, cutoff, tfs=CHART_TFS, fewshot=None, png_dir=None, log=None,
+              allow=None, skipped=None):
+    """एका दिवसाचे सर्व TF charts audit. states = {tf: engine trend state}. रिटर्न records (JSON-योग्य).
+    allow(tf) ⇒ (ok, कारण): प्रत्येक chart आधी (budget); नाही ⇒ तो chart वगळला, `skipped` यादीत (tf, कारण) — API call नाही."""
     records = []
     for tf in tfs:
+        if allow is not None:
+            ok, why = allow(tf)
+            if not ok:
+                if skipped is not None:
+                    skipped.append((tf, why))
+                if log:
+                    log(f"  ⏭️ {symbol} {tf}: वगळलं — {why}")
+                continue
         ch = prepare_chart(frames, journal, levels, tf, symbol, cutoff)
         if ch is None:
             continue

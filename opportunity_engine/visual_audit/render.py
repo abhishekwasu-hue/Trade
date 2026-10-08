@@ -107,11 +107,64 @@ def build_figure(df, tf, symbol, labels=None, swings=None, overlay=True, title=N
     return fig
 
 
-def render_png(df, tf, symbol, labels=None, swings=None, overlay=True, title=None):
-    """PNG bytes किंवा None (डेटा नाही / kaleido-Chrome नाही — कधीच raise नाही)."""
+RENDER_ATTEMPTS = 2
+RENDER_RETRY_SEC = 2.0
+
+
+class KaleidoSession:
+    """एका run साठी **एकच** Chrome (kaleido v1 sync server) — नाहीतर प्रत्येक `to_image` नवा Chrome सुरू करून बंद करतो (8 charts ⇒ 8 launch;
+    लहान RAM च्या VPS वर अपयशाचं कारण). `with KaleidoSession():` ⇒ शेवटी नेहमी cleanup (stop). Server सुरू न झाल्यास जुन्या oneshot पद्धतीने चालतं."""
+
+    def __enter__(self):
+        self.started = start_server()
+        return self
+
+    def __exit__(self, *exc):
+        stop_server()
+        return False
+
+
+def start_server():
+    try:
+        import kaleido
+        kaleido.start_sync_server(silence_warnings=True)
+        return True
+    except Exception as exc:                                            # kaleido / Chrome नाही ⇒ oneshot (आधीसारखं)
+        print(f"  ℹ️ kaleido server सुरू झाला नाही ({type(exc).__name__}) — प्रत्येक chart साठी स्वतंत्र Chrome")
+        return False
+
+
+def stop_server():
+    try:
+        import kaleido
+        kaleido.stop_sync_server(silence_warnings=True)
+    except Exception:
+        pass
+
+
+def server_running():
+    try:
+        from kaleido import _global_server
+        return bool(_global_server.is_running())
+    except Exception:
+        return False
+
+
+def render_png(df, tf, symbol, labels=None, swings=None, overlay=True, title=None, attempts=RENDER_ATTEMPTS, sleep=None):
+    """PNG bytes किंवा None (डेटा नाही / kaleido-Chrome नाही — कधीच raise नाही).
+    🎓 2026-10-08: NIFTY 1H चा plain chart अयशस्वी झाला, तर त्याच frame चा overlay chart आधीच यशस्वी — म्हणजे kaleido / Chrome चं तात्पुरतं
+    अपयश (1 GB VPS वर memory / timeout). म्हणून एकदा पुन्हा प्रयत्न, आणि प्रत्येक अपयशाचं कारण log मध्ये (आधी शांत None)."""
     if df is None or len(df) < 5:
         return None
-    try:
-        return build_figure(df, tf, symbol, labels, swings, overlay, title).to_image(format="png", width=WIDTH, height=HEIGHT, scale=1)
-    except Exception:
-        return None
+    import time
+    for k in range(max(1, int(attempts))):
+        try:
+            return build_figure(df, tf, symbol, labels, swings, overlay, title).to_image(format="png", width=WIDTH, height=HEIGHT, scale=1)
+        except Exception as exc:
+            print(f"  ⚠️ render {symbol} {tf} {'overlay' if overlay else 'plain'} (प्रयत्न {k + 1}/{attempts}): {type(exc).__name__}: {str(exc)[:200]}")
+            if k + 1 < attempts:
+                if server_running():                                    # अडकलेला / मेलेला Chrome ⇒ बंद करून नवा (cleanup), मग पुन्हा
+                    stop_server()
+                    start_server()
+                (sleep or time.sleep)(RENDER_RETRY_SEC)
+    return None
