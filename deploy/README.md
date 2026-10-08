@@ -1027,3 +1027,16 @@ journalctl -u vision_telegram.service -n 20 --no-pager
 - Dry-run (order नाही): `python3 scripts/vision_dryrun.py --no-vision` (खर्च 0) ⇒ ✅ दाबा; पुन्हा ❌; पुन्हा काहीच न दाबता (3 मिनिटं ⇒ timeout).
   `--drift` ⇒ drift guard नकार. Vision सह (≈ $0.01): `--no-vision` शिवाय.
 - Mode: Telegram `/vision vtc dynamic_sr_instant` · `/pending` · `/today`, किंवा dashboard 👁 पान → ⚙️ Settings. LIVE bot ला V1 mode निवडता येत नाही.
+
+### Backtest Visual Review + Golden Gallery (साधनं; runs K-10 नंतर)
+- काहीच cron नाही; एकदाच चालवायचे (15:30 IST नंतर). Charts / JSON फक्त trade-data मध्ये (`/root/trade-data/backtest_review/…`,
+  `/root/trade-data/golden_gallery/`); public repo मध्ये फक्त अहवाल (`research/review_report.py`).
+- Backtest review (contaminated Jul–Oct 2026 आणि VAL शेवट Jan–Mar 2024; holdout ⇒ HoldoutError):
+  `python3 research/backtest_review_run.py --period 2026_q3 --data <1m csv.gz> --out-dir /root/trade-data/backtest_review/2026_q3 --send`
+  `python3 research/backtest_review_run.py --period 2024_q1 --data data/nifty50_1min.parquet --out-dir /root/trade-data/backtest_review/2024_q1 --send`
+  (`--send` ⇒ Telegram "🔎 REVIEW", फक्त trades, दिवसाला ≤ 10, Approve नाही.)
+- Golden Gallery (IS 2015–2021 + Jul–Oct 2026): `python3 research/golden_gallery.py --out-dir /root/trade-data/golden_gallery --send`
+  `--recent-data <Jul–Oct 2026 1m csv.gz>` (प्रति G एक "⭐ GALLERY" संदेश).
+- Dashboard: ANALYZE → "Backtest Review" (दिवस / trades ✔ / ✘ / ?, सुटलेला trade; "⭐ Golden Gallery" tab). Supabase tables
+  `backtest_review`, `golden_gallery` पहिल्या save वर आपोआप बनतात.
+- Abhi च्या review नंतर: `python3 research/review_report.py` ⇒ `docs/reports/backtest_visual_review.md`, `docs/reports/golden_gallery.md`.

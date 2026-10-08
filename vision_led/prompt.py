@@ -16,12 +16,13 @@ REF = {"type": "object", "additionalProperties": False, "required": ["price", "o
        "properties": {"price": {"type": "number"}, "ohlc_ref": {"type": "string"}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["trade", "side", "grade", "area_id", "story", "entry", "invalidation", "invalidation_reason", "target", "evidence_for",
-                 "evidence_against", "wrong_if"],
+    "required": ["trade", "side", "grade", "setup_type", "area_id", "story", "entry", "invalidation", "invalidation_reason", "target",
+                 "evidence_for", "evidence_against", "wrong_if"],
     "properties": {
         "trade": {"type": "boolean"},
         "side": {"type": "string", "enum": ["bull_put", "bear_call", "none"]},
         "grade": {"type": "string", "enum": ["A", "B", "C"]},
+        "setup_type": {"type": "string", "enum": ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "none"]},
         "area_id": {"type": "string"},
         "story": {"type": "array", "items": {"type": "string"}},
         "entry": REF, "invalidation": REF, "invalidation_reason": {"type": "string"}, "target": REF,
