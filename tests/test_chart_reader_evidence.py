@@ -105,6 +105,22 @@ def test_lq_pdl_pool_from_candidates():
     assert E.liquidity(_lq_df((142, 142.5, 139.5, 142.3)), st, cands, 1, S, mr=1.0)["pool"] == "PDL"
 
 
+def test_lq_gap_open_through_pool_is_not_a_sweep():
+    """§8.2 (7 Oct 09:30 सारखं, सर्वसाधारण): bear बाजूचा pool (A-end high 150) — gap down open pool च्या वर (152), bar खाली पार करून
+    close खाली. किंमत pool कडे खालून आली नाही ⇒ sweep नाही. तसंच pool आधीच पार झाला असेल तर नंतरचा poke sweep नाही."""
+    st = st_dict(side=-1, impulse={"dir": -1, "origin": 200.0, "end": 140.0, "start_bar": 0, "end_bar": 10, "bars": 10, "size_mr": 20.0},
+                 correction=[140.0, 150.0, 144.0, 151.0], correction_bars=[10, 12, 14, 16])
+    rows = [(160, 160.5, 159.5, 160)] * 10 + [(141, 141.5, 140, 140.5), (141, 149.5, 140.8, 149), (149, 150, 145, 145.5),
+                                              (145.5, 146, 143.5, 144), (144, 148, 143.8, 147.5), (147.5, 148.5, 147, 148)]
+    gap_bar = (152.0, 152.4, 148.0, 148.6)                                                 # open pool च्या वर, खाली पार, close खाली
+    df = ohlc(rows + [gap_bar])
+    assert E.liquidity(df, st, [], -1, S, mr=1.0)["pts"] == 0
+    real = (148.0, 150.5, 147.8, 148.3)                                                    # खालून आलं, wick ने 0.5 पार, परत खाली close
+    assert E.liquidity(ohlc(rows + [real]), st, [], -1, S, mr=1.0)["pts"] > 0
+    used = rows[:-1] + [(147.5, 151.5, 147, 148)]                                          # pool आधीच पार झाला
+    assert E.liquidity(ohlc(used + [real]), st, [], -1, S, mr=1.0)["pts"] == 0
+
+
 # ------------------------------------------------------------------------------------------------ DV [K10.2]
 def _div_series():
     c = [100 + (i % 2) * 0.5 for i in range(20)]
@@ -219,13 +235,11 @@ def test_veto_origin_acceptance_and_magnet():
     assert not E.vetoes(st_dict(), {}, {"area": {"low": 139.0, "high": 140.0}}, far, {}, 1, trig, S, 1.0)
 
 
-def test_veto_gap_b_without_pullback():
+def test_gap_veto_moved_to_gap_rule():
+    """gap setup B चा व्हेटो आता chart_reader/gap.py (GAP_NO_PULLBACK, सगळे वर्ग) — vetoes मध्ये दुहेरी ओळ नाही."""
     gap = {"has_gap": True, "direction": "up", "class": "G3"}
     up = ohlc([(100 + i, 101.1 + i, 100.5 + i, 101 + i) for i in range(5)], start="2021-03-01 09:15")
-    assert any("[K13]" in v for v in E.vetoes(st_dict(), {}, {}, [], gap, 1, up, S, 1.0))
-    pb = ohlc([(100, 103, 99.8, 102.8), (102.8, 104, 101, 101.5), (101.5, 103, 101.2, 102.5)])
-    assert not E.vetoes(st_dict(), {}, {}, [], gap, 1, pb, S, 1.0)
-    assert not E.vetoes(st_dict(), {}, {}, [], {**gap, "class": "G1"}, 1, up, S, 1.0)
+    assert not any("[K13]" in v for v in E.vetoes(st_dict(), {}, {}, [], gap, 1, up, S, 1.0))
 
 
 def test_flat_b_near_impulse_end_is_not_a_double_top():

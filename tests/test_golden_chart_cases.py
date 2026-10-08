@@ -97,7 +97,10 @@ def _check_area(r, aa, tol, t):
     return errs
 
 
-@pytest.mark.parametrize("path", CASES, ids=[os.path.basename(p) for p in CASES])
+WINDOW_CASES = [c for c in CASES if "window" in json.load(open(c, encoding="utf-8"))]
+
+
+@pytest.mark.parametrize("path", WINDOW_CASES, ids=[os.path.basename(p) for p in WINDOW_CASES])
 def test_golden_chart_case(path):
     case = json.load(open(path, encoding="utf-8"))
     df = _data(case["data"])
@@ -127,3 +130,44 @@ def test_golden_chart_case(path):
             if r["entry"] and r["side"] == bad:
                 errs.append(f"{cp['id']} {t}: {cp['no_entry_side']} entry झाली ({cp['why']})")
     assert not errs, "\n".join(errs)
+
+
+DAY_CASES = [c for c in CASES if "simple_core_day" in json.load(open(c, encoding="utf-8"))]
+
+
+@pytest.mark.parametrize("path", DAY_CASES, ids=[os.path.basename(c)[:-5] for c in DAY_CASES])
+def test_golden_simple_core_day(path):
+    """Simple Core (Abhi 2026-10-08): दिवसभर प्रत्येक बंद 15M bar वर signal_at (trendline memory + एक setup = एक entry) ⇒ signals फक्त
+    अपेक्षित वेळांवर; pause अपेक्षित वेळेपासून; area अपेक्षित पट्टा सामावतो; trendline ओळख स्थिर."""
+    from chart_reader import setups as SU
+    from simple_core import engine as EN
+    case = json.load(open(path, encoding="utf-8"))
+    de = case["simple_core_day"]
+    m1 = _data(case["data"])
+    day = pd.Timestamp(de["date"])
+    m1 = m1[pd.to_datetime(m1["timestamp"]) >= day - pd.Timedelta(days=110)]
+    mem, tr = SU.LineMemory(), EN.Tracker()
+    got, tl = {}, {}
+    for t in pd.date_range(f"{de['date']} {de['from']}", f"{de['date']} {de['to']}", freq="15min"):
+        r = EN.signal_at(m1, t + pd.Timedelta(minutes=15), memory=mem, tracker=tr)
+        hm = f"{t:%H:%M}"
+        tl[hm] = next((z for z in r.get("zones") or [] if z.get("tool") == "f" and z.get("role") == "RESISTANCE" and z.get("tl_reason")), None)
+        if r["signal"]:
+            got[hm] = r["signal"]
+    assert {k: v["side"] for k, v in got.items()} == de["signals"], f"signals {list(got)}"
+    assert not set(de["no_signal"]) & set(got)
+    for hm in de["signals"]:
+        sg = got[hm]
+        if de.get("pause_from_max"):
+            assert sg["pause_from"][11:16] <= de["pause_from_max"], sg["pause_from"]
+        if de.get("area_contains"):
+            lo, hi = de["area_contains"]
+            assert sg["area"]["low"] <= lo and sg["area"]["high"] >= hi, sg["area"]
+        if (de.get("setups") or {}).get(hm):
+            assert sg.get("setup") == de["setups"][hm], f"{hm}: setup {sg.get('setup')}"
+    st = de.get("same_trendline") or {"at": []}
+    for hm in st["at"]:
+        z = tl.get(hm) or {}
+        assert z.get("id") == st["id"], f"{hm}: trendline {z.get('id')} ≠ {st['id']}"
+        for (day_, px), (ts, v) in zip(st["anchors_near"], z["anchors"]):
+            assert str(ts).startswith(day_) and abs(float(v) - px) <= 15, f"{hm}: anchor {ts} {v}"

@@ -95,10 +95,10 @@ def test_gallery_store_and_page_groups():
     with pytest.raises(ValueError):
         BS.save_gallery(gid, "G1", "2019-03-11 14:30", "bull_put", "MAYBE", conn_factory=cf)
     with pytest.raises(ValueError):
-        BS.save_gallery(gid, "G1", "2019-03-11 14:30", "bull_put", "OK", "G9", conn_factory=cf)
+        BS.save_gallery(gid, "G1", "2019-03-11 14:30", "bull_put", "OK", "G10", conn_factory=cf)
     import page_backtest_review as P
     g = P.gallery_groups({"examples": [{"setup": "G3", "id": "x"}, {"setup": "G1", "id": "y"}]})
-    assert list(g)[:6] == ["G1", "G2", "G3", "G4", "G5", "G6"] and len(g["G3"]) == 1
+    assert list(g)[:9] == [f"G{i}" for i in range(1, 10)] and len(g["G3"]) == 1
 
 
 def test_review_and_gallery_reports():

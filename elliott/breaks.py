@@ -10,6 +10,8 @@ elliott/breaks.py — "खरा break" (spec §7, §14 Q1): count invalidation 
         ⇒ t वर confirm (break_displacement_confirm).
     (b) Acceptance: पुढचे break_no_reclaim_bars bars सुद्धा level च्या पलीकडेच close (reclaim नाही) ⇒ शेवटच्या bar वर confirm.
         (0 ⇒ एका close वर — तुलनेसाठीच.)
+    (d) Time acceptance (break_accept_closes = n, 0 ⇒ बंद): level पलीकडे **सलग n closes** (buffer आत असले तरी) ⇒ n-व्या close वर confirm
+        (`time_accepted` — levels_v2 lifecycle सुद्धा हेच वापरतो, सगळीकडे एकच व्याख्या).
     (c) Failed retest: break नंतर reclaim, पण लगेच level चा retest उलट logical reversal ने नाकारला ⇒ confirm
         (`retest_fn` = elliott.reversal.retest_fn; BreakCache मध्ये break_retest_confirm नुसार आपोआप). (a)/(b)/(c) पैकी जे आधी.
   अन्यथा (wick, किंवा कमकुवत close मग reclaim) ⇒ false break: candidate रद्द, exit/invalidation नाही.
@@ -33,6 +35,15 @@ def _back_inside(close, level, side):
     return close >= level if side == "below" else close <= level
 
 
+def time_accepted(close, t, level, side, n, start=0):
+    """(d) bar t वर: closes [t−n+1 … t] सगळे level च्या पलीकडे (buffer शिवाय) आणि सगळे ≥ start ⇒ True. n ≤ 0 ⇒ False."""
+    n = int(n or 0)
+    if n <= 0 or t - n + 1 < max(int(start), 0):
+        return False
+    w = close[t - n + 1:t + 1]
+    return bool((w < level).all() if side == "below" else (w > level).all())
+
+
 def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=None):
     """[start, end] मध्ये level च्या पहिल्या **खऱ्या** break चा confirm index (नाहीतर None).
     side: "below" (भाव level च्या खाली तुटणं — bull put/up-count साठी धोका) / "above"."""
@@ -45,9 +56,12 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
     k = s["break_no_reclaim_bars"]
     t = max(start, 0)
     best_r = None                                                                     # (c) failed retest — "जे आधी" साठी लक्षात
+    acc = int(s.get("break_accept_closes", 0) or 0)
     while t <= end:
         if best_r is not None and t > best_r:
             return best_r
+        if acc and time_accepted(c, t, level, side, acc, start):
+            return _first(t, best_r)                                                  # (d) time acceptance
         m = mr[t]
         if not np.isfinite(m) or not _beyond(c[t], level, s["break_buffer_mr"] * m, side):
             t += 1
@@ -63,6 +77,8 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
         for j in range(t + 1, t + k + 1):
             if j > end:
                 return best_r                                                         # अजून ठरलं नाही (भविष्य नाही)
+            if acc and time_accepted(c, j, level, side, acc, start):
+                return _first(j, best_r)
             if _back_inside(c[j], level, side):
                 ok = False
                 break

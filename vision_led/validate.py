@@ -138,8 +138,13 @@ def validate(v, cand, tables, decision_start, ev, trig, s, daily_close=None, cfg
         out["reasons"].append(f"area_id अज्ञात: {v.get('area_id')!r}")
     from pullback_credit_spread.signal import approached_from_trend_side
     approach = area is not None and approached_from_trend_side(trig, area, "LONG" if side > 0 else "SHORT", 20)
+    gap_chase = False
+    if ev is not None and (ev.get("gap") or {}).get("has_gap"):                # K13: trade दिशेचा gap, पहिला pullback नाही (chart_reader/gap.py)
+        from chart_reader import gap as GP
+        zs = ev.get("zones") or (ev.get("areas") or {}).get("candidates") or []
+        gap_chase = bool(GP.read(trig, ev["gap"], side, zs, {"area": area}, s, mr)["block"])
     hard = RU.check({"side": side, "bar_closed": True, "bar_end": cand["bar_end"], "approach_ok": approach,
-                     "area_role": (area or {}).get("role"), "invalidation": inv, "entry": entry, "rr": rr, "gap_chase": False,
+                     "area_role": (area or {}).get("role"), "invalidation": inv, "entry": entry, "rr": rr, "gap_chase": gap_chase,
                      "risk_ok": True}, {**s, "min_rr": cfg["min_rr"]})
     out["reasons"] += hard
     out["sl_defs"] = sl_definitions(side, entry, tgt, trig, area, mr, cfg)

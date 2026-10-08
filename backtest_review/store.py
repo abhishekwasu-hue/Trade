@@ -83,11 +83,11 @@ def gallery_id(setup, bar_time, side):
 
 
 def save_gallery(gid, setup, bar_time, side, verdict, corrected_setup=None, reason="", conn_factory=None, now=None):
-    """⭐ golden / ✔ ठीक / ✘ चुकीचं ओळखलं; corrected_setup = "हा वेगळा G आहे" (G1–G6 किंवा none)."""
+    """⭐ golden / ✔ ठीक / ✘ चुकीचं ओळखलं; corrected_setup = "हा वेगळा G आहे" (G1–G9 किंवा none)."""
     if verdict not in GALLERY_VERDICTS:
         raise ValueError(f"verdict {verdict!r} — {GALLERY_VERDICTS} पैकी")
-    if corrected_setup not in (None, "", "none", "G1", "G2", "G3", "G4", "G5", "G6"):
-        raise ValueError("corrected_setup: G1–G6 / none")
+    if corrected_setup not in (None, "", "none") + tuple(f"G{i}" for i in range(1, 10)):
+        raise ValueError("corrected_setup: G1–G9 / none")
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now("UTC").tz_localize(None)
     row = (gid, setup, pd.Timestamp(bar_time).to_pydatetime(), side, verdict, corrected_setup or None, reason or "", now.to_pydatetime())
 

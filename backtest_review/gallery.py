@@ -13,6 +13,11 @@ Detector फक्त **बंद bars** (bar j पर्यंत) वर — n
                         (evaluate: active area — trendline ≥ 3 touches अधिक) + reversal.
   G6 साधा pullback       HTF trend impulse च्या दिशेने ("trend"), फक्त A (किंवा लहान A-B), overlapping (K10.1 ≥ 0.6), pullback speed ≤ impulse,
                         retrace 38.2–61.8%, displacement base (evaluate: tool c) वर hammer / engulfing (reversal candle).
+  G7 exhaustion gap     trend दिशेने मोठा gap (≥ G7_GAP_MR × MR), पहिल्या 6 bars मध्ये gap दिशेचं टोक आणि नंतर close day open च्या पलीकडे
+                        परत (rejection / reclaim), मग पहिल्या pullback वर उलट reversal candle (opening window नंतर). Major HTF zone तपासणी
+                        evaluate / Abhi च्या डोळ्यावर (सैल detector).
+  G8 (ii)/(iv) of 3     simple_core.waves: wave 3 मधला उथळ (≤ 38.2% + tol), जलद (≤ 6 bars) pullback, wave 1 overlap नाही + reversal candle.
+  G9 wave 4 end         simple_core.waves: wave 3 ≥ wave 1, pullback wave 1 च्या भागात नाही (R3) + reversal candle (Tier C).
 Ranking (प्रति G): code grade total + confluence (evaluate) — hindsight नाही. वेगवेगळी वर्षं, दोन्ही बाजू, एका आठवड्यात एकच.
 """
 import numpy as np
@@ -29,7 +34,11 @@ SETUPS = {
     "G4": "role flip retest",
     "G5": "ending diagonal C + trendline",
     "G6": "simple pullback on demand",
+    "G7": "exhaustion gap reversal",
+    "G8": "(ii)/(iv) of 3 shallow pullback",
+    "G9": "wave 4 end → wave 5",
 }
+G7_GAP_MR = 3.0                  # [अनुमान, सैल] gap ≥ इतके × 15M MR
 INTERNAL_ATR = 1.5
 
 
@@ -51,11 +60,55 @@ def internal_legs(trig, start_ts, upto):
     return [(p["idx"], p["price"], p["kind"]) for p in pts]
 
 
+def detect_g7(ms, trig, j, mr):
+    """G7 exhaustion gap reversal (सैल): bar j = gap दिवसाचा पहिला pullback reversal (gap विरुद्ध दिशेने)."""
+    if not np.isfinite(mr) or mr <= 0:
+        return []
+    ts = pd.to_datetime(trig["timestamp"])
+    d0 = ts.iloc[j].normalize()
+    today = np.nonzero((ts.dt.normalize() == d0).to_numpy())[0]
+    prev = np.nonzero((ts.dt.normalize() < d0).to_numpy())[0]
+    if not len(today) or not len(prev) or j - today[0] < 2:
+        return []
+    o0, pc = float(trig["open"].iloc[today[0]]), float(trig["close"].iloc[prev[-1]])
+    gap = o0 - pc
+    gd = 1 if gap > 0 else -1
+    tr = ms.get("trend") or {}
+    if abs(gap) < G7_GAP_MR * mr or int(tr.get("dir") or 0) != gd:
+        return []
+    seg = trig.iloc[today[0]:j + 1]
+    first = seg.iloc[:6]
+    ext_i = int(np.argmax(first["high"].to_numpy()) if gd > 0 else np.argmin(first["low"].to_numpy()))
+    after = seg.iloc[ext_i + 1:-1]
+    reclaimed = bool(((after["close"] < o0) if gd > 0 else (after["close"] > o0)).any()) if len(after) else False
+    if not reclaimed or not _rejection(trig.iloc[j], -gd):
+        return []
+    return [{"setup": "G7", "side": -gd, "key": ("G7", f"{d0:%Y-%m-%d}"),
+             "why": f"gap {gap:+,.0f} ({abs(gap) / mr:.1f} MR) trend दिशेने, टोकानंतर open {o0:,.0f} च्या पलीकडे close, पहिल्या pullback वर reversal"}]
+
+
+def detect_waves(ms, trig, j, mr):
+    """G8 / G9: simple_core.waves count (trade-degree swings) + bar j reversal candle."""
+    from simple_core import waves as WV
+    tr = ms.get("trend") or {}
+    side = int(tr.get("dir") or 0) if tr.get("state") == "trend" else 0
+    if not side or not _rejection(trig.iloc[j], side):
+        return []
+    piv = [{"ts": p["ts"], "price": p["price"], "kind": p["kind"]} for p in ms.get("swings") or []]
+    w = WV.count(trig.iloc[:j + 1].reset_index(drop=True), piv, side)
+    if w["setup"] not in ("G8", "G9"):
+        return []
+    ref = w["ref"]
+    return [{"setup": w["setup"], "side": side, "key": (w["setup"], side, ref.get("wave1_origin"), ref.get("wave1_extreme")),
+             "why": w["story"]}]
+
+
 def detect(ms, trig, j, mr):
     """bar j (बंद) वर कोणते G जुळतात ⇒ [{"setup", "why", "labels"(ऐच्छिक)}]. ms = market_state at bar j close."""
     imp, corr = ms.get("impulse"), ms.get("correction") or {}
+    extra = detect_g7(ms, trig, j, mr) + detect_waves(ms, trig, j, mr)
     if not imp or corr.get("status") in (None, "origin_broken", "not_started", "none") or not np.isfinite(mr) or mr <= 0:
-        return []
+        return extra
     side = imp["dir"]
     bar = trig.iloc[j]
     close = float(bar["close"])
@@ -104,7 +157,7 @@ def detect(ms, trig, j, mr):
         ov = corr.get("overlap")
         if ov is not None and ov >= 0.6:
             out.append({"setup": "G6", "why": f"साधा pullback: retrace {r:.0%}, overlap {ov}, trend सोबत"})
-    return out
+    return out + extra
 
 
 def cheap_score(hit, ms):
@@ -126,12 +179,13 @@ def scan(m1, trig, frames, start=None, end=None, step=1, log=None):
             continue
         ms = MS.read(m1, trig["bar_end"].iloc[j], run_elliott=False, frames=frames)
         for h in detect(ms, trig, int(j), float(mra[j]) if np.isfinite(mra[j]) else float("nan")):
-            imp = ms["impulse"]
-            key = (h["setup"], imp["dir"], imp["from"], imp["to"])
+            imp = ms["impulse"] or {}
+            key = h.get("key") or (h["setup"], imp.get("dir"), imp.get("from"), imp.get("to"))
             if key in seen:
                 continue
             seen.add(key)
-            out.append({**h, "bar_start": ts.iloc[j], "bar_end": pd.Timestamp(trig["bar_end"].iloc[j]), "side": imp["dir"], "impulse": imp,
+            out.append({**{k: v for k, v in h.items() if k != "key"}, "bar_start": ts.iloc[j], "bar_end": pd.Timestamp(trig["bar_end"].iloc[j]),
+                        "side": h.get("side") or imp.get("dir"), "impulse": imp,
                         "trend": ms["trend"], "labels": h.get("labels") or (ms.get("correction") or {}).get("labels") or [],
                         "score": cheap_score(h, ms), "code_side": ms["side"]})
         if log and n % 2000 == 0:

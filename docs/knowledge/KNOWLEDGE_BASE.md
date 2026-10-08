@@ -42,7 +42,7 @@
 - **भाग E:** नेहमीच्या चुका (checklist)
 - **भाग F:** प्रामाणिक मर्यादा: काय सिद्ध आहे, काय नाही
 - **भाग G:** विरोधाभासांचे निर्णय (एकच व्याख्या)
-- **भाग H:** Golden setups G1–G7
+- **भाग H:** Golden setups G1–G9
 - **स्रोत**
 
 ---
@@ -939,7 +939,7 @@
 
 ---
 
-# भाग H: Golden setups G1–G7 (Abhi ने मंजूर केलेले, 2026-10-08)
+# भाग H: Golden setups G1–G9 (Abhi ने मंजूर केलेले, 2026-10-08)
 
 > सगळ्यांमध्ये समान 5 गोष्टी:
 > 1. स्पष्ट impulse (BOS);
@@ -958,12 +958,31 @@
 | **G6** | Trend मधला साधा pullback demand वर | HH/HL स्पष्ट. Pullback संथ, overlapping, कमी volume. Displacement च्या आधीच्या base वर. | Hammer / engulfing बंद झाल्यावर | Base पलीकडे | K1, K2, K4, K9 |
 
 | **G7** | Exhaustion gap reversal (major zone मध्ये gap) | (1) Trend stretched: शेवटचा leg ATR च्या पटीत लांब, legs लहान होत जाणं / divergence / Elliott 5 किंवा C च्या शेवटाची शक्यता; (2) trend दिशेने मोठा gap (G5 / E) थेट **major HTF zone** मध्ये (D2/D3 demand / supply, न तुटलेला); (3) पहिल्या 2–6 bars मध्ये **rejection**: gap extension अपयशी, zone मध्ये लांब wick, close परत open च्या पलीकडे / gap edge reclaim, futures volume climax पण प्रगती नाही (absorption) | Rejection नंतरचा **पहिला pullback** (higher low / lower high) zone वर टिकल्यावर reversal candle. Opening window मध्ये आणि पहिल्या रिकव्हरी candle वर entry नाही. | Gap दिवसाचं टोक (zone च्या पलीकडे) + buffer. Target: PDC / gap fill (Bulkowski: exhaustion gaps 60–66% आठवड्यात भरतात). | K13, K4, K5, K10, K12, K3 |
+| **G8** | Motive wave मधला उथळ pullback: wave 3 मध्ये (ii) / (iv) of 3 | Wave 2 संपून wave 3 सुरू, मजबूत displacement. आतले pullbacks **उथळ** (23.6–38.2%), जलद (2–6 candles, flag / छोटा ABC), wave 1 च्या टोकावरचा flip किंवा wave 3 मधला base area. Momentum मजबूत. | उथळ pullback च्या शेवटी commitment candle (impulse दिशेने) | Sub-wave (i) ची सुरुवात / pullback चं टोक (R1, lower degree) | K3 (S2, S4), K4, K11 (flag) |
+| **G9** | Wave 4 चा शेवट ⇒ wave 5 | Wave 3 नंतर बाजूला किंवा उथळ correction (flat / triangle / zigzag), wave 1 च्या भागात शिरत नाही (R3). Alternation: wave 2 धारदार असेल तर 4 बाजूला. | Wave 4 end वर commitment candle | Wave 1 चं टोक (overlap = count चुकला) | K3 (S3, S9) |
+
+
+> **Motive wave चे trades (G1, G8, G9 आणि बाकी):** सगळे setups correction च्या शेवटी entry घेऊन **पुढची motive wave** पकडतात:
+> - wave 2 end (G1) ⇒ wave 3, सगळ्यात मोठी चाल;
+> - (ii) / (iv) of 3 (G8) ⇒ wave 3 चालू असताना पुन्हा entry;
+> - wave 4 end (G9, G3) ⇒ wave 5;
+> - ABC / C-end (G1, G2, G5) ⇒ मोठ्या trend ची पुढची impulse.
+>
+> **Motive wave च्या आत, उथळ pullback शिवाय, entry नाही** (breakout / chase).
+>
+
+> **Motive wave reference levels (engine फक्त माहिती देतो; target / SL dashboard setting ठरवते):**
+> - Wave 3 projection = wave 2 end + 1.618 × wave 1 (पर्याय 1.0 / 2.618). SL संदर्भ: wave 1 origin (G1), sub-wave (i) origin (G8).
+> - Wave 5 projection = wave 4 end + 1.0 × wave 1, किंवा wave 4 end + 0.618 × (wave 1 start → wave 3 end). SL संदर्भ: wave 1 चं टोक (G9).
+> - या projections [अनुभव / guideline] आहेत (Fibonacci ratios ना सांख्यिकीय आधार नाही, K7). म्हणून फक्त `ref_levels` मध्ये, आणि dashboard च्या `target_mode` चे पर्याय म्हणून.
+
+> **G9 सावधानता:** wave 5 लहान असू शकतो (truncation), आणि शेवटी divergence येते. Target कमी; spec Tier C (size setting).
 
 > **G7 टीप:** अनेकदा हा gap मोठ्या degree च्या correction चा C-end असतो, म्हणजे मोठ्या trend मधला pullback संपतोय. मग हा सुद्धा "pullback end" च. पण मोठ्या trend विरुद्ध असेल तर तो counter-trend trade; evidence T लागू, आणि scorecard वेगळा. Event दिवशी जास्त काटेकोर.
 
 **वापर:**
-- Vision playbook मध्ये ही 7 नावं आणि ओळख (मजकूर म्हणून).
-- Vision JSON मध्ये `setup_type` (G1–G7 किंवा none).
+- Vision playbook मध्ये ही 9 नावं आणि ओळख (मजकूर म्हणून).
+- Vision JSON मध्ये `setup_type` (G1–G9 किंवा none).
 - Code candidates वर setup label.
 - Golden Gallery मधले Abhi ने निवडलेले खरे NIFTY charts या प्रत्येकाची उदाहरणं.
 

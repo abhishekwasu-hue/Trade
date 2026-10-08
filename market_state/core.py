@@ -42,6 +42,9 @@ DEFAULTS = {
     "impulse_er_min": 0.45,           # कमी overlap: efficiency ratio (|निव्वळ| ÷ Σ|close बदल|) ≥ हे … [अनुमान, Abhi मंजुरी]
     "impulse_overlap_max": 0.40,      # … किंवा K10.1 overlap ratio < हे (KB K2)
     "correction_overlap_min": 0.60,   # K10.1: correction overlap > 0.6
+    "reversal_retrace_min": 0.382,    # POSSIBLE_REVERSAL v2 (Abhi): counter-move ≥ हे **आणि** impulsive (11 Aug 58% सुद्धा)
+    "reversal_min_criteria": 3,       # impulsive = 5 निकषांपैकी ≥ हे (counter_score)
+    "reversal_internal_atr": 1.5,     # counter-move मधले आतले swings: ATR × हे (gallery internal legs सारखं)
     "retrace_lo": 0.382,
     "retrace_hi": 1.0,
     "htf_days": 60,                   # HTF trend साठी मागचे इतके दिवस
@@ -140,7 +143,8 @@ def trend(fr, s=None, es=None):
       1. protected LH चा real break (elliott/breaks.py) ⇒ "testing" (CHoCH = इशारा);
       2. break नंतर confirmed HL (LL च्या वर);
       3. मग break-नंतरच्या high च्या वर close ⇒ REVERSAL_CONFIRMED (K1: "LH, मग CHoCH नंतरच्या low खाली close" चा आरसा).
-    त्याआधी नवा LL ⇒ break फसला (BOS), protected = नव्या LL आधीचा high. KB K1 चा "4 swings निर्णयाशिवाय ⇒ RANGE" नियम F2 ने बदलला
+    त्याआधी नवा LL ⇒ break फसला (BOS), protected = नव्या LL आधीचा high. A1 (Abhi K-10): testing मध्ये जुन्या टोकापलीकडे **close** ⇒
+    लगेच BREAK_FAILED (pivot confirm ची वाट नाही), protected = break नंतरचं उलट टोक. KB K1 चा "4 swings निर्णयाशिवाय ⇒ RANGE" नियम F2 ने बदलला
     (Abhi 2026-10-08: counter चाल लांबी कितीही असो correction) ⇒ दिशा ठरल्यावर range मध्ये परत जात नाही."""
     s = {**DEFAULTS, **(s or {})}
     es = es or _es()
@@ -168,6 +172,27 @@ def trend(fr, s=None, es=None):
             if b is not None:
                 st["brk"] = b
                 ev(b, "REAL_BREAK", dir=d, protected=st["prot"]["price"])
+        if st["brk"] is not None and st["ext"] is not None:
+            # A1 (Abhi K-10): testing मध्ये जुन्या trend टोकापलीकडे close ⇒ break failed ⇒ जुना trend तात्काळ परत (pivot confirm ची वाट नाही)
+            b0 = st["brk"]
+            seg = c[b0 + 1:upto + 1]
+            fail = np.nonzero(seg > st["ext"])[0] if d > 0 else np.nonzero(seg < st["ext"])[0]
+            rev = None
+            if st["hl"] is not None and st["hl"]["conf"] <= upto:
+                a0 = st["hl"]["conf"] + 1
+                hit0 = np.nonzero(c[a0:upto + 1] > st["post"])[0] if d < 0 else np.nonzero(c[a0:upto + 1] < st["post"])[0]
+                rev = a0 + int(hit0[0]) if len(hit0) else None
+            if len(fail) and (rev is None or b0 + 1 + int(fail[0]) < rev):
+                f = b0 + 1 + int(fail[0])
+                j = b0 + int(np.argmin(lo[b0:f + 1])) if d > 0 else b0 + int(np.argmax(h[b0:f + 1]))
+                prot = {"idx": j, "price": float(lo[j] if d > 0 else h[j]), "kind": "L" if d > 0 else "H", "ts": pd.Timestamp(ts.iloc[j]),
+                        "conf": f}
+                new_ext = float(h[b0:f + 1].max()) if d > 0 else float(lo[b0:f + 1].min())
+                ev(f, "BREAK_FAILED", dir=d, protected=prot["price"], old_extreme=st["ext"])
+                st.update(prot=prot, ext=max(new_ext, st["ext"]) if d > 0 else min(new_ext, st["ext"]), brk=None, hl=None, post=None,
+                          since=f + 1)
+                advance(upto)                                            # नव्या protected चा break याच टप्प्यात?
+                return
         if st["hl"] is not None and st["hl"]["conf"] <= upto:
             a = st["hl"]["conf"] + 1
             seg = c[a:upto + 1]
@@ -420,6 +445,139 @@ def _slice(fr, t0, asof):
     return fr[(fr["timestamp"] >= t0) & (fr["bar_end"] <= asof)].reset_index(drop=True)
 
 
+def _internal(fr, a, b, atr_mult):
+    """[a, b] मधले आतले swings (ATR × atr_mult, confirmed, b पर्यंतच्या bars वर) ⇒ [(idx, price, kind)]."""
+    sub = fr.iloc[: b + 1].reset_index(drop=True)
+    return [(p["idx"], p["price"], p["kind"]) for p in pivots(sub, atr_mult) if a < p["idx"] < b]
+
+
+def counter_score(fr, e, x, imp, mr, s, ep=None):
+    """Counter-move (impulse टोक e ⇒ counter टोक x) impulsive आहे का — Abhi चे 5 निकष, ≥ reversal_min_criteria ⇒ impulsive:
+    (1) 5 legs किंवा कमी overlap, (2) displacement candles, (3) गती मागच्या impulse पेक्षा जास्त, (4) impulse ची सुरुवात close ने तुटली,
+    (5) वाटेत उथळ pauses (आतले pullbacks ≤ 38.2%). रिटर्न (count, {निकष: bool}). Corrective (3 legs, overlap, संथ) ⇒ कमी count."""
+    d = -int(imp["dir"])                                                   # counter दिशा
+    o, h, lo, c = (fr[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    mm = mr[e + 1:x + 1] if len(mr) else np.array([])
+    body, rng = np.abs(c[e + 1:x + 1] - o[e + 1:x + 1]), np.maximum(h[e + 1:x + 1] - lo[e + 1:x + 1], 1e-9)
+    disp = int(((body >= s["disp_body_mr"] * mm) & (body / rng >= s["disp_body_frac"]) & ((c[e + 1:x + 1] - o[e + 1:x + 1]) * d > 0)).sum()) \
+        if len(mm) == len(body) else 0
+    inner = _internal(fr, e, x, s["reversal_internal_atr"])
+    legs = len(inner) + 1
+    ov = overlap_ratio(fr, e + 1, x)
+    xp = float(h[x] if d > 0 else lo[x])
+    ep = float(imp["to"]) if ep is None else float(ep)
+    speed_c = abs(xp - ep) / max(x - e, 1)
+    speed_i = abs(float(imp["to"]) - float(imp["from"])) / max(int(imp["end_idx"]) - int(imp["start_idx"]), 1)
+    seg = c[e + 1:x + 1]
+    origin = bool(((seg > float(imp["from"])) if d > 0 else (seg < float(imp["from"]))).any())
+    pulls = []
+    for i in range(1, len(inner)):
+        a, b = inner[i - 1], inner[i]
+        prev = inner[i - 2][1] if i >= 2 else ep
+        if (b[1] - a[1]) * d < 0:                                          # counter विरुद्ध pullback
+            up = abs(a[1] - prev)
+            pulls.append(abs(a[1] - b[1]) / up if up > 0 else 1.0)
+    er = efficiency(fr, e, x)                                              # F3 "कमी overlap" = ER ≥ impulse_er_min किंवा K10.1 overlap कमी
+    crit = {"legs5_or_low_overlap": bool(legs >= 5 or er >= s["impulse_er_min"] or (ov is not None and ov < s["impulse_overlap_max"])),
+            "displacement": bool(disp >= s["impulse_disp_min"]),
+            "faster_than_impulse": bool(speed_c > speed_i),
+            "impulse_origin_broken": origin,
+            "shallow_pauses": bool(pulls and all(p <= s["retrace_lo"] for p in pulls))}      # pause नसेल ⇒ हा निकष नाही (दुहेरी गुण नको)
+    return sum(crit.values()), crit
+
+
+def _reversal_state(fr, pv, imp, e, ep, x, mr, s):
+    """Counter leg (e: सुरुवात index, ep: सुरुवातीचा भाव ⇒ x: counter टोक) impulsive असेल तर रचनेने स्थिती: active / cancelled / new_trend."""
+    d = -int(imp["dir"])
+    n, crit = counter_score(fr, e, x, imp, mr, s, ep)
+    if n < int(s["reversal_min_criteria"]):
+        return None
+    c = fr["close"].to_numpy(float)
+    after = c[x + 1:]
+    out = {"dir": d, "score": n, "criteria": crit, "x_idx": x, "start_idx": e, "start": round(float(ep), 2), "state": "active"}
+    if len(after) and (((after < ep) if d > 0 else (after > ep)).any()):
+        out.update(state="cancelled", why=f"(a) counter-move ची सुरुवात {ep:,.1f} close ने पुन्हा ⇒ जुना trend")
+        return out
+    inner = [p for p in _internal(fr, e, x, s["reversal_internal_atr"]) if p[2] == ("L" if d > 0 else "H")]
+    if inner and len(after):
+        lvl = float(inner[-1][1])
+        hit = np.nonzero((after < lvl) if d > 0 else (after > lvl))[0]
+        if len(hit):
+            b = x + 1 + int(hit[0])
+            er, ov = efficiency(fr, x, b), overlap_ratio(fr, x, b)
+            o = fr["open"].to_numpy(float)
+            bd = (c[x + 1:b + 1] - o[x + 1:b + 1]) * (-d)                 # जुन्या trend दिशेचे bodies
+            disp = int((bd >= s["disp_body_mr"] * mr[x + 1:b + 1]).sum()) if len(mr) > b else 0
+            if disp >= s["impulse_disp_min"] or er >= s["impulse_er_min"] or (ov is not None and ov < s["impulse_overlap_max"]):
+                out.update(state="cancelled", why=f"(b) शेवटचा आतला swing {lvl:,.1f} impulsive leg ने तुटला ⇒ जुना trend")
+                return out
+    conf = [p for p in pv if p["idx"] > x and p["kind"] == ("L" if d > 0 else "H") and (p["price"] - ep) * d > 0]
+    if conf:
+        out.update(state="new_trend", why=f"(c) नव्या दिशेत {'HL' if d > 0 else 'LH'} {conf[-1]['price']:,.1f} confirm ⇒ नवीन trend "
+                                          "(wave (2) setup ची वाट)")
+    return out
+
+
+def possible_reversal(fr, pv, imp, corr, mr, s, tr=None):
+    """POSSIBLE_REVERSAL (Abhi 2026-10-08, v2): impulse नंतरची counter-move impulse च्या ≥ reversal_retrace_min (38.2%) खोल **आणि**
+    impulsive (counter_score ≥ reversal_min_criteria). HTF protected तोडणारी counter-move ⇒ trend / testing प्रश्न ⇒ इथे नाही.
+    दोन counter legs तपासतो: (i) impulse टोक ⇒ correction टोक (पूर्ण counter-move); (ii) (i) नसेल / रद्द झाली असेल तर ताजा leg —
+    impulse दिशेचा शेवटचा confirmed swing ⇒ त्यानंतरचं टोक (उदा. 11 Aug: 10 Aug high ⇒ 11 Aug घसरण, impulse च्या 58%).
+    Flag चा शेवट फक्त रचनेने: (a) leg ची सुरुवात close ने पुन्हा ⇒ cancelled; (b) leg मधला शेवटचा आतला swing impulsive leg ने तुटला ⇒
+    cancelled; (c) नव्या दिशेत HL / LH confirm ⇒ new_trend (wave (2) setup). 61.8% परत गेल्याने flag संपत नाही (wave (2)).
+    रिटर्न {"state", "dir", retrace, score, criteria, reason, start, x_idx} किंवा None."""
+    if not imp or not corr or corr.get("extreme_ts") is None:
+        return None
+    d = -int(imp["dir"])
+    size = abs(float(imp["to"]) - float(imp["from"]))
+    prot = ((tr or {}).get("protected") or {}).get("price")
+    if size <= 0 or (tr or {}).get("state") == "testing":
+        return None
+    ts = pd.to_datetime(fr["timestamp"])
+    h, lo = fr["high"].to_numpy(float), fr["low"].to_numpy(float)
+    e = int(imp["end_idx"])
+    cands = []
+    x = int(np.searchsorted(ts.to_numpy(), np.datetime64(pd.Timestamp(corr["extreme_ts"]))))
+    if e + 1 < x < len(fr):
+        cands.append((e, float(imp["to"]), x))
+    ends = [p for p in pv if p["idx"] > e and p["kind"] == ("H" if d < 0 else "L")]           # impulse दिशेचे swings (counter ची सुरुवात)
+    if ends:
+        p = ends[-1]
+        if p["idx"] + 1 < len(fr):
+            seg = slice(p["idx"] + 1, len(fr))
+            x2 = p["idx"] + 1 + (int(np.argmax(h[seg])) if d > 0 else int(np.argmin(lo[seg])))
+            if x2 > p["idx"] + 1:
+                cands.append((p["idx"], float(p["price"]), x2))
+    best = None
+    full_checked = False
+    for i, (a, ap, xx) in enumerate(cands):
+        if i > 0 and full_checked and (best is None or best["state"] != "cancelled"):
+            break                                                          # ताजा leg फक्त पूर्ण counter-move रद्द झाल्यावर (C leg ≠ reversal)
+        xp = float(h[xx] if d > 0 else lo[xx])
+        depth = abs(float(imp["to"]) - xp) / size
+        if depth < s["reversal_retrace_min"]:
+            continue
+        cl = fr["close"].to_numpy(float)[a + 1:xx + 1]
+        if prot is not None and int((tr or {}).get("dir") or 0) == -d and len(cl) and ((cl - float(prot)) * d > 0).any():
+            continue                                                       # protected close ने तुटला ⇒ market_state trend / testing प्रश्न
+        st = _reversal_state(fr, pv, imp, a, ap, xx, mr, s)
+        full_checked = full_checked or a == e
+        if st is None:
+            continue
+        st["retrace"] = round(depth, 3)
+        st["leg"] = "full" if i == 0 and a == e else "latest"
+        best = st
+        if st["state"] != "cancelled":
+            break
+    if best is None:
+        return None
+    names = [k for k, v in best["criteria"].items() if v]
+    best["reason"] = (f"POSSIBLE_REVERSAL ({best['state']}): counter-move {best['retrace']:.0%} ({best['leg']} leg, {best['start']:,.1f} पासून), "
+                      f"impulsive {best['score']}/5 ({', '.join(names)})"
+                      + (f" · {best['why']}" if best.get("why") else " ⇒ जुन्या trend दिशेने trade नाही"))
+    return best
+
+
 def read(df1m, asof, s=None, es=None, run_elliott=True, frames=None):
     """Market state at `asof` (फक्त bar_end ≤ asof चे बंद bars). JSON-able dict.
     frames = full_frames(df1m) (ऐच्छिक, scan वेगवान): तेच bars asof ने कापून — df1m वरून काढल्यासारखंच उत्तर (test)."""
@@ -446,12 +604,15 @@ def read(df1m, asof, s=None, es=None, run_elliott=True, frames=None):
     imp = impulse(trade, pv_t, tr["dir"], mr, s) if len(pv_t) >= 2 else None
     corr = correction(trade, pv, imp, mr, s, es) if imp else None
     ew = elliott_vote(d1, asof, s["elliott_degrees"], es) if (run_elliott and imp) else {}
+    rev = possible_reversal(trade, pv, imp, corr, mr, s, tr)
     side, why = decide_side(tr, imp, corr, st_state, ew)
+    if rev and rev["state"] in ("active", "new_trend"):
+        side, why = "unclear", why + [rev["reason"]]
     mr_now = float(np.median((trade["high"] - trade["low"]).to_numpy(float)[-20:])) if len(trade) else float("nan")
     out = {"asof": asof, "tf": {"trend": s["trend_tf"], "trade": s["trade_tf"]}, "mr": round(mr_now, 2) if np.isfinite(mr_now) else None,
            "trend": {k: v for k, v in tr.items() if k != "swings"}, "trend_swings": tr["swings"][-8:],
            "structure_state": st_state, "structure_protected": st_prot,
-           "impulse": imp, "correction": corr, "elliott": ew, "side": side, "side_reasons": why,
+           "impulse": imp, "correction": corr, "elliott": ew, "side": side, "side_reasons": why, "possible_reversal": rev,
            "swings": pv[-12:], "tentative": tent}
     out["lines"] = lines(out)
     return out

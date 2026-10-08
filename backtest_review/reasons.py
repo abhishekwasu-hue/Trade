@@ -8,6 +8,12 @@ CODES = {
     "GRADE_C": "grade C (गुण कमी)",
     "NO_IMPULSE": "trade-degree impulse नाही",
     "SIDE_UNCLEAR": "F4: trend / structure / Elliott विरोध",
+    "NO_ZONE": "trade बाजूचा selling / buying zone नाही (§3)",
+    "FAR_FROM_ZONE": "reversal / entry zone पासून दूर (§3)",
+    "GAP_NO_PULLBACK": "trade दिशेचा gap, पहिला pullback नाही (K13 §8.1)",
+    "NO_CONFIRMATION": "zone वर rejection + ताकदीचा close नाही (§5)",
+    "DUP_SETUP": "याच correction वर आधीच entry (§8.3)",
+    "CHECKLIST_INCOMPLETE": "23 बाबींपैकी रिकामी (bug)",
     "NO_AREA": "active area नाही",
     "NO_PULLBACK_END": "pullback end (C / E) नाही",
     "NO_REVERSAL": "reversal candle नाही / अपुरी",
@@ -23,7 +29,14 @@ CODES = {
     "VETO_GAP_B": "A3 व्हेटो: gap B, pullback नाही",
     "OTHER": "इतर",
 }
-_PATTERNS = (                       # (substring in why line, code) — chart_reader मधल्या मजकुरानुसार
+_PATTERNS = (                       # (substring in why line, code) — chart_reader मधल्या मजकुरानुसार; code-prefixed ओळी आधी
+    ("CHECKLIST_INCOMPLETE", "CHECKLIST_INCOMPLETE"),
+    ("GAP_NO_PULLBACK", "GAP_NO_PULLBACK"),
+    ("NO_ZONE", "NO_ZONE"),
+    ("FAR_FROM_ZONE", "FAR_FROM_ZONE"),
+    ("NO_CONFIRMATION", "NO_CONFIRMATION"),
+    ("DUP_SETUP", "DUP_SETUP"),
+    ("SIDE_UNCLEAR", "SIDE_UNCLEAR"),
     ("impulse / बाजू नाही", "NO_IMPULSE"),
     ("active area नाही", "NO_AREA"),
     ("pullback end नाही", "NO_PULLBACK_END"),

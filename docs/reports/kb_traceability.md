@@ -259,3 +259,25 @@
 - F4 + HTF range (dir 0): side impulse वरून (विरोध नाही म्हणून) — Abhi ने स्पष्ट करायचं.
 - अजून market_state न वापरणारे: OE / PCS live trend; `structure.read` चा जुना finder फक्त `ms` नसताना (tests).
 
+
+## v3: KB दुरुस्त्या + Simple Core PR नंतर (2026-10-08)
+
+> Abhi: खरा निर्णय **Simple Core** (`simple_core/`: trend + area + pause + commitment ⇒ ENTRY SIGNAL; SL / target / instrument dashboard settings). खालील KB भाग जड chart_reader (shadow / context) मध्ये.
+
+| आधी ❌ / आंशिक | आता | Code | Test |
+|---|---|---|---|
+| A1.4 / A3: zone शिवाय entry | ✅ `NO_ZONE` / `FAR_FROM_ZONE` (reversal composite टोक ≤ 0.3 MR; close अंतर नियम नाही — Abhi) | `rules.zone_entry` | evaluate / golden |
+| A1.6, E17 gap chase | ✅ trade दिशेचा कुठलाही gap ⇒ पहिला pullback (`GAP_NO_PULLBACK`) | `gap.read`, `rules.check(gap_chase)` | `test_chart_reader_gap` (13) |
+| B3 / K4 selling–buying zones, state, freshness, reaction | ✅ जन्मावरून भूमिका + lifecycle | `zones.annotate` | `test_chart_reader_zones` (7) |
+| B4 / K9 / K10.1 / K12 candle-by-candle, absorption, zone story | ✅ | `candles.series / leg_read / zone_story` | `test_chart_reader_candles` (4) |
+| B4 / E6 / K5 sweep (gap bar) | ✅ pool अबाधित + sweep bar आतून | `evidence.liquidity` | `test_lq_gap_open_through_pool_is_not_a_sweep` |
+| B5 / K13 gap setups A/B/C, गोष्ट, G7 | ✅ (G7 स्वतंत्र scorecard) | `gap.read / story / g7` | gap tests (a–d) |
+| §5A checklist (23) | ✅ `CHECKLIST_INCOMPLETE` | `checklist.build` | evaluate test (23 भरलेल्या) |
+| §8.3 एक setup = एक entry | ✅ `DUP_SETUP` | `setups.SetupTracker` | `test_chart_reader_setups` |
+| §8.4 / K6.1 trendline स्थिर ओळख, real break एकच (भाग G) | ✅ memory + `breaks.first_real_break` (detrend) | `areas.sloping(keep)`, `setups.LineMemory`, `areas._line_state` | golden 7 Oct (09:30 = 12:15 रेषा) |
+| §8.5 charts: zones, gap, adaptive window, edge labels, candle खुणा | ✅ | `backtest_review/charts.py` | backtest review tests |
+| F4 gate (भाग G निर्णय) | ✅ code-mode `SIDE_UNCLEAR` | `evaluate` | `test_f4_side_unclear_is_a_code_mode_gate` |
+| Part H G7 | ✅ detector (scorecard), label checklist #22 | `gap.g7`, `evaluate._setups` | G7 tests (a–d) |
+
+अजून उघडे: K1 trend थकणं, K3 ending diagonal / combination, E16 X wave, टप्पा 6 correction channel break, chart_reader मध्ये σ strike,
+OE / PCS live trend market_state वर (K-10 नंतर), वेग: precompute (सध्या evaluate ~3 s, लक्ष्य ≤ 20 s आधीच पूर्ण — K-10 मध्ये मोजणी).
