@@ -7,6 +7,9 @@
   • Overlay नसलेली आवृत्ती (फक्त candles + swings नाहीत) — स्वतंत्र visual वाचनासाठी (§17.8), म्हणजे model ची नजर गणितावर अवलंबून नाही.
   • Dark theme, 1280×720 (image tokens ≈ 1,200 च्या आसपास मर्यादित).
 """
+import os
+import threading
+
 import numpy as np
 import pandas as pd
 
@@ -109,11 +112,15 @@ def build_figure(df, tf, symbol, labels=None, swings=None, overlay=True, title=N
 
 RENDER_ATTEMPTS = 2
 RENDER_RETRY_SEC = 2.0
+RENDER_TIMEOUT_SEC = float(os.environ.get("VISUAL_AUDIT_RENDER_TIMEOUT", 90))
+WARMUP_TIMEOUT_SEC = 60.0
 
 
 class KaleidoSession:
     """एका run साठी **एकच** Chrome (kaleido v1 sync server) — नाहीतर प्रत्येक `to_image` नवा Chrome सुरू करून बंद करतो (8 charts ⇒ 8 launch;
-    लहान RAM च्या VPS वर अपयशाचं कारण). `with KaleidoSession():` ⇒ शेवटी नेहमी cleanup (stop). Server सुरू न झाल्यास जुन्या oneshot पद्धतीने चालतं."""
+    लहान RAM च्या VPS वर अपयशाचं कारण). `with KaleidoSession():` ⇒ शेवटी नेहमी cleanup (stop). Server warm-up अयशस्वी ⇒ जुनी oneshot पद्धत.
+    Review (PR #274): kaleido चा `start_sync_server` कधीच raise करत नाही; Chrome सुरू न झाल्यास server thread मरतो पण `is_running()` True
+    राहतो आणि पुढचा `to_image` कायमचा अडकतो ⇒ warm-up render timeout सह, प्रत्येक render timeout सह, thread मेला / अडकला ⇒ server सोडून oneshot."""
 
     def __enter__(self):
         self.started = start_server()
@@ -124,33 +131,92 @@ class KaleidoSession:
         return False
 
 
-def start_server():
+def run_with_timeout(fn, sec):
+    """fn() वेगळ्या (daemon) thread मध्ये; sec पेक्षा जास्त ⇒ TimeoutError (अडकलेला thread मागे सोडतो — process अडत नाही)."""
+    box = {}
+
+    def run():
+        try:
+            box["v"] = fn()
+        except BaseException as exc:                                    # noqa: BLE001 — caller कडे परत
+            box["e"] = exc
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    th.join(sec)
+    if th.is_alive():
+        raise TimeoutError(f"{sec:.0f}s पेक्षा जास्त (kaleido / Chrome अडकलं)")
+    if "e" in box:
+        raise box["e"]
+    return box.get("v")
+
+
+def _server():
+    try:
+        from kaleido import _global_server
+        return _global_server
+    except Exception:
+        return None
+
+
+def server_running():
+    gs = _server()
+    try:
+        return bool(gs is not None and gs.is_running())
+    except Exception:
+        return False
+
+
+def server_healthy():
+    """server चालू **आणि** त्याचा thread जिवंत (Chrome सुरू न झाल्यास thread मरतो पण is_running() True राहतो)."""
+    gs = _server()
+    th = getattr(gs, "_thread", None)
+    return server_running() and th is not None and th.is_alive()
+
+
+def abandon_server():
+    """मेला / अडकलेला server join न करता सोडून देणे (join केल्यास तोच अडकतो) ⇒ पुढचे render oneshot (प्रत्येकी नवा Chrome)."""
+    gs = _server()
+    if gs is not None:
+        try:
+            gs._initialized = False                                     # noqa: SLF001 — kaleido 1.x singleton reset
+        except Exception:
+            pass
+
+
+def start_server(warmup_sec=WARMUP_TIMEOUT_SEC):
     try:
         import kaleido
         kaleido.start_sync_server(silence_warnings=True)
-        return True
     except Exception as exc:                                            # kaleido / Chrome नाही ⇒ oneshot (आधीसारखं)
         print(f"  ℹ️ kaleido server सुरू झाला नाही ({type(exc).__name__}) — प्रत्येक chart साठी स्वतंत्र Chrome")
+        return False
+    try:
+        import plotly.graph_objects as go
+        run_with_timeout(lambda: go.Figure().to_image(format="png", width=40, height=40), warmup_sec)
+        if not server_healthy():
+            raise RuntimeError("server thread मेला")
+        return True
+    except BaseException as exc:                                        # noqa: BLE001
+        print(f"  ℹ️ kaleido server warm-up अयशस्वी ({type(exc).__name__}: {str(exc)[:120]}) — oneshot पद्धत")
+        stop_server()
         return False
 
 
 def stop_server():
+    """चालू server बंद (join timeout सह); अडकलेला / मेलेला ⇒ abandon. कधीच raise / अडकत नाही."""
+    if not server_running():
+        return
+    if not server_healthy():
+        abandon_server()
+        return
     try:
         import kaleido
-        kaleido.stop_sync_server(silence_warnings=True)
-    except Exception:
-        pass
+        run_with_timeout(lambda: kaleido.stop_sync_server(silence_warnings=True), 15)
+    except BaseException:                                               # noqa: BLE001
+        abandon_server()
 
 
-def server_running():
-    try:
-        from kaleido import _global_server
-        return bool(_global_server.is_running())
-    except Exception:
-        return False
-
-
-def render_png(df, tf, symbol, labels=None, swings=None, overlay=True, title=None, attempts=RENDER_ATTEMPTS, sleep=None):
+def render_png(df, tf, symbol, labels=None, swings=None, overlay=True, title=None, attempts=RENDER_ATTEMPTS, sleep=None, timeout=None):
     """PNG bytes किंवा None (डेटा नाही / kaleido-Chrome नाही — कधीच raise नाही).
     🎓 2026-10-08: NIFTY 1H चा plain chart अयशस्वी झाला, तर त्याच frame चा overlay chart आधीच यशस्वी — म्हणजे kaleido / Chrome चं तात्पुरतं
     अपयश (1 GB VPS वर memory / timeout). म्हणून एकदा पुन्हा प्रयत्न, आणि प्रत्येक अपयशाचं कारण log मध्ये (आधी शांत None)."""
@@ -158,12 +224,18 @@ def render_png(df, tf, symbol, labels=None, swings=None, overlay=True, title=Non
         return None
     import time
     for k in range(max(1, int(attempts))):
+        if server_running() and not server_healthy():                   # मेलेला server ⇒ to_image कायमचा अडकेल ⇒ आधीच सोडा (oneshot)
+            print("  ⚠️ kaleido server thread मेला — oneshot पद्धत")
+            abandon_server()
         try:
-            return build_figure(df, tf, symbol, labels, swings, overlay, title).to_image(format="png", width=WIDTH, height=HEIGHT, scale=1)
+            fig = build_figure(df, tf, symbol, labels, swings, overlay, title)
+            return run_with_timeout(lambda: fig.to_image(format="png", width=WIDTH, height=HEIGHT, scale=1), timeout or RENDER_TIMEOUT_SEC)
         except Exception as exc:
             print(f"  ⚠️ render {symbol} {tf} {'overlay' if overlay else 'plain'} (प्रयत्न {k + 1}/{attempts}): {type(exc).__name__}: {str(exc)[:200]}")
+            if isinstance(exc, TimeoutError):
+                abandon_server()                                         # अडकलेला server ⇒ पुढे oneshot
             if k + 1 < attempts:
-                if server_running():                                    # अडकलेला / मेलेला Chrome ⇒ बंद करून नवा (cleanup), मग पुन्हा
+                if server_healthy():                                    # अडकलेला / मेलेला Chrome ⇒ बंद करून नवा (cleanup), मग पुन्हा
                     stop_server()
                     start_server()
                 (sleep or time.sleep)(RENDER_RETRY_SEC)

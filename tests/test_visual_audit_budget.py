@@ -82,10 +82,9 @@ def test_per_chart_skip_is_not_a_failure(vdb, monkeypatch):
 
 
 def test_kaleido_session_reuses_one_server_and_cleans_up(monkeypatch):
-    import kaleido
     ev = []
-    monkeypatch.setattr(kaleido, "start_sync_server", lambda **k: ev.append("start"))
-    monkeypatch.setattr(kaleido, "stop_sync_server", lambda **k: ev.append("stop"))
+    monkeypatch.setattr(R, "start_server", lambda: ev.append("start") or True)
+    monkeypatch.setattr(R, "stop_server", lambda: ev.append("stop"))
     with pytest.raises(RuntimeError):
         with R.KaleidoSession():
             raise RuntimeError("audit मध्ये चूक")
@@ -152,6 +151,72 @@ def test_main_reports_failed_charts_in_error_and_records_cost(vdb, monkeypatch, 
 
 def test_dashboard_spend_rows_sum_signal_and_visual():
     import page_vision_human_eye as P
-    day, month, rows = P.spend_rows({"signal": (0.04, 1.2, 3), "visual_audit": (0.09, 0.9, 4)}, {})
+    day, month, rows = P.spend_rows({"signal": (0.04, 1.2, 3), "visual_audit": (0.09, 0.9, 4)})
     assert round(day, 3) == 0.13 and round(month, 2) == 2.1 and rows[-1]["काम"] == "एकूण" and rows[-1]["आज calls"] == 7
     assert json.dumps(rows, ensure_ascii=False)
+
+
+def test_per_chart_cost_is_recorded_before_next_allow(vdb, monkeypatch):
+    """Review PR #274 (blocking 1): दुसऱ्या chart चा allow पहिल्या chart चा खरा खर्च पाहतो ⇒ उप-मर्यादा ओलांडत नाही."""
+    from opportunity_engine.visual_audit import jobs as J
+    from opportunity_engine.visual_audit import auditor as A
+    monkeypatch.setattr(J, "prepare_chart", lambda *a, **k: {"png_overlay": None, "png_plain": b"p", "labels": [], "lo": 0, "hi": 1,
+                                                               "components": {}})
+    monkeypatch.setattr(A, "audit_chart", lambda client, vcfg, symbol, tf, *a, **k: dict(rec(tf=tf, tin=19403, tout=4982, calls=2), run_id="r"))
+    model = "claude-opus-test"
+    allow = RVA.make_allow(model, g=G, today=pd.Timestamp("2026-10-09"))
+    skipped = []
+    out = J.audit_day(None, None, "NIFTY", "2026-10-09", {}, None, [], [], {}, None, ("1d", "1h"), allow=allow, skipped=skipped,
+                      on_chart=lambda r: RVA.record_usage(model, r))
+    spent = VUS.spent_by_task()["visual_audit"][0]
+    assert [r["tf"] for r in out] == ["1d"] and skipped and skipped[0][0] == "1h"
+    assert len(out) == 1 and spent > 0                                                     # 1d चा खरा खर्च (≈ $0.10) ⇒ 1h वगळला
+
+
+def test_allow_fails_closed_on_db_error():
+    def boom():
+        raise RuntimeError("database is locked")
+    allow = RVA.make_allow("claude-opus-test", g=G, by_task_fn=boom, today=pd.Timestamp("2026-10-09"))
+    ok, why = allow("1d")
+    assert not ok and "budget वाचता आलं नाही" in why
+
+
+def test_monthly_reserve_protects_signals_until_month_end():
+    g = {**G, "vision_monthly_budget_usd": 5.0}
+    # 9 Oct 2026 (शुक्र) नंतर ऑक्टोबरमध्ये 15 weekdays ⇒ राखीव $3.00 ⇒ audit साठी $2.00 पर्यंतच
+    assert RVA.remaining_weekdays(pd.Timestamp("2026-10-09")) == 15
+    ok, why = RVA.audit_allowed(0.05, g, {"signal": (0.0, 1.98, 0)}, today=pd.Timestamp("2026-10-09"))
+    assert not ok and "राखीव" in why
+    assert RVA.audit_allowed(0.05, g, {"signal": (0.0, 1.0, 0)}, today=pd.Timestamp("2026-10-09"))[0]
+    assert RVA.remaining_weekdays(pd.Timestamp("2026-10-30")) == 0
+
+
+def test_empty_symbols_setting_disables(vdb, monkeypatch):
+    monkeypatch.delenv("VISUAL_AUDIT_SYMBOLS", raising=False)
+    VC.save("_global", {"visual_audit_symbols": []}, "test")
+    assert RVA.symbols_setting() == []
+    with pytest.raises(ValueError):
+        VC.save("_global", {"signals_daily_reserve_usd": 0.50}, "test")                  # राखीव > दैनिक budget
+
+
+def test_render_timeout_does_not_hang_and_abandons_dead_server(monkeypatch):
+    """Review PR #274 (blocking 2): अडकलेला render ⇒ TimeoutError ⇒ None (process अडत नाही); मेलेला server thread ⇒ abandon."""
+    import time as _t
+    import plotly.graph_objects as go
+    df = pd.DataFrame({"timestamp": pd.date_range("2026-10-01 09:15", periods=30, freq="h"), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5})
+    df["bar_end"] = df["timestamp"] + pd.Timedelta(hours=1)
+    monkeypatch.setattr(go.Figure, "to_image", lambda self, **k: _t.sleep(5))
+    t0 = _t.monotonic()
+    assert R.render_png(df, "1h", "NIFTY", overlay=False, sleep=lambda s: None, timeout=0.2) is None
+    assert _t.monotonic() - t0 < 3
+    with pytest.raises(TimeoutError):
+        R.run_with_timeout(lambda: _t.sleep(2), 0.1)
+
+
+def test_start_server_falls_back_when_warmup_fails(monkeypatch):
+    import kaleido
+    calls = []
+    monkeypatch.setattr(kaleido, "start_sync_server", lambda **k: calls.append("start"))
+    monkeypatch.setattr(R, "run_with_timeout", lambda fn, sec: (_ for _ in ()).throw(TimeoutError("hung")))
+    monkeypatch.setattr(R, "stop_server", lambda: calls.append("stop"))
+    assert R.start_server() is False and calls == ["start", "stop"]

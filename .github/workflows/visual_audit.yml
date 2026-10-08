@@ -2,6 +2,8 @@ name: Visual Audit (Opportunity Engine — Dual-Eye, फक्त वाचन)
 
 # 🎓 PR-V: EOD visual audit VPS crontab वरून चालतो (deploy/README.md "PR-V" विभाग). हा workflow फक्त मॅन्युअल/backup (workflow_dispatch).
 # फक्त level_audit / level_audit_suggestions / visual_levels / visual_audit_runs tables लिहितो; कुठलाही order/bot नाही.
+# ⚠️ Budget: runner वरचा vision SQLite DB रिकामा ⇒ इथली budget तपासणी VPS चा खर्च पाहत नाही आणि इथला खर्च dashboard वर दिसत नाही
+#    (तरी प्रति run $0.10 उप-मर्यादा लागू). फक्त VPS cron बंद असताना मॅन्युअल backup म्हणून वापरा.
 # आवश्यक secrets: ANTHROPIC_API_KEY, VISUAL_AUDIT_MODEL (vision model id), SUPABASE_DB_URL. Chart images इथे runner वरच राहतात (persistent नाहीत).
 
 on:

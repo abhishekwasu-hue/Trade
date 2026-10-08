@@ -145,7 +145,7 @@ def render_settings():
             st.dataframe(pd.DataFrame(hist)[["ts", "bot", "by", "new_json"]].tail(20), use_container_width=True, hide_index=True)
 
 
-def spend_rows(by_task, g):
+def spend_rows(by_task):
     """{task: (आज $, महिना $, आज calls)} ⇒ (एकूण आज, एकूण महिना, ओळी) — signal audits + visual audit एकाच vision budget मध्ये."""
     names = {"signal": "Signal audit", "visual_audit": "Visual audit (EOD)"}
     day = sum(v[0] for v in by_task.values())
@@ -159,11 +159,11 @@ def render_spend():
     from vision import config as VC
     try:
         g = VC.load("_global")
-        day, month, rows = spend_rows(VS.spent_by_task(), g)
+        by = VS.spent_by_task()
+        day, month, rows = spend_rows(by)
     except Exception as exc:
         st.caption(f"खर्च वाचता आला नाही: {exc}")
         return
-    by = VS.spent_by_task()
     sig, va = (by.get("signal") or (0.0, 0.0, 0))[0], (by.get("visual_audit") or (0.0, 0.0, 0))[0]
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("Signals आज", f"${sig:.3f}", help=f"signals साठी राखीव किमान ${g['signals_daily_reserve_usd']}/दिवस")

@@ -82,9 +82,10 @@ def symbols_setting(cli=None):
             raw = VC.load("_global").get("visual_audit_symbols")
         except Exception:
             raw = None
-    raw = raw or DEFAULT_SYMBOLS
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = DEFAULT_SYMBOLS                                           # setting नाही ⇒ default; [] (dashboard वर सगळे काढले) ⇒ बंद
     items = raw.split(",") if isinstance(raw, str) else raw
-    return [s.strip().upper() for s in items if str(s).strip()]
+    return [str(s).strip().upper() for s in items if str(s).strip()]
 
 
 def call_cost(model, usage):
@@ -92,8 +93,12 @@ def call_cost(model, usage):
     return SA.cost_usd(model, usage)
 
 
+EST_OUT_TOKENS = 1500        # पहिल्या run चा अंदाज (खरी नोंद नसताना): प्रति call output tokens (actual सहसा ~700)
+
+
 def chart_estimate(model, by_task_rows=None):
-    """एका chart (overlay + स्वतंत्र) चा अंदाज $: मागच्या खऱ्या visual_audit नोंदींची सरासरी (असतील तर), नाहीतर jobs.estimate (सावध)."""
+    """एका chart (overlay + स्वतंत्र) चा अंदाज $: मागच्या (≤ 20) खऱ्या visual_audit नोंदींची सरासरी, नसतील तर jobs.estimate (1,500 output/call).
+    प्रत्येक chart नंतर खरा खर्च **लगेच** नोंदला जातो (review PR #274) ⇒ अंदाज कमी पडला तरी ओलांडणं जास्तीत जास्त एका chart चं."""
     rows = by_task_rows
     if rows is None:
         try:
@@ -103,12 +108,20 @@ def chart_estimate(model, by_task_rows=None):
         except Exception:
             rows = []
     rows = [float(x) for x in rows if x]
-    return sum(rows) / len(rows) if rows else call_cost(model, J.estimate(1))
+    return sum(rows) / len(rows) if rows else call_cost(model, J.estimate(1, out_tokens=EST_OUT_TOKENS))
 
 
-def audit_allowed(est, g, by_task):
+def remaining_weekdays(today):
+    """आजनंतर महिन्यात उरलेले सोम–शुक्र (signals चा मासिक राखीव भाग)."""
+    t = pd.Timestamp(today).normalize()
+    end = t + pd.offsets.MonthEnd(0)
+    return int(len(pd.bdate_range(t + pd.Timedelta(days=1), end))) if end > t else 0
+
+
+def audit_allowed(est, g, by_task, today=None):
     """Signals ला प्राधान्य (Abhi 2026-10-08): visual audit ला परवानगी फक्त जर
-      audit आज + est ≤ min(visual_audit_daily_cap, दैनिक budget − signals_daily_reserve_usd) · आजचा एकूण + est ≤ दैनिक · महिना + est ≤ मासिक.
+      audit आज + est ≤ min(visual_audit_daily_cap, दैनिक budget − signals_daily_reserve_usd) · आजचा एकूण + est ≤ दैनिक ·
+      महिना + est ≤ मासिक − signals_daily_reserve_usd × (महिन्यात उरलेले weekdays) (review PR #274: महिन्याच्या शेवटी signals उपाशी नकोत).
     by_task = vision store spent_by_task(). रिटर्न (ok, कारण)."""
     audit_day = (by_task.get("visual_audit") or (0.0, 0.0, 0))[0]
     day = sum(v[0] for v in by_task.values())
@@ -119,20 +132,35 @@ def audit_allowed(est, g, by_task):
                        f"(cap ${g['visual_audit_daily_cap']}, signals राखीव ${g['signals_daily_reserve_usd']})")
     if day + est > float(g["vision_daily_budget_usd"]) + 1e-12:
         return False, f"vision दैनिक budget: आज ${day:.3f} + अंदाज ${est:.3f} > ${g['vision_daily_budget_usd']}"
-    if month + est > float(g["vision_monthly_budget_usd"]) + 1e-12:
-        return False, f"vision मासिक budget: ${month:.2f} + अंदाज ${est:.3f} > ${g['vision_monthly_budget_usd']}"
+    if today is None:
+        today = pd.Timestamp(get_ist_now())
+        today = today.tz_convert("Asia/Kolkata").tz_localize(None) if today.tzinfo is not None else today
+    rest = remaining_weekdays(today)
+    m_allow = float(g["vision_monthly_budget_usd"]) - float(g["signals_daily_reserve_usd"]) * rest
+    if month + est > m_allow + 1e-12:
+        return False, (f"vision मासिक budget: ${month:.2f} + अंदाज ${est:.3f} > ${m_allow:.2f} (${g['vision_monthly_budget_usd']} − signals राखीव "
+                       f"${g['signals_daily_reserve_usd']} × {rest} उरलेले दिवस)")
     return True, ""
 
 
-def make_allow(model, g=None, by_task_fn=None):
-    """प्रत्येक chart आधी ताजी तपासणी (आधीच्या chart चा खर्च नोंदल्यानंतर)."""
-    from vision import config as VC
-    from vision import store as VUS
-    g = g or VC.load("_global")
-    est = chart_estimate(model)
+def make_allow(model, g=None, by_task_fn=None, today=None):
+    """प्रत्येक chart आधी ताजी तपासणी — आधीच्या chart चा खर्च `audit_day(on_chart=…)` मधून लगेच नोंदलेला असतो.
+    Vision DB / settings वाचता आलं नाही ⇒ **fail closed** (chart वगळा, कारणासह; raise नाही)."""
+    try:
+        from vision import config as VC
+        from vision import store as VUS
+        g = g or VC.load("_global")
+        est = chart_estimate(model)
+        fn = by_task_fn or VUS.spent_by_task
+    except Exception as exc:
+        why = f"vision budget वाचता आलं नाही ({type(exc).__name__}: {exc}) ⇒ audit नाही"
+        return lambda tf: (False, why)
 
     def allow(tf):
-        return audit_allowed(est, g, (by_task_fn or VUS.spent_by_task)())
+        try:
+            return audit_allowed(est, g, fn(), today)
+        except Exception as exc:
+            return False, f"vision budget वाचता आलं नाही ({type(exc).__name__}: {exc}) ⇒ chart वगळला"
     return allow
 
 
@@ -188,26 +216,29 @@ def run_symbol(symbol, token, vcfg, client, now, audit_date, tfs, fetch_fn=fetch
         return True, [f"{symbol}: dry-run — {n} charts, {est['calls']} calls, ≈ {est['input_tokens']:,} input + {est['output_tokens']:,} output tokens"], est
     feedback, _ = store_mod.load_feedback(symbol)
     skipped = []
+    lines, usage = [], {"input_tokens": 0, "output_tokens": 0, "calls": 0, "cost_usd": 0.0, "failures": [], "skipped": skipped}
+
+    def on_chart(rec):                                                  # खर्च **लगेच** (पुढच्या chart चा allow हा खर्च पाहतो)
+        if on_record is None:
+            return
+        try:
+            usage["cost_usd"] += float(on_record(rec) or 0.0)
+        except Exception as exc:                                        # खर्च नोंद अयशस्वी ⇒ audit थांबत नाही, पण अपयश म्हणून सांगतो
+            usage["failures"].append(f"{symbol} {rec['tf']}: खर्च नोंद (vision_usage) अयशस्वी — {type(exc).__name__}: {exc}")
     records = J.audit_day(client, vcfg, symbol, audit_date, snap.frames, snap.journal, levels, pool, states, now, tfs,
-                          load_fewshot(vcfg.fewshot), png_dir, log, allow=allow, skipped=skipped)
+                          load_fewshot(vcfg.fewshot), png_dir, log, allow=allow, skipped=skipped, on_chart=on_chart)
     res = CONS.classify(levels, pool, records, feedback)
     by_id = {z["level_id"]: z for z in levels if z.get("level_id")}
     store_mod.ensure_tables()
-    lines, usage = [], {"input_tokens": 0, "output_tokens": 0, "calls": 0, "cost_usd": 0.0, "failures": [], "skipped": skipped}
     for rec in records:
         VS.append_jsonl(cache, rec)
         saved = store_mod.save_record(rec, by_id, res["classes"], [v for v in res["visual_rows"] if v.get("tf") == rec["tf"]])
         for k in ("input_tokens", "output_tokens", "calls"):
             usage[k] += int(rec["usage"].get(k, 0))
-        if on_record is not None:
-            try:
-                usage["cost_usd"] += float(on_record(rec) or 0.0)
-            except Exception as exc:                                    # खर्च नोंद अयशस्वी ⇒ audit थांबत नाही, पण अपयश म्हणून सांगतो
-                usage["failures"].append(f"{symbol} {rec['tf']}: खर्च नोंद (vision_usage) अयशस्वी — {type(exc).__name__}: {exc}")
         usage["failures"] += failures_of(rec, bool(saved))
         lines.append(CONS.summary_text(symbol, rec, res["classes"]))
     have = {r["tf"] for r in records} | {tf for tf, _ in skipped}
-    usage["failures"] += [f"{symbol} {tf}: chart तयार झाला नाही (डेटा अपुरा)" for tf in tfs if tf not in have]
+    lines += [f"{symbol} {tf}: chart तयार झाला नाही (डेटा अपुरा — अपयश नाही)" for tf in tfs if tf not in have]
     lines += [f"{symbol} {tf}: वगळलं — {why}" for tf, why in skipped]
     for f in usage["failures"]:
         log(f"  ❌ {f}")
@@ -245,6 +276,9 @@ def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
     print(f"Visual audit — audit_date {audit_date} ({'pre-market' if args.pre_market else 'EOD'}), TFs {tfs}")
     all_ok, summary, total, failures = True, [], {"input_tokens": 0, "output_tokens": 0, "calls": 0, "cost_usd": 0.0}, []
     symbols = symbols_setting(args.symbols)
+    if not symbols:
+        print("ℹ️ Visual audit symbols रिकामे (dashboard वर बंद) — आज audit नाही.")
+        return 0
     print(f"Symbols: {', '.join(symbols)}")
     allow = None if args.dry_run else make_allow(vcfg.model)
     with R.KaleidoSession():                                            # एकच Chrome सगळ्या charts साठी, शेवटी cleanup

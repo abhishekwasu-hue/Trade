@@ -112,7 +112,7 @@ def validate(bot, s):
         if k in ("exit_advice", "vision_wait_for_bar_close"):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
         if k == "visual_audit_symbols":
-            v = [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
+            v = [str(x).strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
             bad = [x for x in v if x not in VISUAL_AUDIT_SYMBOLS]
             if bad:
                 raise ValueError(f"visual_audit_symbols: {bad} — {VISUAL_AUDIT_SYMBOLS} पैकी")
@@ -131,6 +131,9 @@ def validate(bot, s):
             if bad:
                 raise ValueError(f"{k}: अज्ञात नियम {bad} — {RULE_IDS[k]} पैकी")
         out[k] = v
+    if bot == "_global" and 0 < float(out["vision_daily_budget_usd"]) < float(out["signals_daily_reserve_usd"]):
+        raise ValueError(f"signals_daily_reserve_usd ({out['signals_daily_reserve_usd']}) ≤ vision_daily_budget_usd "
+                         f"({out['vision_daily_budget_usd']}) हवा — नाहीतर visual audit नेहमी गुपचूप वगळला जातो")
     return out
 
 
