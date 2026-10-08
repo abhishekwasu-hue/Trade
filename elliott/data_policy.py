@@ -6,8 +6,9 @@ elliott/data_policy.py
   IS            2015-01-01 → 2021-12-31   सगळं calibration (options P&L फक्त weekly options सुरू झाल्यापासून)
   VAL           2022-01-01 → 2024-03-31   IS मध्ये निवडलेल्या ≤ 3 configs; tuning नाही
   HOLDOUT       2024-04-01 → पुढे        sealed — फक्त शेवटी एकदाच, अंतिम एका config साठी
-  CONTAMINATED  2026-07-01 → 2026-10-06   golden-file regression (Abhi चे screenshots याच काळाचे; logic इथूनच ठरलं).
+  CONTAMINATED  2026-07-01 → 2026-10-08   golden-file regression (Abhi चे screenshots याच काळाचे; logic इथूनच ठरलं).
                                           फक्त purpose="golden" साठी; अंतिम holdout चाचणीतूनही **वगळायचा** (Abhi, 2026-10-06).
+                                          7–8 Oct जोडले (Abhi, 2026-10-08): Chart Reader ची "golden story" — फक्त illustration, tuning नाही.
 """
 import datetime as dt
 
@@ -19,11 +20,11 @@ VAL_START = pd.Timestamp("2022-01-01")
 VAL_END = pd.Timestamp("2024-03-31 23:59:59")
 HOLDOUT_START = pd.Timestamp("2024-04-01")
 CONTAMINATED_START = pd.Timestamp("2026-07-01")
-CONTAMINATED_END = pd.Timestamp("2026-10-06 23:59:59")
+CONTAMINATED_END = pd.Timestamp("2026-10-08 23:59:59")
 # सीमा नेहमी exclusive (`< पुढचा दिवस`) — sub-second/तास कुठलाही असला तरी period() आणि check_range() एकच उत्तर देतात
 _VAL_END_X = pd.Timestamp("2024-04-01")
 _IS_END_X = pd.Timestamp("2022-01-01")
-_CONT_END_X = pd.Timestamp("2026-10-07")
+_CONT_END_X = pd.Timestamp("2026-10-09")
 
 PURPOSES = ("research", "golden")
 

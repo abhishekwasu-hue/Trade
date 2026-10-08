@@ -8,7 +8,7 @@ Upstox डेटा public repo मध्ये push करायचा ना�
   python3 research/elliott_vps_data.py --repo /root/trade-data all
   उप-commands:
     probe-expired   Upstox expired-options API (Upstox Plus) तुमच्या account वर चालतो का + किती जुना डेटा
-    golden          NIFTY 1m, 2026-07-01 → 2026-10-06 (golden-file; हा काळ "contaminated", अंतिम holdout मधूनही वगळला).
+    golden          NIFTY 1m, 2026-07-01 → 2026-10-08 (golden-file; हा काळ "contaminated", अंतिम holdout मधूनही वगळला; 7–8 Oct = Chart Reader golden story).
                     बाजार बंद (15:30 IST) झाल्यानंतरच चालवा; अपूर्ण/गहाळ दिवस असतील तर ⚠️ आणि non-zero.
     major-levels    Major Level engine चे candles (research/major_levels_eval.py export) — public repo ऐवजी इथे; NSE index
                     candles मधून sealed holdout आपोआप काढतो (फक्त golden काळ + IS/VAL राहतो)
