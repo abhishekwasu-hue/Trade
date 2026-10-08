@@ -275,7 +275,7 @@ def audit_chart(client, cfg, symbol, tf, audit_date, png_overlay, png_plain, lab
         rec["usage"]["output_tokens"] += r.output_tokens
         rec["usage"]["calls"] += r.attempts
 
-    ov = CallResult(error="chart image नाही")
+    ov = CallResult(error="chart image नाही (render अयशस्वी — log मध्ये '⚠️ render' ओळ)")
     if png_overlay is not None and labels:
         params = build_request(cfg, "overlay", png_overlay, symbol, tf, labels, engine_state, fewshot)
         ov = call(client, params, "overlay", labels, price_lo, price_hi, cfg.retries)
@@ -287,7 +287,7 @@ def audit_chart(client, cfg, symbol, tf, audit_date, png_overlay, png_plain, lab
     elif not labels:
         ov = CallResult(status="SKIPPED", error="या chart वर audit करण्याजोगे levels नाहीत")
     rec["overlay"] = {"status": ov.status, "data": ov.data, "error": ov.error}
-    ind = CallResult(error="chart image नाही")
+    ind = CallResult(error="chart image नाही (render अयशस्वी — log मध्ये '⚠️ render' ओळ)")
     if png_plain is not None:
         ind = call(client, build_request(cfg, "independent", png_plain, symbol, tf), "independent", None, price_lo, price_hi, cfg.retries)
         add(ind)

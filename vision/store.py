@@ -291,6 +291,16 @@ def add_usage(task, model, usage, cost_usd, signal_id=None, path=None, ts=None):
                    int(usage.get("output_tokens", 0)), int(usage.get("cache_read", 0)), int(usage.get("cache_write", 0)), float(cost_usd)))
 
 
+def spent_by_task(path=None, ts=None):
+    """{task: (आजचा $, महिन्याचा $, आजचे calls)} — dashboard वर signal audits आणि visual audit एकत्र / वेगळे."""
+    t = ts or now_ist()
+    with connect(path) as c:
+        rows = c.execute("SELECT COALESCE(task,'?'), COALESCE(SUM(CASE WHEN day=? THEN cost_usd END),0), COALESCE(SUM(cost_usd),0), "
+                         "SUM(CASE WHEN day=? THEN 1 ELSE 0 END) FROM vision_usage WHERE month=? GROUP BY 1",
+                         (t.strftime("%Y-%m-%d"), t.strftime("%Y-%m-%d"), t.strftime("%Y-%m"))).fetchall()
+    return {r[0]: (float(r[1]), float(r[2]), int(r[3] or 0)) for r in rows}
+
+
 def spent(path=None, ts=None):
     """(आजचा $, या महिन्याचा $) — IST."""
     t = ts or now_ist()

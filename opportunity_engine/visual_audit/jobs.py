@@ -48,10 +48,21 @@ def prepare_chart(frames, journal, levels, tf, symbol, cutoff, bars=None, render
     return out
 
 
-def audit_day(client, vcfg, symbol, audit_date, frames, journal, levels, pool, states, cutoff, tfs=CHART_TFS, fewshot=None, png_dir=None, log=None):
-    """एका दिवसाचे सर्व TF charts audit. states = {tf: engine trend state}. रिटर्न records (JSON-योग्य)."""
+def audit_day(client, vcfg, symbol, audit_date, frames, journal, levels, pool, states, cutoff, tfs=CHART_TFS, fewshot=None, png_dir=None, log=None,
+              allow=None, skipped=None, on_chart=None):
+    """एका दिवसाचे सर्व TF charts audit. states = {tf: engine trend state}. रिटर्न records (JSON-योग्य).
+    allow(tf) ⇒ (ok, कारण): प्रत्येक chart आधी (budget); नाही ⇒ तो chart वगळला, `skipped` यादीत (tf, कारण) — API call नाही.
+    on_chart(rec): प्रत्येक audit झालेल्या chart नंतर **लगेच** (खर्च नोंद) ⇒ पुढच्या chart चा allow तो खर्च पाहतो (review PR #274)."""
     records = []
     for tf in tfs:
+        if allow is not None:
+            ok, why = allow(tf)
+            if not ok:
+                if skipped is not None:
+                    skipped.append((tf, why))
+                if log:
+                    log(f"  ⏭️ {symbol} {tf}: वगळलं — {why}")
+                continue
         ch = prepare_chart(frames, journal, levels, tf, symbol, cutoff)
         if ch is None:
             continue
@@ -65,6 +76,8 @@ def audit_day(client, vcfg, symbol, audit_date, frames, journal, levels, pool, s
                             ch["lo"], ch["hi"], fewshot)
         rec["components"] = ch["components"]
         records.append(rec)
+        if on_chart is not None:
+            on_chart(rec)
         if log:
             log(f"  {symbol} {tf}: overlay {rec['overlay']['status']}, स्वतंत्र {rec['independent']['status']}, tokens {rec['usage']['input_tokens']}/{rec['usage']['output_tokens']}")
     return records
