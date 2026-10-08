@@ -1415,3 +1415,61 @@ Deploy आधी 2 code दुरुस्त्या (Abhi चा नियम
   जाणीवपूर्वक ठेवलं: `legs.py` r_warn 0.80 (KB) ⇒ `level_strength` / `bot_view` / `leg_level_validation` च्या default LegConfig मध्ये 75–80% pullback आता
   MIXED (आधी DANGEROUS); PCS signal r_warn स्वतः देतो ⇒ बदल नाही. Roll नंतर 20-दिवस baseline जुन्या contract चा (खरा volume सलग ⇒ परिणाम लहान).
 **उघडे प्रश्न:** thresholds (60/45) वितरणानुसार; IS उदाहरणांमध्ये (flat/triangle) entry नसलेले A (R:R < 3) — target नियम योग्य वाटतो का.
+
+## 2026-10-08 · V-L0 — Vision-led नमुना चाचणी (टप्पा 0, TRADE_VISION_LED_PROMPT)
+**दिशा (Abhi):** "Vision-led" entry — vision trade निवडतो; code आकडे आणि सुरक्षा पाहतो. कारण: G-E1a code grade आठवड्याला ~0.03–0.05 setups.
+**काय केलं (`vision_led/`, `research/vision_led_sample.py`, live code नाही):**
+- Candidates (सैल, high recall): impulse ≥ 3 MR + BOS, pullback ≥ 38.2% (origin अबाधित), 12 साधनांपैकी कोणत्याही area पासून ≤ 0.5 MR,
+  बंद candle वर rejection (wick ≥ 0.4 किंवा CL ≥ 0.6), 09:30 नंतर; एकाच correction चे सलग bars ⇒ एक; cooldown 4 bars.
+  24 Sep → 8 Oct (contaminated) dry-run: 11 candidates, त्यात 7 Oct 14:00 (golden window).
+- `vision_led_v1`: chart (15M + code areas + trendlines तिरक्या, futures volume — rel_vol नसेल तर raw, 1H, line panel) + OHLC तक्ते (15M 60,
+  1H 20) + code areas (id, साधन, पट्टा, touches) + तटस्थ facts (confirmed swings, PDH/PDL/PDC, gap, volume आकडे) + playbook (KB चा English
+  सारांश, < 4k tokens, cache_control); temperature 0. **Anchoring नाही (Abhi):** code ची बाजू / grade / narrative vision ला दिली जात नाही
+  (test: code side बदलला तरी मजकूर तंतोतंत तोच). **No-lookahead:** input chart / तक्ते decision bar च्या close पर्यंतच (runtime assert + test).
+  JSON schema (trade, side, grade, area_id, story, entry/invalidation/target {price, ohlc_ref}, evidence, wrong_if).
+- Code validation: प्रत्येक ohlc_ref OHLC मध्ये (± 0.1 MR), entry = decision bar चा close, invalidation = ref + 0.25 MR buffer, बाजू सुसंगत,
+  R:R ≥ 3, पाच पक्के नियम, A3 व्हेटो, strike σ (माहिती). Annotated chart (entry bar पर्यंतच) + hindsight chart (पुढचे 2 दिवस, वेगळा);
+  REJECTED ⇒ रेषा नाहीत. Telegram "🧪 SAMPLE — trade नाही": एका संदेशात दोन images (entry-वेळचा annotated + hindsight), caption मध्ये code side
+  आणि vision side (≤ 20 संदेश; जास्त ⇒ A/B आधी + सारांश). अहवाल तक्ता: candidate | code side | vision side/grade | validation | R:R |
+  hindsight, आणि 7 Oct golden ची स्वतंत्र नोंद (golden "पकडला" = vision ची bear call, code ची बाजू नाही). खर्च ≤ $1.50 (पुढचा call ओलांडेल तर थांबतो).
+- PNG / JSON फक्त trade-data (`vision_led/<date>/`); public repo मध्ये फक्त अहवाल (मजकूर). Run VPS वर (API key, Telegram).
+**थांबा-बिंदू V-L0:** अहवाल + Telegram नमुने पाहून Abhi ची मंजुरी; तोपर्यंत टप्पा 1 नाही.
+
+## 2026-10-08 · C-V1 — CAS noise, एकच market state (F1–F4), cross-verification (TRADE_CODE_FIX_CROSSVERIFY_PROMPT)
+**का (Abhi):** 7 Oct 14:00 candidate ला code ने bull_put दिली — 6 Oct ची तेजी (22,220 → 22,720, ~86% overlapping ABC) impulse धरली.
+बरोबर वाचन: impulse 22,801 → 22,220, 22,801 protected LH अबाधित ⇒ trend down ⇒ bear_call.
+**CAS (`opportunity_engine/cas.py`, setting `config.yaml` → `market_data.cas_window`):**
+- NSE/CMTR/75479 (30 Jul 2026): CAS 3 Aug 2026 पासून (15:15–15:20 reference, 15:20–15:30 order entry, 15:30–15:35 matching). Data मध्ये
+  रोज 15:15–15:28 index गोठलेला आणि 15:28/15:29 ला auction close ची उडी (6 Oct: 22,717.70 → 22,776.10). 3 Aug आधी (IS 2015–2024 सकट)
+  असं काही नाही ⇒ `effective_from` 2026-08-03; window 15:15 ≤ bar start < 15:30. Hard-code नाही (DEFAULT फक्त circular चा fallback).
+- `sessions.resample_nse / resample_nse_daily(cas=…)`: CAS bars चे OHLC वगळून high/low/close; पूर्ण CAS bins structure मधून काढले
+  ("flat" पर्याय chart साठी); `official_close` (auction close) + `cas` flag. `daily_levels`: PDH/PDL CAS वगळून, **PDC = official close**
+  (chart_reader areas, vision gap_context, vision_led facts). elliott/swings 1m frame, chart_reader daily frame सुद्धा. Futures volume
+  bins (`opportunity_engine/volume.py`) CAS ने बदलत नाहीत (cas=False).
+- Data tests: 6 Oct high 22,731.85 (TradingView ~22,731) · PDC 22,776.10 · session बाहेर bars नाहीत · outlier flag (range > 5 × मागचा
+  non-flat median) 6 Oct 15:29 पकडतो, CAS वगळल्यावर शेवटच्या 15 मिनिटांत outlier नाही.
+- F2 तपासणी: CAS उडी सकट chart_reader चा impulse 23,163 → 22,570 (चुकीचा) होता; CAS वगळल्यावर 22,809 → 22,217 (बरोबर). म्हणजे खोट्या
+  high ने impulse / degree निवड बिघडवली होती. (6 Oct ची तेजी "impulse" ठरण्याचं मुख्य कारण मात्र counter_move_impulsive ⇒ reversal नियम — F2.)
+**Market state (`market_state/`, F1):** candidates (vision_led), chart_reader आणि vision facts हेच वापरतात.
+- F2 trend: 1H (setting 75m) swings (elliott/swings ATR × 1.5); protected = शेवटचा LL/HH बनवणाऱ्या leg ची सुरुवात; counter चाल protected चा
+  real break (elliott/breaks.py) **आणि** नंतर HL/LH confirmed होईपर्यंत correction; break पण पुष्टी नाही ⇒ "testing" (side unclear).
+- F3 impulse: displacement (body ≥ 1.5 MR, ≥ 60%) **आणि** कमी overlap (efficiency ratio ≥ 0.45 किंवा K10.1 overlap < 0.4 — KB चा 0.4
+  NIFTY 15M वर लागू होत नाही: 7 Oct impulse 0.62 ⇒ **Abhi मंजुरी हवी**) **आणि** BOS, ≥ 4 MR; trend दिशेचा सगळ्यात ताजा. Correction:
+  A / B / C (trade-degree swings; tentative B/C), retrace, origin real break ⇒ `origin_broken`.
+- F4 side: HTF trend, HTF StructureTracker state (*_WEAK = त्याच दिशेचा इशारा) आणि Elliott vote — विरोध ⇒ "unclear" + कारण.
+- chart_reader: `structure.read(ms=…)` (impulse + A/B/C market_state मधून; F2 नुसार फक्त origin real break = reversal, counter-impulsive /
+  major acceptance = PB −10 धोका), `trend.read(ms=…)`, side unclear ⇒ entry नाही. `evaluate.frame` = `market_state.frame`.
+- Areas: `sloping` आता शेवटच्या 16 आतल्या swings मधल्या जोड्यांतून सर्वोत्तम रेषा (touches, मग trade-degree touches, मग ताजेपणा) —
+  7 Oct उतरती रेषा 28 Sep 22,855 / 30 Sep 22,809 / 6 Oct 22,732 / 7 Oct 22,718 (4 touches) सापडते. `active`: ताजे 3 bars + शेवटच्या 12
+  bars मधलं trade-विरुद्ध टोक (12:00 चा rejection) ⇒ 14:00–14:45 active area = ती trendline.
+- vision_led: candidates `market_state` मधून (ad-hoc `impulse_at` काढला), code side = F4 (vision ला दिली जात नाही), तटस्थ facts =
+  market_state swings (15M + 1H). Prompt `vision_led_v2`: invalidation = idea जिथे चुकीची ठरते (active area / trendline पलीकडे);
+  tight SL ला `invalidation_reason`; 1H तक्ता 70 bars (~10 sessions). Validation: दोन SL व्याख्या (reversal-candle / structural) + R:R,
+  tight SL + कारण नाही ⇒ warning. Charts: annotated ≥ 10 sessions / anchors, vision area ठळक (trendline तिरकी + anchors), impulse origin
+  रेषा, दोन SL रेषा, "SIM" watermark (grade chart वर नाही), CAS राखाडी + "CAS".
+**Cross-verification:** V1 `docs/reports/kb_traceability.md` (KB → code → test → स्थिती + सुटलेल्यांची यादी) · V2 `tests/golden_chart_cases/`
+(7 Oct 14:00–15:00 आणि 5–6 Oct; JSON फक्त, data trade-data मध्ये; दोन्ही pass) · V5 `tests/test_market_state.py` (truncation / future bars /
+precomputed frames) · funnel C-V1 mode (`research/chart_reader_funnel.py`, `--legacy` तुलना; जुना अहवाल
+`chart_reader_funnel_legacy.md`) + 7 Oct SL उदाहरण. V4 (40 LABEL CHECK) ची जागा **Backtest visual review** (TRADE_BACKTEST_VISUAL_REVIEW_PROMPT,
+Abhi 18:20) ने घेतली — हा PR merge झाल्यावर वेगळा PR.
+**थांबा-बिंदू C-V1:** backtest visual review चं Abhi चं उत्तर — त्यानंतरच V-L0 run.

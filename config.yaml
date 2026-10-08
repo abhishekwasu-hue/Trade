@@ -77,3 +77,15 @@ strategies:
     primary_htf: "4h"           # bias = 4H, Daily = veto, 1H = पुष्टी ("1d" ने Daily primary)
     daily_veto: true
     consensus_mode: "off"       # 🎓 PR-V Dual-Eye: off (फक्त माहिती) | score | gate — backfill + 3 modes तुलना अहवालानंतरच बदला. Visual audit स्वतः env VISUAL_AUDIT_ENABLED ने चालू.
+
+# 🎓 Market data: NSE Closing Auction Session (CAS) — opportunity_engine/cas.py.
+# NSE/CMTR/75479 (30 Jul 2026): CAS 3 Aug 2026 पासून. Index 1m bars 15:15 पासून गोठतात आणि 15:28/15:29 ला auction close ची उडी छापतात
+# ⇒ structure (swings, areas, MR, PDH/PDL, candidates, real break) मधून त्या bars ची high/low वगळतो; official close (PDC) तसाच.
+market_data:
+  cas_window:
+    enabled: true
+    effective_from: "2026-08-03"
+    start: "15:15"              # bar-start वेळ, start ≤ t < end
+    end: "15:30"
+    chart: "grey"               # grey = राखाडी + "CAS" label | exclude = chart वरून वगळा
+    circular: "NSE/CMTR/75479 (2026-07-30): CAS 15:15–15:35 from 2026-08-03"

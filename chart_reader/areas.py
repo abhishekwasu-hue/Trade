@@ -45,36 +45,59 @@ def _line_state(d, a_bar, a_px, slope, role, mr, s, start):
     return state
 
 
+def _line_from(d, pts, a, b, kind, role, s, mr):
+    """anchors a, b (pivots) मधून रेषा: touches (सगळे pts मध्ये ± tl_touch_mr × MR), anchors-पासून-आत्तापर्यंत closes, spacing, slope."""
+    ts, c = d["timestamp"], d["close"].to_numpy(float)
+    slope = (b[1] - a[1]) / max(b[0] - a[0], 1)
+    tol = s["tl_touch_mr"] * mr
+    on = [p for p in pts if p[0] >= a[0] and abs(p[1] - (a[1] + slope * (p[0] - a[0]))) <= tol]
+    last_touch = max(p[0] for p in on)
+    seg = np.arange(a[0], last_touch + 1)
+    line = a[1] + slope * (seg - a[0])
+    beyond = (c[seg] - line) if kind == "H" else (line - c[seg])
+    spaced = all(on[i + 1][0] - on[i][0] >= s["tl_min_spacing"] for i in range(len(on) - 1))
+    valid = (len(on) >= 3 and not (beyond > s["tl_close_beyond_mr"] * mr).any() and spaced
+             and abs(slope) <= s["tl_max_slope_mr"] * mr)
+    v = a[1] + slope * (len(d) - 1 - a[0])
+    lo, hi = _zone(v, tol)
+    return {"id": f"TL-{'R' if role == 'RESISTANCE' else 'S'}{ts.iloc[a[0]]:%y%m%d%H%M}", "tool": "f", "kind": "solid", "role": role,
+            "slope": float(slope), "touches": int(len(on)), "valid": bool(valid), "value": float(v), "low": lo, "high": hi,
+            "state": _line_state(d, a[0], a[1], slope, role, mr, s, last_touch + 1),
+            "anchors": [(str(ts.iloc[p[0]]), round(p[1], 2)) for p in on], "last_touch": int(last_touch),
+            "quality": 0.8 if valid else 0.3}
+
+
 def sloping(df, s, mr, upto=None):
-    """शेवटचे 3 confirmed swing highs (resistance) / lows (support) ⇒ candidate रेषा **नेहमी** (≥ 3 pivots असताना).
-    valid (गुण मिळतात) फक्त: ≥ 3 touches (± tl_touch_mr × MR), anchors मध्ये कुठलाही close रेषेपलीकडे > tl_close_beyond_mr × MR नाही,
-    touches ≥ tl_min_spacing bars दूर, |slope| ≤ tl_max_slope_mr × MR प्रति bar. Anchor wicks वर, break चा निर्णय closes वर."""
+    """K6.1 sloping trendlines. (1) शेवटचे 3 confirmed swing highs / lows ⇒ candidate रेषा **नेहमी** (≥ 3 pivots असताना).
+    (2) शोध (C-V1, 7 Oct उतरती रेषा 28 Sep / 30 Sep / 7 Oct सुटली होती): शेवटच्या tl_search_pivots swings (आतले pivots, ATR ×
+        internal_atr_mult) मधल्या प्रत्येक जोडीतून रेषा; valid ⇒ सर्वाधिक touches, मग trade-degree swings वरचे touches जास्त, मग
+        सर्वात ताजा touch — प्रति role एक.
+    valid (गुण मिळतात) फक्त: ≥ 3 touches (± tl_touch_mr × MR), पहिल्या anchor पासून शेवटच्या touch पर्यंत कुठलाही close रेषेपलीकडे >
+    tl_close_beyond_mr × MR नाही, touches ≥ tl_min_spacing bars दूर, |slope| ≤ tl_max_slope_mr × MR प्रति bar. Anchor wicks वर, break closes वर."""
     d = (df if upto is None else df.iloc[: upto + 1]).reset_index(drop=True)
     if len(d) < 10 or not mr:
         return []
     piv = M.pivots(d, s["swing_atr_mult"])
-    ts, c = d["timestamp"], d["close"].to_numpy(float)
+    inner = M.pivots(d, s["internal_atr_mult"])
     out = []
     for kind, role in (("H", "RESISTANCE"), ("L", "SUPPORT")):
         pts = [p for p in piv if p[2] == kind][-3:]
-        if len(pts) < 3:
-            continue
-        a, b = pts[0], pts[-1]
-        slope = (b[1] - a[1]) / max(b[0] - a[0], 1)
-        on = lambda p: abs(p[1] - (a[1] + slope * (p[0] - a[0]))) <= s["tl_touch_mr"] * mr       # noqa: E731
-        touches = sum(on(p) for p in pts)
-        seg = np.arange(a[0], b[0] + 1)
-        line = a[1] + slope * (seg - a[0])
-        beyond = (c[seg] - line) if kind == "H" else (line - c[seg])
-        spaced = all(pts[i + 1][0] - pts[i][0] >= s["tl_min_spacing"] for i in range(len(pts) - 1))
-        valid = (touches >= 3 and not (beyond > s["tl_close_beyond_mr"] * mr).any() and spaced
-                 and abs(slope) <= s["tl_max_slope_mr"] * mr)
-        v = a[1] + slope * (len(d) - 1 - a[0])
-        lo, hi = _zone(v, s["tl_touch_mr"] * mr)
-        out.append({"id": f"TL-{'R' if role == 'RESISTANCE' else 'S'}{ts.iloc[a[0]]:%y%m%d%H%M}", "tool": "f", "kind": "solid", "role": role,
-                    "slope": float(slope), "touches": int(touches), "valid": bool(valid), "value": float(v), "low": lo, "high": hi,
-                    "state": _line_state(d, a[0], a[1], slope, role, mr, s, b[0] + 1),
-                    "anchors": [(str(ts.iloc[p[0]]), round(p[1], 2)) for p in pts], "quality": 0.8 if valid else 0.3})
+        if len(pts) >= 3:
+            out.append(_line_from(d, pts, pts[0], pts[-1], kind, role, s, mr))
+        cand = [p for p in inner if p[2] == kind and p[0] >= len(d) - int(s["tl_search_bars"])][-int(s["tl_search_pivots"]):]
+        major_pts = {(str(d["timestamp"].iloc[p[0]]), round(p[1], 2)) for p in piv if p[2] == kind}
+        best = None
+        for i in range(len(cand)):
+            for k in range(i + 1, len(cand)):
+                ln = _line_from(d, cand, cand[i], cand[k], kind, role, s, mr)
+                if not ln["valid"] or ln["state"] == "BROKEN":
+                    continue
+                major = sum(1 for an in ln["anchors"] if an in major_pts)      # trade-degree swings वरचे touches जास्त वजनाचे (K1)
+                key = (ln["touches"], major, ln["last_touch"], -abs(ln["slope"]))
+                if best is None or key > best[0]:
+                    best = (key, ln)
+        if best is not None and all(best[1]["anchors"] != x["anchors"] for x in out):
+            out.append(best[1])
     return out
 
 
@@ -267,7 +290,15 @@ def active(df, cands, side, s, mr, n_recent=3):
     """रिटर्न {area | None, quality 0–1, confluence [साधन letters], confluence_extra, touched_ids, intersection}."""
     want = "SUPPORT" if side > 0 else "RESISTANCE"
     recent = df.tail(int(n_recent))
-    lo, hi = recent["low"].to_numpy(float), recent["high"].to_numpy(float)
+    # K6.4: बाजार ज्या area ला react करतोय = ताजे bars **आणि** correction चं ताजं टोक (शेवटच्या active_extreme_bars मधलं
+    # trade-विरुद्ध टोक; 7 Oct: 12:00 चा 22,717.65 rejection, entry 14:30 ला) — त्या bar ने शिवलेला area सुद्धा
+    n = len(df)
+    win = df.tail(int(s.get("active_extreme_bars", n_recent)))
+    k = int(win["high"].to_numpy(float).argmax() if side < 0 else win["low"].to_numpy(float).argmin()) if len(win) else 0
+    ext = win.iloc[[k]] if len(win) else recent.iloc[:0]
+    both = pd.concat([recent, ext])
+    lo, hi = both["low"].to_numpy(float), both["high"].to_numpy(float)
+    back = (n - 1 - np.concatenate([np.arange(n - len(recent), n), [n - len(win) + k] if len(win) else []])).astype(float)
     out = {"area": None, "quality": 0.0, "confluence": [], "confluence_extra": 0, "touched_ids": [], "intersection": False}
     touched = []
     for z in cands:
@@ -275,7 +306,9 @@ def active(df, cands, side, s, mr, n_recent=3):
             continue
         if z.get("tool") == "f" and not z.get("valid"):
             continue
-        if ((lo <= z["high"]) & (hi >= z["low"])).any():
+        # trendline चं मूल्य त्या bar वर (शेवटच्या bar चं नाही — V3 review): band − slope × (मागे किती bars)
+        shift = float(z.get("slope") or 0.0) * back if z.get("tool") == "f" else 0.0
+        if ((lo <= z["high"] - shift) & (hi >= z["low"] - shift)).any():
             touched.append(z)
     out["touched_ids"] = [z["id"] for z in touched]
     if not touched:
@@ -332,8 +365,8 @@ def prior_levels(df1m, asof):
     d = df1m[pd.to_datetime(df1m["timestamp"]) < t.normalize()]
     if d.empty:
         return {}
-    g = d.groupby(pd.to_datetime(d["timestamp"]).dt.normalize()).agg(high=("high", "max"), low=("low", "min"), close=("close", "last"),
-                                                                     n=("close", "size"))
+    from opportunity_engine.cas import daily_levels
+    g = daily_levels(d)                                                  # CAS: PDH/PDL CAS bars वगळून; PDC = official close
     g = g[g["n"] >= 200]
     if g.empty:
         return {}

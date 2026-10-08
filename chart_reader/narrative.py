@@ -15,6 +15,8 @@ def build(r):
     el = r.get("elliott") or {}
     # टप्पा 1: मोठं चित्र
     L.append(f"[K1] {r['trend']['line']} · [K3] {el.get('line', 'Elliott: —')}")
+    if r.get("side_unclear"):
+        L.append("[F4] ⚠️ side unclear: " + "; ".join(r["side_unclear"]))
     # टप्पा 2: impulse / correction
     facts = st.get("facts") or []
     if facts:

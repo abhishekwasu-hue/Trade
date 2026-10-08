@@ -23,11 +23,11 @@ DEFAULTS = {"gap_g0_atr": 0.25, "gap_large_atr": 0.63, "gap_stretch_atr": 3.0, "
 
 
 def daily(cut):
-    """1m (cut) ⇒ दिवसनिहाय OHLC + bars संख्या."""
+    """1m (cut) ⇒ दिवसनिहाय OHLC + bars संख्या (opportunity_engine/cas.py::daily_levels — CAS high/low वगळून, PDC = official close)."""
     if cut is None or len(cut) == 0:
         return pd.DataFrame(columns=["open", "high", "low", "close", "n"])
-    g = cut.groupby(cut["timestamp"].dt.normalize())
-    return g.agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"), n=("close", "size"))
+    from opportunity_engine.cas import daily_levels
+    return daily_levels(cut)[["open", "high", "low", "close", "n"]]          # CAS: high/low CAS bars वगळून, close = official close (PDC)
 
 
 def atr14(prior):

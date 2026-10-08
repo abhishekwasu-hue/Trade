@@ -102,6 +102,7 @@ DEFAULTS = {
     "flat_c_min": 0.90,                # flat C-end: C ≥ 0.9 × A (C ने A एवढं अंतर; नाहीतर C चालू)
     "retrace_max": 0.80,               # pullback valid खोली कमाल (Abhi / KB: 38.2–80%); पलीकडे ⇒ unclear
     "retrace_lo": 0.382,               # 38.2% — त्याखाली "उथळ" (फक्त fact)
+    "c_end_back_max": 0.618,           # C-end: C च्या टोकापासून परत आलेलं अंतर ≤ हे × C (market_state A/B/C; C-V1)
     "origin_break_buffer_mr": 0.25,    # impulse origin real break: close origin ∓ हे × MR पलीकडे
     "disp_body_mr": 1.5,               # displacement candle: body ≥ हे × MR आणि body% ≥ disp_body_frac
     "disp_body_frac": 0.6,
@@ -112,7 +113,10 @@ DEFAULTS = {
     "tl_touch_mr": 0.2,                # K6.1: touch = pivot रेषेपासून ± हे × MR
     "tl_close_beyond_mr": 0.3,         # K6.1: anchors मध्ये कुठलाही close रेषेपलीकडे > हे × MR नाही
     "tl_min_spacing": 6,               # K6.1: touches एकमेकांपासून ≥ इतके bars
-    "tl_max_slope_mr": 0.5,            # K6.1: |slope| ≤ हे × MR प्रति bar
+    "tl_max_slope_mr": 0.5,
+    "tl_search_pivots": 16,            # K6.1 शोध: शेवटच्या इतक्या आतल्या swings मधल्या जोड्या (C-V1)
+    "tl_search_bars": 200,             # … आणि फक्त शेवटच्या इतक्या bars मधले (15M ⇒ 8 sessions)
+    "active_extreme_bars": 12,         # K6.4: active area = ताजे bars + शेवटच्या इतक्या bars मधलं trade-विरुद्ध टोक (C-V1)            # K6.1: |slope| ≤ हे × MR प्रति bar
     "disp_single_mr": 2.5,             # K4: एकच displacement candle ≥ हे × MR
     "base_max_range_mr": 0.8,          # K4: base candle range ≤ हे × MR
     "base_max_height_mr": 1.5,         # K4: base zone उंची ≤ हे × MR

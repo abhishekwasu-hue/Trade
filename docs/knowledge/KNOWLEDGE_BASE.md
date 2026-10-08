@@ -42,6 +42,7 @@
 - **भाग E:** नेहमीच्या चुका (checklist)
 - **भाग F:** प्रामाणिक मर्यादा: काय सिद्ध आहे, काय नाही
 - **भाग G:** विरोधाभासांचे निर्णय (एकच व्याख्या)
+- **भाग H:** Golden setups G1–G7
 - **स्रोत**
 
 ---
@@ -782,7 +783,7 @@
 - **A:** trend विरुद्ध gap अपयशी ⇒ trend दिशेने reversal.
 - **B:** trend सोबत मोठा gap ⇒ पहिल्या pullback ची वाट (gap edge / PDC). Pullback नाही तर trade नाही.
 - **C:** जुन्या न भरलेल्या gap ची कड (कमकुवत, confluence फक्त).
-- **D:** exhaustion fade, **OFF.**
+- **D → G7: Exhaustion gap reversal (Abhi, 2026-10-08; PAPER मध्ये ON, स्वतंत्र scorecard):** trend दिशेने stretched चालीनंतर अचानक मोठा gap थेट **major (HTF) supply/demand zone** मध्ये उघडतो, zone hit होतो, आणि त्याच दिवशी short covering / recovery येते. अटी खाली भाग H (G7) मध्ये. Open वर entry कधीच नाही; rejection ची पुष्टी आणि पहिला pullback आल्यावरच.
 - **नाकारलेले:** gap-and-go, ORB, पहिल्या candle चा break, FVG entries.
 
 **गोष्ट म्हणून वाचन (Abhi, 7 Oct):** आदल्या दिवशीची **कमकुवत तेजी + आज gap down = कमजोरीची पुष्टी.** मग gap भरण्यासाठीची तेजी ही sellers ची दुसरी संधी.
@@ -935,6 +936,36 @@
 | Strike model expiry | NIFTY मंगळवार (table DTE-आधारित) |
 | Gap थ्रेशोल्ड | ATR14 (daily) च्या पटीत, fixed % नाही |
 | Levels चा edge | Area = कुठे पाहायचं; strike = σ-अंतर |
+
+---
+
+# भाग H: Golden setups G1–G7 (Abhi ने मंजूर केलेले, 2026-10-08)
+
+> सगळ्यांमध्ये समान 5 गोष्टी:
+> 1. स्पष्ट impulse (BOS);
+> 2. corrective pullback (3 waves, overlap, origin अबाधित);
+> 3. खऱ्या area मध्ये शेवट (demand, flip, trendline, liquidity; Fibonacci फक्त सोबतीला);
+> 4. reversal candle बंद (sweep आणि reclaim असेल तर अधिक चांगलं);
+> 5. invalidation जवळ आणि स्पष्ट ⇒ R:R ≥ 3. Breakout चा पाठलाग नाही.
+
+| # | Setup | ओळख | Entry | Invalidation | Chapter |
+|---|---|---|---|---|---|
+| **G1** | Zigzag wave 2 / ABC चा शेवट | धारदार impulse → A-B-C. C ≈ A. 50–61.8% (80% पर्यंत) retrace, **आणि तिथे आधीचा demand / base** | C-end ला reversal candle बंद झाल्यावर | Impulse origin (wave 1 सुरुवात) | K3, K4, K7 |
+| **G2** | Expanded flat: C, A चा low/high तोडून परत (spring / upthrust) | B > 105% A (सापळा). C, A च्या टोकापलीकडे sweep करून परत आत close | Sweep नंतरची पहिली मजबूत candle | C चं टोक | K3, K5, K12 |
+| **G3** | Triangle (wave 4 / B): E चा शेवट | आकुंचन पावणारे 5 legs (3-3-3-3-3). E undershoot किंवा throw-over | E-end ला reversal. Triangle breakout वर नाही. | C चं टोक | K3 |
+| **G4** | Role flip retest | तुटलेला support (आता resistance) किंवा उलट. त्यावर pullback, **कमी volume**, rejection wick / engulfing | Rejection candle बंद झाल्यावर | Flip zone पलीकडे real break | K4, K5, K10.3 |
+| **G5** | Ending diagonal C + trendline / resistance | C wedge सारखा: लहान होत जाणारे, overlapping legs. Trendline / area वर संपतो. Gap ची पुष्टी असेल तर अधिक मजबूत (7 Oct 2026). | Area वर reversal candle | Diagonal चं टोक | K3, K6, K13 |
+| **G6** | Trend मधला साधा pullback demand वर | HH/HL स्पष्ट. Pullback संथ, overlapping, कमी volume. Displacement च्या आधीच्या base वर. | Hammer / engulfing बंद झाल्यावर | Base पलीकडे | K1, K2, K4, K9 |
+
+| **G7** | Exhaustion gap reversal (major zone मध्ये gap) | (1) Trend stretched: शेवटचा leg ATR च्या पटीत लांब, legs लहान होत जाणं / divergence / Elliott 5 किंवा C च्या शेवटाची शक्यता; (2) trend दिशेने मोठा gap (G5 / E) थेट **major HTF zone** मध्ये (D2/D3 demand / supply, न तुटलेला); (3) पहिल्या 2–6 bars मध्ये **rejection**: gap extension अपयशी, zone मध्ये लांब wick, close परत open च्या पलीकडे / gap edge reclaim, futures volume climax पण प्रगती नाही (absorption) | Rejection नंतरचा **पहिला pullback** (higher low / lower high) zone वर टिकल्यावर reversal candle. Opening window मध्ये आणि पहिल्या रिकव्हरी candle वर entry नाही. | Gap दिवसाचं टोक (zone च्या पलीकडे) + buffer. Target: PDC / gap fill (Bulkowski: exhaustion gaps 60–66% आठवड्यात भरतात). | K13, K4, K5, K10, K12, K3 |
+
+> **G7 टीप:** अनेकदा हा gap मोठ्या degree च्या correction चा C-end असतो, म्हणजे मोठ्या trend मधला pullback संपतोय. मग हा सुद्धा "pullback end" च. पण मोठ्या trend विरुद्ध असेल तर तो counter-trend trade; evidence T लागू, आणि scorecard वेगळा. Event दिवशी जास्त काटेकोर.
+
+**वापर:**
+- Vision playbook मध्ये ही 7 नावं आणि ओळख (मजकूर म्हणून).
+- Vision JSON मध्ये `setup_type` (G1–G7 किंवा none).
+- Code candidates वर setup label.
+- Golden Gallery मधले Abhi ने निवडलेले खरे NIFTY charts या प्रत्येकाची उदाहरणं.
 
 ---
 

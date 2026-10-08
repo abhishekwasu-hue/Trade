@@ -22,8 +22,10 @@ def _map(state):
     return "unclear", "unclear"
 
 
-def read(frames, tfs, lookback=60):
-    """frames = {tf: बंद bars}; tfs = HTF क्रम (मोठा आधी). रिटर्न {htf, trend_strength, at_range_edge, states{tf: state}, line}."""
+def read(frames, tfs, lookback=60, ms=None):
+    """frames = {tf: बंद bars}; tfs = HTF क्रम (मोठा आधी). रिटर्न {htf, trend_strength, at_range_edge, states{tf: state}, line}.
+    ms (market_state, F1/F2) दिला ⇒ दिशा तिथून: protected swing च्या real break + पुष्टी पर्यंत trend तोच; structure state *_WEAK /
+    real break (testing) ⇒ "weakening". states फक्त नोंद."""
     states = {}
     for tf in tfs:
         df = frames.get(tf)
@@ -31,9 +33,16 @@ def read(frames, tfs, lookback=60):
             states[tf] = trend_state(df, tf)
     main = next((states[tf] for tf in tfs if tf in states), None)
     htf, strength = _map(main)
+    if ms is not None:
+        t = ms["trend"]
+        htf = {1: "up", -1: "down"}.get(t["dir"], "range")
+        weak = t["state"] == "testing" or str(ms.get("structure_state", "")).endswith("_WEAK")
+        strength = "unclear" if htf == "range" else ("weakening" if weak else "strong")
+        states = {f"{ms['tf']['trend']} (market_state)": f"{htf}/{t['state']}", **states}
     edge = False
-    if htf == "range":
-        df = frames[next(tf for tf in tfs if tf in states)].tail(lookback)
+    first = next((tf for tf in tfs if frames.get(tf) is not None and len(frames[tf]) >= 10), None)
+    if htf == "range" and first is not None:
+        df = frames[first].tail(lookback)
         hi, lo, c = float(df["high"].max()), float(df["low"].min()), float(df["close"].iloc[-1])
         edge = hi > lo and ((c - lo) / (hi - lo) <= 0.15 or (hi - c) / (hi - lo) <= 0.15)
     line = f"HTF trend {htf} ({strength})" + (" · range edge" if edge else "") + (f" · {', '.join(f'{k} {v}' for k, v in states.items())}"

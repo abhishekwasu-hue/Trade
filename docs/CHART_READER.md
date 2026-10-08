@@ -66,3 +66,10 @@ Entry फक्त: पक्के नियम पास + entry point + rever
 - `research/chart_reader_ge1a_report.py` ⇒ `docs/reports/chart_reader_ge1a_kb.md`: MR-आधारित आकड्यांचं calibration, IS grade वितरण,
   reversal दिवस, 7 Oct golden.
 - `research/chart_reader_examples.py` ⇒ `docs/reports/chart_reader_examples.md`: golden + IS flat C-end + IS triangle E-end (charts gitignored).
+
+## Market state (C-V1, F1–F4)
+Trend / impulse / correction (A/B/C) / side आता `market_state/` मधून (एकच module — candidates, chart_reader, vision facts):
+HTF (1H; setting 75m) protected swing + real break (`elliott/breaks.py`) + HL/LH पुष्टी (F2) · impulse = displacement + कमी overlap + BOS
+(F3) · side = trend / HTF structure state / Elliott vote सुसंगत, नाहीतर "unclear" (F4 ⇒ entry नाही). `structure.read(ms=…)` मध्ये फक्त
+impulse origin चा real break = reversal; बाकी reversal चिन्हं PB −10 धोका. CAS bars (`opportunity_engine/cas.py`) structure मधून वगळले,
+PDC = official close. Traceability: `docs/reports/kb_traceability.md`; golden: `tests/golden_chart_cases/`.

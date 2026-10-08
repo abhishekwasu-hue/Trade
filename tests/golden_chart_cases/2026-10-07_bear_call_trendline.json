@@ -1,0 +1,18 @@
+{
+  "id": "2026-10-07_bear_call_trendline",
+  "source": "Abhi 2026-10-08 (TRADE_CODE_FIX_CROSSVERIFY_PROMPT §3 V2)",
+  "data": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
+  "data_policy": "contaminated — regression only, no tuning",
+  "window": {"from": "2026-10-07 14:00", "to": "2026-10-07 15:00", "step_min": 15},
+  "tolerance_pts": 15,
+  "expect": {
+    "trend": {"dir": "down", "protected": 22805},
+    "impulse": {"dir": "down", "from": 22805, "to": 22220},
+    "correction": {"dir": "up", "labels": ["A", "B", "C"], "c_top_range": [22700, 22740], "status_in": ["correction"]},
+    "active_area": {"tool": "f", "slope": "down", "value_range": [22700, 22730],
+                    "anchors_near": [["2026-09-28", 22850], ["2026-09-30", 22805], ["2026-10-07", 22715]],
+                    "zone": [22700, 22730]},
+    "side": "bear_call"
+  },
+  "notes": "Impulse = 22,801→22,220 (fast, displacement, BOS). Rally = overlapping ABC (~86% retrace), C ending-diagonal-like, top ~22,715 (7 Oct; 6 Oct ~22,731). 22,801 protected LH intact ⇒ trend down ⇒ bear_call. Active area = descending trendline 28 Sep ~22,850 / 30 Sep ~22,801 / 7 Oct ~22,715 + horizontal 22,700–22,730."
+}

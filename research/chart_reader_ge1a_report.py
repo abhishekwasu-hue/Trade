@@ -26,6 +26,7 @@ from chart_reader import measures as M        # noqa: E402
 from chart_reader import settings as CS       # noqa: E402
 from chart_reader import structure as ST      # noqa: E402
 from elliott import data_policy as DP         # noqa: E402
+import market_state as MS                      # noqa: E402
 
 REPORT = os.path.join(ROOT, "docs", "reports", "chart_reader_ge1a_kb.md")
 OUT_JSON = os.path.join(ROOT, "data", "research", "chart_reader_ge1a_kb.json")
@@ -151,11 +152,14 @@ def calibration(trig, s):
 # ---------------------------------------------------------------------------------------------------------------------
 # 2. IS grade distribution
 # ---------------------------------------------------------------------------------------------------------------------
-def candidates(trig, s, step=1):
+def candidates(trig, s, step=1, m1=None):
+    """C-V1: impulse / A-B-C market_state मधून (m1 दिला तर; F1)."""
+    fr = MS.full_frames(m1) if m1 is not None else None
     found = []
     for j in range(300, len(trig), step):
         w = trig.iloc[j - 300:j + 1].reset_index(drop=True)
-        r = ST.read(w, s)
+        ms = MS.read(m1, trig["bar_end"].iloc[j], run_elliott=False, frames=fr) if fr is not None else None
+        r = ST.read(w, s, ms=ms)
         if r["entry_point"]:
             found.append((trig["bar_end"].iloc[j], r["correction_type"]))
     return found
@@ -274,7 +278,7 @@ def main(argv=None):
     res["calibration"] = calibration(trig, s)
     res["calib_sec"] = round(time.time() - t0, 1)
     t0 = time.time()
-    cands = candidates(trig, s)
+    cands = candidates(trig, s, m1=m1)
     res["n_candidates"], res["scan_sec"] = len(cands), round(time.time() - t0, 1)
     t0 = time.time()
     res["distribution"] = distribution(m1, cands, s, a.sample)
