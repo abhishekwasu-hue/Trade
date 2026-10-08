@@ -59,7 +59,7 @@ class LegConfig:
     d_body: float = 0.6                # displacement: body% ≥ d_body
     fvg_min: float = 0.1               # FVG/imbalance मोजण्यासाठी किमान आकार (× median_range) — सूक्ष्म gaps गोंगाट
     r_ok: float = 0.5                  # HEALTHY: depth कमाल
-    r_warn: float = 0.75               # DANGEROUS: depth > r_warn
+    r_warn: float = 0.80               # DANGEROUS: depth > r_warn (Abhi / KB भाग G, 2026-10-08: valid pullback 38.2–80%; आधी 0.75)
     s_ratio: float = 0.8               # HEALTHY: speed < impulse speed × s_ratio
     healthy_max_dir: float = 0.8       # HEALTHY: "रंग मिश्र" ⇒ leg-दिशेचे candles ≤ 80%
     e_range: float = 0.15              # RANGE
