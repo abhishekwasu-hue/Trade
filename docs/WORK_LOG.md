@@ -1520,3 +1520,18 @@ Abhi 18:20) ने घेतली — हा PR merge झाल्यावर 
 **थांबा-बिंदू:** C-V1 (backtest review अहवाल) आणि G-GAL (Abhi ची निवड) — मग V-L0.
 **क्रम बदल (Abhi 19:30, TRADE_KB_FULL_IMPLEMENTATION_PROMPT):** हा PR फक्त साधनं (code + page + tests). पूर्ण review (125 दिवस) आणि
 Gallery runs **K-10** (10 random दिवस, KB दुरुस्त्यांनंतर) चांगले दिसल्यावरच. G7 detector KB दुरुस्ती PR मध्ये (gap नियमासोबत).
+
+## 2026-10-08 · Review charts ⇒ Telegram (VPS वरून) + ✔ / ✘ replies ⇒ backtest_review
+**का (Abhi):** K-10 / Golden Gallery / backtest review चे charts phone वर पाहायचे; Approve बटण नाही, reply मध्ये ✔ / ✘ कारण / सुटलेला trade.
+- Charts + manifest फक्त private trade-data: `review/<kind>/<run_id>/manifest.json` ({run_id, title, items[n, date, item, reading, files]}).
+  K-10 run1 (10 दिवस: 1H + 15M, signal दिवसांचा trade chart) तिथे push केला.
+- `backtest_review/telegram.py` + `scripts/send_review_to_telegram.py`: trade-data pull ⇒ manifest ⇒ प्रत्येक item एक media group, caption
+  "🔎 K-10 दिवस n/N · तारीख" + एका ओळीत वाचन. Sent log (VPS local `data/review_tg_sent.json`) ⇒ duplicate नाही; संदेशांमध्ये 3 s विराम;
+  Telegram ने नाकारलं ⇒ लहान (JPEG 60%) करून एकदा. Token / chat id नाहीत ⇒ स्पष्ट error (token कधीच print नाही).
+- Replies: सध्याचा listener (`vision/telegram_bot`, getUpdates) — sent log मधल्या संदेशाला approver चा reply ⇒ `parse_reply` (✔ OK / ✘ WRONG /
+  ? UNCLEAR / "सुटलेला trade HH:MM bear|bull" ⇒ missed; वेळ / बाजू अस्पष्ट ⇒ ❓, नोंद नाही) ⇒ `backtest_review` (item_id = manifest item:
+  K-10 ⇒ "k10/run1|day:…", backtest review ⇒ "day:…" / "trade:…" page शी जुळणारे; settings_hash = run) ⇒ "नोंद ✓". इतरांचे replies दुर्लक्षित.
+- Telegram चुका: 429 ⇒ retry_after थांबून तेच; 400 / 413 ⇒ लहान करून एकदा; network ⇒ पुन्हा नाही (duplicate album टाळा). Sent log खराब ⇒
+  sender थांबतो; ProcessLock ⇒ एका वेळी एक sender. Independent review: 9 findings (ids, 429, files 1–10, parser edge cases, sent log,
+  caption UTF-16, README restart wording, stderr redaction) — सगळे दुरुस्त + tests; manifest writer K-10 runner मध्ये Simple Core PR सोबत. Listener restart ⇒ फक्त उघडे vision PENDING_HUMAN रद्द (आधीसारखं); PAPER exits ला हात नाही.
+- याच PR मध्ये Backtest Review page + Golden Gallery साधनं (आधीचा local commit).

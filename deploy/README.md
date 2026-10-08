@@ -1040,3 +1040,12 @@ journalctl -u vision_telegram.service -n 20 --no-pager
 - Dashboard: ANALYZE → "Backtest Review" (दिवस / trades ✔ / ✘ / ?, सुटलेला trade; "⭐ Golden Gallery" tab). Supabase tables
   `backtest_review`, `golden_gallery` पहिल्या save वर आपोआप बनतात.
 - Abhi च्या review नंतर: `python3 research/review_report.py` ⇒ `docs/reports/backtest_visual_review.md`, `docs/reports/golden_gallery.md`.
+
+### Review charts ⇒ Telegram (K-10 / Golden Gallery / backtest review)
+Charts फक्त private trade-data मध्ये (`review/<kind>/<run_id>/`). पाठवणं फक्त VPS वरून (token `.env` मध्ये):
+```bash
+cd /root/Trade && python3 scripts/send_review_to_telegram.py --run review/k10/run1      # trade-data pull + न पाठवलेले items
+```
+Deploy नंतर **एकदाच** (बाजार बंद असताना, `/pending` रिकामा पाहून): `sudo systemctl restart vision_telegram` — replies (✔ / ✘ / सुटलेला trade)
+⇒ backtest_review. Restart उघडे vision PENDING_HUMAN (entries) रद्द करतो; PAPER exits ला हात नाही. प्रत्येक send नंतर restart नको.
+Sent log `data/review_tg_sent.json` (पुन्हा चालवलं तरी duplicate नाही; sender व listener दोघांना तोच `REVIEW_TG_SENT_PATH`). Approver (`TELEGRAM_APPROVER_IDS`) चेच replies नोंदवले जातात.
