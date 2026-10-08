@@ -176,7 +176,7 @@ def test_run_with_fake_client_budget_and_caption(tmp_path, monkeypatch):
     monkeypatch.setattr(RS.EV, "evaluate", lambda *a, **k: {"grade": "C", "total": 20, "story": ["s"], "lines": ["l"], "why_no_entry": ["x"]})
     monkeypatch.setattr(RS.CH, "png", lambda fig: b"png")
     m1 = pd.DataFrame({"timestamp": pd.date_range("2026-09-28 09:15", periods=10, freq="min"), "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0})
-    v = {"trade": True, "side": "bull_put", "grade": "A", "area_id": "A1", "story": ["one", "two"], "entry": ref(t, j, "close"),
+    v = {"trade": True, "side": "bull_put", "grade": "A", "setup_type": "G6", "area_id": "A1", "story": ["one", "two"], "entry": ref(t, j, "close"),
          "invalidation": ref(t, j, "low"), "invalidation_reason": "below the support area", "target": ref(t, 29, "high"),
          "evidence_for": [], "evidence_against": [], "wrong_if": "below 120"}
     seen = []

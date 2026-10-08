@@ -14,6 +14,7 @@ code ची side **दिली जात नाही** (anchoring). एका�
 import numpy as np
 import pandas as pd
 
+from backtest_review import gallery as GL
 from chart_reader import areas as AR
 from chart_reader import measures as M
 from price_action import levels_v2 as LV
@@ -112,6 +113,7 @@ def scan(df1m, trig, start, end, s, cfg=None, frame_fn=None, ctx_fn=None, horiz_
         out.append({"bar_end": be, "bar_start": pd.Timestamp(trig["timestamp"].iloc[j]), "j": j, "side": imp["side"], "impulse": imp,
                     "code_side": ms["side"], "side_reasons": ms["side_reasons"], "state_lines": ms["lines"],
                     "swings": ms.get("swings") or [], "htf_swings": ms.get("trend_swings") or [], "htf_tf": ms["tf"]["trend"],
+                    "setups": [h["setup"] for h in GL.detect(ms, trig, j, float(mr))],
                     "mr": float(mr), "wick": wick, "cl": cl, "areas": near[:6], "all_areas": cands})
     return out
 

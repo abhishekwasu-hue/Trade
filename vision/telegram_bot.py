@@ -7,6 +7,7 @@
   • निर्णय conditional (`status = PENDING_HUMAN` असेल तरच) ⇒ दुसऱ्यांदा / replay ⇒ "आधीच ठरलं". Deadline नंतर ⇒ "मुदत संपली".
   • Service सुरू होताना उघडे PENDING_HUMAN ⇒ EXPIRED (restart नंतर जुना approve चालत नाही).
   • Token / secret कधीच print नाहीत. फक्त PAPER bots (LIVE ला vision off). Exits ला यातलं काहीच लागत नाही.
+Review replies (फक्त approver): K-10 / gallery संदेशाला "✔" / "✘ कारण" / "सुटलेला trade HH:MM bear" ⇒ backtest_review (backtest_review/telegram.py).
 Commands (फक्त approver): /pending · /today · /vision <off|shadow|notify|auto_veto|confirm|veto_then_confirm> <bot>
 """
 import argparse
@@ -128,6 +129,9 @@ def poll_once(offset, path=None, timeout=50):
                 m = u["message"]
                 if str(m.get("text", "")).startswith("/"):
                     handle_command(m["text"], m.get("from"), m.get("chat"), path)
+                elif m.get("reply_to_message"):                          # review charts (K-10 / gallery) ला ✔ / ✘ reply ⇒ backtest_review
+                    from backtest_review import telegram as RT
+                    RT.handle_reply(m, _authorized, send=TG.send_text)
         except Exception as exc:                                         # एका update ची चूक service थांबवत नाही
             print(f"⚠️ update {u.get('update_id')}: {type(exc).__name__}: {exc}")
         VS.kv_set("tg_offset", offset, path)

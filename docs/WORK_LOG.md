@@ -1490,3 +1490,48 @@ Abhi 18:20) ने घेतली — हा PR merge झाल्यावर 
 - Abhi चा निर्णय: visual audit मध्ये BANKNIFTY बंद — setting `visual_audit_symbols` (vision `_global`, default ["NIFTY"], dashboard वरून).
 - 2026-10-08 चा run: 7 calls, 19,403 / 4,982 tokens ⇒ model claude-opus-5-5 (repo दर 4 / 20 $ per 1M) ≈ **$0.177** — आजच्या $0.30 पैकी 59%.
   NIFTY-only ⇒ साधारण निम्मा.
+
+## 2026-10-08 · Backtest visual review + Golden Gallery G1–G6 (TRADE_BACKTEST_VISUAL_REVIEW_PROMPT, TRADE_GOLDEN_GALLERY_PROMPT)
+**का (Abhi):** backtest ची फक्त आकडेवारी ⇒ code ने chart चुकीचा वाचला का ते दिसत नाही. प्रत्येक निर्णय chart वर खुणांसह, घेतलेले **आणि
+सुटलेले** trades; ✘ ⇒ golden test case. V4 (40 LABEL CHECK) ची जागा हा review घेतो. KB भाग H: 6 golden setups — खऱ्या NIFTY data मधून
+उदाहरणं, Abhi निवडतो.
+**Backtest review (`backtest_review/`, `research/backtest_review_run.py`, पान "Backtest Review"):**
+- काळ: 1 Jul → 8 Oct 2026 (contaminated) आणि 1 Jan → 31 Mar 2024 (VAL शेवट); `elliott/data_policy` ने (holdout ⇒ HoldoutError; warm-up
+  सुद्धा holdout मधून नाही). Logic पडताळणी फक्त; settings hash नोंद.
+- प्रत्येक बंद 15M bar: market_state (impulse + correction ≥ 38.2%) ⇒ candidate ⇒ chart_reader.evaluate ⇒ ✅ ENTRY / 🟡 C / ✖ + reason
+  codes (`RR<3`, `NO_AREA`, `SIDE_UNCLEAR`, `VETO_A_END`, `NO_REVERSAL`, `OPENING_WINDOW` …; रिकामा कधीच नाही). Trades: एका वेळी एकच
+  position (आधीचा बंद होईपर्यंत नवीन entry नाही). Hindsight: target / SL / time (2–3 sessions), MFE / MAE.
+- Charts: trade ⇒ 1H context (≥ 15 sessions; trend + protected, मोठे areas, trendline anchors, impulse / ABC, Elliott), 15M entry (entry
+  bar पर्यंतच; impulse रंगीत, ABC + प्रकार, areas साधन नावासह, reversal candles ठळक, sweep, ENTRY / SL (कुठून) / TARGET / R:R / strike σ,
+  grade + मुख्य पुरावे, CAS राखाडी), hindsight. दिवस ⇒ 1H + 15M (सगळे candidates + "code ची गोष्ट").
+- पान: run / filter (फक्त trades / ✘ / न तपासलेले) / प्रगती; प्रत्येक दिवस / trade ✔ / ✘ / ? + कारण, दिवसासाठी "सुटलेला trade" (वेळ + side)
+  ⇒ Supabase `backtest_review` (upsert; पुन्हा उघडल्यावर दिसतं). Telegram (--send): फक्त trades, "🔎 REVIEW", Approve नाही, दिवसाला ≤ 10.
+- 7 Oct smoke run: 24 candidates; 09:30 bear_call (B) entry, 12:15 A (त्याच position मुळे trade नाही); उतरती trendline / ABC दिसतात.
+**Golden Gallery (`backtest_review/gallery.py`, `research/golden_gallery.py`, पानावर "⭐ Golden Gallery" tab):**
+- काळ: IS 2015–2021 + Jul–Oct 2026 (VAL नाही — नियम gallery मधून ठरणार; holdout नाही).
+- G1–G6 detectors (market_state वर, सैल, फक्त बंद bars) ⇒ shortlist ⇒ evaluate ⇒ rank = code total + 5 × confluence (**hindsight नाही**) ⇒
+  प्रति G ≤ 8 (वर्षं / दोन्ही बाजू / एका आठवड्यात एकच). Charts 1H + 15M entry + hindsight. Abhi: ⭐ / ✔ / ✘ + "वेगळा G" ⇒ `golden_gallery`.
+  Telegram: प्रति G एक ("⭐ GALLERY", एकूण 6).
+- Jul–Oct 2026 smoke: G1 2, G2 0, G3 4, G4 6, G5 2, G6 5 सापडले.
+- Vision: playbook मध्ये G1–G7 मजकूर (`vision_led_v3`; G7 = KB नवीन आवृत्ती), JSON `setup_type` (G1–G7 / none); code candidates वर `setups` label. Images system
+  prompt मध्ये नाहीत. "कसं दिसतं" ओळी Abhi च्या ⭐ नंतर.
+- अहवाल: `research/review_report.py` ⇒ `docs/reports/backtest_visual_review.md` (✔ / ✘ / ? %, ✘ प्रकार ⇒ file:function, सुटलेले trades)
+  आणि `docs/reports/golden_gallery.md` (प्रति G ⭐ / ✔ / ✘, hindsight फक्त माहिती).
+**थांबा-बिंदू:** C-V1 (backtest review अहवाल) आणि G-GAL (Abhi ची निवड) — मग V-L0.
+**क्रम बदल (Abhi 19:30, TRADE_KB_FULL_IMPLEMENTATION_PROMPT):** हा PR फक्त साधनं (code + page + tests). पूर्ण review (125 दिवस) आणि
+Gallery runs **K-10** (10 random दिवस, KB दुरुस्त्यांनंतर) चांगले दिसल्यावरच. G7 detector KB दुरुस्ती PR मध्ये (gap नियमासोबत).
+
+## 2026-10-08 · Review charts ⇒ Telegram (VPS वरून) + ✔ / ✘ replies ⇒ backtest_review
+**का (Abhi):** K-10 / Golden Gallery / backtest review चे charts phone वर पाहायचे; Approve बटण नाही, reply मध्ये ✔ / ✘ कारण / सुटलेला trade.
+- Charts + manifest फक्त private trade-data: `review/<kind>/<run_id>/manifest.json` ({run_id, title, items[n, date, item, reading, files]}).
+  K-10 run1 (10 दिवस: 1H + 15M, signal दिवसांचा trade chart) तिथे push केला.
+- `backtest_review/telegram.py` + `scripts/send_review_to_telegram.py`: trade-data pull ⇒ manifest ⇒ प्रत्येक item एक media group, caption
+  "🔎 K-10 दिवस n/N · तारीख" + एका ओळीत वाचन. Sent log (VPS local `data/review_tg_sent.json`) ⇒ duplicate नाही; संदेशांमध्ये 3 s विराम;
+  Telegram ने नाकारलं ⇒ लहान (JPEG 60%) करून एकदा. Token / chat id नाहीत ⇒ स्पष्ट error (token कधीच print नाही).
+- Replies: सध्याचा listener (`vision/telegram_bot`, getUpdates) — sent log मधल्या संदेशाला approver चा reply ⇒ `parse_reply` (✔ OK / ✘ WRONG /
+  ? UNCLEAR / "सुटलेला trade HH:MM bear|bull" ⇒ missed; वेळ / बाजू अस्पष्ट ⇒ ❓, नोंद नाही) ⇒ `backtest_review` (item_id = manifest item:
+  K-10 ⇒ "k10/run1|day:…", backtest review ⇒ "day:…" / "trade:…" page शी जुळणारे; settings_hash = run) ⇒ "नोंद ✓". इतरांचे replies दुर्लक्षित.
+- Telegram चुका: 429 ⇒ retry_after थांबून तेच; 400 / 413 ⇒ लहान करून एकदा; network ⇒ पुन्हा नाही (duplicate album टाळा). Sent log खराब ⇒
+  sender थांबतो; ProcessLock ⇒ एका वेळी एक sender. Independent review: 9 findings (ids, 429, files 1–10, parser edge cases, sent log,
+  caption UTF-16, README restart wording, stderr redaction) — सगळे दुरुस्त + tests; manifest writer K-10 runner मध्ये Simple Core PR सोबत. Listener restart ⇒ फक्त उघडे vision PENDING_HUMAN रद्द (आधीसारखं); PAPER exits ला हात नाही.
+- याच PR मध्ये Backtest Review page + Golden Gallery साधनं (आधीचा local commit).
