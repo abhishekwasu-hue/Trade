@@ -1117,3 +1117,55 @@ Nits:
 
 **अजून बाकी (V2):** `morning_<symbol>_<tf>.png` — path helper (`vision/images.morning_path`) तयार आहे; सकाळचा audit V2 मध्ये.
 **PNG आकार:** आपले charts ~90 KB (< 150 KB). Archive मूळ PNG जशीच्या तशी ठेवतो, compression नाही.
+
+## 2026-10-08 · Elliott review fixes (PRs #254–#265 चा review) — PAPER/LIVE wiring आधी
+
+**काय केलं:**
+1. **Forced exits ला premium नसेल तर intrinsic नाही** (`elliott/backtest.py`):
+   - Emergency आणि end_of_data साठी नवीन `_forced_debit` वापरला. क्रम: pricer → model price → पूर्ण width.
+   - आधी intrinsic वापरायचो. Strike जवळ ते ≈ 0.05 येतं ⇒ जवळजवळ पूर्ण credit, म्हणजे सर्वात वाईट exit वर आशावादी निकाल.
+   - Primary pricer `ModelPricer` नसेल (उदा. bhavcopy) तरच model fallback.
+   - Full width ला closing खर्च short leg = width धरून.
+   - `exit_price_src` trade row मध्ये नोंदवतो.
+2. **Emergency exit bar च्या सुरुवातीच्या वेळी priced:**
+   - Strike cross bar मध्ये कधीही होऊ शकतो. आधी bar_end ला price ⇒ bar भराचा time decay मिळायचा ⇒ 1-DTE वर तोटा कमी दिसायचा.
+   - आता price bar start ला (conservative मर्यादा). Fill / P&L ची नोंद bar_end ला.
+3. **Tier A "किमान 1 lot" आता setting:** `tierA_min_one_lot` = backtest_only (default) / always / never.
+   - `plan_spread` / `size_lots_detail` ला `context` दिला. Default "paper"; Backtest आणि golden report "backtest" पाठवतात.
+   - PAPER / LIVE मध्ये 1 lot चा कमाल तोटा capital × risk% पेक्षा जास्त असेल तर 0 lots (size_zero). त्यामुळे Tier B/C चा floor पण 0.
+4. **Settings `trading_mode` आणि `live_approved`** (नवीन section "mode", spec B7):
+   - Defaults: PAPER आणि false.
+   - LIVE पण मंजुरी नाही ⇒ validate PAPER करतो (error सह).
+   - `effective_trading_mode()` हा अनवैध dict साठीही सुरक्षित: फक्त `live_approved is True`.
+5. **Backtest report variant C:** F2 नंतर `progress_mode` default off असल्याने जुना C (`progress_bars_mult = 0`) B सारखाच झाला होता.
+   - C आता `C_guard_off_progress_on` (`progress_mode = correction_time`) ⇒ progress exit चा परिणाम दिसतो.
+   - G2 note अद्ययावत केली (जुना "20–30 मिनिटांत बंद" दावा त्या वेळचा असल्याचं स्पष्ट).
+   - **Report पुन्हा तयार केला — फक्त IS** (2019-02-11 → 2021-12-31). VAL / holdout उघडले नाहीत.
+
+**नवीन IS निकाल (model premium, अंदाज):**
+
+| Variant | n | Sized | R सरासरी | ₹ (sized) |
+|---|---|---|---|---|
+| A | 55 | 41 | −0.012 | −2,499 |
+| B | 157 | 117 | −0.018 | −14,496 |
+| C (progress on) | 156 | 117 | −0.018 | −13,847 |
+
+- Signals 212 (जुन्या report मध्ये 199 — मधल्या F-fixes मुळे).
+- Variants A / B / C मध्ये emergency / end_of_data exits **0** ⇒ तिथे fixes 1–2 चा परिणाम नाही. पण section 2 च्या structure-free तुलनेत breach झालेले trades emergency ने बंद होतात (EW ~4 / 208, random ~15 / 1014) ⇒ तिथे fix 2 (bar-start pricing) लागू. Section 2 आणि variants साठी exit कारणं + forced-exit premium स्रोत आता report मध्ये छापले जातात. Model primary असल्याने full_width कधीच लागला नाही (max-loss% 0).
+- EW वि. random (structure-free exits): R −0.022 वि. −0.024 ⇒ फरक नाही.
+- Golden: 5 must FAIL, आधीसारखेच.
+
+**Tests:**
+- e3: Tier A context (paper / live / backtest / always / never), plan_spread, mode settings.
+- e4: pricer None ⇒ model fallback / full width, emergency bar-start pricing (exit निर्णय monkeypatch — 2019 नमुन्यात emergency exit नाही).
+- एक जुना assert अपडेट केला: `size_lots_detail("A", …, 1e3, …)` आता backtest context मध्ये (1, "a_min_one"); default context मध्ये (0, "").
+
+**Independent review (subagent):** blocking नाही. केलेले बदल:
+- `min_one_lot` (shadow) सुद्धा आता फक्त backtest context मध्ये — PAPER / LIVE मध्ये risk cap मोडत नाही (test).
+- Intrabar premium-stop चा gap price bar start ला (emergency सारखाच).
+- `trading_mode` lowercase (spec मधलं `paper` / `live`) स्वीकारतो.
+- WORK_LOG मधला "exits 0" दावा दुरुस्त केला (वर).
+नोंद: `docs/reports/elliott_candle_merge.md` जुन्या pricing वर आहे (structure-free emergency exits) — पुढच्या C3 run मध्ये ताजा होईल.
+Model fallback वापरला तर (bhavcopy primary) entry bhavcopy वर आणि exit model वर ⇒ reports मध्ये `exit_price_src` नुसार वेगळं दाखवायचं.
+
+**नोंद:** trade-data मधला F8 WIP (`wip/elliott_f8_2026-10-07/backtest.diff`) emergency branch बदलतो ⇒ पुन्हा सुरू करताना या बदलांवर rebase करायचा.

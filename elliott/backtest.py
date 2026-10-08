@@ -91,6 +91,7 @@ class Trade:
     events: list = field(default_factory=list)
     notes: list = field(default_factory=list)           # log-only घटना (opposite_candle) — fills नाहीत
     opp_on: bool = False
+    exit_price_src: str = ""            # forced exit चा premium स्रोत: pricer / model_fallback / full_width
 
 
 def _dte_bucket(n):
@@ -129,6 +130,9 @@ class Backtest:
         self.cal = cal or CT.TradingCalendar.from_spot(df1m, min_bars=s.get("full_session_min_bars", CT.FULL_SESSION_MIN_BARS))
         self.book = book or CT.ExpiryBook(self.cal)
         self.pricer = pricer or ModelPricer(df1m, s, self.cal)
+        # review fix 1: forced exits (emergency / end_of_data) ला premium नसेल तर intrinsic नाही (strike जवळ ≈ 0 ⇒ जवळजवळ पूर्ण credit — आशावादी).
+        # आधी model price (primary pricer model नसेल तर), तोही नसेल तर पूर्ण width (सर्वात वाईट).
+        self.fallback_pricer = None if isinstance(self.pricer, ModelPricer) else ModelPricer(df1m, s, self.cal)
         self.shadow = shadow
         self.sfe = structure_free_exits                # baseline तुलनेसाठी: structure-आधारित exits बंद
         self.open, self.closed, self.skipped = [], [], []
@@ -152,6 +156,22 @@ class Backtest:
             return None
         self._last_px = (CO.slip(px[0], "buy", self.s), CO.slip(px[1], "sell", self.s))
         return self._last_px[0] - self._last_px[1]
+
+    def _forced_debit(self, tr, ts, spot):
+        """Forced exit (emergency / end_of_data) चा debit: pricer → model fallback → पूर्ण width. रिटर्न (debit, स्रोत)."""
+        debit = self._debit(tr, ts, spot)
+        if debit is not None:
+            return debit, "pricer"
+        if self.fallback_pricer is not None:
+            p = tr.plan
+            a = self.fallback_pricer.premium(p["opt"], p["short_k"], p["expiry"], ts, spot)
+            b = self.fallback_pricer.premium(p["opt"], p["long_k"], p["expiry"], ts, spot)
+            if a is not None and b is not None:
+                self._last_px = (CO.slip(a, "buy", self.s), CO.slip(b, "sell", self.s))
+                return self._last_px[0] - self._last_px[1], "model_fallback"
+        w = float(tr.plan["width"])
+        self._last_px = (w, 0.0)                                                    # closing खर्च: short leg = width, long ≈ 0
+        return w, "full_width"
 
     def _next_open(self, t):
         """t नंतर सुरू होणारा पहिला (finest TF) bar: (timestamp, open) — 15:30 नंतर ⇒ पुढच्या session चा open (gap सह)."""
@@ -200,10 +220,11 @@ class Backtest:
         pf = lambda opt, k, e: self.pricer.premium(opt, k, e, fill_ts, spot)          # noqa: E731
         slip = s["slippage_ticks"] * CO.TICK
         iv = self.pricer.iv(fill_ts.date())
-        plan = SK.plan_spread(sig, spot, fill_ts, iv, mr, self.cal, self.book, s, pf, slip_pts=slip)
+        plan = SK.plan_spread(sig, spot, fill_ts, iv, mr, self.cal, self.book, s, pf, slip_pts=slip, context="backtest")
         sized = True
         if plan == "size_zero" and self.shadow:
-            plan = SK.plan_spread(sig, spot, fill_ts, iv, mr, self.cal, self.book, {**s, "min_one_lot": True}, pf, slip_pts=slip)
+            plan = SK.plan_spread(sig, spot, fill_ts, iv, mr, self.cal, self.book, {**s, "min_one_lot": True}, pf, slip_pts=slip,
+                                  context="backtest")
             sized = False
         if isinstance(plan, str):
             self.skipped.append((sig, plan))
@@ -336,13 +357,15 @@ class Backtest:
         if r["move_inv"] is not None:
             tr.inv_from = j + 1
         if r["exit"] == "emergency_short_strike":                                     # intrabar — लगेच, gap असेल तर open वर
-            debit = self._debit(tr, t, emergency_spot(o, k, d))
-            if debit is None:
-                debit = max(0.0, (k - emergency_spot(o, k, d)) if d > 0 else (emergency_spot(o, k, d) - k))
+            # review fix 2: bar च्या **सुरुवातीच्या** वेळी price (cross bar मध्ये कधीही झाला असेल; शेवटच्या वेळी price केल्यास
+            # bar भराचा time decay मिळतो ⇒ 1-DTE वर तोटा कमी दिसतो). Conservative मर्यादा.
+            t0 = pd.Timestamp(fr["timestamp"].iloc[j])
+            debit, src = self._forced_debit(tr, t0, emergency_spot(o, k, d))
+            tr.exit_price_src = src
             self._close(tr, t, r["exit"], min(debit, tr.plan["width"]))
         elif r["exit"] == "premium_stop" and s["hard_stop_eval"] == "intrabar":
             stop = s["hard_stop_mult"] * tr.st.entry_credit
-            gap = self._debit(tr, t, o)
+            gap = self._debit(tr, pd.Timestamp(fr["timestamp"].iloc[j]), o)            # open चा spot ⇒ bar start ची वेळ (decay नाही)
             debit = max(stop, gap) if gap is not None else stop                       # gap ने stop पलीकडे उघडलं ⇒ open
             self._close(tr, t, r["exit"], min(debit, tr.plan["width"]))
         elif r["exit"] is not None:
@@ -390,10 +413,8 @@ class Backtest:
         for tr in list(self.open):
             j = frame_index_at(self.fine, t)
             spot = float(self.fine["close"].iloc[j])
-            debit = self._debit(tr, t, spot)
-            if debit is None:
-                p, d = tr.plan, tr.sig.trade_dir
-                debit = max(0.0, (p["short_k"] - spot) if d > 0 else (spot - p["short_k"]))
+            debit, src = self._forced_debit(tr, t, spot)
+            tr.exit_price_src = src
             self._close(tr, t, "end_of_data", min(debit, tr.plan["width"]))
 
     # ------------------------------------------------------------------------------------------------ run
@@ -433,5 +454,6 @@ class Backtest:
                          "lots": p["lots"], "qty": p["qty"], "pnl": tr.realized, "R": tr.realized / ml if ml > 0 else np.nan,
                          "pct_cap": tr.realized / self.s["capital"] * 100.0, "reason": tr.exit_reason, "breach": tr.breached,
                          "sized": tr.sized, "max_loss_hit": tr.exit_debit >= p["width"] - 1e-9 if tr.exit_debit == tr.exit_debit else False,
-                         "next_weekly": p["next_weekly"], "over_budget": p.get("over_budget", False), "deferred": tr.deferred})
+                         "next_weekly": p["next_weekly"], "over_budget": p.get("over_budget", False), "deferred": tr.deferred,
+                         "exit_price_src": tr.exit_price_src})
         return pd.DataFrame(rows)

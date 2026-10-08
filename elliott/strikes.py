@@ -36,12 +36,20 @@ def strikes_for(sig, spot, dist, width, step=CT.STRIKE_STEP):
     return "CE", k, k + width
 
 
-def size_lots(tier, mult, base_budget, per_lot, s):
-    return size_lots_detail(tier, mult, base_budget, per_lot, s)[0]
+def size_lots(tier, mult, base_budget, per_lot, s, context="paper"):
+    return size_lots_detail(tier, mult, base_budget, per_lot, s, context)[0]
 
 
-def size_lots_detail(tier, mult, base_budget, per_lot, s):
-    """(lots, floor कारण) — F1. tier_of_A: Tier A lots = budget ÷ प्रति-lot तोटा (किमान 1 — "a_min_one"); बाकी tiers = round(A × गुणक),
+def a_min_one_applies(s, context):
+    """Tier A "किमान 1 lot" (review fix 3): `tierA_min_one_lot` = backtest_only (default) ⇒ फक्त backtest मध्ये; PAPER / LIVE मध्ये
+    1 lot चा तोटा budget पेक्षा जास्त असेल तर 0 lots (risk cap मोडत नाही). always / never ⇒ सगळीकडे तसंच."""
+    m = s.get("tierA_min_one_lot", "backtest_only")
+    return m == "always" or (m == "backtest_only" and context == "backtest")
+
+
+def size_lots_detail(tier, mult, base_budget, per_lot, s, context="paper"):
+    """(lots, floor कारण) — F1. tier_of_A: Tier A lots = budget ÷ प्रति-lot तोटा (किमान 1 — "a_min_one" — फक्त `a_min_one_applies`
+    खरं असेल तर: default फक्त backtest context मध्ये; PAPER / LIVE मध्ये budget मध्ये 1 lot बसत नसेल तर 0); बाकी tiers = round(A × गुणक),
     किमान tierB_min_lots / tierC_min_lots पण A पेक्षा जास्त नाही ("tier_floor"); गुणक 0 ⇒ 0. risk_budget: tier budget ÷ प्रति-lot
     तोटा (जुनं). दोन्हीत `min_one_lot` (shadow trades) ⇒ गुणक > 0 असताना किमान 1 ("min_one_lot")."""
     if per_lot <= 0 or mult <= 0:
@@ -51,20 +59,20 @@ def size_lots_detail(tier, mult, base_budget, per_lot, s):
         lots = int(base_budget * mult // per_lot)
     else:
         raw_a = int(base_budget // per_lot)
-        lots_a = max(1, raw_a)
+        lots_a = max(1, raw_a) if a_min_one_applies(s, context) else raw_a
         if tier == "A":
-            lots, why = lots_a, ("a_min_one" if raw_a < 1 else "")
+            lots, why = lots_a, ("a_min_one" if lots_a > raw_a else "")
         else:
             lots = int(math.floor(lots_a * mult + 0.5 + 1e-9))                         # सामान्य rounding (0.5 ⇒ वर)
             floor_ = min({"B": s["tierB_min_lots"], "C": s["tierC_min_lots"]}.get(tier, 0), lots_a)
             if lots < floor_:
                 lots, why = floor_, "tier_floor"
-    if lots < 1 and s["min_one_lot"]:
-        lots, why = 1, "min_one_lot"                                                # budget ओलांडतो — report मध्ये वेगळं
+    if lots < 1 and s["min_one_lot"] and context == "backtest":                   # shadow trades फक्त backtest मध्ये (review: PAPER /
+        lots, why = 1, "min_one_lot"                                                # LIVE मध्ये risk cap मोडू नये) — report मध्ये वेगळं
     return lots, why
 
 
-def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=None, bhav_lots=None, slip_pts=0.0):
+def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=None, bhav_lots=None, slip_pts=0.0, context="paper"):
     """dict (trade plan) किंवा कारण (str). iv = float किंवा callable(expiry) (§11: निवडलेल्या expiry चा ATM IV).
     delta_fn नसेल ⇒ BS delta (risk_free_rate, त्या expiry चा IV) — max_short_delta guard कधीच गुपचूप बंद नाही.
     slip_pts = प्रति leg slippage (points) — guard आणि sizing **fill नंतरच्या** credit वर (short − slip, long + slip)."""
@@ -114,7 +122,7 @@ def plan_spread(sig, spot, fill_ts, iv, mr, cal, book, s, price_fn, delta_fn=Non
             per_lot = (width - credit) * lot
             base = s["capital"] * s["risk_per_trade_pct"] / 100.0
             budget = base * mult
-            lots, floor_why = size_lots_detail(sig.tier, mult, base, per_lot, s)
+            lots, floor_why = size_lots_detail(sig.tier, mult, base, per_lot, s, context)
             if lots < 1:
                 return "size_zero"
             return {"expiry": expiry, "expiry_kind": kind, "dte_days": dd, "dte_frac": df_, "opt": opt, "short_k": sk,

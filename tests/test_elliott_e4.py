@@ -219,3 +219,73 @@ def test_model_iv_varies_and_carries_over_short_days():
     mp = BT.ModelPricer(df, S0, cal)
     assert mp.iv(days[44].date()) > mp.iv(days[29].date())                         # volatility वाढली ⇒ IV वाढला
     assert mp.iv(days[40].date()) is not None                                      # लहान session ⇒ आधीचा IV
+
+
+class _NonePricer:
+    """Exits ला premium नाही (bhavcopy gap सारखं) — iv आतल्या pricer चा."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def iv(self, day):
+        return self.inner.iv(day)
+
+    def premium(self, *a, **k):
+        return None
+
+
+def _fresh(tr0):
+    import dataclasses
+    from elliott import exits as EX
+    p = tr0.plan
+    st = EX.TradeState(tr0.sig, p, tr0.entry_ts, p["credit"], p["lots"], tr0.sig.hard_inv)
+    return dataclasses.replace(tr0, st=st, realized=0.0, events=[], notes=[], exit_ts=None, exit_reason="", exit_price_src="")
+
+
+def test_forced_exit_without_premium_uses_model_then_full_width_not_intrinsic(run2019):
+    """Review fix 1: end_of_data / emergency ला pricer None ⇒ model price, तोही नाही ⇒ पूर्ण width (intrinsic ≈ 0 नाही)."""
+    d, sc, times, sigs, bt = run2019
+    tr0 = bt.closed[0]
+    fine = sc.frames["5m"]
+    t = pd.Timestamp(fine["bar_end"][fine["bar_end"] > tr0.entry_ts].iloc[0])
+    spot = float(fine["close"][fine["bar_end"] == t].iloc[0])
+    want = bt._debit(_fresh(tr0), t, spot)                                          # run2019 चा pricer = ModelPricer
+    for fallback, src in ((True, "model_fallback"), (False, "full_width")):
+        b2 = BT.Backtest(d, SB, scanner=sc, replay={}, pricer=_NonePricer(bt.pricer), cal=bt.cal, book=bt.book)
+        assert isinstance(b2.fallback_pricer, BT.ModelPricer)
+        if not fallback:
+            b2.fallback_pricer = None
+        tr = _fresh(tr0)
+        b2.open.append(tr)
+        b2._finish(t)
+        assert tr.exit_reason == "end_of_data" and tr.exit_price_src == src
+        if fallback:
+            assert tr.exit_debit == pytest.approx(min(want, tr.plan["width"]))
+        else:
+            assert tr.exit_debit == tr.plan["width"]
+            assert tr.realized < (tr.plan["credit"] - tr.plan["width"]) * tr.plan["qty"] + 1e-6   # पूर्ण तोटा + खर्च
+    assert BT.Backtest(d, SB, scanner=sc, replay={}, cal=bt.cal, book=bt.book).fallback_pricer is None   # model primary ⇒ fallback नको
+
+
+def test_emergency_exit_priced_at_bar_start_and_without_premium_full_width(run2019, monkeypatch):
+    """Review fix 2: emergency (intrabar strike cross) bar च्या सुरुवातीच्या वेळी priced (कमी time decay ⇒ conservative);
+    fill / P&L नोंद bar_end ला. Premium नाही ⇒ fix 1 प्रमाणे (intrinsic नाही)."""
+    d, sc, times, sigs, bt = run2019
+    tr0 = bt.closed[0]
+    fr = sc.frames[tr0.tf]
+    j = tr0.entry_idx + 1
+    t = pd.Timestamp(fr["bar_end"].iloc[j])
+    monkeypatch.setattr(BT.EX, "evaluate", lambda st, ctx, s: {"exit": "emergency_short_strike", "move_inv": None, "partial_lots": 0})
+    for pricer, src in ((None, "pricer"), (_NonePricer(bt.pricer), "full_width")):
+        b2 = BT.Backtest(d, SB, scanner=sc, replay={}, pricer=pricer, cal=bt.cal, book=bt.book)
+        b2.fallback_pricer = None
+        seen = []
+        orig = b2._debit
+        b2._debit = lambda tr, ts, spot: (seen.append(ts), orig(tr, ts, spot))[1]
+        tr = _fresh(tr0)
+        b2.open.append(tr)
+        b2._manage(tr, t)
+        assert tr.exit_reason == "emergency_short_strike" and tr.exit_ts == t and tr.exit_price_src == src
+        assert seen[-1] == pd.Timestamp(fr["timestamp"].iloc[j]) and seen[-1] < t   # bar start, end नाही
+        if src == "full_width":
+            assert tr.exit_debit == tr.plan["width"]
