@@ -40,6 +40,16 @@ def merge_store(existing, new):
     return out.drop_duplicates("timestamp", keep="first").sort_values("timestamp").reset_index(drop=True)
 
 
+def merge_store_by_contract(existing, new):
+    """सगळ्या contracts चा store (Chart Reader K10.3 roll): key = (timestamp, contract); आधी साठवलेला row ठेवतो."""
+    if existing is None or not len(existing):
+        return new.reset_index(drop=True)
+    if new is None or not len(new):
+        return existing.reset_index(drop=True)
+    out = pd.concat([existing, new], ignore_index=True)
+    return out.drop_duplicates(["timestamp", "contract"], keep="first").sort_values(["timestamp", "contract"]).reset_index(drop=True)
+
+
 def attach_futures_volume(frames, fut5):
     """frames (engine frames) च्या 5m आणि 15m `volume` ला futures volume ने बदलतो (नवीन dict; मूळ frames बदलत नाहीत). रिटर्न (frames, coverage dict)."""
     out = dict(frames)

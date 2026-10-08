@@ -72,12 +72,15 @@ def _label(n, o, h, l, c, fo, fc, mo, mc, dirn):
 
 
 def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extreme_idx=None, bars_last_subleg=None,
-                    div_ok=None, reclaim_ref="touched_level", mr_override=None, rmin=None):
+                    div_ok=None, reclaim_ref="touched_level", mr_override=None, rmin=None, soft=False):
     """Window = bars [j−n+1, j]. levels = zone levels (किंमत); inv = hard invalidation (किंवा None).
     mr_override = strength संदर्भ (own_correction / time_slot — C1); rmin = rejection_min (profile). दोन्ही None ⇒ सध्याचं वर्तन.
-    रिटर्न dict: ok, reason, n, score, touched, comp (o,h,l,c — खरी किंमत), close_loc, rng_ratio, parts, label."""
+    soft = True (Chart Reader, 2026-10-08): touch / inv / reclaim / indecision पक्के; बाकी (last_against, path, weak, exhaustion,
+    no_body, low_score) निर्णय नाही — `flags` मध्ये नोंद आणि score तरीही मोजतो. Default False ⇒ Elliott चं वर्तन तसंच.
+    रिटर्न dict: ok, reason, n, score, touched, comp (o,h,l,c — खरी किंमत), close_loc, rng_ratio, parts, label, flags."""
     out = {"ok": False, "reason": NO_DATA, "n": n, "score": 0.0, "touched": None, "comp": None, "close_loc": None, "rng_ratio": None,
-           "parts": {}, "label": None}
+           "parts": {}, "label": None, "flags": []}
+    flags = out["flags"]
     a = j - n + 1
     if a < max(min_start, 0) or j >= b.n or not levels:
         return out
@@ -112,24 +115,33 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     if n >= 2:
         last_o, last_c = (b.o[j], b.c[j]) if dirn > 0 else (-b.o[j], -b.c[j])
         if not last_c > last_o:
-            out["reason"] = LAST_AGAINST
-            return out
+            if not soft:
+                out["reason"] = LAST_AGAINST
+                return out
+            flags.append("last_against")
         if s.get("path_checks"):                                     # शेवटच्या candle ने स्वतः किती परत दिलं (त्याचा high / आधीचा close पासून)
             last_h, prev_c = (b.h[j], b.c[j - 1]) if dirn > 0 else (-b.l[j], -b.c[j - 1])
             if (max(last_h, prev_c) - c) / rng > 0.5:
-                out["reason"] = PATH
-                return out
+                if not soft:
+                    out["reason"] = PATH
+                    return out
+                flags.append("path_retrace")
     if rng < s["strength_min"] * m:
-        out["reason"] = WEAK
-        return out
+        if not soft:
+            out["reason"] = WEAK
+            return out
+        flags.append("weak")
     if rng > s["strength_max"] * m:
-        if s.get("strength_cap_mode", "fixed") == "fixed" or out["close_loc"] < 0.6:
+        if soft:
+            flags.append("climax" if out["close_loc"] < 0.6 else "wide_reclaim")
+        elif s.get("strength_cap_mode", "fixed") == "fixed" or out["close_loc"] < 0.6:
             out["reason"] = EXHAUSTION                                   # logic: pullback दिशेने close (climax extension)
             return out
-        guard = s.get("strength_risk_guard_mult", 0.0)
-        if guard > 0 and rng > guard * m:
-            out["reason"] = EXHAUSTION                                   # logic mode मधला पर्यायी risk guard
-            return out
+        else:
+            guard = s.get("strength_risk_guard_mult", 0.0)
+            if guard > 0 and rng > guard * m:
+                out["reason"] = EXHAUSTION                               # logic mode मधला पर्यायी risk guard
+                return out
     w = s["rejection_weights"]
     body_bull = abs(c - o) / rng * (c > o)
     hi1, lo1 = max(fo, fc), min(fo, fc)
@@ -138,8 +150,10 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     if s.get("body_term_mode", "bull_body") == "body_or_reclaim" and depth >= 0.5:
         body_v = max(body_bull, depth)
     if s.get("min_body_or_reclaim") and (c - o) / rng < s.get("min_body_frac", MIN_BODY) and depth < 0.5:     # trade दिशेची body (mirror)
-        out["reason"] = NO_BODY
-        return out
+        if not soft:
+            out["reason"] = NO_BODY
+            return out
+        flags.append("no_body")
     comps = [("wick", w[0], (min(o, c) - l) / rng), ("close_loc", w[1], (c - l) / rng), ("body", w[2], body_v)]
     if extreme_idx is not None and bars_last_subleg is not None:
         comps.append(("time", w[3], float(j - extreme_idx <= bars_last_subleg)))
@@ -163,7 +177,7 @@ def evaluate_window(b, j, n, dirn, levels, tol, s, inv=None, min_start=0, extrem
     if band[0] <= out["close_loc"] <= band[1]:
         out["reason"] = INDECISIVE
         return out
-    if out["score"] < (s["rejection_min"] if rmin is None else rmin):
+    if not soft and out["score"] < (s["rejection_min"] if rmin is None else rmin):
         out["reason"] = LOW_SCORE
         return out
     out.update(ok=True, reason=None)
