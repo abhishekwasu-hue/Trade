@@ -221,6 +221,16 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — dynamic_sr_instant_trader.py प्रमाणेच — Naked Option
     # Trade आता Credit Spread पासून स्वतंत्र lots सेटिंग वापरतो.
     naked_lots = settings.get("naked_lots", lots)
+    # 🎓 Vision V1 (reduce-only gate, फक्त PAPER) — dynamic_sr_instant_trader.py प्रमाणेच: प्रत्येक level साठी मूळ lots, आणि approve /
+    # reject झालेले levels या cycle ला touch नसला तरी पुन्हा तपासले जातात (bot चे gates पुन्हा).
+    _lots_base, _naked_base = lots, naked_lots
+    try:
+        from vision.gate import forced_levels as _vision_forced_levels, is_forced as _vision_is_forced
+        _vision_forced = (_vision_forced_levels("srv2_momentum_reversal", symbol, settings.get("trading_mode", "PAPER"))
+                          if settings.get("trading_mode", "PAPER") == "PAPER" else [])
+    except Exception as exc:
+        print(f"⚠️ vision forced_levels त्रुटी (trade वर परिणाम नाही): {exc}")
+        _vision_forced, _vision_is_forced = [], None
     bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
     bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
@@ -257,10 +267,15 @@ def process_symbol(access_token, symbol, lot_size=65):
     todays_1m_candles = _fetch_todays_1m_candles(access_token, symbol, now)
     recent_1m_candles = todays_1m_candles[-2:]
     for level_price, timeframe_suffix, candles_df, underlying_price, todays_closes in candidates:
+        lots, naked_lots = _lots_base, _naked_base
         touched, touch_type, _approx = (
             check_level_crossed(level_price, recent_1m_candles, tolerance_pct=TOUCH_TOLERANCE_PCT)
             if recent_1m_candles else (False, None, None)
         )
+        _vision_forced_hit = False
+        if not touched and _vision_forced and _vision_is_forced(_vision_forced, level_price, timeframe_suffix):
+            # Vision V1 निर्णय झालेला level — touch नाही, पण gates पुन्हा; entry फक्त gate ने ताजा APPROVED दिला तरच
+            touched, touch_type, _vision_forced_hit = True, "TOUCH", True
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — आधी दिशा फक्त सद्य किमतीच्या raw तुलनेवरून ठरायची
         # (dynamic_sr_instant_trader.py मध्ये आधी होतं तसंच) — आता तिथल्याच hysteresis logic ने,
@@ -276,7 +291,8 @@ def process_symbol(access_token, symbol, lot_size=65):
         # प्रत्येक तपासलेला candidate (NO_HIT सकट) इथे लगेच साठवला जातो.
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
-            "level_price": level_price, "hit_type": (touch_type or "TOUCH") if touched else "NO_HIT",
+            "level_price": level_price,
+            "hit_type": "VISION_FORCED" if _vision_forced_hit else ((touch_type or "TOUCH") if touched else "NO_HIT"),
             "direction": direction if touched else "NONE", "ltp_at_signal": underlying_price,
             "trade_status": None,
             "reason": "" if touched else (
@@ -377,14 +393,30 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
-        # 🎓 Vision V0 (shadow / notify) — फक्त नोंद (dynamic_sr_instant_trader.py प्रमाणेच). Trade निर्णय / size / exits वर परिणाम नाही.
+        # 🎓 Vision gate (`vision/gate.py`; dynamic_sr_instant_trader.py प्रमाणेच): HOLD / ENTER (≤ मूळ lots) / SHADOW. LIVE ⇒ ENTER.
+        _vg = None
         try:
-            from vision.hook import submit_signal as _vision_submit
-            _vision_submit("srv2_momentum_reversal", symbol, settings.get("trading_mode", "PAPER"), direction, level_price, level_type,
-                           timeframe_suffix, now, spot=underlying_price, tags={"hit": touch_type or "TOUCH"},
-                           last_bar=recent_1m_candles[-1] if recent_1m_candles else None)
+            from vision.gate import entry_gate as _vision_gate, note_execution as _vision_note
+            _vg = _vision_gate("srv2_momentum_reversal", symbol, settings.get("trading_mode", "PAPER"), direction, level_price, level_type,
+                               timeframe_suffix, now, underlying_price,
+                               lots if settings.get("credit_spread_enabled", True) else 0,
+                               naked_lots if settings.get("naked_enabled", True) else 0, tags={"hit": touch_type or "TOUCH"},
+                               last_bar=recent_1m_candles[-1] if recent_1m_candles else None, forced=_vision_forced_hit)
         except Exception as exc:
-            print(f"⚠️ vision hook त्रुटी (trade वर परिणाम नाही): {exc}")
+            print(f"⚠️ vision gate त्रुटी (trade वर परिणाम नाही): {exc}")
+        if _vg is None and _vision_forced_hit:                             # touch नव्हता आणि gate चालला नाही ⇒ entry नाही
+            log_entry["trade_status"] = "SKIPPED_VISION_FORCED_STALE"
+            log_entry["reason"] = f"Vision: forced level, gate उपलब्ध नाही ⇒ entry नाही ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is not None and _vg.action == "HOLD":
+            log_entry["trade_status"] = _vg.status
+            log_entry["reason"] = f"Vision: {_vg.note} ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is not None and _vg.action == "ENTER":
+            lots = min(lots, _vg.lots) if settings.get("credit_spread_enabled", True) else lots
+            naked_lots = min(naked_lots, _vg.naked_lots) if settings.get("naked_enabled", True) else naked_lots
         # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Expiry-Day Logic) — आज expiry day असेल, तर
         # पुढच्या आठवड्याचे strikes (expiry_index=1) — आजच्या expiry वर trade नाही (जास्त जोखीम).
         expiry_index = 1 if is_todays_expiry_day(access_token, symbol) else 0
@@ -401,6 +433,30 @@ def process_symbol(access_token, symbol, lot_size=65):
         log_entry["ltp_at_signal"] = underlying_price
         strike_step = cloud_db.STRIKE_STEP.get(symbol, cloud_db.STRIKE_STEP["NIFTY"])
         atm_strike = round(underlying_price / strike_step) * strike_step
+
+        # Vision V1: नाकारलेला / drift ⇒ मूळ lots ने PAPER shadow (credit spread, तेच exit नियम), source वेगळा. खरा trade नाही.
+        if _vg is not None and _vg.action == "SHADOW":
+            shadow_status = "shadow: strike-निवड अयशस्वी"
+            try:
+                _sr = select_credit_spread_itm(raw_chain, direction, atm_strike, step=strike_step,
+                                               itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"])
+                if has_open_trade_from_source(symbol, "srv2_momentum_reversal_vision_shadow"):  # algorithm सारखंच: एका वेळी एकच position
+                    shadow_status, _sr = "shadow: आधीचा shadow अजून उघडा ⇒ नवा नाही", None
+                if _sr is not None:
+                    _ok, _resp = open_multi_leg_trade(
+                        access_token, symbol, _sr, lots=_lots_base, lot_size=lot_size, sl_pct_of_max_loss=None,
+                        target_pct_of_max_profit=target_pct_of_premium, product_type="D", trading_mode="PAPER", trading_style="INTRADAY",
+                        sl_pct_of_credit=100, source="srv2_momentum_reversal_vision_shadow", entry_level_price=level_price,
+                        entry_timeframe=timeframe_suffix, entry_spot_price=underlying_price, direction=direction,
+                    )
+                    shadow_status = "shadow: " + format_trade_result(_ok, _resp)
+            except Exception as exc:
+                shadow_status = f"shadow त्रुटी: {exc}"
+            _vision_note(_vg.signal_id, shadow_status)
+            log_entry["trade_status"] = _vg.status
+            log_entry["reason"] = f"Vision: {_vg.note} — {shadow_status} ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Naked Option Buy आणि Credit Spread दोन्ही independently
         # optional असायला पाहिजेत — कमी कॅपिटल असलेला user फक्त naked करणं पसंत करतो") — आधी credit
@@ -474,6 +530,8 @@ def process_symbol(access_token, symbol, lot_size=65):
                 # trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी
                 # ठरायचा, आणि नेमकी entry-क्षणाचीच signal_log रांग हरवायची.
                 trade_status = format_trade_result(trade_ok, trade_response)
+            if _vg is not None and _vg.signal_id:
+                _vision_note(_vg.signal_id, f"{trade_status} (lots {lots})")
 
             rsi_reason = f"RSI {rsi_value} ({timeframe_suffix}), फिल्टर पास" if entry_rsi_gate_enabled else f"RSI Gate बंद ({timeframe_suffix}, तपासलं नाही)"
             cloud_db.save_srv2_state(symbol, last_tested_level=level_price, last_sl_hit_time=state["last_sl_hit_time"])

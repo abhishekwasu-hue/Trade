@@ -538,7 +538,7 @@ def is_15m_strategy_ready_for(symbol, direction, trading_mode):
 
 
 FIVE_MIN_FAMILY_SOURCES = ("dynamic_sr_instant", "dynamic_sr_instant_otm_shadow", "dynamic_sr_instant_min_hold_shadow",
-                           "dynamic_sr_instant_srv3_shadow")
+                           "dynamic_sr_instant_srv3_shadow", "dynamic_sr_instant_vision_shadow")
 
 
 def close_open_5m_positions(access_token, symbol, detail):
@@ -576,6 +576,16 @@ def process_symbol(access_token, symbol, lot_size=65):
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच lots
     # (वेगळं सेटिंगच नव्हतं) घ्यायचा — आता स्वतंत्र, Bot Dynamic SR Algo पानावरून बदलण्याजोगं.
     naked_lots = settings.get("naked_lots", lots)
+    # 🎓 Vision V1 (reduce-only gate, फक्त PAPER): gate half size देऊ शकतो ⇒ प्रत्येक level साठी मूळ lots पुन्हा (खाली loop मध्ये).
+    # Approve / reject झालेले levels या cycle ला touch नसला तरी पुन्हा तपासले जातात (bot चे सगळे gates पुन्हा) — `vision/gate.py`.
+    _lots_base, _naked_base = lots, naked_lots
+    try:
+        from vision.gate import forced_levels as _vision_forced_levels, is_forced as _vision_is_forced
+        _vision_forced = (_vision_forced_levels("dynamic_sr_instant", symbol, settings.get("trading_mode", "PAPER"))
+                          if settings.get("trading_mode", "PAPER") == "PAPER" else [])
+    except Exception as exc:
+        print(f"⚠️ vision forced_levels त्रुटी (trade वर परिणाम नाही): {exc}")
+        _vision_forced, _vision_is_forced = [], None
     bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
     bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
     entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
@@ -673,6 +683,7 @@ def process_symbol(access_token, symbol, lot_size=65):
     outcomes = []
     target_hit_today = _NOT_CHECKED
     for row, timeframe_suffix in pooled_levels:
+        lots, naked_lots = _lots_base, _naked_base
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up,
         # फक्त Breakout साठीच, established reversal-touch मार्गाला अजिबात स्पर्श न करता) — साधारण
@@ -691,6 +702,10 @@ def process_symbol(access_token, symbol, lot_size=65):
         if not hit and entry_breakout_gate_enabled and timeframe_suffix == "5M" and todays_5m_candles_all:
             hit, hit_type, approx_price = check_level_crossed(row["zone_low"], todays_5m_candles_all[-2:])
             breakout_catchup_hit = hit
+        _vision_forced_hit = False
+        if not hit and _vision_forced and _vision_is_forced(_vision_forced, row["zone_low"], timeframe_suffix):
+            # Vision V1 निर्णय झालेला level — touch नाही, पण bot चे gates पुन्हा; entry फक्त gate ने ताजा APPROVED दिला तरच (खाली)
+            hit, hit_type, approx_price, _vision_forced_hit = True, "TOUCH", current_price, True
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — दिशा आता row["zone_type"] च्या साठवलेल्या
         # (मागच्या रात्रीच्या/मागच्या merge-cron cycle च्या) SUPPORT/RESISTANCE label वरून नाही, तर
@@ -724,7 +739,8 @@ def process_symbol(access_token, symbol, lot_size=65):
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now,
             "level_type": f"DYNAMIC_SR_{role}_{timeframe_suffix}",
-            "level_price": row["zone_low"], "hit_type": hit_type or "NO_HIT", "direction": direction if hit else "NONE",
+            "level_price": row["zone_low"], "hit_type": "VISION_FORCED" if _vision_forced_hit else (hit_type or "NO_HIT"),
+            "direction": direction if hit else "NONE",
             # 🎓 वापरकर्त्याने सापडवलेली bug — हा संदेश "level cross आढळला नाही" असायचा, पण प्रत्यक्ष
             # निकष (check_level_crossed वरचा docstring बघा) TOUCH किंवा GAP_THROUGH आहे — "cross" या
             # शब्दाने असं वाटायचं की entry साठी level पूर्ण ओलांडून पलीकडे बंद व्हावी लागते, जे खरं
@@ -1115,16 +1131,33 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
-        # 🎓 Vision V0 (shadow / notify) — फक्त नोंद: signal queue मध्ये जातो, chart + vision + Telegram वेगळा worker करतो. Trade चा निर्णय,
-        # size आणि exits यावर कुठलाच परिणाम नाही (submit_signal नेहमी None, कधीच raise नाही). LIVE ⇒ hook काहीच करत नाही.
+        # 🎓 Vision gate (`vision/gate.py`, फक्त PAPER; LIVE ⇒ नेहमी ENTER): V0 (shadow / notify) ⇒ फक्त नोंद, ENTER. V1 ⇒ HOLD (vision /
+        # तुमचा निर्णय बाकी — SKIPPED_VISION_PENDING, hit मोजणीत नाही), ENTER (≤ मूळ lots — reduce-only) किंवा SHADOW (नाकारलेला ⇒ PAPER
+        # shadow trade, खाली). Gate कधीच raise करत नाही; चूक ⇒ ENTER पूर्ण size. Exits ला हात नाही.
+        _vg = None
         try:
-            from vision.hook import submit_signal as _vision_submit
-            _vision_submit("dynamic_sr_instant", symbol, settings.get("trading_mode", "PAPER"), direction, row["zone_low"], role,
-                           timeframe_suffix, now, spot=current_price,
-                           tags={"breakout_entry": bool(is_breakout_trade), "directional": bool(is_directional_trade), "hit": hit_type},
-                           last_bar=recent_candles[-1] if recent_candles else None)
+            from vision.gate import entry_gate as _vision_gate, note_execution as _vision_note
+            _vg = _vision_gate("dynamic_sr_instant", symbol, settings.get("trading_mode", "PAPER"), direction, row["zone_low"], role,
+                               timeframe_suffix, now, current_price,
+                               lots if settings.get("credit_spread_enabled", True) else 0,
+                               naked_lots if settings.get("naked_enabled", True) else 0,
+                               tags={"breakout_entry": bool(is_breakout_trade), "directional": bool(is_directional_trade), "hit": hit_type},
+                               last_bar=recent_candles[-1] if recent_candles else None, forced=_vision_forced_hit)
         except Exception as exc:
-            print(f"⚠️ vision hook त्रुटी (trade वर परिणाम नाही): {exc}")
+            print(f"⚠️ vision gate त्रुटी (trade वर परिणाम नाही): {exc}")
+        if _vg is None and _vision_forced_hit:                             # touch नव्हता आणि gate चालला नाही ⇒ entry नाही
+            log_entry["trade_status"] = "SKIPPED_VISION_FORCED_STALE"
+            log_entry["reason"] = "Vision: forced level, gate उपलब्ध नाही ⇒ entry नाही"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is not None and _vg.action == "HOLD":
+            log_entry["trade_status"] = _vg.status
+            log_entry["reason"] = f"Vision: {_vg.note}"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is not None and _vg.action == "ENTER":
+            lots = min(lots, _vg.lots) if settings.get("credit_spread_enabled", True) else lots
+            naked_lots = min(naked_lots, _vg.naked_lots) if settings.get("naked_enabled", True) else naked_lots
         expiry_index = 1 if is_todays_expiry_day(access_token, symbol) else 0
         raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol, expiry_index=expiry_index)
         if not raw_chain:
@@ -1154,6 +1187,32 @@ def process_symbol(access_token, symbol, lot_size=65):
         # म्हणून live_trades मध्येच कायमचा साठवला जातो (आधी फक्त Signal Log च्या reason मध्ये होता,
         # जो Trade Log/PDF शी कधीच जोडलेला नव्हता).
         entry_reason_tag = "BREAKOUT_ENTRY" if is_breakout_trade else ("IV_BREAKOUT_DIRECTIONAL" if is_directional_trade else None)
+
+        # Vision V1: नाकारलेला / drift झालेला signal ⇒ मूळ lots ने PAPER shadow (credit spread, तेच exit नियम — trading_engine चा
+        # SHADOW_EXIT_PARENT_SOURCE), source वेगळा ⇒ खऱ्या आकडेवारीत मिसळत नाही. खरा trade नाही.
+        if _vg is not None and _vg.action == "SHADOW":
+            shadow_status = "shadow: strike-निवड अयशस्वी"
+            try:
+                _sr = select_credit_spread_itm(raw_chain, direction, atm_strike, step=strike_step,
+                                               itm_depth_points=settings["itm_depth_points"], hedge_width_points=settings["hedge_width_points"])
+                if has_open_trade_from_source(symbol, "dynamic_sr_instant_vision_shadow"):     # algorithm सारखंच: एका वेळी एकच position
+                    shadow_status, _sr = "shadow: आधीचा shadow अजून उघडा ⇒ नवा नाही", None
+                if _sr is not None:
+                    _ok, _resp = open_multi_leg_trade(
+                        access_token, symbol, _sr, lots=_lots_base, lot_size=lot_size, sl_pct_of_max_loss=None, target_pct_of_max_profit=100,
+                        product_type="D", trading_mode="PAPER", trading_style="INTRADAY", sl_pct_of_credit=100,
+                        source="dynamic_sr_instant_vision_shadow", entry_level_price=row["zone_low"], entry_timeframe=timeframe_suffix,
+                        entry_spot_price=underlying_price, entry_reason_tag=entry_reason_tag, direction=direction,
+                        is_directional_trade=is_directional_trade,
+                    )
+                    shadow_status = "shadow: " + format_trade_result(_ok, _resp)
+            except Exception as exc:
+                shadow_status = f"shadow त्रुटी: {exc}"
+            _vision_note(_vg.signal_id, shadow_status)
+            log_entry["trade_status"] = _vg.status
+            log_entry["reason"] = f"Vision: {_vg.note} — {shadow_status}"
+            cloud_db.save_signal_log(log_entry)
+            continue
 
         spread_result = None
         defer_spread_disabled_log = False
@@ -1209,6 +1268,8 @@ def process_symbol(access_token, symbol, lot_size=65):
                 # क्षणाचीच signal_log रांग हरवायची.
                 trade_status = format_trade_result(trade_result, trade_response)
             log_entry["trade_status"] = trade_status
+            if _vg is not None and _vg.signal_id:
+                _vision_note(_vg.signal_id, f"{trade_status} (lots {lots})")
             # 🎓 Directional trade (IV Breakout Gate — दिशा-flip, किंवा नवीन Breakout Entry) असल्यास
             # Signal Log मध्येच स्पष्ट नोंद — नंतर Performance Report/Signal Log मधून reversal विरुद्ध
             # directional trades वेगळे शोधता यावेत.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Vision V1 - Telegram Approve/Reject बटणं (long-polling, webhook नाही; फक्त PAPER signals)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 🎓 paths तुमच्या VPS प्रमाणे. VISION_CALLBACK_SECRET आणि TELEGRAM_APPROVER_IDS .env मध्ये हवेत, नाहीतर service सुरू होत नाही.
+# Restart ⇒ उघडे PENDING_HUMAN signals EXPIRED (जुना approve चालत नाही). Exits ला ही service लागत नाही.
+WorkingDirectory=/root/Trade
+ExecStart=/usr/bin/python3 -m vision.telegram_bot
+EnvironmentFile=/root/Trade/.env
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

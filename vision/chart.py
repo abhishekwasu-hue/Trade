@@ -154,6 +154,8 @@ def render(df1m, sig, daily=None):
         setup, higher, tfs = panels(df1m, sig["signal_ts"], sig.get("setup_tf"), daily, sig.get("last_bar"))
         meta.update(setup_last=str(setup["last_ts"].max()) if len(setup) else None, higher_last=str(higher["last_ts"].max()) if len(higher) else None,
                     setup_bars=len(setup), higher_bars=len(higher), tfs=[s for s in tfs])
+        rng = (setup["high"] - setup["low"]).tail(20)
+        meta["median_range"] = float(rng.median()) if len(rng) else None              # V1 drift guard (setup TF, signal पर्यंतच)
         if len(setup) < 5:
             meta["error"] = "setup TF चे bars अपुरे"
             return None, meta

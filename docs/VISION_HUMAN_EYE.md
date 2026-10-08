@@ -1,9 +1,10 @@
 # Vision + Human-Eye — PAPER signals ची chart तपासणी
 
-> स्रोत: TRADE_VISION_HUMAN_CONFIRM_PROMPT.md (§10 तुमचे निर्णय आणि §11 PNG जतन — विरोध असेल तर हे जिंकतात) + 2026-10-07 चे निर्णय. टप्पे V0 → V1 → V2 → V3. **हे पान V0 पर्यंत अद्ययावत.**
+> स्रोत: TRADE_VISION_HUMAN_CONFIRM_PROMPT.md (§10 तुमचे निर्णय आणि §11 PNG जतन — विरोध असेल तर हे जिंकतात) + 2026-10-07 चे निर्णय. टप्पे V0 → V1 → V2 → V3. **हे पान V1 पर्यंत अद्ययावत.**
 
 ## अटळ नियम
-1. Vision / AI कधीच order देत नाही, size वाढवत नाही (reduce-only). **V0 मध्ये trading वर शून्य परिणाम** — hook नेहमी `None`, bot त्याचा परिणाम वापरत नाही (test).
+1. Vision / AI कधीच order देत नाही, size वाढवत नाही (reduce-only). **V0 modes (shadow / notify) मध्ये trading वर शून्य परिणाम.** V1 modes मध्ये
+   फक्त entry थांबवणे / अर्धा size — bot मध्ये gate चे lots फक्त `min(मूळ, gate)` मधूनच वापरले जातात (AST test).
 2. Exits पूर्ण automatic — `trade_monitor.py` / `trading_engine.py` / `engine_service.py` मध्ये vision नाही (test).
 3. किंमती image वरून नाहीत — level / spot bot च्या OHLC मधून; vision फक्त enum मत देतो.
 4. फक्त PAPER. LIVE bot ⇒ `effective_mode = off` (कुठलाही mode लागू नाही).
@@ -64,12 +65,63 @@ System prompt मध्ये तुमचे नियम: pullback-only (break
 `python3 -m vision.config show` · `python3 -m vision.config set dynamic_sr_instant vision_mode shadow --by abhishek` (बदल-इतिहास `vision_settings_history` मध्ये, `python3 -m vision.config history`).
 Keys: `vision_mode`, `symbols`, `vision_gray_action`, `vision_disagree_action`, `vision_fail_action`, `timeout_action`, `approve_window_min`, `max_drift_mr`,
 `exit_advice`, `vision_timeout_sec` (20), `second_audit_below_conf` (0.6), `reuse_window_min` (15), `level_gate`; `_global`: `vision_daily_budget_usd` (0.30),
-`vision_monthly_budget_usd` (5), `morning_audit_time` (08:00). V0 मध्ये `auto_veto` / `human_confirm` / `veto_then_confirm` निवडता येत नाहीत (ValueError "V1 मध्ये").
+`vision_monthly_budget_usd` (5), `morning_audit_time` (08:00), `exec_window_min` (5, V1), `shadow_cooldown_min` (30, V1).
+V1 modes (`auto_veto` / `human_confirm` / `veto_then_confirm`) फक्त PAPER bot वर — bot चा `trading_mode` LIVE किंवा अज्ञात ⇒ save नाकारलं (CLI, dashboard, Telegram तिन्ही).
 
 ### Telegram user ID (V1 approver साठी — आत्ताच काढून ठेवा)
 1. Telegram मध्ये **@userinfobot** ला कुठलाही संदेश पाठवा → तो `Id: 123456789` असं उत्तर देतो. हाच तुमचा user ID.
 2. (पर्याय) तुमच्या trading bot ला संदेश पाठवा, मग `https://api.telegram.org/bot<TOKEN>/getUpdates` उघडा → `"from":{"id": …}`. खाजगी chat मध्ये `chat.id` = तोच आकडा.
 3. V1 मध्ये VPS `.env`: `TELEGRAM_APPROVER_IDS=123456789` (फक्त तुमचा). Token कुठेही paste करू नका.
+
+## V1 — veto_then_confirm / auto_veto / human_confirm
+
+**Defaults अजून `notify` च.** G-V1 (dry-run screenshot) नंतर तुम्ही ठरवाल त्या bot वर `veto_then_confirm` चालू करायचा
+(`/vision vtc dynamic_sr_instant` Telegram वर, किंवा dashboard → 👁 पान → ⚙️ Settings, किंवा `python3 -m vision.config set …`).
+
+| mode | vision मत | काय होतं |
+|---|---|---|
+| `veto_then_confirm` | disagree | आपोआप skip (Telegram वर फक्त माहिती, बटण नाही) ⇒ shadow trade |
+| | agree / gray | ✅ / ❌ बटणं. Approve ⇒ agree पूर्ण, gray **अर्धा** size. Reject ⇒ skip (shadow) |
+| | (मुदतीत उत्तर नाही) | `timeout_action = auto_veto` ⇒ agree पूर्ण, gray अर्धा (`skip` ⇒ skip) |
+| | unavailable | बटणं; उत्तर नाही ⇒ algorithm चा निर्णय (पूर्ण size) |
+| `auto_veto` | agree / gray / disagree / unavailable | बटण नाही: 1 / `vision_gray_action` / `vision_disagree_action` / `vision_fail_action` |
+| `human_confirm` | कोणतंही | नेहमी बटणं (gray ⇒ अर्धा). Reject / timeout ⇒ skip |
+
+```
+Bot cycle 1: सगळे gates पास ⇒ vision.gate.entry_gate ⇒ QUEUED + HOLD   (signal_log SKIPPED_VISION_PENDING — hit / cooldown मध्ये मोजत नाही)
+Worker:      chart ⇒ vision ⇒ decide ⇒ APPROVED / REJECTED / PENDING_HUMAN (बटणांसह chart; मुदत approve_window_min = 10)
+Telegram service (long-polling): ✅ ⇒ APPROVED · ❌ ⇒ REJECTED  (WHERE status = 'PENDING_HUMAN' — एकदाच)
+Worker:      मुदत संपली ⇒ timeout नियम (caption बदल, बटणं गायब)
+Bot cycle N: forced level (touch नसला तरी तो level पुन्हा तपासतो) ⇒ bot चे सगळे gates पुन्हा ⇒ gate:
+             APPROVED ⇒ drift guard ⇒ ठीक: EXECUTED, lots = floor(lots × factor) · अपयश: DRIFT_REJECTED + shadow
+             REJECTED ⇒ SHADOWED + shadow trade.  अर्ध्या size चे lots 0 ⇒ shadow
+Worker:      APPROVED / REJECTED ला exec_window_min (5) मध्ये bot पोहोचला नाही (gates बदलले) ⇒ EXPIRED (Telegram माहिती)
+```
+
+- **Forced level (touch नसताना):** फक्त V1 mode, फक्त आजचे, फक्त exec_window आतले निर्णय. ENTER फक्त ताज्या APPROVED वरून — mode बदलला / चूक / row नाही ⇒
+  `SKIPPED_VISION_FORCED_STALE` (touch शिवाय algorithm चा entry कधीच नाही). signal_log मध्ये `hit_type = VISION_FORCED`.
+- **Worker बंद असला तरी अडकत नाही:** bot चा gate स्वतः timeout लावतो — PENDING_HUMAN मुदत ⇒ timeout नियम; QUEUED / RUNNING `approve_window_min` पेक्षा जुने ⇒
+  "vision unavailable + उत्तर नाही" (veto_then_confirm ⇒ algorithm, human_confirm ⇒ skip, auto_veto ⇒ `vision_fail_action`).
+- **दिशा / breakout प्रकार बदलला** ⇒ जुना निर्णय रद्द (EXPIRED, shadow नाही), हा touch नवा signal.
+- **½ size:** चालू leg चे lots 0 झाले (उदा. 1 lot × ½) ⇒ entry नाही, shadow (0-lot / multi-account किमान-1-lot order टाळायला).
+- **नाकारलेला level:** `shadow_cooldown_min` (30) मध्ये पुन्हा विचारणा / shadow नाही (`SKIPPED_VISION_COOLDOWN`); आधीचा shadow उघडा ⇒ नवा shadow नाही.
+
+- **Shadow trade:** नाकारलेला signal मूळ lots ने PAPER मध्ये, वेगळ्या source ने (`dynamic_sr_instant_vision_shadow`, `srv2_momentum_reversal_vision_shadow`).
+  Exit नियम मूळ bot चेच (`SHADOW_EXIT_PARENT_SOURCE`). खरा entry नाही ⇒ hit / cooldown / max-open मध्ये मोजत नाही. Outcome chart तोच trade जोडतो.
+- **Drift guard (entry च्या क्षणी):** 1. spot signal-spot पासून `max_drift_mr` (0.5) × median range (setup TF चे शेवटचे 20 bars, worker chart वरून;
+  chart नसेल तर spot च्या 0.10%) पेक्षा दूर · 2. invalidation (setup मध्ये असेल तर) ओलांडली / level ची बाजू बदलली · 3. pullback origin ओलांडला — bot ने origin
+  दिला तरच (5-Min / 15M bots सध्या origin मोजत नाहीत ⇒ त्यांना लागू नाही) · 4. bot चे daily-loss / kill switch / max-open — bot चे gates पुन्हा चालतात म्हणून रचनेनेच.
+- **Security:** callback = `v1|signal_id|A/R|HMAC16(VISION_CALLBACK_SECRET)`; `from.id` **आणि** `chat.id` दोन्ही `TELEGRAM_APPROVER_IDS` मध्ये; दुसऱ्यांदा / replay ⇒ "आधीच ठरलं";
+  मुदतीनंतर ⇒ "मुदत संपली". Secret / approvers नसतील, किंवा बटणं जिथे जातात तो chat (`TELEGRAM_CHAT_ID`) approvers मध्ये नसेल (group chat ⇒ त्याचा id पण जोडा)
+  ⇒ बटणं पाठवत नाही (caption मध्ये कारण; service सुरू होताना इशारा) ⇒ timeout नियम. Service restart ⇒ उघडे PENDING_HUMAN ⇒ EXPIRED.
+- **Commands** (फक्त approver): `/pending` · `/today` (signals + खर्च) · `/vision <off|shadow|notify|veto|confirm|vtc> <bot>` (LIVE guard सह).
+- **Vision worker अपयश (V1 row)** ⇒ "unavailable" सारखं (veto_then_confirm ⇒ बटणं / algorithm), signal अडकत नाही.
+- **Exits:** `trade_monitor.py` / `trading_engine.py` / `engine_service.py` मध्ये vision import नाही (AST test); trading_engine मध्ये फक्त shadow source ची नावं.
+
+### Dry-run (G-V1) — order नाही
+`python3 scripts/vision_dryrun.py [--no-vision] [--window 3] [--drift] [--mode auto_veto]` — शेवटच्या 1m candle वर TEST signal (bot `vision_dryrun`) ⇒ chart + बटणं ⇒
+तुम्ही ✅ / ❌ / काहीच नाही ⇒ drift guard ⇒ Telegram वर "🧪 DRY-RUN निकाल — कोणताही order नाही". Script मध्ये `trading_engine` चा import नाही (test).
+Telegram service चालू नसेल तर script स्वतः getUpdates वाचतो.
 
 ## Chart images कायमस्वरूपी (§11)
 - **`_sent.png`**: vision ला गेलेली आणि Telegram वरची हीच फाईल. आधी disk वर `O_EXCL` ने लिहिली जाते (नाव असेल तर `_2`; overwrite कधीच नाही),
@@ -102,8 +154,6 @@ Keys: `vision_mode`, `symbols`, `vision_gray_action`, `vision_disagree_action`, 
   - `data/visual_audit/` gitignored — public repo मध्ये images कधीच नाहीत.
 
 ## पुढचे टप्पे
-- **V1** `veto_then_confirm` (NIFTY default): disagree ⇒ auto skip (माहिती); agree / gray ⇒ Approve / Reject बटणं (gray ⇒ अर्धा size); 10 मिनिटांत उत्तर नाही ⇒ `timeout_action = auto_veto`;
-  vision unavailable ⇒ तुम्हाला विचारणे, timeout ⇒ algorithm. Inbound long-polling service (webhook नाही), chat.id + from.id whitelist, HMAC single-use callbacks,
-  conditional `WHERE status='PENDING'`, drift guard (4 नियम), restart ⇒ PENDING expire, नाकारलेल्यांचं shadow tracking, `scripts/vision_dryrun.py`. G-V1: dry-run screenshot.
+- **V1** ✅ (वर). G-V1: dry-run screenshot (approve / reject / timeout) ⇒ मग कोणत्या bots वर `veto_then_confirm` ते तुम्ही ठरवा.
 - **V2** 08:00 level audit (NIFTY, 1 image, सर्वात स्वस्त model), `level_gate` off.
 - **V3** "Vision & Human Eye" पान + साप्ताहिक `docs/reports/vision_human_eye.md` (random-veto baseline ≥ 1000).

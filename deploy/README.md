@@ -995,3 +995,22 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 - Images: `data/visual_audit/YYYY-MM-DD/*_sent.png` (vision ला गेलेली) आणि `*_outcome.png` (POST-HOC). Outcome chart वर मराठी
   "POST-HOC: vision ला पाठवलेली नाही" साठी Devanagari font: `sudo apt-get install -y fonts-noto-core` (नसेल तर इंग्रजी शीर्षक). पान: ANALYZE → 👁 Vision & Human Eye.
 - दिवसाचा वापर: `python3 -m vision.worker --usage` · settings: `python3 -m vision.config show` / `set <bot> vision_mode shadow --by <नाव>`.
+
+### Vision V1 — veto_then_confirm (Telegram Approve / Reject)
+
+- काय: V1 mode असलेल्या **PAPER** bot चा signal ⇒ entry थांबतो ⇒ vision मत ⇒ Telegram वर ✅ / ❌ (मुदत 10 मिनिटं) ⇒ bot पुढच्या मिनिटाला drift guard नंतर
+  पूर्ण / अर्ध्या size ने entry, किंवा नाकारलेला signal PAPER shadow trade. Defaults अजून `notify` — G-V1 नंतर तुम्ही mode बदलाल. तपशील: `docs/VISION_HUMAN_EYE.md`.
+- `.env` (नवीन ओळी; secret कुठेही paste / print करू नका):
+  `VISION_CALLBACK_SECRET=<python3 -c "import secrets; print(secrets.token_hex(32))" चं उत्तर>` · `TELEGRAM_APPROVER_IDS=<तुमचा Telegram user id>`.
+  Bot चे संदेश group मध्ये जात असतील (`TELEGRAM_CHAT_ID` ऋण आकडा) तर तो id पण त्याच ओळीत (comma ने) — नाहीतर बटणं पाठवली जात नाहीत.
+- Telegram inbound service (long-polling — port उघडायचा नाही). Restart फक्त market बंद असताना:
+
+```
+sudo cp deploy/vision_telegram.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now vision_telegram.service
+journalctl -u vision_telegram.service -n 20 --no-pager
+```
+
+- Dry-run (order नाही): `python3 scripts/vision_dryrun.py --no-vision` (खर्च 0) ⇒ ✅ दाबा; पुन्हा ❌; पुन्हा काहीच न दाबता (3 मिनिटं ⇒ timeout).
+  `--drift` ⇒ drift guard नकार. Vision सह (≈ $0.01): `--no-vision` शिवाय.
+- Mode: Telegram `/vision vtc dynamic_sr_instant` · `/pending` · `/today`, किंवा dashboard 👁 पान → ⚙️ Settings. LIVE bot ला V1 mode निवडता येत नाही.
