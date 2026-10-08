@@ -8,6 +8,7 @@ collect_index_futures_volume.py
 साठवण (repo मध्ये commit होत नाही — .gitignore):
     data/oe_futures_5min_<SYMBOL>.parquet   (timestamp, open, high, low, close, volume, oi, contract)
     data/oe_index_5min_<SYMBOL>.parquet     (timestamp, open, high, low, close, volume, oi)
+    data/oe_futures_5min_<SYMBOL>_all.parquet  (front + पुढचा contract, key = timestamp + contract — Chart Reader K10.3 चा volume roll)
 एकाच timestamp चा आधी साठवलेला row ठेवला जातो (rollover नंतर पुढच्या contract चे जुने दिवस front-month चा डेटा बदलत नाहीत).
 
 चालवणे (VPS वर, रोज बाजार बंद झाल्यावर; मागचे 5 दिवस पुन्हा मागवले जातात म्हणून एखादा दिवस चुकला तरी भरून निघतो):
@@ -24,7 +25,7 @@ import pandas as pd
 import cloud_db
 import verify_opportunity_data_availability as V
 from config import get_ist_today
-from opportunity_engine.volume import candles_to_df, merge_store
+from opportunity_engine.volume import candles_to_df, merge_store, merge_store_by_contract
 from upstox_api import SYMBOL_INSTRUMENT_KEYS
 
 DATA_DIR = "data"
@@ -37,6 +38,14 @@ def store_path(kind, symbol, data_dir=DATA_DIR):
 def _merge_into(path, new):
     old = pd.read_parquet(path) if os.path.exists(path) else None
     merged = merge_store(old, new)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    merged.to_parquet(path, index=False)
+    return len(merged) - (0 if old is None else len(old)), len(merged)
+
+
+def _merge_all(path, new):
+    old = pd.read_parquet(path) if os.path.exists(path) else None
+    merged = merge_store_by_contract(old, new)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     merged.to_parquet(path, index=False)
     return len(merged) - (0 if old is None else len(old)), len(merged)
@@ -57,6 +66,24 @@ def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
     added, total = _merge_into(store_path("futures", symbol, data_dir), fdf)
     out.update({"futures_rows": len(fdf), "futures_added": added, "futures_total": total,
                 "volume_nonzero_pct": round(100.0 * (fdf["volume"] > 0).mean(), 1) if len(fdf) else 0.0})
+    # पुढचा contract सुद्धा (K10.3 roll) — `_all` store मध्ये, front सोबत. अपयश ⇒ फक्त नोंद (front data वर परिणाम नाही).
+    try:
+        parts = [fdf]
+        chain, cerr = V.resolve_futures_chain(token, symbol, today, n=2)
+        for nxt in [c for c in chain if c["instrument_key"] != info["instrument_key"]]:
+            nf = V.fetch_candles_window(token, nxt["instrument_key"], "5minute", start, today)
+            if nf["status"] == 200:
+                parts.append(candles_to_df(nf["candles"], contract=nxt["trading_symbol"]))
+                out["next_contract"] = nxt["trading_symbol"]
+            else:
+                out["next_error"] = f"HTTP {nf['status']} {nf['error']}"
+        if cerr:
+            out["next_error"] = cerr
+        added_all, total_all = _merge_all(os.path.join(data_dir, f"oe_futures_5min_{symbol.upper()}_all.parquet"),
+                                          pd.concat([p for p in parts if len(p)], ignore_index=True) if any(len(p) for p in parts) else fdf)
+        out.update({"all_added": added_all, "all_total": total_all})
+    except Exception as exc:                                             # नवीन पायरीचं अपयश ⇒ फक्त नोंद; front / index collection चालू राहते
+        out["next_error"] = f"{type(exc).__name__}: {exc}"
     idx_key = SYMBOL_INSTRUMENT_KEYS.get(symbol.upper())
     if idx_key:
         ix = V.fetch_candles_window(token, idx_key, "5minute", start, today)

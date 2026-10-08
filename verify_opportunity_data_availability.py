@@ -201,6 +201,21 @@ def resolve_front_future(token, name, today):
     }, None
 
 
+def resolve_futures_chain(token, name, today, n=2):
+    """Front + पुढचे (n) अजून expire न झालेले futures contracts, expiry क्रमाने (Chart Reader K10.3: volume roll साठी पुढचा contract
+    सुद्धा साठवायचा). रिटर्न (list, error|None)."""
+    params = {"query": name, "exchanges": "NSE", "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
+    status, body, error = _get(f"{BASE_V2}/instruments/search", token, params=params)
+    if status != 200:
+        return [], f"HTTP {status}: {error}"
+    today_s = today.isoformat()
+    rows = [r for r in ((body or {}).get("data") or []) if _name_before_fut(r.get("trading_symbol")) == name.upper()
+            and _expiry_str(r.get("expiry")) >= today_s]
+    rows.sort(key=lambda r: _expiry_str(r.get("expiry")))
+    return [{"trading_symbol": r.get("trading_symbol"), "instrument_key": r.get("instrument_key"), "expiry": _expiry_str(r.get("expiry")),
+             "lot_size": r.get("lot_size")} for r in rows[:n]], None
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # ४. Expired futures (Upstox Plus plan चे Expired Instruments API)
 # ---------------------------------------------------------------------------------------------------------------------

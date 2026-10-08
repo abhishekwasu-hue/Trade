@@ -1381,3 +1381,37 @@ Deploy आधी 2 code दुरुस्त्या (Abhi चा नियम
   (फक्त purpose="golden", illustration; tuning नाही; अंतिम holdout चाचणीतून वगळले). `CONTAMINATED_END` 2026-10-06 → 2026-10-08.
 - VPS export (`research/elliott_vps_data.py golden`) आता 2026-07-01 → 2026-10-08 ची नवी file लिहितो (`NIFTY_1m_2026-07-01_2026-10-08.csv.gz`);
   जुनी 10-06 file (golden regression) तशीच.
+
+## 2026-10-08 · G-E1a — Chart Reader (report-only) + Knowledge Base
+**काय केलं** (`chart_reader/`, `docs/CHART_READER.md`, KB `docs/knowledge/KNOWLEDGE_BASE.md`):
+- Evaluate = KB भाग B चे 8 टप्पे; गोष्ट [K#] tags सह. सगळी 12 साधनं (a–l) प्रत्येक वेळी उमेदवार (≥ 3 pivots ⇒ trendline उमेदवार नेहमी);
+  active area K6.4; Fibonacci / C = A / channel ला गुण फक्त ठोस area सोबत.
+- KB भाग D: नवीन पुरावे PB, LQ, VL, DV (RSI14, confirmed pivots), PT, TM, VX (`evidence.py`, `volume.py`) + A3 व्याख्यात्मक व्हेटो.
+  Thresholds 60/45 आणि weights बदलले नाहीत.
+- एकच व्याख्या (भाग G): impulse origin वरचा break = `elliott/breaks.py` real break; MR = 20 बंद bars (`levels_v2` सुद्धा 50 → 20);
+  swings = `elliott/swings.py`; `legs.py` r_warn 0.75 → 0.80. Reversal = `elliott/reversal.py` soft (पुरावा).
+- Futures volume (K10.3): collector आता front + पुढचा contract `_all` store मध्ये; causal continuous roll; slot-normalised `rel_vol` (20 दिवस).
+  IS / VAL मध्ये volume नाही ⇒ VL फक्त PAPER scorecard मधून.
+- Tests आधी (failing): evidence, grade, volume, evaluate (causal), areas targets; collector next contract.
+
+**निर्णय (कारणासह, Abhi च्या मंजुरीसाठी):**
+- Counter-move impulsive ⇒ PB −10 (पुरावा, grade C जबरदस्तीने नाही); structure अशा वेळी entry point देत नाही ⇒ entry नाही.
+  Origin acceptance (real break) ⇒ व्हेटो. Major level acceptance ⇒ PB −10.
+- **Target (टप्पा 7):** पहिल्या IS run मध्ये 44 A/B setups पैकी सगळे R:R < 3 (1:0.0–0.5) ने अडले — target म्हणून correction च्या आतले लहान pools
+  (swing / equal, round, gap edge, PDC) निवडले जात होते. KB "पुढचा opposite area किंवा impulse चं टोक" ⇒ आता target = impulse सुरू झाल्यापासूनचं
+  trade-दिशेचं टोक (सहसा impulse end; expanded flat ⇒ B), मग पलीकडचे ठोस HTF areas (a/b/c/d/k). मधले areas = obstacles (गोष्टीत नोंद).
+- IS grade वितरण (400 pullback-end उमेदवार, Elliott सह): A 3.2% · B 8.2% · C 88.5% · entries 12; व्हेटो 17 (count स्पष्ट A-end/B 10, S6a बंद 7).
+  Thresholds बदलायचे का — Abhi चा निर्णय (KB भाग D ⚠️).
+- Reversal दिवस 2018-02-02 (LTCG budget): bull put बाजूचे 19 bars सगळे C, entry 0 ✓.
+- Calibration (MR20; बदल नाही): MR20 ≈ median-50 (p50 0.998), ≈ 0.90 × ATR14. Equal-pool tolerance 0.10–0.50 MR मध्ये retest-reject दर सपाट
+  (64.5–65.6%, baseline 68%) ⇒ 0.15 ठीक, edge नाही. Sweep: reclaim % खोलीसोबत घटतो (0–0.1: 96%, 0.5–1.0: 58%, > 1.5: 20%); reclaim
+  झाल्यावर यश खोलीसोबत वाढतं ⇒ 0.1–1.0 band ठीक. Fibonacci ± 0.25 MR: pullback टोकं 30.5% वि. uniform null 31.1% ⇒ Fibonacci ला स्वतःचा edge
+  नाही (KB भाग F शी सुसंगत; मोजपट्टीच).
+- 7 Oct golden: trade-data export (VPS block) अजून नाही ⇒ अहवाल प्रलंबित.
+
+- Independent review (high नाही) नंतर दुरुस्त्या: futures volume `load` दोन्ही files एकत्र (जुना इतिहास); flat चा B (impulse टोकाजवळ) "double top" म्हणून
+  PT −10 नाही; VIX फक्त बंद bars; major HTF levels (degree ≥ 2, impulse पट्ट्यात) structure ला ⇒ "major level acceptance" आता चालतो; collector च्या
+  नवीन पायरीचं अपयश front/index collection थांबवत नाही; MR = 0 guard; tz-aware timestamps.
+  जाणीवपूर्वक ठेवलं: `legs.py` r_warn 0.80 (KB) ⇒ `level_strength` / `bot_view` / `leg_level_validation` च्या default LegConfig मध्ये 75–80% pullback आता
+  MIXED (आधी DANGEROUS); PCS signal r_warn स्वतः देतो ⇒ बदल नाही. Roll नंतर 20-दिवस baseline जुन्या contract चा (खरा volume सलग ⇒ परिणाम लहान).
+**उघडे प्रश्न:** thresholds (60/45) वितरणानुसार; IS उदाहरणांमध्ये (flat/triangle) entry नसलेले A (R:R < 3) — target नियम योग्य वाटतो का.

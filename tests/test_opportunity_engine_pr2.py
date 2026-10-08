@@ -207,6 +207,7 @@ def test_collector_stores_futures_and_index_and_is_idempotent(tmp_path, monkeypa
     calls = []
     monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: ({"trading_symbol": f"{s} FUT 30 OCT 26", "instrument_key": f"NSE_FO|{s}",
                                                                               "expiry": "2026-10-30", "lot_size": 75}, None))
+    monkeypatch.setattr(COL.V, "resolve_futures_chain", lambda tok, s, today, n=2: ([], None))
 
     def fetch(tok, key, interval, start, end, expired=False):
         calls.append(key)
@@ -222,6 +223,27 @@ def test_collector_stores_futures_and_index_and_is_idempotent(tmp_path, monkeypa
     assert stored["contract"].iloc[0] == "NIFTY FUT 30 OCT 26" and stored["volume"].sum() == 200
     monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: (None, "HTTP 401"))
     assert "error" in COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 2), data_dir=str(tmp_path), log=lambda s: None)
+
+
+def test_collector_also_stores_next_contract_keyed_by_contract(tmp_path, monkeypatch):
+    """Chart Reader K10.3: volume roll साठी पुढचा contract सुद्धा `_all` store मध्ये (timestamp + contract); front file बदलत नाही."""
+    import datetime
+    front = {"trading_symbol": "NIFTY FUT 27 OCT 26", "instrument_key": "NSE_FO|A", "expiry": "2026-10-27", "lot_size": 65}
+    nxt = {"trading_symbol": "NIFTY FUT 24 NOV 26", "instrument_key": "NSE_FO|B", "expiry": "2026-11-24", "lot_size": 65}
+    monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: (front, None))
+    monkeypatch.setattr(COL.V, "resolve_futures_chain", lambda tok, s, today, n=2: ([front, nxt], None))
+
+    def fetch(tok, key, interval, start, end, expired=False):
+        vol = {"NSE_FO|A": 100, "NSE_FO|B": 40}.get(key, 0)
+        return {"status": 200, "candles": [["2026-10-01T09:15:00+05:30", 1, 2, 0.5, 1.5, vol, 9]], "error": None}
+    monkeypatch.setattr(COL.V, "fetch_candles_window", fetch)
+    r = COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 2), data_dir=str(tmp_path), log=lambda s: None)
+    assert r["next_contract"] == "NIFTY FUT 24 NOV 26" and r["all_total"] == 2
+    allf = pd.read_parquet(tmp_path / "oe_futures_5min_NIFTY_all.parquet")
+    assert sorted(allf["contract"]) == ["NIFTY FUT 24 NOV 26", "NIFTY FUT 27 OCT 26"]
+    assert pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path)))["volume"].sum() == 100
+    r2 = COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 2), data_dir=str(tmp_path), log=lambda s: None)
+    assert r2["all_added"] == 0
 
 
 def test_resolver_returns_front_future_per_symbol(monkeypatch):
