@@ -5,8 +5,9 @@
   auto_veto          agree ⇒ 1 · gray ⇒ vision_gray_action (half 0.5 / skip 0 / ignore 1) · disagree ⇒ vision_disagree_action
                      (skip 0 / half 0.5 / ignore 1) · unavailable ⇒ vision_fail_action (ignore 1 / skip 0)
   human_confirm      नेहमी Telegram (✅/❌). Approve ⇒ agree / unavailable / disagree 1, gray 0.5 · Reject / timeout ⇒ skip
-  veto_then_confirm  disagree ⇒ आपोआप skip (फक्त माहिती, बटण नाही) · agree / gray ⇒ Telegram (gray ⇒ अर्धा) ·
-                     timeout ⇒ timeout_action (auto_veto: agree पूर्ण, gray अर्धा · skip) · unavailable ⇒ Telegram, timeout ⇒ algorithm (1)
+  veto_then_confirm  disagree ⇒ आपोआप skip (फक्त माहिती, बटण नाही) · agree / gray / unavailable ⇒ Telegram (✅ ⇒ agree / unavailable पूर्ण,
+                     gray अर्धा) · timeout ⇒ timeout_action: auto_veto = auto_veto चे नियम (agree पूर्ण, gray ⇒ vision_gray_action,
+                     unavailable ⇒ vision_fail_action) · skip = skip. Approver / बटणं नसतील तर worker हा timeout नियम लगेच लावतो.
 """
 import hashlib
 import hmac
@@ -53,11 +54,10 @@ def decide(mode, verdict, s):
     if mode == "veto_then_confirm":
         if verdict == "disagree":
             return Decision("REJECTED", 0.0, "veto_then_confirm: vision disagree ⇒ आपोआप skip")
-        if verdict == "unavailable":
-            return Decision("PENDING_HUMAN", 1.0, "veto_then_confirm: vision unavailable ⇒ तुम्हाला विचारलं", "APPROVED", 1.0, True)
-        f = 1.0 if verdict == "agree" else 0.5
-        tf = f if s.get("timeout_action", "auto_veto") == "auto_veto" else 0.0
-        return Decision("PENDING_HUMAN", f, f"veto_then_confirm: {verdict}", "APPROVED" if tf > 0 else "REJECTED", tf, True)
+        f = 0.5 if verdict == "gray" else 1.0
+        tf = min(f, verdict_factor(verdict, s)) if s.get("timeout_action", "auto_veto") == "auto_veto" else 0.0
+        why = "vision unavailable ⇒ तुम्हाला विचारलं" if verdict == "unavailable" else verdict
+        return Decision("PENDING_HUMAN", f, f"veto_then_confirm: {why}", "APPROVED" if tf > 0 else "REJECTED", tf, True)
     raise ValueError(f"V1 mode नाही: {mode}")
 
 

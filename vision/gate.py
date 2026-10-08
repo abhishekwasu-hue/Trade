@@ -15,7 +15,8 @@
      PENDING_HUMAN ची मुदत संपली ⇒ timeout नियम — हे gate स्वतःच (`resolve_due`) लावतो.
   6. नाकारलेला level `shadow_cooldown_min` मध्ये पुन्हा ⇒ नवी विचारणा / shadow नाही (SKIPPED_VISION_COOLDOWN).
   7. दिशा किंवा breakout प्रकार बदलला ⇒ जुनी row EXPIRED (shadow नाही), हा touch नवा signal.
-LIVE ⇒ effective_mode off ⇒ नेहमी ENTER (algorithm). काही चूक ⇒ ENTER (algorithm, vision_fail_action = ignore सारखं) + print.
+LIVE ⇒ effective_mode off ⇒ नेहमी ENTER (algorithm). काही चूक ⇒ vision_fail_action: ignore ⇒ ENTER (algorithm) · skip (V1) ⇒ HOLD
+(SKIPPED_VISION_ERROR — entry नाही) + print.
 **Forced level** (touch नसताना फक्त vision निर्णयामुळे तपासलेला) ⇒ ENTER फक्त ताज्या APPROVED row वरून; बाकी सगळं (mode बदलला, चूक, row नाही)
 ⇒ HOLD (SKIPPED_VISION_FORCED_STALE) — touch शिवाय algorithm चा entry कधीच नाही.
 """
@@ -55,8 +56,20 @@ def entry_gate(bot, symbol, trading_mode, direction, level, role, setup_tf, sign
         if forced:
             print(f"⚠️ vision gate त्रुटी (forced level ⇒ entry नाही): {type(exc).__name__}: {exc}")
             return _stale(f"gate error: {exc}")
+        if _fail_skip(bot, trading_mode, path):                        # V1 + vision_fail_action = skip ⇒ "unavailable ⇒ skip" इथेही
+            print(f"⚠️ vision gate त्रुटी ⇒ entry नाही (vision_fail_action = skip): {type(exc).__name__}: {exc}")
+            return Gate("HOLD", status="SKIPPED_VISION_ERROR", note=f"gate error ⇒ entry नाही (vision_fail_action = skip): {exc}")
         print(f"⚠️ vision gate त्रुटी ⇒ algorithm चा निर्णय (पूर्ण size): {type(exc).__name__}: {exc}")
         return Gate("ENTER", lots, naked_lots, 1.0, note=f"gate error: {exc}")
+
+
+def _fail_skip(bot, trading_mode, path=None):
+    """Gate चूक झाल्यावर: V1 mode आणि vision_fail_action = skip ⇒ True (entry नाही). Settings वाचता आल्या नाहीत ⇒ False (algorithm)."""
+    try:
+        s = VC.load(bot, path, DB_TIMEOUT)
+        return VC.effective_mode(s, trading_mode) in VC.V1_MODES and s.get("vision_fail_action") == "skip"
+    except Exception:
+        return False
 
 
 def _stale(note):
@@ -96,7 +109,7 @@ def resolve_due(row, s, now=None, path=None, timeout=DB_TIMEOUT):
     """मुदत संपलेल्या V1 rows ला नियम लावणे (worker असो वा नसो). रिटर्न (ताजी row, बदलला status | None).
       PENDING_HUMAN, deadline गेली ⇒ timeout_status / timeout_factor.
       QUEUED / RUNNING, created_at + approve_window_min गेले (worker बंद / अडकला) ⇒ vision unavailable आणि उत्तर नाही: `decide` चा
-      timeout निकाल (veto_then_confirm ⇒ algorithm पूर्ण size; human_confirm ⇒ skip; auto_veto ⇒ vision_fail_action)."""
+      timeout निकाल (veto_then_confirm / auto_veto ⇒ vision_fail_action (timeout_action = skip ⇒ skip); human_confirm ⇒ skip)."""
     now = pd.Timestamp(now or VS.now_ist())
     sid, st = row["signal_id"], row["status"]
     if st == "PENDING_HUMAN" and row.get("deadline") and pd.Timestamp(row["deadline"]) <= now:

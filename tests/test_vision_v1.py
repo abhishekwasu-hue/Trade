@@ -72,6 +72,10 @@ def test_decide_rules_all_modes():
     assert VD.decide("veto_then_confirm", "agree", {**S, "timeout_action": "skip"}).timeout_status == "REJECTED"
     d = VD.decide("veto_then_confirm", "unavailable", S)
     assert d.ask_human and (d.timeout_status, d.timeout_factor) == ("APPROVED", 1.0)              # unavailable ⇒ विचार; timeout ⇒ algorithm
+    U = {**S, "vision_gray_action": "skip", "vision_fail_action": "skip"}                          # तुमचा नियम: फक्त agree ⇒ entry
+    assert [VD.decide("veto_then_confirm", v, U).timeout_status for v in ("agree", "gray", "unavailable")] == ["APPROVED", "REJECTED", "REJECTED"]
+    assert VD.decide("veto_then_confirm", "gray", U).factor == 0.5                                 # तुम्ही ✅ दाबलं तर gray अर्धा
+    assert VD.decide("veto_then_confirm", "unavailable", {**S, "timeout_action": "skip"}).timeout_status == "REJECTED"
     d = VD.decide("human_confirm", "agree", S)
     assert d.ask_human and d.timeout_status == "REJECTED"                                         # human_confirm: timeout ⇒ skip
     for m in ("auto_veto", "human_confirm", "veto_then_confirm"):
@@ -226,7 +230,8 @@ def test_setup_change_closes_old_row_and_starts_new_signal(db):
 
 
 def test_gate_applies_timeouts_when_worker_is_down(db):
-    """Review S3: worker बंद ⇒ QUEUED कायम HOLD नाही. approve_window नंतर "unavailable + उत्तर नाही" ⇒ veto_then_confirm: algorithm."""
+    """Review S3: worker बंद ⇒ QUEUED कायम HOLD नाही. approve_window नंतर "unavailable + उत्तर नाही" ⇒ veto_then_confirm: vision_fail_action
+    (इथे S = ignore ⇒ algorithm)."""
     set_mode("veto_then_confirm")
     sid = gate().signal_id
     assert VS.expire_stale(0) == 0                                                                # V0 चा stale-expiry V1 row ला लागत नाही
@@ -365,7 +370,51 @@ def test_worker_no_secret_means_no_buttons_and_timeout_rule(db, monkeypatch):
     monkeypatch.delenv("VISION_CALLBACK_SECRET")
     run(None, [msg(GOOD)], monkeypatch)
     cap, buttons = db["photos"][-1]
-    assert buttons is None and "बटणं नाहीत" in cap and VS.get_signal(sid)["status"] == "PENDING_HUMAN"
+    r = VS.get_signal(sid)
+    assert buttons is None and "ENTRY मंजूर" in cap and (r["status"], r["factor"], r["decided_by"]) == ("APPROVED", 1.0, "vision")   # 10 मिनिटं थांबणं नाही
+    assert "approver नाही" in r["decision_reason"]
+
+
+def test_worker_no_approver_gray_and_unavailable_skip_immediately(db, monkeypatch):
+    """veto_then_confirm + timeout auto_veto + gray / fail = skip, approver नाही ⇒ gray आणि unavailable लगेच skip (shadow), agree लगेच entry."""
+    monkeypatch.delenv("TELEGRAM_APPROVER_IDS")
+    VC.save("dynamic_sr_instant", {"vision_gray_action": "skip", "vision_fail_action": "skip"}, "t", trading_mode_fn=paper)
+    sid = _queue_v1("veto_then_confirm")
+    run(None, [msg({**GOOD, "level_real": "unclear"})], monkeypatch)
+    r = VS.get_signal(sid)
+    assert (r["status"], r["factor"], r["verdict"]) == ("REJECTED", 0.0, "gray") and db["photos"][-1][1] is None
+    assert "ENTRY नाकारली" in db["photos"][-1][0]
+    sid = _queue_v1("veto_then_confirm", level=25300.0)
+    run(None, [], monkeypatch, key=False)                                                         # key नाही ⇒ vision unavailable
+    r = VS.get_signal(sid)
+    assert (r["status"], r["factor"], r["verdict"]) == ("REJECTED", 0.0, "unavailable")
+    sid = _queue_v1("veto_then_confirm", level=25600.0)
+    run(None, [msg(GOOD)], monkeypatch)
+    assert (VS.get_signal(sid)["status"], VS.get_signal(sid)["factor"]) == ("APPROVED", 1.0)      # फक्त agree ⇒ entry (लगेच)
+
+
+def test_no_approver_when_can_ask_raises(db, monkeypatch):
+    from vision import tg as TG
+    monkeypatch.setattr(TG, "can_ask", lambda: (_ for _ in ()).throw(RuntimeError("creds")))
+    sid = _queue_v1("veto_then_confirm")
+    run(None, [msg(GOOD)], monkeypatch)
+    assert VS.get_signal(sid)["status"] == "APPROVED"                                             # crash नाही, PENDING मध्ये अडकत नाही
+
+
+def test_stale_queued_with_fail_skip_rejects_and_gate_error_holds(db, monkeypatch):
+    """Worker बंद + fail = skip ⇒ approve_window नंतर REJECTED (shadow), entry नाही. Gate ची चूक + fail = skip ⇒ HOLD (algorithm entry नाही)."""
+    VC.save("dynamic_sr_instant", {"vision_fail_action": "skip"}, "t", trading_mode_fn=paper)
+    set_mode("veto_then_confirm")
+    sid = gate().signal_id
+    tick(db, 13)
+    g = fgate()
+    r = VS.get_signal(sid)
+    assert g.action == "SHADOW" and r["status"] == "SHADOWED" and r["decided_by"] == "stale"
+    monkeypatch.setattr(VG, "_gate", lambda *a, **k: 1 / 0)
+    g = gate(level=25900.0)
+    assert (g.action, g.status) == ("HOLD", "SKIPPED_VISION_ERROR")
+    VC.save("dynamic_sr_instant", {"vision_fail_action": "ignore"}, "t", trading_mode_fn=paper)
+    assert gate(level=25900.0).action == "ENTER"                                                  # ignore ⇒ आधीसारखं algorithm
 
 
 # ------------------------------------------------------------------------------------------------ Telegram callback security
@@ -521,3 +570,21 @@ def test_dryrun_end_to_end_no_order(db, monkeypatch, press, drift, want):
 
 def test_store_v1_modes_match_config():
     assert VS.V1_MODES == VC.V1_MODES                                     # store ला config import करता येत नाही (cycle) ⇒ प्रत
+
+
+def test_shadow_report_lists_decisions_and_trades(db, monkeypatch, tmp_path):
+    import sqlite3
+    sid = _queue_v1("auto_veto")
+    run(None, [msg({**GOOD, "level_real": "unclear"})], monkeypatch)
+    VS.update(sid, status="SHADOWED")
+    tdb = str(tmp_path / "t.db")
+    c = sqlite3.connect(tdb)
+    c.execute("CREATE TABLE live_trades (trade_id TEXT, source TEXT, symbol TEXT, entry_time TEXT, mode TEXT, status TEXT, realized_pnl REAL)")
+    c.execute("INSERT INTO live_trades VALUES ('T1','dynamic_sr_instant_vision_shadow','NIFTY',?, 'PAPER','CLOSED',-1200.0)",
+              ((dt.datetime.fromisoformat(str(VS.get_signal(sid)["signal_ts"])) + dt.timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S"),))
+    c.commit()
+    c.close()
+    lines = []
+    VW.shadow_report(str(VS.get_signal(sid)["signal_ts"])[:10], trades_db=tdb, out=lines.append)
+    assert "V1 signals 1" in lines[0] and "SHADOWED" in lines[1] and "P&L -1,200" in lines[1] and "L25,000.00" in lines[1]
+    assert "नाकारलेले-shadow 1 (P&L -1,200)" in lines[-1]

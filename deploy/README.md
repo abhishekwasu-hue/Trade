@@ -991,6 +991,9 @@ GitHub Actions `Market Structure Refresh` (workflow_dispatch) फक्त म�
 20 18 * * * cd /root/Trade && set -a && . /root/Trade/.env && set +a && python3 scripts/vision_archive.py >> /root/Trade/vision_archive.log 2>&1
 ```
 
+- कमी latency (V1 modes साठी): `deploy/vision_worker.service` (2 s poll, तासाला स्वतः restart) — `cp deploy/vision_worker.service /etc/systemd/system/ &&
+  systemctl daemon-reload && systemctl enable --now vision_worker`. वरची cron ओळ fallback (process lock ⇒ एकच worker).
+- दिवसाचा सारांश: `python3 -m vision.worker --usage` (खर्च) · `python3 -m vision.worker --shadow` (V1 निर्णय + entry वि. नाकारलेले-shadow P&L).
 - तपासणी: `python3 scripts/vision_v0_smoke.py --no-vision` (chart + Telegram, खर्च 0) → `python3 scripts/vision_v0_smoke.py` (1 vision call, tokens/$ छापतो).
 - Images: `data/visual_audit/YYYY-MM-DD/*_sent.png` (vision ला गेलेली) आणि `*_outcome.png` (POST-HOC). Outcome chart वर मराठी
   "POST-HOC: vision ला पाठवलेली नाही" साठी Devanagari font: `sudo apt-get install -y fonts-noto-core` (नसेल तर इंग्रजी शीर्षक). पान: ANALYZE → 👁 Vision & Human Eye.

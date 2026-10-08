@@ -1,0 +1,20 @@
+[Unit]
+Description=Vision worker - QUEUED signals लगेच (2 s poll) chart + vision + निर्णय (फक्त PAPER signals; exits ला लागत नाही)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 🎓 paths तुमच्या VPS प्रमाणे. तासाला स्वतः बाहेर पडतो ⇒ systemd लगेच परत सुरू करतो ⇒ git pull नंतरचा नवा code तासाभरात (किंवा restart ने लगेच).
+# cron मधली `vision.worker --loop-seconds 55` ओळ fallback म्हणून ठेवली तरी चालते — process lock मुळे एका वेळी एकच worker.
+WorkingDirectory=/root/Trade
+EnvironmentFile=/root/Trade/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m vision.worker --loop-seconds 3600 --poll 2
+StandardOutput=append:/root/Trade/vision_worker.log
+StandardError=append:/root/Trade/vision_worker.log
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

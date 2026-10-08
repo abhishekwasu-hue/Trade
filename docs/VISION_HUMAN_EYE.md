@@ -82,8 +82,9 @@ V1 modes (`auto_veto` / `human_confirm` / `veto_then_confirm`) फक्त PAPE
 |---|---|---|
 | `veto_then_confirm` | disagree | आपोआप skip (Telegram वर फक्त माहिती, बटण नाही) ⇒ shadow trade |
 | | agree / gray | ✅ / ❌ बटणं. Approve ⇒ agree पूर्ण, gray **अर्धा** size. Reject ⇒ skip (shadow) |
-| | (मुदतीत उत्तर नाही) | `timeout_action = auto_veto` ⇒ agree पूर्ण, gray अर्धा (`skip` ⇒ skip) |
-| | unavailable | बटणं; उत्तर नाही ⇒ algorithm चा निर्णय (पूर्ण size) |
+| | unavailable | ✅ / ❌ बटणं (Approve ⇒ पूर्ण) |
+| | (मुदतीत उत्तर नाही) | `timeout_action = auto_veto` ⇒ auto_veto चे नियम: agree पूर्ण, gray ⇒ `vision_gray_action`, unavailable ⇒ `vision_fail_action` (`skip` ⇒ सगळे skip) |
+| | (approver / बटणं नाहीत) | 10 मिनिटं न थांबता **लगेच** वरचा timeout नियम (Telegram वर फक्त माहिती: ENTRY मंजूर / नाकारली) |
 | `auto_veto` | agree / gray / disagree / unavailable | बटण नाही: 1 / `vision_gray_action` / `vision_disagree_action` / `vision_fail_action` |
 | `human_confirm` | कोणतंही | नेहमी बटणं (gray ⇒ अर्धा). Reject / timeout ⇒ skip |
 
