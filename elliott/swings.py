@@ -18,6 +18,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from opportunity_engine.cas import strip_cas
 from opportunity_engine.sessions import filter_regular_hours, resample_nse, resample_nse_daily
 from price_action.legs import fractal_pivots, zigzag_pivots
 
@@ -43,7 +44,7 @@ class Pivot:
 def build_frame(df1m, tf):
     """1m (NIFTY spot) → NSE 09:15-anchored TF bars, **फक्त पूर्ण बंद** bars (bar_closed). Columns: timestamp, bar_end, OHLC."""
     if tf == "1m":
-        d = filter_regular_hours(df1m)[["timestamp", "open", "high", "low", "close"]].copy()
+        d = strip_cas(filter_regular_hours(df1m))[["timestamp", "open", "high", "low", "close"]].copy()     # CAS bars structure मध्ये नाहीत
         d["timestamp"] = pd.to_datetime(d["timestamp"])
         d["bar_end"] = d["timestamp"] + pd.Timedelta(minutes=1)
         return d.reset_index(drop=True)

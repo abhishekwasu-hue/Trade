@@ -64,7 +64,7 @@ def attach_futures_volume(frames, fut5):
     f5["volume"] = f5["bar_start"].map(vol5).fillna(0.0).astype(float)
     out["5m"] = f5
     if "15m" in frames:
-        fut15 = sessions.resample_nse(fut.assign(open=0.0, high=0.0, low=0.0, close=0.0), 15)          # फक्त volume बेरीज हवी
+        fut15 = sessions.resample_nse(fut.assign(open=0.0, high=0.0, low=0.0, close=0.0), 15, cas=False)         # फक्त volume बेरीज हवी
         vol15 = fut15.set_index("bar_start")["volume"]
         f15 = frames["15m"].copy()
         f15["volume"] = f15["bar_start"].map(vol15).fillna(0.0).astype(float)

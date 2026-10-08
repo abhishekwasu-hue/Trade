@@ -13,6 +13,7 @@ role सध्याच्या किंमतीच्या सापेक�
 import numpy as np
 import pandas as pd
 
+from . import cas as CAS
 from .config import EngineConfig
 from .level_quality import (ORIGIN_SCORE, REJECT_REASONS, body_core_score, density_percentile, grade, level_id, price_density,
                             reaction_strength, spike_kind)
@@ -160,7 +161,8 @@ def key_levels(daily, t, price, symbol="NIFTY", round_band_pct=3.0):
         if len(d):
             d["date"] = d["timestamp"].dt.normalize()
             last = d.iloc[-1]
-            for name, val in (("PDH", last["high"]), ("PDL", last["low"]), ("PDC", last["close"])):
+            pdc = float(CAS.pdc_col(d).iloc[-1])                          # PDC = official close (CAS); PDH/PDL CAS वगळून
+            for name, val in (("PDH", last["high"]), ("PDL", last["low"]), ("PDC", pdc)):
                 out.append((name, float(val), last["bar_end"]))
             # "आजचा/पुढचा session" = शेवटच्या बंद दिवसानंतरचा weekday; मागचा आठवडा = त्या session च्या आठवड्याआधीचा (शुक्रवार बंद झाल्यावर => नुकताच संपलेला आठवडा)
             ref = last["date"] + pd.Timedelta(days=1)
@@ -195,8 +197,9 @@ def gap_registry(daily, t, cfg):
         return []
     out = []
     start = max(1, len(d) - int(cfg.gap_sessions))
+    closes = CAS.pdc_col(d).to_numpy(float)                              # official close (CAS)
     for i in range(start, len(d)):
-        pdc, op = float(d["close"].iloc[i - 1]), float(d["open"].iloc[i])
+        pdc, op = float(closes[i - 1]), float(d["open"].iloc[i])
         if pdc <= 0 or abs(op - pdc) / pdc * 100.0 < cfg.gap_min_pct:
             continue
         up = op > pdc

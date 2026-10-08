@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from . import cas as CAS
 from .bias import resolve_bias
 from .config import EngineConfig
 from .context import Context, IncrementalTFState, TFState
@@ -140,6 +141,7 @@ def prepare_timeline(frames, bcfg=None, progress=None):
     bcfg = bcfg or BacktestConfig()
     cfg = bcfg.engine
     f5, f15, f1h, f4h, f1d = (_closed(frames[k]) for k in ("5m", "15m", "1h", "4h", "1d"))
+    pdc_arr = CAS.pdc_col(f1d).to_numpy(float)                         # PDC = official close (CAS; 2026-08-03 पासून)
     journal = Journal(cfg, tfs=("1d", "4h", "1h", "15m"))
     arr = {}
     for tf, f in (("1d", f1d), ("4h", f4h), ("1h", f1h), ("15m", f15)):
@@ -180,7 +182,7 @@ def prepare_timeline(frames, bcfg=None, progress=None):
         i_d = int(np.searchsorted(d1_be, np.datetime64(open_t), side="right")) - 1           # शेवटचा बंद Daily bar (D−1)
         if i_d < 3 or len(g) < 6:
             continue
-        pdc, pdh, pdl = float(f1d["close"].iloc[i_d]), float(f1d["high"].iloc[i_d]), float(f1d["low"].iloc[i_d])
+        pdc, pdh, pdl = float(pdc_arr[i_d]), float(f1d["high"].iloc[i_d]), float(f1d["low"].iloc[i_d])            # PDC = official close (CAS)
         daily_adr = measure_adr(f1d.iloc[max(0, i_d - 40):i_d + 1], cfg.adr_days)
         levels, pool = [], []
         if len(journal.trackers["1d"].c) >= 30 and len(journal.trackers["4h"].c) >= 30 and bcfg.levels_every_day:
@@ -189,7 +191,7 @@ def prepare_timeline(frames, bcfg=None, progress=None):
             res = build_levels(journal, {"1d": f1d, "5m": fine}, bcfg.symbol, pdc, cfg, fine=fine, tfs=("15m", "1h", "4h", "1d"))
             levels = res["levels"] + [z for z in res["rejected"] if z.get("status") == "BROKEN"]
             pool = [z for z in res["rejected"] if z.get("status") != "BROKEN" and z.get("kind") in ("DEMAND", "SUPPLY", "SUPPORT", "RESISTANCE")]
-        info = DayInfo(date=d, open=float(g["open"].iloc[0]), pdc=pdc, pdh=pdh, pdl=pdl, close_3d_ago=float(f1d["close"].iloc[i_d - 3]), adr=daily_adr)
+        info = DayInfo(date=d, open=float(g["open"].iloc[0]), pdc=pdc, pdh=pdh, pdl=pdl, close_3d_ago=float(pdc_arr[i_d - 3]), adr=daily_adr)
         g15 = day15.get(d, f15.iloc[0:0])
         days.append(DayPack(date=d, open_t=open_t, df5=g.reset_index(drop=True), df15=g15.reset_index(drop=True), o=g["open"].to_numpy(float), h=g["high"].to_numpy(float),
                             l=g["low"].to_numpy(float), c=g["close"].to_numpy(float), be=g["bar_end"].tolist(), g5=int(g.index[0]),

@@ -36,23 +36,14 @@ from . import settings as CS
 from . import structure as ST
 from . import trend as TR
 from . import volume as VO
+import market_state as MS
 from .profiles import PROFILES, TF_MINUTES
 
 
 def frame(df1m, tf, asof):
-    """1m ⇒ NSE 09:15-anchored TF bars, फक्त पूर्ण बंद (bar_end ≤ asof). Columns: timestamp, bar_end, OHLC."""
-    from opportunity_engine.sessions import resample_nse
-    d = df1m[pd.to_datetime(df1m["timestamp"]) + pd.Timedelta(minutes=1) <= pd.Timestamp(asof)]
-    if tf == "1d":
-        g = d.groupby(pd.to_datetime(d["timestamp"]).dt.normalize())
-        out = g.agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"),
-                    last=("timestamp", "max")).reset_index().rename(columns={"timestamp": "timestamp"})
-        out["bar_end"] = out["timestamp"] + pd.Timedelta(hours=15, minutes=30)
-        out = out[out["bar_end"] <= pd.Timestamp(asof)]
-        return out[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
-    r = resample_nse(d, TF_MINUTES[tf])
-    r = r[r["bar_closed"].astype(bool) & (r["bar_end"] <= pd.Timestamp(asof))]
-    return r[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
+    """1m ⇒ NSE 09:15-anchored TF bars (CAS वगळून), फक्त पूर्ण बंद (bar_end ≤ asof) — market_state.frame (F1: एकच व्याख्या)."""
+    from market_state import frame as _frame
+    return _frame(df1m, tf, asof)
 
 
 def _gap_evidence(g, side):
@@ -124,13 +115,20 @@ def evaluate(df1m, profile, asof, s=None, daily=None, events=None, risk_ok=True,
     horiz = []
     for tf in pr["areas_tfs"]:
         horiz += LV.build(htf_frames[tf], tf=tf)["candidates"]
-    stc = ST.read(trig, s, es=es)
+    # F1: trend / impulse / A-B-C / side एकाच market_state मधून
+    ms = MS.read(cut, asof, es=es, run_elliott=run_elliott)
+    out["market_state"] = ms
+    stc = ST.read(trig, s, es=es, ms=ms)
     majors = major_zones(horiz, stc)
-    if majors:                                                           # impulse मधले major HTF levels पलीकडे acceptance ⇒ reversal पुरावा
-        stc = ST.read(trig, s, major_zones=majors, es=es)
+    if majors:                                                           # impulse मधले major HTF levels पलीकडे acceptance ⇒ धोक्याचा पुरावा
+        stc = ST.read(trig, s, major_zones=majors, es=es, ms=ms)
     side = int(stc["side"])
+    if ms["side"] == "unclear" and side:
+        # F4: विरोध ⇒ "unclear" + कारण (candidates / vision साठी). Chart Reader मध्ये gate नाही (KB भाग G: HTF trend = context ⇒ T −20 गुण
+        # grade मध्ये) — फक्त नोंद आणि गोष्टीत इशारा. Gate हवा का हा निर्णय Abhi चा (kb_traceability).
+        out["side_unclear"] = ms["side_reasons"]
     out.update(side=side, structure=stc, mr=round(mr, 2))
-    tr = TR.read(htf_frames, pr["areas_tfs"])
+    tr = TR.read(htf_frames, pr["areas_tfs"], ms=ms)
     out["trend"] = tr
     el = EC.read(cut, asof, side, tuple(pr["elliott_degrees"]), es) if (run_elliott and side) else {
         "state": "gray", "clear": False, "line": "Elliott: चालवलं नाही", "setup": None, "tier": None, "zone": None, "hard_inv": None}

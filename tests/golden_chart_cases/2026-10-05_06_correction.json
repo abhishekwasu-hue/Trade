@@ -1,0 +1,58 @@
+{
+  "id": "2026-10-05_06_correction",
+  "source": "docs/reports/elliott_golden_expectations.json T6/T7/T8/R-1006-0940 (ELLIOTT_MASTER_PROMPT §4) + KB 2026-10-08 (S6a/S13 default OFF)",
+  "data": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
+  "data_policy": "contaminated — regression only, no tuning",
+  "window": {
+    "from": "2026-10-05 09:45",
+    "to": "2026-10-06 15:00",
+    "step_min": 15
+  },
+  "tolerance_pts": 15,
+  "expect": {
+    "trend": {
+      "dir": "down",
+      "protected": 22805
+    },
+    "impulse": {
+      "dir": "down",
+      "from": 22805,
+      "to": 22220
+    },
+    "correction": {
+      "dir": "up"
+    },
+    "side_in": [
+      "bear_call",
+      "unclear"
+    ]
+  },
+  "checkpoints": [
+    {
+      "at": "2026-10-05 10:15",
+      "id": "T6",
+      "correction_labels": [
+        "A"
+      ],
+      "no_entry_side": "bear_call",
+      "why": "A-end ban (R4): A संपला, B/C बाकी ⇒ bear call entry नाही"
+    },
+    {
+      "at": "2026-10-05 12:30",
+      "id": "T7",
+      "correction_labels": [
+        "A",
+        "B"
+      ],
+      "no_entry_side": "bear_call",
+      "why": "B चा शेवट: C बाकी ⇒ bear call नाही. bull_put (S6a B→C, counter-HTF) default OFF (KB 2026-10-08) ⇒ report-only"
+    },
+    {
+      "at": "2026-10-06 09:45",
+      "id": "R-1006-0940",
+      "no_entry_side": "bear_call",
+      "why": "22,614 level भावाच्या खाली (support) ⇒ इथे bear call नाही"
+    }
+  ],
+  "notes": "5–6 Oct = 22,801→22,220 impulse नंतरचा correction (A 22,217→22,622, B →22,397, C 6 Oct →22,731). Trend down राहतो (protected 22,801 अबाधित). T7/T8 (bull put, S6a/S13) हे C-wave counter-HTF setups — Abhi ने 2026-10-08 ला default OFF केले ⇒ इथे फक्त report. Side: bear_call किंवा unclear (F4: 5 Oct सकाळी Elliott D1 vote up ⇒ unclear चालतं); bull_put कधीच नाही."
+}

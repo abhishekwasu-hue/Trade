@@ -14,6 +14,7 @@ impulse च्या दिशेने credit spread. Entry points: zigzag C-en
 फक्त दिलेले (बंद) bars; state नाही ⇒ तेच इनपुट तेच उत्तर (no-lookahead: caller फक्त बंद bars देतो; `upto` ⇒ तिथपर्यंतच).
 """
 import numpy as np
+import pandas as pd
 
 from elliott import breaks as BR
 from elliott import settings as ES
@@ -119,9 +120,40 @@ def _origin_break(d, start, origin, idir, es):
     return BR.first_real_break(fr, start, origin, "below" if idir > 0 else "above", es, mr=mr, retest_fn=retest)
 
 
-def read(df, s, major_zones=None, upto=None, es=None):
+def _bar_of(d, ts, price=None, kind=None, span_min=15):
+    """market_state (15M) चा pivot ⇒ d मधला bar index. d बारीक TF (instant: 5M) असेल तर त्या 15M bin मधला खरा टोकाचा bar
+    (kind H ⇒ high max, L ⇒ low min) — V3 review."""
+    t = d["timestamp"].to_numpy(dtype="datetime64[ns]")
+    a = max(int(np.searchsorted(t, np.datetime64(ts, "ns"), side="right")) - 1, 0)
+    if kind is None:
+        return a
+    b = int(np.searchsorted(t, np.datetime64(pd.Timestamp(ts) + pd.Timedelta(minutes=span_min), "ns"), side="left"))
+    if b - a <= 1:
+        return a
+    seg = d["high"].to_numpy(float)[a:b] if kind == "H" else d["low"].to_numpy(float)[a:b]
+    return a + int(seg.argmax() if kind == "H" else seg.argmin())
+
+
+def _abc_type(labels, cdir, s):
+    """market_state चे A/B/C (trade-degree swings) ⇒ zigzag / flat (KB K3 family: B < 0.79 A zigzag, ≥ 0.9 A flat)."""
+    if len(labels) < 3:
+        return {1: "A", 2: "AB"}.get(len(labels))
+    a = abs(labels[0]["to"] - labels[0]["from"])
+    b = abs(labels[1]["to"] - labels[1]["from"])
+    beyond = (labels[2]["to"] - labels[0]["to"]) * cdir > 0
+    if a <= 0:
+        return "unclear"
+    if b >= s["flat_b_min"] * a:
+        return "flat"
+    if b <= s["zigzag_b_max"] * a and beyond:
+        return "zigzag"
+    return "unclear"
+
+
+def read(df, s, major_zones=None, upto=None, es=None, ms=None):
     """रिटर्न dict (JSON-able): impulse, side, correction_type, entry_point, correction (टोकं), retrace, duration_ratio, pullback
-    ("pullback" / "reversal" / "unclear" / "none"), reversal_reasons, correction_weakening (0–1), cw_parts, facts (ओळी)."""
+    ("pullback" / "reversal" / "unclear" / "none"), reversal_reasons, correction_weakening (0–1), cw_parts, facts (ओळी).
+    ms = market_state.read चा निकाल (F1): impulse आणि A/B/C तिथूनच (ad-hoc impulse finder फक्त ms नसताना — जुने callers / tests)."""
     d = df if upto is None else df.iloc[: upto + 1]
     d = d.reset_index(drop=True)
     es = es or ES.DEFAULTS
@@ -136,19 +168,32 @@ def read(df, s, major_zones=None, upto=None, es=None):
         mr = float((d["high"] - d["low"]).median())
     if not np.isfinite(mr) or mr <= 0:
         mr = 1e-9                                                         # सगळे bars high == low (data) ⇒ division by zero टाळा
-    sw = _alternate(_points(d, s["swing_atr_mult"]))
-    legs = [(sw[i], sw[i + 1]) for i in range(len(sw) - 1)]
-    cand = list(range(max(0, len(legs) - int(s["impulse_lookback_legs"])), len(legs) - 1))
-    best = None
-    for i in cand:
-        mag = abs(legs[i][1][1] - legs[i][0][1])
-        if mag >= s["impulse_min_mr"] * mr and all(abs(b[1] - a[1]) < mag for a, b in legs[i + 1:]):
-            if best is None or mag > best[1]:
-                best = (i, mag)
-    if best is None:
-        out["facts"].append("स्पष्ट impulse नाही")
-        return out
-    (b0, p0, _), (b1, p1, k1) = legs[best[0]]
+    labels = None
+    if ms is not None:
+        mi = ms.get("impulse")
+        if not mi:
+            out["facts"].append("स्पष्ट impulse नाही (market_state F3)")
+            return out
+        b0 = _bar_of(d, mi["from_ts"], kind="L" if mi["dir"] > 0 else "H")
+        b1 = _bar_of(d, mi["to_ts"], kind="H" if mi["dir"] > 0 else "L")
+        p0, p1 = float(mi["from"]), float(mi["to"])
+        k1 = "H" if mi["dir"] > 0 else "L"
+        best = (None, abs(p1 - p0))
+        labels = (ms.get("correction") or {}).get("labels") or []
+    else:
+        sw = _alternate(_points(d, s["swing_atr_mult"]))
+        legs = [(sw[i], sw[i + 1]) for i in range(len(sw) - 1)]
+        cand = list(range(max(0, len(legs) - int(s["impulse_lookback_legs"])), len(legs) - 1))
+        best = None
+        for i in cand:
+            mag = abs(legs[i][1][1] - legs[i][0][1])
+            if mag >= s["impulse_min_mr"] * mr and all(abs(b[1] - a[1]) < mag for a, b in legs[i + 1:]):
+                if best is None or mag > best[1]:
+                    best = (i, mag)
+        if best is None:
+            out["facts"].append("स्पष्ट impulse नाही")
+            return out
+        (b0, p0, _), (b1, p1, k1) = legs[best[0]]
     idir = 1 if p1 > p0 else -1
     cdir = -idir
     out["impulse"] = {"dir": idir, "origin": round(p0, 2), "end": round(p1, 2), "start_bar": int(b0), "end_bar": int(b1),
@@ -161,12 +206,24 @@ def read(df, s, major_zones=None, upto=None, es=None):
     out["correction"] = [round(p[1], 2) for p in pts]
     out["correction_bars"] = [int(p[0]) for p in pts]
     ctype = _classify(pts, cdir, s) if len(pts) >= 2 else None
-    out["correction_type"] = ctype
     n_legs = len(pts) - 1
     last_dir_ok = n_legs >= 1 and (pts[-1][1] - pts[-2][1]) * cdir > 0
     if n_legs >= 3:
         a_len = abs(pts[1][1] - pts[0][1])
         out["c_progress"] = round(abs(pts[3][1] - pts[2][1]) / a_len, 3) if a_len > 0 else None
+    if labels is not None and len(labels) >= 1:
+        # F1/F3: A/B/C trade-degree swings वरून (market_state); आतले pivots फक्त weakening / overlap साठी
+        ctype = _abc_type(labels, cdir, s)
+        n_legs = len(labels)
+        out["abc"] = [{"label": x["label"], "from": x["from"], "to": x["to"]} for x in labels]
+        if n_legs >= 3:
+            a_len = abs(labels[0]["to"] - labels[0]["from"])
+            out["c_progress"] = round(abs(labels[2]["to"] - labels[2]["from"]) / a_len, 3) if a_len > 0 else None
+            c_len = abs(labels[2]["to"] - labels[2]["from"])
+            back = abs(labels[2]["to"] - float(d["close"].iloc[-1]))
+            last_dir_ok = c_len > 0 and back <= s["c_end_back_max"] * c_len   # C च्या टोकाजवळ (C चा 61.8% पेक्षा कमी परत)
+            n_legs = 3
+    out["correction_type"] = ctype
     if ctype == "zigzag" and n_legs == 3 and last_dir_ok:
         out["entry_point"] = "C-end"
     elif ctype == "flat" and n_legs == 3 and last_dir_ok and (out.get("c_progress") or 0) >= s["flat_c_min"]:
@@ -207,7 +264,10 @@ def read(df, s, major_zones=None, upto=None, es=None):
             reasons.append("acceptance_major_level")
             break
     out["reversal_reasons"] = reasons
-    if reasons:
+    # F2 (Abhi 2026-10-08): counter चाल protected swing (impulse origin) च्या real break पर्यंत correction — लांबी / displacement / major
+    # level acceptance हे फक्त धोक्याचे पुरावे (PB −10), "reversal" नाही. ms नसताना (जुने callers) जुनं वर्तन.
+    flip = ("impulse_origin_acceptance" in reasons) if ms is not None else bool(reasons)
+    if flip:
         out["pullback"], out["entry_point"] = "reversal", None
     elif out["retrace"] <= s["retrace_max"] or ctype == "triangle":
         out["pullback"] = "pullback"
@@ -233,8 +293,10 @@ def read(df, s, major_zones=None, upto=None, es=None):
              f"{out['retrace']:.0%}, वेळ impulse च्या {out['duration_ratio']}×")
     if out["retrace"] < s["retrace_lo"]:
         f.append("pullback उथळ (< 38.2%)")
-    if reasons:
+    if flip:
         f.append("reversal चे पुरावे: " + ", ".join(reasons) + " ⇒ pullback नाही")
+    elif reasons:
+        f.append("धोक्याचे पुरावे (F2: protected swing अबाधित ⇒ अजून correction): " + ", ".join(reasons))
     elif out["entry_point"]:
         f.append(f"entry point: {ctype} {out['entry_point']} — impulse दिशेने ({'bull put' if idir > 0 else 'bear call'})")
     if out["cw_parts"]:

@@ -22,6 +22,7 @@ from chart_reader import evaluate as EV       # noqa: E402
 from chart_reader import settings as CS       # noqa: E402
 from chart_reader import structure as ST      # noqa: E402
 from elliott import data_policy as DP         # noqa: E402
+import market_state as MS                      # noqa: E402
 
 OUT_DIR = os.path.join(ROOT, "data", "research", "chart_reader_examples")
 REPORT = os.path.join(ROOT, "docs", "reports", "chart_reader_examples.md")
@@ -36,9 +37,10 @@ def scan_is(m1, s, types=("flat", "triangle"), step=1):
     """Stage 1 (स्वस्त): 15m structure प्रत्येक bar वर (शेवटचे 300 bars) ⇒ pullback-end उमेदवार."""
     trig = EV.frame(m1, "15m", m1["timestamp"].iloc[-1] + pd.Timedelta(minutes=1))
     found = {t: [] for t in types}
+    fr = MS.full_frames(m1)                                              # C-V1 F1: impulse / A-B-C market_state मधून
     for j in range(300, len(trig), step):
         w = trig.iloc[j - 300:j + 1].reset_index(drop=True)
-        r = ST.read(w, s)
+        r = ST.read(w, s, ms=MS.read(m1, trig["bar_end"].iloc[j], run_elliott=False, frames=fr))
         if r["entry_point"] and r["pullback"] == "pullback" and r["correction_type"] in found:
             found[r["correction_type"]].append(trig["bar_end"].iloc[j])
     return found
