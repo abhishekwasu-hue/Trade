@@ -1359,3 +1359,19 @@ agree (L reclaimed 09:55, bar बंद, drift ✅ ⇒ vision ठरवेल). 
   **निर्णय (बदल नाही):** drift guard signal spot वरूनच मोजतो (तुमचं "signal spot वि. bar close spot" — नमुना 2 ❌); 60M वर bar बंद होईपर्यंतची हालचाल
   मोठी असेल तर entry drift मुळे नाकारली जाईल — हे reduce-only दिशेने, म्हणून ठेवलं. Bot च्या चालू candle (last_bar) वरून signal bar ठरतो (touch चालू
   candle वर होतो). `approve_window_min` ≥ 4 ठेवावा (bar close नंतर data साठी कमाल 2 मिनिटं + vision call).
+
+## 2026-10-08 — Vision live deploy (veto_then_confirm, NIFTY PAPER) — PR
+VPS वर 3 नमुने (bar close नंतर, खरा vision call): 1 disagree, 2 disagree, 3 gray (code agree; vision ने HTF downtrend पकडला) — Abhi च्या वाचनाशी जुळलं.
+खर्च $0.040 / 3 calls, caching चालू, latency 4–6 s.
+
+Deploy आधी 2 code दुरुस्त्या (Abhi चा नियम: agree ⇒ entry; gray / disagree / unavailable ⇒ skip; approver नसेल तर फक्त माहिती + auto_veto):
+- `veto_then_confirm` timeout (`timeout_action = auto_veto`) आता auto_veto चेच नियम वापरतो: gray ⇒ `vision_gray_action`, unavailable ⇒
+  `vision_fail_action` (आधी gray नेहमी अर्धा आणि unavailable नेहमी पूर्ण). Defaults (half / ignore) सोबत वर्तन तसंच; `timeout_action = skip` ⇒
+  unavailable सुद्धा skip (reduce-only).
+- Approver / बटणं नसतील (`TELEGRAM_APPROVER_IDS` / `VISION_CALLBACK_SECRET` नाही, किंवा chat approver यादीत नाही) तर worker 10 मिनिटं PENDING_HUMAN मध्ये न
+  ठेवता **लगेच** timeout नियम लावतो — नाहीतर entry 10+ मिनिटं उशिरा आणि drift guard मुळे बहुतेक नाकारली गेली असती.
+- `python3 -m vision.worker --shadow [YYYY-MM-DD]`: दिवसाचे V1 निर्णय + entry घेतलेले वि. नाकारलेले-shadow trades चा P&L (read-only).
+- Worker latency: systemd service (`--poll 2`, तासाला restart ⇒ नवा code), cron fallback (process lock ⇒ एकच worker).
+- Independent review नंतर: gate ची स्वतःची चूक (exception) + V1 + `vision_fail_action = skip` ⇒ HOLD (`SKIPPED_VISION_ERROR`, entry नाही) — आधी
+  नेहमी algorithm चा पूर्ण-size entry ("unavailable ⇒ skip" नियम मोडत होता). `fail_action = ignore` ⇒ आधीसारखं. Deploy block mode बदलण्याआधी जुन्या
+  उघड्या V1 rows (PENDING_HUMAN — आधीच्या नियमांचा timeout साठवलेला) EXPIRED करतो. Tests: unavailable / agree लगेच, can_ask चूक, stale + fail skip.

@@ -146,6 +146,16 @@ def v1_status(row, verdict, s, meta):
     if row.get("mode") not in VC.V1_MODES:
         return "DONE", {}, None
     d = VD.decide(row["mode"], verdict, s)
+    if d.ask_human:
+        from . import tg as TG
+        try:
+            can, why = TG.can_ask()
+        except Exception as exc:                                         # credentials वाचता आले नाहीत ⇒ बटणं नाहीत
+            can, why = False, f"{type(exc).__name__}"
+        if not can:                                                     # approver / बटणं नाहीत ⇒ 10 मिनिटं थांबून तोच नियम नको — लगेच
+            st = d.timeout_status or "REJECTED"
+            d = VD.Decision(st, float(d.timeout_factor or 0.0) if st == "APPROVED" else 0.0,
+                            f"{d.reason} · approver नाही ({why}) ⇒ timeout नियम लगेच")
     now = VS.now_ist()
     extra = {"factor": d.factor, "decision_reason": d.reason, "timeout_status": d.timeout_status, "timeout_factor": d.timeout_factor,
              "median_range": (meta or {}).get("median_range")}
@@ -406,12 +416,54 @@ def run_once(path=None, **kw):
     return done
 
 
+def shadow_report(day, path=None, trades_db=None, out=print):
+    """V1 signals चा दिवसाचा सारांश: entry घेतलेले (EXECUTED) वि. नाकारलेले (SHADOWED / DRIFT_REJECTED) आणि त्यांचे PAPER trades (P&L).
+    Read-only (live_trades फक्त वाचतो)."""
+    from . import outcome as VO
+    import os
+    rows = [r for r in VS.list_signals(day, path) if r.get("mode") in VC.V1_MODES]
+    if trades_db is None:
+        from config import DB_PATH
+        trades_db = DB_PATH
+    have_db = os.path.exists(trades_db)
+    by = {}
+    for r in rows:
+        by[r["status"]] = by.get(r["status"], 0) + 1
+    out(f"{day}: V1 signals {len(rows)} · " + (", ".join(f"{k} {v}" for k, v in sorted(by.items())) or "—")
+        + ("" if have_db else f" · ⚠️ trades DB नाही ({trades_db}) ⇒ P&L नाही"))
+    tot = {"EXECUTED": [0, 0.0], "SHADOW": [0, 0.0]}
+    for r in rows:
+        tr = None
+        if have_db and r["status"] in ("EXECUTED", "SHADOWED", "DRIFT_REJECTED"):
+            try:
+                tr = VO.find_trade(r, trades_db, path)
+            except Exception as exc:
+                tr = {"status": f"trade शोध चूक: {type(exc).__name__}"}
+        pnl = (tr or {}).get("realized_pnl")
+        key = "EXECUTED" if r["status"] == "EXECUTED" else "SHADOW" if r["status"] in ("SHADOWED", "DRIFT_REJECTED") else None
+        if key and tr and pnl is not None:
+            tot[key][0] += 1
+            tot[key][1] += float(pnl)
+        t = f" · trade {tr.get('status')} P&L {float(pnl):,.0f}" if tr and pnl is not None else (f" · trade {tr.get('status')}" if tr else "")
+        lv = f"{float(r['level']):,.2f}" if r.get("level") is not None else "-"
+        out(f"  {str(r['signal_ts'])[11:16]} {r['bot']} {r['direction']} L{lv} {r['setup_tf']} → {r['verdict'] or '-'} · "
+            f"{r['status']} ×{r['factor'] if r['factor'] is not None else '-'} ({r['decided_by'] or '-'}) · {(r['decision_reason'] or r['error'] or '')[:90]}{t}")
+    out(f"बंद trades: entry घेतलेले {tot['EXECUTED'][0]} (P&L {tot['EXECUTED'][1]:,.0f}) · नाकारलेले-shadow {tot['SHADOW'][0]} "
+        f"(P&L {tot['SHADOW'][1]:,.0f}) — shadow P&L जास्त ⇒ vision ने चांगले trades नाकारले. EXPIRED = bot entry पर्यंत पोहोचला नाही "
+        "(gates बदलले / setup बदलला) — trade नाही.")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--loop-seconds", type=int, default=0, help="इतके सेकंद दर --poll ने तपासत राहा (cron दर मिनिटाला ⇒ 55)")
     p.add_argument("--poll", type=int, default=5)
     p.add_argument("--usage", nargs="?", const="today", default=None, help="त्या दिवसाचा token / $ वापर")
+    p.add_argument("--shadow", nargs="?", const="today", default=None, help="त्या दिवसाचे V1 निर्णय + नाकारलेल्या signals चे shadow trades")
     a = p.parse_args(argv)
+    if a.shadow:
+        day = VS.now_ist().strftime("%Y-%m-%d") if a.shadow == "today" else a.shadow
+        return shadow_report(day)
     if a.usage:
         day = VS.now_ist().strftime("%Y-%m-%d") if a.usage == "today" else a.usage
         u = VS.usage_summary(day)
