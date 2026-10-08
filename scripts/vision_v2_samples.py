@@ -82,6 +82,8 @@ def main(argv=None):
     ap.add_argument("--no-vision", action="store_true")
     ap.add_argument("--no-telegram", action="store_true")
     ap.add_argument("--historical", action="store_true", help="तुम्हाला दाखवलेले तेच 3 नमुने (2021 IS)")
+    ap.add_argument("--bar-close", action="store_true",
+                    help="live प्रमाणे: signal चा setup bar बंद झाल्यावर मूल्यमापन (vision_wait_for_bar_close = on) + drift guard")
     a = ap.parse_args(argv)
     if a.historical:
         pairs = historical()
@@ -97,10 +99,26 @@ def main(argv=None):
     out_dir = os.path.join(IM.base_dir(), "samples_v2")
     os.makedirs(out_dir, exist_ok=True)
     valid, total, summary = 0, 0.0, []
-    expect = {1: "disagree", 2: "disagree", 3: "gray"} if a.historical else {}
+    expect = ({1: "gray (room tight)", 2: "disagree (breakout)", 3: "vision ठरवेल"} if a.bar_close else
+              {1: "gray (room tight / bar बंद नाही)", 2: "disagree (breakout)", 3: "vision ठरवेल"}) if a.historical else {}
+    from vision import context as CX
+    from vision import decide as VD
     for i, (sig, frame, daily) in enumerate(pairs, 1):
         sig["ctx_settings"] = VC.ctx_settings("dynamic_sr_instant")
+        drift_note = None
+        if a.bar_close:                                                  # worker चा खरा प्रवाह: bar बंद ⇒ chart / संदर्भ bar close पर्यंत
+            s_tf = CH.TF_MAP.get(str(sig.get("setup_tf")).upper(), (5, 15))[0]
+            sb = CX.signal_bar(pd.Timestamp(sig["signal_ts"]), s_tf)
+            if pd.Timestamp(sb["end_ts"]) > pd.Timestamp(sig["signal_ts"]):
+                sig["asof"] = pd.Timestamp(sb["end_ts"])
         png, meta = CH.render(frame, sig, daily)
+        if a.bar_close and meta.get("ctx"):                              # entry च्या क्षणीचा drift guard (signal spot वि. bar close चा spot)
+            cut = CH.cut_1m(CH.norm_1m(frame), sig.get("asof") or sig["signal_ts"])
+            spot_now = float(cut["close"].iloc[-1]) if len(cut) else None
+            drift = VD.drift_guard({"spot": sig.get("spot"), "median_range": meta["ctx"].get("median_range"), "direction": sig["direction"],
+                                    "invalidation": sig.get("invalidation")}, spot_now, sig["direction"], float(s["max_drift_mr"]))
+            drift_note = (f"drift guard @ {str(sig.get('asof', sig['signal_ts']))[11:16]}: spot {spot_now:,.2f} वि. signal {float(sig['spot']):,.2f} ⇒ "
+                          + ("❌ " + "; ".join(drift) if drift else "✅ ठीक"))
         sig["ctx"] = meta.get("ctx")
         print(f"\n===== नमुना {i}: {sig['bot']} {sig['symbol']} {sig['direction']} L{sig['level']} @ {sig['signal_ts']} =====")
         if png is None:
@@ -109,7 +127,13 @@ def main(argv=None):
         path = os.path.join(out_dir, f"sample_{i}_{pd.Timestamp(sig['signal_ts']):%Y%m%d_%H%M}.png")
         with open(path, "wb") as f:
             f.write(png)
-        print(f"chart: {path}\n--- signal text ---\n{SA.signal_text(sig)}")
+        print(f"chart: {path}" + (f" · evaluated at bar close {str(sig['asof'])[11:16]}" if sig.get("asof") is not None else "")
+              + f"\n--- signal text ---\n{SA.signal_text(sig)}")
+        if drift_note:
+            print(drift_note)
+        pv, ph, pf = SA.pre_verdict(sig["ctx"], sig["direction"], s["v2_disagree_rules"], s["v2_gray_rules"])
+        print(f"--- code-only pre-verdict (vision शिवाय): {pv} · disagree नियम {ph['disagree'] or '—'} · gray नियम {ph['gray'] or '—'} · "
+              f"code तथ्यं {pf or '—'}")
         res = None
         if model and VC.api_key_present() and VW._budget_ok(g, model)[0]:
             client = SA.make_client(int(s["vision_timeout_sec"]))
@@ -121,12 +145,16 @@ def main(argv=None):
             print(json.dumps((res.get("audits") or [None])[0], ensure_ascii=False, indent=1))
             print(f"code verdict: {res['verdict']} · नियम: {(res.get('rule_hits') or [None])[0]} · code तथ्यं: "
                   f"{((res.get('audits') or [{}])[0] or {}).get('code_overrides')} · error: {res.get('error')} · "
-                  f"${res.get('cost_usd', 0):.4f} · tokens {res.get('usage')}")
+                  f"${res.get('cost_usd', 0):.4f} · latency {res.get('latency_ms', 0) / 1000:.1f}s · tokens {res.get('usage')}")
             total += float(res.get("cost_usd") or 0)
             own = ((res.get("audits") or [{}])[0] or {}).get("verdict")
-            summary.append(f"नमुना {i}: vision {own} ⇒ अंतिम {res['verdict']}" + (f" (तुमचं अपेक्षित {expect[i]})" if i in expect else ""))
+            fin = res["verdict"] if not (drift_note and "❌" in drift_note and res["verdict"] == "agree") else "agree ⇒ पण drift guard ⇒ entry नाही"
+            summary.append(f"नमुना {i}: code pre-verdict {pv} · vision {own} ⇒ अंतिम {fin} · {res.get('latency_ms', 0) / 1000:.1f}s · "
+                           f"${float(res.get('cost_usd') or 0):.4f}"
+                           + (f" (तुमचं अपेक्षित {expect[i]})" if i in expect else ""))
         else:
             print("(vision call नाही — --no-vision / model / key / budget)")
+            summary.append(f"नमुना {i}: code pre-verdict {pv} (vision नाही)" + (f" (तुमचं अपेक्षित {expect[i]})" if i in expect else ""))
         if not a.no_telegram:
             cap = VW.caption({**sig, "signal_ts": str(sig["signal_ts"])}, res or {"verdict": "unavailable", "error": "sample — vision नाही"},
                              "auto_veto").replace("Vision V0 — फक्त माहिती", "🧪 Vision V2 नमुना — trade नाही")

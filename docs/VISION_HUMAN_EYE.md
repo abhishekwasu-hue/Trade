@@ -204,6 +204,15 @@ Telegram service चालू नसेल तर script स्वतः getUpda
   टिकाव; inside gap ⇒ open पलीकडे buffer सह); acceptance नंतर परत open खाली ⇒ undecided ("failed drive").
 - **नमुने VPS वर:** `python3 scripts/vision_v0_smoke.py --sample` — 3 नमुने खऱ्या vision call सह, JSON + code verdict + खर्च + सारांश.
 
+### v2.1 — शेवटच्या 3 दुरुस्त्या
+- **Signal bar बंद नसणे:** Instant bot चा signal 5m bar च्या मधे येतो. Text: "Signal bar 10:30-10:35: NOT CLOSED yet (1/5 min)". Levels तक्ता:
+  "held_as_support until 13:05; the current OPEN (unfinished) bar is breaking it down" (breakout ओळीशी विरोध नाही). Code: bar बंद नाही ⇒
+  reversal_valid = unclear ⇒ gray. **`vision_wait_for_bar_close` (default on):** worker signal चा setup bar बंद होईपर्यंत row QUEUED ठेवतो
+  (fetch / खर्च नाही), मग chart आणि संदर्भ bar च्या close पर्यंत (title: "evaluated at bar close HH:MM"), मग निर्णय; entry च्या क्षणी drift guard.
+- **today_role "reclaimed":** आधी real break, नंतर पूर्ण bar चा close परत आजच्या उघडण्याच्या बाजूला. Reclaimed ⇒ role_conflict नियम लागू नाही.
+  Chart label "PDL · reclaimed".
+- **Code-only pre-verdict:** vision शिवाय, फक्त OHLC तथ्यं + नियम (`signal_audit.pre_verdict`) — samples output मध्ये प्रत्येक नमुन्यासाठी.
+
 ## Chart images कायमस्वरूपी (§11)
 - **`_sent.png`**: vision ला गेलेली आणि Telegram वरची हीच फाईल. आधी disk वर `O_EXCL` ने लिहिली जाते (नाव असेल तर `_2`; overwrite कधीच नाही),
   temp फाईल → `os.link` (अर्धवट फाईल अंतिम नावाने कधीच नाही), मग परत वाचून sha256 तपासला जातो. Record मध्ये path + sha256, prompt_version, model, vision JSON (tokens), cost, algo निर्णय, अंतिम निर्णय

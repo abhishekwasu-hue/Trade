@@ -78,7 +78,7 @@ def main(argv=None):
     sid = make_signal(m1, a.mode, a.symbol)
     row = VS.claim_one(sid)
     if row is not None:
-        VW.process_row(row, data_cache={(a.symbol, True): (m1, None)})
+        VW.process_row(row, data_cache={(a.symbol, True): (m1, None)}, wait_for_bar=False)
     else:                                                                # चालू worker ने आधीच उचलला — तोच chart / बटणं पाठवेल
         print("ℹ️ vision worker ने हा TEST signal उचलला — त्याची वाट …")
         for _ in range(60):

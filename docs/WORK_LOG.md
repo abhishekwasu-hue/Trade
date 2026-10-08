@@ -1327,3 +1327,18 @@ samples script. जुने v0 / images tests v2 JSON वर अद्यया
 
 **Code-floor (vision "सगळं ठीक / agree" म्हणाला असता तरी):** नमुना 1 ⇒ gray (tight room), नमुना 2 ⇒ disagree (breakout ORL 13:10, wrong_approach,
 role_conflict), नमुना 3 ⇒ agree. म्हणजे तुमचं अपेक्षित 1 disagree / 3 gray हे vision च्या मतावर — खरं JSON VPS वर पाहायचं.
+
+**शेवटच्या 3 दुरुस्त्या (round 3) — याच PR मध्ये:**
+1. Signal bar बंद नसणे: text मध्ये bar स्थिती; तक्त्यात "held until <शेवटचा पूर्ण bar>; current open bar is breaking it"; code: bar बंद नाही ⇒ reversal unclear ⇒
+   gray; `vision_wait_for_bar_close` (default on) — worker bar बंद होईपर्यंत row QUEUED (क्लेम पुन्हा 5 s loop मध्ये), मग asof = bar close.
+   Scripts (smoke / dry-run / samples) थांबत नाहीत (`wait_for_bar=False`) — नमुने मुद्दाम signal क्षणीच (तुमच्या अपेक्षेप्रमाणे "bar बंद नाही").
+2. today_role "reclaimed" (break नंतर पूर्ण bar चा close परत opening side ला); role_conflict reclaimed ला लागू नाही. नमुना 3: L+PDL reclaimed at 09:55.
+3. Code-only pre-verdict (`pre_verdict`): नमुना 1 = gray (unclear: bar बंद नाही, tight_room PWL 0.30×); नमुना 2 = disagree (breakout ORL 13:10,
+   wrong_approach, role_conflict); नमुना 3 = gray (फक्त bar बंद नाही — live मध्ये wait_for_bar_close मुळे bar बंद झाल्यावर vision ठरवेल).
+   `vision_v0_smoke.py --sample` output: code pre-verdict + vision JSON + अंतिम verdict + खर्च + सारांश.
+
+**"Live प्रमाणे" नमुने (bar close नंतर):** `vision_v0_smoke.py --sample --bar-close [--no-telegram]` — मूल्यमापन signal bar बंद झाल्यावर (10:35 / 13:15 /
+10:05), chart व संदर्भ तिथपर्यंत, आणि entry च्या क्षणीचा drift guard (signal spot वि. bar close spot). Code pre-verdict: नमुना 1 = gray (room tight
+0.30×, drift ✅), नमुना 2 = disagree (L+PDH आणि ORL 13:10 ला पूर्ण bar वर तुटले ⇒ breakout; wrong_approach; drift ❌ 15,702 वि. 15,729), नमुना 3 =
+agree (L reclaimed 09:55, bar बंद, drift ✅ ⇒ vision ठरवेल). VPS वर हे फक्त वेगळ्या `git worktree` मधून, तात्पुरत्या DB / image dir सह चालवायचं
+(live checkout / bots / worker ला हात नाही, Telegram नाही) — फक्त 3 vision calls.

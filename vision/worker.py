@@ -243,8 +243,22 @@ def v1_housekeeping(path=None, now=None):
     return changed
 
 
-def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send_photo=None, send_text=None, path=None, data_cache=None):
-    """एक RUNNING row पूर्ण करणे. रिटर्न अंतिम result dict. कधीच raise नाही (चूक ⇒ FAILED row)."""
+BAR_WAIT = True                                                          # tests / scripts साठी master switch (setting सोबत)
+
+
+def bar_wait(row, s, now=None):
+    """`vision_wait_for_bar_close`: signal चा setup bar अजून बंद नसेल तर (मूल्यमापन नंतर) ⇒ (थांबायचं?, bar माहिती)."""
+    from . import context as CX
+    s_tf = CH.TF_MAP.get(str(row.get("setup_tf")).upper(), (5, 15))[0]
+    sb = CX.signal_bar(pd.Timestamp(row["signal_ts"]), s_tf, now or VS.now_ist())
+    return bool(BAR_WAIT and s.get("vision_wait_for_bar_close", True) and not sb["closed"]), sb
+
+
+def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send_photo=None, send_text=None, path=None, data_cache=None,
+                wait_for_bar=True):
+    """एक RUNNING row पूर्ण करणे. रिटर्न अंतिम result dict. कधीच raise नाही (चूक ⇒ FAILED row).
+    `vision_wait_for_bar_close` (default on): signal चा setup bar बंद होईपर्यंत row परत QUEUED (data fetch / खर्च नाही); बंद झाल्यावर chart आणि
+    संदर्भ त्या bar च्या close पर्यंत (asof) — मग निर्णय, आणि entry च्या क्षणी drift guard."""
     from notifications import send_telegram_message, send_telegram_photo
     send_photo = send_photo or send_telegram_photo
     send_text = send_text or send_telegram_message
@@ -257,6 +271,12 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
                "last_bar": setup.get("last_bar")}
         s, g = VC.load(row["bot"], path), VC.load("_global", path)
         model = VC.env_model("signal")
+        wait, sb = bar_wait(row, s)
+        if wait and wait_for_bar:
+            VS.transition(sid, "RUNNING", "QUEUED", path)                 # bar बंद झाल्यावर पुन्हा (worker चा 5 s loop)
+            return {"verdict": None, "deferred": True, "bar_end": sb["end"]}
+        if wait_for_bar and s.get("vision_wait_for_bar_close", True) and BAR_WAIT and pd.Timestamp(sb["end_ts"]) > pd.Timestamp(row["signal_ts"]):
+            row["asof"] = sb["end_ts"]                                    # bar बंद झाला ⇒ तिथपर्यंतचा chart (signal नंतरचा, पण निर्णयाच्या आधीचा)
 
         # 3. chart (reuse असला तरी Telegram साठी ताजा chart)
         need_daily = True                                               # v2.1: daily candles ⇒ ATR14 / trend / leg (gap वर्ग); 60M ⇒ daily panel

@@ -107,7 +107,8 @@ def _tf_label(tf):
     return "1D" if tf == "D" else (f"{tf // 60}H" if tf >= 60 and tf % 60 == 0 else f"{tf}m")
 
 
-ROLE_SHORT = {"held_as_support": "held S", "held_as_resistance": "held R", "broken_down": "broken↓", "broken_up": "broken↑", "untested": ""}
+ROLE_SHORT = {"held_as_support": "held S", "held_as_resistance": "held R", "broken_down": "broken↓", "broken_up": "broken↑",
+              "reclaimed": "reclaimed", "untested": ""}
 OVL_STYLE = {"major": dict(color="#90caf9", width=1), "ref": dict(color="#b0bec5", width=1, dash="dot")}
 
 
@@ -130,7 +131,7 @@ def _overlays(fig, df, ctx, lo, hi, c, n, label_x):
         busy = {s for py, s in placed if abs(py - y) < gap}
         slot = next((k for k in range(10) if k not in busy), 9)
         placed.append((y, slot))
-        rs = "reclaimed" if o.get("reclaimed") else ROLE_SHORT.get(o.get("today_role"), "")
+        rs = ROLE_SHORT.get(o.get("today_role"), "")
         fig.add_annotation(x=label_x - slot * max(1.0, n * 0.14), y=y, text=o["label"] + (f" · {rs}" if rs else ""), showarrow=False,
                            xanchor="right", yshift=7,
                            font=dict(size=9, color=style["color"]), row=1, col=c)
@@ -290,7 +291,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
             fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=level, y1=level, line=dict(color=col, width=2), row=1, col=c)
             lo_ = next((o for o in (ctx or {}).get("overlays") or [] if "L" in o["kinds"]), None)
             others = "+".join(x for x in (lo_["label"] if lo_ else "").split("+") if x != "L")
-            rshort = ("reclaimed" if lo_.get("reclaimed") else ROLE_SHORT.get(lo_.get("today_role"), "")) if lo_ else ""
+            rshort = ROLE_SHORT.get(lo_.get("today_role"), "") if lo_ else ""
             ltxt = f"<b>L {role or 'LEVEL'}</b>" + (f" ({others})" if others else "") + (f" · {rshort}" if rshort else "")
             fig.add_annotation(x=0, y=level, text=ltxt, showarrow=False, xanchor="left", yshift=9,
                                font=dict(size=11, color="#ffffff"), bgcolor=col, row=1, col=c)
@@ -307,7 +308,9 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
     if with_line:
         _line_panel(fig, line, ctx, sig)
     ts = pd.Timestamp(to_ist_naive(sig["signal_ts"]))
-    title = f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {sig.get('direction', '')} · signal {ts:%d %b %H:%M} (chart cut at signal)"
+    ev = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else ts
+    cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
+    title = f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {sig.get('direction', '')} · signal {ts:%d %b %H:%M} ({cutnote})"
     fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT_V21 if with_line else HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)
@@ -327,7 +330,8 @@ def render(df1m, sig, daily=None):
     """रिटर्न (png bytes | None, meta). meta = {setup_last, higher_last, setup_bars, higher_bars, error}. कधीच raise नाही."""
     meta = {"setup_last": None, "higher_last": None, "setup_bars": 0, "higher_bars": 0, "error": None}
     try:
-        setup, higher, tfs, cut = panels(df1m, sig["signal_ts"], sig.get("setup_tf"), daily, sig.get("last_bar"), return_cut=True)
+        asof = sig.get("asof") if sig.get("asof") is not None else sig["signal_ts"]   # bar बंद होईपर्यंत थांबलं असेल तर तिथपर्यंत (भविष्य नाही)
+        setup, higher, tfs, cut = panels(df1m, asof, sig.get("setup_tf"), daily, sig.get("last_bar"), return_cut=True)
         meta.update(setup_last=str(setup["last_ts"].max()) if len(setup) else None, higher_last=str(higher["last_ts"].max()) if len(higher) else None,
                     setup_bars=len(setup), higher_bars=len(higher), tfs=[s for s in tfs])
         rng = (setup["high"] - setup["low"]).tail(20)

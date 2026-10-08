@@ -113,35 +113,67 @@ def merge_labels(items, mr):
     return out
 
 
-def today_role(bars, p, buf, t=None):
-    """आज (signal पर्यंतच्या setup bars वर) level कसा वागला: held_as_support / held_as_resistance / broken_down / broken_up / untested.
-    बाजू (side) = आजच्या पहिल्या open ची level च्या सापेक्ष बाजू. Real break = बाजू बदलणारा close, level पलीकडे buffer सह, आणि पुढच्या bar ने
-    reclaim नाही (शेवटचा bar ⇒ अजून reclaim नाही) — फक्त वरूनच खाली (broken_down) किंवा खालून वर (broken_up); जी बाजू आधीपासून आहे तिथे "break" नाही.
-    Break चिकटतो (उलट real break पर्यंत) — break नंतरचा retest "broken" च. Touch (break नाही) ⇒ वरच्या बाजूने held_as_support, खालून held_as_resistance.
-    रिटर्न (role, break वेळ | None)."""
-    role, at = "untested", None
+def level_state(bars, p, buf, t=None):
+    """आज (signal पर्यंतच्या setup bars वर) level कसा वागला — dict:
+      role: held_as_support / held_as_resistance / broken_down / broken_up / reclaimed / untested
+      at: break / reclaim वेळ · side: शेवटच्या पूर्ण bar नंतर किंमत कुठल्या बाजूला · held_until: शेवटचा पूर्ण bar (role तोपर्यंत)
+      open_bar_breaking: चालू (अपूर्ण) signal bar level buffer सह ओलांडत आहे का ("down" / "up" / None)
+    बाजू = आजच्या पहिल्या open ची बाजू. Real break = उघडण्याच्या बाजूपासून दूर जाणारा पूर्ण-bar close, buffer सह, पुढच्या bar ने reclaim नाही.
+    Break नंतर कुठल्याही **पूर्ण** bar चा close परत उघडण्याच्या बाजूला ⇒ reclaimed (false break). Break नंतरचा retest "broken" च.
+    Touch (break नाही) ⇒ वरच्या बाजूने held_as_support, खालून held_as_resistance."""
+    st = {"role": "untested", "at": None, "side": None, "held_until": None, "open_bar_breaking": None}
     if bars is None or len(bars) == 0 or p is None:
-        return role, at
+        return st
     O, H, L, C = (bars[k].to_numpy(float) for k in ("open", "high", "low", "close"))
-    side = "above" if (O[0] > p or (O[0] == p and C[0] >= p)) else "below"          # open = level ⇒ पहिल्या close ची बाजू
+    open_side = "above" if (O[0] > p or (O[0] == p and C[0] >= p)) else "below"          # open = level ⇒ पहिल्या close ची बाजू
+    side, role, at = open_side, "untested", None
     n = len(C)
-    # break फक्त **पूर्ण** bar वर (signal च्या क्षणी चालू असलेला शेवटचा bar break सुरू करू शकत नाही, फक्त reclaim नाही हे पुष्टी करतो)
     fin = n if t is None or "end" not in bars else int((pd.to_datetime(bars["end"]) <= pd.Timestamp(t)).sum())
-    for i in range(n):
+    for i in range(fin):                                                 # break / reclaim फक्त पूर्ण bars वर
         nxt = C[i + 1] if i + 1 < n else None
-        if i >= fin:
-            if L[i] <= p <= H[i] and not role.startswith("broken"):
-                role = "held_as_support" if side == "above" else "held_as_resistance"
+        hm = str(bars["start"].iloc[i])[11:16]
+        if role.startswith("broken") and ((C[i] >= p) if open_side == "above" else (C[i] <= p)):
+            side, role, at = open_side, "reclaimed", hm
             continue
         if side == "above" and C[i] < p - buf and (nxt is None or nxt < p):
-            side, role, at = "below", "broken_down", str(bars["start"].iloc[i])[11:16]
+            side, role, at = "below", "broken_down", hm
             continue
         if side == "below" and C[i] > p + buf and (nxt is None or nxt > p):
-            side, role, at = "above", "broken_up", str(bars["start"].iloc[i])[11:16]
+            side, role, at = "above", "broken_up", hm
             continue
-        if L[i] <= p <= H[i] and not role.startswith("broken"):
+        if L[i] <= p <= H[i] and role in ("untested", "held_as_support", "held_as_resistance"):
             role = "held_as_support" if side == "above" else "held_as_resistance"
-    return role, at
+    if fin < n:                                                          # चालू (अपूर्ण) signal bar
+        c = C[-1]
+        if side == "above" and c < p - buf:
+            st["open_bar_breaking"] = "down"
+        elif side == "below" and c > p + buf:
+            st["open_bar_breaking"] = "up"
+        elif L[-1] <= p <= H[-1] and role == "untested":
+            role = "held_as_support" if side == "above" else "held_as_resistance"
+    st.update(role=role, at=at, side=side, held_until=str(bars["start"].iloc[fin - 1])[11:16] if fin else None)
+    return st
+
+
+def today_role(bars, p, buf, t=None):
+    """(role, break / reclaim वेळ) — `level_state` चं छोटं रूप."""
+    s = level_state(bars, p, buf, t)
+    return s["role"], s["at"]
+
+
+def signal_bar(sig_t, s_tf, asof=None):
+    """Signal ज्या setup-TF bar मध्ये आहे तो (signal च्या क्षणीचा शेवटचा पूर्ण 1m minute ज्या bar मध्ये): start, end, `asof` (मूल्यमापनाचा क्षण,
+    default = signal) ला बंद झाला का, किती मिनिटं झाली."""
+    t = pd.Timestamp(sig_t)
+    last_min = t.floor("min") - pd.Timedelta(minutes=1)                   # cut_1m: start + 1 मिनिट ≤ signal ⇒ हा शेवटचा पूर्ण minute
+    day0 = last_min.normalize() + OPEN_T
+    k = int((last_min - day0).total_seconds() // 60) // int(s_tf)
+    start = day0 + pd.Timedelta(minutes=k * int(s_tf))
+    end = start + pd.Timedelta(minutes=int(s_tf))
+    ev = pd.Timestamp(asof) if asof is not None else t
+    return {"start": str(start)[11:16], "end": str(end)[11:16], "end_ts": str(end), "closed": bool(end <= ev),
+            "elapsed": min(int(s_tf), int((ev.floor("min") - start).total_seconds() // 60)), "tf": int(s_tf),
+            "evaluated_at": str(ev)[11:16]}
 
 
 def crossings(bars, p):
@@ -204,7 +236,8 @@ def build(cut, setup, sig, median_range=None, daily=None):
     sig["ctx_settings"] (ऐच्छिक): inv_buffer_mr, gap_* settings, events {YYYY-MM-DD: नाव}."""
     cs = sig.get("ctx_settings") or {}
     from .chart import to_ist_naive
-    t = pd.Timestamp(to_ist_naive(sig["signal_ts"]))                    # tz-aware / string ⇒ naive IST (cut_1m सारखं)
+    t0 = pd.Timestamp(to_ist_naive(sig["signal_ts"]))                   # tz-aware / string ⇒ naive IST (cut_1m सारखं)
+    t = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else t0   # bar बंद होईपर्यंत थांबलं असेल तर मूल्यमापनाचा क्षण
     sig_day = t.normalize()
     spot = float(sig.get("spot") or (cut["close"].iloc[-1] if len(cut) else np.nan))
     mr = median_range
@@ -239,17 +272,17 @@ def build(cut, setup, sig, median_range=None, daily=None):
     tb = resample(cut[_days(cut) == sig_day], s_tf) if len(cut) else None    # आजचे सगळे setup bars 09:15 पासून (chart चे शेवटचे 60 नाही)
     groups = merge_labels(items, mr)
     rows = []
-    open0 = float(tb["open"].iloc[0]) if tb is not None and len(tb) else None
     for g in groups:
-        role, at = today_role(tb, g["price"], buf, t)
-        side0 = None if open0 is None else ("above" if open0 >= g["price"] else "below")
-        recl = (role == "broken_up" and side0 == "above") or (role == "broken_down" and side0 == "below")
+        ls = level_state(tb, g["price"], buf, t)
+        role, at = ls["role"], ls["at"]
+        recl = role == "reclaimed"
         d = (g["price"] - spot) / mr if mr else None
         rb, rb_at = recent_breaks(tb, g["price"], buf)
         rows.append({"name": g["label"], "price": g["price"], "kinds": g["kinds"], "dist_mr": round(d, 2) if d is not None else None,
                      "position": "above" if g["price"] > spot else ("below" if g["price"] < spot else "at"), "today_role": role,
                      "broken_at": at, "reclaimed": bool(recl), "magnet": crossings(tb, g["price"]) >= MAGNET_CROSSES,
-                     "recent_break": rb, "recent_break_at": rb_at})
+                     "recent_break": rb, "recent_break_at": rb_at, "held_until": ls["held_until"],
+                     "open_bar_breaking": ls["open_bar_breaking"]})
     # Room: trade दिशेने पुढचा विरोधी level — फक्त न तुटलेले (प्रत्यक्ष विरोध करू शकणारे); L चा group वगळून
     # Room (तुमची दुरुस्ती): trade दिशेने पुढचा कोणताही level — आज तुटलेला (flip: broken support ⇒ आता resistance) आणि untested सुद्धा; फक्त magnet वगळा
     opp = [r for r in rows if "L" not in r["kinds"] and not r["magnet"] and ((bull and r["price"] > spot) or (not bull and r["price"] < spot))]
@@ -266,12 +299,13 @@ def build(cut, setup, sig, median_range=None, daily=None):
     if level is not None and tb is not None and len(tb):
         ref = tb["close"].iloc[-7] if len(tb) >= 7 else tb["open"].iloc[0]
         early_role, _ = today_role(tb.iloc[:-3] if len(tb) > 3 else tb.iloc[:0], float(level), buf, t)
-        now_role, br_at = today_role(tb, float(level), buf, t)
+        lst = level_state(tb, float(level), buf, t)
+        now_role, br_at = lst["role"], lst["at"]
         open_side = "above" if float(tb["open"].iloc[0]) >= float(level) else "below"
-        # opening बाजूकडे परतणारा break = reclaim (false break / spring), opening बाजूपासून दूर जाणारा = खरा break
-        reclaimed = (now_role == "broken_up" and open_side == "above") or (now_role == "broken_down" and open_side == "below")
+        reclaimed = now_role == "reclaimed"
         lline = {"approach": "from above" if ref > float(level) else "from below", "earlier_role": early_role, "today_role": now_role,
-                 "broken": now_role.startswith("broken") and not reclaimed, "reclaimed": bool(reclaimed), "broken_at": br_at,
+                 "broken": now_role.startswith("broken"), "reclaimed": bool(reclaimed), "broken_at": br_at,
+                 "held_until": lst["held_until"], "open_bar_breaking": lst["open_bar_breaking"],
                  "opening_side": open_side, "bot_role": str(sig.get("role") or "").upper(), "spot_side": "above" if spot > float(level) else ("below" if spot < float(level) else "at")}
     mins = int((t - (sig_day + OPEN_T)).total_seconds() // 60)
     gap = None
@@ -294,7 +328,7 @@ def build(cut, setup, sig, median_range=None, daily=None):
         "swings": [{"i": i, "kind": k, "price": p} for i, k, p in sw],
         "overlays": [{"price": r["price"], "label": r["name"], "kinds": r["kinds"], "today_role": r["today_role"], "reclaimed": r["reclaimed"]}
                      for r in rows],
-        "level": float(level) if level is not None else None, "recent_breaks": recent,
+        "level": float(level) if level is not None else None, "recent_breaks": recent, "signal_bar": signal_bar(t0, s_tf, t),
         "invalidation": inv, "invalidation_source": inv_src, "l_line": lline, "gap_ctx": gctx,
         "composite": composite(setup, level, bull, buf) if setup is not None else None,
     }

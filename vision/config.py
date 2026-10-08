@@ -54,6 +54,7 @@ BOT_DEFAULTS = {
     "v2_gray_rules": ["unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
                       "line_conflict", "event_day", "gap_c_alone"],
     # v2.1 chart / gap संदर्भ
+    "vision_wait_for_bar_close": True,     # (v2.1) signal चा setup bar बंद झाल्यावरच vision call (Instant bot चा signal bar च्या मधे येतो)
     "line_lookback_sessions": 5,           # line panel: किती sessions चे 15m closes
     "inv_buffer_mr": 0.5,                  # bot ने invalidation न दिल्यास L ∓ हे × median range (chart / text)
     "gap_g0_atr": 0.25,                    # |gap_atr| याखाली ⇒ G0 (noise). IS 2015–2021 p50 = 0.247
@@ -103,7 +104,7 @@ def validate(bot, s):
             v = float(v) if isinstance(out[k], float) else int(v)
             if not lo <= v <= hi:
                 raise ValueError(f"{k} = {v} — [{lo}, {hi}] मध्ये हवं")
-        if k == "exit_advice":
+        if k in ("exit_advice", "vision_wait_for_bar_close"):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
         if k == "symbols":
             v = [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if x.strip()]

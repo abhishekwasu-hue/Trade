@@ -184,7 +184,8 @@ def test_request_is_v2_cached_and_text_has_exact_prices():
     text = p["messages"][0]["content"][1]["text"]
     pdh = meta["ctx"]["prev_day"]["high"]
     assert f"{pdh:,.2f}" in text and "PDH" in text and "Room:" in text and "minutes since the 09:15 open" in text
-    assert r["rule_hits"][0] == {"disagree": [], "gray": []}
+    assert r["rule_hits"][0] == {"disagree": [], "gray": ["unclear"]}                         # 11:01 ⇒ 11:00 चा bar बंद नाही ⇒ reversal unclear
+    assert any("बंद नाही" in x for x in r["audits"][0]["code_overrides"]) and "NOT CLOSED" in text
 
 
 def test_config_rule_lists_validated_and_match_audit_rules():

@@ -261,8 +261,10 @@ def signal_text(sig):
             tr = r.get("today_role") or r.get("role") or "n/a"
             if r.get("broken_at"):
                 tr += f" at {r['broken_at']}"
-            if r.get("reclaimed"):
-                tr += " (reclaim back to today's opening side = false break of the earlier break)"
+            if tr.startswith("reclaimed"):
+                tr += " (an earlier real break was undone: a completed bar closed back on today's opening side = false break)"
+            if r.get("open_bar_breaking"):
+                tr += (f" until {r.get('held_until')}; the current OPEN (unfinished) bar is breaking it {r['open_bar_breaking']}")
             lines.append(f"  {r['name']} | {r['price']:,.2f} | {pos} {'n/a' if d is None else f'{d:+.2f}'} x | {tr}")
     ll = ctx.get("l_line")
     if ll:
@@ -288,6 +290,11 @@ def signal_text(sig):
     if room.get("invalidation_mr") is not None:
         lines.append(f"Invalidation: {_f(ctx.get('invalidation', sig.get('invalidation')), 2)} ({ctx.get('invalidation_source', 'bot')}), "
                      f"{room['invalidation_mr']:.2f} x median range away.")
+    sb = ctx.get("signal_bar") or {}
+    if sb:
+        lines.append(f"Signal bar ({sb['tf']}m) {sb['start']}-{sb['end']}: " + (
+            f"closed (evaluated at {sb['evaluated_at']})." if sb["closed"] else
+            f"NOT CLOSED yet ({sb['elapsed']}/{sb['tf']} min elapsed) - the reversal candle is not final."))
     mins = ctx.get("minutes_since_open")
     if mins is not None:
         flag = {"opening": " - FIRST 15 MINUTES", "last_hour": " - LAST HOUR"}.get(ctx.get("time_flag"), "")
@@ -421,6 +428,10 @@ def apply_facts(a, ctx, direction=None):
             a["room_to_next_level"] = "unclear"
             ch.append("room=unclear (context नाही)")
         return a, ch
+    sb = ctx.get("signal_bar") or {}
+    if sb and not sb.get("closed") and a.get("reversal_valid") == "yes":   # तुमचा नियम 1c: signal bar बंद नाही ⇒ reversal unclear ⇒ gray
+        a["reversal_valid"] = "unclear"
+        ch.append(f"reversal_valid=unclear (signal bar {sb['start']} बंद नाही, {sb['elapsed']}/{sb['tf']} min)")
     if ctx.get("time_flag") == "opening" and a.get("time_risk") != "opening":
         a["time_risk"] = "opening"
         ch.append("time_risk=opening")
@@ -436,6 +447,22 @@ def apply_facts(a, ctx, direction=None):
         a["room_to_next_level"] = "tight"
         ch.append(f"room=tight ({nm:.2f}x)")
     return a, ch
+
+
+# Code-only pre-verdict: vision "सगळं ठीक / agree" म्हणाला असता तरी code चे नियम काय म्हणतात (vision शिवाय, खर्च 0)
+NEUTRAL = {"htf_trend": "up", "setup_structure": "range", "trend_context": "with", "level_real": "yes", "level_kind": "swing_origin",
+           "confluence": "yes", "wave_position": "abc_end", "correction_complete": "yes", "false_break_reclaim": "no", "reversal_touch": "yes",
+           "reversal_reclaim": "yes", "reversal_strength": "yes", "reversal_close_location": "good", "reversal_valid": "yes",
+           "is_breakout_entry": "no", "room_to_next_level": "enough", "time_risk": "none", "false_break_risk": "low",
+           "gap_class_agrees": "yes", "gap_behaviour": "no_gap", "gap_setup": "none", "line_structure": "up", "line_vs_candles": "consistent",
+           "elliott_note": "", "verdict": "agree", "reason": "", "confidence": 1.0}
+
+
+def pre_verdict(ctx, direction, disagree_rules=None, gray_rules=None):
+    """(verdict, {"disagree": […], "gray": […]}, code तथ्यं) — फक्त OHLC वरून (vision शिवाय)."""
+    a, facts = apply_facts(dict(NEUTRAL), ctx, direction)
+    d, g = rule_hits(a, disagree_rules, gray_rules, ctx, direction)
+    return code_verdict(a, disagree_rules, gray_rules, ctx, direction), {"disagree": d, "gray": g}, facts
 
 
 def rule_hits(a, disagree_rules=None, gray_rules=None, ctx=None, direction=None):

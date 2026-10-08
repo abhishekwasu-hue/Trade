@@ -116,7 +116,7 @@ def test_today_role_rules():
     brk = bars5([(110, 112, 105, 108), (108, 109, 96, 97), (97, 99, 95, 96)])
     assert CX.today_role(brk, 100, 1.0)[0] == "broken_down"
     recl = bars5([(110, 112, 105, 108), (108, 109, 96, 97), (97, 99, 95, 96), (96, 104, 95, 103), (103, 106, 102, 105)])
-    assert CX.today_role(recl, 100, 1.0)[0] == "broken_up"                              # reclaim (context मध्ये reclaimed flag)
+    assert CX.today_role(recl, 100, 1.0)[0] == "reclaimed"                              # break नंतर पूर्ण bar परत उघडण्याच्या बाजूला
     already = bars5([(110, 112, 108, 111), (111, 115, 109, 114)])
     assert CX.today_role(already, 100, 1.0)[0] == "untested"                          # आधीपासून वर ⇒ "broken_up" नाही
     probe = bars5([(110, 112, 105, 108), (108, 109, 99.5, 99.6), (99.6, 103, 99, 102)])
@@ -231,7 +231,7 @@ def test_user_samples_code_facts(samples):
     assert got[1] == "disagree"
     assert samples[1][1]["l_line"]["approach"] == "from above" and samples[1][1]["gap_ctx"]["direction"] == "up"
     ll3 = samples[2][1]["l_line"]                                                          # 10:01: 10:00 चा reclaim bar अपूर्ण ⇒ break पूर्ण bars वरच
-    assert ll3["today_role"] == "broken_down" and ll3["spot_side"] == "above" and got[2] == "agree"   # नमुना 3: vision चं मत ठरवेल
+    assert ll3["today_role"] == "reclaimed" and ll3["broken_at"] == "09:55" and got[2] == "gray"   # नमुना 3: PDL reclaimed; bar बंद नाही ⇒ gray
     assert got[0] == "gray" and samples[0][1]["room"]["next_name"] == "PWL"                  # नमुना 1: PWL 0.30× वर ⇒ room tight (किमान gray)
     assert samples[1][1]["recent_breaks"] == [{"name": "ORL", "at": "13:10"}]                 # नमुना 2: ORL broken_down at 13:10 ⇒ breakout
     g2 = samples[1][1]["gap_ctx"]
@@ -273,7 +273,7 @@ def test_v21_image_size_and_token_estimate(samples):
     assert (w, h) == (1000, 900) and w * h / 750 <= 1500                                  # image tokens ≈ w × h / 750
     setup, higher, tfs, cut2 = CH.panels(fr, sig["signal_ts"], "5M", return_cut=True)
     texts = [a.text for a in CH.build_figure(setup, higher, sig, tfs, meta["ctx"], CH.line_frame(cut2)).layout.annotations]
-    assert any("broken↓" in t for t in texts if t.startswith("<b>L"))
+    assert any("reclaimed" in t for t in texts if t.startswith("<b>L"))                   # "PDL · reclaimed"
     assert any(t in ("sH", "sL") for t in texts) and "INV" in texts and not any(t in ("H", "L") for t in texts)
 
 
@@ -297,3 +297,76 @@ def test_opening_behaviour_rejection_open_test_drive_and_history():
     fail = m([(25100, 25110, 25085, 25105), (25104, 25150, 25103, 25145), (25145, 25146, 25080, 25085)])  # drive नंतर परत open खाली
     st, _, hist = GC.opening_behaviour(fail, o, pdc, pdh, pdl, True, "beyond", buf)
     assert st == "undecided" and "failed drive" in hist[-1]                                  # पहिल्या घटनेवर lock नाही
+
+
+# ------------------------------------------------------------------------------------------------ round 3: bar close / reclaimed / pre-verdict
+def test_signal_bar_open_vs_closed_and_text():
+    sb = CX.signal_bar(pd.Timestamp("2021-07-12 13:11"), 5)
+    assert (sb["start"], sb["closed"], sb["elapsed"]) == ("13:10", False, 1)
+    assert CX.signal_bar(pd.Timestamp("2021-07-12 13:15"), 5)["closed"]                   # 13:14 minute पूर्ण ⇒ 13:10 चा bar बंद
+    assert CX.signal_bar(pd.Timestamp("2021-07-12 13:11"), 5, pd.Timestamp("2021-07-12 13:15"))["closed"]
+
+
+def test_open_bar_breaking_is_reported_not_counted_as_role(samples):
+    """नमुना 2: ORL तक्त्यात held ... until 13:05; current open bar breaking it down — breakout ओळीशी विरोध नाही."""
+    sig, ctx, _, _, _ = samples[1]
+    orl = [r for r in ctx["levels"] if r["name"] == "ORL"][0]
+    assert orl["open_bar_breaking"] == "down" and orl["held_until"] == "13:05" and not orl["today_role"].startswith("broken")
+    txt = SA.signal_text({**sig, "ctx": ctx})
+    assert "the current OPEN (unfinished) bar is breaking it down" in txt and "ORL at 13:10" in txt and "NOT CLOSED yet (1/5 min" in txt
+
+
+def test_reclaimed_turns_off_role_conflict():
+    a = SA.validate(GOOD)[0]
+    ctx = {"time_flag": "none", "room": {"next_mr": 3.0}, "recent_breaks": [],
+           "l_line": {"approach": "from above", "today_role": "reclaimed", "bot_role": "SUPPORT"}}
+    assert "role_conflict" not in SA.rule_hits(a, ctx=ctx, direction="BULLISH")[0]
+    held_r = {**ctx, "l_line": {**ctx["l_line"], "today_role": "held_as_resistance"}}
+    assert "role_conflict" in SA.rule_hits(a, ctx=held_r, direction="BULLISH")[0]
+
+
+def test_code_pre_verdicts_for_user_samples(samples):
+    """तुमची अपेक्षा: 1 = gray (room tight / bar बंद नाही), 2 = disagree (breakout), 3 = vision ठरवेल — code floor gray (bar बंद नाही)."""
+    out = [SA.pre_verdict(ctx, sig["direction"]) for sig, ctx, _, _, _ in samples]
+    assert out[0][0] == "gray" and {"tight_room", "unclear"} <= set(out[0][1]["gray"])
+    assert out[1][0] == "disagree" and {"breakout", "wrong_approach", "role_conflict"} <= set(out[1][1]["disagree"])
+    assert out[2][0] == "gray" and out[2][1] == {"disagree": [], "gray": ["unclear"]}
+
+
+def test_worker_waits_for_bar_close_then_cuts_chart_at_close(tmp_path, monkeypatch):
+    """vision_wait_for_bar_close: bar बंद नसेल ⇒ row परत QUEUED (fetch / खर्च नाही); बंद झाल्यावर asof = bar close."""
+    from vision import store as VS
+    from vision import worker as VW
+    monkeypatch.setattr(VW, "BAR_WAIT", True)
+    row = {"bot": "dynamic_sr_instant", "symbol": "NIFTY", "trading_mode": "PAPER", "mode": "notify", "signal_ts": pd.Timestamp("2026-10-06 10:31"),
+           "direction": "BULLISH", "level": 25000.0, "role": "SUPPORT", "setup_tf": "5M", "spot": 25010.0, "algo_decision": "ENTER"}
+    sid = VS.insert_signal(row)
+    r = VS.claim_one(sid)
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:33").to_pydatetime())
+    fetched = []
+    out = VW.process_row(r, fetch_fn=lambda s, d: fetched.append(1) or (None, None))
+    assert out["deferred"] and VS.get_signal(sid)["status"] == "QUEUED" and not fetched
+    seen = {}
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:35:20").to_pydatetime())
+    monkeypatch.setattr(CH, "render", lambda m1, s, d=None: (seen.update(asof=s.get("asof")), (None, {"error": "x"}))[1])
+    VW.process_row(VS.claim_one(sid), fetch_fn=lambda s, d: (pd.DataFrame({"timestamp": [pd.Timestamp("2026-10-06 10:30")], "open": [1.0],
+                                                                        "high": [1.0], "low": [1.0], "close": [1.0]}), None))
+    assert str(seen["asof"]).startswith("2026-10-06 10:35")
+
+
+def test_samples_bar_close_flow(capsys, tmp_path, monkeypatch):
+    """तुमचे 3 नमुने live प्रमाणे (bar close नंतर + drift guard), vision शिवाय: 1 gray (room tight), 2 disagree (breakout, drift), 3 agree ⇒ vision ठरवेल."""
+    if not os.path.exists(os.path.join(ROOT, "data", "nifty50_1min.parquet")):
+        pytest.skip("parquet नाही")
+    spec = importlib.util.spec_from_file_location("vsmoke21", os.path.join(ROOT, "scripts", "vision_v0_smoke.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.main(["--sample", "--bar-close", "--no-vision", "--no-telegram"]) == 0
+    out = capsys.readouterr().out
+    for hm in ("10:35", "13:15", "10:05"):
+        assert f"evaluated at bar close {hm}" in out and f"drift guard @ {hm}" in out
+    pv = [ln for ln in out.splitlines() if ln.startswith("--- code-only pre-verdict")]
+    assert pv[0].split(": ")[1].startswith("gray") and "tight_room" in pv[0]
+    assert pv[1].split(": ")[1].startswith("disagree") and "breakout" in pv[1]
+    assert pv[2].split(": ")[1].startswith("agree")
+    assert "drift guard @ 13:15" in out and "❌ drift" in out
