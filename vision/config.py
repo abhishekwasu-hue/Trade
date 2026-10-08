@@ -1,7 +1,8 @@
 """vision/config.py — bot-निहाय Vision settings (defaults, validation, बदल-इतिहास) + env (model, key).
 
-🎓 Modes: off / shadow / notify / auto_veto / human_confirm / veto_then_confirm. **V0 मध्ये फक्त off / shadow / notify लागू** — बाकीचे V1 मध्ये
-(निवडले तर ValueError: "V1 मध्ये"). LIVE bot ⇒ नेहमी off (`effective_mode`) — LIVE ला हात नाही.
+🎓 Modes: off / shadow / notify (V0 — trading वर परिणाम नाही) आणि auto_veto / human_confirm / veto_then_confirm (V1 — reduce-only gate:
+skip किंवा अर्धा size, कधीच वाढ नाही). LIVE bot ⇒ नेहमी off (`effective_mode`), आणि V1 modes LIVE bot साठी save करता येत नाहीत
+(`save` मध्ये bot चा trading_mode तपासतो) — LIVE ला हात नाही. V1 default अजून notify — dry-run (G-V1) नंतर तुम्ही निवडलेल्या bots वर.
 V0 defaults (WORK_LOG मध्ये कारण): NIFTY 5-Min Instant आणि 15M = notify (G-V0 साठी पहिल्या दिवसाचा Telegram हवा); बाकी सगळे off.
 Pullback Credit Spread सध्या फक्त preview पान (PAPER bot म्हणून चालत नाही) ⇒ यादीत off.
 
@@ -17,7 +18,9 @@ from . import store as VS
 
 MODES = ("off", "shadow", "notify", "auto_veto", "human_confirm", "veto_then_confirm")
 V0_MODES = ("off", "shadow", "notify")
-LIVE_FORBIDDEN = ("auto_veto", "human_confirm", "veto_then_confirm")
+V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
+LIVE_FORBIDDEN = V1_MODES
+BOT_STRATEGY_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr"}   # cloud_db strategy settings
 
 BOTS = {
     # bot key            : (dashboard नाव, symbols, V0 default mode)
@@ -41,6 +44,8 @@ BOT_DEFAULTS = {
     "vision_timeout_sec": 20,
     "second_audit_below_conf": 0.6,        # पहिल्या audit ची confidence याखाली ⇒ दुसरा audit
     "reuse_window_min": 15,                # तोच level/setup 15 मिनिटांत ⇒ आधीचं मत पुन्हा
+    "shadow_cooldown_min": 30,             # (V1) नाकारलेल्या level वर इतक्या मिनिटांत पुन्हा विचारणा / shadow नाही (bot च्या 30-मिनिट cooldown सारखं)
+    "exec_window_min": 5,                  # (V1) approve / reject नंतर इतक्या मिनिटांत bot ने entry / shadow घ्यावा, नाहीतर EXPIRED
     "level_gate": "off",                   # off / skip_mid_range           (V2)
 }
 GLOBAL_DEFAULTS = {
@@ -53,7 +58,7 @@ ENUMS = {
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
-          "reuse_window_min": (0, 120), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0)}
+          "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0)}
 
 
 def defaults(bot):
@@ -64,7 +69,7 @@ def defaults(bot):
     return d
 
 
-def validate(bot, s, allow_future_modes=False):
+def validate(bot, s):
     """रिटर्न स्वच्छ dict; चुकीचं ⇒ ValueError (कारणासह)."""
     out = defaults(bot) if bot != "_global" else copy.deepcopy(GLOBAL_DEFAULTS)
     for k, v in (s or {}).items():
@@ -82,8 +87,6 @@ def validate(bot, s, allow_future_modes=False):
         if k == "symbols":
             v = [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if x.strip()]
         out[k] = v
-    if bot != "_global" and not allow_future_modes and out["vision_mode"] not in V0_MODES:
-        raise ValueError(f"vision_mode {out['vision_mode']} V1 मध्ये येईल — V0 मध्ये फक्त {V0_MODES}")
     return out
 
 
@@ -92,7 +95,19 @@ def effective_mode(settings, trading_mode):
     if str(trading_mode or "").upper() != "PAPER":
         return "off"
     m = settings.get("vision_mode", "off")
-    return m if m in V0_MODES else "off"
+    return m if m in MODES else "off"
+
+
+def bot_trading_mode(bot, symbol="NIFTY"):
+    """Bot चा trading_mode (cloud_db strategy settings). वाचता आला नाही / अज्ञात bot ⇒ "UNKNOWN" (V1 modes नाकारायला)."""
+    key = BOT_STRATEGY_KEY.get(bot)
+    if not key:
+        return "UNKNOWN"
+    try:
+        import cloud_db
+        return str(cloud_db.get_strategy_settings(key, symbol).get("trading_mode", "PAPER")).upper()
+    except Exception:
+        return "UNKNOWN"
 
 
 def load(bot, path=None, timeout=10):
@@ -105,12 +120,17 @@ def load(bot, path=None, timeout=10):
         return defaults(bot) if bot != "_global" else copy.deepcopy(GLOBAL_DEFAULTS)
 
 
-def save(bot, changes, by, path=None):
+def save(bot, changes, by, path=None, trading_mode_fn=None):
     """changes merge + validate + इतिहास. रिटर्न नवीन settings."""
     if bot != "_global" and bot not in BOTS:
         raise ValueError(f"अज्ञात bot: {bot} — {sorted(BOTS)}")
     old = load(bot, path)
     new = validate(bot, {**old, **changes})
+    if bot != "_global" and new["vision_mode"] in LIVE_FORBIDDEN and new["vision_mode"] != old["vision_mode"]:
+        modes = {sym: (trading_mode_fn or bot_trading_mode)(bot, sym) for sym in new["symbols"] or ["NIFTY"]}
+        bad = {k: v for k, v in modes.items() if v != "PAPER"}
+        if bad:
+            raise ValueError(f"{new['vision_mode']} फक्त PAPER bot वर — {bot}: {bad} (LIVE ला हात नाही)")
     stored = {k: v for k, v in new.items()}
     with VS.connect(path) as c:
         ts = VS._iso(VS.now_ist())

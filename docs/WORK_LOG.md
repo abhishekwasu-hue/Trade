@@ -1169,3 +1169,75 @@ Nits:
 Model fallback वापरला तर (bhavcopy primary) entry bhavcopy वर आणि exit model वर ⇒ reports मध्ये `exit_price_src` नुसार वेगळं दाखवायचं.
 
 **नोंद:** trade-data मधला F8 WIP (`wip/elliott_f8_2026-10-07/backtest.diff`) emergency branch बदलतो ⇒ पुन्हा सुरू करताना या बदलांवर rebase करायचा.
+
+## 2026-10-08 · Vision V1 — veto_then_confirm / auto_veto / human_confirm → **G-V1 वर थांबणार** (dry-run screenshot)
+
+**काय केलं:**
+- `vision/decide.py` (नवीन, pure): mode × verdict ⇒ APPROVED / REJECTED / PENDING_HUMAN + factor (≤ 1), timeout नियम, `scaled_lots` (floor, reduce-only),
+  drift guard (4 नियम), callback HMAC (`v1|sid|A/R|hmac16`, `compare_digest`), approver ids.
+- `vision/gate.py` (नवीन): bots साठी `entry_gate` ⇒ ENTER / HOLD / SHADOW. कधीच raise नाही (चूक ⇒ algorithm, पूर्ण size). V0 modes ⇒ आधीसारखं फक्त नोंद.
+- `vision/store.py`: `vision_events` table (प्रत्येक transition ची नोंद), V1 columns (idempotent ALTER), conditional `transition()` (`WHERE status IN …`).
+- `vision/worker.py`: V1 rows ⇒ `decide` ⇒ Telegram (बटणांसह chart); housekeeping: PENDING_HUMAN मुदत ⇒ timeout नियम, APPROVED / REJECTED ला bot `exec_window_min` मध्ये
+  न पोहोचल्यास EXPIRED; DRIFT_REJECTED / EXPIRED ची Telegram माहिती. `chart.py` meta मध्ये `median_range` (drift guard साठी).
+- `vision/tg.py` + `vision/telegram_bot.py` (नवीन): long-polling service, from.id + chat.id whitelist, HMAC, single-use, deadline, restart ⇒ EXPIRED,
+  `/pending` `/today` `/vision`. `deploy/vision_telegram.service`.
+- Bots (5-Min Instant, 15M): V0 hook च्या जागी gate. HOLD ⇒ `SKIPPED_VISION_PENDING` (hit / cooldown मध्ये नाही). Approve नंतर forced level ⇒ bot चे सगळे gates पुन्हा ⇒
+  `lots = min(lots, gate.lots)`. Reject / drift ⇒ मूळ lots ने PAPER shadow trade (`<bot>_vision_shadow`, exits मूळ bot चे — `SHADOW_EXIT_PARENT_SOURCE`).
+- `vision/config.py`: V1 modes आता चालतात, पण फक्त PAPER — bot `trading_mode` LIVE / अज्ञात ⇒ save नाकार (CLI, dashboard, Telegram). Runtime ला LIVE ⇒ off (आधीसारखं).
+- Dashboard 👁 पान: ⚙️ Settings (LIVE / अज्ञात bot ला V1 modes दिसतच नाहीत) + बदल-इतिहास. `outcome.py`: shadow trades जोडतो.
+- `scripts/vision_dryrun.py` (नवीन): TEST signal ⇒ बटणं ⇒ approve / reject / timeout / `--drift` ⇒ निकाल Telegram वर. **Order नाही** (trading_engine import नाही — test).
+
+**Tests:** vision 67 → 91 (`test_vision_v1.py` 37: निर्णय तक्ता, reduce-only, HMAC / whitelist / replay / deadline / race, restart expiry, timeout, exec-window expiry,
+drift guard, LIVE guard, dashboard, dry-run चे 4 मार्ग; `test_vision_v1_bot.py` 7: खऱ्या 5-Min bot सोबत HOLD ⇒ approve ½ ⇒ 1 lot, reject ⇒ shadow 2 lots,
+LIVE अप्रभावित, notify लगेच, नाकारल्यानंतर notify ⇒ forced entry नाही, ½ × 1 lot ⇒ shadow, control). `test_vision_v0.py`: exit modules मध्ये vision नाही (AST), bots मध्ये gate lots फक्त `min()` मध्ये.
+
+**निर्णय (कारणासह):**
+- **Defaults अजून `notify`** — §10 नुसार NIFTY default veto_then_confirm, पण G-V1 (dry-run screenshot) आधी trading बदलायचं नाही. G-V1 नंतर तुम्ही `/vision vtc <bot>`.
+- **Bot 10 मिनिटं थांबू शकत नाही** (cron, दर मिनिट नवीन process) ⇒ HOLD + DB state + पुढच्या cycle ला forced level. त्यामुळे entry च्या क्षणी bot चे सगळे gates
+  (daily loss, kill switch, max-open, cooldown) ताज्या data वर पुन्हा चालतात — drift guard चा नियम 4 रचनेनेच.
+- **`exec_window_min` = 5** (नवीन setting): approve नंतर bot च्या gates पैकी कुठलं तरी बदललं तर signal कायम उघडा राहू नये.
+- **Shadow trade वेगळ्या source ने**: खऱ्या P&L / hit / max-open मोजणीत मिसळत नाही, पण नाकारलेल्यांचा निकाल (V3 random-veto तुलना) मोजता येतो.
+- **Worker अपयश (V1 row) ⇒ unavailable सारखं**: signal अडकू नये; veto_then_confirm मध्ये तुम्हाला विचारतो, उत्तर नाही ⇒ algorithm.
+- **Secret / approvers नसतील तर बटणं नाहीत** (caption मध्ये इशारा) ⇒ timeout नियम लागू — खोटी बटणं दाबता येऊ नयेत.
+- `find_open_decision` role / दिशा न पाहता (bot, symbol, TF, level, दिवस) ने शोधतो; दिशा / breakout प्रकार बदलला ⇒ जुनी row EXPIRED, नवा signal.
+
+**Independent review (subagent):** 2 BLOCKER + 7 SHOULD-FIX — सगळे दुरुस्त (प्रत्येकाला test):
+- **B1 forced level ⇒ touch शिवाय पूर्ण-size entry शक्य होता** (नाकारल्यानंतर mode notify केला / gate ची DB चूक / जुने rows). आता `forced_levels` फक्त V1 mode +
+  आजचे + exec_window आतले; forced call (`forced=True`) ला ENTER फक्त ताज्या APPROVED वरून, बाकी सगळं (mode बदल, चूक, row नाही) ⇒ HOLD
+  `SKIPPED_VISION_FORCED_STALE`; bot मध्ये gate import / call अपयशी + forced ⇒ entry नाही. signal_log मध्ये `hit_type = VISION_FORCED` (touch म्हणून नाही).
+- **B2 0-lot leg:** ½ × 1 lot ⇒ `ENTER(0, …)` होऊ शकत होतं (0-lot PAPER row; multi-account `max(1, …)` ⇒ 1 lot!). आता bots फक्त चालू legs चे lots पाठवतात
+  (बंद leg = 0) आणि चालू leg 0 झाला ⇒ SHADOW.
+- **S1** नाकारलेल्या bearish level वर खरा bullish touch ⇒ आधी bullish signal चुकीच्या row ला जोडून shadow व्हायचा. आता दिशा / breakout प्रकार वेगळा ⇒ जुनी row
+  EXPIRED (shadow नाही), नवा signal.
+- **S2** एकाच level वर दर touch ला नवा shadow + पुन्हा Telegram. आता `shadow_cooldown_min` (30, नवीन setting) मध्ये पुन्हा नाही (`SKIPPED_VISION_COOLDOWN`),
+  आणि `<bot>_vision_shadow` उघडा असेल तर नवा shadow नाही (algorithm सारखंच: एका वेळी एक). जुना "shadow एकदाच" test दुसऱ्या level वर होता — दुरुस्त.
+- **S3** worker बंद ⇒ bot कायम HOLD. आता `gate.resolve_due` (bot आणि worker दोघे): PENDING_HUMAN मुदत ⇒ timeout नियम; QUEUED / RUNNING `approve_window_min`
+  पेक्षा जुने ⇒ "vision unavailable + उत्तर नाही" (veto_then_confirm ⇒ algorithm; human_confirm ⇒ skip). V0 चा 15-मिनिट expiry V1 rows ला लागत नाही.
+  Housekeeping ची चूक नवे signals थांबवत नाही (try).
+- **S4** worker चा `finish` आता conditional (`status = RUNNING` असेल तरच) — bot / service ने आधी ठरवलेलं overwrite नाही, दुसऱ्यांदा बटणं नाहीत;
+  Telegram चूक निर्णय बिघडवत नाही.
+- **S5** drift guard चे दोन नियम प्रत्यक्षात कधीच लागत नव्हते: invalidation `setup_json` मधून वाचतो; median range नसेल (chart अपयश) ⇒ spot च्या 0.10%
+  (तपासणी वगळत नाही). Pullback origin: सध्याचे bots तो मोजत नाहीत ⇒ नियम 3 त्यांना लागू नाही (docs मध्ये स्पष्ट).
+- **S6** पहिल्या V1 start ला अनेक processes एकाच वेळी `ALTER TABLE` ⇒ "duplicate column" चूक गिळली.
+- **S7** बटणं जिथे जातात तो chat (notifications चा `TELEGRAM_CHAT_ID`) approvers मध्ये नसेल तर प्रत्येक दाब नाकारला जाऊन signal शांतपणे timeout ने जायचा.
+  आता `tg.can_ask()` ⇒ बटणं नाहीत + caption मध्ये कारण; service सुरू होताना Telegram इशारा.
+- Nits: forced तपासणी कधीच raise नाही; caption edit text संदेशावरही; dry-run चा signal चालू worker ने उचलला तरी चालतो; dry-run test चा नेहमी-खरा assert दुरुस्त.
+- **Re-review:** blocker नाही. केलेले: shadow cooldown फक्त त्याच दिशा / breakout प्रकाराला (उलट दिशेचा खरा touch अडत नाही);
+  मागच्या दिवसाचे न ठरलेले V1 rows शांतपणे EXPIRED (worker बंद होता ⇒ सकाळी संदेशांचा पूर नाही). Gate ने timeout / रद्द केलेल्या row चं Telegram बटण
+  तसंच राहतं (दाबल्यास "आधीच ठरलं") — bot मार्गात network call नको म्हणून बदल नाही.
+- **माहीत असलेल्या मर्यादा (बदल नाही):** APPROVED → EXECUTED हे option chain / strike-निवडीच्या आधी — ती अपयशी झाली तर निर्णय वापरला जातो पण trade नाही
+  (`exec_note` / outcome `no_trade` मध्ये दिसतं). Supabase बंद असताना `bot_trading_mode` default PAPER वाचतो ⇒ LIVE bot साठी V1 mode save होऊ शकतो,
+  पण runtime ला LIVE ⇒ vision off (trade वर परिणाम नाही). Outcome जुळणी EXECUTED साठी `executed_at` नंतरच्या trade वर (trade_id नोंद नाही).
+
+**तुमचा निर्णय (2026-10-08, market चालू असताना):** LIVE trading बंद (फक्त PAPER) ⇒ **auto_veto आजच** NIFTY PAPER bots वर (5-Min Instant, 15M).
+- नियम: agree ⇒ entry; gray / disagree / unavailable ⇒ skip (shadow) — म्हणजे `vision_gray_action = skip`, `vision_disagree_action = skip`,
+  `vision_fail_action = skip`. Code चे defaults बदलले नाहीत (अजून notify / half / ignore) — हे VPS वर `vision.config set` ने, आधी actions आणि मग mode
+  (मधल्या क्षणी gray ⇒ half होऊ नये म्हणून).
+- Deploy नियमाला (23:30 नंतर / 08:00–09:00) तुमच्या सांगण्यावरून अपवाद. Bots / vision worker cron वर ⇒ `git pull` पुरे, restart नाही. VPS block आधी
+  Supabase मधले सगळे strategy × symbol `trading_mode` आणि उघडे trades तपासतो: PAPER शिवाय काहीही (LIVE / LIVE_PAPER) ⇒ काहीच न बदलता थांबतो.
+  `position_stream_monitor` (long-running, जुना code memory त) फक्त उघडा trade नसेल तरच restart; नाहीतर 15:30 नंतर. तोपर्यंत नव्या vision shadow trades चे
+  exits cron `trade_monitor` (नवा code) करतो — खऱ्या trades चे exit नियम बदललेले नाहीत.
+- Telegram: worker चा संदेश "✅ ENTRY मंजूर / ❌ ENTRY नाकारली — कारण", entry झाल्यावर bot चा नेहमीचा trade संदेश, drift ⇒ "❌ ENTRY नाकारली (drift guard)".
+  auto_veto ला बटणं / `vision_telegram` service लागत नाही.
+
+**उघडे प्रश्न (G-V1 ला):** dry-run screenshot (approve / reject / timeout); मग कोणत्या bots वर `veto_then_confirm`. त्यानंतर V2 (08:00 level audit).

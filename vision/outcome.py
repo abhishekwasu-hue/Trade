@@ -71,7 +71,10 @@ def find_trade(row, trades_db=None, path=None):
         from config import DB_PATH
         trades_db = DB_PATH
     t = pd.Timestamp(row["signal_ts"])
-    lo, hi = t.strftime("%Y-%m-%d %H:%M:%S"), (t + pd.Timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    # V1: entry approve नंतर (executed_at) होतो; नाकारलेले (SHADOWED / DRIFT_REJECTED) ⇒ "<bot>_vision_shadow" source चा PAPER shadow
+    t_hi = pd.Timestamp(row["executed_at"]) if row.get("executed_at") else t
+    source = f"{row['bot']}_vision_shadow" if row.get("status") in ("SHADOWED", "DRIFT_REJECTED") else row["bot"]
+    lo, hi = t.strftime("%Y-%m-%d %H:%M:%S"), (t_hi + pd.Timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     if not os.path.exists(trades_db):
         raise FileNotFoundError(f"trades DB नाही: {trades_db}")
     conn = sqlite3.connect(f"file:{trades_db}?mode=ro", uri=True, timeout=5)
@@ -79,19 +82,20 @@ def find_trade(row, trades_db=None, path=None):
     try:
         cands = [dict(r) for r in conn.execute(
             "SELECT * FROM live_trades WHERE source=? AND symbol=? AND entry_time >= ? AND entry_time <= ? AND mode='PAPER' ORDER BY entry_time",
-            (row["bot"], row["symbol"], lo, hi))]
+            (source, row["symbol"], lo, hi))]
     finally:
         conn.close()
     with VS.connect(path) as c:
         linked = {r[0] for r in c.execute("SELECT trade_id FROM vision_signals WHERE trade_id IS NOT NULL AND signal_id != ?", (row["signal_id"],))}
-        later = [r[0] for r in c.execute("SELECT signal_ts FROM vision_signals WHERE bot=? AND symbol=? AND signal_ts > ? AND signal_ts <= ? "
-                                         "AND signal_id != ?", (row["bot"], row["symbol"], VS._iso(t), VS._iso(t + pd.Timedelta(minutes=10)),
-                                                                row["signal_id"]))]
+        later = [r[0] for r in c.execute("SELECT COALESCE(executed_at, signal_ts) FROM vision_signals WHERE bot=? AND symbol=? "
+                                         "AND COALESCE(executed_at, signal_ts) > ? AND COALESCE(executed_at, signal_ts) <= ? AND signal_id != ?",
+                                         (row["bot"], row["symbol"], VS._iso(t_hi), VS._iso(t_hi + pd.Timedelta(minutes=10)),
+                                          row["signal_id"]))]
     for tr in cands:
         if tr["trade_id"] in linked:
             continue
         e = pd.Timestamp(tr["entry_time"])
-        if any(t < pd.Timestamp(x) <= e for x in later):
+        if any(t_hi < pd.Timestamp(x) <= e for x in later):
             return None
         return tr
     return None

@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS vision_signals (
     signal_ts TEXT NOT NULL, created_at TEXT NOT NULL,
     direction TEXT, level REAL, role TEXT, setup_tf TEXT, spot REAL,
     setup_json TEXT, algo_decision TEXT,
-    status TEXT NOT NULL,                 -- QUEUED | RUNNING | DONE | EXPIRED | FAILED
+    status TEXT NOT NULL,                 -- V0: QUEUED | RUNNING | DONE | EXPIRED | FAILED
+                                          -- V1: PENDING_HUMAN | APPROVED | REJECTED → EXECUTED | SHADOWED | DRIFT_REJECTED | EXPIRED
     verdict TEXT,                         -- agree | gray | disagree | unavailable
     vision_json TEXT, audits INTEGER DEFAULT 0, confidence REAL,
     latency_ms INTEGER, cost_usd REAL DEFAULT 0, model TEXT, reused_from TEXT,
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS vision_signals (
     image_sha256 TEXT, prompt_version TEXT, final_decision TEXT,
     trade_id TEXT, outcome_path TEXT, outcome_sha256 TEXT, outcome_json TEXT
 );
+CREATE TABLE IF NOT EXISTS vision_events (ts TEXT, signal_id TEXT, event TEXT, detail TEXT);
 CREATE INDEX IF NOT EXISTS ix_vs_status ON vision_signals(status, created_at);
 CREATE INDEX IF NOT EXISTS ix_vs_reuse ON vision_signals(symbol, direction, setup_tf, signal_ts);
 CREATE TABLE IF NOT EXISTS vision_usage (
@@ -52,6 +54,32 @@ def db_path():
     return os.path.join(DATA_DIR, "vision.db")
 
 
+# V1 कॉलम — जुन्या (V0) DB वर `ALTER TABLE ADD COLUMN` ने (idempotent)
+V1_COLUMNS = {
+    "factor": "REAL", "deadline": "TEXT", "timeout_status": "TEXT", "timeout_factor": "REAL", "tg_message_id": "INTEGER",
+    "decided_at": "TEXT", "decided_by": "TEXT", "decision_reason": "TEXT", "median_range": "REAL", "executed_at": "TEXT",
+    "exec_note": "TEXT", "transition_notified": "INTEGER DEFAULT 0",
+}
+V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
+OPEN_V1 = ("QUEUED", "RUNNING", "PENDING_HUMAN", "APPROVED", "REJECTED")
+OUTCOME_STATUSES = ("DONE", "EXECUTED", "SHADOWED", "DRIFT_REJECTED")
+_MIGRATED = set()
+
+
+def _migrate(conn, p):
+    if p in _MIGRATED:
+        return
+    have = {r[1] for r in conn.execute("PRAGMA table_info(vision_signals)")}
+    for col, typ in V1_COLUMNS.items():
+        if col not in have:
+            try:
+                conn.execute(f"ALTER TABLE vision_signals ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as exc:                      # दुसऱ्या process ने (bot / worker / service) आधीच जोडला
+                if "duplicate column" not in str(exc).lower():
+                    raise
+    _MIGRATED.add(p)
+
+
 @contextlib.contextmanager
 def connect(path=None, timeout=10):
     p = path or db_path()
@@ -61,6 +89,7 @@ def connect(path=None, timeout=10):
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn, os.path.abspath(p))
         yield conn
         conn.commit()
     finally:
@@ -114,15 +143,21 @@ def claim_one(signal_id, path=None):
         return dict(c.execute("SELECT * FROM vision_signals WHERE signal_id=?", (signal_id,)).fetchone())
 
 
-def finish(signal_id, status, path=None, **fields):
+def finish(signal_id, status, path=None, only_from=None, **fields):
+    """only_from (str / tuple) ⇒ status तसा असेल तरच (conditional, gate / service ने आधीच ठरवलेलं overwrite होत नाही). रिटर्न True ⇒ बदल झाला."""
     cols = dict(fields)
     cols["status"] = status
     cols["finished_at"] = _iso(now_ist())
     if "vision_json" in cols and not isinstance(cols["vision_json"], (str, type(None))):
         cols["vision_json"] = json.dumps(cols["vision_json"], ensure_ascii=False)
     sets = ", ".join(f"{k}=?" for k in cols)
+    q, args = f"UPDATE vision_signals SET {sets} WHERE signal_id=?", [*cols.values(), signal_id]
+    if only_from:
+        frm = (only_from,) if isinstance(only_from, str) else tuple(only_from)
+        q += f" AND status IN ({','.join('?' * len(frm))})"
+        args += list(frm)
     with connect(path) as c:
-        c.execute(f"UPDATE vision_signals SET {sets} WHERE signal_id=?", (*cols.values(), signal_id))
+        return c.execute(q, args).rowcount == 1
 
 
 def set_outcome(signal_id, path=None, **fields):
@@ -136,8 +171,8 @@ def set_outcome(signal_id, path=None, **fields):
 def pending_outcomes(since_day, path=None):
     """DONE signals (since_day पासून) ज्यांचा outcome अजून नाही."""
     with connect(path) as c:
-        rows = c.execute("SELECT * FROM vision_signals WHERE status='DONE' AND outcome_json IS NULL AND substr(signal_ts,1,10) >= ? "
-                         "ORDER BY signal_ts", (str(since_day),)).fetchall()
+        rows = c.execute("SELECT * FROM vision_signals WHERE status IN (%s) AND outcome_json IS NULL AND substr(signal_ts,1,10) >= ? "
+                         "ORDER BY signal_ts" % ",".join("?" * len(OUTCOME_STATUSES)), (*OUTCOME_STATUSES, str(since_day))).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -147,11 +182,13 @@ def set_notified(signal_id, ok, path=None):
 
 
 def expire_stale(max_age_min, path=None):
-    """RUNNING / QUEUED rows जुन्या (worker crash / restart) ⇒ EXPIRED. V1 मध्ये PENDING सुद्धा (stale approve नाही)."""
+    """V0 च्या RUNNING / QUEUED rows जुन्या (worker crash / restart) ⇒ EXPIRED. V1 rows इथे नाहीत — त्यांना `gate.resolve_due` चा
+    timeout नियम (vision unavailable + उत्तर नाही) लागतो, नाहीतर bot कायम HOLD मध्ये अडकतो."""
     cutoff = _iso(now_ist() - datetime.timedelta(minutes=max_age_min))
     with connect(path) as c:
         cur = c.execute("UPDATE vision_signals SET status='EXPIRED', error=COALESCE(error, 'stale (worker उशीर / restart)'), finished_at=? "
-                        "WHERE status IN ('QUEUED','RUNNING') AND created_at < ?", (_iso(now_ist()), cutoff))
+                        "WHERE status IN ('QUEUED','RUNNING') AND created_at < ? AND mode NOT IN (%s)" % ",".join("?" * len(V1_MODES)),
+                        (_iso(now_ist()), cutoff, *V1_MODES))
         return cur.rowcount
 
 
@@ -180,7 +217,7 @@ def find_reusable(row, window_min, tol_pct=0.05, path=None):
     t0 = _iso(datetime.datetime.fromisoformat(t1) - datetime.timedelta(minutes=window_min))
     with connect(path) as c:
         rows = c.execute("SELECT * FROM vision_signals WHERE bot=? AND symbol=? AND direction IS ? AND role IS ? AND setup_tf IS ? "
-                         "AND status='DONE' AND verdict IS NOT NULL AND verdict != 'unavailable' AND reused_from IS NULL "
+                         "AND status NOT IN ('QUEUED','RUNNING','FAILED') AND verdict IS NOT NULL AND verdict != 'unavailable' AND reused_from IS NULL "
                          "AND signal_ts >= ? AND signal_ts <= ? AND signal_id != ? ORDER BY signal_ts DESC",
                          (row["bot"], row["symbol"], row.get("direction"), row.get("role"), row.get("setup_tf"), t0, t1,
                           row.get("signal_id") or "")).fetchall()
@@ -237,3 +274,70 @@ def kv_get(k, path=None):
 def kv_set(k, v, path=None):
     with connect(path) as c:
         c.execute("INSERT INTO vision_kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
+
+
+# --------------------------------------------------------------------------------------------------------- V1 निर्णय (conditional)
+def event(signal_id, ev, detail="", path=None):
+    with connect(path) as c:
+        c.execute("INSERT INTO vision_events VALUES (?,?,?,?)", (_iso(now_ist()), signal_id, ev, str(detail)[:500]))
+
+
+def transition(signal_id, frm, to, path=None, timeout=10, **fields):
+    """status `frm` (str किंवा tuple) असेल तरच `to` — single-use / race-safe. रिटर्न True फक्त ज्याने बदल केला त्याला."""
+    frm = (frm,) if isinstance(frm, str) else tuple(frm)
+    cols = {"status": to, **fields}
+    sets = ", ".join(f"{k}=?" for k in cols)
+    with connect(path, timeout) as c:
+        cur = c.execute(f"UPDATE vision_signals SET {sets} WHERE signal_id=? AND status IN ({','.join('?' * len(frm))})",
+                        (*cols.values(), signal_id, *frm))
+        ok = cur.rowcount == 1
+        if ok:
+            c.execute("INSERT INTO vision_events VALUES (?,?,?,?)", (_iso(now_ist()), signal_id, f"{'/'.join(frm)}→{to}",
+                                                                      json.dumps({k: v for k, v in fields.items()}, default=str)[:500]))
+    return ok
+
+
+def find_open_decision(bot, symbol, setup_tf, level, day, tol_pct=0.05, path=None, timeout=10):
+    """आजची त्याच bot / symbol / TF / level (±tol) ची उघडी V1 row (सर्वात नवीन) किंवा None. Role / दिशा मुद्दाम filter नाही:
+    level ची बाजू बदलली तर drift guard ने पकडायचं (नवा signal म्हणून नाही)."""
+    with connect(path, timeout) as c:
+        rows = c.execute("SELECT * FROM vision_signals WHERE bot=? AND symbol=? AND setup_tf IS ? AND substr(signal_ts,1,10)=? "
+                         "AND status IN (%s) ORDER BY created_at DESC" % ",".join("?" * len(OPEN_V1)),
+                         (bot, symbol, setup_tf, str(day), *OPEN_V1)).fetchall()
+    for r in rows:
+        if r["level"] is not None and level is not None and abs(float(r["level"]) - float(level)) <= abs(float(level)) * tol_pct / 100.0:
+            return dict(r)
+    return None
+
+
+def recent_closed(bot, symbol, setup_tf, level, since, statuses=("SHADOWED", "DRIFT_REJECTED"), tol_pct=0.05, path=None, timeout=10,
+                  match=None):
+    """`since` नंतर (executed_at) त्याच bot / symbol / TF / level चा shadow / drift ⇒ ती row (cooldown साठी) किंवा None."""
+    with connect(path, timeout) as c:
+        rows = c.execute("SELECT * FROM vision_signals WHERE bot=? AND symbol=? AND setup_tf IS ? AND executed_at >= ? AND status IN (%s) "
+                         "ORDER BY executed_at DESC" % ",".join("?" * len(statuses)), (bot, symbol, setup_tf, _iso(since), *statuses)).fetchall()
+    for r in rows:
+        if r["level"] is not None and level is not None and abs(float(r["level"]) - float(level)) <= abs(float(level)) * tol_pct / 100.0:
+            if match is None or match(dict(r)):
+                return dict(r)
+    return None
+
+
+def rows_with_status(statuses, path=None, timeout=10, bot=None, symbol=None):
+    statuses = (statuses,) if isinstance(statuses, str) else tuple(statuses)
+    q = "SELECT * FROM vision_signals WHERE status IN (%s)" % ",".join("?" * len(statuses))
+    args = list(statuses)
+    if bot:
+        q += " AND bot=?"
+        args.append(bot)
+    if symbol:
+        q += " AND symbol=?"
+        args.append(symbol)
+    with connect(path, timeout) as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY created_at", args)]
+
+
+def update(signal_id, path=None, **fields):
+    sets = ", ".join(f"{k}=?" for k in fields)
+    with connect(path) as c:
+        c.execute(f"UPDATE vision_signals SET {sets} WHERE signal_id=?", (*fields.values(), signal_id))

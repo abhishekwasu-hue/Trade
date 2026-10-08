@@ -61,6 +61,36 @@ def disk_usage(path):
     return 100.0 * u.used / u.total, size / 1e6
 
 
+def mode_options(bot, trading_mode):
+    """UI मध्ये निवडता येणारे modes: LIVE / अज्ञात bot ⇒ फक्त off / shadow / notify (V1 modes दिसतच नाहीत)."""
+    from vision import config as VC
+    return list(VC.MODES) if str(trading_mode).upper() == "PAPER" else list(VC.V0_MODES)
+
+
+def render_settings():
+    from vision import config as VC
+    with st.expander("⚙️ Vision settings (bot-निहाय, बदल-इतिहासासह)"):
+        st.caption("V1 modes (auto_veto / human_confirm / veto_then_confirm) फक्त PAPER bots वर — LIVE ला हात नाही. "
+                   "Exits नेहमी automatic.")
+        for bot, (label, _syms, _d) in VC.BOTS.items():
+            cur = VC.load(bot)
+            tm = VC.bot_trading_mode(bot)
+            opts = mode_options(bot, tm)
+            c1, c2, c3 = st.columns([3, 3, 2])
+            c1.write(f"**{label}** · `{bot}` · trading mode: {tm}")
+            pick = c2.selectbox("vision_mode", opts, index=opts.index(cur["vision_mode"]) if cur["vision_mode"] in opts else 0,
+                                key=f"vmode_{bot}", label_visibility="collapsed")
+            if c3.button("Save", key=f"vsave_{bot}") and pick != cur["vision_mode"]:
+                try:
+                    VC.save(bot, {"vision_mode": pick}, "dashboard")
+                    st.success(f"{bot}: {pick}")
+                except ValueError as exc:
+                    st.error(str(exc))
+        hist = VC.history()
+        if hist:
+            st.dataframe(pd.DataFrame(hist)[["ts", "bot", "by", "new_json"]].tail(20), use_container_width=True, hide_index=True)
+
+
 def render():
     st.title("👁 Vision & Human Eye")
     st.caption("V0: vision फक्त माहिती — trade निर्णयावर परिणाम नाही. डावीकडे vision ला पाठवलेली image (signal पर्यंतच), उजवीकडे trade नंतरचा "
@@ -70,6 +100,7 @@ def render():
     except Exception as exc:
         st.error(f"vision DB वाचता आली नाही: {exc}")
         return
+    render_settings()
     pct, mb = disk_usage(IM.base_dir())
     c1, c2, c3 = st.columns(3)
     c1.metric("Signals (एकूण)", len(df))

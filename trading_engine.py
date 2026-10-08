@@ -572,6 +572,9 @@ SHADOW_EXIT_PARENT_SOURCE = {
     "dynamic_sr_instant_min_hold_shadow": "dynamic_sr_instant",
     "dynamic_sr_instant_srv3_shadow": "dynamic_sr_instant",      # SR V3 levels PAPER shadow (srv3_instant_shadow.py)
     "mcx_futures_srv3_shadow": "mcx_futures",                     # MCX SR V3 levels PAPER shadow (mcx_futures_trader.py)
+    # Vision V1 ने नाकारलेल्या signals चे PAPER shadow trades (bot मधून उघडले जातात) — exit नियम मूळ strategy चेच; exit मार्गात vision नाही.
+    "dynamic_sr_instant_vision_shadow": "dynamic_sr_instant",
+    "srv2_momentum_reversal_vision_shadow": "srv2_momentum_reversal",
 }
 
 

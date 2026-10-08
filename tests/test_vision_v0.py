@@ -60,15 +60,18 @@ def test_defaults_v0_nifty_notify_others_off(db):
     assert g["vision_daily_budget_usd"] == 0.30 and g["vision_monthly_budget_usd"] == 5.0
 
 
-def test_v1_modes_rejected_in_v0_and_live_always_off(db):
+def test_v1_modes_only_for_paper_bots_and_live_always_off(db):
     for m in ("auto_veto", "human_confirm", "veto_then_confirm"):
-        with pytest.raises(ValueError):
-            VC.save("dynamic_sr_instant", {"vision_mode": m}, "t")
+        with pytest.raises(ValueError):                                             # LIVE bot ⇒ V1 mode save नाही (code)
+            VC.save("dynamic_sr_instant", {"vision_mode": m}, "t", trading_mode_fn=lambda b, sym: "LIVE")
+        with pytest.raises(ValueError):                                             # trading mode वाचता आला नाही ⇒ नकार
+            VC.save("dynamic_sr_instant", {"vision_mode": m}, "t", trading_mode_fn=lambda b, sym: "UNKNOWN")
+    VC.save("dynamic_sr_instant", {"vision_mode": "veto_then_confirm"}, "t", trading_mode_fn=lambda b, sym: "PAPER")
     s = VC.load("dynamic_sr_instant")
-    assert VC.effective_mode(s, "LIVE") == "off"
-    assert VC.effective_mode(s, None) == "off"
-    assert VC.effective_mode(s, "PAPER") == "notify"
-    assert VC.effective_mode({"vision_mode": "human_confirm"}, "PAPER") == "off"   # V0 मध्ये लागू नाही
+    assert s["vision_mode"] == "veto_then_confirm"
+    assert VC.effective_mode(s, "LIVE") == "off" and VC.effective_mode(s, None) == "off"
+    assert VC.effective_mode(s, "PAPER") == "veto_then_confirm"
+    assert VC.load("srv2_momentum_reversal")["vision_mode"] == "notify"            # default अजून notify (G-V1 नंतर बदल)
 
 
 def test_settings_validation_and_history(db):
@@ -104,19 +107,26 @@ def test_hook_never_raises_and_returns_none(db, monkeypatch):
     assert VH.submit_signal("dynamic_sr_instant", "NIFTY", "PAPER", "BULLISH", 25000, "SUPPORT", "5M", dt.datetime(2026, 10, 6, 10, 0)) is None
 
 
-def _vision_calls(path):
+def _gate_lot_uses(path):
+    """Bot मध्ये gate चे lots (`_vg.lots` / `_vg.naked_lots`) कुठे वापरले — प्रत्येक वापर `min(मूळ, gate)` च्या आत हवा (reduce-only)."""
     tree = ast.parse(open(os.path.join(ROOT, path), encoding="utf-8").read())
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_vision_submit"]
-    parents = {id(c) for n in ast.walk(tree) if isinstance(n, ast.Expr) for c in [n.value]}
-    return calls, parents
+    parent = {}
+    for n in ast.walk(tree):
+        for ch in ast.iter_child_nodes(n):
+            parent[id(ch)] = n
+    uses = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("lots", "naked_lots")
+            and isinstance(n.value, ast.Name) and n.value.id == "_vg"]
+    inside_min = [isinstance(parent.get(id(u)), ast.Call) and getattr(parent[id(u)].func, "id", None) == "min" for u in uses]
+    gate_calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_vision_gate"]
+    return uses, inside_min, gate_calls
 
 
 @pytest.mark.parametrize("path", ["dynamic_sr_instant_trader.py", "srv2_momentum_reversal_strategy.py"])
-def test_bots_ignore_hook_result(path):
-    """Reduce-only (V0 मध्ये शून्य परिणाम): hook चा परिणाम bot कुठेच वापरत नाही — call हे फक्त statement आहे."""
-    calls, expr_ids = _vision_calls(path)
-    assert calls, "hook जोडलेला नाही"
-    assert all(id(c) in expr_ids for c in calls)
+def test_bots_use_gate_reduce_only(path):
+    """Reduce-only: bot gate कडून आलेले lots फक्त `min(मूळ lots, gate lots)` ने वापरतो — vision / human कधीच size वाढवू शकत नाही."""
+    uses, inside_min, gate_calls = _gate_lot_uses(path)
+    assert gate_calls, "gate जोडलेला नाही"
+    assert uses and all(inside_min)
 
 
 def test_vision_package_never_touches_orders_and_exits_never_touch_vision():
@@ -130,7 +140,11 @@ def test_vision_package_never_touches_orders_and_exits_never_touch_vision():
         p = os.path.join(ROOT, exit_mod)
         if os.path.exists(p):
             src = open(p, encoding="utf-8").read()
-            assert "vision" not in src.replace("visual", ""), exit_mod     # exit मार्गात vision / human call नाही
+            tree = ast.parse(src)
+            mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module} | \
+                   {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+            assert not any(m == "vision" or m.startswith("vision.") for m in mods), exit_mod   # exit मार्गात vision / human call नाही
+            assert "telegram_bot" not in src and "_vision_gate" not in src and "PENDING_HUMAN" not in src, exit_mod
 
 
 # ------------------------------------------------------------------------------------------------ chart: no-lookahead
