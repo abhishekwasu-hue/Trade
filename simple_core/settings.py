@@ -45,7 +45,7 @@ ENGINE_DEFAULTS = {
 SL_MODES = ("structural_invalidation", "commitment_extreme", "wave1_origin", "subwave_origin", "wave1_extreme", "fixed_points", "percent",
             "none")
 TARGET_MODES = ("next_opposite_area", "impulse_end", "wave3_projection", "wave5_projection", "r_multiple", "premium_pct", "none")
-G9_TIERS = ("C", "skip")
+G9_TIERS = ("full", "half", "C", "skip")    # full ⇒ lots · half ⇒ lots ÷ 2 · C ⇒ g9_lots · skip ⇒ trade नाही
 INSTRUMENTS = ("credit_spread", "futures", "naked_buy", "naked_sell")
 STRIKE_MODES = ("offset_points", "beyond_sl_points", "sigma")
 EXEC_FIELDS = {
@@ -53,7 +53,7 @@ EXEC_FIELDS = {
     "target_mode": TARGET_MODES, "target_value": "number", "rr_filter": "bool", "min_rr": "number",
     "instrument": INSTRUMENTS, "strike_mode": STRIKE_MODES, "strike_value": "number", "strike_step": "number", "width": "number",
     "lots": "number",
-    "g9_tier": G9_TIERS, "g9_lots": "number",        # G9 (wave 5, KB Tier C): skip ⇒ trade नाही; C ⇒ g9_lots
+    "g9_tier": G9_TIERS, "g9_lots": "number",        # G9 (wave 5, KB Tier C): full / half / C (g9_lots) / skip
     "expiry_rule": "text",
 }
 
@@ -83,9 +83,20 @@ def load_profiles(path=None):
         return {}
 
 
+# PAPER profile (Abhi निर्णय 2026-10-08 23:48): store मध्ये "paper_core" नसेल तर हीच मूल्यं. K-10 round 2 (SL structural + 0.25 MR,
+# rr_filter on, min_rr 3) + target_mode impulse_end + g9_tier full. Instrument / strike / lots इथे नाहीत ⇒ order साठी dashboard वर
+# निवडायलाच हवेत. फक्त PAPER profile; दुसऱ्या कोणत्याही profile ला (LIVE सह) default नाही.
+PAPER_PROFILE = "paper_core"
+PAPER_SEED = {"rr_filter": True, "min_rr": 3.0, "sl_mode": "structural_invalidation", "sl_buffer": 0.25, "sl_buffer_unit": "mr",
+              "target_mode": "impulse_end", "g9_tier": "full"}
+
+
 def load_profile(name, path=None):
-    """profile नसेल ⇒ {} (default भरत नाही — execution.plan "निवडलेले नाही" सांगेल)."""
-    return dict(load_profiles(path).get(name) or {})
+    """profile नसेल ⇒ {} (default भरत नाही — execution.plan "निवडलेले नाही" सांगेल). अपवाद: PAPER_PROFILE ⇒ PAPER_SEED."""
+    allp = load_profiles(path)
+    if name not in allp and name == PAPER_PROFILE:
+        return dict(PAPER_SEED)
+    return dict(allp.get(name) or {})
 
 
 def validate(ex):

@@ -163,7 +163,36 @@ def _tl_value_fn(z, m15_ts):
     return f
 
 
-def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4):
+def place_right_labels(fig, x, items, lo, hi, gap_frac=0.045):
+    """उजवीकडचे labels एकमेकांवर येऊ नयेत (Abhi Sep–Oct review): y नुसार क्रम, किमान अंतर ठेवून stagger; हलवलेल्या label पासून
+    खऱ्या भावापर्यंत बारीक बाण. items = [{y, text, color, bold}] — bold फक्त entry-area / ENTRY साठी, बाकी फिकट."""
+    items = [it for it in items if it.get("y") is not None and np.isfinite(float(it["y"]))]
+    if not items:
+        return
+    span = (hi - lo) or 1.0
+    gap = gap_frac * span
+    items = sorted(items, key=lambda it: float(it["y"]))
+    ya = []
+    for it in items:                                                       # खालून वर: किमान अंतर
+        y = float(it["y"])
+        ya.append(y if not ya else max(y, ya[-1] + gap))
+    over = ya[-1] - (hi + 0.04 * span)
+    if over > 0:                                                           # वर chart बाहेर ⇒ सगळे खाली सरकवा (क्रम तसाच)
+        ya = [v - over for v in ya]
+    for it, y_lab in zip(items, ya):
+        y, col, bold = float(it["y"]), it.get("color") or "#b0bec5", bool(it.get("bold"))
+        moved = abs(y_lab - y) > 1e-9
+        kw = dict(text=f"<b>{it['text']}</b>" if bold else it["text"], xanchor="right", yanchor="middle",
+                  font=dict(size=12 if bold else 10, color=col), bgcolor="rgba(14,17,23,0.85)" if bold else "rgba(14,17,23,0.55)",
+                  bordercolor=col if bold else "rgba(0,0,0,0)", borderwidth=1 if bold else 0, opacity=1.0 if bold else 0.8)
+        if moved:
+            fig.add_annotation(x=x, y=y, ax=x, ay=y_lab, axref="x", ayref="y", showarrow=True, arrowhead=0, arrowwidth=1,
+                               arrowcolor=col, **kw)
+        else:
+            fig.add_annotation(x=x, y=y, showarrow=False, **kw)
+
+
+def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4, focus=None, labels_out=None):
     """§2: selling zones लाल छटा, buying zones हिरवी; trendlines anchors सह; label "S1 · flip · 15M · ACTIVE · 2 touches"."""
     import plotly.graph_objects as go
     n = len(d)
@@ -171,6 +200,11 @@ def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4):
     ts = pd.to_datetime(d["timestamp"])
     t0 = ts.iloc[0]
     shown = {"sell": 0, "buy": 0}
+    focus = list(focus or ())                                            # signal areas: [{low, high}] — भावपट्टा overlap ⇒ ठळक
+
+    def _focus(lo_, hi_):
+        return any(lo_ <= float(a["high"]) and hi_ >= float(a["low"]) for a in focus)
+    rlabels = []                                                          # उजवीकडचे labels — शेवटी place_right_labels (stagger)
     for z in zones or []:
         side = z.get("side") or ("sell" if z.get("role") == "RESISTANCE" else "buy")
         col = SELL_COL if side == "sell" else BUY_COL
@@ -193,15 +227,18 @@ def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4):
                 txt = " · ".join(f"{pd.Timestamp(a):%d %b} {v:,.0f}" for a, v in before)
                 fig.add_annotation(x=0, y=ys[0], text=f"← {txt}", showarrow=False, xanchor="left", yanchor="bottom",
                                    font=dict(size=10, color=col))
-            fig.add_annotation(x=n - 1, y=ys[-1], text=label, showarrow=False, xanchor="right", yanchor="bottom", font=dict(size=11, color=col))
+            rlabels.append({"y": ys[-1], "text": label, "color": col, "bold": _focus(ys[-1], ys[-1])})
             continue
         if shown[side] >= per_side or float(z["high"]) < lo - 0.1 * span or float(z["low"]) > hi + 0.1 * span:
             continue
         shown[side] += 1
         fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(z["low"]), y1=float(z["high"]), fillcolor=col, opacity=0.13,
                       line=dict(color=col, width=1), layer="below")
-        fig.add_annotation(x=n - 1, y=float(z["high"]), text=label, showarrow=False, xanchor="right", yanchor="bottom",
-                           font=dict(size=11, color=col))
+        rlabels.append({"y": float(z["high"]), "text": label, "color": col, "bold": _focus(float(z["low"]), float(z["high"]))})
+    if labels_out is not None:
+        labels_out.extend(rlabels)
+    else:
+        place_right_labels(fig, n - 1, rlabels, lo, hi)
 
 
 def _gap_layer(fig, d, gap, day=None):
@@ -412,7 +449,9 @@ def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
     sig_bar = next((b for b in bars if b.get("signal") and b.get("zones")), None)     # signal च्या वेळचे zones (दिवस अखेरचे नाहीत)
     src = sig_bar or next((b for b in reversed(bars) if b.get("zones")), {})
     live = [z for z in src.get("zones") or [] if z.get("state") not in ("BROKEN", "DEAD", "MAGNET")]
-    _zones_layer(fig, d, live, m15_ts, lo, hi)
+    focus = [b["signal"]["area"] for b in bars if b.get("signal") and (b["signal"].get("area") or {}).get("low") is not None]
+    rlabels = []
+    _zones_layer(fig, d, live, m15_ts, lo, hi, focus=focus, labels_out=rlabels)
     if ms_close:
         corr = ms_close.get("correction") or {}
         labels = [] if corr.get("origin_broken") else corr.get("labels")       # origin तुटला ⇒ correction नाही ⇒ ABC नाही
@@ -438,9 +477,10 @@ def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
             if v is None:
                 continue
             fig.add_shape(type="line", x0=k, x1=n - 0.5, y0=v, y1=v, line=dict(color="#b0bec5", width=1, dash="dot"))
-            fig.add_annotation(x=n - 1, y=v, text=f"{name} {v:,.0f}", showarrow=False, xanchor="right", font=dict(size=10, color="#b0bec5"))
+            rlabels.append({"y": v, "text": f"{name} {v:,.0f}", "color": "#b0bec5", "bold": False})
             lo, hi = min(lo, v), max(hi, v)
         notes.append(f"{pd.Timestamp(sg['bar_start']):%H:%M}: area {sg['area']['id']} · pause {sg['pause_bars']} · shadow: {b.get('shadow') or '—'}")
+    place_right_labels(fig, n - 1, rlabels, lo, hi)
     _trend_box(fig, d, hi, (ms_close or {}).get("trend"))
     txt = "<br>".join(notes) if notes else "आज ENTRY SIGNAL नाही"
     span = (hi - lo) or 1.0

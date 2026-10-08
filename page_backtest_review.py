@@ -201,8 +201,11 @@ def render_exec_settings():
     st.caption("Simple Core फक्त ENTRY SIGNAL देतो (area + pause + commitment). SL / target / R:R / instrument / strike / lots / expiry "
                "इथून. काही निवडलं नसेल ⇒ trade नाही, स्पष्ट संदेशासह. PAPER फक्त.")
     profs = SS.load_profiles()
-    name = st.text_input("Profile (bot / backtest)", value=next(iter(profs), "paper_core"), key="sc_prof")
-    prev = profs.get(name) or {}
+    name = st.text_input("Profile (bot / backtest)", value=next(iter(profs), SS.PAPER_PROFILE), key="sc_prof")
+    prev = SS.load_profile(name)                                       # paper_core store मध्ये नसेल ⇒ Abhi चे PAPER मूल्य (23:48)
+    if name == SS.PAPER_PROFILE and name not in profs:
+        st.info("PAPER profile: Abhi चे निर्णय (target_mode impulse_end, g9_tier full, SL structural + 0.25 MR, R:R ≥ 3) — Save केल्यावर store "
+                "मध्ये. Instrument / strike / lots निवडा. LIVE ला लागू नाही.")
 
     def choose(k, kind, cur):
         lab = f"{k}" + (f" — {EXEC_HELP[k]}" if k in EXEC_HELP else "")

@@ -423,5 +423,5 @@ def signal_at(df1m, asof, s=None, memory=None, tracker=None, profile="srv2", es=
     gl = g.get("class") if g.get("has_gap") else None
     ctx["story"] = f"gap {gl} {g.get('direction')}" if gl else ""
     r = detect(trig, zones, ctx, mr, s, tracker)
-    r.update(zones=zones, ms=ms, mr=mr, trig=trig, gap=g)
+    r.update(zones=zones, ms=ms, mr=mr, trig=trig, gap=g, ctx=ctx)       # ctx: research replay (sensitivity) साठी
     return r

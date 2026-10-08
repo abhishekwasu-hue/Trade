@@ -5,7 +5,8 @@ Settings (default नाही; निवडलेलं नसेल ⇒ trade 
                 fixed_points / percent / none  (+ sl_buffer, sl_buffer_unit points / mr, sl_value — fixed_points ⇒ points, percent ⇒ %)
   target_mode   next_opposite_area / impulse_end / wave3_projection / wave5_projection / r_multiple / premium_pct / none
                 (+ target_value — r_multiple ⇒ R, premium_pct ⇒ %). Wave levels signal च्या ref_levels मधून; count gray ⇒ trade नाही + कारण.
-  g9_tier       G9 (wave 5, KB Tier C): "C" ⇒ g9_lots, "skip" ⇒ trade नाही. G9 signal वर निवडलेलं नसेल ⇒ trade नाही.
+  g9_tier       G9 (wave 5, KB Tier C): "full" ⇒ lots, "half" ⇒ lots ÷ 2 (खाली पूर्णांक; < 1 ⇒ trade नाही), "C" ⇒ g9_lots,
+                "skip" ⇒ trade नाही. G9 signal वर निवडलेलं नसेल ⇒ trade नाही.
   rr_filter     true / false (+ min_rr)
   instrument    credit_spread / futures / naked_buy / naked_sell
   strike_mode   offset_points / beyond_sl_points / sigma (options साठी) + strike_value + strike_step; width (credit_spread); lots;
@@ -64,10 +65,20 @@ def plan(sig, ex, mr=None, sigma_px=None, spot_only=False):
         if ex["g9_tier"] == "skip":
             out["reason"] = "G9: g9_tier = skip ⇒ trade नाही"
             return out
-        if _missing(ex, "g9_lots") and not spot_only:
-            out["reason"] = "G9 Tier C: g9_lots निवडलेले नाहीत"
-            return out
-        out.update(lots=ex.get("g9_lots"), tier="C")
+        tier = ex["g9_tier"]
+        if tier in ("full", "half"):
+            lots = ex.get("lots")
+            if tier == "half" and lots is not None:
+                lots = math.floor(float(lots) / 2)
+                if lots < 1 and not spot_only:
+                    out["reason"] = f"G9 half: lots {ex.get('lots')} ÷ 2 < 1 ⇒ trade नाही"
+                    return out
+            out.update(lots=lots, tier=tier)
+        else:
+            if _missing(ex, "g9_lots") and not spot_only:
+                out["reason"] = "G9 Tier C: g9_lots निवडलेले नाहीत"
+                return out
+            out.update(lots=ex.get("g9_lots"), tier="C")
     m = ex["sl_mode"]
     if m in REF_SL:
         base = ref.get(m)

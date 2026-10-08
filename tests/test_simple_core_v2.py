@@ -12,6 +12,7 @@ import pytest
 from simple_core import engine as EN
 from simple_core import execution as EX
 from simple_core import waves as WV
+from simple_core import settings as SS
 
 MR = 10.0
 
@@ -405,3 +406,28 @@ def test_review_k10_reading_with_no_sl_target():
            "plan": {"ok": True, "sl": None, "target": None, "rr": None}, "sim": {"result": "TIME"}}]}
     assert "SL — T —" in K.reading(rec)
     assert "SL — · T —" in K.sensitivity_md([rec], "m", [])[0]
+
+
+def test_g9_tier_full_and_half_use_profile_lots():
+    """Abhi 2026-10-08 23:48: g9_tier = full (PAPER). full ⇒ lots; half ⇒ lots ÷ 2 (खाली); < 1 ⇒ trade नाही."""
+    s = wsig(G9_ROWS, [buy_zone(1128.0, 1136.0, bar=12)], PV_W3)["signal"]
+    ex = {**BASE_EX, "sl_mode": "wave1_extreme", "target_mode": "wave5_projection", "lots": 4}
+    p = EX.plan(s, {**ex, "g9_tier": "full"}, MR)
+    assert p["ok"] and p["lots"] == 4 and p["tier"] == "full"
+    p = EX.plan(s, {**ex, "g9_tier": "half"}, MR)
+    assert p["ok"] and p["lots"] == 2 and p["tier"] == "half"
+    p = EX.plan(s, {**ex, "g9_tier": "half", "lots": 1}, MR)
+    assert not p["ok"] and "half" in p["reason"]
+    assert EX.plan(s, {**ex, "g9_tier": "half", "lots": 1}, MR, spot_only=True)["ok"]   # review (order नाही) ⇒ lots तपासत नाही
+
+
+def test_paper_profile_seed_only_for_paper(tmp_path):
+    """PAPER profile store मध्ये नसेल ⇒ Abhi चे मूल्य; इतर profile (LIVE सह) ⇒ {} (default नाही); saved profile ⇒ तेच."""
+    path = str(tmp_path / "exec.json")
+    p = SS.load_profile(SS.PAPER_PROFILE, path)
+    assert p["target_mode"] == "impulse_end" and p["g9_tier"] == "full" and p["sl_buffer"] == 0.25 and p["min_rr"] == 3.0
+    assert "instrument" not in p and "lots" not in p                                     # order साठी dashboard वर निवडायलाच हवे
+    assert SS.load_profile("live_core", path) == {}
+    SS.save_profile(SS.PAPER_PROFILE, {"target_mode": "next_opposite_area"}, path)
+    assert SS.load_profile(SS.PAPER_PROFILE, path) == {"target_mode": "next_opposite_area"}
+    SS.validate(SS.PAPER_SEED)
