@@ -43,9 +43,12 @@ def m1_frame(days=("2026-10-05", "2026-10-06"), spike_after=None):
     return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"])
 
 
+CTX_OK = {"time_flag": "none", "room": {"next_mr": 3.0}, "levels": [], "median_range": 10.0}   # v2 संदर्भ: वेळ ठीक, room पुरेसा
+
+
 def sig(**kw):
     s = {"signal_id": "x", "bot": "dynamic_sr_instant", "symbol": "NIFTY", "direction": "BULLISH", "level": 25000.0, "role": "SUPPORT",
-         "setup_tf": "5M", "signal_ts": "2026-10-06T10:42:20", "spot": 25010.0, "mode": "notify", "trading_mode": "PAPER"}
+         "setup_tf": "5M", "signal_ts": "2026-10-06T10:42:20", "spot": 25010.0, "mode": "notify", "trading_mode": "PAPER", "ctx": CTX_OK}
     s.update(kw)
     return s
 
@@ -175,7 +178,12 @@ def test_render_png_or_none_without_kaleido():
 
 
 # ------------------------------------------------------------------------------------------------ verdict नियम / audit
-GOOD = {"level_real": "yes", "trend_context": "with", "reversal_valid": "yes", "is_breakout_entry": "no", "false_break_risk": "low",
+# signal_check_v2_1 चं "सगळं ठीक" उत्तर (JSON v2 + v2.1 gap / line fields)
+GOOD = {"htf_trend": "up", "setup_structure": "down", "trend_context": "with", "level_real": "yes", "level_kind": "flip", "confluence": "yes",
+        "wave_position": "w4_end", "correction_complete": "yes", "false_break_reclaim": "yes", "reversal_touch": "yes",
+        "reversal_reclaim": "yes", "reversal_strength": "yes", "reversal_close_location": "good", "reversal_valid": "yes",
+        "is_breakout_entry": "no", "room_to_next_level": "enough", "time_risk": "none", "false_break_risk": "low",
+        "gap_class_agrees": "no_gap", "gap_behaviour": "no_gap", "gap_setup": "none", "line_structure": "up", "line_vs_candles": "consistent",
         "elliott_note": "", "verdict": "agree", "reason": "level खरा, reversal स्पष्ट", "confidence": 0.8}
 
 
@@ -251,8 +259,10 @@ def test_cost_math_and_g_cost_estimate():
     assert SA.cost_usd("test-haiku-model", {"output_tokens": 1_000_000}) == pytest.approx(5.0)
     assert SA.cost_usd("test-sonnet-model", {"cache_read": 1_000_000}) == pytest.approx(0.2)
     assert SA.cost_usd("unknown-model", {"input_tokens": 1_000_000}) == pytest.approx(5.0)
-    per = SA.estimate_usd("test-sonnet-model", output_tokens=300)               # नेहमीचा audit (लहान JSON)
-    assert per < 0.01 and 22 * 10 * 1.3 * per < 5.0                             # 22 दिवस × 10 signals × 1.3 audits < $5
+    per = SA.estimate_usd("test-sonnet-model", output_tokens=400)               # v2: system ~2.4k (cache न धरता), output ~400
+    assert per < 0.015 and 22 * 10 * 1.3 * per < 5.0                            # spec: ≤ $0.015 / signal; 22 × 10 × 1.3 < $5
+    cached = SA.cost_usd("test-sonnet-model", {"input_tokens": 1350, "cache_read": 2400, "output_tokens": 400})
+    assert cached < per * 0.75                                                  # सलग signals वर cache read ⇒ स्वस्त
     worst = SA.estimate_usd("test-sonnet-model")                                # budget तपासणीचा सावध अंदाज (output = max_tokens)
     assert worst < 0.30 / 10                                                    # तरीही दैनिक मर्यादेत ≥ 10 audits
 
@@ -288,7 +298,7 @@ def run(db, replies, monkeypatch, key=True, model="test-sonnet-model"):
     else:
         monkeypatch.delenv("VISION_SIGNAL_MODEL", raising=False)
     monkeypatch.setattr(VS, "now_ist", lambda: dt.datetime(2026, 10, 6, 10, 43))
-    monkeypatch.setattr(CH, "render", lambda df, s, daily=None: (b"\x89PNGfake", {"error": None}))   # Chrome शिवायही worker tests
+    monkeypatch.setattr(CH, "render", lambda df, s, daily=None: (b"\x89PNGfake", {"error": None, "ctx": CTX_OK}))   # Chrome शिवायही
     client = FakeClient(replies)
     sent = Sent()
     out = VW.run_once(fetch_fn=lambda sym, daily: (m1_frame(), None), client_factory=lambda t: client, send_photo=sent.photo,

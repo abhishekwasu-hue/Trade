@@ -9,6 +9,7 @@ Pullback Credit Spread सध्या फक्त preview पान (PAPER bot
 Settings बदल: `python3 -m vision.config set <bot> <key> <value> --by <नाव>` (इतिहासासह); `python3 -m vision.config show`.
 """
 import argparse
+import datetime as dt
 import copy
 import json
 import os
@@ -47,18 +48,38 @@ BOT_DEFAULTS = {
     "shadow_cooldown_min": 30,             # (V1) नाकारलेल्या level वर इतक्या मिनिटांत पुन्हा विचारणा / shadow नाही (bot च्या 30-मिनिट cooldown सारखं)
     "exec_window_min": 5,                  # (V1) approve / reject नंतर इतक्या मिनिटांत bot ने entry / shadow घ्यावा, नाहीतर EXPIRED
     "level_gate": "off",                   # off / skip_mid_range           (V2)
+    # signal_check_v2 चे verdict नियम (code मध्ये; vision चं मत यांपेक्षा positive कधीच नाही) — चालू नियमांची यादी, dashboard वरून on/off
+    "v2_disagree_rules": ["breakout", "reversal_invalid", "weak_level", "bad_wave", "bad_close", "opening", "gap_disallowed", "gap_chase",
+                          "gap_b_pdc_accept", "wrong_approach", "role_conflict"],
+    "v2_gray_rules": ["unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
+                      "line_conflict", "event_day", "gap_c_alone"],
+    # v2.1 chart / gap संदर्भ
+    "line_lookback_sessions": 5,           # line panel: किती sessions चे 15m closes
+    "inv_buffer_mr": 0.5,                  # bot ने invalidation न दिल्यास L ∓ हे × median range (chart / text)
+    "gap_g0_atr": 0.25,                    # |gap_atr| याखाली ⇒ G0 (noise). IS 2015–2021 p50 = 0.247
+    "gap_large_atr": 0.63,                 # G5 साठी "मोठा" gap. IS p90 = 0.628
+    "gap_stretch_atr": 3.0,                # G5: आधीचा 5-session leg ≥ हे × ATR
+    "gap_max_age_sessions": 10,            # जुने unfilled gaps किती sessions पर्यंत
 }
+RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", "bad_wave", "bad_close", "opening", "gap_disallowed",
+                                  "gap_chase", "gap_b_pdc_accept", "wrong_approach", "role_conflict"),
+            "v2_gray_rules": ("unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
+                              "line_conflict", "event_day", "gap_c_alone")}
+CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions")
 GLOBAL_DEFAULTS = {
     "vision_daily_budget_usd": 0.30,
     "vision_monthly_budget_usd": 5.0,
     "morning_audit_time": "08:00",
+    "event_days": [],                      # ["YYYY-MM-DD:नाव", …] — event दिवस (policy / budget / मोठा data), dashboard वरून
 }
 ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
-          "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0)}
+          "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
+          "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
+          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0)}
 
 
 def defaults(bot):
@@ -86,6 +107,18 @@ def validate(bot, s):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
         if k == "symbols":
             v = [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if x.strip()]
+        if k == "event_days":
+            v = [str(x).strip() for x in (v.split(";") if isinstance(v, str) else v) if str(x).strip()]
+            for x in v:
+                try:
+                    dt.date.fromisoformat(x.split(":", 1)[0])
+                except ValueError:
+                    raise ValueError(f"event_days: {x!r} — 'YYYY-MM-DD:नाव' हवं")
+        if k in RULE_IDS:
+            v = [x.strip() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
+            bad = [x for x in v if x not in RULE_IDS[k]]
+            if bad:
+                raise ValueError(f"{k}: अज्ञात नियम {bad} — {RULE_IDS[k]} पैकी")
         out[k] = v
     return out
 
@@ -116,7 +149,7 @@ def load(bot, path=None, timeout=10):
     stored = json.loads(r[0]) if r else {}
     try:
         return validate(bot, stored)
-    except ValueError:
+    except Exception:                                                    # हाताने बिघडलेली row ⇒ defaults (gate चूक ⇒ पूर्ण size नको)
         return defaults(bot) if bot != "_global" else copy.deepcopy(GLOBAL_DEFAULTS)
 
 
@@ -167,6 +200,16 @@ def api_key_present():
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
+def ctx_settings(bot, path=None):
+    """Chart / gap संदर्भासाठी settings (+ event दिवस {YYYY-MM-DD: नाव})."""
+    s, g = load(bot, path), load("_global", path)
+    ev = {}
+    for x in g.get("event_days") or []:
+        d, _, name = str(x).partition(":")
+        ev[d.strip()] = name.strip() or "event"
+    return {**{k: s[k] for k in CTX_KEYS}, "events": ev}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Vision settings (बदल-इतिहासासह)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -196,3 +239,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+

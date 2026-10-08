@@ -24,7 +24,15 @@ def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--no-vision", action="store_true", help="vision API call नाही (फक्त chart + Telegram)")
     p.add_argument("--symbol", default="NIFTY")
+    p.add_argument("--sample", action="store_true",
+                   help="तुम्हाला दाखवलेले 3 नमुने (2021 IS) खऱ्या vision call सह: JSON + code verdict + खर्च (trade नाही, vision_signals ला हात नाही)")
     a = p.parse_args(argv)
+    if a.sample:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("vision_v2_samples", os.path.join(ROOT, "scripts", "vision_v2_samples.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.main(["--historical"] + (["--no-vision"] if a.no_vision else []))
     m1, _ = VW.default_fetch(a.symbol, False)
     if m1 is None or len(m1) == 0:
         print("❌ 1m candles मिळाले नाहीत (Upstox token?)")
@@ -47,7 +55,7 @@ def main(argv=None):
     if row is None:
         print("❌ TEST row claim झाली नाही")
         return 1
-    res = VW.process_row(row, data_cache={(a.symbol, False): (m1, None)})
+    res = VW.process_row(row, data_cache={(a.symbol, True): (m1, None)})
     r = VS.get_signal(sid)
     print(f"TEST signal {sid}: {r['direction']} level {level} @ {sig_ts:%d %b %H:%M} → verdict {r['verdict']} "
           f"(confidence {r['confidence']}), खर्च ${r['cost_usd'] or 0:.4f}, {r['latency_ms'] or 0} ms, Telegram {'✅' if r['notified'] else '❌'}, "

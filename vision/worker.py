@@ -14,6 +14,7 @@
 """
 import argparse
 import html
+import re
 import sys
 import time
 
@@ -47,9 +48,44 @@ def default_fetch(symbol, need_daily=False):
     token = cloud_db.get_effective_upstox_token(None)
     if not token:
         raise RuntimeError("Upstox token नाही")
-    m1 = fetch_candles(token, symbol, 0, interval="1minute", lookback_days=14)
+    m1 = fetch_candles(token, symbol, 0, interval="1minute", lookback_days=21)          # v2: major levels (~3 आठवडे) + PWH / PWL
     d1 = fetch_candles(token, symbol, 0, interval="day", lookback_days=120) if need_daily else None
     return m1, d1
+
+
+def fetch_expiries(symbol):
+    """Weekly expiry dates (contract master) — v2 signal text साठी. अपयश ⇒ [] (कधीच raise नाही)."""
+    try:
+        import cloud_db
+        from upstox_api import fetch_option_expiries
+        token = cloud_db.get_effective_upstox_token(None)
+        return list(fetch_option_expiries(token, symbol) or []) if token else []
+    except Exception:
+        return []
+
+
+YES = {"yes": "✓", "no": "✗", "good": "✓", "middle": "~", "bad": "✗"}
+
+
+def v2_lines(a, hits=None):
+    """signal_check_v2 audit ⇒ caption च्या ओळी (trend, level, wave, reversal 4 टप्पे, room, false-break risk, नियम)."""
+    s = [f"Trend: HTF {a.get('htf_trend')} · setup {a.get('setup_structure')} ({a.get('trend_context')})",
+         f"Level: {a.get('level_kind')} · real {a.get('level_real')} · confluence {a.get('confluence')}",
+         f"Wave: {a.get('wave_position')} · correction पूर्ण {a.get('correction_complete')}"
+         + (f" · {html.escape(a['elliott_note'])}" if a.get("elliott_note") else ""),
+         "Reversal: " + " ".join(f"{k} {YES.get(a.get('reversal_' + k), '?')}" for k in ("touch", "reclaim", "strength"))
+         + f" close {YES.get(a.get('reversal_close_location'), '?')} ⇒ {a.get('reversal_valid')}"
+         + (" · false-break reclaim ✓" if a.get("false_break_reclaim") == "yes" else ""),
+         f"Room {a.get('room_to_next_level')} · false-break risk {a.get('false_break_risk')} · time {a.get('time_risk')}"
+         + (" · <b>BREAKOUT</b>" if a.get("is_breakout_entry") == "yes" else "")]
+    if a.get("gap_behaviour"):                                          # v2.1
+        s.append(f"Gap: {a.get('gap_behaviour')} · setup {a.get('gap_setup')} · वर्ग पटतो {a.get('gap_class_agrees')} · line {a.get('line_structure')} "
+                 f"({a.get('line_vs_candles')})")
+    if a.get("code_overrides"):
+        s.append("Code तथ्यं: " + html.escape("; ".join(a["code_overrides"])))
+    if hits and (hits.get("disagree") or hits.get("gray")):
+        s.append("नियम: " + ", ".join([f"❌ {x}" for x in hits.get("disagree") or []] + [f"🟡 {x}" for x in hits.get("gray") or []]))
+    return s
 
 
 def caption(row, res, mode, reused=False):
@@ -64,10 +100,13 @@ def caption(row, res, mode, reused=False):
     a = (res.get("audits") or [None])[0]
     if a:
         if a.get("reason"):
-            s.append("कारण: " + html.escape(a["reason"]))
-        s.append(f"level {a['level_real']} · trend {a['trend_context']} · reversal {a['reversal_valid']} · breakout {a['is_breakout_entry']} · "
-                 f"false-break {a['false_break_risk']}")
-        if a.get("elliott_note"):
+            s.append("<b>कारण:</b> " + html.escape(a["reason"]))
+        if "level_kind" in a:                                           # signal_check_v2
+            s += v2_lines(a, (res.get("rule_hits") or [None])[0])
+        else:
+            s.append(f"level {a.get('level_real')} · trend {a.get('trend_context')} · reversal {a.get('reversal_valid')} · "
+                     f"breakout {a.get('is_breakout_entry')} · false-break {a.get('false_break_risk')}")
+        if a.get("elliott_note") and "level_kind" not in a:
             s.append("Elliott: " + html.escape(a["elliott_note"]))
         if len(res.get("audits") or []) > 1:
             s.append("दुसरा audit: " + " / ".join(res.get("verdicts") or []))
@@ -121,7 +160,8 @@ def v1_status(row, verdict, s, meta):
 def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     s = caption(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
     s = s.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
-    s = "\n".join(x for x in s.split("\n") if x)
+    lines = [x for x in s.split("\n") if x]
+    s = ""
     if d.status == "PENDING_HUMAN":
         to = "skip" if d.timeout_status == "REJECTED" else _fmr(d.timeout_factor)
         dl = pd.Timestamp(deadline).strftime("%H:%M") if deadline else "?"
@@ -132,8 +172,16 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
         s += f"\n<b>✅ ENTRY मंजूर</b> ({_fmr(d.factor)}) — {html.escape(d.reason)}. Bot पुढच्या मिनिटाला drift guard नंतर entry घेईल (त्याचा trade संदेश येईल)."
     else:
         s += f"\n<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. खरा trade नाही; तुलनेसाठी PAPER shadow trade."
-    s += "\nSL / target / exits: bot चे नेहमीचे नियम (automatic)."
-    return s[:1024]
+    lines = lines[:1] + [x for x in s.split("\n") if x] + lines[1:] + ["SL / target / exits: bot चे नेहमीचे नियम (automatic)."]
+    return _fit(lines)
+
+
+def _fit(lines, limit=1024):
+    """Telegram caption मर्यादा: शेवटच्या ओळी पूर्ण गाळतो (HTML tag मध्येच कापला जाऊ नये; निर्णयाची ओळ वर असल्याने टिकते)."""
+    while len(lines) > 2 and len("\n".join(lines)) > limit:
+        lines.pop(-2 if len(lines) > 3 else -1)
+    s = "\n".join(lines)
+    return s if len(s) <= limit else re.sub(r"<[^>]+>", "", s)[:limit]
 
 
 def v1_notify(row, res, d, png, path, reused=False):
@@ -211,7 +259,7 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         model = VC.env_model("signal")
 
         # 3. chart (reuse असला तरी Telegram साठी ताजा chart)
-        need_daily = CH.TF_MAP.get(str(row.get("setup_tf")).upper(), (5, 15))[1] == "D"
+        need_daily = True                                               # v2.1: daily candles ⇒ ATR14 / trend / leg (gap वर्ग); 60M ⇒ daily panel
         key = (row["symbol"], need_daily)
         if data_cache is not None and key in data_cache:
             m1, d1 = data_cache[key]
@@ -219,7 +267,16 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
             m1, d1 = fetch_fn(row["symbol"], need_daily)
             if data_cache is not None:
                 data_cache[key] = (m1, d1)
+        ek = ("expiries", row["symbol"])
+        if data_cache is not None and ek in data_cache:
+            row["expiries"] = data_cache[ek]
+        else:
+            row["expiries"] = fetch_expiries(row["symbol"]) if fetch_fn is default_fetch else []
+            if data_cache is not None:
+                data_cache[ek] = row["expiries"]
+        row["ctx_settings"] = VC.ctx_settings(row["bot"], path)
         png, meta = CH.render(m1, row, d1) if m1 is not None and len(m1) else (None, {"error": "1m candles नाहीत"})
+        row["ctx"] = meta.get("ctx")                                      # v2 signal text (अचूक किंमती OHLC वरून)
         if png:
             # §11: `_sent.png` आधी disk वर (overwrite नाही), मग तीच फाईल परत वाचून (sha256 तपासून) vision आणि Telegram ला — तेच bytes.
             img_path, img_sha = IM.save_exclusive(IM.signal_path(row, IM.SENT), png)
@@ -227,13 +284,23 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         final = row.get("algo_decision") or "ENTER"                     # V0: vision फक्त माहिती ⇒ अंतिम निर्णय = algorithm चा
 
         # 2. reuse
-        prev = VS.find_reusable(row, int(s["reuse_window_min"]), path=path) if int(s["reuse_window_min"]) > 0 else None
+        prev = (VS.find_reusable(row, int(s["reuse_window_min"]), path=path, prompt_version=SA.PROMPT_VERSION)
+                if int(s["reuse_window_min"]) > 0 else None)
         if prev is not None:
             pj = json.loads(prev.get("vision_json") or "{}")
             res = {**pj, "verdict": prev["verdict"], "confidence": prev.get("confidence"), "cost_usd": 0.0, "latency_ms": 0, "error": None}
-            pj = {**pj, "reused_image_sha256": prev.get("image_sha256")}          # vision ने पाहिलेली image = आधीच्या signal ची
+            pa = (pj.get("audits") or [None])[0]
+            if pa:                                                      # code तथ्यं वेळेनुसार बदलतात (L break, PDC acceptance) — नव्या ctx वर पुन्हा (review S6)
+                fa, _ = SA.apply_facts(SA.validate(pa)[0] or pa, meta.get("ctx"), row.get("direction"))
+                cv = SA.code_verdict(fa, s.get("v2_disagree_rules"), s.get("v2_gray_rules"), meta.get("ctx"), row.get("direction"))
+                if cv in SA.SEVERITY and SA.SEVERITY[cv] > SA.SEVERITY.get(res["verdict"], 1):
+                    res["verdict"] = cv
+            elif res["verdict"] == "agree":
+                res["verdict"] = "gray"                                 # जुनं मत तपासता येत नाही ⇒ entry नाही
+            pj = {**pj, "reused_image_sha256": prev.get("image_sha256"),          # vision ने पाहिलेली image = आधीच्या signal ची
+                  "context": meta.get("ctx"), "reused_context": True}             # संदर्भ या signal चा; मत आधीचं
             st, extra, d = v1_status(row, res["verdict"], s, meta)
-            ok = VS.finish(sid, st, path, only_from="RUNNING", verdict=prev["verdict"], vision_json=pj, audits=0, confidence=prev.get("confidence"), latency_ms=0,
+            ok = VS.finish(sid, st, path, only_from="RUNNING", verdict=res["verdict"], vision_json=pj, audits=0, confidence=prev.get("confidence"), latency_ms=0,
                       cost_usd=0.0, model=prev.get("model"), reused_from=prev["signal_id"], image_path=img_path, image_sha256=img_sha,
                       prompt_version=prev.get("prompt_version"), final_decision=extra.pop("final", final), **extra)
             if not ok:                                                  # bot / service ने आधीच ठरवलं (उदा. उशीर ⇒ timeout) — overwrite नाही
@@ -262,11 +329,13 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
                 res = SA.audit(client, png, row, model, second_below=float(s["second_audit_below_conf"]), effort=VC.env_effort("signal"),
                                thinking=VC.env_thinking("signal"),
                                on_usage=lambda u, c: VS.add_usage("signal", model, u, c, sid, path),
-                               budget_ok=lambda: _budget_ok(g, model, path)[0])
+                               budget_ok=lambda: _budget_ok(g, model, path)[0],
+                               disagree_rules=s.get("v2_disagree_rules"), gray_rules=s.get("v2_gray_rules"))
         res["fail_action"] = s["vision_fail_action"] if res["verdict"] == "unavailable" else None
         st, extra, d = v1_status(row, res["verdict"], s, meta)
-        ok = VS.finish(sid, st, path, only_from="RUNNING", verdict=res["verdict"], vision_json={k: res.get(k) for k in ("audits", "verdicts", "error", "prompt_version",
-                                                                                                 "usage", "fail_action")},
+        ok = VS.finish(sid, st, path, only_from="RUNNING", verdict=res["verdict"], vision_json={**{k: res.get(k) for k in ("audits", "verdicts", "error", "prompt_version", "usage",
+                                                                                                    "fail_action", "rule_hits")},
+                                                                               "context": meta.get("ctx")},
                   audits=len(res.get("audits") or []), confidence=res.get("confidence"), latency_ms=res.get("latency_ms"),
                   cost_usd=res.get("cost_usd") or 0.0, model=model, image_path=img_path, image_sha256=img_sha, error=res.get("error"),
                   prompt_version=SA.PROMPT_VERSION if res.get("audits") or res.get("verdicts") else None,

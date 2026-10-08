@@ -104,6 +104,16 @@ def _iso(ts):
     return ts.replace(microsecond=0).isoformat() if hasattr(ts, "replace") else str(ts)
 
 
+def _json_default(o):
+    """numpy bool / int / float, Timestamp ⇒ JSON (vision_json मध्ये context — एका प्रकारामुळे verdict unavailable होऊ नये)."""
+    if hasattr(o, "item"):
+        try:
+            return o.item()
+        except (TypeError, ValueError):
+            pass
+    return str(o)
+
+
 def now_ist():
     return datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
 
@@ -149,7 +159,7 @@ def finish(signal_id, status, path=None, only_from=None, **fields):
     cols["status"] = status
     cols["finished_at"] = _iso(now_ist())
     if "vision_json" in cols and not isinstance(cols["vision_json"], (str, type(None))):
-        cols["vision_json"] = json.dumps(cols["vision_json"], ensure_ascii=False)
+        cols["vision_json"] = json.dumps(cols["vision_json"], ensure_ascii=False, default=_json_default)
     sets = ", ".join(f"{k}=?" for k in cols)
     q, args = f"UPDATE vision_signals SET {sets} WHERE signal_id=?", [*cols.values(), signal_id]
     if only_from:
@@ -209,7 +219,7 @@ def _reuse_tags(setup_json):
     return tuple(bool(t.get(k)) for k in REUSE_TAGS)
 
 
-def find_reusable(row, window_min, tol_pct=0.05, path=None):
+def find_reusable(row, window_min, tol_pct=0.05, path=None, prompt_version=None):
     """तोच bot / symbol / दिशा / role / TF / setup प्रकार (breakout / directional tags), level ±tol_pct %, आधीच्या `window_min` मिनिटांत DONE
     (unavailable नाही, स्वतः reuse नाही) ⇒ ती row. Role किंवा breakout प्रकार वेगळा ⇒ नवा audit (verdict नियम वेगळे लागतात)."""
     level = row.get("level")
@@ -224,6 +234,8 @@ def find_reusable(row, window_min, tol_pct=0.05, path=None):
     want = _reuse_tags(row.get("setup_json"))
     for r in rows:
         if _reuse_tags(r["setup_json"]) != want:
+            continue
+        if prompt_version and r["prompt_version"] != prompt_version:       # v1 चं मत v2 signal ला नाही
             continue
         if r["level"] is not None and level is not None and abs(float(r["level"]) - float(level)) <= abs(float(level)) * tol_pct / 100.0:
             return dict(r)
