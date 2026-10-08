@@ -1375,3 +1375,9 @@ Deploy आधी 2 code दुरुस्त्या (Abhi चा नियम
 - Independent review नंतर: gate ची स्वतःची चूक (exception) + V1 + `vision_fail_action = skip` ⇒ HOLD (`SKIPPED_VISION_ERROR`, entry नाही) — आधी
   नेहमी algorithm चा पूर्ण-size entry ("unavailable ⇒ skip" नियम मोडत होता). `fail_action = ignore` ⇒ आधीसारखं. Deploy block mode बदलण्याआधी जुन्या
   उघड्या V1 rows (PENDING_HUMAN — आधीच्या नियमांचा timeout साठवलेला) EXPIRED करतो. Tests: unavailable / agree लगेच, can_ask चूक, stale + fail skip.
+
+## 2026-10-08 — data_policy: CONTAMINATED 2026-10-08 पर्यंत (G-E1 पूर्वतयारी)
+- Abhi चा निर्णय: Chart Reader ची 7 Oct 2026 "golden story" (आणि 8 Oct चा निकाल) Abhi ने आधीच पाहिली आहे ⇒ HOLDOUT ऐवजी CONTAMINATED
+  (फक्त purpose="golden", illustration; tuning नाही; अंतिम holdout चाचणीतून वगळले). `CONTAMINATED_END` 2026-10-06 → 2026-10-08.
+- VPS export (`research/elliott_vps_data.py golden`) आता 2026-07-01 → 2026-10-08 ची नवी file लिहितो (`NIFTY_1m_2026-07-01_2026-10-08.csv.gz`);
+  जुनी 10-06 file (golden regression) तशीच.

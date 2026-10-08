@@ -22,16 +22,17 @@ import elliott_vps_data as V  # noqa: E402
 
 def test_period_boundaries_are_consistent_with_check_range():
     assert DP.period("2024-03-31 23:59:59.9") == "VAL" and DP.period("2024-04-01 00:00") == "HOLDOUT"
-    assert DP.period("2026-10-06 23:59:59.9") == "CONTAMINATED" and DP.period("2026-10-07") == "HOLDOUT"
-    assert DP.check_range("2026-07-01", "2026-10-06 23:59:59.9", "golden")
+    assert DP.period("2026-10-08 23:59:59.9") == "CONTAMINATED" and DP.period("2026-10-09") == "HOLDOUT"
+    assert DP.period("2026-10-07 10:00") == "CONTAMINATED"                       # 7–8 Oct golden story (Abhi 2026-10-08, illustration only)
+    assert DP.check_range("2026-07-01", "2026-10-08 23:59:59.9", "golden")
     with pytest.raises(DP.HoldoutError):
-        DP.check_range("2026-07-01", "2026-10-07 00:00", "golden")
+        DP.check_range("2026-07-01", "2026-10-09 00:00", "golden")
 
 
 def test_periods_and_allowed():
     assert DP.period("2016-05-02") == "IS" and DP.period("2023-01-02") == "VAL"
     assert DP.period("2024-04-01") == "HOLDOUT" and DP.period("2026-09-29 10:00") == "CONTAMINATED"
-    assert DP.period("2026-10-07") == "HOLDOUT"
+    assert DP.period("2026-10-09") == "HOLDOUT"
     assert DP.allowed("2021-12-31 15:29") and not DP.allowed("2024-06-01")
     assert not DP.allowed("2026-09-29", "research") and DP.allowed("2026-09-29", "golden")
     assert not DP.allowed("2025-01-01", "golden")
@@ -39,18 +40,18 @@ def test_periods_and_allowed():
 
 def test_check_range_blocks_holdout_and_research_use_of_golden_window():
     assert DP.check_range("2019-01-01", "2024-03-31")
-    assert DP.check_range("2026-07-01", "2026-10-06", "golden")
-    for a, b, p in (("2024-03-01", "2024-04-02", "research"), ("2026-06-30", "2026-10-06", "golden"),
-                    ("2026-07-01", "2026-10-07", "golden"), ("2026-07-01", "2026-10-06", "research")):
+    assert DP.check_range("2026-07-01", "2026-10-08", "golden")
+    for a, b, p in (("2024-03-01", "2024-04-02", "research"), ("2026-06-30", "2026-10-08", "golden"),
+                    ("2026-07-01", "2026-10-09", "golden"), ("2026-07-01", "2026-10-06", "research")):
         with pytest.raises(DP.HoldoutError):
             DP.check_range(a, b, p)
 
 
 def test_filter_and_final_holdout_mask():
-    df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-03-28", "2024-05-02", "2026-08-03", "2026-10-07"])})
+    df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-03-28", "2024-05-02", "2026-08-03", "2026-10-07", "2026-10-09"])})
     assert list(DP.filter_allowed(df)["timestamp"].dt.date.astype(str)) == ["2024-03-28"]
-    assert list(DP.filter_allowed(df, "golden")["timestamp"].dt.date.astype(str)) == ["2024-03-28", "2026-08-03"]
-    assert list(DP.final_holdout_mask(df["timestamp"])) == [False, True, False, True]     # contaminated अंतिम holdout मधून वगळला
+    assert list(DP.filter_allowed(df, "golden")["timestamp"].dt.date.astype(str)) == ["2024-03-28", "2026-08-03", "2026-10-07"]
+    assert list(DP.final_holdout_mask(df["timestamp"])) == [False, True, False, False, True]     # contaminated अंतिम holdout मधून वगळला
 
 
 # ---------------------------------------------------------------- bhavcopy
@@ -261,11 +262,12 @@ def _golden_fetch(seen, extra_ts=()):
 
 def test_golden_export_only_golden_window_and_completeness(repo, capsys):
     seen = {}
-    after = dt.datetime(2026, 10, 7, 9, 0)
-    p = V.golden(repo, token="t", fetch=_golden_fetch(seen, ["2026-06-30 15:29", "2026-10-07 09:15"]), now=after)
-    assert seen == {"key": "NSE_INDEX|Nifty 50", "interval": "1minute", "a": dt.date(2026, 7, 1), "b": dt.date(2026, 10, 6)}
+    after = dt.datetime(2026, 10, 8, 15, 40)
+    p = V.golden(repo, token="t", fetch=_golden_fetch(seen, ["2026-06-30 15:29", "2026-10-09 09:15"]), now=after)
+    assert seen == {"key": "NSE_INDEX|Nifty 50", "interval": "1minute", "a": dt.date(2026, 7, 1), "b": dt.date(2026, 10, 8)}
+    assert p.endswith("NIFTY_1m_2026-07-01_2026-10-08.csv.gz")
     d = pd.read_csv(p, parse_dates=["timestamp"])
-    assert d["timestamp"].min() == pd.Timestamp("2026-07-01 09:15") and d["timestamp"].max() == pd.Timestamp("2026-10-06 15:29")
+    assert d["timestamp"].min() == pd.Timestamp("2026-07-01 09:15") and d["timestamp"].max() == pd.Timestamp("2026-10-08 15:29")
     assert "✅ golden" in capsys.readouterr().out
 
     def gappy(tok, key, interval, a, b):                                                   # एक 28-दिवसांचा chunk गहाळ
@@ -274,12 +276,12 @@ def test_golden_export_only_golden_window_and_completeness(repo, capsys):
         return df[(ts < "2026-08-01") | (ts >= "2026-08-29")]
     assert V.golden(repo, token="t", fetch=gappy, now=after) is False
     assert "गहाळ दिवस" in capsys.readouterr().out
-    assert V.golden(repo, token="t", fetch=_golden_fetch({}), now=dt.datetime(2026, 10, 6, 14, 0)) is None   # बाजार बंद होण्याआधी
+    assert V.golden(repo, token="t", fetch=_golden_fetch({}), now=dt.datetime(2026, 10, 8, 14, 0)) is None   # बाजार बंद होण्याआधी
 
 
 def test_major_levels_index_fetch_drops_holdout():
     def fetch(*a, **k):
-        ts = pd.to_datetime(["2026-07-28 09:15", "2026-10-06 15:15", "2026-10-07 09:15"]).tz_localize("Asia/Kolkata")
+        ts = pd.to_datetime(["2026-07-28 09:15", "2026-10-06 15:15", "2026-10-09 09:15"]).tz_localize("Asia/Kolkata")
         return pd.DataFrame({"timestamp": ts, "open": 1, "high": 1, "low": 1, "close": 1})
     d = V.golden_filtered_fetch(fetch)("tok", "NIFTY", None, interval="15minute", lookback_days=70)
     assert list(d["timestamp"].astype(str)) == ["2026-07-28 09:15:00", "2026-10-06 15:15:00"]
