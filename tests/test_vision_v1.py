@@ -231,6 +231,8 @@ def test_gate_applies_timeouts_when_worker_is_down(db):
     sid = gate().signal_id
     assert VS.expire_stale(0) == 0                                                                # V0 चा stale-expiry V1 row ला लागत नाही
     tick(db, 11)
+    assert VG.forced_levels("dynamic_sr_instant", "NIFTY", "PAPER") == []                          # 5M bar 10:45 ला बंद ⇒ timeout 10:55 पासून (B1)
+    tick(db, 2)
     assert VG.forced_levels("dynamic_sr_instant", "NIFTY", "PAPER") == [(25000.0, "5M", "SUPPORT")]
     g = fgate()
     r = VS.get_signal(sid)

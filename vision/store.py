@@ -132,11 +132,27 @@ def insert_signal(row, path=None, timeout=10):
     return sid
 
 
-def claim_queued(limit=5, path=None):
+def requeue(signal_id, path=None):
+    """RUNNING → QUEUED, events नोंद नाही (bar-close wait — दर 5 s churn नको)."""
+    with connect(path) as c:
+        return c.execute("UPDATE vision_signals SET status='QUEUED' WHERE signal_id=? AND status='RUNNING'", (signal_id,)).rowcount == 1
+
+
+def claim_queued(limit=20, path=None):
     """QUEUED → RUNNING (conditional — दोन workers एकच row घेऊ शकत नाहीत). रिटर्न dict rows."""
     out = []
     with connect(path) as c:
-        ids = [r["signal_id"] for r in c.execute("SELECT signal_id FROM vision_signals WHERE status='QUEUED' ORDER BY created_at LIMIT ?", (limit,))]
+        rows = [dict(r) for r in c.execute("SELECT * FROM vision_signals WHERE status='QUEUED' ORDER BY created_at")]
+        now = now_ist()
+
+        def waiting(r):                                                  # bar अजून बंद नाही ⇒ मागे (नाहीतर ≥ limit थांबलेल्या rows नवीन rows ना उपाशी ठेवतात)
+            try:
+                from .context import bar_end_of
+                be = bar_end_of(r)
+                return be is not None and be.to_pydatetime() > now
+            except Exception:
+                return False
+        ids = [r["signal_id"] for r in sorted(rows, key=waiting)][:limit]          # sorted स्थिर ⇒ गटात created_at क्रम
         for sid in ids:
             cur = c.execute("UPDATE vision_signals SET status='RUNNING' WHERE signal_id=? AND status='QUEUED'", (sid,))
             if cur.rowcount == 1:
@@ -194,12 +210,27 @@ def set_notified(signal_id, ok, path=None):
 def expire_stale(max_age_min, path=None):
     """V0 च्या RUNNING / QUEUED rows जुन्या (worker crash / restart) ⇒ EXPIRED. V1 rows इथे नाहीत — त्यांना `gate.resolve_due` चा
     timeout नियम (vision unavailable + उत्तर नाही) लागतो, नाहीतर bot कायम HOLD मध्ये अडकतो."""
-    cutoff = _iso(now_ist() - datetime.timedelta(minutes=max_age_min))
+    now = now_ist()
+    n = 0
     with connect(path) as c:
-        cur = c.execute("UPDATE vision_signals SET status='EXPIRED', error=COALESCE(error, 'stale (worker उशीर / restart)'), finished_at=? "
-                        "WHERE status IN ('QUEUED','RUNNING') AND created_at < ? AND mode NOT IN (%s)" % ",".join("?" * len(V1_MODES)),
-                        (_iso(now_ist()), cutoff, *V1_MODES))
-        return cur.rowcount
+        rows = c.execute("SELECT * FROM vision_signals WHERE status IN ('QUEUED','RUNNING') AND mode NOT IN (%s)" % ",".join("?" * len(V1_MODES)),
+                         V1_MODES).fetchall()
+        for r in rows:
+            try:
+                base = datetime.datetime.fromisoformat(r["created_at"])
+            except Exception:                                            # खराब created_at ⇒ worker loop crash नको; लगेच stale
+                base = now - datetime.timedelta(minutes=max_age_min + 1)
+            try:                                                         # bar-close wait ⇒ bar बंद होण्यापासून मोजा (30M / 60M — review B1)
+                from .context import bar_end_of
+                be = bar_end_of(dict(r))
+                if be is not None and be.to_pydatetime() > base:
+                    base = be.to_pydatetime()
+            except Exception:
+                pass
+            if base + datetime.timedelta(minutes=max_age_min) < now:
+                n += c.execute("UPDATE vision_signals SET status='EXPIRED', error=COALESCE(error, 'stale (worker उशीर / restart)'), finished_at=? "
+                               "WHERE signal_id=? AND status IN ('QUEUED','RUNNING')", (_iso(now), r["signal_id"])).rowcount
+        return n
 
 
 def get_signal(signal_id, path=None):

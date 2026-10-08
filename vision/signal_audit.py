@@ -263,7 +263,7 @@ def signal_text(sig):
                 tr += f" at {r['broken_at']}"
             if tr.startswith("reclaimed"):
                 tr += " (an earlier real break was undone: a completed bar closed back on today's opening side = false break)"
-            if r.get("open_bar_breaking"):
+            if r.get("open_bar_breaking") and r.get("held_until"):
                 tr += (f" until {r.get('held_until')}; the current OPEN (unfinished) bar is breaking it {r['open_bar_breaking']}")
             lines.append(f"  {r['name']} | {r['price']:,.2f} | {pos} {'n/a' if d is None else f'{d:+.2f}'} x | {tr}")
     ll = ctx.get("l_line")
@@ -292,6 +292,8 @@ def signal_text(sig):
                      f"{room['invalidation_mr']:.2f} x median range away.")
     sb = ctx.get("signal_bar") or {}
     if sb:
+        if ctx.get("spot_signal") is not None and abs(float(ctx["spot_signal"]) - float(ctx.get("spot") or 0)) > 1e-9:
+            lines.append(f"Spot at signal {ctx['spot_signal']:,.2f}; at evaluation (bar close) {ctx['spot']:,.2f} - levels / room use the latter.")
         lines.append(f"Signal bar ({sb['tf']}m) {sb['start']}-{sb['end']}: " + (
             f"closed (evaluated at {sb['evaluated_at']})." if sb["closed"] else
             f"NOT CLOSED yet ({sb['elapsed']}/{sb['tf']} min elapsed) - the reversal candle is not final."))

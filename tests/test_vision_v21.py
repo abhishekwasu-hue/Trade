@@ -349,8 +349,8 @@ def test_worker_waits_for_bar_close_then_cuts_chart_at_close(tmp_path, monkeypat
     seen = {}
     monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:35:20").to_pydatetime())
     monkeypatch.setattr(CH, "render", lambda m1, s, d=None: (seen.update(asof=s.get("asof")), (None, {"error": "x"}))[1])
-    VW.process_row(VS.claim_one(sid), fetch_fn=lambda s, d: (pd.DataFrame({"timestamp": [pd.Timestamp("2026-10-06 10:30")], "open": [1.0],
-                                                                        "high": [1.0], "low": [1.0], "close": [1.0]}), None))
+    VW.process_row(VS.claim_one(sid), fetch_fn=lambda s, d: (pd.DataFrame({"timestamp": pd.date_range("2026-10-06 10:30", periods=5, freq="1min"),
+                                                                        "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}), None))
     assert str(seen["asof"]).startswith("2026-10-06 10:35")
 
 
@@ -370,3 +370,100 @@ def test_samples_bar_close_flow(capsys, tmp_path, monkeypatch):
     assert pv[1].split(": ")[1].startswith("disagree") and "breakout" in pv[1]
     assert pv[2].split(": ")[1].startswith("agree")
     assert "drift guard @ 13:15" in out and "❌ drift" in out
+
+
+# ------------------------------------------------------------------------------------------------ round-3 review fixes
+def test_signal_bar_session_clamp_and_last_bar_minute():
+    sb = CX.signal_bar(pd.Timestamp("2026-10-06 15:16"), 60)
+    assert sb["end"] == "15:30"                                                            # S1: 15:30 नंतर नाही
+    sb = CX.signal_bar(pd.Timestamp("2026-10-06 10:35:05"), 5, None, pd.Timestamp("2026-10-06 10:35"))
+    assert sb["start"] == "10:35" and not sb["closed"]                                     # S2: bot ची चालू 10:35 candle ⇒ 10:35 चा bar
+    assert CX.signal_bar(pd.Timestamp("2026-10-06 09:15:30"), 5)["start"] == "09:15"
+
+
+def test_bar_aware_stale_timeout_for_15m(tmp_path, monkeypatch):
+    """Review B1: 15M signal 10:16 — bar 10:30 ला बंद; stale timeout bar बंद + approve_window पासून, आधी नाही."""
+    from vision import gate as VG
+    from vision import store as VS
+    s = {**VC.BOT_DEFAULTS, "vision_mode": "auto_veto"}
+    row = {"bot": "srv2_momentum_reversal", "symbol": "NIFTY", "trading_mode": "PAPER", "mode": "auto_veto", "signal_ts": pd.Timestamp("2026-10-06 10:16:10"),
+           "direction": "BULLISH", "level": 25000.0, "role": "SUPPORT", "setup_tf": "15M", "spot": 25010.0, "algo_decision": "ENTER"}
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:16:10").to_pydatetime())
+    sid = VS.insert_signal(row)
+    r = VS.get_signal(sid)
+    assert VG.stale_base(r, s) == pd.Timestamp("2026-10-06 10:30")
+    _, to = VG.resolve_due(r, s, pd.Timestamp("2026-10-06 10:27"))
+    assert to is None and VS.get_signal(sid)["status"] == "QUEUED"                         # आधी: 10:26 ला unavailable ⇒ entry
+    _, to = VG.resolve_due(VS.get_signal(sid), s, pd.Timestamp("2026-10-06 10:40:30"))
+    assert to is not None                                                                  # bar + 10 मिनिटं नंतरच
+
+
+def test_v0_expire_stale_bar_aware_and_quiet_requeue(tmp_path, monkeypatch):
+    from vision import store as VS
+    row = {"bot": "srv2_momentum_reversal", "symbol": "NIFTY", "trading_mode": "PAPER", "mode": "notify", "signal_ts": pd.Timestamp("2026-10-06 10:01"),
+           "direction": "BULLISH", "level": 25000.0, "role": "SUPPORT", "setup_tf": "60M", "spot": 25010.0, "algo_decision": "ENTER"}
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:01").to_pydatetime())
+    sid = VS.insert_signal(row)
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:30").to_pydatetime())
+    assert VS.expire_stale(15) == 0                                                        # 60M bar 11:15 ला बंद — अजून expire नाही
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 11:31").to_pydatetime())
+    assert VS.expire_stale(15) == 1
+    sid2 = VS.insert_signal({**row, "signal_ts": pd.Timestamp("2026-10-06 11:40")})
+    VS.claim_one(sid2)
+    def n_ev():
+        with VS.connect() as c:
+            return c.execute("SELECT COUNT(*) FROM vision_events WHERE signal_id=?", (sid2,)).fetchone()[0]
+    before = n_ev()
+    assert VS.requeue(sid2) and VS.get_signal(sid2)["status"] == "QUEUED"
+    assert n_ev() == before                                                                # requeue ⇒ event / Telegram नाही
+
+
+def test_reclaimed_level_is_not_a_recent_breakout():
+    """Review S5: 09:20 ला तुटलेला, 09:30 ला परत (reclaimed) ⇒ recent breakout नाही."""
+    t0 = pd.Timestamp("2026-10-06 09:15")
+    rows = [(110, 112, 105, 108), (108, 109, 96, 97), (97, 99, 95, 96), (96, 104, 95, 103), (103, 106, 102, 105)]
+    tb = pd.DataFrame([{"start": t0 + pd.Timedelta(minutes=5 * k), "end": t0 + pd.Timedelta(minutes=5 * (k + 1)), "open": a, "high": b, "low": c,
+                        "close": d} for k, (a, b, c, d) in enumerate(rows)])
+    assert CX.level_state(tb, 100, 1.0)["role"] == "reclaimed"
+    assert CX.recent_breaks(tb, 100, 1.0)[0] == "down"                                    # कच्चं break सापडतं …
+    # … पण context च्या recent यादीत reclaimed level येत नाही (build मधला filter) — signal text / breakout नियम सुसंगत
+
+
+def test_worker_redefers_when_last_candle_missing(tmp_path, monkeypatch):
+    """Review S3: bar बंद झाला पण शेवटची 1m candle (10:34) अजून data मध्ये नाही ⇒ +2 मिनिटं पुन्हा थांब; त्यानंतर जे आहे त्यावर चालव."""
+    from vision import store as VS
+    from vision import worker as VW
+    monkeypatch.setattr(VW, "BAR_WAIT", True)
+    row = {"bot": "dynamic_sr_instant", "symbol": "NIFTY", "trading_mode": "PAPER", "mode": "notify", "signal_ts": pd.Timestamp("2026-10-06 10:31"),
+           "direction": "BULLISH", "level": 25000.0, "role": "SUPPORT", "setup_tf": "5M", "spot": 25010.0, "algo_decision": "ENTER"}
+    sid = VS.insert_signal(row)
+    short = pd.DataFrame({"timestamp": pd.date_range("2026-10-06 10:30", periods=3, freq="1min"), "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0})
+    seen = []
+    monkeypatch.setattr(CH, "render", lambda m1, s, d=None: (seen.append(s.get("asof")), (None, {"error": "x"}))[1])
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:35:30").to_pydatetime())
+    out = VW.process_row(VS.claim_one(sid), fetch_fn=lambda s, d: (short, None))
+    assert out["deferred"] and VS.get_signal(sid)["status"] == "QUEUED" and not seen
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:37:30").to_pydatetime())
+    VW.process_row(VS.claim_one(sid), fetch_fn=lambda s, d: (short, None))
+    assert len(seen) == 1                                                                  # मुदत संपली ⇒ अपूर्ण data वर का होईना, चालवलं
+
+
+def test_tz_aware_signal_ts_and_ready_rows_claimed_first(tmp_path, monkeypatch):
+    """Review: tz-aware signal_ts ⇒ worker crash नको (naive वि. aware तुलना); bar बंद झालेल्या rows आधी claim (थांबलेल्या rows उपाशी ठेवत नाहीत)."""
+    from vision import store as VS
+    from vision import worker as VW
+    monkeypatch.setattr(VW, "BAR_WAIT", True)
+    base = {"bot": "dynamic_sr_instant", "symbol": "NIFTY", "trading_mode": "PAPER", "mode": "notify", "direction": "BULLISH", "level": 25000.0,
+            "role": "SUPPORT", "spot": 25010.0, "algo_decision": "ENTER"}
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:31").to_pydatetime())
+    waiting = [VS.insert_signal({**base, "signal_ts": pd.Timestamp("2026-10-06 10:16"), "setup_tf": "60M", "level": 25000.0 + k}) for k in range(3)]
+    ready = VS.insert_signal({**base, "signal_ts": pd.Timestamp("2026-10-06 10:31:00+05:30"), "setup_tf": "5M"})
+    monkeypatch.setattr(VS, "now_ist", lambda: pd.Timestamp("2026-10-06 10:36").to_pydatetime())
+    got = VS.claim_queued(limit=1)
+    assert [r["signal_id"] for r in got] == [ready]
+    seen = []
+    monkeypatch.setattr(CH, "render", lambda m1, s, d=None: (seen.append(s.get("asof")), (None, {"error": "x"}))[1])
+    out = VW.process_row(got[0], fetch_fn=lambda s, d: (pd.DataFrame({"timestamp": pd.date_range("2026-10-06 10:30", periods=5, freq="1min"),
+                                                                    "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}), None))
+    assert seen and str(seen[0]).startswith("2026-10-06 10:35") and not (out or {}).get("deferred")
+    assert all(VS.get_signal(w)["status"] == "QUEUED" for w in waiting)

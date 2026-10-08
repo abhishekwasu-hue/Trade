@@ -1339,6 +1339,23 @@ role_conflict), नमुना 3 ⇒ agree. म्हणजे तुमचं 
 
 **"Live प्रमाणे" नमुने (bar close नंतर):** `vision_v0_smoke.py --sample --bar-close [--no-telegram]` — मूल्यमापन signal bar बंद झाल्यावर (10:35 / 13:15 /
 10:05), chart व संदर्भ तिथपर्यंत, आणि entry च्या क्षणीचा drift guard (signal spot वि. bar close spot). Code pre-verdict: नमुना 1 = gray (room tight
-0.30×, drift ✅), नमुना 2 = disagree (L+PDH आणि ORL 13:10 ला पूर्ण bar वर तुटले ⇒ breakout; wrong_approach; drift ❌ 15,702 वि. 15,729), नमुना 3 =
+0.18× — bar close spot वरून, drift ✅), नमुना 2 = disagree (L+PDH आणि ORL 13:10 ला पूर्ण bar वर तुटले ⇒ breakout; wrong_approach; drift ❌ 15,702 वि. 15,729), नमुना 3 =
 agree (L reclaimed 09:55, bar बंद, drift ✅ ⇒ vision ठरवेल). VPS वर हे फक्त वेगळ्या `git worktree` मधून, तात्पुरत्या DB / image dir सह चालवायचं
 (live checkout / bots / worker ला हात नाही, Telegram नाही) — फक्त 3 vision calls.
+
+**Independent review (round-3 code) च्या दुरुस्त्या — याच PR मध्ये:**
+- **B1 (blocking):** bar-close wait चालू असताना V1 चा QUEUED/RUNNING timeout `created_at` पासून मोजला जात होता ⇒ 15M/30M/60M signal bar बंद होण्याआधीच
+  "vision unavailable" ठरून (veto_then_confirm मध्ये) vision शिवाय entry. आता `gate.stale_base` = max(created_at, signal bar बंद) — `resolve_due` आणि
+  `forced_levels` दोन्हीत. V0 चा `expire_stale` सुद्धा bar-aware.
+- Signal bar 15:30 ला clamp (60M 15:15 bar ⇒ 15:30, 16:15 नाही); bot ने दिलेल्या चालू candle (`last_bar`) वरून bar ठरवणं (signal_ts 10:35:05 ⇒ 10:35 bar).
+- Bar बंद झाल्यावर शेवटची 1m candle data मध्ये नसेल तर कमाल +2 मिनिटं पुन्हा थांबणं (मग जे आहे त्यावर).
+- Bar-close मूल्यमापनात spot = bar close (levels / room त्यावरून; text मध्ये signal spot वि. evaluation spot दोन्ही). ⇒ नमुना 1 room 0.18×.
+- Reclaimed level "recent breakout" यादीत नाही (signal text आणि breakout नियम सुसंगत).
+- Deferral ⇒ `store.requeue` (RUNNING→QUEUED, event / Telegram नाही — आधी प्रत्येक 5 s ला event row); claim_queued limit 20.
+- Tests: 15M stale timeout bar-aware, 60M expire_stale, 15:30 clamp, last_bar, data-completeness re-defer, quiet requeue, reclaimed ≠ breakout.
+- दुसरा review (या दुरुस्त्यांवर): tz-aware `signal_ts` ⇒ worker मध्ये naive वि. aware तुलना crash (⇒ unavailable ⇒ vision शिवाय entry) — दुरुस्त + test;
+  bar-close spot फक्त data bar close पर्यंत असेल तर (नाहीतर signal spot); `claim_queued` आधी bar बंद झालेल्या rows (थांबलेल्या ≥ 20 rows नवीन rows
+  उपाशी ठेवत नाहीत) + test; `expire_stale` मध्ये खराब created_at ⇒ crash नाही.
+  **निर्णय (बदल नाही):** drift guard signal spot वरूनच मोजतो (तुमचं "signal spot वि. bar close spot" — नमुना 2 ❌); 60M वर bar बंद होईपर्यंतची हालचाल
+  मोठी असेल तर entry drift मुळे नाकारली जाईल — हे reduce-only दिशेने, म्हणून ठेवलं. Bot च्या चालू candle (last_bar) वरून signal bar ठरतो (touch चालू
+  candle वर होतो). `approve_window_min` ≥ 4 ठेवावा (bar close नंतर data साठी कमाल 2 मिनिटं + vision call).

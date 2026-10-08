@@ -250,7 +250,7 @@ def bar_wait(row, s, now=None):
     """`vision_wait_for_bar_close`: signal चा setup bar अजून बंद नसेल तर (मूल्यमापन नंतर) ⇒ (थांबायचं?, bar माहिती)."""
     from . import context as CX
     s_tf = CH.TF_MAP.get(str(row.get("setup_tf")).upper(), (5, 15))[0]
-    sb = CX.signal_bar(pd.Timestamp(row["signal_ts"]), s_tf, now or VS.now_ist())
+    sb = CX.signal_bar(CH.to_ist_naive(row["signal_ts"]), s_tf, now or VS.now_ist(), (row.get("last_bar") or {}).get("timestamp"))
     return bool(BAR_WAIT and s.get("vision_wait_for_bar_close", True) and not sb["closed"]), sb
 
 
@@ -273,9 +273,9 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
         model = VC.env_model("signal")
         wait, sb = bar_wait(row, s)
         if wait and wait_for_bar:
-            VS.transition(sid, "RUNNING", "QUEUED", path)                 # bar बंद झाल्यावर पुन्हा (worker चा 5 s loop)
+            VS.requeue(sid, path)                                       # bar बंद झाल्यावर पुन्हा (worker चा 5 s loop; events / print नाही)
             return {"verdict": None, "deferred": True, "bar_end": sb["end"]}
-        if wait_for_bar and s.get("vision_wait_for_bar_close", True) and BAR_WAIT and pd.Timestamp(sb["end_ts"]) > pd.Timestamp(row["signal_ts"]):
+        if wait_for_bar and s.get("vision_wait_for_bar_close", True) and BAR_WAIT and pd.Timestamp(sb["end_ts"]) > pd.Timestamp(CH.to_ist_naive(row["signal_ts"])):
             row["asof"] = sb["end_ts"]                                    # bar बंद झाला ⇒ तिथपर्यंतचा chart (signal नंतरचा, पण निर्णयाच्या आधीचा)
 
         # 3. chart (reuse असला तरी Telegram साठी ताजा chart)
@@ -295,6 +295,14 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
             if data_cache is not None:
                 data_cache[ek] = row["expiries"]
         row["ctx_settings"] = VC.ctx_settings(row["bot"], path)
+        if row.get("asof") is not None and m1 is not None and len(m1):   # bar चा शेवटचा 1m candle data मध्ये आला का (review S3)
+            last_need = pd.Timestamp(row["asof"]) - pd.Timedelta(minutes=1)
+            have = CH.norm_1m(m1)["timestamp"].max()
+            if have < last_need and VS.now_ist() < (pd.Timestamp(row["asof"]) + pd.Timedelta(minutes=2)).to_pydatetime():
+                VS.requeue(sid, path)                                   # थोडं थांबून पुन्हा (कमाल 2 मिनिटं)
+                if data_cache is not None:
+                    data_cache.pop(key, None)
+                return {"verdict": None, "deferred": True, "bar_end": sb["end"]}
         png, meta = CH.render(m1, row, d1) if m1 is not None and len(m1) else (None, {"error": "1m candles नाहीत"})
         row["ctx"] = meta.get("ctx")                                      # v2 signal text (अचूक किंमती OHLC वरून)
         if png:
@@ -392,7 +400,9 @@ def run_once(path=None, **kw):
     cache = {}
     done = []
     for row in VS.claim_queued(path=path):
-        done.append((row["signal_id"], process_row(row, path=path, data_cache=cache, **kw)))
+        r = process_row(row, path=path, data_cache=cache, **kw)
+        if not (isinstance(r, dict) and r.get("deferred")):
+            done.append((row["signal_id"], r))
     return done
 
 

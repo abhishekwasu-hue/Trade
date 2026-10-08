@@ -161,18 +161,29 @@ def today_role(bars, p, buf, t=None):
     return s["role"], s["at"]
 
 
-def signal_bar(sig_t, s_tf, asof=None):
+SESSION_CLOSE = pd.Timedelta(hours=15, minutes=30)
+
+
+def signal_bar(sig_t, s_tf, asof=None, last_bar_ts=None):
     """Signal ज्या setup-TF bar मध्ये आहे तो (signal च्या क्षणीचा शेवटचा पूर्ण 1m minute ज्या bar मध्ये): start, end, `asof` (मूल्यमापनाचा क्षण,
     default = signal) ला बंद झाला का, किती मिनिटं झाली."""
-    t = pd.Timestamp(sig_t)
+    from .chart import to_ist_naive
+    t = pd.Timestamp(to_ist_naive(sig_t))
     last_min = t.floor("min") - pd.Timedelta(minutes=1)                   # cut_1m: start + 1 मिनिट ≤ signal ⇒ हा शेवटचा पूर्ण minute
+    if last_bar_ts is not None:                                          # bot ने पाहिलेली चालू (अपूर्ण) 1m candle — signal तिच्यावर असू शकतो
+        try:
+            lb = pd.Timestamp(to_ist_naive(last_bar_ts)).floor("min")
+            if last_min < lb <= t:
+                last_min = lb
+        except (TypeError, ValueError):
+            pass
     day0 = last_min.normalize() + OPEN_T
-    k = int((last_min - day0).total_seconds() // 60) // int(s_tf)
+    k = max(0, int((last_min - day0).total_seconds() // 60) // int(s_tf))   # 09:15 आधी ⇒ पहिला bar
     start = day0 + pd.Timedelta(minutes=k * int(s_tf))
-    end = start + pd.Timedelta(minutes=int(s_tf))
-    ev = pd.Timestamp(asof) if asof is not None else t
+    end = min(start + pd.Timedelta(minutes=int(s_tf)), last_min.normalize() + SESSION_CLOSE)   # 15:30 ला session संपतो
+    ev = pd.Timestamp(to_ist_naive(asof)) if asof is not None else t
     return {"start": str(start)[11:16], "end": str(end)[11:16], "end_ts": str(end), "closed": bool(end <= ev),
-            "elapsed": min(int(s_tf), int((ev.floor("min") - start).total_seconds() // 60)), "tf": int(s_tf),
+            "elapsed": max(0, min(int((end - start).total_seconds() // 60), int((ev.floor("min") - start).total_seconds() // 60))), "tf": int(s_tf),
             "evaluated_at": str(ev)[11:16]}
 
 
@@ -240,6 +251,9 @@ def build(cut, setup, sig, median_range=None, daily=None):
     t = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else t0   # bar बंद होईपर्यंत थांबलं असेल तर मूल्यमापनाचा क्षण
     sig_day = t.normalize()
     spot = float(sig.get("spot") or (cut["close"].iloc[-1] if len(cut) else np.nan))
+    if sig.get("asof") is not None and len(cut) and \
+            pd.Timestamp(cut["timestamp"].iloc[-1]) >= t - pd.Timedelta(minutes=1):   # bar close पर्यंत थांबलं ⇒ room / position त्या क्षणीच्या spot वरून
+        spot = float(cut["close"].iloc[-1])                              # (data अपूर्ण ⇒ signal spot च — जुना close नको, review)
     mr = median_range
     if mr is None and setup is not None and len(setup):
         mr = float((setup["high"] - setup["low"]).tail(20).median())
@@ -293,7 +307,8 @@ def build(cut, setup, sig, median_range=None, daily=None):
             "next_role": nxt["today_role"] if nxt else None, "next_flip": bool(nxt and nxt["today_role"].startswith("broken") and not nxt["reclaimed"])}
     # signal bar / मागचे 3 bars: trade दिशेने real-break झालेले levels (bear ⇒ down, bull ⇒ up)
     want = "up" if bull else "down"
-    recent = [{"name": r["name"], "at": r["recent_break_at"]} for r in rows if r["recent_break"] == want]
+    recent = [{"name": r["name"], "at": r["recent_break_at"]} for r in rows                 # नंतर reclaim झालेला level breakout नाही
+              if r["recent_break"] == want and r["today_role"] != "reclaimed"]
     # Traded level L: कुठून आला, आधी कसा वागला, तुटला का
     lline = None
     if level is not None and tb is not None and len(tb):
@@ -328,7 +343,20 @@ def build(cut, setup, sig, median_range=None, daily=None):
         "swings": [{"i": i, "kind": k, "price": p} for i, k, p in sw],
         "overlays": [{"price": r["price"], "label": r["name"], "kinds": r["kinds"], "today_role": r["today_role"], "reclaimed": r["reclaimed"]}
                      for r in rows],
-        "level": float(level) if level is not None else None, "recent_breaks": recent, "signal_bar": signal_bar(t0, s_tf, t),
+        "level": float(level) if level is not None else None, "recent_breaks": recent, "signal_bar": signal_bar(t0, s_tf, t, (sig.get("last_bar") or {}).get("timestamp")),
+        "spot_signal": float(sig.get("spot")) if sig.get("spot") is not None else None,
         "invalidation": inv, "invalidation_source": inv_src, "l_line": lline, "gap_ctx": gctx,
         "composite": composite(setup, level, bull, buf) if setup is not None else None,
     }
+
+
+def bar_end_of(row, setup_tf=None):
+    """Row (signal_ts, setup_tf, setup_json.last_bar) चा signal bar कधी बंद होतो — timeouts bar-aware करण्यासाठी. चूक ⇒ None."""
+    try:
+        import json
+        from .chart import TF_MAP
+        lb = (json.loads(row.get("setup_json") or "{}").get("last_bar") or {}).get("timestamp") if row.get("setup_json") else None
+        s_tf = TF_MAP.get(str(setup_tf or row.get("setup_tf")).upper(), (5, 15))[0]
+        return pd.Timestamp(signal_bar(row["signal_ts"], s_tf, None, lb)["end_ts"])
+    except Exception:
+        return None
