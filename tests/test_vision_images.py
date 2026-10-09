@@ -53,7 +53,7 @@ def test_sent_png_name_sha_and_same_bytes_to_vision_and_telegram(db, monkeypatch
     img = next(b for b in client.calls[0]["messages"][0]["content"] if b["type"] == "image")
     assert sha(base64.standard_b64decode(img["source"]["data"])) == r["image_sha256"]          # vision ला तीच image
     assert sha(sent.photos[0][0]) == r["image_sha256"]                                          # Telegram वर तीच image
-    assert r["prompt_version"] == "signal_check_v2_1" and r["final_decision"] == "ENTER" and r["model"] == "test-sonnet-model"
+    assert r["prompt_version"] == "signal_check_v2_2" and r["final_decision"] == "ENTER" and r["model"] == "test-sonnet-model"
     vj = json.loads(r["vision_json"])
     assert vj["usage"]["input_tokens"] > 0 and r["cost_usd"] > 0
 

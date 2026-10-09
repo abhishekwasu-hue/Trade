@@ -4,7 +4,7 @@
   2. Area: trade बाजूचे zones (chart_reader.zones: flip, supply/demand base, trendline, PDH / gap edge, swing high/low cluster …),
      area_merge_mr अंतरातले एकत्र ⇒ एक area (trendline चं मूल्य त्या bar वर).
   3. Pause at area: commitment आधी area ला लागलेले (± area_tol_mr) indecision bars — लहान body / median पेक्षा लहान range / दोन्ही
-     बाजूंचे wicks. किमान pause_min_bars. Area पलीकडे acceptance (सलग accept_bars closes) ⇒ setup रद्द.
+     बाजूंचे wicks. किमान pause_min_bars. Area च्या कडेचा real break (elliott/breaks.py) ⇒ setup रद्द.
   4. Commitment: trend दिशेने मजबूत candle — एकटा bar (टोक area ला लागलेलं) किंवा शेवटचा pause bar (touch) + हा bar (KB "touch → मजबूत
      close"): range commit_strength_min_mr–commit_strength_max_mr × MR, body ≥ commit_body_min, close टोकाजवळ. Bar बंद ⇒ ENTRY SIGNAL.
   5. एक setup = एक entry (Tracker: त्याच area वर पुन्हा नाही). Area पासून दूर ⇒ नाही (chase नाही).
@@ -116,10 +116,6 @@ def detect(df, zones, ctx, mr, s=None, tracker=None):
         return _testing(df, zones, ctx, mr, s, tracker)
     zs = list(zones or [])
     piv = ctx.get("pivots")
-    if side and piv and len(df):
-        wz = WV.wave1_zone(df, piv, side, mr, s)
-        if wz:
-            zs.append(wz)
     if side and ctx.get("impulse") and len(df):
         fz = FL.flag_zone(df, ctx["impulse"], side, mr, s)                # G8: flag channel हाच area
         if fz:
@@ -153,14 +149,18 @@ def _detect_episode(df, zs, ctx, mr, s, tracker):
     return r
 
 
+WAVE_REFS = ("wave3_projection", "wave5_projection", "wave1_origin", "wave1_extreme", "subwave_origin")
+
+
 def _wave_context(sg, df, piv, side, s):
+    """टप्पा B §2.5: waves.py चा स्वतंत्र count निर्णयात नाही — फक्त तुलनेसाठी नोंद (`waves_cmp`). Setup label / wave refs count_source
+    (एकच preferred count) मधून signal_at मध्ये."""
     w = WV.count(df, piv or [], side, len(df) - 1, s)
-    sg.setdefault("setup", w["setup"])
-    sg["wave"] = {"setup": w["setup"], "gray": w["gray"], "alts": w.get("alts", {}), "story": w["story"]}
-    sg["ref_levels"].update(w["ref"])
-    sg["ref_notes"] = w["notes"]
-    if w["story"]:
-        sg["context_story"] += f" · {w['story']}"
+    sg["waves_cmp"] = {"setup": w["setup"], "gray": w["gray"], "story": w["story"]}
+    why = "लागू नाही — wave refs फक्त एकाच preferred count मधून (G1 / G9), reading layer मध्ये भरतात"
+    for kk in WAVE_REFS:                                                   # execution ला "का नाही" कळावं (count नसेल तर तसंच राहतं)
+        sg["ref_levels"].setdefault(kk, None)
+        sg.setdefault("ref_notes", {})[kk] = why
 
 
 def _testing(df, zones, ctx, mr, s, tracker):
@@ -296,15 +296,21 @@ def _detect(df, zones, ctx, mr, s=None, tracker=None):
                 tracker.release(side, a)
             out["why"] = f"area {a['id']} पलीकडे acceptance (सलग {LVD['accept_closes']} closes) ⇒ setup रद्द"
             return out
-    run = 0
+    # Area च्या कडेचा real break (breaks.py — KB G ची एकच व्याख्या: buffer + displacement / no-reclaim; Abhi G-MAP1 निर्णय 8) ⇒ setup रद्द.
+    from elliott import breaks as BR
+    from elliott import settings as ES
+    bs = {**ES.DEFAULTS, "break_accept_closes": LVD["accept_closes"]}
+    mra = np.full(len(c), float(mr))
     for jj in range(ep, k + 1):
         aj = area_at(a, jj)
-        beyond = (c[jj] > aj["high"] + buf) if side < 0 else (c[jj] < aj["low"] - buf)
-        run = run + 1 if beyond else 0
-        if run >= int(s["accept_bars"]):
+        lvl = aj["high"] if side < 0 else aj["low"]
+        if not ((c[jj] > lvl + buf) if side < 0 else (c[jj] < lvl - buf)):
+            continue
+        r = BR.break_from(df, jj, lvl, "above" if side < 0 else "below", bs, mr=mra)
+        if r is not None and 0 <= r <= k:
             if tracker is not None:
                 tracker.release(side, a)
-            out["why"] = f"area {a['id']} पलीकडे acceptance (सलग {run} closes) ⇒ setup रद्द"
+            out["why"] = f"area {a['id']} पलीकडे acceptance — real break (breaks.py, {str(df['timestamp'].iloc[r])[11:16]}) ⇒ setup रद्द"
             return out
     if pause < int(s["pause_min_bars"]):
         out["why"] = f"area वर pause नाही (indecision bars {pause} < {int(s['pause_min_bars'])}) — थेट entry नाही"
@@ -352,7 +358,6 @@ def context_from(ms):
     impulse ची बाजू (F4 "unclear" ⇒ नाही). F4 gate (impulse / Elliott विरोध) shadow engine मध्ये — core HTF trend वरच चालतो."""
     tr = (ms or {}).get("trend") or {}
     d = int(tr.get("dir") or 0)
-    rev = (ms or {}).get("possible_reversal")
     testing = None
     if tr.get("state") == "testing":
         side = 0
@@ -366,9 +371,7 @@ def context_from(ms):
     out = {"trend": d, "side": side, "protected": (tr.get("protected") or {}).get("price"), "impulse_end": imp.get("to")}
     if testing:
         out["testing"] = testing
-    if rev and rev.get("state") in ("active", "new_trend") and not testing:
-        # impulsive counter-move (POSSIBLE_REVERSAL v2): जुन्या trend दिशेने नाही; नव्या दिशेने (wave (2) end) चालतं
-        out.update(side=int(rev["dir"]), block=rev["reason"], reversal=rev["state"])
+    # टप्पा B (नकाशा I8.2): POSSIBLE_REVERSAL flag काढला — त्याची जागा S3 + Gray-1 + reaction test (reading.py) घेतात.
     return out
 
 
@@ -423,5 +426,136 @@ def signal_at(df1m, asof, s=None, memory=None, tracker=None, profile="srv2", es=
     gl = g.get("class") if g.get("has_gap") else None
     ctx["story"] = f"gap {gl} {g.get('direction')}" if gl else ""
     r = detect(trig, zones, ctx, mr, s, tracker)
+    ss = SS.engine_settings(s)
+    if not r.get("signal") and ss["g10_enabled"] and not ctx.get("testing"):
+        r10 = g10(trig, zones, ctx, mr, s, tracker, ss)                    # S9 / G10 range कड
+        if r10.get("signal"):
+            r = r10
+    h1 = EV.frame(df1m, "1h", asof)
+    r = apply_reading(r, trig, h1, df1m, asof, mr, ss, zones, ctx, g, tracker, es)
     r.update(zones=zones, ms=ms, mr=mr, trig=trig, gap=g, ctx=ctx)       # ctx: research replay (sensitivity) साठी
     return r
+
+
+EXCEPTIONS = ("G4", "range_edge", "G10", "G7")                             # नकाशा P1: पालक-दिशा / gray filter ने मरत नाहीत
+
+
+def apply_reading(r, trig, h1, df1m, asof, mr, s, zones, ctx, gap, tracker=None, es=None):
+    """टप्पा B reading layer (simple_core/reading.py + count_source.py) candidate signal वर: S#, Gray-1 / Gray-2 / S4 / S11, पालक दिशा
+    (`parent_source`), gray धोरण (`get_gray_policy`, default block), target degree (impulse_end + next_opposite_area), एकच count स्रोत
+    (G1 / G9 labels, wave refs), commit_vs_impulse (report), 15:15 ⇒ eod recheck. Gray मुळे थांबलेला signal `gray_candidate` मध्ये
+    (backtest मध्ये block / reduce दोन्ही निकाल)."""
+    from . import count_source as CSRC
+    from . import reading as RD
+    sg = r.get("signal")
+    pd_ms = int(ctx.get("trend") or 0)
+    if not sg:
+        r["reading"] = {"S": None, "parent_ms": pd_ms, "why": r.get("why")}
+        return r
+    side = int(sg["side"])
+    rd = RD.read_signal(trig, h1, sg, sg["area"], mr, s, asof, gap=gap, es=es)
+    imp = rd.get("impulse")
+    cnt = CSRC.read(df1m, asof, imp["end_ts"] if imp else None, side, es)
+    pref = cnt.get("preferred") or {}
+    # एकच count स्रोत: G1 / G9 फक्त preferred count नुसार (G8 / G4 / range_edge / G10 त्यांच्या रचनेवरून)
+    if sg.get("setup") not in ("G8", "G4", "range_edge", "G10"):
+        sg["setup"] = cnt.get("setup")
+        sg["wave"] = {"setup": cnt.get("setup"), "gray": None if cnt.get("setup") else (cnt.get("why") or "count gray at trade degree"),
+                      "count": pref.get("pattern"), "wave": pref.get("wave"), "degree": cnt.get("degree")}
+        tops = (rd.get("legs") or {}).get("tops") or []
+        refs = CSRC.wave_refs(pref, cnt.get("setup"), s, ext=(max(tops) if side < 0 else min(tops)) if tops else None)
+        sg["ref_levels"].update(refs)
+        for kk, v in refs.items():
+            if v is not None:
+                (sg.get("ref_notes") or {}).pop(kk, None)
+    # target degree (निर्णय 9): impulse_end = याच correction चा origin; next_opposite_area: correction च्या आतले areas वगळून
+    sg["ref_levels"]["impulse_end"] = round(float(imp["end"]), 2) if imp else None
+    opp = areas(zones, -side, 0, s["area_merge_mr"] * mr)
+    c = float(sg["trigger_price"])
+    if imp:
+        e = float(imp["end"])
+        nxt = [x for x in opp if x["high"] < c and x["low"] <= e] if side < 0 else [x for x in opp if x["low"] > c and x["high"] >= e]
+    else:
+        nxt = [x for x in opp if x["high"] < c] if side < 0 else [x for x in opp if x["low"] > c]
+    sg["ref_levels"]["next_opposite_area"] = (round(float(max(x["high"] for x in nxt) if side < 0 else min(x["low"] for x in nxt)), 2)
+                                              if nxt else None)
+    sg["commit_vs_impulse"] = rd.get("commit_vs_impulse")
+    # पालक दिशा
+    psrc = s["parent_source"]
+    parent = pd_ms if psrc == "market_state" else int(cnt.get("parent_dir") or 0)
+    conflict = bool(pd_ms and cnt.get("parent_dir") and pd_ms != int(cnt["parent_dir"]))
+    pol = RD.get_gray_policy(pd.Timestamp(asof).normalize())
+    rd.update(parent_source=psrc, parent=parent, parent_ms=pd_ms, parent_count=cnt.get("parent_dir"), PARENT_CONFLICT=conflict,
+              count={"degree": cnt.get("degree"), "preferred": cnt.get("preferred"), "alternate": cnt.get("alternate"), "why": cnt.get("why"),
+                     "degrees": cnt.get("degrees"), "tie": cnt.get("count_tie"), "S11_alpha": cnt.get("S11_alpha"),
+                     "setup_alpha": cnt.get("setup_alpha")},
+              policy=pol, area_source=f"{sg['area'].get('id')} ({sg['area'].get('type')})",
+              invalidation=sg["ref_levels"].get("structural_invalidation"))
+    sg["reading"] = rd
+    r["reading"] = rd
+    exc = sg.get("setup") in EXCEPTIONS
+
+    def stop(why, gray=None):
+        if tracker is not None and sg.get("area"):
+            tracker.release(side, sg["area"])                               # gray मुळे थांबला ⇒ तोच setup नंतर (धोरण बदलल्यास) शक्य
+        r["gray_candidate" if gray else "blocked_candidate"] = sg
+        r.update(signal=None, why=why)
+        return r
+
+    if not exc:
+        if psrc == "preferred_count" and not parent:
+            return stop("PARENT_UNKNOWN: preferred count / sequence नाही ⇒ trade नाही (gray नाही)")
+        if parent and parent != side:
+            return stop(f"पालक दिशा ({psrc}) {'up' if parent > 0 else 'down'} — trade दिशा विरुद्ध")
+        if cnt.get("S11"):
+            return stop("S11: preferred count नुसार B च्या आत — trade नाही")
+        if rd.get("gray") == "S4":
+            return stop(rd["gray_why"])
+        if rd.get("gray") in ("Gray-1", "Gray-2"):
+            ok = pol["policy"] == "reduce" and (rd["gray"] == "Gray-2" or (pol.get("dir") is not None and int(pol["dir"]) == side))
+            if not ok:
+                return stop(f"{rd['gray']} ({pol['policy']}): {rd['gray_why']}", gray=True)
+            sg["gray"] = rd["gray"]                                         # reduce ⇒ GRAY खूण, size gray_size (execution)
+    if s["eod_signal_carry"] == "recheck" and pd.Timestamp(sg["bar_start"]).strftime("%H:%M") >= "15:15":
+        sg["eod_carry"] = "recheck"                                         # दुसऱ्या दिवशी आपोआप entry नाही; नवी commitment हवी
+        if tracker is not None:
+            tracker.release(side, sg["area"])
+    return r
+
+
+def g10(trig, zones, ctx, mr, s, tracker, ss):
+    """S9 / G10 (नकाशा S9; Abhi): 15M StructureTracker RANGE ⇒ confirmed range कडा. कडेवर Simple Core pause + commitment ⇒ खालची ⇒ bull,
+    वरची ⇒ bear. पालक (market_state) trend असेल ⇒ फक्त trend दिशेची कड (S6 + S9 default). Range मध्यात area नाही ⇒ signal नाही.
+    Sweep + reclaim (pause / commitment bars मध्ये कडेपलीकडे wick, close आत) ⇒ पुरावा मजबूत (नोंद)."""
+    from opportunity_engine.structure import StructureTracker
+    out = {"signal": None, "why": "G10: RANGE नाही", "pause_bars": 0, "area": None}
+    f = trig.iloc[-int(ss["g10_range_bars"]):]
+    st = StructureTracker("15m")
+    for b in f.itertuples(index=False):
+        st.on_bar(pd.Timestamp(b.bar_end), b.open, b.high, b.low, b.close)
+    snap = st.snapshot()
+    if snap.get("trend_state") != "RANGE" or snap.get("range_high") is None:
+        return out
+    hi_r, lo_r = float(snap["range_high"]), float(snap["range_low"])
+    parent = int(ctx.get("trend") or 0)
+    edges = [(-1, hi_r), (1, lo_r)] if not parent else [(-1, hi_r)] if parent < 0 else [(1, lo_r)]
+    why = []
+    for sd, edge in edges:
+        z = {"id": f"RANGE-{'H' if sd < 0 else 'L'}", "zid": "R", "tool": "d", "type": "range edge", "kind": "solid", "state": "ACTIVE",
+             "side": "sell" if sd < 0 else "buy", "role": "RESISTANCE" if sd < 0 else "SUPPORT", "low": edge, "high": edge}
+        r = _detect_episode(trig, [z], {**ctx, "side": sd}, mr, s, tracker)
+        sg = r.get("signal")
+        if sg:
+            k = len(trig) - 1
+            p0 = k - int(sg.get("pause_bars", 0)) - int(sg["commitment"]["bars"]) + 1
+            seg = trig.iloc[max(0, p0):k + 1]                               # pause + commitment bars
+            sweep = bool((seg["high"] > edge).any()) if sd < 0 else bool((seg["low"] < edge).any())
+            sg["setup"] = "G10"
+            sg["g10"] = {"mode": ss["g10_mode"], "edge": round(edge, 2), "range": (round(lo_r, 2), round(hi_r, 2)), "sweep_reclaim": sweep,
+                         "s6_s9": bool(parent)}
+            sg["ref_levels"]["next_opposite_area"] = round(lo_r if sd < 0 else hi_r, 2)   # target = विरुद्ध कड
+            sg["context_story"] += f" · G10: range {'वरची' if sd < 0 else 'खालची'} कड {edge:,.1f}" + (" (sweep + reclaim)" if sweep else "")
+            return r
+        why.append(r["why"])
+    out["why"] = "G10: " + " · ".join(why)
+    return out

@@ -97,6 +97,23 @@ def first_real_break(frame, start, level, side, s, mr=None, end=None, retest_fn=
     return best_r
 
 
+def break_from(frame, j, level, side, s, mr=None):
+    """Bar j चा close level च्या पलीकडे (buffer सह) गेला ⇒ **हाच** break खरा का — first_real_break चीच व्याख्या (displacement ⇒ लगेच;
+    नाहीतर break_no_reclaim_bars bars reclaim नाही; time acceptance सुद्धा), फक्त [j, j + k] मध्ये. रिटर्न: confirm index · None (reclaim /
+    खरा नाही) · -1 (पुढचे bars अजून नाहीत ⇒ अपुष्ट, no-lookahead). Simple Core area acceptance हेच वापरतं (Abhi G-MAP1 निर्णय 8:
+    रचनेच्या breaks ना एकच व्याख्या). levels_v2 lifecycle: अजून 'buffer + पुढचा bar' (+ 3-close) — विलीनीकरण Abhi च्या निर्णयासाठी उघडं."""
+    c = frame["close"].to_numpy(float)
+    n = len(c)
+    k = int(s["break_no_reclaim_bars"])
+    end = min(n - 1, j + k)
+    r = first_real_break(frame, j, level, side, s, mr=mr, end=end)
+    if r is not None:
+        return r
+    if j + k > n - 1 and not any(_back_inside(c[t], level, side) for t in range(j + 1, n)):
+        return -1
+    return None
+
+
 def _first(x, y):
     return x if y is None else min(x, y)
 

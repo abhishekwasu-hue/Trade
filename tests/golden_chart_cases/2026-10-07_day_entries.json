@@ -1,6 +1,6 @@
 {
   "id": "2026-10-07_simple_core",
-  "source": "Abhi 2026-10-08 (Simple Core: trend + area + pause + commitment; tuning नाही)",
+  "source": "Abhi 2026-10-08 (Simple Core: trend + area + pause + commitment; tuning नाही); पक्का Abhi ✔ 2026-10-09 (run2 review): 12:15 = C-end, bear call",
   "data": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
   "data_policy": "contaminated — regression only, no tuning",
   "simple_core_day": {

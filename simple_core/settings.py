@@ -9,6 +9,12 @@ import json
 import os
 
 ENGINE_DEFAULTS = {
+    # टप्पा B (Abhi G-MAP1, 2026-10-09) — dashboard / paper_core profile मधूनही (ENGINE_FROM_PROFILE)
+    "parent_source": "market_state",   # market_state (default) / preferred_count (count_source; नसेल ⇒ PARENT_UNKNOWN ⇒ trade नाही)
+    "g10_enabled": True,           # G10 range कड signals तयार करायचे का
+    "g10_mode": "shadow",          # shadow ⇒ PAPER trade नाही, फक्त नोंद + Telegram माहिती (Approve नाही) / paper
+    "eod_signal_carry": "recheck",  # 15:15 चा signal ⇒ दुसऱ्या दिवशी आपोआप entry नाही (नकाशा S12)
+    "g10_range_bars": 400,         # G10: 15M StructureTracker मागचे इतके bars (zones.zone_lookback_bars सारखंच, ~16 sessions) [व्याख्या]
     "area_tol_mr": 0.3,            # area ला "लागला" = candle चं टोक area च्या ± हे × MR
     "area_merge_mr": 0.5,          # trade बाजूचे zones इतक्या × MR अंतरात ⇒ एकच area (उदा. TL + swing high = "TL3+H 22,700–22,730")
     "pause_body_max": 0.5,         # pause (indecision): body ≤ range च्या हे …
@@ -21,8 +27,7 @@ ENGINE_DEFAULTS = {
     "commit_body_min": 0.5,        # body ≥ range च्या हे
     "commit_close_max": 0.3,       # close टोकाजवळ: bear close location ≤ हे (bull ≥ 1 − हे)
     "commitment_vs_pause": 1.5,    # commitment range ≥ हे × pause bars ची सरासरी range [अनुमान, Evening plan §5 — K-10 / IS वर तपासायचं]
-    "accept_bars": 2,              # area पलीकडे सलग इतके closes (buffer सह) ⇒ acceptance ⇒ setup रद्द
-    "accept_buf_mr": 0.25,
+    "accept_buf_mr": 0.25,         # area कडेपलीकडचा close (break तपासणी सुरू); real break = elliott/breaks.py (accept_bars काढला — G-MAP1 निर्णय 8)
     "opening_block_min": 15,       # 09:15 + हे मिनिटं पर्यंत बंद होणाऱ्या bars वर signal नाही
     # Motive wave context (waves.py, KB भाग H G1 / G8 / G9) — label व reference levels फक्त; entry चे 4 टप्पे तसेच
     "wave_lookback_pivots": 12,    # trade-degree swings पैकी मागचे इतके (origin शोध)
@@ -35,7 +40,7 @@ ENGINE_DEFAULTS = {
     "w5_proj_w13": 0.618,          # … पर्याय: + हे × (wave 1 start → wave 3 end)
     "wave1_zone_mr": 0.15,         # wave 1 टोकाचा flip area = टोक ± हे × MR
     # G8 flag channel (flags.py, Abhi 28 Sep) [अनुमान — K-10 / IS वर तपासायचं]
-    "flag_min_bars": 4,            # flag मध्ये किमान bars
+    "flag_min_bars": 2,            # G8 flag: 2–6 candles (KB H, Abhi; नकाशा S5) — कमाल g8_max_bars. 1 candle ⇒ setup नाही
     "flag_retrace_max": 0.5,       # flag ची खोली ≤ हे × impulse (उथळ)
     "flag_overlap_min": 0.6,       # overlapping (K10.1 correction overlap)
     "flag_min_touches": 2,         # प्रत्येक रेषेला किमान touches
@@ -45,7 +50,8 @@ ENGINE_DEFAULTS = {
 SL_MODES = ("structural_invalidation", "commitment_extreme", "wave1_origin", "subwave_origin", "wave1_extreme", "fixed_points", "percent",
             "none")
 TARGET_MODES = ("next_opposite_area", "impulse_end", "wave3_projection", "wave5_projection", "r_multiple", "premium_pct", "none")
-G9_TIERS = ("full", "half", "C", "skip")    # full ⇒ lots · half ⇒ lots ÷ 2 · C ⇒ g9_lots · skip ⇒ trade नाही
+G9_TIERS = ("full", "half", "C", "skip")
+ENGINE_FROM_PROFILE = ("parent_source", "g10_enabled", "g10_mode", "eod_signal_carry")   # profile ⇒ engine overrides    # full ⇒ lots · half ⇒ lots ÷ 2 · C ⇒ g9_lots · skip ⇒ trade नाही
 INSTRUMENTS = ("credit_spread", "futures", "naked_buy", "naked_sell")
 STRIKE_MODES = ("offset_points", "beyond_sl_points", "sigma")
 EXEC_FIELDS = {
@@ -55,6 +61,9 @@ EXEC_FIELDS = {
     "lots": "number",
     "g9_tier": G9_TIERS, "g9_lots": "number",        # G9 (wave 5, KB Tier C): full / half / C (g9_lots) / skip
     "expiry_rule": "text",
+    "gray_size": ("half", "full"),   # gray reduce ⇒ lots (half = floor(lots / 2); 0 ⇒ trade नाही) — Abhi 2026-10-09
+    "parent_source": ("market_state", "preferred_count"), "g10_enabled": "bool", "g10_mode": ("shadow", "paper"),
+    "eod_signal_carry": ("recheck",),
 }
 
 
@@ -88,7 +97,8 @@ def load_profiles(path=None):
 # निवडायलाच हवेत. फक्त PAPER profile; दुसऱ्या कोणत्याही profile ला (LIVE सह) default नाही.
 PAPER_PROFILE = "paper_core"
 PAPER_SEED = {"rr_filter": True, "min_rr": 3.0, "sl_mode": "structural_invalidation", "sl_buffer": 0.25, "sl_buffer_unit": "mr",
-              "target_mode": "impulse_end", "g9_tier": "full"}
+              "target_mode": "impulse_end", "g9_tier": "full", "gray_size": "half", "eod_signal_carry": "recheck",
+              "g10_enabled": True, "g10_mode": "shadow", "parent_source": "market_state"}   # Phase B §3.5
 
 
 def load_profile(name, path=None):

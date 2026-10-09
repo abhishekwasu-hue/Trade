@@ -178,7 +178,7 @@ def test_request_is_v2_cached_and_text_has_exact_prices():
     c = _Fake([msg(GOOD)])
     r = SA.audit(c, b"png", s, "test-sonnet-model")
     p = c.calls[0]
-    assert r["prompt_version"] == "signal_check_v2_1" and p["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert r["prompt_version"] == "signal_check_v2_2" and p["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert "ELLIOTT WAVE" in p["system"][0]["text"] and p["max_tokens"] == 1200
     assert set(p["output_config"]["format"]["schema"]["required"]) >= {"level_kind", "wave_position", "reversal_close_location"}
     text = p["messages"][0]["content"][1]["text"]

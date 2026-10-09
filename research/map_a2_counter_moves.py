@@ -29,6 +29,7 @@ sys.path.insert(0, ROOT)
 from elliott import breaks as BR                 # noqa: E402
 from elliott import data_policy as DP            # noqa: E402
 from elliott import settings as ES               # noqa: E402
+from simple_core import reading as RD             # noqa: E402
 
 HORIZON = 400          # bars (~16 sessions) — outcome शोधण्याची मर्यादा (फक्त गटांसाठी) [A1 register]
 INTERNAL_ATR = 1.5     # आतले swings (gallery / market_state internal सारखं) [A1 register]
@@ -122,6 +123,9 @@ def scan(fr, h1, log=print):
                "legs": _internal_legs(fr, a, x), "speed_ratio": round((cm / bars_c) / (size / bars_i), 3) if size else None,
                "displacement": _disp(fr, a + 1, b, -d, mr, s), "impulse_1h_broken": brk1h, "decision_idx": x,
                "outcome": _outcome(fr, x, p0, p1, d, es, mr)}
+        # टप्पा B §2.2: S3 घटना — simple_core.reading.s3_trigger (1H LH / HL ची breaks.py real break; pivot नाही ⇒ S3_NO_1H_PIVOT)
+        s3 = RD.s3_trigger(h1, None, {"dir": d, "start_ts": pd.Timestamp(p0["ts"]), "end_ts": pd.Timestamp(p1["ts"])}, dts, es)
+        rec["s3_event"] = None if s3["code"] == "S3_NO_1H_PIVOT" else bool(s3["s3"])
         out.append(rec)
         if log and len(out) % 200 == 0:
             log(f"  {rec['ts'][:10]}: counter-moves {len(out)}")
@@ -159,12 +163,24 @@ def report(rows):
         q = lambda v: f"{v.median():.2f} [{v.quantile(.25):.2f}–{v.quantile(.75):.2f}]"      # noqa: E731
         stats[col] = {"auc": A, "delta": round(2 * A - 1, 3), "n_a": len(a_), "n_b": len(b_), "med_a": float(a_.median()), "med_b": float(b_.median())}
         L.append(f"| {col} | {q(a_)} | {q(b_)} | {A} | {round(2 * A - 1, 3)} | {len(a_)} / {len(b_)} |")
-    for col in ("impulse_1h_broken",):
+    for col in ("impulse_1h_broken", "s3_event"):
         a_ = df.loc[(df["outcome"] == "a") & df[col].notna(), col].astype(bool)
         b_ = df.loc[(df["outcome"] == "b") & df[col].notna(), col].astype(bool)
         if len(a_) and len(b_):
             stats[col] = {"p_a": round(float(a_.mean()), 3), "p_b": round(float(b_.mean()), 3), "n_a": len(a_), "n_b": len(b_)}
             L.append(f"| {col} (प्रमाण True) | {a_.mean():.2f} | {b_.mean():.2f} | — | फरक {b_.mean() - a_.mean():+.2f} | {len(a_)} / {len(b_)} |")
+    if "s3_event" in df:
+        for o in ("a", "b", "c"):
+            g = df.loc[df["outcome"] == o, "s3_event"]
+            stats.setdefault("s3_no_1h_pivot", {})[o] = int(g.isna().sum())
+        sa = df.loc[(df["outcome"] == "a") & df["s3_event"].notna(), "s3_event"].astype(float)
+        sb = df.loc[(df["outcome"] == "b") & df["s3_event"].notna(), "s3_event"].astype(float)
+        A = auc(sa, sb) if len(sa) and len(sb) else None
+        stats["s3_event_auc"] = A
+        L += ["", "**§2.2 S3 घटना (टप्पा B व्याख्या: impulse मधला शेवटचा confirmed 1H LH / HL, breaks.py real break, origin शाबूत):** "
+              f"AUC (b>a) = {A} (n {len(sa)} / {len(sb)}); confirmed 1H pivot नसलेले (S3_NO_1H_PIVOT) — "
+              + ", ".join(f"({k}) {v}" for k, v in stats["s3_no_1h_pivot"].items()) + ". `impulse_1h_broken` (टप्पा A) = 15M एका close वरून — "
+              "तुलनेसाठी. फक्त माहिती; निर्णय reaction ने (P3)."]
     L += ["", "Futures volume: IS (2015–2021) मध्ये futures volume data नाही ⇒ इथे मोजलेलं नाही (Jul–Oct 2026 फक्त illustration).",
           "", "**वाचन (Abhi साठी, निर्णय नाही):** AUC 0.5 पासून जितका दूर तितका भेद मजबूत. G-MAP1 ला Abhi \"मजबूत / कमकुवत\" यादी गोठवेल; "
           "मग VAL वर एकदाच तीच तुलना."]
@@ -178,6 +194,7 @@ def main(argv=None):
     ap.add_argument("--start", default="2015-02-01")
     ap.add_argument("--end", default="2021-12-31")
     ap.add_argument("--out", default=os.path.join(ROOT, "docs", "reports", "situation_map"))
+    ap.add_argument("--json-out", default=None, help="rows JSON (private trade-data); नसेल ⇒ --out")
     a = ap.parse_args(argv)
     raw = pd.read_parquet(a.is_data) if a.is_data.endswith(".parquet") else pd.read_csv(a.is_data, parse_dates=["timestamp"])
     ts = pd.to_datetime(raw["timestamp"])
@@ -189,7 +206,7 @@ def main(argv=None):
     os.makedirs(a.out, exist_ok=True)
     md, stats = report(rows)
     open(os.path.join(a.out, "A2_counter_moves.md"), "w", encoding="utf-8").write(md)
-    json.dump({"stats": stats, "rows": rows}, open(os.path.join(a.out, "A2_counter_moves.json"), "w", encoding="utf-8"), ensure_ascii=False,
+    json.dump({"stats": stats, "rows": rows}, open(os.path.join(a.json_out or a.out, "A2_counter_moves.json"), "w", encoding="utf-8"), ensure_ascii=False,
               indent=1, default=str)
     print(md[:1500])
 

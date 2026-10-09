@@ -19,10 +19,11 @@ DICTS = [("simple_core/settings.py", "ENGINE_DEFAULTS"), ("market_state/core.py"
          ("vision/gap_context.py", "DEFAULTS"), ("chart_reader/settings.py", "DEFAULTS")]
 ELLIOTT = "elliott/settings.py"
 ELLIOTT_SECTIONS = ("breaks", "swings", "degrees", "count", "invalidation")
-ENTRY_FILES = ["simple_core/engine.py", "simple_core/waves.py", "simple_core/flags.py", "simple_core/settings.py", "market_state/core.py",
+ENTRY_FILES = ["simple_core/engine.py", "simple_core/reading.py", "simple_core/count_source.py", "simple_core/execution.py",
+               "simple_core/waves.py", "simple_core/flags.py", "simple_core/settings.py", "market_state/core.py",
                "chart_reader/areas.py", "chart_reader/zones.py", "chart_reader/gap.py", "chart_reader/candles.py", "chart_reader/measures.py",
                "price_action/levels_v2.py", "elliott/breaks.py", "elliott/swings.py", "vision/gap_context.py"]
-INLINE_FILES = ["simple_core/engine.py", "simple_core/waves.py", "simple_core/flags.py", "market_state/core.py", "chart_reader/zones.py",
+INLINE_FILES = ["simple_core/engine.py", "simple_core/reading.py", "simple_core/count_source.py", "simple_core/waves.py", "simple_core/flags.py", "market_state/core.py", "chart_reader/zones.py",
                 "chart_reader/areas.py", "elliott/breaks.py", "price_action/levels_v2.py"]
 
 # (वर्ग, कारण) — हाताने; स्रोत KB / Abhi निर्णय / research notes. नोंद नसलेले ⇒ अंदाज.
@@ -48,8 +49,13 @@ CLASS = {
     "commit_body_min": ("अंदाज", "commitment body ≥ 0.5"),
     "commit_close_max": ("अंदाज", "close टोकाजवळ (0.3)"),
     "commitment_vs_pause": ("अंदाज", "Evening plan §5 [अनुमान] 1.5; Abhi: 1.3 / 1.5 / 2.0 sensitivity"),
-    "accept_bars": ("अंदाज", "engine area acceptance: buffer पलीकडे सलग 2 closes (breaks.py बाहेरची दुसरी व्याख्या — B2 नुसार विलीन करायची)"),
-    "accept_buf_mr": ("अंदाज", "engine acceptance buffer"),
+    "accept_buf_mr": ("व्याख्या", "area कडेपलीकडचा close ⇒ breaks.break_from तपासणी सुरू (break_buffer_mr शी समान 0.25); accept_bars (2 closes) "
+                      "टप्पा B मध्ये काढला — real break = breaks.py (G-MAP1 निर्णय 8)"),
+    "parent_source": ("Abhi", "G-MAP1 निर्णय 4: market_state (default) / preferred_count"),
+    "g10_enabled": ("Abhi", "G-MAP1 निर्णय 5: G10 signals (default on)"),
+    "g10_mode": ("Abhi", "G-MAP1 निर्णय 5: shadow (default) / paper"),
+    "eod_signal_carry": ("Abhi", "G-MAP1 निर्णय 7: recheck (नकाशा S12)"),
+    "g10_range_bars": ("व्याख्या", "G10 StructureTracker lookback = zones.zone_lookback_bars (400, ~16 sessions) — नवा आकडा नाही"),
     "opening_block_min": ("Abhi", "opening window (A3 / KB K14: पहिली candle नाही)"),
     "g8_retrace_max": ("Abhi", "KB H G8: उथळ 23.6–38.2%"),
     "g8_max_bars": ("Abhi", "KB H G8: 2–6 candles"),
@@ -58,7 +64,7 @@ CLASS = {
     "w5_proj_w1": ("research", "Elliott guideline wave 5 = wave 1"),
     "w5_proj_w13": ("research", "Elliott guideline 0.618 × (1 start → 3 end)"),
     "flag_retrace_max": ("अंदाज", "flag ≤ 50% (research notes 'codable rule' ⇒ अंदाज वर्ग, नकाशा I5)"),
-    "flag_min_bars": ("अंदाज", "flag किमान bars (नकाशा S5: G8 2–6 candles शी जुळवायचं)"),
+    "flag_min_bars": ("Abhi", "नकाशा S5 / KB H G8: 2–6 candles (टप्पा B: 4 → 2; 1 candle = flag नाही)"),
     "flag_overlap_min": ("research", "KB K10.1 correction overlap > 0.6"),
     "flag_min_touches": ("व्याख्या", "channel = प्रत्येक रेषेला ≥ 2 touches"),
     "flag_slope_tol_mr": ("अंदाज", "flag slope सहनशीलता"),
@@ -168,14 +174,34 @@ def build():
     return rows, inline_literals()
 
 
+# टप्पा B मधले नवे आकडे (settings dicts बाहेरचे; I5: वर्ग + कारण). Settings मधले नवे keys वरच्या CLASS मध्ये.
+PHASE_B = ["## टप्पा B: नवे / बदललेले आकडे (G-MAP1, 2026-10-09)", "",
+           "| आकडा | मूल्य | कुठे | वर्ग | कारण |", "|---|---|---|---|---|",
+           "| `S2_DEEP` | 0.618 | simple_core/reading.py | Abhi | नकाशा P4 / S2: 61.8–80% खोल (फक्त नोंद / पुरावा, gate नाही) |",
+           "| count degree जुळवणी सहनशीलता | 30 मि (5m / 15m) · 120 मि (1h+) | simple_core/count_source.py | व्याख्या | correction origin E आणि "
+           "count pivot एकच आहे का (TF च्या 2–6 bars) |",
+           "| `commit_vs_impulse` [प्रस्ताव] स्तंभ | ≥ 1.0 | research/map_b_measure.py | प्रस्ताव, Abhi चा निर्णय बाकी | §2.1: 'impulse ची सामान्य "
+           "candle' — फक्त अहवालात, gate नाही |",
+           "| `commit_vs_impulse` median | median | simple_core/reading.py | व्याख्या | §2.1: impulse bars चा median range (व्याख्येची निवड) |",
+           "| random-entry draws | N = 20 | research/map_b_measure.py | research | §4 baseline: प्रति signal draws (fixed seed 20261011) |",
+           "| random-entry window | 09:30–15:00 | research/map_b_measure.py | व्याख्या | engine opening window वगळून, 15:15 eod recheck आधी |",
+           "| §4 नमुना seed | 20261010 | research/map_b_measure.py | research | 200 IS दिवस (वगळलेले दिवस अहवालात) |",
+           "| `gray_size` half | floor(lots / 2) | simple_core/execution.py | Abhi | G-MAP1 निर्णय 6 |",
+           "| `flag_min_bars` | 4 → 2 | simple_core/settings.py | Abhi | G8 2–6 candles |",
+           "| `accept_bars` | काढला (2) | simple_core/settings.py | — | breaks.py ची एकच व्याख्या (निर्णय 8) |", ""]
+
+
 def to_md(rows, inl):
     L = ["# नकाशा A1: Constants register (entry engine)", "",
          "फक्त अहवाल — कोणतंही मूल्य बदललं / निवडलं नाही. वर्ग: व्याख्या / Abhi / research / NIFTY / अंदाज. `used_by` रिकामा ⇒ entry मार्गात वापर "
          "नाही (shadow / context).", "",
          "**Real break ची एकच व्याख्या:** `elliott/breaks.py` — `first_real_break` (buffer + displacement / no-reclaim / failed retest) आणि "
          "`time_accepted` (`break_accept_closes` = 3, Abhi). `levels_v2.lifecycle` (`accept_closes`) आणि Simple Core engine ची area "
-         "acceptance दोन्ही `breaks.time_accepted` च वापरतात. **उरलेली दुसरी व्याख्या:** engine `accept_bars` (buffer पलीकडे सलग 2 closes) आणि "
-         "`levels_v2` चा buffer + पुढचा bar नियम — टप्पा B मध्ये breaks.py मध्ये विलीन करायचे (खाली ⚠).", ""]
+         "acceptance दोन्ही `breaks.time_accepted` च वापरतात. **टप्पा B (G-MAP1 निर्णय 8):** Simple Core engine `accept_bars` (सलग 2 closes) काढला ⇒ area चा real break = `breaks.break_from` "
+         "(= `first_real_break`: displacement ⇒ लगेच, नाहीतर no-reclaim, time acceptance). Elliott count नियम (R1–R11, invalidation) "
+         "भावावरूनच — 3-close नाही. **⚠ उघडा (Abhi):** `levels_v2` lifecycle — 3-close (time acceptance) breaks.py चाच, पण 'buffer + पुढचा "
+         "bar' नियम ठेवला: त्यात breaks.py चा displacement-मार्ग लावल्यावर 26 Aug चा 1H flip zone (24,356–24,379) FLIPPED ऐवजी DEAD ⇒ "
+         "Abhi-✔ 26 Aug G4 bear गेला. विलीन करायचं का, Abhi ठरवेल.", ""] + PHASE_B
     for cls in sorted({r["class"] for r in rows}):
         sub = [r for r in rows if r["class"] == cls]
         L += [f"## {cls} ({len(sub)})", "", "| key | मूल्य | file:line | used_by | कारण |", "|---|---|---|---|---|"]

@@ -31,7 +31,7 @@ def flag_zone(df, impulse, side, mr, s=None):
             e = s0 + (int(np.argmin(lo[s0:k])) if side < 0 else int(np.argmax(h[s0:k])))
             impulse = {**impulse, "to": float(lo[e] if side < 0 else h[e])}
     a, b = e + 1, k - 1                                                     # flag bars (commitment bar k वगळून)
-    if e >= len(df) or b - a + 1 < int(s["flag_min_bars"]):
+    if e >= len(df) or b - a + 1 < int(s["flag_min_bars"]) or b - a + 1 > int(s["g8_max_bars"]):   # G8: 2–6 candles (KB H, Abhi)
         return None
     size = abs(float(impulse["to"]) - float(impulse["from"]))
     end = float(impulse["to"])

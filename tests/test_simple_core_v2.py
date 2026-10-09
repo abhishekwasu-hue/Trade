@@ -54,8 +54,25 @@ OVERLAP_ROWS = W3 + [(1196, 1198, 1180, 1182), (1182, 1185, 1165, 1167), (1167, 
                      (1099, 1118, 1097, 1116)]
 
 
+def legacy_wave_label(sig, df, pv):
+    """टप्पा B §2.5: waves.py आता निर्णयात नाही (फक्त तुलना). waves.py च्या स्वतःच्या नियमांचे tests टिकवण्यासाठी त्याचा label / refs
+    इथे test helper मध्ये लावतो (engine हे करत नाही — engine चे labels count_source मधून, test_phase_b पाहा)."""
+    w = WV.count(df, pv or [], int(sig["side"]), len(df) - 1, SS.engine_settings())
+    sig.setdefault("setup", w["setup"])
+    sig["wave"] = {"setup": w["setup"], "gray": w["gray"], "alts": w.get("alts", {}), "story": w["story"]}
+    sig["ref_levels"].update(w["ref"])
+    sig["ref_notes"] = w["notes"]
+    if w["story"]:
+        sig["context_story"] += f" · {w['story']}"
+    return sig
+
+
 def wsig(rows, zones, pv):
-    return EN.detect(day(rows), zones, {**UP, "pivots": pv}, MR)
+    r = EN.detect(day(rows), zones, {**UP, "pivots": pv}, MR)
+    if r.get("signal"):
+        assert "waves_cmp" in r["signal"]                                            # engine: waves.py फक्त तुलना म्हणून
+        legacy_wave_label(r["signal"], day(rows), pv)
+    return r
 
 
 def test_wave2_end_gives_g1_with_projections():
@@ -279,15 +296,11 @@ def test_b2_zone_annotate_path_breaks_on_three_closes():
     assert out and out[0]["state"] in ("BROKEN", "FLIPPED") and out[0]["role"] == "RESISTANCE" and out[0].get("role_since") == 33
 
 
-def test_possible_reversal_blocks_old_trend_side_allows_new():
+def test_possible_reversal_no_longer_drives_simple_core():
+    """टप्पा B (नकाशा I8.2): POSSIBLE_REVERSAL flag गेला — त्याची जागा S3 + Gray-1 + reaction test. context_from त्याला वाचत नाही."""
     rev = {"dir": 1, "state": "active", "reason": "POSSIBLE_REVERSAL (active): counter-move 58%, impulsive 4/5"}
     ctx = EN.context_from({"trend": {"dir": -1, "state": "trend"}, "side": "unclear", "possible_reversal": rev})
-    assert ctx["side"] == 1 and ctx["reversal"] == "active"                          # नव्या दिशेने (wave (2) end) चालतं
-    r = EN.detect(day(SELL_A), [{"id": "S", "zid": "S1", "side": "sell", "role": "RESISTANCE", "tool": "c", "type": "base",
-                                 "kind": "solid", "low": 1043.0, "high": 1050.0, "state": "ACTIVE"}], ctx, MR)
-    assert not r["signal"]                                                           # जुन्या (bear) दिशेने नाही
-    gone = EN.context_from({"trend": {"dir": -1, "state": "trend"}, "side": "bear_call", "possible_reversal": {**rev, "state": "cancelled"}})
-    assert gone["side"] == -1
+    assert ctx["side"] == -1 and "reversal" not in ctx and "block" not in ctx
 
 
 RV_BASE = [(0, 1300), (600, 1200), (300, 1260), (600, 1100), (300, 1180), (150, 1060), (150, 1120), (150, 990)]

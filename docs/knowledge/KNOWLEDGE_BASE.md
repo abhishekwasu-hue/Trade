@@ -43,6 +43,7 @@
 - **भाग F:** प्रामाणिक मर्यादा: काय सिद्ध आहे, काय नाही
 - **भाग G:** विरोधाभासांचे निर्णय (एकच व्याख्या)
 - **भाग H:** Golden setups G1–G9
+- **भाग I:** बाजारातल्या परिस्थितींचा नकाशा (S1–S12, P1–P9, Gray-1 / Gray-2) — Simple Core चं reading layer
 - **स्रोत**
 
 ---
@@ -925,7 +926,7 @@
 | Correction वेळ | Neely चे तपासलेले नियम (OR-rule, t(c) ≤ t(a)+t(b)) score म्हणून. "संपूर्ण correction impulse पेक्षा जास्त वेळ" हा नियम नाही. NIFTY वर corrective legs कमी bars चे निघाले. |
 | Zigzag C, A च्या टोकापलीकडे | Strong guideline (truncated C शक्य) |
 | Ending diagonal w4–w1 overlap | Guideline ("almost always") |
-| HTF trend | Context / पुरावा (T), gate नाही (spec, `htf_gate_enabled=false`). Opportunity engine चा daily veto नवीन engine मध्ये नाही. |
+| HTF trend | **पालक दिशा trade ची दिशा ठरवते; आजोबा degree फक्त पुरावा** (Abhi, 2026-10-08; नकाशा भाग I P1). अपवाद: S4 flip retest, G7, G10 (स्वतंत्र scorecard). Opportunity engine चा daily veto नवीन engine मध्ये नाही. |
 | Pullback / wave 2 ची खोली | निश्चित आकडा नाही; valid zone 38.2–80% (Abhi), 80% पलीकडे कमकुवत, 100% पलीकडे acceptance = व्हेटो. Repo चा `r_warn` 0.75 → 0.80. |
 | Real break | **एकच: `elliott/breaks.py`** (0.25 MR buffer + displacement / acceptance / failed retest). इतर व्याख्या (level_strength, zones, structure) engine मध्ये वापरायच्या नाहीत. |
 | Displacement | **एकच:** range ≥ 1.2 MR (break साठी). Zone origin साठी `zones.py` ची (≥ 2 candles body ≥ 0.6 आणि ≥ 1.5 MR, किंवा एक ≥ 2.5 MR). दोन्ही settings मध्ये, नावं वेगळी. |
@@ -985,6 +986,537 @@
 - Vision JSON मध्ये `setup_type` (G1–G9 किंवा none).
 - Code candidates वर setup label.
 - Golden Gallery मधले Abhi ने निवडलेले खरे NIFTY charts या प्रत्येकाची उदाहरणं.
+
+---
+
+# भाग I: बाजारातल्या परिस्थितींचा नकाशा (Market Situation Map)
+
+> **स्थिती:** मंजूर (Abhi, G-MAP1 2026-10-09) — मसुदा 4 + G-MAP1 चे निर्णय (P1, P4, S3, S9, I9). KB चा भाग I (हाच मजकूर; वेगळी file नाही).
+> **कोणत्या engine साठी:** Simple Core (trend → area → pause → commitment). हा नकाशा Simple Core ला सांगतो की **आपण कोणत्या परिस्थितीत आहोत, trend दिशा कोणती, आणि area कुठे शोधायचा.** नवीन gates चा ढीग नाही.
+> **लेबलं:**
+> - [नियम] Elliott चा पक्का नियम;
+> - [स्रोत: नाव] practitioner किंवा प्रकाशित research;
+> - [research-अनुमान] research notes मधला संशोधकाचा तर्क (स्रोताचं थेट विधान नाही);
+> - [NIFTY] आपल्या data वर मोजलेलं;
+> - [Abhi] Abhi चा निर्णय;
+> - [अनुमान] या नकाशातला तर्क, तपासायचा;
+> - **[प्रस्ताव]** KB भाग A3 / G मध्ये बदल, Abhi च्या मंजुरीशिवाय लागू नाही.
+
+---
+
+## I0. हा भाग का लिहिला
+
+आतापर्यंत उदाहरणागणिक नियम बदलत गेले:
+- 7 Oct वरून "protected level तुटेपर्यंत correction";
+- 14 Aug वरून माझा "> 80% आणि impulsive ⇒ POSSIBLE_REVERSAL";
+- मग Abhi ने सांगितलं की 58% सुद्धा नवी impulse असू शकते [Abhi], आणि तो नियम पुन्हा बदलावा लागला.
+
+शेवटी 16 Feb 2018 चा 09:30 चा signal (target गाठलेला; Abhi चा निर्णय बाकी) अडला. 144% चाल (impulse origin पार केलेली) "counter-move" म्हणून मोजली गेली, आणि flag कधीच संपला नाही.
+
+**मूळ कारण: research न वापरणं.**
+- **NIFTY 15M वरचे आकडे (KB K2) [NIFTY]:** 57% pullbacks impulse इतके किंवा जास्त वेगवान, 62% मध्ये displacement, आणि 31% pullbacks 0.75 पेक्षा खोल. म्हणून "वेगवान / displacement असलेली counter-move ⇒ reversal" हा नियम अनेक सामान्य pullbacks अडवणार होता.
+- **Research मधल्या तीन मुख्य गोष्टी prompts मध्ये नव्हत्या:**
+  1. नेहमी primary आणि alternate count, आणि प्रत्येकाचा invalidation [स्रोत: EWI, CWCOUNT];
+  2. Trade degree आणि त्याच्या वरची degree [स्रोत: Kennedy, MTPredictor];
+  3. चालीचा अर्थ अनेकदा तिच्या नंतरच्या चालीवरून कळतो [स्रोत: EWP outline (elliottwaveplus, secondary): "trend change ची पुष्टी एका लहान degree च्या उलट 5-wave चालीने"; NEoWave: pattern ची पुष्टी "shortly after the fact"].
+
+हा भाग नियमांची यादी नाही. Pullback trader समोर येणाऱ्या प्रत्येक परिस्थितीसाठी तो सांगतो:
+- ती कशी दिसते;
+- तिच्यासारखी दिसणारी दुसरी कोणती;
+- फरक कसा ओळखायचा, आणि **कोणत्या bar ला तो सर्वात लवकर कळतो** (no lookahead);
+- ओळखता येत नसेल तेव्हा काय करायचं.
+
+---
+
+## I1. नऊ मूलतत्त्वं
+
+### P1. आधी degree, मग setup
+- **Degree म्हणजे count मधली जागा**, वेळ किंवा आकार नाही [स्रोत: EWP].
+  - सोयीसाठी default: trade degree = 15M वरचा correction, पालक = 1H swing, आजोबा = Daily / Weekly. पण degree count वरून ठरते, TF वरून नाही (खाली पालकाची व्याख्या).
+- **पालकाची दिशा:** आपण ज्या correction च्या शेवटी trade घेतो, तो correction ज्या motive sequence मध्ये बसतो, तिची दिशा (primary count नुसार).
+  - **Code मध्ये [Abhi, 2026-10-09]:** preferred count ची चालू sequence दिशा. "पुढची motive wave" चा vote नाही; correction च्या मध्यात तो शून्य येतो (A4b: 63–91% gray).
+  - **Abhi ची पालक-दिशा दुरुस्ती** (review loop): त्या session साठी `parent_source_effective = abhi_review`. ती त्याच्या count च्या invalidation शी बांधलेली; तो तुटला ⇒ खालच्या setting वर परत.
+  - Setting `parent_source` = `market_state` (सध्या) / `preferred_count`. आधी दोन्हींची तुलना आणि conflict चं प्रमाण; मग Abhi बदल करेल. `PARENT_CONFLICT` अजून gate नाही. `preferred_count` mode मध्ये count / sequence नसेल ⇒ `PARENT_UNKNOWN` ⇒ trade नाही. हा Gray-1 नाही (रचनेची घटना नाही), म्हणून gray `reduce` ने सुद्धा trade होत नाही.
+  - उदा. 22 Sep: wave (4) हा (1)–(5) खालच्या sequence मध्ये ⇒ पालक दिशा खाली.
+  - 26 Aug: P3 ने ठरल्यावर wave (2) हा नव्या (1)–(5) खालच्या sequence मध्ये ⇒ खाली.
+  - त्या sequence च्या वरची degree (उदा. Daily) ही आजोबा. ती अजून विरुद्ध दिशेला असू शकते. तसं असेल तर तो फक्त नकारात्मक पुरावा (कमी विश्वास), बंदी नाही.
+- Counts ची क्रमवारी फक्त Elliott नियम, guidelines आणि रचनेच्या घटनांवरून (P2, P3). त्यामुळे P1 आणि P2 एकमेकांवर अवलंबून नाहीत.
+- **Trade पालक degree च्या दिशेने** [स्रोत: Kennedy: "Waves 3, 5, A, and C are the most advantageous to trade, because they are oriented in the direction of the one larger trend"; MTPredictor: "Trade in direction of larger-degree trend"].
+  - Simple Core trend दिशा HTF market state (protected level सह) वरून घेतो [अनुमान: Trade session च्या Simple Core अहवालानुसार; code मध्ये पडताळायचं].
+  - **[Abhi, 2026-10-08 मंजूर]** KB भाग G ची ओळ "HTF trend = Context / पुरावा, gate नाही (spec, `htf_gate_enabled=false`)" बदलून: **"पालक दिशा trade ची दिशा ठरवते; आजोबा degree फक्त पुरावा."**
+- **स्पष्ट अपवाद** (स्वतंत्र scorecard सह):
+  - S4 मध्ये flip retest, break दिशेने [Abhi, K-10];
+  - G7 exhaustion gap reversal (PAPER मध्ये ON) [Abhi, KB H];
+  - G10 range / sideways कड: पालक trend नसताना, दिशा कडेवरून (S9) [Abhi];
+  - K13 setup A: trend विरुद्ध gap अपयशी ⇒ trend दिशेने (हा अपवाद नाही, पालकाच्याच दिशेने आहे).
+- **B-end → C trade, जेव्हा तो संपूर्ण ABC ज्या trend ला correct करतो त्याच्या विरुद्ध असतो:** default OFF [Abhi]. (ABC च्या आत C ची दिशाच "पालक" वाटेल, म्हणून इथे पालक = ABC ज्या trend ला correct करतो तो trend.)
+- **आजोबा degree वर** wave 5 / ending diagonal / मोठ्या correction चा शेवट जवळ ⇒ फक्त नोंद / पुरावा, बंदी नाही [research-अनुमान]. Size वर परिणाम P9 च्या मोजमापानंतरच.
+
+### P2. दोन counts: primary आणि alternate
+- "At any time, two or more valid wave interpretations usually exist." Preferred = सगळ्यात जास्त guidelines पाळणारा, alternate = त्यानंतरचा [स्रोत: EWI].
+  - Backtest (2015–2021) मध्ये vision / Evening Plan नसतो, त्यामुळे क्रमवारी फक्त code च्या नियम + guidelines वरून.
+  - Live मध्ये vision आणि Abhi चं मत (Evening Plan ✔) जोडलं जातं.
+- **प्रत्येक count सोबत:**
+  - invalidation: इथे गेला तर count मेला;
+  - confirmation: इथे गेला तर count बळकट [स्रोत: CWCOUNT; research-अनुमान].
+- **तपासण्याचा क्रम (प्रत्येक बंद bar वर):**
+  1. **Gray-1: पालकाची दिशा रचनेने ठरलेली आहे का?** खालीलपैकी काहीही चालू असेल तर ⇒ gray ⇒ trade नाही:
+     - S3 चा reaction अजून उघडा (P3 चा निकाल नाही; 12 Aug, 25 Aug 10:45);
+     - S4 चं testing अजून न सुटलेलं (अपवाद: S4 चा flip retest);
+     - (Range च्या **मध्यात** असणं हा gray नाही. तिथे area नाही, म्हणजे व्याख्येनेच setup नाही, कोणत्याही gray धोरणात. कडा G10 नियमाने tradable; S9 पाहा.)
+
+     Gray-1 फक्त या **रचनेच्या घटनांवरून** ठरतो. Counts च्या "गुणांच्या फरकावरून" नाही, म्हणजे लपलेला आकडा नाही.
+  2. **Gray-2: trade degree वर correction संपल्याचं commitment bar ला ठरवता येतं का?** ठरवता येतं म्हणजे:
+     - **zigzag / flat:** A, B, C तिन्ही legs दिसतात, आणि C, A च्या टोकापर्यंत किंवा पलीकडे गेला. C, A च्या टोकापर्यंत पोहोचला नाही (truncated) ⇒ Gray-2. अपवाद: S5 चे निकष (with-trend legs लहान होत नाहीत, divergence नाही) पूर्ण असतील तेव्हाच, आणि तो कमी पुरावा.
+     - **triangle:** पाच legs.
+     - **flag (S5):** G8 ची रचना.
+     - आणि commitment candle बंद.
+     - **G10 (range कड):** ABC नसतो ⇒ Gray-2 म्हणजे फक्त "commitment candle बंद झाली का". Grade वाढ लागू नाही.
+
+     Counter-move स्वतः 5 waves (म्हणजे A) असेल, किंवा legs पुरेसे दिसत नसतील ⇒ gray [नियम R4; KB A-end ban; KB E3].
+  3. **Trade:** पालक दिशेने, त्या परिस्थितीच्या area वर (I3), Simple Core ची commitment.
+  4. **Grade वाढ (बंधन नाही):** alternate count नुसार सुद्धा entry पासून target पर्यंतचा मार्ग trade invalidation आधी पूर्ण होतो (R:R ≥ 3 सह) ⇒ "उत्तम संधी" [स्रोत: ELWAVE: "If you find several alternative counts pointing in the same direction, you have found an excellent trading opportunity"]. Target दोघांपैकी जवळचा.
+- **Alternate असणं म्हणजे gray नाही; alternate नेहमीच असतो.** Gray म्हणजे रचनेने अजून न सुटलेला प्रश्न: "काय चाललंय ते माहीत नाही" [स्रोत: Kennedy: "You never trade gray. You have to know what is going on"].
+- **Gray चं धोरण: Abhi दर दिवशी ठरवतो [Abhi, 2026-10-08].** Code मध्ये पक्का नियम नाही.
+  - **Evening Plan:** उद्याच्या plan मध्ये gray ची स्थिती दाखवायची (कोणता gray, का, कोणते दोन counts). Abhi च्या reply मध्ये त्या दिवसाचं धोरण:
+    - `gray = block` ⇒ gray मध्ये trade नाही;
+    - `gray = reduce` ⇒ trade चालेल, पण grade कमी आणि size dashboard च्या `gray_size` setting प्रमाणे (Abhi, 2026-10-09: अर्धे lots; अर्धे 1 lot पेक्षा कमी ⇒ trade नाही).
+    - **Gray-1 मध्ये पालक दिशाच ठरलेली नसते.** म्हणून `reduce` फक्त तेव्हाच, जेव्हा Abhi reply मध्ये दिशा सुद्धा सांगतो (उदा. "gray reduce bear"). दिशा नसेल ⇒ Gray-1 साठी `block`. Gray-2 मध्ये दिशा पालकाची.
+  - **Abhi ने धोरण सांगितलं नाही** ⇒ `block`.
+  - **Plan ला ✔ नसेल तर (Abhi, 2026-10-09):** entries चालू, पण signal संदेशात "⚠ plan Abhi ने तपासलेला नाही". Gray धोरण नसल्यास gray `block` कायम. स्पष्ट plan ✘ ⇒ त्या दिवशी trade नाही.
+  - **दिवसा नव्याने gray आला** (उदा. S3 reaction सुरू झाला): त्या दिवसाचं धोरण लागू. `reduce` असेल तर signal Telegram वर "GRAY" खुणेसह, Approve बटणासह (सध्याची व्यवस्था).
+  - **नोंद:** प्रत्येक दिवसाचं धोरण आणि gray signals चा निकाल scorecard मध्ये वेगळा. कालांतराने कोणतं धोरण चांगलं ते data दाखवेल.
+- **स्थिरता:** count दर bar ला नव्याने मोजायचा नाही; पुढे वाढवायचा. वरच्या degree चा invalidation तुटला तरच नवी मोजणी [स्रोत: WaveBasis]. अपवाद: Abhi ने मागितलेला "पुन्हा count" (त्याच्या मान्य दुरुस्त्या anchors म्हणून), नोंदवून. Primary बदलताना hysteresis [research-अनुमान].
+
+### P3. चालीचा अर्थ तिच्या नंतरच्या चालीवरून (reaction test)
+- जोरदार counter-move दिसल्या क्षणी "pullback की reversal" ठरवणं बहुतेक वेळा शक्य नसतं. दोन valid counts असतात [स्रोत: EWI], आणि pattern संपल्याची खात्री थोड्या उशिरा मिळते [स्रोत: NEoWave].
+- **Reaction corrective असेल** (3 waves, overlap), counter-move ने तोडलेला area / flip ओलांडला नाही, आणि मग counter-move दिशेने commitment आली ⇒ counter-move = नवी impulse.
+  - Reaction चा शेवट = नव्या trend चा पहिला correction [स्रोत: MTPredictor W3: "Best place to buy is on the initial correction after the start of the new trend" (Gann)].
+- **Reaction impulsive असेल**, आणि counter-move ची सुरुवात real break ने (breaks.py) परत घेतली ⇒ counter-move हाच pullback होता ⇒ जुना trend.
+- **Reaction चालू असताना** ⇒ Gray-1.
+- **सगळ्यात लवकर कधी कळतं:** reaction च्या शेवटच्या commitment candle च्या close वर, किंवा real break च्या confirm bar वर. त्याआधी नाही.
+
+### P4. मोजमाप सापेक्ष; आकडे फक्त व्याख्येचे
+- **प्रत्येक चाल दोन गोष्टींशी तुलना करून मोजायची:**
+  1. ती ज्या impulse ला correct करते तिच्याशी;
+  2. बाजाराच्या अलीकडच्या, त्याच degree च्या चालींशी (किती मागे पाहायचं ते setting) [अनुमान].
+- **व्याख्येच्या रेषा:**
+  - **Impulse origin:** त्याचा real break (breaks.py, KB भाग G ची एकच व्याख्या) ⇒ pullback नाही (A3 व्हेटो). Wick पलीकडे जाऊन परत आत ⇒ sweep (S7; KB D मध्ये −15 पुरावा).
+  - Elliott नियम R1–R11 [नियम].
+  - बंद candle.
+- **कोणते पुरावे भेद करतात:**
+  - **NIFTY वर मोजलेलं:** वेग आणि displacement सामान्य pullbacks मध्ये सुद्धा भरपूर ⇒ एकटे reversal चा पुरावा नाहीत [NIFTY, KB K2].
+  - **IS वर मोजलेलं (G-MAP1, A2) [NIFTY]:** "trend चालू" वि. "reversal" यांत फरक दिसला तो फक्त **खोलीत** (AUC 0.71) आणि **displacement** मध्ये (0.59, कमकुवत). Overlap आणि legs (3 वि. 5) यांनी फरक केला नाही. खोलीचा AUC काहीसा फुगलेला आहे, कारण खोल चाल origin जवळ असते, आणि ती तुटण्याची शक्यता आपोआप जास्त.
+  - **गोठवलेली यादी [Abhi, 2026-10-09]:**
+    - खोली = पुरावा;
+    - displacement = कमकुवत पुरावा;
+    - overlap / legs = फक्त नोंदीसाठी.
+  - **निष्कर्ष:** counter-move स्वतःकडे पाहून pullback की reversal हे त्या क्षणी ठरत नाही. म्हणूनच P3 (reaction test) हाच मुख्य मार्ग.
+- **खोली (पुरावा, gate नाही):**
+  - < 38.2%: फक्त मजबूत trend मध्ये (S5, G8: 23.6–38.2% [KB H, Abhi]);
+  - 38.2–80%: valid [Abhi];
+  - 80–100%: कमकुवत; area + sweep हवा [KB D];
+  - origin चा real break ⇒ pullback नाही.
+
+### P5. Area प्रत्येक परिस्थितीत वेगळ्या साधनाने
+- प्रत्येक परिस्थितीचा area वेगळा (I3). उदा. मजबूत trend मधल्या flag साठी flag ची स्वतःची कड आणि तुटलेला लहान swing हेच areas. जुना horizontal zone असेलच असं नाही [अनुमान; structure notes: "Enter on the reversal candle at the flag's lower boundary"].
+- **Area निर्णयाच्या क्षणी अस्तित्वात असला पाहिजे** (no lookahead):
+  - zone displacement + BOS confirm झाल्यावरच [स्रोत: areas notes];
+  - pivot त्याच्या confirm bar नंतरच [स्रोत: algo biases notes].
+
+### P6. पुष्टी: बाजाराला आधी commit करू द्या
+- "Let the market commit to you before you commit to the market" [स्रोत: Kennedy].
+- Commitment candle बंद झाल्यावर entry (Simple Core).
+- Candle एकटी कमकुवत पुरावा [स्रोत: Marshall, Young & Rose 2006; Tharavanij 2017] ⇒ ती फक्त योग्य परिस्थिती + area मध्ये अर्थपूर्ण.
+
+### P7. "नाही" ची नोंद
+- प्रत्येक "नाही" सोबत: परिस्थिती (S#), दोन counts, पालक दिशा, gray प्रकार.
+- Scorecard मध्ये gray मुळे सोडलेल्या संधी वेगळ्या (I4.5) ⇒ gray फार कडक आहे का ते कळेल.
+
+### P8. आकडा फक्त कारणासह
+- **Code मधल्या प्रत्येक आकड्याचा स्रोत यापैकी एक:** व्याख्या / Abhi / research / NIFTY वर मोजलेला.
+- **अंदाजाने ठेवलेला आकडा** = setting + sensitivity (I5).
+- या नकाशातले आकडे (उदा. Brooks चे "1–3 bars", K11 चे "4–20 bars") स्रोताचे आहेत, आपले नियम नाहीत.
+
+### P9. बाजार खरा पैसा आणि sentiment ने हलतो [Abhi, 2026-10-09]
+- Elliott, patterns, channels आणि S/R फक्त **कुठे** वळू शकतो ते सांगतात. बाजार **खरंच** वळेल की नाही हे पैसा ठरवतो: FII / DII flows, जागतिक परिस्थिती (US बाजार, bond yields, dollar index, crude), भारतीय valuation आणि VIX.
+- **Weekly वरून बाजाराची एकूण स्थिती** ठरते [Abhi].
+- म्हणून Evening Plan मध्ये रोज **"Macro आणि sentiment"** हा भाग, VIX च्या chart सह. हे **पुरावा आणि संदर्भ** आहे, ठरीव नियम नाही.
+- कोणत्या macro परिस्थितीत कोणते trades चालतात, हे **IS data वर मोजून** ठरवायचं. गृहीत धरायचं नाही.
+- उदा. "wave 5 मध्ये trades कमी फायदेशीर" (S8) हे **गृहीतक** आहे, मोजलेलं नाही. ते macro / sentiment सोबत तपासायचं.
+
+---
+
+## I2. परिस्थितींचा तक्ता
+
+| # | परिस्थिती | ओळख (real time) | सारखी दिसणारी | Setup | काय |
+|---|---|---|---|---|---|
+| **S1** | सामान्य pullback | पालक दिशा स्पष्ट; 3-wave, overlapping; origin अबाधित | S3; W-X-Y combination | G1, G6, G5 | C-end वर area + commitment |
+| **S2** | खोल pullback | 61.8–80% (valid) किंवा 80–100% (कमकुवत); रचना corrective | S3, S4 | G1, G2 | Area + sweep / spring |
+| **S3** | जोरदार counter-move | Impulse चा शेवटचा confirmed 1H HL / LH breaks.py real break ने तुटला; origin real-broken नाही | S2 | नव्या trend चा पहिला correction | Gray-1; reaction ची वाट |
+| **S4** | Testing | Correct होणाऱ्या impulse च्या origin चा **real break** (breaks.py). हा origin बहुधा पालकाचा protected level असतो. | S7 | G4 | Flip retest, break दिशेने [Abhi] |
+| **S5** | मजबूत trend मधला उथळ flag | Trade degree वर wave 3 / C; उथळ, अरुंद; G8 ची रचना (2–6 candles, flag / छोटा ABC) | S8 | G8 | Flag कड / तुटलेला swing |
+| **S6** | बाजूचा correction | स्पष्ट impulse नंतर, वेळखाऊ, overlapping | S9 | G3, G9 | E-end / C-end फक्त |
+| **S7** | Expanded flat / spring | B नवा extreme; C, A चं टोक sweep करून परत | S4 | G2 | Sweep + reclaim नंतर |
+| **S8** | Trend थकतोय | Trade degree वर with-trend legs लहान, pullbacks मोठे, divergence | S5 | G9 (सावध) | कमी विश्वास; fade नाही |
+| **S9** | Range / sideways | market_state RANGE; overlap, दोन्ही कडांवर sweeps, मध्ये MAGNET | S6; range ची खरी break | G10 | कडेवर commitment ⇒ कडेच्या दिशेने (खाली ⇒ bull put, वर ⇒ bear call); मध्यात नाही [Abhi] |
+| **S10** | Gap दिवस | Open आदल्या range बाहेर | — | K13 A / B, G7 | Gap स्वीकारला की नाकारला |
+| **S11** | B wave सापळा | पालक degree वर correction मध्यात (A झाला, C बाकी) | S1 चा impulse | — | B च्या आत नाही |
+| **S12** | विशेष वेळा | पहिली 30 मिनिटं, event, expiry, VIX उडी, "आजपर्यंत pullback नाही", 15:15 चा signal | — | — | पुरावा / execution नियम |
+
+**दोन परिस्थिती एकत्र लागू झाल्या तर:**
+
+| जोडी | कोणती जिंकते |
+|---|---|
+| S3 + S11 (26 Aug सारखं) | S3 चे नियम (reaction test). S11 फक्त सांगतो की reaction च्या आत trade नाही. |
+| S5 + मोठ्या degree चा wave 5 (P1 आजोबा) | Entry साठी S5 (trade degree). मोठ्या degree चा wave 5 फक्त नोंद / पुरावा (size वर परिणाम P9 च्या मोजमापानंतरच). |
+| S5 + S8 (दोन्ही trade degree वर) | S8. With-trend legs लहान होत असतील तर तो मजबूत trend नाही. |
+| S6 + S9 | Range हा मोठ्या trend मधला correction असेल तर फक्त trend दिशेची कड. पालक degree वर trend नसेल तर दोन्ही कडा (S9 पाहा) [प्रस्ताव, default]. |
+| S2 + S3 | Counter-move corrective (3 waves, overlap) ⇒ S2. नाहीतर S3 (gray). |
+| S4 + S10 / S12 | S4 चे नियम; S10 / S12 वेळ आणि पुराव्यासाठी. |
+| इतर कुठलीही | जास्त कडक परिस्थिती लागू. |
+
+---
+
+## I3. प्रत्येक परिस्थिती तपशीलवार
+
+> **साचा:** गोष्ट · सारखी दिसणारी · फरक · सगळ्यात लवकर कधी कळतं · area · invalidation · स्रोत.
+
+### S1. सामान्य pullback
+- **गोष्ट:** Impulse नंतर trend दिशेचे traders नफा घेतात, आणि उशिरा आलेले counter-traders धाडस करतात. Trend दिशेच्या resting orders मुळे चाल तुटक आणि overlapping होते [स्रोत: KB K2; Wyckoff: reactions "show smaller spreads and diminished volume"].
+- **सारखी दिसणारी:**
+  - S3 (नव्या trend ची पहिली चाल);
+  - W-X-Y combination: पहिला ABC संपला वाटतो, पण X नंतर आणखी एक correction येतो [KB E16].
+- **फरक:**
+  - 3 waves, overlap;
+  - origin अबाधित;
+  - candles impulse पेक्षा अरुंद;
+  - futures volume कमी [Abhi; KB K10.3].
+  - Combination चा धोका: correction impulse पेक्षा खूप जास्त वेळ बाजूला गेला, किंवा पहिला "C" लहान / truncated दिसला ⇒ alternate "हा W आहे" बळकट [अनुमान].
+- **C चे प्रकार:**
+  - C कधी ending diagonal च्या रूपात येतो (7 Oct) ⇒ S1 च (G5).
+  - C कधी A च्या टोकापर्यंत पोहोचत नाही (truncated C, running flat) ⇒ मजबूत trend चं लक्षण [KB K3].
+- **सगळ्यात लवकर:** commitment candle च्या close वर.
+- **Area:** impulse चा origin base / demand, flip, trendline, liquidity (KB टप्पा 3 ची पूर्ण यादी).
+- **Invalidation:**
+  - trade: C चं टोक;
+  - count: wave 2 entry ⇒ wave 1 ची सुरुवात; wave 4 entry ⇒ wave 1 चं टोक [स्रोत: Kennedy].
+- **Counter-move स्वतः 5 waves असेल** ⇒ ते A आहे, C नाही ⇒ entry नाही [नियम R4; KB A-end ban] ⇒ बहुधा S3.
+
+### S2. खोल pullback
+- **गोष्ट:** "Second waves often retrace so much of wave one that most of the profits gained up to that time are erased" [स्रोत: EWP wave personality]. गर्दीला वाटतं trend संपला. Invalidation (origin) जवळ असल्याने R:R चांगला मिळू शकतो.
+- **सारखी दिसणारी:** S3, S4.
+- **फरक:** रचना S1 सारखीच; शेवटी sweep / spring किंवा spreads आकुंचन [स्रोत: Wyckoff test; areas notes].
+- **खोली:** 61.8–80% valid [Abhi]; 80–100% कमकुवत ⇒ area + sweep आवश्यक [KB D].
+  - Wave 2 च्या सामान्य खोलीबाबत स्रोतांत मतभेद: Kennedy ".618"; Swannell (शेअर) "38.2% दुप्पट वेळा".
+- **Area:** origin जवळचा demand / flip / liquidity. Fibonacci फक्त सोबत [Abhi, KB K7].
+- **Invalidation:** C चं टोक (trade); origin (count).
+
+### S3. जोरदार counter-move: नवी impulse असू शकते (11–12 Aug)
+- **गोष्ट:** Trend विरुद्ध एक बाजू अचानक घाईत येते, आणि जी impulse ती correct करते तिची अंतर्गत रचना (शेवटचा confirmed 1H HL / LH) real break ने तुटते. Impulse origin चा real break नाही (झाला तर S4). चाल अनेकदा 5-wave सारखी, कमी overlap अशी दिसते, पण हे फक्त वर्णन आहे, ओळखीची अट नाही (P4).
+  - ही नव्या trend ची wave 1 / A असू शकते, किंवा जुन्या trend चा खोल, वेगवान pullback (NIFTY वर वेगवान pullbacks सामान्य [NIFTY, KB K2]).
+  - KB K1 नुसार इथे झालेला CHoCH हा **इशारा** आहे, reversal नाही.
+- **सारखी दिसणारी:** S2.
+- **फरक त्या क्षणी करता येत नाही; तो reaction मधून कळतो (P3):**
+
+  | Reaction | अर्थ | Trade |
+  |---|---|---|
+  | Corrective; तोडलेला area / flip ओलांडला नाही; मग counter-move दिशेने commitment | नवी impulse; reaction = wave 2 (किंवा मोठ्या correction चा B) | Reaction च्या शेवटी counter-move दिशेने (26 Aug) |
+  | Impulsive; counter-move ची सुरुवात real break ने परत घेतली | Counter-move = pullback | जुन्या trend दिशेने, पुढच्या pullback वर |
+  | अजून ठरलेलं नाही | पालक दिशा अस्पष्ट | Gray-1, trade नाही (12 Aug; 25 Aug 10:45) |
+
+- **पहिल्या ओळीत trade का चालतो:**
+  - Primary count ("wave 2 संपला") नुसार पालक दिशा आता बदलली आहे ⇒ P1 प्रमाणे trade.
+  - Alternate ("मोठ्या correction चा B संपला") नुसार सुद्धा पुढची चाल (C) त्याच दिशेला ⇒ P2 ची grade वाढ.
+  - Alternate खरा असेल तर C ची चाल मर्यादित (C ≈ A [स्रोत: EWP guideline]) ⇒ target दोघांपैकी जवळचा.
+- **Gray-1 कधी संपतो:** फक्त रचनेने (वरच्या दोन ओळी), किंवा counter-move च्या सुरुवातीच्या real break ने.
+  - ठरीव % वरून नाही, कारण wave 2 ची सामान्य खोली स्वतःच 0.618 सांगितली आहे [स्रोत: Kennedy].
+  - वेळ-मर्यादा हवी असेल तर ती setting, आणि Abhi चा निर्णय (I9).
+- **S3 ची ओळख [Abhi, 2026-10-09, A2 नंतर]:** एका **रचनेच्या घटनेवरून**: counter-move ने correct होणाऱ्या impulse ची 1H अंतर्गत रचना (शेवटचा confirmed 1H HL / LH) breaks.py च्या real break ने तोडली, आणि origin real-broken नाही. Impulse मध्ये confirmed 1H pivot नसेल ⇒ S3 नाही (`S3_NO_1H_PIVOT`; पुढचा निर्णय Abhi चा).
+  - "5-wave / impulsive" ही अट नाही. ते NIFTY वर भेद करत नाहीत (P4), आणि आपोआप ओळखणं कठीण [स्रोत: neowave / automation notes].
+  - निर्णय reaction ने (P3).
+  - Live मध्ये vision + Evening Plan (Abhi ✔) ची भर; backtest मध्ये फक्त code.
+- **सगळ्यात लवकर:**
+  - S3 = त्या 1H HL / LH च्या real break चं confirm bar (breaks.py);
+  - reaction चा निकाल = P3.
+- **Invalidation (पहिल्या ओळीचा trade):**
+  - trade: reaction चं टोक;
+  - count: counter-move ची सुरुवात [स्रोत: Kennedy stop rule].
+- **स्रोत:**
+  - EWP outline: "Confirmation that trend change of certain degree comes with 5-wave move of one lesser degree in opposite direction";
+  - MTPredictor W3;
+  - research-अनुमान (Brooks तर्क): "strong counter spike → at least a second leg".
+
+### S4. Testing: impulse origin चा real break (15 Nov 2021, 16 Feb 2018)
+- **गोष्ट:** Correct होणाऱ्या impulse चा origin real-broken (breaks.py). हा origin बहुधा पालकाचा protected level असतो. Origin च्या आतली कोणतीही break S3 आहे, S4 नाही. जुन्या trend चे लोक अडकले; नवी दिशा अजून सिद्ध नाही. पहिला break = इशारा [KB K1; research-अनुमान: Dow / Rhea "failed retest"].
+- **सारखी दिसणारी:** S7 (sweep, म्हणजे परत आत).
+- **फरक:** breaks.py ची real break (buffer + displacement / acceptance / failed retest) वि. reclaim. एकच व्याख्या [KB भाग G].
+- **Trade:**
+  - फक्त break दिशेने, तुटलेल्या level च्या flip retest वर: retest corrective, आणि rejection (G4) [Abhi].
+  - Retest ची वारंवारता: Bulkowski च्या daily chart patterns मध्ये ~2/3 [स्रोत: Bulkowski; NIFTY intraday वर तपासलेलं नाही].
+- **MAGNET:** तुटलेल्या level भोवती closes वर-खाली (16 Feb 13:30) ⇒ बाजार अनिर्णित ⇒ setup नाही.
+- **S4 कसा संपतो:**
+  - **नवा trend confirm:** break नंतर LH (किंवा HL) तयार होतो, आणि मग break बाजूचं नवं टोक तुटतं [KB K1 "Reversal confirmed"] ⇒ नव्या दिशेने S1 / S5.
+  - **Break अपयशी:** जुनं टोक पुन्हा घेतलं, किंवा reclaim + परत real break उलट दिशेने ⇒ जुना trend ⇒ S1.
+  - तोपर्यंत जुन्या trend दिशेने trade नाही.
+- **सगळ्यात लवकर:** real break चं confirm bar (breaks.py जे सांगते ते).
+
+### S5. मजबूत trend मधला उथळ flag (28 Sep)
+- **गोष्ट:** Trade degree वर wave 3 / C चालू; एक बाजू पूर्ण नियंत्रणात; counter-traders ला वेळ मिळत नाही.
+  - Brooks: tight channel मध्ये pullbacks "last for only one to three bars";
+  - micro channel जितका मजबूत, "the more likely that the first pullback will fail to reverse the trend".
+- **सारखी दिसणारी:** S8: तिथे with-trend legs लहान होत जातात आणि pullbacks मोठे [स्रोत: structure notes].
+- **फरक:**
+  - flag मधल्या candles impulse पेक्षा अरुंद, futures volume कमी;
+  - आधीचे with-trend legs लहान होत नाहीत;
+  - divergence नाही.
+- **फक्त दिसणारी flag रचना चालते:**
+  - रचना Abhi ने मंजूर केलेल्या G8 प्रमाणे: "जलद (2–6 candles, flag / छोटा ABC)" [KB H, Abhi].
+  - त्यापेक्षा लहान pause (1 candle) म्हणजे setup नाही (S12 "आजपर्यंत pullback नाही").
+  - Structure notes चा "4–20 bars" हा संशोधकाचा code-साठीचा प्रस्ताव आहे [research-अनुमान]. तो G8 शी जुळत नाही, म्हणून वापरायचा नाही.
+- **Area:**
+  - flag च्या आत / लगेच आधीचा तुटलेला swing (polarity);
+  - शेवटच्या displacement चा base;
+  - flag ची कड, **फक्त** flag पुरेसा लांब असेल तर (त्याचे pivots decision bar आधी confirm झालेले असावेत). ही K6 ची long trendline नाही; वेगळं साधन. 2–3 candles च्या flag मध्ये confirmed pivots नसतात ⇒ फक्त पहिले दोन.
+
+  जुना मोठा zone असेलच असं नाही. 28 Sep ला code फक्त zones पाहत होता [अनुमान; KB E1 ची चूक].
+- **खोली:** < 38.2% इथेच valid (G8: 23.6–38.2% [KB H, Abhi]).
+- **Trade:** flag च्या शेवटी trend दिशेने commitment (G8). Flag breakout वर नाही [Abhi].
+- **Invalidation:**
+  - trade: flag चं टोक;
+  - count: (ii) ⇒ (i) ची सुरुवात; (iv) ⇒ (i) चं टोक [नियम R1, R3].
+- **सावधानता:** pennant नंतरची चाल आधीच्या चालीइतकी फक्त ~30% वेळा जाते [स्रोत: Bulkowski] ⇒ target dashboard वर.
+
+### S6. बाजूचा correction (triangle / flat; wave 4 / B)
+- **गोष्ट:** दोन्ही बाजू थकलेल्या; वेळ जातो, range आकुंचन पावते. "Triangles take time and go sideways" [स्रोत: EWI].
+- **सारखी दिसणारी:** S9.
+- **S6 वि. S9 (real time):** फक्त "आधी स्पष्ट impulse आला होता का" [अनुमान].
+- **Correction संपला का (Gray-2):** commitment bar ला legs ची संख्या पूर्ण असेल तर ठरवता येतो (flat: A-B-C; triangle: पाच legs). पण combination (W-X-Y) चा alternate राहतोच ⇒ trade invalidation (C / E चं टोक) हेच संरक्षण.
+- **Trade:** E-end / C-end (G3, G9). आत (B, D, X) नाही [KB K3 बंदी].
+- **धोके:**
+  - triangle लवकर "पूर्ण" म्हणणं: "Many analysts are fooled into labeling a completed triangle way too early" [स्रोत: EWI].
+  - Expanding triangle / diametric मध्ये Type-2 confirmation "can provide false signals" [स्रोत: NEoWave QOW 1109] ⇒ **पुरावा (−)**; बंदी हवी का हा Abhi चा निर्णय [अनुमान].
+- **Invalidation:** C चं टोक; wave 4 असेल तर wave 1 चं टोक (R3).
+
+### S7. Expanded flat / spring
+- **गोष्ट:** B नवा extreme करतो ⇒ breakout traders आत येतात ⇒ C त्यांचे stops घेत A च्या टोकापलीकडे जातो ⇒ परत आत [स्रोत: KB K3; Wyckoff spring; Osler stop clusters].
+- **सारखी दिसणारी:** S4.
+- **फरक:** reclaim वि. real break (breaks.py).
+- **Trade:** sweep + reclaim नंतरची commitment (G2).
+- **Invalidation:** C चं टोक.
+- **सगळ्यात लवकर:** reclaim close वर. Sweep bar वर नाही [स्रोत: areas notes].
+
+### S8. Trend थकतोय (trade degree वर)
+- **गोष्ट:** Trend दिशेचे शेवटचे लोक येतात: with-trend legs लहान, pullbacks मोठे, overlap वाढतो, divergence [स्रोत: EWP: fifth waves "less dynamic than third waves"; structure notes; Bulkowski rising wedge].
+- **सारखी दिसणारी:** S5.
+- **Trade:**
+  - नवे with-trend trades कमी विश्वासाचे (पुरावा, size setting) [research-अनुमान; **NIFTY वर मोजलेलं नाही** ⇒ P9 प्रमाणे macro / sentiment सोबत IS वर तपासायचं; तोपर्यंत size वर परिणाम नाही, फक्त नोंद].
+  - Wave 4 end ⇒ wave 5 (G9) चालतो; truncation धोका [KB H].
+  - Wave 5 चा लगेच fade नाही [KB K3]. Reversal ची पहिली impulse आली की ती S3 ⇒ reaction ची वाट.
+  - G7 हा वेगळा approved अपवाद (P1).
+- **फरक लक्षात ठेवा:** trend दिशेचा ending diagonal (S8) आणि correction च्या C मधला ending diagonal (S1, 7 Oct) वेगळे.
+- **सगळ्यात लवकर:** "legs लहान होत आहेत" हे प्रत्येक नवा leg confirm झाल्यावर. Ending diagonal पूर्ण झाल्याचं शेवटीच कळतं.
+
+### S9. Range / sideways (G10: range कड) [Abhi, 2026-10-08: sideways trades सुद्धा घ्यायचे]
+- **गोष्ट:**
+  - कोणत्याही बाजूचं नियंत्रण नाही. Buyers खालच्या कडेवर, sellers वरच्या कडेवर बचाव करतात; मधल्या भागात बाजार भटकतो.
+  - खालच्या कडेखाली stop-losses जमा होतात. Sweep होऊन परत आत आला की ते stops संपतात, आणि पलीकडे ढकलायला कोणी उरत नाही [स्रोत: Osler stop clusters; Wyckoff spring / upthrust; areas notes].
+  - Range मध्ये premium selling ला वेळ (theta) फायदेशीर [research-अनुमान: sideways waves suit selling premium].
+- **ओळख (real time):**
+  - **Trade degree** (15M) चा market_state = RANGE (repo व्याख्या: नवे swings, पण कोणताही निर्णय नाही; KB K1). Range edges चे pivots decision bar आधी confirm झालेले.
+  - कडा = range चे confirmed high / low. Repo च्या equal highs / liquidity व्याख्येनुसार त्यांच्याशी जुळणारे levels, आणि PDH / PDL फक्त ते कडेवर असतील तर. Range रुंद करण्यासाठी नाही.
+  - **पालक degree** (HTF market_state) वर trend असेल ⇒ S6 + S9. पालक सुद्धा RANGE / trend नाही ⇒ शुद्ध S9.
+  - **Range ची उंची risk च्या तुलनेत पुरेशी असली पाहिजे.** हे R:R ≥ 3 (A3) मधूनच आपोआप ठरतं; वेगळा आकडा नाही.
+- **सारखी दिसणारी:**
+  1. **S6** (trend मधला बाजूचा correction: triangle / flat). फरक: आधी पालक degree वर स्पष्ट impulse आहे का.
+  2. **Range ची खरी break** (breakout). फरक: breaks.py ची real break / acceptance वि. reclaim.
+- **Trade (G10):**
+  - **खालची कड ⇒ bull put; वरची कड ⇒ bear call.** इथे दिशा पालक trend वरून नाही, तर कडेवरून ठरते. P1 चा स्पष्ट अपवाद, स्वतंत्र scorecard सह.
+  - Simple Core प्रमाणेच: कडेवर pause + commitment candle (बंद).
+  - Sweep + reclaim (कडेपलीकडे wick / थोडा close, मग परत आत close) असेल तर पुरावा मजबूत (KB D: LQ).
+  - Sweep नसताना कडेवर साधी rejection सुद्धा चालते, पण पुरावा कमी.
+  - Range च्या मध्यात entry नाही. Area नाही; MAGNET.
+- **S6 + S9 एकत्र** (range हा मोठ्या trend मधला correction असू शकतो) [प्रस्ताव, default]:
+  - फक्त trend दिशेची कड tradable;
+  - विरुद्ध कड ⇒ B च्या आतला trade (S11) ⇒ नाही.
+  - पालक degree वर trend नसेल तेव्हाच दोन्ही कडा.
+- **Invalidation:**
+  - trade: sweep चं टोक (sweep नसेल तर कड) + buffer (बाकी trades सारखंच dashboard SL buffer setting; नवा आकडा नाही);
+  - range संपली: कडेची real break (breaks.py) ⇒ S4 (flip retest, break दिशेने). Break अपयशी (परत आत real break) ⇒ पुन्हा S9.
+- **Target:** range ची विरुद्ध कड (किंवा dashboard चा target_mode).
+- **सगळ्यात लवकर कधी कळतं:**
+  - RANGE हे market_state ने confirm केल्यावर;
+  - sweep हे reclaim close वर (sweep bar वर नाही).
+- **प्रामाणिक मर्यादा:**
+  - Range-कड trading चा प्रकाशित पुरावा कमकुवत आहे. Brooks चं "most breakout attempts from trading ranges fail" हे practitioner मत आहे.
+  - Raschke / Connors च्या "Turtle Soup" (false breakout) चा vendor backtest costs नंतर कमकुवत ("D" rating) [स्रोत: Oxford Capital].
+  - Trading-range-break नियम 1986 नंतर out-of-sample टिकले नाहीत [स्रोत: Sullivan, Timmermann & White].
+  - ⇒ PAPER मध्ये स्वतंत्र scorecard, आणि IS वर आधी मोजमाप (कड टिकली / तुटली, sweep सह / शिवाय).
+  - **IS चा पहिला निकाल (A5) [NIFTY]:** कडेवरून उलट trade केला तर फक्त ~30% वेळा भाव विरुद्ध कडेपर्यंत गेला.
+  - **[Abhi, 2026-10-09]:** G10 सध्या **shadow मध्ये**: signal आणि नोंद होईल, PAPER trade नाही. Sweep + reclaim आणि sweep शिवाय यांचे वेगळे निकाल (SL आधी target गाठला का) आल्यावर Abhi PAPER ON करेल.
+
+### S10. Gap दिवस
+- **मुख्य तत्त्व:**
+  - Gap चा प्रकार 09:15 ला ठरत नाही. "By the time you properly identify them, the move is nearly over" [स्रोत: Bulkowski]; LuxAlgo: label "largely retrospective".
+  - 09:15 ला फक्त context माहीत असतो: कुठे (range आत / बाहेर; trend मध्ये कुठे), आकार (daily ATR14 च्या पटीत, KB G), आणि news.
+  - निर्णय पहिल्या 2–6 bars (15M) मध्ये, gap **स्वीकारला की नाकारला** यावरून, दर bar पुन्हा तपासून [KB K13].
+- **उप-परिस्थिती (KB K13):**
+  - **B: trend दिशेचा gap** ⇒ पहिल्या pullback ची वाट; pullback नाही तर trade नाही.
+    - 7 Oct: gap down trend दिशेने; 09:30 entry = chase ⇒ नाही.
+    - 12:15: gap fill rally (C-diagonal) trendline + seller zone वर अडली, आणि commitment ⇒ bear call ✔.
+  - **A: trend विरुद्ध gap अपयशी (नाकारला)** ⇒ trend दिशेने, पहिल्या pullback नंतर.
+  - **Trend विरुद्ध gap स्वीकारला** ⇒ ही counter-move ⇒ S3 / S4.
+  - **G7: trend दिशेचा मोठा gap major HTF zone मध्ये, नाकारला** ⇒ पहिल्या pullback नंतर (approved अपवाद, P1).
+  - **Range आतला लहान gap** ⇒ सामान्य दिवस.
+
+### S11. B wave सापळा
+- **गोष्ट:** मोठ्या correction मधली जोरदार उलट चाल; गर्दीला वाटतं trend परत आला. "B waves are phonies. They are sucker plays, bull traps" [स्रोत: EWP].
+- **Trade:**
+  - B च्या आत नाही [KB K3].
+  - B-end → C, जेव्हा तो ABC ज्या trend ला correct करतो त्याच्या विरुद्ध असतो ⇒ OFF [Abhi] (P1).
+  - S3 पहिल्या ओळीत primary नुसार trend च बदलला आहे (counter-move = नवी impulse). त्यामुळे तिथला trade "ज्या trend ला correct करतो" त्याच्याच दिशेने आहे; B → C नाही.
+- **मर्यादा:** "आपण B मध्ये आहोत" हे बहुतेक वेळा नंतरच कळतं ⇒ live मध्ये Gray-1 हेच संरक्षण.
+
+### S12. विशेष वेळा आणि execution
+- **पहिली 30 मिनिटं:** bars रुंद ⇒ पुरावा कमी (KB D: TM −5) [स्रोत: session notes; KB K14].
+- **Event दिवस:** VIX आधीच भरलेला, नंतर IV crush ⇒ KB D: EV [स्रोत: session notes].
+- **Pullback दरम्यान VIX उडी** ⇒ "फक्त pullback" वरचा विश्वास कमी (KB D: VX) [research-अनुमान, practitioner-level].
+- **"आजपर्यंत pullback नाही" (trend day):** setup नाही; chase बंदी [Abhi; A3]. हा नवीन gate नाही, A1 ची व्याख्या आहे.
+- **15:15 च्या bar वर signal [Abhi, 2026-10-09: `eod_signal_carry = recheck`]:** दुसऱ्या दिवशी 09:15 ला आपोआप entry नाही.
+  - रात्रीचा gap आणि उघडण्याच्या 30 मिनिटांचा कमी विश्वास (KB D: TM −5) यामुळे तो signal दुसऱ्या दिवशी S10 नुसार नव्याने वाचायचा.
+  - Area अजून वैध असेल तर तिथे नवी commitment हवी.
+  - Invalidation पार झाला ⇒ रद्द.
+- **MR आणि सामान्य खोली VIX नुसार बदलते** [research-अनुमान] ⇒ म्हणूनच P4.
+
+---
+
+## I4. दोन counts कसे वापरायचे (code आणि vision)
+
+1. **Evening Plan (Weekly → Daily → 1H):** प्रत्येक degree साठी primary आणि alternate. प्रत्येकासाठी:
+   - पुढचं अपेक्षित पाऊल;
+   - invalidation;
+   - confirmation;
+   - आघाडी (स्पष्ट / बरोबरी).
+2. **Intraday, प्रत्येक बंद 15M bar वर:**
+   - परिस्थिती (S1–S12; जोडी असेल तर I2 चा precedence);
+   - P2 चा क्रम (Gray-1 → Gray-2 → trade → grade वाढ);
+   - trade असेल तर त्या परिस्थितीचा area (I3) आणि Simple Core ची commitment.
+3. **Invalidation झाला ⇒** तो count काढा; alternate primary; नवा alternate. वरची degree शाबूत असेल तर तीच ठेवा [स्रोत: WaveBasis].
+4. **Vision:**
+   - code च्या counts शी सहमत / असहमत, आणि तिला दिसणारा वेगळा count.
+   - Chart decision bar वर कापलेला (पुढचं काही नाही).
+   - किंमती code च्या.
+5. **Gray चं मोजमाप:**
+   - gray मुळे सोडलेल्या संधींपैकी किती वेळा एक दिशा 1:3 ने यशस्वी झाली असती;
+   - जास्त असेल तर अपुरी परिस्थिती शोधायची (I6). नियम सैल करायचा नाही.
+6. **Labels फक्त त्या bar ला माहीत असलेले:**
+   - "हा B होता", "(2) संपला" असे hindsight labels tests मध्ये नाहीत.
+   - Tests मध्ये फक्त decision bar पर्यंत दिसणारी माहिती.
+
+---
+
+## I5. आकड्यांचं धोरण
+
+| वर्ग | उदाहरण | काय करायचं |
+|---|---|---|
+| **व्याख्या** | Impulse origin real break, Elliott R1–R11, बंद candle | Code मध्ये ठेवा |
+| **Abhi** | R:R ≥ 3; valid खोली 38.2–80%; G8 23.6–38.2%; pullback volume कमी | Dashboard setting, default = Abhi चा |
+| **Research / practitioner** | sweep 0.1–1.0 MR (areas notes) | Setting, स्रोतासह; NIFTY वर तपासायचा. **Research notes मधले "codable rules" चे आकडे** (उदा. flag 4–20 bars, ≤ 0.5 pole) संशोधकाचे प्रस्ताव आहेत ⇒ "अंदाज" वर्गात |
+| **NIFTY वर मोजलेला** | उदा. counter-move overlap चं वितरण | IS वर मोजा, VAL वर तपासा |
+| **अंदाज** | commitment_vs_pause 1.5, touch 0.3 MR, "≥ 3 खुणा", flag ≤ 50%, lookback लांबी | **सापेक्ष तुलनेत बदला**, नाहीतर setting + sensitivity (किमान 3 मूल्ये) + Abhi चा निर्णय |
+
+Real break साठी एकच व्याख्या: breaks.py (KB G). इतर कुठलीही "N closes" व्याख्या वापरायची नाही.
+
+**Constants register:** Trade session ने entry engine मधल्या **प्रत्येक** आकड्याची यादी बनवायची. प्रत्येकासाठी:
+- नाव;
+- मूल्य;
+- file:line;
+- वर्ग;
+- कारण.
+
+"अंदाज" वर्गाची sensitivity, आणि कोणते सापेक्ष तुलनेत बदलता येतील याचा प्रस्ताव.
+
+---
+
+## I6. नवीन उदाहरण आलं की प्रक्रिया (overfitting थांबवण्यासाठी)
+
+1. **परिस्थिती ओळखा (S#).** कुठलीच बसत नसेल ⇒ नकाशात भर (Abhi सोबत); code मध्ये थेट नियम नाही.
+2. **चूक कुठल्या थराची:**
+   - **वाचन:** swing / area / degree / count; area त्या वेळी अस्तित्वात नव्हता;
+   - **निर्णय:** परिस्थितीचा नियम चुकीचा लागला;
+   - **अंमलबजावणी:** bug.
+
+   दुरुस्ती त्याच थरात.
+3. **संच:** त्या परिस्थितीची आणि तिच्यासारख्या दिसणाऱ्या परिस्थितीची अनेक उदाहरणं IS मधून (Golden Gallery पद्धत). Labels decision bar पर्यंतच्या माहितीवर.
+4. **बदल संचावर तपासा.** काय मोडलं ते अहवालात.
+5. **नवीन आकडा फक्त I5 प्रमाणे.**
+6. **Batch मध्ये एकच एकत्रित बदल.**
+7. **Abhi चा निर्णय बाकी असलेल्या उदाहरणांवर** नकाशाचं उत्तर **आधी** लिहायचं, मग Abhi चा निर्णय. उलट क्रमाने नाही.
+
+---
+
+## I7. Abhi च्या उदाहरणांवर नकाशाची तपासणी (decision bar ला जे माहीत होतं त्यावर)
+
+| दिवस | परिस्थिती | P2 चा क्रम | नकाशाचं उत्तर | Abhi |
+|---|---|---|---|---|
+| 12 Aug 2026 | S3: 24,677 → ~24,000 (58%), impulsive; reaction अजून सुरू नाही | Gray-1 (S3 reaction उघडा). शिवाय: uptrend count मध्ये 5-wave घसरण = फक्त A ⇒ Gray-2 (R4); नव्या downtrend count मध्ये bull put पालकविरुद्ध (P1). तिन्ही मार्गांनी नाही. | Bull put नाही | ✔ नाही |
+| 25 Aug 10:45 | S3, reaction चालू (त्या वेळी "B" हे माहीत नव्हतं) | Gray-1 (reaction उघडा) | Buy नाही | ✔ नाही |
+| 26 Aug | S3, reaction corrective; 24,380–24,420 flip ओलांडली नाही; खाली commitment | Gray-1 संपला (P3 पहिली ओळ) ⇒ (2) नव्या खालच्या sequence मध्ये ⇒ पालक खाली. Gray-2: तीन legs, C (24,380–24,420) A (24,330) च्या पलीकडे ⇒ ठरवता येतं. Alternate (B-end) सुद्धा खाली ⇒ grade वाढ. | Bear call; target दोघांपैकी जवळचा; R:R ≥ 3 dashboard वर | ✔ bear |
+| 22 Sep | S6: wave (4) end ~23,500 | पालक: (4) खालच्या (1)–(5) मध्ये ⇒ खाली. Gray-2: (4) ची legs पूर्ण (flat / zigzag) आणि commitment ⇒ ठरवता येतं (Trade session ने bars वर तपासायचं) | G9 bear call; wave 5 truncation सावधानता | ✔ bear |
+| 28 Sep | Flag 11 candles ⇒ G8 नाही ⇒ **S1** (Abhi, 2026-10-08: G8 ची व्याख्या बदलायची नाही). मोठ्या degree चा wave (5) = P1 आजोबा पुरावा | पालक खाली | S1 bear: area = तुटलेला swing 23,021 / displacement base 22,856–22,912, + commitment; आजोबा wave 5 फक्त नोंद | ✔ bear |
+| 31 Aug | Wave (3) चालू (26 Aug नंतर) ⇒ S1 / S5 | — | Commitment कमकुवत आणि R:R 1:1.1 < 3 ⇒ A3 ⇒ नाही | ✔ नाही |
+| 7 Oct 09:30 | S10-B: trend दिशेचा gap, pullback नाही | — | नाही (chase) | ✔ नाही |
+| 7 Oct 12:15 | S10-B → S1: gap fill rally, C-diagonal trendline + seller zone वर | पालक (1H) खाली: protected H 22,809 (code चं वाचन 7 Oct review मध्ये ✔) | G5 bear call | ✔ bear — पक्का (Abhi 2026-10-09, run2 review: 12:15 = C-end). Code चं "B च्या आत (S11)" = वाचनाचा दोष (count score tie) ⇒ I6 |
+| 16 Feb 2018 13:30 | S4, MAGNET | — | Setup नाही | बरोबर (session) |
+| 16 Feb 2018 09:30 | आधीची चाल 144% ⇒ origin real-broken ⇒ S4 (S3 नाही) | — | **नकाशाची अट:** 09:30 पर्यंत break अपयशी ठरला असेल (उलट real break, किंवा जुनं टोक) ⇒ जुना downtrend ⇒ S1 ⇒ area + commitment असेल तर setup शक्य. नाहीतर S4 ⇒ फक्त वरच्या दिशेने flip retest ⇒ bear नाही. | **Trade session ने decision bar पर्यंतच्या data वर ही अट तपासून नकाशाचं उत्तर लिहायचं; मग Abhi ✔/✘** |
+| 15 Nov 2021 13:00 | S4 (session: जुनं टोक 18,604; 18,210 फक्त local high; testing) | — | **नकाशाची अट:** break real (breaks.py) असेल आणि 13:00 चा retest corrective + rejection असेल ⇒ G4 bear. नाहीतर नाही. | **तसंच: आधी अट तपासून उत्तर, मग Abhi** |
+
+**निष्कर्ष:**
+- 12, 25 आणि 26 Aug ला तीन वेगळे नियम लागत नाहीत. P2 चा क्रम (Gray-1) आणि P3 (reaction) तिन्ही दिवसांचं उत्तर देतात.
+- 28 Sep चा प्रश्न "touch" नव्हता, तर "या परिस्थितीचा area कोणता" हा होता (P5).
+- **मर्यादा:** 28 Sep नंतरचा Abhi चा count माहीत नाही. 7 Oct ची पालक दिशा code च्या मान्य 1H वाचनावरून घेतली आहे (protected H 22,809; 1 Oct चा low 22,217 पासून ABC तेजी; 2–4 Oct बाजार बंद [Sep–Oct review charts]).
+- **मर्यादा:** हे 11 दिवस फक्त **तपासणी** आहेत. खरी चाचणी I6 च्या IS संचांवर.
+
+---
+
+## I8. Code आणि vision मध्ये काय बदलेल (उच्च पातळी; तपशील मंजुरीनंतरच्या एकत्रित prompt मध्ये)
+
+1. **Simple Core तसाच** (area → pause → commitment). त्याच्या आधी दोन गोष्टी: परिस्थिती (S#) आणि पालक दिशा, P2 च्या क्रमाने.
+2. **`POSSIBLE_REVERSAL` flag जातो.** त्याची जागा S3 + Gray-1 + reaction test (P3) घेतात.
+3. **S3 / S4 सीमा:** correct होणाऱ्या impulse च्या origin चा real break (breaks.py) ⇒ S4. Origin च्या आतली कोणतीही break ⇒ S3.
+4. **Area sources परिस्थितीनुसार:**
+   - S5: flag कड + तुटलेला swing;
+   - S4: flip;
+   - बाकी: KB टप्पा 3.
+5. **प्रत्येक signal आणि "नाही" ची नोंद:** S#, दोन counts, पालक दिशा, gray प्रकार, invalidation.
+6. **पुराव्यांचं NIFTY मोजमाप (P4)**, आणि **constants register (I5).**
+7. **Evening Plan:** प्रत्येक degree चे दोन counts, आघाडी, आणि उद्याच्या अपेक्षित परिस्थिती.
+8. **Vision playbook:** हा नकाशा मजकूर म्हणून.
+9. **Tests:** I7 चा तक्ता (decision-bar labels), आणि I6 चे संच.
+
+---
+
+## I9. Abhi कडून हवे निर्णय
+
+1. ~~Gray-1 आणि Gray-2~~ ⇒ **ठरलं:** Abhi दर दिवशी Evening Plan मधून ठरवतो (P2).
+2. ~~पालक दिशा (P1)~~ ⇒ **ठरलं:** KB भाग G ची ओळ बदलायची (Abhi ✔).
+3. **S3 मधला gray:** default = फक्त रचनेने संपतो, वेळ-मर्यादा नाही (Abhi बदलेपर्यंत).
+4. ~~S9 range कड~~ ⇒ **ठरलं:** sideways trades सुद्धा (G10, स्वतंत्र scorecard). S6 + S9 मध्ये फक्त trend दिशेची कड, हा default; बदलायचा असेल तर Abhi सांगेल.
+5. **S6 expanding triangle:** default = फक्त नकारात्मक पुरावा, बंदी नाही.
+6. **7 Oct चा count:** 7 Oct 12:15 पर्यंतचे bars पाहून तुमचा count (त्यानंतरचे bars न पाहता)?
+7. **16 Feb 2018 09:30 आणि 15 Nov 2021 13:00:** वर नकाशाचं उत्तर आधीच लिहिलं आहे. आता charts पाहून ✔ / ✘.
+8. **नकाशा पुरेसा आहे का?** एखादी परिस्थिती सुटली आहे का?
+
+**G-MAP1 चे निर्णय (Abhi, 2026-10-09 08:36):**
+- Commitment candle ची ताकद impulse च्या candles च्या तुलनेत (`commit_vs_impulse`). Gate ला threshold लागतो, आणि Abhi ने 17 signals वरून मूल्य न निवडण्याचं ठरवलं. म्हणून टप्पा B मध्ये हा **फक्त report** (Claude ची अंमलबजावणी-निवड, Abhi चा थेट आदेश नाही). Gate सध्याचाच राहील. सापेक्ष gate कोणत्या मूल्याने, आणि तोपर्यंत जुना MR gate ठेवायचा का, हा निर्णय Abhi PR वर घेईल.
+- 3-close फक्त रचनेच्या breaks ना; Elliott R1–R11 भावावरून.
+- पुराव्यांची यादी गोठवली (P4).
+- S3 ची ओळख रचनेच्या घटनेवरून (S3).
+- पालक दिशा: `parent_source`, आणि आधी तुलना (P1).
+- G10 सध्या shadow (S9).
+- `gray_size` = अर्धे lots; `eod_signal_carry` = दुसऱ्या दिवशी नव्याने वाचन.
+- Target साठी तोच impulse, ज्याचा correction आपण trade करतो (degree-सुसंगत).
+- 28 Sep = S1; `g9_tier = full`; `target_mode = impulse_end` (2026-10-08 रात्री).
 
 ---
 

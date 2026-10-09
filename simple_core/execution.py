@@ -5,6 +5,7 @@ Settings (default नाही; निवडलेलं नसेल ⇒ trade 
                 fixed_points / percent / none  (+ sl_buffer, sl_buffer_unit points / mr, sl_value — fixed_points ⇒ points, percent ⇒ %)
   target_mode   next_opposite_area / impulse_end / wave3_projection / wave5_projection / r_multiple / premium_pct / none
                 (+ target_value — r_multiple ⇒ R, premium_pct ⇒ %). Wave levels signal च्या ref_levels मधून; count gray ⇒ trade नाही + कारण.
+  gray_size     gray reduce signal ⇒ half (floor(lots / 2); 0 ⇒ trade नाही) / full. G10 shadow आणि 15:15 eod recheck ⇒ ok नाही.
   g9_tier       G9 (wave 5, KB Tier C): "full" ⇒ lots, "half" ⇒ lots ÷ 2 (खाली पूर्णांक; < 1 ⇒ trade नाही), "C" ⇒ g9_lots,
                 "skip" ⇒ trade नाही. G9 signal वर निवडलेलं नसेल ⇒ trade नाही.
   rr_filter     true / false (+ min_rr)
@@ -147,9 +148,34 @@ def plan(sig, ex, mr=None, sigma_px=None, spot_only=False):
         if out["strike"] is None:
             out["reason"] = "strike मोजता आला नाही (sigma ⇒ daily closes हवे / beyond_sl ⇒ SL हवा)"
             return out
+    # टप्पा B (Abhi G-MAP1, 2026-10-09). SL / target / R:R वर मोजलेले राहतात (shadow / research निकालासाठी), फक्त ok नाही.
+    if sig.get("eod_carry") == "recheck":
+        out["reason"] = "15:15 चा signal ⇒ eod_signal_carry recheck: दुसऱ्या दिवशी आपोआप entry नाही (area वैध असेल तर नवी commitment हवी)"
+        return out
+    if sig.get("setup") == "G10" and (sig.get("g10") or {}).get("mode", ex.get("g10_mode", "shadow")) != "paper":
+        out["reason"] = "G10 shadow: PAPER trade नाही — नोंद आणि Telegram माहिती (Approve नाही)"
+        out["shadow"] = "G10"
+        return out
+    if sig.get("gray"):
+        out["gray"] = sig["gray"]
+        if ex.get("gray_size", "half") == "half" and out.get("lots") is not None:
+            out["lots"] = math.floor(float(out["lots"]) / 2)
+            if out["lots"] < 1 and not spot_only:
+                out["reason"] = f"GRAY ({sig['gray']}) reduce: gray_size half ⇒ lots {out['lots']} < 1 ⇒ trade नाही"
+                return out
     out["ok"] = True
     out["reason"] = "OK"
     return out
+
+
+def telegram_action(plan):
+    """Telegram संदेशाचा प्रकार (Abhi G-MAP1 निर्णय 5): ok ⇒ "approve" (Approve बटणासह); shadow (G10) ⇒ "info" (Approve बटण नाही);
+    बाकी ⇒ None (संदेश नाही). Sender (intraday hook, Evening Plan PR) हाच वापरतो — AI / shadow कधीच order देत नाही."""
+    if plan.get("ok"):
+        return "approve"
+    if plan.get("shadow"):
+        return "info"
+    return None
 
 
 def strike(sig, ex, sl, step, sigma_px=None):

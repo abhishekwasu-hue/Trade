@@ -80,6 +80,8 @@ def run_day(raw, day, out_dir, exec_ex=None, render=True, alts=None, engine_s=No
     from simple_core import execution as EX
     os.makedirs(out_dir, exist_ok=True)
     m1 = raw[(raw["timestamp"] >= day - pd.Timedelta(days=130)) & (raw["timestamp"] < day + pd.Timedelta(days=5))].reset_index(drop=True)
+    from simple_core import settings as SCS
+    engine_s = {**(engine_s or {}), **{k: exec_ex[k] for k in SCS.ENGINE_FROM_PROFILE if exec_ex and k in exec_ex}}
     mem, tr = SU.LineMemory(), EN.Tracker()
     bars, timing = [], {"core_s": [], "shadow_s": [], "render_s": []}
     for t in pd.date_range(day + pd.Timedelta(hours=9, minutes=15), day + pd.Timedelta(hours=15, minutes=15), freq="15min"):
@@ -87,7 +89,19 @@ def run_day(raw, day, out_dir, exec_ex=None, render=True, alts=None, engine_s=No
         t0 = time.monotonic()
         r = EN.signal_at(m1, asof, s=engine_s, memory=mem, tracker=tr)
         timing["core_s"].append(round(time.monotonic() - t0, 2))
-        b = {"bar_start": str(t), "signal": r.get("signal"), "why": r.get("why"), "pause_bars": r.get("pause_bars", 0)}
+        b = {"bar_start": str(t), "signal": r.get("signal"), "why": r.get("why"), "pause_bars": r.get("pause_bars", 0),
+             "reading": _reading_brief(r.get("reading"))}
+        stopped = r.get("gray_candidate") or r.get("blocked_candidate")
+        if stopped is not None:                                            # टप्पा B: थांबलेला candidate — block / reduce (shadow) दोन्ही निकाल
+            full_s = EV.frame(m1, "15m", day + pd.Timedelta(days=5))
+            after_s = full_s[pd.to_datetime(full_s["timestamp"]) > pd.Timestamp(t)]
+            b["stopped"] = {"kind": "gray" if r.get("gray_candidate") is not None else "blocked", "why": r.get("why"),
+                            "time": str(t)[11:16], "side": stopped["side"], "trigger_price": stopped["trigger_price"],
+                            "area": stopped["area"], "setup": stopped.get("setup"), "ref_levels": stopped.get("ref_levels"),
+                            "reading": _reading_brief(stopped.get("reading"))}
+            if exec_ex is not None:
+                ps = EX.plan({**stopped, "gray": (stopped.get("reading") or {}).get("gray")}, exec_ex, r["mr"], spot_only=True)
+                b["stopped"]["reduce_plan"], b["stopped"]["reduce_sim"] = ps, EX.simulate(ps, after_s)
         if r["signal"]:
             t0 = time.monotonic()
             sh = EV.evaluate(m1, "srv2", asof, run_elliott=False)
@@ -113,9 +127,12 @@ def run_day(raw, day, out_dir, exec_ex=None, render=True, alts=None, engine_s=No
     sigs = [b for b in bars if b["signal"]]
     rec = {"date": f"{day:%Y-%m-%d}", "signals": [{"time": b["bar_start"][11:16], **{k: b["signal"].get(k) for k in
                                                    ("side", "trigger_price", "area", "pause_bars", "pause_from", "ref_levels", "context_story",
-                                                    "setup", "ref_notes")},
+                                                    "setup", "ref_notes", "wave", "waves_cmp", "g10", "gray", "eod_carry",
+                                                    "commit_vs_impulse")}, "reading": b.get("reading"),
                                                    "shadow": b.get("shadow"), "plan": b.get("plan"), "sim": b.get("sim"), "alts": b.get("alts")} for b in sigs],
-           "why_by_bar": [(b["bar_start"][11:16], b["why"]) for b in bars], "pngs": {}, "tl_log": mem.log}
+           "why_by_bar": [(b["bar_start"][11:16], b["why"]) for b in bars], "pngs": {}, "tl_log": mem.log,
+           "stopped": [b["stopped"] for b in bars if b.get("stopped")],
+           "no_reading": [(b["bar_start"][11:16], b.get("reading")) for b in bars if not b["signal"]]}
     if render:
         t0 = time.monotonic()
         frames = MS.full_frames(m1)
@@ -158,6 +175,23 @@ def _px(v):
     return "—" if v is None else f"{float(v):,.1f}"
 
 
+def _reading_brief(rd):
+    """टप्पा B नोंद (B4 / P7): S#, flags, gray, पालक (दोन्ही स्रोत), conflict, दोन counts, impulse, legs, commit_vs_impulse."""
+    if not rd:
+        return None
+    c = rd.get("count") or {}
+    nd = lambda n: None if not n else f"{n.get('pattern')}/{n.get('wave')}"          # noqa: E731
+    return {"S": rd.get("S"), "flags": rd.get("flags"), "gray": rd.get("gray"), "gray_why": rd.get("gray_why"),
+            "parent": rd.get("parent"), "parent_source": rd.get("parent_source"), "parent_ms": rd.get("parent_ms"),
+            "parent_count": rd.get("parent_count"), "PARENT_CONFLICT": rd.get("PARENT_CONFLICT"),
+            "count_degree": c.get("degree"), "preferred": nd(c.get("preferred")), "alternate": nd(c.get("alternate")),
+            "count_why": c.get("why"), "impulse": rd.get("impulse"), "impulse_na": rd.get("impulse_na"),
+            "legs": rd.get("legs"), "s3": rd.get("s3"), "commit_vs_impulse": rd.get("commit_vs_impulse"),
+            "policy": (rd.get("policy") or {}).get("policy"), "why": rd.get("why"), "counts_by_degree": c.get("degrees"), "count_tie": c.get("tie"),
+            "S11_alpha": c.get("S11_alpha"), "setup_alpha": c.get("setup_alpha"),
+            "area_source": rd.get("area_source"), "invalidation": rd.get("invalidation")}
+
+
 def reading(rec):
     """दिवसाचं एका ओळीत वाचन: trend · signal (area, pause, setup, plan / sim) किंवा मुख्य कारण."""
     head = f"Trend: {rec.get('trend') or '—'}"
@@ -176,6 +210,11 @@ def reading(rec):
                 x += f" · [{nm}: " + (f"R:R {ap_.get('rr')} ⇒ {as_.get('result')}" if ap_.get("ok") else f"नाही — {ap_.get('reason')}") + "]"
             parts.append(x)
         return head + " · " + " | ".join(parts)
+    st = rec.get("stopped") or []
+    if st:
+        x = st[0]
+        head += (f" · थांबला {x['time']} {'bear' if x['side'] < 0 else 'bull'} {x['trigger_price']:,.1f}: {str(x.get('why'))[:80]}"
+                 + (f" [reduce असता तर: {((x.get('reduce_sim') or {}).get('result'))}]" if (x.get("reduce_plan") or {}).get("ok") else ""))
     whys = pd.Series([w for _, w in rec.get("why_by_bar") or []])
     if not len(whys):
         return head + " · Signal नाही"

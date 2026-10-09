@@ -2,23 +2,43 @@
 
 फक्त अहवाल — कोणतंही मूल्य बदललं / निवडलं नाही. वर्ग: व्याख्या / Abhi / research / NIFTY / अंदाज. `used_by` रिकामा ⇒ entry मार्गात वापर नाही (shadow / context).
 
-**Real break ची एकच व्याख्या:** `elliott/breaks.py` — `first_real_break` (buffer + displacement / no-reclaim / failed retest) आणि `time_accepted` (`break_accept_closes` = 3, Abhi). `levels_v2.lifecycle` (`accept_closes`) आणि Simple Core engine ची area acceptance दोन्ही `breaks.time_accepted` च वापरतात. **उरलेली दुसरी व्याख्या:** engine `accept_bars` (buffer पलीकडे सलग 2 closes) आणि `levels_v2` चा buffer + पुढचा bar नियम — टप्पा B मध्ये breaks.py मध्ये विलीन करायचे (खाली ⚠).
+**Real break ची एकच व्याख्या:** `elliott/breaks.py` — `first_real_break` (buffer + displacement / no-reclaim / failed retest) आणि `time_accepted` (`break_accept_closes` = 3, Abhi). `levels_v2.lifecycle` (`accept_closes`) आणि Simple Core engine ची area acceptance दोन्ही `breaks.time_accepted` च वापरतात. **टप्पा B (G-MAP1 निर्णय 8):** Simple Core engine `accept_bars` (सलग 2 closes) काढला ⇒ area चा real break = `breaks.break_from` (= `first_real_break`: displacement ⇒ लगेच, नाहीतर no-reclaim, time acceptance). Elliott count नियम (R1–R11, invalidation) भावावरूनच — 3-close नाही. **⚠ उघडा (Abhi):** `levels_v2` lifecycle — 3-close (time acceptance) breaks.py चाच, पण 'buffer + पुढचा bar' नियम ठेवला: त्यात breaks.py चा displacement-मार्ग लावल्यावर 26 Aug चा 1H flip zone (24,356–24,379) FLIPPED ऐवजी DEAD ⇒ Abhi-✔ 26 Aug G4 bear गेला. विलीन करायचं का, Abhi ठरवेल.
 
-## Abhi (11)
+## टप्पा B: नवे / बदललेले आकडे (G-MAP1, 2026-10-09)
+
+| आकडा | मूल्य | कुठे | वर्ग | कारण |
+|---|---|---|---|---|
+| `S2_DEEP` | 0.618 | simple_core/reading.py | Abhi | नकाशा P4 / S2: 61.8–80% खोल (फक्त नोंद / पुरावा, gate नाही) |
+| count degree जुळवणी सहनशीलता | 30 मि (5m / 15m) · 120 मि (1h+) | simple_core/count_source.py | व्याख्या | correction origin E आणि count pivot एकच आहे का (TF च्या 2–6 bars) |
+| `commit_vs_impulse` [प्रस्ताव] स्तंभ | ≥ 1.0 | research/map_b_measure.py | प्रस्ताव, Abhi चा निर्णय बाकी | §2.1: 'impulse ची सामान्य candle' — फक्त अहवालात, gate नाही |
+| `commit_vs_impulse` median | median | simple_core/reading.py | व्याख्या | §2.1: impulse bars चा median range (व्याख्येची निवड) |
+| random-entry draws | N = 20 | research/map_b_measure.py | research | §4 baseline: प्रति signal draws (fixed seed 20261011) |
+| random-entry window | 09:30–15:00 | research/map_b_measure.py | व्याख्या | engine opening window वगळून, 15:15 eod recheck आधी |
+| §4 नमुना seed | 20261010 | research/map_b_measure.py | research | 200 IS दिवस (वगळलेले दिवस अहवालात) |
+| `gray_size` half | floor(lots / 2) | simple_core/execution.py | Abhi | G-MAP1 निर्णय 6 |
+| `flag_min_bars` | 4 → 2 | simple_core/settings.py | Abhi | G8 2–6 candles |
+| `accept_bars` | काढला (2) | simple_core/settings.py | — | breaks.py ची एकच व्याख्या (निर्णय 8) |
+
+## Abhi (16)
 
 | key | मूल्य | file:line | used_by | कारण |
 |---|---|---|---|---|
 | `g7_min_rr` | 3.0 | chart_reader/gap.py:36 | gap.py | A3: R:R ≥ 3 (G7) |
 | `retrace_lo` | 0.382 | chart_reader/settings.py:126 | core.py | valid खोली 38.2% पासून (नकाशा P4) |
-| `min_rr` | 3.0 | chart_reader/settings.py:159 | settings.py | A3: R:R ≥ 3 |
+| `min_rr` | 3.0 | chart_reader/settings.py:159 | execution.py, settings.py | A3: R:R ≥ 3 |
 | `opening_block_min` | 15 | chart_reader/settings.py:160 | engine.py, settings.py | opening window (A3 / KB K14: पहिली candle नाही) |
-| `break_accept_closes` | 3 | elliott/settings.py:128 | breaks.py | K-10 B2; breaks.py (KB G ची एकच real-break व्याख्या) चा भाग |
+| `break_accept_closes` | 3 | elliott/settings.py:128 | engine.py, breaks.py | K-10 B2; breaks.py (KB G ची एकच real-break व्याख्या) चा भाग |
 | `retrace_lo` | 0.382 | market_state/core.py:48 | core.py | valid खोली 38.2% पासून (नकाशा P4) |
 | `accept_closes` | 3 | price_action/levels_v2.py:35 | engine.py, zones.py, levels_v2.py | K-10 निर्णय B2 (16 Feb PDL): सलग 3 closes ⇒ acceptance; elliott/breaks.time_accepted हीच व्याख्या |
-| `pause_min_bars` | 1 | simple_core/settings.py:17 | engine.py, settings.py | Simple Core: area वर किमान एक pause (थेट entry नाही) |
-| `opening_block_min` | 15 | simple_core/settings.py:26 | engine.py, settings.py | opening window (A3 / KB K14: पहिली candle नाही) |
-| `g8_retrace_max` | 0.382 | simple_core/settings.py:29 | waves.py, settings.py | KB H G8: उथळ 23.6–38.2% |
-| `g8_max_bars` | 6 | simple_core/settings.py:31 | waves.py, settings.py | KB H G8: 2–6 candles |
+| `parent_source` | market_state | simple_core/settings.py:13 | engine.py, settings.py | G-MAP1 निर्णय 4: market_state (default) / preferred_count |
+| `g10_enabled` | True | simple_core/settings.py:14 | engine.py, settings.py | G-MAP1 निर्णय 5: G10 signals (default on) |
+| `g10_mode` | shadow | simple_core/settings.py:15 | engine.py, execution.py, settings.py | G-MAP1 निर्णय 5: shadow (default) / paper |
+| `eod_signal_carry` | recheck | simple_core/settings.py:16 | engine.py, settings.py | G-MAP1 निर्णय 7: recheck (नकाशा S12) |
+| `pause_min_bars` | 1 | simple_core/settings.py:23 | engine.py, settings.py | Simple Core: area वर किमान एक pause (थेट entry नाही) |
+| `opening_block_min` | 15 | simple_core/settings.py:31 | engine.py, settings.py | opening window (A3 / KB K14: पहिली candle नाही) |
+| `g8_retrace_max` | 0.382 | simple_core/settings.py:34 | waves.py, settings.py | KB H G8: उथळ 23.6–38.2% |
+| `g8_max_bars` | 6 | simple_core/settings.py:36 | waves.py, flags.py, settings.py | KB H G8: 2–6 candles |
+| `flag_min_bars` | 2 | simple_core/settings.py:43 | flags.py, settings.py | नकाशा S5 / KB H G8: 2–6 candles (टप्पा B: 4 → 2; 1 candle = flag नाही) |
 
 ## config (TF / स्रोत निवड) (16)
 
@@ -36,10 +56,10 @@
 | `break_confirm_tf` | level_tf | elliott/settings.py:130 | — | [breaks] Break confirmation TF — level_tf (default, F4): count आणि trade exit दोन्ही त्या wave च्या TF वर (fixed mode ⇒ degree_tf; auto ⇒ wave start → |
 | `break_retest_confirm` | True | elliott/settings.py:133 | breaks.py | [breaks] Failed retest ने break — Break नंतर reclaim झाला, पण लगेच (trigger window मध्ये) level ला उलट logical reversal ने नाकारलं ⇒ खरा break (role r |
 | `trend_tf` | 1h | market_state/core.py:34 | core.py | F2 HTF: "1h" / "75m" |
-| `trade_tf` | 15m | market_state/core.py:36 | core.py |  |
+| `trade_tf` | 15m | market_state/core.py:36 | reading.py, core.py |  |
 | `elliott_degrees` | (1, 2) | market_state/core.py:52 | core.py | F4 Elliott vote (trade degree) |
 | `pivot_source` | elliott | price_action/levels_v2.py:26 | levels_v2.py |  |
-| `degrees` | [1, 2, 3] | price_action/levels_v2.py:27 | levels_v2.py |  |
+| `degrees` | [1, 2, 3] | price_action/levels_v2.py:27 | engine.py, count_source.py, levels_v2.py |  |
 
 ## research (14)
 
@@ -49,16 +69,16 @@
 | `fib_min_impulse_mr` | 4.0 | chart_reader/settings.py:150 | areas.py | KB भाग B: impulse ≥ 4 MR |
 | `atr_len` | 14 | elliott/settings.py:46 | core.py, measures.py, levels_v2.py, swings.py | standard ATR14 |
 | `break_buffer_mr` | 0.25 | elliott/settings.py:117 | zones.py, levels_v2.py, breaks.py | KB G: break buffer × MR (Osler stop clusters / spec §7); आकडा 0.25 अंदाज-समान |
-| `trend_swing_atr_mult` | 1.5 | market_state/core.py:35 | core.py | KB K1: HTF swing ≥ 1.5–2 MR |
+| `trend_swing_atr_mult` | 1.5 | market_state/core.py:35 | reading.py, core.py | KB K1: HTF swing ≥ 1.5–2 MR |
 | `impulse_min_mr` | 4.0 | market_state/core.py:38 | core.py | KB भाग B टप्पा 2: impulse ≥ 4 MR |
 | `impulse_overlap_max` | 0.4 | market_state/core.py:43 | core.py | KB K2: overlap < 0.4 |
 | `correction_overlap_min` | 0.6 | market_state/core.py:44 | core.py | KB K10.1: correction overlap > 0.6 |
 | `atr_len` | 14 | price_action/levels_v2.py:29 | core.py, measures.py, levels_v2.py, swings.py | standard ATR14 |
 | `break_buffer_mr` | 0.25 | price_action/levels_v2.py:34 | zones.py, levels_v2.py, breaks.py | KB G: break buffer × MR (Osler stop clusters / spec §7); आकडा 0.25 अंदाज-समान |
-| `w3_proj` | 1.618 | simple_core/settings.py:32 | waves.py, settings.py | Elliott guideline 1.618 (K7: Fibonacci ला सांख्यिकीय आधार नाही ⇒ फक्त माहिती) |
-| `w5_proj_w1` | 1.0 | simple_core/settings.py:34 | waves.py, settings.py | Elliott guideline wave 5 = wave 1 |
-| `w5_proj_w13` | 0.618 | simple_core/settings.py:35 | waves.py, settings.py | Elliott guideline 0.618 × (1 start → 3 end) |
-| `flag_overlap_min` | 0.6 | simple_core/settings.py:40 | flags.py, settings.py | KB K10.1 correction overlap > 0.6 |
+| `w3_proj` | 1.618 | simple_core/settings.py:37 | count_source.py, waves.py, settings.py | Elliott guideline 1.618 (K7: Fibonacci ला सांख्यिकीय आधार नाही ⇒ फक्त माहिती) |
+| `w5_proj_w1` | 1.0 | simple_core/settings.py:39 | count_source.py, waves.py, settings.py | Elliott guideline wave 5 = wave 1 |
+| `w5_proj_w13` | 0.618 | simple_core/settings.py:40 | waves.py, settings.py | Elliott guideline 0.618 × (1 start → 3 end) |
+| `flag_overlap_min` | 0.6 | simple_core/settings.py:45 | flags.py, settings.py | KB K10.1 correction overlap > 0.6 |
 
 ## shadow (entry मार्गात नाही) (97)
 
@@ -162,7 +182,7 @@
 | `inv_buffer_mr` | 0.25 | chart_reader/settings.py:156 | — | invalidation = area / reversal candle च्या टोकापलीकडे हे × MR (दोन्हीतलं दूरचं) |
 | `max_targets` | 2 | chart_reader/settings.py:157 | — | पुढचे 1–2 opposite areas |
 
-## अंदाज (122)
+## अंदाज (119)
 
 | key | मूल्य | file:line | used_by | कारण |
 |---|---|---|---|---|
@@ -238,11 +258,11 @@
 | `swing_fractal_r` | [2, 4, 8, 16] | elliott/settings.py:53 | swings.py | [degrees] Fractal r (प्रति degree) — fractal पद्धतीसाठी: दोन्ही बाजूंचे bars. Confirm = r bars नंतर. — [स्रोत नाही ⇒ अंदाज] |
 | `tf_bars_min` | 8 | elliott/settings.py:62 | swings.py | [degrees] Wave किमान candles — Corrective wave इतक्या बंद candles मध्ये दिसावी (कमी ⇒ आतली रचना दिसत नाही). — [स्रोत नाही ⇒ अंदाज] |
 | `tf_bars_max` | 40 | elliott/settings.py:64 | swings.py | [degrees] Wave कमाल candles — यापेक्षा जास्त ⇒ noise; मोठा TF घ्या. — [स्रोत नाही ⇒ अंदाज] |
-| `median_range_n` | 20 | elliott/settings.py:115 | core.py, breaks.py | MR lookback (20); sensitivity हवी |
+| `median_range_n` | 20 | elliott/settings.py:115 | reading.py, core.py, breaks.py | MR lookback (20); sensitivity हवी |
 | `break_close_loc` | 0.3 | elliott/settings.py:120 | breaks.py | displacement close location (0.3) |
 | `strength_min` | 1.2 | elliott/settings.py:122 | breaks.py | displacement / commitment ताकद × MR (1.2); sensitivity हवी |
 | `strength_max` | 2.5 | elliott/settings.py:124 | — | news spike मर्यादा × MR (2.5) |
-| `trade_swing_atr_mult` | 3.0 | market_state/core.py:37 | core.py | trade-degree swings ATR × 3 (Elliott D1) |
+| `trade_swing_atr_mult` | 3.0 | market_state/core.py:37 | reading.py, core.py | trade-degree swings ATR × 3 (Elliott D1) |
 | `disp_body_mr` | 1.5 | market_state/core.py:40 | core.py, areas.py | displacement body ≥ 1.5 MR |
 | `disp_body_frac` | 0.6 | market_state/core.py:41 | core.py, areas.py | displacement body ÷ range ≥ 0.6 |
 | `impulse_er_min` | 0.45 | market_state/core.py:42 | core.py | market_state: ER ≥ 0.45 [अनुमान, Abhi मंजुरी] — 7 Oct impulse overlap 0.62 |
@@ -263,26 +283,23 @@
 | `w_edge` | 1.0 | price_action/levels_v2.py:43 | levels_v2.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
 | `w_degree` | {1: 0.5, 2: 1.0, 3: 1.5} | price_action/levels_v2.py:44 | levels_v2.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
 | `origin_bonus` | 1.0 | price_action/levels_v2.py:45 | levels_v2.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
-| `area_tol_mr` | 0.3 | simple_core/settings.py:12 | engine.py, flags.py, settings.py | touch सहनशीलता 0.3 MR (Abhi: contaminated वर tune नाही; IS sensitivity हवी) |
-| `area_merge_mr` | 0.5 | simple_core/settings.py:13 | engine.py, settings.py | zones एकत्र करण्याचं अंतर |
-| `pause_body_max` | 0.5 | simple_core/settings.py:14 | engine.py, settings.py | indecision body ≤ 0.5 range |
-| `pause_range_max_mr` | 1.0 | simple_core/settings.py:15 | engine.py, settings.py | indecision range ≤ 1 MR |
-| `pause_wick_min` | 0.2 | simple_core/settings.py:16 | engine.py, settings.py | दोन्ही wicks ≥ 0.2 |
-| `pause_lookback` | 12 | simple_core/settings.py:18 | engine.py, settings.py | pause शोध खिडकी |
-| `commit_strength_min_mr` | 1.2 | simple_core/settings.py:19 | engine.py, settings.py | commitment range ≥ 1.2 MR (elliott strength_min सारखं) |
-| `commit_strength_max_mr` | 2.5 | simple_core/settings.py:20 | engine.py, settings.py | commitment ≤ 2.5 MR (news spike नाही) |
-| `commit_body_min` | 0.5 | simple_core/settings.py:21 | engine.py, settings.py | commitment body ≥ 0.5 |
-| `commit_close_max` | 0.3 | simple_core/settings.py:22 | engine.py, settings.py | close टोकाजवळ (0.3) |
-| `commitment_vs_pause` | 1.5 | simple_core/settings.py:23 | engine.py, settings.py | Evening plan §5 [अनुमान] 1.5; Abhi: 1.3 / 1.5 / 2.0 sensitivity |
-| `accept_bars` | 2 | simple_core/settings.py:24 | engine.py, settings.py | engine area acceptance: buffer पलीकडे सलग 2 closes (breaks.py बाहेरची दुसरी व्याख्या — B2 नुसार विलीन करायची) |
-| `accept_buf_mr` | 0.25 | simple_core/settings.py:25 | engine.py, settings.py | engine acceptance buffer |
-| `wave_lookback_pivots` | 12 | simple_core/settings.py:28 | waves.py, settings.py | trade-degree swings पैकी मागचे इतके (origin शोध) — [स्रोत नाही ⇒ अंदाज] |
-| `g8_retrace_tol` | 0.05 | simple_core/settings.py:30 | waves.py, settings.py | G8 retrace सहनशीलता |
-| `w3_proj_alts` | (1.0, 2.618) | simple_core/settings.py:33 | waves.py, settings.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
-| `wave1_zone_mr` | 0.15 | simple_core/settings.py:36 | waves.py, settings.py | wave 1 टोकाचा flip area = टोक ± हे × MR — [स्रोत नाही ⇒ अंदाज] |
-| `flag_min_bars` | 4 | simple_core/settings.py:38 | flags.py, settings.py | flag किमान bars (नकाशा S5: G8 2–6 candles शी जुळवायचं) |
-| `flag_retrace_max` | 0.5 | simple_core/settings.py:39 | flags.py, settings.py | flag ≤ 50% (research notes 'codable rule' ⇒ अंदाज वर्ग, नकाशा I5) |
-| `flag_slope_tol_mr` | 0.05 | simple_core/settings.py:42 | flags.py, settings.py | flag slope सहनशीलता |
+| `area_tol_mr` | 0.3 | simple_core/settings.py:18 | engine.py, reading.py, flags.py, settings.py | touch सहनशीलता 0.3 MR (Abhi: contaminated वर tune नाही; IS sensitivity हवी) |
+| `area_merge_mr` | 0.5 | simple_core/settings.py:19 | engine.py, settings.py | zones एकत्र करण्याचं अंतर |
+| `pause_body_max` | 0.5 | simple_core/settings.py:20 | engine.py, settings.py | indecision body ≤ 0.5 range |
+| `pause_range_max_mr` | 1.0 | simple_core/settings.py:21 | engine.py, settings.py | indecision range ≤ 1 MR |
+| `pause_wick_min` | 0.2 | simple_core/settings.py:22 | engine.py, settings.py | दोन्ही wicks ≥ 0.2 |
+| `pause_lookback` | 12 | simple_core/settings.py:24 | engine.py, settings.py | pause शोध खिडकी |
+| `commit_strength_min_mr` | 1.2 | simple_core/settings.py:25 | engine.py, settings.py | commitment range ≥ 1.2 MR (elliott strength_min सारखं) |
+| `commit_strength_max_mr` | 2.5 | simple_core/settings.py:26 | engine.py, settings.py | commitment ≤ 2.5 MR (news spike नाही) |
+| `commit_body_min` | 0.5 | simple_core/settings.py:27 | engine.py, settings.py | commitment body ≥ 0.5 |
+| `commit_close_max` | 0.3 | simple_core/settings.py:28 | engine.py, settings.py | close टोकाजवळ (0.3) |
+| `commitment_vs_pause` | 1.5 | simple_core/settings.py:29 | engine.py, settings.py | Evening plan §5 [अनुमान] 1.5; Abhi: 1.3 / 1.5 / 2.0 sensitivity |
+| `wave_lookback_pivots` | 12 | simple_core/settings.py:33 | waves.py, settings.py | trade-degree swings पैकी मागचे इतके (origin शोध) — [स्रोत नाही ⇒ अंदाज] |
+| `g8_retrace_tol` | 0.05 | simple_core/settings.py:35 | waves.py, settings.py | G8 retrace सहनशीलता |
+| `w3_proj_alts` | (1.0, 2.618) | simple_core/settings.py:38 | waves.py, settings.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
+| `wave1_zone_mr` | 0.15 | simple_core/settings.py:41 | waves.py, settings.py | wave 1 टोकाचा flip area = टोक ± हे × MR — [स्रोत नाही ⇒ अंदाज] |
+| `flag_retrace_max` | 0.5 | simple_core/settings.py:44 | flags.py, settings.py | flag ≤ 50% (research notes 'codable rule' ⇒ अंदाज वर्ग, नकाशा I5) |
+| `flag_slope_tol_mr` | 0.05 | simple_core/settings.py:47 | flags.py, settings.py | flag slope सहनशीलता |
 | `gap_g0_atr` | 0.25 | vision/gap_context.py:22 | gap_context.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
 | `gap_large_atr` | 0.63 | vision/gap_context.py:22 | gap_context.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
 | `gap_stretch_atr` | 3.0 | vision/gap_context.py:22 | gap_context.py | स्रोत नोंद नाही — [स्रोत नाही ⇒ अंदाज] |
@@ -297,7 +314,7 @@
 | `reversal_min_criteria` | 3 | market_state/core.py:46 | core.py | POSSIBLE_REVERSAL — नकाशा: बदलणार |
 | `reversal_internal_atr` | 1.5 | market_state/core.py:47 | core.py | POSSIBLE_REVERSAL — नकाशा: बदलणार |
 
-## व्याख्या (5)
+## व्याख्या (7)
 
 | key | मूल्य | file:line | used_by | कारण |
 |---|---|---|---|---|
@@ -305,7 +322,9 @@
 | `break_no_reclaim_bars` | 1 | elliott/settings.py:126 | breaks.py | KB G: कमकुवत close नंतर reclaim नाही ⇒ acceptance |
 | `impulse_disp_min` | 1 | market_state/core.py:39 | core.py | impulse मध्ये किमान एक displacement candle (F3) |
 | `retrace_hi` | 1.0 | market_state/core.py:49 | core.py | 100% = origin |
-| `flag_min_touches` | 2 | simple_core/settings.py:41 | flags.py, settings.py | channel = प्रत्येक रेषेला ≥ 2 touches |
+| `g10_range_bars` | 400 | simple_core/settings.py:17 | engine.py, settings.py | G10 StructureTracker lookback = zones.zone_lookback_bars (400, ~16 sessions) — नवा आकडा नाही |
+| `accept_buf_mr` | 0.25 | simple_core/settings.py:30 | engine.py, settings.py | area कडेपलीकडचा close ⇒ breaks.break_from तपासणी सुरू (break_buffer_mr शी समान 0.25); accept_bars (2 closes) टप्पा B मध्ये काढला — real break = breaks |
+| `flag_min_touches` | 2 | simple_core/settings.py:46 | flags.py, settings.py | channel = प्रत्येक रेषेला ≥ 2 touches |
 
 ## Inline आकडे (settings बाहेर) — प्रत्येक setting मध्ये न्यायचा का ते टप्पा B मध्ये
 
@@ -316,7 +335,27 @@
 | simple_core/engine.py:65 | 1e-9 | `rng = max(h - lo, 1e-9)` |
 | simple_core/engine.py:72 | 1e-9 | `rng = max(h - lo, 1e-9)` |
 | simple_core/engine.py:218 | 3 | `if df is None or len(df) < 3 or not mr or not np.isfinite(float(mr)):` |
-| simple_core/engine.py:401 | 40 | `if len(trig) < 40:` |
+| simple_core/engine.py:404 | 40 | `if len(trig) < 40:` |
+| simple_core/engine.py:446 | 15, 15 | `(G1 / G9 labels, wave refs), commit_vs_impulse (report), 15:15 ⇒ eod recheck. Gray मुळे थांबलेला signal `gray_candidate` मध्ये` |
+| simple_core/reading.py:4 | 9, 2.4 | `impulse (निर्णय 9 / Phase B §2.4): ज्या correction च्या शेवटी trade घेतो त्याच correction च्या आधीचा impulse — trade-degree` |
+| simple_core/reading.py:10 | 5, 5 | `triangle ⇒ 5 legs (आकुंचन); counter-move स्वतः 5 waves (वाढती टोकं) ⇒ A ⇒ gray; flag (G8) ⇒ रचना पुरेशी.` |
+| simple_core/reading.py:12 | 3, 2.2 | `S3 (निर्णय 3, §2.2): impulse मधला शेवटचा confirmed 1H LH (bear impulse) / HL (bull) — 1H pivots = market_state trend pivots —` |
+| simple_core/reading.py:15 | 61.8, 3 | `S2 खोल (retrace ≥ 61.8%), S5 flag (G8 area), S6 बाजूचा (legs ≥ 3 आणि correction bars > impulse bars), S8 (with-trend legs लहान),` |
+| simple_core/reading.py:16 | 15, 15 | `S10 gap दिवस, S12 15:15 — फक्त नोंद / पुरावा (I2 precedence: जास्त कडक जिंकते).` |
+| simple_core/reading.py:17 | 2.1 | `commit_vs_impulse (निर्णय 1, §2.1): commitment range ÷ impulse मधल्या बंद 15M bars चा median range — फक्त report, gate नाही.` |
+| simple_core/reading.py:19 | 0.618 | `नवे आकडे नाहीत: 0.618 (S2) = नकाशा P4 / KB [Abhi]; बाकी सगळं व्याख्या (A1 register).` |
+| simple_core/reading.py:24 | 0.618 | `S2_DEEP = 0.618` |
+| simple_core/reading.py:74 | 3 | `retrace = round(abs(ext - imp["end"]) / size, 3) if (ext is not None and size > 0) else None` |
+| simple_core/reading.py:86 | 5, 4 | `out["why"] = "Gray-2: counter-move स्वतः 5 waves (वाढती टोकं, wave 4 चा wave 1 शी overlap नाही) ⇒ A"` |
+| simple_core/reading.py:88 | 5 | `out.update(complete=True, why="triangle (आकुंचन, 5 legs)")` |
+| simple_core/reading.py:125 | 20 | `if len(f) < 20:` |
+| simple_core/reading.py:149 | 3 | `return round(rng / med, 3) if med > 0 else None` |
+| simple_core/reading.py:187 | 15 | `if hhmm >= "15:15":` |
+| simple_core/reading.py:210 | 3 | `if legs["legs"] >= 3 and legs["bars"] > (imp["end_idx"] - imp["start_idx"]):` |
+| simple_core/count_source.py:5 | 9, 2.4 | `Degree (निर्णय 9 / §2.4): reading layer चा correction origin E (trade-degree confirmed pivot) ज्या count-degree वर confirmed pivot म्हणून` |
+| simple_core/count_source.py:8 | 4, 4 | `• motive (impulse / diagonal) + चालू wave 2 ⇒ G1, 4 ⇒ G9 (G9 फक्त preferred wave 4 म्हणतो तेव्हा; alternate ⇒ फक्त grade वाढ);` |
+| simple_core/count_source.py:109 | 4, 4 | `G9 (चालू wave 4): wave1_origin = O, wave1_extreme = W1, wave5_projection = wave 4 टोक (ext) + w5_proj_w1 × wave 1.` |
+| simple_core/count_source.py:116 | 1.0, 1.0 | `d = 1.0 if w1 > o else -1.0` |
 | simple_core/waves.py:4 | 3 | `Trade-degree swings (market_state, 15M ATR × 3) + चालू pullback, "x-space" मध्ये (trend दिशा = वर; bear ⇒ किंमत उलटी):` |
 | simple_core/waves.py:6 | 3 | `W2          = O नंतरचा पहिला start-kind pivot जो O च्या वर, नंतरचे सगळे pullbacks त्याच्या वर (R1: (ii) of 3 सुद्धा W2 खाली नाही),` |
 | simple_core/waves.py:9 | 3, 4, 3, 5 | `W2 आहे     ⇒ wave 3 चं टोक X3; त्याआधी पूर्ण झालेली wave 4 (W1 overlap नाही, खोल, wave 3 ≥ wave 1) आणि नवा high ⇒ wave 5 नंतर ⇒ gray.` |
@@ -409,7 +448,8 @@
 | chart_reader/areas.py:364 | 1.0 | `q = 1.0` |
 | chart_reader/areas.py:412 | 200 | `g = g[g["n"] >= 200]` |
 | elliott/breaks.py:2 | 7, 14 | `elliott/breaks.py — "खरा break" (spec §7, §14 Q1): count invalidation आणि (E3) exits एकाच व्याख्येवर` |
-| elliott/breaks.py:134 | 6 | `key = (int(start), round(float(level), 6), side, self.s["count_inv_basis"])` |
+| elliott/breaks.py:104 | 8 | `(Abhi G-MAP1 निर्णय 8: रचनेच्या breaks ना एकच व्याख्या)."""` |
+| elliott/breaks.py:151 | 6 | `key = (int(start), round(float(level), 6), side, self.s["count_inv_basis"])` |
 | price_action/levels_v2.py:5 | 2026, 08 | `Abhi (2026-10-08): PAPER bots नव्या levels वर चालतील; G-L1 (eye-match) / G-L2 (edge) अहवाल समांतर, report-only. LIVE ⇒ G-L2 PASS अनिवार्य.` |
 | price_action/levels_v2.py:9 | 6, 26 | `L2 lookback    degree नुसार (`lookback_weeks_by_degree`: D1 2, D2 6, D3 26 आठवडे). Recency decay नाही.` |
 | price_action/levels_v2.py:16 | 4 | `L6 selection   प्रत्येक बाजूला ≤ max_per_side (2), एकूण ≤ max_total (4); प्राधान्य FLIPPED > ≥ 2 quality rejections > range edge;` |

@@ -2,7 +2,7 @@
 
 🎓 पूर्ण KB नाही — 8 टप्पे, 12 साधनं, व्हेटो, Fibonacci नियम, volume, नेहमीच्या चुका. System prompt मध्ये cache_control सह (स्थिर ⇒ स्वस्त).
 """
-PROMPT_VERSION = "vision_led_v3"          # v2 (C-V1): structural invalidation, multi-degree trend, invalidation_reason
+PROMPT_VERSION = "vision_led_v4"          # v4 (टप्पा B): KB भाग I situation map मजकूर; v3          # v2 (C-V1): structural invalidation, multi-degree trend, invalidation_reason
 
 PLAYBOOK = """You are an experienced NIFTY index trader reading a chart for ONE decision: is there a high-quality PULLBACK-END entry right now,
 in the direction of the prior impulse, to sell a credit spread (bull put in an uptrend, bear call in a downtrend)?
@@ -103,3 +103,7 @@ OUTPUT RULES:
 - Every price must equal the OHLC value you reference. Copy it exactly from the table. Never estimate from the picture.
 - If no trade: trade = false, still give the story and why not.
 """
+
+from .situation_map import MAP_TEXT  # noqa: E402 — KB भाग I (नकाशा) मजकूर म्हणून (टप्पा B, B1)
+PLAYBOOK = PLAYBOOK + "\n" + MAP_TEXT
+
