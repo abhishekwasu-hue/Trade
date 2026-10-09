@@ -120,3 +120,17 @@ def rvol(m15, fut5, s):
         if np.isfinite(v) and np.isfinite(b) and b > 0:
             rv[i] = float(v) / b
     return rv, bad
+
+
+def bar_volume(m15, fut5):
+    """Spot 15M bars शी जुळणारा near-month futures volume (NaN = data नाही). wave_vol / effort_result साठी."""
+    out = np.full(len(m15), np.nan)
+    v15 = to_15m(near_month(fut5))
+    if not len(v15):
+        return out
+    vol = dict(zip(pd.to_datetime(v15["timestamp"]), v15["volume"].to_numpy(float)))
+    for i, t in enumerate(pd.to_datetime(m15["timestamp"])):
+        x = vol.get(t)
+        if x is not None:
+            out[i] = x
+    return out
