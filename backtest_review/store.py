@@ -11,7 +11,7 @@ from opportunity_engine import store as S
 
 TABLE = "backtest_review"
 VERDICTS = ("OK", "WRONG", "UNCLEAR")          # ✔ / ✘ / ?
-KINDS = ("day", "trade", "vision_test", "test", "annotation_check")  # test = Abhi च्या चाचणी replies (खरे निकाल नाहीत) ⇒ मोजमापातून वगळ
+KINDS = ("day", "trade", "vision_test", "test", "annotation_check", "swing_check")  # test = Abhi च्या चाचणी replies (खरे निकाल नाहीत) ⇒ मोजमापातून वगळ
 CREATE_SQL = f"""CREATE TABLE IF NOT EXISTS {TABLE} (
     item_id TEXT PRIMARY KEY, review_date DATE NOT NULL, item_type TEXT NOT NULL, verdict TEXT NOT NULL, reason TEXT,
     missed_trade TEXT, settings_hash TEXT, reviewed_at TIMESTAMP NOT NULL DEFAULT NOW());"""
@@ -49,7 +49,7 @@ def save_review(item, date, kind, verdict, reason="", missed=None, settings_hash
     return bool(S._run(conn_factory, work))
 
 
-NOT_MEASURED = ("test", "vision_test", "annotation_check")   # चाचणी replies / vision blind test / annotation तपासणी ⇒ code-review मोजमापात नाहीत
+NOT_MEASURED = ("test", "vision_test", "annotation_check", "swing_check")   # चाचणी replies / vision blind test / annotation तपासणी ⇒ code-review मोजमापात नाहीत
 
 
 def measurable(reviews):
