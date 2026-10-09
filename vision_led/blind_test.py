@@ -14,13 +14,15 @@ import pandas as pd
 
 from .playbook import PLAYBOOK
 
-CASES = ("2026-09-22 15:00", "2026-09-28 14:15", "2018-02-16 09:30", "2021-11-15 13:00")
 TFS = ("W", "D", "1H", "15M")
-BARS = {"W": 80, "D": 120, "1H": 70, "15M": 100}                         # chart + OHLC तक्ता (शेवटचे इतके बंद bars)
-GATING = (4, 5, 6, 9, 10, 12)                                          # यापैकी एकही ✘ ⇒ trade नाही (Abhi)
-ITEM_MR = {1: "Weekly + Daily स्थिती", 2: "1H trend / protected swing", 3: "impulse खरा", 4: "pullback = correction", 5: "pattern",
-           6: "pattern पूर्ण", 7: "area confluence", 8: "खोली", 9: "price failure", 10: "risk / R:R ≥ 3", 11: "संदर्भ",
+BARS = {"W": 80, "D": 120, "1H": 70, "15M": 100}                         # किमान (W / D = नेमके); 1H / 15M impulse साठी वाढतात
+MAX_BARS = {"1H": 260, "15M": 420}                                     # impulse खूप जुना असला तरी chart वाचनीय राहावा
+GATING = (5, 6, 9, 10, 12)                                             # Abhi 2026-10-09: gates फक्त हे (+ entry_start); 1, 4, 7, 8, 11 = पुरावा
+ENTRY_START = "09:30"                                                  # त्याआधी सुरू झालेला candle trigger मध्ये नाही
+ITEM_MR = {"entry_start": "entry वेळ 09:30 आधी", 1: "Weekly + Daily स्थिती", 2: "1H trend / protected swing", 3: "impulse खरा", 4: "pullback = correction", 5: "pattern",
+           6: "शेवटचा leg हजर", 7: "area confluence", 8: "खोली", 9: "price failure", 10: "risk / R:R ≥ 3", 11: "संदर्भ",
            12: "पक्के नियम"}
+PATTERN_STATES = ("final_leg_present", "final_leg_in_progress", "forming", "not_identified")
 STATUS = ("✔", "✘", "लागू नाही")
 CIRC = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
@@ -41,11 +43,18 @@ BLIND TEST CHECKLIST (Abhi) — answer EVERY item, in this order, for the decisi
 10 Risk: invalidation pattern च्या टोकाच्या / area च्या पलीकडे; target opposite area / impulse टोक; R:R ≥ 3.
 11 संदर्भ: gap, वेळ (09:15–09:45), expiry, event, VIX.
 12 पक्के नियम: breakout / पाठलाग नाही, बंद candle, स्पष्ट invalidation, R:R ≥ 3.
-निर्णय: 4, 5, 6, 9, 10, 12 पैकी एकही ✘ ⇒ trade नाही (तरी सगळी उत्तरं द्यायची). शेवटी "मी कुठे चुकीचा ठरेन".
+निर्णय (gates फक्त 5, 6, 9, 10, 12): यापैकी एकही ✘ ⇒ trade नाही. मुद्दा 6 ✘ कारण शेवटचा leg (C / E / 5) अजून चालू ⇒ "थांबा"
+(trade नाही पेक्षा वेगळं). मुद्दे 1, 4, 7, 8, 11 = फक्त पुरावा (grade), gate नाहीत. 09:30 आधी सुरू झालेला candle trigger मध्ये धरायचा नाही.
+तरी सगळी उत्तरं द्यायची. शेवटी "मी कुठे चुकीचा ठरेन".
 
-MARKS (for the chart the code will draw): pattern labels, areas and trendline anchors — each anchored to a bar as
-{tf: "W"|"D"|"1H"|"15M", time: exactly as in that table's first column, field: "high"|"low"|"open"|"close"}. An area = two anchors (its
-two edges); a trendline = two anchors. Trend words in Marathi (तेजी / मंदी / correction / range), 1–3 words each.
+ALWAYS GIVE (even when there is no trade):
+- impulse: the impulse being corrected — its ORIGIN bar and its END bar (anchors), on the timeframe where you read it;
+- labels: the correction's labels (A-B-C, or a-b-c-d-e, or (1)-(5) for a diagonal, or W-X-Y), each anchored to its bar;
+- pattern.state: final_leg_present / final_leg_in_progress / forming / not_identified;
+- trendlines: ALWAYS search playbook tool f (the correction's own trendline, rising/falling lines through the latest swings, wedge
+  lines) and give each as two anchors; if you truly find none, give an empty list and say why in trendline_note.
+MARKS: every anchor is {tf: "W"|"D"|"1H"|"15M", time: exactly as in that table's first column, field: "high"|"low"|"open"|"close"}.
+An area = two anchors (its two edges); a trendline = two anchors. Trend words in Marathi (तेजी / मंदी / correction / range), 1–3 words.
 No futures volume, VIX or event data is provided in this test: say so where an item needs it.
 """
 
@@ -56,7 +65,7 @@ REF = {"type": "object", "additionalProperties": False, "required": ["tf", "time
                       "field": {"type": "string", "enum": ["open", "high", "low", "close"]}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["trend", "checklist", "pattern", "labels", "areas", "trendlines", "decision", "wrong_if"],
+    "required": ["trend", "impulse", "checklist", "pattern", "labels", "areas", "trendlines", "trendline_note", "decision", "wrong_if"],
     "properties": {
         "trend": {"type": "object", "additionalProperties": False, "required": ["weekly", "daily", "h1", "m15"],
                   "properties": {k: {"type": "string"} for k in ("weekly", "daily", "h1", "m15")}},
@@ -64,8 +73,11 @@ SCHEMA = {
             "type": "object", "additionalProperties": False, "required": ["n", "status", "evidence", "bar_times"],
             "properties": {"n": {"type": "integer"}, "status": {"type": "string", "enum": list(STATUS)}, "evidence": {"type": "string"},
                            "bar_times": {"type": "array", "items": {"type": "string"}}}}},
-        "pattern": {"type": "object", "additionalProperties": False, "required": ["name", "complete"],
-                    "properties": {"name": {"type": "string"}, "complete": {"type": "boolean"}}},
+        "impulse": {"type": "object", "additionalProperties": False, "required": ["origin", "end"], "properties": {"origin": REF, "end": REF}},
+        "pattern": {"type": "object", "additionalProperties": False, "required": ["name", "complete", "state"],
+                    "properties": {"name": {"type": "string"}, "complete": {"type": "boolean"},
+                                   "state": {"type": "string", "enum": list(PATTERN_STATES)}}},
+        "trendline_note": {"type": "string"},
         "labels": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["text", "at"],
                                               "properties": {"text": {"type": "string"}, "at": REF}}},
         "areas": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["name", "a", "b"],
@@ -94,8 +106,38 @@ def weekly(daily, asof):
     return g[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
-def frames(m1, decision):
-    """decision = 15M bar start ⇒ asof = त्याचा close. फक्त बंद bars (bar_end ≤ asof); decision दिवसाचा daily bar अर्धवट ⇒ नाही."""
+def window_from(cut, asof):
+    """1H / 15M chart कुठून: (Abhi 2026-10-09) पूर्ण impulse — त्याच्या origin च्या आधीच्या swing पासून — आणि पूर्ण correction दिसायला
+    हवेत. Impulse / protected swing / swings = market_state (फक्त asof पर्यंतचा data). फक्त खिडकी ठरवायला; vision ला यातलं काहीच
+    (marking / वेळा) दिलं जात नाही. रिटर्न (ts | None, नोंद)."""
+    import market_state as MS
+    try:
+        ms = MS.read(cut, asof, run_elliott=False)
+    except Exception as exc:                                               # noqa: BLE001 — खिडकी default bars
+        return None, f"market_state: {type(exc).__name__}"
+    imp, prot = ms.get("impulse") or {}, ((ms.get("trend") or {}).get("protected") or {})
+    starts = [pd.Timestamp(x) for x in (imp.get("from_ts"), prot.get("ts")) if x is not None]
+    if not starts:
+        return None, "impulse / protected swing नाही"
+    s0 = min(starts)
+    piv = sorted({pd.Timestamp(p["ts"]) for p in (ms.get("swings") or []) + (ms.get("trend_swings") or []) if p.get("ts") is not None})
+    before = [t for t in piv if t < s0]
+    return (before[-1] if before else s0), f"impulse origin {s0:%Y-%m-%d %H:%M} च्या आधीचा swing"
+
+
+def _slice(f, tf, start):
+    """start पासून (किमान BARS, कमाल MAX_BARS; start नसेल ⇒ BARS)."""
+    if start is None or tf not in MAX_BARS:
+        return f.tail(BARS[tf]).reset_index(drop=True)
+    i = int(np.searchsorted(pd.to_datetime(f["timestamp"]).to_numpy(), np.datetime64(pd.Timestamp(start))))
+    i = max(0, i - 3)                                                       # swing bar च्या थोडं आधीपासून
+    n = min(max(len(f) - i, BARS[tf]), MAX_BARS[tf])
+    return f.tail(n).reset_index(drop=True)
+
+
+def frames(m1, decision, with_window=False):
+    """decision = 15M bar start ⇒ asof = त्याचा close. फक्त बंद bars (bar_end ≤ asof); decision दिवसाचा daily bar अर्धवट ⇒ नाही.
+    1H / 15M खिडकी = impulse origin च्या आधीच्या swing पासून (window_from)."""
     from market_state import core as MC
     asof = pd.Timestamp(decision) + pd.Timedelta(minutes=15)
     cut = m1[pd.to_datetime(m1["timestamp"]) + pd.Timedelta(minutes=1) <= asof]
@@ -103,7 +145,13 @@ def frames(m1, decision):
     out = {"W": weekly(d, asof), "D": d, "1H": MC.frame(cut, "1h", asof), "15M": MC.frame(cut, "15m", asof)}
     for tf, f in out.items():
         assert not len(f) or pd.Timestamp(f["bar_end"].max()) <= asof, f"{tf}: decision नंतरचा bar"
-    return {tf: f.tail(BARS[tf]).reset_index(drop=True) for tf, f in out.items()}, asof
+    start, note = window_from(cut, asof)
+    fr = {tf: _slice(f, tf, start) for tf, f in out.items()}
+    cut_off = [tf for tf in MAX_BARS if start is not None and len(fr[tf]) and pd.Timestamp(fr[tf]["timestamp"].iloc[0]) > start]
+    if cut_off:                                                             # MAX_BARS मुळे origin कापला ⇒ नोंद (लपवायचं नाही)
+        note += f"; MAX_BARS मुळे {'/'.join(cut_off)} मध्ये origin दिसत नाही"
+    w = {"from": None if start is None else str(start), "note": note, "origin_cut": cut_off}
+    return (fr, asof, w) if with_window else (fr, asof)
 
 
 def fmt_time(ts, tf):
@@ -185,12 +233,16 @@ def price_of(ref, fr):
 
 def resolve(v, fr):
     """Vision JSON ⇒ code निकाल: प्रत्येक खुणेची खरी किंमत, निर्णय नियम (GATING), entry / SL / target / R:R, गहाळ refs."""
+    dec_bar = pd.Timestamp(fr["15M"]["timestamp"].iloc[-1])
+    early = dec_bar.strftime("%H:%M") < ENTRY_START                          # entry_start: trigger candle 09:30 आधी सुरू ⇒ gate
     raw = [c for c in v.get("checklist") or [] if isinstance(c.get("n"), int)]
     cnt = {n: sum(1 for c in raw if c["n"] == n) for n in range(1, 13)}
     items = {n: next(c for c in raw if c["n"] == n) for n in range(1, 13) if cnt[n] == 1}
     missing_items = [n for n in range(1, 13) if cnt[n] != 1]                # नाही किंवा दोनदा ⇒ उत्तर ग्राह्य नाही
     fails = sorted({int(c["n"]) for c in raw if c.get("status") == "✘" and 1 <= int(c["n"]) <= 12})
     gate_fail = [n for n in GATING if n in fails or n in missing_items]
+    gate_fail_all = gate_fail + (["entry_start"] if early else [])
+    state = (v.get("pattern") or {}).get("state")
     bad_refs = []
 
     def px(ref, what):
@@ -206,6 +258,8 @@ def resolve(v, fr):
     for a in areas:
         ps = [p for p in a.pop("p") if p is not None]
         a["lo"], a["hi"] = (min(ps), max(ps)) if ps else (None, None)
+    im = v.get("impulse") or {}
+    impulse = {k: ({**im[k], "price": px(im[k], f"impulse {k}")} if im.get(k) else None) for k in ("origin", "end")}
     tls = [{"name": t["name"], "a": {**t["a"], "price": px(t["a"], f"trendline {t['name']}")},
             "b": {**t["b"], "price": px(t["b"], f"trendline {t['name']}")}} for t in v.get("trendlines") or []]
     d = v.get("decision") or {}
@@ -219,16 +273,23 @@ def resolve(v, fr):
         rr = round(abs(tgt - entry) / abs(entry - inv), 2)
         sgn = -1 if side == "bear" else 1                                   # bear: SL वर, target खाली; bull उलट
         order_ok = (inv - entry) * sgn < 0 < (tgt - entry) * sgn
-    trade = side != "none" and not gate_fail and rr is not None and rr >= 3.0 and order_ok
+    trade = side != "none" and not gate_fail_all and rr is not None and rr >= 3.0 and order_ok
     why = []
     if gate_fail:
         why.append("✘ मुद्दे " + ", ".join(str(n) for n in gate_fail) + " ⇒ trade नाही (नियम)")
+    if early:
+        why.append(f"decision candle {dec_bar:%H:%M} ({ENTRY_START} आधी सुरू) ⇒ trigger नाही")
     if side != "none" and not order_ok:
         why.append("SL / target चुकीच्या बाजूला")
     elif side != "none" and (rr is None or rr < 3.0):
         why.append(f"R:R {rr} < 3" if rr is not None else "R:R मोजता आला नाही")
-    return {"n_ok": sum(1 for n in range(1, 13) if items.get(n, {}).get("status") == "✔"), "fails": fails, "gate_fail": gate_fail,
-            "missing_items": missing_items, "first_fail": (fails or [None])[0], "side": side, "trade": trade, "entry": entry,
+    wait = (not trade and gate_fail == [6] and 6 in fails and 6 not in missing_items   # फक्त 6 ✘ (गहाळ नाही) आणि C चालू ⇒ "थांबा"
+            and state == "final_leg_in_progress")
+    outcome = "setup" if trade else ("wait" if wait else "no_trade")
+    gfirst = next((n for n in GATING if n in gate_fail), None)
+    return {"n_ok": sum(1 for n in range(1, 13) if items.get(n, {}).get("status") == "✔"), "fails": fails, "gate_fail": gate_fail_all,
+            "missing_items": missing_items, "first_fail": gfirst if gfirst is not None else ("entry_start" if early else None),
+            "outcome": outcome, "pattern_state": state, "impulse": impulse, "side": side, "trade": trade, "entry": entry,
             "invalidation": inv, "target": tgt, "rr": rr, "order_ok": order_ok, "labels": labels, "areas": areas, "trendlines": tls, "bad_refs": bad_refs,
             "code_why": "; ".join(why), "vision_said_trade": side != "none"}
 
@@ -242,11 +303,14 @@ def _short(s, n):
 def caption(n, total, decision, v, r):
     """≤ 8 ओळी, ≤ 1024 अक्षरं, साधी मराठी, code keys नाहीत."""
     t = v.get("trend") or {}
-    side_mr = {"bear": "bear", "bull": "bull"}.get(r["side"], "trade नाही")
-    dec = (f"{side_mr} · entry {r['entry']:,.1f} · SL {r['invalidation']:,.1f} · target {r['target']:,.1f} · R:R {r['rr']}"
-           if r["side"] != "none" and None not in (r["entry"], r["invalidation"], r["target"]) else side_mr)
-    if r["side"] != "none" and not r["trade"]:
-        dec = f"trade नाही ({_short(r['code_why'], 60)}) · vision: {dec}"
+    plan = (f"{r['side']} · entry {r['entry']:,.1f} · SL {r['invalidation']:,.1f} · target {r['target']:,.1f} · R:R {r['rr']}"
+            if r["side"] != "none" and None not in (r["entry"], r["invalidation"], r["target"]) else None)
+    if r.get("outcome") == "setup":
+        dec = plan
+    elif r.get("outcome") == "wait":
+        dec = "थांबा (शेवटचा leg अजून चालू)"
+    else:
+        dec = "trade नाही" + (f" ({_short(r['code_why'], 60)})" if r.get("code_why") else "") + (f" · vision: {plan}" if plan else "")
     ar = [f"{a['name']} {a['lo']:,.0f}–{a['hi']:,.0f}" for a in r["areas"] if a["lo"] is not None][:3]
     ar += [f"{x['name']} रेषा" for x in r["trendlines"]][:2]
     ff = r["first_fail"]
@@ -255,7 +319,8 @@ def caption(n, total, decision, v, r):
              f"15M {_short(t.get('m15'), 20)}",
              f"🌀 Pattern: {_short((v.get('pattern') or {}).get('name'), 80)} ({'पूर्ण' if (v.get('pattern') or {}).get('complete') else 'अपूर्ण'})",
              f"🧱 Areas / trendline: {_short(' · '.join(ar) or '—', 160)}",
-             f"✅ Checklist: {r['n_ok']}/12 ✔" + (f" · पहिला ✘: {ff} {ITEM_MR[ff]}" if ff else ""),
+             f"✅ Checklist: {r['n_ok']}/12 ✔" + (f" · पहिला ✘ (gate): {ITEM_MR['entry_start']}" if ff == "entry_start"
+                                                   else f" · पहिला ✘ (gate): {ff} {ITEM_MR[ff]}" if ff else ""),
              f"🎯 निर्णय: {dec}",
              "Reply: ✔ बरोबर · ✘ कारण"]
     cap = "\n".join(lines)
@@ -275,9 +340,20 @@ def figure(df, tf, title, marks=None, legend=True):
                       xaxis=dict(tickmode="array", tickvals=list(x[::step]), ticktext=[fmt_time(t, tf) for t in df["timestamp"].iloc[::step]],
                                  zeroline=False),
                       yaxis=dict(side="right", tickformat=",.0f", zeroline=False))
+    tf_badge(fig, tf)
     if marks:
         _draw(fig, df, tf, marks, legend)
     return fig
+
+
+TF_NAME = {"W": "WEEKLY", "D": "DAILY", "1H": "1H", "15M": "15M"}
+
+
+def tf_badge(fig, tf):
+    """Album bug (Abhi 2026-10-09, केस 3): चारही files वेगळ्या होत्या, पण Telegram album चे thumbnails title कापतात आणि HTF Weekly / Daily
+    सारखे दिसतात ⇒ "Weekly दोनदा" वाटलं. म्हणून chart च्या मध्यात मोठी, फिकट TF खूण (thumbnail मध्येही दिसते). किंमत / मत नाही."""
+    fig.add_annotation(x=0.5, y=0.5, xref="paper", yref="paper", text=TF_NAME.get(tf, tf), showarrow=False,
+                       font=dict(size=150, color="rgba(255,255,255,0.10)"), xanchor="center", yanchor="middle")
 
 
 def _xi(df, tf, ref_tf, time):
@@ -311,6 +387,14 @@ def _draw(fig, df, tf, r, legend):
         slope = (pb - pa) / (xb - xa)
         fig.add_shape(type="line", x0=xa, y0=pa, x1=n - 1, y1=pa + slope * (n - 1 - xa), line=dict(color="#ab47bc", width=2))
         rows.append((pa + slope * (n - 1 - xa), f"{t_['name']} ({pa:,.1f} → {pb:,.1f})", n - 1))
+    imp = r.get("impulse") or {}
+    o_, e_ = imp.get("origin") or {}, imp.get("end") or {}
+    if o_.get("price") is not None and e_.get("price") is not None:
+        xo, xe = _xi(df, tf, o_["tf"], o_["time"]), _xi(df, tf, e_["tf"], e_["time"])
+        if xo is not None and xe is not None:
+            fig.add_shape(type="line", x0=xo, y0=o_["price"], x1=xe, y1=e_["price"], line=dict(color="#42a5f5", width=3, dash="dot"))
+            rows.append((o_["price"], f"impulse origin {o_['price']:,.1f} ({o_['time']})", xo))
+            rows.append((e_["price"], f"impulse end {e_['price']:,.1f} ({e_['time']})", xe))
     for lb in r["labels"]:
         xi = _xi(df, tf, lb["tf"], lb["time"])
         if lb["price"] is None or xi is None:
