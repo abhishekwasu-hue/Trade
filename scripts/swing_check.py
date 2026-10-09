@@ -62,6 +62,7 @@ def main(argv=None):
     ap.add_argument("--send", action="store_true", help="Telegram albums (VPS)")
     a = ap.parse_args(argv)
     m1 = load_1m(a.data)
+    print(f"1m rows {len(m1)} वाचले · engine बांधतो (काही मिनिटं)…", flush=True)
     m15 = PE.bars_15m(m1)
     res = PE.build(m15, m1)
     hist = load_history(a.daily_history)
@@ -87,6 +88,7 @@ def main(argv=None):
         items.append({"n": n, "date": tag, "item": f"{a.run_id}|day:{tag}", "kind": "swing_check", "reading": cap, "caption": cap,
                       "files": files})
         pages.append(PC.grid(pngs))
+        print(f"  {n}/{len(days)} {tag} ✓", flush=True)                           # VPS वर progress दिसावा
     rows = PE.measures(res, days[0], last) if days else []
     write_json(os.path.join(a.out_dir, "measures.json"), {"from": str(days[0]) if days else None, "to": str(last), "rows": rows,
                                                          "settings": {k: v for k, v in res["settings"].items()}})

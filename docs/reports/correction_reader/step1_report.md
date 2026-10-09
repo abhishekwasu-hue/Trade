@@ -69,6 +69,19 @@
 | Diagonal overlap | `g_diag_overlap` = score (gate नाही) ✔ | — | EWI "almost always" | ✔ spec प्रमाणे |
 | chart_reader `zigzag_b_max` = 0.79, `flat_c_min` = 0.90 | `chart_reader/settings.py:122–124` (entry_point gate, shadow engine) | अंदाज | KB K3 family / R7 | Shadow engine मध्येच; Simple Core live gate नाही |
 
+**थर 3 (patterns2) मधून नवे मुद्दे (थर 3 prompt §10.4; Abhi च्या निर्णयासाठी, आज default):**
+
+| मुद्दा | थर 3 मध्ये आज | पर्याय |
+|---|---|---|
+| Sub-wave ची आतली रचना (A = 5, B = 3, C = 5) | **पुरावा** (गुण), gate नाही. कारण: रचना swing उंबरठ्यावर अवलंबून (EW संशोधन Q5; थर 2 मध्ये रचना फक्त नोंद) | spec §3 प्रमाणे RULE (gate) |
+| Wedge चा truncation gate (5 हा 3 च्या टोकापलीकडे) | gate (EWGold) | EWP: पाचव्या wave चं truncation शक्य (recalled, verify) ⇒ gate काढणं |
+| संपूर्ण-K wedge "ending" म्हणून entry | नाही: पहिला पाच-legs भाग = leading (A) ⇒ "थांबा" (`wedge_as_ending` = False) | ending diagonal म्हणून शेवटचा leg / entry (Correction Reader §3.5) |
+| Triangle: "C, A च्या आत" | अट नाही (contracting मध्ये C, A पलीकडे चालतो) | अट जोडणं |
+| Expanding triangle | valid, गुण 0.5 ("expanding उप-प्रकार"); code मध्ये `nm = 0` | पूर्ण बंदी / फक्त नकारात्मक पुरावा |
+| Flat B/A > 2.0 | gate नाही, m 0.2 (आजच्या code मध्ये gate) | gate ठेवणं |
+| गुण बरोबरीत शेवटचा tie-break | गुण ⇒ नवा I ⇒ pattern-क्रम ⇒ (फक्त निश्चिततेसाठी) wave-सीमा, म्हणजे position | दुसरा नियम (उदा. alternate दोन्ही दाखवणं) |
+| शेवटच्या wave चं confirmed टोक पुढे सरकलं (उदा. C लांबला) | तोच hypothesis ("extension"), बदल मोजत नाही | spec §5.3 शब्दशः: identity जुळत नाही ⇒ बदल |
+
 ## 4. 22 Sep: area ला पहिला स्पर्श कोणत्या bar ला?
 
 हे decision-bar data वर तपासलं (प्रत्येक bar ला फक्त त्या वेळी माहीत असलेले zones; touch tolerance 0.3 MR, सध्याचं):
