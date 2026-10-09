@@ -139,6 +139,9 @@ IS मध्ये 496 tests मिळाले (`A5_range_edges.md`). "कड �
    - Code ने 12:15 पर्यंतच्या bars वरून G9 म्हटलं: wave 3 चं टोक 22,217 (1 Oct), नंतरची तेजी wave 4, retrace 41%.
    - Abhi चा golden: G5 / S1 (C-end).
    - तुम्हाला कोणता count योग्य वाटतो ते सांगा. ते टप्पा B मध्ये golden test होईल.
+   - **Code च्या आतच दोन वाचनं:** 15M chart वरचं market_state चं ABC असं वाचतं: impulse 22,809 वरून 22,217, मग A 22,620, B 22,400,
+     C सुमारे 22,730 (6 Oct). म्हणजे C-end, आणि हे Abhi च्या golden शी जुळतं. पण `simple_core/waves.py` तोच भाग "wave 4 end ⇒ G9"
+     म्हणतो. टप्पा B मध्ये ही दोन वाचनं एकाच count मधून यायला हवीत.
 4. **नकाशात एखादी परिस्थिती सुटली आहे का (I9.8):** Sep–Oct review मधून दोन गोष्टी दिसल्या:
    - target degree (§0.1);
    - G9 विरुद्ध C-end मधला गोंधळ (§6.3).

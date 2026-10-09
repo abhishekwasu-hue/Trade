@@ -163,33 +163,93 @@ def _tl_value_fn(z, m15_ts):
     return f
 
 
-def place_right_labels(fig, x, items, lo, hi, gap_frac=0.045):
-    """उजवीकडचे labels एकमेकांवर येऊ नयेत (Abhi Sep–Oct review): y नुसार क्रम, किमान अंतर ठेवून stagger; हलवलेल्या label पासून
-    खऱ्या भावापर्यंत बारीक बाण. items = [{y, text, color, bold}] — bold फक्त entry-area / ENTRY साठी, बाकी फिकट."""
+def circ(n):
+    """1 ⇒ ①, … 20 ⇒ ⑳, पुढे (21)."""
+    return chr(0x2460 + n - 1) if 1 <= n <= 20 else f"({n})"
+
+
+CORNERS = ("top-right", "bottom-right", "top-left", "bottom-left")
+
+
+def legend_corner(d, lo, hi, items_y=(), n_rows=8, blocked=()):
+    """Legend box चा कोपरा: candles आणि उजव्या कडेवरच्या क्रमांक-खुणा सगळ्यात कमी झाकल्या जातील असा (blocked = trend / notes box चे
+    कोपरे). Box ची उंची rows वरून अंदाजे (फक्त जागेचा अंदाज, निर्णय नाही)."""
+    span = (hi - lo) or 1.0
+    vfrac = min(0.65, 0.05 + 0.035 * n_rows)
+    m = len(d)
+    k = max(1, int(m * 0.28))
+    best = None
+    for c in CORNERS:
+        if c in blocked:
+            continue
+        top, right = c.startswith("top"), c.endswith("right")
+        cut = hi - vfrac * span if top else lo + vfrac * span
+        seg = d.iloc[m - k:] if right else d.iloc[:k]
+        cost = int(((seg["high"].astype(float) > cut) if top else (seg["low"].astype(float) < cut)).sum()) if m else 0
+        if right:
+            cost += 3 * sum(1 for y in items_y if (y > cut if top else y < cut))
+        if best is None or cost < best[0]:
+            best = (cost, c)
+    return best[1] if best else "top-right"
+
+
+def level_marks(fig, x, items, lo, hi, corner="auto", d=None, blocked=(), legend_px=250):
+    """Levels चे labels (Abhi 2026-10-09): label खऱ्या भावापासून कधीच ढकलत नाही.
+    - axis range [lo, hi] आतले: त्या भावावर लहान क्रमांक-खूण (①②③ …; जवळजवळच्या खुणा फक्त आडव्या सरकतात) + कोपऱ्यातल्या legend box मध्ये
+      "① <नाव किंमत>". ठळक (bold) फक्त entry-area. Legend उजव्या कोपऱ्यात असेल आणि खूण त्याच्या उंचीत ⇒ खूण त्याच भावावर legend च्या डावीकडे.
+    - range बाहेरचे: axis ताणत नाही — chart च्या वरच्या / खालच्या कडेवर बाणासह label ("↑ wave1_origin 23,489").
+    items = [{y, text, color, bold}] — text मध्ये किंमत (caller देतो). रिटर्न: legend मधल्या rows ची संख्या."""
     items = [it for it in items if it.get("y") is not None and np.isfinite(float(it["y"]))]
     if not items:
-        return
+        return 0
     span = (hi - lo) or 1.0
-    gap = gap_frac * span
-    items = sorted(items, key=lambda it: float(it["y"]))
-    ya = []
-    for it in items:                                                       # खालून वर: किमान अंतर
-        y = float(it["y"])
-        ya.append(y if not ya else max(y, ya[-1] + gap))
-    over = ya[-1] - (hi + 0.04 * span)
-    if over > 0:                                                           # वर chart बाहेर ⇒ सगळे खाली सरकवा (क्रम तसाच)
-        ya = [v - over for v in ya]
-    for it, y_lab in zip(items, ya):
+    inr = sorted([it for it in items if lo <= float(it["y"]) <= hi], key=lambda it: -float(it["y"]))
+    if inr and corner == "auto":
+        corner = legend_corner(d, lo, hi, [float(it["y"]) for it in inr], len(inr), blocked) if d is not None else "top-right"
+    corner = {"top": "top-right", "bottom": "bottom-right", "auto": "top-right"}.get(corner, corner)
+    top, right = corner.startswith("top"), corner.endswith("right")
+    vfrac = min(0.65, 0.05 + 0.035 * len(inr))
+    cut = hi - vfrac * span if top else lo + vfrac * span
+    rows, prev_y, j = [], None, 0
+    for n, it in enumerate(inr, 1):
         y, col, bold = float(it["y"]), it.get("color") or "#b0bec5", bool(it.get("bold"))
-        moved = abs(y_lab - y) > 1e-9
-        kw = dict(text=f"<b>{it['text']}</b>" if bold else it["text"], xanchor="right", yanchor="middle",
-                  font=dict(size=12 if bold else 10, color=col), bgcolor="rgba(14,17,23,0.85)" if bold else "rgba(14,17,23,0.55)",
-                  bordercolor=col if bold else "rgba(0,0,0,0)", borderwidth=1 if bold else 0, opacity=1.0 if bold else 0.8)
-        if moved:
-            fig.add_annotation(x=x, y=y, ax=x, ay=y_lab, axref="x", ayref="y", showarrow=True, arrowhead=0, arrowwidth=1,
-                               arrowcolor=col, **kw)
-        else:
-            fig.add_annotation(x=x, y=y, showarrow=False, **kw)
+        j = j + 1 if prev_y is not None and abs(prev_y - y) < 0.025 * span else 0
+        prev_y = y
+        under = right and (y > cut if top else y < cut)                    # legend खाली झाकली गेली असती
+        fig.add_annotation(x=x, y=y, text=f"<b>{circ(n)}</b>" if bold else circ(n), showarrow=False,
+                           xanchor="right" if under else "left", yanchor="middle",
+                           xshift=(-legend_px - 16 * j) if under else (4 + 16 * j), font=dict(size=13 if bold else 11, color=col),
+                           bgcolor="rgba(14,17,23,0.85)", bordercolor=col if bold else "rgba(0,0,0,0)", borderwidth=1 if bold else 0)
+        txt = f"{circ(n)} {it['text']}"
+        rows.append(f"<span style='color:{col}'>{'<b>' + txt + '</b>' if bold else txt}</span>")
+    for side, arrow in (("top", "↑"), ("bottom", "↓")):
+        outs = [it for it in items if (float(it["y"]) > hi if side == "top" else float(it["y"]) < lo)]
+        outs.sort(key=lambda it: abs(float(it["y"]) - (hi if side == "top" else lo)))
+        for k, it in enumerate(outs):
+            fig.add_annotation(x=1.0, xref="paper", y=hi if side == "top" else lo, text=f"{arrow} {it['text']}", showarrow=False,
+                               xanchor="right", yanchor="top" if side == "top" else "bottom", yshift=(-15 if side == "top" else 15) * k,
+                               font=dict(size=10, color=it.get("color") or "#b0bec5"), bgcolor="rgba(14,17,23,0.75)")
+    if rows:
+        fig.add_annotation(x=0.995 if right else 0.005, y=0.97 if top else 0.03, xref="paper", yref="paper",
+                           xanchor="right" if right else "left", yanchor="top" if top else "bottom",
+                           align="left", text="<br>".join(rows), showarrow=False, font=dict(size=10), bgcolor="rgba(14,17,23,0.85)",
+                           bordercolor="#455a64", borderwidth=1)
+    return len(rows)
+
+
+def _zone_text(z, price_txt):
+    return f"{z.get('zid') or z.get('id')} {z.get('type') or ''} {price_txt} · {z.get('state', 'ACTIVE')}".replace("  ", " ")
+
+
+def is_entry_area(lo_, hi_, side_, a):
+    """Abhi 2026-10-09: entry-area ठळक फक्त trade दिशेचे — bear ⇒ seller (S…) zone आणि entry च्या वर; bull ⇒ buyer (B…) आणि entry च्या
+    खाली; आणि signal area च्या पट्ट्याशी overlap. a = {low, high, side ("sell"/"buy"), entry}."""
+    if side_ != a.get("side"):
+        return False
+    e = a.get("entry")
+    if e is not None and ((side_ == "sell" and hi_ < float(e)) or (side_ == "buy" and lo_ > float(e))):
+        return False
+    return lo_ <= float(a["high"]) and hi_ >= float(a["low"])
 
 
 def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4, focus=None, labels_out=None):
@@ -200,10 +260,10 @@ def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4, focus=None, labels_o
     ts = pd.to_datetime(d["timestamp"])
     t0 = ts.iloc[0]
     shown = {"sell": 0, "buy": 0}
-    focus = list(focus or ())                                            # signal areas: [{low, high}] — भावपट्टा overlap ⇒ ठळक
+    focus = list(focus or ())                                            # signal areas: [{low, high, side, entry}]
 
-    def _focus(lo_, hi_):
-        return any(lo_ <= float(a["high"]) and hi_ >= float(a["low"]) for a in focus)
+    def _focus(lo_, hi_, side_):
+        return any(is_entry_area(lo_, hi_, side_, a) for a in focus)
     rlabels = []                                                          # उजवीकडचे labels — शेवटी place_right_labels (stagger)
     for z in zones or []:
         side = z.get("side") or ("sell" if z.get("role") == "RESISTANCE" else "buy")
@@ -227,18 +287,19 @@ def _zones_layer(fig, d, zones, m15_ts, lo, hi, per_side=4, focus=None, labels_o
                 txt = " · ".join(f"{pd.Timestamp(a):%d %b} {v:,.0f}" for a, v in before)
                 fig.add_annotation(x=0, y=ys[0], text=f"← {txt}", showarrow=False, xanchor="left", yanchor="bottom",
                                    font=dict(size=10, color=col))
-            rlabels.append({"y": ys[-1], "text": label, "color": col, "bold": _focus(ys[-1], ys[-1])})
+            rlabels.append({"y": ys[-1], "text": _zone_text(z, f"{ys[-1]:,.0f}"), "color": col, "bold": _focus(ys[-1], ys[-1], side)})
             continue
         if shown[side] >= per_side or float(z["high"]) < lo - 0.1 * span or float(z["low"]) > hi + 0.1 * span:
             continue
         shown[side] += 1
         fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(z["low"]), y1=float(z["high"]), fillcolor=col, opacity=0.13,
                       line=dict(color=col, width=1), layer="below")
-        rlabels.append({"y": float(z["high"]), "text": label, "color": col, "bold": _focus(float(z["low"]), float(z["high"]))})
+        rlabels.append({"y": (float(z["low"]) + float(z["high"])) / 2.0, "text": _zone_text(z, f"{float(z['low']):,.0f}–{float(z['high']):,.0f}"),
+                        "color": col, "bold": _focus(float(z["low"]), float(z["high"]), side)})
     if labels_out is not None:
         labels_out.extend(rlabels)
     else:
-        place_right_labels(fig, n - 1, rlabels, lo, hi)
+        level_marks(fig, n - 1, rlabels, lo, hi, d=d, blocked=("top-left",))
 
 
 def _gap_layer(fig, d, gap, day=None):
@@ -432,6 +493,21 @@ def day_15m(m15_day, cands, story, title, ms_close=None, cut=None, areas=None, z
     return _finish(fig, d, min(lo, bottom), hi)
 
 
+WAVE_INFO_REFS = ("wave1_origin", "wave1_extreme", "subwave_origin")   # count ची माहिती (target / SL नाहीत) — gray ⇒ नाही
+
+
+def sl_target(b):
+    """Abhi 2026-10-09: chart वर फक्त **चालू** SL / target. Plan (execution settings) असेल तर त्याचे भाव; plan ने भाव काढला नसेल (उदा. G9
+    tier नाही) तर settings च्या sl_mode / target_mode चा ref level. Settings नाहीत ⇒ काहीच नाही (next_opposite_area फक्त target_mode तोच
+    असेल तर). रिटर्न ((sl, label), (target, label))."""
+    sg, pl = b.get("signal") or {}, b.get("plan") or {}
+    ex, ref = pl.get("settings") or {}, sg.get("ref_levels") or {}
+    sm, tm = ex.get("sl_mode"), ex.get("target_mode")
+    sl = pl.get("sl") if pl.get("sl") is not None else ref.get(sm) if sm else None
+    tg = pl.get("target") if pl.get("target") is not None else ref.get(tm) if tm else None
+    return (sl, f"SL ({sm})" if sm else "SL"), (tg, f"TARGET ({tm})" if tm else "TARGET")
+
+
 def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
     """Simple Core दिवस chart (K-10): trend label, selling / buying areas, pause candles फिकट, commitment ठळक, 🚩 ENTRY SIGNAL,
     ref_levels (फक्त माहिती), प्रत्येक signal वर shadow engine चा निर्णय एका ओळीत. bars = [{bar_start, signal, pause_bars, why,
@@ -449,7 +525,12 @@ def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
     sig_bar = next((b for b in bars if b.get("signal") and b.get("zones")), None)     # signal च्या वेळचे zones (दिवस अखेरचे नाहीत)
     src = sig_bar or next((b for b in reversed(bars) if b.get("zones")), {})
     live = [z for z in src.get("zones") or [] if z.get("state") not in ("BROKEN", "DEAD", "MAGNET")]
-    focus = [b["signal"]["area"] for b in bars if b.get("signal") and (b["signal"].get("area") or {}).get("low") is not None]
+    focus = [{**b["signal"]["area"], "side": "sell" if b["signal"]["side"] < 0 else "buy", "entry": b["signal"].get("trigger_price")}
+             for b in bars if b.get("signal") and (b["signal"].get("area") or {}).get("low") is not None]
+    for b in bars:                                                        # axis: दिसणारे candles + entry / SL / target एवढंच
+        for v in (sl_target(b)[0][0], sl_target(b)[1][0]) if b.get("signal") else ():
+            if v is not None:
+                lo, hi = min(lo, float(v)), max(hi, float(v))
     rlabels = []
     _zones_layer(fig, d, live, m15_ts, lo, hi, focus=focus, labels_out=rlabels)
     if ms_close:
@@ -472,15 +553,21 @@ def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
         up = sg["side"] > 0
         fig.add_annotation(x=k, y=float(d["low"].iloc[k] if up else d["high"].iloc[k]), text=f"🚩 ENTRY {pd.Timestamp(sg['bar_start']):%H:%M} "
                            f"{'bull' if up else 'bear'} · {sg['trigger_price']:,.0f}", showarrow=True, ay=40 if up else -40,
+                           ax=-160 if k > 0.75 * n else 0, xanchor="right" if k > 0.75 * n else "center",   # उजवीकडच्या labels मागे लपू नये
                            font=dict(size=13, color="#ffd54f"), bgcolor="rgba(0,0,0,0.7)")
-        for name, v in (sg.get("ref_levels") or {}).items():
+        (sl, sl_lab), (tg, tg_lab) = sl_target(b)
+        lines = [(sl, sl_lab, "#ef5350"), (tg, tg_lab, "#26a69a")]
+        wave = sg.get("wave") or {}
+        if wave.get("setup") and not wave.get("gray"):                       # count gray ⇒ wave refs दाखवायचेच नाहीत (Abhi)
+            lines += [((sg.get("ref_levels") or {}).get(key), key, "#b0bec5") for key in WAVE_INFO_REFS]
+        for v, name, col in lines:
             if v is None:
                 continue
-            fig.add_shape(type="line", x0=k, x1=n - 0.5, y0=v, y1=v, line=dict(color="#b0bec5", width=1, dash="dot"))
-            rlabels.append({"y": v, "text": f"{name} {v:,.0f}", "color": "#b0bec5", "bold": False})
-            lo, hi = min(lo, v), max(hi, v)
+            v = float(v)
+            fig.add_shape(type="line", x0=k, x1=n - 0.5, y0=v, y1=v, line=dict(color=col, width=1, dash="dot"))
+            rlabels.append({"y": v, "text": f"{name} {v:,.0f}", "color": col, "bold": False})
         notes.append(f"{pd.Timestamp(sg['bar_start']):%H:%M}: area {sg['area']['id']} · pause {sg['pause_bars']} · shadow: {b.get('shadow') or '—'}")
-    place_right_labels(fig, n - 1, rlabels, lo, hi)
+    level_marks(fig, n - 1, rlabels, lo, hi, d=d, blocked=("top-left", "bottom-left"))      # trend box / notes box
     _trend_box(fig, d, hi, (ms_close or {}).get("trend"))
     txt = "<br>".join(notes) if notes else "आज ENTRY SIGNAL नाही"
     span = (hi - lo) or 1.0
@@ -488,3 +575,79 @@ def core_day_15m(m15, day, bars, title, m15_ts=None, cut=None, ms_close=None):
                                                        "zones: दिवस अखेरचे<br>") + txt[:600], showarrow=False, xanchor="left", yanchor="top", font=dict(size=12, color="#eceff1"),
                        bgcolor="rgba(0,0,0,0.7)", align="left")
     return _finish(fig, d, lo - 0.12 * span, hi)
+
+
+def daily_1d(f, title, sessions=60):
+    """Daily (आजोबा degree) chart — Abhi 2026-10-09. f = backtest_review.daily.facts(df1m, asof). Axis फक्त दिसणाऱ्या candles एवढा;
+    levels क्रमांक-खूण + legend (किंमतीसह), range बाहेरचे ⇒ कडेवर बाण. Count gray ⇒ "count gray", labels नाहीत."""
+    fr = f["frame"]
+    d = fr.tail(sessions).reset_index(drop=True)
+    off = len(fr) - len(d)                                                # fr index ⇒ d index
+    fig = _base(d, title)
+    n = len(d)
+    if not n:
+        return fig
+    lo, hi = float(d["low"].min()), float(d["high"].max())
+    span = (hi - lo) or 1.0
+    xi = _xmap(d)
+    items = []
+    tr = f.get("trend") or {}
+    prot = tr.get("protected") or {}
+    if prot.get("price") is not None:
+        v = float(prot["price"])
+        fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=v, y1=v, line=dict(color="#ffd54f", width=1.5, dash="dash"))
+        items.append({"y": v, "text": f"protected {prot.get('kind', '')} {v:,.0f}", "color": "#ffd54f", "bold": False})
+    for p in f.get("swings") or []:                                       # confirmed daily swings, किंमतीसह
+        k = int(p["idx"]) - off
+        if 0 <= k < n:
+            up = p["kind"] == "H"
+            fig.add_annotation(x=k, y=p["price"], text=f"{p['label']} {p['price']:,.0f}", showarrow=False, yanchor="bottom" if up else "top",
+                               yshift=4 if up else -4, font=dict(size=10, color="#ef9a9a" if up else "#80cbc4"))
+    for z in f.get("areas") or []:
+        col = SELL_COL if z["side"] == "sell" else BUY_COL
+        fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(z["low"]), y1=float(z["high"]), fillcolor=col, opacity=0.13,
+                      line=dict(color=col, width=1), layer="below")
+        items.append({"y": (float(z["low"]) + float(z["high"])) / 2.0,
+                      "text": _zone_text(z, f"{float(z['low']):,.0f}–{float(z['high']):,.0f}"), "color": col, "bold": False})
+    for g in f.get("gaps") or []:
+        fig.add_shape(type="rect", x0=max(-0.5, xi(g["ts"]) - 0.5), x1=n - 0.5, y0=g["low"], y1=g["high"], fillcolor="#90a4ae", opacity=0.12,
+                      line=dict(color="#90a4ae", width=1, dash="dot"), layer="below")
+        items.append({"y": (g["low"] + g["high"]) / 2.0, "text": f"न भरलेला gap {g['dir']} {g['low']:,.0f}–{g['high']:,.0f}",
+                      "color": "#90a4ae", "bold": False})
+    z = f.get("trendline")
+    if z is not None:
+        import plotly.graph_objects as go
+        ts = pd.to_datetime(fr["timestamp"]).to_numpy(dtype="datetime64[ns]")
+        fn = _tl_value_fn(z, ts)
+        if fn is not None:
+            col = SELL_COL if z["side"] == "sell" else BUY_COL
+            ys = [fn(t) for t in d["timestamp"]]
+            fig.add_trace(go.Scatter(x=list(range(n)), y=ys, mode="lines", line=dict(color=col, width=2, dash="dash")))
+            pts = [(a, float(v)) for a, v in (z.get("anchors") or []) if pd.Timestamp(a) >= d["timestamp"].iloc[0]]
+            if pts:
+                fig.add_trace(go.Scatter(x=[xi(a) for a, _ in pts], y=[v for _, v in pts], mode="markers",
+                                         marker=dict(color=col, size=10, symbol="circle-open", line=dict(width=2))))
+            items.append({"y": ys[-1], "text": f"daily trendline {ys[-1]:,.0f} · {len(z.get('anchors') or [])} touch-बिंदू", "color": col,
+                          "bold": False})
+    cnt = f.get("count") or {}
+    if not cnt.get("gray"):
+        for node, op, size in ((cnt.get("alternate"), 0.45, 11), (cnt.get("preferred"), 1.0, 14)):
+            if not node:
+                continue
+            for (t, v), lab in zip(node["points"], node["labels"]):
+                k = xi(t)
+                if pd.Timestamp(t) < d["timestamp"].iloc[0] or lab == "0":
+                    continue
+                fig.add_annotation(x=k, y=v, text=f"({lab})", showarrow=False, yshift=18 if v >= float(d["close"].iloc[min(k, n - 1)]) else -18,
+                                   font=dict(size=size, color="#ffd54f"), opacity=op)
+    level_marks(fig, n - 1, items, lo, hi, d=d, blocked=("top-left",))
+    struct = f.get("struct") or "—"
+    dtxt = {1: "UP", -1: "DOWN"}.get(int(tr.get("dir") or 0), "RANGE") + (" (testing)" if tr.get("state") == "testing" else "")
+    ctxt = "count gray" if cnt.get("gray") else (f"count: {cnt['preferred']['pattern']} wave {cnt['preferred']['current_wave']}"
+                                                  + (" · alt फिकट" if cnt.get("alternate") else ""))
+    fig.add_annotation(x=0, y=hi, text=f"Daily trend: {dtxt} · {struct} · {ctxt}", showarrow=False, xanchor="left", yanchor="top",
+                       font=dict(size=13, color="#ffffff"), bgcolor="rgba(0,0,0,0.6)")
+    fig.add_annotation(x=n - 1, y=float(d["close"].iloc[-1]), text=f.get("line") or "", showarrow=True, ax=-260, ay=-60 if
+                       float(d["close"].iloc[-1]) < (lo + hi) / 2 else 60, xanchor="right", font=dict(size=12, color="#ffd54f"),
+                       bgcolor="rgba(0,0,0,0.75)", arrowcolor="#ffd54f")
+    return _finish(fig, d, lo, hi + 0.02 * span, fmt="%d %b", n=10)

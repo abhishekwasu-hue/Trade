@@ -136,6 +136,10 @@ def run_day(raw, day, out_dir, exec_ex=None, render=True, alts=None, engine_s=No
              "labels": (ms_close.get("correction") or {}).get("labels"), "zones": last.get("zones")}
         rec["pngs"]["day_1h"] = _png(BC.context_1h(frames["1h"], c, f"{day:%Y-%m-%d} · 1H context", m15_ts=m15_ts),
                                      os.path.join(out_dir, "day_1h.png"))
+        from backtest_review import daily as DL                           # 1D = आजोबा degree (नकाशा P1), दिवसाच्या close पर्यंतच
+        f1d = DL.facts(m1[m1["timestamp"] < day_end], day_end)
+        rec["daily"] = {"line": f1d["line"], "struct": f1d["struct"], "count_gray": bool(f1d["count"].get("gray"))}
+        rec["pngs"]["day_1d"] = _png(BC.daily_1d(f1d, f"{day:%Y-%m-%d} · 1D · आजोबा degree"), os.path.join(out_dir, "day_1d.png"))
         timing["render_s"].append(round(time.monotonic() - t0, 2))
     rec["timing"] = {k: {"n": len(v), "p50": float(np.median(v)) if v else None, "max": max(v) if v else None} for k, v in timing.items()}
     json.dump(rec, open(os.path.join(out_dir, "day.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
@@ -180,7 +184,7 @@ def reading(rec):
 
 
 def trade_chart(m15, day, s, path):
-    """Signal दिवस + पुढचं session (hindsight): area, ENTRY, SL / target (plan असेल तर) नाहीतर ref_levels."""
+    """Signal दिवस + पुढचं session (hindsight): area, ENTRY, चालू SL / target (BC.sl_target)."""
     import plotly.graph_objects as go
     days = sorted(pd.to_datetime(m15["timestamp"]).dt.normalize().unique())
     i = days.index(pd.Timestamp(day))
@@ -189,23 +193,21 @@ def trade_chart(m15, day, s, path):
     fig = go.Figure(go.Candlestick(x=x, open=f["open"], high=f["high"], low=f["low"], close=f["close"], increasing_line_color="#26a69a",
                                    decreasing_line_color="#ef5350"))
     xs = (pd.Timestamp(day) + pd.Timedelta(hours=int(s["time"][:2]), minutes=int(s["time"][3:]))).strftime("%d %b %H:%M")
-    pl, ref = s.get("plan") or {}, s.get("ref_levels") or {}
-    lines = [(s["trigger_price"], "ENTRY", "#f5c518")]
-    if pl.get("ok"):
-        lines += [(pl.get("sl"), "SL", "#ef5350"), (pl.get("target"), "TARGET", "#26a69a")]
-    else:
-        lines += [(ref.get("structural_invalidation"), "structural_invalidation", "#ef5350"),
-                  (ref.get("next_opposite_area"), "next_opposite_area", "#26a69a")]
     from backtest_review import charts as BC
+    (sl, sl_lab), (tg, tg_lab) = BC.sl_target({"signal": s, "plan": s.get("plan")})   # फक्त चालू SL / target (Abhi 2026-10-09)
+    lines = [(s["trigger_price"], "ENTRY", "#f5c518"), (sl, sl_lab, "#ef5350"), (tg, tg_lab, "#26a69a")]
     a = s["area"]
-    rl = [{"y": a["high"], "text": f"area {a['id']} {a['low']:,.0f}–{a['high']:,.0f}", "color": "#ef9a9a" if s["side"] < 0 else "#80cbc4",
-           "bold": True}]                                                  # entry-area label ठळक
+    rl = [{"y": (a["low"] + a["high"]) / 2.0, "text": f"area {a['id']} {a['low']:,.0f}–{a['high']:,.0f}",
+           "color": "#ef9a9a" if s["side"] < 0 else "#80cbc4", "bold": True}]   # entry-area label ठळक
     for v, nm, col in lines:
         if v is not None:
             fig.add_shape(type="line", x0=xs, x1=x[-1], y0=v, y1=v, line=dict(color=col, width=1.5, dash="dash"))
-            rl.append({"y": v, "text": f"{nm} {v:,.1f}", "color": col, "bold": nm == "ENTRY"})
-    ys = [float(v) for v in f["low"].tolist() + f["high"].tolist()] + [it["y"] for it in rl]
-    BC.place_right_labels(fig, x[-1], rl, min(ys), max(ys))
+            rl.append({"y": v, "text": f"{nm} {v:,.1f}", "color": col, "bold": False})
+    ys = [float(v) for v in f["low"].tolist() + f["high"].tolist()] + [float(v) for v, _, _ in lines if v is not None]
+    lo_, hi_ = min(ys), max(ys)
+    BC.level_marks(fig, x[-1], rl, lo_, hi_, d=f)
+    pad = 0.05 * ((hi_ - lo_) or 1.0)
+    fig.update_yaxes(range=[lo_ - pad, hi_ + pad])
     fig.add_shape(type="rect", x0=x[0], x1=x[-1], y0=a["low"], y1=a["high"], line=dict(width=0),
                   fillcolor="rgba(239,83,80,0.15)" if s["side"] < 0 else "rgba(38,166,154,0.15)")
     fig.add_annotation(x=xs, y=s["trigger_price"], text=f"🚩 {s['time']}", showarrow=True, font=dict(color="#f5c518"))
