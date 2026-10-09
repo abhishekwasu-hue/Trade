@@ -22,7 +22,7 @@ import elliott_vps_data as V  # noqa: E402
 
 def test_period_boundaries_are_consistent_with_check_range():
     assert DP.period("2024-03-31 23:59:59.9") == "VAL" and DP.period("2024-04-01 00:00") == "HOLDOUT"
-    assert DP.period("2026-10-08 23:59:59.9") == "CONTAMINATED" and DP.period("2026-10-09") == "HOLDOUT"
+    assert DP.period("2026-10-08 23:59:59.9") == "CONTAMINATED" and DP.period("2026-10-09") == "ILLUSTRATION"
     assert DP.period("2026-10-07 10:00") == "CONTAMINATED"                       # 7–8 Oct golden story (Abhi 2026-10-08, illustration only)
     assert DP.check_range("2026-07-01", "2026-10-08 23:59:59.9", "golden")
     with pytest.raises(DP.HoldoutError):
@@ -32,10 +32,30 @@ def test_period_boundaries_are_consistent_with_check_range():
 def test_periods_and_allowed():
     assert DP.period("2016-05-02") == "IS" and DP.period("2023-01-02") == "VAL"
     assert DP.period("2024-04-01") == "HOLDOUT" and DP.period("2026-09-29 10:00") == "CONTAMINATED"
-    assert DP.period("2026-10-09") == "HOLDOUT"
+    assert DP.period("2026-10-09") == "ILLUSTRATION" and DP.period("2026-06-30 15:29") == "HOLDOUT"
     assert DP.allowed("2021-12-31 15:29") and not DP.allowed("2024-06-01")
     assert not DP.allowed("2026-09-29", "research") and DP.allowed("2026-09-29", "golden")
     assert not DP.allowed("2025-01-01", "golden")
+
+
+def test_illustration_days_only_for_annotation_and_holdout_unchanged():
+    """Abhi 2026-10-09: 8 Oct नंतरचे नवे दिवस = ILLUSTRATION — फक्त annotation / Abhi ची तपासणी; backtest / IS / VAL / golden backtest साठी
+    नाहीत. 2024-04 → 2026-06 holdout तसाच, कधीच नाही."""
+    for t in ("2026-10-09 09:15", "2026-11-20 14:00", "2027-03-01"):
+        assert DP.period(t) == "ILLUSTRATION"
+        assert DP.allowed(t, "annotation") and not DP.allowed(t, "golden") and not DP.allowed(t, "research")
+    assert DP.allowed("2026-09-29", "annotation") and not DP.allowed("2025-01-01", "annotation")
+    assert DP.check_range("2026-07-01", "2026-11-30", "annotation")
+    for a, b, p in (("2026-10-09", "2026-11-30", "golden"), ("2026-10-09", "2026-11-30", "research"),
+                    ("2026-06-30", "2026-11-30", "annotation"), ("2024-04-01", "2024-04-02", "annotation")):
+        with pytest.raises(DP.HoldoutError):
+            DP.check_range(a, b, p)
+    df = pd.DataFrame({"timestamp": pd.to_datetime(["2020-01-02", "2025-01-02", "2026-08-03", "2026-10-12"])})
+    assert list(DP.filter_allowed(df, "annotation")["timestamp"].dt.year) == [2020, 2026, 2026]
+    assert list(DP.filter_allowed(df, "golden")["timestamp"].dt.month) == [1, 8]
+    assert list(DP.filter_allowed(df, "research")["timestamp"].dt.year) == [2020]
+    m = DP.final_holdout_mask(df["timestamp"])
+    assert list(m) == [False, True, False, False]                                  # अंतिम holdout: फक्त 2024-04 → 2026-06
 
 
 def test_check_range_blocks_holdout_and_research_use_of_golden_window():
@@ -51,7 +71,7 @@ def test_filter_and_final_holdout_mask():
     df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-03-28", "2024-05-02", "2026-08-03", "2026-10-07", "2026-10-09"])})
     assert list(DP.filter_allowed(df)["timestamp"].dt.date.astype(str)) == ["2024-03-28"]
     assert list(DP.filter_allowed(df, "golden")["timestamp"].dt.date.astype(str)) == ["2024-03-28", "2026-08-03", "2026-10-07"]
-    assert list(DP.final_holdout_mask(df["timestamp"])) == [False, True, False, False, True]     # contaminated अंतिम holdout मधून वगळला
+    assert list(DP.final_holdout_mask(df["timestamp"])) == [False, True, False, False, False]    # contaminated + illustration (Abhi 2026-10-09) अंतिम holdout मधून वगळले
 
 
 # ---------------------------------------------------------------- bhavcopy
@@ -277,6 +297,25 @@ def test_golden_export_only_golden_window_and_completeness(repo, capsys):
     assert V.golden(repo, token="t", fetch=gappy, now=after) is False
     assert "गहाळ दिवस" in capsys.readouterr().out
     assert V.golden(repo, token="t", fetch=_golden_fetch({}), now=dt.datetime(2026, 10, 8, 14, 0)) is None   # बाजार बंद होण्याआधी
+
+
+def test_illustration_export_from_first_illustration_day_to_last_closed_day(repo, capsys):
+    """Abhi 2026-10-09: 8 Oct नंतरचे दिवस फक्त annotation साठी ⇒ वेगळी file, purpose annotation, holdout / golden काळाचा data नाही."""
+    seen = {}
+
+    def fetch(tok, key, interval, a, b):
+        seen.update(a=a, b=b)
+        days = [d for d in pd.bdate_range("2026-10-08", "2026-10-13")]
+        ts = [d + pd.Timedelta(hours=9, minutes=15) + pd.Timedelta(minutes=m) for d in days for m in range(375)]
+        return pd.DataFrame({"timestamp": pd.DatetimeIndex(ts).tz_localize("Asia/Kolkata"), "open": 1.0, "high": 2.0, "low": 0.5,
+                             "close": 1.5})
+    p = V.illustration(repo, token="t", fetch=fetch, now=dt.datetime(2026, 10, 12, 16, 0))
+    assert seen == {"a": dt.date(2026, 10, 9), "b": dt.date(2026, 10, 12)}
+    assert p.endswith("NIFTY_1m_illustration_2026-10-09_2026-10-12.csv.gz")
+    d = pd.read_csv(p, parse_dates=["timestamp"])
+    assert d["timestamp"].min() == pd.Timestamp("2026-10-09 09:15") and d["timestamp"].max() == pd.Timestamp("2026-10-12 15:29")
+    assert V.last_closed_day(dt.datetime(2026, 10, 12, 11, 0)) == dt.date(2026, 10, 9)          # सोमवार सकाळ ⇒ शुक्रवार
+    assert V.illustration(repo, token="t", fetch=fetch, now=dt.datetime(2026, 10, 9, 11, 0)) is None
 
 
 def test_major_levels_index_fetch_drops_holdout():

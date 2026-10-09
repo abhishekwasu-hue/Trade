@@ -99,3 +99,31 @@
 - **पायरी 3:** golden केसेस + आजच्या vision test (12 मुद्दे) शी तुलना, charts सह.
 - **पायरी 4:** §11.3 IS मोजमाप. **पायरी 5:** draft PR (merge Abhi च्या मंजुरीनेच).
 - Abhi चे निर्णय येईपर्यंत spec मधले defaults वापरायचे.
+
+## 6. बदल (Abhi, नंतरचे निर्णय)
+- **Backtest बंद:** पुढची सूचना येईपर्यंत कोणतंही backtest, IS मोजमाप किंवा VAL नाही. यात टप्पा B §4, macro §4 आणि या spec चा §11.3 येतात. चालू असलेलं टप्पा B §4 मोजमाप थांबवलं.
+- **Code / tests मध्ये तारीख नाही.** §11.1 च्या golden केसेस आणि §12 मधले तारखांचे tests code मध्ये जाणार नाहीत. ती उदाहरणं फक्त अहवालात, तुलनेसाठी.
+- **नवं काम:** annotation (ANNOTATION CHECK, `correction/` shadow module). शेवटचा सुमारे एक महिना annotate करायचा, Abhi ✔ / ✘ देईल. Vision चा टप्पा त्यानंतर.
+- **पायरी 2 मध्ये तीन भर** (annotation module मध्ये लागू होतील):
+  1. `g_c_time` (t(C) ≤ t(A) + t(B)) तसाच, आणि spec §5 ची खालची सीमा "t(C) > t(A)" वेगळा पुरावा (score; gate नाही).
+  2. पायरी 3 च्या अहवालात 22 Sep 10:15: `elliott/reversal.py` composite (touch / reclaim / strength / close location) पास होतो का; नसेल तर कोणती अट अडवते (उदा. strength 1.2 MR); engulfing feature काय म्हणतो. आकडा बदल नाही.
+  3. Trendline: code ची TL-R2609160915 आणि Abhi ची रेघ (15 Sep नंतरच्या low पासून, 17 Sep च्या high मधून, 22 Sep पर्यंत) दोन्ही काढायच्या. `tl_touch_mr` तसाच; फक्त फरक अहवालात.
+
+### तुलनेसाठी उदाहरणं (फक्त अहवाल; tests मध्ये नाहीत)
+| केस | Abhi चा निर्णय | आधार |
+|---|---|---|
+| 22 Sep 10:15 | bear setup | Abhi चा live trade |
+| 30 Sep ~13:00 | bear setup (wedge C, flip 22,808) | Abhi चा live trade |
+| 30 Sep 10:30 | entry नाही (wedge अपूर्ण) | रात्रीचा log |
+| 7 Oct 12:15 | bear (C ending diagonal + trendline + seller zone) | नकाशा I7 ✔ |
+| 26 Aug | bear | I7 ✔ |
+| 12 Aug | bull put नाही (Gray-1 / S3) | I7 ✔ |
+| 31 Aug | trade नाही (R:R 1:1.1) | I7 ✔ |
+| **9 Oct 14:21** | **trade नाही.** NIFTY 15M Dynamic SR bearish signal, 22,565 resistance (touch). Vision V1 ने veto केला आणि Abhi ने trade घेतला नाही. कारणं: price failure नाही, close bar च्या मध्यात, 22,180 पासून जोरदार rally, correction अपूर्ण, शेवटचा तास. | Abhi (live) |
+
+### नवे सामान्य नियम (Abhi, नंतर)
+1. **Futures फक्त volume साठी.** रचना, levels, zones आणि RSI सगळं spot वर. Futures चं volume spot च्या bar ला **वेळेने** जोडलं जातं (`chart_reader/volume.py`: continuous contract, 15M bins); futures चे भाव कुठेच वापरले जात नाहीत.
+2. **Monthly expiry चा rollover:** continuous contract बदलल्याचा दिवस (`roll_day`) वेगळ्या खुणेने (chart वर नारिंगी bars) दाखवला जातो आणि impulse वि. correction तुलनेत धरला जात नाही.
+3. **Correction मधल्या छोट्या swing चा किंवा correction च्या स्वतःच्या रेघेचा break = noise.** फक्त नोंद (box मध्ये "नोंद (noise)"). पुष्टी नाही, grade नाही, entry नाही. निर्णय फक्त area वरच्या price failure ने.
+4. **Annotation:** 15M खाली futures volume panel; box मध्ये impulse वि. correction चं सरासरी volume (rollover वगळून) आणि area candle चं volume.
+5. **Data policy:** 8 Oct 2026 नंतरचे नवे दिवस "ILLUSTRATION" वर्गात: फक्त `annotation` purpose (annotation / vision तपासणी). Golden backtest, IS, VAL आणि research साठी नाहीत. 2024-04 ते 2026-06 चा holdout तसाच, कधीच नाही.

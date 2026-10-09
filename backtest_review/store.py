@@ -11,6 +11,7 @@ from opportunity_engine import store as S
 
 TABLE = "backtest_review"
 VERDICTS = ("OK", "WRONG", "UNCLEAR")          # ✔ / ✘ / ?
+KINDS = ("day", "trade", "vision_test", "test", "annotation_check")  # test = Abhi च्या चाचणी replies (खरे निकाल नाहीत) ⇒ मोजमापातून वगळ
 CREATE_SQL = f"""CREATE TABLE IF NOT EXISTS {TABLE} (
     item_id TEXT PRIMARY KEY, review_date DATE NOT NULL, item_type TEXT NOT NULL, verdict TEXT NOT NULL, reason TEXT,
     missed_trade TEXT, settings_hash TEXT, reviewed_at TIMESTAMP NOT NULL DEFAULT NOW());"""
@@ -29,8 +30,8 @@ def save_review(item, date, kind, verdict, reason="", missed=None, settings_hash
     """missed = {"time": "14:00", "side": "bear_call"} (फक्त दिवसासाठी, "सुटलेला trade"). रिटर्न True / False."""
     if verdict not in VERDICTS:
         raise ValueError(f"verdict {verdict!r} — {VERDICTS} पैकी")
-    if kind not in ("day", "trade"):
-        raise ValueError("kind day / trade")
+    if kind not in KINDS:
+        raise ValueError(f"kind {KINDS} पैकी")
     if missed:
         if not str(missed.get("time") or "").strip() or missed.get("side") not in ("bull_put", "bear_call"):
             raise ValueError("सुटलेला trade: वेळ (HH:MM) आणि side (bull_put / bear_call) हवेत")
@@ -43,8 +44,17 @@ def save_review(item, date, kind, verdict, reason="", missed=None, settings_hash
         cur.execute(f"""INSERT INTO {TABLE} (item_id, review_date, item_type, verdict, reason, missed_trade, settings_hash, reviewed_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (item_id) DO UPDATE SET verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
-                        missed_trade = EXCLUDED.missed_trade, settings_hash = EXCLUDED.settings_hash, reviewed_at = EXCLUDED.reviewed_at""", row)
+                        missed_trade = EXCLUDED.missed_trade, settings_hash = EXCLUDED.settings_hash, reviewed_at = EXCLUDED.reviewed_at,
+                        item_type = EXCLUDED.item_type""", row)
     return bool(S._run(conn_factory, work))
+
+
+NOT_MEASURED = ("test", "vision_test", "annotation_check")   # चाचणी replies / vision blind test / annotation तपासणी ⇒ code-review मोजमापात नाहीत
+
+
+def measurable(reviews):
+    """code review मोजमापासाठी नोंदी: test (Abhi च्या चाचणी replies) आणि vision_test वगळून."""
+    return {k: v for k, v in (reviews or {}).items() if v.get("item_type") not in NOT_MEASURED}
 
 
 def load_reviews(conn_factory=None):
@@ -63,11 +73,35 @@ def load_reviews(conn_factory=None):
 
 
 def progress(index, reviews):
-    """index = run_index.json चे दिवस/trades ⇒ {"days": (तपासले, एकूण), "trades": (तपासले, एकूण), "verdicts": {...}}."""
+    """index = run_index.json चे दिवस/trades ⇒ {"days": (तपासले, एकूण), "trades": (तपासले, एकूण), "verdicts": {...}}.
+    test / vision_test नोंदी मोजत नाही (measurable)."""
+    reviews = measurable(reviews)
     days = [item_id("day", d["date"]) for d in index.get("days", [])]
     trades = [t["item_id"] for d in index.get("days", []) for t in d.get("trades", [])]
     cnt = pd.Series([r["verdict"] for r in reviews.values()]).value_counts().to_dict() if reviews else {}
     return {"days": (sum(i in reviews for i in days), len(days)), "trades": (sum(i in reviews for i in trades), len(trades)), "verdicts": cnt}
+
+
+def test_candidates(reviews, dates, start_utc, end_utc):
+    """Abhi च्या चाचणी replies शोधा: review_date ∈ dates आणि reviewed_at (UTC) [start, end] मध्ये. रिटर्न item_id यादी (फक्त वाचन)."""
+    ds = {f"{pd.Timestamp(d):%Y-%m-%d}" for d in dates}
+    a, b = pd.Timestamp(start_utc), pd.Timestamp(end_utc)
+    return sorted(k for k, v in reviews.items() if str(v.get("review_date"))[:10] in ds and v.get("item_type") != "test"
+                  and a <= pd.Timestamp(v.get("reviewed_at")) <= b)
+
+
+def mark_test(item_ids, conn_factory=None):
+    """नोंदी 'test' म्हणून चिन्हांकित (item_type = test; reason मध्ये मूळ प्रकार) — delete नाही, मोजमापात वगळल्या जातात."""
+    ids = list(item_ids or [])
+    if not ids:
+        return True
+
+    def work(cur):
+        cur.execute(CREATE_SQL)
+        for i in ids:
+            cur.execute(f"UPDATE {TABLE} SET reason = CONCAT('[test; was ', item_type, '] ', COALESCE(reason, '')), item_type = 'test' "
+                        f"WHERE item_id = %s AND item_type <> 'test'", (i,))
+    return bool(S._run(conn_factory, work))
 
 
 # ---------------------------------------------------------------------------------------------------------------- Golden Gallery
