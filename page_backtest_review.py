@@ -126,10 +126,67 @@ def render_gallery(base=GALLERY_DIR):
                             st.error(str(exc))
 
 
+VTEST_DIR = os.environ.get("VISION_TEST_DIR", "/root/trade-data/review/vision_test")
+VT_ITEM = {1: "Weekly + Daily स्थिती", 2: "1H trend / protected swing", 3: "Impulse खरा", 4: "Pullback = correction", 5: "Pattern",
+           6: "Pattern पूर्ण", 7: "Area confluence", 8: "खोली", 9: "Price failure", 10: "Risk / R:R ≥ 3", 11: "संदर्भ", 12: "पक्के नियम"}
+
+
+def vtest_runs(base=VTEST_DIR):
+    if not os.path.isdir(base):
+        return []
+    return sorted(d for d in os.listdir(base) if os.path.exists(os.path.join(base, d, "summary.json")))
+
+
+def vtest_cases(run, base=VTEST_DIR):
+    """run ⇒ [result.json] (केस क्रमाने)."""
+    d = os.path.join(base, run)
+    out = []
+    for c in sorted(os.listdir(d)):
+        p = os.path.join(d, c, "result.json")
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                out.append({**json.load(fh), "_dir": os.path.join(d, c)})
+    return out
+
+
+def render_vision_test(base=VTEST_DIR):
+    """🧪 Vision blind test: केसनिहाय पूर्ण 12-मुद्दे उत्तर + marking केलेले charts + Abhi चा Telegram reply (backtest_review, vision_test)."""
+    st.caption("चार MAP CHECK केसेसवर vision ची blind चाचणी — vision ला फक्त स्वच्छ charts + OHLC. Reply Telegram वर (✔ / ✘ कारण).")
+    rs = vtest_runs(base)
+    if not rs:
+        st.info(f"Vision test run सापडला नाही ({base}).")
+        return
+    run = st.selectbox("Vision test run", rs)
+    with open(os.path.join(base, run, "summary.json"), encoding="utf-8") as fh:
+        sm = json.load(fh)
+    st.caption(f"Model {sm.get('model')} · खर्च ${sm.get('spent_usd')} (मर्यादा ${sm.get('budget_usd')})")
+    reviews = BS.load_reviews()
+    for c in vtest_cases(run, base):
+        rv = reviews.get(f"{sm.get('run_id')}|case:{str(c['decision'])[:16]}") or {}
+        head = f"{c['n']}. {str(c['decision'])[:16]} · {c.get('status')}" + (f" · Abhi {MARK.get(rv.get('verdict'), '')} {rv.get('reason') or ''}" if rv else "")
+        with st.expander(head, expanded=False):
+            if c.get("status") != "OK":
+                st.warning(c.get("error") or c.get("note") or c.get("status"))
+                continue
+            v, r = c["vision"], c["code"]
+            st.markdown(f"**निर्णय:** {r['side']} · trade {'हो' if r['trade'] else 'नाही'} · entry {r['entry']} · SL {r['invalidation']} · "
+                        f"target {r['target']} · R:R {r['rr']}" + (f"  \n{r['code_why']}" if r.get("code_why") else ""))
+            rows = [{"#": x["n"], "मुद्दा": VT_ITEM.get(x["n"], ""), "उत्तर": x["status"], "पुरावा": x["evidence"],
+                     "bar वेळा": ", ".join(x.get("bar_times") or [])} for x in v.get("checklist") or []]
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.markdown(f"**मी कुठे चुकीचा ठरेन:** {v.get('wrong_if', '')}")
+            if r.get("bad_refs"):
+                st.caption("OHLC मध्ये न सापडलेले refs: " + "; ".join(r["bad_refs"]))
+            for f in ("marked_1H.png", "marked_15M.png", "marked_W.png", "marked_D.png"):
+                p = os.path.join(c["_dir"], f)
+                if os.path.exists(p):
+                    st.image(p, use_container_width=True)
+
+
 def render():
     st.title("🔎 Backtest Review")
-    tab_days, tab_gal, tab_exec, tab_cc = st.tabs(["दिवस / trades", "⭐ Golden Gallery", "⚙ Simple Core execution settings",
-                                                   "🗺 Chart संकल्पना (MTF)"])
+    tab_days, tab_gal, tab_exec, tab_cc, tab_vt = st.tabs(["दिवस / trades", "⭐ Golden Gallery", "⚙ Simple Core execution settings",
+                                                           "🗺 Chart संकल्पना (MTF)", "🧪 Vision test"])
     with tab_exec:
         render_exec_settings()
     with tab_cc:
@@ -138,6 +195,8 @@ def render():
         render_gallery()
     with tab_days:
         render_days()
+    with tab_vt:
+        render_vision_test()
 
 
 def render_days():
