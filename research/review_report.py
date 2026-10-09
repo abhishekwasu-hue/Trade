@@ -45,6 +45,7 @@ def _pct(n, d):
 
 
 def review_md(indexes, reviews):
+    reviews = BS.measurable(reviews)                                          # test / vision_test नोंदी मोजमापात नाहीत
     days = [d for ix in indexes for d in ix.get("days", [])]
     trades = [t for d in days for t in d.get("trades", [])]
     L = ["# Backtest visual review — निकाल (C-V1)", "",

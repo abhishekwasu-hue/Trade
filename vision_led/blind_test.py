@@ -129,7 +129,7 @@ def user_text(decision, fr, history_note=None):
 
 
 # ---------------------------------------------------------------------------------------------------------------- request
-def build_request(pngs, text, model, max_tokens=6000, effort=None, thinking=None, temperature=0.0):
+def build_request(pngs, text, model, max_tokens=16000, effort=None, thinking=None, temperature=0.0):
     if not model:
         raise ValueError("model env नाही (VISION_SIGNAL_MODEL)")
     content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
@@ -164,7 +164,7 @@ def parse(message):
     return (None, f"JSON field नाही: {miss}", usage) if miss else (data, None, usage)
 
 
-def estimate_usd(model, n_images=4, text_chars=40000, max_tokens=6000):
+def estimate_usd(model, n_images=4, text_chars=40000, max_tokens=16000):
     """सावध अंदाज: cache नाही, output = max_tokens. Image ≈ 1,600 tokens, मजकूर ≈ 3.5 अक्षरं / token."""
     from vision.signal_audit import cost_usd
     return cost_usd(model, {"input_tokens": n_images * 1600 + len(SYSTEM) // 3 + text_chars // 3, "output_tokens": max_tokens})
@@ -185,9 +185,11 @@ def price_of(ref, fr):
 
 def resolve(v, fr):
     """Vision JSON ⇒ code निकाल: प्रत्येक खुणेची खरी किंमत, निर्णय नियम (GATING), entry / SL / target / R:R, गहाळ refs."""
-    items = {int(c["n"]): c for c in v.get("checklist") or [] if isinstance(c.get("n"), int)}
-    missing_items = [n for n in range(1, 13) if n not in items]
-    fails = [n for n in range(1, 13) if items.get(n, {}).get("status") == "✘"]
+    raw = [c for c in v.get("checklist") or [] if isinstance(c.get("n"), int)]
+    cnt = {n: sum(1 for c in raw if c["n"] == n) for n in range(1, 13)}
+    items = {n: next(c for c in raw if c["n"] == n) for n in range(1, 13) if cnt[n] == 1}
+    missing_items = [n for n in range(1, 13) if cnt[n] != 1]                # नाही किंवा दोनदा ⇒ उत्तर ग्राह्य नाही
+    fails = sorted({int(c["n"]) for c in raw if c.get("status") == "✘" and 1 <= int(c["n"]) <= 12})
     gate_fail = [n for n in GATING if n in fails or n in missing_items]
     bad_refs = []
 
@@ -208,7 +210,10 @@ def resolve(v, fr):
             "b": {**t["b"], "price": px(t["b"], f"trendline {t['name']}")}} for t in v.get("trendlines") or []]
     d = v.get("decision") or {}
     side = d.get("side", "none")
-    entry, inv, tgt = (px(d.get(k), f"decision {k}") if side != "none" else price_of(d.get(k), fr) for k in ("entry", "invalidation", "target"))
+    inv, tgt = (px(d.get(k), f"decision {k}") if side != "none" else price_of(d.get(k), fr) for k in ("invalidation", "target"))
+    entry = round(float(fr["15M"]["close"].iloc[-1]), 2)                    # entry = decision bar चा close (playbook), दुसरा नाही
+    if side != "none" and price_of(d.get("entry"), fr) != entry:
+        bad_refs.append(f"decision entry: vision {d.get('entry')} ⇒ decision bar close {entry} वापरला")
     rr, order_ok = None, True
     if side != "none" and None not in (entry, inv, tgt) and abs(entry - inv) > 0:
         rr = round(abs(tgt - entry) / abs(entry - inv), 2)

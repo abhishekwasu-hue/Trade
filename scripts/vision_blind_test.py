@@ -42,6 +42,12 @@ def run_case(n, decision, m1, out_dir, model, client, state, dry_run=False, log=
     tag = pd.Timestamp(decision).strftime("%Y-%m-%d_%H%M")
     cdir = os.path.join(out_dir, tag)
     os.makedirs(cdir, exist_ok=True)
+    prev = os.path.join(cdir, "result.json")
+    if not dry_run and os.path.exists(prev):
+        old = json.load(open(prev, encoding="utf-8"))
+        if old.get("status") == "OK":                                      # पुन्हा चालवलं तरी झालेल्या केसवर पुन्हा खर्च नाही
+            log(f"  {decision}: आधीच OK — पुन्हा call नाही")
+            return old
     fr, asof = BT.frames(m1, decision)
     rec = {"n": n, "decision": str(decision), "asof": str(asof), "model": model, "status": None,
            "bars": {tf: [str(fr[tf]["timestamp"].iloc[0]), str(fr[tf]["timestamp"].iloc[-1]), len(fr[tf])] for tf in BT.TFS if len(fr[tf])}}
@@ -55,27 +61,33 @@ def run_case(n, decision, m1, out_dir, model, client, state, dry_run=False, log=
         rec["status"] = "DRY_RUN"
         rec["estimate_usd"] = round(BT.estimate_usd(model or "opus", text_chars=len(text)), 4)
         return rec
-    est = BT.estimate_usd(model, text_chars=len(text))
+    est = max(state["costs"]) * 1.3 if state["costs"] else BT.estimate_usd(model, text_chars=len(text))   # पहिला: सावध; नंतर खऱ्यावरून
     if state["spent"] + est > state["budget"]:
         rec.update(status="NOT_RUN_BUDGET", note=f"खर्च ${state['spent']:.3f} + अंदाज ${est:.3f} > ${state['budget']}")
         return rec
     params = BT.build_request([clean[tf] for tf in BT.TFS], text, model, effort=os.environ.get("VISION_SIGNAL_EFFORT") or None,
                               thinking=os.environ.get("VISION_SIGNAL_THINKING") or None)
-    t0 = time.monotonic()
-    try:
-        msg = client.messages.create(**params)
-    except Exception as exc:                                                # noqa: BLE001 — एक call; नोंद आणि पुढे
-        if "temperature" in str(exc).lower() and "temperature" in params:
-            params.pop("temperature")
-            msg = client.messages.create(**params)
-        else:
-            rec.update(status="API_ERROR", error=f"{type(exc).__name__}: {str(exc)[:200]}")
-            return rec
-    data, err, usage = BT.parse(msg)
     from vision import store as VS
     from vision.signal_audit import cost_usd
+    t0 = time.monotonic()
+    try:
+        try:
+            msg = client.messages.create(**params)
+        except Exception as exc:                                            # noqa: BLE001
+            if "temperature" in str(exc).lower() and "temperature" in params:
+                params.pop("temperature")
+                msg = client.messages.create(**params)
+            else:
+                raise
+    except Exception as exc:                                                # noqa: BLE001 — call कदाचित billed ⇒ सावध अंदाज नोंद
+        state["spent"] += est
+        VS.add_usage("vision_test", model, {"input_tokens": 0, "output_tokens": 0}, est)
+        rec.update(status="API_ERROR", error=f"{type(exc).__name__}: {str(exc)[:200]}", cost_usd=round(est, 5), cost_estimated=True)
+        return rec
+    data, err, usage = BT.parse(msg)
     c = cost_usd(model, usage)
     state["spent"] += c
+    state["costs"].append(c)
     VS.add_usage("vision_test", model, usage, c)
     rec.update(latency_ms=int((time.monotonic() - t0) * 1000), usage=usage, cost_usd=round(c, 5))
     if err:
@@ -106,25 +118,34 @@ def main(argv=None):
     ap.add_argument("--budget", type=float, default=1.0, help="या चाचणीची एकूण खर्च मर्यादा ($)")
     ap.add_argument("--dry-run", action="store_true", help="फक्त charts + request text (API call नाही)")
     ap.add_argument("--send", action="store_true", help="Telegram albums (VPS)")
+    ap.add_argument("--allow-market-hours", action="store_true", help="बाजार चालू असताना दैनिक vision budget ओलांडून चालवा (Abhi चा निर्णय)")
     a = ap.parse_args(argv)
     model = os.environ.get("VISION_SIGNAL_MODEL") or None
     if not a.dry_run and not model:
         print("⛔ VISION_SIGNAL_MODEL env नाही")
         return 1
-    client = None
+    client, already = None, 0.0
     if not a.dry_run:
         from vision import config as VC
         from vision import store as VS
-        month = VS.spent()[1]
-        cap = float(VC.load("_global")["vision_monthly_budget_usd"])
-        if month + a.budget > cap:
-            print(f"⛔ महिन्याचा vision खर्च ${month:.2f} + या चाचणीची मर्यादा ${a.budget} > ${cap} — थांबलो (Abhi ला विचारा)")
+        g = VC.load("_global")
+        day, month = VS.spent()
+        already = float(VS.spent_by_task().get("vision_test", (0, 0, 0))[1])   # आधीच्या runs चा या चाचणीचा खर्च (महिना)
+        left = max(0.0, a.budget - already)
+        if month + left > float(g["vision_monthly_budget_usd"]):
+            print(f"⛔ महिन्याचा vision खर्च ${month:.2f} + उरलेली मर्यादा ${left:.2f} > ${g['vision_monthly_budget_usd']} — थांबलो (Abhi ला विचारा)")
             return 1
-        from vision.signal_audit import make_client
-        client = make_client(timeout_sec=120)
+        now = VS.now_ist()
+        market = now.weekday() < 5 and "09:00" <= now.strftime("%H:%M") <= "15:30"
+        if market and day + left > float(g["vision_daily_budget_usd"]) and not a.allow_market_hours:
+            print(f"⛔ बाजार चालू: आजचा vision खर्च ${day:.2f} + ${left:.2f} > दैनिक ${g['vision_daily_budget_usd']} ⇒ आज उरलेल्या PAPER signal "
+                  "audits ला vision मिळणार नाही. 15:30 नंतर चालवा, किंवा जाणूनबुजून --allow-market-hours.")
+            return 1
+        import anthropic
+        client = anthropic.Anthropic(timeout=900.0, max_retries=0)         # retry नाही ⇒ दुहेरी billing नाही
     os.makedirs(a.out_dir, exist_ok=True)
     is_raw, recent = load(a.is_data, "research"), None
-    state = {"spent": 0.0, "budget": float(a.budget)}
+    state = {"spent": float(already), "budget": float(a.budget), "costs": []}
     recs = []
     for n, dec in enumerate(BT.CASES, 1):
         d = pd.Timestamp(dec)
@@ -140,6 +161,7 @@ def main(argv=None):
         json.dump(recs[-1], open(os.path.join(a.out_dir, f"{d:%Y-%m-%d_%H%M}", "result.json"), "w", encoding="utf-8"),
                   ensure_ascii=False, indent=1, default=str)
     summary = {"run_id": RUN_ID, "model": model, "budget_usd": a.budget, "spent_usd": round(state["spent"], 5),
+               "spent_before_usd": round(already, 5),
                "cases": [{k: r.get(k) for k in ("n", "decision", "status", "cost_usd", "error", "note")} for r in recs]}
     json.dump(summary, open(os.path.join(a.out_dir, "summary.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
     ok = [r for r in recs if r.get("status") == "OK"]

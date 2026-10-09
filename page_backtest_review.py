@@ -31,7 +31,8 @@ def load_index(run, base=BASE):
 
 
 def filter_days(index, reviews, mode):
-    """mode: "सगळे" / "फक्त trades" / "फक्त ✘" / "फक्त न तपासलेले"."""
+    """mode: "सगळे" / "फक्त trades" / "फक्त ✘" / "फक्त न तपासलेले". test / vision_test नोंदी तपासलेल्या मानत नाही."""
+    reviews = BS.measurable(reviews)
     out = []
     for d in index.get("days", []):
         ids = [d["item_id"]] + [t["item_id"] for t in d.get("trades", [])]

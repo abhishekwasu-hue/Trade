@@ -145,3 +145,26 @@ def test_wrong_side_target_is_not_a_trade(m1):
     hi, lo, c = (float(fr["15M"][k].iloc[-1]) for k in ("high", "low", "close"))
     r = BT.resolve(v, fr)
     assert not r["order_ok"] and not r["trade"] and "चुकीच्या बाजूला" in r["code_why"]
+
+
+def test_duplicate_gating_item_blocks_and_entry_is_decision_close(m1):
+    fr, _ = BT.frames(m1, pd.Timestamp("2026-09-23 13:00"))
+    v = _v(fr)
+    v["checklist"].append({"n": 4, "status": "✔", "evidence": "", "bar_times": []})          # 4 दोनदा ⇒ ग्राह्य नाही
+    r = BT.resolve(v, fr)
+    assert 4 in r["gate_fail"] and not r["trade"]
+    v2 = _v(fr)
+    v2["decision"]["entry"] = {"tf": "15M", "time": BT.fmt_time(fr["15M"]["timestamp"].iloc[-10], "15M"), "field": "high"}
+    r2 = BT.resolve(v2, fr)
+    assert r2["entry"] == round(float(fr["15M"]["close"].iloc[-1]), 2) and any("decision entry" in b for b in r2["bad_refs"])
+
+
+def test_measurable_drops_test_and_vision_test():
+    rv = {"a": {"item_type": "day"}, "b": {"item_type": "test"}, "c": {"item_type": "vision_test"}, "d": {"item_type": "trade"}}
+    assert set(BS.measurable(rv)) == {"a", "d"}
+    import page_backtest_review as PG
+    idx = {"days": [{"item_id": "b", "trades": []}, {"item_id": "a", "trades": []}]}
+    assert [d["item_id"] for d in PG.filter_days(idx, {"b": {"verdict": "WRONG", "item_type": "test"}}, "फक्त ✘")] == []
+    import research.review_report as RR
+    md = RR.review_md([{"days": [{"item_id": "b", "trades": []}]}], {"b": {"verdict": "WRONG", "item_type": "test", "reason": "x"}})
+    assert "तपासले 0/1" in md
