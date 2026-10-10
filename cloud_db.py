@@ -420,6 +420,9 @@ STRATEGY_SETTINGS_DEFAULTS = {
         # 🎓 वापरकर्त्याचा निर्णय ("फक्त 5-Min bot ला SR V3 देऊन PAPER मध्ये चाचणी") — srv3_instant_shadow.py: SR V3 (grade A/B)
         # levels वर याच strategy चे entry नियम, निव्वळ PAPER, वेगळ्या source ने (dynamic_sr_instant_srv3_shadow). डीफॉल्ट बंद.
         "srv3_shadow_enabled": False,
+        # 🎓 Abhi (Monday PAPER): signal कुठून — own / engine / both (engine_signal.py). Default own.
+        "signal_source": "own",
+        "srv3_signal_source": "own",
         # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच
         # "lots" इतकेच lots घ्यायचा (वेगळं सेटिंगच नव्हतं) — पण दोन्ही वेगळ्या जोखीम/भांडवल-गरजेचे
         # trade-प्रकार असल्याने वापरकर्त्याला ते स्वतंत्रपणे ठरवता यायला हवं. डीफॉल्ट "lots" इतकाच
@@ -460,6 +463,7 @@ STRATEGY_SETTINGS_DEFAULTS = {
     },
     "15m_dynamic_sr": {
         "lots": 1,
+        "signal_source": "own",          # 🎓 Abhi (Monday PAPER): own / engine / both
         # 🎓 Level memory (वापरकर्त्याचा निर्णय: "levels तिथेच राहावेत, बदलू नयेत", डीफॉल्ट चालू) — Dynamic S/R refresh मध्ये जुने levels त्याच
         # किंमतीवर (बघा level_memory.py; logic तोच compute_dynamic_sr, फक्त स्मरण). बंद ⇒ जुनं वर्तन (ताजे top-5, बाकी STALE).
         "level_memory_enabled": True,

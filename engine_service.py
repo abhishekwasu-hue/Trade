@@ -122,10 +122,14 @@ def run_once():
                 except Exception as exc:
                     # एका symbol मध्ये अपयश आलं तरी बाकीच्या symbols चं monitoring थांबता कामा नये.
                     notify_error(SCRIPT_NAME, f"{symbol} monitoring अयशस्वी: {exc}")
-
             write_heartbeat(SCRIPT_NAME)
     except ProcessLockHeld:
-        pass  # दुसरी exit-monitor invocation (हीच script किंवा trade_monitor.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं
+        return  # दुसरी exit-monitor invocation (हीच script किंवा trade_monitor.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं
+    try:                                                               # 🎓 Abhi (Monday PAPER): updates + journal, exit lock सुटल्यानंतर, best-effort
+        from paper import watch as _paper_watch
+        _paper_watch.run_locked(token)
+    except Exception as exc:
+        print(f"⚠️ paper watch (exits वर परिणाम नाही): {exc}")
 
 
 if __name__ == "__main__":

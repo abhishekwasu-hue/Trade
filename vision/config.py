@@ -21,12 +21,17 @@ MODES = ("off", "shadow", "notify", "auto_veto", "human_confirm", "veto_then_con
 V0_MODES = ("off", "shadow", "notify")
 V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
 LIVE_FORBIDDEN = V1_MODES
-BOT_STRATEGY_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr"}   # cloud_db strategy settings
+HUMAN_MODES = ("human_confirm", "veto_then_confirm")                      # ✅ बटण विचारणारे modes (approval_required साठी)
+BOT_STRATEGY_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr",
+                    "srv3_instant": "1m_instant"}   # cloud_db strategy settings (SR V3 shadow मूळ 5-Min bot च्याच settings वापरतो)
+MANUAL_PROFILES = ("srv3_instant", "dynamic_sr_instant", "srv2_momentum_reversal")   # ✋ /paper: strikes / lots कोणत्या bot च्या settings ने
 
 BOTS = {
     # bot key            : (dashboard नाव, symbols, V0 default mode)
     "dynamic_sr_instant": ("NIFTY 5-Min Instant", ("NIFTY",), "notify"),
     "srv2_momentum_reversal": ("NIFTY 15M Dynamic SR", ("NIFTY",), "notify"),
+    "srv3_instant": ("NIFTY 5-Min SR V3 (PAPER)", ("NIFTY",), "notify"),
+    "manual": ("✋ Manual (/paper, PAPER)", ("NIFTY",), "notify"),       # Abhi: Telegram /paper — वेगळा key (bots च्या levels मध्ये मिसळत नाही)
     "pullback_credit_spread": ("Pullback Credit Spread", ("NIFTY",), "off"),
     "mcx_futures": ("MCX Futures", (), "off"),
     "elliott": ("Elliott (E6 नंतर)", ("NIFTY",), "off"),
@@ -34,6 +39,7 @@ BOTS = {
 
 BOT_DEFAULTS = {
     "vision_mode": "off",
+    "approval_required": True,             # (Abhi, PAPER) ✅ approval शिवाय PAPER entry नाही: V1 नसलेला mode ⇒ human_confirm; gate चूक ⇒ entry नाही
     "symbols": ["NIFTY"],
     "vision_gray_action": "half",          # half / skip / ignore           (V1)
     "vision_disagree_action": "skip",      # skip / half / ignore           (V1)
@@ -62,6 +68,8 @@ BOT_DEFAULTS = {
     "gap_stretch_atr": 3.0,                # G5: आधीचा 5-session leg ≥ हे × ATR
     "gap_max_age_sessions": 10,            # जुने unfilled gaps किती sessions पर्यंत
 }
+BOT_OVERRIDES = {"manual": {"vision_wait_for_bar_close": False,      # manual signal ला bar बंद होण्याची वाट नाही
+                            "shadow_cooldown_min": 0}}               # नाकारल्यानंतर नवी /paper आज्ञा लगेच चालते
 RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", "bad_wave", "bad_close", "opening", "gap_disallowed",
                                   "gap_chase", "gap_b_pdc_accept", "wrong_approach", "role_conflict"),
             "v2_gray_rules": ("unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
@@ -75,11 +83,13 @@ GLOBAL_DEFAULTS = {
     "visual_audit_symbols": ["NIFTY"],     # EOD visual audit (run_visual_audit.py) — Abhi 2026-10-08: फक्त NIFTY (खर्च कमी); खर्च याच budget मध्ये
     "visual_audit_daily_cap": 0.10,        # visual audit ची दैनिक उप-मर्यादा ($) — signals ला प्राधान्य (Abhi 2026-10-08)
     "signals_daily_reserve_usd": 0.20,     # signals साठी राखीव ($/दिवस): audit कधीच (दैनिक budget − हे) पलीकडे जात नाही
+    "manual_profile": "srv3_instant",      # ✋ /paper (strikes न दिल्यास): strikes / spread width / lots या bot च्या settings ने
 }
 VISUAL_AUDIT_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
+    "manual_profile": MANUAL_PROFILES,
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
@@ -93,6 +103,7 @@ def defaults(bot):
     if bot in BOTS:
         d["vision_mode"] = BOTS[bot][2]
         d["symbols"] = list(BOTS[bot][1])
+    d.update(copy.deepcopy(BOT_OVERRIDES.get(bot, {})))
     return d
 
 
@@ -109,7 +120,7 @@ def validate(bot, s):
             v = float(v) if isinstance(out[k], float) else int(v)
             if not lo <= v <= hi:
                 raise ValueError(f"{k} = {v} — [{lo}, {hi}] मध्ये हवं")
-        if k in ("exit_advice", "vision_wait_for_bar_close"):
+        if k in ("exit_advice", "vision_wait_for_bar_close", "approval_required"):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
         if k == "visual_audit_symbols":
             v = [str(x).strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
@@ -142,11 +153,21 @@ def effective_mode(settings, trading_mode):
     if str(trading_mode or "").upper() != "PAPER":
         return "off"
     m = settings.get("vision_mode", "off")
-    return m if m in MODES else "off"
+    m = m if m in MODES else "off"
+    if approval_required(settings, trading_mode) and m not in HUMAN_MODES:
+        return "human_confirm"                                           # Abhi: approval शिवाय PAPER entry नाही (auto_veto ⇒ सुद्धा human_confirm)
+    return m
+
+
+def approval_required(settings, trading_mode):
+    """PAPER आणि `approval_required` (default True) ⇒ प्रत्येक entry ला ✅ हवं. LIVE / इतर ⇒ False (LIVE मार्गाला हात नाही)."""
+    return str(trading_mode or "").upper() == "PAPER" and bool((settings or {}).get("approval_required", True))
 
 
 def bot_trading_mode(bot, symbol="NIFTY"):
     """Bot चा trading_mode (cloud_db strategy settings). वाचता आला नाही / अज्ञात bot ⇒ "UNKNOWN" (V1 modes नाकारायला)."""
+    if bot == "manual":
+        return "PAPER"                                                   # /paper फक्त PAPER (LIVE मार्ग नाही)
     key = BOT_STRATEGY_KEY.get(bot)
     if not key:
         return "UNKNOWN"

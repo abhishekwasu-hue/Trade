@@ -123,3 +123,25 @@ def _vision_db_isolated(tmp_path, monkeypatch):
         monkeypatch.setattr(_VW, "BAR_WAIT", False)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _paper_isolation(tmp_path, monkeypatch):
+    """Monday PAPER modules (paper/, engine_signal): tests मध्ये state फाइल्स tmp मध्ये, आणि Upstox instrument master (network) नाही ⇒
+    lot size config fallback. कुठलाही test खऱ्या network / repo data/ ला हात लावत नाही."""
+    monkeypatch.setenv("PAPER_DATA_DIR", str(tmp_path / "paper_data"))
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "engine_signals.db"))
+    monkeypatch.setenv("PAPER_JOURNAL_DB", str(tmp_path / "paper_journal.db"))
+    monkeypatch.setenv("VISION_DB_PATH", str(tmp_path / "vision_default.db"))     # vision fixtures हे स्वतःचं path पुन्हा ठेवतात
+    try:                                                                         # bot-logic tests: जुनं V0 वर्तन; approval tests ते स्वतः चालू करतात
+        from vision import config as _VC
+        monkeypatch.setitem(_VC.BOT_DEFAULTS, "approval_required", False)
+    except Exception:
+        pass
+    try:
+        from paper import lots as _PL
+        from paper import watch as _PW
+        monkeypatch.setattr(_PL, "_default_resolve", lambda: (lambda *a, **k: (None, "tests: Upstox master नाही")))
+        monkeypatch.setattr(_PW, "_db_path", lambda: str(tmp_path / "no_live_trades.db"))   # trade_monitor tests ⇒ repo data/ चे trades नाहीत
+    except Exception:
+        pass

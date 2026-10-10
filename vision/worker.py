@@ -14,6 +14,7 @@
 """
 import argparse
 import html
+import json
 import re
 import sys
 import time
@@ -169,6 +170,13 @@ def v1_status(row, verdict, s, meta):
 
 def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     s = caption(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
+    try:
+        tags = json.loads(row.get("setup_json") or "{}").get("tags") or {}
+    except (ValueError, TypeError, AttributeError):
+        tags = {}
+    if tags.get("dry_run"):                                             # Abhi (Sunday dry-run): replay signal ला स्पष्ट टॅग
+        s = "🧪 [DRY-RUN] " + s
+    manual = str(tags.get("manual_text") or "") if tags.get("manual") else ""
     s = s.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
     lines = [x for x in s.split("\n") if x]
     s = ""
@@ -182,8 +190,23 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
         s += f"\n<b>✅ ENTRY मंजूर</b> ({_fmr(d.factor)}) — {html.escape(d.reason)}. Bot पुढच्या मिनिटाला drift guard नंतर entry घेईल (त्याचा trade संदेश येईल)."
     else:
         s += f"\n<b>❌ ENTRY नाकारली</b> — {html.escape(d.reason)}. खरा trade नाही; तुलनेसाठी PAPER shadow trade."
-    lines = lines[:1] + [x for x in s.split("\n") if x] + lines[1:] + ["SL / target / exits: bot चे नेहमीचे नियम (automatic)."]
+    extra = []
+    if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
+        extra.append(manual)
+    if (res or {}).get("verdict") in (None, "unavailable"):
+        extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") + " — बटणं तरीही चालतात")
+    tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
+    lines = lines[:1] + extra + [x for x in s.split("\n") if x] + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
     return _fit(lines)
+
+
+def engine_line(row):
+    """Abhi (Monday PAPER): common analysis engine (decision2) चं shadow मत — निर्णयात नाही (signal_source = own असताना)."""
+    try:
+        import engine_signal as ES
+        return html.escape(ES.opinion(row["symbol"], row.get("signal_ts")))
+    except Exception as exc:
+        return f"engine: NA ({html.escape(type(exc).__name__)})"
 
 
 def _fit(lines, limit=1024):

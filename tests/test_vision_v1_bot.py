@@ -91,6 +91,7 @@ def test_live_bot_unaffected_by_v1_mode(signal_db):
 
 
 def test_notify_mode_trades_immediately_full_size(signal_db):
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=lambda b, s: "PAPER")   # जुनं V0 वर्तन (approval बंद)
     calls = _run(T0, 1)                                                           # default notify (V0)
     assert len(calls) == 1 and calls[0].kwargs["lots"] == 2
     assert _only_row()["status"] == "QUEUED" and _only_row()["mode"] == "notify"
@@ -102,7 +103,7 @@ def test_rejected_level_then_notify_mode_no_forced_entry(signal_db):
     _run(T0, 1)
     r = _only_row()
     VS.update(r["signal_id"], status="REJECTED", factor=0.0, decided_at=VS._iso(T0))
-    VC.save("dynamic_sr_instant", {"vision_mode": "notify"}, "t", trading_mode_fn=lambda b, s: "PAPER")
+    VC.save("dynamic_sr_instant", {"vision_mode": "notify", "approval_required": False}, "t", trading_mode_fn=lambda b, s: "PAPER")
     assert _run(T0 + datetime.timedelta(minutes=1), 0) == []
 
 

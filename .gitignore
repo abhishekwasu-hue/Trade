@@ -75,3 +75,10 @@ data/srv3_shadow_refresh.json
 
 # review Telegram sent log (VPS local)
 data/review_tg_sent.json
+
+# Monday PAPER: VPS-local state (paper/, engine_signal)
+data/lot_size_cache.json
+data/paper_token_alert.json
+data/paper_journal.db
+data/engine_signals.db
+data/paper_dry_run_*.log

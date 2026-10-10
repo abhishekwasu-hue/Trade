@@ -135,9 +135,20 @@ def run_monitor_cycle(access_token, product_type="D", live_prices=None, live_pri
             if heartbeat and (any_symbol_succeeded or not symbols_to_check):
                 write_heartbeat(SCRIPT_NAME)  # OPEN trade नसतानाही monitor जिवंत आहे (heartbeat कायम)
 
-            return "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
+            out = "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
     except ProcessLockHeld:
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
+    run_paper_watch(access_token)
+    return out
+
+
+def run_paper_watch(access_token):
+    """🎓 Abhi (Monday PAPER): PAPER updates + journal + ✋ manual spot SL / T — exit-monitor lock **सुटल्यानंतर** (paper/watch.py: run_locked)."""
+    try:
+        from paper import watch as _paper_watch
+        _paper_watch.run_locked(access_token)
+    except Exception as exc:
+        print(f"⚠️ paper watch (exits वर परिणाम नाही): {exc}")
 
 
 def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=62, tsl_interval_seconds=5,

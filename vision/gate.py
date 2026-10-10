@@ -65,11 +65,15 @@ def entry_gate(bot, symbol, trading_mode, direction, level, role, setup_tf, sign
 
 def _fail_skip(bot, trading_mode, path=None):
     """Gate चूक झाल्यावर: V1 mode आणि vision_fail_action = skip ⇒ True (entry नाही). Settings वाचता आल्या नाहीत ⇒ False (algorithm)."""
-    try:
-        s = VC.load(bot, path, DB_TIMEOUT)
+    if str(trading_mode or "").upper() == "PAPER":
+        try:
+            s = VC.load(bot, path, DB_TIMEOUT)
+        except Exception:
+            return True                                                  # settings वाचता आल्या नाहीत ⇒ approval गृहीत (PAPER entry नाही)
+        if VC.approval_required(s, trading_mode):
+            return True                                                  # Abhi: approval शिवाय PAPER entry नाही
         return VC.effective_mode(s, trading_mode) in VC.V1_MODES and s.get("vision_fail_action") == "skip"
-    except Exception:
-        return False
+    return False
 
 
 def _stale(note):
@@ -140,6 +144,8 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     full = Gate("ENTER", lots, naked_lots, 1.0)
     sym = str(symbol).upper()
     listed = sym in [x.upper() for x in s.get("symbols") or []]
+    if VC.approval_required(s, trading_mode) and not listed:
+        return Gate("HOLD", status="SKIPPED_NOT_ENABLED", note=f"{sym} vision symbols यादीत नाही ⇒ approval मार्ग नाही ⇒ PAPER entry नाही")
     if mode not in VC.V1_MODES or not listed:
         if forced:
             return _stale(f"mode {mode}")
@@ -183,6 +189,12 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
             return Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_REJECTED", sid, row.get("decision_reason") or "rejected")
         return _stale("race") if forced else _hold(sid, "race")
     # APPROVED
+    if VC.approval_required(s, trading_mode) and not str(row.get("decided_by") or "").startswith("telegram:"):
+        # Abhi: approval शिवाय PAPER entry नाही — timeout / approver नसणं / vision ने APPROVED केलं (veto_then_confirm) ⇒ entry नाही
+        if VS.transition(sid, "APPROVED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts,
+                         exec_note=f"✅ तुमचं approval नाही (decided_by {row.get('decided_by')}) ⇒ entry नाही"):
+            return Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_NO_HUMAN_APPROVAL", sid, "✅ तुमचं approval नाही ⇒ entry नाही")
+        return _stale("race") if forced else _hold(sid, "race")
     drift = VD.drift_guard(row, spot, direction, s["max_drift_mr"], origin)
     if drift:
         if VS.transition(sid, "APPROVED", "DRIFT_REJECTED", path, DB_TIMEOUT, executed_at=ts, drift_result="; ".join(drift)):
