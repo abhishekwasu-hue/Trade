@@ -458,16 +458,10 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
     """§3a: range_alt I/K; G-C = थर 4 range-कड (d) zone; G-D = थर 6 range-fade पुरावा किंवा momentum; G-G = कडेकडची चाल impulse-K नाही;
     entry फक्त खालच्या / वरच्या तृतीयांशात (मध्य ±1 σ_1H नाही). मग G-E … G-I नेहमीसारखे."""
     s = C.s
-    role = "buyer" if d > 0 else "seller"
-    zs = [z for z in (l4.get("range_zone_bands") or []) if z[2] == role]
-    A = C.A
-    hit = None
-    for bot, top, _ in zs:
-        if A["l"][t] <= top and A["h"][t] >= bot:
-            hit = (bot, top)
-    if hit is None:
-        return stop(WAIT, "G-C", "range mode: range-कड zone नाही")
-    area = {"src": "range-कड zone", "band": hit, "ans": "हो", "stars": 1, "accept": False}
+    area = range_area(C, t, d, band, l4, l5)
+    if area is None:
+        return stop(WAIT, "G-C", "range mode: बाहेरच्या तृतीयांशात area नाही (range-कड zone / ★ ≥ 2 zone / trade-योग्य रेघ)")
+    hit = area["band"]
     out["points"]["7_area"] = {"src": area["src"], "band": [round(x, 2) for x in hit]}
     m = l4.get("momentum") or rec3.get("momentum") or {}
     if not (m.get("verdict") == "कमकुवत होतोय" or l6.get("label") == "range-fade पुरावा"):
@@ -499,6 +493,35 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
                approval_required=bool(s["signal_approval_required"]))
     out["flags"].append("range mode")
     return out
+
+
+def range_area(C, t, d, band, l4, l5):
+    """Range mode G-C (Abhi batch 2 निर्णय 2), प्राधान्य-क्रमाने: (a) range-कडेचा zone (थर 4 d flag) — grade +w_range_edge; (b) trade-
+    बाजूचा self-नसलेला zone (थर 4 K area "हो…") ★ ≥ range_zone_min_stars, पट्टा range च्या बाहेरच्या (trade-बाजूच्या) तृतीयांशात;
+    (c) थर 5 trade-योग्य रेघ (K area "हो…") त्याच तृतीयांशात. मधला तृतीयांश ⇒ नाही."""
+    top, bot = band
+    third = (top - bot) / 3.0
+    lo, hi = (bot, bot + third) if d > 0 else (top - third, top)
+
+    def outer(x):
+        return lo <= x <= hi
+    role = "buyer" if d > 0 else "seller"
+    A = C.A
+    for zb, zt, r in (l4.get("range_zone_bands") or []):
+        if r == role and A["l"][t] <= zt and A["h"][t] >= zb:
+            return {"src": "range-कड zone", "band": (zb, zt), "ans": "हो", "stars": 1, "accept": False, "range_edge": True}
+    ka = l4.get("k_area") or {}
+    if ka.get("ans", "").startswith("हो") and not ka.get("htf_against") and int(ka.get("stars", 1)) >= int(C.s["range_zone_min_stars"]) \
+            and ka.get("band") and outer((ka["band"][0] + ka["band"][1]) / 2.0):
+        return {"src": "zone (बाहेरचा तृतीयांश)", "band": tuple(ka["band"]), "ans": ka["ans"], "stars": ka.get("stars", 1),
+                "accept": False, "zone": ka.get("zone")}
+    la = (l5 or {}).get("k_area_line") or {}
+    if la.get("ans", "").startswith("हो") and la.get("value") is not None and outer(la["value"]):
+        tau = float(TS.DEFAULTS["tau"]) * float(C.res["sigma"].get(pd.Timestamp(C.day[t]), np.nan))
+        v = la["value"]
+        return {"src": "रेघ (बाहेरचा तृतीयांश)", "band": (v - tau, v + tau), "ans": la["ans"], "stars": 1, "accept": False,
+                "line": la.get("line"), "steep": bool(la.get("steep")), "bar": la.get("bar")}
+    return None
 
 
 def second_attempt(C, t, d, area, k_from):
@@ -545,7 +568,9 @@ def grade(C, t, d, area, cm, flavours, m, l6, rec3, st, s5, adj=0.0, g7=False):
     if (C.L4.get(t) or {}).get("open_noise"):
         g += float(s["w_open"])
     if area.get("steep"):
-        g += float(s["w_steep"])                                                      # तीव्र रेघ (थर 5 उत्तर 11): नोंद + grade
+        g += float(s["w_steep"])
+    if area.get("range_edge"):
+        g += float(s["w_range_edge"])                                                 # range mode: कडेचा zone सगळ्यात मजबूत                                                      # तीव्र रेघ (थर 5 उत्तर 11): नोंद + grade
     return round(float(g), 3)
 
 
@@ -576,10 +601,13 @@ def context_rows(C, t, d):
     t ⇒ [-1, 1], fetch known_at ≤ t). फक्त नोंद / size."""
     ev = (C.ext.get("event_bars") or {})
     name = ev.get(t) if isinstance(ev, dict) else (True if t in ev else None)
-    macro = (C.ext.get("macro") or {}).get(t)
-    against = macro is not None and float(np.clip(macro, -1, 1)) * d <= -float(C.s["macro_against"])
-    flags = (["event hold-window ⇒ size कमी"] if name else []) + (["macro trade-विरुद्ध ⇒ size कमी"] if against else []) + \
-        ([] if macro is not None else ["macro data नाही"])
+    if C.s["macro_source"] == "none":                                                 # macro_daily अजून नाही (Abhi निर्णय 4)
+        macro, against, mflag = None, False, ["macro_source = none"]
+    else:
+        macro = (C.ext.get("macro") or {}).get(t)
+        against = macro is not None and float(np.clip(macro, -1, 1)) * d <= -float(C.s["macro_against"])
+        mflag = (["macro trade-विरुद्ध ⇒ size कमी"] if against else []) + ([] if macro is not None else ["macro data नाही"])
+    flags = (["event hold-window ⇒ size कमी"] if name else []) + mflag
     return {"event": name, "macro": macro, "macro_against": bool(against), "flags": flags}
 
 

@@ -348,6 +348,34 @@ def test_range_alt_rediscovers_when_near_edge_changes(world, monkeypatch):
     assert all(t in snaps for t in flips)                                      # प्रत्येक कड-बदलाला पुन्हा शोध
 
 
+def test_range_alt_mid_band_no_edge_and_parent_flip(world, monkeypatch):
+    """Abhi batch 2: (1-a) close मध्यापासून ±1 σ_1H ⇒ कड नाही ⇒ I नाही; (3) पालक थेट उलटला ⇒ parent_flip रद्द."""
+    m15, res, st, lg = world
+    tr = LI.Tracker(lg, st, 1)
+    t = len(m15) - 1
+    c = float(lg["A"]["c"][t])
+    s1 = res["sigma_1h"].get(pd.Timestamp(tr.ts.iloc[t]).normalize())
+    assert tr.near_edge(t, (c + 0.5 * s1, c - 0.5 * s1)) is None                # मध्यावर
+    assert tr.near_edge(t, (c + 10 * s1, c - 0.5 * s1)) == "bottom"
+    n = len(m15)
+
+    def up(self, t):
+        return SST.UPT, None, float(np.min(self.A["l"][max(t - 100, 0):t + 1]))
+    monkeypatch.setattr(LI.Tracker, "parent", up)
+    tu = LI.Tracker(lg, st, 1)
+    flip = next(t for t in range(n // 2, n) if tu.I_at(t) is not None and tu.I_at(t)["dir"] > 0) + 1   # UP I चालू असताना उलट
+
+    def par(self, t):
+        return (SST.UPT if t < flip else SST.DNT), None, float(np.min(self.A["l"][max(t - 100, 0):t + 1]))
+    monkeypatch.setattr(LI.Tracker, "parent", par)
+    tr2 = LI.Tracker(lg, st, 1)
+    for t in range(flip, n):
+        I = tr2.I_at(t)
+        if I is not None and I["mode"] == LI.MODE_TREND:
+            assert I["dir"] < 0                                                # उलटल्यावर जुना UP I टिकत नाही
+    assert any(e["event"] == "I रद्द: parent_flip" for e in tr2.log)
+
+
 def test_I_mode_real_parent_consistent(world, tracker):
     _, res, st, lg = world
     for t in range(len(res["m15"])):

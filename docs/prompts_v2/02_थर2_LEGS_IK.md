@@ -36,13 +36,15 @@ R = |leg| / |मागचा उलट leg| (wicks). R > 1 प्रबळ (P_(j
 ## 5. I आणि K (D1; D2 आरसा-संदर्भ)
 ### 5.1 I शोधणं (I नाही / रद्द)
 1. मागे जाताना पहिला confirmed D1 leg: label आवेग / आवेग(कमकुवत) **आणि दिशा = D2 trend state (थर 1)** किंवा त्या leg ने D1 plain-close BOS केला. C_na leg वरून I ⇒ `I_weak_basis`.
-   - **D2 RANGE / unknown ⇒ `range_alt` mode:** I = range च्या जवळच्या कडेपासून दूर जाणारा शेवटचा D1 leg (कड = थर 1 RANGE पट्टा), K = कडेकडे येणारी चाल; `I_mode = range_alt` खूण; थर 3/4 त्यावर नेहमीसारखे चालतात; थर 7 §3a त्याच fields वापरतो.
+   - **`I_mode` = प्रत्येक candle ला D2 trend state चं function (Abhi, प्रश्न 4):** D2 RANGE ⇒ `range_alt` mode: I = range च्या जवळच्या कडेपासून दूर जाणारा शेवटचा D1 leg (कड = थर 1 RANGE पट्टा; **जवळची कड = t च्या close ला**, `range_alt_edge_from = close`; close मध्यापासून ±1 σ_1H मध्ये ⇒ कड नाही ⇒ I नाही; कड बदलली ⇒ I पुन्हा शोध), K = त्या कडेकडे येणारी चाल; `I_mode = range_alt` खूण; थर 3/4 त्यावर नेहमीसारखे चालतात; थर 7 §3a त्याच fields वापरतो. D2 RANGE तुटून trend ⇒ §5.1 ने trend I पुन्हा.
+   - **D2 unknown / warm-up (प्रश्न 5):** D2 स्वतःचा Dow trend (RANGE ⇒ range_alt) + `htf_unknown` खूण; पालक माहीत झाला ⇒ I पुन्हा शोध.
 2. **I_origin** (I वर): I_end आधीचा, I_end ≥ असलेला शेवटचा D1 high आणि I_end यांच्यामधला सगळ्यात खालचा D1 low; **असा high नसेल तर origin = D2 strong low (थर 1) आणि `origin_bounded`** (`origin_open` नाही).
 3. **गुणवत्ता (नोंद):** spike (trend_candle% ≥ 0.7, max_run ≥ 5, avg_overlap ≤ 0.4, ER ≥ 0.6, FVG ≥ 1) / channel; `climax` (I च्या शेवटच्या 3 candles मध्ये climax_candle(d)); `SOT_trend` (I चे शेवटचे 3 with-trend pushes चे gains घटत).
 
 ### 5.2 I sticky: बदल फक्त
 - I-दिशेने confirmed D1 leg ज्याचा pivot I_end पलीकडे **आणि त्या leg मध्ये close I_end पलीकडे** ⇒ I_end सरकतो (आवृत्ती यादी); फक्त wick ⇒ `sweep_of_I_end`, I_end तोच.
-- **रद्द:** (a) I_origin चा real break (Master पातळी 2; frame = masked 15M, start = I_end bar, side = origin ची, `end = decision_bar`; settings dict नाव + register); (b) थर 1 ची दोन-पायरी reversal D1 वर पूर्ण (I-विरुद्ध).
+- **रद्द:** (a) I_origin चा real break (Master पातळी 2; frame = masked 15M, start = I_end bar, side = origin ची, `end = decision_bar`; settings dict नाव + register); (b) थर 1 ची दोन-पायरी reversal D1 वर पूर्ण (I-विरुद्ध); (c) **`parent_flip`** — D2 trend state थेट I-विरुद्ध trend_up / trend_down ⇒ trend-mode I रद्द, नव्या दिशेने §5.1 शोध (Abhi, batch 2 निर्णय 3; I_mode = D2 state चं function).
+- Sticky फक्त trend-mode I च्या identity (I_end / I_origin) ला; mode बदल (trend ⇄ range_alt) त्याच्या बाहेर.
 - K मधले आवेग legs I ची जागा घेत नाहीत.
 
 ### 5.3 K अवस्था (running D1 leg वर)

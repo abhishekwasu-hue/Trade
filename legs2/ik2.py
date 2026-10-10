@@ -13,7 +13,7 @@ Fold (replay = live): 15M bars वर पुढे, प्रत्येक bar
   I_origin: I_end आधीचा, I_end ≥ असलेला शेवटचा high आणि I_end यांच्यामधला सगळ्यात खालचा low; असा high नसेल ⇒ पालक strong low
   (थर 1 protected) + `origin_bounded`.
 §5.2 sticky: I-दिशेचा confirmed leg ज्याचा pivot I_end पलीकडे **आणि** leg मध्ये close I_end पलीकडे ⇒ I_end सरकतो; फक्त wick ⇒
-  `sweep_of_I_end`. रद्द: (a) I_origin real break (`elliott/breaks.first_real_break`, settings `I_ORIGIN_BREAK`, retest_fn=None, cache
+  `sweep_of_I_end`. रद्द: (c) `parent_flip` — पालक trend थेट I-विरुद्ध UP / DOWN (Abhi निर्णय 3); (a) I_origin real break (`elliott/breaks.first_real_break`, settings `I_ORIGIN_BREAK`, retest_fn=None, cache
   नाही, `end = decision_bar`), (b) थर 1 दोन-पायरी reversal (त्याच degree, I-विरुद्ध). रद्द नंतर नवा I फक्त रद्द झालेल्या I_end नंतर
   संपणाऱ्या legs मधून (तोच I पुन्हा नाही).
 §5.3 K अवस्था; I_strict_HL; खोली (मुख्य / दुय्यम); वेळ; C_K vs C_I; quiet / heavy; counter-impulse; CHoCH strict (+ displacement);
@@ -172,6 +172,8 @@ class Tracker:
             return None
         if tr == SST.RNG and band is not None:
             edge = self.near_edge(t, band)
+            if edge is None:
+                return None                                                       # मध्य ±1 σ_1H ⇒ कड नाही ⇒ I नाही
             want = 1 if edge == "bottom" else -1                                  # जवळच्या कडेपासून दूर; K = त्या कडेकडे येणारी चाल
             for L in reversed(legs):
                 if L["dir"] != want:
@@ -186,9 +188,13 @@ class Tracker:
         return None
 
     def near_edge(self, t, band):
-        """range_alt: t च्या close ला जवळची कड (top / bottom) — K तिकडे येते."""
+        """range_alt: t च्या close ला जवळची कड (top / bottom) — K तिकडे येते (`range_alt_edge_from` = close). Close मध्यापासून
+        ± range_alt_mid_sigma × σ_1H मध्ये ⇒ None (कड ठरवत नाही ⇒ I नाही; दिशा चमकू नये, Abhi निर्णय 1-a)."""
         top, bot = band
         c = self.A["c"][t]
+        s1 = self.res.get("sigma_1h", {}).get(pd.Timestamp(self.ts.iloc[t]).normalize())
+        if s1 is not None and np.isfinite(s1) and abs(c - (top + bot) / 2.0) <= float(self.s["range_alt_mid_sigma"]) * s1:
+            return None
         return "bottom" if abs(c - bot) <= abs(c - top) else "top"
 
     def _new_I(self, L, o, bounded, c, t, mode, legs):
@@ -241,6 +247,8 @@ class Tracker:
                     why = "I रद्द: I_origin real break"
                 elif any(e["dir"] == -I["dir"] for e in self.revs.get(t, [])):
                     why = "I रद्द: थर 1 reversal (I-विरुद्ध)"
+                elif I["mode"] == MODE_TREND and tr in (SST.UPT, SST.DNT) and (tr == SST.UPT) != (I["dir"] > 0):
+                    why = "I रद्द: parent_flip"                                   # §5.2 तिसरं कारण (Abhi निर्णय 3)
                 elif I["mode"] == MODE_RANGE and tr in (SST.UPT, SST.DNT):
                     why = "range_alt संपला (पालक trend)"
                 elif I["mode"] == MODE_TREND and tr == SST.RNG and band is not None:

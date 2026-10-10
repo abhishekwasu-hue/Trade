@@ -2,8 +2,11 @@
 
 - VIX: Upstox India VIX 15M candles (timestamp = candle सुरुवात); known_at = candle close (timestamp + 15 मिनिटं). bar t ला = bar_end[t]
   पर्यंत बंद झालेल्या शेवटच्या VIX candle चा close.
-- Event calendar: `decision2/events.yaml` (हाताने भरलेली); entry फक्त `added_on` ≤ त्या दिवशी दिसते.
-- Macro row: macro-sentiment output (value −1 … 1, `fetched_at` = known_at); bar t ला fetched_at ≤ bar_end[t] असलेली शेवटची row.
+- Event calendar: `decision2/events.yaml` (data file); entry फक्त `added_on` ≤ त्या दिवशी दिसते. Size window (Abhi निर्णय 5): kind
+  `event_size_kinds` (rbi / fomc / budget) ⇒ event दिवस (`ist_date` असेल तर तो) + आधीचे `event_sessions_before` sessions. expiry /
+  holiday = calendar data.
+- Macro row: `macro_daily` (वेगळा prompt, नंतर). आत्ता `macro_source = none` ⇒ NA, grade / size वर परिणाम नाही; `MacroDailyProvider`
+  फक्त interface (रिकामा). Provider आल्यावर: value −1 … 1, `fetched_at` = known_at; bar t ला fetched_at ≤ bar_end[t] असलेली शेवटची row.
 - Timestamps tz-aware असतील (उदा. +05:30 / UTC) ⇒ IST naive (m15 सारखे). जुनी row: VIX फक्त त्याच session ची; macro ≤ macro_max_age_h
   तास — त्यापलीकडे NA (नोंद "data नाही").
 """
@@ -18,8 +21,17 @@ KINDS = ("rbi", "fomc", "budget", "expiry", "holiday", "other")
 VIX_BAR = pd.Timedelta(minutes=15)
 
 
+class MacroDailyProvider:
+    """`macro_daily` table साठी interface (Abhi निर्णय 4). आत्ता रिकामा: rows() ⇒ रिकामी DataFrame (fetched_at, value)."""
+
+    source = "none"
+
+    def rows(self, start=None, end=None):
+        return pd.DataFrame({"fetched_at": pd.Series(dtype="datetime64[ns]"), "value": pd.Series(dtype=float)})
+
+
 def load_events(path=EVENTS_PATH):
-    """yaml ⇒ [{date, name, kind, added_on}] (तपासणीसह). फाईल नाही ⇒ []."""
+    """yaml ⇒ [{date, ist_date, name, kind, added_on, verify, symbol, series}] (तपासणीसह). फाईल नाही ⇒ []."""
     if not path or not os.path.exists(path):
         return []
     import yaml
@@ -31,21 +43,33 @@ def load_events(path=EVENTS_PATH):
         kind = str(e.get("kind") or "other")
         if kind not in KINDS:
             raise ValueError(f"event kind {kind!r} — {KINDS} पैकी हवं")
-        out.append({"date": pd.Timestamp(str(e["date"])).normalize(), "name": str(e["name"]), "kind": kind,
-                    "added_on": pd.Timestamp(str(e["added_on"])).normalize(), "window": str(e.get("window") or "day")})
+        d = pd.Timestamp(str(e["date"])).normalize()
+        out.append({"date": d, "ist_date": pd.Timestamp(str(e["ist_date"])).normalize() if e.get("ist_date") else d,
+                    "name": str(e["name"]), "kind": kind, "added_on": pd.Timestamp(str(e["added_on"])).normalize(),
+                    "window": str(e.get("window") or "day"), "verify": bool(e.get("verify")), "symbol": e.get("symbol"),
+                    "series": e.get("series")})
     return out
 
 
-def event_bars(events, ts):
-    """{bar: नाव} — त्या दिवसाच्या candles, फक्त added_on ≤ त्या दिवशी (known_at)."""
-    day = pd.to_datetime(pd.Series(ts)).dt.normalize().to_numpy()
+def event_bars(events, ts, kinds=None, before=None):
+    """{bar: नाव} — size-kind event चा परिणाम-दिवस (ist_date) आणि त्याआधीचे `before` sessions (data मधले trading days); प्रत्येक bar ला
+    entry फक्त added_on ≤ त्या bar चा दिवस (known_at)."""
+    from . import settings as DS
+    kinds = tuple(DS.DEFAULTS["event_size_kinds"] if kinds is None else kinds)
+    before = int(DS.DEFAULTS["event_sessions_before"] if before is None else before)
+    day = pd.to_datetime(pd.Series(ts)).dt.normalize()
+    days = sorted(day.unique())
+    dv = day.to_numpy()
     out = {}
     for e in events:
-        if e["window"] != "day":
+        if e["window"] != "day" or e["kind"] not in kinds:
             continue
-        for t in np.flatnonzero(day == np.datetime64(e["date"])):
-            if e["added_on"] <= e["date"]:
-                out[int(t)] = e["name"] if int(t) not in out else out[int(t)] + " + " + e["name"]
+        D = np.datetime64(e["ist_date"])
+        prev = [d for d in days if d < D][-before:] if before else []
+        for wd in prev + [D]:
+            for t in np.flatnonzero(dv == np.datetime64(wd)):
+                if e["added_on"] <= pd.Timestamp(dv[t]):
+                    out[int(t)] = e["name"] if int(t) not in out else out[int(t)] + " + " + e["name"]
     return out
 
 

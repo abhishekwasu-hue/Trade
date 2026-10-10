@@ -181,6 +181,11 @@ def test_grade_determinism_and_macro_only_size(patched):
     C, t = fake_ctx()
     a, b = DE.decide(C, t), DE.decide(C, t)
     assert a["grade_score"] == b["grade_score"]
+    C.ext = {"macro": {t: -0.8}}                                                   # macro_source = none (Abhi निर्णय 4) ⇒ परिणाम नाही
+    n = DE.decide(C, t)
+    assert n["size_weight"] == a["size_weight"] and n["grade_score"] == a["grade_score"] and "macro_source = none" in n["flags"]
+    C, t = fake_ctx(overrides={"macro_source": "macro_daily"})
+    a = DE.decide(C, t)
     C.ext = {"macro": {t: 1.0}}                                                    # trade-बाजूचा macro ⇒ काहीच बदल नाही
     c = DE.decide(C, t)
     assert c["decision"] == a["decision"] and c["grade_score"] == a["grade_score"] and c["size_weight"] == a["size_weight"]
@@ -371,11 +376,16 @@ def test_context_rows_known_at(tmp_path):
     assert DX.vix_map(vz, be)[0] == v                                              # tz-aware (UTC) ⇒ IST naive, तसंच
     p = tmp_path / "ev.yaml"
     d0, d1 = (str(x.date()) for x in day)
-    p.write_text(f"events:\n  - {{date: {d1}, name: X, kind: rbi, added_on: {d0}}}\n  - {{date: {d0}, name: Y, kind: other, added_on: {d1}}}\n",
+    p.write_text(f"events:\n  - {{date: {d1}, name: X, kind: rbi, added_on: {d0}}}\n  - {{date: {d0}, name: Y, kind: fomc, added_on: {d1}}}\n"
+                 f"  - {{date: {d1}, name: Z, kind: expiry, added_on: {d0}}}\n",
                  encoding="utf-8")
     ev = DX.event_bars(DX.load_events(str(p)), ts)
-    assert set(ev) == set(range(25, 50)) and ev[25] == "X"                         # Y: added_on त्या दिवसानंतर ⇒ दिसत नाही
-    assert DX.load_events(DX.EVENTS_PATH) == []
+    assert set(ev) == set(range(0, 50)) and ev[25] == "X" and ev[0] == "X"       # event दिवस + आधीचा session; Y: added_on नंतर; Z expiry ⇒ size नाही
+    real = DX.load_events(DX.EVENTS_PATH)
+    kinds = {e["kind"] for e in real}
+    assert {"holiday", "expiry", "fomc", "rbi", "budget"} <= kinds
+    assert all(e["verify"] for e in real if e["kind"] in ("fomc", "rbi"))
+    assert DX.MacroDailyProvider().rows().empty and DX.MacroDailyProvider.source == "none"
     m = DX.macro_map(pd.DataFrame({"fetched_at": [be[3]], "value": [0.4]}), be)
     assert 2 not in m and m[3] == 0.4
     m2 = DX.macro_map(pd.DataFrame({"fetched_at": [be[3]], "value": [0.4]}), be, max_age_h=1)
@@ -386,3 +396,27 @@ def test_vision_run_budget_uses_existing_caps():
     g = {"visual_audit_daily_cap": 0.10, "vision_daily_budget_usd": 0.30}
     assert VV.run_budget(g) == pytest.approx(0.10) and VV.run_budget(None) is None
     assert VV.MODEL_TASK == "veto"
+
+
+def test_range_mode_area_options(monkeypatch):
+    """Abhi batch 2 निर्णय 2: range mode area = (a) कडेचा zone (+1) / (b) ★ ≥ 2 zone बाहेरच्या तृतीयांशात / (c) trade-योग्य रेघ त्याच
+    तृतीयांशात; मधला तृतीयांश ⇒ नाही."""
+    C, t = fake_ctx()
+    C.res["sigma"] = {C.day[t]: 10.0}
+    band = (130.0, 100.0)                                                         # top, bot; d > 0 ⇒ खालचा तृतीयांश 100–110
+    l4 = {"range_zone_bands": [(118.0, 122.0, "buyer")], "k_area": {"ans": "हो", "band": (104.0, 106.0), "stars": 2, "zone": "z"}}
+    a = DE.range_area(C, t, 1, band, l4, {})
+    assert a["src"] == "range-कड zone" and a.get("range_edge")                     # (a) प्राधान्य
+    l4["range_zone_bands"] = []
+    assert DE.range_area(C, t, 1, band, l4, {})["src"] == "zone (बाहेरचा तृतीयांश)"  # (b)
+    l4["k_area"]["stars"] = 1
+    assert DE.range_area(C, t, 1, band, l4, {}) is None                           # ★ 1 ⇒ नाही
+    l4["k_area"] = {"ans": "हो", "band": (114.0, 116.0), "stars": 3}
+    assert DE.range_area(C, t, 1, band, l4, {}) is None                           # मधला तृतीयांश ⇒ नाही
+    l5 = {"k_area_line": {"ans": "हो (sweep)", "value": 107.0, "line": "L1-2"}}
+    assert DE.range_area(C, t, 1, band, l4, l5)["src"] == "रेघ (बाहेरचा तृतीयांश)"   # (c)
+    l5["k_area_line"]["value"] = 125.0
+    assert DE.range_area(C, t, 1, band, l4, l5) is None
+    g0 = DE.grade(C, t, 1, {"stars": 1}, {"g4_both": False}, [], {}, {}, {}, {}, False)
+    g1 = DE.grade(C, t, 1, {"stars": 1, "range_edge": True}, {"g4_both": False}, [], {}, {}, {}, {}, False)
+    assert g1 == pytest.approx(g0 + S["w_range_edge"])

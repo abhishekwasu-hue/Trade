@@ -1,10 +1,48 @@
-# थर 7 event calendar (Abhi उत्तर 14) — हाताने भरायची. फक्त size_weight / नोंद; gate नाही.
-# प्रत्येक entry:
-#   date:      त्या event चा दिवस (YYYY-MM-DD)
-#   name:      नाव (उदा. "RBI policy")
-#   kind:      rbi / fomc / budget / expiry / holiday / other
-#   added_on:  ही entry कधी लिहिली (YYYY-MM-DD) = known_at; replay मध्ये त्या दिवसाआधी ही entry "माहीत नव्हती"
-#   window:    day (default) — त्या दिवसाच्या सगळ्या 15M candles
-# उदाहरण (format; खरी entry नाही):
-#   - {date: YYYY-MM-DD, name: "RBI policy", kind: rbi, added_on: YYYY-MM-DD}
-events: []
+# थर 7 event calendar (Abhi उत्तरं 14 आणि batch 2 चा निर्णय 5) — data file (code मध्ये तारीख नाही).
+# प्रत्येक entry: date, name, kind (rbi / fomc / budget / expiry / holiday / other), added_on (= known_at; replay मध्ये
+# त्या दिवसाआधी ही entry माहीत नव्हती). ऐच्छिक: ist_date (भारतात परिणामाचा दिवस; window त्यावर), verify (true ⇒ Abhi ने तपासायचं),
+# symbol / series (expiry), source.
+# Size (gate नाही): size_kinds (decision2 settings `event_size_kinds` = rbi, fomc, budget) — event दिवस + आधीचा 1 session ⇒ ×0.5.
+# expiry / holiday = calendar data (size window नाही).
+expiry_rules:
+  - {symbol: NIFTY, series: weekly, rule: "प्रत्येक मंगळवार; सुट्टी ⇒ आधीचा trading day"}
+  - {symbol: SENSEX, series: weekly, rule: "प्रत्येक गुरुवार; सुट्टी ⇒ आधीचा trading day"}
+  - {symbol: NIFTY, series: monthly, rule: "महिन्याचा शेवटचा मंगळवार; सुट्टी ⇒ आधीचा trading day"}
+# expiry entries वरच्या नियमाने (config.NSE_HOLIDAYS_2026 वापरून) 31 Dec 2026 पर्यंत generate केल्या; 2027 च्या सुट्ट्या आल्यावर पुढे.
+events:
+  - {date: 2026-10-20, name: "दसरा", kind: holiday, added_on: 2026-10-10, source: "config.NSE_HOLIDAYS_2026; NSE list ने verify", verify: true}
+  - {date: 2026-11-10, name: "दिवाळी-बलिप्रतिपदा", kind: holiday, added_on: 2026-10-10, source: "config.NSE_HOLIDAYS_2026; NSE list ने verify", verify: true}
+  - {date: 2026-11-24, name: "गुरु नानक जयंती", kind: holiday, added_on: 2026-10-10, source: "config.NSE_HOLIDAYS_2026; NSE list ने verify", verify: true}
+  - {date: 2026-12-25, name: "ख्रिसमस", kind: holiday, added_on: 2026-10-10, source: "config.NSE_HOLIDAYS_2026; NSE list ने verify", verify: true}
+  - {date: 2026-10-13, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-10-19, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}  # मंगळवार 2026-10-20 सुट्टी
+  - {date: 2026-10-27, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-03, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-09, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}  # मंगळवार 2026-11-10 सुट्टी
+  - {date: 2026-11-17, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-23, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}  # मंगळवार 2026-11-24 सुट्टी
+  - {date: 2026-12-01, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-08, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-15, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-22, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-29, name: "NIFTY weekly expiry", kind: expiry, symbol: NIFTY, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-10-15, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-10-22, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-10-29, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-05, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-12, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-19, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-11-26, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-03, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-10, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-17, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-24, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-12-31, name: "SENSEX weekly expiry", kind: expiry, symbol: SENSEX, series: weekly, added_on: 2026-10-10}
+  - {date: 2026-10-27, name: "NIFTY monthly expiry", kind: expiry, symbol: NIFTY, series: monthly, added_on: 2026-10-10}
+  - {date: 2026-11-23, name: "NIFTY monthly expiry", kind: expiry, symbol: NIFTY, series: monthly, added_on: 2026-10-10}  # 2026-11-24 सुट्टी
+  - {date: 2026-12-29, name: "NIFTY monthly expiry", kind: expiry, symbol: NIFTY, series: monthly, added_on: 2026-10-10}
+  - {date: 2026-10-28, ist_date: 2026-10-29, name: "FOMC decision", kind: fomc, added_on: 2026-10-10, verify: true, source: "web search (federalreserve.gov sandbox मधून उघडलं नाही); federalreserve.gov calendar ने verify"}
+  - {date: 2026-12-09, ist_date: 2026-12-10, name: "FOMC decision", kind: fomc, added_on: 2026-10-10, verify: true, source: "web search (federalreserve.gov sandbox मधून उघडलं नाही); federalreserve.gov calendar ने verify"}
+  - {date: 2026-12-04, name: "RBI MPC decision (2–4 Dec)", kind: rbi, added_on: 2026-10-10, verify: true, source: "RBI press release prid=62422 (web search द्वारे; rbi.org.in sandbox मधून उघडलं नाही) — Abhi verify"}
+  - {date: 2027-02-05, name: "RBI MPC decision (3–5 Feb)", kind: rbi, added_on: 2026-10-10, verify: true, source: "RBI press release prid=62422 (web search द्वारे; rbi.org.in sandbox मधून उघडलं नाही) — Abhi verify"}
+  - {date: 2027-02-01, name: "Union Budget", kind: budget, added_on: 2026-10-10, source: "Abhi"}

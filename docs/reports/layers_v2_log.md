@@ -275,6 +275,23 @@ commitment candle वर; charts मधून G-I काढला; profile cache
 POC / naked POC आणि rollover वगळ नाही; prompt files (07 §3 / §6, 05 §2.7) मधला मजकूर उत्तरांशी जुळवायचा — prompt तुमचे असल्याने मी बदलले
 नाहीत.
 
+## Abhi चे निर्णय (batch 2, 5 मुद्दे) — काय बदललं
+| # | निर्णय | code |
+|---|---|---|
+| 1 | range_alt "जवळची कड" = close; (a) close मध्य ±1 σ_1H ⇒ कड नाही ⇒ I नाही; (b) `range_alt_edge_from = close` register | `ik2.near_edge()`; `range_alt_mid_sigma` = 1 (legs2 register); prompt 02 §5.1 अद्ययावत |
+| 2 | range mode area = (a) कडेचा zone (d) +1 grade; (b) ★ ≥ 2 zone बाहेरच्या तृतीयांशात; (c) trade-योग्य रेघ त्याच तृतीयांशात | `decision2.range_area()`; `w_range_edge` = +1, `range_zone_min_stars` = 2 |
+| 3 | `parent_flip`: D2 थेट I-विरुद्ध trend ⇒ trend I रद्द, नव्या दिशेने शोध | `ik2` तिसरं रद्द-कारण; prompt 02 §5.2 + register |
+| 4 | macro = NA, `macro_source = none`, परिणाम नाही; `macro_daily` interface | `decision2.context.MacroDailyProvider` (रिकामा); `macro_source` setting; flag "macro_source = none" |
+| 5 | `events.yaml` भरा; window = event दिवस + आधीचा 1 session ⇒ ×0.5 | 36 entries: सुट्ट्या 4 (config मधून, `verify`), NIFTY / SENSEX weekly + NIFTY monthly expiry (नियम + 31 Dec 2026 पर्यंत generate), FOMC 28 Oct / 9 Dec (IST परिणाम दुसऱ्या दिवशी, `verify`), RBI MPC 4 Dec / 5 Feb 2027 (`verify`), Budget 1 Feb 2027. `event_size_kinds` = rbi / fomc / budget; expiry / holiday = calendar (size window नाही — माझा अर्थ, तुमचा ✔ हवा) |
+
+**Web:** rbi.org.in आणि federalreserve.gov sandbox मधून उघडले नाहीत (DNS). RBI च्या तारखा RBI press release (prid 62422) चा web-search
+सारांश; FOMC च्या तारखा दोन स्वतंत्र calendars. दोन्ही `verify: true` — तुम्ही अधिकृत page वर तपासा.
+
+**22 दिवस पुन्हा (batch 2 नंतर):** setup 0. 7 Oct 12:00 – 12:30 आता **G-C पास** (वरच्या तृतीयांशातला ★ ≥ 2 zone 22,715 – 22,735)
+⇒ थांबवणारा gate **G-D**: K अवस्था "K सुरू झाला असावा" मध्ये अडकते ⇒ momentum मोजलं जात नाही. हा audit मुद्दा **#11 (🔴, K अवस्था
+अडकते)** — थर 2 च्या audit दुरुस्तीत येतो. Gate-निहाय: I नाही 255, area नाही 152, drift 70, momentum मोजलं नाही 20 + 4, momentum नाही 12,
+range area नाही 12, range मध्य 3.
+
 ## स्वतंत्र review (थर 2–7) — काय दुरुस्त केलं, काय बाकी
 **दुरुस्त केलं:**
 - **Zones lookahead (गंभीर):** "K area मध्ये" शेवटच्या data चं zone state वाचत होतं (pending / sweep / spring). आता प्रत्येक candle ची गोठलेली प्रत वापरतो.
