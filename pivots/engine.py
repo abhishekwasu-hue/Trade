@@ -7,6 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from elliott import data_policy as DP
 
 from . import settings as PS
@@ -15,10 +16,13 @@ from .dc import BAR, D0, Upper
 DEGREES = (0, 1, 2, 3, 4)
 
 
-def guard(df, col="timestamp"):
-    """σ / DC / मोजमाप यांच्या input चा पहारा: holdout row किंवा display_only row ⇒ HoldoutError (शांतपणे वगळत नाही)."""
+def guard(df, col="timestamp", instrument=None):
+    """σ / DC / मोजमाप यांच्या input चा पहारा: holdout row किंवा display_only row ⇒ HoldoutError (शांतपणे वगळत नाही).
+    Holdout तारखा फक्त holdout instrument (NIFTY) साठी; instrument = None ⇒ चालू instrument (default NIFTY)."""
     if "display_only" in df.columns and df["display_only"].astype(bool).any():
         raise DP.HoldoutError("display_only rows (फक्त chart साठी) σ / DC / मोजमापात नाहीत")
+    if not INS.holdout(instrument):
+        return df
     ts = pd.to_datetime(df[col])
     bad = ts[(ts >= DP.HOLDOUT_START) & (ts < DP.CONTAMINATED_START)]
     if len(bad):
@@ -55,8 +59,9 @@ def sessions_of(m15):
     day = pd.to_datetime(m15["timestamp"]).dt.normalize()
     days = sorted(day.unique())
     seg, cur = {}, 0
+    hold = INS.holdout()
     for i, d in enumerate(days):
-        if i and any(DP.period(x) == "HOLDOUT" for x in pd.bdate_range(days[i - 1] + pd.Timedelta(days=1), d - pd.Timedelta(days=1))):
+        if i and hold and any(DP.period(x) == "HOLDOUT" for x in pd.bdate_range(days[i - 1] + pd.Timedelta(days=1), d - pd.Timedelta(days=1))):
             cur += 1
         seg[pd.Timestamp(d)] = cur
     return day, [pd.Timestamp(d) for d in days], seg

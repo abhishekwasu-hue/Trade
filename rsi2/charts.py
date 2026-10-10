@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from pivots import charts as PC
 from vision_led import charts as VC
 
@@ -75,7 +76,7 @@ def charts(R, r, t):
         if r.get(nm):
             divs.append(dict(r[nm], tag=nm))
     ranges = [R.classify(i, "15M").get("range") for i in range(off, t + 1)]
-    title = "🧭 RSI CHECK · NIFTY {tf} · {d:%d %b %Y %H:%M}"
+    title = "🧭 RSI CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     p15 = PC.png(figure(w, R.r15[off:t + 1], divs, title.format(tf="15M", d=asof), ranges, box_text(r)))
     h1 = PC.window(PC.agg_1h(m), "1H", asof)
     k = R.bar_to_h1[t]

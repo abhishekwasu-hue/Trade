@@ -4,6 +4,7 @@ volume). Chart मजकूर इंग्रजी / मराठी; caption 
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from pivots import charts as PC
 from swings2 import engine as SE
 
@@ -86,7 +87,7 @@ def charts(lg, trk, t):
     m = m15.iloc[:t + 1]
     sts = {d: trk[d].state(t) for d in trk}
     box = "<br>".join([ik_line(sts[1], "15M (D1)"), ik_line(sts[2], "1H (D2)")])
-    title = "🧭 LEG CHECK v2 · NIFTY {tf} · {d:%d %b %Y %H:%M} · {deg}"
+    title = "🧭 LEG CHECK v2 · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M} · {deg}"
     w15 = PC.window(m, "15M", asof)
     off = len(m) - len(w15)
     out = {}

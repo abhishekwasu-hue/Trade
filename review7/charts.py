@@ -4,6 +4,7 @@ Shadow: निर्णय / order नाही."""
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from decision2 import charts7 as D7
 from pivots import charts as PC
 
@@ -154,7 +155,7 @@ def telegram_charts(C, D, t, head=None, s=None, scan_start=None, cache=None):
     marks = [m for m in allm if m["bar"] >= w0]
     pl = RM.plan(C, t, s)
     asof = pd.Timestamp(C.m15["bar_end"].iloc[t])
-    title = "🧭 सातही थर + मागे / पुढे · NIFTY {tf} · {d:%d %b %Y %H:%M}"
+    title = "🧭 सातही थर + मागे / पुढे · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     pngs = {}
     w15, _ = _window_start(C, t, "15M")
     for tf in ("15M", "1H"):

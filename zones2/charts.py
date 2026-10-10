@@ -3,6 +3,7 @@
 पुढचे / उलट, momentum (re-emitted)."""
 import pandas as pd
 
+import instruments as INS
 from backtest_review import charts as BC
 from pivots import charts as PC
 
@@ -70,7 +71,7 @@ def charts(Z, t, r, i_end_bar=None):
     zones = Z.snap[t]
     zmap = {z["id"]: z for z in zones}
     side = r["side"] if r["side"] in (ZE.SELLER, ZE.BUYER) else None
-    title = "🧭 ZONE CHECK · NIFTY {tf} · {d:%d %b %Y %H:%M}"
+    title = "🧭 ZONE CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     return {"15M": PC.png(figure(PC.window(m, "15M", asof), "15M", zones, title.format(tf="15M", d=asof), i_end_bar, side,
                                  box_text(r, zmap))),
             "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", zones, title.format(tf="1H", d=asof), i_end_bar, side,

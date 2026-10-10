@@ -91,7 +91,8 @@ class Zones:
             out.append({"id": f"p{p.bar}{p.kind}", "src": "a", "pivot": p, "born": p.confirm_bar, "top": top, "bottom": bot,
                         "sigma": p.sigma, "role": SELLER if p.kind == "H" else BUYER, "ups": ups, "seg": self.res["segments"].get(
                             pd.Timestamp(p.ts).normalize())})
-        out += self._k_atoms()
+        if self.s.get("k_atoms", True):
+            out += self._k_atoms()                                                 # session-स्रोत (PDH / PDL / PWH …)
         out = sorted(out, key=lambda a: (a["born"], a["id"]))
         nxt = {}
         for a in reversed(out):                                                    # k: त्याच नावाचा नवा आला ⇒ जुना संपला

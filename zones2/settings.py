@@ -15,6 +15,7 @@ DEFAULTS = {
     "band_convention": "base",                    # base / ob
     "base_bars": 2, "base_range": 1.0,
     "k_tol": 0.1,                                 # PDH / PDL / PDC / PWH / PWL पट्टा ± 0.1 σ
+    "k_atoms": True,                              # session-स्रोत zones; mtf कृत्रिम sessions (W / D / 1H) ⇒ बंद
     "range_edge_tol": 0.25,                       # d: zone पट्टा range कडेच्या इतक्या σ आत
     "w_liq": 3, "w_origin": 2, "w_degree": 2, "w_react": 1, "w_flip": 1, "w_k": 1, "w_age": 1,
     "star2": 0.4, "star3": 0.7,
@@ -40,6 +41,7 @@ REGISTER = {
     "prune_d1_sessions / prune_far": ("20 / 15 σ", "15/20/30, 10/15/20", "अंदाज", "थर 4 §3"),
     "departure_bars / departure_disp / departure_net": ("3 / 2 / 2 σ", "2–4 / 1–3 / 1.5–3", "अंदाज", "थर 4 §2.2 c"),
     "band_convention / base_bars / base_range": ("base / 2 / 1 σ", "base / ob", "setting (Abhi: default base)", "थर 4 §2.2 c"),
+    "k_atoms": ("on", "on / off", "व्याख्या", "mtf: एक candle = एक session ⇒ PDH / PDL अर्थहीन ⇒ off"),
     "k_tol": ("0.1 σ", "0.05/0.1/0.2", "अंदाज", "थर 4 §2.3"),
     "range_edge_tol": ("0.25 σ", "0.15/0.25/0.4", "Abhi ✔ (उत्तर 8; confluence tolerance शी जुळतं)", "d: zone ला range कड खूण"),
     "w_liq / w_origin / w_degree / w_react / w_flip / w_k / w_age": ("3/2/2/1/1/1/1", "±1", "अंदाज", "थर 4 §6"),

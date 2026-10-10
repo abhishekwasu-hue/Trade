@@ -4,6 +4,7 @@
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from pivots import charts as PC
 from pivots import engine as PE
 
@@ -148,7 +149,7 @@ def charts(res, struct, t, history_daily=None, title_kind="दिवस-अख�
         hd = history_daily[pd.to_datetime(history_daily["timestamp"]) + pd.Timedelta(hours=15, minutes=30) <= asof]
         hw = PC.weekly_from_daily(hd.assign(bar_end=pd.to_datetime(hd["timestamp"]) + pd.Timedelta(hours=15, minutes=30)), asof)
         hd, hw = PC.display_only(hd), PC.display_only(hw)
-    title = "🧭 SWING CHECK · NIFTY {tf} · {d:%d %b %Y %H:%M} " + title_kind + " · {deg}"
+    title = "🧭 SWING CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M} " + title_kind + " · {deg}"
     f15 = PC.window(m, "15M", asof)
     fig = PC.figure(f15, "15M", sn, 1, title.format(tf="15M", d=asof, deg="D1 (मोठे) + D0 (लहान)"), minor=0, box=False)
     overlay(fig, f15, struct, 1, t, res)

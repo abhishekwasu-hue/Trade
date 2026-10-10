@@ -32,7 +32,7 @@ TF = {"W": ("weeks", "1", 3650), "D": ("days", "1", 3650), "1H": ("hours", "1", 
 
 
 def ist_today():
-    return (dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30)).date()
+    return (dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5, minutes=30)).date()
 
 
 def span(tf, today, weekly_years, daily_years, intraday_months):
@@ -110,7 +110,7 @@ def main(argv=None, session=None, token=None, today=None):
         man["files"][tf] = {"file": fn if len(df) else None, "rows": int(len(df)), "requested": [str(s), str(e)],
                             "first": str(df["timestamp"].iloc[0]) if len(df) else None, "last": str(df["timestamp"].iloc[-1]) if len(df) else None,
                             "chunks_ok": ok, "chunks_failed": bad, "holdout_rows_dropped": dropped,
-                            "fetched_at_ist": str(dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30))[:19]}
+                            "fetched_at_ist": str(dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5, minutes=30))[:19]}
         flag = "✅" if (len(df) and not bad) else "⚠️"
         print(f"{flag} {ins['name']} {tf}: {len(df)} rows · {man['files'][tf]['first']} → {man['files'][tf]['last']}"
               + (f" · अयशस्वी chunks {len(bad)}" if bad else ""))

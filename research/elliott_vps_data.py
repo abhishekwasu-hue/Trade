@@ -33,10 +33,11 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from elliott import bhavcopy as BC  # noqa: E402
 from elliott import data_policy as DP  # noqa: E402
 
-NIFTY_KEY = "NSE_INDEX|Nifty 50"
+NIFTY_KEY = INS.get("NIFTY")["key"]
 API = "https://api.upstox.com/v2"
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
       "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9"}
@@ -44,7 +45,7 @@ DONE = ("ok", "missing")                       # resume मध्ये पु�
 
 
 def ist_now():
-    return dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30)
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5, minutes=30)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

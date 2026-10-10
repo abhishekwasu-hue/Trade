@@ -14,6 +14,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from legs2 import charts as LC  # noqa: E402
 from pivots import charts as PC  # noqa: E402
 from pivots import engine as PE  # noqa: E402
@@ -27,8 +28,8 @@ from zones2 import engine as ZE  # noqa: E402
 from zones2 import layer as ZL  # noqa: E402
 
 
-def build_zones(lg, struct, trk, f1, f2, bars):
-    Z = ZE.Zones(lg, struct, trk).run(snap_bars=bars)
+def build_zones(lg, struct, trk, f1, f2, bars, s=None):
+    Z = ZE.Zones(lg, struct, trk, s=s).run(snap_bars=bars)
     return Z, ZL.run(Z, f1, f2)
 
 
@@ -41,7 +42,9 @@ def main(argv=None):
     ap.add_argument("--futures-dir", default=os.path.join(ROOT, "data"))
     ap.add_argument("--m1-status", default=None)
     ap.add_argument("--send", action="store_true")
+    ap.add_argument("--instrument", default=None, choices=INS.names(), help="index (default: TRADE_INSTRUMENT / NIFTY)")
     a = ap.parse_args(argv)
+    INS.set_current(a.instrument)
     m1 = SC.load_1m(a.data)
     print(f"1m rows {len(m1)} वाचले · engine बांधतो…", flush=True)
     m15 = PE.bars_15m(m1)
