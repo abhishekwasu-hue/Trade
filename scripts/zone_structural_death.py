@@ -25,6 +25,8 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
+from mtf import adapter as MA  # noqa: E402
 from pivots import engine as PE  # noqa: E402
 from scripts import degree_diag as DD  # noqa: E402
 from scripts import leg_check as OLD  # noqa: E402
@@ -77,27 +79,40 @@ def touches(h, l, sig1h, bot, top, role, a, b):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True, nargs="+")
+    ap.add_argument("--data", nargs="+", default=None, help="1m csv (NIFTY)")
+    ap.add_argument("--tf-csv", default=None, help="index_candles_fetch चा TF csv (उदा. BANKNIFTY_15M.csv.gz) — 1m ऐवजी")
+    ap.add_argument("--tf", default=None, choices=MA.TFS, help="--tf-csv चा TF (नसेल ⇒ file नावातून <INS>_<TF>.csv.gz)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--start", default=None)
     ap.add_argument("--end", default=None)
     ap.add_argument("--days", type=int, default=None)
     ap.add_argument("--futures-dir", default=os.path.join(ROOT, "data"))
     ap.add_argument("--degrees", type=int, nargs="+", default=[1, 2, 3])
+    ap.add_argument("--instrument", default=None, choices=INS.names(), help="index (default: TRADE_INSTRUMENT / NIFTY)")
     a = ap.parse_args(argv)
-    m1 = SC.load_1m(a.data)
-    m15 = PE.bars_15m(m1)
+    INS.set_current(a.instrument)
+    if a.tf_csv:
+        a.tf = a.tf or MA.tf_of_path(a.tf_csv)
+        m1 = None
+        m15, real = MA.frame(a.tf_csv, a.tf)
+    elif a.data:
+        m1 = SC.load_1m(a.data)
+        m15, real = PE.bars_15m(m1), None
+    else:
+        ap.error("--data किंवा --tf-csv हवं")
     res, struct, lg, trk = L2.build_all(m15, m1, OLD.load_futures(a.futures_dir), None)
     f1, f2 = P2.build_folds(lg, trk)
-    t0, t1, ds = DD.window(m15, a.start, a.end, a.days)
+    t0, t1, ds = DD.window(m15, a.start, a.end, a.days) if real is None else MA.window_real(real, a.start, a.end, a.days)
     n = len(m15)
-    Z, _ = Z4.build_zones(lg, struct, trk, f1, f2, range(t0, n))
+    syn = real is not None and a.tf != "15M"                                    # कृत्रिम sessions (W / D / 1H) ⇒ PDH / PDL zones नाहीत
+    Z, _ = Z4.build_zones(lg, struct, trk, f1, f2, range(t0, n), s={"k_atoms": False} if syn else None)
     A = res["A"]
     h, l, c = A["h"], A["l"], A["c"]
-    ts = pd.to_datetime(m15["timestamp"])
+    eday = pd.to_datetime(m15["timestamp"]).dt.normalize()                        # engine चा session (σ / segment)
+    ts = pd.to_datetime(m15["timestamp"]) if real is None else real              # दाखवायची खरी वेळ
     S = lambda t: str(ts.iloc[t])[:16]  # noqa: E731
-    sig1h = np.array([res["sigma_1h"].get(pd.Timestamp(x), np.nan) for x in ts.dt.normalize()], float)
-    seg_t = [res["segments"].get(pd.Timestamp(x)) for x in ts.dt.normalize()]
+    sig1h = np.array([(res["sigma"] if syn else res["sigma_1h"]).get(pd.Timestamp(x), np.nan) for x in eday], float)  # TF csv ⇒ त्या TF चा σ
+    seg_t = [res["segments"].get(pd.Timestamp(x)) for x in eday]
     seg_of = lambda p: res["segments"].get(pd.Timestamp(p.ts).normalize())  # noqa: E731
     life = {}
     for t in range(t0, t1):
@@ -160,7 +175,7 @@ def main(argv=None):
                 "swing NA": sum(1 for r in dd if r.get(f"D{d}_swing_intact_at_code_death") == "NA"),
                 "नंतर पुन्हा स्पर्श": sum(1 for r in it if r.get(f"D{d}_touches_after_code_death", 0) > 0),
                 "नंतर स्पर्श + ≥1σ_1H उलट": sum(1 for r in it if r.get(f"D{d}_reversed_after_code_death", 0) > 0)}
-    summ = {"window": [str(pd.Timestamp(ds[0]).date()), str(pd.Timestamp(ds[-1]).date())] if ds else None, "zones_total": len(out),
+    summ = {"instrument": INS.label(), "tf": a.tf if a.tf_csv else "15M (1m वरून)", "sigma_unit": f"σ_{a.tf} (त्याच TF चा)" if syn else "σ_1H", "window": [str(pd.Timestamp(ds[0]).date()), str(pd.Timestamp(ds[-1]).date())] if ds else None, "zones_total": len(out),
             "code_death_reason": dict(Counter(r["code_death_reason"] for r in out)),
             **{f"D{d}": {"मेला घटना (दुसरा break / accept)": agg(d, EV_DEAD), "prune / merge": agg(d, ("prune / merge",)),
                          "swing तुटलेले (window शेवटपर्यंत)": sum(1 for r in out if r[f"D{d}_swing_broken"] == "हो"),

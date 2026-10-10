@@ -18,6 +18,8 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
+from mtf import adapter as MA  # noqa: E402
 from pivots import engine as PE  # noqa: E402
 from scripts import swing_check as SC  # noqa: E402
 from swings2 import engine as SE  # noqa: E402
@@ -54,18 +56,29 @@ def week_of(ts):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True, nargs="+")
+    ap.add_argument("--data", nargs="+", default=None, help="1m csv (NIFTY)")
+    ap.add_argument("--tf-csv", default=None, help="index_candles_fetch चा TF csv (उदा. BANKNIFTY_15M.csv.gz) — 1m ऐवजी")
+    ap.add_argument("--tf", default=None, choices=MA.TFS, help="--tf-csv चा TF (नसेल ⇒ file नावातून <INS>_<TF>.csv.gz)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--start", default=None)
     ap.add_argument("--end", default=None)
     ap.add_argument("--days", type=int, default=None)
+    ap.add_argument("--instrument", default=None, choices=INS.names(), help="index (default: TRADE_INSTRUMENT / NIFTY)")
     a = ap.parse_args(argv)
-    m1 = SC.load_1m(a.data)
-    m15 = PE.bars_15m(m1)
+    INS.set_current(a.instrument)
+    if a.tf_csv:
+        a.tf = a.tf or MA.tf_of_path(a.tf_csv)
+        m1 = None
+        m15, real = MA.frame(a.tf_csv, a.tf)
+    elif a.data:
+        m1 = SC.load_1m(a.data)
+        m15, real = PE.bars_15m(m1), None
+    else:
+        ap.error("--data किंवा --tf-csv हवं")
     res = SE.build(m15, m1)
-    t0, t1, ds = window(m15, a.start, a.end, a.days)
-    ts = pd.to_datetime(m15["timestamp"])
-    day = ts.dt.normalize()
+    t0, t1, ds = window(m15, a.start, a.end, a.days) if real is None else MA.window_real(real, a.start, a.end, a.days)
+    day = pd.to_datetime(m15["timestamp"]).dt.normalize()                         # engine चा session (σ / segment)
+    ts = pd.to_datetime(m15["timestamp"]) if real is None else real              # दाखवायची खरी वेळ
     s = res["settings"]
     sig = np.array([res["sigma"].get(pd.Timestamp(x), np.nan) for x in day], float)
     degs = sorted(res["pivots"])
@@ -126,7 +139,7 @@ def main(argv=None):
     nb = t1 - t0
     summ = {"window": [str(pd.Timestamp(ds[0]).date()), str(pd.Timestamp(ds[-1]).date())] if ds else None, "bars_15m": nb,
             "first_sigma_bar": next((S(t) for t in range(len(sig)) if np.isfinite(sig[t])), None), "degrees": {}}
-    lines = [f"# Degree निदान · {summ['window'][0]} – {summ['window'][1]} · {nb} bars (15M)" if ds else "# Degree निदान", ""]
+    lines = [f"# Degree निदान · {summ['window'][0]} – {summ['window'][1]} · {nb} bars ({a.tf if a.tf_csv else '15M'}, {INS.label()})" if ds else "# Degree निदान", ""]
     for d in degs:
         ps = res["pivots"][d]
         nw = [p for p in ps if not p.warmup]

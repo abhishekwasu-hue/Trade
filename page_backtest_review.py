@@ -128,9 +128,12 @@ def render_gallery(base=GALLERY_DIR):
 
 def render():
     st.title("🔎 Backtest Review")
-    tab_days, tab_gal, tab_exec = st.tabs(["दिवस / trades", "⭐ Golden Gallery", "⚙ Simple Core execution settings"])
+    tab_days, tab_gal, tab_exec, tab_cc = st.tabs(["दिवस / trades", "⭐ Golden Gallery", "⚙ Simple Core execution settings",
+                                                   "🗺 Chart संकल्पना (MTF)"])
     with tab_exec:
         render_exec_settings()
+    with tab_cc:
+        render_chart_concepts()
     with tab_gal:
         render_gallery()
     with tab_days:
@@ -234,3 +237,42 @@ def render_exec_settings():
         except ValueError as exc:
             st.error(str(exc))
     st.write(f"सध्याचा hash: `{SS.settings_hash(prev)}` · निवडलेले: {', '.join(sorted(prev)) or '—'}")
+
+
+def concepts_form_values(cfg, choose):
+    """फॉर्मचे values (Streamlit बाहेर test करता येतं): choose(kind, key, current) ⇒ value. रिटर्न पूर्ण chart_concepts dict."""
+    from mtf import concepts as CC
+    out = {"mode": choose("mode", None, cfg["mode"]), "concepts": {}, "window": {}}
+    for k in CC.CONCEPTS:
+        cur = cfg["concepts"].get(k) or {}
+        out["concepts"][k] = {"show": bool(choose("show", k, cur.get("show", True))), "tier": choose("tier", k, cur.get("tier", CC.CONCEPTS[k][2]))}
+    for tf, n in cfg["window"].items():
+        out["window"][tf] = int(choose("window", tf, n))
+    return out
+
+
+def render_chart_concepts():
+    """MTF CHECK charts वर कोणत्या संकल्पना (Abhi): show / tier, mode all | primary, प्रत्येक TF ची chart खिडकी. फक्त दाखवणं."""
+    import streamlit as st
+    from mtf import concepts as CC
+    st.caption("🗺 MTF CHECK (W / D / 1H / 15M) charts वर काय दिसावं. Default: सगळं दाखवा (mode all). mode primary ⇒ फक्त primary tier. "
+               "Layer ला output नसेल तर legend मध्ये 'NA (अजून नाही)'. नियम / निर्णय बदलत नाहीत.")
+    cfg = CC.load()
+
+    def choose(kind, key, cur):
+        if kind == "mode":
+            return st.selectbox("mode", list(CC.MODES), index=list(CC.MODES).index(cur), key="cc_mode")
+        if kind == "show":
+            return st.checkbox(f"{CC.CONCEPTS[key][0]} ({CC.CONCEPTS[key][1]})", value=cur, key=f"cc_show_{key}")
+        if kind == "tier":
+            return st.selectbox(f"tier · {key}", list(CC.TIERS), index=list(CC.TIERS).index(cur), key=f"cc_tier_{key}",
+                                label_visibility="collapsed")
+        return st.number_input(f"chart खिडकी {key} (candles)", min_value=10, max_value=400, value=int(cur), step=5, key=f"cc_win_{key}")
+    with st.form("cc_form"):
+        vals = concepts_form_values(cfg, choose)
+        ok = st.form_submit_button("Save")
+    if ok:
+        try:
+            st.success(f"Saved · {CC.save(vals)}")
+        except ValueError as exc:
+            st.error(str(exc))
