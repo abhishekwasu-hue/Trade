@@ -278,3 +278,23 @@ def test_register_numbers_dates_shadow():
         for bad in ("broker", "place_order", "market_state", "chart_reader", "levels_v2", "areas"):
             assert f"import {bad}" not in src and f"from {bad}" not in src
         assert "BreakCache" not in src.replace("BreakCache नाही", "").replace("BreakCache वापरायचा", "")
+
+
+def test_audit41_demark_on_confirmed_break_not_earlier_false_break():
+    """Audit #41 (🔴): आधी buffer पलीकडचा पहिला close (नंतर reclaim झालेला false break) वर Q मोजले जायचे."""
+    n = 60
+    v = lambda i: 200 - 1.0 * i                                                 # noqa: E731
+    h = [v(i) - 3 for i in range(n)]
+    l = [v(i) - 25 for i in range(n)]
+    c = [v(i) - 10 for i in range(n)]
+    o = [v(i) - 12 for i in range(n)]
+    h[0], h[10] = 200, 190
+    h[20], c[20], o[20], l[20] = v(20) + 20, v(20) + 8, v(20) - 2, v(20) - 4   # false break: close पलीकडे पण मध्यात (displacement नाही), 21 परत आत
+    o[19], c[19] = v(19) - 12, v(19) - 10                                       # 19 हिरवी ⇒ false break वर Q1 ✗
+    for i in range(30, n):
+        h[i], c[i], o[i], l[i] = v(i) + 30, v(i) + 25, v(i) + 22, v(i) + 15
+    o[30], c[29], o[29] = v(30) - 5, v(29) - 15, v(29) - 10                     # खरा break 30: आधीची (29) लाल ⇒ Q1 ✓
+    E = mini(h, l, c, o)
+    L = E.make((0, 200.0), (10, 190.0), "H", 10)
+    assert L.cand is not None and L.cand < 30 <= L.cb                         # cand = false break (आधी Q इथे)
+    assert TE.break_candle(L, L.a2[0] + 1) == 30 and L.q["Q1"] is True

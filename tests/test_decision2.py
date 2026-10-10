@@ -435,3 +435,60 @@ def test_charts7_caption_marathi_limits_and_no_order_imports():
     for bad in ("broker", "place_order", "requests", "telegram"):
         assert f"import {bad}" not in src and f"from {bad}" not in src
     assert not [ln for ln in src.splitlines() if any(rx.search(ln) for rx in DATE_RX_I)]
+
+
+def test_audit62_target_mode_dispatch(patched):
+    """Audit #62 (🔴): target_mode setting मेलेली होती (target नेहमी I_end)."""
+    C, t = fake_ctx()
+    assert DE.decide(C, t)["points"]["10_risk"]["target"] == pytest.approx(160.0)               # I_end
+    C, t = fake_ctx(overrides={"target_mode": "measured_move"})
+    assert DE.decide(C, t)["points"]["10_risk"]["target"] == pytest.approx(99.0 + 80.0)         # K टोक + I आकार
+    C, t = fake_ctx(overrides={"target_mode": "opposite_zone"})
+    C.Z = SimpleNamespace(snap={t: [{"id": "z8", "bottom": 90.0, "top": 95.0}, {"id": "z9", "bottom": 130.0, "top": 135.0}]})
+    C.L4[t]["opp"] = ["z8", "z9"]
+    d = DE.decide(C, t)
+    assert d["points"]["10_risk"]["target"] == pytest.approx(130.0) and d["points"]["10_risk"]["target_mode"] == "opposite_zone"
+    C.L4[t]["opp"] = ["z8"]                                                       # entry पलीकडे उलट zone नाही ⇒ no_trade
+    d = DE.decide(C, t)
+    assert (d["decision"], d["gate"]) == (DE.NO_TRADE, "G-F") and "target नाही" in d["where_wrong"]
+    C, t = fake_ctx(overrides={"target_mode": "opposite_edge"})
+    C.st[2]["states"] = [{"trend": SST.UPT, "protected": 90.0, "reversal": None, "range": {"top": 140.0, "bottom": 95.0}}] * C.n
+    assert DE.decide(C, t)["points"]["10_risk"]["target"] == pytest.approx(140.0)
+
+
+def _range_ctx(monkeypatch, d3=SST.RNG, reversal=None, ban=False):
+    """range mode: पट्टा 100–130, I खाली (range_alt), close वरच्या तृतीयांशात (120); commitment candle वरच्या कडेवर."""
+    monkeypatch.setattr(DE, "regime", lambda C, t: {"regime": DE.RANGE})
+    monkeypatch.setattr(DE, "must_hold_broken", lambda C, t, d: False)
+    monkeypatch.setattr(SST, "trend_of", lambda ps: d3)
+    monkeypatch.setattr(DE, "range_area", lambda C, t, d, band, l4, l5: {"src": "range-कड zone", "band": (121.0, 125.0),
+                                                                        "range_edge": True, "stars": 2})
+    good = {"pass": True, "checks": {}, "merged": 1, "candle": {"i0": 39, "t": 39, "o": 123.0, "h": 124.0, "l": 119.0, "c": 119.5},
+            "g4_both": False, "engulf": False, "rng_ratio": 1.2, "overlap3": 0.2}
+    monkeypatch.setattr(DE, "commitment", lambda C, t, d, area, s=None: dict(good))
+    C, t = fake_ctx()
+    tr = C.trk[1]
+    tr.I = {"dir": -1, "mode": "range_alt", "origin": _P(130.0, 2), "end": _P(101.0, 20)}
+    C.st[2]["states"] = [{"trend": SST.RNG, "protected": None, "reversal": reversal, "range": {"top": 130.0, "bottom": 100.0}}] * C.n
+    C.h1 = {"E": np.array([-1]), "S": np.array([np.nan])}
+    C.f1.out[t]["position"] = {"ban": ban, "where": "टोकाशी"}
+    return C, t
+
+
+def test_audit63_range_mode_gates_do_not_leak(monkeypatch):
+    """Audit #63 (🔴): range mode मध्ये HTF veto / Gray-1 / position_ban / G-H expiry / संदर्भ / hard_exits / 12 मुद्दे गळत होते."""
+    C, t = _range_ctx(monkeypatch)
+    d = DE.decide(C, t)
+    assert d["decision"] == DE.SETUP and "range mode" in d["flags"], (d["gate"], d["where_wrong"])
+    for k in ("3_impulse_ok", "10_risk", "11_context", "12_hard_rules"):
+        assert k in d["points"]
+    assert d["points"]["10_risk"]["target"] == pytest.approx(100.0) and "expiry data नाही" in d["flags"]
+    C, t = _range_ctx(monkeypatch, d3=SST.UPT)                                    # D3 वर, trade खाली ⇒ HTF veto
+    assert (DE.decide(C, t)["decision"], DE.decide(C, t)["where_wrong"]) == (DE.NO_TRADE, "HTF veto (D3)")
+    C, t = _range_ctx(monkeypatch, reversal={"stage": 1})                         # Gray-1, Abhi दिशा नाही
+    assert DE.decide(C, t)["where_wrong"].startswith("Gray-1")
+    C, t = _range_ctx(monkeypatch, ban=True)
+    assert (DE.decide(C, t)["gate"], DE.decide(C, t)["decision"]) == ("G-G", DE.NO_TRADE)
+    C, t = _range_ctx(monkeypatch, d3=None)                                       # htf_unknown ⇒ grade −, flag
+    d = DE.decide(C, t)
+    assert "htf_unknown" in d["flags"] and d["decision"] == DE.SETUP

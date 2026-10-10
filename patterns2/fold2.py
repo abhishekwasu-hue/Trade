@@ -23,7 +23,7 @@ from . import score as SC1
 from . import score2 as SC
 from . import settings2 as PS
 
-FORMING = F1.FORMING
+FORMING = tuple(x for x in F1.FORMING if x != "impulse_K")      # audit #21: impulse-K "forming" नाही ⇒ agg none ने danger दबत नाही
 STATE_MR = {**F1.STATE_MR, "complete_resuming": "pattern पूर्ण, resumption सुरू", "impulse": "impulse चालू (pattern नाही)"}
 FAMILY_MR = F1.FAMILY_MR
 wave_labels = F1.wave_labels
@@ -277,7 +277,8 @@ class Fold:
         st_k = SC1.Ctx(P, [_pt(p) for p in self.inner if p.confirm_bar <= t], self.h, self.lo, [], t, I["end"].sigma, self.s)
         kstruct = st_k.structure(0, P.index(kx))["struct"] if P.index(kx) > 0 else SC1.UNK
         ctx = {"A": self.lg["A"], "rr": self.lg["rr"], "lg": self.lg, "s": self.s, "t": t, "state": st, "P": P, "h": h,
-               "sigma": float(I["end"].sigma or 0.0), "i_leg": il, "pref_family": None if h is None else h["family"],
+               "sigma": float(I["end"].sigma or 0.0), "i_leg": il,
+               "pref_family": None if rec.get("pref") is None else rec["pref"]["family"],   # agg कडे न बघता (audit #21)
                "k_struct": kstruct, "d0": self.d - 1,
                "k_legs": [L for L in self.legs if L["a"].bar >= I["end"].bar and L["b"].confirm_bar <= t]}
         m = MO.evaluate(ctx, zone_fn)

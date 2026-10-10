@@ -186,7 +186,7 @@ class Engine:
             L.cb2 = BR.first_real_break(F, L.cb + 1, 0.0, "below" if side == "above" else "above", self.es, mr=self.mr, end=None,
                                         retest_fn=None)
             L.dead_at = L.cb2
-            L.q = demark(A, L.cand if L.cand is not None else L.cb, L, 1 if side == "above" else -1)
+            L.q = demark(A, break_candle(L, st), L, 1 if side == "above" else -1)   # audit #41: confirm झालेल्या break चीच candle
         # touches (भेटीनुसार): flip आधी भूमिका role0, नंतर उलट
         sgn = 1 if L.kind == "H" else -1                                            # +1: रेघ वर (resistance)
         in_v, vs, fb, sw = False, None, False, False
@@ -336,6 +336,15 @@ class Engine:
                 "valid": L.valid0, "why": L.why, "touches": self.descriptors(L, t, i_slope),
                 "break": None if L.cb is None or L.cb > t else {"ts": str(self.ts.iloc[L.cb]), "Q": L.q},
                 "retest": None if L.retest is None or L.retest["held"] > t else str(self.ts.iloc[L.retest["held"]])}
+
+
+def break_candle(L, start):
+    """confirm (cb) पासून मागे: रेघेपलीकडे (buffer सह) सलग closes चा run — त्याची पहिली candle = break candle. आधीचा reclaim झालेला
+    (false) break वेगळा run ⇒ तो Q साठी वापरत नाही (audit #41)."""
+    i = L.cb
+    while i - 1 >= start and np.isfinite(L.bufv[i - 1]) and L.dc[i - 1] > L.bufv[i - 1]:
+        i -= 1
+    return i
 
 
 def demark(A, i, L, dirn):

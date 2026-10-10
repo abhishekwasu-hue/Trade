@@ -280,3 +280,31 @@ def test_sessions_profile_needs_full_sessions_and_volume():
     v2 = vol.copy()
     v2[2] = np.nan
     assert ZE.sessions_profile(A, v2, day, sess, 5, 10.0, s5) is None        # एका session मध्ये volume नाही ⇒ NA
+
+
+def test_audit30_dead_and_flipped_groups_do_not_swallow_new_atoms():
+    """Audit #30 (🔴): मेलेला / flip झालेला group नवा pivot / PDL गिळायचा ⇒ नवा zone जन्मताच dead. आता dead atoms clustering बाहेर,
+    flipped group नव्या atoms शी जोडत नाही."""
+    Z = _bare()
+    old, new = _z(101, 100, "p1H", born=1), _z(101.2, 100.1, "p9H", born=9)
+    _round(Z, [[old]], 5)
+    Z.state["p1H"]["status"] = "flipped"
+    g = Z.cluster([old, new], 1.0)
+    assert sorted(sorted(a["id"] for a in x) for x in g) == [["p1H"], ["p9H"]]      # flipped ⇒ वेगळे
+    Z.state["p1H"]["status"] = "dead"
+    assert Z.owner_status(old) == "dead" and Z.owner_status(new) is None
+    Z.state["p1H"]["status"] = "active"
+    assert len(Z.cluster([old, new], 1.0)) == 1                                    # जिवंत ⇒ नेहमीसारखं merge
+
+
+def test_audit31_deep_sweep_is_note_only_not_zone_sweep():
+    """Audit #31 (🔴): > sweep_hi σ wick = deep_sweep (फक्त नोंद); `sweeps` (k_area "हो (sweep)" / score) मध्ये जात नाही."""
+    Z = object.__new__(ZE.Zones)
+    Z.s, Z.events = S, []
+    Z.A = _A([100] * 4, [100, 103, 100.5, 100], [99] * 4, [100] * 4)
+    Z.lg = {"vol": np.ones(4)}
+    z = {"id": "z", "role": ZE.SELLER, "sweeps": [], "deep": []}
+    Z._sweep(z, 1, 3.0, 1.0, 1)                                                     # 3σ wick ⇒ deep
+    Z._sweep(z, 2, 0.5, 1.0, 2)                                                     # 0.5σ ⇒ zone_sweep
+    assert [x["bar"] for x in z["deep"]] == [1] and [x["bar"] for x in z["sweeps"]] == [2]
+    assert [e["type"] for e in Z.events] == ["deep_sweep", "zone_sweep"]

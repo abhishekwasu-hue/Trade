@@ -497,3 +497,26 @@ def test_script_writes_only_out_dir_and_rerun_is_byte_identical(tmp_path):
         outs.append({f: open(os.path.join(dp, f), "rb").read() for dp, _, fs in os.walk(od) for f in fs if f.endswith(".json")})
     assert set(os.listdir(tmp_path)) - before == {"a", "b"}
     assert outs[0] == outs[1] and outs[0]
+
+
+@pytest.mark.parametrize("seed", [12, 16])
+def test_audit11_k_state_not_stuck_after_sweep_of_I_end(seed):
+    """Audit #11 (🔴): I_end पलीकडे फक्त wick (sweep) ⇒ tentative टोक eb ≠ I_end; त्यानंतर confirmed D1 leg / उलट D1 pivot आला तरी
+    आधी "K सुरू झाला असावा" कायम राहायचा. आता eb नंतर सुरू होणारा confirmed D1 leg (किंवा उलट D1 pivot) ⇒ "K चालू"."""
+    m15, res, st, lg = built(seed, trend=0.0)                                # या seeds मध्ये I_end पलीकडे फक्त wick (sweep) येतो
+    tr = LI.Tracker(lg, st, 1)
+    checked = swept = 0
+    for t in range(len(m15) // 3, len(m15)):
+        x = tr.state(t)
+        if x["state"] not in (LI.ST_K, LI.ST_KSTART) or x["I"] is None:
+            continue
+        eb = x["k_from_bar"]
+        I = tr.I_at(t)
+        legs_after = [L for L in tr.legs if L["a"].bar >= max(eb, I["end"].bar) and L["b"].confirm_bar <= t]
+        opp = "L" if I["dir"] > 0 else "H"
+        piv_after = [p for p in tr.piv if p.kind == opp and p.bar > eb and p.confirm_bar <= t] if eb != I["end"].bar else []
+        if legs_after or piv_after:
+            assert x["state"] == LI.ST_K, (t, eb)
+            checked += 1
+            swept += eb != I["end"].bar
+    assert checked and swept                                                   # sweep-नंतरचे प्रसंग खरंच तपासले

@@ -206,8 +206,17 @@ class Zones:
         return None
 
     # ------------------------------------------------------------------------------------------------ एकत्र
+    def owner_status(self, a):
+        """atom ज्या zone मध्ये आहे त्याची status (owner नाही ⇒ None)."""
+        z = getattr(self, "owner", {}).get(a["id"])
+        st = getattr(self, "state", {}).get(z) if z is not None else None
+        return None if st is None else st.get("status")
+
     def cluster(self, atoms, sig):
-        """single-linkage (क्रम-स्वतंत्र): overlap किंवा मध्यबिंदू ≤ linkage σ; मग union > split σ ⇒ सगळ्यात मोठ्या अंतरावर तोड."""
+        """single-linkage (क्रम-स्वतंत्र): overlap किंवा मध्यबिंदू ≤ linkage σ; मग union > split σ ⇒ सगळ्यात मोठ्या अंतरावर तोड.
+        Audit #30: flip झालेल्या zone चे atoms दुसऱ्या (नव्या / वेगळ्या) atoms शी जोडत नाहीत — नवा pivot जुन्या flipped group मध्ये गिळला जात
+        नाही (state = सदस्य + bars चं शुद्ध फंक्शन)."""
+        own = getattr(self, "owner", {})
         n = len(atoms)
         par = list(range(n))
 
@@ -220,6 +229,8 @@ class Zones:
         for i in range(n):
             for j in range(i + 1, n):
                 a, b = atoms[i], atoms[j]
+                if (self.owner_status(a) == "flipped" or self.owner_status(b) == "flipped") and own.get(a["id"]) != own.get(b["id"]):
+                    continue
                 ov = min(a["top"], b["top"]) >= max(a["bottom"], b["bottom"])
                 mid = abs((a["top"] + a["bottom"]) / 2 - (b["top"] + b["bottom"]) / 2) <= lk
                 if ov or mid:
@@ -256,6 +267,8 @@ class Zones:
         for a in self.atoms:
             if a["born"] > t or a["seg"] != self.segs[t]:
                 continue
+            if self.owner_status(a) == "dead":
+                continue                                                           # audit #30: मेलेल्या zone चे atoms clustering बाहेर
             if a["src"] == "k":
                 if a["until"] <= t:
                     continue                                                       # फक्त सगळ्यात नवा PD* / PW*
@@ -442,9 +455,9 @@ class Zones:
             return
         rec = {"bar": bar, "seen": seen, "deep": deep, "mid": (A["h"][bar] + A["l"][bar]) / 2, "ext": A["h"][bar] if z["role"] == SELLER
                else A["l"][bar], "vol": self.lg["vol"][bar], "reclaim": None}
-        if any(x["bar"] == bar for x in z["sweeps"]):
+        if any(x["bar"] == bar for x in z["sweeps"] + z["deep"]):
             return
-        z["sweeps"].append(rec)
+        (z["deep"] if deep else z["sweeps"]).append(rec)                         # audit #31: > 1σ = फक्त नोंद (zone_sweep नाही)
         self.events.append({"bar": bar, "type": "deep_sweep" if deep else "zone_sweep", "id": z["id"]})
 
     def _spring(self, z, t):
@@ -492,6 +505,7 @@ class Zones:
                         "breaker": z["breaker"], "flip_bar": z["flip_bar"], "retest": z["retest"],
                         "spring": None if z["spring"] is None else dict(z["spring"]),
                         "sweeps_all": [{"bar": x["bar"], "seen": x["seen"], "deep": x["deep"], "reclaim": x["reclaim"]} for x in z["sweeps"]],
+                        "deep_sweeps": [x["bar"] for x in z["deep"]][-3:],
                         "age": self.age(z, g, t),                            # t ची गोठलेली प्रत (k_area नंतरचं state वाचत नाही)
                         "lineage": list(z.get("lineage", []))[-3:]})
         for zj in out:

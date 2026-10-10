@@ -345,8 +345,8 @@ class Tracker:
             x = h[j] if dirn > 0 else lo[j]
             if _beyond(x, ext, dirn):
                 ext, eb = x, j
+        opp = "L" if dirn > 0 else "H"
         if eb != e.bar:
-            opp = "L" if dirn > 0 else "H"
             if not [p for p in self.lower if p.kind == opp and p.bar > eb and p.confirm_bar <= t]:
                 out["state"] = ST_IMP
                 out["extreme"] = round(float(ext), 2)
@@ -357,8 +357,14 @@ class Tracker:
         K_legs = [L for L in self.legs if L["a"].bar >= e.bar and L["b"].confirm_bar <= t]
         tail = range(eb + 1, t + 1) if eb != e.bar else after
         cx = (min((lo[j] for j in tail), default=ref) if dirn > 0 else max((h[j] for j in tail), default=ref))
-        out["state"] = ST_K if (eb == e.bar and K_legs) else ST_KSTART
+        if eb == e.bar:
+            k_on = bool(K_legs)
+        else:                                                                  # audit #11: sweep_of_I_end नंतर अडकत नाही
+            k_on = any(L["a"].bar >= eb for L in K_legs) or \
+                bool([p for p in self.piv if p.kind == opp and p.bar > eb and p.confirm_bar <= t])
+        out["state"] = ST_K if k_on else ST_KSTART
         out["extreme"] = round(float(ref), 2)
+        out["k_from_bar"] = int(eb)
         out["retrace_pct"] = round(100.0 * abs(ref - cx) / abs(ref - o.price), 1) if ref != o.price else None
         K = {"legs": [LM_json(L) for L in K_legs], "extreme": round(float(cx), 2)}
         if hs is not None and ref != hs.price:                                   # ref / eb = I_end किंवा त्यापलीकडचं tentative टोक
