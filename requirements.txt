@@ -34,3 +34,5 @@ cryptography~=50.0
 websocket-client>=1.7,<2.0
 # Opportunity Engine PR-V: visual audit (vision model) — anthropic SDK (model नाव env VISUAL_AUDIT_MODEL मधून)
 anthropic~=1.11
+# थर v2.2 (decision3/charts.py): W / D / 1H / 15M review charts + Telegram trader view files (engine स्वतः matplotlib शिवाय चालतो)
+matplotlib~=3.11
