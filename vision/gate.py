@@ -43,6 +43,7 @@ class Gate:
     signal_id: str = None
     note: str = ""
     drift: list = field(default_factory=list)
+    final: bool = False                 # HOLD पण निर्णय अंतिम (नाकारलं / ✅ नाही) ⇒ पुन्हा विचारणा / entry नाही (Abhi: shadow PAPER rows नाहीत)
 
 
 def entry_gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts, spot, lots, naked_lots=None, tags=None,
@@ -74,6 +75,21 @@ def _fail_skip(bot, trading_mode, path=None):
             return True                                                  # Abhi: approval शिवाय PAPER entry नाही
         return VC.effective_mode(s, trading_mode) in VC.V1_MODES and s.get("vision_fail_action") == "skip"
     return False
+
+
+def _shadow(s, trading_mode, g, row, symbol, direction, level, setup_tf):
+    """नाकारलेला / ✅ नसलेला / drift / ½ ⇒ 0 lots signal. Abhi (Monday PAPER, approval_required): **shadow PAPER position नाही** — फक्त
+    journal / signal log मध्ये "would-have" नोंद (lots 0) आणि HOLD (final). approval बंद (जुनं V1) ⇒ आधीसारखं SHADOW (bot shadow trade)."""
+    if not VC.approval_required(s, trading_mode):
+        return g
+    try:
+        from paper import journal as PJ
+        PJ.would_have({"ts": VS._iso(VS.now_ist()), "bot": (row or {}).get("bot"), "symbol": str(symbol).upper(), "direction": direction,
+                       "level": level, "setup_tf": setup_tf, "status": g.status, "reason": g.note, "signal_id": g.signal_id,
+                       "orig_lots": g.lots, "orig_naked_lots": g.naked_lots, "dry_run": bool(_row_tags(row or {}).get("dry_run"))})
+    except Exception as exc:
+        print(f"⚠️ would-have नोंद: {exc}")
+    return Gate("HOLD", 0, 0, g.factor, g.status, g.signal_id, f"{g.note} ⇒ PAPER position नाही (would-have नोंद, lots 0)", g.drift, True)
 
 
 def _stale(note):
@@ -186,19 +202,22 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     ts = VS._iso(now)
     if row["status"] == "REJECTED":
         if VS.transition(sid, "REJECTED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts, exec_note="shadow (rejected)"):
-            return Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_REJECTED", sid, row.get("decision_reason") or "rejected")
+            return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_REJECTED", sid, row.get("decision_reason") or "rejected"),
+                           row, symbol, direction, level, setup_tf)
         return _stale("race") if forced else _hold(sid, "race")
     # APPROVED
     if VC.approval_required(s, trading_mode) and not str(row.get("decided_by") or "").startswith("telegram:"):
         # Abhi: approval शिवाय PAPER entry नाही — timeout / approver नसणं / vision ने APPROVED केलं (veto_then_confirm) ⇒ entry नाही
         if VS.transition(sid, "APPROVED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts,
                          exec_note=f"✅ तुमचं approval नाही (decided_by {row.get('decided_by')}) ⇒ entry नाही"):
-            return Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_NO_HUMAN_APPROVAL", sid, "✅ तुमचं approval नाही ⇒ entry नाही")
+            return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_NO_HUMAN_APPROVAL", sid, "✅ तुमचं approval नाही ⇒ entry नाही"),
+                           row, symbol, direction, level, setup_tf)
         return _stale("race") if forced else _hold(sid, "race")
     drift = VD.drift_guard(row, spot, direction, s["max_drift_mr"], origin)
     if drift:
         if VS.transition(sid, "APPROVED", "DRIFT_REJECTED", path, DB_TIMEOUT, executed_at=ts, drift_result="; ".join(drift)):
-            return Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_DRIFT", sid, "; ".join(drift), drift)
+            return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_DRIFT", sid, "; ".join(drift), drift),
+                           row, symbol, direction, level, setup_tf)
         return _stale("race") if forced else _hold(sid, "race")
     f = float(row.get("factor") or 0.0)
     l1, l2 = VD.scaled_lots(lots, f), VD.scaled_lots(naked_lots, f)
@@ -206,7 +225,8 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     if (l1 == 0 and l2 == 0) or (lots > 0 and l1 == 0) or (naked_lots > 0 and l2 == 0):
         if VS.transition(sid, "APPROVED", "SHADOWED", path, DB_TIMEOUT, executed_at=ts, drift_result="ok",
                          exec_note=f"factor {f} ⇒ lots {l1}/{l2} ⇒ shadow"):
-            return Gate("SHADOW", lots, naked_lots, f, "SKIPPED_VISION_HALF_ZERO", sid, f"factor {f} ⇒ एका leg चे 0 lots")
+            return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, f, "SKIPPED_VISION_HALF_ZERO", sid, f"factor {f} ⇒ एका leg चे 0 lots"),
+                           row, symbol, direction, level, setup_tf)
         return _stale("race") if forced else _hold(sid, "race")
     if VS.transition(sid, "APPROVED", "EXECUTED", path, DB_TIMEOUT, executed_at=ts, drift_result="ok", exec_note=f"lots {l1}/{l2}"):
         return Gate("ENTER", l1, l2, f, "", sid, f"approved ×{f}")

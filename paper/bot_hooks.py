@@ -2,7 +2,7 @@
 
   pre_cycle(...)  ⇒ cycle सुरू होताना: PAPER साठी instrument enabled (config.yaml paper.instruments), Upstox token (नाही ⇒ स्पष्ट error +
                     दिवसातून एकदा Telegram), lot size (Upstox instrument master; config फक्त fallback), signal_source = engine ⇒ engine मार्ग.
-  own_signal_ok() ⇒ bot चा स्वतःचा signal वापरायचा का (own / both).
+  own_signal_ok() ⇒ bot चा स्वतःचा signal वापरायचा का (own / both; engine ⇒ नाही; PAPER pause ⇒ नाही).
 LIVE / LIVE_PAPER ⇒ lot size, enabled-तपासणी, engine मार्ग यातलं काहीच नाही (जुनं वर्तन; lot size आधीचाच default — config / master नाही).
 """
 import json
@@ -13,6 +13,7 @@ import engine_signal as ES
 
 from . import config as PC
 from . import lots as PL
+from . import pause as PP
 
 
 LIVE_LEGACY_LOT_SIZE = 65   # LIVE मार्गाचा आधीचा default (process_symbol(lot_size=65)) — बदल नाही; PAPER ला Upstox master
@@ -57,7 +58,8 @@ def token_error(symbol, bot, send=None, state_path=None, today=None):
 
 def pre_cycle(bot, access_token, symbol, settings, lot_size=None, cfg=None, resolve=None, send=None, engine_fn=None, source=None, now=None,
               ss_key="signal_source"):
-    """रिटर्न Pre. stop = True ⇒ bot ने हा cycle इथेच संपवावा (msg परत करावा)."""
+    """रिटर्न Pre. stop = True ⇒ bot ने हा cycle इथेच संपवावा (msg परत करावा): instrument बंद / token नाही / lot size नाही.
+    signal_source = engine ⇒ engine मार्ग चालवून stop = False (bot चा cycle चालू)."""
     if not _paper(settings):                                             # LIVE / LIVE_PAPER ⇒ आधीचं वर्तन तंतोतंत (lot size सुद्धा) — LIVE ला हात नाही
         return Pre(False, lot_size=lot_size if lot_size is not None else LIVE_LEGACY_LOT_SIZE, lot_src="legacy (non-PAPER)")
     cfg = cfg or PC.load()
@@ -72,12 +74,21 @@ def pre_cycle(bot, access_token, symbol, settings, lot_size=None, cfg=None, reso
     else:
         src = "caller"
     if ES.source_of(settings, ss_key) == "engine":
-        sts = dict(settings, signal_source="engine")
-        if engine_fn is None:
-            from . import engine_entry as EE
-            engine_fn = EE.process
-        return Pre(True, engine_fn(bot, access_token, symbol, sts, lot_size, source or bot, now=now) or f"{symbol}: engine — काही नाही",
-                   lot_size, src)
+        # engine चा setup (असल्यास) ⇒ Vision + ✅ ⇒ entry. Bot चा cycle **थांबत नाही** (levels refresh / signal log चालू राहतात);
+        # bot चे स्वतःचे entries `own_signal_ok` (engine ⇒ False) अडवतो.
+        if PP.paused():
+            msg = f"{symbol}: engine — ⏸ PAPER pause ⇒ नवीन entry नाही"
+        else:
+            sts = dict(settings, signal_source="engine")
+            if engine_fn is None:
+                from . import engine_entry as EE
+                engine_fn = EE.process
+            try:
+                msg = engine_fn(bot, access_token, symbol, sts, lot_size, source or bot, now=now) or f"{symbol}: engine — काही नाही"
+            except Exception as exc:
+                msg = f"{symbol}: engine त्रुटी ⇒ entry नाही ({type(exc).__name__}: {exc})"
+        print(msg)
+        return Pre(False, msg, lot_size, src)
     return Pre(False, lot_size=lot_size, lot_src=src)
 
 
@@ -85,4 +96,6 @@ def own_signal_ok(symbol, direction, settings, now=None, ss_key="signal_source")
     """own ⇒ True; both ⇒ engine चा ताजा setup त्याच दिशेला; engine ⇒ False. रिटर्न (ok, कारण)."""
     if not _paper(settings):
         return True, "non-PAPER ⇒ जुनं वर्तन"
+    if PP.paused():
+        return False, "⏸ PAPER pause (/resume) ⇒ नवीन PAPER entry नाही"
     return ES.own_allowed(symbol, direction, settings, now, key=ss_key)

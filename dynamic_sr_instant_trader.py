@@ -1138,7 +1138,8 @@ def process_symbol(access_token, symbol, lot_size=None):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
-        # 🎓 Abhi (Monday PAPER) signal_source: own ⇒ हाच signal; both ⇒ engine चा ताजा setup याच दिशेला हवा; engine ⇒ (वर pre_cycle मध्येच).
+        # 🎓 Abhi (Monday PAPER) signal_source: own ⇒ हाच signal; both ⇒ engine चा ताजा setup याच दिशेला हवा; engine ⇒ नाही (engine मार्ग
+        # pre_cycle मध्ये); PAPER pause ⇒ नाही.
         _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, settings, now)
         if not _ss_ok:
             log_entry["trade_status"] = "SKIPPED_SIGNAL_SOURCE"

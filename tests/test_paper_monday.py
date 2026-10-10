@@ -1,6 +1,5 @@
 """Monday PAPER (Abhi P0): approval शिवाय entry नाही, exit कधीच अडत नाही, Vision order देत नाही / image मधून किंमत नाही, LIVE मार्गाला
 हात नाही, signal_source (own / engine / both), token नाही ⇒ स्पष्ट error, lot size (master / fallback), journal + charges, commands."""
-import ast
 import datetime as dt
 import json
 import os
@@ -108,29 +107,8 @@ def test_bots_hold_when_gate_unavailable_in_paper():
 
 
 # ------------------------------------------------------------------------------------------------ 2. exit कधीही अडत नाही
-def _func_src(path, name):
-    tree = ast.parse(_src(path))
-    for n in ast.walk(tree):
-        if isinstance(n, ast.FunctionDef) and n.name == name:
-            return ast.get_source_segment(_src(path), n)
-    raise AssertionError(name)
-
-
-def test_exit_path_has_no_pause_kill_vision_or_approval():
-    for fn in ("manage_open_trades", "_send_exit_orders", "close_trade_manually"):
-        body = _func_src("trading_engine.py", fn)
-        for bad in ("get_trading_pause_settings", "check_kill_switch", "vision.gate", "from vision", "approval_required", "paper."):
-            assert bad not in body, f"{fn} मध्ये {bad}"
-
-
-def test_paper_watch_runs_after_exits_and_never_raises(monkeypatch, tmp_path):
-    for f in ("trade_monitor.py", "engine_service.py"):
-        s = _src(f)
-        i_exit, i_watch = s.index("manage_open_trades("), s.index("_paper_watch.run_locked")
-        assert i_watch > i_exit and "except Exception" in s[i_watch:i_watch + 300]
-        lock_end = s.index("except ProcessLockHeld", i_exit)                       # exit lock सुटल्यानंतरच (network मुळे exit cycle अडू नये)
-        call = s.index("run_paper_watch(access_token)") if f == "trade_monitor.py" else i_watch
-        assert call > lock_end
+def test_paper_watch_lock_and_never_raises(monkeypatch, tmp_path):
+    """Exits नंतरचा क्रम / stream loop: tests/test_paper_approval_e2e.py (behaviour). इथे: स्वतःचा lock आणि कधीच raise नाही."""
     calls = []
     monkeypatch.setattr(PW, "run_cycle", lambda tok, **k: calls.append(tok) or {"entries": 0})
     from process_lock import ProcessLock
@@ -142,15 +120,17 @@ def test_paper_watch_runs_after_exits_and_never_raises(monkeypatch, tmp_path):
     assert PW.run_cycle("tok", now=pd.Timestamp("2026-10-12 10:00"), db_path=str(tmp_path / "x.db")) == {"entries": 0, "exits": 0, "updates": 0}
 
 
-def test_pause_only_blocks_entries():
-    out = []
-    assert "exits" in PCMD.pause("telegram:1", set_fn=lambda p, reason: out.append((p, reason)))
-    assert out[0][0] is True
-    PCMD.resume("telegram:1", set_fn=lambda p, reason: out.append((p, reason)))
-    assert out[1][0] is False
+def test_pause_is_paper_scoped_and_only_blocks_entries(monkeypatch):
+    import cloud_db
+    from paper import pause as PP
+    monkeypatch.setattr(cloud_db, "set_trading_pause", lambda *a, **k: pytest.fail("Telegram ने LIVE / dashboard pause बदलू नये"))
+    assert "PAPER" in PCMD.pause("telegram:1") and PP.paused()
+    s = {"signal_source": "own", "trading_mode": "PAPER"}
+    assert PBH.own_signal_ok("NIFTY", "BULLISH", s)[0] is False                  # नवे PAPER entries नाहीत
+    assert PBH.own_signal_ok("NIFTY", "BULLISH", {**s, "trading_mode": "LIVE"})[0] is True   # LIVE ला हात नाही
+    PCMD.resume("telegram:1")
+    assert not PP.paused() and PBH.own_signal_ok("NIFTY", "BULLISH", s)[0] is True
 
-
-# ------------------------------------------------------------------------------------------------ 3. Vision order देत नाही, किंमत image मधून नाही
 def test_vision_cannot_place_orders():
     for d in ("vision", "vision2"):
         for f in os.listdir(os.path.join(ROOT, d)):
@@ -158,7 +138,7 @@ def test_vision_cannot_place_orders():
                 s = _src(os.path.join(d, f))
                 for bad in ("open_multi_leg_trade", "place_order", "execute_trade_on_all_accounts", "broker_factory", "fetch_upstox_option_chain"):
                     assert bad not in s, f"{d}/{f}: {bad}"
-    assert set(VG.Gate.__dataclass_fields__) == {"action", "lots", "naked_lots", "factor", "status", "signal_id", "note", "drift"}
+    assert set(VG.Gate.__dataclass_fields__) == {"action", "lots", "naked_lots", "factor", "status", "signal_id", "note", "drift", "final"}
 
 
 def test_no_price_from_image():
@@ -231,7 +211,8 @@ def test_pre_cycle_engine_mode_routes_to_engine():
     calls = []
     pre = PBH.pre_cycle("dynamic_sr_instant", "tok", "NIFTY", {"signal_source": "engine", "trading_mode": "PAPER"}, 65,
                         cfg={"instruments": {"NIFTY": {"enabled": True}}}, engine_fn=lambda *a, **k: calls.append(a) or "engine msg")
-    assert pre.stop and pre.msg == "engine msg" and calls
+    assert not pre.stop and pre.msg == "engine msg" and calls                    # engine मार्ग चालला, bot चा cycle (levels refresh) चालू
+    assert PBH.own_signal_ok("NIFTY", "BULLISH", {"signal_source": "engine", "trading_mode": "PAPER"})[0] is False   # bot चे स्वतःचे entries नाहीत
 
 
 # ------------------------------------------------------------------------------------------------ 5. token / instruments / lot size

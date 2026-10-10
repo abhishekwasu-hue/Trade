@@ -261,12 +261,12 @@ def run_shadow(access_token, symbol, now=None, settings=None, lot_size=None, fet
                 if why != "touch नाही":
                     notes.append(f"{symbol} SR V3 {level:,.2f}: {why}")
                 continue
-            _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, dict(settings, trading_mode="PAPER"), now, ss_key="srv3_signal_source")
-            if not _ss_ok:
-                notes.append(f"{symbol} SR V3 {level:,.2f}: {_ss_note}")
-                continue
         else:
             direction, why = forced_dir, "vision निर्णय (forced level)"
+        _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, dict(settings, trading_mode="PAPER"), now, ss_key="srv3_signal_source")
+        if not _ss_ok:                                                   # signal_source / PAPER pause — forced level ला सुद्धा
+            notes.append(f"{symbol} SR V3 {level:,.2f}: {_ss_note}")
+            continue
         g = _gate(symbol, direction, level, now, closes[-1] if closes else None, settings, forced=forced_dir is not None,
                   last_bar=recent[-1] if recent else None, gate_fn=gate_fn)
         if g is None or g.action != "ENTER":

@@ -52,7 +52,7 @@ def open_paper(access_token, symbol, settings, direction, level, lot_size, sourc
 
 
 def process(bot, access_token, symbol, settings, lot_size, source, now=None, has_open=None, gate_fn=None, open_fn=None, chain=None,
-            path=None, cutoff=(14, 45), vpath=None):
+            path=None, cutoff=None, vpath=None):
     """engine mode चा एक cycle. रिटर्न संदेश (None = engine mode नाही / नवा setup नाही)."""
     if ES.source_of(settings) != "engine":
         return None
@@ -64,6 +64,9 @@ def process(bot, access_token, symbol, settings, lot_size, source, now=None, has
         return f"{symbol}: engine — नवा setup नाही ({ES.opinion(symbol, now, path)})"
     d = int(r["direction"])
     direction = ES.DIR_TXT[d]
+    if cutoff is None:                                                   # config.yaml paper.entry_cutoff (manual सारखंच; code मध्ये आकडा नाही)
+        from . import config as PC
+        cutoff = tuple(int(x) for x in str(PC.load()["entry_cutoff"]).split(":"))
     if (now.hour, now.minute) >= tuple(cutoff):
         ES.mark_consumed(bot, symbol, r["bar_ts"], "SKIPPED_CUTOFF", path)
         return f"{symbol}: engine setup — {cutoff[0]}:{cutoff[1]:02d} नंतर नवीन entry नाही"
@@ -91,7 +94,7 @@ def process(bot, access_token, symbol, settings, lot_size, source, now=None, has
                     tags={"engine": True, "engine_bar": r["bar_ts"], "engine_grade": r.get("grade")}, path=vpath)
     except Exception as exc:
         return f"{symbol}: engine setup — gate त्रुटी ⇒ entry नाही ({exc})"
-    if g is None or g.action == "HOLD":
+    if g is None or (g.action == "HOLD" and not getattr(g, "final", False)):
         return f"{symbol}: engine setup {direction} — Vision / ✅ ची वाट ({getattr(g, 'note', 'gate नाही')})"
     if g.action != "ENTER":
         ES.mark_consumed(bot, symbol, r["bar_ts"], f"NOT_ENTERED_{g.action}", path)

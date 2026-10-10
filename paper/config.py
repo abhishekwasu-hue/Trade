@@ -6,7 +6,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULTS = {"instruments": {"NIFTY": {"enabled": True, "lot_size_fallback": None}}, "update_every_min": 30, "near_alert_pct": 80,
-            "entry_cutoff": "14:45"}
+            "entry_cutoff": "14:45", "watch_min_interval_sec": 15}
 
 
 def data_dir():
@@ -23,6 +23,14 @@ def load(path=None):
         cfg = {}
     out = dict(DEFAULTS)
     out.update({k: v for k, v in cfg.items() if v is not None})
+    cut = out.get("entry_cutoff")
+    if isinstance(cut, int):                                             # YAML मध्ये quote नसलेलं 14:45 ⇒ sexagesimal 885 (मिनिटं)
+        out["entry_cutoff"] = f"{cut // 60:02d}:{cut % 60:02d}"
+    try:
+        h, m = (int(x) for x in str(out["entry_cutoff"]).split(":"))
+        assert 0 <= h < 24 and 0 <= m < 60
+    except (ValueError, AssertionError):
+        out["entry_cutoff"] = DEFAULTS["entry_cutoff"]                  # चुकीचं ⇒ default (fail-closed: नवीन entries 14:45 नंतर नाहीत)
     return out
 
 

@@ -15,7 +15,12 @@ CREATE TABLE IF NOT EXISTS paper_journal (
   entry_time TEXT, lots INTEGER, lot_size INTEGER, net_credit REAL, max_loss REAL, sl_pnl_level REAL, target_pnl_level REAL,
   legs_json TEXT, entry_charges REAL, exit_time TEXT, exit_reason TEXT, gross_pnl REAL, exit_charges REAL, net_pnl REAL,
   last_update_at TEXT, near_alerts TEXT, dry_run INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS paper_would_have (
+  ts TEXT, bot TEXT, symbol TEXT, direction TEXT, level REAL, setup_tf TEXT, status TEXT, reason TEXT, signal_id TEXT,
+  orig_lots INTEGER, orig_naked_lots INTEGER, lots INTEGER DEFAULT 0, dry_run INTEGER DEFAULT 0);
 """
+WOULD_COLS = ("ts", "bot", "symbol", "direction", "level", "setup_tf", "status", "reason", "signal_id", "orig_lots", "orig_naked_lots",
+              "dry_run")
 COLS = ("trade_id", "bot", "source", "symbol", "signal_source", "direction", "strategy", "vision_signal_id", "vision_verdict", "vision_reason",
         "approver", "engine_opinion", "rr", "entry_time", "lots", "lot_size", "net_credit", "max_loss", "sl_pnl_level", "target_pnl_level",
         "legs_json", "entry_charges", "exit_time", "exit_reason", "gross_pnl", "exit_charges", "net_pnl", "last_update_at", "near_alerts",
@@ -96,3 +101,16 @@ def load_legs(legs_json):
         return json.loads(legs_json or "[]")
     except (TypeError, ValueError):
         return []
+
+
+def would_have(row, path=None):
+    """Abhi (Monday PAPER): ✅ शिवाय / नाकारलेला signal ⇒ position नाही, फक्त ही नोंद (lots 0) — "झाला असता तर" तुलनेसाठी."""
+    r = {k: row.get(k) for k in WOULD_COLS}
+    r["dry_run"] = 1 if r.get("dry_run") else 0
+    with connect(path) as c:
+        c.execute(f"INSERT INTO paper_would_have ({','.join(WOULD_COLS)}, lots) VALUES ({','.join('?' * len(WOULD_COLS))}, 0)", list(r.values()))
+
+
+def would_have_rows(path=None):
+    with connect(path) as c:
+        return [dict(r) for r in c.execute("SELECT * FROM paper_would_have ORDER BY ts").fetchall()]

@@ -198,7 +198,7 @@ def _profile(path=None):
 
 
 def _cutoff_txt(cfg=None):
-    return str((cfg or PC.load()).get("entry_cutoff") or "14:45")
+    return str((cfg or PC.load())["entry_cutoff"])
 
 
 def _before_cutoff(now=None, cfg=None):
@@ -218,6 +218,11 @@ def _market_open():
 
 
 def _paused():
+    """Dashboard (global) pause किंवा PAPER pause (/pause) — कुठलाही ⇒ नवीन manual entry नाही."""
+    from . import pause as PP
+    pp = PP.get()
+    if pp["paused"]:
+        return True, f"PAPER pause — {pp.get('reason') or ''}"
     import cloud_db
     s = cloud_db.get_trading_pause_settings() or {}
     return bool(s.get("paused")), s.get("reason")
@@ -333,7 +338,7 @@ def handle(text, by, send=None, token_fn=None, market_fn=None, chain_fn=None, ga
     except Exception as exc:
         _set_status(m["id"], "NEW", "FAILED", path, note=f"gate: {exc}")
         return no(f"Vision gate त्रुटी ⇒ entry नाही ({type(exc).__name__})")
-    if g.action != "HOLD" or not g.signal_id:                           # approval मार्ग नसेल तर (approval बंद / symbol यादीत नाही) ⇒ entry नाही
+    if g.action != "HOLD" or not g.signal_id or getattr(g, "final", False):                           # approval मार्ग नसेल तर (approval बंद / symbol यादीत नाही) ⇒ entry नाही
         _set_status(m["id"], "NEW", "FAILED", path, note=f"gate {g.action} {g.status}: {g.note}"[:300])
         return no(f"approval मार्ग उपलब्ध नाही ({g.action} {g.status}: {g.note}) ⇒ entry नाही")
     _set_status(m["id"], "NEW", "QUEUED", path, vision_signal_id=g.signal_id)
@@ -377,6 +382,11 @@ def _execute_one(m, VS, token, now, gate_fn, open_fn, chain_fn, send, path, vpat
     if st == "APPROVED":
         from vision import config as VC
         from vision import gate as VG
+        from . import pause as PP
+        if PP.paused():                                                  # ✅ नंतर /pause ⇒ gate च्या आधीच थांब (vision row EXECUTED होत नाही)
+            _set_status(m["id"], "QUEUED", "FAILED", path, note="PAPER pause")
+            send(f"⏸ ✋ MANUAL {m['symbol']}: PAPER pause ⇒ entry नाही (/resume)")
+            return "FAILED pause"
         if VG._exec_expired(v, VC.load(BOT, vpath), pd.Timestamp(now or VS.now_ist())):
             chain = None                                                 # exec window संपली ⇒ gate EXPIRED करतो (खाली), entry नाही
         else:
@@ -409,6 +419,12 @@ def _execute_one(m, VS, token, now, gate_fn, open_fn, chain_fn, send, path, vpat
             _note(g.signal_id, "manual: spread बनत नाही ⇒ entry नाही")
             send(f"❌ ✋ MANUAL {m['symbol']}: ✅ नंतर spread बनत नाही (LTP / credit) ⇒ entry नाही")
             return "FAILED spread"
+        from . import pause as PP
+        if PP.paused():                                                  # ✅ नंतर /pause ⇒ entry नाही (global pause open_multi_leg_trade मध्ये)
+            _set_status(m["id"], "QUEUED", "FAILED", path, note="PAPER pause")
+            _note(g.signal_id, "manual: PAPER pause ⇒ entry नाही")
+            send(f"⏸ ✋ MANUAL {m['symbol']}: PAPER pause ⇒ entry नाही (/resume)")
+            return "FAILED pause"
         if open_fn is None:
             from trading_engine import open_multi_leg_trade as open_fn
         source = SOURCE + ("_dryrun_shadow" if m.get("dry_run") else "")
@@ -433,7 +449,7 @@ def _execute_one(m, VS, token, now, gate_fn, open_fn, chain_fn, send, path, vpat
         _note(g.signal_id, f"manual PAPER FAILED: {why}")
         send(f"❌ ✋ MANUAL {m['symbol']}: entry झाली नाही — {why}")
         return f"FAILED {why}"
-    if g.action == "SHADOW":                                             # नाकारलं / drift ⇒ manual साठी shadow trade नाही
+    if g.action == "SHADOW" or getattr(g, "final", False):               # नाकारलं / ✅ नाही / drift ⇒ manual साठी shadow trade नाही
         _set_status(m["id"], "QUEUED", "REJECTED", path, note=f"{g.status}: {g.note}"[:300])
         send(f"❌ ✋ MANUAL {m['symbol']}: entry नाही — {g.note}")
         return f"REJECTED {g.status}"

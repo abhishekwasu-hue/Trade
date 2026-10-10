@@ -320,3 +320,10 @@ def test_live_lot_size_unchanged():
     for sym in ("NIFTY", "BANKNIFTY", "SENSEX"):
         assert PBH.pre_cycle("dynamic_sr_instant", "tok", sym, {"trading_mode": "LIVE"}).lot_size == 65      # आधीचा default
     assert PBH.pre_cycle("dynamic_sr_instant", "tok", "NIFTY", {"trading_mode": "LIVE"}, lot_size=75).lot_size == 75
+
+
+def test_submit_with_final_hold_fails_cleanly(db):
+    import vision.gate as VG2
+    d, _ = deps(gate_fn=lambda *a, **k: VG2.Gate("HOLD", 0, 0, 0.0, "SKIPPED_VISION_REJECTED", "sid1", "आधीच नाकारलं", final=True))
+    ok, msg = PM.handle("/paper NIFTY bullput SL 24900", "telegram:1", **d)
+    assert not ok and "approval मार्ग उपलब्ध नाही" in msg and not PM.rows("QUEUED")

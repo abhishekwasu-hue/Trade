@@ -104,6 +104,10 @@ def run_bot(bot, token, symbol, wait_min, hold_min, lines, lpath, gate_fn=None, 
     if g2.action != "ENTER":
         log(lines, f"{TAG}entry नाही (approval नाही / नाकारलं / मुदत संपली) — बरोबर वर्तन", lpath)
         return None
+    from paper import pause as PP
+    if PP.paused():
+        log(lines, f"{TAG}PAPER pause ⇒ entry नाही (/resume)", lpath)
+        return None
     lot_size, src = PL.lot_size(token, symbol)
     log(lines, f"{TAG}lot size {lot_size} ({src})", lpath)
     msgs, spot = EE.open_paper(token, symbol, st, direction, level, lot_size, SOURCE[bot] + PW.DRYRUN_SUFFIX, "DRYRUN", min(lots, g2.lots),

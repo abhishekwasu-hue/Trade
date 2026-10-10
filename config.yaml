@@ -98,4 +98,5 @@ paper:
     SENSEX: {enabled: false, lot_size_fallback: 20}
   update_every_min: 30         # उघड्या PAPER trade चा P&L Telegram वर दर इतक्या मिनिटांनी
   near_alert_pct: 80           # SL / target च्या इतक्या % जवळ पोचला ⇒ एकदा इशारा
-  entry_cutoff: "14:45"        # ✋ /paper: यानंतर नवीन manual entry नाही (bots सारखंच; EOD square-off जवळ)
+  entry_cutoff: "14:45"        # /paper आणि engine मार्ग: यानंतर नवीन entry नाही (bots सारखंच; EOD square-off जवळ)
+  watch_min_interval_sec: 15   # PAPER watcher (updates / journal / manual spot SL-T) कमाल इतक्या सेकंदांनी एकदा — फक्त cron monitor loop मधून, stream मधून नाही

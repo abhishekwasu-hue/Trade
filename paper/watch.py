@@ -275,9 +275,33 @@ def run_locked(access_token, **kw):
         return None
     try:
         with ProcessLock("paper_watch"):
+            if not _due(kw.get("cfg")):                                  # throttle: TSL loop (5 s) मध्ये प्रत्येक cycle ला network नको
+                return None
             return run_cycle(access_token, **kw)
     except ProcessLockHeld:
         return None
     except Exception as exc:
         print(f"⚠️ paper watch: {type(exc).__name__}: {exc}")
         return None
+
+
+def _due(cfg=None, state_path=None, now=None):
+    """शेवटच्या run पासून `watch_min_interval_sec` (config.yaml paper) झाले का; झाले ⇒ timestamp नोंदवून True. वाचता / लिहिता आलं नाही ⇒ True."""
+    import time
+    cfg = cfg or PC.load()
+    p = state_path or os.path.join(PC.data_dir(), "paper_watch_last.json")
+    t = time.time() if now is None else now
+    try:
+        with open(p, encoding="utf-8") as f:
+            last = float(json.load(f).get("t") or 0)
+    except (OSError, ValueError):
+        last = 0.0
+    if t - last < float(cfg.get("watch_min_interval_sec") or 0):
+        return False
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"t": t}, f)
+    except OSError:
+        pass
+    return True
