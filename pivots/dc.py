@@ -63,6 +63,7 @@ class D0:
 
     def __init__(self, degree=0):
         self.degree = degree
+        self.order_fn = _order_1m           # 1m क्रम-निर्णय (swings2: stream मध्ये साठवलेला निर्णय replay ला — replay = live)
         self.reset()
 
     def reset(self):
@@ -105,7 +106,7 @@ class D0:
                     return None
             if down:
                 if self.mx[1] == b:                                     # टोक आणि उलट θ एकाच candle मध्ये
-                    o = _order_1m(rows_1m, hi, lo, +1)
+                    o = self.order_fn(rows_1m, hi, lo, +1)
                     if o is None or o[0] == "first_rev" or self.mx[0] - o[1] < theta:
                         self._hold(b)
                         return None
@@ -117,7 +118,7 @@ class D0:
                 return p
             if up:
                 if self.mn[1] == b:
-                    o = _order_1m(rows_1m, hi, lo, -1)
+                    o = self.order_fn(rows_1m, hi, lo, -1)
                     if o is None or o[0] == "first_rev" or o[1] - self.mn[0] < theta:
                         self._hold(b)
                         return None
@@ -144,7 +145,7 @@ class D0:
                 p = self._confirm("H", *self.ext, b, None, known_at, sigma, theta, "normal", session, ts_of)
                 self.mode, self.ext, self.rev = DOWN, (lo, b), None
                 return p
-            o = _order_1m(rows_1m, hi, lo, +1)                          # same-bar: नवं high आणि उलट θ
+            o = self.order_fn(rows_1m, hi, lo, +1)                          # same-bar: नवं high आणि उलट θ
             if o is None:
                 self._hold(b)                                            # सावध: फक्त extend
                 return None
@@ -175,7 +176,7 @@ class D0:
             p = self._confirm("L", *self.ext, b, None, known_at, sigma, theta, "normal", session, ts_of)
             self.mode, self.ext, self.rev = UP, (hi, b), None
             return p
-        o = _order_1m(rows_1m, hi, lo, -1)
+        o = self.order_fn(rows_1m, hi, lo, -1)
         if o is None:
             self._hold(b)
             return None

@@ -53,7 +53,7 @@ def main(argv=None):
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     fut = OLD.load_futures(a.futures_dir)
     print("futures volume: " + (f"{len(fut)} 5M rows" if fut is not None else "नाही (V तटस्थ)"), flush=True)
     res, struct, lg, trk = build_all(m15, m1, fut, smap)

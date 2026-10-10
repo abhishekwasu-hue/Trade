@@ -11,6 +11,9 @@ DEFAULTS = {
     "rhea_min_bars": 8,
     "rhea_touch_sigma": 0.25,
     "rhea_min_touches": 2,
+    "rhea_d2_scale": "k2/k1",                    # D2 Rhea 15M वर: पट्टा आणि min bars × k_D2 / k_D1 (Abhi, audit #4)
+    "range_band_source": "pivots",               # pivot-RANGE चा range_break पट्टा = शेवटचे 2 H / 2 L (audit #5)
+    "k_compare_days": 3,
     "disp_rng_ratio": 1.5,
     "disp_body": 0.6,
     "disp_wick_opp": 0.2,
@@ -24,7 +27,7 @@ DEFAULTS = {
     "run_days": 22,
     "moments_per_day": 3,
 }
-K_OPTIONS = {0: (1.5, 2.0, 2.5), 1: (3.0, 4.0, 5.0), 2: (6.0, 8.0, 10.0), 3: (12.0, 16.0, 20.0), 4: (24.0, 32.0, 40.0)}
+K_OPTIONS = {0: (1.5, 2.0, 2.5), 1: (3.0, 4.0, 5.0), 2: (4.0, 6.0, 8.0), 3: (12.0, 16.0, 20.0), 4: (24.0, 32.0, 40.0)}
 
 # आकडा: (default, पर्याय, वर्ग, स्रोत)
 REGISTER = {
@@ -37,6 +40,10 @@ REGISTER = {
     "rhea_min_bars": (8, "6/8/10", "अंदाज", "थर 1 §2.1"),
     "rhea_touch_sigma": (0.25, "0.15/0.25/0.35", "अंदाज", "थर 1 §2.1"),
     "rhea_min_touches": (2, "—", "व्याख्या", "थर 1 §2.1: प्रत्येक कडेला ≥ 2 स्पर्श"),
+    "rhea_d2_scale": ("k2/k1 (= 1.5 ⇒ 4.5σ, 12 bars)", "1 / k2/k1", "Abhi (audit #4 उत्तर)",
+                      "D2 Rhea 15M bars + σ वर (MASTER §3: D2 साखळी 15M वर); पट्टा / min bars D2 च्या आकाराप्रमाणे; touch tol तसाच"),
+    "range_band_source": ("pivots", "—", "व्याख्या (audit #5)", "pivot-RANGE चा range_break पट्टा = शेवटच्या 2 H चा वरचा / 2 L चा खालचा"),
+    "k_compare_days": (3, "—", "व्याख्या", "थर 1 §5: k-तुलना charts शेवटचे 3 दिवस (audit #8)"),
     "disp_rng_ratio": (1.5, "1.25/1.5/1.75", "research-practitioner", "MASTER §3 displacement (ICT heuristic)"),
     "disp_body": (0.6, "0.35/0.6/0.85", "research-practitioner", "MASTER §3"),
     "disp_wick_opp": (0.2, "0.0/0.2/0.45", "research-practitioner", "MASTER §3"),
@@ -52,11 +59,14 @@ REGISTER = {
 }
 NOTES = {
     "D2 घटना": "BOS / CHoCH / sweep सगळ्या degrees साठी 15M close वर (series = 15M; known_at = त्या candle चा close)",
-    "Rhea": "D1: 15M bars आणि σ; D2: बंद 1H bars आणि σ_1H (MASTER §3)",
-    "strong low": "शेवटच्या BOS_up ची चाल ज्या low पासून सुरू झाली (तुटलेल्या H नंतरचा raw low); नसेल तर strict_HL. आरसा DOWN",
+    "Rhea": "D1: 15M bars आणि σ; D2: 15M bars आणि σ, पट्टा / min bars × k_D2 / k_D1 (MASTER §3: D2 साखळी 15M वर)",
+    "strong low": "शेवटच्या BOS_up ची चाल ज्या confirmed D(n) low पासून सुरू झाली (तुटलेल्या H नंतरचा, BOS आधीचा); तो confirm होईपर्यंत "
+                  "strict_HL. आरसा DOWN",
+    "weak high": "UP मध्ये शेवटचा H जर आधीचा H न ओलांडलेला (price ≤ आधीचा H) असेल तर तो; नाहीतर None. आरसा DOWN",
     "pivot RANGE": "pivot वरून RANGE (HH + LL / EQ) ⇒ पट्टा = शेवटच्या दोन H चा वरचा आणि दोन L चा खालचा; close बाहेर ⇒ range_break",
     "split candle": "D0 ने same-bar मुळे candle चा भाग वापरला नाही ⇒ D(n+1) त्या candle वर crossing मोजत नाही",
-    "1m replay": "stream.json मध्ये प्रत्येक candle चा 1m_status; complete असेल तर 1m rows पुन्हा वाचतात (नंतरची दुरुस्ती क्रम बदलू शकते)",
+    "1m replay": "stream.json मध्ये प्रत्येक candle चा 1m_status **आणि** 1m चा निर्णय (order: first_ext / first_rev / none + "
+                 "after_extreme); replay त्या निर्णयावरच (1m rows पुन्हा वाचत नाही ⇒ backfill pivot बदलत नाही)",
 }
 
 

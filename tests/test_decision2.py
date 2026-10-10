@@ -420,3 +420,18 @@ def test_range_mode_area_options(monkeypatch):
     g0 = DE.grade(C, t, 1, {"stars": 1}, {"g4_both": False}, [], {}, {}, {}, {}, False)
     g1 = DE.grade(C, t, 1, {"stars": 1, "range_edge": True}, {"g4_both": False}, [], {}, {}, {}, {}, False)
     assert g1 == pytest.approx(g0 + S["w_range_edge"])
+
+
+def test_charts7_caption_marathi_limits_and_no_order_imports():
+    from decision2 import charts7 as D7
+    dec = {"decision": "wait", "gate": "G-C", "where_wrong": "area नाही", "points": {"1_htf_state": {"regime": {"regime": "drift"}}},
+           "grade": None, "size_weight": None, "flags": []}
+    cap = D7.caption(1, 3, pd.Timestamp(0), dec, "gate बदल (G-C)")
+    assert "सातही थर" in cap and "थांबा" in cap and "drift" in cap and len(cap) <= 1024
+    for bad in ("G-A✗", "where_wrong", "k_area", "decision"):
+        assert bad not in cap
+    src = open(os.path.join(ROOT, "decision2", "charts7.py"), encoding="utf-8").read() + \
+        open(os.path.join(ROOT, "scripts", "all7_check.py"), encoding="utf-8").read()
+    for bad in ("broker", "place_order", "requests", "telegram"):
+        assert f"import {bad}" not in src and f"from {bad}" not in src
+    assert not [ln for ln in src.splitlines() if any(rx.search(ln) for rx in DATE_RX_I)]

@@ -48,7 +48,7 @@ def main(argv=None):
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     fut = OLD.load_futures(a.futures_dir)
     res, struct, lg, trk = L2.build_all(m15, m1, fut, smap)
     f1, f2 = P2.build_folds(lg, trk)

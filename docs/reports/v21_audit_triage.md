@@ -5,16 +5,16 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 
 | # | थर | तीव्रता | स्थिती | #279 मध्ये / नोंद |
 |---|---|---|---|---|
-| 1 | 1 | 🟡 | open |  |
-| 2 | 1 | 🟡 | open |  |
-| 3 | 1 | 🟡 | open |  |
-| 4 | 1 | 🟡 | open |  |
-| 5 | 1 | 🟡 | open |  |
-| 6 | 1 | 🟡 | open |  |
-| 7 | 1 | 🟡 | open |  |
-| 8 | 1 | 🟡 | open |  |
-| 9 | 1 | 🟢 | open |  |
-| 10 | 1 | tests | open |  |
+| 1 | 1 | 🟡 | fixed (l1) | l1: structure.py `p.confirm_bar > choch_bar` |
+| 2 | 1 | 🟡 | fixed (l1) | l1: `strong_price()` |
+| 3 | 1 | 🟡 | fixed (l1) | l1: `weak_level()` |
+| 4 | 1 | 🟡 | fixed (l1) | l1: `rhea_settings()` (15M, ×k2/k1) |
+| 5 | 1 | 🟡 | fixed (l1) | l1: register `range_band_source` + 01 §2.1 |
+| 6 | 1 | 🟡 | fixed (l1) | l1: stream `order` + `pivots/dc.py` `order_fn` |
+| 7 | 1 | 🟡 | fixed (l1) | l1: K_OPTIONS[2] 4/6/8 + MASTER/01 docs |
+| 8 | 1 | 🟡 | fixed (l1) | l1: `k_compare_days` = 3 |
+| 9 | 1 | 🟢 | fixed (l1) | l1: split for 1m first_rev |
+| 10 | 1 | tests | fixed (l1) | l1: `test_audit*` (थर 1 log तक्ता) |
 | 11 | 2 | 🔴 | open |  |
 | 12 | 2 | 🟡 | open |  |
 | 13 | 2 | 🟡 | open |  |

@@ -59,7 +59,7 @@ def main(argv=None):
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     res = SE.build(m15, m1, m1_status_map=smap)
     struct, rr = ST.all_structure(res)
     hist = SC.load_history(a.daily_history)
@@ -98,8 +98,8 @@ def main(argv=None):
                                                             "register": SR.register_rows(), "notes": SS.NOTES,
                                                             "settings": res["settings"]})
     kpages = []
-    if days:
-        asof = pd.Timestamp(m15[ts.dt.normalize() == days[-1]]["bar_end"].max())
+    for dk in days[-int(SS.DEFAULTS["k_compare_days"]):]:                          # k-तुलना शेवटचे 3 दिवस (थर 1 §5)
+        asof = pd.Timestamp(m15[ts.dt.normalize() == dk]["bar_end"].max())
         for deg in (1, 2):
             kpages.append(WC.k_options_png(m15, m1, asof, deg, SS.K_OPTIONS[deg]))
     PC.pdf([LC.table_png(rows, "थर 1 v2: swings + market structure (वर्णन; backtest नाही)"),

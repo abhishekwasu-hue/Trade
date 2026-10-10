@@ -79,7 +79,7 @@ def main(argv=None):
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     full = PE.complete_sessions(m15)
     days = [d for d in sorted(full) if full[d]][-int(a.days):]
     ts = pd.to_datetime(m15["timestamp"])

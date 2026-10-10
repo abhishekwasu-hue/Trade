@@ -30,7 +30,7 @@ DOWN: आरसा ('<=').  UNDECIDED: max/min दोन्ही; पहिल�
 - D(n+1) = DC ज्यात **extreme फक्त confirmed D(n) pivots** मधून, पण θ_(n+1) ओलांडणं **raw bar high/low** वर तपासायचं (θ_(n+1) > θ_n म्हणून तो extreme आधीच confirmed D(n) असतो). D(n) चा tentative extreme कधीच नाही.
 - `known_at(D(n+1) pivot) = max(raw crossing candle चा close, त्या D(n) extreme pivot चा known_at)`.
 - D4 याच साखळीतून. **Invariant (test):** D(n+1) ⊆ D(n), सावध same-bar नियमासह.
-- k पर्याय ("अंदाज"): D0 1.5/2/2.5; D1 3/4/5; D2 6/8/10; D3 12/16/20; D4 24/32/40; पहिल्या run मध्ये D1/D2 चे 3 k शेजारी (3 दिवस) ⇒ Abhi निवडतो. (Prototype: k = 2/4/8 Abhi च्या वाचनाशी जुळले.)
+- k पर्याय ("अंदाज"): D0 1.5/2/2.5; D1 3/4/5; D2 4/6/8 (default 6 = Abhi ची निवड); D3 12/16/20; D4 24/32/40; पहिल्या run मध्ये D1/D2 चे 3 k शेजारी (3 दिवस) ⇒ Abhi निवडतो. (Prototype: k = 2/4/8 Abhi च्या वाचनाशी जुळले.)
 
 ### 1.3 एकाच candle मध्ये दोन्ही घटना
 - 1m (फक्त `known_at` ला उपलब्ध) ⇒ high/low क्रम. एकाच मिनिटात दोन्ही / 1m अपूर्ण / 1m 15M शी जुळत नाही ⇒ **सावध नियम:** candle फक्त extend; उलट θ पुढच्या candle च्या स्वतःच्या high/low ने.
@@ -46,7 +46,8 @@ UNDECIDED पासून; warm-up sessions (D0/D1 3, D2 10, D3 30, D4 60) ⇒ `
 ## 2. Market structure (D1, D2; माहिती)
 ### 2.1 Trend state
 - शेवटचे दोन confirmed (non-warmup) H, L: HH+HL ⇒ UP; LH+LL ⇒ DOWN; बाकी ⇒ RANGE. < 2 उपलब्ध ⇒ `unknown`.
-- **Rhea line / Brooks TR:** ≥ 8 bars highs-lows ≤ 3 σ पट्ट्यात, प्रत्येक कडेला ≥ 2 स्पर्श (wick कडेपासून ≤ 0.25 σ) ⇒ RANGE, पट्ट्यासह, `range_known_at`.
+- **Rhea line / Brooks TR:** ≥ 8 bars highs-lows ≤ 3 σ पट्ट्यात, प्रत्येक कडेला ≥ 2 स्पर्श (wick कडेपासून ≤ 0.25 σ) ⇒ RANGE, पट्ट्यासह, `range_known_at`. D2: 15M bars + σ, पट्टा आणि min bars × k_D2 / k_D1 (Abhi, audit #4).
+- **Pivot-RANGE** (HH + LL / EQ ⇒ RANGE, Rhea शिवाय): `range_break` पट्टा = शेवटच्या 2 H चा वरचा / 2 L चा खालचा (`range_band_source = pivots`, register; audit #5).
 - **EQH / EQL:** एकाच degree चे **लागोपाठचे** दोन same-type confirmed pivots ≤ 0.1 σ (σ नंतरच्या pivot च्या `known_at` चा) ⇒ HH/LH नाहीत ⇒ RANGE कडे; e खूण (थर 4).
 - RANGE मध्ये BOS / CHoCH / protected swing नाहीत; फक्त `range_break` (close पट्ट्याबाहेर) घटना.
 

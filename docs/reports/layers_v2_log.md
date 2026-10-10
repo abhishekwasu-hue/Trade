@@ -275,6 +275,24 @@ commitment candle वर; charts मधून G-I काढला; profile cache
 POC / naked POC आणि rollover वगळ नाही; prompt files (07 §3 / §6, 05 §2.7) मधला मजकूर उत्तरांशी जुळवायचा — prompt तुमचे असल्याने मी बदलले
 नाहीत.
 
+## Audit थर 1 (`swings2/`) — #1–#10 (branch `claude/v21-audit-l1`)
+| # | spec म्हणतो | code करत होता | दुरुस्ती | test |
+|---|---|---|---|---|
+| 1 | reversal पायरी 2 = CHoCH नंतरचा **confirmed** LH | `p.bar > choch_bar` (आधीच्या bar चा, नंतर confirm झालेला LH सुटायचा) | `p.confirm_bar > choch_bar`; पायरी-3 पातळी [min, max] | `test_audit1_reversal_step2_uses_confirmed_lh` |
+| 2 | strong low = BOS ची चाल ज्या **confirmed** low पासून | raw (tentative) low | `strong_price()`: ext नंतरचा confirmed L; तोवर strict | `test_audit2_3_…`, `test_audit2_protected_waits_…` |
+| 3 | weak high = न ओलांडलेला high | `weak` = lastH (UP मध्ये HH) | `weak_level()` | `test_audit2_3_…` |
+| 4 | D2 साखळी 15M वर | D2 Rhea 1H bars + σ_1H | 15M + σ, पट्टा / min bars × k2/k1 (Abhi: k-प्रमाण) ⇒ 4.5σ / 12 bars | `test_audit4_…`, `test_audit10_rhea_…` |
+| 5 | (prompt मध्ये नाही) | pivot-RANGE range_break पट्टा | register `range_band_source = pivots` + 01 §2.1 | `test_audit10_pivot_range_break_…` |
+| 6 | replay = live | stream मध्ये फक्त status; replay ला 1m rows पुन्हा वाचायचे | stream मध्ये 1m **निर्णय** (`order`); replay त्यावर (`pivots/dc.py` मध्ये फक्त `order_fn` hook) | `test_audit6_stream_stores_1m_decision_…` |
+| 7 | k D2 = 6 (Abhi) | docs मध्ये 8; `K_OPTIONS[2]` 6/8/10 | MASTER §3 + 01 §3; `K_OPTIONS[2]` = 4/6/8 | `test_audit7_8_…` |
+| 8 | k-तुलना 3 दिवस | फक्त शेवटचा दिवस | `k_compare_days` = 3 | `test_audit7_8_…` |
+| 9 | first_rev same-bar | split खूण फक्त p.bar == b | `rule == "1m"` आणि p.bar ≠ b ⇒ split | `test_audit9_first_rev_…` |
+| 10 | tests | — | Rhea end-to-end, pivot-RANGE break, reversal negative (LH आधी step 3 नाही, नवा HH ⇒ रद्द), always-in clause 3, 1m partial, σ_1H | `test_audit10_*` |
+
+**22 दिवस आधी ⇒ नंतर:** D1 बदल नाही (RANGE 40.7%, घटना तशाच). D2 RANGE 32.4% ⇒ **36.9%**, range_start 1 ⇒ 9, range_break 2 ⇒ 10,
+protected बदल 9 ⇒ 19 (Rhea आता 15M वर); weak high 313 / 357 bars ⇒ 0 (UP मध्ये शेवटचा H नेहमी HH ⇒ नव्या व्याख्येने weak नाही);
+split candles 23 ⇒ 25; pivots तेच (D0 108, D1 29, D2 13).
+
 ## Abhi चे निर्णय (batch 2, 5 मुद्दे) — काय बदललं
 | # | निर्णय | code |
 |---|---|---|

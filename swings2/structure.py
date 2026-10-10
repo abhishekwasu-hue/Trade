@@ -1,7 +1,9 @@
 """swings2/structure.py — थर 1 §2: market structure (D1, D2; माहिती). प्रत्येक बंद 15M candle ला शुद्ध fold (replay = live).
 
 Trend: शेवटचे दोन confirmed (non-warmup) H आणि L ⇒ UP / DOWN / RANGE; < 2 ⇒ unknown; EQH / EQL ⇒ RANGE.
-Rhea / Brooks TR: ≥ 8 bars चा पट्टा ≤ 3σ, प्रत्येक कडेला ≥ 2 स्पर्श ⇒ RANGE (पट्ट्यासह); D1 15M + σ, D2 बंद 1H + σ_1H.
+Rhea / Brooks TR: ≥ 8 bars चा पट्टा ≤ 3σ, प्रत्येक कडेला ≥ 2 स्पर्श ⇒ RANGE (पट्ट्यासह); D1 15M + σ; D2 सुद्धा 15M + σ (MASTER §3),
+पट्टा आणि min bars × k_D2 / k_D1 (`rhea_d2_scale`). Strong low = शेवटच्या BOS ची चाल ज्या confirmed low पासून (तो confirm होईपर्यंत
+strict); weak high = न ओलांडलेला शेवटचा H. Reversal पायरी 2 = CHoCH नंतर **confirm** झालेला LH.
 RANGE मध्ये BOS / CHoCH / protected नाहीत; फक्त range_break (close पट्ट्याबाहेर).
 घटना (plain close; known_at = त्या 15M candle चा close): BOS, CHoCH (+ choch_disp), sweep, reversal (CHoCH ⇒ LH ⇒ BOS),
 always-in flip (reversal / 3 उलट trend candles ≥ 3σ / range_break + follow-through), failed_gap_break.
@@ -87,8 +89,7 @@ def fold(res, d, rr=None):
     sig = np.array([res["sigma"].get(pd.Timestamp(x), np.nan) for x in day], float)
     rr = SC.rng_ratio(res) if rr is None else rr
     piv = sorted([p for p in res["pivots"][d] if not p.warmup], key=lambda p: (p.confirm_bar, p.bar))
-    if d >= 2:
-        H1, L1, E1, S1, G1, F1 = _h1(res)
+    sr = rhea_settings(s, d)
     events, states = [], []
     known, pi = [], 0
     fired = set()
@@ -97,7 +98,7 @@ def fold(res, d, rr=None):
     streak = []
     pending_gap = []
     follow = None
-    strong = None                          # (trend dir, भाव): शेवटच्या BOS ची चाल ज्या low / high पासून सुरू झाली
+    strong = None                          # (trend dir, तुटलेल्या ext चा bar, BOS bar): चाल ज्या confirmed low / high पासून सुरू झाली
     for t in range(n):
         while pi < len(piv) and piv[pi].confirm_bar <= t:
             known.append(piv[pi])
@@ -121,15 +122,7 @@ def fold(res, d, rr=None):
                 follow = (t, dirn, c)
                 rng_state, rng_start = None, t + 1
         if rng_state is None:
-            if d < 2:
-                r = rhea(A["h"], A["l"], sig, t, rng_start, s) if t >= rng_start else None
-            else:
-                r = None
-                idx = np.flatnonzero(E1 == t)
-                if len(idx):
-                    i1 = int(idx[0])
-                    cand = np.flatnonzero((F1 >= rng_start) & (G1 == segs[t]))           # range_break नंतर सुरू होणाऱ्या 1H candles पासूनच
-                    r = rhea(H1, L1, S1, i1, int(cand[0]), s) if len(cand) and cand[0] <= i1 else None
+            r = rhea(A["h"], A["l"], sig, t, rng_start, sr) if t >= rng_start else None
             if r is not None:
                 rng_state = {"top": r[0], "bottom": r[1], "bars": r[2], "known_at": str(ts.iloc[t] + BAR)}
                 ev("range_start", None, 0, top=round(r[0], 2), bottom=round(r[1], 2))
@@ -167,9 +160,7 @@ def fold(res, d, rr=None):
             if ext is not None and (c - ext.price) * dirn > 0 and ("bos", d, ext.bar) not in fired:
                 fired.add(("bos", d, ext.bar))
                 gapbar = bool(res["first"][t] and (A["o"][t] - ext.price) * dirn > 0)
-                seg_lo = A["l"][ext.bar + 1:t + 1] if up else A["h"][ext.bar + 1:t + 1]
-                if len(seg_lo):                                                        # strong low / high: BOS ची चाल इथून
-                    strong = (dirn, float(seg_lo.min() if up else seg_lo.max()))
+                strong = (dirn, ext.bar, t)                                            # चाल ext नंतरच्या confirmed low / high पासून
                 ev("BOS", ext.price, dirn, gap=gapbar)
                 if gapbar:
                     pending_gap.append((t, ext.price, dirn))
@@ -207,12 +198,12 @@ def fold(res, d, rr=None):
                 rev = None
             elif rev["stage"] == 1:
                 kind = "H" if rd < 0 else "L"
-                cand = [p for p in ps if p.kind == kind and p.bar > rev["choch_bar"] and (p.price - rev["H1"]) * (-rd) < 0]
+                cand = [p for p in ps if p.kind == kind and p.confirm_bar > rev["choch_bar"] and (p.price - rev["H1"]) * (-rd) < 0]
                 if cand:
                     rev.update(stage=2, lh=cand[-1])
                     ev("LH" if rd < 0 else "HL_rev", cand[-1].price, rd)
             if rev is not None and rev["stage"] == 2:
-                a, b = rev["choch_bar"], rev["lh"].bar
+                a, b = sorted((rev["choch_bar"], rev["lh"].bar))
                 lvl = float(A["l"][a:b + 1].min()) if rd < 0 else float(A["h"][a:b + 1].max())
                 if (c - lvl) * rd > 0:
                     ev("reversal", lvl, rd)
@@ -230,14 +221,42 @@ def fold(res, d, rr=None):
                     ev("always_in_flip", None, od, why=f"{len(streak)} उलट trend candles")
         else:
             streak = []
+        sp = strong_price(strong, tr, hs, ls)
         states.append({"trend": tr, "range": rng_state, "lastH": None if lastH is None else lastH.price,
                        "lastL": None if lastL is None else lastL.price, "strict": None if strict is None else strict.price,
                        "strict_bar": None if strict is None else strict.bar,
-                       "protected": (strong[1] if strong is not None and tr in (UPT, DNT) and strong[0] == (1 if tr == UPT else -1)
-                                     else (None if strict is None else strict.price)),
-                       "weak": None if (tr not in (UPT, DNT)) else
-                       (lastH.price if tr == UPT else lastL.price), "reversal": None if rev is None else rev["stage"]})
+                       "protected": sp if sp is not None else (None if strict is None else strict.price),
+                       "weak": weak_level(tr, hs, ls), "reversal": None if rev is None else rev["stage"]})
     return {"states": states, "events": events}
+
+
+def rhea_settings(s, d):
+    """D2+ Rhea 15M वर: पट्टा आणि min bars × k_d / k_1 (`rhea_d2_scale` = k2/k1); D1 ⇒ तसेच."""
+    if d < 2 or s.get("rhea_d2_scale", "k2/k1") != "k2/k1":
+        return s
+    r = float(s["k"][d]) / float(s["k"][1])
+    return dict(s, rhea_band_sigma=float(s["rhea_band_sigma"]) * r, rhea_min_bars=int(round(int(s["rhea_min_bars"]) * r)))
+
+
+def strong_price(strong, tr, hs, ls):
+    """शेवटच्या BOS ची चाल ज्या confirmed pivot पासून सुरू झाली (ext.bar < pivot.bar ≤ BOS bar): UP ⇒ त्यातला सगळ्यात खालचा L,
+    DOWN ⇒ सगळ्यात वरचा H. अजून confirm नाही / trend वेगळा ⇒ None (caller strict वापरतो)."""
+    if strong is None or tr not in (UPT, DNT) or strong[0] != (1 if tr == UPT else -1):
+        return None
+    _, eb, bb = strong
+    cand = [p.price for p in (ls if tr == UPT else hs) if eb < p.bar <= bb]
+    if not cand:
+        return None
+    return min(cand) if tr == UPT else max(cand)
+
+
+def weak_level(tr, hs, ls):
+    """Weak high (UP) = शेवटचा H जर आधीच्या H पेक्षा वर गेला नसेल; weak low (DOWN) आरसा; नाहीतर None."""
+    if tr == UPT and len(hs) >= 2 and hs[-1].price <= hs[-2].price:
+        return hs[-1].price
+    if tr == DNT and len(ls) >= 2 and ls[-1].price >= ls[-2].price:
+        return ls[-1].price
+    return None
 
 
 def all_structure(res):
