@@ -197,7 +197,7 @@ def commitment(A, t, d, lvl, s, tss=None):
         if not (s["entry_start"] <= hm < s["entry_end"]):               # 15:15 चा bar बाजार बंदला close ⇒ entry नाही (v2.1 सारखं)
             return False, "entry वेळ-खिडकीबाहेर", {}
         day = ts.normalize()
-    best = None
+    best = weak_c = None                                                   # पहिला पूर्ण ✔ k; नसेल तर पहिला कमकुवत (कारणासाठी)
     for k in range(1, int(s["commit_merge_max"]) + 1):
         i0 = t - k + 1
         if i0 < 1:
@@ -210,7 +210,12 @@ def commitment(A, t, d, lvl, s, tss=None):
         h, l = max(A["high"][i0:t + 1]), min(A["low"][i0:t + 1])
         rng = max(h - l, 1e-9)
         body = (c - o) * d
-        prev_ext = A["high"][i0 - 1] if d == UP else A["low"][i0 - 1]
+        if s["commit_beyond"] not in ("extreme", "close"):
+            raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
+        if s["commit_beyond"] == "close":                                 # Q16 पर्याय (Brooks close-beyond-prior-close); default extreme
+            prev_ext = A["close"][i0 - 1]
+        else:
+            prev_ext = A["high"][i0 - 1] if d == UP else A["low"][i0 - 1]
         beyond = (c - prev_ext) * d > 0
         side = (c >= lvl["lo"]) if d == UP else (c <= lvl["hi"])
         if body > 0 and body / rng >= float(s["commit_body"]) and beyond and side:
@@ -219,13 +224,16 @@ def commitment(A, t, d, lvl, s, tss=None):
             weak = pos < float(s["commit_close_frac"]) or opp >= body / rng
             engulf = k == 1 and abs(A["close"][t - 1] - A["open"][t - 1]) > 0 and \
                 (max(o, c) >= max(A["open"][t - 1], A["close"][t - 1])) and (min(o, c) <= min(A["open"][t - 1], A["close"][t - 1]))
-            best = {"merged": k, "body_pct": round(body / rng, 2), "close_third": round(pos, 2), "opp_wick": round(opp, 2), "weak": weak,
+            cand = {"merged": k, "body_pct": round(body / rng, 2), "close_third": round(pos, 2), "opp_wick": round(opp, 2), "weak": weak,
                     "engulf": bool(engulf), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
-            break
+            if not weak:
+                best = cand
+                break
+            weak_c = weak_c or cand                                        # k = 1 कमकुवत ⇒ k = 2 merged पण पाहा (spec "≤ 2 merged")
+    if best is None and weak_c is not None:
+        return False, "signal-bar कमकुवत (मध्य close / उलट wick)", weak_c
     if best is None:
         return False, "commitment candle नाही", {}
-    if best["weak"]:
-        return False, "signal-bar कमकुवत (मध्य close / उलट wick)", best
     return True, f"commitment ({best['merged']} candle) body {best['body_pct']:.0%}" + (" · engulf" if best["engulf"] else ""), best
 
 

@@ -1634,3 +1634,7 @@ checklist. OPEN_QUESTIONS Q10–Q19.
 **D — Telegram trader view (`decision3/telegram_view.py`):** setups + Abhi च्या खुणांसाठी 3 charts (Daily known-at पर्यंत, 1H, 15M — English,
 emoji ऐवजी "SETUP A / B" + बाण), मराठी caption 5–8 ओळी (कथा + B1 / B2), debug.json वेगळा. Manifest = backtest_review format ⇒ पाठवणं फक्त VPS
 (`scripts/send_review_to_telegram.py --run review/v22/<run>`). `scripts/v22_check.py --tg-run`. Q21 (B1 / B2 व्याख्या).
+**What-if (Q15 / Q16, फक्त अहवाल):** `scripts/v22_whatif.py` + `docs/reports/v22/WHATIF.md`; setting `commit_beyond` (default extreme,
+spec ⑥). NIFTY: फक्त Daily DC ने E1 / E2 ① पार; सगळ्या variants मध्ये E-days ⑥ (commitment candle) वर अडतात. Defaults तसेच.
+**⑥ दुरुस्ती + diag:** commitment मध्ये k = 1 core ✔ पण कमकुवत असेल तर k = 2 merged पाहत नव्हता (spec "≤ 2 merged") ⇒ दुरुस्त (diag च्या
+agreement test ने पकडलं). `scripts/v22_commit_diag.py` (फक्त अहवाल): ③ ✔ bars वर ⑥ च्या प्रत्येक अटीचा निकाल, कोणती अट किती अडवते.

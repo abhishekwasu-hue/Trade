@@ -32,6 +32,7 @@ DEFAULTS = {
     # ⑥ Commitment (C)
     "commit_body": 0.5,                      # body ≥ range च्या हे
     "commit_merge_max": 2,
+    "commit_beyond": "extreme",              # spec ⑥ "मागच्या candle च्या extreme पलीकडे close" (Q16: close पर्याय फक्त what-if)
     "commit_close_frac": 2 / 3,              # signal-bar: close range च्या trend-बाजूच्या तृतीयांशात (§5.2)
     "touch_window_bars": 3,                  # ③ "level मध्ये / लगत": शेवटच्या इतक्या 15M bars पैकी एकाने पट्ट्याला स्पर्श (commitment + आधीचा)
     "entry_start": "09:30", "entry_end": "15:15",   # entry bar ची सुरुवात start ≤ hm < end (15:15 चा bar बाजार बंदला close ⇒ नाही)
@@ -80,6 +81,7 @@ REGISTER = {
     "tl_min_touches": (2, "—", "Abhi नियम", "spec ⑤ K चे ≥ 2 स्पर्श"),
     "commit_body": (0.5, "—", "Abhi नियम", "spec ⑥ body ≥ 50% range"),
     "commit_merge_max": (2, "1/2", "Abhi नियम", "spec ⑥ ≤ 2 merged"),
+    "commit_beyond": ("extreme", "extreme / close", "Abhi नियम", "spec ⑥ extreme पलीकडे close; close = Q16 पर्याय (Abhi ठरवतील)"),
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
     "touch_window_bars": (3, "1/2/3", "व्याख्या", "spec ⑥ 'level मध्ये / लगत' + §6.2 H2 'वर / जवळ' (Q18)"),
     "entry_start / entry_end": ("09:30 / 15:15", "settings", "setting", "spec ⑥ वेळ-खिडकी फक्त settings; v2.1 प्रमाणे end exclusive"),

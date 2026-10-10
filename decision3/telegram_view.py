@@ -28,14 +28,27 @@ def caption(V, r, symbol):
     """Telegram caption (मराठी, 5–7 ओळी, ≤ 1024)."""
     head = f"🧭 v2.2 {symbol} · {r['ts'][:16]} · " + (f"{r['mark']} {r.get('conviction') or ''}".strip() if r.get("mark")
                                                        else {"wait": "⏳ वाट", "no_trade": "⛔ trade नाही"}.get(r["decision"], r["decision"]))
-    lines = [head] + CH.story(r).splitlines()[:4]                       # 5–7 ओळी: शीर्षक + कथा ≤ 4 + B1/B2 + शेवटी disclaimer
-    bp = b_plans(V, r)
+    story = [x for x in CH.story(r).splitlines() if x.strip() != "Commitment: —"]
+    marks = " ".join(f"{k}{'✔' if v[0] else ('✘' if v[0] is False else '·')}" for k, v in r["checklist"].items())
+    lines = [head] + story[:3] + [marks]                                 # 5–7 ओळी: शीर्षक + कथा ≤ 3 + checklist + अडलं / B1-B2 + disclaimer
+    if r["decision"] != "setup":
+        lines.append("अडलं: " + stop_reason(r))
+    bp = b_plans(V, r) if r["decision"] == "setup" else None              # B1 / B2 फक्त setup ला (⇒ कमाल 7 ओळी)
     if bp:
         b2 = bp["B2"]
         lines.append(f"B1: close {bp['B1']['entry']:,.0f} वर · B2: {b2['trigger']:,.0f} break वर (R:R {b2['rr']}"
                      + ("" if b2["ok"] else " < 3 ⇒ B2 नाही") + ")")
     lines.append("Shadow / PAPER फक्त — AI order देत नाही")
     return "\n".join(lines)[:MAX_CAPTION]
+
+
+def stop_reason(r):
+    """setup नसेल तर: पहिला ✘ gate (①②③⑥⑦; ④ / ⑤ पुरावे) + कारण, नाहीतर engine चं why."""
+    for k in ("①", "②", "③", "⑥", "⑦"):
+        ok, why = r["checklist"][k]
+        if ok is False:
+            return f"{k} {why}"[:160]
+    return (r.get("why") or "पुढच्या candle ची वाट")[:160]
 
 
 def debug_view(r):

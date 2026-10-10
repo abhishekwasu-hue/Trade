@@ -265,3 +265,19 @@ def test_daily_protected_ignores_discarded_pivot_and_follows_replacement(monkeyp
     piv[:] = [DD.DPivot(k, float(p), b, days[b], b + 2, kat[b + 2]) for k, p, b in spec2]
     st2 = DD.fold(d, {"daily_min_sessions": 3})
     assert st2[22].protected.price == 112.0                                       # सलग अधिक टोकाचा L ⇒ protected तो
+
+
+def test_commit_beyond_option_default_extreme_close_is_looser():
+    A = A_of([(104, 104.8, 101, 101.5), (101.5, 104.6, 101.4, 104.5)])                              # close 104.5: prev close वर, prev high खाली
+    assert S["commit_beyond"] == "extreme"
+    assert not M.commitment(A, 1, M.UP, LVL, S)[0]
+    assert M.commitment(A, 1, M.UP, LVL, {**S, "commit_beyond": "close"})[0]
+
+
+def test_commitment_tries_merged_when_single_bar_is_weak():
+    """k = 1 core ✔ पण कमकुवत (मोठा उलट wick), k = 2 merged मजबूत ⇒ ✔ (merged 2); दोन्ही कमकुवत ⇒ 'कमकुवत' कारण."""
+    A = A_of([(102.0, 102.2, 100.8, 101.0), (101.0, 101.3, 100.5, 101.1), (101.1, 103.6, 101.0, 102.6)])   # bar 2: close मधोमध
+    ok1 = M.commitment(A, 2, M.UP, LVL, {**S, "commit_merge_max": 1})
+    assert not ok1[0] and "कमकुवत" in ok1[1]
+    ok2 = M.commitment(A, 2, M.UP, LVL, S)
+    assert ok2[0] and ok2[2]["merged"] == 2

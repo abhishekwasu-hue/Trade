@@ -87,3 +87,21 @@ def test_engine_trendline_is_grade_only_and_chart_draws_break(monkeypatch):
     assert br["decision"] == intact["decision"] == base["decision"] == "setup"
     png = CH.m15_png(V, t, "NIFTY", r=br)
     assert png[:4] == b"\x89PNG"
+
+
+def test_no_trade_caption_says_where_it_stopped_and_has_5_lines():
+    V, rows = _V_rows()
+    r = next(x for x in rows if x["daily_trend"] in ("NEUTRAL", "UNKNOWN"))
+    lines = TV.caption(V, r, "NIFTY").splitlines()
+    assert any(x.startswith("अडलं: ①") for x in lines) and 5 <= len(lines) <= 7 and lines[-1].startswith("Shadow / PAPER")
+    assert TV.stop_reason({**r, "checklist": {**r["checklist"], "①": [True, "x"], "②": [True, "y"],
+                                              "③": [True, "z"], "④": [False, "ev"], "⑥": [False, "candle नाही"]}}).startswith("⑥")
+
+
+def test_caption_at_most_7_lines_for_every_row_incl_wait_with_risk():
+    V, rows = _V_rows()
+    assert any(r["decision"] != "setup" and r.get("risk") for r in rows)          # non-vacuous: risk असलेली wait / no_trade row आहे
+    for r in rows:
+        lines = TV.caption(V, r, "NIFTY").splitlines()
+        assert 4 <= len(lines) <= 7 and lines[-1].startswith("Shadow / PAPER"), r["ts"]
+        assert any(x.startswith("B1:") for x in lines) == (r["decision"] == "setup" and bool((r.get("risk") or {}).get("target")))
