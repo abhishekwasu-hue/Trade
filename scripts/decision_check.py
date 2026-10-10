@@ -15,6 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from decision2 import charts as DC  # noqa: E402
+from decision2 import context as DX  # noqa: E402
 from decision2 import engine as DE  # noqa: E402
 from legs2 import charts as LC  # noqa: E402
 from legs2 import volume as LV  # noqa: E402
@@ -33,7 +34,16 @@ from trendlines2 import engine as TE  # noqa: E402
 from trendlines2 import layer as TL  # noqa: E402
 
 
-def build_ctx(m15, m1, fut, t0, smap=None):
+def ext_rows(m15, events=None, vix_csv=None, macro_csv=None):
+    """VIX / event / macro rows (known_at सह; फक्त size / नोंद). नसतील ⇒ रिकामे (NA नोंद)."""
+    be = m15["bar_end"]
+    ev = DX.event_bars(DX.load_events(events), m15["timestamp"]) if events else {}
+    vix, jump = DX.vix_map(pd.read_csv(vix_csv) if vix_csv else None, be)
+    macro = DX.macro_map(pd.read_csv(macro_csv) if macro_csv else None, be)
+    return {"event_bars": ev, "vix": vix, "vix_jump": jump, "macro": macro}
+
+
+def build_ctx(m15, m1, fut, t0, smap=None, extra=None):
     res, struct, lg, trk = L2.build_all(m15, m1, fut, smap)
     f1, f2 = P2.build_folds(lg, trk)
     bars = range(t0, len(m15))
@@ -46,7 +56,7 @@ def build_ctx(m15, m1, fut, t0, smap=None):
     if fut is not None:
         nm = LV.near_month(fut)
         exp = sorted({pd.Timestamp(x).normalize() for x in nm["expiry"].dropna().unique()}) if len(nm) else None
-    return DE.Ctx(lg, struct, trk, f1, f2, Z, L4, L5, L6, ext={"expiries": exp})
+    return DE.Ctx(lg, struct, trk, f1, f2, Z, L4, L5, L6, ext={"expiries": exp, **(extra or {})})
 
 
 def main(argv=None):
@@ -57,6 +67,9 @@ def main(argv=None):
     ap.add_argument("--days", type=int, default=SS.DEFAULTS["run_days"])
     ap.add_argument("--futures-dir", default=os.path.join(ROOT, "data"))
     ap.add_argument("--m1-status", default=None, help="थर 1 run चा stream.json (replay = live)")
+    ap.add_argument("--events", default=DX.EVENTS_PATH, help="event calendar yaml (added_on = known_at)")
+    ap.add_argument("--vix-csv", default=None, help="India VIX 15M candles (timestamp, close) — private data")
+    ap.add_argument("--macro-csv", default=None, help="macro rows (fetched_at, value −1…1) — private data")
     ap.add_argument("--send", action="store_true")
     a = ap.parse_args(argv)
     m1 = SC.load_1m(a.data)
@@ -71,7 +84,7 @@ def main(argv=None):
     days = [d for d in sorted(full) if full[d]][-int(a.days):]
     ts = pd.to_datetime(m15["timestamp"])
     t0 = int((ts.dt.normalize() >= days[0]).to_numpy().argmax()) if days else 0
-    C = build_ctx(m15, m1, fut, t0, smap)
+    C = build_ctx(m15, m1, fut, t0, smap, ext_rows(m15, a.events, a.vix_csv, a.macro_csv))
     D = DE.run(C, range(t0, len(m15)))
     os.makedirs(a.out_dir, exist_ok=True)
     picks = []

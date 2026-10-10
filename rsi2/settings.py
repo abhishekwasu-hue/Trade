@@ -23,7 +23,7 @@ REGISTER = {
     "gaps": ("5/60, 5/120, 3/60", "±50%", "अंदाज", "थर 6 §2 minGap / maxGap"),
     "min_price_sigma": ("0.25 σ", "0.15/0.25/0.4", "अंदाज", "थर 6 §2 minPriceDiff"),
     "min_rsi": ("3", "2/3/5", "अंदाज", "थर 6 §2 minRsiDiff"),
-    "line_skip": ("2 bars", "0/1/2/3", "अंदाज", "line_clear: टोकाशेजारची candle (price pivot च्या आधी / नंतर) RSI रेघेखाली जाते — prompt मध्ये आकडा नाही"),
+    "line_skip": ("2 bars", "0/1/2", "Abhi ✔ (उत्तर 12)", "line_clear: RSI रेघ 2 bars पर्यंत ओलांडली तरी ग्राह्य; `line_clear_strict` (0) खूण"),
     "bull_min / bull_max / bull_trough": ("38 / 65 / 40", "±2", "Cardwell / Brown", "थर 6 §3"),
     "bear_max / bear_min / bear_peak": ("62 / 35 / 60", "±2", "Cardwell / Brown", "थर 6 §3"),
     "window_15m / window_1h": ("40 / 20", "30/40/60, 15/20/30", "अंदाज", "थर 6 §3"),

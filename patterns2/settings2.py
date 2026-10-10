@@ -16,6 +16,7 @@ DEFAULTS = {
     "range_like_x": 2.0,               # K वेळ > 2 × I-leg ⇒ range_like
     "final_flag_slope": 0.02,          # K slope < इतका σ / bar
     "final_flag_pushes": 3,
+    "final_flag_mm_sigma": 1.0,        # (c) चालू K पट्टा target_MM च्या ± इतका σ
     "partial_lo": 0.70,                # rectangle / flat: swing ≥ 70% पण < 100%
     # momentum (§7)
     "m_sot_ratio": 0.5,
@@ -47,6 +48,7 @@ REGISTER = {
     "vol_flat_m": ("0.6", "0.5/0.6/0.7", "अंदाज", "थर 3 §4 volume"),
     "range_like_x": ("2.0", "1.5/2/3", "अंदाज", "थर 3 §4 K > 2 × I-leg"),
     "final_flag_slope / final_flag_pushes": ("0.02 σ/bar / 3", "0.01/0.02/0.03", "अंदाज (Brooks final flag ~40%)", "थर 3 §6"),
+    "final_flag_mm_sigma": ("±1 σ", "0.5/1/1.5", "Abhi (उत्तर 7) / अंदाज", "final_flag_risk (c) measured-move"),
     "partial_lo": ("0.70", "0.65/0.70/0.75", "Bulkowski", "थर 3 §6 partial_rise"),
     "m_sot_ratio": ("0.5", "0.4/0.5/0.6", "अंदाज", "थर 3 §7 item 1"),
     "m_wick": ("0.5", "0.4/0.5/0.6", "अंदाज", "item 2"),

@@ -1,0 +1,10 @@
+# थर 7 event calendar (Abhi उत्तर 14) — हाताने भरायची. फक्त size_weight / नोंद; gate नाही.
+# प्रत्येक entry:
+#   date:      त्या event चा दिवस (YYYY-MM-DD)
+#   name:      नाव (उदा. "RBI policy")
+#   kind:      rbi / fomc / budget / expiry / holiday / other
+#   added_on:  ही entry कधी लिहिली (YYYY-MM-DD) = known_at; replay मध्ये त्या दिवसाआधी ही entry "माहीत नव्हती"
+#   window:    day (default) — त्या दिवसाच्या सगळ्या 15M candles
+# उदाहरण (format; खरी entry नाही):
+#   - {date: YYYY-MM-DD, name: "RBI policy", kind: rbi, added_on: YYYY-MM-DD}
+events: []

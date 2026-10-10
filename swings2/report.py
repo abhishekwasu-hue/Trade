@@ -43,8 +43,9 @@ def rows(res, struct, start, end):
         known = [(a, b) for a, b in both if a not in ("unknown",) and b not in ("unknown",)]
         agree = round(100.0 * sum(a == b for a, b in known) / len(known), 1) if known else None
         out.append({"Degree": "D1–D2 trend एकमत %", "Pivots": agree})
-        rng = round(100.0 * sum(struct[1]["states"][i]["trend"] == "RANGE" for i in bars) / len(bars), 1) if bars else None
-        out.append({"Degree": "D1 RANGE मध्ये bars %", "Pivots": rng})
+        for d in (1, 2):                                                     # Abhi उत्तर 1: RANGE% D1 आणि D2 वेगळे (threshold फिरवत नाही)
+            rng = round(100.0 * sum(struct[d]["states"][i]["trend"] == "RANGE" for i in bars) / len(bars), 1) if bars else None
+            out.append({"Degree": f"D{d} RANGE मध्ये bars %", "Pivots": rng})
     ks = [float(s["k"][d]) for d in SE.DEGREES if counts.get(d)]
     cs = [counts[d] for d in SE.DEGREES if counts.get(d)]
     if len(ks) >= 3:

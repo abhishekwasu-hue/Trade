@@ -27,7 +27,10 @@ def run(E, trk, f1, Z=None, L4=None, bars=None):
         o = I["origin"]
         A = E.A
         i_slope = (I["end"].price - o.price) / max(I["end"].bar - o.bar, 1)
-        lines = TE.tradeable(E, t, kind, k_start, k_ext, I["dir"])
+        rec = f1.out.get(t) if f1 is not None else None
+        kl = TE.k_lines(E, rec, I, t)
+        kb = TE.k_base_break(E, kl["base"], t, I["end"].bar) if kl is not None else None
+        lines = TE.tradeable(E, t, kind, k_start, k_ext, I["dir"], k_break=kb)
         r["lines"] = [E.line_json(L, t, name, cls, i_slope) for L, name, cls in lines]
         tl = [x for x in r["lines"] if x["class"] == "trade-योग्य"]
         if tl:
@@ -38,12 +41,10 @@ def run(E, trk, f1, Z=None, L4=None, bars=None):
             zones = [z for z in Z.snap[t] if z["role"] == r["side"] and z["status"] != "dead"
                      and not (z["pivot_bar"] is not None and z["pivot_bar"] > I["end"].bar)]
         r["k_area_line"] = TE.k_sloping_area(E, lines, t, k_start, zones)
-        rec = f1.out.get(t) if f1 is not None else None
-        kl = TE.k_lines(E, rec, I, t)
         if kl is not None:
             r["k_lines"] = {"base": E.line_json(kl["base"], t, "K आधार", "K"), "tip": None if kl["tip"] is None else
                             E.line_json(kl["tip"], t, "K टोक", "K")}
-            r["k_base"] = TE.k_base_break(E, kl["base"], t, I["end"].bar)
+            r["k_base"] = kb
             r["k_tip"] = TE.tip_touch(E, kl["tip"], t, I["end"].bar)
         za = (L4 or {}).get(t, {}).get("k_area") if L4 else None
         la = r["k_area_line"]

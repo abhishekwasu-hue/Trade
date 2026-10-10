@@ -151,7 +151,7 @@ def test_momentum_reemit_single_verdict(world):
     got = [r["momentum"] for r in L.values() if r["momentum"]]
     assert got
     for m in got:
-        assert m["item9_zone"] and len(m["items"]) == 12 and m["verdict"] in (MO.WEAK, MO.NOT, MO.UNCLEAR, MO.EARLY)
+        assert m["item9_zone"] and len(m["items"]) == 12 and m["verdict"] in (MO.WEAK, MO.NOT, MO.UNCLEAR, MO.EARLY, MO.NA_V)
 
 
 def test_profile_grid_and_poc():
@@ -225,3 +225,58 @@ def test_register_numbers_dates_shadow():
         src = open(p, encoding="utf-8").read()
         for bad in ("broker", "place_order", "market_state", "chart_reader", "levels_v2", "areas"):
             assert f"import {bad}" not in src and f"from {bad}" not in src
+
+
+def _bare():
+    Z = object.__new__(ZE.Zones)
+    Z.s, Z.state, Z.owner, Z.events = S, {}, {}, []
+    return Z
+
+
+def _round(Z, groups, t):
+    ids = Z.assign_ids(groups, t)
+    for g, i in zip(groups, ids):
+        if i not in Z.state:
+            Z.state[i] = {"born": t, "id": i}
+        for a in g:
+            Z.owner[a["id"]] = i
+    return ids
+
+
+def test_zone_id_lineage_prune_merge_split():
+    """Abhi निर्णय (04 §3): id बदलत नाही; merge ⇒ जुना id; split ⇒ मूळ pivot चा भाग; pruning ⇒ तोच id."""
+    Z = _bare()
+    a, b, c = _z(101, 100, "p1H", born=1), _z(101, 100.2, "p5H", born=5), _z(110, 109, "p7H", born=7)
+    assert _round(Z, [[a, b], [c]], 10) == ["p1H", "p7H"]
+    assert _round(Z, [[b]], 11) == ["p1H"]                                     # मूळ p1H pruning ⇒ तोच id (वंश)
+    assert any(x["what"].startswith("वारसा") for x in Z.state["p1H"]["lineage"])
+    _round(Z, [[b]], 11)
+    assert sum(x["what"].startswith("वारसा") for x in Z.state["p1H"]["lineage"]) == 1     # एकदाच नोंद
+    assert _round(Z, [[b, c]], 12) == ["p1H"]                                  # merge ⇒ जुना id
+    assert any(e["type"] == "merge" and e["from"] == "p7H" for e in Z.events)
+    Z2 = _bare()
+    _round(Z2, [[a, b, c]], 10)
+    ids = _round(Z2, [[c], [a, b]], 11)                                        # split ⇒ मूळ pivot (p1H) चा भाग id ठेवतो
+    assert ids[1] == "p1H" and ids[0] != "p1H"
+    assert any(e["type"] == "split" and e["id"] == "p1H" for e in Z2.events)
+
+
+def test_real_zone_ids_never_reused_for_two_groups(world):
+    m15, res, st, lg, trk, f1, f2, Z, L = world
+    for t, zs in Z.snap.items():
+        ids = [z["id"] for z in zs]
+        assert len(ids) == len(set(ids))
+
+
+def test_sessions_profile_needs_full_sessions_and_volume():
+    A = _A([0] * 6, [101, 102, 103, 104, 105, 106], [100, 101, 102, 103, 104, 105], [0] * 6)
+    import pandas as pd
+    day = pd.Timestamp(0) + pd.to_timedelta(np.arange(6), unit="D")
+    sess = {pd.Timestamp(d): [j] for j, d in enumerate(day)}
+    vol = np.full(6, 10.0)
+    s5 = dict(S, profile_sessions=5)
+    assert ZE.sessions_profile(A, vol, day, sess, 5, 10.0, s5) is not None   # 5 आधीच्या पूर्ण sessions
+    assert ZE.sessions_profile(A, vol, day, sess, 4, 10.0, s5) is None       # फक्त 4 ⇒ NA
+    v2 = vol.copy()
+    v2[2] = np.nan
+    assert ZE.sessions_profile(A, v2, day, sess, 5, 10.0, s5) is None        # एका session मध्ये volume नाही ⇒ NA

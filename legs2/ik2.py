@@ -4,8 +4,12 @@ Fold (replay = live): 15M bars वर पुढे, प्रत्येक bar
 त्या bar पर्यंत). Timeline = (bar, I) बदल; `state(t)` = त्या bar ची K अवस्था.
 
 §5.1 I शोधणं: मागे जाताना पहिला confirmed leg, दिशा = पालक trend (थर 1) आणि (label आवेग / आवेग (कमकुवत) **किंवा** त्या leg मध्ये
-  त्याच degree चा plain-close BOS). C NA leg ⇒ `I_weak_basis`. पालक RANGE ⇒ `range_alt` (I = range च्या जवळच्या कडेपासून दूर जाणारा
-  शेवटचा leg). पालक unknown ⇒ I नाही.
+  त्याच degree चा plain-close BOS). C NA leg ⇒ `I_weak_basis`.
+  I_mode (Abhi उत्तर 4) = प्रत्येक candle ला पालक trend state चं function (थर 1 states, range known_at पासून): पालक RANGE ⇒ `range_alt`
+  (जवळची कड = t च्या close ला जवळची; I = त्या कडेपासून दूर जाणारा शेवटचा leg; K = त्या कडेकडे येणारी चाल; कड बदलली ⇒ I पुन्हा). Sticky फक्त trend-mode I च्या identity (I_end /
+  I_origin) ला; mode बदल त्याच्या बाहेर: पालक RANGE झाला ⇒ trend I जातो, range_alt I; पालक RANGE तोडून trend ⇒ §5.1 ने trend I पुन्हा.
+  पालक unknown / warm-up (उत्तर 5) ⇒ स्वतःच्या degree चा Dow trend (RANGE ⇒ range_alt) + `htf_unknown` खूण; पालक माहीत झाला ⇒ I पुन्हा
+  शोध.
   I_origin: I_end आधीचा, I_end ≥ असलेला शेवटचा high आणि I_end यांच्यामधला सगळ्यात खालचा low; असा high नसेल ⇒ पालक strong low
   (थर 1 protected) + `origin_bounded`.
 §5.2 sticky: I-दिशेचा confirmed leg ज्याचा pivot I_end पलीकडे **आणि** leg मध्ये close I_end पलीकडे ⇒ I_end सरकतो; फक्त wick ⇒
@@ -80,6 +84,22 @@ class Tracker:
         tr = SST.trend_of(ps)
         return tr, (self._pivot_band(pd_, t) if tr == SST.RNG else None), None
 
+    def ctx(self, t):
+        """(trend, पट्टा, protected, htf_unknown): पालक trend; पालक unknown ⇒ स्वतःच्या degree चा trend (थर 1) + htf_unknown."""
+        tr, band, prot = self.parent(t)
+        if tr != SST.UNK:
+            return tr, band, prot, False
+        if self.d in self.st:
+            x = self.st[self.d]["states"][t]
+            tr = x["trend"]
+            band = None
+            if tr == SST.RNG:
+                band = (x["range"]["top"], x["range"]["bottom"]) if x["range"] is not None else self._pivot_band(self.d, t)
+            return tr, band, x["protected"], True
+        ps = [p for p in self.piv if p.confirm_bar <= t and not p.warmup and self._seg_p(p) == self.segs[t]]
+        tr = SST.trend_of(ps)
+        return tr, (self._pivot_band(self.d, t) if tr == SST.RNG else None), None, True
+
     def _pivot_band(self, dd, t):
         ps = [p for p in self.res["pivots"][dd] if p.confirm_bar <= t and not p.warmup and self._seg_p(p) == self.segs[t]]
         hs, ls = [p for p in ps if p.kind == "H"][-2:], [p for p in ps if p.kind == "L"][-2:]
@@ -126,7 +146,13 @@ class Tracker:
         return any(L["a"].bar < e["bar"] <= L["b"].bar and e["dir"] == L["dir"] for e in self.bos)
 
     def _discover(self, t, floor):
-        tr, band, prot = self.parent(t)
+        tr, band, prot, hu = self.ctx(t)
+        I = self._discover_in(t, floor, tr, band, prot)
+        if I is not None:
+            I["htf_unknown"] = hu
+        return I
+
+    def _discover_in(self, t, floor, tr, band, prot):
         legs = [L for L in self.legs if L["b"].confirm_bar <= t and L["b"].bar > floor and L["seg"] == self.segs[t]]
         ps = [p for p in self.piv if p.confirm_bar <= t]
         if tr in (SST.UPT, SST.DNT):
@@ -145,18 +171,25 @@ class Tracker:
                 return self._new_I(L, o, bounded, c, t, MODE_TREND, legs)
             return None
         if tr == SST.RNG and band is not None:
-            top, bot = band
+            edge = self.near_edge(t, band)
+            want = 1 if edge == "bottom" else -1                                  # जवळच्या कडेपासून दूर; K = त्या कडेकडे येणारी चाल
             for L in reversed(legs):
-                near_bot = abs(L["a"].price - bot) <= abs(L["a"].price - top)
-                if (near_bot and L["dir"] > 0) or (not near_bot and L["dir"] < 0):
-                    o = L["a"]
-                    c = self.origin_break(o, L["dir"], start=L["b"].bar)
-                    if c is not None and c <= t:
-                        continue
-                    I = self._new_I(L, o, False, c, t, MODE_RANGE, legs)
-                    I["band"] = band
-                    return I
+                if L["dir"] != want:
+                    continue
+                o = L["a"]
+                c = self.origin_break(o, L["dir"], start=L["b"].bar)
+                if c is not None and c <= t:
+                    continue
+                I = self._new_I(L, o, False, c, t, MODE_RANGE, legs)
+                I["band"], I["edge"] = band, edge
+                return I
         return None
+
+    def near_edge(self, t, band):
+        """range_alt: t च्या close ला जवळची कड (top / bottom) — K तिकडे येते."""
+        top, bot = band
+        c = self.A["c"][t]
+        return "bottom" if abs(c - bot) <= abs(c - top) else "top"
 
     def _new_I(self, L, o, bounded, c, t, mode, legs):
         I = {"dir": L["dir"], "origin": o, "end": L["b"], "ends": [L["b"]], "leg": L, "origin_bounded": bounded, "cancel": c,
@@ -201,14 +234,23 @@ class Tracker:
                     new.append(self.legs[li])
                 li += 1
             changed = False
+            tr, band, _, hu = self.ctx(t)
             if I is not None:
                 why = None
                 if I["cancel"] is not None and I["cancel"] <= t:
                     why = "I रद्द: I_origin real break"
                 elif any(e["dir"] == -I["dir"] for e in self.revs.get(t, [])):
                     why = "I रद्द: थर 1 reversal (I-विरुद्ध)"
-                elif I["mode"] == MODE_RANGE and self.parent(t)[0] in (SST.UPT, SST.DNT):
+                elif I["mode"] == MODE_RANGE and tr in (SST.UPT, SST.DNT):
                     why = "range_alt संपला (पालक trend)"
+                elif I["mode"] == MODE_TREND and tr == SST.RNG and band is not None:
+                    why = "mode बदल: पालक RANGE ⇒ range_alt"
+                elif I["mode"] == MODE_RANGE and band != I.get("band"):
+                    why = "range पट्टा बदलला ⇒ range_alt पुन्हा"
+                elif I["mode"] == MODE_RANGE and self.near_edge(t, band) != I.get("edge"):
+                    why = "range: जवळची कड बदलली ⇒ range_alt पुन्हा"
+                elif I.get("htf_unknown") and not hu:
+                    why = "पालक trend माहीत झाला ⇒ I पुन्हा शोध"
                 if why is not None:
                     self.log.append({"bar": t, "event": why, "origin": I["origin"].price})
                     floor = I["end"].bar if why.startswith("I रद्द") else -1
@@ -219,7 +261,7 @@ class Tracker:
                         before = (I["end"], len(I["sweeps"]))
                         self._extend(I, M, t)
                         changed = changed or before != (I["end"], len(I["sweeps"]))
-            par = self.parent(t)[:2]
+            par = (tr, band, hu, self.near_edge(t, band) if (tr == SST.RNG and band is not None) else None)
             par_changed = par != prev_par
             prev_par = par
             if I is None and (new or changed or par_changed):
@@ -271,8 +313,8 @@ class Tracker:
         I = self.I_at(t)
         out = {"degree": self.d, "bar": t, "ts": str(self.ts.iloc[t]), "I": None, "state": ST_NONE, "flags": {}}
         if I is None:
-            tr = self.parent(t)[0]
-            out["why"] = "पालक trend unknown" if tr == SST.UNK else "पात्र leg नाही"
+            tr = self.ctx(t)[0]
+            out["why"] = "trend unknown (पालक आणि स्वतःचा)" if tr == SST.UNK else "पात्र leg नाही"
             return out
         A, lg, s = self.A, self.lg, self.s
         o, e, dirn = I["origin"], I["end"], I["dir"]
@@ -285,7 +327,7 @@ class Tracker:
                     "size_sigma": round(size / e.sigma, 2) if e.sigma else None, "bars": e.bar - o.bar, "legs": len(I_legs),
                     "origin_bounded": I["origin_bounded"], "I_weak_basis": I["weak_basis"], "found_from": I["leg"]["label"],
                     "quality": q["kind"], "climax": q["climax"], "SOT_trend": q["SOT_trend"],
-                    "band": I.get("band")}
+                    "band": I.get("band"), "edge": I.get("edge"), "htf_unknown": bool(I.get("htf_unknown"))}
         hs = self.strict_hl(I, t)
         out["I"]["I_strict_HL"] = None if hs is None else {"price": round(hs.price, 2), "ts": str(hs.ts)}
         h, lo, cl = A["h"], A["l"], A["c"]

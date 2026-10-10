@@ -13,12 +13,12 @@
 | थर | module | स्थिती | Abhi ✔ |
 |---|---|---|---|
 | 1 v2.1 | `swings2/` | commit `6529f1f`; SWING CHECK v2 run1 trade-data मध्ये (50 albums; VPS block दिला होता) | बाकी |
-| 2 v2.1 | `legs2/` (features, measure2, ik2) | code + 27 tests | बाकी |
-| 3 v2.1 | `patterns2/` (rules2, enum2, score2, fold2, momentum) | code + 21 tests | बाकी |
-| 4 | `zones2/` | code + 14 tests | बाकी |
-| 5 | `trendlines2/` | code + 11 tests | बाकी |
-| 6 | `rsi2/` | code + 10 tests | बाकी |
-| 7 | `decision2/` + `vision2/` | code + 19 tests; vision = फक्त veto नियम (API call नाही) | बाकी |
+| 2 v2.1 | `legs2/` (features, measure2, ik2) | code + 30 tests (उत्तरं 4, 5 लागू) | बाकी |
+| 3 v2.1 | `patterns2/` (rules2, enum2, score2, fold2, momentum) | code + 23 tests (उत्तरं 6, 7) | बाकी |
+| 4 | `zones2/` | code + 17 tests (उत्तर 8, id वंश, 5-session profile) | बाकी |
+| 5 | `trendlines2/` | code + 14 tests (उत्तरं 10-ब, 11) | बाकी |
+| 6 | `rsi2/` | code + 12 tests (उत्तर 12, cascade degree-निहाय) | बाकी |
+| 7 | `decision2/` + `vision2/` | code + 26 tests (उत्तरं 13–16, tier, N = 6); vision = फक्त veto नियम (API call नाही) | बाकी |
 
 **वेग:** खऱ्या data वर (जुलै–ऑक्टोबर, 1727 bars) सगळे 7 थर ~15 सेकंदात चालतात.
 
@@ -191,6 +191,90 @@ K thinning 4, trend मजबूत 2 bars.
 
 ---
 
+## Abhi ची उत्तरं (batch 1) — काय बदललं
+प्रश्न 1–16 ची उत्तरं आली (2, 10-अ, 15 मधला खर्च Abhi ⚠️ — तुम्ही भरायचे). Threshold कुठेही सैल केला नाही.
+
+| # | उत्तर | code मध्ये |
+|---|---|---|
+| 1 | 8 candles / 3σ / 2 स्पर्श तसेच | बदल नाही; मोजमाप तक्त्यात RANGE% **D1 आणि D2 वेगळे** (`swings2/report.py`). शेवटचे 22 दिवस: **D1 40.7%, D2 32.4%** |
+| 3 | D4 = display / filter, gate नाही; htf_unknown फक्त D3 | D4 ला कुठेही gate नव्हतं; SWING CHECK box मध्ये "display only" खूण |
+| 4 | I_mode = प्रत्येक candle ला पालक trend चं function | `legs2/ik2.py`: पालक RANGE ⇒ trend I जातो, `range_alt` I; RANGE तुटून trend ⇒ §5.1 ने trend I पुन्हा; sticky फक्त trend I च्या identity ला |
+| 5 | D3 unknown ⇒ D2 स्वतःचा Dow trend + htf_unknown; D3 RANGE ⇒ range_alt | `ctx()`: पालक unknown ⇒ स्वतःचा trend (RANGE ⇒ range_alt) + `htf_unknown`; पालक माहीत झाला ⇒ I पुन्हा शोध |
+| 6 | Thresholds तसेच; ratio फक्त non-NA वर; < 6 non-NA ⇒ NA | ratio आधीपासून non-NA वर होता; आता < 6 non-NA ⇒ verdict **"NA (non-NA < 6)"** (आधी "अस्पष्ट (early)") |
+| 7 | final_flag_risk = (a) + (b) + (c) | (c) measured-move जोडलं: पहिला I_end − I_origin, पहिल्या K च्या टोकापासून projection; चालू K पट्टा ± 1σ ⇒ ✓; नोंद + grade |
+| 8 | 0.25σ, register 0.15/0.25/0.4 | register बदलला |
+| 9 | futures data स्रोत | खाली "प्रश्न 9: तपासणी" |
+| 10-ब | provisional K-टोक रेघ trade-योग्य: ≥ 2 held + 3रा touch (close आत) + K आधार-रेघ break ≤ 6 candles | `trendlines2/engine.py` `prov_ok()`; `prov_break_n` = 6 (थर 7 `tl_break_n` शी समान, test) |
+| 11 | तीव्र = gate नाही; grade −0.5; तीव्र + 2 ⇒ नाही, ≥ 3 held ⇒ trade-योग्य | `line_class()`; थर 7 `w_steep` = −0.5 |
+| 12 | line_skip = 2; register 0/1/2; `line_clear_strict` | प्रत्येक divergence मध्ये `line_clear_strict` (skip 0) खूण |
+| 13 | प्रश्न 4 नंतर 22 दिवस पुन्हा, gate-निहाय | खाली "22 दिवस rerun" |
+| 14 | VIX (Upstox 15M, known_at = close), event yaml (added_on), macro (fetch time); फक्त size / नोंद | `decision2/context.py`, `decision2/events.yaml` (रिकामी — तुम्ही भरायची); G-I चे दोन्ही **block काढले**: VIX > 22 ⇒ size floor, event ⇒ ×0.5, macro विरुद्ध ⇒ ×0.75; macro grade मधून काढला |
+| 15 | default veto-only Sonnet; budget सध्याच्या caps मधूनच | `vision2/veto.py`: `run_budget()` = `visual_audit_daily_cap` (दैनिक budget च्या आत), महिना $5 तसाच; model नाव फक्त VPS `.env` मध्ये (`VISION_VETO_MODEL`) — repo मध्ये नाही |
+| 16 | Gray-1 block तसाच | बदल नाही |
+| बाकी | tier 1 default; tier 2 setting | `commit_tier()`: tier 2 = t−1 commitment + t चा close त्याच्या टोकापलीकडे |
+| बाकी | trendline-break N = 6 | flavour फक्त break आधी ≤ 6 candles मध्ये area स्पर्श असेल तर |
+| बाकी | zone id वंश (04 §3) | `assign_ids()`: id बदलत नाही; merge ⇒ जुना id; split ⇒ मूळ pivot चा भाग; मूळ pivot pruning ⇒ तोच id; `lineage` नोंद |
+| बाकी | base default | तसंच |
+| बाकी | 5 पूर्ण sessions profile; कमी ⇒ NA | `sessions_profile()` (आजच्या आधीची 5 पूर्ण sessions, प्रत्येकात volume हवा) |
+| बाकी | cascade degree-निहाय | `cascade()` degree tag नुसार; त्याच degree चे pivots |
+
+**माझा एक अर्थ — तुमचा ✔ हवा (range_alt "जवळची कड"):** "I = जवळच्या कडेपासून दूर जाणारा शेवटचा D1 leg; K = कडेकडे येणारी चाल" —
+जवळची कड **t च्या close** पासून मोजली (leg च्या सुरुवातीपासून नाही). कारण: leg-सुरुवात अर्थाने 7 Oct 12:00 ला I = खालच्या कडेपासूनचा
+UP leg येत होता (long, आणि भाव वरच्या तृतीयांशात ⇒ G-A थांबा). Close-अर्थाने भाव वरच्या कडेजवळ ⇒ I = वरच्या कडेपासून खाली गेलेला leg,
+K = वर येणारी चाल ⇒ trade-बाजू seller (तुमच्या trade सारखी). जवळची कड बदलली ⇒ range_alt I पुन्हा शोधतो.
+
+### प्रश्न 9: futures data तपासणी
+1. VPS collector (`collect_index_futures_volume.py`) चा data trade-data (private) मध्ये आहे, पण फक्त **30 Sep – 6 Oct** (5M, 308 rows,
+   एक आठवडा). VPS च्या `data/` मध्ये जास्त असेल तर ते trade-data ला push करावं लागेल (VPS block, तुमच्या मंजुरीने).
+2. Upstox historical (चालू / पुढचा contract) — token फक्त VPS वर; sandbox मधून call नाही. Expired contracts चा endpoint उपलब्ध आहे का ते
+   VPS वरच्या probe ने पाहावं लागेल.
+3. तोपर्यंत रोज साठवणं चालू; profile / item 8 NA. Data बनवला नाही; Trade repo मध्ये data नाही.
+
+### 22 दिवस rerun (उत्तर 13; प्रश्न 4 नंतर + review दुरुस्त्यांनंतर; threshold सैल नाही)
+528 bars (22 sessions): **setup 0, wait 528**. Gate-निहाय (पहिला थांबवणारा gate):
+
+| Gate | कारण | bars |
+|---|---|---|
+| G-A | I नाही | 234 |
+| G-C | area नाही (zone / रेघ स्पर्श नाही) | 152 |
+| G-A | drift regime | 79 |
+| G-D | momentum मोजलं नाही (K अवस्था अजून नाही) | 20 |
+| G-C | range mode: range-कड (d) zone नाही | 16 |
+| G-A | range मध्ये (कडेच्या तृतीयांशात नाही) | 15 |
+| G-D | momentum "नाही" | 12 |
+
+D1 I_mode: trend 235, range_alt 59, I नाही 234 bars (आधी 107). **"I नाही" वाढलं:** D2 RANGE असताना (32% वेळ) range_alt I हवा, आणि
+जवळच्या कडेपासून दूर जाणारा पात्र confirmed leg नसेल (किंवा त्याचा origin तुटला असेल) तर I नाही. हा उत्तर 4 + "जवळची कड" अर्थाचा परिणाम.
+
+**ठरलेले क्षण:**
+- **7 Oct 11:00 – 12:30:** D2 RANGE (pivot पट्टा 22,217 – 22,809) ⇒ range mode. I = range_alt **DOWN** (22,731.8 ⇒ 22,578.2), बाजू seller
+  (तुमच्या trade सारखी). K अवस्था "K सुरू झाला असावा" (confirmed K leg नाही ⇒ momentum मोजलं नाही). थांबवणारा gate **G-C "range-कड
+  zone नाही"**: 12:00 ला seller zone p1650H (22,715 – 22,735) ला स्पर्श ("K area: हो"), पण तो range च्या वरच्या कडेपासून (22,809) 74 pts खाली ⇒
+  0.25σ आत नाही ⇒ d (range कड) खूण नाही. 12:30 ला त्याला d खूण येते, पण त्या candle चा high (22,675) zone पर्यंत पोचत नाही.
+  30 Sep → 6 Oct रेघ ("latest", provisional, 3 held) 12:15 ला दिसते, पण "लागू नाही": K आधार-रेघ break नाही (उत्तर 10-ब ची अट); आणि
+  §3a नुसार range mode मध्ये फक्त range-कड zone area आहे, रेघ नाही. **तुमचा निर्णय हवा:** range mode मध्ये trade-योग्य रेघ / सामान्य
+  zone सुद्धा area मानायचा का, की फक्त range-कड zone?
+- **30 Sep 14:00:** D2 DOWN, trend I (23,592.8 ⇒ 22,569.7). **G-C "area नाही"**: trade-बाजूच्या zone / trade-योग्य रेघेला स्पर्श नाही
+  (primary "लागू नाही", fans तुटलेल्या, latest तीव्र 0 touches).
+
+**Momentum (उत्तर 6 ची तपासणी):**
+- 30 Sep 10:45 – 11:00: **कमकुवत होतोय** (ratio 0.75 / 0.625, non-NA 8). 11:15 नंतर अस्पष्ट, 12:45 – 13:15 नाही, 14:00 अस्पष्ट (0.5;
+  SOT, three-push, counter candles लहान, closes, नाममात्र टोक ✗).
+- 7 Oct 11:00 – 12:15: K अवस्था नाही ⇒ momentum मोजलं नाही. (Leg-सुरुवात अर्थाने range_alt UP असताना पहिल्या run मध्ये अस्पष्ट 0.43,
+  non-NA 7.) **"कमकुवत" नाही ⇒ बिघाड म्हणून नोंद**; threshold फिरवला नाही. Volume (item 8) futures data नसल्याने NA.
+
+### Review (या batch चा, स्वतंत्र) — दुरुस्त / बाकी
+**दुरुस्त:** range_alt "जवळची कड" बदलल्यावर I पुन्हा शोध (high; आधी I अडकून राहत होता); VIX / macro timestamps tz-aware ⇒ IST;
+जुनी VIX (दुसऱ्या session ची) / macro (> 24 तास) ⇒ NA; trendline-break खिडकी break **आधीच्या** N candles, रेघ area ला थर 5 चा touch bar;
+तीव्र + provisional ला सुद्धा ≥ 3 held; provisional खिडकी नेमकी N; zone "वारसा" नोंद एकदाच; tier 2 session ओलांडून नाही आणि flavour
+commitment candle वर; charts मधून G-I काढला; profile cache key मध्ये σ.
+**मुद्दाम लागू नाही (तुमचा निर्णय):** पालक trend थेट उलटला (UP ⇒ DOWN, मध्ये RANGE / reversal नाही) तर trend I रद्द करायचा का? 02 §5.2
+नुसार sticky I फक्त origin real break / reversal ने रद्द होतो — म्हणून तसंच ठेवलं.
+**बाकी (नोंद):** `run_budget` / `MODEL_TASK` अजून कोणत्याही replay vision call ला जोडलेले नाहीत (paid call नाही म्हणून); 07 §5 room
+(σ 2-day, VIX 18–22 ⇒ +0.5σ strike), `room_mode` / `premium` / `break_entry_mode = retest` register मध्ये पण वापर नाही; 04 §5 per-session
+POC / naked POC आणि rollover वगळ नाही; prompt files (07 §3 / §6, 05 §2.7) मधला मजकूर उत्तरांशी जुळवायचा — prompt तुमचे असल्याने मी बदलले
+नाहीत.
+
 ## स्वतंत्र review (थर 2–7) — काय दुरुस्त केलं, काय बाकी
 **दुरुस्त केलं:**
 - **Zones lookahead (गंभीर):** "K area मध्ये" शेवटच्या data चं zone state वाचत होतं (pending / sweep / spring). आता प्रत्येक candle ची गोठलेली प्रत वापरतो.
@@ -216,13 +300,7 @@ K thinning 4, trend मजबूत 2 bars.
   - trap ची दिशा range शी जुळायला हवी.
 - सगळ्या scripts ना `--m1-status` (replay = live).
 
-**बाकी (नोंद; तुमच्या निर्णयानंतर):**
-- tier 2 commitment;
-- trendline-break flavour ची "≤ 6 candles आधी area" अट;
-- zone id pruning नंतर वंशानुसार टिकवणं;
-- base / ob पट्टा;
-- 5-session profiles;
-- cascade degree-निहाय.
+**बाकी:** सगळ्यांवर तुमचा निर्णय आला; वरच्या "Abhi ची उत्तरं" तक्त्यात लागू.
 
 ## पुढे (तुमच्या उत्तरांनंतर)
 1. थर 1 ✔ ⇒ थर 2 चा LEG CHECK v2 run (22 दिवस) ⇒ trade-data push ⇒ VPS block (15:30 नंतर, एकच block) ⇒ तुमचा ✔.

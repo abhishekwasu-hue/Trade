@@ -89,7 +89,8 @@ def box_text(sn, struct, t):
         last = " · ".join(f"{p['label']} {p['price']:,.0f}" for p in s["pivots"][-2:]) or "—"
         pr = s["trend"]["protected"]
         e = last_event(struct, d, t)
-        rows.append(f"<b>{nm}</b>: {TREND_MR.get(s['trend']['name'], s['trend']['name'])}{'' if s['warmup_done'] else ' (warm-up)'} · {last}"
+        tag = ("" if s["warmup_done"] else " (warm-up)") + (" · display only (gate नाही)" if d == 4 else "")
+        rows.append(f"<b>{nm}</b>: {TREND_MR.get(s['trend']['name'], s['trend']['name'])}{tag} · {last}"
                     + (f" · protected {pr['price']:,.0f}" if pr else "") + (f" · {e['type']} {e['ts'][5:16]}" if e else ""))
     return "<br>".join(rows)
 

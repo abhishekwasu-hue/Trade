@@ -298,11 +298,12 @@ class Fold:
             pushes = [L for L in self.legs if L["dir"] == I["dir"] and L["a"].bar >= I["origin"].bar and L["b"].bar <= I["end"].bar
                       and L["b"].confirm_bar <= t]
             sot = (st.get("I") or {}).get("SOT_trend")
-            hs_ = self.trk.strict_hl(I, t)
-            leg = abs(I["end"].price - (hs_.price if hs_ is not None else I["origin"].price))
-            if slope < float(self.s["final_flag_slope"]) and (len(pushes) >= int(self.s["final_flag_pushes"]) or sot):
+            mm = measured_move(I, {"h": self.h, "l": self.lo}, K["extreme"], sig, float(self.s["final_flag_mm_sigma"]))
+            a_ok = slope < float(self.s["final_flag_slope"])
+            b_ok = len(pushes) >= int(self.s["final_flag_pushes"]) or bool(sot)
+            if a_ok and b_ok and mm["ok"]:                                       # Abhi उत्तर 7: (a) आणि (b) आणि (c) — नोंद + grade, gate नाही
                 out["final_flag_risk"] = {"slope_sigma_bar": round(slope, 4), "pushes": len(pushes), "SOT_trend": bool(sot),
-                                          "measured_move": round(K["extreme"] + I["dir"] * leg, 2)}
+                                          "measured_move": mm["target"]}
         if h is not None:
             P = h["P"]
             out["c_eq_a"] = c_equals_a(h, P)
@@ -321,6 +322,24 @@ class Fold:
 
     def _choose(self, st, hs, t):
         return F1.Fold._choose(self, st, hs, t)
+
+
+def measured_move(I, A, k_extreme, sig, tol):
+    """final_flag_risk (c): target_MM = |I_end − I_origin| (पहिला I_end) चं, I_end नंतरच्या पहिल्या K च्या टोकापासून trend-दिशेने
+    projection; चालू K चा पट्टा (K टोक ↔ आत्ताचा I_end) target_MM च्या ±tol·σ मध्ये ⇒ ✓ (trend आधीच परिपक्व). पहिला K अजून चालू
+    (I_end एकदाच) ⇒ ✗."""
+    ends = I["ends"]
+    if len(ends) < 2 or not sig:
+        return {"ok": False, "target": None}
+    e0, e1, d = ends[0], ends[1], I["dir"]
+    seg = A["l"][e0.bar + 1:e1.bar + 1] if d > 0 else A["h"][e0.bar + 1:e1.bar + 1]
+    if not len(seg):
+        return {"ok": False, "target": None}
+    tip = float(seg.min() if d > 0 else seg.max())
+    target = tip + d * abs(e0.price - I["origin"].price)
+    lo, hi = sorted((float(k_extreme), float(I["end"].price)))
+    ok = lo - tol * sig <= target <= hi + tol * sig
+    return {"ok": bool(ok), "target": round(target, 2)}
 
 
 def position(child, parent, t):

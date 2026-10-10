@@ -166,19 +166,67 @@ def test_rr_time_vix_gates(patched):
     C, t = fake_ctx(n=50)                                                          # दुसऱ्या दिवसाची शेवटची candle 15:15
     assert DE.decide(C, t)["gate"] == "G-H"
     C, t = fake_ctx()
-    C.ext = {"vix": {t: 25.0}}
-    assert (DE.decide(C, t)["decision"], DE.decide(C, t)["gate"]) == (DE.NO_TRADE, "G-I")
+    C.ext = {"vix": {t: 25.0}}                                                     # Abhi उत्तर 14: VIX gate नाही ⇒ फक्त size
+    d = DE.decide(C, t)
+    assert d["decision"] == DE.SETUP and d["size_weight"] == pytest.approx(S["size_floor"])
     C.ext = {"vix": {t: 20.0}}
     assert DE.decide(C, t)["size_weight"] == pytest.approx(0.75)
+    C.ext = {"vix": {t: 15.0}, "event_bars": {t: "RBI policy"}}                   # event ⇒ size कमी, gate नाही
+    d = DE.decide(C, t)
+    assert d["decision"] == DE.SETUP and d["size_weight"] == pytest.approx(S["reduce_size"])
+    assert d["points"]["11_context"]["event"] == "RBI policy"
 
 
-def test_grade_determinism_and_macro_changes_grade_not_decision(patched):
+def test_grade_determinism_and_macro_only_size(patched):
     C, t = fake_ctx()
     a, b = DE.decide(C, t), DE.decide(C, t)
     assert a["grade_score"] == b["grade_score"]
-    C.ext = {"macro": {t: 1.0}}
+    C.ext = {"macro": {t: 1.0}}                                                    # trade-बाजूचा macro ⇒ काहीच बदल नाही
     c = DE.decide(C, t)
-    assert c["decision"] == a["decision"] and c["grade_score"] == pytest.approx(a["grade_score"] + S["w_macro"])
+    assert c["decision"] == a["decision"] and c["grade_score"] == a["grade_score"] and c["size_weight"] == a["size_weight"]
+    C.ext = {"macro": {t: -0.8}}                                                   # trade-विरुद्ध ⇒ फक्त size (gate / grade नाही)
+    e = DE.decide(C, t)
+    assert e["decision"] == a["decision"] and e["grade_score"] == a["grade_score"]
+    assert e["size_weight"] == pytest.approx(max(a["size_weight"] * S["macro_size"], S["size_floor"]))
+
+
+def test_tier2_needs_next_candle_confirm():
+    C = mini([105, 104, 99.5, 103.0], [106, 105, 103.5, 106.0], [103, 101, 98.0, 102.5], [104, 102, 103.2, 105.0])
+    area = {"band": (98.0, 100.0)}
+    assert DE.commit_tier(C, 2, 1, area)["pass"]                                  # tier 1 (default): commitment candle
+    C.s["tier"] = 2
+    C.day = pd.Series([C.day[0]] * 4)
+    r = DE.commit_tier(C, 3, 1, area)                                             # t−1 commitment + t close 105 > 103.5
+    assert r["pass"] and r["tier2_confirm"] and r["entry"] == 105.0
+    C.A["c"][3] = 103.0
+    assert not DE.commit_tier(C, 3, 1, area)["pass"]
+    C.A["c"][3] = 105.0
+    C.day = pd.Series([C.day[0]] * 3 + [C.day[0] + pd.Timedelta(days=1)])
+    assert DE.commit_tier(C, 3, 1, area) is None                                   # आदल्या session ची candle + आजची ⇒ नाही
+
+
+def test_trendline_break_flavour_needs_area_within_n(patched):
+    C, t = fake_ctx()
+    C.L5[t] = {"k_base": {"bar": t}}
+    C.L4[t]["k_area"]["band"] = (117.0, 119.0)                                     # break आधीच्या ≤ 6 candles मध्ये area स्पर्श
+    d = DE.decide(C, t)
+    assert "trendline-break" in d["points"]["9_price_failure"]["flavours"]
+    C.L4[t]["k_area"]["band"] = (120.5, 121.0)                                     # फक्त break candle स्वतः स्पर्श करते ⇒ "आधी" नाही
+    assert "trendline-break" not in DE.decide(C, t)["points"]["9_price_failure"]["flavours"]
+    C.L4[t]["k_area"]["band"] = (117.0, 119.0)
+    C.L4[t]["k_area"]["band"] = (60.0, 61.0)                                       # area ≤ 6 candles आधी नाही
+    assert "trendline-break" not in DE.decide(C, t)["points"]["9_price_failure"]["flavours"]
+
+
+def test_steep_line_lowers_grade(patched):
+    C, t = fake_ctx()
+    C.L4[t]["k_area"] = {"ans": "नाही"}
+    C.res["sigma"] = {C.day[t]: 10.0}
+    C.L5[t] = {"k_area_line": {"ans": "हो", "value": 100.0, "line": "H1-2"}}
+    a = DE.decide(C, t)
+    C.L5[t]["k_area_line"]["steep"] = True
+    b = DE.decide(C, t)
+    assert b["decision"] == a["decision"] == DE.SETUP and b["grade_score"] == pytest.approx(a["grade_score"] + S["w_steep"])
 
 
 def test_hard_exits_independent(patched):
@@ -307,3 +355,34 @@ def test_script_rerun_identical_and_decide_real_stack(tmp_path):
     for f, b in outs[0].items():
         if f.endswith("_decision.json"):
             assert b'"decision"' in b
+
+
+def test_context_rows_known_at(tmp_path):
+    from decision2 import context as DX
+    day = pd.bdate_range(_monday(700), periods=2)
+    ts = pd.Series([d + SLOTS[i] for d in day for i in range(25)])
+    be = ts + pd.Timedelta(minutes=15)
+    vix = pd.DataFrame({"timestamp": [ts[0], ts[1], ts[30]], "close": [14.0, 15.0, 16.5]})
+    v, j = DX.vix_map(vix, be)
+    assert 0 in v and v[0] == 14.0 and v[1] == 15.0 and v[24] == 15.0 and v[30] == 16.5   # known_at = candle close
+    assert 29 not in v                                                             # आदल्या session चा VIX ⇒ stale ⇒ NA
+    assert j[30] == pytest.approx(16.5 / 15.0 - 1.0)
+    vz = vix.assign(timestamp=pd.to_datetime(vix["timestamp"]).dt.tz_localize("Asia/Kolkata").dt.tz_convert("UTC"))
+    assert DX.vix_map(vz, be)[0] == v                                              # tz-aware (UTC) ⇒ IST naive, तसंच
+    p = tmp_path / "ev.yaml"
+    d0, d1 = (str(x.date()) for x in day)
+    p.write_text(f"events:\n  - {{date: {d1}, name: X, kind: rbi, added_on: {d0}}}\n  - {{date: {d0}, name: Y, kind: other, added_on: {d1}}}\n",
+                 encoding="utf-8")
+    ev = DX.event_bars(DX.load_events(str(p)), ts)
+    assert set(ev) == set(range(25, 50)) and ev[25] == "X"                         # Y: added_on त्या दिवसानंतर ⇒ दिसत नाही
+    assert DX.load_events(DX.EVENTS_PATH) == []
+    m = DX.macro_map(pd.DataFrame({"fetched_at": [be[3]], "value": [0.4]}), be)
+    assert 2 not in m and m[3] == 0.4
+    m2 = DX.macro_map(pd.DataFrame({"fetched_at": [be[3]], "value": [0.4]}), be, max_age_h=1)
+    assert 3 in m2 and 10 not in m2                                                # 1 तासापेक्षा जुनी ⇒ NA
+
+
+def test_vision_run_budget_uses_existing_caps():
+    g = {"visual_audit_daily_cap": 0.10, "vision_daily_budget_usd": 0.30}
+    assert VV.run_budget(g) == pytest.approx(0.10) and VV.run_budget(None) is None
+    assert VV.MODEL_TASK == "veto"

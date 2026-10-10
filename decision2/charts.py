@@ -5,7 +5,7 @@ import pandas as pd
 from backtest_review import charts as BC
 from pivots import charts as PC
 
-GATES = ("G-A", "G-B", "G-C", "G-D", "G-E", "G-F", "G-G", "G-H", "G-I")
+GATES = ("G-A", "G-B", "G-C", "G-D", "G-E", "G-F", "G-G", "G-H")          # G-I: VIX / event फक्त size (Abhi उत्तर 14)
 DEC_MR = {"setup": "📌 setup", "wait": "थांबा", "no_trade": "trade नाही"}
 
 

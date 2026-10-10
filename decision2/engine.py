@@ -3,6 +3,8 @@
 निर्णय = थोडे gates (Abhi चे) + grade (पुरावे). AI / vision कधीच order देत नाही; हा module order / broker call करत नाही.
 Exits (`hard_exits`) कोणत्याही budget / listener / vision / approval / वेळ-gate / holdout guard पासून स्वतंत्र — वेगळं शुद्ध फंक्शन.
 बाह्य data (VIX, event calendar, expiry, macro row, gray_policy दिशा) = `ext` dict मधल्या rows (`known_at` सह); नसेल ⇒ नोंद (NA).
+VIX / event / macro (Abhi उत्तर 14) = फक्त size_weight + नोंद, gate नाही. Tier (Abhi निर्णय) default 1: G1–G6 + G8 hard, G7 grade; tier 2
+= पुढची candle confirm (setting, default नाही). Trendline-break flavour: area स्पर्श break आधी ≤ tl_break_n candles.
 """
 import numpy as np
 import pandas as pd
@@ -231,7 +233,7 @@ def _area(C, t, d, l4, l5):
         tau = float(TS.DEFAULTS["tau"]) * float(C.res["sigma"].get(pd.Timestamp(C.day[t]), np.nan))
         v = la["value"]
         return {"src": "रेघ", "band": (v - tau, v + tau), "ans": la["ans"], "stars": 1, "accept": False, "line": la.get("line"),
-                "intersection": la.get("intersection")}
+                "intersection": la.get("intersection"), "steep": bool(la.get("steep")), "bar": la.get("bar")}
     return None
 
 
@@ -346,7 +348,7 @@ def decide(C, t):
                 return stop(NO_TRADE, "G-G", "Gray-2 · Abhi दिशा नाही / उलट")
             size *= float(s["reduce_size"])
     # ---- G-E
-    cm = commitment(C, t, d, area)
+    cm = commit_tier(C, t, d, area)
     depth = ((st.get("K") or {}).get("depth_main"))
     pts["8_depth"] = {"main": depth, "secondary": (st.get("K") or {}).get("depth_secondary")}
     flavours = []
@@ -357,7 +359,8 @@ def decide(C, t):
             flavours.append("sweep-reclaim")
         if (l5.get("k_tip") or {}).get("throw_over"):
             flavours.append("throw-over")
-        if k_base.get("bar") == t:
+        cm_t = cm["candle"]["t"]
+        if k_base.get("bar") == cm_t and area_touched(C, cm_t, area, int(s["tl_break_n"])):
             flavours.append("trendline-break")
         if not flavours:
             flavours.append("rejection")
@@ -367,7 +370,7 @@ def decide(C, t):
     if depth is not None and depth >= float(s["retrace_flavour"]) and not ({"sweep-reclaim", "throw-over"} & set(flavours)):
         return stop(WAIT, "G-E", "retrace ≥ 0.80 ⇒ फक्त sweep-reclaim / throw-over")
     # ---- G-F
-    entry = cm["candle"]["c"]
+    entry = cm["entry"]
     small = (cm["rng_ratio"] or 0) < float(s["g5_rng"]) or (cm["overlap3"] or 0) >= float(s["g6_overlap3"])
     mode = s["invalidation_mode"] if s["invalidation_mode"] != "auto" else ("structural" if small else "candle")
     kx = (st.get("K") or {}).get("extreme")
@@ -395,17 +398,14 @@ def decide(C, t):
     else:
         out["flags"].append("expiry data नाही")
         pts_ex = None
-    # ---- G-I
+    # ---- संदर्भ (VIX / event / macro: फक्त size + नोंद; gate नाही)
     vix = (C.ext.get("vix") or {}).get(t)
-    if vix is not None and vix > float(s["vix_block"]):
-        return stop(NO_TRADE, "G-I", f"VIX {vix} > {s['vix_block']}")
     if vix is None:
         out["flags"].append("VIX data नाही")
-    if (C.ext.get("event_bars") or set()) and t in C.ext["event_bars"]:
-        if s["event_action"] == "defer":
-            return stop(NO_TRADE, "G-I", "event hold-window")
-        size *= float(s["reduce_size"])
-    pts["11_context"] = {"open_noise": bool(l4.get("open_noise")), "vix": vix, "gap": bool(t in C.res["gap_bar_2s"]), "expiry": pts_ex}
+    ctx = context_rows(C, t, d)
+    out["flags"] += ctx["flags"]
+    pts["11_context"] = {"open_noise": bool(l4.get("open_noise")), "vix": vix, "gap": bool(t in C.res["gap_bar_2s"]), "expiry": pts_ex,
+                         "event": ctx["event"], "macro": ctx["macro"]}
     pts["12_hard_rules"] = {"exits": hard_exits(C, t, d)}
     pts["3_impulse_ok"] = {k: (st.get("I") or {}).get(k) for k in ("quality", "climax", "SOT_trend", "origin_bounded", "I_weak_basis")}
     # ---- grade + size
@@ -414,7 +414,7 @@ def decide(C, t):
     g = grade(C, t, d, area, cm, flavours, m, l6, rec3, st, s5, grade_adj, g7)
     out["grade_score"] = g
     out["grade"] = "A" if g >= float(s["grade_a"]) else ("B" if g >= float(s["grade_b"]) else "C")
-    out["size_weight"] = size_weight(C, t, vix, size)
+    out["size_weight"] = size_weight(C, t, vix, size, d)
     out["decision"] = SETUP
     out["where_wrong"] = f"invalidation {inv:,.0f} (mode {mode})"
     out["paper_only"] = True
@@ -475,11 +475,11 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
     pref = rec3.get("pref") if rec3.get("agg") != "none" else None
     if pref is not None and pref["family"] == "impulse_k":
         return stop(WAIT, "G-G", "range mode: कडेकडची चाल impulse-K")
-    cm = commitment(C, t, d, area)
+    cm = commit_tier(C, t, d, area)
     out["points"]["9_price_failure"] = {"candle": cm, "flavours": ["range-edge"], "tier": int(s["tier"])}
     if cm is None or not cm["pass"]:
         return stop(WAIT, "G-E", "commitment candle नाही")
-    entry = cm["candle"]["c"]
+    entry = cm["entry"]
     inv = (min(cm["candle"]["l"], hit[0]) - float(s["sl_buffer"])) if d > 0 else (max(cm["candle"]["h"], hit[1]) + float(s["sl_buffer"]))
     target = band[0] if d > 0 else band[1]                                           # range ची उलट कड
     risk = (entry - inv) * d
@@ -491,11 +491,11 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
     if C.ts[t].time() >= pd.Timestamp(s["entry_end"]).time():
         return stop(NO_TRADE, "G-H", "15:15 नंतर नवी entry नाही")
     vix = (C.ext.get("vix") or {}).get(t)
-    if vix is not None and vix > float(s["vix_block"]):
-        return stop(NO_TRADE, "G-I", f"VIX {vix} > {s['vix_block']}")
+    ctx = context_rows(C, t, d)
+    out["flags"] += ctx["flags"] + ([] if vix is not None else ["VIX data नाही"])
     g = grade(C, t, d, area, cm, ["range-edge"], m, l6, rec3, st, False)
     out.update(decision=SETUP, grade_score=g, grade="A" if g >= float(s["grade_a"]) else ("B" if g >= float(s["grade_b"]) else "C"),
-               size_weight=size_weight(C, t, vix), where_wrong=f"invalidation {inv:,.0f} (range mode)", paper_only=True,
+               size_weight=size_weight(C, t, vix, 1.0, d), where_wrong=f"invalidation {inv:,.0f} (range mode)", paper_only=True,
                approval_required=bool(s["signal_approval_required"]))
     out["flags"].append("range mode")
     return out
@@ -544,22 +544,75 @@ def grade(C, t, d, area, cm, flavours, m, l6, rec3, st, s5, adj=0.0, g7=False):
         g += float(s["w_d2d3"])
     if (C.L4.get(t) or {}).get("open_noise"):
         g += float(s["w_open"])
-    macro = (C.ext.get("macro") or {}).get(t)
-    if macro is not None:
-        g += float(s["w_macro"]) * float(np.clip(macro, -1, 1))
+    if area.get("steep"):
+        g += float(s["w_steep"])                                                      # तीव्र रेघ (थर 5 उत्तर 11): नोंद + grade
     return round(float(g), 3)
 
 
-def size_weight(C, t, vix, base=1.0):
+def size_weight(C, t, vix, base=1.0, d=None):
+    """Size (gate नाही): VIX > vix_hi ⇒ ×vix_size; VIX > vix_extreme ⇒ size_floor; VIX jump ⇒ ×vix_size; event hold-window ⇒
+    ×reduce_size; macro trade-विरुद्ध (≥ macro_against) ⇒ ×macro_size. Floor = size_floor."""
     s = C.s
     w = base
     if vix is not None:
         if vix > float(s["vix_hi"]):
             w *= float(s["vix_size"])
+        if vix > float(s["vix_extreme"]):
+            w = float(s["size_floor"])
         jump = (C.ext.get("vix_jump") or {}).get(t)
         if jump is not None and jump >= float(s["vix_jump"]):
             w *= float(s["vix_size"])
+    if d is not None:
+        ctx = context_rows(C, t, d)
+        if ctx["event"]:
+            w *= float(s["reduce_size"])
+        if ctx["macro_against"]:
+            w *= float(s["macro_size"])
     return round(max(w, float(s["size_floor"])), 3)
+
+
+def context_rows(C, t, d):
+    """Event calendar (ext["event_bars"]: t ⇒ नाव, `added_on` ≤ त्या दिवशी — known_at लावून आधीच तयार) आणि macro row (ext["macro"]:
+    t ⇒ [-1, 1], fetch known_at ≤ t). फक्त नोंद / size."""
+    ev = (C.ext.get("event_bars") or {})
+    name = ev.get(t) if isinstance(ev, dict) else (True if t in ev else None)
+    macro = (C.ext.get("macro") or {}).get(t)
+    against = macro is not None and float(np.clip(macro, -1, 1)) * d <= -float(C.s["macro_against"])
+    flags = (["event hold-window ⇒ size कमी"] if name else []) + (["macro trade-विरुद्ध ⇒ size कमी"] if against else []) + \
+        ([] if macro is not None else ["macro data नाही"])
+    return {"event": name, "macro": macro, "macro_against": bool(against), "flags": flags}
+
+
+def area_touched(C, t, area, n):
+    """Trendline-break flavour: break candle t च्या **आधीच्या** n candles ([t − n, t − 1]) मध्ये area स्पर्श. रेघ area ⇒ थर 5 चा touch
+    bar (रेघेची त्या वेळची किंमत; उतरती रेघ t च्या ± τ पट्ट्याशी तुलना नाही); zone ⇒ पट्टा."""
+    if area.get("src") == "रेघ":
+        b = area.get("bar")
+        return b is not None and t - n <= b < t
+    bot, top = area["band"]
+    A = C.A
+    return any(A["l"][j] <= top and A["h"][j] >= bot for j in range(max(t - n, 0), t))
+
+
+def commit_tier(C, t, d, area):
+    """Tier ≤ 1: commitment candle (G1–G6 + G8 hard) — entry = तिचा close. Tier 2: t−1 चा commitment pass **आणि** t चा close त्याच्या
+    trade-टोकापलीकडे (पुढची candle confirm) — entry = t चा close."""
+    s = C.s
+    if int(s["tier"]) < 2:
+        cm = commitment(C, t, d, area)
+        if cm is not None:
+            cm = dict(cm, entry=cm["candle"]["c"])
+        return cm
+    if t < 1 or C.day[t - 1] != C.day[t]:
+        return None                                                                  # आदल्या session ची candle + आजची ⇒ नाही
+    cm = commitment(C, t - 1, d, area)
+    if cm is None:
+        return None
+    c = C.A["c"][t]
+    ok = (c > cm["candle"]["h"]) if d > 0 else (c < cm["candle"]["l"])
+    out = dict(cm)
+    out.update({"pass": bool(cm["pass"] and ok), "tier2_confirm": bool(ok), "entry": c})
+    return out
 
 
 def run(C, bars):

@@ -14,6 +14,7 @@ DEFAULTS = {
     "fan_valid": 2, "fan_cand": 1,
     "accept_sigma": 0.5, "accept_closes": 2,       # MASTER accept (detrended)
     "valid_touches": 3,
+    "prov_break_n": 6,            # provisional रेघ: touch नंतर ≤ N candles मध्ये K आधार-रेघ break (थर 7 tl_break_n शी समान)
 }
 
 REGISTER = {
@@ -28,7 +29,8 @@ REGISTER = {
     "inbound_bars": ("20", "—", "Bulkowski", "inbound trend"),
     "fan_valid / fan_cand": ("2 / 1", "—", "व्याख्या", "थर 5 §2.6"),
     "accept_sigma / accept_closes": ("0.5 σ / 2", "—", "MASTER", "accept (detrended)"),
-    "valid_touches": ("3", "—", "व्याख्या", "थर 5 §2.4: 3 held ⇒ valid, 2 ⇒ उमेदवार"),
+    "valid_touches": ("3", "—", "व्याख्या", "थर 5 §2.4: 3 held ⇒ valid, 2 ⇒ उमेदवार; तीव्र ⇒ ≥ 3 held (Abhi उत्तर 11)"),
+    "prov_break_n": ("6", "4/6/8", "Abhi (उत्तर 10-ब)", "provisional K-टोक रेघ: 3रा touch + ≤ N candles मध्ये K आधार-रेघ break"),
     "line_break (breaks.py settings)": ("elliott.settings DEFAULTS", "±1 पायरी", "code (MR ≠ σ)", "थर 5 §3"),
 }
 

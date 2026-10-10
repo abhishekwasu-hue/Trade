@@ -195,7 +195,9 @@ def test_momentum_items_verdict_rules(folds):
         rv = m["raw_verdict"]
         if m["danger"]:
             assert rv == MO.NOT
-        elif m["pushes"] < 2 or m["non_na"] < S["m_min_non_na"]:
+        elif m["non_na"] < S["m_min_non_na"]:
+            assert rv == MO.NA_V                                                  # Abhi उत्तर 6: non-NA < 6 ⇒ NA
+        elif m["pushes"] < 2:
             assert rv == MO.EARLY
         elif m["ratio"] >= S["m_hi"]:
             assert rv == MO.WEAK
@@ -324,3 +326,26 @@ def test_register_and_numbers_and_dates():
         src = open(p, encoding="utf-8").read()
         for bad in ("broker", "place_order", "market_state", "chart_reader", "levels_v2", "import elliott"):
             assert f"import {bad}" not in src and f"from {bad}" not in src
+
+
+def test_momentum_ratio_only_non_na_and_na_verdict():
+    """Abhi उत्तर 6: ratio = ✓ ÷ non-NA (NA = ✗ नाही)."""
+    items = [MO.YES] * 4 + [MO.NO] * 2 + [MO.NA] * 6
+    non_na = [x for x in items if x != MO.NA]
+    assert sum(x == MO.YES for x in non_na) / len(non_na) >= S["m_hi"]    # 4/6 = 0.67 ⇒ कमकुवत (NA मोजले असते तर 4/12)
+
+
+def test_final_flag_measured_move():
+    from types import SimpleNamespace as N
+
+    from patterns2 import fold2 as F2
+    A = {"h": np.array([100.0, 110, 108, 112, 120, 118]), "l": np.array([90.0, 100, 104, 105, 112, 114])}
+    o = N(price=90.0, bar=0)
+    e0, e1 = N(price=110.0, bar=1), N(price=126.0, bar=4)
+    I = {"dir": 1, "origin": o, "ends": [e0, e1], "end": e1}
+    mm = F2.measured_move(I, A, 120.0, 2.0, 1.0)                            # टोक = 104 (bars 2–4 चा low) ⇒ 104 + 20 = 124
+    assert mm["target"] == 124.0 and mm["ok"]                                # चालू K पट्टा 120–126 ⇒ ✓
+    I1 = {"dir": 1, "origin": o, "ends": [e0], "end": e0}
+    assert F2.measured_move(I1, A, 104.0, 2.0, 1.0)["ok"] is False           # पहिला K अजून चालू ⇒ ✗
+    far = {"dir": 1, "origin": o, "ends": [e0, N(price=160.0, bar=4)], "end": N(price=160.0, bar=4)}
+    assert F2.measured_move(far, A, 150.0, 2.0, 1.0)["ok"] is False          # पट्टा 150–160, target 124 ⇒ ✗
