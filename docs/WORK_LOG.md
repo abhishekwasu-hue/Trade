@@ -1604,3 +1604,28 @@ close; (7) दोन vacuous tests खरे केले; (8) K-10 वाचन
 खरा नाही, (b) displacement दिशेसह, "कमी overlap" = F3 व्याख्या (ER किंवा K10.1); (11) rr_filter "false" string, अज्ञात sl / target mode,
 --engine-alt keys तपासणी. Golden: 7 Oct 12:15 bear आणि 28 Sep 14:15 G8 bear (नवीन case) पास.
 **Golden Gallery:** G7 (exhaustion gap reversal, सैल), G8 / G9 (waves.py) detectors; manifest ⇒ Telegram; corrected_setup G1–G9.
+
+---
+## थर v2.2 "method-first" — पायरी A + B (decision3)
+**Spec:** `docs/prompts_v2/08_थर_v22_METHOD_FIRST.md` (Abhi, §0–§7; §5–§7 जोड research / पुराव्याचं वजन / liquidity नंतर).
+**A:** नवा package `decision3/` (जुना `decision2` तसाच — shadow तुलना, setting `engine_version` v21 / v22). Register: प्रत्येक आकडा
+"Abhi नियम / व्याख्या / अंदाज / setting" वर्गासह (`decision3/settings.py`).
+**B — ① Daily Dow (`decision3/daily.py`):** Daily swings pivot (N = 2, default) किंवा DC (k_D × σ_D); confirm-क्रमाने आलटून पालटून.
+UP = नवा HL + HH (break नंतरचे), DOWN आरसा; protected = तो HL / LH; trend फक्त protected च्या Daily **close** ने संपतो (wick नाही) ⇒
+pullback मध्ये trend बदलत नाही (v2.1 चं net/H regime, D3 / htf_unknown / Gray-1 नाहीत). RANGE = NEUTRAL + दोन H व दोन L σ_D-अपूर्णांकात समान.
+UNKNOWN फक्त ≤ 10 Daily candles. Intraday: Daily state known_at ≤ bar_end.
+**B — ② 1H levels (`decision3/levels.py`):** जन्म (a) D2 / Daily swing (wick-to-body + किमान रुंदी), (b) BOS origin base, (c) flip
+(acceptance: पलीकडे सलग 3 closes), (d) equal highs / lows. Merge overlap ⇒ एक (पट्टा-इतिहास ⇒ truncation-safe). 1–2 closes पलीकडे / wick
+आणि परत ⇒ sweep ★. Flip अयशस्वी (closes जुन्या बाजूला टिकले) ⇒ जुनी भूमिका. मृत्यू फक्त मूळ बाजूचा पलीकडचा D2 swing close ने तुटला (Q2).
+Prune नाही; `self` नियम नाही. Active = trade-बाजूची जवळची 2.
+**OPEN_QUESTIONS:** `docs/reports/v22/OPEN_QUESTIONS.md` (Q1–Q9, प्रत्येकाला default).
+**C — ③④⑥⑦ + §5–§7 (`decision3/method.py`, `liquidity.py`, `engine.py`):** K (BOS impulse ⇒ उलट D1 swing / level ⇒ उघडी;
+origin close ने तुटला ⇒ रद्द), ③ breakout / gap ✘, ④ power shift (a–d पैकी 2; RSI NA), ⑥ commitment (body, मागच्या extreme पलीकडे close,
+reclaim चालतो, कमकुवत signal-bar ✘, वेळ-खिडकी end exclusive), ⑦ SL / target / R:R ≥ 3, §5.1 पाय-मोजणी (पहिला पाय ⇒ फक्त ★ ≥ 2 +
+मजबूत signal-bar ⇒ कमाल B), §5.3 range अवस्था gate, §6 conviction (NA बेरजेत नाही), §7 liquidity pools / sweeps / traps. Charts English
+(Abhi), Telegram caption `story` मराठी.
+**Self-review + independent review दुरुस्त्या:** 1H पट्टा / BOS base अपूर्ण तासाचे पुढचे bars वापरत होते (lookahead) ⇒ `_h1_upto`;
+retest + reclaim ला नवा BOS ⇒ K रीसेट (एक pivot = एकच BOS); §5.1 पहिल्या पायाचा नियम उलटा होता; Daily protected टाकलेल्या pivot वर
+जात होता; 15:15 bar entry ला चालत होता; ③ स्पर्श फक्त entry bar (spec "लगत" ⇒ `touch_window_bars`, Q18); level score नंतरचे births पाहत
+होता (फक्त माहिती); magic numbers register मध्ये; engine invariant test खरा (ABC synthetic ⇒ setup) + truncation key मध्ये K / risk /
+checklist. OPEN_QUESTIONS Q10–Q19.
