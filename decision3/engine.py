@@ -2,7 +2,7 @@
 
 पायरी B: ① Daily trend (Dow) + ② 1H levels (जीवनक्रम). पायरी C: ③ K, ④ power shift, ⑥ commitment, ⑦ risk (R:R ≥ 3), §5–§7 पुरावे ⇒
 conviction (A ✅ / B 🟡 / weak ⇒ वाट / against ⇒ नाही). कठोर नियम फक्त H1 (①), H2 (②③, breakout नाही), H3 (⑦); ⑥ = entry trigger;
-§5.3 range अवस्था = gate. ⑤ trendline break अजून grade मध्ये नाही (पुढे).
+§5.3 range अवस्था = gate. ⑤ K ची आतली रेघ close ने तुटली = पुरावा (grade +), gate नाही (`trendline.py`).
 जुना decision2 (v2.1) तसाच — `engine_version` setting ने shadow तुलना. हा module order / broker call करत नाही; AI order देत नाही.
 Known_at: प्रत्येक bar चा निर्णय फक्त त्या bar च्या close पर्यंतच्या माहितीवर (Daily state known_at ≤ bar_end; levels त्यांच्या जन्म-bar पासून).
 """
@@ -13,6 +13,7 @@ from . import levels as LV
 from . import liquidity as LQ
 from . import method as M
 from . import settings as S3
+from . import trendline as TL
 
 SETUP, WAIT, NO_TRADE = "setup", "wait", "no_trade"
 M_SETUP, M_WAIT, M_NO = "s", "w", "n"
@@ -66,6 +67,9 @@ class V22:
         chk["③"] = [ok3, f"{why3} · K {k['why_open']}, पाय {k['legs']}"]
         if not ok3:
             return M_WAIT, chk, {"K": k}
+        tl = TL.k_line(self, t, d, k)
+        chk["⑤"] = [None, "K ची आतली रेघ नाही (< 2 स्पर्श)"] if tl is None else \
+            [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) {'close ने तुटली ⇒ grade +' if tl['broken'] else 'अजून अखंड'}"]
         ok4, n4, items = M.power_shift(A, t, d, k, self.s)
         chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
         rng = M.range_state(A, t, self.s)
@@ -77,13 +81,14 @@ class V22:
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False, "engulf": bool(cm.get("engulf")) if cm else False,
               "rsi_div": None, "volume_low": None, "pattern": None,
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
-              "fourth_attempt": k["legs"] > int(self.s["max_attempts"])}
+              "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
+              "tl_break": True if (tl and tl["broken"]) else None}            # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
         ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])
         conv, score, missing = M.conviction(ev, self.s)
-        extra = {"K": k, "evidence": ev, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
+        extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
                  "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}}
         if rng:
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
@@ -114,7 +119,6 @@ class V22:
         chk = {"①": [ok1, why1], "②": [ok2, why2]}
         for k in ("③", "④", "⑤", "⑥", "⑦"):
             chk[k] = [None, "—"]
-        chk["⑤"] = [None, "trendline break: grade (पुढे)"]
         dec, best = (NO_TRADE if not ok1 else WAIT), {}
         if ok1 and ok2:
             rank = {M_SETUP: 0, M_WAIT: 1, M_NO: 2}
@@ -137,7 +141,8 @@ class V22:
                 "range_band": st.band, "active_levels": act, "checklist": chk, "decision": dec, "mark": mark,
                 "K": best.get("K"), "risk": best.get("risk"), "conviction": best.get("conviction"), "conv_score": best.get("conv_score"),
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
-                "level": best.get("level"), "liquidity": best.get("liquidity")}
+                "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
+                "commit": best.get("commit")}
 
     def run(self, bars=None):
         bars = range(len(self.m15)) if bars is None else bars

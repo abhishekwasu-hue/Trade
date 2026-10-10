@@ -1629,3 +1629,8 @@ retest + reclaim ला नवा BOS ⇒ K रीसेट (एक pivot = ए�
 जात होता; 15:15 bar entry ला चालत होता; ③ स्पर्श फक्त entry bar (spec "लगत" ⇒ `touch_window_bars`, Q18); level score नंतरचे births पाहत
 होता (फक्त माहिती); magic numbers register मध्ये; engine invariant test खरा (ABC synthetic ⇒ setup) + truncation key मध्ये K / risk /
 checklist. OPEN_QUESTIONS Q10–Q19.
+**⑤ trendline (`decision3/trendline.py`):** K ची आतली रेघ (I_end + confirmed D1 counter pivots, ≥ 2 स्पर्श), trend-दिशेचा close-break ⇒
+पुरावा `tl_break` (grade +, gate नाही; रेघ नाही ⇒ NA). Checklist ⑤, 15M chart वर रेघ (English), caption मध्ये ओळ. Q20.
+**D — Telegram trader view (`decision3/telegram_view.py`):** setups + Abhi च्या खुणांसाठी 3 charts (Daily known-at पर्यंत, 1H, 15M — English,
+emoji ऐवजी "SETUP A / B" + बाण), मराठी caption 5–8 ओळी (कथा + B1 / B2), debug.json वेगळा. Manifest = backtest_review format ⇒ पाठवणं फक्त VPS
+(`scripts/send_review_to_telegram.py --run review/v22/<run>`). `scripts/v22_check.py --tg-run`. Q21 (B1 / B2 व्याख्या).

@@ -25,6 +25,10 @@ DEFAULTS = {
     # ④ Power shift (C)
     "power_shift_min": 2,                    # (a)–(d) पैकी किमान इतके
     "power_overlap": 0.5,                    # (b) bodies overlap
+    # ⑤ Trendline (grade फक्त)
+    "tl_degree": 1,                          # K मधले counter pivots (D1 — §5.1 पाय-मोजणीचीच degree)
+    "tl_touch_sigma": 0.15,                  # स्पर्श = रेघेपासून σ_1H × हे
+    "tl_min_touches": 2,
     # ⑥ Commitment (C)
     "commit_body": 0.5,                      # body ≥ range च्या हे
     "commit_merge_max": 2,
@@ -43,10 +47,12 @@ DEFAULTS = {
     # ⑦ Risk (C)
     "sl_buffer_sigma": 0.25,                 # SL buffer = σ_15M × हे
     "min_rr": 3.0,
+    # D Telegram trader view
+    "entry_tick": 0.05,                      # B2: signal-bar extreme च्या इतक्या पलीकडे break (index tick)
     # §6 पुरावे ⇒ conviction (वजन; NA ⇒ बेरजेत नाही)
     "evidence_weights": {"level_star": 1.0, "fresh": 0.5, "power_shift": 1.5, "trap_sweep": 1.5, "second_attempt": 1.0,
                          "commit_strong": 1.0, "engulf": 0.5, "rsi_div": 0.5, "volume_low": 0.5, "pattern": 0.5,
-                         "against_bodies": -1.0, "fourth_attempt": -1.5},
+                         "against_bodies": -1.0, "fourth_attempt": -1.5, "tl_break": 1.0},
     "conv_a": 0.6, "conv_b": 0.4, "conv_weak": 0.2,
     "max_attempts": 3,                       # §5.1: चौथा प्रयत्न (H4 / L4) ⇒ reversal शक्यता ⇒ trade नाही
 }
@@ -69,6 +75,9 @@ REGISTER = {
     "k_reset_sigma": (0.25, "—", "Abhi नियम", "spec ③ < 0.25 σ_1H ⇒ reset नाही"),
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
     "power_overlap": (0.5, "—", "Abhi नियम", "spec ④ (b) ≥ 50%"),
+    "tl_degree": (1, "0/1", "व्याख्या", "spec ⑤ 'K ची आतली रेघ' — K चे पाय D1 (Q20)"),
+    "tl_touch_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ⑤ स्पर्श सहनशीलता"),
+    "tl_min_touches": (2, "—", "Abhi नियम", "spec ⑤ K चे ≥ 2 स्पर्श"),
     "commit_body": (0.5, "—", "Abhi नियम", "spec ⑥ body ≥ 50% range"),
     "commit_merge_max": (2, "1/2", "Abhi नियम", "spec ⑥ ≤ 2 merged"),
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
@@ -84,6 +93,7 @@ REGISTER = {
                                                                    "spec §5.4 ★ provenance / freshness; निर्णयात नाही"),
     "sl_buffer_sigma": (0.25, "0.1/0.25/0.5", "अंदाज", "spec ⑦ buffer σ_15M × अपूर्णांक"),
     "min_rr": (3.0, "—", "Abhi नियम", "spec ⑦ R:R < 3 ⇒ trade नाही (एकमेव numeric gate)"),
+    "entry_tick": (0.05, "—", "व्याख्या", "spec §5.2 B2 'signal-bar extreme च्या 1 tick पलीकडे' (Q21)"),
     "evidence_weights": ("§6.3 यादी", "±0.5", "अंदाज", "spec §6.3–6.4 पुराव्यांचं वजन (Abhi च्या E1–E4 खुणांशी जुळवायचं, निकाल पाहून नाही)"),
     "conv_a / conv_b / conv_weak": ("0.6 / 0.4 / 0.2", "±0.1", "अंदाज", "spec §6.4 conviction स्तरांच्या सीमा"),
     "max_attempts": (3, "—", "Abhi नियम", "spec §5.1 H4 / L4 ⇒ trade नाही"),

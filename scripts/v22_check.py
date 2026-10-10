@@ -59,6 +59,7 @@ def main(argv=None):
     ap.add_argument("--to")
     ap.add_argument("--moments", nargs="*", default=[], help="Abhi च्या खुणा: 'YYYY-MM-DD' (त्या दिवसाचे ✅ / 🟡 / कारण) किंवा 'YYYY-MM-DD HH:MM'")
     ap.add_argument("--max-charts", type=int, default=12)
+    ap.add_argument("--tg-run", help="पायरी D: Telegram trader view run folder (उदा. <trade-data>/review/v22/nifty_run3) — फक्त फाइली, पाठवणं नाही")
     a = ap.parse_args(argv)
     m15, m1, daily = load_inputs(a)
     print(f"{a.symbol}: 15M bars {len(m15)} · engine बांधतो…", flush=True)
@@ -151,6 +152,11 @@ def main(argv=None):
     for e in eod[-5:]:
         print(e)
     print("charts:", *pngs, sep="\n  ")
+    if a.tg_run:
+        from decision3 import telegram_view as TV
+        man = TV.build_run(V, rows, a.tg_run, a.symbol, os.path.basename(os.path.normpath(a.tg_run)), a.moments, a.max_charts)
+        print(f"Telegram run: {a.tg_run} · items {0 if man is None else len(man['items'])} (पाठवणं फक्त VPS: "
+              f"scripts/send_review_to_telegram.py --run review/v22/<run>)")
     return 0
 
 

@@ -119,7 +119,7 @@ def _key(r):
     return (r["decision"], r["daily_trend"], r["mark"], r["conviction"],
             [(x["id"], round(x["lo"], 6), round(x["hi"], 6)) for x in r["active_levels"]],
             {c: v[0] for c, v in r["checklist"].items()}, (k.get("open"), k.get("i_end"), k.get("k_ext"), k.get("legs")),
-            None if not r["risk"] else tuple(sorted(r["risk"].items())))
+            None if not r["risk"] else tuple(sorted(r["risk"].items())), repr(r.get("trendline")))
 
 
 def test_engine_invariants_no_breakout_setups_direction_and_truncation():

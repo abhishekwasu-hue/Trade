@@ -263,6 +263,32 @@ def first_leg_cap(conv, legs, sweeps, commit_strong):
     return "B" if (sweeps >= 2 and commit_strong) else "weak"
 
 
+# ------------------------------------------------------------------------------------------------ B1 / B2 (§5.2)
+def b_plans(A, t, d, rk, merged, s):
+    """B1 = commitment close वर entry (default); B2 = signal-bar (≤ 2 merged ⇒ संपूर्ण merged candle) extreme च्या `entry_tick`
+    पलीकडे break. SL / target तेच (⑦); B2 चा R:R नव्या entry ने (< min_rr ⇒ ok False). Risk / target नसेल ⇒ None."""
+    if not rk or rk.get("target") is None or d not in (UP, DOWN):
+        return None
+    i0 = max(0, t - max(1, int(merged or 1)) + 1)
+    tick = float(s["entry_tick"])
+    trig = float(max(A["high"][i0:t + 1])) + tick if d == UP else float(min(A["low"][i0:t + 1])) - tick
+    sl, tgt = float(rk["sl"]), float(rk["target"])
+    risk2 = (trig - sl) * d
+    rr2 = (tgt - trig) * d / risk2 if risk2 > 0 else None
+    return {"B1": {"entry": rk["entry"], "sl": sl, "target": tgt, "rr": rk["rr"]},
+            "B2": {"trigger": round(trig, 2), "sl": sl, "target": tgt, "rr": None if rr2 is None else round(rr2, 2),
+                   "ok": rr2 is not None and rr2 >= float(s["min_rr"])}}
+
+
+def plans_of(V, r):
+    """engine row ⇒ b_plans (setup नसेल / level नसेल ⇒ None)."""
+    lv = r.get("level")
+    if not lv:
+        return None
+    d = UP if lv["role"] == LV.SUP else DOWN
+    return b_plans(V.levels.A, int(r["bar"]), d, r.get("risk"), (r.get("commit") or {}).get("merged"), V.s)
+
+
 # ------------------------------------------------------------------------------------------------ §6 conviction
 def conviction(ev, s):
     """ev = {पुरावा: True / False / None (NA)}; वजन register मध्ये (W). NA ⇒ बेरजेत नाही (कमाल सुद्धा नाही)."""

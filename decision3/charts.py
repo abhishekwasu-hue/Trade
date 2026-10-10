@@ -10,6 +10,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from . import levels as LV  # noqa: E402
+from . import method as M  # noqa: E402
 
 TREND_COLOR = {"UP": "#d8f3dc", "DOWN": "#ffd6d6", "RANGE": "#fff3bf", "NEUTRAL": "#eeeeee", "UNKNOWN": "#ffffff"}
 
@@ -140,6 +141,8 @@ def story(r):
         bits = [f"pullback चे {k['legs']} पाय"]
         if ev.get("power_shift"):
             bits.append("counter जोर संपतोय")
+        if ev.get("tl_break"):
+            bits.append("K ची रेघ close ने तुटली")
         if ev.get("trap_sweep"):
             bits.append("sweep होऊन परत ⇒ अडकलेले traders")
         lines.append("15M: " + ", ".join(bits))
@@ -173,8 +176,26 @@ def m15_png(V, t, title, bars=60, r=None):
             if y is not None:
                 ax.axhline(y, color=col, lw=0.9, ls="--")
                 ax.text(len(m) - 0.5, y, f" {lab} {y:,.0f}", color=col, fontsize=8, va="bottom")
+    bp = M.plans_of(V, r) if r and r.get("risk") else None
+    if bp:                                                                     # B2 योजना: signal-bar extreme पलीकडचा trigger
+        y = bp["B2"]["trigger"]
+        ax.axhline(y, color="#868e96", lw=0.8, ls=":")
+        ax.text(len(m) - 0.5, y, f" B2 trigger {y:,.0f} (R:R {bp['B2']['rr']})", color="#868e96", fontsize=7, va="top")
+    tl = r.get("trendline") if r else None
+    if tl:                                                                     # ⑤ K ची आतली रेघ (t पर्यंत) + break खूण
+        (b1, y1), sl = tl["p1"], tl["slope"]
+        xs = [max(b1, i0), t]
+        ax.plot([x - i0 for x in xs], [y1 + sl * (x - b1) for x in xs], color="#7048e8", lw=1.1, ls="-.")
+        lab = f" K line ({tl['touches']} touches)" + (" broken" if tl["broken"] else "")
+        ax.text(len(m) - 0.5, y1 + sl * (t - b1), lab, color="#7048e8", fontsize=8, va="top")
+        if tl["broken"] and tl["break_bar"] is not None and tl["break_bar"] >= i0:
+            bb = tl["break_bar"]
+            ax.plot(bb - i0, float(V.m15["close"].iloc[bb]), marker="x", color="#7048e8", ms=8)
     if r and r.get("mark"):
-        ax.annotate(r["mark"], (len(m) - 1, float(m["close"].iloc[-1])), textcoords="offset points", xytext=(0, 18), ha="center", fontsize=14)
+        up = bool(r.get("level")) and r["level"]["role"] == LV.SUP                 # chart वर emoji नाही (font) ⇒ English label + बाण
+        lab = {"✅": "SETUP A", "🟡": "SETUP B"}.get(r["mark"], str(r["mark"]))
+        ax.annotate(("▲ " if up else "▼ ") + lab, (len(m) - 1, float(m["close"].iloc[-1])), textcoords="offset points",
+                    xytext=(0, -26 if up else 18), ha="center", fontsize=11, color="#2f9e44" if r["mark"] == "✅" else "#e8590c")
     ax.set_title(f"{title} · 15M · {r['decision'] if r else ''} {r.get('conviction') or '' if r else ''}", fontsize=10)
     _xticks(ax, m["timestamp"].to_numpy(), max(1, len(m) // 12))
     return _png(fig)
