@@ -14,7 +14,7 @@ import json
 import os
 import time
 
-PROMPT_VERSION = "signal_check_v2_1"
+PROMPT_VERSION = "signal_check_v2_2"      # v2_2 (टप्पा B): + KB भाग I situation map मजकूर
 VERDICTS = ("agree", "gray", "disagree")
 YN = ("yes", "no")
 ENUMS = {
@@ -192,6 +192,10 @@ verdict: "agree" = follows the rules (real level, completed correction, valid re
 elliott_note: one short remark on the wave count, at most 100 characters (empty string when none).
 reason: one short sentence in simple Marathi (Devanagari), max 160 characters, naming the deciding factor.
 Reply with the JSON object only."""
+
+from vision_led.situation_map import MAP_TEXT  # noqa: E402 — KB भाग I (नकाशा) मजकूर म्हणून (टप्पा B, B1)
+SYSTEM_PROMPT = SYSTEM_PROMPT + "\n" + MAP_TEXT
+
 
 # $ प्रति 1M tokens: (input, output, cache read) — model family नुसार (नाव कोडमध्ये नाही; model नावात हा शब्द असेल तर). Cache write = 1.25 × input
 # (5-मिनिट TTL). जुन्या / वेगळ्या किंमतीचा model वापरला तर env VISION_PRICE_IN / _OUT / _CACHE_READ ने अचूक किंमत द्या.

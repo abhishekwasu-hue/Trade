@@ -125,6 +125,8 @@ SCHEMA += [
        calibrate=False),
     _s("break_no_reclaim_bars", "breaks", "Acceptance bars", "कमकुवत breaking close नंतर इतके bars reclaim नाही ⇒ खरा break. 0 ⇒ एका close वर "
        "(तुमच्या नियमाविरुद्ध, फक्त तुलनेसाठी).", "int", 1, 0, 5),
+    _s("break_accept_closes", "breaks", "Time acceptance closes", "Level पलीकडे सलग इतके closes (buffer आत असले तरी) ⇒ खरा break / acceptance "
+       "(Abhi K-10, 16 Feb 2018 PDL). 0 ⇒ बंद. levels_v2 lifecycle सुद्धा हीच व्याख्या (accept_closes).", "int", 3, 0, 10, calibrate=False),
     _s("break_confirm_tf", "breaks", "Break confirmation TF", "level_tf (default, F4): count आणि trade exit दोन्ही त्या wave च्या TF वर "
        "(fixed mode ⇒ degree_tf; auto ⇒ wave start → आत्ता चा auto TF, trigger TF सारखा नियम) — 5m वरच्या कमकुवत closes ने 15m trade चा "
        "count मरत नाही. 5m / 15m ⇒ ठराविक.", "choice", "level_tf", choices=("level_tf", "5m", "15m"), calibrate=False),

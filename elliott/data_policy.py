@@ -5,10 +5,13 @@ elliott/data_policy.py
 
   IS            2015-01-01 → 2021-12-31   सगळं calibration (options P&L फक्त weekly options सुरू झाल्यापासून)
   VAL           2022-01-01 → 2024-03-31   IS मध्ये निवडलेल्या ≤ 3 configs; tuning नाही
-  HOLDOUT       2024-04-01 → पुढे        sealed — फक्त शेवटी एकदाच, अंतिम एका config साठी
+  HOLDOUT       2024-04-01 → 2026-06-30   sealed — फक्त शेवटी एकदाच, अंतिम एका config साठी (कधीच उघडायचा नाही)
   CONTAMINATED  2026-07-01 → 2026-10-08   golden-file regression (Abhi चे screenshots याच काळाचे; logic इथूनच ठरलं).
-                                          फक्त purpose="golden" साठी; अंतिम holdout चाचणीतूनही **वगळायचा** (Abhi, 2026-10-06).
+                                          फक्त purpose="golden" / "annotation" साठी; अंतिम holdout चाचणीतूनही **वगळायचा** (Abhi, 2026-10-06).
                                           7–8 Oct जोडले (Abhi, 2026-10-08): Chart Reader ची "golden story" — फक्त illustration, tuning नाही.
+  ILLUSTRATION  2026-10-09 → पुढे        (Abhi, 2026-10-09) annotation सराव / Abhi ची तपासणी आणि golden illustration साठीचे नवे दिवस
+                                          (Jul–Oct 2026 सारखे). फक्त purpose="annotation" (annotation / vision तपासणी, Abhi पाहतो);
+                                          golden backtest / IS / VAL / research साठी **कधीच नाही**, आणि अंतिम holdout चाचणीतही नाही.
 """
 import datetime as dt
 
@@ -26,7 +29,10 @@ _VAL_END_X = pd.Timestamp("2024-04-01")
 _IS_END_X = pd.Timestamp("2022-01-01")
 _CONT_END_X = pd.Timestamp("2026-10-09")
 
-PURPOSES = ("research", "golden")
+PURPOSES = ("research", "golden", "annotation")
+ILLUSTRATION_START = _CONT_END_X                          # CONTAMINATED नंतरचा पहिला दिवस ⇒ open-ended
+GOLDEN_LIKE = ("golden", "annotation")                    # CONTAMINATED फक्त यांना
+ILLUSTRATION_ONLY = ("annotation",)                       # ILLUSTRATION फक्त याला (golden backtest scripts ना नवे दिवस नाहीत)
 
 
 class HoldoutError(RuntimeError):
@@ -34,7 +40,7 @@ class HoldoutError(RuntimeError):
 
 
 def period(ts):
-    """एका वेळेचा काळ: "PRE_IS" / "IS" / "VAL" / "CONTAMINATED" / "HOLDOUT"."""
+    """एका वेळेचा काळ: "PRE_IS" / "IS" / "VAL" / "HOLDOUT" / "CONTAMINATED" / "ILLUSTRATION"."""
     t = pd.Timestamp(ts)
     if t < IS_START:
         return "PRE_IS"
@@ -44,17 +50,22 @@ def period(ts):
         return "VAL"
     if CONTAMINATED_START <= t < _CONT_END_X:
         return "CONTAMINATED"
+    if t >= ILLUSTRATION_START:
+        return "ILLUSTRATION"
     return "HOLDOUT"
 
 
 def allowed(ts, purpose="research"):
-    """research ⇒ फक्त IS/VAL (आणि त्याआधीचा warm-up). golden ⇒ त्याशिवाय CONTAMINATED सुद्धा. HOLDOUT ⇒ कधीच नाही."""
+    """research ⇒ फक्त IS/VAL (आणि त्याआधीचा warm-up). golden ⇒ त्याशिवाय CONTAMINATED. annotation ⇒ CONTAMINATED + ILLUSTRATION.
+    HOLDOUT ⇒ कधीच नाही."""
     if purpose not in PURPOSES:
         raise ValueError(f"purpose {purpose!r} — {PURPOSES} पैकी हवा")
     p = period(ts)
     if p in ("PRE_IS", "IS", "VAL"):
         return True
-    return p == "CONTAMINATED" and purpose == "golden"
+    if p == "CONTAMINATED":
+        return purpose in GOLDEN_LIKE
+    return p == "ILLUSTRATION" and purpose in ILLUSTRATION_ONLY
 
 
 def check_range(start, end, purpose="research"):
@@ -62,21 +73,30 @@ def check_range(start, end, purpose="research"):
     s, e = pd.Timestamp(start), pd.Timestamp(end)
     if e < s:
         raise ValueError("end < start")
-    for lo, hi_x in ((HOLDOUT_START, CONTAMINATED_START), (_CONT_END_X, pd.Timestamp.max)):
-        if s < hi_x and e >= lo:
-            raise HoldoutError(f"{s.date()}→{e.date()} sealed HOLDOUT ला छेदतो ({lo.date()} नंतर) — परवानगी नाही")
-    if s < _CONT_END_X and e >= CONTAMINATED_START and purpose != "golden":
-        raise HoldoutError(f"{s.date()}→{e.date()} contaminated golden काळ ({CONTAMINATED_START.date()}→"
-                           f"{CONTAMINATED_END.date()}) — फक्त purpose='golden'")
+    if purpose not in PURPOSES:
+        raise ValueError(f"purpose {purpose!r} — {PURPOSES} पैकी हवा")
+    if s < CONTAMINATED_START and e >= HOLDOUT_START:
+        raise HoldoutError(f"{s.date()}→{e.date()} sealed HOLDOUT ला छेदतो ({HOLDOUT_START.date()} → "
+                           f"{(CONTAMINATED_START - pd.Timedelta(days=1)).date()}) — परवानगी नाही")
+    if e >= CONTAMINATED_START and purpose not in GOLDEN_LIKE:
+        raise HoldoutError(f"{s.date()}→{e.date()} contaminated golden काळ ({CONTAMINATED_START.date()}→{CONTAMINATED_END.date()}) — "
+                           f"फक्त purpose {GOLDEN_LIKE}")
+    if e >= ILLUSTRATION_START and purpose not in ILLUSTRATION_ONLY:
+        raise HoldoutError(f"{s.date()}→{e.date()} illustration काळ ({ILLUSTRATION_START.date()} नंतर) — फक्त purpose "
+                           f"{ILLUSTRATION_ONLY} (backtest / IS / VAL साठी नाही)")
     return True
 
 
 def filter_allowed(df, purpose="research", col="timestamp"):
     """DataFrame मधून परवानगी नसलेल्या ओळी काढतो (वापरापूर्वी शेवटचा पहारा)."""
     ts = pd.to_datetime(df[col])
+    if purpose not in PURPOSES:
+        raise ValueError(f"purpose {purpose!r} — {PURPOSES} पैकी हवा")
     keep = ts < _VAL_END_X
-    if purpose == "golden":
-        keep |= (ts >= CONTAMINATED_START) & (ts < _CONT_END_X)
+    if purpose in GOLDEN_LIKE:
+        keep |= (ts >= CONTAMINATED_START) & (ts < ILLUSTRATION_START)
+    if purpose in ILLUSTRATION_ONLY:
+        keep |= ts >= ILLUSTRATION_START
     return df[keep.to_numpy()].reset_index(drop=True)
 
 
@@ -92,9 +112,9 @@ def load_parquet(path, purpose="research", col="timestamp"):
 
 
 def final_holdout_mask(ts):
-    """अंतिम holdout चाचणीसाठी वापरायच्या वेळा: HOLDOUT पण CONTAMINATED नाही (Abhi: contaminated काळ तिथूनही वगळा)."""
+    """अंतिम holdout चाचणीसाठी वापरायच्या वेळा: फक्त HOLDOUT (CONTAMINATED / ILLUSTRATION नाही — Abhi)."""
     t = pd.to_datetime(pd.Series(ts))
-    return ((t >= HOLDOUT_START) & ~((t >= CONTAMINATED_START) & (t < _CONT_END_X))).to_numpy()
+    return ((t >= HOLDOUT_START) & (t < CONTAMINATED_START)).to_numpy()
 
 
 def default_download_ranges():

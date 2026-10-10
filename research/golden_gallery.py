@@ -1,4 +1,4 @@
-"""research/golden_gallery.py — Golden Gallery G1–G6 (TRADE_GOLDEN_GALLERY_PROMPT). **Trade नाही, vision call नाही ($0).**
+"""research/golden_gallery.py — Golden Gallery G1–G9 (TRADE_GOLDEN_GALLERY_PROMPT; G7–G9 KB भाग H). **Trade नाही, vision call नाही ($0).**
 
 🎓 काळ (data policy): IS 2015–2021 आणि 1 Jul → 8 Oct 2026 (contaminated, पाहिलेला). **VAL (2022 → 2024-03) नाही** (gallery मधून नियम ठरतील
 ⇒ VAL ची स्वतंत्र चाचणी जपायची). Holdout ⇒ कधीच नाही (HoldoutError).
@@ -57,7 +57,7 @@ def evaluate_rank(m1, c, s):
 
 def caption(c, n):
     side = {1: "bull_put", -1: "bear_call"}[c["side"]]
-    return (f"⭐ GALLERY {n}/6 · {c['setup']} {GL.SETUPS[c['setup']]} · {pd.Timestamp(c['bar_start']):%d %b %Y %H:%M} · {side}\n"
+    return (f"⭐ GALLERY {n}/{len(GL.SETUPS)} · {c['setup']} {GL.SETUPS[c['setup']]} · {pd.Timestamp(c['bar_start']):%d %b %Y %H:%M} · {side}\n"
             f"{c['why']}\ncode grade {c.get('grade')} ({c.get('total')}) · R:R {('1:%.1f' % c['rr']) if c.get('rr') else '—'} · "
             f"hindsight {c.get('hindsight', {}).get('result')} (फक्त माहिती)\n(1) 1H (2) 15M entry (3) hindsight · ⭐ / ✔ / ✘ dashboard वर.")[:1024]
 
@@ -71,6 +71,7 @@ def main(argv=None):
     ap.add_argument("--per-setup", type=int, default=8)
     ap.add_argument("--send", action="store_true")
     ap.add_argument("--parts", default="IS,2026_q3")
+    ap.add_argument("--run-id", default="gallery/run1", help="review manifest (Telegram: scripts/send_review_to_telegram.py)")
     a = ap.parse_args(argv)
     s = CS.load()
     os.makedirs(a.out_dir, exist_ok=True)
@@ -133,6 +134,13 @@ def main(argv=None):
             sent.add(c["setup"])
             imgs = [open(os.path.join(d, p), "rb").read() for p in pngs.values() if p]
             send(imgs, caption(c, len(sent)))
+    items = [{"n": n, "date": e["bar_start"][:10], "item": f"{a.run_id}|{e['id']}",
+              "reading": f"{e['setup']} · {GL.SETUPS[e['setup']]} · {e['bar_start'][:16]} · {'bull' if e['side'] > 0 else 'bear'} · {e['why']} · "
+                         f"grade {e.get('grade')} · R:R {e.get('rr')}",
+              "files": [f"{e['dir']}/{p}" for p in e["pngs"].values() if p]} for n, e in enumerate(index["examples"], 1)]
+    with open(os.path.join(a.out_dir, "manifest.json"), "w", encoding="utf-8") as fh:
+        json.dump({"run_id": a.run_id, "title": "Golden Gallery", "unit": "उदाहरण", "items": [i for i in items if i["files"]]}, fh,
+                  ensure_ascii=False, indent=1)
     with open(os.path.join(a.out_dir, "gallery_index.json"), "w", encoding="utf-8") as fh:
         json.dump(index, fh, ensure_ascii=False, indent=1, default=str)
     print(json.dumps({"counts": index["counts"], "chosen": {g: sum(e["setup"] == g for e in index["examples"]) for g in GL.SETUPS},

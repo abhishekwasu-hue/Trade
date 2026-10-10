@@ -1,0 +1,22 @@
+{
+  "id": "2026-09-28_simple_core_g8",
+  "source": "Abhi 2026-10-08 (K-10 निर्णय 5: G8 flag channel area; tuning नाही)",
+  "data": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
+  "data_policy": "contaminated — regression only, no tuning",
+  "simple_core_day": {
+    "date": "2026-09-28",
+    "from": "12:00",
+    "to": "15:00",
+    "signals": {
+      "14:15": -1
+    },
+    "setups": {
+      "14:15": "G8"
+    },
+    "no_signal": [
+      "13:30",
+      "13:45"
+    ]
+  },
+  "notes": "28 Sep: 11:15 पर्यंत मजबूत घसरण (impulse), 11:30–14:00 उथळ overlapping flag (22,808–22,855), 14:15 flag च्या खालच्या रेषेखाली commitment ⇒ G8 bear. जुना horizontal zone लागत नाही."
+}

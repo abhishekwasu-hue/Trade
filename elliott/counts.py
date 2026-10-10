@@ -75,9 +75,16 @@ class CountEngine:
 
     def __init__(self, md, s, confirm=None):
         """confirm = ConfirmTF (Scanner पुरवतो) ⇒ count invalidation `break_confirm_tf` वर (trade exit सारखं); None ⇒ degree frame."""
-        self.md, self.s, self.confirm = md, s, confirm
+        self.md, self.s = md, s
+        # Abhi G-MAP1 निर्णय 8: Elliott चे पक्के नियम (R1–R11, count invalidation) भावावरूनच — 3-close time acceptance नाही.
+        # 3-close (break_accept_closes) फक्त रचनेच्या breaks ना (origin / protected / BOS — market_state, levels, Simple Core).
+        rules_s = {**s, "break_accept_closes": 0}
+        if confirm is not None and int(s.get("break_accept_closes", 0) or 0):
+            from .confirm import ConfirmTF
+            confirm = ConfirmTF(confirm.frames, rules_s)
+        self.confirm = confirm
         self.degrees = sorted(md)
-        self.cache = {d: BreakCache(md[d]["frame"], s) for d in self.degrees}
+        self.cache = {d: BreakCache(md[d]["frame"], rules_s) for d in self.degrees}
         self.atr = {d: W.atr(md[d]["frame"], s["atr_len"]) for d in self.degrees}
         self.prev = None
         self.log = []

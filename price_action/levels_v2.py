@@ -8,7 +8,7 @@ Abhi (2026-10-08): PAPER bots नव्या levels वर चालतील; 
                  level ची degree = pivot ची degree. "htf_fractal" — major_levels v1 चे 240m fractal pivots (तुलनेसाठी).
   L2 lookback    degree नुसार (`lookback_weeks_by_degree`: D1 2, D2 6, D3 26 आठवडे). Recency decay नाही.
   L3 lifecycle   ACTIVE → TESTED(n) (wick / buffer आत close / पुढच्या bar ने reclaim) → BROKEN (buffer पलीकडे close आणि पुढच्या bar ने
-                 reclaim नाही ⇒ role उलटा) → FLIPPED (उलट बाजूने retest वर नकार) / DEAD (परत उलट break). MAGNET = शेवटच्या chop_window
+                 reclaim नाही, **किंवा** far edge पलीकडे सलग accept_closes closes — buffer आत असले तरी (time acceptance) ⇒ role उलटा) → FLIPPED (उलट बाजूने retest वर नकार) / DEAD (परत उलट break). MAGNET = शेवटच्या chop_window
                  bars मध्ये zone-mid आरपार closes > chop_max_crossings. Transitions फक्त bar close वर.
   L4 quality     प्रत्येक reaction (pivot bar) चा rejection: wick share (H ⇒ upper, L ⇒ lower) आणि close परत zone आत/मागे.
                  score = Σ quality × w_quality + role reversal / flipped bonus + range edge bonus + degree weight (+ origin bonus); MAGNET ⇒ 0.
@@ -32,6 +32,7 @@ DEFAULTS = {
     "zone_pad_mr": 0.25,
     "zone_min_mr": 0.5,
     "break_buffer_mr": 0.25,
+    "accept_closes": 3,              # time acceptance: far edge पलीकडे सलग इतके closes (buffer आत) ⇒ BROKEN (elliott/breaks.time_accepted)
     "chop_window": 20,
     "chop_max_crossings": 4,
     "max_per_side": 2,
@@ -57,8 +58,17 @@ def lifecycle(f, zone, role, start, mr, s):
     state, cur_role, tests, touching = "ACTIVE", role, 0, False
     broken_at = flipped_at = None
     j = max(int(start), 0)
+    from elliott.breaks import time_accepted
+    acc = int(s.get("accept_closes", 0) or 0)
     while j < n:
         sup = cur_role == "SUPPORT"
+        if acc and state in ("ACTIVE", "TESTED", "FLIPPED") and time_accepted(c, j, lo if sup else hi, "below" if sup else "above", acc,
+                                                                                max(int(start), 0) if state != "FLIPPED" else (flipped_at or 0)):
+            state, broken_at = "BROKEN", j                                # time acceptance (buffer आत closes) ⇒ role उलटा
+            cur_role = "RESISTANCE" if sup else "SUPPORT"
+            touching = False
+            j += 1
+            continue
         beyond = c[j] < lo - buf if sup else c[j] > hi + buf
         if beyond and state in ("ACTIVE", "TESTED", "FLIPPED"):
             if j + 1 >= n:                                            # पुढचा bar अजून नाही ⇒ break अपुष्ट (no-lookahead)
@@ -80,7 +90,12 @@ def lifecycle(f, zone, role, start, mr, s):
             j += 2
             continue
         if state == "BROKEN":
-            # तुटल्यानंतर: उलट बाजूने retest आणि नकार ⇒ FLIPPED; परत उलट real break ⇒ DEAD
+            # तुटल्यानंतर: उलट बाजूने retest आणि नकार ⇒ FLIPPED; परत उलट real break (buffer + पुढचा bar, किंवा time acceptance) ⇒ DEAD
+            if acc and time_accepted(c, j, hi if cur_role == "RESISTANCE" else lo, "above" if cur_role == "RESISTANCE" else "below", acc,
+                                     (broken_at or 0) + 1):
+                state = "DEAD"
+                j += 1
+                continue
             if cur_role == "RESISTANCE":
                 if h[j] >= lo and c[j] < lo:
                     state, flipped_at = "FLIPPED", j

@@ -6,15 +6,16 @@ import pytest
 
 from backtest_review import telegram as RT
 
-def _png():
+def _png(col=(20, 30, 40)):
     import io
     from PIL import Image
     b = io.BytesIO()
-    Image.new("RGB", (40, 30), (20, 30, 40)).save(b, "PNG")
+    Image.new("RGB", (40, 30), col).save(b, "PNG")
     return b.getvalue()
 
 
 PNG = _png()
+PNG_15M = _png((40, 30, 20))                                                # album मधला प्रत्येक chart वेगळा (duplicate guard)
 
 
 def run_dir(tmp_path, n=2):
@@ -23,8 +24,8 @@ def run_dir(tmp_path, n=2):
     for i in range(n):
         day = f"2026-08-0{i + 1}"
         (d / day).mkdir(parents=True)
-        for f in ("day_1h.png", "day_15m.png"):
-            (d / day / f).write_bytes(PNG)
+        for f, b in (("day_1h.png", PNG), ("day_15m.png", PNG_15M)):
+            (d / day / f).write_bytes(b)
         items.append({"n": i + 1, "date": day, "item": f"day:{day}", "reading": f"Trend: up · area B{i}",
                       "files": [f"{day}/day_1h.png", f"{day}/day_15m.png"]})
     (d / "manifest.json").write_text(json.dumps({"run_id": "k10_run1", "title": "K-10", "items": items}, ensure_ascii=False),

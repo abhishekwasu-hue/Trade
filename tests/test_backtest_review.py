@@ -22,6 +22,12 @@ from elliott.data_policy import HoldoutError
     ({"why_no_entry": ["⛔ [K3] count स्पष्ट: A-end / B च्या आत ⇒ pullback संपलेला नाही"]}, ["VETO_A_END"]),
     ({"why_no_entry": ["grade C (31)"]}, ["GRADE_C"]),
     ({"side_unclear": ["Elliott vote विरुद्ध (D1)"], "why_no_entry": ["grade C (40)"]}, ["SIDE_UNCLEAR", "GRADE_C"]),
+    ({"why_no_entry": ["GAP_NO_PULLBACK — trade दिशेचा gap", "FAR_FROM_ZONE — entry zone S1 पासून 4.0 MR"]},
+     ["GAP_NO_PULLBACK", "FAR_FROM_ZONE"]),
+    ({"why_no_entry": ["NO_ZONE — trade बाजूचा selling zone नाही"]}, ["NO_ZONE"]),
+    ({"why_no_entry": ["NO_CONFIRMATION — zone S1 वर 3 candles", "DUP_SETUP — याच correction वर 12:15 ला entry"]},
+     ["NO_CONFIRMATION", "DUP_SETUP"]),
+    ({"why_no_entry": ["CHECKLIST_INCOMPLETE — बाबी [7] रिकाम्या"]}, ["CHECKLIST_INCOMPLETE"]),
     ({"why_no_entry": ["काहीतरी नवीन"]}, ["OTHER"]),
     ({}, ["OTHER"]),
 ])

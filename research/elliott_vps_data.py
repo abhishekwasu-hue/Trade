@@ -10,6 +10,8 @@ Upstox डेटा public repo मध्ये push करायचा ना�
     probe-expired   Upstox expired-options API (Upstox Plus) तुमच्या account वर चालतो का + किती जुना डेटा
     golden          NIFTY 1m, 2026-07-01 → 2026-10-08 (golden-file; हा काळ "contaminated", अंतिम holdout मधूनही वगळला; 7–8 Oct = Chart Reader golden story).
                     बाजार बंद (15:30 IST) झाल्यानंतरच चालवा; अपूर्ण/गहाळ दिवस असतील तर ⚠️ आणि non-zero.
+    illustration    NIFTY 1m, 2026-10-09 → शेवटचा बंद झालेला दिवस (Abhi 2026-10-09: "illustration" वर्ग — फक्त annotation /
+                    vision तपासणी, purpose="annotation"; backtest / IS / VAL साठी नाही). upstox/NIFTY_1m_illustration_<start>_<end>.csv.gz
     major-levels    Major Level engine चे candles (research/major_levels_eval.py export) — public repo ऐवजी इथे; NSE index
                     candles मधून sealed holdout आपोआप काढतो (फक्त golden काळ + IS/VAL राहतो)
     bhavcopy        NSE F&O bhavcopy (NIFTY options + futures). IS/VAL → nse_fo_bhavcopy/NIFTY/, golden काळ →
@@ -186,6 +188,47 @@ def golden(repo, token=None, fetch=None, now=None):
     return p if complete else False
 
 
+def last_closed_day(now=None):
+    """शेवटचा बंद झालेला NSE दिवस: आज 15:35 IST नंतर ⇒ आज, नाहीतर मागचा (weekday − NSE सुट्ट्या)."""
+    import config
+    hol = getattr(config, "NSE_HOLIDAYS_2026", set())
+    now = now or ist_now()
+    d = now.date() if now.time() >= dt.time(15, 35) else now.date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d in hol:
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def illustration(repo, token=None, fetch=None, now=None):
+    """NIFTY index 1m — ILLUSTRATION काळ (CONTAMINATED नंतर ⇒ शेवटचा बंद दिवस). फक्त purpose='annotation'."""
+    start, end = DP.ILLUSTRATION_START.date(), last_closed_day(now)
+    if end < start:
+        print("❌ illustration: अजून एकही बंद झालेला illustration दिवस नाही")
+        return None
+    DP.check_range(start, end, "annotation")
+    if fetch is None:
+        from upstox_api import fetch_candles_date_range_by_instrument_key as fetch
+    tok = _token(token)
+    if not tok:
+        print("❌ illustration: Upstox token नाही")
+        return None
+    df = fetch(tok, NIFTY_KEY, "1minute", start, end)
+    if df is None or len(df) == 0:
+        print("❌ illustration: candles मिळाले नाहीत")
+        return None
+    d = _naive_ist(df[["timestamp", "open", "high", "low", "close"]])
+    d = DP.filter_allowed(d.sort_values("timestamp").drop_duplicates("timestamp"), "annotation")
+    d = d[(d["timestamp"] >= DP.ILLUSTRATION_START) & (d["timestamp"] < pd.Timestamp(end) + pd.Timedelta(days=1))]
+    os.makedirs(os.path.join(repo, "upstox"), exist_ok=True)
+    p = os.path.join(repo, "upstox", f"NIFTY_1m_illustration_{start}_{end}.csv.gz")
+    d.to_csv(p, index=False)
+    per_day = d.groupby(d["timestamp"].dt.date).size()
+    short = list(per_day[per_day < 370].index)
+    print(f"{'✅' if not short else '⚠️'} illustration: {len(d)} 1m candles, {len(per_day)} दिवस, {d['timestamp'].min()} → "
+          f"{d['timestamp'].max()}" + (f"; अपूर्ण दिवस {len(short)}: {', '.join(map(str, short[:6]))}" if short else ""))
+    return p if not short else False
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 def golden_filtered_fetch(fetch):
     """Index candles मधून sealed holdout काढणारा wrapper (फक्त IS/VAL + golden काळ राहतो)."""
@@ -334,7 +377,7 @@ def _flush(base, by_month):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", required=True, help="private trade-data repo चा checkout (उदा. /root/trade-data)")
-    ap.add_argument("cmd", choices=["probe-expired", "golden", "major-levels", "bhavcopy", "all"])
+    ap.add_argument("cmd", choices=["probe-expired", "golden", "illustration", "major-levels", "bhavcopy", "all"])
     ap.add_argument("--max-days", type=int, default=None, help="bhavcopy: प्रत्येक श्रेणीत फक्त इतके दिवस (चाचणीसाठी)")
     a = ap.parse_args(argv)
     try:
@@ -351,6 +394,8 @@ def main(argv=None):
                 ok = probe_expired(a.repo).get("expiries_status") is not None      # API "नाही" हा सुद्धा वैध निकाल
             elif st == "golden":
                 ok = bool(golden(a.repo))
+            elif st == "illustration":
+                ok = bool(illustration(a.repo))
             elif st == "major-levels":
                 ok = major_levels(a.repo)
             else:

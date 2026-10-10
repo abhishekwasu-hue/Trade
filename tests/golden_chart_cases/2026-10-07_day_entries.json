@@ -1,0 +1,46 @@
+{
+  "id": "2026-10-07_simple_core",
+  "source": "Abhi 2026-10-08 (Simple Core: trend + area + pause + commitment; tuning नाही); पक्का Abhi ✔ 2026-10-09 (run2 review): 12:15 = C-end, bear call",
+  "data": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
+  "data_policy": "contaminated — regression only, no tuning",
+  "simple_core_day": {
+    "date": "2026-10-07",
+    "from": "09:15",
+    "to": "15:15",
+    "signals": {
+      "12:15": -1
+    },
+    "no_signal": [
+      "09:30",
+      "11:00",
+      "12:00"
+    ],
+    "pause_from_max": "11:15",
+    "area_contains": [
+      22700,
+      22725
+    ],
+    "same_trendline": {
+      "at": [
+        "09:30",
+        "12:15"
+      ],
+      "id": "TL-R2609281215",
+      "anchors_near": [
+        [
+          "2026-09-28",
+          22850
+        ],
+        [
+          "2026-09-30",
+          22809
+        ],
+        [
+          "2026-10-06",
+          22732
+        ]
+      ]
+    }
+  },
+  "notes": "09:30 ⇒ signal नाही (area वर नाही); 11:00–12:00 ⇒ seller area (trendline + swing high 22,700–22,730) वर pause; 12:15 ⇒ commitment ⇒ ENTRY SIGNAL. 12:45 ⇒ DUP_SETUP. SL / target execution settings वर."
+}

@@ -7,6 +7,7 @@
   Caption = "🔎 {title} {unit (default दिवस)} n/N · date" + reading. Images = एक media group (caption पहिल्या image वर).
   Sent log (VPS local JSON, `REVIEW_TG_SENT_PATH`, default data/review_tg_sent.json): {run_id|item: {message_ids, date, item, run_id}} —
   आधी पाठवलेलं पुन्हा नाही; listener (vision/telegram_bot) reply चा message_id इथून ओळखतो.
+  Item मध्ये "caption" असेल तर तोच (vision_test); "kind" sent log मध्ये ⇒ reply त्याच प्रकाराने नोंद.
   Reply (फक्त approver): "✔ …" ⇒ OK · "✘ कारण" ⇒ WRONG · "?" ⇒ UNCLEAR · "सुटलेला trade 13:30 bear" ⇒ missed (verdict नसेल तर WRONG).
   नोंद = `backtest_review` (item_id = manifest item, item_type day / trade, review_date, verdict, reason, missed_trade, settings_hash = run)
   ⇒ bot "नोंद ✓". Telegram चुका: 429 ⇒ retry_after थांबून तेच पुन्हा; 400 / 413 (size / dims) ⇒ लहान करून एकदा; network ⇒ पुन्हा नाही
@@ -50,11 +51,27 @@ def load_manifest(run_dir):
         missing = [f for f in it["files"] if not os.path.exists(os.path.join(run_dir, f))]
         if missing:
             raise ValueError(f"item {i} ({it['date']}): files नाहीत {missing}")
+        digests = [_sha(os.path.join(run_dir, f)) for f in it["files"]]
+        if len(set(it["files"])) != len(it["files"]) or len(set(digests)) != len(digests):
+            raise ValueError(f"item {i} ({it['date']}): album मध्ये एकच chart दोनदा — पाठवत नाही")
         it.setdefault("n", i + 1)
     return m
 
 
+def _sha(path):
+    import hashlib
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()[:16]
+
+
+def _kind(b):
+    """bytes ⇒ (extension, mime): shrink नंतर JPEG असतो."""
+    return ("jpg", "image/jpeg") if b[:3] == b"\xff\xd8\xff" else ("png", "image/png")
+
+
 def caption(m, it):
+    if it.get("caption"):                                                   # item चा स्वतःचा caption (उदा. vision_test) — तसाच
+        return str(it["caption"])[:MAX_CAPTION]
     return (f"🔎 {m['title']} {m.get('unit') or 'दिवस'} {it['n']}/{len(m['items'])} · {it['date']}\n{str(it['reading'])[:MAX_READING]}\n"
             "Reply: ✔ / ✘ कारण / सुटलेला trade HH:MM bear|bull")
 
@@ -131,11 +148,12 @@ def raw_call(creds):
 def _media_group(call, chat_id, imgs, cap):
     """रिटर्न (message_ids | None, Telegram JSON | None)."""
     if len(imgs) == 1:
-        j = call("sendPhoto", {"chat_id": chat_id, "caption": cap}, {"photo": ("a.png", imgs[0], "image/png")}, timeout=90)
+        ext, mime = _kind(imgs[0])
+        j = call("sendPhoto", {"chat_id": chat_id, "caption": cap}, {"photo": (f"a.{ext}", imgs[0], mime)}, timeout=90)
         return ([j["result"]["message_id"]] if j and j.get("ok") else None), j
     media = [{"type": "photo", "media": f"attach://img{i}"} for i in range(len(imgs))]
     media[0]["caption"] = cap
-    files = {f"img{i}": (f"img{i}.png", b, "image/png") for i, b in enumerate(imgs)}
+    files = {f"img{i}": (f"img{i}.{_kind(b)[0]}", b, _kind(b)[1]) for i, b in enumerate(imgs)}
     j = call("sendMediaGroup", {"chat_id": chat_id, "media": json.dumps(media)}, files, timeout=120)
     return ([r["message_id"] for r in j["result"]] if j and j.get("ok") else None), j
 
@@ -158,6 +176,33 @@ def _send_item(call, cid, imgs, cap, sleep, max_429=3):
             continue
         return None, f"Telegram {code}: {str(j.get('description'))[:120]}"
     return None, "429 वारंवार"
+
+
+def send_document(path, cap, run_key, call=None, creds=None, sent=None):
+    """एक file (उदा. PDF अहवाल) Telegram document म्हणून — एकदाच (sent log key `run_key|doc:<नाव>`). रिटर्न "sent" / "skipped" / कारण."""
+    if creds is None:
+        from vision import tg as TG
+        creds = TG._creds
+    tok, cid = creds()
+    if not tok or not cid:
+        raise NoCredentials("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID .env मध्ये नाहीत — काहीच पाठवलं नाही")
+    call = call or raw_call(creds)
+    log = load_sent(sent, strict=True)
+    k = key(run_key, f"doc:{os.path.basename(path)}")
+    if k in log:
+        return "skipped"
+    with open(path, "rb") as fh:
+        j = call("sendDocument", {"chat_id": cid, "caption": cap[:1024]}, {"document": (os.path.basename(path), fh.read(), "application/pdf")},
+                 timeout=180)
+    if j is None:                                                           # network: पोचलं का अनिश्चित ⇒ पुन्हा पाठवायचं नाही (duplicate टाळा)
+        log[k] = {"run": run_key, "item": f"doc:{os.path.basename(path)}", "message_ids": [], "kind": "document", "uncertain": True}
+        _save_sent(log, sent)
+        return "network (अनिश्चित — पुन्हा पाठवत नाही; sent log मधून नोंद काढल्यासच पुन्हा)"
+    if not j.get("ok"):
+        return f"Telegram {j.get('error_code')}"
+    log[k] = {"run": run_key, "item": f"doc:{os.path.basename(path)}", "message_ids": [j["result"]["message_id"]], "kind": "document"}
+    _save_sent(log, sent)
+    return "sent"
 
 
 def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None):
@@ -190,7 +235,8 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
         if ids is None:
             out["failed"].append((it["date"], why))
         else:
-            log[k] = {"run": run_key, "item": it["item"], "date": it["date"], "message_ids": ids}
+            log[k] = {"run": run_key, "item": it["item"], "date": it["date"], "message_ids": ids, "kind": it.get("kind"),
+                      "files": it["files"], "sha": [_sha(os.path.join(run_dir, f)) for f in it["files"]]}
             _save_sent(log, sent)
             out["sent"] += 1
         sleep(pause_s)                                                      # rate limit: संदेशांमध्ये विराम
@@ -249,7 +295,7 @@ def handle_reply(msg, authorized, save=None, send=None, sent=None):
     if not rt:
         return False, "not_reply"
     rec = lookup_message(rt.get("message_id"), sent)
-    if rec is None:
+    if rec is None or rec.get("kind") == "document":                       # PDF अहवाल ⇒ review item नाही (✔ / ✘ albums वर)
         return False, "not_review"
     if not authorized(msg.get("from"), msg.get("chat")):
         return False, "unauthorized"
@@ -261,7 +307,7 @@ def handle_reply(msg, authorized, save=None, send=None, sent=None):
     if save is None:
         from . import store as ST
         save = ST.save_review
-    kind = "trade" if "trade:" in rec["item"] else "day"
+    kind = rec.get("kind") or ("trade" if "trade:" in rec["item"] else "day")     # vision_test ⇒ स्वतंत्र प्रकार (मोजमापात वेगळा)
     ok = save(rec["item"], rec["date"], kind, p["verdict"], p["reason"], p["missed"] if kind == "day" else None, rec.get("run"))
     if send:
         send(f"नोंद ✓ {rec['date']} · {p['verdict']}" + (f" · सुटलेला {p['missed']['time']} {p['missed']['side']}" if p["missed"] else "")

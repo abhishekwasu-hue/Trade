@@ -82,8 +82,9 @@ GMARK = {"GOLDEN": "⭐", "OK": "✔", "WRONG": "✘"}
 
 
 def gallery_groups(index):
-    """gallery_index.json ⇒ {G: [examples]} (G1–G6 क्रमाने)."""
-    out = {g: [] for g in ("G1", "G2", "G3", "G4", "G5", "G6")}
+    """gallery_index.json ⇒ {G: [examples]} (G1–G9 क्रमाने)."""
+    from backtest_review import gallery as GL
+    out = {g: [] for g in GL.SETUPS}
     for e in index.get("examples", []):
         out.setdefault(e["setup"], []).append(e)
     return out
@@ -100,8 +101,8 @@ def render_gallery(base=GALLERY_DIR):
     ex = index.get("examples", [])
     st.metric("निवड", f"{sum(e['id'] in rev for e in ex)}/{len(ex)} तपासले · ⭐ {sum((rev.get(e['id']) or {}).get('verdict') == 'GOLDEN' for e in ex)}",
               help=f"सापडलेले: {index.get('counts')}")
-    names = {"G1": "zigzag / ABC end", "G2": "expanded flat spring", "G3": "triangle E-end", "G4": "role flip retest",
-             "G5": "ending diagonal C + trendline", "G6": "simple pullback on demand"}
+    from backtest_review import gallery as GL
+    names = dict(GL.SETUPS)
     for g, items in gallery_groups(index).items():
         with st.expander(f"{g} · {names.get(g, '')} ({len(items)})"):
             for e in items:
@@ -115,7 +116,7 @@ def render_gallery(base=GALLERY_DIR):
                     v = st.radio("निकाल", ["GOLDEN", "OK", "WRONG"], horizontal=True,
                                  index=["GOLDEN", "OK", "WRONG"].index(cur.get("verdict", "OK")),
                                  format_func=lambda x: {"GOLDEN": "⭐ golden", "OK": "✔ ठीक", "WRONG": "✘ चुकीचं ओळखलं"}[x])
-                    cs = st.selectbox("हा वेगळा G आहे?", ["—", "G1", "G2", "G3", "G4", "G5", "G6", "none"])
+                    cs = st.selectbox("हा वेगळा G आहे?", ["—"] + [f"G{i}" for i in range(1, 10)] + ["none"])
                     reason = st.text_area("कारण", value=cur.get("reason") or "", height=70)
                     if st.form_submit_button("जतन करा"):
                         try:
@@ -127,7 +128,9 @@ def render_gallery(base=GALLERY_DIR):
 
 def render():
     st.title("🔎 Backtest Review")
-    tab_days, tab_gal = st.tabs(["दिवस / trades", "⭐ Golden Gallery"])
+    tab_days, tab_gal, tab_exec = st.tabs(["दिवस / trades", "⭐ Golden Gallery", "⚙ Simple Core execution settings"])
+    with tab_exec:
+        render_exec_settings()
     with tab_gal:
         render_gallery()
     with tab_days:
@@ -170,3 +173,64 @@ def render_days():
         for kname in ("1h", "15m", "hind"):
             _img(run, d["date"], t["pngs"].get(kname))
         review_form(t["item_id"], d["date"], "trade", reviews, index.get("settings_hash"), f"tr-{run}-{t['item_id']}")
+
+
+EXEC_HELP = {
+    "sl_mode": "SL कुठे: structural_invalidation (area / pause चं टोक) · commitment_extreme · fixed_points · percent · none",
+    "target_mode": "Target: next_opposite_area · impulse_end · r_multiple (× risk) · premium_pct (option premium) · none",
+    "instrument": "credit_spread / futures / naked_buy / naked_sell",
+    "strike_mode": "offset_points (trigger ± value) · beyond_sl_points (SL ± value) · sigma (trigger ± value × σ)",
+}
+
+
+def exec_form_values(prev, choose):
+    """फॉर्मचे values (Streamlit बाहेर test करता येतं): choose(field, options_or_kind, current) ⇒ value / None. None ⇒ निवडलेलं नाही."""
+    from simple_core import settings as SS
+    out = {}
+    for k, kind in SS.EXEC_FIELDS.items():
+        v = choose(k, kind, prev.get(k))
+        if v is not None and v != "":
+            out[k] = v
+    return out
+
+
+def render_exec_settings():
+    """प्रति profile execution settings (Abhi 2026-10-08): engine काहीच गृहीत धरत नाही — इथे निवडलं नसेल तर trade नाही."""
+    import streamlit as st
+    from simple_core import settings as SS
+    st.caption("Simple Core फक्त ENTRY SIGNAL देतो (area + pause + commitment). SL / target / R:R / instrument / strike / lots / expiry "
+               "इथून. काही निवडलं नसेल ⇒ trade नाही, स्पष्ट संदेशासह. PAPER फक्त.")
+    profs = SS.load_profiles()
+    name = st.text_input("Profile (bot / backtest)", value=next(iter(profs), SS.PAPER_PROFILE), key="sc_prof")
+    prev = SS.load_profile(name)                                       # paper_core store मध्ये नसेल ⇒ Abhi चे PAPER मूल्य (23:48)
+    if name == SS.PAPER_PROFILE and name not in profs:
+        st.info("PAPER profile: Abhi चे निर्णय (target_mode impulse_end, g9_tier full, SL structural + 0.25 MR, R:R ≥ 3) — Save केल्यावर store "
+                "मध्ये. Instrument / strike / lots निवडा. LIVE ला लागू नाही.")
+
+    def choose(k, kind, cur):
+        lab = f"{k}" + (f" — {EXEC_HELP[k]}" if k in EXEC_HELP else "")
+        if isinstance(kind, tuple):
+            opts = ["(निवडलेलं नाही)"] + list(kind)
+            v = st.selectbox(lab, opts, index=opts.index(cur) if cur in opts else 0, key=f"sc_{name}_{k}")
+            return None if v == "(निवडलेलं नाही)" else v
+        if kind == "bool":
+            v = st.selectbox(lab, ["(निवडलेलं नाही)", "on", "off"], index={True: 1, False: 2}.get(cur, 0), key=f"sc_{name}_{k}")
+            return None if v.startswith("(") else v == "on"
+        if kind == "number":
+            v = st.text_input(lab, value="" if cur is None else str(cur), key=f"sc_{name}_{k}")
+            try:
+                return float(v) if v.strip() else None
+            except ValueError:
+                st.error(f"{k}: '{v}' हा आकडा नाही — निवडलेलं नाही असं धरलं")
+                return None
+        return st.text_input(lab, value=cur or "", key=f"sc_{name}_{k}") or None
+    with st.form(f"sc_form_{name}"):
+        vals = exec_form_values(prev, choose)
+        ok = st.form_submit_button("Save")
+    if ok:
+        try:
+            h = SS.save_profile(name, vals)
+            st.success(f"Saved · settings hash {h}")
+        except ValueError as exc:
+            st.error(str(exc))
+    st.write(f"सध्याचा hash: `{SS.settings_hash(prev)}` · निवडलेले: {', '.join(sorted(prev)) or '—'}")

@@ -54,3 +54,39 @@ def test_major_zones_only_degree2_inside_impulse_and_not_bad():
     horiz = [{"low": 120, "high": 122, "degree": 2, "state": "ACTIVE"}, {"low": 130, "high": 132, "degree": 1, "state": "ACTIVE"},
              {"low": 140, "high": 142, "degree": 3, "state": "MAGNET"}, {"low": 170, "high": 172, "degree": 2, "state": "ACTIVE"}]
     assert EV.major_zones(horiz, st) == [(120.0, 122.0)] and EV.major_zones(horiz, {"impulse": None}) == []
+
+
+def _first_sided(m1):
+    for asof in pd.date_range("2021-02-22 10:00", "2021-02-24 15:00", freq="15min"):
+        if asof.hour < 9 or asof.hour > 15:
+            continue
+        r = EV.evaluate(m1, "srv2", asof, s=CS.load(), run_elliott=False)
+        if r["side"]:
+            return asof, r
+    return None, None
+
+
+def test_f4_side_unclear_is_a_code_mode_gate(monkeypatch):
+    """Abhi 2026-10-08 (c): F4 विरोध (market_state side "unclear") ⇒ code-mode entry नाही (SIDE_UNCLEAR); f4_gate OFF ⇒ फक्त नोंद."""
+    import market_state as MSM
+    m1 = synth_1m()
+    real = MSM.read
+
+    def unclear(*a, **k):
+        ms = real(*a, **k)
+        return {**ms, "side": "unclear", "side_reasons": ["HTF trend विरुद्ध (test)"]}
+    monkeypatch.setattr(EV.MS, "read", unclear)
+    asof, r = _first_sided(m1)
+    assert asof is not None
+    assert any(w.startswith("SIDE_UNCLEAR") for w in r["why_no_entry"]) and not r["entry"]
+    r2 = EV.evaluate(m1, "srv2", asof, s={**CS.load(), "f4_gate": False}, run_elliott=False)
+    assert not any(w.startswith("SIDE_UNCLEAR") for w in r2["why_no_entry"]) and r2.get("side_unclear")
+
+
+def test_shadow_engine_fills_23_item_checklist():
+    """जड chart_reader (shadow): प्रत्येक बाजू असलेल्या candidate वर 23 बाबी भरलेल्या (context; entry ठरवत नाहीत)."""
+    m1 = synth_1m()
+    for asof in pd.date_range("2021-02-23 10:00", "2021-02-23 15:00", freq="30min"):
+        r = EV.evaluate(m1, "srv2", asof, s=CS.load(), run_elliott=False)
+        if r["side"]:
+            assert len(r["checklist"]) == 23 and all(x["value"] for x in r["checklist"])

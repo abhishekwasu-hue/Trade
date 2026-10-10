@@ -76,8 +76,30 @@ DEFAULTS = {
     "vx_jump_pct": 5.0,
     "w_vx_falling": 2.0,               # VX: VIX घटतोय (≤ vx_fall_pct %)
     "vx_fall_pct": -2.0,
-    "gap_b_classes": ["G3", "G5"],     # A3 व्हेटो: trend सोबत मोठा gap (setup B) — आज pullback आलाच नाही ⇒ entry नाही
-    "gap_pb_min_mr": 1.0,              # "pullback आला" = आजच्या running extreme पासून ≥ हे × MR मागे
+    # ---- gap नियम (K13; TRADE_KB_FULL_IMPLEMENTATION_PROMPT §4 / §8.1): trade दिशेचा कुठलाही gap ⇒ पहिला pullback हवा ----
+    "gap_pb_min_mr": 1.0,              # "pullback आला" = running टोकापासून ≥ हे × MR उलट …
+    "gap_pb_tol_mr": 0.3,              # … आणि gap edge (open) / PDC / trade बाजूचा zone पासून ≤ हे × MR पर्यंत
+    "gap_story_bars": 8,               # गोष्ट: आदल्या दिवसाची शेवटची चाल = शेवटचे इतके bars
+    "gap_story_weak_er": 0.4,          # … efficiency < हे ⇒ कमकुवत
+    "gap_story_min_mr": 1.5,           # … |चाल| < हे × MR ⇒ बाजूला
+    "gap_setup_g7": True,              # §4A G7 exhaustion gap reversal (PAPER ON, स्वतंत्र scorecard; entry वर परिणाम नाही)
+    "g7_min_degree": 2,                # G7: major HTF zone = degree ≥ हे
+    "g7_zone_tol_mr": 0.3,
+    "g7_reject_bars": 6,               # rejection पहिल्या 2–6 bars मध्ये
+    "g7_wick_min": 0.4,
+    "g7_rev_cl": 0.6,
+    "g7_inv_buffer_mr": 0.25,
+    # ---- zones (§2) आणि zone entry (§3) ----
+    "zone_entry_tol_mr": 0.3,          # reversal composite zone च्या आत किंवा ≤ हे × MR (नाहीतर FAR_FROM_ZONE)
+    "f4_gate": True,                   # Abhi 2026-10-08 (c): code-mode मध्ये F4 side unclear ⇒ entry नाही (SIDE_UNCLEAR)
+    "zone_break_buffer_mr": 0.25,      # zone real break: close पलीकडे हे × MR
+    "zone_reaction_bars": 8,           # reaction ताकद: touch नंतरचे इतके bars
+    "zone_worn_tests": 3,              # ≥ इतके tests ⇒ worn
+    # ---- candle-by-candle (§5) ----
+    "cs_absorption_ratio": 3.0,        # effort (Σ range) ÷ result (|net|) ≥ हे ⇒ absorption
+    "cs_absorption_min_mr": 1.2,
+    "cs_wick_tag": 0.4,
+    "cs_tired_min": 3,                 # leg मालिकेत इतक्या खुणा ⇒ "थकतोय"
     # ---- grade ----
     "grade_a_min": 60.0,
     "grade_b_min": 45.0,
@@ -116,6 +138,8 @@ DEFAULTS = {
     "tl_max_slope_mr": 0.5,
     "tl_search_pivots": 16,            # K6.1 शोध: शेवटच्या इतक्या आतल्या swings मधल्या जोड्या (C-V1)
     "tl_search_bars": 200,             # … आणि फक्त शेवटच्या इतक्या bars मधले (15M ⇒ 8 sessions)
+    "tl_switch_touches": 2,            # (b) memory: नवी रेषा फक्त जुनीपेक्षा ≥ इतके जास्त touches आणि ताजा touch असेल तर (नाहीतर जुनी कायम)
+    "tl_max_lines": 3,                 # §8.4: प्रति role इतक्या valid रेषा (anchors स्थिर) — दर bar ला एकच "सर्वोत्तम" बदलत नाही
     "active_extreme_bars": 12,         # K6.4: active area = ताजे bars + शेवटच्या इतक्या bars मधलं trade-विरुद्ध टोक (C-V1)            # K6.1: |slope| ≤ हे × MR प्रति bar
     "disp_single_mr": 2.5,             # K4: एकच displacement candle ≥ हे × MR
     "base_max_range_mr": 0.8,          # K4: base candle range ≤ हे × MR

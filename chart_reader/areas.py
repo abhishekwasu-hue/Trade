@@ -30,19 +30,20 @@ def _role(lo, hi, price):
 # f: sloping trendline (K6.1)
 # ---------------------------------------------------------------------------------------------------------------------
 def _line_state(d, a_bar, a_px, slope, role, mr, s, start):
-    c, h, lo = (d[k].to_numpy(float) for k in ("close", "high", "low"))
-    buf = s["origin_break_buffer_mr"] * mr
-    state = "ACTIVE"
-    for j in range(start, len(c)):
-        v = a_px + slope * (j - a_bar)
-        beyond = c[j] > v + buf if role == "RESISTANCE" else c[j] < v - buf
-        if beyond and j + 1 < len(c):
-            v1 = a_px + slope * (j + 1 - a_bar)
-            if (c[j + 1] > v1) if role == "RESISTANCE" else (c[j + 1] < v1):
-                return "BROKEN"                                           # real break: buffer पलीकडे close + पुढचा bar reclaim नाही
-        if (h[j] >= v if role == "RESISTANCE" else lo[j] <= v) and state == "ACTIVE":
-            state = "TESTED"
-    return state
+    """Trendline state: real break **elliott/breaks.py::first_real_break** ने (भाग G: real break ची एकच व्याख्या) — तिरक्या रेषेसाठी
+    OHLC मधून रेषेचं मूल्य वजा करून (detrend) level 0 वर. नाहीतर touch ⇒ TESTED, अन्यथा ACTIVE."""
+    from elliott import breaks as BRK
+    from elliott import settings as ESET
+    n = len(d)
+    if start >= n:
+        return "ACTIVE"
+    line = a_px + slope * (np.arange(n) - a_bar)
+    det = pd.DataFrame({k: d[k].to_numpy(float) - line for k in ("open", "high", "low", "close")})
+    side = "above" if role == "RESISTANCE" else "below"
+    if BRK.first_real_break(det, int(start), 0.0, side, dict(ESET.DEFAULTS)) is not None:
+        return "BROKEN"
+    touch = (det["high"].to_numpy()[start:] >= 0) if role == "RESISTANCE" else (det["low"].to_numpy()[start:] <= 0)
+    return "TESTED" if touch.any() else "ACTIVE"
 
 
 def _line_from(d, pts, a, b, kind, role, s, mr):
@@ -64,16 +65,33 @@ def _line_from(d, pts, a, b, kind, role, s, mr):
             "slope": float(slope), "touches": int(len(on)), "valid": bool(valid), "value": float(v), "low": lo, "high": hi,
             "state": _line_state(d, a[0], a[1], slope, role, mr, s, last_touch + 1),
             "anchors": [(str(ts.iloc[p[0]]), round(p[1], 2)) for p in on], "last_touch": int(last_touch),
+            "touch_bars": [int(p[0]) for p in on],
+            "pair": [(str(ts.iloc[a[0]]), round(a[1], 2)), (str(ts.iloc[b[0]]), round(b[1], 2))],   # रेषा आखणारी जोडी (स्थिर ओळख)
+            "bar": int(sorted(p[0] for p in on)[2]) if len(on) >= 3 else int(last_touch),   # "जन्म" = 3रा touch (story no-lookahead)
             "quality": 0.8 if valid else 0.3}
 
 
-def sloping(df, s, mr, upto=None):
+def _rebuild(d, inner, kind, role, anchors, s, mr):
+    """Memory मधली रेषा (पहिले दोन anchors) त्याच pivots वरून पुन्हा: touches नव्याने (नवीन touch त्याच रेषेत). Pivots सापडले नाहीत ⇒ None."""
+    ts = [str(t) for t in d["timestamp"]]
+    pts = [p for p in inner if p[2] == kind]
+    a = next((p for p in pts if ts[p[0]] == str(anchors[0][0])), None)
+    b = next((p for p in pts if ts[p[0]] == str(anchors[1][0])), None)
+    if a is None or b is None or b[0] <= a[0]:
+        return None
+    return _line_from(d, [p for p in pts if p[0] >= a[0]], a, b, kind, role, s, mr)
+
+
+def sloping(df, s, mr, upto=None, keep=None):
     """K6.1 sloping trendlines. (1) शेवटचे 3 confirmed swing highs / lows ⇒ candidate रेषा **नेहमी** (≥ 3 pivots असताना).
     (2) शोध (C-V1, 7 Oct उतरती रेषा 28 Sep / 30 Sep / 7 Oct सुटली होती): शेवटच्या tl_search_pivots swings (आतले pivots, ATR ×
         internal_atr_mult) मधल्या प्रत्येक जोडीतून रेषा; valid ⇒ सर्वाधिक touches, मग trade-degree swings वरचे touches जास्त, मग
         सर्वात ताजा touch — प्रति role एक.
     valid (गुण मिळतात) फक्त: ≥ 3 touches (± tl_touch_mr × MR), पहिल्या anchor पासून शेवटच्या touch पर्यंत कुठलाही close रेषेपलीकडे >
-    tl_close_beyond_mr × MR नाही, touches ≥ tl_min_spacing bars दूर, |slope| ≤ tl_max_slope_mr × MR प्रति bar. Anchor wicks वर, break closes वर."""
+    tl_close_beyond_mr × MR नाही, touches ≥ tl_min_spacing bars दूर, |slope| ≤ tl_max_slope_mr × MR प्रति bar. Anchor wicks वर, break closes वर.
+    keep (Abhi 2026-10-08 (b), स्थिर ओळख): {role: [anchor0, anchor1]} — memory मधली रेषा कायम (नवीन touches त्याच रेषेत); बदल फक्त
+        (1) real break (breaks.py) किंवा (2) दुसरी रेषा स्पष्ट जास्त महत्त्वाची: touches ≥ जुनी + tl_switch_touches आणि ताजा touch.
+        प्रति role एकच रेषा, कारण `tl_reason` मध्ये. keep = None ⇒ memory नाही (stateless): सर्वोत्तम tl_max_lines रेषा."""
     d = (df if upto is None else df.iloc[: upto + 1]).reset_index(drop=True)
     if len(d) < 10 or not mr:
         return []
@@ -86,7 +104,7 @@ def sloping(df, s, mr, upto=None):
             out.append(_line_from(d, pts, pts[0], pts[-1], kind, role, s, mr))
         cand = [p for p in inner if p[2] == kind and p[0] >= len(d) - int(s["tl_search_bars"])][-int(s["tl_search_pivots"]):]
         major_pts = {(str(d["timestamp"].iloc[p[0]]), round(p[1], 2)) for p in piv if p[2] == kind}
-        best = None
+        best = []
         for i in range(len(cand)):
             for k in range(i + 1, len(cand)):
                 ln = _line_from(d, cand, cand[i], cand[k], kind, role, s, mr)
@@ -94,10 +112,32 @@ def sloping(df, s, mr, upto=None):
                     continue
                 major = sum(1 for an in ln["anchors"] if an in major_pts)      # trade-degree swings वरचे touches जास्त वजनाचे (K1)
                 key = (ln["touches"], major, ln["last_touch"], -abs(ln["slope"]))
-                if best is None or key > best[0]:
-                    best = (key, ln)
-        if best is not None and all(best[1]["anchors"] != x["anchors"] for x in out):
-            out.append(best[1])
+                best.append((key, ln))
+        if keep is not None:                                               # memory mode: प्रति role एकच, स्थिर रेषा
+            top = max(best, key=lambda kv: kv[0])[1] if best else None
+            old = _rebuild(d, inner, kind, role, keep[role], s, mr) if keep.get(role) else None
+            if old is not None and old["valid"] and old["state"] != "BROKEN":
+                if (top is not None and top["pair"] != old["pair"]
+                        and top["touches"] >= old["touches"] + int(s.get("tl_switch_touches", 2)) and top["last_touch"] > old["last_touch"]):
+                    out.append({**top, "tl_reason": f"बदल: {top['id']} स्पष्ट जास्त महत्त्वाची ({top['touches']} वि. {old['touches']} touches, "
+                                                    f"ताजा touch) — {old['id']} सोडली"})
+                else:
+                    out.append({**old, "tl_reason": f"कायम: {old['id']} ({old['touches']} touches)"})
+            elif top is not None:
+                why = ("real break ⇒ " if old is not None and old["state"] == "BROKEN" else
+                       "जुनी रेषा अवैध / सापडली नाही ⇒ " if keep.get(role) else "पहिली निवड: ")
+                out.append({**top, "tl_reason": why + top["id"]})
+            continue
+        # stateless: फक्त एक "सर्वोत्तम" रेषा दर bar ला बदलू शकते ⇒ सर्वोत्तम tl_max_lines valid रेषा (anchors नुसार वेगळ्या) zones म्हणून;
+        # प्रत्येक रेषेची ओळख (anchors) स्थिर; बाजार ज्याला react करतोय ती active (areas.active).
+        seen = [x["anchors"][:2] for x in out]
+        for _, ln in sorted(best, key=lambda kv: kv[0], reverse=True):
+            if sum(1 for x in out if x.get("role") == role) >= int(s.get("tl_max_lines", 3)) + 1:
+                break
+            if ln["anchors"][:2] in seen or any(set(ln["anchors"]) <= set(x["anchors"]) for x in out):
+                continue
+            seen.append(ln["anchors"][:2])
+            out.append(ln)
     return out
 
 
@@ -134,7 +174,8 @@ def base_zones(df, s, mr, lookback=120, keep=3):
                 zlo, zhi = float(np.minimum(o[base], c[base]).min()), float(h[base].max())
             if zhi - zlo <= s["base_max_height_mr"] * mr:
                 out.append({"id": f"BASE-{'D' if dirn > 0 else 'S'}{d['timestamp'].iloc[base[-1]]:%y%m%d%H%M}", "tool": "c", "kind": "solid",
-                            "low": zlo, "high": zhi, "role": "SUPPORT" if dirn > 0 else "RESISTANCE", "state": "ACTIVE", "quality": 0.8})
+                            "low": zlo, "high": zhi, "role": "SUPPORT" if dirn > 0 else "RESISTANCE", "state": "ACTIVE", "quality": 0.8,
+                            "bar": int(end)})                       # जन्म = displacement चा शेवट (zones.py lifecycle इथून)
         i = end + 1
     return out[-keep:]
 
@@ -257,19 +298,20 @@ def _pd_levels(ctx, s, mr, price):
 
 def _gaps(ctx, price):
     out = []
+    old = set(map(tuple, (ctx or {}).get("old_gap_edges") or []))
     for i, (lo_, hi_) in enumerate((ctx or {}).get("gap_edges") or []):
         out.append({"id": f"GAP{i}", "tool": "l", "kind": "solid", "low": float(lo_), "high": float(hi_), "role": _role(lo_, hi_, price),
-                    "state": "ACTIVE", "quality": 0.3})
+                    "state": "ACTIVE", "quality": 0.3, "old": (float(lo_), float(hi_)) in old})
     return out
 
 
-def tools(df, horiz, st, ctx, s, mr):
+def tools(df, horiz, st, ctx, s, mr, keep=None):
     """सगळी साधनं (a–l) ⇒ candidates [{id, tool, kind, low, high, role, state, quality, …}]. df = trigger TF बंद bars."""
     price = float(df["close"].iloc[-1])
     cands = _horizontal(horiz)
     cands += base_zones(df, s, mr)
     cands += _liquidity(df, s, mr, price)
-    cands += sloping(df, s, mr)
+    cands += sloping(df, s, mr, keep=keep)
     cands += _channels(df, st or {}, s, mr, price)
     cands += _fib(st or {}, s, mr, price)
     cands += _c_eq_a(st or {}, s, mr, price)

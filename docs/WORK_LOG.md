@@ -1535,3 +1535,72 @@ Gallery runs **K-10** (10 random दिवस, KB दुरुस्त्या
   sender थांबतो; ProcessLock ⇒ एका वेळी एक sender. Independent review: 9 findings (ids, 429, files 1–10, parser edge cases, sent log,
   caption UTF-16, README restart wording, stderr redaction) — सगळे दुरुस्त + tests; manifest writer K-10 runner मध्ये Simple Core PR सोबत. Listener restart ⇒ फक्त उघडे vision PENDING_HUMAN रद्द (आधीसारखं); PAPER exits ला हात नाही.
 - याच PR मध्ये Backtest Review page + Golden Gallery साधनं (आधीचा local commit).
+
+## 2026-10-08 · Simple Core + execution settings; KB दुरुस्त्या (context म्हणून)
+**का (Abhi):** "आपण analysis paralysis मध्ये अडकलो आहोत." Engine चं काम फक्त (1) entry चा area शोधणं, (2) confirmation (commitment
+candle) झाल्यावर ENTRY SIGNAL. SL / target / R:R / instrument / strike / lots / expiry = dashboard settings, engine मध्ये काहीही hardcoded
+नाही. Story P1–P5 module **नाही** (बनवलेला काढला). बाकी analysis (gap, Elliott, volume, divergence, patterns, VIX, 23 बाबी, गुण) =
+context / shadow.
+**Simple Core (`simple_core/`):**
+- `engine.detect`: trend (market_state; HTF range ⇒ impulse बाजू; F4 विरोध / testing ⇒ signal नाही) · area = trade बाजूचे zones
+  (`chart_reader.zones`; ≤ 0.5 MR अंतरातले एकत्र, उदा. trendline + swing high) · pause = commitment आधी area ला लागलेले indecision bars
+  (body ≤ 50% / range ≤ 1 MR / दोन्ही wicks), किमान 1 · commitment = एकटा bar (टोक area ला) किंवा शेवटचा pause bar (touch) + हा bar:
+  range 1.2–2.5 MR, body ≥ 50%, close टोकाजवळ · area पलीकडे सलग 2 closes ⇒ acceptance ⇒ रद्द · `Tracker`: त्याच area (पट्टा overlap) वर
+  एकच signal (`DUP_SETUP`) · opening window नाही. Signal = {side, trigger_time, trigger_price, area, pause_bars, pause_from, commitment,
+  ref_levels {structural_invalidation, commitment_extreme, next_opposite_area, impulse_end}, context_story}. `signal_at` = real data
+  wrapper (trendline memory सह). वेळ ~1 s / bar.
+- `execution.plan / simulate`: sl_mode, target_mode, rr_filter (+ min_rr), instrument, strike_mode / value, width, lots, expiry_rule —
+  निवडलेलं नसेल ⇒ trade नाही ("SL mode निवडलेला नाही" …); settings hash प्रत्येक plan मध्ये. `settings.py`: profiles store
+  (`data/simple_core_exec.json`, default नाही). Dashboard: Backtest Review पान ⇒ "⚙ Simple Core execution settings" tab.
+- Tests (`tests/test_simple_core.py`): (a)–(g) + settings नसल्यावर trade नाही + DUP_SETUP + store; engine.py मध्ये SL / target /
+  instrument शब्द नाहीत (grep test).
+**KB दुरुस्त्या (आधीचं काम, फेकलेलं नाही):** `zones.py` (core वापरतो), `setups.SetupTracker` / `LineMemory` (trendline स्थिर ओळख: बदल
+फक्त real break — आता `elliott/breaks.first_real_break`, detrend — किंवा ≥ +2 touches आणि ताजा touch; कारण log), `gap.py`
+(`GAP_NO_PULLBACK`, setups A/B/C, गोष्ट, G7 scorecard), sweep व्याख्या (gap open = sweep नाही), candle series / zone story,
+23 बाबींचा checklist, दोन SL व्याख्या — हे सगळं जड chart_reader (shadow) मध्ये context म्हणून; F4 gate (shadow मध्ये `SIDE_UNCLEAR`).
+**7 Oct golden (Simple Core, tuning नाही):** 09:30 signal नाही (area वर नाही) · 11:00–12:00 seller area (trendline 28 Sep + swing high,
+22,682–22,740) वर pause · **12:15 ENTRY SIGNAL** (bear, 22,648.9) · 12:45 `DUP_SETUP`. 09:30 आणि 12:15 ला तीच trendline (28 Sep 22,855 /
+30 Sep 22,809 / 6 Oct 22,732).
+**K-10:** `research/k10_days.py` (seed 20261008; IS 5 + Jul–Oct 2026 5; gap-up / gap-down / trend ×2 / range) — प्रत्येक दिवस 15M (trend,
+areas, pause फिकट, commitment ठळक, 🚩, ref_levels, shadow ओळ) + 1H; `--exec-profile` ⇒ plan + simulate. **थांबा-बिंदू K-10.**
+नंतर: OE / PCS live trend market_state वर.
+
+## 2026-10-08 (रात्र) · Simple Core v2: G1 / G8 / G9 wave context, K-10 निर्णय A–D, commitment ≥ pause, POSSIBLE_REVERSAL, Gallery G7–G9
+**KB:** नवीन आवृत्ती (भाग H G1–G9; motive wave reference levels फक्त माहिती).
+**Motive wave (`simple_core/waves.py`):** trade-degree swings (market_state, 15M ATR × 3) + चालू pullback ⇒ origin / W1 / W2 / wave 3 टोक.
+चालू pullback = wave 2 ⇒ G1; wave 3 मधला उथळ (≤ 38.2% + 5%) जलद (≤ 6 bars) ⇒ G8; wave 3 ≥ wave 1 आणि W1 overlap नाही ⇒ G9; W1 भागात
+(R3) / wave 5 नंतर / origin खाली ⇒ count gray. Simple Core चे 4 टप्पे तसेच — wave फक्त setup label आणि ref_levels: wave3_projection
+(W2 end + 1.618 × wave 1; 1.0 / 2.618 पर्याय), wave5_projection (W4 end + 1.0 × wave 1; पर्याय + 0.618 × (W1 start → W3 end)),
+wave1_origin, wave1_extreme, subwave_origin. Gray / लागू नाही ⇒ None + `ref_notes` कारण. Wave 3 ने पार केलेलं W1 टोक ⇒ flip area.
+**Execution:** target_mode wave3_projection / wave5_projection; sl_mode wave1_origin / subwave_origin / wave1_extreme; G9 ⇒ `g9_tier`
+(C ⇒ `g9_lots`, skip ⇒ trade नाही) — निवडलेलं नसेल ⇒ trade नाही. Default कुठेच नाही. `plan(spot_only=True)` (K-10 / review अहवाल).
+**K-10 निर्णय (Abhi):**
+- A1 testing मध्ये जुन्या trend टोकापलीकडे close ⇒ BREAK_FAILED, trend लगेच परत (protected = break नंतरचं टोक) — 15 Nov 2021.
+- A2 testing ⇒ फक्त (a) तुटलेल्या protected / flip PDL-PDH चा retest break दिशेने (G4) किंवा (b) range edges; बाकी TESTING_ONLY_FLIP_OR_EDGE.
+- B1 touch 0.3 MR तसाच; pause + commitment मालिकेतला कोणताही candle area ला लागला तरी valid (28 Sep). Flip zone: pause / acceptance
+  role_since (break bar) नंतरचेच.
+- B2 time acceptance: level पलीकडे सलग 3 closes (buffer आत) ⇒ खरा break / BROKEN — `elliott/breaks.time_accepted`, Elliott settings
+  `break_accept_closes` 3 आणि levels_v2 `accept_closes` 3 — एकच व्याख्या (16 Feb 2018 PDL).
+- C K-10 runner: `--exec-json` / `--exec-profile` ⇒ प्रत्येक signal वर spot plan + simulate; एका ओळीत वाचन; review manifest (Telegram).
+- D 15M chart window कमाल 7 sessions (`backtest_review/charts.CHART`), मोठा context 1H वर.
+**Evening plan §8.1 पूर्वतयारी:** commitment range ≥ `commitment_vs_pause` (1.5, dashboard) × pause सरासरी; K-10 runner `--engine-alt`
+⇒ 1.3 / 1.5 / 2.0 signals शेजारी (निर्णय Abhi चा).
+**POSSIBLE_REVERSAL v2 (Abhi, K-10 खऱ्या data नंतर):** counter-move impulse च्या ≥ 38.2% **आणि** impulsive — 5 निकषांपैकी ≥ 3
+(5 legs / कमी overlap; displacement; गती impulse पेक्षा जास्त; impulse ची सुरुवात close ने तुटली; वाटेत उथळ pauses). दोन legs: पूर्ण
+counter-move आणि ताजा leg (impulse दिशेच्या शेवटच्या swing पासून). शेवट फक्त रचनेने: (a) सुरुवात close ने पुन्हा; (b) शेवटचा आतला swing
+impulsive leg ने तुटला ⇒ जुना trend; (c) नव्या दिशेत HL / LH confirm ⇒ new_trend. 61.8% नियम नाही (wave (2)). HTF protected तोडणारी
+counter-move ⇒ market_state trend / testing (इथे नाही). Flag असताना जुन्या दिशेने signal नाही, नव्या दिशेने (wave (2) end) चालतो.
+**G8 flag channel (`simple_core/flags.py`):** area = flag channel (समांतर रेषा, प्रत्येक बाजूस ≥ 2 touches), impulse नंतर उथळ (≤ 50%),
+overlapping (≥ 0.6), slope trend विरुद्ध / सपाट; commitment flag रेषेबाहेर close ⇒ setup G8. Breakout bar नेच नवं टोक केलं तरी flag
+आधीच्या टोकावरून. Futures volume (कमी) अजून engine मध्ये नाही.
+**खऱ्या data वर (regression, tuning नाही):** 7 Oct 12:15 bear कायम · 28 Sep 14:15 G8 bear 22,794 · 26 Aug 10:00 bear (flip, G4) ·
+16 Feb 2018: 09:30 नाही (counter-move 144% + HL ⇒ new_trend), 13:30 G8 flag breakout bear · 11 Aug: flag (3/5) पण (b) ने रद्द; ताजा leg
+1/5 ⇒ Abhi ला degree विचारला. `research/reversal_check.py`: IS मधून 5 reversal + 5 continuation (hindsight फक्त निवडीसाठी) + charts.
+**Independent review (12 findings) — दुरुस्त + tests:** (1) सगळे pause bars असलेला flag "late zone" ने गळत होता ⇒ flag zone जन्म = impulse
+टोक; (2) B2 zones path (`chart_reader/zones` ⇒ lifecycle) मध्ये accept_closes नव्हतं ⇒ जोडलं, engine area acceptance आणि BROKEN ⇒ DEAD
+सुद्धा `time_accepted`; (3) K-10 spot_only G9 वर g9_lots KeyError; (4) ताज्या counter leg चा swing प्रकार उलटा ⇒ दुरुस्त, आणि ताजा leg फक्त
+पूर्ण counter-move रद्द झाल्यावर (ABC चा C leg ≠ reversal); (5) G8 label असताना wave G9 ⇒ g9_tier gate; (6) protected exclusion wick ऐवजी
+close; (7) दोन vacuous tests खरे केले; (8) K-10 वाचन SL / target None; (9) PROT-BRK zone role_since; (10) "उथळ pauses" pause नसेल तर
+खरा नाही, (b) displacement दिशेसह, "कमी overlap" = F3 व्याख्या (ER किंवा K10.1); (11) rr_filter "false" string, अज्ञात sl / target mode,
+--engine-alt keys तपासणी. Golden: 7 Oct 12:15 bear आणि 28 Sep 14:15 G8 bear (नवीन case) पास.
+**Golden Gallery:** G7 (exhaustion gap reversal, सैल), G8 / G9 (waves.py) detectors; manifest ⇒ Telegram; corrected_setup G1–G9.

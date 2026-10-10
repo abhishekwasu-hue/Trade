@@ -10,12 +10,14 @@ Settings hash = chart_reader settings + market_state DEFAULTS + CAS window (न�
 """
 import hashlib
 import json
+import time
 
 import numpy as np
 import pandas as pd
 
 import market_state as MS
 from chart_reader import evaluate as EV
+from chart_reader import setups as SU
 from elliott import data_policy as DP
 from opportunity_engine import cas as CAS
 from vision_led import candidates as CA
@@ -69,6 +71,32 @@ def inv_source(r):
     return (min if side > 0 else max)(refs, key=lambda x: x[1])[0]
 
 
+ZONE_KEYS = ("id", "zid", "tool", "type", "side", "role", "label", "low", "high", "slope", "anchors", "pair", "value", "state", "tf", "degree",
+             "touches", "fresh", "reaction_mr", "valid", "tl_reason")
+
+
+def chart_zones(r, per_side=4):
+    """Chart साठी selling / buying zones: प्रत्येक बाजूचे जवळचे per_side जिवंत zones + सगळ्या valid trendlines (anchors सह)."""
+    zs = [z for z in r.get("zones") or [] if z.get("state") not in ("DEAD", "MAGNET")]
+    out = []
+    for side in ("sell", "buy"):
+        near = [z for z in zs if z.get("side") == side and z.get("tool") != "f"]
+        near = sorted(near, key=lambda z: str(z.get("zid") or ""))[:per_side]
+        out += near
+    out += [z for z in zs if z.get("tool") == "f" and z.get("valid") and z.get("state") != "BROKEN"]
+    return [{k: z.get(k) for k in ZONE_KEYS if k in z} for z in out]
+
+
+def gap_record(r):
+    g = r.get("gap") or {}
+    if not g.get("has_gap"):
+        return None
+    gr = r.get("gap_rule") or {}
+    return {k: g.get(k) for k in ("class", "direction", "pdc", "open", "fill_pct", "behaviour", "behaviour_at", "behaviour_history",
+                                  "gap_atr", "location")} | {"rule": gr.get("line"), "block": gr.get("block"), "setup": gr.get("setup"),
+                                                             "story": (gr.get("story") or {}).get("line"), "pullback": gr.get("pullback")}
+
+
 def candidate_record(r, ms, bar):
     act = (r.get("active") or {}).get("area") or {}
     rk = r.get("risk") or {}
@@ -77,12 +105,18 @@ def candidate_record(r, ms, bar):
             "grade": r.get("grade"), "total": r.get("total"), "entry_px": rk.get("entry"), "inv": rk.get("invalidation"),
             "targets": rk.get("targets"), "rr": rk.get("rr"), "inv_src": inv_source(r),
             "rev_comp": (r.get("reversal") or {}).get("comp"), "rev_status": (r.get("reversal") or {}).get("status"), "area": {k: act.get(k) for k in ("id", "tool", "low", "high", "slope", "anchors",
-                                                                                               "value") if k in act} or None,
+                                                                                               "pair", "value") if k in act} or None,
             "confluence": (r.get("active") or {}).get("confluence") or [], "top_points": _top_points(r),
             "ctype": (r.get("structure") or {}).get("correction_type"), "story": (r.get("story") or [])[:10],
             "impulse": ms.get("impulse"), "labels": (ms.get("correction") or {}).get("labels") or [], "trend": ms.get("trend"),
             "lq": ((r.get("kb") or {}).get("LQ") or {}).get("pts"), "mr": r.get("mr"),
-            "elliott": (r.get("elliott") or {}).get("line"), "areas": compact_areas(r)}
+            "elliott": (r.get("elliott") or {}).get("line"), "areas": compact_areas(r),
+            "zones": chart_zones(r), "gap": gap_record(r), "zone_story": (r.get("candles") or {}).get("zone"),
+            "legs": ((r.get("candles") or {}).get("legs") or {}).get("line"), "checklist": r.get("checklist") or [],
+            "checklist_summary": r.get("checklist_summary"), "setups": r.get("setups") or [], "zone_entry": (r.get("zone_entry") or {}).get("line"),
+            "sl_defs": rk.get("sl_defs"), "g7": {k: (r.get("g7") or {}).get(k) for k in ("state", "line", "entry", "inv", "target", "rr", "zone")},
+            "area_label": act.get("label") or (f"{act.get('tool')} {act.get('id')}" if act else None),
+            "eval_s": r.get("_eval_s"), "tl_log": r.get("tl_log")}
 
 
 def compact_areas(r, tools=("a", "b", "c", "d", "f"), n=10):
@@ -95,9 +129,10 @@ def compact_areas(r, tools=("a", "b", "c", "d", "f"), n=10):
     return out[:n]
 
 
-def scan_day(m1, day, s, frames=None, trig=None, eval_fn=None, state_fn=None, profile="srv2", pullback_min=None):
-    """एका दिवसाचे candidates (बंद 15M bars, क्रमाने). eval_fn / state_fn tests साठी बदलता येतात."""
-    eval_fn = eval_fn or (lambda w, asof: EV.evaluate(w, profile, asof, s=s))
+def scan_day(m1, day, s, frames=None, trig=None, eval_fn=None, state_fn=None, profile="srv2", pullback_min=None, memory=None):
+    """एका दिवसाचे candidates (बंद 15M bars, क्रमाने). eval_fn / state_fn tests साठी बदलता येतात. memory = chart_reader.setups.LineMemory
+    (trendline स्थिर ओळख; दिवसांमध्ये caller कायम ठेवतो)."""
+    eval_fn = eval_fn or (lambda w, asof: EV.evaluate(w, profile, asof, s=s, memory=memory))
     state_fn = state_fn or (lambda asof: MS.read(m1, asof, run_elliott=False, frames=frames))
     pullback_min = CA.DEFAULTS["pullback_min"] if pullback_min is None else pullback_min
     trig = trig if trig is not None else MS.frame(m1, "15m", pd.Timestamp(day) + pd.Timedelta(days=1))
@@ -105,16 +140,23 @@ def scan_day(m1, day, s, frames=None, trig=None, eval_fn=None, state_fn=None, pr
     idx = np.nonzero((pd.to_datetime(trig["timestamp"]).dt.normalize() == day).to_numpy())[0]
     tsv = pd.to_datetime(m1["timestamp"]).to_numpy(dtype="datetime64[ns]")
     out = []
+    tracker = SU.SetupTracker()                                            # §8.3: एक setup = एक entry (DUP_SETUP), gap / zone नियमांनंतर
+    first = int(idx[0]) if len(idx) else 0
     for j in idx:
         bar = trig.iloc[j]
         asof = pd.Timestamp(bar["bar_end"])
+        if j > first:
+            tracker.on_bar(float(trig["high"].iloc[j]), float(trig["low"].iloc[j]))
         ms = state_fn(asof)
         imp = CA.impulse_from_state(ms, trig.iloc[: j + 1])
         if imp is None or imp["retrace"] < pullback_min:
             continue
         a = int(np.searchsorted(tsv, np.datetime64(asof - pd.Timedelta(days=EVAL_DAYS), "ns")))
         b = int(np.searchsorted(tsv, np.datetime64(asof, "ns")))
+        t0 = time.monotonic()
         r = eval_fn(m1.iloc[a:b].reset_index(drop=True), asof)
+        r["_eval_s"] = round(time.monotonic() - t0, 2)
+        r = tracker.apply(r) if "market_state" in r else r
         out.append(candidate_record(r, ms, bar))
     return out
 

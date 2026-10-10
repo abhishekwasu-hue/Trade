@@ -78,9 +78,29 @@ def pools(st, cands, side):
     return out
 
 
+def _intact_since(df, level, side, pbar, j):
+    """Pool अबाधित: pool बनल्यानंतर (pbar नसेल ⇒ त्याच दिवसाच्या सुरुवातीपासून) sweep bar च्या आधी कोणत्याही bar ने level पार केली नाही,
+    आणि sweep bar आतल्या बाजूने उघडला. Gap open ने level ओलांडली (उदा. gap down open pool च्या वर, मग खाली) ⇒ pool आधीच वापरला गेला ⇒
+    sweep नाही (KB K5; TRADE_KB_FULL_IMPLEMENTATION_PROMPT §8.2)."""
+    o, h, lo = (df[k].to_numpy(float) for k in ("open", "high", "low"))
+    beyond_open = (o[j] <= level) if side > 0 else (o[j] >= level)
+    if beyond_open:
+        return False
+    if pbar is not None:
+        a = int(pbar) + 1
+    else:
+        d = pd.to_datetime(df["timestamp"]).dt.normalize().to_numpy()
+        a = j
+        while a > 0 and d[a - 1] == d[j]:
+            a -= 1
+    seg = lo[a:j] if side > 0 else h[a:j]
+    return not len(seg) or (bool((seg >= level).all()) if side > 0 else bool((seg <= level).all()))
+
+
 def liquidity(df, st, cands, side, s, mr, n_recent=3):
     """शेवटच्या n_recent बंद bars पैकी एकाने pool च्या 0.1–1.0 MR पलीकडे जाऊन आत close (किंवा पुढच्या 1–2 bars नी), आणि शेवटचा close
-    अजून आत ⇒ sweep + reclaim. Pool sweep bar च्या आधी तयार झालेला हवा (no-lookahead)."""
+    अजून आत ⇒ sweep + reclaim. Pool sweep bar च्या आधी तयार झालेला हवा (no-lookahead), आणि तोपर्यंत अबाधित; sweep bar आतल्या बाजूने
+    उघडलेला (gap open / gap ने ओलांडलेली level = sweep नाही)."""
     if not side or not mr:
         return _res(0, "LQ 0 [K5]: —")
     o, h, lo, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
@@ -89,6 +109,8 @@ def liquidity(df, st, cands, side, s, mr, n_recent=3):
     for level, pbar, name in pools(st, cands, side):
         for j in range(max(0, n - int(n_recent)), n):
             if pbar is not None and pbar >= j:
+                continue
+            if not _intact_since(df, level, side, pbar, j):
                 continue
             depth = (level - lo[j]) if side > 0 else (h[j] - level)
             if not (s["sweep_min_mr"] * mr <= depth <= s["sweep_max_mr"] * mr):
@@ -317,20 +339,6 @@ def vix(vix_df, t0, t1, s):
 # ---------------------------------------------------------------------------------------------------------------------
 # A3 व्याख्यात्मक व्हेटो
 # ---------------------------------------------------------------------------------------------------------------------
-def _pullback_today(trig, side, s, mr):
-    d = pd.to_datetime(trig["timestamp"])
-    today = trig[d.dt.normalize() == d.iloc[-1].normalize()]
-    if today.empty:
-        return False
-    if side > 0:
-        run = today["high"].cummax().to_numpy(float)
-        back = run - today["low"].to_numpy(float)
-    else:
-        run = today["low"].cummin().to_numpy(float)
-        back = today["high"].to_numpy(float) - run
-    return bool((back >= s["gap_pb_min_mr"] * mr).any())
-
-
 def vetoes(st, el, act, cands, gap, side, trig, s, mr):
     """रिटर्न व्हेटो ओळींची यादी (रिकामी ⇒ व्हेटो नाही)."""
     out = []
@@ -348,9 +356,5 @@ def vetoes(st, el, act, cands, gap, side, trig, s, mr):
             if hit:
                 out.append(f"⛔ [K5] MAGNET level {z['id']} ({z['low']:,.1f}–{z['high']:,.1f}) ⇒ no-trade level")
                 break
-    g = gap or {}
-    gdir = 1 if g.get("direction") == "up" else -1 if g.get("direction") == "down" else 0
-    if g.get("has_gap") and gdir == side and g.get("class") in s["gap_b_classes"] and trig is not None and len(trig):
-        if not _pullback_today(trig, side, s, mr):
-            out.append(f"⛔ [K13] gap setup B ({g.get('class')} trend सोबत): आज pullback आलाच नाही ⇒ entry नाही")
+    # gap setup B ("पहिला pullback नाही") आता chart_reader/gap.py (सगळे वर्ग, gap edge / PDC / zone पर्यंत) ⇒ पक्का नियम GAP_NO_PULLBACK
     return out

@@ -20,6 +20,7 @@ secrets.toml
 
 # --- Runtime state / settings फाईल्स (प्रत्येक deploy वर पुन्हा तयार होतात) ---
 data/engine_settings.json
+data/simple_core_exec.json
 data/credit_spread_state.json
 data/notification_config.json
 data/KILL_SWITCH
