@@ -1825,3 +1825,21 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 (anatomy +0.45, structure पर्यायांना बहुमत नाही), Apr→Jun correction low (zigzag), Jun→now provisional correction low. Read 0.32 s; mirror / causality 0 फरक. Tests 233 pass / 40 xfail.
 **Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
 नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
+
+## 2026-10-11 · Level bots L4 (MCX) + L5 (visibility)
+
+**L4 — MCX confirmation gate** (`mcx_futures_trader.py`): PAPER pause काढला; trend = decision3 Daily fold सध्याच्या contract च्या Daily candles वर
+(cache key = trading_symbol), areas = bot चे 30M/60M levels, confirmation = contract चे बंद 15M candles + त्याचाच volume. Breakout / candle-confirm /
+min-hold बंद, RSI default बंद; SL = gate चा structural SL (settings SL ही कमाल), target = पुढचा उलट area, R:R entry भावावर पुन्हा; skip statuses
+INVALIDATED / TARGET_PASSED / SL_TOO_WIDE / RR. Legacy touch ⇒ फक्त paper_would_have. LIVE (touch) तसाच. Pre-open मध्ये MCX ओळ. Tests: `test_level_bots_mcx.py` (12).
+**L5 — दिसणं**: dashboard tab "🎯 आजचे Areas (gate)" (trend cache मधून, signal_log मधून armed → confirmed → disarmed), 15:45 summary मध्ये
+"Level bots — confirmation gate" भाग (armed / confirmed / ignored-by-reason / touch-legacy), ARMED मधले absorption / low-volume आता स्वतंत्र statuses.
+सामायिक pure functions `bots_common/level_visibility.py`. Tests: `test_level_bots_visibility.py` (14). उघडे: LB12–LB16.
+**Review fixes (L4 + L5)**: confirmed hit_type दोन्ही ("CONFIRMATION" srv2 / Classic, "CONFIRMED" Instant / MCX); सारांशात area = (symbol, TF,
+किंमत) — role flip ने भेट तुटत नाही; ignored = entry शिवाय संपलेल्या भेटीचं **शेवटचं** कारण (मधले absorption / low volume नंतर confirmed ⇒ नाही);
+MCX गट (सक्रिय commodities, साधा SUPPORT / RESISTANCE symbol वरून SRv2 पासून वेगळा) + MCX statuses (INVALIDATED / TARGET_PASSED / SL_TOO_WIDE /
+CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरलेली confirmation (level + commitment candle) `data/level_gate/mcx_confirm_used.json` मध्ये ⇒
+लवकर exit नंतर त्याच candle वर पुन्हा entry नाही (`SKIPPED_GATE_CONFIRM_USED`; अपयशी order ⇒ पुन्हा प्रयत्न); grade lots 0 ⇒ 0. Trend negative cache
+(`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
+≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
+

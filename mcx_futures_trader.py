@@ -72,6 +72,7 @@ import pandas as pd
 
 import cloud_db
 import resolve_mcx_futures_instruments as mcx_resolver
+from bots_common import level_gate_bot as LGB
 from config import get_ist_now
 import database
 from database import (init_sqlite_db, has_open_trade_from_source, run_auto_backup_if_due, count_entries_at_level_today,
@@ -460,6 +461,89 @@ def _sl_target_points(settings, entry_price):
     return float(settings["sl_points"]), float(settings["target_points"])
 
 
+# 🎓 Abhi (level bots confirmation §1/§3, L4): MCX वर trend = decision3 Daily engine सध्याच्या front-month contract च्या Daily candles वर
+# (Upstox कडे expired contracts चा इतिहास नाही ⇒ rolls पलीकडचा continuous इतिहास नाही; gate च्या किमान 30 Daily bars पेक्षा कमी ⇒
+# "trend unclear (Daily data अपुरा)" ⇒ entry नाही). Areas = bot चेच 30M/60M (DYNAMIC / SRV3) levels; confirmation = contract चे बंद 15M
+# candles; volume = contract चाच (NSE futures resolver नाही).
+MCX_TREND_LOOKBACK_DAYS = 400
+
+
+def _gate_area(level, settings):
+    """level किंमत ⇒ gate area (lo, hi) — srv2 सारखाच (gate_area_pad_pct, default LGB.AREA_PAD_PCT)."""
+    pad = float(level) * float((settings or {}).get("gate_area_pad_pct", LGB.AREA_PAD_PCT)) / 100.0
+    return LGB.areas_from_rows([{"zone_low": float(level), "zone_high": None}], pad)[0]
+
+
+def _build_mcx_gate(access_token, symbol, resolved, settings, areas, now):
+    """एका cycle चा CycleGate (trend दिवसातून एकदा cache — key = contract चं trading_symbol ⇒ NSE symbols शी / roll नंतर टक्कर नाही).
+    रिटर्न (gate | None, कारण | None) — exception ⇒ fail-closed (नवा entry नाही; exits ला हात नाही)."""
+    key = resolved["instrument_key"]
+    got = {}
+
+    def bars(tok, _sym, minutes):
+        got["df"] = fetch_mcx_candles(tok, key, interval=LGB._INTERVAL.get(int(minutes), "15minute"), lookback_days=5)
+        return got["df"]
+
+    def volume(_tok, _sym, _minutes):                                      # a2 / c0: contract चा स्वतःचा volume (तेच 15M candles)
+        return got.get("df")
+
+    def daily(tok, _sym):
+        return fetch_mcx_candles(tok, key, interval="day", lookback_days=MCX_TREND_LOOKBACK_DAYS)
+    try:
+        return LGB.cycle_gate("mcx", resolved.get("trading_symbol") or symbol, access_token, settings, areas, now,
+                              fetch_bars=bars, fetch_daily=daily, fetch_volume=volume), None
+    except Exception as exc:                                               # noqa: BLE001
+        return None, f"{LGB.LR.R_ERROR}: {type(exc).__name__}: {str(exc)[:80]}"
+
+
+# 🎓 review 🟡 (L4): gate चा `entry` पूर्ण 15M bar भर (~15 एक-मिनिट cycles) True राहतो आणि MCX ला approval पायरी नाही ⇒ लवकर exit नंतर
+# त्याच commitment candle वर पुन्हा entry होऊ शकायची. वापरलेली confirmation (level + confirm_ts) प्रत्येक (symbol, source) साठी file मध्ये —
+# दर मिनिटाला नवा process असला तरी टिकते (data/level_gate/ gitignored).
+GATE_USED_STATE = os.path.join("data", "level_gate", "mcx_confirm_used.json")
+
+
+def _gate_used_id(level_price, r):
+    return f"{round(float(level_price), 2)}|{r.get('confirm_ts')}"
+
+
+def _gate_confirm_used(symbol, source, level_price, r, path=None):
+    used = (SRV3._load_state(path or GATE_USED_STATE) or {}).get(_candle_key(symbol, source)) or []
+    return _gate_used_id(level_price, r) in used
+
+
+def _gate_mark_used(symbol, source, level_price, r, path=None):
+    st = SRV3._load_state(path or GATE_USED_STATE) or {}
+    k = _candle_key(symbol, source)
+    st[k] = ((st.get(k) or []) + [_gate_used_id(level_price, r)])[-50:]
+    SRV3._save_state(st, path or GATE_USED_STATE)
+
+
+def _gate_result(g, area, err=None):
+    try:
+        if g is not None:
+            return g.result(*area)
+    except Exception as exc:                                               # noqa: BLE001 — fail-closed
+        err = f"{LGB.LR.R_ERROR}: {type(exc).__name__}: {str(exc)[:80]}"
+    return {"state": "ERROR", "entry": False, "side": None, "reason": err or LGB.LR.R_ERROR, "events": [], "area": tuple(area)}
+
+
+def _gate_sl_target(r, price, direction, settings):
+    """CONFIRMED plan ⇒ (sl_points, target_points, None): SL = gate चा structural SL (area च्या पलीकडे), settings SL ही कमाल (candle gate सारखंच);
+    target = पुढचा उलट area. सद्य भावावरून पुन्हा: SL / target ओलांडले, SL settings पेक्षा रुंद, किंवा R:R < min_rr ⇒ (None, None, (status, कारण))."""
+    d = 1 if direction == "BULLISH" else -1
+    sl_pts, tgt_pts = (price - float(r["sl"])) * d, (float(r["target"]) - price) * d
+    max_sl, min_rr = _sl_target_points(settings, price)[0], float(LGB.gate_settings(settings)["min_rr"])
+    if sl_pts <= 0:
+        return None, None, ("SKIPPED_GATE_INVALIDATED", f"भाव {price:.2f} gate SL {r['sl']:.2f} च्या पलीकडे")
+    if tgt_pts <= 0:
+        return None, None, ("SKIPPED_GATE_TARGET_PASSED", f"भाव {price:.2f} target {r['target']:.2f} पलीकडे")
+    if sl_pts > max_sl:
+        return None, None, ("SKIPPED_GATE_SL_TOO_WIDE", f"structural SL {r['sl']:.2f} = {sl_pts:.2f} pts > settings SL {max_sl:.2f}")
+    if tgt_pts / sl_pts < min_rr:
+        return None, None, ("SKIPPED_GATE_RR", f"{LGB.LR.R_RR} at {price:.2f} ({tgt_pts / sl_pts:.2f} < {min_rr:g})")
+    return sl_pts, tgt_pts, None
+
+
 def _open_futures_trade(access_token, symbol, settings, resolved, direction, price, lots, sl_points, target_points, level_price,
                         timeframe_suffix, source, shadow, entry_reason_tag=None):
     """एकच futures leg (BUY/SELL) PAPER/LIVE मध्ये उघडणे (एक किंवा अनेक broker accounts). रिटर्न trade_status मजकूर."""
@@ -481,10 +565,6 @@ def _open_futures_trade(access_token, symbol, settings, resolved, direction, pri
         "max_loss": sl_points, "max_profit": target_points,
     }
     trading_mode = "PAPER" if shadow else settings.get("trading_mode", "PAPER")
-    if trading_mode == "PAPER":
-        from bots_common import level_gate_bot as _LGB
-        if _LGB.entry_mode(settings) == _LGB.CONFIRMATION:                  # Abhi (level bots §1/§8): MCX वर trend + confirmation gate (L4)
-            return "SKIPPED_MCX_PAPER_PAUSED (confirmation gate L4 अजून नाही — PAPER नवे entries थांबवले; exits चालू)"
     broker_account_ids = [] if shadow else (settings.get("broker_account_ids") or [])
     if broker_account_ids:
         from trading_engine import execute_trade_on_all_accounts
@@ -576,10 +656,6 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, MCX Futures Trader सेटिंग्जमधून सक्रिय करा)"
-    if shadow or settings.get("trading_mode", "PAPER") == "PAPER":
-        from bots_common import level_gate_bot as _LGB
-        if _LGB.entry_mode(settings) == _LGB.CONFIRMATION:                  # Abhi (level bots §1/§8): L4 पर्यंत PAPER नवे entries नाहीत —
-            return f"{symbol}: MCX PAPER नवे entries थांबवले (confirmation gate L4 अजून नाही; exits चालू)"   # gates / Telegram / candle state आधीच
 
     ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
     if not ok:
@@ -597,10 +673,14 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     max_hits_per_zone = int(settings.get("max_hits_per_zone", 2))
     bullish_entry_enabled = settings.get("bullish_entry_enabled", True)
     bearish_entry_enabled = settings.get("bearish_entry_enabled", True)
-    entry_rsi_gate_enabled = settings.get("entry_rsi_gate_enabled", True)
+    # 🎓 Abhi (level bots confirmation, L4): entry_mode — PAPER default "confirmation" (Daily trend च्या बाजूने, बंद 15M candle वर area ची
+    # commitment झाल्यावरच; दिशा gate ची), LIVE ⇒ "touch" (जुनं वर्तन तंतोतंत) जोपर्यंत settings["entry_mode"] स्पष्टपणे बदलत नाही. Confirmation
+    # मध्ये: Breakout नाही, RSI threshold gate default बंद (conf_rsi_gate_enabled), candle-confirm / min-hold नाहीत (commitment candle हाच पुरावा).
+    _conf = LGB.entry_mode(settings) == LGB.CONFIRMATION
+    entry_rsi_gate_enabled = LGB.conf_gate_enabled(settings, "rsi") if _conf else settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
-    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False) and not shadow
+    entry_breakout_gate_enabled = settings.get("entry_breakout_gate_enabled", False) and not shadow and not _conf
     breakout_lookback_candles = settings.get("breakout_lookback_candles", 12)
     breakout_tolerance_pct = settings.get("breakout_tolerance_pct", 0.30)
     supertrend_1h_period = settings.get("supertrend_1h_period", 10)
@@ -612,7 +692,7 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     sl_cooldown_minutes = int(settings.get("sl_cooldown_minutes", 60) or 0)
     sl_level_direction_block_enabled = settings.get("sl_level_direction_block_enabled", True)
     cascade_filter_enabled = settings.get("cascade_filter_enabled", False)
-    candle_gate_enabled = bool(settings.get("candle_confirm_enabled", False))
+    candle_gate_enabled = bool(settings.get("candle_confirm_enabled", False)) and not _conf
     candle_tf_mode = settings.get("candle_tf_mode", "chart")
     candle_frames_cache = []          # candle confirmation साठी पूर्ण 30M/60M bars -- lazily, प्रति-cycle एकदाच
     closed_today_cache = []           # आजचे बंद trades (cooldown/level-direction) -- lazily, प्रति-cycle एकदाच
@@ -660,6 +740,9 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         "price": _nearest[3], "nearest_level": _nearest[0], "nearest_timeframe": _nearest[1],
         "nearest_level_type": "RESISTANCE" if _nearest[0] >= _nearest[3] else "SUPPORT",
     })
+    _gate, _gate_err = None, None
+    if _conf:                                                              # cycle मध्ये एकदा: trend + बंद 15M candles + सगळे candidate areas
+        _gate, _gate_err = _build_mcx_gate(access_token, symbol, resolved, settings, [_gate_area(c[0], settings) for c in candidates], now)
 
     for level_price, timeframe_suffix, candles_df, current_price, todays_closes in candidates:
         touched = abs(current_price - level_price) <= level_price * TOUCH_TOLERANCE_PCT / 100
@@ -668,6 +751,12 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         # आता srv2_momentum_reversal_strategy.py सारखीच hysteresis logic (0.015% buffer) — किंमत
         # level पासून त्या बँडच्या आतच wobble करत असेल, तर आधीचीच निश्चित दिशा कायम राहते.
         direction = determine_direction_with_hysteresis(level_price, todays_closes)
+        _gr, _legacy = None, (touched, direction)                          # confirmation: जुना touch फक्त would-have तुलनेसाठी
+        if _conf:                                                          # entry फक्त शेवटचा बंद 15M candle = commitment candle असेल तर
+            _gr = _gate_result(_gate, _gate_area(level_price, settings), _gate_err)
+            touched = bool(_gr.get("entry")) and _gr.get("side") in ("BULLISH", "BEARISH")
+            if touched:
+                direction = _gr["side"]
         level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
 
         # 🎓 वापरकर्त्याशी चर्चा करून ठरवलेली सुधारणा ("Mcx comodity sathi suddha he feature add
@@ -722,13 +811,19 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
 
         log_entry = {
             "symbol": symbol, "trade_date": trade_date, "signal_time": now, "level_type": level_type,
-            "level_price": level_price, "hit_type": "TOUCH" if touched else "NO_HIT",
+            "level_price": level_price,
+            "hit_type": ("CONFIRMED" if _gr is not None else "TOUCH") if touched else "NO_HIT",
             "direction": direction if touched else "NONE", "ltp_at_signal": current_price,
             "trade_status": None,
             "reason": "" if touched else f"level ला स्पर्श (touch) आढळला नाही ({timeframe_suffix})",
         }
 
         if not touched:
+            if _gr is not None:                                            # confirmation: gate चं कारण (SKIPPED_GATE_*), Telegram नाही
+                log_entry.update(LGB.skip_fields(_gr))
+                if _legacy[0]:                                             # जुना touch ⇒ फक्त paper_would_have (lots 0), trade नाही
+                    log_entry["hit_type"] = "TOUCH"
+                    LGB.record_touch_legacy(source, symbol, _legacy[1], level_price, timeframe_suffix, log_entry["reason"])
             _log(log_entry)
             continue
 
@@ -803,7 +898,7 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         # लागू नाही (किंमत level पासून दूर गेलेली असते, टिकण्याचा प्रश्नच नाही; त्याचं स्वतःचं confirmation आधीच आहे). 1-मिनिट डेटा
         # नसेल/त्रुटी आली तर fail-open. SKIPPED_MIN_HOLD_DURATION no-hit status (max-hits मोजत नाही).
         # Candlestick confirmation असेल तर min-hold लागू नाही -- पूर्ण candle हाच level टिकल्याचा पुरावा (भाव आता level पासून दूर असू शकतो).
-        if (entry_min_hold_gate_enabled and not is_breakout_trade and candle_conf is None
+        if (entry_min_hold_gate_enabled and not is_breakout_trade and candle_conf is None and not _conf
                 and not (entry_min_hold_first_trade_only and last_trade_time is not None)):
             if not todays_1m_cache:
                 todays_1m_cache.append(fetch_mcx_todays_1m_candles(access_token, instrument_key, now))
@@ -884,6 +979,23 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                     continue
                 lots_now = 0                  # फक्त भाग 2 (pullback) प्रतीक्षेत
 
+        gate_sl_tgt = None
+        if _gr is not None and _gate_confirm_used(symbol, source, level_price, _gr):   # हीच confirmation आधीच trade झाली ⇒ पुन्हा नाही
+            log_entry["trade_status"] = "SKIPPED_GATE_CONFIRM_USED"
+            log_entry["reason"] = (f"[GATE] commitment candle {_gr.get('confirm_ts')} वर आधीच entry झाली — त्याच confirmation वर पुन्हा entry नाही "
+                                   f"({timeframe_suffix})")
+            _log(log_entry)
+            continue
+        if _gr is not None:                                                # SL / target gate च्या plan वरून (structural), settings SL ही कमाल
+            _gsl, _gtgt, _gskip = _gate_sl_target(_gr, float(current_price), direction, settings)
+            if _gskip:
+                log_entry["trade_status"], log_entry["reason"] = _gskip[0], f"[GATE] {_gskip[1]} ({timeframe_suffix})"
+                _log(log_entry)
+                continue
+            gate_sl_tgt = (_gsl, _gtgt)
+            if _gr.get("grade") and lots_now > 0:                          # grade B ⇒ lots × grade_b_lot_mult (default 1.0 ⇒ बदल नाही); 0 ⇒ 0 च
+                lots_now = max(1, int(round(lots_now * LGB.LR.lot_multiplier(_gr, LGB.gate_settings(settings)))))
+
         if has_open_trade_from_source(symbol, source):
             log_entry["trade_status"] = "SKIPPED_PREVIOUS_POSITION_STILL_OPEN"
             log_entry["reason"] = f"आधीची MCX Futures position (कुठल्याही level/timeframe वरची) अजून बंद झालेली नाही ({timeframe_suffix})"
@@ -898,7 +1010,11 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         if candle_sl is not None:
             sl_points_effective = PA.sl_distance(entry_price_estimate, candle_sl, direction)    # structure SL (भाव), settings SL ही कमाल
         target_note = ""
-        if settings.get("next_level_target_enabled", False):
+        if gate_sl_tgt is not None:
+            sl_points_effective, target_points_effective = gate_sl_tgt
+            target_note = (f"🎯 Gate: SL {_gr['sl']:.2f} ({sl_points_effective:.2f} pts) · target = पुढचा area {_gr['target']:.2f} "
+                           f"({target_points_effective:.2f} pts) · R:R {target_points_effective / sl_points_effective:.2f}")
+        elif settings.get("next_level_target_enabled", False):
             nl = MF.next_level_target(_bot_level_prices(all_zones, active_suffixes, level_source), entry_price_estimate, direction,
                                       max(entry_price_estimate * 2 * TOUCH_TOLERANCE_PCT / 100, 0.5 * sl_points_effective))
             if nl is not None:
@@ -918,6 +1034,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
                                                entry_reason_tag="CANDLE_CONFIRM" if candle_conf is not None else None)
         else:
             trade_status = "PENDING_PULLBACK_50"
+        if _gr is not None and "OPENED" in str(trade_status):              # ही confirmation वापरली (अपयशी order ⇒ पुढच्या cycle ला पुन्हा प्रयत्न)
+            _gate_mark_used(symbol, source, level_price, _gr)
         if candle_conf is not None:
             cstate = _candle_state_load()
             cstate.setdefault("used", {}).setdefault(_candle_key(symbol, source), [])
@@ -946,6 +1064,8 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
             log_entry["reason"] = f"Directional (trend-continuation) trade — Breakout Entry (price consolidation + candle close, {timeframe_suffix}), RSI Gate वगळले"
         else:
             log_entry["reason"] = rsi_display
+        if _gr is not None:
+            log_entry["reason"] += f" | [GATE] {LGB.LR.describe(_gr)}"
         if target_note:
             log_entry["reason"] += f" | {target_note}"
         if candle_note:
@@ -953,14 +1073,23 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         _log(log_entry)
 
         hit_label_header = "🎯 Breakout Entry" if is_breakout_trade else f"🎯 Dynamic S/R Cross (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
+        if _gr is not None:
+            hit_label_header = f"✅ 15M commitment (confirmation, आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
         if shadow:
             hit_label_header = f"🧪 [SR V3 PAPER shadow] (आजचा {hit_count_so_far + 1}/{max_hits_per_zone} वा trade)"
         elif level_source == "SRV3":
             hit_label_header += " — SR V3 levels"
+        gate_lines = ""
+        if _gr is not None:                                                # ticket: trend, area, grade, a2 study, c0 commitment
+            import html as _html
+            _lo, _hi = _gr.get("area") or (level_price, level_price)
+            gate_lines = "".join(f"{_html.escape(str(x))}\n" for x in (
+                f"{(getattr(_gate, 'ctx', None) or {}).get('reason')} · area {_lo:.2f}–{_hi:.2f} · grade {_gr.get('grade')}",
+                _gr.get("study"), _gr.get("commit_line")) if x)
         message = (
             f"{hit_label_header} <b>{symbol} MCX Futures ({timeframe_suffix})</b>\n"
             f"{level_type} {level_price:.2f} — {transaction_type} {resolved['trading_symbol']} (≈{entry_price_estimate:.2f}). {rsi_display}\n"
-            + (f"{target_note}\n" if target_note else "") +
+            + gate_lines + (f"{target_note}\n" if target_note else "") +
             (f"{candle_note}\n" if candle_note else "") +
             f"निकाल: {trade_status}\n"
             f"वेळ: {now.strftime('%H:%M:%S')}"

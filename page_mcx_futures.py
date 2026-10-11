@@ -543,9 +543,14 @@ def render():
     symbol = st.selectbox("Commodity निवडा", MCX_SYMBOLS, key="mcxf_symbol")
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
 
-    tab_chart, tab_entry, tab_exit, tab_orders, tab_perf, tab_zones, tab_mode = st.tabs([
+    tab_chart, tab_entry, tab_exit, tab_orders, tab_perf, tab_zones, tab_mode, tab_areas = st.tabs([
         "📈 Chart", "🚪 Entry Gate", "🚪 Exit Gate", "📜 Order Log", "📊 Performance Report", "📐 Dynamic S/R", "🎮 Mode & Broker",
+        "🎯 आजचे Areas (gate)",
     ])
+
+    with tab_areas:                                                        # L5 (Abhi §5): MCX confirmation gate — आजचे areas + trend (फक्त वाचन)
+        from page_bot_dynamic_sr_algo import _render_level_gate_today
+        _render_level_gate_today(STRATEGY_KEY, symbol, settings)
 
     with tab_chart:
         sub_header(f"📈 {symbol} — Futures Price Chart", HDR_BLUE)

@@ -36,8 +36,17 @@ Confirmation TF: 5M Instant 5m (1m only detects arrival), Classic 5m, 15M SRv2 1
 - Signal log: `SKIPPED_GATE_*` + "[GATE] Watching demand 22,570–22,640 · price arrived · waiting for a bullish commitment · 3/8 bars".
 - Ticket (Vision caption / approval): "inside supply: rising wedge · selling candles growing, buying candles weakening · volume rising on selling
   candles" and "commitment: bearish engulfing · body 1.8× window avg · volume 1.6× window avg".
-- MCX: PAPER new entries paused until L4 (MCX gate); LIVE unchanged.
+- MCX (L4, `mcx_futures_trader.py`): trend = `decision3.daily.fold` on the current front-month contract's Daily candles (Upstox has
+  no expired-contract history ⇒ no continuous series across rolls; < 30 Daily bars ⇒ "trend unclear", no entry); areas = the bot's
+  30M/60M (DYNAMIC / SRV3) levels; confirmation on the contract's closed 15M candles, volume = the contract's own. Breakout, candle-confirm
+  and min-hold off; RSI threshold off by default; Supertrend / cascade / cooldown / max hits / one position unchanged. SL = gate's structural
+  SL (settings SL is the cap ⇒ wider = `SKIPPED_GATE_SL_TOO_WIDE`), target = next opposite area, R:R re-checked at the entry price.
+  CONFIRMED ⇒ existing PAPER order path (no Vision / §9 approval for MCX yet — follow-up). LIVE unchanged (touch).
+  One entry per confirmation: a used (level, commitment candle) is kept in `data/level_gate/mcx_confirm_used.json` ⇒
+  `SKIPPED_GATE_CONFIRM_USED` after a quick exit. Trend failures are negative-cached for `trend_retry_min` (15) minutes, still fail-closed.
+- L5 visibility (`bots_common/level_visibility.py`): dashboard tab "🎯 आजचे Areas (gate)" (index bots + MCX page) and a "Level bots —
+  confirmation gate" section in the 15:45 summary (armed / confirmed / ignored by the visit's final reason / touch-legacy), MCX included.
 
 ## Not in the MVP (follow-ups)
-L4 MCX gate · full L5 dashboard (armed areas table, daily summary per bot) · L6 replay report (touch vs confirmation, IS/VAL, costs) ·
+§9 Vision approval for MCX · L6 replay report (touch vs confirmation, IS/VAL, costs) ·
 structural exit (real break beyond the area) as an extra exit rule — today the bots' existing exits stay (never blocked) · RSI divergence evidence.

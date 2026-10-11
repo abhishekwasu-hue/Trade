@@ -19,6 +19,7 @@ Fail-closed: trend / data / कुठलीही exception ⇒ entry नाह�
 import datetime as dt
 import json
 import os
+import time
 
 import numpy as np
 import pandas as pd
@@ -65,6 +66,7 @@ DEFAULTS = {
     "wait_next_candle": False,      # हो ⇒ commitment नंतरची candle area मध्ये परत close झाली नाही तरच CONFIRMED
     "allow_parent_correction": False,   # A1 (impulse origin तुटला, parent टिकला) चालू असताना नवे entries? default नाही (fail-safe)
     "grade_b_lot_mult": 1.0,        # grade B ⇒ lots × इतके (MVP: बदल नाही; Abhi ठरवतील)
+    "trend_retry_min": 15,          # trend अपयशी (fetch त्रुटी / < 30 Daily bars) ⇒ इतकी मिनिटं पुन्हा fetch नाही (negative cache; entry नाहीच)
 }
 
 
@@ -159,11 +161,15 @@ def call_with_timeout(fn, args=(), timeout=20.0):
 def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=None, lookback_days=3650, s=None, timeout=25.0):
     """आजच्या दिवसासाठी trend context (दिवसातून एकदा गणना, file cache). fetch(access_token, symbol) ⇒ daily DataFrame (default Upstox
     'day' candles, ~10 वर्षं — पूर्ण history सारखीच अवस्था देतात). अपयश ⇒ ok False (fail-closed). Cache फक्त पूर्ण fetch चा (≥ 30 bars,
-    failed_chunks 0) — एखादा अपयशी / अपूर्ण fetch दिवसभर "trend नाही" ठेवत नाही; पुढच्या cycle ला पुन्हा प्रयत्न. Cache key मध्ये
-    allow_parent_correction (settings बदलले ⇒ नवी गणना)."""
+    failed_chunks 0) — एखादा अपयशी / अपूर्ण fetch दिवसभर "trend नाही" ठेवत नाही; `trend_retry_min` नंतर पुन्हा प्रयत्न. Cache key मध्ये
+    allow_parent_correction (settings बदलले ⇒ नवी गणना).
+    अपयश (ok False — fetch त्रुटी / रिकामे / < 30 bars) ⇒ "_fail" negative cache `trend_retry_min` मिनिटं: त्या काळात तोच ok False निकाल
+    (fail-closed, entry नाही) — दर 1-मिनिट cycle ला 25 s चा fetch नाही (MCX exits उशिरा होऊ नयेत)."""
     s = settings(s)
     today = pd.Timestamp(today or dt.date.today()).normalize()
-    p = _cache_path(symbol, today.date().isoformat() + ("_a1" if s["allow_parent_correction"] else ""), cache_dir)
+    key = today.date().isoformat() + ("_a1" if s["allow_parent_correction"] else "")
+    p = _cache_path(symbol, key, cache_dir)
+    pf = _cache_path(symbol, key + "_fail", cache_dir)
     try:
         if os.path.exists(p):
             c = json.load(open(p, encoding="utf-8"))
@@ -173,6 +179,31 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     except (OSError, ValueError):
         pass
     try:
+        if os.path.exists(pf):
+            f = json.load(open(pf, encoding="utf-8"))
+            if _clock() - float(f.get("at", 0)) < float(s["trend_retry_min"]) * 60 and not (f.get("ctx") or {}).get("ok"):
+                return {**f["ctx"], "ok": False, "sides": set()}
+    except (OSError, ValueError, TypeError):
+        pass
+    ctx, complete = _fetch_trend(symbol, access_token, today, fetch, lookback_days, s, timeout)
+    try:
+        if complete:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            json.dump({**ctx, "sides": sorted(ctx["sides"])}, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+        elif not ctx.get("ok"):
+            os.makedirs(os.path.dirname(pf), exist_ok=True)
+            json.dump({"at": _clock(), "ctx": {**ctx, "sides": []}}, open(pf, "w", encoding="utf-8"), ensure_ascii=False)
+    except OSError:
+        pass
+    return ctx
+
+
+_clock = time.time                                                         # tests बदलतात (negative cache ची मुदत)
+
+
+def _fetch_trend(symbol, access_token, today, fetch, lookback_days, s, timeout):
+    """(ctx, complete) — complete = पूर्ण fetch (≥ 30 bars, failed_chunks 0) ⇒ दिवसाचा cache."""
+    try:
         if fetch is None:
             from upstox_api import fetch_candles
 
@@ -180,18 +211,12 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
                 return fetch_candles(tok, sym, current_spot=0, interval="day", lookback_days=lookback_days)
         df = call_with_timeout(fetch, (access_token, symbol), timeout)
         if df is None or len(df) == 0:
-            return {"ok": False, "trend": "UNKNOWN", "sides": set(), "reason": f"{R_NO_TREND} (Daily candles मिळाले नाहीत)"}
+            return {"ok": False, "trend": "UNKNOWN", "sides": set(), "reason": f"{R_NO_TREND} (Daily candles मिळाले नाहीत)"}, False
         ctx = trend_context(df, today, s)
     except Exception as exc:                                               # noqa: BLE001 — fail-closed, कारण नोंदीत
-        return {"ok": False, "trend": "UNKNOWN", "sides": set(), "reason": f"{R_ERROR}: trend — {type(exc).__name__}: {str(exc)[:80]}"}
-    complete = len(df) >= 30 and not int(getattr(df, "attrs", {}).get("failed_chunks", 0) or 0)
-    if complete:
-        try:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            json.dump({**ctx, "sides": sorted(ctx["sides"])}, open(p, "w", encoding="utf-8"), ensure_ascii=False)
-        except OSError:
-            pass
-    return ctx
+        return ({"ok": False, "trend": "UNKNOWN", "sides": set(), "reason": f"{R_ERROR}: trend — {type(exc).__name__}: {str(exc)[:80]}"},
+                False)
+    return ctx, len(df) >= 30 and not int(getattr(df, "attrs", {}).get("failed_chunks", 0) or 0)
 
 
 # ------------------------------------------------------------------------------------------------ bars
@@ -441,6 +466,8 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     else:
         out["reason"] = R_BROKEN if broken else "price not at area"            # आज तुटलेला area (flip retest अजून नाही) ⇒ कारण "broken"
     out["broken"] = bool(broken)
+    out["absorbing"] = state == ARMED and bool(info.get("absorbing"))     # L5: ARMED मधलं कारण (signal log / दैनिक सारांश)
+    out["low_volume"] = state == ARMED and bool(info.get("low_vol_logged"))
     return out
 
 
@@ -471,7 +498,9 @@ def describe(r, area=None):
     st = r.get("state")
     if st == ARMED:
         word = "bullish" if r.get("side") == BULL else "bearish"
-        return f"Watching {kind} {rng} · price arrived · waiting for a {word} commitment · {r.get('bars_armed', 0)}/{r.get('max_armed_bars')} bars"
+        why = " · absorption" if r.get("absorbing") else (" · commitment on low volume" if r.get("low_volume") else "")
+        return (f"Watching {kind} {rng} · price arrived · waiting for a {word} commitment · "
+                f"{r.get('bars_armed', 0)}/{r.get('max_armed_bars')} bars{why}")
     if st == CONFIRMED:
         return (f"CONFIRMED {kind} {rng} · {r.get('form')} · grade {r.get('grade')} · entry {r.get('entry_price')} · SL {r.get('sl')} · "
                 f"target {r.get('target')} · R:R {r.get('rr')}")

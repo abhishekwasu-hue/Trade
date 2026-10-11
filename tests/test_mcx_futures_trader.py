@@ -53,7 +53,7 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 # म्हणून इथे तो बंद; TestMinHoldGate मध्ये तो स्पष्टपणे चालू केला जातो.
 # Supertrend filter (डीफॉल्ट "htf_against") पण तसाच -- त्याचे स्वतःचे tests TestSupertrendEntryGate / test_mcx_phase1_filters मध्ये.
 _DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False,
-                     "supertrend_filter_mode": "off", "entry_mode": "touch"}   # legacy touch वर्तन (PAPER confirmation default ⇒ MCX pause, L4)
+                     "supertrend_filter_mode": "off", "entry_mode": "touch"}   # legacy touch वर्तन (PAPER confirmation default ⇒ MCX gate, tests/test_level_bots_mcx.py)
 
 
 @pytest.fixture(autouse=True)
@@ -1466,25 +1466,26 @@ class TestNoNewEntryAfterEod:
         assert trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses
 
 
-def test_mcx_paper_entries_paused_until_confirmation_gate_l4(monkeypatch):
-    """Abhi (level bots §1/§8): MCX PAPER (confirmation default) ⇒ नवे entries नाहीत; touch ⇒ जुनं वर्तन; LIVE ला हात नाही."""
+def test_mcx_open_futures_trade_has_no_paper_pause_any_more(monkeypatch):
+    """Abhi (level bots L4): MCX PAPER pause काढला — confirmation gate आता _process_symbol_core मध्ये (CONFIRMED नंतरच इथे येतो)."""
     from bots_common import level_gate_bot as LGB
     monkeypatch.setattr(LGB, "entry_mode", LGB._entry_mode_orig)       # conftest चा "touch" default इथे नको — खरा PAPER default
     st = {**_DEFAULT_SETTINGS}
     st.pop("entry_mode")
-    with patch("trading_engine.open_multi_leg_trade") as op:
+    with patch.object(mft, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")) as op:
         res = mft._open_futures_trade("tok", "CRUDEOIL", st, _fake_resolved()[1], "BULLISH", 100.0, 1, 10.0, 30.0, 99.0, "30M",
                                       "mcx_futures", False)
-    assert res.startswith("SKIPPED_MCX_PAPER_PAUSED") and not op.called
+    assert "PAUSED" not in res and op.called and op.call_args.kwargs["trading_mode"] == "PAPER"
 
 
-def test_mcx_core_returns_early_in_paper_confirmation(monkeypatch):
-    """review 🟡4: pause gates / Telegram / candle state च्या आधी — प्रत्येक cycle ला spam नाही."""
+def test_mcx_core_paper_confirmation_runs_gate_path_not_pause(monkeypatch):
+    """PAPER confirmation ⇒ आता pause नाही: resolver / gate चा मार्ग चालतो (बाकी tests/test_level_bots_mcx.py मध्ये); Telegram spam नाही."""
     from bots_common import level_gate_bot as LGB
     monkeypatch.setattr(LGB, "entry_mode", LGB._entry_mode_orig)
     st = {**_DEFAULT_SETTINGS, "symbol_enabled": True}
     st.pop("entry_mode")
     with patch.object(mft.cloud_db, "get_strategy_settings", return_value=st), \
-            patch.object(mft.mcx_resolver, "resolve_symbol") as res, patch.object(mft, "send_telegram_message") as tg:
+            patch.object(mft.mcx_resolver, "resolve_symbol", return_value=(False, "नाही")) as res, \
+            patch.object(mft, "send_telegram_message") as tg:
         out = mft._process_symbol_core("tok", "CRUDEOIL", {})
-    assert "थांबवले" in out and not res.called and not tg.called
+    assert "थांबवले" not in out and res.called and not tg.called

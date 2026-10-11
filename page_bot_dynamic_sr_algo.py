@@ -349,6 +349,41 @@ def _render_vix_halt_alert_banner():
         )
 
 
+def _render_level_gate_today(strategy_key, symbol, settings):
+    """L5 (Abhi §5): या bot + symbol चे आजचे areas आणि त्यांची gate अवस्था (signal_log मधली प्रत्येक level ची सर्वात नवी नोंद) + आजचा
+    Daily trend (फक्त cache file). फक्त वाचन — नवा network call नाही; DB read फक्त signal_log."""
+    try:
+        import pandas as pd
+        from bots_common import level_gate_bot as _LGB
+        from bots_common import level_visibility as _LV
+        from config import get_ist_now
+        today = get_ist_today()
+        _ap = bool(_LGB.gate_settings(settings)["allow_parent_correction"])
+        ctx = _LV.trend_from_cache(symbol, today, allow_parent=_ap, contract=strategy_key == "mcx_futures")   # MCX: contract चं नाव
+        if ctx:
+            (st.info if ctx.get("ok") else st.warning)(f"🧭 {symbol} Daily trend: {_LV.trend_text(ctx)}")
+        else:
+            st.caption(f"🧭 {symbol}: आजचा trend cache अजून नाही (pre-open script / bot चा पहिला cycle झाल्यावर दिसेल).")
+        if _LGB.entry_mode(settings) != _LGB.CONFIRMATION:
+            st.caption("ℹ️ या bot + symbol चा entry mode touch आहे — gate नोंदी फक्त confirmation mode मध्ये लिहिल्या जातात.")
+        log_df = cloud_db.get_signal_log(symbol, today)
+        if log_df is None:
+            st.warning("Signal log वाचता आला नाही (DB नाही / त्रुटी) — areas दाखवता येत नाहीत.")
+            return
+        show_idle = st.checkbox("price area वर नसलेले levels पण दाखवा", value=False, key=f"bdsr_l5_idle_{strategy_key}_{symbol}")
+        rows = _LV.area_table(log_df, strategy_key, now=get_ist_now(), tf_minutes=settings.get("confirm_tf_minutes"), include_idle=show_idle,
+                              symbol=symbol)
+        if not rows:
+            st.caption("आज या bot ची gate नोंद नाही (किंवा कुठलाच area सक्रिय नाही).")
+        else:
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        if strategy_key in ("1m_instant", "classic_sr_reversal"):
+            st.caption("5M levels: signal_log मध्ये bot column नाही — 5M Instant आणि Classic दोघांचे 5M rows एकच (दोन्ही bots खाली दिसतात). "
+                       "'~k/N bars' = पहिल्या ARMED नोंदीपासूनच्या वेळेवरून अंदाज.")
+    except Exception as exc:                                               # noqa: BLE001 — हा फक्त दृश्य भाग, बाकी पान चालू राहावं
+        st.warning(f"आजचे areas दाखवता आले नाहीत: {type(exc).__name__}: {exc}")
+
+
 def render():
     mega_header("🤖 Bot Dynamic SR Algo", HDR_BLUE)
     st.caption("तिन्ही strategies (5-मिनिट Instant Trader, 15M/30M/60M Dynamic SR Reversal, Classical S/R Reversal) चे सर्व सेटिंग्ज — इथूनच, कधीही बदलता येण्याजोगे.")
@@ -403,7 +438,10 @@ def render():
     _broker_caption = f"🏦 {len(_current_broker_ids)} broker account(s) निवडलेले" if _current_broker_ids else "🏦 Broker: डीफॉल्ट (शुद्ध Upstox)"
     st.caption(f"{_mode_caption} · {_broker_caption} — बदलण्यासाठी खालचं '🎮 Mode & Broker' tab बघा.")
 
-    tab_entry, tab_exit, tab_mode = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate", "🎮 Mode & Broker"])
+    tab_entry, tab_exit, tab_mode, tab_areas = st.tabs(["🚪 Entry Gate", "🚪 Exit Gate", "🎮 Mode & Broker", "🎯 आजचे Areas (gate)"])
+
+    with tab_areas:
+        _render_level_gate_today(strategy_key, symbol, settings)
 
     with tab_entry:
         if strategy_key in ("1m_instant", "classic_sr_reversal"):
