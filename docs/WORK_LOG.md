@@ -1664,3 +1664,17 @@ Q28 (नोंद): data (A) पासून असेल तर (B) zigzag = UP
 merged forms चा संदर्भ t − 2 (Q30); cap-कारणांत फक्त cap नोंदी; Telegram 1H chart `trend_used`; corr_label H / L आलटून. Tests: तिन्ही
 repro (एक-दिवसाचे bars) + Q30 grade + pipeline maturity cap; engine fixture (एकसारखे legs ⇒ प्रत्येक (5) mature) invariants साठी
 `NO_MATURE` override (default वर्तन वेगळ्या test मध्ये).
+
+## थर v2.2 — Daily swing review + Vision audit before Telegram (Abhi, urgent)
+- `decision3/daily_swings.py` + `charts.daily_swings_png` + `scripts/v22_daily_swings_view.py`: Daily वर दोन थर — Dow minor (Q15 आधीचा;
+  pivots, HH/HL/LH/LL, protected pivot ⇒ तुटला ✕, trend पट्टा) आणि Q15 degree-aware (impulse origin, phase / wave पट्टा, legs impulse
+  (trend दिशा + phase impulse) / corrective); elliott CountEngine Daily frames वर (fixed 1d), preferred count labels ("?" = कमकुवत vote).
+  Engine पूर्ण history वर; chart शेवटची 2 वर्षं. NIFTY: sealed holdout rows कधीच नाहीत (फक्त holdout नंतर, gap ओलांडून fold नाही).
+  आधी फक्त BANKNIFTY (Abhi). Output trade-data `review/v22/daily_swings/` (PNG + JSON + caption + manifest, NIFTY आधी).
+- `decision3/vision_audit.py`: chart → Vision audit → Telegram (सगळे v2.2 manifest items, kind `v22…`). Facts engine JSON मधून, Vision
+  फक्त placement; caption ओळ + "Vision report" reply (≤ 12 ओळी, Zones / Structure / Pullback & trigger / Entry/SL/Target); audit JSON PNG
+  शेजारी (त्याच chart साठी पुन्हा खर्च नाही); दैनिक सारांश `VISION_AUDIT.md`; budget संपला / अपयश ⇒ chart तरीही, caption मध्ये कारण.
+  `vision_daily_budget_usd` default 0.30 ⇒ 2.0 (hard stop तसाच; monthly 5 बदल नाही). Vision decision कधीच बदलत नाही (test).
+- Independent review: auditor exception ने send अडत होता (fixed), Q15 origin-break ✕ flip bar वर (fixed), reuse / monthly-cap कारण /
+  off caption / report-reply अपयश / label जुळवणी / legs phase / NIFTY gap — fixed + tests (mutation-checked: break marker).
+- Open: Q31 (NIFTY 2y ⇒ holdout), Q32 (legs2 Daily वर नाही), Q33 (history-अवलंबी degree), Q34 (wave (6)+).

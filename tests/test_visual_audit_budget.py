@@ -196,7 +196,7 @@ def test_empty_symbols_setting_disables(vdb, monkeypatch):
     VC.save("_global", {"visual_audit_symbols": []}, "test")
     assert RVA.symbols_setting() == []
     with pytest.raises(ValueError):
-        VC.save("_global", {"signals_daily_reserve_usd": 0.50}, "test")                  # राखीव > दैनिक budget
+        VC.save("_global", {"signals_daily_reserve_usd": VC.GLOBAL_DEFAULTS["vision_daily_budget_usd"] + 0.5}, "test")   # राखीव > दैनिक budget
 
 
 def test_render_timeout_does_not_hang_and_abandons_dead_server(monkeypatch):

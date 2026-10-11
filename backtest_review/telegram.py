@@ -205,8 +205,10 @@ def send_document(path, cap, run_key, call=None, creds=None, sent=None):
     return "sent"
 
 
-def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None):
-    """manifest मधले न पाठवलेले items पाठवा. रिटर्न {"sent": n, "skipped": n, "failed": [(date, कारण)]}.
+def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None, auditor=None):
+    """manifest मधले न पाठवलेले items पाठवा. रिटर्न {"sent": n, "skipped": n, "failed": [(date, कारण)]} + "audits": […] (फक्त v2.2 audit झाले तर).
+    auditor(run_dir, item) ⇒ decision3.vision_audit dict (v2.2 items, kind "v22…"): Telegram **आधी** audit; caption मध्ये audit ओळ,
+    media group नंतर "Vision report" reply. Audit अपयश / budget संपला ⇒ chart तरीही जातो (caption मध्ये तसं).
     run_key = sent log मधली run ओळख (default manifest run_id; script ⇒ --run path). call(method, data, files, timeout) ⇒ Telegram JSON
     (ok false सुद्धा) | None (network); creds() ⇒ (token, chat_id) — default notifications credentials."""
     m = load_manifest(run_dir)
@@ -226,6 +228,19 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
             out["skipped"] += 1
             continue
         cap = caption(m, it)
+        aud = None
+        if auditor is not None and str(it.get("kind") or "").startswith("v22") and not dry_run:
+            from decision3 import vision_audit as VA
+            try:
+                aud = auditor(run_dir, it)                                  # chart → Vision audit → Telegram
+            except Exception as exc:                                        # noqa: BLE001 — audit अपयश chart अडवत नाही (Abhi)
+                aud = {"status": "failed", "why": f"auditor {type(exc).__name__}", "verdict": None, "sections": {}, "issues": [],
+                       "cost_usd": 0.0, "item": it["item"], "chart": it["files"][0]}
+            cap = VA.with_audit_line(cap, VA.caption_line(aud))
+            out.setdefault("audits", []).append(aud)
+        elif str(it.get("kind") or "").startswith("v22") and not dry_run:   # audit बंद ⇒ caption मध्ये स्पष्ट
+            from decision3 import vision_audit as VA
+            cap = VA.with_audit_line(cap, "Vision audit skipped: off")
         if dry_run:
             print(f"[dry-run] {cap.splitlines()[0]} · {len(it['files'])} images")
             out["sent"] += 1
@@ -237,6 +252,13 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
         else:
             log[k] = {"run": run_key, "item": it["item"], "date": it["date"], "message_ids": ids, "kind": it.get("kind"),
                       "files": it["files"], "sha": [_sha(os.path.join(run_dir, f)) for f in it["files"]]}
+            if aud is not None:                                              # Vision report = chart चा reply (वेगळा संदेश)
+                from decision3 import vision_audit as VA
+                j = call("sendMessage", {"chat_id": cid, "text": VA.report_text(aud, cap.splitlines()[0]),
+                                         "reply_to_message_id": ids[0]}, None, timeout=30)
+                log[k]["vision_report_ok"] = bool(j and j.get("ok"))
+                if not log[k]["vision_report_ok"]:                          # chart गेला, report नाही ⇒ गुपचूप नाही
+                    out["failed"].append((it["date"], f"Vision report reply: {(j or {}).get('error_code', 'network')}"))
             _save_sent(log, sent)
             out["sent"] += 1
         sleep(pause_s)                                                      # rate limit: संदेशांमध्ये विराम

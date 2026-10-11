@@ -76,8 +76,8 @@ RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", 
                               "line_conflict", "event_day", "gap_c_alone")}
 CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions")
 GLOBAL_DEFAULTS = {
-    "vision_daily_budget_usd": 0.30,
-    "vision_monthly_budget_usd": 5.0,
+    "vision_daily_budget_usd": 2.0,         # Abhi: दैनिक Vision cap $2.00 (hard stop तसाच; बाकी मर्यादा बदल नाही)
+    "vision_monthly_budget_usd": 60.0,      # Abhi: मासिक $60 ($2/दिवस शी सुसंगत). Dashboard / DB मधली value code default वर मात करते
     "morning_audit_time": "08:00",
     "event_days": [],                      # ["YYYY-MM-DD:नाव", …] — event दिवस (policy / budget / मोठा data), dashboard वरून
     "visual_audit_symbols": ["NIFTY"],     # EOD visual audit (run_visual_audit.py) — Abhi 2026-10-08: फक्त NIFTY (खर्च कमी); खर्च याच budget मध्ये
@@ -94,7 +94,7 @@ ENUMS = {
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
           "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
-          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 50.0),
+          "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 100.0),
           "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0)}
 
 

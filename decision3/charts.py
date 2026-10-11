@@ -221,3 +221,87 @@ def m15_png(V, t, title, bars=60, r=None):
     ax.set_title(f"{title} · 15M · {r['decision'] if r else ''} {r.get('conviction') or '' if r else ''}", fontsize=10)
     _xticks(ax, m["timestamp"].to_numpy(), max(1, len(m) // 12))
     return _png(fig)
+
+
+BAND_COLOR = {"UP": "#8ce99a", "DOWN": "#ffa8a8", "RANGE": "#ffe066", "NEUTRAL": "#ced4da", "UNKNOWN": "#f8f9fa"}
+
+
+def daily_swings_png(v, title):
+    """Daily swing review (decision3.daily_swings.build): candles (last window); (a) Dow minor — pivots + HH/HL/LH/LL + protected
+    (pivot to broken / moved) + trend band; (b) Q15 — impulse / corrective legs, protected origin, phase band; Elliott advisory
+    labels (gray ⇒ "?"). All chart text English. Visual review only."""
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    d, i0, n = v["frame"], v["i0"], v["n"]
+    fr = d.iloc[i0:].reset_index(drop=True)
+    x = lambda b: b - i0                                                   # noqa: E731
+    fig, (ax, bx) = plt.subplots(2, 1, figsize=(20, 9.5), gridspec_kw={"height_ratios": [7, 1]}, sharex=True)
+    _candles(ax, fr)
+    for lg in v["legs"]:                                                   # (b) legs
+        b = lg["to"]
+        if lg["class"] == "impulse":
+            ax.plot([x(lg["from"]), x(b)], [lg["p0"], lg["p1"]], color="#f76707", lw=3, alpha=0.35, solid_capstyle="round")
+        elif lg["class"] == "corrective":
+            ax.plot([x(lg["from"]), x(b)], [lg["p0"], lg["p1"]], color="#7048e8", lw=1.2, ls=":", alpha=0.8)
+    for sg in v["minor"]["protected"]:                                     # (a) protected
+        if sg["to"] < i0:
+            continue
+        a = max(sg["bar"], i0)
+        ax.plot([x(a), x(sg["to"])], [sg["price"]] * 2, color="#1c7ed6", lw=1.1, ls="--")
+        if sg["ended"] == "broken":
+            ax.plot([x(sg["to"])], [sg["price"]], marker="x", color="#1c7ed6", ms=7, mew=2)
+    for sg in v["q15"]["protected"]:                                       # (b) impulse origin
+        if sg["to"] < i0:
+            continue
+        a = max(sg["bar"], i0)
+        ax.plot([x(a), x(sg["to"])], [sg["price"]] * 2, color="#e8590c", lw=1.6)
+        if sg["ended"] == "broken":
+            ax.plot([x(sg["to"])], [sg["price"]], marker="X", color="#e8590c", ms=8)
+    rng = float(fr["high"].max() - fr["low"].min()) or 1.0
+    for p in v["pivots"]:                                                  # (a) pivots + tags + elliott label
+        if not p["in_window"]:
+            continue
+        up = p["kind"] == "H"
+        ax.plot([x(p["bar"])], [p["price"]], marker="v" if up else "^", color="#1c7ed6" if up else "#e8590c", ms=6,
+                markeredgecolor="#212529" if (p["protected_minor"] or p["protected_q15"]) else None)
+        lab = p["tag"] + ("*" if p["protected_minor"] else "")
+        ax.annotate(lab, (x(p["bar"]), p["price"]), textcoords="offset points", xytext=(0, 8 if up else -12), ha="center", fontsize=6.5,
+                    color="#1c7ed6" if up else "#e8590c", fontweight="bold")
+        if p.get("wave_label"):
+            ax.text(x(p["bar"]), p["price"] + (0.055 if up else -0.055) * rng, p["wave_label"], ha="center", va="center", fontsize=9,
+                    color="#5f3dc4", fontweight="bold", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="#5f3dc4", lw=0.6))
+    lo_, hi_ = float(fr["low"].min()), float(fr["high"].max())
+    ax.set_ylim(lo_ - 0.09 * rng, hi_ + 0.09 * rng)                        # labels / tags कापले जात नाहीत
+    for t in v["q15"]["targets"] or ():
+        ax.axhline(t, color="#868e96", lw=0.8, ls="--")
+        ax.text(len(fr) - 0.5, t, f" Q15 target {t:,.0f}", color="#868e96", fontsize=7, va="bottom")
+    for row, (key, name) in enumerate((("q15", "Q15 degree-aware"), ("minor", "Dow minor swings"))):
+        for a, b, s in v[key]["bands"]:
+            if b < i0:
+                continue
+            a2 = max(a, i0)
+            bx.add_patch(plt.Rectangle((x(a2) - 0.5, row), b - a2 + 1, 0.9, color=BAND_COLOR.get(s, "#fff"), lw=0))
+        bx.text(-1, row + 0.45, name, ha="right", va="center", fontsize=8)
+    for a, b, s in v["q15"]["phases"]:                                     # Q15 wave नावं पट्ट्यावर
+        if b < i0 or s.startswith("-"):
+            continue
+        a2 = max(a, i0)
+        if b - a2 >= 12:                                                   # लहान runs वर नाव नाही (गर्दी)
+            ph, wv = s.split("|")
+            short = {"impulse": "imp", "correction": "corr", "origin_broken": "broken"}.get(ph, ph)
+            bx.text(x(a2) + (b - a2) / 2, 0.45, f"{wv} {short}", ha="center", va="center", fontsize=6.5)
+    bx.set_ylim(0, 2)
+    bx.set_yticks([])
+    hdl = [Line2D([], [], color="#1c7ed6", ls="--", label="Dow minor: protected (x = broken by close)"),
+           Line2D([], [], marker="v", ls="", color="#1c7ed6", label="pivot H / L with HH-LH-HL-LL (* = was protected)"),
+           Line2D([], [], color="#e8590c", lw=1.6, label="Q15: impulse origin = protected (X = broken by close)"),
+           Line2D([], [], color="#f76707", lw=3, alpha=0.35, label="Q15 leg: impulse"),
+           Line2D([], [], color="#7048e8", lw=1.2, ls=":", label="Q15 leg: corrective"),
+           Patch(fc="white", ec="#5f3dc4", label="Elliott advisory label ('?' = weak vote) — not used in decisions")]
+    hdl += [Patch(color=BAND_COLOR[k], label=f"state {k}") for k in ("UP", "DOWN", "NEUTRAL", "RANGE")]
+    ax.legend(handles=hdl, loc="upper left", fontsize=7, ncol=2, framealpha=0.9)
+    ax.set_title(f"{title} · Daily swings — Dow minor vs degree-aware (Q15) · visual review only", fontsize=11)
+    ax.grid(alpha=0.15)
+    _xticks(bx, fr["timestamp"].to_numpy(), max(1, len(fr) // 24))
+    fig.tight_layout()
+    return _png(fig)
