@@ -1798,3 +1798,14 @@ Tests: COMPLETE खरंच तपासणारा (W = 3-wave ⇒ आधी 
 आकडे: mature दिवस NIFTY 1755 ⇒ 809, BANKNIFTY 1685 ⇒ 443; BANKNIFTY V22 (15M 2026-07 पासून) setup 0 ⇒ 0; level bots BANKNIFTY शेवटचे 250 सत्र: 5 दिवस blocked ⇒ allowed (2026-06-29 … 07-03), शेवटचा दिवस context तसाच. NIFTY अलीकडचे सत्र holdout ⇒ offline नाही.
 Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `python3 <scratchpad>/prA_v22_nifty.py <scratchpad>/base <out_old.json>` आणि `python3 <scratchpad>/prA_v22_nifty.py /home/user/Trade-eng <out_new.json>`.
 
+## 2026-10-11 · PR C (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §2 — Q49 wave A की wave 1)
+
+**काय केलं (decision3):**
+- `daily.counter_kind`: 5-wave counter-move ⇒ default wave A. Same-degree ("wave_1a") ⇒ wave 1 (flip शक्य) फक्त (a) correct होत असलेल्या impulse च्या origin पलीकडे close (Abhi: impulse-leg origin, A1 parent नाही) किंवा (b) `daily_legs.unfolded_123` ("1" / "2" / "3" दिसणारे 5 / 3 / 5, "3" "1" पलीकडे). नाहीतर parent टिकला ⇒ A1 correction. Q22 खालचा degree ⇒ नेहमी A (wave 1 फक्त parent तुटल्यावर). फक्त ≤ i confirmed pivots.
+- **⏳ PENDING Abhi मंजुरी — (a) चा विस्तार** (`q49_impulse_origin: complete_impulse`, default; `leg` = साधं वाचन): चालू leg एखाद्या पूर्ण 5-wave चा wave 5 असेल तर (a) origin = त्या impulse ची सुरुवात (`daily.complete_impulse_start`, wave 5 bar ने — Rule 4 origin सुद्धा; seq मग low pivots; उमेदवार = नंतर न ओलांडलेले टोक, cap नाही). हा निर्णय नाही — deep zigzag fixture साठी प्रस्ताव; साध्या वाचनाने तिन्ही नवे fixtures fail (OPEN_QUESTIONS Q49).
+- (a) पूर्ण-impulse सुरुवातीवर फुटल्यास origin = तोच (pcorr शाखेसारखं). Q49 why मजकूर मार्गानुसार (Q22 मार्गावर "origin टिकला" असा दावा नाही).
+- `DState.wave_a` / `alt` ("1"), prov snapshot मध्ये. Default chart "A"; debug JSON / debug chart "A (alt: 1)"; trend line / caption / ① (Telegram) मध्ये wave क्रमांक नाही (Q46).
+- `daily_legs.leg_points` / `leg_prices` (classify मधून, वर्तन तेच), `_motive_segs`, `unfolded_123`.
+
+**Fixtures / tests:** `very_deep_holds_origin` pass (strict xfail काढले); नवे `q49_complete_five` ((b), "3" च्या शेवटी flip नाही), `q49_beyond_impulse_origin` (ABC_FIX आकार, (a)), `q49_lower_degree_a` (Q22 why); सगळे आरशात. `double_zigzag` strict xfail (Q49 (b)). `tests/test_decision3_q49.py` (17, Rule-4 bar-match unit test सह).
+**Before / after:** `scripts/q49_before_after.py` — BANKNIFTY 2479 दिवस: बदल खाली (review नंतरचा run).

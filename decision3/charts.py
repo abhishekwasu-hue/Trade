@@ -281,6 +281,10 @@ def daily_swings_png(v, title):
         up = pb["kind"] == "H"
         ax.annotate(pb["tag"], (x(pb["bar"]), pb["price"]), textcoords="offset points", xytext=(0, 9 if up else -13), ha="center",
                     fontsize=6.5, color="#868e96" if pb["tag"] == "pullback" else "#5f3dc4")
+    for wv in sp.get("waves") or ():                                       # Q49: 5-wave पहिला पाय = "A" (पर्याय फक्त debug)
+        up = wv["kind"] == "H"
+        ax.annotate(wv["label"], (x(wv["bar"]), wv["price"]), textcoords="offset points", xytext=(0, 14 if up else -18), ha="center",
+                    fontsize=10, color="#5f3dc4", fontweight="bold")
     off_n = {"above": 0, "below": 0}
     for bd in sp["bands"]:                                                 # ≤ 6 level bands
         col = BAND_STATE_COLOR.get(bd["state"], "#495057")
@@ -361,6 +365,11 @@ def daily_swings_debug_png(v, title):
         if p.get("wave_label"):
             ax.text(x(p["bar"]), p["price"] + (0.055 if up else -0.055) * rng, p["wave_label"], ha="center", va="center", fontsize=9,
                     color="#5f3dc4", fontweight="bold", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="#5f3dc4", lw=0.6))
+    wa = v["q15"].get("wave_a")                                            # Q49 debug: "A (alt: 1)"
+    if wa and wa["bar"] >= i0:
+        up = wa["kind"] == "H"
+        ax.text(x(wa["bar"]), wa["price"] + (0.075 if up else -0.075) * rng, f"A (alt: {v['q15'].get('alt') or '-'})", ha="center",
+                va="center", fontsize=8, color="#c92a2a", fontweight="bold")
     lo_, hi_ = float(fr["low"].min()), float(fr["high"].max())
     ax.set_ylim(lo_ - 0.09 * rng, hi_ + 0.09 * rng)                        # labels / tags कापले जात नाहीत
     for t in v["q15"]["targets"] or ():
