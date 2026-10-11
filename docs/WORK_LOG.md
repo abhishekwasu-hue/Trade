@@ -1783,6 +1783,49 @@ dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegr
 तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
 उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.
 
+## 2026-10-11 · Chart Reader v2 CR0–CR2 (Abhi: TRADE_SESSION_CHART_READER_V2) — research-only
+
+**CR0:** `docs/READER2_DESIGN.md` (English) — design, units (median range), data flow, invariants तक्ता, आणि `legs2/features.py` audit (काय आहे / anatomy
+vote साठी काय नाही: MR unit, range expansion / contraction, दोन्ही बाजूंच्या wicks, आधीच्या counter-move शी volume, MR units मधलं effort vs result, pause).
+**CR1:** नवा package `reader2/` (शुद्ध functions): `frame` (कोणताही timeframe, MR, known_at, futures volume NA-safe), `legs` (degree = DC k × MR, causal),
+`anatomy` (legs2 features पुन्हा वापरून 13 features ⇒ [−1, +1] + evidence), `structure` (`decision3.daily_legs.read_counter` wrapper).
+**CR2:** `fusion` (एकमत ⇒ high; एक गप्प ⇒ medium; विरोध ⇒ पर्यायी खालच्या pivots ने re-read ⇒ low / uncertain), `trend` (flip फक्त impulse counter-move ने:
+structure + anatomy + prior swing break; origin पलीकडे close ⇒ uncertain), `selfcheck` (invariants 1–7, कमाल 3 passes, "relabelled X → Y because …" +
+known_at, `history` नवीन bars साठी), `reader.mark` (बाहेरची / v1 marking तपासणे).
+**Tests:** `tests/test_reader2_{anatomy,fusion,selfcheck,boundary}.py` + `tests/reader2_fixtures.py` (clean impulse, overlapping correction, mis-placed pivots,
+big-c correction, deep sideways, sharp A — प्रत्येकाचा आरसा) — 84 pass. decision3 / bots / vision reader2 import करत नाहीत (boundary test). आकडे tune केले
+नाहीत (CR-Q6). CR3+ (marking page, gallery, CI, chart layer, shadow) सुरू केलेलं नाही. उघडे प्रश्न: OPEN_QUESTIONS CR-Q1–CR-Q7.
+
+### 2026-10-11 · Chart Reader v2 — independent review (BANKNIFTY daily) नंतर दुरुस्ती (research-only)
+**🔴1 roll-up:** candles फक्त lowest degree ला; वरच्या leg चा anatomy = sub-legs (एक degree खाली, recursive) चा roll-up — motive (आकाराने वजनी),
+counter, थांब्यांची वेळ / खोली (≥ 2 counters असताना), motive आवेगी नसेल तर leg आवेगी नाही, मोठा सुधारात्मक motive sub-leg ⇒ veto. CR-Q1 सोडवला.
+**🔴2:** uncertain कायमचं नाही — trend-capable impulse (कोणत्याही दिशेचा) trend पुन्हा ठरवतो. **🔴3:** "3-wave" fallback निर्णायक नाही (−0.25 < 0.5).
+**🔴4:** एक vote गप्प ⇒ re-read; structure-only impulse ⇒ uncertain; "low" impulse trend ठरवत / उलटवत / protected हलवत नाही.
+**🟡:** एकतर्फी features चा 0 सरासरीत नाही; provisional (अपूर्ण) leg वाचतो, trend बदलत नाही; invariant 5 नेहमी re-read (उल्लंघन पुन्हा तपासून);
+invariant 4 origin नसलेल्या marking साठी; look-ahead test `read()` ने; re-read फक्त एक degree खाली (1/0.875/0.75/0.625); history खर्च नोंद;
+REGISTER keys = DEFAULTS (contraction_min_half, intraday_max_spacing_hours settings मध्ये).
+**Fixtures / tests:** realistic noisy candles (seeds 1–3), structure-only 5-wave (ambiguous candles ⇒ uncertain), uncertain पुन्हा trend, provisional,
+library run (`tests/test_reader2_library.py`: 86 pass / 10 strict xfail — CR-Q2). BANKNIFTY daily: Feb→Apr 2026 DOWN impulse (medium, flip DOWN 7 May),
+Apr→Jun uncertain (zigzag vs mixed candles), Jun→now provisional DOWN impulse; mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — re-review (fecdac7) नंतर दुरुस्ती (research-only)
+**🔴1 sharp a-b-c:** roll-up मध्ये "shape" (sub-legs ची संख्या: 3 ⇒ −1, 5 ⇒ +1) आणि दोन pushes (2 motive + 1 counter) ⇒ score ≤ a_lo — a आणि c आवेगी असले तरी
+sharp a-b-c correction (test: 3 खोली × ideal + 3 noisy seeds × आरसा ⇒ correction). Anatomy नेहमी reader चे स्वतःचे pivots वापरते (बाहेरचे pivots फक्त structure).
+**🔴2 re-read:** तीन पर्याय (0.9 / 0.75 / 0.6), निर्णय बहुमताने (2 / 3), दोन्ही दिशांना एकच; नाव असलेली correction re-read ने impulse होत नाही.
+**🔴3:** candle votes Chart वर cache ⇒ BANKNIFTY read 1.2 s ⇒ 0.47 s; history docstring खर्च दुरुस्त.
+**परिणाम (प्रामाणिक):** BANKNIFTY Daily — Feb→Apr 2026 uncertain (anatomy +0.54 पण structure पर्याय 1 / 3 impulse), Apr→Jun correction high (zigzag, Abhi शी जुळतं),
+Jun→now provisional correction high (zigzag, two-push); uncertain 79 % (CR-Q11). Library: flip 32/32, correction≠impulse 30/32, impulse दिशा 0/32 (CR-Q2).
+Mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — round-2 re-review (75e4442) नंतर दुरुस्ती (research-only)
+**🔴1:** anatomy मधून shape term आणि two-push cap काढले (wave count फक्त structure मध्ये); a-b-c / 1-2-3-4-5 candles च्या पुराव्याने: c_like_a, b_brief, middle_push.
+SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अपेक्षा परत; ते आता strict xfail (नाव असलेली zigzag re-read ने impulse होत नाही — CR-Q11). Probes: लहान wave 4 / wave 2
+⇒ uncertain (कधीच correction high नाही); sharp a-b-c ⇒ correction low. **🔴2:** re-read पर्याय dc_k[D−1] × (0.9 / 0.75 / 0.6), कधीच dc_k[0] खाली नाही (नाहीतर abstain).
+**BANKNIFTY:** trend UP 23.6 % / DOWN 5.5 % / uncertain 55.2 %; uncertain फक्त 2 origin-close घटनांतून, कारण = trend-capable up-impulses नाहीत (CR-Q12). Feb→Apr 2026 impulse low
+(anatomy +0.45, structure पर्यायांना बहुमत नाही), Apr→Jun correction low (zigzag), Jun→now provisional correction low. Read 0.32 s; mirror / causality 0 फरक. Tests 233 pass / 40 xfail.
+**Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
+नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**
