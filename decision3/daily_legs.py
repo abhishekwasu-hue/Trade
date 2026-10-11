@@ -82,11 +82,144 @@ def reduce_waves(x):
     return out
 
 
-def structure(prices):
-    """रिटर्न {"structure": impulse / corrective / single, "n": मूळ waves, "form": zigzag / flat / None}."""
+def reduce_counted(x):
+    """reduce_waves सारखंच, पण प्रत्येक उरलेल्या wave मध्ये मूळ किती पाय (subdivision) — {n: (prices, counts)}."""
+    x = list(map(float, x))
+    cnt = [1] * (len(x) - 1)
+    out = {len(x) - 1: (list(x), list(cnt))}
+    d = 1 if x[-1] > x[0] else -1
+    while len(x) - 1 > 1:
+        best = None
+        for i in range(1, len(x) - 2):
+            a, b = x[i], x[i + 1]
+            sgn = d if i % 2 == 1 else -d
+            ok = (x[i + 2] - a) * sgn >= 0 and (b - x[i - 1]) * sgn >= 0
+            if ok and (best is None or abs(b - a) < best[0]):
+                best = (abs(b - a), i)
+        if best is None:
+            break
+        i = best[1]
+        merged = cnt[i - 1] + cnt[i] + cnt[i + 1]
+        x = x[:i] + x[i + 2:]
+        cnt = cnt[:i - 1] + [merged] + cnt[i + 2:]
+        out.setdefault(len(x) - 1, (list(x), list(cnt)))
+    return out
+
+
+MOTIVE = ("impulse", "diagonal")
+CORRECTIVE = ("zigzag", "flat", "triangle", "combination", "3-wave")
+_READ_CACHE = {}
+
+
+def _segments(prices, counts):
+    """reduced waves ⇒ प्रत्येक wave चे मूळ बिंदू (subdivision)."""
+    out, k = [], 0
+    for c in counts:
+        out.append(list(prices[k:k + c + 1]))
+        k += c
+    return out
+
+
+def _is_motive(seg):
+    return len(seg) - 1 == 1 or read_counter(seg)["family"] in MOTIVE
+
+
+def _is_corrective(seg):
+    return len(seg) - 1 == 1 or read_counter(seg)["family"] in CORRECTIVE
+
+
+def read_counter(prices):
+    """ABC_FIX / fixture library: एक संपूर्ण चाल (टोक ते टोक, एक degree खालचे pivots) Elliott नियमांनी वाचा (Frost & Prechter —
+    docs/research/elliott_rules.md). प्रत्येक wave ची subdivision recursive वाचली: impulse 5-3-5-3-5 (1/3/5 motive, 2/4 corrective),
+    diagonal (wedge, 3-3-3-3-3), triangle (sideways, 3-3-3-3-3), combination (W आणि Y स्वतः corrective), zigzag 5-3-5 (a, c motive),
+    flat 3-3-5 (a corrective, c motive). एक-पायी wave ⇒ दोन्ही चालतो (तपशील दिसत नाही). Ratios नाहीत — फक्त नियम + patterns2 settings.
+    रिटर्न {"family", "n"}: impulse / diagonal / triangle / combination / zigzag / flat / 3-wave / single."""
+    key = tuple(round(float(v), 6) for v in prices)
+    if key in _READ_CACHE:
+        return _READ_CACHE[key]
+    if len(_READ_CACHE) > 20000:
+        _READ_CACHE.clear()
+    n = len(prices) - 1
+    if n <= 1:
+        return {"family": "single", "n": max(n, 0)}
+    _READ_CACHE[key] = {"family": "3-wave", "n": n}                       # recursion guard
+    red = reduce_counted(prices)
+    s2 = PS2.DEFAULTS
+    fam = None
+    p5 = red.get(5)
+    if p5 is not None and n >= 5:
+        x5, c5 = p5
+        seg5 = _segments(prices, c5)
+        corr_all = all(_is_corrective(g) for g in seg5)
+        if PR.impulse(x5, done=True) and all(_is_motive(seg5[k]) for k in (0, 2, 4)) and all(_is_corrective(seg5[k]) for k in (1, 3)):
+            fam = "impulse"
+        elif (corr_all or (all(_is_motive(seg5[k]) for k in (0, 2, 4)) and all(_is_corrective(seg5[k]) for k in (1, 3)))) and \
+                (PR.wedge(x5, done=True, kind="contracting") or PR.wedge(x5, done=True, kind="expanding")):
+            fam = "diagonal"                                               # ending 3-3-3-3-3 / leading 5-3-5-3-5 (4 overlaps 1)
+        elif corr_all and any(PR.triangle(x5, done=True, kind=k)[0] for k in ("contracting", "expanding")) and not PR.impulse(x5, True):
+            fam = "triangle"
+        elif all(len(seg5[k]) > 2 and read_counter(seg5[k])["family"] in CORRECTIVE for k in (0, 2, 4)) and \
+                all(_is_corrective(seg5[k]) for k in (1, 3)):
+            fam = "combination"                                            # triple three W-X-Y-X-Z (W, Y, Z स्वतः corrective)
+    p9 = red.get(9)
+    if fam is None and p9 is not None and n >= 9:                          # extended wave: 9 waves (विस्तारलेल्या wave चे 5 उप-waves
+        x9, c9 = p9                                                        # इतर waves इतकेच मोठे — Frost & Prechter "extensions")
+        seg9 = _segments(prices, c9)
+        for ext in (0, 2, 4):                                              # 1st / 3rd / 5th extended
+            grp = [[k] for k in range(9)]
+            j = ext
+            waves = grp[:j] + [list(range(j, j + 5))] + grp[j + 5:]
+            if len(waves) != 5:
+                continue
+            x5e = [x9[0]] + [x9[w[-1] + 1] for w in waves]
+            segs = [sum((seg9[k][1:] if t else seg9[k] for t, k in enumerate(w)), []) for w in waves]
+            if PR.impulse(x5e, done=True) and all(_is_motive(segs[k]) for k in (0, 2, 4)) and \
+                    all(_is_corrective(segs[k]) for k in (1, 3)):
+                fam = "impulse"
+                break
+    p3 = red.get(3)
+    if fam is None and p3 is not None:
+        x3, c3 = p3
+        a_seg, _, c_seg = _segments(prices, c3)
+        if len(a_seg) > 2 and len(c_seg) > 2 and read_counter(a_seg)["family"] in CORRECTIVE and \
+                read_counter(c_seg)["family"] in CORRECTIVE:
+            fam = "combination"                                            # W आणि Y स्वतः corrective (double / triple three, double zigzag)
+        elif PR2.zigzag(x3, True, s2)[0] and _is_motive(a_seg) and _is_motive(c_seg):
+            fam = "zigzag"
+        elif PR2.flat(x3, True, s2)[0] and _is_corrective(a_seg) and _is_motive(c_seg):
+            fam = "flat"
+        if fam is None:                                                    # B सर्वात टोकाच्या बिंदूवर संपत नाही (उदा. triangle B चा e)
+            ia = c3[0]
+            for ib in range(ia + 1, n, 2):
+                xb = [prices[0], prices[ia], prices[ib], prices[n]]
+                b_seg, c2 = list(prices[ia:ib + 1]), list(prices[ib:])
+                if (prices[ib] - prices[0]) * (prices[n] - prices[0]) < 0 or len(c2) < 2:
+                    continue
+                if not (_is_corrective(b_seg) and _is_motive(c2)):
+                    continue
+                if PR2.zigzag(xb, True, s2)[0] and _is_motive(a_seg):
+                    fam = "zigzag"
+                    break
+                if PR2.flat(xb, True, s2)[0] and _is_corrective(a_seg):
+                    fam = "flat"
+                    break
+    out = {"family": fam or "3-wave", "n": n}
+    _READ_CACHE[key] = out
+    return out
+
+
+def structure(prices, elliott=False):
+    """रिटर्न {"structure": impulse / corrective / single, "n": मूळ waves, "form": ...}. Default (Q28 / Q36 nature gates): 5-wave
+    reduction वर impulse नियम, नाहीतर zigzag / flat / 3-wave. elliott=True (ABC_FIX — संपूर्ण counter-move, correction शेवट, box family):
+    read_counter चं subdivision वाचन (impulse / diagonal ⇒ "impulse"; zigzag / flat / triangle / combination / 3-wave ⇒ "corrective")."""
     n = len(prices) - 1
     if n <= 1:
         return {"structure": "single", "n": max(n, 0), "form": None}
+    if elliott:
+        fam = read_counter(prices)["family"]
+        if fam in ("impulse", "diagonal"):
+            return {"structure": "impulse", "n": n, "form": fam}
+        return {"structure": "corrective", "n": n, "form": fam}
     red = reduce_waves(prices)
     x5 = red.get(5)
     if x5 is not None and PR.impulse(x5, done=True):
@@ -108,7 +241,7 @@ def _m(A, i0, i1, dirn, cache):
     return cache[k]
 
 
-def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache=None, inner_seq=None):
+def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache=None, inner_seq=None, elliott=False):
     """एक leg (a ⇒ b, b चालू टोक असू शकतो): seq = त्याच degree चे confirmed pivots (DPivot) — आधी पूर्ण झालेले legs C baseline साठी;
     inner_seq = एक degree खालचे pivots (आतली रचना; seq आलटून पालटून असल्याने त्याच degree चे आतले pivots नसतात). confirm_bar ≤
     upto_confirm. legs2 नियम: ≤ short_leg_bars bars चा leg ⇒ C तटस्थ, baseline बाहेर. रिटर्न dict kind / structure / form / C / c_cls / n."""
@@ -127,7 +260,7 @@ def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache
     if len(prices) > 1 and kinds[-1] == ("H" if dirn > 0 else "L"):     # शेवटचा आतला pivot leg-दिशेचा ⇒ b शी merge
         prices, kinds = prices[:-1], kinds[:-1]
     prices.append(b_price)
-    st = structure(prices)
+    st = structure(prices, elliott)
     short = int(s["short_leg_bars"])
     done = sorted((p for p in conf if p.bar <= a_bar), key=lambda p: p.bar)   # a पर्यंत पूर्ण झालेले Daily legs (C baseline)
     pairs = [(p, q) for p, q in zip(done, done[1:]) if p.kind != q.kind and q.bar - p.bar > short][-int(s["baseline_legs"]):]

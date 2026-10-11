@@ -29,7 +29,7 @@ def test_q15_origin_break_marked_on_break_bar():
     """Q15: origin close ने तुटला (phase origin_broken, protected तसाच) ⇒ segment त्याच bar ला "broken" (X), flip bar ला नाही."""
     from decision3 import daily as DD
     d = daily_from_path(FLAT[:12] + [96, 92])
-    s = {"daily_min_sessions": 3, "daily_sigma_sessions": 3}
+    s = {"daily_min_sessions": 3, "daily_sigma_sessions": 3, "daily_parent_gate": False}   # Q53: origin_broken यंत्रणा (gate off)
     st = DD.fold(d, s)
     brk = next(i for i, x in enumerate(st) if x.phase == "origin_broken")
     v = DS.build(d, s=s, window=len(d), with_elliott=False)

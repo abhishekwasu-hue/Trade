@@ -7,6 +7,10 @@ from decision3 import daily as DD
 from tests.test_decision3 import daily_from_path
 
 S = {"daily_min_sessions": 3, "daily_sigma_sessions": 3, "range_eq_sigma_d": 0.25}
+
+# ABC_FIX rule 1: या fixtures मधली counter-move 3-wave आहे आणि trend सुरुवात टिकते ⇒ default (parent gate on) मध्ये ती correction.
+# origin_broken / Q23 / Q27 / Q36 यंत्रणा (rule 1 सोडतो तेव्हा — counter impulse किंवा trend सुरुवात तुटली) gate off ने तपासली (Q53).
+OB = {**S, "daily_parent_gate": False}
 #      pre  (A) (B) (1) (2)  ---------- (3) with minor swings ---------  (4)  ----- (5) -----
 FLAT = [100, 60, 98, 85, 93, 82, 84.5, 84, 74, 76, 75.5, 62, 80, 70, 72, 58]   # minor bounces नंतर थांबा ⇒ confirm होतात
 
@@ -59,7 +63,7 @@ def test_minor_daily_mode_flips_on_minor_lh_but_impulse_mode_does_not():
 def test_origin_close_break_alone_keeps_down_then_opposite_impulse_flips_up():
     path = FLAT[:12] + [96, 88, 104]                                                          # (3) नंतर origin (93.5) वर, HL, नवा HH
     d = daily_from_path(path)
-    st = DD.fold(d, S)
+    st = DD.fold(d, OB)
     C = d["close"].to_numpy()
     brk = _idx_first(st, lambda x: x.phase == "origin_broken")
     assert C[brk] > 93.5 and st[brk].trend == "DOWN"                                           # फक्त close-break ⇒ trend संपत नाही
@@ -71,7 +75,7 @@ def test_origin_close_break_alone_keeps_down_then_opposite_impulse_flips_up():
 def test_new_low_after_origin_break_resumes_down_with_advanced_protected():
     path = FLAT[:12] + [95, 70, 55]                                                           # origin वर close, मग (3) low खाली
     d = daily_from_path(path)
-    st = DD.fold(d, S)
+    st = DD.fold(d, OB)
     brk = _idx_first(st, lambda x: x.phase == "origin_broken")
     after = [x for x in st[brk:] if x.phase == "impulse"]
     assert after and after[-1].trend == "DOWN" and abs(after[-1].protected.price - 95.5) < 1e-9
@@ -115,7 +119,7 @@ def test_step1_weekly_against_caps_b_and_mature_or_origin_broken_caps_weak():
     ok, why, s1, ctx = V.step1(0)
     assert s1.mature and ctx["cap"] == "weak" and "mature" in " ".join(ctx["notes"])
     path = FLAT[:12] + [96]
-    sb = DD.fold(daily_from_path(path), S)
+    sb = DD.fold(daily_from_path(path), OB)
     V = _V_with(sb, [DD.DState(0, sb[0].day, sb[0].known_at, "UNKNOWN")])
     ok, why, s1, ctx = V.step1(0)
     assert s1.phase == "origin_broken" and ctx["trend"] == "DOWN" and ctx["cap"] == "B" and ctx["notes"]    # Q23 (Abhi): कमाल B
@@ -145,7 +149,7 @@ FLAT_B_INNER = FLAT[:2] + [75, 68] + FLAT[2:]
 
 def test_b_with_inner_swings_same_behaviour_and_maturity_targets_a_low():
     d = daily_from_path(FLAT_B_INNER)
-    st = DD.fold(d, S)
+    st = DD.fold(d, OB)
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
     assert st[b3 - 1].trend == "UP"                    # Q28: data (A) पासून ⇒ (B) zigzag = UP impulse; (B) चा HL close ने तुटेपर्यंत UP
     assert all(x.trend == "DOWN" for x in st[b3:]) and abs(st[b3].protected.price - 93.5) < 1e-9   # flip ⇒ सर्वात उंच LH = (2) high
@@ -187,7 +191,7 @@ def test_flip_origin_skips_hl_broken_later():
     d = _append_days(daily_from_path(FLAT[:12]), [68, 74, 80, 77, 73, 70, 77, 85, 92, 83, 75, 66, 75, 85, 94, 96])
     j = int(d["close"].to_numpy().tolist().index(92.0))
     d.loc[j, "high"] = 97.5                                                       # wick high (close origin खालीच)
-    st = DD.fold(d, S)
+    st = DD.fold(d, OB)
     C = d["close"].to_numpy()
     brk = _idx_first(st, lambda x: x.phase == "origin_broken" or x.trend == "UP")
     assert C[brk] > 93.5
@@ -198,3 +202,12 @@ def test_post_break_hl_must_be_inside_old_impulse_end():
     """(आ) break नंतरचा "HL" जुन्या impulse टोकाइतका / पलीकडे असेल तर तो HL नाही (double bottom) ⇒ flip नाही."""
     st = DD.fold(daily_from_path(FLAT[:12] + [96, 62, 99]), S)
     assert all(not (x.trend == "UP" and abs(x.protected.price - 61.5) < 1e-9) for x in st)
+
+
+def test_abc_fix_three_wave_counter_move_holding_the_trend_start_is_a_correction():
+    """ABC_FIX rule 1 (default gate on): वरच्या fixture ची (3) नंतरची 3-wave counter-move origin close ने तोडते, पण trend ची सुरुवात
+    टिकते ⇒ origin_broken / flip नाही — same-degree correction (protected = parent)."""
+    st = DD.fold(daily_from_path(FLAT[:12] + [96, 88]), S)
+    after = st[next(i for i, x in enumerate(st) if x.trend == "DOWN"):]
+    assert all(x.trend == "DOWN" for x in after)
+    assert not any(x.phase == "origin_broken" for x in after) and any(x.counter == "correction" for x in after)

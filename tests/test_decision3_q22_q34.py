@@ -10,6 +10,10 @@ from tests.test_decision3 import daily_from_path
 
 S = {"daily_min_sessions": 3, "daily_sigma_sessions": 3, "range_eq_sigma_d": 0.25}
 
+# ABC_FIX rule 1: या fixtures मधली counter-move 3-wave आहे आणि trend सुरुवात टिकते ⇒ default (parent gate on) मध्ये ती correction.
+# origin_broken / Q23 / Q27 / Q36 यंत्रणा (rule 1 सोडतो तेव्हा — counter impulse किंवा trend सुरुवात तुटली) gate off ने तपासली (Q53).
+OB = {**S, "daily_parent_gate": False}
+
 
 def bars(segments, start=100.0, day0="2030-01-01"):
     """segments = [(target, n_bars, style)]: style "line" (daily_from_path सारखी), "imp" (मोठी body, लहान wick, overlap कमी),
@@ -116,11 +120,11 @@ def test_q22_bigger_bounce_than_internal_is_correction():
 def test_q27_range_after_origin_break_with_equal_highs_lows():
     from tests.test_decision3_daily_q15 import FLAT
     path = FLAT[:12] + [96, 88, 96, 88, 96]                                                      # origin (93.5) तुटला, मग 96 / 88 बाजू
-    st = DD.fold(daily_from_path(path), S)
+    st = DD.fold(daily_from_path(path), OB)
     rng = [x for x in st if x.trend == "RANGE"]
     assert rng and rng[0].band[0] < 88 < 96 < rng[0].band[1]
     assert DD.trade_side("RANGE") == ("bull_put", "bear_call")
-    off = DD.fold(daily_from_path(path), {**S, "range_after_trend": False})
+    off = DD.fold(daily_from_path(path), {**OB, "range_after_trend": False})
     assert not any(x.trend == "RANGE" for x in off[24:])
 
 
@@ -246,8 +250,8 @@ def test_q36_flip_needs_impulse_leg_else_origin_broken():
     segs = [(120, 4, "line"), (100, 4, "line"), (112, 4, "line"), (92, 5, "line"), (96, 2, "line"), (85, 4, "line"),
             (95, 3, "line"), (91, 1, "line"), (100, 3, "line"), (93, 4, "line"), (118, 6, "line")]
     d = bars(segs, start=100.0)
-    on = DD.fold(d, S)
-    off = DD.fold(d, {**S, "daily_start_nature_gate": False})
+    on = DD.fold(d, OB)
+    off = DD.fold(d, {**OB, "daily_start_nature_gate": False})
     assert on[-1].trend == "DOWN" and on[-1].phase == "origin_broken"
     assert any("Q36" in x.why for x in on)
     assert off[-1].trend == "UP"

@@ -60,6 +60,10 @@ class DState:
     leg_start: int = None      # चालू impulse leg चा origin bar (chart: legs / corrections objects)
     corr_bars: tuple = ()      # चालू leg मधले same-degree correction swings (bars, confirmed)
     origin_risk: bool = False  # B1: correction किंमत origin च्या maturity_sigma_d × σ_D आत (पुरावा, gate नाही)
+    sharp: tuple = None        # ABC_FIX rule 2: (lo, hi, bar) sharp-fall (DOWN) / sharp-rise (UP) zone
+    evidence: tuple = ()       # ABC_FIX rule 3: continuation पुरावा (उदा. correction sharp zone मध्ये संपली)
+    corr_zone: tuple = None    # ABC_FIX rule 2 / 5: चालू leg ज्या correction नंतर सुरू झाला ती sharp zone मध्ये संपली ⇒ (lo, hi, bar)
+    leg_from: int = None       # चालू impulse leg ज्या correction नंतर सुरू झाला त्या counter-move ची सुरुवात (bar) — box / family साठी
 
 
 def _arr(d):
@@ -211,33 +215,89 @@ def fold_impulse(d, s=None):
     origin = imp_end = w1_start = None
     phase, k_imp, w1_len, ref_corr, broken_at, leg_start = None, 0, None, None, None, None
     prev_int = 0.0                                                         # Q22: मागच्या impulse leg चा सर्वात मोठा आतला pullback
-    porg, pcorr, mat_leg, t_start = None, False, False, 0                  # A1: parent; impulse origin तुटला पण parent टिकला; A3
-    tstart_org = None                                                      # trend ज्या origin पासून सुरू झाला
-    csz = {}
+    porg, pcorr, tstart_org = None, False, None                            # A1 / ABC_FIX: parent = trend च्या impulse ची सुरुवात
+    cm_cache, sharp, evid = {}, None, ()                                   # counter-move वर्गीकरण cache; sharp-fall / rise zone; पुरावा
+    cm0 = None                                                             # चालू counter-move (correction) ची सुरुवात = impulse टोक
+    czone = None                                                           # शेवटची correction sharp zone मध्ये संपली ⇒ ती zone
+    leg_cm = None                                                          # चालू leg ज्या counter-move नंतर सुरू झाला त्याची सुरुवात (bar)
 
-    def csize(p):
-        """A1: correction swing p चा आकार = p − p आधीचं impulse-दिशेचं टोक (p पेक्षा पलीकडच्या शेवटच्या त्याच प्रकारच्या pivot पासून)."""
-        key = (p.kind, p.bar)
-        if key not in csz:
-            dn = -1 if p.kind == "H" else 1                               # H ⇒ DOWN trend ची correction
-            q = next((x for x in reversed(seq) if x.kind == p.kind and x.bar < p.bar and (x.price - p.price) * dn < 0), None)
-            a = 0 if q is None else q.bar
-            seg = L[a:p.bar] if dn < 0 else H[a:p.bar]
-            csz[key] = float((p.price - seg.min()) if dn < 0 else (seg.max() - p.price)) if len(seg) else 0.0
-        return csz[key]
+    def counter_kind(i):
+        """ABC_FIX rule 1: impulse टोकापासून आजच्या टोकापर्यंतची **संपूर्ण** counter-move एकच वाचली (Q32 adapter, एक degree खालचे
+        pivots): "impulse" (5-wave नियम / diagonal) / "corrective" (3-wave, triangle, combination) / "single". c ने a ओलांडला किंवा
+        b ने नवा टोक केला तरी 3-wave ⇒ correction."""
+        st0 = cm0 or imp_end                                               # expanded flat चा b नवा टोक ⇒ सुरुवात तीच (E)
+        seg = H[st0.bar:i + 1] if dirn < 0 else L[st0.bar:i + 1]
+        tb = st0.bar + int(np.argmax(seg) if dirn < 0 else np.argmin(seg))
+        if tb <= st0.bar:
+            return "single", tb
+        key = (st0.bar, tb, len(low), leg_start, round(prev_int, 9))      # degree तपासणी leg_start / prev_int वर अवलंबून
+        if key not in cm_cache:
+            k = DL.classify(A2, seq, st0.bar, st0.price, tb, float(H[tb] if dirn < 0 else L[tb]), i, cache=mcache,
+                            inner_seq=low, elliott=True)["structure"]
+            if k == "impulse":                                             # degree (Q22 माप): counter impulse चा wave 2 / 4 आधीच्या
+                own = int_pull(-dirn, st0.bar, tb, i)                      # trend-degree impulse च्या सर्वात मोठ्या आतल्या pullback इतका
+                ref = max(int_pull(dirn, leg_start, st0.bar, i), prev_int)  # हवा — Q22 degree_ref (चालू / मागच्या leg चा आतला
+                                                                           # pullback); लहान ⇒ एक degree खाली (Q49 open)
+                if own < ref:                                              # खालचा 5-wave (zigzag चा a) ⇒ trend उलटत नाही
+                    k = "corrective"
+            cm_cache[key] = k
+        return cm_cache[key], tb
 
-    def parent_of(i):
-        """A1 (Abhi): मोठ्या degree चा origin = "the top of the previous same-degree correction": या trend मधली (सुरुवातीपासून)
-        counter-move (impulse टोकापासून आजपर्यंत) इतकी किंवा मोठी शेवटची correction — तिचं टोक (origin च्या पलीकडचं). अशी नसेल
-        (counter-move trend मधल्या प्रत्येक correction पेक्षा मोठी) ⇒ trend ज्या origin पासून सुरू झाला तो."""
-        ok = "H" if dirn < 0 else "L"
-        m = (H[imp_end.bar:i + 1].max() - imp_end.price) if dirn < 0 else (imp_end.price - L[imp_end.bar:i + 1].min())
-        for p in reversed(seq):
-            if p.bar <= t_start:
-                break
-            if p.kind == ok and p.bar < imp_end.bar and p.confirm_bar <= i and (p.price - origin.price) * dirn < 0 and csize(p) >= m:
-                return p
-        return tstart_org
+    prov = []                                                              # तात्पुरत्या completions (continuation confirm होईपर्यंत)
+    PROV_KEYS = ("origin", "k_imp", "leg_start", "pcorr", "porg", "tstart_org", "prev_int", "ref_corr", "cm0", "imp_end", "sharp",
+                 "leg_cm", "evid", "czone")
+
+    def corr_end(i):
+        """continuation confirm झालं का आणि correction कुठे संपली: तात्पुरत्या origin पासून आजच्या टोकापर्यंतचे उलट (एक degree खालचे)
+        pivots — ज्या pivot पासून आजपर्यंतची चाल motive (5-wave / सरळ) वाचते त्यातला सर्वात टोकाचा = correction चा शेवट. नसेल ⇒ None
+        (continuation अजून confirm नाही)."""
+        okind = "H" if dirn < 0 else "L"
+        b0 = prov[0]["cm0"].bar if prov else origin.bar                    # counter-move च्या सुरुवातीपासून (running flat चा c टोकानंतर नाही)
+        cands = [origin] + [q for q in low if q.kind == okind and b0 < q.bar < imp_end.bar and q.confirm_bar <= i and q.bar != origin.bar]
+        best, wait = None, None
+        for q in cands:
+            if best is not None and (q.price - best.price) * -dirn <= 0:
+                continue
+            r = DL.classify(A2, seq, q.bar, q.price, imp_end.bar, imp_end.price, i, cache=mcache, inner_seq=low, elliott=True)
+            k = r["structure"]
+            if k == "impulse" or (k == "single" and q is origin):          # आतल्या swing पासूनचा एकच पाय (expanded flat च्या b चा c) नाही
+                best = q
+            elif r.get("form") == "zigzag" and (wait is None or (q.price - wait.price) * -dirn > 0):
+                wait = q                                                   # 5-3-5 = impulse चे 1-2-3 सुद्धा ⇒ अजून ठरत नाही
+        if best is not None and wait is not None and (wait.price - best.price) * -dirn > 0:
+            return None                                                    # वरचा swing अजून continuation ची सुरुवात असू शकतो
+        return best
+
+    def push_prov():
+        """correction संपली (done / A1) — पण a-b-c चा a / b की खरा शेवट हे continuation नंतरच कळतं (ABC_FIX 1, Q45). आधीची अवस्था
+        जपून ठेवा: नवा origin continuation confirm होण्याआधी close ने तुटला ⇒ तीच correction चालू (trend उलटत नाही). Stack confirm
+        (corr_end) किंवा अपयशी restore वरच रिकामा होतो; restore फक्त snapshot चा origin / parent आज close ने टिकला असेल तर (Q54)."""
+        snap = {k: v for k, v in zip(PROV_KEYS, (origin, k_imp, leg_start, pcorr, porg, tstart_org, prev_int, ref_corr,
+                                                    cm0 or imp_end, imp_end, sharp, leg_cm, evid, czone))}
+        prov.append(snap)
+
+
+    def sharp_zone(dn, a, b, i):
+        """ABC_FIX rule 2: impulse (a ⇒ b) मधला "sharp-fall / sharp-rise point" — wide-range, दिशेच्या candles ची धाव सुरू होण्याआधीचा
+        शेवटचा swing: एक degree खालच्या उलट-प्रकारच्या pivots पैकी ज्यानंतरच्या धावेची सरासरी range (पुढच्या त्याच प्रकारच्या pivot
+        पर्यंत) impulse च्या स्वतःच्या आधीच्या bars पेक्षा सर्वात जास्त पटीने मोठी (> 1) आणि ती धाव impulse दिशेने. Zone = त्या swing
+        candle ची range (DOWN ⇒ supply, UP ⇒ demand). नसेल ⇒ None. फक्त confirmed (≤ i) pivots."""
+        ok = "H" if dn < 0 else "L"
+        R_ = H - L
+        cand = sorted((q for q in low if q.kind == ok and a < q.bar < b and q.confirm_bar <= i), key=lambda q: q.bar)
+        best = None
+        for k, q in enumerate(cand):
+            nxt = cand[k + 1].bar if k + 1 < len(cand) else b
+            if q.bar - a < 2 or nxt - q.bar < 2:
+                continue
+            ratio = float(R_[q.bar + 1:nxt + 1].mean() / max(R_[a + 1:q.bar + 1].mean(), 1e-9))
+            move = (C[nxt] - C[q.bar]) * dn
+            if ratio > 1.0 and move > 0 and (best is None or ratio > best[0]):
+                best = (ratio, q)
+        if best is None:
+            return None
+        q = best[1]
+        return (float(L[q.bar]), float(H[q.bar]), int(q.bar))
 
     def int_pull(dn, a, b, i):
         """Q22: (a, b) मधल्या impulse (दिशा dn) चा सर्वात मोठा आतला pullback (किंमत) — एक degree खालचे confirmed (≤ i) उलट pivots,
@@ -295,9 +355,10 @@ def fold_impulse(d, s=None):
 
     def start(nd, org, w1s, w1l, ref, i, why_, w1e_bar=None):
         nonlocal trend, dirn, band, origin, imp_end, w1_start, phase, k_imp, w1_len, ref_corr, broken_at, leg_start, prev_int, porg, pcorr, \
-            mat_leg, t_start, tstart_org
+            tstart_org, sharp, evid, cm0, prov, leg_cm, czone
         trend, dirn, band = ("UP" if nd > 0 else "DOWN"), nd, None
-        porg, pcorr, mat_leg, tstart_org, t_start = None, False, False, org, org.bar   # A1: parent शोध या trend च्या आत
+        porg, pcorr, sharp, evid, cm0, prov, leg_cm, czone = None, False, None, (), None, [], None, None
+        tstart_org = w1s if w1s is not None else org                       # ABC_FIX: parent = trend च्या impulse ची सुरुवात (टोक)
         origin, w1_start, w1_len, ref_corr, k_imp, phase, broken_at = org, w1s, w1l, max(ref, 1e-9), 2, "impulse", None
         leg_start = org.bar
         prev_int = int_pull(nd, w1s.bar, w1e_bar, i) if (w1s is not None and w1e_bar is not None) else 0.0   # (1) चा आतला pullback
@@ -379,12 +440,15 @@ def fold_impulse(d, s=None):
         if dirn != 0 and phase in ("impulse", "correction", "origin_broken"):
             ek = "L" if dirn < 0 else "H"
             corr = corrections(i)
-            done = [] if pcorr else [p for p in corr if beyond_after(p, i)]   # A1 correction ⇒ खालचा completion नियम (खरं टोक tb)
+            done = [] if pcorr else [p for p in corr if beyond_after(p, i) and (C[i] - p.price) * dirn > 0]   # A1 ⇒ खालचा नियम;
+                                                                           # आज close ने तुटलेला टोक origin होऊ शकत नाही
             if done:                                                       # correction नंतर close त्या आधीच्या टोकापलीकडे ⇒ नवा impulse
                 top = max(done, key=lambda p: p.price * -dirn)             # पूर्ण correction चं टोक ((4) high; आतले b-swings नाहीत)
+                push_prov()
                 ref_corr = abs(top.price - pre_ext(top))
                 prev_int = int_pull(dirn, leg_start, extreme(dirn, leg_start, top.bar), i)   # संपलेल्या impulse leg चा आतला pullback
-                origin, phase, k_imp, leg_start, pcorr, mat_leg = top, "impulse", k_imp + 1, top.bar, False, False
+                leg_cm, czone = (cm0 or imp_end).bar, None
+                origin, phase, k_imp, leg_start, pcorr, cm0 = top, "impulse", k_imp + 1, top.bar, False, None
                 why = f"नवा impulse (L{2 * k_imp - 1}) ⇒ protected पुढे = correction टोक {origin.price:,.2f}"
                 corr = corrections(i)
             if pcorr and imp_end.bar < i:                                  # A1 correction कधी संपली? (Dow: counter-move चा शेवटचा HL close ने तुटला)
@@ -395,29 +459,70 @@ def fold_impulse(d, s=None):
                 fire = tb < i and (C[i] - lvl) * dirn > 0                  # Q45: फक्त counter-move च्या शेवटच्या HL पलीकडे close (टोकानंतरचा
                                                                            # LH + मधला L नियम complex correction च्या आतल्या minor रचनेवर
                                                                            # लवकर फुटतो — NIFTY (4) — म्हणून नाही)
+                tpx = float(H[tb] if dirn < 0 else L[tb])
+                at_sharp = sharp is not None and sharp[0] <= tpx <= sharp[1]
+                if not fire and at_sharp and tb < i and (C[i] - (sharp[0] if dirn < 0 else sharp[1])) * dirn > 0:
+                    fire, lvl = True, (sharp[0] if dirn < 0 else sharp[1])  # ABC_FIX rule 3: sharp zone मध्ये संपली + trend दिशेने close
                 if fire:                     # trend-दिशेचं पुढे जाणं ⇒ nature gate नाही (Q28 / Q36 फक्त सुरुवात / flip)
                     top = piv("H" if dirn < 0 else "L", tb)
+                    push_prov()
                     ref_corr = max(abs(top.price - imp_end.price), 1e-9)
-                    prev_int = int_pull(dirn, leg_start, imp_end.bar, i)
-                    origin, phase, k_imp, leg_start, pcorr, mat_leg = top, "impulse", k_imp + 1, tb, False, False
+                    t0 = tstart_org.bar if tstart_org is not None else leg_start   # trend-degree correction ⇒ नव्या impulse चा degree
+                    prev_int = int_pull(dirn, t0, imp_end.bar, i)          # संदर्भ = आधीच्या trend-degree impulse चा सर्वात मोठा आतला pullback
+                    leg_cm = (cm0 or imp_end).bar
+                    origin, phase, k_imp, leg_start, pcorr, cm0 = top, "impulse", k_imp + 1, tb, False, None
+                    czone = sharp if at_sharp else None
+                    if at_sharp:
+                        evid = evid + (f"correction ended at sharp-{'fall supply' if dirn < 0 else 'rise demand'} "
+                                       f"{sharp[0]:,.0f}-{sharp[1]:,.0f}",)
+                    tstart_org, sharp = top, None                          # नवा trend-degree impulse इथून (parent / degree / sharp zone)
                     why = (f"correction (A1) संपली — close counter-move च्या शेवटच्या {'HL' if dirn < 0 else 'LH'} {lvl:,.2f} "
                            f"पलीकडे ⇒ नवा impulse (L{2 * k_imp - 1}), protected = correction टोक {top.price:,.2f}")
                     corr = corrections(i)
             imp_end = piv(ek, extreme(dirn, leg_start, i))                 # leg चं टोक (wick सह; origin_broken मध्येही — 🟡3 / 🟡4)
+            if phase == "impulse" and not pcorr and tstart_org is not None and imp_end.bar == i:   # नवा टोक ⇒ sharp zone पुन्हा
+                sharp = sharp_zone(dirn, tstart_org.bar, imp_end.bar, i) or sharp
+            if prov and imp_end.bar == i and (imp_end.price - prov[0]["cm0"].price) * dirn > 0:
+                end = corr_end(i)                                          # correction सुरुवातीच्या पलीकडे motive continuation ⇒ confirm
+                if end is not None:
+                    leg_cm = prov[0]["cm0"].bar                            # पूर्ण correction ची सुरुवात (आतल्या तात्पुरत्या completions सह)
+                    prov.clear()
+                    if end.bar != origin.bar:                              # Rule 4: origin = correction चा शेवट (triangle e, truncated /
+                        why = (f"continuation confirm ⇒ origin = correction चा शेवट {end.price:,.2f} "   # running चा c), टोक नाही
+                               f"(टोक {origin.price:,.2f} नाही)")
+                        if tstart_org is not None and tstart_org.bar == origin.bar:
+                            tstart_org = end                               # नवा trend-degree impulse सुद्धा शेवटापासून
+                        origin, leg_start = end, end.bar
+            while prov and phase != "origin_broken" and (C[i] - origin.price) * dirn < 0:
+                snap = prov.pop()                                          # तात्पुरता origin तुटला ⇒ ती completion नव्हती (a / b चा पाय)
+                keep = snap["porg"] if snap["pcorr"] else snap["origin"]   # परत जायचं तर ती अवस्था आज टिकलेली हवी (A1 ⇒ parent)
+                if keep is None or (C[i] - keep.price) * dirn < 0:
+                    prov.clear()                                           # तीही तुटली ⇒ जुन्या अवस्था नाहीत; सामान्य origin_broken
+                    break
+                origin, k_imp, leg_start, pcorr, porg, tstart_org, prev_int, ref_corr, cm0, imp_end, sharp, leg_cm, evid, czone = \
+                    (snap[k] for k in PROV_KEYS)
+                why = (f"origin {origin.price:,.2f} वर परत — आधीची correction completion continuation आधीच तुटली ⇒ correction चालू "
+                       f"(ABC_FIX 1)")
+                corr = corrections(i)
             if phase != "origin_broken":
                 phase = "correction" if (corr or pcorr) else "impulse"
-                par = parent_of(i) if (pgate and not (mat_leg and not pcorr)
-                                       and (pcorr or (C[i] - origin.price) * dirn < 0)) else None   # A3: mature ⇒ सामान्य origin_broken
-                if par is not None and par.bar != origin.bar:
-                    if (C[i] - par.price) * dirn >= 0:
+                if phase == "correction" and cm0 is None:
+                    cm0 = imp_end                                          # correction इथून (b चा नवा टोक आला तरी सुरुवात तीच)
+                elif phase == "impulse" and imp_end.bar == i:
+                    cm0 = None
+                if pgate and (pcorr or (C[i] - origin.price) * dirn < 0):  # ABC_FIX rule 1: counter-move संपूर्ण वाचा
+                    cmk, _tb = counter_kind(i)
+                    par = tstart_org if (tstart_org is not None and (tstart_org.price - origin.price) * dirn < 0) else None
+                    if cmk == "impulse":                                   # counter-move स्वतःच 5-wave impulse ⇒ खरा break (flip शक्य)
+                        if pcorr:
+                            pcorr = False
+                    elif par is not None and (C[i] - par.price) * dirn >= 0:
                         if not pcorr:
-                            why = (f"impulse origin {origin.price:,.2f} Daily close ने तुटला, पण parent origin {par.price:,.2f} टिकला "
-                                   f"(impulse mature नव्हता) ⇒ same-degree correction, trend उलटत नाही (A1)")
+                            why = (f"impulse origin {origin.price:,.2f} Daily close ने तुटला, पण counter-move {cmk} (3-wave / impulse नाही) आणि "
+                                   f"impulse ची सुरुवात {par.price:,.2f} टिकली ⇒ correction, trend उलटत नाही (ABC_FIX 1)")
                         porg, pcorr, phase = par, True, "correction"
                     elif pcorr:
-                        origin, pcorr = par, False                         # parent सुद्धा close ने तुटला ⇒ आता खरा origin_broken
-                elif pcorr:
-                    pcorr = False
+                        origin, pcorr = par or porg, False                       # impulse ची सुरुवात सुद्धा close ने तुटली ⇒ खरा origin_broken
                 if not pcorr and (C[i] - origin.price) * dirn < 0:
                     phase, broken_at = "origin_broken", i
                     why = f"protected origin {origin.price:,.2f} Daily close ने तुटला — उलट impulse ची वाट (trend संपलेला नाही)"
@@ -485,7 +590,6 @@ def fold_impulse(d, s=None):
                 if pre is not None:
                     tg.append(pre)                                         # (1) ज्या leg च्या शेवटी सुरू झाली त्या leg चं उलट टोक ((A) low)
                 mature = any((imp_end.price - x) * dirn >= -near for x in tg)
-                mat_leg = mat_leg or mature
                 targets = tuple(round(float(x), 2) for x in tg)
             cbars = tuple(int(p.bar) for p in corr) if phase in ("impulse", "correction") else ()
             if pcorr:
@@ -507,7 +611,8 @@ def fold_impulse(d, s=None):
                           phase if tr else None, wave if tr else None, corr_label if tr else None, imp_end if tr else None,
                           bool(mature and tr), targets if tr else (),
                           (porg if pcorr else tstart_org) if tr else None, counter if tr else None, leg_start if tr else None, cbars if tr else (),
-                          bool(risk and tr)))
+                          bool(risk and tr), sharp if tr else None, evid if tr else (), czone if tr else None,
+                          leg_cm if tr else None))
     return out
 
 

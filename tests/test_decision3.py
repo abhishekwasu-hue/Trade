@@ -31,6 +31,10 @@ def daily_from_path(points, legs=4, start="2030-01-01"):
 
 S = {"daily_min_sessions": 3, "daily_sigma_sessions": 3, "range_eq_sigma_d": 0.25}
 
+# ABC_FIX rule 1: या fixtures मधली counter-move 3-wave आहे आणि trend सुरुवात टिकते ⇒ default (parent gate on) मध्ये ती correction.
+# origin_broken / Q23 / Q27 / Q36 यंत्रणा (rule 1 सोडतो तेव्हा — counter impulse किंवा trend सुरुवात तुटली) gate off ने तपासली (Q53).
+OB = {**S, "daily_parent_gate": False}
+
 
 def test_up_after_hh_hl_and_protected_is_hl():
     d = daily_from_path([100, 120, 110, 130, 118, 140])
@@ -44,10 +48,10 @@ def test_hl_close_break_neutral_then_new_lh_ll_down():
     st = DD.fold(d, {**S, "daily_trend_mode": "minor"})                                        # जुना minor Dow (what-if) ⇒ NEUTRAL
     trends = [x.trend for x in st]
     assert "UP" in trends and trends[-1] == "NEUTRAL"
-    sti = DD.fold(d, S)                                                                         # Q15: फक्त close-break ⇒ trend संपत नाही
+    sti = DD.fold(d, OB)                                                                        # Q15: फक्त close-break ⇒ trend संपत नाही
     assert sti[-1].trend == "UP" and sti[-1].phase == "origin_broken"
     d2 = daily_from_path([100, 120, 110, 130, 118, 140, 112, 125, 100, 115, 92, 105])           # नवा LH (125 < 140) + LL
-    st2 = DD.fold(d2, S)
+    st2 = DD.fold(d2, OB)
     assert st2[-1].trend == "DOWN" and st2[-1].protected.kind == "H"
 
 

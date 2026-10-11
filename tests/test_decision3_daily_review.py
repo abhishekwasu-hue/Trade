@@ -6,6 +6,7 @@ small bounces into the (A) low zone.
 """
 import numpy as np
 import pandas as pd
+import pytest
 
 from decision3 import daily as DD
 from decision3 import daily_swings as DS
@@ -45,7 +46,8 @@ def test_c_wave_fixture_down_throughout_with_wave4_correction_and_wave5_origin()
     d, st = _fold(HEAD + WAVE4 + WAVE5)
     start = next(i for i, x in enumerate(st) if x.trend == "DOWN")
     assert all(x.trend == "DOWN" for x in st[start:]), "no UP state anywhere after the C decline starts"
-    parent = st[start].protected.price                                     # the C start origin (the LH after the (B) top)
+    parent = st[start].parent.price                                        # ABC_FIX rule 1: the trend-degree impulse start = the (B)
+    assert parent == 1352.0                                                 # top where C began (was the LH 1302 in #289 — Q50)
     n4 = sum(nb for _, nb in HEAD) + 1
     top4 = _top_bar(d, n4 - 12, n4 + 12)                                    # (4) top = the highest high of the rally
     broke = next(i for i in range(start, len(st)) if st[i].counter == "correction")
@@ -71,6 +73,8 @@ def test_parent_gate_off_flips_the_trend_on_the_wave4_rally():
     assert any(x.trend != "DOWN" or x.phase == "origin_broken" for x in st[start:])   # old behaviour: origin_broken / flip
 
 
+@pytest.mark.xfail(strict=True, reason="Q50: #289 hybrid parent (previous same-degree correction top) superseded by ABC_FIX "
+                                       "rule 1 (parent = trend-degree impulse start) — pending Abhi")
 def test_parent_is_previous_same_degree_correction_when_one_is_large_enough():
     pts = [(1000, 0), (1400, 20), (1000, 20), (1350, 20), (1250, 6), (1300, 4), (1150, 8),
            (1170, 3), (1130, 4), (1220, 8), (1100, 8),                      # (2)-size correction (90) ⇒ origin → its top
@@ -95,7 +99,7 @@ def test_mature_impulse_lets_a_counter_impulse_break_the_origin_normally():
 
 
 def test_origin_risk_when_the_correction_reaches_the_parent_zone():
-    d, st = _fold(HEAD + [(1301, 14), (1290, 2)])                          # (4) reaches the C start origin zone
+    d, st = _fold(HEAD + [(1349, 14), (1338, 2)])                          # (4) reaches the parent ((B) top) zone
     hit = [x for x in st if x.counter == "correction" and x.origin_risk]
     assert hit and all(x.trend == "DOWN" for x in hit)
 
@@ -163,7 +167,8 @@ def test_default_chart_spec_trend_degree_only_and_renders():
     corr = [c for c in v["q15"]["objects"]["corrections"] if c["end_bar"] >= v["i0"]]
     assert corr and len(sp["boxes"]) == len(corr)                         # प्रत्येक correction ला box
     assert any(b["label"] == "protected origin" for b in sp["bands"]) and sp["protected"]["price"] == 1252.0
-    assert any(b["label"] == "larger-degree origin" and b["price"] == 1302.0 for b in sp["bands"])
+    assert v["q15"]["parent"]["price"] == 1252.0                            # after the A1 completion the trend-degree impulse
+    assert not any(b["label"] == "larger-degree origin" for b in sp["bands"])   # starts at the (4) top = protected (one band)
     strip = {s for _, _, s in sp["strip"]["degree-aware"]}
     assert not any(x in " ".join(strip) for x in ("corr ", "broken", "imp "))
     a, b = CH.daily_swings_png(v, "TEST"), CH.daily_swings_debug_png(v, "TEST")
@@ -179,7 +184,7 @@ def test_default_chart_spec_snapshot_on_fixture():
     snap = {"tags": sp["tags"], "bands": [(b["label"], b["price"], b["state"], b["off_window"]) for b in sp["bands"]],
             "protected": sp["protected"]["price"], "legs": len(sp["legs"])}
     assert snap == {
-        "tags": ["correction · 78% of impulse", "pullback", "pullback", "pullback", "pullback"],
-        "bands": [("larger-degree origin", 1302.0, "tested", "above"), ("protected origin", 1252.0, "tested", None),
-                  ("maturity target", 998.0, "target", None), ("maturity target", 1148.0, "target", None)],
+        "tags": ["correction · 64% of impulse", "pullback", "pullback", "pullback", "pullback"],   # depth vs the (B) top (Q50)
+        "bands": [("protected origin", 1252.0, "tested", None), ("window low", 994.0, "tested", None),   # ABC_FIX rule 5 order:
+                  ("maturity target", 1148.0, "target", None)],                # window extremes before maturity targets (998 ⊂ low)
         "protected": 1252.0, "legs": 2}
