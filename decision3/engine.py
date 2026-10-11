@@ -88,7 +88,7 @@ class V22:
                 ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
             if st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
-                ctx["notes"].append("impulse mature — target जवळ (mechanical count, Q34); मोठा reversal शक्य ⇒ नवे entries weak")
+                ctx["notes"].append("impulse mature — target जवळ (Q44: parent नंतरच्या पहिल्या impulse leg चं टोक); मोठा reversal शक्य ⇒ नवे entries weak")
         elif st.trend in ("NEUTRAL", "UNKNOWN") and wk.trend in ("UP", "DOWN"):
             ctx.update(trend=wk.trend, resolution="weekly fallback", cap=M.cap_min(ctx["cap"], "B"))
             ctx["notes"].append(f"Daily वाचता येत नाही ⇒ Weekly {wk.trend} (कमाल B)")

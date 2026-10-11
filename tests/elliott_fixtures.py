@@ -198,6 +198,26 @@ def acceptance_banknifty(mirror=False):
     return d, {"top": top, "sharp_point": sharp_point, "a": a, "b": b, "c": c, "dir": 1 if mirror else -1}
 
 
+
+def acceptance_banknifty_two_lows(mirror=False):
+    """Q55 (Abhi): ABC_FIX §6 fixture चा भाऊ — window top → slow topping (a swing low at sharp_point) → sharp fall: a run of wide-range directional bars breaks that swing
+    low first (the sharp-fall point, Q55) and later the lead-in's swing low (two lows broken — the first one is the point) → a up,
+    b down holding above the low, c up beyond a ending inside the sharp-fall zone → new decline. Engine: DOWN throughout; a-b-c
+    labelled; sharp-fall band at sharp_point; origin at c (after confirm)."""
+    top = 1600.0
+    slow = [(1580.0, 3), (1590.0, 2), (1562.0, 3), (1572.0, 2)]                            # slow topping, narrow bars
+    sharp_point = 1562.0                                                                   # swing low the run breaks first
+    fall = [(1300.0, 5), (1360.0, 4), (1150.0, 5), (1220.0, 4), (1080.0, 5)]                # wide-range directional run (its 2 / 4
+                                                                                           # are one degree above a's sub-waves)
+    a, b = 1380.0, 1220.0
+    c = 1567.0                                                                             # c > a, ends inside the sharp-fall zone
+    corr = build(1080.0, zz(a, b, c))                                                      # 5-3-5
+    after = [(1420.0, 6), (1460.0, 3), (1250.0, 7), (1290.0, 3), (1150.0, 6), (1170.0, 3)]
+    lead = [(1350.0, 0), (top, 30), (1520.0, 8), (1585.0, 5)]                              # 1520: second swing low the run breaks
+    d = ohlc(lead + slow + fall + corr + after, mirror)
+    return d, {"top": top, "sharp_point": sharp_point, "second_low": 1520.0, "a": a, "b": b, "c": c, "dir": 1 if mirror else -1}
+
+
 def acceptance_nifty():
     """(B) top → C decline: (1)-(3) with minor bounces, a large (4) rally (breaks the minor origin, not the C start), (5) with three
     small bounces into the (A) low zone (same as tests/test_decision3_daily_review.py)."""

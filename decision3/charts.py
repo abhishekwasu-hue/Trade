@@ -87,7 +87,7 @@ def daily_png(daily_df, states, title, upto=None, start=0):
         ax.text(n - start - 0.5, last.protected.price, f" protected {last.protected.price:,.0f}", color="#7048e8", fontsize=8, va="bottom")
     if last.band:
         ax.axhspan(last.band[0], last.band[1], color="#fab005", alpha=0.15)
-    for x in getattr(last, "targets", ()) or ():                               # Q15 maturity targets ((5) equality / मोठा आधीचा swing)
+    for x in getattr(last, "targets", ()) or ():                               # Q44 structural target (parent नंतरच्या पहिल्या impulse leg चं टोक)
         ax.axhline(x, color="#868e96", lw=0.8, ls="--")
         ax.text(n - start - 0.5, x, f" target {x:,.0f}", color="#868e96", fontsize=7, va="top")
     ax.set_title(f"{title} · Daily trend {last.trend}" + _why_en(last), fontsize=10)
@@ -365,7 +365,7 @@ def daily_swings_debug_png(v, title):
     ax.set_ylim(lo_ - 0.09 * rng, hi_ + 0.09 * rng)                        # labels / tags कापले जात नाहीत
     for t in v["q15"]["targets"] or ():
         ax.axhline(t, color="#868e96", lw=0.8, ls="--")
-        ax.text(len(fr) - 0.5, t, f" Q15 target {t:,.0f}", color="#868e96", fontsize=7, va="bottom")
+        ax.text(len(fr) - 0.5, t, f" target {t:,.0f}", color="#868e96", fontsize=7, va="bottom")
     for row, (key, name) in enumerate((("q15", "Q15 degree-aware"), ("minor", "Dow minor swings"))):
         for a, b, s in v[key]["bands"]:
             if b < i0:

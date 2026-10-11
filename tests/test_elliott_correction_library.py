@@ -120,7 +120,7 @@ def test_acceptance_banknifty_abc_ends_at_sharp_fall_supply(mirror):
     lb = int(np.argmin(np.abs((H if mirror else L) - low_v)))                # sharp-fall impulse end
     assert st[lb].trend == want and all(x.trend == want for x in st[lb:])
     c_v = (F.MIRROR - info["c"] - F.WICK) if mirror else (info["c"] + F.WICK)
-    cb = int(np.argmin(np.abs((L if mirror else H) - c_v)))
+    cb = lb + int(np.argmin(np.abs((L[lb:] if mirror else H[lb:]) - c_v)))  # c टोक impulse low नंतरच
     assert st[-1].protected.bar == cb
     v = DS.build(d, window=len(d), with_elliott=False)
     assert any(c["end_bar"] == cb and c["shape"] == "zigzag" for c in v["q15"]["objects"]["corrections"])

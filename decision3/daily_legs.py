@@ -108,6 +108,8 @@ def reduce_counted(x):
 
 MOTIVE = ("impulse", "diagonal")
 CORRECTIVE = ("zigzag", "flat", "triangle", "combination", "3-wave")
+COMPLETE = ("zigzag", "flat", "triangle", "combination")                  # Abhi item 4: combination = दोन पूर्ण corrective patterns
+                                                                       # (W, Y [, Z]) X ने जोडलेले — न ओळखलेला "3-wave" W / Y नाही
 _READ_CACHE = {}
 
 
@@ -158,7 +160,7 @@ def read_counter(prices):
             fam = "diagonal"                                               # ending 3-3-3-3-3 / leading 5-3-5-3-5 (4 overlaps 1)
         elif corr_all and any(PR.triangle(x5, done=True, kind=k)[0] for k in ("contracting", "expanding")) and not PR.impulse(x5, True):
             fam = "triangle"
-        elif all(len(seg5[k]) > 2 and read_counter(seg5[k])["family"] in CORRECTIVE for k in (0, 2, 4)) and \
+        elif all(len(seg5[k]) > 2 and read_counter(seg5[k])["family"] in COMPLETE for k in (0, 2, 4)) and \
                 all(_is_corrective(seg5[k]) for k in (1, 3)):
             fam = "combination"                                            # triple three W-X-Y-X-Z (W, Y, Z स्वतः corrective)
     p9 = red.get(9)
@@ -181,8 +183,8 @@ def read_counter(prices):
     if fam is None and p3 is not None:
         x3, c3 = p3
         a_seg, _, c_seg = _segments(prices, c3)
-        if len(a_seg) > 2 and len(c_seg) > 2 and read_counter(a_seg)["family"] in CORRECTIVE and \
-                read_counter(c_seg)["family"] in CORRECTIVE:
+        if len(a_seg) > 2 and len(c_seg) > 2 and read_counter(a_seg)["family"] in COMPLETE and \
+                read_counter(c_seg)["family"] in COMPLETE:
             fam = "combination"                                            # W आणि Y स्वतः corrective (double / triple three, double zigzag)
         elif PR2.zigzag(x3, True, s2)[0] and _is_motive(a_seg) and _is_motive(c_seg):
             fam = "zigzag"
