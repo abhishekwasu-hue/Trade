@@ -1,7 +1,8 @@
 """patterns2/momentum.py — थर 3 v2.1 §7: "momentum कमकुवत होतोय का" (मुख्य output; प्रत्येक बंद candle).
 
 12 लक्षणं; प्रत्येक ✓ (सगळ्या उप-अटी खऱ्या) / ✗ (कोणतीही खोटी) / NA (कोणताही input NA). Pushes = preferred चे counter-दिशेचे waves
-(fallback: K चे pivots, "ओळखता येत नाही" तेव्हा). निकाल: non-NA ≥ 6 (नाहीतर "अस्पष्ट (early)"; < 2 pushes ⇒ early); ratio = ✓ ÷ non-NA;
+(fallback: K चे pivots, "ओळखता येत नाही" तेव्हा). निकाल (Abhi उत्तर 6): ratio = ✓ ÷ non-NA (NA वगळून; NA = ✗ नाही); non-NA < 6 ⇒
+verdict NA; < 2 pushes ⇒ "अस्पष्ट (early)";
 ≥ 0.65 ⇒ कमकुवत होतोय, ≤ 0.35 ⇒ नाही, मध्ये अस्पष्ट. Danger ⇒ नाही. Retrace ≥ 0.80 = फक्त नोंद.
 थर 4 नंतर item 9 (absorption, zone) `zone_fn` देऊन **हेच function** पुन्हा ⇒ एकच verdict.
 """
@@ -14,7 +15,7 @@ from legs2 import measure2 as M2
 from . import score as SC
 
 YES, NO, NA = "✓", "✗", "NA"
-WEAK, NOT, UNCLEAR, EARLY = "कमकुवत होतोय", "नाही", "अस्पष्ट", "अस्पष्ट (early)"
+WEAK, NOT, UNCLEAR, EARLY, NA_V = "कमकुवत होतोय", "नाही", "अस्पष्ट", "अस्पष्ट (early)", "NA (non-NA < 6)"
 NAMES = ("SOT", "three-push", "counter candles लहान", "closes / push स्वभाव", "counter displacement नाही", "संथ",
          "नाममात्र नवं टोक", "volume fading", "absorption", "खोली / origin", "3 legs (5 नव्हे)", "CISD")
 
@@ -185,7 +186,9 @@ def evaluate(ctx, zone_fn=None):
     ratio = (sum(x == YES for x in non_na) / len(non_na)) if non_na else None
     if danger:
         verdict = NOT
-    elif len(pu) < 2 or len(non_na) < int(s["m_min_non_na"]):
+    elif len(non_na) < int(s["m_min_non_na"]):
+        verdict = NA_V
+    elif len(pu) < 2:
         verdict = EARLY
     elif ratio >= float(s["m_hi"]):
         verdict = WEAK

@@ -38,6 +38,7 @@ def mini(h, l, c=None, o=None, sigma=10.0):
     E.sig = np.full(n, sigma)
     E.ts = pd.Series(pd.to_datetime(np.arange(n) * 900, unit="s"))
     E.lines = {}
+    E.steep = {}
     return E
 
 
@@ -134,18 +135,58 @@ def world():
     return m15, res, st, lg, trk, f1, f2, Z, L4, E, L5
 
 
-def test_lines_born_after_known_at_and_provisional_never_tradeable(world):
+def test_lines_born_after_known_at_and_provisional_only_with_k_break(world):
     *_, E, L5 = world
     for t, r in L5.items():
         for x in r["lines"]:
             L = next(v for v in E.lines.values() if v.id == x["id"])
             assert L.birth <= t
             if x["class"] == "trade-योग्य":
-                assert not L.provisional and not L.flat
+                assert not L.flat
+                if L.provisional:                                              # उत्तर 10-ब: K आधार-रेघ break + 3रा touch
+                    assert r["k_base"] is not None and TE.prov_ok(E, L, t, r["k_base"]) is not None
         ka = r["k_area_line"]
         if ka.get("line"):
             L = next(v for v in E.lines.values() if v.id == ka["line"])
-            assert not L.provisional and not L.k_line
+            assert not L.k_line
+
+
+def test_line_class_steep_and_provisional_rules():
+    lc = TE.line_class
+    assert lc(False, True, True, 2, True, False, False) == "trade-योग्य"
+    assert lc(False, True, True, 2, True, True, False) == "तीव्र"               # तीव्र + 2 touches ⇒ trade-योग्य नाही
+    assert lc(False, True, True, 3, True, True, False) == "trade-योग्य"        # तीव्र + ≥ 3 held ⇒ trade-योग्य (grade कमी)
+    assert lc(False, True, False, 2, True, False, False) == "लागू नाही"        # provisional (before_k नाही), prov नाही
+    assert lc(False, True, False, 2, True, False, True) == "trade-योग्य"       # provisional + prov अट
+    assert lc(False, True, False, 2, True, True, True) == "तीव्र"              # तीव्र + provisional + 2 held ⇒ नाही
+    assert lc(False, True, False, 3, True, True, True) == "trade-योग्य"
+    assert lc(True, True, True, 5, True, False, False) == "सपाट"
+
+
+def test_prov_ok_third_touch_close_inside_then_k_break_within_n():
+    n = 40
+    h, l = [150.0] * n, [130.0] * n
+    h[0], h[10] = 200, 190                                                     # A1, A2 (slope −1)
+    l[3], l[14] = 100, 100                                                     # θ_D0 दूर ⇒ दोन्ही held
+    h[25] = 175.5                                                              # 3रा touch (रेघ 175), close आत
+    c = [x - 5 for x in h]
+    E = mini(h, l, c)
+    L = E.make((0, 200.0), (10, 190.0), "H", 10, provisional=True)
+    assert len([x for x in L.held if x["held"] < 25]) >= 2
+    assert TE.prov_ok(E, L, 28, {"bar": 28}) == 25                             # break 3 candles नंतर ⇒ ✓
+    assert TE.prov_ok(E, L, 27, {"bar": 28}) is None                           # break अजून झाला नाही
+    assert TE.prov_ok(E, L, 33, {"bar": 33}) is None                           # 8 candles नंतर > N (6)
+    assert TE.prov_ok(E, L, 31, {"bar": 31}) == 25                             # नेमके N (6) candles नंतर ⇒ ✓
+    c2 = list(c)
+    c2[25] = 180.0                                                             # close रेघेपलीकडे ⇒ commitment नाही
+    E2 = mini(h, l, c2)
+    L2 = E2.make((0, 200.0), (10, 190.0), "H", 10, provisional=True)
+    assert TE.prov_ok(E2, L2, 28, {"bar": 28}) is None
+
+
+def test_prov_break_n_matches_layer7():
+    from decision2 import settings as DS
+    assert TS.DEFAULTS["prov_break_n"] == DS.DEFAULTS["tl_break_n"]
 
 
 def test_k_base_break_once_and_mirror(world):

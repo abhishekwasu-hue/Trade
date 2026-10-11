@@ -25,6 +25,17 @@ def should_call(dec, manual=False):
     return dec.get("decision") == "setup" or (dec.get("decision") == "wait" and dec.get("grade") in ("A", "B"))
 
 
+MODEL_TASK = "veto"            # model नाव फक्त VPS env मध्ये: VISION_VETO_MODEL (vision.config.env_model); Abhi default = Sonnet वर्ग
+
+
+def run_budget(g):
+    """run_vision_budget (Abhi उत्तर 15 default): नवी रक्कम नाही — सध्याच्या vision_daily_budget_usd मधली visual_audit_daily_cap उप-मर्यादा;
+    महिना vision_monthly_budget_usd ($5) तसाच. g = vision.config global settings."""
+    if g is None:
+        return None
+    return min(float(g["visual_audit_daily_cap"]), float(g["vision_daily_budget_usd"]))
+
+
 def budget_ok(spent, cap):
     """run_vision_budget (replay साठी वेगळा; live vision_* reserve ला हात नाही)."""
     return cap is not None and spent < cap

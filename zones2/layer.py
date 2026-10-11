@@ -3,6 +3,7 @@
 import pandas as pd
 
 from patterns2 import momentum as MO
+from pivots import engine as PE
 
 from . import engine as ZE
 
@@ -20,6 +21,12 @@ def run(Z, f1, f2=None, bars=None):
     s = Z.s
     hy, hy_key, last_t = MO.Hysteresis(f1.s["hysteresis_bars"]), None, None
     out = {}
+    full = PE.complete_sessions(res["m15"])
+    sess_of = {}
+    for j, d in enumerate(Z.day):
+        if full.get(pd.Timestamp(d)) and Z.segs[j] is not None:
+            sess_of.setdefault(pd.Timestamp(d), []).append(j)
+    sp_cache = {}
     bars = sorted(Z.snap) if bars is None else bars
     for t in bars:
         zones = Z.snap.get(t)
@@ -57,6 +64,15 @@ def run(Z, f1, f2=None, bars=None):
                 if prof is not None:
                     extras += [("I POC", prof[0]), ("I VAL", prof[1]), ("I VAH", prof[2])]
                     r["i_profile"] = [round(x, 2) for x in prof]
+                dk = (pd.Timestamp(Z.day[t]), Z.segs[t], round(float(sig), 6))       # σ दिवसाचा (एकच); key मध्ये स्पष्ट
+                if dk not in sp_cache:                                           # 5 पूर्ण sessions (Abhi निर्णय); कमी ⇒ NA
+                    same = {d: b for d, b in sess_of.items() if Z.segs[b[0]] == Z.segs[t]}
+                    sp_cache[dk] = ZE.sessions_profile(Z.A, Z.lg["vol"], Z.day, same, t, sig, s)
+                sp = sp_cache[dk]
+                r["sessions_profile"] = None if sp is None else [round(x, 2) for x in sp]
+                if sp is not None:
+                    n5 = int(s["profile_sessions"])
+                    extras += [(f"{n5}S POC", sp[0]), (f"{n5}S VAL", sp[1]), (f"{n5}S VAH", sp[2])]
                 others = [z for z in zones if z["id"] != ka.get("zone")]
                 extras += [(f"zone {z['id']}", (z["top"] + z["bottom"]) / 2) for z in others]
                 r["confluence"] = ZE.confluence(mid, sig, s, extras)

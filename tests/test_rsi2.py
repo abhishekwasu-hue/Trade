@@ -229,3 +229,29 @@ def test_register_numbers_dates_shadow():
     assert not hits, hits
     src = open(os.path.join(ROOT, "rsi2", "engine.py"), encoding="utf-8").read()
     assert "def divergence" not in src and "EV.divergence" not in src                  # सध्याचं evidence.divergence() तसंच (shadow)
+
+
+def test_line_skip_two_accepted_with_strict_flag():
+    """Abhi उत्तर 12: L2 शेजारची RSI 2 bars पर्यंत रेघ ओलांडते ⇒ line_clear ✓, line_clear_strict ✗."""
+    R = _R([100.0] * 40)
+    R.r15 = np.full(40, 50.0)
+    R.r15[5], R.r15[30] = 30.0, 40.0
+    a, b = P("L", 100.0, 5), P("L", 95.0, 30)
+    R.r15[29] = 30.0                                                               # L2 च्या आधीची candle रेघेखाली
+    assert R._clear(a, b, "L")[0] is True
+    assert R._clear(a, b, "L", skip=0)[0] is False
+    x = R.pair(a, b, 0, "L")
+    assert x["line_clear"] and not x["line_clear_strict"]
+    assert RS.DEFAULTS["line_skip"] == 2
+
+
+def test_cascade_is_degree_wise():
+    """Abhi निर्णय: cascade = एकाच degree tag च्या regular divergences; degrees मिसळत नाहीत."""
+    piv = {0: [P("L", 90.0, 25, 26), P("L", 80.0, 45, 46)], 1: [P("L", 80.0, 45, 46)]}
+    divs = [{"type": RE.REG_BULL, "degree": 0, "L2": {"bar": 20, "price": 95.0}, "known_bar": 22},
+            {"type": RE.REG_BULL, "degree": 1, "L2": {"bar": 40, "price": 85.0}, "known_bar": 42}]
+    R = SimpleNamespace(res={"pivots": piv}, known=lambda t: [x for x in divs if x["known_bar"] <= t])
+    assert RE.cascade(R, 60) == []                                                 # D0 + D1 मिसळले असते तर 2
+    divs.append({"type": RE.REG_BULL, "degree": 0, "L2": {"bar": 40, "price": 85.0}, "known_bar": 42})
+    out = RE.cascade(R, 60)
+    assert out == [{"type": RE.REG_BULL, "degree": 0, "n": 2, "known_bar": 46}]

@@ -6,6 +6,8 @@ Flags: c origin / base (आवेग leg + departure + BOS; `known_at` max-न�
 शेवटचं टोक; नवं टोक / accept / real break ⇒ काढलं; sweep ⇒ `swept_at`).
 एकत्र (§3): फक्त a + k; linkage overlap किंवा मध्यबिंदू ≤ 0.5 σ (सध्याचा σ; क्रम-स्वतंत्र single-linkage); union > 1.5 σ ⇒ सगळ्यात मोठ्या
 अंतरावर तोड, प्रत्येक भाग ≤ 1.5 σ होईपर्यंत. Id = सगळ्यात जुना pivot (k-फक्त ⇒ k-id); merge ⇒ जुना id चं state; नवा id ⇒ नवं state.
+Id वंश (Abhi निर्णय, 04 §3): id कधीच बदलत नाही — pruning ने मूळ pivot गेला तरी तोच id (आधीच्या सदस्यांवरून); merge ⇒ जुना id;
+split ⇒ मूळ pivot चा भाग id ठेवतो, बाकीचे भाग नवे id; प्रत्येक बदल `lineage` नोंद.
 अवस्था (§4; प्रत्येक बंद candle): भेट (जन्माची चाल नाही), reaction (≥ 1 σ, पुढच्या भेटीपर्यंत / 12 bars), touch_score, zone_sweep /
 deep_sweep, reclaim, accept, spring test, pending ⇒ real break (`elliott/breaks.first_real_break`, settings `ZONE_BREAK`, retest_fn None,
 end = decision bar) ⇒ flip ⇒ दुसरा real break ⇒ मेला; breaker (break आधीच्या 20 bars मध्ये sweep + displacement).
@@ -68,6 +70,7 @@ class Zones:
         self.sess = {d: i for i, d in enumerate(self.res["sessions"])}
         self.atoms = self._atoms()
         self.state = {}                     # id ⇒ zone state
+        self.owner = {}                     # atom id ⇒ zone id (वंश)
         self.events = []
         self.snap = {}
         self.groups_at = {}
@@ -281,21 +284,67 @@ class Zones:
             if k2 != key:
                 key = k2
                 new = self.cluster(act, sig)
-                ids = [self.gid(g) for g in new]
-                old = {z for z in self.state}
+                ids = self.assign_ids(new, t)
                 for g, i in zip(new, ids):
                     if i not in self.state:
                         self.state[i] = self._new_state(g, t)
+                        self.state[i]["id"] = i
                         self.events.append({"bar": t, "type": "जन्म", "id": i})
-                    absorbed = [a["id"] for a in g if a["id"] != i and a["id"] in old and a["id"] not in ids]
-                    for x in absorbed:
-                        self.events.append({"bar": t, "type": "merge", "id": i, "from": x})
+                    for a in g:
+                        self.owner[a["id"]] = i
                 groups = list(zip(ids, new))
             for i, g in groups:
                 self._step(self.state[i], g, t)
             if t in snap_bars:
                 self.snap[t] = self.snapshot(groups, t)
         return self
+
+    def assign_ids(self, groups, t):
+        """Id वंश: प्रत्येक जुन्या zone चं "घर" = ज्या गटात त्याचा मूळ atom (atom id = zone id) आहे; मूळ atom pruning ने गेला ⇒ त्याचे
+        सगळ्यात जास्त जुने सदस्य असलेला गट. गटाला त्याच्या घरातल्या zones पैकी सगळ्यात जुना id (merge ⇒ जुना id; split ⇒ मूळ pivot चा
+        भाग); बाकी ⇒ merge नोंद. घर नसलेला गट ⇒ नवा id (सगळ्यात जुना pivot). प्रत्येक बदल lineage मध्ये."""
+        def age(z):
+            return (self.state[z]["born"], z)
+        mem = [{a["id"] for a in g} for g in groups]
+        parts = {}
+        for k, g in enumerate(groups):
+            for a in g:
+                z = self.owner.get(a["id"])
+                if z in self.state:
+                    parts.setdefault(z, {}).setdefault(k, []).append(a)
+        home = {}
+        for z, by in parts.items():
+            f = [k for k in by if z in mem[k]]
+            home[z] = f[0] if f else min(by, key=lambda k: (-len(by[k]), min(x["born"] for x in by[k]), k))
+        ids, taken = [None] * len(groups), set()
+        for k in range(len(groups)):
+            hs = sorted([z for z in home if home[z] == k], key=age)
+            if hs:
+                ids[k] = hs[0]
+                taken.add(hs[0])
+                if hs[0] not in mem[k] and not self.state[hs[0]].get("inherited"):
+                    self.state[hs[0]]["inherited"] = True                         # एकदाच नोंद (प्रत्येक recluster ला नाही)
+                    self._lin(hs[0], t, "वारसा (मूळ pivot pruning)", members=sorted(mem[k]))
+                for z in hs[1:]:
+                    self.events.append({"bar": t, "type": "merge", "id": hs[0], "from": z})
+                    self._lin(hs[0], t, "merge", src=z)
+        for k, g in enumerate(groups):
+            if ids[k] is None:
+                i = self.gid(g)
+                if i in taken or i in self.state:
+                    i = f"{i}~{t}"
+                ids[k] = i
+                taken.add(i)
+        for z, by in parts.items():
+            into = sorted({ids[k] for k in by})
+            if len(into) > 1:
+                self.events.append({"bar": t, "type": "split", "id": z, "into": into})
+                self._lin(z, t, "split", into=into)
+        return ids
+
+    def _lin(self, z, t, what, **kw):
+        if z in self.state:
+            self.state[z].setdefault("lineage", []).append({"bar": t, "what": what, **kw})
 
     def _new_state(self, g, t):
         a = min((x for x in g if x["src"] == "a"), key=lambda x: x["born"], default=g[0])
@@ -432,7 +481,7 @@ class Zones:
         for i, g in groups:
             z = self.state[i]
             top, bot = self.band(g)
-            fl = self.flags(g, t)
+            fl = self.flags(g, t, i)
             out.append({"id": i, "top": round(top, 2), "bottom": round(bot, 2), "role": z["role"], "status": z["status"],
                         "pending": z["pend"] is not None, "accept": z["accept_at"] is not None, "flags": fl,
                         "degree": max((self.degree(a, t) for a in g if a["src"] == "a"), default=0),
@@ -443,17 +492,18 @@ class Zones:
                         "breaker": z["breaker"], "flip_bar": z["flip_bar"], "retest": z["retest"],
                         "spring": None if z["spring"] is None else dict(z["spring"]),
                         "sweeps_all": [{"bar": x["bar"], "seen": x["seen"], "deep": x["deep"], "reclaim": x["reclaim"]} for x in z["sweeps"]],
-                        "age": self.age(z, g, t)})                                  # t ची गोठलेली प्रत (k_area नंतरचं state वाचत नाही)
+                        "age": self.age(z, g, t),                            # t ची गोठलेली प्रत (k_area नंतरचं state वाचत नाही)
+                        "lineage": list(z.get("lineage", []))[-3:]})
         for zj in out:
             zj["score"], zj["parts"] = self.score(zj, t)
             zj["stars"] = 1 if zj["score"] < float(self.s["star2"]) else (2 if zj["score"] < float(self.s["star3"]) else 3)
         return out
 
-    def flags(self, g, t):
+    def flags(self, g, t, i=None):
         c = [x for x in (self.flag_c(a, t) for a in g if a["src"] == "a") if x]
         d = [x for x in (self.flag_d(a, t) for a in g if a["src"] == "a") if x]
         e = [x for x in (self.flag_e(a, t) for a in g if a["src"] == "a") if x]
-        z = self.state[self.gid(g)]
+        z = self.state[self.gid(g) if i is None else i]
         if z["accept_at"] is not None or z["breaks"]:
             e = []
         return {"c": max(c, key=lambda x: x["q"]) if c else None, "d": d[0] if d else None, "e": e[0] if e else None}
@@ -550,6 +600,23 @@ def confluence(price, sigma, s, extras):
 def fib_levels(I, s):
     o, e = I["origin"]["price"], I["end"]["price"]
     return [(f"Fib {int(f * 1000) / 10}", e - (e - o) * f) for f in s["fibs"]]
+
+
+def sessions_profile(A, vol, day, sess_of, t, sigma, s):
+    """शेवटची `profile_sessions` **पूर्ण** sessions (आजच्या आधीची; known_at = त्या session चा close) — प्रत्येक session मध्ये futures
+    volume हवा; कमी sessions / volume नाही ⇒ None (NA; कमी sessions वर profile नाही). रिटर्न (POC, VAL, VAH)."""
+    n = int(s["profile_sessions"])
+    cur = pd.Timestamp(day[t])
+    days = sorted({d for d in sess_of if d < cur})[-n:]
+    if len(days) < n:
+        return None
+    bars = []
+    for d in days:
+        b = sess_of[d]
+        if not any(np.isfinite(vol[j]) and vol[j] > 0 for j in b):
+            return None
+        bars += b
+    return profile(A, vol, bars, sigma, s)
 
 
 def profile(A, vol, bars, sigma, s):

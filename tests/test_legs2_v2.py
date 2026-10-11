@@ -170,7 +170,7 @@ def test_I_direction_matches_parent_trend_and_sticky_end(world, tracker):
         if I is None or b < 0:
             continue
         seen += 1
-        tr = st[2]["states"][b]["trend"]
+        tr = tracker.ctx(b)[0]                                              # पालक (unknown ⇒ स्वतःचा, उत्तर 5)
         if I["mode"] == LI.MODE_TREND and b == I["since"]:
             assert tr == (SST.UPT if I["dir"] > 0 else SST.DNT)
         if I["mode"] == LI.MODE_RANGE:
@@ -270,18 +270,123 @@ def test_range_alt_mode(world, monkeypatch):
     modes = {I["mode"] for b, I in tr.timeline if I is not None}
     assert modes <= {LI.MODE_RANGE}
     for b, I in tr.timeline:
-        if I is not None and I["since"] == b:
-            a = I["leg"]["a"].price
-            near_bot = abs(a - 19600.0) <= abs(a - 20400.0)
-            assert I["dir"] == (1 if near_bot else -1)
+        if I is not None:
+            c = lg["A"]["c"][b]                                                # जवळची कड = t च्या close ला (K तिकडे येते)
+            near_bot = abs(c - 19600.0) <= abs(c - 20400.0)
+            assert I["dir"] == (1 if near_bot else -1) and I["edge"] == ("bottom" if near_bot else "top")
 
 
-def test_unknown_parent_no_I(world, monkeypatch):
+def test_unknown_parent_and_own_unknown_no_I(world, monkeypatch):
+    _, res, st, lg = world
+    monkeypatch.setattr(LI.Tracker, "parent", lambda self, t: (SST.UNK, None, None))
+    monkeypatch.setattr(LI.Tracker, "ctx", lambda self, t: (SST.UNK, None, None, True))
+    tr = LI.Tracker(lg, st, 1)
+    assert all(I is None for _, I in tr.timeline)
+    assert tr.state(len(res["m15"]) - 1)["why"] == "trend unknown (पालक आणि स्वतःचा)"
+
+
+def test_unknown_parent_uses_own_trend_with_htf_unknown(world, monkeypatch):
+    """Abhi उत्तर 5: पालक unknown ⇒ स्वतःच्या degree चा Dow trend + htf_unknown; RANGE ⇒ range_alt."""
     _, res, st, lg = world
     monkeypatch.setattr(LI.Tracker, "parent", lambda self, t: (SST.UNK, None, None))
     tr = LI.Tracker(lg, st, 1)
-    assert all(I is None for _, I in tr.timeline)
-    assert tr.state(len(res["m15"]) - 1)["why"] == "पालक trend unknown"
+    Is = [(b, I) for b, I in tr.timeline if I is not None]
+    assert Is
+    for b, I in Is:
+        assert I["htf_unknown"] is True
+        own = st[1]["states"][b]["trend"]
+        if I["mode"] == LI.MODE_RANGE:
+            assert own == SST.RNG
+        elif I["since"] == b:
+            assert own == (SST.UPT if I["dir"] > 0 else SST.DNT)
+    t = Is[-1][0]
+    assert tr.state(t)["I"]["htf_unknown"] is True
+
+
+def test_I_mode_follows_parent_state_every_candle(world, monkeypatch):
+    """Abhi उत्तर 4: I_mode = प्रत्येक candle ला पालक trend चं function. पालक RANGE (पट्ट्यासह) ⇒ I नाही किंवा range_alt; पालक trend
+    ⇒ I नाही किंवा trend-mode; RANGE तुटल्यावर trend I पुन्हा शोधला जातो."""
+    m15, res, st, lg = world
+    n = len(m15)
+
+    def par(self, t):                                                      # trend / RANGE / trend पट्टे
+        if (t // 150) % 2 == 1:
+            return SST.RNG, (float(np.max(self.A["h"][:t + 1])), float(np.min(self.A["l"][:t + 1]))), None
+        return SST.UPT, None, float(np.min(self.A["l"][max(t - 100, 0):t + 1]))     # protected = खरा low (origin_bounded)
+    monkeypatch.setattr(LI.Tracker, "parent", par)
+    tr = LI.Tracker(lg, st, 1)
+    n_rng = n_tr = 0
+    for t in range(n):
+        I = tr.I_at(t)
+        if I is None:
+            continue
+        if (t // 150) % 2 == 1:
+            assert I["mode"] == LI.MODE_RANGE
+            n_rng += 1
+        else:
+            assert I["mode"] == LI.MODE_TREND and I["dir"] > 0
+            n_tr += 1
+    assert n_rng and n_tr
+    ev = {e["event"] for e in tr.log}
+    assert "mode बदल: पालक RANGE ⇒ range_alt" in ev and "range_alt संपला (पालक trend)" in ev
+
+
+def test_range_alt_rediscovers_when_near_edge_changes(world, monkeypatch):
+    """Review: पालक RANGE तसाच, नवा leg नाही, पण close दुसऱ्या कडेजवळ गेला ⇒ range_alt पुन्हा शोधला जातो (I नाही अडकत नाही)."""
+    m15, res, st, lg = world
+    band = (float(np.max(lg["A"]["h"])), float(np.min(lg["A"]["l"])))
+    monkeypatch.setattr(LI.Tracker, "parent", lambda self, t: (SST.RNG, band, None))
+    tr = LI.Tracker(lg, st, 1)
+    for t in range(len(m15)):
+        I = tr.I_at(t)
+        want = 1 if tr.near_edge(t, band) == "bottom" else -1
+        if I is not None:
+            assert I["dir"] == want
+    flips = [t for t in range(1, len(m15)) if tr.near_edge(t, band) != tr.near_edge(t - 1, band)]
+    assert flips
+    snaps = {b for b, _ in tr.timeline}
+    assert all(t in snaps for t in flips)                                      # प्रत्येक कड-बदलाला पुन्हा शोध
+
+
+def test_range_alt_mid_band_no_edge_and_parent_flip(world, monkeypatch):
+    """Abhi batch 2: (1-a) close मध्यापासून ±1 σ_1H ⇒ कड नाही ⇒ I नाही; (3) पालक थेट उलटला ⇒ parent_flip रद्द."""
+    m15, res, st, lg = world
+    tr = LI.Tracker(lg, st, 1)
+    t = len(m15) - 1
+    c = float(lg["A"]["c"][t])
+    s1 = res["sigma_1h"].get(pd.Timestamp(tr.ts.iloc[t]).normalize())
+    assert tr.near_edge(t, (c + 0.5 * s1, c - 0.5 * s1)) is None                # मध्यावर
+    assert tr.near_edge(t, (c + 10 * s1, c - 0.5 * s1)) == "bottom"
+    n = len(m15)
+
+    def up(self, t):
+        return SST.UPT, None, float(np.min(self.A["l"][max(t - 100, 0):t + 1]))
+    monkeypatch.setattr(LI.Tracker, "parent", up)
+    tu = LI.Tracker(lg, st, 1)
+    flip = next(t for t in range(n // 2, n) if tu.I_at(t) is not None and tu.I_at(t)["dir"] > 0) + 1   # UP I चालू असताना उलट
+
+    def par(self, t):
+        return (SST.UPT if t < flip else SST.DNT), None, float(np.min(self.A["l"][max(t - 100, 0):t + 1]))
+    monkeypatch.setattr(LI.Tracker, "parent", par)
+    tr2 = LI.Tracker(lg, st, 1)
+    for t in range(flip, n):
+        I = tr2.I_at(t)
+        if I is not None and I["mode"] == LI.MODE_TREND:
+            assert I["dir"] < 0                                                # उलटल्यावर जुना UP I टिकत नाही
+    assert any(e["event"] == "I रद्द: parent_flip" for e in tr2.log)
+
+
+def test_I_mode_real_parent_consistent(world, tracker):
+    _, res, st, lg = world
+    for t in range(len(res["m15"])):
+        I = tracker.I_at(t)
+        tr, band, _, hu = tracker.ctx(t)
+        if I is None:
+            continue
+        if tr == SST.RNG and band is not None:
+            assert I["mode"] == LI.MODE_RANGE and I["band"] == band
+        if tr in (SST.UPT, SST.DNT):
+            assert I["mode"] == LI.MODE_TREND
 
 
 def test_origin_bounded_uses_parent_protected():

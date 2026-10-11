@@ -4,7 +4,9 @@ quality descriptors, K sloping area (shadow; निर्णय नाही).
 - एकच pivot पाया (थर 1 swings2); anchors फक्त confirmed pivots, त्यांच्या `known_at` पासून. सगळी गणना 15M masked series वर, linear किंमत.
 - Downtrend (seller; uptrend आरसा): origin = ज्या D2 H पासून थर 1 ची दोन-पायरी reversal DOWN सुरू झाली (`origin_known_at` = reversal);
   correction-टोक (structural top) = D1 H ज्यानंतर, भाव त्याच्या वर जाण्याआधी, आधीच्या D1 low खाली **close** (`top_known_at` = तो close).
-  Provisional टोक = शेवटचा न ओलांडलेला D1 H — फक्त रेघ काढण्यासाठी, trade-योग्य / K area साठी कधीच नाही.
+  Provisional टोक = शेवटचा न ओलांडलेला D1 H. Provisional (K-टोक) रेघ trade-योग्य फक्त (Abhi उत्तर 10-ब): ≥ 2 आधीचे held touches +
+  चालू (3रा) touch candle चा close रेघेच्या आत + त्यानंतर ≤ N (6) candles मध्ये K आधार-रेघ break (थर 7 trendline-break flavour).
+  "तीव्र" (उत्तर 11) = gate नाही: तीव्र + ≥ 3 held ⇒ trade-योग्य (`steep` खूण, थर 7 grade −0.5); तीव्र + 2 ⇒ trade-योग्य नाही.
 - वैधता: A1–A2 मध्ये close रेघेपलीकडे > 0.3 σ नाही; |slope| ≤ 0.5 σ/bar; A1–A2 ≥ 6 bars; |slope| < 0.02 σ/bar ⇒ सपाट. σ = जन्माचा.
 - Touch = wick ने ± τ (0.2 σ), भेटीनुसार; held = भेटीनंतर break न होता θ_D0 दूर. चालू भेट मोजत नाही. ≥ 3 held ⇒ valid, 2 ⇒ उमेदवार.
 - Break: `elliott/breaks.first_real_break` detrended frame (OHLC − v(t)) वर, level 0, mr = मूळ frame चा median_range, retest_fn None,
@@ -106,6 +108,7 @@ class Engine:
         self.tops = {k: structural_tops(self.res, self.A, self.td, k) for k in ("H", "L")}
         self.orig = {k: origins(self.res, st, self.od, k) for k in ("H", "L")}
         self.lines = {}
+        self.steep = {}                                                              # (line id, t) ⇒ तीव्र trade-योग्य
         self._build()
 
     # ------------------------------------------------------------------------------------------------ रेघा बांधणं
@@ -328,7 +331,8 @@ class Engine:
     def line_json(self, L, t, name=None, cls=None, i_slope=None):
         return {"id": L.id, "name": name, "kind": L.kind, "class": cls, "a1": {"ts": str(self.ts.iloc[L.a1[0]]), "price": round(L.a1[1], 2)},
                 "a2": {"ts": str(self.ts.iloc[L.a2[0]]), "price": round(L.a2[1], 2)}, "value_now": round(L.value(t), 2),
-                "status": self.status(L, t), "flat": L.flat, "origin": L.origin, "origin_shifted": L.shifted, "provisional": L.provisional,
+                "status": self.status(L, t), "flat": L.flat, "steep": bool(self.steep.get((L.id, t))), "origin": L.origin,
+                "origin_shifted": L.shifted, "provisional": L.provisional,
                 "valid": L.valid0, "why": L.why, "touches": self.descriptors(L, t, i_slope),
                 "break": None if L.cb is None or L.cb > t else {"ts": str(self.ts.iloc[L.cb]), "Q": L.q},
                 "retest": None if L.retest is None or L.retest["held"] > t else str(self.ts.iloc[L.retest["held"]])}
@@ -357,7 +361,36 @@ def trend_slope_of(E, t, o, kind):
     return (v - o.price) / max(j - o.bar, 1)
 
 
-def tradeable(E, t, kind, k_start, k_ext, i_dir, trend_slope=None):
+def line_class(flat, side_ok, before_k, held, near, steep, prov, valid_touches=3):
+    """वर्ग: सपाट / trade-योग्य / तीव्र / लागू नाही. तीव्र = gate नाही — ≥ valid_touches held ⇒ trade-योग्य (उत्तर 11); provisional ⇒
+    फक्त prov (उत्तर 10-ब)."""
+    if flat:
+        return "सपाट"
+    need = int(valid_touches) if steep else 2
+    if side_ok and near and held >= need and (before_k or prov):                 # तीव्र ⇒ provisional ला सुद्धा ≥ 3 held
+        return "trade-योग्य"
+    return "तीव्र" if steep else "लागू नाही"
+
+
+def prov_ok(E, L, t, k_break):
+    """Provisional रेघ (उत्तर 10-ब): A2 नंतरचा touch candle j (wick रेघेच्या ± τ, close रेघेच्या आत), j पर्यंत ≥ 2 held, आणि K आधार-रेघ
+    break kb ∈ [j, j + N], kb ≤ t. रिटर्न touch bar किंवा None."""
+    if k_break is None or k_break["bar"] > t or not np.isfinite(L.sigma):
+        return None
+    A = E.A
+    kb = k_break["bar"]
+    tau = float(E.s["tau"]) * L.sigma
+    sgn = 1 if L.kind == "H" else -1
+    for j in range(kb, max(L.a2[0], kb - int(E.s["prov_break_n"]) - 1), -1):   # j ∈ [kb − N, kb]
+        v = L.value(j)
+        touch = (A["h"][j] >= v - tau) if sgn > 0 else (A["l"][j] <= v + tau)
+        inside = (A["c"][j] - v) * sgn <= 0
+        if touch and inside and len([h for h in L.held if h["held"] < j]) >= 2:
+            return j
+    return None
+
+
+def tradeable(E, t, kind, k_start, k_ext, i_dir, trend_slope=None, k_break=None):
     """§2.7: [(Line, नाव, वर्ग)] — trade-योग्य / उमेदवार / लागू नाही / तुटलेली fan / तीव्र. §5: उलट प्रकारची flip केलेली रेघ (support ⇒
     resistance) सुद्धा trade-बाजूची उमेदवार."""
     nm = E.named(t, kind)
@@ -391,14 +424,10 @@ def tradeable(E, t, kind, k_start, k_ext, i_dir, trend_slope=None):
         before_k = L.birth < k_start and L.a2[0] < k_start and not L.provisional
         near = k_ext is not None and np.isfinite(L.sigma) and abs(k_ext - L.value(t)) <= float(E.s["k_near"]) * L.sigma
         steep = trend_slope is not None and not flipped_in and abs(L.slope) > abs(trend_slope)
-        if L.flat:
-            cls = "सपाट"
-        elif steep:
-            cls = "तीव्र"
-        elif side_ok and before_k and held >= 2 and near:
-            cls = "trade-योग्य"
-        else:
-            cls = "लागू नाही"
+        prov = L.provisional and side_ok and near and prov_ok(E, L, t, k_break) is not None
+        cls = line_class(L.flat, side_ok, before_k, held, near, steep, prov, int(E.s["valid_touches"]))
+        if cls == "trade-योग्य" and steep:
+            E.steep[(L.id, t)] = True                                              # नोंद + grade (थर 7 w_steep), gate नाही
         if name.startswith("fan"):
             key = "valid" if held >= int(E.s["valid_touches"]) else "cand"
             cap = int(E.s["fan_valid"] if key == "valid" else E.s["fan_cand"])
@@ -526,7 +555,7 @@ def k_sloping_area(E, lines, t, k_start, zones=None):
             z = [zz for zz in zones if zz["bottom"] - 1e-9 <= v <= zz["top"] + 1e-9]
             inter = z[0]["id"] if z else None
         r = {"ans": ans, "line": L.id, "name": name, "touches": len(E.held_at(L, t)) + 1, "bar": hit, "intersection": inter,
-             "value": round(L.value(t), 2)}
+             "value": round(L.value(t), 2), "steep": bool(E.steep.get((L.id, t))), "provisional": bool(L.provisional)}
         rank = {"हो (sweep)": 3, "हो": 2, "हो (pending)": 1, "नाही": 0}[ans]
         if best is None or (rank, inter is not None) > best[0]:
             best = ((rank, inter is not None), r)

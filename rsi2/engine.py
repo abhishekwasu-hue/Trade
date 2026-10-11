@@ -87,8 +87,8 @@ class RSI:
             return self.r1h[k], int(self.h1_end[k])
         return self.r15[p.bar], None
 
-    def _clear(self, a, b, kind, d=0):
-        """line_clear (RSI; L1 / L2 शेजारचे line_skip bars वगळून; D2 ⇒ 1H RSI) आणि price_clear (closes)."""
+    def _clear(self, a, b, kind, d=0, skip=None):
+        """line_clear (RSI; L1 / L2 शेजारचे line_skip bars वगळून; D2 ⇒ 1H RSI) आणि price_clear (closes). skip = 0 ⇒ strict."""
         lo, hi = a.bar, b.bar
         if hi - lo < 2:
             return True, True
@@ -96,7 +96,7 @@ class RSI:
         pl = a.price + (b.price - a.price) * (seg - lo) / (hi - lo)
         cc = self.A["c"][seg]
         pc = bool(np.all(cc >= pl - 1e-9)) if kind == "L" else bool(np.all(cc <= pl + 1e-9))
-        k = int(self.s["line_skip"])
+        k = int(self.s["line_skip"] if skip is None else skip)
         if d == 2:
             i0, i1 = int(self.bar_to_h1[lo]), int(self.bar_to_h1[hi])
             r, x0, x1 = self.r1h, i0, i1
@@ -134,6 +134,7 @@ class RSI:
         if typ is None:
             return None
         lc, pc = self._clear(a, b, kind, d)
+        strict = self._clear(a, b, kind, d, skip=0)[0]                          # Abhi उत्तर 12: line_skip 2 ग्राह्य, strict खूण
         known = b.confirm_bar if d != 2 else max(b.confirm_bar, k2)
         gap_between = any(a.bar < g <= b.bar for g in self.res["gap_bar_2s"])
         grade = None
@@ -141,7 +142,8 @@ class RSI:
             grade = "मजबूत" if (r1 <= s["grade_os"] if typ == REG_BULL else r1 >= s["grade_ob"]) else "कमकुवत"
         return {"type": typ, "degree": d, "L1": {"bar": a.bar, "price": round(a.price, 2), "ts": str(self.ts.iloc[a.bar])},
                 "L2": {"bar": b.bar, "price": round(b.price, 2), "ts": str(self.ts.iloc[b.bar])}, "rsi1": round(float(r1), 2),
-                "rsi2": round(float(r2), 2), "gap": b.bar - a.bar, "known_bar": int(known), "line_clear": lc, "price_clear": pc,
+                "rsi2": round(float(r2), 2), "gap": b.bar - a.bar, "known_bar": int(known), "line_clear": lc, "line_clear_strict": strict,
+                "price_clear": pc,
                 "strength": round(abs(r2 - r1) / (abs(b.price - a.price) / sig), 3) if sig else None, "gap_between": gap_between,
                 "grade": grade}
 
@@ -286,21 +288,23 @@ def special(R, I, st_ik, pref, t):
 
 
 def cascade(R, t):
-    """एकाच दिशेच्या लागोपाठ ≥ 2 regular divergences ज्या price ने नाकारल्या (नंतरचा same-type confirmed pivot L2 पलीकडे trend-दिशेने)."""
+    """Degree-निहाय (Abhi निर्णय): एकाच degree tag च्या, एकाच दिशेच्या लागोपाठ ≥ 2 regular divergences ज्या price ने नाकारल्या (नंतरचा
+    त्याच degree चा same-type confirmed pivot L2 पलीकडे trend-दिशेने). Degrees मिसळत नाहीत."""
     regs = [x for x in R.known(t) if x["type"] in (REG_BULL, REG_BEAR)]
     out = []
-    for typ in (REG_BULL, REG_BEAR):
-        kind = "L" if typ == REG_BULL else "H"
-        rej = []
-        for x in [y for y in regs if y["type"] == typ]:
-            ps = [p for p in R.res["pivots"][0] if p.kind == kind and p.bar > x["L2"]["bar"] and p.confirm_bar <= t]
-            nxt = ps[0] if ps else None
-            if nxt is not None and ((nxt.price < x["L2"]["price"]) if kind == "L" else (nxt.price > x["L2"]["price"])):
-                rej.append((x, nxt.confirm_bar))
-            else:
-                rej = []
-        if len(rej) >= 2:
-            out.append({"type": typ, "n": len(rej), "known_bar": rej[-1][1]})
+    for d in sorted({x["degree"] for x in regs}):
+        for typ in (REG_BULL, REG_BEAR):
+            kind = "L" if typ == REG_BULL else "H"
+            rej = []
+            for x in [y for y in regs if y["type"] == typ and y["degree"] == d]:
+                ps = [p for p in R.res["pivots"][d] if p.kind == kind and p.bar > x["L2"]["bar"] and p.confirm_bar <= t]
+                nxt = ps[0] if ps else None
+                if nxt is not None and ((nxt.price < x["L2"]["price"]) if kind == "L" else (nxt.price > x["L2"]["price"])):
+                    rej.append((x, nxt.confirm_bar))
+                else:
+                    rej = []
+            if len(rej) >= 2:
+                out.append({"type": typ, "degree": d, "n": len(rej), "known_bar": rej[-1][1]})
     return out
 
 

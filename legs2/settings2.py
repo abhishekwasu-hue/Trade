@@ -22,6 +22,7 @@ DEFAULTS = {
     "label_degrees": (1, 2),
     "degrees": (0, 1, 2, 3),
     "ik_degrees": (1, 2),
+    "range_alt_mid_sigma": 1.0,        # range_alt: close मध्यापासून ± इतके σ_1H ⇒ कड नाही ⇒ I नाही
 }
 
 # I_origin real break (MASTER break पातळी 2): elliott/breaks.first_real_break, retest_fn=None, cache नाही, MR = याच settings चा
@@ -44,6 +45,11 @@ REGISTER = {
     "climax_last_candles": (3, "—", "व्याख्या", "थर 2 §5.1.3: I च्या शेवटच्या 3 candles"),
     "sot_pushes": (3, "—", "व्याख्या", "थर 2 §5.1.3: शेवटचे 3 with-trend pushes"),
     "quiet / heavy": ("1.2/1.5", "±0.1", "NexusFi", "थर 2 §5.3"),
+    "range_alt_edge_from": ("close", "close / leg सुरुवात", "Abhi (batch 2, निर्णय 1)",
+                            "जवळची कड = t च्या close ला; कड बदलली ⇒ range_alt I पुन्हा शोध"),
+    "range_alt_mid_sigma": (1.0, "0.5/1/1.5", "Abhi (निर्णय 1-a)", "close मध्य ± 1 σ_1H ⇒ कड ठरवत नाही ⇒ I नाही"),
+    "I_mode / रद्द कारणं": ("D2 state चं function", "—", "Abhi (प्रश्न 4, निर्णय 3)",
+                           "trend ⇄ range_alt; रद्द: I_origin real break, थर 1 reversal, parent_flip (पालक थेट I-विरुद्ध)"),
     "I_origin_break (breaks.py settings)": ("elliott.settings DEFAULTS", "±1 पायरी", "code (MR ≠ σ नोंद)", "MASTER break पातळी 2"),
     # व्याख्या-फरक (थर 2 §1: सध्याच्या code शी फरक)
     "overlap (फरक)": ("नोंद", "—", "नोंद", "market_state.overlap_ratio = >50% overlap bars चं प्रमाण; थर 2 = overlap ÷ range ची सरासरी"),
