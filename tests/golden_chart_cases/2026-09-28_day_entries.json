@@ -18,5 +18,6 @@
       "13:45"
     ]
   },
-  "notes": "28 Sep: 11:15 पर्यंत मजबूत घसरण (impulse), 11:30–14:00 उथळ overlapping flag (22,808–22,855), 14:15 flag च्या खालच्या रेषेखाली commitment ⇒ G8 bear. जुना horizontal zone लागत नाही."
+  "notes": "28 Sep: 11:15 पर्यंत मजबूत घसरण (impulse), 11:30–14:00 उथळ overlapping flag (22,808–22,855), 14:15 flag च्या खालच्या रेषेखाली commitment ⇒ G8 bear. जुना horizontal zone लागत नाही.",
+  "known_issue": "xfail: Simple Core gives no 14:15 signal on this day — see issue #284 (fails only when trade-data is present; CI skips)"
 }

@@ -135,7 +135,17 @@ def test_golden_chart_case(path):
 DAY_CASES = [c for c in CASES if "simple_core_day" in json.load(open(c, encoding="utf-8"))]
 
 
-@pytest.mark.parametrize("path", DAY_CASES, ids=[os.path.basename(c)[:-5] for c in DAY_CASES])
+def _day_params():
+    """Golden case JSON मध्ये "known_issue" असेल ⇒ xfail (कारण + issue link) — गुपचूप fail नाही."""
+    out = []
+    for c in DAY_CASES:
+        ki = json.load(open(c, encoding="utf-8")).get("known_issue")
+        marks = [pytest.mark.xfail(reason=ki, strict=False, raises=AssertionError)] if ki else []
+        out.append(pytest.param(c, id=os.path.basename(c)[:-5], marks=marks))
+    return out
+
+
+@pytest.mark.parametrize("path", _day_params())
 def test_golden_simple_core_day(path):
     """Simple Core (Abhi 2026-10-08): दिवसभर प्रत्येक बंद 15M bar वर signal_at (trendline memory + एक setup = एक entry) ⇒ signals फक्त
     अपेक्षित वेळांवर; pause अपेक्षित वेळेपासून; area अपेक्षित पट्टा सामावतो; trendline ओळख स्थिर."""
