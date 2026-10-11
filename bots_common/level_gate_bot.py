@@ -25,6 +25,7 @@ STATUS = {                                                                 # sig
     LR.R_NO_COMMIT: "SKIPPED_GATE_WAITING_COMMITMENT", LR.R_BROKEN: "SKIPPED_GATE_BROKEN", LR.R_TIMEOUT: "SKIPPED_GATE_TIMEOUT",
     LR.R_RR: "SKIPPED_GATE_RR", LR.R_NO_TARGET: "SKIPPED_GATE_NO_TARGET", LR.R_ERROR: "SKIPPED_GATE_ERROR",
 }
+ARMED_WHY = {"absorbing": "SKIPPED_GATE_ABSORPTION", "low_volume": "SKIPPED_GATE_LOW_VOLUME"}   # ARMED चालू, पण कारण वेगळं (L5 सारांश)
 
 
 def entry_mode(settings):
@@ -43,6 +44,10 @@ def gate_settings(settings):
 
 def status_of(r):
     why = str(r.get("reason") or "")
+    if r.get("state") == LR.ARMED:
+        for k, v in ARMED_WHY.items():
+            if r.get(k):
+                return v
     for k, v in STATUS.items():
         if why.startswith(k):
             return v
@@ -154,10 +159,25 @@ def _default_futures_candles(token, symbol, minutes, cache_dir=None, lookback_da
     return fetch_mcx_candles(token, key, interval=_INTERVAL.get(int(minutes), "5minute"), lookback_days=lookback_days)
 
 
+def confirm_tf(bot, settings):
+    """settings["confirm_tf_minutes"] (dashboard) — Upstox interval असलेला (1 / 5 / 15 / 30) नसेल तर शांतपणे दुसऱ्या TF चे candles आणून
+    चुकीचे "बंद" candles मोजू नयेत ⇒ bot चा default TF (MCX 15) आणि log."""
+    default = CONFIRM_TF.get(bot, 5)
+    raw = (settings or {}).get("confirm_tf_minutes")
+    try:
+        tf = int(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        tf = None
+    if tf not in _INTERVAL:
+        print(f"⚠️ {bot}: confirm_tf_minutes={raw!r} चालत नाही (फक्त {sorted(_INTERVAL)}) ⇒ default {default}m")
+        tf = default
+    return tf
+
+
 def cycle_gate(bot, symbol, access_token, settings, areas, now, fetch_bars=None, fetch_daily=None, cache_dir=None, fetch_volume=None):
     """एका cycle साठी: trend (दिवसातून एकदा, cache), confirmation-TF चे बंद candles (मागचे काही दिवस median range साठी), सगळे areas."""
     s = gate_settings(settings)
-    tf = int((settings or {}).get("confirm_tf_minutes") or CONFIRM_TF.get(bot, 5))
+    tf = confirm_tf(bot, settings)
     now = pd.Timestamp(now)
     try:
         ctx = LR.daily_trend(symbol, access_token, today=now.normalize().tz_localize(None) if now.tzinfo else now.normalize(),

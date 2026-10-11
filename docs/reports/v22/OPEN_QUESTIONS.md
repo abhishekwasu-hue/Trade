@@ -130,3 +130,9 @@
 - `t_first` / `t_first_par` snapshot (`PROV_KEYS`) मध्ये — सुरक्षा (A1 फक्त रिकाम्या stack वर सुरू होतो ⇒ output बदल 0, वरचे आकडे तसेच).
 - **उघडा:** COMPLETE मुळे काही चाली "combination" ऐवजी 9-wave extended **impulse** वाचतात (synthetic शोधात ~4,600 combination पैकी 11) ⇒ अशी counter-move खरा break ठरू शकते (flip शक्य). Real NIFTY / BANKNIFTY वर trend बदल 0, पण नियम म्हणून Abhi ✔ हवा.
 
+| LB12 | MCX (L4) trend इतिहास | सध्याच्या front-month contract चे Daily candles (Upstox कडे expired contracts नाहीत) ⇒ roll नंतर < 30 bars ⇒ "trend unclear", entry नाही | continuous MCX series (उदा. spot / स्वतःचा roll-stitched इतिहास) हवा का? |
+| LB13 | MCX SL cap | structural SL > settings `sl_points` (default 20) ⇒ `SKIPPED_GATE_SL_TOO_WIDE` — GOLD / SILVER वर बहुतेक structural SL यापेक्षा रुंद ⇒ बहुतेक skip | MCX साठी cap वाढवायचा की structural SL ⇒ lots कमी? |
+| LB14 | MCX Supertrend filter | confirmation mode मध्येही Supertrend / cascade / cooldown / max hits चालू (फक्त breakout, candle-confirm, min-hold बंद; RSI default बंद) | Supertrend confirmation मध्ये बंद करायचा? |
+| LB15 | MCX approval | CONFIRMED ⇒ जुना PAPER order मार्ग (Vision / §9 Telegram ✅ नाही — आधीसुद्धा MCX PAPER approval शिवाय होता) | MCX ला §9 approval हवं का? |
+| LB16 | L5 signal_log मध्ये bot column नाही | 5M Instant आणि Classic दोघे 5M levels च्या सारख्याच rows लिहितात ⇒ dashboard मध्ये 5M rows दोन्ही bots खाली (caption), summary मध्ये "5M levels (Instant + Classic)" एक ओळ; touch-legacy संख्या bot-wise अचूक | signal_log ला bot column (hit मोजणी / page filters ला हात) — हवं का? |
+| LB17 | L5 MCX दृश्य | MCX signal_log level_type फक्त SUPPORT / RESISTANCE (30M / 60M TF नाही) ⇒ सारांश / dashboard मध्ये area = (symbol, किंमत); MCX symbols = सक्रिय (symbol_enabled) commodities; वापरलेली confirmation फक्त MCX साठी file मध्ये (index bots ला Vision ✅ आहे) | MCX signal_log मध्ये TF हवा का? index bots ना पण तसाच confirm-used guard हवा का? |
