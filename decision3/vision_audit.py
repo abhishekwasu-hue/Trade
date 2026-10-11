@@ -84,22 +84,41 @@ def build_request(png, facts, model, max_tokens=900):
 
 
 def validate(raw):
+    """Vision JSON ⇒ (data, None) किंवा (None, English कारण) — caption / report English राहतात; कोणताही आकार raise करत नाही."""
     if not isinstance(raw, dict) or raw.get("verdict") not in VERDICTS:
-        return None, "verdict अवैध"
-    secs = raw.get("sections") or {}
-    out = {"verdict": raw["verdict"], "sections": {}, "issues": [str(x)[:120] for x in (raw.get("issues") or [])][:5],
-           "missing_or_clutter": str(raw.get("missing_or_clutter") or "")[:160]}
+        return None, "invalid verdict"
+    secs = raw.get("sections")
+    if not isinstance(secs, dict):
+        return None, "invalid sections"
+    iss = raw.get("issues") or []
+    iss = iss if isinstance(iss, list) else [iss]
+    out = {"verdict": raw["verdict"], "sections": {}, "issues": [_one_line(x)[:120] for x in iss][:5],
+           "missing_or_clutter": _one_line(raw.get("missing_or_clutter") or "")[:160]}
     for k in SECTIONS:
-        s = secs.get(k) or {}
+        s = secs.get(k)
+        s = s if isinstance(s, dict) else {}
         st = s.get("status") if s.get("status") in STATUS_ICON else None
         if st is None:
-            return None, f"{k} status अवैध"
-        out["sections"][k] = {"status": st, "reason": str(s.get("reason") or "")[:120]}
+            return None, f"invalid {k} status"
+        out["sections"][k] = {"status": st, "reason": _one_line(s.get("reason") or "")[:120]}
     return out, None
 
 
-def _budget(model, g=None, spent_fn=None, estimate_fn=None):
-    """(ok, day, cap). Hard stop: आजचा खर्च + अंदाज > vision_daily_budget_usd ⇒ नाही."""
+def _one_line(x):
+    return " ".join(str(x).split())
+
+
+def _weekdays_left(today):
+    """आजनंतर महिन्यात उरलेले सोम–शुक्र (signals चा मासिक राखीव भाग — run_visual_audit सारखाच नियम)."""
+    import pandas as pd
+    t = pd.Timestamp(today).normalize()
+    end = t + pd.offsets.MonthEnd(0)
+    return int(len(pd.bdate_range(t + pd.Timedelta(days=1), end))) if end > t else 0
+
+
+def _budget(model, g=None, spent_fn=None, estimate_fn=None, today=None):
+    """(ok, day, cap, why). Hard stop — signals ला प्राधान्य (run_visual_audit / PR #274 सारखं): chart audit फक्त जर
+    आजचा खर्च + अंदाज ≤ दैनिक budget − signals_daily_reserve_usd, आणि महिना + अंदाज ≤ मासिक − राखीव × उरलेले weekdays."""
     from vision import config as VC
     from vision import signal_audit as SA
     from vision import store as VS
@@ -107,9 +126,13 @@ def _budget(model, g=None, spent_fn=None, estimate_fn=None):
     day, month = (spent_fn or VS.spent)()
     est = (estimate_fn or SA.estimate_usd)(model)
     cap = float(g["vision_daily_budget_usd"])
-    if day + est > cap:
+    reserve = float(g.get("signals_daily_reserve_usd", 0.0))
+    if day + est > cap - reserve + 1e-12:
         return False, day, cap, "daily budget reached"
-    if month + est > float(g["vision_monthly_budget_usd"]):
+    if today is None:
+        today = VS.now_ist()
+        today = today.replace(tzinfo=None) if getattr(today, "tzinfo", None) is not None else today
+    if month + est > float(g["vision_monthly_budget_usd"]) - reserve * _weekdays_left(today) + 1e-12:
         return False, day, cap, "monthly budget reached"
     return True, day, cap, ""
 
@@ -141,6 +164,14 @@ def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None,
         msg = client.messages.create(**build_request(png, facts, model))
     except Exception as exc:                                               # noqa: BLE001 — chart तरीही जातो; कारण caption मध्ये
         out.update(status="failed", why=f"API: {type(exc).__name__}")
+        if on_usage is not None:                                           # timeout / network: request कदाचित billed ⇒ सावध अंदाज
+            usage = {"input_tokens": 2050, "output_tokens": SA.max_output_tokens(), "estimated": 1}   # (signal_audit सारखाच)
+            out["cost_usd"] = round(SA.cost_usd(model, usage), 6)
+            out["cost_estimated"] = True
+            try:
+                on_usage(usage, out["cost_usd"])
+            except Exception as e2:                                        # noqa: BLE001
+                out["cost_log_error"] = type(e2).__name__
         return out
     usage = SA.usage_of(msg)
     cost = SA.cost_usd(model, usage)
@@ -154,8 +185,8 @@ def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None,
     text = next((b.text for b in (getattr(msg, "content", None) or []) if getattr(b, "type", None) == "text"), None)
     try:
         data, err = validate(json.loads(text or ""))
-    except ValueError as exc:
-        data, err = None, f"JSON: {exc}"
+    except ValueError:
+        data, err = None, "invalid JSON"
     if err:
         out.update(status="failed", why=err)
         return out
@@ -185,7 +216,9 @@ def report_text(a, title):
             lines.append(f"{SECTION_NAMES[k]}: {STATUS_ICON[s['status']]} {s['reason']}"[:160])
         for x in a["issues"][:4]:
             lines.append(f"• {x}"[:140])
-        if a.get("cost_usd"):
+        if a.get("reused"):
+            lines.append("Reused earlier audit of the same chart — no new cost")
+        elif a.get("cost_usd"):
             lines.append(f"Cost ${a['cost_usd']:.4f} · today ${a.get('spent_today', 0) + a['cost_usd']:.3f} / ${a.get('cap', 0):.2f}")
     lines.append(FOOTER)
     return "\n".join(lines[:11] + [lines[-1]] if len(lines) > 12 else lines)
@@ -197,6 +230,8 @@ def with_audit_line(caption, line):
     idx = next((i for i, x in enumerate(ls) if x.startswith("Vision audit")), None)
     if idx is None:
         ls.insert(max(0, len(ls) - 1), line)
+        if len(ls) > 7:                                                    # ≤ 7 ओळी: audit + शेवटची ओळ ठेवून मधली गाळतो
+            ls = ls[:5] + ls[-2:]
     else:
         ls[idx] = line
     return "\n".join(ls)[:1024]
@@ -233,8 +268,8 @@ def make_auditor(model=None, client=None, budget=None, on_usage=None):
         out_p = os.path.join(run_dir, os.path.splitext(png_rel)[0] + ".vision.json")
         try:                                                               # त्याच chart चा आधीचा पूर्ण audit ⇒ पुन्हा खर्च नाही
             old = json.load(open(out_p, encoding="utf-8"))
-            if old.get("sha") == sha and old.get("status") == "done":
-                return {**old, "reused": True}
+            if old.get("sha") == sha and old.get("status") == "done":   # खर्च आधीच नोंदलेला ⇒ या send चा खर्च 0 (summary दुहेरी नाही)
+                return {**old, "reused": True, "cost_usd": 0.0, "first_cost_usd": old.get("cost_usd", 0.0)}
         except (OSError, ValueError):
             pass
         jp = os.path.join(run_dir, it["json"]) if it.get("json") else None

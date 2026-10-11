@@ -24,9 +24,15 @@ from decision3 import daily_swings as DS  # noqa: E402
 ORDER = ("NIFTY", "BANKNIFTY")                                             # Telegram क्रम: NIFTY आधी
 
 
+def is_nifty(symbol):
+    """NIFTY / NIFTY50 / "NIFTY 50" / NIFTY_INDEX … (sealed holdout नियम लागू); BANKNIFTY / FINNIFTY नाही."""
+    s = "".join(ch for ch in str(symbol).upper() if ch.isalnum())
+    return s in ("NIFTY", "NIFTY50", "NIFTYINDEX", "NIFTY50INDEX", "NSENIFTY", "NSENIFTY50")
+
+
 def load_daily(path, symbol):
     d = DS.prepare(pd.read_csv(path))
-    if symbol.upper() == "NIFTY":                                           # sealed holdout कधीच नाही; gap ओलांडून fold नाही ⇒
+    if is_nifty(symbol):                                                    # sealed holdout कधीच नाही; gap ओलांडून fold नाही ⇒
         from elliott import data_policy as DP                                # फक्त holdout नंतरचे rows
         d = d[d["timestamp"] >= DP.CONTAMINATED_START].reset_index(drop=True)
     return d

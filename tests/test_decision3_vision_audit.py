@@ -88,11 +88,58 @@ def test_daily_cap_default_is_two_dollars_and_hard_stop():
     from vision import config as VC
     assert VC.GLOBAL_DEFAULTS["vision_daily_budget_usd"] == 2.0
     g = dict(VC.GLOBAL_DEFAULTS)
-    ok, day, cap, why = VA._budget("m", g=g, spent_fn=lambda: (1.99, 3.0), estimate_fn=lambda m: 0.02)
+    import pandas as pd
+    month_end = (pd.Timestamp.now() + pd.offsets.MonthEnd(0)).normalize()                     # महिन्यात उरलेले weekdays 0
+    ok, day, cap, why = VA._budget("m", g=g, spent_fn=lambda: (1.99, 3.0), estimate_fn=lambda m: 0.02, today=month_end)
     assert not ok and cap == 2.0 and why == "daily budget reached"
-    assert VA._budget("m", g=g, spent_fn=lambda: (1.0, 3.0), estimate_fn=lambda m: 0.02)[0]
-    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.5, 4.99), estimate_fn=lambda m: 0.02)
+    assert VA._budget("m", g=g, spent_fn=lambda: (1.0, 3.0), estimate_fn=lambda m: 0.02, today=month_end)[0]
+    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.5, 4.99), estimate_fn=lambda m: 0.02, today=month_end)
     assert not ok and why == "monthly budget reached"                                          # कारण बरोबर cap चं
+
+
+def test_chart_audit_keeps_signals_reserve():
+    """Signals ला प्राधान्य (run_visual_audit सारखं): दैनिक cap − राखीव; मासिक cap − राखीव × उरलेले weekdays."""
+    import pandas as pd
+    from vision import config as VC
+    g = dict(VC.GLOBAL_DEFAULTS, signals_daily_reserve_usd=0.20)
+    month_end = (pd.Timestamp.now() + pd.offsets.MonthEnd(0)).normalize()
+    assert not VA._budget("m", g=g, spent_fn=lambda: (1.79, 0.0), estimate_fn=lambda m: 0.02, today=month_end)[0]
+    assert VA._budget("m", g=g, spent_fn=lambda: (1.70, 0.0), estimate_fn=lambda m: 0.02, today=month_end)[0]
+    first = (pd.Timestamp.now() + pd.offsets.MonthBegin(-1)).normalize()
+    rest = VA._weekdays_left(first)
+    assert rest >= 15
+    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.0, 5.0 - 0.2 * rest), estimate_fn=lambda m: 0.02, today=first)
+    assert not ok and why == "monthly budget reached"
+
+
+def test_api_failure_logs_cautious_estimate():
+    class Boom:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **params):
+            raise TimeoutError("slow")
+    logged = []
+    a = VA.audit_chart(b"png", "facts", model="claude-x", client=Boom(), budget=lambda m: (True, 0, 2.0),
+                       on_usage=lambda u, c: logged.append((u, c)))
+    assert a["status"] == "failed" and a["why"] == "API: TimeoutError" and a.get("cost_estimated")
+    assert logged and logged[0][0]["estimated"] == 1 and logged[0][1] == a["cost_usd"]
+
+
+def test_malformed_sections_english_reason_no_crash():
+    for bad in ({**GOOD, "sections": ["x"]}, {**GOOD, "sections": "x"}, {**GOOD, "sections": {**GOOD["sections"], "zones": "ok"}}):
+        a = VA.audit_chart(b"png", "facts", model="m", client=FakeClient(bad, []), budget=lambda m: (True, 0, 2.0))
+        line = VA.caption_line(a)
+        assert a["status"] == "failed" and line.isascii() and "invalid" in line
+    multi = {**GOOD, "issues": ["line one\nline two\nline three"] * 4}
+    a = VA.audit_chart(b"png", "facts", model="m", client=FakeClient(multi, []), budget=lambda m: (True, 0, 2.0))
+    assert len(VA.report_text(a, "t").splitlines()) <= 12
+
+
+def test_audit_line_insert_keeps_seven_lines():
+    cap = "\n".join(f"l{i}" for i in range(7))
+    out = VA.with_audit_line(cap, "Vision audit: pass").splitlines()
+    assert len(out) == 7 and out[-2] == "Vision audit: pass" and out[-1] == "l6"
 
 
 def test_report_at_most_12_lines_with_four_sections():
@@ -156,6 +203,8 @@ def test_same_chart_audit_reused_no_second_spend(tmp_path):
     it = json.load(open(d / "manifest.json"))["items"][0]
     a1, a2 = aud(str(d), it), aud(str(d), it)
     assert [x[0] for x in log] == ["vision"] and a2.get("reused") and a2["verdict"] == a1["verdict"]
+    assert a1["cost_usd"] > 0 and a2["cost_usd"] == 0 and a2["first_cost_usd"] == a1["cost_usd"]          # summary दुहेरी नाही
+    assert "no new cost" in VA.report_text(a2, "t")
 
 
 def test_failed_report_reply_is_surfaced(tmp_path):

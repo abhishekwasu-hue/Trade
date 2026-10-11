@@ -58,8 +58,8 @@ def runs(values):
 
 def protected_segments(states, C):
     """प्रत्येक protected swing: pivot पासून ज्या bar ला तो बदलला / तुटला तिथपर्यंत. ended = "broken" (त्या bar चा close पलीकडे, किंवा
-    Q15 phase origin_broken चा पहिला bar — protected तसाच राहतो पण तुटला) / "moved" (नवा protected) / "open" (अजून चालू)."""
-    segs, cur, since, closed = [], None, None, False
+    तुटल्याचा पहिला bar — Q15 phase origin_broken / minor trend UP|DOWN → NEUTRAL; protected state मध्ये तसाच राहतो पण तुटला) / "moved" (नवा protected) / "open" (अजून चालू)."""
+    segs, cur, since, closed, prev_tr = [], None, None, False, None
     for i, st in enumerate(states):
         p = st.protected
         key = None if p is None else (p.kind, p.bar, round(p.price, 6))
@@ -69,10 +69,12 @@ def protected_segments(states, C):
                 broken = (C[i] < price) if kind == "L" else (C[i] > price)
                 segs.append({"kind": kind, "bar": bar, "price": price, "from": since, "to": i, "ended": "broken" if broken else "moved"})
             cur, since, closed = key, i, False
-        if cur is not None and not closed and getattr(st, "phase", None) == "origin_broken":
-            kind, bar, price = cur                                         # Q15: origin close ने तुटला — X इथेच
-            segs.append({"kind": kind, "bar": bar, "price": price, "from": since, "to": i, "ended": "broken"})
+        brk_now = getattr(st, "phase", None) == "origin_broken" or (st.trend == "NEUTRAL" and prev_tr in ("UP", "DOWN"))
+        if cur is not None and not closed and brk_now:
+            kind, bar, price = cur                                         # Q15: origin close ने तुटला; minor: trend → NEUTRAL
+            segs.append({"kind": kind, "bar": bar, "price": price, "from": since, "to": i, "ended": "broken"})   # — X इथेच
             closed = True
+        prev_tr = st.trend
     if cur is not None and not closed:
         kind, bar, price = cur
         segs.append({"kind": kind, "bar": bar, "price": price, "from": since, "to": len(states) - 1, "ended": "open"})
@@ -220,7 +222,7 @@ def caption(v, symbol, audit_line=None, years=None):
     lines = [
         f"{symbol} · Daily · {span} (engine on full history)",
         f"Dow (minor swings): {m['trend']} since {ago(m['since'], n)}" + (f" — {why}" if why else ""),
-        f"Protected: minor {_pv(pm)} | Q15 origin {_pv(pq)}",
+        f"Protected: minor {_pv(pm, m['trend'] == 'NEUTRAL')} | Q15 origin {_pv(pq, q['phase'] == 'origin_broken')}",
         f"Degree-aware (Q15): {q['trend']} {q['phase'] or ''} {q['wave'] or ''}".rstrip() + f" since {ago(q['since'], n)}"
         + (" · impulse mature" if q["mature"] else ""),
         f"Elliott advisory (not used in decisions): {lab}",
@@ -231,10 +233,10 @@ def caption(v, symbol, audit_line=None, years=None):
     return "\n".join(lines[:7])
 
 
-def _pv(p):
+def _pv(p, broken=False):
     if not p:
         return "—"
-    return f"{'H' if p['kind'] == 'H' else 'L'} {p['price']:,.0f}"
+    return f"{'H' if p['kind'] == 'H' else 'L'} {p['price']:,.0f}" + (" (broken)" if broken else "")
 
 
 def _en(why):

@@ -28,9 +28,11 @@ def main(argv=None):
     ap.add_argument("--pause", type=float, default=3.0, help="संदेशांमध्ये विराम (sec)")
     ap.add_argument("--vision-audit", choices=("auto", "off"), default="auto",
                     help="v2.2 charts (kind v22…): Telegram आधी Vision audit (Abhi). off ⇒ फक्त तपासणीसाठी; caption मध्ये 'skipped'")
-    ap.add_argument("--audit-summary", default=os.path.join(ROOT, "docs", "reports", "v22", "VISION_AUDIT.md"),
-                    help="दैनिक Vision audit सारांश (append)")
+    ap.add_argument("--audit-summary", default=None,
+                    help="दैनिक Vision audit सारांश (append); default <data-dir>/review/v22/VISION_AUDIT.md — repo checkout बाहेर "
+                         "(tracked file बदलला तर VPS deploy clean-tree check थांबतो)")
     a = ap.parse_args(argv)
+    a.audit_summary = a.audit_summary or os.path.join(a.data_dir, "review", "v22", "VISION_AUDIT.md")
     if not a.no_pull:
         r = subprocess.run(["git", "-C", a.data_dir, "pull", "-q", "--ff-only"], capture_output=True, text=True)
         if r.returncode != 0:

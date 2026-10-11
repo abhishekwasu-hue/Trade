@@ -37,6 +37,30 @@ def test_q15_origin_break_marked_on_break_bar():
     assert seg and seg[0]["to"] == brk and d["close"].iloc[brk] > seg[0]["price"]
 
 
+def test_minor_break_marked_on_neutral_bar_not_when_moved():
+    """Minor: protected close ने तुटला ⇒ trend NEUTRAL पण protected state मध्ये तसाच ⇒ X त्याच bar ला (नवा protected येईपर्यंत नाही)."""
+    from types import SimpleNamespace as N
+    L = N(kind="L", bar=1, price=100.0)
+    H = N(kind="H", bar=6, price=120.0)
+    st = [N(trend="NEUTRAL", protected=None)] + [N(trend="UP", protected=L)] * 3 + [N(trend="NEUTRAL", protected=L)] * 4 \
+        + [N(trend="DOWN", protected=H)] * 2
+    C = [110, 110, 105, 104, 99, 98, 101, 102, 103, 104]
+    segs = DS.protected_segments(st, C)
+    assert segs[0]["ended"] == "broken" and segs[0]["to"] == 4                                   # break bar, NEUTRAL stretch नाही
+    assert len(segs) == 2 and segs[1]["kind"] == "H" and segs[1]["ended"] == "open"
+    assert "(broken)" in DS._pv({"kind": "L", "price": 100.0}, True) and "(broken)" not in DS._pv({"kind": "L", "price": 100.0})
+
+
+def test_nifty_aliases_get_holdout_filter():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("v22dsv", os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                                                         "scripts", "v22_daily_swings_view.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    assert all(m.is_nifty(x) for x in ("NIFTY", "nifty", "NIFTY50", "NIFTY 50", "Nifty_50", "NSE:NIFTY"))
+    assert not any(m.is_nifty(x) for x in ("BANKNIFTY", "FINNIFTY", "SENSEX"))
+
+
 def test_legs_use_phase_not_only_trend():
     v, _ = _view()
     q = DS.DD.fold(_view()[1], {"daily_min_sessions": 3, "daily_sigma_sessions": 3})
