@@ -1783,6 +1783,70 @@ dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegr
 तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
 उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.
 
+## 2026-10-11 · L6 — level bots replay: legacy touch वि. confirmation (Abhi §6)
+
+**काय केलं:** `level_bots_replay.py` (pure functions) + `scripts/level_bots_replay.py` (CLI, फक्त local data, network / DB / order नाही) ⇒
+`docs/reports/level_bots_confirmation.md` + CSV (`data/research/level_bots_replay/`). दोन्ही arms त्याच दिवसांवर, त्याच levels वर (bots चे Dynamic
+S/R, refresh scripts चे parameters / lookback, सत्र सुरुवात + दर 60 मिनिटं बंद bars वरून), तोच cost (charges.py ⇒ points). Touch arm = bot फाईल्समधली
+functions थेट (`check_level_crossed`, `determine_direction_with_hysteresis`) + settings defaults (RSI, max hits, cooldowns, 14:45, EOD, naked spot %
+SL / target); confirmation arm = `LR.evaluate` प्रत्येक बंद confirmation-TF candle ला (live सारखं), trend = एकच `DD.fold` प्रति symbol + `state_at`
+प्रति दिवस, exit = structural SL / target. अहवाल: प्रति bot trades / win rate / net expectancy / max DD / PF, bull / bear / range / no trend split,
+gate ने नाकारलेले legacy trades कारणानुसार (saved / cost), n < 30 ⇒ निष्कर्ष नाही. NIFTY फक्त IS / VAL (HOLDOUT guard); BANKNIFTY फक्त 15M
+(≈ 3 महिने, SRv2) आणि MCX 30m (≈ 4 महिने) — illustration.
+**Tests:** `tests/test_level_bots_replay.py` 32 pass (exits आरसा, position नियम, metrics, gate निकाल गट, n < 30, holdout, एकच fold, legacy = bot functions).
+**SAMPLE:** NIFTY 2021-12-17 → 2022-01-13 (20 दिवस IS / VAL), BANKNIFTY / MCX 19–20 दिवस — अहवालावर "SAMPLE — full run pending". पूर्ण run lead
+चालवेल: `python3 scripts/level_bots_replay.py` (≈ 35 मिनिटं). Bot फाईल्सना हात नाही (LIVE / touch वर्तन तसंच).
+**Review दुरुस्त्या (🔴1 / 🟡2–5 / ⚪):** confirmation arm ला आता bot चेच exits (live मध्ये exits ला हात नाही) — फक्त entry gate वेगळा; structural
+SL / target वेगळा तिसरा arm "confirmation + structural exit (not live)". Position नियम live प्रमाणे: Instant / Classic (level, role) 30 मिनिटं,
+SRv2 चा symbol-व्यापी cooldown काढला (live मध्ये कधीच लागत नाही), level SL / TSL 15, MCX तोट्याचा SL 60 + level-दिशा block. Exits:
+`evaluate_point_spot_exit` चा spot भाग + TSL-to-breakeven (sticky); premium-points भाग replay होत नाही (assumptions मध्ये). Rejection: त्याच बाजूची,
+त्याच भेटीची (arrival → area सोडेपर्यंत) gate नोंद; cutoff नंतरचा confirmation ⇒ "after cutoff". MCX: L4 नियम (structural SL settings SL ने
+capped ⇒ SL_TOO_WIDE skip, R:R पुन्हा), confirmation 30m (15m data नाही), "ILLUSTRATION — default points unrealistic" ठळक. काळ = DP.period सगळ्यांना,
+seal `is_nifty`, शेवटच्या bar वरचा entry ⇒ dropped नोंद, ctx_days 5. Tests 42 pass; SAMPLE पुन्हा बनवला.
+
+## 2026-10-11 · Chart Reader v2 CR0–CR2 (Abhi: TRADE_SESSION_CHART_READER_V2) — research-only
+
+**CR0:** `docs/READER2_DESIGN.md` (English) — design, units (median range), data flow, invariants तक्ता, आणि `legs2/features.py` audit (काय आहे / anatomy
+vote साठी काय नाही: MR unit, range expansion / contraction, दोन्ही बाजूंच्या wicks, आधीच्या counter-move शी volume, MR units मधलं effort vs result, pause).
+**CR1:** नवा package `reader2/` (शुद्ध functions): `frame` (कोणताही timeframe, MR, known_at, futures volume NA-safe), `legs` (degree = DC k × MR, causal),
+`anatomy` (legs2 features पुन्हा वापरून 13 features ⇒ [−1, +1] + evidence), `structure` (`decision3.daily_legs.read_counter` wrapper).
+**CR2:** `fusion` (एकमत ⇒ high; एक गप्प ⇒ medium; विरोध ⇒ पर्यायी खालच्या pivots ने re-read ⇒ low / uncertain), `trend` (flip फक्त impulse counter-move ने:
+structure + anatomy + prior swing break; origin पलीकडे close ⇒ uncertain), `selfcheck` (invariants 1–7, कमाल 3 passes, "relabelled X → Y because …" +
+known_at, `history` नवीन bars साठी), `reader.mark` (बाहेरची / v1 marking तपासणे).
+**Tests:** `tests/test_reader2_{anatomy,fusion,selfcheck,boundary}.py` + `tests/reader2_fixtures.py` (clean impulse, overlapping correction, mis-placed pivots,
+big-c correction, deep sideways, sharp A — प्रत्येकाचा आरसा) — 84 pass. decision3 / bots / vision reader2 import करत नाहीत (boundary test). आकडे tune केले
+नाहीत (CR-Q6). CR3+ (marking page, gallery, CI, chart layer, shadow) सुरू केलेलं नाही. उघडे प्रश्न: OPEN_QUESTIONS CR-Q1–CR-Q7.
+
+### 2026-10-11 · Chart Reader v2 — independent review (BANKNIFTY daily) नंतर दुरुस्ती (research-only)
+**🔴1 roll-up:** candles फक्त lowest degree ला; वरच्या leg चा anatomy = sub-legs (एक degree खाली, recursive) चा roll-up — motive (आकाराने वजनी),
+counter, थांब्यांची वेळ / खोली (≥ 2 counters असताना), motive आवेगी नसेल तर leg आवेगी नाही, मोठा सुधारात्मक motive sub-leg ⇒ veto. CR-Q1 सोडवला.
+**🔴2:** uncertain कायमचं नाही — trend-capable impulse (कोणत्याही दिशेचा) trend पुन्हा ठरवतो. **🔴3:** "3-wave" fallback निर्णायक नाही (−0.25 < 0.5).
+**🔴4:** एक vote गप्प ⇒ re-read; structure-only impulse ⇒ uncertain; "low" impulse trend ठरवत / उलटवत / protected हलवत नाही.
+**🟡:** एकतर्फी features चा 0 सरासरीत नाही; provisional (अपूर्ण) leg वाचतो, trend बदलत नाही; invariant 5 नेहमी re-read (उल्लंघन पुन्हा तपासून);
+invariant 4 origin नसलेल्या marking साठी; look-ahead test `read()` ने; re-read फक्त एक degree खाली (1/0.875/0.75/0.625); history खर्च नोंद;
+REGISTER keys = DEFAULTS (contraction_min_half, intraday_max_spacing_hours settings मध्ये).
+**Fixtures / tests:** realistic noisy candles (seeds 1–3), structure-only 5-wave (ambiguous candles ⇒ uncertain), uncertain पुन्हा trend, provisional,
+library run (`tests/test_reader2_library.py`: 86 pass / 10 strict xfail — CR-Q2). BANKNIFTY daily: Feb→Apr 2026 DOWN impulse (medium, flip DOWN 7 May),
+Apr→Jun uncertain (zigzag vs mixed candles), Jun→now provisional DOWN impulse; mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — re-review (fecdac7) नंतर दुरुस्ती (research-only)
+**🔴1 sharp a-b-c:** roll-up मध्ये "shape" (sub-legs ची संख्या: 3 ⇒ −1, 5 ⇒ +1) आणि दोन pushes (2 motive + 1 counter) ⇒ score ≤ a_lo — a आणि c आवेगी असले तरी
+sharp a-b-c correction (test: 3 खोली × ideal + 3 noisy seeds × आरसा ⇒ correction). Anatomy नेहमी reader चे स्वतःचे pivots वापरते (बाहेरचे pivots फक्त structure).
+**🔴2 re-read:** तीन पर्याय (0.9 / 0.75 / 0.6), निर्णय बहुमताने (2 / 3), दोन्ही दिशांना एकच; नाव असलेली correction re-read ने impulse होत नाही.
+**🔴3:** candle votes Chart वर cache ⇒ BANKNIFTY read 1.2 s ⇒ 0.47 s; history docstring खर्च दुरुस्त.
+**परिणाम (प्रामाणिक):** BANKNIFTY Daily — Feb→Apr 2026 uncertain (anatomy +0.54 पण structure पर्याय 1 / 3 impulse), Apr→Jun correction high (zigzag, Abhi शी जुळतं),
+Jun→now provisional correction high (zigzag, two-push); uncertain 79 % (CR-Q11). Library: flip 32/32, correction≠impulse 30/32, impulse दिशा 0/32 (CR-Q2).
+Mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — round-2 re-review (75e4442) नंतर दुरुस्ती (research-only)
+**🔴1:** anatomy मधून shape term आणि two-push cap काढले (wave count फक्त structure मध्ये); a-b-c / 1-2-3-4-5 candles च्या पुराव्याने: c_like_a, b_brief, middle_push.
+SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अपेक्षा परत; ते आता strict xfail (नाव असलेली zigzag re-read ने impulse होत नाही — CR-Q11). Probes: लहान wave 4 / wave 2
+⇒ uncertain (कधीच correction high नाही); sharp a-b-c ⇒ correction low. **🔴2:** re-read पर्याय dc_k[D−1] × (0.9 / 0.75 / 0.6), कधीच dc_k[0] खाली नाही (नाहीतर abstain).
+**BANKNIFTY:** trend UP 23.6 % / DOWN 5.5 % / uncertain 55.2 %; uncertain फक्त 2 origin-close घटनांतून, कारण = trend-capable up-impulses नाहीत (CR-Q12). Feb→Apr 2026 impulse low
+(anatomy +0.45, structure पर्यायांना बहुमत नाही), Apr→Jun correction low (zigzag), Jun→now provisional correction low. Read 0.32 s; mirror / causality 0 फरक. Tests 233 pass / 40 xfail.
+**Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
+नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**
@@ -1809,3 +1873,39 @@ Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `
 
 **Fixtures / tests:** `very_deep_holds_origin` pass (strict xfail काढले); नवे `q49_complete_five` ((b), "3" च्या शेवटी flip नाही), `q49_beyond_impulse_origin` (ABC_FIX आकार, (a)), `q49_lower_degree_a` (Q22 why); सगळे आरशात. `double_zigzag` strict xfail (Q49 (b)). `tests/test_decision3_q49.py` (17, Rule-4 bar-match unit test सह).
 **Before / after:** `scripts/q49_before_after.py` — BANKNIFTY 2479 दिवस: बदल खाली (review नंतरचा run).
+
+## 2026-10-11 · PR B (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5 — chart declutter + legend + 2-ओळी caption + Vision consistency)
+
+**काय केलं (फक्त दृश्य / caption / Vision prompt — engine fold बदल नाही):**
+- `daily_swings.view_spec`: text फक्त चालू + आधीच्या correction ला; in-progress candidate box वर "pullback" एकदाच (box मधल्या pullback / candidate खुणा नाहीत); box नसताना चालू pullback ⇒ एकच खूण; जुने boxes फिके (text नाही) — window > `chart_old_box_sessions` (126) ⇒ नाहीतच. `full=True` (debug) ⇒ सगळं.
+- `level_bands`: कमाल 6, degree क्रम; नवा rank-2 "structure low / high" (शेवटच्या पूर्ण correction ची सुरुवात — BANKNIFTY March low) window टोकांच्या वर; नावं "demand / supply / protected / sharp-fall supply / target <price> (state)"; तुटलेला कमाल 1 (सर्वात अलीकडचा), dashed.
+- `charts.daily_swings_fig`: पट्ट्यांचे labels उजव्या margin मध्ये, box labels box वर / आत — pixel bbox collision (candles + मजकूर + legend); जागा नाही ⇒ label (आणि पट्टा) सोडतो. Legend एका कोपऱ्यात (candles वर नाही — गरज असल्यास y-axis वाढवतो), फक्त काढलेल्या styles.
+- Caption: ओळ 1 अवस्था + protected + risk (ATR_D), ओळ 2 जवळची supply / demand + अंतर ATR_D (`chart_atr_n` 14); मग पूर्ण रचना ओळ.
+- Vision (`DAILY_SYSTEM_PROMPT` / `DAILY_SCHEMA`, v3): structure-consistency तपासणी (caption चा trend वि. काढलेली रचना); facts मध्ये caption ओळी + शेवटचा box + प्रत्यक्ष काढलेले boxes. Audit-only.
+
+**Tests:** नवी `tests/test_decision3_chart_declutter.py` (UP / DOWN आरसा): 2-वर्ष window label मोजणी (≤ 2 correction + 6 पट्टे + origin + legend), text-text / text-candle overlap नाही (5 fixtures), legend = काढलेल्या styles, box खोली, नावं / 1 broken dashed, structure टोक rank, caption ATR, Vision consistency. जुने review tests नव्या नियमांप्रमाणे (tags ≤ 2; full view मध्ये सगळे).
+**Real BANKNIFTY 2y:** labels 6 पट्टे + 2 (correction 74% zigzag, pullback) + legend; overlap 0; काहीच सोडावं लागलं नाही. निर्णय: OPEN_QUESTIONS CD1–CD10.
+**Abhi review (BANKNIFTY chart "चुकीचं मार्किंग"):** labelled correction boxes वर a-b-c / a–e / W-X-Y अक्षरं family वाचलेल्या pivots वर (`daily_legs.wave_ends`; चालू wave ला नाही). Trend legs आता सरळ origin ⇒ टोक रेषा नाहीत — leg च्या स्वतःच्या pivots मधून zig-zag; `read_counter` ने तपासणी (look-ahead नाही): impulse ⇒ घन नारंगी, 3-wave ⇒ राखाडी, चालू / न वाचलेला ⇒ dashed "impulse not confirmed"; caption / title "new impulse" फक्त 5 waves सिद्ध असल्यावर. Engine (fold) बदल नाही. CD11–CD12.
+**Independent review (🟡1–6 + nits):** nearest पट्टा कडेच्या अंतरावर (ओळ 1 / 2 एकच नियम); महत्त्वाचे labels कधीच टाकत नाही (leader रेषा), टाकलेले JSON + Vision facts मध्ये; protected रेषा role वर; broken मर्यादा merge आधी; target सगळ्या hits तपासतो; protected sharp zone मध्ये ⇒ एक पट्टा; legend मध्ये कडेचे बाण / `$p$` नाहीत; Vision facts depth %, काढलेले पट्टेच, cache key prompt version. Tests हाताने मोजलेल्या आकड्यांवर (ATR, अंतर), old-box सीमा, ≥ 6 दाट पट्टे. CD13.
+**Abhi (run2 नंतर):** read_counter "3-wave" fallback (न वाचलेलं, n ≠ 3) / single ⇒ dashed "unclear", राखाडी फक्त ओळखलेल्या corrective ला (CD14). BANKNIFTY Feb → Mar leg तरीही राखाडी — read_counter त्याला zigzag वाचतो (CD14).
+**Trend degree (run4):** legs आता trend-degree impulses (`trend_impulses`: सलग एकाच दिशेचे sub-legs, A1 / दिशा बदलावर सीमा) — संपूर्ण leg एकदाच read_counter; sub-legs वेगळे काढत नाही. BANKNIFTY Feb → Apr: zigzag, n 9 ⇒ राखाडी (CD14).
+**Final (run5):** trend legs कधीच राखाडी नाहीत — impulse / diagonal ⇒ घन नारंगी, बाकी ⇒ dashed "impulse not verified (structure-only check)"; family + n JSON / Vision facts मध्ये; रेषा window मध्ये ≤ 15 बिंदू (`chart_leg_path_points`). CD14.
+**Re-review (#297):** `coarse_path` लवकर थांबल्यास जसे आहे तसे (ValueError नाही), `chart_leg_path_points` ≥ 6; caption ओळ 1 risk आता protected **किंमती**पर्यंत (BANKNIFTY 4.7 ATR — merged sharp zone कडा 3.9 ATR कमी दाखवत होती), ओळ 2 कडेचाच नियम; "pullback" label चालू (unconfirmed) bounce वर, नसेल तर "last pullback high / low", leader रेषेसह.
+
+## 2026-10-11 · Level bots L4 (MCX) + L5 (visibility)
+
+**L4 — MCX confirmation gate** (`mcx_futures_trader.py`): PAPER pause काढला; trend = decision3 Daily fold सध्याच्या contract च्या Daily candles वर
+(cache key = trading_symbol), areas = bot चे 30M/60M levels, confirmation = contract चे बंद 15M candles + त्याचाच volume. Breakout / candle-confirm /
+min-hold बंद, RSI default बंद; SL = gate चा structural SL (settings SL ही कमाल), target = पुढचा उलट area, R:R entry भावावर पुन्हा; skip statuses
+INVALIDATED / TARGET_PASSED / SL_TOO_WIDE / RR. Legacy touch ⇒ फक्त paper_would_have. LIVE (touch) तसाच. Pre-open मध्ये MCX ओळ. Tests: `test_level_bots_mcx.py` (12).
+**L5 — दिसणं**: dashboard tab "🎯 आजचे Areas (gate)" (trend cache मधून, signal_log मधून armed → confirmed → disarmed), 15:45 summary मध्ये
+"Level bots — confirmation gate" भाग (armed / confirmed / ignored-by-reason / touch-legacy), ARMED मधले absorption / low-volume आता स्वतंत्र statuses.
+सामायिक pure functions `bots_common/level_visibility.py`. Tests: `test_level_bots_visibility.py` (14). उघडे: LB12–LB16.
+**Review fixes (L4 + L5)**: confirmed hit_type दोन्ही ("CONFIRMATION" srv2 / Classic, "CONFIRMED" Instant / MCX); सारांशात area = (symbol, TF,
+किंमत) — role flip ने भेट तुटत नाही; ignored = entry शिवाय संपलेल्या भेटीचं **शेवटचं** कारण (मधले absorption / low volume नंतर confirmed ⇒ नाही);
+MCX गट (सक्रिय commodities, साधा SUPPORT / RESISTANCE symbol वरून SRv2 पासून वेगळा) + MCX statuses (INVALIDATED / TARGET_PASSED / SL_TOO_WIDE /
+CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरलेली confirmation (level + commitment candle) `data/level_gate/mcx_confirm_used.json` मध्ये ⇒
+लवकर exit नंतर त्याच candle वर पुन्हा entry नाही (`SKIPPED_GATE_CONFIRM_USED`; अपयशी order ⇒ पुन्हा प्रयत्न); grade lots 0 ⇒ 0. Trend negative cache
+(`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
+≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
+

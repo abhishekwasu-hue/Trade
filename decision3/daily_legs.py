@@ -210,6 +210,54 @@ def read_counter(prices):
     return out
 
 
+def wave_ends(prices):
+    """Chart (§5 / Abhi review): read_counter ने जे family वाचलं त्याच्या waves चे टोक — prices मधले index (0 = सुरुवात सोडून).
+    read_counter चाच शाखा-क्रम (त्याचं वर्तन बदलत नाही, फक्त टोकं दाखवतो): zigzag / flat / 3-wave ⇒ a b c, triangle ⇒ a–e,
+    combination ⇒ W X Y (X Z). impulse / diagonal / single ⇒ टोकं नाहीत. रिटर्न (family, [(index, letter)])."""
+    fam = read_counter(prices)["family"]
+    n = len(prices) - 1
+    red = reduce_counted(prices)
+    cum = lambda c: [sum(c[:k + 1]) for k in range(len(c))]              # noqa: E731
+    if fam == "triangle" and red.get(5):
+        return fam, list(zip(cum(red[5][1]), "abcde"))
+    if fam == "combination":
+        p5 = red.get(5)
+        if p5 is not None and n >= 5:
+            seg5 = _segments(prices, p5[1])
+            if all(len(seg5[k]) > 2 and read_counter(seg5[k])["family"] in COMPLETE for k in (0, 2, 4)) and \
+                    all(_is_corrective(seg5[k]) for k in (1, 3)):
+                return fam, list(zip(cum(p5[1]), ("W", "X", "Y", "X", "Z")))
+        if red.get(3):
+            return fam, list(zip(cum(red[3][1]), ("W", "X", "Y")))
+        return fam, []
+    if fam not in ("zigzag", "flat", "3-wave") or not red.get(3):
+        return fam, []
+    x3, c3 = red[3]
+    ends = cum(c3)
+    if fam == "3-wave":
+        return fam, list(zip(ends, "abc"))
+    s2 = PS2.DEFAULTS
+    a_seg, _, c_seg = _segments(prices, c3)
+    main = (PR2.zigzag(x3, True, s2)[0] and _is_motive(a_seg) and _is_motive(c_seg)) if fam == "zigzag" else \
+        (PR2.flat(x3, True, s2)[0] and _is_corrective(a_seg) and _is_motive(c_seg))
+    if not main:                                                           # read_counter ची B-शोध शाखा (B सर्वात टोकाला नाही)
+        ia = c3[0]
+        for ib in range(ia + 1, n, 2):
+            xb = [prices[0], prices[ia], prices[ib], prices[n]]
+            b_seg, c2 = list(prices[ia:ib + 1]), list(prices[ib:])
+            if (prices[ib] - prices[0]) * (prices[n] - prices[0]) < 0 or len(c2) < 2:
+                continue
+            if not (_is_corrective(b_seg) and _is_motive(c2)):
+                continue
+            if fam == "zigzag" and PR2.zigzag(xb, True, s2)[0] and _is_motive(a_seg):
+                ends = [ia, ib, n]
+                break
+            if fam == "flat" and PR2.flat(xb, True, s2)[0] and _is_corrective(a_seg):
+                ends = [ia, ib, n]
+                break
+    return fam, list(zip(ends, "abc"))
+
+
 def structure(prices, elliott=False):
     """रिटर्न {"structure": impulse / corrective / single, "n": मूळ waves, "form": ...}. Default (Q28 / Q36 nature gates): 5-wave
     reduction वर impulse नियम, नाहीतर zigzag / flat / 3-wave. elliott=True (ABC_FIX — संपूर्ण counter-move, correction शेवट, box family):
