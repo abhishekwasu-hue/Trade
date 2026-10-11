@@ -105,3 +105,15 @@
 | LB9 | a2 handover वाचन: पहिल्या / दुसऱ्या अर्ध्याची तुलना; body आवश्यक + इतर उप-तपासण्यांपैकी किमान अर्ध्या | तसेच (`study_min_bars` 4) | प्रत्येक उप-तपासणी आवश्यक |
 | LB10 | SENSEX volume | SENSEX FUT (BSE) resolver नाही ⇒ NA ⇒ grade कमाल B | BSE FO resolver जोडणे |
 | LB11 | Engine (decision3) diffs: ④ (a) आता relative contraction (`power_a_rule`); ④ (e) handover-volume (volume असेल तर, engine च्या 15M data मध्ये volume नाही ⇒ NA); commitment ला dominance + volume फक्त `win` दिल्यावर (gate) — engine call अजून win देत नाही | decision3 tests / goldens मध्ये बदल नाही (फक्त जुन्या strict-3 test ला `power_a_rule="strict3"`); v22 review charts पुन्हा बनवले नाहीत | engine मध्ये commitment ला K window देणे (Abhi सांगतील तेव्हा) |
+
+## Chart Reader v2 (TRADE_SESSION_CHART_READER_V2) — CR0–CR2 मध्ये घेतलेले default निर्णय (Abhi ने बदलावे; research-only, कोणताही bot / decision3 वापरत नाही)
+
+| # | प्रश्न | default | पर्याय |
+|---|---|---|---|
+| CR-Q1 | §2d "candles फक्त lowest degree साठी" — अर्थ? | प्रत्येक leg ला त्याच्या timeframe च्या आतल्या candles चा anatomy vote; lowest degree ला रचना नाही ⇒ तिथे फक्त candles. वरच्या degree चा anatomy sub-leg labels मधून बांधत नाही. Daily leg + `low=` 1H ⇒ दोन्हीची वजनी सरासरी (`lower_weight` 0.5) | वरच्या degree चा anatomy = sub-legs च्या votes ची बेरीज (motive sub-legs चे candles + pauses ची उथळता) |
+| CR-Q2 | सध्याच्या correction fixture library वर reader2: library candles एकसारख्या (anatomy नाही) ⇒ flip ला impulsive anatomy मिळत नाही; `dc_k` 8 वर lead-in चा LH degree-2 pivot होत नाही ⇒ trend बहुतेक "uncertain" (zigzag_c_extended मध्ये lead-in चा UP परत) | default: library tests तसेच (reader2 कोणताही जुना module बदलत नाही); reader2 चं library वाचन CR3/CR4 gallery calibration मध्ये. आकडे आत्ता tune केले नाहीत | library fixtures ना anatomy असलेल्या candles देणे / flip ला मजबूत structure + neutral anatomy चालू देणे |
+| CR-Q3 | three-push आकार आणि climax candle anatomy vote मध्ये नाहीत | three-push ⇒ structure vote (3-wave / zigzag) + ER / stall; climax फक्त `leg_features` मध्ये मोजलं (vote नाही) | स्वतंत्र three-push / climax features |
+| CR-Q4 | impulsive candles + impulse रचना असलेली counter-move जी prior swing तोडत नाही (wave 1 की wave A — Q49) | invariant 2 / 5 ⇒ "uncertain" (trend तसाच, entry नाही) ⇒ uncertain rate वाढू शकतो | label impulse ठेवा पण flip नाही |
+| CR-Q5 | Protected origin पलीकडे close ⇒ trend "uncertain"; पुन्हा trend कसा? | पूर्ण impulse लागतो: label + structure impulse + impulsive anatomy (उलट दिशेला prior swing break सुद्धा) — जुन्याच दिशेने परत येतानाही | जुन्या दिशेचा कोणताही impulse label पुरे |
+| CR-Q6 | Anatomy / degree आकडे (`FEATURES`, `a_hi`/`a_lo` ±0.25, `dc_k` 2/4/8, `mr_bars` 20, re-read गुणक 0.5/0.75/1.5) | register मध्ये "अंदाज"; dev gallery (Abhi labels) वरच calibrate — trade निकालांवर कधीच नाही | — |
+| CR-Q7 | Index volume | caller `volume` column देतो: `reader2.frame.with_futures_volume` (near-month, expiry/contract वरून); नाही / 0 ⇒ volume features NA (vote बाकी features वर). SENSEX FUT resolver नाही ⇒ NA (LB10 सारखं) | — |

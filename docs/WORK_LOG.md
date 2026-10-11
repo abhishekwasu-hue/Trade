@@ -1782,3 +1782,16 @@ dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegr
 (cache key सह); network वेळ-मर्यादा (daily 25 s, futures volume 10 s, SENSEX resolve अपयश दिवसासाठी cache); LIVE tests खरा default वापरतात;
 तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
 उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.
+
+## 2026-10-11 · Chart Reader v2 CR0–CR2 (Abhi: TRADE_SESSION_CHART_READER_V2) — research-only
+
+**CR0:** `docs/READER2_DESIGN.md` (English) — design, units (median range), data flow, invariants तक्ता, आणि `legs2/features.py` audit (काय आहे / anatomy
+vote साठी काय नाही: MR unit, range expansion / contraction, दोन्ही बाजूंच्या wicks, आधीच्या counter-move शी volume, MR units मधलं effort vs result, pause).
+**CR1:** नवा package `reader2/` (शुद्ध functions): `frame` (कोणताही timeframe, MR, known_at, futures volume NA-safe), `legs` (degree = DC k × MR, causal),
+`anatomy` (legs2 features पुन्हा वापरून 13 features ⇒ [−1, +1] + evidence), `structure` (`decision3.daily_legs.read_counter` wrapper).
+**CR2:** `fusion` (एकमत ⇒ high; एक गप्प ⇒ medium; विरोध ⇒ पर्यायी खालच्या pivots ने re-read ⇒ low / uncertain), `trend` (flip फक्त impulse counter-move ने:
+structure + anatomy + prior swing break; origin पलीकडे close ⇒ uncertain), `selfcheck` (invariants 1–7, कमाल 3 passes, "relabelled X → Y because …" +
+known_at, `history` नवीन bars साठी), `reader.mark` (बाहेरची / v1 marking तपासणे).
+**Tests:** `tests/test_reader2_{anatomy,fusion,selfcheck,boundary}.py` + `tests/reader2_fixtures.py` (clean impulse, overlapping correction, mis-placed pivots,
+big-c correction, deep sideways, sharp A — प्रत्येकाचा आरसा) — 84 pass. decision3 / bots / vision reader2 import करत नाहीत (boundary test). आकडे tune केले
+नाहीत (CR-Q6). CR3+ (marking page, gallery, CI, chart layer, shadow) सुरू केलेलं नाही. उघडे प्रश्न: OPEN_QUESTIONS CR-Q1–CR-Q7.
