@@ -8,6 +8,7 @@ import pytest
 import cloud_db
 import srv3_instant_shadow as SH
 import trading_engine
+from tests.test_dynamic_sr_instant_trader import legacy_touch_mode  # noqa: F401 (autouse fixture: जुने tests touch mode)
 
 NOW = datetime.datetime(2025, 3, 5, 11, 0)
 

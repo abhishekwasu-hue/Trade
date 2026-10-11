@@ -110,14 +110,20 @@ def callback_data(signal_id, action, key=None):
     return f"v1|{signal_id}|{action}|{sign(signal_id, action, key)}"
 
 
+# Abhi §10: ✏️ Modify (M), 📝 Correct marking (C), ❌ नंतर कारण (एक tap; RO = other ⇒ मोकळा मजकूर)
+REJECT_REASONS = {"RT": "wrong trend", "RZ": "wrong zone", "RC": "no real commitment", "RL": "too late", "RP": "against my plan",
+                  "RO": "other"}
+ACTIONS = ("A", "R", "M", "C", *REJECT_REASONS)
+
+
 def parse_callback(data, key=None):
-    """(signal_id, action) किंवा None (format / HMAC चूक). action ∈ {A, R}."""
+    """(signal_id, action) किंवा None (format / HMAC चूक). action ∈ ACTIONS (A, R, M, C, कारणे)."""
     try:
         tag, sid, action, sig = str(data).split("|")
     except ValueError:
         return None
     k = key if key is not None else secret()
-    if tag != "v1" or action not in ("A", "R") or not k:
+    if tag != "v1" or action not in ACTIONS or not k:
         return None
     return (sid, action) if hmac.compare_digest(sig, sign(sid, action, k)) else None
 

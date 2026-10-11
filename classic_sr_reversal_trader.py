@@ -40,6 +40,7 @@ import argparse
 import pandas as pd
 
 import cloud_db
+from bots_common import level_gate_bot as LGB
 from config import get_ist_now, DB_PATH
 from dynamic_sr_instant_trader import determine_direction_with_hysteresis
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
@@ -59,6 +60,15 @@ NO_NEW_ENTRY_AFTER_MINUTE = 45
 TOUCH_TOLERANCE_PCT = 0.05  # level पासून ±0.05% च्या आत candle चा low/high आला तरी "स्पर्श" (TOUCH)
 
 POOLED_TIMEFRAMES = ["5M", "15M"]
+
+# 🎓 Abhi (level bots confirmation): DB मधला single-price level ⇒ gate साठी लहान पट्टा (level च्या इतके %, settings `gate_area_pad_pct`)
+GATE_AREA_PAD_PCT = LGB.AREA_PAD_PCT
+
+
+def _gate_area(level, settings):
+    """level किंमत ⇒ confirmation gate चा area (lo, hi) — cycle_gate ला दिलेल्या areas आणि g.result() साठी एकच गणित."""
+    pad = float(level) * float((settings or {}).get("gate_area_pad_pct", GATE_AREA_PAD_PCT)) / 100.0
+    return LGB.areas_from_rows([{"zone_low": float(level), "zone_high": None}], pad)[0]
 
 
 def check_classic_sr_rsi_filter(candles_df, direction, neutral_level=RSI_NEUTRAL_LEVEL):
@@ -147,12 +157,21 @@ def _collect_pooled_levels(all_zones, timeframes=None):
     return pooled
 
 
-def process_symbol(access_token, symbol, lot_size=65):
+def process_symbol(access_token, symbol, lot_size=None):
     """एका symbol साठी — 5M+15M levels एकत्र, RSI-फिल्टर, Entry Refinement गेट्स, Multi-Hit/Cooldown,
     Expiry-Day Logic, आणि आढळल्यास Credit-Spread (ITM) + (सक्रिय असल्यास) समांतर Naked Option PAPER trade."""
     settings = cloud_db.get_strategy_settings("classic_sr_reversal", symbol)
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा — नवीन strategy असल्याने डीफॉल्ट निष्क्रिय)"
+    # 🎓 Abhi (Monday PAPER, level bots §9): srv2 प्रमाणेच — enabled / token / lot size (Upstox master) / signal_source. LIVE / LIVE_PAPER ⇒
+    # pre_cycle काहीच बदलत नाही (lot size आधीचाच 65).
+    from paper import bot_hooks as _PBH
+    _pre = _PBH.pre_cycle("classic_sr", access_token, symbol, settings, lot_size, source="classic_sr_reversal")
+    if _pre.stop:
+        return _pre.msg
+    lot_size = _pre.lot_size
+    _trading_mode = settings.get("trading_mode", "PAPER")
+    _paper = str(_trading_mode).upper() == "PAPER"
     lots = settings["lots"]
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("Max trade on same level yachi setting sidhha द्या, default
     # 2") — बघा dynamic_sr_instant_trader.py मधली टिप्पणी.
@@ -172,6 +191,22 @@ def process_symbol(access_token, symbol, lot_size=65):
     trendline_gate_enabled = settings.get("trendline_gate_enabled", False)
     trendline_lookback_swings = settings.get("trendline_lookback_swings", 4)
     timeframe_choice = settings.get("timeframe_choice", "BOTH")
+    # 🎓 Abhi (level bots confirmation): entry_mode — PAPER default "confirmation" (Daily trend च्या बाजूने, बंद 5M candle वर level ची
+    # commitment झाल्यावरच), LIVE / LIVE_PAPER ⇒ "touch" (जुनं वर्तन) जोपर्यंत settings["entry_mode"] बदलत नाही. confirmation मध्ये RSI
+    # threshold gate default बंद (conf_rsi_gate_enabled); breakout / gap-through entry नाही (gate: broken ⇒ trade नाही).
+    _conf = LGB.entry_mode(settings) == LGB.CONFIRMATION
+    if _conf:
+        entry_rsi_gate_enabled = LGB.conf_gate_enabled(settings, "rsi")
+    # 🎓 Vision (फक्त PAPER; srv2 प्रमाणेच): approve / reject झालेले levels या cycle ला touch नसला तरी पुन्हा तपासले जातात. LIVE ⇒ vision नाही.
+    _lots_base, _naked_base = lots, naked_lots
+    _vision_forced, _vision_is_forced = [], None
+    if _paper:
+        try:
+            from vision.gate import forced_levels as _vision_forced_levels, is_forced as _vision_is_forced
+            _vision_forced = _vision_forced_levels("classic_sr", symbol, _trading_mode)
+        except Exception as exc:
+            print(f"⚠️ vision forced_levels त्रुटी (trade वर परिणाम नाही): {exc}")
+            _vision_forced, _vision_is_forced = [], None
     active_timeframes = POOLED_TIMEFRAMES if timeframe_choice == "BOTH" else [timeframe_choice]
 
     all_zones = cloud_db.get_market_zones(symbol)
@@ -202,15 +237,49 @@ def process_symbol(access_token, symbol, lot_size=65):
     now = get_ist_now()
     trade_date = now.strftime("%Y-%m-%d")
 
+    _gate, _gate_err = None, None
+    if _conf:                                                              # cycle मध्ये एकदा: trend + बंद 5M candles + सगळे (5M+15M) areas
+        try:
+            _gate = LGB.cycle_gate("classic_sr", symbol, access_token, settings,
+                                   [_gate_area(r_["zone_low"], settings) for r_, _ in pooled_levels], now)
+        except Exception as exc:                                           # fail-closed: या cycle ला नवीन entry नाही (forced सुद्धा नाही)
+            _gate_err = f"{LGB.LR.R_ERROR}: {type(exc).__name__}: {str(exc)[:80]}"
+            print(f"⚠️ {symbol}: confirmation gate त्रुटी ⇒ नवीन entry नाही — {_gate_err}")
+
     outcomes = []
     for row, timeframe_suffix in pooled_levels:
+        lots, naked_lots = _lots_base, _naked_base
         hit, hit_type, approx_price = check_level_crossed(row["zone_low"], recent_candles)
+        _vision_forced_hit = False
+        if not hit and _vision_forced and _vision_is_forced(_vision_forced, row["zone_low"], timeframe_suffix):
+            # Vision निर्णय झालेला level — touch नाही, पण gates पुन्हा; entry फक्त gate ने ताजा APPROVED दिला तरच
+            hit, hit_type, approx_price, _vision_forced_hit = True, "VISION_FORCED", row["zone_low"], True
 
         # दिशा सद्य किमतीच्या level च्या सापेक्ष स्थितीवरून ठरते (साठवलेल्या ऐतिहासिक label वरून नाही) — 5M/15M/MCX प्रमाणेच hysteresis
         # (±0.10%) सह: किंमत level पासून त्या बँडच्या आतच wobble करत असेल तर आधीचीच निश्चित दिशा कायम राहते, उगाच फ्लिप नाही.
         # 🎓 bug-review (वापरकर्त्याचा निर्णय: "5M सारखंच") — role (SUPPORT/RESISTANCE, hit-counting आणि Signal Log चा level_type) आधी
         # DB मधल्या साठवलेल्या (दर ५ मिनिटांनी पुन्हा-गणना होणाऱ्या) label वरून यायचा, म्हणून दिशेशी विसंगत ठरू शकायचा; आता दिशेवरूनच.
         direction = determine_direction_with_hysteresis(row["zone_low"], todays_closes)
+        _gr = None                                                         # confirmation gate चा निकाल (touch mode ⇒ None)
+        if _conf:
+            _legacy = (hit and not _vision_forced_hit, hit_type, direction)    # जुना touch ⇒ फक्त would-have तुलना
+            _area = _gate_area(row["zone_low"], settings)
+            _gr = (_gate.result(*_area) if _gate is not None
+                   else {"state": "ERROR", "entry": False, "side": None, "reason": _gate_err, "area": _area})
+            # Vision forced level: ✅ approval हीच confirmation ⇒ r["entry"] पुन्हा नको; दिशा submission वेळची (role), नाहीतर CONFIRMED gate ची
+            # बाजू; शंका / gate exception ⇒ entry नाही.
+            _fdir = None
+            if _gate is not None and _vision_forced and _vision_is_forced(_vision_forced, row["zone_low"], timeframe_suffix):
+                from vision.gate import forced_direction as _vision_forced_dir
+                _fdir = _vision_forced_dir(_vision_forced, row["zone_low"], timeframe_suffix) or (
+                    _gr.get("side") if _gr.get("state") == LGB.LR.CONFIRMED else None)
+            if _fdir is not None:
+                hit, hit_type, approx_price, _vision_forced_hit, direction = True, "VISION_FORCED", row["zone_low"], True, _fdir
+            elif _gr.get("entry"):                                         # शेवटचा बंद 5M candle = commitment candle
+                hit, hit_type, _vision_forced_hit, direction = True, "CONFIRMATION", False, _gr["side"]
+                approx_price = _gr.get("entry_price") or row["zone_low"]
+            else:
+                hit, hit_type, _vision_forced_hit = False, None, False
         role = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
         rsi_value = None
         log_entry = {
@@ -220,6 +289,12 @@ def process_symbol(access_token, symbol, lot_size=65):
         }
 
         if not hit:
+            if _gr is not None:                                            # confirmation: gate चं कारण (SKIPPED_GATE_*); जुना touch ⇒ फक्त would-have
+                log_entry.update(LGB.skip_fields(_gr))
+                if _legacy[0]:
+                    log_entry["hit_type"] = _legacy[1] or "TOUCH"
+                    LGB.record_touch_legacy("classic_sr_reversal", symbol, _legacy[2], row["zone_low"], timeframe_suffix,
+                                            f"{_legacy[1] or 'TOUCH'} — {log_entry['reason']}")
             cloud_db.save_signal_log(log_entry)
             continue
 
@@ -321,6 +396,42 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
+        _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, settings, now)      # Abhi: signal_source own / both; PAPER pause
+        if not _ss_ok:
+            log_entry["trade_status"] = "SKIPPED_SIGNAL_SOURCE"
+            log_entry["reason"] = f"{_ss_note} ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _gr is not None and _gr.get("grade"):                           # confirmation: grade B ⇒ lots × grade_b_lot_mult (default 1.0 ⇒ बदल नाही)
+            _lm = LGB.LR.lot_multiplier(_gr, LGB.gate_settings(settings))
+            if _lm != 1.0:
+                lots, naked_lots = (max(1, int(lots * _lm)) if lots else 0), (max(1, int(naked_lots * _lm)) if naked_lots else 0)
+        # 🎓 Vision gate (फक्त PAPER; srv2 प्रमाणेच §9): पहिल्यांदा ⇒ HOLD (Vision + Telegram ✅/❌), पुढच्या cycle ला forced level ⇒ ताजा
+        # human-APPROVED (+ drift) असेल तरच ENTER (≤ मूळ lots). नाकारलेला / ✅ नाही ⇒ entry नाही (Classic ला shadow trade नाही). LIVE ⇒ हा मार्ग नाही.
+        _vg = None
+        if _paper:
+            try:
+                from vision.gate import entry_gate as _vision_gate, note_execution as _vision_note
+                _vg = _vision_gate("classic_sr", symbol, _trading_mode, direction, row["zone_low"], role, timeframe_suffix, now, current_price,
+                                   lots if settings.get("credit_spread_enabled", True) else 0,
+                                   naked_lots if settings.get("naked_enabled", True) else 0,
+                                   tags={"hit": hit_type or "TOUCH", **(LGB.gate_tags(_gr, _gate.ctx if _gate is not None else None, "5M")
+                                                                         if _gr is not None else {})},
+                                   last_bar=recent_candles[-1] if recent_candles else None, forced=_vision_forced_hit)
+            except Exception as exc:
+                print(f"⚠️ vision gate त्रुटी ⇒ PAPER entry नाही: {exc}")
+            if _vg is None:                                                # Abhi: approval शिवाय PAPER entry नाही
+                log_entry["trade_status"] = "SKIPPED_VISION_FORCED_STALE" if _vision_forced_hit else "SKIPPED_VISION_ERROR"
+                log_entry["reason"] = f"Vision gate उपलब्ध नाही ⇒ ✅ approval नाही ⇒ PAPER entry नाही ({timeframe_suffix})"
+                cloud_db.save_signal_log(log_entry)
+                continue
+            if _vg.action != "ENTER":                                      # HOLD (वाट / अंतिम नकार) · SHADOW ⇒ Classic ला shadow trade नाही
+                log_entry["trade_status"] = _vg.status or "SKIPPED_VISION_SHADOW"
+                log_entry["reason"] = f"Vision: {_vg.note} ({timeframe_suffix})"
+                cloud_db.save_signal_log(log_entry)
+                continue
+            lots = min(lots, _vg.lots) if settings.get("credit_spread_enabled", True) else lots
+            naked_lots = min(naked_lots, _vg.naked_lots) if settings.get("naked_enabled", True) else naked_lots
         expiry_index = 1 if is_todays_expiry_day(access_token, symbol) else 0
         raw_chain, chain_status = fetch_upstox_option_chain(access_token, symbol, expiry_index=expiry_index)
         if not raw_chain:
@@ -382,6 +493,8 @@ def process_symbol(access_token, symbol, lot_size=65):
                 # trade_status (TEXT column) मध्ये साठवायचा प्रयत्न केला की DB insert चुपचाप अपयशी
                 # ठरायचा, आणि नेमकी entry-क्षणाचीच signal_log रांग हरवायची.
                 trade_status = format_trade_result(trade_ok, trade_response)
+            if _vg is not None and _vg.signal_id:
+                _vision_note(_vg.signal_id, f"{trade_status} (lots {lots})")
             log_entry["trade_status"] = trade_status
             cloud_db.save_signal_log(log_entry)
         else:
@@ -440,6 +553,8 @@ def process_symbol(access_token, symbol, lot_size=65):
                     direction=direction,
                 )
                 naked_status = format_trade_result(naked_ok, naked_response)
+            if _vg is not None and _vg.signal_id and not credit_spread_enabled:
+                _vision_note(_vg.signal_id, f"naked: {naked_status} (lots {naked_lots})")
 
         # 🎓 naked-only मोड (बघा वरची टिप्पणी) — naked trade ने प्रत्यक्ष order प्रयत्न केला असेल तर तोच
         # निकाल (उदा. "OPENED") खरा trade_status म्हणून signal_log मध्ये; नाहीतर (strike सापडला नाही / naked
@@ -451,7 +566,8 @@ def process_symbol(access_token, symbol, lot_size=65):
             cloud_db.save_signal_log(log_entry)
 
         level_label = "Support" if direction == "BULLISH" else "Resistance"
-        hit_label = "थेट स्पर्श" if hit_type == "TOUCH" else "⚡ Gap ने उडी मारून ओलांडला"
+        hit_label = {"TOUCH": "थेट स्पर्श", "CONFIRMATION": "✅ बंद 5M candle वर confirmation", "VISION_FORCED": "✅ Vision approval नंतर"}.get(
+            hit_type, "⚡ Gap ने उडी मारून ओलांडला")
         rsi_display = f"RSI {rsi_value}." if entry_rsi_gate_enabled else "RSI Gate बंद (तपासलं नाही)."
         naked_line = f"Naked Option: {naked_result.get('strategy', direction)} — {naked_status}\n" if naked_result is not None else ""
         credit_spread_line = f"Credit Spread: {spread_result.get('strategy', direction)} — {trade_status}\n" if spread_result is not None else ""
@@ -503,6 +619,11 @@ if __name__ == "__main__":
             token = cloud_db.get_effective_upstox_token(args.token)
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                try:
+                    from paper.bot_hooks import token_error
+                    token_error("NIFTY", "Classic SR")                      # Abhi: स्पष्ट error, Telegram दिवसातून एकदा
+                except Exception:
+                    pass
                 exit(1)
             any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
             if any_symbol_succeeded:

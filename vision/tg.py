@@ -38,8 +38,10 @@ def can_ask():
 
 
 def keyboard(buttons):
-    """buttons = [(text, callback_data), …] ⇒ एका ओळीत."""
-    return json.dumps({"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in buttons]]})
+    """buttons = [(text, callback_data), …] ⇒ ≤ 3 असतील तर एका ओळीत, जास्त ⇒ दोन-दोनच्या ओळी (✅ ❌ / ✏️ 📝)."""
+    b = [{"text": t, "callback_data": d} for t, d in buttons]
+    rows = [b] if len(b) <= 3 else [b[i:i + 2] for i in range(0, len(b), 2)]
+    return json.dumps({"inline_keyboard": rows})
 
 
 def send_photo(png, caption, buttons=None, chat_id=None):

@@ -193,6 +193,11 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     extra = []
     if manual:                                                          # ✋ /paper: तुमचे strikes / SL / T / R:R (HTML आधीच escape केलेलं)
         extra.append(manual)
+    try:                                                                # level bots confirmation (§9): trend / area / form / entry / SL / target / R:R
+        from bots_common import level_gate_bot as _LGB
+        extra += [html.escape(x) for x in _LGB.gate_caption_lines(tags)]
+    except Exception:
+        pass
     if (res or {}).get("verdict") in (None, "unavailable"):
         extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") + " — बटणं तरीही चालतात")
     tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
@@ -222,7 +227,10 @@ def v1_notify(row, res, d, png, path, reused=False):
     sid = row["signal_id"]
     r = VS.get_signal(sid, path) or {}
     can, why = TG.can_ask()
-    btn = [("✅ Approve", VD.callback_data(sid, "A")), ("❌ Reject", VD.callback_data(sid, "R"))] if d.ask_human and can else None
+    btn = None
+    if d.ask_human and can:                                              # Abhi §10: ✅ · ❌ · ✏️ (engine SL / target असतील तर) · 📝
+        from . import approval as AP
+        btn = AP.buttons(sid, AP.base_levels({**row, **r}) is not None)
     mid = TG.send_photo(png, v1_caption({**row, **r}, res, d, r.get("deadline"), buttons=bool(btn) or not d.ask_human, why=why), btn)
     VS.update(sid, path, tg_message_id=mid, notified=1 if mid else 0)
     return mid
@@ -262,10 +270,13 @@ def v1_housekeeping(path=None, now=None):
     for r in VS.rows_with_status(("APPROVED", "REJECTED"), path):
         s = VC.load(r["bot"], path)
         if r.get("decided_at") and pd.Timestamp(r["decided_at"]) + pd.Timedelta(minutes=int(s["exec_window_min"])) <= now:
+            lim = r["status"] == "APPROVED" and r.get("mod_entry") is not None          # ✏️ limit entry गाठला नाही ⇒ would-have
             if VS.transition(r["signal_id"], r["status"], "EXPIRED", path,
-                             exec_note=f"{r['status']} नंतर {s['exec_window_min']} मिनिटांत bot पोहोचला नाही (gates बदलले)",
+                             exec_note=VG.limit_note(r, s) if lim else f"{r['status']} नंतर {s['exec_window_min']} मिनिटांत bot पोहोचला नाही (gates बदलले)",
                              transition_notified=0 if str(r["signal_ts"])[:10] >= today else 1):
                 changed.append((r["signal_id"], "EXPIRED"))
+                if lim:
+                    VG.limit_expired(r, s, path=path)
     for r in VS.rows_with_status(("DRIFT_REJECTED", "EXPIRED"), path):
         if not r.get("transition_notified") and r.get("mode") in VC.V1_MODES and r.get("decided_at"):
             msg = (f"❌ <b>ENTRY नाकारली (drift guard)</b>: {r['symbol']} {r['direction']} L{float(r['level'] or 0):,.0f} — {r.get('drift_result')} ⇒ PAPER shadow"

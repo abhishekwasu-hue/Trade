@@ -27,11 +27,13 @@ import os
 import pandas as pd
 
 import cloud_db
+from bots_common import level_gate_bot as LGB
 from config import get_ist_now
 from database import count_entries_at_level_today, get_last_sl_tsl_exit_time, has_open_trade_from_source
 from dynamic_sr_instant_trader import (NO_NEW_ENTRY_AFTER_HOUR, NO_NEW_ENTRY_AFTER_MINUTE, RSI_RESISTANCE_MIN, RSI_SUPPORT_MAX,
-                                       _completed_bars_only, check_instant_rsi_filter, check_level_crossed,
-                                       determine_direction_with_hysteresis, is_todays_expiry_day)
+                                       _build_gate, _completed_bars_only, _gate_areas, _gate_result, _grade_lots,
+                                       check_instant_rsi_filter, check_level_crossed, determine_direction_with_hysteresis,
+                                       is_todays_expiry_day)
 from notifications import send_telegram_message
 from oi_analysis import check_pcr_gate
 from sr_levels_v3 import compute_sr_v3
@@ -137,12 +139,17 @@ def active_levels(symbol):
 # ---------------------------------------------------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------------------------------------------------
-def evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now, rsi_fn=check_instant_rsi_filter, pcr_fn=check_pcr_gate):
-    """एका level वर मूळ bot चे (डीफॉल्ट-चालू) gates. रिटर्न (direction किंवा None, कारण)."""
-    hit, hit_type, _ = check_level_crossed(level, recent)
-    if not hit:
-        return None, "touch नाही"
-    direction = determine_direction_with_hysteresis(level, closes)
+def evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now, rsi_fn=check_instant_rsi_filter, pcr_fn=check_pcr_gate,
+                   side=None):
+    """एका level वर मूळ bot चे (डीफॉल्ट-चालू) gates. रिटर्न (direction किंवा None, कारण).
+    side = confirmation gate ची CONFIRMED बाजू ⇒ touch / hysteresis नाही, आणि RSI / PCR फक्त conf_* keys चालू असतील तर (मूळ bot सारखंच)."""
+    if side is None:
+        hit, hit_type, _ = check_level_crossed(level, recent)
+        if not hit:
+            return None, "touch नाही"
+        direction = determine_direction_with_hysteresis(level, closes)
+    else:
+        direction, hit_type = side, "CONFIRMED"
     if direction == "BULLISH" and not settings.get("bullish_entry_enabled", True):
         return None, "Bullish entries बंद"
     if direction == "BEARISH" and not settings.get("bearish_entry_enabled", True):
@@ -154,11 +161,11 @@ def evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_da
     cooldown = float(settings.get("sl_tsl_cooldown_minutes", 15))
     if last_sl is not None and pd.Timestamp(now) - pd.Timestamp(last_sl) < pd.Timedelta(minutes=cooldown):
         return None, f"SL/TSL नंतर {cooldown:.0f} मिनिटांचा cooldown"
-    if settings.get("entry_rsi_gate_enabled", True):
+    if (LGB.conf_gate_enabled(settings, "rsi") if side is not None else settings.get("entry_rsi_gate_enabled", True)):
         ok, rsi = rsi_fn(candles_df, direction, settings.get("rsi_support_max", RSI_SUPPORT_MAX), settings.get("rsi_resistance_min", RSI_RESISTANCE_MIN))
         if not ok:
             return None, f"RSI gate ({rsi})"
-    if settings.get("entry_pcr_gate_enabled", True):
+    if (LGB.conf_gate_enabled(settings, "pcr") if side is not None else settings.get("entry_pcr_gate_enabled", True)):
         ok, _, reason = pcr_fn(symbol, direction, settings["pcr_bullish_min"], settings["pcr_bearish_max"])
         if not ok:
             return None, f"PCR gate ({reason})"
@@ -196,7 +203,7 @@ def _open_paper(access_token, symbol, settings, direction, level, lot_size):
 BOT = "srv3_instant"                                            # vision / journal मधलं नाव (Abhi: तिन्ही bots Vision + ✅ मार्गावर)
 
 
-def _gate(symbol, direction, level, now, spot, settings, forced=False, last_bar=None, gate_fn=None):
+def _gate(symbol, direction, level, now, spot, settings, forced=False, last_bar=None, gate_fn=None, extra_tags=None):
     """Vision gate (approval शिवाय PAPER entry नाही). gate चालला नाही ⇒ None (caller: entry नाही)."""
     try:
         if gate_fn is None:
@@ -204,7 +211,7 @@ def _gate(symbol, direction, level, now, spot, settings, forced=False, last_bar=
         lots = settings["lots"] if settings.get("credit_spread_enabled", True) else 0
         naked = settings.get("naked_lots", settings["lots"]) if settings.get("naked_enabled", True) else 0
         role = "Support" if direction == "BULLISH" else "Resistance"
-        return gate_fn(BOT, symbol, "PAPER", direction, level, role, "5M", now, spot, lots, naked, tags={"srv3": True},
+        return gate_fn(BOT, symbol, "PAPER", direction, level, role, "5M", now, spot, lots, naked, tags={"srv3": True, **(extra_tags or {})},
                        last_bar=last_bar, forced=forced)
     except Exception as exc:
         print(f"⚠️ SR V3 vision gate त्रुटी ⇒ entry नाही: {exc}")
@@ -253,9 +260,34 @@ def run_shadow(access_token, symbol, now=None, settings=None, lot_size=None, fet
         forced = forced_fn(BOT, symbol, "PAPER") or []
     except Exception:
         forced = []
+    # 🎓 Abhi (level bots confirmation): shadow parent bot च्याच mode ने — confirmation ⇒ SR V3 areas वर बंद 5M candle चा commitment
+    # (bot key "srv3_instant"); forced level ⇒ ✅ हीच confirmation (दिशा नोंदलेल्या role ची). Gate चूक ⇒ नवा entry नाही.
+    confirm = LGB.entry_mode(settings) == LGB.CONFIRMATION
+    cg = gate_err = None
+    areas = {}
+    if confirm:
+        try:
+            areas = dict(zip(levels, _gate_areas([{"zone_low": lv, "zone_high": lv} for lv in levels], closes[-1], settings)))
+            cg, gate_err = _build_gate(BOT, symbol, access_token, settings, list(areas.values()), now)
+        except Exception as exc:
+            gate_err = f"gate error (fail-closed): {type(exc).__name__}: {str(exc)[:80]}"
     todo = [(lv, None) for lv in levels] + [(float(lv), "BULLISH" if role == "Support" else "BEARISH") for lv, _tf, role in forced]
     for level, forced_dir in todo:
-        if forced_dir is None:
+        r = None
+        if forced_dir is None and confirm:
+            r = _gate_result(cg, areas.get(level, (level, level)), gate_err)
+            if not (r.get("entry") and r.get("side") in ("BULLISH", "BEARISH")):
+                if check_level_crossed(level, recent)[0]:               # जुना touch ⇒ फक्त paper_would_have (lots 0)
+                    LGB.record_touch_legacy(BOT, symbol, determine_direction_with_hysteresis(level, closes), level, "5M",
+                                            LGB.skip_fields(r)["reason"])
+                if r.get("state") not in ("IDLE", None):
+                    notes.append(f"{symbol} SR V3 {level:,.2f}: {LGB.skip_fields(r)['reason']}")
+                continue
+            direction, why = evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now, side=r["side"])
+            if direction is None:
+                notes.append(f"{symbol} SR V3 {level:,.2f}: {why}")
+                continue
+        elif forced_dir is None:
             direction, why = evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now)
             if direction is None:
                 if why != "touch नाही":
@@ -267,14 +299,17 @@ def run_shadow(access_token, symbol, now=None, settings=None, lot_size=None, fet
         if not _ss_ok:                                                   # signal_source / PAPER pause — forced level ला सुद्धा
             notes.append(f"{symbol} SR V3 {level:,.2f}: {_ss_note}")
             continue
-        g = _gate(symbol, direction, level, now, closes[-1] if closes else None, settings, forced=forced_dir is not None,
-                  last_bar=recent[-1] if recent else None, gate_fn=gate_fn)
+        _s1 = settings if r is None else dict(settings, lots=_grade_lots(settings["lots"], r, settings),
+                                              naked_lots=_grade_lots(settings.get("naked_lots", settings["lots"]), r, settings))
+        g = _gate(symbol, direction, level, now, closes[-1] if closes else None, _s1, forced=forced_dir is not None,
+                  last_bar=recent[-1] if recent else None, gate_fn=gate_fn,
+                  extra_tags=LGB.gate_tags(r, getattr(cg, "ctx", None), "5M") if r is not None else None)
         if g is None or g.action != "ENTER":
             notes.append(f"{symbol} SR V3 {level:,.2f}: Vision / ✅ — {'gate नाही ⇒ entry नाही' if g is None else g.note}")
             continue
-        _s2 = dict(settings, lots=min(settings["lots"], g.lots) if settings.get("credit_spread_enabled", True) else settings["lots"],
-                   naked_lots=min(settings.get("naked_lots", settings["lots"]), g.naked_lots) if settings.get("naked_enabled", True)
-                   else settings.get("naked_lots", settings["lots"]))
+        _s2 = dict(_s1, lots=min(_s1["lots"], g.lots) if _s1.get("credit_spread_enabled", True) else _s1["lots"],
+                   naked_lots=min(_s1.get("naked_lots", _s1["lots"]), g.naked_lots) if _s1.get("naked_enabled", True)
+                   else _s1.get("naked_lots", _s1["lots"]))
         results, spot = _open_paper(access_token, symbol, _s2, direction, level, lot_size)
         try:
             from vision.gate import note_execution

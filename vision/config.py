@@ -23,7 +23,7 @@ V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
 LIVE_FORBIDDEN = V1_MODES
 HUMAN_MODES = ("human_confirm", "veto_then_confirm")                      # ✅ बटण विचारणारे modes (approval_required साठी)
 BOT_STRATEGY_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr",
-                    "srv3_instant": "1m_instant"}   # cloud_db strategy settings (SR V3 shadow मूळ 5-Min bot च्याच settings वापरतो)
+                    "srv3_instant": "1m_instant", "classic_sr": "classic_sr_reversal"}   # cloud_db strategy settings (SR V3 shadow मूळ 5-Min bot च्याच settings वापरतो)
 MANUAL_PROFILES = ("srv3_instant", "dynamic_sr_instant", "srv2_momentum_reversal")   # ✋ /paper: strikes / lots कोणत्या bot च्या settings ने
 
 BOTS = {
@@ -31,6 +31,7 @@ BOTS = {
     "dynamic_sr_instant": ("NIFTY 5-Min Instant", ("NIFTY",), "notify"),
     "srv2_momentum_reversal": ("NIFTY 15M Dynamic SR", ("NIFTY",), "notify"),
     "srv3_instant": ("NIFTY 5-Min SR V3 (PAPER)", ("NIFTY",), "notify"),
+    "classic_sr": ("NIFTY Classic SR", ("NIFTY",), "notify"),          # Abhi (level bots confirmation §9): Classic SR सुद्धा approval मार्गावर
     "manual": ("✋ Manual (/paper, PAPER)", ("NIFTY",), "notify"),       # Abhi: Telegram /paper — वेगळा key (bots च्या levels मध्ये मिसळत नाही)
     "pullback_credit_spread": ("Pullback Credit Spread", ("NIFTY",), "off"),
     "mcx_futures": ("MCX Futures", (), "off"),

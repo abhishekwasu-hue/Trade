@@ -311,8 +311,16 @@ def signal_text(sig):
     lines += gap_lines(ctx.get("gap_ctx"))
     if ctx.get("expiry_days") is not None:
         lines.append(f"Weekly expiry in {ctx['expiry_days']} calendar day(s).")
-    if tags:
-        lines.append("Bot tags: " + ", ".join(f"{k}={v}" for k, v in sorted(tags.items())))
+    g = tags.get("gate") if isinstance(tags.get("gate"), dict) else None
+    if g:                                                                # level bots confirmation (§9): engine चं वाचन — Vision ने तपासावं
+        a = g.get("area") or [None, None]
+        lines.append(f"Confirmation gate (engine reading, please audit): trend {g.get('trend')}; area {_f(a[0], 2)}-{_f(a[1], 2)} "
+                     f"({'demand' if g.get('side') == 'BULLISH' else 'supply'}); commitment {g.get('form')} on {g.get('tf')}; "
+                     f"entry {_f(g.get('entry'), 2)}, SL {_f(g.get('sl'), 2)}, target {_f(g.get('target'), 2)}, R:R {g.get('rr')}. "
+                     "Check zone, trend, pullback, trigger and whether entry / SL / target are sensible.")
+    rest = {k: v for k, v in tags.items() if k != "gate"}
+    if rest:
+        lines.append("Bot tags: " + ", ".join(f"{k}={v}" for k, v in sorted(rest.items())))
     lines.append("Audit this signal against the playbook and fill the JSON.")
     return "\n".join(lines)
 

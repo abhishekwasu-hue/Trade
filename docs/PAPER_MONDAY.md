@@ -15,6 +15,7 @@ LIVE मार्गाला हात नाही. Vision कधीच order 
 | 9 | NIFTY enabled; BANKNIFTY / SENSEX `enabled: false` | `config.yaml: paper.instruments` |
 | — | Token नाही ⇒ स्पष्ट error + Telegram (दिवसातून एकदा) | `paper/bot_hooks.py: token_error`, bots चा `__main__` |
 | ✋ | Manual trigger `/paper` (P1 मधून P0): validation ⇒ Vision (bot key `manual`; NA तरी बटणं) ⇒ ✅ ⇒ PAPER entry ⇒ updates ⇒ तुमचा spot SL / T exit ⇒ journal | `paper/manual.py`, `vision/telegram_bot.py`, `paper/watch.py`, `vision/worker.py: v1_caption` |
+| §10 | Approval संदेश: ✅ · ✏️ Modify (फक्त entry, spot limit) · ❌ (+ कारण एक tap) · 📝 Correct marking (engine ला लागू नाही) · `/exit <id>` (फक्त PAPER) · 15:45 सारांश | `vision/approval.py`, `vision/telegram_bot.py`, `vision/gate.py: limit_reached`, `paper/commands.py: exit_trade`, `scripts/paper_daily_summary.py` |
 
 ## Settings (code मध्ये आकडे नाहीत)
 - `config.yaml → paper`: `instruments.<SYM>.enabled / lot_size_fallback`, `update_every_min` (30), `near_alert_pct` (80), `entry_cutoff` ("14:45" — ✋ /paper आणि engine मार्ग), `watch_min_interval_sec` (15).
@@ -33,6 +34,22 @@ LIVE मार्गाला हात नाही. Vision कधीच order 
 - ✅ ⇒ लगेच (Telegram service) drift guard + entry (`open_multi_leg_trade` — kill-switch / pause / VIX पुन्हा). ❌ / 10 मिनिटं उत्तर नाही ⇒ entry नाही.
 - Exit: तुमचा spot SL / T (paper watcher, trade_monitor च्या प्रत्येक cycle ला) + backstop generic नियम (credit च्या 100% तोटा, 3:10 नियम).
 - `manual_profile`: dashboard → Vision Human Eye → "✋ manual_profile".
+
+## Approval संदेश (Abhi §10, फक्त TELEGRAM_APPROVER_IDS; प्रत्येक parsed value आधी परत दाखवतो)
+- ✅ Approve — जुनं वर्तन.
+- ✏️ Modify — फक्त **entry** (`entry 22590`, spot वर limit). SL / target engine चेच (signal tags `gate`; ✋ manual ⇒ तुमचे SL / T), R:R पुन्हा;
+  area बाहेर / R:R < 3 ⇒ ⚠️ (block नाही). सुधारित ticket ⇒ पुन्हा ✅ (approval window पुन्हा सुरू). ✅ नंतर spot entry ला आला तरच PAPER entry;
+  `exec_window_min` मध्ये नाही ⇒ EXPIRED, position नाही, would-have (`EXPIRED_LIMIT`). Vision पुन्हा नाही. SL / target / lots / strikes / hedge /
+  expiry / risk — dashboard वरच.
+- ❌ Reject — लगेच (position नाही, would-have) + कारण एक tap: wrong trend / wrong zone / no real commitment / too late / against my plan / other (मजकूर).
+- 📝 Correct marking (✅ आधी / नंतर — बटणं गेल्यावर `/correct [signal_id]`): `zone 22570-22640` · `trend down` · `this is a correction, not impulse` ·
+  `commitment candle 10:45` · मोकळा मजकूर ⇒ `vision.db: corrections` (chart path, engine reading, parsed + raw). Engine ला कधीच लागू नाही — review queue
+  `vision.store.corrections(day, unreviewed=True)`. मजकुराची वाट 15 मिनिटं; `cancel` ⇒ रद्द.
+- `/exit <id>` (`/positions` मधला #id) — फक्त PAPER, लगेच बंद (`close_trade_manually`); LIVE ⇒ नकार; pause / kill-switch कधीच अडवत नाहीत.
+- 15:45 IST सारांश (cron UTC, Abhi स्वतः जोडतो):
+```
+15 10 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/paper_daily_summary.py >> paper_daily_summary.log 2>&1
+```
 
 ## Engine service (signal_source engine / both साठी; own असताना फक्त caption मत; cron वेळ UTC)
 ```

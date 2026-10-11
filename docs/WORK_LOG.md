@@ -1761,3 +1761,24 @@ ending diagonal) + acceptance (NIFTY (4)→(5), BANKNIFTY sharp fall → a-b-c s
 **Tests:** library 108 pass / 15 strict xfail (Q49 12, Q52 2, + #289 hybrid 1); #289 review tests parent अपेक्षा 1302 → 1352 (Q50); जुने Q15 / Q23 / Q27 / Q36 origin_broken tests parent gate off ने (Q53); नवे `tests/test_decision3_abc_fix.py` (caption, next demand, evidence, restore, no-lookahead). Full suite 4107 pass / 16 xfail. Independent review: 🔴 2 + 🟡 6 दुरुस्त; prov expiry नाही (Q54). Real: BANKNIFTY DOWN, correction Apr–Jul, origin = c top 58,706; NIFTY DOWN protected 24,774.
 
 **Rule 7:** `docs/reports/v22/ABC_FIX_RULE7.md` — flips BANKNIFTY 19 → 8, NIFTY 28 → 7 (holdout तारखा masked).
+
+## 2026-10-11 · Level bots confirmation MVP (Abhi: TRADE_SESSION_LEVEL_BOTS_CONFIRMATION, Monday deadline)
+
+**काय केलं:** `bots_common/level_reaction.py` (एकच gate: decision3 Daily trend ⇒ बाजू; area वर ARMED ⇒ commitment (decision3 `commitment`) ⇒ CONFIRMED;
+खरा break (`elliott.breaks`) / timeout / impulsive approach / R:R < 3 ⇒ DISARMED; fail-closed), `bots_common/level_gate_bot.py` (bots साठी पातळ थर,
+signal log `SKIPPED_GATE_*`, Vision tags, legacy touch ⇒ `paper_would_have`), pre-open script `scripts/level_gate_preopen.py`, dashboard Entry mode
+(touch ⇒ warning), Vision chart वर area / entry / SL / target + caption / prompt मध्ये gate वाचन, dry-run मध्ये gate CONFIRMED replay, MCX PAPER
+नवे entries L4 पर्यंत थांबवले. Design: `docs/LEVEL_BOTS_CONFIRMATION.md`; default निर्णय: OPEN_QUESTIONS LB1–LB7.
+**Smoke (IS NIFTY 5m, 117 दिवस, synthetic areas = मागच्या 3 दिवसांचे high / low):** 261 arrivals, 214 against trend, 187 broken, 117 R:R < 3, 18 impulsive,
+7 timeout, 14 CONFIRMED — crash नाही.
+**Bots (parallel worktrees):** L2 — 5M Instant + SR V3 shadow (confirmation mode, breakout off, forced level = recorded role, legacy touch ⇒ would-have);
+L3 — 15M SRv2 + Classic (Classic ला Vision approval मार्ग जोडला, vision key `classic_sr`); §10 Telegram — ✅ / ❌ (कारण) / 📝 correction / ✏️ Modify (फक्त
+entry; limit order window मध्ये, नाहीतर EXPIRED + would-have) / `/exit <id>` (फक्त PAPER) / 15:45 summary (`scripts/paper_daily_summary.py`).
+**Spec revision (a2 / c0):** decision3 `zone_study` / `zone_pattern` / `contraction` (④ a relative, `power_a_rule`), commitment `win` (dominance + volume),
+index volume = front futures; सगळे नियम एका function मध्ये दिशा d सह, आरसा tests. Smoke (तेच 117 दिवस): CONFIRMED 14 ⇒ 4, absorption ⇒ 13 वेळा वाट,
+timeout 54, R:R < 3 54. decision3 goldens बदलले नाहीत (LB11).
+**Independent review (🔴 2 / 🟡 7):** trend cache फक्त पूर्ण fetch चा (अपयशी fetch दिवसभर "trend नाही" ठेवत नव्हता — दुरुस्त); सगळ्या नव्या files commit मध्ये;
+dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegram आधीच (spam नाही); `allow_parent_correction` settings पुढे जातात
+(cache key सह); network वेळ-मर्यादा (daily 25 s, futures volume 10 s, SENSEX resolve अपयश दिवसासाठी cache); LIVE tests खरा default वापरतात;
+तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
+उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.

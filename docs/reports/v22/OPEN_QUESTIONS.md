@@ -89,3 +89,19 @@
 | Q38 | default OK | तसाच |
 | Q39 | default OK | तसाच |
 | Q40 | option (refined) — window आधीचे महत्त्वाचे Daily levels हवेत: फक्त trend-degree swings (impulse origin / टोक, correction टोकं) + Weekly swings, किंमतीपासून ATR-scaled अंतरात; NIFTY holdout swings ⇒ फक्त किंमत (तारीख masked) | `levels._prior_levels`: degree-aware Dow चे protected (origin / correction टोक) + `imp_end` + Weekly pivots, `prior_level_atr_mult` (8) × ATR_D (`prior_level_atr_n` 14) आत; bar 0 ला जन्म, भूमिका तेव्हाच्या किंमतीनुसार; birth "a:D-prior" / "a:W-prior" |
+
+## Level bots — confirmation (TRADE_SESSION_LEVEL_BOTS_CONFIRMATION) — MVP मध्ये घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | प्रश्न | MVP default | पर्याय |
+|---|---|---|---|
+| LB1 | A1: impulse origin तुटला, parent टिकला (same-degree correction चालू) — नवे entries? | नाहीत (`allow_parent_correction` = false, fail-safe; spec "origin being invalidated ⇒ no entries") ⇒ BANKNIFTY सारखा c-top short सुद्धा नाही | trend बाजूचे entries चालू (setting) |
+| LB2 | Confirmation mode मध्ये exit: "structural (area पलीकडे खरा break) + emergency stop" | bots चे सध्याचे exits तसेच (कधीच अडवत नाहीत); structural exit नियम L5/L6 नंतर | structural exit जोडणे |
+| LB3 | Grade B ⇒ lots | ×1.0 (`gate_grade_b_lot_mult`) — बदल नाही | उदा. ×0.5 |
+| LB4 | एकाच किंमतीचा level (zone_low = zone_high) | शून्य-रुंदीचा area (स्पर्श / आतली कड = तीच किंमत) | median range च्या भागाने पट्टा |
+| LB5 | आकडे (निकाल न पाहता ठरवले, dashboard वर): impulsive approach ≥ 1.5 × median range, close टोकाच्या 25% मध्ये, सलग 2; `max_armed_bars` 8; SL buffer 0.25 × MR; median range 20 bars | तसेच | L6 replay नंतर Abhi |
+| LB6 | RSI divergence पुरावा | MVP मध्ये NA (grade मध्ये मोजत नाही) | rsi2 मधून जोडणे |
+| LB7 | Daily `mature` (impulse target जवळ) | gate नाही (फक्त नोंद) | mature ⇒ नवे entries नाहीत |
+| LB8 | c0 "dominant" commitment: body किती पट window सरासरी? | 1.5× (`commit_dom_mult`, register "अंदाज") — निकाल पाहून नाही | 1.25 / 2.0 |
+| LB9 | a2 handover वाचन: पहिल्या / दुसऱ्या अर्ध्याची तुलना; body आवश्यक + इतर उप-तपासण्यांपैकी किमान अर्ध्या | तसेच (`study_min_bars` 4) | प्रत्येक उप-तपासणी आवश्यक |
+| LB10 | SENSEX volume | SENSEX FUT (BSE) resolver नाही ⇒ NA ⇒ grade कमाल B | BSE FO resolver जोडणे |
+| LB11 | Engine (decision3) diffs: ④ (a) आता relative contraction (`power_a_rule`); ④ (e) handover-volume (volume असेल तर, engine च्या 15M data मध्ये volume नाही ⇒ NA); commitment ला dominance + volume फक्त `win` दिल्यावर (gate) — engine call अजून win देत नाही | decision3 tests / goldens मध्ये बदल नाही (फक्त जुन्या strict-3 test ला `power_a_rule="strict3"`); v22 review charts पुन्हा बनवले नाहीत | engine मध्ये commitment ला K window देणे (Abhi सांगतील तेव्हा) |

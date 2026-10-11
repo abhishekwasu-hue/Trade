@@ -29,7 +29,7 @@ def test_power_shift_two_of_four_and_rsi_alone_not_enough():
     rows = [(110, 111, 106, 107), (107, 108, 104, 105), (105, 105.5, 103, 103.5), (103.5, 104, 102.8, 103.8)]
     A = A_of(rows)
     k = {"k_open_bar": 0, "k_ext": 102.8, "k_ext_bar": 3}
-    ok, n, it = M.power_shift(A, 3, M.UP, k, S)
+    ok, n, it = M.power_shift(A, 3, M.UP, k, {**S, "power_a_rule": "strict3"})                     # जुना (what-if) नियम
     assert it["a_shrinking"] and n >= 2 and ok
     A2 = A_of([(100, 110, 99, 109), (109, 120, 108, 119), (119, 130, 118, 129)])                    # trend-दिशेच्या मोठ्या candles
     ok2, n2, it2 = M.power_shift(A2, 2, M.UP, {"k_open_bar": 0, "k_ext": 99, "k_ext_bar": 0}, S)
@@ -321,3 +321,19 @@ def test_mature_cap_in_pipeline():
         if r["mature"]:
             assert r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
     assert any(V.decide(r0["bar"])["mature"] for r0 in off)
+
+
+def test_power_shift_a_relative_contraction_both_directions():
+    """Abhi (level bots spec): (a) = area मधल्या pullback candles चा सरासरी range < pullback च्या आधीच्या आणि impulse च्या candles पेक्षा; नेमके 3 नाहीत.
+    आरसा (DOWN) तसाच निर्णय देतो."""
+    up = [(90, 99, 89, 98), (98, 107, 97, 106), (106, 110, 105, 109),                          # impulse (मोठ्या हिरव्या)
+          (109, 109.5, 103, 104), (104, 104.5, 99, 100),                                       # pullback आधीचा भाग (मोठ्या लाल)
+          (100, 100.4, 98.8, 99), (99.2, 99.6, 98.4, 98.6), (98.6, 99.0, 98.0, 98.2)]          # area मध्ये (लहान लाल; 3 सलग लहान नाहीत तरी)
+    lvl = {"lo": 97.5, "hi": 100.5}
+    k = {"k_open_bar": 3, "origin_bar": 0, "i_end_bar": 2, "k_ext": 98.0, "k_ext_bar": 7}
+    assert M.contraction(A_of(up), 7, M.UP, k, S, lvl)
+    dn = [(200 - o, 200 - l, 200 - h, 200 - c) for o, h, l, c in up]
+    lvl_dn = {"lo": 200 - lvl["hi"], "hi": 200 - lvl["lo"]}
+    assert M.contraction(A_of(dn), 7, M.DOWN, k, S, lvl_dn)
+    big = up[:5] + [(100, 101, 93, 94), (94, 95, 87, 88), (88, 89, 81, 82)]                    # area मध्ये मोठ्या ⇒ contraction नाही
+    assert not M.contraction(A_of(big), 7, M.UP, k, S, {"lo": 80, "hi": 100.5})

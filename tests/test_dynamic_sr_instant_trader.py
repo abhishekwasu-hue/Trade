@@ -10,10 +10,20 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 import dynamic_sr_instant_trader as dsr
 import cloud_db
+from bots_common import level_gate_bot as LGB
 from config import get_ist_now
+
+
+@pytest.fixture(autouse=True)
+def legacy_touch_mode(monkeypatch):
+    """हे जुने bot-logic tests touch mode चे (PAPER चा default आता confirmation) — settings मध्ये entry_mode स्पष्ट दिला तरच तो.
+    Confirmation mode चे tests: tests/test_level_bots_5m.py. इतर files हा fixture import करतात (autouse)."""
+    orig = LGB.entry_mode
+    monkeypatch.setattr(LGB, "entry_mode", lambda s: orig(s) if (s or {}).get("entry_mode") else LGB.TOUCH)
 
 
 class TestCheckLevelCrossed:

@@ -17,6 +17,7 @@ from paper import journal as PJ
 from paper import pause as PP
 from paper import watch as PW
 from tests.test_dynamic_sr_instant_trader import _candles_with_rsi, _fake_chain, _fake_zones
+from tests.test_dynamic_sr_instant_trader import legacy_touch_mode  # noqa: F401 (autouse fixture: जुने tests touch mode)
 from tests.test_min_hold_end_to_end import _hover, signal_db  # noqa: F401 (fixture)
 from tests.test_trading_engine import FakeTime, seed_trade, temp_db  # noqa: F401 (fixture)
 from tests.test_vision_v1 import KEY, ME
