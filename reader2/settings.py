@@ -37,7 +37,7 @@ DEFAULTS = {
     "intraday_max_spacing_hours": 20,  # bars मधलं median अंतर यापेक्षा कमी ⇒ intraday (session पहिला bar ⇒ overnight gap वगळा)
     "dc_k": (2.0, 4.0, 8.0),          # degree 0, 1, 2 चे directional-change threshold (× MR)
     "trend_degree": 2,                # trend / protected origin या degree च्या legs वरून
-    "reread_k_mult": (1.0, 0.875, 0.75, 0.625),  # re-read: dc_k[D−1] चे गुणक — फक्त एक degree खाली (dc_k[D−2] < k ≤ dc_k[D−1])
+    "reread_k_mult": (0.9, 0.75, 0.6),  # re-read: sub-leg degree च्या dc_k चे गुणक — फक्त एक degree खाली (त्याखालच्या dc_k च्या वर); बहुमत (2 / 3)
     "short_leg_bars": LS2.DEFAULTS["short_leg_bars"],   # ≤ इतके bars ⇒ candle anatomy NA (legs2 नियम)
     "min_features": 4,                # यापेक्षा कमी पुरावा देणारे features ⇒ candle anatomy NA
     "contraction_min_half": 2,        # contraction: प्रत्येक अर्ध्यात किमान इतके bars
@@ -52,7 +52,8 @@ DEFAULTS = {
     "weights": {k: 1.0 for k in FEATURES},
     "features": FEATURES,
     "rollup": ROLLUP,
-    "rollup_weights": {"motive": 2.0, "counter": 1.0, "pause_time": 1.0, "pause_depth": 1.0},
+    "rollup_weights": {"motive": 2.0, "counter": 1.0, "pause_time": 1.0, "pause_depth": 1.0, "shape": 2.0},
+    "rollup_shape": {3: -1.0, 5: 1.0},  # sub-legs ची संख्या: 3 (a-b-c, दोन pushes) ⇒ सुधार; 5 (1-2-3-4-5, तीन pushes) ⇒ आवेग; इतर ⇒ पुरावा नाही
     "rollup_pause_min_counters": 2,   # थांब्यांचा पुरावा फक्त ≥ इतके counter sub-legs असताना (waves 2 आणि 4); एक थांबा = zigzag चा b सुद्धा
     "rollup_veto_share": 0.25,        # motive चालीचा ≥ इतका वाटा असलेला सुधारात्मक motive sub-leg ⇒ leg आवेगी वाचत नाही (big-c zigzag चा a)
     "trend_body": _L2["trend_body"],
@@ -69,7 +70,7 @@ REGISTER = {
     "intraday_max_spacing_hours": (20, "—", "व्याख्या", "Daily (24 h) आणि intraday वेगळं करण्यासाठी"),
     "dc_k": ("2/4/8", "1.5/3/6, 2.5/5/10", "अंदाज", "degree = पट; dev gallery वर calibrate"),
     "trend_degree": (2, "1/2", "अंदाज", "spec §2d: leg त्याच्या degree वर"),
-    "reread_k_mult": ("1/0.875/0.75/0.625", "—", "व्याख्या", "spec §3.1 alternative pivots one degree lower (D−2 पर्यंत नाही)"),
+    "reread_k_mult": ("0.9/0.75/0.6", "—", "व्याख्या", "spec §3.1 alternative pivots one degree lower; तीन पर्याय, निर्णय बहुमताने 2 / 3"),
     "short_leg_bars": (2, "—", "व्याख्या", "legs2 settings2"),
     "min_features": (4, "3/4/6", "अंदाज", "—"),
     "contraction_min_half": (2, "—", "व्याख्या", "अर्ध्यात 1 bar ⇒ गुणोत्तर अर्थहीन"),
@@ -84,7 +85,8 @@ REGISTER = {
     "weights": ("सगळे 1", "—", "अंदाज", "candle features समान वजन"),
     "features": ("FEATURES", "±1 पायरी", "अंदाज", "spec §2b; volume = legs2 v_lo / v_hi (NexusFi)"),
     "rollup": ("ROLLUP", "±1 पायरी", "अंदाज", "spec §2b pause (shallow, brief) — sub-leg पातळीवर"),
-    "rollup_weights": ("2/1/1/1", "—", "अंदाज", "motive sub-legs मुख्य"),
+    "rollup_weights": ("2/1/1/1/2", "—", "अंदाज", "motive sub-legs आणि shape मुख्य"),
+    "rollup_shape": ("3 ⇒ −1, 5 ⇒ +1", "—", "व्याख्या", "Elliott: correction तीन पाय (दोन pushes), impulse पाच (तीन pushes); review 🔴1"),
     "rollup_pause_min_counters": (2, "—", "व्याख्या", "एका थांब्यावरून impulse आणि zigzag (a-b-c) वेगळे होत नाहीत"),
     "rollup_veto_share": (0.25, "0.2/0.25/0.33", "अंदाज", "एक लहान आळशी push (उदा. टोकाजवळचा wave 1) impulse रद्द करत नाही; मोठा करतो"),
     "trend_body": (_L2["trend_body"], "—", "व्याख्या", "swings2 / MASTER §3 trend candle"),

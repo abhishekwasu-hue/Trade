@@ -225,8 +225,9 @@ def htf_check(R, higher, pas=None):
 def history(df, start, step=1, s=None, low=None, read_fn=None):
     """Invariant 7: प्रत्येक T (start…, step) ला `read(df[:T+1])` — label बदल log (known_at = T चा bar end). रिटर्न
     {"labels": {T: {leg key: label}}, "trend": {T: trend}, "log": [...]}. Provisional legs मोजत नाही (त्यांची key रोज बदलते).
-    खर्च: प्रत्येक T ला पूर्ण वाचन ⇒ O(n_T × read) (Daily 4,000 bars ≈ 0.2 s / read) — incremental नाही; लांब history साठी step वापरा
-    किंवा replay script (heavy job नियम)."""
+    खर्च: प्रत्येक T ला पूर्ण वाचन ⇒ O(n_T × read) — BANKNIFTY Daily (~2,400 bars) वर एक read ≈ 0.5 s (candle votes Chart वर cache), म्हणजे
+    पूर्ण history ≈ 10–20 मिनिटं. Incremental नाही; लांब history साठी step वापरा किंवा replay script (heavy job नियम).
+    """
     from . import reader as RR                                           # reader → selfcheck (चक्र टाळण्यासाठी इथे)
     fn = read_fn or RR.read
     first = object()

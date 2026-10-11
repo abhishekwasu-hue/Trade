@@ -107,15 +107,17 @@ def _misplaced(R, mirror):
 
 @pytest.mark.parametrize("dn,mirror", DIRS)
 def test_misplaced_pivots_are_caught_by_the_anatomy_vote(dn, mirror):
+    """Mis-placed degree-1 pivots read the impulse as a zigzag. The anatomy uses the reader's own sub-legs (independent of the
+    marking) and reads it impulsive ⇒ the leg is never labelled a correction; a named corrective reading is not turned into an
+    impulse by the re-read either ⇒ uncertain, with the alternatives in the reason."""
     df, _ = F.clean_impulse(mirror)
     pv = _misplaced(RR.read(df), mirror)
     R = RR.read(df, pivots=pv)
     lg = _trend_leg(R, mirror)
     assert lg.structure["family"] == "zigzag", "precondition: the mis-placed pivots read as a correction"
-    assert lg.anatomy["cls"] == "impulsive"
-    assert lg.label == "impulse" and lg.confidence == "medium", lg.reason
-    assert "re-read with alternative pivots one degree lower" in lg.reason
-    assert lg.reread["structure"]["family"] == "impulse"
+    assert lg.anatomy["cls"] == "impulsive" and lg.anatomy["subs"] and len(lg.anatomy["subs"]) == 5
+    assert lg.label == RF.UNCERTAIN, lg.reason
+    assert "structure k=" in lg.reason and "impulse (5 waves)" in lg.reason
 
 
 @pytest.mark.parametrize("dn,mirror", DIRS)
@@ -245,3 +247,23 @@ def test_structure_only_impulse_is_challenged(dn, mirror, seed):
     assert lg.structure["family"] == "impulse" and lg.anatomy["cls"] != "impulsive"
     assert lg.label == RF.UNCERTAIN
     assert all(st["trend"] is None for st in R.states), "a structure-only impulse never sets the trend"
+
+
+# --------------------------------------------------------------------------------------------------------------- sharp a-b-c
+@pytest.mark.parametrize("depth", (0.65, 0.72, 0.8))
+@pytest.mark.parametrize("seed", (None, 1, 2, 3))
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_sharp_abc_with_impulsive_a_and_c_stays_a_correction(dn, mirror, seed, depth):
+    """Abhi's "sharp fall ⇒ a-b-c": a and c are impulsive candles, b a bounce. Two pushes and one counter-move ⇒ the roll-up is
+    corrective in structure ⇒ correction (not uncertain, not impulse); the trend stays with the prior impulse."""
+    shape = F.IMPULSE + F.sharp_abc(depth * F.IMP_SIZE) + F.CONT
+    df, _ = F.frame(shape, mirror) if seed is None else F.realistic(shape, mirror, seed=seed)
+    R = RR.read(df)
+    cm = _counter_leg(R, mirror)
+    subs = cm.anatomy["subs"]
+    assert len(subs) == 3, "precondition: a-b-c visible one degree lower"
+    if seed is None:
+        assert all(x["vote"]["cls"] == "impulsive" for x in subs if x["dirn"] == cm.dirn), "precondition: a and c impulsive"
+    assert cm.anatomy["cls"] == "corrective" and any(e["feature"] == "sub:two_push" for e in cm.anatomy["evidence"])
+    assert cm.label == "correction", cm.reason
+    assert {s["trend"] for s in R.states[_trend_leg(R, mirror).known_bar:]} == {"DOWN" if mirror else "UP"}

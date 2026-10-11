@@ -164,7 +164,16 @@ def lower_bars(ch, i0, i1, low):
 
 
 def candle_vote(ch, i0, i1, d, prev=None, low=None):
-    """Lowest degree: leg च्या candles; low = खालच्या TF चा Chart (उदा. Daily साठी 1H) ⇒ दोघांची वजनी सरासरी (spec §2d)."""
+    """Lowest degree: leg च्या candles; low = खालच्या TF चा Chart (उदा. Daily साठी 1H) ⇒ दोघांची वजनी सरासरी (spec §2d).
+    शुद्ध function ⇒ Chart वर cache (roll-up / re-read तेच sub-legs पुन्हा वाचतात)."""
+    key = (int(i0), int(i1), int(d), prev, id(low))
+    cache = ch.__dict__.setdefault("_cv", {})
+    if key not in cache:
+        cache[key] = _candle_vote(ch, i0, i1, d, prev, low)
+    return cache[key]
+
+
+def _candle_vote(ch, i0, i1, d, prev, low):
     own = vote(ch, i0, i1, d, prev)
     own["level"] = "candles"
     if low is None:
@@ -186,7 +195,9 @@ def candle_vote(ch, i0, i1, d, prev=None, low=None):
 
 def _combine(subs, d, s):
     """Sub-legs ⇒ leg चा vote: motive (leg-दिशेचे sub-legs, आकाराने वजनी), counter (उलट sub-legs सुधारात्मक ⇒ आवेगी पुरावा),
-    pause_time, pause_depth. Motive चालीचा ≥ rollup_veto_share वाटा असलेला सुधारात्मक motive sub-leg ⇒ score ≤ त्याचा score."""
+    pause_time, pause_depth, shape (sub-legs ची संख्या: 3 = दोन pushes a-b-c ⇒ सुधार; 5 = तीन pushes 1-2-3-4-5 ⇒ आवेग; बाकी ⇒ 0).
+    Motive चालीचा ≥ rollup_veto_share वाटा असलेला सुधारात्मक motive sub-leg ⇒ score ≤ त्याचा score. दोन pushes (2 motive + 1 counter)
+    ⇒ score ≤ a_lo: a आणि c दोन्ही आवेगी असले तरी sharp a-b-c impulse नाही (पाच sub-legs शिवाय impulse नाही)."""
     mot = [x for x in subs if x["dirn"] == d]
     cnt = [x for x in subs if x["dirn"] != d]
     mv = [(x["vote"]["score"], x["size"]) for x in mot if x["vote"]["score"] is not None]
@@ -202,10 +213,12 @@ def _combine(subs, d, s):
     if len(cnt) >= int(s["rollup_pause_min_counters"]):                            # एकच थांबा impulse / zigzag वेगळं करत नाही
         ptime = sum(x["bars"] for x in cnt) / tot if tot else None
         pdepth = (sum(x["size"] for x in cnt) / msize) if msize > 0 else None
+    shape = s["rollup_shape"].get(len(subs))                                        # 3 ⇒ −1, 5 ⇒ +1, इतर ⇒ None (पुरावा नाही)
     vals = {"motive": m, "counter": c,
             "pause_time": feature_score(ptime, *s["rollup"]["pause_time"]),
-            "pause_depth": feature_score(pdepth, *s["rollup"]["pause_depth"])}
-    raws = {"motive": ms, "counter": [-x for x in cs], "pause_time": ptime, "pause_depth": pdepth}
+            "pause_depth": feature_score(pdepth, *s["rollup"]["pause_depth"]),
+            "shape": shape}
+    raws = {"motive": ms, "counter": [-x for x in cs], "pause_time": ptime, "pause_depth": pdepth, "shape": len(subs)}
     ev = []
     num = den = 0.0
     for k, sc in vals.items():
@@ -231,6 +244,10 @@ def _combine(subs, d, s):
         score = min(score, min(veto))
         ev.append({"feature": "sub:veto", "value": min(veto), "score": None, "lean": LEAN_COR, "counted": False,
                    "text": f"a corrective motive sub-leg carries ≥ {s['rollup_veto_share']} of the leg's travel ⇒ not impulsive"})
+    if len(mot) == 2 and len(cnt) == 1:
+        score = min(score, float(s["a_lo"]))
+        ev.append({"feature": "sub:two_push", "value": 3, "score": None, "lean": LEAN_COR, "counted": False,
+                   "text": "two pushes and one counter-move (a-b-c) ⇒ corrective in structure, even with impulsive a and c"})
     return {"score": score, "cls": classify(score, s), "evidence": ev, "raw": raws, "subs": subs, "level": "rollup"}
 
 
@@ -252,14 +269,22 @@ def rollup(ch, i0, i1, p0, p1, d, lowers, upto, prev=None, low=None):
     return _combine(subs, d, ch.s)
 
 
+def own_lowers(ch, degree):
+    """Reader चे स्वतःचे खालचे pivot संच (जवळच्यापासून). Anatomy नेहमी हेच वापरते — बाहेरची (hand / v1) marking फक्त structure vote
+    बदलते, म्हणून चुकीचे pivots candles च्या vote ला दूषित करत नाहीत (दोन votes स्वतंत्र)."""
+    return [ch.pivots(ch.s["dc_k"][D]) for D in range(int(degree) - 1, -1, -1)]
+
+
 def leg_vote(ch, leg, prev=None, low=None, lowers=None):
-    """Leg चा anatomy vote: खालचे pivots असतील तर sub-legs चा roll-up, नाहीतर candles (spec §2d)."""
+    """Leg चा anatomy vote: खालचे pivots (default: reader चे स्वतःचे) असतील तर sub-legs चा roll-up, नाहीतर candles (spec §2d)."""
     pb = (prev.i0, prev.i1) if prev is not None else None
-    return rollup(ch, leg.i0, leg.i1, leg.p0, leg.p1, leg.dirn, list(lowers or []), leg.known_bar, pb, low)
+    lw = own_lowers(ch, leg.degree) if lowers is None else list(lowers)
+    return rollup(ch, leg.i0, leg.i1, leg.p0, leg.p1, leg.dirn, lw, leg.known_bar, pb, low)
 
 
-def alternatives(ch, leg, lowers, prev=None, low=None):
-    """Re-read (§3.1 / 🔴4): पर्यायी pivots फक्त एक degree खाली (structure.alt_thresholds) वापरून roll-up. रिटर्न [(k, vote)]."""
+def alternatives(ch, leg, prev=None, low=None):
+    """Re-read (§3.1): पर्यायी pivots फक्त एक degree खाली (structure.alt_thresholds, स्वतःच्या pivots वर) वापरून roll-up.
+    रिटर्न [(k, vote)]."""
     from . import structure as RSt                                         # structure → legs; anatomy → structure (चक्र नाही)
-    ks, rest = RSt.alt_thresholds(ch, leg, lowers)
+    ks, rest = RSt.alt_thresholds(ch, leg, own_lowers(ch, leg.degree))
     return [(k, leg_vote(ch, leg, prev, low, [ch.pivots(k)] + rest)) for k in ks]

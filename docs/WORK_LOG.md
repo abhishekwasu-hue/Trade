@@ -1807,3 +1807,12 @@ REGISTER keys = DEFAULTS (contraction_min_half, intraday_max_spacing_hours setti
 **Fixtures / tests:** realistic noisy candles (seeds 1–3), structure-only 5-wave (ambiguous candles ⇒ uncertain), uncertain पुन्हा trend, provisional,
 library run (`tests/test_reader2_library.py`: 86 pass / 10 strict xfail — CR-Q2). BANKNIFTY daily: Feb→Apr 2026 DOWN impulse (medium, flip DOWN 7 May),
 Apr→Jun uncertain (zigzag vs mixed candles), Jun→now provisional DOWN impulse; mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — re-review (fecdac7) नंतर दुरुस्ती (research-only)
+**🔴1 sharp a-b-c:** roll-up मध्ये "shape" (sub-legs ची संख्या: 3 ⇒ −1, 5 ⇒ +1) आणि दोन pushes (2 motive + 1 counter) ⇒ score ≤ a_lo — a आणि c आवेगी असले तरी
+sharp a-b-c correction (test: 3 खोली × ideal + 3 noisy seeds × आरसा ⇒ correction). Anatomy नेहमी reader चे स्वतःचे pivots वापरते (बाहेरचे pivots फक्त structure).
+**🔴2 re-read:** तीन पर्याय (0.9 / 0.75 / 0.6), निर्णय बहुमताने (2 / 3), दोन्ही दिशांना एकच; नाव असलेली correction re-read ने impulse होत नाही.
+**🔴3:** candle votes Chart वर cache ⇒ BANKNIFTY read 1.2 s ⇒ 0.47 s; history docstring खर्च दुरुस्त.
+**परिणाम (प्रामाणिक):** BANKNIFTY Daily — Feb→Apr 2026 uncertain (anatomy +0.54 पण structure पर्याय 1 / 3 impulse), Apr→Jun correction high (zigzag, Abhi शी जुळतं),
+Jun→now provisional correction high (zigzag, two-push); uncertain 79 % (CR-Q11). Library: flip 32/32, correction≠impulse 30/32, impulse दिशा 0/32 (CR-Q2).
+Mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.

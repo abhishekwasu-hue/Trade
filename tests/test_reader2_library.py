@@ -13,13 +13,14 @@ from reader2 import trend as RT
 from tests import elliott_fixtures as EF
 
 DIRS = (("down", False), ("up", True))
-_DEG = ("CR-Q2: at dc_k = 8 MR the degree-2 pivots do not separate this correction's first leg from the impulse (flat A / triangle "
-        "swings < 8 MR), so the trend-degree impulse is never confirmed — degree calibration on the dev gallery, not tuned here")
-_FLAT_C = ("CR-Q2: same degree cause — flat A + B merge into the prior degree-2 leg, so the C wave (a real 5-wave motive with "
-           "impulsive candles) is read alone as a trend-capable impulse; needs the degree calibration, not a rule change")
-KNOWN_FAIL = {(nm, "trend", dn): _DEG for nm in ("flat_expanded", "flat_running", "triangle_contracting", "triangle_barrier")
-              for dn in ("down", "up")}
-KNOWN_FAIL.update({("flat_expanded", "impulse", dn): _FLAT_C for dn in ("down", "up")})
+_TREND = ("CR-Q2: the library's degree-2 leg runs from the lead-in top through the lower high into the impulse (the 90-point pullback "
+          "and 30-point lower high are below dc_k × MR at degrees 1 and 2), so its structure is an unparsed 9-wave count; with the "
+          "majority re-read (review 🔴2) the alternatives do not agree on an impulse ⇒ uncertain ⇒ no trend. Degree calibration on "
+          "the dev gallery, not tuned here")
+_C_EXT = ("CR-Q2: the extended c subdivides into 5 visible sub-legs one degree lower, so the whole zigzag reads as a 5-wave impulse "
+          "with impulsive candles — degree mixing, not tuned here")
+KNOWN_FAIL = {(nm, "trend", dn): _TREND for nm in EF.CORRECTIONS for dn in ("down", "up")}
+KNOWN_FAIL.update({("zigzag_c_extended", "impulse", dn): _C_EXT for dn in ("down", "up")})
 
 
 def _params(check):

@@ -171,3 +171,55 @@ def test_reread_alternatives_stay_exactly_one_degree_lower():
     k = RS.DEFAULTS["dc_k"]
     ratio = max(k[i - 1] / k[i] for i in range(1, len(k)))
     assert all(ratio < m <= 1.0 for m in RS.DEFAULTS["reread_k_mult"])
+
+
+def _alts(monkeypatch, s_fams=(), a_cls=()):
+    S2 = {"impulse": "impulse", "diagonal": "impulse", "zigzag": "correction", "flat": "correction", "3-wave": "none"}
+    xs = [(1.0, {"cls": S2[f], "family": f, "n": 5, "vote": 0}) for f in s_fams]
+    xa = [(1.0, {"cls": c, "score": {"impulsive": 0.5, "corrective": -0.5}.get(c, 0.0)}) for c in a_cls]
+    monkeypatch.setattr(RSt, "alternatives", lambda *a, **k: xs)
+    monkeypatch.setattr(RF.RA, "alternatives", lambda *a, **k: xa)
+
+
+def _leg1(ch, sv, av):
+    lg = Leg(1, 1, 40, 60, 1.0, 2.0, 61, ch.kat[61])
+    lg.structure, lg.anatomy = sv, av
+    return lg
+
+
+@pytest.mark.parametrize("fams,label,conf", [
+    (("impulse", "impulse", "zigzag"), "impulse", "medium"),       # 2 / 3 agree ⇒ resolved
+    (("impulse", "zigzag", "3-wave"), "impulse", "low"),            # 1 / 3 ⇒ no majority (no cherry-picking)
+    (("impulse", "zigzag", "flat"), "uncertain", None),             # majority against
+])
+def test_reread_decides_by_majority_impulse_side(monkeypatch, fams, label, conf):
+    df, _ = F.clean_impulse()
+    ch = Chart(df)
+    _alts(monkeypatch, s_fams=fams)
+    lab, c, _ = RF.decide(ch, _leg1(ch, _sv("none", "3-wave"), _av("impulsive", 0.5)), [])
+    assert (lab, c) == (label, conf)
+
+
+@pytest.mark.parametrize("fams,label,conf", [
+    (("zigzag", "flat", "impulse"), "correction", "medium"),       # same rule for the correction side
+    (("zigzag", "impulse", "3-wave"), "correction", "low"),
+    (("impulse", "diagonal", "zigzag"), "uncertain", None),
+])
+def test_reread_decides_by_majority_correction_side(monkeypatch, fams, label, conf):
+    df, _ = F.clean_impulse()
+    ch = Chart(df)
+    _alts(monkeypatch, s_fams=fams)
+    lab, c, _ = RF.decide(ch, _leg1(ch, _sv("none", "3-wave"), _av("corrective", -0.5)), [])
+    assert (lab, c) == (label, conf)
+
+
+@pytest.mark.parametrize("fam", ("zigzag", "flat", "triangle", "combination"))
+def test_named_correction_is_never_reread_into_an_impulse(monkeypatch, fam):
+    df, _ = F.clean_impulse()
+    ch = Chart(df)
+    _alts(monkeypatch, s_fams=("impulse", "impulse", "impulse"), a_cls=("impulsive", "impulsive", "impulsive"))
+    lab, c, why = RF.decide(ch, _leg1(ch, _sv("correction", fam), _av("impulsive", 0.6)), [])
+    assert lab == RF.UNCERTAIN and c is None
+    _alts(monkeypatch, s_fams=("impulse", "impulse", "impulse"), a_cls=("corrective", "corrective", "neutral"))
+    lab, c, _ = RF.decide(ch, _leg1(ch, _sv("correction", fam), _av("impulsive", 0.6)), [])
+    assert (lab, c) == ("correction", "medium"), "the anatomy re-read can still confirm the named correction"
