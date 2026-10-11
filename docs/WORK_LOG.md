@@ -1734,3 +1734,16 @@ repro (एक-दिवसाचे bars) + Q30 grade + pipeline maturity cap; e
   (2) A1 correction चालू असताना जुना `done` मार्ग आधी चालून चुकीचा origin (confirmed H) घेत होता ⇒ pcorr मध्ये `done` बंद, completion
   खरं टोक घेतो. 🟡: correction (A1) ला कमाल B (loosen नाही); repair खर्च / schema repair / skip खर्च ओळ; off-window origin label; बाण
   एकाखाली एक; candidate खुणा; csize key (kind, bar); snapshot test; Q47 / Q48 / Q42 नोंद.
+
+## 2026-10-11 · Elliott correction fixture library (Abhi: TRADE_SESSION_CORRECTION_FIXTURES) — library PR (आधी)
+
+**काय केलं:** `tests/elliott_fixtures.py` — synthetic Daily OHLC, दोन्ही दिशा (UP = आरसा): lead-in → 5-3-5-3-5 DOWN impulse →
+correction (sub-waves सह: zigzag 5-3-5, flat 3-3-5, triangle 3-3-3-3-3, combinations) → continuation (5 waves). 16 corrections
+(zigzag c = a / extended / truncated / double; flat regular / expanded / running; triangle contracting / expanding / barrier / zigzag
+चा b; double / triple three; b impulsive दिसणारा, वेळेने लांब, > 80% खोल) + 6 negative controls (impulse, extended 3rd / 5th, leading /
+ending diagonal) + acceptance (NIFTY (4)→(5), BANKNIFTY sharp fall → a-b-c sharp-fall supply पर्यंत → नवी घसरण).
+`tests/test_elliott_correction_library.py` — trend टिकतो / origin correction च्या शेवटी / family box / controls flip / acceptance.
+`docs/research/elliott_rules.md` — Frost & Prechter नियम / guidelines आणि repo मधला वापर (ratios फक्त fixtures मध्ये).
+
+**Tests:** main engine वर 38 pass, 74 strict xfail (`KNOWN_FAIL`: trend / origin / family / control (ending diagonal) + BANKNIFTY acceptance 2) — Abhi
+चा क्रम: library आधी (अपयश यादीसह), engine fix पुढच्या PR मध्ये.
