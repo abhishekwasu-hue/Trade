@@ -8,7 +8,7 @@
 | Q4 | ② (b) BOS base चा पट्टा | ↑ [low, open] / ↓ [open, high] (base चा उगम-भाग) + किमान रुंदी | पूर्ण candle [low, high] |
 | Q5 | ① नवा trend: नवा HL आणि HH दोन्ही शेवटच्या break नंतरचे हवेत का? | हो (दोन्ही pivots break bar नंतरचे) | फक्त दुसरा (नंतरचा) pivot नवा |
 | Q6 | ② (a) "1H trend-degree swing" | थर 1 swings2 D2 (15M bars वर, θ₂ = 6σ — v2.1 मधली 1H degree) | खऱ्या 1H candles वर स्वतंत्र pivots |
-| Q7 | BANKNIFTY Daily (fetched D 10y) | engine मध्ये फक्त sealed holdout नंतरचे rows (data-policy); जुने W/D फक्त chart (display) | — |
+| Q7 | BANKNIFTY Daily (fetched D 10y) | ~~engine मध्ये फक्त sealed holdout नंतरचे rows~~ **Q33 (Abhi) ने बदललं:** engine पूर्ण history वर (warm-up); NIFTY holdout तारखांचा output नाही | — |
 | Q8 | ① intraday: आजचा trend कधी बदलतो? | आजच्या Daily close नंतरच (शेवटच्या 15M bar ला); दिवसभर कालच्या close ची state | — |
 | Q9 | ② RANGE trade-बाजू | खालचा जवळचा support + वरचा जवळचा resistance (प्रत्येकी 1) | range पट्ट्याच्या कडांवरचेच levels |
 | Q10 | §2 "✅ फक्त ①②③④⑥ पूर्ण" वि. §6.2 "कठोर नियम फक्त H1–H3" | H1–H3 + ⑥ (entry trigger) कठोर; ④ आणि बाकी पुरावे ⇒ conviction; ✅ = conviction A, 🟡 = B; §5.3 range अवस्था = gate | ④ सुद्धा कठोर |
@@ -37,3 +37,40 @@
 | Q32 | Daily legs impulse / corrective — "legs2 / patterns2 classification" | legs2 / patterns2 intraday swings2 (15M degrees) वर चालतात, Daily pivots वर नाहीत ⇒ Daily legs चं वर्गीकरण Q15 fold वरून (leg संपताना trend दिशेचा ⇒ impulse, उलट ⇒ corrective) | legs2 ला Daily frame साठी adapter (वेगळं काम) |
 | Q33 | Daily swing view मध्ये engine पूर्ण history वर (Abhi) वि. v22_check मध्ये BANKNIFTY Daily फक्त Jul 2026 पासून (Q7) — degree वेगळी येते (BANKNIFTY आज: full history ⇒ Q15 UP correction (6); Jul-पासून ⇒ DOWN impulse (5)) | View: full history (Abhi चा नियम); engine run (v22_check) Q7 तसाच — फरक caption / report मध्ये नोंद | engine run पण full history वर (BANKNIFTY ला holdout नाही) |
 | Q34 | Q15 wave क्रमांक (5) नंतरही वाढत राहतो ((6) … (36)) — mechanical count, Elliott degree नाही | तसाच (फक्त दाखवतो); maturity (5)+ ला लागते | (5) नंतर मोठ्या degree ला नवा count / वर्तुळ ((1)…(5)) |
+| Q35 | Q22: "आतले pullbacks" कोणते, आणि impulse leg अजून सरळ (आतला pullback नाही) व मागच्या impulse leg मध्येही नाही ⇒ पहिला उलट swing कोणत्या degree चा? | आतले = एक degree खालचे Daily pivots (N − 1 = 1); संदर्भ = चालू leg चा किंवा मागच्या impulse leg चा सर्वात मोठा (जो मोठा); संदर्भ 0 ⇒ आतलाच (संदर्भ 0 ⇒ correction नाही); तो पुढच्या swings चा संदर्भ बनतो. शब्दशः नियमाने प्रत्येक पहिला bounce correction ठरत होता ⇒ wave count फुगत होता (FLAT fixture (3) मध्ये L10) | पहिला swing नेहमी same-degree |
+| Q36 | Q28 gate (impulse-स्वभावाचा पाय) फक्त NEUTRAL / RANGE मधून trend सुरुवातीला की origin_broken नंतरच्या flip ला पण? | फक्त सुरुवातीला (Abhi: "first leg after the data start"); flip (उलट impulse) ला नाही — origin_broken मध्ये Q23 कमाल B आधीच | flip ला पण gate |
+| Q37 | Q28: C माहीत नसेल (baseline < 10 आधीचे Daily legs — warm-up; किंवा ≤ 2-bar पाय) तर? | फक्त रचना (आतली रचना एक degree खालच्या pivots वरून): (1) किंवा (3) corrective (3-wave) ⇒ trend नाही; नाहीतर परवानगी. C असेल तर (1) किंवा (3) impulse हवा (5-wave impulse किंवा C = IMP) | warm-up मध्ये trend नाहीच |
+| Q38 | Q27 RANGE: कोणते H / L, आणि ② ला कडा कशा? | impulse टोकानंतरचे शेवटचे दोन H आणि दोन L (tol = `range_eq_sigma_d` × σ_D); ② मध्ये support पट्ट्याच्या खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य) | कडेपासून σ अंतर |
+| Q39 | Q33: NIFTY चा protected / origin pivot holdout काळातला असेल तर output मध्ये? | किंमत दाखवतो (engine state), तारीख "before window"; caption मध्ये "since before the shown window" | किंमतही लपवा |
+| Q40 | Q33: पूर्ण Daily history ⇒ जुने (वर्षांपूर्वीचे / NIFTY holdout) Daily pivots 1H levels म्हणून जन्मावेत का? | नाही — 15M window आधी बनलेले Daily pivots level म्हणून जन्मत नाहीत (त्यांचे आधीचे breaks / flips माहीत नाहीत; holdout काळ output मध्ये नाही). Daily trend / protected पूर्ण history वरूनच | जुने Daily pivots सुद्धा levels |
+
+## Abhi उत्तरं Q22–Q34 (batch) — अंमल
+
+| # | निर्णय | अंमल |
+|---|---|---|
+| Q22 | option — रचनात्मक: correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे; वेळ फक्त पुरावा; 0.5 / 0.382 / 0.618 नाही | `corr_degree_rule` = internal_pullback (default); जुना ratio फक्त what-if; Q35 default |
+| Q23 | option — origin close-through, उलट impulse नाही ⇒ कमाल B (नोंद तशीच) | `engine.step1` cap B + नोंद |
+| Q24 | default | बदल नाही |
+| Q25 | default | बदल नाही |
+| Q26 | default | बदल नाही |
+| Q27 | option — origin तुटला + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला | `range_after_trend`; `levels.active(…, band)`; Q38 |
+| Q28 | option — 3-wave (corrective) रचना trend लावत नाही; impulse-स्वभावाचा पाय येईपर्यंत trend नाही | `daily_start_nature_gate` (Q32 adapter); Q36 / Q37 |
+| Q29 | default | बदल नाही |
+| Q30 | default — 26 Aug A ⇒ B चालेल, re-tune नाही | बदल नाही |
+| Q31 | default — holdout sealed; BANKNIFTY 2-year chart पूर्ण history वर; NIFTY chart फक्त holdout नंतर | view: window शेवटच्या sealed row नंतर |
+| Q32 | option — Daily adapter legs2 / patterns2 (आधी) | `decision3/daily_legs.py` (legs2 C + patterns2 5 / 3-wave नियम) |
+| Q33 | option — engine दोन्हींसाठी पूर्ण history (warm-up); NIFTY साठी holdout तारखांचा कोणताही output नाही (test) | `decision3/history.py`; `v22_check` / view / telegram_view / engine rows; Q7 बदलला; Q39 |
+| Q34 | option — mechanical count ला (n) नाही; "L7" फक्त debug; Elliott लेबल फक्त advisory | `DState.wave` = "L5"…; describe / caption / chart वर क्रमांक नाही |
+| #284 | golden अपेक्षा कधीच बदलायची नाही; xfail + issue तसेच; 4 marked दिवसांसारखं पायरीवार निदान; rule / degree चूक असेल तरच वेगळ्या PR ने दुरुस्ती | निदान अहवाल (पुढे) |
+
+
+## Abhi उत्तरं Q35–Q40 — अंमल
+
+| # | निर्णय | अंमल |
+|---|---|---|
+| Q35 | default OK | तसाच |
+| Q36 | option — flip ला सुद्धा Q28: नव्या दिशेचा impulse-स्वभावाचा पाय हवा; फक्त corrective पायांची उलट रचना ⇒ origin_broken (Q23 कमाल B); Q29: त्याच दिवशी flip फक्त impulse पाय असेल तर | `flip()` दोन्ही मार्ग (अ / आ) `nature_ok` ने; नकार ⇒ why मध्ये "(Q36; कमाल B)"; `daily_start_nature_gate` सुरुवात + flip दोन्हीला |
+| Q37 | default OK | तसाच |
+| Q38 | default OK | तसाच |
+| Q39 | default OK | तसाच |
+| Q40 | option (refined) — window आधीचे महत्त्वाचे Daily levels हवेत: फक्त trend-degree swings (impulse origin / टोक, correction टोकं) + Weekly swings, किंमतीपासून ATR-scaled अंतरात; NIFTY holdout swings ⇒ फक्त किंमत (तारीख masked) | `levels._prior_levels`: degree-aware Dow चे protected (origin / correction टोक) + `imp_end` + Weekly pivots, `prior_level_atr_mult` (8) × ATR_D (`prior_level_atr_n` 14) आत; bar 0 ला जन्म, भूमिका तेव्हाच्या किंमतीनुसार; birth "a:D-prior" / "a:W-prior" |

@@ -32,15 +32,15 @@ def test_flat_c_five_waves_down_degree_aware():
     st = DD.fold(d, S)
     C = d["close"].to_numpy()
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
-    assert C[b3] < 84.5 and st[b3].wave == "(3)" and abs(st[b3].protected.price - 93.5) < 1e-9     # (2) high = origin
+    assert C[b3] < 84.5 and st[b3].wave == "L3" and abs(st[b3].protected.price - 93.5) < 1e-9     # (2) high = origin
     low3 = 61.5
     adv = _idx_first(st, lambda x: x.protected is not None and abs(x.protected.price - 93.5) > 1e-9)
     assert all(x.trend == "DOWN" for x in st[b3:])                                             # (3), (4), (5) संपूर्ण DOWN
     assert C[adv] < low3 and all(C[j] >= low3 for j in range(b3, adv))                         # पहिल्या (3)-low-खालच्या close ला
     assert all(abs(x.protected.price - 93.5) < 1e-9 for x in st[b3:adv])                         # minor LH तुटले तरी (2) high
-    assert abs(st[adv].protected.price - 80.5) < 1e-9 and st[adv].wave == "(5)"                 # (4) high, फक्त (3) low खाली close नंतर
+    assert abs(st[adv].protected.price - 80.5) < 1e-9 and st[adv].wave == "L5"                 # (4) high, फक्त (3) low खाली close नंतर
     corr = [x for x in st[b3:adv] if x.phase == "correction"]
-    assert corr and all(x.wave == "(4)" and x.corr_label for x in corr)                         # (4) = correction चालू (label सह)
+    assert corr and all(x.wave == "L4" and x.corr_label for x in corr)                         # (4) = correction चालू (label सह)
     minor_lh = 76.5                                                                             # (3) आतला minor LH
     above = [j for j in range(b3, adv) if C[j] > minor_lh]
     assert above and all(st[j].trend == "DOWN" for j in above)                                 # minor LH वर close ⇒ trend बदलत नाही
@@ -65,7 +65,7 @@ def test_origin_close_break_alone_keeps_down_then_opposite_impulse_flips_up():
     assert C[brk] > 93.5 and st[brk].trend == "DOWN"                                           # फक्त close-break ⇒ trend संपत नाही
     up = _idx_first(st, lambda x: x.trend == "UP")
     assert up > brk and st[up].protected.kind == "L" and abs(st[up].protected.price - 87.5) < 1e-9   # origin = नवा HL
-    assert C[up] > 96.5 and st[up].wave == "(3)"
+    assert C[up] > 96.5 and st[up].wave == "L3"
 
 
 def test_new_low_after_origin_break_resumes_down_with_advanced_protected():
@@ -118,7 +118,8 @@ def test_step1_weekly_against_caps_b_and_mature_or_origin_broken_caps_weak():
     sb = DD.fold(daily_from_path(path), S)
     V = _V_with(sb, [DD.DState(0, sb[0].day, sb[0].known_at, "UNKNOWN")])
     ok, why, s1, ctx = V.step1(0)
-    assert s1.phase == "origin_broken" and ctx["trend"] == "DOWN" and ctx["cap"] is None and ctx["notes"]   # Q23: cap नाही
+    assert s1.phase == "origin_broken" and ctx["trend"] == "DOWN" and ctx["cap"] == "B" and ctx["notes"]    # Q23 (Abhi): कमाल B
+    assert any("कमाल B" in x for x in ctx["notes"])                                             # cap ची नोंद ⇒ "गहाळ" यादीत येते
 
 
 def test_step1_weekly_fallback_when_daily_unreadable():
@@ -148,7 +149,7 @@ def test_b_with_inner_swings_same_behaviour_and_maturity_targets_a_low():
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
     assert st[b3 - 1].trend == "UP"                    # Q28: data (A) पासून ⇒ (B) zigzag = UP impulse; (B) चा HL close ने तुटेपर्यंत UP
     assert all(x.trend == "DOWN" for x in st[b3:]) and abs(st[b3].protected.price - 93.5) < 1e-9   # flip ⇒ सर्वात उंच LH = (2) high
-    assert abs(st[-1].protected.price - 80.5) < 1e-9 and st[-1].wave == "(5)" and st[-1].mature
+    assert abs(st[-1].protected.price - 80.5) < 1e-9 and st[-1].wave == "L5" and st[-1].mature
     assert any(abs(t - 59.5) < 1e-9 for t in st[-1].targets)                    # (A) low — leg चं टोक
     assert not any(abs(t - 67.5) < 1e-9 for t in st[-1].targets)                # (B) आतला minor low नाही
 
@@ -171,14 +172,14 @@ def test_origin_break_with_existing_opposite_structure_flips_on_break_day():
     up = _idx_first(st, lambda x: x.trend == "UP")
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
     assert C[up] > 93.5 and all(C[j] <= 93.5 for j in range(b3, up))            # DOWN नंतरचा पहिलाच origin-वरचा close
-    assert st[up].protected.kind == "L" and abs(st[up].protected.price - 71.5) < 1e-9 and st[up].wave == "(3)"
+    assert st[up].protected.kind == "L" and abs(st[up].protected.price - 71.5) < 1e-9 and st[up].wave == "L3"
 
 
 def test_correction_top_confirmed_after_fast_new_low_still_advances_protected():
     """(4) टोक N bars नंतर confirm होतो; त्याआधीच (3) low खाली close झाला तरी correction हरवत नाही ⇒ protected = (4) high, wave (5)."""
     d = _append_days(daily_from_path(FLAT[:12]), [66, 72, 80, 60, 58, 57, 56])
     st = DD.fold(d, S)
-    assert st[-1].trend == "DOWN" and st[-1].wave == "(5)" and abs(st[-1].protected.price - 80.5) < 1e-9
+    assert st[-1].trend == "DOWN" and st[-1].wave == "L5" and abs(st[-1].protected.price - 80.5) < 1e-9
 
 
 def test_flip_origin_skips_hl_broken_later():

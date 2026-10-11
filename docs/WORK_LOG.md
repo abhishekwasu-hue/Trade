@@ -1678,3 +1678,31 @@ repro (एक-दिवसाचे bars) + Q30 grade + pipeline maturity cap; e
 - Independent review: auditor exception ने send अडत होता (fixed), Q15 origin-break ✕ flip bar वर (fixed), reuse / monthly-cap कारण /
   off caption / report-reply अपयश / label जुळवणी / legs phase / NIFTY gap — fixed + tests (mutation-checked: break marker).
 - Open: Q31 (NIFTY 2y ⇒ holdout), Q32 (legs2 Daily वर नाही), Q33 (history-अवलंबी degree), Q34 (wave (6)+).
+
+## थर v2.2 — Abhi उत्तरं Q22–Q34 (batch 1: Daily structure)
+- **Q32** `decision3/daily_legs.py`: Daily legs साठी legs2 / patterns2 adapter — स्वभाव C (legs2 candle मापं ER / overlap / body / दिशा,
+  आधीच्या ≤ 40 Daily legs शी percentile; legs2 चेच c_hi / c_lo; Daily ला volume नाही ⇒ V नाही) + रचना (आतले pivots गाळून 5 / 3 waves;
+  patterns2 impulse नियम / zigzag / flat). kind = impulse / corrective / unclear.
+- **Q28** trend सुरुवात (NEUTRAL / RANGE मधून) फक्त impulse-स्वभावाच्या पायाने: (1) किंवा (3) impulse हवा; warm-up मध्ये (C नाही) फक्त रचना
+  (corrective ⇒ नाही) — Q36 / Q37. नाकारलं तर `why` मध्ये "(Q28)" कारण. `daily_start_nature_gate` (default on; off = जुना नियम, what-if).
+- **Q22** correction degree रचनात्मक: impulse leg च्या सर्वात मोठ्या आतल्या pullback पलीकडे (किंवा मागच्या impulse leg च्या); प्रमाण नाही.
+  सरळ leg चा पहिला pullback आतलाच (Q35). `corr_degree_rule` = internal_pullback (ratio = what-if).
+- **Q23** origin close-through + उलट impulse नाही ⇒ कमाल B. **Q27** origin तुटल्यावर दोन समान H / L ⇒ RANGE; पट्टा ② ला (support खालच्या
+  अर्ध्यात, resistance वरच्या) — Q38. **Q34** mechanical leg क्रमांक "L5" (debug JSON), describe / caption / chart वर (n) नाही.
+- **Q33** `decision3/history.py`: engine पूर्ण उपलब्ध history वर (BANKNIFTY full; NIFTY holdout candles warm-up म्हणून); NIFTY साठी chart /
+  JSON / caption / engine rows मध्ये holdout तारीख नाही (view window शेवटच्या sealed row नंतर, protected तारीख "before window",
+  elliott labels गाळले; `display_start` Daily / Weekly charts) — test (mutation-checked). Q7 बदलला. Q39 default.
+- Settings: monthly Vision cap default 60 (daily 2.0 सोबत); DB / dashboard value code default वर मात करते (docs).
+- **Independent review (Q-batch) दुरुस्त्या:** 🔴 v22_check / whatif / commit_diag Daily पूर्ण history वर HoldoutError (Daily warm-up ला holdout पहारा नाही, Q33;
+  15M पहारा तसाच); 🔴 Telegram Daily chart शेवटची माहीत candle sealed असताना 30 Jun दाखवत होता (आता chart नाही); 🔴 Q28 रचना कधीच दिसत नव्हती
+  (त्याच degree चे pivots आलटून पालटून ⇒ आतली रचना एक degree खालच्या N − 1 pivots वरून; Q22 आतले pullbacks सुद्धा). 🟡 ≤ 2-bar पाय तटस्थ +
+  baseline बाहेर (legs2); h1 chart ला Q27 पट्टा; RANGE फक्त close पट्ट्यात; जुने Daily pivots levels म्हणून नाहीत (145 ⇒ Q40 पाहा); state_at bisect;
+  what-if variants (ratio / gate off / range off).
+- **Abhi Q35–Q40:** Q36 flip ला सुद्धा impulse-स्वभावाचा पाय (नाहीतर origin_broken, कमाल B); Q40 window आधीचे trend-degree Daily + Weekly swings
+  levels म्हणून (ATR_D × 8 अंतरात; NIFTY holdout ⇒ फक्त किंमत). बाकी defaults OK.
+- **दुसरा independent review दुरुस्त्या:** 🔴 Q40 मध्ये impulse चालू असताना प्रत्येक running low (`imp_end`) level बनत होता ⇒ आता फक्त प्रत्येक impulse
+  leg चं अंतिम टोक + window सुरुवातीचं चालू टोक + चालू correction चं confirmed टोक; 🟡 window च्या आधीचा पण window मध्ये confirm झालेला Daily pivot
+  सामान्य मार्गाने (known_at वरून) level; display_only पहारा column निवडीआधी; state_at cache प्रत्येक list साठी. Test (mutation-checked).
+- **Level count (BANKNIFTY, 15M 13 Jul – 9 Oct):** आधी (Daily फक्त window) 20 levels; full history Daily pivots सगळे ⇒ 145 (पहिल्या review चं माप);
+  Q40 नंतर 22 levels (त्यापैकी 19 window-आधीच्या trend-degree Daily / Weekly swings वरून जन्मले — 59 उमेदवार, overlap merge नंतर 19;
+  window-मधले बहुतेक births त्यांच्यात merge). काही merged पट्टे रुंद (Weekly + Daily, ~1,600 points) — नोंद.

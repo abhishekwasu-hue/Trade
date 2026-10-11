@@ -36,16 +36,17 @@ def load_inputs(a):
         m15["bar_end"] = m15["timestamp"] + pd.Timedelta(minutes=15)
     PE.guard(m15)
     d = None
-    if a.daily:
-        d = pd.read_csv(a.daily)
-        d["timestamp"] = pd.to_datetime(d["timestamp"])
-        if getattr(d["timestamp"].dt, "tz", None) is not None:
-            d["timestamp"] = d["timestamp"].dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
-        d["timestamp"] = d["timestamp"].dt.normalize()
-        from elliott import data_policy as DP
-        d = d[(d["timestamp"] <= m15["timestamp"].max().normalize()) & (d["timestamp"] >= DP.CONTAMINATED_START)]   # sealed holdout पलीकडे फक्त
+    if a.daily:                                                            # Q33: पूर्ण उपलब्ध history (warm-up; degree तिच्यावर)
+        from decision3 import history as HI
+        d = HI.load_daily(a.daily)
+        if "display_only" in d.columns and d["display_only"].fillna(False).astype(bool).any():
+            from elliott import data_policy as DP
+            raise DP.HoldoutError("display_only rows (फक्त chart साठी) Daily engine input मध्ये नाहीत")
+        d = d[["timestamp", "open", "high", "low", "close"]]
+        d = d[d["timestamp"] <= m15["timestamp"].max().normalize()].reset_index(drop=True)
         d["bar_end"] = d["timestamp"] + pd.Timedelta(hours=15, minutes=30)
-        PE.guard(d)
+        # Q33 (Abhi): Daily holdout candles = फक्त warm-up input (holdout evaluation साठी sealed, आधीच्या candles म्हणून मनाई नाही) ⇒
+        # PE.guard चा holdout पहारा Daily ला लावत नाही; output मध्ये holdout तारीख नाही (history.sealed_fn). display_only पहारा वर.
     return m15[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True), None, d
 
 
@@ -54,7 +55,7 @@ def main(argv=None):
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--data", nargs="*")
     ap.add_argument("--m15")
-    ap.add_argument("--daily")
+    ap.add_argument("--daily", nargs="+", help="Daily files (csv / parquet), जुने आधी — पूर्ण history (Q33)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--from", dest="frm")
     ap.add_argument("--to")
@@ -64,7 +65,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     m15, m1, daily = load_inputs(a)
     print(f"{a.symbol}: 15M bars {len(m15)} · engine बांधतो…", flush=True)
-    V = E3.V22(m15, m1, daily)
+    from decision3 import history as HI
+    V = E3.V22(m15, m1, daily, sealed=HI.sealed_fn(a.symbol))
     ts = pd.to_datetime(V.m15["timestamp"])
     lo = pd.Timestamp(a.frm) if a.frm else ts.min()
     hi = pd.Timestamp(a.to) + pd.Timedelta(days=1) if a.to else ts.max() + pd.Timedelta(days=1)
@@ -107,11 +109,13 @@ def main(argv=None):
     with open(os.path.join(a.out_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(fun, f, ensure_ascii=False, indent=1, default=str)
     pngs = []
+    from decision3 import history as HI
+    st0 = HI.display_start(V.daily_df["timestamp"], None, HI.sealed_fn(a.symbol))   # Q33: NIFTY holdout तारखा chart वर नाहीत
     p = os.path.join(a.out_dir, "01_weekly.png")
-    open(p, "wb").write(CH.weekly_png(V.daily_df, a.symbol))
+    open(p, "wb").write(CH.weekly_png(V.daily_df.iloc[st0:], a.symbol))
     pngs.append(p)
     p = os.path.join(a.out_dir, "02_daily.png")
-    open(p, "wb").write(CH.daily_png(V.daily_df, V.daily, a.symbol))
+    open(p, "wb").write(CH.daily_png(V.daily_df, V.daily, a.symbol, start=st0))
     pngs.append(p)
     moments = [pd.Timestamp(x) + (pd.Timedelta(days=1) - pd.Timedelta(minutes=1) if len(x.strip()) == 10 else pd.Timedelta(0))
                for x in a.moments] or [ts.iloc[max(i for i in bars if ts.iloc[i].normalize() == d)] for d in days[-3:]]
@@ -120,9 +124,10 @@ def main(argv=None):
         if not cand:
             continue
         t = cand[-1]
-        trend = DD.state_at(V.daily, V.bar_end[t]).trend
+        st_ = DD.state_at(V.daily, V.bar_end[t])
+        trend = st_.trend
         p = os.path.join(a.out_dir, f"{k + 2:02d}_1h_{str(ts.iloc[t])[:16].replace(' ', '_').replace(':', '')}.png")
-        open(p, "wb").write(CH.h1_png(V.levels, t, trend, a.symbol, liq=LQ.pool_marks(V, t)))
+        open(p, "wb").write(CH.h1_png(V.levels, t, trend, a.symbol, liq=LQ.pool_marks(V, t), band=st_.band if trend == "RANGE" else None))
         pngs.append(p)
     for k, st in enumerate([x for x in fun["setups"]][:a.max_charts], 1):
         t = next(r["bar"] for r in rows if r["ts"] == st["ts"])
@@ -150,7 +155,7 @@ def main(argv=None):
             lv = r.get("level") or {}
             return {"ts": r["ts"], "decision": r["decision"], "mark": r.get("mark"), "step_reached": reached,
                     "trend_used": r.get("trend_used"), "resolution": r.get("trend_resolution"), "daily_phase": r.get("daily_phase"),
-                    "daily_wave": r.get("daily_wave"), "corr_label": r.get("corr_label"), "weekly": r.get("weekly_trend"),
+                    "daily_leg": r.get("daily_leg"), "corr_label": r.get("corr_label"), "weekly": r.get("weekly_trend"),
                     "mature": r.get("mature"), "conviction": r.get("conviction"), "form": r.get("commitment_form"),
                     "rr": rk.get("rr"), "entry": rk.get("entry"), "sl": rk.get("sl"), "target": rk.get("target"),
                     "level": None if not lv else f"{lv.get('role')} {lv.get('lo'):,.0f}–{lv.get('hi'):,.0f}",
@@ -160,7 +165,7 @@ def main(argv=None):
                        "best_bar": brief(best[0] if best else far),
                        "furthest_level": None if e_ is None else {"ts": r_["ts"], "trend_used": r_.get("trend_used"),
                                                                   "resolution": r_.get("trend_resolution"), "daily_phase": r_.get("daily_phase"),
-                                                                  "daily_wave": r_.get("daily_wave"), **e_}}
+                                                                  "daily_leg": r_.get("daily_leg"), **e_}}
     fun["moments"] = marks
     with open(os.path.join(a.out_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(fun, f, ensure_ascii=False, indent=1, default=str)

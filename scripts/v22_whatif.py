@@ -16,6 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from decision3 import engine as E3  # noqa: E402
+from decision3 import history as HI  # noqa: E402
 from scripts import v22_check as VC  # noqa: E402
 
 # (नाव, overrides, कोणता प्रश्न) — फक्त register मध्ये नोंदलेले पर्याय
@@ -25,6 +26,9 @@ VARIANTS = (
     ("daily_pivot_n=1", {"daily_pivot_n": 1}, "Q15 (ii) नाकारला"),
     ("daily_dc", {"daily_swing_method": "dc"}, "Q15 (iii) नाकारला"),
     ("commit_beyond=extreme", {"commit_beyond": "extreme"}, "Q16 आधी"),
+    ("corr_degree=ratio", {"corr_degree_rule": "ratio"}, "Q22 आधी"),
+    ("start_gate=off", {"daily_start_nature_gate": False}, "Q28 आधी"),
+    ("range_after_trend=off", {"range_after_trend": False}, "Q27 आधी"),
 )
 STEPS = ("①", "②", "③", "④", "⑥", "⑦")
 GATES = ("①", "②", "③", "⑥", "⑦")                                        # ④ = पुरावा (gate नाही) ⇒ "कुठे अडलं" मध्ये नाही
@@ -60,7 +64,7 @@ def main(argv=None):
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--data", nargs="*")
     ap.add_argument("--m15")
-    ap.add_argument("--daily")
+    ap.add_argument("--daily", nargs="+")
     ap.add_argument("--from", dest="frm")
     ap.add_argument("--to")
     ap.add_argument("--moments", nargs="*", default=[])
@@ -75,7 +79,7 @@ def main(argv=None):
     bars = [i for i in range(len(ts)) if lo <= ts.iloc[i] < hi]
     out = {"symbol": a.symbol, "window": [str(lo.date()), str((hi - pd.Timedelta(days=1)).date())], "bars": len(bars), "variants": []}
     for name, ov, q in VARIANTS:
-        V = E3.V22(m15, m1, daily, s=ov, res=res)
+        V = E3.V22(m15, m1, daily, s=ov, res=res, sealed=HI.sealed_fn(a.symbol))
         sm = summarize(V.run(bars), a.moments)
         out["variants"].append({"name": name, "question": q, "overrides": ov, **sm})
         print(f"{name:22s} {q:16s} ①{sm['funnel']['①']['ok']:4d} ③{sm['funnel']['③']['ok']:4d} ④{sm['funnel']['④']['ok']:4d} "

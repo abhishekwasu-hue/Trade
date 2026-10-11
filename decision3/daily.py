@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from . import daily_legs as DL
 from . import settings as S3
 
 
@@ -173,9 +174,21 @@ def fold_impulse(d, s=None):
     by_conf = {}
     for p in raw:
         by_conf.setdefault(p.confirm_bar, []).append(p)
+    # एक degree खालचे pivots (N − 1; Q22 आतले pullbacks, Q32 आतली रचना) — confirm क्रमाने; N = 1 / dc ⇒ हेच pivots
+    nlow = int(s["daily_pivot_n"]) - 1
+    low_all = pivots_pivot(d, nlow, kat) if (s["daily_swing_method"] == "pivot" and nlow >= 1) else list(raw)
+    low = []                                                               # bar i पर्यंत confirmed (loop मध्ये वाढतो)
+    low_by = {}
+    for p in low_all:
+        low_by.setdefault(p.confirm_bar, []).append(p)
     eq = float(s["range_eq_sigma_d"])
     msig = float(s["maturity_sigma_d"])
     cfrac = float(s["corr_degree_frac"])
+    rule = s["corr_degree_rule"]
+    if rule not in ("internal_pullback", "ratio"):
+        raise ValueError(f"corr_degree_rule {rule!r} — internal_pullback / ratio पैकी")
+    gate, range_after = bool(s["daily_start_nature_gate"]), bool(s["range_after_trend"])
+    A2, mcache = DL.arrays(d), {}
 
     def piv(kind, bar):
         price = float(H[bar] if kind == "H" else L[bar])
@@ -188,6 +201,22 @@ def fold_impulse(d, s=None):
     trend, dirn, band, brk = "NEUTRAL", 0, None, -1
     origin = imp_end = w1_start = None
     phase, k_imp, w1_len, ref_corr, broken_at, leg_start = None, 0, None, None, None, None
+    prev_int = 0.0                                                         # Q22: मागच्या impulse leg चा सर्वात मोठा आतला pullback
+
+    def int_pull(dn, a, b, i):
+        """Q22: (a, b) मधल्या impulse (दिशा dn) चा सर्वात मोठा आतला pullback (किंमत) — एक degree खालचे confirmed (≤ i) उलट pivots,
+        प्रत्येक त्याच्या आधीच्या (a पासून) impulse-टोकापासून मोजलेला. नसेल ⇒ 0."""
+        ok, out = ("H" if dn < 0 else "L"), 0.0
+        for q in low:
+            if q.kind == ok and a < q.bar < b and q.confirm_bar <= i:
+                j = extreme(dn, a, q.bar)
+                out = max(out, (q.price - float(L[j] if dn < 0 else H[j])) * -dn)
+        return out
+
+    def degree_ref(p_bar, i):
+        """Q22 संदर्भ: चालू impulse leg (leg_start ⇒ p आधीचं टोक) चा सर्वात मोठा आतला pullback, किंवा मागच्या impulse leg चा (त्याच
+        degree चे आतले पाय खालच्या degree चे) — जो मोठा. दोन्ही 0 (सरळ legs) ⇒ 0 ⇒ हा pullback आतलाच धरतो आणि पुढच्यांचा संदर्भ बनतो."""
+        return max(int_pull(dirn, leg_start, extreme(dirn, leg_start, p_bar), i), prev_int)
 
     def pre_swing(dirn, w1s):
         """(1) सुरू होण्याआधीचा मोठा उलट swing: DOWN ⇒ w1_start (H) आधीचा, त्याहून उंच शेवटचा confirmed H नंतरचं सर्वात खालचं low
@@ -212,25 +241,54 @@ def fold_impulse(d, s=None):
         """चालू impulse leg (leg_start पासून) मधले same-degree उलट swings (confirmed ≤ i): आकार = p − p-आधीचं टोक ≥ cfrac × संदर्भ.
         p-आधीच्या टोकाशी मोजतो ⇒ pivot उशिरा (N bars) confirm झाला आणि त्याआधीच नवा LL आला तरी correction हरवत नाही (review 🔴1)."""
         ok = "H" if dirn < 0 else "L"
-        return [p for p in seq if p.kind == ok and p.bar > leg_start and p.confirm_bar <= i
-                and (p.price - pre_ext(p)) * -dirn >= cfrac * ref_corr]
+        cand = [p for p in seq if p.kind == ok and p.bar > leg_start and p.confirm_bar <= i]
+        if rule == "ratio":
+            return [p for p in cand if (p.price - pre_ext(p)) * -dirn >= cfrac * ref_corr]
+        out = []
+        for p in cand:                                                     # Q22: रचनात्मक, प्रमाण नाही
+            ref = degree_ref(p.bar, i)
+            if ref > 0 and (p.price - pre_ext(p)) * -dirn > ref:            # आतला संदर्भच नाही ⇒ पहिला pullback आतलाच (Q35 default)
+                out.append(p)
+        return out
 
     def beyond_after(p, i):
         """p नंतर (≤ i) कोणत्या Daily close ने p-आधीचं टोक impulse-दिशेने ओलांडलं?"""
         seg = C[p.bar + 1:i + 1]
         return bool(len(seg)) and bool(((seg - pre_ext(p)) * dirn > 0).any())
 
-    def start(nd, org, w1s, w1l, ref, i, why_):
-        nonlocal trend, dirn, band, origin, imp_end, w1_start, phase, k_imp, w1_len, ref_corr, broken_at, leg_start
+    def start(nd, org, w1s, w1l, ref, i, why_, w1e_bar=None):
+        nonlocal trend, dirn, band, origin, imp_end, w1_start, phase, k_imp, w1_len, ref_corr, broken_at, leg_start, prev_int
         trend, dirn, band = ("UP" if nd > 0 else "DOWN"), nd, None
         origin, w1_start, w1_len, ref_corr, k_imp, phase, broken_at = org, w1s, w1l, max(ref, 1e-9), 2, "impulse", None
         leg_start = org.bar
+        prev_int = int_pull(nd, w1s.bar, w1e_bar, i) if (w1s is not None and w1e_bar is not None) else 0.0   # (1) चा आतला pullback
         imp_end = piv("H" if nd > 0 else "L", extreme(nd, org.bar, i))
         return why_
 
+    def nature_ok(nd, w1s, w1e, org, i, tag="trend नाही (Q28)"):
+        """Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने — (1) = w1s ⇒ w1e किंवा (3) = org ⇒ आजचं टोक impulse (Q32 adapter:
+        5-wave impulse रचना किंवा legs2 C = IMP). C चा baseline नसेल (warm-up) तर फक्त रचना: corrective (3-wave) ⇒ नाही.
+        रिटर्न (ok, why-जोड)."""
+        if not gate:
+            return True, ""
+        e = extreme(nd, org.bar, i)
+        c1 = DL.classify(A2, seq, w1s.bar, w1s.price, w1e.bar, w1e.price, i, cache=mcache, inner_seq=low)
+        c3 = DL.classify(A2, seq, org.bar, org.price, e, float(H[e] if nd > 0 else L[e]), i, cache=mcache, inner_seq=low)
+        kinds = (c1["kind"], c3["kind"])
+        if "impulse" in kinds:
+            return True, f" ((1) {DL.tag(c1)}, (3) {DL.tag(c3)})"
+        if c1["C"] is None and c3["C"] is None and "corrective" not in kinds:   # C माहीत नाही (warm-up / ≤ 2-bar पाय) ⇒ फक्त रचना
+            return True, " (C नाही; रचना corrective नाही)"
+        return False, (f"{'UP' if nd > 0 else 'DOWN'} रचना पण impulse-स्वभावाचा पाय नाही ((1) {DL.tag(c1)}, (3) {DL.tag(c3)}) "
+                       f"⇒ {tag}")
+
     def flip(i):
-        """origin_broken नंतर उलट impulse? (break च्या दिवशीही तपासतो.) रिटर्न why ("" ⇒ नाही)."""
+        """origin_broken नंतर उलट impulse? (break च्या दिवशीही तपासतो.) Q36 (Abhi): उलट रचनेत नव्या दिशेचा impulse-स्वभावाचा पाय हवा
+        (Q28 नियम flip ला सुद्धा; Q29: त्याच दिवशी flip फक्त तेव्हाच) — फक्त corrective पायांची उलट रचना ⇒ flip नाही, origin_broken
+        (Q23 कमाल B). रिटर्न why ("" ⇒ काही नाही; flip नाही पण नकार ⇒ कारण)."""
         why, nd, ek = "", -dirn, ("L" if dirn < 0 else "H")
+        tag = "flip नाही — origin तुटला, उलट impulse नाही (Q36; कमाल B)"
+        blocked = ""
         # (अ) मोठी degree: जुन्या impulse टोकापासूनच उलट रचना (LH + मधल्या L खाली close / HL आरसा) आधीच झाली असेल ⇒ लगेच flip;
         #     origin = त्या टोकानंतरचा सर्वात उंच LH (UP ⇒ सर्वात खालचा HL) — minor post-break swing नाही (degree-स्वतंत्र).
         okind = "H" if nd < 0 else "L"
@@ -246,25 +304,35 @@ def fold_impulse(d, s=None):
                 continue
             lm = min(mids, key=lambda p: p.price * -nd)               # (1) चं टोक
             if (C[i] - lm.price) * nd > 0:
+                ok_n, why_n = nature_ok(nd, imp_end, lm, h, i, tag)
+                if not ok_n:
+                    blocked = blocked or why_n
+                    continue
                 why = start(nd, h, imp_end, abs(imp_end.price - lm.price), abs(h.price - lm.price), i,
-                            f"origin तुटला + उलट रचना ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {h.price:,.2f})")
+                            f"origin तुटला + उलट रचना ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {h.price:,.2f})", lm.bar)
                 flipped = True
                 break
         post = [] if flipped else [p for p in seq if p.kind == ek and p.bar > broken_at and p.confirm_bar <= i
                                    and (p.price - imp_end.price) * -dirn > 0]   # (आ) break नंतरचा खरा HL / LH (जुन्या टोकाच्या आत; 🟡3)
         if post:
             hl = post[-1]
-            ext = float(H[broken_at:hl.bar + 1].max() if dirn < 0 else L[broken_at:hl.bar + 1].min())
+            ext_bar = broken_at + int(np.argmax(H[broken_at:hl.bar + 1]) if dirn < 0 else np.argmin(L[broken_at:hl.bar + 1]))
+            ext = float(H[ext_bar] if dirn < 0 else L[ext_bar])
             if (C[i] - ext) * -dirn > 0:
                 nd = -dirn                                             # (1) = जुन्या impulse टोकापासून break नंतरच्या टोकापर्यंत
-                why = start(nd, hl, imp_end, abs(ext - imp_end.price), abs(ext - hl.price), i,
-                            f"origin तुटल्यानंतर उलट impulse ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {hl.price:,.2f})")
-        return why
+                ok_n, why_n = nature_ok(nd, imp_end, piv("H" if dirn < 0 else "L", ext_bar), hl, i, tag)
+                if ok_n:
+                    why = start(nd, hl, imp_end, abs(ext - imp_end.price), abs(ext - hl.price), i,
+                                f"origin तुटल्यानंतर उलट impulse ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {hl.price:,.2f})", ext_bar)
+                else:
+                    blocked = blocked or why_n
+        return why or blocked
 
     for i in range(len(d)):
         why = ""
         for p in by_conf.get(i, []):
             _add(seq, p)
+        low.extend(low_by.get(i, []))
         tol = eq * sig[i] if np.isfinite(sig[i]) else 0.0
         ek = "L" if dirn < 0 else "H"
         if dirn != 0 and phase == "origin_broken":
@@ -276,8 +344,9 @@ def fold_impulse(d, s=None):
             if done:                                                       # correction नंतर close त्या आधीच्या टोकापलीकडे ⇒ नवा impulse
                 top = max(done, key=lambda p: p.price * -dirn)             # पूर्ण correction चं टोक ((4) high; आतले b-swings नाहीत)
                 ref_corr = abs(top.price - pre_ext(top))
+                prev_int = int_pull(dirn, leg_start, extreme(dirn, leg_start, top.bar), i)   # संपलेल्या impulse leg चा आतला pullback
                 origin, phase, k_imp, leg_start = top, "impulse", k_imp + 1, top.bar
-                why = f"नवा impulse ({2 * k_imp - 1}) ⇒ protected पुढे = correction टोक {origin.price:,.2f}"
+                why = f"नवा impulse (L{2 * k_imp - 1}) ⇒ protected पुढे = correction टोक {origin.price:,.2f}"
                 corr = corrections(i)
             imp_end = piv(ek, extreme(dirn, leg_start, i))                 # leg चं टोक (wick सह; origin_broken मध्येही — 🟡3 / 🟡4)
             if phase != "origin_broken":
@@ -285,7 +354,16 @@ def fold_impulse(d, s=None):
                 if (C[i] - origin.price) * dirn < 0:
                     phase, broken_at = "origin_broken", i
                     why = f"protected origin {origin.price:,.2f} Daily close ने तुटला — उलट impulse ची वाट (trend संपलेला नाही)"
-                    why = flip(i) or why                                   # त्याच दिवशी उलट रचना पूर्ण ⇒ लगेच flip
+                    w = flip(i)                                            # त्याच दिवशी उलट रचना (impulse पायासह) पूर्ण ⇒ लगेच flip
+                    why = w if phase == "impulse" else (why + (f" · {w}" if w else ""))
+        if range_after and dirn != 0 and phase == "origin_broken":           # Q27: origin तुटला + उलट impulse नाही + दोन समान H / L
+            hs = [p for p in seq if p.kind == "H" and p.bar > imp_end.bar and p.confirm_bar <= i]
+            ls = [p for p in seq if p.kind == "L" and p.bar > imp_end.bar and p.confirm_bar <= i]
+            if len(hs) >= 2 and len(ls) >= 2 and abs(hs[-1].price - hs[-2].price) <= tol and abs(ls[-1].price - ls[-2].price) <= tol:
+                bd = (min(ls[-1].price, ls[-2].price), max(hs[-1].price, hs[-2].price))
+                if bd[0] <= C[i] <= bd[1]:                                 # close पट्ट्यात असेल तेव्हाच (नाहीतर लगेच तुटलेली range)
+                    trend, dirn, phase, brk, band = "RANGE", 0, None, broken_at, bd
+                    why = "origin तुटला + दोन H आणि दोन L जवळपास समान ⇒ RANGE (कडांवर; Q27)"
         if trend in ("NEUTRAL", "RANGE"):
             Hs = [p for p in seq if p.kind == "H" and p.confirm_bar <= i]
             Ls = [p for p in seq if p.kind == "L" and p.confirm_bar <= i]
@@ -294,13 +372,23 @@ def fold_impulse(d, s=None):
                 mid = [p for p in Ls if h1.bar < p.bar < h2.bar]
                 if mid and h2.bar > brk and h2.price < h1.price - tol and C[i] < mid[-1].price:
                     lm = mid[-1]
-                    why = start(-1, h2, h1, h1.price - lm.price, h2.price - lm.price, i, "LH + close मागच्या low खाली ⇒ DOWN impulse (3)")
+                    ok_n, why_n = nature_ok(-1, h1, lm, h2, i)
+                    if ok_n:
+                        why = start(-1, h2, h1, h1.price - lm.price, h2.price - lm.price, i,
+                                    "LH + close मागच्या low खाली ⇒ DOWN impulse" + why_n, lm.bar)
+                    else:
+                        why = why_n
             if trend in ("NEUTRAL", "RANGE") and len(Ls) >= 2:             # UP आरसा
                 l1, l2 = Ls[-2], Ls[-1]
                 mid = [p for p in Hs if l1.bar < p.bar < l2.bar]
                 if mid and l2.bar > brk and l2.price > l1.price + tol and C[i] > mid[-1].price:
                     hm = mid[-1]
-                    why = start(1, l2, l1, hm.price - l1.price, hm.price - l2.price, i, "HL + close मागच्या high वर ⇒ UP impulse (3)")
+                    ok_n, why_n = nature_ok(1, l1, hm, l2, i)
+                    if ok_n:
+                        why = start(1, l2, l1, hm.price - l1.price, hm.price - l2.price, i,
+                                    "HL + close मागच्या high वर ⇒ UP impulse" + why_n, hm.bar)
+                    else:
+                        why = why_n
             if trend == "NEUTRAL":
                 h1, h2 = _last2(seq, "H")
                 l1, l2 = _last2(seq, "L")
@@ -312,11 +400,13 @@ def fold_impulse(d, s=None):
         wave = corr_label = None
         mature, targets = False, ()
         if dirn != 0 and phase:
-            wave = f"({2 * k_imp - 1})" if phase == "impulse" else f"({2 * k_imp})"
+            wave = f"L{2 * k_imp - 1}" if phase == "impulse" else f"L{2 * k_imp}"   # Q34: mechanical leg index (debug); Elliott लेबल फक्त advisory
             if phase in ("correction", "origin_broken"):
                 prev_px, prev_k, n_after = imp_end.price, imp_end.kind, 0   # फक्त same-degree, H / L आलटून पालटून पाय
+                lref = cfrac * ref_corr if rule == "ratio" else max(int_pull(dirn, leg_start, imp_end.bar, i), prev_int)
                 for p in seq:
-                    if p.bar > imp_end.bar and p.confirm_bar <= i and p.kind != prev_k and abs(p.price - prev_px) >= cfrac * ref_corr:
+                    if p.bar > imp_end.bar and p.confirm_bar <= i and p.kind != prev_k and (
+                            abs(p.price - prev_px) >= lref if rule == "ratio" else (lref > 0 and abs(p.price - prev_px) > lref)):
                         prev_px, prev_k, n_after = p.price, p.kind, n_after + 1
                 corr_label = "abcde"[min(n_after, 4)]                      # 1 swing ⇒ a पूर्ण, b चालू
             if k_imp >= 3 and phase == "impulse":
@@ -409,15 +499,16 @@ def weekly_from_daily(d):
 
 
 def describe(st):
-    """① वाचन (मराठी, caption साठी): टप्पा / wave / correction पाय / maturity."""
+    """① वाचन (मराठी, caption साठी): टप्पा / correction पाय / maturity. Q34: mechanical leg क्रमांक (L5 …) फक्त debug (JSON) —
+    Elliott लेबल (1)…(5) / (A)(B)(C) फक्त advisory elliott count मधून."""
     if st.phase is None:
         return ""
     if st.phase == "impulse":
-        txt = f"impulse {st.wave}"
+        txt = "impulse"
     elif st.phase == "correction":
-        txt = f"correction {st.wave} चालू (पाय {st.corr_label})"
+        txt = f"correction चालू (पाय {st.corr_label})"
     else:
-        txt = f"origin close ने तुटला — उलट impulse ची वाट ({st.wave} {st.corr_label or ''})".strip()
+        txt = f"origin close ने तुटला — उलट impulse ची वाट (correction पाय {st.corr_label or '—'}; कमाल B)"
     if st.protected is not None:
         txt += f" · protected origin {st.protected.price:,.0f}"
     if st.mature:
@@ -427,14 +518,19 @@ def describe(st):
 
 def state_at(states, ts):
     """ts ला माहीत असलेली (known_at ≤ ts) शेवटची Daily state; नसेल ⇒ UNKNOWN."""
+    import bisect
     ts = pd.Timestamp(ts)
-    best = None
-    for x in states:
-        if x.known_at <= ts:
-            best = x
-        else:
-            break
-    return best if best is not None else DState(-1, None, None, "UNKNOWN", why="Daily candle अजून नाही")
+    hit = _KAT_CACHE.get(id(states))
+    if hit is None or hit[0] is not states or len(hit[1]) != len(states):   # list चा reference ठेवतो ⇒ id reuse नाही
+        if len(_KAT_CACHE) > 16:
+            _KAT_CACHE.clear()
+        hit = _KAT_CACHE[id(states)] = (states, [x.known_at for x in states])   # known_at क्रमाने ⇒ bisect
+    kats = hit[1]
+    j = bisect.bisect_right(kats, ts) - 1
+    return states[j] if j >= 0 else DState(-1, None, None, "UNKNOWN", why="Daily candle अजून नाही")
+
+
+_KAT_CACHE = {}
 
 
 def trade_side(trend):
