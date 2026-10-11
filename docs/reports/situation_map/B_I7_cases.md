@@ -29,7 +29,7 @@
   - 14:45: नाही · area वर pause नाही (indecision bars 0 < 1) — थेट entry नाही · S None  · gray None · legs None · S3 None · count None · पालक ms -1 / count None
   - 15:00: नाही · commitment area पासून दूर (area ला लागलेला नाही) — chase नाही · S None  · gray None · legs None · S3 None · count None · पालक ms -1 / count None
 
-### 2026-09-28 14:15 — S1 bear (flag 11 candles ⇒ G8 नाही) · आता: **FAIL (code signal नाही)**
+### 2026-09-28 14:15 — S1 bear (flag 11 candles ⇒ G8 नाही; *नंतर Abhi #284: 11 ⇒ G8*) · आता: **FAIL (code signal नाही)**
 - थर = **वाचन (area, P5)**: नकाशाचा S1 area = तुटलेला swing 23,021 (zones मध्ये PDL / PWL flip 23,014–23,028 म्हणून आहे, पण 6.9 MR दूर) आणि displacement base 22,856–22,912 — हा base **zones यादीत नाही** (tool c ने तयार केला नाही). Pause 13:15–14:00 (22,818–22,848) च्या जवळचा फक्त SWH-1523 liquidity (22,853–22,858, 0.99 MR) — commitment 14:15 त्याला लागलेली नाही ⇒ 'दूर'.
 - पुढची पायरी (I6.3): 'displacement base' tool c चे IS look-alike संच; constants बदल नाही. Abhi ✔ (A3 MAP CHECK) बाकी.
 - bar-निहाय (शेवटचे):

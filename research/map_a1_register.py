@@ -58,7 +58,7 @@ CLASS = {
     "g10_range_bars": ("व्याख्या", "G10 StructureTracker lookback = zones.zone_lookback_bars (400, ~16 sessions) — नवा आकडा नाही"),
     "opening_block_min": ("Abhi", "opening window (A3 / KB K14: पहिली candle नाही)"),
     "g8_retrace_max": ("Abhi", "KB H G8: उथळ 23.6–38.2%"),
-    "g8_max_bars": ("Abhi", "KB H G8: 2–6 candles"),
+    "g8_max_bars": ("Abhi", "KB H G8: 2–6 candles; Abhi #284 ⇒ 11 (28 Sep 11-candle flag)"),
     "g8_retrace_tol": ("अंदाज", "G8 retrace सहनशीलता"),
     "w3_proj": ("research", "Elliott guideline 1.618 (K7: Fibonacci ला सांख्यिकीय आधार नाही ⇒ फक्त माहिती)"),
     "w5_proj_w1": ("research", "Elliott guideline wave 5 = wave 1"),

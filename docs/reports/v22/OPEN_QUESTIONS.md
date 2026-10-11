@@ -43,6 +43,7 @@
 | Q38 | Q27 RANGE: कोणते H / L, आणि ② ला कडा कशा? | impulse टोकानंतरचे शेवटचे दोन H आणि दोन L (tol = `range_eq_sigma_d` × σ_D); ② मध्ये support पट्ट्याच्या खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य) | कडेपासून σ अंतर |
 | Q39 | Q33: NIFTY चा protected / origin pivot holdout काळातला असेल तर output मध्ये? | किंमत दाखवतो (engine state), तारीख "before window"; caption मध्ये "since before the shown window" | किंमतही लपवा |
 | Q40 | Q33: पूर्ण Daily history ⇒ जुने (वर्षांपूर्वीचे / NIFTY holdout) Daily pivots 1H levels म्हणून जन्मावेत का? | नाही — 15M window आधी बनलेले Daily pivots level म्हणून जन्मत नाहीत (त्यांचे आधीचे breaks / flips माहीत नाहीत; holdout काळ output मध्ये नाही). Daily trend / protected पूर्ण history वरूनच | जुने Daily pivots सुद्धा levels |
+| Q41 | #284 (28 Sep 14:15 bear): 11-candle G8 flag आता चालतो (`g8_max_bars` 11), पण अजून Gray-2 IMPULSE_NA — flag चा low (impulse टोक) trade-degree confirmed pivot नाही. "Flag ने impulse टोक confirm केलं" असा नियम लावला तर 28 Sep जुळतं, पण 16 Feb 2018 13:30 (Abhi: none) ला G8 signal येतो. दोन्हींत फरक कसा करायचा? | बदल नाही — golden 28 Sep xfail तसाच; 16 Feb 2018 "none" जपला | (अ) flag ने टोक confirm + अजून एक अट (उदा. flag ची खोली / impulse आकार — Abhi सांगतील ती); (आ) 16 Feb 2018 13:30 चं उत्तर बदलणं (Abhi चं) |
 
 ## Abhi उत्तरं Q22–Q34 (batch) — अंमल
 

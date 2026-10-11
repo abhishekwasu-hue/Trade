@@ -37,7 +37,7 @@
 | `pause_min_bars` | 1 | simple_core/settings.py:23 | engine.py, settings.py | Simple Core: area वर किमान एक pause (थेट entry नाही) |
 | `opening_block_min` | 15 | simple_core/settings.py:31 | engine.py, settings.py | opening window (A3 / KB K14: पहिली candle नाही) |
 | `g8_retrace_max` | 0.382 | simple_core/settings.py:34 | waves.py, settings.py | KB H G8: उथळ 23.6–38.2% |
-| `g8_max_bars` | 6 | simple_core/settings.py:36 | waves.py, flags.py, settings.py | KB H G8: 2–6 candles |
+| `g8_max_bars` | 11 | simple_core/settings.py:36 | waves.py, flags.py, settings.py | KB H G8: 2–6 candles; Abhi #284 ⇒ 11 (28 Sep 11-candle flag) |
 | `flag_min_bars` | 2 | simple_core/settings.py:43 | flags.py, settings.py | नकाशा S5 / KB H G8: 2–6 candles (टप्पा B: 4 → 2; 1 candle = flag नाही) |
 
 ## config (TF / स्रोत निवड) (16)
