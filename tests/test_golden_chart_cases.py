@@ -140,7 +140,7 @@ def _day_params():
     out = []
     for c in DAY_CASES:
         ki = json.load(open(c, encoding="utf-8")).get("known_issue")
-        marks = [pytest.mark.xfail(reason=ki, strict=False)] if ki else []
+        marks = [pytest.mark.xfail(reason=ki, strict=False, raises=AssertionError)] if ki else []
         out.append(pytest.param(c, id=os.path.basename(c)[:-5], marks=marks))
     return out
 
