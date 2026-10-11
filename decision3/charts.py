@@ -482,6 +482,20 @@ def daily_swings_fig(v, title, full=False):
             dropped.append(c["label"])
         else:
             labels.append({"kind": "correction", "text": c["label"], "artist": t})
+    for pb in sp["pullbacks"]:                                             # §5.2: एकच "pullback" खूण (full ⇒ सगळ्या)
+        up = pb["kind"] == "H"
+        px, py = x(pb["bar"]), pb["price"]
+        tries = [(px, py, ha, "bottom" if up else "top", (dx, (6 + 10 * k) * (1 if up else -1))) for k in range(10)
+                 for ha, dx in (("center", 0), ("right", -4), ("left", 4))]   # leader रेषा ⇒ लांब offset चालतो
+        txt = pb.get("text") or "pullback"
+        t = _place(ax, lay, txt, tries, 7, C["pullback"])                 # मजकूरच स्वतःचं स्पष्टीकरण ⇒ legend नाही
+        if t is None:
+            dropped.append(txt)
+        else:
+            labels.append({"kind": "correction", "text": txt, "artist": t, "bar": pb["bar"], "price": pb["price"]})
+            bb = t.get_window_extent(lay.r)                                # label सरकलेला ⇒ टोकापासून label पर्यंत लहान leader रेषा
+            ex, ey = ax.transData.inverted().transform([(bb.x0 + bb.x1) / 2, bb.y0 if up else bb.y1])
+            ax.plot([px, ex], [py, ey], color=C["pullback"], lw=0.6, alpha=0.8)
     for lg in sp["impulses"]:                                              # चालू leg: "decline in progress — impulse not verified"
         if lg.get("state") != "in progress":
             continue
@@ -498,17 +512,6 @@ def daily_swings_fig(v, title, full=False):
             dropped.append(txt)
         else:
             labels.append({"kind": "leg", "text": txt, "artist": t})
-    for pb in sp["pullbacks"]:                                             # §5.2: एकच "pullback" खूण (full ⇒ सगळ्या)
-        up = pb["kind"] == "H"
-        px, py = x(pb["bar"]), pb["price"]
-        tries = [(px, py, "center", "bottom" if up else "top", (0, (6 + 10 * k) * (1 if up else -1))) for k in range(4)]
-        tries += [(px, py, ha, "bottom" if up else "top", (dx, (6 + 10 * k) * (1 if up else -1))) for k in range(4)
-                  for ha, dx in (("left", 4), ("right", -4))]
-        t = _place(ax, lay, "pullback", tries, 7, C["pullback"])          # मजकूरच स्वतःचं स्पष्टीकरण ⇒ legend नाही
-        if t is None:
-            dropped.append("pullback")
-        else:
-            labels.append({"kind": "correction", "text": "pullback", "artist": t})
     for row, (name, runs_) in enumerate((("degree-aware", sp["strip"]["degree-aware"]), ("Dow minor", sp["strip"]["Dow minor"]))):
         for a, b, st in runs_:
             if b < i0:

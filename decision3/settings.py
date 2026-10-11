@@ -108,7 +108,7 @@ REGISTER = {
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
     "chart_atr_n": (14, "—", "व्याख्या", "§5.7 caption: ATR_D कालावधी (सामान्य 14)"),
-    "chart_leg_path_points": (15, "—", "अंदाज (फक्त chart)", "Abhi review: लांब leg 207-wave tracing नको — leg चे स्वतःचे मोठे swings (≤ ~15 बिंदू)"),
+    "chart_leg_path_points": (15, "≥ 6 (code मध्ये किमान 6)", "अंदाज (फक्त chart)", "Abhi review: लांब leg 207-wave tracing नको — leg चे स्वतःचे मोठे swings (≤ ~15 बिंदू)"),
     "k_reset_sigma": (0.25, "—", "Abhi नियम", "spec ③ < 0.25 σ_1H ⇒ reset नाही"),
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
     "power_a_rule": ("relative", "relative / strict3", "Abhi नियम", "level bots spec: (a) relative contraction — 'नेमके 3 सलग लहान' ही आपली यांत्रिक आवृत्ती होती"),

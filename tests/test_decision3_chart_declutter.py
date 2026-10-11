@@ -277,11 +277,22 @@ def test_nearest_band_by_edge_not_centre_and_exclusions():
     assert dem["price"] == 7.9 and dem["dist_atr"] == 0.0 and sup["price"] == 12.0 and sup["dist_atr"] == pytest.approx(1.3)
 
 
-def test_caption_line1_and_line2_use_one_distance_rule():
-    prot = _band("protected", 11.0, 10.4, 11.6, rank=1, label="protected origin")
-    v = _tiny_v([prot], protected={"kind": "H", "price": 11.0, "bar": 1})
-    sup, _ = DS.nearest_bands(v)
-    assert DS.protected_risk(v) == sup["dist_atr"] == pytest.approx(0.8)   # (10.4 − 8) / 3.0
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_caption_risk_to_protected_price_line2_to_band_edge(mirror):
+    """Line 1 risk = close → protected PRICE (never the merged sharp-zone edge, which would understate it); line 2 = band edge."""
+    if not mirror:                                                         # protected 11 above close 8, merged zone 9.0–12.0
+        prot = _band("protected", 11.0, 9.0, 12.0, rank=1, label="protected origin · sharp-fall supply")
+        pk = "H"
+    else:                                                                  # protected 5 below close 8, merged zone 4.0–7.0
+        prot = _band("protected", 5.0, 4.0, 7.0, rank=1, label="protected origin · sharp-rise demand")
+        pk = "L"
+    prot["sharp"] = "sharp-rise demand" if mirror else "sharp-fall supply"
+    prot["name"] = DS.band_name(prot)
+    v = _tiny_v([prot], protected={"kind": pk, "price": prot["price"], "bar": 1})
+    sup, dem = DS.nearest_bands(v)
+    near = dem if mirror else sup
+    assert DS.protected_risk(v) == pytest.approx(1.0)                      # |8 − 11| / 3 (or |8 − 5| / 3) — the price itself
+    assert near["dist_atr"] == pytest.approx(0.3)                          # 1.0 / 3 to the zone edge
 
 
 @pytest.mark.parametrize("cap_sessions, kept", [(200, True), (199, False)])
@@ -469,6 +480,36 @@ def test_a1_correction_splits_trend_degree_impulses():
              {"state": "done", "start_bar": 20, "end_bar": 30, "broke_origin": True}]
     imp = DS.trend_impulses(legs, corrs, [], [], 100)
     assert [(x["from"], x["to"], x["sub_legs"]) for x in imp] == [(0, 20, 2), (30, 40, 1)]
+
+
+def test_coarse_path_never_raises_when_reduction_stops_early():
+    p = [100.0]
+    p += [100.0 + 3 * k if k % 2 else 100.0 - 3 * k for k in range(1, 41)]   # expanding swings: no inner pair can be removed
+    p.append(p[-2] + 500.0)
+    pts = list(enumerate(p))
+    for mp in (15, 6, 2):
+        out = DS.coarse_path(pts, mp)
+        assert out[0] == pts[0] and out[-1] == pts[-1] and all(q in pts for q in out)
+    ok = [(i, x) for i, x in enumerate([100.0, 130.0, 115.0, 170.0, 150.0, 200.0, 180.0, 230.0, 210.0, 260.0])]
+    assert len(DS.coarse_path(ok, 2)) <= DS.MIN_PATH_POINTS                 # max_points below the floor ⇒ floor (6)
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_pullback_label_anchored_to_current_bounce_with_leader(mirror):
+    v = _fixture(mirror)
+    q = v["q15"]
+    assert q["counter"] == "pullback"
+    cur = q["objects"]["legs"][-1]
+    d = v["frame"]
+    seg = d["high"].to_numpy(float)[cur["to"] + 1:] if cur["dir"] < 0 else d["low"].to_numpy(float)[cur["to"] + 1:]
+    want = float(seg.max() if cur["dir"] < 0 else seg.min())
+    pb = DS.view_spec(v)["pullbacks"]
+    assert len(pb) == 1 and pb[0]["bar"] > cur["to"] and pb[0]["price"] == want and pb[0]["text"] == "pullback"
+    fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
+    lab = next(x for x in info["labels"] if x["text"] == "pullback")
+    x0, y0 = pb[0]["bar"] - v["i0"], pb[0]["price"]
+    assert any(list(ln.get_xdata())[0] == x0 and list(ln.get_ydata())[0] == y0 and ln.get_gid() is None for ln in info["ax"].lines)
+    assert lab["bar"] == pb[0]["bar"]
 
 
 NINE = [100.0, 130.0, 110.0, 150.0, 120.0, 160.0, 135.0, 175.0, 140.0, 190.0]   # 9 waves read_counter cannot parse

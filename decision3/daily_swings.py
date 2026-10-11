@@ -232,12 +232,18 @@ def coarse_path(pts, max_points=15):
     """[(bar, price)] आलटून पालटून ⇒ कमाल max_points बिंदू: सर्वात लहान आतल्या जोड्या गाळून (daily_legs.reduce_counted — टोकं तीच,
     उरलेले बिंदू मूळ pivots च)."""
     from . import daily_legs as DL
-    if len(pts) <= int(max_points) or len(pts) < 3:
+    mp = max(int(max_points), MIN_PATH_POINTS)                             # register: chart_leg_path_points ≥ 6
+    if len(pts) <= mp or len(pts) < 3:
         return list(pts)
     red = DL.reduce_counted([p for _, p in pts])
-    k = max(m for m in red if m + 1 <= int(max_points))
+    k = max((m for m in red if m + 1 <= mp), default=None)
+    if k is None:                                                          # reduce_counted लवकर थांबला ⇒ गाळता येत नाही, जसे आहे तसे
+        return list(pts)
     ends = [0] + [sum(red[k][1][:j + 1]) for j in range(len(red[k][1]))]
     return [pts[e] for e in ends]
+
+
+MIN_PATH_POINTS = 6
 
 
 def _leg_waves(lg, piv, upto):
@@ -648,8 +654,11 @@ def view_spec(v, full=False):
     if cur_box is not None and not full:                                   # §5.2: box मधले pullback / candidate marks नाहीत
         pulls = []
     one = None
-    if not full and cur_box is None and trending and q.get("counter") == "pullback":
-        one = next((b for b in reversed(pulls) if b["tag"] == "pullback"), None)   # box नसलेला चालू pullback ⇒ एकच खूण
+    if not full and cur_box is None and trending and q.get("counter") == "pullback" and cur is not None:
+        one = _current_pullback(v["frame"], cur)                           # box नसलेला चालू pullback ⇒ एकच खूण, चालू bounce वर
+        if one is None:                                                    # bounce अजून नाही ⇒ शेवटचा confirmed pullback pivot
+            one = next(({**b, "text": f"last pullback {'high' if b['kind'] == 'H' else 'low'}"} for b in reversed(pulls)
+                        if b["tag"] == "pullback"), None)
     if full:
         keep = {id(c) for c in allb}
     elif cur_box is not None:
@@ -665,12 +674,28 @@ def view_spec(v, full=False):
         if lab is None and not old_ok:
             continue                                                       # लांब window ⇒ जुने boxes नाहीत
         boxes.append({**c, "label": lab, "faint": lab is None})
-    marks = [{**b, "tag": "pullback"} for b in pulls] if full else ([{**one, "tag": "pullback"}] if one is not None else [])
+    marks = [{**b, "tag": "pullback"} for b in pulls] if full else ([{"text": "pullback", **one, "tag": "pullback"}] if one is not None
+                                                                     else [])
     tags = [b["label"] for b in boxes if b["label"]] + [b["tag"] for b in marks]
     bands = level_bands(v, s, limit=None, max_broken=None) if full else (q.get("levels") or [])
     imps = [x for x in ob.get("impulses") or [] if x["to"] >= i0]
     return {"legs": legs, "impulses": imps, "boxes": boxes, "pullbacks": marks, "tags": tags, "bands": bands,
             "protected": q.get("protected_now"), "strip": {"degree-aware": q["states"], "Dow minor": v["minor"]["bands"]}}
+
+
+def _current_pullback(d, leg):
+    """चालू (अजून confirm न झालेला) pullback: leg च्या टोकानंतरचं उलट टोक (DOWN ⇒ सर्वात उंच high, UP ⇒ सर्वात खालचा low). टोक
+    शेवटचा bar असेल ⇒ None."""
+    j0, n = int(leg["to"]), len(d)
+    if j0 + 1 >= n:
+        return None
+    if leg["dir"] < 0:
+        H = d["high"].to_numpy(float)
+        j = j0 + 1 + int(np.argmax(H[j0 + 1:]))
+        return {"bar": j, "price": float(H[j]), "kind": "H", "text": "pullback"}
+    L = d["low"].to_numpy(float)
+    j = j0 + 1 + int(np.argmin(L[j0 + 1:]))
+    return {"bar": j, "price": float(L[j]), "kind": "L", "text": "pullback"}
 
 
 def box_label(c):
@@ -842,7 +867,8 @@ def nearest_bands(v, s=None):
 
 
 def protected_risk(v, s=None):
-    """§5.7 ओळ 1: protected पर्यंत risk (ATR_D) — ओळ 2 सारखाच नियम (protected पट्ट्याची जवळची कडा; पट्टा नसेल ⇒ किंमतच)."""
+    """§5.7 ओळ 1: protected **किंमती** पर्यंत risk (ATR_D) — पट्ट्याच्या कडेपर्यंत नाही (sharp zone मध्ये merge झालेला पट्टा कडा जवळ
+    आणतो ⇒ risk कमी दिसेल, असुरक्षित). ओळ 2 (जवळचा पट्टा) कडेचाच नियम."""
     s = S3.load(s if s is not None else v.get("s"))
     q = v["q15"]
     pq = q.get("protected_now")
@@ -850,8 +876,7 @@ def protected_risk(v, s=None):
         return None
     d = v["frame"]
     close = float(d["close"].iloc[-1])
-    b = next((x for x in q.get("levels") or [] if x["role"] == "protected"), None) or {"lo": pq["price"], "hi": pq["price"]}
-    return round(band_dist(b, close) / (atr(d, int(s["chart_atr_n"])) or 1e-9), 1)
+    return round(abs(close - float(pq["price"])) / (atr(d, int(s["chart_atr_n"])) or 1e-9), 1)
 
 
 def caption(v, symbol, audit_line=None, years=None):
@@ -877,7 +902,7 @@ def caption(v, symbol, audit_line=None, years=None):
     pq = q.get("protected_now")
     one = f"{symbol} Daily: {state_short(q)}"
     if pq:
-        one += f" · protected {pq['price']:,.0f} · risk {protected_risk(v, s):.1f} ATR to protected band"
+        one += f" · protected {pq['price']:,.0f} · risk {protected_risk(v, s):.1f} ATR to protected"
     else:
         one += " · no protected level"
     if q.get("origin_risk"):
