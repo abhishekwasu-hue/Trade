@@ -60,7 +60,7 @@ def test_defaults_v0_nifty_notify_others_off(db):
     assert VC.load("mcx_futures")["vision_mode"] == "off"
     assert VC.load("pullback_credit_spread")["vision_mode"] == "off"
     g = VC.load("_global")
-    assert g["vision_daily_budget_usd"] == 0.30 and g["vision_monthly_budget_usd"] == 5.0
+    assert g["vision_daily_budget_usd"] == 2.0 and g["vision_monthly_budget_usd"] == 5.0
 
 
 def test_v1_modes_only_for_paper_bots_and_live_always_off(db):

@@ -76,7 +76,7 @@ RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", 
                               "line_conflict", "event_day", "gap_c_alone")}
 CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions")
 GLOBAL_DEFAULTS = {
-    "vision_daily_budget_usd": 0.30,
+    "vision_daily_budget_usd": 2.0,         # Abhi 2026-10-11: दैनिक Vision cap $2.00 (hard stop तसाच; बाकी मर्यादा बदल नाही)
     "vision_monthly_budget_usd": 5.0,
     "morning_audit_time": "08:00",
     "event_days": [],                      # ["YYYY-MM-DD:नाव", …] — event दिवस (policy / budget / मोठा data), dashboard वरून
