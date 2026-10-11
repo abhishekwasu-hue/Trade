@@ -220,3 +220,25 @@ def test_start_server_falls_back_when_warmup_fails(monkeypatch):
     monkeypatch.setattr(R, "run_with_timeout", lambda fn, sec: (_ for _ in ()).throw(TimeoutError("hung")))
     monkeypatch.setattr(R, "stop_server", lambda: calls.append("stop"))
     assert R.start_server() is False and calls == ["start", "stop"]
+
+
+def test_dashboard_budget_inputs_override_stale_saved_global(vdb):
+    """Abhi: जुनी save केलेली `_global` row (0.30 / 5) code default वर मात करते ⇒ dashboard वर दैनिक + मासिक budget inputs हवेत;
+    Budget Save दोन्ही साठवतो (60 range मध्ये)."""
+    import os
+    import page_vision_human_eye as P
+    VC.save("_global", {"vision_daily_budget_usd": 0.30, "vision_monthly_budget_usd": 5.0}, "test")
+    assert VC.load("_global")["vision_daily_budget_usd"] == 0.30                                   # stale row जिंकते
+    VC.save("_global", {"vision_daily_budget_usd": 2.0, "vision_monthly_budget_usd": 60.0, "visual_audit_daily_cap": 0.10,
+                        "signals_daily_reserve_usd": 0.20}, "dashboard")
+    g = VC.load("_global")
+    assert g["vision_daily_budget_usd"] == 2.0 and g["vision_monthly_budget_usd"] == 60.0
+    src = open(os.path.join(os.path.dirname(P.__file__), "page_vision_human_eye.py"), encoding="utf-8").read()
+    assert '"vision_daily_budget_usd": day_cap' in src and '"vision_monthly_budget_usd": mon_cap' in src
+
+
+def test_vision_page_file_check_handles_nan_paths():
+    """VPS crash: image_path NaN (float) ⇒ os.path.exists TypeError ⇒ पूर्ण page बंद. आता False."""
+    import page_vision_human_eye as P
+    assert P._file(float("nan")) is False and P._file(None) is False and P._file("") is False
+    assert P._file(__file__) is True
