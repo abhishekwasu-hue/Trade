@@ -7,7 +7,11 @@
 DEFAULTS = {
     "engine_version": "v22",                 # v21 (decision2, जुना) / v22 (हा) — shadow तुलनेसाठी दोन्ही चालतात
     # ① Daily trend (Dow)
-    "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D)
+    "daily_trend_mode": "impulse",           # Q15 (Abhi FINAL): impulse-degree Dow; "minor" = जुना (फक्त what-if)
+    "corr_degree_frac": 0.5,                 # same-degree correction ≥ मागच्या same-degree correction च्या इतका भाग (Q22)
+    "maturity_sigma_d": 0.5,                 # maturity: (5) target च्या इतक्या σ_D आत ⇒ "impulse mature" (पुरावा)
+    "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
+    "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D) — Q15: pivot; dc फक्त what-if
     "daily_pivot_n": 2,
     "daily_dc_k": 1.0,                       # θ_D = k_D × σ_D (σ_D = Daily range median)
     "daily_sigma_sessions": 10,              # σ_D साठी Daily candles (warm-up फक्त σ साठी)
@@ -20,6 +24,7 @@ DEFAULTS = {
     "active_levels_max": 2,                  # trade-बाजूची जवळची levels
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
+    "liq_marks_per_side": 3,                 # chart वर प्रत्येक बाजूचे जवळचे liquidity pools (फक्त chart)
     # ③ Pullback (C पायरी)
     "k_reset_sigma": 0.25,                   # नवं टोक < हे × σ_1H ने सरकलं ⇒ तेच टोक (reset नाही)
     # ④ Power shift (C)
@@ -32,7 +37,10 @@ DEFAULTS = {
     # ⑥ Commitment (C)
     "commit_body": 0.5,                      # body ≥ range च्या हे
     "commit_merge_max": 2,
-    "commit_beyond": "extreme",              # spec ⑥ "मागच्या candle च्या extreme पलीकडे close" (Q16: close पर्याय फक्त what-if)
+    "commit_beyond": "close",                # Q16 (Abhi): किमान अट = मागच्या candle च्या close पलीकडे; "extreme" फक्त what-if
+    "pin_wick_min": 0.5,                     # pin / hammer: level कडचा wick ≥ range च्या इतका
+    "star_body_max": 0.3,                    # morning / evening star: मधली candle body ≤ range च्या इतकी
+    "tweezer_tol": 0.1,                      # tweezer: दोन lows / highs मधला फरक ≤ सरासरी range × हे
     "commit_close_frac": 2 / 3,              # signal-bar: close range च्या trend-बाजूच्या तृतीयांशात (§5.2)
     "touch_window_bars": 3,                  # ③ "level मध्ये / लगत": शेवटच्या इतक्या 15M bars पैकी एकाने पट्ट्याला स्पर्श (commitment + आधीचा)
     "entry_start": "09:30", "entry_end": "15:15",   # entry bar ची सुरुवात start ≤ hm < end (15:15 चा bar बाजार बंदला close ⇒ नाही)
@@ -61,7 +69,11 @@ DEFAULTS = {
 # आकडा: (default, पर्याय, वर्ग, स्रोत)
 REGISTER = {
     "engine_version": ("v22", "v21 / v22", "setting", "spec §4.A — जुना code shadow तुलना"),
-    "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — कमी warm-up ⇒ pivot default"),
+    "daily_trend_mode": ("impulse", "impulse / minor", "Abhi नियम", "Q15 FINAL: trend = शेवटचा impulse leg, protected = त्याचा origin"),
+    "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "Q15 'त्याच degree ची correction' — मागच्या same-degree correction शी प्रमाण (Q22)"),
+    "maturity_sigma_d": (0.5, "0.25/0.5/1.0", "अंदाज", "Q15 (5): target 'जवळ' = σ_D चा अपूर्णांक (पुरावा, gate नाही)"),
+    "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
+    "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — pivot default; Q15: N = 1 / DC primary नाहीत (फक्त what-if)"),
     "daily_pivot_n": (2, "1/2/3", "अंदाज", "spec ① (N config default 2)"),
     "daily_dc_k": (1.0, "0.75/1.0/1.5", "अंदाज", "spec ① (k_D config)"),
     "daily_sigma_sessions": (10, "10/15/20", "अंदाज", "spec ① warm-up फक्त σ साठी, default 10"),
@@ -72,6 +84,7 @@ REGISTER = {
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),
     "active_levels_max": (2, "—", "Abhi नियम", "spec ② active level = जवळची 2"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
+    "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "k_reset_sigma": (0.25, "—", "Abhi नियम", "spec ③ < 0.25 σ_1H ⇒ reset नाही"),
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
@@ -81,7 +94,10 @@ REGISTER = {
     "tl_min_touches": (2, "—", "Abhi नियम", "spec ⑤ K चे ≥ 2 स्पर्श"),
     "commit_body": (0.5, "—", "Abhi नियम", "spec ⑥ body ≥ 50% range"),
     "commit_merge_max": (2, "1/2", "Abhi नियम", "spec ⑥ ≤ 2 merged"),
-    "commit_beyond": ("extreme", "extreme / close", "Abhi नियम", "spec ⑥ extreme पलीकडे close; close = Q16 पर्याय (Abhi ठरवतील)"),
+    "commit_beyond": ("close", "close / extreme", "Abhi नियम", "Q16: किमान अट close पलीकडे; extreme पलीकडे = grade A (extreme मोड फक्त what-if)"),
+    "pin_wick_min": (0.5, "0.5/0.6/0.66", "व्याख्या", "Q16 pin bar: लांब wick level मध्ये (range च्या निम्म्याहून)"),
+    "star_body_max": (0.3, "0.25/0.3/0.4", "व्याख्या", "Q16 star: मधली candle लहान body"),
+    "tweezer_tol": (0.1, "0.05/0.1/0.2", "व्याख्या", "Q16 tweezer: दोन टोकं जवळपास समान (range चा अपूर्णांक)"),
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
     "touch_window_bars": (3, "1/2/3", "व्याख्या", "spec ⑥ 'level मध्ये / लगत' + §6.2 H2 'वर / जवळ' (Q18)"),
     "entry_start / entry_end": ("09:30 / 15:15", "settings", "setting", "spec ⑥ वेळ-खिडकी फक्त settings; v2.1 प्रमाणे end exclusive"),

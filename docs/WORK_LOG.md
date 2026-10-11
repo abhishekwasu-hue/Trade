@@ -1638,3 +1638,29 @@ emoji ऐवजी "SETUP A / B" + बाण), मराठी caption 5–8 ओ
 spec ⑥). NIFTY: फक्त Daily DC ने E1 / E2 ① पार; सगळ्या variants मध्ये E-days ⑥ (commitment candle) वर अडतात. Defaults तसेच.
 **⑥ दुरुस्ती + diag:** commitment मध्ये k = 1 core ✔ पण कमकुवत असेल तर k = 2 merged पाहत नव्हता (spec "≤ 2 merged") ⇒ दुरुस्त (diag च्या
 agreement test ने पकडलं). `scripts/v22_commit_diag.py` (फक्त अहवाल): ③ ✔ bars वर ⑥ च्या प्रत्येक अटीचा निकाल, कोणती अट किती अडवते.
+
+---
+## थर v2.2 — Abhi चे Q15 / Q16 निर्णय (degree-aware Dow + reversal-form commitment)
+**Q15 (`decision3/daily.py` `fold_impulse`, default):** trend = शेवटच्या impulse leg ची दिशा; protected = impulse origin. सुरुवात: LH +
+मधल्या L खाली close ⇒ DOWN impulse (3) (रचना (1)/(2) आधीच). Correction = impulse टोकानंतरचा confirmed उलट swing, आकार ≥ 0.5 × मागची
+same-degree correction (Q22) ⇒ minor LH तुटले तरी trend नाही. Correction नंतर impulse टोकापलीकडे close ⇒ protected = correction टोक
+(wave + 2). Origin close-break ⇒ "origin_broken" (trend तसाच, Q23); उलट impulse (HL + break-नंतरच्या टोकापलीकडे close) ⇒ flip. Maturity
+((5)+ आणि equality / (1)-आधीचा swing target जवळ) ⇒ कमाल weak. Weekly पालक: विरुद्ध ⇒ कमाल B; Daily NEUTRAL / UNKNOWN ⇒ Weekly fallback
+(कमाल B). Elliott count (count_source) फक्त caption सल्ला (`decision3/advisory.py`). जुना minor Dow = `daily_trend_mode: minor` (what-if).
+**Q16 (`method.commitment` / `reversal_form`):** forms engulf / star / inside_break / doji_confirm / tweezer / pin / strong_close(_2);
+किमान close मागच्या close पलीकडे; grade A / B (B ⇒ कमाल B, Q26); pullback-दिशेची / doji / inside ⇒ वाट; पुष्टीची candle ③ वारसा (Q25);
+§5.3 range gate commitment पट्ट्याबाहेर close केल्यावर लागू नाही (Q24). `commitment_form` output; diag = engine चंच commitment.
+**दुसरा independent review (Q15 / Q16) — दुरुस्त्या:** 🔴1 degree data-सुरुवातीवर अवलंबून: origin तुटल्यावर जुन्या impulse टोकापासून
+उलट रचना (LH + मधल्या L खाली close) आधीच असेल ⇒ त्याच दिवशी flip, origin = सर्वात उंच LH (Q29; `flip()` break दिवशीही); नवा fixture
+(B आतले swings) ने candidate क्रम-bug पकडला (सर्वात खालचा LH घेत होता). 🔴2 maturity "आधीचा swing" = (1) ज्या leg च्या शेवटी सुरू झाली
+त्या leg चं टोक (`pre_swing`), शेवटचा minor pivot नाही. 🟡3 `commit_strong` पुन्हा signal-bar आकार (grade वेगळा). 🟡4 RANGE फक्त NEUTRAL
+मधून ⇒ Q27. 🟡5 tests: (B) आतले swings, start-offset invariance, break-दिवशी flip, ③ pipeline (`_level_eval`) level-दूर; mutation-checked.
+⚪ corr_label फक्त same-degree पाय मोजतो; engulf / star साठी t−1 / t−2 त्याच दिवसाचे; settings comment / prio register नोंद; docstring.
+Q28 (नोंद): data (A) पासून असेल तर (B) zigzag = UP impulse (नियम जसाच; पर्याय legs2 वर्गीकरण).
+**तिसरा independent review — दुरुस्त्या:** 🔴 correction टोक N-bar उशिरा confirm होतो आणि त्याआधीच नवा LL ⇒ correction हरवत होती
+(wave (3) कायम, protected पुढे नाही): आता correction = चालू leg (`leg_start`) मधला उलट swing, आकार त्याच्या आधीच्या टोकापासून; त्या
+टोकापलीकडे नंतरचा close ⇒ नवा impulse (`beyond_after`); impulse टोक = leg चं wick-टोक (origin_broken मध्येही). 🟡 flip (अ) origin नंतर
+तुटलेला HL / LH नाही; (आ) "HL" जुन्या टोकाच्या आत हवा (double bottom ✘); `pre_swing` raw data-सुरुवातीवर नाही (confirmed pivot);
+merged forms चा संदर्भ t − 2 (Q30); cap-कारणांत फक्त cap नोंदी; Telegram 1H chart `trend_used`; corr_label H / L आलटून. Tests: तिन्ही
+repro (एक-दिवसाचे bars) + Q30 grade + pipeline maturity cap; engine fixture (एकसारखे legs ⇒ प्रत्येक (5) mature) invariants साठी
+`NO_MATURE` override (default वर्तन वेगळ्या test मध्ये).

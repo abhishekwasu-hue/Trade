@@ -40,10 +40,12 @@ def test_up_after_hh_hl_and_protected_is_hl():
 
 
 def test_hl_close_break_neutral_then_new_lh_ll_down():
-    d = daily_from_path([100, 120, 110, 130, 118, 140, 112])                                  # close < HL (118) ⇒ NEUTRAL
-    st = DD.fold(d, S)
+    d = daily_from_path([100, 120, 110, 130, 118, 140, 112])                                  # close < origin (118)
+    st = DD.fold(d, {**S, "daily_trend_mode": "minor"})                                        # जुना minor Dow (what-if) ⇒ NEUTRAL
     trends = [x.trend for x in st]
     assert "UP" in trends and trends[-1] == "NEUTRAL"
+    sti = DD.fold(d, S)                                                                         # Q15: फक्त close-break ⇒ trend संपत नाही
+    assert sti[-1].trend == "UP" and sti[-1].phase == "origin_broken"
     d2 = daily_from_path([100, 120, 110, 130, 118, 140, 112, 125, 100, 115, 92, 105])           # नवा LH (125 < 140) + LL
     st2 = DD.fold(d2, S)
     assert st2[-1].trend == "DOWN" and st2[-1].protected.kind == "H"
@@ -70,6 +72,9 @@ def test_unknown_only_when_data_short():
 
 def test_range_from_neutral_equal_highs_lows():
     d = daily_from_path([100, 120, 110, 130, 118, 140, 112, 130, 112.2, 130.2, 112.1, 122])
+    st = DD.fold(d, {**S, "daily_trend_mode": "minor"})
+    assert any(x.trend == "RANGE" for x in st)
+    d = daily_from_path([100, 120, 110, 120.2, 110.1, 120.1, 110.2, 115])                    # सुरुवातीपासून सपाट ⇒ RANGE (impulse मोड)
     st = DD.fold(d, S)
     assert any(x.trend == "RANGE" for x in st)
     r = [x for x in st if x.trend == "RANGE"][0]

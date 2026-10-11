@@ -12,11 +12,11 @@ from decision3 import charts as CH
 from decision3 import engine as E3
 from decision3 import method as M
 from decision3 import telegram_view as TV
-from tests.test_decision3_method import _abc_m15
+from tests.test_decision3_method import NO_MATURE, _abc_m15
 
 
 def _V_rows():
-    V = E3.V22(_abc_m15())
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
     return V, V.run()
 
 

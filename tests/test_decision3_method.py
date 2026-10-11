@@ -36,16 +36,6 @@ def test_power_shift_two_of_four_and_rsi_alone_not_enough():
     assert it2["e_rsi_div"] is None and n2 < 2 and not ok2
 
 
-def test_commitment_body_beyond_prev_and_reclaim_ok_weak_rejected():
-    A = A_of([(104, 104.4, 101, 101.5), (101.5, 104.8, 101.2, 104.6)])                                # body 85%, prev high पलीकडे close
-    ok, why, cm = M.commitment(A, 1, M.UP, LVL, S)
-    assert ok and cm["body_pct"] >= 0.5
-    A2 = A_of([(103, 103.5, 99, 99.5), (99.5, 103.8, 99.4, 103.7)])                                   # level मध्ये reclaim चालतं
-    assert M.commitment(A2, 1, M.UP, LVL, S)[0]
-    A3 = A_of([(104, 104.4, 101, 101.5), (101.5, 108, 101.2, 105.2)])                                   # मोठा उलट wick ⇒ कमकुवत
-    assert not M.commitment(A3, 1, M.UP, LVL, S)[0]
-
-
 def test_range_state_gate():
     A = A_of([(100, 101, 99, 100.6), (100.6, 101, 99.2, 100.6), (100.6, 101.1, 99.1, 100.62)])
     assert M.range_state(A, 2)
@@ -80,6 +70,11 @@ def _synthetic_m15(seed=7, legs=None):
         rows.append({"timestamp": ts, "bar_end": ts + pd.Timedelta(minutes=15), "open": o, "high": h, "low": l, "close": c})
         px = c
     return pd.DataFrame(rows)
+
+
+# fixture चे impulse legs एकसारखे ⇒ Q15 maturity (equality target) प्रत्येक (5)+ ला लागते. Setup invariants maturity-स्वतंत्र ⇒ त्या tests
+# मध्ये maturity बंद (near = −10⁶ σ ⇒ कधीच "जवळ" नाही); default वर्तन test_mature_cap_in_pipeline मध्ये.
+NO_MATURE = {"maturity_sigma_d": -1e6}
 
 
 def _abc_m15(seed=1, impulse=900, pb=0.7, n_cycles=8, start=22000):
@@ -125,7 +120,7 @@ def _key(r):
 def test_engine_invariants_no_breakout_setups_direction_and_truncation():
     from decision3 import engine as E3
     m15 = _abc_m15()
-    V = E3.V22(m15)
+    V = E3.V22(m15, s=NO_MATURE)
     rows = V.run()
     A = V.levels.A
     assert any(r["decision"] == "setup" for r in rows)                           # test vacuous नाही: setup invariants खरंच तपासले
@@ -138,12 +133,12 @@ def test_engine_invariants_no_breakout_setups_direction_and_truncation():
             else:
                 assert r["daily_trend"] in ("DOWN", "RANGE") and A["close"][t] <= lv["hi"] and A["open"][t] <= lv["hi"]
             assert r["risk"]["rr"] >= 3 and r["mark"] in ("✅", "🟡")
-        if r["daily_trend"] in ("NEUTRAL", "UNKNOWN"):
+        if r["trend_used"] in ("NEUTRAL", "UNKNOWN"):
             assert r["decision"] == "no_trade"
     assert any(r["daily_trend"] == "DOWN" for r in rows)
     st = [r["bar"] for r in rows if r["decision"] == "setup"][0]
     k = st + 1                                                                    # setup bar वरच कापलेलं data ⇒ तोच निर्णय (lookahead नाही)
-    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True))
+    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True), s=NO_MATURE)
     for t in range(max(0, k - 200), k):
         a, b = rows[t], Vt.decide(t)
         assert _key(a) == _key(b), t                                             # K, risk, checklist, band सुद्धा
@@ -218,22 +213,6 @@ def test_touch_window_level_adjacent_but_breakout_on_t_rejected():
     assert not M.at_level(A_of(gap), 2, M.UP, LVL, 3)[0]
 
 
-def test_commitment_entry_window_end_exclusive_and_merged_start():
-    import pandas as pd
-    A = A_of([(104, 104.4, 101, 101.5), (101.5, 104.8, 101.2, 104.6)])
-    tss = lambda hm1: [pd.Timestamp(f"2030-01-07 {hm1}") - pd.Timedelta(minutes=15), pd.Timestamp(f"2030-01-07 {hm1}")]
-    assert M.commitment(A, 1, M.UP, LVL, S, tss("15:00"))[0]
-    assert not M.commitment(A, 1, M.UP, LVL, S, tss("15:15"))[0]                 # बाजार बंदला close होणारा bar ⇒ entry नाही
-    assert not M.commitment(A, 1, M.UP, LVL, S, tss("09:15"))[0]
-    A2 = A_of([(103, 103.4, 101, 101.5), (101.5, 104.0, 101.2, 103.0), (103.0, 104.9, 102.0, 103.9)])   # फक्त 2-merged commitment
-    ok, _, cm = M.commitment(A2, 2, M.UP, LVL, S)
-    assert ok and cm["merged"] == 2
-    day = [pd.Timestamp("2030-01-06 15:15"), pd.Timestamp("2030-01-07 09:30"), pd.Timestamp("2030-01-07 09:45")]
-    assert M.commitment(A2, 2, M.UP, LVL, S, day)[0]
-    early = [pd.Timestamp("2030-01-06 15:15"), pd.Timestamp("2030-01-07 09:15"), pd.Timestamp("2030-01-07 09:30")]
-    assert not M.commitment(A2, 2, M.UP, LVL, S, early)[0]                       # merged candle 09:15 पासून ⇒ खिडकीबाहेर
-
-
 def test_bos_fires_once_per_pivot_retest_reclaim_keeps_impulse():
     from types import SimpleNamespace as NS
     from decision3 import levels as LV
@@ -258,26 +237,63 @@ def test_daily_protected_ignores_discarded_pivot_and_follows_replacement(monkeyp
     spec = [("L", 100, 2), ("H", 120, 5), ("L", 110, 8), ("H", 130, 11), ("L", 115, 14), ("L", 118, 17)]
     piv = [DD.DPivot(k, float(p), b, days[b], b + 2, kat[b + 2]) for k, p, b in spec]
     monkeypatch.setattr(DD, "pivots_pivot", lambda *a, **k: piv)
-    st = DD.fold(d, {"daily_min_sessions": 3})
+    st = DD.fold(d, {"daily_min_sessions": 3, "daily_trend_mode": "minor"})   # minor (what-if) Dow चा protected नियम
     assert st[22].trend == "UP" and st[22].protected.price == 115.0               # टाकलेला 118 protected नाही
     assert st[24].trend == "UP"
     spec2 = [("L", 100, 2), ("H", 120, 5), ("L", 110, 8), ("H", 130, 11), ("L", 115, 14), ("L", 112, 17)]
     piv[:] = [DD.DPivot(k, float(p), b, days[b], b + 2, kat[b + 2]) for k, p, b in spec2]
-    st2 = DD.fold(d, {"daily_min_sessions": 3})
+    st2 = DD.fold(d, {"daily_min_sessions": 3, "daily_trend_mode": "minor"})
     assert st2[22].protected.price == 112.0                                       # सलग अधिक टोकाचा L ⇒ protected तो
 
+def test_pool_marks_nearest_per_side_dedup_and_priority():
+    from types import SimpleNamespace as NS
+    import pandas as pd
+    from decision3 import liquidity as LQ
+    n = 60
+    ts = pd.Series(pd.date_range("2030-01-07 09:15", periods=n, freq="15min"))
+    c = np.full(n, 100.0)
+    A = {"open": c, "high": c + 1, "low": c - 1, "close": c}
+    piv = [NS(kind="H", price=103.0, bar=5, confirm_bar=6), NS(kind="H", price=103.05, bar=10, confirm_bar=11),
+           NS(kind="H", price=106.0, bar=12, confirm_bar=13), NS(kind="L", price=97.0, bar=14, confirm_bar=15),
+           NS(kind="H", price=180.0, bar=16, confirm_bar=17)]
+    lv = NS(A=A, ts=ts, sig1h=np.full(n, 2.0), known_pivots=lambda t: piv)
+    V = NS(levels=lv, s={**S, "liq_marks_per_side": 2, "show_distance_sigma": 12.0, "liquidity_eq_sigma": 0.15})
+    mk = LQ.pool_marks(V, n - 1)
+    buy = [m for m in mk if m["side"] == "buy"]
+    assert len(buy) <= 2 and all(m["price"] >= 100 for m in buy)
+    assert not any(abs(m["price"] - 180) < 1 for m in mk)                               # दूरचं (> 12 σ) chart वर नाही
+    near103 = [m for m in buy if abs(m["price"] - 103) < 0.2]
+    assert len(near103) == 1 and near103[0]["src"] == "equal"                          # 103 / 103.05 ⇒ एकच, EQ ला प्राधान्य
+    assert all(m["label"].endswith("BSL") for m in buy) and any(m["side"] == "sell" for m in mk)
 
-def test_commit_beyond_option_default_extreme_close_is_looser():
-    A = A_of([(104, 104.8, 101, 101.5), (101.5, 104.6, 101.4, 104.5)])                              # close 104.5: prev close वर, prev high खाली
-    assert S["commit_beyond"] == "extreme"
-    assert not M.commitment(A, 1, M.UP, LVL, S)[0]
-    assert M.commitment(A, 1, M.UP, LVL, {**S, "commit_beyond": "close"})[0]
+
+def test_charts_with_liquidity_layer_render_english_only():
+    import warnings
+    from decision3 import charts as CH
+    from decision3 import engine as E3
+    from decision3 import liquidity as LQ
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
+    rows = V.run()
+    r = next(x for x in rows if x["decision"] == "setup")
+    r = {**r, "liquidity": {"sweeps": [{"price": r["level"]["hi"], "side": "buy", "src": "PDH", "bar": r["bar"] - 1,
+                                        "extreme": r["level"]["hi"] + 5}],
+                            "trapped": [{"lo": r["level"]["hi"], "hi": r["level"]["hi"] + 5, "side": "buy", "kind": "failed_breakout"}]}}
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message="Glyph")
+        a = CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", liq=LQ.pool_marks(V, r["bar"]))
+        b = CH.m15_png(V, r["bar"], "NIFTY", r=r)
+    assert a[:4] == b[:4] == b"\x89PNG"
 
 
-def test_commitment_tries_merged_when_single_bar_is_weak():
-    """k = 1 core ✔ पण कमकुवत (मोठा उलट wick), k = 2 merged मजबूत ⇒ ✔ (merged 2); दोन्ही कमकुवत ⇒ 'कमकुवत' कारण."""
-    A = A_of([(102.0, 102.2, 100.8, 101.0), (101.0, 101.3, 100.5, 101.1), (101.1, 103.6, 101.0, 102.6)])   # bar 2: close मधोमध
-    ok1 = M.commitment(A, 2, M.UP, LVL, {**S, "commit_merge_max": 1})
-    assert not ok1[0] and "कमकुवत" in ok1[1]
-    ok2 = M.commitment(A, 2, M.UP, LVL, S)
-    assert ok2[0] and ok2[2]["merged"] == 2
+def test_mature_cap_in_pipeline():
+    """Default settings: तोच fixture — maturity बंद असताना setup देणारा bar, default ला mature ⇒ कमाल weak ⇒ setup नाही (Q15 (5))."""
+    from decision3 import engine as E3
+    m15 = _abc_m15()
+    off = [r for r in E3.V22(m15, s=NO_MATURE).run() if r["decision"] == "setup"]
+    assert off
+    V = E3.V22(m15)
+    for r0 in off:
+        r = V.decide(r0["bar"])
+        if r["mature"]:
+            assert r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
+    assert any(V.decide(r0["bar"])["mature"] for r0 in off)

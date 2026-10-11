@@ -40,6 +40,10 @@ def _png(fig):
 def _why_en(st):
     """Chart वर फक्त English (Abhi): Daily state चं कारण."""
     p = st.protected
+    if st.trend in ("UP", "DOWN") and p is not None and getattr(st, "phase", None):
+        ph = {"impulse": f"impulse {st.wave}", "correction": f"correction {st.wave} leg {st.corr_label}",
+              "origin_broken": "origin closed through - waiting for opposite impulse"}[st.phase]
+        return f" · {ph} · protected origin {p.price:,.0f}" + (" · MATURE near target" if st.mature else "")
     if st.trend in ("UP", "DOWN") and p is not None:
         return f" · protected {'HL' if p.kind == 'L' else 'LH'} {p.price:,.0f}"
     if st.trend == "NEUTRAL" and p is not None:
@@ -77,6 +81,9 @@ def daily_png(daily_df, states, title, upto=None):
         ax.text(n - 0.5, last.protected.price, f" protected {last.protected.price:,.0f}", color="#7048e8", fontsize=8, va="bottom")
     if last.band:
         ax.axhspan(last.band[0], last.band[1], color="#fab005", alpha=0.15)
+    for x in getattr(last, "targets", ()) or ():                               # Q15 maturity targets ((5) equality / मोठा आधीचा swing)
+        ax.axhline(x, color="#868e96", lw=0.8, ls="--")
+        ax.text(n - 0.5, x, f" target {x:,.0f}", color="#868e96", fontsize=7, va="top")
     ax.set_title(f"{title} · Daily trend {last.trend}" + _why_en(last), fontsize=10)
     _xticks(ax, d["timestamp"].to_numpy(), max(1, n // 15))
     return _png(fig)
@@ -95,7 +102,7 @@ def weekly_png(daily_df, title):
     return _png(fig)
 
 
-def h1_png(lv, t, trend, title, sessions=8, max_sigma=None):
+def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None):
     """1H: शेवटच्या `sessions` sessions चे candles (t पर्यंत), D2 swings, जिवंत levels (role रंग, ★ sweeps, जन्म-कारण), active ठळक."""
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
@@ -117,6 +124,10 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None):
         ax.axhspan(x["lo"], x["hi"], color=col, alpha=0.30 if x["id"] in act else 0.10, lw=0)
         lab = f"{'▶ ' if x['id'] in act else ''}{x['role'][:3]} {'+'.join(x['births'])} {'★' * x['sweeps']} t{x['tests']}"
         ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color=col, va="center")
+    for q in liq or ():                                                        # §7.6 liquidity pools (BSL वर / SSL खाली) — लहान खुणा
+        col = "#1971c2" if q["side"] == "buy" else "#c2255c"
+        ax.plot([len(frame) - 3, len(frame) - 0.5], [q["price"], q["price"]], color=col, lw=1.0, ls=(0, (1, 1)))
+        ax.text(len(frame) - 3, q["price"], f"{q['label']} {q['price']:,.0f} ", color=col, fontsize=6, va="bottom", ha="right")
     for p in lv.piv:
         if p.confirm_bar <= t:
             j = int(h1_of[p.bar]) - j0
@@ -181,6 +192,17 @@ def m15_png(V, t, title, bars=60, r=None):
         y = bp["B2"]["trigger"]
         ax.axhline(y, color="#868e96", lw=0.8, ls=":")
         ax.text(len(m) - 0.5, y, f" B2 trigger {y:,.0f} (R:R {bp['B2']['rr']})", color="#868e96", fontsize=7, va="top")
+    lq = (r.get("liquidity") or {}) if r else {}
+    for x in lq.get("trapped") or ():                                          # §7.6 trapped zone पट्टा
+        ax.axhspan(x["lo"], x["hi"], color="#fd7e14", alpha=0.12, hatch="///", lw=0)
+        ax.text(0, x["hi"], f" trapped {'buyers' if x['side'] == 'buy' else 'sellers'} {x['lo']:,.0f}-{x['hi']:,.0f}",
+                color="#d9480f", fontsize=7, va="bottom")
+    for x in lq.get("sweeps") or ():                                           # §7.6 sweep खूण (pool पलीकडे जाऊन परत)
+        b = int(x.get("bar", -1))
+        if i0 <= b <= t:
+            ax.plot(b - i0, x["extreme"], marker="X", color="#d9480f", ms=7)
+            ax.text(b - i0, x["extreme"], f" SWEEP {x['src']} {x['price']:,.0f}", color="#d9480f", fontsize=7,
+                    va="bottom" if x["side"] == "buy" else "top")
     tl = r.get("trendline") if r else None
     if tl:                                                                     # ⑤ K ची आतली रेघ (t पर्यंत) + break खूण
         (b1, y1), sl = tl["p1"], tl["slope"]

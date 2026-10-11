@@ -21,10 +21,10 @@ from scripts import v22_check as VC  # noqa: E402
 # (नाव, overrides, कोणता प्रश्न) — फक्त register मध्ये नोंदलेले पर्याय
 VARIANTS = (
     ("default", {}, "—"),
-    ("daily_pivot_n=1", {"daily_pivot_n": 1}, "Q15 (ii)"),
-    ("daily_dc", {"daily_swing_method": "dc"}, "Q15 (iii)"),
-    ("commit_beyond=close", {"commit_beyond": "close"}, "Q16"),
-    ("pivot_n=1 + close", {"daily_pivot_n": 1, "commit_beyond": "close"}, "Q15 (ii) + Q16"),
+    ("daily_minor (जुना)", {"daily_trend_mode": "minor"}, "Q15 आधी"),
+    ("daily_pivot_n=1", {"daily_pivot_n": 1}, "Q15 (ii) नाकारला"),
+    ("daily_dc", {"daily_swing_method": "dc"}, "Q15 (iii) नाकारला"),
+    ("commit_beyond=extreme", {"commit_beyond": "extreme"}, "Q16 आधी"),
 )
 STEPS = ("①", "②", "③", "④", "⑥", "⑦")
 GATES = ("①", "②", "③", "⑥", "⑦")                                        # ④ = पुरावा (gate नाही) ⇒ "कुठे अडलं" मध्ये नाही

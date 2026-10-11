@@ -2,7 +2,7 @@
 from decision3 import engine as E3
 from decision3 import settings as S3
 from scripts import v22_whatif as W
-from tests.test_decision3_method import _abc_m15
+from tests.test_decision3_method import NO_MATURE, _abc_m15
 
 
 def test_variants_only_register_options_and_default_first():
@@ -16,7 +16,7 @@ def test_variants_only_register_options_and_default_first():
 
 
 def test_summarize_counts_and_marks():
-    V = E3.V22(_abc_m15())
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
     rows = V.run()
     day = rows[300]["ts"][:10]
     sm = W.summarize(rows, [day])
@@ -27,7 +27,7 @@ def test_summarize_counts_and_marks():
 
 
 def test_stop_reason_never_points_at_evidence_step_4():
-    V = E3.V22(_abc_m15())
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
     rows = V.run()
     days = sorted({r["ts"][:10] for r in rows})
     sm = W.summarize(rows, days)

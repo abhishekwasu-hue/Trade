@@ -71,3 +71,31 @@ def sweeps_and_traps(V, t, lookback):
         if any(seq) and tail_in >= acc:
             tr.append({"lo": min(pr, ext), "hi": max(pr, ext), "kind": "failed_breakout", "side": p["side"], "bar": t0 + first})
     return sw, tr
+
+
+SRC_EN = {"swing": "swing", "equal": "EQ", "PDH": "PDH", "PDL": "PDL", "PWH": "PWH", "PWL": "PWL"}
+
+
+def pool_marks(V, t, per_side=None, max_sigma=None):
+    """§7.6 chart साठी: t ला माहीत pools पैकी किंमतीच्या जवळचे (प्रत्येक बाजूला `liq_marks_per_side`, `show_distance_sigma` × σ_1H आत),
+    duplicate किंमती (σ_1H × liquidity_eq_sigma आत) एक — PDH / PWH / EQ ला swing पेक्षा प्राधान्य. रिटर्न [{price, side, src, label}]."""
+    lv = V.levels
+    per_side = int(per_side or V.s["liq_marks_per_side"])
+    sg = lv.sig1h[t] if np.isfinite(lv.sig1h[t]) else 0.0
+    lim = float(max_sigma or V.s["show_distance_sigma"]) * sg if sg > 0 else np.inf
+    tol = float(V.s["liquidity_eq_sigma"]) * sg
+    c = float(lv.A["close"][t])
+    prio = {"PWH": 0, "PWL": 0, "PDH": 1, "PDL": 1, "equal": 2, "swing": 3}
+    out = []
+    for side in ("buy", "sell"):
+        ps = [p for p in pools(V, t) if p["side"] == side and abs(p["price"] - c) <= lim
+              and ((p["price"] >= c) if side == "buy" else (p["price"] <= c))]
+        ps.sort(key=lambda p: (prio.get(p["src"], 9), abs(p["price"] - c)))
+        kept = []
+        for p in ps:
+            if all(abs(p["price"] - q["price"]) > tol for q in kept):
+                kept.append(p)
+        kept.sort(key=lambda p: abs(p["price"] - c))
+        for p in kept[:per_side]:
+            out.append({**p, "label": f"{SRC_EN.get(p['src'], p['src'])} {'BSL' if side == 'buy' else 'SSL'}"})
+    return out

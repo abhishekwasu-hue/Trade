@@ -12,7 +12,9 @@ import os
 
 import pandas as pd
 
+from . import advisory as AV
 from . import charts as CH
+from . import liquidity as LQ
 from . import daily as DD
 from . import method as M
 
@@ -24,13 +26,14 @@ def b_plans(V, r):
     return M.plans_of(V, r)
 
 
-def caption(V, r, symbol):
-    """Telegram caption (मराठी, 5–7 ओळी, ≤ 1024)."""
+def caption(V, r, symbol, count=None):
+    """Telegram caption (मराठी, 5–7 ओळी, ≤ 1024). दुसरी ओळ = ① (Daily impulse-degree Dow state) + elliott count सल्ला (Q15 (5))."""
     head = f"🧭 v2.2 {symbol} · {r['ts'][:16]} · " + (f"{r['mark']} {r.get('conviction') or ''}".strip() if r.get("mark")
                                                        else {"wait": "⏳ वाट", "no_trade": "⛔ trade नाही"}.get(r["decision"], r["decision"]))
     story = [x for x in CH.story(r).splitlines() if x.strip() != "Commitment: —"]
     marks = " ".join(f"{k}{'✔' if v[0] else ('✘' if v[0] is False else '·')}" for k, v in r["checklist"].items())
-    lines = [head] + story[:3] + [marks]                                 # 5–7 ओळी: शीर्षक + कथा ≤ 3 + checklist + अडलं / B1-B2 + disclaimer
+    one = "① " + r["checklist"]["①"][1] + (f" | {count}" if count else "")
+    lines = [head, one[:300]] + story[1:3] + [marks]                     # शीर्षक + ① + कथा ≤ 2 + checklist + अडलं / B1-B2 + disclaimer ≤ 7
     if r["decision"] != "setup":
         lines.append("अडलं: " + stop_reason(r))
     bp = b_plans(V, r) if r["decision"] == "setup" else None              # B1 / B2 फक्त setup ला (⇒ कमाल 7 ओळी)
@@ -75,7 +78,7 @@ def select(rows, moments=()):
 def build_run(V, rows, run_dir, symbol, run_id, moments=(), max_items=20):
     """run_dir मध्ये charts + manifest.json + debug.json. रिटर्न manifest dict."""
     os.makedirs(run_dir, exist_ok=True)
-    items, dbg = [], []
+    items, dbg, counts = [], [], {}
     for n, r in enumerate(select(rows, moments)[:max_items], 1):
         t = int(r["bar"])
         st = DD.state_at(V.daily, V.bar_end[t])
@@ -86,12 +89,12 @@ def build_run(V, rows, run_dir, symbol, run_id, moments=(), max_items=20):
             open(os.path.join(run_dir, f), "wb").write(CH.daily_png(V.daily_df, V.daily, symbol, upto=st.bar))
             files.append(f)
         f = f"{n:02d}_{tag}_1h.png"
-        open(os.path.join(run_dir, f), "wb").write(CH.h1_png(V.levels, t, st.trend, symbol))
+        open(os.path.join(run_dir, f), "wb").write(CH.h1_png(V.levels, t, r.get("trend_used") or st.trend, symbol, liq=LQ.pool_marks(V, t)))
         files.append(f)
         f = f"{n:02d}_{tag}_15m.png"
         open(os.path.join(run_dir, f), "wb").write(CH.m15_png(V, t, symbol, r=r))
         files.append(f)
-        cap = caption(V, r, symbol)
+        cap = caption(V, r, symbol, AV.count_line(getattr(V, "df1m", None), r["bar_end"], counts))
         items.append({"n": n, "date": r["ts"][:10], "item": f"{run_id}|v22:{symbol}:{r['ts'][:16]}", "reading": cap.splitlines()[0],
                       "caption": cap, "kind": "v22_check", "files": files})
         dbg.append(debug_view(r))

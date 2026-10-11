@@ -19,6 +19,7 @@ sys.path.insert(0, ROOT)
 from decision3 import charts as CH  # noqa: E402
 from decision3 import daily as DD  # noqa: E402
 from decision3 import engine as E3  # noqa: E402
+from decision3 import liquidity as LQ  # noqa: E402
 
 
 def load_inputs(a):
@@ -121,7 +122,7 @@ def main(argv=None):
         t = cand[-1]
         trend = DD.state_at(V.daily, V.bar_end[t]).trend
         p = os.path.join(a.out_dir, f"{k + 2:02d}_1h_{str(ts.iloc[t])[:16].replace(' ', '_').replace(':', '')}.png")
-        open(p, "wb").write(CH.h1_png(V.levels, t, trend, a.symbol))
+        open(p, "wb").write(CH.h1_png(V.levels, t, trend, a.symbol, liq=LQ.pool_marks(V, t)))
         pngs.append(p)
     for k, st in enumerate([x for x in fun["setups"]][:a.max_charts], 1):
         t = next(r["bar"] for r in rows if r["ts"] == st["ts"])
@@ -137,9 +138,29 @@ def main(argv=None):
         dr = [r for r in rows if pd.Timestamp(r["ts"]).normalize() == day]
         best = [r for r in dr if r["decision"] == "setup"]
         far = max(dr, key=lambda r: sum(1 for k in ("①", "②", "③", "④", "⑥", "⑦") if r["checklist"][k][0]), default=None)
+        # सर्वात पुढे गेलेलं (bar, level) — decide फक्त सर्वोत्तम level दाखवतो; R:R ने अडलेले levels level_evals मध्ये
+        cand = [(r, e) for r in dr for e in (r.get("level_evals") or [])]
+        far_lv = max(cand, key=lambda x: (x[1]["n_ok"], x[0]["bar"]), default=(None, None))
+        def brief(r):
+            if r is None:
+                return None
+            steps = ("①", "②", "③", "⑥", "⑦")
+            reached = max([k for k in steps if r["checklist"][k][0]], default="—", key=steps.index)
+            rk = r.get("risk") or {}
+            lv = r.get("level") or {}
+            return {"ts": r["ts"], "decision": r["decision"], "mark": r.get("mark"), "step_reached": reached,
+                    "trend_used": r.get("trend_used"), "resolution": r.get("trend_resolution"), "daily_phase": r.get("daily_phase"),
+                    "daily_wave": r.get("daily_wave"), "corr_label": r.get("corr_label"), "weekly": r.get("weekly_trend"),
+                    "mature": r.get("mature"), "conviction": r.get("conviction"), "form": r.get("commitment_form"),
+                    "rr": rk.get("rr"), "entry": rk.get("entry"), "sl": rk.get("sl"), "target": rk.get("target"),
+                    "level": None if not lv else f"{lv.get('role')} {lv.get('lo'):,.0f}–{lv.get('hi'):,.0f}",
+                    "checklist": {k: v for k, v in r["checklist"].items()}, "why": r.get("why"), "notes": r.get("trend_notes")}
+        r_, e_ = far_lv
         marks[mstr] = {"setups": [(r["ts"][11:16], r["mark"], r["conviction"]) for r in best],
-                       "best_bar": None if far is None else {"ts": far["ts"], "checklist": {k: v for k, v in far["checklist"].items()},
-                                                             "why": far.get("why")}}
+                       "best_bar": brief(best[0] if best else far),
+                       "furthest_level": None if e_ is None else {"ts": r_["ts"], "trend_used": r_.get("trend_used"),
+                                                                  "resolution": r_.get("trend_resolution"), "daily_phase": r_.get("daily_phase"),
+                                                                  "daily_wave": r_.get("daily_wave"), **e_}}
     fun["moments"] = marks
     with open(os.path.join(a.out_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(fun, f, ensure_ascii=False, indent=1, default=str)
@@ -148,7 +169,7 @@ def main(argv=None):
     for x in fun["setups"]:
         print(" ", x["ts"], x["mark"], x["side"], x["level"], x["conviction"], (x["risk"] or {}).get("rr"))
     for m_, v in marks.items():
-        print("moment", m_, v["setups"] or ("— · best: " + json.dumps(v["best_bar"], ensure_ascii=False)[:400]))
+        print("moment", m_, v["setups"], json.dumps(v["best_bar"], ensure_ascii=False, default=str)[:700])
     for e in eod[-5:]:
         print(e)
     print("charts:", *pngs, sep="\n  ")

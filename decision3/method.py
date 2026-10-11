@@ -114,6 +114,22 @@ def at_level(A, t, d, lvl, win=1):
     return True, "pullback level मध्ये, उलट बाजूने" + ("" if i1 == t else f" (स्पर्श {t - i1} bar आधी)")
 
 
+def at_level_or_confirm(A, t, d, lvl, s, tss=None):
+    """③ + Q16 "वाट एक candle": t ला स्पर्श खिडकीत नसला, पण t − 1 ला ③ ✔ आणि t − 1 ची candle doji / inside (⑥ ने वाट) होती ⇒ t
+    ही पुष्टीची candle ⇒ ③ ✔ वारसा. breakout / gap तपासणी तरीही t वर (at_level सारखी)."""
+    win = int(s["touch_window_bars"])
+    ok, why = at_level(A, t, d, lvl, win)
+    if ok or t < 2:
+        return ok, why
+    o, c = A["open"][t], A["close"][t]
+    if (d == UP and (o < lvl["lo"] or c < lvl["lo"])) or (d == DOWN and (o > lvl["hi"] or c > lvl["hi"])):
+        return ok, why                                                     # t ने level पार ⇒ breakout, वारसा नाही
+    ok_p, _ = at_level(A, t - 1, d, lvl, win)
+    if ok_p and commitment(A, t - 1, d, lvl, s, tss)[2].get("wait") in ("doji", "inside"):
+        return True, "doji / inside नंतरची पुष्टी candle (③ आधीच्या bar वरून)"
+    return ok, why
+
+
 # ------------------------------------------------------------------------------------------------ candle read (§6.6)
 def candle_read(A, t, s=None):
     """कोण जिंकला + ताकद. रिटर्न dict. "मोठा" = मागच्या `candle_avg_n` च्या सरासरीपेक्षा (§5.2)."""
@@ -171,6 +187,16 @@ def power_shift(A, t, d, k, s):
     return n >= int(s["power_shift_min"]), n, items
 
 
+def range_broken_by(A, t, d, s=None):
+    """Q24: commitment candle ने मागच्या `range_state_n` candles च्या पट्ट्याबाहेर trade-दिशेने close केला ⇒ range अवस्था संपली."""
+    s = s or S3.DEFAULTS
+    n = int(s["range_state_n"])
+    if t < n:
+        return False
+    c = float(A["close"][t])
+    return bool(c > float(np.max(A["high"][t - n:t]))) if d == UP else bool(c < float(np.min(A["low"][t - n:t])))
+
+
 def range_state(A, t, s=None):
     """§5.3 gate: शेवटच्या n candles बहुतांश overlap (प्रत्येक जोडी ≥ range_overlap_min) आणि त्यात doji ⇒ range अवस्था."""
     s = s or S3.DEFAULTS
@@ -187,54 +213,107 @@ def range_state(A, t, s=None):
 
 
 # ------------------------------------------------------------------------------------------------ ⑥ commitment
+def _ohlc(A, i):
+    return float(A["open"][i]), float(A["high"][i]), float(A["low"][i]), float(A["close"][i])
+
+
+def _same_window(tss, t, i, s):
+    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि entry_start नंतरचा? (tss नसेल ⇒ हो)."""
+    if tss is None:
+        return True
+    ti, tt = pd.Timestamp(tss[i]), pd.Timestamp(tss[t])
+    return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s["entry_start"]
+
+
+def reversal_form(A, t, d, s, tss=None):
+    """Q16: level वरची reversal candle ओळख (तर्काने, checklist नाही). रिटर्न (form, merged) किंवा None. क्रम: engulf, star, inside_break,
+    doji_confirm, tweezer, pin, strong_close (1 candle), strong_close_2 (2 merged). d = trade दिशा (UP ⇒ खाली नकार, वर close)."""
+    if t < 1:
+        return None
+    o, h, lo, c = _ohlc(A, t)
+    po, ph, pl, pc = _ohlc(A, t - 1)
+    rng, prng = max(h - lo, 1e-9), max(ph - pl, 1e-9)
+    body = (c - o) * d
+    pbody = (pc - po) * d
+    two = _same_window(tss, t, t - 1, s)                                  # 2-candle forms: t − 1 आजचा / खिडकीत
+    doji_max, cbody, cfrac = float(s["doji_body_max"]), float(s["commit_body"]), float(s["commit_close_frac"])
+    pos = (c - lo) / rng if d == UP else (h - c) / rng                     # close trade-बाजूच्या टोकाजवळ (1 = टोकावर)
+    rej = (min(o, c) - lo) / rng if d == UP else (h - max(o, c)) / rng     # level कडचा नकाराचा wick
+    opp = (h - max(o, c)) / rng if d == UP else (min(o, c) - lo) / rng
+    if two and body > 0 and pbody < 0 and max(o, c) >= max(po, pc) and min(o, c) <= min(po, pc):
+        return "engulf", 1                                                 # pullback च्या शेवटच्या candle ला गिळलं
+    if two and t >= 2 and body > 0 and _same_window(tss, t, t - 2, s):
+        qo, qh, ql, qc = _ohlc(A, t - 2)
+        q_rng, qbody = max(qh - ql, 1e-9), (qc - qo) * d
+        if qbody < 0 and -qbody / q_rng >= cbody and abs(pc - po) / prng <= float(s["star_body_max"]) and \
+                (c - (qo + qc) / 2) * d > 0:
+            return "star", 2                                               # morning / evening star (t − 1 लहान, t परत अर्ध्या पलीकडे)
+        inside = ph <= qh and pl >= ql
+        harami = max(po, pc) <= max(qo, qc) and min(po, pc) >= min(qo, qc)
+        if (inside or harami) and (c - (ph if d == UP else pl)) * d > 0:
+            return "inside_break", 2                                       # inside / harami नंतर trade-दिशेचा break
+    if two and body > 0 and abs(pc - po) / prng < doji_max and (c - (ph if d == UP else pl)) * d > 0:
+        return "doji_confirm", 2                                           # level वर doji, पुढची candle पुष्टी
+    if two and body > 0 and pbody <= 0 and \
+            abs((lo - pl) if d == UP else (h - ph)) <= float(s["tweezer_tol"]) * (rng + prng) / 2:
+        return "tweezer", 2                                                # tweezer bottom / top
+    if rej >= float(s["pin_wick_min"]) and rej > opp and pos >= cfrac:
+        return "pin", 1                                                    # pin bar / hammer / shooting star
+    if body > 0 and body / rng >= cbody and pos >= cfrac and opp < body / rng:
+        return "strong_close", 1
+    if two:                                                                # ≤ 2 merged strong close (spec ⑥)
+        mo, mh, ml = po, max(h, ph), min(lo, pl)
+        mr = max(mh - ml, 1e-9)
+        mb = (c - mo) * d
+        mpos = (c - ml) / mr if d == UP else (mh - c) / mr
+        mopp = (mh - max(mo, c)) / mr if d == UP else (min(mo, c) - ml) / mr
+        if mb > 0 and mb / mr >= cbody and mpos >= cfrac and mopp < mb / mr:
+            return "strong_close_2", 2
+    return None
+
+
 def commitment(A, t, d, lvl, s, tss=None):
-    """trend-दिशेची candle (किंवा ≤ commit_merge_max merged), body ≥ commit_body × range, मागच्या candle च्या extreme पलीकडे close, close
-    level च्या trade-बाजूला / level मध्ये; signal-bar कमकुवत (doji / मध्य close / उलट wick ≥ body) ⇒ ✘. वेळ-खिडकी settings."""
-    day = None
+    """⑥ Q16 (Abhi): commitment = level वरची price-reversal candle (≤ 2 merged); कोणताही ओळखलेला reversal form चालतो.
+    किमान सामायिक अट: close मागच्या candle च्या **close** पलीकडे trade-दिशेने (`commit_beyond` = close, default; "extreme" = what-if) आणि
+    (merged 2-candle form ⇒ "मागची" = pattern आधीची candle t − 2, त्याच दिवसाची असेल तर; Q30)
+    close level च्या trade-बाजूला / level मध्ये. Grade: मागच्या candle च्या extreme पलीकडे close किंवा engulf ⇒ A; बाकी (wick नकार + close
+    पलीकडे) ⇒ B. वाट: चालू candle pullback-दिशेची / doji / inside bar ⇒ पुढच्या candle ची वाट. वेळ-खिडकी settings."""
+    if s["commit_beyond"] not in ("extreme", "close"):
+        raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
     if tss is not None:                                                    # tss = 15M bars चे timestamps (bar सुरुवात)
-        ts = pd.Timestamp(tss[t])
-        hm = ts.strftime("%H:%M")
+        hm = pd.Timestamp(tss[t]).strftime("%H:%M")
         if not (s["entry_start"] <= hm < s["entry_end"]):               # 15:15 चा bar बाजार बंदला close ⇒ entry नाही (v2.1 सारखं)
             return False, "entry वेळ-खिडकीबाहेर", {}
-        day = ts.normalize()
-    best = weak_c = None                                                   # पहिला पूर्ण ✔ k; नसेल तर पहिला कमकुवत (कारणासाठी)
-    for k in range(1, int(s["commit_merge_max"]) + 1):
-        i0 = t - k + 1
-        if i0 < 1:
-            break
-        if k > 1 and day is not None:                                      # merged: प्रत्येक bar आजचा आणि खिडकीत
-            t0 = pd.Timestamp(tss[i0])
-            if t0.normalize() != day or t0.strftime("%H:%M") < s["entry_start"]:
-                break
-        o, c = A["open"][i0], A["close"][t]
-        h, l = max(A["high"][i0:t + 1]), min(A["low"][i0:t + 1])
-        rng = max(h - l, 1e-9)
-        body = (c - o) * d
-        if s["commit_beyond"] not in ("extreme", "close"):
-            raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
-        if s["commit_beyond"] == "close":                                 # Q16 पर्याय (Brooks close-beyond-prior-close); default extreme
-            prev_ext = A["close"][i0 - 1]
-        else:
-            prev_ext = A["high"][i0 - 1] if d == UP else A["low"][i0 - 1]
-        beyond = (c - prev_ext) * d > 0
-        side = (c >= lvl["lo"]) if d == UP else (c <= lvl["hi"])
-        if body > 0 and body / rng >= float(s["commit_body"]) and beyond and side:
-            pos = (c - l) / rng if d == UP else (h - c) / rng
-            opp = (h - max(o, c)) / rng if d == UP else (min(o, c) - l) / rng
-            weak = pos < float(s["commit_close_frac"]) or opp >= body / rng
-            engulf = k == 1 and abs(A["close"][t - 1] - A["open"][t - 1]) > 0 and \
-                (max(o, c) >= max(A["open"][t - 1], A["close"][t - 1])) and (min(o, c) <= min(A["open"][t - 1], A["close"][t - 1]))
-            cand = {"merged": k, "body_pct": round(body / rng, 2), "close_third": round(pos, 2), "opp_wick": round(opp, 2), "weak": weak,
-                    "engulf": bool(engulf), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
-            if not weak:
-                best = cand
-                break
-            weak_c = weak_c or cand                                        # k = 1 कमकुवत ⇒ k = 2 merged पण पाहा (spec "≤ 2 merged")
-    if best is None and weak_c is not None:
-        return False, "signal-bar कमकुवत (मध्य close / उलट wick)", weak_c
-    if best is None:
+    if t < 1:
         return False, "commitment candle नाही", {}
-    return True, f"commitment ({best['merged']} candle) body {best['body_pct']:.0%}" + (" · engulf" if best["engulf"] else ""), best
+    o, h, lo, c = _ohlc(A, t)
+    po, ph, pl, pc = _ohlc(A, t - 1)
+    rng = max(h - lo, 1e-9)
+    beyond_close = (c - pc) * d > 0
+    beyond_ext = (c - (ph if d == UP else pl)) * d > 0
+    side = (c >= lvl["lo"]) if d == UP else (c <= lvl["hi"])
+    if abs(c - o) / rng < float(s["doji_body_max"]):
+        return False, "doji level वर — पुढच्या candle ची वाट", {"wait": "doji"}
+    if h <= ph and lo >= pl:
+        return False, "inside bar — पुढच्या candle ची वाट", {"wait": "inside"}
+    if (c - o) * d < 0 and not beyond_close:
+        return False, "candle अजून pullback-दिशेची — वाट", {"wait": "pullback"}
+    fm = reversal_form(A, t, d, s, tss)
+    if fm is not None and fm[1] == 2 and t >= 2 and _same_window(tss, t, t - 2, s):
+        r = t - 2                                                          # merged (≤ 2) = एक candle ⇒ "मागची" = pattern आधीची (Q30)
+        qo, qh, ql, qc = _ohlc(A, r)
+        beyond_close = (c - qc) * d > 0
+        beyond_ext = (c - (qh if d == UP else ql)) * d > 0
+    need = beyond_close if s["commit_beyond"] == "close" else beyond_ext
+    if not (need and side):
+        return False, "commitment candle नाही" + ("" if side else " (close level पलीकडे चुकीच्या बाजूला)"), {}
+    if fm is None:
+        return False, "commitment candle नाही (reversal form नाही)", {}
+    form, merged = fm
+    grade = "A" if (beyond_ext or form == "engulf") else "B"
+    cm = {"form": form, "merged": merged, "grade": grade, "beyond_extreme": bool(beyond_ext), "engulf": form == "engulf",
+          "body_pct": round(abs(c - o) / rng, 2), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
+    return True, f"commitment {form} ({merged} candle) · grade {grade}", cm
 
 
 # ------------------------------------------------------------------------------------------------ ⑦ risk
@@ -260,6 +339,26 @@ def risk(V, t, d, lvl, k, s):
     ok = rr is not None and rr >= float(s["min_rr"])
     return ok, {"entry": round(entry, 2), "sl": round(sl, 2), "target": None if tgt is None else round(tgt, 2),
                 "rr": None if rr is None else round(rr, 2)}
+
+
+# ------------------------------------------------------------------------------------------------ conviction caps (Q15)
+CONV_RANK = {"A": 3, "B": 2, "weak": 1, "against": 0}
+
+
+def cap_min(a, b):
+    """दोन caps पैकी कडक (None = cap नाही)."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if CONV_RANK[a] <= CONV_RANK[b] else b
+
+
+def cap_conv(conv, cap):
+    """conviction ला cap (A / B / weak) — cap पेक्षा वरचं ⇒ cap; against तसाच."""
+    if cap is None or conv is None or conv not in CONV_RANK:
+        return conv
+    return cap if CONV_RANK[conv] > CONV_RANK[cap] else conv
 
 
 # ------------------------------------------------------------------------------------------------ §5.1 पहिला पाय
