@@ -11,7 +11,7 @@ import json
 import os
 import time
 
-PROMPT_VERSION = "v22_chart_audit_v1"
+PROMPT_VERSION = "v22_chart_audit_v2"
 TASK = "v22_chart_audit"
 SECTIONS = ("zones", "structure", "pullback_trigger", "entry_sl_target")
 SECTION_NAMES = {"zones": "Zones", "structure": "Structure", "pullback_trigger": "Pullback & trigger", "entry_sl_target": "Entry/SL/Target"}
@@ -42,8 +42,8 @@ RULES
 - Check, where the chart shows them:
   Zones/levels: each zone at a real prior buyer/seller area (visible reaction/rejection), sensible width, only significant levels
   (no clutter), state (fresh/tested/flipped/invalidated) consistent with candles, any obvious significant level missing.
-  Structure: pivots at visible swing extremes, HH/HL/LH/LL tags consistent with drawn swings, protected swing at the right swing,
-  Dow state band matches structure, impulse vs correction legs, wave labels plausible.
+  Structure: the protected swing / origin line at the right swing and the Dow state in the title consistent with the candles
+  (default charts draw no minor pivots or HH/HL/LH/LL tags — never ask for them).
   Pullback & trigger: price really pulled back into the level; commitment (reversal) candle at the level and of a recognisable form;
   trendline/channel drawn where claimed.
   Entry/SL/Target: entry at the marked trigger; stop beyond the structural swing/zone (not inside); target at the next opposing level;
@@ -54,12 +54,38 @@ RULES
 Return only the JSON object."""
 
 
+DAILY_SYSTEM_PROMPT = """ROLE
+You audit a DAILY structure chart produced by a rule-based trading engine (NSE index, PAPER/shadow review only). You judge whether what is
+DRAWN is placed where the candles say it should be. You never trade, never change levels, never change the engine's decision.
+
+The chart shows only trend-degree structure: impulse legs (one line each), corrections as labelled brackets/boxes, the protected origin
+line, and at most six horizontal level bands. Minor pivots and tags are intentionally NOT drawn — never ask for them.
+
+Answer exactly these questions (numbers only from FACTS; judge placement only):
+- zones: are the level bands at real prior buyer/seller areas (visible reaction/rejection)?
+- structure: are the corrections bracketed correctly (start, end, in progress), and is the origin/protected line at the right swing?
+- missing_or_clutter: is anything important missing (a major swing level, a correction not bracketed)?
+- pullback_trigger and entry_sl_target: always "na" on this chart.
+status: ok / warn / fail / na; reason ≤ 15 words, English. issues: ≤ 5 short items, most important first.
+verdict: agree (no fail, ≤ 1 warn) / partly_agree / disagree (any fail on structure).
+Return only the JSON object."""
+REPAIR = "Your previous reply was not a valid JSON object for the required schema. Reply again with only that JSON object — no prose, no code fences."
+
+
 def facts_text(kind, js):
     """Engine JSON ⇒ छोटा facts मजकूर (आकडे फक्त इथून)."""
     if kind == "v22_daily_swings":
         piv = js.get("pivots") or []
         prot = [p for p in piv if p.get("protected_minor") or p.get("protected_q15")]
         q, m = js.get("q15") or {}, js.get("minor") or {}
+        if js.get("objects") is not None:                                 # C1: trend-degree chart (corrections + bands)
+            ob = js["objects"]
+            lines = [f"Chart: {js.get('symbol')} daily structure, window {js.get('window', {}).get('from')} .. {js.get('window', {}).get('to')}.",
+                     f"Trend now: {js.get('trend_line')}.",
+                     f"Impulse legs drawn: {len(ob.get('legs', []))}; corrections bracketed: {len(ob.get('corrections', []))}; "
+                     f"level bands: {len(js.get('bands') or [])}.",
+                     "Bands: " + "; ".join(f"{b['label']} {b['lo']:,.0f}-{b['hi']:,.0f} ({b['state']})" for b in (js.get("bands") or [])) + "."]
+            return "\n".join(lines)
         lines = [f"Chart: {js.get('symbol')} daily swings, window {js.get('window', {}).get('from')} .. {js.get('window', {}).get('to')}.",
                  f"Engine pivots in window: {len(piv)} (tags {sum(1 for p in piv if p['tag'] in ('HH', 'HL'))} HH/HL, "
                  f"{sum(1 for p in piv if p['tag'] in ('LH', 'LL'))} LH/LL); protected swings {len(prot)}.",
@@ -73,11 +99,11 @@ def facts_text(kind, js):
                       ensure_ascii=False, default=str)[:3000]
 
 
-def build_request(png, facts, model, max_tokens=900):
+def build_request(png, facts, model, max_tokens=900, system=None):
     if not model:
         raise ValueError("VISION_SIGNAL_MODEL env सेट नाही")
     return {"model": model, "max_tokens": int(max_tokens),
-            "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            "system": [{"type": "text", "text": system or SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(png).decode()}},
                 {"type": "text", "text": "FACTS (engine data):\n" + facts}]}],
@@ -103,6 +129,21 @@ def validate(raw):
             return None, f"invalid {k} status"
         out["sections"][k] = {"status": st, "reason": _one_line(s.get("reason") or "")[:120]}
     return out, None
+
+
+def parse_json(text):
+    """C2: Vision text ⇒ dict — code fence / आधी-नंतरचा मजकूर असेल तर पहिला {...} object; जमलं नाही ⇒ ValueError."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        t = t[4:] if t.lower().startswith("json") else t
+    try:
+        return json.loads(t)
+    except ValueError:
+        a, b = t.find("{"), t.rfind("}")
+        if a < 0 or b <= a:
+            raise
+        return json.loads(t[a:b + 1])
 
 
 def _one_line(x):
@@ -138,7 +179,7 @@ def _budget(model, g=None, spent_fn=None, estimate_fn=None, today=None):
     return True, day, cap, ""
 
 
-def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None, decision=None):
+def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None, decision=None, system=None):
     """एका chart चा audit ⇒ dict {status: done/skipped/failed, verdict, sections, issues, cost_usd, spent_today, cap, why, model,
     prompt_version}. decision (असल्यास) फक्त deep-copy म्हणून वाचतो — परत कधीच नाही / बदल नाही."""
     _ = copy.deepcopy(decision) if decision is not None else None
@@ -160,9 +201,10 @@ def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None,
         return out
     from vision import signal_audit as SA
     t0 = time.monotonic()
+    req = build_request(png, facts, model, system=system)
     try:
         client = client or SA.make_client(30)
-        msg = client.messages.create(**build_request(png, facts, model))
+        msg = client.messages.create(**req)
     except Exception as exc:                                               # noqa: BLE001 — chart तरीही जातो; कारण caption मध्ये
         out.update(status="failed", why=f"API: {type(exc).__name__}")
         if on_usage is not None:                                           # timeout / network: request कदाचित billed ⇒ सावध अंदाज
@@ -183,16 +225,48 @@ def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None,
             on_usage(usage, cost)                                          # cost log अपयश ⇒ पैसे गेलेला निकाल टाकत नाही
         except Exception as exc:                                           # noqa: BLE001
             out["cost_log_error"] = type(exc).__name__
-    text = next((b.text for b in (getattr(msg, "content", None) or []) if getattr(b, "type", None) == "text"), None)
-    try:
-        data, err = validate(json.loads(text or ""))
-    except ValueError:
-        data, err = None, "invalid JSON"
-    if err:
-        out.update(status="failed", why=err)
+    data, err, text = _read(msg)
+    if err:                                                                # C2: JSON / schema चुकीचा ⇒ एकदाच repair (budget आत असेल तरच)
+        try:
+            b2 = budget(model) if budget else _budget(model)
+        except Exception as exc:                                           # noqa: BLE001
+            b2, out["repair_error"] = (False,), type(exc).__name__
+        if b2[0]:
+            out["repair"] = True
+            req2 = {**req, "messages": req["messages"] + [{"role": "assistant", "content": text or "{}"},
+                                                          {"role": "user", "content": REPAIR}]}
+            try:
+                msg2 = client.messages.create(**req2)
+                u2 = SA.usage_of(msg2)
+            except Exception as exc:                                       # noqa: BLE001 — timeout: request कदाचित billed ⇒ सावध अंदाज
+                out["repair_error"] = type(exc).__name__
+                msg2, u2 = None, {"input_tokens": 2050, "output_tokens": SA.max_output_tokens(), "estimated": 1}
+                out["cost_estimated"] = True
+            c2 = SA.cost_usd(model, u2)
+            out["cost_usd"] = round(out["cost_usd"] + c2, 6)
+            if on_usage is not None:
+                try:
+                    on_usage(u2, c2)
+                except Exception as exc:                                   # noqa: BLE001
+                    out["cost_log_error"] = type(exc).__name__
+            if msg2 is not None:
+                data, err, _ = _read(msg2)
+    if err:                                                                # chart तरीही जातो: "Vision skipped: parse error" (एकटी failed ओळ नाही)
+        out.update(status="skipped", why="parse error", detail=err)
         return out
     out.update(status="done", **data)
     return out
+
+
+def _read(msg):
+    """Vision message ⇒ (data, err, text); JSON वाचता आला नाही ⇒ err "parse error"; schema चुकीचा ⇒ validate चं कारण."""
+    text = next((b.text for b in (getattr(msg, "content", None) or []) if getattr(b, "type", None) == "text"), None)
+    try:
+        raw = parse_json(text)
+    except ValueError:
+        return None, "parse error", text
+    data, err = validate(raw)
+    return data, err, text
 
 
 def caption_line(a):
@@ -202,6 +276,8 @@ def caption_line(a):
             f"Vision audit: {a['verdict'].replace('_', ' ')} — {bad} issue{'s' if bad != 1 else ''}, see report"
     if a["why"] in ("daily budget reached", "monthly budget reached"):
         return f"Vision audit skipped: {a['why']}"
+    if a["why"] == "parse error":
+        return "Vision skipped: parse error"
     return f"Vision audit {'failed' if a['status'] == 'failed' else 'skipped'}: {a['why'][:40]}"
 
 
@@ -210,11 +286,17 @@ def report_text(a, title):
     lines = [f"Vision report — {title}"[:120]]
     if a["status"] != "done":
         lines.append(caption_line(a))
+        if a.get("cost_usd"):                                              # C4: पैसे गेले असतील तर खर्च ओळ
+            lines.append(f"Cost ${a['cost_usd']:.4f}" + (" (estimated)" if a.get("cost_estimated") else ""))
     else:
         lines.append(f"Verdict: {a['verdict'].replace('_', ' ')}")
         for k in SECTIONS:
             s = a["sections"][k]
+            if s["status"] == "na":                                        # C3: chart वर नसलेला भाग ⇒ ओळच नाही ("—" नाही)
+                continue
             lines.append(f"{SECTION_NAMES[k]}: {STATUS_ICON[s['status']]} {s['reason']}"[:160])
+        if a.get("missing_or_clutter"):
+            lines.append(f"Missing: {a['missing_or_clutter']}"[:160])
         for x in a["issues"][:4]:
             lines.append(f"• {x}"[:140])
         if a.get("reused"):
@@ -278,7 +360,9 @@ def make_auditor(model=None, client=None, budget=None, on_usage=None):
             js = json.load(open(jp, encoding="utf-8")) if jp and os.path.exists(jp) else {}
         except ValueError:
             js = {}
-        a = audit_chart(png, facts_text(it.get("kind"), js), model=model, client=client, budget=budget, on_usage=on_usage)
+        system = DAILY_SYSTEM_PROMPT if (it.get("kind") == "v22_daily_swings" and js.get("objects") is not None) else None   # C1
+        a = audit_chart(png, facts_text(it.get("kind"), js), model=model, client=client, budget=budget, on_usage=on_usage,
+                        system=system)
         a["item"], a["chart"], a["sha"] = it["item"], png_rel, sha
         try:
             with open(out_p, "w", encoding="utf-8") as fh:
