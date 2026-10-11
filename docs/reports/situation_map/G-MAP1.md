@@ -81,7 +81,7 @@ Charts trade-data `review/map/a3` मध्ये आहेत. VPS वर `send
 | केस | नकाशाचं उत्तर (decision bar पर्यंतच्या data वरून) |
 |---|---|
 | 22 Sep 15:00 | Wave (4) चे A-B-C decision bar ला पूर्ण दिसत होते, त्यामुळे Gray-2 नाही आणि G9 bear शक्य होता. Signal **निर्णय थरात** अडला: 10:15 ची commitment candle (34.6) pause सरासरीच्या (30.6) 1.5 पटीपेक्षा लहान होती. |
-| 28 Sep 14:15 | Flag 11 candles चा, त्यामुळे G8 नाही (2–6 candles ची व्याख्या तशीच ठेवली). With-trend legs लहान होत नव्हते, त्यामुळे S8 नाही. S1 म्हणून तपासलं (तुटलेला swing 23,021 / displacement base): **12:45 ला S1 bear signal**, entry 22,830. |
+| 28 Sep 14:15 | Flag 11 candles चा, त्यामुळे G8 नाही (2–6 candles ची व्याख्या तशीच ठेवली). *नंतर (Abhi #284): 11 candles सुद्धा G8 — `g8_max_bars` 11.* With-trend legs लहान होत नव्हते, त्यामुळे S8 नाही. S1 म्हणून तपासलं (तुटलेला swing 23,021 / displacement base): **12:45 ला S1 bear signal**, entry 22,830. |
 | 16 Feb 2018 09:30 | Origin 15 Feb ला real-broken झाला होता, पण 09:30 पर्यंत break अपयशी ठरला. त्यामुळे S1 (जुना downtrend): area आणि commitment असेल तर bear setup शक्य. |
 | 15 Nov 2021 13:00 | Retest ची रचना corrective नव्हती, पण rejection होतं. त्यामुळे G4 नाही. |
 

@@ -117,10 +117,12 @@ def check_28sep(raw):
     base = None if not disp else (round(float(fr["low"].iloc[disp[-1]]), 1), round(float(fr["high"].iloc[disp[-1]]), 1))
     facts = {"impulse": f"{imp['from']:,.1f} → (flag आधी) {lo[e]:,.1f}", "flag_bars": int(flag_bars), "with_trend_legs_last3": [round(x) for x in legs],
              "legs_shrinking": shrinking, "broken_swing (impulse BOS)": imp.get("bos"), "last_displacement_base": base}
-    g8 = 2 <= flag_bars <= 6
+    from simple_core import settings as SS
+    g8_max = int(SS.engine_settings()["g8_max_bars"])                 # Abhi #284: 11
+    g8 = 2 <= flag_bars <= g8_max
     s1 = s1_on_areas(raw, "2026-09-28", imp.get("bos"), base, disp[-1] if disp else None, fr)
     facts["S1_check"] = s1["summary"]
-    ans = (("G8 रचना (2–6 candles) ✔" if g8 else f"G8 नाही: flag {flag_bars} candles (G8 = 2–6; व्याख्या बदलली नाही — G-MAP1)") + " · "
+    ans = ((f"G8 रचना (2–{g8_max} candles) ✔" if g8 else f"G8 नाही: flag {flag_bars} candles (G8 = 2–{g8_max}; Abhi #284)") + " · "
            + ("S8 (with-trend legs लहान होत आहेत)" if shrinking else "with-trend legs लहान होत नाहीत (S8 नाही)") + " · "
            + f"S1 म्हणून: area = तुटलेला swing {imp.get('bos')} / displacement base {base} ⇒ {s1['answer']}")
     return {"id": "2026-09-28 14:15", "date": "2026-09-28", "bar": "14:15", "facts": facts, "answer": ans,

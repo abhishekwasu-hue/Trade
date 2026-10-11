@@ -33,14 +33,14 @@ ENGINE_DEFAULTS = {
     "wave_lookback_pivots": 12,    # trade-degree swings पैकी मागचे इतके (origin शोध)
     "g8_retrace_max": 0.382,       # G8: wave 3 मधला pullback ≤ हे (KB 23.6–38.2%) …
     "g8_retrace_tol": 0.05,        # … + हे सहनशीलता
-    "g8_max_bars": 6,              # … आणि ≤ इतके bars (KB "जलद, 2–6 candles")
+    "g8_max_bars": 11,             # … आणि ≤ इतके bars (KB "2–6 candles"; Abhi #284: 28 Sep चा 11-candle flag सुद्धा G8 ⇒ 11)
     "w3_proj": 1.618,              # wave3_projection = wave 2 end + हे × wave 1 [guideline, K7]
     "w3_proj_alts": (1.0, 2.618),
     "w5_proj_w1": 1.0,             # wave5_projection = wave 4 end + हे × wave 1 …
     "w5_proj_w13": 0.618,          # … पर्याय: + हे × (wave 1 start → wave 3 end)
     "wave1_zone_mr": 0.15,         # wave 1 टोकाचा flip area = टोक ± हे × MR
     # G8 flag channel (flags.py, Abhi 28 Sep) [अनुमान — K-10 / IS वर तपासायचं]
-    "flag_min_bars": 2,            # G8 flag: 2–6 candles (KB H, Abhi; नकाशा S5) — कमाल g8_max_bars. 1 candle ⇒ setup नाही
+    "flag_min_bars": 2,            # G8 flag: 2–11 candles (KB H 2–6; Abhi #284 ⇒ 11; नकाशा S5) — कमाल g8_max_bars. 1 candle ⇒ setup नाही
     "flag_retrace_max": 0.5,       # flag ची खोली ≤ हे × impulse (उथळ)
     "flag_overlap_min": 0.6,       # overlapping (K10.1 correction overlap)
     "flag_min_touches": 2,         # प्रत्येक रेषेला किमान touches

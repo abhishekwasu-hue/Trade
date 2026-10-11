@@ -379,6 +379,22 @@ def test_g8_flag_needs_breakout_shallow_and_overlap():
     assert FL.flag_zone(dd, _imp(dd), -1, MR) is None
 
 
+def test_g8_flag_length_boundary_11_yes_12_no():
+    """Abhi #284: 11-candle flag सुद्धा G8 (g8_max_bars 11); 12 ⇒ flag नाही. Pause / acceptance शोध पूर्ण flag पाहतो."""
+    from simple_core import flags as FL
+    from simple_core import settings as SS
+    side_bar = [(1004, 1014, 1002, 1010), (1010, 1016, 1004, 1006)]                 # बाजूला, overlapping
+    for n, ok in ((11, True), (12, False)):
+        flag = (side_bar * 6)[:n]
+        dd = day(IMP_DN + flag + [(1006, 1007, 996, 997)])
+        z = FL.flag_zone(dd, _imp(dd), -1, MR)
+        assert (z is not None) == ok, (n, z)
+        if ok:
+            assert z["flag_bars"] == 11
+    s = SS.engine_settings()
+    assert int(s["pause_lookback"]) >= int(s["g8_max_bars"])
+
+
 def test_g8_breakout_bar_that_makes_new_low_still_uses_flag():
     rows = IMP_DN + FLAG_UP + [(1020, 1021, 997, 999)]                              # breakout bar नेच नवा low (impulse टोक पुढे सरकलं)
     df = day(rows)
