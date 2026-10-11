@@ -17,12 +17,12 @@ from . import config as PC
 from . import journal as PJ
 
 BOT_OF_SOURCE = {"dynamic_sr_instant": "dynamic_sr_instant", "srv2_momentum_reversal": "srv2_momentum_reversal",
-                 "dynamic_sr_instant_srv3_shadow": "srv3_instant", "manual_paper": "manual"}   # manual = ✋ /paper (paper/manual.py)
+                 "dynamic_sr_instant_srv3_shadow": "srv3_instant", "manual_paper": "manual", "classic_sr_reversal": "classic_sr"}   # manual = ✋ /paper (paper/manual.py)
 DRYRUN_SUFFIX = "_dryrun_shadow"                                        # Sunday dry-run trades ("_shadow" ⇒ P&L / kill-switch बेरजेत नाहीत)
 BOT_OF_SOURCE.update({f"{k}{DRYRUN_SUFFIX}": v for k, v in list(BOT_OF_SOURCE.items())})
 SS_KEY = {"srv3_instant": "srv3_signal_source"}                        # SR V3 चा signal_source मूळ 5-Min settings मध्ये वेगळ्या key ने
 BOT_LABEL = {"dynamic_sr_instant": "5-Min Instant", "srv2_momentum_reversal": "15M Dynamic SR", "srv3_instant": "SR V3 (5-Min)",
-             "manual": "✋ Manual"}
+             "manual": "✋ Manual", "classic_sr": "Classic SR"}
 
 
 def _db_path():

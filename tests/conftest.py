@@ -145,3 +145,28 @@ def _paper_isolation(tmp_path, monkeypatch):
         monkeypatch.setattr(_PW, "_db_path", lambda: str(tmp_path / "no_live_trades.db"))   # trade_monitor tests ⇒ repo data/ चे trades नाहीत
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _level_gate_touch_by_default(monkeypatch):
+    """Level bots (Abhi: confirmation gate) — PAPER चा नवा default "confirmation" जुन्या bot-logic tests (touch वर लिहिलेले) मध्ये network
+    (Daily / 15M candles) मागवेल ⇒ tests मध्ये settings["entry_mode"] दिला नसेल तर "touch". Confirmation tests entry_mode स्पष्ट देतात किंवा
+    `LGB._entry_mode_orig` परत लावतात."""
+    try:
+        from bots_common import level_gate_bot as _LGB
+        orig = getattr(_LGB, "_entry_mode_orig", _LGB.entry_mode)
+        _LGB._entry_mode_orig = orig
+        monkeypatch.setattr(_LGB, "entry_mode",
+                            lambda s: orig(s) if str((s or {}).get("entry_mode") or "").strip() else _LGB.TOUCH)
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _no_futures_volume_network(monkeypatch):
+    """Level gate (a2 / c0): tests मध्ये futures volume साठी network नाही ⇒ NA (एखादा test fetch_volume देऊन स्वतः तपासतो)."""
+    try:
+        from bots_common import level_gate_bot as _LGB
+        monkeypatch.setattr(_LGB, "_default_futures_candles", lambda *a, **k: None)
+    except Exception:
+        pass

@@ -481,6 +481,10 @@ def _open_futures_trade(access_token, symbol, settings, resolved, direction, pri
         "max_loss": sl_points, "max_profit": target_points,
     }
     trading_mode = "PAPER" if shadow else settings.get("trading_mode", "PAPER")
+    if trading_mode == "PAPER":
+        from bots_common import level_gate_bot as _LGB
+        if _LGB.entry_mode(settings) == _LGB.CONFIRMATION:                  # Abhi (level bots §1/§8): MCX वर trend + confirmation gate (L4)
+            return "SKIPPED_MCX_PAPER_PAUSED (confirmation gate L4 अजून नाही — PAPER नवे entries थांबवले; exits चालू)"
     broker_account_ids = [] if shadow else (settings.get("broker_account_ids") or [])
     if broker_account_ids:
         from trading_engine import execute_trade_on_all_accounts
@@ -572,6 +576,10 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     settings = cloud_db.get_strategy_settings(STRATEGY_KEY, symbol)
     if not settings.get("symbol_enabled", False):
         return f"{symbol}: बंद आहे (symbol_enabled=False, MCX Futures Trader सेटिंग्जमधून सक्रिय करा)"
+    if shadow or settings.get("trading_mode", "PAPER") == "PAPER":
+        from bots_common import level_gate_bot as _LGB
+        if _LGB.entry_mode(settings) == _LGB.CONFIRMATION:                  # Abhi (level bots §1/§8): L4 पर्यंत PAPER नवे entries नाहीत —
+            return f"{symbol}: MCX PAPER नवे entries थांबवले (confirmation gate L4 अजून नाही; exits चालू)"   # gates / Telegram / candle state आधीच
 
     ok, resolved = mcx_resolver.resolve_symbol(access_token, symbol)
     if not ok:

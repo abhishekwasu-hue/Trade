@@ -149,14 +149,49 @@ def candle_read(A, t, s=None):
 
 
 # ------------------------------------------------------------------------------------------------ ④ power shift
-def power_shift(A, t, d, k, s):
-    """(a) counter candles च्या ranges शेवटच्या 3 मध्ये लहान होत; (b) शेवटच्या 3 bodies overlap ≥ power_overlap; (c) शेवटचा counter push
-    नवं टोक नाही किंवा sweep करून परत; (d) trend-दिशेचे wicks / rejection. ≥ power_shift_min ⇒ ✔. (e) RSI पूरक (NA)."""
-    items = {}
+def _mean(x):
+    return float(np.mean(x)) if len(x) else None
+
+
+def _vol(A):
+    v = A.get("volume") if hasattr(A, "get") else None
+    if v is None:
+        return None
+    v = np.asarray(v, dtype=float)
+    return v if np.isfinite(v).any() and np.nanmax(v) > 0 else None
+
+
+def contraction(A, t, d, k, s, lvl=None):
+    """④ (a) Abhi (level bots spec): विरुद्ध बाजू area मध्ये दमली ⇒ candles लहान. Relative: area मधल्या (lvl नसेल ⇒ pullback चा शेवटचा
+    तिसरा भाग) pullback candles चा सरासरी range < pullback च्या आधीच्या candles चा **आणि** impulse candles चा सरासरी range. नेमके 3 नाहीत."""
     k0 = k["k_open_bar"] if k and k.get("k_open_bar") is not None else max(0, t - int(s["power_fallback_bars"]))
     idx = [i for i in range(k0, t + 1) if (A["close"][i] - A["open"][i]) * d < 0]
-    r = [A["high"][i] - A["low"][i] for i in idx[-3:]]
-    items["a_shrinking"] = len(r) == 3 and r[0] > r[1] > r[2]
+    if lvl is not None:
+        inside = [i for i in idx if A["low"][i] <= lvl["hi"] and A["high"][i] >= lvl["lo"]]
+    else:
+        inside = idx[-max(1, len(idx) // 3):] if idx else []
+    earlier = [i for i in idx if inside and i < inside[0]]
+    if k and k.get("origin_bar") is not None and k.get("i_end_bar") is not None:
+        imp = [i for i in range(int(k["origin_bar"]), int(k["i_end_bar"]) + 1) if (A["close"][i] - A["open"][i]) * d > 0]
+    else:
+        imp = [i for i in range(max(0, k0 - int(s["power_fallback_bars"])), k0) if (A["close"][i] - A["open"][i]) * d > 0]
+    rng = lambda ii: _mean([A["high"][i] - A["low"][i] for i in ii])     # noqa: E731
+    a_in, a_er, a_im = rng(inside), rng(earlier), rng(imp)
+    return bool(a_in is not None and a_er is not None and a_im is not None and a_in < a_er and a_in < a_im)
+
+
+def power_shift(A, t, d, k, s, lvl=None):
+    """(a) विरुद्ध candles लहान होत (power_a_rule: relative = `contraction`; strict3 = जुना शेवटचे 3 सलग लहान); (b) शेवटच्या 3 bodies overlap ≥
+    power_overlap; (c) शेवटचा counter push नवं टोक नाही किंवा sweep करून परत; (d) trend-दिशेचे wicks / rejection. ≥ power_shift_min ⇒ ✔.
+    (e) handover-volume (a2 zone study, volume असेल तर; नाहीतर NA) — पूरक, मोजणीत नाही."""
+    items = {}
+    k0 = k["k_open_bar"] if k and k.get("k_open_bar") is not None else max(0, t - int(s["power_fallback_bars"]))
+    if s.get("power_a_rule", "relative") == "strict3":
+        idx = [i for i in range(k0, t + 1) if (A["close"][i] - A["open"][i]) * d < 0]
+        r = [A["high"][i] - A["low"][i] for i in idx[-3:]]
+        items["a_shrinking"] = len(r) == 3 and r[0] > r[1] > r[2]
+    else:
+        items["a_shrinking"] = contraction(A, t, d, k, s, lvl)
     bl = [(min(A["open"][i], A["close"][i]), max(A["open"][i], A["close"][i])) for i in range(max(0, t - 2), t + 1)]
     ov = []
     for (a0, a1), (b0, b1) in zip(bl[:-1], bl[1:]):
@@ -182,6 +217,8 @@ def power_shift(A, t, d, k, s):
         ow = cr["upper_wick"] if d == UP else cr["lower_wick"]
         rej = rej or (w >= cr["body_pct"] and w > ow)
     items["d_rejection_wick"] = rej
+    zs = zone_study(A, k0, t, d, s) if _vol(A) is not None else None
+    items["e_handover_volume"] = None if zs is None or zs.get("handover") is None else bool(zs["handover"] and zs.get("vol_ok"))
     items["e_rsi_div"] = None                                            # पूरक; थर 6 जोडणी पुढे (NA)
     n = sum(1 for k_ in ("a_shrinking", "b_overlap", "c_no_new_extreme_or_sweep", "d_rejection_wick") if items[k_])
     return n >= int(s["power_shift_min"]), n, items
@@ -210,6 +247,104 @@ def range_state(A, t, s=None):
         m = min(A["high"][a] - A["low"][a], A["high"][b] - A["low"][b])
         ok = ok and m > 0 and (hi - lo) / m >= float(s["range_overlap_min"])
     return ok and any(candle_read(A, i, s)["doji"] for i in ix)
+
+
+# ------------------------------------------------------------------------------------------------ a2 zone study (level bots)
+def _cmp(first, second):
+    """+1 दुसरा अर्धा मोठा, -1 लहान, None (एखादा अर्धा रिकामा / NA)."""
+    a, b = _mean([x for x in first if x is not None and np.isfinite(x)]), _mean([x for x in second if x is not None and np.isfinite(x)])
+    if a is None or b is None:
+        return None
+    return 1 if b > a else (-1 if b < a else 0)
+
+
+def _majority(req, others):
+    """req (आवश्यक) खरं आणि उपलब्ध इतर उप-तपासण्यांपैकी किमान अर्ध्या खऱ्या."""
+    if req is None:
+        return None
+    av = [x for x in others if x is not None]
+    return bool(req and (not av or sum(1 for x in av if x) * 2 >= len(av)))
+
+
+def zone_study(A, a, t, d, s, mr=None):
+    """Abhi a2: ARMED (a) पासून t पर्यंतच्या बंद candles — trend-बाजूच्या (d दिशेचा रंग) आणि उलट-बाजूच्या candles ची पहिल्या / दुसऱ्या अर्ध्यात
+    तुलना (सगळं सापेक्ष; volume असेल तर). handover = trend-बाजू मोठी होत (body ↑ आवश्यक; range ↑, close टोकाजवळ ↑, volume ↑) आणि उलट-बाजू दमत
+    (body ↓ आवश्यक; उलट wick ↑, close टोकापासून दूर ↑, volume ↓). absorption = उलट-बाजू मजबूत होत (body ↑, range ↑, volume असेल तर ↑).
+    Pattern (पुरावा): area मधल्या swings वरून wedge / channel-flag / double-triple. एकाच function मध्ये दोन्ही दिशा (d = ±1)."""
+    s = s or S3.DEFAULTS
+    w = list(range(max(0, int(a)), int(t) + 1))
+    vol = _vol(A)
+    out = {"handover": None, "absorption": None, "trend_growing": None, "counter_weakening": None, "vol_ok": vol is not None,
+           "pattern": None, "line": ""}
+    if len(w) < int(s.get("study_min_bars", 4)):
+        out["pattern"] = zone_pattern(A, a, t, d, s, mr)
+        return out
+    m = len(w) // 2
+    halves = (w[:m], w[m:])
+
+    def feats(ii, side):
+        o_, h_, l_, c_ = A["open"], A["high"], A["low"], A["close"]
+        sel = [i for i in ii if (c_[i] - o_[i]) * d * side > 0]
+        rng = [max(h_[i] - l_[i], 1e-9) for i in sel]
+        body = [abs(c_[i] - o_[i]) for i in sel]
+        loc = [((c_[i] - l_[i]) if d > 0 else (h_[i] - c_[i])) / r for i, r in zip(sel, rng)]   # trade-दिशेच्या टोकाकडे close
+        opp = [((min(o_[i], c_[i]) - l_[i]) if d > 0 else (h_[i] - max(o_[i], c_[i]))) / r for i, r in zip(sel, rng)]
+        v = [float(vol[i]) for i in sel] if vol is not None else []
+        return {"body": body, "range": rng, "loc": loc, "opp": opp, "vol": v}
+    T = [feats(x, 1) for x in halves]
+    C = [feats(x, -1) for x in halves]
+    tb, tr, tl = _cmp(T[0]["body"], T[1]["body"]), _cmp(T[0]["range"], T[1]["range"]), _cmp(T[0]["loc"], T[1]["loc"])
+    tv = _cmp(T[0]["vol"], T[1]["vol"]) if vol is not None else None
+    cb, cr, co = _cmp(C[0]["body"], C[1]["body"]), _cmp(C[0]["range"], C[1]["range"]), _cmp(C[0]["opp"], C[1]["opp"])
+    cl = _cmp(C[0]["loc"], C[1]["loc"])
+    cv = _cmp(C[0]["vol"], C[1]["vol"]) if vol is not None else None
+    out["trend_growing"] = _majority(None if tb is None else tb > 0, [None if x is None else x > 0 for x in (tr, tl, tv)])
+    out["counter_weakening"] = _majority(None if cb is None else cb < 0, [None if co is None else co > 0, None if cl is None else cl > 0,
+                                                                          None if cv is None else cv < 0])
+    out["handover"] = bool(out["trend_growing"] and out["counter_weakening"])
+    out["absorption"] = bool(cb is not None and cb > 0 and cr is not None and cr > 0 and (cv is None or cv > 0))
+    out["vol_trend_rising"] = None if tv is None else tv > 0
+    out["pattern"] = zone_pattern(A, a, t, d, s, mr)
+    tw, cw = ("buying", "selling") if d > 0 else ("selling", "buying")
+    parts = []
+    if out["trend_growing"]:
+        parts.append(f"{tw} candles growing")
+    if out["counter_weakening"]:
+        parts.append(f"{cw} candles weakening")
+    if out["absorption"]:
+        parts.append(f"{cw} candles strengthening (absorption)")
+    if out["vol_trend_rising"]:
+        parts.append(f"volume rising on {tw} candles")
+    out["line"] = " · ".join(([out["pattern"]] if out["pattern"] else []) + parts)
+    return out
+
+
+def zone_pattern(A, a, t, d, s, mr=None):
+    """a2 patterns (पुरावा, कधीच आवश्यक नाही): area मधले swings (a … t − 1, साधे 1-bar pivots). UP (demand): falling wedge / falling channel–bull
+    flag / double–triple bottom; DOWN (supply): आरसा — rising wedge / rising channel–bear flag / double–triple top. नसेल ⇒ None."""
+    s = s or S3.DEFAULTS
+    H, L = A["high"], A["low"]
+    ii = list(range(max(1, int(a)), int(t) - 1))                           # pivot ला दोन्ही शेजारी हवेत (t − 1 पर्यंत, commitment वगळून)
+    hs = [(i, float(H[i])) for i in ii if H[i] > H[i - 1] and H[i] >= H[i + 1]]
+    ls = [(i, float(L[i])) for i in ii if L[i] < L[i - 1] and L[i] <= L[i + 1]]
+    if mr is None or not np.isfinite(mr):
+        rr = [H[i] - L[i] for i in range(max(0, int(a)), int(t) + 1)]
+        mr = float(np.median(rr)) if rr else 0.0
+    tol = float(s.get("pattern_eq_mr", 0.5)) * mr
+    if len(hs) >= 2 and len(ls) >= 2:
+        sh = (hs[-1][1] - hs[0][1]) / max(hs[-1][0] - hs[0][0], 1)
+        sl = (ls[-1][1] - ls[0][1]) / max(ls[-1][0] - ls[0][0], 1)
+        if d > 0 and sh < 0 and sl < 0:
+            return "falling wedge" if sh < sl else "falling channel / bull flag"
+        if d < 0 and sh > 0 and sl > 0:
+            return "rising wedge" if sl > sh else "rising channel / bear flag"
+    ext = ls if d > 0 else hs
+    if len(ext) >= 2 and tol > 0:
+        best = min(p for _, p in ext) if d > 0 else max(p for _, p in ext)
+        n = sum(1 for _, p in ext if abs(p - best) <= tol)
+        if n >= 2:
+            return f"{'triple' if n >= 3 else 'double'} {'bottom' if d > 0 else 'top'}"
+    return None
 
 
 # ------------------------------------------------------------------------------------------------ ⑥ commitment
@@ -272,7 +407,7 @@ def reversal_form(A, t, d, s, tss=None):
     return None
 
 
-def commitment(A, t, d, lvl, s, tss=None):
+def commitment(A, t, d, lvl, s, tss=None, win=None):
     """⑥ Q16 (Abhi): commitment = level वरची price-reversal candle (≤ 2 merged); कोणताही ओळखलेला reversal form चालतो.
     किमान सामायिक अट: close मागच्या candle च्या **close** पलीकडे trade-दिशेने (`commit_beyond` = close, default; "extreme" = what-if) आणि
     (merged 2-candle form ⇒ "मागची" = pattern आधीची candle t − 2, त्याच दिवसाची असेल तर; Q30)
@@ -313,6 +448,25 @@ def commitment(A, t, d, lvl, s, tss=None):
     grade = "A" if (beyond_ext or form == "engulf") else "B"
     cm = {"form": form, "merged": merged, "grade": grade, "beyond_extreme": bool(beyond_ext), "engulf": form == "engulf",
           "body_pct": round(abs(c - o) / rng, 2), "big_body": candle_read(A, t, s)["big_body"], "big_range": candle_read(A, t, s)["big_range"]}
+    if win is not None:                                                    # c0 (Abhi, level bots): study window मधली dominant candle + volume
+        ww = list(range(max(0, int(win)), t)) or [t]
+        mb = _mean([abs(A["close"][i] - A["open"][i]) for i in ww]) or 0.0
+        body = max(abs(c - o), abs(c - po) if merged == 2 else 0.0)
+        bm = body / mb if mb > 0 else float("inf")
+        cm["body_mult"] = round(bm, 2) if np.isfinite(bm) else None
+        if bm < float(s.get("commit_dom_mult", 1.5)):
+            return False, f"commitment candle dominant नाही (body {bm:.1f}× window सरासरी)", {"wait": "not_dominant", **cm}
+        V = _vol(A)
+        wv = [float(V[i]) for i in ww] if V is not None else []
+        mv = _mean([x for x in wv if np.isfinite(x) and x > 0]) if wv else None
+        if V is not None and np.isfinite(V[t]) and V[t] > 0 and mv:
+            vm = float(V[t]) / mv
+            cm.update(vol_mult=round(vm, 2), vol_na=False)
+            if vm <= 1.0:
+                return False, f"commitment on low volume ({vm:.1f}× window सरासरी)", {"wait": "low_volume", **cm}
+        else:
+            cm.update(vol_mult=None, vol_na=True)                          # volume NA ⇒ चालतं, पण grade कमाल B
+            grade = cm["grade"] = "B"
     return True, f"commitment {form} ({merged} candle) · grade {grade}", cm
 
 

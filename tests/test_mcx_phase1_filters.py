@@ -98,7 +98,7 @@ def test_supertrend_mode_htf_against():
     assert trade.called                                                  # जुना नियम: एकच विरुद्ध ⇒ चालेल
     trade, _, m = _run(directions=("BEARISH", "BEARISH"))
     assert trade.called and not m["dirs"].called                         # tests चा _DEFAULT_SETTINGS = off
-    raw = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False}
+    raw = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False, "entry_mode": "touch"}
     trade, logs, m = _run(directions=("BULLISH", "BEARISH"), **raw)       # खरा डीफॉल्ट: 4H BEARISH ⇒ LONG नाही
     assert not trade.called and m["dirs"].called and "SKIPPED_MCX_TREND_FILTER" in _statuses(logs)
 

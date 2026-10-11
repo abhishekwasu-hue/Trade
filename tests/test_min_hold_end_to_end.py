@@ -14,6 +14,7 @@ import pytest
 import cloud_db
 import dynamic_sr_instant_trader as dsr
 from tests.test_dynamic_sr_instant_trader import _candles_with_rsi, _fake_chain, _fake_zones
+from tests.test_dynamic_sr_instant_trader import legacy_touch_mode  # noqa: F401 (autouse fixture: जुने tests touch mode)
 
 sqlite3.register_converter("TIMESTAMP", lambda b: datetime.datetime.fromisoformat(b.decode()))
 sqlite3.register_adapter(datetime.datetime, lambda d: d.isoformat(sep=" "))

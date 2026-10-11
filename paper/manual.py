@@ -35,7 +35,9 @@ HELP = ("✋ <b>Manual PAPER trigger</b> (फक्त approver):\n"
         "• <code>/paper NIFTY bullput SL 24750 T 25300</code> — strikes / width / lots: manual_profile bot च्या settings ने\n"
         "• <code>/paper NIFTY bearcall 25100/25200 SL 25250 T 24800</code> — तुमचे strikes (short/hedge)\n"
         "SL / T = spot. T ऐच्छिक. पुढे: Vision ⇒ ✅ / ❌ ⇒ PAPER entry. R:R &lt; 3 ⇒ इशारा.\n"
-        "इतर: /status · /positions · /pause · /resume · /pending · /today")
+        "इतर: /status · /positions · /pause · /resume · /pending · /today\n"
+        "Approval संदेश: ✅ · ✏️ (फक्त entry: <code>entry 22590</code>) · ❌ (+ कारण) · 📝 marking दुरुस्ती (/correct) · "
+        "PAPER लगेच बंद: <code>/exit &lt;id&gt;</code>")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS manual_setups (

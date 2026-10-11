@@ -53,7 +53,7 @@ def _fake_resolved(instrument_key="MCX_FO|12345", lot_size=100):
 # म्हणून इथे तो बंद; TestMinHoldGate मध्ये तो स्पष्टपणे चालू केला जातो.
 # Supertrend filter (डीफॉल्ट "htf_against") पण तसाच -- त्याचे स्वतःचे tests TestSupertrendEntryGate / test_mcx_phase1_filters मध्ये.
 _DEFAULT_SETTINGS = {**cloud_db.STRATEGY_SETTINGS_DEFAULTS["mcx_futures"], "entry_min_hold_gate_enabled": False,
-                     "supertrend_filter_mode": "off"}
+                     "supertrend_filter_mode": "off", "entry_mode": "touch"}   # legacy touch वर्तन (PAPER confirmation default ⇒ MCX pause, L4)
 
 
 @pytest.fixture(autouse=True)
@@ -1464,3 +1464,27 @@ class TestNoNewEntryAfterEod:
     def test_touch_before_eod_still_trades(self):
         trade, statuses = self._run(22, 30)
         assert trade.called and "SKIPPED_TOO_LATE_FOR_NEW_ENTRY" not in statuses
+
+
+def test_mcx_paper_entries_paused_until_confirmation_gate_l4(monkeypatch):
+    """Abhi (level bots §1/§8): MCX PAPER (confirmation default) ⇒ नवे entries नाहीत; touch ⇒ जुनं वर्तन; LIVE ला हात नाही."""
+    from bots_common import level_gate_bot as LGB
+    monkeypatch.setattr(LGB, "entry_mode", LGB._entry_mode_orig)       # conftest चा "touch" default इथे नको — खरा PAPER default
+    st = {**_DEFAULT_SETTINGS}
+    st.pop("entry_mode")
+    with patch("trading_engine.open_multi_leg_trade") as op:
+        res = mft._open_futures_trade("tok", "CRUDEOIL", st, _fake_resolved()[1], "BULLISH", 100.0, 1, 10.0, 30.0, 99.0, "30M",
+                                      "mcx_futures", False)
+    assert res.startswith("SKIPPED_MCX_PAPER_PAUSED") and not op.called
+
+
+def test_mcx_core_returns_early_in_paper_confirmation(monkeypatch):
+    """review 🟡4: pause gates / Telegram / candle state च्या आधी — प्रत्येक cycle ला spam नाही."""
+    from bots_common import level_gate_bot as LGB
+    monkeypatch.setattr(LGB, "entry_mode", LGB._entry_mode_orig)
+    st = {**_DEFAULT_SETTINGS, "symbol_enabled": True}
+    st.pop("entry_mode")
+    with patch.object(mft.cloud_db, "get_strategy_settings", return_value=st), \
+            patch.object(mft.mcx_resolver, "resolve_symbol") as res, patch.object(mft, "send_telegram_message") as tg:
+        out = mft._process_symbol_core("tok", "CRUDEOIL", {})
+    assert "थांबवले" in out and not res.called and not tg.called

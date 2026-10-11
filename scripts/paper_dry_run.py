@@ -27,9 +27,13 @@ sys.path.insert(0, ROOT)
 
 TAG = "🧪 [DRY-RUN] "
 SOURCE = {"dynamic_sr_instant": "dynamic_sr_instant", "srv2_momentum_reversal": "srv2_momentum_reversal",
-          "srv3_instant": "dynamic_sr_instant_srv3_shadow"}
-SETTINGS_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr", "srv3_instant": "1m_instant"}
-TF = {"dynamic_sr_instant": "5M", "srv2_momentum_reversal": "15M", "srv3_instant": "5M"}
+          "srv3_instant": "dynamic_sr_instant_srv3_shadow", "classic_sr": "classic_sr_reversal"}
+SETTINGS_KEY = {"dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr", "srv3_instant": "1m_instant",
+                "classic_sr": "classic_sr_reversal"}
+TF = {"dynamic_sr_instant": "5M", "srv2_momentum_reversal": "15M", "srv3_instant": "5M", "classic_sr": "5M"}
+# level bots confirmation (§9): gate key + areas चे timeframes (market_zones zone_type suffix)
+GATE = {"dynamic_sr_instant": ("dynamic_sr_instant", ("1M", "5M")), "srv3_instant": ("dynamic_sr_instant", ("1M", "5M")),
+        "srv2_momentum_reversal": ("srv2", ("15M", "30M", "60M")), "classic_sr": ("classic_sr", ("5M", "15M"))}
 
 
 def _ist_now():
@@ -68,6 +72,28 @@ def signal_for(bot, lo, hi, close):
     return "BULLISH", lo, "Support"
 
 
+def confirmed_replay(bot, token, symbol, st, zones_fn=None, cycle_fn=None):
+    """मागच्या बंद दिवसावर level gate replay ⇒ त्या दिवसाचा शेवटचा CONFIRMED (area, side, plan) — नसेल ⇒ None. फक्त माहिती / tags साठी."""
+    from bots_common import level_gate_bot as LGB
+    from bots_common import level_reaction as LR
+    import cloud_db
+    key, tfs = GATE[bot]
+    zones = (zones_fn or cloud_db.get_market_zones)(symbol)
+    if zones is None or len(zones) == 0:
+        return None, None
+    rows = [r for _, r in zones.iterrows() if r.get("status") == "ACTIVE" and any(str(r.get("zone_type", "")).endswith(f"_{t}") for t in tfs)]
+    areas = LGB.areas_from_rows(rows)
+    day, *_ = last_day_levels(token, symbol)
+    g = (cycle_fn or LGB.cycle_gate)(key, symbol, token, st, areas, day + pd.Timedelta(hours=15, minutes=31))
+    best = None
+    for a in areas:
+        r = g.result(*a)
+        conf = [e for e in r.get("events", []) if e[1] == LR.CONFIRMED]
+        if conf and r.get("entry_price") is not None and (best is None or conf[-1][0] > best[0]):
+            best = (conf[-1][0], a, r)
+    return (best[1], best[2]) if best else (None, g.ctx)
+
+
 def run_bot(bot, token, symbol, wait_min, hold_min, lines, lpath, gate_fn=None, status_fn=None, open_fn=None, close_fn=None, sleep=time.sleep):
     import cloud_db
     from paper import engine_entry as EE
@@ -81,12 +107,26 @@ def run_bot(bot, token, symbol, wait_min, hold_min, lines, lpath, gate_fn=None, 
     st = cloud_db.get_strategy_settings(SETTINGS_KEY[bot], symbol)
     day, lo, hi, close, _ts = last_day_levels(token, symbol)
     direction, level, role = signal_for(bot, lo, hi, close)
+    tags = {"dry_run": True}
+    try:                                                                         # confirmation gate चा खरा CONFIRMED (मागचा दिवस) असेल तर तोच
+        from bots_common import level_gate_bot as LGB
+        from bots_common import level_reaction as LR
+        area, r = confirmed_replay(bot, token, symbol, st)
+        if area is not None:
+            direction, level = r["side"], float(area[0] if r["side"] == LR.BULL else area[1])
+            role = "Support" if r["side"] == LR.BULL else "Resistance"
+            tags.update(LGB.gate_tags(r, None, TF[bot]))
+            log(lines, f"{TAG}{bot}: gate CONFIRMED replay — {LR.describe(r)}", lpath)
+        else:
+            log(lines, f"{TAG}{bot}: मागच्या दिवशी CONFIRMED नाही ({(r or {}).get('reason', '—')}) ⇒ जुना replay signal", lpath)
+    except Exception as exc:
+        log(lines, f"{TAG}{bot}: gate replay त्रुटी {type(exc).__name__}: {exc} ⇒ जुना replay signal", lpath)
     ts = pd.Timestamp(VS.now_ist())                                              # signal वेळ = आत्ता (worker आदल्या दिवसाचे signals expire करतो);
     log(lines, f"{TAG}{bot}: signal {direction} {role} {level:,.2f} — मागच्या दिवसाची ({day:%d %b}) किंमत, chart त्या दिवसापर्यंतचा", lpath)
     lots = int(st["lots"]) if st.get("credit_spread_enabled", True) else 0
     naked = int(st.get("naked_lots", st["lots"])) if st.get("naked_enabled", True) else 0
     args = (bot, symbol, "PAPER", direction, level, role, TF[bot], ts, close, lots, naked)
-    g = gate_fn(*args, tags={"dry_run": True})
+    g = gate_fn(*args, tags=tags)
     log(lines, f"{TAG}gate #1: {g.action} — {g.note}", lpath)
     if g.action != "HOLD" or not g.signal_id:
         log(lines, f"{TAG}अपेक्षित HOLD (approval शिवाय entry नाही) मिळाला नाही ⇒ थांबलो", lpath)
@@ -99,7 +139,7 @@ def run_bot(bot, token, symbol, wait_min, hold_min, lines, lpath, gate_fn=None, 
             break
         sleep(5)
     log(lines, f"{TAG}Vision / तुमचा निर्णय: {stt}", lpath)
-    g2 = gate_fn(*args, tags={"dry_run": True}, forced=True)
+    g2 = gate_fn(*args, tags=tags, forced=True)
     log(lines, f"{TAG}gate #2: {g2.action} — {g2.note}", lpath)
     if g2.action != "ENTER":
         log(lines, f"{TAG}entry नाही (approval नाही / नाकारलं / मुदत संपली) — बरोबर वर्तन", lpath)
@@ -178,7 +218,7 @@ def run_manual(token, symbol, wait_min, hold_min, lines, lpath, send=None, close
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bots", default="dynamic_sr_instant,srv2_momentum_reversal,srv3_instant,manual")
+    ap.add_argument("--bots", default="dynamic_sr_instant,srv2_momentum_reversal,srv3_instant,classic_sr,manual")
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--wait-min", type=float, default=12)
     ap.add_argument("--hold-min", type=float, default=1)

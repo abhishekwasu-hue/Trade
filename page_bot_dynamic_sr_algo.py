@@ -611,6 +611,36 @@ def render():
                     "Report वर दोन्हींची तुलना करा. मूळ bot चे levels आणि trades बदलत नाहीत."
                 )
 
+        with st.expander("🎯 Entry mode — trend + confirmation (Abhi)", expanded=True):
+            from bots_common import level_gate_bot as _LGB
+            _em = ("confirmation", "touch")
+            _cur_em = _LGB.entry_mode(settings)
+            entry_mode = st.selectbox("Entry mode", _em, index=_em.index(_cur_em), key=_widget_key(strategy_key, symbol, "entry_mode"),
+                                      help="confirmation = Daily trend ची बाजू + level वर बंद candle ची commitment ⇒ Vision ⇒ तुमचा ✅ ⇒ PAPER. "
+                                           "touch = जुनी पद्धत (level ला स्पर्श ⇒ entry).")
+            if entry_mode == "touch":
+                st.warning("⚠️ touch mode: level ला स्पर्श होताच entry (trend / confirmation तपासणी नाही) — जुनी पद्धत. PAPER साठी confirmation शिफारस.")
+            _gs = _LGB.gate_settings(settings)
+            _c1, _c2, _c3 = st.columns(3)
+            gate_min_rr = _c1.number_input("किमान R:R", min_value=1.0, max_value=10.0, step=0.5, value=float(_gs["min_rr"]),
+                                           key=_widget_key(strategy_key, symbol, "gate_min_rr"))
+            gate_max_armed_bars = _c2.number_input("Commitment ची वाट (बंद candles)", min_value=1, max_value=40, step=1,
+                                                   value=int(_gs["max_armed_bars"]), key=_widget_key(strategy_key, symbol, "gate_max_armed_bars"))
+            _tf_default = {"1m_instant": 5, "classic_sr_reversal": 5, "15m_dynamic_sr": 15}.get(strategy_key, 5)
+            _tfs = (5, 15)
+            _tf_cur = int(settings.get("confirm_tf_minutes") or _tf_default)
+            confirm_tf_minutes = _c3.selectbox("Confirmation TF (min)", _tfs, index=_tfs.index(_tf_cur) if _tf_cur in _tfs else 0,
+                                               key=_widget_key(strategy_key, symbol, "confirm_tf_minutes"))
+            gate_wait_next_candle = st.checkbox("Commitment नंतरची candle area मध्ये परत close झाली नाही तरच entry", value=bool(_gs["wait_next_candle"]),
+                                                key=_widget_key(strategy_key, symbol, "gate_wait_next_candle"))
+            _c4, _c5 = st.columns(2)
+            conf_rsi_gate_enabled = _c4.checkbox("Confirmation mode: RSI threshold gate", value=_LGB.conf_gate_enabled(settings, "rsi"),
+                                                 key=_widget_key(strategy_key, symbol, "conf_rsi_gate_enabled"))
+            conf_pcr_gate_enabled = _c5.checkbox("Confirmation mode: PCR gate", value=_LGB.conf_gate_enabled(settings, "pcr"),
+                                                 key=_widget_key(strategy_key, symbol, "conf_pcr_gate_enabled"))
+            st.caption("Confirmation mode: breakout entries बंद; RSI / PCR default बंद (RSI divergence फक्त पुरावा). Max hits, cooldown, "
+                       "एका वेळी एकच position तसेच. Exits कधीच अडवले जात नाहीत. LIVE bot चा mode तुम्ही बदलेपर्यंत तसाच.")
+
         with st.expander("🧭 RSI Gate", expanded=False):
             entry_rsi_gate_enabled = st.checkbox(
                 "RSI Gate सक्रिय (बंद केल्यास — फक्त S/R Touch वरच entry, RSI तपासला जाणार नाही)",
@@ -1290,6 +1320,13 @@ def render():
             "trading_mode": trading_mode_selected if (trading_mode_selected == "PAPER" or live_confirmed) else "PAPER",
             "broker_account_ids": broker_account_ids,
         }
+        # review 🟡3: confirmation mode फक्त PAPER साठी (LIVE मध्ये Vision ✅ नाही, RSI / PCR बंद होतील) ⇒ LIVE / LIVE_PAPER save ⇒ touch
+        _em_save = str(entry_mode) if new_settings["trading_mode"] == "PAPER" else "touch"
+        if _em_save != str(entry_mode):
+            st.warning("LIVE / LIVE_PAPER साठी Entry mode 'touch' जतन केला (confirmation mode फक्त PAPER — Abhi चा निर्णय होईपर्यंत).")
+        new_settings.update({"entry_mode": _em_save, "gate_min_rr": float(gate_min_rr), "gate_max_armed_bars": int(gate_max_armed_bars),
+                             "confirm_tf_minutes": int(confirm_tf_minutes), "gate_wait_next_candle": bool(gate_wait_next_candle),
+                             "conf_rsi_gate_enabled": bool(conf_rsi_gate_enabled), "conf_pcr_gate_enabled": bool(conf_pcr_gate_enabled)})
         # 🎓 classic_sr_reversal साठी PCR गेट मुद्दामच नाही (वर पहा) — त्यामुळे हे fields save करायचे नाहीत.
         if strategy_key != "classic_sr_reversal":
             new_settings["entry_pcr_gate_enabled"] = bool(entry_pcr_gate_enabled)

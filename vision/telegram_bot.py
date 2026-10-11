@@ -13,6 +13,8 @@ Commands (फक्त approver): /pending · /today · /vision <off|shadow|noti
 /paper <instrument> <bullput|bearcall> [short/hedge] SL <spot> [T <spot>] (✋ manual — paper/manual.py; Vision ⇒ ✅ / ❌ ⇒ PAPER) · /help
 ✋ manual signal ला ✅ ⇒ लगेच entry प्रयत्न (paper.manual.execute_ready; gate चं APPROVED → EXECUTED conditional ⇒ एकदाच); प्रत्येक poll नंतर sweep
 (timeout / नाकार / मुदत ⇒ manual बंद).
+Abhi §10 (vision/approval.py): ✏️ Modify (फक्त entry, "entry 22590" ⇒ सुधारित ticket ⇒ पुन्हा ✅) · ❌ नंतर कारण (एक tap / other ⇒ मजकूर) ·
+📝 Correct marking (engine ला लागू नाही) · /correct [signal_id] · /exit <id> (फक्त PAPER, लगेच बंद — pause कधीच अडवत नाही).
 """
 import argparse
 import sys
@@ -20,6 +22,7 @@ import time
 
 import pandas as pd
 
+from . import approval as AP
 from . import config as VC
 from . import decide as VD
 from . import store as VS
@@ -52,8 +55,8 @@ def _manual_sweep(path=None, only_signal=None, send=None):
         return []
 
 
-def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_send=None):
-    """रिटर्न (ok, संदेश). answer / edit injectable (tests)."""
+def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_send=None, send=None, send_buttons=None):
+    """रिटर्न (ok, संदेश). answer / edit / send / send_buttons injectable (tests)."""
     answer = answer or TG.answer_callback
     edit = edit or TG.edit_any
     msg = cq.get("message") or {}
@@ -70,18 +73,28 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
         answer(cq.get("id"), "signal सापडला नाही")
         return False, "missing"
     now = pd.Timestamp(now or VS.now_ist())
+    uid = str((cq.get("from") or {}).get("id"))
+    if action == "C":                                                    # 📝 approve असो वा नसो — status ला हात नाही
+        return AP.start_correction(row, uid, answer, cq.get("id"), send, path, now)
+    if action in VD.REJECT_REASONS:                                      # ❌ नंतरचं कारण (एक tap)
+        return AP.set_reason(row, action, uid, answer, cq.get("id"), edit, msg.get("message_id"), send, path, now)
     if row["status"] != "PENDING_HUMAN":
         answer(cq.get("id"), f"आधीच ठरलं: {row['status']}")
         return False, "already"
     if row.get("deadline") and pd.Timestamp(row["deadline"]) <= now:
         answer(cq.get("id"), "मुदत संपली")
         return False, "expired"
+    if action == "M":                                                    # ✏️ फक्त entry — मजकूर उत्तराची वाट (AP.handle_text)
+        return AP.start_modify(row, uid, answer, cq.get("id"), send, path, now)
     who = f"telegram:{(cq.get('from') or {}).get('id')}"
     if action == "A":
         f = float(row.get("factor") or 1.0)
+        lim = row.get("mod_entry")
+        why = f"तुम्ही approve केलं ({f}×)" + (f" · ✏️ limit entry {float(lim):g}" if lim is not None else "")
         ok = VS.transition(sid, "PENDING_HUMAN", "APPROVED", path, human_decision="approve", human_ts=VS._iso(now), decided_at=VS._iso(now),
-                           decided_by=who, decision_reason=f"तुम्ही approve केलं ({f}×)")
-        text = f"✅ Approved {now:%H:%M} — entry ×{f} (drift guard नंतर)"
+                           decided_by=who, decision_reason=why)
+        text = (f"✅ Approved {now:%H:%M} — entry ×{f} (drift guard नंतर)" if lim is None else
+                f"✅ Approved {now:%H:%M} — limit entry {float(lim):g}: spot तिथे आल्यावरच ×{f} (exec window मध्ये; नाहीतर position नाही)")
     else:
         ok = VS.transition(sid, "PENDING_HUMAN", "REJECTED", path, factor=0.0, human_decision="reject", human_ts=VS._iso(now),
                            decided_at=VS._iso(now), decided_by=who, decision_reason="तुम्ही reject केलं")
@@ -91,6 +104,8 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_sen
         return False, "race"
     answer(cq.get("id"), text)
     edit(row.get("tg_message_id"), f"{text} · {row['symbol']} {row['direction']} L{float(row['level'] or 0):,.0f}")
+    if action == "R":                                                    # Abhi §10b: कारण एक tap (निर्णय आधीच लागू — position नाही)
+        AP.prompt_reason(row, send_buttons)
     if row.get("bot") == "manual":                                       # ✋ /paper: bot cycle नाही ⇒ इथेच (✅ ⇒ entry, ❌ ⇒ बंद)
         _manual_sweep(path, only_signal=sid, send=execute_send)
     return True, text
@@ -141,10 +156,16 @@ def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None
         except Exception as exc:
             send(f"❌ /paper: {type(exc).__name__}: {exc}")
             return False, str(exc)
-    if cmd in ("/status", "/positions", "/pause", "/resume"):          # Abhi (Monday PAPER) — paper/commands.py
+    if cmd == "/cancel":                                                 # ✏️ / 📝 / ❌ कारण ची वाट रद्द
+        AP.state_clear(str((from_ or {}).get("id")), path)
+        send("रद्द — काहीच बदल नाही.")
+        return True, "cancel"
+    if cmd == "/correct":                                                # 📝 (बटणं गेल्यावरही) — vision/approval.py
+        return AP.start_correction_cmd(text, str((from_ or {}).get("id")), send, path)
+    if cmd in ("/status", "/positions", "/pause", "/resume", "/exit"):  # Abhi (Monday PAPER) — paper/commands.py
         from paper import commands as PCMD
         try:
-            return PCMD.handle(cmd, f"telegram:{(from_ or {}).get('id')}", send)
+            return PCMD.handle(cmd, f"telegram:{(from_ or {}).get('id')}", send, arg=" ".join(parts[1:]))
         except Exception as exc:
             send(f"❌ {cmd}: {type(exc).__name__}: {exc}")
             return False, str(exc)
@@ -162,6 +183,8 @@ def poll_once(offset, path=None, timeout=50):
                 m = u["message"]
                 if str(m.get("text", "")).startswith("/"):
                     handle_command(m["text"], m.get("from"), m.get("chat"), path)
+                elif m.get("text") and AP.handle_text(m, _authorized, path)[1] not in AP.NOT_MINE:   # ✏️ entry / 📝 / ❌ कारण (state असेल तरच)
+                    pass
                 elif m.get("reply_to_message"):                          # review charts (K-10 / gallery) ला ✔ / ✘ reply ⇒ backtest_review
                     from backtest_review import telegram as RT
                     RT.handle_reply(m, _authorized, send=TG.send_text)

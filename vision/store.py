@@ -6,7 +6,9 @@ Tables:
   vision_usage           प्रत्येक API call चा खर्च (tokens, cache, $) — दैनिक / मासिक budget इथूनच.
   vision_settings        bot-निहाय settings (JSON) + `_global` (budget).
   vision_settings_history बदल-इतिहास (कोणी, कधी, काय).
-  vision_kv              छोटे flags (उदा. आजचा budget इशारा पाठवला का).
+  vision_kv              छोटे flags (उदा. आजचा budget इशारा पाठवला का; Telegram reply ची वाट — vision/approval.py).
+  corrections            📝 Abhi च्या marking दुरुस्त्या (chart path, engine reading, parsed + raw मजकूर) — फक्त daily review queue;
+                         engine / gate / settings कधीच हे वाचत नाहीत (live self-tuning नाही).
 Audit record (§11): `_sent.png` path + sha256 (vision ला गेलेले bytes), prompt_version, model, vision JSON (tokens सह), cost, algo निर्णय,
 (V1) माझा निर्णय + वेळ, drift guard, अंतिम निर्णय; trade बंद झाल्यावर `_outcome.png` path + sha256 आणि निकाल.
 """
@@ -44,6 +46,10 @@ CREATE TABLE IF NOT EXISTS vision_usage (
 CREATE TABLE IF NOT EXISTS vision_settings (bot TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT, updated_by TEXT);
 CREATE TABLE IF NOT EXISTS vision_settings_history (ts TEXT, bot TEXT, by TEXT, old_json TEXT, new_json TEXT);
 CREATE TABLE IF NOT EXISTS vision_kv (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS corrections (
+    id TEXT PRIMARY KEY, ts TEXT NOT NULL, signal_id TEXT, bot TEXT, symbol TEXT, tf TEXT, image_path TEXT,
+    engine_reading TEXT, ctype TEXT, parsed_json TEXT, raw_text TEXT, by_ TEXT, reviewed INTEGER DEFAULT 0
+);
 """
 
 
@@ -59,6 +65,7 @@ V1_COLUMNS = {
     "factor": "REAL", "deadline": "TEXT", "timeout_status": "TEXT", "timeout_factor": "REAL", "tg_message_id": "INTEGER",
     "decided_at": "TEXT", "decided_by": "TEXT", "decision_reason": "TEXT", "median_range": "REAL", "executed_at": "TEXT",
     "exec_note": "TEXT", "transition_notified": "INTEGER DEFAULT 0",
+    "mod_entry": "REAL", "mod_json": "TEXT", "reject_reason": "TEXT",     # Abhi §10: ✏️ limit entry (spot) + सुधारित ticket; ❌ चं कारण
 }
 V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
 OPEN_V1 = ("QUEUED", "RUNNING", "PENDING_HUMAN", "APPROVED", "REJECTED")
@@ -394,3 +401,33 @@ def update(signal_id, path=None, **fields):
     sets = ", ".join(f"{k}=?" for k in fields)
     with connect(path) as c:
         c.execute(f"UPDATE vision_signals SET {sets} WHERE signal_id=?", (*fields.values(), signal_id))
+
+
+# --------------------------------------------------------------------------------------------------------- 📝 corrections (Abhi §10c)
+def add_correction(row, path=None):
+    """row: signal_id, bot, symbol, tf, image_path, engine_reading, ctype, parsed (dict), raw_text, by_. रिटर्न id. फक्त नोंद — engine ला लागू नाही."""
+    cid = uuid.uuid4().hex[:12]
+    with connect(path) as c:
+        c.execute("INSERT INTO corrections (id, ts, signal_id, bot, symbol, tf, image_path, engine_reading, ctype, parsed_json, raw_text, by_) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (cid, _iso(row.get("ts") or now_ist()), row.get("signal_id"), row.get("bot"), row.get("symbol"), row.get("tf"),
+                   row.get("image_path"), row.get("engine_reading"), row.get("ctype"),
+                   json.dumps(row.get("parsed") or {}, ensure_ascii=False, default=str), row.get("raw_text"), row.get("by_")))
+    return cid
+
+
+def corrections(day=None, unreviewed=False, path=None):
+    """Daily review queue: त्या दिवसाच्या (day नसेल ⇒ सगळ्या) दुरुस्त्या, जुन्या आधी. unreviewed ⇒ फक्त न पाहिलेल्या."""
+    q, a = "SELECT * FROM corrections WHERE 1=1", []
+    if day:
+        q += " AND substr(ts,1,10)=?"
+        a.append(str(day))
+    if unreviewed:
+        q += " AND reviewed=0"
+    with connect(path) as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY ts", a)]
+
+
+def mark_correction_reviewed(cid, path=None):
+    with connect(path) as c:
+        return c.execute("UPDATE corrections SET reviewed=1 WHERE id=?", (cid,)).rowcount == 1

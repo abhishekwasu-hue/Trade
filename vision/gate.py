@@ -15,6 +15,9 @@
      PENDING_HUMAN ची मुदत संपली ⇒ timeout नियम — हे gate स्वतःच (`resolve_due`) लावतो.
   6. नाकारलेला level `shadow_cooldown_min` मध्ये पुन्हा ⇒ नवी विचारणा / shadow नाही (SKIPPED_VISION_COOLDOWN).
   7. दिशा किंवा breakout प्रकार बदलला ⇒ जुनी row EXPIRED (shadow नाही), हा touch नवा signal.
+  8. (Abhi §10a) ✏️ Modify केलेला signal (`mod_entry`, spot वर limit): APPROVED असूनही spot entry ला पोहोचेपर्यंत HOLD (BULLISH spot ≤ entry,
+     BEARISH spot ≥ entry); drift guard त्या entry पासून. exec window मध्ये पोहोचला नाही ⇒ EXPIRED + would-have (position नाही).
+     `mod_entry` नसलेल्या signals चं वर्तन पूर्वीसारखंच.
 LIVE ⇒ effective_mode off ⇒ नेहमी ENTER (algorithm). काही चूक ⇒ vision_fail_action: ignore ⇒ ENTER (algorithm) · skip (V1) ⇒ HOLD
 (SKIPPED_VISION_ERROR — entry नाही) + print.
 **Forced level** (touch नसताना फक्त vision निर्णयामुळे तपासलेला) ⇒ ENTER फक्त ताज्या APPROVED row वरून; बाकी सगळं (mode बदलला, चूक, row नाही)
@@ -153,6 +156,30 @@ def _exec_expired(row, s, now):
     return bool(row.get("decided_at")) and pd.Timestamp(row["decided_at"]) + pd.Timedelta(minutes=int(s["exec_window_min"])) <= now
 
 
+def limit_reached(direction, spot, entry):
+    """✏️ Modify (limit entry, spot वर): BULLISH ⇒ spot ≤ entry, BEARISH ⇒ spot ≥ entry. spot / entry नाही ⇒ False (entry नाही)."""
+    if spot is None or entry is None:
+        return False
+    return float(spot) <= float(entry) if str(direction or "").upper().startswith("BULL") else float(spot) >= float(entry)
+
+
+def limit_note(row, s):
+    return (f"✏️ limit entry {float(row['mod_entry']):g} exec window ({s['exec_window_min']} मि.) मध्ये गाठला नाही ⇒ position नाही "
+            "(would-have नोंद)")
+
+
+def limit_expired(row, s, lots=None, naked_lots=None, path=None):
+    """✏️ limit entry न गाठता exec window संपली (APPROVED → EXPIRED झाल्यावरच बोलवायचं ⇒ एकदाच) ⇒ would-have (lots 0). कधीच raise नाही."""
+    try:
+        from paper import journal as PJ
+        PJ.would_have({"ts": VS._iso(VS.now_ist()), "bot": row.get("bot"), "symbol": str(row.get("symbol") or "").upper(),
+                       "direction": row.get("direction"), "level": row.get("level"), "setup_tf": row.get("setup_tf"),
+                       "status": "EXPIRED_LIMIT", "reason": limit_note(row, s), "signal_id": row.get("signal_id"), "orig_lots": lots,
+                       "orig_naked_lots": naked_lots, "dry_run": bool(_row_tags(row).get("dry_run"))})
+    except Exception as exc:
+        print(f"⚠️ would-have नोंद (limit): {exc}")
+
+
 def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts, spot, lots, naked_lots, tags, last_bar, origin, path,
           forced):
     s = VC.load(bot, path, DB_TIMEOUT)
@@ -175,8 +202,11 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
     if row is not None:
         row, _ = resolve_due(row, s, now, path)
         if row["status"] in ("APPROVED", "REJECTED") and _exec_expired(row, s, now):
-            VS.transition(row["signal_id"], row["status"], "EXPIRED", path, DB_TIMEOUT,
-                          exec_note=f"{row['status']} नंतर {s['exec_window_min']} मिनिटांत bot पोहोचला नाही")
+            lim = row["status"] == "APPROVED" and row.get("mod_entry") is not None
+            if (VS.transition(row["signal_id"], row["status"], "EXPIRED", path, DB_TIMEOUT,
+                              exec_note=limit_note(row, s) if lim else f"{row['status']} नंतर {s['exec_window_min']} मिनिटांत bot पोहोचला नाही")
+                    and lim):
+                limit_expired(row, s, lots, naked_lots, path)
             row = None
         elif row["status"] not in VS.OPEN_V1:
             row = None
@@ -213,7 +243,11 @@ def _gate(bot, symbol, trading_mode, direction, level, role, setup_tf, signal_ts
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_NO_HUMAN_APPROVAL", sid, "✅ तुमचं approval नाही ⇒ entry नाही"),
                            row, symbol, direction, level, setup_tf)
         return _stale("race") if forced else _hold(sid, "race")
-    drift = VD.drift_guard(row, spot, direction, s["max_drift_mr"], origin)
+    lim = row.get("mod_entry")
+    if lim is not None and not limit_reached(row.get("direction"), spot, lim):    # ✏️ limit entry अजून नाही ⇒ HOLD (exec window पर्यंत)
+        return Gate("HOLD", status="SKIPPED_VISION_LIMIT_WAIT", signal_id=sid,
+                    note=f"✏️ limit entry {float(lim):g} ची वाट (spot {spot}) — exec window {s['exec_window_min']} मि.")
+    drift = VD.drift_guard(row if lim is None else {**row, "spot": float(lim)}, spot, direction, s["max_drift_mr"], origin)
     if drift:
         if VS.transition(sid, "APPROVED", "DRIFT_REJECTED", path, DB_TIMEOUT, executed_at=ts, drift_result="; ".join(drift)):
             return _shadow(s, trading_mode, Gate("SHADOW", lots, naked_lots, 0.0, "SKIPPED_VISION_DRIFT", sid, "; ".join(drift), drift),
@@ -268,6 +302,19 @@ def is_forced(forced, level, setup_tf, tol_pct=0.05):
         return any(tf == setup_tf and abs(lv - float(level)) <= abs(float(level)) * tol_pct / 100.0 for lv, tf, _ in forced or [])
     except Exception:
         return False
+
+
+def forced_direction(forced, level, setup_tf, tol_pct=0.05):
+    """Forced level ची submission वेळची दिशा (role SUPPORT ⇒ BULLISH, RESISTANCE ⇒ BEARISH). forced नाही / role अज्ञात ⇒ None
+    (level bots confirmation mode: शंका ⇒ entry नाही). कधीच raise नाही."""
+    try:
+        for lv, tf, role in forced or []:
+            if tf == setup_tf and abs(lv - float(level)) <= abs(float(level)) * tol_pct / 100.0:
+                r = str(role or "").upper()
+                return "BULLISH" if "SUPPORT" in r else ("BEARISH" if "RESIST" in r else None)
+    except Exception:
+        pass
+    return None
 
 
 def note_execution(signal_id, text, path=None):

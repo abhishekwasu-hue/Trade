@@ -25,6 +25,7 @@ import argparse
 import pandas as pd
 
 import cloud_db
+from bots_common import level_gate_bot as LGB
 from config import get_ist_now
 from database import init_sqlite_db, has_open_trade_from_source, get_last_sl_tsl_exit_time, run_auto_backup_if_due
 # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("RSI setting 60/40 अशी करा") — established single, सममित
@@ -63,6 +64,14 @@ DIRECTION_HYSTERESIS_BUFFER_PCT = 0.015
 
 # वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा — Multi-Timeframe. Upstox interval-नाव -> zone_type suffix.
 TIMEFRAME_TO_SUFFIX = {"15minute": "15M", "30minute": "30M", "60minute": "60M"}
+# 🎓 Abhi (level bots confirmation): DB मधला single-price level ⇒ gate साठी लहान पट्टा (level च्या इतके %, settings `gate_area_pad_pct`)
+GATE_AREA_PAD_PCT = LGB.AREA_PAD_PCT
+
+
+def _gate_area(level, settings):
+    """level किंमत ⇒ confirmation gate चा area (lo, hi) — cycle_gate ला दिलेल्या areas आणि g.result() साठी एकच गणित."""
+    pad = float(level) * float((settings or {}).get("gate_area_pad_pct", GATE_AREA_PAD_PCT)) / 100.0
+    return LGB.areas_from_rows([{"zone_low": float(level), "zone_high": None}], pad)[0]
 
 
 def determine_direction_with_hysteresis(level, closes, buffer_pct=DIRECTION_HYSTERESIS_BUFFER_PCT):
@@ -246,6 +255,13 @@ def process_symbol(access_token, symbol, lot_size=None):
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
     entry_pcr_gate_enabled = settings.get("entry_pcr_gate_enabled", True)
+    # 🎓 Abhi (level bots confirmation): entry_mode — PAPER default "confirmation" (Daily trend च्या बाजूने, आणि बंद 15M candle वर level ची
+    # commitment झाल्यावरच), LIVE / LIVE_PAPER ⇒ "touch" (जुनं वर्तन तंतोतंत) जोपर्यंत settings["entry_mode"] स्पष्टपणे बदलत नाही.
+    # confirmation मध्ये RSI threshold / PCR gate default बंद (वेगळ्या conf_* keys ने चालू करता येतात); breakout entry नाही (gate: broken ⇒ trade नाही).
+    _conf = LGB.entry_mode(settings) == LGB.CONFIRMATION
+    if _conf:
+        entry_rsi_gate_enabled = LGB.conf_gate_enabled(settings, "rsi")
+        entry_pcr_gate_enabled = LGB.conf_gate_enabled(settings, "pcr")
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा ("15 minute डीफॉल्ट ठेवा, 30 आणि 60 minute optional राहील") —
     # आधी तिन्ही (15M/30M/60M) नेहमीच एकत्र तपासले जायचे, निवडीची सोयच नव्हती. आता Dashboard वरून
     # (Entry Gate) निवडलेले टाईमफ्रेम्स — डीफॉल्ट फक्त 15M.
@@ -272,6 +288,13 @@ def process_symbol(access_token, symbol, lot_size=None):
 
     todays_1m_candles = _fetch_todays_1m_candles(access_token, symbol, now)
     recent_1m_candles = todays_1m_candles[-2:]
+    _gate, _gate_err = None, None
+    if _conf:                                                              # cycle मध्ये एकदा: trend + बंद 15M candles + सगळे candidate areas
+        try:
+            _gate = LGB.cycle_gate("srv2", symbol, access_token, settings, [_gate_area(c[0], settings) for c in candidates], now)
+        except Exception as exc:                                           # fail-closed: या cycle ला नवीन entry नाही (forced सुद्धा नाही)
+            _gate_err = f"{LGB.LR.R_ERROR}: {type(exc).__name__}: {str(exc)[:80]}"
+            print(f"⚠️ {symbol}: confirmation gate त्रुटी ⇒ नवीन entry नाही — {_gate_err}")
     for level_price, timeframe_suffix, candles_df, underlying_price, todays_closes in candidates:
         lots, naked_lots = _lots_base, _naked_base
         touched, touch_type, _approx = (
@@ -289,6 +312,26 @@ def process_symbol(access_token, symbol, lot_size=None):
         # तर आधीचीच निश्चित दिशा कायम राहते.
         direction = determine_direction_with_hysteresis(level_price, todays_closes)
         level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
+        _gr = None                                                         # confirmation gate चा निकाल (touch mode ⇒ None)
+        if _conf:
+            _legacy = (touched and not _vision_forced_hit, touch_type, direction)   # जुना touch ⇒ फक्त would-have तुलना
+            _area = _gate_area(level_price, settings)
+            _gr = (_gate.result(*_area) if _gate is not None
+                   else {"state": "ERROR", "entry": False, "side": None, "reason": _gate_err, "area": _area})
+            # Vision forced level: ✅ approval हीच confirmation ⇒ r["entry"] पुन्हा नको; दिशा submission वेळची (role), नाहीतर CONFIRMED gate ची
+            # बाजू; शंका / gate exception ⇒ entry नाही.
+            _fdir = None
+            if _gate is not None and _vision_forced and _vision_is_forced(_vision_forced, level_price, timeframe_suffix):
+                from vision.gate import forced_direction as _vision_forced_dir
+                _fdir = _vision_forced_dir(_vision_forced, level_price, timeframe_suffix) or (
+                    _gr.get("side") if _gr.get("state") == LGB.LR.CONFIRMED else None)
+            if _fdir is not None:
+                touched, touch_type, _vision_forced_hit, direction = True, "TOUCH", True, _fdir
+            elif _gr.get("entry"):                                         # शेवटचा बंद 15M candle = commitment candle
+                touched, touch_type, _vision_forced_hit, direction = True, "CONFIRMATION", False, _gr["side"]
+            else:
+                touched, touch_type, _vision_forced_hit = False, None, False
+            level_type = "SUPPORT" if direction == "BULLISH" else "RESISTANCE"
 
         # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Market Zones tab वर 1-मिनिट Instant Trader
         # सारखाच संपूर्ण Signal Log, SRv2 साठीही) — याआधी इथे फक्त प्रत्यक्ष trade झाला तरच
@@ -308,6 +351,12 @@ def process_symbol(access_token, symbol, lot_size=None):
         }
 
         if not touched:
+            if _gr is not None:                                            # confirmation: gate चं कारण (SKIPPED_GATE_*); जुना touch ⇒ फक्त would-have
+                log_entry.update(LGB.skip_fields(_gr))
+                if _legacy[0]:
+                    log_entry["hit_type"] = _legacy[1] or "TOUCH"
+                    LGB.record_touch_legacy("srv2_momentum_reversal", symbol, _legacy[2], level_price, timeframe_suffix,
+                                            f"{_legacy[1] or 'TOUCH'} — {log_entry['reason']}")
             cloud_db.save_signal_log(log_entry)
             continue
 
@@ -405,6 +454,10 @@ def process_symbol(access_token, symbol, lot_size=None):
             log_entry["reason"] = f"{_ss_note} ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
+        if _gr is not None and _gr.get("grade"):                           # confirmation: grade B ⇒ lots × grade_b_lot_mult (default 1.0 ⇒ बदल नाही)
+            _lm = LGB.LR.lot_multiplier(_gr, LGB.gate_settings(settings))
+            if _lm != 1.0:
+                lots, naked_lots = (max(1, int(lots * _lm)) if lots else 0), (max(1, int(naked_lots * _lm)) if naked_lots else 0)
         # 🎓 Vision gate (`vision/gate.py`; dynamic_sr_instant_trader.py प्रमाणेच): HOLD / ENTER (≤ मूळ lots) / SHADOW. LIVE ⇒ ENTER.
         _vg = None
         try:
@@ -412,7 +465,9 @@ def process_symbol(access_token, symbol, lot_size=None):
             _vg = _vision_gate("srv2_momentum_reversal", symbol, settings.get("trading_mode", "PAPER"), direction, level_price, level_type,
                                timeframe_suffix, now, underlying_price,
                                lots if settings.get("credit_spread_enabled", True) else 0,
-                               naked_lots if settings.get("naked_enabled", True) else 0, tags={"hit": touch_type or "TOUCH"},
+                               naked_lots if settings.get("naked_enabled", True) else 0,
+                               tags={"hit": touch_type or "TOUCH", **(LGB.gate_tags(_gr, _gate.ctx if _gate is not None else None, "15M")
+                                                                     if _gr is not None else {})},
                                last_bar=recent_1m_candles[-1] if recent_1m_candles else None, forced=_vision_forced_hit)
         except Exception as exc:
             print(f"⚠️ vision gate त्रुटी (trade वर परिणाम नाही): {exc}")

@@ -22,6 +22,7 @@ secrets.toml
 data/engine_settings.json
 data/simple_core_exec.json
 data/chart_concepts.json
+data/level_gate/
 data/credit_spread_state.json
 data/notification_config.json
 data/KILL_SWITCH

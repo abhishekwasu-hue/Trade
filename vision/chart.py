@@ -242,6 +242,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
     level = sig.get("level")
     role = (sig.get("role") or "").upper()
     col = ROLE_COLOR.get(role, "#ffca28")
+    gate = ((sig.get("tags") or {}).get("gate") or {}) if isinstance(sig.get("tags"), dict) else {}   # level bots confirmation (§9)
     inv = sig.get("invalidation")
     if inv is None and ctx is not None:
         inv = ctx.get("invalidation")                                   # bot ने न दिल्यास L ∓ inv_buffer (derived)
@@ -252,7 +253,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
         fig.add_trace(go.Candlestick(x=x, open=df["open"], high=df["high"], low=df["low"], close=df["close"], showlegend=False,
                                      increasing_line_color="#26a69a", decreasing_line_color="#ef5350"), row=1, col=c)
         lo, hi = float(df["low"].min()), float(df["high"].max())
-        for v in (level, inv):
+        for v in (level, inv) + (tuple(gate.get(k) for k in ("sl", "target")) if c == 1 else ()):
             if v is not None and np.isfinite(v):
                 lo, hi = min(lo, float(v)), max(hi, float(v))
         pad = 0.04 * (hi - lo or 1.0)
@@ -300,6 +301,18 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
             if c == 1:
                 fig.add_annotation(x=0, y=inv, text="INV", showarrow=False, xanchor="left", yshift=-8, font=dict(size=8, color="#ffca28"),
                                    row=1, col=c)
+        if c == 1 and gate:                                                # area पट्टा + entry / SL / target (confirmation)
+            a = gate.get("area") or [None, None]
+            if a[0] is not None and a[1] is not None:
+                fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(a[0]), y1=float(a[1]), fillcolor="rgba(66,165,245,0.12)",
+                              line=dict(width=0), layer="below", row=1, col=c)
+            for k_, lab, colr in (("entry", "ENTRY", "#ffd54f"), ("sl", "SL", "#ef5350"), ("target", "TARGET", "#66bb6a")):
+                v = gate.get(k_)
+                if v is not None and np.isfinite(float(v)):
+                    fig.add_shape(type="line", x0=n * 0.6, x1=n - 0.5, y0=float(v), y1=float(v), line=dict(color=colr, width=1, dash="dot"),
+                                  row=1, col=c)
+                    fig.add_annotation(x=n - 1, y=float(v), text=f"{lab} {float(v):,.0f}", showarrow=False, xanchor="right", yshift=8,
+                                       font=dict(size=9, color=colr), row=1, col=c)
         if c == 1:
             up = str(sig.get("direction", "")).upper().startswith("BULL")
             y = float(df["low"].iloc[-1]) if up else float(df["high"].iloc[-1])
@@ -311,6 +324,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
     ev = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else ts
     cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
     title = f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {sig.get('direction', '')} · signal {ts:%d %b %H:%M} ({cutnote})"
+    if gate:
+        title += f"<br><sup>{gate.get('trend') or ''} · {gate.get('form') or ''} · R:R {gate.get('rr')}</sup>"
     fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT_V21 if with_line else HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)

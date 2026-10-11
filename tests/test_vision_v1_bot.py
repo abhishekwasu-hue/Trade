@@ -8,6 +8,7 @@ import pytest
 import cloud_db
 import dynamic_sr_instant_trader as dsr
 from tests.test_dynamic_sr_instant_trader import _candles_with_rsi, _fake_chain, _fake_zones
+from tests.test_dynamic_sr_instant_trader import legacy_touch_mode  # noqa: F401 (autouse fixture: जुने tests touch mode)
 from tests.test_min_hold_end_to_end import _hover, _statuses, signal_db  # noqa: F401  (fixture)
 from vision import config as VC
 from vision import store as VS

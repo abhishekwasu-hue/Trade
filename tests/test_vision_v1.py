@@ -358,7 +358,7 @@ def test_worker_veto_then_confirm_agree_asks_with_hmac_buttons(db, monkeypatch):
     r = VS.get_signal(sid)
     assert r["status"] == "PENDING_HUMAN" and r["deadline"] and r["tg_message_id"] == 777 and r["factor"] == 1.0
     cap, buttons = db["photos"][-1]
-    assert [b[0] for b in buttons] == ["✅ Approve", "❌ Reject"] and "पर्यंत" in cap
+    assert [b[0] for b in buttons] == ["✅ Approve", "❌ Reject", "📝 Correct marking"] and "पर्यंत" in cap   # §10: ✏️ फक्त engine SL / T असताना
     assert VD.parse_callback(buttons[0][1]) == (sid, "A") and VD.parse_callback(buttons[1][1]) == (sid, "R")
 
 
