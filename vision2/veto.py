@@ -30,7 +30,7 @@ MODEL_TASK = "veto"            # model नाव फक्त VPS env मध्�
 
 def run_budget(g):
     """run_vision_budget (Abhi उत्तर 15 default): नवी रक्कम नाही — सध्याच्या vision_daily_budget_usd मधली visual_audit_daily_cap उप-मर्यादा;
-    महिना vision_monthly_budget_usd ($5) तसाच. g = vision.config global settings."""
+    महिना vision_monthly_budget_usd (default $60) तसाच. g = vision.config global settings."""
     if g is None:
         return None
     return min(float(g["visual_audit_daily_cap"]), float(g["vision_daily_budget_usd"]))

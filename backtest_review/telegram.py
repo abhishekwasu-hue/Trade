@@ -206,7 +206,7 @@ def send_document(path, cap, run_key, call=None, creds=None, sent=None):
 
 
 def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None, auditor=None):
-    """manifest मधले न पाठवलेले items पाठवा. रिटर्न {"sent": n, "skipped": n, "failed": [(date, कारण)], "audits": […]}.
+    """manifest मधले न पाठवलेले items पाठवा. रिटर्न {"sent": n, "skipped": n, "failed": [(date, कारण)]} + "audits": […] (फक्त v2.2 audit झाले तर).
     auditor(run_dir, item) ⇒ decision3.vision_audit dict (v2.2 items, kind "v22…"): Telegram **आधी** audit; caption मध्ये audit ओळ,
     media group नंतर "Vision report" reply. Audit अपयश / budget संपला ⇒ chart तरीही जातो (caption मध्ये तसं).
     run_key = sent log मधली run ओळख (default manifest run_id; script ⇒ --run path). call(method, data, files, timeout) ⇒ Telegram JSON
@@ -221,7 +221,7 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
         raise NoCredentials("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID .env मध्ये नाहीत — काहीच पाठवलं नाही")
     call = call or raw_call(creds)
     log = load_sent(sent, strict=True)
-    out = {"sent": 0, "skipped": 0, "failed": [], "audits": []}
+    out = {"sent": 0, "skipped": 0, "failed": []}
     for it in m["items"]:
         k = key(run_key, it["item"])
         if k in log:
@@ -237,7 +237,7 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
                 aud = {"status": "failed", "why": f"auditor {type(exc).__name__}", "verdict": None, "sections": {}, "issues": [],
                        "cost_usd": 0.0, "item": it["item"], "chart": it["files"][0]}
             cap = VA.with_audit_line(cap, VA.caption_line(aud))
-            out["audits"].append(aud)
+            out.setdefault("audits", []).append(aud)
         elif str(it.get("kind") or "").startswith("v22") and not dry_run:   # audit बंद ⇒ caption मध्ये स्पष्ट
             from decision3 import vision_audit as VA
             cap = VA.with_audit_line(cap, "Vision audit skipped: off")

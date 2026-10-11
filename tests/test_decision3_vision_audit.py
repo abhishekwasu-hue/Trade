@@ -93,7 +93,7 @@ def test_daily_cap_default_is_two_dollars_and_hard_stop():
     ok, day, cap, why = VA._budget("m", g=g, spent_fn=lambda: (1.99, 3.0), estimate_fn=lambda m: 0.02, today=month_end)
     assert not ok and cap == 2.0 and why == "daily budget reached"
     assert VA._budget("m", g=g, spent_fn=lambda: (1.0, 3.0), estimate_fn=lambda m: 0.02, today=month_end)[0]
-    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.5, 4.99), estimate_fn=lambda m: 0.02, today=month_end)
+    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.5, 59.99), estimate_fn=lambda m: 0.02, today=month_end)
     assert not ok and why == "monthly budget reached"                                          # कारण बरोबर cap चं
 
 
@@ -108,7 +108,7 @@ def test_chart_audit_keeps_signals_reserve():
     first = (pd.Timestamp.now() + pd.offsets.MonthBegin(-1)).normalize()
     rest = VA._weekdays_left(first)
     assert rest >= 15
-    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.0, 5.0 - 0.2 * rest), estimate_fn=lambda m: 0.02, today=first)
+    ok, _, _, why = VA._budget("m", g=g, spent_fn=lambda: (0.0, g["vision_monthly_budget_usd"] - 0.2 * rest), estimate_fn=lambda m: 0.02, today=first)
     assert not ok and why == "monthly budget reached"
 
 

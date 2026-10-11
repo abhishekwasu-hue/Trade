@@ -227,9 +227,9 @@ BAND_COLOR = {"UP": "#8ce99a", "DOWN": "#ffa8a8", "RANGE": "#ffe066", "NEUTRAL":
 
 
 def daily_swings_png(v, title):
-    """Daily swing review (decision3.daily_swings.build): candles (शेवटची window), (a) Dow minor — pivots + HH/HL/LH/LL + protected
-    (pivot ⇒ तुटला / बदलला) + trend पट्टा; (b) Q15 — impulse / corrective legs, origin protected, phase / wave पट्टा; elliott advisory
-    labels (gray ⇒ "?"). सगळा मजकूर English. फक्त दृश्य तपासणी."""
+    """Daily swing review (decision3.daily_swings.build): candles (last window); (a) Dow minor — pivots + HH/HL/LH/LL + protected
+    (pivot to broken / moved) + trend band; (b) Q15 — impulse / corrective legs, protected origin, phase band; Elliott advisory
+    labels (gray ⇒ "?"). All chart text English. Visual review only."""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     d, i0, n = v["frame"], v["i0"], v["n"]

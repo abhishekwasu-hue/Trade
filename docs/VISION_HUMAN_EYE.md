@@ -23,7 +23,7 @@ vision worker (cron, दर मिनिट, 55 s loop, दर 5 s तपास�
    2. Upstox 1m (14 दिवस) → signal पर्यंत कापून 2-panel chart (setup TF + मोठा TF), ~1000×700 PNG
       → data/visual_audit/YYYY-MM-DD/<bot>_<symbol>_<signal_id>_<HHMM>_sent.png (overwrite नाही) + sha256; vision आणि Telegram ला हीच फाईल
    3. तोच symbol / दिशा / TF / level (±0.05%) 15 मिनिटांत आधी तपासलेला ⇒ तेच मत (API call नाही)
-   4. Budget (आज ≤ $2.00 — Abhi 2026-10-11, आधी $0.30; महिना ≤ $5) / model / key नाही ⇒ verdict unavailable, fail action = ignore (algorithm चा निर्णय) + दिवसातून एकदा Telegram इशारा
+   4. Budget (आज ≤ $2.00, आधी $0.30; महिना ≤ $60, आधी $5 — Abhi. **Dashboard / DB मध्ये `_global` save केलं असेल तर तीच value लागू — code default नाही**; म्हणून dashboard वरही 2.0 / 60 ठेवा) / model / key नाही ⇒ verdict unavailable, fail action = ignore (algorithm चा निर्णय) + दिवसातून एकदा Telegram इशारा
    5. Audit: 1 call; confidence < 0.6 ⇒ दुसरा (budget असेल तर)
    6. नोंद: verdict, JSON, latency, tokens, $
    7. mode = notify ⇒ Telegram: chart + मत + कारण (बटणं नाहीत). shadow ⇒ फक्त नोंद.
@@ -53,7 +53,7 @@ System prompt मध्ये तुमचे नियम: pullback-only (break
 ### खर्च (G-COST)
 - Model नाव फक्त env मध्ये: `VISION_SIGNAL_MODEL` (signals — मध्यम model), `VISION_LEVEL_MODEL` (V2 सकाळचा audit — सर्वात स्वस्त). ऐच्छिक `VISION_SIGNAL_EFFORT`, `VISION_SIGNAL_THINKING`, `VISION_SIGNAL_MAX_TOKENS` (v2 पासून 1200; thinking off ठेवा).
 - एका audit चा अंदाज (मध्यम model, $2 / $10 प्रति 1M): input ≈ 900 (image) + ≈ 570 (system) + ≈ 70 = ~1.6k ⇒ $0.003; output JSON ~150–500 ⇒ $0.002–0.005.
-  **≈ $0.005–0.01 प्रति audit.** 10 signals/दिवस × 1.3 audits × 22 दिवस ⇒ **≈ $1.4–2.9 / महिना** (< $5). दैनिक मर्यादा (आता $2.00, Abhi 2026-10-11) हा कठोर ब्रेक.
+  **≈ $0.005–0.01 प्रति audit.** 10 signals/दिवस × 1.3 audits × 22 दिवस ⇒ **≈ $1.4–2.9 / महिना** (< $5). दैनिक मर्यादा (आता $2.00) आणि मासिक ($60) हे कठोर ब्रेक; v2.2 chart audits signals साठी राखीव (`signals_daily_reserve_usd`) सोडून.
 - System prompt `cache_control` सह. तो ~570 tokens (अंदाज) — नव्या models चं किमान 512 च्या अगदी जवळ, त्यामुळे cache होईलच असं नाही; सर्वात स्वस्त model वर किमान 4096 असल्याने होत नाही. शिवाय signals मध्ये 5 मिनिटांपेक्षा जास्त अंतर असेल तर cache संपतो. एकूण परिणाम लहान (system चा खर्च प्रति audit ~$0.001) — म्हणून खर्च नेहमी API च्या `usage` वरून मोजला जातो, अंदाजावरून नाही.
 - Budget तपासणी सावध: प्रत्येक call आधी अंदाज = input ~2k + output = `VISION_SIGNAL_MAX_TOKENS` (thinking सुद्धा output मध्ये मोजलं जातं). API timeout / network अपयश
   (usage मिळाला नाही) ⇒ हाच अंदाज खर्च म्हणून नोंद (billed झाला असू शकतो).
@@ -64,8 +64,8 @@ System prompt मध्ये तुमचे नियम: pullback-only (break
 ### Settings
 `python3 -m vision.config show` · `python3 -m vision.config set dynamic_sr_instant vision_mode shadow --by abhishek` (बदल-इतिहास `vision_settings_history` मध्ये, `python3 -m vision.config history`).
 Keys: `vision_mode`, `symbols`, `vision_gray_action`, `vision_disagree_action`, `vision_fail_action`, `timeout_action`, `approve_window_min`, `max_drift_mr`,
-`exit_advice`, `vision_timeout_sec` (20), `second_audit_below_conf` (0.6), `reuse_window_min` (15), `level_gate`; `_global`: `vision_daily_budget_usd` (2.00; आधी 0.30),
-`vision_monthly_budget_usd` (5), `morning_audit_time` (08:00), `exec_window_min` (5, V1), `shadow_cooldown_min` (30, V1).
+`exit_advice`, `vision_timeout_sec` (20), `second_audit_below_conf` (0.6), `reuse_window_min` (15), `level_gate`; `_global`: `vision_daily_budget_usd` (2.00; आधी 0.30; DB value code default वर मात करते),
+`vision_monthly_budget_usd` (60), `morning_audit_time` (08:00), `exec_window_min` (5, V1), `shadow_cooldown_min` (30, V1).
 V1 modes (`auto_veto` / `human_confirm` / `veto_then_confirm`) फक्त PAPER bot वर — bot चा `trading_mode` LIVE किंवा अज्ञात ⇒ save नाकारलं (CLI, dashboard, Telegram तिन्ही).
 
 ### Telegram user ID (V1 approver साठी — आत्ताच काढून ठेवा)
