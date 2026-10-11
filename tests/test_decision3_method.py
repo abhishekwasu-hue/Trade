@@ -282,7 +282,31 @@ def test_charts_with_liquidity_layer_render_english_only():
         warnings.filterwarnings("error", message="Glyph")
         a = CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", liq=LQ.pool_marks(V, r["bar"]))
         b = CH.m15_png(V, r["bar"], "NIFTY", r=r)
-    assert a[:4] == b[:4] == b"\x89PNG"
+        a2 = CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", liq=LQ.pool_marks(V, r["bar"]), debug=True)   # C1 debug
+        b2 = CH.m15_png(V, r["bar"], "NIFTY", r=r, debug=True)
+    assert a[:4] == b[:4] == a2[:4] == b2[:4] == b"\x89PNG"
+
+
+def test_review_charts_default_at_most_six_level_bands(monkeypatch):
+    """C1 (Abhi): 1H default chart वर ≤ 6 level पट्टे (+ trigger candle); debug मध्ये सगळी जवळची levels."""
+    import matplotlib.axes
+    from decision3 import charts as CH
+    from decision3 import engine as E3
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
+    rows = V.run()
+    r = next(x for x in rows if x["decision"] == "setup")
+    spans = []
+    real = matplotlib.axes.Axes.axhspan
+    monkeypatch.setattr(matplotlib.axes.Axes, "axhspan", lambda self, *a, **k: spans.append(a) or real(self, *a, **k))
+    monkeypatch.setattr(V.levels, "snapshot", lambda t: [{"id": f"L{i}", "lo": 100.0 + i, "hi": 100.5 + i, "role": "support",
+                                                         "births": ["a"], "sweeps": 0, "tests": i % 2, "dist": float(i)}
+                                                        for i in range(10)])
+    monkeypatch.setattr(V.levels, "active", lambda t, trend, band=None: [])
+    CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", max_sigma=1e9)
+    assert len(spans) == CH.MAX_LEVEL_BANDS
+    spans.clear()
+    CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", max_sigma=1e9, debug=True)
+    assert len(spans) == 10
 
 
 def test_mature_cap_in_pipeline():

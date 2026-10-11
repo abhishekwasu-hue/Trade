@@ -128,9 +128,9 @@ def test_api_failure_logs_cautious_estimate():
 
 def test_malformed_sections_english_reason_no_crash():
     for bad in ({**GOOD, "sections": ["x"]}, {**GOOD, "sections": "x"}, {**GOOD, "sections": {**GOOD["sections"], "zones": "ok"}}):
-        a = VA.audit_chart(b"png", "facts", model="m", client=FakeClient(bad, []), budget=lambda m: (True, 0, 2.0))
-        line = VA.caption_line(a)
-        assert a["status"] == "failed" and line.isascii() and "invalid" in line
+        a = VA.audit_chart(b"png", "FACTS facts", model="m", client=FakeClient(bad, []), budget=lambda m: (True, 0, 2.0))
+        line = VA.caption_line(a)                                           # C2: repair नंतरही चुकीचा ⇒ skipped, English कारण
+        assert a["status"] == "skipped" and line.isascii() and line == "Vision skipped: parse error" and "invalid" in a["detail"]
     multi = {**GOOD, "issues": ["line one\nline two\nline three"] * 4}
     a = VA.audit_chart(b"png", "facts", model="m", client=FakeClient(multi, []), budget=lambda m: (True, 0, 2.0))
     assert len(VA.report_text(a, "t").splitlines()) <= 12
@@ -142,14 +142,80 @@ def test_audit_line_insert_keeps_seven_lines():
     assert len(out) == 7 and out[-2] == "Vision audit: pass" and out[-1] == "l6"
 
 
-def test_report_at_most_12_lines_with_four_sections():
+def test_report_at_most_12_lines_skips_na_sections():
     a = {"status": "done", "cost_usd": 0.01, "spent_today": 0.2, "cap": 2.0, **VA.validate(GOOD)[0]}
     a["issues"] = [f"issue {i}" for i in range(9)]
     txt = VA.report_text(a, "BANKNIFTY daily")
     ls = txt.splitlines()
     assert len(ls) <= 12 and ls[-1] == VA.FOOTER
-    for name in VA.SECTION_NAMES.values():
-        assert any(x.startswith(name + ":") for x in ls)
+    assert any(x.startswith("Structure:") for x in ls)                     # C3: chart वर असलेला भाग
+    assert not any(x.startswith(("Zones:", "Pullback & trigger:", "Entry/SL/Target:")) for x in ls)   # "na" ⇒ ओळ नाही
+    assert "—" not in txt.replace(" — ", "") and any(x.startswith("Missing: too many minor pivots") for x in ls)
+
+
+class TextClient(FakeClient):
+    """C2: Vision ने दिलेले कच्चे text (क्रमाने)."""
+    def __init__(self, texts, log):
+        super().__init__(None, log)
+        self.texts = list(texts)
+
+    def create(self, **params):
+        self.log.append(("vision", params["model"], len(params["messages"])))
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=self.texts.pop(0))], stop_reason="end_turn",
+                               usage=SimpleNamespace(input_tokens=1500, output_tokens=200, cache_read_input_tokens=0,
+                                                     cache_creation_input_tokens=0))
+
+
+def test_parse_error_repaired_once():
+    log, used = [], []
+    a = VA.audit_chart(b"png", "FACTS x", model="m", client=TextClient(["Here is my audit: verdict partly", json.dumps(GOOD)], log),
+                       budget=lambda m: (True, 0, 2.0), on_usage=lambda u, c: used.append(c))
+    assert a["status"] == "done" and a.get("repair") and len(log) == 2 and log[1][2] == 3     # repair = original + reply + REPAIR
+    assert len(used) == 2 and a["cost_usd"] > 0
+
+
+def test_parse_error_twice_chart_sent_with_skip_line():
+    log = []
+    a = VA.audit_chart(b"png", "FACTS x", model="m", client=TextClient(["not json", "still not json"], log), budget=lambda m: (True, 0, 2.0))
+    assert a["status"] == "skipped" and a["why"] == "parse error" and len(log) == 2
+    assert VA.caption_line(a) == "Vision skipped: parse error"
+    assert VA.report_text(a, "NIFTY daily").splitlines()[1] == "Vision skipped: parse error"
+
+
+def test_code_fenced_json_parses_without_repair():
+    log = []
+    a = VA.audit_chart(b"png", "FACTS x", model="m", client=TextClient(["```json\n" + json.dumps(GOOD) + "\n```"], log),
+                       budget=lambda m: (True, 0, 2.0))
+    assert a["status"] == "done" and len(log) == 1
+
+
+def test_repair_skipped_when_budget_gone():
+    log, calls = [], []
+
+    def budget(m):
+        calls.append(1)
+        return (len(calls) == 1, 0, 2.0, "daily budget reached")
+    a = VA.audit_chart(b"png", "FACTS x", model="m", client=TextClient(["nope"], log), budget=budget)
+    assert a["status"] == "skipped" and a["why"] == "parse error" and len(log) == 1
+
+
+def test_daily_structure_chart_uses_structure_prompt(tmp_path):
+    d = _run_dir(tmp_path)
+    jp = d / "BANKNIFTY" / "daily_swings.json"
+    js = json.loads(jp.read_text())
+    js.update(objects={"legs": [], "corrections": []}, bands=[{"label": "origin", "lo": 1.0, "hi": 2.0, "state": "fresh"}],
+              trend_line="Trend UP (impulse)")
+    jp.write_text(json.dumps(js))
+    seen = []
+
+    class C(FakeClient):
+        def create(self, **params):
+            seen.append(params["system"][0]["text"])
+            return super().create(**params)
+    it = json.loads((d / "manifest.json").read_text())["items"][0]
+    VA.make_auditor(model="m", client=C(GOOD, []), budget=lambda m: (True, 0, 2.0))(str(d), it)
+    assert seen and seen[0] == VA.DAILY_SYSTEM_PROMPT and "HH/HL" not in seen[0]
+    assert "corrections bracketed" in VA.facts_text("v22_daily_swings", js)
 
 
 def test_summary_appended(tmp_path):
@@ -219,7 +285,23 @@ def test_failed_report_reply_is_surfaced(tmp_path):
     assert out["sent"] == 1 and any("Vision report reply" in w for _, w in out["failed"])
 
 
-def test_invalid_json_is_failed_not_crash():
+def test_invalid_schema_is_repaired_then_skipped_not_crash():
     log = []
-    a = VA.audit_chart(b"png", "facts", model="m", client=FakeClient({"verdict": "maybe"}, log), budget=lambda m: (True, 0, 2.0))
-    assert a["status"] == "failed" and VA.caption_line(a).startswith("Vision audit failed")
+    a = VA.audit_chart(b"png", "FACTS facts", model="m", client=FakeClient({"verdict": "maybe"}, log), budget=lambda m: (True, 0, 2.0))
+    assert a["status"] == "skipped" and a["detail"] == "invalid verdict" and len(log) == 2       # C2: एकदा repair
+    assert VA.caption_line(a) == "Vision skipped: parse error"
+    assert any(x.startswith("Cost $") for x in VA.report_text(a, "x").splitlines())            # C4: खर्च ओळ
+
+
+def test_repair_timeout_logs_cautious_estimate():
+    used = []
+
+    class T(TextClient):
+        def create(self, **params):
+            if len(params["messages"]) > 1:
+                raise TimeoutError("slow")
+            return super().create(**params)
+    a = VA.audit_chart(b"png", "FACTS x", model="m", client=T(["nope"], []), budget=lambda m: (True, 0, 2.0),
+                       on_usage=lambda u, c: used.append(u))
+    assert a["status"] == "skipped" and a["repair_error"] == "TimeoutError" and a.get("cost_estimated")
+    assert len(used) == 2 and used[1].get("estimated") == 1

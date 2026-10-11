@@ -60,7 +60,8 @@ class V22:
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
         weekly}. Weekly विरुद्ध ⇒ कमाल B; Daily वाचता येत नाही (NEUTRAL / UNKNOWN) + Weekly trend ⇒ Weekly fallback, कमाल B;
-        impulse mature ⇒ कमाल weak (नवे trend-दिशेचे entries वाट); origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23).
+        impulse mature / origin धोक्यात (B1) ⇒ कमाल weak; origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23); A1: impulse origin
+        तुटला पण parent टिकला ⇒ same-degree correction (protected = parent; कमाल B — आधीच्या origin_broken सारखाच, loosen नाही).
         RANGE (Q27: origin तुटल्यानंतर दोन समान H / L सुद्धा) ⇒ पट्टा ctx["band"] — ② कडांजवळची levels."""
         st = DD.state_at(self.daily, self.bar_end[t])
         wk = DD.state_at(self.weekly, self.bar_end[t])
@@ -76,6 +77,12 @@ class V22:
             if st.phase == "origin_broken":                                 # Q23 (Abhi): रचना खराब, अजून उलटली नाही ⇒ कमाल B (नोंद तशीच)
                 ctx["cap"] = M.cap_min(ctx["cap"], "B")
                 ctx["notes"].append("protected origin close ने तुटला — correction चालू, उलट impulse अजून नाही ⇒ कमाल B")
+            if st.counter == "correction":                                  # A1: impulse origin तुटला (parent टिकला) ⇒ आधीसारखाच कमाल B (Q23)
+                ctx["cap"] = M.cap_min(ctx["cap"], "B")
+                ctx["notes"].append("impulse origin close ने तुटला, parent टिकला — same-degree correction चालू ⇒ कमाल B")
+            if st.origin_risk:                                              # B1 (Abhi): correction origin जवळ ⇒ conviction weak
+                ctx["cap"] = M.cap_min(ctx["cap"], "weak")
+                ctx["notes"].append("correction protected origin जवळ (origin धोक्यात) ⇒ नवे entries weak")
             if st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("impulse mature — target जवळ (mechanical count, Q34); मोठा reversal शक्य ⇒ नवे entries weak")

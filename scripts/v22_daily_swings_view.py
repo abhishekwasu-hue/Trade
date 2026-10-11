@@ -56,6 +56,19 @@ def update_manifest(out_dir, item):
     return m
 
 
+def log_elliott(out_dir, sym, day, ev):
+    """A5: <out-dir>/ELLIOTT_VS_DOW.md — एक ओळ प्रति symbol प्रति शेवटचा दिवस (पुन्हा चालवलं ⇒ तीच ओळ बदलते)."""
+    p = os.path.join(out_dir, "ELLIOTT_VS_DOW.md")
+    head = ["# Elliott advisory vs degree-aware Dow (Abhi A5: if they never agree, the advisory is dropped later)", "",
+            "| day | symbol | Dow (degree-aware) | Elliott advisory | direction agrees | structure agrees |", "|---|---|---|---|---|---|"]
+    rows = [x for x in (open(p, encoding="utf-8").read().splitlines() if os.path.exists(p) else []) if x.startswith("| 20")]
+    yn = lambda b: "—" if b is None else ("yes" if b else "no")   # noqa: E731
+    row = f"| {day} | {sym} | {ev['dow']} | {ev['elliott']} | {yn(ev['direction_agree'])} | {yn(ev['structure_agree'])} |"
+    rows = [x for x in rows if not x.startswith(f"| {day} | {sym} |")] + [row]
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(head + sorted(rows)) + "\n")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", required=True)
@@ -72,8 +85,9 @@ def main(argv=None):
     v["full_window"] = v["i0"] == len(d) - w and (d["timestamp"].iloc[-1] - d["timestamp"].iloc[0]).days >= 365.25 * a.years - 7
     sd = os.path.join(a.out_dir, sym)
     os.makedirs(sd, exist_ok=True)
-    png = CH.daily_swings_png(v, sym)
+    png = CH.daily_swings_png(v, sym)                                       # C1: default (trend degree) — Telegram
     open(os.path.join(sd, "daily_swings.png"), "wb").write(png)
+    open(os.path.join(sd, "daily_swings_debug.png"), "wb").write(CH.daily_swings_debug_png(v, sym))   # debug — पाठवला जात नाही
     cap = DS.caption(v, sym, audit_line="Vision audit: pending (runs before Telegram send)", years=int(a.years) if a.years == int(a.years) else a.years)
     js = DS.to_json(v, sym)
     js["caption"] = cap
@@ -83,6 +97,11 @@ def main(argv=None):
     m = update_manifest(a.out_dir, {"symbol": sym, "date": v["last_day"], "item": f"v22_daily_swings|{sym}|{v['last_day']}",
                                     "reading": cap.splitlines()[0], "caption": cap, "kind": "v22_daily_swings",
                                     "files": [f"{sym}/daily_swings.png"], "json": f"{sym}/daily_swings.json"})
+    ev = DS.elliott_vs_dow(v)                                               # A5: advisory उपयोगी आहे का — प्रत्येक run ची नोंद
+    js["elliott_vs_dow"] = ev
+    with open(os.path.join(sd, "daily_swings.json"), "w", encoding="utf-8") as fh:
+        json.dump(js, fh, ensure_ascii=False, indent=1, default=str)
+    log_elliott(a.out_dir, sym, v["last_day"], ev)
     print(cap)
     print(f"pivots in window {len(js['pivots'])} · legs {len(js['legs'])} · elliott degree {v['elliott_degree']} · "
           f"manifest items {[x['symbol'] for x in m['items']]}")

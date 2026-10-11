@@ -1706,3 +1706,31 @@ repro (एक-दिवसाचे bars) + Q30 grade + pipeline maturity cap; e
 - **Level count (BANKNIFTY, 15M 13 Jul – 9 Oct):** आधी (Daily फक्त window) 20 levels; full history Daily pivots सगळे ⇒ 145 (पहिल्या review चं माप);
   Q40 नंतर 22 levels (त्यापैकी 19 window-आधीच्या trend-degree Daily / Weekly swings वरून जन्मले — 59 उमेदवार, overlap merge नंतर 19;
   window-मधले बहुतेक births त्यांच्यात merge). काही merged पट्टे रुंद (Weekly + Daily, ~1,600 points) — नोंद.
+
+## थर v2.2 — Abhi daily-swings review (A1–A5, B1–B2) — engine भाग
+- **A1 parent-degree gate** (`daily_parent_gate`, default ON): impulse origin Daily close ने तुटला तरी parent टिकला ⇒ `counter = "correction"`
+  (same-degree correction; protected = parent; flip नाही). Parent = याच trend मधली counter-move इतकी / मोठी शेवटची correction चं टोक, नाहीतर
+  trend ज्या origin पासून सुरू झाला तो (Q42 hybrid). Impulse mature (A3) झाला असेल ⇒ gate नाही. Correction संपली ⇒ close counter-move च्या
+  शेवटच्या HL पलीकडे किंवा टोकानंतर LH + मधल्या L पलीकडे ⇒ नवा impulse, origin = correction टोक (Q45).
+- **A2:** origin फक्त same-degree correction + नवा टोक ने पुढे (नियम जसाच; Q22 / Q35 संदर्भ — Q43 open).
+- **A3:** maturity आता pullback / candidate correction मध्येही (leg चं टोक target जवळ); engine: mature ⇒ कमाल weak (जसं).
+- **B1:** `origin_risk` (correction किंमत protected च्या maturity_sigma_d × σ_D आत) ⇒ कमाल weak; correction depth (retrace) caption मध्ये;
+  Q27 RANGE चाचणी trend-degree जोड्यांवर फक्त अहवाल (`range_check`).
+- **A4 / B2:** caption ची दुसरी ओळ = एक trend ओळ ("Trend DOWN (impulse) · pullback in progress (lower degree) · protected …"), Dow-minor दुय्यम.
+- **A5:** `elliott_vs_dow` — दिशा / रचना जुळते का; view script `<out-dir>/ELLIOTT_VS_DOW.md` मध्ये प्रत्येक run ची ओळ.
+- **Objects:** `daily_swings.structure_objects` — impulse legs, corrections (depth, patterns2 shape), bounces (pullback / candidate / correction)
+  — C1 chart साठी.
+- **NIFTY (full history, 70-session window):** संपूर्ण window DOWN; 22,183 → 24,774 rally = correction (parent 26,341); (5) confirmed b-19,
+  origin 24,774 कायम; तीन bounces pullback; maturity ON. Abhi चं "शेवटचा bounce candidate" जुळत नाही (Q43). **BANKNIFTY:** UP, origin
+  53,027, correction candidate (depth 87%); origin_risk नाही (सर्वात जवळ 759 points > 0.5σ); RANGE नाही (lows 49,955 / 53,027).
+- Synthetic fixture (`tests/test_decision3_daily_review.py`): C-wave आकार — DOWN सतत, (4) correction protected = parent, (5) origin = (4)
+  टोक, bounces pullback, (A) low जवळ mature; hybrid parent, mature ⇒ सामान्य break, origin_risk, caption, Elliott log, RANGE अहवाल.
+- **C (charts / Vision):** default Daily chart फक्त trend-degree (legs, correction boxes depth + shape, origin रेषा, ≤ 6 level पट्टे
+  fresh / tested / broken / target, pullback / candidate खुणा, पट्टा "DOWN · impulse" शब्दांत); जुना दाट chart = `daily_swings_debug.png`
+  (Telegram ला नाही). 1H / 15M: default ≤ 6 पट्टे + trigger candle (+ 15M entry/SL/target), `debug=True` ला बाकी (Q48). Vision: code fence /
+  मजकुरातून JSON काढणे, JSON / schema चुकीचा ⇒ एकदा repair (खर्च नोंद; timeout ⇒ सावध अंदाज), तरी चुकला ⇒ "Vision skipped: parse error"
+  + खर्च ओळ; report मध्ये "na" भाग वगळले, "Missing:" ओळ; Daily structure chart साठी वेगळा prompt (levels / corrections / origin / missing).
+- **Independent review:** 🔴 (1) Q45 "OR" नियम स्वतंत्र फुटत नव्हता — स्वतंत्र केल्यावर NIFTY (4) मध्ये लवकर फुटला ⇒ पर्यायच काढला (Q45);
+  (2) A1 correction चालू असताना जुना `done` मार्ग आधी चालून चुकीचा origin (confirmed H) घेत होता ⇒ pcorr मध्ये `done` बंद, completion
+  खरं टोक घेतो. 🟡: correction (A1) ला कमाल B (loosen नाही); repair खर्च / schema repair / skip खर्च ओळ; off-window origin label; बाण
+  एकाखाली एक; candidate खुणा; csize key (kind, bar); snapshot test; Q47 / Q48 / Q42 नोंद.

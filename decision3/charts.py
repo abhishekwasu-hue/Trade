@@ -108,8 +108,13 @@ def weekly_png(daily_df, title):
     return _png(fig)
 
 
-def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None):
-    """1H: शेवटच्या `sessions` sessions चे candles (t पर्यंत), D2 swings, जिवंत levels (role रंग, ★ sweeps, जन्म-कारण), active ठळक."""
+MAX_LEVEL_BANDS = 6                                                        # C1 (Abhi): review charts वर कमाल 6 level पट्टे
+
+
+def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False):
+    """1H (C1 default): candles of the last `sessions` sessions (up to t), at most 6 level bands (active first, then nearest; one
+    label: role, price, state) and the highlighted trigger candle - nothing else. debug=True: all nearby levels (births, sweeps,
+    tests), D2 swings and liquidity marks."""
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
     days = pd.to_datetime(h1["timestamp"]).dt.normalize()
@@ -123,18 +128,24 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None)
     sg = lv.sig1h[t]
     lim = (max_sigma or float(lv.s["show_distance_sigma"])) * (sg if np.isfinite(sg) else np.inf)
     act = {x["id"] for x in lv.active(t, trend, band)}                    # Q27: engine ② सारखाच पट्टा
-    for x in lv.snapshot(t):
-        if x["dist"] > lim and x["id"] not in act:
-            continue                                                           # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
+    shown = [x for x in lv.snapshot(t) if x["dist"] <= lim or x["id"] in act]   # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
+    if not debug:
+        shown = sorted(shown, key=lambda x: (x["id"] not in act, x["dist"]))[:MAX_LEVEL_BANDS]
+    for x in shown:
         col = "#2f9e44" if x["role"] == LV.SUP else "#e03131"
         ax.axhspan(x["lo"], x["hi"], color=col, alpha=0.30 if x["id"] in act else 0.10, lw=0)
-        lab = f"{'▶ ' if x['id'] in act else ''}{x['role'][:3]} {'+'.join(x['births'])} {'★' * x['sweeps']} t{x['tests']}"
+        if debug:
+            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'][:3]} {'+'.join(x['births'])} {'★' * x['sweeps']} t{x['tests']}"
+        else:
+            st = "tested" if x.get("tests") else "fresh"
+            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'].lower()} {x['lo']:,.0f}-{x['hi']:,.0f} ({st})"
         ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color=col, va="center")
-    for q in liq or ():                                                        # §7.6 liquidity pools (BSL वर / SSL खाली) — लहान खुणा
+    ax.axvspan(len(frame) - 1.5, len(frame) - 0.5, color="#fab005", alpha=0.18, lw=0)   # C1: trigger candle (चालू तास)
+    for q in (liq or ()) if debug else ():                                                        # §7.6 liquidity pools (BSL वर / SSL खाली) — लहान खुणा
         col = "#1971c2" if q["side"] == "buy" else "#c2255c"
         ax.plot([len(frame) - 3, len(frame) - 0.5], [q["price"], q["price"]], color=col, lw=1.0, ls=(0, (1, 1)))
         ax.text(len(frame) - 3, q["price"], f"{q['label']} {q['price']:,.0f} ", color=col, fontsize=6, va="bottom", ha="right")
-    for p in lv.piv:
+    for p in (lv.piv if debug else ()):
         if p.confirm_bar <= t:
             j = int(h1_of[p.bar]) - j0
             if 0 <= j < len(frame):
@@ -178,8 +189,9 @@ def story(r):
     return "\n".join(lines[:6])
 
 
-def m15_png(V, t, title, bars=60, r=None):
-    """15M: level, K टोक, commitment खूण (✅ / 🟡), entry / SL / target."""
+def m15_png(V, t, title, bars=60, r=None, debug=False):
+    """15M (C1 default): level band, highlighted trigger candle, entry / SL / target and the setup mark - nothing else. debug=True
+    adds the B2 trigger, trapped zones, sweeps and the K line (old dense view)."""
     i0 = max(0, t - bars + 1)
     m = V.m15.iloc[i0:t + 1].reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(13, 5.5))
@@ -193,12 +205,13 @@ def m15_png(V, t, title, bars=60, r=None):
             if y is not None:
                 ax.axhline(y, color=col, lw=0.9, ls="--")
                 ax.text(len(m) - 0.5, y, f" {lab} {y:,.0f}", color=col, fontsize=8, va="bottom")
-    bp = M.plans_of(V, r) if r and r.get("risk") else None
+    ax.axvspan(len(m) - 1.5, len(m) - 0.5, color="#fab005", alpha=0.18, lw=0)   # C1: trigger candle (निर्णयाचा bar)
+    bp = M.plans_of(V, r) if (debug and r and r.get("risk")) else None
     if bp:                                                                     # B2 योजना: signal-bar extreme पलीकडचा trigger
         y = bp["B2"]["trigger"]
         ax.axhline(y, color="#868e96", lw=0.8, ls=":")
         ax.text(len(m) - 0.5, y, f" B2 trigger {y:,.0f} (R:R {bp['B2']['rr']})", color="#868e96", fontsize=7, va="top")
-    lq = (r.get("liquidity") or {}) if r else {}
+    lq = (r.get("liquidity") or {}) if (r and debug) else {}
     for x in lq.get("trapped") or ():                                          # §7.6 trapped zone पट्टा
         ax.axhspan(x["lo"], x["hi"], color="#fd7e14", alpha=0.12, hatch="///", lw=0)
         ax.text(0, x["hi"], f" trapped {'buyers' if x['side'] == 'buy' else 'sellers'} {x['lo']:,.0f}-{x['hi']:,.0f}",
@@ -209,7 +222,7 @@ def m15_png(V, t, title, bars=60, r=None):
             ax.plot(b - i0, x["extreme"], marker="X", color="#d9480f", ms=7)
             ax.text(b - i0, x["extreme"], f" SWEEP {x['src']} {x['price']:,.0f}", color="#d9480f", fontsize=7,
                     va="bottom" if x["side"] == "buy" else "top")
-    tl = r.get("trendline") if r else None
+    tl = r.get("trendline") if (r and debug) else None
     if tl:                                                                     # ⑤ K ची आतली रेघ (t पर्यंत) + break खूण
         (b1, y1), sl = tl["p1"], tl["slope"]
         xs = [max(b1, i0), t]
@@ -232,13 +245,85 @@ def m15_png(V, t, title, bars=60, r=None):
 BAND_COLOR = {"UP": "#8ce99a", "DOWN": "#ffa8a8", "RANGE": "#ffe066", "NEUTRAL": "#ced4da", "UNKNOWN": "#f8f9fa"}
 
 
+STATE_COLOR = {"UP · impulse": "#69db7c", "UP · correction": "#b2f2bb", "DOWN · impulse": "#ff8787", "DOWN · correction": "#ffc9c9",
+               "RANGE": "#ffe066", "NEUTRAL": "#ced4da", "UNKNOWN": "#f8f9fa", "UP": "#8ce99a", "DOWN": "#ffa8a8"}
+BAND_STATE_COLOR = {"fresh": "#1971c2", "tested": "#e67700", "broken": "#868e96", "target": "#5f3dc4"}
+
+
 def daily_swings_png(v, title):
-    """Daily swing review (decision3.daily_swings.build): candles (last window); (a) Dow minor — pivots + HH/HL/LH/LL + protected
-    (pivot to broken / moved) + trend band; (b) Q15 — impulse / corrective legs, protected origin, phase band; Elliott advisory
-    labels (gray ⇒ "?"). All chart text English. Visual review only."""
+    """C1 (Abhi) default Daily chart - trend-degree structure only: impulse legs (one line each), corrections as labelled boxes
+    (depth, shape), the protected origin as one line with its price, at most 6 level bands (label + state; off-window bands at the
+    edge with an arrow and the price), small "pullback" marks inside the current impulse. No minor pivots, no HH/LL tags, no Elliott
+    labels (debug chart). Bottom strip: degree-aware and Dow-minor states in trader words. Visual review only."""
+    from matplotlib.patches import Rectangle
+
+    from . import daily_swings as DS
+    sp = DS.view_spec(v)
+    d, i0 = v["frame"], v["i0"]
+    fr = d.iloc[i0:].reset_index(drop=True)
+    nn = len(fr)
+    x = lambda b: b - i0                                                   # noqa: E731
+    fig, (ax, bx) = plt.subplots(2, 1, figsize=(20, 9.5), gridspec_kw={"height_ratios": [7, 1]}, sharex=True)
+    _candles(ax, fr)
+    lo_, hi_ = float(fr["low"].min()), float(fr["high"].max())
+    rng = (hi_ - lo_) or 1.0
+    for lg in sp["legs"]:                                                  # impulse legs
+        a = max(lg["from"], i0)
+        p0 = lg["p0"] if lg["from"] >= i0 else lg["p0"] + (lg["p1"] - lg["p0"]) * (a - lg["from"]) / max(lg["to"] - lg["from"], 1)
+        ax.plot([x(a), x(lg["to"])], [p0, lg["p1"]], color="#e8590c", lw=3, alpha=0.55, solid_capstyle="round")
+    for c in sp["boxes"]:                                                  # corrections = boxes
+        a, b = max(c["start_bar"], i0), c["end_bar"] if c["state"] == "done" else v["n"] - 1
+        y0, y1 = sorted((c["start_price"], c["end_price"]))
+        ax.add_patch(Rectangle((x(a) - 0.5, y0), b - a + 1, y1 - y0, fill=True, fc="#7048e8", alpha=0.07, ec="#7048e8", lw=1.0,
+                               ls="-" if c["state"] == "done" else "--"))
+        ax.text(x(a), y1, c["label"], fontsize=7.5 if nn <= 200 else 6, color="#5f3dc4", va="bottom", ha="left")
+    for pb in sp["pullbacks"]:                                             # lower-degree pullbacks / candidate (current impulse)
+        up = pb["kind"] == "H"
+        ax.annotate(pb["tag"], (x(pb["bar"]), pb["price"]), textcoords="offset points", xytext=(0, 9 if up else -13), ha="center",
+                    fontsize=6.5, color="#868e96" if pb["tag"] == "pullback" else "#5f3dc4")
+    off_n = {"above": 0, "below": 0}
+    for bd in sp["bands"]:                                                 # ≤ 6 level bands
+        col = BAND_STATE_COLOR.get(bd["state"], "#495057")
+        lab = f"{bd['label']} {bd['price']:,.0f} ({bd['state']})"
+        if bd["off_window"]:                                               # window बाहेर ⇒ कडेला बाण; अनेक असतील तर एकाखाली एक
+            k = off_n[bd["off_window"]]
+            off_n[bd["off_window"]] += 1
+            yy = hi_ + (0.06 - 0.03 * k) * rng if bd["off_window"] == "above" else lo_ - (0.06 - 0.03 * k) * rng
+            ax.annotate(("▲ " if bd["off_window"] == "above" else "▼ ") + lab, (nn - 1, yy), ha="right", fontsize=8, color=col,
+                        va="center")
+            continue
+        ax.axhspan(bd["lo"], bd["hi"], color=col, alpha=0.13, lw=0)
+        ax.text(nn - 0.5, bd["price"], " " + lab, fontsize=7.5, color=col, va="center")
+    pq = sp["protected"]
+    if pq and lo_ <= pq["price"] <= hi_:                                   # window बाहेरचा origin ⇒ पट्ट्याचा बाण पुरे (label plot बाहेर नाही)
+        a = max(pq["bar"], i0)
+        ax.plot([x(a), nn - 1], [pq["price"]] * 2, color="#c92a2a", lw=1.4)
+        ax.text(x(a), pq["price"], f"origin {pq['price']:,.0f} ", fontsize=8, color="#c92a2a", ha="right", va="center")
+    ax.set_ylim(lo_ - 0.1 * rng, hi_ + 0.1 * rng)
+    for row, (name, runs_) in enumerate((("degree-aware", sp["strip"]["degree-aware"]), ("Dow minor", sp["strip"]["Dow minor"]))):
+        for a, b, st in runs_:
+            if b < i0:
+                continue
+            a2 = max(a, i0)
+            bx.add_patch(plt.Rectangle((x(a2) - 0.5, row), b - a2 + 1, 0.9, color=STATE_COLOR.get(st, "#fff"), lw=0))
+            if b - a2 >= max(8, nn // 14):                                 # लहान runs वर नाव नाही (गर्दी)
+                bx.text(x(a2) + (b - a2) / 2, row + 0.45, st, ha="center", va="center", fontsize=7)
+        bx.text(-1, row + 0.45, name, ha="right", va="center", fontsize=8)
+    bx.set_ylim(0, 2)
+    bx.set_yticks([])
+    ax.set_title(f"{title} · Daily structure (trend degree) · " + DS.trend_line(v["q15"]) + " · visual review only", fontsize=10)
+    ax.grid(alpha=0.12)
+    _xticks(bx, fr["timestamp"].to_numpy(), max(1, len(fr) // 24))
+    fig.tight_layout()
+    return _png(fig)
+
+
+def daily_swings_debug_png(v, title):
+    """Debug (C1): the old dense view - Dow minor pivots with HH/HL/LH/LL and protected swings, Q15 legs / origin / phases, Elliott
+    advisory labels (gray = "?"). Not sent to Telegram unless asked. Visual review only."""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
-    d, i0, n = v["frame"], v["i0"], v["n"]
+    d, i0 = v["frame"], v["i0"]
     fr = d.iloc[i0:].reset_index(drop=True)
     x = lambda b: b - i0                                                   # noqa: E731
     fig, (ax, bx) = plt.subplots(2, 1, figsize=(20, 9.5), gridspec_kw={"height_ratios": [7, 1]}, sharex=True)
@@ -294,8 +379,7 @@ def daily_swings_png(v, title):
         a2 = max(a, i0)
         if b - a2 >= 12:                                                   # लहान runs वर नाव नाही (गर्दी)
             ph, wv = s.split("|")
-            short = {"impulse": "imp", "correction": "corr", "origin_broken": "broken"}.get(ph, ph)
-            bx.text(x(a2) + (b - a2) / 2, 0.45, short, ha="center", va="center", fontsize=6.5)   # Q34: leg क्रमांक chart वर नाही
+            bx.text(x(a2) + (b - a2) / 2, 0.45, ph.replace("_", " "), ha="center", va="center", fontsize=6.5)   # Q34: क्रमांक नाही
     bx.set_ylim(0, 2)
     bx.set_yticks([])
     hdl = [Line2D([], [], color="#1c7ed6", ls="--", label="Dow minor: protected (x = broken by close)"),
@@ -306,7 +390,7 @@ def daily_swings_png(v, title):
            Patch(fc="white", ec="#5f3dc4", label="Elliott advisory label ('?' = weak vote) — not used in decisions")]
     hdl += [Patch(color=BAND_COLOR[k], label=f"state {k}") for k in ("UP", "DOWN", "NEUTRAL", "RANGE")]
     ax.legend(handles=hdl, loc="upper left", fontsize=7, ncol=2, framealpha=0.9)
-    ax.set_title(f"{title} · Daily swings — Dow minor vs degree-aware (Q15) · visual review only", fontsize=11)
+    ax.set_title(f"{title} · Daily swings DEBUG — Dow minor vs degree-aware (Q15) · visual review only", fontsize=11)
     ax.grid(alpha=0.15)
     _xticks(bx, fr["timestamp"].to_numpy(), max(1, len(fr) // 24))
     fig.tight_layout()

@@ -95,6 +95,89 @@ def legs(pivots, states):
     return out
 
 
+def structure_objects(d, states, s=None):
+    """Abhi daily review A / C1: trend-degree रचना objects (chart + JSON) — फक्त engine states वरून (नवीन संख्या नाहीत).
+
+    • legs: प्रत्येक impulse leg (origin bar ⇒ leg चं टोक), एक रेषा.
+    • corrections: दोन impulse legs मधली same-degree correction (मागच्या leg च्या टोकापासून पुढच्या leg च्या origin पर्यंत) +
+      चालू (counter = candidate / correction) — "in progress". depth = correction ÷ आधीचा impulse leg (data वरून); shape =
+      patterns2 नियम (daily_legs.structure) एक degree खालच्या pivots वर: zigzag / flat / 3-wave / impulse; वाचता येत नाही ⇒ None.
+    • bounces: impulse leg मधले same-degree उलट swings — "pullback" (lower degree), "candidate" (चालू leg, correction ची शक्यता),
+      "correction" (पूर्ण झाली ⇒ पुढचा leg तिथून)."""
+    from . import daily_legs as DL
+    s = S3.load(s)
+    d = d.reset_index(drop=True)
+    H, L = d["high"].to_numpy(float), d["low"].to_numpy(float)
+    nlow = int(s["daily_pivot_n"]) - 1
+    low = DD.pivots_pivot(d, nlow, DD.known_at_of(d)) if nlow >= 1 else []
+    legs, corrs = [], []
+    cur = None
+    for x in states:
+        if x.trend not in ("UP", "DOWN") or x.leg_start is None or x.imp_end is None:
+            cur = None
+            continue
+        dirn = 1 if x.trend == "UP" else -1
+        key = (x.trend, int(x.leg_start))
+        if cur is None or cur["key"] != key:
+            prev = cur if (cur is not None and cur["key"][0] == x.trend and x.leg_start > cur["from"]) else None
+            if prev is not None:                                           # जुना leg नव्या origin पर्यंतच: त्याचं टोक त्या मधलं
+                a, b = prev["from"], int(x.leg_start)
+                j = a + int(np.argmin(L[a:b + 1]) if prev["dir"] < 0 else np.argmax(H[a:b + 1]))
+                prev["to"], prev["p1"] = int(j), float(L[j] if prev["dir"] < 0 else H[j])
+            p0 = float(L[x.leg_start] if dirn > 0 else H[x.leg_start])
+            cur = {"key": key, "dir": dirn, "from": int(x.leg_start), "to": int(x.imp_end.bar), "p0": p0, "p1": float(x.imp_end.price),
+                   "par": None}
+            legs.append(cur)
+            if prev is not None:                                           # पूर्ण same-degree correction: prev टोक ⇒ नव्या leg चा origin
+                corrs.append(_corr(prev, x.leg_start, p0, "done", low, DL, broke_origin=prev["par"] is not None))
+        else:
+            cur["to"], cur["p1"] = int(x.imp_end.bar), float(x.imp_end.price)
+        if x.counter == "correction" and x.parent is not None:
+            cur["par"] = float(x.parent.price)                             # A1: origin तुटला, parent टिकला ⇒ खोली parent पासून
+    last = states[-1] if states else None
+    if cur is not None and last is not None and last.counter in ("candidate", "correction"):
+        j = cur["to"] + 1 + int(np.argmax(H[cur["to"] + 1:]) if cur["dir"] < 0 else np.argmin(L[cur["to"] + 1:])) \
+            if cur["to"] + 1 < len(d) else cur["to"]
+        px = float(H[j] if cur["dir"] < 0 else L[j])
+        corrs.append(_corr(cur, j, px, "in progress", low, DL, kind=last.counter))
+    seen = set()
+    pv = list(last.pivots) if last is not None else []
+    tops = {c["end_bar"] for c in corrs if c["state"] == "done"}
+    cand = set(last.corr_bars) if last is not None else set()
+    bounces = []
+    for lg in legs:
+        ok = "H" if lg["dir"] < 0 else "L"
+        hi = len(d) - 1 if lg is cur else lg["to"]
+        for p in pv:
+            if p.kind == ok and lg["from"] < p.bar <= hi and p.bar not in seen:
+                seen.add(p.bar)
+                tag = "correction" if p.bar in tops else ("candidate" if (lg is cur and p.bar in cand) else "pullback")
+                bounces.append({"bar": int(p.bar), "price": float(p.price), "kind": p.kind, "tag": tag})
+    out_legs = [{"dir": lg["dir"], "from": lg["from"], "to": lg["to"], "p0": lg["p0"], "p1": lg["p1"]} for lg in legs]
+    return {"legs": out_legs, "corrections": corrs, "bounces": bounces}
+
+
+def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=False):
+    imp = abs(leg["p1"] - (leg["par"] if leg.get("par") is not None else leg["p0"]))   # A1: parent टिकलेली correction ⇒ parent पासूनचा impulse
+    depth = abs(end_px - leg["p1"]) / imp if imp > 0 else None
+    inner = sorted((q for q in low if leg["to"] < q.bar < end_bar), key=lambda q: q.bar)
+    prices, kinds = [leg["p1"]], ["L" if leg["dir"] < 0 else "H"]
+    for q in inner:                                                        # आलटून पालटून; सलग तोच प्रकार ⇒ जास्त टोकाचा
+        if q.kind != kinds[-1]:
+            prices.append(q.price)
+            kinds.append(q.kind)
+        elif len(prices) > 1 and (q.price - prices[-1]) * (1 if q.kind == "H" else -1) > 0:
+            prices[-1] = q.price
+    if len(prices) > 1 and kinds[-1] == ("H" if leg["dir"] < 0 else "L"):
+        prices, kinds = prices[:-1], kinds[:-1]
+    prices.append(end_px)
+    st = DL.structure(prices)
+    shape = st["form"] if st["structure"] != "single" else None
+    shape = "5-wave" if shape == "impulse" else shape                     # correction box वर "impulse" शब्द नाही
+    return {"start_bar": int(leg["to"]), "start_price": float(leg["p1"]), "end_bar": int(end_bar), "end_price": float(end_px),
+            "state": state, "kind": kind, "broke_origin": bool(broke_origin or (kind == "correction" and state == "in progress")), "depth": None if depth is None else round(float(depth), 3), "shape": shape}
+
+
 def _fake_1m(d):
     """Daily bars ⇒ elliott.swings.build_frame("1d") ला चालणारे rows (09:15 OHLC + 15:29 close) — resample ने तोच Daily bar परत."""
     a = d[["timestamp", "open", "high", "low", "close"]].copy()
@@ -172,6 +255,7 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
             if i0 >= n:
                 raise ValueError("सगळ्या दाखवायच्या Daily candles sealed (holdout) — chart नाही (Q33)")
     piv = list(q15[-1].pivots)                                             # दोन्ही modes चे pivots एकच (_raw_pivots)
+    objs = structure_objects(d, q15, s)
     tags = tag_pivots(piv)
     seg_m, seg_q = protected_segments(minor, C), protected_segments(q15, C)
     prot_m = {(x["kind"], x["bar"]) for x in seg_m}
@@ -200,7 +284,7 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
     since_m = runs(tm)[-1][0]
     since_q = runs(tq)[-1][0]
     why_m = next((minor[j].why for j in range(since_m, n) if minor[j].why), "") or minor[since_m].why
-    return {
+    v = {
         "n": n, "i0": i0, "first_day": str(d["timestamp"].iloc[0].date()), "last_day": str(d["timestamp"].iloc[-1].date()),
         "frame": d, "pivots": pivots, "legs": [x for x in legs(piv, q15) if x["to"] >= i0],
         "minor": {"bands": runs(tm), "protected": seg_m, "trend": last_m.trend, "since": since_m, "why": why_m,
@@ -210,9 +294,179 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
                 "corr_label": last_q.corr_label, "mature": bool(last_q.mature), "targets": list(last_q.targets),
                 "protected_now": None if last_q.protected is None else {"kind": last_q.protected.kind, "price": last_q.protected.price,
                                                                         "bar": last_q.protected.bar},
-                "phases": runs([(x.phase or "-") + "|" + (x.wave or "") for x in q15])},
+                "phases": runs([(x.phase or "-") + "|" + (x.wave or "") for x in q15]),
+                "counter": last_q.counter, "origin_risk": bool(last_q.origin_risk), "band": last_q.band,
+                "parent": None if last_q.parent is None else {"kind": last_q.parent.kind, "price": last_q.parent.price, "bar": last_q.parent.bar},
+                "states": runs([state_label(x) for x in q15]), "objects": objs,
+                "retrace": _retrace(d, last_q), "range_check": range_check(d, objs, s)},
         "elliott": ev, "elliott_degree": deg, "sealed": sealed,
     }
+    v["q15"]["levels"] = level_bands(v, s)
+    return v
+
+
+def range_check(d, objs, s=None):
+    """B1 (Abhi): Q27 RANGE चाचणी trend-degree रचनेवर — शेवटचे दोन trend-degree lows (UP leg origin / DOWN leg टोक) आणि दोन highs;
+    tol = range_eq_sigma_d × σ_D (शेवटचा). फक्त अहवाल (engine चा RANGE नियम बदलत नाही; tune नाही)."""
+    s = S3.load(s)
+    lows, highs = [], []
+    for lg in objs["legs"]:
+        a = (lg["from"], lg["p0"]) if lg["dir"] > 0 else (lg["to"], lg["p1"])
+        b = (lg["to"], lg["p1"]) if lg["dir"] > 0 else (lg["from"], lg["p0"])
+        lows.append(a)
+        highs.append(b)
+    lows = sorted(set(lows))[-2:]
+    highs = sorted(set(highs))[-2:]
+    sig = DD.sigma_d(d.reset_index(drop=True), int(s["daily_sigma_sessions"]))
+    tol = float(s["range_eq_sigma_d"]) * float(sig[-1]) if len(sig) and np.isfinite(sig[-1]) else 0.0
+    eq = lambda xs: len(xs) == 2 and abs(xs[0][1] - xs[1][1]) <= tol   # noqa: E731
+    return {"tol": round(tol, 2), "lows": [{"bar": int(b), "price": float(p)} for b, p in lows],
+            "highs": [{"bar": int(b), "price": float(p)} for b, p in highs],
+            "lows_equal": bool(eq(lows)), "highs_equal": bool(eq(highs)), "range": bool(eq(lows) and eq(highs))}
+
+
+MAX_BANDS = 6                                                              # C1 (Abhi): Daily chart वर कमाल 6 level पट्टे
+
+
+def level_bands(v, s=None):
+    """C1 (Abhi): महत्त्वाची levels पट्टे म्हणून — degree आधी, मग किंमतीपासून जवळीक; कमाल MAX_BANDS. उमेदवार (rank = degree):
+    0 मोठ्या degree चा origin (parent, window बाहेर असला तरी — कडेला बाण), 1 protected origin, 2 maturity target (आधीच्या मोठ्या
+    correction ची सुरुवात / (5) equality), 3 window चे major टोक (high / low), 4 trend-degree correction टोकं. पट्टा = किंमत ±
+    range_eq_sigma_d × σ_D. State: fresh / tested / broken (birth नंतरचे closes / ranges); target ⇒ "target"."""
+    s = S3.load(s)
+    d = v["frame"]
+    C, Hh, Ll = d["close"].to_numpy(float), d["high"].to_numpy(float), d["low"].to_numpy(float)
+    n, i0 = v["n"], v["i0"]
+    q = v["q15"]
+    sig = DD.sigma_d(d, int(s["daily_sigma_sessions"]))
+    half = max(float(s["range_eq_sigma_d"]) * (float(sig[-1]) if np.isfinite(sig[-1]) else 0.0), 1e-9)
+    cand = []
+    if q.get("parent") and (not q.get("protected_now") or abs(q["parent"]["price"] - q["protected_now"]["price"]) > 1e-9):
+        cand.append((0, "larger-degree origin", q["parent"]["price"], q["parent"]["bar"]))
+    if q.get("protected_now"):
+        cand.append((1, "protected origin", q["protected_now"]["price"], q["protected_now"]["bar"]))
+    for x in q.get("targets") or ():
+        cand.append((2, "maturity target", float(x), None))
+    win_h = i0 + int(np.argmax(Hh[i0:]))
+    win_l = i0 + int(np.argmin(Ll[i0:]))
+    cand += [(3, "window high", float(Hh[win_h]), win_h), (3, "window low", float(Ll[win_l]), win_l)]
+    for c in (q.get("objects") or {}).get("corrections", []):
+        if c["end_bar"] >= i0 and c["state"] == "done":
+            cand.append((4, "correction end", c["end_price"], c["end_bar"]))
+    out = []
+    for rank, label, px, bar in sorted(cand, key=lambda x: (x[0], abs(x[2] - C[-1]))):
+        if any(b["lo"] - half <= px <= b["hi"] + half for b in out):        # आधीच्या (वरच्या degree) पट्ट्यात ⇒ नवा नाही
+            continue
+        lo, hi = px - half, px + half
+        if bar is None:
+            state = "target"
+        else:
+            after = slice(int(bar) + 1, n)
+            above_now = C[-1] > hi
+            crossed = bool(((C[after] < lo) if above_now else (C[after] > hi)).any()) if C[-1] > hi or C[-1] < lo else False
+            touched = bool(((Ll[after] <= hi) & (Hh[after] >= lo)).any())
+            state = "broken" if crossed else ("tested" if touched else "fresh")
+        wlo, whi = float(Ll[i0:].min()), float(Hh[i0:].max())
+        off = "above" if lo > whi else ("below" if hi < wlo else None)
+        out.append({"rank": rank, "label": label, "price": round(float(px), 2), "lo": round(lo, 2), "hi": round(hi, 2), "state": state,
+                    "bar": None if bar is None else int(bar), "off_window": off})
+        if len(out) >= MAX_BANDS:
+            break
+    return out
+
+
+def view_spec(v):
+    """C1: default Daily chart वर काय काढायचं (फक्त trend-degree) — chart आणि tests याच spec वरून. tags = chart वरचे सगळे degree
+    labels (correction boxes + current impulse मधले pullbacks); minor pivot tags / Elliott labels इथे नाहीत (debug chart मध्ये)."""
+    i0 = v["i0"]
+    ob = v["q15"]["objects"]
+    legs = [lg for lg in ob["legs"] if lg["to"] >= i0]
+    boxes = []
+    for c in ob["corrections"]:
+        if c["end_bar"] < i0:
+            continue
+        name = "correction candidate" if (c["state"] == "in progress" and c["kind"] == "candidate") else "correction"
+        bits = [name + (" (in progress)" if c["state"] == "in progress" else "")]
+        if c.get("depth") is not None:
+            bits.append(f"{c['depth']:.0%} of impulse")
+        if c.get("shape"):
+            bits.append(c["shape"])
+        boxes.append({**c, "label": " · ".join(bits)})
+    cur = ob["legs"][-1] if ob["legs"] else None
+    boxed = {c["end_bar"] for c in boxes}
+    pulls = [b for b in ob["bounces"] if cur is not None and b["bar"] > cur["from"] and b["bar"] >= i0 and b["bar"] not in boxed
+             and b["tag"] in ("pullback", "candidate") and v["q15"]["trend"] in ("UP", "DOWN")]
+    tags = [b["label"] for b in boxes] + [b["tag"] for b in pulls]
+    return {"legs": legs, "boxes": boxes, "pullbacks": pulls, "tags": tags, "bands": v["q15"].get("levels") or [],
+            "protected": v["q15"].get("protected_now"), "strip": {"degree-aware": v["q15"]["states"], "Dow minor": v["minor"]["bands"]}}
+
+
+def state_label(st):
+    """C1 पट्टा (trader वाचतो ती अवस्था): "DOWN · impulse" / "DOWN · correction" / "RANGE" / "NEUTRAL" / "UNKNOWN"."""
+    if st.trend in ("UP", "DOWN"):
+        return f"{st.trend} · {'impulse' if st.phase == 'impulse' else 'correction'}"
+    return st.trend
+
+
+def _retrace(d, st):
+    """चालू correction किती खोल: (leg टोक − correction चं टोक) ÷ (leg टोक − protected origin); impulse मध्ये ⇒ None."""
+    if st is None or st.trend not in ("UP", "DOWN") or st.imp_end is None or st.protected is None or st.counter is None:
+        return None
+    j0 = st.imp_end.bar
+    seg = d["high"].to_numpy(float)[j0:] if st.trend == "DOWN" else d["low"].to_numpy(float)[j0:]
+    ext = float(seg.max() if st.trend == "DOWN" else seg.min())
+    org = st.protected.price if st.counter != "correction" else (st.parent.price if st.parent is not None else st.protected.price)
+    span = abs(st.imp_end.price - org)
+    return round(abs(ext - st.imp_end.price) / span, 3) if span > 0 else None
+
+
+COUNTER_TXT = {"pullback": "pullback in progress (lower degree)", "candidate": "same-degree correction candidate in progress",
+               "correction": "correction in progress (same degree; parent origin holds)"}
+
+
+def trend_line(q):
+    """A4 (Abhi): एक ओळ — "Trend DOWN (impulse) · pullback in progress (lower degree) · protected 24,774"."""
+    t = q["trend"]
+    if t not in ("UP", "DOWN"):
+        return f"Trend {t}" + (f" · band {q['band'][0]:,.0f}–{q['band'][1]:,.0f}" if q.get("band") else "")
+    if q["phase"] == "origin_broken":
+        body = f"Trend {t} · origin broken on close — waiting for an opposite impulse"
+    else:
+        body = f"Trend {t} ({'impulse' if q['phase'] == 'impulse' else 'correction'})"
+        if q.get("counter"):
+            body += f" · {COUNTER_TXT[q['counter']]}"
+            if q.get("retrace") is not None:
+                body += f" (depth {q['retrace']:.0%} of last impulse)"
+    pq = q["protected_now"]
+    if pq:
+        body += f" · protected {pq['price']:,.0f}"
+    if q["mature"]:
+        body += " · impulse mature, larger reversal possible"
+    if q.get("origin_risk"):
+        body += " · origin at risk"
+    return body
+
+
+WITH_WAVES = {"1", "3", "5", "A", "C", "W", "Y", "Z", "E"}                # pattern दिशेने चालणाऱ्या waves (बाकी उलट)
+
+
+def elliott_vs_dow(v):
+    """A5 (Abhi): elliott advisory वि. degree-aware Dow — चालू wave ची दिशा trend शी जुळते का, आणि रचना (impulse / corrective) phase
+    शी. रिटर्न {"elliott", "dow", "direction_agree", "structure_agree"} — advisory उपयोगी आहे का हे पाहण्यासाठी log (निर्णयात नाही)."""
+    q = v["q15"]
+    dow = trend_line(q).split(" · protected")[0]
+    deg = v.get("elliott_degree")
+    if not deg:
+        return {"elliott": v["elliott"].get("error") or "no count", "dow": dow, "direction_agree": None, "structure_agree": None}
+    e = v["elliott"]["degrees"][deg]
+    cw = str(e.get("current_wave") or "").strip("()").upper()
+    move = int(e.get("direction") or 0) * (1 if cw in WITH_WAVES else -1)
+    tdir = {"UP": 1, "DOWN": -1}.get(q["trend"], 0)
+    e_imp = e.get("pattern") in ("impulse", "lead_diag", "end_diag") and cw in {"1", "3", "5"}
+    d_imp = q["phase"] == "impulse"
+    return {"elliott": f"{deg} {e['pattern']} wave {e['current_wave']}" + (" ?" if e.get("gray") else ""), "dow": dow,
+            "direction_agree": None if tdir == 0 or move == 0 else bool(move == tdir),
+            "structure_agree": None if tdir == 0 else bool(e_imp == d_imp)}
 
 
 def caption(v, symbol, audit_line=None, years=None):
@@ -223,7 +477,6 @@ def caption(v, symbol, audit_line=None, years=None):
     w0 = v["i0"] if v.get("sealed") is not None else None                 # Q33: sealed काळातली सुरुवात ⇒ "window आधी" (तारीख / मोजणी नाही)
     span = f"last {years}y" if years and v.get("full_window", True) else f"{shown} sessions"
     pm = m["protected_now"]
-    pq = q["protected_now"]
     lab = "—"
     if v.get("elliott_degree"):
         e = v["elliott"]["degrees"][v["elliott_degree"]]
@@ -233,10 +486,9 @@ def caption(v, symbol, audit_line=None, years=None):
     why = _en(m["why"])
     lines = [
         f"{symbol} · Daily · {span} (engine on full history)",
-        f"Dow (minor swings): {m['trend']} since {ago(m['since'], n, w0)}" + (f" — {why}" if why else ""),
-        f"Protected: minor {_pv(pm, m['trend'] == 'NEUTRAL')} | Q15 origin {_pv(pq, q['phase'] == 'origin_broken')}",
-        f"Degree-aware (Q15): {q['trend']} {(q['phase'] or '').replace('_', ' ')}".rstrip() + f" since {ago(q['since'], n, w0)}"
-        + (" · impulse mature" if q["mature"] else ""),
+        trend_line(q) + f" · since {ago(q['since'], n, w0)}",
+        f"Dow minor swings (secondary): {m['trend']} since {ago(m['since'], n, w0)}" + (f" — {why}" if why else "")
+        + f" · minor protected {_pv(pm, m['trend'] == 'NEUTRAL')}",
         f"Elliott advisory (not used in decisions): {lab}",
     ]
     if audit_line:
@@ -301,4 +553,26 @@ def to_json(v, symbol):
                     "protected": seg(v["q15"]["protected"]), "protected_now": v["q15"]["protected_now"],
                     "phases": [{"from": day(a, True), "to": day(b), "phase_wave": s} for a, b, s in v["q15"]["phases"] if b >= i0]},
             "elliott": ev, "elliott_degree": v["elliott_degree"],
+            "trend_line": trend_line(v["q15"]), "counter": v["q15"].get("counter"), "origin_risk": v["q15"].get("origin_risk"),
+            "retrace": v["q15"].get("retrace"),
+            "parent": None if not v["q15"].get("parent") else {**v["q15"]["parent"], "day": day(v["q15"]["parent"]["bar"])},
+            "objects": _objects_json(v, day), "bands": [{**b, "day": None if b["bar"] is None else day(b["bar"])}
+                                                        for b in v["q15"].get("levels") or []],
+            "range_check": _range_json(v, day),
             "note": "Visual review only — no trade, no order. Engine numbers from data."}
+
+
+def _objects_json(v, day):
+    """C1 objects (window ला लागणारे) — bars ⇒ दिवस (Q33: sealed ⇒ "before window")."""
+    ob, i0 = v["q15"].get("objects") or {"legs": [], "corrections": [], "bounces": []}, v["i0"]
+    return {"legs": [{**x, "from_day": day(x["from"]), "to_day": day(x["to"])} for x in ob["legs"] if x["to"] >= i0],
+            "corrections": [{**x, "start_day": day(x["start_bar"]), "end_day": day(x["end_bar"])} for x in ob["corrections"]
+                            if x["end_bar"] >= i0],
+            "bounces": [{**x, "day": day(x["bar"])} for x in ob["bounces"] if x["bar"] >= i0]}
+
+
+def _range_json(v, day):
+    rc = v["q15"].get("range_check")
+    if not rc:
+        return None
+    return {**rc, "lows": [{**x, "day": day(x["bar"])} for x in rc["lows"]], "highs": [{**x, "day": day(x["bar"])} for x in rc["highs"]]}
