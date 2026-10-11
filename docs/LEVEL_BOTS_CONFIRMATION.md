@@ -39,5 +39,12 @@ Confirmation TF: 5M Instant 5m (1m only detects arrival), Classic 5m, 15M SRv2 1
 - MCX: PAPER new entries paused until L4 (MCX gate); LIVE unchanged.
 
 ## Not in the MVP (follow-ups)
-L4 MCX gate · full L5 dashboard (armed areas table, daily summary per bot) · L6 replay report (touch vs confirmation, IS/VAL, costs) ·
+L4 MCX gate · full L5 dashboard (armed areas table, daily summary per bot) ·
 structural exit (real break beyond the area) as an extra exit rule — today the bots' existing exits stay (never blocked) · RSI divergence evidence.
+
+## L6 replay (touch vs confirmation)
+`level_bots_replay.py` (pure) + `scripts/level_bots_replay.py` (CLI, local data only) ⇒ `docs/reports/level_bots_confirmation.md` and CSVs in
+`data/research/level_bots_replay/`. Same days, same levels (bots' Dynamic S/R, hourly from closed bars), same costs (`charges.py`, points);
+legacy arm = the bots' own touch / direction functions + default settings; confirmation arm = `level_reaction.evaluate` on closed confirmation-TF
+candles with one `decision3.daily.fold` per symbol. NIFTY IS / VAL only (HOLDOUT guard); BANKNIFTY 15M (≈ 3 months) and MCX 30m (≈ 4 months) are
+illustrations. Full run: `python3 scripts/level_bots_replay.py` (≈ 35 min, sequential).
