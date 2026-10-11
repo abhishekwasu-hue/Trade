@@ -11,7 +11,7 @@ import json
 import os
 import time
 
-PROMPT_VERSION = "v22_chart_audit_v2"
+PROMPT_VERSION = "v22_chart_audit_v3"                                     # v3: Daily structure-consistency (§5.8), legs / letters
 TASK = "v22_chart_audit"
 SECTIONS = ("zones", "structure", "pullback_trigger", "entry_sl_target")
 SECTION_NAMES = {"zones": "Zones", "structure": "Structure", "pullback_trigger": "Pullback & trigger", "entry_sl_target": "Entry/SL/Target"}
@@ -58,17 +58,33 @@ DAILY_SYSTEM_PROMPT = """ROLE
 You audit a DAILY structure chart produced by a rule-based trading engine (NSE index, PAPER/shadow review only). You judge whether what is
 DRAWN is placed where the candles say it should be. You never trade, never change levels, never change the engine's decision.
 
-The chart shows only trend-degree structure: impulse legs (one line each), corrections as labelled brackets/boxes, the protected origin
-line, and at most six horizontal level bands. Minor pivots and tags are intentionally NOT drawn — never ask for them.
+The chart shows only trend-degree structure: trend legs drawn through their own swing pivots (solid orange = verified 5-wave impulse,
+dashed orange = impulse not verified by the structure-only check — never a claim that the leg is corrective), corrections as boxes with wave letters (a-b-c, a-e, W-X-Y) at the pivots the
+engine read, the protected origin
+line, and at most six horizontal level bands with a legend. Minor pivots and tags are intentionally NOT drawn — never ask for them.
+Only the current and the previous correction carry text; older corrections are faint without text, or omitted on long windows — by
+design, never report them as missing.
 
 Answer exactly these questions (numbers only from FACTS; judge placement only):
 - zones: are the level bands at real prior buyer/seller areas (visible reaction/rejection)?
 - structure: are the corrections bracketed correctly (start, end, in progress), and is the origin/protected line at the right swing?
 - missing_or_clutter: is anything important missing (a major swing level, a correction not bracketed)?
 - pullback_trigger and entry_sl_target: always "na" on this chart.
+- consistency (structure-consistency check): does the trend the CAPTION claims (FACTS "Caption (trend claim)" and "Trend now") agree
+  with the structure DRAWN on the chart? Count the swings of the latest counter-move yourself. Examples: a 3-wave (a-b-c) counter-move
+  labelled as a trend flip = inconsistent; a 5-wave impulsive move against the trend called only a "pullback" = inconsistent; caption
+  "DOWN impulse" while the chart shows lower highs and lower lows from the protected origin = consistent. status consistent /
+  inconsistent / na (cannot judge); reason ≤ 20 words naming the wave count you see. You only report — you never change the trend.
 status: ok / warn / fail / na; reason ≤ 15 words, English. issues: ≤ 5 short items, most important first.
-verdict: agree (no fail, ≤ 1 warn) / partly_agree / disagree (any fail on structure).
+verdict: agree (no fail, ≤ 1 warn, consistency not inconsistent) / partly_agree / disagree (any fail on structure).
 Return only the JSON object."""
+CONSISTENCY = ("consistent", "inconsistent", "na")
+DAILY_SCHEMA = {**SCHEMA, "required": SCHEMA["required"] + ["consistency"],   # §5.8 (Abhi): फक्त Daily structure chart ला
+                "properties": {**SCHEMA["properties"],
+                               "consistency": {"type": "object", "additionalProperties": False, "required": ["status", "reason"],
+                                               "properties": {"status": {"type": "string", "enum": list(CONSISTENCY)},
+                                                              "reason": {"type": "string"}}}}}
+CONSISTENCY_ICON = {"consistent": "✅", "inconsistent": "❌", "na": "—"}
 REPAIR = "Your previous reply was not a valid JSON object for the required schema. Reply again with only that JSON object — no prose, no code fences."
 
 
@@ -80,11 +96,34 @@ def facts_text(kind, js):
         q, m = js.get("q15") or {}, js.get("minor") or {}
         if js.get("objects") is not None:                                 # C1: trend-degree chart (corrections + bands)
             ob = js["objects"]
+            ch = js.get("chart") or {}
+            nb = ch.get("boxes_drawn", len(ob.get("corrections", [])))
             lines = [f"Chart: {js.get('symbol')} daily structure, window {js.get('window', {}).get('from')} .. {js.get('window', {}).get('to')}.",
                      f"Trend now: {js.get('trend_line')}.",
-                     f"Impulse legs drawn: {len(ob.get('legs', []))}; corrections bracketed: {len(ob.get('corrections', []))}; "
-                     f"level bands: {len(js.get('bands') or [])}.",
-                     "Bands: " + "; ".join(f"{b['label']} {b['lo']:,.0f}-{b['hi']:,.0f} ({b['state']})" for b in (js.get("bands") or [])) + "."]
+                     f"Trend-degree legs drawn: {len(ob.get('impulses', ob.get('legs', [])))}; corrections bracketed: {nb}"
+                     + (f" of {len(ob.get('corrections', []))} (older ones omitted / faint by design)" if nb != len(ob.get("corrections", []))
+                        else "") + f"; level bands: {len(js.get('bands') or [])}.",
+                     "Bands: " + "; ".join(f"{b.get('name') or b['label']} [{b['lo']:,.0f}-{b['hi']:,.0f}]"
+                                           + ("" if b.get("name") else f" ({b['state']})") for b in (js.get("bands") or [])
+                                           if "bands_drawn" not in ch or (b.get("name") or b["label"]) in ch["bands_drawn"]) + "."]
+            if ch.get("dropped"):                                          # label ला जागा नव्हती ⇒ chart वर नाही (Vision ला सांगतो)
+                lines.append("Not drawn (no room for the label): " + "; ".join(ch["dropped"]) + ".")
+            lg = ob.get("impulses") or []
+            if lg:
+                lines.append("Trend-degree legs (structure-only read_counter; dashed = impulse not verified): " + "; ".join(
+                    f"{x.get('from_day')}..{x.get('to_day')} {'impulse' if x.get('verified') else 'not verified'} "
+                    f"(read {x.get('family')}, n {x.get('n')})" for x in lg) + ".")
+            cap = [x for x in str(js.get("caption") or "").splitlines() if x.strip()]
+            if cap:                                                        # §5.8: caption चा trend दावा (consistency तपासणीसाठी)
+                lines.append("Caption (trend claim): " + " | ".join(cap[:3]))
+            corr = ob.get("corrections") or []
+            if corr:
+                c = corr[-1]
+                dep = "?" if c.get("depth") is None else f"{c['depth']:.0%}"
+                wl = " ".join(m["letter"] for m in c.get("marks") or ())
+                lines.append(f"Latest correction drawn: {c.get('state')} ({c.get('kind')}), shape {c.get('shape') or 'unread'}"
+                             + (f" (waves {wl})" if wl else "") + f", depth {dep} of impulse; engine counter now: "
+                             f"{js.get('counter') or 'none'}.")
             return "\n".join(lines)
         lines = [f"Chart: {js.get('symbol')} daily swings, window {js.get('window', {}).get('from')} .. {js.get('window', {}).get('to')}.",
                  f"Engine pivots in window: {len(piv)} (tags {sum(1 for p in piv if p['tag'] in ('HH', 'HL'))} HH/HL, "
@@ -99,7 +138,7 @@ def facts_text(kind, js):
                       ensure_ascii=False, default=str)[:3000]
 
 
-def build_request(png, facts, model, max_tokens=900, system=None):
+def build_request(png, facts, model, max_tokens=900, system=None, schema=None):
     if not model:
         raise ValueError("VISION_SIGNAL_MODEL env सेट नाही")
     return {"model": model, "max_tokens": int(max_tokens),
@@ -107,7 +146,7 @@ def build_request(png, facts, model, max_tokens=900, system=None):
             "messages": [{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(png).decode()}},
                 {"type": "text", "text": "FACTS (engine data):\n" + facts}]}],
-            "output_config": {"format": {"type": "json_schema", "schema": SCHEMA}}}
+            "output_config": {"format": {"type": "json_schema", "schema": schema or SCHEMA}}}
 
 
 def validate(raw):
@@ -128,6 +167,11 @@ def validate(raw):
         if st is None:
             return None, f"invalid {k} status"
         out["sections"][k] = {"status": st, "reason": _one_line(s.get("reason") or "")[:120]}
+    cs = raw.get("consistency")
+    if cs is not None:                                                     # §5.8: Daily chart ला; बाकी charts ला field नाही
+        if not isinstance(cs, dict) or cs.get("status") not in CONSISTENCY:
+            return None, "invalid consistency status"
+        out["consistency"] = {"status": cs["status"], "reason": _one_line(cs.get("reason") or "")[:140]}
     return out, None
 
 
@@ -179,7 +223,7 @@ def _budget(model, g=None, spent_fn=None, estimate_fn=None, today=None):
     return True, day, cap, ""
 
 
-def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None, decision=None, system=None):
+def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None, decision=None, system=None, schema=None):
     """एका chart चा audit ⇒ dict {status: done/skipped/failed, verdict, sections, issues, cost_usd, spent_today, cap, why, model,
     prompt_version}. decision (असल्यास) फक्त deep-copy म्हणून वाचतो — परत कधीच नाही / बदल नाही."""
     _ = copy.deepcopy(decision) if decision is not None else None
@@ -201,7 +245,7 @@ def audit_chart(png, facts, model=None, client=None, budget=None, on_usage=None,
         return out
     from vision import signal_audit as SA
     t0 = time.monotonic()
-    req = build_request(png, facts, model, system=system)
+    req = build_request(png, facts, model, system=system, schema=schema)
     try:
         client = client or SA.make_client(30)
         msg = client.messages.create(**req)
@@ -272,8 +316,11 @@ def _read(msg):
 def caption_line(a):
     if a["status"] == "done":
         bad = sum(1 for s in a["sections"].values() if s["status"] in ("warn", "fail"))
-        return "Vision audit: pass" if a["verdict"] == "agree" and bad == 0 else \
-            f"Vision audit: {a['verdict'].replace('_', ' ')} — {bad} issue{'s' if bad != 1 else ''}, see report"
+        inc = (a.get("consistency") or {}).get("status") == "inconsistent"     # §5.8: caption trend ≠ काढलेली रचना
+        if a["verdict"] == "agree" and bad == 0 and not inc:
+            return "Vision audit: pass"
+        return f"Vision audit: {a['verdict'].replace('_', ' ')} — {bad} issue{'s' if bad != 1 else ''}" + \
+            (" · structure inconsistent" if inc else "") + ", see report"
     if a["why"] in ("daily budget reached", "monthly budget reached"):
         return f"Vision audit skipped: {a['why']}"
     if a["why"] == "parse error":
@@ -295,6 +342,9 @@ def report_text(a, title):
             if s["status"] == "na":                                        # C3: chart वर नसलेला भाग ⇒ ओळच नाही ("—" नाही)
                 continue
             lines.append(f"{SECTION_NAMES[k]}: {STATUS_ICON[s['status']]} {s['reason']}"[:160])
+        cs = a.get("consistency")
+        if cs and cs["status"] != "na":                                    # §5.8: caption trend वि. काढलेली रचना
+            lines.append(f"Consistency: {CONSISTENCY_ICON[cs['status']]} {cs['reason']}"[:160])
         if a.get("missing_or_clutter"):
             lines.append(f"Missing: {a['missing_or_clutter']}"[:160])
         for x in a["issues"][:4]:
@@ -351,7 +401,7 @@ def make_auditor(model=None, client=None, budget=None, on_usage=None):
         out_p = os.path.join(run_dir, os.path.splitext(png_rel)[0] + ".vision.json")
         try:                                                               # त्याच chart चा आधीचा पूर्ण audit ⇒ पुन्हा खर्च नाही
             old = json.load(open(out_p, encoding="utf-8"))
-            if old.get("sha") == sha and old.get("status") == "done":   # खर्च आधीच नोंदलेला ⇒ या send चा खर्च 0 (summary दुहेरी नाही)
+            if old.get("sha") == sha and old.get("status") == "done" and old.get("prompt_version") == PROMPT_VERSION:   # नवा prompt ⇒ पुन्हा   # खर्च आधीच नोंदलेला ⇒ या send चा खर्च 0 (summary दुहेरी नाही)
                 return {**old, "reused": True, "cost_usd": 0.0, "first_cost_usd": old.get("cost_usd", 0.0)}
         except (OSError, ValueError):
             pass
@@ -360,9 +410,9 @@ def make_auditor(model=None, client=None, budget=None, on_usage=None):
             js = json.load(open(jp, encoding="utf-8")) if jp and os.path.exists(jp) else {}
         except ValueError:
             js = {}
-        system = DAILY_SYSTEM_PROMPT if (it.get("kind") == "v22_daily_swings" and js.get("objects") is not None) else None   # C1
+        daily = it.get("kind") == "v22_daily_swings" and js.get("objects") is not None   # C1 / §5.8
         a = audit_chart(png, facts_text(it.get("kind"), js), model=model, client=client, budget=budget, on_usage=on_usage,
-                        system=system)
+                        system=DAILY_SYSTEM_PROMPT if daily else None, schema=DAILY_SCHEMA if daily else None)
         a["item"], a["chart"], a["sha"] = it["item"], png_rel, sha
         try:
             with open(out_p, "w", encoding="utf-8") as fh:

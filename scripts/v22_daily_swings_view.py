@@ -85,11 +85,12 @@ def main(argv=None):
     v["full_window"] = v["i0"] == len(d) - w and (d["timestamp"].iloc[-1] - d["timestamp"].iloc[0]).days >= 365.25 * a.years - 7
     sd = os.path.join(a.out_dir, sym)
     os.makedirs(sd, exist_ok=True)
-    png = CH.daily_swings_png(v, sym)                                       # C1: default (trend degree) — Telegram
+    png, drawn = CH.daily_swings_render(v, sym)                             # C1: default (trend degree) — Telegram; drawn = प्रत्यक्ष काढलेलं
     open(os.path.join(sd, "daily_swings.png"), "wb").write(png)
     open(os.path.join(sd, "daily_swings_debug.png"), "wb").write(CH.daily_swings_debug_png(v, sym))   # debug — पाठवला जात नाही
     cap = DS.caption(v, sym, audit_line="Vision audit: pending (runs before Telegram send)", years=int(a.years) if a.years == int(a.years) else a.years)
     js = DS.to_json(v, sym)
+    js["chart"].update(drawn)                                              # Vision facts: काढलेले पट्टे + टाकलेले labels
     js["caption"] = cap
     with open(os.path.join(sd, "daily_swings.json"), "w", encoding="utf-8") as fh:
         json.dump(js, fh, ensure_ascii=False, indent=1, default=str)
