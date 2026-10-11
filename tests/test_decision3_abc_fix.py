@@ -16,7 +16,9 @@ def test_rule5_caption_bands_and_next_demand_on_banknifty_shape():
         t = "UP" if mirror else "DOWN"
         side = "fall supply" if t == "DOWN" else "rise demand"
         line = DS.trend_line(q)
-        assert line.startswith(f"Trend {t} · a-b-c correction completed at sharp-{side} · new impulse {t.lower()} in progress"), line
+        move = "advance" if mirror else "decline"                          # Abhi review: नवा leg 3 waves ⇒ impulse दावा नाही
+        assert line.startswith(f"Trend {t} · a-b-c correction completed at sharp-{side} · new {move} in progress (impulse not "
+                               "verified)"), line
         assert f"protected {q['protected_now']['price']:,.0f}" in line
         b_px = (F.MIRROR - 1220.0 + F.WICK) if mirror else (1220.0 - F.WICK)
         assert abs(q["next_level"]["price"] - b_px) < 1e-9                  # rule 4: next demand = b low (a-b-c reduction)

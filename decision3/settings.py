@@ -30,6 +30,9 @@ DEFAULTS = {
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
+    "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
+    "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
+    "chart_atr_n": 14,                       # §5.7 (Abhi): caption मधलं अंतर ATR_D मध्ये — शेवटच्या इतक्या Daily candles चा सरासरी true range
     "liq_marks_per_side": 3,                 # chart वर प्रत्येक बाजूचे जवळचे liquidity pools (फक्त chart)
     # ③ Pullback (C पायरी)
     "k_reset_sigma": 0.25,                   # नवं टोक < हे × σ_1H ने सरकलं ⇒ तेच टोक (reset नाही)
@@ -104,6 +107,9 @@ REGISTER = {
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
+    "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
+    "chart_atr_n": (14, "—", "व्याख्या", "§5.7 caption: ATR_D कालावधी (सामान्य 14)"),
+    "chart_leg_path_points": (15, "≥ 6 (code मध्ये किमान 6)", "अंदाज (फक्त chart)", "Abhi review: लांब leg 207-wave tracing नको — leg चे स्वतःचे मोठे swings (≤ ~15 बिंदू)"),
     "k_reset_sigma": (0.25, "—", "Abhi नियम", "spec ③ < 0.25 σ_1H ⇒ reset नाही"),
     "power_shift_min": (2, "2/3", "Abhi नियम", "spec ④ किमान 2 (config)"),
     "power_a_rule": ("relative", "relative / strict3", "Abhi नियम", "level bots spec: (a) relative contraction — 'नेमके 3 सलग लहान' ही आपली यांत्रिक आवृत्ती होती"),

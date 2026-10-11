@@ -1943,7 +1943,30 @@ class TestCheckVixSpikeHalt:
     लागू (MCX/CRUDEOIL वगळून) — आणि PAPER/LIVE दोन्ही trading_mode ला (check_vix_spike_halt() स्वतः
     trading_mode विचारातच घेत नाही — तो भेद caller — open_multi_leg_trade() — मध्ये आहे)."""
 
-    TODAY = trading_engine.get_ist_today().strftime("%Y-%m-%d")
+    # TODAY collection वेळी (class attribute) धरला तर IST मध्यरात्र collection आणि test
+    # दरम्यान गेली की "today" जुना होतो ⇒ halt fail-open ⇒ 4 tests खोटे fail (CI 2026-10-11
+    # 18:30 UTC). म्हणून प्रत्येक test मध्ये तारीख गोठवतो: engine चं get_ist_today() आणि
+    # settings मधला trade_date — दोन्ही एकच गोठवलेली तारीख.
+    @pytest.fixture(autouse=True)
+    def _freeze_today(self, monkeypatch):
+        frozen = trading_engine.get_ist_today()
+        monkeypatch.setattr(trading_engine, "get_ist_today", lambda: frozen)
+        self.TODAY = frozen.strftime("%Y-%m-%d")
+
+    def test_today_not_captured_at_collection_time(self):
+        """Regression: 'आज' class attribute (collection वेळी) नसावा — IST मध्यरात्र ओलांडली तरी
+        प्रत्येक test ची trade_date आणि engine ची तारीख एकच (गोठवलेली) असते."""
+        assert "TODAY" not in type(self).__dict__
+        assert self.TODAY == trading_engine.get_ist_today().strftime("%Y-%m-%d")
+
+    def test_halt_rolls_off_after_midnight(self, monkeypatch):
+        """कालचा halt आज (IST) लागू नाही — trade_date जुना ⇒ fail-open (हेच CI flake चं मूळ होतं)."""
+        monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
+        tomorrow = datetime.datetime.strptime(self.TODAY, "%Y-%m-%d").date() + datetime.timedelta(days=1)
+        monkeypatch.setattr(trading_engine, "get_ist_today", lambda: tomorrow)
+        ok, reason = trading_engine.check_vix_spike_halt("NIFTY", direction="BULLISH")
+        assert ok is True
+        assert reason is None
 
     def test_mcx_symbol_always_ok(self, monkeypatch):
         monkeypatch.setattr(cloud_db, "get_vix_spike_halt_settings", lambda: {"enabled": True, "halted": True, "trade_date": self.TODAY, "pct_change": 6.0, "threshold_pct": 5.0})
