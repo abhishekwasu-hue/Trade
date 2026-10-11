@@ -275,6 +275,37 @@ commitment candle वर; charts मधून G-I काढला; profile cache
 POC / naked POC आणि rollover वगळ नाही; prompt files (07 §3 / §6, 05 §2.7) मधला मजकूर उत्तरांशी जुळवायचा — prompt तुमचे असल्याने मी बदलले
 नाहीत.
 
+## Audit थर 1 (`swings2/`) — #1–#10 (branch `claude/v21-audit-l1`)
+| # | spec म्हणतो | code करत होता | दुरुस्ती | test |
+|---|---|---|---|---|
+| 1 | reversal पायरी 2 = CHoCH नंतरचा **confirmed** LH | `p.bar > choch_bar` (आधीच्या bar चा, नंतर confirm झालेला LH सुटायचा) | `p.confirm_bar > choch_bar`; पायरी-3 पातळी [min, max] | `test_audit1_reversal_step2_uses_confirmed_lh` |
+| 2 | strong low = BOS ची चाल ज्या **confirmed** low पासून | raw (tentative) low | `strong_price()`: ext नंतरचा confirmed L; तोवर strict | `test_audit2_3_…`, `test_audit2_protected_waits_…` |
+| 3 | weak high = न ओलांडलेला high | `weak` = lastH (UP मध्ये HH) | `weak_level()` | `test_audit2_3_…` |
+| 4 | D2 साखळी 15M वर | D2 Rhea 1H bars + σ_1H | 15M + σ, पट्टा / min bars × k2/k1 (Abhi: k-प्रमाण) ⇒ 4.5σ / 12 bars | `test_audit4_…`, `test_audit10_rhea_…` |
+| 5 | (prompt मध्ये नाही) | pivot-RANGE range_break पट्टा | register `range_band_source = pivots` + 01 §2.1 | `test_audit10_pivot_range_break_…` |
+| 6 | replay = live | stream मध्ये फक्त status; replay ला 1m rows पुन्हा वाचायचे | stream मध्ये 1m **निर्णय** (`order`); replay त्यावर (`pivots/dc.py` मध्ये फक्त `order_fn` hook) | `test_audit6_stream_stores_1m_decision_…` |
+| 7 | k D2 = 6 (Abhi) | docs मध्ये 8; `K_OPTIONS[2]` 6/8/10 | MASTER §3 + 01 §3; `K_OPTIONS[2]` = 4/6/8 | `test_audit7_8_…` |
+| 8 | k-तुलना 3 दिवस | फक्त शेवटचा दिवस | `k_compare_days` = 3 | `test_audit7_8_…` |
+| 9 | first_rev same-bar | split खूण फक्त p.bar == b | `rule == "1m"` आणि p.bar ≠ b ⇒ split | `test_audit9_first_rev_…` |
+| 10 | tests | — | Rhea end-to-end, pivot-RANGE break, reversal negative (LH आधी step 3 नाही, नवा HH ⇒ रद्द), always-in clause 3, 1m partial, σ_1H | `test_audit10_*` |
+
+**22 दिवस आधी ⇒ नंतर:** D1 बदल नाही (RANGE 40.7%, घटना तशाच). D2 RANGE 32.4% ⇒ **36.9%**, range_start 1 ⇒ 9, range_break 2 ⇒ 10,
+protected बदल 9 ⇒ 19 (Rhea आता 15M वर); weak high 313 / 357 bars ⇒ 0 (UP मध्ये शेवटचा H नेहमी HH ⇒ नव्या व्याख्येने weak नाही);
+split candles 23 ⇒ 25; pivots तेच (D0 108, D1 29, D2 13).
+
+## Audit 🔴 (#11, 21, 30, 31, 41, 62, 63) — वेगळा commit
+| # | थर | spec म्हणतो | code करत होता | दुरुस्ती | test (जुन्या code वर fail) |
+|---|---|---|---|---|---|
+| 11 | 2 | `eb` नंतर confirmed D1 K leg / उलट pivot ⇒ K | `sweep_of_I_end` नंतर `eb ≠ e.bar` ⇒ state कायम "K सुरू झाला असावा" | `ik2.py`: `eb` नंतर सुरू झालेला K leg किंवा `eb` नंतरचा confirmed उलट pivot ⇒ `ST_K`; `k_from_bar` output | `test_audit11_k_state_not_stuck_after_sweep_of_I_end` |
+| 21 | 3 | impulse-K preferred ⇒ momentum danger | सगळ्या hyps forming ⇒ `agg = none` ⇒ `pref_family = None` ⇒ danger कधीच नाही | `fold2.py`: `pref_family` थेट `rec["pref"]` वरून; `FORMING` मधून `impulse_K` काढला | `test_audit21_impulse_k_danger_not_suppressed_by_agg_none` |
+| 30 | 4 | अवस्था = सदस्य + bars चं शुद्ध फंक्शन | dead / flipped atoms clustering मध्ये ⇒ नवा zone जन्मताच dead | `zones2/engine.py`: `owner_status()`; dead owner चे atoms `active()` बाहेर; flipped ≠ owner ⇒ link नाही | `test_audit30_dead_and_flipped_groups_do_not_swallow_new_atoms` |
+| 31 | 4 | > 1σ sweep = फक्त नोंद | deep sweep `z["sweeps"]` मध्ये ⇒ k_area "हो (sweep)" आणि score | वेगळी `z["deep"]` list; snapshot `deep_sweeps` | `test_audit31_deep_sweep_is_note_only_not_zone_sweep` |
+| 41 | 5 | DeMark Q = confirm झालेल्या break ची candle | `L.cand` = buffer पलीकडचा पहिला close (reclaim झालेला false break सुद्धा) | `trendlines2/engine.py`: `break_candle()` — `cb` पासून मागे सलग पलीकडच्या closes चा run, त्याची पहिली candle | `test_audit41_demark_on_confirmed_break_not_earlier_false_break` |
+| 62 | 7 | `target_mode` (I_end / उलट कड / measured move / उलट zone) | target = I_end hardcoded | `decision2/engine.py`: `target_price()` dispatch; target मिळत नाही ⇒ G-F no_trade; `10_risk.target_mode` | `test_audit62_target_mode_dispatch` |
+| 63 | 7 | §3a फक्त G-C/G-D/G-G/entry बदलतो, बाकी सगळे gates | range mode मध्ये HTF veto, htf_unknown, Gray-1, G-B, position_ban, expiry, संदर्भ, hard_exits, 12 पैकी 7 मुद्दे नाहीत | `decide()`: veto / Gray-1 / G-B / position_ban range branch आधी; `trend_mode()` / `range_mode()` plan देतात; common `_tail()` (G-F, G-H, संदर्भ, hard_exits, grade, size) | `test_audit63_range_mode_gates_do_not_leak` |
+
+Range mode चा target = range ची उलट कड (§3a) — `target_mode` फक्त trend path वर (नोंद `10_risk.target_mode`).
+
 ## Abhi चे निर्णय (batch 2, 5 मुद्दे) — काय बदललं
 | # | निर्णय | code |
 |---|---|---|
@@ -318,6 +349,102 @@ range area नाही 12, range मध्य 3.
 - सगळ्या scripts ना `--m1-status` (replay = live).
 
 **बाकी:** सगळ्यांवर तुमचा निर्णय आला; वरच्या "Abhi ची उत्तरं" तक्त्यात लागू.
+
+## abhi_marked_entries_08sep
+**फक्त निदान — code / threshold बदल नाही.** NIFTY replay (`known_at` नुसार, `scripts/decision_check.build_ctx` + `decision2.engine.decide`),
+code = #280 worktree (🔴 audit दुरुस्त्यांसह, commit आधीची स्थिती). Panels (15M + 1H, प्रत्येक bar) आणि पूर्ण `diag.json`:
+trade-data `review/abhi_marked_08sep/`. 15M bar ची वेळ = candle सुरुवात (chart title वर bar_end, उदा. 14:15 ⇒ 14:30).
+
+### 1. चार bars — थर-निहाय (15M = D1 tracker / f1; 1H = D2 tracker / f2)
+| थर | E1 · 01 Sep 11:15 (c 24,126 · h 24,130) | E2 · 03 Sep 10:15 (c 23,985 · h 24,005) | E3 · 04 Sep 11:15 (c 23,982 · h 23,990) | E4 · 07 Sep 14:15 (c 23,784 · h 23,787) |
+|---|---|---|---|---|
+| 1 regime (थर 7 §2) | **drift** — D2 RANGE (pivot-RANGE: HH 24,379 + LL 23,994), H 6.48 σ_1H, \|net\|/H 0.50 (≥ 0.30 ⇒ range नाही) | **transition ↑** — D2 Rhea पट्टा 23,801–23,896 (2 Sep 14:00) चा 3 Sep 09:15 gap-up break; held pullback नाही | **transition ↑** (तोच break) | **drift** — D2 DOWN, H 6.48 σ, net/H 0.19 (< 0.5) |
+| 1 D1 / D2 / D3 | RANGE / RANGE (CHoCH ↓ 28 Aug 24,115 ⇒ reversal पायरी 1) / unknown | RANGE / **DOWN** (protected 24,143) / unknown | UP / **DOWN** (protected 24,143) / unknown | RANGE / **DOWN** (protected 24,025) / unknown |
+| 2 D1 (15M) | I **↑ range_alt** 23,994 ⇒ 24,114; **impulse चालू** (24,130 > I_end, D0 उलट pivot नाही) | I ↓ 24,143 ⇒ 23,787; **K चालू** (टोक 24,025, खोली 0.67, 2 legs) | I ↓ 24,143 ⇒ 23,787; **K चालू** (0.67, 4 legs) | I ↓ 24,704 ⇒ 23,787; **impulse चालू** (नवा low 23,738.7) |
+| 2 D2 (1H) | I नाही (पात्र leg नाही) | I ↓ 24,143 ⇒ 23,787; K सुरू झाला असावा | I ↓; K चालू | I नाही |
+| 3 D1 / D2 | impulse / none | **flat · final_leg_in_progress** (0.97); momentum **अस्पष्ट** (0.5, 8 items) / forming_A | **wedge · final_leg_in_progress** (0.90); momentum **अस्पष्ट** (0.3, 10) / तेच | impulse / none |
+| 4 बाजू · K area | buyer (I ↑) · **NA** (K नाही) | seller · **हो (sweep + reclaim)** p1081L 24,010–24,018 (★1, flip seller 1 Sep 13:45) | seller · **नाही** (स्पर्श नाही) | seller · **NA** (K नाही) |
+| 4 पातळी A ≈ 24,130 जवळ | kPDH1079 24,126–24,131 seller ★1 (31 Aug PDH) · p1077H 24,092–24,114 seller ★1 (11:30 ला flip buyer, 13:00 मेला) | kPDH1079 24,128–24,143 seller ★2 | kPDH1079 ★1 | kPDH1079 24,141–24,145 ★1 |
+| 4 पातळी B ≈ 24,025 जवळ | p1081L 24,010–24,018 buyer ★1 · p1062L 23,991–24,002 buyer ★2 | p1081L seller (flipped) ★1 | p1127H 24,003–24,028 seller ★2 (**self**: 3 Sep 09:15 चं K टोक) · p1081L seller ★1 (11:30 h 24,005.75 — 3.75 pt कमी) | p1127H ★2 · p1160H 23,984–24,006 ★1 · p1081L ★1 |
+| 4 23,800 | — | p1103L 23,785–23,815 buyer ★2 | p1103L buyer ★2 | p1103L **seller (flip 7 Sep 11:00) ★1** |
+| 5 रेघा | नाहीत | primary trade-योग्य (held 2) · K area रेघ नाही | latest तुटलेली (held 4) · primary लागू नाही | नाहीत |
+| 6 RSI | 63.9, label — | 62.5; on_K hidden_bear (24,143 RSI 61.8 vs 24,025 RSI 66.6, strength 0.92), label — | 63.2; तोच hidden_bear, label — | 40.5, label — |
+| 7 पहिला अडलेला gate | **G-A drift** | **G-A transition** | **G-A transition** | **G-A drift** |
+
+### 2. विशेष प्रश्न
+**a) तुटलेला support ⇒ seller zone?** हो — थर 4 role-flip करतो. 04 §4: "**Pending ⇒ Real break (confirm index) ⇒ flip (b) (retest खूण;
+shallow retest मजबूत) ⇒ दुसरा ⇒ मेला.**" आणि §7: "**I खाली ⇒ seller (flip सह) वर**". पण तुमच्या दोन्ही पातळ्यांचे मूळ zones flip नंतर लगेच
+**मेले**: पातळी A = 25 Aug HL zone p963L (24,115–24,126, buyer ★2–3) — 28 Aug 11:45 flip ⇒ seller, 28 Aug 15:00 **मेला** (close परत वर =
+"दुसरा" real break). पातळी B = 19/20 Aug L zone p883L (24,023–24,039, buyer ★2) — 31 Aug 10:00 flip ⇒ seller, 31 Aug 12:00 **accept ⇒ मेला**
+(23,994 नंतर भाव परत वर). म्हणून 01 / 03 / 04 Sep ला 24,130 / 24,025 वर "तुमचा" zone नव्हता; जवळचे नवे zones होते (वरचा तक्ता): A ला 31 Aug
+PDH (kPDH1079), B ला 1 Sep 09:45 चा L (p1081L, 1 Sep 13:45 flip ⇒ seller) — E2 ला तोच K area (sweep) म्हणून सापडला.
+
+**b) "impulse चालू 20 Aug – 08 Sep"?** नाही — box फक्त त्या bar ची अवस्था दाखवतो. D1 tracker चा timeline (बदलांचे क्षण):
+20 Aug 09:15 I ↓ 24,360 ⇒ 24,026 "K सुरू"; 24 Aug 11:00 **K चालू**; D2 RANGE / unknown मुळे 20, 24, 25 Aug ला I अनेकदा गेला ("mode बदल: पालक
+RANGE"); 25 Aug 14:45 range_alt I; 26 Aug 09:15 I रद्द (I_origin 24,313 real break); 26 Aug 11:45 **I ↑ 24,026 ⇒ 24,379** (D2 27 Aug ला UP: HH +
+HL) — म्हणजे **25–27 Aug ची चाल system ने नवा ↑ I मानली, ↓ I ची K नाही**; 28 Aug 13:15 – 31 Aug: D2 RANGE ⇒ I नाही / I ↑ पुन्हा; 31 Aug 10:00
+I रद्द (24,026 तुटला); 1 Sep 11:15 range_alt **↑** I (23,994 ⇒ 24,114) — **29 Aug – 1 Sep ची चाल ↓ I ची K नव्हती, कारण तेव्हा ↓ I च नव्हता**
+(D2 UP / RANGE); 1 Sep 13:45 I ↓ 24,704 ⇒ 23,994 (impulse); 2 Sep 10:15 K सुरू, 12:00 **K चालू**; 2 Sep 14:00 D2 RANGE ⇒ I नाही; 3 Sep 09:15
+I ↓ 24,143 ⇒ 23,787 **K चालू** (4 Sep पर्यंत) — **02–03 Sep ला K उघडलेली होती.** 7 Sep 10:45 पासून impulse (नवा low).
+K उघडण्याची अट depth / bars / σ ची **नाही** (02 §5.3, `ik2.state`): भाव I_end पलीकडे गेला तर "impulse चालू", जोवर त्या नव्या टोकानंतरचा
+**खालच्या degree (D0) चा उलट pivot confirm** होत नाही. 7 Sep: low 23,738.7 (12:45) ⇒ D0 H 23,786.8 (14:30) confirm 15:00 — पण 15:00 च्या
+candle ने **23,737.9 (0.8 pt खाली)** नवा low केला ⇒ टोक सरकलं ⇒ तो H आता "टोकाआधीचा" ⇒ K नाही. मुख्य अडथळा: तुमचा I (24,704 ⇒ 23,787) हा
+D3-पातळीचा; system D1 I चा पालक D2 घेतो, D3 संपूर्ण काळ **unknown** आणि D2 मध्ये UP / RANGE / DOWN बदलत गेला ⇒ I तुटक.
+
+**c) Regime कोणत्या degree चा?** थर 7 §2 regime = **थर 1 D2** trend + 20 बंद 1H candles (H ≥ 6 σ_1H, net/H ≥ 0.5). D1 regime ठरवत नाही (box मधला
+"D1 range" फक्त माहिती). I / K = D1 tracker (पालक D2; D2 RANGE ⇒ range_alt). E1 / E4 मध्ये trend mode बंद **D2 / net मुळे** (D1 मुळे नाही):
+E1 D2 RANGE + |net|/H 0.50 ⇒ drift; E4 D2 DOWN पण net/H 0.19 ⇒ drift; E2 / E3 D2 DOWN पण D2 transition ↑ ⇒ G-A.
+
+**d) 07 Sep ★★ zone, "area नाही" का?** स्पर्शाच्या व्याख्येपर्यंत पोचलंच नाही: (1) G-A drift आधी; (2) थर 2 "impulse चालू" ⇒ K नाही ⇒ `k_area`
+= **NA** ("I / K नाही"). K उघडली असती तर व्याख्या (04 §7, `zones2.k_area`): K च्या शेवटच्या leg ची कोणतीही candle — **wick** (high ≥ zone
+bottom आणि low ≤ top), close नाही; पट्टा `band_convention = base`. 14:15 high 23,786.65 ≥ p1103L bottom 23,784.6 ⇒ "हो" झालं असतं. तेव्हा
+p1103L flip नंतर ★1 होता (8 Sep panel वर ★★).
+
+**e) 1H vs 15M panel?** दोन्ही एकाच `charts7.figure()` मधून, **तोच** थर 4 record (`L4[t]`: next पैकी 3 + opp पैकी 2 zones) आणि तोच box. फरक फक्त
+x-खिडकी (15M = 3 sessions, 1H = 15) आणि y-range (दिसणाऱ्या candles + zones). run2 चा 08 Sep 15:15 15M panel (trade-data
+`review/all7/run2/2026-09-08/1500_15M.png`) मध्ये तीन seller zones (23,800 ★★, 23,760 ★, 23,740 ★) दिसतात. "trade-बाजूचे zones 4" = next ची
+संख्या; chart वर पहिले 3 काढतो (4था नाही — हा chart मधला फरक, निर्णयावर परिणाम नाही).
+
+### 3. निष्कर्ष (प्रत्येक entry)
+| Entry | अडवणारा थर + कारण | spec नुसार बरोबर / bug / spec त्रुटी |
+|---|---|---|
+| E1 01 Sep (पातळी A, LH 24,143) | थर 1/7: D2 pivot-RANGE + \|net\|/H 0.50 ⇒ **drift (G-A)**; थर 2: I **↑ range_alt** (buy बाजू); थर 1: 28 Aug D2 CHoCH ⇒ Gray-1 (default block); थर 4: पातळी A चा flip zone 28 Aug ला मेला | Code spec नुसार (01 §2.1, 07 §2, 07 §3 Gray-1, 04 §4). **Spec त्रुटी:** CHoCH नंतर तुटलेल्या पातळीचा retest (LH बनताना) हा setup spec मध्ये नाही; flip नंतर एका दिवसात "दुसरा" break ⇒ पातळी कायमची जाते |
+| E2 03 Sep (पातळी B, LH 24,025) | थर 7 **G-A transition ↑** (2 Sep च्या छोट्या D2 Rhea पट्ट्याचा gap-up break); त्यामागे G-C ✓ (sweep p1081L), **G-D** (momentum अस्पष्ट 0.5), **G-G** (flat final_leg_in_progress) | G-A: code = 07 §2 ("दिशा = break ची"). **Spec त्रुटी:** D2 DOWN + protected 24,143 अखंड असताना उलट break ला transition. G-D / G-G spec नुसार |
+| E3 04 Sep (पातळी B, LH 24,006) | **G-A transition ↑** (तोच); त्यामागे G-C: p1127H = K च्या स्वतःच्या टोकाचा `self` zone (04 §1 ⇒ कधीच नाही), p1081L ला 3.75 pt ने स्पर्श नाही; G-D अस्पष्ट (0.3); G-G wedge final_leg_in_progress | Spec नुसार. **Spec त्रुटी:** K च्या पहिल्या टोकाचा zone दुसऱ्या test (LH) ला कधीच area नाही; स्पर्शाला सहनशीलता नाही |
+| E4 07 Sep (23,800 ★★) | **G-A drift** (net/H 0.19); थर 2 **impulse चालू** (15:00 चा 0.8 pt नवा low ⇒ K reset) ⇒ K area NA | Spec नुसार (07 §2, 02 §5.3). **Spec त्रुटी:** खोल pullback मध्ये 20-candle net/H trend काढून घेतो; एक-tick नवा low K reset करतो |
+
+**Code bug:** या चार bars मध्ये spec-विरुद्ध code सापडला नाही. नोंद (तपासायचं): D2 trend 18–26 Aug "unknown" आणि D3 संपूर्ण काळ unknown (htf_unknown).
+
+**सुचवलेले उपाय (लागू नाहीत, तुमचा निर्णय):** (1) D2 trend उलट range_break + protected अखंड ⇒ transition नाही, regime = D2 trend;
+(2) CHoCH retest setup (तुटलेल्या पातळीवर rejection, LH आधी) — size, target (measured move?) ठरवायचे; (3) K च्या आधीच्या टोकाचा self zone
+दुसऱ्या test ला area + स्पर्श ± 0.25 σ; (4) sweep / दुसरा test असेल तर G-D "अस्पष्ट" चालेल; (5) नवा टोक K reset करायला ≥ x σ पलीकडे
+हवा (E4); (6) regime net/H ऐवजी I-खिडकी किंवा D2 protected अखंड ⇒ trend (E4). Chat मध्ये तुम्ही (1)–(4) वर उत्तरं दिली होती (CHoCH retest पूर्ण
+size + measured move; G-G तसाच); त्यांचा **draft patch** trade-data `review/abhi_marked_08sep/proposed_rules.patch` मध्ये ठेवला — **लागू नाही**.
+त्या draft चा आंशिक run (measured move आणि दुसरा-test G-D आधी): E1 G-F (R:R 1.94, I_end target), E2 G-G, E3 G-D (11:30–12:00) / G-E (12:15+).
+
+### 4. Abhi चा निर्णय (10 Oct) आणि उरलेलं निदान
+**निदान मान्य:** code spec-प्रमाणे; spec मध्ये तीन मुळं — (अ) trend चा degree (D2 ऐवजी D3 / सर्वोच्च confirm degree), (ब) zone-lifecycle (दुसऱ्या
+स्पर्शाला मरणं + K-टोकाचा `self` वगळणं), (क) K चा tick-reset आणि pullback मधलं drift / transition. तिन्ही एकाच spec-सुधारणेत (v2.2); ती येईपर्यंत
+नियम बदल नाही. `proposed_rules_NOT_APPLIED.patch` trade-data मध्ये तसाच, लागू नाही.
+
+**D2 trend 18–26 Aug "unknown" — कारण:** `swings2.structure.trend_of` = शेवटचे दोन confirmed **non-warmup** H आणि L; कमी ⇒ unknown.
+Data 1 Jul पासून; σ ला 20 पूर्ण sessions ⇒ DC (segment "started") ~29 Jul पासून; D2 warm-up 10 sessions ⇒ ~11 Aug पर्यंतचे D2 pivots
+`warmup` (4 Aug चा H 24,703.9 सकट). पहिले non-warmup D2 pivots: L 24,025.7 (19 Aug, confirm 20 Aug 09:15), H 24,313.0 (24 Aug), L 24,115.5
+(25 Aug), H 24,378.6 (confirm 27 Aug 09:15) ⇒ 2 H + 2 L **27 Aug 09:15** ला ⇒ UP. कमी पडलेली अट = **दोन non-warmup H** (H 24,313 फक्त 24 Aug ला;
+दुसरा 27 Aug ला). मधल्या काळात Rhea पट्टा असताना RANGE, बाकी unknown. 4 Aug चा 24,704 H warm-up मुळे trend मध्ये कधीच नाही ⇒ तुमच्या I ↓
+24,704 ला D2 पातळीवर आधार नव्हता. D3 (warm-up 30 sessions, k 16 σ) संपूर्ण काळ unknown. Code spec नुसार (01 §1.4 warm-up) — data सुरुवात
+(1 Jul) + σ (20) + warm-up (10) मिळून पहिले ~8 आठवडे D2 कमकुवत; हे v2.2 च्या मूळ (अ) शी जोडलेलं.
+
+**v2.2 साठी data (18 Aug – 09 Oct, start_date explicit; E1–E4 आत):** trade-data `review/structure_timeline_22d/` (folder नाव जुनं) —
+`a0_D2_pivots_from_1jul.csv`, `a_1h_timeline.csv` (प्रत्येक बंद 1H: D1/D2/D3, protected, थर 2 role / I_origin / I_end / K घटना, G-A regime + कारण),
+`b_zones_lifecycle.csv` (जन्म, flip, स्पर्श, मृत्यू + कारण, मृत्यूच्या bar चा close पलीकडे? पुढच्या 1H ने परत घेतला?, `self` प्रसंग),
+`c_k_events.csv` (K reset: जुनं-नवं टोक, फरक pts / σ_1H, K अवस्था, किती bars, K टोक, retrace %, I_origin, I_end), `summary.json`, `README.md`.
+मुख्य आकडे (222 बंद 1H): regime drift 113 (D2 trend असूनही 60), transition 58, trend_down 36, range 15; सगळे wait (G-A 185, G-C 33, G-D 4);
+D3 unknown 222 / 222. K resets 12 (< 0.25 σ_1H 7, 0.25–0.5 1, > 0.5 4). Zones 121 — prune / merge 76, flip नंतर दुसरा break 27 (24 तासांत 21),
+accept 5, जिवंत 13; सगळ्या 32 मृत्यूंत close पलीकडे, पुढच्या 1H ने परत घेतला: दुसरा break 6 / 27, accept 1 / 5; `self` वगळले 13 zones / 91 bars.
+D2 transitions 14, त्यापैकी protected अखंड 8 (D2 trend च्या उलट 6).
+
+**Chart (दृश्य दुरुस्ती):** box मध्ये "zones 4" पण chart वर 3 — आता box मधले सगळे trade-बाजूचे (next) आणि उलट (opp) zones काढतो.
 
 ## पुढे (तुमच्या उत्तरांनंतर)
 1. थर 1 ✔ ⇒ थर 2 चा LEG CHECK v2 run (22 दिवस) ⇒ trade-data push ⇒ VPS block (15:30 नंतर, एकच block) ⇒ तुमचा ✔.

@@ -18,6 +18,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from elliott import data_policy as DP  # noqa: E402
 from legs2 import charts as LC  # noqa: E402
 from legs2 import ik as LI  # noqa: E402
@@ -32,10 +33,11 @@ from simple_core import count_source as CS  # noqa: E402
 
 def load_futures(d):
     """Futures फक्त volume साठी; holdout काळाचा volume सुद्धा नाही (data-policy annotation)."""
-    if not d:
-        return None
+    fut = INS.get()["futures"]
+    if not d or not fut:
+        return None                                                            # futures नसलेलं instrument (उदा. BANKNIFTY index) ⇒ volume NA
     from chart_reader import volume as VL
-    f = VL.load("NIFTY", d)
+    f = VL.load(fut, d)
     return None if f is None else DP.filter_allowed(VL._naive_ist(f), "annotation")
 
 

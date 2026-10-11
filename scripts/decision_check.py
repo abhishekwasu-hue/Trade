@@ -14,6 +14,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from decision2 import charts as DC  # noqa: E402
 from decision2 import context as DX  # noqa: E402
 from decision2 import engine as DE  # noqa: E402
@@ -71,7 +72,9 @@ def main(argv=None):
     ap.add_argument("--vix-csv", default=None, help="India VIX 15M candles (timestamp, close) — private data")
     ap.add_argument("--macro-csv", default=None, help="macro rows (fetched_at, value −1…1) — private data")
     ap.add_argument("--send", action="store_true")
+    ap.add_argument("--instrument", default=None, choices=INS.names(), help="index (default: TRADE_INSTRUMENT / NIFTY)")
     a = ap.parse_args(argv)
+    INS.set_current(a.instrument)
     m1 = SC.load_1m(a.data)
     print(f"1m rows {len(m1)} वाचले · सगळे थर बांधतो…", flush=True)
     m15 = PE.bars_15m(m1)
@@ -79,7 +82,7 @@ def main(argv=None):
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     full = PE.complete_sessions(m15)
     days = [d for d in sorted(full) if full[d]][-int(a.days):]
     ts = pd.to_datetime(m15["timestamp"])

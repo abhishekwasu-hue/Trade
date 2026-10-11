@@ -36,7 +36,7 @@
 ## 3. सामायिक व्याख्या (सगळे थर हेच वापरतात; इथे बदलल्याशिवाय कुठे वेगळी नाही)
 - **Series:** 15M spot, `cas_mask` लागू (15:15 नंतरची CAS candle वगळलेली). Bar index = या series मधला क्रमांक. 1H / Daily / Weekly candles **या series पासून aggregate** (1H: 09:15–10:15 … 14:15–15:15; शेवटची 15:15–15:30 लहान); **अपूर्ण aggregate candle कधीच वापरायची नाही.**
 - **σ:** मागच्या 20 पूर्ण sessions च्या 15M (high − low) चा median, 09:15 आणि cas candles वगळून; session आधी एकदा, गोठलेला. ATR / Yang-Zhang ने "सुधारणा" नाही. **σ_1H:** तसंच बंद 1H candles वर (पहिली आणि शेवटची लहान 15:15–15:30 candle वगळून). संशोधनातलं "R / MR" ≈ σ.
-- **θ_D = k_D × σ;** defaults k = 2 / 4 / 8 / 16 / 32 (D0…D4), Abhi charts पाहून ठरवतो. **Degrees:** D0 आतली रचना; D1 trade (15M वर काढलेली); D2 पालक (8σ साखळी 15M वरच; 1H chart वर दाखवलेली); D3 Daily; D4 Weekly.
+- **θ_D = k_D × σ;** defaults k = 2 / 4 / 6 / 16 / 32 (D0…D4; D2 = 6 Abhi ची निवड, SWING CHECK run1; मूळ prototype 8), Abhi charts पाहून ठरवतो. **Degrees:** D0 आतली रचना; D1 trade (15M वर काढलेली); D2 पालक (6σ साखळी 15M वरच; Rhea सुद्धा 15M वर, पट्टा × k2/k1; 1H chart वर दाखवलेली); D3 Daily; D4 Weekly.
 - **Pivot:** (degree, H/L, भाव, टोकाच्या candle ची वेळ, `known_at` = confirm candle ची बंद वेळ, नियम-खूण).
 - **Break च्या तीन पातळ्या (क्रम ठरलेला):**
   1. **Plain-close घटना** (BOS / CHoCH; थर 1): close पातळीपलीकडे; लवकर; `known_at` = त्या candle चा close.

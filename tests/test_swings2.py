@@ -417,3 +417,202 @@ def test_weekly_drops_unfinished_week():
     daily = PC.daily_from_15m(m15[pd.to_datetime(m15["bar_end"]) <= asof_mid], asof_mid)
     w = WC.complete_weekly(daily, asof_mid)
     assert len(w) == len(PC.weekly_from_daily(daily, asof_mid)) - 1
+
+
+# ---------------------------------------------------------------------------------------------------------------- audit (v2.1) थर 1
+def _with_1m_swapped(m15):
+    """तेच OHLC, पण 1m मध्ये low आधी (मिनिट 3) आणि high नंतर (मिनिट 9) — नंतरचा 'backfill दुरुस्ती' क्रम बदलतो."""
+    df = _with_1m(m15)
+    out = []
+    for i, r in m15.iterrows():
+        t0 = pd.Timestamp(r["timestamp"])
+        for k in range(15):
+            hi = r["high"] if k == 9 else min(r["high"], max(r["open"], r["close"]))
+            lo = r["low"] if k == 3 else max(r["low"], min(r["open"], r["close"]))
+            out.append((t0 + pd.Timedelta(minutes=k), r["open"], hi, lo, r["close"]))
+    assert len(out) == len(df)
+    return pd.DataFrame(out, columns=["timestamp", "open", "high", "low", "close"])
+
+
+def test_audit6_stream_stores_1m_decision_and_replay_ignores_backfill():
+    """Audit #6: stream मध्ये 1m चा निर्णय (order); replay त्यावरच — 1m backfill ने क्रम बदलला तरी pivots तेच."""
+    m15 = m15_from(walk(25 * 30, 5, 6.0))
+    live = SE.build(m15, _with_1m(m15))
+    used = [x for x in live["stream"] if x["order"]]
+    assert used                                                                    # same-bar candles ला 1m निर्णय वापरला
+    smap = {x["ts"]: json.loads(json.dumps(x)) for x in live["stream"]}             # stream.json सारखं (tuple ⇒ list)
+    replay = SE.build(m15, _with_1m_swapped(m15), m1_status_map=smap)
+    for d in range(5):
+        assert [SE.pivot_json(p) for p in live["pivots"][d]] == [SE.pivot_json(p) for p in replay["pivots"][d]]
+    fresh = SE.build(m15, _with_1m_swapped(m15))                                   # rows पुन्हा वाचले असते तर वेगळं
+    assert any(a["order"] != b["order"] for a, b in zip(live["stream"], fresh["stream"]) if a["order"])
+
+
+def test_audit9_first_rev_same_bar_marks_split():
+    """Audit #9: 1m ने first_rev ⇒ आधीचं टोक confirm (p.bar ≠ b) ⇒ त्या candle चं नवं टोक D0 ला दिसलं नाही ⇒ split."""
+    m15 = m15_from(walk(25 * 30, 5, 6.0))
+    res = SE.build(m15, _with_1m_swapped(m15))
+    hits = [p for p in res["pivots"][0] if p.rule == "1m" and p.bar != p.confirm_bar]
+    assert hits
+    assert all(res["A"]["split"][p.confirm_bar] for p in hits)
+
+
+def test_audit1_reversal_step2_uses_confirmed_lh():
+    """Audit #1: CHoCH आधीच्या bar चा, पण CHoCH नंतर confirm झालेला LH ⇒ पायरी 2 (आधी `p.bar > choch_bar` ने सुटायचा)."""
+    res = scenario()
+    rr = np.full(len(res["m15"]), np.nan)
+    out = ST.fold(res, 1, rr=rr)
+    ch = next(e for e in out["events"] if e["type"] == "CHoCH")["bar"]
+    h1 = out["states"][ch]["lastH"] if out["states"][ch]["lastH"] is not None else 136.0
+    b = ch - 1
+    price = float(res["A"]["h"][b])
+    assert price < h1
+    extra = SE.Pivot(1, "H", price, b, pd.Timestamp(res["m15"]["timestamp"].iloc[b]), ch + 2,
+                     pd.Timestamp(res["m15"]["timestamp"].iloc[ch + 2]) + BAR, 1.0, 4.0, "normal")
+    res["pivots"][1] = sorted(res["pivots"][1] + [extra], key=lambda p: p.bar)
+    out2 = ST.fold(res, 1, rr=rr)
+    lh = [e for e in out2["events"] if e["type"] == "LH" and e["bar"] >= ch]
+    assert lh and lh[0]["bar"] == ch + 2 and lh[0]["level"] == pytest.approx(price, abs=0.01)
+
+
+def test_audit2_3_strong_is_confirmed_pivot_and_weak_high():
+    P = _p
+    ls = [P("L", 100, 4), P("L", 118, 28)]
+    hs = [P("H", 120, 10), P("H", 130, 22)]
+    assert ST.strong_price((1, 22, 31), "UP", hs, ls) == 118                       # ext 22 नंतरचा confirmed L
+    assert ST.strong_price((1, 22, 31), "UP", hs, ls[:1]) is None                  # अजून confirm नाही ⇒ caller strict
+    assert ST.strong_price((1, 22, 31), "DOWN", hs, ls) is None
+    assert ST.weak_level("UP", hs, ls) is None                                     # शेवटचा H = HH ⇒ weak नाही
+    assert ST.weak_level("UP", hs + [P("H", 128, 40)], ls) == 128                  # आधीचा high न ओलांडलेला
+    assert ST.weak_level("DOWN", hs, [P("L", 90, 5), P("L", 95, 9)]) == 95
+
+
+def test_audit2_protected_waits_for_confirmed_low_in_fold():
+    res = scenario()
+    out = ST.fold(res, 1, rr=np.full(len(res["m15"]), np.nan))
+    bos = [e for e in out["events"] if e["type"] == "BOS" and e["dir"] == 1]
+    assert bos
+    for e in bos:
+        st = out["states"][e["bar"]]
+        conf = [p.price for p in res["pivots"][1] if p.kind == "L" and p.confirm_bar <= e["bar"] and p.bar < e["bar"]]
+        assert st["protected"] in conf or st["protected"] == st["strict"]          # raw (tentative) low नाही
+
+
+def test_audit4_d2_rhea_on_15m_scaled_by_k():
+    s = SS.load()
+    s2 = ST.rhea_settings(s, 2)
+    r = s["k"][2] / s["k"][1]
+    assert s2["rhea_band_sigma"] == pytest.approx(3.0 * r) and s2["rhea_min_bars"] == round(8 * r)
+    assert ST.rhea_settings(s, 1) is s
+    H = np.array([10, 12, 11.9, 11, 11.8, 10.5, 11, 11.95, 10.9, 11.0])
+    L = np.array([9, 9.1, 9.0, 9.5, 9.2, 9.6, 9.05, 9.4, 9.3, 9.2])
+    sig = np.ones(10)
+    assert ST.rhea(H, L, sig, 9, 1, s) is not None and ST.rhea(H, L, sig, 9, 1, s2) is None   # D2 ला 12 bars हवे
+    m15, res = built(11, 45)
+    out, _ = ST.all_structure(res)
+    starts = [e for e in out[2]["events"] if e["type"] == "range_start"]
+    assert all(e["bar"] >= 0 for e in starts)                                      # 15M वर (1H close ची वाट नाही) — crash नाही
+
+
+def test_audit7_8_k_options_and_three_day_compare(tmp_path, monkeypatch):
+    assert SS.K_OPTIONS[2] == (4.0, 6.0, 8.0) and SS.DEFAULTS["k"][2] == 6.0
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("sw2k", os.path.join(ROOT, "scripts", "swing_check2.py"))
+    M = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(M)
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(buf, format="PNG")
+    png = buf.getvalue()
+    calls = []
+    monkeypatch.setattr(M.WC, "k_options_png", lambda m15, m1, asof, deg, ks: calls.append((asof.normalize(), deg)) or png)
+    monkeypatch.setattr(M.PC, "pdf", lambda pages, path: None)
+    monkeypatch.setattr(M.WC, "charts", lambda *a, **k: ({"15M": png, "1H": png, "D": png, "W": png}, {}))
+    monkeypatch.setattr(M.WC, "caption", lambda *a, **k: "x")
+    monkeypatch.setattr(M.LC, "table_png", lambda *a, **k: png)
+    rng = np.random.default_rng(4)
+    rows, px = [], 20000.0
+    for d in pd.bdate_range(_monday(900), periods=25):
+        for t in pd.date_range(d + SLOTS[0], d + pd.Timedelta(hours=15, minutes=29), freq="1min"):
+            o = px
+            px += rng.normal(0, 2.0)
+            rows.append((t, o, max(o, px) + 0.5, min(o, px) - 0.5, px))
+    data = tmp_path / "in.csv"
+    pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"]).to_csv(data, index=False)
+    assert M.main(["--data", str(data), "--out-dir", str(tmp_path / "o"), "--run-id", "swings2/k", "--days", "5"]) == 0
+    assert len({d for d, _ in calls}) == 3 and len(calls) == 6                    # 3 दिवस × D1, D2
+
+
+def _flat_res(c, h=None, lo=None, piv=()):
+    n = len(c)
+    c = np.asarray(c, float)
+    o = np.r_[c[0], c[:-1]]
+    h = np.maximum(o, c) + 0.1 if h is None else np.asarray(h, float)
+    lo = np.minimum(o, c) - 0.1 if lo is None else np.asarray(lo, float)
+    days = pd.bdate_range(_monday(300), periods=n // 25 + 1)
+    ts = [days[i // 25] + SLOTS[i % 25] for i in range(n)]
+    m15 = pd.DataFrame({"timestamp": ts, "bar_end": [t + BAR for t in ts], "open": o, "high": h, "low": lo, "close": c})
+    day = pd.to_datetime(m15["timestamp"]).dt.normalize()
+    return {"m15": m15, "A": {"o": o, "h": h, "l": lo, "c": c}, "pivots": {1: list(piv), 2: []}, "settings": SS.load(),
+            "segments": {pd.Timestamp(d): 0 for d in day.unique()}, "sigma": {pd.Timestamp(d): 1.0 for d in day.unique()},
+            "first": np.r_[True, day.to_numpy()[1:] != day.to_numpy()[:-1]], "sessions": [pd.Timestamp(d) for d in day.unique()],
+            "sigma_1h": {}}
+
+
+def test_audit10_rhea_end_to_end_start_known_at_break_and_always_in_clause3():
+    c = [100, 102, 100, 102, 100.5, 101.8, 100.2, 101.9, 100.1, 101.5, 101, 101.2, 103.5, 104.5, 105]   # 2σ पट्टा, मग वर break
+    res = _flat_res(c)
+    out = ST.fold(res, 1, rr=np.full(len(c), np.nan))
+    ev = out["events"]
+    rs = next(e for e in ev if e["type"] == "range_start")
+    assert pd.Timestamp(rs["known_at"]) == pd.Timestamp(res["m15"]["timestamp"].iloc[rs["bar"]]) + BAR
+    assert out["states"][rs["bar"]]["range"] is not None and out["states"][rs["bar"]]["trend"] == "RANGE"
+    rb = next(e for e in ev if e["type"] == "range_break")
+    assert rb["dir"] == 1 and rb["bar"] > rs["bar"]
+    assert any(e["type"] == "always_in_flip" and e["bar"] == rb["bar"] + 1 and "range_break" in e["why"] for e in ev)   # clause 3
+    out2 = ST.fold(res, 2, rr=np.full(len(c), np.nan))
+    rs2 = [e for e in out2["events"] if e["type"] == "range_start"]
+    assert all(e["bar"] > rs["bar"] for e in rs2)                                       # D2: ≥ 12 bars ⇒ D1 पेक्षा उशिरा
+
+
+def test_audit10_pivot_range_break_and_reversal_negative_cases():
+    c = np.r_[np.linspace(100, 110, 10), np.linspace(110, 95, 10), np.linspace(95, 115, 10), np.linspace(115, 90, 10), [92, 118, 119]]
+    res = _flat_res(c)
+    tsr = res["m15"]["timestamp"]
+    P = lambda k, pr, b: SE.Pivot(1, k, pr, b, pd.Timestamp(tsr.iloc[b]), b + 1, pd.Timestamp(tsr.iloc[b + 1]), 1.0, 4.0, "normal")  # noqa: E731
+    res["pivots"][1] = [P("H", 110.1, 9), P("L", 94.9, 19), P("H", 115.1, 29), P("L", 89.9, 39)]   # HH + LL ⇒ pivot-RANGE
+    res["settings"]["rhea_min_bars"] = 99                                              # Rhea बंद ⇒ फक्त pivot पट्टा
+    out = ST.fold(res, 1, rr=np.full(len(c), np.nan))
+    assert out["states"][41]["trend"] == "RANGE"
+    rb = [e for e in out["events"] if e["type"] == "range_break" and e.get("source") == "pivots"]
+    assert rb and rb[0]["bar"] == 41 and rb[0]["level"] == pytest.approx(115.1)        # वरचा = दोन H पैकी मोठा
+    res = scenario()
+    out = ST.fold(res, 1, rr=np.full(len(res["m15"]), np.nan))
+    ev = out["events"]
+    ch = next(e for e in ev if e["type"] == "CHoCH")
+    lh = [e for e in ev if e["type"] == "LH"]
+    rv = [e for e in ev if e["type"] == "reversal"]
+    assert not [e for e in rv if not lh or e["bar"] < lh[0]["bar"]]                     # LH आधी पायरी 3 नाही
+    A = res["A"]
+    t = ch["bar"] + 1
+    A["c"][t] = A["h"][t] = 140.0                                                       # नवा HH (H1 136 पलीकडे close) ⇒ रद्द
+    out2 = ST.fold(res, 1, rr=np.full(len(res["m15"]), np.nan))
+    assert any(e["type"] == "reversal_cancel" and e["bar"] == t for e in out2["events"])
+
+
+def test_audit10_m1_partial_status_and_sigma_1h_excludes_short_candles():
+    rows = pd.DataFrame({"high": [10.0] * 10, "low": [9.0] * 10})
+    assert SE.m1_status(rows, 10.0, 9.0) == "partial"                                  # < 15 rows
+    assert SE.m1_status(None, 10.0, 9.0) == "absent"
+    m15, res = built(3, 30)
+    days = res["sessions"]
+    d = days[-1]
+    from pivots import charts as PC2
+    h1 = PC2.agg_1h(m15)
+    t = pd.to_datetime(h1["timestamp"])
+    prev = [x for x in days[:-1]][-20:]
+    m = t.dt.normalize().isin(prev) & ~t.dt.strftime("%H:%M").isin(["09:15", "15:15"])
+    want = float(np.median((h1["high"] - h1["low"])[m]))
+    assert res["sigma_1h"][d] == pytest.approx(want)

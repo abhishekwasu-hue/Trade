@@ -349,3 +349,20 @@ def test_final_flag_measured_move():
     assert F2.measured_move(I1, A, 104.0, 2.0, 1.0)["ok"] is False           # पहिला K अजून चालू ⇒ ✗
     far = {"dir": 1, "origin": o, "ends": [e0, N(price=160.0, bar=4)], "end": N(price=160.0, bar=4)}
     assert F2.measured_move(far, A, 150.0, 2.0, 1.0)["ok"] is False          # पट्टा 150–160, target 124 ⇒ ✗
+
+
+def test_audit21_impulse_k_danger_not_suppressed_by_agg_none(folds, monkeypatch):
+    """Audit #21 (🔴): सगळ्या hyps forming ⇒ agg "none" ⇒ आधी pref_family None ⇒ "impulse-K preferred" danger कधीच लागत नव्हता."""
+    *_, f1, f2 = folds
+    t = next(t for t, r in f1.out.items() if r.get("pref") is not None and r.get("momentum") is not None)
+    rec = dict(f1.out[t], agg="none", pref=dict(f1.out[t]["pref"], family="impulse_k"))
+    seen = {}
+    real = MO.evaluate
+
+    def spy(ctx, zone_fn=None):
+        seen["fam"] = ctx["pref_family"]
+        return real(ctx, zone_fn)
+    monkeypatch.setattr(MO, "evaluate", spy)
+    m = f1.momentum(rec, rec["l2"], f1.trk.I_at(t), t, hyst=False)
+    assert seen["fam"] == "impulse_k" and "impulse-K preferred" in m["danger"] and m["verdict"] == MO.NOT
+    assert "impulse_K" not in F2.FORMING

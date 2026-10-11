@@ -2,6 +2,7 @@
 pattern रेघा, D0 ठिपके) + box: momentum निकाल + 12 ✓✗NA ओळ + अवस्था + गुण; final_flag / partial / position_ban खुणा."""
 import pandas as pd
 
+import instruments as INS
 from pivots import charts as PC
 from swings2 import engine as SE
 
@@ -53,7 +54,7 @@ def charts(res, f1, f2, t, j1, j2):
     m15 = res["m15"]
     m = m15.iloc[:t + 1]
     asof = pd.Timestamp(m["bar_end"].iloc[-1])
-    title = "🧭 PATTERN CHECK v2 · NIFTY {tf} · {d:%d %b %Y %H:%M} · {deg}"
+    title = "🧭 PATTERN CHECK v2 · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M} · {deg}"
     d0 = SE.known(res, 0, asof)
     d1 = SE.known(res, 1, asof)
     return {"15M": PC.png(CH1.figure(PC.window(m, "15M", asof), "15M", j1, d0, title.format(tf="15M", d=asof, deg="D1 pattern"),

@@ -2,6 +2,7 @@
 तुटक, आधार-break ⭑, trade-बाजूचे zones फिके, ∩ ★) + box; 1H (D2 रेघा)."""
 import pandas as pd
 
+import instruments as INS
 from backtest_review import charts as BC
 from pivots import charts as PC
 
@@ -84,7 +85,7 @@ def box_text(r, momentum=None, zone_area=None):
 def charts(E, E1h, r, r1h, t, zones=None, momentum=None, zone_area=None):
     m = E.m15.iloc[:t + 1]
     asof = pd.Timestamp(m["bar_end"].iloc[-1])
-    title = "🧭 TRENDLINE CHECK · NIFTY {tf} · {d:%d %b %Y %H:%M}"
+    title = "🧭 TRENDLINE CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     return {"15M": PC.png(figure(PC.window(m, "15M", asof), "15M", r, E, t, title.format(tf="15M", d=asof), zones,
                                  box_text(r, momentum, zone_area))),
             "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", r1h, E1h, t, title.format(tf="1H", d=asof)))}

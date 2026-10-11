@@ -14,6 +14,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from legs2 import charts as LC  # noqa: E402
 from pivots import charts as PC  # noqa: E402
 from pivots import engine as PE  # noqa: E402
@@ -52,14 +53,16 @@ def main(argv=None):
     ap.add_argument("--daily-history", default=None)
     ap.add_argument("--m1-status", default=None, help="आधीच्या run चा stream.json (replay = live: त्यातलाच 1m_status)")
     ap.add_argument("--send", action="store_true")
+    ap.add_argument("--instrument", default=None, choices=INS.names(), help="index (default: TRADE_INSTRUMENT / NIFTY)")
     a = ap.parse_args(argv)
+    INS.set_current(a.instrument)
     m1 = SC.load_1m(a.data)
     print(f"1m rows {len(m1)} वाचले · engine बांधतो…", flush=True)
     m15 = PE.bars_15m(m1)
     smap = None
     if a.m1_status:
         import json
-        smap = {x["ts"]: x["m1_status"] for x in json.load(open(a.m1_status, encoding="utf-8"))}
+        smap = {x["ts"]: x for x in json.load(open(a.m1_status, encoding="utf-8"))}   # status + 1m निर्णय
     res = SE.build(m15, m1, m1_status_map=smap)
     struct, rr = ST.all_structure(res)
     hist = SC.load_history(a.daily_history)
@@ -98,8 +101,8 @@ def main(argv=None):
                                                             "register": SR.register_rows(), "notes": SS.NOTES,
                                                             "settings": res["settings"]})
     kpages = []
-    if days:
-        asof = pd.Timestamp(m15[ts.dt.normalize() == days[-1]]["bar_end"].max())
+    for dk in days[-int(SS.DEFAULTS["k_compare_days"]):]:                          # k-तुलना शेवटचे 3 दिवस (थर 1 §5)
+        asof = pd.Timestamp(m15[ts.dt.normalize() == dk]["bar_end"].max())
         for deg in (1, 2):
             kpages.append(WC.k_options_png(m15, m1, asof, deg, SS.K_OPTIONS[deg]))
     PC.pdf([LC.table_png(rows, "थर 1 v2: swings + market structure (वर्णन; backtest नाही)"),

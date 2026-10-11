@@ -1,8 +1,9 @@
 """swings2/engine.py — थर 1 engine (v2.1 §1).
 
 D0: 15M spot bars वर DC, θ₀ = k₀ σ (pivots.dc.D0: बरोबरीत नंतरची candle, same-bar ⇒ 1m क्रम किंवा सावध नियम, एका candle मधून दोन
-pivots नाहीत, फक्त θ बदलल्याने confirm नाही). 1m फक्त `1m_status = complete` असेल तर; प्रत्येक candle चा status प्रवाहात (`stream`)
-साठवला जातो आणि replay त्यावरच fold करतो (नंतरचा backfill आधीचा pivot बदलत नाही).
+pivots नाहीत, फक्त θ बदलल्याने confirm नाही). 1m फक्त `1m_status = complete` असेल तर; प्रत्येक candle चा status **आणि 1m क्रम-निर्णय**
+(`order`: दिशा ⇒ first_ext + after_extreme / first_rev / none) प्रवाहात (`stream`) साठवला जातो; replay त्या निर्णयावरच fold करतो (1m rows
+पुन्हा वाचत नाही ⇒ नंतरचा backfill आधीचा pivot बदलत नाही).
 
 D(n+1): extreme फक्त confirmed D(n) pivots मधून, पण θ_(n+1) ओलांडणं **raw bar high / low** वर (extreme च्या नंतरच्या bars, आणि तो
 अजून खरंच टोक आहे तोपर्यंत). known_at = max(crossing candle चा close, त्या D(n) pivot चा known_at). ⇒ D(n+1) ⊆ D(n).
@@ -18,6 +19,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 import pandas as pd
 
+from pivots import dc as DC
 from pivots import engine as PE
 from pivots.dc import BAR, D0
 
@@ -217,13 +219,21 @@ def build(m15, df1m=None, s=None, m1_status_map=None):
         r1 = rows.get(ts_of(b))
         if r1 is not None and "received_at" in r1.columns:
             r1 = r1[pd.to_datetime(r1["received_at"]) <= known_of(b)]
-        st = (m1_status_map or {}).get(str(ts_of(b))) or m1_status(r1, A["h"][b], A["l"][b])
-        stream.append({"ts": str(ts_of(b)), "m1_status": st})
+        entry = (m1_status_map or {}).get(str(ts_of(b)))
+        saved = entry.get("order") if isinstance(entry, dict) else None
+        st = (entry.get("m1_status") if isinstance(entry, dict) else entry) or m1_status(r1, A["h"][b], A["l"][b])
+        rec = {}
+        if saved is not None:                                                        # replay: साठवलेला 1m निर्णयच (rows नाहीत)
+            d0.order_fn = (lambda rows, hi, lo, dr, sv=saved: (lambda x: None if x is None else tuple(x))(sv.get(str(dr))))
+        else:
+            d0.order_fn = (lambda rows, hi, lo, dr, rc=rec: rc.setdefault(str(dr), DC._order_1m(rows, hi, lo, dr)))
+        stream.append({"ts": str(ts_of(b)), "m1_status": st, "order": rec if saved is None else saved})
         if not np.isfinite(sigma[b]):
             continue
         started.setdefault(cur_seg, sess_idx[dd])
         p = d0.step(b, A["h"][b], A["l"][b], theta[0][b], sigma[b], known_of(b), None, ts_of, r1 if st == "complete" else None)
-        A["split"][b] = bool((p is not None and p.bar == b) or d0.cons == b)          # same-bar: candle चा भाग D0 ला दिसला नाही
+        A["split"][b] = bool((p is not None and p.bar == b) or d0.cons == b          # same-bar: candle चा भाग D0 ला दिसला नाही
+                             or (p is not None and p.rule == "1m" and p.bar != b))       # first_rev: आधीचं टोक confirm, या candle चं टोक नाही
         new = [finish(p, 0)] if p is not None else []
         for d in DEGREES[1:]:
             nxt = []

@@ -10,6 +10,7 @@ import io
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from backtest_review import charts as BC
 
 from . import engine as PE
@@ -168,7 +169,7 @@ def charts(res, asof, history_daily=None):
         hw = weekly_from_daily(hd.assign(bar_end=pd.to_datetime(hd["timestamp"]) + pd.Timedelta(hours=15, minutes=30)), asof)
         hd, hw = display_only(hd), display_only(hw)
     t = pd.Timestamp(asof)
-    title = "🧭 SWING CHECK · NIFTY {tf} · {d:%d %b %Y} दिवस-अखेर · {deg}"
+    title = "🧭 SWING CHECK · " + INS.label() + " {tf} · {d:%d %b %Y} दिवस-अखेर · {deg}"
     out = {"15M": png(figure(window(m, "15M", asof), "15M", snap, 1, title.format(tf="15M", d=t, deg="D1 (मोठे) + D0 (लहान)"), minor=0)),
            "1H": png(figure(window(agg_1h(m), "1H", asof), "1H", snap, 2, title.format(tf="1H", d=t, deg="D2"), box=False)),
            "D": png(figure(daily, "D", snap, 3, title.format(tf="Daily", d=t, deg="D3"), history=hd, box=False)),

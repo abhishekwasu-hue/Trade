@@ -264,6 +264,7 @@ def decide(C, t):
     size = 1.0
     grade_adj = 0.0
     rg = reg["regime"]
+    band = None                                                                      # range mode ⇒ (top, bot)
     if rg in (UP, DOWN):
         if (rg == UP) != (d > 0):
             return stop(NO_TRADE, "G-A", "against_parent")
@@ -281,7 +282,6 @@ def decide(C, t):
         mid = (top + bot) / 2.0
         if (d > 0 and c > bot + third) or (d < 0 and c < top - third) or (np.isfinite(s1h) and abs(c - mid) <= s1h):
             return stop(WAIT, "G-A", "range मध्ये (कडेच्या तृतीयांशात नाही)")
-        return range_mode(C, t, d, out, stop, (top, bot), I, st, l4, l5, l6, rec3, reg)
     elif rg == TRANS:
         if reg["dir"] != d or not reg["pullback_held"]:
             return stop(WAIT, "G-A", "transition: break-दिशा / held pullback नाही")
@@ -290,6 +290,7 @@ def decide(C, t):
         return stop(NO_TRADE, "G-A", "barbwire")
     else:
         return stop(WAIT, "G-A", "drift")
+    # audit #63: HTF veto / htf_unknown / Gray-1 / G-B / position_ban दोन्ही paths ला (range mode सुद्धा — §3a फक्त G-C/G-D/G-G/entry बदलतो)
     if d3 in (SST.UPT, SST.DNT) and (d3 == SST.UPT) != (d > 0):
         return stop(NO_TRADE, "G-A", "HTF veto (D3)")
     if d3 not in (SST.UPT, SST.DNT, SST.RNG):
@@ -316,6 +317,19 @@ def decide(C, t):
     pts["6_complete"] = {"state": rec3.get("agg"), "position_ban": bool(pos.get("ban")), "final_flag_risk": rec3.get("final_flag_risk")}
     if pos.get("ban"):
         return stop(NO_TRADE, "G-G", f"position_ban (D2: {pos.get('where')})")
+    if band is not None:
+        plan = range_mode(C, t, d, out, stop, band, l4, l5, l6, rec3, pref)
+    else:
+        plan = trend_mode(C, t, d, out, stop, I, st, l4, l5, l6, rec3, pref)
+    if plan is out:                                                                  # gate थांबला
+        return out
+    return _tail(C, t, d, out, stop, plan, I, st, l4, l6, rec3, size, grade_adj)
+
+
+def trend_mode(C, t, d, out, stop, I, st, l4, l5, l6, rec3, pref):
+    """Trend path G-C / G-D / G-G (अवस्था) / G-E / invalidation / target; थांबला ⇒ out, नाहीतर plan."""
+    s, pts = C.s, out["points"]
+    size = 1.0
     # ---- G-C
     area = _area(C, t, d, l4, l5)
     pts["7_area"] = area and {k: v for k, v in area.items() if k != "band"} | {"band": [round(x, 2) for x in area["band"]]}
@@ -369,7 +383,7 @@ def decide(C, t):
         return stop(WAIT, "G-E", "commitment candle नाही")
     if depth is not None and depth >= float(s["retrace_flavour"]) and not ({"sweep-reclaim", "throw-over"} & set(flavours)):
         return stop(WAIT, "G-E", "retrace ≥ 0.80 ⇒ फक्त sweep-reclaim / throw-over")
-    # ---- G-F
+    # ---- G-F (invalidation; target = target_mode)
     entry = cm["entry"]
     small = (cm["rng_ratio"] or 0) < float(s["g5_rng"]) or (cm["overlap3"] or 0) >= float(s["g6_overlap3"])
     mode = s["invalidation_mode"] if s["invalidation_mode"] != "auto" else ("structural" if small else "candle")
@@ -379,11 +393,43 @@ def decide(C, t):
     else:
         cand = [x for x in (kx, area["band"][0] if d > 0 else area["band"][1]) if x is not None]
         inv = (min(cand) - float(s["sl_buffer"])) if d > 0 else (max(cand) + float(s["sl_buffer"]))
-    target = I["end"].price
+    tmode = s["target_mode"]
+    return {"area": area, "cm": cm, "m": m, "flavours": flavours, "entry": entry, "inv": inv, "mode": mode, "s5": s5, "size": size,
+            "target": target_price(C, t, d, tmode, I, st, l4, entry), "target_mode": tmode, "where": f"mode {mode}"}
+
+
+def target_price(C, t, d, mode, I, st, l4, entry, band=None):
+    """audit #62: `target_mode` dispatch (थर 7 §5). I_end; opposite_edge = range ची उलट कड (थर 1 D2 पट्टा); measured_move = I-leg
+    आकार K टोकापासून; opposite_zone = थर 4 चा entry पलीकडचा सर्वात जवळचा उलट zone (l4["opp"]) — long ⇒ त्याचा bottom, short ⇒ top.
+    मिळत नाही ⇒ None (G-F no_trade)."""
+    if mode == "I_end":
+        return float(I["end"].price)
+    if mode == "opposite_edge":
+        band = range_band(C, t) if band is None else band
+        return None if band is None else float(band[0] if d > 0 else band[1])
+    if mode == "measured_move":
+        kx = (st.get("K") or {}).get("extreme")
+        return None if kx is None else float(kx) + d * abs(float(I["end"].price) - float(I["origin"].price))
+    if mode == "opposite_zone":
+        zmap = {z["id"]: z for z in ((getattr(C, "Z", None) and C.Z.snap.get(t)) or [])}
+        xs = [float(zmap[i]["bottom"] if d > 0 else zmap[i]["top"]) for i in (l4.get("opp") or []) if i in zmap]
+        xs = [x for x in xs if (x - entry) * d > 0]
+        return min(xs, key=lambda x: abs(x - entry)) if xs else None
+    raise ValueError(f"target_mode {mode}")
+
+
+def _tail(C, t, d, out, stop, plan, I, st, l4, l6, rec3, size, grade_adj):
+    """audit #63: दोन्ही paths चा common शेवट — G-F R:R, G-H (वेळ + expiry), संदर्भ (VIX / event / macro), hard_exits, 12 मुद्दे,
+    grade, size."""
+    s, pts = C.s, out["points"]
+    entry, inv, target = plan["entry"], plan["inv"], plan["target"]
     risk = (entry - inv) * d
-    rr = (target - entry) * d / risk if risk > 0 else None
-    pts["10_risk"] = {"invalidation_mode": mode, "entry": round(entry, 2), "invalidation": round(inv, 2), "target": round(target, 2),
+    rr = (target - entry) * d / risk if (risk > 0 and target is not None) else None
+    pts["10_risk"] = {"invalidation_mode": plan["mode"], "entry": round(entry, 2), "invalidation": round(inv, 2),
+                      "target": None if target is None else round(target, 2), "target_mode": plan["target_mode"],
                       "rr": None if rr is None else round(rr, 2), "strike_beyond": round(inv, 2)}
+    if target is None:
+        return stop(NO_TRADE, "G-F", f"target नाही (target_mode {plan['target_mode']})")
     if rr is None or rr < float(s["min_rr"]):
         return stop(NO_TRADE, "G-F", f"R:R {rr if rr is None else round(rr, 2)} < {s['min_rr']}")
     # ---- G-H
@@ -409,16 +455,19 @@ def decide(C, t):
     pts["12_hard_rules"] = {"exits": hard_exits(C, t, d)}
     pts["3_impulse_ok"] = {k: (st.get("I") or {}).get(k) for k in ("quality", "climax", "SOT_trend", "origin_bounded", "I_weak_basis")}
     # ---- grade + size
+    area = plan["area"]
     g7 = second_attempt(C, t, d, area, I["end"].bar)
     out["flags"] += ["second attempt"] if g7 else []
-    g = grade(C, t, d, area, cm, flavours, m, l6, rec3, st, s5, grade_adj, g7)
+    g = grade(C, t, d, area, plan["cm"], plan["flavours"], plan["m"], l6, rec3, st, plan["s5"], grade_adj, g7)
     out["grade_score"] = g
     out["grade"] = "A" if g >= float(s["grade_a"]) else ("B" if g >= float(s["grade_b"]) else "C")
-    out["size_weight"] = size_weight(C, t, vix, size, d)
+    out["size_weight"] = size_weight(C, t, vix, size * plan["size"], d)
     out["decision"] = SETUP
-    out["where_wrong"] = f"invalidation {inv:,.0f} (mode {mode})"
+    out["where_wrong"] = f"invalidation {inv:,.0f} ({plan['where']})"
     out["paper_only"] = True
     out["approval_required"] = bool(s["signal_approval_required"])
+    if plan.get("range"):
+        out["flags"].append("range mode")
     return out
 
 
@@ -454,9 +503,10 @@ def expiry_choice(C, t, exp):
     return {"expiry": None if pick is None else str(pick[0].date()), "sessions": None if pick is None else pick[1], "flags": flags}
 
 
-def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
+def range_mode(C, t, d, out, stop, band, l4, l5, l6, rec3, pref):
     """§3a: range_alt I/K; G-C = थर 4 range-कड (d) zone; G-D = थर 6 range-fade पुरावा किंवा momentum; G-G = कडेकडची चाल impulse-K नाही;
-    entry फक्त खालच्या / वरच्या तृतीयांशात (मध्य ±1 σ_1H नाही). मग G-E … G-I नेहमीसारखे."""
+    entry फक्त खालच्या / वरच्या तृतीयांशात (मध्य ±1 σ_1H नाही — decide मध्ये). target = range ची उलट कड (§3a). G-A veto / Gray-1 / G-B /
+    position_ban आधीच (decide); G-F … hard_exits / grade / size common `_tail` (audit #63). थांबला ⇒ out, नाहीतर plan."""
     s = C.s
     area = range_area(C, t, d, band, l4, l5)
     if area is None:
@@ -464,9 +514,9 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
     hit = area["band"]
     out["points"]["7_area"] = {"src": area["src"], "band": [round(x, 2) for x in hit]}
     m = l4.get("momentum") or rec3.get("momentum") or {}
+    out["points"]["4_character"] = {"momentum": m.get("verdict"), "danger": m.get("danger"), "range_fade": l6.get("label") == "range-fade पुरावा"}
     if not (m.get("verdict") == "कमकुवत होतोय" or l6.get("label") == "range-fade पुरावा"):
         return stop(WAIT, "G-D", f"range mode: momentum {m.get('verdict')} / range-fade नाही")
-    pref = rec3.get("pref") if rec3.get("agg") != "none" else None
     if pref is not None and pref["family"] == "impulse_k":
         return stop(WAIT, "G-G", "range mode: कडेकडची चाल impulse-K")
     cm = commit_tier(C, t, d, area)
@@ -475,24 +525,9 @@ def range_mode(C, t, d, out, stop, band, I, st, l4, l5, l6, rec3, reg):
         return stop(WAIT, "G-E", "commitment candle नाही")
     entry = cm["entry"]
     inv = (min(cm["candle"]["l"], hit[0]) - float(s["sl_buffer"])) if d > 0 else (max(cm["candle"]["h"], hit[1]) + float(s["sl_buffer"]))
-    target = band[0] if d > 0 else band[1]                                           # range ची उलट कड
-    risk = (entry - inv) * d
-    rr = (target - entry) * d / risk if risk > 0 else None
-    out["points"]["10_risk"] = {"invalidation_mode": "structural", "entry": round(entry, 2), "invalidation": round(inv, 2),
-                                "target": round(target, 2), "rr": None if rr is None else round(rr, 2), "strike_beyond": round(inv, 2)}
-    if rr is None or rr < float(s["min_rr"]):
-        return stop(NO_TRADE, "G-F", f"R:R {rr if rr is None else round(rr, 2)} < {s['min_rr']}")
-    if C.ts[t].time() >= pd.Timestamp(s["entry_end"]).time():
-        return stop(NO_TRADE, "G-H", "15:15 नंतर नवी entry नाही")
-    vix = (C.ext.get("vix") or {}).get(t)
-    ctx = context_rows(C, t, d)
-    out["flags"] += ctx["flags"] + ([] if vix is not None else ["VIX data नाही"])
-    g = grade(C, t, d, area, cm, ["range-edge"], m, l6, rec3, st, False)
-    out.update(decision=SETUP, grade_score=g, grade="A" if g >= float(s["grade_a"]) else ("B" if g >= float(s["grade_b"]) else "C"),
-               size_weight=size_weight(C, t, vix, 1.0, d), where_wrong=f"invalidation {inv:,.0f} (range mode)", paper_only=True,
-               approval_required=bool(s["signal_approval_required"]))
-    out["flags"].append("range mode")
-    return out
+    return {"area": area, "cm": cm, "m": m, "flavours": ["range-edge"], "entry": entry, "inv": inv, "mode": "structural", "s5": False,
+            "size": 1.0, "target": float(band[0] if d > 0 else band[1]), "target_mode": "opposite_edge (range §3a)", "where": "range mode",
+            "range": True}
 
 
 def range_area(C, t, d, band, l4, l5):

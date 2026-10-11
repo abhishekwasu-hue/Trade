@@ -8,6 +8,7 @@ import io
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from backtest_review import charts as BC
 from pivots import charts as PC
 from vision_led import charts as VC
@@ -147,7 +148,7 @@ def charts(res, f1, f2, t, j1, j2, pos):
     m15 = res["m15"]
     m = m15.iloc[:t + 1]
     asof = pd.Timestamp(m["bar_end"].iloc[-1])
-    title = "🧭 PATTERN CHECK · NIFTY {tf} · {d:%d %b %Y %H:%M} · {deg}"
+    title = "🧭 PATTERN CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M} · {deg}"
     from pivots import engine as PE
     d0 = PE.known(res, 0, asof)
     d1 = PE.known(res, 1, asof)

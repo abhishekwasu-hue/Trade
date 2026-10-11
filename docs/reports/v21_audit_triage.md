@@ -5,17 +5,17 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 
 | # | थर | तीव्रता | स्थिती | #279 मध्ये / नोंद |
 |---|---|---|---|---|
-| 1 | 1 | 🟡 | open |  |
-| 2 | 1 | 🟡 | open |  |
-| 3 | 1 | 🟡 | open |  |
-| 4 | 1 | 🟡 | open |  |
-| 5 | 1 | 🟡 | open |  |
-| 6 | 1 | 🟡 | open |  |
-| 7 | 1 | 🟡 | open |  |
-| 8 | 1 | 🟡 | open |  |
-| 9 | 1 | 🟢 | open |  |
-| 10 | 1 | tests | open |  |
-| 11 | 2 | 🔴 | open |  |
+| 1 | 1 | 🟡 | fixed (l1) | l1: structure.py `p.confirm_bar > choch_bar` |
+| 2 | 1 | 🟡 | fixed (l1) | l1: `strong_price()` |
+| 3 | 1 | 🟡 | fixed (l1) | l1: `weak_level()` |
+| 4 | 1 | 🟡 | fixed (l1) | l1: `rhea_settings()` (15M, ×k2/k1) |
+| 5 | 1 | 🟡 | fixed (l1) | l1: register `range_band_source` + 01 §2.1 |
+| 6 | 1 | 🟡 | fixed (l1) | l1: stream `order` + `pivots/dc.py` `order_fn` |
+| 7 | 1 | 🟡 | fixed (l1) | l1: K_OPTIONS[2] 4/6/8 + MASTER/01 docs |
+| 8 | 1 | 🟡 | fixed (l1) | l1: `k_compare_days` = 3 |
+| 9 | 1 | 🟢 | fixed (l1) | l1: split for 1m first_rev |
+| 10 | 1 | tests | fixed (l1) | l1: `test_audit*` (थर 1 log तक्ता) |
+| 11 | 2 | 🔴 | fixed now (🔴 commit) | ik2.py `k_on` + `k_from_bar` |
 | 12 | 2 | 🟡 | open |  |
 | 13 | 2 | 🟡 | open |  |
 | 14 | 2 | 🟡 | fixed | legs2/ik2.py:87 `ctx()` — पालक unknown ⇒ स्वतःचा Dow trend + `htf_unknown`; band नसेल तरच I नाही; test `test_unknown_parent_uses_own_trend_with_htf_unknown` (`test_unknown_parent_no_I` बदलला) |
@@ -25,7 +25,7 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 | 18 | 2 | 🟡 | open |  |
 | 19 | 2 | 🟢 | open |  |
 | 20 | 2 | tests | partial | range_alt दिशा / कड-बदल / parent_flip tests जोडले; बाकी open |
-| 21 | 3 | 🔴 | open |  |
+| 21 | 3 | 🔴 | fixed now (🔴 commit) | fold2.py `pref_family` from `rec["pref"]`; FORMING − impulse_K |
 | 22 | 3 | 🟡 | open |  |
 | 23 | 3 | 🟡 | fixed | patterns2/fold2.py:327 `measured_move()` — (a)+(b)+(c); test `test_final_flag_measured_move` |
 | 24 | 3 | 🟡 | open |  |
@@ -34,8 +34,8 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 | 27 | 3 | 🟡 | open |  |
 | 28 | 3 | 🟢 | open |  |
 | 29 | 3 | tests | partial | final_flag_risk test जोडला; बाकी (12 items hand-built ctx, danger, partial_rise, resuming failed, wxy, apex, D2-I fixture) open |
-| 30 | 4 | 🔴 | open |  |
-| 31 | 4 | 🔴 | open |  |
+| 30 | 4 | 🔴 | fixed now (🔴 commit) | zones2 `owner_status()`; dead/flipped बाहेर |
+| 31 | 4 | 🔴 | fixed now (🔴 commit) | zones2 `z["deep"]` वेगळी |
 | 32 | 4 | 🟡 | open |  |
 | 33 | 4 | 🟡 | partial | zones2/engine.py:605 `sessions_profile()` — 5 पूर्ण sessions, कमी ⇒ NA; naked POC, score मधला profile term, rollover `bad[j]` mask अजून open |
 | 34 | 4 | 🟡 | fixed | zones2/engine.py:302 `assign_ids()` — id बदलत नाही (वारसा / merge / split + lineage), तोच state पुढे; tests `test_zone_id_lineage_prune_merge_split` |
@@ -45,7 +45,7 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 | 38 | 4 | 🟡 | open |  |
 | 39 | 4 | 🟡 | open |  |
 | 40 | 4 | tests | partial | merge / split id + pruning lineage + 5-session profile tests जोडले; बाकी open |
-| 41 | 5 | 🔴 | open |  |
+| 41 | 5 | 🔴 | fixed now (🔴 commit) | trendlines2 `break_candle()` |
 | 42 | 5 | 🟡 | open |  |
 | 43 | 5 | 🟡 | open |  |
 | 44 | 5 | 🟡 | open |  |
@@ -66,8 +66,8 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 | 59 | 6 | 🟡 | open |  |
 | 60 | 6 | 🟢 | open |  |
 | 61 | 6 | tests | partial | cascade per degree + line_clear_strict tests जोडले; बाकी open |
-| 62 | 7 | 🔴 | open |  |
-| 63 | 7 | 🔴 | open |  |
+| 62 | 7 | 🔴 | fixed now (🔴 commit) | decision2 `target_price()` |
+| 63 | 7 | 🔴 | fixed now (🔴 commit) | decision2 `trend_mode`/`range_mode` + `_tail()` |
 | 64 | 7 | 🟡 | open |  |
 | 65 | 7 | 🟡 | open |  |
 | 66 | 7 | 🟡 | open |  |
@@ -89,7 +89,7 @@ Audit `main` (#278 नंतर) वर होतं. प्रत्येक �
 | 82 | MASTER | 🟡 | open |  |
 | 83 | MASTER | 🟢 | open |  |
 
-**सारांश:** fixed 6, partial 13, open 64. 🔴 सातही (#11, 21, 30, 31, 41, 62, 63) open.
+**सारांश:** #279 मध्ये fixed 6, partial 13; या PR (#280) मध्ये थर 1 (#1–#10) आणि 🔴 सातही (#11, 21, 30, 31, 41, 62, 63) दुरुस्त; बाकी open.
 
 **नोंद:** #13 (BOS clause ला D2 दिशा ठेवायची) — code तसाच; prompt 02 §5.1 चं वाक्य थर 2 च्या दुरुस्तीत बदलायचं. #14 चा निर्णय =
 Abhi उत्तर 5, #15 = उत्तर 4 + batch 2 निर्णय 3 (parent_flip). #49 = उत्तर 10-ब (code bug नाही).

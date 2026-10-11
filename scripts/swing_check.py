@@ -17,6 +17,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import instruments as INS  # noqa: E402
 from elliott import data_policy as DP  # noqa: E402
 from pivots import charts as PC  # noqa: E402
 from pivots import engine as PE  # noqa: E402
@@ -33,7 +34,10 @@ def read(paths):
 
 
 def load_1m(paths):
-    """Engine साठी: data-policy (annotation) — sealed holdout चा एकही row नाही."""
+    """Engine साठी: data-policy (annotation) — sealed holdout चा एकही row नाही. 1m data फक्त holdout instrument (NIFTY) चा आहे ⇒
+    दुसरं instrument निवडलं असेल तर नकार (NIFTY data वर दुसरं नाव लागून holdout segment / पहारा बंद होऊ नये)."""
+    if not INS.holdout():
+        raise ValueError(f"1m data फक्त holdout instrument चा — {INS.label()} साठी TF csv (--tf-csv / mtf_check --tf-dir) वापरा")
     return DP.filter_allowed(read(paths), "annotation")
 
 

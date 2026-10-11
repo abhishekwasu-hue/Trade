@@ -8,6 +8,7 @@ import io
 import numpy as np
 import pandas as pd
 
+import instruments as INS
 from backtest_review import charts as BC
 from pivots import charts as PC
 from vision_led import charts as VC
@@ -164,7 +165,7 @@ def charts(lg, asof, sts):
     end = int((pd.to_datetime(m15["bar_end"]) <= pd.Timestamp(asof)).sum())
     m = m15.iloc[:end]
     t = pd.Timestamp(asof)
-    title = "🧭 LEG CHECK · NIFTY {tf} · {d:%d %b %Y} दिवस-अखेर · {deg}"
+    title = "🧭 LEG CHECK · " + INS.label() + " {tf} · {d:%d %b %Y} दिवस-अखेर · {deg}"
     out = {}
     box = box_text(sts[1], sts[2])
     w15 = PC.window(m, "15M", asof)
