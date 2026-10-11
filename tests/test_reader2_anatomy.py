@@ -274,6 +274,21 @@ def test_sharp_abc_with_impulsive_a_and_c_stays_a_correction(dn, mirror, seed, d
     assert {s["trend"] for s in R.states[_trend_leg(R, mirror).known_bar:]} == {"DOWN" if mirror else "UP"}
 
 
+@pytest.mark.parametrize("c_mult", (1.3, 1.6))
+@pytest.mark.parametrize("seed", (None, 1, 2))
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_sharp_abc_with_a_longer_c_is_never_an_impulse(dn, mirror, seed, c_mult):
+    """Unequal sharp a-b-c (c ≈ 1.3–1.6 × a): never labelled impulse and never flips the trend; correction or uncertain allowed."""
+    shape = F.IMPULSE + F.sharp_abc(0.72 * F.IMP_SIZE, c_mult=c_mult) + F.CONT
+    df, _ = F.frame(shape, mirror) if seed is None else F.realistic(shape, mirror, seed=seed)
+    R = RR.read(df)
+    cm = _counter_leg(R, mirror)
+    assert cm.label in ("correction", RF.UNCERTAIN), cm.reason
+    against = "UP" if mirror else "DOWN"
+    assert against not in [s["trend"] for s in R.states]
+    assert not any(e["to"] == against for e in R.events)
+
+
 # --------------------------------------------------------------------------------------------------------------- reviewer probes
 SMALL_W4 = [("imp", 150, 14), ("cor", -70, 20), ("imp", 300, 24), ("cor", -12, 3), ("imp", 160, 14)]
 SMALL_W2 = [("imp", 150, 14), ("cor", -12, 3), ("imp", 300, 24), ("cor", -80, 22), ("imp", 160, 14)]

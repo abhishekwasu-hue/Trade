@@ -13,6 +13,8 @@ SHARP_A_NAMED = ("review rule (CR-Q11): sharp_a (original fixture) shows only 3 
                  "zigzag; a named correction is never re-read into an impulse even though 3/3 alternatives read 5 waves ⇒ the "
                  "counter-move is uncertain from the start and these impulse-counter-move preconditions do not hold. Kept failing on "
                  "purpose (fixture unchanged)")
+SHARP = [pytest.param("sharp_a5", id="sharp_a5"),
+         pytest.param("sharp_a", id="sharp_a", marks=pytest.mark.xfail(strict=True, reason=SHARP_A_NAMED))]
 FIXTURES = ("clean_impulse", "overlapping_correction", "big_c_correction", "deep_sideways", "sharp_a")
 
 
@@ -85,10 +87,10 @@ def test_unresolved_after_max_passes_is_uncertain(dn, mirror):
 
 
 # ---------------------------------------------------------------------------------------------------------------- invariant 2
-@pytest.mark.xfail(strict=True, reason=SHARP_A_NAMED)
+@pytest.mark.parametrize("fx", SHARP)
 @pytest.mark.parametrize("dn,mirror", DIRS)
-def test_inv2_flip_without_a_break_of_the_prior_swing_is_undone(dn, mirror):
-    df, _ = F.sharp_a(mirror)
+def test_inv2_flip_without_a_break_of_the_prior_swing_is_undone(fx, dn, mirror):
+    df, _ = getattr(F, fx)(mirror)
     R = RR.build(df)
     d = _d(mirror)
     up, cm = _leg(R, d), _leg(R, -d)
@@ -212,10 +214,10 @@ def test_unfinished_move_is_read_but_never_moves_the_trend(dn, mirror):
 
 
 # ---------------------------------------------------------------------------------------------------------------- invariant 5
-@pytest.mark.xfail(strict=True, reason=SHARP_A_NAMED)
+@pytest.mark.parametrize("fx", SHARP)
 @pytest.mark.parametrize("dn,mirror", DIRS)
-def test_inv5_two_opposite_impulses_are_reread(dn, mirror):
-    df, _ = F.sharp_a(mirror)
+def test_inv5_two_opposite_impulses_are_reread(fx, dn, mirror):
+    df, _ = getattr(F, fx)(mirror)
     R = RR.build(df)
     d = _d(mirror)
     up, cm = _leg(R, d), _leg(R, -d)
@@ -276,10 +278,10 @@ def test_inv7_new_bars_rerun_the_check_and_log_every_change(dn, mirror):
         assert e["known_at"] == kat[e["bar"]] and e["text"].startswith("relabelled ")
 
 
-@pytest.mark.xfail(strict=True, reason=SHARP_A_NAMED)
+@pytest.mark.parametrize("fx", SHARP)
 @pytest.mark.parametrize("dn,mirror", DIRS)
-def test_inv7_selfcheck_relabel_on_a_new_bar_carries_that_bars_known_at(dn, mirror):
-    df, _ = F.sharp_a(mirror)
+def test_inv7_selfcheck_relabel_on_a_new_bar_carries_that_bars_known_at(fx, dn, mirror):
+    df, _ = getattr(F, fx)(mirror)
     R0 = RR.build(df)
     cm = _leg(R0, -_d(mirror))
     T = cm.known_bar

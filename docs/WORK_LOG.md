@@ -1823,3 +1823,5 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 ⇒ uncertain (कधीच correction high नाही); sharp a-b-c ⇒ correction low. **🔴2:** re-read पर्याय dc_k[D−1] × (0.9 / 0.75 / 0.6), कधीच dc_k[0] खाली नाही (नाहीतर abstain).
 **BANKNIFTY:** trend UP 23.6 % / DOWN 5.5 % / uncertain 55.2 %; uncertain फक्त 2 origin-close घटनांतून, कारण = trend-capable up-impulses नाहीत (CR-Q12). Feb→Apr 2026 impulse low
 (anatomy +0.45, structure पर्यायांना बहुमत नाही), Apr→Jun correction low (zigzag), Jun→now provisional correction low. Read 0.32 s; mirror / causality 0 फरक. Tests 233 pass / 40 xfail.
+**Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
+नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).

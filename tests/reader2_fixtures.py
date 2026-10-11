@@ -83,6 +83,8 @@ IMP_SIZE = 150 - 70 + 300 - 80 + 160
 OVERLAP_ABC = [("cor", -150, 40), ("cor", 70, 20), ("cor", -150, 40)]
 # zigzag with a big, impulsive c (c ≈ 2 × a, beyond the end of a) that stays a correction
 BIG_C_ABC = [("cor", -110, 30), ("cor", 60, 18), ("imp", -220, 12)]
+# same idea, but its waves 2 and 4 are large enough to show 5 sub-legs at degree 1 (live passing cases for invariants 2 / 5 / 7)
+SHARP_A5 = [("imp", -200, 7), ("cor", 110, 10), ("imp", -300, 10), ("cor", 140, 12), ("imp", -170, 7), ("cor", 130, 14)]
 # continuation up after the correction (new high)
 CONT = [("imp", 200, 12), ("cor", -70, 20), ("imp", 220, 14), ("cor", -90, 24)]
 # sideways overlapping decline that closes below the impulse origin (corrective anatomy, not an impulse)
@@ -91,11 +93,11 @@ DEEP_SIDEWAYS = [("cor", -220, 30), ("cor", 90, 16), ("cor", -400, 50), ("cor", 
 SHARP_A = [("imp", -200, 7), ("cor", 100, 10), ("imp", -260, 9), ("cor", 110, 10), ("imp", -170, 7), ("cor", 130, 14)]
 
 
-def sharp_abc(depth, b_frac=0.6):
-    """Sharp zigzag down after the impulse: a and c are impulsive candles (equal), b an overlapping bounce of b_frac × a;
+def sharp_abc(depth, b_frac=0.6, c_mult=1.0):
+    """Sharp zigzag down after the impulse: a and c are impulsive candles (c = c_mult × a), b an overlapping bounce of b_frac × a;
     depth = a − b + c (price)."""
-    a = depth / (2.0 - b_frac)
-    return [("imp", -a, 8), ("cor", b_frac * a, 12), ("imp", -a, 8)]
+    a = depth / (1.0 - b_frac + c_mult)
+    return [("imp", -a, 8), ("cor", b_frac * a, 12), ("imp", -c_mult * a, int(round(8 * c_mult)))]
 
 
 def clean_impulse(mirror=False, volume=False):
@@ -121,6 +123,11 @@ def deep_sideways(mirror=False, volume=False):
 def sharp_a(mirror=False, volume=False):
     """Impulse, then a sharp 5-wave counter-move with impulsive candles that does not break the impulse origin."""
     return frame(IMPULSE + SHARP_A + CONT, mirror, volume)
+
+
+def sharp_a5(mirror=False, volume=False):
+    """As sharp_a, with all 5 waves of the counter-move visible at degree 1."""
+    return frame(IMPULSE + SHARP_A5 + CONT, mirror, volume)
 
 
 def hourly(df, per_day=7, start=None):

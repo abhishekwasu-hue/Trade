@@ -127,8 +127,10 @@ column, zeros or NaN ⇒ `volume` and `effort_result` are NA (listed as "NA (no 
 
 ## 7. Fusion (spec §2c)
 Re-read = alternative pivots **exactly one degree lower**: `dc_k[D − 1] × reread_k_mult` with three multipliers 0.9, 0.75, 0.6,
-never below the lowest degree (`dc_k[0]`): finer swings are noise counts (13 / 17 / 19 waves). A degree-1 leg therefore has no
-alternatives and the re-read **abstains** (no majority) — the remaining rules apply and one vote never gives a trend-capable label. Both votes can be re-read: structure from the alternative pivots, anatomy rolled up from them.
+never below the lowest degree (`dc_k[0]`): finer swings are noise counts (13 / 17 / 19 waves).
+**Degree-1 legs can never be re-read:** their alternatives would be `dc_k[0]` × 0.9 / 0.75 / 0.6, all below the floor, so the re-read
+always **abstains** (no majority). A degree-1 leg is therefore labelled only by its first reading — agree ⇒ high; conflict ⇒
+uncertain; one vote silent ⇒ low / uncertain — and never reaches "medium". Only degree-2 (and higher) legs can be resolved by a re-read. Both votes can be re-read: structure from the alternative pivots, anatomy rolled up from them.
 A re-read decides only by **majority** (more than half of the alternatives, i.e. 2 of 3), with the same rule for both directions — the
 first agreeing alternative is never picked on its own. A **named** corrective structure (zigzag, flat, triangle, combination) is never
 re-read into an impulse (only the anatomy re-read can confirm it as a correction).
@@ -227,7 +229,7 @@ Definition note: `features.er` returns None for a zero path; `legs2.measure.cand
   With uniform candles every push looks impulsive, so correction legs read `correction` (low) or `uncertain`, never impulse. CR-Q2:
   degree calibration on the dev gallery, not tuned here. The library's own decision3 tests are unaffected.
 - **Kept-failing tests (strict xfail, fixtures unchanged):** the mis-placed-pivot test (expects impulse / medium) and the three sharp_a
-  self-check tests (inv 2 / 5 / 7) — both fixtures give a NAMED zigzag at the default degree-1 pivots, and the review rule forbids
+  self-check tests (inv 2 / 5 / 7; the same tests pass live on `sharp_a5`, whose 5 waves are visible at degree 1) — both fixtures give a NAMED zigzag at the default degree-1 pivots, and the review rule forbids
   re-reading a named correction into an impulse even when 3 / 3 alternatives read 5 waves (CR-Q11).
 - Sharp, impulsive-looking counter-moves that do not break the prior swing (wave 1 vs wave A, Q49) become `uncertain` (CR-Q4).
 - **BANKNIFTY daily** (2016 → now, not sealed): trend share UP 23.6 % / DOWN 5.5 % / uncertain 55.2 % / none 15.7 % (warm-up).
@@ -241,4 +243,5 @@ tests/test_reader2_selfcheck.py tests/test_reader2_library.py tests/test_reader2
 clean impulse, overlapping correction, impulse with mis-placed pivots, big-c correction, deep sideways decline, sharp A (block candles),
 plus realistic noisy candles (bodies ~50–65 %, wicks on both sides; seeds 1–3) and a structure-only 5-wave drawn with ambiguous
 candles that must be challenged (uncertain, no trend), sharp a-b-c (impulsive a and c; 3 depths, ideal + noisy) that must stay a
-correction, and the reviewer's probes (impulse with a 12-point, 3-bar wave 4 or wave 2 ⇒ never correction/high) — each with its mirror.
+correction, unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a ⇒ never impulse, never a flip; uncertain allowed), sharp_a5 (live inv 2 / 5 / 7
+cases), and the reviewer's probes (impulse with a 12-point, 3-bar wave 4 or wave 2 ⇒ never correction/high) — each with its mirror.
