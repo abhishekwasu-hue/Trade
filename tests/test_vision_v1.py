@@ -101,6 +101,7 @@ def test_drift_guard_rules():
 
 # ------------------------------------------------------------------------------------------------ gate (bot बाजू)
 def test_gate_v0_modes_enter_full_and_live_untouched(db):
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)   # जुनं V0 / algorithm वर्तन (approval बंद)
     assert gate().action == "ENTER" and gate().lots == 2                                          # notify (default)
     set_mode("veto_then_confirm")
     g = VG.entry_gate("dynamic_sr_instant", "NIFTY", "LIVE", "BULLISH", 25000.0, "SUPPORT", "5M", NOW, 25010.0, 2, 1)
@@ -182,6 +183,7 @@ def fgate(**kw):
 
 def test_forced_level_never_enters_without_fresh_approval(db, monkeypatch):
     """Review B1: forced (touch नाही) ⇒ ENTER फक्त ताज्या APPROVED वरून. Mode बदलला / exec_window गेली / दुसरा दिवस / gate चूक ⇒ HOLD."""
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)   # जुनं V0 / algorithm वर्तन (approval बंद)
     set_mode("veto_then_confirm")
     sid = gate().signal_id
     VS.update(sid, status="REJECTED", factor=0.0, decided_at=VS._iso(NOW))
@@ -202,7 +204,8 @@ def test_forced_level_never_enters_without_fresh_approval(db, monkeypatch):
     monkeypatch.setattr(VC, "load", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db locked")))
     g = fgate(level=25100.0, spot=25105.0)
     assert g.action == "HOLD" and g.status == "SKIPPED_VISION_FORCED_STALE"                      # चूक + forced ⇒ entry नाही
-    assert VG.entry_gate("dynamic_sr_instant", "NIFTY", "PAPER", "BULLISH", 25100.0, "SUPPORT", "5M", NOW, 25105.0, 2, 1).action == "ENTER"
+    # Abhi (Monday PAPER): settings वाचता आल्या नाहीत ⇒ approval गृहीत ⇒ PAPER entry नाही (आधी: algorithm चा ENTER)
+    assert VG.entry_gate("dynamic_sr_instant", "NIFTY", "PAPER", "BULLISH", 25100.0, "SUPPORT", "5M", NOW, 25105.0, 2, 1).action == "HOLD"
     assert VG.forced_levels("dynamic_sr_instant", "NIFTY", "PAPER") == []                         # कधीच raise नाही
 
 
@@ -327,6 +330,7 @@ def test_gate_drift_rejects_to_shadow(db):
 
 
 def test_gate_error_falls_back_to_algorithm(db, monkeypatch):
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)   # जुनं V0 / algorithm वर्तन (approval बंद)
     set_mode("veto_then_confirm")
     monkeypatch.setattr(VS, "find_open_decision", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db locked")))
     g = gate(lots=3, naked=2)
@@ -403,6 +407,7 @@ def test_no_approver_when_can_ask_raises(db, monkeypatch):
 
 def test_stale_queued_with_fail_skip_rejects_and_gate_error_holds(db, monkeypatch):
     """Worker बंद + fail = skip ⇒ approve_window नंतर REJECTED (shadow), entry नाही. Gate ची चूक + fail = skip ⇒ HOLD (algorithm entry नाही)."""
+    VC.save("dynamic_sr_instant", {"approval_required": False}, "t", trading_mode_fn=paper)   # जुनं V0 / algorithm वर्तन (approval बंद)
     VC.save("dynamic_sr_instant", {"vision_fail_action": "skip"}, "t", trading_mode_fn=paper)
     set_mode("veto_then_confirm")
     sid = gate().signal_id

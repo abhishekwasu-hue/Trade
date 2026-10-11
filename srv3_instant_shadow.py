@@ -193,7 +193,25 @@ def _open_paper(access_token, symbol, settings, direction, level, lot_size):
     return out or ["Credit Spread आणि Naked दोन्ही बंद / strike सापडला नाही"], spot
 
 
-def run_shadow(access_token, symbol, now=None, settings=None, lot_size=65, fetch=fetch_candles):
+BOT = "srv3_instant"                                            # vision / journal मधलं नाव (Abhi: तिन्ही bots Vision + ✅ मार्गावर)
+
+
+def _gate(symbol, direction, level, now, spot, settings, forced=False, last_bar=None, gate_fn=None):
+    """Vision gate (approval शिवाय PAPER entry नाही). gate चालला नाही ⇒ None (caller: entry नाही)."""
+    try:
+        if gate_fn is None:
+            from vision.gate import entry_gate as gate_fn
+        lots = settings["lots"] if settings.get("credit_spread_enabled", True) else 0
+        naked = settings.get("naked_lots", settings["lots"]) if settings.get("naked_enabled", True) else 0
+        role = "Support" if direction == "BULLISH" else "Resistance"
+        return gate_fn(BOT, symbol, "PAPER", direction, level, role, "5M", now, spot, lots, naked, tags={"srv3": True},
+                       last_bar=last_bar, forced=forced)
+    except Exception as exc:
+        print(f"⚠️ SR V3 vision gate त्रुटी ⇒ entry नाही: {exc}")
+        return None
+
+
+def run_shadow(access_token, symbol, now=None, settings=None, lot_size=None, fetch=fetch_candles, gate_fn=None, forced_fn=None):
     """एका symbol साठी एक cycle. setting बंद / symbol बंद / बाजाराबाहेर ⇒ None (काहीच नाही). रिटर्न: एक ओळ सारांश."""
     settings = settings if settings is not None else cloud_db.get_strategy_settings("1m_instant", symbol)
     if not settings.get("srv3_shadow_enabled", False) or not settings.get("symbol_enabled", symbol == "NIFTY"):
@@ -206,6 +224,13 @@ def run_shadow(access_token, symbol, now=None, settings=None, lot_size=65, fetch
     msg = refresh_levels_if_due(access_token, symbol, now, fetch=fetch)
     if msg:
         notes.append(msg)
+    # 🎓 Abhi (Monday PAPER): enabled / token / lot size (Upstox master) / signal_source (key `srv3_signal_source`) = engine ⇒ engine मार्ग.
+    from paper import bot_hooks as _PBH
+    _pre = _PBH.pre_cycle(BOT, access_token, symbol, dict(settings, trading_mode="PAPER"), lot_size, source=SOURCE, now=now,
+                          ss_key="srv3_signal_source")
+    if _pre.stop:
+        return "🧪 " + "; ".join(notes + [_pre.msg])
+    lot_size = _pre.lot_size
     if hm >= (NO_NEW_ENTRY_AFTER_HOUR, NO_NEW_ENTRY_AFTER_MINUTE):
         return "🧪 " + "; ".join(notes + [f"{symbol}: SR V3 shadow — 14:45 नंतर नवीन entry नाही"])
     if has_open_trade_from_source(symbol, SOURCE):
@@ -222,13 +247,40 @@ def run_shadow(access_token, symbol, now=None, settings=None, lot_size=65, fetch
     recent = today.tail(2).to_dict("records")
     closes = today["close"].tolist()
     trade_date = now.strftime("%Y-%m-%d")
-    for level in levels:
-        direction, why = evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now)
-        if direction is None:
-            if why != "touch नाही":
-                notes.append(f"{symbol} SR V3 {level:,.2f}: {why}")
+    try:                                                                # approve / reject झालेले levels touch नसला तरी पुन्हा (gate नियम)
+        if forced_fn is None:
+            from vision.gate import forced_levels as forced_fn
+        forced = forced_fn(BOT, symbol, "PAPER") or []
+    except Exception:
+        forced = []
+    todo = [(lv, None) for lv in levels] + [(float(lv), "BULLISH" if role == "Support" else "BEARISH") for lv, _tf, role in forced]
+    for level, forced_dir in todo:
+        if forced_dir is None:
+            direction, why = evaluate_touch(level, recent, closes, candles_df, settings, symbol, trade_date, now)
+            if direction is None:
+                if why != "touch नाही":
+                    notes.append(f"{symbol} SR V3 {level:,.2f}: {why}")
+                continue
+        else:
+            direction, why = forced_dir, "vision निर्णय (forced level)"
+        _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, dict(settings, trading_mode="PAPER"), now, ss_key="srv3_signal_source")
+        if not _ss_ok:                                                   # signal_source / PAPER pause — forced level ला सुद्धा
+            notes.append(f"{symbol} SR V3 {level:,.2f}: {_ss_note}")
             continue
-        results, spot = _open_paper(access_token, symbol, settings, direction, level, lot_size)
+        g = _gate(symbol, direction, level, now, closes[-1] if closes else None, settings, forced=forced_dir is not None,
+                  last_bar=recent[-1] if recent else None, gate_fn=gate_fn)
+        if g is None or g.action != "ENTER":
+            notes.append(f"{symbol} SR V3 {level:,.2f}: Vision / ✅ — {'gate नाही ⇒ entry नाही' if g is None else g.note}")
+            continue
+        _s2 = dict(settings, lots=min(settings["lots"], g.lots) if settings.get("credit_spread_enabled", True) else settings["lots"],
+                   naked_lots=min(settings.get("naked_lots", settings["lots"]), g.naked_lots) if settings.get("naked_enabled", True)
+                   else settings.get("naked_lots", settings["lots"]))
+        results, spot = _open_paper(access_token, symbol, _s2, direction, level, lot_size)
+        try:
+            from vision.gate import note_execution
+            note_execution(g.signal_id, "; ".join(results))
+        except Exception:
+            pass
         role = "Support" if direction == "BULLISH" else "Resistance"
         send_telegram_message(f"🧪 [SR V3 PAPER shadow] {symbol} {role} {level:,.2f} ({why})\n" + "\n".join(results) +
                               f"\nवेळ: {now.strftime('%H:%M:%S')} — फक्त चाचणी, खरा पैसा नाही.")

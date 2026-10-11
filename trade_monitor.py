@@ -79,7 +79,7 @@ from upstox_api import fetch_broker_positions
 SCRIPT_NAME = "trade_monitor"
 
 
-def run_monitor_cycle(access_token, product_type="D", live_prices=None, live_price_age=None, heartbeat=True):
+def run_monitor_cycle(access_token, product_type="D", live_prices=None, live_price_age=None, heartbeat=True, paper_watch=None):
     """प्रत्येक symbol साठी, manage_open_trades() मार्फत सर्व OPEN trades तपासून, आवश्यक असल्यास
     बंद करणे (SL/TSL/Target/EOD/Carry-Forward/Next-Level-Exit/OI-reversal-exit/Trailing-SL —
     सर्व एकाच, अधिकृत ठिकाणाहून). एका symbol मध्ये त्रुटी आली तरी बाकीचे symbols तपासले जातच राहतात.
@@ -135,9 +135,25 @@ def run_monitor_cycle(access_token, product_type="D", live_prices=None, live_pri
             if heartbeat and (any_symbol_succeeded or not symbols_to_check):
                 write_heartbeat(SCRIPT_NAME)  # OPEN trade नसतानाही monitor जिवंत आहे (heartbeat कायम)
 
-            return "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
+            out = "\n".join(results) if results else "कुठलेही OPEN trades नाहीत / काहीच OPEN नाही."
     except ProcessLockHeld:
+        if heartbeat if paper_watch is None else paper_watch:              # stream monitor lock धरून असला तरी watcher (स्वतःचा lock + throttle) चालतो
+            run_paper_watch(access_token)
         return "⏭️ दुसरी exit-monitor invocation (हीच script किंवा engine_service.py) अजून चालू आहे — डुप्लिकेट-एक्झिट टाळण्यासाठी वगळलं."
+    # PAPER watcher फक्त cron loop मधून (heartbeat=True). Stream monitor (position_stream_monitor, heartbeat=False) च्या hot loop मधून कधीच
+    # नाही — तिथे प्रत्येक tick ला LTP / Telegram network call ⇒ पुढचा SL / target check अडेल (Abhi review #1).
+    if heartbeat if paper_watch is None else paper_watch:
+        run_paper_watch(access_token)
+    return out
+
+
+def run_paper_watch(access_token):
+    """🎓 Abhi (Monday PAPER): PAPER updates + journal + ✋ manual spot SL / T — exit-monitor lock **सुटल्यानंतर** (paper/watch.py: run_locked)."""
+    try:
+        from paper import watch as _paper_watch
+        _paper_watch.run_locked(access_token)
+    except Exception as exc:
+        print(f"⚠️ paper watch (exits वर परिणाम नाही): {exc}")
 
 
 def run_monitor_loop(token, product_type="D", interval_seconds=15, loop_seconds=62, tsl_interval_seconds=5,

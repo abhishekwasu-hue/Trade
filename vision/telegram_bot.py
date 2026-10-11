@@ -8,7 +8,11 @@
   • Service सुरू होताना उघडे PENDING_HUMAN ⇒ EXPIRED (restart नंतर जुना approve चालत नाही).
   • Token / secret कधीच print नाहीत. फक्त PAPER bots (LIVE ला vision off). Exits ला यातलं काहीच लागत नाही.
 Review replies (फक्त approver): K-10 / gallery संदेशाला "✔" / "✘ कारण" / "सुटलेला trade HH:MM bear" ⇒ backtest_review (backtest_review/telegram.py).
-Commands (फक्त approver): /pending · /today · /vision <off|shadow|notify|auto_veto|confirm|veto_then_confirm> <bot>
+Commands (फक्त approver): /pending · /today · /vision <off|shadow|notify|auto_veto|confirm|veto_then_confirm> <bot> ·
+/status · /positions · /pause · /resume (paper/commands.py; pause फक्त नवे entries — exits नेहमी चालू) ·
+/paper <instrument> <bullput|bearcall> [short/hedge] SL <spot> [T <spot>] (✋ manual — paper/manual.py; Vision ⇒ ✅ / ❌ ⇒ PAPER) · /help
+✋ manual signal ला ✅ ⇒ लगेच entry प्रयत्न (paper.manual.execute_ready; gate चं APPROVED → EXECUTED conditional ⇒ एकदाच); प्रत्येक poll नंतर sweep
+(timeout / नाकार / मुदत ⇒ manual बंद).
 """
 import argparse
 import sys
@@ -39,7 +43,16 @@ def _authorized(upd_from, chat):
     return bool(ids) and str((upd_from or {}).get("id")) in ids and str((chat or {}).get("id")) in ids
 
 
-def handle_callback(cq, path=None, now=None, answer=None, edit=None):
+def _manual_sweep(path=None, only_signal=None, send=None):
+    try:
+        from paper import manual as PM
+        return PM.execute_ready(send=send or TG.send_text, vpath=path, only_signal=only_signal)
+    except Exception as exc:
+        print(f"⚠️ manual sweep: {type(exc).__name__}: {exc}")
+        return []
+
+
+def handle_callback(cq, path=None, now=None, answer=None, edit=None, execute_send=None):
     """रिटर्न (ok, संदेश). answer / edit injectable (tests)."""
     answer = answer or TG.answer_callback
     edit = edit or TG.edit_any
@@ -78,6 +91,8 @@ def handle_callback(cq, path=None, now=None, answer=None, edit=None):
         return False, "race"
     answer(cq.get("id"), text)
     edit(row.get("tg_message_id"), f"{text} · {row['symbol']} {row['direction']} L{float(row['level'] or 0):,.0f}")
+    if row.get("bot") == "manual":                                       # ✋ /paper: bot cycle नाही ⇒ इथेच (✅ ⇒ entry, ❌ ⇒ बंद)
+        _manual_sweep(path, only_signal=sid, send=execute_send)
     return True, text
 
 
@@ -115,6 +130,24 @@ def handle_command(text, from_, chat, path=None, send=None, trading_mode_fn=None
             return False, str(exc)
         send(f"✅ {bot}: vision_mode = {mode}")
         return True, mode
+    if cmd == "/help":
+        from paper import manual as PM
+        send(PM.HELP)
+        return True, "help"
+    if cmd == "/paper":                                                  # ✋ Abhi (Monday PAPER) — paper/manual.py
+        from paper import manual as PM
+        try:
+            return PM.handle(text, f"telegram:{(from_ or {}).get('id')}", send, vpath=path)
+        except Exception as exc:
+            send(f"❌ /paper: {type(exc).__name__}: {exc}")
+            return False, str(exc)
+    if cmd in ("/status", "/positions", "/pause", "/resume"):          # Abhi (Monday PAPER) — paper/commands.py
+        from paper import commands as PCMD
+        try:
+            return PCMD.handle(cmd, f"telegram:{(from_ or {}).get('id')}", send)
+        except Exception as exc:
+            send(f"❌ {cmd}: {type(exc).__name__}: {exc}")
+            return False, str(exc)
     return False, "unknown"
 
 
@@ -135,6 +168,7 @@ def poll_once(offset, path=None, timeout=50):
         except Exception as exc:                                         # एका update ची चूक service थांबवत नाही
             print(f"⚠️ update {u.get('update_id')}: {type(exc).__name__}: {exc}")
         VS.kv_set("tg_offset", offset, path)
+    _manual_sweep(path)                                                  # ✋ manual: ✅ नंतरचा entry / timeout / नाकार (idempotent)
     return offset
 
 

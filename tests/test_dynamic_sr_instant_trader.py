@@ -609,7 +609,8 @@ class TestProcessSymbol:
              patch.object(dsr, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(dsr, "send_telegram_message", return_value=True), \
              patch.object(dsr.cloud_db, "save_signal_log", return_value=True), \
-             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)):
+             patch.object(dsr.cloud_db, "get_zone_hits_today", return_value=(0, None, None)), \
+             patch("paper.config.enabled", return_value=True):     # config.yaml paper: BANKNIFTY enabled false (Monday NIFTY only) — strike-step तपासणीसाठी चालू
             dsr.process_symbol("fake_token", "BANKNIFTY")
             assert mock_select.called
             # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती

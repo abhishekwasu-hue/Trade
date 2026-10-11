@@ -1246,9 +1246,26 @@ def render():
         else:
             st.success(f"📋 **सारांश** — 'Settings जतन करा' दाबल्यावर: {STRATEGY_LABELS[strategy_key]} ({symbol}) 📝 **PAPER** — {broker_summary}, फक्त सिम्युलेशन (सुरक्षित).")
 
+    signal_source = settings.get("signal_source", "own")
+    srv3_signal_source = settings.get("srv3_signal_source", "own")
+    if strategy_key in ("1m_instant", "15m_dynamic_sr"):
+        # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
+        # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
+        with st.expander("🧭 Signal source (own / engine / both)", expanded=False):
+            _ss = ("own", "engine", "both")
+            signal_source = st.selectbox("Signal source", _ss, index=_ss.index(signal_source) if signal_source in _ss else 0,
+                                         key=_widget_key(strategy_key, symbol, "signal_source"),
+                                         help="own = bot चा स्वतःचा signal · engine = फक्त engine (decision2) चा setup · both = दोन्ही एकाच दिशेला तरच")
+            if strategy_key == "1m_instant":
+                srv3_signal_source = st.selectbox("SR V3 PAPER चा signal source", _ss,
+                                                  index=_ss.index(srv3_signal_source) if srv3_signal_source in _ss else 0,
+                                                  key=_widget_key(strategy_key, symbol, "srv3_signal_source"))
+            st.caption("Engine signal फक्त PAPER साठी. `engine` / `both` साठी VPS वर engine service (scripts/engine_signal_run.py) चालू हवा.")
+
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
         new_settings = {
+            "signal_source": str(signal_source),
             "symbol_enabled": bool(symbol_enabled),
             "lots": int(lots), "itm_depth_points": float(itm_depth_points), "hedge_width_points": float(hedge_width_points),
             "credit_spread_enabled": bool(credit_spread_enabled),
@@ -1319,6 +1336,7 @@ def render():
             new_settings["otm_shadow_enabled"] = bool(otm_shadow_enabled)
             new_settings["otm_shadow_strikes_count"] = int(otm_shadow_strikes_count)
             new_settings["srv3_shadow_enabled"] = bool(srv3_shadow_enabled)
+            new_settings["srv3_signal_source"] = str(srv3_signal_source)
         elif strategy_key == "classic_sr_reversal":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_neutral_level"] = int(rsi_neutral_level)

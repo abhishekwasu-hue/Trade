@@ -563,7 +563,7 @@ def open_15m_position_exists(symbol, trading_mode):
     )
 
 
-def process_symbol(access_token, symbol, lot_size=65):
+def process_symbol(access_token, symbol, lot_size=None):
     """एका symbol साठी — 1M+5M levels एकत्र, RSI-फिल्टर, Multi-Hit/Cooldown, Expiry-Day Logic, आणि
     आढळल्यास Credit-Spread (ITM) + (सक्रिय असल्यास) समांतर Naked Option PAPER trade."""
     settings = cloud_db.get_strategy_settings("1m_instant", symbol)
@@ -572,6 +572,13 @@ def process_symbol(access_token, symbol, lot_size=65):
     # symbol वर इथेच थांबतो, पुढचं काहीही (zones/candles fetch, trade) होत नाही.
     if not settings.get("symbol_enabled", symbol == "NIFTY"):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा)"
+    # 🎓 Abhi (Monday PAPER): PAPER instrument enabled (config.yaml), token, lot size (Upstox instrument master; config फक्त fallback —
+    # आधीचा hardcoded 65 नाही), signal_source = engine ⇒ engine मार्ग (paper/engine_entry.py). LIVE ⇒ जुनं वर्तन.
+    from paper import bot_hooks as _PBH
+    _pre = _PBH.pre_cycle("dynamic_sr_instant", access_token, symbol, settings, lot_size, source="dynamic_sr_instant")
+    if _pre.stop:
+        return _pre.msg
+    lot_size = _pre.lot_size
     lots = settings["lots"]
     # 🎓 वापरकर्त्याने मागितलेली सुधारणा — Naked Option Trade आधी नेहमी Credit Spread च्याच lots
     # (वेगळं सेटिंगच नव्हतं) घ्यायचा — आता स्वतंत्र, Bot Dynamic SR Algo पानावरून बदलण्याजोगं.
@@ -1131,6 +1138,14 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
+        # 🎓 Abhi (Monday PAPER) signal_source: own ⇒ हाच signal; both ⇒ engine चा ताजा setup याच दिशेला हवा; engine ⇒ नाही (engine मार्ग
+        # pre_cycle मध्ये); PAPER pause ⇒ नाही.
+        _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, settings, now)
+        if not _ss_ok:
+            log_entry["trade_status"] = "SKIPPED_SIGNAL_SOURCE"
+            log_entry["reason"] = _ss_note
+            cloud_db.save_signal_log(log_entry)
+            continue
         # 🎓 Vision gate (`vision/gate.py`, फक्त PAPER; LIVE ⇒ नेहमी ENTER): V0 (shadow / notify) ⇒ फक्त नोंद, ENTER. V1 ⇒ HOLD (vision /
         # तुमचा निर्णय बाकी — SKIPPED_VISION_PENDING, hit मोजणीत नाही), ENTER (≤ मूळ lots — reduce-only) किंवा SHADOW (नाकारलेला ⇒ PAPER
         # shadow trade, खाली). Gate कधीच raise करत नाही; चूक ⇒ ENTER पूर्ण size. Exits ला हात नाही.
@@ -1148,6 +1163,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         if _vg is None and _vision_forced_hit:                             # touch नव्हता आणि gate चालला नाही ⇒ entry नाही
             log_entry["trade_status"] = "SKIPPED_VISION_FORCED_STALE"
             log_entry["reason"] = "Vision: forced level, gate उपलब्ध नाही ⇒ entry नाही"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is None and str(settings.get("trading_mode", "PAPER")).upper() == "PAPER":   # Abhi: approval शिवाय PAPER entry नाही
+            log_entry["trade_status"] = "SKIPPED_VISION_ERROR"
+            log_entry["reason"] = "Vision gate उपलब्ध नाही ⇒ ✅ approval नाही ⇒ PAPER entry नाही"
             cloud_db.save_signal_log(log_entry)
             continue
         if _vg is not None and _vg.action == "HOLD":
@@ -1503,6 +1523,11 @@ if __name__ == "__main__":
             token = cloud_db.get_effective_upstox_token(args.token)
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                try:
+                    from paper.bot_hooks import token_error
+                    token_error("NIFTY", "5-Min Instant")                   # Abhi: स्पष्ट error, Telegram दिवसातून एकदा
+                except Exception:
+                    pass
                 exit(1)
             any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
             if any_symbol_succeeded:

@@ -330,7 +330,8 @@ class TestProcessSymbol:
              patch.object(srv2, "check_pcr_gate", return_value=(True, 0.95, "PCR गेट पास")), \
              patch.object(srv2, "open_multi_leg_trade", return_value=({"trade_id": "T1"}, "OPENED")), \
              patch.object(srv2, "send_telegram_message", return_value=True), \
-             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True):
+             patch.object(srv2.cloud_db, "save_srv2_state", return_value=True), \
+             patch("paper.config.enabled", return_value=True):     # config.yaml paper: BANKNIFTY enabled false (Monday NIFTY only) — strike-step तपासणीसाठी चालू
             srv2.process_symbol("fake_token", "BANKNIFTY")
             assert mock_select.called
             # round(51930/100)*100 = 51900 -- जुनी बग round(51930/50)*50 = 51950 देत होती

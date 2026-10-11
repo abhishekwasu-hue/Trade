@@ -140,6 +140,16 @@ def render_settings():
                 st.success(f"visual audit: {', '.join(vas) or '— (बंद)'}")
             except ValueError as exc:
                 st.error(str(exc))
+        m1, m2 = st.columns([6, 2])                                     # ✋ Telegram /paper (strikes न दिल्यास) कोणत्या bot चे settings
+        mp = m1.selectbox("✋ manual_profile — /paper (strikes न दिल्यास) strikes / spread width / lots या bot च्या settings ने",
+                          list(VC.MANUAL_PROFILES), index=list(VC.MANUAL_PROFILES).index(g.get("manual_profile") or "srv3_instant"),
+                          format_func=lambda b: VC.BOTS.get(b, (b,))[0], key="v_manual_profile")
+        if m2.button("Profile Save", key="v_manual_profile_save"):
+            try:
+                VC.save("_global", {"manual_profile": mp}, "dashboard")
+                st.success(f"manual_profile = {mp}")
+            except ValueError as exc:
+                st.error(str(exc))
         hist = VC.history()
         if hist:
             st.dataframe(pd.DataFrame(hist)[["ts", "bot", "by", "new_json"]].tail(20), use_container_width=True, hide_index=True)

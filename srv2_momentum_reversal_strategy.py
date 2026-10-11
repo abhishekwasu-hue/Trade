@@ -198,7 +198,7 @@ def _yield_open_5m_positions(access_token, symbol, trading_mode):
     return all_closed, closed_ids
 
 
-def process_symbol(access_token, symbol, lot_size=65):
+def process_symbol(access_token, symbol, lot_size=None):
     """एका symbol साठी — 15M/30M/60M levels एकत्र, RSI-फिल्टर, Multi-Hit/Cooldown, Expiry-Day
     Logic, आणि आढळल्यास PAPER trade (settings-चालित lots/hedge_width_points सह)."""
     settings = cloud_db.get_strategy_settings("15m_dynamic_sr", symbol)
@@ -207,6 +207,12 @@ def process_symbol(access_token, symbol, lot_size=65):
     # symbol वर इथेच थांबतो, पुढचं काहीही (cooldown/state check, candles fetch, trade) होत नाही.
     if not settings.get("symbol_enabled", symbol == "NIFTY"):
         return f"{symbol}: बंद आहे (symbol_enabled=False, Bot Dynamic SR Algo सेटिंग्जमधून सक्रिय करा)"
+    # 🎓 Abhi (Monday PAPER): enabled / token / lot size (Upstox master) / signal_source = engine — dynamic_sr_instant_trader.py प्रमाणेच.
+    from paper import bot_hooks as _PBH
+    _pre = _PBH.pre_cycle("srv2_momentum_reversal", access_token, symbol, settings, lot_size, source="srv2_momentum_reversal")
+    if _pre.stop:
+        return _pre.msg
+    lot_size = _pre.lot_size
 
     now = get_ist_now()
     state = cloud_db.get_srv2_state(symbol)
@@ -393,6 +399,12 @@ def process_symbol(access_token, symbol, lot_size=65):
             continue
 
         # --- सर्व अटी पूर्ण! Entry ---
+        _ss_ok, _ss_note = _PBH.own_signal_ok(symbol, direction, settings, now)      # Abhi: signal_source own / both
+        if not _ss_ok:
+            log_entry["trade_status"] = "SKIPPED_SIGNAL_SOURCE"
+            log_entry["reason"] = f"{_ss_note} ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
         # 🎓 Vision gate (`vision/gate.py`; dynamic_sr_instant_trader.py प्रमाणेच): HOLD / ENTER (≤ मूळ lots) / SHADOW. LIVE ⇒ ENTER.
         _vg = None
         try:
@@ -407,6 +419,11 @@ def process_symbol(access_token, symbol, lot_size=65):
         if _vg is None and _vision_forced_hit:                             # touch नव्हता आणि gate चालला नाही ⇒ entry नाही
             log_entry["trade_status"] = "SKIPPED_VISION_FORCED_STALE"
             log_entry["reason"] = f"Vision: forced level, gate उपलब्ध नाही ⇒ entry नाही ({timeframe_suffix})"
+            cloud_db.save_signal_log(log_entry)
+            continue
+        if _vg is None and str(settings.get("trading_mode", "PAPER")).upper() == "PAPER":   # Abhi: approval शिवाय PAPER entry नाही
+            log_entry["trade_status"] = "SKIPPED_VISION_ERROR"
+            log_entry["reason"] = f"Vision gate उपलब्ध नाही ⇒ ✅ approval नाही ⇒ PAPER entry नाही ({timeframe_suffix})"
             cloud_db.save_signal_log(log_entry)
             continue
         if _vg is not None and _vg.action == "HOLD":
@@ -668,6 +685,11 @@ if __name__ == "__main__":
             token = cloud_db.get_effective_upstox_token(args.token)
             if not token:
                 print("❌ कुठलाही Upstox token उपलब्ध नाही (--token दिलेला नाही, आणि Supabase मध्येही साठवलेला नाही).")
+                try:
+                    from paper.bot_hooks import token_error
+                    token_error("NIFTY", "15M Dynamic SR")                  # Abhi: स्पष्ट error, Telegram दिवसातून एकदा
+                except Exception:
+                    pass
                 exit(1)
             any_symbol_succeeded = run_all_symbols(token, args.symbols.split(","))
             if any_symbol_succeeded:
