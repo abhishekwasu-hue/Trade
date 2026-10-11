@@ -1905,4 +1905,8 @@ zones. 🟡 (b)/(c) zones रचनेने K टोकाच्या आत �
 `Pullbacks.legs` सारखं I_end नंतरचं (`p.bar > i_end_bar`), K उघडण्याआधी confirm झालेलं पहिल्या पायाचं टोक सुद्धा. Before / after पुन्हा (तोच NIFTY
 slice): decision / conviction / SL / R:R बदल 0; failed_breakout bars 31 ⇒ 20 (खोटे गेले). Tests 11 (नवे: pool-cross ⇒ sweep नाही, K-आधीचा zone SL
 ला नाही, sl_edge k0). decision3 + level bots 267 pass / 1 xfail.
-**पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं.
+**§7.7 tests (liquidity pools, वर्तन बदल नाही):** `tests/test_decision3_liquidity_pools.py` (6) — equal highs / lows σ-अपूर्णांकात ⇒ EQ pool (आरसा),
+swing pools फक्त confirmed (confirm_bar ≤ t), PDH / PDL फक्त आधीच्या दिवसाचे (पहिला दिवस ⇒ नाही; आजचा high नाही), PWH / PWL फक्त आधीच्या आठवड्याचे,
+`pool_marks` (trade-बाजू, show_distance_sigma, duplicate ⇒ PDH प्राधान्य, per_side, आरसा), truncation.
+**पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं; `counter_traps` level-निरपेक्ष ⇒
+प्रति (t, d) एकदाच मोजणं (perf, reviewer ⚪).
