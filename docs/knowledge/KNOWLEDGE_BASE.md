@@ -959,7 +959,7 @@
 | **G6** | Trend मधला साधा pullback demand वर | HH/HL स्पष्ट. Pullback संथ, overlapping, कमी volume. Displacement च्या आधीच्या base वर. | Hammer / engulfing बंद झाल्यावर | Base पलीकडे | K1, K2, K4, K9 |
 
 | **G7** | Exhaustion gap reversal (major zone मध्ये gap) | (1) Trend stretched: शेवटचा leg ATR च्या पटीत लांब, legs लहान होत जाणं / divergence / Elliott 5 किंवा C च्या शेवटाची शक्यता; (2) trend दिशेने मोठा gap (G5 / E) थेट **major HTF zone** मध्ये (D2/D3 demand / supply, न तुटलेला); (3) पहिल्या 2–6 bars मध्ये **rejection**: gap extension अपयशी, zone मध्ये लांब wick, close परत open च्या पलीकडे / gap edge reclaim, futures volume climax पण प्रगती नाही (absorption) | Rejection नंतरचा **पहिला pullback** (higher low / lower high) zone वर टिकल्यावर reversal candle. Opening window मध्ये आणि पहिल्या रिकव्हरी candle वर entry नाही. | Gap दिवसाचं टोक (zone च्या पलीकडे) + buffer. Target: PDC / gap fill (Bulkowski: exhaustion gaps 60–66% आठवड्यात भरतात). | K13, K4, K5, K10, K12, K3 |
-| **G8** | Motive wave मधला उथळ pullback: wave 3 मध्ये (ii) / (iv) of 3 | Wave 2 संपून wave 3 सुरू, मजबूत displacement. आतले pullbacks **उथळ** (23.6–38.2%), जलद (2–6 candles, flag / छोटा ABC), wave 1 च्या टोकावरचा flip किंवा wave 3 मधला base area. Momentum मजबूत. | उथळ pullback च्या शेवटी commitment candle (impulse दिशेने) | Sub-wave (i) ची सुरुवात / pullback चं टोक (R1, lower degree) | K3 (S2, S4), K4, K11 (flag) |
+| **G8** | Motive wave मधला उथळ pullback: wave 3 मध्ये (ii) / (iv) of 3 | Wave 2 संपून wave 3 सुरू, मजबूत displacement. आतले pullbacks **उथळ** (23.6–38.2%), जलद (2–6 candles; Abhi #284 ⇒ 2–11, flag / छोटा ABC), wave 1 च्या टोकावरचा flip किंवा wave 3 मधला base area. Momentum मजबूत. | उथळ pullback च्या शेवटी commitment candle (impulse दिशेने) | Sub-wave (i) ची सुरुवात / pullback चं टोक (R1, lower degree) | K3 (S2, S4), K4, K11 (flag) |
 | **G9** | Wave 4 चा शेवट ⇒ wave 5 | Wave 3 नंतर बाजूला किंवा उथळ correction (flat / triangle / zigzag), wave 1 च्या भागात शिरत नाही (R3). Alternation: wave 2 धारदार असेल तर 4 बाजूला. | Wave 4 end वर commitment candle | Wave 1 चं टोक (overlap = count चुकला) | K3 (S3, S9) |
 
 
@@ -1155,7 +1155,7 @@
 | **S2** | खोल pullback | 61.8–80% (valid) किंवा 80–100% (कमकुवत); रचना corrective | S3, S4 | G1, G2 | Area + sweep / spring |
 | **S3** | जोरदार counter-move | Impulse चा शेवटचा confirmed 1H HL / LH breaks.py real break ने तुटला; origin real-broken नाही | S2 | नव्या trend चा पहिला correction | Gray-1; reaction ची वाट |
 | **S4** | Testing | Correct होणाऱ्या impulse च्या origin चा **real break** (breaks.py). हा origin बहुधा पालकाचा protected level असतो. | S7 | G4 | Flip retest, break दिशेने [Abhi] |
-| **S5** | मजबूत trend मधला उथळ flag | Trade degree वर wave 3 / C; उथळ, अरुंद; G8 ची रचना (2–6 candles, flag / छोटा ABC) | S8 | G8 | Flag कड / तुटलेला swing |
+| **S5** | मजबूत trend मधला उथळ flag | Trade degree वर wave 3 / C; उथळ, अरुंद; G8 ची रचना (2–6 candles; Abhi #284 ⇒ 2–11, flag / छोटा ABC) | S8 | G8 | Flag कड / तुटलेला swing |
 | **S6** | बाजूचा correction | स्पष्ट impulse नंतर, वेळखाऊ, overlapping | S9 | G3, G9 | E-end / C-end फक्त |
 | **S7** | Expanded flat / spring | B नवा extreme; C, A चं टोक sweep करून परत | S4 | G2 | Sweep + reclaim नंतर |
 | **S8** | Trend थकतोय | Trade degree वर with-trend legs लहान, pullbacks मोठे, divergence | S5 | G9 (सावध) | कमी विश्वास; fade नाही |
@@ -1271,7 +1271,7 @@
   - आधीचे with-trend legs लहान होत नाहीत;
   - divergence नाही.
 - **फक्त दिसणारी flag रचना चालते:**
-  - रचना Abhi ने मंजूर केलेल्या G8 प्रमाणे: "जलद (2–6 candles, flag / छोटा ABC)" [KB H, Abhi].
+  - रचना Abhi ने मंजूर केलेल्या G8 प्रमाणे: "जलद (2–6 candles; Abhi #284 ⇒ 2–11, flag / छोटा ABC)" [KB H, Abhi].
   - त्यापेक्षा लहान pause (1 candle) म्हणजे setup नाही (S12 "आजपर्यंत pullback नाही").
   - Structure notes चा "4–20 bars" हा संशोधकाचा code-साठीचा प्रस्ताव आहे [research-अनुमान]. तो G8 शी जुळत नाही, म्हणून वापरायचा नाही.
 - **Area:**
@@ -1463,7 +1463,7 @@ Real break साठी एकच व्याख्या: breaks.py (KB G). �
 | 25 Aug 10:45 | S3, reaction चालू (त्या वेळी "B" हे माहीत नव्हतं) | Gray-1 (reaction उघडा) | Buy नाही | ✔ नाही |
 | 26 Aug | S3, reaction corrective; 24,380–24,420 flip ओलांडली नाही; खाली commitment | Gray-1 संपला (P3 पहिली ओळ) ⇒ (2) नव्या खालच्या sequence मध्ये ⇒ पालक खाली. Gray-2: तीन legs, C (24,380–24,420) A (24,330) च्या पलीकडे ⇒ ठरवता येतं. Alternate (B-end) सुद्धा खाली ⇒ grade वाढ. | Bear call; target दोघांपैकी जवळचा; R:R ≥ 3 dashboard वर | ✔ bear |
 | 22 Sep | S6: wave (4) end ~23,500 | पालक: (4) खालच्या (1)–(5) मध्ये ⇒ खाली. Gray-2: (4) ची legs पूर्ण (flat / zigzag) आणि commitment ⇒ ठरवता येतं (Trade session ने bars वर तपासायचं) | G9 bear call; wave 5 truncation सावधानता | ✔ bear |
-| 28 Sep | Flag 11 candles ⇒ G8 नाही ⇒ **S1** (Abhi, 2026-10-08: G8 ची व्याख्या बदलायची नाही). मोठ्या degree चा wave (5) = P1 आजोबा पुरावा | पालक खाली | S1 bear: area = तुटलेला swing 23,021 / displacement base 22,856–22,912, + commitment; आजोबा wave 5 फक्त नोंद | ✔ bear |
+| 28 Sep | Flag 11 candles ⇒ G8 नाही ⇒ **S1** (Abhi, 2026-10-08: G8 ची व्याख्या बदलायची नाही). **नंतर बदल (Abhi, #284): 11-candle flag सुद्धा G8 ⇒ `g8_max_bars` 11.** मोठ्या degree चा wave (5) = P1 आजोबा पुरावा | पालक खाली | S1 bear: area = तुटलेला swing 23,021 / displacement base 22,856–22,912, + commitment; आजोबा wave 5 फक्त नोंद | ✔ bear |
 | 31 Aug | Wave (3) चालू (26 Aug नंतर) ⇒ S1 / S5 | — | Commitment कमकुवत आणि R:R 1:1.1 < 3 ⇒ A3 ⇒ नाही | ✔ नाही |
 | 7 Oct 09:30 | S10-B: trend दिशेचा gap, pullback नाही | — | नाही (chase) | ✔ नाही |
 | 7 Oct 12:15 | S10-B → S1: gap fill rally, C-diagonal trendline + seller zone वर | पालक (1H) खाली: protected H 22,809 (code चं वाचन 7 Oct review मध्ये ✔) | G5 bear call | ✔ bear — पक्का (Abhi 2026-10-09, run2 review: 12:15 = C-end). Code चं "B च्या आत (S11)" = वाचनाचा दोष (count score tie) ⇒ I6 |

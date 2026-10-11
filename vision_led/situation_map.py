@@ -12,7 +12,7 @@ Situations: S1 normal 3-wave overlapping pullback -> trade C-end at area. S2 dee
 S3 strong counter-move that REAL-breaks the last confirmed 1H LH/HL inside the impulse (origin intact) -> GRAY-1, wait for the reaction:
 corrective reaction that does not reclaim the broken area then commitment in the counter-move direction = new trend (trade the reaction
 end); impulsive reaction that real-breaks the counter-move start = old trend. S4 real break of the impulse origin (testing) -> only the
-flip retest in the break direction; MAGNET (closes chopping around the level) = no setup. S5 shallow 2-6 candle flag in a strong trend
+flip retest in the break direction; MAGNET (closes chopping around the level) = no setup. S5 shallow 2-11 candle flag in a strong trend
 (G8) -> flag edge / broken swing / displacement base; 1 candle is not a flag. S6 sideways triangle/flat -> only E-end/C-end, never
 inside B/D/X. S7 expanded flat / spring: sweep beyond A then reclaim -> enter after the reclaim close. S8 trend tiring (smaller
 with-trend legs, bigger pullbacks, divergence) -> lower confidence, no fade. S9 range (trade degree RANGE) -> G10 at the edges only

@@ -271,9 +271,9 @@ def test_g10_edges_range_only_and_parent_trend_side(monkeypatch):
     assert EN.g10(fr, [], {"trend": 0}, 1.0, None, None, ss)["signal"] is None and not seen
 
 
-def test_g8_flag_is_2_to_6_candles():
+def test_g8_flag_is_2_to_11_candles():
     s = SS.engine_settings()
-    assert s["flag_min_bars"] == 2 and s["g8_max_bars"] == 6
+    assert s["flag_min_bars"] == 2 and s["g8_max_bars"] == 11                     # Abhi #284: 11-candle flag सुद्धा G8
 
 
 def test_wave_refs_from_preferred_count_only_for_g1_g9():

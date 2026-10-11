@@ -16,7 +16,7 @@ Detector फक्त **बंद bars** (bar j पर्यंत) वर — n
   G7 exhaustion gap     trend दिशेने मोठा gap (≥ G7_GAP_MR × MR), पहिल्या 6 bars मध्ये gap दिशेचं टोक आणि नंतर close day open च्या पलीकडे
                         परत (rejection / reclaim), मग पहिल्या pullback वर उलट reversal candle (opening window नंतर). Major HTF zone तपासणी
                         evaluate / Abhi च्या डोळ्यावर (सैल detector).
-  G8 (ii)/(iv) of 3     simple_core.waves: wave 3 मधला उथळ (≤ 38.2% + tol), जलद (≤ 6 bars) pullback, wave 1 overlap नाही + reversal candle.
+  G8 (ii)/(iv) of 3     simple_core.waves: wave 3 मधला उथळ (≤ 38.2% + tol), जलद (≤ g8_max_bars, Abhi #284: 11) pullback, wave 1 overlap नाही + reversal candle.
   G9 wave 4 end         simple_core.waves: wave 3 ≥ wave 1, pullback wave 1 च्या भागात नाही (R3) + reversal candle (Tier C).
 Ranking (प्रति G): code grade total + confluence (evaluate) — hindsight नाही. वेगवेगळी वर्षं, दोन्ही बाजू, एका आठवड्यात एकच.
 """
