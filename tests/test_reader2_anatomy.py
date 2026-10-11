@@ -1,4 +1,5 @@
-"""reader2 CR1 — anatomy vote from the candles inside a leg (spec §2b / §7), in median-range units; mirror (UP / DOWN) pairs."""
+"""reader2 CR1 — anatomy vote (spec §2b / §2d / §7): candles read only at the lowest degree, higher-degree legs rolled up from their
+sub-legs one degree lower; median-range units; mirror (UP / DOWN) pairs."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -27,6 +28,13 @@ def _counter_leg(R, mirror):
     return next(lg for lg in _legs(R) if lg.dirn == d)
 
 
+def _candle_votes(v):
+    """All lowest-degree (candle) votes under a rolled-up vote."""
+    if v.get("level") == "candles":
+        return [v]
+    return [c for x in v.get("subs", []) for c in _candle_votes(x["vote"])]
+
+
 # --------------------------------------------------------------------------------------------------------------- feature scores
 def test_feature_score_maps_linearly_and_respects_sides():
     assert RA.feature_score(0.55, 0.35, 0.55, "both") == pytest.approx(1.0)
@@ -48,9 +56,29 @@ def test_clean_impulse_reads_impulsive(dn, mirror):
     assert lg.anatomy["cls"] == "impulsive" and lg.anatomy["score"] >= RS.DEFAULTS["a_hi"]
     assert lg.structure["family"] == "impulse"
     assert (lg.label, lg.confidence) == ("impulse", "high")
-    feats = {e["feature"] for e in lg.anatomy["evidence"]}
-    assert set(RS.FEATURES) <= feats, "every anatomy feature is listed in the evidence (NA ones too)"
+    assert lg.anatomy["level"] == "rollup", "a degree-2 leg is read from its sub-legs, not from all its candles"
+    ev = {e["feature"]: e for e in lg.anatomy["evidence"]}
+    assert ev["sub:motive"]["lean"] == "impulsive" and ev["sub:counter"]["lean"] == "impulsive"   # counter sub-legs corrective
+    motive = [x for x in lg.anatomy["subs"] if x["dirn"] == lg.dirn]
+    assert len(motive) == 3 and all(x["vote"]["cls"] == "impulsive" for x in motive)
+    leaves = _candle_votes(lg.anatomy)
+    assert leaves and all(set(RS.FEATURES) <= {e["feature"] for e in v["evidence"]} for v in leaves if v["score"] is not None), \
+        "every candle feature is listed in the lowest-degree evidence (NA ones too)"
     assert all(e["text"] for e in lg.anatomy["evidence"])
+
+
+@pytest.mark.parametrize("seed", (1, 2, 3))
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_rollup_is_not_diluted_by_waves_2_and_4(dn, mirror, seed):
+    """Realistic impulse: the average of all its candles (waves 2 / 4 included) reads neutral; the roll-up of its sub-legs reads
+    impulsive (spec §2d: candles only at the lowest degree)."""
+    df, _ = F.realistic(F.IMPULSE + F.OVERLAP_ABC[:1], mirror, seed=seed)
+    R = RR.read(df)
+    lg = _trend_leg(R, mirror)
+    flat = RA.vote(R.ch, lg.i0, lg.i1, lg.dirn)
+    assert flat["cls"] == "neutral"
+    assert lg.anatomy["level"] == "rollup" and lg.anatomy["cls"] == "impulsive"
+    assert (lg.label, lg.confidence) == ("impulse", "high")
 
 
 @pytest.mark.parametrize("dn,mirror", DIRS)
@@ -61,7 +89,10 @@ def test_overlapping_correction_reads_corrective(dn, mirror):
     assert lg.anatomy["cls"] == "corrective" and lg.anatomy["score"] <= RS.DEFAULTS["a_lo"]
     assert (lg.label, lg.confidence) == ("correction", "high")
     ev = {e["feature"]: e for e in lg.anatomy["evidence"]}
-    assert ev["overlap"]["lean"] == "corrective" and ev["wick_both"]["lean"] == "corrective"
+    assert ev["sub:motive"]["lean"] == "corrective", "waves a and c are overlapping"
+    leaf = _candle_votes(lg.anatomy)[0]
+    lev = {e["feature"]: e for e in leaf["evidence"]}
+    assert lev["overlap"]["lean"] == "corrective" and lev["wick_both"]["lean"] == "corrective"
 
 
 def _misplaced(R, mirror):
@@ -82,9 +113,9 @@ def test_misplaced_pivots_are_caught_by_the_anatomy_vote(dn, mirror):
     lg = _trend_leg(R, mirror)
     assert lg.structure["family"] == "zigzag", "precondition: the mis-placed pivots read as a correction"
     assert lg.anatomy["cls"] == "impulsive"
-    assert lg.label == "impulse", lg.reason
-    assert "conflicted with anatomy" in lg.reason and "re-read" in lg.reason
-    assert lg.structure["reread"]["family"] == "impulse"
+    assert lg.label == "impulse" and lg.confidence == "medium", lg.reason
+    assert "re-read with alternative pivots one degree lower" in lg.reason
+    assert lg.reread["structure"]["family"] == "impulse"
 
 
 @pytest.mark.parametrize("dn,mirror", DIRS)
@@ -109,7 +140,9 @@ def test_big_c_correction_stays_a_correction(dn, mirror):
     else:
         assert lo[c_end] < lo[a_end] - 50, "precondition: c ends well beyond a"
     assert lg.structure["family"] in ("zigzag", "flat")
-    assert lg.anatomy["cls"] != "impulsive"
+    assert lg.anatomy["cls"] != "impulsive", "wave a is corrective ⇒ the impulsive c cannot make the leg impulsive"
+    a_sub = [x for x in lg.anatomy["subs"] if x["dirn"] == lg.dirn][0]
+    assert a_sub["vote"]["cls"] == "corrective"
     assert lg.label == "correction"
     want = "DOWN" if mirror else "UP"
     known = next(x for x in _legs(R) if x.label == "impulse").known_bar
@@ -141,15 +174,27 @@ def test_short_leg_is_na():
 @pytest.mark.parametrize("dn,mirror", DIRS)
 def test_volume_is_used_when_present_and_na_safe_otherwise(dn, mirror):
     df, _ = F.overlapping_correction(mirror, volume=True)
-    lg = _counter_leg(RR.read(df), mirror)
+    R = RR.read(df)
+    lg = next(x for x in R.legs[0] if x.i0 == _counter_leg(R, mirror).i0)          # wave a: a lowest-degree leg (candles)
     ev = {e["feature"]: e for e in lg.anatomy["evidence"]}
+    assert lg.anatomy["level"] == "candles"
     assert ev["volume"]["value"] < 1.0 and ev["volume"]["lean"] == "corrective"   # lower volume than the impulse it corrects
     for vol in (None, 0.0, np.nan):                                               # no column / index spot volume 0 / missing
         d2 = df.drop(columns="volume") if vol is None else df.assign(volume=vol)
-        lg2 = _counter_leg(RR.read(d2), mirror)
+        R2 = RR.read(d2)
+        lg2 = next(x for x in R2.legs[0] if x.key == lg.key)
         ev2 = {e["feature"]: e for e in lg2.anatomy["evidence"]}
         assert ev2["volume"]["score"] is None and "NA" in ev2["volume"]["text"]
-        assert lg2.anatomy["score"] is not None and lg2.label == "correction"
+        assert lg2.anatomy["score"] is not None and _counter_leg(R2, mirror).label == "correction"
+
+
+def test_one_sided_features_without_evidence_do_not_dilute():
+    df, _ = F.overlapping_correction()
+    v = RA.vote(Chart(df), 124, 163, -1)
+    for e in v["evidence"]:
+        side = RS.FEATURES[e["feature"]][2]
+        if side != "both" and e["score"] == 0.0:
+            assert e["counted"] is False
 
 
 def test_with_futures_volume_maps_near_month_rows_to_spot_bars():
@@ -172,6 +217,31 @@ def test_lower_timeframe_candles_join_the_daily_anatomy(dn, mirror):
     low = F.split_hourly(df)
     R = RR.read(df, low=low)
     lg = _counter_leg(R, mirror)
-    assert any(e["feature"].startswith("lower:") for e in lg.anatomy["evidence"])
-    assert lg.anatomy["lower"]["score"] is not None
+    leaves = _candle_votes(lg.anatomy)
+    assert any(any(e["feature"].startswith("lower:") for e in v["evidence"]) and v["lower"]["score"] is not None for v in leaves)
     assert lg.label == "correction"
+
+
+# --------------------------------------------------------------------------------------------------------------- realistic candles
+@pytest.mark.parametrize("seed", (1, 2, 3))
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_realistic_impulse_and_correction(dn, mirror, seed):
+    """Noisy candles (bodies ~50–65 %, wicks on both sides): the roll-up still reads the impulse and the overlapping correction."""
+    df, _ = F.realistic(F.IMPULSE + F.OVERLAP_ABC + F.CONT, mirror, seed=seed)
+    R = RR.read(df)
+    up, cm = _trend_leg(R, mirror), _counter_leg(R, mirror)
+    assert (up.label, up.confidence) == ("impulse", "high"), up.reason
+    assert cm.label == "correction" and cm.anatomy["cls"] == "corrective", cm.reason
+    assert R.trend_now()["trend"] == ("DOWN" if mirror else "UP")
+
+
+@pytest.mark.parametrize("seed", (1, 2, 3))
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_structure_only_impulse_is_challenged(dn, mirror, seed):
+    """A clean 5-wave count drawn with ambiguous candles: structure says impulse, the candles do not ⇒ uncertain, no trend."""
+    df, _ = F.realistic(F.neutral_shape(F.IMPULSE) + F.OVERLAP_ABC, mirror, seed=seed)
+    R = RR.read(df)
+    lg = _trend_leg(R, mirror)
+    assert lg.structure["family"] == "impulse" and lg.anatomy["cls"] != "impulsive"
+    assert lg.label == RF.UNCERTAIN
+    assert all(st["trend"] is None for st in R.states), "a structure-only impulse never sets the trend"

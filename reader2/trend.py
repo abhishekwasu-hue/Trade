@@ -1,33 +1,50 @@
 """reader2/trend.py — trend-degree legs च्या labels वरून trend अवस्था (bar नुसार, causal: bar i ला फक्त known_bar ≤ i चे legs).
 
-  • Trend = शेवटच्या impulse leg ची दिशा; protected origin = त्या impulse ची सुरुवात (त्याच दिशेचा नवा impulse ⇒ origin पुढे).
-  • Flip (spec §3.2) फक्त impulse counter-move ने: label impulse + impulse structure + impulsive anatomy + आधीच्या swing चा break
-    (counter-move चं टोक आधीच्या leg च्या सुरुवातीपलीकडे). नाहीतर trend तसाच. Correction (c > a सकट, §3.3) आणि uncertain कधीच flip नाहीत.
-  • Origin च्या पलीकडे close (§3.4) ⇒ trend "uncertain" (re-read): पुढचा पूर्ण impulse (structure + anatomy; उलट दिशेला prior
-    swing break सुद्धा) trend ठरवतो. Uncertain ⇒ entries नाहीत.
+  • फक्त "trend-capable" impulse trend ठरवतो / protected हलवतो / उलटवतो: label impulse, confidence high / medium (दोन्ही votes
+    जुळलेले — re-read नंतरही), effective structure impulse, effective anatomy impulsive. एकाच vote वरचा ("low") impulse नाही.
+  • Trend = शेवटच्या trend-capable impulse ची दिशा; protected origin = त्याची सुरुवात (त्याच दिशेचा नवा ⇒ origin पुढे).
+  • Flip (spec §3.2) = trend-capable counter-move + आधीच्या swing चा break. Correction (c > a सकट, §3.3), uncertain आणि low कधीच नाहीत.
+  • Origin च्या पलीकडे close (§3.4) ⇒ trend "uncertain" (re-read). Uncertain कायमचं नाही: पुढचा trend-capable impulse (कोणत्याही
+    दिशेचा — origin आधीच तुटला) नेहमीच्या Dow / structure मार्गाने trend पुन्हा ठरवतो. Uncertain ⇒ entries नाहीत.
+  • Provisional (अपूर्ण) legs इथे येत नाहीत.
 """
 from . import fusion as RF
+
+CAPABLE = ("high", "medium")
 
 
 def eff_structure(leg):
     """Re-read झालं असेल तर तो structure vote, नाहीतर मूळ."""
-    sv = leg.structure or {}
-    return sv.get("reread") or sv
+    return ((leg.reread or {}).get("structure")) or leg.structure or {}
 
 
-def flip_test(leg, prev, need_break=True):
-    """रिटर्न (ok, कारण) — counter-move impulse आहे का (§3.2): label impulse + impulse structure + impulsive anatomy (+ prior swing
-    break). need_break=False ⇒ origin तुटल्यावर ("uncertain") जुन्याच दिशेने trend पुन्हा ठरवताना (break ची गरज नाही)."""
+def eff_anatomy(leg):
+    return ((leg.reread or {}).get("anatomy")) or leg.anatomy or {}
+
+
+def trend_capable(leg):
+    """रिटर्न (ok, कारण): दोन्ही votes impulse वर सहमत."""
     why = []
     if leg.label != RF.IMPULSE:
         why.append(f"label is {leg.label}")
+    elif leg.confidence not in CAPABLE:
+        why.append(f"confidence {leg.confidence} (one vote only)")
     sv = eff_structure(leg)
     if sv.get("cls") != "impulse":
         why.append(f"structure reads {sv.get('family')}, not impulse")
-    av = leg.anatomy or {}
+    av = eff_anatomy(leg)
     if av.get("cls") != "impulsive":
         sc = av.get("score")
         why.append("anatomy " + ("NA" if sc is None else f"{av.get('cls')} ({sc:+.2f})") + ", not impulsive")
+    if getattr(leg, "provisional", False):
+        why.append("provisional leg")
+    return (not why), "; ".join(why)
+
+
+def flip_test(leg, prev, need_break=True):
+    """रिटर्न (ok, कारण) — counter-move impulse आहे का (§3.2): trend-capable + prior swing break."""
+    ok, why = trend_capable(leg)
+    why = [why] if why else []
     if need_break and (prev is None or (leg.p1 - prev.p0) * leg.dirn <= 0):
         why.append("no break of the prior swing" if prev is not None else "no prior swing")
     return (not why), "; ".join(why)
@@ -36,7 +53,7 @@ def flip_test(leg, prev, need_break=True):
 def derive(ch, legs):
     """रिटर्न (states, events). states[i] = {"bar", "known_at", "trend", "dir", "origin", "origin_bar", "why"};
     events = trend बदल [{"bar", "known_at", "from", "to", "leg", "why"}]."""
-    legs = sorted(legs, key=lambda x: (x.known_bar, x.i1))
+    legs = sorted((lg for lg in legs if not lg.provisional), key=lambda x: (x.known_bar, x.i1))
     prev_of = {lg.key: p for p, lg in zip([None] + legs[:-1], legs)}
     by_bar = {}
     for lg in legs:
@@ -56,17 +73,19 @@ def derive(ch, legs):
             if lg.label != RF.IMPULSE:
                 continue
             d = "UP" if lg.dirn > 0 else "DOWN"
-            if trend is None or (trend != "uncertain" and lg.dirn == last_dir):
-                _set(i, d, lg, f"impulse {lg.name()}")
-                last_dir, origin, obar, why = lg.dirn, lg.p0, lg.i0, f"impulse {lg.name()}"
+            opposite = trend in ("UP", "DOWN") and lg.dirn != last_dir
+            ok, reason = flip_test(lg, prev_of[lg.key], need_break=opposite)
+            if not ok:
+                why = f"no {'flip' if opposite else 'trend'} on {lg.name()}: {reason}"
                 continue
-            ok, reason = flip_test(lg, prev_of[lg.key], need_break=lg.dirn != last_dir)
-            if ok:
-                tag = "flip: impulse counter-move" if lg.dirn != last_dir else "trend re-read: impulse"
-                _set(i, d, lg, f"{tag} {lg.name()}" + (" broke the prior swing" if lg.dirn != last_dir else ""))
-                last_dir, origin, obar, why = lg.dirn, lg.p0, lg.i0, f"{tag} {lg.name()}"
+            if opposite:
+                tag = f"flip: impulse counter-move {lg.name()} broke the prior swing"
+            elif trend == "uncertain":
+                tag = f"trend re-read: impulse {lg.name()}"
             else:
-                why = f"no {'flip' if lg.dirn != last_dir else 're-read'} on {lg.name()}: {reason}"
+                tag = f"impulse {lg.name()}"
+            _set(i, d, lg, tag)
+            last_dir, origin, obar, why = lg.dirn, lg.p0, lg.i0, tag
         if trend in ("UP", "DOWN") and origin is not None and (C[i] - origin) * last_dir < 0:
             _set(i, "uncertain", None, f"close beyond protected origin {origin:g}: trend re-read")
             why = "protected origin closed beyond; waiting for an impulse"

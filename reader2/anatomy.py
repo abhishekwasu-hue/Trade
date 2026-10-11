@@ -1,13 +1,22 @@
-"""reader2/anatomy.py — anatomy vote (spec §2b): leg च्या आतल्या candles वरून −1 (पूर्ण सुधारात्मक) ते +1 (पूर्ण आवेगी).
+"""reader2/anatomy.py — anatomy vote (spec §2b / §2d): −1 (पूर्ण सुधारात्मक) ते +1 (पूर्ण आवेगी).
+
+§2d: candles फक्त lowest degree ला वाचतो (`vote`): leg च्या आत खालच्या degree चे pivots नाहीत ⇒ तो leg स्वतःच lowest-degree swing.
+वरच्या degree चा vote = sub-legs (एक degree खाली, recursive — शेवटी candles) चा roll-up (`rollup`): आवेगी leg ⇒ leg-दिशेचे (motive)
+sub-legs आवेगी आणि उलट (counter) sub-legs सुधारात्मक / थोडक्यात / उथळ; सुधारात्मक leg ⇒ motive sub-legs सुधारात्मक (overlapping), लांब /
+खोल थांबे. लांब leg च्या सगळ्या candles ची सरासरी नाही (waves 2 / 4 ती पातळ करतात). Motive sub-leg निर्णायक आवेगी नसेल तर pause पुरावा
+leg ला आवेगी करू शकत नाही (score ≤ motive); motive चालीचा मोठा वाटा (≥ rollup_veto_share) असलेला सुधारात्मक motive sub-leg सुद्धा —
+उदा. big-c zigzag: a सुधारात्मक ⇒ leg आवेगी नाही; टोकाजवळचा लहान आळशी push impulse रद्द करत नाही.
 
 Candle मापं legs2/features.py मधूनच (`leg_features`: body, CLV_d, overlap, ER, displacement, FVG, wave volume); इथे फक्त जे legs2 मध्ये
 नाही ते: MR units मधली range expansion / contraction, दोन्ही बाजूंच्या wicks, आधीच्या counter-move शी volume तुलना, effort vs result
-(MR units), आतली pause (खोली / कालावधी). प्रत्येक feature ⇒ settings च्या (corrective, impulsive) टोकांमध्ये रेषीय score; NA ⇒ वगळला
-(evidence मध्ये "NA" कारणासह). Score = वजनांची सरासरी. Points / % नाहीत.
+(MR units), swing मधली pause. प्रत्येक feature ⇒ settings च्या (corrective, impulsive) टोकांमध्ये रेषीय score; NA आणि एकतर्फी
+feature चा 0 सरासरीत नाहीत (evidence मध्ये कारणासह). Points / % नाहीत.
 """
 import numpy as np
 
 from legs2 import features as LF
+
+from . import legs as RL
 
 LEAN_IMP, LEAN_COR, LEAN_NEU = "impulsive", "corrective", "neutral"
 
@@ -71,7 +80,8 @@ def raw(ch, i0, i1, d, prev=None):
     rng = ch.rng[i0 + 1:i1 + 1]
     out["range"] = float(rng.mean() / unit) if size_mr is not None and n else None
     half = n // 2
-    out["contraction"] = (float(rng[n - half:].mean() / rng[:half].mean())) if half >= 2 and rng[:half].mean() > 0 else None
+    ok = half >= int(s["contraction_min_half"]) and rng[:half].mean() > 0
+    out["contraction"] = float(rng[n - half:].mean() / rng[:half].mean()) if ok else None
     wb = float(s["wick_both_min"])
     both = []
     for i in idx:
@@ -121,10 +131,12 @@ def vote(ch, i0, i1, d, prev=None):
         why = "NA (no volume)" if x is None and k in ("volume", "effort_result") else ("NA" if x is None else f"{_fmt(x)}")
         ev.append({"feature": k, "value": x, "score": sc, "lean": lean,
                    "text": f"{k} {why} (corrective {lo}, impulsive {hi}) ⇒ {lean}" if sc is not None else f"{k} {why}"})
-        if sc is not None:
+        e = ev[-1]
+        e["counted"] = sc is not None and not (side != "both" and sc == 0.0)      # एकतर्फी feature चा 0 = पुरावा नाही
+        if e["counted"]:
             w = float(s["weights"].get(k, 1.0))
             num, den = num + w * sc, den + w
-    used = sum(1 for e in ev if e["score"] is not None)
+    used = sum(1 for e in ev if e["counted"])
     if used < int(s["min_features"]) or den <= 0:
         return {"score": None, "cls": "NA", "evidence": ev, "raw": m}
     score = num / den
@@ -151,15 +163,16 @@ def lower_bars(ch, i0, i1, low):
     return int(sel[0] - 1), int(sel[-1])
 
 
-def leg_vote(ch, leg, prev=None, low=None):
-    """Leg चा anatomy vote; low = खालच्या TF चा Chart (उदा. Daily leg साठी 1H) ⇒ दोघांची वजनी सरासरी (spec §2d)."""
-    own = vote(ch, leg.i0, leg.i1, leg.dirn, (prev.i0, prev.i1) if prev is not None else None)
+def candle_vote(ch, i0, i1, d, prev=None, low=None):
+    """Lowest degree: leg च्या candles; low = खालच्या TF चा Chart (उदा. Daily साठी 1H) ⇒ दोघांची वजनी सरासरी (spec §2d)."""
+    own = vote(ch, i0, i1, d, prev)
+    own["level"] = "candles"
     if low is None:
         return own
-    jj = lower_bars(ch, leg.i0, leg.i1, low)
+    jj = lower_bars(ch, i0, i1, low)
     if jj is None:
         return own
-    sub = vote(low, jj[0], jj[1], leg.dirn)
+    sub = vote(low, jj[0], jj[1], d)
     if sub["score"] is None:
         return own
     if own["score"] is None:
@@ -168,4 +181,85 @@ def leg_vote(ch, leg, prev=None, low=None):
         w = float(ch.s["lower_weight"])
         score = (1 - w) * own["score"] + w * sub["score"]
     ev = own["evidence"] + [dict(e, feature="lower:" + e["feature"], text="lower TF " + e["text"]) for e in sub["evidence"]]
-    return {"score": score, "cls": classify(score, ch.s), "evidence": ev, "raw": own["raw"], "lower": sub}
+    return {"score": score, "cls": classify(score, ch.s), "evidence": ev, "raw": own["raw"], "lower": sub, "level": "candles"}
+
+
+def _combine(subs, d, s):
+    """Sub-legs ⇒ leg चा vote: motive (leg-दिशेचे sub-legs, आकाराने वजनी), counter (उलट sub-legs सुधारात्मक ⇒ आवेगी पुरावा),
+    pause_time, pause_depth. Motive चालीचा ≥ rollup_veto_share वाटा असलेला सुधारात्मक motive sub-leg ⇒ score ≤ त्याचा score."""
+    mot = [x for x in subs if x["dirn"] == d]
+    cnt = [x for x in subs if x["dirn"] != d]
+    mv = [(x["vote"]["score"], x["size"]) for x in mot if x["vote"]["score"] is not None]
+    ms = [v for v, _ in mv]
+    cs = [-x["vote"]["score"] for x in cnt if x["vote"]["score"] is not None]       # सुधारात्मक counter ⇒ आवेगी पुरावा
+    wsum = sum(w for _, w in mv)
+    m = (sum(v * w for v, w in mv) / wsum) if wsum > 0 else None
+    msize = sum(x["size"] for x in mot)
+    veto = [v for v, w in mv if v <= float(s["a_lo"]) and msize > 0 and w / msize >= float(s["rollup_veto_share"])]
+    c = float(np.mean(cs)) if cs else None
+    tot = sum(x["bars"] for x in subs)
+    ptime = pdepth = None
+    if len(cnt) >= int(s["rollup_pause_min_counters"]):                            # एकच थांबा impulse / zigzag वेगळं करत नाही
+        ptime = sum(x["bars"] for x in cnt) / tot if tot else None
+        pdepth = (sum(x["size"] for x in cnt) / msize) if msize > 0 else None
+    vals = {"motive": m, "counter": c,
+            "pause_time": feature_score(ptime, *s["rollup"]["pause_time"]),
+            "pause_depth": feature_score(pdepth, *s["rollup"]["pause_depth"])}
+    raws = {"motive": ms, "counter": [-x for x in cs], "pause_time": ptime, "pause_depth": pdepth}
+    ev = []
+    num = den = 0.0
+    for k, sc in vals.items():
+        lean = LEAN_NEU if sc is None or abs(sc) < 1e-9 else (LEAN_IMP if sc > 0 else LEAN_COR)
+        rv = raws[k]
+        shown = ("[" + ", ".join(f"{x:+.2f}" for x in rv) + "]") if isinstance(rv, list) else _fmt(rv)
+        ev.append({"feature": "sub:" + k, "value": rv, "score": sc, "lean": lean, "counted": sc is not None,
+                   "text": f"sub-legs {k} {shown} ⇒ {lean}" + ("" if sc is None else f" ({sc:+.2f})")})
+        if sc is not None:
+            w = float(s["rollup_weights"].get(k, 1.0))
+            num, den = num + w * sc, den + w
+    for x in subs:
+        v = x["vote"]
+        ev.append({"feature": "sub-leg", "value": v["score"], "score": None, "lean": v["cls"], "counted": False,
+                   "text": f"{'UP' if x['dirn'] > 0 else 'DOWN'} bars {x['i0']}-{x['i1']} ({'motive' if x['dirn'] == d else 'counter'}): "
+                           f"{v['cls']}" + ("" if v["score"] is None else f" {v['score']:+.2f}") + f" [{v.get('level')}]"})
+    if m is None or den <= 0:
+        return {"score": None, "cls": "NA", "evidence": ev, "raw": raws, "subs": subs, "level": "rollup"}
+    score = num / den
+    if m < float(s["a_hi"]):
+        score = min(score, m)                                                       # motive आवेगी नाही ⇒ pause पुरावा leg आवेगी करत नाही
+    if veto:
+        score = min(score, min(veto))
+        ev.append({"feature": "sub:veto", "value": min(veto), "score": None, "lean": LEAN_COR, "counted": False,
+                   "text": f"a corrective motive sub-leg carries ≥ {s['rollup_veto_share']} of the leg's travel ⇒ not impulsive"})
+    return {"score": score, "cls": classify(score, s), "evidence": ev, "raw": raws, "subs": subs, "level": "rollup"}
+
+
+def rollup(ch, i0, i1, p0, p1, d, lowers, upto, prev=None, low=None):
+    """lowers = leg च्या खालच्या degrees चे pivots, जवळच्यापासून. आत रचना दिसणारा पहिला संच ⇒ sub-legs (प्रत्येक त्याच्या खालच्या
+    संचांनी recursive); कुठेच नाही ⇒ lowest degree ⇒ candles."""
+    for k, pv in enumerate(lowers):
+        pts = RL.inner_points(i0, i1, p0, p1, d, pv, upto)
+        if len(pts) > 2:
+            break
+    else:
+        return candle_vote(ch, i0, i1, d, prev, low)
+    subs, pseg = [], prev
+    for (a, pa), (b, pb) in zip(pts, pts[1:]):
+        sd = 1 if pb > pa else -1
+        v = rollup(ch, a, b, pa, pb, sd, lowers[k + 1:], upto, pseg, low)
+        subs.append({"i0": a, "i1": b, "dirn": sd, "bars": b - a, "size": abs(pb - pa), "vote": v})
+        pseg = (a, b)
+    return _combine(subs, d, ch.s)
+
+
+def leg_vote(ch, leg, prev=None, low=None, lowers=None):
+    """Leg चा anatomy vote: खालचे pivots असतील तर sub-legs चा roll-up, नाहीतर candles (spec §2d)."""
+    pb = (prev.i0, prev.i1) if prev is not None else None
+    return rollup(ch, leg.i0, leg.i1, leg.p0, leg.p1, leg.dirn, list(lowers or []), leg.known_bar, pb, low)
+
+
+def alternatives(ch, leg, lowers, prev=None, low=None):
+    """Re-read (§3.1 / 🔴4): पर्यायी pivots फक्त एक degree खाली (structure.alt_thresholds) वापरून roll-up. रिटर्न [(k, vote)]."""
+    from . import structure as RSt                                         # structure → legs; anatomy → structure (चक्र नाही)
+    ks, rest = RSt.alt_thresholds(ch, leg, lowers)
+    return [(k, leg_vote(ch, leg, prev, low, [ch.pivots(k)] + rest)) for k in ks]

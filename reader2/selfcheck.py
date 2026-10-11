@@ -37,14 +37,8 @@ def relabel(R, leg, to, conf, because, pas, inv):
 
 
 def _refuse(R, leg):
-    """Leg पुन्हा वाचा: (effective structure, anatomy) ⇒ fusion; विरोध ⇒ पर्यायी pivots (re-read)."""
-    sv, av = RT.eff_structure(leg), leg.anatomy
-    lab, conf, why = RF.fuse(sv, av)
-    if lab is None:
-        lab, conf, why, sv2 = RF.reread(R.ch, leg, sv, av)
-        if sv2 is not sv:
-            leg.structure = dict(leg.structure, reread=sv2)
-    return lab, conf, why
+    """Leg पुन्हा वाचा: मूळ votes ⇒ fusion; विरोध / गप्प ⇒ पर्यायी pivots (एक degree खाली) ने re-read."""
+    return RF.decide(R.ch, leg, R.lower(leg.degree), R.prev_of(leg), R.low)
 
 
 def _opposite(label, cls):
@@ -63,7 +57,7 @@ def violations(R):
     """रिटर्न [{"inv", "leg" | None, "bar" | None, "why"}]."""
     out = []
     for lg in R.all_legs():                                                       # 1
-        av = lg.anatomy or {}
+        av = RT.eff_anatomy(lg)
         if _opposite(lg.label, av.get("cls")):
             out.append({"inv": "1", "leg": lg, "bar": None,
                         "why": f"labelled {lg.label} but anatomy is {av['cls']} ({av['score']:+.2f})"})
@@ -95,11 +89,8 @@ def violations(R):
     for st in R.states or []:                                                     # 4
         if st["trend"] not in ("UP", "DOWN"):
             continue
-        org = st.get("origin")
-        if org is None and st.get("leg") is not None:
-            lg = R.find(*st["leg"])
-            org = lg.p0 if lg else None
         d = 1 if st["trend"] == "UP" else -1
+        org = _origin_of(R, st, d)
         if org is not None and (R.ch.A["c"][st["bar"]] - org) * d < 0:
             out.append({"inv": "4", "leg": None, "bar": st["bar"],
                         "why": f"trend kept {st['trend']} after a close beyond the protected origin {org:g}"})
@@ -107,9 +98,24 @@ def violations(R):
     return out
 
 
+def _origin_of(R, st, d):
+    """Protected origin: marking मध्ये दिलेला, नाहीतर तो trend ज्या leg वर आहे त्याची सुरुवात, नाहीतर त्या bar पर्यंत माहीत असलेल्या
+    त्याच दिशेच्या शेवटच्या trend-degree impulse (नसेल तर कोणत्याही त्याच दिशेच्या leg) ची सुरुवात."""
+    if st.get("origin") is not None:
+        return st["origin"]
+    if st.get("leg") is not None:
+        lg = R.find(*st["leg"])
+        if lg is not None:
+            return lg.p0
+    known = [lg for lg in R.legs.get(R.trend_degree, []) if lg.dirn == d and lg.known_bar <= st["bar"]]
+    imp = [lg for lg in known if lg.label == RF.IMPULSE]
+    pick = (imp or known)
+    return pick[-1].p0 if pick else None
+
+
 def _fix_counter_move(R, lg, why, pas, inv):
     """2 / 5: counter-move impulse नाही ⇒ correction; anatomy आवेगी (पण structure / break नाही) ⇒ uncertain."""
-    sv, av = RT.eff_structure(lg), lg.anatomy or {}
+    sv, av = RT.eff_structure(lg), RT.eff_anatomy(lg)
     if av.get("cls") == "impulsive":
         relabel(R, lg, RF.UNCERTAIN, None, why + " (impulsive candles: wave 1 or wave A?)", pas, inv)
     else:
@@ -131,19 +137,30 @@ def _rederive(R, reasons, pas, inv):
         prev_same = same
 
 
+def _holds(v):
+    """उल्लंघन अजून आहे का (त्याच pass मधल्या आधीच्या fix नंतर) — नसेल तर पुन्हा हात लावू नका."""
+    lg = v["leg"]
+    if v["inv"] == "1":
+        return _opposite(lg.label, RT.eff_anatomy(lg).get("cls"))
+    if v["inv"] == "5":
+        a = v["pair"]
+        return a.label == lg.label == RF.IMPULSE
+    return True
+
+
 def fix(R, viol, pas):
     trend_reasons, invs, touched_trend = {}, set(), False
     for v in viol:
         lg = v["leg"]
+        if not _holds(v):
+            continue
         if v["inv"] == "1":
             lab, conf, why = _refuse(R, lg)
             relabel(R, lg, lab, conf, f"{v['why']}; re-read: {why}", pas, "1")
             touched_trend |= lg.degree == R.trend_degree
         elif v["inv"] == "5":
             a = v["pair"]
-            for x in (a, lg):
-                if x.history:                                                 # self-check ने आधीच पुन्हा वाचलेला ⇒ परत उलटवू नका
-                    continue
+            for x in (a, lg):                                                 # spec: दोन्ही पुन्हा वाचा (बिनशर्त)
                 lab, conf, why = _refuse(R, x)
                 relabel(R, x, lab, conf, f"{v['why']}; re-read: {why}", pas, "5")
             if a.label == lg.label == RF.IMPULSE:
@@ -207,7 +224,9 @@ def htf_check(R, higher, pas=None):
 
 def history(df, start, step=1, s=None, low=None, read_fn=None):
     """Invariant 7: प्रत्येक T (start…, step) ला `read(df[:T+1])` — label बदल log (known_at = T चा bar end). रिटर्न
-    {"labels": {T: {leg key: label}}, "trend": {T: trend}, "log": [...]}."""
+    {"labels": {T: {leg key: label}}, "trend": {T: trend}, "log": [...]}. Provisional legs मोजत नाही (त्यांची key रोज बदलते).
+    खर्च: प्रत्येक T ला पूर्ण वाचन ⇒ O(n_T × read) (Daily 4,000 bars ≈ 0.2 s / read) — incremental नाही; लांब history साठी step वापरा
+    किंवा replay script (heavy job नियम)."""
     from . import reader as RR                                           # reader → selfcheck (चक्र टाळण्यासाठी इथे)
     fn = read_fn or RR.read
     first = object()

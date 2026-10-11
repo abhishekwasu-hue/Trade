@@ -1795,3 +1795,15 @@ known_at, `history` नवीन bars साठी), `reader.mark` (बाहे
 **Tests:** `tests/test_reader2_{anatomy,fusion,selfcheck,boundary}.py` + `tests/reader2_fixtures.py` (clean impulse, overlapping correction, mis-placed pivots,
 big-c correction, deep sideways, sharp A — प्रत्येकाचा आरसा) — 84 pass. decision3 / bots / vision reader2 import करत नाहीत (boundary test). आकडे tune केले
 नाहीत (CR-Q6). CR3+ (marking page, gallery, CI, chart layer, shadow) सुरू केलेलं नाही. उघडे प्रश्न: OPEN_QUESTIONS CR-Q1–CR-Q7.
+
+### 2026-10-11 · Chart Reader v2 — independent review (BANKNIFTY daily) नंतर दुरुस्ती (research-only)
+**🔴1 roll-up:** candles फक्त lowest degree ला; वरच्या leg चा anatomy = sub-legs (एक degree खाली, recursive) चा roll-up — motive (आकाराने वजनी),
+counter, थांब्यांची वेळ / खोली (≥ 2 counters असताना), motive आवेगी नसेल तर leg आवेगी नाही, मोठा सुधारात्मक motive sub-leg ⇒ veto. CR-Q1 सोडवला.
+**🔴2:** uncertain कायमचं नाही — trend-capable impulse (कोणत्याही दिशेचा) trend पुन्हा ठरवतो. **🔴3:** "3-wave" fallback निर्णायक नाही (−0.25 < 0.5).
+**🔴4:** एक vote गप्प ⇒ re-read; structure-only impulse ⇒ uncertain; "low" impulse trend ठरवत / उलटवत / protected हलवत नाही.
+**🟡:** एकतर्फी features चा 0 सरासरीत नाही; provisional (अपूर्ण) leg वाचतो, trend बदलत नाही; invariant 5 नेहमी re-read (उल्लंघन पुन्हा तपासून);
+invariant 4 origin नसलेल्या marking साठी; look-ahead test `read()` ने; re-read फक्त एक degree खाली (1/0.875/0.75/0.625); history खर्च नोंद;
+REGISTER keys = DEFAULTS (contraction_min_half, intraday_max_spacing_hours settings मध्ये).
+**Fixtures / tests:** realistic noisy candles (seeds 1–3), structure-only 5-wave (ambiguous candles ⇒ uncertain), uncertain पुन्हा trend, provisional,
+library run (`tests/test_reader2_library.py`: 86 pass / 10 strict xfail — CR-Q2). BANKNIFTY daily: Feb→Apr 2026 DOWN impulse (medium, flip DOWN 7 May),
+Apr→Jun uncertain (zigzag vs mixed candles), Jun→now provisional DOWN impulse; mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.

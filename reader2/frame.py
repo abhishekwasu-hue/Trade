@@ -23,14 +23,14 @@ class Chart:
     """एका frame चा context (truncate केलेल्या data वरच बनवा: look-ahead नाही)."""
 
     def __init__(self, df, s=None):
-        self.s = s if s and s.get("_loaded") else RS.load(s)
+        self.s = s if RS.is_loaded(s) else RS.load(s)
         d = df.copy()
         d["timestamp"] = pd.to_datetime(d["timestamp"])
         d = d.sort_values("timestamp").drop_duplicates("timestamp", keep="last").reset_index(drop=True)
         self.d = d
         ts = d["timestamp"]
         step = _spacing(ts)
-        self.intraday = step < pd.Timedelta(hours=20)
+        self.intraday = step < pd.Timedelta(hours=float(self.s["intraday_max_spacing_hours"]))
         day = ts.dt.normalize().to_numpy()
         first = np.r_[True, day[1:] != day[:-1]] if self.intraday else np.zeros(len(d), bool)
         self.A = {"o": d["open"].to_numpy(float), "h": d["high"].to_numpy(float), "l": d["low"].to_numpy(float),

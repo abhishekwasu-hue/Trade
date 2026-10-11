@@ -24,6 +24,7 @@ class Reading:
     passes: int = 0
     htf: dict = None
     low: Chart = None                  # खालच्या TF चा Chart (anatomy, §2d)
+    current: dict = field(default_factory=dict)   # degree ⇒ provisional leg (शेवटच्या confirmed pivot पासून आत्तापर्यंत)
 
     @property
     def trend_degree(self):
@@ -45,6 +46,8 @@ class Reading:
 
     def prev_of(self, leg):
         same = self.legs.get(leg.degree, [])
+        if leg.provisional:
+            return same[-1] if same else None
         k = same.index(leg)
         return same[k - 1] if k > 0 else None
 
@@ -56,6 +59,8 @@ def label_all(R):
     for D in sorted(R.legs):
         for lg in R.legs[D]:
             RF.label_leg(R.ch, lg, R.lower(D), R.prev_of(lg), R.low)
+    for D, lg in R.current.items():                     # अपूर्ण चाल पण वाचा (फक्त नोंद; trend / invariants मध्ये नाही)
+        RF.label_leg(R.ch, lg, R.lower(D), R.prev_of(lg), R.low)
 
 
 def rederive(R):
@@ -72,7 +77,8 @@ def build(df, s=None, pivots=None, low=None):
         ov[D] = [p for p in pv] if pv and hasattr(pv[0], "confirm_bar") else RL.external_pivots(ch, pv)
     pvs = RL.degree_pivots(ch, ov)
     legs = {D: RL.make_legs(pvs[D], D, ch) for D in sorted(pvs)}
-    R = Reading(ch, pvs, legs, low=lowc)
+    cur = {D: RL.provisional_leg(pvs[D], D, ch) for D in sorted(pvs)}
+    R = Reading(ch, pvs, legs, low=lowc, current={D: lg for D, lg in cur.items() if lg is not None})
     label_all(R)
     rederive(R)
     return R
@@ -106,7 +112,8 @@ def summary(R):
     t = R.trend_now()
     out = {"trend": t["trend"] if t else None, "origin": t["origin"] if t else None, "passes": R.passes,
            "legs": [{"degree": lg.degree, "dir": lg.dir_name, "i0": lg.i0, "i1": lg.i1, "label": lg.label, "confidence": lg.confidence,
-                     "anatomy": None if not lg.anatomy else lg.anatomy["score"], "structure": RT.eff_structure(lg).get("family"),
-                     "reason": lg.reason, "known_at": lg.known_at} for lg in R.all_legs()],
+                     "anatomy": RT.eff_anatomy(lg).get("score"), "structure": RT.eff_structure(lg).get("family"),
+                     "provisional": lg.provisional, "reason": lg.reason, "known_at": lg.known_at}
+                    for lg in R.all_legs() + list(R.current.values())],
            "selfcheck": [e["text"] for e in R.log]}
     return out

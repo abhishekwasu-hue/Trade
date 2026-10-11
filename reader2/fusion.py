@@ -1,20 +1,25 @@
-"""reader2/fusion.py — structure vote + anatomy vote ⇒ label (spec §2c).
+"""reader2/fusion.py — structure vote + anatomy vote ⇒ label (spec §2c), confidence, कारण.
 
-  • दोन्ही एकच सांगतात ⇒ तो label, confidence "high".
-  • एक निर्णायक, दुसरा गप्प (structure "none" / anatomy neutral / NA) ⇒ निर्णायकाचा label, "medium".
-  • दोन्ही गप्प ⇒ "uncertain" (कारणासह).
-  • विरोध ⇒ re-read (पर्यायी pivots एक degree खाली, spec §3.1): एखादं पर्यायी वाचन anatomy शी जुळलं ⇒ तो label, "low"; नाहीतर
-    "uncertain" (कारणासह). Uncertain leg trend उलटत नाही आणि entry देत नाही (trend.py).
+  • दोन्ही एकच सांगतात ⇒ तो label, "high".
+  • विरोध ⇒ re-read (पर्यायी pivots फक्त एक degree खाली: structure पुन्हा आणि anatomy roll-up पुन्हा): दोन्ही जुळले ⇒ "medium";
+    नाहीतर "uncertain" (कारणासह).
+  • एक vote गप्प ⇒ आधी re-read (गप्प vote पुन्हा, पर्यायी खालच्या pivots ने). जुळलं ⇒ "medium"; विरोध ⇒ "uncertain"; अजून गप्प ⇒
+      – फक्त structure "impulse" ⇒ "uncertain" (candles नी पुष्टी नाही — Abhi ची तक्रार: रचनेवरूनच impulse नाही);
+      – फक्त structure "correction" ⇒ correction, "low";
+      – फक्त anatomy ⇒ तो label, "low" (lowest degree ला रचना नसते).
+  • दोन्ही गप्प ⇒ "uncertain".
+"low" किंवा "uncertain" impulse trend ठरवत नाही, उलटवत नाही, protected हलवत नाही (trend.py `trend_capable`).
 """
 from . import anatomy as RA
 from . import structure as RSt
 
 IMPULSE, CORRECTION, UNCERTAIN = "impulse", "correction", "uncertain"
 _A2L = {RA.LEAN_IMP: IMPULSE, RA.LEAN_COR: CORRECTION}
+_S2L = {"impulse": IMPULSE, "correction": CORRECTION}
 
 
 def _a_txt(av):
-    return "NA" if av["score"] is None else f"{av['cls']} ({av['score']:+.2f})"
+    return "NA" if av.get("score") is None else f"{av['cls']} ({av['score']:+.2f})"
 
 
 def _s_txt(sv):
@@ -22,42 +27,55 @@ def _s_txt(sv):
 
 
 def fuse(sv, av):
-    """रिटर्न (label, confidence, reason) — re-read शिवाय."""
-    s_l = {"impulse": IMPULSE, "correction": CORRECTION}.get(sv["cls"])
-    a_l = _A2L.get(av["cls"])
+    """पहिलं वाचन (re-read शिवाय). रिटर्न (label | None = re-read हवं, confidence, कारण)."""
+    s_l, a_l = _S2L.get(sv["cls"]), _A2L.get(av.get("cls"))
     if s_l and a_l and s_l == a_l:
         return s_l, "high", f"structure {_s_txt(sv)} and anatomy {_a_txt(av)} agree"
-    if s_l and a_l:
-        return None, None, f"structure reads {_s_txt(sv)} but anatomy reads {_a_txt(av)}"
-    if s_l or a_l:
-        lab = s_l or a_l
-        src = f"structure {_s_txt(sv)}" if s_l else f"anatomy {_a_txt(av)}"
-        other = f"anatomy {_a_txt(av)}" if s_l else f"structure {_s_txt(sv)}"
-        return lab, "medium", f"{src}; {other} is silent"
-    return UNCERTAIN, None, f"no decisive vote: structure {_s_txt(sv)}, anatomy {_a_txt(av)}"
+    if not s_l and not a_l:
+        return UNCERTAIN, None, f"no decisive vote: structure {_s_txt(sv)}, anatomy {_a_txt(av)}"
+    return None, None, None
 
 
-def reread(ch, leg, sv, av):
-    """विरोध ⇒ पर्यायी खालचे pivots. रिटर्न (label, confidence, reason, structure vote वापरलेला)."""
-    a_l = _A2L.get(av["cls"])
-    tried = []
-    for k, alt in RSt.alternatives(ch, leg):
-        tried.append(f"k={k:g}: {_s_txt(alt)}")
-        if {"impulse": IMPULSE, "correction": CORRECTION}.get(alt["cls"]) == a_l:
-            return a_l, "low", (f"structure {_s_txt(sv)} conflicted with anatomy {_a_txt(av)}; re-read with alternative pivots "
-                                f"(k={k:g}) reads {_s_txt(alt)}"), dict(alt, reread_k=k)
-    why = f"structure {_s_txt(sv)} vs anatomy {_a_txt(av)}; re-read did not resolve" + (f" ({'; '.join(tried)})" if tried else "")
-    return UNCERTAIN, None, why, sv
-
-
-def label_leg(ch, leg, lower, prev=None, low=None):
-    """Leg वर दोन्ही votes + fusion (+ विरोध ⇒ re-read). Leg mutate करतो आणि परत देतो."""
-    sv = RSt.leg_vote(ch, leg, lower)
-    av = RA.leg_vote(ch, leg, prev, low)
-    leg.structure, leg.anatomy = sv, av
+def decide(ch, leg, lowers, prev=None, low=None):
+    """leg.structure / leg.anatomy (पहिलं वाचन) ⇒ (label, confidence, कारण); re-read केलं तर leg.reread मध्ये पर्यायी votes."""
+    sv, av = leg.structure, leg.anatomy
+    leg.reread = None
     lab, conf, why = fuse(sv, av)
-    if lab is None:
-        lab, conf, why, sv2 = reread(ch, leg, sv, av)
-        leg.structure = dict(sv, reread=sv2) if sv2 is not sv else sv
-    leg.label, leg.confidence, leg.reason = lab, conf, why
+    if lab is not None:
+        return lab, conf, why
+    s_l, a_l = _S2L.get(sv["cls"]), _A2L.get(av.get("cls"))
+    alt_s = RSt.alternatives(ch, leg, lowers) if (a_l and s_l != a_l) else []        # structure पुन्हा (विरोध / गप्प)
+    alt_a = RA.alternatives(ch, leg, lowers, prev, low) if (s_l and s_l != a_l) else []  # anatomy roll-up पुन्हा
+    for k, x in alt_s:
+        if _S2L.get(x["cls"]) == a_l:
+            leg.reread = {"structure": dict(x, reread_k=k)}
+            return a_l, "medium", (f"structure {_s_txt(sv)} vs anatomy {_a_txt(av)}; re-read with alternative pivots one degree lower "
+                                   f"(k={k:g}) reads {_s_txt(x)}")
+    for k, x in alt_a:
+        if _A2L.get(x.get("cls")) == s_l:
+            leg.reread = {"anatomy": dict(x, reread_k=k)}
+            return s_l, "medium", (f"structure {_s_txt(sv)} vs anatomy {_a_txt(av)}; anatomy re-read from sub-legs at k={k:g} reads "
+                                   f"{_a_txt(x)}")
+    tried = [f"structure k={k:g}: {_s_txt(x)}" for k, x in alt_s] + [f"anatomy k={k:g}: {_a_txt(x)}" for k, x in alt_a]
+    tail = f" (re-read: {'; '.join(tried)})" if tried else ""
+    if s_l and a_l:
+        return UNCERTAIN, None, f"structure {_s_txt(sv)} vs anatomy {_a_txt(av)}; re-read did not resolve{tail}"
+    if s_l:
+        opp = [x for _, x in alt_a if _A2L.get(x.get("cls")) not in (None, s_l)]
+        if opp:
+            return UNCERTAIN, None, f"structure {_s_txt(sv)} vs re-read anatomy {_a_txt(opp[0])}{tail}"
+        if s_l == IMPULSE:
+            return UNCERTAIN, None, f"impulse structure {_s_txt(sv)} not confirmed by the candles: anatomy {_a_txt(av)}{tail}"
+        return CORRECTION, "low", f"structure {_s_txt(sv)}; anatomy {_a_txt(av)} silent{tail}"
+    opp = [x for _, x in alt_s if _S2L.get(x["cls"]) not in (None, a_l)]
+    if opp:
+        return UNCERTAIN, None, f"anatomy {_a_txt(av)} vs re-read structure {_s_txt(opp[0])}{tail}"
+    return a_l, "low", f"anatomy {_a_txt(av)}; structure {_s_txt(sv)} silent{tail}"
+
+
+def label_leg(ch, leg, lowers, prev=None, low=None):
+    """Leg वर दोन्ही votes + fusion (+ re-read). Leg mutate करतो आणि परत देतो."""
+    leg.structure = RSt.leg_vote(ch, leg, lowers)
+    leg.anatomy = RA.leg_vote(ch, leg, prev, low, lowers)
+    leg.label, leg.confidence, leg.reason = decide(ch, leg, lowers, prev, low)
     return leg

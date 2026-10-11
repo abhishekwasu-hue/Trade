@@ -32,10 +32,17 @@ def test_structure_vote_wraps_read_counter(px, family, cls, mirror):
 
 
 @pytest.mark.parametrize("mirror", (False, True), ids=("up", "down"))
-def test_unnamed_three_wave_is_a_weak_correction(mirror):
-    v = RSt.vote_prices(_mir([0, 30, 10, 40, 20, 50], mirror), S)          # overlapping 5 swings: no impulse, no named pattern
-    assert v["family"] == "3-wave"
-    assert v["vote"] == S["three_wave_vote"] and v["cls"] == "correction"
+def test_unparsed_count_is_never_a_decisive_correction(mirror):
+    """read_counter "3-wave" (no named pattern — also unparsed 5- / 9-wave counts) is weak: |vote| < s_decisive ⇒ silent."""
+    for px in ([0, 30, 10, 40, 20, 50], [0, 50, 45, 52, 40, 60, 50, 70, 30, 80]):
+        v = RSt.vote_prices(_mir(px, mirror), S)
+        if v["family"] == "3-wave":
+            assert abs(v["vote"]) < S["s_decisive"] and v["cls"] == "none"
+    assert RSt.vote_prices(_mir([0, 30, 10, 40, 20, 50], mirror), S)["family"] == "3-wave"
+
+
+def test_settings_three_wave_vote_below_decisive():
+    assert abs(RS.DEFAULTS["three_wave_vote"]) < RS.DEFAULTS["s_decisive"]
 
 
 @pytest.mark.parametrize("mirror", (False, True), ids=("up", "down"))
@@ -54,50 +61,113 @@ def _av(cls, score):
 @pytest.mark.parametrize("sv,av,label,conf", [
     (_sv("impulse"), _av("impulsive", 0.6), "impulse", "high"),
     (_sv("correction"), _av("corrective", -0.6), "correction", "high"),
-    (_sv("impulse"), _av("neutral", 0.1), "impulse", "medium"),
-    (_sv("none"), _av("corrective", -0.5), "correction", "medium"),
     (_sv("none"), _av("NA", None), "uncertain", None),
     (_sv("none"), _av("neutral", 0.0), "uncertain", None),
 ])
-def test_fuse_table(sv, av, label, conf):
+def test_fuse_first_reading(sv, av, label, conf):
     lab, c, why = RF.fuse(sv, av)
     assert (lab, c) == (label, conf) and why
 
 
-def test_fuse_conflict_needs_reread():
-    lab, conf, why = RF.fuse(_sv("correction", "zigzag"), _av("impulsive", 0.5))
-    assert lab is None and "zigzag" in why and "impulsive" in why
+@pytest.mark.parametrize("sv,av", [
+    (_sv("correction", "zigzag"), _av("impulsive", 0.5)),          # conflict
+    (_sv("impulse"), _av("neutral", 0.1)),                          # one vote silent: never labelled straight away
+    (_sv("none"), _av("corrective", -0.5)),
+])
+def test_fuse_needs_a_reread(sv, av):
+    assert RF.fuse(sv, av)[0] is None
 
 
-def _leg(ch, dirn, i0, i1, label, s_cls="impulse", a_cls="impulsive"):
+def _leg0(ch, sv, av):
+    """A degree-0 leg (no lower degree ⇒ no alternative pivots): decide() shows the after-re-read rule directly."""
+    lg = Leg(0, 1, 40, 60, 1.0, 2.0, 61, ch.kat[61])
+    lg.structure, lg.anatomy = sv, av
+    return lg
+
+
+@pytest.mark.parametrize("sv,av,label,conf", [
+    (_sv("impulse"), _av("neutral", 0.1), "uncertain", None),      # structure-only impulse is challenged
+    (_sv("impulse"), _av("NA", None), "uncertain", None),
+    (_sv("correction", "zigzag"), _av("neutral", -0.1), "correction", "low"),
+    (_sv("none"), _av("impulsive", 0.5), "impulse", "low"),        # candles only (lowest degree): low, never trend-capable
+    (_sv("correction", "zigzag"), _av("impulsive", 0.5), "uncertain", None),
+])
+def test_decide_after_reread(sv, av, label, conf):
+    df, _ = F.clean_impulse()
+    ch = Chart(df)
+    lab, c, why = RF.decide(ch, _leg0(ch, sv, av), [])
+    assert (lab, c) == (label, conf) and why
+
+
+def _leg(ch, dirn, i0, i1, label, s_cls="impulse", a_cls="impulsive", conf="high"):
     A = ch.A
     p0 = A["l"][i0] if dirn > 0 else A["h"][i0]
     p1 = A["h"][i1] if dirn > 0 else A["l"][i1]
     lg = Leg(2, dirn, i0, i1, float(p0), float(p1), i1 + 1, ch.kat[i1 + 1])
     lg.structure = {"cls": s_cls, "family": "impulse" if s_cls == "impulse" else "zigzag", "n": 5}
     lg.anatomy = {"cls": a_cls, "score": 0.6 if a_cls == "impulsive" else -0.6}
-    lg.label = label
+    lg.label, lg.confidence = label, conf
     return lg
 
 
 @pytest.mark.parametrize("mirror", (False, True), ids=("up", "down"))
-@pytest.mark.parametrize("label,s_cls,a_cls,flips", [
-    ("impulse", "impulse", "impulsive", True),
-    ("uncertain", "impulse", "impulsive", False),          # uncertain never flips the trend
-    ("correction", "correction", "corrective", False),
-    ("impulse", "correction", "impulsive", False),          # needs impulse structure too
-    ("impulse", "impulse", "corrective", False),            # and impulsive anatomy
+@pytest.mark.parametrize("label,s_cls,a_cls,conf,flips", [
+    ("impulse", "impulse", "impulsive", "high", True),
+    ("impulse", "impulse", "impulsive", "medium", True),     # agreed after re-read
+    ("impulse", "impulse", "impulsive", "low", False),       # one vote only never sets / flips the trend
+    ("uncertain", "impulse", "impulsive", None, False),      # uncertain never flips the trend
+    ("correction", "correction", "corrective", "high", False),
+    ("impulse", "correction", "impulsive", "high", False),   # needs impulse structure too
+    ("impulse", "impulse", "corrective", "high", False),     # and impulsive anatomy
 ])
-def test_only_an_impulse_counter_move_flips(label, s_cls, a_cls, flips, mirror):
+def test_only_a_trend_capable_impulse_moves_the_trend(label, s_cls, a_cls, conf, flips, mirror):
     df, marks = F.deep_sideways(mirror)
     ch = Chart(df)
     d = -1 if mirror else 1
     first = _leg(ch, d, marks[0], marks[5] + 1, "impulse")
     end = len(ch) - 30                                       # the counter-move ends beyond the first leg's start
-    second = _leg(ch, -d, marks[5] + 1, end, label, s_cls, a_cls)
+    second = _leg(ch, -d, marks[5] + 1, end, label, s_cls, a_cls, conf)
     assert (second.p1 - first.p0) * -d > 0, "precondition: the counter-move breaks the prior swing"
     states, events = RT.derive(ch, [first, second])
     flipped = any(e["to"] == ("UP" if -d > 0 else "DOWN") for e in events)
     assert flipped == flips, events
     if not flips:
         assert states[-1]["trend"] in ("uncertain", "UP" if d > 0 else "DOWN")
+
+
+@pytest.mark.parametrize("mirror", (False, True), ids=("up", "down"))
+def test_one_vote_impulse_never_sets_the_first_trend_or_moves_the_origin(mirror):
+    df, marks = F.overlapping_correction(mirror)
+    ch = Chart(df)
+    d = -1 if mirror else 1
+    weak = _leg(ch, d, marks[0], marks[5] + 1, "impulse", conf="low")
+    states, events = RT.derive(ch, [weak])
+    assert events == [] and all(s["trend"] is None for s in states)
+    strong = _leg(ch, d, marks[0], marks[5] + 1, "impulse")
+    later = _leg(ch, d, marks[8], marks[10], "impulse", conf="low")
+    states, _ = RT.derive(ch, [strong, later])
+    assert states[-1]["origin"] == strong.p0, "a one-vote impulse does not move the protected origin"
+
+
+@pytest.mark.parametrize("mirror", (False, True), ids=("up", "down"))
+def test_live_trend_needs_a_break_of_the_prior_swing_to_flip(mirror):
+    df, marks = F.sharp_a(mirror)
+    ch = Chart(df)
+    d = -1 if mirror else 1
+    first = _leg(ch, d, marks[0], marks[5] + 1, "impulse")
+    second = _leg(ch, -d, marks[5] + 1, marks[10], "impulse")
+    assert (second.p1 - first.p0) * -d < 0, "precondition: no break"
+    states, events = RT.derive(ch, [first, second])
+    assert not any(e["to"] == ("UP" if -d > 0 else "DOWN") for e in events)
+    assert "no break of the prior swing" in states[second.known_bar]["why"]
+
+
+def test_settings_register_matches_defaults():
+    assert set(RS.REGISTER) == set(RS.DEFAULTS)
+    assert set(RS.DEFAULTS["weights"]) == set(RS.FEATURES)
+
+
+def test_reread_alternatives_stay_exactly_one_degree_lower():
+    k = RS.DEFAULTS["dc_k"]
+    ratio = max(k[i - 1] / k[i] for i in range(1, len(k)))
+    assert all(ratio < m <= 1.0 for m in RS.DEFAULTS["reread_k_mult"])

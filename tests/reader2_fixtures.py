@@ -88,7 +88,7 @@ CONT = [("imp", 200, 12), ("cor", -70, 20), ("imp", 220, 14), ("cor", -90, 24)]
 # sideways overlapping decline that closes below the impulse origin (corrective anatomy, not an impulse)
 DEEP_SIDEWAYS = [("cor", -220, 30), ("cor", 90, 16), ("cor", -400, 50), ("cor", 150, 24)]
 # sharp 5-wave counter-move (impulsive candles) that retraces ~65% but does not break the impulse origin
-SHARP_A = [("imp", -150, 6), ("cor", 50, 5), ("imp", -200, 8), ("cor", 45, 5), ("imp", -140, 6), ("cor", 80, 8)]
+SHARP_A = [("imp", -200, 7), ("cor", 100, 10), ("imp", -260, 9), ("cor", 110, 10), ("imp", -170, 7), ("cor", 130, 14)]
 
 
 def clean_impulse(mirror=False, volume=False):
@@ -136,3 +136,67 @@ def split_hourly(daily, per_day=7):
             a, b = xs[k], xs[k + 1]
             rows.append((r["timestamp"] + pd.Timedelta(hours=9, minutes=15) + pd.Timedelta(hours=k), a, max(a, b), min(a, b), b))
     return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"])
+
+
+# ---------------------------------------------------------------------------------------------------------------- realistic candles
+def _real(p, delta, n, kind, rng):
+    """Noisy candles: bodies ~50–65 % (imp), wicks on both sides, occasional small opposite candle; 'cor' overlapping and choppy;
+    'neu' = ambiguous (bodies ~40 %, closes mid-range, heavy overlap) — moves in the leg direction without impulsive anatomy."""
+    d = 1.0 if delta > 0 else -1.0
+    rows, c = [], p
+    if kind == "imp":
+        w = rng.uniform(0.7, 1.3, n)
+        flip = rng.random(n) < 0.15
+        w[flip] = -0.3
+        w[0] = abs(w[0])
+        steps = delta * w / w.sum()
+        for st in steps:
+            o = c + rng.normal(0, 0.03) * abs(delta) / n
+            c = o + st
+            body = abs(c - o)
+            r = body / rng.uniform(0.5, 0.65)
+            wick = r - body
+            u = rng.uniform(0.25, 0.45)                                  # share of wick at the leg-direction extreme (smaller)
+            top, bot = (wick * u, wick * (1 - u)) if (c - o) * d > 0 else (wick * (1 - u), wick * u)
+            if st < 0:
+                top, bot = bot, top
+            rows.append((o, max(o, c) + top, min(o, c) - bot, c, 200.0 * rng.uniform(0.8, 1.2)))
+        return rows
+    drift = abs(delta) / n
+    mult, jit, wk = (5.0, 0.25, 0.4) if kind == "cor" else (3.0, 0.22, 0.3)
+    mids = p + delta * np.arange(1, n + 1) / n
+    for k, m in enumerate(mids):
+        r = max(0.9 * U, mult * drift) * rng.uniform(0.85, 1.15) * (1.0 - (0.4 if kind == "cor" else 0.0) * k / max(n - 1, 1))
+        sg = -d if k % 2 == 0 else d
+        o = c
+        c = m + jit * r * sg * rng.uniform(0.7, 1.3) if k < n - 1 else m
+        rows.append((o, max(o, c) + wk * r * rng.uniform(0.7, 1.3), min(o, c) - wk * r * rng.uniform(0.7, 1.3), c,
+                     (90.0 if kind == "cor" else 150.0) * rng.uniform(0.8, 1.2)))
+    return rows
+
+
+def realistic(shape, mirror=False, volume=False, seed=7, warm=WARM, start=P0):
+    """Same shapes as `frame` but with noisy, realistic candles (kinds imp / cor / neu). Deterministic per seed."""
+    rng = np.random.default_rng(seed)
+    rows = _warm(warm, start)
+    marks = [len(rows) - 1]
+    p = rows[-1][3]
+    for kind, delta, n in shape:
+        rows += _real(p, delta, n, kind, rng)
+        p = rows[-1][3]
+        marks.append(len(rows) - 1)
+    a = np.array(rows, float)
+    o, h, lo, c, v = a.T
+    if mirror:
+        o, h, lo, c = MIRROR - o, MIRROR - lo, MIRROR - h, MIRROR - c
+    from mtf.adapter import SYN_EPOCH
+    df = pd.DataFrame({"timestamp": pd.bdate_range(SYN_EPOCH, periods=len(a)), "open": o, "high": h, "low": lo, "close": c})
+    if volume:
+        df["volume"] = v
+    return df, marks
+
+
+def neutral_shape(shape, scale=0.6, slow=2):
+    """Same waves, every candle drawn ambiguous ("neu"): the structure without impulsive anatomy. Ambiguous candles have a smaller
+    range, so the waves are scaled (`scale` × price, `slow` × bars) to keep the same size in median-range units."""
+    return [("neu", scale * dl, slow * n) for _, dl, n in shape]

@@ -152,6 +152,60 @@ def test_inv4_close_beyond_the_protected_origin_rereads_the_trend(dn, mirror):
     _check_log(R)
 
 
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_inv4_marking_without_origin_uses_the_trend_legs_start(dn, mirror):
+    df, _ = F.deep_sideways(mirror)
+    R = RR.build(df)
+    d = _d(mirror)
+    up = _leg(R, d)
+    RR.mark(R, events=[{"bar": up.known_bar, "trend": _name(d)}])                         # no origin, no leg
+    assert "4" in _invs(R)
+    SC.run(R)
+    assert R.trend_now()["trend"] == "uncertain"
+
+
+# ------------------------------------------------------------------------------------------------------------ uncertain is not permanent
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_uncertain_trend_is_re_entered_by_a_clear_agreeing_impulse(dn, mirror):
+    """Origin closed beyond ⇒ uncertain; a later 5-wave impulse with impulsive candles re-establishes the trend (Dow path)."""
+    df, _ = F.frame(F.IMPULSE + F.DEEP_SIDEWAYS[:3] + F.IMPULSE + F.OVERLAP_ABC[:1], mirror)
+    R = RR.read(df)
+    d = _d(mirror)
+    tr = [s["trend"] for s in R.states]
+    first_unc = tr.index("uncertain")
+    assert _name(d) in tr[:first_unc]
+    back = [i for i in range(first_unc, len(tr)) if tr[i] == _name(d)]
+    assert back, "uncertain must not be permanent"
+    ev = next(e for e in R.events if e["bar"] == back[0])
+    assert "trend re-read" in ev["why"]
+    assert tr[-1] == _name(d)
+    assert sum(t == "uncertain" for t in tr) < 0.4 * len(tr)
+
+
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_uncertain_trend_can_be_re_entered_the_other_way(dn, mirror):
+    """After the origin breaks, a clear impulse in the opposite direction sets the new trend (no prior-swing break needed)."""
+    down = [(k, -dl, n) for k, dl, n in F.IMPULSE]
+    df, _ = F.frame(F.IMPULSE + [("cor", -500, 100), ("cor", 350, 50)] + down + [("cor", 150, 40)], mirror)
+    R = RR.read(df)
+    tr = [s["trend"] for s in R.states]
+    assert "uncertain" in tr and tr[-1] == _name(-_d(mirror))
+
+
+# ---------------------------------------------------------------------------------------------------------------- provisional leg
+@pytest.mark.parametrize("dn,mirror", DIRS)
+def test_unfinished_move_is_read_but_never_moves_the_trend(dn, mirror):
+    df, marks = F.sharp_a(mirror)
+    d = _d(mirror)
+    T = marks[10]                                                     # inside the sharp counter-move, before it is confirmed
+    R = RR.read(df.iloc[:T + 1])
+    cur = R.current[2]
+    assert cur.provisional and cur.dirn == -d and cur.label is not None and cur.known_bar == T
+    assert cur not in R.all_legs()
+    assert not any(e["to"] == _name(-d) for e in R.events)
+    assert any(lg["provisional"] for lg in RR.summary(R)["legs"])
+
+
 # ---------------------------------------------------------------------------------------------------------------- invariant 5
 @pytest.mark.parametrize("dn,mirror", DIRS)
 def test_inv5_two_opposite_impulses_are_reread(dn, mirror):
@@ -186,15 +240,16 @@ def test_inv6_higher_timeframe_wins_for_trend_lower_gives_the_pullback(dn, mirro
 
 
 # ---------------------------------------------------------------------------------------------------------------- invariant 7
+@pytest.mark.parametrize("name", ("overlapping_correction", "sharp_a", "deep_sideways"))
 @pytest.mark.parametrize("dn,mirror", DIRS)
-def test_inv7_label_known_at_T_uses_bars_up_to_T(dn, mirror):
-    """Fused labels and the trend state at T are the same whether or not later bars exist."""
-    df, _ = F.overlapping_correction(mirror)
-    full = RR.build(df)
-    for T in (140, 170, 200, 240, 280):
-        cut = RR.build(df.iloc[:T + 1])
-        known = {lg.key: lg.label for lg in full.all_legs() if lg.known_bar <= T}
-        mine = {lg.key: lg.label for lg in cut.all_legs()}
+def test_inv7_label_known_at_T_uses_bars_up_to_T(name, dn, mirror):
+    """Final labels (after the self-check) and the trend state at T are the same whether or not later bars exist."""
+    df, _ = getattr(F, name)(mirror)
+    full = RR.read(df)
+    for T in range(140, len(df), 30):
+        cut = RR.read(df.iloc[:T + 1])
+        known = {lg.key: (lg.label, lg.confidence) for lg in full.all_legs() if lg.known_bar <= T}
+        mine = {lg.key: (lg.label, lg.confidence) for lg in cut.all_legs()}
         assert known == mine, T
         assert [s["trend"] for s in full.states[:T + 1]] == [s["trend"] for s in cut.states], T
 
