@@ -1783,6 +1783,27 @@ dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegr
 तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
 उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.
 
+## 2026-10-11 · L6 — level bots replay: legacy touch वि. confirmation (Abhi §6)
+
+**काय केलं:** `level_bots_replay.py` (pure functions) + `scripts/level_bots_replay.py` (CLI, फक्त local data, network / DB / order नाही) ⇒
+`docs/reports/level_bots_confirmation.md` + CSV (`data/research/level_bots_replay/`). दोन्ही arms त्याच दिवसांवर, त्याच levels वर (bots चे Dynamic
+S/R, refresh scripts चे parameters / lookback, सत्र सुरुवात + दर 60 मिनिटं बंद bars वरून), तोच cost (charges.py ⇒ points). Touch arm = bot फाईल्समधली
+functions थेट (`check_level_crossed`, `determine_direction_with_hysteresis`) + settings defaults (RSI, max hits, cooldowns, 14:45, EOD, naked spot %
+SL / target); confirmation arm = `LR.evaluate` प्रत्येक बंद confirmation-TF candle ला (live सारखं), trend = एकच `DD.fold` प्रति symbol + `state_at`
+प्रति दिवस, exit = structural SL / target. अहवाल: प्रति bot trades / win rate / net expectancy / max DD / PF, bull / bear / range / no trend split,
+gate ने नाकारलेले legacy trades कारणानुसार (saved / cost), n < 30 ⇒ निष्कर्ष नाही. NIFTY फक्त IS / VAL (HOLDOUT guard); BANKNIFTY फक्त 15M
+(≈ 3 महिने, SRv2) आणि MCX 30m (≈ 4 महिने) — illustration.
+**Tests:** `tests/test_level_bots_replay.py` 32 pass (exits आरसा, position नियम, metrics, gate निकाल गट, n < 30, holdout, एकच fold, legacy = bot functions).
+**SAMPLE:** NIFTY 2021-12-17 → 2022-01-13 (20 दिवस IS / VAL), BANKNIFTY / MCX 19–20 दिवस — अहवालावर "SAMPLE — full run pending". पूर्ण run lead
+चालवेल: `python3 scripts/level_bots_replay.py` (≈ 35 मिनिटं). Bot फाईल्सना हात नाही (LIVE / touch वर्तन तसंच).
+**Review दुरुस्त्या (🔴1 / 🟡2–5 / ⚪):** confirmation arm ला आता bot चेच exits (live मध्ये exits ला हात नाही) — फक्त entry gate वेगळा; structural
+SL / target वेगळा तिसरा arm "confirmation + structural exit (not live)". Position नियम live प्रमाणे: Instant / Classic (level, role) 30 मिनिटं,
+SRv2 चा symbol-व्यापी cooldown काढला (live मध्ये कधीच लागत नाही), level SL / TSL 15, MCX तोट्याचा SL 60 + level-दिशा block. Exits:
+`evaluate_point_spot_exit` चा spot भाग + TSL-to-breakeven (sticky); premium-points भाग replay होत नाही (assumptions मध्ये). Rejection: त्याच बाजूची,
+त्याच भेटीची (arrival → area सोडेपर्यंत) gate नोंद; cutoff नंतरचा confirmation ⇒ "after cutoff". MCX: L4 नियम (structural SL settings SL ने
+capped ⇒ SL_TOO_WIDE skip, R:R पुन्हा), confirmation 30m (15m data नाही), "ILLUSTRATION — default points unrealistic" ठळक. काळ = DP.period सगळ्यांना,
+seal `is_nifty`, शेवटच्या bar वरचा entry ⇒ dropped नोंद, ctx_days 5. Tests 42 pass; SAMPLE पुन्हा बनवला.
+
 ## 2026-10-11 · Chart Reader v2 CR0–CR2 (Abhi: TRADE_SESSION_CHART_READER_V2) — research-only
 
 **CR0:** `docs/READER2_DESIGN.md` (English) — design, units (median range), data flow, invariants तक्ता, आणि `legs2/features.py` audit (काय आहे / anatomy

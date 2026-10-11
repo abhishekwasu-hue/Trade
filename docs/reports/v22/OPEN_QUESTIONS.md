@@ -105,6 +105,14 @@
 | LB9 | a2 handover वाचन: पहिल्या / दुसऱ्या अर्ध्याची तुलना; body आवश्यक + इतर उप-तपासण्यांपैकी किमान अर्ध्या | तसेच (`study_min_bars` 4) | प्रत्येक उप-तपासणी आवश्यक |
 | LB10 | SENSEX volume | SENSEX FUT (BSE) resolver नाही ⇒ NA ⇒ grade कमाल B | BSE FO resolver जोडणे |
 | LB11 | Engine (decision3) diffs: ④ (a) आता relative contraction (`power_a_rule`); ④ (e) handover-volume (volume असेल तर, engine च्या 15M data मध्ये volume नाही ⇒ NA); commitment ला dominance + volume फक्त `win` दिल्यावर (gate) — engine call अजून win देत नाही | decision3 tests / goldens मध्ये बदल नाही (फक्त जुन्या strict-3 test ला `power_a_rule="strict3"`); v22 review charts पुन्हा बनवले नाहीत | engine मध्ये commitment ला K window देणे (Abhi सांगतील तेव्हा) |
+| LB18 | L6 replay cost: option premium इतिहास नाही ⇒ P&L index points; cost = 1 lot naked ITM buy (NIFTY premium ₹150, lot 75, delta 0.6, slippage ₹0.5 / बाजू ⇒ ≈ 3.2 pts; BANKNIFTY ₹350 / 35 / 0.6 / ₹1 ⇒ ≈ 6.7 pts) | `COST_DEFAULTS` (निकाल न पाहता) | Abhi चे आकडे / credit spread चा cost |
+| LB19 | L6 exits: touch आणि confirmation दोघांना bot चेच exits — naked spot % SL / target entry पासून + TSL-to-breakeven (5M / SRv2 0.10 %, Classic 0.6 %, sticky; live चं "premium ≤ 0" ⇒ spot ≤ entry); premium-points SL / TSL / target, premium trailing, spread exits, next-level exit replay नाहीत (premium इतिहास नाही) | तसेच; structural SL / target फक्त तिसरा तुलना-arm (not live) | premium model / LB2 structural exit live करणे |
+| LB20 | L6 levels: सत्र सुरुवात + दर 60 मिनिटं (live: 1M / 5M दर 5 मिनिटं, 15M+ दर 15 मिनिटं); level memory replay नाही | `level_refresh_min` 60 | 5 / 15 मिनिटं (run वेळ ×4–12) |
+| LB21 | BANKNIFTY intraday इतिहास फक्त 15M ≈ 3 महिने (2026-07 → 10, calendar NIFTY design window शी जुळतो) ⇒ फक्त SRv2, illustration | तसेच | VPS वरून BANKNIFTY 1m / 5m IS / VAL इतिहास |
+| LB22 | MCX: फक्त 30m ≈ 4 महिने, volume नाही; confirmation 30m (live 15m); Daily trend ≤ 4 महिन्यांवरून (live ~10 वर्षं); cascade / supertrend / structure SL replay नाहीत | illustration | MCX 15m + Daily लांब इतिहास (L4 सोबत) |
+| LB23 | IS / VAL मध्ये index futures volume नाही ⇒ gate ची volume तपासणी (c0) replay मध्ये कधीच लागत नाही (grade ≤ B) | तसेच | NSE F&O bhavcopy (Daily) पुरेसा नाही — intraday futures volume हवा |
+| LB24 | Trend split: Daily trend UP / DOWN पण gate ने entries अडवले (origin broken / धोक्यात, A1 parent correction) ⇒ bull / bear मध्येच, verdict "trend unclear" | तसेच | वेगळा "blocked" गट |
+
 
 ## Chart Reader v2 (TRADE_SESSION_CHART_READER_V2) — CR0–CR2 मध्ये घेतलेले default निर्णय (Abhi ने बदलावे; research-only, कोणताही bot / decision3 वापरत नाही)
 
