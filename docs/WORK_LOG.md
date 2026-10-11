@@ -1841,6 +1841,25 @@ Tests: COMPLETE खरंच तपासणारा (W = 3-wave ⇒ आधी 
 आकडे: mature दिवस NIFTY 1755 ⇒ 809, BANKNIFTY 1685 ⇒ 443; BANKNIFTY V22 (15M 2026-07 पासून) setup 0 ⇒ 0; level bots BANKNIFTY शेवटचे 250 सत्र: 5 दिवस blocked ⇒ allowed (2026-06-29 … 07-03), शेवटचा दिवस context तसाच. NIFTY अलीकडचे सत्र holdout ⇒ offline नाही.
 Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `python3 <scratchpad>/prA_v22_nifty.py <scratchpad>/base <out_old.json>` आणि `python3 <scratchpad>/prA_v22_nifty.py /home/user/Trade-eng <out_new.json>`.
 
+
+## 2026-10-11 · PR B (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5 — chart declutter + legend + 2-ओळी caption + Vision consistency)
+
+**काय केलं (फक्त दृश्य / caption / Vision prompt — engine fold बदल नाही):**
+- `daily_swings.view_spec`: text फक्त चालू + आधीच्या correction ला; in-progress candidate box वर "pullback" एकदाच (box मधल्या pullback / candidate खुणा नाहीत); box नसताना चालू pullback ⇒ एकच खूण; जुने boxes फिके (text नाही) — window > `chart_old_box_sessions` (126) ⇒ नाहीतच. `full=True` (debug) ⇒ सगळं.
+- `level_bands`: कमाल 6, degree क्रम; नवा rank-2 "structure low / high" (शेवटच्या पूर्ण correction ची सुरुवात — BANKNIFTY March low) window टोकांच्या वर; नावं "demand / supply / protected / sharp-fall supply / target <price> (state)"; तुटलेला कमाल 1 (सर्वात अलीकडचा), dashed.
+- `charts.daily_swings_fig`: पट्ट्यांचे labels उजव्या margin मध्ये, box labels box वर / आत — pixel bbox collision (candles + मजकूर + legend); जागा नाही ⇒ label (आणि पट्टा) सोडतो. Legend एका कोपऱ्यात (candles वर नाही — गरज असल्यास y-axis वाढवतो), फक्त काढलेल्या styles.
+- Caption: ओळ 1 अवस्था + protected + risk (ATR_D), ओळ 2 जवळची supply / demand + अंतर ATR_D (`chart_atr_n` 14); मग पूर्ण रचना ओळ.
+- Vision (`DAILY_SYSTEM_PROMPT` / `DAILY_SCHEMA`, v3): structure-consistency तपासणी (caption चा trend वि. काढलेली रचना); facts मध्ये caption ओळी + शेवटचा box + प्रत्यक्ष काढलेले boxes. Audit-only.
+
+**Tests:** नवी `tests/test_decision3_chart_declutter.py` (UP / DOWN आरसा): 2-वर्ष window label मोजणी (≤ 2 correction + 6 पट्टे + origin + legend), text-text / text-candle overlap नाही (5 fixtures), legend = काढलेल्या styles, box खोली, नावं / 1 broken dashed, structure टोक rank, caption ATR, Vision consistency. जुने review tests नव्या नियमांप्रमाणे (tags ≤ 2; full view मध्ये सगळे).
+**Real BANKNIFTY 2y:** labels 6 पट्टे + 2 (correction 74% zigzag, pullback) + legend; overlap 0; काहीच सोडावं लागलं नाही. निर्णय: OPEN_QUESTIONS CD1–CD10.
+**Abhi review (BANKNIFTY chart "चुकीचं मार्किंग"):** labelled correction boxes वर a-b-c / a–e / W-X-Y अक्षरं family वाचलेल्या pivots वर (`daily_legs.wave_ends`; चालू wave ला नाही). Trend legs आता सरळ origin ⇒ टोक रेषा नाहीत — leg च्या स्वतःच्या pivots मधून zig-zag; `read_counter` ने तपासणी (look-ahead नाही): impulse ⇒ घन नारंगी, 3-wave ⇒ राखाडी, चालू / न वाचलेला ⇒ dashed "impulse not confirmed"; caption / title "new impulse" फक्त 5 waves सिद्ध असल्यावर. Engine (fold) बदल नाही. CD11–CD12.
+**Independent review (🟡1–6 + nits):** nearest पट्टा कडेच्या अंतरावर (ओळ 1 / 2 एकच नियम); महत्त्वाचे labels कधीच टाकत नाही (leader रेषा), टाकलेले JSON + Vision facts मध्ये; protected रेषा role वर; broken मर्यादा merge आधी; target सगळ्या hits तपासतो; protected sharp zone मध्ये ⇒ एक पट्टा; legend मध्ये कडेचे बाण / `$p$` नाहीत; Vision facts depth %, काढलेले पट्टेच, cache key prompt version. Tests हाताने मोजलेल्या आकड्यांवर (ATR, अंतर), old-box सीमा, ≥ 6 दाट पट्टे. CD13.
+**Abhi (run2 नंतर):** read_counter "3-wave" fallback (न वाचलेलं, n ≠ 3) / single ⇒ dashed "unclear", राखाडी फक्त ओळखलेल्या corrective ला (CD14). BANKNIFTY Feb → Mar leg तरीही राखाडी — read_counter त्याला zigzag वाचतो (CD14).
+**Trend degree (run4):** legs आता trend-degree impulses (`trend_impulses`: सलग एकाच दिशेचे sub-legs, A1 / दिशा बदलावर सीमा) — संपूर्ण leg एकदाच read_counter; sub-legs वेगळे काढत नाही. BANKNIFTY Feb → Apr: zigzag, n 9 ⇒ राखाडी (CD14).
+**Final (run5):** trend legs कधीच राखाडी नाहीत — impulse / diagonal ⇒ घन नारंगी, बाकी ⇒ dashed "impulse not verified (structure-only check)"; family + n JSON / Vision facts मध्ये; रेषा window मध्ये ≤ 15 बिंदू (`chart_leg_path_points`). CD14.
+**Re-review (#297):** `coarse_path` लवकर थांबल्यास जसे आहे तसे (ValueError नाही), `chart_leg_path_points` ≥ 6; caption ओळ 1 risk आता protected **किंमती**पर्यंत (BANKNIFTY 4.7 ATR — merged sharp zone कडा 3.9 ATR कमी दाखवत होती), ओळ 2 कडेचाच नियम; "pullback" label चालू (unconfirmed) bounce वर, नसेल तर "last pullback high / low", leader रेषेसह.
+
 ## 2026-10-11 · Level bots L4 (MCX) + L5 (visibility)
 
 **L4 — MCX confirmation gate** (`mcx_futures_trader.py`): PAPER pause काढला; trend = decision3 Daily fold सध्याच्या contract च्या Daily candles वर
