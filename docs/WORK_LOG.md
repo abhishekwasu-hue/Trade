@@ -1858,3 +1858,25 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+
+## 2026-10-12 (IST रात्र) · RESUME worker — CI flake + v2.2 §7.3 trapped zones
+
+**CI (#295 / #297 लाल):** `TestCheckVixSpikeHalt` चे 4 tests — `TODAY` class attribute collection वेळी (23:44 IST) धरलेला, tests 00:19 IST ला
+⇒ `trade_date` जुना ⇒ fail-open. main चा run 18:30:48 UTC ला संपला म्हणून पास. दुरुस्ती: autouse fixture `_freeze_today` + regression tests
+(`test_today_not_captured_at_collection_time`, `test_halt_rolls_off_after_midnight`). Simulated-midnight plugin ने जुन्या code वर तेच 4 fail,
+नव्या वर 14 pass. PR #298 (draft, `claude/fix-vix-halt-test-midnight`); तोच commit #295 आणि #297 वर cherry-pick (3ef5e4e / 2e6a243).
+
+**v2.2 §7.3 trapped zones (`claude/v22-trapped-zones`):** `decision3/liquidity.counter_traps` — (b) `late_counter`: K चा शेवटचा counter push
+आधीच्या confirmed D1 counter टोकापलीकडे नवं टोक करून close परत आधीच्या टोकाच्या trend-बाजूला ⇒ पट्टा [आधीचं टोक, नवं टोक]; (c) `engulfed_counter`:
+K मध्ये trend-विरुद्ध big_body candle लगेच trend-दिशेच्या body ने गिळली ⇒ पट्टा = तिची body. `method.risk(..., traps=)`: SL पाया = level कड /
+K टोक / trade-बाजूच्या trapped zones ची दूरची कड यांतला सर्वात दूरचा (`sl_beyond_trapped`, default True — spec §7.3) + buffer; `risk["sl_src"]`
+(level / K / trapped). Story: sweep नसेल तर "… मध्ये buyers अडकले (…)", SL "(trapped पलीकडे)"; chart label मध्ये kind. पुरावा `trap_sweep`
+बदलला नाही (Q56 default: (b)/(c) पुराव्यात नाहीत). नवे thresholds नाहीत (candle_read + D1 pivots). Tests `tests/test_decision3_trapped_zones.py`
+(9: दोन्ही kinds + आरसा, known_at (confirm_bar > t ⇒ नाही), truncation, SL पलीकडे / विरुद्ध बाजू नाही / K आत ⇒ बदल नाही / setting off, story).
+decision3 + level bots 266 pass / 1 xfail.
+**Before / after (NIFTY IS 2023-10-01 … 2024-03-27, 2997 bars, holdout नाही):** decision / conviction / SL / R:R / ⑦ बदल **0** (risk bars 5, सगळे
+wait); नवे zones chart / story ला: engulfed_counter 112 bars, late_counter 11, failed_breakout 31 (आधीही). (b)/(c) K च्या आत ⇒ SL फक्त (a) चं
+टोक K पलीकडे असेल तर बदलतो — या slice मध्ये 0 वेळा. BANKNIFTY data (trade-data) या run ला उपलब्ध नव्हता.
+**Self-review:** sign (UP ⇄ DOWN) आरसा tests; (b) prev pivot K बाहेरचा / unconfirmed ⇒ नाही; risk `traps=None` ⇒ जुना SL; `liquidity.trapped`
+[:2] ⇒ [:3] (फक्त chart / story); (c) पूर्ण K scan O(K) प्रति bar — NIFTY 6 महिने run मध्ये वेळ ठीक. उघडं: Q56.
+**पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं.

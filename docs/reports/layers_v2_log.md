@@ -451,3 +451,8 @@ D2 transitions 14, त्यापैकी protected अखंड 8 (D2 trend �
 2. मग क्रमाने थर 3 … 7 (प्रत्येक थराचं script तयार आहे: `scripts/leg_check2.py`, `pattern_check2.py`, `zone_check.py`,
    `trendline_check.py`, `rsi_check.py`, `decision_check.py`).
 3. सात ✔ ⇒ migration prompt (वेगळा टप्पा).
+
+## 2026-10-12 · v2.2 §7.3 trapped zones (b) late_counter / (c) engulfed_counter + SL trapped पलीकडे (`claude/v22-trapped-zones`)
+`decision3/liquidity.counter_traps` (K मधले अडकलेले counter traders), `method.risk` ला `traps=` आणि `sl_beyond_trapped` (default True, spec §7.3),
+`risk["sl_src"]`; story / chart मध्ये zone + kind. पुरावा `trap_sweep` तसाच (Q56). NIFTY IS slice (2023-10 … 2024-03, 2997 bars): निर्णय / SL / R:R
+बदल 0; नवे zones 112 + 11 bars (chart). Tests 9 नवे (आरसा, known_at, truncation, setting off); decision3 suite 266 pass. तपशील WORK_LOG.
