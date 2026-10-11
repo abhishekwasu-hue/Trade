@@ -62,6 +62,11 @@ def apply_filters(df, start=None, end=None, bots=None, verdicts=None, results=No
     return df[m].reset_index(drop=True)
 
 
+def _file(p):
+    """DB मधला path NaN / None / रिकामा असू शकतो (chart अपयश) ⇒ False; os.path.exists(float) TypeError नको (VPS वर page crash)."""
+    return isinstance(p, str) and bool(p) and os.path.exists(p)
+
+
 def disk_usage(path):
     p = path if os.path.exists(path) else "/"
     u = shutil.disk_usage(p)
@@ -122,13 +127,19 @@ def render_settings():
                 st.success("event दिवस साठवले")
             except ValueError as exc:
                 st.error(str(exc))
+        d1, d2 = st.columns(2)                                             # एकूण Vision मर्यादा (signals + visual audit + v2.2 chart audit)
+        day_cap = d1.number_input("Vision दैनिक budget ($/दिवस)", value=float(g["vision_daily_budget_usd"]), step=0.1,
+                                  key="v_day_budget")
+        mon_cap = d2.number_input("Vision मासिक budget ($/महिना)", value=float(g["vision_monthly_budget_usd"]), step=1.0,
+                                  key="v_month_budget")
         b1, b2, b3 = st.columns([3, 3, 2])
         cap = b1.number_input("Visual audit दैनिक cap ($)", value=float(g["visual_audit_daily_cap"]), step=0.01, key="v_va_cap")
         res = b2.number_input("Signals राखीव ($/दिवस)", value=float(g["signals_daily_reserve_usd"]), step=0.01, key="v_sig_res")
         if b3.button("Budget Save", key="v_budget_save"):
             try:
-                VC.save("_global", {"visual_audit_daily_cap": cap, "signals_daily_reserve_usd": res}, "dashboard")
-                st.success("visual audit cap / signals राखीव साठवले")
+                VC.save("_global", {"vision_daily_budget_usd": day_cap, "vision_monthly_budget_usd": mon_cap,
+                                    "visual_audit_daily_cap": cap, "signals_daily_reserve_usd": res}, "dashboard")
+                st.success("Vision दैनिक / मासिक budget, visual audit cap, signals राखीव साठवले")
             except ValueError as exc:
                 st.error(str(exc))
         a1, a2 = st.columns([6, 2])
@@ -227,11 +238,11 @@ def render():
     for _, r in v.sort_values("signal_ts", ascending=False).head(30).iterrows():
         with st.expander(f"{str(r['signal_ts'])[:16]} · {r['bot']} · {r['symbol']} {r['direction']} · {r['verdict']} · {r['result'] or 'open'}"):
             a, b = st.columns(2)
-            if r["image_path"] and os.path.exists(r["image_path"]):
+            if _file(r["image_path"]):
                 a.image(r["image_path"], caption="vision ला पाठवलेली (_sent.png)")
             else:
                 a.info("_sent.png नाही (chart अपयश / archive नंतर delete)")
-            if r["outcome_path"] and os.path.exists(r["outcome_path"]):
+            if _file(r["outcome_path"]):
                 b.image(r["outcome_path"], caption="POST-HOC (_outcome.png) — vision कडे नाही")
             else:
                 b.info("Outcome अजून नाही (trade चालू / सापडला नाही)")
