@@ -132,7 +132,7 @@ REGISTER = {
     "score_daily_bonus / score_fresh_bonus / score_test_penalty": ("1 / 1 / 0.5", "—", "अंदाज",
                                                                    "spec §5.4 ★ provenance / freshness; निर्णयात नाही"),
     "sl_buffer_sigma": (0.25, "0.1/0.25/0.5", "अंदाज", "spec ⑦ buffer σ_15M × अपूर्णांक"),
-    "sl_beyond_trapped": (True, "True / False", "Abhi नियम", "spec §7.3 'SL trapped zone च्या पलीकडे' — failed_breakout / late_counter / engulfed_counter (Q56)"),
+    "sl_beyond_trapped": (True, "True / False", "Abhi नियम", "spec §7.3 'SL trapped zone च्या पलीकडे' — K मध्ये बनलेले zones; (b)/(c) K टोकाच्या आत ⇒ व्यवहारात फक्त (a) failed_breakout (Q56)"),
     "min_rr": (3.0, "—", "Abhi नियम", "spec ⑦ R:R < 3 ⇒ trade नाही (एकमेव numeric gate)"),
     "entry_tick": (0.05, "—", "व्याख्या", "spec §5.2 B2 'signal-bar extreme च्या 1 tick पलीकडे' (Q21)"),
     "evidence_weights": ("§6.3 यादी", "±0.5", "अंदाज", "spec §6.3–6.4 पुराव्यांचं वजन (Abhi च्या E1–E4 खुणांशी जुळवायचं, निकाल पाहून नाही)"),

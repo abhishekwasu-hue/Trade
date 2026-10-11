@@ -27,7 +27,7 @@ def mirror(rows, c=200.0):
 # bar 5 परत खाली close 108 (< 110) ⇒ उशिरा आलेले buyers [110, 114] मध्ये अडकले.
 LATE = [(100, 108, 99, 107), (107, 110, 106, 109), (109, 109.5, 105, 106), (106, 107, 103, 104), (104, 114, 103.5, 113),
         (113, 113.5, 107, 108)]
-K_LATE = {"open": True, "k_open_bar": 0, "k_ext": 114.0, "k_ext_bar": 4, "legs": 2, "i_end": 95.0}
+K_LATE = {"open": True, "k_open_bar": 0, "k_ext": 114.0, "k_ext_bar": 4, "legs": 2, "i_end": 95.0, "i_end_bar": -1}
 PIV_LATE = [NS(kind="H", price=110.0, bar=1, confirm_bar=3)]
 
 
@@ -51,8 +51,10 @@ def test_late_counter_needs_return_and_prior_confirmed_extreme():
     # known_at: आधीचं टोक अजून confirm नाही (confirm_bar 7 > t 5) ⇒ trap नाही
     assert not [x for x in LQ.counter_traps(A, 5, M.DOWN, K_LATE, S, [NS(kind="H", price=110.0, bar=1, confirm_bar=7)])
                 if x["kind"] == "late_counter"]
-    # आधीचं टोक K आधीचं (bar < k_open_bar) ⇒ मोजत नाही
-    assert not [x for x in LQ.counter_traps(A, 5, M.DOWN, {**K_LATE, "k_open_bar": 2}, S, PIV_LATE) if x["kind"] == "late_counter"]
+    # आधीचं टोक I_end च्या आधीचं / I_end वरचं (bar ≤ i_end_bar) ⇒ मोजत नाही (Pullbacks.legs सारखंच: p.bar > i_end_bar)
+    assert not [x for x in LQ.counter_traps(A, 5, M.DOWN, {**K_LATE, "i_end_bar": 1}, S, PIV_LATE) if x["kind"] == "late_counter"]
+    # K उशिरा उघडली (k_open_bar 2) पण pivot I_end नंतरचा ⇒ मोजतो (पहिल्या पायाचं टोक K उघडण्याआधी confirm झालेलं)
+    assert [x for x in LQ.counter_traps(A, 5, M.DOWN, {**K_LATE, "k_open_bar": 2}, S, PIV_LATE) if x["kind"] == "late_counter"]
     # K उघडी नाही ⇒ []
     assert LQ.counter_traps(A, 5, M.DOWN, {**K_LATE, "open": False}, S, PIV_LATE) == []
     assert LQ.counter_traps(A, 5, M.DOWN, None, S, PIV_LATE) == []
@@ -87,9 +89,30 @@ def test_engulf_needs_big_counter_body_full_body_cover_and_k_window():
     assert LQ.counter_traps(A_of(more), 6, M.DOWN, K_ENG, S, []) == LQ.counter_traps(A_of(ENG), 6, M.DOWN, K_ENG, S, [])
 
 
-def test_sl_edge_picks_far_edge_per_direction():
-    tz = [{"lo": 110.0, "hi": 114.0}, {"lo": 112.0, "hi": 118.0}]
+def test_sl_edge_picks_far_edge_per_direction_and_only_k_zones():
+    tz = [{"lo": 110.0, "hi": 114.0, "bar": 2}, {"lo": 112.0, "hi": 118.0, "bar": 6}]
     assert LQ.sl_edge(tz, M.DOWN) == 118.0 and LQ.sl_edge(tz, M.UP) == 110.0 and LQ.sl_edge([], M.UP) is None
+    assert LQ.sl_edge(tz, M.DOWN, k0=3) == 118.0 and LQ.sl_edge(tz, M.UP, k0=3) == 112.0 and LQ.sl_edge(tz, M.DOWN, k0=7) is None
+    assert LQ.sl_edge(tz, M.DOWN, k0=6) == 118.0 and LQ.sl_edge(tz, M.UP, k0=6) == 112.0                 # bar == k0 ⇒ K मधला
+
+
+def test_failed_breakout_needs_price_inside_before_sweep():
+    """Review 🔴: impulse pool ओलांडून खाली गेला (window सुरुवातीलाच pool पलीकडे) ⇒ sweep / failed_breakout नाही — आधी K-पलीकडचं
+    खोटं 'trapped' टोक SL ला लागलं असतं."""
+    S2 = {**S, "accept_closes": 3}
+    rows = [(130, 131, 125, 126), (126, 127, 118, 119), (119, 120, 112, 113), (113, 114, 108, 109), (109, 110, 106, 107),
+            (107, 108.5, 105, 108), (108, 109, 106, 107)]                                                  # pool (swing H) 110: आधीच वर, मग खाली
+    ts = pd.Series(pd.date_range("2030-01-07 09:15", periods=len(rows), freq="15min"))
+    piv = [NS(kind="H", price=110.0, bar=0, confirm_bar=0)]
+    V = NS(levels=NS(A=A_of(rows), ts=ts, sig1h=np.full(len(rows), 10.0), known_pivots=lambda t: piv), s=S2)
+    sw, tr = LQ.sweeps_and_traps(V, 6, 5)                                                                 # window bar 1 पासून; bar 0 आधीच वर
+    assert not [x for x in sw if x["src"] == "swing"] and not tr
+    sw2, tr2 = LQ.sweeps_and_traps(V, 6, 6)                                                               # window bar 1 पासून, आधीचा bar 0 वर ⇒ तसंच
+    assert not [x for x in sw2 if x["src"] == "swing"] and not tr2
+    # खरा sweep (आत ⇒ पलीकडे wick ⇒ परत) अजूनही ओळखतो
+    sweep = [(105, 106, 104, 105)] * 3 + [(105, 112, 104, 108), (108, 109, 106, 107)]
+    V2 = NS(levels=NS(A=A_of(sweep), ts=ts[:5], sig1h=np.full(5, 10.0), known_pivots=lambda t: piv), s=S2)
+    assert [x for x in LQ.sweeps_and_traps(V2, 4, 4)[0] if x["src"] == "swing"]
 
 
 def _V(rows, sigma15=2.0):
@@ -112,6 +135,9 @@ def test_risk_sl_beyond_trapped_zone_and_setting_off():
     ok1, r1 = M.risk(V, 6, M.DOWN, lvl, k, S, traps=traps)
     assert r1["sl"] == round(118.0 + buf, 2) and r1["sl_src"] == "trapped"
     assert r1["rr"] < r0["rr"]                                                            # SL रुंद ⇒ R:R कमी (target तोच)
+    # K आधी (bar < k_open_bar) बनलेला zone SL ला लागत नाही (review 🔴: impulse मधला pool-cross)
+    _, r1b = M.risk(V, 6, M.DOWN, lvl, {**k, "k_open_bar": 3}, S, traps=traps)
+    assert r1b["sl"] == r0["sl"] and r1b["sl_src"] == "K"
     # विरुद्ध बाजूचा (sell-side) trapped zone bear call च्या SL ला लागत नाही
     _, r2 = M.risk(V, 6, M.DOWN, lvl, k, S, traps=[{**traps[0], "side": "sell", "lo": 90.0, "hi": 95.0}])
     assert r2["sl"] == r0["sl"] and r2["sl_src"] == "K"

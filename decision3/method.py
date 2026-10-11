@@ -473,8 +473,9 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
 # ------------------------------------------------------------------------------------------------ ⑦ risk
 def risk(V, t, d, lvl, k, s, traps=None):
     """SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); §7.3: `sl_beyond_trapped` ⇒ trade-बाजूच्या trapped zones
-    (counter traders चा पट्टा) च्या दूरच्या कडेपलीकडे सुद्धा — तिथे ते exit करतात. target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत level
-    (जवळचा). `traps` = liquidity trapped zones (engine देतो; नसेल तर SL फक्त level + K)."""
+    (counter traders चा पट्टा, K मध्ये बनलेले — bar ≥ k_open_bar) च्या दूरच्या कडेपलीकडे सुद्धा — तिथे ते exit करतात. (b) / (c) zones
+    रचनेने K टोकाच्या आत ⇒ व्यवहारात फक्त (a) failed_breakout चं K-पलीकडचं टोक SL हलवतं. target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत
+    level (जवळचा). `traps` = liquidity trapped zones (engine देतो; नसेल तर SL फक्त level + K)."""
     A = V.levels.A
     entry = float(A["close"][t])
     sg15 = V.res["sigma"].get(pd.Timestamp(V.levels.ts[t]).normalize(), np.nan)
@@ -483,7 +484,7 @@ def risk(V, t, d, lvl, k, s, traps=None):
     tz = None
     if s.get("sl_beyond_trapped", True) and traps:
         from . import liquidity as LQ
-        tz = LQ.sl_edge([x for x in traps if x["side"] == ("sell" if d == UP else "buy")], d)
+        tz = LQ.sl_edge([x for x in traps if x["side"] == ("sell" if d == UP else "buy")], d, k0=k.get("k_open_bar") if k else None)
     # SL चा पाया = level कड / K टोक / trapped कड यांतला counter-बाजूला सर्वात दूरचा (क्रमात पहिला जिंकतो ⇒ समान असल्यास "level")
     base = [("level", lvl["lo"] if d == UP else lvl["hi"])] + ([("K", kx)] if kx is not None else []) + ([("trapped", tz)] if tz is not None else [])
     sl_src, sl0 = min(base, key=lambda x: x[1] * d)

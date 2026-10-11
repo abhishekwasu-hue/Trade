@@ -1877,6 +1877,13 @@ decision3 + level bots 266 pass / 1 xfail.
 **Before / after (NIFTY IS 2023-10-01 … 2024-03-27, 2997 bars, holdout नाही):** decision / conviction / SL / R:R / ⑦ बदल **0** (risk bars 5, सगळे
 wait); नवे zones chart / story ला: engulfed_counter 112 bars, late_counter 11, failed_breakout 31 (आधीही). (b)/(c) K च्या आत ⇒ SL फक्त (a) चं
 टोक K पलीकडे असेल तर बदलतो — या slice मध्ये 0 वेळा. BANKNIFTY data (trade-data) या run ला उपलब्ध नव्हता.
-**Self-review:** sign (UP ⇄ DOWN) आरसा tests; (b) prev pivot K बाहेरचा / unconfirmed ⇒ नाही; risk `traps=None` ⇒ जुना SL; `liquidity.trapped`
+**Self-review:** sign (UP ⇄ DOWN) आरसा tests; (b) prev pivot unconfirmed ⇒ नाही; risk `traps=None` ⇒ जुना SL; `liquidity.trapped`
 [:2] ⇒ [:3] (फक्त chart / story); (c) पूर्ण K scan O(K) प्रति bar — NIFTY 6 महिने run मध्ये वेळ ठीक. उघडं: Q56.
+**स्वतंत्र review (reviewer subagent) नंतर दुरुस्त:** 🔴 (a) `sweeps_and_traps` मध्ये impulse pool ओलांडून गेला (window सुरुवातीला आणि आधीच्या bar ला
+आधीच pool पलीकडे) तरी "failed_breakout" (hi = window चं टोक) येत होतं — आधी फक्त chart / पुरावा, आता SL ला लागलं असतं (K टोकापलीकडचं खोटं टोक ⇒
+R:R कोसळतो). दुरुस्ती दोन: sweep ला window-आधीचा bar pool च्या आत हवा (आधीच पलीकडे ⇒ sweep नाही); SL ला फक्त K मध्ये (bar ≥ k_open_bar) बनलेले
+zones. 🟡 (b)/(c) zones रचनेने K टोकाच्या आत ⇒ SL कधीच हलवत नाहीत — व्यवहारात फक्त (a) — register / docstring मध्ये स्पष्ट. 🟡 (b) आधीचं टोक
+`Pullbacks.legs` सारखं I_end नंतरचं (`p.bar > i_end_bar`), K उघडण्याआधी confirm झालेलं पहिल्या पायाचं टोक सुद्धा. Before / after पुन्हा (तोच NIFTY
+slice): decision / conviction / SL / R:R बदल 0; failed_breakout bars 31 ⇒ 20 (खोटे गेले). Tests 11 (नवे: pool-cross ⇒ sweep नाही, K-आधीचा zone SL
+ला नाही, sl_edge k0). decision3 + level bots 267 pass / 1 xfail.
 **पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं.
