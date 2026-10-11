@@ -110,34 +110,66 @@ def test_take_trades_symbol_cooldown_and_level_gap(specs):
 # ------------------------------------------------------------------------------------------------ gate निकाल (rejection grouping)
 UP = {"ok": True, "trend": "UP", "sides": {BULL}}
 DOWN = {"ok": True, "trend": "DOWN", "sides": {BEAR}}
+AREA = (99.0, 101.0)
+
+
+def _bars(closes, lows, highs):
+    C = np.asarray(closes, float)
+    return C.copy(), C, np.asarray(highs, float), np.asarray(lows, float)
+
+
+def _visits(mirror=False):
+    """bars: 0 वर (105) ⇒ 1 ला arrival (BULL), 1–3 area मध्ये, 4 बाहेर; 5 खाली (97) ⇒ 6 ला arrival (BEAR), 7 मध्ये, 8 बाहेर.
+    mirror ⇒ किंमती 200 − x (बाजू उलट)."""
+    cl = [105, 100, 100, 100, 104, 97, 100, 100, 96]
+    lo = [104, 99.5, 99.5, 99.5, 102, 96, 99.5, 99.5, 95]
+    hi = [106, 100.5, 100.5, 100.5, 105, 98, 100.5, 100.5, 97]
+    if mirror:
+        cl, lo, hi = [200 - x for x in cl], [200 - x for x in hi], [200 - x for x in lo]
+    return _bars(cl, lo, hi)
+
+
+def test_gate_visits_side_and_extent_mirror():
+    ev = [(1, LR.ARMED, "price arrived"), (2, LR.ARMED, LR.R_ABSORPTION), (3, LR.DISARMED, LR.R_TIMEOUT), (6, LR.DISARMED, LR.R_AGAINST)]
+    for mirror, (s1, s2) in ((False, (BULL, BEAR)), (True, (BEAR, BULL))):
+        O, C, H, L = _visits(mirror)
+        v = RP.gate_visits(ev, O, C, H, L, AREA, 9)
+        assert [(x["start"], x["end"], x["side"]) for x in v] == [(1, 3, s1), (6, 7, s2)]
+        assert v[0]["terminal"] == (3, LR.DISARMED, LR.R_TIMEOUT) and v[1]["terminal"][2] == LR.R_AGAINST
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_verdict_same_side_same_visit_mirror(mirror):
+    O, C, H, L = _visits(mirror)
+    side, other = (BULL, BEAR) if not mirror else (BEAR, BULL)
+    ctx = {"ok": True, "trend": "RANGE", "sides": {BULL, BEAR}, "band": None}
+    ev = [(1, LR.ARMED, "price arrived"), (2, LR.ARMED, LR.R_ABSORPTION), (3, LR.DISARMED, LR.R_TIMEOUT)]
+    v = RP.gate_visits(ev, O, C, H, L, AREA, 9)
+    assert RP.verdict(v, 2, side, ctx, AREA)[0] == "SKIPPED_GATE_TIMEOUT_ABSORPTION"
+    assert RP.verdict(v, 0, side, ctx, AREA)[0] == "SKIPPED_GATE_TIMEOUT_ABSORPTION"        # touch एक bar आधी, arrival पुढच्या bar ला
+    assert RP.verdict(v, 2, other, ctx, AREA)[0] == "SKIPPED_GATE_NOT_AT_AREA"              # उलट बाजू ⇒ त्या भेटीचं कारण नाही
+    assert RP.verdict(v, 5, side, ctx, AREA)[0] == "SKIPPED_GATE_NOT_AT_AREA"               # भेट संपली (bar 4 ला area सोडली)
+    v2 = RP.gate_visits([(1, LR.ARMED, "price arrived"), (2, LR.DISARMED, "R:R < min (1.2 < 3)")], O, C, H, L, AREA, 9)
+    assert RP.verdict(v2, 1, side, ctx, AREA)[0] == "SKIPPED_GATE_RR"
+    v3 = RP.gate_visits([(1, LR.ARMED, "price arrived")], O, C, H, L, AREA, 4)
+    assert RP.verdict(v3, 2, side, ctx, AREA)[0] == "SKIPPED_GATE_WAITING_COMMITMENT"
+    v4 = RP.gate_visits([(1, LR.ARMED, "price arrived"), (3, LR.CONFIRMED, "c")], O, C, H, L, AREA, 9)
+    assert RP.verdict(v4, 2, side, ctx, AREA, sig_bars={3})[0] == "KEPT"
+    assert RP.verdict(v4, 2, side, ctx, AREA, sig_bars={7})[0] != "KEPT"                     # signal दुसऱ्या भेटीत ⇒ kept नाही
+    assert RP.verdict(v4, 2, side, ctx, AREA, sig_bars=set(), cutoff=3)[0] == "SKIPPED_GATE_AFTER_CUTOFF"
+    assert RP.verdict(v4, 2, side, ctx, AREA, sig_bars=set(), cutoff=9)[0] == "GATE_HINDSIGHT"
 
 
 @pytest.mark.parametrize("ctx,side", [(UP, BEAR), (DOWN, BULL)])
 def test_verdict_against_trend_mirror(ctx, side):
-    assert RP.verdict({"state": LR.IDLE, "events": []}, 0, 9, False, ctx, side, (99.0, 101.0))[0] == "SKIPPED_GATE_AGAINST_TREND"
+    assert RP.verdict([], 0, side, ctx, AREA)[0] == "SKIPPED_GATE_AGAINST_TREND"
 
 
-@pytest.mark.parametrize("ctx,side", [(UP, BULL), (DOWN, BEAR)])
-def test_verdict_trend_side_ok_then_area_reason_mirror(ctx, side):
-    r = {"state": LR.DISARMED, "reason": LR.R_BROKEN, "events": [(3, LR.ARMED, "price arrived"), (4, LR.DISARMED, LR.R_BROKEN)]}
-    assert RP.verdict(r, 0, 9, False, ctx, side, (99.0, 101.0))[0] == "SKIPPED_GATE_BROKEN"
-
-
-def test_verdict_categories():
+def test_verdict_no_trend_first():
     nt = {"ok": False, "trend": "UP", "phase": "impulse", "counter": "correction", "reason": LR.R_NO_TREND + " (x)"}
-    code, _, det = RP.verdict({"state": LR.IDLE, "events": []}, 0, 9, False, nt, BULL, (1, 2))
+    code, _, det = RP.verdict([], 0, BULL, nt, AREA, sig_bars={1})
     assert code == "SKIPPED_GATE_NO_TREND" and det == "Daily UP: parent correction (A1)"
-    assert RP.verdict({}, 0, 9, True, nt)[0] == "KEPT"                       # kept आधी
-    ev = lambda *e: {"state": LR.DISARMED, "reason": e[-1][2], "events": list(e)}  # noqa: E731
-    assert RP.verdict(ev((5, LR.DISARMED, "R:R < min (1.2 < 3)")), 0, 9, False, UP)[0] == "SKIPPED_GATE_RR"
-    assert RP.verdict(ev((5, LR.DISARMED, LR.R_IMPULSIVE)), 0, 9, False, UP)[0] == "SKIPPED_GATE_IMPULSIVE"
-    assert RP.verdict(ev((5, LR.DISARMED, LR.R_NO_TARGET)), 0, 9, False, UP)[0] == "SKIPPED_GATE_NO_TARGET"
-    assert RP.verdict(ev((5, LR.DISARMED, LR.R_TIMEOUT)), 0, 9, False, UP)[0] == "SKIPPED_GATE_TIMEOUT"
-    assert RP.verdict(ev((4, LR.ARMED, LR.R_ABSORPTION), (8, LR.DISARMED, LR.R_TIMEOUT)), 0, 9, False, UP)[0] == "SKIPPED_GATE_TIMEOUT_ABSORPTION"
-    assert RP.verdict({"state": LR.ARMED, "events": [(2, LR.ARMED, "price arrived")]}, 0, 9, False, UP)[0] == "SKIPPED_GATE_WAITING_COMMITMENT"
-    assert RP.verdict({"state": LR.IDLE, "events": []}, 0, 9, False, UP)[0] == "SKIPPED_GATE_NOT_AT_AREA"
-    assert RP.verdict({"state": LR.CONFIRMED, "events": [(3, LR.CONFIRMED, "c")]}, 0, 9, False, UP)[0] == "GATE_OTHER_SIDE"
-    assert RP.verdict(ev((15, LR.DISARMED, LR.R_BROKEN)), 0, 9, False, UP)[0] == "SKIPPED_GATE_BROKEN"   # window बाहेरचा event ⇒ state
+    assert RP.no_trend_detail({"trend": "NEUTRAL"}) == "Daily NEUTRAL" and "origin at risk" in RP.no_trend_detail({"trend": "DOWN", "origin_risk": True})
 
 
 def _trades(rows):
@@ -172,7 +204,7 @@ def test_no_conclusion_below_30_and_sample_banner():
     assert "SAMPLE — full run pending" in md and "n < 30 — no conclusion" in md and "None — no cell reaches n ≥ 30" in md
     big = _trades(_mode_rows(RP.TOUCH, 30, pts=-1.0) + _mode_rows(RP.CONF, 31, pts=2.0))
     lines = RP.conclusion_lines(RP.summary(big))
-    assert any("· bull:" in x and "+3.00 pts/trade" in x for x in lines) and not any("· bear:" in x for x in lines)
+    assert any("· bull · confirmation:" in x and "+3.00 pts/trade" in x for x in lines) and not any("· bear ·" in x for x in lines)
     assert "SAMPLE" not in RP.render_report(big, {"assumptions": []}, sample=False)
     assert RP.cell_note(30, 30) == "" and RP.cell_note(30, 29) == "n < 30 — no conclusion"
 
@@ -185,7 +217,7 @@ def test_holdout_guard_nifty_only():
     assert RP.assert_research_only(df.iloc[:1], "NIFTY") and RP.assert_research_only(df, "BANKNIFTY")
     with pytest.raises(DP.HoldoutError):
         RP.period_of("NIFTY", DP.HOLDOUT_START)
-    assert RP.period_of("NIFTY", DP.IS_START) == "IS" and RP.period_of("NIFTY", DP.VAL_START) == "VAL" and RP.period_of("GOLD", DP.HOLDOUT_START) == "ALL"
+    assert RP.period_of("NIFTY", DP.IS_START) == "IS" and RP.period_of("NIFTY", DP.VAL_START) == "VAL" and RP.period_of("GOLD", DP.HOLDOUT_START) == "HOLDOUT"
 
 
 def test_prepare_market_refuses_holdout_rows():
@@ -251,6 +283,19 @@ def test_legacy_uses_the_bots_own_functions(specs):
     assert (c.rsi_bull_max, c.rsi_bear_min) == (SSD["classic_sr_reversal"]["rsi_neutral_level"],) * 2
 
 
+def test_position_rules_match_live(specs):
+    """review 🟡2 / 🟡3: Instant — (level, role) 30 मिनिटं; SRv2 — symbol-व्यापी cooldown नाही (live मध्ये कधीच लागत नाही); Classic —
+    (level, role) 30; TSL = naked_tsl_spot_pct; MCX — symbol-व्यापी SL cooldown + level-दिशा block, live च structural (L4)."""
+    from cloud_db import STRATEGY_SETTINGS_DEFAULTS as SSD
+    i, v, c, m = specs["instant"], specs["srv2"], specs["classic"], specs["mcx"]
+    assert (i.level_trade_gap, i.symbol_sl_cooldown, i.level_sl_cooldown) == (30, 0, SSD["1m_instant"]["sl_tsl_cooldown_minutes"])
+    assert (v.level_trade_gap, v.symbol_sl_cooldown) == (0, 0) and (c.level_trade_gap, c.symbol_sl_cooldown) == (30, 0)
+    assert i.tsl_pct == SSD["1m_instant"]["naked_tsl_spot_pct"] and v.tsl_pct == SSD["15m_dynamic_sr"]["naked_tsl_spot_pct"]
+    assert c.tsl_pct == SSD["classic_sr_reversal"]["naked_tsl_spot_pct"] and m.tsl_pct is None
+    assert m.symbol_sl_cooldown == SSD["mcx_futures"]["sl_cooldown_minutes"] and m.level_dir_sl_block and m.live_structural
+    assert "ILLUSTRATION" in m.illustration and not i.live_structural
+
+
 def _touch_market(monkeypatch, closes_today, level, rsi):
     """दिवस 1–2 सपाट, दिवस 3 = closes_today; level एकच; RSI स्थिर."""
     d0 = minutes(days=2, px=level + 50)
@@ -287,7 +332,8 @@ def test_legacy_touch_day_mirror(monkeypatch, specs, side, path, rsi):
 
 @pytest.mark.parametrize("side", [BULL, BEAR])
 def test_confirmation_arm_takes_the_gate_plan_mirror(monkeypatch, specs, side):
-    """gate (LR.safe_evaluate) ने commitment candle वर entry दिला ⇒ त्याच entry / structural SL / target ने trade."""
+    """gate (LR.safe_evaluate) ने commitment candle वर entry दिला ⇒ confirmation arm: त्याच entry ला **bot चेच exits** (live: exits ला हात
+    नाही); structural arm (not live): gate चा SL / target."""
     sg = 1 if side == BULL else -1
     path = [22000.0 + sg * 0.5 * k for k in range(375)]
     mk, day = _touch_market(monkeypatch, path, 22000.0, 50.0)
@@ -307,9 +353,12 @@ def test_confirmation_arm_takes_the_gate_plan_mirror(monkeypatch, specs, side):
         return {"state": LR.ARMED, "entry": False, "side": side, "events": []}
     monkeypatch.setattr(RP.LR, "safe_evaluate", fake_eval)
     out = RP.replay_day(mk, specs["instant"], day, cost=0.0)
-    assert len(out["conf"]) == 1
-    c = out["conf"][0]
-    assert c["direction"] == side and c["time"] == cf["end"].iat[t_conf] and c["exit_reason"] == "TARGET" and c["gross_pts"] == pytest.approx(20.0)
+    assert len(out["conf"]) == 1 and len(out["struct"]) == 1
+    c, st = out["conf"][0], out["struct"][0]
+    assert c["direction"] == side and c["time"] == cf["end"].iat[t_conf] and c["exit_reason"] == "TARGET"
+    plan = RP.legacy_plan(specs["instant"], c["entry"], side)
+    assert (c["sl"], c["target"]) == (plan["sl"], plan["target"]) and c["gross_pts"] == pytest.approx(c["entry"] * specs["instant"].target[1] / 100)
+    assert st["exit_reason"] == "TARGET" and st["gross_pts"] == pytest.approx(20.0) and st["sl"] == pytest.approx(st["entry"] - sg * 5)
     assert c["grade"] == "B" and seen                                          # gate फक्त area जवळच्या candles वर विचारला
 
 
@@ -355,3 +404,74 @@ def test_supported_markets(specs):
     mk = RP.prepare_market("BANKNIFTY", minutes(days=2).iloc[::15].reset_index(drop=True), 15, fold=lambda x: [])
     assert RP.supported(mk, specs["srv2"]) and not RP.supported(mk, specs["instant"]) and not RP.supported(mk, specs["mcx"])
     assert RP.confirm_tf(mk, specs["srv2"]) == 15
+
+
+# ------------------------------------------------------------------------------------------------ review fixes: TSL, dropped, MCX L4, काळ, is_nifty
+@pytest.mark.parametrize("side", [BULL, BEAR])
+def test_tsl_to_breakeven_sticky_mirror(specs, side):
+    """spot TSL उंबरठा गाठला ⇒ पुढच्या bar पासून SL = entry ("TSL_SL"); आधीचा SL (−) आता लागत नाही."""
+    sg = 1 if side == BULL else -1
+    sp = dataclasses.replace(specs["instant"], level_trade_gap=0)
+    closes = [100.0] * 5 + [100.0 + sg * 0.15] * 3 + [100.0 - sg * 0.02] * 367    # +0.15% ⇒ TSL (0.10%), target (0.20%) नाही; मग खाली ⇒ breakeven
+    b = day_bars(closes=closes, spread=0.0)
+    cd = {"time": pd.Timestamp("2021-06-01 09:20"), "level": 100.0, "direction": side, "entry": 100.0, **RP.legacy_plan(sp, 100.0, side)}
+    t = RP.take_trades([cd], b, sp, "NIFTY", cost=0.0)[0]
+    assert t["exit_reason"] == "TSL_SL" and t["exit"] == pytest.approx(100.0) and t["gross_pts"] == pytest.approx(0.0)
+    no_tsl = dataclasses.replace(sp, tsl_pct=None)
+    cd2 = {**cd, **RP.legacy_plan(no_tsl, 100.0, side)}
+    assert RP.take_trades([cd2], b, no_tsl, "NIFTY", cost=0.0)[0]["exit_reason"] == "EOD"   # TSL नाही ⇒ SL (0.05%) दूर ⇒ EOD
+
+
+def test_tsl_same_bar_trigger_does_not_exit_at_breakeven(specs):
+    pos = {"direction": BULL, "entry": 100.0, "sl": 99.0, "target": 105.0, "tsl": 100.1, "tsl_on": False}
+    assert RP.exit_on_bar(pos, 100, 100.2, 99.95, 100.1, False) == (None, None) and RP.tsl_reached(pos, 100.2, 99.95)
+    pos["tsl_on"] = True
+    assert RP.exit_on_bar(pos, 100.1, 100.2, 99.95, 100.0, False) == ("TSL_SL", 100.0)
+
+
+def test_last_bar_entry_is_dropped_and_logged(specs):
+    sp = dataclasses.replace(specs["mcx"], last_entry="23:59", eod="23:59")
+    b = day_bars(n=10)
+    last = b["end"].iloc[-1]
+    dropped = []
+    cd = {"time": last, "level": 100.0, "direction": BULL, "entry": 100.0, "sl": 90.0, "target": 110.0, "tsl": None}
+    assert RP.take_trades([cd], b, sp, "NIFTY", cost=0.0, dropped=dropped) == []
+    assert len(dropped) == 1 and dropped[0]["exit_reason"] == "entry on the session's last bar"
+
+
+@pytest.mark.parametrize("side", [BULL, BEAR])
+def test_mcx_l4_plan_mirror(specs, side):
+    """L4: structural SL settings SL पेक्षा रुंद ⇒ SL_TOO_WIDE; entry भावावर R:R < min ⇒ RR; नाहीतर structural SL / target."""
+    sg = 1 if side == BULL else -1
+    m = specs["mcx"]
+    cap = m.sl[1]
+    ok, why = RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 0.5, "plan_target": 1000.0 + sg * cap * 2}, m, 3)
+    assert why is None and ok["sl"] == 1000.0 - sg * cap * 0.5 and ok["tsl"] is None
+    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 1.5, "plan_target": 1000.0 + sg * cap * 9}, m, 3)[1] == \
+        "SKIPPED_GATE_SL_TOO_WIDE"
+    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 0.5, "plan_target": 1000.0 + sg * cap}, m, 3)[1] == \
+        "SKIPPED_GATE_RR"
+    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 + sg, "plan_target": 1000.0 + sg * 50}, m, 3)[1] == \
+        "SKIPPED_GATE_INVALIDATED"
+
+
+def test_period_labels_and_is_nifty_seal():
+    assert RP.period_of("BANKNIFTY", DP.CONTAMINATED_START) == "CONTAMINATED" and RP.period_of("GOLD", DP.ILLUSTRATION_START) == "ILLUSTRATION"
+    assert RP.period_of("BANKNIFTY", DP.HOLDOUT_START) == "HOLDOUT"           # BANKNIFTY sealed नाही, पण काळ नाव दिसतं
+    df = pd.DataFrame({"timestamp": [DP.HOLDOUT_START]})
+    for name in ("NIFTY 50", "NIFTY50", "nifty"):
+        with pytest.raises(DP.HoldoutError):
+            RP.assert_research_only(df, name)
+        with pytest.raises(DP.HoldoutError):
+            RP.period_of(name, DP.HOLDOUT_START)
+    assert RP.assert_research_only(df, "BANKNIFTY") and RP.assert_research_only(df, "FINNIFTY")
+
+
+def test_summary_struct_arm_only_for_nse_bots(specs):
+    rows = _mode_rows(RP.TOUCH, 3) + _mode_rows(RP.CONF, 2)
+    t = _trades([{**r, "bot": "MCX"} for r in rows] + [{**r, "bot": "Classic"} for r in rows])
+    sm = RP.summary(t)
+    assert RP.STRUCT not in set(sm[sm["bot"] == "MCX"]["mode"]) and RP.STRUCT in set(sm[sm["bot"] == "Classic"]["mode"])
+    skip = _trades([{**rows[0], "mode": RP.SKIPPED, "gate_code": "SKIPPED_GATE_SL_TOO_WIDE", "gate_reason": RP.CONF, "bot": "MCX"}])
+    assert len(RP.summary(skip)) == 0 or RP.summary(skip)["n"].sum() == 0     # skipped नोंदी metrics मध्ये नाहीत
+

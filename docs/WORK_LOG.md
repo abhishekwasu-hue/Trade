@@ -1796,3 +1796,11 @@ gate ने नाकारलेले legacy trades कारणानुस�
 **Tests:** `tests/test_level_bots_replay.py` 32 pass (exits आरसा, position नियम, metrics, gate निकाल गट, n < 30, holdout, एकच fold, legacy = bot functions).
 **SAMPLE:** NIFTY 2021-12-17 → 2022-01-13 (20 दिवस IS / VAL), BANKNIFTY / MCX 19–20 दिवस — अहवालावर "SAMPLE — full run pending". पूर्ण run lead
 चालवेल: `python3 scripts/level_bots_replay.py` (≈ 35 मिनिटं). Bot फाईल्सना हात नाही (LIVE / touch वर्तन तसंच).
+**Review दुरुस्त्या (🔴1 / 🟡2–5 / ⚪):** confirmation arm ला आता bot चेच exits (live मध्ये exits ला हात नाही) — फक्त entry gate वेगळा; structural
+SL / target वेगळा तिसरा arm "confirmation + structural exit (not live)". Position नियम live प्रमाणे: Instant / Classic (level, role) 30 मिनिटं,
+SRv2 चा symbol-व्यापी cooldown काढला (live मध्ये कधीच लागत नाही), level SL / TSL 15, MCX तोट्याचा SL 60 + level-दिशा block. Exits:
+`evaluate_point_spot_exit` चा spot भाग + TSL-to-breakeven (sticky); premium-points भाग replay होत नाही (assumptions मध्ये). Rejection: त्याच बाजूची,
+त्याच भेटीची (arrival → area सोडेपर्यंत) gate नोंद; cutoff नंतरचा confirmation ⇒ "after cutoff". MCX: L4 नियम (structural SL settings SL ने
+capped ⇒ SL_TOO_WIDE skip, R:R पुन्हा), confirmation 30m (15m data नाही), "ILLUSTRATION — default points unrealistic" ठळक. काळ = DP.period सगळ्यांना,
+seal `is_nifty`, शेवटच्या bar वरचा entry ⇒ dropped नोंद, ctx_days 5. Tests 42 pass; SAMPLE पुन्हा बनवला.
+

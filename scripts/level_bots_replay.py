@@ -80,31 +80,46 @@ def assumptions(level_refresh):
     g = LR.DEFAULTS
     costs = {s: round(RP.cost_points(s, 0.0 if RP.COST_DEFAULTS[s]["kind"] == "option" else p), 2)
              for s, p in (("NIFTY", 0), ("BANKNIFTY", 0), ("GOLD", 150000.0), ("SILVER", 230000.0), ("COPPER", 1400.0))}
+    specs = RP.bot_specs()
+    tsl = ", ".join(f"{sp.name} {sp.tsl_pct:g}%" for sp in specs.values() if sp.tsl_pct)
     return [
-        "Same days, same levels, same cost model for both modes. Levels = the bots' Dynamic S/R (`sr_dynamic.compute_dynamic_sr`, refresh "
-        f"parameters and lookbacks), recomputed at the session open and every {level_refresh} min from closed bars only (no lookahead). "
-        "Level memory is not replayed.",
-        "**Touch (legacy)** = the bots' own functions imported from the bot files (`check_level_crossed`, `determine_direction_with_hysteresis`), "
-        "default settings (RSI thresholds, max hits per level and role, cooldowns, one position at a time, no new entry from 14:45, EOD). "
-        "PCR gate skipped (no PCR history). Exits = the bots' naked spot-% SL / target (MCX: settings points).",
-        "**Confirmation** = `level_reaction.evaluate` on closed confirmation-TF candles, exactly as the live cycle: an entry only on the commitment "
-        f"candle itself. Trend = one `decision3.daily.fold` per symbol + `state_at` per day (yesterday's close). Gate defaults: min R:R {g['min_rr']:g}, "
-        f"max armed bars {g['max_armed_bars']}, area = level ± {LGB.AREA_PAD_PCT:g}% / 2. RSI / PCR gates off, no breakout. "
-        "Exits = the gate's structural SL (beyond the area's far edge + buffer) / target (next opposite area).",
-        "Exit simulation on the next base bars: SL before target when both are inside one bar (pessimistic); a gap beyond SL fills at the open; "
-        "EOD closes at the bar close. Index futures volume is not available for IS / VAL ⇒ volume NA ⇒ grade ≤ B (as live with volume NA).",
+        "Same days, same levels, same position rules and cost model for every arm. Levels = the bots' Dynamic S/R "
+        "(`sr_dynamic.compute_dynamic_sr`, refresh parameters and lookbacks), recomputed at the session open and every "
+        f"{level_refresh} min from closed bars only (no lookahead). Level memory is not replayed.",
+        "**Touch (legacy)** entries = the bots' own functions imported from the bot files (`check_level_crossed`, "
+        "`determine_direction_with_hysteresis`) with default settings (RSI thresholds). PCR gate skipped (no PCR history).",
+        "Position rules (all arms, as live): one position at a time; max hits per (level, role) per day; 5M Instant and Classic: 30 min since the "
+        "last trade on the same level and role; 5M Instant / SRv2 / Classic: 15 min after an SL / TSL exit on the same level; MCX: 60 min after a "
+        "losing SL / TSL (symbol-wide) and no re-entry on a level + direction that hit a losing SL today; no new entry from the bot's cutoff "
+        "(14:45; MCX 22:45); EOD square-off.",
+        "**Confirmation** (live PAPER behaviour) entries = `level_reaction.evaluate` on closed confirmation-TF candles, exactly as the live cycle: "
+        "an entry only on the commitment candle itself, at its close. Trend = one `decision3.daily.fold` per symbol + `state_at` per day "
+        f"(yesterday's close). Gate defaults: min R:R {g['min_rr']:g}, max armed bars {g['max_armed_bars']}, area = level ± "
+        f"{LGB.AREA_PAD_PCT:g}% / 2. RSI / PCR gates off, no breakout. **Exits = the bot's own exits, the same as touch** (live confirmation mode "
+        "never touches exits) ⇒ for 5M Instant / SRv2 / Classic only the entry differs. MCX (L4): structural SL capped by the settings SL "
+        "(wider ⇒ skipped `SKIPPED_GATE_SL_TOO_WIDE`), target = next opposite area, R:R re-checked at the entry price, one entry per confirmation.",
+        f"**{RP.STRUCT}** = the same gate entries with the gate's structural SL (beyond the area's far edge + buffer) and next-area target, no "
+        "TSL — a comparison arm for the NSE bots only; it is **not** what the bots do live.",
+        "Bot exits replayed from `trading_engine.evaluate_point_spot_exit`, spot part only: naked spot-% SL / target from entry (MCX: settings "
+        f"points), TSL-to-breakeven once spot moves the naked TSL % ({tsl}; sticky; live 'premium ≤ 0' read as spot ≤ entry). "
+        "The premium-point SL / TSL / target legs and premium trailing cannot be replayed (no premium history) — live exits may fire earlier.",
+        "Exit simulation on the next base bars: SL (or breakeven) before target when both are inside one bar (pessimistic); TSL activates from "
+        "the bar after the trigger bar; a gap beyond SL fills at the open; EOD closes at the bar close. An entry on the session's last bar has no "
+        "bar to exit on ⇒ not taken, listed as `dropped`. Index futures volume is not available for IS / VAL ⇒ volume NA ⇒ grade ≤ B "
+        "(as live with volume NA).",
         "P&L is in **index / futures points** — intraday option premium history is not available. Cost per round trip (points) from "
         f"`charges.py` (Upstox rates): 1 lot naked ITM option buy (premium / lot / delta / slippage in `COST_DEFAULTS`) ⇒ {costs}.",
-        "NIFTY: IS / VAL per `elliott.data_policy`; the HOLDOUT is never loaded (guard raises). BANKNIFTY: only 15M candles exist (≈ 3 months, "
-        "not sealed, but the calendar overlaps the gate's NIFTY design window ⇒ illustration, not validation); touch and exits on 15M bars; "
-        "only 15M SRv2. MCX: 30m candles only (≈ 4 months, no volume); confirmation on 30m (live: 15m); Daily trend from ≤ 4 months of Daily bars "
-        "(live: ~10 years) ⇒ trend often UNKNOWN; MCX extra filters (cascade, supertrend, structure SL, min-hold) not replayed.",
+        "Period = `elliott.data_policy.period(day)` for every symbol. NIFTY: IS / VAL only; the HOLDOUT is never loaded (guard raises). "
+        "BANKNIFTY: only 15M candles exist (≈ 3 months, not sealed, but the dates are CONTAMINATED / ILLUSTRATION — the gate's NIFTY design "
+        "window ⇒ illustration, not validation); touch and exits on 15M bars; only 15M SRv2. MCX: 30m candles only (≈ 4 months, no volume) "
+        "⇒ confirmation on **30m** (live L4: 15m — no 15m data here); Daily trend from ≤ 4 months of Daily bars (live: front-month contract) "
+        "⇒ trend often UNKNOWN; MCX cascade / supertrend filters not replayed.",
         "Trend split = the gate's Daily trend that day (UP ⇒ bull, DOWN ⇒ bear, RANGE ⇒ range, NEUTRAL / UNKNOWN ⇒ no trend). A day whose trend "
         "is UP / DOWN but where the gate blocks new entries (origin broken / at risk, parent correction A1) stays in bull / bear; its legacy "
         "trades show the verdict \"Daily trend unclear / entries blocked\".",
-        "Rejected legacy trades: for each legacy trade, the gate's verdict on the same area in the window max armed bars before → after the touch "
-        "(the same visit); the Daily trend check comes first, as in the gate. "
-        "\"Kept\" = the gate confirmed the same area and side in that window (whether or not the confirmation arm could take it).",
+        "Rejected legacy trades: the Daily trend check first (as in the gate); then the gate visit of the **same side** that contains the touch "
+        "(arrival → the area is left after its first CONFIRMED / DISARMED): a live confirmation in that visit ⇒ kept; confirmed only after the "
+        "cutoff ⇒ 'after cutoff'; the visit's DISARMED reason; still armed ⇒ 'no commitment'; no such visit ⇒ 'no arrival'.",
     ]
 
 
@@ -130,7 +145,7 @@ def main(argv=None):
     (s0, s_map), (e0, e_map) = per_symbol(a.start), per_symbol(a.end)
     for sym in [x.strip().upper() for x in a.symbols.split(",") if x.strip()]:
         start, end = s_map.get(sym, s0), e_map.get(sym, e0)
-        if sym in RP.SEALED and (start or end):
+        if RP.is_nifty(sym) and (start or end):
             DP.check_range(start or DP.IS_START, end or DP.VAL_END, purpose="research")      # HOLDOUT ला छेदणारी श्रेणी ⇒ HoldoutError
         try:
             mk = (load_nifty(a.nifty_path) if sym == "NIFTY" else load_banknifty(a.trade_data) if sym == "BANKNIFTY"
@@ -142,7 +157,7 @@ def main(argv=None):
             print(f"⚠️ {sym}: loader नाही — वगळले", flush=True)
             continue
         days = [d for d in mk.days if (start is None or d >= pd.Timestamp(start)) and (end is None or d <= pd.Timestamp(end))]
-        if sym in RP.SEALED:
+        if RP.is_nifty(sym):
             days = [d for d in days if DP.allowed(d, "research")]
         if a.max_days:
             days = days[:a.max_days]

@@ -44,7 +44,9 @@ structural exit (real break beyond the area) as an extra exit rule — today the
 
 ## L6 replay (touch vs confirmation)
 `level_bots_replay.py` (pure) + `scripts/level_bots_replay.py` (CLI, local data only) ⇒ `docs/reports/level_bots_confirmation.md` and CSVs in
-`data/research/level_bots_replay/`. Same days, same levels (bots' Dynamic S/R, hourly from closed bars), same costs (`charges.py`, points);
-legacy arm = the bots' own touch / direction functions + default settings; confirmation arm = `level_reaction.evaluate` on closed confirmation-TF
-candles with one `decision3.daily.fold` per symbol. NIFTY IS / VAL only (HOLDOUT guard); BANKNIFTY 15M (≈ 3 months) and MCX 30m (≈ 4 months) are
-illustrations. Full run: `python3 scripts/level_bots_replay.py` (≈ 35 min, sequential).
+`data/research/level_bots_replay/`. Same days, same levels (bots' Dynamic S/R, hourly from closed bars), same position rules (live cooldowns /
+re-entry gaps / max hits per level and role), same costs (`charges.py`, points). Arms: **touch** (the bots' own touch / direction functions +
+default settings) · **confirmation** (`level_reaction.evaluate` on closed confirmation-TF candles, one `decision3.daily.fold` per symbol; exits =
+the bot's own exits, as live — spot SL / target + TSL-to-breakeven; MCX = L4 structural SL capped by settings SL) · **confirmation + structural
+exit (not live)** (comparison only). Legacy trades the gate rejects are attributed to the same-side gate visit. NIFTY IS / VAL only (HOLDOUT guard);
+BANKNIFTY 15M (≈ 3 months) and MCX 30m (≈ 4 months) are illustrations. Full run: `python3 scripts/level_bots_replay.py` (≈ 35 min, sequential).
