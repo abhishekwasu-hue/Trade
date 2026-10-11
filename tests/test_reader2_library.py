@@ -17,10 +17,7 @@ _TREND = ("CR-Q2: the library's degree-2 leg runs from the lead-in top through t
           "and 30-point lower high are below dc_k × MR at degrees 1 and 2), so its structure is an unparsed 9-wave count; with the "
           "majority re-read (review 🔴2) the alternatives do not agree on an impulse ⇒ uncertain ⇒ no trend. Degree calibration on "
           "the dev gallery, not tuned here")
-_C_EXT = ("CR-Q2: the extended c subdivides into 5 visible sub-legs one degree lower, so the whole zigzag reads as a 5-wave impulse "
-          "with impulsive candles — degree mixing, not tuned here")
 KNOWN_FAIL = {(nm, "trend", dn): _TREND for nm in EF.CORRECTIONS for dn in ("down", "up")}
-KNOWN_FAIL.update({("zigzag_c_extended", "impulse", dn): _C_EXT for dn in ("down", "up")})
 
 
 def _params(check):

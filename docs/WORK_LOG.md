@@ -1816,3 +1816,10 @@ sharp a-b-c correction (test: 3 खोली × ideal + 3 noisy seeds × आर�
 **परिणाम (प्रामाणिक):** BANKNIFTY Daily — Feb→Apr 2026 uncertain (anatomy +0.54 पण structure पर्याय 1 / 3 impulse), Apr→Jun correction high (zigzag, Abhi शी जुळतं),
 Jun→now provisional correction high (zigzag, two-push); uncertain 79 % (CR-Q11). Library: flip 32/32, correction≠impulse 30/32, impulse दिशा 0/32 (CR-Q2).
 Mirror 0 फरक, causality 0 फरक. आकडे tune केले नाहीत.
+
+### 2026-10-11 · Chart Reader v2 — round-2 re-review (75e4442) नंतर दुरुस्ती (research-only)
+**🔴1:** anatomy मधून shape term आणि two-push cap काढले (wave count फक्त structure मध्ये); a-b-c / 1-2-3-4-5 candles च्या पुराव्याने: c_like_a, b_brief, middle_push.
+SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अपेक्षा परत; ते आता strict xfail (नाव असलेली zigzag re-read ने impulse होत नाही — CR-Q11). Probes: लहान wave 4 / wave 2
+⇒ uncertain (कधीच correction high नाही); sharp a-b-c ⇒ correction low. **🔴2:** re-read पर्याय dc_k[D−1] × (0.9 / 0.75 / 0.6), कधीच dc_k[0] खाली नाही (नाहीतर abstain).
+**BANKNIFTY:** trend UP 23.6 % / DOWN 5.5 % / uncertain 55.2 %; uncertain फक्त 2 origin-close घटनांतून, कारण = trend-capable up-impulses नाहीत (CR-Q12). Feb→Apr 2026 impulse low
+(anatomy +0.45, structure पर्यायांना बहुमत नाही), Apr→Jun correction low (zigzag), Jun→now provisional correction low. Read 0.32 s; mirror / causality 0 फरक. Tests 233 pass / 40 xfail.

@@ -5,7 +5,9 @@
 sub-legs आवेगी आणि उलट (counter) sub-legs सुधारात्मक / थोडक्यात / उथळ; सुधारात्मक leg ⇒ motive sub-legs सुधारात्मक (overlapping), लांब /
 खोल थांबे. लांब leg च्या सगळ्या candles ची सरासरी नाही (waves 2 / 4 ती पातळ करतात). Motive sub-leg निर्णायक आवेगी नसेल तर pause पुरावा
 leg ला आवेगी करू शकत नाही (score ≤ motive); motive चालीचा मोठा वाटा (≥ rollup_veto_share) असलेला सुधारात्मक motive sub-leg सुद्धा —
-उदा. big-c zigzag: a सुधारात्मक ⇒ leg आवेगी नाही; टोकाजवळचा लहान आळशी push impulse रद्द करत नाही.
+उदा. big-c zigzag: a सुधारात्मक ⇒ leg आवेगी नाही; टोकाजवळचा लहान आळशी push impulse रद्द करत नाही. Sub-legs ची संख्या anatomy मध्ये
+कधीच वापरत नाही (wave count फक्त structure vote मध्ये — दोन votes स्वतंत्र); a-b-c आणि 1-2-3-4-5 candles च्या पुराव्याने वेगळे:
+c चे candles a सारखे, b लांब / overlapping ⇒ सुधार; wave 2 / 4 थोडके, wave 3 सर्वात आवेगी ⇒ आवेग.
 
 Candle मापं legs2/features.py मधूनच (`leg_features`: body, CLV_d, overlap, ER, displacement, FVG, wave volume); इथे फक्त जे legs2 मध्ये
 नाही ते: MR units मधली range expansion / contraction, दोन्ही बाजूंच्या wicks, आधीच्या counter-move शी volume तुलना, effort vs result
@@ -193,11 +195,18 @@ def _candle_vote(ch, i0, i1, d, prev, low):
     return {"score": score, "cls": classify(score, ch.s), "evidence": ev, "raw": own["raw"], "lower": sub, "level": "candles"}
 
 
+def _speed(x):
+    return x["size"] / x["bars"] if x["bars"] else None
+
+
 def _combine(subs, d, s):
-    """Sub-legs ⇒ leg चा vote: motive (leg-दिशेचे sub-legs, आकाराने वजनी), counter (उलट sub-legs सुधारात्मक ⇒ आवेगी पुरावा),
-    pause_time, pause_depth, shape (sub-legs ची संख्या: 3 = दोन pushes a-b-c ⇒ सुधार; 5 = तीन pushes 1-2-3-4-5 ⇒ आवेग; बाकी ⇒ 0).
-    Motive चालीचा ≥ rollup_veto_share वाटा असलेला सुधारात्मक motive sub-leg ⇒ score ≤ त्याचा score. दोन pushes (2 motive + 1 counter)
-    ⇒ score ≤ a_lo: a आणि c दोन्ही आवेगी असले तरी sharp a-b-c impulse नाही (पाच sub-legs शिवाय impulse नाही)."""
+    """Sub-legs ⇒ leg चा vote — फक्त candles चा पुरावा, wave count नाही (count = structure vote चं काम):
+      motive (leg-दिशेचे sub-legs, आकाराने वजनी), counter (उलट sub-legs सुधारात्मक ⇒ आवेगी पुरावा), pause_time / pause_depth
+      (≥ 2 counters असताना), c_like_a (शेवटचा push त्याआधीच्या सर्वात मजबूत push सारखा — candles, वेग, आकार — zigzag चा c ≈ a ⇒
+      सुधार; impulse मध्ये wave 5 ≠ wave 3), b_brief (counter
+      sub-leg चे bars ÷ आधीच्या push चे bars: wave 2 / 4 थोडके ⇒ आवेग; zigzag चा b लांब ⇒ सुधार), middle_push (≥ 3 pushes: सर्वात
+      आवेगी push — candle score × आकार — मधला: wave 3 ⇒ आवेग; पहिला / शेवटचा ⇒ सुधार).
+    Motive चालीचा ≥ rollup_veto_share वाटा असलेला सुधारात्मक motive sub-leg ⇒ score ≤ त्याचा score."""
     mot = [x for x in subs if x["dirn"] == d]
     cnt = [x for x in subs if x["dirn"] != d]
     mv = [(x["vote"]["score"], x["size"]) for x in mot if x["vote"]["score"] is not None]
@@ -213,21 +222,40 @@ def _combine(subs, d, s):
     if len(cnt) >= int(s["rollup_pause_min_counters"]):                            # एकच थांबा impulse / zigzag वेगळं करत नाही
         ptime = sum(x["bars"] for x in cnt) / tot if tot else None
         pdepth = (sum(x["size"] for x in cnt) / msize) if msize > 0 else None
-    shape = s["rollup_shape"].get(len(subs))                                        # 3 ⇒ −1, 5 ⇒ +1, इतर ⇒ None (पुरावा नाही)
+    def strength(x):                                                                # push ची आवेगी चाल = candle score × आकार
+        return (x["vote"]["score"] or 0.0) * x["size"]
+
+    like = None                                                    # शेवटचा push vs त्याआधीचा सर्वात मजबूत push (zigzag: c ≈ a)
+    if len(mot) >= 2 and all(x["vote"]["score"] is not None for x in mot):
+        last, ref = mot[-1], max(mot[:-1], key=strength)
+        v0, v1 = _speed(ref), _speed(last)
+        if v0 and v1 and ref["size"] > 0 and last["size"] > 0:
+            like = ((1.0 - abs(ref["vote"]["score"] - last["vote"]["score"]) / 2.0) * min(v0, v1) / max(v0, v1)
+                    * min(ref["size"], last["size"]) / max(ref["size"], last["size"]))
+    brief = [x["bars"] / subs[k - 1]["bars"] for k, x in enumerate(subs) if x["dirn"] != d and k > 0 and subs[k - 1]["bars"]]
+    brief = float(np.mean(brief)) if brief else None
+    middle = None                                                                   # सर्वात आवेगी push मधला (wave 3)?
+    if len(mot) >= 3 and all(x["vote"]["score"] is not None for x in mot):
+        top = max(range(len(mot)), key=lambda k: strength(mot[k]))
+        middle = 1.0 if 0 < top < len(mot) - 1 else -1.0
     vals = {"motive": m, "counter": c,
             "pause_time": feature_score(ptime, *s["rollup"]["pause_time"]),
             "pause_depth": feature_score(pdepth, *s["rollup"]["pause_depth"]),
-            "shape": shape}
-    raws = {"motive": ms, "counter": [-x for x in cs], "pause_time": ptime, "pause_depth": pdepth, "shape": len(subs)}
+            "c_like_a": feature_score(like, *s["rollup"]["c_like_a"]),
+            "b_brief": feature_score(brief, *s["rollup"]["b_brief"]),
+            "middle_push": middle}
+    raws = {"motive": ms, "counter": [-x for x in cs], "pause_time": ptime, "pause_depth": pdepth, "c_like_a": like,
+            "b_brief": brief, "middle_push": middle}
     ev = []
     num = den = 0.0
     for k, sc in vals.items():
         lean = LEAN_NEU if sc is None or abs(sc) < 1e-9 else (LEAN_IMP if sc > 0 else LEAN_COR)
         rv = raws[k]
         shown = ("[" + ", ".join(f"{x:+.2f}" for x in rv) + "]") if isinstance(rv, list) else _fmt(rv)
-        ev.append({"feature": "sub:" + k, "value": rv, "score": sc, "lean": lean, "counted": sc is not None,
+        counted = sc is not None and not (k == "c_like_a" and sc == 0.0)              # एकतर्फी: 0 = पुरावा नाही
+        ev.append({"feature": "sub:" + k, "value": rv, "score": sc, "lean": lean, "counted": counted,
                    "text": f"sub-legs {k} {shown} ⇒ {lean}" + ("" if sc is None else f" ({sc:+.2f})")})
-        if sc is not None:
+        if counted:
             w = float(s["rollup_weights"].get(k, 1.0))
             num, den = num + w * sc, den + w
     for x in subs:
@@ -244,10 +272,6 @@ def _combine(subs, d, s):
         score = min(score, min(veto))
         ev.append({"feature": "sub:veto", "value": min(veto), "score": None, "lean": LEAN_COR, "counted": False,
                    "text": f"a corrective motive sub-leg carries ≥ {s['rollup_veto_share']} of the leg's travel ⇒ not impulsive"})
-    if len(mot) == 2 and len(cnt) == 1:
-        score = min(score, float(s["a_lo"]))
-        ev.append({"feature": "sub:two_push", "value": 3, "score": None, "lean": LEAN_COR, "counted": False,
-                   "text": "two pushes and one counter-move (a-b-c) ⇒ corrective in structure, even with impulsive a and c"})
     return {"score": score, "cls": classify(score, s), "evidence": ev, "raw": raws, "subs": subs, "level": "rollup"}
 
 

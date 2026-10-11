@@ -27,6 +27,8 @@ FEATURES = {
 ROLLUP = {
     "pause_time": (0.55, 0.35, "both"),      # counter sub-legs चे bars ÷ leg चे bars (थोडक्यात थांबा ⇒ आवेगी)
     "pause_depth": (0.80, 0.50, "both"),     # counter sub-legs ची एकूण चाल ÷ motive sub-legs ची एकूण चाल (उथळ ⇒ आवेगी; choppy ⇒ सुधार)
+    "c_like_a": (0.85, 0.60, "cor"),         # शेवटचा push vs आधीचा सर्वात मजबूत push: साम्यता (candle score × वेग × आकार): c ≈ a ⇒ सुधार
+    "b_brief": (1.50, 0.60, "both"),         # counter sub-leg चे bars ÷ आधीच्या push चे bars (wave 2/4 थोडके ⇒ आवेग; zigzag b लांब ⇒ सुधार)
 }
 
 _L2 = LS2.load()                                          # MASTER trend / displacement / climax व्याख्या (swings2 मार्गे legs2)
@@ -52,8 +54,8 @@ DEFAULTS = {
     "weights": {k: 1.0 for k in FEATURES},
     "features": FEATURES,
     "rollup": ROLLUP,
-    "rollup_weights": {"motive": 2.0, "counter": 1.0, "pause_time": 1.0, "pause_depth": 1.0, "shape": 2.0},
-    "rollup_shape": {3: -1.0, 5: 1.0},  # sub-legs ची संख्या: 3 (a-b-c, दोन pushes) ⇒ सुधार; 5 (1-2-3-4-5, तीन pushes) ⇒ आवेग; इतर ⇒ पुरावा नाही
+    "rollup_weights": {"motive": 2.0, "counter": 1.0, "pause_time": 1.0, "pause_depth": 1.0, "c_like_a": 1.0, "b_brief": 1.0,
+                       "middle_push": 1.0},
     "rollup_pause_min_counters": 2,   # थांब्यांचा पुरावा फक्त ≥ इतके counter sub-legs असताना (waves 2 आणि 4); एक थांबा = zigzag चा b सुद्धा
     "rollup_veto_share": 0.25,        # motive चालीचा ≥ इतका वाटा असलेला सुधारात्मक motive sub-leg ⇒ leg आवेगी वाचत नाही (big-c zigzag चा a)
     "trend_body": _L2["trend_body"],
@@ -85,8 +87,7 @@ REGISTER = {
     "weights": ("सगळे 1", "—", "अंदाज", "candle features समान वजन"),
     "features": ("FEATURES", "±1 पायरी", "अंदाज", "spec §2b; volume = legs2 v_lo / v_hi (NexusFi)"),
     "rollup": ("ROLLUP", "±1 पायरी", "अंदाज", "spec §2b pause (shallow, brief) — sub-leg पातळीवर"),
-    "rollup_weights": ("2/1/1/1/2", "—", "अंदाज", "motive sub-legs आणि shape मुख्य"),
-    "rollup_shape": ("3 ⇒ −1, 5 ⇒ +1", "—", "व्याख्या", "Elliott: correction तीन पाय (दोन pushes), impulse पाच (तीन pushes); review 🔴1"),
+    "rollup_weights": ("2/1/1/1/1/1/1", "—", "अंदाज", "motive sub-legs मुख्य; बाकी candle पुरावे समान"),
     "rollup_pause_min_counters": (2, "—", "व्याख्या", "एका थांब्यावरून impulse आणि zigzag (a-b-c) वेगळे होत नाहीत"),
     "rollup_veto_share": (0.25, "0.2/0.25/0.33", "अंदाज", "एक लहान आळशी push (उदा. टोकाजवळचा wave 1) impulse रद्द करत नाही; मोठा करतो"),
     "trend_body": (_L2["trend_body"], "—", "व्याख्या", "swings2 / MASTER §3 trend candle"),

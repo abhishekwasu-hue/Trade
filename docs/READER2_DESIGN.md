@@ -33,7 +33,7 @@ reader.read(df, s=None, pivots=None, low=None, higher=None) ──► Reading (l
 | `reader2/settings.py` | `DEFAULTS`, `FEATURES`, `ROLLUP`, `REGISTER` (same keys as `DEFAULTS`), `load(overrides)`, `is_loaded(s)` |
 | `reader2/frame.py` | `Chart(df, s)`, `with_futures_volume(spot, fut)` |
 | `reader2/legs.py` | `Leg`, `degree_pivots`, `make_legs`, `provisional_leg`, `inner_points`, `inner_prices`, `external_pivots` |
-| `reader2/structure.py` | `vote_prices(prices, s)`, `leg_vote(ch, leg, lowers)`, `sub_degree`, `alt_thresholds`, `alternatives` |
+| `reader2/structure.py` | `vote_prices(prices, s)`, `leg_vote(ch, leg, lowers)`, `alt_thresholds`, `alternatives` |
 | `reader2/anatomy.py` | `feature_score`, `raw`, `vote` (candles), `candle_vote` (cached on the Chart), `rollup`, `own_lowers`, `leg_vote(ch, leg, prev, low)`, `alternatives` |
 | `reader2/fusion.py` | `fuse(sv, av)` (first reading), `decide(ch, leg, lowers, prev, low)` (with re-read), `label_leg(...)` |
 | `reader2/trend.py` | `trend_capable(leg)`, `flip_test(leg, prev)`, `derive(ch, legs)`, `from_events(ch, events)` |
@@ -54,7 +54,7 @@ percentages of price. `MR[i]` = median (H − L) of the last `mr_bars` bars incl
   `R.legs`: it never sets, flips or moves the trend and is not checked by the trend invariants.
 - External pivots (Abhi's hand marking, a v1 count) can replace any degree: `read(df, pivots={1: [(bar, "H"|"L"[, confirm_bar])]})`.
 - **Sub-legs one degree lower.** A leg's sub-legs are the next lower pivot set that shows structure inside it; when two thresholds catch
-  the same swings, the set below is used (`structure.sub_degree`).
+  the same swings, the set below is used (`structure.leg_vote` / `anatomy.rollup`; the re-read never goes below `dc_k[0]`).
 - **Candles are read only at the lowest degree** (resolves CR-Q1). A leg with no lower pivots inside is its own lowest-degree swing and
   is read from its candles. Every higher leg's anatomy is **rolled up** from its sub-legs, recursively down to candles — never the
   average of all its candles (waves 2 and 4 would dilute it: on realistic candles the flat average of a clean impulse reads ≈ +0.1,
@@ -89,16 +89,19 @@ contaminate the candle vote — the two votes stay independent.
 | `counter` | mean of −score of the counter sub-legs | corrective / brief pauses are impulsive evidence; sharp counter-moves are corrective evidence |
 | `pause_time` | counter bars ÷ leg bars (0.55 → 0.35) | brief pauses ⇒ impulsive; long ⇒ corrective (sideways) |
 | `pause_depth` | total counter travel ÷ total motive travel (0.80 → 0.50) | shallow ⇒ impulsive; choppy / three-push ⇒ corrective |
-| `shape` (weight 2) | number of sub-legs (`rollup_shape`): 3 ⇒ −1, 5 ⇒ +1, other ⇒ no evidence | two pushes + one counter (a-b-c) vs three pushes + two counters (1-2-3-4-5) — count / alternation, not ratios |
+| `c_like_a` | last push vs the strongest earlier push: candle-score similarity × speed ratio × size ratio (0.85 → 0.60, cor only) | a zigzag's c resembles a ⇒ corrective; an impulse's wave 5 differs from wave 3 ⇒ no evidence |
+| `b_brief` | counter sub-leg bars ÷ the preceding push's bars (1.50 → 0.60) | waves 2 / 4 brief ⇒ impulsive; a zigzag's long overlapping b ⇒ corrective |
+| `middle_push` | with ≥ 3 pushes: is the strongest push (candle score × size) a middle one? (+1 / −1) | wave 3 the most impulsive push ⇒ impulsive |
+
+**No wave count in the anatomy.** The number of sub-legs is never a feature or a cap (that belongs to the structure vote only), so the two
+votes stay independent; a-b-c is told from 1-2-3-4-5 by candle evidence (the rows above).
 
 Gates: (1) pause evidence counts only with ≥ `rollup_pause_min_counters` (2) counter sub-legs — one pause cannot tell an impulse from a
 zigzag's b; (2) if `motive` is not impulsive the leg cannot read impulsive (score ≤ motive); (3) a corrective motive sub-leg carrying
 ≥ `rollup_veto_share` (25 %) of the motive travel vetoes an impulsive reading (score ≤ its score) — the overlapping wave a of a big-c
-zigzag keeps it a correction, while a small sluggish first push next to the top does not cancel an impulse; (4) **two pushes**
-(2 motive + 1 counter sub-legs) ⇒ score ≤ `a_lo`: a sharp a-b-c whose a and c are impulsive candles still rolls up corrective in
-structure (Abhi's "sharp fall ⇒ a-b-c"; `test_sharp_abc_with_impulsive_a_and_c_stays_a_correction`, 3 depths × ideal + 3 noisy seeds ×
-mirror). Known cost: an impulse whose waves 3-4-5 merge at the nearest lower degree (only 3 sub-legs visible) also reads corrective in
-structure and ends uncertain (CR-Q10). Each sub-leg is listed in
+zigzag keeps it a correction, while a small sluggish first push next to the top does not cancel an impulse. A sharp a-b-c with
+impulsive a and c rolls up neutral (c ≈ a, long b) and its zigzag structure labels it a correction (low); an impulse with a
+sub-threshold wave 2 or 4 (only 3 sub-legs visible) rolls up impulsive and never reads correction/high (reviewer probes). Each sub-leg is listed in
 the evidence with its own vote and level (candles / rollup). **All thresholds are register guesses — calibrated later only on the
 dev gallery against Abhi's labels, never on trade results.**
 
@@ -123,8 +126,9 @@ Volume: the index has no volume, so the caller passes the matching futures volum
 column, zeros or NaN ⇒ `volume` and `effort_result` are NA (listed as "NA (no volume)") and the vote uses the other features.
 
 ## 7. Fusion (spec §2c)
-Re-read = alternative pivots **exactly one degree lower**: `dc_k[sub-leg degree] × reread_k_mult` with three multipliers 0.9, 0.75,
-0.6 (never reaching the degree below). Both votes can be re-read: structure from the alternative pivots, anatomy rolled up from them.
+Re-read = alternative pivots **exactly one degree lower**: `dc_k[D − 1] × reread_k_mult` with three multipliers 0.9, 0.75, 0.6,
+never below the lowest degree (`dc_k[0]`): finer swings are noise counts (13 / 17 / 19 waves). A degree-1 leg therefore has no
+alternatives and the re-read **abstains** (no majority) — the remaining rules apply and one vote never gives a trend-capable label. Both votes can be re-read: structure from the alternative pivots, anatomy rolled up from them.
 A re-read decides only by **majority** (more than half of the alternatives, i.e. 2 of 3), with the same rule for both directions — the
 first agreeing alternative is never picked on its own. A **named** corrective structure (zigzag, flat, triangle, combination) is never
 re-read into an impulse (only the anatomy re-read can confirm it as a correction).
@@ -169,7 +173,7 @@ loaded with `reader.mark(R, labels, events)` and checked the same way.
 No look-ahead: pivots are directional-change (known at `confirm_bar`); leg votes (and their roll-up) use bars ≤ `known_bar` and
 pivots confirmed by then; the trend at bar i uses only legs known by i. Test: the full `read()` (with self-check) restricted to legs
 known by T equals `read(df[:T+1])`, and so do the trend states (also checked on BANKNIFTY daily every 61 bars, and mirror-symmetric).
-`history()` re-reads the whole series at every T — O(n) reads (≈ 0.5 s per read on 2,400 BANKNIFTY daily bars with the candle-vote
+`history()` re-reads the whole series at every T — O(n) reads (≈ 0.3–0.5 s per read on 2,400 BANKNIFTY daily bars with the candle-vote
 cache, so a full history is ≈ 10–20 min); it is not
 incremental, so long histories use `step` or a replay script (heavy-job rule).
 
@@ -217,21 +221,24 @@ Definition note: `features.er` returns None for a zero path; `legs2.measure.cand
   | Check | Pass | Strict xfail |
   |---|---|---|
   | no flip against the impulse during the correction | 32 / 32 | — |
-  | no correction leg read as a trend-capable impulse | 30 / 32 | zigzag_c_extended (2): the extended c shows 5 sub-legs ⇒ read as an impulse |
-  | impulse direction read by the end | 0 / 32 | all: the degree-2 leg runs from the lead-in top through the lower high into the impulse (unparsed 9-wave count); the majority re-read does not agree on an impulse ⇒ uncertain, no trend |
+  | no correction leg read as a trend-capable impulse | 32 / 32 | — |
+  | impulse direction read by the end | 0 / 32 | all: the degree-2 leg runs from the lead-in top through the lower high into the impulse (unparsed 9-wave count); the re-read finds no majority ⇒ no trend-capable impulse ⇒ no trend |
 
-  Correction legs themselves now mostly read `correction` (high): zigzag c = a, flat expanded, triangle expanding, zigzag-b-triangle,
-  double three, triple three, b-looks-impulsive, very-deep; c-truncated correction (low); double zigzag and long-in-time uncertain;
-  flat regular / running and contracting / barrier triangles have no degree-2 correction leg. All CR-Q2 (degree calibration on the dev
-  gallery, not tuned here). The library's own decision3 tests are unaffected.
+  With uniform candles every push looks impulsive, so correction legs read `correction` (low) or `uncertain`, never impulse. CR-Q2:
+  degree calibration on the dev gallery, not tuned here. The library's own decision3 tests are unaffected.
+- **Kept-failing tests (strict xfail, fixtures unchanged):** the mis-placed-pivot test (expects impulse / medium) and the three sharp_a
+  self-check tests (inv 2 / 5 / 7) — both fixtures give a NAMED zigzag at the default degree-1 pivots, and the review rule forbids
+  re-reading a named correction into an impulse even when 3 / 3 alternatives read 5 waves (CR-Q11).
 - Sharp, impulsive-looking counter-moves that do not break the prior swing (wave 1 vs wave A, Q49) become `uncertain` (CR-Q4).
-- BANKNIFTY daily (2016 → now, not sealed): trend share DOWN 6 % / uncertain 79 % / none 16 % (warm-up). The majority re-read and
-  the two-push gate make trend-capable impulses rare at degree 2 (CR-Q11) — gallery calibration item.
+- **BANKNIFTY daily** (2016 → now, not sealed): trend share UP 23.6 % / DOWN 5.5 % / uncertain 55.2 % / none 15.7 % (warm-up).
+  Only 3 of 37 degree-2 legs are trend-capable impulses. All uncertain bars come from 2 origin-close events (2018-07 → 2021-05 and
+  2021-09 → 2024-06); keeping the trend instead would have meant "DOWN" through the 2019–2024 rally, so the origin-close rule is not
+  the cause — the missing trend-capable up-impulses are (CR-Q12).
 
 ## 12. Tests
 `SUPABASE_DB_URL="" python3 -m pytest -q -p no:cacheprovider tests/test_reader2_anatomy.py tests/test_reader2_fusion.py
 tests/test_reader2_selfcheck.py tests/test_reader2_library.py tests/test_reader2_boundary.py` — fixtures in `tests/reader2_fixtures.py`:
 clean impulse, overlapping correction, impulse with mis-placed pivots, big-c correction, deep sideways decline, sharp A (block candles),
 plus realistic noisy candles (bodies ~50–65 %, wicks on both sides; seeds 1–3) and a structure-only 5-wave drawn with ambiguous
-candles that must be challenged (uncertain, no trend), and sharp a-b-c (impulsive a and c; 3 depths, ideal + noisy) that must stay a
-correction — each with its mirror.
+candles that must be challenged (uncertain, no trend), sharp a-b-c (impulsive a and c; 3 depths, ideal + noisy) that must stay a
+correction, and the reviewer's probes (impulse with a 12-point, 3-bar wave 4 or wave 2 ⇒ never correction/high) — each with its mirror.

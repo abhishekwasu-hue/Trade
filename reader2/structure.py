@@ -45,23 +45,14 @@ def leg_vote(ch, leg, lowers, upto_bar=None):
     return vote_prices(prices, ch.s)
 
 
-def sub_degree(leg, lowers, upto_bar=None):
-    """leg चे sub-legs ज्या degree वर दिसतात ती (lowers मधला आत रचना असलेला पहिला संच) ⇒ (degree, त्याखालचे संच). नाही ⇒ (D−1, [])."""
-    ub = leg.known_bar if upto_bar is None else upto_bar
-    for k, pv in enumerate(lowers or []):
-        if len(RL.inner_points(leg.i0, leg.i1, leg.p0, leg.p1, leg.dirn, pv, ub)) > 2:
-            return leg.degree - 1 - k, list(lowers[k + 1:])
-    return leg.degree - 1, list((lowers or [])[1:])
-
-
 def alt_thresholds(ch, leg, lowers):
-    """Re-read (spec §3.1): पर्यायी pivots फक्त एक degree खाली — sub-legs ज्या degree वर दिसतात त्या dc_k चे गुणक (reread_k_mult ≤ 1,
-    त्याखालच्या degree च्या वर). रिटर्न ([k], त्याखालचे संच)."""
+    """Re-read (spec §3.1): पर्यायी pivots फक्त एक degree खाली — dc_k[D−1] × reread_k_mult, आणि कधीच lowest degree (dc_k[0]) च्या
+    खाली नाही (त्याखालचे swings = noise counts). एकही पर्याय उरला नाही ⇒ re-read नाही (abstain). रिटर्न ([k], त्याखालचे संच)."""
     if leg.degree <= 0:
         return [], []
-    D, rest = sub_degree(leg, lowers)
-    base = float(ch.s["dc_k"][max(D, 0)])
-    return [base * float(m) for m in ch.s["reread_k_mult"]], rest
+    base, floor = float(ch.s["dc_k"][leg.degree - 1]), float(ch.s["dc_k"][0])
+    ks = [base * float(m) for m in ch.s["reread_k_mult"] if base * float(m) >= floor - 1e-9]
+    return ks, list((lowers or [])[1:])
 
 
 def alternatives(ch, leg, lowers=None):

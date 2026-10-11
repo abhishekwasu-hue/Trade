@@ -88,7 +88,7 @@ CONT = [("imp", 200, 12), ("cor", -70, 20), ("imp", 220, 14), ("cor", -90, 24)]
 # sideways overlapping decline that closes below the impulse origin (corrective anatomy, not an impulse)
 DEEP_SIDEWAYS = [("cor", -220, 30), ("cor", 90, 16), ("cor", -400, 50), ("cor", 150, 24)]
 # sharp 5-wave counter-move (impulsive candles) that retraces ~65% but does not break the impulse origin
-SHARP_A = [("imp", -200, 7), ("cor", 110, 10), ("imp", -300, 10), ("cor", 140, 12), ("imp", -170, 7), ("cor", 130, 14)]
+SHARP_A = [("imp", -200, 7), ("cor", 100, 10), ("imp", -260, 9), ("cor", 110, 10), ("imp", -170, 7), ("cor", 130, 14)]
 
 
 def sharp_abc(depth, b_frac=0.6):
