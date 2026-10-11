@@ -63,7 +63,8 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None):
                 continue
             txt = "; ".join(f"{'demand' if s == LR.BULL else 'supply'} {lo:,.0f}–{hi:,.0f}" for s, lo, hi, _ in ar)
             lines.append(f"• {bot}: watching {txt}")
-    lines.append("\nMCX: PAPER new entries paused until its confirmation gate (L4) is ready; exits run as usual.")
+    lines.append("\nMCX: PAPER = confirmation gate on 15M (trend from the current contract's Daily); entry only after CONFIRMED "
+                 "(no Vision approval for MCX yet). LIVE MCX stays on touch until you change its entry mode. Exits run as usual.")
     lines.append("Entry only after a closed-candle commitment → Vision → your ✅. PAPER only.")
     return "\n".join(lines)
 
