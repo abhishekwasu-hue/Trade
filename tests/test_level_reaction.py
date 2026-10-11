@@ -144,8 +144,34 @@ def test_daily_trend_fails_closed_and_caches(tmp_path):
     c = LR.daily_trend("NIFTY", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path))
     assert not c["ok"] and "fail-closed" in c["reason"]
     d = pd.DataFrame({"timestamp": pd.date_range("2000-01-01", periods=10), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5})
-    c = LR.daily_trend("NIFTY", "tok", today="2001-01-10", fetch=lambda *_: d, cache_dir=str(tmp_path))
+    c = LR.daily_trend("NIFTY", "tok", today="2001-01-10", fetch=lambda *_: d, cache_dir=str(tmp_path), s={"trend_retry_min": 0})
     assert not c["ok"] and "अपुरा" in c["reason"]
+
+
+def test_daily_trend_negative_cache_stays_fail_closed_then_retries(tmp_path, monkeypatch):
+    """review 🟡6: अपयश / < 30 bars ⇒ trend_retry_min (default 15) मिनिटं पुन्हा fetch नाही (दर cycle 25 s नाही), तरीही ok False (entry नाही);
+    मुदतीनंतर पुन्हा प्रयत्न, आणि पूर्ण fetch ⇒ दिवसाचा cache."""
+    t = [1000.0]
+    monkeypatch.setattr(LR, "_clock", lambda: t[0])
+    calls = []
+
+    def bad(*_):
+        calls.append(1)
+        raise RuntimeError("network")
+    c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path))
+    assert not c["ok"] and len(calls) == 1
+    t[0] += 14 * 60
+    c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path))
+    assert not c["ok"] and not c["sides"] and "fail-closed" in c["reason"] and len(calls) == 1      # negative cache: fetch नाही
+    short = pd.DataFrame({"timestamp": pd.date_range("2000-01-01", periods=10), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5})
+    t[0] += 2 * 60                                                         # 16 मिनिटं ⇒ मुदत संपली ⇒ पुन्हा fetch
+    c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=lambda *_: calls.append(2) or short, cache_dir=str(tmp_path))
+    assert not c["ok"] and "अपुरा" in c["reason"] and calls == [1, 2]
+    c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=lambda *_: calls.append(3) or short, cache_dir=str(tmp_path))
+    assert not c["ok"] and calls == [1, 2]                                 # < 30 bars सुद्धा negative cache
+    assert not (tmp_path / "trend_CRUDEOIL_2001-01-10.json").exists() and (tmp_path / "trend_CRUDEOIL_2001-01-10_fail.json").exists()
+    c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path), s={"allow_parent_correction": True})
+    assert len(calls) == 3                                                 # वेगळी key (_a1) ⇒ वेगळा negative cache
 
 
 def test_today_daily_bar_is_dropped():
@@ -174,6 +200,7 @@ def test_preopen_report_lists_trade_side_areas_and_fail_closed():
     msg = P.build_report(["NIFTY", "BANKNIFTY"], "tok", lambda s: zones, lambda s: 1030.0, trend_fn=lambda s: ctxs[s])
     assert "watching demand 990–1,000" in msg and "supply 1,060" not in msg          # UP ⇒ फक्त खालचे demand
     assert "NO NEW ENTRIES" in msg.split("<b>BANKNIFTY</b>")[1]
+    assert "LIVE MCX stays on touch" in msg                                  # review nit: LIVE MCX चा mode बदलत नाही
 
 
 def test_vision_chart_draws_gate_area_entry_sl_target():
