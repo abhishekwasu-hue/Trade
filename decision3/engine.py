@@ -36,8 +36,9 @@ def level_eval_brief(dd, part, extra, lvl):
 
 
 class V22:
-    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None):
+    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None):
         self.s = S3.load(s)
+        self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
         if res is None:
             from swings2 import engine as SE
@@ -51,7 +52,7 @@ class V22:
         self.daily = DD.fold(self.daily_df, self.s)
         self.weekly_df = DD.weekly_from_daily(self.daily_df)
         self.weekly = DD.fold(self.weekly_df, {**self.s, "daily_min_sessions": int(self.s["weekly_min_bars"])})   # Q15 (4) पालक
-        self.levels = LV.Levels(res, self.daily, self.daily_df, self.s)
+        self.levels = LV.Levels(res, self.daily, self.daily_df, self.s, weekly_states=self.weekly, weekly_df=self.weekly_df)
         self.bar_end = pd.to_datetime(self.m15["bar_end"]).reset_index(drop=True)
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
@@ -59,11 +60,12 @@ class V22:
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
         weekly}. Weekly विरुद्ध ⇒ कमाल B; Daily वाचता येत नाही (NEUTRAL / UNKNOWN) + Weekly trend ⇒ Weekly fallback, कमाल B;
-        impulse mature ⇒ कमाल weak (नवे trend-दिशेचे entries वाट); origin close ने तुटला ⇒ फक्त नोंद (correction चालू)."""
+        impulse mature ⇒ कमाल weak (नवे trend-दिशेचे entries वाट); origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23).
+        RANGE (Q27: origin तुटल्यानंतर दोन समान H / L सुद्धा) ⇒ पट्टा ctx["band"] — ② कडांजवळची levels."""
         st = DD.state_at(self.daily, self.bar_end[t])
         wk = DD.state_at(self.weekly, self.bar_end[t])
         ctx = {"trend": st.trend, "resolution": "daily impulse" if st.trend in ("UP", "DOWN") else ("daily range" if st.trend == "RANGE"
-               else None), "cap": None, "notes": [], "weekly": wk.trend}
+               else None), "cap": None, "notes": [], "weekly": wk.trend, "band": st.band if st.trend == "RANGE" else None}
         why = {"UP": "Daily UP", "DOWN": "Daily DOWN", "RANGE": "Daily RANGE ⇒ कडेनुसार", "NEUTRAL": "Daily NEUTRAL",
                "UNKNOWN": "Daily data अपुरा"}[st.trend]
         if st.trend in ("UP", "DOWN") and st.phase:
@@ -71,11 +73,12 @@ class V22:
             if wk.trend in ("UP", "DOWN") and wk.trend != st.trend:
                 ctx["cap"] = M.cap_min(ctx["cap"], "B")
                 ctx["notes"].append(f"Daily {st.trend} = Weekly {wk.trend} विरुद्ध correction ⇒ कमाल B")
-            if st.phase == "origin_broken":                                 # Q15: state = "DOWN — correction चालू" (cap नाही, फक्त नोंद; Q23)
-                ctx["notes"].append("protected origin close ने तुटला — correction चालू, उलट impulse अजून नाही")
+            if st.phase == "origin_broken":                                 # Q23 (Abhi): रचना खराब, अजून उलटली नाही ⇒ कमाल B (नोंद तशीच)
+                ctx["cap"] = M.cap_min(ctx["cap"], "B")
+                ctx["notes"].append("protected origin close ने तुटला — correction चालू, उलट impulse अजून नाही ⇒ कमाल B")
             if st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
-                ctx["notes"].append("impulse mature — fifth wave near target; मोठा reversal शक्य ⇒ नवे entries weak")
+                ctx["notes"].append("impulse mature — target जवळ (mechanical count, Q34); मोठा reversal शक्य ⇒ नवे entries weak")
         elif st.trend in ("NEUTRAL", "UNKNOWN") and wk.trend in ("UP", "DOWN"):
             ctx.update(trend=wk.trend, resolution="weekly fallback", cap=M.cap_min(ctx["cap"], "B"))
             ctx["notes"].append(f"Daily वाचता येत नाही ⇒ Weekly {wk.trend} (कमाल B)")
@@ -86,8 +89,8 @@ class V22:
         why += {"UP": " ⇒ bull put", "DOWN": " ⇒ bear call"}.get(ctx["trend"], "" if ok else " ⇒ trade नाही")
         return ok, why, st, ctx
 
-    def step2(self, t, trend):
-        act = self.levels.active(t, trend)
+    def step2(self, t, trend, band=None):
+        act = self.levels.active(t, trend, band)
         if not act:
             return False, "trade-बाजूचा जिवंत 1H level नाही", act
         a = act[0]
@@ -153,7 +156,7 @@ class V22:
         conv2 = M.cap_conv(conv, cap)                                    # Q15: weekly विरुद्ध / origin तुटला / mature
         if conv2 != conv:
             conv = extra["conviction"] = conv2
-            missing.extend(x for x in (notes or []) if "कमाल" in x or "weak" in x)   # फक्त cap लावणाऱ्या नोंदी (origin_broken नोंद cap नाही)
+            missing.extend(x for x in (notes or []) if "कमाल" in x or "weak" in x)   # फक्त cap लावणाऱ्या नोंदी
         if conv in ("A", "B"):
             return M_SETUP, chk, extra
         if conv == "weak":
@@ -163,7 +166,7 @@ class V22:
     def decide(self, t):
         ok1, why1, st, ctx = self.step1(t)
         trend = ctx["trend"]
-        ok2, why2, act = self.step2(t, trend) if ok1 else (False, "① ✘", [])
+        ok2, why2, act = self.step2(t, trend, ctx.get("band")) if ok1 else (False, "① ✘", [])
         chk = {"①": [ok1, why1], "②": [ok2, why2]}
         for k in ("③", "④", "⑤", "⑥", "⑦"):
             chk[k] = [None, "—"]
@@ -185,11 +188,12 @@ class V22:
             mark = "✅" if best.get("conviction") == "A" else "🟡"
         return {"bar": int(t), "ts": str(pd.Timestamp(self.m15["timestamp"].iloc[t])), "bar_end": str(self.bar_end[t]),
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
-                "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_wave": st.wave, "corr_label": st.corr_label,
+                "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
-                                                                  "day": str(st.protected.day.date())},
+                                                                  "day": ("before window" if self.sealed and self.sealed(st.protected.day)
+                                                                          else str(st.protected.day.date()))},
                 "range_band": st.band, "active_levels": act, "checklist": chk, "decision": dec, "mark": mark,
                 "K": best.get("K"), "risk": best.get("risk"), "conviction": best.get("conviction"), "conv_score": best.get("conv_score"),
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),

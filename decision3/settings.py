@@ -8,7 +8,10 @@ DEFAULTS = {
     "engine_version": "v22",                 # v21 (decision2, जुना) / v22 (हा) — shadow तुलनेसाठी दोन्ही चालतात
     # ① Daily trend (Dow)
     "daily_trend_mode": "impulse",           # Q15 (Abhi FINAL): impulse-degree Dow; "minor" = जुना (फक्त what-if)
-    "corr_degree_frac": 0.5,                 # same-degree correction ≥ मागच्या same-degree correction च्या इतका भाग (Q22)
+    "corr_degree_rule": "internal_pullback", # Q22 (Abhi): correction त्याच degree ची ⇔ impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे
+    "corr_degree_frac": 0.5,                 # फक्त corr_degree_rule = "ratio" (जुना, what-if): मागच्या same-degree correction चा भाग
+    "daily_start_nature_gate": True,         # Q28 (Abhi): 3-wave / corrective रचना trend लावत नाही — impulse-स्वभावाचा पाय लागतो
+    "range_after_trend": True,               # Q27 (Abhi): origin तुटला + दोन समान H आणि दोन समान L ⇒ RANGE (कडांवर trade)
     "maturity_sigma_d": 0.5,                 # maturity: (5) target च्या इतक्या σ_D आत ⇒ "impulse mature" (पुरावा)
     "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
     "daily_swing_method": "pivot",           # pivot (N bars दोन्ही बाजूला) / dc (k_D × σ_D) — Q15: pivot; dc फक्त what-if
@@ -22,6 +25,8 @@ DEFAULTS = {
     "level_min_width_sigma": 0.15,           # पट्ट्याची किमान रुंदी = σ_1H × हे
     "liquidity_eq_sigma": 0.15,              # equal highs / lows = σ_1H च्या इतक्या अपूर्णांकात
     "active_levels_max": 2,                  # trade-बाजूची जवळची levels
+    "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
+    "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "liq_marks_per_side": 3,                 # chart वर प्रत्येक बाजूचे जवळचे liquidity pools (फक्त chart)
@@ -70,7 +75,10 @@ DEFAULTS = {
 REGISTER = {
     "engine_version": ("v22", "v21 / v22", "setting", "spec §4.A — जुना code shadow तुलना"),
     "daily_trend_mode": ("impulse", "impulse / minor", "Abhi नियम", "Q15 FINAL: trend = शेवटचा impulse leg, protected = त्याचा origin"),
-    "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "Q15 'त्याच degree ची correction' — मागच्या same-degree correction शी प्रमाण (Q22)"),
+    "corr_degree_rule": ("internal_pullback", "internal_pullback / ratio", "Abhi नियम", "Q22: रचनात्मक — impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे (प्रमाण नाही); ratio = जुना what-if"),
+    "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
+    "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
+    "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "maturity_sigma_d": (0.5, "0.25/0.5/1.0", "अंदाज", "Q15 (5): target 'जवळ' = σ_D चा अपूर्णांक (पुरावा, gate नाही)"),
     "weekly_min_bars": (10, "—", "Abhi नियम", "daily_min_sessions सारखाच — weekly data अपुरा ⇒ UNKNOWN"),
     "daily_swing_method": ("pivot", "pivot / dc", "setting", "spec ① — pivot default; Q15: N = 1 / DC primary नाहीत (फक्त what-if)"),
@@ -83,6 +91,8 @@ REGISTER = {
     "level_min_width_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② पट्टा किमान रुंदी σ_1H × अपूर्णांक"),
     "liquidity_eq_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ② (d) equal highs / lows"),
     "active_levels_max": (2, "—", "Abhi नियम", "spec ② active level = जवळची 2"),
+    "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
+    "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),

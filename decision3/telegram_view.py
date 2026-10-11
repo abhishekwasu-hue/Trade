@@ -16,6 +16,7 @@ from . import advisory as AV
 from . import charts as CH
 from . import liquidity as LQ
 from . import daily as DD
+from . import history as HI
 from . import method as M
 
 MAX_CAPTION = 1024
@@ -84,12 +85,15 @@ def build_run(V, rows, run_dir, symbol, run_id, moments=(), max_items=20):
         st = DD.state_at(V.daily, V.bar_end[t])
         tag = r["ts"][:16].replace(" ", "_").replace(":", "")
         files = []
-        if st.bar >= 0:
+        st0 = HI.display_start(V.daily_df["timestamp"], st.bar, HI.sealed_fn(symbol)) if st.bar >= 0 else 0
+        if 0 <= st0 <= st.bar:                                             # Q33: शेवटची माहीत Daily candle sealed ⇒ Daily chart नाही
             f = f"{n:02d}_{tag}_daily.png"
-            open(os.path.join(run_dir, f), "wb").write(CH.daily_png(V.daily_df, V.daily, symbol, upto=st.bar))
+            open(os.path.join(run_dir, f), "wb").write(CH.daily_png(V.daily_df, V.daily, symbol, upto=st.bar, start=st0))
             files.append(f)
         f = f"{n:02d}_{tag}_1h.png"
-        open(os.path.join(run_dir, f), "wb").write(CH.h1_png(V.levels, t, r.get("trend_used") or st.trend, symbol, liq=LQ.pool_marks(V, t)))
+        tr_ = r.get("trend_used") or st.trend
+        open(os.path.join(run_dir, f), "wb").write(CH.h1_png(V.levels, t, tr_, symbol, liq=LQ.pool_marks(V, t),
+                                                             band=r.get("range_band") if tr_ == "RANGE" else None))
         files.append(f)
         f = f"{n:02d}_{tag}_15m.png"
         open(os.path.join(run_dir, f), "wb").write(CH.m15_png(V, t, symbol, r=r))

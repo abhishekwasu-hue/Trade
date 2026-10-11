@@ -89,7 +89,7 @@ def _band_swing(kind, o, h, l, c, price, w):
 class Levels:
     """सगळ्या levels चा जीवनक्रम (एकदा, bar क्रमाने). snapshot(t) फक्त t पर्यंतची माहिती वापरतो."""
 
-    def __init__(self, res, daily_states=None, daily_df=None, s=None):
+    def __init__(self, res, daily_states=None, daily_df=None, s=None, weekly_states=None, weekly_df=None):
         self.s = S3.load(s)
         self.res = res
         m15 = res["m15"]
@@ -105,6 +105,9 @@ class Levels:
         self.piv = [p for p in res["pivots"][deg]]
         self.daily_df = daily_df
         self.daily_states = daily_states or []
+        self.weekly_states = weekly_states or []
+        self.weekly_df = weekly_df
+        self.prior = []                     # Q40: 15M window आधीचे trend-degree Daily + Weekly swings (debug / count)
         self.L = []
         self.bos = []                       # [(bar, dir, origin pivot)] — ③ impulse साठी (known_at = bar चा close)
         self.known_by = []                  # प्रत्येक bar ला माहीत D2 pivots ची संख्या (confirm क्रमाने)
@@ -138,6 +141,65 @@ class Levels:
         self.L.append(L)
         return L
 
+    def _prior_levels(self):
+        """Q40 (Abhi): 15M window आधीचे महत्त्वाचे Daily levels — फक्त trend-degree swings (degree-aware Dow चे impulse origin / टोक =
+        correction टोकं) + Weekly swings, window सुरुवातीच्या किंमतीपासून `prior_level_atr_mult` × ATR_D आत. bar 0 ला जन्म; भूमिका
+        तेव्हाच्या किंमतीनुसार (वर ⇒ resistance, खाली ⇒ support). तारीख output मध्ये नाही (NIFTY holdout swing ⇒ फक्त किंमत, Q39)."""
+        if not self.n or self.daily_df is None or not len(self.daily_df):
+            return []
+        dd = self.daily_df.reset_index(drop=True)
+        day0 = self.ts.iloc[0].normalize()
+        t0_end = self.bar_end.iloc[0]
+        before = dd[pd.to_datetime(dd["timestamp"]) < day0]
+        if not len(before):
+            return []
+        nA = int(self.s["prior_level_atr_n"])
+        b = before.tail(nA + 1)
+        pc = b["close"].shift(1)
+        tr = np.maximum(b["high"] - b["low"], np.maximum((b["high"] - pc).abs(), (b["low"] - pc).abs())).iloc[1:]
+        atr = float(tr.mean()) if len(tr) else float((b["high"] - b["low"]).mean())
+        px0 = float(self.A["open"][0])
+        lim = float(self.s["prior_level_atr_mult"]) * atr
+        cand = {}
+        self.prior = []
+
+        def add(p):
+            if p is not None and p.known_at <= t0_end:
+                cand[("D", p.kind, p.bar)] = (p, "a:D-prior", dd)
+        pre = [st for st in self.daily_states if st.known_at is not None and st.known_at <= t0_end]
+        leg, end = None, None
+        for st in pre:                                                     # degree-aware Dow ने वापरलेले swings (known ≤ window सुरुवात)
+            add(st.protected)                                              # impulse origin / correction टोक
+            key = (st.trend, None if st.protected is None else (st.protected.kind, st.protected.bar))
+            if key != leg:                                                 # impulse leg संपला ⇒ त्याचं शेवटचं टोक (चालू running low नाही)
+                add(end)
+                leg = key
+            end = getattr(st, "imp_end", None)
+        add(end)
+        if pre and pre[-1].phase in ("correction", "origin_broken") and pre[-1].imp_end is not None:
+            last = pre[-1]                                                 # window सुरुवातीला चालू correction चं confirmed टोक
+            ok = "H" if last.imp_end.kind == "L" else "L"
+            xs = [p for p in last.pivots if p.kind == ok and p.bar > last.imp_end.bar and p.known_at <= t0_end]
+            if xs:
+                add(max(xs, key=lambda p: p.price) if ok == "H" else min(xs, key=lambda p: p.price))
+        if self.weekly_states and self.weekly_df is not None:
+            wk = [x for x in self.weekly_states if x.known_at is not None and x.known_at <= t0_end]
+            if wk:
+                wdf = self.weekly_df.reset_index(drop=True)
+                for p in wk[-1].pivots:
+                    if p.known_at <= t0_end:
+                        cand[("W", p.kind, p.bar)] = (p, "a:W-prior", wdf)
+        out = []
+        for (_, kind, bar), (p, birth, src) in sorted(cand.items(), key=lambda kv: kv[0]):
+            if abs(p.price - px0) > lim:
+                continue
+            r = src.iloc[p.bar]
+            lo, hi = _band_swing(p.kind, r["open"], r["high"], r["low"], r["close"], p.price, self._w(0))
+            role = RES if lo > px0 else (SUP if hi < px0 else (RES if p.kind == "H" else SUP))
+            out.append((role, lo, hi, birth, p.price))
+            self.prior.append({"src": birth, "kind": p.kind, "price": float(p.price), "role": role})
+        return out
+
     def _births_at(self):
         """{15M bar: [(role, lo, hi, birth, anchor)]} — known_at क्रमाने."""
         out = {}
@@ -150,11 +212,16 @@ class Levels:
         if self.daily_states and self.daily_df is not None:
             seen = set()
             dd = self.daily_df.reset_index(drop=True)
+            day0 = self.ts.iloc[0].normalize() if self.n else None
+            # Q33: Daily पूर्ण history (warm-up) — पण level जीवनक्रमाला 15M इतिहास लागतो ⇒ 15M window आधी बनलेले Daily pivots level म्हणून
+            # जन्मत नाहीत (आधीचे breaks / flips माहीत नाहीत; आणि NIFTY holdout काळातले level output मध्ये नाहीत)
             for st in self.daily_states:
+                if day0 is not None and st.day is not None and st.day < day0:
+                    continue
                 for p in st.pivots:
                     key = (p.kind, p.bar)
-                    if key in seen:
-                        continue
+                    if key in seen or p.known_at <= self.bar_end.iloc[0]:
+                        continue                                           # window सुरुवातीला आधीच माहीत ⇒ फक्त Q40 prior मार्गाने
                     seen.add(key)
                     js = np.flatnonzero(self.bar_end.to_numpy() >= np.datetime64(p.known_at))
                     if not len(js):
@@ -163,6 +230,8 @@ class Levels:
                     lo, hi = _band_swing(p.kind, dd["open"].iloc[p.bar], dd["high"].iloc[p.bar], dd["low"].iloc[p.bar], dd["close"].iloc[p.bar],
                                          p.price, self._w(t))
                     out.setdefault(t, []).append((RES if p.kind == "H" else SUP, lo, hi, "a:D", p.price))
+        for item in self._prior_levels():
+            out.setdefault(0, []).append(item)
         # (d) liquidity: equal highs / lows (D2)
         eqs = float(self.s["liquidity_eq_sigma"])
         for kind in ("H", "L"):
@@ -313,9 +382,10 @@ class Levels:
                         "above": lo > c, "below": hi < c})
         return out
 
-    def active(self, t, trend):
+    def active(self, t, trend, band=None):
         """trade-बाजूची जवळची levels (≤ active_levels_max). DOWN ⇒ किंमतीवरचे / किंमत ज्यात आहे ते resistance; UP ⇒ खालचे support;
-        RANGE ⇒ खालचा support + वरचा resistance (प्रत्येकी जवळचा)."""
+        RANGE ⇒ खालचा support + वरचा resistance (प्रत्येकी जवळचा). Daily पट्टा (Q27) दिला असेल ⇒ फक्त कडांची बाजू: support पट्ट्याच्या
+        खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य; Abhi: bull put खालच्या कडेला, bear call वरच्या)."""
         snap = self.snapshot(t)
         m = int(self.s["active_levels_max"])
         sup = sorted([x for x in snap if x["role"] == SUP and not x["above"]], key=lambda x: x["dist"])
@@ -325,6 +395,10 @@ class Levels:
         if trend == "UP":
             return sup[:m]
         if trend == "RANGE":
+            if band:
+                mid = (float(band[0]) + float(band[1])) / 2.0
+                sup = [x for x in sup if (x["lo"] + x["hi"]) / 2.0 <= mid]
+                res = [x for x in res if (x["lo"] + x["hi"]) / 2.0 >= mid]
             return (sup[:1] + res[:1])[:m]
         return []
 

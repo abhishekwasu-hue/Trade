@@ -64,7 +64,8 @@ def facts_text(kind, js):
                  f"Engine pivots in window: {len(piv)} (tags {sum(1 for p in piv if p['tag'] in ('HH', 'HL'))} HH/HL, "
                  f"{sum(1 for p in piv if p['tag'] in ('LH', 'LL'))} LH/LL); protected swings {len(prot)}.",
                  f"Dow minor state now {m.get('trend')} since {m.get('since')}; protected {m.get('protected_now')}.",
-                 f"Q15 degree-aware now {q.get('trend')} {q.get('phase')} {q.get('wave')}; origin {q.get('protected_now')}; mature {q.get('mature')}.",
+                 f"Q15 degree-aware now {q.get('trend')} {q.get('phase')}; origin {q.get('protected_now')}; mature {q.get('mature')}. "
+                 "Wave labels (1)-(5)/(A)(B)(C) on the chart are the Elliott advisory count only.",
                  f"Elliott advisory degree {js.get('elliott_degree')} (not used in decisions).",
                  "No zones, no entry/SL/target on this chart (structure review only)."]
         return "\n".join(lines)

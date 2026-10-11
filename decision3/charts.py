@@ -41,7 +41,7 @@ def _why_en(st):
     """Chart वर फक्त English (Abhi): Daily state चं कारण."""
     p = st.protected
     if st.trend in ("UP", "DOWN") and p is not None and getattr(st, "phase", None):
-        ph = {"impulse": f"impulse {st.wave}", "correction": f"correction {st.wave} leg {st.corr_label}",
+        ph = {"impulse": "impulse", "correction": f"correction leg {st.corr_label}",
               "origin_broken": "origin closed through - waiting for opposite impulse"}[st.phase]
         return f" · {ph} · protected origin {p.price:,.0f}" + (" · MATURE near target" if st.mature else "")
     if st.trend in ("UP", "DOWN") and p is not None:
@@ -55,37 +55,43 @@ def _why_en(st):
     return ""
 
 
-def daily_png(daily_df, states, title, upto=None):
-    """Daily: candles, trend पार्श्वभूमी, confirmed swings (HH/HL/LH/LL), protected रेघ, range पट्टा."""
+def daily_png(daily_df, states, title, upto=None, start=0):
+    """Daily: candles, trend पार्श्वभूमी, confirmed swings (HH/HL/LH/LL), protected रेघ, range पट्टा. start ⇒ फक्त त्या index पासून
+    दाखवतो (engine पूर्ण history वर; Q33: NIFTY holdout तारखा chart वर नाहीत)."""
     d = daily_df.reset_index(drop=True)
     n = len(d) if upto is None else upto + 1
-    d = d.iloc[:n]
+    if int(start) > n - 1:
+        raise ValueError("daily_png: no daily candle to show after start (sealed or not enough data)")
+    start = max(0, int(start))
+    d = d.iloc[start:n]
     fig, ax = plt.subplots(figsize=(12, 5))
-    for i in range(n):
-        ax.axvspan(i - 0.5, i + 0.5, color=TREND_COLOR.get(states[i].trend, "#fff"), lw=0)
+    for i in range(start, n):
+        ax.axvspan(i - start - 0.5, i - start + 0.5, color=TREND_COLOR.get(states[i].trend, "#fff"), lw=0)
     _candles(ax, d)
     last = states[n - 1]
     hs, ls = [], []
+    shown = [p for p in last.pivots if p.bar >= start]
     for p in last.pivots:
         seq = hs if p.kind == "H" else ls
         lab = p.kind
         if seq:
             lab = ("HH" if p.price > seq[-1] else "LH") if p.kind == "H" else ("HL" if p.price > seq[-1] else "LL")
         seq.append(p.price)
-        ax.annotate(lab, (p.bar, p.price), textcoords="offset points", xytext=(0, 8 if p.kind == "H" else -12), ha="center", fontsize=8,
-                    color="#1c7ed6" if p.kind == "H" else "#e8590c")
-    if last.pivots:
-        ax.plot([p.bar for p in last.pivots], [p.price for p in last.pivots], color="#495057", lw=0.8, ls="--")
+        if p.bar >= start:
+            ax.annotate(lab, (p.bar - start, p.price), textcoords="offset points", xytext=(0, 8 if p.kind == "H" else -12), ha="center",
+                        fontsize=8, color="#1c7ed6" if p.kind == "H" else "#e8590c")
+    if shown:
+        ax.plot([p.bar - start for p in shown], [p.price for p in shown], color="#495057", lw=0.8, ls="--")
     if last.protected is not None:
         ax.axhline(last.protected.price, color="#7048e8", lw=1.2, ls=":")
-        ax.text(n - 0.5, last.protected.price, f" protected {last.protected.price:,.0f}", color="#7048e8", fontsize=8, va="bottom")
+        ax.text(n - start - 0.5, last.protected.price, f" protected {last.protected.price:,.0f}", color="#7048e8", fontsize=8, va="bottom")
     if last.band:
         ax.axhspan(last.band[0], last.band[1], color="#fab005", alpha=0.15)
     for x in getattr(last, "targets", ()) or ():                               # Q15 maturity targets ((5) equality / मोठा आधीचा swing)
         ax.axhline(x, color="#868e96", lw=0.8, ls="--")
-        ax.text(n - 0.5, x, f" target {x:,.0f}", color="#868e96", fontsize=7, va="top")
+        ax.text(n - start - 0.5, x, f" target {x:,.0f}", color="#868e96", fontsize=7, va="top")
     ax.set_title(f"{title} · Daily trend {last.trend}" + _why_en(last), fontsize=10)
-    _xticks(ax, d["timestamp"].to_numpy(), max(1, n // 15))
+    _xticks(ax, d["timestamp"].to_numpy(), max(1, (n - start) // 15))
     return _png(fig)
 
 
@@ -102,7 +108,7 @@ def weekly_png(daily_df, title):
     return _png(fig)
 
 
-def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None):
+def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None):
     """1H: शेवटच्या `sessions` sessions चे candles (t पर्यंत), D2 swings, जिवंत levels (role रंग, ★ sweeps, जन्म-कारण), active ठळक."""
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
@@ -116,7 +122,7 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None):
     _candles(ax, frame)
     sg = lv.sig1h[t]
     lim = (max_sigma or float(lv.s["show_distance_sigma"])) * (sg if np.isfinite(sg) else np.inf)
-    act = {x["id"] for x in lv.active(t, trend)}
+    act = {x["id"] for x in lv.active(t, trend, band)}                    # Q27: engine ② सारखाच पट्टा
     for x in lv.snapshot(t):
         if x["dist"] > lim and x["id"] not in act:
             continue                                                           # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
@@ -289,7 +295,7 @@ def daily_swings_png(v, title):
         if b - a2 >= 12:                                                   # लहान runs वर नाव नाही (गर्दी)
             ph, wv = s.split("|")
             short = {"impulse": "imp", "correction": "corr", "origin_broken": "broken"}.get(ph, ph)
-            bx.text(x(a2) + (b - a2) / 2, 0.45, f"{wv} {short}", ha="center", va="center", fontsize=6.5)
+            bx.text(x(a2) + (b - a2) / 2, 0.45, short, ha="center", va="center", fontsize=6.5)   # Q34: leg क्रमांक chart वर नाही
     bx.set_ylim(0, 2)
     bx.set_yticks([])
     hdl = [Line2D([], [], color="#1c7ed6", ls="--", label="Dow minor: protected (x = broken by close)"),

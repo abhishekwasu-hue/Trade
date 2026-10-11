@@ -3,7 +3,8 @@
 दोन थर (engine पूर्ण उपलब्ध history वर; chart फक्त शेवटची `window` sessions दाखवतो — कोणताही parameter chart पाहून बदलत नाही):
   a. Dow (minor swings, Q15 आधीचा engine — `daily_trend_mode: minor`): confirmed pivots (daily_pivot_n), HH/HL/LH/LL, protected swing
      (pivot पासून तो तुटला / बदलला तिथपर्यंत), trend पट्टे (UP / DOWN / NEUTRAL / RANGE) — engine NEUTRAL कुठे झाला ते दिसतं.
-  b. Degree-aware (Q15, आताचा default `impulse`): protected = impulse origin, phase / wave ((3) / (4) / (5)), legs impulse / corrective
+  b. Degree-aware (Q15, आताचा default `impulse`): protected = impulse origin, phase (mechanical leg क्रमांक L3 / L4 … फक्त JSON debug —
+     Q34), legs impulse / corrective
      (Q15 fold च्या phase वरून — legs2 / patterns2 intraday swings2 वर चालतात, Daily वर नाहीत ⇒ Q32), maturity.
   Elliott (advisory, निर्णयात नाही): elliott.counts CountEngine Daily frames वर (fixed degree TF = 1d); preferred count चे wave labels,
   vote कमकुवत (gray) ⇒ "?".
@@ -146,13 +147,17 @@ def pick_degree(ev, t0):
     return degs[0][0] if degs else None
 
 
-def ago(i, n):
+def ago(i, n, i0=None):
+    if i0 is not None and i < i0:
+        return "before the shown window"
     k = n - 1 - i
     return "today" if k == 0 else f"{k} sessions ago"
 
 
-def build(df, s=None, window=500, es=None, with_elliott=True):
-    """पूर्ण history वर दोन थर + elliott ⇒ view dict (chart + JSON साठी). window = दाखवायची शेवटची sessions."""
+def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
+    """पूर्ण history वर दोन थर + elliott ⇒ view dict (chart + JSON साठी). window = दाखवायची शेवटची sessions.
+    sealed(ts) ⇒ True असलेल्या तारखा (Q33: NIFTY holdout) engine warm-up मध्ये वापरतो पण output (window, JSON, caption, chart) मध्ये कधीच
+    नाहीत: window शेवटच्या sealed row नंतरच सुरू होते."""
     s = S3.load(s)
     d = prepare(df)
     C = d["close"].to_numpy()
@@ -160,6 +165,12 @@ def build(df, s=None, window=500, es=None, with_elliott=True):
     minor = DD.fold(d, {**s, "daily_trend_mode": "minor"})
     q15 = DD.fold(d, {**s, "daily_trend_mode": "impulse"})
     i0 = max(0, n - int(window))
+    if sealed is not None:
+        hit = [j for j in range(n) if sealed(d["timestamp"].iloc[j])]
+        if hit:
+            i0 = max(i0, hit[-1] + 1)
+            if i0 >= n:
+                raise ValueError("सगळ्या दाखवायच्या Daily candles sealed (holdout) — chart नाही (Q33)")
     piv = list(q15[-1].pivots)                                             # दोन्ही modes चे pivots एकच (_raw_pivots)
     tags = tag_pivots(piv)
     seg_m, seg_q = protected_segments(minor, C), protected_segments(q15, C)
@@ -200,7 +211,7 @@ def build(df, s=None, window=500, es=None, with_elliott=True):
                 "protected_now": None if last_q.protected is None else {"kind": last_q.protected.kind, "price": last_q.protected.price,
                                                                         "bar": last_q.protected.bar},
                 "phases": runs([(x.phase or "-") + "|" + (x.wave or "") for x in q15])},
-        "elliott": ev, "elliott_degree": deg,
+        "elliott": ev, "elliott_degree": deg, "sealed": sealed,
     }
 
 
@@ -209,6 +220,7 @@ def caption(v, symbol, audit_line=None, years=None):
     n = v["n"]
     m, q = v["minor"], v["q15"]
     shown = n - v["i0"]
+    w0 = v["i0"] if v.get("sealed") is not None else None                 # Q33: sealed काळातली सुरुवात ⇒ "window आधी" (तारीख / मोजणी नाही)
     span = f"last {years}y" if years and v.get("full_window", True) else f"{shown} sessions"
     pm = m["protected_now"]
     pq = q["protected_now"]
@@ -221,9 +233,9 @@ def caption(v, symbol, audit_line=None, years=None):
     why = _en(m["why"])
     lines = [
         f"{symbol} · Daily · {span} (engine on full history)",
-        f"Dow (minor swings): {m['trend']} since {ago(m['since'], n)}" + (f" — {why}" if why else ""),
+        f"Dow (minor swings): {m['trend']} since {ago(m['since'], n, w0)}" + (f" — {why}" if why else ""),
         f"Protected: minor {_pv(pm, m['trend'] == 'NEUTRAL')} | Q15 origin {_pv(pq, q['phase'] == 'origin_broken')}",
-        f"Degree-aware (Q15): {q['trend']} {q['phase'] or ''} {q['wave'] or ''}".rstrip() + f" since {ago(q['since'], n)}"
+        f"Degree-aware (Q15): {q['trend']} {(q['phase'] or '').replace('_', ' ')}".rstrip() + f" since {ago(q['since'], n, w0)}"
         + (" · impulse mature" if q["mature"] else ""),
         f"Elliott advisory (not used in decisions): {lab}",
     ]
@@ -261,20 +273,32 @@ def _en(why):
 
 def to_json(v, symbol):
     """Chart वर जे काढलं तेच (pivots, legs, states, labels) — frame नाही."""
-    d = v["frame"]
-    day = lambda i: str(d["timestamp"].iloc[int(i)].date())                # noqa: E731
-    band = lambda r: [{"from": day(a), "to": day(b), "state": s} for a, b, s in r if b >= v["i0"]]   # noqa: E731
-    seg = lambda xs: [{**x, "pivot_day": day(x["bar"]), "from_day": day(x["from"]), "to_day": day(x["to"])} for x in xs   # noqa: E731
-                      if x["to"] >= v["i0"]]
-    return {"symbol": symbol, "timeframe": "1D", "window": {"from": day(v["i0"]), "to": v["last_day"]},
-            "history": {"from": v["first_day"], "to": v["last_day"], "bars": v["n"]},
+    d, i0 = v["frame"], v["i0"]
+    sealed = v.get("sealed")
+
+    def day(i, clip=False):
+        """Q33: sealed (NIFTY holdout) तारीख output मध्ये कधीच नाही ⇒ "before window"; clip ⇒ window सुरुवातीपर्यंत आणतो."""
+        i = max(int(i), i0) if clip else int(i)
+        if sealed is not None and i < i0:
+            return "before window"
+        return str(d["timestamp"].iloc[i].date())
+    band = lambda r: [{"from": day(a, True), "to": day(b), "state": s} for a, b, s in r if b >= i0]   # noqa: E731
+    seg = lambda xs: [{**x, "pivot_day": day(x["bar"]), "from_day": day(x["from"], True), "to_day": day(x["to"])} for x in xs   # noqa: E731
+                      if x["to"] >= i0]
+    ev = v["elliott"]
+    if sealed is not None and isinstance(ev, dict) and "degrees" in ev:   # Q33: sealed तारखांचे elliott labels output मध्ये नाहीत
+        ev = {**ev, "degrees": {k: {**g, "labels": [x for x in g.get("labels", []) if not sealed(x["ts"])]}
+                                for k, g in ev["degrees"].items()}}
+    first = v["first_day"] if sealed is None else day(0)
+    return {"symbol": symbol, "timeframe": "1D", "window": {"from": day(i0), "to": v["last_day"]},
+            "history": {"from": first, "to": v["last_day"], "bars": v["n"]},
             "pivots": [p for p in v["pivots"] if p["in_window"]],
             "legs": [{**x, "from_day": day(x["from"]), "to_day": day(x["to"])} for x in v["legs"]],
             "minor": {"trend": v["minor"]["trend"], "since": day(v["minor"]["since"]), "bands": band(v["minor"]["bands"]),
                       "protected": seg(v["minor"]["protected"]), "protected_now": v["minor"]["protected_now"]},
-            "q15": {"trend": v["q15"]["trend"], "since": day(v["q15"]["since"]), "phase": v["q15"]["phase"], "wave": v["q15"]["wave"],
+            "q15": {"trend": v["q15"]["trend"], "since": day(v["q15"]["since"]), "phase": v["q15"]["phase"], "leg_index_debug": v["q15"]["wave"],
                     "mature": v["q15"]["mature"], "targets": v["q15"]["targets"], "bands": band(v["q15"]["bands"]),
                     "protected": seg(v["q15"]["protected"]), "protected_now": v["q15"]["protected_now"],
-                    "phases": [{"from": day(a), "to": day(b), "phase_wave": s} for a, b, s in v["q15"]["phases"] if b >= v["i0"]]},
-            "elliott": v["elliott"], "elliott_degree": v["elliott_degree"],
+                    "phases": [{"from": day(a, True), "to": day(b), "phase_wave": s} for a, b, s in v["q15"]["phases"] if b >= i0]},
+            "elliott": ev, "elliott_degree": v["elliott_degree"],
             "note": "Visual review only — no trade, no order. Engine numbers from data."}
