@@ -58,7 +58,8 @@ def test_c_wave_fixture_down_throughout_with_wave4_correction_and_wave5_origin()
     five = next(i for i in range(top4, len(st)) if st[i].phase == "impulse")
     for x in st[five:]:                                                     # (5): origin = (4) top for the whole decline
         assert x.protected.price == float(d["high"].iloc[top4]) and x.protected.bar == top4
-    assert st[-1].mature and 998.0 in st[-1].targets                       # A3: (A) low zone ⇒ maturity flag (evidence)
+    low3 = float(d["low"].iloc[60:110].min())                               # Q44: target = पहिल्या impulse leg चं टोक ((3) low,
+    assert st[-1].mature and st[-1].targets == (low3,)                      # (4) A1 correction आधी); (5) तिथे पोचला ⇒ mature
     objs = DS.structure_objects(d, st)
     tags = [b["tag"] for b in objs["bounces"] if b["bar"] > top4]
     assert tags and all(t == "pullback" for t in tags)                     # bounces inside (5) are lower degree
@@ -108,14 +109,15 @@ def test_trend_line_wording_and_state_labels():
     d, st = _fold(HEAD + WAVE4 + WAVE5)
     v = DS.build(path(HEAD + WAVE4 + WAVE5), window=60, with_elliott=False)
     line = DS.trend_line(v["q15"])
-    assert line.startswith("Trend DOWN (impulse)") and "protected 1,252" in line and "larger reversal possible" in line
+    assert line.startswith("Trend DOWN") and "protected 1,252" in line and "larger reversal possible" in line   # (4) sharp-fall zone
+    assert "correction completed at sharp-fall supply" in line and "target 1,078" in line                          # मध्ये संपली (rule 5)
     labels = {s for _, _, s in v["q15"]["states"]}
     assert labels <= {"UP · impulse", "UP · correction", "DOWN · impulse", "DOWN · correction", "RANGE", "NEUTRAL", "UNKNOWN"}
     cap = DS.caption(v, "TEST")
     assert cap.splitlines()[1].startswith("Trend DOWN") and "Dow minor swings (secondary)" in cap.splitlines()[2]
     q = {**v["q15"], "phase": "correction", "counter": "correction", "retrace": 0.62}
     assert "correction in progress (same degree; parent origin holds) (depth 62% of last impulse)" in DS.trend_line(q)
-    assert "pullback in progress (lower degree)" in DS.trend_line({**v["q15"], "phase": "impulse", "counter": "pullback"})
+    assert "pullback in progress (lower degree)" in DS.trend_line({**v["q15"], "phase": "impulse", "counter": "pullback", "rule5": False})
 
 
 def test_elliott_vs_dow_logs_agreement():
@@ -185,6 +187,6 @@ def test_default_chart_spec_snapshot_on_fixture():
             "protected": sp["protected"]["price"], "legs": len(sp["legs"])}
     assert snap == {
         "tags": ["correction · 64% of impulse", "pullback", "pullback", "pullback", "pullback"],   # depth vs the (B) top (Q50)
-        "bands": [("protected origin", 1252.0, "tested", None), ("window low", 994.0, "tested", None),   # ABC_FIX rule 5 order:
-                  ("maturity target", 1148.0, "target", None)],                # window extremes before maturity targets (998 ⊂ low)
+        "bands": [("protected origin", 1252.0, "tested", None), ("sharp-fall supply", 1265.67, "broken", None),   # Q55: (2) चा
+                  ("window low", 994.0, "tested", None), ("target", 1078.0, "target", None)],   # तुटलेला swing low; Q44: (3) low
         "protected": 1252.0, "legs": 2}

@@ -112,6 +112,8 @@ def structure_objects(d, states, s=None):
     low = DD.pivots_pivot(d, nlow, DD.known_at_of(d)) if nlow >= 1 else []
     legs, corrs = [], []
     cur = None
+    last = states[-1] if states else None
+    tpv = list(last.pivots) if last is not None else []                    # trend-degree pivots (engine चे स्वतःचे)
     for x in states:
         if x.trend not in ("UP", "DOWN") or x.leg_start is None or x.imp_end is None:
             cur = None
@@ -138,17 +140,16 @@ def structure_objects(d, states, s=None):
                    "par": None}
             legs.append(cur)
             if prev is not None:                                           # पूर्ण same-degree correction: prev टोक ⇒ नव्या leg चा origin
-                corrs.append(_corr(prev, x.leg_start, p0, "done", low, DL, broke_origin=prev["par"] is not None))
+                corrs.append(_corr(prev, x.leg_start, p0, "done", low, DL, broke_origin=prev["par"] is not None, trend_pv=tpv))
         else:
             cur["to"], cur["p1"] = int(x.imp_end.bar), float(x.imp_end.price)
         if x.counter == "correction" and x.parent is not None:
             cur["par"] = float(x.parent.price)                             # A1: origin तुटला, parent टिकला ⇒ खोली parent पासून
-    last = states[-1] if states else None
     if cur is not None and last is not None and last.counter in ("candidate", "correction"):
         j = cur["to"] + 1 + int(np.argmax(H[cur["to"] + 1:]) if cur["dir"] < 0 else np.argmin(L[cur["to"] + 1:])) \
             if cur["to"] + 1 < len(d) else cur["to"]
         px = float(H[j] if cur["dir"] < 0 else L[j])
-        corrs.append(_corr(cur, j, px, "in progress", low, DL, kind=last.counter))
+        corrs.append(_corr(cur, j, px, "in progress", low, DL, kind=last.counter, trend_pv=tpv))
     big = [c for c in corrs if c["state"] == "done"]                       # ABC_FIX: तात्पुरती completion (a / b नंतर) नंतर पूर्ण correction
     corrs = [c for c in corrs if not any(o is not c and o["start_bar"] <= c["start_bar"] and o["end_bar"] > c["end_bar"]
                                          for o in big)]                    # मोठ्या box च्या आतला box नाही
@@ -170,10 +171,26 @@ def structure_objects(d, states, s=None):
     return {"legs": out_legs, "corrections": corrs, "bounces": bounces}
 
 
-def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=False):
+def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=False, trend_pv=()):
     imp = abs(leg["p1"] - (leg["par"] if leg.get("par") is not None else leg["p0"]))   # A1: parent टिकलेली correction ⇒ parent पासूनचा impulse
     depth = abs(end_px - leg["p1"]) / imp if imp > 0 else None
-    inner = sorted((q for q in low if leg["to"] < q.bar < end_bar), key=lambda q: q.bar)
+    prices, bars = _box_waves(leg, end_bar, end_px, trend_pv)              # Abhi item 4: family स्वतःच्या (trend) degree वर — box मधले
+    if len(prices) - 1 < 3:                                                # trend-degree swings; ते a-b-c इतकेही नसले तरच एक degree खाली
+        prices, bars = _box_waves(leg, end_bar, end_px, low)
+    st = DL.structure(prices, elliott=True)
+    x3 = DL.reduce_waves(prices).get(3) if len(prices) > 3 else None       # a-b-c reduction ⇒ b टोक (ABC_FIX rule 4: पुढची demand)
+    b_px = float(x3[2]) if x3 is not None else None
+    b_bar = next((bars[k] for k in range(len(prices) - 1, 0, -1) if b_px is not None and prices[k] == b_px), None)
+    shape = st["form"] if st["structure"] != "single" else None
+    shape = "5-wave" if shape == "impulse" else shape                     # correction box वर "impulse" शब्द नाही
+    return {"start_bar": int(leg["to"]), "start_price": float(leg["p1"]), "end_bar": int(end_bar), "end_price": float(end_px),
+            "state": state, "kind": kind, "broke_origin": bool(broke_origin or (kind == "correction" and state == "in progress")), "depth": None if depth is None else round(float(depth), 3), "shape": shape,
+            "b_price": b_px, "b_bar": b_bar}
+
+
+def _box_waves(leg, end_bar, end_px, piv):
+    """correction box (leg टोक ⇒ end) मधले आलटून पालटून swings (wick टोक, सलग तोच प्रकार ⇒ जास्त टोकाचा) ⇒ (prices, bars)."""
+    inner = sorted((q for q in piv if leg["to"] < q.bar < end_bar), key=lambda q: q.bar)
     prices, kinds, bars = [leg["p1"]], ["L" if leg["dir"] < 0 else "H"], [int(leg["to"])]
     for q in inner:                                                        # आलटून पालटून; सलग तोच प्रकार ⇒ जास्त टोकाचा
         if q.kind != kinds[-1]:
@@ -186,15 +203,7 @@ def _corr(leg, end_bar, end_px, state, low, DL, kind="correction", broke_origin=
         prices, kinds, bars = prices[:-1], kinds[:-1], bars[:-1]
     prices.append(end_px)
     bars.append(int(end_bar))
-    st = DL.structure(prices, elliott=True)
-    x3 = DL.reduce_waves(prices).get(3) if len(prices) > 3 else None       # a-b-c reduction ⇒ b टोक (ABC_FIX rule 4: पुढची demand)
-    b_px = float(x3[2]) if x3 is not None else None
-    b_bar = next((bars[k] for k in range(len(prices) - 1, 0, -1) if b_px is not None and prices[k] == b_px), None)
-    shape = st["form"] if st["structure"] != "single" else None
-    shape = "5-wave" if shape == "impulse" else shape                     # correction box वर "impulse" शब्द नाही
-    return {"start_bar": int(leg["to"]), "start_price": float(leg["p1"]), "end_bar": int(end_bar), "end_price": float(end_px),
-            "state": state, "kind": kind, "broke_origin": bool(broke_origin or (kind == "correction" and state == "in progress")), "depth": None if depth is None else round(float(depth), 3), "shape": shape,
-            "b_price": b_px, "b_bar": b_bar}
+    return prices, bars
 
 
 def _fake_1m(d):
@@ -311,6 +320,7 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
                                                                           "bar": last_m.protected.bar}},
         "q15": {"bands": runs(tq), "protected": seg_q, "trend": last_q.trend, "since": since_q, "phase": last_q.phase, "wave": last_q.wave,
                 "corr_label": last_q.corr_label, "mature": bool(last_q.mature), "targets": list(last_q.targets),
+                "target_passed": bool(getattr(last_q, "target_passed", False)),
                 "protected_now": None if last_q.protected is None else {"kind": last_q.protected.kind, "price": last_q.protected.price,
                                                                         "bar": last_q.protected.bar},
                 "phases": runs([(x.phase or "-") + "|" + (x.wave or "") for x in q15]),
@@ -372,8 +382,9 @@ def _after_correction(st, objs, last_close=None):
 
 def level_bands(v, s=None):
     """C1 (Abhi): महत्त्वाची levels पट्टे म्हणून — degree आधी, मग किंमतीपासून जवळीक; कमाल MAX_BANDS. उमेदवार (rank = degree):
-    0 मोठ्या degree चा origin (parent, window बाहेर असला तरी — कडेला बाण), 1 protected origin, 2 maturity target (आधीच्या मोठ्या
-    correction ची सुरुवात / (5) equality), 3 window चे major टोक (high / low), 4 trend-degree correction टोकं. पट्टा = किंमत ±
+    0 मोठ्या degree चा origin (parent, window बाहेर असला तरी — कडेला बाण), 1 protected origin + sharp-fall / rise zone (ABC_FIX
+    rule 2), 2 पुढची demand / supply (b टोक, rule 4), 3 window चे major टोक (high / low), 4 structural target (Q44: parent origin
+    नंतरच्या पहिल्या impulse leg चं टोक), 5 trend-degree correction टोकं. पट्टा = किंमत ±
     range_eq_sigma_d × σ_D. State: fresh / tested / broken (birth नंतरचे closes / ranges); target ⇒ "target"."""
     s = S3.load(s)
     d = v["frame"]
@@ -397,8 +408,8 @@ def level_bands(v, s=None):
     win_h = i0 + int(np.argmax(Hh[i0:]))
     win_l = i0 + int(np.argmin(Ll[i0:]))
     cand += [(3, "window high", float(Hh[win_h]), win_h), (3, "window low", float(Ll[win_l]), win_l)]
-    for x in q.get("targets") or ():                                       # rule 5 च्या पट्ट्यांनंतर (Q44: fallback target अजून उघडा)
-        cand.append((4, "maturity target", float(x), None))
+    for x in q.get("targets") or ():                                       # rule 5 च्या पट्ट्यांनंतर (Q44: फक्त रचनेतला target)
+        cand.append((4, "target", float(x), None))
     for c in (q.get("objects") or {}).get("corrections", []):
         if c["end_bar"] >= i0 and c["state"] == "done":
             cand.append((5, "correction end", c["end_price"], c["end_bar"]))
@@ -490,7 +501,8 @@ def trend_line(q):
             body += f" · {COUNTER_TXT[q['counter']]}"
             if q.get("retrace") is not None:
                 body += f" (depth {q['retrace']:.0%} of last impulse)"
-    if q.get("rule5"):                                                     # ABC_FIX rule 5 (फक्त नवा impulse चालू असताना; नवी correction ⇒ नाही)
+    r5 = bool(q.get("rule5")) and q["phase"] == "impulse" and q.get("counter") in (None, "pullback")
+    if r5:                                                                 # ABC_FIX rule 5 (फक्त नवा impulse चालू असताना; नवी correction ⇒ नाही)
         fam = q.get("last_corr_shape")
         fam = "a-b-c" if fam in ("zigzag", "flat") else (fam or "")
         body = (f"Trend {t} · {fam + ' ' if fam else ''}correction completed at sharp-{'fall supply' if t == 'DOWN' else 'rise demand'}"
@@ -498,8 +510,12 @@ def trend_line(q):
     pq = q["protected_now"]
     if pq:
         body += f" · protected {pq['price']:,.0f}"
-    if q.get("next_level") and q.get("rule5"):
+    if q.get("next_level") and r5:
         body += f" · next {'demand' if t == 'DOWN' else 'supply'} {q['next_level']['price']:,.0f}"
+    if q["phase"] != "origin_broken":                                     # Q44: target = पहिल्या impulse leg चं टोक; नसेल ⇒ स्पष्ट none
+        tg = q.get("targets") or ()                                        # (protected आधीच पलीकडे ⇒ "target passed", रचना अपूर्ण नाही)
+        body += f" · target {tg[0]:,.0f}" if tg else (" · target passed" if q.get("target_passed") else
+                                                       " · target: none (structure incomplete)")
     if q["mature"]:
         body += " · impulse mature, larger reversal possible"
     if q.get("origin_risk"):
