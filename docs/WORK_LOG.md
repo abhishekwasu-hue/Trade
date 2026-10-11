@@ -1747,3 +1747,17 @@ ending diagonal) + acceptance (NIFTY (4)→(5), BANKNIFTY sharp fall → a-b-c s
 
 **Tests:** main engine वर 38 pass, 74 strict xfail (`KNOWN_FAIL`: trend / origin / family / control (ending diagonal) + BANKNIFTY acceptance 2) — Abhi
 चा क्रम: library आधी (अपयश यादीसह), engine fix पुढच्या PR मध्ये.
+
+## 2026-10-11 · ABC_FIX engine (Abhi: TRADE_SESSION_BANKNIFTY_ABC_FIX) — library नंतर
+
+**काय केलं (decision3):**
+- Rule 1: counter-move संपूर्ण वाचली (`counter_kind`, सुरुवात cm0 — expanded flat चा b नवा टोक केला तरी सुरुवात तीच). 5-wave counter impulse फक्त same degree असेल तर flip-योग्य (आतला pullback ≥ Q22 degree_ref; Q49).
+- तात्पुरती completion (`prov` stack): correction "संपली" असं दिसलं (a / b नंतर) आणि नवा origin continuation confirm होण्याआधीच close ने तुटला ⇒ आधीची correction अवस्था परत (snapshot चा origin / parent टिकला असेल तरच; नाहीतर stack रिकामा). Confirm = counter-move सुरुवातीपलीकडे नवा टोक + एखाद्या swing पासून motive वाचन; तेव्हा origin = correction चा शेवट (`corr_end`: triangle e, running / short c).
+- Rule 2–3: sharp-fall / rise zone; correction त्यात संपली ⇒ `DState.evidence` + `corr_zone`; `engine.step1` नोंद (cap नाही — Q51).
+- Rule 4–5: `daily_swings` — sharp-fall supply पट्टा (rank 1), next demand = b low (rank 2), maturity targets window टोकांनंतर; तात्पुरते legs / box मोठ्या correction box मध्ये विलीन; caption "Trend DOWN · a-b-c correction completed at sharp-fall supply · new impulse down in progress · protected … · next demand …".
+- `daily_legs.read_counter`: 5-segment combination (triple three).
+- A1 parent = trend-degree impulse ची सुरुवात (ABC_FIX "prior impulse's origin"); #289 hybrid test strict xfail (Q50).
+
+**Tests:** library 108 pass / 15 strict xfail (Q49 12, Q52 2, + #289 hybrid 1); #289 review tests parent अपेक्षा 1302 → 1352 (Q50); जुने Q15 / Q23 / Q27 / Q36 origin_broken tests parent gate off ने (Q53); नवे `tests/test_decision3_abc_fix.py` (caption, next demand, evidence, restore, no-lookahead). Full suite 4107 pass / 16 xfail. Independent review: 🔴 2 + 🟡 6 दुरुस्त; prov expiry नाही (Q54). Real: BANKNIFTY DOWN, correction Apr–Jul, origin = c top 58,706; NIFTY DOWN protected 24,774.
+
+**Rule 7:** `docs/reports/v22/ABC_FIX_RULE7.md` — flips BANKNIFTY 19 → 8, NIFTY 28 → 7 (holdout तारखा masked).

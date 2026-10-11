@@ -83,6 +83,9 @@ class V22:
             if st.origin_risk:                                              # B1 (Abhi): correction origin जवळ ⇒ conviction weak
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("correction protected origin जवळ (origin धोक्यात) ⇒ नवे entries weak")
+            if getattr(st, "corr_zone", None) is not None and st.phase == "impulse" and st.counter in (None, "pullback"):                  # ABC_FIX rule 3: correction sharp zone मध्ये संपली + trend
+                ctx["evidence"] = list(st.evidence)                         # दिशेने close ⇒ continuation पुरावा (cap नाही; नोंद — Q51)
+                ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
             if st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("impulse mature — target जवळ (mechanical count, Q34); मोठा reversal शक्य ⇒ नवे entries weak")

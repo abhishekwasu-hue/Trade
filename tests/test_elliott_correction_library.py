@@ -16,60 +16,16 @@ DIRS = (("down", False), ("up", True))
 # (fixture, check, direction) ⇒ reason. Library first (Abhi's order): the library PR lists the engine's failures here; the engine fix
 # empties it. Strict — a fixed case XPASSes and fails until its entry is removed.
 KNOWN_FAIL = {}
-_WHY = {"trend": "engine flips / leaves the trend during the correction (b new extreme, c beyond a, 5-wave a) — ABC_FIX rule 1",
-        "origin": "protected never moves to the correction end (triangle e, truncated / running c, provisional completion)",
-        "family": "correction not boxed with its family (no box, b-new-extreme box, or family misread)",
-        "control": "impulse with an ending-diagonal wave 5 is not read as a 5-wave counter impulse (no flip)"}
-_FAILING = {
-    "trend": {
-        "double_three": ('down', 'up'),
-        "double_zigzag": ('down', 'up'),
-        "flat_expanded": ('down', 'up'),
-        "flat_running": ('down', 'up'),
-        "long_in_time": ('down', 'up'),
-        "triangle_expanding": ('down', 'up'),
-        "very_deep_holds_origin": ('down', 'up'),
-        "zigzag_b_triangle": ('down', 'up'),
-        "zigzag_c_eq_a": ('down', 'up'),
-        "zigzag_c_extended": ('down', 'up'),
-    },
-    "origin": {
-        "double_three": ('down', 'up'),
-        "double_zigzag": ('down', 'up'),
-        "flat_expanded": ('down', 'up'),
-        "flat_running": ('down', 'up'),
-        "long_in_time": ('down', 'up'),
-        "triangle_expanding": ('down', 'up'),
-        "very_deep_holds_origin": ('down', 'up'),
-        "zigzag_b_triangle": ('down', 'up'),
-        "zigzag_c_eq_a": ('down', 'up'),
-        "zigzag_c_extended": ('down', 'up'),
-    },
-    "family": {
-        "b_looks_impulsive": ('down', 'up'),
-        "double_three": ('down', 'up'),
-        "double_zigzag": ('down', 'up'),
-        "flat_expanded": ('down', 'up'),
-        "flat_running": ('down', 'up'),
-        "long_in_time": ('down', 'up'),
-        "triangle_barrier": ('down', 'up'),
-        "triangle_contracting": ('down', 'up'),
-        "triangle_expanding": ('down', 'up'),
-        "triple_three": ('down', 'up'),
-        "very_deep_holds_origin": ('down', 'up'),
-        "zigzag_b_triangle": ('down', 'up'),
-        "zigzag_c_eq_a": ('down', 'up'),
-        "zigzag_c_extended": ('down', 'up'),
-        "zigzag_c_truncated": ('down', 'up'),
-    },
-    "control": {
-        "ending_diagonal": ('down', 'up'),
-    },
-}
-for _ck, _by in _FAILING.items():
-    for _nm, _dns in _by.items():
-        for _dn in _dns:
-            KNOWN_FAIL[(_nm, _ck, _dn)] = _WHY[_ck]
+_Q49 = ("Q49: wave a (W) of this zigzag is itself a 5-wave impulse whose internal pullback is as large as the engine's leg-degree "
+        "reference (Q22) — Elliott cannot tell wave A from wave 1 here; the impulse-span reference passes this case but turns real "
+        "BANKNIFTY into an UP correction against Abhi's count — degree reference pending Abhi")
+for _dn in ("down", "up"):
+    KNOWN_FAIL[("triple_three", "family", _dn)] = ("Q52: sideways triple three ending in a triangle Z is boxed as two corrections "
+                                                   "(W-X-Y, then Z) — the 5-segment combination reading needs the whole W-X-Y-X-Z")
+for _nm in ("double_zigzag", "very_deep_holds_origin"):
+    for _ck in ("trend", "origin", "family"):
+        for _dn in ("down", "up"):
+            KNOWN_FAIL[(_nm, _ck, _dn)] = _Q49
 
 
 def _mark(name, check, dn):
@@ -152,11 +108,7 @@ def test_acceptance_nifty_wave4_correction_then_wave5():
     assert st[-1].protected.price == info["top4"] + F.WICK
 
 
-_BN = "ABC_FIX: 3-wave counter-move (c beyond a) flips the trend; sharp-fall band / a-b-c box not implemented"
-
-
-@pytest.mark.parametrize("mirror", [pytest.param(False, id="down", marks=pytest.mark.xfail(strict=True, reason=_BN)),
-                                    pytest.param(True, id="up", marks=pytest.mark.xfail(strict=True, reason=_BN))])
+@pytest.mark.parametrize("mirror", [pytest.param(False, id="down"), pytest.param(True, id="up")])
 def test_acceptance_banknifty_abc_ends_at_sharp_fall_supply(mirror):
     """Abhi's BANKNIFTY count: sharp fall → a-b-c (c beyond a) ending inside the sharp-fall zone → new decline. Engine stays DOWN
     through the a-b-c; origin = c top after the decline confirms; the a-b-c is boxed as a zigzag; sharp-fall band drawn."""
