@@ -1826,6 +1826,21 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 **Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
 नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
 
+## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
+
+**काय केलं (decision3):**
+- Q55 (B): sharp-fall point = wide-range धावेने तोडलेला पहिला swing low (UP: swing high), zone = त्या swing चा wick टोक + base candles. Rule 3 पुरावा / rule 5 caption तसेच.
+- Q44: target = parent origin नंतरच्या पहिल्या impulse leg चं टोक (`t_first`); numeric fallback काढला; नसेल ⇒ "target: none (structure incomplete)". Band नाव "target". Rule-5 caption फक्त impulse + (counter नाही / pullback) असताना.
+- Family: correction box trend-degree pivots वर वाचला; combination ला दोन पूर्ण corrective patterns (`daily_legs.COMPLETE`).
+
+**Tests:** नवे — पहिला तोडलेला low (दोन lows), target window मर्यादेत (सर्व library fixtures) + "target: none" caption, trend-degree zigzag / W-X-Y. जुने Q15 / review / method tests Q44 प्रमाणे (target फक्त रचनेतून; mature default नाही).
+**Real:** BANKNIFTY DOWN, protected 58,706, sharp-fall supply 57,846–59,875 (late-Jan swing low), c त्यात संपला, evidence ओळ, family zigzag, target 49,955. खरा May low 52,783 (OPEN_QUESTIONS).
+**Review नंतर:** fixture परत + `two_lows` fixture; sharp_zone एक degree खालचे swings; target नव्या parent प्रमाणे reset, A1 दरम्यान दिसतो, protected पलीकडचा जुना target नाही; जुन्या comments दुरुस्त; Q44 random-walk property test (12 seeds). Before / after: trend 0 बदल (NIFTY IS 2282 दिवस, BANKNIFTY 2479), phase / counter 55 / 14 दिवस, target-दिवस 1785 ⇒ 1220 / 1756 ⇒ 1095 (OPEN_QUESTIONS).
+**दुसरा review नंतर:** caption "target passed" (protected आधीच target पलीकडे; `DState.target_passed`) वि. "target: none (structure incomplete)"; `t_first` snapshot (`PROV_KEYS`) मध्ये (सुरक्षा, output बदल 0); न वापरलेला `w1_len` काढला; chart label "target"; Q55 शब्द (origin आधीचे swings सुद्धा) docstring + OPEN_QUESTIONS; जुन्या Q42 / Q44 / Q55 rows ला "निकाली" खूण.
+Tests: COMPLETE खरंच तपासणारा (W = 3-wave ⇒ आधी combination, आता flat; mirror), `_corr` box trend degree वर zigzag वि. खालच्या degree वर flat (mirror), random-walk property कडक (A1 शिवाय target नाही, A1 मधलाच target, bar A1 parent नंतर आणि protected आधी), lookahead key मध्ये targets / mature / target_passed (+ mirror + random walk). नवे tests base engine वर fail होतात (तपासलं).
+आकडे: mature दिवस NIFTY 1755 ⇒ 809, BANKNIFTY 1685 ⇒ 443; BANKNIFTY V22 (15M 2026-07 पासून) setup 0 ⇒ 0; level bots BANKNIFTY शेवटचे 250 सत्र: 5 दिवस blocked ⇒ allowed (2026-06-29 … 07-03), शेवटचा दिवस context तसाच. NIFTY अलीकडचे सत्र holdout ⇒ offline नाही.
+Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `python3 <scratchpad>/prA_v22_nifty.py <scratchpad>/base <out_old.json>` आणि `python3 <scratchpad>/prA_v22_nifty.py /home/user/Trade-eng <out_new.json>`.
+
 ## 2026-10-11 · Level bots L4 (MCX) + L5 (visibility)
 
 **L4 — MCX confirmation gate** (`mcx_futures_trader.py`): PAPER pause काढला; trend = decision3 Daily fold सध्याच्या contract च्या Daily candles वर

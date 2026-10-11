@@ -316,10 +316,14 @@ def test_mature_cap_in_pipeline():
     off = [r for r in E3.V22(m15, s=NO_MATURE).run() if r["decision"] == "setup"]
     assert off
     V = E3.V22(m15)
+    # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही. यंत्रणा (mature ⇒
+    # कमाल weak ⇒ setup नाही) तपासण्यासाठी Daily states mature केले (target असलेल्या fixture वर step1 test वेगळा).
+    import dataclasses
+    assert not any(x.mature for x in V.daily)
+    V.daily = [dataclasses.replace(x, mature=True) if x.trend in ("UP", "DOWN") else x for x in V.daily]
     for r0 in off:
         r = V.decide(r0["bar"])
-        if r["mature"]:
-            assert r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
+        assert r["mature"] and r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
     assert any(V.decide(r0["bar"])["mature"] for r0 in off)
 
 

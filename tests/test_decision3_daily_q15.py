@@ -48,8 +48,9 @@ def test_flat_c_five_waves_down_degree_aware():
     minor_lh = 76.5                                                                             # (3) आतला minor LH
     above = [j for j in range(b3, adv) if C[j] > minor_lh]
     assert above and all(st[j].trend == "DOWN" for j in above)                                 # minor LH वर close ⇒ trend बदलत नाही
-    assert not any(x.mature for x in st[:adv]) and st[-1].mature                               # maturity फक्त (5) मध्ये target जवळ
-    assert any(abs(t - 59.5) < 1e-9 for t in st[-1].targets)                                   # (A) low = मोठा आधीचा swing
+    # Q44 (Abhi): target = parent origin नंतरच्या पहिल्या impulse leg चं टोक (पहिली trend-degree correction सुरू होताना); अशी
+    # correction नसलेल्या या fixture ला structural target नाही ⇒ target नाही, mature नाही ((A) low fallback काढला).
+    assert not any(x.mature for x in st) and st[-1].targets == ()
 
 
 def test_minor_daily_mode_flips_on_minor_lh_but_impulse_mode_does_not():
@@ -115,7 +116,9 @@ def test_step1_weekly_against_caps_b_and_mature_or_origin_broken_caps_weak():
     V = _V_with(st[:22], wk_up)                                                                # (3) impulse चालू, weekly UP
     ok, why, s1, ctx = V.step1(0)
     assert ok and ctx["trend"] == "DOWN" and ctx["cap"] == "B" and ctx["resolution"] == "daily impulse"
-    V = _V_with(st, [DD.DState(0, st[0].day, st[0].known_at, "UNKNOWN")])                        # (5) mature
+    from tests.test_decision3_daily_review import HEAD, WAVE4, WAVE5, _fold   # Q44: structural target असलेला fixture ((4) A1)
+    _, sm = _fold(HEAD + WAVE4 + WAVE5)
+    V = _V_with(sm, [DD.DState(0, sm[0].day, sm[0].known_at, "UNKNOWN")])                        # (5) mature
     ok, why, s1, ctx = V.step1(0)
     assert s1.mature and ctx["cap"] == "weak" and "mature" in " ".join(ctx["notes"])
     path = FLAT[:12] + [96]
@@ -147,15 +150,16 @@ def test_weekly_from_daily_known_at_is_last_day():
 FLAT_B_INNER = FLAT[:2] + [75, 68] + FLAT[2:]
 
 
-def test_b_with_inner_swings_same_behaviour_and_maturity_targets_a_low():
+def test_b_with_inner_swings_same_behaviour_and_no_target_without_a1_correction():
     d = daily_from_path(FLAT_B_INNER)
     st = DD.fold(d, OB)
     b3 = _idx_first(st, lambda x: x.trend == "DOWN")
     assert st[b3 - 1].trend == "UP"                    # Q28: data (A) पासून ⇒ (B) zigzag = UP impulse; (B) चा HL close ने तुटेपर्यंत UP
     assert all(x.trend == "DOWN" for x in st[b3:]) and abs(st[b3].protected.price - 93.5) < 1e-9   # flip ⇒ सर्वात उंच LH = (2) high
-    assert abs(st[-1].protected.price - 80.5) < 1e-9 and st[-1].wave == "L5" and st[-1].mature
-    assert any(abs(t - 59.5) < 1e-9 for t in st[-1].targets)                    # (A) low — leg चं टोक
-    assert not any(abs(t - 67.5) < 1e-9 for t in st[-1].targets)                # (B) आतला minor low नाही
+    assert abs(st[-1].protected.price - 80.5) < 1e-9 and st[-1].wave == "L5"
+    # Q44 (Abhi): target = parent origin नंतरच्या पहिल्या impulse leg चं टोक (पहिली trend-degree correction सुरू होताना); अशी
+    # correction नसलेल्या या fixture ला structural target नाही ⇒ target नाही, mature नाही ((A) low fallback काढला).
+    assert not st[-1].mature and st[-1].targets == ()
 
 
 @pytest.mark.parametrize("prefix", [[120, 105, 112], [90, 110], [100, 95, 100], [60, 80, 70]])
