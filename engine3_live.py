@@ -245,9 +245,17 @@ def build_inputs(feed, symbol, now, s=None):
 def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None):
     """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा)."""
     import instruments as INS
+    prev = INS._current["name"]
+    INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
+    try:
+        return _evaluate(symbol, m15, daily, ltf, fut, s3)
+    finally:
+        INS._current["name"] = prev                                      # process-wide instrument पुढच्या caller ला गळू नये
+
+
+def _evaluate(symbol, m15, daily, ltf, fut, s3):
     from decision3 import engine as E3
     from decision3 import history as HI
-    INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])   # index volume 0 ≠ खरा volume (NA हवा)
     params = v22_kwargs()
     if fut is not None and "futures" not in params:                      # जुना V22 (futures kwarg नाही) ⇒ joined column

@@ -270,6 +270,15 @@ def brief(r):
 
 
 def main(argv=None):
+    import instruments as INS
+    prev = INS._current["name"]
+    try:
+        return _main(argv)
+    finally:
+        INS._current["name"] = prev                                      # process-wide instrument tests / callers ला गळू नये
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="NIFTY")
     ap.add_argument("--day", "--date", dest="day", required=True)
