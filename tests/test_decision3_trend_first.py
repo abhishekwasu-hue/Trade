@@ -58,6 +58,27 @@ def test_staircase_counter_move_below_origin_blocks_the_trend_side(mirror):
 
 
 @pytest.mark.parametrize("mirror", MIRRORS)
+def test_close_back_under_the_swing_with_the_hl_intact_keeps_the_gate_on(mirror):
+    """PR #305 review 🔴: the structure turned (HL + a close beyond the swing before it); today's close dips back under that swing but
+    the HL is intact ⇒ still blocked (any close since the HL counts, bars <= today only). Level bots: no side either."""
+    d, _ = F.staircase_dip_back(mirror)
+    st = DD.fold(d)
+    old = "UP" if mirror else "DOWN"
+    C, Lw, Hw = (d[k].to_numpy() for k in ("close", "low", "high"))
+    last = st[-1]
+    assert last.trend == old and last.phase == "correction" and last.rev is not None
+    h, lm = last.rev
+    assert ((C[-1] > lm.price) if mirror else (C[-1] < lm.price))          # today's close back under the swing
+    assert ((Hw[h.bar:].max() <= h.price) if mirror else (Lw[h.bar:].min() >= h.price))   # HL (LH) intact
+    seg = C[h.bar + 1:]
+    assert ((seg < lm.price) if mirror else (seg > lm.price)).any()        # a close beyond it happened after the HL
+    ok, why, _, ctx = _step1(st, len(st) - 1)
+    assert not ok and ctx["trend"] == "NEUTRAL" and "trend first" in why
+    c = LR.context_from_state(last)
+    assert not c["ok"] and c["sides"] == set()
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
 def test_new_extreme_undoes_the_counter_structure_and_the_trend_side_returns(mirror):
     """Same staircase, then the DOWN continuation to a new low: once price closes beyond the impulse end the counter structure is gone
     and bear calls are allowed again — trend DOWN throughout (no flip, no special case)."""
@@ -94,6 +115,7 @@ def test_truncated_zigzag_c_top_keeps_the_trend_side(mirror):
 def _fixtures(mirror):
     yield F.staircase_below_origin(mirror)[0]
     yield F.staircase_below_origin(mirror, breakdown=True)[0]
+    yield F.staircase_dip_back(mirror)[0]
     for name in ("zigzag_c_truncated", "zigzag_c_extended", "flat_regular", "triangle_contracting", "very_deep_holds_origin"):
         yield F.correction_fixture(name, mirror)[0]
     yield F.acceptance_banknifty(mirror)[0]

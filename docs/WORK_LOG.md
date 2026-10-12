@@ -1952,3 +1952,10 @@ Daily caption, `describe` तसेच. Trend / phase / protected बदल 0 (N
 c0 + 5M) — fixes `claude/v22-confirmation`, `claude/v22-areas-quality`, `claude/chart-volume` वर. Volume 2015–2024 ⇒ NA.
 **Tests:** `tests/test_decision3*.py tests/test_elliott_correction_library.py tests/test_level*.py` ⇒ 567 passed, 9 xfailed. उघडे: TF1–TF7.
 Charts (28) locally बनवले, volume pane नसल्याने trade-data मध्ये commit नाहीत.
+**PR #305 review दुरुस्ती:** 🔴 trend-first रचना (`rev`) आजच्या close वर अवलंबून होती ⇒ close परत मधल्या swing खाली आला (HL अखंड) की gate
+उघडायचा (NIFTY 2020-05-18/19 defect rally मध्येच bear बाजू उघडी). आता HL नंतरचा कोणताही close (≤ आज) पुरे; clear फक्त HL wick ने तुटणं / नवा
+impulse टोक; रचना imp_end नंतरच्या trend-दिशेच्या टोकापासून (provisional restore ने imp_end मागे गेला तरी). Flip चा same-day नियम तसाच.
+Fixture `staircase_dip_back` (down + up; आधीच्या commit वर rev None). 🟡 level bots trend cache ला `engine` = `TREND_CTX_VERSION` ⇒ deploy
+आधीचा आजचा cache पुन्हा वापरला जात नाही (test). ⚪ audit-columns script: daily_df / daily_states / setups वर holdout assert.
+आकडे: Daily state बदल 0; rev दिवस NIFTY 510 ⇒ 633, BANKNIFTY 535 ⇒ 716; V22 re-run (एकदा, lock खाली): setup 28 (तेच), blocked bars 15,770 /
+654 sessions. Tests 570 passed, 9 xfailed.

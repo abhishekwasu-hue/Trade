@@ -162,6 +162,10 @@ def call_with_timeout(fn, args=(), timeout=20.0):
     return box.get("v")
 
 
+TREND_CTX_VERSION = "trend-first-2"                                        # Daily gate (decision3 fold / context_from_state) बदलला की
+                                                                           # वाढवा ⇒ आजचा जुन्या code चा cache (ok True) वापरला जात नाही
+
+
 def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=None, lookback_days=3650, s=None, timeout=25.0):
     """आजच्या दिवसासाठी trend context (दिवसातून एकदा गणना, file cache). fetch(access_token, symbol) ⇒ daily DataFrame (default Upstox
     'day' candles, ~10 वर्षं — पूर्ण history सारखीच अवस्था देतात). अपयश ⇒ ok False (fail-closed). Cache फक्त पूर्ण fetch चा (≥ 30 bars,
@@ -177,9 +181,10 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if os.path.exists(p):
             c = json.load(open(p, encoding="utf-8"))
-            c["sides"] = set(c.get("sides") or ())
-            c["band"] = tuple(c["band"]) if c.get("band") else None
-            return c
+            if c.get("engine") == TREND_CTX_VERSION:                       # जुन्या code चा (deploy आधीचा) cache ⇒ नवी गणना
+                c["sides"] = set(c.get("sides") or ())
+                c["band"] = tuple(c["band"]) if c.get("band") else None
+                return c
     except (OSError, ValueError):
         pass
     try:
@@ -193,7 +198,8 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if complete:
             os.makedirs(os.path.dirname(p), exist_ok=True)
-            json.dump({**ctx, "sides": sorted(ctx["sides"])}, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+            json.dump({**ctx, "sides": sorted(ctx["sides"]), "engine": TREND_CTX_VERSION}, open(p, "w", encoding="utf-8"),
+                      ensure_ascii=False)
         elif not ctx.get("ok"):
             os.makedirs(os.path.dirname(pf), exist_ok=True)
             json.dump({"at": _clock(), "ctx": {**ctx, "sides": []}}, open(pf, "w", encoding="utf-8"), ensure_ascii=False)

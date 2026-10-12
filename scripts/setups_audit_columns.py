@@ -252,6 +252,9 @@ def main(argv=None):
     from elliott import data_policy as DP
     m15 = o["m15"].reset_index(drop=True)
     assert all(DP.period(t) != "HOLDOUT" for t in pd.to_datetime(m15["timestamp"]).dt.normalize().unique())
+    assert all(DP.period(t) != "HOLDOUT" for t in pd.to_datetime(o["daily_df"]["timestamp"]).dt.normalize().unique())
+    assert all(DP.period(x.day) != "HOLDOUT" for x in o["daily_states"] if x.day is not None)
+    assert all(DP.period(pd.Timestamp(r["ts"]).normalize()) != "HOLDOUT" for r in o["setups"])
     m1 = pd.read_parquet(argv[1])
     m1["timestamp"] = pd.to_datetime(m1["timestamp"])
     m1 = m1[m1["timestamp"] < DP.HOLDOUT_START]

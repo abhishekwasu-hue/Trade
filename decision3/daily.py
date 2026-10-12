@@ -462,23 +462,30 @@ def fold_impulse(d, s=None):
         return False, (f"{'UP' if nd > 0 else 'DOWN'} रचना पण impulse-स्वभावाचा पाय नाही ((1) {DL.tag(c1)}, (3) {DL.tag(c3)}) "
                        f"⇒ {tag}")
 
-    def rev_shapes(i):
+    def rev_shapes(i, held=False):
         """Q29 (अ) उलट रचना: जुन्या impulse टोकानंतरचा उलट-दिशेचा HL (DOWN trend मध्ये; UP ⇒ LH) जो नंतर (wick ने) ओलांडला नाही,
         आणि आज Daily close त्याआधीच्या (टोकानंतरच्या) सर्वात टोकाच्या मधल्या swing पलीकडे — (h, lm) जोड्या, सर्वात खालचा HL (UP ⇒
-        सर्वात उंच LH) आधी. फक्त आकार; impulse-स्वभाव (Q36) वेगळा तपासतात."""
+        सर्वात उंच LH) आधी. फक्त आकार; impulse-स्वभाव (Q36) वेगळा तपासतात. held = True (trend-first रचना, PR #305 review): HL नंतरचा
+        कोणताही close (≤ आज) पलीकडे पुरे — close परत मधल्या swing आत आला तरी HL अखंड असेपर्यंत रचना टिकते (Dow: HL तुटेपर्यंत);
+        clear फक्त HL wick ने तुटणं किंवा नवा impulse टोक (imp_end पुढे)."""
         nd = -dirn
         okind = "H" if nd < 0 else "L"
-        cands = [p for p in seq if p.kind == okind and p.bar > imp_end.bar and p.confirm_bar <= i
-                 and (p.price - imp_end.price) * nd > 0]
+        e0 = rev_anchor(i) if held else imp_end
+        cands = [p for p in seq if p.kind == okind and p.bar > e0.bar and p.confirm_bar <= i
+                 and (p.price - e0.price) * nd > 0]
         for h in sorted(cands, key=lambda p: p.price * nd):           # सर्वात उंच LH (DOWN) / सर्वात खालचा HL (UP) आधी
             later = H[h.bar:i + 1].max() if nd < 0 else L[h.bar:i + 1].min()
             if (later - h.price) * nd < 0:
                 continue                                                   # नंतर किंमत त्या LH / HL पलीकडे गेली ⇒ origin नाही (review 🟡2)
-            mids = [p for p in seq if p.kind == ("L" if nd < 0 else "H") and imp_end.bar < p.bar < h.bar]
+            mids = [p for p in seq if p.kind == ("L" if nd < 0 else "H") and e0.bar < p.bar < h.bar]
             if not mids:
                 continue
             lm = min(mids, key=lambda p: p.price * -nd)               # (1) चं टोक
-            if (C[i] - lm.price) * nd > 0:
+            if held:                                                       # रचना (gate): HL नंतर कधीही (≤ आज) close पलीकडे
+                ok_c = bool((((C[h.bar + 1:i + 1] - lm.price) * nd) > 0).any())
+            else:                                                          # flip: आजचाच close (Q29 त्याच दिवशी)
+                ok_c = (C[i] - lm.price) * nd > 0
+            if ok_c:
                 yield h, lm
 
     def rev_structure(i):
@@ -487,10 +494,18 @@ def fold_impulse(d, s=None):
         Trend / phase / protected बदलत नाहीत (Q15); फक्त ① gate trend-बाजू अडवतो. नाही ⇒ None."""
         if dirn == 0 or imp_end is None or imp_end.bar >= i:
             return None
-        for h, lm in rev_shapes(i):                                        # Daily swings (seq, spec ① Dow) — flip सारखेच; Q22 ने
-            if nature_ok(-dirn, imp_end, lm, h, i)[0]:                     # गाळलेले swings नाहीत (अहवाल: NIFTY 2020 rally Q22 degree ला
+        e0 = rev_anchor(i)
+        if e0.bar >= i:
+            return None
+        for h, lm in rev_shapes(i, held=True):                             # Daily swings (seq, spec ① Dow) — flip सारखेच; Q22 ने
+            if nature_ok(-dirn, e0, lm, h, i)[0]:                          # गाळलेले swings नाहीत (अहवाल: NIFTY 2020 rally Q22 degree ला
                 return h, lm                                               # एकच पाय ⇒ तसं गाळलं तर defect राहतो)
         return None
+
+    def rev_anchor(i):
+        """counter-move ची सुरुवात = impulse टोकानंतरचं (imp_end पासून आजपर्यंत) trend-दिशेचं सर्वात टोकाचं बिंदू (≤ i). सहसा imp_end
+        स्वतः; provisional restore (ABC_FIX 1) ने imp_end आधीच्या leg वर परत गेला तरी रचना त्याच टोकापासून (PR #305 review)."""
+        return piv("H" if dirn > 0 else "L", extreme(dirn, imp_end.bar, i))
 
     def flip(i):
         """origin_broken नंतर उलट impulse? (break च्या दिवशीही तपासतो.) Q36 (Abhi): उलट रचनेत नव्या दिशेचा impulse-स्वभावाचा पाय हवा

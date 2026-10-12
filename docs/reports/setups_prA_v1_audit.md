@@ -78,18 +78,28 @@ impulse end it needs an opposite HL (LH in an UP trend) that is not violated aft
 also runs while the counter-move is a **same-degree** correction (phase `correction` — candidate or A1 — or `origin_broken`). The
 result is `DState.rev = (HL, high)`. A lower-degree pullback inside the impulse is not trend-degree structure, so it is not read there.
 Trend, phase, protected and parent are unchanged (Q15 intact; verified: 0 state changes, §6).
+Review fix (PR #305): for this structure reading, **any** Daily close beyond the swing high after the HL formed counts (bars ≤ today,
+no lookahead). Earlier it had to be today's close. So the structure persists when today's close dips back under the swing while the
+HL is intact (Dow: until the HL breaks). Before this fix, NIFTY 2020-05-18/19 inside the defect rally reopened the bear side. The
+reading clears only when a wick goes through the HL or the impulse makes a new extreme (imp_end moves). The structure is anchored
+at the trend-direction extreme reached after imp_end, so a provisional restore that moves imp_end back to an earlier leg no longer
+drops it (2021-11-24). The flip itself keeps its same-day close test and the imp_end anchor. Fixture: `staircase_dip_back`.
+On the previous commit it gives rev = None; now it stays blocked.
+Level bots: the daily trend cache now carries `engine` = `TREND_CTX_VERSION`, so a cache written today by older code is recomputed
+and not reused after deploy.
 
 `decision3/engine.py` ①: `st.rev` set ⇒ **trade नाही**. The trend side is blocked: "trend first — Daily structure UP" for a bear
 call, and DOWN for a bull put. The other side is blocked too, because the trend has not flipped. This is a gate (H1), not a cap.
 The same gate is applied in `bots_common/level_reaction.context_from_state` (level bots), in the Daily caption (`daily_swings.trend_line`)
 and in `DD.describe`. Fixture: `tests/elliott_fixtures.staircase_below_origin` (a staircase of higher highs and higher lows below the
-protected origin, plus a version that breaks down to a new low). Tests: `tests/test_decision3_trend_first.py` (10 cases, down + up).
+protected origin, plus a version that breaks down to a new low). Tests: `tests/test_decision3_trend_first.py` (12 cases, down + up).
 On origin/main the fixture gives "Daily DOWN ⇒ bear call" (UP ⇒ bull put); after the fix it gives "trade नाही".
 
 ## 5. After fix — one V22 re-run (branch `claude/setups-audit`, same data and range, holdout asserted absent)
 
-56,765 bars: setup 30 ⇒ **28**, no_trade 922 ⇒ 13,635 (the "structure against trend" gate blocks 12,720 bars on 546 sessions),
-wait 55,813 ⇒ 43,102, mature bars 20,170 (unchanged). **Removed: 2020-11-04 10:00 and 15:00. Added: none.** The other 28 rows
+56,765 bars: setup 30 ⇒ **28**, no_trade 922 ⇒ 16,682 (the "structure against trend" gate blocks 15,770 bars on 654 sessions),
+wait 55,813 ⇒ 40,055, mature bars 20,170 (unchanged). This is the re-run after the PR #305 review fix. The first fix gave the same
+28 setups with 12,720 blocked bars on 546 sessions. **Removed: 2020-11-04 10:00 and 15:00. Added: none.** The other 28 rows
 are unchanged (same conviction, cap and phase). Note: origin/main moved between the 30-setup run and this one (Q49 merged), and it
 changed none of these rows.
 
@@ -109,22 +119,22 @@ Review charts for the 28 were rendered locally but **not committed** to trade-da
 
 | symbol | days | trend / phase / counter / protected / parent / wave A / leg / mature / target / origin-risk changes | trend-change days | new "structure against trend" days |
 |---|---|---|---|---|
-| NIFTY (2015-01-09 … 2024-03-27) | 2,282 | **0** | **0** | 510 (UP trend 266, DOWN trend 244; all in phase correction) |
-| BANKNIFTY (2016-10-10 … 2026-10-09) | 2,479 | **0** | **0** | 535 (UP 378, DOWN 157); last day: DOWN impulse, no flag |
+| NIFTY (2015-01-09 … 2024-03-27) | 2,282 | **0** | **0** | 633 (UP trend 378, DOWN trend 255; all in phase correction) — 510 before the review fix |
+| BANKNIFTY (2016-10-10 … 2026-10-09) | 2,479 | **0** | **0** | 716 (UP 500, DOWN 216; 1 in origin_broken) — 535 before; last day: DOWN impulse, no flag |
 
 NIFTY spans include 2020-04-22 … 2020-11-06 (the defect), 2016-05 … 10 (a DOWN label through the 2016 advance) and
 2018-10 … 2019-03 (an UP label through the late-2018 fall). BANKNIFTY: 2026-06-17 … 25 (the a-b-c advance, c above a).
 
-Tests: `pytest -q tests/test_decision3*.py tests/test_elliott_correction_library.py tests/test_level*.py` ⇒ **567 passed, 9 xfailed**.
+Tests: `pytest -q tests/test_decision3*.py tests/test_elliott_correction_library.py tests/test_level*.py` ⇒ **570 passed, 9 xfailed** (after the PR #305 review fix).
 These are the same 9 xfails as on main. No golden or correction-library expectation was edited. The new
-`tests/test_decision3_trend_first.py` (10 tests) is included.
+`tests/test_decision3_trend_first.py` (12 tests) and the level cache-version test are included.
 
 ## 7. Open questions (OPEN_QUESTIONS TF1–TF7)
 
 - **TF1** The gate reads the counter structure on the Daily swings (N = 2), the same swings the flip test uses. With the Q22-filtered
   swings (trend degree) the 2020 rally is a single leg, so the defect would remain (verified: rev days 62, and 2020 was not caught).
-- **TF2** A zigzag whose c closes above a (with b as a HL) is a Dow UP structure, so the c-top bear call is blocked until the close
-  falls back below the a top or a new low prints. The default follows Abhi's wording ("never a bear call while the structure is
+- **TF2** A zigzag whose c closes above a (with b as a HL) is a Dow UP structure, so the c-top bear call is blocked until a wick
+  breaks the b low (the HL) or a new low prints. After the review fix, a close back below the a top no longer lifts the block. The default follows Abhi's wording ("never a bear call while the structure is
   UP"). Among the 30 setups this affects only 2020-11-04. The alternative is to block only when the counter-move reads as an
   impulse, but `read_counter` called 2020 a zigzag, so the defect would stay.
 - **TF3** Is the §2 rule (N = 5, 126 sessions) Abhi's "6-month structure"?
