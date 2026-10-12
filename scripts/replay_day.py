@@ -26,7 +26,9 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-TRADE_DATA = os.environ.get("TRADE_DATA_DIR", os.path.join(os.path.dirname(ROOT), "trade-data"))
+TRADE_DATA = os.environ.get("TRADE_DATA_DIR") or next((p for p in (os.path.join(os.path.dirname(ROOT), "trade-data"),
+                                                                   os.path.expanduser("~/trade-data")) if os.path.isdir(p)),
+                                                        os.path.join(os.path.dirname(ROOT), "trade-data"))   # VPS: /root/trade-data
 ENGINE_S = {"level_death_side": "role"}          # Abhi TL1 (claude/v22-touch-levels) — merge होईपर्यंत स्पष्ट; नसलेली key engine दुर्लक्षित करतो
 
 
