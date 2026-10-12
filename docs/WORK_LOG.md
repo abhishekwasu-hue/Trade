@@ -2066,6 +2066,20 @@ Fixture `staircase_dip_back` (down + up; आधीच्या commit वर rev
 आकडे: Daily state बदल 0; rev दिवस NIFTY 510 ⇒ 633, BANKNIFTY 535 ⇒ 716; V22 re-run (एकदा, lock खाली): setup 28 (तेच), blocked bars 15,770 /
 654 sessions. Tests 570 passed, 9 xfailed.
 
+## 2026-10-12 · v22 touch / levels audit (TELEGRAM_CLEANUP §4–§5, ONE_BOT §7(e)) — branch `claude/v22-touch-levels`
+
+**(4) 9 Oct blind spot (22,570–22,640):** level माहीत होता — तुटलेला support (L1 22,476–22,809, weekly L18 22,518–22,527) resistance ला flip
+झाला, पण 8 Oct 11:15 ला खालचा D2 L 22,397 तुटल्यावर Q2 default (मूळ भूमिकेची बाजू) ने मेला. नवी setting `level_death_side` (default "role0" —
+बदल नाही; "role" = चालू भूमिकेची बाजू). What-if Sep–Oct: setup 1 → 1; 9 Oct ला supply दिसते, 11:30 bar ला L18 वर R:R 5.55 (फक्त maturity cap ने
+अडलं). Merge (333 pts पट्टा) आणि 1H sharp-fall base = OPEN_QUESTIONS TL1–TL3. Fixture: `test_decision3_level_death_side.py` (आरसा सह).
+**(5) 29 Sep 12:15 "no touch":** bug `engine.decide()` मध्ये — दूरच्या न-स्पर्शलेल्या level चा "wait" स्पर्शलेल्या level च्या "no_trade (R:R)" वर
+ranked. Fix: ③ ✔ level चा निकाल bar चा. Sep–Oct: setups 1 → 1, no_trade 5 → 118 (R:R 63, 4th try 50), "no touch" झाकलेले bars 113 → 0.
+12:15 निकाल: valid read (touch + buyers दमले + dominant engulf 2.6× + 5M CHoCH), R:R 0.77 ⇒ no setup. FUT volume 29 Sep ला NA (data 30 Sep पासून).
+Fixture: `test_decision3_touch_levels.py`. Tests: `test_decision3*.py test_level*.py` 461 passed + नवे.
+अहवाल: `docs/reports/v22_missed_levels_touch.md`.
+**TL1 ✅ Abhi मंजूर (2026-10-12):** default `level_death_side` = "role" (flipped level चा मृत्यू चालू भूमिकेच्या बाजूने); "role0" फक्त explicit setting
+(revert / what-if). जुना Q2 test (ii) explicit "role0" ने pinned (अपेक्षा तशीच). TL2 (merge रुंदी): Abhi "आत्ता नाही" — उघडा.
+
 ## 2026-10-12 · CD14 — default chart वर Abhi चं स्वीकारलेलं वाचन (BANKNIFTY Feb → Apr = sharp DOWN impulse)
 
 **काय केलं:** `decision3/accepted_legs.py` (loader + validation + match) आणि `decision3/data/accepted_legs.json` (BANKNIFTY 1D 2026-02-03 →
