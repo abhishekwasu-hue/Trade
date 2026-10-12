@@ -2016,6 +2016,39 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
 
+## 2026-10-12 (IST रात्र) · RESUME worker — CI flake + v2.2 §7.3 trapped zones
+
+**CI (#295 / #297 लाल):** `TestCheckVixSpikeHalt` चे 4 tests — `TODAY` class attribute collection वेळी (23:44 IST) धरलेला, tests 00:19 IST ला
+⇒ `trade_date` जुना ⇒ fail-open. main चा run 18:30:48 UTC ला संपला म्हणून पास. दुरुस्ती: autouse fixture `_freeze_today` + regression tests
+(`test_today_not_captured_at_collection_time`, `test_halt_rolls_off_after_midnight`). Simulated-midnight plugin ने जुन्या code वर तेच 4 fail,
+नव्या वर 14 pass. तोच commit #295 आणि #297 वर cherry-pick (3ef5e4e / 2e6a243); #297 Abhi ने merge केला ⇒ fix main वर; स्वतंत्र PR #298 redundant ⇒ बंद.
+
+**v2.2 §7.3 trapped zones (`claude/v22-trapped-zones`):** `decision3/liquidity.counter_traps` — (b) `late_counter`: K चा शेवटचा counter push
+आधीच्या confirmed D1 counter टोकापलीकडे नवं टोक करून close परत आधीच्या टोकाच्या trend-बाजूला ⇒ पट्टा [आधीचं टोक, नवं टोक]; (c) `engulfed_counter`:
+K मध्ये trend-विरुद्ध big_body candle लगेच trend-दिशेच्या body ने गिळली ⇒ पट्टा = तिची body. `method.risk(..., traps=)`: SL पाया = level कड /
+K टोक / trade-बाजूच्या trapped zones ची दूरची कड यांतला सर्वात दूरचा (`sl_beyond_trapped`, default True — spec §7.3) + buffer; `risk["sl_src"]`
+(level / K / trapped). Story: sweep नसेल तर "… मध्ये buyers अडकले (…)", SL "(trapped पलीकडे)"; chart label मध्ये kind. पुरावा `trap_sweep`
+बदलला नाही (Q56 default: (b)/(c) पुराव्यात नाहीत). नवे thresholds नाहीत (candle_read + D1 pivots). Tests `tests/test_decision3_trapped_zones.py`
+(9: दोन्ही kinds + आरसा, known_at (confirm_bar > t ⇒ नाही), truncation, SL पलीकडे / विरुद्ध बाजू नाही / K आत ⇒ बदल नाही / setting off, story).
+decision3 + level bots 266 pass / 1 xfail.
+**Before / after (NIFTY IS 2023-10-01 … 2024-03-27, 2997 bars, holdout नाही):** decision / conviction / SL / R:R / ⑦ बदल **0** (risk bars 5, सगळे
+wait); नवे zones chart / story ला: engulfed_counter 112 bars, late_counter 11, failed_breakout 31 (आधीही). (b)/(c) K च्या आत ⇒ SL फक्त (a) चं
+टोक K पलीकडे असेल तर बदलतो — या slice मध्ये 0 वेळा. BANKNIFTY data (trade-data) या run ला उपलब्ध नव्हता.
+**Self-review:** sign (UP ⇄ DOWN) आरसा tests; (b) prev pivot unconfirmed ⇒ नाही; risk `traps=None` ⇒ जुना SL; `liquidity.trapped`
+[:2] ⇒ [:3] (फक्त chart / story); (c) पूर्ण K scan O(K) प्रति bar — NIFTY 6 महिने run मध्ये वेळ ठीक. उघडं: Q56.
+**स्वतंत्र review (reviewer subagent) नंतर दुरुस्त:** 🔴 (a) `sweeps_and_traps` मध्ये impulse pool ओलांडून गेला (window सुरुवातीला आणि आधीच्या bar ला
+आधीच pool पलीकडे) तरी "failed_breakout" (hi = window चं टोक) येत होतं — आधी फक्त chart / पुरावा, आता SL ला लागलं असतं (K टोकापलीकडचं खोटं टोक ⇒
+R:R कोसळतो). दुरुस्ती दोन: sweep ला window-आधीचा bar pool च्या आत हवा (आधीच पलीकडे ⇒ sweep नाही); SL ला फक्त K मध्ये (bar ≥ k_open_bar) बनलेले
+zones. 🟡 (b)/(c) zones रचनेने K टोकाच्या आत ⇒ SL कधीच हलवत नाहीत — व्यवहारात फक्त (a) — register / docstring मध्ये स्पष्ट. 🟡 (b) आधीचं टोक
+`Pullbacks.legs` सारखं I_end नंतरचं (`p.bar > i_end_bar`), K उघडण्याआधी confirm झालेलं पहिल्या पायाचं टोक सुद्धा. Before / after पुन्हा (तोच NIFTY
+slice): decision / conviction / SL / R:R बदल 0; failed_breakout bars 31 ⇒ 20 (खोटे गेले). Tests 11 (नवे: pool-cross ⇒ sweep नाही, K-आधीचा zone SL
+ला नाही, sl_edge k0). decision3 + level bots 267 pass / 1 xfail.
+**§7.7 tests (liquidity pools, वर्तन बदल नाही):** `tests/test_decision3_liquidity_pools.py` (6) — equal highs / lows σ-अपूर्णांकात ⇒ EQ pool (आरसा),
+swing pools फक्त confirmed (confirm_bar ≤ t), PDH / PDL फक्त आधीच्या दिवसाचे (पहिला दिवस ⇒ नाही; आजचा high नाही), PWH / PWL फक्त आधीच्या आठवड्याचे,
+`pool_marks` (trade-बाजू, show_distance_sigma, duplicate ⇒ PDH प्राधान्य, per_side, आरसा), truncation.
+**पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं; `counter_traps` level-निरपेक्ष ⇒
+प्रति (t, d) एकदाच मोजणं (perf, reviewer ⚪).
+
 ## 2026-10-12 · Volume pane — प्रत्येक setup / proposal chart वर (Abhi: "the volume test is not visible on these charts")
 
 **काय केलं (फक्त charts — engine निर्णय बदलत नाहीत):**

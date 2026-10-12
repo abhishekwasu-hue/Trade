@@ -196,11 +196,17 @@ def story(r):
         x = lq["sweeps"][0]
         who = "buyers" if x["side"] == "buy" else "sellers"
         lines.append(f"liquidity: {x['src']} {x['price']:,.0f} ⚡ sweep ⇒ {who} अडकले")
+    elif lq.get("trapped"):                                                       # §7.6 / §7.3 (b)(c): sweep नाही पण trapped zone आहे
+        x = lq["trapped"][0]
+        who = "buyers" if x["side"] == "buy" else "sellers"
+        kind = {"failed_breakout": "failed breakout", "late_counter": "उशिरा counter push", "engulfed_counter": "engulf"}.get(x["kind"], x["kind"])
+        lines.append(f"liquidity: {x['lo']:,.0f}–{x['hi']:,.0f} मध्ये {who} अडकले ({kind})")
     c = r["checklist"]
     lines.append(f"Commitment: {c['⑥'][1]}")
     if r.get("risk"):
         rk = r["risk"]
-        lines.append(f"Conviction {r.get('conviction')} · entry {rk['entry']:,.0f} · SL {rk['sl']:,.0f} · target {rk['target'] or 0:,.0f} · R:R {rk['rr']}")
+        src = " (trapped पलीकडे)" if rk.get("sl_src") == "trapped" else ""
+        lines.append(f"Conviction {r.get('conviction')} · entry {rk['entry']:,.0f} · SL {rk['sl']:,.0f}{src} · target {rk['target'] or 0:,.0f} · R:R {rk['rr']}")
     elif r.get("why"):
         lines.append(r["why"])
     return "\n".join(lines[:6])
@@ -232,7 +238,7 @@ def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
     lq = (r.get("liquidity") or {}) if (r and debug) else {}
     for x in lq.get("trapped") or ():                                          # §7.6 trapped zone पट्टा
         ax.axhspan(x["lo"], x["hi"], color="#fd7e14", alpha=0.12, hatch="///", lw=0)
-        ax.text(0, x["hi"], f" trapped {'buyers' if x['side'] == 'buy' else 'sellers'} {x['lo']:,.0f}-{x['hi']:,.0f}",
+        ax.text(0, x["hi"], f" trapped {'buyers' if x['side'] == 'buy' else 'sellers'} {x['lo']:,.0f}-{x['hi']:,.0f} ({x.get('kind', '').replace('_', ' ')})",
                 color="#d9480f", fontsize=7, va="bottom")
     for x in lq.get("sweeps") or ():                                           # §7.6 sweep खूण (pool पलीकडे जाऊन परत)
         b = int(x.get("bar", -1))

@@ -209,10 +209,12 @@ class V22:
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
-        ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])
+        ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])          # पुरावा: sweep / failed breakout (जसंच)
+        ctr = LQ.counter_traps(A, t, d, k, self.s, self.pb.p1)                                            # §7.3 (b) late_counter / (c) engulfed_counter — SL + chart (Q56: पुराव्यात नाही)
+        traps = [x for x in tr if x["side"] == side] + ctr
         conv, score, missing = M.conviction(ev, self.s)
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
-                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}}
+                 "liquidity": {"sweeps": mine[:3], "trapped": traps[:3]}}
         if rng:
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
@@ -220,7 +222,7 @@ class V22:
             return M_NO, chk, {**extra, "why": "चौथा+ प्रयत्न ⇒ reversal शक्यता (§5.1)"}
         if not ok6:
             return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
-        ok7, rk = M.risk(self, t, d, lvl, k, self.s)
+        ok7, rk = M.risk(self, t, d, lvl, k, self.s, traps=traps)
         chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
         extra["risk"] = rk
         if not ok7:

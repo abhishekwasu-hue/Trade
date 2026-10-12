@@ -634,20 +634,30 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
 
 
 # ------------------------------------------------------------------------------------------------ ⑦ risk
-def risk(V, t, d, lvl, k, s):
-    """SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत level (जवळचा)."""
+def risk(V, t, d, lvl, k, s, traps=None):
+    """SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); §7.3: `sl_beyond_trapped` ⇒ trade-बाजूच्या trapped zones
+    (counter traders चा पट्टा, K मध्ये बनलेले — bar ≥ k_open_bar) च्या दूरच्या कडेपलीकडे सुद्धा — तिथे ते exit करतात. (b) / (c) zones
+    रचनेने K टोकाच्या आत ⇒ व्यवहारात फक्त (a) failed_breakout चं K-पलीकडचं टोक SL हलवतं. target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत
+    level (जवळचा). `traps` = liquidity trapped zones (engine देतो; नसेल तर SL फक्त level + K)."""
     A = V.levels.A
     entry = float(A["close"][t])
     sg15 = V.res["sigma"].get(pd.Timestamp(V.levels.ts[t]).normalize(), np.nan)
     buf = float(s["sl_buffer_sigma"]) * (sg15 if np.isfinite(sg15) else 0.0)
     kx = k.get("k_ext") if k else None
+    tz = None
+    if s.get("sl_beyond_trapped", True) and traps:
+        from . import liquidity as LQ
+        tz = LQ.sl_edge([x for x in traps if x["side"] == ("sell" if d == UP else "buy")], d, k0=k.get("k_open_bar") if k else None)
+    # SL चा पाया = level कड / K टोक / trapped कड यांतला counter-बाजूला सर्वात दूरचा (क्रमात पहिला जिंकतो ⇒ समान असल्यास "level")
+    base = [("level", lvl["lo"] if d == UP else lvl["hi"])] + ([("K", kx)] if kx is not None else []) + ([("trapped", tz)] if tz is not None else [])
+    sl_src, sl0 = min(base, key=lambda x: x[1] * d)
     if d == UP:
-        sl = min(lvl["lo"], kx if kx is not None else lvl["lo"]) - buf
+        sl = sl0 - buf
         opp = [x["lo"] for x in V.levels.snapshot(t) if x["role"] == LV.RES and x["lo"] > entry]
         cands = [x for x in ([k["i_end"]] if k else []) + opp if x > entry]
         tgt = min(cands) if cands else None
     else:
-        sl = max(lvl["hi"], kx if kx is not None else lvl["hi"]) + buf
+        sl = sl0 + buf
         opp = [x["hi"] for x in V.levels.snapshot(t) if x["role"] == LV.SUP and x["hi"] < entry]
         cands = [x for x in ([k["i_end"]] if k else []) + opp if x < entry]
         tgt = max(cands) if cands else None
@@ -655,7 +665,7 @@ def risk(V, t, d, lvl, k, s):
     rr = (tgt - entry) * d / rk if (tgt is not None and rk > 0) else None
     ok = rr is not None and rr >= float(s["min_rr"])
     return ok, {"entry": round(entry, 2), "sl": round(sl, 2), "target": None if tgt is None else round(tgt, 2),
-                "rr": None if rr is None else round(rr, 2)}
+                "rr": None if rr is None else round(rr, 2), "sl_src": sl_src}
 
 
 # ------------------------------------------------------------------------------------------------ conviction caps (Q15)
