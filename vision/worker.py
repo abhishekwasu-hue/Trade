@@ -54,6 +54,24 @@ def default_fetch(symbol, need_daily=False):
     return m1, d1
 
 
+def default_fetch_volume(symbol):
+    """Volume pane: index ⇒ त्याच्या front futures चे 1m candles (timestamp, volume) — NIFTY FUT / BANKNIFTY FUT / SENSEX FUT (resolve
+    न झाल्यास NA). MCX ⇒ None (1m frame चाच स्वतःचा volume). अपयश ⇒ None ⇒ chart वर "volume: NA (grade cap B)". कधीच raise नाही."""
+    try:
+        from decision3 import volume_pane as VP
+        if not VP.is_index(symbol):
+            return None
+        import cloud_db
+        from bots_common import level_gate_bot as LGB
+        token = cloud_db.get_effective_upstox_token(None)
+        if not token:
+            return None
+        return LGB.LR.call_with_timeout(LGB._default_futures_candles, (token, str(symbol).upper(), 1), 15.0)
+    except Exception as exc:                                             # noqa: BLE001 — volume पूरक
+        print(f"⚠️ {symbol} futures volume (chart) NA: {type(exc).__name__}")
+        return None
+
+
 def fetch_expiries(symbol):
     """Weekly expiry dates (contract master) — v2 signal text साठी. अपयश ⇒ [] (कधीच raise नाही)."""
     try:
@@ -198,6 +216,8 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
         extra += [html.escape(x) for x in _LGB.gate_caption_lines(tags)]
     except Exception:
         pass
+    if row.get("volume_line"):                                          # chart च्या volume pane ची एक ओळ (NA ⇒ "volume: NA (grade cap B)")
+        extra.append(html.escape(str(row["volume_line"])))
     if (res or {}).get("verdict") in (None, "unavailable"):
         extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") + " — बटणं तरीही चालतात")
     tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
@@ -299,7 +319,7 @@ def bar_wait(row, s, now=None):
 
 
 def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send_photo=None, send_text=None, path=None, data_cache=None,
-                wait_for_bar=True):
+                wait_for_bar=True, fetch_volume_fn=None):
     """एक RUNNING row पूर्ण करणे. रिटर्न अंतिम result dict. कधीच raise नाही (चूक ⇒ FAILED row).
     `vision_wait_for_bar_close` (default on): signal चा setup bar बंद होईपर्यंत row परत QUEUED (data fetch / खर्च नाही); बंद झाल्यावर chart आणि
     संदर्भ त्या bar च्या close पर्यंत (asof) — मग निर्णय, आणि entry च्या क्षणी drift guard."""
@@ -347,7 +367,20 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
                 if data_cache is not None:
                     data_cache.pop(key, None)
                 return {"verdict": None, "deferred": True, "bar_end": sb["end"]}
-        png, meta = CH.render(m1, row, d1) if m1 is not None and len(m1) else (None, {"error": "1m candles नाहीत"})
+        fut = None                                                      # volume pane: index ⇒ futures volume (default fetch असतानाच network)
+        if fetch_volume_fn is not None or fetch_fn is default_fetch:
+            vk = ("fut_volume", row["symbol"])
+            if data_cache is not None and vk in data_cache:
+                fut = data_cache[vk]
+            else:
+                fut = (fetch_volume_fn or default_fetch_volume)(row["symbol"])
+                if data_cache is not None:
+                    data_cache[vk] = fut
+        if m1 is None or not len(m1):
+            png, meta = None, {"error": "1m candles नाहीत"}
+        else:
+            png, meta = CH.render(m1, row, d1, fut=fut) if fut is not None else CH.render(m1, row, d1)
+        row["volume_line"] = meta.get("volume_line")                      # caption ची एक volume ओळ
         row["ctx"] = meta.get("ctx")                                      # v2 signal text (अचूक किंमती OHLC वरून)
         if png:
             # §11: `_sent.png` आधी disk वर (overwrite नाही), मग तीच फाईल परत वाचून (sha256 तपासून) vision आणि Telegram ला — तेच bytes.

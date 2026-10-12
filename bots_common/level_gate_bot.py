@@ -205,7 +205,7 @@ def gate_tags(r, ctx=None, tf=None):
     lo, hi = r.get("area") or (None, None)
     return {"gate": {"mode": CONFIRMATION, "side": r.get("side"), "area": [lo, hi], "form": r.get("form"), "grade": r.get("grade"),
                      "commit_grade": r.get("commit_grade"), "entry": r.get("entry_price"), "sl": r.get("sl"), "target": r.get("target"),
-                     "rr": r.get("rr"), "confirm_ts": r.get("confirm_ts"), "trend": (ctx or {}).get("reason"), "tf": tf,
+                     "rr": r.get("rr"), "confirm_ts": r.get("confirm_ts"), "arm_ts": r.get("arm_ts"), "trend": (ctx or {}).get("reason"), "tf": tf,
                      "study": r.get("study"), "commit_line": r.get("commit_line"),
                      "evidence": {k: v for k, v in (r.get("evidence") or {}).items() if v is not None}}}
 

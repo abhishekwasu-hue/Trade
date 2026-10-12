@@ -182,26 +182,26 @@ def _gap_overlays(fig, df, ctx, lo, hi, n, sig):
                            row=1, col=1)
 
 
-def _line_panel(fig, line, ctx, sig):
+def _line_panel(fig, line, ctx, sig, row=3):
     """Panel C: closes ची रेषा (मोठा lookback), L / M / PDC / PDH / PDL, swing ठिपके, session separators, signal क्षणी उभी रेषा — त्यानंतर काहीच नाही."""
     import plotly.graph_objects as go
     if line is None or len(line) < 3:
         return
     x = np.arange(len(line))
     y = line["close"].to_numpy(float)
-    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color="#e0e0e0", width=1.4), showlegend=False), row=2, col=1)
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color="#e0e0e0", width=1.4), showlegend=False), row=row, col=1)
     lo, hi = float(y.min()), float(y.max())
     lvl = sig.get("level")
     if lvl is not None:
         lo, hi = min(lo, float(lvl)), max(hi, float(lvl))
     pad = 0.05 * (hi - lo or 1.0)
     lo, hi = lo - pad, hi + pad
-    fig.update_yaxes(range=[lo, hi], row=2, col=1)
+    fig.update_yaxes(range=[lo, hi], row=row, col=1)
     n = len(line)
     days = pd.to_datetime(line["start"]).dt.normalize()
     for k in range(1, n):
         if days.iloc[k] != days.iloc[k - 1]:
-            fig.add_shape(type="line", x0=k - 0.5, x1=k - 0.5, y0=lo, y1=hi, line=dict(color="#37474f", width=1, dash="dot"), row=2, col=1)
+            fig.add_shape(type="line", x0=k - 0.5, x1=k - 0.5, y0=lo, y1=hi, line=dict(color="#37474f", width=1, dash="dot"), row=row, col=1)
     placed = []
     for o in sorted((ctx or {}).get("overlays") or [], key=lambda z: z["price"]):
         names = o["label"].split("+")
@@ -210,35 +210,39 @@ def _line_panel(fig, line, ctx, sig):
         isl = "L" in o["kinds"]
         color = ROLE_COLOR.get((sig.get("role") or "").upper(), "#ffca28") if isl else ("#90caf9" if "major" in o["kinds"] else "#78909c")
         fig.add_shape(type="line", x0=-0.5, x1=n - 0.5, y0=o["price"], y1=o["price"], line=dict(color=color, width=2 if isl else 1,
-                      dash=None if isl or "major" in o["kinds"] else "dot"), row=2, col=1)
+                      dash=None if isl or "major" in o["kinds"] else "dot"), row=row, col=1)
         busy = {s for py, s in placed if abs(py - o["price"]) < 0.06 * (hi - lo)}
         slot = next((k for k in range(8) if k not in busy), 7)
         placed.append((o["price"], slot))
         fig.add_annotation(x=slot * max(1.0, n * 0.1), y=o["price"], text=o["label"], showarrow=False, xanchor="left", yshift=6,
-                           font=dict(size=8, color=color), row=2, col=1)
+                           font=dict(size=8, color=color), row=row, col=1)
     for i in range(2, n - 2):                                            # closes वरचे confirmed swings (दोन्ही बाजूंना 2 पूर्ण points)
         if y[i] > y[i - 2:i].max() and y[i] >= y[i + 1:i + 3].max():
-            fig.add_trace(go.Scatter(x=[i], y=[y[i]], mode="markers", marker=dict(size=5, color="#ffcc80"), showlegend=False), row=2, col=1)
+            fig.add_trace(go.Scatter(x=[i], y=[y[i]], mode="markers", marker=dict(size=5, color="#ffcc80"), showlegend=False), row=row, col=1)
         if y[i] < y[i - 2:i].min() and y[i] <= y[i + 1:i + 3].min():
-            fig.add_trace(go.Scatter(x=[i], y=[y[i]], mode="markers", marker=dict(size=5, color="#80cbc4"), showlegend=False), row=2, col=1)
-    fig.add_shape(type="line", x0=n - 1, x1=n - 1, y0=lo, y1=hi, line=dict(color="#ffd54f", width=1), row=2, col=1)
+            fig.add_trace(go.Scatter(x=[i], y=[y[i]], mode="markers", marker=dict(size=5, color="#80cbc4"), showlegend=False), row=row, col=1)
+    fig.add_shape(type="line", x0=n - 1, x1=n - 1, y0=lo, y1=hi, line=dict(color="#ffd54f", width=1), row=row, col=1)
     step = max(1, n // 8)
     fig.update_xaxes(tickvals=list(range(0, n, step)), ticktext=[pd.Timestamp(line["start"].iloc[k]).strftime("%d %b %H:%M") for k in range(0, n, step)],
-                     showgrid=False, color="#b0bec5", row=2, col=1)
+                     showgrid=False, color="#b0bec5", row=row, col=1)
 
 
-def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
+def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
+    """vols = (setup volume array, higher volume array) — `panel_volumes`; None ⇒ volume pane मध्ये "volume: NA (grade cap B)".
+    Volume pane (row 2) प्रत्येक price panel खाली — image size तोच (price panel ची उंची कमी)."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from decision3 import volume_pane as VP
     s_tf, h_tf = tfs
     with_line = line is not None and len(line) >= 3
     if with_line:
-        fig = make_subplots(rows=2, cols=2, column_widths=[0.6, 0.4], row_heights=[0.66, 0.34], horizontal_spacing=0.06, vertical_spacing=0.09,
-                            specs=[[{}, {}], [{"colspan": 2}, None]],
-                            subplot_titles=(f"setup {_tf_label(s_tf)}", f"higher {_tf_label(h_tf)}", "line: 15m closes (structure, no wicks)"))
+        fig = make_subplots(rows=3, cols=2, column_widths=[0.6, 0.4], row_heights=[0.50, 0.14, 0.36], horizontal_spacing=0.06,
+                            vertical_spacing=0.06, specs=[[{}, {}], [{}, {}], [{"colspan": 2}, None]],
+                            subplot_titles=(f"setup {_tf_label(s_tf)}", f"higher {_tf_label(h_tf)}", "", "",
+                                            "line: 15m closes (structure, no wicks)"))
     else:
-        fig = make_subplots(rows=1, cols=2, column_widths=[0.6, 0.4], horizontal_spacing=0.06,
-                            subplot_titles=(f"setup {_tf_label(s_tf)}", f"higher {_tf_label(h_tf)}"))
+        fig = make_subplots(rows=2, cols=2, column_widths=[0.6, 0.4], row_heights=[0.78, 0.22], horizontal_spacing=0.06,
+                            vertical_spacing=0.07, subplot_titles=(f"setup {_tf_label(s_tf)}", f"higher {_tf_label(h_tf)}", "", ""))
     level = sig.get("level")
     role = (sig.get("role") or "").upper()
     col = ROLE_COLOR.get(role, "#ffca28")
@@ -262,7 +266,11 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
         step = max(1, len(df) // 6)
         fmt = "%d %b" if h_tf == "D" and c == 2 else "%d %b %H:%M"
         fig.update_xaxes(tickvals=list(range(0, len(df), step)), ticktext=[pd.Timestamp(df["start"].iloc[k]).strftime(fmt) for k in range(0, len(df), step)],
-                         rangeslider_visible=False, showgrid=False, color="#b0bec5", row=1, col=c)
+                         rangeslider_visible=False, showgrid=False, color="#b0bec5", range=[-0.5, len(df) - 0.5], row=1, col=c)
+        vol = (vols or (None, None))[c - 1]
+        VP.add_plotly(fig, VP.study(df, vol=np.full(len(df), np.nan) if vol is None else vol, info=sig, symbol=sig.get("symbol"),
+                                    d=sig.get("direction"), area=_area_of(sig)), row=2, col=c,
+                      title=f"vol {VP.source_label(sig.get('symbol'))}" + (" (study window = setup TF)" if c == 1 else ""))
         n = len(df)
         if ctx is not None:
             if not (h_tf == "D" and c == 2):
@@ -319,7 +327,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
             fig.add_annotation(x=n - 1, y=y, text="▲ signal" if up else "▼ signal", showarrow=False, yshift=-16 if up else 16,
                                font=dict(size=12, color="#ffd54f"), row=1, col=c)
     if with_line:
-        _line_panel(fig, line, ctx, sig)
+        _line_panel(fig, line, ctx, sig, row=3)
     ts = pd.Timestamp(to_ist_naive(sig["signal_ts"]))
     ev = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else ts
     cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
@@ -332,6 +340,26 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None):
     return fig
 
 
+def _area_of(sig):
+    """Volume pane चा area: gate area (confirmation) नाहीतर signal level (एकच किंमत)."""
+    g = ((sig.get("tags") or {}).get("gate") or {}) if isinstance(sig.get("tags"), dict) else {}
+    a = g.get("area") or [None, None]
+    if a[0] is not None and a[1] is not None:
+        return float(a[0]), float(a[1])
+    lv = sig.get("level")
+    return (float(lv), float(lv)) if lv is not None else None
+
+
+def panel_volumes(setup, higher, sig, asof, df1m=None, fut=None):
+    """(setup vol, higher vol) arrays. Index ⇒ futures volume (`fut`: timestamp, volume — worker आणतो; नाही ⇒ NA); MCX / इतर ⇒ df1m चा
+    स्वतःचा volume. फक्त asof पर्यंत संपलेल्या rows (भविष्य नाही)."""
+    from decision3 import volume_pane as VP
+    src = fut if VP.is_index(sig.get("symbol")) else (df1m[["timestamp", "volume"]] if df1m is not None and "volume" in df1m.columns else None)
+    if src is not None and len(src):
+        src = src.assign(timestamp=to_ist_naive(pd.to_datetime(src["timestamp"])))
+    return tuple(VP.bar_volume(df["start"], df["end"], src, asof) if df is not None and len(df) else None for df in (setup, higher))
+
+
 def line_frame(cut, sessions=5):
     """Panel C: शेवटच्या `sessions` दिवसांचे 15m closes (signal पर्यंतच — cut मधून)."""
     m15 = resample(cut, 15)
@@ -341,8 +369,15 @@ def line_frame(cut, sessions=5):
     return m15[pd.to_datetime(m15["start"]).dt.normalize().isin(days)].reset_index(drop=True)
 
 
-def render(df1m, sig, daily=None):
-    """रिटर्न (png bytes | None, meta). meta = {setup_last, higher_last, setup_bars, higher_bars, error}. कधीच raise नाही."""
+def _volume_line(setup, sig, vols):
+    from decision3 import volume_pane as VP
+    v = (vols or (None,))[0]
+    return VP.study(setup, vol=np.full(len(setup), np.nan) if v is None else v, info=sig, d=sig.get("direction"), area=_area_of(sig))["line"]
+
+
+def render(df1m, sig, daily=None, fut=None):
+    """रिटर्न (png bytes | None, meta). meta = {setup_last, higher_last, setup_bars, higher_bars, error}. कधीच raise नाही.
+    fut = index च्या futures चे candles (timestamp, volume) — volume pane साठी (नाही ⇒ "volume: NA (grade cap B)")."""
     meta = {"setup_last": None, "higher_last": None, "setup_bars": 0, "higher_bars": 0, "error": None}
     try:
         asof = sig.get("asof") if sig.get("asof") is not None else sig["signal_ts"]   # bar बंद होईपर्यंत थांबलं असेल तर तिथपर्यंत (भविष्य नाही)
@@ -363,7 +398,12 @@ def render(df1m, sig, daily=None):
                 meta["ctx_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
         meta["ctx"] = ctx
         line = line_frame(cut, int((sig.get("ctx_settings") or {}).get("line_lookback_sessions", 5))) if ctx is not None else None
-        fig = build_figure(setup, higher, sig, tfs, ctx, line)
+        try:
+            vols = panel_volumes(setup, higher, sig, asof, df1m, fut)
+        except Exception as exc:                                         # volume पूरक ⇒ NA pane, chart तरी
+            vols, meta["vol_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
+        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols)
+        meta["volume_line"] = _volume_line(setup, sig, vols)
         png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
         return png, meta
     except Exception as exc:                                             # kaleido/Chrome नाही, डेटा विचित्र — worker ने unavailable नोंदवावं

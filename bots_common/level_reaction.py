@@ -429,6 +429,7 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "rr": None if rr is None else round(float(rr), 2), "form": cm.get("form"), "commit_grade": cm.get("grade"),
                     "grade": grade, "evidence": evid, "confirm_bar": int(t),
                     "confirm_ts": str(pd.Timestamp(bars["timestamp"].iloc[t])),
+                    "arm_bar": int(arm), "arm_ts": str(pd.Timestamp(bars["timestamp"].iloc[arm])),   # chart: study window (volume pane)
                     "study": f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
                     "commit_line": "commitment: " + " · ".join(x for x in (form_name(cm.get("form"), side), btxt, vtxt) if x)}
             if tgt is None:
