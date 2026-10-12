@@ -447,24 +447,35 @@ def daily_swings_fig(v, title, full=False):
     lay.boxes.append(lgd.get_window_extent(lay.r))
     lay.boxes.append(ax.title.get_window_extent(lay.r))
 
+    wa_bars = {wv["bar"] for wv in sp.get("waves") or ()}                  # Q49: 5-wave पहिला पाय = "A" (पर्याय "1" फक्त debug)
+    marked = set()
     for c in sp["boxes"]:                                                  # Abhi review: family वाचलेल्या pivots वर a / b / c (W X Y, a–e)
         if not c["label"]:
             continue
-        for mk in c.get("marks") or ():
+        marks = c.get("marks") or ()
+        upper = False
+        if c["state"] != "done" and any(c["start_bar"] <= b <= c["end_bar"] for b in wa_bars):
+            # Q49: चालू counter-move चा पहिला पाय = wave A. Box चं "a" त्याच pivot वर ⇒ तीच count, मोठ्या अक्षरांत (A B C);
+            # नाहीतर box चं तात्पुरतं family वाचन (उदा. triangle, A = "c") Q49 शी विसंगत ⇒ त्याची अक्षरं नाहीत, फक्त "A" (खाली)
+            upper = any(mk["letter"] == "a" and mk["bar"] in wa_bars for mk in marks)
+            if not upper:
+                marks = ()
+        for mk in marks:
             if mk["bar"] < i0:
                 continue
             up = mk["kind"] == "H"
             sg = 1 if up else -1
+            txt, kind = (mk["letter"].upper(), "wave_a") if upper else (mk["letter"], "wave")
             tries = [(x(mk["bar"]), mk["price"], "center", "bottom" if up else "top", (dx, sg * dy))
                      for dy, dx in ((3, 0), (3, 7), (3, -7), (12, 0))]
-            t = _place(ax, lay, mk["letter"], tries, 8, "#1864ab", weight="bold")
+            t = _place(ax, lay, txt, tries, 9 if kind == "wave_a" else 8, "#1864ab", weight="bold")
+            marked.add(mk["bar"])
             if t is None:
-                dropped.append(mk["letter"])
+                dropped.append(txt)
             else:
-                labels.append({"kind": "wave", "text": mk["letter"], "artist": t, "bar": mk["bar"], "price": mk["price"]})
-    marked = {lb["bar"] for lb in labels if lb["kind"] == "wave"}
-    for wv in sp.get("waves") or ():                                       # Q49: 5-wave पहिला पाय = "A" (पर्याय "1" फक्त debug)
-        if wv["bar"] in marked:                                            # त्या pivot वर family अक्षर आधीच ⇒ दुसरं नाही
+                labels.append({"kind": kind, "text": txt, "artist": t, "bar": mk["bar"], "price": mk["price"]})
+    for wv in sp.get("waves") or ():
+        if wv["bar"] in marked:                                            # त्या pivot वर family अक्षर आधीच (a ⇒ A वर) ⇒ दुसरं नाही
             continue
         up = wv["kind"] == "H"
         sg = 1 if up else -1
@@ -474,7 +485,7 @@ def daily_swings_fig(v, title, full=False):
         if t is None:
             dropped.append(wv["label"])
         else:
-            labels.append({"kind": "wave", "text": wv["label"], "artist": t, "bar": wv["bar"], "price": wv["price"]})
+            labels.append({"kind": "wave_a", "text": wv["label"], "artist": t, "bar": wv["bar"], "price": wv["price"]})
     # §5.1 / §5.2 / §5.5: box labels (चालू + आधीची) — box वर / आत, collision नाही ⇒ label नाही
     fs = 7.5 if nn <= 200 else 7
     for c in sp["boxes"]:

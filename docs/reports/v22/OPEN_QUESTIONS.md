@@ -163,7 +163,8 @@
 | Q49-b | (b) शब्दशः A(5)–B(3)–C(5) = zigzag 5-3-5 | engine: संपूर्ण counter-move 5-wave ज्याचे "1-2-3" स्वतः 5-3-5 ⇒ flip "3" नंतर नाही, counter-move चा "5" चालू असताना (test) | "3" पूर्ण झाल्यावरच flip हवा का? |
 | Q49-Q22 | खालच्या degree चा (Q22) 5-wave पहिला पाय | नेहमी wave A — (a) impulse origin तुटला तरी flip नाही; **wave 1 फक्त parent (trend सुरुवात) close ने तुटल्यावर** (आधीसारखंच). why मजकूर तसं सांगतो ("खालच्या degree चा (Q22) … wave 1 फक्त parent … पलीकडे close ने") | बरोबर? |
 | Q49-dz | double zigzag (W-X-Y) | W चा a-b-c + X + Y चा a = 5-3-5-3-5 ⇒ (b) ⇒ flip — fixture strict xfail | double zigzag ला अपवाद हवा का? |
-| Q49-BN | ✅ Abhi: BANKNIFTY Feb top ⇒ Mar low = **DOWN impulse** (ABC_FIX count) | before / after BANKNIFTY (2016-10 → 2026-10, 2479 दिवस): trend / phase / counter / protected **0 बदल**; wave A 34 दिवस; शेवटचा दिवस DOWN · protected 58,706 | — |
+| Q49-BN | ✅ Abhi: BANKNIFTY Feb top ⇒ Mar low = **DOWN impulse** (ABC_FIX count) | before / after BANKNIFTY (2016-10 → 2026-10, 2479 दिवस): default `complete_impulse` (base = main): trend / phase 2 दिवस, counter 3, protected 4 बदल — सगळे 2018-07-26 → 27 (base UP · Q49 DOWN, extension मुळे); wave A 36 दिवस (`leg` ⇒ 34); 2026 बदल नाही; शेवटचा दिवस DOWN · protected 58,706 | — |
+| Q49-CH | Chart: चालू box चं तात्पुरतं family वाचन (triangle / zigzag) wave A शी विसंगत असू शकतं (A = "c"); wave A चं टोक reading corrective झाल्यावर स्थिर राहतं | box चं "a" = wave A ⇒ मोठी अक्षरं A B C; नाहीतर box अक्षरं नाहीत, फक्त "A"; A टोक स्थिर | box family वाचन wave A पासून सुरू करा (A नंतरचे पाय B / C) — engine बदल |
 
 ## Chart declutter (TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5) — PR B मध्ये घेतलेले default निर्णय (Abhi ने बदलावे)
 

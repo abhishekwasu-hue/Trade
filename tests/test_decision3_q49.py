@@ -176,15 +176,52 @@ def test_chart_label_A_debug_alt_1_and_no_wave_number_on_telegram(mirror):
         assert "alt" not in t and "wave A" not in t and "(1)" not in t and " A " not in t, t
 
 
+def _q49_render_cases():
+    return [pytest.param(f, m, id=f"{n}-{'up' if m else 'down'}") for n, f in
+            (("vdeep", lambda m: F.correction_fixture("very_deep_holds_origin", m)), ("complete_five", F.q49_complete_five),
+             ("lower_degree_a", F.q49_lower_degree_a)) for m in (False, True)]
+
+
+@pytest.mark.parametrize("make,mirror", _q49_render_cases())
+def test_chart_draws_A_once_at_the_wave_a_pivot(make, mirror):
+    """Review 🟡1 / 🟡2: the rendered chart shows "A" (kind "wave_a") exactly once at the wave-A pivot over the whole wave-A span.
+    In-progress box family "a" on that pivot ⇒ the box's letters are drawn upper-case (A B C, same count); a provisional family read
+    that puts another letter there (e.g. triangle "c") is not drawn — no lowercase letter contradicts Q49. Debug PNG renders too."""
+    import matplotlib.pyplot as plt
+    from decision3 import charts as CH
+    d, _ = make(mirror)
+    st = DD.fold(d)
+    span = [i for i, x in enumerate(st) if x.wave_a is not None]
+    assert span
+    for k in sorted({span[0], span[len(span) // 3], span[2 * len(span) // 3], span[-1]}):
+        dk = d.iloc[:k + 1].reset_index(drop=True)
+        v = DS.build(dk, window=len(dk), with_elliott=False)
+        wa = v["q15"]["wave_a"]
+        assert wa is not None and DS.view_spec(v)["waves"] == [wa]
+        fig, info = CH.daily_swings_fig(v, "TEST")
+        at = [x for x in info["labels"] if x.get("bar") == wa["bar"] and x["kind"] in ("wave", "wave_a")]
+        assert [(x["kind"], x["text"]) for x in at] == [("wave_a", "A")], (k, at, info["dropped"])
+        assert all(x["text"] in "abcdeWXYZ" for x in info["labels"] if x["kind"] == "wave")
+        box = next(c for c in info["spec"]["boxes"] if c["state"] != "done" and c["start_bar"] <= wa["bar"] <= c["end_bar"])
+        inside = [x for x in info["labels"] if x["kind"] in ("wave", "wave_a") and x["bar"] >= box["start_bar"]]
+        assert all(x["kind"] == "wave_a" and x["text"] in "ABCDE" for x in inside), inside   # Q49 शी विसंगत लहान अक्षर नाही
+        plt.close(fig)
+        assert CH.daily_swings_debug_png(v, "TEST")
+
+
+@pytest.mark.parametrize("make,start", [pytest.param(F.q49_complete_five, 130, id="complete_five"),
+                                        pytest.param(F.q49_beyond_impulse_origin, None, id="beyond_impulse_origin")])
 @pytest.mark.parametrize("mirror", MIRRORS)
-def test_wave_a_and_flip_have_no_lookahead(mirror):
+def test_wave_a_and_flip_have_no_lookahead(make, start, mirror):
     """Truncation invariance: wave A / alt / trend at bar k are the same with or without later bars (conditions use pivots
-    confirmed ≤ k)."""
-    d, _ = F.q49_complete_five(mirror)
+    confirmed ≤ k). beyond_impulse_origin exercises the (a) extension (imp_origin = complete-impulse start)."""
+    d, _ = make(mirror)
     full = DD.fold(d)
     key = lambda x: (x.trend, x.phase, x.counter, getattr(x.wave_a, "price", None), x.alt,   # noqa: E731
                      getattr(x.protected, "price", None))
-    for k in range(130, len(d), 6):
+    if start is None:                                                      # wave A span ची सुरुवात थोडी आधीपासून
+        start = max(2, next(i for i, x in enumerate(full) if x.wave_a is not None) - 12)
+    for k in range(start, len(d), 6):
         part = DD.fold(d.iloc[:k].reset_index(drop=True))
         assert [key(x) for x in part] == [key(x) for x in full[:k]], k
 

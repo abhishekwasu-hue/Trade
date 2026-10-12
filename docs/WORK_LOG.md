@@ -1873,6 +1873,7 @@ Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `
 
 **Fixtures / tests:** `very_deep_holds_origin` pass (strict xfail काढले); नवे `q49_complete_five` ((b), "3" च्या शेवटी flip नाही), `q49_beyond_impulse_origin` (ABC_FIX आकार, (a)), `q49_lower_degree_a` (Q22 why); सगळे आरशात. `double_zigzag` strict xfail (Q49 (b)). `tests/test_decision3_q49.py` (17, Rule-4 bar-match unit test सह).
 **Before / after:** `scripts/q49_before_after.py` — BANKNIFTY 2479 दिवस: बदल खाली (review नंतरचा run).
+**Independent review (PR #300, 🔴 नाही) नंतर:** chart वर "A" बहुतेक वेळा box च्या family अक्षराखाली लपत होता ⇒ नियम: चालू box चं "a" wave-A pivot वर ⇒ त्या box ची अक्षरं मोठी (A B C, तीच count); box चं तात्पुरतं family वाचन दुसरं अक्षर तिथे ठेवतं (उदा. triangle, A = "c") ⇒ ती अक्षरं नाहीत, फक्त "A" (Q49 शी विसंगत लहान अक्षर नाही; label kind `wave_a`). Render test (3 fixtures × आरसा, wave-A span वर 4 bars + debug PNG); lookahead test मध्ये `q49_beyond_impulse_origin` ((a) extension). BANKNIFTY before / after (base = main): trend / phase 2 दिवस (2018-07-26 → 27, extension), counter 3, protected 4; wave A 36 दिवस (`leg` ⇒ 34); 2026 बदल नाही. तसेच ठेवले: ① Telegram मध्ये Q49 why फक्त NEUTRAL / UNKNOWN ला जातो (trend असताना why वापरला जात नाही); wave A चं टोक reading corrective झाल्यावर जुन्याच pivot वर राहतं (A वाढला तरी) — OPEN_QUESTIONS Q49-CH.
 
 ## 2026-10-11 · PR B (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5 — chart declutter + legend + 2-ओळी caption + Vision consistency)
 
