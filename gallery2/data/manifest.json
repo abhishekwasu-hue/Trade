@@ -143,6 +143,21 @@
    ]
   ]
  },
+ "strata": {
+  "NIFTY": {
+   "seed": 7,
+   "dev": 16,
+   "test": 7,
+   "assignment": "cr3_global_frozen"
+  },
+  "BANKNIFTY": {
+   "seed": 7,
+   "dev": 12,
+   "test": 5,
+   "assignment": "cr3_global_frozen"
+  }
+ },
+ "strata_rule": "प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 dev / test split (seed `strata.<symbol>.seed`). CR3 चे NIFTY / BANKNIFTY assignments गोठवलेले (assignment 'cr3_global_frozen'); नवा symbol फक्त additive (`--add-symbol`), त्याच्याच stratum मध्ये: windows / bucket निवड numpy default_rng(symbol seed), test = round(0.3 × stratum charts), (TF) slot आकाराच्या प्रमाणात, default_rng(symbol seed + 1000). आधीचे entries byte-for-byte तसेच.",
  "charts": [
   {
    "id": "NIFTY_D_20160503",
