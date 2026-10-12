@@ -1,10 +1,10 @@
 """scripts/reader2_gallery_export.py — Abhi ची gallery marking (Supabase `reader2_gallery`) ⇒ साध्या JSON files (एक chart = एक file).
 
-🎓 VPS वर चालवा (DB connection VPS `.env` मधून; key कधीच print होत नाही). Output `gallery2/data/labels/<split>/<id>.json` — split
+🎓 VPS वर चालवा (DB connection VPS `.env` मधून; key कधीच print होत नाही). Output private trade-data `reader2_gallery/labels/<split>/<id>.json` — split
 नेहमी manifest मधला. Bars असतील तर पूर्ण तपासणी (किंमत = bar चे टोक, holdout नाही), नाहीतर रचना-तपासणी. चुकीच्या नोंदी लिहिल्या जात
 नाहीत (ids + कारण छापतो; किंमती नाहीत). CR4 चं CI हे files secrets शिवाय वाचतं; test folder फक्त acceptance साठी (sealed).
 
-    python3 scripts/reader2_gallery_export.py [--out gallery2/data/labels] [--from-dir <JSON store>]
+    python3 scripts/reader2_gallery_export.py [--out /root/trade-data/reader2_gallery/labels] [--from-dir <JSON store>]
 """
 import argparse
 import json

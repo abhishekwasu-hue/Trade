@@ -84,3 +84,6 @@ data/paper_token_alert.json
 data/paper_journal.db
 data/engine_signals.db
 data/paper_dry_run_*.log
+
+# Reader v2 gallery labels — Abhi's marking, private trade-data only (repo public)
+gallery2/data/labels/

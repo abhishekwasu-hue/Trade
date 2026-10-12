@@ -1853,7 +1853,7 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 legs start/end bar + ts + किंमत + impulse / correction / uncertain, trend states, demand / supply zones, marker, marked_at, notes; तपासणी —
 क्रम, overlap नाही, किंमत = bar चा high / low ± 0.25 MR, holdout नाही), `data` (sources + policy: NIFTY "golden" — holdout / illustration चा
 bar कधीच नाही, 1m resample आधी गाळतो; BANKNIFTY NIFTY-holdout तारखा फक्त तुमच्या case ला), `store` (Supabase `reader2_gallery` upsert +
-revision; JSON folder पर्याय; export ⇒ `gallery2/data/labels/dev|test/<id>.json`; sealed: `calibration_labels` फक्त dev folder, test file
+revision; JSON folder पर्याय; export ⇒ private trade-data `reader2_gallery/labels/dev|test/<id>.json` (repo public ⇒ labels repo मध्ये नाहीत); sealed: `calibration_labels` फक्त dev folder, test file
 dev मध्ये ⇒ `SealedTestError`), `candidates` (फक्त किंमतीवरून वर्णनात्मक tags, न चढणारा grid, seeded निवड, 28 / 12 split).
 `scripts/reader2_gallery_candidates.py` ⇒ `gallery2/data/manifest.json` (40 charts: NIFTY D 8 / 1H 7 / 15M 8, BANKNIFTY D 7 / 1H 3 / 15M 7;
 SENSEX data नाही ⇒ 0; seed 7; dev 28 / test 12; तुमचे 2 cases dev + `calibration: false`). `scripts/reader2_gallery_export.py` (VPS).

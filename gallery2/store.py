@@ -5,8 +5,8 @@
     आधीच `cloud_db.get_connection` (VPS `.env`) वापरतो ⇒ Abhi ने केलेली marking VPS rebuild / redeploy नंतरही टिकते, कोणत्याही device
     वरून दिसते. अपयश ⇒ False (raise नाही; page कारण दाखवतो). Writes फक्त या table मध्ये — bot / orders ला हात नाही.
   • **पर्याय = JSON folder** (`READER2_GALLERY_STORE=/path/to/dir`): DB नसताना / tests साठी — त्याच format मध्ये.
-  • **Export** (`scripts/reader2_gallery_export.py`, VPS वर): DB ⇒ `gallery2/data/labels/<split>/<id>.json` (एक chart = एक साधी JSON
-    file). CR4 चं CI हे files secrets शिवाय वाचतं (public repo मध्ये फक्त labels — candles नाहीत; golden_chart_cases सारखं).
+  • **Export** (`scripts/reader2_gallery_export.py`, VPS वर): DB ⇒ private trade-data `reader2_gallery/labels/<split>/<id>.json` (एक chart = एक साधी JSON
+    file). Repo public ⇒ labels repo मध्ये कधीच नाहीत (Abhi नियम: private storage); CR4 scoring trade-data असलेल्या ठिकाणी (CR-Q13).
   • **Sealed test split:** `load_labels(..., purpose="calibration")` फक्त `labels/dev/` उघडतो (आणि फक्त `calibration: true` charts);
     manifest मध्ये test असलेला chart dev folder मध्ये सापडला ⇒ `SealedTestError`. Test labels फक्त purpose="acceptance".
 """
@@ -19,7 +19,9 @@ from . import schema as SC
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST = os.path.join(HERE, "data", "manifest.json")
-LABELS_DIR = os.path.join(HERE, "data", "labels")
+# Abhi नियम: त्यांचे charts / marking फक्त private storage मध्ये (repo public) ⇒ labels default private trade-data मध्ये
+LABELS_DIR = os.environ.get("READER2_GALLERY_LABELS") or os.path.join(os.environ.get("TRADE_DATA_DIR", "/root/trade-data"),
+                                                                     "reader2_gallery", "labels")
 TABLE = "reader2_gallery"
 CREATE_SQL = f"""CREATE TABLE IF NOT EXISTS {TABLE} (
     chart_id TEXT PRIMARY KEY, split TEXT NOT NULL, symbol TEXT NOT NULL, timeframe TEXT NOT NULL, payload TEXT NOT NULL,

@@ -260,7 +260,7 @@ cases), and the reviewer's probes (impulse with a 12-point, 3-bar wave 4 or wave
 | `gallery2/candidates.py` | descriptive shape tags, window grid, seeded selection, 28 / 12 split |
 | `gallery2/data/abhi_cases.json`, `gallery2/data/manifest.json` | Abhi's existing marked cases; the 40-chart manifest (dates / tags only — no candles in the public repo) |
 | `scripts/reader2_gallery_candidates.py` | builds the manifest (deterministic; seed in the manifest) |
-| `scripts/reader2_gallery_export.py` | VPS: DB ⇒ `gallery2/data/labels/<split>/<id>.json` (one file per chart) |
+| `scripts/reader2_gallery_export.py` | VPS: DB ⇒ private trade-data `reader2_gallery/labels/<split>/<id>.json` (one file per chart; never in the public repo) |
 | `page_reader2_gallery.py` | ANALYZE ⇒ "Reader v2 Gallery (प्रयोगिक)" (`/reader2-gallery`) |
 
 **Record (one chart).** `schema`, `id`, `symbol`, `timeframe` (D / 1H / 15M), `window {start, end}` (first / last bar timestamps), `split`,
@@ -275,7 +275,7 @@ zones `low < high` and near the window's price range; the window passes the data
 `opportunity_engine.store._run` and the VPS `.env`; the dashboard runs on the VPS with that connection, so a mark survives a redeploy /
 container rebuild and is visible from any device. Upsert per chart, `revision` + 1 on each edit; failures return False (the page shows
 it). `READER2_GALLERY_STORE=<folder>` switches to plain JSON files (same format) when the DB is not wanted. **CI without secrets:**
-`scripts/reader2_gallery_export.py` (run on the VPS) writes one plain JSON file per chart under `gallery2/data/labels/dev|test/`, split
+`scripts/reader2_gallery_export.py` (run on the VPS) writes one plain JSON file per chart under the private trade-data folder `reader2_gallery/labels/dev|test/` (env `READER2_GALLERY_LABELS` overrides; the repo is public, so labels are never committed to it), split
 always from the manifest; invalid records are not written. Only labels go to the public repo (as `tests/golden_chart_cases`); candles stay
 in the repo's NIFTY parquet or private trade-data (CR-Q13, CR-Q21).
 
