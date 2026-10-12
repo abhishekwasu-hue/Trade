@@ -1935,3 +1935,19 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+## 2026-10-12 · CD14 — default chart वर Abhi चं स्वीकारलेलं वाचन (BANKNIFTY Feb → Apr = sharp DOWN impulse)
+
+**काय केलं:** `decision3/accepted_legs.py` (loader + validation + match) आणि `decision3/data/accepted_legs.json` (BANKNIFTY 1D 2026-02-03 →
+2026-04-02, impulse, down, "Abhi 2026-10-12 CD14"). `daily_swings.build(..., symbol=, accepted=)` ⇒ प्रत्येक trend-degree leg वर `accepted`,
+`drawn_as` ("impulse" ⇔ read_counter 5 waves किंवा स्वीकारलेलं; नाहीतर "trend leg"), `check` (पूर्ण तपासणी मजकूर). जुळवणं फक्त leg च्या pivot
+तारखांवरून ± `daily_pivot_n` sessions + दिशा (code मध्ये तारीख / symbol नाही, किंमत नाही). Default / Telegram chart: स्वीकारलेला leg घन
+"impulse"; न-स्वीकारलेला unverified leg पातळ dashed "trend leg"; title / caption / legend / chart मजकुरात "not verified" नाही
+(`trend_line(q)` / `state_short`: "new decline in progress", impulse दावा नाही). Debug: `trend_line(q, debug=True)`, `daily_swings_debug_png` मध्ये
+प्रत्येक trend leg + "impulse not verified (structure vote: zigzag, n 9; anatomy vote: not run) · accepted by Abhi as impulse (…)", JSON
+`trend_line_debug` + `objects.impulses[].check`. Vision facts / prompt (v4): chart जसा दिसतो (घन = impulse / स्वीकारलेलं, dashed = trend leg).
+**Tests:** `test_decision3_chart_declutter.py` मध्ये CD14 (UP / DOWN आरसा: accepted ⇒ घन + default मजकुरात "not verified" नाही; unaccepted ⇒
+dashed "trend leg"; ± n sessions जुळतं, n + 1 / उलट दिशा / दुसरा symbol नाही; चालू स्वीकारलेला leg ⇒ "new impulse"; debug तपशील; loader
+validation; BANKNIFTY real data — file नसेल तर skip). जुने wording tests CD14 निर्णयानुसार बदलले (golden नाहीत). 5 files: 135 pass, 1 xfail;
+vision_audit 22 pass.
+**Charts:** trade-data `review/v22/daily_swings_v6/` (BANKNIFTY + NIFTY, 2y). BANKNIFTY: Feb → Apr घन impulse, चालू Jun → Sep leg dashed
+"trend leg" (flat, n 13), title "new decline in progress". NIFTY: बदल नाही (चालू leg 5 waves verified). उघडे: OPEN_QUESTIONS CD14-A … CD14-E.

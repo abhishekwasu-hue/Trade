@@ -81,7 +81,7 @@ def main(argv=None):
     sym = a.symbol.upper()
     d = load_daily(a.daily, sym)
     w = window_of(d, a.years)
-    v = DS.build(d, window=w, with_elliott=not a.no_elliott, sealed=sealed_fn(sym))
+    v = DS.build(d, window=w, with_elliott=not a.no_elliott, sealed=sealed_fn(sym), symbol=sym)   # CD14: Abhi-accepted legs
     v["full_window"] = v["i0"] == len(d) - w and (d["timestamp"].iloc[-1] - d["timestamp"].iloc[0]).days >= 365.25 * a.years - 7
     sd = os.path.join(a.out_dir, sym)
     os.makedirs(sd, exist_ok=True)
