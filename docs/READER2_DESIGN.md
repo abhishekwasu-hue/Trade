@@ -1,8 +1,8 @@
 # Chart Reader v2 — design note and legs2 feature audit (CR0)
 
 Abhi: TRADE_SESSION_CHART_READER_V2. Read candles the way a trader does, then re-check the marking. This note covers CR0 (design +
-audit); CR1 (anatomy vote + fixtures) and CR2 (fusion + self-check) are implemented in `reader2/`. CR3+ (marking page, gallery
-storage, CI scoring, chart layer, decision3 shadow) are **not started**. Revised after the independent BANKNIFTY review: candles only at
+audit); CR1 (anatomy vote + fixtures) and CR2 (fusion + self-check) are implemented in `reader2/`; CR3 (marking page + gallery
+storage, §13) in `gallery2/` + `page_reader2_gallery.py`. CR4+ (CI scoring, chart layer, decision3 shadow) are **not started**. Revised after the independent BANKNIFTY review: candles only at
 the lowest degree with a roll-up above, one vote never sets the trend, uncertain is re-entered by a clear impulse, provisional leg.
 
 **Research-only.** No bot, no decision3 gate and no Vision code imports `reader2` until the gallery gate (§5) passes and Abhi approves
@@ -245,3 +245,78 @@ plus realistic noisy candles (bodies ~50–65 %, wicks on both sides; seeds 1–
 candles that must be challenged (uncertain, no trend), sharp a-b-c (impulsive a and c; 3 depths, ideal + noisy) that must stay a
 correction, unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a ⇒ never impulse, never a flip; uncertain allowed), sharp_a5 (live inv 2 / 5 / 7
 cases), and the reviewer's probes (impulse with a 12-point, 3-bar wave 4 or wave 2 ⇒ never correction/high) — each with its mirror.
+
+## 13. CR3 — golden gallery: storage, candidate set, marking page (spec §5)
+
+**Where.** Package `gallery2/` (not `reader2/`): it holds Abhi's **labels**, not reader logic. The dashboard page may not import
+`reader2` (boundary test), and the gallery must not depend on reader output, so `gallery2` imports neither `reader2` nor decision3
+(`test_gallery_does_not_import_reader_or_engine`). CR4 will read `gallery2` from the reader side.
+
+| File | What |
+|---|---|
+| `gallery2/schema.py` | one marked chart (below), `validate(rec, cand, bars)`, `from_points` / `to_points` (clicked pivots ⇔ legs) |
+| `gallery2/data.py` | sources (repo NIFTY 1m; trade-data NIFTY golden 1m, BANKNIFTY D / 1H / 15M), policy filter, `load_window(cand, warmup_bars)` |
+| `gallery2/store.py` | `DbStore` (Supabase `reader2_gallery`), `DirStore` (JSON folder), `save_record`, `progress`, `export_json`, `load_labels`, `calibration_labels` |
+| `gallery2/candidates.py` | descriptive shape tags, window grid, seeded selection, 28 / 12 split |
+| `gallery2/data/abhi_cases.json`, `gallery2/data/manifest.json` | Abhi's existing marked cases; the 40-chart manifest (dates / tags only — no candles in the public repo) |
+| `scripts/reader2_gallery_candidates.py` | builds the manifest (deterministic; seed in the manifest) |
+| `scripts/reader2_gallery_export.py` | VPS: DB ⇒ `gallery2/data/labels/<split>/<id>.json` (one file per chart) |
+| `page_reader2_gallery.py` | ANALYZE ⇒ "Reader v2 Gallery (प्रयोगिक)" (`/reader2-gallery`) |
+
+**Record (one chart).** `schema`, `id`, `symbol`, `timeframe` (D / 1H / 15M), `window {start, end}` (first / last bar timestamps), `split`,
+`legs [{start_bar, start_ts, start_price, end_bar, end_ts, end_price, label}]` (bar = index inside the window; label impulse /
+correction / uncertain), `trend [{from_bar, from_ts, state}]` (up / down / range / uncertain, valid until the next row), `zones [{kind
+demand | supply, low, high, from_bar?}]`, `marker`, `marked_at`, `notes`. Validation: ids / window / split match the manifest; legs
+ordered, `end_bar > start_bar`, no overlap (a shared end / start pivot is fine); an up leg runs low ⇒ high, a down leg high ⇒ low, each
+price within `PRICE_TOL_MR` (0.25) × the window's median range of that bar's extreme; timestamps equal the bars'; trend rows increasing;
+zones `low < high` and near the window's price range; the window passes the data policy.
+
+**Storage — why Supabase.** Abhi's other hand labels (`backtest_review`, `golden_gallery` verdicts) already live in Supabase through
+`opportunity_engine.store._run` and the VPS `.env`; the dashboard runs on the VPS with that connection, so a mark survives a redeploy /
+container rebuild and is visible from any device. Upsert per chart, `revision` + 1 on each edit; failures return False (the page shows
+it). `READER2_GALLERY_STORE=<folder>` switches to plain JSON files (same format) when the DB is not wanted. **CI without secrets:**
+`scripts/reader2_gallery_export.py` (run on the VPS) writes one plain JSON file per chart under `gallery2/data/labels/dev|test/`, split
+always from the manifest; invalid records are not written. Only labels go to the public repo (as `tests/golden_chart_cases`); candles stay
+in the repo's NIFTY parquet or private trade-data (CR-Q13, CR-Q21).
+
+**Sealed test split.** `store.calibration_labels(manifest)` is the only calibration path: it opens only `labels/dev/`, returns only
+`calibration: true` charts, and raises `SealedTestError` if a manifest-test chart (or a record whose split / id disagrees) is found in
+the dev folder. Test labels load only with `purpose="acceptance"`. Tests: a file-open spy proves no `test/` file is opened during
+calibration; a smuggled test file raises; `reader2/` never mentions `acceptance` / `load_labels` / `labels/test`.
+
+**Holdout.** NIFTY: `data_policy` purpose "golden" (IS / VAL / CONTAMINATED) — 1m rows are filtered **before** resampling, warm-up never
+crosses into the holdout, NIFTY never gets an exception. BANKNIFTY: rows on NIFTY-holdout dates are dropped unless the chart is one of
+Abhi's existing marked cases (`holdout_dates_exception`, CR-Q14).
+
+**Candidate set (`gallery2/data/manifest.json`, seed 7).** Rule (also verbatim in the manifest): Abhi's cases first (dev,
+`calibration: false`); then per (symbol, TF) a grid of non-overlapping windows (Daily 160 bars, 1H 140 ≈ 20 sessions, 15M 150 ≈ 6
+sessions; intraday windows start at a session open); NIFTY auto windows only from IS 2015–2021 (VAL kept clean as in
+`research/golden_gallery.py`); each window gets **descriptive, price-only** tags — direction (net ÷ span ≥ 0.4), deepest counter-swing of
+the main move (deep ≥ 0.618 / shallow ≤ 0.382), `flat_ext` (b ≥ 0.9 a, c ≥ 1.2 a on a 6 × MR zigzag), `impulse` (direction ≥ 0.7, depth
+≤ 0.5); seeded round-robin over the buckets impulse, flat_ext, deep, shallow, down, up, range. No reader2 / decision3 output and no
+trade result is used. Split: Abhi cases dev; 12 test drawn per (symbol, TF) in proportion (largest remainder), seeded. Same symbol + TF
+test / dev windows never overlap; cross-TF date overlap is listed in the manifest (CR-Q16).
+
+| | Daily | 1H | 15M | data |
+|---|---|---|---|---|
+| NIFTY | 8 | 7 | 8 (incl. flat-C case) | repo 1m 2015–2021 (IS); golden 1m Jul–Oct 2026 (trade-data) for the case |
+| BANKNIFTY | 7 (incl. sharp-fall case) | 3 | 7 | trade-data D 2016-10 → 2026-10, 1H / 15M only 2026-07-13 → 2026-10-09 |
+| SENSEX | 0 | 0 | 0 | **no local OHLC** (repo or trade-data) — quota moved to the others (CR-Q15) |
+
+Total 40 = 28 dev (NIFTY 16, BANKNIFTY 12) + 12 test (NIFTY 7, BANKNIFTY 5). Abhi's cases: `BANKNIFTY_D_20251215` (Feb top → sharp
+fall → 2 Apr low = DOWN impulse, a-b-c into the sharp-fall supply, new decline) and `NIFTY_15M_202609280915` (22,801 → 22,220 impulse,
+5–6 Oct A-B-C with c beyond a).
+
+**Marking page.** Pick a chart (✔ = saved; filter all / unmarked / marked; progress n/40, dev, test). Candles with a small dot on every
+high and low: click pivots left → right (Streamlit 1.63 `plotly_chart(on_select="rerun", selection_mode="points")`, checked in a headless
+browser); each consecutive pair is a leg; H / L comes from the nearer extreme. Fallback: bar number + H / L + "add point", undo, clear.
+Legs table: pick impulse / correction / uncertain per leg (required). Trend table (from bar, state) and zones table (kind, low, high,
+optional from bar). Save validates first and lists every error. Chart text is English (leg "1 impulse", "demand", "trend: down"); help is
+Marathi. No order / broker code, no paid API, no Vision call.
+
+**Tests.** `tests/test_reader2_gallery.py` — schema accept / 11 rejections, tolerance in MR units, NIFTY holdout + illustration rejected
+(no exception), warm-up never crosses the holdout, BANKNIFTY holdout-date rows, DirStore / DbStore round-trip (sqlite, revision), export
+(manifest split, invalid skipped), progress, sealed calibration (spy, smuggled file), import boundaries, builder determinism / 28-12 /
+cases dev / policy / no same-TF overlap, shape tags, committed manifest, every manifest window loads and validates (data present),
+page AppTest (render, add points, refuse unlabelled save, saved marking reloads).
+
