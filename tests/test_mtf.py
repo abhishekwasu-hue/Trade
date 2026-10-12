@@ -300,7 +300,7 @@ def test_mtf_check_cli_banknifty(tmp_path, monkeypatch):
     assert man["concepts"]["concepts"]["abc"]["show"] is False
     from backtest_review import telegram as TG
     m = TG.load_manifest(str(tmp_path / "out" / "r1"))                         # sender जसाच्या तसा वाचतो
-    assert m["items"][0]["n"] == 1 and TG.caption(m, m["items"][0]).startswith("🗺 MTF CHECK")
+    assert m["items"][0]["n"] == 1 and "🗺 MTF CHECK" in TG.caption(m, m["items"][0]).split("── details ──")[-1]   # Telegram cleanup: headline वर, details मध्ये MTF CHECK
     with pytest.raises(SystemExit):
         SM.main(["--instrument", "BANKNIFTY", "--tf-dir", str(tmp_path / "nope"), "--dates", day, "--out-dir", str(tmp_path / "o2"),
                  "--run-id", "r2"])
