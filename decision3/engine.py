@@ -35,6 +35,12 @@ def level_eval_brief(dd, part, extra, lvl):
             "target": rk.get("target"), "why": (extra.get("why") or "")[:120]}
 
 
+def mature_intact(st):
+    """Abhi (12 Oct, owner rule): maturity = पुरावा फक्त. Trend रचना अखंड ⇔ protected close ने तुटलेला नाही (phase ≠ origin_broken) आणि
+    उलट same-degree impulse / correction नक्की नाही (counter ≠ correction). अखंड ⇒ mature फक्त grade एक पायरी खाली; नाहीतर जुना cap (weak)."""
+    return st.phase in ("impulse", "correction") and st.counter != "correction"
+
+
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
@@ -123,7 +129,10 @@ class V22:
             if getattr(st, "corr_zone", None) is not None and st.phase == "impulse" and st.counter in (None, "pullback"):                  # ABC_FIX rule 3: correction sharp zone मध्ये संपली + trend
                 ctx["evidence"] = list(st.evidence)                         # दिशेने close ⇒ continuation पुरावा (cap नाही; नोंद — Q51)
                 ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
-            if st.mature:
+            if st.mature and mature_intact(st):                             # Abhi (12 Oct): maturity = पुरावा फक्त — रचना अखंड ⇒ gate नाही,
+                ctx["step_down"] = True                                     # grade फक्त एक पायरी खाली (A ⇒ B; B तसाच) — `step_down_conv`
+                ctx["notes"].append("impulse mature — target जवळ (Q44) · पुरावा फक्त: protected अखंड, उलट impulse नाही ⇒ grade एक पायरी खाली")
+            elif st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("impulse mature — target जवळ (Q44: parent नंतरच्या पहिल्या impulse leg चं टोक); मोठा reversal शक्य ⇒ नवे entries weak")
         elif st.trend in ("NEUTRAL", "UNKNOWN") and wk.trend in ("UP", "DOWN"):
@@ -137,14 +146,24 @@ class V22:
         return ok, why, st, ctx
 
     def step2(self, t, trend, band=None):
-        act = self.levels.active(t, trend, band)
+        act = self.levels.active(t, trend, band) + self.tl_areas(t, trend)
         if not act:
             return False, "trade-बाजूचा जिवंत 1H level नाही", act
         a = act[0]
         star = "★" * a["sweeps"]
         return True, f"{a['role']} {a['lo']:,.0f}–{a['hi']:,.0f} ({'+'.join(a['births'])}){star} · अंतर {a['dist']:,.0f}", act
 
-    def _level_eval(self, t, trend, lvl, cap=None, notes=None):
+    def tl_areas(self, t, trend):
+        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + horizontal trade-बाजूचा level ⇒ confluence area
+        (`trendline.confluence_areas`). DOWN ⇒ वरचे resistance + उतरती रेघ; UP ⇒ खालचे support + चढती रेघ; RANGE / बाकी ⇒ नाही."""
+        if trend not in ("UP", "DOWN"):
+            return []
+        d = M._dir(trend)
+        role = LV.RES if d == M.DOWN else LV.SUP
+        cands = [x for x in self.levels.snapshot(t) if x["role"] == role and not (x["below"] if d == M.DOWN else x["above"])]
+        return TL.confluence_areas(self, t, d, cands)
+
+    def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
         """एका active level साठी ③–⑦ + पुरावे ⇒ (decision, checklist part, extra)."""
         A = self.levels.A
         d = M._dir(trend, lvl["role"])
@@ -166,7 +185,7 @@ class V22:
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         chk["⑥"] = [ok6, why6]
         last3 = range(max(0, t - 2), t + 1)
-        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
+        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D", "tl")), "fresh": lvl["fresh"],
               "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1, "second_attempt": k["legs"] >= 2,
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
@@ -204,6 +223,11 @@ class V22:
         if conv2 != conv:
             conv = extra["conviction"] = conv2
             missing.extend(x for x in (notes or []) if "कमाल" in x or "weak" in x)   # फक्त cap लावणाऱ्या नोंदी
+        if step_down:                                                    # mature + रचना अखंड ⇒ एक पायरी खाली (A ⇒ B), entry अडवत नाही
+            conv3 = M.step_down_conv(conv)
+            if conv3 != conv:
+                conv = extra["conviction"] = conv3
+                missing.append("impulse mature (पुरावा) ⇒ grade एक पायरी खाली")
         if conv in ("A", "B"):
             return M_SETUP, chk, extra
         if conv == "weak":
@@ -222,7 +246,7 @@ class V22:
             rank = {M_SETUP: 0, M_WAIT: 1, M_NO: 2}
             res = []
             for lvl in act:
-                dd, part, extra = self._level_eval(t, trend, lvl, ctx["cap"], ctx["notes"])
+                dd, part, extra = self._level_eval(t, trend, lvl, ctx["cap"], ctx["notes"], step_down=bool(ctx.get("step_down")))
                 res.append((rank[dd], dd, part, extra, lvl))
             evals = [level_eval_brief(dd_, part_, extra_, lvl_) for _, dd_, part_, extra_, lvl_ in res]
             res.sort(key=lambda x: x[0])
@@ -237,6 +261,7 @@ class V22:
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
+                "mature_step_down": bool(ctx.get("step_down")),
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
                                                                   "day": ("before window" if self.sealed and self.sealed(st.protected.day)

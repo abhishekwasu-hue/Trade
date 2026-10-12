@@ -353,11 +353,13 @@ def _ohlc(A, i):
 
 
 def _same_window(tss, t, i, s):
-    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि entry_start नंतरचा? (tss नसेल ⇒ हो)."""
+    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि पुरावा-खिडकीतला (`evidence_start`, default सत्राची सुरुवात 09:15)? (tss नसेल ⇒ हो).
+    Abhi (12 Oct): opening candle चा sweep / wick / volume = पुरावा (2-candle form चा पहिला भाग / "मागची" candle) — entry मात्र फक्त
+    `entry_start` … `entry_end` मधल्या commitment candle वर (`commitment` ची वेळ-खिडकी तशीच)."""
     if tss is None:
         return True
     ti, tt = pd.Timestamp(tss[i]), pd.Timestamp(tss[t])
-    return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s["entry_start"]
+    return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s.get("evidence_start", s["entry_start"])
 
 
 def reversal_form(A, t, d, s, tss=None):
@@ -649,6 +651,12 @@ def cap_conv(conv, cap):
     if cap is None or conv is None or conv not in CONV_RANK:
         return conv
     return cap if CONV_RANK[conv] > CONV_RANK[cap] else conv
+
+
+def step_down_conv(conv):
+    """Abhi (12 Oct): mature + trend रचना अखंड ⇒ grade फक्त एक पायरी खाली, पण entry अडवत नाही: A ⇒ B; B / weak / against तसेच
+    (B ⇒ weak केलं असतं तर maturity ने entry अडली असती — owner नियमाविरुद्ध)."""
+    return "B" if conv == "A" else conv
 
 
 # ------------------------------------------------------------------------------------------------ §5.1 पहिला पाय

@@ -110,6 +110,7 @@ def _V_with(daily_states, weekly_states):
 
 
 def test_step1_weekly_against_caps_b_and_mature_or_origin_broken_caps_weak():
+    from decision3 import engine as E3
     d = daily_from_path(FLAT)
     st = DD.fold(d, S)
     wk_up = [DD.DState(0, st[0].day, st[0].known_at, "UP")]
@@ -120,7 +121,8 @@ def test_step1_weekly_against_caps_b_and_mature_or_origin_broken_caps_weak():
     _, sm = _fold(HEAD + WAVE4 + WAVE5)
     V = _V_with(sm, [DD.DState(0, sm[0].day, sm[0].known_at, "UNKNOWN")])                        # (5) mature
     ok, why, s1, ctx = V.step1(0)
-    assert s1.mature and ctx["cap"] == "weak" and "mature" in " ".join(ctx["notes"])
+    # Abhi (12 Oct): रचना अखंड (impulse, उलट impulse नाही) ⇒ mature = पुरावा फक्त ⇒ cap नाही, grade एक पायरी खाली (step_down)
+    assert s1.mature and E3.mature_intact(s1) and ctx["cap"] is None and ctx.get("step_down") and "mature" in " ".join(ctx["notes"])
     path = FLAT[:12] + [96]
     sb = DD.fold(daily_from_path(path), OB)
     V = _V_with(sb, [DD.DState(0, sb[0].day, sb[0].known_at, "UNKNOWN")])
