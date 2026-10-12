@@ -111,7 +111,8 @@ def context_from_state(st, s=None, asof=None):
     s = settings(s)
     ctx = {"ok": False, "trend": st.trend, "sides": set(), "band": st.band, "phase": st.phase, "counter": st.counter,
            "protected": None if st.protected is None else round(float(st.protected.price), 2), "asof": asof,
-           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature)}
+           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature),
+           "targets": [round(float(x), 2) for x in (getattr(st, "targets", None) or ())]}   # फक्त माहिती (15:45 सारांश) — निर्णयात नाही
     if st.trend in ("UP", "DOWN"):
         if st.phase == "origin_broken":
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: protected origin close ने तुटला)"
