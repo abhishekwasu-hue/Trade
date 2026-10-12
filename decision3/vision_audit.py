@@ -11,7 +11,7 @@ import json
 import os
 import time
 
-PROMPT_VERSION = "v22_chart_audit_v3"                                     # v3: Daily structure-consistency (§5.8), legs / letters
+PROMPT_VERSION = "v22_chart_audit_v4"                                     # v4: CD14 leg wording (solid = impulse / accepted, dashed = trend leg)
 TASK = "v22_chart_audit"
 SECTIONS = ("zones", "structure", "pullback_trigger", "entry_sl_target")
 SECTION_NAMES = {"zones": "Zones", "structure": "Structure", "pullback_trigger": "Pullback & trigger", "entry_sl_target": "Entry/SL/Target"}
@@ -58,8 +58,9 @@ DAILY_SYSTEM_PROMPT = """ROLE
 You audit a DAILY structure chart produced by a rule-based trading engine (NSE index, PAPER/shadow review only). You judge whether what is
 DRAWN is placed where the candles say it should be. You never trade, never change levels, never change the engine's decision.
 
-The chart shows only trend-degree structure: trend legs drawn through their own swing pivots (solid orange = verified 5-wave impulse,
-dashed orange = impulse not verified by the structure-only check — never a claim that the leg is corrective), corrections as boxes with wave letters (a-b-c, a-e, W-X-Y) at the pivots the
+The chart shows only trend-degree structure: trend legs drawn through their own swing pivots (solid orange = impulse: 5 waves by the
+engine's structure check, or the owner's accepted reading; dashed orange = trend leg, not claimed as an impulse — never a claim that the
+leg is corrective), corrections as boxes with wave letters (a-b-c, a-e, W-X-Y) at the pivots the
 engine read, the protected origin
 line, and at most six horizontal level bands with a legend. Minor pivots and tags are intentionally NOT drawn — never ask for them.
 Only the current and the previous correction carry text; older corrections are faint without text, or omitted on long windows — by
@@ -88,6 +89,11 @@ CONSISTENCY_ICON = {"consistent": "✅", "inconsistent": "❌", "na": "—"}
 REPAIR = "Your previous reply was not a valid JSON object for the required schema. Reply again with only that JSON object — no prose, no code fences."
 
 
+def _drawn_as(x):
+    """CD14: default chart वरचं leg चं नाव (daily_swings.drawn_as सारखंच; जुन्या JSON ला drawn_as नसेल तर verified / accepted वरून)."""
+    return x.get("drawn_as") or ("impulse" if x.get("verified") or x.get("accepted") else "trend leg")
+
+
 def facts_text(kind, js):
     """Engine JSON ⇒ छोटा facts मजकूर (आकडे फक्त इथून)."""
     if kind == "v22_daily_swings":
@@ -109,10 +115,12 @@ def facts_text(kind, js):
             if ch.get("dropped"):                                          # label ला जागा नव्हती ⇒ chart वर नाही (Vision ला सांगतो)
                 lines.append("Not drawn (no room for the label): " + "; ".join(ch["dropped"]) + ".")
             lg = ob.get("impulses") or []
-            if lg:
-                lines.append("Trend-degree legs (structure-only read_counter; dashed = impulse not verified): " + "; ".join(
-                    f"{x.get('from_day')}..{x.get('to_day')} {'impulse' if x.get('verified') else 'not verified'} "
-                    f"(read {x.get('family')}, n {x.get('n')})" for x in lg) + ".")
+            if lg:                                                         # CD14: chart वर जसं काढलं तसं (घन impulse / dashed trend leg)
+                lines.append("Trend-degree legs as drawn (solid = impulse: 5 waves by the structure check or the owner's accepted "
+                             "reading; dashed = trend leg, not claimed as an impulse): " + "; ".join(
+                                 f"{x.get('from_day')}..{x.get('to_day')} {_drawn_as(x)}"
+                                 + (" (owner-accepted reading)" if x.get("accepted") else
+                                    " (5 waves)" if x.get("verified") else "") for x in lg) + ".")
             cap = [x for x in str(js.get("caption") or "").splitlines() if x.strip()]
             if cap:                                                        # §5.8: caption चा trend दावा (consistency तपासणीसाठी)
                 lines.append("Caption (trend claim): " + " | ".join(cap[:3]))

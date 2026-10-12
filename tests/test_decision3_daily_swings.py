@@ -146,6 +146,22 @@ def test_script_writes_manifest_nifty_first_and_drops_holdout(tmp_path):
     assert len(RT.load_manifest(str(out))["items"]) == 2
 
 
+def test_script_survives_malformed_accepted_legs_override(tmp_path, monkeypatch, caplog):
+    """PR #304: a broken private override (DECISION3_ACCEPTED_LEGS) never kills the daily chart / Telegram run — warning, repo file."""
+    from decision3 import accepted_legs as AL
+    from scripts import v22_daily_swings_view as VS
+    src = tmp_path / "d.csv"
+    daily_from_path(FLAT + [66, 50])[["timestamp", "open", "high", "low", "close"]].to_csv(src, index=False)
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    monkeypatch.setenv(AL.ENV, str(bad))
+    out = tmp_path / "run"
+    with caplog.at_level("WARNING", logger=AL.__name__):
+        assert VS.main(["--symbol", "BANKNIFTY", "--daily", str(src), "--out-dir", str(out), "--no-elliott", "--years", "1"]) == 0
+    assert os.path.exists(out / "BANKNIFTY" / "daily_swings.png")
+    assert any("falling back to the repo file" in r.getMessage() for r in caplog.records)
+
+
 def test_no_dates_or_prices_hardcoded_in_module():
     src = open(DS.__file__, encoding="utf-8").read() + open(VS_PATH(), encoding="utf-8").read()
     assert not re.search(r"20\d\d-\d\d-\d\d", src)

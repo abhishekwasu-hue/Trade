@@ -1,0 +1,7 @@
+{
+ "note": "Owner-accepted trend-degree readings (CD14). A drawn trend leg whose own pivot dates match a record (± daily_pivot_n sessions) is drawn as a solid impulse on the default and Telegram charts; the structure / anatomy votes stay in the debug view and JSON. Dates only, no prices: matching never uses price.",
+ "legs": [
+  {"symbol": "BANKNIFTY", "timeframe": "1D", "from": "2026-02-03", "to": "2026-04-02", "reading": "impulse", "direction": "down",
+   "source": "Abhi 2026-10-12 CD14"}
+ ]
+}
