@@ -246,6 +246,12 @@
 | TF6 | Level bots ला तोच gate (`structure_against` ⇒ नवे entries नाहीत) | हो (shared ① gate, fail-safe) | फक्त V22 |
 | TF7 | §2 a–f audit columns (diagnostic, `scripts/setups_audit_columns.py`): (a) 15M N 3 / 5 sessions, 1H N 2 / 20, Daily N 2 / 126 + तुटलेले Daily lows; (b) edge touch = ≤ 2 candles + near half; (d) provisional = engine `prov` stack (why-trail वरून, अंदाजे); 2015–2024 ला futures volume नाही ⇒ NA | तसेच (फक्त अहवाल; engine बदल इतर branches वर) | Abhi च्या व्याख्या |
 
+| D12-1 | Maturity (Abhi 12 Oct: पुरावा फक्त, "कमाल एक पायरी खाली") — B setup चं काय? | रचना अखंड ⇒ A ⇒ B, B तसाच (B ⇒ weak केलं तर maturity ने entry अडते — owner नियमाविरुद्ध); रचना अखंड नाही ⇒ जुना cap weak | B ⇒ weak (म्हणजे mature + B ⇒ वाट) |
+| D12-2 | फक्त तिरक्या trendline वरून reversal (horizontal level नाही) — area? | नाही: spec ② level जन्म (a)–(d) च; रेघ फक्त horizontal level शी confluence असेल तर area (overlap पट्टा, births + `tl`) | रेघ एकटी area, grade कमाल B |
+| D12-3 | तिरकी रेघ किती स्पर्श? | 2 (anchors; `tl_min_touches`) — spec "पक्की ≥ 3" = माहिती (`tl.touches`) | ≥ 3 आवश्यक |
+| D12-4 | पुरावा-खिडकी (`evidence_start`) | 09:15 (सत्राची सुरुवात) — opening candle 2-candle form / संदर्भ म्हणून; entry खिडकी 09:30 … 15:15 तशीच | entry_start (जुनं) |
+| D12-5 | ⑦ target 12-Oct सारख्या case मध्ये: sweep वर SL + जवळचा support target ⇒ R:R < 3 शक्य | Q14 तसाच (I_end / जवळचा जिवंत level — जो जवळ); बदल नाही | पहिला target जवळचा level, R:R I_end वर (areas-quality branch) |
+| D12-6 | Trendline confluence ने grade वाढावा का? (spec ② "trendline रेघ तिथे (+)") | नाही: confluence area चा ★ / conviction parent level इतकाच; `tl_confluence` फक्त पुरावा-नोंद (वजन नाही). Area फक्त ② च्या active (जवळचे `active_levels_max`) levels वरून, किंमतीच्या योग्य बाजूला; p2 नंतर close रेघेपलीकडे ⇒ रेघ नाही | `tl_confluence` ला evidence वजन (उदा. `level_star` सारखं) |
 
 ## Touch / levels audit (TRADE_SESSION_TELEGRAM_CLEANUP §4–§5, one-bot §7(e)) — `docs/reports/v22_missed_levels_touch.md`
 

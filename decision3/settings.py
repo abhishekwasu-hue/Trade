@@ -63,6 +63,8 @@ DEFAULTS = {
     "commit_close_frac": 2 / 3,              # signal-bar: close range च्या trend-बाजूच्या तृतीयांशात (§5.2)
     "touch_window_bars": 3,                  # ③ "level मध्ये / लगत": शेवटच्या इतक्या 15M bars पैकी एकाने पट्ट्याला स्पर्श (commitment + आधीचा)
     "entry_start": "09:30", "entry_end": "15:15",   # entry bar ची सुरुवात start ≤ hm < end (15:15 चा bar बाजार बंदला close ⇒ नाही)
+    "evidence_start": "09:15",               # Abhi (12 Oct): पुरावा-खिडकी (2-candle form / संदर्भ candle) सत्राच्या सुरुवातीपासून — opening candle चा
+                                             # sweep + wick = पुरावा; entry खिडकी (entry_start) तशीच
     # candle वाचन / §5.3
     "candle_avg_n": 5,                       # "मोठा / लहान" = मागच्या इतक्या candles च्या सरासरीशी तुलना (§5.2)
     "doji_body_max": 0.1,                    # body / range < हे ⇒ doji
@@ -136,6 +138,7 @@ REGISTER = {
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
     "touch_window_bars": (3, "1/2/3", "व्याख्या", "spec ⑥ 'level मध्ये / लगत' + §6.2 H2 'वर / जवळ' (Q18)"),
     "entry_start / entry_end": ("09:30 / 15:15", "settings", "setting", "spec ⑥ वेळ-खिडकी फक्त settings; v2.1 प्रमाणे end exclusive"),
+    "evidence_start": ("09:15", "09:15 / entry_start", "व्याख्या", "Abhi (12 Oct): NSE सत्राची सुरुवात — opening candle पुरावा म्हणून मोजायची, entry नाही"),
     "candle_avg_n": (5, "—", "Abhi नियम", "spec §5.2 मागच्या 5 candles ची सरासरी"),
     "doji_body_max": (0.1, "0.05/0.1/0.15", "अंदाज", "spec §5.2 / §5.3 doji (body लहान)"),
     "range_overlap_min": (0.5, "—", "व्याख्या", "spec §5.3 'बहुतांश overlap' (≥ 50%)"),

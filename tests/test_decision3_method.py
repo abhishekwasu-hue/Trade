@@ -313,21 +313,29 @@ def test_review_charts_default_at_most_six_level_bands(monkeypatch):
 
 
 def test_mature_cap_in_pipeline():
-    """Default settings: तोच fixture — maturity बंद असताना setup देणारा bar, default ला mature ⇒ कमाल weak ⇒ setup नाही (Q15 (5))."""
-    from decision3 import engine as E3
-    m15 = _abc_m15()
-    off = [r for r in E3.V22(m15, s=NO_MATURE).run() if r["decision"] == "setup"]
-    assert off
-    V = E3.V22(m15)
-    # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही. यंत्रणा (mature ⇒
-    # कमाल weak ⇒ setup नाही) तपासण्यासाठी Daily states mature केले (target असलेल्या fixture वर step1 test वेगळा).
+    """Abhi (12 Oct, owner नियम — जुना Q15 (5) "mature ⇒ कमाल weak" बदलला): maturity = पुरावा फक्त. Trend रचना अखंड (protected अखंड,
+    उलट impulse नाही) ⇒ mature setup अडवत नाही; grade फक्त एक पायरी खाली (A ⇒ B; B तसाच). रचना अखंड नाही (same-degree correction) ⇒
+    जुना cap (weak) तसाच. Mature नसताना setup देणारे bars हेच तपासले."""
     import dataclasses
+    from decision3 import engine as E3
+    from decision3 import method as M3
+    m15 = _abc_m15()
+    s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}          # c0 / c1 बंद (हा test त्यांचा नाही), maturity default
+    V = E3.V22(m15, s=s)
+    # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही ⇒ Daily states mature केले.
     assert not any(x.mature for x in V.daily)
+    base = {r["bar"]: r for r in V.run() if r["decision"] == "setup"}
+    assert base
     V.daily = [dataclasses.replace(x, mature=True) if x.trend in ("UP", "DOWN") else x for x in V.daily]
-    for r0 in off:
-        r = V.decide(r0["bar"])
-        assert r["mature"] and r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
-    assert any(V.decide(r0["bar"])["mature"] for r0 in off)
+    for b, r0 in base.items():
+        r = V.decide(b)
+        assert r["mature"] and r["mature_step_down"] and r["trend_cap"] != "weak" and any("mature" in x for x in r["trend_notes"])
+        assert r["decision"] == "setup" and r["conviction"] == M3.step_down_conv(r0["conviction"])      # entry अडत नाही, एक पायरी खाली
+    V.daily = [dataclasses.replace(x, counter="correction") if x.trend in ("UP", "DOWN") else x for x in V.daily]   # रचना अखंड नाही
+    for b in base:
+        r = V.decide(b)
+        assert r["trend_cap"] == "weak" and not r["mature_step_down"] and r["decision"] != "setup"
+    assert M3.step_down_conv("A") == "B" and M3.step_down_conv("B") == "B" and M3.step_down_conv("weak") == "weak"
 
 
 def test_power_shift_a_relative_contraction_both_directions():

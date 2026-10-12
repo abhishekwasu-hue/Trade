@@ -1870,6 +1870,20 @@ pivot) किंवा sweep-close-back-inside, मग शेवटच्या 
   RuntimeWarning (`method.warn_ltf_missing`; V22 / level_reaction). Bots: LTF fetch फक्त commitment candle असताना (`confirm` ला callable).
 - **V22 बदल:** `docs/reports/v22_confirmation_c1.md` (NIFTY 2015 → 2024-03, before / after, #23 / #24). उघडे: LB25–LB30.
 
+## 2026-10-12 · 12-Oct blockers (decision3 V22, Abhi reference case — NIFTY bear call)
+
+**काय केलं** (branch `claude/oct12-blockers`, `claude/v22-confirmation` merge सकट ⇒ a2 + c0 + c1 चालू):
+- (b) maturity = पुरावा फक्त: रचना अखंड (`mature_intact`) ⇒ grade एक पायरी खाली (A ⇒ B, `method.step_down_conv`), entry अडत नाही; अखंड नाही ⇒ जुना cap weak.
+- (c) `evidence_start` = 09:15: opening candle 2-candle form / संदर्भ candle म्हणून पुरावा; entry खिडकी तशीच.
+- (d) `trendline.swing_line` + `confluence_areas`: trend-degree swings वरची तिरकी रेघ + horizontal level ⇒ overlap area (t ला माहीत swings फक्त).
+- (f) FUT volume: merged `futures=` मार्ग (legs2.volume.bar_volume, 09:15-anchored 5M बेरीज) तपासला — misalignment नाही.
+- `scripts/replay_day.py` (per-15M निर्णय + dry-run approval chart / संदेश, network नाही), `tests/oct12_fixture.py` (synthetic), अहवाल
+  `docs/reports/2026-10-12_engine_blockers.md`.
+**निकाल:** खऱ्या data वर (9 Oct पर्यंत) b (mature ⇒ weak) आणि e (22,476–22,809 पट्टा 8 Oct ला old-role death ने मेला) अडवत होते; synthetic 12-Oct
+replay ⇒ 09:45 bear call ✅ A, R:R 3.13 (आरसा bull put तसाच). 12-Oct export अजून नाही ⇒ खरा replay बाकी.
+**Tests:** decision3 सगळे + नवे `test_decision3_oct12.py` (11). `test_mature_cap_in_pipeline` / step1 mature test owner नियमानुसार बदलले.
+**उघडे:** D12-1 … D12-5.
+
 ## 2026-10-12 · Chart Reader v2 CR3 — marking page + gallery storage (research-only)
 
 **काय केलं:** नवा package `gallery2/` (labels — reader2 चं logic नाही; reader2 / decision3 import करत नाही): `schema` (एका chart ची नोंद:
