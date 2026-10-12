@@ -2017,6 +2017,8 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 - अहवाल skeleton: `docs/reports/2026-10-12_no_signals.md`.
 
 **Tests:** `tests/test_one_bot.py` (नवे 15) + vision / paper / level suites.
+**Review fixes (त्याच रात्री):** V22 ला खरे `ltf=` (5M spot) + `futures=` (FUT 5M, expiry सह); FUT नाही ⇒ volume NA. LIVE cron ओळ ओळख `--mode=LIVE` / quoted सुद्धा. Installer: crontab वाचता नाही / trade_monitor नाही ⇒ ❌ थांबतो; auto trader ची OPEN position ⇒ cron ओळ exits साठी चालू, नवे PAPER entries settings `symbol_enabled` = false ने बंद (तिन्ही auto traders मध्ये PAPER-only guard). Pre-open संदेशात `one_bot_status()` ची ❌ ओळ. Engine error Telegram: पहिलं अपयश, 60 मिनिटांनी "still failing", "recovered"; error row ✅ च्या वाटेतला setup रद्द करत नाही. `scripts/deploy_one_bot.sh` (+ `--revert`).
+
 **उघडे प्रश्न:** OB1–OB3 (OPEN_QUESTIONS).
 
 ## 2026-10-12 · Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3) + ONE_BOT_TOMORROW §4 pre-open मजकूर
