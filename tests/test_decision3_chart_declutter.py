@@ -469,7 +469,7 @@ def test_impulse_of_several_engine_sub_legs_is_verified_as_one_leg(mirror):
     assert imp[0]["family"] == "impulse" and imp[0]["verified"] and imp[0]["style"] == "impulse"
     assert imp[0]["from"] == ob["legs"][0]["from"] and imp[0]["to"] == ob["legs"][-1]["to"]
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
-    lines = [ln for ln in info["ax"].lines if ln.get_gid() in ("impulse leg", "leg in progress")]
+    lines = [ln for ln in info["ax"].lines if ln.get_gid() in ("impulse leg", "trend leg")]
     assert len(lines) == 1 and lines[0].get_gid() == "impulse leg"         # sub-legs are not drawn as separate legs
 
 
@@ -542,7 +542,7 @@ def test_trend_legs_never_drawn_grey(mirror):
     assert {x["style"] for x in imp} <= {"impulse", "unconfirmed"} and any(not x["verified"] for x in imp)
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
     legend = {t.get_text() for t in info["ax"].get_legend().get_texts()}
-    assert "trend leg — impulse not verified (structure-only check)" in legend and not any("3-wave" in t for t in legend)
+    assert "trend leg" in legend and not any("3-wave" in t or "not verified" in t for t in legend)   # CD14: neutral name
 
 
 @pytest.mark.parametrize("mirror", MIRRORS)
@@ -574,7 +574,7 @@ def test_chart_legs_follow_pivots_and_styles(mirror):
     legs = DS.view_spec(v)["impulses"]
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
     ax, i0 = info["ax"], v["i0"]
-    gid = {"impulse": "impulse leg", "unconfirmed": "leg in progress"}
+    gid = {"impulse": "impulse leg", "unconfirmed": "trend leg"}            # CD14: no accepted reading in synthetic fixtures
     lines = [ln for ln in ax.lines if ln.get_gid() in gid.values()]
     assert len(lines) == len(legs)
     for ln, lg in zip(lines, legs):
@@ -590,22 +590,27 @@ def test_chart_legs_follow_pivots_and_styles(mirror):
 
 
 @pytest.mark.parametrize("mirror", MIRRORS)
-def test_unverified_new_leg_is_dashed_and_caption_says_not_confirmed(mirror):
+def test_unverified_new_leg_is_dashed_and_caption_never_claims_impulse(mirror):
+    """CD14: an unverified, non-accepted running leg — default chart / caption say "new decline in progress" (no impulse claim, no
+    "not verified" clutter); the debug wording keeps the structure / anatomy votes."""
     from tests.test_decision3_abc_fix import _bn_points
     d = F.ohlc(_bn_points()[:-3], mirror)
     v = DS.build(d, window=len(d), with_elliott=False)
     q = v["q15"]
     move = "advance" if mirror else "decline"
-    assert q["trend"] == ("UP" if mirror else "DOWN") and q["leg_now"] == {"state": "in progress", "verified": False,
-                                                                           "family": q["leg_now"]["family"]}
-    assert f"new {move} in progress (impulse not verified)" in DS.trend_line(q) and "new impulse" not in DS.trend_line(q)
+    ln = q["leg_now"]
+    assert q["trend"] == ("UP" if mirror else "DOWN") and ln["state"] == "in progress" and not ln["verified"] and not ln["accepted"]
+    line = DS.trend_line(q)
+    assert f"new {move} in progress" in line and "new impulse" not in line and "not verified" not in line
+    dbg = DS.trend_line(q, debug=True)
+    assert f"new {move} in progress (impulse not verified (structure vote: {ln['family']}, n {ln['n']}; anatomy vote: not run))" in dbg
     cap = DS.caption(v, "TEST").splitlines()
-    assert "impulse not verified" in cap[0] and "new impulse" not in "\n".join(cap)
+    assert f"new {move} in progress" in cap[0] and "new impulse" not in "\n".join(cap) and "not verified" not in "\n".join(cap)
     fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
-    assert "new impulse" not in info["ax"].get_title()
-    cur = [ln for ln in info["ax"].lines if ln.get_gid() == "leg in progress"]
+    assert "new impulse" not in info["ax"].get_title() and "not verified" not in info["ax"].get_title()
+    cur = [ln for ln in info["ax"].lines if ln.get_gid() == "trend leg"]
     assert cur and cur[-1].get_linestyle() == "--"
-    assert any(x["kind"] == "leg" and x["text"] == f"{move} in progress — impulse not verified" for x in info["labels"])
+    assert any(x["kind"] == "leg" and x["text"] == f"{move} in progress" for x in info["labels"])
 
 
 # ------------------------------------------------------------------------------------------------ §5.8 Vision consistency
@@ -652,3 +657,270 @@ def test_two_year_facts_say_older_boxes_omitted():
     js = DS.to_json(v, "TEST")
     f = VA.facts_text("v22_daily_swings", js)
     assert js["chart"]["boxes_drawn"] < len(js["objects"]["corrections"]) and "omitted / faint by design" in f
+
+
+# ------------------------------------------------------------------------------------------------ CD14: Abhi-accepted readings
+def _day(v, bar):
+    return str(v["frame"]["timestamp"].iloc[int(bar)].date())
+
+
+def _acc(v, lg, shift_from=0, shift_to=0, direction=None, symbol="TEST"):
+    """Accepted record built from the drawn leg's own pivot dates (± sessions shift)."""
+    return {"symbol": symbol, "timeframe": "1D", "from": _day(v, lg["from"] + shift_from), "to": _day(v, lg["to"] + shift_to),
+            "reading": "impulse", "direction": direction or ("up" if lg["dir"] > 0 else "down"), "source": "test"}
+
+
+def _done_unverified(v):
+    return next(x for x in v["q15"]["objects"]["impulses"] if not x["verified"] and x["state"] == "done" and x["n"] > 1)
+
+
+def _default_texts(v, fig_info):
+    """Every word the default chart and the Telegram caption carry: title, axes texts, legend, labels, caption."""
+    fig, info, _ = _texts(fig_info)
+    ax = info["ax"]
+    out = [ax.get_title()] + [t.get_text() for t in ax.texts] + [t.get_text() for t in ax.get_legend().get_texts()]
+    out += [x["text"] for x in info["labels"]] + DS.caption(v, "TEST").splitlines()
+    return out
+
+
+def _head(mirror, accepted=None):
+    pts = HEAD + WAVE4 + WAVE5
+    d = _mirror_path(pts) if mirror else path(pts)
+    return DS.build(d, window=len(d), with_elliott=False, accepted=accepted)
+
+
+def _line_of(ax, lg, i0):
+    xs, ys = CH._clip_path(CH.leg_window_path(lg, i0, S3.DEFAULTS["chart_leg_path_points"]), i0)
+    return next(ln for ln in ax.lines if ln.get_gid() in ("impulse leg", "trend leg") and list(ln.get_xdata()) == xs
+                and list(ln.get_ydata()) == ys)
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_accepted_leg_is_solid_impulse_and_default_has_no_not_verified_text(mirror):
+    v0 = _head(mirror)
+    lg0 = _done_unverified(v0)
+    assert DS.drawn_as(lg0) == "trend leg" and lg0["accepted"] is None
+    v = _head(mirror, accepted=[_acc(v0, lg0)])
+    imp = v["q15"]["objects"]["impulses"]
+    lg = next(x for x in imp if (x["from"], x["to"]) == (lg0["from"], lg0["to"]))
+    assert lg["accepted"]["source"] == "test" and lg["drawn_as"] == "impulse" and not lg["verified"]   # structure vote unchanged
+    assert sum(1 for x in imp if x["accepted"]) == 1
+    fig, info = CH.daily_swings_fig(v, "TEST")
+    line = _line_of(info["ax"], lg, v["i0"])
+    assert line.get_gid() == "impulse leg" and line.get_linestyle() == "-"
+    texts = _default_texts(v, (fig, info))
+    assert not any("not verified" in t for t in texts), [t for t in texts if "not verified" in t]
+    assert "impulse" in {t.get_text() for t in info["ax"].get_legend().get_texts()}
+    js = DS.to_json(v, "TEST")                                              # JSON keeps the full detail
+    jl = next(x for x in js["objects"]["impulses"] if x["accepted"])
+    assert jl["check"].startswith(f"impulse not verified (structure vote: {lg['family']}, n {lg['n']}; anatomy vote: not run)")
+    assert "accepted by Abhi as impulse" in jl["check"] and jl["drawn_as"] == "impulse"
+    js["caption"] = DS.caption(v, "TEST")
+    f = VA.facts_text("v22_daily_swings", js)                               # Vision facts describe what the default chart shows
+    assert "not verified" not in f and f"{jl['from_day']}..{jl['to_day']} impulse (owner-accepted reading)" in f
+    assert "dashed = trend leg" in f and "not verified" not in VA.DAILY_SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_unaccepted_unverified_leg_is_dashed_trend_leg_with_neutral_legend(mirror):
+    v = _head(mirror)
+    lg = _done_unverified(v)
+    fig, info = CH.daily_swings_fig(v, "TEST")
+    ax = info["ax"]
+    line = _line_of(ax, lg, v["i0"])
+    imp = next(ln for ln in ax.lines if ln.get_gid() == "impulse leg")      # the verified running leg
+    assert line.get_gid() == "trend leg" and line.get_linestyle() == "--" and line.get_linewidth() < imp.get_linewidth()
+    legend = {t.get_text() for t in ax.get_legend().get_texts()}
+    assert {"trend leg", "impulse"} <= legend and not any("not verified" in t for t in _default_texts(v, (fig, info)))
+    assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_accepted_match_by_pivot_dates_within_pivot_slack_only(mirror):
+    v0 = _head(mirror)
+    lg0 = _done_unverified(v0)
+    n = int(S3.DEFAULTS["daily_pivot_n"])
+
+    def hit(rec):
+        return any(x["accepted"] for x in _head(mirror, accepted=[rec])["q15"]["objects"]["impulses"])
+    assert hit(_acc(v0, lg0, shift_from=n, shift_to=-n))                    # same pivot ± confirmation window
+    assert not hit(_acc(v0, lg0, shift_from=n + 1))                         # a different bar ⇒ no match
+    assert not hit(_acc(v0, lg0, shift_to=n + 1))
+    assert not hit(_acc(v0, lg0, direction="up" if lg0["dir"] < 0 else "down"))   # direction must agree
+    d = _mirror_path(HEAD + WAVE4 + WAVE5) if mirror else path(HEAD + WAVE4 + WAVE5)
+    v = DS.build(d, window=len(d), with_elliott=False, symbol="TEST", accepted=[_acc(v0, lg0, symbol="OTHER")])
+    assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])  # another symbol's record never matches
+    v = DS.build(d, window=len(d), with_elliott=False)                      # no symbol, no records ⇒ nothing accepted
+    assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_accepted_running_leg_reads_impulse_in_title_caption_and_label(mirror):
+    from tests.test_decision3_abc_fix import _bn_points
+    d = F.ohlc(_bn_points()[:-3], mirror)
+    v0 = DS.build(d, window=len(d), with_elliott=False)
+    cur = v0["q15"]["objects"]["impulses"][-1]
+    assert cur["state"] == "in progress" and not cur["verified"]
+    v = DS.build(d, window=len(d), with_elliott=False, accepted=[_acc(v0, cur)])
+    q = v["q15"]
+    assert q["leg_now"]["accepted"] and not DS.unverified(q)
+    assert f"new impulse {('UP' if mirror else 'DOWN').lower()} in progress" in DS.trend_line(q)
+    fig, info = CH.daily_swings_fig(v, "TEST")
+    assert any(x["kind"] == "leg" and x["text"] == "impulse" for x in info["labels"])
+    assert not any("not verified" in x for x in _default_texts(v, (fig, info)))
+    dbg = DS.trend_line(q, debug=True)                                      # debug keeps the votes + "accepted by Abhi"
+    assert "impulse not verified (structure vote:" in dbg and "accepted by Abhi as impulse" in dbg
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_debug_view_keeps_full_verification_detail(mirror, monkeypatch):
+    v0 = _head(mirror)
+    lg0 = _done_unverified(v0)
+    v = _head(mirror, accepted=[_acc(v0, lg0)])
+    figs = []
+    monkeypatch.setattr(CH, "_png", lambda fig: figs.append(fig) or b"png")
+    assert CH.daily_swings_debug_png(v, "TEST") == b"png"
+    txt = [t.get_text() for t in figs[0].axes[0].texts]
+    acc = [x for x in txt if "accepted by Abhi" in x]
+    assert len(acc) == 1 and acc[0].startswith(f"impulse not verified (structure vote: {lg0['family']}, n {lg0['n']}; anatomy vote:")
+    assert any(x.startswith("impulse (5 waves; structure vote: impulse") for x in txt)
+    from tests.test_decision3_abc_fix import _bn_points                    # running unverified leg: debug title carries the votes
+    d = F.ohlc(_bn_points()[:-3], mirror)
+    vb = DS.build(d, window=len(d), with_elliott=False)
+    CH.daily_swings_debug_png(vb, "TEST")
+    assert "impulse not verified (structure vote:" in figs[-1].axes[0].get_title()
+    _, info = CH.daily_swings_fig(vb, "TEST", full=True)                    # full (debug) variant of the default chart
+    assert "impulse not verified" in info["ax"].get_title()
+
+
+def test_accepted_legs_loader_validates(tmp_path, monkeypatch):
+    import json
+    from decision3 import accepted_legs as AL
+    good = {"symbol": "bn", "timeframe": "1D", "from": "2020-01-02", "to": "2020-02-03", "reading": "impulse", "direction": "down",
+            "source": "test"}
+    assert AL.validate(good)["symbol"] == "BN" and AL.validate(good)["dir"] == -1
+    for bad in ({**good, "direction": "sideways"}, {**good, "reading": "zigzag"}, {**good, "timeframe": "1H"},
+                {**good, "to": good["from"]}, {**good, "source": " "}, {k: x for k, x in good.items() if k != "source"},
+                {**good, "from": "not a date"}):
+        with pytest.raises(ValueError):
+            AL.validate(bad)
+    p = tmp_path / "acc.json"
+    p.write_text(json.dumps({"legs": [good, {**good, "from": "2020-01-20", "to": "2020-03-01"}]}))
+    with pytest.raises(ValueError, match="overlapping"):
+        AL.load(str(p))
+    p.write_text(json.dumps({"legs": [good]}))
+    monkeypatch.setenv(AL.ENV, str(p))
+    assert [x["symbol"] for x in AL.load(symbol="BN")] == ["BN"] and AL.load(symbol="OTHER") == []
+    assert AL.load(str(tmp_path / "missing.json")) == []
+    monkeypatch.delenv(AL.ENV)
+    shipped = AL.load()                                                     # the repo file itself is valid
+    assert shipped and all(x["reading"] == "impulse" for x in shipped)
+
+
+@pytest.mark.parametrize("content", [None, "{not json", '{"legs": [{"symbol": "BN"}]}', '{"legs": 3}'])
+def test_broken_or_missing_override_falls_back_to_repo_file(tmp_path, monkeypatch, caplog, content):
+    """PR #304: override file missing / malformed ⇒ warning + repo records (never silently empty, never an exception)."""
+    from decision3 import accepted_legs as AL
+    p = tmp_path / "override.json"
+    if content is not None:
+        p.write_text(content)
+    monkeypatch.setenv(AL.ENV, str(p))
+    with caplog.at_level("WARNING", logger=AL.__name__):
+        got = AL.load()
+    assert got == AL.load(AL.DEFAULT_PATH) and got
+    assert any("falling back to the repo file" in r.getMessage() for r in caplog.records)
+    if content is not None:
+        with pytest.raises(ValueError):                                     # an explicit path stays strict
+            AL.load(str(p))
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_broken_repo_records_never_stop_the_chart(tmp_path, monkeypatch, mirror):
+    from decision3 import accepted_legs as AL
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(AL, "DEFAULT_PATH", str(bad))
+    monkeypatch.delenv(AL.ENV, raising=False)
+    pts = HEAD + WAVE4 + WAVE5
+    d = _mirror_path(pts) if mirror else path(pts)
+    v = DS.build(d, window=len(d), with_elliott=False, symbol="TEST")
+    assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
+
+
+def _q_last_leg(mirror, **leg):
+    """Built BN-shape q with the running leg turned into a finished, last trend leg and a counter-move running (leg_now None)."""
+    from tests.test_decision3_abc_fix import _bn_points
+    v = DS.build(F.ohlc(_bn_points()[:-3], mirror), window=10 ** 6, with_elliott=False)
+    q = v["q15"]
+    last = {**q["leg_last"], "state": "done", **leg}
+    return {**q, "rule5": False, "leg_now": None, "leg_last": last, "retrace": 0.4}, ("UP" if mirror else "DOWN")
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+@pytest.mark.parametrize("counter", ["candidate", "pullback", None])
+def test_unverified_finished_last_leg_never_called_impulse(mirror, counter):
+    """PR #304 🟡1: phase impulse with no running leg (counter-move / pullback) — wording follows the last drawn trend leg."""
+    q, t = _q_last_leg(mirror, verified=False, accepted=None)
+    q = {**q, "counter": counter}
+    line, short = DS.trend_line(q), DS.state_short(q)
+    assert line.startswith(f"Trend {t} (trend leg)") and "(impulse)" not in line and "of last impulse" not in line, line
+    assert short.startswith(f"{t} · trend leg") and f"{t} impulse" not in short, short
+    if counter == "candidate":
+        assert "same-degree correction candidate in progress (depth 40% of last trend leg)" in line
+        assert short == f"{t} · trend leg · pullback in progress (may become a correction)"
+    assert "not verified" not in line + short
+    assert "impulse not verified (structure vote:" in DS.trend_line(q, debug=True)
+    for ok in ({"verified": True}, {"accepted": {"reading": "impulse", "direction": "x", "source": "t", "from": "", "to": ""}}):
+        q2, _ = _q_last_leg(mirror, **{"verified": False, "accepted": None, **ok})
+        q2 = {**q2, "counter": counter}
+        line2 = DS.trend_line(q2)
+        assert line2.startswith(f"Trend {t} (impulse)") and "trend leg" not in line2, line2
+        assert DS.state_short(q2).startswith(f"{t} impulse")
+    q3, _ = _q_last_leg(mirror, verified=False, accepted=None, dir=1 if t == "DOWN" else -1)   # opposite-direction leg ⇒ no claim
+    assert DS.trend_line({**q3, "counter": counter}).startswith(f"Trend {t} (impulse)")      # either way (old reading)
+
+
+@pytest.mark.parametrize("mk", CASES)
+def test_title_and_caption_match_the_last_drawn_leg(mk):
+    v = mk()
+    q = v["q15"]
+    fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
+    legs = [ln for ln in info["ax"].lines if ln.get_gid() in ("impulse leg", "trend leg")]
+    if not legs or q["trend"] not in ("UP", "DOWN") or q["phase"] != "impulse":
+        return
+    imps = DS.view_spec(v)["impulses"]
+    if imps[-1]["dir"] != {"UP": 1, "DOWN": -1}[q["trend"]]:
+        return
+    title, cap = info["ax"].get_title(), DS.caption(v, "TEST").splitlines()[0]
+    if DS.drawn_as(imps[-1]) == "trend leg":
+        assert "(impulse)" not in title and "new impulse" not in title and f"{q['trend']} impulse" not in cap
+    else:
+        assert "trend leg" not in title and "(new decline in progress" not in title and "(new advance in progress" not in title
+
+
+BN_DAILY = "/home/user/trade-data/banknifty/BANKNIFTY_D.csv.gz"
+
+
+def test_banknifty_accepted_leg_real_data():
+    """CD14 on real data (skipped without the private trade-data file): the owner-accepted BANKNIFTY leg is matched on its own pivot
+    dates and drawn solid; the default chart and caption carry no "not verified" text; the debug detail keeps the structure vote."""
+    import os
+    if not os.path.exists(BN_DAILY):
+        pytest.skip("private BANKNIFTY daily data not available")
+    from decision3 import accepted_legs as AL
+    from decision3 import history as HI
+    recs = AL.load(symbol="BANKNIFTY")
+    if not recs:
+        pytest.skip("no accepted BANKNIFTY record")
+    d = HI.load_daily([BN_DAILY], prepare=DS.prepare)
+    v = DS.build(d, window=500, with_elliott=False, symbol="BANKNIFTY")
+    acc = [x for x in v["q15"]["objects"]["impulses"] if x["accepted"]]
+    assert len(acc) == len([r for r in recs if r["to"] <= d["timestamp"].iloc[-1]]) >= 1
+    for lg in acc:
+        assert lg["drawn_as"] == "impulse" and "accepted by Abhi" in lg["check"]
+        assert lg["dir"] == AL.DIRECTIONS[lg["accepted"]["direction"]]
+    fig, info = CH.daily_swings_fig(v, "BANKNIFTY")
+    assert not any("not verified" in t for t in _default_texts(v, (fig, info)))
+    for lg in acc:
+        if lg["to"] >= v["i0"]:
+            assert _line_of(info["ax"], lg, v["i0"]).get_gid() == "impulse leg"

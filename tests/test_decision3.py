@@ -165,10 +165,11 @@ def test_death_only_when_swing_beyond_breaks():
     lv = LV.Levels(res_of(m, piv))
     upper = [L for L in lv.L if L.role0 == LV.SUP and abs(L.anchor - 96.5) < 1e-6][0]
     assert upper.dead_bar == len(closes) - 1 and upper.count("flip", upper.dead_bar) == 0
-    # (ii) close फक्त पट्ट्यापलीकडे ⇒ flip (resistance), जिवंत; नंतर पलीकडचा swing (90) close ने तुटला ⇒ मेला
+    # (ii) close फक्त पट्ट्यापलीकडे ⇒ flip (resistance), जिवंत; नंतर पलीकडचा swing (90) close ने तुटला ⇒ मेला — जुना Q2 नियम
+    # (level_death_side = "role0", explicit; default "role" (TL1) चं वर्तन test_decision3_level_death_side.py मध्ये)
     closes2 = closes[:-2] + [94, 93, 92, 91.5, 89]
     m2 = m15_from(closes2, lows={4: 90.0})
-    lv2 = LV.Levels(res_of(m2, piv))
+    lv2 = LV.Levels(res_of(m2, piv), s={"level_death_side": "role0"})
     up2 = [L for L in lv2.L if L.role0 == LV.SUP and abs(L.anchor - 96.5) < 1e-6][0]
     t_flip = next(b for b, k, _ in up2.events if k == "flip")
     assert closes2[t_flip] < up2.band_at(t_flip)[0] and up2.alive(len(closes2) - 2) and up2.role_at(len(closes2) - 2) == LV.RES
