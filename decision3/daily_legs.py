@@ -291,6 +291,79 @@ def _m(A, i0, i1, dirn, cache):
     return cache[k]
 
 
+def leg_points(seq, a_bar, a_price, b_bar, b_price, upto_confirm, inner_seq=None):
+    """leg a ⇒ b चे टोक ते टोक आलटून पालटून बिंदू (prices, bars): आतले pivots (inner_seq = एक degree खालचे; नसेल ⇒ seq) फक्त
+    confirm_bar ≤ upto_confirm (look-ahead नाही). सलग तोच प्रकार ⇒ जास्त टोकाचा; शेवटचा आतला pivot leg-दिशेचा ⇒ b शी merge."""
+    dirn = 1 if b_price > a_price else -1
+    inner_src = seq if inner_seq is None else inner_seq
+    inner = sorted((p for p in inner_src if p.confirm_bar <= upto_confirm and a_bar < p.bar < b_bar), key=lambda p: p.bar)
+    prices, kinds, bars = [a_price], ["L" if dirn > 0 else "H"], [int(a_bar)]
+    for p in inner:                                                       # आलटून पालटून; सलग तोच प्रकार ⇒ जास्त टोकाचा
+        if p.kind != kinds[-1]:
+            prices.append(p.price)
+            kinds.append(p.kind)
+            bars.append(int(p.bar))
+        elif len(prices) > 1 and (p.price - prices[-1]) * (1 if p.kind == "H" else -1) > 0:
+            prices[-1], bars[-1] = p.price, int(p.bar)
+    if len(prices) > 1 and kinds[-1] == ("H" if dirn > 0 else "L"):     # शेवटचा आतला pivot leg-दिशेचा ⇒ b शी merge
+        prices, bars = prices[:-1], bars[:-1]
+    prices.append(b_price)
+    bars.append(int(b_bar))
+    return prices, bars
+
+
+def leg_prices(seq, a_bar, a_price, b_bar, b_price, upto_confirm, inner_seq=None):
+    """leg_points चे फक्त prices."""
+    return leg_points(seq, a_bar, a_price, b_bar, b_price, upto_confirm, inner_seq)[0]
+
+
+def _motive_segs(prices):
+    """read_counter चं motive वाचन (5-wave reduction impulse / wedge, किंवा 9-wave extension) ⇒ पाच waves चे मूळ बिंदू; नसेल ⇒ None."""
+    n = len(prices) - 1
+    red = reduce_counted(prices)
+    p5 = red.get(5)
+    if p5 is not None and n >= 5:
+        x5, c5 = p5
+        seg5 = _segments(prices, c5)
+        sub = all(_is_motive(seg5[k]) for k in (0, 2, 4)) and all(_is_corrective(seg5[k]) for k in (1, 3))
+        if PR.impulse(x5, done=True) and sub:
+            return seg5
+        if (sub or all(_is_corrective(g) for g in seg5)) and \
+                (PR.wedge(x5, done=True, kind="contracting") or PR.wedge(x5, done=True, kind="expanding")):
+            return seg5                                                    # diagonal (read_counter चाच क्रम)
+    p9 = red.get(9)
+    if p9 is not None and n >= 9:
+        x9, c9 = p9
+        seg9 = _segments(prices, c9)
+        for j in (0, 2, 4):
+            waves = [[k] for k in range(j)] + [list(range(j, j + 5))] + [[k] for k in range(j + 5, 9)]
+            if len(waves) != 5:
+                continue
+            x5e = [x9[0]] + [x9[w[-1] + 1] for w in waves]
+            segs = [sum((seg9[k][1:] if t else seg9[k] for t, k in enumerate(w)), []) for w in waves]
+            if PR.impulse(x5e, done=True) and all(_is_motive(segs[k]) for k in (0, 2, 4)) and \
+                    all(_is_corrective(segs[k]) for k in (1, 3)):
+                return segs
+    return None
+
+
+def unfolded_123(prices):
+    """Q49 (b) (Abhi): 5-wave counter-move स्वतःची same-degree 5-wave रचना पूर्ण करते का — त्याचा "1" स्वतः 5 waves मध्ये, मग 3-wave
+    "2", मग "3" "1" च्या टोकापलीकडे आणि **स्वतः 5 waves मध्ये उलगडलेला** (एक degree खालच्या confirmed pivots वर दिसणारे पाच पाय —
+    एक-पायी सरळ wave चालत नाही). Ratios / खोली नाहीत — फक्त रचना. नाही ⇒ False (default: तो 5-wave पाय wave A)."""
+    if read_counter(prices)["family"] not in MOTIVE:
+        return False
+    segs = _motive_segs(prices)
+    if segs is None:
+        return False
+    w1, w2, w3 = segs[0], segs[1], segs[2]
+    d = 1 if prices[-1] > prices[0] else -1
+    return (len(w1) - 1 >= 5 and read_counter(w1)["family"] in MOTIVE
+            and len(w2) - 1 >= 3 and read_counter(w2)["family"] in CORRECTIVE
+            and len(w3) - 1 >= 5 and read_counter(w3)["family"] in MOTIVE
+            and (w3[-1] - w1[-1]) * d > 0)
+
+
 def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache=None, inner_seq=None, elliott=False):
     """एक leg (a ⇒ b, b चालू टोक असू शकतो): seq = त्याच degree चे confirmed pivots (DPivot) — आधी पूर्ण झालेले legs C baseline साठी;
     inner_seq = एक degree खालचे pivots (आतली रचना; seq आलटून पालटून असल्याने त्याच degree चे आतले pivots नसतात). confirm_bar ≤
@@ -298,18 +371,7 @@ def classify(A, seq, a_bar, a_price, b_bar, b_price, upto_confirm, s=None, cache
     s = s or LS2.DEFAULTS
     dirn = 1 if b_price > a_price else -1
     conf = [p for p in seq if p.confirm_bar <= upto_confirm]
-    inner_src = conf if inner_seq is None else [p for p in inner_seq if p.confirm_bar <= upto_confirm]
-    inner = sorted((p for p in inner_src if a_bar < p.bar < b_bar), key=lambda p: p.bar)
-    prices, kinds = [a_price], ["L" if dirn > 0 else "H"]
-    for p in inner:                                                       # आलटून पालटून; सलग तोच प्रकार ⇒ जास्त टोकाचा
-        if p.kind != kinds[-1]:
-            prices.append(p.price)
-            kinds.append(p.kind)
-        elif len(prices) > 1 and (p.price - prices[-1]) * (1 if p.kind == "H" else -1) > 0:
-            prices[-1] = p.price
-    if len(prices) > 1 and kinds[-1] == ("H" if dirn > 0 else "L"):     # शेवटचा आतला pivot leg-दिशेचा ⇒ b शी merge
-        prices, kinds = prices[:-1], kinds[:-1]
-    prices.append(b_price)
+    prices = leg_prices(seq, a_bar, a_price, b_bar, b_price, upto_confirm, inner_seq)
     st = structure(prices, elliott)
     short = int(s["short_leg_bars"])
     done = sorted((p for p in conf if p.bar <= a_bar), key=lambda p: p.bar)   # a पर्यंत पूर्ण झालेले Daily legs (C baseline)
