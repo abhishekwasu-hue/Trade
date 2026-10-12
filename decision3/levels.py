@@ -284,6 +284,9 @@ class Levels:
         H, Lo, C = self.A["high"], self.A["low"], self.A["close"]
         touching, excursion = {}, {}
         acc = int(self.s["accept_closes"])
+        death_side = self.s.get("level_death_side", "role0")
+        if death_side not in ("role0", "role"):
+            raise ValueError(f"level_death_side {death_side!r} — role0 / role पैकी")
         pv = self._pv_sorted
         k = 0
         known = []
@@ -304,17 +307,20 @@ class Levels:
                     beyond_wick, beyond_close = H[t] > L.hi, C[t] > L.hi
                 # मृत्यू: मूळ भूमिकेच्या (role0) पलीकडचा structural swing close ने तुटला — support ⇒ खालचा जवळचा D2 L, resistance ⇒ वरचा D2 H
                 # (flip झालेला level सुद्धा: तुटलेला support ⇒ resistance, पण खालचा swing close ने तुटला ⇒ मेला). OPEN_QUESTIONS Q2.
-                if L.role0 == SUP:
+                # level_death_side = "role" (पर्याय, Q2 / TL1) ⇒ चालू भूमिकेची बाजू: flipped support (= supply) ⇒ वरचा D2 H.
+                if (role if death_side == "role" else L.role0) == SUP:
                     sw = [p.price for p in known if p.kind == "L" and p.price < L.lo]
                     dead = bool(sw) and C[t] < max(sw)
+                    beyond_sw = max(sw) if sw else None
                 else:
                     sw = [p.price for p in known if p.kind == "H" and p.price > L.hi]
                     dead = bool(sw) and C[t] > min(sw)
+                    beyond_sw = min(sw) if sw else None
                 if inside and not touching.get(L.id):
                     L.events.append((t, "test", ""))
                 touching[L.id] = inside
                 if dead:
-                    L.events.append((t, "dead", f"पलीकडचा swing {max(sw) if L.role0 == SUP else min(sw):,.2f} close ने तुटला"))
+                    L.events.append((t, "dead", f"पलीकडचा swing {beyond_sw:,.2f} close ने तुटला"))
                     L.dead_bar = t
                     continue
                 exc = excursion.get(L.id, 0)
