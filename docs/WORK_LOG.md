@@ -1872,6 +1872,49 @@ state हवा, default रिकामी ओळ अडवत नाही. **
 Save बंद (test chart कधीच dev होत नाही). ⚪ NIFTY golden file नावाच्या pattern ने, zone from_bar तपासणी, boundary test मध्ये gallery2, CREATE TABLE
 एकदाच, export अपयश ⇒ raise + जुन्या files काढतो. **Tests:** `tests/test_reader2*.py` + `test_app_navigation` — 304 pass / 40 xfail (आधीचेच).
 
+### 2026-10-12 · Gallery: symbol strata + SENSEX (VPS fetch) + CD14 seed (Abhi: TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §1, §3)
+**Split:** प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 split — manifest मध्ये `strata` (seed, dev, test, assignment). NIFTY 16 / 7 आणि BANKNIFTY
+12 / 5 = CR3 चे assignments **गोठवलेले** (`cr3_global_frozen`; 40 entries byte-for-byte तसेच — test त्यांचा sha256 pin करतो). नवा symbol फक्त
+additive: `scripts/reader2_gallery_candidates.py --add-symbol SENSEX` (`gallery2.candidates.add_symbol`) — त्याच्याच stratum मध्ये windows /
+bucket निवड / split, seed `symbol_seed(7, "SENSEX")`, test = round(0.3 × n); आधीचा एकही entry बदलला तर लिहीत नाही. Files नाहीत ⇒ manifest तसाच,
+कारण छापतो (exit 3). `--force` पूर्ण rebuild तसाच (documented मार्ग = additive).
+**SENSEX data:** `scripts/fetch_sensex_history.py` (VPS-only; BANKNIFTY चाच मार्ग `research/index_candles_fetch.py` — Upstox v3, token VPS `.env`
+/ webhook, कधीच छापत नाही): Daily `days/1`, 15M `minutes/15`, 1H = 15M चा 09:15-anchored resample (BANKNIFTY_1H चेच bins). Volume: BSE F&O
+मध्ये SENSEX near-month futures सापडले ⇒ त्याचा 15M volume (1H / D फक्त पूर्ण झाकलेल्या bins ना), बाकी NA + "grade cap B"; सापडले नाहीत ⇒ volume
+NA (grade cap B). Resume (शेवटचा दिवस पुन्हा, आधी तपासलेला जुना काळ पुन्हा नाही), 0.4 s विराम, `--dry-run` (token / network नाही).
+**CD14:** BANKNIFTY Daily (dev case `BANKNIFTY_D_20251215`) — एक leg impulse: bar 34 (2026-02-03 high 61,764.85) ⇒ bar 73 (2026-04-02 low
+49,954.85) + trend down त्या bar पासून; source "Abhi decision 2026-10-12 (CD14)". **फक्त private trade-data** `reader2_gallery/seeds/dev/`
+(DirStore + `save_record` तपासणी; trade-data commit cb91e66). `scripts/reader2_gallery_seed.py` ⇒ VPS DB मध्ये (फक्त जिथे नोंद नाही — तुमची
+marking कधीच overwrite नाही). Chart `calibration: false` तसाच.
+**Review (PR #303) नंतर:** fetcher चे अयशस्वी chunks `pending` (manifest) मध्ये ⇒ पुढच्या run ला पुन्हा, pending असेपर्यंत exit 1;
+futures store चा शेवटचा (अपूर्ण असू शकणारा) दिवस नव्याने बदलतो; seed import एका chart च्या conflict / store अपयशावर थांबत नाही (`failed`, शेवटी
+exit 1); `--force` rebuild चे strata "global_split".
+**Tests:** `tests/test_reader2_gallery.py` (+9: extra symbol ⇒ जुने entries byte-identical, committed manifest pin, stratum counts, additive script /
+files नाहीत, seeds import) + नवी `tests/test_fetch_sensex_history.py` (9: fixture instrument list, resample, volume bins, merge / resume, schema,
+dry-run, token नाही) + `tests/test_reader2*.py` + `test_app_navigation` — सगळे pass. उघडे: OPEN_QUESTIONS CR-Q22–CR-Q26.
+**तुमच्यासाठी (VPS, PR merge नंतर):** खालचा block — SENSEX history, additive SENSEX candidates (`manifest_sensex_add.json` trade-data मध्ये),
+CD14 seed DB मध्ये (**CD14 chart page वर उघडण्याआधी** seed import चालवा — आधी जतन केलं तर seed लागत नाही). मग मी तो manifest review करून repo मध्ये commit करीन (deploy नंतर SENSEX charts page वर दिसतील).
+
+```bash
+bash <<'SENSEX_GALLERY'
+cd /root/Trade || exit 1
+set -a; . ./.env; set +a
+git fetch -q origin main && git merge --ff-only FETCH_HEAD || { echo "⛔ git pull अयशस्वी — थांबलो"; exit 1; }
+git -C /root/trade-data pull -q --ff-only || { echo "⛔ trade-data pull अयशस्वी — थांबलो"; exit 1; }
+echo "== 1) SENSEX history (Upstox, फक्त GET; token छापत नाही) =="
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data --dry-run
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data || echo "⚠️ काही chunks अयशस्वी — हाच block पुन्हा चालवा (resume)"
+echo "== 2) gallery: SENSEX additive (NIFTY / BANKNIFTY entries तसेच) =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_candidates.py --add-symbol SENSEX \
+  --out /root/trade-data/reader2_gallery/manifest_sensex_add.json
+echo "== 3) CD14 seed ⇒ gallery DB (फक्त जिथे नोंद नाही) — page वर BANKNIFTY_D_20251215 उघडण्याआधी हे चालवा =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_seed.py
+echo "== 4) trade-data मध्ये (manifest Claude review करून repo मध्ये commit करेल) =="
+cd /root/trade-data && git add --ignore-removal sensex reader2_gallery \
+  && git commit -qm "SENSEX D/1H/15M history + reader2 gallery SENSEX additive manifest" && git push -q origin HEAD; git log --oneline -1
+SENSEX_GALLERY
+```
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**
@@ -1949,3 +1992,24 @@ Fixture: `test_decision3_touch_levels.py`. Tests: `test_decision3*.py test_level
 अहवाल: `docs/reports/v22_missed_levels_touch.md`.
 **TL1 ✅ Abhi मंजूर (2026-10-12):** default `level_death_side` = "role" (flipped level चा मृत्यू चालू भूमिकेच्या बाजूने); "role0" फक्त explicit setting
 (revert / what-if). जुना Q2 test (ii) explicit "role0" ने pinned (अपेक्षा तशीच). TL2 (merge रुंदी): Abhi "आत्ता नाही" — उघडा.
+
+## 2026-10-12 · CD14 — default chart वर Abhi चं स्वीकारलेलं वाचन (BANKNIFTY Feb → Apr = sharp DOWN impulse)
+
+**काय केलं:** `decision3/accepted_legs.py` (loader + validation + match) आणि `decision3/data/accepted_legs.json` (BANKNIFTY 1D 2026-02-03 →
+2026-04-02, impulse, down, "Abhi 2026-10-12 CD14"). `daily_swings.build(..., symbol=, accepted=)` ⇒ प्रत्येक trend-degree leg वर `accepted`,
+`drawn_as` ("impulse" ⇔ read_counter 5 waves किंवा स्वीकारलेलं; नाहीतर "trend leg"), `check` (पूर्ण तपासणी मजकूर). जुळवणं फक्त leg च्या pivot
+तारखांवरून ± `daily_pivot_n` sessions + दिशा (code मध्ये तारीख / symbol नाही, किंमत नाही). Default / Telegram chart: स्वीकारलेला leg घन
+"impulse"; न-स्वीकारलेला unverified leg पातळ dashed "trend leg"; title / caption / legend / chart मजकुरात "not verified" नाही
+(`trend_line(q)` / `state_short`: "new decline in progress", impulse दावा नाही). Debug: `trend_line(q, debug=True)`, `daily_swings_debug_png` मध्ये
+प्रत्येक trend leg + "impulse not verified (structure vote: zigzag, n 9; anatomy vote: not run) · accepted by Abhi as impulse (…)", JSON
+`trend_line_debug` + `objects.impulses[].check`. Vision facts / prompt (v4): chart जसा दिसतो (घन = impulse / स्वीकारलेलं, dashed = trend leg).
+**Tests:** `test_decision3_chart_declutter.py` मध्ये CD14 (UP / DOWN आरसा: accepted ⇒ घन + default मजकुरात "not verified" नाही; unaccepted ⇒
+dashed "trend leg"; ± n sessions जुळतं, n + 1 / उलट दिशा / दुसरा symbol नाही; चालू स्वीकारलेला leg ⇒ "new impulse"; debug तपशील; loader
+validation; BANKNIFTY real data — file नसेल तर skip). जुने wording tests CD14 निर्णयानुसार बदलले (golden नाहीत). 5 files: 135 pass, 1 xfail;
+vision_audit 22 pass.
+**Charts:** trade-data `review/v22/daily_swings_v6/` (BANKNIFTY + NIFTY, 2y). BANKNIFTY: Feb → Apr घन impulse, चालू Jun → Sep leg dashed
+"trend leg" (flat, n 13), title "new decline in progress". NIFTY: बदल नाही (चालू leg 5 waves verified). उघडे: OPEN_QUESTIONS CD14-A … CD14-E.
+**Review (PR #304):** 🟡1 wording आता chart वरच्या शेवटच्या trend leg वरून (`leg_last`, चालू नसला तरी — candidate / pullback चालू असताना):
+unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
+"impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
+chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.

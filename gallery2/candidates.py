@@ -13,10 +13,18 @@
      bucket मधून एक. Data नसलेल्या slot चा (उदा. SENSEX) वाटा उरलेल्या slots ना आळीपाळीने (window संख्येच्या मर्यादेत).
 Split: Abhi cases dev; बाकीच्यांमधून 12 test — (symbol, TF) slot च्या आकाराच्या प्रमाणात (largest remainder), slot मध्ये seeded निवड.
 एकाच symbol + TF चे windows एकमेकांवर चढत नाहीत (grid) ⇒ test chart चे bars कोणत्याही dev chart मध्ये त्याच TF वर नाहीत.
+
+Symbol strata (Abhi निर्णय 2026-10-12): प्रत्येक symbol चा स्वतःचा, स्थिर 70 / 30 dev / test split — manifest च्या `strata` मध्ये
+(seed, dev, test, assignment). NIFTY (16 / 7) आणि BANKNIFTY (12 / 5) चे CR3 चे assignments **गोठवलेले** (Abhi marking करतोय; page
+split बदललेली नोंद जतन करत नाही). नवा symbol (उदा. SENSEX) फक्त `add_symbol` (additive) ने: आधीचे entries byte-for-byte तसेच,
+नव्या symbol चे windows / निवड / split फक्त त्याच्याच stratum मध्ये, त्याच्या स्वतःच्या seed ने (`symbol_seed`). नवे charts
+(असलेल्या symbol चे) सुद्धा फक्त त्याच stratum मध्ये (`stratum_split`): stratum चा एकूण test = round(30 % × एकूण), फरक नव्यांमधून.
 """
+import copy
 import json
 import math
 import os
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -33,6 +41,7 @@ QUOTAS = {("NIFTY", "D"): 5, ("NIFTY", "1H"): 4, ("NIFTY", "15M"): 5,          #
 BUCKETS = ("impulse", "flat_ext", "deep", "shallow", "down", "up", "range")
 ZZ_K, FLAT_K, DIR_FRAC, DEEP, SHALLOW, IMP_FRAC, IMP_DEPTH, FLAT_B, FLAT_C = 3.0, 6.0, 0.4, 0.618, 0.382, 0.7, 0.5, 0.9, 1.2
 N_TOTAL, N_TEST, SEED = 40, 12, 7
+DEV_FRAC = 0.7                 # प्रत्येक symbol stratum चा dev वाटा (Abhi: "each symbol has its own fixed 70/30 split")
 ORDER_S = {s: i for i, s in enumerate(GD.SYMBOLS)}
 ORDER_T = {t: i for i, t in enumerate(GD.TIMEFRAMES)}
 
@@ -244,14 +253,137 @@ def build(slots, cases, seed=SEED, n_total=N_TOTAL, n_test=N_TEST, quotas=None, 
             "sources": {sl["symbol"] + "/" + sl["timeframe"]: {"source": sl["source"], "rule": sl.get("rule", "")}
                         for sl in sorted(slots, key=lambda s: (ORDER_S[s["symbol"]], ORDER_T[s["timeframe"]]))},
             "missing": list(missing),
-            "cross_tf_overlap": {"rule": "एकाच symbol + TF वर test आणि dev windows कधीच चढत नाहीत (grid). वेगळ्या TF वर त्याच तारखा "
-                                         "चालतात (CR-Q16) — या जोड्या [test, dev]:", "pairs": overlap},
+            "cross_tf_overlap": {"rule": OVERLAP_RULE, "pairs": overlap},
+            "strata": strata_of({"seed": seed, "charts": chosen}, assignment="global_split"), "strata_rule": STRATA_RULE,
             "charts": chosen}
+
+
+# ---------------------------------------------------------------------------------------------------------------- symbol strata
+OVERLAP_RULE = ("एकाच symbol + TF वर test आणि dev windows कधीच चढत नाहीत (grid). वेगळ्या TF वर त्याच तारखा चालतात (CR-Q16) — या "
+                "जोड्या [test, dev]:")
+STRATA_RULE = ("प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 dev / test split (seed `strata.<symbol>.seed`). CR3 चे NIFTY / BANKNIFTY "
+               "assignments गोठवलेले (assignment 'cr3_global_frozen'); नवा symbol फक्त additive (`--add-symbol`), त्याच्याच stratum मध्ये: "
+               "windows / bucket निवड numpy default_rng(symbol seed), test = round(0.3 × stratum charts), (TF) slot आकाराच्या प्रमाणात, "
+               "default_rng(symbol seed + 1000). आधीचे entries byte-for-byte तसेच.")
+
+
+def symbol_seed(seed, symbol):
+    """Symbol stratum चा seed (deterministic, symbol नावावरून) — manifest मध्ये साठवला जातो."""
+    return int(seed) * 1000 + zlib.crc32(symbol.encode("utf-8")) % 1000
+
+
+def stratum_test_count(n, dev_frac=DEV_FRAC):
+    """n charts च्या stratum मध्ये test किती: round((1 − dev_frac) × n), .5 वर वर (बँकर्स rounding नाही)."""
+    return int(math.floor((1.0 - dev_frac) * n + 0.5 + 1e-9))
+
+
+def stratum_split(existing, new, seed, dev_frac=DEV_FRAC):
+    """एका symbol stratum मध्ये नव्या charts चे test ids: stratum चा एकूण test = round(30 % × सगळे), आधीचे test वजा; नव्यांमधून
+    (TF) slot प्रमाणात seeded (`split`). आधीच्या charts ना हात नाही. Abhi cases (origin abhi_case) नेहमी dev."""
+    k = stratum_test_count(len(existing) + len(new), dev_frac) - sum(c["split"] == "test" for c in existing)
+    eligible = [c for c in new if c["origin"] != "abhi_case"]
+    return split(new, max(0, min(k, len(eligible))), seed)
+
+
+def strata_of(manifest, assignment="cr3_global_frozen"):
+    """Manifest चे per-symbol strata. `strata` मध्ये नसलेला symbol ⇒ त्याचे आत्ताचे assignments: असलेल्या (CR3) manifest मधून
+    "cr3_global_frozen"; `--force` पूर्ण rebuild (`build`) ⇒ "global_split"."""
+    out = copy.deepcopy(manifest.get("strata") or {})
+    for sym in GD.SYMBOLS:
+        cs = [c for c in manifest.get("charts", []) if c["symbol"] == sym]
+        if cs and sym not in out:
+            out[sym] = {"seed": manifest.get("seed"), "dev": sum(c["split"] == "dev" for c in cs),
+                        "test": sum(c["split"] == "test" for c in cs), "assignment": assignment}
+    return {s: out[s] for s in sorted(out, key=lambda s: ORDER_S.get(s, 99))}
+
+
+def entry_bytes(c):
+    """एका manifest entry चे serialization (manifest file सारखेच) — 'byte-identical' तपासणीसाठी."""
+    return json.dumps(c, ensure_ascii=False, indent=1)
+
+
+def build_stratum(symbol, slots, cases=(), seed=SEED, quotas=None):
+    """एकाच symbol चे charts (त्याच्याच data / cases / seed वरून) ⇒ (charts, stratum info). इतर symbols शी काहीही share होत नाही
+    (RNG, quota, split). Slot quota (`QUOTAS`) पेक्षा कमी windows ⇒ तुटीचा वाटा त्याच symbol च्या इतर TF ना."""
+    quotas = dict(QUOTAS if quotas is None else quotas)
+    sseed = symbol_seed(seed, symbol)
+    rng = np.random.default_rng(sseed)
+    chosen = []
+    for k in (k for k in cases if k["symbol"] == symbol):
+        GD.window_allowed(k["symbol"], k["bars"]["timestamp"].iloc[0], k["bars"]["timestamp"].iloc[-1],
+                          exception=bool(k.get("holdout_dates_exception")))
+        chosen.append(_cand(k["symbol"], k["timeframe"], k["source"], k["bars"].reset_index(drop=True), "abhi_case",
+                            calibration=False, holdout_dates_exception=bool(k.get("holdout_dates_exception")),
+                            case=k["key"], note=k.get("note", "")))
+    pools = {}
+    for sl in sorted((s for s in slots if s["symbol"] == symbol), key=lambda s: ORDER_T[s["timeframe"]]):
+        pools[(symbol, sl["timeframe"])] = pool(sl, chosen)
+    target = sum(v for (s, _), v in quotas.items() if s == symbol)
+    q = {k: max(0, min(quotas.get(k, 0) - sum(1 for c in chosen if (c["symbol"], c["timeframe"]) == k), len(pl)))
+         for k, pl in pools.items()}
+    deficit = target - len(chosen) - sum(q.values())
+    while deficit > 0:                                               # त्याच symbol च्या इतर TF ना (इतर symbols ना कधीच नाही)
+        moved = False
+        for k in pools:
+            if deficit > 0 and q[k] < len(pools[k]):
+                q[k] += 1
+                deficit -= 1
+                moved = True
+        if not moved:
+            break
+    for k, pl in pools.items():
+        chosen += pick(pl, q[k], rng)
+    test = stratum_split([], chosen, sseed)
+    chosen.sort(key=lambda c: (ORDER_T[c["timeframe"]], c["start"]))
+    for c in chosen:
+        c["split"] = "test" if c["id"] in test else "dev"
+    info = {"seed": sseed, "dev": sum(c["split"] == "dev" for c in chosen), "test": sum(c["split"] == "test" for c in chosen),
+            "assignment": "stratified_70_30", "auto_per_slot": {f"{s}/{t}": v for (s, t), v in q.items()}}
+    return chosen, info
+
+
+def add_symbol(base, symbol, slots, cases=(), missing=None, seed=None, quotas=None):
+    """Additive: `base` manifest मध्ये नवा symbol stratum जोडतो (नवा dict; base बदलत नाही). आधीचे सगळे entries byte-for-byte
+    तसेच (शेवटी तपासलं जातं). `symbol` आधीच असेल ⇒ ValueError; त्याचा data (slots) नाही ⇒ `GD.DataMissing` (manifest बदलत नाही)."""
+    if any(c["symbol"] == symbol for c in base.get("charts", [])):
+        raise ValueError(f"{symbol} आधीच manifest मध्ये आहे — additive mode फक्त नव्या symbol साठी")
+    if not any(s["symbol"] == symbol for s in slots):
+        raise GD.DataMissing(f"{symbol}: OHLC files नाहीत — manifest बदलला नाही")
+    old = [entry_bytes(c) for c in base["charts"]]
+    seed = base.get("seed", SEED) if seed is None else seed
+    new, info = build_stratum(symbol, slots, cases, seed, quotas)
+    if not new:
+        raise GD.DataMissing(f"{symbol}: data आहे पण policy-योग्य window एकही नाही — manifest बदलला नाही")
+    m = copy.deepcopy(base)
+    n0 = max((c.get("n", 0) for c in m["charts"]), default=0)
+    for i, c in enumerate(new, 1):
+        c["n"] = n0 + i
+    m["charts"] = m["charts"] + new
+    cs = m["charts"]
+    strata = strata_of(base)
+    strata[symbol] = {k: v for k, v in info.items() if k != "auto_per_slot"}
+    m["strata"], m["strata_rule"] = strata_of({"strata": strata, "charts": cs}), STRATA_RULE
+    m.update({"n_total": len(cs), "n_dev": sum(c["split"] == "dev" for c in cs), "n_test": sum(c["split"] == "test" for c in cs),
+              "counts": {s: {t: sum(1 for c in cs if c["symbol"] == s and c["timeframe"] == t) for t in GD.TIMEFRAMES}
+                         for s in GD.SYMBOLS}})
+    m.setdefault("auto_per_slot", {}).update(info["auto_per_slot"])
+    m.setdefault("sources", {}).update({sl["symbol"] + "/" + sl["timeframe"]: {"source": sl["source"], "rule": sl.get("rule", "")}
+                                        for sl in sorted(slots, key=lambda s: ORDER_T[s["timeframe"]]) if sl["symbol"] == symbol})
+    have = {c["timeframe"] for c in new}
+    m["missing"] = [x for x in (m.get("missing") or []) if not (x["symbol"] == symbol and x["timeframe"] in have)]
+    m["missing"] += [x for x in (missing or []) if x["symbol"] == symbol and x["timeframe"] not in have and x not in m["missing"]]
+    pairs = sorted([a["id"], b["id"]] for a in cs for b in cs if a["split"] == "test" and b["split"] == "dev"
+                   and a["symbol"] == b["symbol"] and _overlaps(a["start"], a["end"], b["start"], b["end"]))
+    m["cross_tf_overlap"] = {"rule": (m.get("cross_tf_overlap") or {}).get("rule", OVERLAP_RULE), "pairs": pairs}
+    if [entry_bytes(c) for c in m["charts"][:len(old)]] != old:                      # पहारा: आधीचा एकही entry बदलला नाही
+        raise AssertionError("additive mode ने आधीचा entry बदलला — लिहिलं नाही")
+    return m
 
 
 # ---------------------------------------------------------------------------------------------------------------- real data
 AUTO = {("NIFTY", "D"): "nifty_1m_repo", ("NIFTY", "1H"): "nifty_1m_repo", ("NIFTY", "15M"): "nifty_1m_repo",
-        ("BANKNIFTY", "D"): "banknifty_D", ("BANKNIFTY", "1H"): "banknifty_1H", ("BANKNIFTY", "15M"): "banknifty_15M"}
+        ("BANKNIFTY", "D"): "banknifty_D", ("BANKNIFTY", "1H"): "banknifty_1H", ("BANKNIFTY", "15M"): "banknifty_15M",
+        ("SENSEX", "D"): "sensex_D", ("SENSEX", "1H"): "sensex_1H", ("SENSEX", "15M"): "sensex_15M"}
 
 
 def load_cases(path=CASES):
@@ -259,10 +391,11 @@ def load_cases(path=CASES):
         return json.load(fh)
 
 
-def real_inputs(cases_path=CASES):
-    """या machine वरचा data ⇒ (slots, cases, missing). NIFTY auto = फक्त IS; data नाही ⇒ missing मध्ये नोंद (data शोधून काढत नाही)."""
+def real_inputs(cases_path=CASES, symbols=None):
+    """या machine वरचा data ⇒ (slots, cases, missing). NIFTY auto = फक्त IS; data नाही ⇒ missing मध्ये नोंद (data शोधून काढत नाही).
+    `symbols` (ऐच्छिक) ⇒ फक्त ते symbols (additive mode)."""
     slots, missing = [], []
-    for sym in GD.SYMBOLS:
+    for sym in (s for s in GD.SYMBOLS if symbols is None or s in symbols):
         for tf in GD.TIMEFRAMES:
             key = AUTO.get((sym, tf))
             if key is None:
@@ -284,6 +417,8 @@ def real_inputs(cases_path=CASES):
                           "rule": f"{rule}; data {first:%Y-%m-%d} → {last:%Y-%m-%d}, {len(bars)} bars"})
     cases = []
     for k in load_cases(cases_path):
+        if symbols is not None and k["symbol"] not in symbols:
+            continue
         exc = bool(k.get("holdout_dates_exception"))
         try:
             fr = GD.tf_frame(k["source"], k["timeframe"], k["start"], k["end"], exception=exc)
