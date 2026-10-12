@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/deploy_one_bot.sh — Abhi (one bot, VPS वर एकच command). LIVE ला हात नाही (set_one_bot_mode LIVE combos नाकारतो; installer LIVE cron
 # ओळी तशाच ठेवतो; इथे कुठलाही order / LIVE setting नाही).
-#   bash scripts/deploy_one_bot.sh            ⇒ pull (deploy-main = origin/main, rollback file) → engine schedule → one-bot settings
+#   bash scripts/deploy_one_bot.sh            ⇒ pull (deploy-main = origin/main, rollback file) → one-bot settings → engine schedule
 #                                               (before / after table) → services restart (असतील तेच) → pre-open dry-run → engine dry-run → status
 #   bash scripts/deploy_one_bot.sh --revert   ⇒ settings revert → schedule revert → code rollback (rollback file) → restart → status
 # Env: REPO_DIR (default /root/Trade), DEPLOY_REF (default origin/main), ROLLBACK_FILE (default /root/one_bot_rollback.txt).
@@ -9,17 +9,20 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/root/Trade}"
 REF="${DEPLOY_REF:-origin/main}"
 RB="${ROLLBACK_FILE:-/root/one_bot_rollback.txt}"
-UNITS=(vision_worker vision_telegram streamlit_dashboard)
 cd "$REPO_DIR"
+# .env (Supabase / Upstox / Telegram) — scripts स्वतः load करत नाहीत; काहीही छापत नाही.
+[ -f ./.env ] || { echo "❌ $REPO_DIR/.env नाही — deploy थांबवला"; exit 1; }
+set +u; set -a; . ./.env; set +a; set -u
 
 restart_units() {
-  local u
-  for u in "${UNITS[@]}"; do
-    if systemctl list-unit-files --no-legend "$u.service" 2>/dev/null | grep -q "^$u.service"; then
-      systemctl restart "$u.service" && echo "↻ $u: $(systemctl is-active "$u.service" || true)" || echo "⚠️ $u restart अयशस्वी"
-    else
-      echo "· $u: unit नाही (optional) — skip"
-    fi
+  # मागच्या deploy सारखेच: चालू vision* / position* / streamlit* + vision_worker / vision_telegram (unit असेल तर). नसलेले ⇒ skip.
+  local u S
+  S=$(systemctl list-units --type=service --state=active --no-legend --plain "vision*" "position*" "streamlit*" 2>/dev/null | cut -d" " -f1)
+  for u in vision_worker.service vision_telegram.service; do systemctl cat "$u" >/dev/null 2>&1 && S="$S $u"; done
+  S=$(echo $S | tr " " "\n" | sort -u | tr "\n" " ")
+  [ -n "${S// /}" ] || { echo "· restart: unit नाही"; return 0; }
+  for u in $S; do
+    systemctl restart "$u" && echo "↻ $u: $(systemctl is-active "$u" || true)" || echo "⚠️ $u restart अयशस्वी"
   done
 }
 
@@ -53,16 +56,16 @@ git diff --quiet "$OLD" "$REF" -- requirements.txt || python3 -m pip install -q 
 git checkout -q -B deploy-main "$REF"
 echo "code: $(git log -1 --oneline)"
 
-echo "== 2/7 engine schedule"
-bash scripts/install_engine_schedule.sh
-
-echo "== 3/7 one-bot settings (before / after)"
+echo "== 2/7 one-bot settings (before / after)"
 set +e; python3 scripts/set_one_bot_mode.py; RC=$?; set -e
 if [ "$RC" = 3 ]; then
   echo "❌ one-bot mode clean नाही (वरची ❌ ओळ = कारण) — deploy इथे थांबवला. Revert: bash scripts/deploy_one_bot.sh --revert"; exit 3
 elif [ "$RC" != 0 ]; then
   echo "❌ set_one_bot_mode exit $RC — deploy थांबवला"; exit "$RC"
 fi
+
+echo "== 3/7 engine schedule"
+bash scripts/install_engine_schedule.sh
 
 echo "== 4/7 restart (असलेले units)"; restart_units
 echo "== 5/7 pre-open (dry-run, Telegram नाही)"; python3 scripts/level_gate_preopen.py --dry-run || echo "⚠️ pre-open dry-run अयशस्वी"
