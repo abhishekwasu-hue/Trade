@@ -101,7 +101,7 @@ class CycleGate:
             r = {"state": "ERROR", "entry": False, "side": None, "reason": self.err, "events": [], "area": (lo, hi)}
         else:
             others = [a for a in self.areas if (round(min(a), 4), round(max(a), 4)) != key]
-            r = LR.safe_evaluate(self.bars, (lo, hi), self.ctx, others, self.k0, s=self.s, ltf=self.ltf(), tf_minutes=self.tf)
+            r = LR.safe_evaluate(self.bars, (lo, hi), self.ctx, others, self.k0, s=self.s, ltf=self.ltf, tf_minutes=self.tf)
             r.setdefault("area", (lo, hi))
         self._cache[key] = r
         return r

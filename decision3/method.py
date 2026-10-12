@@ -494,6 +494,21 @@ def _naive(ts):
     return ts
 
 
+_LTF_WARNED = set()
+
+
+def warn_ltf_missing(where):
+    """c1 आवश्यक पण LTF दिलेलं नाही ⇒ प्रत्येक caller साठी एकदाच ठळक इशारा (batch tools शांतपणे 0 entries देऊ नयेत). Entry fail-closed राहते."""
+    if where in _LTF_WARNED:
+        return
+    _LTF_WARNED.add(where)
+    import warnings
+    msg = (f"{where}: c1 (LTF CHoCH) is required (ltf_choch=True) but no lower-timeframe bars were given — every entry will wait with "
+           f"'LTF data missing'. Pass ltf= (5M / 1M bars) or set ltf_choch=False for a what-if.")
+    warnings.warn(msg, RuntimeWarning, stacklevel=3)
+    print(f"⚠️ {msg}")
+
+
 def ltf_frame(df, minutes, label=None):
     """c1: lower-timeframe bars (timestamp = bar सुरुवात[, bar_end]) ⇒ arrays (bar_end क्रमाने). None / रिकामे ⇒ None (c1 fail-closed)."""
     if df is None or not len(df):
@@ -510,9 +525,12 @@ def ltf_frame(df, minutes, label=None):
 def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     """c1 (Abhi): lower-timeframe change of character, फक्त CLOSE ने. LTF bars = bar_end ≤ t_end (setup bar चा close ⇒ lookahead नाही);
     study = t_start (area मध्ये arrival) पासून; संदर्भ (pullback चे swings) = t_ctx पासून. Bullish (d = +1): study मधला सर्वात खालचा low
-    (LL) नंतर higher low (1-bar pivot, LL पेक्षा वर) **किंवा** त्या LL candle ने आधीचा LTF swing low / area ची far edge sweep करून close परत
-    आत — **मग** एखादी candle LL आधीच्या शेवटच्या LTF swing high (lower high) च्या वर CLOSE ⇒ CHoCH. Wick वर गेला पण close नाही ⇒ CHoCH नाही.
-    Bearish = आरसा (किंमती उलट करून तेच गणित). रिटर्न dict: done, code (ltf_missing / ltf_against / ltf_pending), line + किंमती."""
+    (LL). LTF ने lower lows थांबवले ⇔ LL नंतर किमान एक बंद candle (तिचा low LL पेक्षा कमी नाही — LL = window चा किमान) **किंवा** LL candle
+    ने आधीचा LTF swing low / area ची far edge sweep करून close परत आत. **मग** LL नंतर (sweep असेल तर LL candle पासूनच) एखादी candle LL
+    आधीच्या शेवटच्या LTF swing high (lower high) च्या वर CLOSE ⇒ CHoCH; higher low = LL नंतर CHoCH candle पर्यंतचा सर्वात खालचा low
+    (समान ⇒ double bottom). V-reversal / stair-step recovery / gap-down चा पहिलाच bar low — सगळे चालतात. Wick वर गेला पण close नाही ⇒
+    CHoCH नाही. शेवटचा बंद LTF bar च LL ⇒ "still trending against". Bearish = आरसा (किंमती उलट करून तेच गणित).
+    रिटर्न dict: done, code (ltf_missing / ltf_against / ltf_pending), line + किंमती."""
     lab = (L or {}).get("label", "LTF")
     miss = {"done": False, "code": C_LTF_MISSING, "line": f"{lab}: LTF data missing"}
     if L is None or not len(L["end"]):
@@ -530,39 +548,42 @@ def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
     E = L["end"][ii]
     m = len(ii)
     w0 = m - len(w)
-    jl = w0 + int(np.argmin(Lo[w0:]))
+    jl = w0 + int(np.argmin(Lo[w0:]))                                      # पहिली घटना (नंतरचा समान low = double bottom)
     lmin = float(Lo[jl])
     ph = [i for i in range(1, m - 1) if H[i] > H[i - 1] and H[i] >= H[i + 1]]
     pl = [i for i in range(1, m - 1) if Lo[i] < Lo[i - 1] and Lo[i] <= Lo[i + 1]]
     lhs = [i for i in ph if i < jl]
-    j_lh = lhs[-1] if lhs else max(jl - 1, 0)                              # pivot नसेल (सरळ घसरण) ⇒ LL आधीच्या candle चा high
+    j_lh = lhs[-1] if lhs else max(jl - 1, 0)                              # pivot नसेल (सरळ घसरण / gap) ⇒ LL आधीच्या candle चा high
     lh = float(H[j_lh])
     prior = [i for i in pl if i < jl]
     sweep = bool(prior and Lo[jl] < Lo[prior[-1]] and C[jl] > Lo[prior[-1]])
     if lvl is not None:
         edge = float(lvl["lo"]) if d > 0 else -float(lvl["hi"])
         sweep = sweep or bool(Lo[jl] < edge and C[jl] >= edge)
-    hls = [i for i in pl if i > jl and Lo[i] > lmin]
-    j0 = jl if sweep else (hls[0] + 1 if hls else None)
-    jc = next((j for j in range(j0, m) if C[j] > lh), None) if j0 is not None else None
+    jc = next((j for j in range(jl if sweep else jl + 1, m) if C[j] > lh), None)
+    seg_end = jc if jc is not None else m - 1
+    hl = float(np.min(Lo[jl + 1:seg_end + 1])) if seg_end > jl else None
     back = (lambda x: x) if d > 0 else (lambda x: -x)                     # noqa: E731
     hl_word, lh_word = ("higher low", "LH") if d > 0 else ("lower high", "HL")
     ext_word, beyond = ("low", "above") if d > 0 else ("high", "below")
-    out = {"done": jc is not None, "low": back(lmin), "lh": back(lh), "sweep": sweep, "hl": back(float(Lo[hls[0]])) if hls else None,
+    trend_word = "lower lows" if d > 0 else "higher highs"
+    out = {"done": jc is not None, "low": back(lmin), "lh": back(lh), "sweep": sweep, "hl": None if hl is None else back(hl),
            "low_at": str(pd.Timestamp(E[jl])), "label": lab}
+    parts = [f"sweep of {ext_word} {_px(out['low'])} closed back inside"] if sweep else []
+    if hl is not None:
+        parts.append(f"double {'bottom' if d > 0 else 'top'} {_px(out['hl'])}" if hl <= lmin else f"{hl_word} {_px(out['hl'])}")
+    first = ", ".join(parts) or f"{ext_word} {_px(out['low'])}"
     if jc is not None:
         hm = pd.Timestamp(E[jc]).strftime("%H:%M")
-        first = f"{hl_word} {_px(out['hl'])}" if (hls and hls[0] < jc) else f"sweep of {ext_word} {_px(out['low'])} closed back inside"
         out.update(code=None, at=str(pd.Timestamp(E[jc])), close=back(float(C[jc])),
                    line=f"{lab} CHoCH: {first}, close {beyond} {lh_word} {_px(out['lh'])} at {hm}")
         return out
-    if sweep or hls:
+    if jl < m - 1 or sweep:
         wick = any(H[j] > lh for j in range(jl, m))
-        first = f"{hl_word} {_px(out['hl'])}" if hls else f"sweep of {ext_word} {_px(out['low'])}"
         out.update(code=C_LTF_PENDING, line=f"{lab}: {first}, no close {beyond} {lh_word} {_px(out['lh'])} yet"
                    + (" (wick only)" if wick else ""))
     else:
-        out.update(code=C_LTF_AGAINST, line=f"{lab}: still making lower {'lows' if d > 0 else 'highs'} "
+        out.update(code=C_LTF_AGAINST, line=f"{lab}: still making {trend_word} "
                    f"({ext_word} {_px(out['low'])} at {pd.Timestamp(E[jl]).strftime('%H:%M')}) — LTF still trending against")
     return out
 
@@ -572,7 +593,7 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
     वापरतात; d = ±1 (आरसा). Study window = arm (area मध्ये arrival) … commitment candle t. क्रम:
       a2 — window arm … t − 1 मध्ये उलट-बाजू volume वाढत मजबूत (absorption) ⇒ वाट (commitment पाहतच नाही);
       c0 — commitment (Q16 form) + dominant body (≥ commit_dom_mult × window सरासरी) + volume > window सरासरी (volume NA ⇒ चालतं, कमाल B);
-      c1 — LTF CHoCH by close (`ltf_choch`; ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
+      c1 — LTF CHoCH by close (`ltf_choch`; ltf = ltf_frame किंवा तो देणारं callable (commitment असेल तरच बोलावतो); ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
            True = आवश्यक). LTF नाही ⇒ "LTF data missing" ⇒ वाट (fail-closed, कधीच शांतपणे वगळत नाही).
     प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
     study (zone_study), absorption, study_ran, c0, c1, choch, lines (ticket ओळी)."""
@@ -586,8 +607,12 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
             return out
     ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm)
     out.update(commit=cm, c0=bool(ok), why=why)
-    if ltf is not None and ltf_times is not None:
-        ch = ltf_choch(ltf, d, *ltf_times, lvl=lvl)
+    if callable(ltf) and not ok:                                           # lazy LTF (bots): commitment नाही ⇒ LTF fetch / वाचन नाही
+        out["wait"] = cm.get("wait") or C_COMMIT
+        return out
+    L = ltf() if callable(ltf) else ltf
+    if L is not None and ltf_times is not None:
+        ch = ltf_choch(L, d, *ltf_times, lvl=lvl)
     else:
         ch = {"done": False, "code": C_LTF_MISSING, "line": "LTF: LTF data missing"}
     out["choch"], out["c1"] = ch, bool(ch["done"])

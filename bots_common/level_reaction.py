@@ -303,7 +303,8 @@ def ltf_minutes_for(tf, s=None):
 def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=None, ltf=None, tf_minutes=None):
     """एका area साठी आजच्या session चे बंद bars replay. bars = DataFrame (timestamp, open, high, low, close[, volume]) — मागच्या
     दिवसांचे bars फक्त median range साठी; session_start = आजचा पहिला bar index. area = (lo, hi). ctx = trend_context. others =
-    इतर areas [(lo, hi)] (target). ltf = lower-timeframe बंद bars (DataFrame, timestamp = सुरुवात) — c1 CHoCH; None ⇒ "LTF data
+    इतर areas [(lo, hi)] (target). ltf = lower-timeframe बंद bars (DataFrame, timestamp = सुरुवात, किंवा तो देणारं callable — commitment
+    candle असेल तेव्हाच बोलावतो) — c1 CHoCH; None ⇒ "LTF data
     missing" (entry नाही). tf_minutes = setup TF (नसेल ⇒ bars वरून). a2 + c0 + c1 = decision3.method.confirm (एकच shared function).
     रिटर्न dict: state, entry (शेवटच्या bar वर CONFIRMED?), side, reason, events [(i, state, reason)],
     + CONFIRMED असेल तर entry_price / sl / target / rr / form / grade / evidence."""
@@ -326,7 +327,15 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     frame = bars.reset_index(drop=True)
     tfm = int(tf_minutes or tf_minutes_of(frame) or 5)
     ltm = ltf_minutes_for(tfm, s)
-    L = M.ltf_frame(ltf, ltm or 1, f"{ltm}M" if ltm else "LTF") if ltf is not None else None
+    lcache = {}
+
+    def get_ltf():                                                         # lazy: commitment candle असेल तेव्हाच LTF (fetch) लागतो
+        if "L" not in lcache:
+            raw = ltf() if callable(ltf) else ltf
+            lcache["L"] = M.ltf_frame(raw, ltm or 1, f"{ltm}M" if ltm else "LTF") if raw is not None else None
+            if lcache["L"] is None and s["ltf_choch"]:
+                M.warn_ltf_missing("level_reaction.evaluate")
+        return lcache["L"]
     TS = pd.to_datetime(frame["timestamp"])
     t_ses = TS.iloc[int(session_start)]
     state, side, arm, broken, reason = IDLE, None, None, False, ""
@@ -418,7 +427,7 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                 state, reason, commit_at = DISARMED, R_NO_COMMIT + " (next candle back inside)", None
                 ev(t, DISARMED, reason)
             continue
-        cf = M.confirm(A, arm, t, d, lvl, s3, None, mr=mr[t], ltf=L,       # a2 + c0 + c1 — decision3 चं एकच shared function
+        cf = M.confirm(A, arm, t, d, lvl, s3, None, mr=mr[t], ltf=get_ltf,  # a2 + c0 + c1 — decision3 चं एकच shared function
                        ltf_times=(t_ses, TS.iloc[arm], TS.iloc[t] + pd.Timedelta(minutes=tfm)))
         if cf["absorption"]:                                               # a2: area मध्ये उलट-बाजू मजबूत होत (absorption) ⇒ ती टिकेपर्यंत entry नाही
             if not info.get("absorbing"):

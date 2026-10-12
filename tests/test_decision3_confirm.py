@@ -29,10 +29,10 @@ def test_choch_by_close_after_higher_low(mirror):
     d = M.DOWN if mirror else M.UP
     ch = M.ltf_choch(_ltf(C1.CHOCH, mirror), d, T0, T_ARR, T_END, _lvl(mirror))
     assert ch["done"] and ch["at"] == str(T0 + pd.Timedelta(minutes=38))  # 09:52 ची 1M candle (09:53 ला बंद)
-    assert ch["low"] == (1013.0 if mirror else 987.0) and ch["hl"] == (1008.0 if mirror else 992.0)
+    assert ch["low"] == (1013.0 if mirror else 987.0) and ch["hl"] == (1012.0 if mirror else 988.0)   # LL नंतर CHoCH पर्यंतचा सर्वात खालचा low
     assert ch["lh"] == (997.5 if mirror else 1002.5)
-    assert ch["line"] == ("1M CHoCH: lower high 1,008, close below HL 997.5 at 09:53" if mirror
-                          else "1M CHoCH: higher low 992, close above LH 1,002.5 at 09:53")
+    assert ch["line"] == ("1M CHoCH: lower high 1,012, close below HL 997.5 at 09:53" if mirror
+                          else "1M CHoCH: higher low 988, close above LH 1,002.5 at 09:53")
 
 
 @pytest.mark.parametrize("mirror", [False, True])
@@ -43,8 +43,67 @@ def test_wick_beyond_swing_is_not_choch(mirror):
 
 @pytest.mark.parametrize("mirror", [False, True])
 def test_lower_lows_continuing_is_trending_against(mirror):
-    ch = M.ltf_choch(_ltf(C1.LOWER, mirror), M.DOWN if mirror else M.UP, T0, T_ARR, T_END, _lvl(mirror))
+    d = M.DOWN if mirror else M.UP
+    ch = M.ltf_choch(_ltf(C1.FALL, mirror), d, T0, T_ARR, T_END, _lvl(mirror))
     assert not ch["done"] and ch["code"] == M.C_LTF_AGAINST and "LTF still trending against" in ch["line"]
+    assert ("still making higher highs" if mirror else "still making lower lows") in ch["line"]
+    at_low = M.ltf_choch(_ltf(C1.VREV, mirror), d, T0, T_ARR, T0 + pd.Timedelta(minutes=36), _lvl(mirror))
+    assert at_low["code"] == M.C_LTF_AGAINST                               # 09:50 चा नवा LL हाच शेवटचा बंद bar ⇒ अजून against
+    v = M.ltf_choch(_ltf(C1.VREV, mirror), d, T0, T_ARR, T_END, _lvl(mirror))
+    assert v["done"] and v["hl"] == (1014.5 if mirror else 985.5)          # V: higher low = LL नंतर CHoCH पर्यंतचा सर्वात खालचा low
+
+
+def _f5(rows, mirror=False):
+    """review 🔴1 repro: 5M LTF bars 09:15 पासून."""
+    df = ltf_rows(rows, T0, 5)
+    if mirror:
+        df = df.assign(open=2000 - df["open"], high=2000 - df["low"], low=2000 - df["high"], close=2000 - df["close"])
+    return M.ltf_frame(df, 5, "5M")
+
+
+STAIR = [(1012, 1013, 1006, 1008), (1008, 1014, 1007, 1009), (1009, 1010, 1000, 1001), (1001, 1002, 995, 997),   # 09:30 LL 995
+         (997, 1008, 996, 1007), (1007, 1016, 1006, 1015), (1015, 1026, 1014, 1025), (1025, 1035, 1024, 1034)]   # सगळे lows वर
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_stair_step_v_reversal_is_choch(mirror):
+    """review 🔴1: lowest low 995 (09:30) area 990–1000 मध्ये, मग चार वाढते lows, closes 1007 → 1034, lower high 1014 वर ⇒ CHoCH (09:40 चा bar, 09:45 ला बंद)."""
+    d = M.DOWN if mirror else M.UP
+    L = _f5(STAIR, mirror)
+    arr = T0 + pd.Timedelta(minutes=10)
+    for cut, done in ((20, False), (25, False), (30, True), (35, True), (40, True), (80, True)):   # cut = setup close (T0 + मिनिटं)
+        ch = M.ltf_choch(L, d, T0, arr, T0 + pd.Timedelta(minutes=cut), _lvl(mirror))
+        assert ch["done"] is done, (cut, ch)
+        if cut == 20:
+            assert ch["code"] == M.C_LTF_AGAINST                           # 09:30 चा LL हाच शेवटचा बंद bar
+        if cut == 25:
+            assert ch["code"] == M.C_LTF_PENDING                           # low थांबला, close 1007 < 1014
+        if done:
+            assert ch["at"] == str(T0 + pd.Timedelta(minutes=30)) and ch["lh"] == (986.0 if mirror else 1014.0)
+            assert ch["hl"] == (1004.0 if mirror else 996.0)
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_gap_down_first_bar_is_the_low(mirror):
+    """review 🔴1: gap-down — window चा पहिलाच bar सर्वात खालचा; मग वाढते lows आणि आधीच्या candle च्या high वर close ⇒ CHoCH."""
+    rows = [(1030, 1031, 1022, 1024), (1024, 1026, 1018, 1019),            # संदर्भ (pullback)
+            (1004, 1006, 996, 999), (999, 1012, 998, 1011), (1011, 1028, 1010, 1027)]   # 09:25 gap-down LL 996
+    d = M.DOWN if mirror else M.UP
+    ch = M.ltf_choch(_f5(rows, mirror), d, T0, T0 + pd.Timedelta(minutes=10), T0 + pd.Timedelta(minutes=40), _lvl(mirror))
+    assert ch["done"] and ch["lh"] == (2000 - 1026 if mirror else 1026) and ch["at"] == str(T0 + pd.Timedelta(minutes=25))
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_equal_low_is_double_bottom_not_against(mirror):
+    """review ⚪: LL नंतर समान low (double bottom) ⇒ trending against नाही; मग LH वर close ⇒ CHoCH."""
+    rows = [(1012, 1014, 1006, 1008), (1008, 1009, 995, 996), (996, 1003, 995.5, 1002), (1002, 1003, 995, 997),
+            (997, 1016, 996.5, 1015)]
+    d = M.DOWN if mirror else M.UP
+    L = _f5(rows, mirror)
+    pend = M.ltf_choch(L, d, T0, T0 + pd.Timedelta(minutes=5), T0 + pd.Timedelta(minutes=20), _lvl(mirror))
+    assert pend["code"] == M.C_LTF_PENDING                                 # समान low शेवटचा bar असला तरी against नाही
+    ch = M.ltf_choch(L, d, T0, T0 + pd.Timedelta(minutes=5), T0 + pd.Timedelta(minutes=25), _lvl(mirror))
+    assert ch["done"] and ("double top" if mirror else "double bottom") in ch["line"]
 
 
 @pytest.mark.parametrize("mirror", [False, True])
@@ -55,7 +114,7 @@ def test_sweep_of_low_closing_back_inside_then_close_above_lh(mirror):
     ch = M.ltf_choch(_ltf(tail, mirror), M.DOWN if mirror else M.UP, T0, T_ARR, T_ARR + pd.Timedelta(minutes=9), _lvl(mirror))
     assert ch["done"] and ch["sweep"] and "closed back inside" in ch["line"]
     no_edge = M.ltf_choch(_ltf(tail, mirror), M.DOWN if mirror else M.UP, T0, T_ARR, T_ARR + pd.Timedelta(minutes=9), None)
-    assert not no_edge["done"]                                             # area नसताना (आधीचा LTF swing low नाही) ⇒ sweep नाही
+    assert no_edge["done"] and not no_edge["sweep"]                        # area नसताना sweep नाही (lower lows थांबले ⇒ तरीही CHoCH)
 
 
 @pytest.mark.parametrize("mirror", [False, True])
@@ -94,8 +153,12 @@ def test_confirm_requires_all_three_and_reports_each_missing_piece(mirror):
     assert "body 4.2× window avg · volume 2.0× window avg" in ok["lines"][1] and ok["lines"][2].startswith("1M CHoCH:")
     miss = M.confirm(A, arm, t, d, lvl, s, ltf=None, ltf_times=times)
     assert not miss["ok"] and miss["wait"] == M.C_LTF_MISSING and miss["c0"]
-    A2, arm, t, lvl, L2 = _A(C1.LOWER, mirror=mirror)
-    assert M.confirm(A2, arm, t, d, lvl, s, ltf=L2, ltf_times=times)["wait"] == M.C_LTF_AGAINST
+    assert M.confirm(A, arm, t, d, lvl, s, ltf=_ltf(C1.FALL, mirror), ltf_times=times)["wait"] == M.C_LTF_AGAINST
+    A2, arm, t, lvl, L2 = _A(C1.VREV, mirror=mirror)
+    assert M.confirm(A2, arm, t, d, lvl, s, ltf=L2, ltf_times=times)["ok"]   # V-reversal ⇒ CHoCH (review 🔴1)
+    calls = []
+    lazy = M.confirm(A, arm - 1, arm, d, lvl, s, ltf=lambda: calls.append(1) or L, ltf_times=times)
+    assert not lazy["c0"] and not calls                                    # commitment नाही ⇒ LTF बोलावत नाही
     A3, arm, t, lvl, L3 = _A(C1.CHOCH, vol_commit=80.0, mirror=mirror)
     lowv = M.confirm(A3, arm, t, d, lvl, s, ltf=L3, ltf_times=times)
     assert not lowv["ok"] and lowv["wait"] == "low_volume" and lowv["c1"]  # CHoCH आहे, पण कमी volume ⇒ या candle वर नाही
