@@ -87,3 +87,9 @@ data/paper_dry_run_*.log
 
 # Reader v2 gallery labels — Abhi's marking, private trade-data only (repo public)
 gallery2/data/labels/
+
+# One bot (VPS local): paper instruments override, set_one_bot_mode before-state, engine3 fold cache / alert dedupe
+data/paper_local.yaml
+data/one_bot_before*.json
+data/engine3_cache/
+data/engine_signal_alerts.json
