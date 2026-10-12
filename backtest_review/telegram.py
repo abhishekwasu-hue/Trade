@@ -12,6 +12,17 @@
   नोंद = `backtest_review` (item_id = manifest item, item_type day / trade, review_date, verdict, reason, missed_trade, settings_hash = run)
   ⇒ bot "नोंद ✓". Telegram चुका: 429 ⇒ retry_after थांबून तेच पुन्हा; 400 / 413 (size / dims) ⇒ लहान करून एकदा; network ⇒ पुन्हा नाही
   (duplicate album टाळा — पुढच्या run मध्ये). Sent log खराब ⇒ sender थांबतो (सगळं पुन्हा पाठवत नाही).
+
+Telegram वर काय जातं (Abhi, TELEGRAM_CLEANUP 1–3):
+  • Debug outputs कधीच नाहीत: manifest चा top-level `"tag": "debug"` ⇒ संपूर्ण run नकार (DebugRunRefused); item चा kind DEBUG_KINDS मध्ये
+    (day maps, per-bar "wait / no touch" strips, reader debug views, diag / what-if) किंवा नावात daymap / debug / strip / per_bar / diag /
+    whatif ⇒ तो item नकार (out["refused"]). ALLOWED_KINDS बाहेरचा अनोळखी kind ⇒ सुद्धा नकार (fail-closed). force=True (script: --force)
+    ⇒ तरीही पाठवतो.
+  • ALLOWED_KINDS (review charts जे Abhi मागतो): kind नसलेले जुने review items (K-10 / Golden Gallery / backtest review), v22_check
+    (setup audit — audit नंतर निवडलेले), v22_setup (setup audit — run "debug" tag शिवाय), v22_daily_swings, vision_test, mtf आणि
+    *_check (decision / swing / trendline / pattern / leg / rsi / zone / all7 / annotation).
+  • प्रत्येक caption: ओळ 1 = साधी English ओळ (काय पाहायचं), ओळ 2 = "Decision needed: …", मग "── details ──" आणि त्याखाली engine चा
+    जुना caption (raw codes) — bots_common/plain_text.compose. Item मध्ये "headline" / "decision" असतील तर तेच.
 """
 import io
 import json
@@ -30,6 +41,53 @@ BAD_MARKS = ("✘", "✗", "❌", "✖", "👎")
 
 class NoCredentials(RuntimeError):
     """Token / chat id नाही (संदेशात token कधीच नाही)."""
+
+
+class DebugRunRefused(RuntimeError):
+    """manifest top-level "tag": "debug" ⇒ Telegram ला नाही (force शिवाय)."""
+
+
+# ---------------------------------------------------------------------------------------------------------------- काय जातं / काय नाही
+DEBUG_TAG = "debug"
+ALLOWED_KINDS = (None, "", "v22_check", "v22_setup", "v22_daily_swings", "vision_test", "decision_check", "swing_check", "trendline_check",
+                 "pattern_check", "leg_check", "rsi_check", "zone_check", "all7_check", "annotation_check", "mtf")
+DEBUG_KINDS = ("v22_daymap", "v22_day_map", "v22_bar_strip", "v22_bars", "v22_commit_diag", "v22_whatif", "reader_debug", "reader2_debug",
+               "reader_debug_view", "debug")
+DEBUG_WORDS = ("daymap", "day_map", "debug", "strip", "per_bar", "diag", "whatif")
+KIND_HEAD = {
+    "v22_check": "Engine setup check ({title}, {date}): do the trend, the area and the entry candle look right to you?",
+    "v22_setup": "Setup the engine would take ({title}, {date}): would you take this trade?",
+    "v22_daily_swings": "Daily trend picture ({title}, {date}): is the trend direction right, and are the supply / demand areas in the "
+                        "right places?",
+    "vision_test": "Vision test ({title}, {date}): is Vision's reading of this chart right?",
+}
+DEFAULT_HEAD = "Engine reading ({title}, {date}): is the marking on the chart right?"
+
+
+def run_refusal(m):
+    """manifest ⇒ run नकाराचं कारण (English, script छापतो) किंवा None."""
+    tag = m.get("tag")
+    tags = tag if isinstance(tag, (list, tuple)) else [tag]
+    if any(str(t or "").strip().lower() == DEBUG_TAG for t in tags):
+        return (f"run '{m.get('run_id')}' is tagged \"debug\" — debug outputs (day maps, per-bar strips, pre-audit batches, reader debug "
+                "views) stay in trade-data and the dashboard; they never go to Telegram. Pass --force only if you really mean to send it.")
+    return None
+
+
+def item_refusal(it, m=None):
+    """item ⇒ नकाराचं कारण (debug / अनोळखी kind; kind नसेल तर run_id / title मध्ये debug शब्द) किंवा None."""
+    k = it.get("kind")
+    kl = str(k or "").strip().lower()
+    if kl in DEBUG_KINDS or any(w in kl for w in DEBUG_WORDS):
+        return f"kind '{k}' is a debug view (kept in trade-data / dashboard, not for Telegram)"
+    if not kl and m is not None:
+        name = f"{m.get('run_id') or ''} {m.get('title') or ''}".lower()
+        hit = next((w for w in DEBUG_WORDS if w in name), None)
+        if hit:
+            return f"item has no kind and the run name contains '{hit}' (debug output, not for Telegram)"
+    if k not in ALLOWED_KINDS:
+        return f"kind '{k}' is not in the allowed list ({', '.join(x for x in ALLOWED_KINDS if x)})"
+    return None
 
 
 # ---------------------------------------------------------------------------------------------------------------- manifest
@@ -69,11 +127,25 @@ def _kind(b):
     return ("jpg", "image/jpeg") if b[:3] == b"\xff\xd8\xff" else ("png", "image/png")
 
 
-def caption(m, it):
+def headline(m, it):
+    """साधी ओळ 1 (काय पाहायचं) — item चा "headline" असेल तर तोच."""
+    if it.get("headline"):
+        return str(it["headline"])
+    return KIND_HEAD.get(it.get("kind"), DEFAULT_HEAD).format(title=m.get("title") or "", date=it.get("date") or "")
+
+
+def details(m, it):
+    """जुना caption (engine codes सकट) — "── details ──" खाली."""
     if it.get("caption"):                                                   # item चा स्वतःचा caption (उदा. vision_test) — तसाच
-        return str(it["caption"])[:MAX_CAPTION]
+        return str(it["caption"])
     return (f"🔎 {m['title']} {m.get('unit') or 'दिवस'} {it['n']}/{len(m['items'])} · {it['date']}\n{str(it['reading'])[:MAX_READING]}\n"
             "Reply: ✔ / ✘ कारण / सुटलेला trade HH:MM bear|bull")
+
+
+def caption(m, it):
+    """ओळ 1 साधी (काय पाहायचं) · ओळ 2 Decision needed · ── details ── · engine caption (≤ 1024; कापणी फक्त details मध्ये)."""
+    from bots_common import plain_text as PT
+    return PT.compose(headline(m, it), str(it.get("decision") or PT.DECISION_REVIEW), details(m, it), limit=MAX_CAPTION)
 
 
 # ---------------------------------------------------------------------------------------------------------------- sent log
@@ -205,13 +277,18 @@ def send_document(path, cap, run_key, call=None, creds=None, sent=None):
     return "sent"
 
 
-def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None, auditor=None):
+def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.sleep, dry_run=False, run_key=None, auditor=None,
+             force=False):
     """manifest मधले न पाठवलेले items पाठवा. रिटर्न {"sent": n, "skipped": n, "failed": [(date, कारण)]} + "audits": […] (फक्त v2.2 audit झाले तर).
     auditor(run_dir, item) ⇒ decision3.vision_audit dict (v2.2 items, kind "v22…"): Telegram **आधी** audit; caption मध्ये audit ओळ,
     media group नंतर "Vision report" reply. Audit अपयश / budget संपला ⇒ chart तरीही जातो (caption मध्ये तसं).
     run_key = sent log मधली run ओळख (default manifest run_id; script ⇒ --run path). call(method, data, files, timeout) ⇒ Telegram JSON
-    (ok false सुद्धा) | None (network); creds() ⇒ (token, chat_id) — default notifications credentials."""
+    (ok false सुद्धा) | None (network); creds() ⇒ (token, chat_id) — default notifications credentials.
+    force False ⇒ run "tag": "debug" ⇒ DebugRunRefused (काहीच पाठवत नाही); debug / अनोळखी kind चे items ⇒ out["refused"] [(item, कारण)]."""
     m = load_manifest(run_dir)
+    why = run_refusal(m)
+    if why and not force:
+        raise DebugRunRefused(why)
     run_key = run_key or m["run_id"]
     if creds is None:
         from vision import tg as TG
@@ -221,11 +298,15 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
         raise NoCredentials("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID .env मध्ये नाहीत — काहीच पाठवलं नाही")
     call = call or raw_call(creds)
     log = load_sent(sent, strict=True)
-    out = {"sent": 0, "skipped": 0, "failed": []}
+    out = {"sent": 0, "skipped": 0, "failed": [], "refused": []}
     for it in m["items"]:
         k = key(run_key, it["item"])
         if k in log:
             out["skipped"] += 1
+            continue
+        bad = None if force else item_refusal(it, m)
+        if bad:                                                             # debug view ⇒ Telegram नाही (trade-data / dashboard मध्येच)
+            out["refused"].append((it["item"], bad))
             continue
         cap = caption(m, it)
         aud = None
@@ -236,11 +317,11 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
             except Exception as exc:                                        # noqa: BLE001 — audit अपयश chart अडवत नाही (Abhi)
                 aud = {"status": "failed", "why": f"auditor {type(exc).__name__}", "verdict": None, "sections": {}, "issues": [],
                        "cost_usd": 0.0, "item": it["item"], "chart": it["files"][0]}
-            cap = VA.with_audit_line(cap, VA.caption_line(aud))
+            cap = caption(m, {**it, "caption": VA.with_audit_line(details(m, it), VA.caption_line(aud))})   # audit ओळ details मध्ये
             out.setdefault("audits", []).append(aud)
         elif str(it.get("kind") or "").startswith("v22") and not dry_run:   # audit बंद ⇒ caption मध्ये स्पष्ट
             from decision3 import vision_audit as VA
-            cap = VA.with_audit_line(cap, "Vision audit skipped: off")
+            cap = caption(m, {**it, "caption": VA.with_audit_line(details(m, it), "Vision audit skipped: off")})
         if dry_run:
             print(f"[dry-run] {cap.splitlines()[0]} · {len(it['files'])} images")
             out["sent"] += 1
@@ -254,7 +335,7 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
                       "files": it["files"], "sha": [_sha(os.path.join(run_dir, f)) for f in it["files"]]}
             if aud is not None:                                              # Vision report = chart चा reply (वेगळा संदेश)
                 from decision3 import vision_audit as VA
-                j = call("sendMessage", {"chat_id": cid, "text": VA.report_text(aud, cap.splitlines()[0]),
+                j = call("sendMessage", {"chat_id": cid, "text": VA.report_text(aud, details(m, it).splitlines()[0]),
                                          "reply_to_message_id": ids[0]}, None, timeout=30)
                 log[k]["vision_report_ok"] = bool(j and j.get("ok"))
                 if not log[k]["vision_report_ok"]:                          # chart गेला, report नाही ⇒ गुपचूप नाही

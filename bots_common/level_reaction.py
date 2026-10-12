@@ -39,6 +39,10 @@ R_NO_TARGET = "no target area"
 R_ERROR = "gate error (fail-closed)"
 R_ABSORPTION = "absorption (counter side strengthening inside the area)"
 R_LOW_VOL = "commitment on low volume"
+R_LTF_MISSING = "LTF data missing"                 # c1: lower-timeframe bars नाहीत ⇒ entry नाही (fail-closed)
+R_LTF_AGAINST = "LTF still trending against"       # c1: LTF अजून lower lows (demand) / higher highs (supply)
+R_LTF_PENDING = "waiting for LTF CHoCH"            # c1: higher low / sweep झाला, पण शेवटच्या LTF swing पलीकडे close नाही
+_LTF_REASON = {"ltf_missing": R_LTF_MISSING, "ltf_against": R_LTF_AGAINST, "ltf_pending": R_LTF_PENDING}
 
 _FORMS = {"engulf": ("bullish engulfing", "bearish engulfing"), "pin": ("hammer / pin", "shooting star / pin"),
           "star": ("morning star", "evening star"), "strong_close": ("strong bullish close", "strong bearish close"),
@@ -67,6 +71,8 @@ DEFAULTS = {
     "allow_parent_correction": False,   # A1 (impulse origin तुटला, parent टिकला) चालू असताना नवे entries? default नाही (fail-safe)
     "grade_b_lot_mult": 1.0,        # grade B ⇒ lots × इतके (MVP: बदल नाही; Abhi ठरवतील)
     "trend_retry_min": 15,          # trend अपयशी (fetch त्रुटी / < 30 Daily bars) ⇒ इतकी मिनिटं पुन्हा fetch नाही (negative cache; entry नाहीच)
+    "ltf_choch": True,              # c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close; False फक्त what-if / a2-c0 regression
+    "ltf_minutes": 0,               # c1 LTF (dashboard): 0 ⇒ Abhi mapping (decision3.method.LTF_OF: 15M ⇒ 5M, 5M ⇒ 1M)
 }
 
 
@@ -105,12 +111,17 @@ def context_from_state(st, s=None, asof=None):
     s = settings(s)
     ctx = {"ok": False, "trend": st.trend, "sides": set(), "band": st.band, "phase": st.phase, "counter": st.counter,
            "protected": None if st.protected is None else round(float(st.protected.price), 2), "asof": asof,
-           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature)}
+           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature),
+           "targets": [round(float(x), 2) for x in (getattr(st, "targets", None) or ())],   # फक्त माहिती (15:45 सारांश) — निर्णयात नाही
+           "structure_against": getattr(st, "rev", None) is not None}
     if st.trend in ("UP", "DOWN"):
         if st.phase == "origin_broken":
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: protected origin close ने तुटला)"
         elif st.origin_risk:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: origin धोक्यात — Q47)"
+        elif getattr(st, "rev", None) is not None:                         # trend first (setups audit): रचना trend विरुद्ध
+            ctx["reason"] = (f"{R_NO_TREND} (Daily {st.trend}: impulse टोकानंतरची रचना उलट — "
+                             f"{'HL' if st.rev[0].kind == 'L' else 'LH'} {st.rev[0].price:,.0f} + close {st.rev[1].price:,.0f} पलीकडे)")
         elif st.counter == "correction" and not s["allow_parent_correction"]:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: impulse origin तुटला, parent correction चालू)"
         else:
@@ -158,6 +169,10 @@ def call_with_timeout(fn, args=(), timeout=20.0):
     return box.get("v")
 
 
+TREND_CTX_VERSION = "trend-first-2"                                        # Daily gate (decision3 fold / context_from_state) बदलला की
+                                                                           # वाढवा ⇒ आजचा जुन्या code चा cache (ok True) वापरला जात नाही
+
+
 def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=None, lookback_days=3650, s=None, timeout=25.0):
     """आजच्या दिवसासाठी trend context (दिवसातून एकदा गणना, file cache). fetch(access_token, symbol) ⇒ daily DataFrame (default Upstox
     'day' candles, ~10 वर्षं — पूर्ण history सारखीच अवस्था देतात). अपयश ⇒ ok False (fail-closed). Cache फक्त पूर्ण fetch चा (≥ 30 bars,
@@ -173,9 +188,10 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if os.path.exists(p):
             c = json.load(open(p, encoding="utf-8"))
-            c["sides"] = set(c.get("sides") or ())
-            c["band"] = tuple(c["band"]) if c.get("band") else None
-            return c
+            if c.get("engine") == TREND_CTX_VERSION:                       # जुन्या code चा (deploy आधीचा) cache ⇒ नवी गणना
+                c["sides"] = set(c.get("sides") or ())
+                c["band"] = tuple(c["band"]) if c.get("band") else None
+                return c
     except (OSError, ValueError):
         pass
     try:
@@ -189,7 +205,8 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if complete:
             os.makedirs(os.path.dirname(p), exist_ok=True)
-            json.dump({**ctx, "sides": sorted(ctx["sides"])}, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+            json.dump({**ctx, "sides": sorted(ctx["sides"]), "engine": TREND_CTX_VERSION}, open(p, "w", encoding="utf-8"),
+                      ensure_ascii=False)
         elif not ctx.get("ok"):
             os.makedirs(os.path.dirname(pf), exist_ok=True)
             json.dump({"at": _clock(), "ctx": {**ctx, "sides": []}}, open(pf, "w", encoding="utf-8"), ensure_ascii=False)
@@ -280,17 +297,34 @@ def _target(side, entry, area, others):
 
 
 # ------------------------------------------------------------------------------------------------ state machine
-def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=None):
+def tf_minutes_of(bars):
+    """bars च्या timestamps मधला सर्वात लहान धन फरक (मिनिटं) — setup TF माहीत नसेल तर. एकच bar ⇒ None."""
+    ts = pd.to_datetime(bars["timestamp"]).sort_values().diff().dropna()
+    ts = ts[ts > pd.Timedelta(0)]
+    return int(ts.min() / pd.Timedelta(minutes=1)) if len(ts) else None
+
+
+def ltf_minutes_for(tf, s=None):
+    """c1 mapping (Abhi): setting `ltf_minutes` (> 0) नाहीतर decision3.method.LTF_OF (15 ⇒ 5, 5 ⇒ 1). माहीत नाही ⇒ None."""
+    from decision3 import method as M
+    s = settings(s)
+    return int(s["ltf_minutes"]) if int(s["ltf_minutes"]) > 0 else M.LTF_OF.get(int(tf)) if tf else None
+
+
+def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=None, ltf=None, tf_minutes=None):
     """एका area साठी आजच्या session चे बंद bars replay. bars = DataFrame (timestamp, open, high, low, close[, volume]) — मागच्या
     दिवसांचे bars फक्त median range साठी; session_start = आजचा पहिला bar index. area = (lo, hi). ctx = trend_context. others =
-    इतर areas [(lo, hi)] (target). रिटर्न dict: state, entry (शेवटच्या bar वर CONFIRMED?), side, reason, events [(i, state, reason)],
+    इतर areas [(lo, hi)] (target). ltf = lower-timeframe बंद bars (DataFrame, timestamp = सुरुवात, किंवा तो देणारं callable — commitment
+    candle असेल तेव्हाच बोलावतो) — c1 CHoCH; None ⇒ "LTF data
+    missing" (entry नाही). tf_minutes = setup TF (नसेल ⇒ bars वरून). a2 + c0 + c1 = decision3.method.confirm (एकच shared function).
+    रिटर्न dict: state, entry (शेवटच्या bar वर CONFIRMED?), side, reason, events [(i, state, reason)],
     + CONFIRMED असेल तर entry_price / sl / target / rr / form / grade / evidence."""
     s = settings(s)
     from decision3 import method as M
     from decision3 import settings as S3
     from elliott import breaks as BR
     from elliott import settings as ES
-    s3 = s3 or S3.DEFAULTS
+    s3 = {**(s3 or S3.DEFAULTS), "ltf_choch": bool(s["ltf_choch"])}
     es = es or ES.DEFAULTS
     lo, hi = float(min(area)), float(max(area))
     n = len(bars)
@@ -302,6 +336,19 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     A = _arrays(bars)
     mr = median_ranges(A, s["mr_n"])
     frame = bars.reset_index(drop=True)
+    tfm = int(tf_minutes or tf_minutes_of(frame) or 5)
+    ltm = ltf_minutes_for(tfm, s)
+    lcache = {}
+
+    def get_ltf():                                                         # lazy: commitment candle असेल तेव्हाच LTF (fetch) लागतो
+        if "L" not in lcache:
+            raw = ltf() if callable(ltf) else ltf
+            lcache["L"] = M.ltf_frame(raw, ltm or 1, f"{ltm}M" if ltm else "LTF") if raw is not None else None
+            if lcache["L"] is None and s["ltf_choch"]:
+                M.warn_ltf_missing("level_reaction.evaluate")
+        return lcache["L"]
+    TS = pd.to_datetime(frame["timestamp"])
+    t_ses = TS.iloc[int(session_start)]
     state, side, arm, broken, reason = IDLE, None, None, False, ""
     broken_side = None                                                     # आज ज्या भूमिकेत area खरा तुटला (review 🟡8: उलट भूमिकेत retest चालतो)
     commit_at, info = None, {}
@@ -351,7 +398,7 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                 state, side, arm = DISARMED, sd, t
             else:
                 state, side, arm, swept = ARMED, sd, t, False
-                for k_ in ("absorbing", "low_vol_logged", "impulsive"):
+                for k_ in ("absorbing", "low_vol_logged", "impulsive", "ltf_wait", "ltf_logged"):
                     info.pop(k_, None)                                     # नवी भेट ⇒ मागचे झेंडे नाहीत
                 ev(t, ARMED, "price arrived")
                 if _impulsive_approach(A, t, sd, mr, s):
@@ -391,30 +438,39 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                 state, reason, commit_at = DISARMED, R_NO_COMMIT + " (next candle back inside)", None
                 ev(t, DISARMED, reason)
             continue
-        if t - 1 >= arm:                                                   # a2: area मध्ये उलट-बाजू मजबूत होत (absorption) ⇒ ती टिकेपर्यंत entry नाही
-            zp = M.zone_study(A, arm, t - 1, d, s3, mr=mr[t])
-            if zp.get("absorption"):
-                if not info.get("absorbing"):
-                    ev(t, ARMED, R_ABSORPTION)
-                info["absorbing"] = True
-                if t - arm + 1 >= int(s["max_armed_bars"]):
-                    state, reason = DISARMED, R_TIMEOUT
-                    ev(t, DISARMED, R_TIMEOUT)
-                continue
+        cf = M.confirm(A, arm, t, d, lvl, s3, None, mr=mr[t], ltf=get_ltf,  # a2 + c0 + c1 — decision3 चं एकच shared function
+                       ltf_times=(t_ses, TS.iloc[arm], TS.iloc[t] + pd.Timedelta(minutes=tfm)))
+        if cf["absorption"]:                                               # a2: area मध्ये उलट-बाजू मजबूत होत (absorption) ⇒ ती टिकेपर्यंत entry नाही
+            if not info.get("absorbing"):
+                ev(t, ARMED, R_ABSORPTION)
+            info["absorbing"] = True
+            if t - arm + 1 >= int(s["max_armed_bars"]):
+                state, reason = DISARMED, R_TIMEOUT
+                ev(t, DISARMED, R_TIMEOUT)
+            continue
+        if cf["study_ran"]:
             info["absorbing"] = False
-        ok, why, cm = M.commitment(A, t, d, lvl, s3, None, win=arm)
+        ok, cm = cf["c0"], cf["commit"]
         if not ok and cm.get("wait") == "low_volume" and not info.get("low_vol_logged"):
             ev(t, ARMED, R_LOW_VOL)                                        # c0: dominant पण volume कमी ⇒ याच candle वर नाही, timeout पर्यंत वाट
             info["low_vol_logged"] = True
         inner_ok = (c - (hi if side == BULL else lo)) * d > 0              # area च्या आतल्या कडेपलीकडे close
-        if ok and inner_ok:
+        info["ltf_wait"] = None
+        if ok and inner_ok and not cf["ok"]:                               # c1: commitment आहे पण LTF CHoCH नाही ⇒ वाट (कारण नोंदीत, timeout पर्यंत)
+            why_l = _LTF_REASON.get(cf["wait"], R_LTF_PENDING)
+            info["ltf_wait"] = why_l
+            if info.get("ltf_logged") != why_l:
+                ev(t, ARMED, why_l)
+                info["ltf_logged"] = why_l
+            info["ltf_line"] = (cf["choch"] or {}).get("line")
+        if ok and inner_ok and cf["ok"]:
             m = mr[t] if np.isfinite(mr[t]) else 0.0
             seg_l, seg_h = A["low"][arm:t + 1].min(), A["high"][arm:t + 1].max()
             sl = (min(lo, seg_l) - float(s["sl_buffer_mr"]) * m) if side == BULL else (max(hi, seg_h) + float(s["sl_buffer_mr"]) * m)
             tgt = _target(side, c, (lo, hi), others)
             rk = (c - sl) * d
             rr = None if (tgt is None or rk <= 0) else (tgt - c) * d / rk
-            zs = M.zone_study(A, arm, t, d, s3, mr=mr[t])                  # a2: window ARMED ⇒ commitment candle
+            zs = cf["study"]                                               # a2: window ARMED ⇒ commitment candle
             evid = {"sweep": bool(swept), "corrective_approach": bool(M.power_shift(A, t, d, None, s3, lvl)[0]),
                     "handover": zs.get("handover"), "pattern": zs.get("pattern"), "rsi_divergence": None,
                     "commit_grade_A": cm.get("grade") == "A", "volume_na": bool(cm.get("vol_na"))}
@@ -429,8 +485,12 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "rr": None if rr is None else round(float(rr), 2), "form": cm.get("form"), "commit_grade": cm.get("grade"),
                     "grade": grade, "evidence": evid, "confirm_bar": int(t),
                     "confirm_ts": str(pd.Timestamp(bars["timestamp"].iloc[t])),
+                    "arm_bar": int(arm), "arm_ts": str(pd.Timestamp(bars["timestamp"].iloc[arm])),   # chart: study window (volume pane)
+                    **_volume_out(frame, A, arm, t, (lo, hi), d, cm),          # chart / caption: engine चेच volume आकडे (output only)
                     "study": f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
                     "commit_line": "commitment: " + " · ".join(x for x in (form_name(cm.get("form"), side), btxt, vtxt) if x)}
+            if cf["choch"] and cf["choch"].get("done"):
+                plan["ltf_line"] = cf["choch"]["line"]                     # c1 ticket: "5M CHoCH: higher low …, close above LH … at 10:20"
             if tgt is None:
                 state, reason = DISARMED, R_NO_TARGET
                 ev(t, DISARMED, R_NO_TARGET)
@@ -468,6 +528,29 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     out["broken"] = bool(broken)
     out["absorbing"] = state == ARMED and bool(info.get("absorbing"))     # L5: ARMED मधलं कारण (signal log / दैनिक सारांश)
     out["low_volume"] = state == ARMED and bool(info.get("low_vol_logged"))
+    out["ltf_wait"] = info.get("ltf_wait") if state == ARMED else None   # c1: ARMED मधलं LTF कारण (signal log / dashboard)
+    if out["ltf_wait"]:
+        out["ltf_line"] = info.get("ltf_line")
+    return out
+
+
+VOLUME_BARS_OUT = 80                                                       # chart साठी bar volumes (setup panel ≈ 60 bars)
+
+
+def _volume_out(frame, A, arm, t, area, d, cm):
+    """Output only (निर्णयात नाही): c0 चा vol_mult / vol_na, त्याच window ची trend-side / counter-side सरासरी (× window avg) आणि
+    t पर्यंतचे शेवटचे bars चे volume — Vision chart / caption तेच आकडे दाखवतात (पुन्हा futures fetch नाही, दोन वेगळे आकडे नाहीत)."""
+    from decision3 import volume_pane as VP
+    v = A.get("volume")
+    out = {"vol_mult": cm.get("vol_mult"), "vol_na": bool(cm.get("vol_na")) if cm.get("vol_na") is not None else v is None,
+           "vol_trend_mult": None, "vol_counter_mult": None, "bar_volumes": []}
+    if v is None:
+        return out
+    st = VP.study(frame.iloc[:t + 1], vol=v[:t + 1], area=area, d=d, commit=int(t), arm=int(arm))
+    out["vol_trend_mult"], out["vol_counter_mult"] = st["trend_mult"], st["counter_mult"]
+    k0 = max(0, int(t) + 1 - VOLUME_BARS_OUT)
+    ts = pd.to_datetime(frame["timestamp"]).iloc[k0:t + 1]
+    out["bar_volumes"] = [[str(pd.Timestamp(x)), (float(y) if np.isfinite(y) and y > 0 else None)] for x, y in zip(ts, v[k0:t + 1])]
     return out
 
 
@@ -498,7 +581,8 @@ def describe(r, area=None):
     st = r.get("state")
     if st == ARMED:
         word = "bullish" if r.get("side") == BULL else "bearish"
-        why = " · absorption" if r.get("absorbing") else (" · commitment on low volume" if r.get("low_volume") else "")
+        why = " · absorption" if r.get("absorbing") else (" · commitment on low volume" if r.get("low_volume") else
+                                                          (f" · {r['ltf_wait']}" if r.get("ltf_wait") else ""))
         return (f"Watching {kind} {rng} · price arrived · waiting for a {word} commitment · "
                 f"{r.get('bars_armed', 0)}/{r.get('max_armed_bars')} bars{why}")
     if st == CONFIRMED:

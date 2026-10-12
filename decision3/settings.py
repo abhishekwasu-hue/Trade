@@ -12,6 +12,8 @@ DEFAULTS = {
     "corr_degree_frac": 0.5,                 # फक्त corr_degree_rule = "ratio" (जुना, what-if): मागच्या same-degree correction चा भाग
     "daily_start_nature_gate": True,         # Q28 (Abhi): 3-wave / corrective रचना trend लावत नाही — impulse-स्वभावाचा पाय लागतो
     "daily_parent_gate": True,               # A1 (Abhi review): counter impulse trend उलटवत नाही जोपर्यंत trend च्या सुरुवातीचा origin close ने तुटत नाही
+    "q49_impulse_origin": "complete_impulse",  # Q49 (a) origin: "complete_impulse" = चालू leg पूर्ण 5-wave चा wave 5 असेल तर त्या
+                                             # impulse ची सुरुवात (Abhi मंजुरी बाकी); "leg" = साधं वाचन (चालू impulse leg चा origin)
     "range_after_trend": True,               # Q27 (Abhi): origin तुटला + दोन समान H आणि दोन समान L ⇒ RANGE (कडांवर trade)
     "maturity_sigma_d": 0.5,                 # maturity: (5) target च्या इतक्या σ_D आत ⇒ "impulse mature" (पुरावा)
     "weekly_min_bars": 10,                   # weekly पालक: यापेक्षा कमी weekly candles ⇒ weekly UNKNOWN
@@ -29,6 +31,8 @@ DEFAULTS = {
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
+    "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
+                                             # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
     "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
@@ -43,6 +47,7 @@ DEFAULTS = {
     "commit_dom_mult": 1.5,                  # ⑥ c0 (Abhi): commitment candle "dominant" ⇔ body ≥ इतके × study window ची सरासरी body (window दिला तरच)
     "study_min_bars": 4,                     # a2 zone study: window मध्ये किमान इतक्या candles (पहिला / दुसरा अर्धा तुलना)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
+    "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
     "tl_degree": 1,                          # K मधले counter pivots (D1 — §5.1 पाय-मोजणीचीच degree)
@@ -58,6 +63,8 @@ DEFAULTS = {
     "commit_close_frac": 2 / 3,              # signal-bar: close range च्या trend-बाजूच्या तृतीयांशात (§5.2)
     "touch_window_bars": 3,                  # ③ "level मध्ये / लगत": शेवटच्या इतक्या 15M bars पैकी एकाने पट्ट्याला स्पर्श (commitment + आधीचा)
     "entry_start": "09:30", "entry_end": "15:15",   # entry bar ची सुरुवात start ≤ hm < end (15:15 चा bar बाजार बंदला close ⇒ नाही)
+    "evidence_start": "09:15",               # Abhi (12 Oct): पुरावा-खिडकी (2-candle form / संदर्भ candle) सत्राच्या सुरुवातीपासून — opening candle चा
+                                             # sweep + wick = पुरावा; entry खिडकी (entry_start) तशीच
     # candle वाचन / §5.3
     "candle_avg_n": 5,                       # "मोठा / लहान" = मागच्या इतक्या candles च्या सरासरीशी तुलना (§5.2)
     "doji_body_max": 0.1,                    # body / range < हे ⇒ doji
@@ -88,6 +95,7 @@ REGISTER = {
     "corr_degree_rule": ("internal_pullback", "internal_pullback / ratio", "Abhi नियम", "Q22: रचनात्मक — impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे (प्रमाण नाही); ratio = जुना what-if"),
     "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
     "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
+    "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "maturity_sigma_d": (0.5, "0.25/0.5/1.0", "अंदाज", "Q15 (5): target 'जवळ' = σ_D चा अपूर्णांक (पुरावा, gate नाही)"),
@@ -105,6 +113,7 @@ REGISTER = {
     "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
+    "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),
@@ -116,6 +125,7 @@ REGISTER = {
     "commit_dom_mult": (1.5, "1.25/1.5/2.0", "अंदाज", "level bots c0: 'clearly larger than the window average' — आकडा Abhi ने ठरवायचा (OPEN_QUESTIONS LB8)"),
     "study_min_bars": (4, "—", "व्याख्या", "a2: पहिला / दुसरा अर्धा तुलना करायला किमान candles"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
+    "ltf_choch": (True, "True / False (what-if)", "Abhi नियम", "LEVEL_BOTS_CONFIRMATION c1: LTF CHoCH by close आवश्यक; mapping 1H/15M ⇒ 5M, 5M ⇒ 1M (method.LTF_OF); swings = साधे 1-bar pivots (zone_pattern सारखेच)"),
     "power_overlap": (0.5, "—", "Abhi नियम", "spec ④ (b) ≥ 50%"),
     "tl_degree": (1, "0/1", "व्याख्या", "spec ⑤ 'K ची आतली रेघ' — K चे पाय D1 (Q20)"),
     "tl_touch_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ⑤ स्पर्श सहनशीलता"),
@@ -129,6 +139,7 @@ REGISTER = {
     "commit_close_frac": ("2/3", "—", "व्याख्या", "spec §5.2 close trend-बाजूच्या तृतीयांशात"),
     "touch_window_bars": (3, "1/2/3", "व्याख्या", "spec ⑥ 'level मध्ये / लगत' + §6.2 H2 'वर / जवळ' (Q18)"),
     "entry_start / entry_end": ("09:30 / 15:15", "settings", "setting", "spec ⑥ वेळ-खिडकी फक्त settings; v2.1 प्रमाणे end exclusive"),
+    "evidence_start": ("09:15", "09:15 / entry_start", "व्याख्या", "Abhi (12 Oct): NSE सत्राची सुरुवात — opening candle पुरावा म्हणून मोजायची, entry नाही"),
     "candle_avg_n": (5, "—", "Abhi नियम", "spec §5.2 मागच्या 5 candles ची सरासरी"),
     "doji_body_max": (0.1, "0.05/0.1/0.15", "अंदाज", "spec §5.2 / §5.3 doji (body लहान)"),
     "range_overlap_min": (0.5, "—", "व्याख्या", "spec §5.3 'बहुतांश overlap' (≥ 50%)"),

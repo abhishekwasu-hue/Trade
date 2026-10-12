@@ -1783,6 +1783,27 @@ dashboard: LIVE / LIVE_PAPER save ⇒ entry_mode touch; MCX pause gates / Telegr
 तुटलेला area उलट भूमिकेत (flip) त्याच दिवशी retest चालतो, तीच भूमिका नाही; न वापरलेले Telegram helpers काढले; would-have वेळ IST; lots कधी 0 नाहीत.
 उरलेले (नोंद): min-hold / fast-move / level-strength सारखे जुने optional gates confirmation नंतरही लागतात — production settings मध्ये बंद आहेत ना ते तपासा.
 
+## 2026-10-11 · L6 — level bots replay: legacy touch वि. confirmation (Abhi §6)
+
+**काय केलं:** `level_bots_replay.py` (pure functions) + `scripts/level_bots_replay.py` (CLI, फक्त local data, network / DB / order नाही) ⇒
+`docs/reports/level_bots_confirmation.md` + CSV (`data/research/level_bots_replay/`). दोन्ही arms त्याच दिवसांवर, त्याच levels वर (bots चे Dynamic
+S/R, refresh scripts चे parameters / lookback, सत्र सुरुवात + दर 60 मिनिटं बंद bars वरून), तोच cost (charges.py ⇒ points). Touch arm = bot फाईल्समधली
+functions थेट (`check_level_crossed`, `determine_direction_with_hysteresis`) + settings defaults (RSI, max hits, cooldowns, 14:45, EOD, naked spot %
+SL / target); confirmation arm = `LR.evaluate` प्रत्येक बंद confirmation-TF candle ला (live सारखं), trend = एकच `DD.fold` प्रति symbol + `state_at`
+प्रति दिवस, exit = structural SL / target. अहवाल: प्रति bot trades / win rate / net expectancy / max DD / PF, bull / bear / range / no trend split,
+gate ने नाकारलेले legacy trades कारणानुसार (saved / cost), n < 30 ⇒ निष्कर्ष नाही. NIFTY फक्त IS / VAL (HOLDOUT guard); BANKNIFTY फक्त 15M
+(≈ 3 महिने, SRv2) आणि MCX 30m (≈ 4 महिने) — illustration.
+**Tests:** `tests/test_level_bots_replay.py` 32 pass (exits आरसा, position नियम, metrics, gate निकाल गट, n < 30, holdout, एकच fold, legacy = bot functions).
+**SAMPLE:** NIFTY 2021-12-17 → 2022-01-13 (20 दिवस IS / VAL), BANKNIFTY / MCX 19–20 दिवस — अहवालावर "SAMPLE — full run pending". पूर्ण run lead
+चालवेल: `python3 scripts/level_bots_replay.py` (≈ 35 मिनिटं). Bot फाईल्सना हात नाही (LIVE / touch वर्तन तसंच).
+**Review दुरुस्त्या (🔴1 / 🟡2–5 / ⚪):** confirmation arm ला आता bot चेच exits (live मध्ये exits ला हात नाही) — फक्त entry gate वेगळा; structural
+SL / target वेगळा तिसरा arm "confirmation + structural exit (not live)". Position नियम live प्रमाणे: Instant / Classic (level, role) 30 मिनिटं,
+SRv2 चा symbol-व्यापी cooldown काढला (live मध्ये कधीच लागत नाही), level SL / TSL 15, MCX तोट्याचा SL 60 + level-दिशा block. Exits:
+`evaluate_point_spot_exit` चा spot भाग + TSL-to-breakeven (sticky); premium-points भाग replay होत नाही (assumptions मध्ये). Rejection: त्याच बाजूची,
+त्याच भेटीची (arrival → area सोडेपर्यंत) gate नोंद; cutoff नंतरचा confirmation ⇒ "after cutoff". MCX: L4 नियम (structural SL settings SL ने
+capped ⇒ SL_TOO_WIDE skip, R:R पुन्हा), confirmation 30m (15m data नाही), "ILLUSTRATION — default points unrealistic" ठळक. काळ = DP.period सगळ्यांना,
+seal `is_nifty`, शेवटच्या bar वरचा entry ⇒ dropped नोंद, ctx_days 5. Tests 42 pass; SAMPLE पुन्हा बनवला.
+
 ## 2026-10-11 · Chart Reader v2 CR0–CR2 (Abhi: TRADE_SESSION_CHART_READER_V2) — research-only
 
 **CR0:** `docs/READER2_DESIGN.md` (English) — design, units (median range), data flow, invariants तक्ता, आणि `legs2/features.py` audit (काय आहे / anatomy
@@ -1826,6 +1847,111 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 **Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
 नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
 
+## 2026-10-12 · एकच confirmation (a2 + c0 + c1) — V22 ⑥ आणि level bots (LEVEL_BOTS_CONFIRMATION §2 a2 / c0 / c1; DECISIONS item 2 (e) (f))
+
+**काय केलं:** `decision3/method.confirm` = एकच shared function (दिशा d, आरसा): a2 (window मध्ये absorption ⇒ वाट), c0 (Q16 form + dominant body
+≥ `commit_dom_mult` × window सरासरी + volume > window सरासरी; NA ⇒ चालतं, कमाल B), **c1 नवा** — `method.ltf_choch`: LTF lower low नंतर higher low (1-bar
+pivot) किंवा sweep-close-back-inside, मग शेवटच्या LTF lower high वर **close** (wick ⇒ नाही); LTF bars फक्त setup bar च्या close पर्यंत (lookahead
+नाही). Mapping `method.LTF_OF`: 15M / 1H ⇒ 5M, 5M ⇒ 1M. Setting `ltf_choch` (decision3 + gate, default True = आवश्यक; False फक्त what-if).
+प्रत्येक गहाळ भाग ⇒ वाट + कारण ("LTF data missing" / "LTF still trending against" / "waiting for LTF CHoCH" / low volume / not dominant / absorption).
+- **V22:** ⑥ `M.commitment` ऐवजी `V22._confirm` ⇒ `M.confirm` (study window = K मधला level-स्पर्शांचा शेवटचा सलग गट). नवे optional inputs
+  `ltf=` (5M bars) आणि `futures=` (5M FUT ⇒ `legs2.volume.bar_volume`); `ltf` नसेल आणि `df1m` असेल ⇒ त्याच 1m चे 5M (`market_state.core.frame`);
+  दोन्ही नाहीत ⇒ ⑥ "LTF data missing" (setup नाही). ④ (e) handover-volume आधीच होतं — आता volume दिल्यावर लागतं.
+- **Level bots:** `level_reaction.evaluate` आता `M.confirm` बोलावतो (a2 / c0 ची नक्कल काढली), `ltf=` / `tf_minutes=`; CHoCH नसेल ⇒ ARMED +
+  `ltf_wait` (signal log `SKIPPED_GATE_LTF_MISSING / _AGAINST / _NO_CHOCH`), ticket `ltf_line`. `cycle_gate` LTF त्याच fetch मार्गाने (lazy, एकदाच);
+  5M Instant स्वतःचे 1-मिनिट candles देतो (`use_ltf`). L6 replay ला LTF (1m / 5m frames). Exits ला हात नाही; touch mode तसाच.
+- **a2 / c0 वर्तन तसेच (पुरावा):** c1 बंद ठेवून सगळे जुने level-bot tests (695) हिरवे; replay-day तुलना (NIFTY 2021-08 → 2022-01, Instant /
+  Classic / SRv2, 120 दिवस): c1 बंद ⇒ origin/main शी byte-identical; c1 चालू ⇒ touch trades तेच (589), confirmation 18 ⇒ 11.
+- **Tests:** नवे `tests/test_level_reaction_c1.py`, `tests/test_decision3_confirm.py` (प्रत्येक case आरशासह; main वर 34 / 35 fail). जुन्या tests
+  मध्ये फक्त inputs: `test_level_reaction.py` = c1-पूर्व करार (c1 बंद fixture), `NO_MATURE` fixture (15M-only, dominant candle नाही) ⇒ c0 / c1 बंद,
+  bot harnesses ना LTF candles, replay fake ला `**kw`. Expectations बदलल्या नाहीत.
+- **Review 🔴1 / 🟡2 / 🟡3:** V-reversal (stair-step, gap-down पहिलाच bar low) आता CHoCH — HL = LL नंतर CHoCH पर्यंतचा सर्वात खालचा low;
+  "against" फक्त LL हाच शेवटचा बंद bar असेल तर; समान low = double bottom; bearish मजकूर "higher highs". c1 आवश्यक पण LTF नाही ⇒ एकदाच
+  RuntimeWarning (`method.warn_ltf_missing`; V22 / level_reaction). Bots: LTF fetch फक्त commitment candle असताना (`confirm` ला callable).
+- **V22 बदल:** `docs/reports/v22_confirmation_c1.md` (NIFTY 2015 → 2024-03, before / after, #23 / #24). उघडे: LB25–LB30.
+
+## 2026-10-12 · 12-Oct blockers (decision3 V22, Abhi reference case — NIFTY bear call)
+
+**काय केलं** (branch `claude/oct12-blockers`, `claude/v22-confirmation` merge सकट ⇒ a2 + c0 + c1 चालू):
+- (b) maturity = पुरावा फक्त: रचना अखंड (`mature_intact`) ⇒ grade एक पायरी खाली (A ⇒ B, `method.step_down_conv`), entry अडत नाही; अखंड नाही ⇒ जुना cap weak.
+- (c) `evidence_start` = 09:15: opening candle 2-candle form / संदर्भ candle म्हणून पुरावा; entry खिडकी तशीच.
+- (d) `trendline.swing_line` + `confluence_areas`: trend-degree swings वरची तिरकी रेघ + horizontal level ⇒ overlap area (t ला माहीत swings फक्त).
+- (f) FUT volume: merged `futures=` मार्ग (legs2.volume.bar_volume, 09:15-anchored 5M बेरीज) तपासला — misalignment नाही.
+- `scripts/replay_day.py` (per-15M निर्णय + dry-run approval chart / संदेश, network नाही), `tests/oct12_fixture.py` (synthetic), अहवाल
+  `docs/reports/2026-10-12_engine_blockers.md`.
+**निकाल:** खऱ्या data वर (9 Oct पर्यंत) b (mature ⇒ weak) आणि e (22,476–22,809 पट्टा 8 Oct ला old-role death ने मेला) अडवत होते; synthetic 12-Oct
+replay ⇒ 09:45 bear call ✅ A, R:R 3.13 (आरसा bull put तसाच). 12-Oct export अजून नाही ⇒ खरा replay बाकी.
+**Tests:** decision3 सगळे + नवे `test_decision3_oct12.py` (11). `test_mature_cap_in_pipeline` / step1 mature test owner नियमानुसार बदलले.
+**उघडे:** D12-1 … D12-5.
+
+## 2026-10-12 · Chart Reader v2 CR3 — marking page + gallery storage (research-only)
+
+**काय केलं:** नवा package `gallery2/` (labels — reader2 चं logic नाही; reader2 / decision3 import करत नाही): `schema` (एका chart ची नोंद:
+legs start/end bar + ts + किंमत + impulse / correction / uncertain, trend states, demand / supply zones, marker, marked_at, notes; तपासणी —
+क्रम, overlap नाही, किंमत = bar चा high / low ± 0.25 MR, holdout नाही), `data` (sources + policy: NIFTY "golden" — holdout / illustration चा
+bar कधीच नाही, 1m resample आधी गाळतो; BANKNIFTY NIFTY-holdout तारखा फक्त तुमच्या case ला), `store` (Supabase `reader2_gallery` upsert +
+revision; JSON folder पर्याय; export ⇒ private trade-data `reader2_gallery/labels/dev|test/<id>.json` (repo public ⇒ labels repo मध्ये नाहीत); sealed: `calibration_labels` फक्त dev folder, test file
+dev मध्ये ⇒ `SealedTestError`), `candidates` (फक्त किंमतीवरून वर्णनात्मक tags, न चढणारा grid, seeded निवड, 28 / 12 split).
+`scripts/reader2_gallery_candidates.py` ⇒ `gallery2/data/manifest.json` (40 charts: NIFTY D 8 / 1H 7 / 15M 8, BANKNIFTY D 7 / 1H 3 / 15M 7;
+SENSEX data नाही ⇒ 0; seed 7; dev 28 / test 12; तुमचे 2 cases dev + `calibration: false`). `scripts/reader2_gallery_export.py` (VPS).
+Dashboard: ANALYZE ⇒ "Reader v2 Gallery (प्रयोगिक)" — chart निवडा, high / low वर क्लिक (Streamlit plotly selection, headless browser मध्ये
+तपासलं) किंवा bar क्रमांक + H / L, legs ला label, trend, zones, जतन (तपासणी आधी), पुन्हा उघडून edit, प्रगती n/40. Chart वर इंग्रजी मजकूर.
+**Tests:** `tests/test_reader2_gallery.py` (schema, round-trip, export, holdout, sealed split, builder determinism / split, manifest, page
+AppTest) + `test_app_navigation` (15 पानं) + `tests/test_reader2*.py` — सगळे pass. Order / broker / paid API / Vision नाही; काहीही calibrate केलं
+नाही. **तुमच्यासाठी तयार:** VPS deploy नंतर dashboard वर 40 charts marking (≈ 10 मिनिटं / chart). उघडे प्रश्न: OPEN_QUESTIONS CR-Q13–CR-Q21.
+
+
+### 2026-10-12 · Chart Reader v2 CR3 — independent review (PR #302) नंतर दुरुस्ती
+**🟡1** chart बदलून परत आल्यावर तक्ते (legs / trend / zones) त्या chart च्या state वरून पुन्हा (जुने बदल परत येत नाहीत). **🟡2** labels folder call वेळी
+(`READER2_GALLERY_LABELS`, नाहीतर `<trade-data>/reader2_gallery/labels`); folder नाही ⇒ स्पष्ट `LabelsMissing`. **🟡3** जतन optimistic lock (revision +
+split; दुसऱ्या tab / device ने मधेच जतन ⇒ "conflict" संदेश, overwrite नाही); DB वाचन अपयश ⇒ error, Save बंद. **🟡4** trend ओळी bar क्रमाने, किमान एक
+state हवा, default रिकामी ओळ अडवत नाही. **🟡5** रिकामा window ⇒ error. **🟡6** manifest `--force` शिवाय बदलत नाही; split वेगळा असलेली नोंद ⇒ error,
+Save बंद (test chart कधीच dev होत नाही). ⚪ NIFTY golden file नावाच्या pattern ने, zone from_bar तपासणी, boundary test मध्ये gallery2, CREATE TABLE
+एकदाच, export अपयश ⇒ raise + जुन्या files काढतो. **Tests:** `tests/test_reader2*.py` + `test_app_navigation` — 304 pass / 40 xfail (आधीचेच).
+
+### 2026-10-12 · Gallery: symbol strata + SENSEX (VPS fetch) + CD14 seed (Abhi: TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §1, §3)
+**Split:** प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 split — manifest मध्ये `strata` (seed, dev, test, assignment). NIFTY 16 / 7 आणि BANKNIFTY
+12 / 5 = CR3 चे assignments **गोठवलेले** (`cr3_global_frozen`; 40 entries byte-for-byte तसेच — test त्यांचा sha256 pin करतो). नवा symbol फक्त
+additive: `scripts/reader2_gallery_candidates.py --add-symbol SENSEX` (`gallery2.candidates.add_symbol`) — त्याच्याच stratum मध्ये windows /
+bucket निवड / split, seed `symbol_seed(7, "SENSEX")`, test = round(0.3 × n); आधीचा एकही entry बदलला तर लिहीत नाही. Files नाहीत ⇒ manifest तसाच,
+कारण छापतो (exit 3). `--force` पूर्ण rebuild तसाच (documented मार्ग = additive).
+**SENSEX data:** `scripts/fetch_sensex_history.py` (VPS-only; BANKNIFTY चाच मार्ग `research/index_candles_fetch.py` — Upstox v3, token VPS `.env`
+/ webhook, कधीच छापत नाही): Daily `days/1`, 15M `minutes/15`, 1H = 15M चा 09:15-anchored resample (BANKNIFTY_1H चेच bins). Volume: BSE F&O
+मध्ये SENSEX near-month futures सापडले ⇒ त्याचा 15M volume (1H / D फक्त पूर्ण झाकलेल्या bins ना), बाकी NA + "grade cap B"; सापडले नाहीत ⇒ volume
+NA (grade cap B). Resume (शेवटचा दिवस पुन्हा, आधी तपासलेला जुना काळ पुन्हा नाही), 0.4 s विराम, `--dry-run` (token / network नाही).
+**CD14:** BANKNIFTY Daily (dev case `BANKNIFTY_D_20251215`) — एक leg impulse: bar 34 (2026-02-03 high 61,764.85) ⇒ bar 73 (2026-04-02 low
+49,954.85) + trend down त्या bar पासून; source "Abhi decision 2026-10-12 (CD14)". **फक्त private trade-data** `reader2_gallery/seeds/dev/`
+(DirStore + `save_record` तपासणी; trade-data commit cb91e66). `scripts/reader2_gallery_seed.py` ⇒ VPS DB मध्ये (फक्त जिथे नोंद नाही — तुमची
+marking कधीच overwrite नाही). Chart `calibration: false` तसाच.
+**Review (PR #303) नंतर:** fetcher चे अयशस्वी chunks `pending` (manifest) मध्ये ⇒ पुढच्या run ला पुन्हा, pending असेपर्यंत exit 1;
+futures store चा शेवटचा (अपूर्ण असू शकणारा) दिवस नव्याने बदलतो; seed import एका chart च्या conflict / store अपयशावर थांबत नाही (`failed`, शेवटी
+exit 1); `--force` rebuild चे strata "global_split".
+**Tests:** `tests/test_reader2_gallery.py` (+9: extra symbol ⇒ जुने entries byte-identical, committed manifest pin, stratum counts, additive script /
+files नाहीत, seeds import) + नवी `tests/test_fetch_sensex_history.py` (9: fixture instrument list, resample, volume bins, merge / resume, schema,
+dry-run, token नाही) + `tests/test_reader2*.py` + `test_app_navigation` — सगळे pass. उघडे: OPEN_QUESTIONS CR-Q22–CR-Q26.
+**तुमच्यासाठी (VPS, PR merge नंतर):** खालचा block — SENSEX history, additive SENSEX candidates (`manifest_sensex_add.json` trade-data मध्ये),
+CD14 seed DB मध्ये (**CD14 chart page वर उघडण्याआधी** seed import चालवा — आधी जतन केलं तर seed लागत नाही). मग मी तो manifest review करून repo मध्ये commit करीन (deploy नंतर SENSEX charts page वर दिसतील).
+
+```bash
+bash <<'SENSEX_GALLERY'
+cd /root/Trade || exit 1
+set -a; . ./.env; set +a
+git fetch -q origin main && git merge --ff-only FETCH_HEAD || { echo "⛔ git pull अयशस्वी — थांबलो"; exit 1; }
+git -C /root/trade-data pull -q --ff-only || { echo "⛔ trade-data pull अयशस्वी — थांबलो"; exit 1; }
+echo "== 1) SENSEX history (Upstox, फक्त GET; token छापत नाही) =="
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data --dry-run
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data || echo "⚠️ काही chunks अयशस्वी — हाच block पुन्हा चालवा (resume)"
+echo "== 2) gallery: SENSEX additive (NIFTY / BANKNIFTY entries तसेच) =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_candidates.py --add-symbol SENSEX \
+  --out /root/trade-data/reader2_gallery/manifest_sensex_add.json
+echo "== 3) CD14 seed ⇒ gallery DB (फक्त जिथे नोंद नाही) — page वर BANKNIFTY_D_20251215 उघडण्याआधी हे चालवा =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_seed.py
+echo "== 4) trade-data मध्ये (manifest Claude review करून repo मध्ये commit करेल) =="
+cd /root/trade-data && git add --ignore-removal sensex reader2_gallery \
+  && git commit -qm "SENSEX D/1H/15M history + reader2 gallery SENSEX additive manifest" && git push -q origin HEAD; git log --oneline -1
+SENSEX_GALLERY
+```
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**
@@ -1841,6 +1967,18 @@ Tests: COMPLETE खरंच तपासणारा (W = 3-wave ⇒ आधी 
 आकडे: mature दिवस NIFTY 1755 ⇒ 809, BANKNIFTY 1685 ⇒ 443; BANKNIFTY V22 (15M 2026-07 पासून) setup 0 ⇒ 0; level bots BANKNIFTY शेवटचे 250 सत्र: 5 दिवस blocked ⇒ allowed (2026-06-29 … 07-03), शेवटचा दिवस context तसाच. NIFTY अलीकडचे सत्र holdout ⇒ offline नाही.
 Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `python3 <scratchpad>/prA_v22_nifty.py <scratchpad>/base <out_old.json>` आणि `python3 <scratchpad>/prA_v22_nifty.py /home/user/Trade-eng <out_new.json>`.
 
+## 2026-10-11 · PR C (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §2 — Q49 wave A की wave 1)
+
+**काय केलं (decision3):**
+- `daily.counter_kind`: 5-wave counter-move ⇒ default wave A. Same-degree ("wave_1a") ⇒ wave 1 (flip शक्य) फक्त (a) correct होत असलेल्या impulse च्या origin पलीकडे close (Abhi: impulse-leg origin, A1 parent नाही) किंवा (b) `daily_legs.unfolded_123` ("1" / "2" / "3" दिसणारे 5 / 3 / 5, "3" "1" पलीकडे). नाहीतर parent टिकला ⇒ A1 correction. Q22 खालचा degree ⇒ नेहमी A (wave 1 फक्त parent तुटल्यावर). फक्त ≤ i confirmed pivots.
+- **✅ Abhi मंजूर (2026-10-12) — (a) चा विस्तार** (`q49_impulse_origin: complete_impulse`, default; `leg` = साधं वाचन): चालू leg एखाद्या पूर्ण 5-wave चा wave 5 असेल तर (a) origin = त्या impulse ची सुरुवात (`daily.complete_impulse_start`, wave 5 bar ने — Rule 4 origin सुद्धा; seq मग low pivots; उमेदवार = नंतर न ओलांडलेले टोक, cap नाही). मंजुरीपूर्वी हा प्रस्ताव होता; साध्या वाचनाने तिन्ही नवे fixtures fail (OPEN_QUESTIONS Q49).
+- (a) पूर्ण-impulse सुरुवातीवर फुटल्यास origin = तोच (pcorr शाखेसारखं). Q49 why मजकूर मार्गानुसार (Q22 मार्गावर "origin टिकला" असा दावा नाही).
+- `DState.wave_a` / `alt` ("1"), prov snapshot मध्ये. Default chart "A"; debug JSON / debug chart "A (alt: 1)"; trend line / caption / ① (Telegram) मध्ये wave क्रमांक नाही (Q46).
+- `daily_legs.leg_points` / `leg_prices` (classify मधून, वर्तन तेच), `_motive_segs`, `unfolded_123`.
+
+**Fixtures / tests:** `very_deep_holds_origin` pass (strict xfail काढले); नवे `q49_complete_five` ((b), "3" च्या शेवटी flip नाही), `q49_beyond_impulse_origin` (ABC_FIX आकार, (a)), `q49_lower_degree_a` (Q22 why); सगळे आरशात. `double_zigzag` strict xfail (Q49 (b)). `tests/test_decision3_q49.py` (17, Rule-4 bar-match unit test सह).
+**Before / after:** `scripts/q49_before_after.py` — BANKNIFTY 2479 दिवस: बदल खाली (review नंतरचा run).
+**Independent review (PR #300, 🔴 नाही) नंतर:** chart वर "A" बहुतेक वेळा box च्या family अक्षराखाली लपत होता ⇒ नियम: चालू box चं "a" wave-A pivot वर ⇒ त्या box ची अक्षरं मोठी (A B C, तीच count); box चं तात्पुरतं family वाचन दुसरं अक्षर तिथे ठेवतं (उदा. triangle, A = "c") ⇒ ती अक्षरं नाहीत, फक्त "A" (Q49 शी विसंगत लहान अक्षर नाही; label kind `wave_a`). Render test (3 fixtures × आरसा, wave-A span वर 4 bars + debug PNG); lookahead test मध्ये `q49_beyond_impulse_origin` ((a) extension). BANKNIFTY before / after (base = main): trend / phase 2 दिवस (2018-07-26 → 27, extension), counter 3, protected 4; wave A 36 दिवस (`leg` ⇒ 34); 2026 बदल नाही. तसेच ठेवले: ① Telegram मध्ये Q49 why फक्त NEUTRAL / UNKNOWN ला जातो (trend असताना why वापरला जात नाही); wave A चं टोक reading corrective झाल्यावर जुन्याच pivot वर राहतं (A वाढला तरी) — OPEN_QUESTIONS Q49-CH.
 
 ## 2026-10-11 · PR B (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5 — chart declutter + legend + 2-ओळी caption + Vision consistency)
 
@@ -1910,3 +2048,131 @@ swing pools फक्त confirmed (confirm_bar ≤ t), PDH / PDL फक्त �
 `pool_marks` (trade-बाजू, show_distance_sigma, duplicate ⇒ PDH प्राधान्य, per_side, आरसा), truncation.
 **पुढे:** Q56 Abhi; BANKNIFTY before / after (trade-data) + Telegram view sample; CD1–CD14 / LB18–LB24 उत्तरं; `counter_traps` level-निरपेक्ष ⇒
 प्रति (t, d) एकदाच मोजणं (perf, reviewer ⚪).
+
+## 2026-10-12 · Volume pane — प्रत्येक setup / proposal chart वर (Abhi: "the volume test is not visible on these charts")
+
+**काय केलं (फक्त charts — engine निर्णय बदलत नाहीत):**
+- `decision3/volume_pane.py` — एकच implementation: source (index ⇒ futures volume NIFTY FUT / BANKNIFTY FUT / SENSEX FUT, MCX ⇒ contract चा
+  स्वतःचा, नाही ⇒ "volume: NA (grade cap B)"), `bar_volume` (asof नंतर संपणारी row कधीच नाही), `study` (window = area arrival → commitment;
+  trend-side / counter-side, window सरासरी = commitment आधीचे window bars — c0 चीच व्याख्या, commitment ×, caption ची एक ओळ), matplotlib
+  आणि plotly panes. Window / बाजू / commitment engine output मधून (`normalize_info`: evaluate चे `arm_bar` / `confirm_bar`, gate tags चे
+  `arm_ts` / `confirm_ts`, `vol_mult`, confirmation branch चा a2 / c0 / c1 dict — `study_window`, `choch_ts` …); नसेल तर helper bars + area +
+  दिशा वरून evaluate चाच arrival नियम वापरतो आणि `computed` मध्ये नोंद.
+- Renderers: Vision chart (`vision/chart.py` — level-bot CONFIRMED §9, manual /paper, सगळे Vision gate signals) setup + higher panel खाली pane
+  (image size तोच); worker index साठी front futures 1m volume आणतो (`default_fetch_volume`, अपयश ⇒ NA) आणि caption मध्ये एक volume ओळ.
+  `decision3/charts.py` m15_png / daily_png (V22 Telegram view) खाली pane. V22 setup review chart scratchpad मधून repo मध्ये:
+  `decision3/setup_chart.py` + `scripts/v22_setup_charts.py` (run / render) — Daily + 15M + 5M, प्रत्येकाखाली volume; Q44 फक्त Daily +
+  caption (15M वर नाही); holdout Daily bars कधीच नाहीत; पहिली ओळ साधं English "What to look at", engine codes caption च्या "Engine detail"
+  भागात; manifest `--tag debug`.
+- `level_reaction.evaluate` plan मध्ये `arm_bar` / `arm_ts` (फक्त output; निर्णय तेच), `gate_tags` मध्ये `arm_ts`.
+
+**Tests:** `tests/test_volume_pane.py` (15: तीन renderers × volume / NA, mirror, no-future, engine window, caption एक ओळ, Q44 15M वर नाही) +
+vision / level bots / decision3 चे संबंधित tests पास.
+
+**Samples (trade-data, tag debug):** `review/v22/volume_pane_samples/` — recent 2026-09-30 13:15 (NIFTY FUT 5M collector + bhavcopy Daily:
+commitment 0.2× window avg) आणि setups_prA_v1 #15 / #16 / #21 (intraday futures इतिहास नाही ⇒ 15M / 5M NA; Daily = bhavcopy near-month FUT).
+30 setups चा पूर्ण re-run confirmation / area branches merge नंतर. उघडे: VP1–VP6.
+**Review fixes (PR #306):** caption / pane मध्ये engine (c0) चेच आकडे — evaluate plan + gate tags मध्ये `vol_mult` / `vol_na` /
+`vol_trend_mult` / `vol_counter_mult` / `bar_volumes` (output only); engine आकडे नसतील तेव्हाच chart अंदाज, ओळ "volume (chart est.): …".
+Worker: gate चे bar volumes असतील तर futures fetch नाही; नाहीतर fetch कमाल 5 s (2 दिवस lookback), timeout ⇒ NA. मोठा TF panel: arrival
+आणि commitment एकाच bar मध्ये ⇒ साधे bars (खोटा 1.0× नाही); एका bar च्या window ला तुलना नाही. Index च्या spot volume column ला FUT
+म्हणून कधीच दाखवत नाही. Tests: worker soft failure / timeout / injection / caption ओळ (+6).
+
+## 2026-10-12 · One bot (Abhi: TRADE_SESSION_ONE_BOT_TOMORROW §1–§6) — `claude/one-bot-tomorrow`
+
+**काय केलं:**
+- `engine3_live.py` + `engine_signal.run3`: decision3 (V22) live — NIFTY / BANKNIFTY / SENSEX, प्रत्येक बंद 15M bar (09:30–15:00): 15M + Daily
+  (~10 वर्षं, Q33 warm-up) + 5M spot (LTF) + front-month FUT 5M volume (SENSEX = BSE). V22 चे `ltf=` / `futures=` kwargs feature-detect;
+  नसतील तर m15 मध्ये joined volume. Daily fold disk cache (input hash; ~50 s ⇒ < 1 s). decision2 मार्ग `--engine decision2` ने तसाच.
+- Fail-closed: data / exception ⇒ "error" row (`pending_entry` नवा entry देत नाही) + Telegram एक ओळ, symbol मागे दिवसातून एकदा.
+- `pending_entry`: max-age मधला सर्वात नवा न-वापरलेला setup (आधी: सर्वात नवी row — पुढचा "wait" bar ✅ च्या वाटेतला setup रद्द करायचा).
+- `scripts/set_one_bot_mode.py` (+ `bots_common/one_bot.py`, `one_bot_status()` / `preopen_line()`): 15M SRv2 ON + signal_source engine; बाकी
+  `symbol_enabled` / `srv3_shadow_enabled` false; Vision srv2 symbols + approval; PAPER instruments local override (`data/paper_local.yaml`).
+  before-state JSON ⇒ `--revert` तंतोतंत (नसलेले keys काढले — `cloud_db.remove_strategy_settings_keys`); LIVE combo ला हात नाही.
+- `scripts/install_engine_schedule.sh` (idempotent, `--revert`, `--dry-run`), `scripts/diag_today.py` (read-only), `instruments.py` SENSEX.
+- अहवाल skeleton: `docs/reports/2026-10-12_no_signals.md`.
+
+**Tests:** `tests/test_one_bot.py` (नवे 15) + vision / paper / level suites.
+**Review fixes (त्याच रात्री):** V22 ला खरे `ltf=` (5M spot) + `futures=` (FUT 5M, expiry सह); FUT नाही ⇒ volume NA. LIVE cron ओळ ओळख `--mode=LIVE` / quoted सुद्धा. Installer: crontab वाचता नाही / trade_monitor नाही ⇒ ❌ थांबतो; auto trader ची OPEN position ⇒ cron ओळ exits साठी चालू, नवे PAPER entries settings `symbol_enabled` = false ने बंद (तिन्ही auto traders मध्ये PAPER-only guard). Pre-open संदेशात `one_bot_status()` ची ❌ ओळ. Engine error Telegram: पहिलं अपयश, 60 मिनिटांनी "still failing", "recovered"; error row ✅ च्या वाटेतला setup रद्द करत नाही. `scripts/deploy_one_bot.sh` (+ `--revert`).
+
+**उघडे प्रश्न:** OB1–OB3 (OPEN_QUESTIONS).
+
+## 2026-10-12 · Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3) + ONE_BOT_TOMORROW §4 pre-open मजकूर
+
+**काय केलं (फक्त wording / routing — engine निर्णय बदल नाही):**
+- `backtest_review/telegram.py` + `scripts/send_review_to_telegram.py`: manifest top-level `"tag": "debug"` ⇒ संपूर्ण run नकार (exit 6, कारण
+  छापतो); debug kinds (`v22_daymap`, per-bar strips, reader debug views, diag / what-if) आणि allowed यादीबाहेरचे kinds ⇒ ते items नकार;
+  `--force` ⇒ तरीही. Allowed kinds docstring मध्ये (`ALLOWED_KINDS`).
+- नवा `bots_common/plain_text.py`: प्रत्येक Telegram chart / सारांश = ओळ 1 साधी English (काय पाहायचं) · ओळ 2 "Decision needed: approve / reject"
+  किंवा "none — information" (review ⇒ ✔ / ✘) · "── details ──" खाली जुना engine मजकूर (K leg, a:D2+b, sweep, Q44 …). Review captions,
+  Vision V0 / V1 proposal captions (`vision/worker.py`), ✏️ सुधारित ticket (`vision/approval.py`).
+- Pre-open (`scripts/level_gate_preopen.py`): दिवसातून एकच संदेश — पहिली ओळ dashboard settings वरून चालू bot(s) ("Only 15M SRv2 active · signal
+  source: engine · symbols … · mode PAPER"; वेगळं असेल तर जे चालू ते, ⚠️ / ❌), प्रत्येक symbol ची एक ओळ (Daily + Weekly trend, last close,
+  trade-बाजूचे areas + अंतर points), engine store चा शेवटचा computed_at (नाही / 96 h पेक्षा जुना ⇒ ❌), price / login / settings DB नाही ⇒ ❌.
+  `--dry-run`. Weekly = engine ① सारखीच गणना, फक्त माहिती.
+- 15:45 (`scripts/paper_daily_summary.py`): एकच संदेश — symbol-निहाय साधी ओळ (setup / trend / area पर्यंत पोचली का + कारण / दिवसाच्या high-low
+  पासून जवळचा area points / impulse mature ⇒ weak; data नाही ⇒ तसं), तुमचे निर्णय + P&L साध्या शब्दांत, gate आकडे details मध्ये. Trend cache
+  ctx मध्ये `targets` (Q44, फक्त माहिती).
+
+**Tests:** नवी `tests/test_telegram_cleanup.py` (debug run / kinds नकार + --force, script exit 6, caption रचना — ओळ 1 साधी, निर्णय ओळ, वरच्या
+भागात engine codes नाहीत, pre-open status ओळ settings वरून + engine ❌ + dry-run, 15:45 Abhi चं उदाहरण शब्दशः). जुने caption / सारांश tests नव्या
+wording प्रमाणे (आकडे तेच). Network नाही. उघडे: TG1–TG7.
+
+## 2026-10-12 · Setups audit — trend first (Abhi: TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §2)
+
+**अहवाल:** `docs/reports/setups_prA_v1_audit.md` — 2020-11-04 bear call चं निदान, 30 setups चं audit (6-month rule निकालाआधी जाहीर:
+`scripts/setups_trend_audit.py`), §2 a–f diagnostic columns (`scripts/setups_audit_columns.py`; engine निर्णय बदलत नाही).
+**निदान:** Daily DOWN (protected 12,151 = Feb-2020 LH, parent 12,430); Q15 नुसार origin पलीकडे close (2020-11-06) पर्यंत trend बदलत नाही आणि
+counter-move चं वाचन (ABC_FIX / Q49) त्याआधी होतच नाही ⇒ Mar–Nov 2020 चढ 6.5 महिने "correction candidate"; ① gate फक्त `st.trend` पाहतो
+(candidate ला cap / block नाही) ⇒ bear call.
+**Fix (root cause):** `daily.fold_impulse` — flip चा (अ) आकार (`rev_shapes`, flip आणि नवा वाचक एकच code) + Q36 impulse-स्वभाव आता origin
+break आधीही, same-degree correction असताना ⇒ `DState.rev`; `engine.step1` ⇒ trade नाही ("trend first"); level bots `context_from_state`,
+Daily caption, `describe` तसेच. Trend / phase / protected बदल 0 (NIFTY 2,282 + BANKNIFTY 2,479 दिवस). Fixture `staircase_below_origin`
+(down + up), tests `test_decision3_trend_first.py` (10).
+**V22 re-run (NIFTY 2015-01 … 2024-03, एकदा):** setup 30 ⇒ 28 (फक्त 2020-11-04 ×2 गेले, नवे नाहीत); audit 9 pass · 10 ambiguous · 9 FAIL
+(2019-09-03, 2022-03-28 ×4 = degree प्रश्न TF4; 4 rule-ambiguous TF5). a–f: 30 पैकी एकही सगळ्या columns पार नाही (#23 (a)+(b), #24 09:45
+c0 + 5M) — fixes `claude/v22-confirmation`, `claude/v22-areas-quality`, `claude/chart-volume` वर. Volume 2015–2024 ⇒ NA.
+**Tests:** `tests/test_decision3*.py tests/test_elliott_correction_library.py tests/test_level*.py` ⇒ 567 passed, 9 xfailed. उघडे: TF1–TF7.
+Charts (28) locally बनवले, volume pane नसल्याने trade-data मध्ये commit नाहीत.
+**PR #305 review दुरुस्ती:** 🔴 trend-first रचना (`rev`) आजच्या close वर अवलंबून होती ⇒ close परत मधल्या swing खाली आला (HL अखंड) की gate
+उघडायचा (NIFTY 2020-05-18/19 defect rally मध्येच bear बाजू उघडी). आता HL नंतरचा कोणताही close (≤ आज) पुरे; clear फक्त HL wick ने तुटणं / नवा
+impulse टोक; रचना imp_end नंतरच्या trend-दिशेच्या टोकापासून (provisional restore ने imp_end मागे गेला तरी). Flip चा same-day नियम तसाच.
+Fixture `staircase_dip_back` (down + up; आधीच्या commit वर rev None). 🟡 level bots trend cache ला `engine` = `TREND_CTX_VERSION` ⇒ deploy
+आधीचा आजचा cache पुन्हा वापरला जात नाही (test). ⚪ audit-columns script: daily_df / daily_states / setups वर holdout assert.
+आकडे: Daily state बदल 0; rev दिवस NIFTY 510 ⇒ 633, BANKNIFTY 535 ⇒ 716; V22 re-run (एकदा, lock खाली): setup 28 (तेच), blocked bars 15,770 /
+654 sessions. Tests 570 passed, 9 xfailed.
+
+## 2026-10-12 · v22 touch / levels audit (TELEGRAM_CLEANUP §4–§5, ONE_BOT §7(e)) — branch `claude/v22-touch-levels`
+
+**(4) 9 Oct blind spot (22,570–22,640):** level माहीत होता — तुटलेला support (L1 22,476–22,809, weekly L18 22,518–22,527) resistance ला flip
+झाला, पण 8 Oct 11:15 ला खालचा D2 L 22,397 तुटल्यावर Q2 default (मूळ भूमिकेची बाजू) ने मेला. नवी setting `level_death_side` (default "role0" —
+बदल नाही; "role" = चालू भूमिकेची बाजू). What-if Sep–Oct: setup 1 → 1; 9 Oct ला supply दिसते, 11:30 bar ला L18 वर R:R 5.55 (फक्त maturity cap ने
+अडलं). Merge (333 pts पट्टा) आणि 1H sharp-fall base = OPEN_QUESTIONS TL1–TL3. Fixture: `test_decision3_level_death_side.py` (आरसा सह).
+**(5) 29 Sep 12:15 "no touch":** bug `engine.decide()` मध्ये — दूरच्या न-स्पर्शलेल्या level चा "wait" स्पर्शलेल्या level च्या "no_trade (R:R)" वर
+ranked. Fix: ③ ✔ level चा निकाल bar चा. Sep–Oct: setups 1 → 1, no_trade 5 → 118 (R:R 63, 4th try 50), "no touch" झाकलेले bars 113 → 0.
+12:15 निकाल: valid read (touch + buyers दमले + dominant engulf 2.6× + 5M CHoCH), R:R 0.77 ⇒ no setup. FUT volume 29 Sep ला NA (data 30 Sep पासून).
+Fixture: `test_decision3_touch_levels.py`. Tests: `test_decision3*.py test_level*.py` 461 passed + नवे.
+अहवाल: `docs/reports/v22_missed_levels_touch.md`.
+**TL1 ✅ Abhi मंजूर (2026-10-12):** default `level_death_side` = "role" (flipped level चा मृत्यू चालू भूमिकेच्या बाजूने); "role0" फक्त explicit setting
+(revert / what-if). जुना Q2 test (ii) explicit "role0" ने pinned (अपेक्षा तशीच). TL2 (merge रुंदी): Abhi "आत्ता नाही" — उघडा.
+
+## 2026-10-12 · CD14 — default chart वर Abhi चं स्वीकारलेलं वाचन (BANKNIFTY Feb → Apr = sharp DOWN impulse)
+
+**काय केलं:** `decision3/accepted_legs.py` (loader + validation + match) आणि `decision3/data/accepted_legs.json` (BANKNIFTY 1D 2026-02-03 →
+2026-04-02, impulse, down, "Abhi 2026-10-12 CD14"). `daily_swings.build(..., symbol=, accepted=)` ⇒ प्रत्येक trend-degree leg वर `accepted`,
+`drawn_as` ("impulse" ⇔ read_counter 5 waves किंवा स्वीकारलेलं; नाहीतर "trend leg"), `check` (पूर्ण तपासणी मजकूर). जुळवणं फक्त leg च्या pivot
+तारखांवरून ± `daily_pivot_n` sessions + दिशा (code मध्ये तारीख / symbol नाही, किंमत नाही). Default / Telegram chart: स्वीकारलेला leg घन
+"impulse"; न-स्वीकारलेला unverified leg पातळ dashed "trend leg"; title / caption / legend / chart मजकुरात "not verified" नाही
+(`trend_line(q)` / `state_short`: "new decline in progress", impulse दावा नाही). Debug: `trend_line(q, debug=True)`, `daily_swings_debug_png` मध्ये
+प्रत्येक trend leg + "impulse not verified (structure vote: zigzag, n 9; anatomy vote: not run) · accepted by Abhi as impulse (…)", JSON
+`trend_line_debug` + `objects.impulses[].check`. Vision facts / prompt (v4): chart जसा दिसतो (घन = impulse / स्वीकारलेलं, dashed = trend leg).
+**Tests:** `test_decision3_chart_declutter.py` मध्ये CD14 (UP / DOWN आरसा: accepted ⇒ घन + default मजकुरात "not verified" नाही; unaccepted ⇒
+dashed "trend leg"; ± n sessions जुळतं, n + 1 / उलट दिशा / दुसरा symbol नाही; चालू स्वीकारलेला leg ⇒ "new impulse"; debug तपशील; loader
+validation; BANKNIFTY real data — file नसेल तर skip). जुने wording tests CD14 निर्णयानुसार बदलले (golden नाहीत). 5 files: 135 pass, 1 xfail;
+vision_audit 22 pass.
+**Charts:** trade-data `review/v22/daily_swings_v6/` (BANKNIFTY + NIFTY, 2y). BANKNIFTY: Feb → Apr घन impulse, चालू Jun → Sep leg dashed
+"trend leg" (flat, n 13), title "new decline in progress". NIFTY: बदल नाही (चालू leg 5 waves verified). उघडे: OPEN_QUESTIONS CD14-A … CD14-E.
+**Review (PR #304):** 🟡1 wording आता chart वरच्या शेवटच्या trend leg वरून (`leg_last`, चालू नसला तरी — candidate / pullback चालू असताना):
+unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
+"impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
+chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.

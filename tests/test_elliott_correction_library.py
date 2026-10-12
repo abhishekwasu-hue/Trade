@@ -16,13 +16,13 @@ DIRS = (("down", False), ("up", True))
 # (fixture, check, direction) ⇒ reason. Library first (Abhi's order): the library PR lists the engine's failures here; the engine fix
 # empties it. Strict — a fixed case XPASSes and fails until its entry is removed.
 KNOWN_FAIL = {}
-_Q49 = ("Q49: wave a (W) of this zigzag is itself a 5-wave impulse whose internal pullback is as large as the engine's leg-degree "
-        "reference (Q22) — Elliott cannot tell wave A from wave 1 here; the impulse-span reference passes this case but turns real "
-        "BANKNIFTY into an UP correction against Abhi's count — degree reference pending Abhi")
+_Q49 = ("Q49 (b): W's a-b-c + X + Y's a is 5-3-5-3-5 with a 5-wave a, a 3-wave b and a 5-wave c beyond a — structurally the "
+        "counter-move's own complete same-degree 5-wave (Abhi's rule (b)), so the engine reads wave 1 and flips; a double zigzag "
+        "cannot be told from an impulse until Y's b / c (OPEN_QUESTIONS Q49)")
 for _dn in ("down", "up"):
     KNOWN_FAIL[("triple_three", "family", _dn)] = ("Q52: sideways triple three ending in a triangle Z is boxed as two corrections "
                                                    "(W-X-Y, then Z) — the 5-segment combination reading needs the whole W-X-Y-X-Z")
-for _nm in ("double_zigzag", "very_deep_holds_origin"):
+for _nm in ("double_zigzag",):                                          # Q49: very_deep_holds_origin आता pass (default wave A)
     for _ck in ("trend", "origin", "family"):
         for _dn in ("down", "up"):
             KNOWN_FAIL[(_nm, _ck, _dn)] = _Q49

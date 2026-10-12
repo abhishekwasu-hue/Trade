@@ -1,4 +1,6 @@
 """bots_common/level_reaction (Abhi: TRADE_SESSION_LEVEL_BOTS_CONFIRMATION §7) — trend first, arrival ≠ entry, closed bars only."""
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,6 +11,13 @@ DAY0 = pd.Timestamp("2001-01-01 09:15")   # synthetic sessions (खरी ता
 UP_CTX = {"ok": True, "trend": "UP", "sides": {LR.BULL}, "band": None, "reason": "Daily UP"}
 DOWN_CTX = {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "band": None, "reason": "Daily DOWN"}
 AREA = (990.0, 1000.0)                    # demand area
+
+
+@pytest.fixture(autouse=True)
+def _a2_c0_contract_without_c1(monkeypatch):
+    """हा module a2 / c0 / state machine चा करार तपासतो (c1 आधीचा) ⇒ इथे c1 (LTF CHoCH) बंद — c1 सुरू असताना तेच वर्तन + CHoCH ची अट
+    tests/test_level_reaction_c1.py मध्ये (प्रत्येक case आरशासह)."""
+    monkeypatch.setitem(LR.DEFAULTS, "ltf_choch", False)
 OTHERS = [(1090.0, 1100.0), (900.0, 910.0)]
 
 
@@ -172,6 +181,24 @@ def test_daily_trend_negative_cache_stays_fail_closed_then_retries(tmp_path, mon
     assert not (tmp_path / "trend_CRUDEOIL_2001-01-10.json").exists() and (tmp_path / "trend_CRUDEOIL_2001-01-10_fail.json").exists()
     c = LR.daily_trend("CRUDEOIL", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path), s={"allow_parent_correction": True})
     assert len(calls) == 3                                                 # वेगळी key (_a1) ⇒ वेगळा negative cache
+
+
+def test_daily_trend_cache_from_older_code_is_not_reused(tmp_path):
+    """PR #305 review 🟡: a cache written today by the code before a Daily-gate change (no / old `engine` tag, ok True) must not be
+    reused after deploy ⇒ recomputed (here the fetch fails ⇒ fail-closed, not the stale ok True); a current-version cache is reused."""
+    p = tmp_path / "trend_NIFTY_2001-01-10.json"
+    p.write_text(json.dumps({"ok": True, "trend": "DOWN", "sides": [LR.BEAR], "reason": "Daily DOWN"}), encoding="utf-8")
+    calls = []
+
+    def bad(*_):
+        calls.append(1)
+        raise RuntimeError("network")
+    c = LR.daily_trend("NIFTY", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path))
+    assert calls == [1] and not c["ok"] and not c["sides"]
+    p.write_text(json.dumps({"ok": True, "trend": "DOWN", "sides": [LR.BEAR], "reason": "Daily DOWN", "engine": LR.TREND_CTX_VERSION}),
+                 encoding="utf-8")
+    c = LR.daily_trend("NIFTY", "tok", today="2001-01-10", fetch=bad, cache_dir=str(tmp_path), s={"trend_retry_min": 0})
+    assert c["ok"] and c["sides"] == {LR.BEAR} and calls == [1]
 
 
 def test_today_daily_bar_is_dropped():

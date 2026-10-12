@@ -74,7 +74,10 @@ def _synthetic_m15(seed=7, legs=None):
 
 # fixture चे impulse legs एकसारखे ⇒ Q15 maturity (equality target) प्रत्येक (5)+ ला लागते. Setup invariants maturity-स्वतंत्र ⇒ त्या tests
 # मध्ये maturity बंद (near = −10⁶ σ ⇒ कधीच "जवळ" नाही); default वर्तन test_mature_cap_in_pipeline मध्ये.
-NO_MATURE = {"maturity_sigma_d": -1e6}
+# हा fixture 15M-only (5M LTF नाही) आणि त्याचा setup bar study window पेक्षा dominant नाही ⇒ ⑥ ची c0 dominance / c1 LTF CHoCH (Abhi,
+# LEVEL_BOTS_CONFIRMATION) इथे बंद — हे tests त्या नियमांचे नाहीत (setup invariants / charts / captions); c0 + c1 चे tests (आरशासह)
+# tests/test_decision3_confirm.py मध्ये.
+NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
 
 
 def _abc_m15(seed=1, impulse=900, pb=0.7, n_cycles=8, start=22000):
@@ -310,21 +313,29 @@ def test_review_charts_default_at_most_six_level_bands(monkeypatch):
 
 
 def test_mature_cap_in_pipeline():
-    """Default settings: तोच fixture — maturity बंद असताना setup देणारा bar, default ला mature ⇒ कमाल weak ⇒ setup नाही (Q15 (5))."""
-    from decision3 import engine as E3
-    m15 = _abc_m15()
-    off = [r for r in E3.V22(m15, s=NO_MATURE).run() if r["decision"] == "setup"]
-    assert off
-    V = E3.V22(m15)
-    # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही. यंत्रणा (mature ⇒
-    # कमाल weak ⇒ setup नाही) तपासण्यासाठी Daily states mature केले (target असलेल्या fixture वर step1 test वेगळा).
+    """Abhi (12 Oct, owner नियम — जुना Q15 (5) "mature ⇒ कमाल weak" बदलला): maturity = पुरावा फक्त. Trend रचना अखंड (protected अखंड,
+    उलट impulse नाही) ⇒ mature setup अडवत नाही; grade फक्त एक पायरी खाली (A ⇒ B; B तसाच). रचना अखंड नाही (same-degree correction) ⇒
+    जुना cap (weak) तसाच. Mature नसताना setup देणारे bars हेच तपासले."""
     import dataclasses
+    from decision3 import engine as E3
+    from decision3 import method as M3
+    m15 = _abc_m15()
+    s = {k: v for k, v in NO_MATURE.items() if k != "maturity_sigma_d"}          # c0 / c1 बंद (हा test त्यांचा नाही), maturity default
+    V = E3.V22(m15, s=s)
+    # Q44: या fixture ला trend-degree (A1) correction नाही ⇒ structural target नाही ⇒ default मध्ये mature नाही ⇒ Daily states mature केले.
     assert not any(x.mature for x in V.daily)
+    base = {r["bar"]: r for r in V.run() if r["decision"] == "setup"}
+    assert base
     V.daily = [dataclasses.replace(x, mature=True) if x.trend in ("UP", "DOWN") else x for x in V.daily]
-    for r0 in off:
-        r = V.decide(r0["bar"])
-        assert r["mature"] and r["decision"] != "setup" and r["trend_cap"] == "weak" and any("mature" in x for x in r["trend_notes"])
-    assert any(V.decide(r0["bar"])["mature"] for r0 in off)
+    for b, r0 in base.items():
+        r = V.decide(b)
+        assert r["mature"] and r["mature_step_down"] and r["trend_cap"] != "weak" and any("mature" in x for x in r["trend_notes"])
+        assert r["decision"] == "setup" and r["conviction"] == M3.step_down_conv(r0["conviction"])      # entry अडत नाही, एक पायरी खाली
+    V.daily = [dataclasses.replace(x, counter="correction") if x.trend in ("UP", "DOWN") else x for x in V.daily]   # रचना अखंड नाही
+    for b in base:
+        r = V.decide(b)
+        assert r["trend_cap"] == "weak" and not r["mature_step_down"] and r["decision"] != "setup"
+    assert M3.step_down_conv("A") == "B" and M3.step_down_conv("B") == "B" and M3.step_down_conv("weak") == "weak"
 
 
 def test_power_shift_a_relative_contraction_both_directions():

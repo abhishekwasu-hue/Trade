@@ -375,6 +375,7 @@ if context_ok:
     import page_opportunity_engine
     import page_vision_human_eye
     import page_backtest_review
+    import page_reader2_gallery
     import page_pullback_credit_spread
     import page_broker_accounts
     import page_bot_dynamic_sr_algo
@@ -402,6 +403,7 @@ if context_ok:
             st.Page(page_opportunity_engine.render, title="Opportunity Engine (प्रयोगिक)", icon="🎯", url_path="opportunity-engine"),
             st.Page(page_vision_human_eye.render, title="Vision & Human Eye", icon="👁", url_path="vision-human-eye"),
             st.Page(page_backtest_review.render, title="Backtest Review", icon="🔎", url_path="backtest-review"),
+            st.Page(page_reader2_gallery.render, title="Reader v2 Gallery (प्रयोगिक)", icon="📐", url_path="reader2-gallery"),
         ],
         "SYSTEM": [
             st.Page(page_broker_accounts.render, title="Settings", icon="⚙️", url_path="settings"),

@@ -35,3 +35,19 @@ def test_reader2_does_not_import_bots_or_vision():
     banned = {"bots_common", "vision", "vision2", "vision_led", "decision2", "order_execution", "broker_factory"}
     for p in (ROOT / "reader2").glob("*.py"):
         assert not (_imports(p) & banned), p.name
+
+
+GALLERY_USERS = {"page_reader2_gallery.py", "scripts/reader2_gallery_candidates.py", "scripts/reader2_gallery_export.py",
+                 "scripts/reader2_gallery_seed.py"}
+
+
+def test_only_gallery_tools_import_gallery2():
+    """gallery2 (Abhi च्या labels) फक्त marking page / gallery scripts / reader2 (CR4) / tests — bots, decision3, vision कधीच नाहीत."""
+    bad = []
+    for p in ROOT.rglob("*.py"):
+        rel = p.relative_to(ROOT)
+        if rel.parts[0] in SKIP | {"gallery2"} or any(part in SKIP for part in rel.parts) or rel.as_posix() in GALLERY_USERS:
+            continue
+        if "gallery2" in _imports(p):
+            bad.append(str(rel))
+    assert not bad, f"gallery2 imported by: {bad}"

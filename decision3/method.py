@@ -353,11 +353,13 @@ def _ohlc(A, i):
 
 
 def _same_window(tss, t, i, s):
-    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि entry_start नंतरचा? (tss नसेल ⇒ हो)."""
+    """merged / संदर्भ candle i हा t च्या दिवसाचा आणि पुरावा-खिडकीतला (`evidence_start`, default सत्राची सुरुवात 09:15)? (tss नसेल ⇒ हो).
+    Abhi (12 Oct): opening candle चा sweep / wick / volume = पुरावा (2-candle form चा पहिला भाग / "मागची" candle) — entry मात्र फक्त
+    `entry_start` … `entry_end` मधल्या commitment candle वर (`commitment` ची वेळ-खिडकी तशीच)."""
     if tss is None:
         return True
     ti, tt = pd.Timestamp(tss[i]), pd.Timestamp(tss[t])
-    return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s["entry_start"]
+    return ti.normalize() == tt.normalize() and ti.strftime("%H:%M") >= s.get("evidence_start", s["entry_start"])
 
 
 def reversal_form(A, t, d, s, tss=None):
@@ -470,6 +472,167 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
     return True, f"commitment {form} ({merged} candle) · grade {grade}", cm
 
 
+# ------------------------------------------------------------------------------------------------ c1 LTF CHoCH + एकच confirmation (a2 + c0 + c1)
+C_ABSORB, C_COMMIT = "absorption", "no_commitment"
+C_LTF_MISSING, C_LTF_AGAINST, C_LTF_PENDING = "ltf_missing", "ltf_against", "ltf_pending"
+REASON = {C_ABSORB: "absorption (counter side strengthening inside the area)", C_COMMIT: "no commitment",
+          "low_volume": "commitment on low volume", "not_dominant": "commitment candle not dominant",
+          C_LTF_MISSING: "LTF data missing", C_LTF_AGAINST: "LTF still trending against",
+          C_LTF_PENDING: "waiting for LTF CHoCH (no close beyond the last LTF swing)"}
+LTF_OF = {60: 5, 15: 5, 5: 1}                                              # Abhi c1 mapping: 1H area / 15M setup ⇒ 5M; 5M ⇒ 1M; MCX 15M ⇒ 5M
+
+
+def _px(x):
+    """ticket किंमत: 17041 ⇒ "17,041", 1002.5 ⇒ "1,002.5" (शेवटची शून्ये नाहीत)."""
+    return f"{x:,.2f}".rstrip("0").rstrip(".")
+
+
+def _naive(ts):
+    ts = pd.to_datetime(ts)
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    return ts
+
+
+_LTF_WARNED = set()
+
+
+def warn_ltf_missing(where):
+    """c1 आवश्यक पण LTF दिलेलं नाही ⇒ प्रत्येक caller साठी एकदाच ठळक इशारा (batch tools शांतपणे 0 entries देऊ नयेत). Entry fail-closed राहते."""
+    if where in _LTF_WARNED:
+        return
+    _LTF_WARNED.add(where)
+    import warnings
+    msg = (f"{where}: c1 (LTF CHoCH) is required (ltf_choch=True) but no lower-timeframe bars were given — every entry will wait with "
+           f"'LTF data missing'. Pass ltf= (5M / 1M bars) or set ltf_choch=False for a what-if.")
+    warnings.warn(msg, RuntimeWarning, stacklevel=3)
+    print(f"⚠️ {msg}")
+
+
+def ltf_frame(df, minutes, label=None):
+    """c1: lower-timeframe bars (timestamp = bar सुरुवात[, bar_end]) ⇒ arrays (bar_end क्रमाने). None / रिकामे ⇒ None (c1 fail-closed)."""
+    if df is None or not len(df):
+        return None
+    ts = _naive(df["timestamp"]).reset_index(drop=True)
+    end = _naive(df["bar_end"]).reset_index(drop=True) if "bar_end" in df.columns else ts + pd.Timedelta(minutes=int(minutes))
+    o = np.argsort(end.to_numpy(), kind="stable")
+    out = {"start": ts.to_numpy()[o], "end": end.to_numpy()[o], "minutes": int(minutes), "label": label or f"{int(minutes)}M"}
+    for k in ("open", "high", "low", "close"):
+        out[k] = df[k].to_numpy(float)[o]
+    return out
+
+
+def ltf_choch(L, d, t_ctx, t_start, t_end, lvl=None):
+    """c1 (Abhi): lower-timeframe change of character, फक्त CLOSE ने. LTF bars = bar_end ≤ t_end (setup bar चा close ⇒ lookahead नाही);
+    study = t_start (area मध्ये arrival) पासून; संदर्भ (pullback चे swings) = t_ctx पासून. Bullish (d = +1): study मधला सर्वात खालचा low
+    (LL). LTF ने lower lows थांबवले ⇔ LL नंतर किमान एक बंद candle (तिचा low LL पेक्षा कमी नाही — LL = window चा किमान) **किंवा** LL candle
+    ने आधीचा LTF swing low / area ची far edge sweep करून close परत आत. **मग** LL नंतर (sweep असेल तर LL candle पासूनच) एखादी candle LL
+    आधीच्या शेवटच्या LTF swing high (lower high) च्या वर CLOSE ⇒ CHoCH; higher low = LL नंतर CHoCH candle पर्यंतचा सर्वात खालचा low
+    (समान ⇒ double bottom). V-reversal / stair-step recovery / gap-down चा पहिलाच bar low — सगळे चालतात. Wick वर गेला पण close नाही ⇒
+    CHoCH नाही. शेवटचा बंद LTF bar च LL ⇒ "still trending against". Bearish = आरसा (किंमती उलट करून तेच गणित).
+    रिटर्न dict: done, code (ltf_missing / ltf_against / ltf_pending), line + किंमती."""
+    lab = (L or {}).get("label", "LTF")
+    miss = {"done": False, "code": C_LTF_MISSING, "line": f"{lab}: LTF data missing"}
+    if L is None or not len(L["end"]):
+        return miss
+    t_ctx, t_start, t_end = (np.datetime64(pd.Timestamp(x)) for x in (t_ctx, t_start, t_end))
+    n_ok = int(np.searchsorted(L["end"], t_end, side="right"))
+    ii = np.flatnonzero(L["start"][:n_ok] >= min(t_ctx, t_start))
+    w = ii[L["start"][ii] >= t_start]
+    if not len(w):
+        return miss
+    sg = 1.0 if d > 0 else -1.0
+    H = (L["high"] if d > 0 else -L["low"])[ii]                            # आरसा: bearish ⇒ high ↔ −low
+    Lo = (L["low"] if d > 0 else -L["high"])[ii]
+    C = sg * L["close"][ii]
+    E = L["end"][ii]
+    m = len(ii)
+    w0 = m - len(w)
+    jl = w0 + int(np.argmin(Lo[w0:]))                                      # पहिली घटना (नंतरचा समान low = double bottom)
+    lmin = float(Lo[jl])
+    ph = [i for i in range(1, m - 1) if H[i] > H[i - 1] and H[i] >= H[i + 1]]
+    pl = [i for i in range(1, m - 1) if Lo[i] < Lo[i - 1] and Lo[i] <= Lo[i + 1]]
+    lhs = [i for i in ph if i < jl]
+    j_lh = lhs[-1] if lhs else max(jl - 1, 0)                              # pivot नसेल (सरळ घसरण / gap) ⇒ LL आधीच्या candle चा high
+    lh = float(H[j_lh])
+    prior = [i for i in pl if i < jl]
+    sweep = bool(prior and Lo[jl] < Lo[prior[-1]] and C[jl] > Lo[prior[-1]])
+    if lvl is not None:
+        edge = float(lvl["lo"]) if d > 0 else -float(lvl["hi"])
+        sweep = sweep or bool(Lo[jl] < edge and C[jl] >= edge)
+    jc = next((j for j in range(jl if sweep else jl + 1, m) if C[j] > lh), None)
+    seg_end = jc if jc is not None else m - 1
+    hl = float(np.min(Lo[jl + 1:seg_end + 1])) if seg_end > jl else None
+    back = (lambda x: x) if d > 0 else (lambda x: -x)                     # noqa: E731
+    hl_word, lh_word = ("higher low", "LH") if d > 0 else ("lower high", "HL")
+    ext_word, beyond = ("low", "above") if d > 0 else ("high", "below")
+    trend_word = "lower lows" if d > 0 else "higher highs"
+    out = {"done": jc is not None, "low": back(lmin), "lh": back(lh), "sweep": sweep, "hl": None if hl is None else back(hl),
+           "low_at": str(pd.Timestamp(E[jl])), "label": lab}
+    parts = [f"sweep of {ext_word} {_px(out['low'])} closed back inside"] if sweep else []
+    if hl is not None:
+        parts.append(f"double {'bottom' if d > 0 else 'top'} {_px(out['hl'])}" if hl <= lmin else f"{hl_word} {_px(out['hl'])}")
+    first = ", ".join(parts) or f"{ext_word} {_px(out['low'])}"
+    if jc is not None:
+        hm = pd.Timestamp(E[jc]).strftime("%H:%M")
+        out.update(code=None, at=str(pd.Timestamp(E[jc])), close=back(float(C[jc])),
+                   line=f"{lab} CHoCH: {first}, close {beyond} {lh_word} {_px(out['lh'])} at {hm}")
+        return out
+    if jl < m - 1 or sweep:
+        wick = any(H[j] > lh for j in range(jl, m))
+        out.update(code=C_LTF_PENDING, line=f"{lab}: {first}, no close {beyond} {lh_word} {_px(out['lh'])} yet"
+                   + (" (wick only)" if wick else ""))
+    else:
+        out.update(code=C_LTF_AGAINST, line=f"{lab}: still making {trend_word} "
+                   f"({ext_word} {_px(out['low'])} at {pd.Timestamp(E[jl]).strftime('%H:%M')}) — LTF still trending against")
+    return out
+
+
+def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
+    """एकच confirmation (Abhi, LEVEL_BOTS_CONFIRMATION §2 a2 + c0 + c1) — V22 ⑥ आणि level bots (bots_common/level_reaction) दोघेही हेच
+    वापरतात; d = ±1 (आरसा). Study window = arm (area मध्ये arrival) … commitment candle t. क्रम:
+      a2 — window arm … t − 1 मध्ये उलट-बाजू volume वाढत मजबूत (absorption) ⇒ वाट (commitment पाहतच नाही);
+      c0 — commitment (Q16 form) + dominant body (≥ commit_dom_mult × window सरासरी) + volume > window सरासरी (volume NA ⇒ चालतं, कमाल B);
+      c1 — LTF CHoCH by close (`ltf_choch`; ltf = ltf_frame किंवा तो देणारं callable (commitment असेल तरच बोलावतो); ltf_times = (संदर्भ सुरुवात, arrival सुरुवात, setup bar close)), `ltf_choch` setting (default
+           True = आवश्यक). LTF नाही ⇒ "LTF data missing" ⇒ वाट (fail-closed, कधीच शांतपणे वगळत नाही).
+    प्रत्येक गहाळ भाग ⇒ वाट (code), कायमचा नकार नाही (timeout / disarm caller चे नियम). रिटर्न dict: ok, wait (code | None), why, commit (cm),
+    study (zone_study), absorption, study_ran, c0, c1, choch, lines (ticket ओळी)."""
+    out = {"ok": False, "wait": None, "why": "", "commit": {}, "study": None, "absorption": False, "study_ran": False, "c0": False,
+           "c1": None, "choch": None, "lines": []}
+    if t - 1 >= arm:
+        zp = zone_study(A, arm, t - 1, d, s, mr=mr)
+        out["study_ran"] = True
+        if zp.get("absorption"):
+            out.update(absorption=True, wait=C_ABSORB, why=REASON[C_ABSORB], study=zp)
+            return out
+    ok, why, cm = commitment(A, t, d, lvl, s, tss, win=arm)
+    out.update(commit=cm, c0=bool(ok), why=why)
+    if callable(ltf) and not ok:                                           # lazy LTF (bots): commitment नाही ⇒ LTF fetch / वाचन नाही
+        out["wait"] = cm.get("wait") or C_COMMIT
+        return out
+    L = ltf() if callable(ltf) else ltf
+    if L is not None and ltf_times is not None:
+        ch = ltf_choch(L, d, *ltf_times, lvl=lvl)
+    else:
+        ch = {"done": False, "code": C_LTF_MISSING, "line": "LTF: LTF data missing"}
+    out["choch"], out["c1"] = ch, bool(ch["done"])
+    if not ok:
+        out["wait"] = cm.get("wait") or C_COMMIT
+        return out
+    if bool(s.get("ltf_choch", True)) and not ch["done"]:
+        out.update(wait=ch["code"], why=f"{REASON[ch['code']]} · {ch['line']}")
+        return out
+    zs = zone_study(A, arm, t, d, s, mr=mr)
+    vtxt = f"volume {cm['vol_mult']:.1f}× window avg" if cm.get("vol_mult") is not None else "volume: NA (grade cap B)"
+    btxt = f"body {cm['body_mult']:.1f}× window avg" if cm.get("body_mult") is not None else ""
+    kind = "demand" if d > 0 else "supply"
+    lines = [f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
+             "commitment: " + " · ".join(x for x in (str(cm.get("form")), btxt, vtxt) if x),
+             ch["line"] if ch["done"] else f"LTF CHoCH not required (what-if): {ch['line']}"]
+    out.update(ok=True, study=zs, lines=lines, why=f"{why} · {ch['line']}")
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ ⑦ risk
 def risk(V, t, d, lvl, k, s, traps=None):
     """SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); §7.3: `sl_beyond_trapped` ⇒ trade-बाजूच्या trapped zones
@@ -523,6 +686,12 @@ def cap_conv(conv, cap):
     if cap is None or conv is None or conv not in CONV_RANK:
         return conv
     return cap if CONV_RANK[conv] > CONV_RANK[cap] else conv
+
+
+def step_down_conv(conv):
+    """Abhi (12 Oct): mature + trend रचना अखंड ⇒ grade फक्त एक पायरी खाली, पण entry अडवत नाही: A ⇒ B; B / weak / against तसेच
+    (B ⇒ weak केलं असतं तर maturity ने entry अडली असती — owner नियमाविरुद्ध)."""
+    return "B" if conv == "A" else conv
 
 
 # ------------------------------------------------------------------------------------------------ §5.1 पहिला पाय

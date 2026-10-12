@@ -241,7 +241,8 @@ def test_run_day_eight_images_caption_and_manifest(built, tmp_path, monkeypatch)
                                                        "files": [f"d1/{f}" for f in out["files"]]}]}
     json.dump(man, open(tmp_path / "manifest.json", "w", encoding="utf-8"), ensure_ascii=False)
     m = TG.load_manifest(str(tmp_path))
-    assert len(m["items"][0]["files"]) == 8 and TG.caption(m, m["items"][0]) == cap
+    tc = TG.caption(m, m["items"][0])
+    assert len(m["items"][0]["files"]) == 8 and tc.startswith("Engine reading") and "Decision needed" in tc and cap.splitlines()[0] in tc   # Telegram cleanup: साधी headline + decision ओळ, मग details
     j = json.load(open(tmp_path / "d1" / "mtf_day.json", encoding="utf-8"))
     for tf in MA.TFS:
         for mk in j["tf"][tf]["marks"]:
@@ -299,7 +300,7 @@ def test_mtf_check_cli_banknifty(tmp_path, monkeypatch):
     assert man["concepts"]["concepts"]["abc"]["show"] is False
     from backtest_review import telegram as TG
     m = TG.load_manifest(str(tmp_path / "out" / "r1"))                         # sender जसाच्या तसा वाचतो
-    assert m["items"][0]["n"] == 1 and TG.caption(m, m["items"][0]).startswith("🗺 MTF CHECK")
+    assert m["items"][0]["n"] == 1 and "🗺 MTF CHECK" in TG.caption(m, m["items"][0]).split("── details ──")[-1]   # Telegram cleanup: headline वर, details मध्ये MTF CHECK
     with pytest.raises(SystemExit):
         SM.main(["--instrument", "BANKNIFTY", "--tf-dir", str(tmp_path / "nope"), "--dates", day, "--out-dir", str(tmp_path / "o2"),
                  "--run-id", "r2"])

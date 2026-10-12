@@ -35,8 +35,14 @@ def level_eval_brief(dd, part, extra, lvl):
             "target": rk.get("target"), "why": (extra.get("why") or "")[:120]}
 
 
+def mature_intact(st):
+    """Abhi (12 Oct, owner rule): maturity = पुरावा फक्त. Trend रचना अखंड ⇔ protected close ने तुटलेला नाही (phase ≠ origin_broken) आणि
+    उलट same-degree impulse / correction नक्की नाही (counter ≠ correction). अखंड ⇒ mature फक्त grade एक पायरी खाली; नाहीतर जुना cap (weak)."""
+    return st.phase in ("impulse", "correction") and st.counter != "correction"
+
+
 class V22:
-    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None):
+    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
@@ -56,11 +62,50 @@ class V22:
         self.bar_end = pd.to_datetime(self.m15["bar_end"]).reset_index(drop=True)
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
+        self._confirm_inputs(ltf, futures)
+
+    def _confirm_inputs(self, ltf, futures):
+        """⑥ c1 / c0 inputs (Abhi, LEVEL_BOTS_CONFIRMATION): LTF = दिलेले bars, नाहीतर त्याच 1m data चे 5M (market_state.core.frame —
+        15M ची तीच व्याख्या); दोन्ही नाहीत ⇒ None ⇒ ⑥ "LTF data missing" (fail-closed). Volume = futures (legs2.volume.bar_volume —
+        near-month join) किंवा m15 चा स्वतःचा volume column; नाहीतर NA (spot volume 0 ⇒ NA, grade कमाल B)."""
+        lm = M.LTF_OF.get(15, 5)
+        if ltf is None and self.df1m is not None and len(self.df1m):
+            import market_state.core as MC
+            ltf = MC.frame(self.df1m, f"{lm}m", pd.to_datetime(self.df1m["timestamp"]).max() + pd.Timedelta(minutes=1))
+        self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
+        if self.ltf is None and bool(self.s.get("ltf_choch", True)):
+            M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
+        if futures is not None:
+            from legs2 import volume as LVOL
+            self.levels.A["volume"] = LVOL.bar_volume(self.m15, futures)
+        elif "volume" in self.m15.columns:
+            self.levels.A["volume"] = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
+
+    def _confirm(self, t, d, lvl, k):
+        """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
+        शेवटचा सलग गट (दोन स्पर्शांत ≤ touch_window_bars — ③ चीच "level मध्ये / लगत" व्याख्या) — त्याचा पहिला स्पर्श (arrival) … t;
+        LTF संदर्भ = K च्या impulse टोकापासून (pullback चे swings); LTF bars फक्त setup bar च्या close पर्यंत."""
+        A = self.levels.A
+        k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
+        hits = [i for i in range(int(k0), t + 1) if A["low"][i] <= lvl["hi"] and A["high"][i] >= lvl["lo"]]
+        arm = hits[-1] if hits else t
+        for i in reversed(hits[:-1]):
+            if arm - i > int(self.s["touch_window_bars"]):
+                break
+            arm = i
+        c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0
+        times = (pd.Timestamp(self._ts[min(int(c0), arm)]), pd.Timestamp(self._ts[arm]), pd.Timestamp(self.bar_end[t]))
+        cf = M.confirm(A, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
+        cm = dict(cf["commit"] or {})
+        cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
+                  ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
+                  absorption=cf["absorption"])
+        return cf["ok"], cf["why"], cm
 
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
         weekly}. Weekly विरुद्ध ⇒ कमाल B; Daily वाचता येत नाही (NEUTRAL / UNKNOWN) + Weekly trend ⇒ Weekly fallback, कमाल B;
-        impulse mature / origin धोक्यात (B1) ⇒ कमाल weak; origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23); A1: impulse origin
+        impulse mature / origin धोक्यात (B1) ⇒ कमाल weak; trend first: impulse टोकानंतर Daily रचना trend विरुद्ध (`st.rev`) ⇒ trade नाही; origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23); A1: impulse origin
         तुटला पण parent टिकला ⇒ same-degree correction (protected = parent; कमाल B — आधीच्या origin_broken सारखाच, loosen नाही).
         RANGE (Q27: origin तुटल्यानंतर दोन समान H / L सुद्धा) ⇒ पट्टा ctx["band"] — ② कडांजवळची levels."""
         st = DD.state_at(self.daily, self.bar_end[t])
@@ -69,6 +114,16 @@ class V22:
                else None), "cap": None, "notes": [], "weekly": wk.trend, "band": st.band if st.trend == "RANGE" else None}
         why = {"UP": "Daily UP", "DOWN": "Daily DOWN", "RANGE": "Daily RANGE ⇒ कडेनुसार", "NEUTRAL": "Daily NEUTRAL",
                "UNKNOWN": "Daily data अपुरा"}[st.trend]
+        if st.trend in ("UP", "DOWN") and st.phase and getattr(st, "rev", None) is not None:
+            # Trend first (Abhi, setups audit — docs/reports/setups_prA_v1_audit.md): impulse टोकानंतर Daily रचना trend विरुद्ध पूर्ण (flip चा (अ) नियम —
+            # उलट HL / LH + मधल्या swing पलीकडे close + impulse-स्वभावाचा पाय, Q29 / Q36), फक्त origin पलीकडचा close बाकी ⇒ trend-बाजूचा
+            # trade नाही (उलट बाजू पण नाही — trend अजून flip झाला नाही, Q15). Cap नाही, gate (H1).
+            opp = "UP" if st.trend == "DOWN" else "DOWN"
+            why += f" · {DD.describe(st)} ⇒ trade नाही (trend first: Daily रचना {opp}; flip ला origin पलीकडे close हवा)"
+            ctx.update(trend="NEUTRAL", resolution="structure against trend", band=None)
+            ctx["notes"].append(f"Daily {st.trend} पण impulse टोकानंतरची रचना {opp} ⇒ {'bear call' if st.trend == 'DOWN' else 'bull put'} नाही "
+                                f"(trend first)")
+            return False, why, st, ctx
         if st.trend in ("UP", "DOWN") and st.phase:
             why += f" · {DD.describe(st)}"
             if wk.trend in ("UP", "DOWN") and wk.trend != st.trend:
@@ -86,7 +141,10 @@ class V22:
             if getattr(st, "corr_zone", None) is not None and st.phase == "impulse" and st.counter in (None, "pullback"):                  # ABC_FIX rule 3: correction sharp zone मध्ये संपली + trend
                 ctx["evidence"] = list(st.evidence)                         # दिशेने close ⇒ continuation पुरावा (cap नाही; नोंद — Q51)
                 ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
-            if st.mature:
+            if st.mature and mature_intact(st):                             # Abhi (12 Oct): maturity = पुरावा फक्त — रचना अखंड ⇒ gate नाही,
+                ctx["step_down"] = True                                     # grade फक्त एक पायरी खाली (A ⇒ B; B तसाच) — `step_down_conv`
+                ctx["notes"].append("impulse mature — target जवळ (Q44) · पुरावा फक्त: protected अखंड, उलट impulse नाही ⇒ grade एक पायरी खाली")
+            elif st.mature:
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("impulse mature — target जवळ (Q44: parent नंतरच्या पहिल्या impulse leg चं टोक); मोठा reversal शक्य ⇒ नवे entries weak")
         elif st.trend in ("NEUTRAL", "UNKNOWN") and wk.trend in ("UP", "DOWN"):
@@ -101,13 +159,23 @@ class V22:
 
     def step2(self, t, trend, band=None):
         act = self.levels.active(t, trend, band)
+        act = act + self.tl_areas(t, trend, act)
         if not act:
             return False, "trade-बाजूचा जिवंत 1H level नाही", act
         a = act[0]
         star = "★" * a["sweeps"]
         return True, f"{a['role']} {a['lo']:,.0f}–{a['hi']:,.0f} ({'+'.join(a['births'])}){star} · अंतर {a['dist']:,.0f}", act
 
-    def _level_eval(self, t, trend, lvl, cap=None, notes=None):
+    def tl_areas(self, t, trend, act=None):
+        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + ② चेच active horizontal levels (जवळचे `active_levels_max`)
+        ⇒ confluence area (`trendline.confluence_areas`). DOWN ⇒ उतरती रेघ + resistance; UP ⇒ चढती + support; RANGE / बाकी ⇒ नाही."""
+        if trend not in ("UP", "DOWN"):
+            return []
+        if act is None:
+            act = self.levels.active(t, trend)
+        return TL.confluence_areas(self, t, M._dir(trend), act)
+
+    def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
         """एका active level साठी ③–⑦ + पुरावे ⇒ (decision, checklist part, extra)."""
         A = self.levels.A
         d = M._dir(trend, lvl["role"])
@@ -126,7 +194,7 @@ class V22:
         ok4, n4, items = M.power_shift(A, t, d, k, self.s)
         chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
         rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
-        ok6, why6, cm = M.commitment(A, t, d, lvl, self.s, self._ts)
+        ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         chk["⑥"] = [ok6, why6]
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
@@ -136,7 +204,8 @@ class V22:
               "rsi_div": None, "volume_low": None, "pattern": None,
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
               "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
-              "tl_break": True if (tl and tl["broken"]) else None}            # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
+              "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
+              "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
@@ -169,6 +238,11 @@ class V22:
         if conv2 != conv:
             conv = extra["conviction"] = conv2
             missing.extend(x for x in (notes or []) if "कमाल" in x or "weak" in x)   # फक्त cap लावणाऱ्या नोंदी
+        if step_down:                                                    # mature + रचना अखंड ⇒ एक पायरी खाली (A ⇒ B), entry अडवत नाही
+            conv3 = M.step_down_conv(conv)
+            if conv3 != conv:
+                conv = extra["conviction"] = conv3
+                missing.append("impulse mature (पुरावा) ⇒ grade एक पायरी खाली")
         if conv in ("A", "B"):
             return M_SETUP, chk, extra
         if conv == "weak":
@@ -187,10 +261,12 @@ class V22:
             rank = {M_SETUP: 0, M_WAIT: 1, M_NO: 2}
             res = []
             for lvl in act:
-                dd, part, extra = self._level_eval(t, trend, lvl, ctx["cap"], ctx["notes"])
+                dd, part, extra = self._level_eval(t, trend, lvl, ctx["cap"], ctx["notes"], step_down=bool(ctx.get("step_down")))
                 res.append((rank[dd], dd, part, extra, lvl))
             evals = [level_eval_brief(dd_, part_, extra_, lvl_) for _, dd_, part_, extra_, lvl_ in res]
-            res.sort(key=lambda x: x[0])
+            # bar चा निकाल = किंमत ज्या level वर आहे (③ ✔) त्याचा; स्पर्श नसलेल्या दूरच्या level चा "wait" (③ ✘) पोहोचलेल्या level चा
+            # निकाल (उदा. ⑦ R:R ⇒ no_trade) झाकत नाही. ③ ✔ नसेल ⇒ आधीसारखा क्रम (setup < wait < no_trade).
+            res.sort(key=lambda x: (0 if (x[2].get("③") or [None])[0] else 1, x[0]))
             _, dd, part, extra, lvl = res[0]
             chk.update(part)
             dec = {M_SETUP: SETUP, M_WAIT: WAIT, M_NO: NO_TRADE}[dd]
@@ -202,6 +278,7 @@ class V22:
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
+                "mature_step_down": bool(ctx.get("step_down")),
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
                                                                   "day": ("before window" if self.sealed and self.sealed(st.protected.day)

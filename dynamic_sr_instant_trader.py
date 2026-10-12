@@ -729,6 +729,8 @@ def process_symbol(access_token, symbol, lot_size=None):
             _gate_err, _areas = f"{LR.R_ERROR}: areas — {type(exc).__name__}: {str(exc)[:80]}", [(0.0, 0.0)] * len(pooled_levels)
         if _gate_err is None:
             _g, _gate_err = _build_gate("dynamic_sr_instant", symbol, access_token, settings, _areas, now)
+            if _g is not None and hasattr(_g, "use_ltf") and LR.ltf_minutes_for(getattr(_g, "tf", None), LGB.gate_settings(settings)) == 1:
+                _g.use_ltf(candles_df.drop(columns=["_date"], errors="ignore"), 1, now)   # c1 (5M ⇒ 1M): हेच 1-मिनिट candles, पुन्हा fetch नाही
 
     # 🎓 वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Breakout Entry — "missed window" catch-up, खाली
     # पहा) — entry_breakout_gate_enabled असेल तर आजचे 5-मिनिट candles इथेच एकदाच (प्रति-symbol,

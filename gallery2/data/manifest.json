@@ -1,0 +1,1179 @@
+{
+ "schema": 1,
+ "seed": 7,
+ "n_total": 40,
+ "n_dev": 28,
+ "n_test": 12,
+ "counts": {
+  "NIFTY": {
+   "D": 8,
+   "1H": 7,
+   "15M": 8
+  },
+  "BANKNIFTY": {
+   "D": 7,
+   "1H": 3,
+   "15M": 7
+  },
+  "SENSEX": {
+   "D": 0,
+   "1H": 0,
+   "15M": 0
+  }
+ },
+ "window_bars": {
+  "D": 160,
+  "1H": 140,
+  "15M": 150
+ },
+ "quotas": {
+  "NIFTY/D": 5,
+  "NIFTY/1H": 4,
+  "NIFTY/15M": 5,
+  "BANKNIFTY/D": 5,
+  "BANKNIFTY/1H": 3,
+  "BANKNIFTY/15M": 5,
+  "SENSEX/D": 5,
+  "SENSEX/1H": 4,
+  "SENSEX/15M": 4
+ },
+ "auto_per_slot": {
+  "NIFTY/D": 8,
+  "NIFTY/1H": 7,
+  "NIFTY/15M": 7,
+  "BANKNIFTY/D": 6,
+  "BANKNIFTY/1H": 3,
+  "BANKNIFTY/15M": 7
+ },
+ "selection_rule": "1. Abhi चे आधीचे marked charts (`data/abhi_cases.json`) आधी — नेहमी dev, `calibration: false` (logic त्यांच्यावरच ठरलं ⇒\n     regression only; NIFTY चा case CONTAMINATED काळ).\n  2. बाकी प्रत्येक (symbol, TF) साठी: उपलब्ध data वर न चढणाऱ्या, ठराविक लांबीच्या windows ची grid (`WINDOW_BARS`; intraday window session सुरुवातीपासून), policy-बाहेरचे\n     आणि Abhi cases वर चढणारे वगळून. NIFTY auto windows फक्त IS (2015–2021): VAL स्वतंत्र चाचणीसाठी जपला (research/golden_gallery\n     सारखा), holdout / illustration कधीच नाही. BANKNIFTY ⇒ NIFTY holdout च्या तारखा नाहीत.\n  3. प्रत्येक window ला **फक्त किंमतीवरून** वर्णनात्मक tags (`shape`): दिशा up / down / range (net ÷ span), साध्या zigzag (3 × median\n     range) वरून सर्वात खोल counter-move deep (≥ 0.618) / shallow (≤ 0.382), flat_ext (b ≥ 0.9 a, c a च्या टोकापलीकडे), impulse\n     (दिशा + ER ≥ 0.25 + खोली ≤ 0.5). हे label नाहीत — फक्त विविधता मिळवण्यासाठी (आकडे निकाल पाहून ठरवलेले नाहीत).\n  4. Slot quota (`QUOTAS`) पर्यंत seeded RNG ने buckets (impulse, flat_ext, deep, shallow, down, up, range) आळीपाळीने — प्रत्येक\n     bucket मधून एक. Data नसलेल्या slot चा (उदा. SENSEX) वाटा उरलेल्या slots ना आळीपाळीने (window संख्येच्या मर्यादेत).",
+ "split_rule": "Abhi cases ⇒ dev. बाकीतून 12 test: (symbol, TF) slot आकाराच्या प्रमाणात (largest remainder), slot मध्ये numpy default_rng(seed + 1000) ने. Test labels sealed — फक्त acceptance (gallery2.store.load_labels).",
+ "sources": {
+  "NIFTY/D": {
+   "source": "nifty_1m_repo",
+   "rule": "IS 2015–2021 फक्त (VAL जपला; holdout / illustration नाही); data 2015-01-09 → 2021-12-31, 1720 bars"
+  },
+  "NIFTY/1H": {
+   "source": "nifty_1m_repo",
+   "rule": "IS 2015–2021 फक्त (VAL जपला; holdout / illustration नाही); data 2015-01-09 → 2021-12-31, 12034 bars"
+  },
+  "NIFTY/15M": {
+   "source": "nifty_1m_repo",
+   "rule": "IS 2015–2021 फक्त (VAL जपला; holdout / illustration नाही); data 2015-01-09 → 2021-12-31, 42977 bars"
+  },
+  "BANKNIFTY/D": {
+   "source": "banknifty_D",
+   "rule": "उपलब्ध सगळा data, NIFTY holdout तारखा वगळून; data 2016-10-10 → 2026-10-09, 1923 bars"
+  },
+  "BANKNIFTY/1H": {
+   "source": "banknifty_1H",
+   "rule": "उपलब्ध सगळा data, NIFTY holdout तारखा वगळून; data 2026-07-13 → 2026-10-09, 441 bars"
+  },
+  "BANKNIFTY/15M": {
+   "source": "banknifty_15M",
+   "rule": "उपलब्ध सगळा data, NIFTY holdout तारखा वगळून; data 2026-07-13 → 2026-10-09, 1575 bars"
+  }
+ },
+ "missing": [
+  {
+   "symbol": "SENSEX",
+   "timeframe": "D",
+   "why": "repo / trade-data मध्ये या symbol चा OHLC source नाही"
+  },
+  {
+   "symbol": "SENSEX",
+   "timeframe": "1H",
+   "why": "repo / trade-data मध्ये या symbol चा OHLC source नाही"
+  },
+  {
+   "symbol": "SENSEX",
+   "timeframe": "15M",
+   "why": "repo / trade-data मध्ये या symbol चा OHLC source नाही"
+  }
+ ],
+ "cross_tf_overlap": {
+  "rule": "एकाच symbol + TF वर test आणि dev windows कधीच चढत नाहीत (grid). वेगळ्या TF वर त्याच तारखा चालतात (CR-Q16) — या जोड्या [test, dev]:",
+  "pairs": [
+   [
+    "BANKNIFTY_15M_202607210915",
+    "BANKNIFTY_1H_202607130915"
+   ],
+   [
+    "BANKNIFTY_15M_202607210915",
+    "BANKNIFTY_D_20251215"
+   ],
+   [
+    "BANKNIFTY_15M_202607290915",
+    "BANKNIFTY_1H_202607130915"
+   ],
+   [
+    "BANKNIFTY_15M_202607290915",
+    "BANKNIFTY_D_20251215"
+   ],
+   [
+    "BANKNIFTY_1H_202609070915",
+    "BANKNIFTY_15M_202609010915"
+   ],
+   [
+    "BANKNIFTY_1H_202609070915",
+    "BANKNIFTY_15M_202609090915"
+   ],
+   [
+    "BANKNIFTY_1H_202609070915",
+    "BANKNIFTY_15M_202609180915"
+   ],
+   [
+    "BANKNIFTY_1H_202609070915",
+    "BANKNIFTY_D_20251215"
+   ],
+   [
+    "NIFTY_15M_201802060915",
+    "NIFTY_D_20170816"
+   ],
+   [
+    "NIFTY_1H_201702200915",
+    "NIFTY_D_20161223"
+   ],
+   [
+    "NIFTY_D_20160503",
+    "NIFTY_1H_201606280915"
+   ],
+   [
+    "NIFTY_D_20200324",
+    "NIFTY_15M_202010130915"
+   ]
+  ]
+ },
+ "strata": {
+  "NIFTY": {
+   "seed": 7,
+   "dev": 16,
+   "test": 7,
+   "assignment": "cr3_global_frozen"
+  },
+  "BANKNIFTY": {
+   "seed": 7,
+   "dev": 12,
+   "test": 5,
+   "assignment": "cr3_global_frozen"
+  }
+ },
+ "strata_rule": "प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 dev / test split (seed `strata.<symbol>.seed`). CR3 चे NIFTY / BANKNIFTY assignments गोठवलेले (assignment 'cr3_global_frozen'); नवा symbol फक्त additive (`--add-symbol`), त्याच्याच stratum मध्ये: windows / bucket निवड numpy default_rng(symbol seed), test = round(0.3 × stratum charts), (TF) slot आकाराच्या प्रमाणात, default_rng(symbol seed + 1000). आधीचे entries byte-for-byte तसेच.",
+ "charts": [
+  {
+   "id": "NIFTY_D_20160503",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2016-05-03 00:00:00",
+   "end": "2016-12-22 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.126,
+    "er": 0.031,
+    "swings": 17,
+    "max_counter_depth": null,
+    "span_mr": 18.1
+   },
+   "n": 1,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_D_20161223",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2016-12-23 00:00:00",
+   "end": "2017-08-14 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.812,
+    "er": 0.287,
+    "swings": 11,
+    "max_counter_depth": 0.147,
+    "span_mr": 36.9
+   },
+   "n": 2,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_D_20170816",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2017-08-16 00:00:00",
+   "end": "2018-04-10 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.388,
+    "er": 0.056,
+    "swings": 16,
+    "max_counter_depth": null,
+    "span_mr": 19.2
+   },
+   "n": 3,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_D_20180411",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2018-04-11 00:00:00",
+   "end": "2018-12-04 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.252,
+    "er": 0.042,
+    "swings": 18,
+    "max_counter_depth": null,
+    "span_mr": 20.0
+   },
+   "n": 4,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_D_20181205",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2018-12-05 00:00:00",
+   "end": "2019-07-26 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.27,
+    "er": 0.045,
+    "swings": 16,
+    "max_counter_depth": null,
+    "span_mr": 17.2
+   },
+   "n": 5,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_D_20190729",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2019-07-29 00:00:00",
+   "end": "2020-03-23 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "shallow",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.758,
+    "er": 0.2,
+    "swings": 18,
+    "max_counter_depth": 0.285,
+    "span_mr": 40.6
+   },
+   "n": 6,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_D_20200324",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2020-03-24 00:00:00",
+   "end": "2020-11-11 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.934,
+    "er": 0.26,
+    "swings": 16,
+    "max_counter_depth": 0.375,
+    "span_mr": 33.1
+   },
+   "n": 7,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_D_20201112",
+   "symbol": "NIFTY",
+   "timeframe": "D",
+   "source": "nifty_1m_repo",
+   "start": "2020-11-12 00:00:00",
+   "end": "2021-07-07 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.961,
+    "er": 0.171,
+    "swings": 18,
+    "max_counter_depth": 0.539,
+    "span_mr": 20.6
+   },
+   "n": 8,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_1H_201501090915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2015-01-09 09:15:00",
+   "end": "2015-02-09 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.289,
+    "er": 0.083,
+    "swings": 10,
+    "max_counter_depth": null,
+    "span_mr": 26.3
+   },
+   "n": 9,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_1H_201507070915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2015-07-07 09:15:00",
+   "end": "2015-08-03 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.039,
+    "er": 0.006,
+    "swings": 11,
+    "max_counter_depth": null,
+    "span_mr": 13.6
+   },
+   "n": 10,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_1H_201606280915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2016-06-28 09:15:00",
+   "end": "2016-07-26 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.885,
+    "er": 0.262,
+    "swings": 11,
+    "max_counter_depth": 0.361,
+    "span_mr": 27.7
+   },
+   "n": 11,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_1H_201702200915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2017-02-20 09:15:00",
+   "end": "2017-03-21 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.761,
+    "er": 0.18,
+    "swings": 13,
+    "max_counter_depth": 0.724,
+    "span_mr": 23.7
+   },
+   "n": 12,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_1H_201704210915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2017-04-21 09:15:00",
+   "end": "2017-05-19 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.578,
+    "er": 0.153,
+    "swings": 16,
+    "max_counter_depth": 0.359,
+    "span_mr": 23.9
+   },
+   "n": 13,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_1H_202103120915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2021-03-12 09:15:00",
+   "end": "2021-04-12 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.897,
+    "er": 0.136,
+    "swings": 10,
+    "max_counter_depth": 0.599,
+    "span_mr": 15.2
+   },
+   "n": 14,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_1H_202107090915",
+   "symbol": "NIFTY",
+   "timeframe": "1H",
+   "source": "nifty_1m_repo",
+   "start": "2021-07-09 09:15:00",
+   "end": "2021-08-06 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.679,
+    "er": 0.165,
+    "swings": 11,
+    "max_counter_depth": 0.33,
+    "span_mr": 22.7
+   },
+   "n": 15,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_201506120915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2015-06-12 09:15:00",
+   "end": "2015-06-19 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.883,
+    "er": 0.209,
+    "swings": 16,
+    "max_counter_depth": 0.9,
+    "span_mr": 23.0
+   },
+   "n": 16,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_201508190915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2015-08-19 09:15:00",
+   "end": "2015-08-26 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "flat_ext",
+    "shallow",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.797,
+    "er": 0.269,
+    "swings": 15,
+    "max_counter_depth": 0.327,
+    "span_mr": 37.2
+   },
+   "n": 17,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_201802060915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2018-02-06 09:15:00",
+   "end": "2018-02-14 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.463,
+    "er": 0.028,
+    "swings": 15,
+    "max_counter_depth": 0.906,
+    "span_mr": 18.4
+   },
+   "n": 18,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_15M_201903050915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2019-03-05 09:15:00",
+   "end": "2019-03-12 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "impulse",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.848,
+    "er": 0.347,
+    "swings": 15,
+    "max_counter_depth": 0.293,
+    "span_mr": 39.3
+   },
+   "n": 19,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_202009160915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2020-09-16 09:15:00",
+   "end": "2020-09-23 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "shallow",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.679,
+    "er": 0.166,
+    "swings": 14,
+    "max_counter_depth": 0.281,
+    "span_mr": 25.3
+   },
+   "n": 20,
+   "split": "test"
+  },
+  {
+   "id": "NIFTY_15M_202010130915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2020-10-13 09:15:00",
+   "end": "2020-10-20 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": -0.1,
+    "er": 0.015,
+    "swings": 14,
+    "max_counter_depth": null,
+    "span_mr": 14.9
+   },
+   "n": 21,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_202012310915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_repo",
+   "start": "2020-12-31 09:15:00",
+   "end": "2021-01-07 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.572,
+    "er": 0.083,
+    "swings": 15,
+    "max_counter_depth": 0.913,
+    "span_mr": 15.3
+   },
+   "n": 22,
+   "split": "dev"
+  },
+  {
+   "id": "NIFTY_15M_202609280915",
+   "symbol": "NIFTY",
+   "timeframe": "15M",
+   "source": "nifty_1m_golden",
+   "start": "2026-09-28 09:15:00",
+   "end": "2026-10-08 15:15:00",
+   "n_bars": 200,
+   "origin": "abhi_case",
+   "calibration": false,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.925,
+    "er": 0.144,
+    "swings": 12,
+    "max_counter_depth": 0.555,
+    "span_mr": 23.9
+   },
+   "case": "nifty_flat_c_wave",
+   "note": "Abhi's marked count: 22,801 -> 22,220 DOWN impulse, then the 5-6 Oct correction A 22,217 -> 22,622, B -> 22,397, C (6 Oct) -> 22,731, c beyond a (flat with an extended c); trend stays DOWN (protected 22,801). Source: tests/golden_chart_cases/2026-10-05_06_correction.json. CONTAMINATED window (data_policy purpose golden) = regression only.",
+   "n": 23,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_D_20161010",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2016-10-10 00:00:00",
+   "end": "2017-06-01 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.652,
+    "er": 0.169,
+    "swings": 9,
+    "max_counter_depth": 0.0,
+    "span_mr": 26.6
+   },
+   "n": 24,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_D_20170602",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2017-06-02 00:00:00",
+   "end": "2018-01-19 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.877,
+    "er": 0.159,
+    "swings": 13,
+    "max_counter_depth": 0.709,
+    "span_mr": 19.2
+   },
+   "n": 25,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_D_20190514",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2019-05-14 00:00:00",
+   "end": "2020-01-06 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.416,
+    "er": 0.051,
+    "swings": 13,
+    "max_counter_depth": 0.762,
+    "span_mr": 14.2
+   },
+   "n": 26,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_D_20200107",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2020-01-07 00:00:00",
+   "end": "2020-08-26 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "shallow",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.504,
+    "er": 0.109,
+    "swings": 23,
+    "max_counter_depth": 0.248,
+    "span_mr": 27.4
+   },
+   "n": 27,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_D_20200827",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2020-08-27 00:00:00",
+   "end": "2021-04-19 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "shallow",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.445,
+    "er": 0.115,
+    "swings": 10,
+    "max_counter_depth": 0.254,
+    "span_mr": 27.0
+   },
+   "n": 28,
+   "split": "test"
+  },
+  {
+   "id": "BANKNIFTY_D_20211210",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2021-12-10 00:00:00",
+   "end": "2022-07-29 00:00:00",
+   "n_bars": 160,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.056,
+    "er": 0.006,
+    "swings": 17,
+    "max_counter_depth": null,
+    "span_mr": 12.7
+   },
+   "n": 29,
+   "split": "test"
+  },
+  {
+   "id": "BANKNIFTY_D_20251215",
+   "symbol": "BANKNIFTY",
+   "timeframe": "D",
+   "source": "banknifty_D",
+   "start": "2025-12-15 00:00:00",
+   "end": "2026-10-09 00:00:00",
+   "n_bars": 203,
+   "origin": "abhi_case",
+   "calibration": false,
+   "holdout_dates_exception": true,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": -0.322,
+    "er": 0.045,
+    "swings": 26,
+    "max_counter_depth": null,
+    "span_mr": 18.7
+   },
+   "case": "banknifty_sharp_fall_abc_down",
+   "note": "Abhi's marked count: Feb 2026 top 61,765 (3 Feb) -> sharp fall to 49,955 (2 Apr) = DOWN impulse (Feb->Mar 2026); a-b-c up into the sharp-fall supply (c 58,706, late Jun); then a new decline = trend DOWN. Sources: docs/WORK_LOG.md (ABC_FIX, PR A), OPEN_QUESTIONS Q44 / Q49 / Q55 / CD14. BANKNIFTY bars inside the NIFTY-holdout dates: allowed only for this existing marked case (CR-Q14).",
+   "n": 30,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_1H_202607130915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "1H",
+   "source": "banknifty_1H",
+   "start": "2026-07-13 09:15:00",
+   "end": "2026-08-07 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.05,
+    "er": 0.01,
+    "swings": 16,
+    "max_counter_depth": null,
+    "span_mr": 15.6
+   },
+   "n": 31,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_1H_202608100915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "1H",
+   "source": "banknifty_1H",
+   "start": "2026-08-10 09:15:00",
+   "end": "2026-09-04 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "range"
+   ],
+   "stats": {
+    "net_over_span": -0.368,
+    "er": 0.018,
+    "swings": 16,
+    "max_counter_depth": null,
+    "span_mr": 8.5
+   },
+   "n": 32,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_1H_202609070915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "1H",
+   "source": "banknifty_1H",
+   "start": "2026-09-07 09:15:00",
+   "end": "2026-10-06 15:15:00",
+   "n_bars": 140,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "deep",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.608,
+    "er": 0.108,
+    "swings": 17,
+    "max_counter_depth": 0.751,
+    "span_mr": 21.3
+   },
+   "n": 33,
+   "split": "test"
+  },
+  {
+   "id": "BANKNIFTY_15M_202607130915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-07-13 09:15:00",
+   "end": "2026-07-20 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.274,
+    "er": 0.037,
+    "swings": 12,
+    "max_counter_depth": null,
+    "span_mr": 13.1
+   },
+   "n": 34,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_15M_202607210915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-07-21 09:15:00",
+   "end": "2026-07-28 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "shallow",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.515,
+    "er": 0.171,
+    "swings": 4,
+    "max_counter_depth": 0.0,
+    "span_mr": 26.0
+   },
+   "n": 35,
+   "split": "test"
+  },
+  {
+   "id": "BANKNIFTY_15M_202607290915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-07-29 09:15:00",
+   "end": "2026-08-05 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "up"
+   ],
+   "stats": {
+    "net_over_span": 0.415,
+    "er": 0.093,
+    "swings": 16,
+    "max_counter_depth": 0.423,
+    "span_mr": 20.5
+   },
+   "n": 36,
+   "split": "test"
+  },
+  {
+   "id": "BANKNIFTY_15M_202608140915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-08-14 09:15:00",
+   "end": "2026-08-21 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "range"
+   ],
+   "stats": {
+    "net_over_span": 0.223,
+    "er": 0.043,
+    "swings": 16,
+    "max_counter_depth": null,
+    "span_mr": 11.8
+   },
+   "n": 37,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_15M_202609010915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-09-01 09:15:00",
+   "end": "2026-09-08 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.748,
+    "er": 0.101,
+    "swings": 12,
+    "max_counter_depth": 0.985,
+    "span_mr": 14.3
+   },
+   "n": 38,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_15M_202609090915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-09-09 09:15:00",
+   "end": "2026-09-17 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "range"
+   ],
+   "stats": {
+    "net_over_span": -0.342,
+    "er": 0.05,
+    "swings": 15,
+    "max_counter_depth": null,
+    "span_mr": 13.4
+   },
+   "n": 39,
+   "split": "dev"
+  },
+  {
+   "id": "BANKNIFTY_15M_202609180915",
+   "symbol": "BANKNIFTY",
+   "timeframe": "15M",
+   "source": "banknifty_15M",
+   "start": "2026-09-18 09:15:00",
+   "end": "2026-09-25 15:15:00",
+   "n_bars": 150,
+   "origin": "auto",
+   "calibration": true,
+   "holdout_dates_exception": false,
+   "tags": [
+    "flat_ext",
+    "deep",
+    "down"
+   ],
+   "stats": {
+    "net_over_span": -0.445,
+    "er": 0.085,
+    "swings": 12,
+    "max_counter_depth": 0.916,
+    "span_mr": 18.2
+   },
+   "n": 40,
+   "split": "dev"
+  }
+ ]
+}
