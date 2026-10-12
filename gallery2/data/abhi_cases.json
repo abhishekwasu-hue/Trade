@@ -1,0 +1,22 @@
+[
+ {
+  "key": "banknifty_sharp_fall_abc_down",
+  "symbol": "BANKNIFTY",
+  "timeframe": "D",
+  "source": "banknifty_D",
+  "start": "2025-12-15",
+  "end": "2026-10-09",
+  "holdout_dates_exception": true,
+  "note": "Abhi's marked count: Feb 2026 top 61,765 (3 Feb) -> sharp fall to 49,955 (2 Apr) = DOWN impulse (Feb->Mar 2026); a-b-c up into the sharp-fall supply (c 58,706, late Jun); then a new decline = trend DOWN. Sources: docs/WORK_LOG.md (ABC_FIX, PR A), OPEN_QUESTIONS Q44 / Q49 / Q55 / CD14. BANKNIFTY bars inside the NIFTY-holdout dates: allowed only for this existing marked case (CR-Q14)."
+ },
+ {
+  "key": "nifty_flat_c_wave",
+  "symbol": "NIFTY",
+  "timeframe": "15M",
+  "source": "nifty_1m_golden",
+  "start": "2026-09-28 09:15",
+  "end": "2026-10-08 15:15",
+  "holdout_dates_exception": false,
+  "note": "Abhi's marked count: 22,801 -> 22,220 DOWN impulse, then the 5-6 Oct correction A 22,217 -> 22,622, B -> 22,397, C (6 Oct) -> 22,731, c beyond a (flat with an extended c); trend stays DOWN (protected 22,801). Source: tests/golden_chart_cases/2026-10-05_06_correction.json. CONTAMINATED window (data_policy purpose golden) = regression only."
+ }
+]

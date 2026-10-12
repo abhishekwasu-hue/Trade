@@ -1847,6 +1847,31 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 **Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
 नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
 
+## 2026-10-12 · Chart Reader v2 CR3 — marking page + gallery storage (research-only)
+
+**काय केलं:** नवा package `gallery2/` (labels — reader2 चं logic नाही; reader2 / decision3 import करत नाही): `schema` (एका chart ची नोंद:
+legs start/end bar + ts + किंमत + impulse / correction / uncertain, trend states, demand / supply zones, marker, marked_at, notes; तपासणी —
+क्रम, overlap नाही, किंमत = bar चा high / low ± 0.25 MR, holdout नाही), `data` (sources + policy: NIFTY "golden" — holdout / illustration चा
+bar कधीच नाही, 1m resample आधी गाळतो; BANKNIFTY NIFTY-holdout तारखा फक्त तुमच्या case ला), `store` (Supabase `reader2_gallery` upsert +
+revision; JSON folder पर्याय; export ⇒ private trade-data `reader2_gallery/labels/dev|test/<id>.json` (repo public ⇒ labels repo मध्ये नाहीत); sealed: `calibration_labels` फक्त dev folder, test file
+dev मध्ये ⇒ `SealedTestError`), `candidates` (फक्त किंमतीवरून वर्णनात्मक tags, न चढणारा grid, seeded निवड, 28 / 12 split).
+`scripts/reader2_gallery_candidates.py` ⇒ `gallery2/data/manifest.json` (40 charts: NIFTY D 8 / 1H 7 / 15M 8, BANKNIFTY D 7 / 1H 3 / 15M 7;
+SENSEX data नाही ⇒ 0; seed 7; dev 28 / test 12; तुमचे 2 cases dev + `calibration: false`). `scripts/reader2_gallery_export.py` (VPS).
+Dashboard: ANALYZE ⇒ "Reader v2 Gallery (प्रयोगिक)" — chart निवडा, high / low वर क्लिक (Streamlit plotly selection, headless browser मध्ये
+तपासलं) किंवा bar क्रमांक + H / L, legs ला label, trend, zones, जतन (तपासणी आधी), पुन्हा उघडून edit, प्रगती n/40. Chart वर इंग्रजी मजकूर.
+**Tests:** `tests/test_reader2_gallery.py` (schema, round-trip, export, holdout, sealed split, builder determinism / split, manifest, page
+AppTest) + `test_app_navigation` (15 पानं) + `tests/test_reader2*.py` — सगळे pass. Order / broker / paid API / Vision नाही; काहीही calibrate केलं
+नाही. **तुमच्यासाठी तयार:** VPS deploy नंतर dashboard वर 40 charts marking (≈ 10 मिनिटं / chart). उघडे प्रश्न: OPEN_QUESTIONS CR-Q13–CR-Q21.
+
+
+### 2026-10-12 · Chart Reader v2 CR3 — independent review (PR #302) नंतर दुरुस्ती
+**🟡1** chart बदलून परत आल्यावर तक्ते (legs / trend / zones) त्या chart च्या state वरून पुन्हा (जुने बदल परत येत नाहीत). **🟡2** labels folder call वेळी
+(`READER2_GALLERY_LABELS`, नाहीतर `<trade-data>/reader2_gallery/labels`); folder नाही ⇒ स्पष्ट `LabelsMissing`. **🟡3** जतन optimistic lock (revision +
+split; दुसऱ्या tab / device ने मधेच जतन ⇒ "conflict" संदेश, overwrite नाही); DB वाचन अपयश ⇒ error, Save बंद. **🟡4** trend ओळी bar क्रमाने, किमान एक
+state हवा, default रिकामी ओळ अडवत नाही. **🟡5** रिकामा window ⇒ error. **🟡6** manifest `--force` शिवाय बदलत नाही; split वेगळा असलेली नोंद ⇒ error,
+Save बंद (test chart कधीच dev होत नाही). ⚪ NIFTY golden file नावाच्या pattern ने, zone from_bar तपासणी, boundary test मध्ये gallery2, CREATE TABLE
+एकदाच, export अपयश ⇒ raise + जुन्या files काढतो. **Tests:** `tests/test_reader2*.py` + `test_app_navigation` — 304 pass / 40 xfail (आधीचेच).
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**
