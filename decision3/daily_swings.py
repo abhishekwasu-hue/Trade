@@ -432,6 +432,8 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None, symbo
                 "states": runs([state_label(x) for x in q15]), "objects": objs,
                 "leg_now": next(({k: lg.get(k) for k in ("state", "verified", "family", "n", "accepted", "anatomy")}
                                  for lg in objs["impulses"][-1:] if lg["state"] == "in progress"), None),
+                "leg_last": next(({k: lg.get(k) for k in ("state", "verified", "family", "n", "accepted", "anatomy", "dir")}
+                                  for lg in objs["impulses"][-1:]), None),   # PR #304: chart वरचा शेवटचा trend leg (चालू / पूर्ण)
                 "retrace": _retrace(d, last_q), "range_check": range_check(d, objs, s),
                 "sharp_end": getattr(last_q, "corr_zone", None), "evidence": list(getattr(last_q, "evidence", ()) or ()),
                 "wave_a": _wave_a(last_q), "alt": getattr(last_q, "alt", None),
@@ -454,7 +456,11 @@ def mark_accepted(impulses, ts, s=None, symbol=None, accepted=None):
         if symbol is not None:
             recs = [r for r in recs if r["symbol"] == str(symbol).upper()]
     else:
-        recs = AL.load(symbol=symbol) if symbol else []
+        try:
+            recs = AL.load(symbol=symbol) if symbol else []
+        except (OSError, ValueError) as e:                                 # PR #304: नोंदींची file चुकीची ⇒ chart / Telegram थांबत नाही
+            AL.log.warning("accepted legs unreadable (%s) — chart drawn without accepted readings", e)
+            recs = []
     AL.annotate(impulses, recs, ts, int(s["daily_pivot_n"]))
     for lg in impulses:
         lg.setdefault("anatomy", None)
@@ -797,16 +803,37 @@ COUNTER_TXT = {"pullback": "pullback in progress (lower degree)", "candidate": "
                "correction": "correction in progress (same degree; parent origin holds)"}
 
 
+def _leg_cur(q):
+    """Chart वरचा शेवटचा trend-degree leg (चालू असेल तर leg_now, नाहीतर leg_last — candidate / pullback चालू असताना पूर्ण झालेला), trend च्या
+    दिशेचा असेल तरच; नाही / हाताने बनवलेले q ⇒ None."""
+    ln = q.get("leg_now") or q.get("leg_last")
+    if not ln:
+        return None
+    want = {"UP": 1, "DOWN": -1}.get(q.get("trend"))
+    return ln if ln.get("dir") in (None, want) else None
+
+
 def unverified(q):
-    """Abhi review: चालू trend leg read_counter ने अजून 5-wave impulse म्हणून वाचला नाही **आणि** Abhi ने तो impulse म्हणून स्वीकारलेला
-    नाही (CD14) ⇒ True (caption / title "impulse" म्हणत नाहीत). leg_now नसलेले (हाताने बनवलेले) q ⇒ False (जुनं वाचन)."""
-    ln = q.get("leg_now")
-    return bool(ln) and ln.get("state") == "in progress" and not ln.get("verified") and not ln.get("accepted")
+    """Abhi review + CD14 + PR #304: chart वरचा शेवटचा trend leg (चालू किंवा पूर्ण) read_counter ने 5-wave impulse म्हणून वाचला नाही **आणि**
+    Abhi ने तो impulse म्हणून स्वीकारलेला नाही ⇒ True (title / caption "impulse" म्हणत नाहीत — chart वर तो dashed "trend leg"). leg माहिती
+    नसलेले (हाताने बनवलेले) q ⇒ False (जुनं वाचन)."""
+    ln = _leg_cur(q)
+    return bool(ln) and not ln.get("verified") and not ln.get("accepted")
 
 
 def _leg_now_detail(q):
-    """Debug: चालू leg ची तपासणी (leg_check_text) — default मध्ये कधीच नाही."""
-    return leg_check_text(q.get("leg_now") or {})
+    """Debug: शेवटच्या trend leg ची तपासणी (leg_check_text) — default मध्ये कधीच नाही."""
+    return leg_check_text(_leg_cur(q) or {})
+
+
+def _leg_word(q):
+    """Unverified + न-स्वीकारलेला leg: चालू ⇒ "new decline in progress", पूर्ण ⇒ "trend leg" (strip वरचं नाव) — impulse दावा नाही."""
+    return f"new {_move(q['trend'])} in progress" if (_leg_cur(q) or {}).get("state") == "in progress" else "trend leg"
+
+
+def _depth(q):
+    """Counter-move ची खोली — शेवटचा leg impulse (verified / स्वीकारलेला / माहिती नाही) ⇒ "of last impulse", नाहीतर "of last trend leg"."""
+    return f" (depth {q['retrace']:.0%} of last {'trend leg' if unverified(q) else 'impulse'})"
 
 
 def _move(t):
@@ -824,25 +851,25 @@ def trend_line(q, debug=False):
     if q["phase"] == "origin_broken":
         body = f"Trend {t} · origin broken on close — waiting for an opposite impulse"
     elif q["phase"] == "impulse" and unverified(q):
-        body = f"Trend {t} (new {_move(t)} in progress" + (f", {_leg_now_detail(q)})" if debug else ")")
+        body = f"Trend {t} ({_leg_word(q)}" + (f", {_leg_now_detail(q)})" if debug else ")")
         if q.get("counter"):
             body += f" · {COUNTER_TXT[q['counter']]}"
             if q.get("retrace") is not None:
-                body += f" (depth {q['retrace']:.0%} of last impulse)"
+                body += _depth(q)
     else:
         body = f"Trend {t} ({'impulse' if q['phase'] == 'impulse' else 'correction'})"
         if q.get("counter"):
             body += f" · {COUNTER_TXT[q['counter']]}"
             if q.get("retrace") is not None:
-                body += f" (depth {q['retrace']:.0%} of last impulse)"
+                body += _depth(q)
     r5 = bool(q.get("rule5")) and q["phase"] == "impulse" and q.get("counter") in (None, "pullback")
     if r5:                                                                 # ABC_FIX rule 5 (फक्त नवा impulse चालू असताना; नवी correction ⇒ नाही)
         fam = q.get("last_corr_shape")
         fam = "a-b-c" if fam in ("zigzag", "flat") else (fam or "")
         body = (f"Trend {t} · {fam + ' ' if fam else ''}correction completed at sharp-{'fall supply' if t == 'DOWN' else 'rise demand'}"
-                + ((f" · new {_move(t)} in progress" + (f" ({_leg_now_detail(q)})" if debug else "")) if unverified(q)
+                + ((f" · {_leg_word(q)}" + (f" ({_leg_now_detail(q)})" if debug else "")) if unverified(q)
                    else f" · new impulse {t.lower()} in progress"))
-    ln = q.get("leg_now") or {}
+    ln = _leg_cur(q) or {}
     if debug and q["phase"] == "impulse" and ln.get("accepted") and not ln.get("verified"):   # CD14 debug: स्वीकारलेल्या चालू leg चे votes
         body += f" [{_leg_now_detail(q)}]"
     pq = q["protected_now"]
@@ -904,8 +931,8 @@ def state_short(q):
     if c == "correction":
         return f"{t} · correction in progress"
     if q["phase"] == "impulse" and unverified(q):
-        body = f"{t} · new {_move(t)} in progress"                         # CD14: impulse दावा नाही, "not verified" मजकूर नाही
-    elif q["phase"] == "impulse" and (q.get("leg_now") or {}).get("verified"):
+        body = f"{t} · {_leg_word(q)}"                                     # CD14: impulse दावा नाही, "not verified" मजकूर नाही
+    elif q["phase"] == "impulse" and (_leg_cur(q) or {}).get("verified"):
         body = f"{t} impulse (5 waves)"
     else:
         body = f"{t} {'impulse' if q['phase'] == 'impulse' else 'correction'}"
@@ -1059,7 +1086,7 @@ def to_json(v, symbol):
                     "phases": [{"from": day(a, True), "to": day(b), "phase_wave": s} for a, b, s in v["q15"]["phases"] if b >= i0]},
             "elliott": ev, "elliott_degree": v["elliott_degree"],
             "trend_line": trend_line(v["q15"]), "trend_line_debug": trend_line(v["q15"], debug=True),   # CD14: default (chart) / तपशील
-            "leg_now": v["q15"].get("leg_now"),
+            "leg_now": v["q15"].get("leg_now"), "leg_last": v["q15"].get("leg_last"),
             "counter": v["q15"].get("counter"), "origin_risk": v["q15"].get("origin_risk"),
             "wave_a": None if not v["q15"].get("wave_a") else {**v["q15"]["wave_a"], "day": day(v["q15"]["wave_a"]["bar"]),
                                                               "alt": v["q15"].get("alt")},   # Q49 debug: "A" (alt: 1)

@@ -10,9 +10,12 @@ sessions आत, आणि दिशा तीच. का ± daily_pivot_n: pivo
 उजवीकडे ≥) ⇒ n sessions च्या आत त्याच प्रकारचा दुसरा pivot असू शकत नाही — जुळणं एकाच pivot शी, आणि vendor च्या तारखेतला / सुट्टीचा
 फरक सामावतो. किंमत कधीच वापरत नाही (tuning नाही). Engine (trend / phase / protected) बदलत नाही — फक्त दाखवणं."""
 import json
+import logging
 import os
 
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "accepted_legs.json")
 ENV = "DECISION3_ACCEPTED_LEGS"
@@ -51,9 +54,23 @@ def validate(rec):
 
 
 def load(path=None, symbol=None, timeframe="1D"):
-    """File ⇒ तपासलेल्या नोंदी (symbol / timeframe ने गाळलेल्या). File नाही ⇒ [] (नोंदी नसणं ही चूक नाही); चुकीची file ⇒ ValueError.
-    त्याच symbol / timeframe च्या दोन नोंदी एकमेकांवर येत असतील (overlap) ⇒ ValueError — एका leg ला एकच वाचन."""
-    p = path or os.environ.get(ENV) or DEFAULT_PATH
+    """File ⇒ तपासलेल्या नोंदी (symbol / timeframe ने गाळलेल्या). path दिला ⇒ काटेकोर: file नाही ⇒ [], चुकीची ⇒ ValueError.
+    path नाही ⇒ env `DECISION3_ACCEPTED_LEGS` (असेल तर) — ती file नाही / चुकीची ⇒ warning आणि repo file वर परत (PR #304: chart / Telegram
+    कधीच थांबत नाही, repo ची नोंद हरवत नाही). त्याच symbol / timeframe च्या दोन नोंदी एकमेकांवर (overlap) ⇒ ValueError."""
+    if path is None:
+        env = os.environ.get(ENV)
+        if env:
+            try:
+                if not os.path.exists(env):
+                    raise ValueError("file not found")
+                return load(env, symbol, timeframe)
+            except (OSError, ValueError) as e:                             # json.JSONDecodeError ⊂ ValueError
+                log.warning("accepted legs: %s=%s unusable (%s) — falling back to the repo file %s", ENV, env, e, DEFAULT_PATH)
+        path = DEFAULT_PATH
+    return _load_file(path, symbol, timeframe)
+
+
+def _load_file(p, symbol, timeframe):
     if not os.path.exists(p):
         return []
     with open(p, encoding="utf-8") as fh:

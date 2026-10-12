@@ -1951,3 +1951,7 @@ validation; BANKNIFTY real data — file नसेल तर skip). जुने
 vision_audit 22 pass.
 **Charts:** trade-data `review/v22/daily_swings_v6/` (BANKNIFTY + NIFTY, 2y). BANKNIFTY: Feb → Apr घन impulse, चालू Jun → Sep leg dashed
 "trend leg" (flat, n 13), title "new decline in progress". NIFTY: बदल नाही (चालू leg 5 waves verified). उघडे: OPEN_QUESTIONS CD14-A … CD14-E.
+**Review (PR #304):** 🟡1 wording आता chart वरच्या शेवटच्या trend leg वरून (`leg_last`, चालू नसला तरी — candidate / pullback चालू असताना):
+unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
+"impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
+chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.

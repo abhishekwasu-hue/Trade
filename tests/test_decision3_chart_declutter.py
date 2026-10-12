@@ -817,6 +817,87 @@ def test_accepted_legs_loader_validates(tmp_path, monkeypatch):
     assert shipped and all(x["reading"] == "impulse" for x in shipped)
 
 
+@pytest.mark.parametrize("content", [None, "{not json", '{"legs": [{"symbol": "BN"}]}', '{"legs": 3}'])
+def test_broken_or_missing_override_falls_back_to_repo_file(tmp_path, monkeypatch, caplog, content):
+    """PR #304: override file missing / malformed ⇒ warning + repo records (never silently empty, never an exception)."""
+    from decision3 import accepted_legs as AL
+    p = tmp_path / "override.json"
+    if content is not None:
+        p.write_text(content)
+    monkeypatch.setenv(AL.ENV, str(p))
+    with caplog.at_level("WARNING", logger=AL.__name__):
+        got = AL.load()
+    assert got == AL.load(AL.DEFAULT_PATH) and got
+    assert any("falling back to the repo file" in r.getMessage() for r in caplog.records)
+    if content is not None:
+        with pytest.raises(ValueError):                                     # an explicit path stays strict
+            AL.load(str(p))
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+def test_broken_repo_records_never_stop_the_chart(tmp_path, monkeypatch, mirror):
+    from decision3 import accepted_legs as AL
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(AL, "DEFAULT_PATH", str(bad))
+    monkeypatch.delenv(AL.ENV, raising=False)
+    pts = HEAD + WAVE4 + WAVE5
+    d = _mirror_path(pts) if mirror else path(pts)
+    v = DS.build(d, window=len(d), with_elliott=False, symbol="TEST")
+    assert not any(x["accepted"] for x in v["q15"]["objects"]["impulses"])
+
+
+def _q_last_leg(mirror, **leg):
+    """Built BN-shape q with the running leg turned into a finished, last trend leg and a counter-move running (leg_now None)."""
+    from tests.test_decision3_abc_fix import _bn_points
+    v = DS.build(F.ohlc(_bn_points()[:-3], mirror), window=10 ** 6, with_elliott=False)
+    q = v["q15"]
+    last = {**q["leg_last"], "state": "done", **leg}
+    return {**q, "rule5": False, "leg_now": None, "leg_last": last, "retrace": 0.4}, ("UP" if mirror else "DOWN")
+
+
+@pytest.mark.parametrize("mirror", MIRRORS)
+@pytest.mark.parametrize("counter", ["candidate", "pullback", None])
+def test_unverified_finished_last_leg_never_called_impulse(mirror, counter):
+    """PR #304 🟡1: phase impulse with no running leg (counter-move / pullback) — wording follows the last drawn trend leg."""
+    q, t = _q_last_leg(mirror, verified=False, accepted=None)
+    q = {**q, "counter": counter}
+    line, short = DS.trend_line(q), DS.state_short(q)
+    assert line.startswith(f"Trend {t} (trend leg)") and "(impulse)" not in line and "of last impulse" not in line, line
+    assert short.startswith(f"{t} · trend leg") and f"{t} impulse" not in short, short
+    if counter == "candidate":
+        assert "same-degree correction candidate in progress (depth 40% of last trend leg)" in line
+        assert short == f"{t} · trend leg · pullback in progress (may become a correction)"
+    assert "not verified" not in line + short
+    assert "impulse not verified (structure vote:" in DS.trend_line(q, debug=True)
+    for ok in ({"verified": True}, {"accepted": {"reading": "impulse", "direction": "x", "source": "t", "from": "", "to": ""}}):
+        q2, _ = _q_last_leg(mirror, **{"verified": False, "accepted": None, **ok})
+        q2 = {**q2, "counter": counter}
+        line2 = DS.trend_line(q2)
+        assert line2.startswith(f"Trend {t} (impulse)") and "trend leg" not in line2, line2
+        assert DS.state_short(q2).startswith(f"{t} impulse")
+    q3, _ = _q_last_leg(mirror, verified=False, accepted=None, dir=1 if t == "DOWN" else -1)   # opposite-direction leg ⇒ no claim
+    assert DS.trend_line({**q3, "counter": counter}).startswith(f"Trend {t} (impulse)")      # either way (old reading)
+
+
+@pytest.mark.parametrize("mk", CASES)
+def test_title_and_caption_match_the_last_drawn_leg(mk):
+    v = mk()
+    q = v["q15"]
+    fig, info, _ = _texts(CH.daily_swings_fig(v, "TEST"))
+    legs = [ln for ln in info["ax"].lines if ln.get_gid() in ("impulse leg", "trend leg")]
+    if not legs or q["trend"] not in ("UP", "DOWN") or q["phase"] != "impulse":
+        return
+    imps = DS.view_spec(v)["impulses"]
+    if imps[-1]["dir"] != {"UP": 1, "DOWN": -1}[q["trend"]]:
+        return
+    title, cap = info["ax"].get_title(), DS.caption(v, "TEST").splitlines()[0]
+    if DS.drawn_as(imps[-1]) == "trend leg":
+        assert "(impulse)" not in title and "new impulse" not in title and f"{q['trend']} impulse" not in cap
+    else:
+        assert "trend leg" not in title and "(new decline in progress" not in title and "(new advance in progress" not in title
+
+
 BN_DAILY = "/home/user/trade-data/banknifty/BANKNIFTY_D.csv.gz"
 
 
