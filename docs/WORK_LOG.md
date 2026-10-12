@@ -1935,3 +1935,20 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+
+## 2026-10-12 · One bot (Abhi: TRADE_SESSION_ONE_BOT_TOMORROW §1–§6) — `claude/one-bot-tomorrow`
+
+**काय केलं:**
+- `engine3_live.py` + `engine_signal.run3`: decision3 (V22) live — NIFTY / BANKNIFTY / SENSEX, प्रत्येक बंद 15M bar (09:30–15:00): 15M + Daily
+  (~10 वर्षं, Q33 warm-up) + 5M spot (LTF) + front-month FUT 5M volume (SENSEX = BSE). V22 चे `ltf=` / `futures=` kwargs feature-detect;
+  नसतील तर m15 मध्ये joined volume. Daily fold disk cache (input hash; ~50 s ⇒ < 1 s). decision2 मार्ग `--engine decision2` ने तसाच.
+- Fail-closed: data / exception ⇒ "error" row (`pending_entry` नवा entry देत नाही) + Telegram एक ओळ, symbol मागे दिवसातून एकदा.
+- `pending_entry`: max-age मधला सर्वात नवा न-वापरलेला setup (आधी: सर्वात नवी row — पुढचा "wait" bar ✅ च्या वाटेतला setup रद्द करायचा).
+- `scripts/set_one_bot_mode.py` (+ `bots_common/one_bot.py`, `one_bot_status()` / `preopen_line()`): 15M SRv2 ON + signal_source engine; बाकी
+  `symbol_enabled` / `srv3_shadow_enabled` false; Vision srv2 symbols + approval; PAPER instruments local override (`data/paper_local.yaml`).
+  before-state JSON ⇒ `--revert` तंतोतंत (नसलेले keys काढले — `cloud_db.remove_strategy_settings_keys`); LIVE combo ला हात नाही.
+- `scripts/install_engine_schedule.sh` (idempotent, `--revert`, `--dry-run`), `scripts/diag_today.py` (read-only), `instruments.py` SENSEX.
+- अहवाल skeleton: `docs/reports/2026-10-12_no_signals.md`.
+
+**Tests:** `tests/test_one_bot.py` (नवे 15) + vision / paper / level suites.
+**उघडे प्रश्न:** OB1–OB3 (OPEN_QUESTIONS).
