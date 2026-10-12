@@ -1,0 +1,29 @@
+# Local development stack: Postgres (+PostGIS) and the API.
+# Usage (from bagmitra/): make dev
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bagmitra
+    ports: ["54322:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 3s
+      retries: 30
+
+  api:
+    build: ../api
+    env_file: [../product.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/bagmitra
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
+      LOG_LEVEL: INFO
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+    command: sh -c "alembic upgrade head && uvicorn bagmitra_api.asgi:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  pgdata:

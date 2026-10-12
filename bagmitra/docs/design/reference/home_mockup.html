@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BagMitra Home</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Mukta:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --leaf:#1F4D2B; --leaf-2:#2E6B3C; --leaf-3:#9BC79A;
+  --santra:#F28C28; --santra-2:#FFB15C; --sun:#FFC857;
+  --soil:#6B4A2B; --sky:#CFE8F3; --bg:#F3F7EE; --card:#FFFFFF;
+  --ink:#1B2A1E; --ink-2:#4E6153; --line:#E3EAD9; --alert:#D64545;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DDE6D5;font-family:'Mukta',sans-serif;color:var(--ink);display:flex;justify-content:center;padding:24px}
+.phone{width:390px;height:844px;background:var(--bg);border-radius:44px;overflow:hidden;position:relative;box-shadow:0 30px 80px rgba(0,0,0,.25);border:10px solid #111}
+.scroll{height:calc(100% - 78px);overflow:hidden;padding-bottom:40px}
+h1,h2,h3,.disp{font-family:'Baloo 2',sans-serif}
+
+/* header */
+.hdr{background:linear-gradient(160deg,var(--leaf) 0%,var(--leaf-2) 70%,#3F8A4F 100%);padding:44px 22px 78px;color:#fff;position:relative;border-radius:0 0 40px 40px}
+.hdr .row{display:flex;justify-content:space-between;align-items:center}
+.hdr .hello{font-size:15px;opacity:.85}
+.hdr .name{font-size:26px;font-weight:800;line-height:1.1}
+.avatar{width:44px;height:44px;border-radius:50%;background:var(--sun);display:flex;align-items:center;justify-content:center;font-family:'Baloo 2';font-weight:800;color:var(--leaf);font-size:18px;border:3px solid rgba(255,255,255,.5)}
+.weather{margin-top:18px;display:flex;align-items:center;gap:14px}
+.weather .temp{font-size:44px;font-weight:800;line-height:1}
+.weather .sub{font-size:14px;opacity:.9;line-height:1.35}
+.weather .pill{margin-left:auto;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:8px 12px;border-radius:999px;font-size:13px;font-weight:600}
+.sunsvg{width:52px;height:52px}
+
+/* stage card overlapping header */
+.stage{margin:-62px 18px 0;background:var(--card);border-radius:24px;padding:18px 18px 16px;box-shadow:0 14px 34px rgba(31,77,43,.16);position:relative}
+.stage .top{display:flex;justify-content:space-between;align-items:flex-start}
+.stage .tag{font-size:13px;color:var(--ink-2);font-weight:600}
+.stage h2{font-size:24px;color:var(--leaf);line-height:1.1}
+.stage .day{text-align:right}
+.stage .day b{font-family:'Baloo 2';font-size:34px;color:var(--santra);line-height:1;display:block}
+.stage .day span{font-size:12px;color:var(--ink-2);font-weight:600}
+.timeline{margin-top:10px;position:relative;height:70px}
+.timeline .track{position:absolute;left:14px;right:14px;top:30px;height:6px;background:var(--line);border-radius:3px}
+.timeline .fill{position:absolute;left:14px;top:30px;height:6px;width:58%;background:linear-gradient(90deg,var(--leaf-3),var(--santra));border-radius:3px}
+.node{position:absolute;top:0;width:60px;margin-left:-30px;text-align:center;font-size:11px;font-weight:600;color:var(--ink-2)}
+.node .dot{width:30px;height:30px;border-radius:50%;background:#fff;border:3px solid var(--line);margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.node.done .dot{border-color:var(--leaf-3);background:#EEF6EC}
+.node.now .dot{border-color:var(--santra);background:#FFF1E2;width:36px;height:36px;margin-top:-3px;box-shadow:0 0 0 6px rgba(242,140,40,.15)}
+.node.now{color:var(--santra);font-weight:700}
+.stage .next{margin-top:4px;font-size:14px;color:var(--ink-2)}
+.stage .next b{color:var(--ink)}
+
+/* section */
+.sec{padding:14px 18px 0}
+.sec h3{font-size:19px;color:var(--ink);display:flex;justify-content:space-between;align-items:baseline}
+.sec h3 a{font-family:'Mukta';font-size:13px;color:var(--leaf-2);font-weight:600;text-decoration:none}
+
+/* alert */
+.alert{margin:12px 18px 0;background:linear-gradient(135deg,#FFF3E6,#FFE7CC);border:1.5px solid #F7C98F;border-radius:20px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.alert .ic{width:40px;height:40px;border-radius:12px;background:var(--santra);display:flex;align-items:center;justify-content:center;flex:none}
+.alert b{font-family:'Baloo 2';font-size:16px;color:#8A4B06;display:block}
+.alert p{font-size:13.5px;color:#5E4225;line-height:1.4}
+
+/* tasks */
+.tasks{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.task{background:var(--card);border-radius:18px;padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 14px rgba(31,77,43,.06)}
+.task .chk{width:28px;height:28px;border-radius:50%;border:2.5px solid var(--leaf-3);flex:none}
+.task.done .chk{background:var(--leaf-2);border-color:var(--leaf-2);position:relative}
+.task.done .chk:after{content:'';position:absolute;left:9px;top:4px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.task .t{flex:1}
+.task .t b{font-size:15.5px;font-weight:600;display:block}
+.task .t span{font-size:12.5px;color:var(--ink-2)}
+.task.done .t b{text-decoration:line-through;color:var(--ink-2)}
+.task .em{font-size:22px}
+
+/* market */
+.market{margin-top:12px;background:var(--leaf);border-radius:22px;padding:16px;color:#fff;display:flex;align-items:center;gap:14px}
+.market .big{font-family:'Baloo 2';font-size:30px;font-weight:800;line-height:1}
+.market .lbl{font-size:13px;opacity:.85}
+.market .up{margin-left:auto;background:rgba(255,255,255,.14);border-radius:14px;padding:8px 12px;text-align:center}
+.market .up b{font-family:'Baloo 2';font-size:18px;color:var(--sun);display:block}
+.market .up span{font-size:11px;opacity:.9}
+
+/* bottom nav + fab */
+.nav{position:absolute;z-index:1;left:0;right:0;bottom:0;height:78px;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:center;padding:0 10px 10px}
+.nav div{font-size:11.5px;font-weight:600;color:var(--ink-2);text-align:center;width:64px}
+.nav div.on{color:var(--leaf)}
+.nav svg{display:block;margin:0 auto 3px;width:24px;height:24px}
+.fab{position:absolute;z-index:3;left:50%;transform:translateX(-50%);bottom:34px;width:72px;height:72px;border-radius:50%;background:linear-gradient(145deg,var(--santra-2),var(--santra));box-shadow:0 12px 28px rgba(242,140,40,.45),0 0 0 6px #fff;display:flex;align-items:center;justify-content:center}
+.fab-l{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:2;font-size:11.5px;font-weight:700;color:var(--santra)}
+</style>
+</head>
+<body>
+<div class="phone"><div class="scroll">
+
+<div class="hdr">
+  <div class="row">
+    <div><div class="hello">नमस्कार 🙏</div><div class="name">अभिषेक जी</div></div>
+    <div class="avatar">अ</div>
+  </div>
+  <div class="weather">
+    <svg class="sunsvg" viewBox="0 0 64 64" fill="none"><circle cx="30" cy="30" r="13" fill="#FFC857"/><g stroke="#FFC857" stroke-width="3" stroke-linecap="round"><path d="M30 8v6M30 46v6M8 30h6M46 30h6M14.4 14.4l4.3 4.3M41.3 41.3l4.3 4.3M14.4 45.6l4.3-4.3M41.3 18.7l4.3-4.3"/></g><path d="M24 52c-6 0-9-4-9-8s4-8 9-8c2-6 8-9 14-7 7 2 9 9 8 13 4 0 7 3 7 6 0 2-2 4-5 4H24z" fill="#fff" opacity=".95"/></svg>
+    <div><div class="temp">34°</div><div class="sub">काटोल · ढगाळ, दमट<br>कमाल 36°</div></div>
+    <div class="pill">💧 माती ओली 41%</div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="top">
+    <div><div class="tag">मृग बहार · बाग १ · ४ एकर</div><h2>फळधारणा सुरू</h2></div>
+    <div class="day"><b>६८</b><span>दिवस</span></div>
+  </div>
+  <div class="timeline">
+    <div class="track"></div><div class="fill"></div>
+    <div class="node done" style="left:14px"><div class="dot">💧</div>ताण</div>
+    <div class="node done" style="left:33%"><div class="dot">🌸</div>फुलोरा</div>
+    <div class="node now" style="left:58%"><div class="dot">🟢</div>फळधारणा</div>
+    <div class="node" style="left:calc(100% - 14px)"><div class="dot">🍊</div>काढणी</div>
+  </div>
+  <div class="next">पुढचा टप्पा: <b>फळ वाढ</b> · अंदाजे २० दिवसांत · काढणी फेब्रुवारी</div>
+</div>
+
+<div class="alert">
+  <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18.5v.5"/></svg></div>
+  <div><b>उद्या उष्णतेची लहर · फळगळीचा धोका</b><p>पुढील ३ दिवस ३८°+ · आज संध्याकाळी पाणी द्या, सकाळी हलकी फवारणी टाळा.</p></div>
+</div>
+
+<div class="sec"><h3>आजची कामं <a href="#">सगळी पाहा</a></h3>
+  <div class="tasks">
+    <div class="task done"><div class="chk"></div><div class="t"><b>ठिबक ४ तास — बाग १</b><span>सकाळी ६:०० · पूर्ण</span></div><div class="em">💧</div></div>
+    <div class="task"><div class="chk"></div><div class="t"><b>झिंक + बोरॉन फवारणी</b><span>फळधारणा टप्पा · ४ एकर · PHI ७ दिवस</span></div><div class="em">🧪</div></div>
+    <div class="task"><div class="chk"></div><div class="t"><b>सिल्ला तपासणी — १० झाडं</b><span>फोटो काढा, ॲप तपासेल</span></div><div class="em">📷</div></div>
+  </div>
+</div>
+
+<div class="sec"><h3>कळमना बाजार <a href="#">७ दिवसांचा कल</a></h3>
+  <div class="market">
+    <div><div class="big">₹३,२००</div><div class="lbl">प्रति क्विंटल · आंबिया · ७० मिमी+</div></div>
+    <div class="up"><b>▲ ८%</b><span>गेल्या आठवड्यापेक्षा</span></div>
+  </div>
+</div>
+
+</div><div class="fab"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></div>
+<div class="fab-l">फोटो काढा</div>
+<div class="nav">
+  <div class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 11l9-7 9 7v9H3z"/></svg>घर</div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21c-5-4-8-7-8-11a8 8 0 0116 0c0 4-3 7-8 11z"/></svg>बाग</div>
+  <div style="opacity:0">x</div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 19h16M6 16V9M11 16V5M16 16v-7"/></svg>हिशोब</div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 15a4 4 0 004-4V6a4 4 0 00-8 0v5a4 4 0 004 4zM6 11a6 6 0 0012 0M12 17v4"/></svg>विचारा</div>
+</div>
+
+</div>
+</body>
+</html>

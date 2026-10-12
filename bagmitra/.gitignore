@@ -1,0 +1,11 @@
+# API
+api/.env
+api/*.db
+api/.coverage
+api/.mypy_cache/
+api/.ruff_cache/
+# App
+app/coverage/
+app/build/
+app/.dart_tool/
+app/test/**/failures/

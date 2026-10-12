@@ -1,0 +1,19 @@
+targets:
+  $default:
+    sources:
+      - lib/**
+      - openapi/**
+      - pubspec.*
+      - $package$
+    builders:
+      swagger_dart_code_generator:
+        options:
+          input_folder: openapi/
+          output_folder: lib/api/generated/
+          separate_models: true
+          with_converter: true
+          use_required_attribute_for_headers: false
+          include_if_null: false
+      drift_dev:
+        options:
+          store_date_time_values_as_text: true

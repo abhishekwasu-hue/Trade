@@ -1,0 +1,74 @@
+[project]
+name = "bagmitra-api"
+version = "0.1.0"
+description = "BagMitra orchard management API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.118.0",
+  "pydantic==2.11.9",
+  "pydantic-settings==2.10.1",
+  "sqlalchemy[asyncio]==2.0.43",
+  "alembic==1.16.5",
+  "asyncpg==0.30.0",
+  "uvicorn==0.37.0",
+  "pyjwt[crypto]==2.10.1",
+  "structlog==25.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "aiosqlite==0.21.0",
+  "httpx==0.28.1",
+  "pytest==8.4.2",
+  "pytest-asyncio==1.2.0",
+  "pytest-cov==7.0.0",
+  "mypy==1.18.2",
+  "ruff==0.13.3",
+  "bandit==1.8.6",
+  "psycopg[binary]==3.2.10",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "S", "A", "C4", "SIM", "RUF", "ASYNC", "PT", "RET", "ARG", "PL"]
+ignore = ["PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR0913", "ARG001"]
+"alembic/**" = ["E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=bagmitra_api --cov-branch --cov-report=term-missing --cov-fail-under=85"
+markers = ["postgres: requires a real Postgres (DATABASE_URL), run in CI migration job"]
+
+[tool.coverage.run]
+omit = ["src/bagmitra_api/asgi.py"]
+concurrency = ["greenlet", "thread"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "alembic"]
