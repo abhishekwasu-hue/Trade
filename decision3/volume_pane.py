@@ -142,6 +142,8 @@ def normalize_info(info):
             "commit_bar": commit_bar,
             "commit_ts": _first(subs, "confirm_ts", "commit_ts", "commitment_ts"),
             "d": d, "area": None if area is None else (float(min(area)), float(max(area))), "vol_mult": vm,
+            "vol_na": _first(subs, "vol_na"), "vol_trend_mult": _first(subs, "vol_trend_mult", "trend_vol_mult"),
+            "vol_counter_mult": _first(subs, "vol_counter_mult", "counter_vol_mult"),
             "ltf_bar": _first(subs, "choch_bar", "ltf_bar"), "ltf_ts": _first(subs, "choch_ts", "ltf_ts")}
 
 
@@ -184,13 +186,17 @@ def _resolve(times, ts, bar, n):
 
 
 # ------------------------------------------------------------------------------------------------ study (numbers + caption line)
-def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, symbol=None):
+def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, symbol=None, engine_numbers=True):
     """bars: DataFrame (open, high, low, close + timestamp / start). vol: bars शी जुळणारा array (नसेल ⇒ bars["volume"]). info: engine
     output (normalize_info). area / d / commit / arm: थेट दिलेले (info पेक्षा प्राधान्य). रिटर्न dict: vol, ok (window मध्ये volume आहे),
-    arm, commit, d, side (+1 trend / -1 counter / 0 doji, window बाहेर None), avg, commit_mult, trend_mult, counter_mult, line, computed."""
+    arm, commit, d, side (+1 trend / -1 counter / 0 doji, window बाहेर None), avg, commit_mult, trend_mult, counter_mult, line, computed,
+    engine (आकडे engine चे?).
+    आकडे: engine ने vol_mult / vol_na दिले (c0) आणि commitment engine चीच ⇒ तेच (caption मध्ये दोन वेगळे आकडे नाहीत); नाहीतर chart च्या
+    data वरून — ओळ "volume (chart est.): …". engine_numbers=False (उदा. मोठा TF panel) ⇒ engine आकडे वापरत नाही.
+    Index ला vol न दिल्यास bars["volume"] (spot) कधीच वापरत नाही ⇒ NA."""
     n = len(bars)
     if vol is None:
-        vol = own_volume(bars) if "volume" in bars.columns else np.full(n, np.nan)
+        vol = own_volume(bars) if "volume" in bars.columns and not is_index(symbol) else np.full(n, np.nan)
     vol = np.asarray(vol, dtype=float)
     vol = np.where(vol > 0, vol, np.nan)
     ni = normalize_info(info)
@@ -209,9 +215,10 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
         arm, how = _resolve(times, ni["arm_ts"], ni["arm_bar"], n)
         if how == "clamped":
             computed.append("window starts before the first bar shown")
+    eng = bool(engine_numbers and from_engine and (ni["vol_mult"] is not None or ni["vol_na"] is True))
     out = {"vol": vol, "n": n, "symbol": symbol, "source": source_label(symbol) if symbol else None, "d": d, "arm": None,
            "commit": None, "side": [None] * n, "avg": None, "commit_mult": None, "trend_mult": None, "counter_mult": None,
-           "ok": False, "pane": available(vol), "computed": computed, "line": NA_LINE}
+           "ok": False, "pane": available(vol), "computed": computed, "line": NA_LINE, "engine": eng}
     if n == 0 or commit is None or not (0 <= int(commit) < n):
         return out
     commit = int(commit)
@@ -231,24 +238,35 @@ def study(bars, vol=None, info=None, area=None, d=None, commit=None, arm=None, s
     for i in range(arm, commit + 1):
         b = (C[i] - O[i]) * d
         out["side"][i] = 1 if b > 0 else (-1 if b < 0 else 0)
-    pre = list(range(arm, commit)) or [commit]
-    pv = vol[pre]
+    pre = list(range(arm, commit))
+    pv = vol[pre] if pre else np.array([])
     pv = pv[np.isfinite(pv)]
-    if not len(pv) or not np.isfinite(vol[commit]):
-        return out                                                         # window मध्ये volume नाही ⇒ NA (grade cap B)
-    avg = float(pv.mean())
-    if avg <= 0:
+    avg = float(pv.mean()) if len(pv) else None
+    out["avg"] = avg if avg and avg > 0 else None
+    if eng:                                                                # engine (c0) चे आकडे — तेच दाखवायचे
+        if ni["vol_na"] is True or ni["vol_mult"] is None:
+            return out                                                     # engine: volume NA ⇒ NA (grade cap B)
+        out.update(ok=True, commit_mult=round(float(ni["vol_mult"]), 2), trend_mult=ni["vol_trend_mult"],
+                   counter_mult=ni["vol_counter_mult"])
+        out["line"] = line(out)
         return out
+    if not pre:                                                            # window = एकच bar ⇒ तुलना नाही (खोटा 1.0× नको)
+        out["line"] = "volume (chart est.): study window is one bar - no comparison"
+        return out
+    if out["avg"] is None or not np.isfinite(vol[commit]):
+        return out                                                         # window मध्ये volume नाही ⇒ NA (grade cap B)
 
     def side_mult(sd):
-        x = [vol[i] for i in pre if out["side"][i] == sd and i != commit and np.isfinite(vol[i])]
+        x = [vol[i] for i in pre if out["side"][i] == sd and np.isfinite(vol[i])]
         return round(float(np.mean(x)) / avg, 2) if x else None
-    cm = float(vol[commit]) / avg
-    if ni["vol_mult"] is not None and from_engine:
-        cm = float(ni["vol_mult"])                                         # engine (c0) चा आकडा — तोच दाखवायचा
-    out.update(ok=True, avg=avg, commit_mult=round(cm, 2), trend_mult=side_mult(1), counter_mult=side_mult(-1))
+    out.update(ok=True, commit_mult=round(float(vol[commit]) / avg, 2), trend_mult=side_mult(1), counter_mult=side_mult(-1))
     out["line"] = line(out)
     return out
+
+
+def plain(st):
+    """Window / खूण नसलेला pane (मोठा TF / Daily): साधे bars."""
+    return {**st, "side": [None] * st["n"], "ok": False, "arm": None, "commit": None, "line": NA_LINE if not st["pane"] else st["line"]}
 
 
 def _x(v):
@@ -259,12 +277,15 @@ def line(st):
     """Caption / ticket ची एकच volume ओळ."""
     if not st or not st.get("ok"):
         return NA_LINE
-    return (f"volume: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "
+    head = "volume" if st.get("engine") else "volume (chart est.)"
+    return (f"{head}: counter-side candles {_x(st['counter_mult'])} → trend-side {_x(st['trend_mult'])} · "
             f"commitment {_x(st['commit_mult'])} avg")
 
 
 def commit_label(st, what="commitment"):
-    return f"{what} vol {st['commit_mult']:.1f}× window avg" if st.get("ok") else NA_LINE
+    if not st.get("ok"):
+        return NA_LINE
+    return f"{what} vol {st['commit_mult']:.1f}× window avg" + ("" if st.get("engine") else " (chart est.)")
 
 
 def colors(st, pal):
@@ -305,7 +326,8 @@ def draw_mpl(ax, st, x=None, title=None, label_commit=True, commit_what="commitm
         ax.plot(x[miss], np.full(miss.sum(), top * 0.02), ls="none", marker="|", ms=4, color="#bbbbbb", zorder=2)
     if st["ok"]:
         a, c = st["arm"], st["commit"]
-        ax.hlines(st["avg"], x[a] - 0.5, x[c] + 0.5, colors=MPL["avg"], linestyles="--", lw=1.1, zorder=5)
+        if st["avg"]:
+            ax.hlines(st["avg"], x[a] - 0.5, x[c] + 0.5, colors=MPL["avg"], linestyles="--", lw=1.1, zorder=5)
         ax.bar([x[c]], [vv[c]], width=0.8, facecolor="none", edgecolor=MPL["commit"], lw=1.6, zorder=6)
         if label_commit:                                                   # pane च्या वरच्या भागात, commitment bar कडे बाण
             ax.annotate(commit_label(st, commit_what), (x[c], vv[c]), xytext=(x[c], top * 1.3), textcoords="data", ha="right",
@@ -313,7 +335,7 @@ def draw_mpl(ax, st, x=None, title=None, label_commit=True, commit_what="commitm
                         arrowprops=dict(arrowstyle="-", color=MPL["commit"], lw=0.7),
                         bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.5))
     elif st["commit"] is not None:
-        ax.text(0.5, 0.80, NA_LINE + " (no volume in the study window)", transform=ax.transAxes, fontsize=8, color=MPL["na"],
+        ax.text(0.5, 0.80, (st["line"] if st["line"] != NA_LINE else NA_LINE + " (no volume in the study window)"), transform=ax.transAxes, fontsize=8, color=MPL["na"],
                 ha="center", va="center").set_gid(GID + "_na")
     return ax
 
@@ -378,14 +400,15 @@ def add_plotly(fig, st, row, col, x=None, title=None, commit_what="commitment"):
                        showarrow=False, xanchor="left", yanchor="top", font=dict(size=8, color=PLOTLY["ink"]), row=row, col=col)
     if st["ok"]:
         a, c = st["arm"], st["commit"]
-        fig.add_shape(type="line", x0=x[a] - 0.5, x1=x[c] + 0.5, y0=st["avg"], y1=st["avg"], line=dict(color=PLOTLY["avg"], width=1,
-                      dash="dash"), row=row, col=col)
+        if st["avg"]:
+            fig.add_shape(type="line", x0=x[a] - 0.5, x1=x[c] + 0.5, y0=st["avg"], y1=st["avg"], line=dict(color=PLOTLY["avg"], width=1,
+                          dash="dash"), row=row, col=col)
         fig.add_shape(type="rect", x0=x[c] - 0.45, x1=x[c] + 0.45, y0=0, y1=vv[c], line=dict(color=PLOTLY["commit"], width=1.5),
                       row=row, col=col)
         fig.add_annotation(x=x[c], y=vv[c], text=commit_label(st, commit_what), showarrow=False, xanchor="right", yanchor="bottom",
                            font=dict(size=8, color=PLOTLY["commit"]), row=row, col=col)
     elif st["commit"] is not None:
-        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=NA_LINE + " (no volume in the study window)", showarrow=False,
+        fig.add_annotation(x=(n - 1) / 2, y=top * 1.2, text=(st["line"] if st["line"] != NA_LINE else NA_LINE + " (no volume in the study window)"), showarrow=False,
                            font=dict(size=9, color=PLOTLY["na"]), row=row, col=col)
     return fig
 

@@ -268,9 +268,11 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
         fig.update_xaxes(tickvals=list(range(0, len(df), step)), ticktext=[pd.Timestamp(df["start"].iloc[k]).strftime(fmt) for k in range(0, len(df), step)],
                          rangeslider_visible=False, showgrid=False, color="#b0bec5", range=[-0.5, len(df) - 0.5], row=1, col=c)
         vol = (vols or (None, None))[c - 1]
-        VP.add_plotly(fig, VP.study(df, vol=np.full(len(df), np.nan) if vol is None else vol, info=sig, symbol=sig.get("symbol"),
-                                    d=sig.get("direction"), area=_area_of(sig)), row=2, col=c,
-                      title=f"vol {VP.source_label(sig.get('symbol'))}" + (" (study window = setup TF)" if c == 1 else ""))
+        vst = VP.study(df, vol=np.full(len(df), np.nan) if vol is None else vol, info=sig, symbol=sig.get("symbol"),
+                       d=sig.get("direction"), area=_area_of(sig), engine_numbers=c == 1)   # engine आकडे फक्त setup (confirmation) TF चे
+        if c == 2 and (vst["arm"] is None or vst["arm"] >= vst["commit"]):
+            vst = VP.plain(vst)                                         # मोठा TF: arrival आणि commitment एकाच bar मध्ये ⇒ साधे bars, label नाही
+        VP.add_plotly(fig, vst, row=2, col=c, title=f"vol {VP.source_label(sig.get('symbol'))}")
         n = len(df)
         if ctx is not None:
             if not (h_tf == "D" and c == 2):

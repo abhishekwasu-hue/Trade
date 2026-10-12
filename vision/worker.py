@@ -66,9 +66,46 @@ def default_fetch_volume(symbol):
         token = cloud_db.get_effective_upstox_token(None)
         if not token:
             return None
-        return LGB.LR.call_with_timeout(LGB._default_futures_candles, (token, str(symbol).upper(), 1), 15.0)
+        return LGB._default_futures_candles(token, str(symbol).upper(), 1, None, VOL_LOOKBACK_DAYS)
     except Exception as exc:                                             # noqa: BLE001 — volume पूरक
         print(f"⚠️ {symbol} futures volume (chart) NA: {type(exc).__name__}")
+        return None
+
+
+VOL_TIMEOUT_S = 5.0                     # chart volume fetch: proposal कधीच यापेक्षा जास्त अडत नाही (timeout ⇒ NA)
+VOL_LOOKBACK_DAYS = 2
+
+
+def engine_volume(row):
+    """Gate (level bots) ने signal सोबत दिलेले confirmation-TF bar volumes (timestamp, volume) — setup TF पेक्षा बारीक / समान TF असतील
+    तरच (मोठे bars लहान chart bars मध्ये वाटता येत नाहीत). नाही ⇒ None."""
+    g = (row.get("tags") or {}).get("gate") if isinstance(row.get("tags"), dict) else None
+    bv = (g or {}).get("bar_volumes")
+    if not bv:
+        return None
+    f = pd.DataFrame(bv, columns=["timestamp", "volume"])
+    f["timestamp"] = pd.to_datetime(f["timestamp"])
+    f["volume"] = pd.to_numeric(f["volume"], errors="coerce")
+    d = f["timestamp"].diff().dropna()
+    step = d[d > pd.Timedelta(0)].median() if len(d) else None
+    s_tf = CH.TF_MAP.get(str(row.get("setup_tf")).upper(), (5, 15))[0]
+    if step is None or pd.isna(step) or step > pd.Timedelta(minutes=int(s_tf)):
+        return None
+    return f
+
+
+def chart_volume(row, fetch_volume_fn):
+    """Volume pane चा डेटा: engine चे bar volumes (fetch नाही) नाहीतर fetch_volume_fn — कमाल VOL_TIMEOUT_S, अपयश / timeout ⇒ None (NA)."""
+    ev = engine_volume(row)
+    if ev is not None:
+        return ev
+    if fetch_volume_fn is None:
+        return None
+    try:
+        from bots_common import level_reaction as LR
+        return LR.call_with_timeout(fetch_volume_fn, (row["symbol"],), VOL_TIMEOUT_S)
+    except Exception as exc:                                             # noqa: BLE001 — timeout / अपयश ⇒ NA, proposal अडत नाही
+        print(f"⚠️ {row.get('symbol')} chart volume NA: {type(exc).__name__}")
         return None
 
 
@@ -367,15 +404,14 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
                 if data_cache is not None:
                     data_cache.pop(key, None)
                 return {"verdict": None, "deferred": True, "bar_end": sb["end"]}
-        fut = None                                                      # volume pane: index ⇒ futures volume (default fetch असतानाच network)
-        if fetch_volume_fn is not None or fetch_fn is default_fetch:
-            vk = ("fut_volume", row["symbol"])
-            if data_cache is not None and vk in data_cache:
-                fut = data_cache[vk]
-            else:
-                fut = (fetch_volume_fn or default_fetch_volume)(row["symbol"])
-                if data_cache is not None:
-                    data_cache[vk] = fut
+        vfn = fetch_volume_fn or (default_fetch_volume if fetch_fn is default_fetch else None)   # network फक्त default fetch असताना
+        vk = ("fut_volume", row["symbol"])
+        if engine_volume(row) is None and data_cache is not None and vk in data_cache:
+            fut = data_cache[vk]
+        else:
+            fut = chart_volume(row, vfn)
+            if engine_volume(row) is None and data_cache is not None and vfn is not None:
+                data_cache[vk] = fut
         if m1 is None or not len(m1):
             png, meta = None, {"error": "1m candles नाहीत"}
         else:

@@ -1959,3 +1959,8 @@ vision / level bots / decision3 चे संबंधित tests पास.
 **Samples (trade-data, tag debug):** `review/v22/volume_pane_samples/` — recent 2026-09-30 13:15 (NIFTY FUT 5M collector + bhavcopy Daily:
 commitment 0.2× window avg) आणि setups_prA_v1 #15 / #16 / #21 (intraday futures इतिहास नाही ⇒ 15M / 5M NA; Daily = bhavcopy near-month FUT).
 30 setups चा पूर्ण re-run confirmation / area branches merge नंतर. उघडे: VP1–VP6.
+**Review fixes (PR #306):** caption / pane मध्ये engine (c0) चेच आकडे — evaluate plan + gate tags मध्ये `vol_mult` / `vol_na` /
+`vol_trend_mult` / `vol_counter_mult` / `bar_volumes` (output only); engine आकडे नसतील तेव्हाच chart अंदाज, ओळ "volume (chart est.): …".
+Worker: gate चे bar volumes असतील तर futures fetch नाही; नाहीतर fetch कमाल 5 s (2 दिवस lookback), timeout ⇒ NA. मोठा TF panel: arrival
+आणि commitment एकाच bar मध्ये ⇒ साधे bars (खोटा 1.0× नाही); एका bar च्या window ला तुलना नाही. Index च्या spot volume column ला FUT
+म्हणून कधीच दाखवत नाही. Tests: worker soft failure / timeout / injection / caption ओळ (+6).
