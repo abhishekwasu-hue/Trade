@@ -45,6 +45,7 @@ DEFAULTS = {
     "commit_dom_mult": 1.5,                  # ⑥ c0 (Abhi): commitment candle "dominant" ⇔ body ≥ इतके × study window ची सरासरी body (window दिला तरच)
     "study_min_bars": 4,                     # a2 zone study: window मध्ये किमान इतक्या candles (पहिला / दुसरा अर्धा तुलना)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
+    "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
     "tl_degree": 1,                          # K मधले counter pivots (D1 — §5.1 पाय-मोजणीचीच degree)
@@ -118,6 +119,7 @@ REGISTER = {
     "commit_dom_mult": (1.5, "1.25/1.5/2.0", "अंदाज", "level bots c0: 'clearly larger than the window average' — आकडा Abhi ने ठरवायचा (OPEN_QUESTIONS LB8)"),
     "study_min_bars": (4, "—", "व्याख्या", "a2: पहिला / दुसरा अर्धा तुलना करायला किमान candles"),
     "pattern_eq_mr": (0.5, "0.3/0.5/0.75", "अंदाज", "a2: double / triple top-bottom टोकं median range च्या इतक्या आत"),
+    "ltf_choch": (True, "True / False (what-if)", "Abhi नियम", "LEVEL_BOTS_CONFIRMATION c1: LTF CHoCH by close आवश्यक; mapping 1H/15M ⇒ 5M, 5M ⇒ 1M (method.LTF_OF); swings = साधे 1-bar pivots (zone_pattern सारखेच)"),
     "power_overlap": (0.5, "—", "Abhi नियम", "spec ④ (b) ≥ 50%"),
     "tl_degree": (1, "0/1", "व्याख्या", "spec ⑤ 'K ची आतली रेघ' — K चे पाय D1 (Q20)"),
     "tl_touch_sigma": (0.15, "0.1/0.15/0.25", "अंदाज", "spec ⑤ स्पर्श सहनशीलता"),

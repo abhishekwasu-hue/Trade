@@ -36,7 +36,7 @@ def level_eval_brief(dd, part, extra, lvl):
 
 
 class V22:
-    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None):
+    def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
         self.sealed = sealed                                              # Q33: sealed (NIFTY holdout) तारखा output मध्ये नाहीत
         self.df1m = df1m                                                  # फक्त advisory (elliott count) साठी
@@ -56,6 +56,45 @@ class V22:
         self.bar_end = pd.to_datetime(self.m15["bar_end"]).reset_index(drop=True)
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
+        self._confirm_inputs(ltf, futures)
+
+    def _confirm_inputs(self, ltf, futures):
+        """⑥ c1 / c0 inputs (Abhi, LEVEL_BOTS_CONFIRMATION): LTF = दिलेले bars, नाहीतर त्याच 1m data चे 5M (market_state.core.frame —
+        15M ची तीच व्याख्या); दोन्ही नाहीत ⇒ None ⇒ ⑥ "LTF data missing" (fail-closed). Volume = futures (legs2.volume.bar_volume —
+        near-month join) किंवा m15 चा स्वतःचा volume column; नाहीतर NA (spot volume 0 ⇒ NA, grade कमाल B)."""
+        lm = M.LTF_OF.get(15, 5)
+        if ltf is None and self.df1m is not None and len(self.df1m):
+            import market_state.core as MC
+            ltf = MC.frame(self.df1m, f"{lm}m", pd.to_datetime(self.df1m["timestamp"]).max() + pd.Timedelta(minutes=1))
+        self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
+        if self.ltf is None and bool(self.s.get("ltf_choch", True)):
+            M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
+        if futures is not None:
+            from legs2 import volume as LVOL
+            self.levels.A["volume"] = LVOL.bar_volume(self.m15, futures)
+        elif "volume" in self.m15.columns:
+            self.levels.A["volume"] = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
+
+    def _confirm(self, t, d, lvl, k):
+        """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
+        शेवटचा सलग गट (दोन स्पर्शांत ≤ touch_window_bars — ③ चीच "level मध्ये / लगत" व्याख्या) — त्याचा पहिला स्पर्श (arrival) … t;
+        LTF संदर्भ = K च्या impulse टोकापासून (pullback चे swings); LTF bars फक्त setup bar च्या close पर्यंत."""
+        A = self.levels.A
+        k0 = k.get("k_open_bar") if k.get("k_open_bar") is not None else t
+        hits = [i for i in range(int(k0), t + 1) if A["low"][i] <= lvl["hi"] and A["high"][i] >= lvl["lo"]]
+        arm = hits[-1] if hits else t
+        for i in reversed(hits[:-1]):
+            if arm - i > int(self.s["touch_window_bars"]):
+                break
+            arm = i
+        c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0
+        times = (pd.Timestamp(self._ts[min(int(c0), arm)]), pd.Timestamp(self._ts[arm]), pd.Timestamp(self.bar_end[t]))
+        cf = M.confirm(A, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
+        cm = dict(cf["commit"] or {})
+        cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
+                  ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
+                  absorption=cf["absorption"])
+        return cf["ok"], cf["why"], cm
 
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
@@ -126,7 +165,7 @@ class V22:
         ok4, n4, items = M.power_shift(A, t, d, k, self.s)
         chk["④"] = [ok4, f"power shift {n4}/4 ({', '.join(x for x in ('a_shrinking', 'b_overlap', 'c_no_new_extreme_or_sweep', 'd_rejection_wick') if items[x]) or '—'})"]
         rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
-        ok6, why6, cm = M.commitment(A, t, d, lvl, self.s, self._ts)
+        ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         chk["⑥"] = [ok6, why6]
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],

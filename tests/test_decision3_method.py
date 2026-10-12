@@ -74,7 +74,10 @@ def _synthetic_m15(seed=7, legs=None):
 
 # fixture चे impulse legs एकसारखे ⇒ Q15 maturity (equality target) प्रत्येक (5)+ ला लागते. Setup invariants maturity-स्वतंत्र ⇒ त्या tests
 # मध्ये maturity बंद (near = −10⁶ σ ⇒ कधीच "जवळ" नाही); default वर्तन test_mature_cap_in_pipeline मध्ये.
-NO_MATURE = {"maturity_sigma_d": -1e6}
+# हा fixture 15M-only (5M LTF नाही) आणि त्याचा setup bar study window पेक्षा dominant नाही ⇒ ⑥ ची c0 dominance / c1 LTF CHoCH (Abhi,
+# LEVEL_BOTS_CONFIRMATION) इथे बंद — हे tests त्या नियमांचे नाहीत (setup invariants / charts / captions); c0 + c1 चे tests (आरशासह)
+# tests/test_decision3_confirm.py मध्ये.
+NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
 
 
 def _abc_m15(seed=1, impulse=900, pb=0.7, n_cycles=8, start=22000):
