@@ -60,7 +60,7 @@ class V22:
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
         weekly}. Weekly विरुद्ध ⇒ कमाल B; Daily वाचता येत नाही (NEUTRAL / UNKNOWN) + Weekly trend ⇒ Weekly fallback, कमाल B;
-        impulse mature / origin धोक्यात (B1) ⇒ कमाल weak; origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23); A1: impulse origin
+        impulse mature / origin धोक्यात (B1) ⇒ कमाल weak; trend first: impulse टोकानंतर Daily रचना trend विरुद्ध (`st.rev`) ⇒ trade नाही; origin close ने तुटला, उलट impulse नाही ⇒ कमाल B (Q23); A1: impulse origin
         तुटला पण parent टिकला ⇒ same-degree correction (protected = parent; कमाल B — आधीच्या origin_broken सारखाच, loosen नाही).
         RANGE (Q27: origin तुटल्यानंतर दोन समान H / L सुद्धा) ⇒ पट्टा ctx["band"] — ② कडांजवळची levels."""
         st = DD.state_at(self.daily, self.bar_end[t])
@@ -69,6 +69,16 @@ class V22:
                else None), "cap": None, "notes": [], "weekly": wk.trend, "band": st.band if st.trend == "RANGE" else None}
         why = {"UP": "Daily UP", "DOWN": "Daily DOWN", "RANGE": "Daily RANGE ⇒ कडेनुसार", "NEUTRAL": "Daily NEUTRAL",
                "UNKNOWN": "Daily data अपुरा"}[st.trend]
+        if st.trend in ("UP", "DOWN") and st.phase and getattr(st, "rev", None) is not None:
+            # Trend first (Abhi, setups audit — docs/reports/setups_prA_v1_audit.md): impulse टोकानंतर Daily रचना trend विरुद्ध पूर्ण (flip चा (अ) नियम —
+            # उलट HL / LH + मधल्या swing पलीकडे close + impulse-स्वभावाचा पाय, Q29 / Q36), फक्त origin पलीकडचा close बाकी ⇒ trend-बाजूचा
+            # trade नाही (उलट बाजू पण नाही — trend अजून flip झाला नाही, Q15). Cap नाही, gate (H1).
+            opp = "UP" if st.trend == "DOWN" else "DOWN"
+            why += f" · {DD.describe(st)} ⇒ trade नाही (trend first: Daily रचना {opp}; flip ला origin पलीकडे close हवा)"
+            ctx.update(trend="NEUTRAL", resolution="structure against trend", band=None)
+            ctx["notes"].append(f"Daily {st.trend} पण impulse टोकानंतरची रचना {opp} ⇒ {'bear call' if st.trend == 'DOWN' else 'bull put'} नाही "
+                                f"(trend first)")
+            return False, why, st, ctx
         if st.trend in ("UP", "DOWN") and st.phase:
             why += f" · {DD.describe(st)}"
             if wk.trend in ("UP", "DOWN") and wk.trend != st.trend:

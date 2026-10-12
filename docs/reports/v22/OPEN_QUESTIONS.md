@@ -210,3 +210,15 @@
 | LB15 | MCX approval | CONFIRMED ⇒ जुना PAPER order मार्ग (Vision / §9 Telegram ✅ नाही — आधीसुद्धा MCX PAPER approval शिवाय होता) | MCX ला §9 approval हवं का? |
 | LB16 | L5 signal_log मध्ये bot column नाही | 5M Instant आणि Classic दोघे 5M levels च्या सारख्याच rows लिहितात ⇒ dashboard मध्ये 5M rows दोन्ही bots खाली (caption), summary मध्ये "5M levels (Instant + Classic)" एक ओळ; touch-legacy संख्या bot-wise अचूक | signal_log ला bot column (hit मोजणी / page filters ला हात) — हवं का? |
 | LB17 | L5 MCX दृश्य | MCX signal_log level_type फक्त SUPPORT / RESISTANCE (30M / 60M TF नाही) ⇒ सारांश / dashboard मध्ये area = (symbol, किंमत); MCX symbols = सक्रिय (symbol_enabled) commodities; वापरलेली confirmation फक्त MCX साठी file मध्ये (index bots ला Vision ✅ आहे) | MCX signal_log मध्ये TF हवा का? index bots ना पण तसाच confirm-used guard हवा का? |
+
+## Trend first — setups audit (TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §2) — default निर्णय (Abhi ने बदलावे; अहवाल `docs/reports/setups_prA_v1_audit.md`)
+
+| # | प्रश्न | आत्ता (default) | पर्याय |
+|---|---|---|---|
+| TF1 | Trend-first gate ची "Daily रचना" कोणत्या swings वर? | Daily swings (seq, N = 2 — spec ①, flip (अ) सारखेच) — counter-move same-degree correction (phase correction / origin_broken) असताना: impulse टोकानंतर HL (UP ⇒ LH) + मधल्या swing पलीकडे close + impulse-स्वभावाचा पाय (Q29 / Q36) ⇒ `DState.rev` ⇒ trend-बाजूचा trade नाही (trend / protected बदल नाही) | Q22 ने गाळलेले trend-degree swings — NIFTY 2020 rally तिथे एकच पाय ⇒ defect राहतो (पडताळलं: rev दिवस 62, 2020 नाही) |
+| TF2 | zigzag चा c, a च्या टोकापलीकडे close (b = HL) ⇒ Dow रचना UP ⇒ c-top bear call अडतो (HL wick ने तुटेपर्यंत / नवा LL होईपर्यंत; close परत a टोकाखाली आला तरी — PR #305 review) | अडतो (Abhi: "structure UP असताना bear call कधीच नाही"). NIFTY 633 / 2,282, BANKNIFTY 716 / 2,479 दिवस trend-बाजू बंद (सगळे correction phase); 30 पैकी फक्त 2020-11-04 ×2 वर परिणाम | counter-move impulse वाचला तरच अडवा — पण read_counter ने 2020 zigzag वाचलं ⇒ defect राहतो |
+| TF3 | Audit rule (126 sessions, N = 5 swings, शेवटचे दोन H / L) हाच Abhi चा "6-month structure"? | अहवालात rule चं वाचन (निकाल पाहण्याआधी जाहीर) | दुसरा rule |
+| TF4 | 2019-09-03, 2022-03-28 ×4: engine UP (Q45: A1 correction counter-move च्या शेवटच्या N = 2 LH पलीकडे close ने संपली) वि. rule DOWN (N = 5 LH टिकलेला) | बदल नाही (T1 — engine degree) | T2: gate audit rule सुद्धा वाचतो ⇒ 9 FAIL rows जातात, 19 उरतात — पण नवी swing degree (N = 5) |
+| TF5 | rule-ambiguous rows (equal lows / आधीच तुटलेलं DOWN वाचन): 2015-08-10, 2022-01-20, 2022-03-14, 2022-11-15 | FAIL* (Abhi confirm) | प्रत्येक row Abhi |
+| TF6 | Level bots ला तोच gate (`structure_against` ⇒ नवे entries नाहीत) | हो (shared ① gate, fail-safe) | फक्त V22 |
+| TF7 | §2 a–f audit columns (diagnostic, `scripts/setups_audit_columns.py`): (a) 15M N 3 / 5 sessions, 1H N 2 / 20, Daily N 2 / 126 + तुटलेले Daily lows; (b) edge touch = ≤ 2 candles + near half; (d) provisional = engine `prov` stack (why-trail वरून, अंदाजे); 2015–2024 ला futures volume नाही ⇒ NA | तसेच (फक्त अहवाल; engine बदल इतर branches वर) | Abhi च्या व्याख्या |
