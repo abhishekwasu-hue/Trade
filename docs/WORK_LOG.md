@@ -1872,6 +1872,46 @@ state हवा, default रिकामी ओळ अडवत नाही. **
 Save बंद (test chart कधीच dev होत नाही). ⚪ NIFTY golden file नावाच्या pattern ने, zone from_bar तपासणी, boundary test मध्ये gallery2, CREATE TABLE
 एकदाच, export अपयश ⇒ raise + जुन्या files काढतो. **Tests:** `tests/test_reader2*.py` + `test_app_navigation` — 304 pass / 40 xfail (आधीचेच).
 
+### 2026-10-12 · Gallery: symbol strata + SENSEX (VPS fetch) + CD14 seed (Abhi: TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §1, §3)
+**Split:** प्रत्येक symbol चा स्वतःचा स्थिर 70 / 30 split — manifest मध्ये `strata` (seed, dev, test, assignment). NIFTY 16 / 7 आणि BANKNIFTY
+12 / 5 = CR3 चे assignments **गोठवलेले** (`cr3_global_frozen`; 40 entries byte-for-byte तसेच — test त्यांचा sha256 pin करतो). नवा symbol फक्त
+additive: `scripts/reader2_gallery_candidates.py --add-symbol SENSEX` (`gallery2.candidates.add_symbol`) — त्याच्याच stratum मध्ये windows /
+bucket निवड / split, seed `symbol_seed(7, "SENSEX")`, test = round(0.3 × n); आधीचा एकही entry बदलला तर लिहीत नाही. Files नाहीत ⇒ manifest तसाच,
+कारण छापतो (exit 3). `--force` पूर्ण rebuild तसाच (documented मार्ग = additive).
+**SENSEX data:** `scripts/fetch_sensex_history.py` (VPS-only; BANKNIFTY चाच मार्ग `research/index_candles_fetch.py` — Upstox v3, token VPS `.env`
+/ webhook, कधीच छापत नाही): Daily `days/1`, 15M `minutes/15`, 1H = 15M चा 09:15-anchored resample (BANKNIFTY_1H चेच bins). Volume: BSE F&O
+मध्ये SENSEX near-month futures सापडले ⇒ त्याचा 15M volume (1H / D फक्त पूर्ण झाकलेल्या bins ना), बाकी NA + "grade cap B"; सापडले नाहीत ⇒ volume
+NA (grade cap B). Resume (शेवटचा दिवस पुन्हा, आधी तपासलेला जुना काळ पुन्हा नाही), 0.4 s विराम, `--dry-run` (token / network नाही).
+**CD14:** BANKNIFTY Daily (dev case `BANKNIFTY_D_20251215`) — एक leg impulse: bar 34 (2026-02-03 high 61,764.85) ⇒ bar 73 (2026-04-02 low
+49,954.85) + trend down त्या bar पासून; source "Abhi decision 2026-10-12 (CD14)". **फक्त private trade-data** `reader2_gallery/seeds/dev/`
+(DirStore + `save_record` तपासणी; trade-data commit cb91e66). `scripts/reader2_gallery_seed.py` ⇒ VPS DB मध्ये (फक्त जिथे नोंद नाही — तुमची
+marking कधीच overwrite नाही). Chart `calibration: false` तसाच.
+**Tests:** `tests/test_reader2_gallery.py` (+9: extra symbol ⇒ जुने entries byte-identical, committed manifest pin, stratum counts, additive script /
+files नाहीत, seeds import) + नवी `tests/test_fetch_sensex_history.py` (9: fixture instrument list, resample, volume bins, merge / resume, schema,
+dry-run, token नाही) + `tests/test_reader2*.py` + `test_app_navigation` — सगळे pass. उघडे: OPEN_QUESTIONS CR-Q22–CR-Q26.
+**तुमच्यासाठी (VPS, PR merge नंतर):** खालचा block — SENSEX history, additive SENSEX candidates (`manifest_sensex_add.json` trade-data मध्ये),
+CD14 seed DB मध्ये. मग मी तो manifest review करून repo मध्ये commit करीन (deploy नंतर SENSEX charts page वर दिसतील).
+
+```bash
+bash <<'SENSEX_GALLERY'
+cd /root/Trade || exit 1
+set -a; . ./.env; set +a
+git fetch -q origin main && git merge --ff-only FETCH_HEAD || { echo "⛔ git pull अयशस्वी — थांबलो"; exit 1; }
+git -C /root/trade-data pull -q --ff-only || { echo "⛔ trade-data pull अयशस्वी — थांबलो"; exit 1; }
+echo "== 1) SENSEX history (Upstox, फक्त GET; token छापत नाही) =="
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data --dry-run
+python3 scripts/fetch_sensex_history.py --repo /root/trade-data || echo "⚠️ काही chunks अयशस्वी — हाच block पुन्हा चालवा (resume)"
+echo "== 2) gallery: SENSEX additive (NIFTY / BANKNIFTY entries तसेच) =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_candidates.py --add-symbol SENSEX \
+  --out /root/trade-data/reader2_gallery/manifest_sensex_add.json
+echo "== 3) CD14 seed ⇒ gallery DB (फक्त जिथे नोंद नाही) =="
+TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_seed.py
+echo "== 4) trade-data मध्ये (manifest Claude review करून repo मध्ये commit करेल) =="
+cd /root/trade-data && git add --ignore-removal sensex reader2_gallery \
+  && git commit -qm "SENSEX D/1H/15M history + reader2 gallery SENSEX additive manifest" && git push -q origin HEAD; git log --oneline -1
+SENSEX_GALLERY
+```
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**

@@ -225,6 +225,46 @@ def save_record(store, rec, cand, bars=None, expected_revision=0):
     return store.save(rec, expected_revision)
 
 
+def seeds_dir():
+    """Abhi-provided seed labels (उदा. निर्णय-फाइलमधले legs) — private `<trade-data>/reader2_gallery/seeds/<split>/<id>.json`
+    (DirStore format). env `READER2_GALLERY_SEEDS` आधी. Labels export च्या folder पासून वेगळा (export जुन्या files काढतो)."""
+    return os.environ.get("READER2_GALLERY_SEEDS") or os.path.join(GD.trade_data_dir(), "reader2_gallery", "seeds")
+
+
+def import_seeds(store, manifest, seeds_root=None, bars_for=None, dry_run=False):
+    """Seed नोंदी ⇒ `store` (VPS वर DB). फक्त ज्या chart ला अजून नोंद **नाही** तिथे (expected_revision 0 ⇒ Abhi ची आधीची marking कधीच
+    overwrite होत नाही). प्रत्येक seed `save_record` ने तपासला जातो (manifest id / split / window, bars असतील तर किंमती). रिटर्न
+    {"imported": [ids], "skipped_existing": [ids], "unknown": [ids], "invalid": {id: [चुका]}} — किंमती नाहीत."""
+    root = seeds_root or seeds_dir()
+    seeds = DirStore(root).load_all() if os.path.isdir(root) else {}
+    have = store.load_all()
+    cs = charts(manifest)
+    out = {"imported": [], "skipped_existing": [], "unknown": [], "invalid": {}}
+    for cid, rec in sorted(seeds.items()):
+        cand = cs.get(cid)
+        if cand is None:
+            out["unknown"].append(cid)
+            continue
+        if cid in have:
+            out["skipped_existing"].append(cid)
+            continue
+        rec = _payload(rec)
+        bars = None
+        if bars_for is not None:
+            try:
+                bars = bars_for(cand)
+            except Exception:                                       # data नाही ⇒ रचना-तपासणी
+                bars = None
+        err = SC.validate(rec, cand, bars)
+        if err:
+            out["invalid"][cid] = err
+            continue
+        if not dry_run:
+            store.save(rec, 0)
+        out["imported"].append(cid)
+    return out
+
+
 def progress(manifest, records):
     """{"marked": n, "total": N, "dev": (n, N), "test": (n, N)} — manifest मधले charts ज्यांना ≥ 1 leg आहे."""
     cs = charts(manifest)

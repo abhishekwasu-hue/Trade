@@ -2,6 +2,7 @@
 import ast
 import builtins
 import gzip
+import hashlib
 import json
 import os
 import sqlite3
@@ -434,9 +435,10 @@ def test_shape_tags_are_descriptive_only():
 def test_committed_manifest_is_sound():
     m = GS.load_manifest(GS.MANIFEST)
     cs = m["charts"]
-    assert (m["n_total"], m["n_dev"], m["n_test"]) == (40, 28, 12) and len(cs) == 40 and "seed" in m
-    assert len({c["id"] for c in cs}) == 40
-    assert sum(c["split"] == "test" for c in cs) == 12
+    old = [c for c in cs if c["symbol"] in ("NIFTY", "BANKNIFTY")]
+    assert len(old) == 40 and sum(c["split"] == "test" for c in old) == 12 and "seed" in m
+    assert (m["n_total"], m["n_dev"], m["n_test"]) == (len(cs), sum(c["split"] == "dev" for c in cs), sum(c["split"] == "test" for c in cs))
+    assert len({c["id"] for c in cs}) == len(cs) and [c["n"] for c in cs] == list(range(1, len(cs) + 1))
     for c in cs:
         GD.window_allowed(c["symbol"], c["start"], c["end"], exception=c["holdout_dates_exception"])
         if c["symbol"] == "NIFTY":
@@ -445,7 +447,13 @@ def test_committed_manifest_is_sound():
     cases = {c.get("case") for c in cs if c["origin"] == "abhi_case"}
     assert cases == {"banknifty_sharp_fall_abc_down", "nifty_flat_c_wave"}
     assert all(c["split"] == "dev" and not c["calibration"] for c in cs if c["origin"] == "abhi_case")
-    assert {x["symbol"] for x in m["missing"]} == {"SENSEX"}
+    sx = [c for c in cs if c["symbol"] == "SENSEX"]
+    if sx:                                                                  # VPS additive step नंतर: SENSEX चा स्वतःचा 70/30 stratum
+        assert 10 <= len(sx) <= 13 and m["strata"]["SENSEX"]["assignment"] == "stratified_70_30"
+        assert sum(c["split"] == "test" for c in sx) == GC.stratum_test_count(len(sx)) == m["strata"]["SENSEX"]["test"]
+        assert all(c["origin"] == "auto" and c["calibration"] for c in sx)
+    else:
+        assert {x["symbol"] for x in m["missing"]} == {"SENSEX"}
     for a in cs:
         for b in cs:
             if a["split"] == "test" and b["split"] == "dev" and (a["symbol"], a["timeframe"]) == (b["symbol"], b["timeframe"]):
@@ -703,3 +711,152 @@ def test_golden_file_picker_prefers_full_coverage_and_skips_holdout_start(tmp_pa
         (up / f).write_bytes(b"")
     monkeypatch.setattr(GD, "trade_data_dir", lambda: str(tmp_path))
     assert os.path.basename(GD.source_path("nifty_1m_golden")) == full
+
+
+# ------------------------------------------------------------------ symbol strata (Abhi 2026-10-12: SENSEX, stratified 70/30)
+NB_DIGEST = "be1c32269c958cbbc3278ca9ed7465fa9146cbc24340ef08199023c399437e38"   # CR3 NIFTY / BANKNIFTY entries (Abhi marking चालू)
+
+
+def _intraday(start_day, n_days, minutes, seed):
+    per = {15: 25, 60: 7}[minutes]
+    days = pd.bdate_range(start_day, periods=n_days)
+    ts = [d + pd.Timedelta(hours=9, minutes=15) + pd.Timedelta(minutes=minutes * k) for d in days for k in range(per)]
+    b = _daily("2022-01-03", len(ts), seed=seed, base=60000.0)
+    b["timestamp"] = ts
+    return b
+
+
+def _sensex_slots():
+    return [{"symbol": "SENSEX", "timeframe": "D", "source": "sensex_D", "bars": _daily("2012-01-02", 1000, seed=41, base=60000.0),
+             "rule": "synthetic"},
+            {"symbol": "SENSEX", "timeframe": "1H", "source": "sensex_1H", "bars": _intraday("2022-01-03", 250, 60, 42), "rule": "synthetic"},
+            {"symbol": "SENSEX", "timeframe": "15M", "source": "sensex_15M", "bars": _intraday("2022-01-03", 60, 15, 43), "rule": "synthetic"}]
+
+
+def _nb_bytes(m):
+    return [GC.entry_bytes(c) for c in m["charts"] if c["symbol"] in ("NIFTY", "BANKNIFTY")]
+
+
+def test_regenerating_with_extra_symbol_leaves_existing_entries_byte_identical():
+    base = GC.build(_slots(), _cases(), seed=7, missing=[{"symbol": "SENSEX", "timeframe": t, "why": "none"} for t in GD.TIMEFRAMES])
+    before = json.dumps(base, ensure_ascii=False, sort_keys=True)
+    m = GC.add_symbol(base, "SENSEX", _sensex_slots(), missing=[])
+    assert json.dumps(base, ensure_ascii=False, sort_keys=True) == before                     # base dict बदलला नाही
+    assert _nb_bytes(m) == _nb_bytes(base) and len(_nb_bytes(m)) == 40
+    sx = [c for c in m["charts"] if c["symbol"] == "SENSEX"]
+    assert len(sx) == 13 and {c["timeframe"] for c in sx} == {"D", "1H", "15M"}
+    assert sum(c["split"] == "test" for c in sx) == 4 and m["strata"]["SENSEX"] == {
+        "seed": GC.symbol_seed(7, "SENSEX"), "dev": 9, "test": 4, "assignment": "stratified_70_30"}
+    assert m["strata"]["NIFTY"]["assignment"] == "cr3_global_frozen" and not [x for x in m["missing"] if x["symbol"] == "SENSEX"]
+    assert [c["n"] for c in m["charts"]] == list(range(1, len(m["charts"]) + 1))
+    assert (m["n_total"], m["n_test"]) == (53, 16) and m["counts"]["SENSEX"] == {"D": 5, "1H": 4, "15M": 4}
+    again = GC.add_symbol(base, "SENSEX", _sensex_slots(), missing=[])                       # deterministic
+    assert [GC.entry_bytes(c) for c in again["charts"]] == [GC.entry_bytes(c) for c in m["charts"]]
+    for c in sx:                                                                               # policy: NIFTY-holdout तारखा नाहीत
+        GD.window_allowed("SENSEX", c["start"], c["end"])
+    with pytest.raises(ValueError):
+        GC.add_symbol(m, "SENSEX", _sensex_slots())
+
+
+def test_add_symbol_to_committed_manifest_keeps_nifty_banknifty_bytes():
+    base = GS.load_manifest(GS.MANIFEST)
+    assert hashlib.sha256("\n".join(_nb_bytes(base)).encode("utf-8")).hexdigest() == NB_DIGEST
+    assert {s: (v["dev"], v["test"]) for s, v in base["strata"].items() if s != "SENSEX"} == {"NIFTY": (16, 7), "BANKNIFTY": (12, 5)}
+    if any(c["symbol"] == "SENSEX" for c in base["charts"]):
+        pytest.skip("SENSEX आधीच manifest मध्ये")
+    m = GC.add_symbol(base, "SENSEX", _sensex_slots(), missing=[])
+    assert _nb_bytes(m) == _nb_bytes(base)
+    assert [GC.entry_bytes(c) for c in m["charts"][:len(base["charts"])]] == [GC.entry_bytes(c) for c in base["charts"]]
+    assert {s: (v["dev"], v["test"]) for s, v in m["strata"].items()} == {"NIFTY": (16, 7), "BANKNIFTY": (12, 5), "SENSEX": (9, 4)}
+
+
+def test_stratum_split_counts_and_new_charts_stay_in_their_stratum():
+    assert [GC.stratum_test_count(n) for n in (10, 11, 12, 13, 17, 23)] == [3, 3, 4, 4, 5, 7]
+    m = GC.build(_slots(), _cases(), seed=7)
+    bn = [c for c in m["charts"] if c["symbol"] == "BANKNIFTY"]
+    new = [dict(c, id=c["id"] + "X", split=None) for c in bn[-4:]]
+    test = GC.stratum_split(bn, new, GC.symbol_seed(7, "BANKNIFTY"))
+    assert test <= {c["id"] for c in new}
+    assert len(test) == GC.stratum_test_count(len(bn) + 4) - sum(c["split"] == "test" for c in bn)
+
+
+def test_add_symbol_script_writes_out_or_leaves_manifest_unchanged(tmp_path, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("r2gc2", ROOT / "scripts" / "reader2_gallery_candidates.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    base = tmp_path / "manifest.json"
+    base.write_bytes(Path(GS.MANIFEST).read_bytes())
+    raw = base.read_bytes()
+    out = tmp_path / "td" / "reader2_gallery" / "manifest_sensex_add.json"
+    miss = [{"symbol": "SENSEX", "timeframe": t, "why": "sensex/SENSEX_D.csv.gz नाही"} for t in GD.TIMEFRAMES]
+    rc = mod.main(["--add-symbol", "SENSEX", "--base", str(base), "--out", str(out)], inputs=([], [], miss))
+    assert rc == 3 and not out.exists() and base.read_bytes() == raw and "बदलला नाही" in capsys.readouterr().out
+    if any(c["symbol"] == "SENSEX" for c in GS.load_manifest(str(base))["charts"]):
+        return
+    rc = mod.main(["--add-symbol", "SENSEX", "--base", str(base), "--out", str(out)], inputs=(_sensex_slots(), [], []))
+    printed = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert rc == 0 and base.read_bytes() == raw and printed["new_charts"] == 13 and printed["test"] == 4
+    assert _nb_bytes(GS.load_manifest(str(out))) == _nb_bytes(GS.load_manifest(str(base)))
+
+
+def test_real_inputs_without_sensex_files_reports_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADE_DATA_DIR", str(tmp_path))
+    GD._RAW.clear()
+    slots, cases, missing = GC.real_inputs(symbols=["SENSEX"])
+    assert slots == [] and cases == [] and {(x["symbol"], x["timeframe"]) for x in missing} == {("SENSEX", t) for t in GD.TIMEFRAMES}
+    assert GD.source_path("sensex_15M") == str(tmp_path / "sensex" / "SENSEX_15M.csv.gz")
+
+
+# ------------------------------------------------------------------ Abhi seed labels (CD14) ⇒ store
+def test_import_seeds_validates_and_never_overwrites(tmp_path):
+    bars = _daily("2018-01-01", 120, seed=5)
+    c1 = _cand(bars, split="dev")
+    c2 = _cand(bars, cid="BANKNIFTY_D_OTHER", split="test")
+    manifest = {"charts": [c1, c2]}
+    seeds = GS.DirStore(str(tmp_path / "seeds"))
+    GS.save_record(seeds, _good(bars, c1), c1, bars)
+    GS.save_record(seeds, _good(bars, c2), c2, bars)
+    GS._write(str(tmp_path / "seeds" / "dev" / "UNKNOWN_CHART.json"), dict(_good(bars, c1), id="UNKNOWN_CHART"))
+    target = GS.DirStore(str(tmp_path / "store"))
+    GS.save_record(target, dict(_good(bars, c2), notes="Abhi"), c2, bars)                 # Abhi ची आधीची marking
+    res = GS.import_seeds(target, manifest, str(tmp_path / "seeds"), bars_for=lambda c: bars)
+    assert res["imported"] == [c1["id"]] and res["skipped_existing"] == [c2["id"]] and res["unknown"] == ["UNKNOWN_CHART"]
+    got = target.load_all()
+    assert got[c2["id"]]["notes"] == "Abhi" and got[c2["id"]]["revision"] == 1 and got[c1["id"]]["revision"] == 1
+    again = GS.import_seeds(target, manifest, str(tmp_path / "seeds"), bars_for=lambda c: bars)
+    assert again["imported"] == [] and sorted(again["skipped_existing"]) == sorted([c1["id"], c2["id"]])
+    wrong = GS.DirStore(str(tmp_path / "seeds2"))
+    rec = dict(_good(bars, c1), split="test")                                             # manifest म्हणतो dev
+    GS._write(wrong.path(rec), rec)
+    res = GS.import_seeds(GS.DirStore(str(tmp_path / "s3")), manifest, str(tmp_path / "seeds2"), bars_for=lambda c: bars)
+    assert res["imported"] == [] and c1["id"] in res["invalid"]
+
+
+def test_seed_script_dry_run_writes_nothing(tmp_path, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("r2seed", ROOT / "scripts" / "reader2_gallery_seed.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    target = GS.DirStore(str(tmp_path / "store"))
+    assert mod.main(["--seeds", str(tmp_path / "none")], store=target) == 3
+    (tmp_path / "seeds" / "dev").mkdir(parents=True)
+    assert mod.main(["--seeds", str(tmp_path / "seeds"), "--dry-run"], store=target) == 0
+    assert target.load_all() == {}
+
+
+def test_cd14_seed_record_validates_when_trade_data_present():
+    """Private seed (trade-data, repo मध्ये नाही): Abhi चा CD14 leg = एकच DOWN impulse, dev chart, manifest शी जुळतो."""
+    p = Path(GS.seeds_dir()) / "dev" / "BANKNIFTY_D_20251215.json"
+    if not p.exists():
+        pytest.skip("trade-data seed नाही")
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    cand = GS.charts(GS.load_manifest(GS.MANIFEST))[rec["id"]]
+    try:
+        bars = GD.load_window(cand)
+    except GD.DataMissing:
+        bars = None
+    assert SC.validate({k: v for k, v in rec.items() if k != "revision"}, cand, bars) == []
+    lg = rec["legs"]
+    assert len(lg) == 1 and lg[0]["label"] == "impulse" and lg[0]["end_price"] < lg[0]["start_price"]
+    assert cand["split"] == "dev" and cand["calibration"] is False and "CD14" in rec["source"]
