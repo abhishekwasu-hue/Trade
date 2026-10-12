@@ -327,6 +327,17 @@ end date), zone `from_bar` is range-checked, export fails loudly on a write erro
 an invalid record keeps its last valid export), and `tests/test_reader2_boundary.py` allows `gallery2` imports only from the marking
 page, the two gallery scripts, `reader2` and tests.
 
+**Symbol strata + SENSEX + seeds (Abhi 2026-10-12).** Manifest `strata.<symbol>` = {seed, dev, test, assignment}: NIFTY 16 / 7 and
+BANKNIFTY 12 / 5 are the CR3 assignments, frozen (`cr3_global_frozen`; their 40 entries are pinned by sha256 in the tests). A new symbol is
+added only with `--add-symbol <SYM>` (`candidates.add_symbol`): its own windows / bucket pick / split inside its stratum, seed
+`symbol_seed(seed, symbol)`, test = round(0.3 × n) by TF in proportion (`stratum_split`; new charts of an existing symbol use the same
+rule); existing entries stay byte-identical (checked before writing); no data ⇒ nothing written. SENSEX OHLC comes from
+`scripts/fetch_sensex_history.py` (VPS only, Upstox v3 like BANKNIFTY: D `days/1`, 15M `minutes/15`, 1H = 09:15-anchored resample of
+15M; near-month BSE futures volume where Upstox has it, else NA ⇒ grade cap B) into `<trade-data>/sensex/`; sources `sensex_D / 1H /
+15M` in `gallery2/data.py` (NIFTY-holdout dates skipped as for BANKNIFTY). Abhi-provided labels that are not page markings (e.g. the CD14
+leg) are seed records in private `<trade-data>/reader2_gallery/seeds/<split>/<id>.json` (DirStore format, validated);
+`store.import_seeds` / `scripts/reader2_gallery_seed.py` put them in the store only where the chart has no record yet.
+
 **Tests.** `tests/test_reader2_gallery.py` (47) — schema accept / 13 rejections, tolerance in MR units, NIFTY holdout + illustration rejected
 (no exception), warm-up never crosses the holdout, BANKNIFTY holdout-date rows, DirStore / DbStore round-trip (sqlite, revision), export
 (manifest split, invalid skipped), progress, sealed calibration (spy, smuggled file), import boundaries, builder determinism / 28-12 /
