@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""🧭 Engine signal service (Abhi, Monday PAPER): शेवटच्या **बंद** 15M candle वर common analysis engine (decision2, थर 1–7) ⇒
-`engine_signal` store (VPS local SQLite). Bots हा store adapter ने वाचतात (signal_source own / engine / both); own असताना फक्त
-shadow मत (Vision caption). Order / broker call नाही. Code मध्ये तारीख नाही. Holdout rows कधीच नाहीत (data_policy).
+"""🧭 Engine signal service (Abhi, one bot): शेवटच्या **बंद** 15M candle वर method engine ⇒ `engine_signal` store (VPS local SQLite). Bots हा
+store adapter ने वाचतात (signal_source own / engine / both; 15M SRv2 = engine). Order / broker call नाही. Code मध्ये तारीख नाही. Holdout rows
+कधीच engine input मध्ये नाहीत (data_policy; Daily warm-up फक्त Q33 प्रमाणे).
 
-VPS cron (VPS ची वेळ UTC — deploy/README.md; बाजार 03:45–10:00 UTC; प्रत्येक 15M candle बंद झाल्यावर ~1 मिनिटाने; बाजार बंद ⇒ script स्वतः थांबतो):
-  1,16,31,46 3-10 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py >> engine_signal.log 2>&1
+Engine: `--engine decision3` (default; env ENGINE_SIGNAL_ENGINE) = थर v2.2 (trend → area → pullback → commitment → R:R), NIFTY / BANKNIFTY /
+SENSEX, 09:30–15:00 मध्ये बंद होणारा प्रत्येक 15M bar. `--engine decision2` = जुना मार्ग (NIFTY 1m ⇒ थर 1–7), तसाच.
+Fail-closed: data नाही / exception ⇒ त्या bar ची "error" row (entry नाही) + Telegram ला एक ओळ (symbol मागे दिवसातून एकदा).
+
+VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही):
+  1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --symbols NIFTY,BANKNIFTY,SENSEX
+Dry-run (store / Telegram नाही; बाजार बंद असला तरी): python3 scripts/engine_signal_run.py --dry-run --force
 """
 import argparse
 import os
@@ -15,33 +20,63 @@ sys.path.insert(0, ROOT)
 
 import engine_signal as ES  # noqa: E402
 
+SYMBOLS = "NIFTY,BANKNIFTY,SENSEX"
 
-def main(argv=None, token_fn=None, run_fn=None, market_fn=None):
+
+def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert_path=None, now=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", default="NIFTY")
+    ap.add_argument("--symbols", default=None, help=f"default: decision3 ⇒ {SYMBOLS}; decision2 ⇒ NIFTY")
+    ap.add_argument("--engine", default=None, help="decision3 (default) / decision2")
     ap.add_argument("--force", action="store_true", help="बाजार बंद असला तरी (dry-run / तपासणी)")
+    ap.add_argument("--dry-run", action="store_true", help="store मध्ये लिहीत नाही, Telegram नाही — फक्त print")
     a = ap.parse_args(argv)
+    engine = ES.engine_name(a.engine)
     if market_fn is None:
         from config import is_market_open as market_fn
     if not a.force and not market_fn():
         print("बाजार बंद ⇒ engine signal नाही")
         return 0
+    syms = [x.strip().upper() for x in (a.symbols or (SYMBOLS if engine == "decision3" else "NIFTY")).split(",") if x.strip()]
     if token_fn is None:
         import cloud_db
         token_fn = lambda: cloud_db.get_effective_upstox_token(None)  # noqa: E731
     tok = token_fn()
+    bar = ES.expected_bar_end(now or ES.now_ist())
     if not tok:
-        print("❌ Upstox token नाही — engine signal मोजता येत नाही (आधी daily login)")
+        msg = "Upstox token नाही — engine signal मोजता येत नाही (आधी daily login)"
+        print(f"❌ {msg}")
+        if not a.dry_run:
+            for sym in syms:
+                ES.save_error(sym, bar, msg, engine=engine)
+                ES.alert_once(sym, "Upstox token missing", send=send, state_path=alert_path)
         return 2
-    run_fn = run_fn or ES.run
+    if run_fn is None:
+        if engine == "decision3":
+            run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run)  # noqa: E731
+        else:
+            run_fn = ES.run
     rc = 0
-    for sym in [x.strip().upper() for x in a.symbols.split(",") if x.strip()]:
+    for sym in syms:
         try:
             r = run_fn(sym, tok)
-            print(f"✅ {sym} {r['bar_ts']}: {r['decision']} {r.get('gate') or ''} dir {r.get('direction')} · {ES.opinion(sym, r['bar_ts'])}")
-        except Exception as exc:
-            print(f"⚠️ {sym}: {type(exc).__name__}: {exc}")
+            if r.get("skipped"):
+                print(f"⏭️ {sym} [{engine}] {r['bar_ts']}: {r['decision']} — {r['skipped']}")
+                continue
+            tag = " (dry-run, store नाही)" if a.dry_run else ""
+            print(f"✅ {sym} [{engine}] {r['bar_ts']}: {r['decision']} gate {r.get('gate') or '—'} dir {r.get('direction')} "
+                  f"grade {r.get('grade') or '—'} · {r.get('reason') or ''}{tag}")
+            if not a.dry_run:
+                print(f"   {ES.opinion(sym, r['bar_ts'])}")
+        except Exception as exc:                                         # noqa: BLE001 — fail-closed
+            msg = f"{type(exc).__name__}: {exc}"
+            print(f"❌ {sym} [{engine}]: {msg} ⇒ entry नाही (fail-closed)")
             rc = 1
+            if not a.dry_run:
+                try:
+                    ES.save_error(sym, bar, msg, engine=engine)
+                except Exception as exc2:                                # noqa: BLE001
+                    print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
+                ES.alert_once(sym, msg, send=send, state_path=alert_path)
     return rc
 
 
