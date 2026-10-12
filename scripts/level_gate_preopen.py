@@ -220,6 +220,20 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
     return f"{head}\n{PT.DECISION_NONE}\n\n" + "\n".join(plain) + f"\n{PT.SEP}\n" + "\n".join(det)
 
 
+def one_bot_problems(status_fn=None):
+    """ONE_BOT §4: `bots_common.one_bot.one_bot_status()` — फक्त 15M SRv2 (engine, PAPER) चालू नसेल / Vision approval / PAPER instruments /
+    engine schedule / auto-trader cron / LIVE (untouched) ⇒ ❌ / ⚠️ ओळ (`preopen_line`, HTML-escaped). सगळं ठीक ⇒ [] (status ओळ पुरेशी)."""
+    try:
+        if status_fn is None:
+            from bots_common.one_bot import one_bot_status as status_fn
+        st = status_fn()
+    except Exception as exc:                                               # noqa: BLE001
+        return [f"❌ One-bot status not readable ({type(exc).__name__}) — check settings / crontab before trading."]
+    if st.get("ok") and not st.get("live_untouched"):
+        return []
+    return [html.escape(st.get("line") or "❌ One-bot mode NOT clean", quote=False)]
+
+
 def weekly_trend(df, today=None):
     """Daily candles ⇒ Weekly trend (engine ① सारखीच: W-FRI + fold, weekly_min_bars). फक्त माहिती. अपुरा data ⇒ None."""
     if df is None or len(df) == 0:
@@ -278,6 +292,7 @@ def main(argv=None):
     except Exception as exc:                                               # noqa: BLE001 — status ओळ ❌ सांगते
         print(f"⚠️ bot settings: {type(exc).__name__}: {exc}")
         active = None
+    problems = one_bot_problems() + problems
     msg = build_report(syms, token, lambda s: cloud_db.get_market_zones(s), last_close,
                        trend_fn=lambda s: LR.daily_trend(s, token, fetch=lambda tok, sy: daily_df(sy)),
                        weekly_fn=lambda s: weekly_trend(daily_df(s), today), day=today.isoformat(), active=active,

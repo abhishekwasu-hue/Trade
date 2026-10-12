@@ -153,37 +153,66 @@ def expected_bar_end(now):
 
 
 def save_error(symbol, bar_ts, msg, path=None, engine="decision3"):
-    """Fail-closed नोंद: त्या bar साठी "error" row ⇒ `pending_entry` नवा entry देत नाही (आधीचा setup सुद्धा नाही)."""
+    """Fail-closed नोंद: त्या bar साठी "error" row ⇒ `pending_entry` नवा entry देत नाही (✅ च्या वाटेतला आधीचा setup मात्र तसाच — gate ठरवतो)."""
     save({"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(bar_ts)), "computed_at": str(now_ist()), "decision": ERROR,
           "gate": "data", "direction": None, "level_lo": None, "level_hi": None, "entry": None, "invalidation": None, "target": None,
           "grade": None, "reason": str(msg)[:300], "payload": json.dumps({"engine": engine, "error": str(msg)[:500]}, ensure_ascii=False)},
          path)
 
 
-def alert_once(symbol, msg, send=None, state_path=None, today=None):
-    """Engine error ⇒ Telegram ला **एक ओळ, symbol मागे दिवसातून एकदा** (dedupe). रिटर्न पाठवलं का. कधीच raise नाही."""
-    import datetime as _dt
-    p = state_path or os.path.join(ROOT, "data", "engine_signal_alerts.json")
-    day = str(today or _dt.date.today())
+ALERT_REPEAT_MIN = 60                                                       # अजून अपयश ⇒ इतक्या मिनिटांनी पुन्हा एक ओळ
+
+
+def _alert_state(p):
     try:
-        st = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+        return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     except (OSError, ValueError):
-        st = {}
-    if st.get("day") != day:
-        st = {"day": day, "sent": []}
-    sym = str(symbol).upper()
-    if sym in st["sent"]:
-        return False
-    line = f"❌ Engine {sym}: {str(msg)[:160]} ⇒ no engine entry for {sym} until the data is back (exits unaffected)"
+        return {}
+
+
+def _alert_send(line, send):
     try:
         if send is None:
             from notifications import send_telegram_message as send
         send(line)
     except Exception:                                                    # noqa: BLE001
         print(line)
-    st["sent"].append(sym)
+
+
+def _alert_path(state_path):
+    return state_path or os.path.join(ROOT, "data", "engine_signal_alerts.json")
+
+
+def alert_error(symbol, msg, send=None, state_path=None, now=None):
+    """Engine error ⇒ Telegram: पहिल्या अपयशाला एक ओळ; अजून अपयशी असेल तर `ALERT_REPEAT_MIN` नंतरच पुन्हा. रिटर्न पाठवलं का. raise नाही."""
+    p, sym = _alert_path(state_path), str(symbol).upper()
+    now = _naive(now or now_ist())
+    st = _alert_state(p)
+    cur = st.get(sym) or {}
+    last = pd.Timestamp(cur["last_sent"]) if cur.get("last_sent") else None
+    if cur.get("failing") and last is not None and now - last < pd.Timedelta(minutes=ALERT_REPEAT_MIN):
+        return False
+    again = " (still failing)" if cur.get("failing") else ""
+    _alert_send(f"❌ Engine {sym}{again}: {str(msg)[:160]} ⇒ no new engine entry for {sym} until the data is back (exits unaffected)", send)
+    st[sym] = {"failing": True, "since": cur.get("since") or str(now), "last_sent": str(now)}
     try:
         os.makedirs(os.path.dirname(p), exist_ok=True)
+        json.dump(st, open(p, "w", encoding="utf-8"))
+    except OSError:
+        pass
+    return True
+
+
+def alert_recovered(symbol, send=None, state_path=None, now=None):
+    """आधी अपयशी होता आणि आता चालला ⇒ एक "recovered" ओळ (एकदाच). रिटर्न पाठवलं का."""
+    p, sym = _alert_path(state_path), str(symbol).upper()
+    st = _alert_state(p)
+    cur = st.get(sym) or {}
+    if not cur.get("failing"):
+        return False
+    _alert_send(f"✅ Engine {sym} recovered (failing since {pd.Timestamp(cur.get('since')):%H:%M}) — engine setups resume", send)
+    st[sym] = {"failing": False}
+    try:
         json.dump(st, open(p, "w", encoding="utf-8"))
     except OSError:
         pass
@@ -261,9 +290,9 @@ def own_allowed(symbol, direction, settings, now=None, path=None, key="signal_so
 
 def pending_entry(bot, symbol, settings, now=None, path=None):
     """signal_source = engine: या bot ने अजून न वापरलेला ताजा engine setup. नाही ⇒ None.
-    ताजा = bar_ts ≥ now − engine_max_age_min. सर्वात नवा setup (त्यानंतरचा "wait" bar तो रद्द करत नाही — Abhi च्या ✅ ची वाट चालू
-    असताना पुढचा 15M bar आला तरी तोच setup; Vision gate / ✅ हाच अंतिम तपास). नवा setup ⇒ जुना बाद. सर्वात नवी row "error" (data
-    नाही) ⇒ None (fail-closed). सर्वात नवा setup आधीच वापरला ⇒ None."""
+    ताजा = bar_ts ≥ now − engine_max_age_min. सर्वात नवा setup (त्यानंतरचा "wait" / "error" bar तो रद्द करत नाही — Abhi च्या ✅ ची वाट
+    चालू असताना पुढचा 15M bar आला / data त्रुटी आली तरी तोच setup; Vision gate / ✅ हाच अंतिम तपास). "error" row कधीच setup नाही ⇒
+    नवा entry नाही (fail-closed). नवा setup ⇒ जुना बाद. सर्वात नवा setup आधीच वापरला ⇒ None."""
     if source_of(settings) != "engine":
         return None
     try:
@@ -272,8 +301,6 @@ def pending_entry(bot, symbol, settings, now=None, path=None):
         with connect(path) as c:
             rows = [dict(x) for x in c.execute("SELECT * FROM engine_signals WHERE symbol=? AND bar_ts<=? AND bar_ts>=? ORDER BY bar_ts DESC",
                                                 (str(symbol).upper(), str(now), str(now - pd.Timedelta(minutes=age)))).fetchall()]
-            if not rows or rows[0]["decision"] == ERROR:
-                return None
             r = next((x for x in rows if x["decision"] == "setup"), None)
             if r is None or r["direction"] not in (1, -1):
                 return None

@@ -29,6 +29,7 @@ VISION_BOT = "srv2_momentum_reversal"
 ABSENT = "__ABSENT__"
 AUTO_TRADERS = ("oi_signal_auto_trader.py", "credit_spread_auto_trader.py", "oi_greeks_vix_strategy.py")
 ENGINE_CRON_TAG = "scripts/engine_signal_run.py"
+LIVE_RE = re.compile(r"""--mode[=\s]+['"]?LIVE\b""")                          # --mode LIVE / --mode=LIVE / --mode "LIVE" / --mode='LIVE'
 OFF_TAG = "#one-bot-off# "
 
 
@@ -47,6 +48,7 @@ def targets():
     out += [("SR V3 PAPER shadow", "1m_instant", s, {"srv3_shadow_enabled": False}) for s in SYMBOLS]
     out += [("Classic SR reversal", "classic_sr_reversal", s, {"symbol_enabled": False}) for s in SYMBOLS]
     out += [("MCX futures", "mcx_futures", s, {"symbol_enabled": False}) for s in mcx_symbols()]
+    out += [(f"Auto: {k}", k, s, {"symbol_enabled": False}) for k in AUTO_KEYS for s in SYMBOLS]
     return out
 
 
@@ -93,6 +95,34 @@ class IO:
         return read_crontab()
 
 
+AUTO_KEYS = {"credit_spread_auto_trader": "credit_spread_auto_trader.py", "oi_signal_auto_trader": "oi_signal_auto_trader.py",
+             "oi_greeks_vix_strategy": "oi_greeks_vix_strategy.py"}
+
+
+def paper_entry_blocked(strategy, symbol, trading_mode, raw_fn=None):
+    """Auto traders (settings flag नव्हता): **साठवलेला** `symbol_enabled` = false आणि PAPER ⇒ कारण (नवा entry नाही); नाहीतर None.
+    Default (नोंद नाही) = आधीसारखं चालू. LIVE ⇒ कधीच अडवत नाही. Settings वाचता नाही ⇒ None (जुनं वर्तन; installer cron ओळ बंद करतो)."""
+    if str(trading_mode or "").upper() != "PAPER":
+        return None
+    try:
+        if raw_fn is None:
+            import cloud_db
+            raw_fn = cloud_db.get_strategy_settings_raw
+        raw = raw_fn(strategy, symbol) or {}
+    except Exception:                                                    # noqa: BLE001
+        return None
+    if raw.get("symbol_enabled") is False:
+        return f"{symbol}: {strategy} PAPER entries off (symbol_enabled = false, one-bot mode) — open positions still managed"
+    return None
+
+
+def open_auto_sources(symbols=SYMBOLS, has_open=None):
+    """कोणत्या auto traders च्या OPEN positions आहेत (installer: त्यांची cron ओळ exits साठी चालू ठेवतो)."""
+    if has_open is None:
+        from database import has_open_trade_from_source as has_open
+    return sorted({src for src in AUTO_KEYS for sym in symbols if has_open(sym, src)})
+
+
 def read_crontab():
     """crontab मजकूर (env CRONTAB_FILE ⇒ ती file; tests). वाचता आलं नाही ⇒ None."""
     p = os.environ.get("CRONTAB_FILE")
@@ -113,9 +143,12 @@ def _mode(eff):
 def plan(io):
     """रिटर्न (changes, warnings). change = dict(label, strategy, symbol, key, before_raw, before, after, skip)."""
     changes, warns = [], []
+    ctext = io.crontab()
     for label, strat, sym, kv in targets():
         eff = io.effective(strat, sym)
         raw = io.raw(strat, sym)
+        if strat in AUTO_KEYS and cron_runs(ctext, AUTO_KEYS[strat]).get(sym) == "LIVE":
+            eff = {**eff, "trading_mode": "LIVE"}                        # auto trader चा mode = cron `--mode` (settings मध्ये नाही)
         live = _mode(eff) != "PAPER"
         if live:
             warns.append(f"⚠️ {label} {sym}: trading_mode {_mode(eff)} ⇒ हात लावला नाही (LIVE untouched) — फक्त नोंद")
@@ -220,8 +253,22 @@ def cron_state(text):
     lines = text.splitlines()
     for s in (*AUTO_TRADERS, ENGINE_CRON_TAG, "srv2_momentum_reversal_strategy.py"):
         act = [x for x in lines if s in x and not x.lstrip().startswith("#")]
-        live = [x for x in act if re.search(r"--mode\s+LIVE", x)]
+        live = [x for x in act if LIVE_RE.search(x)]
         out[s] = "LIVE" if live else ("on" if act else ("off" if any(s in x for x in lines) else "absent"))
+    return out
+
+
+SYM_RE = re.compile(r"""--symbol[=\s]+['"]?([A-Z]+)""")
+
+
+def cron_runs(text, script):
+    """{symbol: "LIVE" / "PAPER"} — त्या script च्या चालू (comment नसलेल्या) cron ओळी (`--symbol` नसेल ⇒ NIFTY, script चा default)."""
+    out = {}
+    for x in (text or "").splitlines():
+        if script in x and not x.lstrip().startswith("#"):
+            m = SYM_RE.search(x)
+            sym = m.group(1) if m else "NIFTY"
+            out[sym] = "LIVE" if LIVE_RE.search(x) or out.get(sym) == "LIVE" else "PAPER"
     return out
 
 
@@ -235,6 +282,8 @@ def one_bot_status(io=None, crontab_text=False):
     except Exception:                                                    # noqa: BLE001
         cfg = {}
     pin = {s: bool(((cfg.get("instruments") or {}).get(s) or {}).get("enabled", False)) for s in SYMBOLS}
+    ctext = io.crontab() if crontab_text is False else crontab_text
+    cron = cron_state(ctext)
     for label, strat, sym, kv in targets():
         try:
             eff = io.effective(strat, sym)
@@ -244,6 +293,15 @@ def one_bot_status(io=None, crontab_text=False):
         flag = next(iter(kv))
         if label == "SR V3 PAPER shadow":
             on = bool(eff.get("srv3_shadow_enabled")) and bool(eff.get("symbol_enabled"))
+        elif strat in AUTO_KEYS:                                         # cron वर चालतो (त्या symbol साठी) आणि PAPER entries बंद नाहीत
+            run = cron_runs(ctext, AUTO_KEYS[strat]).get(sym) if ctext is not None else "unknown"
+            if run == "LIVE":
+                eff = {**eff, "trading_mode": "LIVE"}
+            try:
+                blocked = run == "PAPER" and (io.raw(strat, sym) or {}).get("symbol_enabled") is False
+            except Exception:                                            # noqa: BLE001
+                blocked = False
+            on = run is not None and run != "unknown" and not blocked
         else:
             on = bool(eff.get("symbol_enabled"))
         if strat == ON_KEY and _mode(eff) == "PAPER":
@@ -256,12 +314,10 @@ def one_bot_status(io=None, crontab_text=False):
         vision = {"symbols": vs.get("symbols"), "approval_required": vs.get("approval_required"), "vision_mode": vs.get("vision_mode")}
     except Exception as exc:                                             # noqa: BLE001
         vision = {"error": str(exc)}
-    cron = cron_state(io.crontab() if crontab_text is False else crontab_text)
     srv2 = [r for r in rows if r["strategy"] == ON_KEY]
     others_on = [r for r in rows if r["strategy"] != ON_KEY and r.get("on") and r.get("trading_mode") == "PAPER"]
     live = [f"{r['bot']} {r['symbol']} {r['trading_mode']}" for r in rows if r.get("on") and r.get("trading_mode") not in ("PAPER", None)
             and r["strategy"] != ON_KEY]
-    auto_on = [s for s in AUTO_TRADERS if cron.get(s) in ("on", "LIVE")]
     problems = []
     for r in srv2:
         if not r.get("on"):
@@ -276,7 +332,6 @@ def one_bot_status(io=None, crontab_text=False):
     if missing_v:
         problems.append(f"Vision symbols missing {'/'.join(missing_v)} (no approval request)")
     problems += [f"{r['bot']} {r['symbol']} ON" for r in others_on]
-    problems += [f"{s} cron {cron[s]}" for s in auto_on]
     if cron.get(ENGINE_CRON_TAG) not in ("on", "unknown"):
         problems.append(f"engine schedule {cron.get(ENGINE_CRON_TAG)}")
     if cron.get("srv2_momentum_reversal_strategy.py") not in ("on", "unknown"):

@@ -212,6 +212,10 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
         return log
 
     # --- कुठलीही position उघडी नाही -> दिशा तपासून नवीन entry विचार ---
+    _off = _paper_entry_off("credit_spread_auto_trader", symbol, trading_mode)                # one-bot mode: PAPER नवे entries बंद (वरचं position व्यवस्थापन चालूच)
+    if _off:
+        log.append(_off)
+        return log
     direction = get_current_direction(access_token, symbol)
     state["recent_directions"] = (state["recent_directions"] + [direction])[-10:]  # फक्त शेवटच्या १० ठेवणे
     save_state(state)
@@ -267,6 +271,15 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
                f"Long {spread['long_leg']['strike']}, Net Credit={spread['net_credit']}, Trade ID={trade_id}")
     return log
 
+
+
+def _paper_entry_off(name, symbol, trading_mode):
+    """Abhi (one bot): settings `symbol_enabled` = false (फक्त PAPER) ⇒ नवा entry नाही. LIVE / वाचता नाही ⇒ None (जुनं वर्तन)."""
+    try:
+        from bots_common.one_bot import paper_entry_blocked
+        return paper_entry_blocked(name, symbol, trading_mode)
+    except Exception:  # noqa: BLE001
+        return None
 
 if __name__ == "__main__":
     import argparse

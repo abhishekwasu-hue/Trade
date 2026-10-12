@@ -5,7 +5,8 @@ store adapter ने वाचतात (signal_source own / engine / both; 15M 
 
 Engine: `--engine decision3` (default; env ENGINE_SIGNAL_ENGINE) = थर v2.2 (trend → area → pullback → commitment → R:R), NIFTY / BANKNIFTY /
 SENSEX, 09:30–15:00 मध्ये बंद होणारा प्रत्येक 15M bar. `--engine decision2` = जुना मार्ग (NIFTY 1m ⇒ थर 1–7), तसाच.
-Fail-closed: data नाही / exception ⇒ त्या bar ची "error" row (entry नाही) + Telegram ला एक ओळ (symbol मागे दिवसातून एकदा).
+Fail-closed: data नाही / exception ⇒ त्या bar ची "error" row (नवा entry नाही) + Telegram ओळ (पहिलं अपयश, अजून अपयशी ⇒ 60 मिनिटांनी पुन्हा,
+परत चालू ⇒ "recovered").
 
 VPS cron (UTC; `scripts/install_engine_schedule.sh` लावतो — हाताने नाही):
   1,16,31,46 4-9 * * 1-5  cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py --symbols NIFTY,BANKNIFTY,SENSEX
@@ -48,7 +49,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
         if not a.dry_run:
             for sym in syms:
                 ES.save_error(sym, bar, msg, engine=engine)
-                ES.alert_once(sym, "Upstox token missing", send=send, state_path=alert_path)
+                ES.alert_error(sym, "Upstox token missing", send=send, state_path=alert_path, now=now)
         return 2
     if run_fn is None:
         if engine == "decision3":
@@ -59,6 +60,8 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
     for sym in syms:
         try:
             r = run_fn(sym, tok)
+            if not a.dry_run:
+                ES.alert_recovered(sym, send=send, state_path=alert_path, now=now)
             if r.get("skipped"):
                 print(f"⏭️ {sym} [{engine}] {r['bar_ts']}: {r['decision']} — {r['skipped']}")
                 continue
@@ -76,7 +79,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                     ES.save_error(sym, bar, msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                ES.alert_once(sym, msg, send=send, state_path=alert_path)
+                ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
     return rc
 
 

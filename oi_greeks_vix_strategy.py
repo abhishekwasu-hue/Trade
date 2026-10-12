@@ -114,6 +114,10 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
         return log
 
     # --- नवीन Entry — आधी VIX (धोका-गेट) ---
+    _off = _paper_entry_off("oi_greeks_vix_strategy", symbol, trading_mode)                # one-bot mode: PAPER नवे entries बंद (वरचं position व्यवस्थापन चालूच)
+    if _off:
+        log.append(_off)
+        return log
     india_vix = fetch_india_vix(access_token)
     if india_vix is None:
         log.append("India VIX मिळाला नाही — Entry नाही.")
@@ -169,6 +173,15 @@ def _run_cycle_inner(access_token, symbol, trading_mode):
     log.append(f"✅ नवीन Entry: {strategy_result['strategy']} ({direction_label}), Net Credit={net_credit}, Trade ID={result['trade_id']}")
     return log
 
+
+
+def _paper_entry_off(name, symbol, trading_mode):
+    """Abhi (one bot): settings `symbol_enabled` = false (फक्त PAPER) ⇒ नवा entry नाही. LIVE / वाचता नाही ⇒ None (जुनं वर्तन)."""
+    try:
+        from bots_common.one_bot import paper_entry_blocked
+        return paper_entry_blocked(name, symbol, trading_mode)
+    except Exception:  # noqa: BLE001
+        return None
 
 if __name__ == "__main__":
     import argparse

@@ -4,8 +4,8 @@
   • 15M spot (Upstox, `engine3_m15_days` दिवस) — फक्त बंद candles; NIFTY ⇒ `data_policy.filter_allowed(..., "annotation")` (holdout row नाही).
   • Daily (Upstox 'day', ~10 वर्षं, आजचा अपूर्ण Daily bar नाही) — Q33: Daily holdout candles फक्त warm-up input (level_reaction.daily_trend
     प्रमाणेच); output मध्ये sealed तारीख नाही (`history.sealed_fn`). Weekly = Daily वरून (V22 स्वतः).
-  • 5M spot (LTF: c1 5M CHoCH) + front-month FUT 5M volume (c0 dominant candle + volume) — V22 ला `ltf=` / `futures=` kwargs असतील तर ते
-    (feature-detect), नाहीतर m15 मध्ये joined `volume` column. नसेल ⇒ fail-closed (entry नाही, कारण स्पष्ट).
+  • 5M spot (LTF: c1 5M CHoCH) ⇒ V22 `ltf=`; नसेल ⇒ fail-closed. Front-month FUT 5M volume (c0 dominant candle + volume) ⇒ V22
+    `futures=` (expiry सह; जुना V22 ⇒ m15 joined `volume`); FUT नसेल ⇒ volume NA (grade कमाल B), fail-closed नाही.
   • V22(m15, daily_df=…).decide(शेवटचा बंद bar) ⇒ engine_signal store row (decision2 च्याच columns) ⇒ bots चा adapter (`pending_entry`).
 Fail-closed: data नाही / अपूर्ण / exception ⇒ EngineDataError (caller "error" row + दिवसातून एकदा Telegram ओळ). Order / broker call नाही.
 Daily fold (सर्वात महाग भाग, ~50 s) दिवसाला एकदा: input hash वर disk cache (`data/engine3_cache/`) — शुद्ध function, निकाल तोच.
@@ -21,7 +21,7 @@ import urllib.parse
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10, "engine3_require_fut_volume": True}
+DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10}
 SESSION_OPEN, SESSION_CLOSE = (9, 15), (15, 30)
 FUT_EXCHANGE = {"SENSEX": "BSE"}                                          # बाकी NSE (NIFTY / BANKNIFTY)
 
@@ -98,7 +98,8 @@ class UpstoxFeed:
 
     def futures(self, symbol, interval, days):
         info = resolve_future(self.token, symbol, self.today)
-        return self._series(info["instrument_key"], interval, days, contract=info["trading_symbol"])
+        f = self._series(info["instrument_key"], interval, days, contract=info["trading_symbol"])
+        return f.assign(expiry=pd.Timestamp(info["expiry"])) if len(f) else f     # legs2.volume.near_month साठी
 
 
 # ------------------------------------------------------------------------------------------------ frames
@@ -205,7 +206,7 @@ def v22_kwargs():
 
 
 def build_inputs(feed, symbol, now, s=None):
-    """(m15, daily, ltf5, fut5). अपुरा data ⇒ EngineDataError."""
+    """(m15, daily, ltf5, fut5|None, volume note|None). 15M / Daily / 5M LTF अपुरा ⇒ EngineDataError (fail-closed); FUT नाही ⇒ volume NA."""
     from bots_common import level_reaction as LR
     from decision3 import history as HI
     from elliott import data_policy as DP
@@ -230,13 +231,15 @@ def build_inputs(feed, symbol, now, s=None):
         ltf = DP.filter_allowed(ltf, "annotation")
     if not len(ltf) or ltf["timestamp"].iloc[-1].normalize() != m15["timestamp"].iloc[-1].normalize():
         raise EngineDataError(f"{symbol}: 5M spot (LTF) data नाही ⇒ c1 CHoCH तपासता येत नाही")
-    fut = None
-    if s["engine3_require_fut_volume"]:
+    fut, note = None, None
+    try:                                                                 # c0 volume: FUT नाही ⇒ volume NA (grade कमाल B) — fail-closed नाही
         fut = closed_session_bars(feed.futures(symbol, "5minute", s["engine3_ltf_days"]), 5, now)
         today_fut = fut[fut["timestamp"].dt.normalize() == m15["timestamp"].iloc[-1].normalize()] if len(fut) else fut
         if not len(today_fut) or float(today_fut["volume"].sum()) <= 0:
-            raise EngineDataError(f"{symbol}: FUT 5M volume (आज) नाही ⇒ c0 volume तपासता येत नाही")
-    return m15, daily, ltf, fut
+            fut, note = None, f"{symbol}: FUT 5M volume (आज) नाही ⇒ volume NA (grade कमाल B)"
+    except Exception as exc:                                             # noqa: BLE001
+        fut, note = None, f"{symbol}: FUT volume नाही ({type(exc).__name__}: {str(exc)[:80]}) ⇒ volume NA (grade कमाल B)"
+    return m15, daily, ltf, fut, note
 
 
 def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None):
@@ -245,10 +248,10 @@ def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None):
     from decision3 import engine as E3
     from decision3 import history as HI
     INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
-    m15 = m15.copy()
-    if fut is not None:
-        m15["volume"] = fut_volume_15m(m15, fut).to_numpy()
+    m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])   # index volume 0 ≠ खरा volume (NA हवा)
     params = v22_kwargs()
+    if fut is not None and "futures" not in params:                      # जुना V22 (futures kwarg नाही) ⇒ joined column
+        m15["volume"] = fut_volume_15m(m15, fut).to_numpy()
     kw = {"sealed": HI.sealed_fn(symbol)}
     if s3 is not None:
         kw["s"] = s3
@@ -279,7 +282,7 @@ def row_from_v22(symbol, r, now_fn):
     reason = r.get("why") or why or ""
     payload = {"engine": "decision3", **{k: r.get(k) for k in ("ts", "bar_end", "daily_trend", "trend_used", "trend_resolution",
                                                             "weekly_trend", "daily_phase", "mature", "trend_notes", "trend_cap",
-                                                            "mark", "conviction", "commitment_form", "missing", "checklist")},
+                                                            "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note")},
                "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist")} if lv else None,
                "risk": rk or None}
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
@@ -289,5 +292,7 @@ def row_from_v22(symbol, r, now_fn):
 
 
 def compute(symbol, feed, now, s=None):
-    m15, daily, ltf, fut = build_inputs(feed, symbol, now, s)
-    return evaluate(symbol, m15, daily, ltf, fut)
+    m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
+    r = evaluate(symbol, m15, daily, ltf, fut)
+    r["volume_note"] = note
+    return r
