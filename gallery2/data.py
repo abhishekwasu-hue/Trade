@@ -52,8 +52,9 @@ def trade_data_dir():
 
 
 def source_path(key):
-    """Source चा file. `pattern` असलेल्या sources साठी folder मधला जुळणारा, (शेवटची तारीख, सुरुवात) ने सगळ्यात नवा; नाही ⇒ folder
-    + pattern (अस्तित्वात नसलेला path ⇒ `load_source` मध्ये DataMissing)."""
+    """Source चा file. `pattern` असलेल्या sources साठी folder मधला जुळणारा: सगळ्यात उशिराची शेवटची तारीख, त्यात सगळ्यात **लवकरची**
+    सुरुवात (पूर्ण coverage — incremental छोटा file जुन्या bars ना हरवत नाही); NIFTY source ची सुरुवात holdout मध्ये असलेले files
+    निवडतच नाही. नाही ⇒ folder + pattern (अस्तित्वात नसलेला path ⇒ `load_source` मध्ये DataMissing)."""
     src = SOURCES[key]
     base = ROOT if src["where"] == "repo" else trade_data_dir()
     if "pattern" not in src:
@@ -63,8 +64,11 @@ def source_path(key):
     if os.path.isdir(d):
         for f in os.listdir(d):
             m = re.match(src["pattern"], f)
-            if m:
-                found.append((m.group(2), m.group(1), f))
+            if not m:
+                continue
+            if src["symbol"] == "NIFTY" and _in_nifty_holdout_dates([m.group(1)])[0]:
+                continue                                                   # holdout मध्ये सुरू होणारा file वाचतच नाही
+            found.append((m.group(2), -pd.Timestamp(m.group(1)).value, f))
     return os.path.join(d, max(found)[2]) if found else os.path.join(d, src["pattern"])
 
 

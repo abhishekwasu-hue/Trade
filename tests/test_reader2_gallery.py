@@ -684,3 +684,22 @@ def test_golden_nifty_file_is_discovered_by_pattern(tmp_path, monkeypatch):
         (up / f).write_bytes(b"")
     monkeypatch.setenv("TRADE_DATA_DIR", str(tmp_path))
     assert GD.source_path("nifty_1m_golden").endswith("NIFTY_1m_2026-07-01_2026-10-08.csv.gz")
+
+
+def test_golden_file_picker_prefers_full_coverage_and_skips_holdout_start(tmp_path, monkeypatch):
+    """Verify review 🟡: same end date ⇒ the file with the EARLIEST start wins (an incremental file never hides older bars);
+    a NIFTY file starting inside the holdout is never picked."""
+    from gallery2 import data as GD
+    from elliott import data_policy as DP
+    up = tmp_path / "upstox"
+    up.mkdir()
+    hs = DP.HOLDOUT_START
+    late = (DP.CONTAMINATED_START + pd.Timedelta(days=95)).date()
+    mid = (DP.CONTAMINATED_START + pd.Timedelta(days=30)).date()
+    full = f"NIFTY_1m_{DP.CONTAMINATED_START.date()}_{late}.csv.gz"
+    incr = f"NIFTY_1m_{mid}_{late}.csv.gz"
+    held = f"NIFTY_1m_{(hs + pd.Timedelta(days=5)).date()}_{(DP.CONTAMINATED_START + pd.Timedelta(days=200)).date()}.csv.gz"
+    for f in (full, incr, held):
+        (up / f).write_bytes(b"")
+    monkeypatch.setattr(GD, "trade_data_dir", lambda: str(tmp_path))
+    assert os.path.basename(GD.source_path("nifty_1m_golden")) == full
