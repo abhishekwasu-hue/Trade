@@ -241,7 +241,8 @@ def test_run_day_eight_images_caption_and_manifest(built, tmp_path, monkeypatch)
                                                        "files": [f"d1/{f}" for f in out["files"]]}]}
     json.dump(man, open(tmp_path / "manifest.json", "w", encoding="utf-8"), ensure_ascii=False)
     m = TG.load_manifest(str(tmp_path))
-    assert len(m["items"][0]["files"]) == 8 and TG.caption(m, m["items"][0]) == cap
+    tc = TG.caption(m, m["items"][0])
+    assert len(m["items"][0]["files"]) == 8 and tc.startswith("Engine reading") and "Decision needed" in tc and cap.splitlines()[0] in tc   # Telegram cleanup: साधी headline + decision ओळ, मग details
     j = json.load(open(tmp_path / "d1" / "mtf_day.json", encoding="utf-8"))
     for tf in MA.TFS:
         for mk in j["tf"][tf]["marks"]:
