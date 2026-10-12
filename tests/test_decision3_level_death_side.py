@@ -1,7 +1,7 @@
 """(4) 9 Oct 2026 blind spot (docs/reports/v22_missed_levels_touch.md): a broken support that flipped to supply (spec ② (c)) was killed
 by the sharp fall that followed the break, because death is judged on the ORIGINAL role's side (Q2 default "role0"). With
 `level_death_side` = "role" (Q2 alternative, OPEN_QUESTIONS Q2 / TL1) death is judged on the current role's side and the flipped
-supply stays alive for the retest. Default unchanged ("role0") until Abhi decides. Mirrored (broken resistance ⇒ demand)."""
+supply stays alive for the retest. Default "role" (TL1, Abhi मंजूर); "role0" kept as an explicit setting. Mirrored (broken resistance ⇒ demand)."""
 import pytest
 
 from decision3 import levels as LV
@@ -39,11 +39,12 @@ def test_broken_support_flipped_to_supply_survives_the_fall_when_death_side_is_r
 
 
 @pytest.mark.parametrize("mirror", [False, True])
-def test_default_role0_keeps_old_q2_behaviour(mirror):
-    assert S3.DEFAULTS["level_death_side"] == "role0"
-    for side in (None, "role0"):
-        _, _, L0 = _flip_case(mirror, side)                                 # Q2 default (मूळ भूमिका) ⇒ जुनं वर्तन: मेला
-        assert L0.dead_bar == T_BREAK
+def test_default_is_role_and_explicit_role0_keeps_old_q2_behaviour(mirror):
+    assert S3.DEFAULTS["level_death_side"] == "role"                        # TL1 (Abhi मंजूर)
+    _, _, L = _flip_case(mirror)                                            # default ⇒ flipped supply जिवंत
+    assert L.dead_bar is None
+    _, _, L0 = _flip_case(mirror, "role0")                                  # जुना Q2 (मूळ भूमिका) ⇒ मेला
+    assert L0.dead_bar == T_BREAK
 
 
 def test_level_death_side_rejects_unknown_value():

@@ -28,21 +28,21 @@ Root causes, in order:
 3. **Degree.** The actual lows of the broken support (7 Oct 22,546 / 22,578) and the start of the sharp fall (22,649 on 7 Oct 14:15;
    22,599 at the 8 Oct open) are D0/D1 swings. By design, they do not become levels.
 
-**Fix (unambiguous part only).** A new setting, `level_death_side`:
-- `"role0"`: the default, behaviour unchanged.
-- `"role"`: a flipped level dies only when a swing beyond its *current* role breaks.
+**Fix.** A new setting, `level_death_side` (**TL1 approved by Abhi 2026-10-12: default = "role"**):
+- `"role0"`: the old Q2 rule, kept only as an explicit setting (revert / what-if).
+- `"role"` (default): a flipped level dies only when a swing beyond its *current* role breaks.
 
-Changing the default is Abhi's decision (OPEN_QUESTIONS **TL1**; recommended: `"role"`). The merge width (**TL2**) and a 1H
+The merge width (**TL2**, Abhi: "not now") and a 1H
 sharp-fall base (**TL3**) are also listed as options.
 
-What-if, `"role"`, NIFTY Sep–Oct 2026:
+NIFTY Sep–Oct 2026, old vs new default:
 
 | | setups | no_trade | wait |
 |---|---|---|---|
-| default (role0) | 1 (30 Sep 13:15 B) | 118 | 529 |
-| role | 1 (same) | 142 | 505 |
+| role0 (old default) | 1 (30 Sep 13:15 B) | 118 | 529 |
+| role (new default) | 1 (same) | 142 | 505 |
 
-On 9 Oct with `"role"`:
+On 9 Oct with `"role"` (now the default):
 - Both supplies, L1 and L18, are active. Price touches them from 09:45, so the bars no longer read "no touch".
 - **11:30**: bear call at L18 22,518–22,527. Commitment `inside_break`, entry 22,487, SL 22,542, target 22,180, **R:R 5.55**.
   The only block is conviction *weak*, from the maturity cap. That cap belongs to branch `claude/oct12-blockers` (maturity = evidence

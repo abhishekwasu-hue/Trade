@@ -31,8 +31,8 @@ DEFAULTS = {
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
-    "level_death_side": "role0",             # Q2: मृत्यू-swing कोणत्या बाजूचा — "role0" = मूळ भूमिकेची बाजू (default, flip नंतरही);
-                                             # "role" = चालू भूमिकेची (flipped support = supply ⇒ वरचा D2 H; Abhi निर्णय बाकी, Q2 / TL1)
+    "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
+                                             # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
     "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
@@ -109,7 +109,7 @@ REGISTER = {
     "prior_level_atr_mult": (8.0, "5/8/12", "अंदाज", "Q40: window आधीचे महत्त्वाचे Daily / Weekly levels — किंमतीपासूनचं अंतर (ATR-scaled)"),
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
-    "level_death_side": ("role0", "role0 / role", "setting", "Q2 / TL1: मृत्यू 'level पलीकडचा structural swing' — मूळ की चालू भूमिकेची बाजू (Abhi निर्णय)"),
+    "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),

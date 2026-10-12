@@ -1947,3 +1947,5 @@ ranked. Fix: ③ ✔ level चा निकाल bar चा. Sep–Oct: setups 
 12:15 निकाल: valid read (touch + buyers दमले + dominant engulf 2.6× + 5M CHoCH), R:R 0.77 ⇒ no setup. FUT volume 29 Sep ला NA (data 30 Sep पासून).
 Fixture: `test_decision3_touch_levels.py`. Tests: `test_decision3*.py test_level*.py` 461 passed + नवे.
 अहवाल: `docs/reports/v22_missed_levels_touch.md`.
+**TL1 ✅ Abhi मंजूर (2026-10-12):** default `level_death_side` = "role" (flipped level चा मृत्यू चालू भूमिकेच्या बाजूने); "role0" फक्त explicit setting
+(revert / what-if). जुना Q2 test (ii) explicit "role0" ने pinned (अपेक्षा तशीच). TL2 (merge रुंदी): Abhi "आत्ता नाही" — उघडा.

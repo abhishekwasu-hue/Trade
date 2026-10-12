@@ -10,7 +10,7 @@
   (d) liquidity: दोन D2 pivots (त्याच प्रकारचे) σ_1H × liquidity_eq_sigma मध्ये ⇒ equal highs / lows पट्टा.
   लहान pivot (D0 / D1, 15M) पासून level नाही. Merge: नवा पट्टा जिवंत level ला overlap ⇒ एकच (पट्टा एकत्र, जन्म-कारणं एकत्र).
 जीवनक्रम (प्रत्येक बंद 15M bar, जन्मानंतरच्या bars): चाचणी (किंमत पट्ट्यात / पलीकडे — एका भेटीला एकदा), sweep (wick पलीकडे, close परत
-trade-बाजूला / पट्ट्यात; किंवा acceptance शिवाय 1–2 closes पलीकडे आणि परत) ⇒ ★ +1, flip (acceptance ⇒ भूमिका उलट), मृत्यू फक्त: level पलीकडचा (मूळ भूमिकेच्या बाजूचा) structural swing
+trade-बाजूला / पट्ट्यात; किंवा acceptance शिवाय 1–2 closes पलीकडे आणि परत) ⇒ ★ +1, flip (acceptance ⇒ भूमिका उलट), मृत्यू फक्त: level पलीकडचा (चालू भूमिकेच्या बाजूचा, TL1) structural swing
 (confirmed D2 pivot) close ने तुटला. जिवंत level snapshot मधून कधीच prune नाही (फक्त chart वर दूरची लपवा). `self` नियम नाही (K च्या टोकाचा level दुसऱ्या चाचणीला वैध).
 गुण: Daily confluence (+1), fresh (+1), अनेक चाचण्या (−0.5 प्रत्येक दुसऱ्या पासून), sweep ★; impulse retracement / trendline (C पायरी).
 """
@@ -284,7 +284,7 @@ class Levels:
         H, Lo, C = self.A["high"], self.A["low"], self.A["close"]
         touching, excursion = {}, {}
         acc = int(self.s["accept_closes"])
-        death_side = self.s.get("level_death_side", "role0")
+        death_side = self.s.get("level_death_side", "role")
         if death_side not in ("role0", "role"):
             raise ValueError(f"level_death_side {death_side!r} — role0 / role पैकी")
         pv = self._pv_sorted
@@ -305,9 +305,9 @@ class Levels:
                     beyond_wick, beyond_close = Lo[t] < L.lo, C[t] < L.lo
                 else:
                     beyond_wick, beyond_close = H[t] > L.hi, C[t] > L.hi
-                # मृत्यू: मूळ भूमिकेच्या (role0) पलीकडचा structural swing close ने तुटला — support ⇒ खालचा जवळचा D2 L, resistance ⇒ वरचा D2 H
-                # (flip झालेला level सुद्धा: तुटलेला support ⇒ resistance, पण खालचा swing close ने तुटला ⇒ मेला). OPEN_QUESTIONS Q2.
-                # level_death_side = "role" (पर्याय, Q2 / TL1) ⇒ चालू भूमिकेची बाजू: flipped support (= supply) ⇒ वरचा D2 H.
+                # मृत्यू: level पलीकडचा structural swing close ने तुटला — support ⇒ खालचा जवळचा D2 L, resistance ⇒ वरचा D2 H. बाजू = चालू
+                # भूमिका (level_death_side = "role", Q2 / TL1 Abhi मंजूर): flipped support (= supply) फक्त वरचा D2 H तुटला तरच मेला — खालचा
+                # swing तुटणं = break ची पुढची धाव. "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही), फक्त revert / what-if.
                 if (role if death_side == "role" else L.role0) == SUP:
                     sw = [p.price for p in known if p.kind == "L" and p.price < L.lo]
                     dead = bool(sw) and C[t] < max(sw)
