@@ -38,14 +38,33 @@ TODO (diag): प्रत्येक combo ची प्रत्यक्ष v
 TODO (diag §4a/§4b/§4c): engine store rows (decision2, NIFTY) + signal_log (SRv2: SKIPPED_* कारणे) + level-gate trend cache. प्रत्येक bar:
 no touch / against trend / gate / approval not sent / error.
 
-## 4. Abhi चे trades (NIFTY bear call, 12 Oct) — message का नाही?
+## 4. Abhi चा trade (NIFTY bear call, 12 Oct पहिला तास) — message का नाही?
 
-TODO (Abhi चे charts + diag): प्रत्येक setup साठी वरच्या कोणत्या कारणाने अडलं. Engine-बाजूचे (§7 a–f: maturity cap, 09:15 candle,
-sloping resistance, 1H level blind spot, FUT volume alignment) — `claude/oct12-blockers` branch चा अहवाल.
+Code वरून (तपशील: `docs/reports/2026-10-12_engine_blockers.md`) — सकाळी **दोन स्तरांवर** अडलं असतं:
+
+1. **Engine path चालूच नव्हता:** live engine = decision2, फक्त NIFTY; decision3 (V22, trend → area → pullback → commitment → R:R)
+   कुठेच live नव्हता ⇒ `signal_source = engine` असतं तरी decision3 setup येऊ शकत नव्हता (§1).
+2. **decision3 चालला असता तरी (9 Oct पर्यंतच्या खऱ्या data वर तपासलं):**
+   - (b) **maturity cap** — 8–9 Oct प्रत्येक bar वर "impulse mature ⇒ entries weak" ⇒ setup नाही. **Bug** (owner नियम: maturity फक्त
+     evidence) ⇒ दुरुस्त: maturity फक्त grade A → B, कधीच अडवत नाही.
+   - (e) **22,476–22,809 resistance 8 Oct ला "मेला"** (death rule role0) ⇒ 12 Oct ला ≈22,600–22,670 area च नव्हता. **Bug** ⇒ TL1
+     (`level_death_side = "role"`, Abhi मंजूर) — 9 Oct ला level आता जिवंत.
+   - (c) 09:15 candle two-candle pattern मध्ये धरली जात नव्हती ⇒ दुरुस्त: 09:15 चा sweep / wick evidence, entry 09:30 पासूनच.
+   - (d) 30-Sep high पासूनची उतरती trendline (09:15 ला ≈22,654) — horizontal level सोबत confluence असेल तर area (एकटी line नाही);
+     तुटलेली line / price च्या चुकीच्या बाजूचं area वगळलं; grade parent level पेक्षा वर नाही.
+   - (f) FUT volume 5M → 15M (09:15 anchor) बरोबर; पण stored FUT data 8 Oct ला संपतो ⇒ VPS collector वरून.
+3. **Replay:** synthetic fixture वर 09:45 bear call A (entry 22,708.92 · SL 22,985.75 · target 21,842.79 · R:R 3.13, a2/c0/c1 चालू) +
+   dry-run approval message. **खरा 12 Oct data अजून चालवलेला नाही** — VPS वर
+   `python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --source upstox --dry-run-telegram` (read-only). खऱ्या data वर
+   R:R < 3 आला तर setup नाही ("valid read, skipped on R:R") — तो निकाल बदलण्यासाठी threshold फिरवणार नाही.
+
+TODO (Abhi चे charts + diag): त्याचे bar-by-bar कारण खऱ्या data वरून.
 
 ## 5. आजपासूनचा बदल (one bot) — `claude/one-bot-tomorrow`
 
 - फक्त 15M SRv2 ON (NIFTY / BANKNIFTY / SENSEX, PAPER), `signal_source = engine`; engine = decision3 (V22) live, प्रत्येक बंद 15M bar
   09:30–15:00 (`engine3_live.py`, `scripts/install_engine_schedule.sh`). बाकी bots OFF (`scripts/set_one_bot_mode.py`, `--revert`).
 - PAPER instruments BANKNIFTY / SENSEX + Vision symbols — त्याच script ने (वरचे दोन blockers).
-- Fail-closed: data / FUT volume / 5M नाही ⇒ entry नाही + Telegram एक ओळ (symbol मागे दिवसातून एकदा).
+- Fail-closed: data / 5M नाही ⇒ entry नाही + Telegram ओळ (पहिलं अपयश, 60 मिनिटांनी अजून अपयश असेल तर, मग "recovered"). FUT volume नाही ⇒
+  volume NA, grade कमाल B (entry अडत नाही).
+- सकाळी चालू: a2 (absorption ⇒ वाट), c0 (dominant candle + volume > window सरासरी; NA ⇒ कमाल B), c1 (5M CHoCH by close) — तिन्ही.
