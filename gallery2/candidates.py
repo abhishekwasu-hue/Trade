@@ -254,7 +254,7 @@ def build(slots, cases, seed=SEED, n_total=N_TOTAL, n_test=N_TEST, quotas=None, 
                         for sl in sorted(slots, key=lambda s: (ORDER_S[s["symbol"]], ORDER_T[s["timeframe"]]))},
             "missing": list(missing),
             "cross_tf_overlap": {"rule": OVERLAP_RULE, "pairs": overlap},
-            "strata": strata_of({"seed": seed, "charts": chosen}), "strata_rule": STRATA_RULE,
+            "strata": strata_of({"seed": seed, "charts": chosen}, assignment="global_split"), "strata_rule": STRATA_RULE,
             "charts": chosen}
 
 
@@ -285,14 +285,15 @@ def stratum_split(existing, new, seed, dev_frac=DEV_FRAC):
     return split(new, max(0, min(k, len(eligible))), seed)
 
 
-def strata_of(manifest):
-    """Manifest चे per-symbol strata. `strata` मध्ये नसलेला (CR3) symbol ⇒ त्याचे आत्ताचे assignments गोठवलेले म्हणून नोंद."""
+def strata_of(manifest, assignment="cr3_global_frozen"):
+    """Manifest चे per-symbol strata. `strata` मध्ये नसलेला symbol ⇒ त्याचे आत्ताचे assignments: असलेल्या (CR3) manifest मधून
+    "cr3_global_frozen"; `--force` पूर्ण rebuild (`build`) ⇒ "global_split"."""
     out = copy.deepcopy(manifest.get("strata") or {})
     for sym in GD.SYMBOLS:
         cs = [c for c in manifest.get("charts", []) if c["symbol"] == sym]
         if cs and sym not in out:
             out[sym] = {"seed": manifest.get("seed"), "dev": sum(c["split"] == "dev" for c in cs),
-                        "test": sum(c["split"] == "test" for c in cs), "assignment": "cr3_global_frozen"}
+                        "test": sum(c["split"] == "test" for c in cs), "assignment": assignment}
     return {s: out[s] for s in sorted(out, key=lambda s: ORDER_S.get(s, 99))}
 
 

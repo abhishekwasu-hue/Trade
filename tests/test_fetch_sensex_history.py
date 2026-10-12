@@ -191,3 +191,49 @@ def test_no_token_fetches_nothing(repo, monkeypatch, capsys):
     monkeypatch.setattr(EV, "_token", lambda t=None: None)
     s = Sess()
     assert F.main(["--repo", str(repo)], session=s, token=None, today=TODAY) == 3 and s.urls == []
+
+
+# ------------------------------------------------------------------ review PR #303
+class FlakySess(Sess):
+    """पहिल्या run मध्ये index 15M चा एक मधला chunk अपयशी (429), नंतर ठीक."""
+    def __init__(self, fail_from=None):
+        super().__init__(futures=False)
+        self.fail_from = fail_from
+
+    def get(self, url, headers=None, params=None, timeout=None):
+        if self.fail_from and "BSE_INDEX" in url and "/minutes/15/" in url and url.rstrip("/").split("/")[-1] == self.fail_from:
+            self.urls.append(url)
+            return Resp({}, 429)
+        return super().get(url, headers, params, timeout)
+
+
+def test_failed_middle_chunk_is_pending_and_refilled_on_rerun(repo, capsys):
+    args = ["--repo", str(repo), "--daily-years", "1", "--intraday-years", "0.25", "--no-futures"]
+    start = TODAY - dt.timedelta(days=int(np.ceil(365.25 * 0.25)))
+    chunks = F.IF.chunks(start, TODAY, 28)
+    assert len(chunks) >= 3
+    mid = chunks[1]                                                                       # (from, to) — मधला chunk
+    rc = F.main(args, session=FlakySess(fail_from=str(mid[0])), token="t", today=TODAY, sleep=lambda s: None)
+    out = capsys.readouterr().out
+    man = json.loads((repo / "sensex" / "manifest.json").read_text(encoding="utf-8"))
+    assert rc == 1 and man["files"]["15M"]["pending"] == [[str(mid[0]), str(mid[1])]] and "pending" in out
+    full = len(pd.bdate_range(start, TODAY)) * 25
+    assert len(pd.read_csv(repo / "sensex" / "SENSEX_15M.csv.gz")) < full                 # भोक
+    s2 = FlakySess()
+    rc = F.main(args, session=s2, token="t", today=TODAY, sleep=lambda s: None)
+    man = json.loads((repo / "sensex" / "manifest.json").read_text(encoding="utf-8"))
+    assert rc == 0 and man["files"]["15M"]["pending"] == [] and man["files"]["15M"]["chunks_failed"] == []
+    assert any(u.rstrip("/").split("/")[-1] == str(mid[0]) for u in s2.urls if "/minutes/15/" in u)
+    assert len(pd.read_csv(repo / "sensex" / "SENSEX_15M.csv.gz")) == full                # भोक भरलं
+
+
+def test_futures_merge_refreshes_last_stored_day_but_keeps_older_days():
+    old = pd.concat([_m15("2030-06-10"), _m15("2030-06-11").iloc[:10]], ignore_index=True).assign(volume=5.0, oi=1.0, contract="OLD")
+    new = pd.concat([_m15("2030-06-10"), _m15("2030-06-11"), _m15("2030-06-12")], ignore_index=True).assign(volume=9.0, oi=1.0,
+                                                                                                          contract="NEW")
+    m = F.merge_futures(old, new)
+    d = m["timestamp"].dt.date.astype(str)
+    assert (m.loc[d == "2030-06-10", "contract"] == "OLD").all()                           # rollover संरक्षण
+    assert len(m[d == "2030-06-11"]) == 25 and (m.loc[d == "2030-06-11", "volume"] == 9.0).all()   # अपूर्ण दिवस नव्याने
+    assert len(m) == 75
+    assert F.merge_futures(old, new.iloc[0:0]).equals(F.merge(old, new.iloc[0:0], keep="first"))

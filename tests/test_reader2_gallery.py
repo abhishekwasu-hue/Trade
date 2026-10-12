@@ -747,7 +747,8 @@ def test_regenerating_with_extra_symbol_leaves_existing_entries_byte_identical()
     assert len(sx) == 13 and {c["timeframe"] for c in sx} == {"D", "1H", "15M"}
     assert sum(c["split"] == "test" for c in sx) == 4 and m["strata"]["SENSEX"] == {
         "seed": GC.symbol_seed(7, "SENSEX"), "dev": 9, "test": 4, "assignment": "stratified_70_30"}
-    assert m["strata"]["NIFTY"]["assignment"] == "cr3_global_frozen" and not [x for x in m["missing"] if x["symbol"] == "SENSEX"]
+    assert m["strata"]["NIFTY"]["assignment"] == "global_split" and not [x for x in m["missing"] if x["symbol"] == "SENSEX"]
+    assert GC.strata_of(GS.load_manifest(GS.MANIFEST))["NIFTY"]["assignment"] == "cr3_global_frozen"
     assert [c["n"] for c in m["charts"]] == list(range(1, len(m["charts"]) + 1))
     assert (m["n_total"], m["n_test"]) == (53, 16) and m["counts"]["SENSEX"] == {"D": 5, "1H": 4, "15M": 4}
     again = GC.add_symbol(base, "SENSEX", _sensex_slots(), missing=[])                       # deterministic
@@ -860,3 +861,31 @@ def test_cd14_seed_record_validates_when_trade_data_present():
     lg = rec["legs"]
     assert len(lg) == 1 and lg[0]["label"] == "impulse" and lg[0]["end_price"] < lg[0]["start_price"]
     assert cand["split"] == "dev" and cand["calibration"] is False and "CD14" in rec["source"]
+
+
+def test_import_seeds_continues_after_a_conflict(tmp_path):
+    bars = _daily("2018-01-01", 120, seed=5)
+    c1, c2 = _cand(bars, cid="BANKNIFTY_D_A"), _cand(bars, cid="BANKNIFTY_D_B")
+    seeds = GS.DirStore(str(tmp_path / "seeds"))
+    for c in (c1, c2):
+        GS.save_record(seeds, _good(bars, c), c, bars)
+
+    class Racy(GS.DirStore):                                                           # load नंतर, save आधी दुसऱ्या tab ने जतन
+        def save(self, rec, expected_revision=0):
+            if rec["id"] == c1["id"]:
+                raise GS.ConflictError("मधेच जतन")
+            return super().save(rec, expected_revision)
+
+    target = Racy(str(tmp_path / "store"))
+    res = GS.import_seeds(target, {"charts": [c1, c2]}, str(tmp_path / "seeds"), bars_for=lambda c: bars)
+    assert res["imported"] == [c2["id"]] and list(res["failed"]) == [c1["id"]] and "ConflictError" in res["failed"][c1["id"]]
+    assert set(target.load_all()) == {c2["id"]}
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("r2seed2", ROOT / "scripts" / "reader2_gallery_seed.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mpath = tmp_path / "m.json"
+    mpath.write_text(json.dumps({"charts": [c1, c2]}), encoding="utf-8")
+    GD._RAW.clear()
+    rc = mod.main(["--seeds", str(tmp_path / "seeds"), "--manifest", str(mpath)], store=Racy(str(tmp_path / "store2")))
+    assert rc == 1

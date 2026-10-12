@@ -1886,11 +1886,14 @@ NA (grade cap B). Resume (शेवटचा दिवस पुन्हा, �
 49,954.85) + trend down त्या bar पासून; source "Abhi decision 2026-10-12 (CD14)". **फक्त private trade-data** `reader2_gallery/seeds/dev/`
 (DirStore + `save_record` तपासणी; trade-data commit cb91e66). `scripts/reader2_gallery_seed.py` ⇒ VPS DB मध्ये (फक्त जिथे नोंद नाही — तुमची
 marking कधीच overwrite नाही). Chart `calibration: false` तसाच.
+**Review (PR #303) नंतर:** fetcher चे अयशस्वी chunks `pending` (manifest) मध्ये ⇒ पुढच्या run ला पुन्हा, pending असेपर्यंत exit 1;
+futures store चा शेवटचा (अपूर्ण असू शकणारा) दिवस नव्याने बदलतो; seed import एका chart च्या conflict / store अपयशावर थांबत नाही (`failed`, शेवटी
+exit 1); `--force` rebuild चे strata "global_split".
 **Tests:** `tests/test_reader2_gallery.py` (+9: extra symbol ⇒ जुने entries byte-identical, committed manifest pin, stratum counts, additive script /
 files नाहीत, seeds import) + नवी `tests/test_fetch_sensex_history.py` (9: fixture instrument list, resample, volume bins, merge / resume, schema,
 dry-run, token नाही) + `tests/test_reader2*.py` + `test_app_navigation` — सगळे pass. उघडे: OPEN_QUESTIONS CR-Q22–CR-Q26.
 **तुमच्यासाठी (VPS, PR merge नंतर):** खालचा block — SENSEX history, additive SENSEX candidates (`manifest_sensex_add.json` trade-data मध्ये),
-CD14 seed DB मध्ये. मग मी तो manifest review करून repo मध्ये commit करीन (deploy नंतर SENSEX charts page वर दिसतील).
+CD14 seed DB मध्ये (**CD14 chart page वर उघडण्याआधी** seed import चालवा — आधी जतन केलं तर seed लागत नाही). मग मी तो manifest review करून repo मध्ये commit करीन (deploy नंतर SENSEX charts page वर दिसतील).
 
 ```bash
 bash <<'SENSEX_GALLERY'
@@ -1904,7 +1907,7 @@ python3 scripts/fetch_sensex_history.py --repo /root/trade-data || echo "⚠️ 
 echo "== 2) gallery: SENSEX additive (NIFTY / BANKNIFTY entries तसेच) =="
 TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_candidates.py --add-symbol SENSEX \
   --out /root/trade-data/reader2_gallery/manifest_sensex_add.json
-echo "== 3) CD14 seed ⇒ gallery DB (फक्त जिथे नोंद नाही) =="
+echo "== 3) CD14 seed ⇒ gallery DB (फक्त जिथे नोंद नाही) — page वर BANKNIFTY_D_20251215 उघडण्याआधी हे चालवा =="
 TRADE_DATA_DIR=/root/trade-data python3 scripts/reader2_gallery_seed.py
 echo "== 4) trade-data मध्ये (manifest Claude review करून repo मध्ये commit करेल) =="
 cd /root/trade-data && git add --ignore-removal sensex reader2_gallery \

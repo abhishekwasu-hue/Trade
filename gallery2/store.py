@@ -234,12 +234,13 @@ def seeds_dir():
 def import_seeds(store, manifest, seeds_root=None, bars_for=None, dry_run=False):
     """Seed नोंदी ⇒ `store` (VPS वर DB). फक्त ज्या chart ला अजून नोंद **नाही** तिथे (expected_revision 0 ⇒ Abhi ची आधीची marking कधीच
     overwrite होत नाही). प्रत्येक seed `save_record` ने तपासला जातो (manifest id / split / window, bars असतील तर किंमती). रिटर्न
-    {"imported": [ids], "skipped_existing": [ids], "unknown": [ids], "invalid": {id: [चुका]}} — किंमती नाहीत."""
+    {"imported": [ids], "skipped_existing": [ids], "unknown": [ids], "invalid": {id: [चुका]}, "failed": {id: कारण}} — किंमती नाहीत.
+    एका chart चं जतन अपयशी (ConflictError — मधेच दुसरी नोंद / StoreError) ⇒ `failed` मध्ये नोंद, बाकी seeds चालू राहतात."""
     root = seeds_root or seeds_dir()
     seeds = DirStore(root).load_all() if os.path.isdir(root) else {}
     have = store.load_all()
     cs = charts(manifest)
-    out = {"imported": [], "skipped_existing": [], "unknown": [], "invalid": {}}
+    out = {"imported": [], "skipped_existing": [], "unknown": [], "invalid": {}, "failed": {}}
     for cid, rec in sorted(seeds.items()):
         cand = cs.get(cid)
         if cand is None:
@@ -260,7 +261,11 @@ def import_seeds(store, manifest, seeds_root=None, bars_for=None, dry_run=False)
             out["invalid"][cid] = err
             continue
         if not dry_run:
-            store.save(rec, 0)
+            try:
+                store.save(rec, 0)
+            except (ConflictError, StoreError) as exc:
+                out["failed"][cid] = f"{type(exc).__name__}: {exc}"
+                continue
         out["imported"].append(cid)
     return out
 

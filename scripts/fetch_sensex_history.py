@@ -75,9 +75,10 @@ def merge(old, new, keep="last"):
     return out.drop_duplicates("timestamp", keep=keep).sort_values("timestamp").reset_index(drop=True)
 
 
-def plan_ranges(start, end, existing=None, checked_from=None):
+def plan_ranges(start, end, existing=None, checked_from=None, pending=()):
     """मागायचे [(from, to)] (तारखा, दोन्ही सामील). File नाही ⇒ पूर्ण काळ. आहे ⇒ (१) मागितलेली सुरुवात आधी तपासलेल्या सुरुवातीपेक्षा
-    जुनी असेल तर तो भाग, (२) file च्या शेवटच्या दिवसापासून आजपर्यंत (शेवटचा दिवस पुन्हा)."""
+    जुनी असेल तर तो भाग, (२) आधीच्या run मध्ये अयशस्वी झालेले chunks (`pending` — file च्या मधली भोकं), (३) file च्या शेवटच्या
+    दिवसापासून आजपर्यंत (शेवटचा दिवस पुन्हा)."""
     if existing is None or not len(existing):
         return [(start, end)] if start <= end else []
     ts = pd.to_datetime(existing["timestamp"])
@@ -86,9 +87,23 @@ def plan_ranges(start, end, existing=None, checked_from=None):
     out = []
     if start < floor:
         out.append((start, floor - dt.timedelta(days=1)))
+    for s, e in sorted(pending or []):
+        r = (max(s, start), min(e, end))
+        if r[0] <= r[1] and r not in out:
+            out.append(r)
     if last <= end:
         out.append((max(last, start), end))
     return out
+
+
+def merge_futures(old, new):
+    """Futures store + नवे candles: आधीच्या दिवसांचा साठवलेला row जिंकतो (rollover नंतर near-month चा volume बदलत नाही), पण
+    साठवलेल्या **शेवटच्या दिवसाचे** (आणि पुढचे) rows नव्याने बदलतात — तो दिवस मागच्या run वेळी अपूर्ण असू शकतो (चालू 15M bar)."""
+    if old is not None and len(old) and new is not None and len(new):
+        cut = pd.to_datetime(old["timestamp"]).max().normalize()
+        if pd.to_datetime(new["timestamp"]).max() >= cut:
+            old = old[pd.to_datetime(old["timestamp"]) < cut]
+    return merge(old, new, keep="first")
 
 
 def to_1h(m15):
@@ -204,9 +219,13 @@ def _fetch_raw(session, token, key, unit, val, days, ranges, sleep, with_volume=
                 rows += (r.json().get("data") or {}).get("candles") or []
                 ok += 1
             else:
-                bad.append(f"{cs}→{ce}: HTTP {code}")
+                bad.append((cs, ce, code))
             sleep(0.4)
     return candles_df(rows, with_volume), ok, bad
+
+
+def _bad_txt(bad):
+    return [f"{s}→{e}: HTTP {c}" for s, e, c in bad]
 
 
 def _span(today, years):
@@ -239,7 +258,8 @@ def main(argv=None, session=None, token=None, today=None, sleep=time.sleep):
     plans = {}
     for tf in NATIVE:
         cf = (files.get(tf) or {}).get("checked_from")
-        plans[tf] = plan_ranges(*spans[tf], old[tf], pd.Timestamp(cf).date() if cf else None)
+        pend = [(pd.Timestamp(s).date(), pd.Timestamp(e).date()) for s, e in (files.get(tf) or {}).get("pending", [])]
+        plans[tf] = plan_ranges(*spans[tf], old[tf], pd.Timestamp(cf).date() if cf else None, pend)
     if a.dry_run:
         print(f"DRY RUN — {NAME} ({KEY}) ⇒ {out_dir} (token / network नाही; काहीही लिहिलं नाही)")
         for tf in NATIVE:
@@ -268,16 +288,18 @@ def main(argv=None, session=None, token=None, today=None, sleep=time.sleep):
         if tf == "D" and len(new):
             new["timestamp"] = new["timestamp"].dt.normalize()
         merged[tf] = merge(old[tf], new) if (old[tf] is not None or len(new)) else None
-        prev_cf = (files.get(tf) or {}).get("checked_from")         # सगळे chunks यशस्वी ⇒ मागितलेल्या सुरुवातीपासून तपासलं
-        checked = min(x for x in (prev_cf, str(spans[tf][0])) if x) if not bad else prev_cf
+        prev_cf = (files.get(tf) or {}).get("checked_from")         # अयशस्वी chunks `pending` मध्ये ⇒ पुढच्या run ला पुन्हा
+        checked = min(x for x in (prev_cf, str(spans[tf][0])) if x) if merged[tf] is not None and len(merged[tf]) else prev_cf
+        pending = [[str(s), str(e)] for s, e, _ in bad]
         files[tf] = {"file": f"{NAME}_{tf}.csv.gz", "rows": 0 if merged[tf] is None else int(len(merged[tf])),
-                     "requested": [str(s) for s in spans[tf]], "checked_from": checked,
+                     "requested": [str(s) for s in spans[tf]], "checked_from": checked, "pending": pending,
                      "first": None if merged[tf] is None or not len(merged[tf]) else str(merged[tf]["timestamp"].min()),
                      "last": None if merged[tf] is None or not len(merged[tf]) else str(merged[tf]["timestamp"].max()),
-                     "new_rows": int(len(new)), "chunks_ok": ok, "chunks_failed": bad, "fetched_at_ist": now_ist,
+                     "new_rows": int(len(new)), "chunks_ok": ok, "chunks_failed": _bad_txt(bad), "fetched_at_ist": now_ist,
                      "source": f"Upstox v3 {unit}/{val}"}
-        if bad:
+        if pending:
             rc = 1
+            print(f"⚠️ {NAME} {tf}: {len(pending)} chunks अयशस्वी ⇒ pending (भोक) — पुन्हा चालवा, ते पुन्हा मागवले जातील")
     merged["1H"] = to_1h(merged.get("15M"))
     files["1H"] = {"file": f"{NAME}_1H.csv.gz", "rows": int(len(merged["1H"])), "source": "15M ⇒ 09:15-anchored 60 min resample",
                    "first": str(merged["1H"]["timestamp"].min()) if len(merged["1H"]) else None,
@@ -300,9 +322,9 @@ def main(argv=None, session=None, token=None, today=None, sleep=time.sleep):
             fnew, ok, bad = _fetch_raw(session, tok, front["instrument_key"], "minutes", "15", 28, [(s, today)], sleep, with_volume=True)
             if len(fnew):
                 fnew = fnew[fnew["timestamp"].dt.date > since].assign(contract=front["trading_symbol"])
-            fut = merge(fut, fnew, keep="first") if (fut is not None or len(fnew)) else None
+            fut = merge_futures(fut, fnew) if (fut is not None or len(fnew)) else None
             finfo.update(status="ok" if not bad else "partial", contract=front["trading_symbol"], expiry=str(front["expiry"]),
-                         near_month_after=str(since), new_rows=int(len(fnew)), chunks_failed=bad)
+                         near_month_after=str(since), new_rows=int(len(fnew)), chunks_failed=_bad_txt(bad))
             if bad:
                 rc = 1
         if fut is not None and len(fut):

@@ -34,7 +34,7 @@ def main(argv=None, store=None):
         return 3
     res = GS.import_seeds(store, m, seeds, bars_for=GD.load_window, dry_run=a.dry_run)
     print(json.dumps({"store": store.describe(), "seeds": seeds, "dry_run": a.dry_run, **res}, ensure_ascii=False, indent=1))
-    return 1 if res["invalid"] else 0
+    return 1 if res["invalid"] or res["failed"] else 0
 
 
 if __name__ == "__main__":
