@@ -34,6 +34,10 @@ SOURCES = {
     "banknifty_D": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_D.csv.gz", "kind": "D"},
     "banknifty_1H": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_1H.csv.gz", "kind": "1H"},
     "banknifty_15M": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_15M.csv.gz", "kind": "15M"},
+    # SENSEX: `scripts/fetch_sensex_history.py` (VPS, Abhi चा Upstox historical API) ⇒ BANKNIFTY सारखेच files (+ ऐच्छिक futures volume)
+    "sensex_D": {"symbol": "SENSEX", "where": "trade-data", "path": "sensex/SENSEX_D.csv.gz", "kind": "D"},
+    "sensex_1H": {"symbol": "SENSEX", "where": "trade-data", "path": "sensex/SENSEX_1H.csv.gz", "kind": "1H"},
+    "sensex_15M": {"symbol": "SENSEX", "where": "trade-data", "path": "sensex/SENSEX_15M.csv.gz", "kind": "15M"},
 }
 
 

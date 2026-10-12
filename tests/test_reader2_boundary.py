@@ -37,7 +37,8 @@ def test_reader2_does_not_import_bots_or_vision():
         assert not (_imports(p) & banned), p.name
 
 
-GALLERY_USERS = {"page_reader2_gallery.py", "scripts/reader2_gallery_candidates.py", "scripts/reader2_gallery_export.py"}
+GALLERY_USERS = {"page_reader2_gallery.py", "scripts/reader2_gallery_candidates.py", "scripts/reader2_gallery_export.py",
+                 "scripts/reader2_gallery_seed.py"}
 
 
 def test_only_gallery_tools_import_gallery2():

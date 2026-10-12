@@ -251,22 +251,25 @@ STATE_COLOR = {"UP · impulse": "#69db7c", "UP · correction": "#b2f2bb", "DOWN 
 BAND_STATE_COLOR = {"fresh": "#1971c2", "tested": "#e67700", "broken": "#868e96", "target": "#5f3dc4"}
 
 # §5.4–5.6 (Abhi): default Daily chart वरची प्रत्येक रेषा / पट्टा legend मध्ये — style (gid) ⇒ legend मजकूर, रंग
-STYLE_COLOR = {"impulse leg": "#e8590c", "leg in progress": "#e8590c", "correction (done)": "#1c7ed6", "counter-move (in progress)": "#1c7ed6",
+STYLE_COLOR = {"impulse leg": "#e8590c", "trend leg": "#e8590c", "correction (done)": "#1c7ed6", "counter-move (in progress)": "#1c7ed6",
                "older correction": "#1c7ed6", "protected origin": "#7048e8", "sharp band": "#f08c00", "demand": "#2f9e44",
                "supply": "#e03131", "broken": "#868e96", "target": "#0c8599", "pullback": "#495057"}
-LEGEND_TEXT = {"impulse leg": "impulse (5 waves)", "leg in progress": "trend leg — impulse not verified (structure-only check)", "correction (done)": "correction (done)",
+# CD14 (Abhi): घन = impulse (read_counter 5 waves किंवा Abhi ने स्वीकारलेलं वाचन — एकच दिसणं ⇒ एकच legend ओळ "impulse");
+# dashed = "trend leg" (impulse दावा नाही) — default / Telegram वर "not verified" शब्द कुठेच नाही (तो तपशील debug / JSON मध्ये)
+LEGEND_TEXT = {"impulse leg": "impulse", "trend leg": "trend leg", "correction (done)": "correction (done)",
                "counter-move (in progress)": "counter-move in progress", "older correction": "older correction (no label)",
                "protected origin": "protected origin", "sharp band": "sharp-fall / sharp-rise band", "demand": "demand",
                "supply": "supply", "broken": "broken level (dashed)", "target": "structural target"}
 LEGEND_ORDER = tuple(LEGEND_TEXT)
+LEG_KW = {"impulse leg": dict(lw=3, alpha=0.55), "trend leg": dict(lw=1.8, alpha=0.6, ls="--")}   # chart रेषा = legend handle
 
 
 def _legend_handles(styles):
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     C = STYLE_COLOR
-    mk = {"impulse leg": lambda: Line2D([], [], color=C["impulse leg"], lw=3, alpha=0.55),
-          "leg in progress": lambda: Line2D([], [], color=C["leg in progress"], lw=2.4, alpha=0.8, ls="--"),
+    mk = {"impulse leg": lambda: Line2D([], [], color=C["impulse leg"], **LEG_KW["impulse leg"]),
+          "trend leg": lambda: Line2D([], [], color=C["trend leg"], **LEG_KW["trend leg"]),
           "correction (done)": lambda: Patch(fc=C["correction (done)"], ec=C["correction (done)"], alpha=0.25),
           "counter-move (in progress)": lambda: Patch(fc="none", ec=C["counter-move (in progress)"], ls="--"),
           "older correction": lambda: Patch(fc=C["older correction"], ec=C["older correction"], alpha=0.08),
@@ -337,15 +340,13 @@ def daily_swings_fig(v, title, full=False):
     ylo, yhi = lo_ - 0.06 * rng, hi_ + 0.06 * rng
     C = STYLE_COLOR
     styles, labels, dropped = set(), [], []
-    leg_style = {"impulse": "impulse leg", "unconfirmed": "leg in progress"}
     npts = int(S3.load(v.get("s"))["chart_leg_path_points"])
-    for lg in sp["impulses"]:                                              # trend-degree impulses: खऱ्या pivots मधून zig-zag (Abhi review), read_counter
-        st = leg_style[lg.get("style", "impulse")]                         # ने तपासलेला style
+    for lg in sp["impulses"]:                                              # trend-degree legs: खऱ्या pivots मधून zig-zag (Abhi review); CD14:
+        st = leg_gid(lg)                                                   # verified किंवा Abhi-accepted ⇒ घन impulse, बाकी dashed trend leg
         xs, ys = _clip_path(leg_window_path(lg, i0, npts), i0)
         if len(xs) < 2:
             continue
-        kw = dict(lw=3, alpha=0.55) if st == "impulse leg" else dict(lw=2.4, alpha=0.8, ls="--")
-        ax.plot(xs, ys, color=C[st], solid_capstyle="round", gid=st, **kw)
+        ax.plot(xs, ys, color=C[st], solid_capstyle="round", gid=st, **LEG_KW[st])
         styles.add(st)
     for c in sp["boxes"]:                                                  # corrections = boxes (start extreme ⇒ end extreme)
         st = "older correction" if c["faint"] else ("correction (done)" if c["state"] == "done" else "counter-move (in progress)")
@@ -360,7 +361,8 @@ def daily_swings_fig(v, title, full=False):
     if any(b["role"] == "protected" for b in bands):
         styles.add("protected origin")
     ax.set_ylim(ylo, yhi)
-    ax.set_title(f"{title} · Daily structure (trend degree) · " + DS.trend_line(v["q15"]) + " · visual review only", fontsize=10)
+    ax.set_title(f"{title} · Daily structure (trend degree) · " + DS.trend_line(v["q15"], debug=full) + " · visual review only",
+                 fontsize=10)
     lay = _Layout(fig, ax, fr)
     fig.canvas.draw()
 
@@ -520,18 +522,23 @@ def daily_swings_fig(v, title, full=False):
             bb = t.get_window_extent(lay.r)                                # label सरकलेला ⇒ टोकापासून label पर्यंत लहान leader रेषा
             ex, ey = ax.transData.inverted().transform([(bb.x0 + bb.x1) / 2, bb.y0 if up else bb.y1])
             ax.plot([px, ex], [py, ey], color=C["pullback"], lw=0.6, alpha=0.8)
-    for lg in sp["impulses"]:                                              # चालू leg: "decline in progress — impulse not verified"
+    for lg in sp["impulses"]:                                              # चालू leg: "impulse (5 waves)" / "impulse" / "decline in progress"
         if lg.get("state") != "in progress":
             continue
         word = "decline" if lg["dir"] < 0 else "advance"
-        txt = "impulse (5 waves)" if lg.get("verified") else f"{word} in progress — impulse not verified"   # (चालू leg)
+        if full:                                                           # debug: पूर्ण तपासणी (CD14)
+            txt = f"{word} in progress — " + DS.leg_check_text(lg)
+        elif lg.get("verified"):
+            txt = "impulse (5 waves)"
+        else:                                                              # CD14: "not verified" मजकूर default मध्ये नाही
+            txt = "impulse" if lg.get("accepted") else f"{word} in progress"
         pts = [p for p in leg_window_path(lg, i0, npts) if p[0] >= i0]
         dn = lg["dir"] < 0
         tries = []
         for b_, y_ in reversed(pts):
             for dy in (6, 16, 28):
                 tries += [(x(b_), y_, ha, "top" if dn else "bottom", (0, -dy if dn else dy)) for ha in ("right", "center", "left")]
-        t = _place(ax, lay, txt, tries, 7.5, C["leg in progress"] if not lg.get("verified") else C["impulse leg"])
+        t = _place(ax, lay, txt, tries, 7.5, C[leg_gid(lg)])
         if t is None:
             dropped.append(txt)
         else:
@@ -551,6 +558,12 @@ def daily_swings_fig(v, title, full=False):
     ax.grid(alpha=0.12)
     _xticks(bx, fr["timestamp"].to_numpy(), max(1, len(fr) // 24))
     return fig, {"ax": ax, "bx": bx, "frame": fr, "labels": labels, "styles": styles, "dropped": dropped, "spec": sp}
+
+
+def leg_gid(lg):
+    """CD14: chart style (gid) — `daily_swings.drawn_as` "impulse" ⇒ "impulse leg" (घन), "trend leg" ⇒ "trend leg" (dashed)."""
+    from . import daily_swings as DS
+    return "impulse leg" if DS.drawn_as(lg) == "impulse" else "trend leg"
 
 
 def leg_window_path(lg, i0, max_points=15):
@@ -604,6 +617,8 @@ def daily_swings_debug_png(v, title):
     advisory labels (gray = "?"). Not sent to Telegram unless asked. Visual review only."""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+
+    from . import daily_swings as DS
     d, i0 = v["frame"], v["i0"]
     fr = d.iloc[i0:].reset_index(drop=True)
     x = lambda b: b - i0                                                   # noqa: E731
@@ -615,6 +630,17 @@ def daily_swings_debug_png(v, title):
             ax.plot([x(lg["from"]), x(b)], [lg["p0"], lg["p1"]], color="#f76707", lw=3, alpha=0.35, solid_capstyle="round")
         elif lg["class"] == "corrective":
             ax.plot([x(lg["from"]), x(b)], [lg["p0"], lg["p1"]], color="#7048e8", lw=1.2, ls=":", alpha=0.8)
+    npts = int(S3.load(v.get("s"))["chart_leg_path_points"])
+    for lg in (v["q15"].get("objects") or {}).get("impulses") or ():       # CD14: trend-degree legs + पूर्ण तपासणी (फक्त debug मध्ये)
+        xs, ys = _clip_path(leg_window_path(lg, i0, npts), i0)
+        if len(xs) < 2:
+            continue
+        st = leg_gid(lg)
+        ax.plot(xs, ys, color=STYLE_COLOR[st], solid_capstyle="round", **{**LEG_KW[st], "alpha": 0.35})
+        dn = lg["dir"] < 0
+        ax.annotate(DS.leg_check_text(lg), (xs[-1], ys[-1]), textcoords="offset points", xytext=(0, -26 if dn else 26),
+                    ha="right" if xs[-1] > 0.6 * len(fr) else "left", va="top" if dn else "bottom", fontsize=7, color="#a23d00",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#e8590c", lw=0.5, alpha=0.9), annotation_clip=False)
     for sg in v["minor"]["protected"]:                                     # (a) protected
         if sg["to"] < i0:
             continue
@@ -673,10 +699,15 @@ def daily_swings_debug_png(v, title):
            Line2D([], [], color="#e8590c", lw=1.6, label="Q15: impulse origin = protected (X = broken by close)"),
            Line2D([], [], color="#f76707", lw=3, alpha=0.35, label="Q15 leg: impulse"),
            Line2D([], [], color="#7048e8", lw=1.2, ls=":", label="Q15 leg: corrective"),
+           Line2D([], [], color=STYLE_COLOR["impulse leg"], **{**LEG_KW["impulse leg"], "alpha": 0.35},
+                  label="trend leg: impulse (5 waves, or accepted by Abhi)"),
+           Line2D([], [], color=STYLE_COLOR["trend leg"], **{**LEG_KW["trend leg"], "alpha": 0.35},
+                  label="trend leg: impulse not verified (votes in the leg's note)"),
            Patch(fc="white", ec="#5f3dc4", label="Elliott advisory label ('?' = weak vote) — not used in decisions")]
     hdl += [Patch(color=BAND_COLOR[k], label=f"state {k}") for k in ("UP", "DOWN", "NEUTRAL", "RANGE")]
     ax.legend(handles=hdl, loc="upper left", fontsize=7, ncol=2, framealpha=0.9)
-    ax.set_title(f"{title} · Daily swings DEBUG — Dow minor vs degree-aware (Q15) · visual review only", fontsize=11)
+    ax.set_title(f"{title} · Daily swings DEBUG — Dow minor vs degree-aware (Q15) · visual review only\n"
+                 + DS.trend_line(v["q15"], debug=True), fontsize=9)
     ax.grid(alpha=0.15)
     _xticks(bx, fr["timestamp"].to_numpy(), max(1, len(fr) // 24))
     fig.tight_layout()
