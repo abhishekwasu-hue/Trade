@@ -232,8 +232,10 @@ def test_vision_volume_line_in_render_meta():
 
 # ------------------------------------------------------------------------------------------------ review 🟡1–🟡4
 @pytest.mark.parametrize("mirror", [False, True])
-def test_engine_volume_numbers_carried_and_shown_once(mirror):
+def test_engine_volume_numbers_carried_and_shown_once(mirror, monkeypatch):
     from bots_common import level_gate_bot as LGB
+    from bots_common import level_reaction as LR
+    monkeypatch.setitem(LR.DEFAULTS, "ltf_choch", False)                    # हा test volume आकड्यांचा (a2 / c0); c1 चा करार test_level_reaction_c1 मध्ये
     from tests.test_level_reaction import HAND, HAND_V, UP_CTX, _mrun, _vbars
     r = _mrun(HAND, HAND_V, mirror)
     assert r["entry"] and r["vol_mult"] == pytest.approx(2.4, abs=0.05) and not r["vol_na"]
