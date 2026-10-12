@@ -1865,6 +1865,9 @@ pivot) किंवा sweep-close-back-inside, मग शेवटच्या 
 - **Tests:** नवे `tests/test_level_reaction_c1.py`, `tests/test_decision3_confirm.py` (प्रत्येक case आरशासह; main वर 34 / 35 fail). जुन्या tests
   मध्ये फक्त inputs: `test_level_reaction.py` = c1-पूर्व करार (c1 बंद fixture), `NO_MATURE` fixture (15M-only, dominant candle नाही) ⇒ c0 / c1 बंद,
   bot harnesses ना LTF candles, replay fake ला `**kw`. Expectations बदलल्या नाहीत.
+- **Review 🔴1 / 🟡2 / 🟡3:** V-reversal (stair-step, gap-down पहिलाच bar low) आता CHoCH — HL = LL नंतर CHoCH पर्यंतचा सर्वात खालचा low;
+  "against" फक्त LL हाच शेवटचा बंद bar असेल तर; समान low = double bottom; bearish मजकूर "higher highs". c1 आवश्यक पण LTF नाही ⇒ एकदाच
+  RuntimeWarning (`method.warn_ltf_missing`; V22 / level_reaction). Bots: LTF fetch फक्त commitment candle असताना (`confirm` ला callable).
 - **V22 बदल:** `docs/reports/v22_confirmation_c1.md` (NIFTY 2015 → 2024-03, before / after, #23 / #24). उघडे: LB25–LB30.
 
 ## 2026-10-12 · Chart Reader v2 CR3 — marking page + gallery storage (research-only)

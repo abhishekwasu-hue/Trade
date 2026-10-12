@@ -67,6 +67,8 @@ class V22:
             import market_state.core as MC
             ltf = MC.frame(self.df1m, f"{lm}m", pd.to_datetime(self.df1m["timestamp"]).max() + pd.Timedelta(minutes=1))
         self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
+        if self.ltf is None and bool(self.s.get("ltf_choch", True)):
+            M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
         if futures is not None:
             from legs2 import volume as LVOL
             self.levels.A["volume"] = LVOL.bar_volume(self.m15, futures)

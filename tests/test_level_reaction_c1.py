@@ -2,7 +2,7 @@
 function (decision3.method.confirm). प्रत्येक case आरशासह (किंमत p ↦ 2000 − p ⇒ तोच निर्णय, उलट बाजू).
 
 Scenario: 5M setup bars = खालच्या 1M bars चीच बेरीज (सुसंगत data). Demand 990–1000, UP trend. 1M: pullback, area मध्ये lower low 987
-(09:47), higher low 992 (09:50), मग 1M candle चा close शेवटच्या LTF lower high (1002.5, 09:44) वर ⇒ CHoCH (09:53 ला बंद). 5M commitment
+(09:47), मग वरचे lows (सर्वात खालचा 988 — higher low), मग 1M candle चा close शेवटच्या LTF lower high (1002.5, 09:44) वर ⇒ CHoCH (09:53 ला बंद). 5M commitment
 (09:50–09:55) = bullish engulf, window पेक्षा dominant."""
 import pandas as pd
 import pytest
@@ -27,8 +27,10 @@ BASE = [(1002, 1003, 1000, 1000.5), (1000.5, 1001, 997, 997.5), (997.5, 998, 995
 HL = [(996.5, 997, 992, 993), (993, 996, 992.5, 995.5)]                    # 09:50 higher low 992
 CHOCH = BASE + HL + [(995.5, 1003, 995, 1002.8), (1002.8, 1006, 1002, 1005.5), (1005.5, 1009, 1005, 1008)]   # 09:52 close > 1002.5
 WICK = BASE + HL + [(995.5, 1004, 995, 1001.5), (1001.5, 1003.5, 1000.5, 1001), (1001, 1003, 1000.8, 1002.2)]  # wick वर, close नाही
-LOWER = BASE + [(996.5, 997, 985, 985.5), (985.5, 992, 985.5, 991.5), (991.5, 998, 991.5, 997.5), (997.5, 1004, 997.5, 1003.5),
-                (1003.5, 1009, 1003.5, 1008)]                              # 09:50 नवा lower low 985 (sweep नाही), मग V — higher low नाही
+VREV = BASE + [(996.5, 997, 985, 985.5), (985.5, 992, 985.5, 991.5), (991.5, 998, 991.5, 997.5), (997.5, 1004, 997.5, 1003.5),
+               (1003.5, 1009, 1003.5, 1008)]                               # 09:50 नवा lower low 985 (sweep नाही), मग सरळ V (प्रत्येक low वर)
+FALL = BASE + [(996.5, 997, 990, 990.5), (990.5, 991, 986, 986.5), (986.5, 987, 984, 984.5), (984.5, 985, 982, 982.5),
+               (982.5, 983, 980, 980.5)]                                   # LTF feed अजून lower lows (शेवटचा बंद bar च सर्वात खाली)
 
 
 def _case(ltf_tail, vol_commit=200.0, mirror=False, vol=True):
@@ -55,9 +57,12 @@ def _case(ltf_tail, vol_commit=200.0, mirror=False, vol=True):
     return bars, k, m1, area, ctx, others
 
 
-def _eval(ltf_tail, mirror=False, vol_commit=200.0, vol=True, ltf="same", s=None):
+_SAME = object()
+
+
+def _eval(ltf_tail, mirror=False, vol_commit=200.0, vol=True, ltf=_SAME, s=None):
     bars, k, m1, area, ctx, others = _case(ltf_tail, vol_commit, mirror, vol)
-    return LR.evaluate(bars, area, ctx, others, session_start=k, ltf=m1 if ltf == "same" else ltf, tf_minutes=5, s=s)
+    return LR.evaluate(bars, area, ctx, others, session_start=k, ltf=m1 if ltf is _SAME else ltf, tf_minutes=5, s=s)
 
 
 def test_setup_bars_are_the_ltf_aggregate():
@@ -70,18 +75,26 @@ def test_setup_bars_are_the_ltf_aggregate():
 def test_higher_low_close_above_lh_dominant_higher_volume_is_entry(mirror):
     r = _eval(CHOCH, mirror)
     assert r["state"] == LR.CONFIRMED and r["entry"] and r["side"] == (LR.BEAR if mirror else LR.BULL), r["events"]
-    word = "1M CHoCH: lower high 1,008, close below HL" if mirror else "1M CHoCH: higher low 992, close above LH"
+    word = "1M CHoCH: lower high 1,012, close below HL" if mirror else "1M CHoCH: higher low 988, close above LH"
     assert r["ltf_line"].startswith(word) and r["ltf_line"].endswith("at 09:53")
     assert "volume 2.0× window avg" in r["commit_line"]
 
 
 @pytest.mark.parametrize("mirror", [False, True])
 def test_ltf_lower_lows_continuing_is_no_entry(mirror):
-    r = _eval(LOWER, mirror)
+    """5M commitment dominant, पण LTF feed चा शेवटचा बंद bar च सर्वात खालचा (lower lows चालू) ⇒ entry नाही."""
+    r = _eval(CHOCH, mirror, ltf=_case(FALL, mirror=mirror)[2])
     assert not r["entry"] and r["state"] == LR.ARMED and r["ltf_wait"] == LR.R_LTF_AGAINST, r["events"]
     assert any(e[2] == LR.R_LTF_AGAINST for e in r["events"])
-    assert ("still making lower highs" if mirror else "still making lower lows") in r["ltf_line"]
+    assert ("still making higher highs" if mirror else "still making lower lows") in r["ltf_line"]
     assert LGB.status_of(r) == "SKIPPED_GATE_LTF_AGAINST" and LR.R_LTF_AGAINST in LR.describe(r)
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_v_reversal_after_new_low_is_choch_and_entry(mirror):
+    """review 🔴1: नवा LL नंतर सरळ V (प्रत्येक पुढचा low वर, pivot HL नाही) ⇒ lower lows थांबले + LH वर close ⇒ CHoCH ⇒ entry."""
+    r = _eval(VREV, mirror)
+    assert r["entry"] and r["ltf_line"].startswith("1M CHoCH: lower high" if mirror else "1M CHoCH: higher low"), r["events"]
 
 
 @pytest.mark.parametrize("mirror", [False, True])
@@ -154,6 +167,8 @@ def test_ltf_mapping_and_cycle_gate_fetch_per_bot(monkeypatch):
     g = LGB.cycle_gate("classic_sr", "NIFTY", "tok", {}, [area] + others, now, fetch_bars=fetch,
                        fetch_volume=lambda *a: bars[["timestamp", "volume"]])
     assert asked == [5]                                                    # LTF lazy: area result लागेपर्यंत fetch नाही
+    g.result(*others[0])
+    assert asked == [5]                                                    # commitment candle नसलेला area ⇒ LTF fetch नाही (review 🟡3)
     r = g.result(*area)
     assert asked == [5, 1] and r["entry"] and r["ltf_line"].startswith("1M CHoCH")
     g.result(*others[0])
