@@ -67,6 +67,9 @@ class DState:
     target_passed: bool = False  # Q44: रचनेतला target होता पण protected आधीच त्याच्या पलीकडे ⇒ दाखवत नाही ("target passed", "none" नाही)
     wave_a: DPivot = None      # Q49: A1 correction चा 5-wave पहिला पाय — default wave A (chart label "A"); त्याचं टोक
     alt: str = None            # Q49: wave_a चा पर्यायी count ("1") — फक्त debug (Telegram वर wave क्रमांक नाही, Q46)
+    rev: tuple = None          # trend first (setups audit): (HL, मधला H) DOWN trend मध्ये (UP ⇒ (LH, मधला L)) — impulse टोकानंतर उलट
+                               # रचना + impulse-स्वभावाचा पाय (flip चा (अ) नियम, Q29 / Q36) पूर्ण, फक्त origin पलीकडचा close बाकी ⇒ Daily
+                               # रचना trend विरुद्ध; trend-बाजूचे नवे entries नाहीत (trend / protected तसेच — Q15)
 
 
 def _arr(d):
@@ -459,6 +462,51 @@ def fold_impulse(d, s=None):
         return False, (f"{'UP' if nd > 0 else 'DOWN'} रचना पण impulse-स्वभावाचा पाय नाही ((1) {DL.tag(c1)}, (3) {DL.tag(c3)}) "
                        f"⇒ {tag}")
 
+    def rev_shapes(i, held=False):
+        """Q29 (अ) उलट रचना: जुन्या impulse टोकानंतरचा उलट-दिशेचा HL (DOWN trend मध्ये; UP ⇒ LH) जो नंतर (wick ने) ओलांडला नाही,
+        आणि आज Daily close त्याआधीच्या (टोकानंतरच्या) सर्वात टोकाच्या मधल्या swing पलीकडे — (h, lm) जोड्या, सर्वात खालचा HL (UP ⇒
+        सर्वात उंच LH) आधी. फक्त आकार; impulse-स्वभाव (Q36) वेगळा तपासतात. held = True (trend-first रचना, PR #305 review): HL नंतरचा
+        कोणताही close (≤ आज) पलीकडे पुरे — close परत मधल्या swing आत आला तरी HL अखंड असेपर्यंत रचना टिकते (Dow: HL तुटेपर्यंत);
+        clear फक्त HL wick ने तुटणं किंवा नवा impulse टोक (imp_end पुढे)."""
+        nd = -dirn
+        okind = "H" if nd < 0 else "L"
+        e0 = rev_anchor(i) if held else imp_end
+        cands = [p for p in seq if p.kind == okind and p.bar > e0.bar and p.confirm_bar <= i
+                 and (p.price - e0.price) * nd > 0]
+        for h in sorted(cands, key=lambda p: p.price * nd):           # सर्वात उंच LH (DOWN) / सर्वात खालचा HL (UP) आधी
+            later = H[h.bar:i + 1].max() if nd < 0 else L[h.bar:i + 1].min()
+            if (later - h.price) * nd < 0:
+                continue                                                   # नंतर किंमत त्या LH / HL पलीकडे गेली ⇒ origin नाही (review 🟡2)
+            mids = [p for p in seq if p.kind == ("L" if nd < 0 else "H") and e0.bar < p.bar < h.bar]
+            if not mids:
+                continue
+            lm = min(mids, key=lambda p: p.price * -nd)               # (1) चं टोक
+            if held:                                                       # रचना (gate): HL नंतर कधीही (≤ आज) close पलीकडे
+                ok_c = bool((((C[h.bar + 1:i + 1] - lm.price) * nd) > 0).any())
+            else:                                                          # flip: आजचाच close (Q29 त्याच दिवशी)
+                ok_c = (C[i] - lm.price) * nd > 0
+            if ok_c:
+                yield h, lm
+
+    def rev_structure(i):
+        """Trend first (Abhi, setups audit — docs/reports/setups_prA_v1_audit.md): flip चा (अ) नियम — उलट रचना + नव्या दिशेचा impulse-स्वभावाचा पाय (Q36) — origin
+        close-break शिवाय आधीच पूर्ण झाला का? झाला ⇒ (h, lm): Daily रचना trend विरुद्ध (flip ला फक्त origin पलीकडचा close बाकी).
+        Trend / phase / protected बदलत नाहीत (Q15); फक्त ① gate trend-बाजू अडवतो. नाही ⇒ None."""
+        if dirn == 0 or imp_end is None or imp_end.bar >= i:
+            return None
+        e0 = rev_anchor(i)
+        if e0.bar >= i:
+            return None
+        for h, lm in rev_shapes(i, held=True):                             # Daily swings (seq, spec ① Dow) — flip सारखेच; Q22 ने
+            if nature_ok(-dirn, e0, lm, h, i)[0]:                          # गाळलेले swings नाहीत (अहवाल: NIFTY 2020 rally Q22 degree ला
+                return h, lm                                               # एकच पाय ⇒ तसं गाळलं तर defect राहतो)
+        return None
+
+    def rev_anchor(i):
+        """counter-move ची सुरुवात = impulse टोकानंतरचं (imp_end पासून आजपर्यंत) trend-दिशेचं सर्वात टोकाचं बिंदू (≤ i). सहसा imp_end
+        स्वतः; provisional restore (ABC_FIX 1) ने imp_end आधीच्या leg वर परत गेला तरी रचना त्याच टोकापासून (PR #305 review)."""
+        return piv("H" if dirn > 0 else "L", extreme(dirn, imp_end.bar, i))
+
     def flip(i):
         """origin_broken नंतर उलट impulse? (break च्या दिवशीही तपासतो.) Q36 (Abhi): उलट रचनेत नव्या दिशेचा impulse-स्वभावाचा पाय हवा
         (Q28 नियम flip ला सुद्धा; Q29: त्याच दिवशी flip फक्त तेव्हाच) — फक्त corrective पायांची उलट रचना ⇒ flip नाही, origin_broken
@@ -468,27 +516,16 @@ def fold_impulse(d, s=None):
         blocked = ""
         # (अ) मोठी degree: जुन्या impulse टोकापासूनच उलट रचना (LH + मधल्या L खाली close / HL आरसा) आधीच झाली असेल ⇒ लगेच flip;
         #     origin = त्या टोकानंतरचा सर्वात उंच LH (UP ⇒ सर्वात खालचा HL) — minor post-break swing नाही (degree-स्वतंत्र).
-        okind = "H" if nd < 0 else "L"
-        cands = [p for p in seq if p.kind == okind and p.bar > imp_end.bar and p.confirm_bar <= i
-                 and (p.price - imp_end.price) * nd > 0]
         flipped = False
-        for h in sorted(cands, key=lambda p: p.price * nd):           # सर्वात उंच LH (DOWN) / सर्वात खालचा HL (UP) आधी
-            later = H[h.bar:i + 1].max() if nd < 0 else L[h.bar:i + 1].min()
-            if (later - h.price) * nd < 0:
-                continue                                                   # नंतर किंमत त्या LH / HL पलीकडे गेली ⇒ origin नाही (review 🟡2)
-            mids = [p for p in seq if p.kind == ("L" if nd < 0 else "H") and imp_end.bar < p.bar < h.bar]
-            if not mids:
+        for h, lm in rev_shapes(i):
+            ok_n, why_n = nature_ok(nd, imp_end, lm, h, i, tag)
+            if not ok_n:
+                blocked = blocked or why_n
                 continue
-            lm = min(mids, key=lambda p: p.price * -nd)               # (1) चं टोक
-            if (C[i] - lm.price) * nd > 0:
-                ok_n, why_n = nature_ok(nd, imp_end, lm, h, i, tag)
-                if not ok_n:
-                    blocked = blocked or why_n
-                    continue
-                why = start(nd, h, imp_end, abs(imp_end.price - lm.price), abs(h.price - lm.price), i,
-                            f"origin तुटला + उलट रचना ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {h.price:,.2f})", lm.bar)
-                flipped = True
-                break
+            why = start(nd, h, imp_end, abs(imp_end.price - lm.price), abs(h.price - lm.price), i,
+                        f"origin तुटला + उलट रचना ⇒ {'UP' if nd > 0 else 'DOWN'} (origin {h.price:,.2f})", lm.bar)
+            flipped = True
+            break
         post = [] if flipped else [p for p in seq if p.kind == ek and p.bar > broken_at and p.confirm_bar <= i
                                    and (p.price - imp_end.price) * -dirn > 0]   # (आ) break नंतरचा खरा HL / LH (जुन्या टोकाच्या आत; 🟡3)
         if post:
@@ -664,9 +701,12 @@ def fold_impulse(d, s=None):
             elif trend == "RANGE" and band and (C[i] > band[1] or C[i] < band[0]):
                 trend, why, brk, band = "NEUTRAL", "close range पट्ट्याबाहेर", i, None
         # wave / correction पाय / maturity
-        wave = corr_label = counter = None
+        wave = corr_label = counter = rev = None
         mature, targets, risk, cbars, passed = False, (), False, (), False
         if dirn != 0 and phase:
+            if phase in ("correction", "origin_broken"):                   # trend first: same-degree (Q22) counter-move ची रचना trend
+                rev = rev_structure(i)                                     # विरुद्ध? (gate; trend बदल नाही). lower-degree pullback ची
+                                                                           # रचना trend-degree नाही ⇒ तपासत नाही
             wave = f"L{2 * k_imp - 1}" if phase == "impulse" else f"L{2 * k_imp}"   # Q34: mechanical leg index (debug); Elliott लेबल फक्त advisory
             if phase in ("correction", "origin_broken"):
                 prev_px, prev_k, n_after = imp_end.price, imp_end.kind, 0   # फक्त same-degree, H / L आलटून पालटून पाय
@@ -710,7 +750,8 @@ def fold_impulse(d, s=None):
                           (porg if pcorr else tstart_org) if tr else None, counter if tr else None, leg_start if tr else None, cbars if tr else (),
                           bool(risk and tr), sharp if tr else None, evid if tr else (), czone if tr else None,
                           leg_cm if tr else None, bool(passed and tr),
-                          wave_a if (tr and pcorr) else None, "1" if (tr and pcorr and wave_a) else None))
+                          wave_a if (tr and pcorr) else None, "1" if (tr and pcorr and wave_a) else None,
+                          rev=rev if tr else None))
     return out
 
 
@@ -803,6 +844,10 @@ def describe(st):
         txt += " · ⚠ impulse mature (target " + " / ".join(f"{x:,.0f}" for x in st.targets) + ") — मोठा reversal शक्य"
     if st.origin_risk:
         txt += " · ⚠ origin धोक्यात (correction origin जवळ)"
+    if getattr(st, "rev", None) is not None:
+        h, lm = st.rev
+        txt += (f" · ⚠ impulse टोकानंतर रचना trend विरुद्ध ({'HL' if h.kind == 'L' else 'LH'} {h.price:,.0f} + close "
+                f"{lm.price:,.0f} पलीकडे) — trend-बाजूचे entries नाहीत")
     return txt
 
 

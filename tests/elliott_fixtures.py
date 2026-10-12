@@ -262,3 +262,23 @@ def acceptance_nifty():
     pts = [(1000, 0), (1400, 20), (1000, 20), (1350, 20), (1250, 6), (1300, 4), (1150, 8), (1170, 3), (1120, 4), (1160, 4), (1080, 6),
            (1250, 12), (1215, 4), (1235, 3), (1190, 5), (1200, 3), (1120, 6), (1135, 3), (1060, 6), (1075, 3), (996, 7), (1004, 2)]
     return ohlc(pts), {"top4": 1250.0, "parent": 1300.0}
+
+
+# Trend first (Abhi, setups audit — docs/reports/setups_prA_v1_audit.md): a same-degree counter-move that climbs in a staircase of
+# higher lows + higher highs (each step 5 up / 3 down) but stays below the protected origin — the trend label stays DOWN (Q15: no close
+# beyond the origin), yet the Daily structure since the impulse end is UP ⇒ no bear call. `breakdown` adds the DOWN continuation
+# (5 waves to a new low) ⇒ the counter structure is undone and bear calls are allowed again.
+STAIR = build(E, [(E + 40, "m5"), (E + 22, "c3"), (E + 70, "m5"), (E + 52, "c3"), (E + 100, "m5"), (E + 82, "c3"), (E + 122, "m5")])
+
+
+def staircase_dip_back(mirror=False):
+    """PR #305 review: the counter structure turned UP (HL + close above the swing high before it), then price dips back BELOW that
+    swing high while the HL stays intact (no wick through it) ⇒ the Daily structure is still UP (Dow: until the HL breaks)."""
+    up = build(E, [(E + 40, "m5"), (E + 22, "c3"), (E + 70, "m5"), (E + 52, "c3"), (E + 100, "m5")])
+    return ohlc(LEAD + IMPULSE + up + c3(E + 100, E + 12), mirror), {"name": "staircase_dip_back", "dir": 1 if mirror else -1}
+
+
+def staircase_below_origin(mirror=False, breakdown=False):
+    pts = LEAD + IMPULSE + STAIR + (continuation(STAIR[-1]) if breakdown else [])
+    return ohlc(pts, mirror), {"name": "staircase_below_origin", "dir": 1 if mirror else -1, "top": max(STAIR), "origin4": E + 130.0,
+                               "parent": E + I}

@@ -112,12 +112,16 @@ def context_from_state(st, s=None, asof=None):
     ctx = {"ok": False, "trend": st.trend, "sides": set(), "band": st.band, "phase": st.phase, "counter": st.counter,
            "protected": None if st.protected is None else round(float(st.protected.price), 2), "asof": asof,
            "origin_risk": bool(st.origin_risk), "mature": bool(st.mature),
-           "targets": [round(float(x), 2) for x in (getattr(st, "targets", None) or ())]}   # फक्त माहिती (15:45 सारांश) — निर्णयात नाही
+           "targets": [round(float(x), 2) for x in (getattr(st, "targets", None) or ())],   # फक्त माहिती (15:45 सारांश) — निर्णयात नाही
+           "structure_against": getattr(st, "rev", None) is not None}
     if st.trend in ("UP", "DOWN"):
         if st.phase == "origin_broken":
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: protected origin close ने तुटला)"
         elif st.origin_risk:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: origin धोक्यात — Q47)"
+        elif getattr(st, "rev", None) is not None:                         # trend first (setups audit): रचना trend विरुद्ध
+            ctx["reason"] = (f"{R_NO_TREND} (Daily {st.trend}: impulse टोकानंतरची रचना उलट — "
+                             f"{'HL' if st.rev[0].kind == 'L' else 'LH'} {st.rev[0].price:,.0f} + close {st.rev[1].price:,.0f} पलीकडे)")
         elif st.counter == "correction" and not s["allow_parent_correction"]:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: impulse origin तुटला, parent correction चालू)"
         else:
@@ -165,6 +169,10 @@ def call_with_timeout(fn, args=(), timeout=20.0):
     return box.get("v")
 
 
+TREND_CTX_VERSION = "trend-first-2"                                        # Daily gate (decision3 fold / context_from_state) बदलला की
+                                                                           # वाढवा ⇒ आजचा जुन्या code चा cache (ok True) वापरला जात नाही
+
+
 def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=None, lookback_days=3650, s=None, timeout=25.0):
     """आजच्या दिवसासाठी trend context (दिवसातून एकदा गणना, file cache). fetch(access_token, symbol) ⇒ daily DataFrame (default Upstox
     'day' candles, ~10 वर्षं — पूर्ण history सारखीच अवस्था देतात). अपयश ⇒ ok False (fail-closed). Cache फक्त पूर्ण fetch चा (≥ 30 bars,
@@ -180,9 +188,10 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if os.path.exists(p):
             c = json.load(open(p, encoding="utf-8"))
-            c["sides"] = set(c.get("sides") or ())
-            c["band"] = tuple(c["band"]) if c.get("band") else None
-            return c
+            if c.get("engine") == TREND_CTX_VERSION:                       # जुन्या code चा (deploy आधीचा) cache ⇒ नवी गणना
+                c["sides"] = set(c.get("sides") or ())
+                c["band"] = tuple(c["band"]) if c.get("band") else None
+                return c
     except (OSError, ValueError):
         pass
     try:
@@ -196,7 +205,8 @@ def daily_trend(symbol, access_token=None, today=None, fetch=None, cache_dir=Non
     try:
         if complete:
             os.makedirs(os.path.dirname(p), exist_ok=True)
-            json.dump({**ctx, "sides": sorted(ctx["sides"])}, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+            json.dump({**ctx, "sides": sorted(ctx["sides"]), "engine": TREND_CTX_VERSION}, open(p, "w", encoding="utf-8"),
+                      ensure_ascii=False)
         elif not ctx.get("ok"):
             os.makedirs(os.path.dirname(pf), exist_ok=True)
             json.dump({"at": _clock(), "ctx": {**ctx, "sides": []}}, open(pf, "w", encoding="utf-8"), ensure_ascii=False)
