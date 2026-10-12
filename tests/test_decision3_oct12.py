@@ -122,6 +122,67 @@ def test_trendline_confluence_area_known_at_and_mirror(case):
     assert V.tl_areas(t, "RANGE") == []
 
 
+def _fake_V(closes, piv, sig=10.0):
+    from types import SimpleNamespace as NS
+    c = np.asarray(closes, float)
+    lv = NS(A={"open": c, "high": c + 1, "low": c - 1, "close": c}, sig1h=np.full(len(c), sig), known_pivots=lambda t: piv)
+    return NS(levels=lv, s=S3.load())
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_swing_line_dies_on_close_through_and_wrong_side_area_dropped(mirror):
+    """Review: p2 नंतर (t − 1 पर्यंत) close रेघेपलीकडे ⇒ रेघ नाही (k_line सारखं); confluence area किंमतीच्या चुकीच्या बाजूला ⇒ नाही. आरसा."""
+    from types import SimpleNamespace as NS
+    sg = -1.0 if mirror else 1.0
+    mid = 100.0
+    f = (lambda x: 2 * mid - x) if mirror else (lambda x: x)                  # noqa: E731
+    d = M.UP if mirror else M.DOWN
+    kind = "L" if mirror else "H"
+    piv = [NS(kind=kind, price=f(120.0), bar=0, confirm_bar=2), NS(kind=kind, price=f(110.0), bar=10, confirm_bar=12)]   # रेघ: 120 ⇒ 110, −1/bar
+    closes = [f(100.0)] * 20                                                    # सगळे closes रेघेखाली (bear) ⇒ रेघ जिवंत
+    ln = TL.swing_line(_fake_V(closes, piv), 15, d)
+    assert ln is not None and abs(ln["value_t"] - f(105.0)) < 1e-6 and (ln["slope"] < 0) == (not mirror)
+    broken = list(closes)
+    broken[13] = f(108.0)                                                       # bar 13: रेघ 107 ⇒ close 108 पलीकडे
+    assert TL.swing_line(_fake_V(broken, piv), 15, d) is None
+    assert TL.swing_line(_fake_V(broken, piv), 13, d) is not None               # t चा स्वतःचा close मोजत नाही (③ breakout तपासणी)
+    V = _fake_V(closes, piv)
+    role = "support" if mirror else "resistance"
+    near = {"id": 1, "role": role, "lo": min(f(103.0), f(108.0)), "hi": max(f(103.0), f(108.0)), "births": ["a:D2"], "sweeps": 1, "fresh": True}
+    assert [a["id"] for a in TL.confluence_areas(V, 15, d, [near])] == ["1+TL"]
+    V2 = _fake_V([f(112.0)] * 15 + [f(112.0)], piv)                              # किंमत area च्या पलीकडे (resistance खाली राहिला)
+    V2.levels.A["close"][:15] = f(100.0)
+    assert TL.confluence_areas(V2, 15, d, [near]) == []
+
+
+def test_tl_birth_does_not_raise_grade_over_parent(case):
+    """Review: "tl" जन्म grade वाढवत नाही — confluence area चा level ★ / conviction parent level इतकाच; confluence फक्त पुरावा-नोंद."""
+    mirror, (V, m15, fut, ltf, bars) = case
+    trend = "UP" if mirror else "DOWN"
+    t = bars[2]
+    ok1, _w, _st, ctx = V.step1(t)
+    act = V.levels.active(t, trend)
+    areas = V.tl_areas(t, trend, act)
+    assert areas
+    a = areas[0]
+    par = next(x for x in act if x["id"] == a["parent_level"])
+    _d1, _p1, e_par = V._level_eval(t, trend, par, ctx["cap"], ctx["notes"])
+    _d2, _p2, e_tl = V._level_eval(t, trend, a, ctx["cap"], ctx["notes"])
+    assert e_tl["evidence"]["tl_confluence"] is True and e_par["evidence"]["tl_confluence"] is None
+    assert e_tl["evidence"]["level_star"] == e_par["evidence"]["level_star"]
+    assert e_tl["conv_score"] == e_par["conv_score"]
+
+
+def test_replay_loaders_drop_nifty_holdout_rows():
+    """Review: replay चे 15M / 5M / FUT frames data_policy मधून — NIFTY holdout row कधीच नाही; इतर symbols तसेच."""
+    from scripts import replay_day as RD
+    ts = pd.to_datetime(["2023-05-02 09:15", "2025-01-06 09:15", "2026-10-09 09:15"])
+    df = pd.DataFrame({"timestamp": ts, "volume": [1.0, 2.0, 3.0]})
+    got = RD.allowed(df, "NIFTY")
+    assert list(got["volume"]) == [1.0, 3.0]
+    assert len(RD.allowed(df, "BANKNIFTY")) == 3 and RD.allowed(None, "NIFTY") is None
+
+
 def test_trendline_alone_is_not_an_area():
     """रेघ आहे पण horizontal level रेघेजवळ नाही ⇒ confluence area नाही (रेघ एकटी area नाही — OPEN_QUESTIONS)."""
     V, *_ = _run(False)

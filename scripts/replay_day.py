@@ -58,6 +58,20 @@ def bins_15m(idx5):
     return g[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
+def allowed(df, symbol):
+    """NIFTY: data_policy (annotation) — sealed holdout चा एकही 15M / 5M / FUT row engine मध्ये येत नाही (Daily warm-up वेगळा: Q33).
+    इतर symbols ⇒ तसाच. None / रिकामा ⇒ तसाच."""
+    if df is None or not len(df):
+        return df
+    from decision3 import history as HI
+    if not HI.is_nifty(symbol):
+        return df
+    from elliott import data_policy as DP
+    d = df.copy()
+    d["timestamp"] = _naive(d["timestamp"])
+    return DP.filter_allowed(d, "annotation")
+
+
 def _read_any(paths):
     fr = []
     for p in paths:
@@ -79,6 +93,7 @@ def load_real(a, day):
     ltf = MC.frame(m1, "5m", pd.to_datetime(m1["timestamp"]).max() + pd.Timedelta(minutes=1)) if m1 is not None and len(m1) else None
     exp = a.export_dir or os.path.join(TRADE_DATA, "live_export", str(day.date()))
     idx5 = _read_any([os.path.join(exp, f"oe_index_5min_{sym}.parquet")])
+    idx5 = allowed(idx5, sym)
     if idx5 is not None and len(idx5):
         idx5["timestamp"] = _naive(idx5["timestamp"])
         last = pd.to_datetime(m15["timestamp"]).max().normalize() if len(m15) else pd.Timestamp.min
@@ -88,10 +103,12 @@ def load_real(a, day):
         n5 = new[["timestamp", "open", "high", "low", "close"]].assign(bar_end=new["timestamp"] + pd.Timedelta(minutes=5))
         ltf = n5 if ltf is None else pd.concat([ltf[["timestamp", "bar_end", "open", "high", "low", "close"]], n5], ignore_index=True)
     m15 = m15[pd.to_datetime(m15["timestamp"]).dt.normalize() <= day].reset_index(drop=True)
+    m15 = allowed(m15, sym)
+    ltf = allowed(ltf, sym)
     PE.guard(m15)
     fpaths = [os.path.join(exp, f"oe_futures_5min_{sym}.parquet")] + sorted(glob.glob(os.path.join(TRADE_DATA, "futures*", f"oe_futures_5min_{sym}*.parquet")))
-    fut = _read_any(fpaths)
-    if fut is not None:
+    fut = allowed(_read_any(fpaths), sym)
+    if fut is not None and len(fut):
         fut["timestamp"] = _naive(fut["timestamp"])
         fut = fut.drop_duplicates(["timestamp"] + (["contract"] if "contract" in fut.columns else []), keep="first")
     daily = None
@@ -224,7 +241,7 @@ def load_upstox(a, day):
     daily = daily[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
     daily["bar_end"] = pd.to_datetime(daily["timestamp"]).dt.normalize() + pd.Timedelta(hours=15, minutes=30)
     fpath = a.futures or os.path.join(ROOT, "data", f"oe_futures_5min_{sym}.parquet")
-    fut = _read_any([fpath])
+    fut = allowed(_read_any([fpath]), sym)
     if fut is not None and len(fut):
         fut["timestamp"] = _naive(fut["timestamp"])
         fut = fut.drop_duplicates(["timestamp"] + (["contract"] if "contract" in fut.columns else []), keep="first")

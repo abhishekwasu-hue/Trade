@@ -62,7 +62,8 @@ def swing_line(V, t, d):
     """Trade-बाजूची तिरकी रेघ (spec ② "trend-दिशेची trendline रेघ तिथे (+)"; "तीच साखळी, मृत्यू पलीकडच्या swing ने"), t ला माहीत
     trend-degree (`level_degree`, D2) swings वरून: bear call (d = DOWN) ⇒ उतरती resistance — शेवटचा confirmed swing high (p2) आणि त्याआधीचा
     त्याच्यापेक्षा उंच high (p1) ज्यांच्यामधला कोणताही high रेघेपलीकडे (वर, σ_1H × tl_touch_sigma पेक्षा जास्त) नाही; bull put आरसा (चढती
-    support, lows). नवा swing रेघेपलीकडे ⇒ तोच शेवटचा swing ⇒ जुनी रेघ आपोआप मेली. रिटर्न {p1, p2, slope, touches, value_t, tol} / None."""
+    support, lows). नवा swing रेघेपलीकडे ⇒ तोच शेवटचा swing ⇒ जुनी रेघ आपोआप मेली; p2 नंतर (t − 1 पर्यंत) एखादा close रेघेपलीकडे ⇒ रेघ
+    तुटली (k_line सारखं; t चा स्वतःचा close = ③ breakout तपासणी). रिटर्न {p1, p2, slope, touches, value_t, tol} / None."""
     if d not in (UP, DOWN):
         return None
     lv = V.levels
@@ -83,6 +84,9 @@ def swing_line(V, t, d):
             return y1 + slope * (b - b1)
         if any((y - line(b)) * (-d) > tol for b, y in pts[i + 1:-1]):     # मधला swing रेघेपलीकडे ⇒ ही जोडी रेघ नाही
             continue
+        C = lv.A["close"]
+        if any((C[j] - line(j)) * (-d) > 0 for j in range(b2 + 1, t)):    # p2 नंतर (t − 1 पर्यंत) close रेघेपलीकडे ⇒ रेघ तुटली (k_line सारखं)
+            continue
         touches = sum(1 for b, y in pts[i:] if abs(y - line(b)) <= tol)
         return {"p1": [b1, round(y1, 2)], "p2": [b2, round(y2, 2)], "slope": round(slope, 4), "touches": touches,
                 "value_t": round(line(t), 2), "tol": round(tol, 2)}
@@ -92,8 +96,9 @@ def swing_line(V, t, d):
 def confluence_areas(V, t, d, cands):
     """Abhi (12 Oct): तिरकी रेघ + horizontal trade-बाजूचा level ⇒ confluence area = दोघांच्या पट्ट्यांचा overlap (रेघेचा पट्टा = t ला
     रेघेची किंमत ± max(σ_1H × tl_touch_sigma, अर्धी किमान level रुंदी); overlap किमान level रुंदीपेक्षा अरुंद ⇒ मध्याभोवती किमान रुंदी).
-    cands = t ला trade-बाजूचे जिवंत levels (snapshot dicts). रेघ फक्त t ला माहीत swings वरून (lookahead नाही); स्पर्श < tl_min_touches ⇒
-    काहीच नाही. रेघ एकटी area नाही (spec ②: level जन्म a–d; OPEN_QUESTIONS). रिटर्न [area dict] (births + "tl", `tl` = रेघ)."""
+    cands = ② चे active levels (`Levels.active`, तोच जवळचा-N संच — वेगळी अंतर-मर्यादा नाही); area किंमतीच्या चुकीच्या बाजूला ⇒ नाही. रेघ फक्त t ला माहीत swings वरून (lookahead नाही); स्पर्श < tl_min_touches ⇒
+    काहीच नाही. रेघ एकटी area नाही (spec ②: level जन्म a–d; OPEN_QUESTIONS). रिटर्न [area dict] (births + "tl", `tl` = रेघ;
+    "tl" grade वाढवत नाही — parent level चा ★ तसाच, confluence फक्त पुरावा-नोंद, OPEN_QUESTIONS D12-6)."""
     ln = swing_line(V, t, d)
     if ln is None or ln["touches"] < int(V.s["tl_min_touches"]):
         return []
@@ -111,6 +116,8 @@ def confluence_areas(V, t, d, cands):
         if hi - lo < wmin:
             m = (lo + hi) / 2.0
             lo, hi = m - wmin / 2.0, m + wmin / 2.0
+        if (d == DOWN and hi < c) or (d == UP and lo > c):                 # चुकीच्या बाजूला (resistance close खाली / support वर) ⇒ नाही
+            continue
         dist = 0.0 if lo <= c <= hi else (lo - c if c < lo else c - hi)
         out.append({**x, "id": f"{x['id']}+TL", "lo": round(lo, 2), "hi": round(hi, 2), "births": list(x["births"]) + ["tl"],
                     "dist": round(dist, 2), "above": lo > c, "below": hi < c, "tl": ln, "parent_level": x["id"]})

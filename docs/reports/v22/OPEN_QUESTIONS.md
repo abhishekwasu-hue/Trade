@@ -221,6 +221,7 @@
 | D12-3 | तिरकी रेघ किती स्पर्श? | 2 (anchors; `tl_min_touches`) — spec "पक्की ≥ 3" = माहिती (`tl.touches`) | ≥ 3 आवश्यक |
 | D12-4 | पुरावा-खिडकी (`evidence_start`) | 09:15 (सत्राची सुरुवात) — opening candle 2-candle form / संदर्भ म्हणून; entry खिडकी 09:30 … 15:15 तशीच | entry_start (जुनं) |
 | D12-5 | ⑦ target 12-Oct सारख्या case मध्ये: sweep वर SL + जवळचा support target ⇒ R:R < 3 शक्य | Q14 तसाच (I_end / जवळचा जिवंत level — जो जवळ); बदल नाही | पहिला target जवळचा level, R:R I_end वर (areas-quality branch) |
+| D12-6 | Trendline confluence ने grade वाढावा का? (spec ② "trendline रेघ तिथे (+)") | नाही: confluence area चा ★ / conviction parent level इतकाच; `tl_confluence` फक्त पुरावा-नोंद (वजन नाही). Area फक्त ② च्या active (जवळचे `active_levels_max`) levels वरून, किंमतीच्या योग्य बाजूला; p2 नंतर close रेघेपलीकडे ⇒ रेघ नाही | `tl_confluence` ला evidence वजन (उदा. `level_star` सारखं) |
 
 ## Touch / levels audit (TRADE_SESSION_TELEGRAM_CLEANUP §4–§5, one-bot §7(e)) — `docs/reports/v22_missed_levels_touch.md`
 

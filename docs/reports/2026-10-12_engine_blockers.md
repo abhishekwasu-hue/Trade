@@ -10,8 +10,10 @@ This covers the reference case in TRADE_SESSION_ONE_BOT_TOMORROW §7: Daily DOWN
 Real 1m data up to 9 Oct was used to check the state before 12 Oct. Once the export lands, run:
 
 ```
-python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --daily <nifty_daily_is> <nifty_daily_ext> <nifty_daily_post> \
-        --dry-run-telegram --out-dir <dir>
+# VPS (Upstox historical, token from .env, read-only: no store writes, no Telegram); FUT volume from data/oe_futures_5min_NIFTY.parquet if present
+python3 scripts/replay_day.py --date 2026-10-12 --symbol NIFTY --dry-run --json out.json
+# sandbox regression on local data through 9 Oct
+python3 scripts/replay_day.py --date 2026-10-09 --symbol NIFTY --source local --daily <nifty_daily_is> <nifty_daily_ext> <nifty_daily_post>
 ```
 
 ## Findings per blocker
@@ -21,7 +23,7 @@ python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --daily <nifty_dai
 | a | Code running on 12 Oct | Covered by the separate `2026-10-12_no_signals.md` diagnosis, which needs VPS `diag.txt` (inside the same pending export). The live `engine_signal` service still runs **decision2**, not V22. | — (deploy / wiring task) |
 | b | Maturity cap | **Blocking.** At every bar on 8–9 Oct the state was `Daily DOWN · impulse · mature (Q44 target 22,183) ⇒ cap weak`. "Weak" means WAIT, so no V22 setup was possible on any bar while the trend was mature. Protected 24,774 was intact and there was no counter impulse. | Maturity is now evidence only. If structure is intact (`mature_intact`: phase ≠ origin_broken and counter ≠ correction), conviction drops one step (A ⇒ B; B stays B) and the bar still becomes a setup. If structure is broken, the old weak cap still applies. Row field `mature_step_down`. |
 | c | 09:15 candle | `entry_start` = 09:30 also excluded 09:15 from `_same_window`. The opening candle therefore could not be the first half of a 2-candle form (engulf / star / tweezer …) or the reference candle. Touch, sweep ★, the liquidity sweep and the a2 / c0 / c1 window **already** included 09:15. | New `evidence_start` = 09:15 (session open, "व्याख्या"). The opening candle now counts as evidence; the entry window (`entry_start` … `entry_end`) is unchanged. |
-| d | Sloping resistance | V22 had no sloping area (`trendline.py` only had the K inner line, ⑤). On real data the D2 swing highs 22,809 (30 Sep) → 22,732 (6 Oct) form a descending line at **≈22,654 at 12-Oct 09:15**, which matches Abhi's line (FUT ≈22,667). **There was no live horizontal level there** (see e), so no confluence. | `trendline.swing_line` and `confluence_areas`: a line through confirmed trend-degree (D2) swings (lower highs / higher lows), using only swings known at t. Line + trade-side horizontal level ⇒ an extra area = the overlap band (births + `tl`, counts as level ★). A trendline on its own is **not** an area (spec ② births a–d): OPEN_QUESTIONS D12-2. |
+| d | Sloping resistance | V22 had no sloping area (`trendline.py` only had the K inner line, ⑤). On real data the D2 swing highs 22,809 (30 Sep) → 22,732 (6 Oct) form a descending line at **≈22,654 at 12-Oct 09:15**, which matches Abhi's line (FUT ≈22,667). **There was no live horizontal level there** (see e), so no confluence. | `trendline.swing_line` and `confluence_areas`: a line through confirmed trend-degree (D2) swings (lower highs / higher lows), using only swings known at t. The line dies when a close after p2 (up to t − 1) goes through it. Line + one of ②'s active levels (the nearest `active_levels_max`, so no new distance cap) ⇒ an extra area = the overlap band, which must be on the trade side of price. A `tl` birth does **not** raise the grade: the area keeps its parent level's ★, and `tl_confluence` is recorded as evidence only (D12-6). A trendline on its own is **not** an area (spec ② births a–d; D12-2). |
 | e | Missing 1H level 22,600–22,670 | **Blocking, same blind spot as 9 Oct.** Band 22,476–22,809 (flipped to resistance on 1 Oct) died on 8 Oct 11:15 under the old-role death rule ("swing 22,397 broken by close"). On 9 Oct the only resistances were 22,715–22,724 and 22,767–22,776, and a spike to ≈22,600 touches neither. | Not duplicated. TL1 `level_death_side="role"` is on `claude/v22-touch-levels`; `replay_day.py` passes it explicitly (it has no effect until that branch merges). |
 | f | FUT volume | V22 on `main` had **no volume at all** (`Levels.A` was OHLC only), so a2 and c0 were NA. With the merged confirmation branch, V22 takes `futures=` → `legs2.volume.bar_volume`: near-month contract, each 15M bar = sum of the three 09:15-anchored 5M bins, matched to the spot `bar_start` exactly. The level-gate live path (`level_gate_bot.attach_futures_volume`) also matches by exact bar start (Upstox index and FUT candles are both bar-start stamped). **No misalignment found.** The stored FUT 5M data ends on 8 Oct, so 9 Oct has FUT volume on 0/24 bars in replay. | Test `test_futures_volume_15m_is_sum_of_0915_anchored_5m_bins` |
 
@@ -31,7 +33,7 @@ Still open, expected on real data (not verifiable without the export):
 
 ## Replay of 12 Oct (synthetic fixture, a2 + c0 + c1 active)
 
-`python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --synthetic --dry-run-telegram --out-dir <dir>`
+`python3 scripts/replay_day.py --date 2026-10-12 --synthetic --dry-run --out-dir <dir>`
 
 | bar | decision | reason |
 |---|---|---|
@@ -53,5 +55,6 @@ Synthetic prices only demonstrate the gate path. They are not a claim about 12-O
 - V22 review charts were not regenerated. On NIFTY, mature periods (e.g. 8–9 Oct) can now show 🟡 setups where they used to show ⏳.
 
 ## Tests
-`tests/test_decision3_oct12.py` (11, mirrored): first-hour setup with a2/c0/c1 and no lookahead, the maturity step, the opening candle as evidence,
-the TL confluence area being known at t, a trendline alone not being an area, and the FUT 15M = 5M-bin sums.
+After merging `v22-confirmation` @e2d4a88 and `v22-touch-levels` @4757bc4 (TL1 "role" is now the default): on local data the 9-Oct replay shows resistance 22,476–22,809 alive again (blocker e gone). Review 🟡 fixes are in: TL close-through, wrong-side area, no grade lift from `tl`, and replay frames passed through `data_policy`.
+`tests/test_decision3_oct12.py` (17, mirrored): first-hour setup with a2/c0/c1 and no lookahead, the maturity step, the opening candle as evidence,
+the TL confluence area being known at t, a trendline alone not being an area, the FUT 15M = 5M-bin sums, TL close-through and wrong-side areas, no grade lift from `tl`, holdout filtering in the replay loaders, and the read-only Upstox replay path (mocked).

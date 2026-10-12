@@ -148,22 +148,22 @@ class V22:
         return ok, why, st, ctx
 
     def step2(self, t, trend, band=None):
-        act = self.levels.active(t, trend, band) + self.tl_areas(t, trend)
+        act = self.levels.active(t, trend, band)
+        act = act + self.tl_areas(t, trend, act)
         if not act:
             return False, "trade-बाजूचा जिवंत 1H level नाही", act
         a = act[0]
         star = "★" * a["sweeps"]
         return True, f"{a['role']} {a['lo']:,.0f}–{a['hi']:,.0f} ({'+'.join(a['births'])}){star} · अंतर {a['dist']:,.0f}", act
 
-    def tl_areas(self, t, trend):
-        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + horizontal trade-बाजूचा level ⇒ confluence area
-        (`trendline.confluence_areas`). DOWN ⇒ वरचे resistance + उतरती रेघ; UP ⇒ खालचे support + चढती रेघ; RANGE / बाकी ⇒ नाही."""
+    def tl_areas(self, t, trend, act=None):
+        """② Abhi (12 Oct): तिरकी trendline (trend-degree swings, t ला माहीत) + ② चेच active horizontal levels (जवळचे `active_levels_max`)
+        ⇒ confluence area (`trendline.confluence_areas`). DOWN ⇒ उतरती रेघ + resistance; UP ⇒ चढती + support; RANGE / बाकी ⇒ नाही."""
         if trend not in ("UP", "DOWN"):
             return []
-        d = M._dir(trend)
-        role = LV.RES if d == M.DOWN else LV.SUP
-        cands = [x for x in self.levels.snapshot(t) if x["role"] == role and not (x["below"] if d == M.DOWN else x["above"])]
-        return TL.confluence_areas(self, t, d, cands)
+        if act is None:
+            act = self.levels.active(t, trend)
+        return TL.confluence_areas(self, t, M._dir(trend), act)
 
     def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
         """एका active level साठी ③–⑦ + पुरावे ⇒ (decision, checklist part, extra)."""
@@ -187,14 +187,15 @@ class V22:
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         chk["⑥"] = [ok6, why6]
         last3 = range(max(0, t - 2), t + 1)
-        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D", "tl")), "fresh": lvl["fresh"],
+        ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
               "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1, "second_attempt": k["legs"] >= 2,
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
               "rsi_div": None, "volume_low": None, "pattern": None,
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
               "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
-              "tl_break": True if (tl and tl["broken"]) else None}            # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
+              "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
+              "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
         side = "buy" if d == M.DOWN else "sell"
         mine = [x for x in sw if x["side"] == side]
