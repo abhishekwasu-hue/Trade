@@ -485,6 +485,8 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "rr": None if rr is None else round(float(rr), 2), "form": cm.get("form"), "commit_grade": cm.get("grade"),
                     "grade": grade, "evidence": evid, "confirm_bar": int(t),
                     "confirm_ts": str(pd.Timestamp(bars["timestamp"].iloc[t])),
+                    "arm_bar": int(arm), "arm_ts": str(pd.Timestamp(bars["timestamp"].iloc[arm])),   # chart: study window (volume pane)
+                    **_volume_out(frame, A, arm, t, (lo, hi), d, cm),          # chart / caption: engine चेच volume आकडे (output only)
                     "study": f"inside {kind}: " + (zs.get("line") or "no clear handover read"),
                     "commit_line": "commitment: " + " · ".join(x for x in (form_name(cm.get("form"), side), btxt, vtxt) if x)}
             if cf["choch"] and cf["choch"].get("done"):
@@ -529,6 +531,26 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     out["ltf_wait"] = info.get("ltf_wait") if state == ARMED else None   # c1: ARMED मधलं LTF कारण (signal log / dashboard)
     if out["ltf_wait"]:
         out["ltf_line"] = info.get("ltf_line")
+    return out
+
+
+VOLUME_BARS_OUT = 80                                                       # chart साठी bar volumes (setup panel ≈ 60 bars)
+
+
+def _volume_out(frame, A, arm, t, area, d, cm):
+    """Output only (निर्णयात नाही): c0 चा vol_mult / vol_na, त्याच window ची trend-side / counter-side सरासरी (× window avg) आणि
+    t पर्यंतचे शेवटचे bars चे volume — Vision chart / caption तेच आकडे दाखवतात (पुन्हा futures fetch नाही, दोन वेगळे आकडे नाहीत)."""
+    from decision3 import volume_pane as VP
+    v = A.get("volume")
+    out = {"vol_mult": cm.get("vol_mult"), "vol_na": bool(cm.get("vol_na")) if cm.get("vol_na") is not None else v is None,
+           "vol_trend_mult": None, "vol_counter_mult": None, "bar_volumes": []}
+    if v is None:
+        return out
+    st = VP.study(frame.iloc[:t + 1], vol=v[:t + 1], area=area, d=d, commit=int(t), arm=int(arm))
+    out["vol_trend_mult"], out["vol_counter_mult"] = st["trend_mult"], st["counter_mult"]
+    k0 = max(0, int(t) + 1 - VOLUME_BARS_OUT)
+    ts = pd.to_datetime(frame["timestamp"]).iloc[k0:t + 1]
+    out["bar_volumes"] = [[str(pd.Timestamp(x)), (float(y) if np.isfinite(y) and y > 0 else None)] for x, y in zip(ts, v[k0:t + 1])]
     return out
 
 

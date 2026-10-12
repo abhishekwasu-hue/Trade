@@ -2016,6 +2016,35 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
 
+## 2026-10-12 · Volume pane — प्रत्येक setup / proposal chart वर (Abhi: "the volume test is not visible on these charts")
+
+**काय केलं (फक्त charts — engine निर्णय बदलत नाहीत):**
+- `decision3/volume_pane.py` — एकच implementation: source (index ⇒ futures volume NIFTY FUT / BANKNIFTY FUT / SENSEX FUT, MCX ⇒ contract चा
+  स्वतःचा, नाही ⇒ "volume: NA (grade cap B)"), `bar_volume` (asof नंतर संपणारी row कधीच नाही), `study` (window = area arrival → commitment;
+  trend-side / counter-side, window सरासरी = commitment आधीचे window bars — c0 चीच व्याख्या, commitment ×, caption ची एक ओळ), matplotlib
+  आणि plotly panes. Window / बाजू / commitment engine output मधून (`normalize_info`: evaluate चे `arm_bar` / `confirm_bar`, gate tags चे
+  `arm_ts` / `confirm_ts`, `vol_mult`, confirmation branch चा a2 / c0 / c1 dict — `study_window`, `choch_ts` …); नसेल तर helper bars + area +
+  दिशा वरून evaluate चाच arrival नियम वापरतो आणि `computed` मध्ये नोंद.
+- Renderers: Vision chart (`vision/chart.py` — level-bot CONFIRMED §9, manual /paper, सगळे Vision gate signals) setup + higher panel खाली pane
+  (image size तोच); worker index साठी front futures 1m volume आणतो (`default_fetch_volume`, अपयश ⇒ NA) आणि caption मध्ये एक volume ओळ.
+  `decision3/charts.py` m15_png / daily_png (V22 Telegram view) खाली pane. V22 setup review chart scratchpad मधून repo मध्ये:
+  `decision3/setup_chart.py` + `scripts/v22_setup_charts.py` (run / render) — Daily + 15M + 5M, प्रत्येकाखाली volume; Q44 फक्त Daily +
+  caption (15M वर नाही); holdout Daily bars कधीच नाहीत; पहिली ओळ साधं English "What to look at", engine codes caption च्या "Engine detail"
+  भागात; manifest `--tag debug`.
+- `level_reaction.evaluate` plan मध्ये `arm_bar` / `arm_ts` (फक्त output; निर्णय तेच), `gate_tags` मध्ये `arm_ts`.
+
+**Tests:** `tests/test_volume_pane.py` (15: तीन renderers × volume / NA, mirror, no-future, engine window, caption एक ओळ, Q44 15M वर नाही) +
+vision / level bots / decision3 चे संबंधित tests पास.
+
+**Samples (trade-data, tag debug):** `review/v22/volume_pane_samples/` — recent 2026-09-30 13:15 (NIFTY FUT 5M collector + bhavcopy Daily:
+commitment 0.2× window avg) आणि setups_prA_v1 #15 / #16 / #21 (intraday futures इतिहास नाही ⇒ 15M / 5M NA; Daily = bhavcopy near-month FUT).
+30 setups चा पूर्ण re-run confirmation / area branches merge नंतर. उघडे: VP1–VP6.
+**Review fixes (PR #306):** caption / pane मध्ये engine (c0) चेच आकडे — evaluate plan + gate tags मध्ये `vol_mult` / `vol_na` /
+`vol_trend_mult` / `vol_counter_mult` / `bar_volumes` (output only); engine आकडे नसतील तेव्हाच chart अंदाज, ओळ "volume (chart est.): …".
+Worker: gate चे bar volumes असतील तर futures fetch नाही; नाहीतर fetch कमाल 5 s (2 दिवस lookback), timeout ⇒ NA. मोठा TF panel: arrival
+आणि commitment एकाच bar मध्ये ⇒ साधे bars (खोटा 1.0× नाही); एका bar च्या window ला तुलना नाही. Index च्या spot volume column ला FUT
+म्हणून कधीच दाखवत नाही. Tests: worker soft failure / timeout / injection / caption ओळ (+6).
+
 ## 2026-10-12 · One bot (Abhi: TRADE_SESSION_ONE_BOT_TOMORROW §1–§6) — `claude/one-bot-tomorrow`
 
 **काय केलं:**

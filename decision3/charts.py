@@ -12,6 +12,7 @@ import pandas as pd  # noqa: E402
 from . import levels as LV  # noqa: E402
 from . import settings as S3  # noqa: E402
 from . import method as M  # noqa: E402
+from . import volume_pane as VP  # noqa: E402
 
 TREND_COLOR = {"UP": "#d8f3dc", "DOWN": "#ffd6d6", "RANGE": "#fff3bf", "NEUTRAL": "#eeeeee", "UNKNOWN": "#ffffff"}
 
@@ -56,7 +57,20 @@ def _why_en(st):
     return ""
 
 
-def daily_png(daily_df, states, title, upto=None, start=0):
+def _vol_axes(figsize, ratio=(4, 1)):
+    """Price ax + त्याखाली volume pane (एकच x)."""
+    fig, (ax, axv) = plt.subplots(2, 1, figsize=figsize, sharex=True, gridspec_kw={"height_ratios": list(ratio), "hspace": 0.04})
+    return fig, ax, axv
+
+
+def _col(df, name, symbol=None):
+    """Bars चा स्वतःचा volume — index (spot) चा कधीच नाही (तो FUT म्हणून दाखवला जाऊ नये) ⇒ NaN."""
+    if VP.is_index(symbol) or name not in df.columns:
+        return np.full(len(df), np.nan)
+    return df[name].to_numpy(float)
+
+
+def daily_png(daily_df, states, title, upto=None, start=0, symbol=None, vol=None):
     """Daily: candles, trend पार्श्वभूमी, confirmed swings (HH/HL/LH/LL), protected रेघ, range पट्टा. start ⇒ फक्त त्या index पासून
     दाखवतो (engine पूर्ण history वर; Q33: NIFTY holdout तारखा chart वर नाहीत)."""
     d = daily_df.reset_index(drop=True)
@@ -65,7 +79,7 @@ def daily_png(daily_df, states, title, upto=None, start=0):
         raise ValueError("daily_png: no daily candle to show after start (sealed or not enough data)")
     start = max(0, int(start))
     d = d.iloc[start:n]
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax, axv = _vol_axes((12, 6.2))
     for i in range(start, n):
         ax.axvspan(i - start - 0.5, i - start + 0.5, color=TREND_COLOR.get(states[i].trend, "#fff"), lw=0)
     _candles(ax, d)
@@ -92,7 +106,9 @@ def daily_png(daily_df, states, title, upto=None, start=0):
         ax.axhline(x, color="#868e96", lw=0.8, ls="--")
         ax.text(n - start - 0.5, x, f" target {x:,.0f}", color="#868e96", fontsize=7, va="top")
     ax.set_title(f"{title} · Daily trend {last.trend}" + _why_en(last), fontsize=10)
-    _xticks(ax, d["timestamp"].to_numpy(), max(1, (n - start) // 15))
+    vv = np.asarray(vol, dtype=float)[start:n] if vol is not None else _col(d, "volume", symbol or title)   # index ⇒ futures vol द्यावा
+    VP.draw_daily_mpl(axv, vv, source=VP.source_label(symbol or title), partial_last=False)   # volume नाही ⇒ NA
+    _xticks(axv, d["timestamp"].to_numpy(), max(1, (n - start) // 15))
     return _png(fig)
 
 
@@ -190,12 +206,13 @@ def story(r):
     return "\n".join(lines[:6])
 
 
-def m15_png(V, t, title, bars=60, r=None, debug=False):
+def m15_png(V, t, title, bars=60, r=None, debug=False, vol=None, symbol=None):
     """15M (C1 default): level band, highlighted trigger candle, entry / SL / target and the setup mark - nothing else. debug=True
-    adds the B2 trigger, trapped zones, sweeps and the K line (old dense view)."""
+    adds the B2 trigger, trapped zones, sweeps and the K line (old dense view). Volume pane below (vol = array aligned with V.m15,
+    else V.m15["volume"], else "volume: NA (grade cap B)")."""
     i0 = max(0, t - bars + 1)
     m = V.m15.iloc[i0:t + 1].reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(13, 5.5))
+    fig, ax, axv = _vol_axes((13, 7.0))
     _candles(ax, m)
     if r and r.get("level"):
         lv = r["level"]
@@ -239,7 +256,11 @@ def m15_png(V, t, title, bars=60, r=None, debug=False):
         ax.annotate(("▲ " if up else "▼ ") + lab, (len(m) - 1, float(m["close"].iloc[-1])), textcoords="offset points",
                     xytext=(0, -26 if up else 18), ha="center", fontsize=11, color="#2f9e44" if r["mark"] == "✅" else "#e8590c")
     ax.set_title(f"{title} · 15M · {r['decision'] if r else ''} {r.get('conviction') or '' if r else ''}", fontsize=10)
-    _xticks(ax, m["timestamp"].to_numpy(), max(1, len(m) // 12))
+    vv = (np.asarray(vol, dtype=float)[i0:t + 1] if vol is not None else _col(m, "volume", symbol or title))
+    lv = (r or {}).get("level") or {}
+    VP.draw_mpl(axv, VP.study(m, vol=vv, info=r, commit=len(m) - 1, symbol=symbol or title,
+                              area=(lv["lo"], lv["hi"]) if lv.get("lo") is not None else None, d=lv.get("role")))
+    _xticks(axv, m["timestamp"].to_numpy(), max(1, len(m) // 12))
     return _png(fig)
 
 
