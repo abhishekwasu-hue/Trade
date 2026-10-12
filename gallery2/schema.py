@@ -14,7 +14,8 @@
   • id / symbol / timeframe / window / split manifest शी जुळतात; window data policy मध्ये (NIFTY holdout कधीच नाही).
   • legs: start_bar < end_bar, क्रमाने, एकमेकांवर चढत नाहीत (एका leg चा शेवट = पुढच्याची सुरुवात चालते); ts = त्या bar चा timestamp;
     up leg low ⇒ high, down leg high ⇒ low; किंमत त्या bar च्या टोकाशी `PRICE_TOL_MR` × median range (window) आत; label हवा.
-  • trend: from_bar वाढता, state यादीतला; zones: low < high, kind demand / supply, किंमत window च्या आसपास.
+  • trend: किमान एक state, from_bar वाढता, state यादीतला; zones: low < high, kind demand / supply, from_bar window मध्ये,
+    किंमत window च्या आसपास. Split manifest पेक्षा वेगळा ⇒ चूक (test chart कधीच dev होत नाही).
 """
 import math
 import numbers
@@ -131,8 +132,10 @@ def validate(rec, cand, bars=None):
         err.append("marked_at तारीख नाही")
     n = len(bars) if bars is not None else None
     err += _legs(rec.get("legs") or [], bars, n)
+    if not any(t.get("state") in TREND_STATES for t in rec.get("trend") or []):
+        err.append("trend: किमान एक trend state हवा (from_bar + up / down / range / uncertain)")
     err += _trend(rec.get("trend") or [], bars, n)
-    err += _zones(rec.get("zones") or [], bars)
+    err += _zones(rec.get("zones") or [], bars, n)
     return err
 
 
@@ -193,7 +196,7 @@ def _trend(trend, bars, n):
     return err
 
 
-def _zones(zones, bars):
+def _zones(zones, bars, n=None):
     err = []
     if bars is not None and len(bars):
         lo_w, hi_w = float(bars["low"].min()), float(bars["high"].max())
@@ -202,6 +205,8 @@ def _zones(zones, bars):
         lo, hi = _num(z.get("low")), _num(z.get("high"))
         if z.get("kind") not in ZONE_KINDS:
             err.append(f"zone {i}: kind {z.get('kind')!r} — demand / supply")
+        if z.get("from_bar") is not None and not _bar_ok(z.get("from_bar"), n):
+            err.append(f"zone {i}: from_bar {z.get('from_bar')!r} window बाहेर")
         if lo is None or hi is None or not lo < hi:
             err.append(f"zone {i}: low < high हवं ({z.get('low')}, {z.get('high')})")
             continue

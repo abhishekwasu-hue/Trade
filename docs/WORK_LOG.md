@@ -1863,6 +1863,15 @@ Dashboard: ANALYZE ⇒ "Reader v2 Gallery (प्रयोगिक)" — chart 
 AppTest) + `test_app_navigation` (15 पानं) + `tests/test_reader2*.py` — सगळे pass. Order / broker / paid API / Vision नाही; काहीही calibrate केलं
 नाही. **तुमच्यासाठी तयार:** VPS deploy नंतर dashboard वर 40 charts marking (≈ 10 मिनिटं / chart). उघडे प्रश्न: OPEN_QUESTIONS CR-Q13–CR-Q21.
 
+
+### 2026-10-12 · Chart Reader v2 CR3 — independent review (PR #302) नंतर दुरुस्ती
+**🟡1** chart बदलून परत आल्यावर तक्ते (legs / trend / zones) त्या chart च्या state वरून पुन्हा (जुने बदल परत येत नाहीत). **🟡2** labels folder call वेळी
+(`READER2_GALLERY_LABELS`, नाहीतर `<trade-data>/reader2_gallery/labels`); folder नाही ⇒ स्पष्ट `LabelsMissing`. **🟡3** जतन optimistic lock (revision +
+split; दुसऱ्या tab / device ने मधेच जतन ⇒ "conflict" संदेश, overwrite नाही); DB वाचन अपयश ⇒ error, Save बंद. **🟡4** trend ओळी bar क्रमाने, किमान एक
+state हवा, default रिकामी ओळ अडवत नाही. **🟡5** रिकामा window ⇒ error. **🟡6** manifest `--force` शिवाय बदलत नाही; split वेगळा असलेली नोंद ⇒ error,
+Save बंद (test chart कधीच dev होत नाही). ⚪ NIFTY golden file नावाच्या pattern ने, zone from_bar तपासणी, boundary test मध्ये gallery2, CREATE TABLE
+एकदाच, export अपयश ⇒ raise + जुन्या files काढतो. **Tests:** `tests/test_reader2*.py` + `test_app_navigation` — 304 pass / 40 xfail (आधीचेच).
+
 ## 2026-10-11 · PR A (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX — Q55 + Q44 + family)
 
 **काय केलं (decision3):**

@@ -44,7 +44,8 @@ def _state(cid, rec):
         allst[cid] = {"points": pts, "labels": labels, "broken": broken, "nonce": 0,
                       "trend": [{"from_bar": t["from_bar"], "state": t["state"]} for t in rec.get("trend", [])] or [{"from_bar": 0, "state": None}],
                       "zones": [{"kind": z["kind"], "low": z["low"], "high": z["high"], "from_bar": z.get("from_bar")} for z in rec.get("zones", [])],
-                      "notes": rec.get("notes", ""), "marker": rec.get("marker", "Abhi"), "rev": 0}
+                      "notes": rec.get("notes", ""), "marker": rec.get("marker", "Abhi"), "rev": 0,
+                      "revision": int(rec.get("revision", 0) or 0)}
     return allst[cid]
 
 
@@ -148,10 +149,13 @@ def _rows(df, cols):
 
 
 def record_from_state(cand, bars, s, now=None):
+    """Session state ⇒ record. Trend ओळी from_bar ने क्रमाने; state नसलेली ओळ (bar 0 / रिकामा — default placeholder) वगळली; इतर
+    state नसलेल्या ओळी ठेवल्या (validation कारण सांगते). किमान एक state नसेल तर validation ची स्पष्ट चूक."""
     legs = SC.from_points(bars, s["points"], s["labels"])
+    rows = [t for t in s["trend"] if not (t.get("state") is None and _num(t.get("from_bar")) in (None, 0.0))]
+    rows.sort(key=lambda t: (_num(t.get("from_bar")) is None, _num(t.get("from_bar")) or 0))
     trend = [{"from_bar": int(t["from_bar"]), "from_ts": SC.ts_str(bars["timestamp"].iloc[int(t["from_bar"])]), "state": t["state"]}
-             if _num(t.get("from_bar")) is not None and 0 <= int(t["from_bar"]) < len(bars) else dict(t)
-             for t in s["trend"] if t.get("state") is not None or _num(t.get("from_bar")) is not None]
+             if _num(t.get("from_bar")) is not None and 0 <= int(t["from_bar"]) < len(bars) else dict(t) for t in rows]
     zones = []
     for z in s["zones"]:
         q = {"kind": z.get("kind"), "low": _num(z.get("low")), "high": _num(z.get("high"))}
@@ -172,7 +176,11 @@ def render():
         return
     cs = GS.charts(manifest)
     store = GS.default_store()
-    recs = store.load_all()
+    try:
+        recs = store.load_all()
+    except GS.StoreError as exc:
+        st.error(f"साठवलेली marking वाचता आली नाही — Save बंद (जुनी marking पुसली जाऊ नये म्हणून): {exc}")
+        return
     pr = GS.progress(manifest, recs)
     c1, c2, c3 = st.columns(3)
     c1.metric("Marked", f"{pr['marked']}/{pr['total']}")
@@ -204,7 +212,17 @@ def render():
     except GD.DP.HoldoutError as exc:
         st.error(f"Holdout — दाखवत नाही: {exc}")
         return
+    if bars is None or not len(bars):
+        st.error(f"{cid}: या window मध्ये एकही candle नाही ({cand['start']} → {cand['end']}, source {cand['source']}) — data / manifest तपासा.")
+        return
     s = _state(cid, recs.get(cid))
+    if st.session_state.get("g2_last") != cid:                         # chart बदलला ⇒ तक्ते साठवलेल्या state वरून पुन्हा (जुने widgets नाहीत)
+        st.session_state["g2_last"] = cid
+        s["rev"] += 1
+        s["nonce"] += 1
+    split_err = GS.split_mismatch(recs.get(cid), cand)
+    if split_err:
+        st.error(split_err + " — Save बंद.")
     if s.get("broken"):
         st.warning("जतन केलेले legs सलग नव्हते — मधल्या gap साठी नवा leg (label रिकामा) तयार केला; label निवडा किंवा बिंदू काढा.")
     for k in ("g2_msg", "g2_ok"):
@@ -262,21 +280,25 @@ def render():
     s["notes"] = n1.text_area("Notes", value=s.get("notes", ""), height=70, key=f"g2_notes_{cid}_{s['rev']}")
     s["marker"] = n2.text_input("Marker", value=s.get("marker") or "Abhi", key=f"g2_marker_{cid}_{s['rev']}")
     b1, b2 = st.columns([1, 1])
-    if b1.button("💾 जतन करा", type="primary", key=f"g2_save_{cid}"):
+    if b1.button("💾 जतन करा", type="primary", key=f"g2_save_{cid}", disabled=bool(split_err)):
         rec = record_from_state(cand, bars, s)
         try:
-            ok = GS.save_record(store, rec, cand, bars)
+            GS.save_record(store, rec, cand, bars, expected_revision=s["revision"])
         except ValueError as exc:
             st.error("जतन केलं नाही — दुरुस्त करा:\n\n- " + "\n- ".join(str(exc).split("; ")))
+        except GS.ConflictError as exc:
+            st.error(f"जतन केलं नाही — मधेच दुसरीकडे (tab / device) बदल झाला: {exc}. तुमचे बदल लिहून ठेवा, मग 🔄 पुन्हा उघडा.")
+        except GS.StoreError as exc:
+            st.error(f"साठवता आलं नाही: {exc}")
         else:
-            if ok:
-                st.session_state["g2_ok"] = f"जतन झालं ({cid}) — {len(rec['legs'])} legs, {len(rec['trend'])} trend, {len(rec['zones'])} zones"
-                st.rerun()
-            st.error("साठवता आलं नाही (DB connection / folder) — log पाहा.")
+            s["revision"] += 1
+            st.session_state["g2_ok"] = f"जतन झालं ({cid}) — {len(rec['legs'])} legs, {len(rec['trend'])} trend, {len(rec['zones'])} zones"
+            st.rerun()
     if b2.button("🔄 जतन केलेली marking पुन्हा उघडा", key=f"g2_reload_{cid}"):
-        rev = s["rev"] + 1
+        rev, nonce = s["rev"] + 1, s["nonce"] + 1
         st.session_state["g2_state"].pop(cid, None)
-        _state(cid, recs.get(cid))["rev"] = rev
+        fresh = _state(cid, recs.get(cid))
+        fresh["rev"], fresh["nonce"] = rev, nonce
         st.rerun()
 
     with chart_slot:

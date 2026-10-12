@@ -4,7 +4,9 @@
 Split 28 dev / 12 test seeded (seed manifest मध्ये). NIFTY holdout चा bar कधीच वाचत नाही (gallery2/data.py). Manifest मध्ये फक्त
 तारखा / tags / आकडे — candles नाहीत (public repo). Data नसलेले symbol / TF (उदा. SENSEX) manifest च्या `missing` मध्ये.
 
-    python3 scripts/reader2_gallery_candidates.py [--seed 7] [--out gallery2/data/manifest.json]
+    python3 scripts/reader2_gallery_candidates.py [--seed 7] [--out gallery2/data/manifest.json] [--force]
+
+असलेला manifest --force शिवाय कधीच बदलत नाही (marking सुरू झाल्यावर split / ids स्थिर हवेत).
 """
 import argparse
 import json
@@ -22,7 +24,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=GC.SEED)
     ap.add_argument("--out", default=GS.MANIFEST)
+    ap.add_argument("--force", action="store_true", help="असलेला manifest बदला (split बदलू शकतो — marking सुरू झाल्यावर नको)")
     a = ap.parse_args(argv)
+    if os.path.exists(a.out) and not a.force:
+        print(f"⛔ {a.out} आधीच आहे — overwrite नाही (split / ids बदलले तर Abhi ची marking चुकीच्या split मध्ये जाईल). "
+              "मुद्दाम बदलायचा असेल तर --force.")
+        return 2
     slots, cases, missing = GC.real_inputs()
     m = GC.build(slots, cases, seed=a.seed, missing=missing)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
@@ -34,4 +41,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

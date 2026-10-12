@@ -67,6 +67,10 @@ class _Cur:
     def fetchall(self):
         return self.c.fetchall()
 
+    @property
+    def rowcount(self):
+        return self.c.rowcount
+
 
 class _Conn:
     def __init__(self, c):
@@ -107,6 +111,8 @@ def test_valid_record_passes_and_points_round_trip():
     (lambda r: r["zones"][0].update(kind="pivot"), "kind"),
     (lambda r: r.update(split="test"), "split"),
     (lambda r: r["legs"][0].update(start_ts="2001-01-01"), "start_ts"),
+    (lambda r: r.update(trend=[]), "किमान एक trend state"),
+    (lambda r: r["zones"][0].update(from_bar=10_000), "zone 1: from_bar"),
 ])
 def test_schema_rejects_bad_marking(mutate, needle):
     bars = _daily("2018-01-01", 120)
@@ -181,16 +187,22 @@ def test_banknifty_rows_in_nifty_holdout_dates_dropped_unless_exception():
 
 
 # ------------------------------------------------------------------ storage
-def test_dir_store_round_trip_and_split_move(tmp_path):
+def test_dir_store_round_trip_lock_and_no_split_move(tmp_path):
     bars = _daily("2018-01-01", 120)
     cand = _cand(bars)
     rec = _good(bars, cand)
     st = GS.DirStore(str(tmp_path))
     assert GS.save_record(st, rec, cand, bars)
-    assert st.load_all() == {cand["id"]: rec}
-    rec2 = dict(rec, split="test")
-    assert st.save(rec2)
-    assert not (tmp_path / "dev" / f"{cand['id']}.json").exists() and (tmp_path / "test" / f"{cand['id']}.json").exists()
+    assert st.load_all() == {cand["id"]: dict(rec, revision=1)}
+    with pytest.raises(GS.ConflictError):                                  # नवा समजून पुन्हा (revision 0) ⇒ lost update नाही
+        st.save(dict(rec, notes="stale tab"))
+    assert st.save(dict(rec, notes="edit"), expected_revision=1)
+    with pytest.raises(GS.ConflictError):                                  # जुन्या revision वरून (दुसरा tab)
+        st.save(dict(rec, notes="stale"), expected_revision=1)
+    assert st.load_all()[cand["id"]]["notes"] == "edit" and st.load_all()[cand["id"]]["revision"] == 2
+    with pytest.raises(GS.ConflictError):                                  # split कधीच बदलत नाही (test ⇄ dev)
+        st.save(dict(rec, split="test"), expected_revision=2)
+    assert (tmp_path / "dev" / f"{cand['id']}.json").exists() and not (tmp_path / "test").exists()
 
 
 def test_save_record_refuses_invalid(tmp_path):
@@ -203,15 +215,22 @@ def test_save_record_refuses_invalid(tmp_path):
     assert not any(tmp_path.rglob("*.json"))
 
 
-def test_db_store_upsert_revision_and_export(tmp_path):
+def test_db_store_optimistic_lock_and_export(tmp_path):
     db = sqlite3.connect(":memory:")
     store = GS.DbStore(conn_factory=lambda: _Conn(db))
     b1, b2 = _daily("2018-01-01", 120, seed=1), _daily("2019-01-01", 120, seed=2)
     c1, c2 = _cand(b1, split="dev"), _cand(b2, split="test")
     r1, r2 = _good(b1, c1), _good(b2, c2)
-    assert store.save(r1) and store.save(r2) and store.save(dict(r1, notes="edited"))
+    assert store.save(r1) and store.save(r2) and store.save(dict(r1, notes="edited"), expected_revision=1)
+    with pytest.raises(GS.ConflictError):
+        store.save(dict(r1, notes="other tab"), expected_revision=1)       # मधेच revision 2 झाली
+    with pytest.raises(GS.ConflictError):
+        store.save(dict(r1, notes="new?"))                                 # row आहे ⇒ insert नाही
+    with pytest.raises(GS.ConflictError):
+        store.save(dict(r2, split="dev"), expected_revision=1)             # test chart कधीच dev होत नाही
     got = store.load_all()
     assert got[c1["id"]]["notes"] == "edited" and got[c1["id"]]["revision"] == 2 and got[c2["id"]]["revision"] == 1
+    assert got[c2["id"]]["split"] == "test"
     manifest = {"charts": [c1, c2]}
     bars = {c1["id"]: b1, c2["id"]: b2}
     got["UNKNOWN"] = dict(r1, id="UNKNOWN")
@@ -220,6 +239,70 @@ def test_db_store_upsert_revision_and_export(tmp_path):
     on_disk = json.loads((tmp_path / "dev" / f"{c1['id']}.json").read_text(encoding="utf-8"))
     assert "revision" not in on_disk and on_disk["notes"] == "edited" and on_disk["legs"] == r1["legs"]
     assert (tmp_path / "test" / f"{c2['id']}.json").exists()
+
+
+def test_db_load_failure_raises_not_empty():
+    with pytest.raises(GS.StoreError):
+        GS.DbStore(conn_factory=lambda: None).load_all()
+    with pytest.raises(GS.StoreError):
+        GS.DbStore(conn_factory=lambda: None).save(_good(_daily("2018-01-01", 120), _cand(_daily("2018-01-01", 120))))
+
+
+def test_create_table_runs_once_per_store():
+    db = sqlite3.connect(":memory:")
+    seen = []
+
+    class Spy(_Conn):
+        def cursor(self):
+            cur = _Cur(self.c)
+            real = cur.execute
+
+            def ex(sql, params=()):
+                seen.append(sql.strip().split()[0])
+                return real(sql, params)
+            cur.execute = ex
+            return cur
+    store = GS.DbStore(conn_factory=lambda: Spy(db))
+    b = _daily("2018-01-01", 120)
+    c = _cand(b)
+    store.save(_good(b, c))
+    store.load_all()
+    store.load_all()
+    assert seen.count("CREATE") == 1
+
+
+def test_export_removes_stale_files_and_fails_loudly(tmp_path, monkeypatch):
+    b1, b2 = _daily("2018-01-01", 120, seed=1), _daily("2019-01-01", 120, seed=2)
+    c1, c2 = _cand(b1, split="dev"), _cand(b2, split="test")
+    m = {"charts": [c1, c2]}
+    GS.export_json({c1["id"]: _good(b1, c1), c2["id"]: _good(b2, c2)}, m, str(tmp_path))
+    (tmp_path / "dev" / "OLD_CHART.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "keep.txt").write_text("x", encoding="utf-8")
+    res = GS.export_json({c1["id"]: _good(b1, c1)}, m, str(tmp_path))     # c2 DB मधून गेला, OLD_CHART manifest मध्ये नाही
+    assert sorted(res["removed"]) == ["dev/OLD_CHART.json", f"test/{c2['id']}.json"]
+    assert (tmp_path / "dev" / f"{c1['id']}.json").exists() and (tmp_path / "keep.txt").exists()
+    bad = dict(_good(b1, c1), legs=[])
+    bad["trend"] = []
+    res = GS.export_json({c1["id"]: bad}, m, str(tmp_path))                # अवैध ⇒ आधीची वैध export तशीच
+    assert c1["id"] in res["invalid"] and (tmp_path / "dev" / f"{c1['id']}.json").exists()
+
+    def boom(path, rec):
+        raise OSError("disk full")
+    monkeypatch.setattr(GS, "_write", boom)
+    with pytest.raises(GS.StoreError):
+        GS.export_json({c1["id"]: _good(b1, c1)}, m, str(tmp_path))
+
+
+def test_labels_dir_resolved_at_call_time_and_missing_folder_is_loud(tmp_path, monkeypatch):
+    monkeypatch.delenv("READER2_GALLERY_LABELS", raising=False)
+    monkeypatch.setenv("TRADE_DATA_DIR", str(tmp_path / "td"))
+    assert GS.labels_dir() == str(tmp_path / "td" / "reader2_gallery" / "labels")
+    monkeypatch.setenv("READER2_GALLERY_LABELS", str(tmp_path / "lbl"))
+    assert GS.labels_dir() == str(tmp_path / "lbl")
+    with pytest.raises(GS.LabelsMissing):
+        GS.calibration_labels({"charts": []})
+    (tmp_path / "lbl").mkdir()
+    assert GS.calibration_labels({"charts": []}) == {}
 
 
 def test_export_skips_invalid_and_uses_manifest_split(tmp_path):
@@ -395,26 +478,52 @@ def _page_app():
     page.render()
 
 
-def _page_setup(tmp_path, monkeypatch):
+def _page_setup(tmp_path, monkeypatch, store="dir", extra=()):
+    """BANKNIFTY Daily synthetic CSV (240 bars) ⇒ chart A = bars 0–119, B = 120–239 (+ `extra` cands)."""
     from streamlit.testing.v1 import AppTest
-    bars = _daily("2018-01-01", 120, seed=5)
+    allb = _daily("2018-01-01", 240, seed=5)
     (tmp_path / "td" / "banknifty").mkdir(parents=True)
     with gzip.open(tmp_path / "td" / "banknifty" / "BANKNIFTY_D.csv.gz", "wt") as fh:
-        bars.drop(columns=["volume"]).to_csv(fh, index=False)
+        allb.drop(columns=["volume"]).to_csv(fh, index=False)
+    bars = allb.iloc[:120].reset_index(drop=True)
     cand = _cand(bars)
-    (tmp_path / "manifest.json").write_text(json.dumps({"charts": [cand], "missing": [{"symbol": "SENSEX", "timeframe": "D"}]}), encoding="utf-8")
+    cand_b = _cand(allb.iloc[120:].reset_index(drop=True), split="test")
+    cands = [cand, cand_b] + list(extra)
+    (tmp_path / "manifest.json").write_text(json.dumps({"charts": cands, "missing": [{"symbol": "SENSEX", "timeframe": "D"}]}),
+                                            encoding="utf-8")
     monkeypatch.setenv("TRADE_DATA_DIR", str(tmp_path / "td"))
     monkeypatch.setenv("READER2_GALLERY_MANIFEST", str(tmp_path / "manifest.json"))
-    monkeypatch.setenv("READER2_GALLERY_STORE", str(tmp_path / "store"))
+    monkeypatch.setenv("READER2_GALLERY_STORE", str(tmp_path / "store") if store == "dir" else store)
     GD._RAW.clear()
     return AppTest.from_function(_page_app, default_timeout=60), bars, cand
+
+
+def _add(at, cid, bar, kind):
+    at.number_input(key=f"g2_bar_{cid}").set_value(int(bar)).run()
+    at.radio(key=f"g2_hl_{cid}").set_value(kind).run()
+    at.button(key=f"g2_add_{cid}").click().run()
+
+
+def _edit(at, cid, **kw):
+    """Tables (data_editor) AppTest मधून भरता येत नाहीत ⇒ state थेट + nonce / rev वाढवून तक्ते त्यातून पुन्हा बनवतो."""
+    s = at.session_state["g2_state"][cid]
+    s.update(kw)
+    s["nonce"] += 1
+    s["rev"] += 1
+
+
+def _pivots(bars):
+    lo, hi = bars["low"].to_numpy(), bars["high"].to_numpy()
+    a = int(np.argmin(lo[:40]))
+    b = a + 5 + int(np.argmax(hi[a + 5:a + 40]))
+    return a, b
 
 
 def test_page_renders_and_adds_points_without_error(tmp_path, monkeypatch):
     at, bars, cand = _page_setup(tmp_path, monkeypatch)
     at.run()
     assert not at.exception, at.exception
-    assert any(mt.value == "0/1" for mt in at.metric)
+    assert any(mt.value == "0/2" for mt in at.metric)
     lo = int(np.argmin(bars["low"].to_numpy()[:40]))
     at.number_input(key=f"g2_bar_{cand['id']}").set_value(lo).run()
     at.radio(key=f"g2_hl_{cand['id']}").set_value("L").run()
@@ -435,6 +544,143 @@ def test_page_shows_saved_marking(tmp_path, monkeypatch):
     GS.DirStore(str(tmp_path / "store")).save(_good(bars, cand))
     at.run()
     assert not at.exception, at.exception
-    assert any(mt.value == "1/1" for mt in at.metric)
+    assert any(mt.value == "1/2" for mt in at.metric)
     assert len(at.session_state["g2_state"][cand["id"]]["points"]) == 3
     GD._RAW.clear()
+
+
+def test_page_labels_trend_save_and_reload_round_trip(tmp_path, monkeypatch):
+    at, bars, cand = _page_setup(tmp_path, monkeypatch)
+    cid = cand["id"]
+    at.run()
+    a, b = _pivots(bars)
+    _add(at, cid, a, "L")
+    _add(at, cid, b, "H")
+    zl = float(bars["low"].iloc[a])
+    _edit(at, cid, labels=["impulse"], notes="round trip",
+          trend=[{"from_bar": 30, "state": "up"}, {"from_bar": 0, "state": "down"}],          # क्रम उलटा ⇒ save वेळी क्रमाने
+          zones=[{"kind": "demand", "low": zl, "high": zl + 5.0, "from_bar": None}])
+    at.run()
+    at.button(key=f"g2_save_{cid}").click().run()
+    assert not at.exception and not at.error, [e.value for e in at.error]
+    assert at.success
+    saved = GS.DirStore(str(tmp_path / "store")).load_all()[cid]
+    assert saved["revision"] == 1 and saved["notes"] == "round trip"
+    assert saved["legs"] == SC.from_points(bars, [(a, "L"), (b, "H")], ["impulse"])
+    assert [(t["from_bar"], t["state"]) for t in saved["trend"]] == [(0, "down"), (30, "up")]
+    assert saved["zones"] == [{"kind": "demand", "low": zl, "high": zl + 5.0}]
+    at.button(key=f"g2_reload_{cid}").click().run()                        # पुन्हा उघडलं ⇒ तेच
+    s = at.session_state["g2_state"][cid]
+    assert s["points"] == [(a, "L"), (b, "H")] and s["labels"] == ["impulse"] and s["revision"] == 1
+    assert [(t["from_bar"], t["state"]) for t in s["trend"]] == [(0, "down"), (30, "up")]
+    _edit(at, cid, notes="second")
+    at.run()
+    at.button(key=f"g2_save_{cid}").click().run()                          # edit ⇒ revision 2
+    assert not at.error, [e.value for e in at.error]
+    again = GS.DirStore(str(tmp_path / "store")).load_all()[cid]
+    assert again["revision"] == 2 and again["notes"] == "second" and again["legs"] == saved["legs"]
+    GD._RAW.clear()
+
+
+def test_page_placeholder_trend_needs_state_then_saves(tmp_path, monkeypatch):
+    at, bars, cand = _page_setup(tmp_path, monkeypatch)
+    cid = cand["id"]
+    at.run()
+    a, b = _pivots(bars)
+    _add(at, cid, a, "L")
+    _add(at, cid, b, "H")
+    _edit(at, cid, labels=["impulse"])                                     # trend = default placeholder (state नाही)
+    at.run()
+    at.button(key=f"g2_save_{cid}").click().run()
+    assert any("किमान एक trend state" in e.value for e in at.error)
+    _edit(at, cid, trend=[{"from_bar": 0, "state": "up"}])                 # placeholder ला state दिला ⇒ चालतं
+    at.run()
+    at.button(key=f"g2_save_{cid}").click().run()
+    assert not at.error and at.success
+    GD._RAW.clear()
+
+
+def test_page_save_conflict_is_reported(tmp_path, monkeypatch):
+    at, bars, cand = _page_setup(tmp_path, monkeypatch)
+    cid = cand["id"]
+    store = GS.DirStore(str(tmp_path / "store"))
+    store.save(_good(bars, cand))
+    at.run()
+    store.save(dict(_good(bars, cand), notes="other device"), expected_revision=1)   # मधेच दुसरीकडे जतन (revision 2)
+    _edit(at, cid, notes="mine")
+    at.run()
+    at.button(key=f"g2_save_{cid}").click().run()
+    assert any("दुसरीकडे" in e.value for e in at.error)
+    assert store.load_all()[cid]["notes"] == "other device"
+    GD._RAW.clear()
+
+
+def test_page_switching_charts_rebuilds_tables_from_state(tmp_path, monkeypatch):
+    at, bars, cand = _page_setup(tmp_path, monkeypatch)
+    a_id = cand["id"]
+    at.run()
+    _edit(at, a_id, trend=[{"from_bar": 3, "state": "up"}], zones=[{"kind": "supply", "low": 1.0, "high": 2.0, "from_bar": None}])
+    at.run()
+    rev_a = at.session_state["g2_state"][a_id]["rev"]
+    ids = list(GS.charts(GS.load_manifest()))
+    at.selectbox(key="g2_chart").set_value(ids[1]).run()
+    at.selectbox(key="g2_chart").set_value(a_id).run()
+    assert not at.exception
+    s = at.session_state["g2_state"][a_id]
+    assert s["rev"] > rev_a                                                # नवे तक्ते (जुने widget deltas नाहीत)
+    assert s["trend"] == [{"from_bar": 3, "state": "up"}] and s["zones"][0]["kind"] == "supply"
+    GD._RAW.clear()
+
+
+def test_page_load_failure_disables_saving(tmp_path, monkeypatch):
+    def fail(self):
+        raise GS.StoreError("db down")
+    monkeypatch.setattr(GS.DbStore, "load_all", fail)
+    at, bars, cand = _page_setup(tmp_path, monkeypatch, store="db")
+    at.run()
+    assert not at.exception and any("Save बंद" in e.value for e in at.error)
+    assert not [b for b in at.button if b.key and b.key.startswith("g2_save_")]
+    GD._RAW.clear()
+
+
+def test_page_empty_window_shows_error(tmp_path, monkeypatch):
+    empty = {**_cand(_daily("2010-01-04", 30)), "n": 3}                       # CSV 2018 पासून ⇒ 2010 window मध्ये candles नाहीत
+    at, bars, cand = _page_setup(tmp_path, monkeypatch, extra=[empty])
+    at.run()
+    at.selectbox(key="g2_chart").set_value(empty["id"]).run()
+    assert not at.exception and any("एकही candle नाही" in e.value for e in at.error)
+    assert not at.number_input
+    GD._RAW.clear()
+
+
+def test_page_split_mismatch_blocks_save(tmp_path, monkeypatch):
+    at, bars, cand = _page_setup(tmp_path, monkeypatch)
+    rec = dict(_good(bars, cand), split="test")                            # manifest म्हणतो dev
+    (tmp_path / "store" / "test").mkdir(parents=True)
+    (tmp_path / "store" / "test" / f"{cand['id']}.json").write_text(json.dumps(dict(rec, revision=1)), encoding="utf-8")
+    at.run()
+    assert any("split" in e.value and "Save बंद" in e.value for e in at.error)
+    assert at.button(key=f"g2_save_{cand['id']}").disabled
+    assert any("split 'test'" in e for e in SC.validate(rec, cand, bars))
+    GD._RAW.clear()
+
+
+def test_candidates_script_refuses_to_overwrite_manifest(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("r2gc", ROOT / "scripts" / "reader2_gallery_candidates.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = tmp_path / "manifest.json"
+    out.write_text('{"charts": []}', encoding="utf-8")
+    assert mod.main(["--out", str(out)]) == 2
+    assert out.read_text(encoding="utf-8") == '{"charts": []}'
+
+
+def test_golden_nifty_file_is_discovered_by_pattern(tmp_path, monkeypatch):
+    up = tmp_path / "upstox"
+    up.mkdir()
+    for f in ("NIFTY_1m_2026-07-01_2026-10-06.csv.gz", "NIFTY_1m_2026-07-01_2026-10-08.csv.gz",
+              "NIFTY_1m_illustration_2026-10-09_2026-10-09.csv.gz", "BANKNIFTY_1m_2026-07-01_2026-12-31.csv.gz"):
+        (up / f).write_bytes(b"")
+    monkeypatch.setenv("TRADE_DATA_DIR", str(tmp_path))
+    assert GD.source_path("nifty_1m_golden").endswith("NIFTY_1m_2026-07-01_2026-10-08.csv.gz")

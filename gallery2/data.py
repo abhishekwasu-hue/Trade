@@ -11,6 +11,7 @@ Policy:
     `holdout_dates_exception: true` असलेले Abhi चे आधीचे marked charts (उदा. BANKNIFTY Feb → Mar 2026).
 """
 import os
+import re
 
 import pandas as pd
 
@@ -27,7 +28,9 @@ COLS = ["timestamp", "open", "high", "low", "close", "volume"]
 # where: "repo" (public repo checkout) / "trade-data" (private clone). kind: "1m" (resampled) किंवा TF (जसे आहे तसे).
 SOURCES = {
     "nifty_1m_repo": {"symbol": "NIFTY", "where": "repo", "path": "data/nifty50_1min.parquet", "kind": "1m"},
-    "nifty_1m_golden": {"symbol": "NIFTY", "where": "trade-data", "path": "upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz", "kind": "1m"},
+    # golden window चा NIFTY 1m: `upstox/NIFTY_1m_<from>_<to>.csv.gz` — सगळ्यात नवा (शेवटची तारीख मोठी) file आपोआप
+    "nifty_1m_golden": {"symbol": "NIFTY", "where": "trade-data", "dir": "upstox",
+                        "pattern": r"^NIFTY_1m_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv\.gz$", "kind": "1m"},
     "banknifty_D": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_D.csv.gz", "kind": "D"},
     "banknifty_1H": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_1H.csv.gz", "kind": "1H"},
     "banknifty_15M": {"symbol": "BANKNIFTY", "where": "trade-data", "path": "banknifty/BANKNIFTY_15M.csv.gz", "kind": "15M"},
@@ -49,9 +52,20 @@ def trade_data_dir():
 
 
 def source_path(key):
+    """Source चा file. `pattern` असलेल्या sources साठी folder मधला जुळणारा, (शेवटची तारीख, सुरुवात) ने सगळ्यात नवा; नाही ⇒ folder
+    + pattern (अस्तित्वात नसलेला path ⇒ `load_source` मध्ये DataMissing)."""
     src = SOURCES[key]
     base = ROOT if src["where"] == "repo" else trade_data_dir()
-    return os.path.join(base, src["path"])
+    if "pattern" not in src:
+        return os.path.join(base, src["path"])
+    d = os.path.join(base, src["dir"])
+    found = []
+    if os.path.isdir(d):
+        for f in os.listdir(d):
+            m = re.match(src["pattern"], f)
+            if m:
+                found.append((m.group(2), m.group(1), f))
+    return os.path.join(d, max(found)[2]) if found else os.path.join(d, src["pattern"])
 
 
 # ---------------------------------------------------------------------------------------------------------------- policy

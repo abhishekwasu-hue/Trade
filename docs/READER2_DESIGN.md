@@ -314,9 +314,22 @@ Legs table: pick impulse / correction / uncertain per leg (required). Trend tabl
 optional from bar). Save validates first and lists every error. Chart text is English (leg "1 impulse", "demand", "trend: down"); help is
 Marathi. No order / broker code, no paid API, no Vision call.
 
-**Tests.** `tests/test_reader2_gallery.py` — schema accept / 11 rejections, tolerance in MR units, NIFTY holdout + illustration rejected
+**Review fixes (PR #302).** (1) Leaving and re-entering a chart bumps its table keys, so the legs / trend / zones tables are rebuilt
+from the chart's own state (no stale widget edits). (2) The labels folder is resolved at call time (`store.labels_dir()`: env
+`READER2_GALLERY_LABELS`, else `<trade-data>/reader2_gallery/labels`); `load_labels` raises `LabelsMissing` when it is absent. (3) Saves
+are optimistic-locked: a new chart is inserted only if no row exists, an edit is `UPDATE … WHERE chart_id AND revision AND split`
+(DirStore: same check) — a stale tab / device gets `ConflictError` and the page says so; a failed load raises `StoreError` and the page
+shows the error with Save off. CREATE TABLE runs once per process. (4) Trend rows are sorted by bar; at least one trend state is required;
+the untouched default row (bar 0, no state) is dropped. (5) An empty window shows an error before any input. (6) The candidates script
+refuses to overwrite an existing manifest without `--force`; a stored record whose split differs from the manifest is flagged (validate
++ page error, Save disabled) and is never re-saved under a new split. Also: the NIFTY golden 1m file is discovered by name pattern (newest
+end date), zone `from_bar` is range-checked, export fails loudly on a write error and removes stale files (only inside the labels folder;
+an invalid record keeps its last valid export), and `tests/test_reader2_boundary.py` allows `gallery2` imports only from the marking
+page, the two gallery scripts, `reader2` and tests.
+
+**Tests.** `tests/test_reader2_gallery.py` (47) — schema accept / 13 rejections, tolerance in MR units, NIFTY holdout + illustration rejected
 (no exception), warm-up never crosses the holdout, BANKNIFTY holdout-date rows, DirStore / DbStore round-trip (sqlite, revision), export
 (manifest split, invalid skipped), progress, sealed calibration (spy, smuggled file), import boundaries, builder determinism / 28-12 /
 cases dev / policy / no same-TF overlap, shape tags, committed manifest, every manifest window loads and validates (data present),
-page AppTest (render, add points, refuse unlabelled save, saved marking reloads).
+page AppTest (render, add points, refuse unlabelled save, saved marking reloads, label + trend + save + reload round trip, placeholder trend, save conflict, chart switch, load failure, empty window, split mismatch), optimistic lock (DB + folder), export stale / loud failure, labels folder, `--force`, file discovery.
 
