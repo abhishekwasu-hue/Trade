@@ -80,7 +80,7 @@ class _Stub(E3.V22):
     def step2(self, t, trend, band=None):
         return True, "levels", list(self.act)
 
-    def _level_eval(self, t, trend, lvl, cap=None, notes=None):
+    def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
         A, d = self.A, M._dir(trend, lvl["role"])
         ok3, why3 = M.at_level_or_confirm(A, t, d, lvl, self.s)
         chk = {"③": [ok3, why3]}
