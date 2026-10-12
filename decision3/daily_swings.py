@@ -425,6 +425,8 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
                                                                         "bar": last_q.protected.bar},
                 "phases": runs([(x.phase or "-") + "|" + (x.wave or "") for x in q15]),
                 "counter": last_q.counter, "origin_risk": bool(last_q.origin_risk), "band": last_q.band,
+                "rev": None if getattr(last_q, "rev", None) is None else {"kind": last_q.rev[0].kind, "price": last_q.rev[0].price,
+                                                                          "beyond": last_q.rev[1].price},
                 "parent": None if last_q.parent is None else {"kind": last_q.parent.kind, "price": last_q.parent.price, "bar": last_q.parent.bar},
                 "states": runs([state_label(x) for x in q15]), "objects": objs,
                 "leg_now": next(({k: lg[k] for k in ("state", "verified", "family")} for lg in objs["impulses"][-1:]
@@ -796,6 +798,10 @@ def trend_line(q):
         body += " · impulse mature, larger reversal possible"
     if q.get("origin_risk"):
         body += " · origin at risk"
+    if q.get("rev"):                                                       # trend first: impulse टोकानंतर रचना trend विरुद्ध ⇒ entries नाहीत
+        rv = q["rev"]
+        body += (f" · structure turned {'UP' if t == 'DOWN' else 'DOWN'} ({'HL' if rv['kind'] == 'L' else 'LH'} {rv['price']:,.0f}, "
+                 f"close beyond {rv['beyond']:,.0f}) — no {'bear call' if t == 'DOWN' else 'bull put'}")
     return body
 
 

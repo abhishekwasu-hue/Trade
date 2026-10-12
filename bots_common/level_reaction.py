@@ -105,12 +105,16 @@ def context_from_state(st, s=None, asof=None):
     s = settings(s)
     ctx = {"ok": False, "trend": st.trend, "sides": set(), "band": st.band, "phase": st.phase, "counter": st.counter,
            "protected": None if st.protected is None else round(float(st.protected.price), 2), "asof": asof,
-           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature)}
+           "origin_risk": bool(st.origin_risk), "mature": bool(st.mature),
+           "structure_against": getattr(st, "rev", None) is not None}
     if st.trend in ("UP", "DOWN"):
         if st.phase == "origin_broken":
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: protected origin close ने तुटला)"
         elif st.origin_risk:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: origin धोक्यात — Q47)"
+        elif getattr(st, "rev", None) is not None:                         # trend first (setups audit): रचना trend विरुद्ध
+            ctx["reason"] = (f"{R_NO_TREND} (Daily {st.trend}: impulse टोकानंतरची रचना उलट — "
+                             f"{'HL' if st.rev[0].kind == 'L' else 'LH'} {st.rev[0].price:,.0f} + close {st.rev[1].price:,.0f} पलीकडे)")
         elif st.counter == "correction" and not s["allow_parent_correction"]:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: impulse origin तुटला, parent correction चालू)"
         else:

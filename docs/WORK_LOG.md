@@ -1935,3 +1935,20 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+
+## 2026-10-12 · Setups audit — trend first (Abhi: TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §2)
+
+**अहवाल:** `docs/reports/setups_prA_v1_audit.md` — 2020-11-04 bear call चं निदान, 30 setups चं audit (6-month rule निकालाआधी जाहीर:
+`scripts/setups_trend_audit.py`), §2 a–f diagnostic columns (`scripts/setups_audit_columns.py`; engine निर्णय बदलत नाही).
+**निदान:** Daily DOWN (protected 12,151 = Feb-2020 LH, parent 12,430); Q15 नुसार origin पलीकडे close (2020-11-06) पर्यंत trend बदलत नाही आणि
+counter-move चं वाचन (ABC_FIX / Q49) त्याआधी होतच नाही ⇒ Mar–Nov 2020 चढ 6.5 महिने "correction candidate"; ① gate फक्त `st.trend` पाहतो
+(candidate ला cap / block नाही) ⇒ bear call.
+**Fix (root cause):** `daily.fold_impulse` — flip चा (अ) आकार (`rev_shapes`, flip आणि नवा वाचक एकच code) + Q36 impulse-स्वभाव आता origin
+break आधीही, same-degree correction असताना ⇒ `DState.rev`; `engine.step1` ⇒ trade नाही ("trend first"); level bots `context_from_state`,
+Daily caption, `describe` तसेच. Trend / phase / protected बदल 0 (NIFTY 2,282 + BANKNIFTY 2,479 दिवस). Fixture `staircase_below_origin`
+(down + up), tests `test_decision3_trend_first.py` (10).
+**V22 re-run (NIFTY 2015-01 … 2024-03, एकदा):** setup 30 ⇒ 28 (फक्त 2020-11-04 ×2 गेले, नवे नाहीत); audit 9 pass · 10 ambiguous · 9 FAIL
+(2019-09-03, 2022-03-28 ×4 = degree प्रश्न TF4; 4 rule-ambiguous TF5). a–f: 30 पैकी एकही सगळ्या columns पार नाही (#23 (a)+(b), #24 09:45
+c0 + 5M) — fixes `claude/v22-confirmation`, `claude/v22-areas-quality`, `claude/chart-volume` वर. Volume 2015–2024 ⇒ NA.
+**Tests:** `tests/test_decision3*.py tests/test_elliott_correction_library.py tests/test_level*.py` ⇒ 567 passed, 9 xfailed. उघडे: TF1–TF7.
+Charts (28) locally बनवले, volume pane नसल्याने trade-data मध्ये commit नाहीत.
