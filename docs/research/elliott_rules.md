@@ -24,8 +24,11 @@ when 3 extends; channelling.
 
 A lone 5-wave counter-move is *not* proof of a new trend: wave A of a zigzag is also five waves (wave A vs wave 1 is resolved only
 by what follows). The negative controls are complete impulses of the **same degree** as the prior impulse — each motive wave
-itself subdivides into five, wave 4 clear of wave 1 — and those must flip the trend (without a close beyond the prior origin). How
-the engine measures "same degree" is open (OPEN_QUESTIONS Q49).
+itself subdivides into five, wave 4 clear of wave 1 — and those must flip the trend (without a close beyond the prior origin).
+Abhi's Q49 answer: the 5-wave first leg is wave A by default; wave 1 only on (a) a close beyond the origin of the impulse it
+corrects (the last impulse leg's origin, or the start of the complete 5-wave whose wave 5 that leg is) or (b) the
+counter-move's own same-degree 5-wave ("1" in 5, a 3-wave "2", "3" beyond "1" itself in five) — engine: `daily_legs.unfolded_123`
+(OPEN_QUESTIONS Q49).
 
 ## Corrective waves
 

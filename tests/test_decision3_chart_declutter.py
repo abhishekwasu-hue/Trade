@@ -201,7 +201,7 @@ def test_label_count_on_two_year_window(mirror):
     letters = sum(len(b.get("marks") or ()) for b in DS.view_spec(v)["boxes"] if b["label"])
     assert kinds.count("correction") <= 2 and kinds.count("band") <= 6 and kinds.count("leg") <= 1
     assert 0 < kinds.count("wave") <= letters <= 2 * 5
-    assert set(kinds) <= {"correction", "wave", "band", "leg"}
+    assert set(kinds) <= {"correction", "wave", "wave_a", "band", "leg"}
     assert len(info["ax"].texts) == len(kinds) <= 2 + letters + 6 + 1
     assert info["ax"].get_legend() is not None
 

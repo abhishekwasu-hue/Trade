@@ -1878,6 +1878,18 @@ Tests: COMPLETE खरंच तपासणारा (W = 3-wave ⇒ आधी 
 आकडे: mature दिवस NIFTY 1755 ⇒ 809, BANKNIFTY 1685 ⇒ 443; BANKNIFTY V22 (15M 2026-07 पासून) setup 0 ⇒ 0; level bots BANKNIFTY शेवटचे 250 सत्र: 5 दिवस blocked ⇒ allowed (2026-06-29 … 07-03), शेवटचा दिवस context तसाच. NIFTY अलीकडचे सत्र holdout ⇒ offline नाही.
 Lead साठी जड command (NIFTY V22 2015 … 2024-03, before / after): `python3 <scratchpad>/prA_v22_nifty.py <scratchpad>/base <out_old.json>` आणि `python3 <scratchpad>/prA_v22_nifty.py /home/user/Trade-eng <out_new.json>`.
 
+## 2026-10-11 · PR C (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §2 — Q49 wave A की wave 1)
+
+**काय केलं (decision3):**
+- `daily.counter_kind`: 5-wave counter-move ⇒ default wave A. Same-degree ("wave_1a") ⇒ wave 1 (flip शक्य) फक्त (a) correct होत असलेल्या impulse च्या origin पलीकडे close (Abhi: impulse-leg origin, A1 parent नाही) किंवा (b) `daily_legs.unfolded_123` ("1" / "2" / "3" दिसणारे 5 / 3 / 5, "3" "1" पलीकडे). नाहीतर parent टिकला ⇒ A1 correction. Q22 खालचा degree ⇒ नेहमी A (wave 1 फक्त parent तुटल्यावर). फक्त ≤ i confirmed pivots.
+- **✅ Abhi मंजूर (2026-10-12) — (a) चा विस्तार** (`q49_impulse_origin: complete_impulse`, default; `leg` = साधं वाचन): चालू leg एखाद्या पूर्ण 5-wave चा wave 5 असेल तर (a) origin = त्या impulse ची सुरुवात (`daily.complete_impulse_start`, wave 5 bar ने — Rule 4 origin सुद्धा; seq मग low pivots; उमेदवार = नंतर न ओलांडलेले टोक, cap नाही). मंजुरीपूर्वी हा प्रस्ताव होता; साध्या वाचनाने तिन्ही नवे fixtures fail (OPEN_QUESTIONS Q49).
+- (a) पूर्ण-impulse सुरुवातीवर फुटल्यास origin = तोच (pcorr शाखेसारखं). Q49 why मजकूर मार्गानुसार (Q22 मार्गावर "origin टिकला" असा दावा नाही).
+- `DState.wave_a` / `alt` ("1"), prov snapshot मध्ये. Default chart "A"; debug JSON / debug chart "A (alt: 1)"; trend line / caption / ① (Telegram) मध्ये wave क्रमांक नाही (Q46).
+- `daily_legs.leg_points` / `leg_prices` (classify मधून, वर्तन तेच), `_motive_segs`, `unfolded_123`.
+
+**Fixtures / tests:** `very_deep_holds_origin` pass (strict xfail काढले); नवे `q49_complete_five` ((b), "3" च्या शेवटी flip नाही), `q49_beyond_impulse_origin` (ABC_FIX आकार, (a)), `q49_lower_degree_a` (Q22 why); सगळे आरशात. `double_zigzag` strict xfail (Q49 (b)). `tests/test_decision3_q49.py` (17, Rule-4 bar-match unit test सह).
+**Before / after:** `scripts/q49_before_after.py` — BANKNIFTY 2479 दिवस: बदल खाली (review नंतरचा run).
+**Independent review (PR #300, 🔴 नाही) नंतर:** chart वर "A" बहुतेक वेळा box च्या family अक्षराखाली लपत होता ⇒ नियम: चालू box चं "a" wave-A pivot वर ⇒ त्या box ची अक्षरं मोठी (A B C, तीच count); box चं तात्पुरतं family वाचन दुसरं अक्षर तिथे ठेवतं (उदा. triangle, A = "c") ⇒ ती अक्षरं नाहीत, फक्त "A" (Q49 शी विसंगत लहान अक्षर नाही; label kind `wave_a`). Render test (3 fixtures × आरसा, wave-A span वर 4 bars + debug PNG); lookahead test मध्ये `q49_beyond_impulse_origin` ((a) extension). BANKNIFTY before / after (base = main): trend / phase 2 दिवस (2018-07-26 → 27, extension), counter 3, protected 4; wave A 36 दिवस (`leg` ⇒ 34); 2026 बदल नाही. तसेच ठेवले: ① Telegram मध्ये Q49 why फक्त NEUTRAL / UNKNOWN ला जातो (trend असताना why वापरला जात नाही); wave A चं टोक reading corrective झाल्यावर जुन्याच pivot वर राहतं (A वाढला तरी) — OPEN_QUESTIONS Q49-CH.
 
 ## 2026-10-11 · PR B (Abhi: TRADE_SESSION_Q44_Q49_Q55_CHART_FIX §5 — chart declutter + legend + 2-ओळी caption + Vision consistency)
 

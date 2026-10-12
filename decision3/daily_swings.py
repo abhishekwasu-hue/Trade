@@ -431,12 +431,21 @@ def build(df, s=None, window=500, es=None, with_elliott=True, sealed=None):
                                  if lg["state"] == "in progress"), None),
                 "retrace": _retrace(d, last_q), "range_check": range_check(d, objs, s),
                 "sharp_end": getattr(last_q, "corr_zone", None), "evidence": list(getattr(last_q, "evidence", ()) or ()),
+                "wave_a": _wave_a(last_q), "alt": getattr(last_q, "alt", None),
                 **_after_correction(last_q, objs, float(d["close"].iloc[-1]))},
         "elliott": ev, "elliott_degree": deg, "sealed": sealed,
     }
     v["s"] = s
     v["q15"]["levels"] = level_bands(v, s)
     return v
+
+
+def _wave_a(st):
+    """Q49: A1 correction चा 5-wave पहिला पाय (default wave A) — chart label "A"; पर्यायी count ("1") फक्त debug (alt)."""
+    a = getattr(st, "wave_a", None)
+    if a is None:
+        return None
+    return {"kind": a.kind, "price": float(a.price), "bar": int(a.bar), "label": "A"}
 
 
 def range_check(d, objs, s=None):
@@ -679,7 +688,9 @@ def view_spec(v, full=False):
     tags = [b["label"] for b in boxes if b["label"]] + [b["tag"] for b in marks]
     bands = level_bands(v, s, limit=None, max_broken=None) if full else (q.get("levels") or [])
     imps = [x for x in ob.get("impulses") or [] if x["to"] >= i0]
-    return {"legs": legs, "impulses": imps, "boxes": boxes, "pullbacks": marks, "tags": tags, "bands": bands,
+    wa = q.get("wave_a")                                                   # Q49: chart वर "A" (पर्याय "1" फक्त debug)
+    waves = [wa] if wa and wa["bar"] >= i0 else []
+    return {"legs": legs, "impulses": imps, "boxes": boxes, "pullbacks": marks, "tags": tags, "waves": waves, "bands": bands,
             "protected": q.get("protected_now"), "strip": {"degree-aware": q["states"], "Dow minor": v["minor"]["bands"]}}
 
 
@@ -986,6 +997,8 @@ def to_json(v, symbol):
                     "phases": [{"from": day(a, True), "to": day(b), "phase_wave": s} for a, b, s in v["q15"]["phases"] if b >= i0]},
             "elliott": ev, "elliott_degree": v["elliott_degree"],
             "trend_line": trend_line(v["q15"]), "counter": v["q15"].get("counter"), "origin_risk": v["q15"].get("origin_risk"),
+            "wave_a": None if not v["q15"].get("wave_a") else {**v["q15"]["wave_a"], "day": day(v["q15"]["wave_a"]["bar"]),
+                                                              "alt": v["q15"].get("alt")},   # Q49 debug: "A" (alt: 1)
             "retrace": v["q15"].get("retrace"),
             "parent": None if not v["q15"].get("parent") else {**v["q15"]["parent"], "day": day(v["q15"]["parent"]["bar"])},
             "objects": _objects_json(v, day), "bands": [{**b, "day": None if b["bar"] is None else day(b["bar"])}

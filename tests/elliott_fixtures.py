@@ -179,6 +179,44 @@ def impulse_control(name, mirror=False):
     return d, {"name": name, "dir": 1 if mirror else -1, "top": top, "beyond_origin": top > E + I}
 
 
+# Q49 (Abhi): 5-wave पहिला पाय — wave A की wave 1? `very_deep_holds_origin` (A 5-wave, B, C 5-wave पलीकडे, मग DOWN continuation;
+# A wave (4) high = leg origin ओलांडतो पण impulse पूर्ण 5-wave ⇒ (a) चा origin = impulse सुरुवात, टिकलेली)
+# हाच डीप zigzag. त्याचा जोडीदार: तसाच "1" / "2" / "3", पण पुढे "4" ("1" च्या टोकाला न ओलांडता) आणि "5" — counter-move स्वतःची
+# same-degree 5-wave रचना पूर्ण करते ("1" 5, "2" 3, "3" पलीकडे 5) ⇒ (b) ⇒ flip. Parent origin (E + I) वर कधीच close नाही ⇒ (a) नाही.
+Q49_123 = build(E, [(E + 0.55 * I, "m5"), (E + 0.3 * I, "c3"), (E + 0.88 * I, "m5"), (E + 0.7 * I, "c3"), (E + 0.98 * I, "m5")])
+
+
+def q49_complete_five(mirror=False):
+    """Q49 negative control (review 🟡3: नाव "complete five" — flip "3" च्या शेवटी नाही, counter-move चा स्वतःचा "5" चालू असताना):
+    counter-move = "1"(5) – "2"(3) – "3"(5, "1" पलीकडे) – "4"(3) – "5"(5), parent origin खालीच. "3" पर्यंत हा deep zigzag सारखाच
+    (A-B-C) ⇒ तिथे wave A; (b) फक्त "4" + "5" ने संपूर्ण counter-move 5-wave वाचल्यावर."""
+    d = ohlc(LEAD + IMPULSE + Q49_123 + c3(E + 0.98 * I, E + 0.8 * I) + [E + 0.95 * I], mirror)
+    return d, {"name": "q49_complete_five", "dir": 1 if mirror else -1, "a_end": E + 0.55 * I, "parent": E + I,
+               "end3": E + 0.88 * I, "end4": E + 0.7 * I}
+
+
+def q49_lower_degree_a(mirror=False):
+    """Review 🟡4: impulse (1)-(2)-(3), (4) = contracting triangle (Rule 4: origin = e), (5) = continuation; मग खालच्या degree चा
+    (Q22) 5-wave A impulse origin (e) पलीकडे close करतो, parent टिकतो ⇒ wave A (why मध्ये "origin टिकला" असं नाही)."""
+    e2 = E - 120.0
+    w4 = CORRECTIONS["triangle_contracting"]
+    pts = LEAD + build(E + I, [(E + I - 70, "m5"), (E + I - 40, "c3"), (E, "m5")]) + w4 + continuation(w4[-1])[:-1] \
+        + build(e2, zz(E + 100, E + 10, E + 190)) + build(E + 190, [(e2 - 60, "m5")]) + [e2 - 45]
+    return ohlc(pts, mirror), {"name": "q49_lower_degree_a", "dir": 1 if mirror else -1, "end5": e2, "e": w4[-1]}
+
+
+def q49_beyond_impulse_origin(mirror=False):
+    """Q49 (a) — ABC_FIX आकार (Abhi: BANKNIFTY Feb top ⇒ Mar low = DOWN impulse): trend चा चालू leg एखाद्या पूर्ण 5-wave चा wave 5
+    नाही (फक्त (1) – (2) – (3)); counter-move 5-wave (सरळ उप-पाय ⇒ (b) नाही) त्या impulse leg च्या origin पलीकडे close करतो, trend
+    सुरुवात (parent) टिकते ⇒ wave 1 ⇒ flip. मग 3-wave pullback आणि नवा टोक."""
+    org = E + 0.6 * I                                                      # चालू impulse leg चा origin ((2) टोक)
+    trend = build(E + I, [(E + 0.45 * I, "m5"), (org, "c3"), (E, "m5")])
+    up = build(E, [(E + 0.75 * I, "m5")])                                  # 5-wave, origin पलीकडे, parent (E + I) खाली
+    pts = LEAD + trend + up + c3(E + 0.75 * I, E + 0.5 * I) + [E + 0.9 * I]
+    return ohlc(pts, mirror), {"name": "q49_beyond_impulse_origin", "dir": 1 if mirror else -1, "origin": org, "parent": E + I,
+                               "top": E + 0.75 * I}
+
+
 # acceptance set (Abhi's marked counts, structural)
 def acceptance_banknifty(mirror=False):
     """window top → sharp fall (slow start, then wide directional bars) → a up, b down holding above the low, c up beyond a ending
