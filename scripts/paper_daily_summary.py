@@ -193,7 +193,7 @@ def symbols_section(day, symbols=SYMBOLS, ctx_fn=None, rows_fn=None, zones_fn=No
     for sym in symbols:
         ctx = _safe(ctx_fn, sym, day)
         rows, err = _safe(rows_fn, sym, day) or (None, "error")
-        gate = None if err or rows is None else LV.summarize([r for r in rows if LV.market(r.get("symbol") or sym) == "index"])
+        gate = None if err or rows is None else _safe(LV.summarize, [r for r in rows if LV.market(r.get("symbol") or sym) == "index"])
         zones = _safe(zones_fn, sym) if ctx is not None and ctx.get("ok") else None
         out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day)))
     return "\n".join(out)

@@ -21,18 +21,40 @@ RAW_CODES = re.compile(
 TF_WORD = {"1M": "1-min", "5M": "5-min", "15M": "15-min", "30M": "30-min", "60M": "1H", "1H": "1H", "D": "daily", "1D": "daily"}
 
 
+MARGIN = 8                                                                 # Telegram मर्यादेखाली थोडी जागा (entities / rounding)
+
+
+def tg_len(s):
+    """Telegram मर्यादा UTF-16 code units मध्ये मोजतो (emoji = 2) — Python len नाही."""
+    return len(str(s or "").encode("utf-16-le")) // 2
+
+
+def tg_cut(s, units):
+    """UTF-16 units ≤ units इतका सर्वात लांब prefix (surrogate pair मधे कापत नाही)."""
+    out, n = [], 0
+    for ch in str(s or ""):
+        w = 2 if ord(ch) > 0xFFFF else 1
+        if n + w > units:
+            break
+        out.append(ch)
+        n += w
+    return "".join(out)
+
+
 def compose(head, decision, details="", limit=None):
-    """head + decision + SEP + details. limit (उदा. Telegram caption 1024) ⇒ फक्त details कापतो (वरचा भाग कधीच नाही)."""
+    """head + decision + SEP + details. limit (उदा. Telegram caption 1024, UTF-16 units) ⇒ MARGIN ठेवून फक्त details कापतो (वरचा भाग
+    कधीच नाही, तो एकटाच मोठा असेल तरच)."""
     top = f"{head}\n{decision}"
+    eff = None if not limit else int(limit) - MARGIN
     details = str(details or "").strip("\n")
     if not details:
-        return top[:limit] if limit else top
+        return tg_cut(top, eff) if eff and tg_len(top) > eff else top
     text = f"{top}\n{SEP}\n{details}"
-    if limit and len(text) > limit:
-        room = limit - len(top) - len(SEP) - 3
+    if eff and tg_len(text) > eff:
+        room = eff - tg_len(top) - tg_len(SEP) - 3                            # दोन newlines + "…"
         if room <= 0:
-            return top[:limit]
-        cut = details[:room]
+            return tg_cut(top, eff)
+        cut = tg_cut(details, room)
         if "<" in cut and cut.rfind("<") > cut.rfind(">"):                    # अर्धवट HTML tag नको
             cut = cut[:cut.rfind("<")]
         text = f"{top}\n{SEP}\n{cut.rstrip()}…"

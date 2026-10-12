@@ -74,12 +74,17 @@ def run_refusal(m):
     return None
 
 
-def item_refusal(it):
-    """item ⇒ नकाराचं कारण (debug / अनोळखी kind) किंवा None."""
+def item_refusal(it, m=None):
+    """item ⇒ नकाराचं कारण (debug / अनोळखी kind; kind नसेल तर run_id / title मध्ये debug शब्द) किंवा None."""
     k = it.get("kind")
     kl = str(k or "").strip().lower()
     if kl in DEBUG_KINDS or any(w in kl for w in DEBUG_WORDS):
         return f"kind '{k}' is a debug view (kept in trade-data / dashboard, not for Telegram)"
+    if not kl and m is not None:
+        name = f"{m.get('run_id') or ''} {m.get('title') or ''}".lower()
+        hit = next((w for w in DEBUG_WORDS if w in name), None)
+        if hit:
+            return f"item has no kind and the run name contains '{hit}' (debug output, not for Telegram)"
     if k not in ALLOWED_KINDS:
         return f"kind '{k}' is not in the allowed list ({', '.join(x for x in ALLOWED_KINDS if x)})"
     return None
@@ -299,7 +304,7 @@ def send_run(run_dir, call=None, creds=None, sent=None, pause_s=3.0, sleep=time.
         if k in log:
             out["skipped"] += 1
             continue
-        bad = None if force else item_refusal(it)
+        bad = None if force else item_refusal(it, m)
         if bad:                                                             # debug view ⇒ Telegram नाही (trade-data / dashboard मध्येच)
             out["refused"].append((it["item"], bad))
             continue

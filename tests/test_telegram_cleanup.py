@@ -326,3 +326,51 @@ def test_summary_one_message_headline_decisions_pnl_details(monkeypatch):
     assert "approved 1 (1 with a changed entry), rejected 2 (wrong zone 2), changed entry 1, no answer 1." in top
     assert "net P&L <b>₹-850</b>" in top and "Skipped trades tracked for comparison: 2" in top
     assert "a:D2+b" in msg.split(PT.SEP)[1]                                            # gate तपशील details मध्येच
+
+
+# ------------------------------------------------------------------------------------------------ PR #307 review fixes
+def test_caption_limit_counts_utf16_units_with_emoji(tmp_path):
+    d = _run(tmp_path, ["v22_check"], raw="🧭📈🟡✅ " * 400)
+    m = RT.load_manifest(d)
+    cap = RT.caption(m, {**m["items"][0], "headline": "📈" * 50 + " look at the area"})
+    assert PT.tg_len(cap) <= 1024 - PT.MARGIN and len(cap) < PT.tg_len(cap) and cap.endswith("…")
+    assert PT.tg_cut("a📈b", 2) == "a" and PT.tg_len("📈") == 2
+
+
+def test_v1_caption_worst_case_keeps_deadline_and_no_buttons_warning(monkeypatch):
+    from vision import decide as VD
+    from vision import worker as VW
+    monkeypatch.setattr(VW, "engine_line", lambda row: "engine: " + "📈" * 200)
+    row = _gate_row()
+    tags = json.loads(row["setup_json"])["tags"]
+    tags["gate"]["study"] = "🟡 " * 300
+    tags["gate"]["commit_line"] = "✅ " * 300
+    tags.update(manual=True, manual_text="✋ MANUAL " + "🧪" * 200)
+    row = {**row, "bot_label": "B" * 200, "setup_json": json.dumps({"tags": tags})}
+    res = {"verdict": "unavailable", "error": "x" * 200}
+    d = VD.Decision("PENDING_HUMAN", 1.0, "human", "REJECTED", 0.0)
+    cap = VW.v1_caption(row, res, d, "2026-10-09T12:25:00", buttons=False, why="no approver")
+    assert PT.tg_len(cap) <= 1024 and cap.count("<b>") == cap.count("</b>")
+    det = cap.split(PT.SEP + "\n", 1)[1].splitlines()
+    assert det[1].startswith("⏱") and det[2].startswith("⚠️ बटणं नाहीत")
+    v0 = VW.caption({**row, "tags": {}}, {"verdict": "agree", "audits": [], "error": "📈" * 600}, "notify")
+    assert PT.tg_len(v0) <= 1024 and v0.count("<b>") == v0.count("</b>")
+
+
+def test_preopen_escapes_html_and_retries_plain_text(capsys):
+    P = _preopen()
+    bad = {**SENSEX, "reason": "trend <unclear> & x", "trend": "<NEUTRAL>", "phase": None}
+    msg = P.build_report(["SENSEX"], "tok", lambda s: None, lambda s: None, trend_fn=lambda s: bad, day="2026-10-13",
+                         active=[{"label": "15M SRv2", "symbol": "SENSEX", "source": "<engine>", "mode": "PAPER"}],
+                         engine_fn=lambda s: NOW, now=NOW)
+    assert "<unclear>" not in msg and "&lt;unclear&gt;" in msg and "&lt;engine&gt;" in msg and "<NEUTRAL>" not in msg
+    sent = []
+    assert P.send_checked("<b>x</b> &lt;y&gt;", lambda t: sent.append(t) or len(sent) > 1) is True
+    assert sent == ["<b>x</b> &lt;y&gt;", "x &lt;y&gt;"] and "retrying as plain text" in capsys.readouterr().out
+    assert P.send_checked("m", lambda t: (_ for _ in ()).throw(OSError("net"))) is False
+    assert "NOT sent" in capsys.readouterr().out
+
+
+def test_kindless_item_in_debug_named_run_refused():
+    assert RT.item_refusal({"kind": None}, {"run_id": "review/v22/diag_q1516", "title": "x"})
+    assert RT.item_refusal({"kind": None}, {"run_id": "k10/run1", "title": "K-10"}) is None

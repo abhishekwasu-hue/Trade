@@ -14,6 +14,7 @@ settings DB नाही ⇒ ❌ ओळ.
     python3 scripts/level_gate_preopen.py [--symbols NIFTY,BANKNIFTY,SENSEX] [--no-telegram | --dry-run]
 """
 import argparse
+import html
 import datetime as dt
 import os
 import sys
@@ -95,6 +96,11 @@ def bot_status(symbols, get_settings, mcx_fn=None):
 
 
 def status_line(active, symbols):
+    """HTML-escaped (settings मधली मूल्यं Telegram HTML मोडत नाहीत)."""
+    return html.escape(_status_line(active, symbols), quote=False)
+
+
+def _status_line(active, symbols):
     """संदेशाची पहिली ओळ: "Only 15M SRv2 active · signal source: engine · symbols NIFTY / BANKNIFTY / SENSEX · mode PAPER" (settings वरून)."""
     if active is None:
         return "❌ Bot settings could not be read — cannot confirm which bot is active (check the dashboard / database)."
@@ -141,11 +147,11 @@ def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS):
 
 def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
     """प्रत्येक symbol ची एक साधी ओळ (engine codes नाहीत)."""
-    wk = f"Weekly {weekly}" if weekly else "Weekly n/a"
+    wk = f"Weekly {html.escape(str(weekly), quote=False)}" if weekly else "Weekly n/a"
     if not ctx.get("ok"):
         mark = "❌ " if str(ctx.get("trend") or "UNKNOWN") == "UNKNOWN" else ""
-        return f"{mark}<b>{sym}</b>: NO NEW ENTRIES today — {PT.unclear_words(ctx)}, {wk}. Open trades still exit as usual."
-    head = f"<b>{sym}</b>: {PT.trend_words(ctx)}, {wk}"
+        return f"{mark}<b>{sym}</b>: NO NEW ENTRIES today — {html.escape(PT.unclear_words(ctx), quote=False)}, {wk}. Open trades still exit as usual."
+    head = f"<b>{sym}</b>: {html.escape(PT.trend_words(ctx), quote=False)}, {wk}"
     if ctx.get("mature"):
         head += " (the daily move is mature, so new entries are weak)"
     elif ctx.get("origin_risk"):
@@ -190,7 +196,7 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
                 plain.append(bad)
             else:
                 det.append(f"{sym} engine: last run {t:%d %b %H:%M}")
-        head = f"{sym} · {ctx.get('reason')}"
+        head = f"{sym} · {html.escape(str(ctx.get('reason')), quote=False)}"
         if ctx.get("protected") is not None:
             head += f" · protected {ctx['protected']:,.0f}"
         if not ctx.get("ok"):
@@ -277,13 +283,31 @@ def main(argv=None):
                        weekly_fn=lambda s: weekly_trend(daily_df(s), today), day=today.isoformat(), active=active,
                        problems=problems)
     print(msg)
-    if not (a.no_telegram or a.dry_run):
+    if a.no_telegram or a.dry_run:
+        return 0
+    from notifications import send_telegram_message
+    return 0 if send_checked(msg, send_telegram_message) else 1
+
+
+def send_checked(msg, send):
+    """send(msg) (HTML) ⇒ False / चूक ⇒ एकदा साध्या मजकुराने (tags काढून, escape) पुन्हा. दोन्ही वेळा ❌ stdout / log मध्ये. रिटर्न bool."""
+    import re
+
+    def _try(text):
         try:
-            from notifications import send_telegram_message
-            send_telegram_message(msg)
-        except Exception as exc:
-            print(f"⚠️ Telegram त्रुटी: {exc}")
-    return 0
+            return send(text) is not False
+        except Exception as exc:                                           # noqa: BLE001
+            print(f"❌ Telegram error: {type(exc).__name__}: {exc}")
+            return False
+    if _try(msg):
+        return True
+    print("❌ Pre-open (HTML) was not sent to Telegram — retrying as plain text")
+    plain = html.escape(html.unescape(re.sub(r"<[^>]+>", "", msg)), quote=False)
+    if _try(plain):
+        print("✅ Pre-open sent as plain text")
+        return True
+    print("❌ Pre-open NOT sent to Telegram (both attempts failed) — check the bot token / chat id / network")
+    return False
 
 
 if __name__ == "__main__":

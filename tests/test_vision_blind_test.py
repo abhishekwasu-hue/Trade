@@ -168,7 +168,8 @@ def test_request_has_playbook_checklist_and_no_code_opinion(m1):
 
 
 def test_manifest_caption_and_vision_test_reply_kind():
-    assert RT.caption({"title": "T", "items": [1]}, {"n": 1, "date": "d", "reading": "r", "caption": "🧪 x"}) == "🧪 x"
+    cap = RT.caption({"title": "T", "items": [1]}, {"n": 1, "date": "d", "reading": "r", "caption": "🧪 x"})   # TELEGRAM_CLEANUP 3
+    assert cap.endswith("── details ──\n🧪 x") and cap.splitlines()[1].startswith("Decision needed")
     saved = []
     msg = {"reply_to_message": {"message_id": 5}, "text": "✘ B च्या आत", "from": {"id": 1}, "chat": {"id": 1}}
     import json
