@@ -179,7 +179,7 @@ def test_daily_summary_script_one_message_carries_both(monkeypatch):
     from vision import approval as AP
     monkeypatch.setattr(AP, "daily_summary_text", lambda day=None, *a, **k: f"🗓 PAPER {day}")
     sent = []
-    assert S.main(["--day", DAY], send=sent.append, level=lambda d: f"🎯 LEVEL {d}") == 0
+    assert S.main(["--day", DAY], send=sent.append, plain=lambda d: "", level=lambda d: f"🎯 LEVEL {d}") == 0
     assert len(sent) == 1 and f"🗓 PAPER {DAY}" in sent[0] and f"🎯 LEVEL {DAY}" in sent[0]
     from bots_common import level_visibility
 
@@ -187,7 +187,7 @@ def test_daily_summary_script_one_message_carries_both(monkeypatch):
         raise ValueError("<x>")
     monkeypatch.setattr(level_visibility, "summary_text", bad)
     sent.clear()
-    assert S.main(["--day", DAY], send=sent.append) == 0
+    assert S.main(["--day", DAY], send=sent.append, plain=lambda d: "") == 0
     assert "🗓 PAPER" in sent[0] and "Level bots — confirmation gate: NA (ValueError: &lt;x&gt;)" in sent[0]   # HTML escape
 
 
@@ -195,8 +195,8 @@ def test_daily_summary_send_false_is_nonzero(monkeypatch):
     from scripts import paper_daily_summary as S
     from vision import approval as AP
     monkeypatch.setattr(AP, "daily_summary_text", lambda day=None, *a, **k: "🗓 PAPER")
-    assert S.main(["--day", DAY], send=lambda t: False, level=lambda d: "🎯") == 1
-    assert S.main(["--day", DAY], send=lambda t: True, level=lambda d: "🎯") == 0
+    assert S.main(["--day", DAY], send=lambda t: False, plain=lambda d: "", level=lambda d: "🎯") == 1
+    assert S.main(["--day", DAY], send=lambda t: True, plain=lambda d: "", level=lambda d: "🎯") == 0
 
 
 def test_daily_summary_capped_at_4096_never_drops_approvals(monkeypatch):
@@ -206,8 +206,8 @@ def test_daily_summary_capped_at_4096_never_drops_approvals(monkeypatch):
     monkeypatch.setattr(AP, "daily_summary_text", lambda day=None, *a, **k: appr)
     gate = "🎯 <b>Level bots</b>\n" + "\n".join(f"• line {i} <b>x</b> " + "g" * 80 for i in range(100))
     sent = []
-    assert S.main(["--day", DAY], send=sent.append, level=lambda d: gate) == 0
-    assert len(sent[0]) <= 4096 and sent[0].startswith(appr) and sent[0].endswith("\n…")
+    assert S.main(["--day", DAY], send=sent.append, plain=lambda d: "", level=lambda d: gate) == 0
+    assert len(sent[0]) <= 4096 and appr in sent[0] and sent[0].endswith("\n…")   # TELEGRAM_CLEANUP 4: वर साधी ओळ + symbols
     assert sent[0].count("<b>") == sent[0].count("</b>")                    # ओळी-निहाय ⇒ अर्धवट tag नाही
     assert S.combine("x", "short") == "x\n\nshort"
 

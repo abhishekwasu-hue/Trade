@@ -379,4 +379,6 @@ def test_v1_caption_keeps_decision_line_when_long():
            "role": "SUPPORT", "setup_tf": "5M", "signal_ts": "2026-10-06T10:00:00", "mode": "auto_veto"}
     cap = VW.v1_caption(row, res, VD.decide("auto_veto", "disagree", {**VC.BOT_DEFAULTS}))
     assert len(cap) <= 1024 and "<b>❌ ENTRY नाकारली</b>" in cap and cap.count("<b>") == cap.count("</b>")
-    assert cap.split("\n")[1].startswith("<b>❌ ENTRY नाकारली")
+    from bots_common import plain_text as PT                                   # TELEGRAM_CLEANUP 3: साधी ओळ + निर्णय, मग details
+    lines = cap.split("\n")
+    assert lines[1].startswith(PT.DECISION_NONE) and lines[lines.index(PT.SEP) + 2].startswith("<b>❌ ENTRY नाकारली")

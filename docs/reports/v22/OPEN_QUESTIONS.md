@@ -200,3 +200,15 @@
 | LB15 | MCX approval | CONFIRMED ⇒ जुना PAPER order मार्ग (Vision / §9 Telegram ✅ नाही — आधीसुद्धा MCX PAPER approval शिवाय होता) | MCX ला §9 approval हवं का? |
 | LB16 | L5 signal_log मध्ये bot column नाही | 5M Instant आणि Classic दोघे 5M levels च्या सारख्याच rows लिहितात ⇒ dashboard मध्ये 5M rows दोन्ही bots खाली (caption), summary मध्ये "5M levels (Instant + Classic)" एक ओळ; touch-legacy संख्या bot-wise अचूक | signal_log ला bot column (hit मोजणी / page filters ला हात) — हवं का? |
 | LB17 | L5 MCX दृश्य | MCX signal_log level_type फक्त SUPPORT / RESISTANCE (30M / 60M TF नाही) ⇒ सारांश / dashboard मध्ये area = (symbol, किंमत); MCX symbols = सक्रिय (symbol_enabled) commodities; वापरलेली confirmation फक्त MCX साठी file मध्ये (index bots ला Vision ✅ आहे) | MCX signal_log मध्ये TF हवा का? index bots ना पण तसाच confirm-used guard हवा का? |
+
+## Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3, ONE_BOT §4) — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | प्रश्न | आत्ता (default) | पर्याय |
+|---|---|---|---|
+| TG1 | अनोळखी review kind | allowed यादीबाहेरचा kind ⇒ नकार (fail-closed), `--force` ने जातो | फक्त debug kinds नकार, बाकी जाऊ द्या |
+| TG2 | Setup audits (`v22_setup`) | run ला "debug" tag नसेल तरच जातात — "audit झाल्यावर, फक्त निर्णय लागणारे" हे manifest बनवणाऱ्याने निवडायचं | manifest मध्ये "audited" tag बंधनकारक |
+| TG3 | Review charts ची निर्णय ओळ | "Decision needed: reply ✔ (engine right) or ✘ + reason" | "approve / reject" शब्द |
+| TG4 | साध्या ओळींची भाषा | English (Abhi चं उदाहरण); details मधला जुना मराठी / codes मजकूर तसाच | मराठी साधी ओळ |
+| TG5 | 15:45 "जवळचा area" | ACTIVE zones (1M–60M bot TFs), 15:45 ला; आज तुटलेला area दिसत नाही; high / low = Upstox 15M (VPS token) | फक्त 15M+ TFs / आज तुटलेले सुद्धा |
+| TG6 | Pre-open engine ❌ | signal source engine / both असलेल्या symbols साठी engine store चा शेवटचा computed_at नाही किंवा 96 तासांपेक्षा जुना ⇒ ❌ | 09:00 ला कालच्या 15:00 bar ची सक्ती (सुट्टी कॅलेंडर लागेल) |
+| TG7 | Pre-open "चालू bots" यादी | 15M SRv2, 5M Instant, SR V3 shadow, Classic SR (symbol_enabled — bots चेच defaults) + MCX सक्रिय commodities. Vision shadow / oi_signal / credit_spread traders या ओळीत नाहीत | त्यांचेही flags वाचणे |

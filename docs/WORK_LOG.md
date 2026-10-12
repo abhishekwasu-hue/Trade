@@ -1935,3 +1935,24 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+
+## 2026-10-12 · Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3) + ONE_BOT_TOMORROW §4 pre-open मजकूर
+
+**काय केलं (फक्त wording / routing — engine निर्णय बदल नाही):**
+- `backtest_review/telegram.py` + `scripts/send_review_to_telegram.py`: manifest top-level `"tag": "debug"` ⇒ संपूर्ण run नकार (exit 6, कारण
+  छापतो); debug kinds (`v22_daymap`, per-bar strips, reader debug views, diag / what-if) आणि allowed यादीबाहेरचे kinds ⇒ ते items नकार;
+  `--force` ⇒ तरीही. Allowed kinds docstring मध्ये (`ALLOWED_KINDS`).
+- नवा `bots_common/plain_text.py`: प्रत्येक Telegram chart / सारांश = ओळ 1 साधी English (काय पाहायचं) · ओळ 2 "Decision needed: approve / reject"
+  किंवा "none — information" (review ⇒ ✔ / ✘) · "── details ──" खाली जुना engine मजकूर (K leg, a:D2+b, sweep, Q44 …). Review captions,
+  Vision V0 / V1 proposal captions (`vision/worker.py`), ✏️ सुधारित ticket (`vision/approval.py`).
+- Pre-open (`scripts/level_gate_preopen.py`): दिवसातून एकच संदेश — पहिली ओळ dashboard settings वरून चालू bot(s) ("Only 15M SRv2 active · signal
+  source: engine · symbols … · mode PAPER"; वेगळं असेल तर जे चालू ते, ⚠️ / ❌), प्रत्येक symbol ची एक ओळ (Daily + Weekly trend, last close,
+  trade-बाजूचे areas + अंतर points), engine store चा शेवटचा computed_at (नाही / 96 h पेक्षा जुना ⇒ ❌), price / login / settings DB नाही ⇒ ❌.
+  `--dry-run`. Weekly = engine ① सारखीच गणना, फक्त माहिती.
+- 15:45 (`scripts/paper_daily_summary.py`): एकच संदेश — symbol-निहाय साधी ओळ (setup / trend / area पर्यंत पोचली का + कारण / दिवसाच्या high-low
+  पासून जवळचा area points / impulse mature ⇒ weak; data नाही ⇒ तसं), तुमचे निर्णय + P&L साध्या शब्दांत, gate आकडे details मध्ये. Trend cache
+  ctx मध्ये `targets` (Q44, फक्त माहिती).
+
+**Tests:** नवी `tests/test_telegram_cleanup.py` (debug run / kinds नकार + --force, script exit 6, caption रचना — ओळ 1 साधी, निर्णय ओळ, वरच्या
+भागात engine codes नाहीत, pre-open status ओळ settings वरून + engine ❌ + dry-run, 15:45 Abhi चं उदाहरण शब्दशः). जुने caption / सारांश tests नव्या
+wording प्रमाणे (आकडे तेच). Network नाही. उघडे: TG1–TG7.

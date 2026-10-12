@@ -158,7 +158,11 @@ def ticket_text(row, t, deadline, exec_min):
     lines += ["फक्त entry बदलली — SL / target / lots / strikes / hedge / expiry / risk: engine / dashboard चेच.",
               f"⏱ <b>{pd.Timestamp(deadline):%H:%M} पर्यंत</b> पुन्हा ✅ हवं. ✅ नंतर spot {t['entry']:g} ला पोहोचला तरच PAPER entry; "
               f"{exec_min} मिनिटांत नाही ⇒ position नाही (would-have नोंद)."]
-    return "\n".join(lines)
+    from bots_common import plain_text as PT                             # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
+    rr_txt = "R:R not available" if t["rr"] is None else f"reward is {t['rr']:g}× the risk"
+    head = (f"{html.escape(str(row.get('symbol')))}: your changed entry {t['entry']:g} (stop {t['sl']:g}, target {tgt}) — {rr_txt}. "
+            "Check the new numbers, then approve again.")
+    return f"{head}\n<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline):%H:%M}\n{PT.SEP}\n" + "\n".join(lines)
 
 
 def start_modify(row, uid, answer, cq_id, send=None, path=None, now=None):
@@ -394,13 +398,18 @@ def daily_summary(day=None, vpath=None, jpath=None):
 
 
 def daily_summary_text(day=None, vpath=None, jpath=None):
+    """15:45 सारांशाचा "तुमचे निर्णय + P&L" भाग — साधे English शब्द (Abhi, TELEGRAM_CLEANUP 4). आकडे daily_summary चेच."""
     d = daily_summary(day, vpath, jpath)
-    rej = ", ".join(f"{html.escape(k)} {v}" for k, v in sorted(d["rejections"].items(), key=lambda x: -x[1])) or "—"
+    nrej = sum(d["rejections"].values())
+    rej = ", ".join(f"{html.escape('no reason given' if k == 'कारण नाही' else k)} {v}"
+                    for k, v in sorted(d["rejections"].items(), key=lambda x: -x[1]))
+    appr = f"approved {d['approvals']}"
+    if d["modified_approved"] or d["limit_expired"]:
+        appr += (f" ({d['modified_approved']} with a changed entry"
+                 + (f"; {d['limit_expired']} never reached the changed entry" if d["limit_expired"] else "") + ")")
     return "\n".join([
-        f"🗓 <b>PAPER दिवस-सारांश</b> {d['day']} (15:45)",
-        f"✅ approvals {d['approvals']} (त्यातले ✏️ modified {d['modified_approved']}; limit न गाठता expire {d['limit_expired']})",
-        f"✏️ modifications {d['modifications']} · ⏱ उत्तर नाही {d['timeouts']}",
-        f"❌ rejections {sum(d['rejections'].values())}: {rej}",
-        f"📝 corrections {d['corrections']} (daily review queue — engine ला लागू नाही)",
-        f"💰 approved trades: बंद {d['trades_closed']} · उघडे {d['trades_open']} · net P&L <b>₹{d['pnl']:,.0f}</b>",
-        f"👻 would-have नोंदी {d['would_have']} (position नाही — तुलनेसाठी)"])
+        f"<b>Your decisions today</b>: {appr}, rejected {nrej}" + (f" ({rej})" if rej else "")
+        + f", changed entry {d['modifications']}, no answer {d['timeouts']}.",
+        f"<b>Trades</b>: closed {d['trades_closed']}, still open {d['trades_open']}, net P&L <b>₹{d['pnl']:,.0f}</b>. "
+        f"Skipped trades tracked for comparison: {d['would_have']}.",
+        f"Chart corrections you sent: {d['corrections']} (kept for review; not applied to the engine)."])

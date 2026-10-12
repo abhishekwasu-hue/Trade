@@ -355,7 +355,9 @@ def test_daily_summary_counts(db, capsys):
     from scripts import paper_daily_summary as S
     sent = []
     assert S.main(["--day", "2026-10-06"], send=sent.append) == 0
-    assert "approvals 1" in sent[0] and "wrong trend 1" in sent[0] and "₹1,234" in sent[0] and "would-have नोंदी 1" in sent[0]
+    # TELEGRAM_CLEANUP 4: साधे English शब्द, आकडे तेच
+    assert "approved 1 (1 with a changed entry)" in sent[0] and "rejected 2 (wrong trend 1, no reason given 1)" in sent[0]
+    assert "₹1,234" in sent[0] and "Skipped trades tracked for comparison: 1" in sent[0] and "Chart corrections you sent: 1" in sent[0]
 
 
 def test_poll_routes_state_text_before_review_replies(db, monkeypatch):
