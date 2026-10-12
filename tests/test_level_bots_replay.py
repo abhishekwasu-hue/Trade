@@ -343,7 +343,7 @@ def test_confirmation_arm_takes_the_gate_plan_mirror(monkeypatch, specs, side):
     t_conf = int(mk.day_rows[5][day][2])                                      # दिवसाचा 3रा 5m candle
     seen = []
 
-    def fake_eval(bars, area, ctx_, others, k0, s=None):
+    def fake_eval(bars, area, ctx_, others, k0, s=None, **_ltf):
         t = len(bars) - 1
         seen.append(t)
         if bars["timestamp"].iloc[-1] == cf["timestamp"].iat[t_conf]:

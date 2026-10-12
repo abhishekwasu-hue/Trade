@@ -650,6 +650,11 @@ def replay_day(mk, spec, day, gate_s=None, s=None, cost=None):
         prev_days = [d for d in mk.days if d < day][-int(s["ctx_days"]):]
         first = min([mk.day_rows[cm][d][0] for d in prev_days if d in mk.day_rows[cm]] + [today_rows[0]])
         B = cf.iloc[first:today_rows[-1] + 1][["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+        lt = LR.ltf_minutes_for(cm, gate_s)                                # c1: live सारखंच LTF (5M ⇒ 1M, 15M ⇒ 5M); data नाही ⇒ None (entry नाही)
+        LTF = None
+        if lt in mk.frames:
+            lf = mk.frames[lt]
+            LTF = lf[(lf["timestamp"] >= B["timestamp"].iloc[0]) & (lf["day"] <= day)][["timestamp", "open", "high", "low", "close"]]
         k0 = int(today_rows[0] - first)
         BO, BH, BL, BC = (B[k].to_numpy(float) for k in ("open", "high", "low", "close"))
         BE = (B["timestamp"] + pd.Timedelta(minutes=cm)).tolist()
@@ -661,7 +666,7 @@ def replay_day(mk, spec, day, gate_s=None, s=None, cost=None):
             key = (j, a, t)
             if key not in cache:
                 others = [x for x in areas[j] if (round(min(x), 4), round(max(x), 4)) != (round(a[0], 4), round(a[1], 4))]
-                cache[key] = LR.safe_evaluate(B.iloc[:t + 1], a, ctx, others, k0, s=gate_s)
+                cache[key] = LR.safe_evaluate(B.iloc[:t + 1], a, ctx, others, k0, s=gate_s, ltf=LTF, tf_minutes=cm)
             return cache[key]
 
         if ctx.get("ok"):

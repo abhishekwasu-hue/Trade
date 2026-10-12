@@ -152,6 +152,7 @@ def test_real_gate_with_trend_confirmed_vs_against_trend(env, monkeypatch):
     bars.insert(0, "timestamp", [day0 - pd.Timedelta(days=1) + pd.Timedelta(minutes=5 * i) for i in range(30)]
                 + [day0 + pd.Timedelta(minutes=5 * i) for i in range(len(today))])
     monkeypatch.setattr(upstox_api, "fetch_candles", lambda *a, **k: bars.copy() if k.get("interval") == "5minute" else None)
+    env.candles = bars.copy()                                              # c1 (5M ⇒ 1M): bot चा 1-मिनिट feed = gate चा LTF (plumbing; रचना test_level_reaction_c1)
 
     monkeypatch.setattr(LR, "daily_trend", lambda *a, **k: UP_CTX)
     dsr.process_symbol("tok", "NIFTY")

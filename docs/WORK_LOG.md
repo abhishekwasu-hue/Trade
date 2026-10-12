@@ -1847,6 +1847,26 @@ SHARP_A fixture (fecdac7 मूल्यं) आणि mis-placed-pivot अप�
 **Final review 🟡:** `sharp_a5` fixture (5 waves दिसणारे) ⇒ invariant 2 / 5 / 7 चे live passing tests (दोन्ही दिशा); मूळ sharp_a tests strict xfail तसेच. Degree-1 legs चं re-read कधीच होत
 नाही — design note आणि CR-Q11 मध्ये स्पष्ट. Unequal sharp a-b-c (c ≈ 1.3 / 1.6 × a, ideal + 2 seeds, आरसा): कधीच impulse नाही, कधीच flip नाही (8 uncertain / 4 correction low).
 
+## 2026-10-12 · एकच confirmation (a2 + c0 + c1) — V22 ⑥ आणि level bots (LEVEL_BOTS_CONFIRMATION §2 a2 / c0 / c1; DECISIONS item 2 (e) (f))
+
+**काय केलं:** `decision3/method.confirm` = एकच shared function (दिशा d, आरसा): a2 (window मध्ये absorption ⇒ वाट), c0 (Q16 form + dominant body
+≥ `commit_dom_mult` × window सरासरी + volume > window सरासरी; NA ⇒ चालतं, कमाल B), **c1 नवा** — `method.ltf_choch`: LTF lower low नंतर higher low (1-bar
+pivot) किंवा sweep-close-back-inside, मग शेवटच्या LTF lower high वर **close** (wick ⇒ नाही); LTF bars फक्त setup bar च्या close पर्यंत (lookahead
+नाही). Mapping `method.LTF_OF`: 15M / 1H ⇒ 5M, 5M ⇒ 1M. Setting `ltf_choch` (decision3 + gate, default True = आवश्यक; False फक्त what-if).
+प्रत्येक गहाळ भाग ⇒ वाट + कारण ("LTF data missing" / "LTF still trending against" / "waiting for LTF CHoCH" / low volume / not dominant / absorption).
+- **V22:** ⑥ `M.commitment` ऐवजी `V22._confirm` ⇒ `M.confirm` (study window = K मधला level-स्पर्शांचा शेवटचा सलग गट). नवे optional inputs
+  `ltf=` (5M bars) आणि `futures=` (5M FUT ⇒ `legs2.volume.bar_volume`); `ltf` नसेल आणि `df1m` असेल ⇒ त्याच 1m चे 5M (`market_state.core.frame`);
+  दोन्ही नाहीत ⇒ ⑥ "LTF data missing" (setup नाही). ④ (e) handover-volume आधीच होतं — आता volume दिल्यावर लागतं.
+- **Level bots:** `level_reaction.evaluate` आता `M.confirm` बोलावतो (a2 / c0 ची नक्कल काढली), `ltf=` / `tf_minutes=`; CHoCH नसेल ⇒ ARMED +
+  `ltf_wait` (signal log `SKIPPED_GATE_LTF_MISSING / _AGAINST / _NO_CHOCH`), ticket `ltf_line`. `cycle_gate` LTF त्याच fetch मार्गाने (lazy, एकदाच);
+  5M Instant स्वतःचे 1-मिनिट candles देतो (`use_ltf`). L6 replay ला LTF (1m / 5m frames). Exits ला हात नाही; touch mode तसाच.
+- **a2 / c0 वर्तन तसेच (पुरावा):** c1 बंद ठेवून सगळे जुने level-bot tests (695) हिरवे; replay-day तुलना (NIFTY 2021-08 → 2022-01, Instant /
+  Classic / SRv2, 120 दिवस): c1 बंद ⇒ origin/main शी byte-identical; c1 चालू ⇒ touch trades तेच (589), confirmation 18 ⇒ 11.
+- **Tests:** नवे `tests/test_level_reaction_c1.py`, `tests/test_decision3_confirm.py` (प्रत्येक case आरशासह; main वर 34 / 35 fail). जुन्या tests
+  मध्ये फक्त inputs: `test_level_reaction.py` = c1-पूर्व करार (c1 बंद fixture), `NO_MATURE` fixture (15M-only, dominant candle नाही) ⇒ c0 / c1 बंद,
+  bot harnesses ना LTF candles, replay fake ला `**kw`. Expectations बदलल्या नाहीत.
+- **V22 बदल:** `docs/reports/v22_confirmation_c1.md` (NIFTY 2015 → 2024-03, before / after, #23 / #24). उघडे: LB25–LB30.
+
 ## 2026-10-12 · Chart Reader v2 CR3 — marking page + gallery storage (research-only)
 
 **काय केलं:** नवा package `gallery2/` (labels — reader2 चं logic नाही; reader2 / decision3 import करत नाही): `schema` (एका chart ची नोंद:

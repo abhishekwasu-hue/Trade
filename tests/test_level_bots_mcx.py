@@ -77,6 +77,8 @@ class Harness:
         assert key == "MCX_FO|12345"                                       # नेहमी resolve झालेला contract
         if interval == "15minute":
             return self.bars15.copy()
+        if interval == "5minute":                                          # c1 LTF (15M ⇒ 5M) plumbing: तेच candles (CHoCH रचना test_level_reaction_c1 मध्ये)
+            return self.bars15.copy()
         if interval == "30minute":
             return self.c30.copy()
         if interval == "day":

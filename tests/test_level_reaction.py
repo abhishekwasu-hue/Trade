@@ -9,6 +9,13 @@ DAY0 = pd.Timestamp("2001-01-01 09:15")   # synthetic sessions (खरी ता
 UP_CTX = {"ok": True, "trend": "UP", "sides": {LR.BULL}, "band": None, "reason": "Daily UP"}
 DOWN_CTX = {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "band": None, "reason": "Daily DOWN"}
 AREA = (990.0, 1000.0)                    # demand area
+
+
+@pytest.fixture(autouse=True)
+def _a2_c0_contract_without_c1(monkeypatch):
+    """हा module a2 / c0 / state machine चा करार तपासतो (c1 आधीचा) ⇒ इथे c1 (LTF CHoCH) बंद — c1 सुरू असताना तेच वर्तन + CHoCH ची अट
+    tests/test_level_reaction_c1.py मध्ये (प्रत्येक case आरशासह)."""
+    monkeypatch.setitem(LR.DEFAULTS, "ltf_choch", False)
 OTHERS = [(1090.0, 1100.0), (900.0, 910.0)]
 
 

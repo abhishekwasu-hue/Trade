@@ -26,6 +26,8 @@ STATUS = {                                                                 # sig
     LR.R_RR: "SKIPPED_GATE_RR", LR.R_NO_TARGET: "SKIPPED_GATE_NO_TARGET", LR.R_ERROR: "SKIPPED_GATE_ERROR",
 }
 ARMED_WHY = {"absorbing": "SKIPPED_GATE_ABSORPTION", "low_volume": "SKIPPED_GATE_LOW_VOLUME"}   # ARMED चालू, पण कारण वेगळं (L5 सारांश)
+LTF_WHY = {LR.R_LTF_MISSING: "SKIPPED_GATE_LTF_MISSING", LR.R_LTF_AGAINST: "SKIPPED_GATE_LTF_AGAINST",   # c1: ARMED, commitment आहे
+           LR.R_LTF_PENDING: "SKIPPED_GATE_LTF_NO_CHOCH"}                                                # पण LTF CHoCH नाही
 
 
 def entry_mode(settings):
@@ -48,6 +50,8 @@ def status_of(r):
         for k, v in ARMED_WHY.items():
             if r.get(k):
                 return v
+        if r.get("ltf_wait") in LTF_WHY:
+            return LTF_WHY[r["ltf_wait"]]
     for k, v in STATUS.items():
         if why.startswith(k):
             return v
@@ -66,9 +70,27 @@ def skip_fields(r):
 
 
 class CycleGate:
-    def __init__(self, ctx, bars, k0, areas, s, err=None):
+    def __init__(self, ctx, bars, k0, areas, s, err=None, tf=None, ltf_fetch=None):
         self.ctx, self.bars, self.k0, self.areas, self.s, self.err = ctx, bars, k0, list(areas), s, err
         self._cache = {}
+        self.tf, self._ltf_fetch, self._ltf, self._ltf_done = tf, ltf_fetch, None, False
+
+    def use_ltf(self, df, minutes, now):
+        """c1: bot ने आधीच आणलेले lower-timeframe candles (उदा. 5M Instant चे 1-मिनिट) ⇒ पुन्हा fetch नाही. फक्त बंद candles वापरले जातात
+        (आणि method.confirm त्यातलेही फक्त setup bar च्या close पर्यंतचे)."""
+        self._ltf_fetch = (lambda: None if df is None or len(df) == 0 else LR.closed_bars(df, minutes, now))   # noqa: E731
+        self._ltf_done, self._cache = False, {}
+
+    def ltf(self):
+        """c1 LTF बंद candles (पहिल्या गरजेला एकदाच fetch). अपयश / रिकामे ⇒ None ⇒ "LTF data missing" (entry नाही; exits ला हात नाही)."""
+        if not self._ltf_done:
+            self._ltf_done = True
+            try:
+                self._ltf = self._ltf_fetch() if self._ltf_fetch is not None else None
+            except Exception as exc:                                       # noqa: BLE001 — fail-closed (c1 वाट)
+                print(f"⚠️ LTF candles: {type(exc).__name__}: {str(exc)[:80]} ⇒ LTF data missing (entry नाही)")
+                self._ltf = None
+        return self._ltf
 
     def result(self, lo, hi):
         lo, hi = float(min(lo, hi)), float(max(lo, hi))
@@ -79,7 +101,7 @@ class CycleGate:
             r = {"state": "ERROR", "entry": False, "side": None, "reason": self.err, "events": [], "area": (lo, hi)}
         else:
             others = [a for a in self.areas if (round(min(a), 4), round(max(a), 4)) != key]
-            r = LR.safe_evaluate(self.bars, (lo, hi), self.ctx, others, self.k0, s=self.s)
+            r = LR.safe_evaluate(self.bars, (lo, hi), self.ctx, others, self.k0, s=self.s, ltf=self.ltf(), tf_minutes=self.tf)
             r.setdefault("area", (lo, hi))
         self._cache[key] = r
         return r
@@ -195,7 +217,14 @@ def cycle_gate(bot, symbol, access_token, settings, areas, now, fetch_bars=None,
         k0 = LR.session_start_index(bars, now.tz_localize(None) if now.tzinfo else now)
         if k0 >= len(bars):
             return CycleGate(ctx, bars, k0, areas, s, err="आजचा पहिला बंद candle अजून नाही")
-        return CycleGate(ctx, bars, k0, areas, s)
+        lt = LR.ltf_minutes_for(tf, s)                                     # c1: 15M ⇒ 5M, 5M ⇒ 1M (Abhi mapping; dashboard gate_ltf_minutes)
+
+        def ltf_fetch():                                                   # त्याच fetch मार्गाने (Upstox index / MCX contract), गरज पडल्यावरच
+            if not lt or lt not in _INTERVAL:
+                return None
+            raw_l = fetch_bars(access_token, symbol, lt)
+            return None if raw_l is None or len(raw_l) == 0 else LR.closed_bars(raw_l, lt, now)
+        return CycleGate(ctx, bars, k0, areas, s, tf=tf, ltf_fetch=ltf_fetch)
     except Exception as exc:                                               # noqa: BLE001 — fail-closed
         return CycleGate(None, None, 0, areas, s, err=f"{LR.R_ERROR}: {type(exc).__name__}: {str(exc)[:80]}")
 
