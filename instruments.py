@@ -6,6 +6,8 @@ import os
 REGISTRY = {
     "NIFTY": {"key": "NSE_INDEX|Nifty 50", "label": "NIFTY", "holdout": True, "futures": "NIFTY", "dir": "upstox"},
     "BANKNIFTY": {"key": "NSE_INDEX|Nifty Bank", "label": "BANKNIFTY", "holdout": False, "futures": None, "dir": "banknifty"},
+    # Abhi (one bot, live engine): SENSEX index (BSE). FUT volume live feed BSE वरून (engine3_live.resolve_future); collector data नाही ⇒ None
+    "SENSEX": {"key": "BSE_INDEX|SENSEX", "label": "SENSEX", "holdout": False, "futures": None, "dir": "sensex"},
 }
 DEFAULT = "NIFTY"
 _current = {"name": None}

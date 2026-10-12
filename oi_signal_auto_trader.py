@@ -135,6 +135,10 @@ def _run_cycle_inner(access_token, symbol, trading_mode, strategy_choice):
         return log
 
     # --- नवीन Entry — दोन्ही अटी एकत्र हव्यात ---
+    _off = _paper_entry_off("oi_signal_auto_trader", symbol, trading_mode)                # one-bot mode: PAPER नवे entries बंद (वरचं position व्यवस्थापन चालूच)
+    if _off:
+        log.append(_off)
+        return log
     a1_direction, a1_reason = get_current_a1_direction(access_token, symbol, strategy_choice)
     log.append(f"A1 तपासणी: {a1_reason}")
     if a1_direction is None:
@@ -176,6 +180,15 @@ def _run_cycle_inner(access_token, symbol, trading_mode, strategy_choice):
                f"Net Credit={strategy_result['net_credit']}, Trade ID={result['trade_id']}")
     return log
 
+
+
+def _paper_entry_off(name, symbol, trading_mode):
+    """Abhi (one bot): settings `symbol_enabled` = false (फक्त PAPER) ⇒ नवा entry नाही. LIVE / वाचता नाही ⇒ None (जुनं वर्तन)."""
+    try:
+        from bots_common.one_bot import paper_entry_blocked
+        return paper_entry_blocked(name, symbol, trading_mode)
+    except Exception:  # noqa: BLE001
+        return None
 
 if __name__ == "__main__":
     import argparse

@@ -144,7 +144,37 @@ def v2_lines(a, hits=None):
     return s
 
 
-def caption(row, res, mode, reused=False):
+def _row_tags(row):
+    t = row.get("tags")
+    if isinstance(t, dict):
+        return t
+    try:
+        return json.loads(row.get("setup_json") or "{}").get("tags") or {}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def plain_head(row):
+    """Caption ओळ 1 (Abhi, TELEGRAM_CLEANUP 3): साधी English — कोणता index, कोणती बाजू, कुठे, आणि chart वर काय पाहायचं. Engine codes नाहीत."""
+    tags = _row_tags(row)
+    bull = str(row.get("direction") or "").upper() == "BULLISH"
+    trade = "bull put (bullish)" if bull else "bear call (bearish)"
+    g = tags.get("gate") or {}
+    area = [x for x in (g.get("area") or [])[:2] if x is not None]
+    if len(area) == 2:
+        where = f"{'demand' if bull else 'supply'} area {min(area):,.0f}–{max(area):,.0f}"
+    elif row.get("level") is not None:
+        where = f"{'support' if bull else 'resistance'} {float(row['level']):,.0f}"
+    else:
+        where = "the marked level"
+    who = "your manual" if tags.get("manual") else "a"
+    tf = str(row.get("setup_tf") or "").strip()
+    return (f"{row.get('symbol')}: {who} {trade} trade at {where}" + (f" ({tf} chart)" if tf else "") + ". Look at the area and the last "
+            f"candle: did {'buyers' if bull else 'sellers'} really take over there?")
+
+
+def _body(row, res, mode, reused=False):
+    """जुना caption (engine / Vision तपशील) — आता "── details ──" खाली."""
     e, mr = VERDICT_MR.get(res.get("verdict") or "unavailable", ("⚪", res.get("verdict")))
     ts = pd.Timestamp(row["signal_ts"])
     s = [f"👁 <b>Vision V0 — फक्त माहिती</b> · {html.escape(str(row.get('bot_label') or row['bot']))}",
@@ -171,7 +201,15 @@ def caption(row, res, mode, reused=False):
     s.append("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).")
     if res.get("cost_usd"):
         s.append(f"खर्च ${res['cost_usd']:.4f} · {res.get('latency_ms', 0) / 1000:.1f}s")
-    return "\n".join(s)[:1024]
+    return "\n".join(s)                                                 # कापणी callers (_fit, ओळी-निहाय) करतात
+
+
+def caption(row, res, mode, reused=False):
+    """V0 (फक्त माहिती): साधी ओळ + "Decision needed: none" + ── details ── + जुना तपशील (≤ 1024)."""
+    from bots_common import plain_text as PT
+    top = f"{html.escape(plain_head(row))}\n{PT.DECISION_NONE} (Vision opinion only; the bot decided as usual)\n{PT.SEP}"
+    body = [x for x in _body(row, res, mode, reused).split("\n") if x]
+    return top + "\n" + _fit(body, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1)   # ओळी-निहाय (HTML tag अर्धवट नाही)
 
 
 def _budget_ok(g, model, path=None):
@@ -224,13 +262,20 @@ def v1_status(row, verdict, s, meta):
 
 
 def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
-    s = caption(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
+    from bots_common import plain_text as PT
+    s = _body(row, res, row["mode"]).replace("👁 <b>Vision V0 — फक्त माहिती</b>", f"👁 <b>Vision V1 — {row['mode']}</b>")
     try:
         tags = json.loads(row.get("setup_json") or "{}").get("tags") or {}
     except (ValueError, TypeError, AttributeError):
         tags = {}
+    head = html.escape(plain_head(row))                                   # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
     if tags.get("dry_run"):                                             # Abhi (Sunday dry-run): replay signal ला स्पष्ट टॅग
-        s = "🧪 [DRY-RUN] " + s
+        head = "🧪 [DRY-RUN] " + head
+    if d.status == "PENDING_HUMAN":
+        dline = f"<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline).strftime('%H:%M') if deadline else '?'}"
+    else:
+        dline = PT.DECISION_NONE + (" (entry approved automatically)" if d.status == "APPROVED" else " (entry rejected automatically)")
+    top = f"{head}\n{dline}\n{PT.SEP}"
     manual = str(tags.get("manual_text") or "") if tags.get("manual") else ""
     s = s.replace("Bot ने नेहमीप्रमाणे निर्णय घेतला — vision चा trade वर परिणाम नाही (V0).", "")
     lines = [x for x in s.split("\n") if x]
@@ -258,8 +303,10 @@ def v1_caption(row, res, d, deadline=None, buttons=True, why=""):
     if (res or {}).get("verdict") in (None, "unavailable"):
         extra.append("Vision: NA" + (f" ({html.escape(str(res.get('error'))[:80])})" if (res or {}).get("error") else "") + " — बटणं तरीही चालतात")
     tail = ("SL / T: तुमचे spot SL / T (paper watcher) + backstop generic नियम." if manual else "SL / target / exits: bot चे नेहमीचे नियम (automatic).")
-    lines = lines[:1] + extra + [x for x in s.split("\n") if x] + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
-    return _fit(lines)
+    dec = [x for x in s.split("\n") if x]                               # ⏱ / ⚠️ बटणं नाहीत / ✅ ❌ — header नंतर लगेच, कधीच गाळत नाही
+    lines = lines[:1] + dec + extra + lines[1:2] + [engine_line(row)] + lines[2:] + [tail]
+    # वरचा साधा भाग कधीच कापत नाही; details मधून आधी शेवटच्या ओळी, मग extra गाळतो (UTF-16 units, MARGIN सकट)
+    return top + "\n" + _fit(lines, 1024 - PT.MARGIN - PT.tg_len(top) - 1, keep=1 + len(dec))
 
 
 def engine_line(row):
@@ -271,12 +318,17 @@ def engine_line(row):
         return f"engine: NA ({html.escape(type(exc).__name__)})"
 
 
-def _fit(lines, limit=1024):
-    """Telegram caption मर्यादा: शेवटच्या ओळी पूर्ण गाळतो (HTML tag मध्येच कापला जाऊ नये; निर्णयाची ओळ वर असल्याने टिकते)."""
-    while len(lines) > 2 and len("\n".join(lines)) > limit:
-        lines.pop(-2 if len(lines) > 3 else -1)
+def _fit(lines, limit=1024, keep=2):
+    """Telegram caption मर्यादा (UTF-16 units): पहिल्या `keep` ओळी (header + निर्णय) आणि शेवटची ओळ टिकवून, शेवटून आधीच्या ओळी पूर्ण गाळतो
+    (HTML tag मध्येच कापला जाऊ नये). तरीही मोठं ⇒ शेवटची ओळ, मग tags काढून कापतो."""
+    from bots_common import plain_text as PT
+    lines = list(lines)
+    while len(lines) > keep + 1 and PT.tg_len("\n".join(lines)) > limit:
+        lines.pop(-2)
+    if len(lines) > keep and PT.tg_len("\n".join(lines)) > limit:
+        lines.pop(-1)
     s = "\n".join(lines)
-    return s if len(s) <= limit else re.sub(r"<[^>]+>", "", s)[:limit]
+    return s if PT.tg_len(s) <= limit else PT.tg_cut(re.sub(r"<[^>]+>", "", s), limit)
 
 
 def v1_notify(row, res, d, png, path, reused=False):

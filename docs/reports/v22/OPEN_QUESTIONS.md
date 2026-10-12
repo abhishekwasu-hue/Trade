@@ -3,7 +3,7 @@
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | Q1 | ① HH / HL: "जवळपास समान" (RANGE tol) च्या आत असलेला H2 > H1 HH मानायचा का? | नाही — HH / HL साठी tol पलीकडे हवं (`range_eq_sigma_d` × σ_D); tol च्या आत ⇒ RANGE उमेदवार | साधं `>` |
-| Q2 | ② मृत्यू: "level पलीकडचा structural swing" — कोणती बाजू? | **मूळ भूमिकेची** (support ⇒ खालचा जवळचा D2 L; resistance ⇒ वरचा D2 H), flip झाल्यानंतरही | चालू भूमिकेची बाजू (flipped resistance ⇒ वरचा swing) |
+| Q2 | ② मृत्यू: "level पलीकडचा structural swing" — कोणती बाजू? | ~~मूळ भूमिकेची~~ **TL1 (Abhi 2026-10-12) ने बदललं: चालू भूमिकेची बाजू** (`level_death_side` = "role"); जुना: **मूळ भूमिकेची** (support ⇒ खालचा जवळचा D2 L; resistance ⇒ वरचा D2 H), flip झाल्यानंतरही | चालू भूमिकेची बाजू (flipped resistance ⇒ वरचा swing) |
 | Q3 | ② flip ("real break") किती closes? | **spec §5.4 / §7.7 ने ठरलं:** पलीकडे सलग 3 closes (acceptance, `accept_closes`); 1–2 closes किंवा wick आणि परत ⇒ sweep ★ | — |
 | Q4 | ② (b) BOS base चा पट्टा | ↑ [low, open] / ↓ [open, high] (base चा उगम-भाग) + किमान रुंदी | पूर्ण candle [low, high] |
 | Q5 | ① नवा trend: नवा HL आणि HH दोन्ही शेवटच्या break नंतरचे हवेत का? | हो (दोन्ही pivots break bar नंतरचे) | फक्त दुसरा (नंतरचा) pivot नवा |
@@ -104,7 +104,7 @@
 | LB8 | c0 "dominant" commitment: body किती पट window सरासरी? | 1.5× (`commit_dom_mult`, register "अंदाज") — निकाल पाहून नाही | 1.25 / 2.0 |
 | LB9 | a2 handover वाचन: पहिल्या / दुसऱ्या अर्ध्याची तुलना; body आवश्यक + इतर उप-तपासण्यांपैकी किमान अर्ध्या | तसेच (`study_min_bars` 4) | प्रत्येक उप-तपासणी आवश्यक |
 | LB10 | SENSEX volume | SENSEX FUT (BSE) resolver नाही ⇒ NA ⇒ grade कमाल B | BSE FO resolver जोडणे |
-| LB11 | Engine (decision3) diffs: ④ (a) आता relative contraction (`power_a_rule`); ④ (e) handover-volume (volume असेल तर, engine च्या 15M data मध्ये volume नाही ⇒ NA); commitment ला dominance + volume फक्त `win` दिल्यावर (gate) — engine call अजून win देत नाही | decision3 tests / goldens मध्ये बदल नाही (फक्त जुन्या strict-3 test ला `power_a_rule="strict3"`); v22 review charts पुन्हा बनवले नाहीत | engine मध्ये commitment ला K window देणे (Abhi सांगतील तेव्हा) |
+| LB11 | Engine (decision3) diffs: ④ (a) आता relative contraction (`power_a_rule`); ④ (e) handover-volume (volume असेल तर, engine च्या 15M data मध्ये volume नाही ⇒ NA); commitment ला dominance + volume फक्त `win` दिल्यावर (gate) — ~~engine call अजून win देत नाही~~ **2026-10-12: V22 ⑥ आता `method.confirm` (a2 + c0 + c1, LB25–LB30)** | decision3 tests / goldens मध्ये बदल नाही (फक्त जुन्या strict-3 test ला `power_a_rule="strict3"`); v22 review charts पुन्हा बनवले नाहीत | engine मध्ये commitment ला K window देणे (Abhi सांगतील तेव्हा) |
 | LB18 | L6 replay cost: option premium इतिहास नाही ⇒ P&L index points; cost = 1 lot naked ITM buy (NIFTY premium ₹150, lot 75, delta 0.6, slippage ₹0.5 / बाजू ⇒ ≈ 3.2 pts; BANKNIFTY ₹350 / 35 / 0.6 / ₹1 ⇒ ≈ 6.7 pts) | `COST_DEFAULTS` (निकाल न पाहता) | Abhi चे आकडे / credit spread चा cost |
 | LB19 | L6 exits: touch आणि confirmation दोघांना bot चेच exits — naked spot % SL / target entry पासून + TSL-to-breakeven (5M / SRv2 0.10 %, Classic 0.6 %, sticky; live चं "premium ≤ 0" ⇒ spot ≤ entry); premium-points SL / TSL / target, premium trailing, spread exits, next-level exit replay नाहीत (premium इतिहास नाही) | तसेच; structural SL / target फक्त तिसरा तुलना-arm (not live) | premium model / LB2 structural exit live करणे |
 | LB20 | L6 levels: सत्र सुरुवात + दर 60 मिनिटं (live: 1M / 5M दर 5 मिनिटं, 15M+ दर 15 मिनिटं); level memory replay नाही | `level_refresh_min` 60 | 5 / 15 मिनिटं (run वेळ ×4–12) |
@@ -112,6 +112,12 @@
 | LB22 | MCX: फक्त 30m ≈ 4 महिने, volume नाही; confirmation 30m (live 15m); Daily trend ≤ 4 महिन्यांवरून (live ~10 वर्षं); cascade / supertrend / structure SL replay नाहीत | illustration | MCX 15m + Daily लांब इतिहास (L4 सोबत) |
 | LB23 | IS / VAL मध्ये index futures volume नाही ⇒ gate ची volume तपासणी (c0) replay मध्ये कधीच लागत नाही (grade ≤ B) | तसेच | NSE F&O bhavcopy (Daily) पुरेसा नाही — intraday futures volume हवा |
 | LB24 | Trend split: Daily trend UP / DOWN पण gate ने entries अडवले (origin broken / धोक्यात, A1 parent correction) ⇒ bull / bear मध्येच, verdict "trend unclear" | तसेच | वेगळा "blocked" गट |
+| LB25 | c1 "LTF stops making lower lows": higher low म्हणजे काय? | **review 🔴1 नंतर:** study window मधल्या सर्वात खालच्या low (LL) नंतर किमान एक बंद LTF candle (LL हाच शेवटचा बंद bar ⇒ "LTF still trending against"); higher low = LL नंतर CHoCH candle पर्यंतचा सर्वात खालचा low (समान ⇒ double bottom); किंवा LL candle ने आधीचा LTF swing low / area ची far edge sweep करून close परत आत (मग तीच candle CHoCH असू शकते). V-reversal / stair-step / gap-down पहिलाच bar low ⇒ चालतं | 1-bar pivot HL आवश्यक (कडक — V-reversal कधीच नाही) |
+| LB26 | c1 "last LTF lower high": कोणता swing? | lower low आधीचा शेवटचा LTF 1-bar swing high (संदर्भ = सत्र सुरुवात (bots) / K चं impulse टोक (V22)); pivot नसेल (सरळ घसरण) ⇒ lower low आधीच्या candle चा high | संपूर्ण pullback चा सर्वात जवळचा मोठा swing |
+| LB27 | a2 "handover study passed" = ? | absorption **नाही** (gate); handover (दोन्ही बाजू) = grade A पुरावा — level bots आधीसारखंच (a2 / c0 वर्तन बदल नाही) | handover = True आवश्यक (कडक; अनेक entries जातील) |
+| LB28 | V22 study window ("arrival" कधी)? | K मध्ये level ला स्पर्श करणाऱ्या 15M bars चा शेवटचा सलग गट (स्पर्शांत ≤ `touch_window_bars` अंतर); arrival bar स्वतः commitment असेल ⇒ window = तीच candle ⇒ dominant नाही (level bots सारखं) | "near" साठी अंतर (σ / ATR) setting — #24 मधले 25-Mar लाल candles window मध्ये येतील |
+| LB29 | LTF data कुठून (bots)? | त्याच fetch मार्गाने: 5M Instant = bot चे स्वतःचे 1-मिनिट candles (पुन्हा fetch नाही); Classic 1M, 15M SRv2 5M (Upstox index), MCX 5M (contract) — cycle मध्ये पहिल्या area result ला एकदाच; नाही ⇒ "LTF data missing" (entry नाही). Replay: BANKNIFTY (15M-only) आणि MCX (30m-only) ला LTF नाही ⇒ confirmation entries नाहीत | `gate_ltf_minutes` dashboard override |
+| LB30 | V22 volume (c0 / ④ e) | `futures=` (collector 5M FUT ⇒ legs2.volume.bar_volume) किंवा m15 चा volume column; IS / VAL मध्ये intraday FUT नाही ⇒ NA ⇒ grade कमाल B (सगळे इतिहासातले setups B) | Upstox FUT इतिहास |
 
 
 ## Chart Reader v2 (TRADE_SESSION_CHART_READER_V2) — CR0–CR3 मध्ये घेतलेले default निर्णय (Abhi ने बदलावे; research-only, कोणताही bot / decision3 वापरत नाही)
@@ -217,3 +223,49 @@
 | VP4 | 5M (lower TF) pane वर कोणता bar खूण? | c1 output मध्ये CHoCH bar असेल तर तो ("CHoCH bar vol ×"), नाहीतर setup bar चा शेवटचा 5M bar; window = 15M arrival पासूनचे 5M bars | setup bar चे तीन 5M bars एकत्र |
 | VP5 | 1H level chart (`h1_png`) ला volume pane? | नाही — spec फक्त 15M, lower TF आणि Daily सांगतं | 1H ला सुद्धा |
 | VP6 | Daily volume एकक: Upstox futures = quantity, bhavcopy = contracts | bhavcopy मध्ये lot_size (udiff, 2024 नंतर) ⇒ quantity (contracts × lot) आणि setup दिवस futures मधून; lot_size नाही ⇒ contracts, setup दिवस NA | नेहमी contracts (quantity ÷ lot) |
+
+| OB1 | One bot: FUT volume नसेल तर | front-month FUT 5M volume (SENSEX = BSE) नाही ⇒ volume NA (c0 चालतं, grade कमाल B) — fail-closed नाही; फक्त 5M spot (LTF, c1) नसेल ⇒ fail-closed | ठीक? (review नंतर बदल: आधी FUT नसेल तर symbol दिवसभर बंद होता) |
+| OB2 | One bot: engine setup ची मुदत | `pending_entry` = `engine_max_age_min` (30) मधला सर्वात नवा न-वापरलेला setup — पुढचा 15M bar "wait" असला तरी ✅ ची वाट चालू; नवी "error" row ⇒ नाही | 30 मिनिटं ठीक? |
+| OB3 | One bot: auto traders | oi_signal / credit_spread / oi_greeks ना settings flag नाही ⇒ installer त्यांच्या PAPER cron ओळी comment करतो (`#one-bot-off# `), LIVE ओळ नाही | या bots ना dashboard वर `symbol_enabled` हवा का? |
+
+
+## Telegram cleanup (TRADE_SESSION_TELEGRAM_CLEANUP 1–3, ONE_BOT §4) — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | प्रश्न | आत्ता (default) | पर्याय |
+|---|---|---|---|
+| TG1 | अनोळखी review kind | allowed यादीबाहेरचा kind ⇒ नकार (fail-closed), `--force` ने जातो | फक्त debug kinds नकार, बाकी जाऊ द्या |
+| TG2 | Setup audits (`v22_setup`) | run ला "debug" tag नसेल तरच जातात — "audit झाल्यावर, फक्त निर्णय लागणारे" हे manifest बनवणाऱ्याने निवडायचं | manifest मध्ये "audited" tag बंधनकारक |
+| TG3 | Review charts ची निर्णय ओळ | "Decision needed: reply ✔ (engine right) or ✘ + reason" | "approve / reject" शब्द |
+| TG4 | साध्या ओळींची भाषा | English (Abhi चं उदाहरण); details मधला जुना मराठी / codes मजकूर तसाच | मराठी साधी ओळ |
+| TG5 | 15:45 "जवळचा area" | ACTIVE zones (1M–60M bot TFs), 15:45 ला; आज तुटलेला area दिसत नाही; high / low = Upstox 15M (VPS token) | फक्त 15M+ TFs / आज तुटलेले सुद्धा |
+| TG6 | Pre-open engine ❌ | signal source engine / both असलेल्या symbols साठी engine store चा शेवटचा computed_at नाही किंवा 96 तासांपेक्षा जुना ⇒ ❌ | 09:00 ला कालच्या 15:00 bar ची सक्ती (सुट्टी कॅलेंडर लागेल) |
+| TG7 | Pre-open "चालू bots" यादी | 15M SRv2, 5M Instant, SR V3 shadow, Classic SR (symbol_enabled — bots चेच defaults) + MCX सक्रिय commodities. Vision shadow / oi_signal / credit_spread traders या ओळीत नाहीत | त्यांचेही flags वाचणे |
+
+
+## Trend first — setups audit (TRADE_SESSION_DECISIONS_SENSEX_SETUPS_CD14 §2) — default निर्णय (Abhi ने बदलावे; अहवाल `docs/reports/setups_prA_v1_audit.md`)
+
+| # | प्रश्न | आत्ता (default) | पर्याय |
+|---|---|---|---|
+| TF1 | Trend-first gate ची "Daily रचना" कोणत्या swings वर? | Daily swings (seq, N = 2 — spec ①, flip (अ) सारखेच) — counter-move same-degree correction (phase correction / origin_broken) असताना: impulse टोकानंतर HL (UP ⇒ LH) + मधल्या swing पलीकडे close + impulse-स्वभावाचा पाय (Q29 / Q36) ⇒ `DState.rev` ⇒ trend-बाजूचा trade नाही (trend / protected बदल नाही) | Q22 ने गाळलेले trend-degree swings — NIFTY 2020 rally तिथे एकच पाय ⇒ defect राहतो (पडताळलं: rev दिवस 62, 2020 नाही) |
+| TF2 | zigzag चा c, a च्या टोकापलीकडे close (b = HL) ⇒ Dow रचना UP ⇒ c-top bear call अडतो (HL wick ने तुटेपर्यंत / नवा LL होईपर्यंत; close परत a टोकाखाली आला तरी — PR #305 review) | अडतो (Abhi: "structure UP असताना bear call कधीच नाही"). NIFTY 633 / 2,282, BANKNIFTY 716 / 2,479 दिवस trend-बाजू बंद (सगळे correction phase); 30 पैकी फक्त 2020-11-04 ×2 वर परिणाम | counter-move impulse वाचला तरच अडवा — पण read_counter ने 2020 zigzag वाचलं ⇒ defect राहतो |
+| TF3 | Audit rule (126 sessions, N = 5 swings, शेवटचे दोन H / L) हाच Abhi चा "6-month structure"? | अहवालात rule चं वाचन (निकाल पाहण्याआधी जाहीर) | दुसरा rule |
+| TF4 | 2019-09-03, 2022-03-28 ×4: engine UP (Q45: A1 correction counter-move च्या शेवटच्या N = 2 LH पलीकडे close ने संपली) वि. rule DOWN (N = 5 LH टिकलेला) | बदल नाही (T1 — engine degree) | T2: gate audit rule सुद्धा वाचतो ⇒ 9 FAIL rows जातात, 19 उरतात — पण नवी swing degree (N = 5) |
+| TF5 | rule-ambiguous rows (equal lows / आधीच तुटलेलं DOWN वाचन): 2015-08-10, 2022-01-20, 2022-03-14, 2022-11-15 | FAIL* (Abhi confirm) | प्रत्येक row Abhi |
+| TF6 | Level bots ला तोच gate (`structure_against` ⇒ नवे entries नाहीत) | हो (shared ① gate, fail-safe) | फक्त V22 |
+| TF7 | §2 a–f audit columns (diagnostic, `scripts/setups_audit_columns.py`): (a) 15M N 3 / 5 sessions, 1H N 2 / 20, Daily N 2 / 126 + तुटलेले Daily lows; (b) edge touch = ≤ 2 candles + near half; (d) provisional = engine `prov` stack (why-trail वरून, अंदाजे); 2015–2024 ला futures volume नाही ⇒ NA | तसेच (फक्त अहवाल; engine बदल इतर branches वर) | Abhi च्या व्याख्या |
+
+| D12-1 | Maturity (Abhi 12 Oct: पुरावा फक्त, "कमाल एक पायरी खाली") — B setup चं काय? | रचना अखंड ⇒ A ⇒ B, B तसाच (B ⇒ weak केलं तर maturity ने entry अडते — owner नियमाविरुद्ध); रचना अखंड नाही ⇒ जुना cap weak | B ⇒ weak (म्हणजे mature + B ⇒ वाट) |
+| D12-2 | फक्त तिरक्या trendline वरून reversal (horizontal level नाही) — area? | नाही: spec ② level जन्म (a)–(d) च; रेघ फक्त horizontal level शी confluence असेल तर area (overlap पट्टा, births + `tl`) | रेघ एकटी area, grade कमाल B |
+| D12-3 | तिरकी रेघ किती स्पर्श? | 2 (anchors; `tl_min_touches`) — spec "पक्की ≥ 3" = माहिती (`tl.touches`) | ≥ 3 आवश्यक |
+| D12-4 | पुरावा-खिडकी (`evidence_start`) | 09:15 (सत्राची सुरुवात) — opening candle 2-candle form / संदर्भ म्हणून; entry खिडकी 09:30 … 15:15 तशीच | entry_start (जुनं) |
+| D12-5 | ⑦ target 12-Oct सारख्या case मध्ये: sweep वर SL + जवळचा support target ⇒ R:R < 3 शक्य | Q14 तसाच (I_end / जवळचा जिवंत level — जो जवळ); बदल नाही | पहिला target जवळचा level, R:R I_end वर (areas-quality branch) |
+| D12-6 | Trendline confluence ने grade वाढावा का? (spec ② "trendline रेघ तिथे (+)") | नाही: confluence area चा ★ / conviction parent level इतकाच; `tl_confluence` फक्त पुरावा-नोंद (वजन नाही). Area फक्त ② च्या active (जवळचे `active_levels_max`) levels वरून, किंमतीच्या योग्य बाजूला; p2 नंतर close रेघेपलीकडे ⇒ रेघ नाही | `tl_confluence` ला evidence वजन (उदा. `level_star` सारखं) |
+
+## Touch / levels audit (TRADE_SESSION_TELEGRAM_CLEANUP §4–§5, one-bot §7(e)) — `docs/reports/v22_missed_levels_touch.md`
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| TL1 | **✅ Abhi मंजूर (2026-10-12): default `level_death_side` = "role"** (Q2 बदलला; "role0" फक्त revert / what-if). **Q2 पुन्हा (9 Oct blind spot):** flip झालेला level कधी मरतो? 9 Oct: तुटलेला support (22,476–22,809 आणि weekly 22,518–22,527) 1 Oct / 8 Oct ला resistance झाला (3 closes, बरोबर), पण 8 Oct 11:15 ला **खालचा** D2 L 22,397 close ने तुटला ⇒ मूळ भूमिकेच्या (support) नियमाने मेला ⇒ 9 Oct (आणि 12 Oct ≈22,600) ला supply engine ला दिसली नाही. Downtrend मध्ये break ची पुढची धाव नेहमी खालचा swing तोडते ⇒ "तुटलेला support = supply" (spec ② (c)) व्यवहारात कधीच trade होत नाही | `level_death_side` = "role0" (जुना Q2 default, बदल नाही) | **"role" (शिफारस)** = चालू भूमिकेची बाजू: flipped supply फक्त वरचा D2 H close ने तुटला तरच मरते. Setting तयार + fixture (आरसा सह). What-if (NIFTY Sep–Oct 2026): setup 1 → 1, no_trade 118 → 142; 9 Oct ला दोन्ही supply दिसतात, 11:30 bar ला weekly 22,518–22,527 वर R:R 5.55 — फक्त maturity cap (weak) ने अडलं. बदल = एक settings ओळ |
+| TL2 | (Abhi 2026-10-12: "आत्ता नाही" — merge नियम तसाच, प्रश्न उघडा) Merge (Q19) ने पट्टा फुगतो: 22,570–22,640 चं क्षेत्र 22,476–22,809 (333 pts) level मध्ये गेलं (bar 0 ला Q40 prior Daily / Weekly पट्टे + नंतर D2 H 22,809 / BOS base / D2 H 22,732 — भूमिका वेगळी असूनही). इतक्या रुंद पट्ट्यावर SL वरच्या कडेपलीकडे ⇒ R:R < 1 (9 Oct 11:00 / 11:45: 0.99 / 0.74) | तसेच (Q19) | (a) फक्त समान भूमिकेचे merge (Q19 पर्याय); (b) merge फक्त पट्टा ≤ k × σ_1H राहत असेल तर (k Abhi ने ठरवायचा); (c) Q40 prior पट्टे आपापसात merge न करता वेगळे |
+| TL3 | (b) BOS base: 8 Oct BOS चा origin = शेवटचा confirmed D2 H 22,732 (6 Oct) ⇒ base 22,715–22,724. धाव प्रत्यक्ष 7 Oct 14:15 (22,649, D0) / 8 Oct open 22,599 पासून सुरू झाली — तो D2 swing नाही (degree filter: "लहान pivot पासून level नाही") | तसेच (Q4 / spec ② (b)) | 1H साठी Q55 सारखा "sharp-fall base" (धाव सुरू करणारी candle) — Daily `sharp_zone` चा 1H आरसा |
+| TL4 | a2 handover (`zone_study`) — trend-बाजूचा पहिला अर्धा रिकामा (29 Sep: 11:00–12:00 सगळ्या greens, 12:15 पहिली red) ⇒ `trend_growing` NA ⇒ `handover` False, जरी buying candles दमल्या (counter_weakening ✔) आणि 12:15 dominant engulf | तसेच (बदल नाही — `claude/v22-confirmation` चा भाग) | रिकामा पहिला अर्धा + दुसऱ्यात trend candle ⇒ "growing" ✔ |

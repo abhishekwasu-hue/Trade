@@ -1,6 +1,12 @@
 """scripts/send_review_to_telegram.py — review charts (K-10 / Golden Gallery / backtest visual review) Telegram वर, फक्त VPS वरून.
 
     python3 scripts/send_review_to_telegram.py --run review/k10/run1 [--data-dir /root/trade-data] [--no-pull] [--dry-run] [--vision-audit auto|off]
+        [--force]
+
+Debug outputs Telegram ला नाहीत (Abhi, TELEGRAM_CLEANUP 2): manifest top-level "tag": "debug" ⇒ संपूर्ण run नकार (exit 6, कारण छापतो);
+debug kind चे items (v22_daymap, per-bar strips, reader debug views, diag / what-if) किंवा allowed यादीबाहेरचे kinds ⇒ ते items नकार
+(कारणासह छाप). --force ⇒ तरीही पाठवतो. Allowed kinds: backtest_review/telegram.py ALLOWED_KINDS (docstring मध्ये यादी).
+Caption: ओळ 1 साधी (काय पाहायचं) + "Decision needed" ओळ, मग "── details ──" खाली engine चा caption.
 
 v2.2 items (kind "v22…"): chart → Vision audit (decision3/vision_audit.py, daily budget hard stop) → Telegram (caption मध्ये audit ओळ,
 "Vision report" reply); audit JSON PNG शेजारी; दैनिक सारांश docs/reports/v22/VISION_AUDIT.md.
@@ -31,6 +37,8 @@ def main(argv=None):
     ap.add_argument("--audit-summary", default=None,
                     help="दैनिक Vision audit सारांश (append); default <data-dir>/review/v22/VISION_AUDIT.md — repo checkout बाहेर "
                          "(tracked file बदलला तर VPS deploy clean-tree check थांबतो)")
+    ap.add_argument("--force", action="store_true",
+                    help="debug tag असलेला run / debug kind चे items तरीही पाठवा (सामान्यतः नको — debug trade-data / dashboard मध्येच)")
     a = ap.parse_args(argv)
     a.audit_summary = a.audit_summary or os.path.join(a.data_dir, "review", "v22", "VISION_AUDIT.md")
     if not a.no_pull:
@@ -48,7 +56,7 @@ def main(argv=None):
                 from vision import store as VS
                 model = os.environ.get("VISION_SIGNAL_MODEL", "")
                 auditor = VA.make_auditor(model=model, on_usage=lambda u, c: VS.add_usage(VA.TASK, model, u, c))   # per-call cost log
-            out = RT.send_run(run_dir, pause_s=a.pause, dry_run=a.dry_run, run_key=a.run.strip("/"), auditor=auditor)
+            out = RT.send_run(run_dir, pause_s=a.pause, dry_run=a.dry_run, run_key=a.run.strip("/"), auditor=auditor, force=a.force)
             if out.get("audits"):
                 from decision3 import vision_audit as VA
                 VA.append_summary(a.audit_summary,
@@ -58,13 +66,18 @@ def main(argv=None):
     except ProcessLockHeld:
         print("⏭️ दुसरा sender चालू आहे")
         return 5
+    except RT.DebugRunRefused as exc:
+        print(f"⛔ Not sent: {exc}")
+        return 6
     except RT.NoCredentials as exc:
         print(f"❌ {exc}")
         return 3
     except (OSError, ValueError) as exc:
         print(f"❌ manifest: {exc}")
         return 4
-    print(f"Telegram: पाठवले {out['sent']} · आधीच गेलेले {out['skipped']} · अयशस्वी {len(out['failed'])}")
+    print(f"Telegram: पाठवले {out['sent']} · आधीच गेलेले {out['skipped']} · अयशस्वी {len(out['failed'])} · नकार (debug) {len(out['refused'])}")
+    for item, why in out["refused"]:
+        print(f"   ⛔ not sent {item}: {why} (use --force to send anyway)")
     for d, why in out["failed"]:
         print(f"   ✖ {d}: {why}")
     return 0 if not out["failed"] else 1

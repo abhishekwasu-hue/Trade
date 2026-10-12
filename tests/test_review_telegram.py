@@ -5,6 +5,8 @@ import os
 import pytest
 
 from backtest_review import telegram as RT
+from bots_common import plain_text as PT
+
 
 def _png(col=(20, 30, 40)):
     import io
@@ -55,7 +57,9 @@ def test_manifest_parse_and_caption(tmp_path):
     m = RT.load_manifest(run_dir(tmp_path))
     assert m["run_id"] == "k10_run1" and len(m["items"]) == 2
     c = RT.caption(m, m["items"][1])
-    assert c.startswith("🔎 K-10 दिवस 2/2 · 2026-08-02") and "Trend: up" in c and len(c) <= 1024
+    det = c.split(PT.SEP + "\n", 1)[1]                                              # TELEGRAM_CLEANUP 3: साधी ओळ + निर्णय, मग details
+    assert det.startswith("🔎 K-10 दिवस 2/2 · 2026-08-02") and "Trend: up" in det and len(c) <= 1024
+    assert c.splitlines()[1] == PT.DECISION_REVIEW and not PT.has_raw_codes(PT.first_part(c))
 
 
 def test_manifest_missing_file_is_clear_error(tmp_path):
@@ -69,12 +73,12 @@ def test_sent_log_prevents_duplicates(tmp_path):
     d, log = run_dir(tmp_path), str(tmp_path / "sent.json")
     tg = FakeTG()
     out = RT.send_run(d, call=tg, creds=creds, sent=log, sleep=lambda s: None)
-    assert out == {"sent": 2, "skipped": 0, "failed": []}
+    assert out == {"sent": 2, "skipped": 0, "failed": [], "refused": []}
     assert [c[0] for c in tg.calls] == ["sendMediaGroup", "sendMediaGroup"]
     media = json.loads(tg.calls[0][1]["media"])
-    assert media[0]["caption"].startswith("🔎 K-10 दिवस 1/2") and "caption" not in media[1]
+    assert media[0]["caption"].split(PT.SEP + "\n", 1)[1].startswith("🔎 K-10 दिवस 1/2") and "caption" not in media[1]
     out2 = RT.send_run(d, call=tg, creds=creds, sent=log, sleep=lambda s: None)
-    assert out2 == {"sent": 0, "skipped": 2, "failed": []} and len(tg.calls) == 2
+    assert out2 == {"sent": 0, "skipped": 2, "failed": [], "refused": []} and len(tg.calls) == 2
     assert RT.lookup_message(101, log)["date"] == "2026-08-01"
 
 
