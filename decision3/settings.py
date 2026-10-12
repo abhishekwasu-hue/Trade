@@ -89,7 +89,7 @@ REGISTER = {
     "corr_degree_rule": ("internal_pullback", "internal_pullback / ratio", "Abhi नियम", "Q22: रचनात्मक — impulse च्या सर्वात मोठ्या आतल्या pullback पलीकडे (प्रमाण नाही); ratio = जुना what-if"),
     "corr_degree_frac": (0.5, "0.382/0.5/0.618", "व्याख्या", "फक्त ratio what-if (Q22 आधीचा नियम)"),
     "daily_start_nature_gate": (True, "True / False", "Abhi नियम", "Q28: trend सुरुवात फक्त impulse-स्वभावाच्या पायाने (decision3/daily_legs, Q32 adapter)"),
-    "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजुरी बाकी (OPEN_QUESTIONS Q49)"),
+    "q49_impulse_origin": ("complete_impulse", "complete_impulse / leg", "व्याख्या", "Q49 (a): counter-move correct करत असलेल्या impulse चा origin — विस्तार Abhi मंजूर (OPEN_QUESTIONS Q49)"),
     "daily_parent_gate": (True, "True / False", "Abhi नियम", "A1: impulse origin तुटला पण parent (trend सुरुवातीचा origin) टिकला ⇒ same-degree correction, flip नाही"),
     "range_after_trend": (True, "True / False", "Abhi नियम", "Q27: origin_broken + दोन समान H / L ⇒ RANGE; पट्टा ② / ③ ला"),
     "maturity_sigma_d": (0.5, "0.25/0.5/1.0", "अंदाज", "Q15 (5): target 'जवळ' = σ_D चा अपूर्णांक (पुरावा, gate नाही)"),
