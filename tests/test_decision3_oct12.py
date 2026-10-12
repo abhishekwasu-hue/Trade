@@ -141,3 +141,37 @@ def test_futures_volume_15m_is_sum_of_0915_anchored_5m_bins():
     exp0 = fut["volume"].iloc[0:3].sum()                                                     # 09:15 bar = 09:15 + 09:20 + 09:25
     assert v[0] == exp0 and v[1] == fut["volume"].iloc[3:6].sum() and v[2] == fut["volume"].iloc[6:9].sum()
     assert v[3] == fut["volume"].iloc[9:11].sum()                                             # live: फक्त आलेले bins (spot bar बंद नसेल तर वापर नाही)
+
+
+def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_path):
+    """VPS मार्ग (`--source upstox`): Upstox fetch (mock — इथे fixture) ⇒ per-bar निर्णय + dry-run approval संदेश + --json; engine_signal
+    store ला लिहीत नाही; token कधीच छापत नाही."""
+    import json
+    import cloud_db
+    import engine_signal as ES
+    import upstox_api as UA
+    from scripts import replay_day as RD
+    m15, fut, ltf = F.build(end_day="2030-03-04")
+    daily = m15.assign(d=m15["timestamp"].dt.normalize()).groupby("d").agg(
+        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index().rename(columns={"d": "timestamp"})
+    src = {"15minute": m15, "5minute": ltf, "day": daily}
+    calls = []
+
+    def fake_fetch(tok, sym, interval, frm, to):
+        calls.append((sym, interval))
+        return src[interval][["timestamp", "open", "high", "low", "close"]].assign(volume=0.0, oi=0.0)
+
+    def no_write(*a, **k):
+        raise AssertionError("store write")
+    monkeypatch.setattr(UA, "fetch_candles_date_range", fake_fetch)
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "SECRET-TOKEN")
+    monkeypatch.setattr(ES, "save", no_write)
+    fpath = tmp_path / "fut.parquet"
+    fut.to_parquet(fpath)
+    out = tmp_path / "out.json"
+    rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
+                  "--json", str(out), "--out-dir", str(tmp_path)])
+    assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
+    j = json.loads(out.read_text(encoding="utf-8"))
+    assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")
+    assert "Vision skipped: dry run" in j["approval"]["message"] and "SECRET" not in out.read_text(encoding="utf-8")

@@ -11,8 +11,10 @@ Data (real):
   • Daily warm-up (`--daily`, जुने आधी) + replay data चे दिवस.
 `--synthetic`: tests/oct12_fixture (Abhi ने सांगितलेली रचना, खरा data नाही) — export अजून आला नसेल तेव्हा.
 
-  python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 [--daily f1 f2 ...] [--dry-run-telegram --out-dir DIR]
-  python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --synthetic --dry-run-telegram --out-dir DIR
+  VPS (Upstox, read-only):  python3 scripts/replay_day.py --date 2026-10-12 --symbol NIFTY --dry-run [--json out.json]
+  local (sandbox, ≤ 9 Oct):  python3 scripts/replay_day.py --date 2026-10-09 --symbol NIFTY --source local --daily f1 f2 ... [--json out.json]
+  synthetic:                 python3 scripts/replay_day.py --date 2026-10-12 --synthetic --dry-run --out-dir DIR
+Read-only: engine_signal / vision store ला लिहीत नाही, Telegram नाही, order नाही (फक्त PNG / JSON out-dir / --json मध्ये).
 """
 import argparse
 import glob
@@ -128,17 +130,26 @@ def bar_line(r):
     return f"{head} | {lvl} | {str(why)[:150]} {rr}"
 
 
+def engine_line_of(r):
+    """engine_signal.opinion चाच मजकूर (setup row साठी) — store न वाचता / न लिहिता (read-only dry run)."""
+    lv = r["level"]
+    d = 1 if lv["role"] == "support" else -1
+    return (f"engine ({pd.Timestamp(r['bar_end']):%H:%M}): setup {'↑' if d > 0 else '↓'} {'bull put' if d > 0 else 'bear call'} · "
+            f"grade {r.get('conviction') or '—'} · area {lv['lo']:,.0f}–{lv['hi']:,.0f}")
+
+
 def approval(V, r, symbol, out_dir):
-    """Dry run: approval chart + संदेश (vision.worker.v1_caption — खऱ्या approval चाच मजकूर), Vision / Telegram mock."""
+    """Dry run (read-only): approval chart + संदेश (vision.worker.v1_caption — खऱ्या approval चाच मजकूर). Vision = "skipped: dry run",
+    Telegram send = print; engine_signal / vision store / Telegram ला हात नाही. PNG फक्त out_dir (नसेल ⇒ temp dir) मध्ये."""
+    import tempfile
     from bots_common import level_gate_bot as LGB
     from bots_common import level_reaction as LR
     from decision3 import charts as CH
+    from vision import config as VC
     from vision import decide as VD
     from vision import worker as VW
-    from vision import config as VC
-    import engine_signal as ES
+    out_dir = out_dir or tempfile.mkdtemp(prefix="replay_day_")
     os.makedirs(out_dir, exist_ok=True)
-    os.environ["ENGINE_SIGNAL_DB"] = os.path.join(out_dir, "engine_signals_dryrun.db")    # repo चा data/ store नाही
     t = int(r["bar"])
     lv = r["level"]
     bull = lv["role"] == "support"
@@ -147,10 +158,7 @@ def approval(V, r, symbol, out_dir):
     lines = cm.get("confirm_lines") or []
     png = os.path.join(out_dir, f"approval_{symbol}_{r['ts'][:16].replace(' ', '_').replace(':', '')}.png")
     open(png, "wb").write(CH.m15_png(V, t, f"{symbol} 15M", r=r))
-    ES.save({"symbol": symbol.upper(), "bar_ts": str(V.bar_end[t]), "computed_at": str(V.bar_end[t]), "decision": "setup", "gate": "v22",
-             "direction": 1 if bull else -1, "level_lo": lv["lo"], "level_hi": lv["hi"], "entry": rk["entry"], "invalidation": rk["sl"],
-             "target": rk["target"], "grade": r.get("conviction"), "reason": "", "payload": "{}"})
-    gr = {"side": LR.BULL if bull else LR.BEAR, "area": (lv["lo"], lv["hi"]), "form": cm.get("form"), "grade": r.get("conviction"),
+    gr ={"side": LR.BULL if bull else LR.BEAR, "area": (lv["lo"], lv["hi"]), "form": cm.get("form"), "grade": r.get("conviction"),
           "commit_grade": cm.get("grade"), "entry_price": rk["entry"], "sl": rk["sl"], "target": rk["target"], "rr": rk["rr"],
           "confirm_ts": str(V.bar_end[t]), "study": lines[0] if lines else None, "commit_line": " · ".join(lines[1:]) or None,
           "evidence": {k: v for k, v in (r.get("evidence") or {}).items() if v is not None}}
@@ -163,24 +171,107 @@ def approval(V, r, symbol, out_dir):
     res = {"verdict": "unavailable", "error": "Vision skipped: dry run"}
     d = VD.decide("human_confirm", "unavailable", VC.BOT_DEFAULTS)
     deadline = pd.Timestamp(V.bar_end[t]) + pd.Timedelta(minutes=int(VC.BOT_DEFAULTS["approve_window_min"]))
-    cap = VW.v1_caption(row, res, d, deadline, buttons=True)
-    print(f"\n[DRY-RUN] Telegram send_photo(chat=approver, photo={png}, buttons=✅ / ✏️ / ❌ / 📝) — network नाही")
+    orig = VW.engine_line
+    VW.engine_line = lambda _row: engine_line_of(r)                      # store वाचत / लिहीत नाही
+    try:
+        cap = VW.v1_caption(row, res, d, deadline, buttons=True)
+    finally:
+        VW.engine_line = orig
+    print(f"\n[DRY-RUN] Telegram send_photo(chat=approver, photo={png}, buttons=✅ / ✏️ / ❌ / 📝) — network नाही, पाठवलं नाही")
     print("-" * 100 + "\n" + cap + "\n" + "-" * 100)
     open(png[:-4] + "_message.txt", "w", encoding="utf-8").write(cap)
     return png, cap
 
 
+def load_upstox(a, day):
+    """VPS: live engine सारखाच स्रोत — Upstox historical (`upstox_api.fetch_candles_date_range`; token .env / Supabase मधून, कधीच print
+    नाही): 15M (`--m15-days`), 5M LTF (`--ltf-days`), Daily (`--daily-days`, Q33 warm-up). फक्त GET; order / store नाही. FUT volume =
+    data/oe_futures_5min_<SYM>.parquet (collector) असेल तर, नाहीतर NA (c0 volume NA ⇒ grade कमाल B)."""
+    import datetime as _dt
+    import cloud_db
+    import upstox_api as UA
+    from bots_common import level_reaction as LR
+    from decision3 import history as HI
+    from elliott import data_policy as DP
+    sym = a.symbol.upper()
+    tok = cloud_db.get_effective_upstox_token(None)
+    if not tok:
+        raise SystemExit("❌ Upstox token नाही (.env / daily login) — replay नाही")
+    d0 = day.date()
+
+    def get(interval, days):
+        df = UA.fetch_candles_date_range(tok, sym, interval, d0 - _dt.timedelta(days=int(days)), d0)
+        if df is None or not len(df):
+            raise SystemExit(f"❌ {sym} {interval}: Upstox candles मिळाले नाहीत")
+        df = df.copy()
+        df["timestamp"] = _naive(df["timestamp"])
+        return df.drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+
+    def session(df, minutes):
+        end = df["timestamp"] + pd.Timedelta(minutes=minutes)
+        tod = df["timestamp"].dt.hour * 60 + df["timestamp"].dt.minute
+        eod = end.dt.hour * 60 + end.dt.minute
+        keep = ((tod >= 9 * 60 + 15) & (eod <= 15 * 60 + 30) & (df["timestamp"].dt.normalize() <= day)).to_numpy()
+        out = df[keep].assign(bar_end=end[keep]).reset_index(drop=True)
+        return out[["timestamp", "bar_end", "open", "high", "low", "close"]]
+    m15 = session(get("15minute", a.m15_days), 15)
+    ltf = session(get("5minute", a.ltf_days), 5)
+    if HI.is_nifty(sym):                                                 # NIFTY: holdout row 15M / 5M input मध्ये नाही
+        m15 = DP.filter_allowed(m15, "annotation").reset_index(drop=True)
+        ltf = DP.filter_allowed(ltf, "annotation").reset_index(drop=True)
+    dd = get("day", a.daily_days)
+    daily = LR.prepare_daily(dd[["timestamp", "open", "high", "low", "close"]], day + pd.Timedelta(days=1))   # Q33 warm-up फक्त
+    daily = daily[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+    daily["bar_end"] = pd.to_datetime(daily["timestamp"]).dt.normalize() + pd.Timedelta(hours=15, minutes=30)
+    fpath = a.futures or os.path.join(ROOT, "data", f"oe_futures_5min_{sym}.parquet")
+    fut = _read_any([fpath])
+    if fut is not None and len(fut):
+        fut["timestamp"] = _naive(fut["timestamp"])
+        fut = fut.drop_duplicates(["timestamp"] + (["contract"] if "contract" in fut.columns else []), keep="first")
+    else:
+        print(f"⚠️ FUT 5M volume file नाही ({fpath}) ⇒ volume NA (c0 grade कमाल B)")
+        fut = None
+    return m15, None, ltf, fut, daily
+
+
+def _hm_window(w):
+    if not w or w == "all":
+        return "00:00", "23:59"
+    lo, hi = w.split("-")
+    return lo.strip(), hi.strip()
+
+
+def brief(r):
+    rk = r.get("risk") or {}
+    lv = r.get("level") or {}
+    return {"ts": r["ts"], "bar_end": r["bar_end"], "decision": r["decision"], "mark": r.get("mark"),
+            "side": side_of(r) if r["decision"] == "setup" else None, "conviction": r.get("conviction"), "trend": r.get("trend_used"),
+            "mature": r.get("mature"), "mature_step_down": r.get("mature_step_down"),
+            "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps")} if lv else None,
+            "entry": rk.get("entry"), "sl": rk.get("sl"), "target": rk.get("target"), "rr": rk.get("rr"), "why": r.get("why"),
+            "checklist": r["checklist"], "confirm_lines": (r.get("commit") or {}).get("confirm_lines"), "level_evals": r.get("level_evals")}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="NIFTY")
-    ap.add_argument("--day", required=True)
-    ap.add_argument("--data", nargs="*", help="1m csv(.gz) files (default <trade-data>/upstox/<SYM>_1m_*.csv.gz)")
-    ap.add_argument("--export-dir", help="collector export (default <trade-data>/live_export/<DAY>)")
-    ap.add_argument("--daily", nargs="*", help="Daily warm-up files, जुने आधी (Q33)")
-    ap.add_argument("--synthetic", action="store_true", help="tests/oct12_fixture (खरा data नाही)")
-    ap.add_argument("--dry-run-telegram", action="store_true")
+    ap.add_argument("--day", "--date", dest="day", required=True)
+    ap.add_argument("--source", choices=("auto", "local", "upstox", "synthetic"), default="auto",
+                    help="auto: local data मध्ये तो दिवस असेल तर local, नाहीतर Upstox (VPS, token .env)")
+    ap.add_argument("--data", nargs="*", help="local 1m csv(.gz) files (default <trade-data>/upstox/<SYM>_1m_*.csv.gz)")
+    ap.add_argument("--export-dir", help="local collector export (default <trade-data>/live_export/<DAY>)")
+    ap.add_argument("--daily", nargs="*", help="local Daily warm-up files, जुने आधी (Q33)")
+    ap.add_argument("--futures", help="Upstox source: FUT 5M parquet (default data/oe_futures_5min_<SYM>.parquet)")
+    ap.add_argument("--m15-days", type=int, default=90)
+    ap.add_argument("--ltf-days", type=int, default=10)
+    ap.add_argument("--daily-days", type=int, default=3650)
+    ap.add_argument("--synthetic", action="store_true", help="= --source synthetic (tests/oct12_fixture, खरा data नाही)")
+    ap.add_argument("--window", default="09:15-11:15", help="छापायचे bars (bar सुरुवात HH:MM-HH:MM) किंवा all")
+    ap.add_argument("--dry-run-telegram", "--dry-run", dest="dry_run", action="store_true")
+    ap.add_argument("--json", help="per-bar निर्णय + setup + approval संदेश JSON file")
     ap.add_argument("--out-dir", default=None)
     a = ap.parse_args(argv)
+    import instruments as INS
     from decision3 import engine as E3
     from decision3 import history as HI
     from elliott import data_policy as DP
@@ -188,40 +279,67 @@ def main(argv=None):
     if HI.is_nifty(a.symbol) and DP.period(day) == "HOLDOUT":
         print("❌ sealed holdout दिवस — replay नाही")
         return 2
-    m15, m1, ltf, fut, daily = load_synthetic(day) if a.synthetic else load_real(a, day)
+    try:
+        INS.set_current(a.symbol)                                        # PE.guard चा holdout नियम त्याच instrument चा
+    except Exception:                                                    # noqa: BLE001
+        pass
+    src = "synthetic" if a.synthetic else a.source
+    if src == "synthetic":
+        m15, m1, ltf, fut, daily = load_synthetic(day)
+    elif src == "upstox":
+        m15, m1, ltf, fut, daily = load_upstox(a, day)
+    else:
+        m15, m1, ltf, fut, daily = load_real(a, day)
+        if src == "auto" and not (pd.to_datetime(m15["timestamp"]).dt.normalize() == day).any():
+            print(f"local data मध्ये {day.date()} नाही ⇒ Upstox (VPS)")
+            src = "upstox"
+            m15, m1, ltf, fut, daily = load_upstox(a, day)
+        elif src == "auto":
+            src = "local"
     ts = pd.to_datetime(m15["timestamp"])
-    bars = [i for i in range(len(ts)) if ts.iloc[i].normalize() == day]
+    lo, hi = _hm_window(a.window)
+    bars = [i for i in range(len(ts)) if ts.iloc[i].normalize() == day and lo <= ts.iloc[i].strftime("%H:%M") <= hi]
     if not bars:
-        print(f"❌ {a.symbol} {day.date()}: त्या दिवसाचे 15M bars नाहीत (export आला नाही?) — `--synthetic` वापरा किंवा export ची वाट")
+        print(f"❌ {a.symbol} {day.date()}: त्या दिवसाचे 15M bars नाहीत — `--source upstox` (VPS) किंवा `--synthetic`")
         return 2
-    V = E3.V22(m15, m1, daily, s=ENGINE_S, sealed=HI.sealed_fn(a.symbol) if not a.synthetic else None, ltf=ltf, futures=fut)
+    V = E3.V22(m15, m1, daily, s=ENGINE_S, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0
-    print(f"{a.symbol} {day.date()} {'SYNTHETIC FIXTURE (tests/oct12_fixture)' if a.synthetic else 'real data'} · 15M bars {len(bars)} · "
-          f"FUT volume on {nv}/{len(bars)} bars · LTF 5M {'yes' if V.ltf is not None else 'MISSING'} · "
-          f"c0 dominant ×{V.s['commit_dom_mult']} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'}")
+    print(f"{a.symbol} {day.date()} source={src}{' (SYNTHETIC FIXTURE, खरा data नाही)' if src == 'synthetic' else ''} · bars {lo}–{hi}: "
+          f"{len(bars)} · FUT volume on {nv}/{len(bars)} bars · LTF 5M {'yes' if V.ltf is not None else 'MISSING'} · "
+          f"c0 dominant ×{V.s['commit_dom_mult']} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
+          f"level_death_side {V.s.get('level_death_side', '—')}")
     rows = V.run(bars)
     for r in rows:
         print(bar_line(r))
     st = [r for r in rows if r["decision"] == "setup"]
+    out = {"symbol": a.symbol, "day": str(day.date()), "source": src, "bars": [brief(r) for r in rows], "setup": None, "approval": None}
     if a.out_dir:
         os.makedirs(a.out_dir, exist_ok=True)
         with open(os.path.join(a.out_dir, f"replay_{a.symbol}_{day.date()}.jsonl"), "w", encoding="utf-8") as f:
             for r in rows:
                 f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+    rc = 1
     if not st:
         print("\nsetup नाही.")
-        return 1
-    r = st[0]
-    rk = r["risk"]
-    print(f"\nFIRST SETUP {r['ts'][:16]} (bar close {r['bar_end'][11:16]}) · {side_of(r)} · {r.get('mark')} {r.get('conviction')} · "
-          f"entry {rk['entry']:,.2f} · SL {rk['sl']:,.2f} · target {rk['target']:,.2f} · R:R {rk['rr']}")
-    print("reasons:", " | ".join(f"{k} {v[1]}" for k, v in r["checklist"].items() if v[0] is not None))
-    for x in (r.get("commit") or {}).get("confirm_lines") or []:
-        print("  ", x)
-    if a.dry_run_telegram:
-        approval(V, r, a.symbol, a.out_dir or os.path.join(ROOT, "data", "replay_dryrun"))
-    return 0
+    else:
+        rc = 0
+        r = st[0]
+        rk = r["risk"]
+        out["setup"] = brief(r)
+        print(f"\nFIRST SETUP {r['ts'][:16]} (bar close {r['bar_end'][11:16]}) · {side_of(r)} · {r.get('mark')} {r.get('conviction')} · "
+              f"entry {rk['entry']:,.2f} · SL {rk['sl']:,.2f} · target {rk['target']:,.2f} · R:R {rk['rr']}")
+        print("reasons:", " | ".join(f"{k} {v[1]}" for k, v in r["checklist"].items() if v[0] is not None))
+        for x in (r.get("commit") or {}).get("confirm_lines") or []:
+            print("  ", x)
+        if a.dry_run:
+            png, cap = approval(V, r, a.symbol, a.out_dir)
+            out["approval"] = {"chart": png, "message": cap}
+    if a.json:
+        with open(a.json, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=1, default=str)
+        print(f"json: {a.json}")
+    return rc
 
 
 if __name__ == "__main__":
