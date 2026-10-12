@@ -8,6 +8,7 @@ import pytest
 
 from backtest_review import store as BS
 from backtest_review import telegram as RT
+from bots_common import plain_text as PT
 from decision3 import charts as CH
 from decision3 import engine as E3
 from decision3 import method as M
@@ -29,7 +30,8 @@ def test_build_run_manifest_valid_and_captions(tmp_path):
     for it in m["items"]:
         cap = RT.caption(m, it)
         lines = cap.splitlines()
-        assert cap == it["caption"] and 5 <= len(lines) <= 7 and lines[-1].startswith("Shadow / PAPER")
+        assert cap.split(PT.SEP + "\n", 1)[1] == it["caption"] and lines[-1].startswith("Shadow / PAPER")   # TELEGRAM_CLEANUP 3
+        assert 5 <= len(it["caption"].splitlines()) <= 7 and not PT.has_raw_codes(PT.first_part(cap))
         assert it["item"].startswith("t1|v22:NIFTY:") and it["kind"] in BS.KINDS and it["kind"] in BS.NOT_MEASURED
         assert len(it["files"]) == 3 and all(os.path.getsize(os.path.join(str(tmp_path), f)) > 1000 for f in it["files"])
     dbg = json.load(open(os.path.join(str(tmp_path), "debug.json"), encoding="utf-8"))

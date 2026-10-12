@@ -1,4 +1,7 @@
-"""engine_signal.py — common analysis engine (decision2) चा signal bots ना एकाच interface ने (Abhi, Monday PAPER). **Order कधीच नाही.**
+"""engine_signal.py — common analysis engine चा signal bots ना एकाच interface ने (Abhi, Monday PAPER). **Order कधीच नाही.**
+
+Engine (`engine_name`, default decision3 — Abhi, one bot): decision3 = थर v2.2 method engine (trend → area → pullback → commitment → R:R;
+live feed `engine3_live.py`, NIFTY / BANKNIFTY / SENSEX); decision2 = जुना मार्ग (NIFTY 1m ⇒ थर 1–7) तसाच उपलब्ध (`--engine decision2`).
 
 रचना:
   • Service (`scripts/engine_signal_run.py`, cron, प्रत्येक बंद 15M candle नंतर): NIFTY 1m (Upstox, holdout वगळून) ⇒ थर 1–7 ⇒ शेवटच्या बंद
@@ -18,7 +21,10 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SOURCES = ("own", "engine", "both")
-DEFAULTS = {"signal_source": "own", "engine_max_age_min": 30, "engine_lookback_days": 100}
+DEFAULTS = {"signal_source": "own", "engine_max_age_min": 30, "engine_lookback_days": 100, "engine_name": "decision3",
+            "engine_first_bar_end": "09:30", "engine_last_bar_end": "15:00"}       # decision3: फक्त या वेळांत बंद होणारे 15M bars
+ENGINES = ("decision3", "decision2")
+ERROR = "error"                                                                     # fail-closed row (data / exception) ⇒ entry नाही
 DIR_TXT = {1: "BULLISH", -1: "BEARISH"}
 SIDE_TXT = {1: "bull put", -1: "bear call"}
 SCHEMA = """
@@ -121,6 +127,118 @@ def run(symbol, access_token, fetch=None, path=None, lookback_days=None, now=Non
     return row
 
 
+def engine_name(value=None):
+    """decision3 (default) / decision2 — CLI `--engine` नाहीतर env `ENGINE_SIGNAL_ENGINE`. अज्ञात ⇒ ValueError (अंदाज नाही)."""
+    v = str(value or os.environ.get("ENGINE_SIGNAL_ENGINE") or DEFAULTS["engine_name"]).strip().lower()
+    if v not in ENGINES:
+        raise ValueError(f"engine {v!r} — {ENGINES} पैकी हवा")
+    return v
+
+
+def _hm(s):
+    h, m = (int(x) for x in str(s).split(":"))
+    return h, m
+
+
+def in_window(bar_end, s=None):
+    """bar_end (IST) `engine_first_bar_end` … `engine_last_bar_end` मध्ये? (09:30 = 09:15 चा opening candle सुद्धा मोजला जातो.)"""
+    s = {**DEFAULTS, **(s or {})}
+    b = pd.Timestamp(bar_end)
+    return _hm(s["engine_first_bar_end"]) <= (b.hour, b.minute) <= _hm(s["engine_last_bar_end"])
+
+
+def expected_bar_end(now):
+    """आत्ता (IST) शेवटचा बंद व्हायला हवा तो 15M bar_end."""
+    return _naive(now).floor("15min")
+
+
+def save_error(symbol, bar_ts, msg, path=None, engine="decision3"):
+    """Fail-closed नोंद: त्या bar साठी "error" row ⇒ `pending_entry` नवा entry देत नाही (✅ च्या वाटेतला आधीचा setup मात्र तसाच — gate ठरवतो)."""
+    save({"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(bar_ts)), "computed_at": str(now_ist()), "decision": ERROR,
+          "gate": "data", "direction": None, "level_lo": None, "level_hi": None, "entry": None, "invalidation": None, "target": None,
+          "grade": None, "reason": str(msg)[:300], "payload": json.dumps({"engine": engine, "error": str(msg)[:500]}, ensure_ascii=False)},
+         path)
+
+
+ALERT_REPEAT_MIN = 60                                                       # अजून अपयश ⇒ इतक्या मिनिटांनी पुन्हा एक ओळ
+
+
+def _alert_state(p):
+    try:
+        return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _alert_send(line, send):
+    try:
+        if send is None:
+            from notifications import send_telegram_message as send
+        send(line)
+    except Exception:                                                    # noqa: BLE001
+        print(line)
+
+
+def _alert_path(state_path):
+    return state_path or os.path.join(ROOT, "data", "engine_signal_alerts.json")
+
+
+def alert_error(symbol, msg, send=None, state_path=None, now=None):
+    """Engine error ⇒ Telegram: पहिल्या अपयशाला एक ओळ; अजून अपयशी असेल तर `ALERT_REPEAT_MIN` नंतरच पुन्हा. रिटर्न पाठवलं का. raise नाही."""
+    p, sym = _alert_path(state_path), str(symbol).upper()
+    now = _naive(now or now_ist())
+    st = _alert_state(p)
+    cur = st.get(sym) or {}
+    last = pd.Timestamp(cur["last_sent"]) if cur.get("last_sent") else None
+    if cur.get("failing") and last is not None and now - last < pd.Timedelta(minutes=ALERT_REPEAT_MIN):
+        return False
+    again = " (still failing)" if cur.get("failing") else ""
+    _alert_send(f"❌ Engine {sym}{again}: {str(msg)[:160]} ⇒ no new engine entry for {sym} until the data is back (exits unaffected)", send)
+    st[sym] = {"failing": True, "since": cur.get("since") or str(now), "last_sent": str(now)}
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        json.dump(st, open(p, "w", encoding="utf-8"))
+    except OSError:
+        pass
+    return True
+
+
+def alert_recovered(symbol, send=None, state_path=None, now=None):
+    """आधी अपयशी होता आणि आता चालला ⇒ एक "recovered" ओळ (एकदाच). रिटर्न पाठवलं का."""
+    p, sym = _alert_path(state_path), str(symbol).upper()
+    st = _alert_state(p)
+    cur = st.get(sym) or {}
+    if not cur.get("failing"):
+        return False
+    _alert_send(f"✅ Engine {sym} recovered (failing since {pd.Timestamp(cur.get('since')):%H:%M}) — engine setups resume", send)
+    st[sym] = {"failing": False}
+    try:
+        json.dump(st, open(p, "w", encoding="utf-8"))
+    except OSError:
+        pass
+    return True
+
+
+def run3(symbol, access_token, feed=None, path=None, now=None, s=None, dry_run=False):
+    """decision3 (V22) चा एक service cycle: शेवटच्या **बंद** 15M bar चा निर्णय ⇒ store. रिटर्न row (+ "skipped" कारण, असल्यास).
+    Data नाही / अपूर्ण / exception ⇒ raise (caller: error row + Telegram ओळ). dry_run ⇒ store मध्ये लिहीत नाही."""
+    import engine3_live as L
+    now = _naive(now or now_ist())
+    if feed is None:
+        feed = L.UpstoxFeed(access_token, now.date())
+    r = L.compute(str(symbol).upper(), feed, now, s)
+    row = L.row_from_v22(symbol, r, now_ist)
+    if pd.Timestamp(row["bar_ts"]) > now:
+        raise ValueError("शेवटचा 15M candle अजून बंद नाही")
+    if not in_window(row["bar_ts"], s) or pd.Timestamp(row["bar_ts"]).normalize() != now.normalize():
+        row["skipped"] = f"bar {pd.Timestamp(row['bar_ts']):%Y%m%d %H:%M} entry window ({DEFAULTS['engine_first_bar_end']}–" \
+                         f"{DEFAULTS['engine_last_bar_end']}, आजचा) बाहेर ⇒ store मध्ये नाही"
+        return row
+    if not dry_run:
+        save(row, path)
+    return row
+
+
 # ---------------------------------------------------------------------------------------------------------------- adapter
 def latest(symbol, now=None, max_age_min=None, path=None):
     """सर्वात ताजा engine निर्णय (bar_end ≤ now, वय ≤ max_age_min). नाही ⇒ None. कधीच raise नाही."""
@@ -171,14 +289,21 @@ def own_allowed(symbol, direction, settings, now=None, path=None, key="signal_so
 
 
 def pending_entry(bot, symbol, settings, now=None, path=None):
-    """signal_source = engine: या bot ने अजून न वापरलेला ताजा engine setup. नाही ⇒ None."""
+    """signal_source = engine: या bot ने अजून न वापरलेला ताजा engine setup. नाही ⇒ None.
+    ताजा = bar_ts ≥ now − engine_max_age_min. सर्वात नवा setup (त्यानंतरचा "wait" / "error" bar तो रद्द करत नाही — Abhi च्या ✅ ची वाट
+    चालू असताना पुढचा 15M bar आला / data त्रुटी आली तरी तोच setup; Vision gate / ✅ हाच अंतिम तपास). "error" row कधीच setup नाही ⇒
+    नवा entry नाही (fail-closed). नवा setup ⇒ जुना बाद. सर्वात नवा setup आधीच वापरला ⇒ None."""
     if source_of(settings) != "engine":
         return None
-    r = latest(symbol, now, (settings or {}).get("engine_max_age_min"), path)
-    if r is None or r["decision"] != "setup" or r["direction"] not in (1, -1):
-        return None
     try:
+        now = _naive(now or now_ist())
+        age = int((settings or {}).get("engine_max_age_min") or DEFAULTS["engine_max_age_min"])
         with connect(path) as c:
+            rows = [dict(x) for x in c.execute("SELECT * FROM engine_signals WHERE symbol=? AND bar_ts<=? AND bar_ts>=? ORDER BY bar_ts DESC",
+                                                (str(symbol).upper(), str(now), str(now - pd.Timedelta(minutes=age)))).fetchall()]
+            r = next((x for x in rows if x["decision"] == "setup"), None)
+            if r is None or r["direction"] not in (1, -1):
+                return None
             done = c.execute("SELECT status FROM engine_consumed WHERE bot=? AND symbol=? AND bar_ts=?",
                              (bot, str(symbol).upper(), r["bar_ts"])).fetchone()
     except Exception:

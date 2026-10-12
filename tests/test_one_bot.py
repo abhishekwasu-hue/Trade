@@ -1,0 +1,400 @@
+"""One bot (Abhi): set_one_bot_mode (before / after / revert / dry-run / LIVE नकार, dashboard getter तेच दाखवतो), one_bot_status,
+install_engine_schedule.sh (idempotent, revert तंतोतंत, LIVE ओळ untouched), decision3 live engine ⇒ store ⇒ adapter, fail-closed. Network नाही."""
+import json
+import os
+import re
+import subprocess
+
+import pandas as pd
+import pytest
+
+import cloud_db
+import engine3_live as L
+import engine_signal as ES
+from bots_common import one_bot as OB
+from paper import config as PC
+from scripts import engine_signal_run as ESR
+from scripts import set_one_bot_mode as SOB
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+# ------------------------------------------------------------------------------------------------ fake Supabase (cloud_db चा SQL मार्ग)
+class FakeDB:
+    def __init__(self, rows=None):
+        self.rows = {k: dict(v) for k, v in (rows or {}).items()}
+
+    def conn(self):
+        db = self
+
+        class Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql, params=()):
+                s = " ".join(sql.split())
+                self.res = None
+                if s.startswith("SELECT settings FROM strategy_settings"):
+                    r = db.rows.get(tuple(params))
+                    self.res = [(dict(r),)] if r is not None else []
+                elif s.startswith("INSERT INTO strategy_settings"):
+                    k = (params[0], params[1])
+                    db.rows[k] = {**db.rows.get(k, {}), **json.loads(params[2])}
+                elif s.startswith("UPDATE strategy_settings SET settings = settings -"):
+                    keys, k = params[0], (params[1], params[2])
+                    if k in db.rows:
+                        db.rows[k] = {a: b for a, b in db.rows[k].items() if a not in keys}
+                elif s.startswith("SELECT strategy_name, symbol, settings"):
+                    self.res = [(a, b, dict(v)) for (a, b), v in db.rows.items()]
+                else:
+                    raise AssertionError(s)
+
+            def fetchone(self):
+                return self.res[0] if self.res else None
+
+            def fetchall(self):
+                return list(self.res or [])
+
+        class Conn:
+            def cursor(self):
+                return Cur()
+
+            def commit(self):
+                pass
+
+            def close(self):
+                pass
+        return Conn()
+
+
+@pytest.fixture
+def env(tmp_path, monkeypatch):
+    monkeypatch.setenv("VISION_DB_PATH", str(tmp_path / "vision.db"))
+    monkeypatch.setenv("PAPER_LOCAL_CONFIG", str(tmp_path / "paper_local.yaml"))
+    cron = tmp_path / "cron"
+    cron.write_text("* 4-10 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py >> s.log 2>&1\n"
+                    "1,16,31,46 4-9 * * 1-5 cd /root/Trade && python3 scripts/engine_signal_run.py >> e.log 2>&1 # one-bot-engine\n")
+    monkeypatch.setenv("CRONTAB_FILE", str(cron))
+    abhi = {"lots": 3, "itm_depth_points": 250, "hedge_width_points": 400, "spread_sl_spot_pct": 0.2, "entry_mode": "confirmation"}
+    db = FakeDB({("15m_dynamic_sr", "NIFTY"): dict(abhi, signal_source="own"),
+                 ("1m_instant", "NIFTY"): {"symbol_enabled": True, "srv3_shadow_enabled": True, "lots": 2},
+                 ("classic_sr_reversal", "BANKNIFTY"): {"symbol_enabled": True},
+                 ("mcx_futures", "GOLD"): {"symbol_enabled": True, "trading_mode": "LIVE", "lots": 1}})
+    monkeypatch.setattr(cloud_db, "get_connection", db.conn)
+    cloud_db._LAST_GOOD_STRATEGY_SETTINGS.clear()
+    return db, abhi, tmp_path
+
+
+def test_dry_run_writes_nothing(env, capsys):
+    db, _, tmp = env
+    before = repr(sorted(db.rows.items()))
+    assert SOB.main(["--dry-run", "--state", str(tmp / "st.json")]) == 0
+    out = capsys.readouterr().out
+    assert repr(sorted(db.rows.items())) == before and not (tmp / "st.json").exists()
+    assert "signal_source" in out and "LIVE" in out and "dry-run" in out
+
+
+def test_apply_then_dashboard_getter_shows_one_bot_and_revert_is_exact(env, capsys):
+    db, abhi, tmp = env
+    before = {k: dict(v) for k, v in db.rows.items()}
+    st = str(tmp / "st.json")
+    assert SOB.main(["--state", st]) == 0
+    out = capsys.readouterr().out
+    assert "Only 15M SRv2 active · signal source: engine · symbols NIFTY / BANKNIFTY / SENSEX · mode PAPER" in out
+    for sym in ("NIFTY", "BANKNIFTY", "SENSEX"):                     # dashboard चा getter (page_bot_dynamic_sr_algo) तेच वाचतो
+        s = cloud_db.get_strategy_settings("15m_dynamic_sr", sym)
+        assert s["symbol_enabled"] is True and s["signal_source"] == "engine" and s["trading_mode"] == "PAPER"
+        assert cloud_db.get_strategy_settings("1m_instant", sym)["symbol_enabled"] is False
+        assert cloud_db.get_strategy_settings("1m_instant", sym)["srv3_shadow_enabled"] is False
+        assert cloud_db.get_strategy_settings("classic_sr_reversal", sym)["symbol_enabled"] is False
+        assert PC.enabled(sym)
+    s = cloud_db.get_strategy_settings("15m_dynamic_sr", "NIFTY")
+    assert all(s[k] == v for k, v in abhi.items())                    # Abhi चे strikes / lots / SL / entry_mode तसेच
+    assert cloud_db.get_strategy_settings("1m_instant", "NIFTY")["lots"] == 2
+    gold = db.rows[("mcx_futures", "GOLD")]
+    assert gold == {"symbol_enabled": True, "trading_mode": "LIVE", "lots": 1}                     # LIVE ला हात नाही
+    assert cloud_db.get_strategy_settings("mcx_futures", "CRUDEOIL")["symbol_enabled"] is False
+    from vision import config as VC
+    v = VC.load(OB.VISION_BOT)
+    assert set(v["symbols"]) >= {"NIFTY", "BANKNIFTY", "SENSEX"} and v["approval_required"] is True
+    assert SOB.main(["--revert", "--state", st]) == 0
+    assert {k: v for k, v in db.rows.items() if v} == {k: v for k, v in before.items() if v}       # नवे keys काढले, जुने परत
+    assert not os.path.exists(os.environ["PAPER_LOCAL_CONFIG"]) and not PC.enabled("BANKNIFTY")
+    assert VC.load(OB.VISION_BOT)["symbols"] == ["NIFTY"]
+
+
+def test_live_srv2_is_refused(env, capsys):
+    db, _, tmp = env
+    db.rows[("15m_dynamic_sr", "SENSEX")] = {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    SOB.main(["--state", str(tmp / "st.json")])
+    out = capsys.readouterr().out
+    assert "15M SRv2 SENSEX: trading_mode LIVE" in out
+    assert db.rows[("15m_dynamic_sr", "SENSEX")] == {"trading_mode": "LIVE", "symbol_enabled": True, "signal_source": "own"}
+    st = OB.one_bot_status()
+    assert not st["ok"] and st["line"].startswith("❌")
+
+
+def test_status_flags_auto_trader_cron_and_missing_engine(env, monkeypatch):
+    db, _, tmp = env
+    (tmp / "cron").write_text("* 4-10 * * 1-5 python3 srv2_momentum_reversal_strategy.py\n*/5 4-9 * * 1-5 python3 oi_signal_auto_trader.py\n")
+    st = OB.one_bot_status()
+    assert st["auto_traders"]["oi_signal_auto_trader.py"] == "on" and st["engine_cron"] == "absent" and not st["ok"]
+    assert any("oi_signal_auto_trader NIFTY ON" in p for p in st["problems"])
+    SOB.main(["--state", str(tmp / "st.json")])                         # PAPER entries settings ने बंद (cron ओळ exits साठी राहू शकते)
+    assert db.rows[("oi_signal_auto_trader", "NIFTY")]["symbol_enabled"] is False
+    st = OB.one_bot_status()
+    assert not any("oi_signal_auto_trader" in p for p in st["problems"]) and not st["ok"]          # engine cron अजून नाही
+    assert OB.paper_entry_blocked("oi_signal_auto_trader", "NIFTY", "PAPER")
+    assert OB.paper_entry_blocked("oi_signal_auto_trader", "NIFTY", "LIVE") is None              # LIVE ला कधीच नाही
+    assert OB.paper_entry_blocked("oi_signal_auto_trader", "BANKNIFTY", "PAPER") is not None
+    assert OB.paper_entry_blocked("credit_spread_auto_trader", "NIFTY", "PAPER", raw_fn=lambda *a: {}) is None   # नोंद नाही ⇒ जुनं वर्तन
+
+
+@pytest.mark.parametrize("line", ["python3 credit_spread_auto_trader.py --mode LIVE", "python3 credit_spread_auto_trader.py --mode=LIVE",
+                                  "python3 credit_spread_auto_trader.py --mode \"LIVE\"", "python3 credit_spread_auto_trader.py --mode='LIVE'"])
+def test_live_auto_trader_cron_forms_are_live(env, line):
+    db, _, tmp = env
+    (tmp / "cron").write_text(f"*/5 4-9 * * 1-5 cd /root/Trade && {line}\n")
+    assert OB.cron_state((tmp / "cron").read_text())["credit_spread_auto_trader.py"] == "LIVE"
+    SOB.main(["--state", str(tmp / "st.json")])
+    assert ("credit_spread_auto_trader", "NIFTY") not in db.rows                                  # LIVE ⇒ settings ला हात नाही
+    assert any("credit_spread_auto_trader NIFTY LIVE" in x for x in OB.one_bot_status()["live_untouched"])
+
+
+def test_preopen_message_carries_one_bot_line():
+    from scripts import level_gate_preopen as PRE
+    assert PRE.one_bot_problems(lambda: {"ok": True, "line": "Only 15M SRv2 active"}) == []
+    bad = PRE.one_bot_problems(lambda: {"ok": False, "line": "❌ One-bot mode NOT clean: 5M Instant NIFTY ON <x>"})
+    assert bad == ["❌ One-bot mode NOT clean: 5M Instant NIFTY ON &lt;x&gt;"]
+
+    def boom():
+        raise RuntimeError("db")
+    assert PRE.one_bot_problems(boom)[0].startswith("❌ One-bot status not readable")
+    msg = PRE.build_report(["NIFTY"], "t", lambda s: None, lambda s: 22500.0,
+                           trend_fn=lambda s: {"ok": False, "trend": "UNKNOWN", "reason": "x", "sides": set()}, problems=bad,
+                           active=[{"label": "15M SRv2", "symbol": "NIFTY", "source": "engine", "mode": "PAPER"}],
+                           engine_fn=lambda s: None)
+    assert msg.startswith("Only 15M SRv2 active · signal source: engine") and "❌ One-bot mode NOT clean" in msg
+    assert "❌ NIFTY: the engine has no records" in msg
+
+
+# ------------------------------------------------------------------------------------------------ install_engine_schedule.sh
+def _install(cron, *args, open_src="", check=True):
+    return subprocess.run(["bash", os.path.join(ROOT, "scripts", "install_engine_schedule.sh"), *args], capture_output=True, text=True,
+                          env={**os.environ, "CRONTAB_FILE": str(cron), "ONE_BOT_OPEN_SOURCES": open_src}, check=check)
+
+
+ORIG = ("* 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py >> m.log 2>&1\n"
+        "\n"
+        "1,16,31,46 3-10 * * 1-5 cd /root/Trade && set -a && . ./.env && set +a && python3 scripts/engine_signal_run.py >> engine_signal.log 2>&1\n"
+        "*/5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal_auto_trader.py >> o.log 2>&1\n"
+        "*/5 4-9 * * 1-5 cd /root/Trade && python3 credit_spread_auto_trader.py --mode LIVE >> c.log 2>&1\n"
+        "*/5 4-9 * * 1-5 cd /root/Trade && python3 oi_greeks_vix_strategy.py --mode=LIVE >> g.log 2>&1\n"
+        "*/5 4-9 * * 1-5 cd /root/Trade && python3 credit_spread_auto_trader.py --symbol BANKNIFTY --mode 'LIVE' >> c2.log 2>&1\n"
+        "\n"
+        "* 4-10 * * 1-5 cd /root/Trade && sleep 30 && python3 srv2_momentum_reversal_strategy.py >> s.log 2>&1\n")
+
+
+def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
+    cron = tmp_path / "cron"
+    cron.write_text(ORIG)
+    out = _install(cron).stdout
+    once = cron.read_text()
+    _install(cron)
+    assert cron.read_text() == once                                   # idempotent
+    act = [x for x in once.splitlines() if x and not x.startswith("#")]
+    assert sum("scripts/engine_signal_run.py --engine decision3" in x and "--dry-run" not in x for x in act) == 1
+    assert "1,16,31,46 4-9 * * 1-5" in once and "--symbols NIFTY,BANKNIFTY,SENSEX" in once
+    assert "#one-bot-off# 1,16,31,46 3-10" in once and "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" in once
+    for live in ("credit_spread_auto_trader.py --mode LIVE", "oi_greeks_vix_strategy.py --mode=LIVE", "--mode 'LIVE'"):
+        assert any(live in x for x in act), live                      # LIVE ओळी (सगळे प्रकार) untouched
+    assert out.count("LIVE auto-trader") == 3
+    assert "trade_monitor.py" in once and "# one-bot-srv2" not in once and "\n\n" in once
+    _install(cron, "--revert")
+    assert cron.read_text() == ORIG                                   # रिकाम्या ओळींसकट तंतोतंत
+
+
+def test_schedule_installer_keeps_auto_trader_line_with_open_position(tmp_path):
+    cron = tmp_path / "cron"
+    cron.write_text(ORIG)
+    r = _install(cron, open_src="oi_signal_auto_trader")
+    once = cron.read_text()
+    assert "\n*/5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal_auto_trader.py" in once and "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" not in once
+    assert "oi_signal_auto_trader: open position" in r.stderr
+    _install(cron, open_src="UNKNOWN")                                # तपासता आलं नाही ⇒ सुरक्षित: ओळ चालू
+    assert "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" not in cron.read_text()
+
+
+def test_schedule_installer_aborts_without_trade_monitor_or_crontab(tmp_path):
+    cron = tmp_path / "cron"
+    cron.write_text("1,16,31,46 3-10 * * 1-5 python3 scripts/engine_signal_run.py\n# * * * * * python3 trade_monitor.py\n")
+    r = _install(cron, check=False)
+    assert r.returncode == 1 and "❌" in r.stdout
+    assert cron.read_text() == "1,16,31,46 3-10 * * 1-5 python3 scripts/engine_signal_run.py\n# * * * * * python3 trade_monitor.py\n"
+    r = _install(tmp_path / "missing", check=False)
+    assert r.returncode == 1 and not (tmp_path / "missing").exists()
+
+
+def test_schedule_installer_adds_srv2_when_missing_and_dry_run(tmp_path):
+    cron = tmp_path / "cron"
+    cron.write_text("* 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py\n")
+    out = _install(cron, "--dry-run").stdout
+    assert "# one-bot-srv2" in out and cron.read_text() == "* 4-10 * * 1-5 cd /root/Trade && python3 trade_monitor.py\n"
+
+
+def test_deploy_script_syntax_and_live_readonly():
+    p = os.path.join(ROOT, "scripts", "deploy_one_bot.sh")
+    subprocess.run(["bash", "-n", p], check=True)
+    s = open(p, encoding="utf-8").read()
+    assert "list-units --type=service" in s and ". ./.env" in s and "--revert" in s and '"$RC" = 3' in s and "LIVE" not in s.replace("LIVE ला हात नाही", "").replace(
+        "LIVE combos", "").replace("LIVE cron", "").replace("LIVE setting", "")
+
+
+# ------------------------------------------------------------------------------------------------ live decision3 ⇒ store ⇒ adapter
+def v22_setup(symbol, bar_end, role="resistance"):
+    return {"bar": 10, "ts": str(pd.Timestamp(bar_end) - pd.Timedelta(minutes=15)), "bar_end": str(bar_end), "daily_trend": "DOWN",
+            "trend_used": "DOWN", "decision": "setup", "mark": "🟡", "conviction": "B",
+            "checklist": {"①": [True, "Daily DOWN"], "②": [True, "resistance"], "③": [True, "at"], "④": [True, "ps"], "⑤": [None, "—"],
+                          "⑥": [True, "commit"], "⑦": [True, "R:R 3.4"]},
+            "level": {"id": 1, "role": role, "lo": 22600.0, "hi": 22670.0, "births": ["b"], "sweeps": 1, "dist": 10.0},
+            "risk": {"entry": 22580.0, "sl": 22690.0, "target": 22200.0, "rr": 3.4}, "why": None}
+
+
+@pytest.mark.parametrize("sym", ["NIFTY", "BANKNIFTY", "SENSEX"])
+def test_engine_run_per_symbol_writes_setup_readable_by_adapter(sym, tmp_path, monkeypatch):
+    p = str(tmp_path / "es.db")
+    now = pd.Timestamp("2030-01-07 10:01")
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 10:00"))
+    r = ES.run3(sym, "tok", feed=object(), path=p, now=now)
+    assert r["decision"] == "setup" and r["direction"] == -1 and r["level_lo"] == 22600.0 and r["grade"] == "B"
+    st = {"signal_source": "engine", "trading_mode": "PAPER"}
+    pe = ES.pending_entry("srv2_momentum_reversal", sym, st, now, p)
+    assert pe is not None and pe["bar_ts"] == "2030-01-07 10:00:00" and json.loads(pe["payload"])["engine"] == "decision3"
+    # पुढचा bar "wait" ⇒ setup ✅ ची वाट पाहत तसाच (max age मध्ये)
+    w = dict(v22_setup(sym, "2030-01-07 10:15"), decision="wait")
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: w)
+    ES.run3(sym, "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 10:16"))
+    assert ES.pending_entry("srv2_momentum_reversal", sym, st, "2030-01-07 10:17", p)["bar_ts"] == "2030-01-07 10:00:00"
+    assert ES.pending_entry("srv2_momentum_reversal", sym, st, "2030-01-07 10:45", p) is None            # max age नंतर नाही
+    ES.mark_consumed("srv2_momentum_reversal", sym, "2030-01-07 10:00:00", "EXECUTED", p)
+    assert ES.pending_entry("srv2_momentum_reversal", sym, st, "2030-01-07 10:17", p) is None
+
+
+def test_engine_window_skips_bars_outside_0930_1500(tmp_path, monkeypatch):
+    p = str(tmp_path / "es.db")
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 15:15"))
+    r = ES.run3("NIFTY", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 15:16"))
+    assert r.get("skipped") and ES.latest("NIFTY", "2030-01-07 15:16", path=p) is None
+    assert ES.in_window("2030-01-07 09:30") and ES.in_window("2030-01-07 15:00") and not ES.in_window("2030-01-07 09:15")
+
+
+
+def test_fail_closed_error_row_alerts_first_repeat_60min_and_recovered(tmp_path, monkeypatch):
+    p = str(tmp_path / "es.db")
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", p)
+    monkeypatch.setattr(L, "compute", lambda s, feed, n, st=None: v22_setup(s, "2030-01-07 10:00"))
+    ES.run3("SENSEX", "tok", feed=object(), path=p, now=pd.Timestamp("2030-01-07 10:01"))
+    sent, al = [], str(tmp_path / "al.json")
+
+    def boom(sym, tok):
+        raise L.EngineDataError(f"{sym}: 5M spot (LTF) data नाही")
+
+    def run(t, fn=boom):
+        return ESR.main(["--symbols", "SENSEX,BANKNIFTY"], token_fn=lambda: "tok", run_fn=fn, market_fn=lambda: True, send=sent.append,
+                        alert_path=al, now=pd.Timestamp(t))
+    assert run("2030-01-07 10:16") == 1 and len(sent) == 2 and all(x.startswith("❌ Engine") for x in sent)
+    assert run("2030-01-07 10:31") == 1 and len(sent) == 2                       # 60 मिनिटांच्या आत पुन्हा नाही
+    st = {"signal_source": "engine", "trading_mode": "PAPER"}
+    assert ES.latest("SENSEX", "2030-01-07 10:17", path=p)["decision"] == ES.ERROR
+    pe = ES.pending_entry("srv2_momentum_reversal", "SENSEX", st, "2030-01-07 10:17", p)
+    assert pe is not None and pe["bar_ts"] == "2030-01-07 10:00:00"             # error row ✅ च्या वाटेतला setup रद्द करत नाही
+    assert ES.pending_entry("srv2_momentum_reversal", "BANKNIFTY", st, "2030-01-07 10:17", p) is None   # नवा entry नाही
+    assert run("2030-01-07 11:17") == 1 and len(sent) == 4 and "still failing" in sent[-1]
+    ok = lambda sym, tok: {"bar_ts": "2030-01-07 11:30:00", "decision": "wait", "skipped": "x"}       # noqa: E731
+    assert run("2030-01-07 11:31", ok) == 0 and len(sent) == 6 and all("recovered" in x for x in sent[-2:])
+    assert run("2030-01-07 11:46", ok) == 0 and len(sent) == 6                    # recovered एकदाच
+
+
+def test_token_missing_fail_closed(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    sent = []
+    assert ESR.main([], token_fn=lambda: None, market_fn=lambda: True, send=sent.append, alert_path=str(tmp_path / "a.json"),
+                    now=pd.Timestamp("2030-01-07 10:16")) == 2
+    assert len(sent) == 3
+
+class Feed:
+    def __init__(self, fut=True, ltf=True):
+        days = pd.bdate_range("2030-01-01", periods=60)
+        ts = [d + pd.Timedelta(minutes=555 + 15 * k) for d in days for k in range(25)]
+        self.m15 = pd.DataFrame({"timestamp": ts, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5})
+        self.d = pd.DataFrame({"timestamp": pd.bdate_range("2029-01-01", periods=300), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5})
+        self.fut, self.ltf = fut, ltf
+
+    def five(self):
+        f = pd.concat([self.m15.assign(timestamp=self.m15["timestamp"] + pd.Timedelta(minutes=5 * k)) for k in range(3)])
+        return f.sort_values("timestamp").reset_index(drop=True)
+
+    def index(self, sym, interval, days):
+        if interval == "5minute":
+            return self.five() if self.ltf else self.five().iloc[:0]
+        return {"15minute": self.m15, "day": self.d}[interval]
+
+    def futures(self, sym, interval, days):
+        if not self.fut:
+            raise L.EngineDataError(f"{sym}: BSE front-month FUT सापडला नाही ⇒ FUT volume नाही")
+        return self.five().assign(volume=10.0)
+
+
+
+
+def test_build_inputs_ltf_fail_closed_fut_missing_is_volume_na():
+    now = pd.Timestamp("2030-03-25 15:31")
+    m15, daily, ltf, fut, note = L.build_inputs(Feed(), "BANKNIFTY", now)
+    assert len(m15) and (m15["bar_end"] <= now).all() and daily["timestamp"].max() < now.normalize() and fut["volume"].sum() > 0
+    assert note is None and len(ltf) and (ltf["bar_end"] <= now).all()
+    with pytest.raises(L.EngineDataError, match="LTF"):
+        L.build_inputs(Feed(ltf=False), "BANKNIFTY", now)
+    m15, daily, ltf, fut, note = L.build_inputs(Feed(fut=False), "SENSEX", now)                  # FUT नाही ⇒ fail-closed नाही
+    assert fut is None and "volume NA" in note
+    with pytest.raises(L.EngineDataError, match="अजून Upstox"):
+        L.build_inputs(Feed(), "BANKNIFTY", pd.Timestamp("2030-03-26 10:01"))      # आजचा बंद bar नाही
+    assert L.index_key("SENSEX") == "BSE_INDEX|SENSEX"
+    with pytest.raises(L.EngineDataError):
+        L.index_key("FOOBAR")
+
+
+def test_evaluate_passes_real_ltf_and_futures_to_v22(monkeypatch):
+    from decision3 import engine as E3
+    seen = {}
+
+    class FakeV22:
+        def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
+            seen.update(m15=m15, ltf=ltf, futures=futures)
+            self.m15 = m15
+
+        def decide(self, t):
+            return {"bar_end": str(self.m15["bar_end"].iloc[t]), "decision": "wait"}
+    monkeypatch.setattr(E3, "V22", FakeV22)
+    m15, daily, ltf, fut, _ = L.build_inputs(Feed(), "BANKNIFTY", pd.Timestamp("2030-03-25 15:31"))
+    L.evaluate("BANKNIFTY", m15, daily, ltf, fut)
+    assert seen["ltf"] is ltf and seen["futures"] is fut and "volume" not in seen["m15"].columns   # index volume 0 ⇒ NA, खोटा 0 नाही
+    L.evaluate("BANKNIFTY", m15, daily, ltf, None)
+    assert seen["futures"] is None and "volume" not in seen["m15"].columns
+
+
+def test_fut_volume_aligned_to_15m_bins():
+    m15 = pd.DataFrame({"timestamp": pd.to_datetime(["2030-01-07 09:15", "2030-01-07 09:30"])})
+    f = pd.DataFrame({"timestamp": pd.to_datetime(["2030-01-07 09:15", "2030-01-07 09:20", "2030-01-07 09:25", "2030-01-07 09:30"]),
+                      "volume": [1.0, 2.0, 3.0, 7.0]})
+    assert list(L.fut_volume_15m(m15, f)) == [6.0, 7.0]
+
+
+def test_sources_no_dates_no_live_orders():
+    for f in ("engine3_live.py", "bots_common/one_bot.py", "scripts/set_one_bot_mode.py", "scripts/engine_signal_run.py", "engine_signal.py",
+              "scripts/diag_today.py", "scripts/install_engine_schedule.sh", "scripts/deploy_one_bot.sh"):
+        s = open(os.path.join(ROOT, f), encoding="utf-8").read()
+        assert not re.search(r"20\d\d-\d\d-\d\d", s), f
+        assert "place_order" not in s and 'trading_mode="LIVE"' not in s

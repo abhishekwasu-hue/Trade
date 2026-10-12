@@ -1369,6 +1369,43 @@ def save_strategy_settings(strategy_name, symbol, settings_dict):
         conn.close()
 
 
+def get_strategy_settings_raw(strategy_name, symbol):
+    """Supabase मध्ये **साठवलेले** settings (defaults न मिसळता) — `scripts/set_one_bot_mode.py` च्या before-state साठी.
+    नोंद नाही ⇒ {}. Supabase नाही / चूक ⇒ RuntimeError (अंदाज नाही — script थांबतो)."""
+    conn = get_connection()
+    if conn is None:
+        raise RuntimeError("Supabase connection नाही")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT settings FROM strategy_settings WHERE strategy_name=%s AND symbol=%s", (strategy_name, symbol))
+            row = cur.fetchone()
+        if row is None:
+            return {}
+        return dict(row[0] if isinstance(row[0], dict) else json.loads(row[0]))
+    finally:
+        conn.close()
+
+
+def remove_strategy_settings_keys(strategy_name, symbol, keys):
+    """साठवलेल्या settings मधून फक्त हे keys काढणे (JSONB `-`; बाकी तसेच) — `set_one_bot_mode.py --revert` (आधी नसलेले keys)."""
+    keys = [str(k) for k in keys]
+    if not keys:
+        return True
+    conn = get_connection()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE strategy_settings SET settings = settings - %s::text[], updated_at = NOW() "
+                        "WHERE strategy_name=%s AND symbol=%s", (keys, strategy_name, symbol))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
 def get_next_level_in_direction(symbol, entry_level_price, direction_bullish, timeframe_suffixes=("15M", "30M", "60M")):
     """वापरकर्त्याशी चर्चा करून जोडलेली सुधारणा (Multi-Timeframe SRv2, Next-Level-Exit) —
     entry_level_price पासून favourable दिशेने, दिलेल्या timeframe_suffixes (डीफॉल्ट तिन्ही पूल
