@@ -1935,3 +1935,15 @@ CONFIRM_USED) + MCX page वर "आजचे Areas" tab. MCX: वापरल�
 (`trend_retry_min`, default 15 मिनिटं, fail-closed) ⇒ दर मिनिटाला 25 s fetch नाही. `confirm_tf_minutes` 1/5/15/30 नसेल ⇒ bot default + log. 15:45 संदेश
 ≤ 4096 (gate भाग ओळी-निहाय कापतो, approvals कधीच नाही), NA मजकूर HTML-escape, send False ⇒ exit 1. Pre-open: LIVE MCX touch वरच.
 
+
+## 2026-10-12 · v22 touch / levels audit (TELEGRAM_CLEANUP §4–§5, ONE_BOT §7(e)) — branch `claude/v22-touch-levels`
+
+**(4) 9 Oct blind spot (22,570–22,640):** level माहीत होता — तुटलेला support (L1 22,476–22,809, weekly L18 22,518–22,527) resistance ला flip
+झाला, पण 8 Oct 11:15 ला खालचा D2 L 22,397 तुटल्यावर Q2 default (मूळ भूमिकेची बाजू) ने मेला. नवी setting `level_death_side` (default "role0" —
+बदल नाही; "role" = चालू भूमिकेची बाजू). What-if Sep–Oct: setup 1 → 1; 9 Oct ला supply दिसते, 11:30 bar ला L18 वर R:R 5.55 (फक्त maturity cap ने
+अडलं). Merge (333 pts पट्टा) आणि 1H sharp-fall base = OPEN_QUESTIONS TL1–TL3. Fixture: `test_decision3_level_death_side.py` (आरसा सह).
+**(5) 29 Sep 12:15 "no touch":** bug `engine.decide()` मध्ये — दूरच्या न-स्पर्शलेल्या level चा "wait" स्पर्शलेल्या level च्या "no_trade (R:R)" वर
+ranked. Fix: ③ ✔ level चा निकाल bar चा. Sep–Oct: setups 1 → 1, no_trade 5 → 118 (R:R 63, 4th try 50), "no touch" झाकलेले bars 113 → 0.
+12:15 निकाल: valid read (touch + buyers दमले + dominant engulf 2.6× + 5M CHoCH), R:R 0.77 ⇒ no setup. FUT volume 29 Sep ला NA (data 30 Sep पासून).
+Fixture: `test_decision3_touch_levels.py`. Tests: `test_decision3*.py test_level*.py` 461 passed + नवे.
+अहवाल: `docs/reports/v22_missed_levels_touch.md`.

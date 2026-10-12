@@ -188,7 +188,9 @@ class V22:
                 dd, part, extra = self._level_eval(t, trend, lvl, ctx["cap"], ctx["notes"])
                 res.append((rank[dd], dd, part, extra, lvl))
             evals = [level_eval_brief(dd_, part_, extra_, lvl_) for _, dd_, part_, extra_, lvl_ in res]
-            res.sort(key=lambda x: x[0])
+            # bar चा निकाल = किंमत ज्या level वर आहे (③ ✔) त्याचा; स्पर्श नसलेल्या दूरच्या level चा "wait" (③ ✘) पोहोचलेल्या level चा
+            # निकाल (उदा. ⑦ R:R ⇒ no_trade) झाकत नाही. ③ ✔ नसेल ⇒ आधीसारखा क्रम (setup < wait < no_trade).
+            res.sort(key=lambda x: (0 if (x[2].get("③") or [None])[0] else 1, x[0]))
             _, dd, part, extra, lvl = res[0]
             chk.update(part)
             dec = {M_SETUP: SETUP, M_WAIT: WAIT, M_NO: NO_TRADE}[dd]
