@@ -46,7 +46,8 @@ ENGINE_LINE="1,16,31,46 4-9 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a
 WARM_LINE="20 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && flock -n /tmp/engine_signal_run.lock python3 scripts/engine_signal_run.py --engine decision3 --symbols NIFTY,BANKNIFTY,SENSEX --dry-run --force >> $REPO_DIR/engine_signal.log 2>&1 # one-bot-engine-warm"
 SRV2_LINES="45-59 3 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/srv2.log 2>&1 # one-bot-srv2
 * 4-10 * * 1-5 cd $REPO_DIR && sleep 30 && python3 srv2_momentum_reversal_strategy.py --symbols NIFTY,BANKNIFTY,SENSEX >> $REPO_DIR/srv2.log 2>&1 # one-bot-srv2"
-TAGS=(-e '# one-bot-engine$' -e '# one-bot-engine-warm$' -e '# one-bot-srv2$')
+PREOPEN_LINE="30 3 * * 1-5 cd $REPO_DIR && set -a && . ./.env && set +a && python3 scripts/level_gate_preopen.py >> $REPO_DIR/level_gate_preopen.log 2>&1 # one-bot-preopen"
+TAGS=(-e '# one-bot-engine$' -e '# one-bot-engine-warm$' -e '# one-bot-srv2$' -e '# one-bot-preopen$')
 
 if [ "$MODE" = "revert" ]; then
   NEW="$( { printf '%s\n' "$CUR" | grep -v "${TAGS[@]}" || true; } | sed "s|^$OFF||")"
@@ -74,6 +75,7 @@ $SRV2_LINES"
     echo "ℹ️ 15M SRv2 bot cron ओळ नव्हती ⇒ जोडली (# one-bot-srv2)"
   fi
   NEW="$NEW
+$PREOPEN_LINE
 $WARM_LINE
 $ENGINE_LINE"
 fi
@@ -86,4 +88,4 @@ if [ "$DRY" = 1 ]; then
   echo "---- नवा crontab (dry-run, लिहिला नाही) ----"; printf '%s\n' "$NEW"; exit 0
 fi
 printf '%s\n' "$NEW" | write_cron
-echo "✅ crontab ($MODE): engine ओळी $(printf '%s\n' "$NEW" | grep -c '# one-bot-engine$' || true) · warm $(printf '%s\n' "$NEW" | grep -c '# one-bot-engine-warm$' || true) · comment केलेल्या $(printf '%s\n' "$NEW" | grep -c "^$OFF" || true)"
+echo "✅ crontab ($MODE): engine ओळी $(printf '%s\n' "$NEW" | grep -c '# one-bot-engine$' || true) · warm $(printf '%s\n' "$NEW" | grep -c '# one-bot-engine-warm$' || true) · pre-open (09:00 IST) $(printf '%s\n' "$NEW" | grep -c '# one-bot-preopen$' || true) · comment केलेल्या $(printf '%s\n' "$NEW" | grep -c "^$OFF" || true)"
