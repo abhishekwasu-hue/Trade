@@ -212,6 +212,46 @@ def test_dominant_commitment_candle_confirms_before_the_right_side_bars():
     assert {"degree": 0, "side": "bear", "status": "confirmed", "status_by": "commitment_candle"} in log
 
 
+# ------------------------------------------------------------------------------------------------ RSI window (± div_rsi_window bars)
+def _second_rsi(peak_at, val=68.0, confirm=30, n=40):
+    """H 110 @ 10 · L 95 @ 15 · H 112 @ 25 (confirmed at `confirm`); RSI 70 @ 10, 60 @ 25 and `val` at bar `peak_at`."""
+    df = frame(n, highs={10: 110.0, 25: 112.0}, lows={15: 95.0})
+    ps = [piv(df, "H", 10), piv(df, "L", 15), piv(df, "H", 25, confirm=confirm)]
+    D = build(df, ps, rsi_with(n, {10: 70.0, 25: 60.0, peak_at: val}))
+    return pair(D, confirm)["L2"]
+
+
+@pytest.mark.parametrize("off", [1, 2, -2])
+def test_rsi_extreme_taken_within_two_bars_of_the_price_pivot(off):
+    x = _second_rsi(25 + off)
+    assert x["rsi"] == 68.0 and x["rsi_bar"] == 25 + off
+
+
+def test_rsi_peak_outside_the_window_is_not_used():
+    for off in (3, -3):
+        x = _second_rsi(25 + off)
+        assert x["rsi"] == 60.0 and x["rsi_bar"] == 25
+
+
+def test_rsi_window_capped_at_the_swings2_confirm_bar():
+    x = _second_rsi(27, confirm=26)                                              # peak 2 bars right, but the pivot confirmed 1 bar right
+    assert x["rsi"] == 60.0 and x["rsi_bar"] == 25
+    x = _second_rsi(26, confirm=26)                                              # the confirm bar itself is closed ⇒ used
+    assert x["rsi"] == 68.0 and x["rsi_bar"] == 26
+
+
+def test_with_area_never_mutates_stored_records(walk_frame):
+    D = RE.Divergence(walk_frame, "15M")
+    a = D.history(areas=True)
+    assert a and all("area" in x for x in a)
+    b = D.history(areas=False)
+    assert all("area" not in x for x in b)
+    assert all("area" not in x for x in D.events)
+    r = D.read(D.events[-1]["known_bar"])
+    assert all("area" not in x for x in D.events)
+    assert all("area" in x for x in r["divergences"])
+
+
 def test_absence_statements_when_no_pivots():
     df = frame(30)
     D = build(df, [], rsi_with(30, {}))
@@ -306,6 +346,36 @@ def test_dashboard_overlay_display_only(walk_frame):
     assert rsi_div_overlay(df, "30minute", now) == ([], None, None)
     html = build_lightweight_chart_html(df, rsi_series=rsi, rsi_divs=lines, rsi_levels=(30, 70))
     assert lines[0]["label"].split(" · ")[0] in html
+
+
+def test_chart_html_unchanged_without_divergences(walk_frame):
+    from tradingview_chart import build_lightweight_chart_html
+    df = walk_frame.drop(columns=["bar_end"]).assign(volume=0)
+    base = build_lightweight_chart_html(df)
+    assert build_lightweight_chart_html(df, rsi_divs=None) == base == build_lightweight_chart_html(df, rsi_divs=[])
+    assert "K-RSI" not in base and "__RSI_DIVS__" not in base
+    one = [{"t0": df["timestamp"].iloc[10], "t1": df["timestamp"].iloc[30], "p0": 1.0, "p1": 2.0, "rt0": df["timestamp"].iloc[10],
+            "rt1": df["timestamp"].iloc[30], "r0": 70.0, "r1": 65.0, "color": "#ef5350", "label": "bear div"}]
+    html = build_lightweight_chart_html(df, rsi_series=pd.Series(50.0, index=df.index), rsi_divs=one)
+    assert html.count("K-RSI divergences") == 2 and "__RSI_DIVS__" not in html
+
+
+def test_dashboard_overlay_is_cached_per_data_and_settings(walk_frame, monkeypatch):
+    import page_dashboard as PD
+    calls = []
+    monkeypatch.setattr(PD, "rsi_div_overlay", lambda df, tf, now: calls.append(len(df)) or ([], None, "cap"))
+    PD._rsi_div_overlay_cached.clear()
+    df = walk_frame.drop(columns=["bar_end"]).assign(volume=0)
+    now = pd.Timestamp(df["timestamp"].iloc[-1]) + pd.Timedelta(hours=1)
+    for _ in range(3):
+        assert PD._rsi_div_overlay_keyed("NIFTY", df, "15minute", now) == ([], None, "cap")
+    assert len(calls) == 1
+    df2 = df.copy()
+    df2.loc[df2.index[-1], "close"] += 1.0                                       # new data ⇒ recomputed
+    PD._rsi_div_overlay_keyed("NIFTY", df2, "15minute", now)
+    PD._rsi_div_overlay_keyed("BANKNIFTY", df, "15minute", now)
+    assert len(calls) == 3
+    PD._rsi_div_overlay_cached.clear()
 
 
 def test_owner_has_no_dates_and_no_second_rsi():

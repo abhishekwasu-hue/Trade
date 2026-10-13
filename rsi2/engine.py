@@ -609,11 +609,12 @@ class Divergence:
 
     # -------------------------------------------------------------------------------------------- public reads
     def with_area(self, rec):
-        """Adds the at / in area fact (at the record's known bar — the confirmation bar, or the read bar while forming); lazy because
-        the area owner is costly. Returns the record."""
-        if rec.get("is_div") and "area" not in rec:
-            rec["area"] = self.area_at(rec["known_bar"], rec["L2"]["price"], rec["side"])
-        return rec
+        """A COPY of the record with the at / in area fact (at the record's known bar — the confirmation bar, or the read bar while
+        forming); lazy because the area owner is costly. Stored records are never mutated (outputs never depend on earlier calls)."""
+        out = dict(rec)
+        if out.get("is_div") and "area" not in out:
+            out["area"] = self.area_at(out["known_bar"], out["L2"]["price"], out["side"])
+        return out
 
     def history(self, t=None, areas=False):
         """Every divergence confirmed by bar t (in known order) + the forming ones at t. areas ⇒ each with its area fact."""
@@ -641,12 +642,13 @@ class Divergence:
                     latest.append({"degree": d, "side": side, "statement": f"no {side} divergence (D{d}): fewer than two swing "
                                    f"{'highs' if side == BEAR_SIDE else 'lows'} of this degree known"})
                     continue
+                x = self.with_area(x) if x["is_div"] else dict(x)
                 st = (f"{div_label(x)} (D{d}, {x['price_rel']})" if x["is_div"]
                       else f"no {side} divergence (D{d}, {x['status']}): {x['reason']}")
                 latest.append({"degree": d, "side": side, "statement": st, "pair": x})
                 log.append({"degree": d, "side": side, "status": x["status"], "status_by": x["status_by"]})
                 if x["is_div"]:
-                    divs.append(self.with_area(x))
+                    divs.append(x)
                 elif x["cap"]:
                     caps.append(x)
         return {"owner": "rsi2.engine.Divergence", "kb": "K10.4 K-RSI (pending Abhi)", "tf": self.tf, "bar": t,

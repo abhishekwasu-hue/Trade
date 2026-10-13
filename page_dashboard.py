@@ -46,7 +46,7 @@ from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, leg_overlay, level_lines, rsi_gate_line, rsi_threshold_values,
     mcx_level_suffixes, rejection_markers, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
-    RSI_DIV_TF, rsi_div_overlay,
+    LEG_TF_MINUTES, RSI_DIV_TF, rsi_div_overlay,
 )
 from rsi2 import settings as RSI2_SETTINGS
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
@@ -842,6 +842,26 @@ _ZONE_TYPE_SHORT_LABELS = {
 }
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def _rsi_div_overlay_cached(symbol, chart_tf, n_bars, last_ts, last_ohlc, last_done, settings_key, _chart_df, _now):
+    """🎓 K-RSI overlay (swings2 + scan + RSI ≈ 2 s / 126 sessions 15M) प्रत्येक Streamlit rerun ला नाही — फक्त data / settings बदलल्यावर.
+    Key = (symbol, TF, bars, शेवटचा timestamp + OHLC, शेवटचा bar पूर्ण?, rsi2 settings); `_chart_df` / `_now` hash होत नाहीत (key मध्ये
+    त्यांचा सारांश). Exception cache होत नाही (caller चा try/except तसाच)."""
+    return rsi_div_overlay(_chart_df, chart_tf, _now)
+
+
+def _rsi_div_overlay_keyed(symbol, chart_df, chart_tf, now):
+    """rsi_div_overlay ची cached आवृत्ती (key वरच्या docstring प्रमाणे). फक्त display."""
+    last = chart_df.iloc[-1]
+    naive = (lambda t: t.tz_localize(None) if t.tzinfo is not None else t)          # noqa: E731
+    end = naive(pd.Timestamp(last["bar_end"])) if "bar_end" in chart_df.columns else \
+        naive(pd.Timestamp(last["timestamp"])) + pd.Timedelta(minutes=LEG_TF_MINUTES[chart_tf])
+    done = bool(naive(pd.Timestamp(now)) >= end)
+    ohlc = tuple(float(last[k]) for k in ("open", "high", "low", "close"))
+    key = repr(sorted(RSI2_SETTINGS.load().items(), key=lambda kv: kv[0]))
+    return _rsi_div_overlay_cached(symbol, chart_tf, len(chart_df), str(last["timestamp"]), ohlc, done, key, chart_df, now)
+
+
 def _category_wise_levels(zone_types):
     """प्रत्येक zone_type category साठी स्वतंत्रपणे 1,2,3... लेबल तयार करणे — categories मिसळून
     एकत्र क्रमांक नाही. Caller ने आधीच LTP पासूनच्या अंतरानुसार (zone_mid) sort केलेला df द्यावा,
@@ -1389,7 +1409,7 @@ def render():
             rsi_div_lines = []
             if show_rsi_div and not chart_df.empty:
                 try:
-                    rsi_div_lines, _rsi_owner, _rsi_cap = rsi_div_overlay(chart_df, chart_tf, get_ist_now())
+                    rsi_div_lines, _rsi_owner, _rsi_cap = _rsi_div_overlay_keyed(chart_symbol, chart_df, chart_tf, get_ist_now())
                     if _rsi_owner is not None:
                         rsi_for_tv = _rsi_owner                  # RSI pane = owner चा Wilder RSI (divergence points रेषेवरच बसतात)
                         if bot_choice == NO_BOT:
