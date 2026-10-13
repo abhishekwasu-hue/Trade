@@ -433,3 +433,4 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1e | (ii) 22,544–22,622 spot zone = FLIPPED seller area; zone मधलं वाचन ठरवतं. 12 Oct bear call = golden ✅. |
 | Z-1f | Flip झाल्यावर जुनी भूमिका संपते; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead (दुसरा flip नाही), log. ✅ |
 | RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |
+| Trend बाजू (13 Oct) | Daily trend बदलला नाही तोपर्यंत reversal पासूनची चाल correction (a-b-c); flip झालेल्या zone वर bull trade = S4 अपवाद **नाही**. पुढचा seller zone ≈ 5–6 Oct highs; correction च्या शेवटी zone वाचन ⇒ bear. ✅ Abhi |
