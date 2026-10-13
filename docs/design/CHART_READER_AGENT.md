@@ -1,4 +1,4 @@
-# Chart Reader agent and structure reset — design (for Abhi's approval, nothing is built yet)
+# Chart Reader agent and structure reset — design (APPROVED by Abhi, 13 Oct; build R0 → R5)
 
 Sources: Abhi's GO note, STRUCTURE RESET, R:R CORRECTION and the §9 answers (all 13 Oct). Status: **design only**. Abhi approves
 this whole document once; the build then follows it phase by phase (§12) with no side changes. Built in the Trade repo first and
@@ -129,8 +129,7 @@ TTL sits on the edge); the two pre-open Opus reads run minutes apart ⇒ 5-minut
 call), not assumed.
 
 **Budget:** reader cap `reader_daily_budget_usd` = **10.0 per trading day** (Abhi, 13 Oct chat; no reads on non-trading days),
-`reader_monthly_budget_usd` = **220.0** (≈ 22 × $10 — Abhi to confirm); Vision keeps its own $2 / day. (The Method Pack note says
-"the $5 / day cap stays"; the later chat set $10 per trading day — this doc uses $10; Abhi to confirm.) Both are dashboard settings.
+`reader_monthly_budget_usd` = **220.0** (Abhi confirmed both); Vision keeps its own $2 / day. Both are dashboard settings.
 Every call logged (time, symbol, read type, model, pack version, tokens cached / uncached, $). Cap reached ⇒ no more reads that day +
 one Telegram line. If the measured cost nears the cap, degrade and tell Abhi: (1) light reads → every other 5M bar; (2) standard
 reads → only near an area. The 1H deep read and the pre-open read are never dropped.
@@ -160,10 +159,23 @@ least-squares fit, not wick-anchored (79 / 86 fail); trendlines2 still draws wea
 lines on one chart). Areas: SR V3 and the Vision chart draw single prices, not zones, and keep broken levels (SR V3 has no written
 validity rules); some decision3 1H bands are 4–5 MR wide (TL2); zones2 shows 7–17 zones per 15M chart.
 
-Rule after the fix (built in R1, not before approval): charts show **only K6-valid lines, at most 2 per timeframe, each labelled
-with its touch count**, and only K4-valid areas (real bands, width cap), through one shared line check and one shared area check used
-by every chart. Abhi's decisions: TA1–TA4 in `docs/reports/v22/OPEN_QUESTIONS.md` (show only valid; 6 or 8 bars between touches;
-touch minimum 2 → 3; band drawing for SR V3 / Vision).
+**Abhi's decisions (TA1–TA4, 13 Oct) — the rule built in R1:**
+- **TA1:** charts show only valid lines (K6) and valid areas (K4); invalid ones only in the debug view. One shared line check and one
+  shared area check used by every chart.
+- **TA2:** touch spacing default 6 bars (setting).
+- **TA3 (corrected):** a trendline is drawn from **2 touches**; the projected **3rd touch is the trade location** (candidate area,
+  where the line acts as S/R; entry still needs handover + commitment candle). ≥ 3 touches = "established" (evidence +), not a
+  different rule. The other K6 rules stay for 2-touch lines: wick anchors; no close beyond the line between anchors; spacing; slope
+  not extreme. Labels show the touch count and mark the projected 3rd-touch zone. KB K6 updated in #317. The audit is re-run with
+  this rule (the 8 / 153 figure used a 3-touch minimum).
+- **TA3b:** horizontal S/R works the same way: two reaction touches at one price area define the band; the 3rd touch is the trade
+  location; role flip after a break (touches then count on the new side). A band and a line meeting at one price = **confluence**,
+  the strongest location. KB K4 updated in #317.
+- **TA4:** every area drawn as a **band** (low–high from its base / reaction candles), never a single price; broken areas hidden
+  except the most recent broken one (dashed, "broken"); at most 3 bands above and 3 below price per timeframe.
+- **Golden (R1):** Abhi's own trade, NIFTY FUT 15M — touch 1 = 30 Sep high, touch 2 = 6 / 7 Oct highs; the projected line meets the
+  ≈ 22,667 FUT supply on 12 Oct; 3rd touch = the 12 Oct opening spike into the confluence → bear call. The line module must find it
+  from the 2 touches alone and mark the 12 Oct 3rd-touch zone before 12 Oct (no look-ahead); plus the band + line confluence golden.
 
 Related PRs: R:R correction #316; KB K11 expansion #317.
 
@@ -212,3 +224,5 @@ prompt on every call, prompt-cached.
 - **R3** light (Haiku) + reader / critic / rule checker + prompt caching + budget log; golden days; measured cost reported.
 - **R4** live loop + working memory + shadow Telegram + Reader timeline page (VPS command from Abhi).
 - **R5** promotion report; frozen engines archived only after Abhi's decision.
+
+Each step is reported to Abhi with its golden-day results before the next one starts.
