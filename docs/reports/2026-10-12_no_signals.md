@@ -60,7 +60,7 @@ Code वरून (तपशील: `docs/reports/2026-10-12_engine_blockers.md`
 
 TODO (Abhi चे charts + diag): त्याचे bar-by-bar कारण खऱ्या data वरून.
 
-## 5. आजपासूनचा बदल (one bot) — `claude/one-bot-tomorrow`
+## 5. आजपासूनचा बदल (one bot) — `claude/one-bot-tomorrow` (main वर merged, PR #310)
 
 - फक्त 15M SRv2 ON (NIFTY / BANKNIFTY / SENSEX, PAPER), `signal_source = engine`; engine = decision3 (V22) live, प्रत्येक बंद 15M bar
   09:30–15:00 (`engine3_live.py`, `scripts/install_engine_schedule.sh`). बाकी bots OFF (`scripts/set_one_bot_mode.py`, `--revert`).
