@@ -195,9 +195,15 @@ ONE_BOT = {("15m_dynamic_sr", s): {"symbol_enabled": True, "signal_source": "eng
 NOW = pd.Timestamp("2026-10-13 09:00")
 
 
+# engine (decision3 ② Levels) चे पट्टे — signal_source = engine ⇒ pre-open हेच दाखवतो (market_zones नाही)
+ENGINE_LEVELS = {"NIFTY": [{"role": "resistance", "lo": 22715.0, "hi": 22776.0}, {"role": "support", "lo": 22400.0, "hi": 22430.0},
+                           {"role": "resistance", "lo": 22900.0, "hi": 22950.0}]}
+
+
 def _one_bot_report(P, active, engine_fn, **kw):
     ctx = {"NIFTY": NIFTY, "BANKNIFTY": BANK, "SENSEX": SENSEX}
     zz = {"NIFTY": ZONES, "BANKNIFTY": None, "SENSEX": None}
+    kw.setdefault("engine_areas_fn", lambda s: ENGINE_LEVELS.get(s, []))
     return P.build_report(list(ctx), "tok", lambda s: zz[s], lambda s: {"NIFTY": 22565.0}.get(s),
                           trend_fn=lambda s: ctx[s], weekly_fn=lambda s: "UP", day="2026-10-13", active=active, engine_fn=engine_fn,
                           now=NOW, **kw)

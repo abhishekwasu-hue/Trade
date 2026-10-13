@@ -225,8 +225,9 @@ def v22_kwargs():
     return set(inspect.signature(E3.V22.__init__).parameters)
 
 
-def build_inputs(feed, symbol, now, s=None):
-    """(m15, daily, ltf5, fut5|None, volume note|None). 15M / Daily / 5M LTF अपुरा ⇒ EngineDataError (fail-closed); FUT नाही ⇒ volume NA."""
+def build_inputs(feed, symbol, now, s=None, levels_only=False):
+    """(m15, daily, ltf5, fut5|None, volume note|None). 15M / Daily / 5M LTF अपुरा ⇒ EngineDataError (fail-closed); FUT नाही ⇒ volume NA.
+    levels_only (pre-open areas) ⇒ फक्त 15M + Daily (ltf / fut / note = None; शेवटचा उपलब्ध बंद bar)."""
     from bots_common import level_reaction as LR
     from decision3 import history as HI
     from elliott import data_policy as DP
@@ -238,7 +239,7 @@ def build_inputs(feed, symbol, now, s=None):
     if len(m15) < 200:
         raise EngineDataError(f"{symbol}: 15M candles अपुरे ({len(m15)})")
     want = now.floor("15min")
-    if pd.Timestamp(m15["bar_end"].iloc[-1]) < want and SESSION_OPEN <= (want.hour, want.minute) <= SESSION_CLOSE:
+    if not levels_only and pd.Timestamp(m15["bar_end"].iloc[-1]) < want and SESSION_OPEN <= (want.hour, want.minute) <= SESSION_CLOSE:
         raise EngineDataError(f"{symbol}: शेवटचा बंद 15M ({want:%H:%M}) अजून Upstox कडे नाही (last {m15['bar_end'].iloc[-1]:%H:%M})")
     dd = feed.index(symbol, "day", s["engine3_daily_days"])
     if dd is None or len(dd) < 30:
@@ -246,6 +247,8 @@ def build_inputs(feed, symbol, now, s=None):
     daily = LR.prepare_daily(_naive(dd)[["timestamp", "open", "high", "low", "close"]], now.normalize())
     if len(daily) < 30:
         raise EngineDataError(f"{symbol}: Daily candles अपुरे ({len(daily)})")
+    if levels_only:
+        return m15, daily, None, None, None
     ltf = closed_session_bars(feed.index(symbol, "5minute", s["engine3_ltf_days"]), 5, now)
     if HI.is_nifty(symbol):
         ltf = DP.filter_allowed(ltf, "annotation")
@@ -290,6 +293,38 @@ def _evaluate(symbol, m15, daily, ltf, fut, s3):
     with fold_cache(symbol.upper()):
         V = E3.V22(m15, None, daily, **kw)
     return V.decide(len(V.m15) - 1)
+
+
+TRADEABLE_STATES = ("ACTIVE", "TESTED", "FLIPPED")                         # BROKEN / DEAD (किंवा अज्ञात) ⇒ pre-open मध्ये नाही
+
+
+def tradeable_levels(levels):
+    """फक्त trade करता येणारे पट्टे: `state` field असेल (decision3 #325 नंतर) ⇒ ACTIVE / TESTED / FLIPPED ठेवा, BROKEN / DEAD (अज्ञात) वगळा;
+    field नसेल (main: snapshot फक्त जिवंत levels देतो) ⇒ सगळे ठेवा."""
+    return [x for x in levels or [] if x.get("state") is None or str(x["state"]).upper() in TRADEABLE_STATES]
+
+
+def watched_levels(symbol, feed, now, s=None):
+    """Pre-open (Abhi): engine (V22 ② Levels) चे शेवटच्या बंद 15M bar ला जिवंत levels — [{"role", "lo", "hi", …}] (`Levels.snapshot`).
+    पट्टे swing / base candles वरून (TA4, lo < hi). 15M + Daily पुरे (levels ला LTF / FUT लागत नाही ⇒ c1 इशारा दाबला). Data नाही ⇒
+    EngineDataError (caller NA + कारण)."""
+    import contextlib
+    import io
+    import warnings
+    import instruments as INS
+    from decision3 import engine as E3
+    from decision3 import history as HI
+    m15, daily, _l, _f, _n = build_inputs(feed, symbol, now, s, levels_only=True)
+    m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])
+    prev = INS._current["name"]
+    INS.set_current(symbol)
+    try:
+        with fold_cache(symbol.upper()), warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
+            warnings.simplefilter("ignore")
+            V = E3.V22(m15, None, daily, sealed=HI.sealed_fn(symbol))
+    finally:
+        INS._current["name"] = prev
+    return tradeable_levels(V.levels.snapshot(len(V.m15) - 1))
 
 
 def _first_fail(chk):

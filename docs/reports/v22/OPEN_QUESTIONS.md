@@ -412,3 +412,11 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | R0-2 (zone) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
 | Z-1 | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |
 | Z-2 | KB S4 / G4 आणि pack मध्ये "flip retest" हे नाव कोणत्याही real break नंतरच्या retest ला वापरलं आहे — Abhi च्या flip नियमापेक्षा सैल. नाव बदलायचं ("break retest") की G4 ला flip नियम लावायचा? | तसेच (pack मध्ये व्याख्या नाही, फक्त नाव) | Abhi ठरवतो |
+
+### Deploy fixes (branch `claude/preopen-fixes`)
+
+| # | प्रश्न | आत्ता काय (default) | पर्याय |
+|---|---|---|---|
+| PF-1 | 15:45 सारांश (`scripts/paper_daily_summary.py`) अजून market_zones चे DYNAMIC_SR (एकच किंमत) areas दाखवतो; engine source bot साठी engine पट्टे दाखवायचे? | तसेच (या branch चा scope नाही) | pre-open सारखं `watched_levels` (वेगळा PR) |
+| PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | लावलं (नवा आकडा नाही, तोच `level_min_width_sigma`) | σ नसताना level जन्मच नाही |
+| PF-3 | `signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही (Vision symbols / 15M SRv2 on-off) — `python3 scripts/set_one_bot_mode.py` पुन्हा चालवावा लागतो; engine / pre-open / engine entry लगेच नवी यादी वापरतात | dashboard caption मध्ये सूचना | dashboard save वरच one-bot mode लावा |

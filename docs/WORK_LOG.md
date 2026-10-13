@@ -2492,3 +2492,26 @@ legs owner वि. reader2 gate).
   FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
   काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
   (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.
+
+## 2026-10-13 · Deploy fixes: signal_symbols, पट्टे (bands), pre-open फक्त चालू bot (branch `claude/preopen-fixes`)
+
+- **SENSEX OFF (signal_symbols):** नवीन dashboard setting `signal_symbols` (Bot Dynamic SR Algo पान, 🎯 expander; Supabase
+  `strategy_settings` `__signal_symbols__` / `ALL`; नोंद नाही ⇒ default NIFTY + BANKNIFTY — migration नाही). वाचणारे: one-bot mode (15M SRv2
+  signal symbols वर ON, बाकी index वर `symbol_enabled` = false; Vision srv2 symbols = signal symbols; PAPER instrument फक्त signal symbols),
+  engine signal run (`--symbols` दिले तरी बाहेरचे ⏭️; cron ओळीत symbols नाहीत), pre-open, one-bot status table, `paper/engine_entry`
+  (बाहेरचा symbol ⇒ approval / entry नाही). SENSEX फक्त data / charts.
+- **एकच-किंमत zone ("supply 22,781–22,781") — कारणं:** (1) pre-open 15M SRv2 (engine) साठी सुद्धा market_zones चे DYNAMIC_SR rows
+  दाखवायचा — ते एकच किंमत (zone_low = zone_high = pivot channel चा mid) आणि engine trade करतो ते नव्हेत; (2) `paper/engine_entry` engine चा
+  पट्टा mid मध्ये बदलून Vision ला फक्त level द्यायचा (Telegram / chart वर एकच किंमत); (3) `decision3/levels.py` `_w`: σ_1H NaN (window चे
+  पहिले 20 sessions, Q40 prior levels bar 0) ⇒ किमान रुंदी 0 ⇒ close = high candle चा पट्टा एकच किंमत (NIFTY data वर 7 पैकी 6 windows मध्ये
+  सापडलं). **Fix:** (3) σ नसताना तात्पुरती रुंदी = bars ≤ t चे 1H ranges चा median, σ माहीत झाल्यावर spec ची किमान रुंदी (lookahead नाही;
+  σ असताना बदल नाही) — छोटा diff (PR #325 merge साठी); (2) Vision tags["gate"] = engine चा पट्टा (area, side, trend, form; SL / entry नाही ⇒
+  ✏️ Modify वर्तन तसेच); (1) pre-open engine source ⇒ `engine3_live.watched_levels` (decision3 पट्टे, फक्त ACTIVE / TESTED / FLIPPED —
+  #325 चा `state` असेल तर BROKEN / DEAD नाहीत); own source ⇒ bot चाच gate पट्टा (level ± `gate_area_pad_pct`).
+- **Pre-open:** फक्त चालू bots आणि त्यांचे पट्टे (5M Instant / Classic / MCX नियम ओळ बंद असताना नाहीत); engine areas NA ⇒ "Watched areas
+  NA" + कारण, तपशील फक्त log. Maturity ओळीला हात नाही (दुसरी branch).
+- **Tests:** नवीन `tests/test_preopen_symbols_bands.py` (11); बदललेले (spec बदल, golden नाही): `test_one_bot` (SENSEX OFF, Vision symbols,
+  LIVE नकार BANKNIFTY + SENSEX, cron ओळ, engine run symbols), `test_telegram_cleanup` (engine source ⇒ engine पट्टे).
+- **Deploy:** git pull + restart पुरेसं नाही — `bash scripts/deploy_one_bot.sh` पुन्हा (schedule ओळी + `set_one_bot_mode.py` ⇒ SENSEX 15M SRv2
+  OFF, Vision symbols NIFTY / BANKNIFTY). Setting DB मध्ये लिहायची गरज नाही (default).
+- **बाकी:** 15:45 सारांश (`paper_daily_summary`) अजून market_zones चे एकच-किंमत areas दाखवतो (OPEN_QUESTIONS PF-1).
