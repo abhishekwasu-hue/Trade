@@ -2164,4 +2164,5 @@ setup 0 + warning, `--from` truncation = पूर्ण run चे तेच �
 **BANKNIFTY merged-main run** (15M Jul–Oct 2026, Daily पूर्ण, 5M + FUT volume फक्त 30 Sep–6 Oct): setup 0; 30 Sep 14:00 / 14:15 bear call
 a2 / c0 (volume 1.4× / 1.8×) / c1 ✔ पण area 54,891–56,200 (1,309 pts) ⇒ R:R 0.06 / 0.21 ⇒ TL2 + D12-5 चं live उदाहरण (no_signals §6; charts
 trade-data `review/v22/banknifty_merged_1013/`). Live path चे a2 / c0 / c1 खऱ्या data वर end-to-end दिसले.
-**पुढे:** Abhi TF8 / TL2 / D12-1 / D12-5; 12-Oct खऱ्या data वर replay (VPS); CI #299 / #311.
+**PR #299 BANKNIFTY before / after** (पेंडिंग होतं): तोच BANKNIFTY run #299 branch वर — 1,575 bars decision / gate / कारण 0 फरक, ⑦ चे 2 bars R:R
+समान (PR वर comment). **पुढे:** Abhi TF8 / TL2 / D12-1 / D12-5; 12-Oct खऱ्या data वर replay (VPS); CI #299 / #311.
