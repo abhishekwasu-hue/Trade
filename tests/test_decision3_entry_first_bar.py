@@ -17,7 +17,7 @@ from tests import oct12_fixture as F
 from tests.ltf_fixtures import split_bars
 from tests.test_decision3_method import NO_MATURE, _abc_m15
 
-S_ROLE = {"level_death_side": "role"}
+S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance"}   # Z-1: fixture चा supply acceptance-flip (जुना §5.4) — pin
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}
 
 
@@ -142,7 +142,8 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     import json
     from scripts import replay_day as RD
     out = tmp_path / "new.json"
-    assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(out), "--out-dir", str(tmp_path)]) == 0
+    assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(out), "--out-dir", str(tmp_path),
+                    "--flip-rule", "acceptance"]) == 0                    # Z-1: fixture चा supply acceptance-flip — pin
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and not {"rr", "sl", "target", "entry"} & set(j["setup"])
     msg = j["approval"]["message"]
@@ -151,6 +152,6 @@ def test_replay_day_default_output_has_no_engine_rr_sl_target(tmp_path):
     assert all("⑦" not in b["checklist"] for b in j["bars"])
     old = tmp_path / "old.json"
     assert RD.main(["--date", "2030-03-04", "--synthetic", "--dry-run", "--json", str(old), "--out-dir", str(tmp_path),
-                    "--legacy-rr", "--no-first-bar-entry"]) == 0
+                    "--legacy-rr", "--no-first-bar-entry", "--flip-rule", "acceptance"]) == 0
     jo = json.loads(old.read_text(encoding="utf-8"))
     assert jo["setup"]["rr"] >= 3 and "R:R" in jo["approval"]["message"]

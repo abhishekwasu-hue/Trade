@@ -33,6 +33,15 @@ DEFAULTS = {
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
     "level_death_side": "role",              # Q2 / TL1 (✅ Abhi मंजूर): मृत्यू-swing चालू भूमिकेच्या बाजूचा (flipped support = supply ⇒ वरचा D2 H);
                                              # "role0" = जुना Q2 default (मूळ भूमिकेची बाजू, flip नंतरही) — revert साठी
+    "level_flip_rule": "far_swing",          # KB K4 (Abhi, final): flip = पट्ट्यापलीकडे + पलीकडचा swing पार (trade ने) ⇒ FLIPPED; acceptance
+                                             # (accept_closes) पण swing पार नाही ⇒ BROKEN (trade location नाही). "acceptance" = जुना spec §5.4
+                                             # (acceptance ⇒ लगेच flip) — फक्त जुने tests / what-if. "far_swing" मध्ये मृत्यू नाही (R0-2:
+                                             # swing पार ⇒ flip) ⇒ level_death_side फक्त "acceptance" सोबत लागू
+    "flip_pullback_inner_degree": 1,        # G4 (a): pullback ची आतली रचना या swings2 degree च्या pivots वर (level_degree च्या एक खाली)
+    "flip_pullback_vol_ratio": 1.0,          # G4 (b): pullback ची सरासरी FUT volume < हे × flip impulse ची सरासरी ⇒ "कमी volume"
+    "flip_vol_min_coverage": 1.0,            # G4 (b): impulse / pullback bars पैकी इतक्या bars ला FUT volume हवा; कमी ⇒ (b) NA
+    "flip_volume_na": "cap_b",               # G4 (b) NA (FUT volume नाही): "cap_b" = decision3 ची volume-NA प्रथा (c0 सारखं: चालतं, grade कमाल B);
+                                             # "block" = (b) NA ⇒ entry नाही (वाट)
     "show_distance_sigma": 12.0,             # chart वर फक्त इतक्या σ_1H अंतरातली levels (snapshot मधून कधीच prune नाही)
     "chart_old_box_sessions": 126,           # §5.1 (Abhi): Daily chart window यापेक्षा लांब (≈ 6 महिने) ⇒ जुने correction boxes नाहीत (फक्त chart)
     "chart_leg_path_points": 15,             # Abhi review: trend leg ची chart रेषा कमाल इतक्या बिंदूंतून (लांब leg ⇒ मोठे swings च)
@@ -118,6 +127,11 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
+    "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 'A broken zone flips [Abhi]' + 'Broken, not flipped [Abhi]' (PR #324): flip = पलीकडे + पलीकडचा swing पार; नाहीतर BROKEN"),
+    "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq)"),
+    "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 (b) 'pullback as a whole on LOWER FUT volume than the impulse leg' ⇒ ratio < 1.0 (निकाल पाहून नाही)"),
+    "flip_vol_min_coverage": (1.0, "—", "setting", "KB G4 (b): volume NA कधीच शांत pass नाही — सगळ्या bars ला FUT volume हवा"),
+    "flip_volume_na": ("cap_b", "cap_b / block", "setting", "KB G4 (b) NA: decision3 ची volume-NA प्रथा (c0: चालतं, कमाल B); Abhi ठरवतो (OPEN_QUESTIONS Z-1)"),
     "liq_marks_per_side": (3, "2/3/5", "अंदाज (फक्त chart)", "spec §7.6 pools लहान खुणा — गर्दी टाळायला; क्रम PWH/PWL > PDH/PDL > equal > swing (liquidity.pool_marks prio, फक्त display)"),
     "show_distance_sigma": (12.0, "8/12/20", "अंदाज (फक्त chart)", "spec ② दूरची levels chart वर लपवा"),
     "chart_old_box_sessions": (126, "—", "अंदाज (फक्त chart)", "§5.1 (Abhi): '~6 महिन्यांपेक्षा लांब window ⇒ जुने boxes नाहीत' (≈ 126 sessions)"),

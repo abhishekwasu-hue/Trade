@@ -281,3 +281,11 @@
 
 अजून उघडे: K1 trend थकणं, K3 ending diagonal / combination, E16 X wave, टप्पा 6 correction channel break, chart_reader मध्ये σ strike,
 OE / PCS live trend market_state वर (K-10 नंतर), वेग: precompute (सध्या evaluate ~3 s, लक्ष्य ≤ 20 s आधीच पूर्ण — K-10 मध्ये मोजणी).
+
+
+## K4 / G4 flip नियम (Abhi, अंतिम) — decision3 (Z-1)
+
+| KB | नियम | Code | Test | स्थिती |
+|---|---|---|---|---|
+| K4 "A broken zone flips [Abhi]" / "Broken, not flipped [Abhi]" | पलीकडे + पलीकडचा swing पार ⇒ FLIPPED; swing पार नाही ⇒ BROKEN (trade location नाही); तोपर्यंत sweep | `decision3/levels.py:Levels._step_far_swing`, `state_at`, `flip_view`, `active`; `decision3/flip.py:far_swing`; `method.Pullbacks` (BROKEN वगळतो); `levels.band_flip_facts` (find_bands facts) | `tests/test_decision3_flip.py` (state machine, आरसा, no look-ahead, 9 Oct, 12 / 13 Oct real) | ✅ (Z-1a / Z-1b उघडे) |
+| G4 / K4 "Flip retest (G4 / S4) [Abhi]" | FLIPPED retest: (a) corrective pullback, (b) एकूण कमी FUT volume, (c) a2 + c0 + c1 (+ RSI पुरावा); impulsive / जास्त volume ⇒ trade नाही | `decision3/flip.py:flip_retest` (`daily_legs.classify`, `opportunity_engine.volume`), `decision3/engine.py:V22.flip_gate` (checklist "G4") | `tests/test_decision3_flip.py` (corrective + कमी volume ⇒ pass, impulsive / जास्त volume ⇒ no trade, NA ⇒ कारणासह) | ✅ (Z-1c / Z-1d / Z-1e उघडे) |

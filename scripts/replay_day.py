@@ -373,6 +373,8 @@ def _main(argv=None):
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--legacy-rr", action="store_true", help="जुना ⑦ (engine SL / target / R:R ≥ 3 gate) — फक्त जुने reports reproduce")
     ap.add_argument("--no-first-bar-entry", action="store_true", help="जुनं: 09:15 candle फक्त पुरावा (entry 09:30 पासून)")
+    ap.add_argument("--flip-rule", choices=("far_swing", "acceptance"), default=None,
+                    help="level flip नियम (default engine चा: far_swing = KB K4 Abhi); acceptance = जुना spec §5.4 — फक्त जुने reports reproduce")
     a = ap.parse_args(argv)
     import instruments as INS
     from decision3 import engine as E3
@@ -405,7 +407,8 @@ def _main(argv=None):
     if not bars:
         print(f"❌ {a.symbol} {day.date()}: त्या दिवसाचे 15M bars नाहीत — `--source upstox` (VPS) किंवा `--synthetic`")
         return 2
-    es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {})}
+    es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {}),
+          **({"level_flip_rule": a.flip_rule} if a.flip_rule else {})}
     V = E3.V22(m15, m1, daily, s=es, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0

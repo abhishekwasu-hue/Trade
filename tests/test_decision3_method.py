@@ -77,7 +77,10 @@ def _synthetic_m15(seed=7, legs=None):
 # हा fixture 15M-only (5M LTF नाही) आणि त्याचा setup bar study window पेक्षा dominant नाही ⇒ ⑥ ची c0 dominance / c1 LTF CHoCH (Abhi,
 # LEVEL_BOTS_CONFIRMATION) इथे बंद — हे tests त्या नियमांचे नाहीत (setup invariants / charts / captions); c0 + c1 चे tests (आरशासह)
 # tests/test_decision3_confirm.py मध्ये.
-NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
+# या fixture चा एकमेव setup acceptance-flip झालेल्या level च्या retest वर होता (जुना spec §5.4); Abhi च्या K4 नियमाने (Z-1) तो level
+# far swing पार न झाल्याने BROKEN ⇒ trade location नाही. हे tests flip नियमाचे नाहीत (setup invariants / charts / captions) ⇒ जुना नियम
+# स्पष्ट pin (`level_flip_rule` = "acceptance"); नवा नियम tests/test_decision3_flip.py मध्ये. असर्ट बदलले नाहीत.
+NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0, "level_flip_rule": "acceptance"}
 LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 

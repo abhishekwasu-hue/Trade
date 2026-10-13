@@ -2482,3 +2482,20 @@ legs owner वि. reader2 gate).
 - BROKEN (swing पार नाही) ⇒ retest trade location नाही. FLIPPED ⇒ pullback flipped area मध्ये = trade location, पण entry आधी: corrective
   pullback + एकूण कमी FUT volume + area वर handover / commitment / LTF CHoCH / RSI divergence. G4 "flip retest" = हेच.
 - Fixtures (pack बाहेर, KB मराठी K4): 12 Oct sweep, 13 Oct flip. Pack version 5c23b29ca714. पुढे: decision3 BROKEN / FLIPPED code PR.
+
+## Z-1: decision3 BROKEN / FLIPPED code (Abhi चा अंतिम flip नियम)
+
+- `decision3/levels.py` (`level_flip_rule` = "far_swing", default): पट्ट्यापलीकडे acceptance (3 closes) ⇒ **BROKEN** (जुनी भूमिका,
+  trade location नाही — `Levels.active` आणि K उघडणं वगळतात). पलीकडचा swing (आधीच confirm झालेला D2 pivot, excursion आधीचा) trade
+  ने पार ⇒ **FLIPPED** (भूमिका उलट). BROKEN + 3 closes परत ⇒ reclaim (sweep, जुनी भूमिका). नव्या नियमात मृत्यू नाही (R0-2).
+  Facts: state, broken_at, far_swing (price, time), flipped_at. जुना नियम `level_flip_rule` = "acceptance" (फक्त जुने tests / what-if).
+- G4 (`decision3/flip.py`, `V22.flip_gate`): FLIPPED level च्या retest ला (a) pullback corrective (`daily_legs.classify`, legs2 C +
+  read_counter) आणि (b) pullback ची एकूण FUT volume flip impulse पेक्षा कमी (`opportunity_engine.volume`, near-month;
+  `flip_pullback_vol_ratio` 1.0). (a) / (b) ✘ ⇒ no trade; (a) वाचता येत नाही ⇒ वाट; (b) NA ⇒ कमाल B (`flip_volume_na`, decision3 प्रथा).
+  (c) = ⑥ तसाच.
+- Live PAPER परिणाम: 15M SRv2 (signal_source = engine) ⇐ `engine3_live` ⇐ V22 — BROKEN levels आता entry नाहीत, FLIPPED retest ला G4.
+  LIVE ला हात नाही.
+- Real data (trade-data, spot): 12 Oct — 22,667 FUT ≈ spot 22,612 (basis 55) ⇒ level 22,543.8–22,621.8 resistance (8 Oct ला demand ⇒
+  supply), 12 Oct 09:15 wick वर, close आत ⇒ sweep, supply कायम ✅. 13 Oct export अपूर्ण (10:00 पर्यंत 4 bars): far swing = 6 Oct 14:00 चा
+  D2 H 22,731.8 (Abhi चा 6 / 7 Oct high), अजून पार नाही ⇒ code: अजून resistance. Synthetic oct12 fixture चा supply नव्या नियमाने BROKEN
+  (खाली swing नाही) ⇒ जुने oct12 tests जुना नियम pin; प्रश्न Z-1a.

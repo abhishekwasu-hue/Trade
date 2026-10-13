@@ -408,3 +408,16 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | "strong move" | "strong" आणि dominant candle / displacement अर्थ **काढला**. Zone flip = price zone पलीकडे **आणि** पलीकडच्या बाजूचा swing पार; swing पार होणं हाच पुरावा, candle ची वेगळी अट नाही. तोपर्यंत sweep | KB K4 + pack. ✅ निकाली |
 | Z-2 | (b) सगळीकडे एकच flip नियम (G4 सकट). BROKEN (swing पार नाही) ⇒ retest trade location नाही, थांबा. FLIPPED ⇒ swing वरून परत येणं = pullback, flipped area = trade location; entry आधी (a) pullback corrective (zigzag / flat / triangle), (b) एकूण कमी FUT volume (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover (a2) + dominant commitment जास्त FUT volume (c0) + LTF CHoCH (c1) + RSI divergence पुरावा. Impulsive / जास्त volume ने परत ⇒ trade नाही. G4 चं नाव "flip retest" = नेमकं हेच | KB K4 + G4 + pack. ✅ निकाली |
 | Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |
+
+### Z-1 code (decision3 BROKEN / FLIPPED, branch `claude/decision3-flip-state`) — निकाल + पुढचे प्रश्न
+
+| # | प्रश्न / नोंद | सध्या code (default) | कोण |
+|---|---|---|---|
+| Z-1 | decision3 BROKEN / FLIPPED code | ✅ केलं: `level_flip_rule` = "far_swing" (acceptance ⇒ BROKEN; far swing trade ने पार ⇒ FLIPPED; BROKEN = trade location नाही), G4 (a) + (b) gate, facts broken_at / far_swing / flipped_at. Live PAPER: 15M SRv2 engine मार्ग (engine3_live ⇒ V22) बदलला | ✅ निकाली (review बाकी) |
+| Z-1a | पलीकडे swing **नाहीच** (zone = चालू structure चं टोक, trend नवे low / high करतो) ⇒ नियमाने zone कधीच flip होत नाही, BROKEN राहतो (reclaim शिवाय). Synthetic oct12 fixture चा supply असाच ⇒ नव्या नियमाने setup नाही. break नंतर बनलेला पहिला swing चालेल का? | नाही — फक्त excursion आधीचा swing; नसेल ⇒ BROKEN | Abhi ठरवतो |
+| Z-1b | Shared band check (`facts.validity.check_band`) चा "flipped" = real break + नव्या बाजूला ≥ 2 touches — Abhi च्या नियमापेक्षा वेगळा. `find_bands` ला `flip_state` / `far_swing` / `flipped_at` facts जोडल्या (additive), chart label त्यावरून; `valid` / `flipped` तसेच (chart_reader / vision consumers) | facts जोडल्या, validity बदल नाही | Abhi / वेगळा PR |
+| Z-1c | G4 (b) FUT volume NA (FUT नाही, किंवा impulse / pullback च्या एखाद्या bar ला volume नाही — `flip_vol_min_coverage` 1.0). Live `engine3_live` फक्त 10 दिवसांचा FUT आणतो ⇒ जुन्या flip impulse ला (b) NA | decision3 volume-NA प्रथा: चालतं, grade कमाल B (`flip_volume_na` = "cap_b"; "block" ⇒ वाट) | Abhi ठरवतो |
+| Z-1d | G4 (a) "unclear" (pullback मध्ये आतले D1 swings नाहीत, legs2 C तटस्थ) | वाट (entry नाही) | Abhi |
+| Z-1e | Real 12 Oct: decision3 ला 22,6xx area = FLIPPED supply (8 Oct ला demand तुटून 5 Oct चा low 22,397.1 पार). म्हणून 12 Oct retest ला G4 लागतो: (a) unclear, (b) pullback FUT volume / impulse = 1.06–1.11 ⇒ no trade. (जुन्या नियमानेही 12 Oct ला setup नव्हता: range / doji / कमी volume.) हा zone G4 साठी "flipped" धरायचा की मूळ supply? | FLIPPED ⇒ G4 | Abhi |
+| Z-1f | नव्या नियमात level मृत्यू नाही (R0-2: swing पार ⇒ flip) ⇒ जुने levels कायम (snapshot, prune नाही); `level_death_side` (TL1) फक्त जुन्या नियमासोबत | मृत्यू नाही | Abhi |
+| Z-1g | व्याख्या: reclaim = BROKEN नंतर `accept_closes` closes परत भूमिकेच्या बाजूला ⇒ जुनी भूमिका; flip impulse = excursion आधीच्या शेवटच्या उलट D2 swing नंतरचं टोक ⇒ flip नंतरचं टोक; pullback volume = flip टोक नंतर … decision bar आधी (decision bar = ⑥ c0) | असंच | Abhi पुष्टी |

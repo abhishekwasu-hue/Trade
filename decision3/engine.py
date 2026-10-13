@@ -8,9 +8,11 @@ approval वेळचा निर्णय). rr_step = True = जुना ⑦ 
 जुना decision2 (v2.1) तसाच — `engine_version` setting ने shadow तुलना. हा module order / broker call करत नाही; AI order देत नाही.
 Known_at: प्रत्येक bar चा निर्णय फक्त त्या bar च्या close पर्यंतच्या माहितीवर (Daily state known_at ≤ bar_end; levels त्यांच्या जन्म-bar पासून).
 """
+import numpy as np
 import pandas as pd
 
 from . import daily as DD
+from . import flip as FL
 from . import levels as LV
 from . import liquidity as LQ
 from . import method as M
@@ -85,11 +87,17 @@ class V22:
         self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
         if self.ltf is None and bool(self.s.get("ltf_choch", True)):
             M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
+        self.fut15, self.fut15_src = None, None                            # G4 (b): FUT volume (opportunity_engine.volume, near-month)
         if futures is not None:
             from legs2 import volume as LVOL
             self.levels.A["volume"] = LVOL.bar_volume(self.m15, futures)
+            self.fut15 = FL.fut_volume_15m(self.m15, futures, lm)
+            self.fut15_src = "near-month FUT 5M ⇒ 15M (opportunity_engine.volume)"
         elif "volume" in self.m15.columns:
             self.levels.A["volume"] = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
+            v = M._vol(self.levels.A)                                      # caller-joined column (⑥ c0 ची प्रथा); spot 0 ⇒ None (NA)
+            if v is not None:
+                self.fut15, self.fut15_src = np.where(v > 0, v, np.nan), "m15 volume column (caller-joined)"
 
     def _confirm(self, t, d, lvl, k):
         """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
@@ -185,6 +193,38 @@ class V22:
             act = self.levels.active(t, trend)
         return TL.confluence_areas(self, t, M._dir(trend), act)
 
+    def flip_gate(self, t, lvl, cap=None, notes=None):
+        """KB K4 / G4 (Abhi): FLIPPED level ची retest — (a) pullback corrective (daily_legs.classify) आणि (b) pullback ची एकूण FUT volume
+        flip impulse पेक्षा कमी (`flip_pullback_vol_ratio`); (c) = ⑥ (तसाच). (a) / (b) False ⇒ impulsive / जास्त volume ⇒ trade नाही;
+        (a) वाचता येत नाही ⇒ वाट; (b) NA ⇒ `flip_volume_na` ("cap_b" = decision3 volume-NA प्रथा: चालतं, कमाल B; "block" ⇒ वाट).
+        रिटर्न (g4 facts + ok / decision / why, cap, notes)."""
+        g = FL.flip_retest(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, vol=self.fut15,
+                           vol_src=self.fut15_src, legs_A=self._legs_A())
+        notes = list(notes or [])
+        if g["a"] is False or g["b"] is False:
+            bad = [w for w, x in (("impulsive", g["a"] is False), ("high-volume", g["b"] is False)) if x]
+            g.update(ok=False, decision=M_NO, why=f"{g['why']} ⇒ {' / '.join(bad)} return into the flipped area ⇒ no trade (G4)")
+        elif g["a"] is None:
+            g.update(ok=False, decision=M_WAIT, why=f"{g['why']} ⇒ wait (G4 (a) not read yet)")
+        elif g["b"] is None:
+            mode = self.s.get("flip_volume_na", "cap_b")
+            if mode not in ("cap_b", "block"):
+                raise ValueError(f"flip_volume_na {mode!r} — cap_b / block पैकी")
+            if mode == "block":
+                g.update(ok=False, decision=M_WAIT, why=f"{g['why']} ⇒ wait (G4 (b) NA, flip_volume_na = block)")
+            else:
+                cap = M.cap_min(cap, "B")
+                notes.append("G4 (b) pullback FUT volume NA ⇒ कमाल B")
+                g.update(ok=True, decision=None, why=f"{g['why']} ⇒ (a) passes, (b) NA ⇒ grade कमाल B")
+        else:
+            g.update(ok=True, decision=None, why=g["why"] + " ⇒ (a) + (b) pass; (c) = ⑥")
+        return g, cap, notes
+
+    def _legs_A(self):
+        if getattr(self, "_legs_arr", None) is None:
+            self._legs_arr = FL.legs_arrays(self.levels.A, self.levels.ts.to_numpy())
+        return self._legs_arr
+
     def _level_eval(self, t, trend, lvl, cap=None, notes=None, *, step_down=False):
         """एका active level साठी ③–⑦ + पुरावे ⇒ (decision, checklist part, extra)."""
         A = self.levels.A
@@ -198,6 +238,12 @@ class V22:
         chk["③"] = [ok3, f"{why3} · K {k['why_open']}, पाय {k['legs']}"]
         if not ok3:
             return M_WAIT, chk, {"K": k}
+        g4 = None
+        if lvl.get("state") == FL.FLIPPED and self.s.get("level_flip_rule", "far_swing") == "far_swing":
+            g4, cap, notes = self.flip_gate(t, lvl, cap, notes)
+            chk["G4"] = [g4["ok"], g4["why"]]
+            if g4["ok"] is False:
+                return g4["decision"], chk, {"K": k, "flip_retest": g4, "why": g4["why"]}
         tl = TL.k_line(self, t, d, k)
         chk["⑤"] = [None, "K ची आतली रेघ नाही (< 2 स्पर्श)"] if tl is None else \
             [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) {'close ने तुटली ⇒ grade +' if tl['broken'] else 'अजून अखंड'}"]
@@ -222,7 +268,7 @@ class V22:
         ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])
         conv, score, missing = M.conviction(ev, self.s)
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
-                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}}
+                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4}
         if rng:
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
@@ -297,6 +343,7 @@ class V22:
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
+                "flip_retest": best.get("flip_retest"),
                 "level_evals": evals}
 
     def run(self, bars=None):
