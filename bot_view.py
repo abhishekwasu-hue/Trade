@@ -275,3 +275,49 @@ def leg_overlay(chart_df, chart_tf, now, cfg=None):
     cap = ("Legs (T2, फक्त माहिती — trading नाही): गडद = impulse, फिकट = pullback, राखाडी = range, जांभळा = उलटफेर, तुटक = चालू leg. "
            + (f"शेवटचा पूर्ण leg: {LG.leg_info(last)}" if last else "") + (f" · चालू: {LG.LABEL_MR.get(cur.label, cur.label)}" if cur else ""))
     return segs, cap
+
+
+RSI_DIV_TF = {"5minute": "5M", "15minute": "15M", "1hour": "1H"}
+
+
+def rsi_div_overlay(chart_df, chart_tf, now, s=None):
+    """🎓 K-RSI "Show RSI divergences" (फक्त display — bots / gates / settings वर परिणाम नाही): चार्टच्या **पूर्ण** candles वर
+    rsi2.engine.Divergence (owner). Sealed holdout चे rows engine मध्ये कधीच नाहीत (data_policy.filter_allowed, "annotation").
+    रिटर्न (lines, rsi_series, caption): lines = [{"t0", "t1", "p0", "p1", "rt0", "rt1", "r0", "r1", "color", "dashed", "dotted",
+    "width", "label"}] (price pane + RSI pane); rsi_series = owner चा Wilder RSI, chart_df च्या index वर (बाकी NaN). 5M / 15M / 1H फक्त."""
+    from elliott import data_policy as DP
+    from rsi2 import charts as RC
+    from rsi2 import engine as RE
+    tf = RSI_DIV_TF.get(chart_tf)
+    if tf is None or chart_df is None or len(chart_df) < 30:
+        return [], None, None
+    src = chart_df.reset_index(drop=True).assign(_i=lambda x: range(len(x)))
+    df = _completed_bars_only(src, LEG_TF_MINUTES[chart_tf], now)
+    df = df.assign(timestamp=pd.to_datetime(df["timestamp"]).map(lambda t: t.tz_localize(None) if t.tzinfo else t))
+    df = DP.filter_allowed(df[["timestamp", "open", "high", "low", "close", "_i"]], purpose="annotation")
+    if tf != "1H":                                                   # facts convention (pivots.engine.bars_15m): CAS candles वगळ
+        from opportunity_engine import cas as CAS
+        df = df[~CAS.cas_mask(df["timestamp"]).to_numpy()].reset_index(drop=True)
+    if len(df) < 30:
+        return [], None, "RSI divergences: पुरेसे पूर्ण candles नाहीत."
+    D = RE.Divergence(df[["timestamp", "open", "high", "low", "close"]], tf, s=s, areas=False)
+    rsi = pd.Series(float("nan"), index=chart_df.index)
+    rsi.iloc[df["_i"].to_numpy()] = D.rsi
+    if not any(D.piv.values()):
+        return [], rsi, "RSI divergences: swing pivots नाहीत (swings2 ला σ साठी 20 पूर्ण sessions लागतात — chart चा इतिहास कमी)."
+    lines = []
+    for x in RC.merge_degrees(D.history()):
+        col = RC.DIV_COL[(x["side"], x["type"])]
+        lines.append({"t0": x["L1"]["time"], "t1": x["L2"]["time"], "p0": x["L1"]["price"], "p1": x["L2"]["price"],
+                      "rt0": x["L1"]["rsi_time"], "rt1": x["L2"]["rsi_time"], "r0": x["L1"]["rsi"], "r1": x["L2"]["rsi"], "color": col,
+                      "dashed": x["status"] == "forming", "dotted": False, "width": 2,
+                      "label": RE.div_label(x) + " · " + "/".join(f"D{d}" for d in sorted(x["degrees"]))})
+    for x in RC.merge_degrees(D.cap_log()):
+        lines.append({"t0": x["L1"]["time"], "t1": x["L2"]["time"], "p0": x["L1"]["price"], "p1": x["L2"]["price"],
+                      "rt0": x["L1"]["rsi_time"], "rt1": x["L2"]["rsi_time"], "r0": x["L1"]["rsi"], "r1": x["L2"]["rsi"],
+                      "color": RC.CAP_COL, "dashed": False, "dotted": True, "width": 1, "label": f"cap {x['bars']} bars"})
+    r = D.read()
+    now_txt = " · ".join(x["statement"] for x in r["latest"] if x["degree"] == min(D.degrees))
+    cap = (f"RSI divergences ({tf}, rsi2 owner, फक्त display — कधीच gate नाही): लाल = bear, हिरवा = bull, तुटक = forming, राखाडी ठिपके = "
+           f"फक्त bar-cap ने नाकारलेल्या जोड्या. RSI pane = Wilder RSI({D.s['period']}), 70 / 30. आत्ता (D{min(D.degrees)}): {now_txt}")
+    return lines, rsi, cap

@@ -235,13 +235,35 @@ def chart_indicator_controls(key_prefix):
     return {"ema_fast": int(ema_fast), "ema_slow": int(ema_slow), "bb_period": int(bb_period), "bb_std": float(bb_std), "adx_period": int(adx_period)}
 
 
+_RSI_DIV_RSI_JS = """    // 🎓 K-RSI divergences: RSI points जोडणारी रेषा (price pane च्या रेषेच्याच रंगात)
+    __RSI_DIVS__.forEach(dv => {
+        if (dv.rt0 === undefined) return;
+        const s = rsiPane.addSeries(LightweightCharts.LineSeries, {
+            color: dv.color, lineWidth: dv.width, lineStyle: dv.dotted ? LightweightCharts.LineStyle.Dotted : (dv.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid),
+            lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        });
+        s.setData([{ time: dv.rt0, value: dv.r0 }, { time: dv.rt1, value: dv.r1 }]);
+    });
+"""
+_RSI_DIV_PRICE_JS = """// 🎓 K-RSI divergences (rsi2 owner, फक्त display): दोन price pivots जोडणारी रेषा + दुसऱ्या pivot वर label; cap-rejected = राखाडी ठिपके
+__RSI_DIVS__.forEach(dv => {
+    const s = chart.addSeries(LightweightCharts.LineSeries, {
+        color: dv.color, lineWidth: dv.width, lineStyle: dv.dotted ? LightweightCharts.LineStyle.Dotted : (dv.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid),
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    });
+    s.setData([{ time: dv.t0, value: dv.p0 }, { time: dv.t1, value: dv.p1 }]);
+    if (dv.label) LightweightCharts.createSeriesMarkers(s, [{ time: dv.t1, position: dv.p1 >= dv.p0 ? 'aboveBar' : 'belowBar', color: dv.color, shape: 'circle', size: 0.5, text: dv.label }]);
+});
+"""
+
+
 def build_lightweight_chart_html(
     df, symbol="NIFTY", timeframe_label="15M",
     supertrend_1d_series=None, supertrend_1d_direction=None,
     supertrend_1h_series=None, supertrend_1h_direction=None,
     supertrend_15m_series=None, supertrend_15m_direction=None,
     rsi_series=None, sr_levels=None, pattern_markers=None, height=650, indicators=None, trade_lines=None, live_tf_seconds=None,
-    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60), trend_lines=None, legs=None,
+    supertrend_4h_series=None, supertrend_4h_direction=None, rsi_levels=(40, 60), trend_lines=None, legs=None, rsi_divs=None,
 ):
     """
     संपूर्ण TradingView Lightweight Charts HTML/JS पान तयार करणे — candlestick + volume (वेगळा pane) +
@@ -270,6 +292,10 @@ def build_lightweight_chart_html(
 
     legs: price-action legs (price_action.legs.chart_legs) -- [{"start", "start_price", "end", "end_price", "color", "width", "dashed", "info"}];
           प्रत्येक leg एक सरळ रेषा, crosshair त्या leg च्या काळात असताना माहिती-पेटीत leg ची माहिती. None => काहीच बदल नाही.
+
+    rsi_divs: K-RSI divergences (bot_view.rsi_div_overlay) -- [{"t0", "t1", "p0", "p1", "rt0", "rt1", "r0", "r1", "color", "dashed",
+          "dotted", "width", "label"}]: price pivots जोडणारी रेषा (price pane) + RSI points जोडणारी रेषा (RSI pane), एकाच रंगात; दुसऱ्या pivot
+          वर label. फक्त display. None => काहीच बदल नाही.
     """
     if df is None or df.empty:
         return "<div style='color:#888;padding:20px;'>चार्टसाठी डेटा उपलब्ध नाही.</div>"
@@ -442,6 +468,23 @@ def build_lightweight_chart_html(
                             "color": str(lg.get("color", "#90a4ae")), "width": int(lg.get("width", 2)), "dashed": bool(lg.get("dashed", False)),
                             "info": str(lg.get("info", ""))})
     legs_json = json.dumps(legs_js).replace("</", "<\\/")          # info मजकुरातला "</script>" script ब्लॉक तोडू नये
+    rsi_divs_js = []
+    for dv in rsi_divs or []:
+        t0, t1 = _to_unix_time(dv["t0"]), _to_unix_time(dv["t1"])
+        if t1 <= t0:
+            continue
+        x = {"t0": t0, "t1": t1, "p0": round(float(dv["p0"]), 2), "p1": round(float(dv["p1"]), 2), "color": str(dv.get("color", "#ef5350")),
+             "width": int(dv.get("width", 2)), "dashed": bool(dv.get("dashed")), "dotted": bool(dv.get("dotted")),
+             "label": str(dv.get("label", ""))}
+        if dv.get("rt0") is not None and dv.get("rt1") is not None and dv.get("r0") is not None and dv.get("r1") is not None:
+            rt0, rt1 = _to_unix_time(dv["rt0"]), _to_unix_time(dv["rt1"])
+            if rt1 > rt0:
+                x.update(rt0=rt0, rt1=rt1, r0=round(float(dv["r0"]), 2), r1=round(float(dv["r1"]), 2))
+        rsi_divs_js.append(x)
+    rsi_divs_json = json.dumps(rsi_divs_js).replace("</", "<\\/")
+    # K-RSI JS फक्त divergences असतील तरच (toggle बंद ⇒ HTML main सारखाच, byte-for-byte)
+    rsi_div_rsi_js = _RSI_DIV_RSI_JS.replace("__RSI_DIVS__", rsi_divs_json) if rsi_divs_js else ""
+    rsi_div_price_js = _RSI_DIV_PRICE_JS.replace("__RSI_DIVS__", rsi_divs_json) if rsi_divs_js else ""
     trade_lines_js = []
     for tl in (trade_lines or []):
         try:
@@ -609,7 +652,7 @@ if (rsiData.length > 0) {{
     rsiSeries.setData(rsiData);
     {json.dumps([float(v) for v in (rsi_levels or [])])}.forEach(v => rsiSeries.createPriceLine({{ price: v, color: '#787b86', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }}));
     rsiPane.setHeight(100);
-}}
+{rsi_div_rsi_js}}}
 
 // 🎓 Positions चार्ट: Entry / SL / Target / Manual-Override आडव्या रेषा. Price line autoscale मध्ये धरल्या जात नाहीत, म्हणून शेवटच्या candle
 // च्या वेळी दोन अदृश्य बिंदू (किमान/कमाल रेषा-भाव) टाकून scale रेषांपर्यंत ताणतो.
@@ -621,7 +664,7 @@ if (rsiData.length > 0) {{
     }});
     s.setData(tl.points);
 }});
-// 🎓 Price-action legs (price_action.legs) -- impulse गडद, pullback फिकट, range राखाडी; चालू leg तुटक रेषा
+{rsi_div_price_js}// 🎓 Price-action legs (price_action.legs) -- impulse गडद, pullback फिकट, range राखाडी; चालू leg तुटक रेषा
 const legsData = {legs_json};
 legsData.forEach(lg => {{
     const s = chart.addSeries(LightweightCharts.LineSeries, {{

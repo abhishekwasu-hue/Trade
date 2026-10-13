@@ -164,6 +164,7 @@
 | K10.1 | price-only ताकद (legs, overlap, spreads, wicks, failed ext.) | `structure.py` cw_parts | ✅ tests | आंशिक (legs लहान / spreads / absorption नाहीत) |
 | K10.2 | RSI divergence | `evidence.py:divergence` | `test_dv_*` | ✅ |
 | K10.3 | futures volume | `chart_reader/volume.py` | `test_chart_reader_volume::*` | ✅ |
+| K10.4 (K-RSI, pending Abhi) | RSI divergence facts: लागोपाठचे same-degree swings2 pivots, wicks, RSI ± 2 bars, equal counts, bar window + cap log, forming / confirmed, area, absence | `rsi2/engine.py:Divergence` (+ `rsi2/charts.py:div_figure`, `bot_view.rsi_div_overlay`) | `tests/test_rsi_divergence.py` (synthetic + no look-ahead; 12 / 13 Oct golden = report / skip) | code ✅ · KB pending Abhi ✅ (pack मध्ये नाही) |
 | K11 | patterns | `evidence.py:patterns` | `test_pt_*` | ✅ |
 | K12 | Wyckoff / absorption (effort वि. result) | — | — | ❌ |
 | K13 | gaps: वर्ग + behaviour | `vision/gap_context.py` | gap tests | ✅ |
