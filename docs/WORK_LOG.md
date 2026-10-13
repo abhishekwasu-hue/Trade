@@ -2506,3 +2506,4 @@ legs owner वि. reader2 gate).
 - Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
 - Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
 - Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
+- **Abhi B (patience):** wave / maturity फक्त context; watch-list = trend दिशेचे सगळे पुढचे zones armed; loss सामान्य, lock-out default OFF. Pack 4d96843284c6.
