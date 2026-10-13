@@ -2524,3 +2524,7 @@ legs owner वि. reader2 gate).
 - **Dry-run (local):** प्रत्येक केस ≈ 9.0k system (cached) + ≈ 11.7k fresh (3 images) + ≤ 12k output (thinking सह; पूर्ण वापरलं तरच);
   deep-model किंमतीने कमाल ≈ $0.32 / call uncached, दोन्ही मिळून कमाल ≈ $0.62–0.65 (Abhi ची मंजुरी ≈ $1; प्रत्यक्ष output कमी ⇒ कमी).
 - **Tests:** `tests/test_vision_story.py` (28) + vision / pack / dossier संबंधित tests. उघडे प्रश्न: OPEN_QUESTIONS ST-1 … ST-6.
+- **Follow-up (coordinator):** RSI divergence ला 1m intrabar क्रम (`df1m`) — 12 Oct 09:15 spike आता D0 pivot; 3-bar किमान (#325) सह
+  9 Oct 14:15 → 12 Oct 09:15 regular bear (09:45 ला confirmed). Zone flip facts: #325 चे `find_bands` / `band_flip_facts` असतील तर
+  तेच, नाहीतर NA. CAS: decision3 चाच नियम (13 Oct high 22,719.25, CAS सकट 22,721.95). Deep model = `_global` setting
+  `story_model_deep` (env fallback) — `.env` मध्ये फक्त secrets.

@@ -51,11 +51,12 @@ def _paths(td, xs):
 
 # ----------------------------------------------------------------------------------------------------------- data
 def _bars(df, minutes):
-    """NSE 09:15-anchored resample (opportunity_engine.sessions.resample_nse, CAS off ⇒ data as is), only closed bars."""
+    """NSE 09:15-anchored resample (opportunity_engine.sessions.resample_nse) with decision3's CAS policy (market_state.core.frame /
+    pivots.engine.bars_15m: CAS setting, closing-auction bars dropped), only closed bars — facts match the engine."""
     from opportunity_engine import sessions as OS
     if df is None or not len(df):
         return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"])
-    r = OS.resample_nse(df[["timestamp", "open", "high", "low", "close"]], minutes, cas=False)
+    r = OS.resample_nse(df[["timestamp", "open", "high", "low", "close"]], minutes, cas=None)
     r = r[r["bar_closed"].astype(bool)]
     return r[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
 

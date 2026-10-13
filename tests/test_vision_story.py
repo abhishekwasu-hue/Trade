@@ -324,3 +324,65 @@ def test_golden_12_oct_uses_only_data_up_to_0945():
             assert pd.to_datetime(fr["bar_end"]).max() <= as_of, tf
     assert str(frames["15M"]["timestamp"].iloc[-1]) == "2026-10-12 09:30:00"
     assert (pd.to_datetime(f["timestamp"]) + pd.Timedelta(minutes=5)).max() <= as_of
+
+
+@pytest.mark.skipif(not os.path.exists(CASES), reason="private trade-data not present")
+def test_golden_12_oct_rsi_divergence_needs_1m_order_and_3_bar_minimum():
+    """#325 / RSI-2: with the 1m intrabar order the 12 Oct 09:15 spike is a D0 pivot; with the 3-bar minimum the pair
+    9 Oct 14:15 (22,580.75, RSI 67.09) → 12 Oct 09:15 (22,651.10, RSI 66.41) is a regular bear divergence (confirmed by 09:45)."""
+    import scripts.golden_story_check as G
+    from rsi2 import settings as RS
+    case = next(c for c in json.load(open(CASES, encoding="utf-8"))["cases"] if c["id"].startswith("nifty_2026-10-12"))
+    bars, fut, _ = G.load_case(case, TD)
+    fr, _ = ST._cut_frames(bars, ST._fut_near_month(fut), pd.Timestamp(case["as_of"]))
+    s3 = {"div_bars": {**RS.DEFAULTS["div_bars"], "15M": (3, 50)}}
+    d, _ = ST.divergence_facts(fr["15M"], df1m=fr["1m"], s=s3)
+    hit = [x for x in d["divergences_now"] if x["side"] == "bear" and x["type"] == "regular" and x["degree"] == 0]
+    assert hit and hit[0]["status"] == "confirmed" and hit[0]["bars_apart"] == 4
+    assert (hit[0]["pivot1"]["time"], hit[0]["pivot1"]["price"], hit[0]["pivot1"]["rsi"]) == ("2026-10-09 14:15:00", 22580.75, 67.09)
+    assert (hit[0]["pivot2"]["time"], hit[0]["pivot2"]["price"], hit[0]["pivot2"]["rsi"]) == ("2026-10-12 09:15:00", 22651.1, 66.41)
+    d0, _ = ST.divergence_facts(fr["15M"], df1m=None, s=s3)                   # without the 1m order the spike is no D0 pivot
+    assert not [x for x in d0["divergences_now"] if x["side"] == "bear" and x["degree"] == 0]
+
+
+@pytest.mark.skipif(not os.path.exists(CASES), reason="private trade-data not present")
+def test_golden_13_oct_uses_decision3_cas_policy():
+    """ST-4: closing-auction bars dropped (decision3 / market_state policy) ⇒ 13 Oct spot high 22,719.25, not the CAS 22,721.95."""
+    import scripts.golden_story_check as G
+    case = next(c for c in json.load(open(CASES, encoding="utf-8"))["cases"] if c["id"].startswith("nifty_2026-10-13"))
+    bars, fut, _ = G.load_case(case, TD)
+    fr, _ = ST._cut_frames(bars, ST._fut_near_month(fut), pd.Timestamp(case["as_of"]))
+    day = fr["15M"][pd.to_datetime(fr["15M"]["timestamp"]).dt.normalize() == pd.Timestamp("2026-10-13")]
+    assert float(day["high"].max()) == 22719.25 and str(day["timestamp"].iloc[-1]) == "2026-10-13 15:00:00"
+    assert float(fr["D"]["high"].iloc[-1]) == 22719.25
+
+
+def test_divergence_gets_the_1m_order_rows(monkeypatch):
+    from rsi2 import engine as RE
+    seen = {}
+
+    class Fake:
+        def __init__(self, df, tf, s=None, df1m=None, **kw):
+            seen.update(tf=tf, s=s, n1m=None if df1m is None else len(df1m))
+
+        def read(self, t=None):
+            return {"rsi": 50.0, "latest": [], "divergences": []}
+    monkeypatch.setattr(RE, "Divergence", Fake)
+    bars, _ = _bars()
+    d, _ = ST.divergence_facts(bars["15M"], df1m=bars["1m"], s={"div_bars": {"15M": (3, 50)}})
+    assert seen == {"tf": "15M", "s": {"div_bars": {"15M": (3, 50)}}, "n1m": len(bars["1m"])} and d["divergences_now"] == []
+
+
+def test_zone_flip_facts_from_band_owner_function_or_na(monkeypatch):
+    from decision3 import levels as LV
+    band = {"lo": 1.0, "hi": 2.0, "breaks": [{"bar": 3, "dir": "up"}], "flip_state": "BROKEN", "broken_at": {"bar": 3},
+            "far_swing": {"price": 2.5}, "flipped_at": None}
+    x = ST.zone_flip_facts(band, None, -1)
+    assert x["status"] == "OK" and x["flip_state"] == "BROKEN" and x["far_swing"] == {"price": 2.5}   # #325: find_bands adds it
+    plain = {k: v for k, v in band.items() if k not in ST.FLIP_KEYS}
+    monkeypatch.delattr(LV, "band_flip_facts", raising=False)
+    assert ST.zone_flip_facts(plain, pd.DataFrame({"x": [1]}), 0)["status"] == "NA"
+    monkeypatch.setattr(LV, "band_flip_facts", lambda df, t, b, s=None, start=None: {"flip_state": "FLIPPED", "far_swing": {"price": 2.5},
+                                                                                    "broken_at": None, "flipped_at": {"bar": 5}}, raising=False)
+    y = ST.zone_flip_facts(plain, pd.DataFrame({"x": [1]}), 0, "1H")
+    assert y["status"] == "OK" and y["flip_state"] == "FLIPPED" and y["owner"] == "decision3.levels.band_flip_facts"

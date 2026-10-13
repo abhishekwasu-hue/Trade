@@ -284,20 +284,28 @@ def _trend(S, gaps):
     return out
 
 
-def zone_flip_facts(band, df, t):
-    """Abhi चा flip नियम (KB K4: zone पलीकडे AND far-side swing पार ⇒ FLIPPED; नाहीतर BROKEN) — decision3 owner function
-    `levels.band_flip_facts` main वर असेल तरच; नाहीतर NA + कारण (नियम कोडमध्ये इथे लिहिलेला नाही)."""
+FLIP_KEYS = ("flip_state", "broken_at", "far_swing", "flipped_at")
+
+
+def zone_flip_facts(band, df, t, tf="15M"):
+    """Abhi चा flip नियम (KB K4: zone पलीकडे AND far-side swing पार ⇒ FLIPPED; नाहीतर BROKEN) — decision3 owner चे facts:
+    (1) band वरच `flip_state` (#325 नंतर `decision3.levels.find_bands` स्वतः `band_flip_facts` जोडतो) ⇒ तेच; (2) नाहीतर
+    `decision3.levels.band_flip_facts` असेल तर त्याच band वर (त्या TF चा lookback); (3) नाहीतर NA + कारण. नियम इथे लिहिलेला नाही."""
+    if band.get("flip_state") is not None:
+        return {"status": "OK", "owner": "decision3.levels.find_bands (band_flip_facts)", **{k: band.get(k) for k in FLIP_KEYS}}
     from decision3 import levels as LV
     fn = getattr(LV, "band_flip_facts", None)
     if fn is None:
         return {"status": "NA", "reason": "Abhi's flip rule (KB K4: beyond the zone AND past the far-side swing ⇒ FLIPPED, else BROKEN) "
                                           "is not in the decision3 code on this branch; judge it from the zone's breaks and the pivots"}
+    if df is None or not len(df):
+        return {"status": "NA", "reason": f"{tf} frame missing"}
+    from facts import validity as FV
     try:
-        x = fn(df, t, band)
+        x = fn(df, t, band, FV.lookback(tf))
     except Exception as exc:                                               # noqa: BLE001 — NA with the reason
         return {"status": "NA", "reason": f"decision3.levels.band_flip_facts failed: {type(exc).__name__}"}
-    return {"status": "OK", "owner": "decision3.levels.band_flip_facts", **{k: x.get(k) for k in
-                                                                            ("flip_state", "broken_at", "far_swing", "flipped_at")}}
+    return {"status": "OK", "owner": "decision3.levels.band_flip_facts", **{k: x.get(k) for k in FLIP_KEYS}}
 
 
 def _zones(S, frames):
@@ -322,8 +330,7 @@ def _zones(S, frames):
                         "breaks": [{"ts": z.get("ts"), "dir": z.get("dir"), "close": z.get("price")} for z in (b.get("breaks") or [])[-3:]],
                         "shared_check": {"flipped_by_acceptance": b.get("flipped"), "broken": b.get("broken")},
                         "price_side_now": b.get("price_side"),
-                        "abhi_flip_rule": zone_flip_facts(b, df, len(df) - 1) if df is not None and len(df) else
-                        {"status": "NA", "reason": f"{tf} frame missing"}}
+                        "abhi_flip_rule": zone_flip_facts(b, df, len(df) - 1 if df is not None else -1, tf)}
     out["_note"] = ("bands from the shared K4 band check (decision3.levels.display_bands): up to 3 above and 3 below the close per "
                     "timeframe + the latest broken one; 'shared_check' flips by acceptance (K5 real break), which is NOT Abhi's "
                     "far-side-swing flip rule — see 'abhi_flip_rule'")
@@ -435,12 +442,14 @@ def _in_zone(S, m15, vol, rv, rv_label, mr):
                     "approach into the zone is context only (KB K4)"}
 
 
-def divergence_facts(m15, t=None):
+def divergence_facts(m15, t=None, df1m=None, s=None):
     """rsi2.engine.Divergence (K-RSI facts on the 15M spot frame): latest pair per degree / side with the absence statement, the
-    divergences known now (pivots, RSI, bars, status, area). Owner failure ⇒ NA with the reason. Returns (facts, Divergence | None)."""
+    divergences known now (pivots, RSI, bars, status, area). df1m = intrabar order rows (1m; dossier सारखेच) ⇒ swings2 ला candle मधल्या
+    high / low चा क्रम कळतो (नाहीतर उदा. 09:15 spike D0 pivot होत नाही). s = rsi2 settings overrides. Owner failure ⇒ NA + कारण.
+    Returns (facts, Divergence | None)."""
     from rsi2 import engine as RE
     try:
-        Dv = RE.Divergence(m15, "15M")
+        Dv = RE.Divergence(m15, "15M", s=s, df1m=_order_rows(df1m))
         r = Dv.read(t)
     except Exception as exc:                                               # noqa: BLE001 — NA with the reason (evidence only)
         return {"status": "NA", "reason": f"rsi2.engine.Divergence failed: {type(exc).__name__}: {str(exc)[:120]}"}, None
@@ -481,6 +490,13 @@ def _plain(sec, drop=("owner",)):
     return {k: v for k, v in sec.items() if k not in drop and k != "status"}
 
 
+def _order_rows(df1m):
+    """Intrabar order rows for swings2 (timestamp + OHLC) or None."""
+    if df1m is None or not len(df1m):
+        return None
+    return df1m[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+
+
 def build_facts(dossier, frames, fut, as_of, read, meta_extra=None, div=None):
     """Dossier (anonymised frames वरून) + frames ⇒ FACTS dict (JSON-safe, compact). Keys = cite targets for the story.
     div = divergence_facts(...)[0] (आधीच बनवलेलं असल्यास; नाहीतर इथे)."""
@@ -491,7 +507,7 @@ def build_facts(dossier, frames, fut, as_of, read, meta_extra=None, div=None):
     vol, rv, rv_label = fut_15m(m15, fut)
     zones, _ = _zones(S, frames)
     if div is None:
-        div, _ = divergence_facts(m15)
+        div, _ = divergence_facts(m15, df1m=frames.get("1m"))
     close = float(m15["close"].iloc[-1])
     vs = S.get("volume") or {}
     t15 = _sessions_tail(m15, TABLE_15M_SESSIONS)
@@ -611,7 +627,8 @@ def render_images(frames, fut, as_of, zones=None, Dv=None):
 
 
 # ----------------------------------------------------------------------------------------------------------- prepare (no API)
-def prepare(bars_by_tf, fut5, as_of, read, anon=None, render=True, cfg=None, meta_extra=None, symbol="INDEX", hide=()):
+def prepare(bars_by_tf, fut5, as_of, read, anon=None, render=True, cfg=None, meta_extra=None, symbol="INDEX", hide=(),
+            rsi_settings=None):
     """एका story request साठी सगळं (API call नाही): holdout guard (खऱ्या तारखांवर) ⇒ frames कापले (close ≤ as_of) ⇒ (anon असेल तर)
     anonymise ⇒ dossier ⇒ FACTS ⇒ images. रिटर्न dict: facts, text (FACTS + task मजकूर), images [(name, png)], known, anchors,
     as_of (anonymised असल्यास तसा), frames, fut. anon = {"shift_weeks", "scale", "tick"} (golden_vision_check चे defaults) किंवा None.
@@ -627,7 +644,7 @@ def prepare(bars_by_tf, fut5, as_of, read, anon=None, render=True, cfg=None, met
         frames, fut, as_of = anonymise_all(frames, fut, as_of, anon)
     dossier = D.build_dossier("INDEX" if anon else symbol, {k: frames.get(k) for k in ("15M", "5M", "1m", "D")},
                               {"5M": fut} if fut is not None else None, as_of=as_of, cfg=cfg)
-    div, Dv = divergence_facts(frames["15M"])
+    div, Dv = divergence_facts(frames["15M"], df1m=frames.get("1m"), s=rsi_settings)
     facts = build_facts(dossier, frames, fut, as_of, read, meta_extra, div=div)
     text = facts_text(facts) + "\n\n" + task_text(read)
     if anon:
