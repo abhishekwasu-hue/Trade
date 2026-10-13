@@ -27,6 +27,12 @@ swing), or a flip (close ≥ 0.5 MR through, then a retest from the other side t
 (support not > 0.25 MR above the close etc.) · not consumed (no acceptance — 2 closes beyond the far edge by 0.25 MR — after the last
 origin) · not a magnet (K5: ≥ 4 close-crossings of the area mid in t's session, 15M closes).
 
+--rule 2touch (Abhi 2026-10-13, TA1–TA4): a line is valid with 2 wick-anchored touches spaced ≥ 6 bars (≥ 3 = "established"; the
+projected next touch = line value at t), other K6 rules unchanged; an area must be a band (single price = "not_a_band") with ≥ 2
+reaction touches spaced ≥ 6 bars and price leaving the band between them, role from price (flip allowed), broken areas invalid except
+the most recently broken one per engine chart (K4 width and K5 magnet kept). --golden: the 30 Sep → 6/7 Oct NIFTY 15M line on spot and
+FUT (5M ⇒ 15M), its validity at each session close before the check day and its projection on the check day.
+
   python3 research/trendline_area_audit.py --nifty-1m <csv/parquet ...> --banknifty-1m <...> --banknifty-15m <csv> \
       --banknifty-daily <csv> --out <trade-data/reports/trendline_audit/<date>> [--end YYYY-MM-DD] [--sessions 20] [--no-charts]
 """
@@ -302,6 +308,128 @@ def check_area(F, F15, t, ar):
             "consumed": consumed, "crossings_session": cross, "valid": not reasons, "reasons": "|".join(reasons)}
 
 
+# ------------------------------------------------------------------------------------------------ Abhi 2026-10-13 rule (TA1–TA4)
+RECENT_REASONS = {"broken", "no_touch_last2_sessions"}
+
+
+def check_line_2touch(F, t, ln):
+    """TA3 (corrected) + TA2: valid = 2 wick-anchored touches spaced ≥ 6 bars; no close > 0.3 MR beyond between the anchors; slope ≤
+    0.5 MR/bar; respected by recent price (not really broken, a touch in the last 2 sessions — kept as in the first run). ≥ 3 spaced
+    touches = "established". The projected 3rd touch = the line value at t (`value_t`)."""
+    r = check_line(F, t, ln)
+    base = [x for x in r["reasons6"].split("|") if x and x not in ("touches_lt3", "spacing_lt6")]
+    if r["spaced6"] < 2:
+        base.append("touches_lt2_spaced6")
+    valid = not base
+    return {**r, "valid6": valid, "valid8": valid, "reasons6": "|".join(base), "reasons8": "|".join(base),
+            "established": valid and r["spaced6"] >= 3, "fail_only_recent": bool(base) and set(base) <= RECENT_REASONS}
+
+
+def check_area_2touch(F, F15, t, ar):
+    """TA3b + TA4: a band (low < high; a single price = "not_a_band") with ≥ 2 reaction touches (k=2 swing high or low extreme within
+    the band ± 0.2 MR), spaced ≥ 6 bars, price leaving the band (a whole bar outside it) between them. Role from price (flip allowed).
+    Broken = acceptance through the band from one side to the other (2 closes beyond by 0.25 MR) after the first touch; only the most
+    recently broken area of one chart stays (applied per engine chart by `latest_broken_only`). K4 width ≤ 1.5 MR and the K5 magnet rule
+    are kept unchanged."""
+    lo, hi = float(ar["lo"]), float(ar["hi"])
+    mr = F.mr(t)
+    tol, buf = TOUCH_MR * mr, BREAK_BUF_MR * mr
+    reasons = []
+    w = hi - lo
+    if w <= 0:
+        reasons.append("not_a_band")
+    elif w > ZONE_MAX_MR * mr:
+        reasons.append("too_wide")
+    ph, pl = set(F.pivots(t, "H")), set(F.pivots(t, "L"))
+    cand = sorted(i for i in ph | pl if (i in ph and lo - tol <= F.H[i] <= hi + tol) or (i in pl and lo - tol <= F.L[i] <= hi + tol))
+    chain = []
+    for i in cand:
+        if not chain or (i - chain[-1] >= SPACING[0] and any(F.L[k] > hi or F.H[k] < lo for k in range(chain[-1] + 1, i))):
+            chain.append(i)
+    if len(chain) < 2:
+        reasons.append("lt2_reaction_touches")
+    side, brk = 0, None
+    for i in range(chain[0] if chain else 0, t):
+        c, c2 = F.C[i], F.C[i + 1]
+        if side == -1 and c > hi + buf and c2 > hi + buf:
+            brk = i
+        elif side == 1 and c < lo - buf and c2 < lo - buf:
+            brk = i
+        side = 1 if c > hi else (-1 if c < lo else side)
+    t15 = F15.close_bar[F.day[t]] if F.tf != "15M" else t
+    sess = np.flatnonzero((F15.day == F15.day[t15]).to_numpy())
+    sess = sess[sess <= t15]
+    sg = np.sign(F15.C[sess] - (lo + hi) / 2)
+    cross = int(np.sum(sg[1:] * sg[:-1] < 0)) if len(sg) > 1 else 0
+    if cross >= MAGNET_X:
+        reasons.append("magnet")
+    return {"mr": round(mr, 2), "width_mr": round(w / mr, 3), "reaction_touches": len(chain),
+            "touch_ts": "|".join(str(F.ts[i]) for i in chain[:6]), "break_ts": str(F.ts[brk]) if brk is not None else "", "_brk": brk,
+            "price_side": "above" if F.C[t] > hi else ("below" if F.C[t] < lo else "inside"), "crossings_session": cross,
+            "valid": not reasons, "reasons": "|".join(reasons)}
+
+
+def latest_broken_only(areas):
+    """TA4: per engine chart, broken areas are invalid except the most recently broken one."""
+    for eng in {a["engine"] for a in areas}:
+        br = [a for a in areas if a["engine"] == eng and a.get("_brk") is not None]
+        if len(br) < 2:
+            continue
+        keep = max(br, key=lambda a: a["_brk"])
+        for a in br:
+            if a is not keep:
+                a["valid"] = False
+                a["reasons"] = "|".join([x for x in a["reasons"].split("|") if x] + ["broken_not_latest"])
+
+
+def frame15_from_5m(path):
+    """FUT 5M (front contract file) ⇒ 15M, 09:15-anchored (same grouping as h1_frame / m30_of)."""
+    d = no_holdout(_read(path))
+    t = d["timestamp"]
+    day = t.dt.normalize()
+    key = day + pd.Timedelta(hours=9, minutes=15) + ((t - day - pd.Timedelta(hours=9, minutes=15)) // pd.Timedelta(minutes=15)) * \
+        pd.Timedelta(minutes=15)
+    g = d.assign(_k=key).groupby("_k", sort=True).agg(open=("open", "first"), high=("high", "max"), low=("low", "min"),
+                                                     close=("close", "last")).reset_index().rename(columns={"_k": "timestamp"})
+    g = g[g["timestamp"].dt.strftime("%H:%M") <= "15:15"]
+    return g.assign(bar_end=g["timestamp"] + pd.Timedelta(minutes=15)).reset_index(drop=True)
+
+
+def golden_line(F, a1_day, a2_days, check_day, label):
+    """Abhi's 30 Sep → 6/7 Oct descending line, built by the 2-touch rule from the day highs (wick anchors): validity at each session
+    close after anchor 2 and before `check_day`, and its projection on every bar of `check_day` (touch = high within ±0.2 MR)."""
+    out = []
+    d1 = np.flatnonzero((F.day == a1_day).to_numpy())
+    if not len(d1):
+        return [{"source": label, "note": "anchor-1 day not in data"}]
+    b1 = int(d1[np.argmax(F.H[d1])])
+    for a2d in a2_days:
+        d2 = np.flatnonzero((F.day == a2d).to_numpy())
+        if not len(d2):
+            continue
+        b2 = int(d2[np.argmax(F.H[d2])])
+        ln = {"b1": b1, "y1": float(F.H[b1]), "b2": b2, "y2": float(F.H[b2]), "side": "res"}
+        checks = []
+        for d in F.days:
+            if a2d <= d < check_day:
+                t = F.close_bar[d]
+                r = check_line_2touch(F, t, ln)
+                checks.append({"session_close": str(F.ts[t]), "valid": r["valid6"], "reasons": r["reasons6"], "touches": r["touches"],
+                               "value_t": r["value_t"]})
+        cb = np.flatnonzero((F.day == check_day).to_numpy())
+        m = (ln["y2"] - ln["y1"]) / (b2 - b1)
+        proj = []
+        for i in cb:
+            v = ln["y1"] + m * (i - b1)
+            mr = F.mr(i)
+            proj.append({"bar": str(F.ts[i]), "line": round(v, 2), "high": round(float(F.H[i]), 2), "close": round(float(F.C[i]), 2),
+                         "touch": bool(abs(F.H[i] - v) <= TOUCH_MR * mr), "high_minus_line_mr": round(float((F.H[i] - v) / mr), 3),
+                         "close_above": bool(F.C[i] > v)})
+        out.append({"source": label, "a1": [str(F.ts[b1]), round(float(F.H[b1]), 2)], "a2": [str(F.ts[b2]), round(float(F.H[b2]), 2)],
+                    "slope_per_bar": round(m, 3), "checks_before_check_day": checks, "projection_check_day": proj})
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ engines
 def mtf_items(df, tf, sym, bars):
     """trendlines2 lines + zones2 zones as the mtf charts draw them (draw_lines / draw_zones)."""
@@ -458,13 +586,14 @@ def vision_majors(m15, t15):
 # ------------------------------------------------------------------------------------------------ charts (English only)
 ENG_COL = {"trendlines2": "#2a78d6", "d3_kline": "#eb6834", "d3_swingline": "#1baf7a", "dash_tl": "#6250d6",
            "d3_level": "#eb6834", "d3_tl_area": "#e87ba4", "zones2": "#2a78d6", "srv3": "#1baf7a", "vision_major": "#6250d6"}
-SHORT = {"touches_lt3": "T<3", "spacing_lt6": "gap<6", "spacing_lt8": "gap<8", "anchor_not_on_wick": "anchor-off-wick",
+SHORT = {"touches_lt2_spaced6": "T<2", "not_a_band": "not-a-band", "lt2_reaction_touches": "reactions<2",
+         "broken_not_latest": "broken-old", "touches_lt3": "T<3", "spacing_lt6": "gap<6", "spacing_lt8": "gap<8", "anchor_not_on_wick": "anchor-off-wick",
          "close_through_between_anchors": "close-through", "too_steep": "steep", "broken": "broken", "no_touch_last2_sessions": "stale",
          "line_not_zone": "line-not-zone", "too_wide": "wide", "no_displacement_bos_or_flip": "no-origin", "wrong_side_of_price": "wrong-side",
          "consumed_by_acceptance": "consumed", "magnet": "magnet"}
 
 
-def render(path, F, t, sym, tf, lines, areas, nbars):
+def render(path, F, t, sym, tf, lines, areas, nbars, rule="k6k4"):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -501,7 +630,9 @@ def render(path, F, t, sym, tf, lines, areas, nbars):
             axs[0].plot([b1, ln["b2"]] if ln["b2"] >= i0 else [b1], [ln["y1"], ln["y2"]] if ln["b2"] >= i0 else [ln["y1"]], "o",
                         color=ENG_COL[ln["engine"]], ms=4)
         why = "VALID" if ok else ",".join(SHORT.get(r, r) for r in ln["reasons6"].split("|") if r)
-        labs.append((0, ys[-1], f"{ln['engine']} {ln['side']} T={ln['touches']}: {why}", ENG_COL[ln["engine"]]))
+        est = " established" if ln.get("established") else ""
+        labs.append((0, ys[-1], f"{ln['engine']} {ln['side']} T={ln['touches']}: {why}{est}" + (f" (3rd touch now {ln['value_t']:,.0f})"
+                     if ok and rule == "2touch" else ""), ENG_COL[ln["engine"]]))
     for ar in areas:
         ok = ar["valid"]
         if ar["hi"] - ar["lo"] <= 0:
@@ -528,20 +659,23 @@ def render(path, F, t, sym, tf, lines, areas, nbars):
     axs[0].set_ylim(ylo, yhi)
     nv6 = sum(1 for z in lines if z["valid6"])
     nva = sum(1 for z in areas if z["valid"])
-    axs[0].set_title(f"Lines drawn: {len(lines)} (K6-valid at 6-bar spacing: {nv6}) - solid = valid, dashed = invalid", fontsize=9, loc="left")
-    axs[1].set_title(f"Areas drawn: {len(areas)} (K4-valid: {nva}) - filled = valid, hatched = invalid", fontsize=9, loc="left")
+    lr, arl = ("2-touch rule", "band rule") if rule == "2touch" else ("K6-valid at 6-bar spacing", "K4-valid")
+    axs[0].set_title(f"Lines drawn: {len(lines)} ({lr}: {nv6}) - solid = valid, dashed = invalid", fontsize=9, loc="left")
+    axs[1].set_title(f"Areas drawn: {len(areas)} ({arl}: {nva}) - filled = valid, hatched = invalid", fontsize=9, loc="left")
     leg = [Line2D([0], [0], color=ENG_COL[e], lw=2, label=e) for e in ("trendlines2", "d3_kline", "d3_swingline", "dash_tl")]
     axs[0].legend(handles=leg, fontsize=7, loc="upper left")
     leg = [Patch(color=ENG_COL[e], alpha=0.4, label=e) for e in ("d3_level", "d3_tl_area", "zones2", "srv3", "vision_major")]
     axs[1].legend(handles=leg, fontsize=7, loc="upper left")
-    fig.suptitle(f"{sym} {tf} - session close {F.ts[t]:%Y-%m-%d %H:%M} (bar start) - audit vs KB K6 / K4, read-only", fontsize=11)
+    rl = "owner rule 2026-10-13 (2-touch lines, 2-reaction bands)" if rule == "2touch" else "KB K6 / K4"
+    fig.suptitle(f"{sym} {tf} - session close {F.ts[t]:%Y-%m-%d %H:%M} (bar start) - audit vs {rl}, read-only", fontsize=11)
     fig.tight_layout()
     fig.savefig(path, dpi=95)
     plt.close(fig)
 
 
 # ------------------------------------------------------------------------------------------------ main
-def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts):
+def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4"):
+    two = rule == "2touch"
     F15 = Frame(m15, "15M")
     h1 = h1_of(m15)
     F1 = Frame(h1, "1H")
@@ -580,26 +714,32 @@ def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts):
                 lines += dash_lines(F, t, 60)
                 areas += srv3_areas(m15, daily, t15, "1hour")
             for ln in lines:
-                ln.update(check_line(F, t, ln))
+                ln.update(check_line_2touch(F, t, ln) if two else check_line(F, t, ln))
                 rows.append({"symbol": sym, "tf": tf, "session": str(d.date()), "asof_bar": str(F.ts[t]), "kind": "line",
                              "engine": ln["engine"], "name": ln["name"], "engine_class": ln.get("class", ""),
                              "engine_touches": ln.get("engine_touches"), "side_or_role": ln["side"],
                              "a1_ts": str(F.ts[ln["b1"]]), "a1": round(ln["y1"], 2), "a2_ts": str(F.ts[ln["b2"]]), "a2": round(ln["y2"], 2),
                              **{k: ln[k] for k in ("mr", "touches", "spaced6", "spaced8", "slope_mr_per_bar", "anchor_dev_mr",
                                                    "max_close_beyond_between_mr", "break_ts", "recent_touch", "value_t")},
-                             "valid": ln["valid6"], "valid8": ln["valid8"], "reasons": ln["reasons6"], "reasons8": ln["reasons8"]})
+                             "valid": ln["valid6"], "valid8": ln["valid8"], "reasons": ln["reasons6"], "reasons8": ln["reasons8"],
+                             **({"established": ln["established"], "fail_only_recent": ln["fail_only_recent"]} if two else {})})
             for ar in areas:
-                ar.update(check_area(F, F15, t, ar))
+                ar.update(check_area_2touch(F, F15, t, ar) if two else check_area(F, F15, t, ar))
+            if two:
+                latest_broken_only(areas)
+            for ar in areas:
                 rows.append({"symbol": sym, "tf": tf, "session": str(d.date()), "asof_bar": str(F.ts[t]), "kind": "area",
                              "engine": ar["engine"], "name": ar["name"], "engine_class": ar.get("class", ""),
                              "engine_touches": ar.get("engine_touches"), "side_or_role": ar["role"],
                              "lo": round(float(ar["lo"]), 2), "hi": round(float(ar["hi"]), 2),
-                             **{k: ar[k] for k in ("mr", "width_mr", "origin", "origin_ts", "consumed", "crossings_session")},
+                             **{k: ar[k] for k in (("mr", "width_mr", "reaction_touches", "touch_ts", "break_ts", "price_side",
+                                                    "crossings_session") if two else
+                                                   ("mr", "width_mr", "origin", "origin_ts", "consumed", "crossings_session"))},
                              "valid": ar["valid"], "valid8": ar["valid"], "reasons": ar["reasons"], "reasons8": ar["reasons"]})
             if charts:
                 cdir = os.path.join(out_dir, "charts", sym, tf)
                 os.makedirs(cdir, exist_ok=True)
-                render(os.path.join(cdir, f"{sym}_{tf}_{d:%Y%m%d}.png"), F, t, sym, tf, lines, areas, 100 if tf == "15M" else 84)
+                render(os.path.join(cdir, f"{sym}_{tf}_{d:%Y%m%d}.png"), F, t, sym, tf, lines, areas, 100 if tf == "15M" else 84, rule)
     return rows
 
 
@@ -626,14 +766,26 @@ def main(argv=None):
     ap.add_argument("--end", help="last session (YYYY-MM-DD); default = last in data")
     ap.add_argument("--sessions", type=int, default=20)
     ap.add_argument("--no-charts", action="store_true")
+    ap.add_argument("--rule", choices=("k6k4", "2touch"), default="k6k4",
+                    help="k6k4 = first run (KB K6 / K4); 2touch = owner rule 2026-10-13 (TA1-TA4)")
+    ap.add_argument("--nifty-fut-5m", help="NIFTY FUT 5M parquet (for the golden-line projection on FUT)")
+    ap.add_argument("--golden", nargs=3, metavar=("A1_DAY", "A2_DAYS", "CHECK_DAY"),
+                    help="NIFTY 15M golden line: anchor-1 day, anchor-2 days (comma list), the day to project onto")
     a = ap.parse_args(argv)
     end = pd.Timestamp(a.end) if a.end else None
     os.makedirs(a.out, exist_ok=True)
     rows = []
     m15 = load_m15(a.nifty_1m)
-    rows += run_symbol("NIFTY", m15, load_daily(None, m15), a.sessions, end, a.out, not a.no_charts)   # NIFTY daily: 15M-derived only (holdout sealed)
+    rows += run_symbol("NIFTY", m15, load_daily(None, m15), a.sessions, end, a.out, not a.no_charts, a.rule)   # NIFTY daily: 15M only
+    if a.golden:
+        a1d, a2s, ckd = pd.Timestamp(a.golden[0]), [pd.Timestamp(x) for x in a.golden[1].split(",")], pd.Timestamp(a.golden[2])
+        gold = golden_line(Frame(m15, "15M"), a1d, a2s, ckd, "NIFTY spot 15M")
+        if a.nifty_fut_5m:
+            gold += golden_line(Frame(frame15_from_5m(a.nifty_fut_5m), "15M"), a1d, a2s, ckd, "NIFTY FUT 15M (from 5M)")
+        with open(os.path.join(a.out, "golden_line.json"), "w", encoding="utf-8") as f:
+            json.dump(gold, f, indent=1, default=str)
     m15 = load_m15(a.banknifty_1m, a.banknifty_15m)
-    rows += run_symbol("BANKNIFTY", m15, load_daily(a.banknifty_daily, m15), a.sessions, end, a.out, not a.no_charts)
+    rows += run_symbol("BANKNIFTY", m15, load_daily(a.banknifty_daily, m15), a.sessions, end, a.out, not a.no_charts, a.rule)
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(a.out, "trendline_area_audit.csv"), index=False)
     with open(os.path.join(a.out, "summary.json"), "w", encoding="utf-8") as f:

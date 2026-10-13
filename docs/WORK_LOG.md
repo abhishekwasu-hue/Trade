@@ -2235,3 +2235,13 @@ than the day's front month — c0 volume unreliable"; `until_close` `_all` file 
 **Data:** CONTAMINATED + ILLUSTRATION काळ (`purpose="annotation"`) ⇒ illustration, tuning नाही. NIFTY holdout लोड केला नाही (NIFTY Daily फक्त
 15M वरून). Upstox / paid API नाही.
 **उघडे:** OPEN_QUESTIONS TA1–TA4.
+
+### 2026-10-13 · Trendline / area audit — re-run with Abhi चा 2-touch नियम (TA1–TA4)
+
+- `research/trendline_area_audit.py --rule 2touch` (+ `--golden`, `--nifty-fut-5m`): रेघ valid = 2 wick स्पर्श (spacing 6), ≥ 3 = established,
+  बाकी K6 नियम तसेच; area = पट्टा (एकच किंमत ⇒ "not a band"), ≥ 2 reaction स्पर्श (मधे पट्टा सोडला, ≥ 6 bars), flip चालतो, तुटलेले invalid
+  (प्रत्येक engine chart वर सर्वात नवा तुटलेला सोडून). एकच run (~2.5 min); outputs trade-data `.../2026-10-13/rerun_2touch/` (commit b1ba360).
+- **निकाल:** रेघा 153 पैकी 24 valid (8 established); 44 फक्त "recent price" नियमावर गळल्या ⇒ TA5. Areas 1,485 पैकी 310 valid.
+  30 Sep → 6 Oct NIFTY 15M रेघ (22,809.35 → 22,731.85): 6 Oct close ला 2-touch valid, 7 Oct ला established, V22 `swing_line` 7 Oct पासून
+  तीच रेघ; 12 Oct projected touch 09:15 ला 22,654 — high 22,651.10 (touch), close 22,581.8, दिवस 22,317. FUT: 22,935 → 22,830, 12 Oct
+  09:15 ला 22,709.6, high 22,720 (0.25 MR वर), close खाली. अहवाल §8.
