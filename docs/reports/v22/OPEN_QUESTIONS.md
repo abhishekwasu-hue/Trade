@@ -301,6 +301,24 @@
 | DP3 | Pre-open: आज engine row नाही + cron आहे — ℹ️ कधी? | (review #313) 09:45 IST पर्यंत, **आणि** मागच्या trading session (weekday − config सुट्ट्या) चा किमान एक row असेल तरच ℹ️; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". 09:45 नंतर row नाही ⇒ ❌ | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
 | DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |
 
+## Trendline / area audit 2026-10-13 (`docs/reports/2026-10-13_trendline_area_audit.md`) — Abhi निर्णय हवे (code बदल नाही)
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| TA1 | Chart वर फक्त K6-valid रेघा? (≥ 3 wick touches, spacing, मधे close-through नाही, slope ≤ 0.5 MR/bar, real break नाही, शेवटच्या 2 sessions मध्ये touch) — आज 153 पैकी 8 valid | तसेच (audit फक्त; सगळे drawers जसेच्या तसे) | (a) सगळ्या charts वर फक्त valid, TF मागे कमाल 2, label "N touches"; (b) invalid फिकट + कारण; (c) तसेच |
+| TA2 | K6 spacing: 6 की 8 bars? (KB "6–8"; या sample मध्ये verdict सारखाच — दोन्हीने 8 valid; < 8 फक्त BANKNIFTY 1H trendlines2 च्या 13 रेघांत, त्या आधीच stale) | audit दोन्ही दाखवतो; trendlines2 `min_spacing` 6 | 6 / 8 |
+| TA3 | V22 `tl_min_touches` 2 ⇒ 3? (K line / swing line सगळ्या 2 स्पर्शांच्या; K6 ≥ 3). निर्णयावर परिणाम (⑤ पुरावा, "+TL" area) वेगळा मोजावा लागेल | 2 (Abhi नियम "K ≥ 2 स्पर्श") | 3 फक्त chart साठी / 3 engine मध्येही |
+| TA4 | SR V3 आणि Vision majors एकच किंमत (line) काढतात — K4 "zone, line नाही". Band कसा? | तसेच | (a) wick–body पट्टा (V22 `_band_swing` सारखा); (b) ± अपूर्णांक × MR; (c) तसेच |
+
+**TA1–TA4 ✅ Abhi निर्णय (2026-10-13):** TA3 (दुरुस्त) — valid रेघ = 2 स्पर्श (3रा projected स्पर्श = trade जागा; ≥ 3 = "established");
+TA3b — horizontal: एकाच किंमत-पट्ट्यावर 2 reaction स्पर्श (मधे किंमत पट्टा सोडून गेली, ≥ 6 bars) = valid S/R पट्टा, break नंतर role flip;
+TA4 — area म्हणजे पट्टा (low–high), एकच किंमत नाही; तुटलेले areas invalid, फक्त सर्वात नवा तुटलेला सोडून; TA2 — spacing फक्त 6 bars.
+Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 established; areas 1,485 पैकी 310 valid). Code (drawers) मध्ये अजून बदल नाही.
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| TA5 | "Recent price ने मान" (शेवटच्या 2 sessions मध्ये touch) 2-touch नियमाशी टक्कर देतो: projected 3ऱ्या touch ची वाट पाहणारी रेघ बहुतेक 2 sessions touch शिवाय असते. Re-run मध्ये 44 रेघा फक्त याच नियमावर गळल्या (31 "touch नाही", 13 broken); 30 Sep → 6 Oct golden रेघ 9 Oct close ला फक्त यामुळे लपली असती (12 Oct 09:15 ला तिचा touch 22,654 वर) | audit मध्ये तसाच ठेवला (Abhi: "keep as defined") | (a) फक्त real break (K5) ठेवा, "2 sessions touch" काढा; (b) touch-window = रेघेच्या स्वतःच्या touch-spacing च्या × k; (c) तसेच |
+
 ## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
 
 | # | प्रश्न | Abhi चा निर्णय | पर्याय |

@@ -2219,6 +2219,33 @@ engine च्याच नियमाने (`LR.mature_cap` ⇒ `decision3.eng
 weak". (4) replay: feed fallback ⇒ ⚠️ ओळ contract नावासह; D च्या front month चा expiry ≤ D / वेगळा contract ⇒ "volume from a different contract
 than the day's front month — c0 volume unreliable"; `until_close` `_all` file मधून दिवसाचा front month (near_month नियम), alphabetical नाही.
 
+## 2026-10-13 · Trendline / S/R area audit (Abhi: "are we drawing childish trendlines everywhere?") — branch `claude/trendline-area-audit`
+
+**काय केलं (फक्त audit — chart / engine code ला हात नाही):**
+- `research/trendline_area_audit.py`: NIFTY + BANKNIFTY, 15M + 1H (1H = `decision3.levels.h1_frame`), शेवटचे 20 sessions (11 Sep … 12 Oct
+  2026), प्रत्येक session close ला सध्याचं code जे रेघा / areas काढतं ते — trendlines2 (`mtf.charts.draw_lines`), V22 K line
+  (`decision3.trendline.k_line`), V22 swing line (`swing_line` ⇒ "+TL" area), dashboard Trendline Gate (`signals.detect_trendline`),
+  V22 1H bands (`decision3.charts.h1_png`), zones2 (`mtf.charts.draw_zones`), SR V3 (dashboard V3 view), Vision majors (`vision/chart._overlays`)
+  — KB K6 (रेघा) आणि K4 + K5 magnet (areas) वर तपासले. SR V3 audit (`leg_level_validation.md`) मध्ये area validity नियम नाहीत ⇒ K4.
+- एकच run (~3 min). Charts (80, English) + CSV फक्त trade-data `reports/trendline_audit/2026-10-13/` (commit 1993be3).
+- **निकाल:** रेघा 153 पैकी K6-valid फक्त 8 (5%); V22 रेघा 2 स्पर्शांवर (`tl_min_touches` = 2, K6 ≥ 3); dashboard gate ची polyfit
+  रेघ wick वर anchor नसते (79/86). Areas 1,485 पैकी K4-valid 710 (48%): SR V3 चे 279/542 एकच किंमत, Vision majors 84/84 एकच किंमत,
+  BANKNIFTY V22 1H bands 43/110 > 1.5 MR, zones2 एका 15M chart वर 17 पर्यंत.
+- अहवाल: `docs/reports/2026-10-13_trendline_area_audit.md` (counts फक्त; fix फक्त प्रस्ताव).
+**Data:** CONTAMINATED + ILLUSTRATION काळ (`purpose="annotation"`) ⇒ illustration, tuning नाही. NIFTY holdout लोड केला नाही (NIFTY Daily फक्त
+15M वरून). Upstox / paid API नाही.
+**उघडे:** OPEN_QUESTIONS TA1–TA4.
+
+### 2026-10-13 · Trendline / area audit — re-run with Abhi चा 2-touch नियम (TA1–TA4)
+
+- `research/trendline_area_audit.py --rule 2touch` (+ `--golden`, `--nifty-fut-5m`): रेघ valid = 2 wick स्पर्श (spacing 6), ≥ 3 = established,
+  बाकी K6 नियम तसेच; area = पट्टा (एकच किंमत ⇒ "not a band"), ≥ 2 reaction स्पर्श (मधे पट्टा सोडला, ≥ 6 bars), flip चालतो, तुटलेले invalid
+  (प्रत्येक engine chart वर सर्वात नवा तुटलेला सोडून). एकच run (~2.5 min); outputs trade-data `.../2026-10-13/rerun_2touch/` (commit b1ba360).
+- **निकाल:** रेघा 153 पैकी 24 valid (8 established); 44 फक्त "recent price" नियमावर गळल्या ⇒ TA5. Areas 1,485 पैकी 310 valid.
+  30 Sep → 6 Oct NIFTY 15M रेघ (22,809.35 → 22,731.85): 6 Oct close ला 2-touch valid, 7 Oct ला established, V22 `swing_line` 7 Oct पासून
+  तीच रेघ; 12 Oct projected touch 09:15 ला 22,654 — high 22,651.10 (touch), close 22,581.8, दिवस 22,317. FUT: 22,935 → 22,830, 12 Oct
+  09:15 ला 22,709.6, high 22,720 (0.25 MR वर), close खाली. अहवाल §8.
+
 ## 2026-10-13 · R:R correction — Claude ने आणलेले R:R नियम काढले (Abhi; branch `claude/rr-correction`)
 
 **Abhi चा आदेश:** "Remove every R:R rule that came from Claude's orders. Abhi never asked for an R:R filter. R:R, SL, target, lots and
