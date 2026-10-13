@@ -433,3 +433,16 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1e | Real 12 Oct: decision3 ला 22,6xx area = FLIPPED supply (8 Oct ला demand तुटून 5 Oct चा low 22,397.1 पार). म्हणून 12 Oct retest ला G4 लागतो: (a) unclear, (b) pullback FUT volume / impulse = 1.06–1.11 ⇒ no trade. (जुन्या नियमानेही 12 Oct ला setup नव्हता: range / doji / कमी volume.) हा zone G4 साठी "flipped" धरायचा की मूळ supply? | FLIPPED ⇒ G4 | Abhi |
 | Z-1f | नव्या नियमात level मृत्यू नाही (R0-2: swing पार ⇒ flip) ⇒ जुने levels कायम (snapshot, prune नाही); `level_death_side` (TL1) फक्त जुन्या नियमासोबत | मृत्यू नाही | Abhi |
 | Z-1g | व्याख्या: reclaim = BROKEN नंतर `accept_closes` closes परत भूमिकेच्या बाजूला ⇒ जुनी भूमिका; flip impulse = excursion आधीच्या शेवटच्या उलट D2 swing नंतरचं टोक ⇒ flip नंतरचं टोक; pullback volume = flip टोक नंतर … decision bar आधी (decision bar = ⑥ c0) | असंच | Abhi पुष्टी |
+
+### Abhi अंतिम उत्तरं — Z-1 / RSI-2 (in-zone study)
+
+| # | निर्णय |
+|---|---|
+| मुख्य | Zone कडे येण्याची पद्धत (जलद / हळू, कोणताही volume) trade ठरवत नाही. Pullback corrective का आणि volume कमी का = फक्त **context**. निर्णय **zone मध्ये आल्यानंतरच्या वाचनावर** (बाजूनुसार candles, प्रत्येक candle चा normalised FUT volume, zone मधले patterns, कोणती बाजू वाढते / कमी होते, selling / buying volume, RSI divergence) ⇒ dominant commitment (जास्त volume) + LTF CHoCH = entry. ✅ |
+| Volume | सरासरी per bar (बेरीज नाही), प्रत्येक bar त्याच्या वेळेच्या slot च्या मागच्या 20 sessions च्या median ने normalise. ✅ |
+| Z-1a | पलीकडे swing नसेल (नवे high / low) ⇒ break नंतरचा पहिला **confirmed** swing. ✅ |
+| Z-1c | NIFTY / BANKNIFTY FUT volume नाही = data error ⇒ entry नाही + Telegram "data problem: FUT volume missing". Volume शिवाय grade-B trade नाही. ✅ |
+| Z-1d | Pullback आकार फक्त context; zone वाचन अस्पष्ट ⇒ थांबा. ✅ |
+| Z-1e | (ii) 22,544–22,622 spot zone = FLIPPED seller area; zone मधलं वाचन ठरवतं. 12 Oct bear call = golden ✅. |
+| Z-1f | Flip झाल्यावर जुनी भूमिका संपते; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead (दुसरा flip नाही), log. ✅ |
+| RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |

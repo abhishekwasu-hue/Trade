@@ -467,7 +467,7 @@ completed pattern allows, the count is wrong.
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
 - **Flip level:** वरचा flip नियम [Abhi] (zone पलीकडे + पलीकडचा swing पार). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
-- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = sweep (22,667 supply कायम). 13 Oct NIFTY = flip (22,667 तुटला; price 6/7 Oct च्या swing high पार ⇒ support); नंतरचा 22,667–22,700 मधला pullback G4 नियमाने तपासायचा.
+- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout ⇒ spot 22,731.8 (6 Oct high) पार झाला तर flip (support).
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
@@ -547,17 +547,22 @@ completed pattern allows, the count is wrong.
   break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
 - **A broken zone flips [Abhi]:** a zone FLIPS role (supply ⇒ demand, demand ⇒ supply) when price goes beyond it AND past the swing
   on the far side. Reaching that swing is the proof; there is no extra candle condition. Until then the zone keeps its old role (sweep).
+  When no swing exists beyond the zone (price making new highs / lows), the far-side swing is the first CONFIRMED swing formed after
+  the break. Once a zone flips, its old role ends; if the FLIPPED zone is broken again past its own far-side swing, it is DEAD (no
+  second flip).
 - **Broken, not flipped [Abhi]:** price went beyond the zone but did NOT reach the far-side swing ⇒ state BROKEN. Its retest is NOT a
   trade location; wait.
-- **Flip retest (G4 / S4) [Abhi]:** after a flip, price reversing from that far-side swing back into the flipped area is a PULLBACK, and
-  the flipped area is a valid trade location. How the pullback arrives matters most. Before any entry, check:
-  (a) the pullback is CORRECTIVE (zigzag, flat or triangle, by anatomy and structure), not an impulsive move against the flip;
-  (b) the pullback as a whole is on LOWER FUT volume than the impulse leg that made the flip (it may start on rising volume; judge the
-  whole pullback);
-  (c) then, at the area, the zone criteria: handover study, dominant commitment candle on higher FUT volume, LTF CHoCH by close, RSI
-  divergence as zone evidence.
-  Entry only when all of this has been read and passes. An impulsive or high-volume move back into the area = no trade (the flip may be
-  failing).
+- **Flip retest (G4 / S4) [Abhi]:** after a flip, price returning from that far-side swing into the flipped area makes the flipped area a
+  valid trade location.
+- **The approach does not decide; the in-zone study does [Abhi]:** how price approaches a zone (fast or slow, on any volume) does NOT
+  decide the trade. Whether the pullback is corrective and how its volume compares with the impulse are reported as CONTEXT only. The
+  decision comes from price behaviour AFTER price enters the zone: candle sizes by side and FUT volume per candle; patterns forming inside
+  the zone (channel, wedge, double / triple top or bottom, sideways base); which side's candles grow or shrink; whether selling (or
+  buying) volume expands; RSI divergence. Then the dominant commitment candle on higher FUT volume + LTF CHoCH by close = entry. This
+  in-zone study tells whether price will break out or the trend will continue. In-zone study unclear ⇒ wait.
+- **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
+  median of the same slot over the last 20 sessions), because the opening and closing bars are always heavy. NIFTY / BANKNIFTY with FUT
+  volume missing = a data error ⇒ no entry.
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal
@@ -1009,7 +1014,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 1. Pivots = facts layer चे swings2 pivots (reader वापरतो तेच), वेगळी pivot routine नाही. Price wicks वर (high / low).
 2. दोन pivots **लागोपाठचे pushes, एकाच swing degree चे:** आधीचा pivot = चालू push आधीचा शेवटचा swing high (low), आणि दोघांमध्ये त्याहून उंच high (खालचा low) नाही. **ही मुख्य मर्यादा**; bar window फक्त safety cap.
 3. RSI value = price pivot च्या ± N bars (setting, default 2) मधला RSI extreme (RSI peak price peak च्या 1 bar आधी / नंतर येऊ शकतो), त्याच swing च्या आत, आणि फक्त pivot confirm होईपर्यंत बंद झालेल्या bars मधून.
-4. Bar window (setting, dashboard): 15M 5–50 bars (≈ 2 दिवस), 1H 5–35 (≈ 5 दिवस), 5M 5–60 (≈ 1 session). कारण: RSI 14 ≈ शेवटच्या 14 bars चा momentum; 3–4 × period पलीकडे दोन RSI values वेगवेगळ्या market phases सांगतात. प्रत्येक divergence ला खरं bar अंतर नोंदवायचं; **फक्त cap मुळे नाकारलेल्या जोड्या log** (Abhi cap तपासेल).
+4. Bar window (setting, dashboard): 15M 3–50 bars (≈ 2 दिवस), 1H 3–35 (≈ 5 दिवस), 5M 3–60 (≈ 1 session). **किमान अंतर 3 bars, सगळ्या timeframes [Abhi, RSI-2]**. कारण: RSI 14 ≈ शेवटच्या 14 bars चा momentum; 3–4 × period पलीकडे दोन RSI values वेगवेगळ्या market phases सांगतात. प्रत्येक divergence ला खरं bar अंतर नोंदवायचं; **फक्त cap मुळे नाकारलेल्या जोड्या log** (Abhi cap तपासेल).
 5. RSI फरकाला किमान मर्यादा नाही (≤ / ≥); खरा फरक नेहमी नोंद (0 सुद्धा).
 
 **वैधता.**
@@ -1631,7 +1636,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 | **G1** | Zigzag wave 2 / ABC चा शेवट | धारदार impulse → A-B-C. C ≈ A. 50–61.8% (80% पर्यंत) retrace, **आणि तिथे आधीचा demand / base** | C-end ला reversal candle बंद झाल्यावर | Impulse origin (wave 1 सुरुवात) | K3, K4, K7 |
 | **G2** | Expanded flat: C, A चा low/high तोडून परत (spring / upthrust) | B > 105% A (सापळा). C, A च्या टोकापलीकडे sweep करून परत आत close | Sweep नंतरची पहिली मजबूत candle | C चं टोक | K3, K5, K12 |
 | **G3** | Triangle (wave 4 / B): E चा शेवट | आकुंचन पावणारे 5 legs (3-3-3-3-3). E undershoot किंवा throw-over | E-end ला reversal. Triangle breakout वर नाही. | C चं टोक | K3 |
-| **G4** | Flip retest [Abhi] | Zone **FLIPPED** (price zone पलीकडे + पलीकडचा swing पार). त्या swing वरून flipped area मध्ये परत येणारा **pullback**: (a) corrective (zigzag / flat / triangle), (b) एकूण **कमी FUT volume** (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover + dominant commitment (जास्त FUT volume) + LTF CHoCH + RSI divergence (पुरावा). फक्त BROKEN (swing पार नाही) ⇒ retest trade location नाही | (a)–(c) सगळं वाचून pass झाल्यावर | Impulsive / जास्त volume ने परत area मध्ये ⇒ trade नाही (flip अपयशी होत असेल) | K4, K5, K9, K10.3, K10.4 |
+| **G4** | Flip retest [Abhi] | Zone **FLIPPED** (price zone पलीकडे + पलीकडचा swing पार). Flipped area मध्ये परत येणं = trade location. **येण्याची पद्धत (corrective का, volume कमी का) फक्त context**; निर्णय **zone मध्ये आल्यानंतरच्या वाचनावर**: बाजूनुसार candle आकार, प्रत्येक candle चा FUT volume (वेळेच्या slot नुसार normalise, सरासरी), zone मधले patterns (channel / wedge / double-triple top-bottom / sideways base), कोणत्या बाजूच्या candles वाढतात-कमी होतात, selling / buying volume वाढतो का, RSI divergence. फक्त BROKEN (swing पार नाही) ⇒ trade location नाही | Dominant commitment candle (जास्त FUT volume) + LTF CHoCH (close) | Zone वाचन अस्पष्ट ⇒ थांबा; FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead | K4, K5, K9, K10.3, K10.4 |
 | **G5** | Ending diagonal C + trendline / resistance | C wedge सारखा: लहान होत जाणारे, overlapping legs. Trendline / area वर संपतो. Gap ची पुष्टी असेल तर अधिक मजबूत (7 Oct 2026). | Area वर reversal candle | Diagonal चं टोक | K3, K6, K13 |
 | **G6** | Trend मधला साधा pullback demand वर | HH/HL स्पष्ट. Pullback संथ, overlapping, कमी volume. Displacement च्या आधीच्या base वर. | Hammer / engulfing बंद झाल्यावर | Base पलीकडे | K1, K2, K4, K9 |
 
@@ -1929,7 +1934,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - **सारखी दिसणारी:** S7 (sweep, म्हणजे परत आत).
 - **फरक:** breaks.py ची real break (buffer + displacement / acceptance / failed retest) वि. reclaim. एकच व्याख्या [KB भाग G].
 - **Trade:**
-  - फक्त break दिशेने, **FLIPPED** level च्या flip retest वर (G4 [Abhi]: corrective + कमी FUT volume pullback, मग zone निकष). फक्त BROKEN ⇒ थांबा.
+  - फक्त break दिशेने, **FLIPPED** level च्या flip retest वर (G4 [Abhi]: zone मध्ये आल्यानंतरचं वाचन + commitment + CHoCH; येण्याची पद्धत फक्त context). फक्त BROKEN ⇒ थांबा.
   - Retest ची वारंवारता: Bulkowski च्या daily chart patterns मध्ये ~2/3 [स्रोत: Bulkowski; NIFTY intraday वर तपासलेलं नाही].
 - **MAGNET:** तुटलेल्या level भोवती closes वर-खाली (16 Feb 13:30) ⇒ बाजार अनिर्णित ⇒ setup नाही.
 - **S4 कसा संपतो:**
@@ -2146,7 +2151,7 @@ Real break साठी एकच व्याख्या: breaks.py (KB G). �
 | 7 Oct 12:15 | S10-B → S1: gap fill rally, C-diagonal trendline + seller zone वर | पालक (1H) खाली: protected H 22,809 (code चं वाचन 7 Oct review मध्ये ✔) | G5 bear call | ✔ bear — पक्का (Abhi 2026-10-09, run2 review: 12:15 = C-end). Code चं "B च्या आत (S11)" = वाचनाचा दोष (count score tie) ⇒ I6 |
 | 16 Feb 2018 13:30 | S4, MAGNET | — | Setup नाही | बरोबर (session) |
 | 16 Feb 2018 09:30 | आधीची चाल 144% ⇒ origin real-broken ⇒ S4 (S3 नाही) | — | **नकाशाची अट:** 09:30 पर्यंत break अपयशी ठरला असेल (उलट real break, किंवा जुनं टोक) ⇒ जुना downtrend ⇒ S1 ⇒ area + commitment असेल तर setup शक्य. नाहीतर S4 ⇒ FLIPPED झाल्यावरच फक्त वरच्या दिशेने flip retest (G4) ⇒ bear नाही. | **Trade session ने decision bar पर्यंतच्या data वर ही अट तपासून नकाशाचं उत्तर लिहायचं; मग Abhi ✔/✘** |
-| 15 Nov 2021 13:00 | S4 (session: जुनं टोक 18,604; 18,210 फक्त local high; testing) | — | **नकाशाची अट:** level FLIPPED (K4: पलीकडचा swing पार) असेल, आणि 13:00 चा pullback corrective + एकूण कमी FUT volume, मग zone निकष pass ⇒ G4 bear. फक्त BROKEN ⇒ नाही. | **तसंच: आधी अट तपासून उत्तर, मग Abhi** |
+| 15 Nov 2021 13:00 | S4 (session: जुनं टोक 18,604; 18,210 फक्त local high; testing) | — | **नकाशाची अट:** level FLIPPED (K4: पलीकडचा swing पार) असेल, आणि 13:00 पर्यंत zone मधलं वाचन (selling volume, candles, commitment + CHoCH) pass ⇒ G4 bear. फक्त BROKEN ⇒ नाही. | **तसंच: आधी अट तपासून उत्तर, मग Abhi** |
 
 **निष्कर्ष:**
 - 12, 25 आणि 26 Aug ला तीन वेगळे नियम लागत नाहीत. P2 चा क्रम (Gray-1) आणि P3 (reaction) तिन्ही दिवसांचं उत्तर देतात.

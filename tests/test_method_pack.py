@@ -118,7 +118,9 @@ def test_pending_abhi_text_is_excluded_from_pack():
     assert "past the swing on the far side" in flat and "no extra candle condition" in flat     # Abhi: swing पार = पुरावा
     assert "strong move" not in flat and "not by a single wick" not in flat
     assert "Broken, not flipped [Abhi]" in flat and "Flip retest (G4 / S4) [Abhi]" in flat
-    assert "LOWER FUT volume" in flat and "CORRECTIVE" in flat
+    assert "The approach does not decide; the in-zone study does [Abhi]" in flat and "CONTEXT only" in flat   # Abhi: (a)/(b) gate नाहीत
+    assert "first CONFIRMED swing formed after" in flat and "DEAD (no" in flat
+    assert "time-of-day slot" in flat and "never sums" in flat
     assert "22,720" not in flat and "22,667" not in flat                       # golden fixtures pack मध्ये नाहीत (leak)
     pend = "\n<!-- pending:abhi -->\n- secret pending rule\n<!-- /pending -->"
     t1, _ = MP.build(_kb().replace("- text 2", "- text 2" + pend), "")

@@ -2516,3 +2516,10 @@ legs owner वि. reader2 gate).
   supply), 12 Oct 09:15 wick वर, close आत ⇒ sweep, supply कायम ✅. 13 Oct export अपूर्ण (10:00 पर्यंत 4 bars): far swing = 6 Oct 14:00 चा
   D2 H 22,731.8 (Abhi चा 6 / 7 Oct high), अजून पार नाही ⇒ code: अजून resistance. Synthetic oct12 fixture चा supply नव्या नियमाने BROKEN
   (खाली swing नाही) ⇒ जुने oct12 tests जुना नियम pin; प्रश्न Z-1a.
+
+## Abhi: in-zone study हाच निर्णय (KB + pack)
+
+- G4 / S4: येण्याची पद्धत (corrective / volume कमी) फक्त context; निर्णय zone मध्ये आल्यानंतरच्या वाचनावर + commitment + CHoCH. वाचन अस्पष्ट ⇒ थांबा.
+- Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
+- Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
+- Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
