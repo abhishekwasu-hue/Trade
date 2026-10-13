@@ -1,5 +1,5 @@
 """Abhi §10 (Monday PAPER): Telegram approval v2 — ✅ · ✏️ Modify (फक्त entry) · ❌ + कारण · 📝 Correct marking · /exit · 15:45 सारांश.
-non-approver ignored; parsing (चुकीचा मजकूर ⇒ स्पष्ट उत्तर, बदल नाही); area बाहेर / R:R < 3 ⇒ इशारा पण ✅ हवंच; limit न गाठता ⇒ EXPIRED,
+non-approver ignored; parsing (चुकीचा मजकूर ⇒ स्पष्ट उत्तर, बदल नाही); area बाहेर ⇒ इशारा पण ✅ हवंच (R:R इशारा नाही — Abhi); limit न गाठता ⇒ EXPIRED,
 position नाही, would-have; Telegram वरून इतर कुठलाही parameter बदलत नाही; correction नोंद होते पण engine output बदलत नाही; Modify नंतर
 approval window पुन्हा; exits कधीच अडत नाहीत."""
 import datetime as dt
@@ -142,7 +142,8 @@ def test_modify_outside_area_or_low_rr_warns_but_still_needs_approve(db):
     press(db, sid, "M")
     assert say(db, "entry 22660")[0]                                                      # area 22570–22640 बाहेर, R:R 330/120 = 2.75
     cap = db["photos"][-1][0]
-    assert "area 22,570–22,640 बाहेर" in cap and "R:R 2.75 &lt; 3" in cap
+    assert "area 22,570–22,640 बाहेर" in cap and "&lt; 3" not in cap and "⚠️ R:R" not in cap   # Abhi: R:R इशारा नाही (माहिती फक्त)
+    assert "R:R <b>2.75</b>" in cap
     r = VS.get_signal(sid)
     assert r["status"] == "PENDING_HUMAN" and r["mod_entry"] == 22660.0
     assert gate(spot=22650.0).action == "HOLD"                                             # इशारा ⇒ आपोआप entry नाही

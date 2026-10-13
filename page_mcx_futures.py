@@ -952,6 +952,16 @@ def render():
                 disabled=not entry_min_hold_gate_enabled,
             )
 
+        st.markdown("---")
+        sub_header("⚖️ Confirmation mode: R:R gate (डीफॉल्ट बंद)", HDR_ORANGE)
+        from bots_common import level_gate_bot as _LGB
+        _gs = _LGB.gate_settings(settings)
+        rr1, rr2 = st.columns(2)
+        gate_rr_gate_enabled = rr1.checkbox("R:R gate सक्रिय (बंद ⇒ R:R वर skip / इशारा नाही)", value=bool(_gs["rr_gate_enabled"]),
+                                            key=_widget_key(symbol, "gate_rr_gate_enabled"))
+        gate_min_rr = rr2.number_input("किमान R:R", min_value=1.0, max_value=10.0, step=0.5, value=float(_gs["min_rr"]),
+                                       key=_widget_key(symbol, "gate_min_rr"), disabled=not gate_rr_gate_enabled)
+
         if st.button("💾 Entry Gate सेव्ह करा", key=_widget_key(symbol, "save_entry")):
             new_settings = dict(settings)
             new_settings.update({
@@ -980,6 +990,7 @@ def render():
                 "entry_min_hold_gate_enabled": bool(entry_min_hold_gate_enabled),
                 "entry_min_hold_minutes": int(entry_min_hold_minutes),
                 "entry_min_hold_first_trade_only": bool(entry_min_hold_first_trade_only),
+                "gate_rr_gate_enabled": bool(gate_rr_gate_enabled), "gate_min_rr": float(gate_min_rr),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Entry Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")

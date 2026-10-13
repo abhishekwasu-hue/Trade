@@ -55,8 +55,10 @@ def test_touch_without_reaction_no_entry_then_timeout():
 def test_sweep_plus_bullish_commitment_in_up_trend_is_entry():
     r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF])
     assert r["state"] == LR.CONFIRMED and r["entry"] and r["side"] == LR.BULL
-    assert r["evidence"]["sweep"] and r["sl"] < 987 and r["target"] == 1090.0 and r["rr"] >= 3
+    assert r["evidence"]["sweep"] and r["sl"] < 987 and r["target"] == 1090.0 and r["rr"] is None   # R:R gate default बंद ⇒ R:R नाही
     assert r["entry_price"] == 1008.0
+    r_on = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], s={"rr_gate_enabled": True})                    # dashboard rr gate चालू ⇒ जुनं
+    assert r_on["entry"] and r_on["rr"] >= 3
 
 
 def test_same_candles_at_support_in_down_trend_are_ignored():
@@ -92,13 +94,26 @@ def test_range_both_edges_tradable():
 
 
 def test_rr_below_min_is_skipped_with_reason():
+    """Abhi (rr-correction): R:R entry ची अट नाही ⇒ default (gate_rr_gate_enabled बंद) skip / disarm / R:R नाही; चालू ⇒ जुना नियम."""
     r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[(1015.0, 1020.0)])
+    assert r["entry"] and r["state"] == LR.CONFIRMED and r["rr"] is None
+    assert not any(str(e[2]).startswith(LR.R_RR) for e in r["events"]) and "R:R" not in LR.describe(r)
+    r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[(1015.0, 1020.0)], s={"rr_gate_enabled": True})
     assert not r["entry"] and r["state"] == LR.DISARMED and r["reason"].startswith(LR.R_RR)
 
 
 def test_no_target_area_is_skipped():
+    """target area नसणं = ⑦ चा भाग ⇒ default (rr gate बंद) entry चालते (target None); rr gate चालू ⇒ जुनं "no target area"."""
     r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[])
+    assert r["entry"] and r["state"] == LR.CONFIRMED and r["target"] is None and r["rr"] is None
+    r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[], s={"rr_gate_enabled": True})
     assert not r["entry"] and r["reason"] == LR.R_NO_TARGET
+
+
+def test_rr_gate_is_a_dashboard_setting_default_off():
+    from bots_common import level_gate_bot as LGB
+    assert LR.DEFAULTS["rr_gate_enabled"] is False and LGB.gate_settings({})["rr_gate_enabled"] is False
+    assert LGB.gate_settings({"gate_rr_gate_enabled": True, "gate_min_rr": 2.0}) == {**LR.DEFAULTS, "rr_gate_enabled": True, "min_rr": 2.0}
 
 
 def test_unclear_trend_fails_closed():

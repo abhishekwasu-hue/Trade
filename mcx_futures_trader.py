@@ -529,17 +529,21 @@ def _gate_result(g, area, err=None):
 
 def _gate_sl_target(r, price, direction, settings):
     """CONFIRMED plan ⇒ (sl_points, target_points, None): SL = gate चा structural SL (area च्या पलीकडे), settings SL ही कमाल (candle gate सारखंच);
-    target = पुढचा उलट area. सद्य भावावरून पुन्हा: SL / target ओलांडले, SL settings पेक्षा रुंद, किंवा R:R < min_rr ⇒ (None, None, (status, कारण))."""
+    target = पुढचा उलट area (नसेल ⇒ dashboard target). सद्य भावावरून पुन्हा: SL / target ओलांडले, SL settings पेक्षा रुंद ⇒ (None, None,
+    (status, कारण)). R:R < min_rr ⇒ skip फक्त dashboard `gate_rr_gate_enabled` चालू असेल तर (Abhi: R:R entry ची अट नाही, default बंद)."""
     d = 1 if direction == "BULLISH" else -1
-    sl_pts, tgt_pts = (price - float(r["sl"])) * d, (float(r["target"]) - price) * d
-    max_sl, min_rr = _sl_target_points(settings, price)[0], float(LGB.gate_settings(settings)["min_rr"])
+    gs = LGB.gate_settings(settings)
+    has_tgt = r.get("target") is not None
+    max_sl, set_tgt = _sl_target_points(settings, price)
+    sl_pts, tgt_pts = (price - float(r["sl"])) * d, ((float(r["target"]) - price) * d if has_tgt else set_tgt)
     if sl_pts <= 0:
         return None, None, ("SKIPPED_GATE_INVALIDATED", f"भाव {price:.2f} gate SL {r['sl']:.2f} च्या पलीकडे")
-    if tgt_pts <= 0:
+    if has_tgt and tgt_pts <= 0:
         return None, None, ("SKIPPED_GATE_TARGET_PASSED", f"भाव {price:.2f} target {r['target']:.2f} पलीकडे")
     if sl_pts > max_sl:
         return None, None, ("SKIPPED_GATE_SL_TOO_WIDE", f"structural SL {r['sl']:.2f} = {sl_pts:.2f} pts > settings SL {max_sl:.2f}")
-    if tgt_pts / sl_pts < min_rr:
+    min_rr = float(gs["min_rr"])
+    if gs["rr_gate_enabled"] and tgt_pts / sl_pts < min_rr:
         return None, None, ("SKIPPED_GATE_RR", f"{LGB.LR.R_RR} at {price:.2f} ({tgt_pts / sl_pts:.2f} < {min_rr:g})")
     return sl_pts, tgt_pts, None
 
@@ -1012,8 +1016,11 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
         target_note = ""
         if gate_sl_tgt is not None:
             sl_points_effective, target_points_effective = gate_sl_tgt
-            target_note = (f"🎯 Gate: SL {_gr['sl']:.2f} ({sl_points_effective:.2f} pts) · target = पुढचा area {_gr['target']:.2f} "
-                           f"({target_points_effective:.2f} pts) · R:R {target_points_effective / sl_points_effective:.2f}")
+            _tw = (f"पुढचा area {_gr['target']:.2f}" if _gr.get("target") is not None else "dashboard target")
+            _rrw = (f" · R:R {target_points_effective / sl_points_effective:.2f}"
+                    if LGB.gate_settings(settings)["rr_gate_enabled"] else "")   # R:R फक्त dashboard rr gate चालू असेल तर
+            target_note = (f"🎯 Gate: SL {_gr['sl']:.2f} ({sl_points_effective:.2f} pts) · target = {_tw} "
+                           f"({target_points_effective:.2f} pts){_rrw}")
         elif settings.get("next_level_target_enabled", False):
             nl = MF.next_level_target(_bot_level_prices(all_zones, active_suffixes, level_source), entry_price_estimate, direction,
                                       max(entry_price_estimate * 2 * TOUCH_TOLERANCE_PCT / 100, 0.5 * sl_points_effective))

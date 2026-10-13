@@ -57,6 +57,7 @@ Code वरून (तपशील: `docs/reports/2026-10-12_engine_blockers.md`
    dry-run approval message. **खरा 12 Oct data अजून चालवलेला नाही** — VPS वर
    `python3 scripts/replay_day.py --symbol NIFTY --day 2026-10-12 --source upstox --dry-run-telegram` (read-only). खऱ्या data वर
    R:R < 3 आला तर setup नाही ("valid read, skipped on R:R") — तो निकाल बदलण्यासाठी threshold फिरवणार नाही.
+   _दुरुस्ती (Abhi, rr-correction): R:R ही entry ची अट नाही ("skipped on R:R" निकाल नाही) — R:R / SL / target / lots / exits = dashboard settings._
 
 TODO (Abhi चे charts + diag): त्याचे bar-by-bar कारण खऱ्या data वरून.
 

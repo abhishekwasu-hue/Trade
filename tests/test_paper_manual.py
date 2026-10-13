@@ -111,7 +111,7 @@ def test_market_closed_token_missing_pause_kill(db):
 def test_rr_below_3_warns_but_allowed(db):
     d, sent = deps()
     ok, msg = PM.handle("/paper NIFTY bullput SL 24900 T 25100", "telegram:1", **d)
-    assert ok and "R:R 0.82" in msg and "&lt; 3" in msg
+    assert ok and "R:R 0.82" in msg and "&lt; 3" not in msg and "⚠️" not in msg     # Abhi: R:R इशारा नाही (माहिती फक्त), entry चालते
 
 
 def test_approval_off_means_no_manual_entry(db):

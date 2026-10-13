@@ -316,7 +316,9 @@ def signal_text(sig):
         a = g.get("area") or [None, None]
         lines.append(f"Confirmation gate (engine reading, please audit): trend {g.get('trend')}; area {_f(a[0], 2)}-{_f(a[1], 2)} "
                      f"({'demand' if g.get('side') == 'BULLISH' else 'supply'}); commitment {g.get('form')} on {g.get('tf')}; "
-                     f"entry {_f(g.get('entry'), 2)}, SL {_f(g.get('sl'), 2)}, target {_f(g.get('target'), 2)}, R:R {g.get('rr')}. "
+                     f"entry {_f(g.get('entry'), 2)}, SL {_f(g.get('sl'), 2)}, target {_f(g.get('target'), 2)}"
+                     + (f", R:R {g.get('rr')}" if g.get("rr") is not None else "") + ". "   # R:R फक्त dashboard rr gate चालू असेल तर
+                     +
                      "Check zone, trend, pullback, trigger and whether entry / SL / target are sensible.")
     rest = {k: v for k, v in tags.items() if k != "gate"}
     if rest:

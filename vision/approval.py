@@ -2,7 +2,7 @@
 फक्त approver (TELEGRAM_APPROVER_IDS — telegram_bot._authorized नंतर). प्रत्येक parsed value आधी परत दाखवतो (echo), मगच लागू.
 
   ✏️ Modify  = फक्त ENTRY (spot वर limit): "entry 22590". SL / target engine चेच (signal tags["gate"]; ✋ manual ⇒ /paper चे SL / T),
-               R:R पुन्हा मोजतो; area बाहेर / R:R < 3 ⇒ इशारा (block नाही). सुधारित ticket ⇒ पुन्हा ✅ हवं; approval window पुन्हा सुरू.
+               R:R फक्त माहिती म्हणून मोजतो (R:R इशारा नाही — Abhi: R:R dashboard चा); area बाहेर ⇒ इशारा (block नाही). सुधारित ticket ⇒ पुन्हा ✅ हवं; approval window पुन्हा सुरू.
                ✅ नंतर spot entry ला पोहोचला तरच PAPER entry (vision/gate.py: limit_reached); exec window मध्ये नाही ⇒ EXPIRED + would-have.
                Vision पुन्हा चालत नाही. SL / target / lots / strikes / hedge / expiry / risk — Telegram वरून कधीच नाही (dashboard वरच).
   ❌ Reject  = लगेच REJECTED (जुनं वर्तन: position नाही, would-have) + कारण एक tap: wrong trend / wrong zone / no real commitment /
@@ -24,7 +24,6 @@ from . import store as VS
 from . import tg as TG
 
 STATE_TTL_MIN = 15                                                      # reply ची वाट (मग "पुन्हा बटण दाबा")
-RR_WARN = 3.0
 CANCEL = ("cancel", "रद्द")
 NOT_MINE = ("unauthorized", "no_state")                                 # handle_text ने हा मजकूर घेतला नाही ⇒ पुढचा router (review replies)
 FORBIDDEN = ("sl", "stop", "stoploss", "target", "tgt", "t", "lot", "lots", "qty", "strike", "strikes", "hedge", "width", "expiry", "risk",
@@ -139,10 +138,6 @@ def modify_ticket(row, entry):
         lo, hi = sorted(b["area"])
         if not lo <= entry <= hi:
             warn.append(f"⚠️ entry area {lo:,.0f}–{hi:,.0f} बाहेर")
-    if rr is None:
-        warn.append("⚠️ target नाही ⇒ R:R NA")
-    elif rr < RR_WARN:
-        warn.append(f"⚠️ R:R {rr:g} &lt; 3")
     return {"side": b["side"], "entry": entry, "sl": sl, "target": tg, "rr": rr, "area": b["area"], "engine_entry": b["entry"],
             "src": b["src"], "warnings": warn}, None
 

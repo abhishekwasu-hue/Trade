@@ -335,7 +335,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
     cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
     title = f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {sig.get('direction', '')} · signal {ts:%d %b %H:%M} ({cutnote})"
     if gate:
-        title += f"<br><sup>{gate.get('trend') or ''} · {gate.get('form') or ''} · R:R {gate.get('rr')}</sup>"
+        rr = f" · R:R {gate.get('rr')}" if gate.get("rr") is not None else ""   # R:R फक्त dashboard rr gate चालू असेल तर
+        title += f"<br><sup>{gate.get('trend') or ''} · {gate.get('form') or ''}{rr}</sup>"
     fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT_V21 if with_line else HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)

@@ -2218,3 +2218,28 @@ holdout), pre-open (ℹ️ / ❌ दोन्ही). जुना replay test �
 engine च्याच नियमाने (`LR.mature_cap` ⇒ `decision3.engine.mature_intact`, ctx phase / counter): अखंड ⇒ "grade at most B", नाहीतर "grade at most
 weak". (4) replay: feed fallback ⇒ ⚠️ ओळ contract नावासह; D च्या front month चा expiry ≤ D / वेगळा contract ⇒ "volume from a different contract
 than the day's front month — c0 volume unreliable"; `until_close` `_all` file मधून दिवसाचा front month (near_month नियम), alphabetical नाही.
+
+## 2026-10-13 · R:R correction — Claude ने आणलेले R:R नियम काढले (Abhi; branch `claude/rr-correction`)
+
+**Abhi चा आदेश:** "Remove every R:R rule that came from Claude's orders. Abhi never asked for an R:R filter. R:R, SL, target, lots and
+exits are his dashboard settings only." इतर वर्तन बदल नाही.
+**काय केलं:**
+- Level gate (`bots_common/level_reaction.py`; 15M SRv2 / 5M Instant / Classic / MCX — `level_gate_bot.gate_settings` मार्गे): ⑦ आता entry ची
+  अट नाही. Gate = trend → area → handover → LTF CHoCH → volume वरची dominant commitment candle. नवी setting `rr_gate_enabled` (dashboard key
+  `gate_rr_gate_enabled`, default **False**; `min_rr` त्याचं मूल्य). बंद ⇒ R:R मोजत नाही (`rr` = None), "R:R < min" / "no target area"
+  DISARMED नाही, describe / caption / Vision chart title / Vision audit prompt मध्ये R:R ओळ नाही. चालू ⇒ जुना नियम जसाच्या तसा.
+- Dashboard: Bot Dynamic SR Algo पान (5M / Classic / 15M SRv2) आणि MCX Futures पान — "R:R gate सक्रिय" checkbox (default बंद), "किमान R:R"
+  फक्त चालू असेल तर. MCX `_gate_sl_target`: R:R skip फक्त setting चालू असेल तर; gate target नसेल ⇒ dashboard target (आधी crash झाला असता).
+- ✏️ Modify (`vision/approval.py`): "R:R < 3" / "target नाही ⇒ R:R NA" इशारे काढले (area बाहेर इशारा तसाच; R:R आकडा फक्त माहिती).
+  ✋ /paper (`paper/manual.py`): "R:R < 3" इशारे काढले.
+- Setups audit (`scripts/setups_audit_columns.py`, CD14 column (a)): R:R verdict (FAIL R:R < 3) काढला — फक्त तथ्य "opposite area … lies
+  between entry … and target … at X". अहवाल `docs/reports/setups_prA_v1_audit.md` column (a) मधले R:R / ✘ काढले (दुरुस्ती टीप सह).
+- 29 Sep: **Abhi च्या स्पष्ट आदेशाने अपेक्षा बदलली** — "skipped on R:R" निकाल नाही; अपेक्षित वाचन = valid bear-call read
+  (`docs/reports/v22_missed_levels_touch.md`, `tests/test_decision3_touch_levels.py`). जुना `no_trade (R:R)` फक्त legacy `rr_step` = True.
+- decision3 ⑦: `rr_step` default False (PR #314) — तपासलं: `engine_signal` / `engine3_live` V22 ला settings देत नाहीत ⇒ defaults ⇒ ⑦ नाही,
+  `b_plans` None. decision3 settings dashboard वर नाहीत ⇒ `rr_step` dashboard वर आणला नाही.
+- Frozen / research (हात नाही): chart_reader, correction/, opportunity_engine, backtest.py, entry_engine.py, level_bots_replay.py,
+  decision2, simple_core (live execution नाही).
+**Tests:** बदललेले (काढले नाहीत) — level_reaction (3 + 1 नवा), level_bots_5m, level_bots_classic_srv2, level_bots_mcx, telegram_approval_v2,
+paper_manual, decision3_touch_levels (+ 1 नवा default test; जुना legacy `rr_step` = True वर). 23 files: 548 pass.
+**उघडे:** OPEN_QUESTIONS EC6 (✅ बंद), RR1–RR5.

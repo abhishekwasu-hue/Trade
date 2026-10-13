@@ -6,14 +6,15 @@ decision3 ची कार्यं जशीच्या तशी वापर
   ⑥ commitment = decision3.method.commitment / reversal_form (Q16: engulf, pin, outside / strong close …)
   ④ power_shift = पुरावा (corrective approach)
   खरा break    = elliott.breaks.break_from (displacement किंवा पुढचे bars reclaim नाही)
-  ⑦ R:R        = min_rr (default 3)
+  ⑦ R:R        = entry ची अट नाही (Abhi: R:R / SL / target / lots / exits = dashboard settings). फक्त dashboard setting
+                 `gate_rr_gate_enabled` (default False) चालू केल्यास जुना नियम: target area नाही / R:R < min_rr ⇒ DISARMED.
 
 State machine प्रत्येक (symbol, area) साठी, फक्त बंद candles वर — दर cycle ला आजच्या session च्या bars वरून पुन्हा replay (DB state
 नाही ⇒ restart-safe, causal: bar t चा निर्णय फक्त bars ≤ t वरून):
   IDLE → ARMED (बंद candle area ला overlap, आधीचा close trade-बाजूला, आणि ती बाजू trend ने परवानगी दिलेली)
-       → CONFIRMED (commitment candle, approach impulsive नाही, close area च्या आतल्या कडेपलीकडे, R:R ≥ min_rr) = entry
-       → DISARMED (खरा break ⇒ area broken, breakout / उलट trade नाही · max_armed_bars मध्ये commitment नाही · impulsive approach ·
-                   R:R < min_rr · target area नाही)
+       → CONFIRMED (commitment candle + LTF CHoCH, approach impulsive नाही, close area च्या आतल्या कडेपलीकडे) = entry
+       → DISARMED (खरा break ⇒ area broken, breakout / उलट trade नाही · max_armed_bars मध्ये commitment नाही · impulsive approach;
+                   R:R < min_rr / target area नाही — फक्त rr_gate_enabled = True असेल तर)
 Fail-closed: trend / data / कुठलीही exception ⇒ entry नाही, कारण नोंदीत. हा module order / broker call करत नाही.
 """
 import datetime as dt
@@ -59,7 +60,8 @@ def form_name(form, side):
     return pair[0 if side == BULL else 1] if pair else str(form)
 
 DEFAULTS = {
-    "min_rr": 3.0,                  # ⑦ R:R किमान
+    "rr_gate_enabled": False,       # ⑦ R:R gate (dashboard `gate_rr_gate_enabled`). Abhi: R:R entry ची अट नाही ⇒ default बंद (skip / disarm / इशारा नाही)
+    "min_rr": 3.0,                  # ⑦ R:R किमान — फक्त rr_gate_enabled = True
     "max_armed_bars": 8,            # ARMED नंतर इतक्या बंद candles मध्ये commitment नाही ⇒ timeout
     "mr_n": 20,                     # median range = मागच्या इतक्या बंद candles चा (high − low) median (चालू वगळून)
     "approach_bars": 3,             # approach = ARMED candle सह शेवटच्या इतक्या candles
@@ -487,7 +489,8 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
             sl = (min(lo, seg_l) - float(s["sl_buffer_mr"]) * m) if side == BULL else (max(hi, seg_h) + float(s["sl_buffer_mr"]) * m)
             tgt = _target(side, c, (lo, hi), others)
             rk = (c - sl) * d
-            rr = None if (tgt is None or rk <= 0) else (tgt - c) * d / rk
+            rr_on = bool(s["rr_gate_enabled"])                             # ⑦ dashboard setting; बंद (default) ⇒ R:R मोजत / दाखवत नाही
+            rr = None if (not rr_on or tgt is None or rk <= 0) else (tgt - c) * d / rk
             zs = cf["study"]                                               # a2: window ARMED ⇒ commitment candle
             evid = {"sweep": bool(swept), "corrective_approach": bool(M.power_shift(A, t, d, None, s3, lvl)[0]),
                     "handover": zs.get("handover"), "pattern": zs.get("pattern"), "rsi_divergence": None,
@@ -509,12 +512,12 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "commit_line": "commitment: " + " · ".join(x for x in (form_name(cm.get("form"), side), btxt, vtxt) if x)}
             if cf["choch"] and cf["choch"].get("done"):
                 plan["ltf_line"] = cf["choch"]["line"]                     # c1 ticket: "5M CHoCH: higher low …, close above LH … at 10:20"
-            if tgt is None:
+            if rr_on and tgt is None:                                      # ⑦ फक्त dashboard rr gate चालू असेल तर
                 state, reason = DISARMED, R_NO_TARGET
                 ev(t, DISARMED, R_NO_TARGET)
                 out.update(plan)
                 continue
-            if rr is None or rr < float(s["min_rr"]):
+            if rr_on and (rr is None or rr < float(s["min_rr"])):
                 state, reason = DISARMED, f"{R_RR} ({rr:.2f} < {float(s['min_rr']):g})" if rr is not None else R_RR
                 ev(t, DISARMED, reason)
                 out.update(plan)
@@ -605,7 +608,7 @@ def describe(r, area=None):
                 f"{r.get('bars_armed', 0)}/{r.get('max_armed_bars')} bars{why}")
     if st == CONFIRMED:
         return (f"CONFIRMED {kind} {rng} · {r.get('form')} · grade {r.get('grade')} · entry {r.get('entry_price')} · SL {r.get('sl')} · "
-                f"target {r.get('target')} · R:R {r.get('rr')}")
+                f"target {r.get('target')}" + (f" · R:R {r.get('rr')}" if r.get("rr") is not None else ""))   # R:R फक्त rr gate चालू
     if st == DISARMED:
         return f"{kind} {rng} · disarmed: {r.get('reason')}"
     if st == "ERROR":

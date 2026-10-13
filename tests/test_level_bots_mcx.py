@@ -282,7 +282,11 @@ def test_gate_sl_target_mirror(side):
     assert mft._gate_sl_target(_plan(side), _px(side, 980.0), side, s)[2][0] == "SKIPPED_GATE_INVALIDATED"
     assert mft._gate_sl_target(_plan(side), _px(side, 1090.0), side, s)[2][0] == "SKIPPED_GATE_TARGET_PASSED"
     assert mft._gate_sl_target(_plan(side), _px(side, 1008.0), side, {**s, "sl_points": 20})[2][0] == "SKIPPED_GATE_SL_TOO_WIDE"
-    assert mft._gate_sl_target(_plan(side), _px(side, 1025.0), side, s)[2][0] == "SKIPPED_GATE_RR"     # 60 / 40 < 3
+    # Abhi (rr-correction): R:R entry ची अट नाही ⇒ default (gate_rr_gate_enabled बंद) 60 / 40 < 3 तरी skip नाही; चालू ⇒ जुनं SKIPPED_GATE_RR
+    assert mft._gate_sl_target(_plan(side), _px(side, 1025.0), side, s)[2] is None
+    assert mft._gate_sl_target(_plan(side), _px(side, 1025.0), side, {**s, "gate_rr_gate_enabled": True})[2][0] == "SKIPPED_GATE_RR"
+    sl2, tgt2, skip2 = mft._gate_sl_target({**_plan(side), "target": None}, _px(side, 1008.0), side, s)   # target area नाही ⇒ dashboard target
+    assert skip2 is None and sl2 == pytest.approx(23.0) and tgt2 == pytest.approx(mft._sl_target_points(s, _px(side, 1008.0))[1])
 
 
 def _shadow(monkeypatch, h):
