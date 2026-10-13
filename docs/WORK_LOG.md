@@ -2369,3 +2369,10 @@ FUT volume, live V4 चालू करायचा का).
   insert कॉलम-निहाय (जुना / नवा schema दोन्हीवर चालतो).
   Tests: test_vision_v4_checklist (probes, budget, second pass, unset), test_golden_vision_check (holdout gap / parquet / budget).
   OPEN_QUESTIONS R0-9 (V4 cap).
+- **Re-review #318 (5156a02 नंतर, लहान दुरुस्त्या):** price validator — पूर्ण महिना-शब्द फक्त ("Market / Decline / Mayday 25,555" आता नाकारले),
+  leg / no / n नंतर फक्त 1–2 अंकी क्रमांक किंवा roman; known check आधी (facts मधले OI 1,20,000 / bot tag oi=180000 range बाहेर असले तरी चालतात);
+  V4 मासिक राखीव = राखीव × (उरलेले weekdays + आज weekday असेल तर 1); reserve > daily असताना कारण-मजकूर "$-…" नाही; golden `load_data`
+  tz-aware timestamps आधी IST-naive मग policy filter (holdout file नाव-नकार तसाच); holdout gap सगळ्या frames वर (W / D / 1H / 15M / 5M);
+  worker V4 पास: कमाल 2 jobs / `run_once` (`V4_MAX_PER_CYCLE`), आणि नवे (bar बंद) QUEUED rows असतील तर V4 पास वगळतो — सोडलेले V4
+  jobs पुढे नेत नाही (audit-only), `vision_events` मध्ये `v4_dropped` नोंद; shadow rows साठी V4 budget Telegram इशारा नाही; dashboard V4 cap
+  0–2. Tests: test_vision_v4_checklist, test_golden_vision_check.

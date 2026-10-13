@@ -451,7 +451,8 @@ def maybe_v4(row, png, meta, g, model, path=None, send_text=None, client_factory
                                sub_cap=float(g.get("vision_v4_daily_cap", 0.0)))
         if not ok:
             res = {"status": "skipped", "error": why, "pack_version": pack[1], "prompt_version": V4.PROMPT_VERSION}
-            _warn_v4_budget_once(why, send_text, path)
+            if row.get("mode") != "shadow":                                 # shadow ⇒ फक्त नोंद (Telegram नाही)
+                _warn_v4_budget_once(why, send_text, path)
         else:
             known, anchors = v4_price_facts(row, meta, facts)
             client = (client_factory or SA.make_client)(timeout_sec)
@@ -473,10 +474,53 @@ def maybe_v4(row, png, meta, g, model, path=None, send_text=None, client_factory
         return None
 
 
-def run_v4_jobs(jobs):
-    """दुसरा पास: प्रत्येक job (kwargs) maybe_v4 ला — एकाचं अपयश बाकींना थांबवत नाही; कधीच raise नाही."""
+V4_MAX_PER_CYCLE = 2                                                    # एका run_once मध्ये कमाल V4 calls (V2 rows ना उशीर नको)
+
+
+def ready_queued(path=None):
+    """QUEUED rows ज्यांचा bar बंद झाला (लगेच V2 ला तयार) — bar-close ची वाट पाहणारे मोजत नाही (ते V4 कायम अडवत नाहीत)."""
+    from .context import bar_end_of
+    now = VS.now_ist()
+    n = 0
+    for r in VS.rows_with_status("QUEUED", path):
+        try:
+            be = bar_end_of(r)
+            if be is not None and be.to_pydatetime() > now:
+                continue
+        except Exception:                                                # noqa: BLE001
+            pass
+        n += 1
+    return n
+
+
+def _drop_v4(jobs, why, path=None):
+    """Audit-only ⇒ सोडलेले V4 jobs पुढे नेत नाही; फक्त नोंद (event + log)."""
+    for j in jobs:
+        sid = (j.get("row") or {}).get("signal_id")
+        print(f"ℹ️ V4 skipped for {sid}: {why}")
+        try:
+            VS.event(sid, "v4_dropped", why, j.get("path"))
+        except Exception:                                                # noqa: BLE001
+            pass
+
+
+def run_v4_jobs(jobs, path=None, limit=None, check_queue=False):
+    """दुसरा पास: प्रत्येक job (kwargs) maybe_v4 ला — एकाचं अपयश बाकींना थांबवत नाही; कधीच raise नाही. run_once मधून: कमाल `limit` jobs,
+    आणि नवे (bar बंद झालेले) QUEUED rows असतील तर पास वगळतो (त्यांचा V2 आधी); उरलेले / वगळलेले jobs सोडले जातात (नोंदीसह)."""
+    jobs = list(jobs or [])
+    if check_queue and jobs:
+        try:
+            waiting = ready_queued(path)
+        except Exception:                                                # noqa: BLE001
+            waiting = 0
+        if waiting:
+            _drop_v4(jobs, f"{waiting} new signal(s) queued — V2 first", path)
+            return []
+    if limit is not None and len(jobs) > limit:
+        _drop_v4(jobs[limit:], f"V4 cap {limit} per cycle", path)
+        jobs = jobs[:limit]
     out = []
-    for j in jobs or []:
+    for j in jobs:
         try:
             out.append((j["row"]["signal_id"], maybe_v4(**j)))
         except Exception:                                                # noqa: BLE001
@@ -653,7 +697,7 @@ def run_once(path=None, **kw):
         r = process_row(row, path=path, data_cache=cache, v4_jobs=v4_jobs, **kw)
         if not (isinstance(r, dict) and r.get("deferred")):
             done.append((row["signal_id"], r))
-    run_v4_jobs(v4_jobs)                                                # R0 V4: दुसरा पास — V2 निर्णय सगळे नोंदल्यानंतरच
+    run_v4_jobs(v4_jobs, path=path, limit=V4_MAX_PER_CYCLE, check_queue=True)   # R0 V4: दुसरा पास — V2 निर्णय सगळे नोंदल्यानंतरच
     return done
 
 

@@ -95,15 +95,18 @@ def parse_json(text):
 
 
 # ----------------------------------------------------------------------------------------------------------- prices in facts
-_MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+_MONTHS = ("(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+           "Nov(?:ember)?|Dec(?:ember)?)\\b")                                  # पूर्ण महिना-शब्द फक्त ("Market" / "Decline" नाही)
+_DAY = r"\d{1,2}(?![\d,.])"                                                  # 1–2 अंकी दिवस / क्रमांक (25,555 चा भाग नाही)
 _NOT_PRICE = re.compile(
     r"\b\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?"                                  # 2026-10-12 [09:15]
-    rf"|\b\d{{1,2}}[\s-]+(?:{_MONTHS})[a-z]*(?:[\s-]+\d{{2,4}})?\b"                           # 12 Oct [2026] / 12-Oct
-    rf"|\b(?:{_MONTHS})[a-z]*[\s-]+\d{{1,2}}(?:,?\s+\d{{4}})?\b"                               # Oct 12[, 2026]
+    rf"|\b{_DAY}[\s-]+{_MONTHS}(?:[\s-]+\d{{4}}\b|[\s-]+\d{{2}}(?![\d,.]))?"                    # 12 Oct [2026] / 12-Oct
+    rf"|\b{_MONTHS}[\s-]+{_DAY}(?:,?\s+\d{{4}}\b)?"                                              # Oct 12[, 2026]
     r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d{1,2}\.\d{1,2}\.\d{2,4}\b"                         # 12/10, 12/10/2026, 12.10.2026
     r"|\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?m\.?)?"                                         # 09:15, 9:30am
     r"|\b\d{1,2}\s*[ap]\.?m\b"                                                                # 10am
-    r"|\b(?:waves?|items?|sections?|steps?|stages?|legs?|sub-?waves?|degree|n|no\.?|#)\s*\(?\s*[ivx\d]+\s*\)?"   # wave (4), item 3
+    r"|(?:\b(?:waves?|items?|sections?|steps?|stages?|legs?|sub-?waves?|degree|n|no)\b\.?|#)\s*\(?\s*"
+    r"(?:\d{1,2}(?![\d,.])|[ivx]{1,4}\b)\s*\)?"                                                 # wave (4), item 3, leg 2 (25,555 नाही)
     r"|\(\s*(?:\d{1,2}|[ivx]{1,4})\s*\)"                                                       # (4) / (iv) wave labels
     r"|\b(?:volume|vol\.?)\s+(?:of\s+)?[\d.,]+",                                              # volume 1.8 / volume 180,000
     re.I)
@@ -173,21 +176,19 @@ def price_range(anchors):
 def unknown_prices(texts, known, tick=DEFAULT_TICK, anchors=None):
     """texts मधले price-सारखे आकडे जे known मध्ये (tick + लिहिलेल्या अचूकतेच्या अर्ध्या एककात) नाहीत ⇒ [मूळ मजकूर].
     Range फक्त anchors वरून (None ⇒ known = anchors, उदा. golden मध्ये model ला दिसणारे OHLC): range मध्ये ⇒ known मध्ये हवा;
-    range च्या **वर** (> 1.5 × max: दुसऱ्या instrument ची किंमत?) ⇒ नाकार; range च्या **खाली** (counts, %, wave क्रमांक) ⇒ दुर्लक्ष."""
+    range च्या **वर** (> 1.5 × max: दुसऱ्या instrument ची किंमत?) ⇒ नाकार; range च्या **खाली** (counts, %, wave क्रमांक) ⇒ दुर्लक्ष.
+    आधी known तपासतो: facts मध्ये असलेला आकडा (उदा. OI 1,20,000, bot tag) range बाहेर असला तरी चालतो."""
     import bisect
     known = sorted(known or [])
     lo, hi = price_range(known if anchors is None else anchors)
     bad = []
     for tx in texts:
         for v, dec, raw in numbers(tx):
-            if v < lo:
-                continue
-            if v > hi:
-                bad.append(raw)
-                continue
             tol = tick + 0.5 * 10 ** (-dec) + 1e-9
             i = bisect.bisect_left(known, v - tol)
-            if not (i < len(known) and known[i] <= v + tol):
+            if i < len(known) and known[i] <= v + tol:                       # facts मध्ये आहे (OI / bot tag / volume सुद्धा) ⇒ ठीक
+                continue
+            if v >= lo:                                                     # range मध्ये किंवा वर (दुसरं instrument?) आणि facts मध्ये नाही
                 bad.append(raw)
     return bad
 

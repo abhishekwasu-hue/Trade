@@ -56,23 +56,25 @@ def load_data(paths):
     from elliott import data_policy as DP
     parts = []
     for p in paths:
-        if str(p).endswith(".parquet"):
-            parts.append(DP.load_parquet(p, "annotation"))
-        else:
-            parts.append(pd.read_csv(p, parse_dates=["timestamp"]))
+        if os.path.basename(str(p)) in DP.HOLDOUT_FILES:                     # DP.load_parquet चाच नकार (वाचायलाच नाही)
+            raise DP.HoldoutError(f"{os.path.basename(str(p))} हा sealed holdout काळ आहे — वाचायचा नाही")
+        parts.append(pd.read_parquet(p) if str(p).endswith(".parquet") else pd.read_csv(p, parse_dates=["timestamp"]))
     raw = pd.concat(parts, ignore_index=True)
     ts = pd.to_datetime(raw["timestamp"])
+    if ts.dtype == object:                                                 # मिश्र offsets ⇒ UTC मार्गे (मग IST)
+        ts = pd.to_datetime(raw["timestamp"], utc=True)
     if ts.dt.tz is not None:
         ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
-    raw["timestamp"] = ts
+    raw["timestamp"] = ts                                                  # IST-naive आधी, मगच policy filter
     raw = raw.drop_duplicates("timestamp", keep="last").sort_values("timestamp").reset_index(drop=True)
     return DP.filter_allowed(raw, "annotation")
 
 
 def holdout_gap(frames):
-    """W / D frame sealed holdout ओलांडून (आधीचा data + नंतरचा data, मधे holdout काढलेला) ⇒ True — असा chart खोटा trend दाखवतो ⇒ केस नाकारा."""
+    """कोणतीही frame (W / D / 1H / 15M / 5M) sealed holdout ओलांडून (आधीचा + नंतरचा data, मधे holdout काढलेला) ⇒ True — असा chart खोटा
+    trend दाखवतो ⇒ केस नाकारा."""
     from elliott import data_policy as DP
-    for tf in ("W", "D"):
+    for tf in frames:
         f = frames.get(tf)
         if f is None or not len(f):
             continue
@@ -223,7 +225,7 @@ def run_case(case, a, deps, state):
         rec.update(status="NO_DATA", why=f"decision bar {decision} not in the data")
         return rec
     if holdout_gap(fr):
-        rec.update(status="REFUSED_HOLDOUT_GAP", why="Weekly / Daily frames span the sealed holdout gap — pass only post-holdout data")
+        rec.update(status="REFUSED_HOLDOUT_GAP", why="frames span the sealed holdout gap — pass only data on one side of it")
         return rec
     short = short_history(fr)
     if short:

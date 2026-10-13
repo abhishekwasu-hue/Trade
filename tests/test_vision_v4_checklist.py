@@ -400,3 +400,69 @@ def test_config_v4_cap_and_unset_for_rollback(tmp_path):
         stored = json.loads(c.execute("SELECT json FROM vision_settings WHERE bot='_global'").fetchone()[0])
     assert "vision_v4_audit" not in stored and "vision_v4_daily_cap" not in stored and stored["vision_daily_budget_usd"] == 1.5
     assert VC.history("_global", p)[-1]["by"] == "t"
+
+
+# ----------------------------------------------------------------------------------------------------------- re-review #318 (2)
+@pytest.mark.parametrize("probe", ["Market 25,555", "Decline 25,555", "Mayday 25,555", "leg 25,555", "no 25,555", "n 25,555",
+                                   "Octave 25,555", "item 25,555"])
+def test_words_before_invented_prices_do_not_hide_them(probe):
+    anchors = [22610.5, 22640.0, 22700.0]
+    assert CK.unknown_prices([probe], anchors, anchors=anchors) == ["25,555"]
+
+
+def test_known_check_runs_before_above_range_rejection():
+    anchors = [22610.5, 22640.0, 22700.0]
+    known = CK.facts_prices(anchors, "Bot tags: oi=180000, OI 1,20,000 at the strike, avg 1,30,000")
+    ev = ["OI 1,20,000 on the call side", "avg 1,30,000", "oi 180000 per bot tag"]
+    assert CK.unknown_prices(ev, known, anchors=anchors) == []
+    assert CK.unknown_prices(["OI 1,25,000"], known, anchors=anchors) == ["1,25,000"]
+
+
+def test_monthly_reserve_counts_today_on_a_weekday():
+    fri = pd.Timestamp("2026-10-30 11:00")                                  # महिन्याचा शेवटचा weekday (fixture तारीख)
+    assert V4.weekdays_left(fri) == 0
+    assert V4.budget_ok(0.05, G0, {"signal": (0.0, 59.74, 0)}, fri, sub_cap=2.0)[0]          # 59.79 ≤ 60 − 0.20 × 1
+    ok, why = V4.budget_ok(0.05, G0, {"signal": (0.0, 59.76, 0)}, fri, sub_cap=2.0)
+    assert not ok and "monthly" in why
+    sat = pd.Timestamp("2026-10-31 11:00")
+    assert V4.budget_ok(0.05, G0, {"signal": (0.0, 59.90, 0)}, sat, sub_cap=2.0)[0]          # शनिवार: आजचा राखीव नाही
+
+
+def test_budget_reason_text_when_reserve_exceeds_daily():
+    ok, why = V4.budget_ok(0.05, {**G0, "vision_daily_budget_usd": 0.10, "signals_daily_reserve_usd": 0.20}, {}, TODAY, sub_cap=0.3)
+    assert not ok and "$-" not in why and "reserve $0.20" in why
+
+
+def test_v4_pass_cap_and_skip_when_new_rows_queued(tmp_path, monkeypatch):
+    import datetime as dt
+    from vision import worker as W
+    p = str(tmp_path / "v.db")
+    monkeypatch.setattr(VS, "now_ist", lambda: dt.datetime(2026, 10, 12, 12, 0))
+    calls = []
+    monkeypatch.setattr(W, "maybe_v4", lambda row, *a, **k: calls.append(row["signal_id"]))
+    rows = [_row(p) for _ in range(3)]
+    for r in rows:
+        VS.finish(r["signal_id"], "DONE", p)
+    jobs = [{"row": r, "png": b"p", "meta": {}, "g": {}, "model": "m", "path": p} for r in rows]
+    W.run_v4_jobs(jobs, path=p, limit=2, check_queue=True)
+    assert calls == [rows[0]["signal_id"], rows[1]["signal_id"]]           # कमाल 2; तिसरा सोडला (audit-only) + नोंद
+    with VS.connect(p) as c:
+        ev = [tuple(x) for x in c.execute("SELECT signal_id, event FROM vision_events WHERE event='v4_dropped'")]
+    assert ev == [(rows[2]["signal_id"], "v4_dropped")]
+    calls.clear()
+    _row(p)                                                                 # नवा QUEUED row (bar बंद) ⇒ V4 पास वगळतो
+    assert W.ready_queued(p) == 1
+    W.run_v4_jobs(jobs[:1], path=p, limit=2, check_queue=True)
+    assert calls == []
+
+
+def test_v4_budget_warning_not_sent_for_shadow_rows(tmp_path, monkeypatch):
+    from vision import worker as W
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
+    p = str(tmp_path / "v.db")
+    g = {**VC.load("_global", p), "vision_v4_audit": "v4", "vision_v4_daily_cap": 0.0}
+    texts = []
+    r = W.maybe_v4(_row(p, "shadow"), b"png", {}, g, "m", path=p, send_text=texts.append, client_factory=lambda t: object())
+    assert r["status"] == "skipped" and texts == []
+    W.maybe_v4(_row(p, "notify"), b"png", {}, g, "m", path=p, send_text=texts.append, client_factory=lambda t: object())
+    assert len(texts) == 1 and "paused for today" in texts[0]

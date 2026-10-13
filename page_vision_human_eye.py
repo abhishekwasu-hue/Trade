@@ -164,7 +164,8 @@ def render_settings():
         k1, k3, k2 = st.columns([5, 2, 2])                              # R0: V4 Method Pack checklist (audit-only), default off
         v4 = k1.selectbox("👁 vision_v4_audit — V2 नंतर Method Pack checklist (audit-only; order वर परिणाम नाही; खर्च याच budget मध्ये)",
                           ["off", "v4"], index=["off", "v4"].index(g.get("vision_v4_audit") or "off"), key="v_v4_audit")
-        v4cap = k3.number_input("V4 दैनिक cap ($)", value=float(g.get("vision_v4_daily_cap", 0.30)), step=0.05, key="v_v4_cap",
+        v4cap = k3.number_input("V4 दैनिक cap ($)", min_value=0.0, max_value=2.0, value=float(g.get("vision_v4_daily_cap", 0.30)),
+                                step=0.05, key="v_v4_cap",
                                 help="V4 ची स्वतःची दैनिक उप-मर्यादा; V4 कधीच signals राखीव भाग वापरत नाही")
         if k2.button("V4 Save", key="v_v4_audit_save"):
             try:

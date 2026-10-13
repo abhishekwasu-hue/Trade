@@ -82,18 +82,22 @@ def weekdays_left(today):
 def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None):
     """Signals ला प्राधान्य (run_visual_audit.audit_allowed सारखाच): V4 फक्त जर
       task आज + est ≤ min(sub_cap, दैनिक − signals राखीव) · आजचा एकूण + est ≤ दैनिक − signals राखीव ·
-      महिना + est ≤ मासिक − राखीव × उरलेले weekdays.
+      महिना + est ≤ मासिक − राखीव × (उरलेले weekdays + आज weekday असेल तर 1).
     ⇒ V4 कधीच signals चा राखीव भाग खात नाही (नंतरचा V2 audit "budget संपलं" होत नाही). by_task = store.spent_by_task(). रिटर्न (ok, कारण)."""
     daily, reserve = float(g["vision_daily_budget_usd"]), float(g.get("signals_daily_reserve_usd", 0.0))
-    allow = daily - reserve
+    allow = max(0.0, daily - reserve)
     task_day = (by_task.get(task) or (0.0, 0.0, 0))[0]
     day = sum(v[0] for v in by_task.values())
     month = sum(v[1] for v in by_task.values())
     if sub_cap is not None and task_day + est > min(float(sub_cap), allow) + 1e-12:
-        return False, f"V4 daily cap: today ${task_day:.3f} + est ${est:.3f} > ${min(float(sub_cap), allow):.2f}"
+        return False, (f"V4 daily cap: today ${task_day:.3f} + est ${est:.3f} > ${min(float(sub_cap), allow):.2f} "
+                       f"(cap ${float(sub_cap):.2f}, daily ${daily:.2f} − signals reserve ${reserve:.2f})")
     if day + est > allow + 1e-12:
-        return False, f"Vision daily budget: today ${day:.3f} + est ${est:.3f} > ${daily:.2f} − signals reserve ${reserve:.2f}"
-    m_allow = float(g["vision_monthly_budget_usd"]) - reserve * weekdays_left(today)
+        return False, (f"Vision daily budget: today ${day:.3f} + est ${est:.3f} > ${allow:.2f} (daily ${daily:.2f} − signals reserve "
+                       f"${reserve:.2f})")
+    import pandas as pd
+    rest = weekdays_left(today) + (1 if pd.Timestamp(today).weekday() < 5 else 0)   # V4 दिवसा चालतो ⇒ आजचा signals राखीव सुद्धा
+    m_allow = float(g["vision_monthly_budget_usd"]) - reserve * rest
     if month + est > m_allow + 1e-12:
         return False, f"Vision monthly budget: ${month:.2f} + est ${est:.3f} > ${m_allow:.2f}"
     return True, ""

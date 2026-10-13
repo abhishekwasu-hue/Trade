@@ -171,3 +171,20 @@ def test_load_data_refuses_holdout_parquet_and_filters_rows(tmp_path):
     df.to_csv(ok, index=False)
     got = G.load_data([str(ok)])
     assert list(got["timestamp"].dt.year) == [2026]                          # holdout row कधीच परत नाही
+
+
+def test_load_data_converts_tz_aware_parquet_to_ist_before_policy(tmp_path):
+    ts = pd.to_datetime(["2025-01-02 09:15", "2026-09-29 09:15", "2026-09-29 09:16"]).tz_localize("Asia/Kolkata")
+    df = pd.DataFrame({"timestamp": ts, "open": [1.0, 2.0, 3.0], "high": [1.0, 2.0, 3.0], "low": [1.0, 2.0, 3.0], "close": [1.0, 2.0, 3.0]})
+    f = tmp_path / "nifty_tz.parquet"
+    df.to_parquet(f)
+    got = G.load_data([str(f)])
+    assert got["timestamp"].dt.tz is None
+    assert [str(x) for x in got["timestamp"]] == ["2026-09-29 09:15:00", "2026-09-29 09:16:00"]
+
+
+def test_holdout_gap_checked_on_every_frame():
+    fr, _ = _frames(DEC)
+    assert not G.holdout_gap(fr)
+    fr["15M"] = pd.concat([fr["15M"].iloc[:1].assign(timestamp=pd.Timestamp("2024-03-28 10:00")), fr["15M"]], ignore_index=True)
+    assert G.holdout_gap(fr)
