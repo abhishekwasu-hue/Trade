@@ -154,7 +154,15 @@ in private storage (`trade-data/reports/trendline_audit/2026-10-13/`). 20 sessio
 | BANKNIFTY | 1H | 33 | 0 | 350 | 145 |
 | **All** | | **153** | **8 (5%)** | **1,485** | **710 (48%)** |
 
-Main causes: decision3 lines need only 2 touches (K6: ≥ 3); the dashboard "Trendline Gate" (`signals.detect_trendline`) is a
+**Re-run with Abhi's 2-touch rule (report §8; charts in `…/2026-10-13/rerun_2touch/`):** valid lines **24 / 153 (16%)**, of
+which 8 established (≥ 3 touches); valid areas **310 / 1,485 (21%)** — single prices now fail as "not a band" (all 279 SR V3 and 84
+Vision levels), and zones2 keeps 337 broken zones. Live-engine lines mostly pass (18 / 32); the dashboard Trendline Gate still fails
+(3 / 86, least-squares fit). **Golden line found:** the 30 Sep → 6 Oct NIFTY 15M spot line is valid from the 6 Oct close (7 Oct high =
+3rd touch); projected to 22,654 at 12 Oct 09:15 against a bar high of 22,651.10 (FUT: line 22,709.6, high 22,720, close back below) —
+the opening spike hit the projected touch. 44 lines fail only on "a touch in the last 2 sessions", which conflicts with a line that
+waits for its 3rd touch ⇒ open question **TA5** for Abhi.
+
+First run (3-touch minimum): Main causes: decision3 lines need only 2 touches (K6: ≥ 3); the dashboard "Trendline Gate" (`signals.detect_trendline`) is a
 least-squares fit, not wick-anchored (79 / 86 fail); trendlines2 still draws weak / provisional lines; no per-timeframe cap (up to 5
 lines on one chart). Areas: SR V3 and the Vision chart draw single prices, not zones, and keep broken levels (SR V3 has no written
 validity rules); some decision3 1H bands are 4–5 MR wide (TL2); zones2 shows 7–17 zones per 15M chart.
