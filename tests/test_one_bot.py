@@ -208,6 +208,7 @@ def test_schedule_installer_idempotent_and_revert_exact(tmp_path):
     act = [x for x in once.splitlines() if x and not x.startswith("#")]
     assert sum("scripts/engine_signal_run.py --engine decision3" in x and "--dry-run" not in x for x in act) == 1
     assert "1,16,31,46 4-9 * * 1-5" in once and "--symbols NIFTY,BANKNIFTY,SENSEX" in once
+    assert sum(x.startswith("30 3 * * 1-5 ") and "scripts/level_gate_preopen.py" in x for x in act) == 1   # 09:00 IST pre-open, एकदाच
     assert "#one-bot-off# 1,16,31,46 3-10" in once and "#one-bot-off# */5 4-9 * * 1-5 cd /root/Trade && python3 oi_signal" in once
     for live in ("credit_spread_auto_trader.py --mode LIVE", "oi_greeks_vix_strategy.py --mode=LIVE", "--mode 'LIVE'"):
         assert any(live in x for x in act), live                      # LIVE ओळी (सगळे प्रकार) untouched
@@ -249,6 +250,8 @@ def test_deploy_script_syntax_and_live_readonly():
     p = os.path.join(ROOT, "scripts", "deploy_one_bot.sh")
     subprocess.run(["bash", "-n", p], check=True)
     s = open(p, encoding="utf-8").read()
+    body = s[s.index('echo "== 1/7'):]
+    assert body.index("bash scripts/install_engine_schedule.sh\n") < body.index("python3 scripts/set_one_bot_mode.py; RC")   # status तपासणीला engine cron आधी हवा
     assert "list-units --type=service" in s and ". ./.env" in s and "--revert" in s and '"$RC" = 3' in s and "LIVE" not in s.replace("LIVE ला हात नाही", "").replace(
         "LIVE combos", "").replace("LIVE cron", "").replace("LIVE setting", "")
 
