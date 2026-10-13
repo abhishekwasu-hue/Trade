@@ -906,3 +906,43 @@ def test_fut_children_use_the_fut_bar_step_and_the_legs2_session_anchor():
     assert (need1, step1) == (15, pd.Timedelta(minutes=1)) and int(kids1[day + LVOL.OPEN]) == 14   # 1M FUT ⇒ 15 children, not 3
     kids15, need15, _ = E3.fut_children([day + LVOL.OPEN + pd.Timedelta(minutes=15 * j) for j in range(4)])
     assert need15 == 1 and (kids15 == 1).all()
+
+
+def _bars_from_highs(hi):
+    from facts import validity as FV
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    return FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+
+
+def test_band_flip_facts_flipped_then_broken_then_reclaimed_stays_flipped_not_dead():
+    """Re-review: flip (30) → break down (36, far swing 92.8 never reached) → back above the band (up break 42 = reclaim) → rally past
+    104 ⇒ the engine keeps FLIPPED demand + a sweep (Levels._step_far_swing reclaim) — never DEAD, never a second flip."""
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]}
+    mid = LV.band_flip_facts(B, 41, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["dead_at"] is None
+    assert [w["bar"] for w in f["sweeps"]] == [42]
+    lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+    assert "flipped" in lab and "swept" in lab and "dead" not in lab
+
+
+def test_band_flip_facts_never_flipped_break_then_reclaim_is_active_with_a_sweep():
+    """Re-review: a support band 95–98 never flipped, broken down (37), the far swing (93 @ 39, first confirmed after the break) never
+    passed, price back above the band (up break 44 = reclaim) and on to new highs ⇒ ACTIVE + sweep (role kept) — not FLIPPED."""
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    mid = LV.band_flip_facts(B, 43, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 39
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.ACTIVE and f["flipped_at"] is None and [w["bar"] for w in f["sweeps"]] == [44]
+    lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+    assert "swept" in lab and "flipped" not in lab

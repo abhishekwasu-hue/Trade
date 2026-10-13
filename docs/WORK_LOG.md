@@ -2582,3 +2582,6 @@ legs owner वि. reader2 gate).
 - 12 Oct golden xfail फक्त Z-1p कारणावर (no handover, counter weakening NA); दुसरं कारण ⇒ fail.
 - FUT 15M पूर्णता: children = 15M ÷ FUT bar step (data वरून), bins legs2.volume चे OPEN / BAR (वर्तन बदल नाही).
 - OPEN_QUESTIONS: जुन्या Z-1h / Z-1m / B1-a ओळी struck (नव्या ओळीकडे बोट); नवे Z-1q, Z-1r.
+- `band_flip_facts` reclaim (re-review 2): BROKEN असताना far swing आधी उलट दिशेचा break = reclaim ⇒ sweep, आधीची अवस्था / भूमिका तशीच
+  (ACTIVE किंवा FLIPPED) — engine च्या `_step_far_swing` सारखं; फक्त role विरुद्धचा break नवा BROKEN. Chart label "swept".
+  OPEN_QUESTIONS जुनी Z-1j (12 Oct "data problem") ओळ struck ⇒ Z-1p.
