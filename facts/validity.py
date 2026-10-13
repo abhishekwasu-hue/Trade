@@ -71,7 +71,8 @@ REGISTER = {
     "magnet_crossings / magnet_invalidates": "K5 magnet: ≥ 4 close-crossings in the day ⇒ no-trade level",
     "confluence_mr": "K6.4 horizontal and sloping meet within ≤ 0.5 MR ⇒ 'confluence' (K4)",
     "projection_bars": "TA3: projected 3rd-touch zone at future bars (one 15M session)",
-    "lookback_sessions": "design §5 inputs: 15M ≈ 8 trading days, 1H ≈ 15 trading days",
+    "lookback_sessions": "design §5 inputs: 15M ≈ 8 trading days, 1H ≈ 15, 5M = current + previous session, Daily ≈ 6 months "
+                         "(TF_LOOKBACK_SESSIONS / lookback(tf))",
     "max_lines": "TA1: at most 2 valid lines per timeframe",
     "max_bands_per_side": "TA4: at most 3 bands above and 3 below price per timeframe",
 }
@@ -125,6 +126,22 @@ def session_start(B, t, sessions):
     return int(uniq.index[len(uniq) - sessions])
 
 
+def bar_end(B, t):
+    """End of bar t = its start + the frame's usual bar length (the most common gap between consecutive bars)."""
+    d = B.ts.diff().dropna()
+    d = d[d > pd.Timedelta(0)]
+    step = d.mode().iloc[0] if len(d) else pd.Timedelta(microseconds=1)
+    return B.ts.iloc[t] + step
+
+
+TF_LOOKBACK_SESSIONS = {"5M": 2, "15M": 8, "1H": 15, "D": 126}       # design §5 inputs (5M current + previous session; Daily ≈ 6 months)
+
+
+def lookback(tf, s=None):
+    """Settings with the design §5 lookback for a timeframe label ("5M", "15M", "1H", "D")."""
+    return load({**(s or {}), "lookback_sessions": TF_LOOKBACK_SESSIONS.get(tf, DEFAULTS["lookback_sessions"])})
+
+
 def pivots(B, t, kind, s=None, start=0):
     """k-fractal pivots confirmed by t (pivot bar + k ≤ t): bars i in [start, t − k] whose high (H) / low (L) is the extreme of i ± k."""
     s = s or DEFAULTS
@@ -139,12 +156,14 @@ def pivots(B, t, kind, s=None, start=0):
 
 
 def _real_break(B, t, i, level, up, mr, s):
-    """K5 real break at bar i through `level` (up ⇒ close above level + buf). Uses bars ≤ t only."""
+    """K5 real break at bar i through `level` (up ⇒ close above level + buf). `level` = a price (horizontal band edge) or a function
+    bar ⇒ price (a sloped line: the acceptance close i + 1 is compared with the line's value at i + 1). Uses bars ≤ t only."""
+    lv = level if callable(level) else (lambda _i: level)
     buf = float(s["break_buf_mr"]) * mr
     sg = 1 if up else -1
-    if sg * (B.C[i] - level) <= buf:
+    if sg * (B.C[i] - lv(i)) <= buf:
         return False
-    if i + 1 <= t and sg * (B.C[i + 1] - level) > buf:
+    if i + 1 <= t and sg * (B.C[i + 1] - lv(i + 1)) > buf:
         return True                                                         # (b) acceptance
     rng = B.H[i] - B.L[i]
     pos = (B.C[i] - B.L[i]) / rng if rng > 0 else 0.5
@@ -204,7 +223,7 @@ def check_line(df, t, a1, a2, side, s=None):
         reasons.append("against_trend_direction")
     brk = None
     for i in range(b2 + 1, t + 1):
-        if _real_break(B, t, i, v(i), sg > 0, mr, s):
+        if _real_break(B, t, i, v, sg > 0, mr, s):
             brk = i
             break
     if brk is not None:
@@ -264,8 +283,8 @@ def candidate_lines(df, t, side, s=None, start=None):
             if j - i < gap:
                 continue
             m = (y[j] - y[i]) / (j - i)
-            if any(abs(y[p] - (y[i] + m * (p - i))) <= tol and p - i >= gap and j - p >= 1 for p in piv if i < p < j):
-                continue                                                    # an earlier 2nd touch exists ⇒ same line, drawn from it
+            if any(abs(y[p] - (y[i] + m * (p - i))) <= tol and p - i >= gap and j - p >= gap for p in anchors if i < p < j):
+                continue                                                    # an earlier spaced 2nd touch exists ⇒ same line, drawn from it
             out.append(check_line(B, t, (i, y[i]), (j, y[j]), side, s))
     return out
 
@@ -312,11 +331,14 @@ def select_lines(lines, s=None, debug=False):
 
 
 # ------------------------------------------------------------------------------------------------ BAND (K4 + K5)
-def check_band(df, t, lo, hi, s=None, start=0, magnet_df=None):
-    """The shared K4 band check for [lo, hi] at decision bar t (bars [start, t] only). magnet_df: optional finer frame (e.g. 15M) whose
-    closes in t's session are used for the K5 magnet count (default: this frame). Returns facts (touches, breaks, role, flags, reasons)."""
+def check_band(df, t, lo, hi, s=None, start=None, magnet_df=None):
+    """The shared K4 band check for [lo, hi] at decision bar t (bars [start, t] only; start None ⇒ the same `lookback_sessions` window
+    as the finders). magnet_df: optional finer frame (e.g. 15M) whose closes in t's session, up to the end of bar t, are used for the K5
+    magnet count (default: this frame); later rows are ignored. Returns facts (touches, breaks, role, flags, reasons)."""
     s = load(s)
     B = bars_of(df)
+    if start is None:
+        start = session_start(B, t, int(s["lookback_sessions"]))
     lo, hi = float(lo), float(hi)
     mr = mr_at(B, t, s)
     tol = float(s["band_tol_mr"]) * mr
@@ -361,10 +383,8 @@ def check_band(df, t, lo, hi, s=None, start=0, magnet_df=None):
     M = bars_of(magnet_df) if magnet_df is not None else B
     if magnet_df is None:
         tm = t
-    elif t + 1 < len(B):                                                    # finer bars inside bar t (before the next bar starts)
-        tm = int(np.searchsorted(M.ts.to_numpy(), B.ts.iloc[t + 1].to_datetime64(), side="left")) - 1
-    else:                                                                   # caller passes the finer bars only up to the decision
-        tm = len(M) - 1
+    else:                                                                   # finer bars that end by the end of bar t (no look-ahead)
+        tm = int(np.searchsorted(M.ts.to_numpy(), bar_end(B, t).to_datetime64(), side="left")) - 1
     tm = max(tm, 0)
     sess = np.flatnonzero((M.day == M.day.iloc[tm]).to_numpy())
     sess = sess[sess <= tm]

@@ -52,8 +52,11 @@ def test_v3_chart_lines_differ_by_chart_tf_and_old_default_kept():
     assert any(" D" in l["title"] or "+D" in l["title"] or "W" in l["title"] for l in ld)
     old, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, debug=True)        # chart TF नाही ⇒ जुनं वर्तन
     assert note is None
-    shown, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="5minute")
-    assert (shown and note is None and not any("invalid" in l["title"] for l in shown)) or (not shown and "band" in note)
+    shown, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="5minute")     # these candles: no 5M level passes
+    assert shown == [] and "band" in note
+    shown, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="15minute")    # 15M: one valid band + the latest broken
+    assert note is None and len(shown) == 4 and not any("invalid" in l["title"] for l in shown)
+    assert sum(1 for l in shown if l["title"].endswith("broken")) == 1 and sum(1 for l in shown if " T" in l["title"]) == 1
 
 
 def test_band_chart_lines_only_valid_bands_and_single_price_dropped():

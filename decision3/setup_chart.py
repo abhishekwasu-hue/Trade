@@ -356,7 +356,8 @@ def _session_ticks(ax, ts, n, hours=(11, 13)):
 def k_line_facts(D, r, t):
     """TA1 / TA3 (Abhi, design §10), drawing layer only: the V22 K line (r["trendline"], unchanged) through the shared K6 line check
     (facts/validity.py) on the 15M bars up to the setup bar t. The K line's real break is its trigger (K6.5), so "broken" does not hide
-    it; any other K6 reason does (debug only). Label: touch count, and the projected next-touch zone while it is intact."""
+    it; any other K6 reason does (debug only). Label: touch count; the break state is V22's own (r["trendline"]["broken"], the one the
+    decision used), with the K5 real break added only when it differs; the projected next-touch zone while both say intact."""
     from facts import validity as FV
     tl = r["trendline"]
     (b1, y1), (b2, y2) = tl["p1"], tl["p2"]
@@ -364,11 +365,20 @@ def k_line_facts(D, r, t):
     f = FV.check_line(D.m15.iloc[:t + 1].reset_index(drop=True), t, (int(b1), float(y1)), (int(b2), float(y2)), side)
     quality = [x for x in f["reasons"] if x != "broken"]
     lab = f"K line ({f['touch_count']} touches" + (", established" if f["established"] else "")
-    if f["broken"]:
-        lab += f", broken {pd.Timestamp(f['break']['ts']):%H:%M})"
+    v22_broken = bool(tl.get("broken"))
+    bb = tl.get("break_bar")
+    if v22_broken:
+        when = f" {pd.Timestamp(D.m15['timestamp'].iloc[int(bb)]):%H:%M}" if bb is not None and 0 <= int(bb) <= t else ""
+        lab += f", broken{when}"
+    else:
+        lab += ", intact"
+    if f["broken"] != v22_broken:                                           # K5 real break (0.25 MR + acceptance) differs
+        lab += f"; K5 real break {pd.Timestamp(f['break']['ts']):%H:%M}" if f["broken"] else "; no K5 real break"
+    if v22_broken or f["broken"]:
+        lab += ")"
     else:
         z = FV.projected_zone(f, t, bars=1)["next"]
-        lab += f", intact; touch {f['touch_count'] + 1} zone {z['lo']:,.0f}-{z['hi']:,.0f})"
+        lab += f"; touch {f['touch_count'] + 1} zone {z['lo']:,.0f}-{z['hi']:,.0f})"
     if quality:
         lab += " [fails K6: " + ", ".join(quality) + "]"
     return {"facts": f, "drawable": not quality, "label": lab}

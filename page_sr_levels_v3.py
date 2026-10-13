@@ -142,7 +142,7 @@ def render():
                                         mintick=0.05 if symbol in ("NIFTY", "BANKNIFTY") else None)
         html = build_lightweight_chart_html(
             chart_df, symbol=symbol, timeframe_label=chart_tf, height=600,
-            trade_lines=band_chart_lines(shown, chart_df, price), sr_levels=old_sr,           # TA4: फक्त band rule pass होणारे पट्टे
+            trade_lines=band_chart_lines(shown, chart_df, price, tf=chart_tf), sr_levels=old_sr,           # TA4: फक्त band rule pass होणारे पट्टे
         )
         st.components.v1.html(html, height=650, scrolling=False)
         st.caption(

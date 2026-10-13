@@ -326,6 +326,44 @@ def test_review_charts_default_at_most_six_level_bands(monkeypatch):
     assert len(spans) == 10
 
 
+def test_review_charts_real_band_check_no_stub(monkeypatch):
+    """Review 🟡7: h1_png with the real shared band check (no stub) — every drawn band is one band_view picked, each non-active one
+    passes the check (or is the latest broken one), ≤ 3 per side of price, and a valid active level outside the 3 + 3 view is not
+    labelled as failing."""
+    import matplotlib.axes
+    from decision3 import charts as CH
+    from decision3 import engine as E3
+    from decision3 import levels as LVM
+    from facts import validity as FV
+    V = E3.V22(_abc_m15(), s=NO_MATURE)
+    rows = V.run()
+    r = next(x for x in rows if x["decision"] == "setup")
+    t = r["bar"]
+    lv = V.levels
+    act = {x["id"] for x in lv.active(t, r["daily_trend"], None)}
+    shown = list(lv.snapshot(t))
+    view = CH.band_view(lv, t, shown, act)
+    j = int(lv.h1_of[t])
+    fr = lv.h1.iloc[:j + 1].reset_index(drop=True)
+    fr.loc[len(fr) - 1, ["open", "high", "low", "close"]] = list(lv._h1_upto(j, t))
+    real = {x["id"]: f for x, f in LVM.check_bands(fr, len(fr) - 1, shown, FV.lookback("1H"), magnet_df=lv.m15.iloc[:t + 1])}
+    c = float(fr["close"].iloc[-1])
+    for x, f, style in view:
+        assert real[x["id"]]["valid"] == f["valid"] and real[x["id"]]["reasons"] == f["reasons"]
+        assert style in ("valid", "broken", "active", "decision")
+        if style == "active":
+            assert f["valid"] and x["id"] in act
+        if style == "decision":
+            assert not f["valid"] and f["reasons"] and x["id"] in act
+    picked = [f for _, f, st in view if st in ("valid", "broken")]
+    assert sum(1 for f in picked if f["valid"] and f["lo"] > c) <= 3 and sum(1 for f in picked if f["valid"] and f["hi"] < c) <= 3
+    spans = []
+    orig = matplotlib.axes.Axes.axhspan
+    monkeypatch.setattr(matplotlib.axes.Axes, "axhspan", lambda self, *a, **k: spans.append(a) or orig(self, *a, **k))
+    CH.h1_png(lv, t, r["daily_trend"], "NIFTY", max_sigma=1e9)
+    assert len(spans) == len(view)
+
+
 def test_mature_cap_in_pipeline():
     """Abhi (12 Oct, owner नियम — जुना Q15 (5) "mature ⇒ कमाल weak" बदलला): maturity = पुरावा फक्त. Trend रचना अखंड (protected अखंड,
     उलट impulse नाही) ⇒ mature setup अडवत नाही; grade फक्त एक पायरी खाली (A ⇒ B; B तसाच). रचना अखंड नाही (same-degree correction) ⇒

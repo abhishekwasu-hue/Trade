@@ -2334,7 +2334,7 @@ location, flip नंतर नव्या बाजूने, "confluence" lab
   `check_bands`, `band_label`; `Levels` बदलला नाही).
 - Renderers (drawing layer): `decision3/charts.h1_png` (level bands shared check ने, 3 / 3, active level नेहमी + कारण), `decision3/setup_chart`
   (K रेघ फक्त K6 pass झाली तर, touch count + पुढचा touch zone), `trendlines2/charts` + `zones2/charts` (trendline_check / zone_check),
-  `vision/chart` (single-price majors ऐवजी 15m bands; ctx / signal text बदलले नाही), `sr_v3_chart.v3_chart_lines` + `page_sr_levels_v3`
+  `vision/chart` (setting `vision_chart_bands`, default OFF ⇒ image तशीच; ON ⇒ majors ऐवजी 15m bands + signal text legend), `sr_v3_chart.v3_chart_lines` + `page_sr_levels_v3`
   (V3 levels band म्हणून, दोन कडा). सगळ्यांना `debug` = invalid सुद्धा, कारणासह.
 - Frozen (§4) ⇒ हात नाही: `mtf/charts.py`, opportunity_engine visual audit, chart_reader grading, vision_led. Dashboard "Trendline Gate"
   (`signals.detect_trendline`) = gate ⇒ बदल नाही (shared check: 86 पैकी 4 valid; OPEN_QUESTIONS R1a-12).
@@ -2349,4 +2349,11 @@ zone रुंद केला नाही). FUT ≈ 22,667 supply = 22,620–2
 **Tests:** नवे 23 (+5 private-data). बदललेले 2: `test_decision3_method::test_review_charts_default_at_most_six_level_bands` (C1 6 पट्टे ⇒
 TA4 3 / 3 valid), `test_sr_v3_chart_tf::test_v3_chart_lines_differ_by_chart_tf_and_old_default_kept` (TF तुलना debug view वर) + नवा band test.
 **Data:** CONTAMINATED + ILLUSTRATION (`purpose="annotation"`); NIFTY holdout लोड केला नाही; Upstox / paid API नाही.
-**उघडे:** OPEN_QUESTIONS R1a-1 … R1a-12; TA5 अजून उघडा (लावला नाही).
+**उघडे:** OPEN_QUESTIONS R1a-1 … R1a-13; TA5 अजून उघडा (लावला नाही).
+**Independent review (PR #319) fixes:** 🔴 Vision bands आता setting `vision_chart_bands` मागे (default OFF ⇒ approval image main सारखीच —
+figure JSON आणि PNG byte-for-byte तपासले; ON ⇒ supply नारिंगी / demand फिकट निळा, signal text मध्ये "Chart note" legend + किंमती; R1a-13);
+🔴 `candidate_lines`: anchor-2 आधीचा twin pivot (< 6 bars) रेघ मारत नाही (repro + support आरसा test). 🟡 zones2 1H / Daily figures
+स्वतःच्या TF bars वर (3 + 3 प्रत्येक TF, degree filter आधी); h1_png: valid पण 3 + 3 बाहेरचा active level वेगळा label; setup chart K रेघ
+V22 ची स्वतःची break स्थिती (वेगळी असेल तर K5 break सुद्धा); sloped रेघेवर acceptance close ची तुलना v(i + 1) शी; magnet closes bar t च्या
+शेवटापर्यंतच; `check_band` / `check_bands` चा default window = finder lookback (`lookback(tf)`: 5M 2, 15M 8, 1H 15, D 126 sessions);
+h1_png real check test (stub नाही), SR V3 default view test ठोस, bands truncation test. Audit re-run (`rerun_shared_review/`): counts तसेच.

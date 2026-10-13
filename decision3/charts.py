@@ -131,14 +131,16 @@ MAX_LEVEL_BANDS = 6                                                        # C1 
 def band_view(lv, t, shown, act, debug=False):
     """TA1 / TA4 (Abhi, design §10) — drawing layer only, the decision is unchanged: the shared band check (facts/validity.py via
     decision3.levels.check_bands) on each level band, on the 1H bars up to t (the running hour only up to t). Returns
-    [(level, facts, style)] with style "valid" / "broken" (the most recent broken one, dashed) / "decision" (the engine's active level
-    that fails the check — still drawn, labelled, because it is the level the decision used). ≤ 3 valid above and ≤ 3 below price.
+    [(level, facts, style)] with style "valid" / "broken" (the most recent broken one, dashed) / "active" (the engine's active level,
+    valid but outside the 3 + 3 view — still drawn) / "decision" (the engine's active level that fails the check — still drawn,
+    labelled with the reasons, because it is the level the decision used). ≤ 3 valid above and ≤ 3 below price. Band check window =
+    the 1H lookback (design §5, 15 sessions).
     debug=True: every level with its facts (style "debug")."""
     from facts import validity as FV
     j_end = int(lv.h1_of[t])
     fr = lv.h1.iloc[:j_end + 1].reset_index(drop=True)
     fr.loc[len(fr) - 1, ["open", "high", "low", "close"]] = list(lv._h1_upto(j_end, t))
-    checked = LV.check_bands(fr, len(fr) - 1, shown, magnet_df=lv.m15.iloc[:t + 1])
+    checked = LV.check_bands(fr, len(fr) - 1, shown, FV.lookback("1H"), magnet_df=lv.m15.iloc[:t + 1])
     if debug:
         return [(x, f, "debug") for x, f in checked]
     facts = [f for _, f in checked]
@@ -148,7 +150,7 @@ def band_view(lv, t, shown, act, debug=False):
         if id(f) in pick:
             out.append((x, f, "valid" if f["valid"] else "broken"))
         elif x["id"] in act:
-            out.append((x, f, "decision"))
+            out.append((x, f, "active" if f["valid"] else "decision"))
     return out
 
 
@@ -183,6 +185,7 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
                 f" [{'valid' if f['valid'] else ','.join(f['reasons'])}, T{f['touch_count']}]"
         else:
             st = {"valid": f"{f['touch_count']} touches" + (", established" if f["established"] else ""), "broken": "broken",
+                  "active": f"{f['touch_count']} touches, active level outside the 3 + 3 view",
                   "decision": "fails band check: " + ", ".join(f["reasons"])}[style]
             lab = f"{'▶ ' if x['id'] in act else ''}{x['role'].lower()} {x['lo']:,.0f}-{x['hi']:,.0f} ({st})"
         ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color="#868e96" if style == "broken" else col, va="center")

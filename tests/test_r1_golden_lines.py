@@ -245,9 +245,115 @@ def test_setup_chart_k_line_label_and_validity():
     r = {"level": {"role": "support"}, "trendline": {"p1": [10, float(df["high"].iloc[10])], "p2": [30, float(df["high"].iloc[30])]}}
     k = SC.k_line_facts(D, r, len(df) - 1)                                         # UP trade ⇒ K counter-move highs
     assert k["drawable"] and "2 touches" in k["label"] and "touch 3 zone" in k["label"]
+    r["trendline"]["broken"], r["trendline"]["break_bar"] = True, 44                # V22's own break state is what the chart shows
+    k = SC.k_line_facts(D, r, len(df) - 1)
+    assert k["drawable"] and ", broken " in k["label"] and "; no K5 real break" in k["label"] and "zone" not in k["label"]
+    r["trendline"]["broken"] = False
     r["trendline"]["p2"] = [12, float(df["high"].iloc[12])]
     k = SC.k_line_facts(D, r, len(df) - 1)
     assert not k["drawable"] and "fails K6" in k["label"]
+
+
+def test_vision_default_image_unchanged_and_bands_only_with_setting(monkeypatch):
+    """Review 🔴1: vision_chart_bands default OFF ⇒ build_figure gets bands=None (the main drawing: majors drawn, no bands), ctx has no
+    "bands" and chart_bands is never called; ON ⇒ bands drawn in non-L colours and the signal text carries the legend + prices."""
+    from tests import test_vision_v2 as TV
+    from vision import chart as VCH
+    from vision import config as VCF
+    from vision import signal_audit as SA
+    df = TV.bars()
+    got = {}
+    real = VCH.build_figure
+    monkeypatch.setattr(VCH, "build_figure", lambda *a, **k: got.update(bands=a[7] if len(a) > 7 else k.get("bands")) or real(*a, **k))
+    monkeypatch.setattr(VCH, "chart_bands", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called with setting OFF")))
+    cs = {**{k: VCF.BOT_DEFAULTS[k] for k in VCF.CTX_KEYS}, "events": {}}
+    assert VCF.BOT_DEFAULTS["vision_chart_bands"] is False
+    for s in (TV.sig(), TV.sig(ctx_settings=cs)):
+        png, meta = VCH.render(df, s)
+        assert meta["error"] is None and got["bands"] is None and "bands" not in meta["ctx"] and "bands_error" not in meta
+        assert "Chart note" not in SA.signal_text({**s, "ctx": meta["ctx"]})
+    monkeypatch.undo()
+    s = TV.sig(ctx_settings={**cs, "vision_chart_bands": True})
+    png, meta = VCH.render(df, s)
+    assert meta["error"] is None and isinstance(meta["ctx"].get("bands"), list)
+    txt = SA.signal_text({**s, "ctx": meta["ctx"]})
+    assert "Chart note" in txt and "M1 / M2 are NOT drawn" in txt
+    for b in meta["ctx"]["bands"]:
+        assert f"{b['lo']:,.2f} - {b['hi']:,.2f}" in txt
+    cols = {c for c, _ in VCH.BAND_COLOR.values()}
+    assert not cols & {"#26a69a", "#ef5350"}                                       # L green / red never used for bands
+
+
+def _highs_frame(highs, n=50, base=1050.0):
+    """Bars whose highs are given at {bar: high}; other bars sit at `base` (range 4, closes mid)."""
+    t = pd.date_range("2026-01-05 09:15", periods=n, freq="15min")
+    hi = np.full(n, base + 2.0)
+    for b, h in highs.items():
+        hi[b] = h
+    lo = np.minimum(hi - 4.0, base - 2.0)
+    c = (hi + lo) / 2 - 0.5
+    return pd.DataFrame({"timestamp": t, "open": c + 0.5, "high": hi, "low": lo, "close": c})
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_review_twin_pivot_before_anchor2_does_not_kill_the_line(mirror):
+    """Review 🔴2 repro: highs 10 = 1098, 30 = 1094, a twin pivot 27 = 1093.9 (< 6 bars before 30, on the line) ⇒ the 10 → 30 line is valid and found."""
+    df = _highs_frame({10: 1098.0, 27: 1093.9, 30: 1094.0, 9: 1080.0, 11: 1080.0, 26: 1080.0, 28: 1085.0, 29: 1086.0, 31: 1080.0})
+    side = V.RES
+    if mirror:                                                                     # supports: the same picture upside down
+        df = df.assign(high=2000 - df["low"], low=2000 - df["high"], open=2000 - df["open"], close=2000 - df["close"])
+        side = V.SUP
+    t = len(df) - 1
+    y = df["high" if side == V.RES else "low"]
+    ref = V.check_line(df, t, (10, float(y.iloc[10])), (30, float(y.iloc[30])), side)
+    assert ref["valid"], ref["reasons"]
+    found = [x for x in TT.find_lines(df, t) if x["valid"] and x["side"] == side]
+    assert any(x["anchor1"]["bar"] == 10 and x["anchor2"]["bar"] == 30 for x in found), [(x["anchor1"]["bar"], x["anchor2"]["bar"]) for x in found]
+
+
+def test_review_acceptance_on_a_sloped_line_uses_the_next_bar_value():
+    """Review 🟡4: the acceptance close (i + 1) is compared with the line at i + 1. Falling line v(i) = 100 − 0.8 i, MR = 2, buf = 0.5:
+    close 5 = v(5) + 0.6, close 6 = v(6) + 0.6 (above v(6) + buf, below v(5) + buf) ⇒ a real break at 5."""
+    n = 12
+    v = 100 - 0.8 * np.arange(n)
+    c = v - 3.0
+    c[5], c[6] = v[5] + 0.6, v[6] + 0.6
+    df = pd.DataFrame({"timestamp": pd.date_range("2026-01-05 09:15", periods=n, freq="15min"), "open": c, "high": c + 1, "low": c - 1,
+                       "close": c})
+    B = V.bars_of(df)
+    assert V.mr_at(B, n - 1) == 2.0
+    assert V._real_break(B, n - 1, 5, lambda i: 100 - 0.8 * i, True, 2.0, V.DEFAULTS)
+    assert not V._real_break(B, n - 1, 5, float(v[5]), True, 2.0, V.DEFAULTS)     # horizontal level at v(5): close 6 not beyond
+
+
+def test_review_band_magnet_ignores_rows_after_t():
+    """Review 🟡5: magnet closes are clipped to the end of bar t even if the caller passes later rows."""
+    df = _frame(_zigzag(BAND_PTS))
+    t = 25
+    lo, hi = 1050.0, 1060.0
+    fut = df.copy()
+    fut.loc[t + 1:, "close"] = np.where(np.arange(len(fut) - t - 1) % 2, 1040.0, 1070.0)   # many crossings after t
+    a = V.check_band(df.iloc[:t + 1], t, lo, hi, magnet_df=df.iloc[:t + 1])
+    b = V.check_band(df.iloc[:t + 1], t, lo, hi, magnet_df=fut)
+    assert a["crossings_session"] == b["crossings_session"] and a["reasons"] == b["reasons"]
+
+
+def test_review_bands_no_lookahead_truncation():
+    pts = BAND_PTS[:-1] + [(33, 1068), (38, 1110), (46, 1082), (54, 1115), (62, 1082), (68, 1110)]
+    df = _frame(_zigzag(pts))
+    for t in (35, 49, 60, 66):
+        full = LV.find_bands(df, t)
+        cut = LV.find_bands(df.iloc[:t + 1], t)
+        key = [(x["lo"], x["hi"], x["valid"], x["broken"], x["touch_count"], x["role"]) for x in full]
+        assert key == [(x["lo"], x["hi"], x["valid"], x["broken"], x["touch_count"], x["role"]) for x in cut], t
+
+
+def test_review_check_band_default_window_is_the_finder_lookback():
+    df = _frame(_zigzag(BAND_PTS))
+    t = len(df) - 1
+    lo, hi = V.band_from_reactions(V.bars_of(df), 10, 30, "H")
+    assert V.check_band(df, t, lo, hi) == V.check_band(df, t, lo, hi, start=V.session_start(V.bars_of(df), t, 8))
+    assert V.lookback("1H")["lookback_sessions"] == 15 and V.lookback("D")["lookback_sessions"] == 126
 
 
 # ================================================================================================ 2. real data (private; skip in CI)

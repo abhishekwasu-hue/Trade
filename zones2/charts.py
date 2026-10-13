@@ -20,31 +20,33 @@ def label(z):
     return f"D{z['degree'] or '-'} {f or '-'} {'★' * z['stars']} ts{z['touch_score']:+d}{st}"
 
 
-def shown_zones(zones, chk, debug=False):
+def shown_zones(zones, chk, debug=False, tf="15M", magnet_df=None):
     """TA1 / TA4 (Abhi, design §10), drawing layer only: each zone (bottom–top) through the shared band check (facts/validity.py via
-    decision3.levels.check_bands) on the 15M bars up to t (`chk`, the engine's own frame). Returns [(zone, facts, style)]: ≤ 3 valid
-    above and ≤ 3 below the close at t, plus the most recently broken one (style "broken", dashed); debug ⇒ every zone (style "debug")."""
+    decision3.levels.check_bands) on the bars of the figure's own timeframe up to t (`chk`; MR, touches and breaks on that TF, lookback
+    per design §5; `magnet_df` = the 15M bars for the K5 magnet count). Returns [(zone, facts, style)]: ≤ 3 valid above and ≤ 3 below
+    the close at t, plus the most recently broken one (style "broken", dashed); debug ⇒ every zone (style "debug")."""
     from decision3 import levels as LV
     from facts import validity as FV
-    ch = LV.check_bands(chk, len(chk) - 1, [{"lo": z["bottom"], "hi": z["top"]} for z in zones])
+    if chk is None or len(chk) < 2 or not zones:
+        return [] if not debug else [(z, None, "debug") for z in zones]
+    chk = chk.reset_index(drop=True)
+    ch = LV.check_bands(chk, len(chk) - 1, [{"lo": z["bottom"], "hi": z["top"]} for z in zones], FV.lookback(tf), magnet_df=magnet_df)
     if debug:
         return [(z, f, "debug") for z, (_, f) in zip(zones, ch)]
     pick = {id(f) for f in FV.select_bands([f for _, f in ch], float(chk["close"].iloc[-1]))}
     return [(z, f, "valid" if f["valid"] else "broken") for z, (_, f) in zip(zones, ch) if id(f) in pick]
 
 
-def figure(frame, tf, zones, title, i_end_bar=None, side=None, box=None, min_deg=0, chk=None, debug=False):
-    """chk = the 15M bars up to t ⇒ TA4 drawing rule (shown_zones); chk None ⇒ the old drawing (every zone)."""
+def figure(frame, tf, zones, title, i_end_bar=None, side=None, box=None, min_deg=0, chk=None, debug=False, magnet_df=None):
+    """chk = this figure's own TF bars up to t ⇒ TA4 drawing rule (shown_zones, 3 + 3 per TF after the degree filter); chk None ⇒ the
+    old drawing (every zone)."""
     d = frame.reset_index(drop=True)
     n = len(d)
     fig = BC._base(d, title)
     lo, hi = float(d["low"].min()), float(d["high"].max())
-    view = shown_zones(zones, chk, debug) if chk is not None else [(z, None, "old") for z in zones]
+    zones = [z for z in zones if ((z["degree"] or 0) >= min_deg or z["k"]) and not (z["top"] < lo - (hi - lo) or z["bottom"] > hi + (hi - lo))]
+    view = shown_zones(zones, chk, debug, "D" if tf == "D" else tf, magnet_df) if chk is not None else [(z, None, "old") for z in zones]
     for z, f, style in view:
-        if (z["degree"] or 0) < min_deg and not z["k"]:
-            continue
-        if z["top"] < lo - (hi - lo) or z["bottom"] > hi + (hi - lo):
-            continue
         self_ = i_end_bar is not None and z["pivot_bar"] is not None and z["pivot_bar"] > i_end_bar
         trade = side is not None and z["role"] == side and not self_
         col = GREY if (self_ or z["status"] == "dead" or style == "broken") else (RED if z["role"] == ZE.SELLER else GREEN)
@@ -89,12 +91,14 @@ def charts(Z, t, r, i_end_bar=None, debug=False):
     zmap = {z["id"]: z for z in zones}
     side = r["side"] if r["side"] in (ZE.SELLER, ZE.BUYER) else None
     title = "🧭 ZONE CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
+    h1 = PC.agg_1h(m)
+    dd = PC.daily_from_15m(m, asof)
     return {"15M": PC.png(figure(PC.window(m, "15M", asof), "15M", zones, title.format(tf="15M", d=asof), i_end_bar, side,
                                  box_text(r, zmap), chk=m, debug=debug)),
-            "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", zones, title.format(tf="1H", d=asof), i_end_bar, side,
-                                min_deg=2, chk=m, debug=debug)),
-            "D": PC.png(figure(PC.daily_from_15m(m, asof), "D", zones, title.format(tf="Daily", d=asof), i_end_bar, side, min_deg=3,
-                               chk=m, debug=debug))}
+            "1H": PC.png(figure(PC.window(h1, "1H", asof), "1H", zones, title.format(tf="1H", d=asof), i_end_bar, side,
+                                min_deg=2, chk=h1, debug=debug, magnet_df=m)),
+            "D": PC.png(figure(dd, "D", zones, title.format(tf="Daily", d=asof), i_end_bar, side, min_deg=3,
+                               chk=dd, debug=debug, magnet_df=m))}
 
 
 def caption(n, total, asof, r, zmap, why=None):

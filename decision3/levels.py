@@ -434,8 +434,9 @@ def display_bands(df, t, s=None, start=None, magnet_df=None, debug=False):
     return FV.select_bands(find_bands(B, t, s, start, magnet_df), float(B.C[t]), s, debug=debug)
 
 
-def check_bands(df, t, items, s=None, start=0, magnet_df=None):
-    """Run the shared band check on areas another engine drew (items with lo / hi): returns [(item, facts)], TA4 latest-broken applied."""
+def check_bands(df, t, items, s=None, start=None, magnet_df=None):
+    """Run the shared band check on areas another engine drew (items with lo / hi): returns [(item, facts)], TA4 latest-broken applied.
+    start None ⇒ the finders' lookback window (`lookback_sessions`; pass facts.validity.lookback(tf) for 1H / Daily)."""
     from facts import validity as FV
     B = FV.bars_of(df)
     out = [(x, FV.check_band(B, t, x["lo"], x["hi"], s, start=start, magnet_df=magnet_df)) for x in items]

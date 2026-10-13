@@ -9,9 +9,10 @@
   • v2 (signal_check_v2) overlays — `vision/context.py` (causal): major levels (M1↑ / M1↓, flip ⇒ F), PDH / PDL / PDC, PWH / PWL (dotted),
     आजचा open + opening range (फिकट पट्टा), swing H / L खुणा, session separators. 0.1 × median range पेक्षा जवळचे overlays ⇒ एक label
     (उदा. PDH+M1↑); y-range बाहेरचे ⇒ कडेला ▲ / ▼ खुणा. Labels इंग्रजीत; अचूक किंमती फक्त signal text मध्ये.
-  • TA4 (Abhi, design §10): areas फक्त band म्हणून — major levels (एकच किंमत, M1↑ / M1↓) chart वर आता रेषा नाहीत; त्याऐवजी 15m वरचे shared
-    band check pass होणारे पट्टे (`chart_bands`: decision3.levels.display_bands — ≤ 3 वर, ≤ 3 खाली, शेवटचा तुटलेला dashed). फक्त chart
-    (drawing); ctx / signal text / verdict बदलत नाहीत.
+  • TA4 (Abhi, design §10) — **setting `vision_chart_bands`, default OFF** (OFF ⇒ image main सारखीच, byte-for-byte): ON ⇒ major levels
+    (एकच किंमत, M1↑ / M1↓) chart वर रेषा नाहीत; त्याऐवजी 15m वरचे shared band check pass होणारे पट्टे (`chart_bands`:
+    decision3.levels.display_bands — ≤ 3 वर, ≤ 3 खाली, शेवटचा तुटलेला dashed). रंग L (हिरवा / लाल) पासून वेगळे: supply नारिंगी, demand
+    फिकट निळा, broken तपकिरी-राखाडी dashed. ctx["bands"] ⇒ signal text मध्ये legend + अचूक किंमती (signal_audit.signal_text).
 """
 import numpy as np
 import pandas as pd
@@ -134,15 +135,25 @@ def chart_bands(cut, s=None):
     return LV.display_bands(m15[["timestamp", "open", "high", "low", "close"]], len(m15) - 1, s)
 
 
+BAND_COLOR = {"resistance": ("#ffa726", "rgba(255,167,38,0.10)"), "support": ("#4fc3f7", "rgba(79,195,247,0.10)"),
+              "broken": ("#bcaaa4", "rgba(0,0,0,0)")}                  # L = हिरवा / लाल ⇒ पट्टे नारिंगी / फिकट निळे (टक्कर नाही)
+
+
+def band_rows(bands):
+    """ctx["bands"] (signal text साठी): role, low, high, reaction touches, state."""
+    return [{"role": b.get("role"), "lo": float(b["lo"]), "hi": float(b["hi"]), "touches": int(b.get("touch_count") or 0),
+             "state": "broken (most recent)" if (b.get("broken") and not b.get("valid")) else
+             ("flipped" if b.get("flipped") else ("established" if b.get("established") else "valid"))} for b in bands]
+
+
 def _bands(fig, bands, lo, hi, c, n, label_x):
     """TA4 bands on one price panel: valid filled (supply red / demand green), the most recent broken one dashed grey; labels in English."""
     for b in bands or []:
         if b["hi"] < lo or b["lo"] > hi:
             continue
         broken = b.get("broken") and not b.get("valid")
-        colr = "#90a4ae" if broken else ("#ef5350" if b.get("role") == "resistance" else "#26a69a")
-        fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=max(lo, b["lo"]), y1=min(hi, b["hi"]), layer="below",
-                      fillcolor="rgba(0,0,0,0)" if broken else ("rgba(239,83,80,0.10)" if b.get("role") == "resistance" else "rgba(38,166,154,0.10)"),
+        colr, fill = BAND_COLOR["broken" if broken else ("resistance" if b.get("role") == "resistance" else "support")]
+        fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=max(lo, b["lo"]), y1=min(hi, b["hi"]), layer="below", fillcolor=fill,
                       line=dict(color=colr, width=1, dash="dash" if broken else None), row=1, col=c)
         if c == 1:
             role = "supply" if b.get("role") == "resistance" else "demand"
@@ -456,13 +467,13 @@ def render(df1m, sig, daily=None, fut=None):
             vols = panel_volumes(setup, higher, sig, asof, df1m, fut)
         except Exception as exc:                                         # volume पूरक ⇒ NA pane, chart तरी
             vols, meta["vol_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
-        bands = None
-        if ctx is not None:
+        bands = None                                                     # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
+        if ctx is not None and (sig.get("ctx_settings") or {}).get("vision_chart_bands"):
             try:
                 bands = chart_bands(cut)
-                meta["chart_bands"] = [{k: b[k] for k in ("lo", "hi", "role", "touch_count", "valid", "broken")} for b in bands]
-            except Exception as exc:                                     # पट्टे पूरक ⇒ chart तरी (majors शिवाय), नोंद
-                bands, meta["bands_error"] = [], f"{type(exc).__name__}: {str(exc)[:120]}"
+                ctx["bands"] = band_rows(bands)                          # signal text: legend + अचूक किंमती
+            except Exception as exc:                                     # पट्टे अपयशी ⇒ जुनं drawing (majors सह), नोंद
+                bands, meta["bands_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
         fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands)
         meta["volume_line"] = _volume_line(setup, sig, vols)
         png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)

@@ -363,7 +363,7 @@ BANKNIFTY 15M (one session), so the TA1 cap of 2 binds once.
 |---|---|---|
 | line found at the 6 Oct close from 2 touches | 30 Sep 12:45 22,809.35 → 6 Oct 14:00 22,731.85 (valid from 14:30) | 30 Sep 12:45 22,935.0 → 6 Oct 12:45 22,830.0 (valid from 13:15) |
 | valid at the 6 / 7 / 8 / 9 Oct closes | yes; established (3 spaced touches, 7 Oct 12:00 = 3rd) from the 7 Oct close | yes; established from the 7 Oct close |
-| drawn at the 9 Oct close (TA1, ≤ 2 lines) | yes, first | yes, first |
+| drawn at the 9 Oct close (TA1, ≤ 2 lines) | yes, second (first: 6 Oct 14:00 → 9 Oct 14:15, 3 touches, more recent last touch) | yes, second (first: 6 Oct 12:45 → 7 Oct 12:00, 3 touches) |
 | projected zone at 12 Oct 09:15 (± 0.2 MR) | 22,654.35 (22,647.22–22,661.48); high 22,651.10 **inside**; close 22,581.8 | 22,709.6 (22,701.75–22,717.45); high 22,720.0 = 0.27 MR above the line, **outside the zone**, close 22,639.5 back below = a K5 sweep of the projected touch |
 | supply band near ≈ 22,667 | the same two reactions on spot: 22,534–22,574 (9 Oct 11:15, 14:15); no confluence with the spot line inside one session | **22,620–22,665**, 2 touches (9 Oct 11:15 22,620; 14:15 22,665), a flipped band (it was demand until the 8 Oct 09:15 break) |
 | band + line confluence | 22,667–22,711 (4 touches, established): line 22,655.4 at the 9 Oct close, 0.34 MR from it, **confluence at 09:15** | ≈ 22,667 band: the line reaches it at 12 Oct 13:45 (offset 19, line 22,684.4, 0.49 MR), **not at 09:15** (1.14 MR apart). At 09:15 the line is in confluence with supply 22,729–22,761 (7 Oct 11:00, 14:15; 0.46–0.49 MR) |
@@ -371,6 +371,12 @@ BANKNIFTY 15M (one session), so the TA1 cap of 2 binds once.
 So the line golden holds on both feeds. The FUT opening spike is a sweep through the zone, not a touch inside ± 0.2 MR. The zone was not
 widened. The ≈ 22,667 FUT band is found, but by the rule it meets the projected line only later on 12 Oct. The band that is in confluence at
 09:15 is the one above it. Both points are open questions for Abhi (R1a-7, R1a-8).
+
+After the independent review fixes (acceptance on a sloped line compared with the line at the next bar; magnet closes clipped to the
+end of bar t; twin pivot before anchor 2 no longer drops a line), the same run (`rerun_shared_review/`, no charts) gives the identical
+valid / established / latest-broken counts above; only a few magnet counts moved (d3_level 5 → 7, srv3 18 → 19 reasons, no verdict
+changed). With the twin-pivot fix the display finder now also finds a newer 3-touch line, so at the 9 Oct close the golden line is
+drawn second on both feeds (first = the newer line with the more recent last touch, R1a-1).
 
 Files (private): `trade-data/reports/trendline_audit/2026-10-13/rerun_shared/` (80 charts, CSV with `latest_broken`, `summary.json`);
 golden display charts: `trade-data/reports/r1_lines_bands/2026-10-13/`. Rerun: the command in section 7 plus `--rule shared --out

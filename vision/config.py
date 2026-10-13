@@ -68,6 +68,8 @@ BOT_DEFAULTS = {
     "gap_large_atr": 0.63,                 # G5 साठी "मोठा" gap. IS p90 = 0.628
     "gap_stretch_atr": 3.0,                # G5: आधीचा 5-session leg ≥ हे × ATR
     "gap_max_age_sessions": 10,            # जुने unfilled gaps किती sessions पर्यंत
+    "vision_chart_bands": False,           # (R1, TA4) ON ⇒ approval chart वर M1/M2 एकच-किंमत रेषांऐवजी shared band check चे पट्टे + signal text
+                                           # मध्ये त्यांचा legend / किंमती. OFF (default) ⇒ image आधीसारखीच. Abhi ने चालू करायचं (OPEN_QUESTIONS R1a-13)
 }
 BOT_OVERRIDES = {"manual": {"vision_wait_for_bar_close": False,      # manual signal ला bar बंद होण्याची वाट नाही
                             "shadow_cooldown_min": 0}}               # नाकारल्यानंतर नवी /paper आज्ञा लगेच चालते
@@ -75,7 +77,8 @@ RULE_IDS = {"v2_disagree_rules": ("breakout", "reversal_invalid", "weak_level", 
                                   "gap_chase", "gap_b_pdc_accept", "wrong_approach", "role_conflict"),
             "v2_gray_rules": ("unclear", "correction_incomplete", "tight_room", "middle_close", "impulse_running", "gap_undecided_early",
                               "line_conflict", "event_day", "gap_c_alone")}
-CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions")
+CTX_KEYS = ("line_lookback_sessions", "inv_buffer_mr", "gap_g0_atr", "gap_large_atr", "gap_stretch_atr", "gap_max_age_sessions",
+            "vision_chart_bands")
 GLOBAL_DEFAULTS = {
     "vision_daily_budget_usd": 2.0,         # Abhi: दैनिक Vision cap $2.00 (hard stop तसाच; बाकी मर्यादा बदल नाही)
     "vision_monthly_budget_usd": 60.0,      # Abhi: मासिक $60 ($2/दिवस शी सुसंगत). Dashboard / DB मधली value code default वर मात करते

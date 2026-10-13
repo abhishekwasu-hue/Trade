@@ -95,7 +95,10 @@ def frames_for_chart_tf(fetch_fn, token_input, symbol, chart_tf):
     return frames, daily
 
 
-def band_chart_lines(levels, frame, price, debug=False):
+TF_LABEL = {"1minute": "5M", "5minute": "5M", "15minute": "15M", "30minute": "15M", "1hour": "1H", "4hour": "1H", "day": "D", "week": "D"}
+
+
+def band_chart_lines(levels, frame, price, debug=False, tf="15minute"):
     """TA1 / TA4 (Abhi, design §10), drawing layer only: each V3 level as a band (low–high; a single price is "not a band") through the
     shared band check (facts/validity.py via decision3.levels.check_bands) on the chart-TF bars `frame`; ≤ 3 valid bands above and ≤ 3
     below price + the most recently broken one (dashed grey). Each band = two edge lines (tradingview price lines). debug ⇒ every level,
@@ -106,7 +109,7 @@ def band_chart_lines(levels, frame, price, debug=False):
     if frame is None or len(frame) < 10 or not levels:
         return []
     fr = frame.reset_index(drop=True)
-    ch = LV.check_bands(fr, len(fr) - 1, [{"lo": z["low"], "hi": z["high"]} for z in levels])
+    ch = LV.check_bands(fr, len(fr) - 1, [{"lo": z["low"], "hi": z["high"]} for z in levels], FV.lookback(TF_LABEL.get(tf, "15M")))
     pick = {id(f) for f in FV.select_bands([f for _, f in ch], float(price))}
     out = []
     for z, (_, f) in zip(levels, ch):
@@ -128,11 +131,11 @@ def band_chart_lines(levels, frame, price, debug=False):
 
 
 def view_frame(frames, chart_tf):
-    """The chart's own TF bars for the band check (the first TF of its level set that was fetched)."""
+    """(TF, bars) for the band check: the chart's own TF (the first TF of its level set that was fetched)."""
     for tf in CHART_TF_SETS.get(chart_tf, ("15minute", "5minute", "30minute")):
         if tf in frames:
-            return frames[tf]
-    return next(iter(frames.values()), None)
+            return tf, frames[tf]
+    return next(iter(frames.items()), (None, None))
 
 
 def v3_chart_lines(fetch_fn, token_input, symbol, price, cfg=None, chart_tf=None, debug=False):
@@ -152,7 +155,8 @@ def v3_chart_lines(fetch_fn, token_input, symbol, price, cfg=None, chart_tf=None
         shown = select_display_levels(result["levels"], price, cfg)
         if not shown:
             return [], "SR Levels V3: सध्या किंमतीजवळ पात्र level सापडला नाही."
-        lines = band_chart_lines(shown, view_frame(frames, chart_tf), price, debug)
+        vtf, vfr = view_frame(frames, chart_tf)
+        lines = band_chart_lines(shown, vfr, price, debug, vtf)
         if not lines:
             return [], "SR Levels V3: किंमतीजवळचा एकही level band नियम (2 reaction touches, ≤ 1.5 MR, TA4) पूर्ण करत नाही."
         return lines, None
