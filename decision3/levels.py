@@ -612,7 +612,8 @@ def band_flip_facts(df, t, x, s=None, start=None):
         beyond = [i for i in FV.pivots(B, end, "H" if up else "L", s, start=min(st, b))
                   if ((B.H[i] > x["hi"] + tol) if up else (B.L[i] < x["lo"] - tol))]
         piv, post = [i for i in beyond if i < b], sorted(i for i in beyond if i >= b)
-        for i in range(b, end + 1):
+        flip_bar = (out["flipped_at"] or {}).get("bar")
+        for i in range(b + (prior == FL.FLIPPED and flip_bar == b), end + 1):   # the flip bar was used for the flip (engine: no DEAD on it)
             known = [p for p in piv if p + k <= i]                          # confirmed by bar i (no look-ahead)
             if known:
                 p, src = (min(known, key=lambda j: B.H[j]) if up else max(known, key=lambda j: B.L[j])), "before_break"

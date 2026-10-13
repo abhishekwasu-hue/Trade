@@ -978,3 +978,19 @@ def test_band_flip_facts_reclaim_to_flipped_restores_the_flip_facts():
     f = LV.band_flip_facts(B, len(hi) - 1, {**x, "breaks": x["breaks"] + [{"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]},
                            start=0)
     assert f["flip_state"] == FL.FLIPPED and f["broken_at"] == flip["broken_at"] and f["far_swing"] == flip["far_swing"]
+
+
+def test_band_flip_facts_flip_bar_is_never_also_the_dead_bar():
+    """Re-review (9bc7524): an outside reclaim bar that passes the far swing (flip) and, with its other extreme, the new break's far
+    swing must not flip AND die on the same bar — the engine returns right after a flip (no double-counting of one bar)."""
+    from facts import validity as FV
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 102.5, 99.6, 99.6, 99.6]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    lo[44], cl[44] = 92.0, 99.5                                            # outside bar: past 93 (flip) and above every earlier high
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flipped_at"]["bar"] == 44 and f["flip_state"] == FL.BROKEN and f["dead_at"] is None
