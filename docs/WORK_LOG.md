@@ -2158,4 +2158,10 @@ Charts (Daily + 15M + 5M, volume pane; intraday NA, Daily bhavcopy FUT 2018-12 �
 `review/v22/setups_prA_v2/` (tag debug). Setting / threshold / gate बदल **0**. उघडे: TF8.
 **Self-review:** holdout — run / columns / render तिन्ही scripts चे asserts (2024-04 नंतरचा एकही row नाही; setups सगळे ≤ 2022-04); run चे output
 फक्त अहवाल + data (code बदल नाही ⇒ नवे tests नाहीत); "7 step-down" rows चं कारण code logic (mature ⇒ weak cap) + flag; "death-side" rows what-if ने (माझा पहिला अंदाज "3 death-side" चुकीचा होता — 2020-04 चे दोन नाहीत, 2018 चे तीन उलट death-side ने गेले); audit (e)/(f) ची व्याख्या engine च्या ⑥ पेक्षा वेगळी (#9 वर उलट निकाल) — TF7 मध्ये नोंद, script बदलला नाही.
-**पुढे:** Abhi TF8 / TL2 / D12-1; BANKNIFTY (2026-07 पासून) वर तोच run; 12-Oct खऱ्या data वर replay (VPS); CI #299.
+**Driver:** `scripts/v22_setup_charts.py run` ला `--m15 / --daily / --ltf / --futures` (15M-only symbols; ltf नाही ⇒ fail-closed wait, futures नाही ⇒ NA)
++ pickle मध्ये `bars` (प्रत्येक bar: decision, पहिला ✘ gate, कारण). Tests `tests/test_v22_setup_charts_run_m15.py` (4: inputs / pickle रचना, ltf नाही ⇒
+setup 0 + warning, `--from` truncation = पूर्ण run चे तेच निर्णय, --daily आवश्यक). `test_volume_pane.py` 21 पास.
+**BANKNIFTY merged-main run** (15M Jul–Oct 2026, Daily पूर्ण, 5M + FUT volume फक्त 30 Sep–6 Oct): setup 0; 30 Sep 14:00 / 14:15 bear call
+a2 / c0 (volume 1.4× / 1.8×) / c1 ✔ पण area 54,891–56,200 (1,309 pts) ⇒ R:R 0.06 / 0.21 ⇒ TL2 + D12-5 चं live उदाहरण (no_signals §6; charts
+trade-data `review/v22/banknifty_merged_1013/`). Live path चे a2 / c0 / c1 खऱ्या data वर end-to-end दिसले.
+**पुढे:** Abhi TF8 / TL2 / D12-1 / D12-5; 12-Oct खऱ्या data वर replay (VPS); CI #299 / #311.

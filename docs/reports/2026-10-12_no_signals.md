@@ -68,3 +68,20 @@ TODO (Abhi चे charts + diag): त्याचे bar-by-bar कारण ख
 - Fail-closed: data / 5M नाही ⇒ entry नाही + Telegram ओळ (पहिलं अपयश, 60 मिनिटांनी अजून अपयश असेल तर, मग "recovered"). FUT volume नाही ⇒
   volume NA, grade कमाल B (entry अडत नाही).
 - सकाळी चालू: a2 (absorption ⇒ वाट), c0 (dominant candle + volume > window सरासरी; NA ⇒ कमाल B), c1 (5M CHoCH by close) — तिन्ही.
+
+## 6. Engine dry run on real recent data — BANKNIFTY, merged main (13 Oct पहाट; `scripts/v22_setup_charts.py run --m15 … --ltf … --futures …`)
+
+Live path सारखेच inputs जिथे उपलब्ध (trade-data): 15M 2026-07-13 … 10-09 (1,575 bars), Daily पूर्ण (2016 →), 5M spot + front-month FUT 5M
+volume **फक्त 2026-09-30 … 10-06** (collector; त्याआधी c1 ⇒ "LTF data missing" ⇒ wait, volume NA). Setting / threshold बदल 0. निकाल
+trade-data `review/v22/banknifty_merged_1013/` (`bars.json` = प्रत्येक bar चा पहिला ✘ gate; tag debug).
+
+- **Setup 0** (wait 1,519 · no_trade 56); Daily सगळीकडे DOWN (impulse; Weekly UP ⇒ cap B). ③ (level ला स्पर्श नाही / K नाही) 1,347 bars.
+- **30 Sep – 6 Oct (100 bars, पूर्ण inputs):** ③ 38 · ⑤ 25 · ④ 20 · ⑥ 15 · ⑦ 2. ⑥ मध्ये खरे volume / 5M निर्णय दिसतात: 13:30 "commitment on
+  low volume (0.5×)", 14:30 "not dominant (1.4×)", 10:45–11:45 absorption, 5M CHoCH 13:40 ला नोंदला (sweep of high 55,135.5, close below
+  HL 55,049). म्हणजे a2 / c0 (volume सह) / c1 live data वर end-to-end चालतात.
+- **30 Sep 14:00 आणि 14:15 — bear call ⑦ वर अडला: R:R 0.06 / 0.21.** a2 ✔, c0 ✔ (inside_break 1.5× body, volume 1.42×; 14:15 strong_close
+  2.4×, 1.84×), c1 ✔. कारण: resistance area = **54,891–56,200 (1,309 points, जन्म a:D-prior + a:W-prior + a:D + a:D2 + b + c)** ⇒ SL 56,220
+  (entry 54,930 पासून 1,290 वर); target 54,854 (जवळचा जिवंत level, I_end 53,788 नाही). Charts `BANKNIFTY/bar_20260930_1400.png` / `_1415.png`
+  (volume pane सह). हे TL2 (merge रुंदी) + D12-5 (target = जवळचा level) चं live उदाहरण — NIFTY 9 Oct (333 pts पट्टा) सारखंच, मोठं.
+  (Chart शीर्षकात "conviction A": no_trade row ला cap ⑦ नंतर लागतो, म्हणून इथे cap-पूर्व grade; निर्णयावर परिणाम नाही.)
+- 14:30 ला `vol_mult` None (FUT 5M rows त्या 15 मिनिटांत नाहीत — collector gap) ⇒ "not dominant" फक्त body वरून; fail-closed नाही (OB1 प्रमाणे).
