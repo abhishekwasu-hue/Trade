@@ -150,7 +150,7 @@ def symbol_line(sym, ctx, gate, zones, rng):
         tg = [float(x) for x in ctx.get("targets") or []]
         s.append("Daily move: " + LR.mature_words(ctx) + (f", near target {tg[0]:,.0f}" if tg else "") + ".")   # Abhi B1: context only
     elif ctx is not None and ctx.get("ok") and ctx.get("origin_risk"):
-        s.append("Price is near the trend's starting point, so new entries are weak.")
+        s.append("Context: price is near the trend's starting point.")                   # Abhi B1: context only
     return " ".join(s)
 
 

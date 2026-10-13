@@ -205,7 +205,7 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
     if ctx.get("mature"):
         head += f" (daily move: {LR.mature_words(ctx)})"                            # Abhi B1: context only, no grade cap
     elif ctx.get("origin_risk"):
-        head += " (price is near the trend's starting point, so new entries are weak)"
+        head += " (context: price is near the trend's starting point)"           # Abhi B1: context only, no block / downgrade
     if last is None:
         return "❌ " + head + ". Price data missing (no last close), so no area distances."
     ar = trade_side_areas(zones, tfs, last, ctx, n=3)

@@ -668,12 +668,175 @@ def test_short_fut_history_falls_back_to_raw_per_bar_volume_not_a_data_error():
     ts = V.levels.ts
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
     A, label = V.vol_view(bars[0], bars[-1])
-    assert label == V.INSUFFICIENT and np.allclose(A["volume"][bars], V.levels.A["volume_raw"][bars], equal_nan=True)
+    assert label.startswith(V.INSUFFICIENT) and np.allclose(A["volume"][bars], V.levels.A["volume_raw"][bars], equal_nan=True)
     rows = [V.decide(t) for t in bars]
     assert not [r for r in rows if "data problem" in str(r["checklist"].get("⑥"))]
     seen = [r for r in rows if (r["checklist"].get("③") or [None])[0]]
-    assert seen and all(r["volume_measure"] == V.INSUFFICIENT for r in seen)
+    assert seen and all(r["volume_measure"].startswith(V.INSUFFICIENT) for r in seen)
     row = L.row_from_v22("NIFTY", seen[0], lambda: pd.Timestamp("2030-03-04 10:00"))
     assert "insufficient history" in row["payload"]
     full = E3.V22(m15, s=sv, ltf=ltf, futures=fut)
     assert full.vol_view(bars[0], bars[-1])[1].startswith("slot-normalised")
+
+
+# ------------------------------------------------------------------------------------------------ volume baseline: incomplete FUT / rollover
+def test_fut_present_but_incomplete_bar_is_na_with_reason_and_gaps_are_counted():
+    """Reviewer (Z-1 volume): a 15M bar with < 3 of 3 FUT 5M children is marked incomplete — NA with a reason, never an under-counted
+    sum; FUT present but with gaps inside the in-zone window ⇒ the label carries the gap count and the reason (no silent averaging)."""
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    ts15 = pd.to_datetime(m15["timestamp"])
+    last = ts15.dt.normalize().iloc[-1]
+    bars = [i for i in range(len(ts15)) if ts15.dt.normalize().iloc[i] == last]
+    hole, gone = bars[3], bars[5]
+    ft = pd.to_datetime(fut["timestamp"])
+    drop = (ft == ts15.iloc[hole] + pd.Timedelta(minutes=5)) | ((ft >= ts15.iloc[gone]) & (ft < ts15.iloc[gone] + pd.Timedelta(minutes=15)))
+    V = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut[~drop.to_numpy()].reset_index(drop=True))
+    full = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
+    raw = V.levels.A["volume_raw"]
+    assert np.isnan(raw[hole]) and np.isfinite(full.levels.A["volume_raw"][hole])          # NA, not 2/3 of the bar
+    assert np.isnan(V.levels.A["volume"][hole])
+    assert V.vol_reason[hole] == "incomplete 15M FUT bar (2 of 3 5M bars)" and V.vol_reason[gone] == "no FUT bar"
+    assert "incomplete 15M FUT bar (2 of 3 5M bars)" in V.vol_na_reason(hole) and "no FUT bar" in V.vol_na_reason(gone)
+    _, label = V.vol_view(bars[0], bars[-1])
+    assert f"FUT volume gaps: 2/{len(bars)} bars" in label and "incomplete 15M FUT bar" in label and "no FUT bar" in label
+    assert "gaps" not in full.vol_view(bars[0], bars[-1])[1]
+    ok = [i for i in bars if i not in (hole, gone)]                         # complete bars keep their exact volume
+    assert np.allclose(raw[ok], full.levels.A["volume_raw"][ok])
+
+
+def test_slot_baseline_excludes_rollover_days():
+    """Reviewer: slot_rel_volume leaves FUT rollover days out of every baseline, as legs2.volume.rvol does."""
+    days = pd.bdate_range("2030-01-01", periods=14)
+    ts = pd.Series([d + pd.Timedelta(hours=9, minutes=15) for d in days])
+    vol = np.full(len(ts), 100.0)
+    vol[5] = 10000.0                                                        # a rollover-day spike
+    rel, cnt = M.slot_rel_volume(ts, vol, sessions=20, min_sessions=10, exclude_days=[days[5]])
+    _, cnt0 = M.slot_rel_volume(ts, vol, sessions=20, min_sessions=10)
+    assert cnt[-1] == 12 and cnt0[-1] == 13 and rel[-1] == pytest.approx(1.0)
+    rel2, cnt2 = M.slot_rel_volume(ts, np.where(np.arange(len(ts)) < 7, 1000.0, 100.0), sessions=20, min_sessions=3,
+                                   exclude_days=list(days[:4]))
+    rel3, _ = M.slot_rel_volume(ts, np.where(np.arange(len(ts)) < 7, 1000.0, 100.0), sessions=20, min_sessions=3)
+    assert cnt2[-1] == 9 and rel2[-1] == pytest.approx(1.0)                 # baseline = days 4..12 ⇒ median 100
+    assert rel3[-1] == pytest.approx(0.1)                                   # with the rollover days in, the baseline is inflated
+
+
+# ------------------------------------------------------------------------------------------------ Telegram data-problem line (review)
+def test_data_problem_day_marked_sent_only_after_a_successful_send(tmp_path):
+    import engine_signal as ES
+    p, now = str(tmp_path / "a.json"), pd.Timestamp("2030-01-07 10:16")
+    calls = []
+
+    def boom(line):
+        calls.append(line)
+        raise RuntimeError("telegram down")
+    assert ES.alert_data_problem("NIFTY", "x", send=boom, state_path=p, now=now) is False
+    assert ES.alert_data_problem("NIFTY", "x", send=lambda line: calls.append(line) or False, state_path=p, now=now) is False
+    sent = []
+    assert ES.alert_data_problem("NIFTY", "x", send=sent.append, state_path=p, now=now + pd.Timedelta(minutes=15)) is True
+    assert len(calls) == 2 and len(sent) == 1                               # retried until it went through
+    assert ES.alert_data_problem("NIFTY", "x", send=sent.append, state_path=p, now=now + pd.Timedelta(minutes=30)) is False
+
+
+def test_data_problem_line_only_for_nifty_banknifty_never_sensex(tmp_path, monkeypatch):
+    import json
+
+    from scripts import engine_signal_run as ESR
+    monkeypatch.setenv("ENGINE_SIGNAL_DB", str(tmp_path / "es.db"))
+    sent = []
+
+    def run(sym, tok):
+        return {"bar_ts": "2030-01-07 10:15:00", "decision": "wait", "skipped": "test",
+                "payload": json.dumps({"engine": "decision3", "data_problem": "data problem: FUT volume missing"})}
+    ESR.main(["--symbols", "NIFTY,BANKNIFTY,SENSEX"], token_fn=lambda: "tok", run_fn=run, market_fn=lambda: True, send=sent.append,
+             alert_path=str(tmp_path / "a.json"), now=pd.Timestamp("2030-01-07 10:16"))
+    assert len(sent) == 2 and not [x for x in sent if "SENSEX" in x]
+    assert ESR._data_problem(run("SENSEX", None), "SENSEX") is None and ESR._data_problem(run("NIFTY", None), "NIFTY")
+
+
+def test_payload_size_limit_never_drops_the_data_problem_flag():
+    import json
+
+    import engine3_live as L
+    big = {"engine": "decision3", "checklist": {"x": "y" * 30000}, "zone_read": {"z": "w" * 30000},
+           "data_problem": "data problem: FUT volume missing (test)", "volume_measure": "slot-normalised"}
+    out = L.fit_payload(big)
+    d = json.loads(out)                                                     # valid JSON (no blind cut)
+    assert len(out) <= L.PAYLOAD_MAX and d["data_problem"] == big["data_problem"] and d["dropped"] == ["checklist", "zone_read"]
+    huge = {**big, "volume_note": "v" * 30000}
+    d2 = json.loads(L.fit_payload(huge))
+    assert d2["data_problem"] == big["data_problem"] and "all context" in d2["dropped"]
+    small = {"engine": "decision3", "data_problem": None}
+    assert L.fit_payload(small) == json.dumps(small)
+
+
+def test_band_flip_facts_new_highs_use_first_confirmed_swing_after_break():
+    """Review: band_flip_facts applies Abhi Z-1a like the engine (flip.far_swing) — no swing beyond the band before the break (new highs)
+    ⇒ the far swing is the FIRST CONFIRMED swing beyond the band after the break; FLIPPED once price trades past it."""
+    from facts import validity as FV
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2                     # bars 0-19: below the 95-98 band top
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]  # break at 20, swing 104 @24, past it @30
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    df = pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl})
+    B = FV.bars_of(df)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
+    before = LV.band_flip_facts(B, 25, x, start=0)                          # swing @24 not yet confirmed (k = 2)
+    assert before["flip_state"] == FL.BROKEN and before["far_swing"] is None
+    mid = LV.band_flip_facts(B, 29, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["far_swing"]["bar"] == 24 and mid["far_swing"]["price"] == 104.0
+    assert mid["far_swing"]["source"] == "first_confirmed_after_break"
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["flipped_at"]["bar"] == 30 and f["far_swing"]["bar"] == 24
+
+
+# ------------------------------------------------------------------------------------------------ end to end on the DEFAULT path (review)
+_HANDOVER = [(19436, 19458, 6e5), (19458, 19455, 2e5), (19455, 19466, 6e5), (19466, 19452, 5e5), (19452, 19455, 2e5), (19455, 19440, 7e5)]
+_NO_HANDOVER = [(19436, 19458, 6e5), (19458, 19446, 4e5), (19446, 19462, 5e5), (19462, 19458, 3e5), (19458, 19468, 6e5),
+                (19468, 19452, 3e5)]
+
+
+def _default_case(window, commit_vol=1.2e6, with_fut=True):
+    """tests.test_decision3_method._abc_m15 (Daily DOWN): its supply 19,432–19,472 is a support broken at bar 651 and FLIPPED at 659
+    (price traded past the far swing before the break). Bars 735–740 are rewritten to sit in that zone (the in-zone study window), 741 is
+    the bearish commitment. FUT 5M = 3 complete children per 15M bar (flat 3e5 elsewhere); LTF = 5M split of the same bars."""
+    from tests.ltf_fixtures import split_bars
+    from tests.test_decision3_method import _abc_m15
+    m15 = _abc_m15()
+    vol = np.full(len(m15), 3e5)
+    for j, (o_, c_, v_) in enumerate(window):
+        m15.loc[735 + j, ["open", "close", "high", "low"]] = [o_, c_, max(o_, c_) + 2, min(o_, c_) - 2]
+        vol[735 + j] = v_
+    m15.loc[741, ["open", "high"]] = [19440, 19443]
+    vol[741] = commit_vol
+    fut = pd.DataFrame({"timestamp": [t + pd.Timedelta(minutes=5 * j) for t in m15["timestamp"] for j in range(3)],
+                        "volume": np.repeat(vol / 3.0, 3), "expiry": pd.Timestamp("2030-03-28")})
+    return E3.V22(m15, ltf=split_bars(m15, 15, 3), futures=fut if with_fut else None)
+
+
+def test_end_to_end_default_path_flipped_zone_handover_choch_commitment_with_volume_is_a_setup():
+    """DEFAULT settings, no pins: far_swing flip rule + c0_volume_required + mandatory handover (a2) + LTF CHoCH, through V22.decide()."""
+    V = _default_case(_HANDOVER)
+    assert (V.s["level_flip_rule"], V.s["c0_volume_required"], V.s["a2_handover_required"], V.s["ltf_choch"], V.s["wave_gates"]) == \
+        ("far_swing", True, True, True, False)
+    r = V.decide(741)
+    lv = r["level"]
+    assert lv["state"] == FL.FLIPPED and lv["far_swing"]["source"] == "before_break" and lv["broken_at"] < lv["flipped_at"] < 735
+    assert r["decision"] == "setup" and r["checklist"]["⑥"][0] is True and r["conviction"] in ("A", "B")
+    cm = r["commit"]
+    assert cm["handover_present"] is True and cm["arm_bar"] == 735 and cm["choch"]["done"] and cm["vol_mult"] > 1.0
+    assert r["volume_measure"].startswith("slot-normalised") and not cm.get("data_problem")
+    assert r["zone_read"]["summary"]["handover"] is True and r["checklist"]["G4"][0] is None
+    early = V.decide(738)                                                  # CHoCH already done, handover not yet ⇒ wait (order: a2 first)
+    assert early["decision"] == "wait" and "no handover" in early["checklist"]["⑥"][1]
+
+
+def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
+    r = _default_case(_NO_HANDOVER).decide(741)                             # same zone, CHoCH + commitment, but no handover
+    assert r["decision"] == "wait" and (r["commit"] or {}).get("handover_present") is False
+    assert "no handover" in r["checklist"]["⑥"][1]
+    nf = _default_case(_HANDOVER, with_fut=False).decide(741)               # FUT missing ⇒ data problem, never a grade-B entry
+    assert nf["decision"] == "wait" and "data problem" in nf["checklist"]["⑥"][1]
+    lo = _default_case(_HANDOVER, commit_vol=1e5).decide(741)              # commitment without volume ⇒ no entry
+    assert lo["decision"] == "wait" and "low volume" in lo["checklist"]["⑥"][1]

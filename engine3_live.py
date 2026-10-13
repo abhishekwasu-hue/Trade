@@ -350,7 +350,31 @@ def row_from_v22(symbol, r, now_fn):
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),
-            "reason": str(reason)[:300], "payload": json.dumps(payload, ensure_ascii=False, default=str)[:20000]}
+            "reason": str(reason)[:300], "payload": fit_payload(payload)}
+
+
+PAYLOAD_MAX = 20000
+_PAYLOAD_DROP = ("checklist", "zone_read", "watch_list", "flip_context", "trend_notes", "level", "risk")   # bulky first; never data_problem
+
+
+def fit_payload(payload, limit=PAYLOAD_MAX):
+    """Payload JSON ≤ limit chars WITHOUT a blind cut (a cut string is invalid JSON ⇒ the data_problem flag would be lost): drop the
+    bulky context keys one by one (noted in "dropped"); still too long ⇒ only the flags (engine, data_problem, volume_measure)."""
+    dump = lambda d: json.dumps(d, ensure_ascii=False, default=str)  # noqa: E731
+    out = dump(payload)
+    if len(out) <= limit:
+        return out
+    p, dropped = dict(payload), []
+    for k in _PAYLOAD_DROP:
+        if k in p:
+            p.pop(k)
+            dropped.append(k)
+            out = dump({**p, "dropped": dropped})
+            if len(out) <= limit:
+                return out
+    keep = {k: payload.get(k) for k in ("engine", "ts", "bar_end", "data_problem")}
+    keep["volume_measure"] = str(payload.get("volume_measure") or "")[:500]
+    return dump({**keep, "dropped": "all context (payload too large)"})
 
 
 def compute(symbol, feed, now, s=None):

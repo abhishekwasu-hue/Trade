@@ -163,10 +163,11 @@ def _vol(A):
     return v if np.isfinite(v).any() and np.nanmax(v) > 0 else None
 
 
-def slot_rel_volume(ts, vol, sessions=20, min_sessions=10):
+def slot_rel_volume(ts, vol, sessions=20, min_sessions=10, exclude_days=None):
     """Abhi (Z-1 volume): per-bar volume ÷ the median volume of the SAME time-of-day slot over the previous `sessions` sessions that have
     volume in that slot (the 09:15 and closing bars are always heavy). Fewer than `min_sessions` such sessions ⇒ NaN (NA). Only earlier
-    sessions are used (no look-ahead). Returns (rel array, history-count array). vol None ⇒ (None, None)."""
+    sessions are used (no look-ahead). exclude_days = sessions never used in a baseline (FUT rollover days, as legs2.volume.rvol).
+    Returns (rel array, history-count array). vol None ⇒ (None, None)."""
     if vol is None:
         return None, None
     t = pd.to_datetime(pd.Series(ts)).reset_index(drop=True)
@@ -177,11 +178,12 @@ def slot_rel_volume(ts, vol, sessions=20, min_sessions=10):
     rel = np.full(len(v), np.nan)
     cnt = np.zeros(len(v), int)
     hist = {}                                                              # slot ⇒ [(day, vol)] of earlier sessions (in order)
+    skip = {pd.Timestamp(x).normalize() for x in (exclude_days or ())}
     order = np.argsort(t.to_numpy(), kind="stable")
     cur_day, pending = None, []
     for i in order:
         if days[i] != cur_day:                                             # a new session: the previous one becomes history
-            for j in pending:
+            for j in ([] if cur_day is not None and pd.Timestamp(cur_day) in skip else pending):
                 if np.isfinite(v[j]) and v[j] > 0:
                     hist.setdefault(slot[j], []).append(v[j])
             pending, cur_day = [], days[i]

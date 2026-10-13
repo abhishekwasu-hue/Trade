@@ -101,8 +101,8 @@ def prepare_daily(df, today=None):
 
 def trend_context(daily_df, today=None, s=None):
     """Daily अवस्था ⇒ कोणत्या बाजूचे entries चालतात. रिटर्न dict: ok, trend, sides (set), band, protected, phase, counter, reason.
-    UP ⇒ फक्त bullish (खालचे support / demand) · DOWN ⇒ फक्त bearish · RANGE ⇒ दोन्ही कडा (Q27) · NEUTRAL / UNKNOWN, origin धोक्यात
-    (Q47), origin close ने तुटला ⇒ नवे entries नाहीत."""
+    UP ⇒ फक्त bullish (खालचे support / demand) · DOWN ⇒ फक्त bearish · RANGE ⇒ दोन्ही कडा (Q27) · NEUTRAL / UNKNOWN, origin close ने तुटला
+    ⇒ नवे entries नाहीत. Origin धोक्यात (Q47) = फक्त context (Abhi B1, engine प्रमाणे) — entry अडवत नाही."""
     s = settings(s)
     from decision3 import daily as DD
     d = prepare_daily(daily_df, today)
@@ -112,7 +112,7 @@ def trend_context(daily_df, today=None, s=None):
 
 
 def mature_cap(ctx):
-    """Abhi B1 (trader's patience, 13 Oct final): maturity / wave count = context only ⇒ never a grade cap. Always None (kept for
+    """Abhi B1 (trader's patience, final): maturity / wave count = context only ⇒ never a grade cap. Always None (kept for
     callers; the old engine cap B / weak was removed — `decision3` setting `wave_gates` = True only for old tests / what-if)."""
     return None
 
@@ -135,15 +135,14 @@ def context_from_state(st, s=None, asof=None):
     if st.trend in ("UP", "DOWN"):
         if st.phase == "origin_broken":
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: protected origin close ने तुटला)"
-        elif st.origin_risk:
-            ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: origin धोक्यात — Q47)"
         elif getattr(st, "rev", None) is not None:                         # trend first (setups audit): रचना trend विरुद्ध
             ctx["reason"] = (f"{R_NO_TREND} (Daily {st.trend}: impulse टोकानंतरची रचना उलट — "
                              f"{'HL' if st.rev[0].kind == 'L' else 'LH'} {st.rev[0].price:,.0f} + close {st.rev[1].price:,.0f} पलीकडे)")
         elif st.counter == "correction" and not s["allow_parent_correction"]:
             ctx["reason"] = f"{R_NO_TREND} (Daily {st.trend}: impulse origin तुटला, parent correction चालू)"
         else:
-            ctx.update(ok=True, sides={BULL} if st.trend == "UP" else {BEAR}, reason=f"Daily {st.trend}")
+            ctx.update(ok=True, sides={BULL} if st.trend == "UP" else {BEAR}, reason=f"Daily {st.trend}"
+                       + (" (context: price near the trend's starting point)" if st.origin_risk else ""))   # Abhi B1: context only
     elif st.trend == "RANGE" and st.band:
         ctx.update(ok=True, sides={BULL, BEAR}, reason=f"Daily RANGE {st.band[0]:,.0f}–{st.band[1]:,.0f} (दोन्ही कडा)")
     else:

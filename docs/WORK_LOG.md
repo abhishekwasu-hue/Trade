@@ -2558,3 +2558,16 @@ legs owner वि. reader2 gate).
 - Re-run (default, 1m सह, FUT 7–8 sessions ⇒ raw fallback): 12 Oct — 09:30 handover नाही (buying candles दमल्या नाहीत), 10:15 handover
   नाही (दुसऱ्या अर्ध्यात buying candle नाही) ⇒ wait; 13 Oct — handover नाही / absorption ⇒ bear call नाही ✅; 29 Sep — zone ला
   स्पर्श नाही ⇒ wait. OPEN_QUESTIONS Z-1p.
+
+## Review follow-ups (decision3 flip / volume / Telegram)
+
+- Level gate: origin_risk (trend च्या सुरुवातीजवळ किंमत) आता फक्त context — `level_reaction.context_from_state` मधली NO_TREND शाखा काढली
+  (engine प्रमाणे, Abhi B1); pre-open / 15:45 ओळ "context: price is near the trend's starting point". बाकी gate तसाच.
+- Volume baseline: FUT rollover दिवस (`legs2.volume.rollover_days`, roll_sessions_before 2) slot baseline मध्ये कधीच नाहीत; 15M bar
+  ला 3 पैकी < 3 FUT 5M bars ⇒ NA + कारण ("incomplete 15M FUT bar (2 of 3 5M bars)"), कमी बेरीज नाही; window मध्ये FUT gaps ⇒
+  `volume_measure` मध्ये "FUT volume gaps: n/m bars (कारण)"; rollover दिवस असेल तर तेही label मध्ये.
+- Telegram data-problem ओळ: send यशस्वी झाला तरच तो दिवस "sent"; फक्त NIFTY / BANKNIFTY (SENSEX कधीच नाही); payload 20000 पेक्षा
+  मोठा ⇒ मोठे context keys काढतो (`engine3_live.fit_payload`), JSON मधेच कापत नाही ⇒ data_problem हरवत नाही.
+- `levels.band_flip_facts`: Z-1a (पलीकडे आधीचा swing नाही ⇒ break नंतरचा पहिला confirmed swing) — chart labels = engine.
+- Tests: B1 test मधलं vacuous assert काढलं; DEFAULT मार्गाचा end-to-end decide() test (far_swing flip + c0 volume + handover अनिवार्य
+  + 5M CHoCH ⇒ setup; handover नाही / FUT नाही / कमी volume ⇒ wait); FUT incomplete, rollover, Telegram, payload tests.

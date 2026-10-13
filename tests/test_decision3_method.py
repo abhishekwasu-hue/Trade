@@ -424,11 +424,15 @@ def test_maturity_and_leg_count_never_block_or_downgrade_by_default():
     bars = range(700, len(m15))
     base = {t: V.decide(t) for t in bars}
     assert any(r["decision"] == "setup" for r in base.values())
-    for patch in ({"mature": True}, {"mature": True, "counter": "correction", "origin_risk": True}):
+    for patch in ({"mature": True}, {"mature": True, "origin_risk": True}, {"mature": True, "counter": "correction", "origin_risk": True}):
         V.daily = [dataclasses.replace(x, **patch) if x.trend in ("UP", "DOWN") else x for x in V.daily]
         for t, r0 in base.items():
             r = V.decide(t)
-            assert (r["decision"], r["conviction"]) == (r0["decision"], r0["conviction"]) or "counter" in patch
+            assert r["decision"] == r0["decision"]                         # maturity / origin_risk / leg count never block
+            if "counter" not in patch:
+                assert r["conviction"] == r0["conviction"]                 # … and never downgrade
+            else:                                                          # the Q23 same-degree-correction cap (structure, not maturity)
+                assert r["conviction"] == r0["conviction"] or (r0["conviction"] == "A" and r["conviction"] == "B")
             assert not r["mature_step_down"] and r["wave_context"].get("mature")
             if "counter" not in patch:
                 assert r["trend_cap"] == r0["trend_cap"]

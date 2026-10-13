@@ -478,3 +478,11 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1h | Slot normalisation 20 sessions (किमान 10); कमी history ⇒ "volume normalisation: insufficient history — raw per-bar average" (त्याच window मधली per-bar सरासरी; data error नाही); row / payload `volume_measure`, pre-open ℹ️ ओळ. FUT पूर्ण नसेल (NIFTY / BANKNIFTY) ⇒ data error तसाच. `live_export/2026-10-13-fut45/` अजून नाही ⇒ 12 Oct raw fallback वर | ✅ केलं | ✅ निकाली |
 | Z-1m | a2 handover अनिवार्य (`a2_handover_required`), क्रम a2 → c1 → c0. Handover present ⇔ `method.zone_study(arm … t − 1)["handover"]`: zone मधल्या window च्या पहिल्या / दुसऱ्या अर्ध्यात trade-side candles वाढतात (body ↑ आवश्यक + range ↑ / close trade-टोकाजवळ ↑ / volume ↑ पैकी उपलब्धांपैकी किमान अर्धे) **आणि** counter-side candles दमतात (body ↓ आवश्यक + उलट wick ↑ / close दूर ↑ / volume ↓ पैकी किमान अर्धे); window ≥ 4 bars. Level bots (OFF) जुनं वर्तन | ✅ केलं | ✅ निकाली |
 | Z-1p | Handover व्याख्येतली कडा: दुसऱ्या अर्ध्यात counter-side candle **नाहीच** ⇒ counter weakening NA ⇒ handover नाही (12 Oct 10:15). Counter बाजू पूर्ण गायब = दमली मानायचं का? 12 Oct 09:30: selling candles + selling volume वाढले, पण buying candles "दमल्या" नाहीत (body / wick majority) ⇒ handover नाही ⇒ golden bear call अजून नाही | असंच (बदल नाही) | Abhi |
+
+### Review follow-ups — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | नोंद | code (default) | कोण |
+|---|---|---|---|
+| RF-1 | Level gate (SRv2 / classic / MCX confirmation mode — PAPER default; LIVE touch mode ला लागत नाही): origin_risk आता entry अडवत नाही, फक्त context (B1-a मधली "Level bots: origin_risk ⇒ NO_TREND तसंच" ओळ यामुळे बदलली). Level bots OFF | context | Abhi |
+| RF-2 | FUT gaps in-zone window मध्ये: NA bars वगळून per-bar सरासरी + label मध्ये gap count / कारण. Decision bar (c0) चाच volume NA ⇒ data problem (entry नाही). Gaps जास्त असतील तर (उदा. अर्ध्याहून जास्त bars) entry थांबवायची का? | label फक्त, थांबवत नाही | Abhi |
+| RF-3 | FUT rollover दिवस (expiry + आधीचे 2 sessions) slot baseline मधून वगळले (legs2 प्रमाणे); त्या दिवसाचा स्वतःचा bar normalise होतो, label "FUT rollover day" | वगळले | Abhi |

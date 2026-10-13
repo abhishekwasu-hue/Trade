@@ -89,17 +89,38 @@ class V22:
             M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
         # Abhi (Z-1 volume): every in-zone comparison (a2, c0, in-zone facts, G4 context) uses the per-bar FUT volume ÷ the median of the
         # same 15M slot over the previous `vol_slot_sessions` sessions (method.slot_rel_volume); averages per bar, never sums. Raw kept.
-        raw, self.vol_src = None, None
+        raw, self.vol_src, roll = None, None, None
+        self.vol_reason = {}                                               # bar ⇒ why its FUT volume is NA (incomplete / missing)
         if futures is not None:
+            from legs2 import settings2 as LS2
             from legs2 import volume as LVOL
             raw, self.vol_src = LVOL.bar_volume(self.m15, futures), "near-month FUT 5M ⇒ 15M (legs2.volume.bar_volume)"
+            nm = LVOL.near_month(futures)
+            st = pd.to_datetime(self.m15["timestamp"]).reset_index(drop=True)
+            if len(nm):                                                    # 15M bar with < 3 of 3 FUT 5M children ⇒ NA (never under-counted)
+                ft = pd.to_datetime(nm["timestamp"])
+                day = ft.dt.normalize()
+                b0 = day + pd.Timedelta(hours=9, minutes=15) + ((ft - day - pd.Timedelta(hours=9, minutes=15)) // pd.Timedelta(minutes=15)) \
+                    * pd.Timedelta(minutes=15)
+                kids = ft.groupby(b0).nunique()
+                need = 15 // lm
+                for i, x in enumerate(st):
+                    got = int(kids.get(x, 0))
+                    if 0 < got < need:
+                        raw[i] = np.nan
+                        self.vol_reason[i] = f"incomplete 15M FUT bar ({got} of {need} 5M bars)"
+                    elif got == 0:
+                        self.vol_reason[i] = "no FUT bar"
+                sessions = sorted(st.dt.normalize().unique())
+                roll = LVOL.rollover_days(nm["expiry"].unique(), sessions, int(LS2.DEFAULTS["roll_sessions_before"]))
         elif "volume" in self.m15.columns:
             raw = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
             raw, self.vol_src = (raw, "m15 volume column (caller-joined)") if M._vol({"volume": raw}) is not None else (None, None)
+        self.vol_roll = set(roll or ())
         self.vol_hist = None
         if raw is not None:
             rel, self.vol_hist = M.slot_rel_volume(self.m15["timestamp"], raw, int(self.s["vol_slot_sessions"]),
-                                                   int(self.s["vol_slot_min_sessions"]))
+                                                   int(self.s["vol_slot_min_sessions"]), exclude_days=roll)   # rollover days out
             self.levels.A["volume"] = rel
             self.levels.A["volume_raw"] = np.asarray(raw, float)
 
@@ -111,7 +132,7 @@ class V22:
         if A.get("volume_raw") is None:
             return "FUT volume missing (no FUT bars given)"
         if not (np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0):
-            return "FUT volume missing on this bar"
+            return "FUT volume missing on this bar" + (f" ({self.vol_reason[t]})" if getattr(self, "vol_reason", {}).get(t) else "")
         if np.isfinite(A["volume"][t]):
             return None
         return (f"FUT volume slot baseline NA: {int(self.vol_hist[t])} earlier sessions in this time slot "
@@ -130,10 +151,17 @@ class V22:
             return A, "FUT volume missing"
         w = np.arange(int(arm), int(t) + 1)
         have = np.isfinite(raw[w]) & (raw[w] > 0)
+        gaps = [int(i) for i in w[~have]]
+        gtxt = ""
+        if gaps and have.any():                                            # FUT present but with gaps: count + reason, never silent
+            why = sorted({self.vol_reason.get(i, "no FUT volume") for i in gaps})
+            gtxt = f" · FUT volume gaps: {len(gaps)}/{len(w)} bars ({'; '.join(why)}) — averages over the bars with volume"
+        if self.levels.ts.iloc[int(t)].normalize() in getattr(self, "vol_roll", set()):
+            gtxt += " · FUT rollover day (volume less reliable; never used in a baseline)"
         if have.any() and not np.isfinite(A["volume"][w][have]).all():
-            return {**A, "volume": raw, "volume_rel": A["volume"]}, self.INSUFFICIENT
+            return {**A, "volume": raw, "volume_rel": A["volume"]}, self.INSUFFICIENT + gtxt
         return A, f"slot-normalised (÷ median of the same 15M slot, {int(self.s['vol_slot_sessions'])} sessions, min " \
-                  f"{int(self.s['vol_slot_min_sessions'])})"
+                  f"{int(self.s['vol_slot_min_sessions'])}, FUT rollover days excluded)" + gtxt
 
     def _confirm(self, t, d, lvl, k):
         """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
