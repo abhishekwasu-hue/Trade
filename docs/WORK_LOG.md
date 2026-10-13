@@ -2384,3 +2384,9 @@ FUT volume, live V4 चालू करायचा का).
   NA) + item 6 मोजमाप (FUT volume ÷ आधीचे 8 bars, 5M CHoCH by close); R0-4 `research/banknifty_abc_candidates.py` (V22, research only)
   ⇒ 3 उमेदवार charts trade-data `review/banknifty_abc_candidates/`. Sandbox dry-run (खरा data, API नाही): 12 Oct FUT volume 1.33×, 5M CHoCH
   09:40; 29 Sep FUT volume NA (exports 30 Sep पासून), 5M CHoCH 12:30. OPEN_QUESTIONS R0-1 … R0-9 निकाली ("zone dead" उघडा).
+
+## 2026-10-13 — Visual audit: review charts on Telegram
+- Abhi: the EOD visual audit message arrived without charts. `run_visual_audit.main` now sends, after the text summary, each symbol × TF
+  overlay chart (`data/visual_audit/<audit_date>/<SYM>_<tf>_overlay.png`) with its own summary line as caption (`send_review_charts`).
+  Missing file ⇒ skipped; a send error never fails the audit. No extra API call, no cost change. Test: `test_review_charts_sent_after_summary_with_their_line`.
+

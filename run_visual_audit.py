@@ -32,7 +32,7 @@ import pandas as pd
 
 import cloud_db
 from config import get_ist_now
-from notifications import notify_error, send_telegram_message
+from notifications import notify_error, send_telegram_message, send_telegram_photo
 from opportunity_engine.config import EngineConfig
 from opportunity_engine.refresh import compute_snapshot
 from opportunity_engine.visual_audit import auditor as A
@@ -245,6 +245,27 @@ def run_symbol(symbol, token, vcfg, client, now, audit_date, tfs, fetch_fn=fetch
     return not usage["failures"], lines, usage
 
 
+def send_review_charts(png_dir, symbols, tfs, summary, send_photo=None, log=print):
+    """Abhi (13 Oct): सारांशानंतर प्रत्येक symbol × TF चा overlay chart (engine levels + audit labels) Telegram वर — post-audit review chart.
+    Caption = त्या chart ची सारांश ओळ (VALID / SPURIOUS / missing). Chart file नसेल ⇒ वगळा (अपयश नाही). रिटर्न पाठवलेल्या charts ची संख्या."""
+    send_photo = send_photo or send_telegram_photo
+    sent = 0
+    for sym in symbols:
+        for tf in tfs:
+            path = os.path.join(png_dir, f"{sym}_{tf}_overlay.png")
+            if not os.path.exists(path):
+                continue
+            key = f"{sym} {tf.upper()}"
+            line = next((x for x in summary if x.upper().startswith(key.upper())), key)
+            try:
+                with open(path, "rb") as fh:
+                    ok = send_photo(fh.read(), f"👁️ {line}"[:1024])
+                sent += bool(ok)
+            except Exception as exc:                                    # chart पाठवता आला नाही ⇒ audit अपयशी नाही, फक्त log
+                log(f"  ⚠️ {key}: chart Telegram वर पाठवता आला नाही ({type(exc).__name__}: {exc})")
+    return sent
+
+
 def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
     p = argparse.ArgumentParser()
     p.add_argument("--token", default=None)
@@ -313,6 +334,7 @@ def main(argv=None, fetch_fn=fetch, store_mod=VS, client_factory=A.make_client):
             send_telegram_message("👁️ Visual audit (" + str(audit_date) + ")\n" + "\n".join(summary) +
                                   f"\nCalls {total['calls']}, tokens {total['input_tokens']:,}/{total['output_tokens']:,}, ${total['cost_usd']:.3f}" + spent_line
                                   + ("\n❌ अयशस्वी:\n" + "\n".join(failures) if failures else ""))
+            send_review_charts(os.path.join(PNG_ROOT, str(audit_date)), symbols, tfs, summary)
         if not all_ok:
             notify_error("run_visual_audit", "अयशस्वी charts:\n" + "\n".join(failures[:8]))
     return 0 if all_ok else 1
