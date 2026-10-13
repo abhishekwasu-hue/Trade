@@ -183,7 +183,7 @@ def _safe(fn, *a):
 def default_zones(sym):
     """15M SRv2 bot जे पट्टे पाहतो तेच (pre-open सारखं, TA4 — पट्टा, एकच किंमत नाही): signal source engine ⇒ decision3 चे पट्टे
     (`engine3_live.watched_levels`, BROKEN / DEAD नाहीत); own / both ⇒ market_zones, एकच-किंमत level ⇒ bot चाच gate पट्टा
-    (level ± `gate_area_pad_pct` / 2). Token / data नाही ⇒ raise (ओळ "areas not available" सांगते)."""
+    (level ± `gate_area_pad_pct` / 2). Token / data नाही ⇒ raise (ओळ "Bot areas not available today (कारण)" सांगते)."""
     import cloud_db
     import engine_signal as ES
     from scripts import level_gate_preopen as PO
@@ -198,13 +198,15 @@ def default_zones(sym):
     zones = cloud_db.get_market_zones(sym)
     if zones is None or len(zones) == 0:
         return zones
+    import pandas as pd
     from bots_common.level_gate_bot import AREA_PAD_PCT, areas_from_rows
+    tfs = PO.BOT_TFS["15M SRv2"]                                           # bot जे TFs पाहतो तेच (pre-open सारखं)
+    zones = zones[[any(str(zt).endswith(f"_{tf}") for tf in tfs) for zt in zones["zone_type"]]].copy()
     pad_pct = s.get("gate_area_pad_pct")
     pad_pct = AREA_PAD_PCT if pad_pct is None else float(pad_pct)
-    zones = zones.copy()
     for i, z in zones.iterrows():
         lo = float(z["zone_low"])
-        hi = float(z["zone_high"]) if z.get("zone_high") is not None and z.get("zone_high") == z.get("zone_high") else lo
+        hi = float(z["zone_high"]) if z.get("zone_high") is not None and pd.notna(z.get("zone_high")) else lo
         lo, hi = areas_from_rows([{"zone_low": min(lo, hi), "zone_high": max(lo, hi)}], min(lo, hi) * pad_pct / 100.0)[0]
         zones.at[i, "zone_low"], zones.at[i, "zone_high"] = lo, hi
     return zones
@@ -233,7 +235,7 @@ def symbols_section(day, symbols=None, ctx_fn=None, rows_fn=None, zones_fn=None,
                 zones = zones_fn(sym)
             except Exception as exc:                                       # noqa: BLE001 — areas NA + कारण (तपशील log मध्ये)
                 print(f"⚠️ {sym} areas: {type(exc).__name__}: {exc}")
-                zerr = "areas not available"
+                zerr = html.escape(str(exc)[:60] or type(exc).__name__, quote=False)
         out.append(symbol_line(sym, ctx, gate, zones, _safe(range_fn, sym, day), areas_na=zerr))
     return "\n".join(out)
 

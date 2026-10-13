@@ -269,13 +269,16 @@ def test_summary_own_source_single_price_zone_printed_as_bots_gate_band(monkeypa
     from scripts import paper_daily_summary as S
     monkeypatch.setattr(cloud_db, "get_strategy_settings", lambda k, s: {"signal_source": "own", "gate_area_pad_pct": 0.1})
     monkeypatch.setattr(cloud_db, "get_market_zones", lambda s: pd.DataFrame([
-        {"zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": 22781.0, "zone_high": 22781.0, "status": "ACTIVE"}]))
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": 22781.0, "zone_high": 22781.0, "status": "ACTIVE"},
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_5M", "zone_low": 22710.0, "zone_high": 22710.0, "status": "ACTIVE"}]))   # 5M: SRv2 पाहत नाही
     z = S.default_zones("NIFTY")
+    assert list(z["zone_type"]) == ["DYNAMIC_SR_RESISTANCE_15M"]
     assert z["zone_high"].iloc[0] - z["zone_low"].iloc[0] == pytest.approx(22781.0 * 0.1 / 100)
     txt = S.symbols_section("2026-10-09", symbols=("NIFTY",), ctx_fn=lambda s, d: _ctx_down(), rows_fn=lambda s, d: ([], None),
                             range_fn=lambda s, d: {"high": 22700.0, "low": 22600.0})
+    assert "(15-min, " in txt                                              # 5M level (जवळचा) SRv2 पाहत नाही ⇒ दाखवत नाही
     near = re.search(r"Nearest supply ([\d,]+)–([\d,]+)", txt)
-    assert near and near.group(1) != near.group(2)                         # पट्टा, एकच किंमत नाही
+    assert near and near.group(1) != near.group(2) and near.group(1).startswith("22,77")   # 15M पट्टा, एकच किंमत नाही
 
 
 def test_summary_engine_source_uses_engine_bands_without_broken(monkeypatch):
@@ -299,5 +302,5 @@ def test_summary_engine_areas_missing_says_not_available(monkeypatch, capsys):
     monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda x: None)
     txt = S.symbols_section("2026-10-09", symbols=("NIFTY",), ctx_fn=lambda s, d: _ctx_down(), rows_fn=lambda s, d: ([], None),
                             range_fn=lambda s, d: {"high": 22700.0, "low": 22600.0})
-    assert "Bot areas not available today (areas not available)." in txt and "Nearest" not in txt
-    assert "Upstox login missing" in capsys.readouterr().out               # तपशील फक्त log मध्ये
+    assert "Bot areas not available today (Upstox login missing)." in txt and "Nearest" not in txt
+    assert "EngineDataError" in capsys.readouterr().out                    # पूर्ण तपशील log मध्ये

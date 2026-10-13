@@ -327,7 +327,8 @@ def _section(S, **kw):
     zz = {"NIFTY": ZONES, "BANKNIFTY": pd.DataFrame([{"zone_type": "DYNAMIC_SR_SUPPORT_15M", "zone_low": 50800.0, "zone_high": 50900.0,
                                                       "status": "ACTIVE"}])}
     rng = {"NIFTY": {"high": 22625.0, "low": 22480.0}, "BANKNIFTY": {"high": 51300.0, "low": 50830.0}}
-    args = dict(ctx_fn=lambda s, d: ctx.get(s), rows_fn=lambda s, d: (GATE_ROWS[s], None) if s in GATE_ROWS else (None, "db"),
+    args = dict(symbols=("NIFTY", "BANKNIFTY"),                            # = default signal_symbols (DB ला हात नाही; default path: test_preopen_symbols_bands)
+                ctx_fn=lambda s, d: ctx.get(s), rows_fn=lambda s, d: (GATE_ROWS[s], None) if s in GATE_ROWS else (None, "db"),
                 zones_fn=lambda s: zz[s], range_fn=lambda s, d: rng.get(s))
     args.update(kw)
     return S.symbols_section("2026-10-09", **args)
