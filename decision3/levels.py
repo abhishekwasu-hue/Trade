@@ -592,14 +592,15 @@ def band_flip_facts(df, t, x, s=None, start=None):
     st = FV.session_start(B, t, int(s["lookback_sessions"])) if start is None else int(start)
     k = int(s["pivot_k"])
     bar = lambda i: {"bar": int(i), "ts": str(B.ts.iloc[int(i)])}  # noqa: E731
-    state, against, brk_dir, prior = FL.ACTIVE, None, None, None
+    state, against, brk_dir, prior, flip_ctx = FL.ACTIVE, None, None, None, {}
     for n, br in enumerate(brs):
         b, d = int(br["bar"]), br["dir"]
-        end = min(t, int(brs[n + 1]["bar"]) - 1) if n + 1 < len(brs) else t
+        # scan incl. the next break's bar: the engine checks the far swing before a reclaim on every bar (that bar's pass wins)
+        end = min(t, int(brs[n + 1]["bar"])) if n + 1 < len(brs) else t
         if state == FL.BROKEN and d != brk_dir:                             # reclaim before the far swing ⇒ sweep, role / state kept
             state = prior
             out["sweeps"].append(bar(b))
-            out.update(flip_state=state, broken_at=None, far_swing=None)
+            out.update(flip_state=state, **(flip_ctx if state == FL.FLIPPED else {"broken_at": None, "far_swing": None}))
             continue
         if state == FL.BROKEN or (against is not None and d != against):   # same-side repeat / a break in the role's favour ⇒ nothing
             continue
@@ -628,6 +629,7 @@ def band_flip_facts(df, t, x, s=None, start=None):
                     return out
                 state, against = FL.FLIPPED, ("down" if up else "up")       # role changed ⇒ the other way is now "against"
                 out.update(flip_state=FL.FLIPPED, flipped_at=bar(i))
+                flip_ctx = {"broken_at": out["broken_at"], "far_swing": out["far_swing"]}   # reclaim to FLIPPED restores these
                 break
     return out
 
@@ -656,7 +658,7 @@ def band_label(x):
     flags = [f for f, on in (("established", x.get("established")), ("flipped", flipped), ("broken", x.get("broken")),
                              ("far swing not reached", x.get("flip_state") == FL.BROKEN and not x.get("broken")),
                              ("dead", x.get("flip_state") == FL.DEAD),
-                             ("swept", bool(x.get("sweeps")) and x.get("flip_state") in (FL.ACTIVE, FL.FLIPPED))) if on]   # reclaim                    # Z-1f / Z-1k: flipped, then passed again
+                             ("swept", bool(x.get("sweeps")) and x.get("flip_state") in (FL.ACTIVE, FL.FLIPPED))) if on]   # swept = reclaim; dead = Z-1f / Z-1k
     lab = f"{role} {x['lo']:,.0f}-{x['hi']:,.0f}, {x['touch_count']} touches" + (f" ({', '.join(flags)})" if flags else "")
     if not x["valid"] and not x.get("broken"):
         lab += " [invalid: " + ", ".join(x["reasons"]) + "]"

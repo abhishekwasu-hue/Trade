@@ -946,3 +946,35 @@ def test_band_flip_facts_never_flipped_break_then_reclaim_is_active_with_a_sweep
     assert f["flip_state"] == FL.ACTIVE and f["flipped_at"] is None and [w["bar"] for w in f["sweeps"]] == [44]
     lab = LV.band_label({**f, "role": "support", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
     assert "swept" in lab and "flipped" not in lab
+
+
+def test_band_flip_facts_far_swing_passed_on_the_reclaim_bar_flips_first_like_the_engine():
+    """Re-review (6153269): the engine checks the far swing before a reclaim on every bar. A support 95–98 broken down (37), far swing
+    93 @ 39; bar 44 wicks to 92.0 (past 93) and closes back above the band (the band check's up break) ⇒ FLIPPED at 44 (not a reclaim
+    sweep), and the up break at 44 is against the new resistance role ⇒ BROKEN with the flip kept."""
+    from facts import validity as FV
+    hi = [101.0, 101.5, 100.8, 101.6, 101.2, 100.9, 101.4, 101.0, 100.7, 101.3] * 3
+    hi += [101.0, 100.6, 100.4, 100.2, 100.0, 99.5, 97.5, 95.5, 94.5, 94.0, 95.0, 96.5, 97.5, 98.5, 99.8, 101.0, 103.0]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    lo[44], cl[44] = 92.0, 99.5                                            # reclaim bar trades past the far swing first
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 37, "dir": "down"}, {"bar": 44, "dir": "up"}]}
+    f = LV.band_flip_facts(B, 44, x, start=0)
+    assert f["flipped_at"]["bar"] == 44 and f["sweeps"] == []
+    assert f["flip_state"] == FL.BROKEN and f["broken_at"]["bar"] == 44
+    end = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert end["flip_state"] in (FL.BROKEN, FL.DEAD) and end["flip_state"] != FL.ACTIVE and end["sweeps"] == []
+
+
+def test_band_flip_facts_reclaim_to_flipped_restores_the_flip_facts():
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 94.5, 96.0, 97.8, 99.5, 101.5, 103.0, 104.0, 105.5]
+    B = _bars_from_highs(hi)
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}]}
+    flip = LV.band_flip_facts(B, 35, x, start=0)
+    f = LV.band_flip_facts(B, len(hi) - 1, {**x, "breaks": x["breaks"] + [{"bar": 36, "dir": "down"}, {"bar": 42, "dir": "up"}]},
+                           start=0)
+    assert f["flip_state"] == FL.FLIPPED and f["broken_at"] == flip["broken_at"] and f["far_swing"] == flip["far_swing"]
