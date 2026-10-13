@@ -2094,8 +2094,8 @@ Real break साठी एकच व्याख्या: breaks.py (KB G). �
 | 7 Oct 09:30 | S10-B: trend दिशेचा gap, pullback नाही | — | नाही (chase) | ✔ नाही |
 | 7 Oct 12:15 | S10-B → S1: gap fill rally, C-diagonal trendline + seller zone वर | पालक (1H) खाली: protected H 22,809 (code चं वाचन 7 Oct review मध्ये ✔) | G5 bear call | ✔ bear — पक्का (Abhi 2026-10-09, run2 review: 12:15 = C-end). Code चं "B च्या आत (S11)" = वाचनाचा दोष (count score tie) ⇒ I6 |
 | 16 Feb 2018 13:30 | S4, MAGNET | — | Setup नाही | बरोबर (session) |
-| 16 Feb 2018 09:30 | आधीची चाल 144% ⇒ origin real-broken ⇒ S4 (S3 नाही) | — | **नकाशाची अट:** 09:30 पर्यंत break अपयशी ठरला असेल (उलट real break, किंवा जुनं टोक) ⇒ जुना downtrend ⇒ S1 ⇒ area + commitment असेल तर setup शक्य. नाहीतर S4 ⇒ फक्त वरच्या दिशेने flip retest ⇒ bear नाही. | **Trade session ने decision bar पर्यंतच्या data वर ही अट तपासून नकाशाचं उत्तर लिहायचं; मग Abhi ✔/✘** |
-| 15 Nov 2021 13:00 | S4 (session: जुनं टोक 18,604; 18,210 फक्त local high; testing) | — | **नकाशाची अट:** break real (breaks.py) असेल आणि 13:00 चा retest corrective + rejection असेल ⇒ G4 bear. नाहीतर नाही. | **तसंच: आधी अट तपासून उत्तर, मग Abhi** |
+| 16 Feb 2018 09:30 | आधीची चाल 144% ⇒ origin real-broken ⇒ S4 (S3 नाही) | — | **नकाशाची अट:** 09:30 पर्यंत break अपयशी ठरला असेल (उलट real break, किंवा जुनं टोक) ⇒ जुना downtrend ⇒ S1 ⇒ area + commitment असेल तर setup शक्य. नाहीतर S4 ⇒ FLIPPED झाल्यावरच फक्त वरच्या दिशेने flip retest (G4) ⇒ bear नाही. | **Trade session ने decision bar पर्यंतच्या data वर ही अट तपासून नकाशाचं उत्तर लिहायचं; मग Abhi ✔/✘** |
+| 15 Nov 2021 13:00 | S4 (session: जुनं टोक 18,604; 18,210 फक्त local high; testing) | — | **नकाशाची अट:** level FLIPPED (K4: पलीकडचा swing पार) असेल, आणि 13:00 चा pullback corrective + एकूण कमी FUT volume, मग zone निकष pass ⇒ G4 bear. फक्त BROKEN ⇒ नाही. | **तसंच: आधी अट तपासून उत्तर, मग Abhi** |
 
 **निष्कर्ष:**
 - 12, 25 आणि 26 Aug ला तीन वेगळे नियम लागत नाहीत. P2 चा क्रम (Gray-1) आणि P3 (reaction) तिन्ही दिवसांचं उत्तर देतात.
