@@ -2571,3 +2571,4 @@ legs owner वि. reader2 gate).
 - `levels.band_flip_facts`: Z-1a (पलीकडे आधीचा swing नाही ⇒ break नंतरचा पहिला confirmed swing) — chart labels = engine.
 - Tests: B1 test मधलं vacuous assert काढलं; DEFAULT मार्गाचा end-to-end decide() test (far_swing flip + c0 volume + handover अनिवार्य
   + 5M CHoCH ⇒ setup; handover नाही / FUT नाही / कमी volume ⇒ wait); FUT incomplete, rollover, Telegram, payload tests.
+- **Abhi Z-1j / Z-1h / Z-1m:** entry क्रम = handover (बंधनकारक) → LTF CHoCH → dominant commitment (जास्त volume); overlap / sideways = handover study, gate नाही; volume normalise 20 (किमान 10) sessions, कमी ⇒ raw per-bar सरासरी (label). Pack bb237fb57225.
