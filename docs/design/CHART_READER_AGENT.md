@@ -109,26 +109,31 @@ A proposal only comes from a standard or deep read, never from a light read.
 
 ## 8. Cost (estimate; measured on the golden days and reported before the shadow)
 
-Per 1M tokens (in / out): Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20; cached input ≈ one tenth. One chart
-image ≈ 1,600 input tokens. Output includes thinking.
+Per 1M tokens (in / out): Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20. Prompt caching: a cache read costs
+≈ 0.1× input (Opus 5.5: $0.20 / 1M); a cache write costs 1.25× (5-minute TTL) or 2× (1-hour TTL). One chart image ≈ 1,600 input
+tokens. Output includes thinking. Every call also carries the ≈ 8k-token Method Pack (§12) as its cached system prefix.
 
-| Read | Tokens in / out (est.) | $ / call | Calls / day (2 symbols) | $ / day |
-|---|---|---|---|---|
-| Light, Haiku | 6k / 1.5k | 0.0014 | 150 | 0.21 |
-| Standard, Sonnet | 12k / 3k | 0.054 | 50 | 2.70 |
-| Escalated standard, Sonnet | 12k / 3k | 0.054 | ≈ 10 | 0.54 |
-| Deep + critic, Sonnet | 25k / 7k | 0.12 | 12 | 1.44 |
-| EOD + critic, Sonnet | 25k / 7k | 0.12 | 2 | 0.24 |
-| Pre-open + critic, Opus | 25k / 7k | 0.24 | 2 | 0.48 |
-| **Total** | | | | **≈ 5.6 → ≈ 4.6 with prompt caching** |
+| Read | Fresh in / out (est.) | $ / call, pack cached | $ / call, pack uncached | Calls / day (2 symbols) | $ / day cached | $ / day uncached |
+|---|---|---|---|---|---|---|
+| Light, Haiku | 6k / 1.5k | 0.0014 | 0.0022 | 150 | 0.21 | 0.33 |
+| Standard, Sonnet | 12k / 3k | 0.056 | 0.070 | 50 | 2.80 | 3.50 |
+| Escalated standard, Sonnet | 12k / 3k | 0.056 | 0.070 | ≈ 10 | 0.56 | 0.70 |
+| Deep + critic, Sonnet | 25k / 7k | 0.12 | 0.14 | 12 | 1.44 | 1.63 |
+| EOD + critic, Sonnet | 25k / 7k | 0.12 | 0.14 | 2 | 0.24 | 0.27 |
+| Pre-open + critic, Opus | 25k / 7k | 0.27 (one write) | 0.27 | 2 | 0.54 | 0.54 |
+| Cache writes (1-hour TTL, Sonnet / Haiku) | | | | ≈ 2–3 | ≈ 0.10 | — |
+| **Total** | | | | | **≈ 5.9** | **≈ 7.0** |
 
-Prompt caching (fixed system prompt + method notes + the unchanged part of the dossier) is part of R3 and is measured, not assumed.
+TTL by start-to-start gap (§12.3): Sonnet reads share the pack every ≤ 15 min ⇒ 1-hour TTL; Haiku every 5 min ⇒ 1-hour TTL (a 5-minute
+TTL sits on the edge); the two pre-open Opus reads run minutes apart ⇒ 5-minute TTL. Measured and reported (cached vs uncached per
+call), not assumed.
 
-**Budget (Abhi):** `reader_daily_budget_usd` = **10.0 per trading day** (no reads on non-trading days); `reader_monthly_budget_usd`
-= **220.0** (≈ 22 trading days × $10 — Abhi to confirm). Both are dashboard settings, separate from Vision's $2 / day. Every call is
-logged (time, symbol, read type, model, tokens, $). Cap reached ⇒ no more reads that day + one Telegram line. If the measured cost
-ever nears the cap, degrade in this order and tell Abhi: (1) light reads → every other 5M bar; (2) standard reads → only near an
-area. The 1H deep read and the pre-open read are never dropped.
+**Budget:** reader cap `reader_daily_budget_usd` = **10.0 per trading day** (Abhi, 13 Oct chat; no reads on non-trading days),
+`reader_monthly_budget_usd` = **220.0** (≈ 22 × $10 — Abhi to confirm); Vision keeps its own $2 / day. (The Method Pack note says
+"the $5 / day cap stays"; the later chat set $10 per trading day — this doc uses $10; Abhi to confirm.) Both are dashboard settings.
+Every call logged (time, symbol, read type, model, pack version, tokens cached / uncached, $). Cap reached ⇒ no more reads that day +
+one Telegram line. If the measured cost nears the cap, degrade and tell Abhi: (1) light reads → every other 5M bar; (2) standard
+reads → only near an area. The 1H deep read and the pre-open read are never dropped.
 
 ## 9. Output: Telegram and dashboard
 
@@ -169,9 +174,38 @@ Related PRs: R:R correction #316; KB K11 expansion #317.
 2. **Shadow, 2 weeks**, logged beside decision3's proposals and Abhi's own ✅ / ❌ / trades.
 3. **Promotion report.** Abhi decides whether `signal_source` switches to `reader_agent`. decision3 keeps running PAPER until then.
 
-## 12. Build order (after approval; no side changes)
+## 12. Method Pack — the KB as the AI's fixed method text (Vision and the reader)
 
-- **R0** KB: K11 expansion merged (Abhi-approved); R:R-correction PR merged.
+Knowledge files in a claude.ai "Project" are not visible to API calls; the API equivalent is a fixed method text sent as the system
+prompt on every call, prompt-cached.
+
+1. **`docs/knowledge/method_pack.md` (English), generated from `KNOWLEDGE_BASE.md`** by `scripts/build_method_pack.py`; the KB stays the
+   single source. A CI test fails when the pack is stale against the KB. Target ≈ 6–10k tokens. Contents, in Abhi's method order:
+   1) top-down: weekly state → daily trend (degree-aware Dow, protected origin, a correction does not change the trend) → 1H buyer /
+      seller areas → 15M pullback → 5M CHoCH;
+   2) areas: demand / supply, flips, sharp-fall / sharp-rise points, validity rules, "a zone is dead only beyond the far swing";
+   3) trendlines / channels: K6 validity (≥ 3 touches, wick anchors, close breaks, spacing, slope), horizontal vs sloping, confluence;
+   4) corrections: zigzag / flat (incl. expanded / running) / triangle / combinations; impulse vs correction from structure + anatomy;
+   5) zone study: handover (trend-side candles growing, counter side weakening, volume), patterns inside the area (K11), sweeps /
+      traps (K5);
+   6) trigger: lower-timeframe CHoCH by close + a dominant commitment candle (any reversal form) on higher FUT volume;
+   7) never: breakout entries, counter-trend entries, a minor-swing break alone as confirmation, prices not present in the facts;
+   8) Abhi method notes: reviewed lessons from ❌ reasons and 📝 corrections, added only after Abhi approves them.
+   **Not in the pack:** R:R / SL / target / lots / exits (dashboard settings).
+2. **Checklist output.** Vision and the reader return JSON with one entry per checklist item 1–7: `pass` / `fail` / `NA` + one line of
+   evidence citing a fact or a visible chart feature; overall verdict `agree` / `partly` / `disagree`. Telegram shows failed / NA items
+   first, at most 12 lines. Vision stays audit-only: it never blocks or changes orders or decisions.
+3. **Caching.** Method Pack + fixed output schema = the cached system prefix (explicit breakpoint at its end); chart images and the
+   facts of the moment come after it. TTL per §8; cached vs uncached cost per call reported in the cost table.
+4. **One pack for both.** Vision (V4 prompt) and the reader use the same pack version; every log line records the pack version
+   (content hash), so any read traces to the exact method text.
+5. **Tests:** golden days (12 Oct, 29 Sep, BANKNIFTY a-b-c) through Vision with the pack — the checklist items must come out as Abhi
+   reads them; the stale-pack CI test; a test that the output contains no price missing from the facts.
+
+## 13. Build order (after approval; no side changes)
+
+- **R0** KB: K11 expansion merged (Abhi-approved); R:R-correction PR merged; Method Pack generator + stale-pack CI test (§12);
+  Vision V4 prompt with the pack and the 1–7 checklist JSON (audit-only), golden days through Vision.
 - **R1** facts package: one owner per concept (§3) with a single dossier function + tests (no AI calls); trendlines / areas fixed to
   the audit rule (§10).
 - **R2** charts (valid lines / areas only) + anonymiser.
