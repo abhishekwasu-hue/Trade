@@ -93,42 +93,42 @@ reviewed by Abhi. No automatic threshold tuning.
   one. (The separate R:R-correction PR removes the remaining R:R gates from the live path.)
 - Information only, never pass / fail: "a higher-timeframe opposite area lies between entry and the dashboard target at X".
 
-## 7. Cadence and models (Abhi's answers)
+## 7. Cadence and models (Abhi: chart reading only by Sonnet and Opus — no Haiku)
 
-Active 09:15–15:30.
+Active 09:15–15:30. Only Sonnet 5.5 and Opus 5.5 read charts.
 
-| Read | When | Model | Input |
+| Read | When | Who | Input |
 |---|---|---|---|
-| Light | every closed 5M bar | Haiku 5.5 | facts as text, no images |
-| Standard, routine | closed 15M bar, price away from watched areas | Haiku 5.5 | 15M image + facts |
-| Standard, at area | closed 15M bar with price near / inside a watched area, or escalated by a light read | Sonnet 5.5 | 15M image + facts |
+| Light check | every closed 5M bar | **code, no AI** | facts diff: what changed since the last read, price near / inside a watched area, counter side weaker / stronger (FUT volume), LTF CHoCH, sweep — measured facts only, no reading or decision |
+| Standard | every closed 15M bar | Sonnet 5.5 | 15M image + facts + working memory; may say enter / wait / skip |
+| Escalated standard | at once, when the light check sees a trigger (price in an area + dominant candle / CHoCH / sweep) | Sonnet 5.5 | same as standard |
 | Deep + critic | every closed 1H bar; EOD 15:45 | Sonnet 5.5 | W / D / 1H / 15M images + facts |
 | Pre-open + critic | 09:00 | Opus 5.5 | same as deep |
 
-Escalation: a light read seeing a trigger condition (price in an area + dominant candle / CHoCH / sweep) calls an at-area standard
-read at once. A proposal only comes from a standard or deep read. If Haiku misreads a golden day even away from areas, report it
-and switch routine standard reads to Sonnet (option A).
+A proposal only comes from a standard or deep read. The light check only updates the facts in the working memory and decides
+whether to escalate; it never proposes.
 
 ## 8. Cost (estimate; measured on the golden days and reported before the shadow)
 
-Per 1M tokens (in / out): Haiku 5.5 $0.10 / $0.50, Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20; cached input ≈ one tenth. One chart
-image ≈ 1,600 input tokens. Output includes thinking.
+Per 1M tokens (in / out): Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20; cached input ≈ one tenth. One chart image ≈ 1,600 input
+tokens. Output includes thinking.
 
 | Read | Tokens in / out (est.) | $ / call | Calls / day (2 symbols) | $ / day |
 |---|---|---|---|---|
-| Light, Haiku | 6k / 1.5k | 0.0014 | 150 | 0.21 |
-| Standard routine, Haiku | 12k / 3k | 0.003 | ≈ 30 | 0.09 |
-| Standard at area / escalated, Sonnet | 12k / 3k | 0.054 | ≈ 20 + ≈ 10 escalations | 1.62 |
+| Light check, code | — | 0 | 150 | 0 |
+| Standard, Sonnet | 12k / 3k | 0.054 | 50 | 2.70 |
+| Escalated standard, Sonnet | 12k / 3k | 0.054 | ≈ 10 | 0.54 |
 | Deep + critic, Sonnet | 25k / 7k | 0.12 | 12 | 1.44 |
 | EOD + critic, Sonnet | 25k / 7k | 0.12 | 2 | 0.24 |
 | Pre-open + critic, Opus | 25k / 7k | 0.24 | 2 | 0.48 |
-| **Hybrid total** | | | | **≈ 4.1** |
+| **Total** | | | | **≈ 5.4 → ≈ 4.4–4.5 with prompt caching** |
 
-Worst case (price at an area on every 15M bar, many escalations) ≈ $5.6 → the degradation order applies.
-**Budget** (dashboard settings, next to Vision's separate $2 / day): `reader_daily_budget_usd` = 5.0, `reader_monthly_budget_usd`
-= 100.0. Every call logged (time, symbol, read type, model, tokens, $). Cap reached ⇒ no more reads that day + one Telegram line.
-Degradation order, reported to Abhi: (1) light reads → every other 5M bar; (2) standard reads → only near an area. The 1H deep read
-and the pre-open read are never dropped.
+Prompt caching (fixed system prompt + method notes + the unchanged part of the dossier, about half of each input) is part of R3 and
+is measured, not assumed. **Budget** (dashboard settings, next to Vision's separate $2 / day): `reader_daily_budget_usd` = 5.0,
+`reader_monthly_budget_usd` = 100.0. Every call logged (time, symbol, read type, model, tokens, $). Cap reached ⇒ no more reads that
+day + one Telegram line. If the measured cost runs over, degrade and tell Abhi: routine 15M reads away from watched areas are
+dropped (Sonnet reads only near an area or when escalated, ≈ $3.8 / day before caching). The 1H deep read and the pre-open read are
+never dropped.
 
 ## 9. Output: Telegram and dashboard
 
@@ -156,6 +156,6 @@ labelled with its touch count**, and only areas that pass the validity rules.
 - **R1** facts package: one owner per concept (§3) with a single dossier function + tests (no AI calls); trendlines / areas fixed to
   the audit rule (§10).
 - **R2** charts (valid lines / areas only) + anonymiser.
-- **R3** reader / critic / rule checker + budget log; golden days; measured cost reported.
+- **R3** light check (code) + reader / critic / rule checker + prompt caching + budget log; golden days; measured cost reported.
 - **R4** live loop + working memory + shadow Telegram + Reader timeline page (VPS command from Abhi).
 - **R5** promotion report; frozen engines archived only after Abhi's decision.
