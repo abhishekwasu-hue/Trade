@@ -10,10 +10,18 @@ No AI calls, no broker, no network.
 
 ## Inputs and the no-look-ahead rule
 
-`bars_by_tf` = spot bars `{"15M": required, "5M": LTF CHoCH, "1m": context / gaps, "1H": optional (default: complete 09:15-anchored
-hours built from the 15M bars), "D": optional daily (gap ATR / trend)}`; `fut_bars_by_tf = {"5M": near-month FUT 5M bars with volume}`.
+`bars_by_tf` = spot bars `{"15M": required, "5M": LTF CHoCH, "1m": context / gaps, "1H": optional (default: complete NSE hours
+09:15 … 15:15–15:30 from the 15M bars via `opportunity_engine.sessions.resample_nse`, `bar_closed` only), "D": optional daily (gap ATR /
+trend)}`; `fut_bars_by_tf = {"5M": FUT 5M bars with volume [+ contract / expiry]}`.
+
+**Holdout guard first:** before any section runs, every input frame (spot all TFs and FUT) goes through `pivots.engine.guard` with
+`instrument = symbol` (unknown / anonymised symbol ⇒ the strict NIFTY rule) — never the process-global current instrument. Holdout rows
+anywhere ⇒ `HoldoutError` (raised, never NA). FUT rows are de-duplicated only on timestamp + contract / expiry (no such column ⇒ no
+dedupe); sorts are stable.
+
 Every frame is cut to the bars whose **close** time is ≤ `as_of` before any owner sees it (`as_of` default = close of the last 15M bar).
-A running bar is never read. `tests/test_facts_dossier.py` proves that cutting or changing the future bars does not change the dossier.
+A running bar is never read. When `as_of` is more than one 15M bar after the last closed 15M bar, `asof_bar`, `structure` and `candles`
+carry `stale_by_minutes` + `stale_reason` (the facts describe that older bar). `tests/test_facts_dossier.py` proves that cutting or changing the future bars does not change the dossier.
 
 ## Sections: concept → owner function actually called → output keys
 
@@ -29,12 +37,12 @@ into NA (it raises).
 | `lines` | Trendlines (K6, TA3) | `trendlines2.two_touch.display_lines` (→ `facts.validity.check_line`) | `by_tf.<15M / 1H>.{asof_bar, mr, lines[]}` — each line: side, anchor1 / anchor2, slope, touches, touch_count, established, valid_from, value_at_t, projected_zone (next 3rd-touch zone + path) | no frame |
 | `confluence` | Band + line meeting (K4 + K6.4) | `facts.validity.confluence` over the shown bands × lines (all TF pairs) | `items[]` (band_tf, line_tf, role, offset, line_value, band, distance_mr, zone, line_anchors, band_touches) | no frame at all |
 | `patterns` | Chart / correction patterns (K11) | `patterns2.fold2.Fold` D2 and D1 (parent D2) on `legs2.measure2.build` + `legs2.ik2.Tracker` | `D2` / `D1`: phase, state, impulse (dir, origin, end), valid_hypotheses, pref / alt (family, kind, sub, waves, points, state, flags, c_eq_a, lines_geom, range_like), final_flag_risk, position_in_parent | swings2 / legs2 build fails |
-| `candles` | K9: reversal form, commitment, zone study (handover / absorption) | `decision3.method.candle_read`, `reversal_form` (both sides, last bar), and per touched valid band `zone_study` + `commitment` | `last_bar` (OHLC + read), `reversal_form_at_last_bar.{up, down}`, `area_studies[]` (band, role, reaction_side, arrival, bars_in_study, zone_study, commitment.present / reason / form / merged / beyond_extreme / body_pct / body_mult / vol_mult), `volume_source` | owner fails |
-| `volume` | FUT volume, trend side vs counter side (K10) | `opportunity_engine.volume.attach_futures_volume` (FUT 5M ⇒ 09:15-anchored 15M sums) | `coverage`, `last_bar.volume`, `session.{up_bars, down_bars}` (bars / mean / sum) + per-bar list, `lookback.{up_bars, down_bars}` | **FUT 5M missing, or no FUT row matches a spot bar** |
-| `ltf_choch` | LTF structure / CHoCH (K1 at 5M) | `decision3.method.ltf_frame` + `decision3.method.ltf_choch` per touched valid band | `visits[]` (band, role, reaction_side, context_from, study_from / study_to, done, code, low / lh / hl, sweep, at, close, line) | 5M spot missing |
+| `candles` | K9: reversal form, commitment, zone study (handover / absorption) | `decision3.method.candle_read`, `reversal_form` (both sides, last bar), and per touched valid band `zone_study` + `commitment` | `last_bar` (OHLC + read), `reversal_form_at_last_bar.{up, down}`, `area_studies[]` (band, role, reaction_side, arrival, bars_in_study, zone_study, commitment.present / reason / form / merged / beyond_extreme / body_pct / body_mult / vol_mult), `volume_source` ("FUT volume missing" vs "FUT attach failed: <error>"), `stale_*` | owner fails |
+| `volume` | FUT volume, trend side vs counter side (K10) | `opportunity_engine.volume.attach_futures_volume` (FUT 5M ⇒ 09:15-anchored 15M sums) | `coverage`, `last_bar.volume` (+ `reason` when None), `session.{up_bars, down_bars}` (bars / mean / sum) + per-bar list (+ `reason` when None), `lookback.{up_bars, down_bars}`, `incomplete_bars[]` (15M bars with fewer FUT 5M children than 5M slots ⇒ volume NA), `multi_contract_bars[]` | **FUT 5M missing, or no FUT row matches a spot bar** |
+| `ltf_choch` | LTF structure / CHoCH (K1 at 5M) | `decision3.method.ltf_frame` + `decision3.method.ltf_choch` per touched valid band | `visits[]` (band, role, reaction_side, context_from, `context_note` when the context falls back to the arrival bar, study_from / study_to, done, code, low / lh / hl, sweep, at, close, line) | 5M spot missing |
 | `liquidity` | Liquidity pools / sweeps / traps (K5) | `decision3.liquidity.pools`, `sweeps_and_traps` (adapter: `decision3.levels.Levels` on the swings2 result) | `pools[]` (price, side, src swing / equal / PDH / PDL / PWH / PWL), `sweeps[]`, `traps[]`, `lookback_bars` | swings2 build fails |
 | `gaps` | Opening gap (K13) | `vision.gap_context.build` | the owner's dict: pdc / pdh / pdl, open, gap, gap_atr, class G0–G5, location, trend, fill_pct, pdc_acceptance, behaviour, old_gaps … | 1m missing; no complete previous session |
-| `context` | PDH / PDL / PDC, week H-L, opening range (K8, K14) | `vision.context.prev_day`, `prev_week`, `opening` | `prev_day`, `prev_week`, `opening`, `minutes_since_open`, `missing` (VIX, FII / DII, global cues: no owner function yet) | 1m missing |
+| `context` | PDH / PDL / PDC, week H-L, opening range (K8, K14) | `vision.context.prev_day`, `prev_week`, `opening` | `prev_day`, `prev_week`, `opening`, `minutes_since_open`, `missing` (a reason per missing sub-part prev_day / prev_week / opening; VIX, FII / DII, global cues: no owner function yet) | 1m missing, or all of prev_day / prev_week / opening missing (one missing part ⇒ OK + `missing.<part>`) |
 | `divergence` | RSI divergence only (K10) | `rsi2.engine.RSI(...).known` | `rsi15_at_asof`, `rsi_warmup`, `known_count`, `last[]` (type, degree, L1 / L2 pivots, rsi1 / rsi2, gap, known_bar, line_clear, price_clear) | swings2 / legs2 build fails |
 
 Dropped everywhere (not facts): `grade`, `score(s)`, `vote(s)`, `conviction`, `decision`, `confidence`, `verdict`, `ratio`,
@@ -63,3 +71,7 @@ is the band's role (support ⇒ up, resistance ⇒ down) — a fact about the ba
 - **swings2 warm-up:** D2 (decision3's level degree) needs 20 sessions for σ plus 10 warm-up sessions; on shorter history `structure` is
   NA or D2 "unknown" while decision3's Daily Dow (from daily bars) already has a trend.
 - Some owner labels are Marathi (e.g. patterns2 `phase`, `sub`); translated only when the owner is merged.
+- **Owner chain into a frozen package:** `swings2.engine.sigma_1h`, `swings2.structure._h1` and `rsi2.engine` import `pivots.charts`, which
+  imports `backtest_review.charts` ⇒ `vision_led.charts` (plotting helpers). facts' own code imports no chart module (the 1H builder uses
+  `opportunity_engine.sessions`), and a test pins that no other frozen module is loaded; removing this chain needs an owner change
+  (merge step), not R1b.

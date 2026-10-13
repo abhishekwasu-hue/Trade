@@ -2452,3 +2452,13 @@ sessions हवेत), 5M / 1m न दिल्याने ltf_choch / gaps / 
 ⇒ वरची दुरुस्ती; मग `test_facts_dossier` + `test_reader2_boundary` + `-k "facts or validity or two_touch or levels or dossier"` पुन्हा पास.
 **उघडे:** OPEN_QUESTIONS R1b-1 … R1b-6 (trend चे अनेक हिशोब, PDH/PDL दोनदा, FUT roll, owner नसलेले VIX / FII-DII / cues, swings2 warm-up,
 legs owner वि. reader2 gate).
+- **Review (PR #321) fixes:** 🔴 holdout guard आता `build_dossier` च्या सुरुवातीला **प्रत्येक** input frame वर (spot 15M / 5M / 1m / 1H / D
+  + FUT), instrument = dossier चा symbol (global current instrument नाही; अनोळखी symbol ⇒ NIFTY चा कडक नियम); 🔴 FUT dedupe फक्त
+  timestamp + contract / expiry वर (column नसेल ⇒ dedupe नाही), stable sort. 🟡 अपूर्ण FUT 5M children ⇒ त्या 15M bar चा volume NA +
+  `incomplete_bars` + कारण; None volume ला नेहमी कारण; `multi_contract_bars`; stale 15M feed ⇒ `stale_by_minutes` (asof_bar, structure,
+  candles); context च्या प्रत्येक गायब भागाला कारण; ltf_choch fallback ला `context_note`; candles मध्ये "FUT volume missing" वि. "FUT
+  attach failed"; `_j` NaT / NA ⇒ None; 1H आता `opportunity_engine.sessions.resample_nse` (chart module नाही, फक्त पूर्ण तास, 15:15–15:30
+  सकट); न वापरलेले constants काढले, tz / session-close owner helpers (`decision3.method._naive`, `vision.context.SESSION_CLOSE`).
+  Transitive test: frozen decision modules कधीच load नाहीत; owners (swings2 / rsi2 → pivots.charts) मुळे फक्त `vision_led.charts` येतो
+  ⇒ OPEN_QUESTIONS R1b-7. Tests: `test_facts_dossier` 34 (नवे 16), full suite पुन्हा चालवला नाही (review सूचना).
+

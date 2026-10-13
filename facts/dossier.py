@@ -22,13 +22,13 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from decision3 import method as M3
+from elliott import data_policy as DP
 from facts import validity as FV
+from vision import context as VC
 
 SCHEMA = "facts.dossier/1"
 OK, NA = "OK", "NA"
-TF_MIN = {"1m": 1, "5M": 5, "15M": 15, "1H": 60}
-SESSION_OPEN = pd.Timedelta(hours=9, minutes=15)
-SESSION_CLOSE = pd.Timedelta(hours=15, minutes=30)
 
 DEFAULTS = {
     "pivots_per_degree": 8,          # display cap only (same as vision.context.SWINGS_MAX): last N confirmed pivots per degree
@@ -50,7 +50,9 @@ SECTIONS = ("structure", "legs", "areas", "lines", "confluence", "patterns", "ca
 
 # ------------------------------------------------------------------------------------------------ JSON-safe facts
 def _j(x):
-    """Owner output ⇒ JSON-safe facts (numpy / pandas / dataclass ⇒ plain; NaN ⇒ None; grade / score / vote keys dropped)."""
+    """Owner output ⇒ JSON-safe facts (numpy / pandas / dataclass ⇒ plain; NaN / NaT / NA ⇒ None; grade / score / vote keys dropped)."""
+    if x is pd.NaT or x is pd.NA:
+        return None
     if is_dataclass(x) and not isinstance(x, type):
         x = asdict(x)
     if isinstance(x, dict):
@@ -83,43 +85,75 @@ def _ok(owner, **facts):
 
 
 # ------------------------------------------------------------------------------------------------ inputs (closed bars ≤ as_of only)
-def _ts(df):
-    ts = pd.to_datetime(df["timestamp"])
-    if getattr(ts.dt, "tz", None) is not None:
-        ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
-    return ts
+def _naive(x):
+    """tz-aware ⇒ naive IST through the owner's helper (decision3.method._naive); naive stays as is."""
+    return M3._naive(pd.Series(pd.to_datetime(x))).reset_index(drop=True)
+
+
+def _instrument(symbol):
+    """The instrument whose holdout rule applies: the dossier's own symbol (never the process-global current instrument). An unknown /
+    anonymised symbol gets the default (NIFTY) rule — the strict one."""
+    import instruments as INS
+    n = str(symbol or "").upper()
+    return n if n in INS.REGISTRY else INS.DEFAULT
+
+
+def guard_inputs(symbol, bars_by_tf, fut_bars_by_tf):
+    """Sealed-holdout guard on EVERY input frame (spot all TFs + FUT), before any owner runs, with instrument = the dossier's symbol
+    (pivots.engine.guard: holdout rows or display_only rows ⇒ HoldoutError). Whole frames are checked, not only the bars ≤ as_of."""
+    from pivots import engine as PE
+    inst = _instrument(symbol)
+    for kind, frames in (("spot", bars_by_tf), ("FUT", fut_bars_by_tf)):
+        for tf, df in (frames or {}).items():
+            if df is None or not len(df):
+                continue
+            g = pd.DataFrame({"timestamp": _naive(df["timestamp"])})
+            if "display_only" in df.columns:
+                g["display_only"] = df["display_only"].to_numpy()
+            try:
+                PE.guard(g, instrument=inst)
+            except DP.HoldoutError as exc:
+                raise DP.HoldoutError(f"build_dossier({symbol}): {kind} {tf} — {exc}") from exc
 
 
 def _bar_end(df, minutes):
     if "bar_end" in df.columns:
-        be = pd.to_datetime(df["bar_end"])
-        if getattr(be.dt, "tz", None) is not None:
-            be = be.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
-        return be
-    return _ts(df) + pd.Timedelta(minutes=minutes)
+        return _naive(df["bar_end"])
+    return _naive(df["timestamp"]) + pd.Timedelta(minutes=minutes)
 
 
-def _closed(df, minutes, as_of):
-    """Rows whose close time ≤ as_of, sorted, timestamp tz-naive IST, bar_end added (None / empty ⇒ None)."""
+def _closed(df, minutes, as_of, keys=("timestamp",)):
+    """Rows whose close time ≤ as_of, stable-sorted, timestamp tz-naive IST, bar_end added (None / empty ⇒ None). Duplicates are dropped
+    on `keys` only (FUT: timestamp + contract / expiry; no contract column ⇒ no dedupe — rows of two contracts are never collapsed)."""
     if df is None or not len(df):
         return None
-    d = df.copy()
-    d["timestamp"] = _ts(d)
+    d = df.copy().reset_index(drop=True)
+    d["timestamp"] = _naive(d["timestamp"])
     d["bar_end"] = _bar_end(d, minutes)
-    d = d.sort_values("timestamp").drop_duplicates("timestamp", keep="last")
+    d = d.sort_values("timestamp", kind="stable")
+    if keys:
+        d = d.drop_duplicates(list(keys), keep="last")
     if as_of is not None:
         d = d[d["bar_end"] <= as_of]
     d = d.reset_index(drop=True)
     return d if len(d) else None
 
 
+def _fut_keys(df):
+    if df is None:
+        return ()
+    extra = [c for c in ("contract", "expiry") if c in df.columns]
+    return ("timestamp", *extra) if extra else ()
+
+
 def _closed_daily(df, as_of):
+    """Daily bars closed by as_of (the session close, vision.context.SESSION_CLOSE, of their day)."""
     if df is None or not len(df):
         return None
-    d = df.copy()
-    d["timestamp"] = _ts(d).dt.normalize()
-    d["bar_end"] = d["timestamp"] + SESSION_CLOSE
-    d = d.sort_values("timestamp").drop_duplicates("timestamp", keep="last")
+    d = df.copy().reset_index(drop=True)
+    d["timestamp"] = _naive(d["timestamp"]).dt.normalize()
+    d["bar_end"] = d["timestamp"] + VC.SESSION_CLOSE
+    d = d.sort_values("timestamp", kind="stable").drop_duplicates("timestamp", keep="last")
     if as_of is not None:
         d = d[d["bar_end"] <= as_of]
     d = d.reset_index(drop=True)
@@ -127,14 +161,13 @@ def _closed_daily(df, as_of):
 
 
 def _hours_from_15m(m15):
-    """Complete 09:15-anchored 1H bars from closed 15M bars (pivots.charts.agg_1h); an hour is kept only when its last 15M bar ends at
-    min(start + 1h, 15:30) — a running hour is never a bar."""
-    from pivots import charts as PC
-    h1 = PC.agg_1h(m15)
-    t = pd.to_datetime(h1["timestamp"])
-    need = np.minimum((t + pd.Timedelta(hours=1)).to_numpy(), (t.dt.normalize() + SESSION_CLOSE).to_numpy())
-    ok = pd.to_datetime(h1["bar_end"]).to_numpy() >= need
-    return h1[ok].reset_index(drop=True)
+    """Complete NSE hours (09:15-anchored, the 15:15–15:30 hour included) from closed 15M bars via the session owner
+    opportunity_engine.sessions.resample_nse (data path, no chart module; CAS off ⇒ the same OHLC as the 15M input); only bars whose
+    source covers the whole hour (`bar_closed`) — a running hour is never a bar."""
+    from opportunity_engine import sessions as OS
+    h1 = OS.resample_nse(m15[["timestamp", "open", "high", "low", "close"]], 60, cas=False)
+    h1 = h1[h1["bar_closed"].astype(bool)]
+    return h1[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
 
 
 def _frame_info(df):
@@ -154,6 +187,15 @@ class _Ctx:
         self.m15 = frames["15M"]
         self.t = len(self.m15) - 1
         self._memo = {}
+        gap = (as_of - pd.Timestamp(self.m15["bar_end"].iloc[-1])) / pd.Timedelta(minutes=1)
+        bar = (pd.Timestamp(self.m15["bar_end"].iloc[-1]) - pd.Timestamp(self.m15["timestamp"].iloc[-1])) / pd.Timedelta(minutes=1)
+        self.stale = None if gap <= bar else {
+            "stale_by_minutes": int(gap),
+            "stale_reason": f"the last closed 15M bar closed {int(gap)} min before as_of (> one bar): these facts describe that bar, "
+                            f"not as_of (feed stale, market closed or pre-open)"}
+
+    def stale_facts(self):
+        return dict(self.stale or {})
 
     def memo(self, key, fn):
         if key not in self._memo:
@@ -206,7 +248,6 @@ class _Upstream(Exception):
 
 def _reraise_policy(exc):
     """The sealed holdout guard is never turned into NA: a dossier over holdout rows must fail loudly."""
-    from elliott import data_policy as DP
     if isinstance(exc, DP.HoldoutError):
         raise exc
 
@@ -244,7 +285,7 @@ def structure(c):
     if not any(x["confirmed_pivots"] for x in degrees.values()):
         sig = res["settings"]["sigma_sessions"]
         return _na(owner, f"no confirmed swings2 pivot at as_of (σ needs {sig} complete sessions; warm-up per degree)")
-    return _ok(owner, degrees=degrees, events_from=str(c.m15["timestamp"].iloc[start]),
+    return _ok(owner, degrees=degrees, events_from=str(c.m15["timestamp"].iloc[start]), **c.stale_facts(),
                note="state / events per 15M close (swings2 structure degrees D1, D2); pivot_trend = swings2.structure.trend_of "
                     "on confirmed non-warm-up pivots of that degree")
 
@@ -401,15 +442,19 @@ def patterns(c):
 
 # ------------------------------------------------------------------------------------------------ K9 candles — decision3.method
 def _arrays(c):
+    """OHLC arrays for the decision3.method owners + FUT volume from the volume owner. Returns (A, volume_source text): the text tells
+    "FUT volume missing" (no FUT input) apart from "FUT attach failed: <error>" (the volume owner raised)."""
     A = {k: c.m15[k].to_numpy(float) for k in ("open", "high", "low", "close")}
-    v = None
+    if c.fut5 is None:
+        return A, "NA (FUT volume missing: no FUT 5M bars at or before as_of)"
     try:
         v = c.fut15()
-    except _Upstream:
-        v = None
-    if v is not None:
-        A["volume"] = v
-    return A
+    except _Upstream as exc:
+        return A, f"NA (FUT attach failed: {exc})"
+    if v is None or not np.isfinite(v).any():
+        return A, "NA (FUT volume missing: no FUT rows match the 15M spot bars)"
+    A["volume"] = v
+    return A, "FUT 15M (volume owner); bars with incomplete FUT 5M children are NA"
 
 
 def _visits(c, s3):
@@ -444,7 +489,7 @@ def candles(c):
     owner = "decision3.method.candle_read / reversal_form / zone_study / commitment"
     from decision3 import method as M
     s3 = c.s3()
-    A = _arrays(c)
+    A, vsrc = _arrays(c)
     tss = c.m15["timestamp"].to_numpy()
     t = c.t
     mr = FV.mr_at(FV.bars_of(c.m15), t)
@@ -463,8 +508,7 @@ def candles(c):
         studies.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
                         "arrival": {"bar": a, "ts": str(c.m15["timestamp"].iloc[a])}, "bars_in_study": t - a + 1,
                         "zone_study": zs, "commitment": {"present": bool(present), "reason": GRADE_TXT.sub("", why), **cm}})
-    return _ok(owner, last_bar=last, reversal_form_at_last_bar=forms, area_studies=studies,
-               volume_source="FUT 15M (volume owner)" if "volume" in A else "NA (FUT volume missing)",
+    return _ok(owner, last_bar=last, reversal_form_at_last_bar=forms, area_studies=studies, volume_source=vsrc, **c.stale_facts(),
                note="area_studies only for valid bands touched within decision3 touch_window_bars of as_of")
 
 
@@ -480,7 +524,26 @@ def _attach_volume(c):
     frames, cov = OV.attach_futures_volume({"5m": f5, "15m": f15}, c.fut5)
     v = np.array(frames["15m"]["volume"].to_numpy(float), dtype=float)
     v[~(v > 0)] = np.nan                                                    # owner: 0 = no FUT row ⇒ NA, never a guess
+    # completeness (adapter facts, not a rule): a 15M bar whose FUT 5M children (distinct 5M starts inside it) are fewer than the 5M
+    # slots of the bar is under-counted by the sum ⇒ NA for that bar; bars where more than one contract was summed are listed.
+    ft = pd.to_datetime(c.fut5["timestamp"]).to_numpy()
+    st, en = c.m15["timestamp"].to_numpy(), c.m15["bar_end"].to_numpy()
+    pos = np.searchsorted(st, ft, side="right") - 1
+    ok = (pos >= 0) & (ft < en[np.clip(pos, 0, len(st) - 1)])
+    slot = pd.Timedelta(minutes=M3.LTF_OF.get(15, 5))
+    kids = pd.Series(ft[ok]).groupby(pos[ok]).nunique()
+    ccol = next((k for k in ("contract", "expiry") if k in c.fut5.columns), None)
+    multi = pd.Series(c.fut5[ccol].to_numpy()[ok]).groupby(pos[ok]).nunique() if ccol else pd.Series(dtype=int)
+    incomplete = []
+    for i in range(len(st)):
+        need = int((pd.Timestamp(en[i]) - pd.Timestamp(st[i])) / slot)
+        got = int(kids.get(i, 0))
+        if 0 < got < need:
+            incomplete.append({"ts": str(pd.Timestamp(st[i])), "fut_5m_children": got, "expected": need})
+            v[i] = np.nan
     c._cov = cov
+    c._incomplete = incomplete
+    c._multi = [str(pd.Timestamp(st[i])) for i, n in multi.items() if n > 1]
     return v
 
 
@@ -504,9 +567,18 @@ def volume(c):
         x = v[mask]
         x = x[np.isfinite(x)]
         return {"bars": int(len(x)), "mean": float(np.mean(x)) if len(x) else None, "sum": float(np.sum(x)) if len(x) else None}
-    bars = [{"ts": str(m["timestamp"].iloc[i]), "side": "up" if up[i] else ("down" if dn[i] else "flat"),
-             "volume": v[i]} for i in np.flatnonzero(sess)]
-    return _ok(owner, coverage=getattr(c, "_cov", None), last_bar={"ts": str(m["timestamp"].iloc[t]), "volume": v[t]},
+    inc = {x["ts"]: x for x in getattr(c, "_incomplete", [])}
+
+    def why(i):
+        k = str(m["timestamp"].iloc[i])
+        if k in inc:
+            return f"incomplete FUT 5M children ({inc[k]['fut_5m_children']} of {inc[k]['expected']}) — sum would under-count"
+        return "no FUT row for this bar"
+    bars = [{"ts": str(m["timestamp"].iloc[i]), "side": "up" if up[i] else ("down" if dn[i] else "flat"), "volume": v[i],
+             **({} if np.isfinite(v[i]) else {"reason": why(i)})} for i in np.flatnonzero(sess)]
+    last = {"ts": str(m["timestamp"].iloc[t]), "volume": v[t], **({} if np.isfinite(v[t]) else {"reason": why(t)})}
+    return _ok(owner, coverage=getattr(c, "_cov", None), last_bar=last, incomplete_bars=getattr(c, "_incomplete", []),
+               multi_contract_bars=getattr(c, "_multi", []),
                session={"up_bars": side(sess & up), "down_bars": side(sess & dn), "bars": bars},
                lookback={"from": str(m["timestamp"].iloc[start]), "up_bars": side(win & up), "down_bars": side(win & dn)},
                note="up / down = candle colour on spot 15M; which side is the trend side is the reader's call (structure section)")
@@ -522,11 +594,12 @@ def ltf_choch(c):
     L = M.ltf_frame(c.f["5M"], 5, "5M")
     s3 = c.s3()
     vis = _visits(c, s3)
+    d1_err = None
     try:
         res, _, _ = c.swings()
         d1 = SE.known(res, 1, c.as_of)
-    except _Upstream:
-        d1 = []
+    except _Upstream as exc:
+        d1, d1_err = [], str(exc)
     out = []
     t_end = c.m15["bar_end"].iloc[c.t]
     for v in vis:
@@ -536,8 +609,10 @@ def ltf_choch(c):
         prev = [p for p in d1 if p.kind == kind and p.bar < a]
         t_ctx = pd.Timestamp(prev[-1].ts) if prev else t_start
         x = M.ltf_choch(L, d, t_ctx, t_start, t_end, {"lo": b["lo"], "hi": b["hi"]})
+        note = {} if prev else {"context_note": "context falls back to the arrival bar: " + (
+            f"swings2 unavailable ({d1_err})" if d1_err else "no confirmed swings2 D1 swing before the arrival")}
         out.append({"band_tf": v["tf"], "band": [b["lo"], b["hi"]], "role": b["role"], "reaction_side": "up" if d > 0 else "down",
-                    "context_from": str(t_ctx), "study_from": str(t_start), "study_to": str(t_end), **x})
+                    "context_from": str(t_ctx), "study_from": str(t_start), "study_to": str(t_end), **note, **x})
     return _ok(owner, visits=out, note="studied only at valid bands touched within decision3 touch_window_bars of as_of; context starts "
                                        "at the last confirmed swings2 D1 swing before the arrival (else at the arrival)")
 
@@ -576,7 +651,6 @@ def gaps(c):
 # ------------------------------------------------------------------------------------------------ K8 / K14 context — vision.context
 def context(c):
     owner = "vision.context.prev_day / prev_week / opening"
-    from vision import context as VC
     cut = c.f.get("1m")
     if cut is None:
         return _na(owner, "1m spot bars missing (the context owner reads complete 1m sessions)")
@@ -587,6 +661,12 @@ def context(c):
     na = {"vix": "no owner function yet (design §3: VIX lives in chart_reader/evidence)",
           "fii_dii": "no owner function yet (design §3: to move in from vision_led)",
           "global_cues": "no owner function yet (design §3: to move in from vision_led)"}
+    if pdx is None:
+        na["prev_day"] = "no complete previous session in the 1m data (owner's minimum 1m bars per session)"
+    if pw is None:
+        na["prev_week"] = "no complete previous week in the 1m data"
+    if op is None:
+        na["opening"] = "no 1m bar of the as_of session at or before as_of"
     if pdx is None and pw is None and op is None:
         return _na(owner, "no complete previous session / week and no bar today in the 1m data")
     return _ok(owner, prev_day=pdx, prev_week=pw, opening=op, minutes_since_open=mins, missing=na,
@@ -624,13 +704,13 @@ def build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)
     bars_by_tf: spot bars {"15M": required, "5M": LTF CHoCH, "1m": context / gaps, "1H": optional (else complete hours from 15M),
     "D": optional daily (gap ATR / trend)}; each a DataFrame with timestamp (bar start, IST) + open / high / low / close [+ bar_end].
     fut_bars_by_tf: {"5M": near-month FUT 5M bars with timestamp + volume [+ expiry / contract]} — FUT volume (K10).
-    Returns {"schema", "symbol", "as_of", "inputs", "sections": {name: {"status": OK | NA, "owner", ...facts | "reason"}}}."""
+    Returns {"schema", "symbol", "as_of", "inputs", "sections": {name: {"status": OK | NA, "owner", ...facts | "reason"}}}.
+    Every input frame (spot all TFs + FUT) is checked against the sealed holdout for `symbol` first (HoldoutError, never NA)."""
     cfg = {**DEFAULTS, **(cfg or {})}
     bars_by_tf = bars_by_tf or {}
     fut_bars_by_tf = fut_bars_by_tf or {}
-    as_of = None if as_of is None else pd.Timestamp(as_of)
-    if as_of is not None and as_of.tzinfo is not None:
-        as_of = as_of.tz_convert("Asia/Kolkata").tz_localize(None)
+    guard_inputs(symbol, bars_by_tf, fut_bars_by_tf)
+    as_of = None if as_of is None else pd.Timestamp(_naive([as_of]).iloc[0])
     m15 = _closed(bars_by_tf.get("15M"), 15, as_of)
     if m15 is None:
         raise ValueError("build_dossier: 15M spot bars (closed at or before as_of) are required")
@@ -641,10 +721,11 @@ def build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)
     frames["1H"] = _closed(bars_by_tf.get("1H"), 60, as_of) if bars_by_tf.get("1H") is not None else _hours_from_15m(m15)
     if frames["1H"] is not None and not len(frames["1H"]):
         frames["1H"] = None
-    fut5 = _closed(fut_bars_by_tf.get("5M"), 5, as_of)
+    fut5 = _closed(fut_bars_by_tf.get("5M"), 5, as_of, keys=_fut_keys(fut_bars_by_tf.get("5M")))
     c = _Ctx(symbol, frames, fut5, as_of, cfg)
     sections = {name: _run(OWNER_NAMES[name], lambda fn=fn: fn(c)) for name, fn in OWNERS.items()}
     return {"schema": SCHEMA, "symbol": symbol, "as_of": str(as_of),
-            "asof_bar": {"tf": "15M", "ts": str(m15["timestamp"].iloc[-1]), "close": round(float(m15["close"].iloc[-1]), 2)},
+            "asof_bar": {"tf": "15M", "ts": str(m15["timestamp"].iloc[-1]), "close": round(float(m15["close"].iloc[-1]), 2),
+                         **c.stale_facts()},
             "inputs": {**{tf: _frame_info(frames[tf]) for tf in ("15M", "1H", "5M", "1m", "D")}, "FUT_5M": _frame_info(fut5)},
             "sections": sections}

@@ -222,6 +222,191 @@ def test_15m_required_and_holdout_never_swallowed(world):
         D.build_dossier("NIFTY", {"15M": hold}, None)
 
 
+def _to_holdout(df):
+    shift = DP.HOLDOUT_START - pd.to_datetime(df["timestamp"]).dt.normalize().iloc[0]
+    out = df.assign(timestamp=pd.to_datetime(df["timestamp"]) + shift)
+    if "bar_end" in df.columns:
+        out["bar_end"] = pd.to_datetime(df["bar_end"]) + shift
+    return out
+
+
+def _daily(m15):
+    d = m15.assign(day=pd.to_datetime(m15["timestamp"]).dt.normalize()).groupby("day").agg(
+        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"))
+    return d.reset_index().rename(columns={"day": "timestamp"})
+
+
+def test_holdout_guard_uses_the_dossier_symbol_not_the_global_instrument(world, monkeypatch):
+    import instruments as INS
+    m15, *_ = world
+    monkeypatch.setitem(INS._current, "name", "BANKNIFTY")                   # process-global instrument has no holdout
+    with pytest.raises(DP.HoldoutError):
+        D.build_dossier("NIFTY", {"15M": _to_holdout(m15)}, None)
+
+
+@pytest.mark.parametrize("where", ["5M", "1m", "D", "1H", "FUT"])
+def test_holdout_rows_in_any_single_input_frame_raise(world, where):
+    m15, fut, ltf, one, as_of, _ = world
+    bars = {"15M": m15, "5M": ltf, "1m": one, "D": _daily(m15)}
+    futs = {"5M": fut}
+    if where == "FUT":
+        futs["5M"] = _to_holdout(fut)
+    elif where == "1H":
+        bars["1H"] = _to_holdout(m15.assign(bar_end=pd.to_datetime(m15["timestamp"]) + pd.Timedelta(hours=1)))
+    else:
+        bars[where] = _to_holdout(bars[where])
+    with pytest.raises(DP.HoldoutError, match=where):
+        D.build_dossier("NIFTY", bars, futs, as_of=as_of, cfg={"legs_reader": RR.read})
+
+
+# ------------------------------------------------------------------------------------------------ FUT data quality
+def _last_bar_rows(fut, as_of):
+    t = pd.Timestamp(as_of) - pd.Timedelta(minutes=15)
+    ft = pd.to_datetime(fut["timestamp"])
+    return fut[(ft >= t) & (ft < as_of)]
+
+
+def test_fut_two_contracts_at_a_roll_are_not_collapsed_and_order_does_not_matter(world):
+    m15, fut, ltf, one, as_of, d = world
+    rows = _last_bar_rows(fut, as_of)
+    nxt = rows.assign(volume=1000.0, expiry=rows["expiry"] + pd.Timedelta(days=28))
+    two = pd.concat([fut, nxt], ignore_index=True)
+    a = _dossier(m15, two, ltf, one, as_of)["sections"]["volume"]
+    b = _dossier(m15, two.iloc[::-1].reset_index(drop=True), ltf, one, as_of)["sections"]["volume"]
+    assert a == b                                                               # stable: row order never picks a contract
+    assert a["status"] == D.OK and a["multi_contract_bars"] == [d["asof_bar"]["ts"]]
+    assert a["last_bar"]["volume"] == d["sections"]["volume"]["last_bar"]["volume"] + 3 * 1000.0   # owner sums every row (R1b-3)
+    c = _dossier(m15, two.drop(columns=["expiry"]), ltf, one, as_of)["sections"]["volume"]   # no contract column ⇒ no dedupe
+    assert c["last_bar"]["volume"] == a["last_bar"]["volume"]
+
+
+def test_fut_bar_with_missing_5m_children_is_na_with_reason(world):
+    m15, fut, ltf, one, as_of, d = world
+    drop = _last_bar_rows(fut, as_of).index[:1]
+    v = _dossier(m15, fut.drop(index=drop), ltf, one, as_of)["sections"]["volume"]
+    assert v["status"] == D.OK
+    assert v["last_bar"]["volume"] is None and "incomplete FUT 5M children (2 of 3)" in v["last_bar"]["reason"]
+    assert v["incomplete_bars"] == [{"ts": d["asof_bar"]["ts"], "fut_5m_children": 2, "expected": 3}]
+    assert d["sections"]["volume"]["incomplete_bars"] == [] and "reason" not in d["sections"]["volume"]["last_bar"]
+
+
+def test_candles_tell_fut_missing_from_attach_failure(world, monkeypatch):
+    m15, fut, ltf, one, as_of, _ = world
+    assert "FUT volume missing" in _dossier(m15, None, ltf, one, as_of)["sections"]["candles"]["volume_source"]
+    from opportunity_engine import volume as OV
+
+    def boom(*a, **k):
+        raise KeyError("bar_start")
+    monkeypatch.setattr(OV, "attach_futures_volume", boom)
+    S = _dossier(m15, fut, ltf, one, as_of)["sections"]
+    assert "FUT attach failed" in S["candles"]["volume_source"] and "KeyError" in S["candles"]["volume_source"]
+    assert S["volume"]["status"] == D.NA and "KeyError" in S["volume"]["reason"]
+
+
+# ------------------------------------------------------------------------------------------------ stale feed, empty-but-OK pieces
+def test_stale_15m_feed_is_flagged_in_structure_and_candles(world):
+    m15, fut, ltf, one, as_of, d = world
+    late = as_of + pd.Timedelta(minutes=50)                                    # no newer bar exists in the cut frames
+    x = _dossier(_cut(m15, as_of, 15), _cut(fut, as_of, 5), _cut(ltf, as_of, 5), _cut(one, as_of, 1), late)
+    for sec in ("structure", "candles"):
+        assert x["sections"][sec]["stale_by_minutes"] == 50 and "stale" in x["sections"][sec]["stale_reason"], sec
+        assert "stale_by_minutes" not in d["sections"][sec]
+    assert x["asof_bar"]["stale_by_minutes"] == 50 and "stale_by_minutes" not in d["asof_bar"]
+
+
+def test_context_missing_parts_carry_a_reason(world):
+    m15, fut, ltf, one, as_of, _ = world
+    today = pd.to_datetime(one["timestamp"]).dt.normalize() == pd.Timestamp(as_of).normalize()
+    c = _dossier(m15, fut, ltf, one[today].reset_index(drop=True), as_of)["sections"]["context"]
+    assert c["status"] == D.OK and c["opening"] is not None
+    assert c["prev_day"] is None and c["missing"]["prev_day"] and c["prev_week"] is None and c["missing"]["prev_week"]
+    assert "opening" not in c["missing"]
+
+
+def test_area_visit_with_ltf_context_fallback_is_noted(world, monkeypatch):
+    m15, fut, ltf, one, as_of, _ = world
+    from swings2 import engine as SE
+    row = _cut(m15, as_of, 15).iloc[-1]
+    band = {"lo": float(row["low"]), "hi": float(row["high"]), "role": V.RES, "valid": True}
+
+    def visits(c, s3):
+        return [{"tf": "15M", "band": band, "arrival_bar": c.t - 1, "d": -1}]
+
+    def boom(*a, **k):
+        raise ValueError("engine down")
+    monkeypatch.setattr(D, "_visits", visits)
+    monkeypatch.setattr(SE, "build", boom)
+    S = _dossier(m15, fut, ltf, one, as_of)["sections"]
+    v = S["ltf_choch"]["visits"]
+    assert len(v) == 1 and "falls back to the arrival bar" in v[0]["context_note"] and "swings2" in v[0]["context_note"]
+    assert v[0]["context_from"] == v[0]["study_from"]
+    st = S["candles"]["area_studies"]
+    assert len(st) == 1 and "present" in st[0]["commitment"] and "grade" not in st[0]["commitment"]["reason"]
+
+
+def test_json_helper_maps_nat_and_na_to_none():
+    assert D._j({"a": pd.NaT, "b": pd.NA, "c": [pd.NaT, 1.5], "d": float("nan")}) == {"a": None, "b": None, "c": [None, 1.5], "d": None}
+
+
+def test_daily_frame_path_closed_days_only_and_used_by_gaps(world):
+    m15, fut, ltf, one, as_of, d = world
+    daily = _daily(m15)                                                         # includes the as_of day (closes after as_of)
+    bars = {"15M": m15, "5M": ltf, "1m": one}
+    x = D.build_dossier("SYNTH", {**bars, "D": daily}, {"5M": fut}, as_of=as_of, cfg={"legs_reader": RR.read})
+    info = x["inputs"]["D"]
+    assert info != "missing" and pd.Timestamp(info["last_close_at"]) <= as_of
+    assert pd.Timestamp(info["to"]) < pd.Timestamp(as_of).normalize()
+    assert x["sections"]["gaps"]["status"] == D.OK and x["sections"]["gaps"]["trend_source"] == "daily"
+    assert d["sections"]["gaps"]["trend_source"] == "1m"
+    cut = D.build_dossier("SYNTH", {**bars, "D": daily.iloc[:-1]}, {"5M": fut}, as_of=as_of, cfg={"legs_reader": RR.read})
+    assert cut == x                                                             # the running day's daily bar is never read
+
+
+def test_1h_bars_are_complete_nse_hours_only(world):
+    m15, fut, ltf, one, as_of, d = world
+    assert pd.Timestamp(d["inputs"]["1H"]["last_close_at"]) <= as_of
+    h = D._hours_from_15m(_cut(m15, as_of, 15))
+    hm = pd.to_datetime(h["timestamp"]).dt.strftime("%H:%M")
+    assert set(hm) <= {"09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:15"} and "15:15" in set(hm)
+    assert pd.Timestamp(h[hm == "15:15"]["bar_end"].iloc[-1]).strftime("%H:%M") == "15:30"
+    assert pd.Timestamp(h["bar_end"].iloc[-1]) <= as_of                         # the running 09:15 hour of the as_of day is not a bar
+
+
+TRANSITIVE_SCRIPT = """
+import sys
+sys.path.insert(0, {root!r})
+from tests import oct12_fixture as F
+from tests.ltf_fixtures import split_bars
+from facts import dossier as D
+m15, fut, ltf = F.build()
+D.build_dossier("SYNTH", {{"15M": m15, "5M": ltf, "1m": split_bars(m15, 15, 15)}}, {{"5M": fut}})
+print(" ".join(sorted(sys.modules)))
+"""
+
+
+def test_dossier_run_loads_no_frozen_decision_engine():
+    """Transitive check (fresh interpreter, full dossier run): decision2, simple_core, mtf, reader2 and the frozen decision paths are
+    never loaded, and facts' own code imports no chart module. Known owner chain (not facts' code; open question R1b-7): the swings2 /
+    rsi2 σ_1H helpers import pivots.charts ⇒ backtest_review.charts ⇒ vision_led.charts (plotting helpers only) — any OTHER vision_led
+    module fails this test."""
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, "-c", TRANSITIVE_SCRIPT.format(root=ROOT)], capture_output=True, text=True, cwd=ROOT,
+                         timeout=600)
+    assert out.returncode == 0, out.stderr[-2000:]
+    mods = set(out.stdout.split())
+    assert "facts.dossier" in mods
+    banned = ("decision2", "simple_core", "mtf", "reader2", "opportunity_engine.detectors", "opportunity_engine.bias",
+              "opportunity_engine.gate", "opportunity_engine.scoring", "opportunity_engine.selector", "opportunity_engine.engine",
+              "chart_reader.grade", "chart_reader.rules", "chart_reader.risk", "chart_reader.evaluate", "chart_reader.narrative",
+              "chart_reader.checklist")
+    assert not [m for m in mods if any(m == b or m.startswith(b + ".") for b in banned)]
+    assert {m for m in mods if m.split(".")[0] == "vision_led"} <= {"vision_led", "vision_led.charts"}
+    tree = ast.parse(open(os.path.join(ROOT, "facts", "dossier.py"), encoding="utf-8").read())
+    own = {f"{n.module}.{a.name}" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module for a in n.names}
+    assert not [m for m in own if m.endswith(".charts") or m.endswith(".chart")]
+
+
 # ------------------------------------------------------------------------------------------------ 12-Oct reference fixture: golden shape
 def test_oct12_fixture_golden_shape_bear_and_mirror(world):
     """Shape only (no invented values): the bear case and its price mirror (tests/oct12_fixture.py, `mirror=True` = the same case for a
