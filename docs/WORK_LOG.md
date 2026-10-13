@@ -2218,3 +2218,20 @@ holdout), pre-open (ℹ️ / ❌ दोन्ही). जुना replay test �
 engine च्याच नियमाने (`LR.mature_cap` ⇒ `decision3.engine.mature_intact`, ctx phase / counter): अखंड ⇒ "grade at most B", नाहीतर "grade at most
 weak". (4) replay: feed fallback ⇒ ⚠️ ओळ contract नावासह; D च्या front month चा expiry ≤ D / वेगळा contract ⇒ "volume from a different contract
 than the day's front month — c0 volume unreliable"; `until_close` `_all` file मधून दिवसाचा front month (near_month नियम), alphabetical नाही.
+
+## 2026-10-13 · Trendline / S/R area audit (Abhi: "are we drawing childish trendlines everywhere?") — branch `claude/trendline-area-audit`
+
+**काय केलं (फक्त audit — chart / engine code ला हात नाही):**
+- `research/trendline_area_audit.py`: NIFTY + BANKNIFTY, 15M + 1H (1H = `decision3.levels.h1_frame`), शेवटचे 20 sessions (11 Sep … 12 Oct
+  2026), प्रत्येक session close ला सध्याचं code जे रेघा / areas काढतं ते — trendlines2 (`mtf.charts.draw_lines`), V22 K line
+  (`decision3.trendline.k_line`), V22 swing line (`swing_line` ⇒ "+TL" area), dashboard Trendline Gate (`signals.detect_trendline`),
+  V22 1H bands (`decision3.charts.h1_png`), zones2 (`mtf.charts.draw_zones`), SR V3 (dashboard V3 view), Vision majors (`vision/chart._overlays`)
+  — KB K6 (रेघा) आणि K4 + K5 magnet (areas) वर तपासले. SR V3 audit (`leg_level_validation.md`) मध्ये area validity नियम नाहीत ⇒ K4.
+- एकच run (~3 min). Charts (80, English) + CSV फक्त trade-data `reports/trendline_audit/2026-10-13/` (commit 1993be3).
+- **निकाल:** रेघा 153 पैकी K6-valid फक्त 8 (5%); V22 रेघा 2 स्पर्शांवर (`tl_min_touches` = 2, K6 ≥ 3); dashboard gate ची polyfit
+  रेघ wick वर anchor नसते (79/86). Areas 1,485 पैकी K4-valid 710 (48%): SR V3 चे 279/542 एकच किंमत, Vision majors 84/84 एकच किंमत,
+  BANKNIFTY V22 1H bands 43/110 > 1.5 MR, zones2 एका 15M chart वर 17 पर्यंत.
+- अहवाल: `docs/reports/2026-10-13_trendline_area_audit.md` (counts फक्त; fix फक्त प्रस्ताव).
+**Data:** CONTAMINATED + ILLUSTRATION काळ (`purpose="annotation"`) ⇒ illustration, tuning नाही. NIFTY holdout लोड केला नाही (NIFTY Daily फक्त
+15M वरून). Upstox / paid API नाही.
+**उघडे:** OPEN_QUESTIONS TA1–TA4.

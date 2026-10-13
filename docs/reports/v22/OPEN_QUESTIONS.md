@@ -289,3 +289,12 @@
 | DP2 | Replay (`--source upstox`) चा FUT volume स्रोत | collector file मध्ये दिवस D असेल तर ती; नाहीतर `feed.futures` (front-month as of D+1 — expiry दिवशी पुढचा contract असू शकतो, contract छापला जातो) | नेहमी feed (live engine सारखं) / नेहमी file |
 | DP3 | Pre-open: आज engine row नाही + cron आहे — ℹ️ कधी? | (review #313) 09:45 IST पर्यंत, **आणि** मागच्या trading session (weekday − config सुट्ट्या) चा किमान एक row असेल तरच ℹ️; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". 09:45 नंतर row नाही ⇒ ❌ | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
 | DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |
+
+## Trendline / area audit 2026-10-13 (`docs/reports/2026-10-13_trendline_area_audit.md`) — Abhi निर्णय हवे (code बदल नाही)
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| TA1 | Chart वर फक्त K6-valid रेघा? (≥ 3 wick touches, spacing, मधे close-through नाही, slope ≤ 0.5 MR/bar, real break नाही, शेवटच्या 2 sessions मध्ये touch) — आज 153 पैकी 8 valid | तसेच (audit फक्त; सगळे drawers जसेच्या तसे) | (a) सगळ्या charts वर फक्त valid, TF मागे कमाल 2, label "N touches"; (b) invalid फिकट + कारण; (c) तसेच |
+| TA2 | K6 spacing: 6 की 8 bars? (KB "6–8"; या sample मध्ये verdict सारखाच — दोन्हीने 8 valid; < 8 फक्त BANKNIFTY 1H trendlines2 च्या 13 रेघांत, त्या आधीच stale) | audit दोन्ही दाखवतो; trendlines2 `min_spacing` 6 | 6 / 8 |
+| TA3 | V22 `tl_min_touches` 2 ⇒ 3? (K line / swing line सगळ्या 2 स्पर्शांच्या; K6 ≥ 3). निर्णयावर परिणाम (⑤ पुरावा, "+TL" area) वेगळा मोजावा लागेल | 2 (Abhi नियम "K ≥ 2 स्पर्श") | 3 फक्त chart साठी / 3 engine मध्येही |
+| TA4 | SR V3 आणि Vision majors एकच किंमत (line) काढतात — K4 "zone, line नाही". Band कसा? | तसेच | (a) wick–body पट्टा (V22 `_band_swing` सारखा); (b) ± अपूर्णांक × MR; (c) तसेच |
