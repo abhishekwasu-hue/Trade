@@ -2535,6 +2535,7 @@ legs owner वि. reader2 gate).
   V22 c0 volume NA ⇒ data problem वाट (grade-B नाही). cap_b काढला.
 - Z-1a: swing नसेल ⇒ break नंतरचा पहिला confirmed swing. Z-1f: FLIPPED zone पुन्हा far swing पार ⇒ DEAD. Reclaim ⇒ sweep ★ नोंद.
 - RSI-2: `div_bars` किमान 3 (15M / 1H / 5M); dashboard "RSI div min bars".
-- Real data (spot): 12 Oct zone 22,543.75–22,621.8 FLIPPED (8 Oct), 09:15 sweep; golden bear call **नाही** — FUT history 7 sessions < 10 ⇒
-  data problem (what-if: §5.3 range अवस्था 09:30, §5.1 पहिला पाय 10:15). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅.
-  OPEN_QUESTIONS Z-1h … Z-1n.
+- Real data (spot, 1m order सह): 12 Oct zone 22,543.75–22,621.8 FLIPPED (8 Oct), 09:15 sweep; RSI D0 bear div 9 Oct 14:15 → 12 Oct 09:15
+  (67.09 → 66.41, 4 bars). Golden bear call default मध्ये **नाही** — FUT history 7 sessions < 10 ⇒ data problem; what-if (min 5) ⇒ 10:15
+  setup (B). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅. RSI फरक: आधीच्या अहवालात V22 1m शिवाय (D0 pivot वेगळा) —
+  live सुद्धा 1m शिवाय (Z-1o). OPEN_QUESTIONS Z-1h … Z-1o.

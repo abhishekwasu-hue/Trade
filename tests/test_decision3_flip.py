@@ -462,7 +462,7 @@ def _to15(df5):
 def real_inputs():
     """NIFTY SPOT 15M (decision3 runs on spot, as the live engine3 feed): 1m history (golden window) + the EOD export's 1m to 12 Oct ⇒
     market_state.core.frame 15M / 5M; 13 Oct = complete bins of the export's spot 5M. FUT = the export's near-month 5M. Daily = from
-    the 15M (V22 default; the live feed uses Upstox Daily — a known difference). Skips without the private data."""
+    the 15M (V22 default; the live feed uses Upstox Daily — a known difference). Returns (m15, ltf, fut, m1). Skips without the data."""
     if not all(os.path.exists(p) for p in FILES.values()):
         pytest.skip("private trade-data (2026-10-13-eod export / upstox 1m) not present")
     import market_state.core as MC
@@ -477,13 +477,15 @@ def real_inputs():
     m15["bar_end"] = m15["timestamp"] + pd.Timedelta(minutes=15)
     ltf = pd.concat([MC.frame(m1, "5m", end)[["timestamp", "open", "high", "low", "close"]], i5], ignore_index=True)
     ltf["bar_end"] = ltf["timestamp"] + pd.Timedelta(minutes=5)
-    return m15, ltf, _read(FILES["fut5"])
+    return m15, ltf, _read(FILES["fut5"]), m1
 
 
 @pytest.fixture(scope="module")
 def real():
-    m15, ltf, fut = real_inputs()
-    return m15, ltf, fut, E3.V22(m15, s=None, ltf=ltf, futures=fut)
+    m15, ltf, fut, m1 = real_inputs()
+    # 1m intrabar order data where it exists (as the rsi2 phase-1 run and replay_day): swings2 D0 pivots — and so the RSI divergence
+    # pairs — depend on it (without 1m the 12 Oct 09:15 swing high is not a D0 pivot). 13 Oct has no 1m (5M-built bars).
+    return m15, ltf, fut, E3.V22(m15, m1, s=None, ltf=ltf, futures=fut)
 
 
 def _day_bars(V, day):
