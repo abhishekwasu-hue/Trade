@@ -206,13 +206,54 @@ def _feed(token, today):
     return E3L.UpstoxFeed(token, today=today)
 
 
+def front_month(df):
+    """FUT rows: प्रत्येक दिवशी त्या दिवसाचा front-month contract (legs2.volume.near_month चाच नियम — expiry column किंवा contract नावाचे
+    शेवटचे तीन शब्द; expiry ≥ दिवस असलेला सर्वात जवळचा). एकच / contract column नाही / expiry ओळखता नाही ⇒ तसाच (alphabetical निवड नाही)."""
+    if df is None or not len(df) or "contract" not in df.columns or df["contract"].nunique() <= 1:
+        return df
+    from legs2 import volume as LVOL
+    exp = LVOL.expiry_of(df)
+    if exp.isna().all():
+        return df
+    day = pd.to_datetime(df["timestamp"]).dt.normalize()
+    ok = (exp.notna() & (exp >= day)).to_numpy()
+    near = exp[ok].groupby(day[ok]).transform("min")
+    keep = pd.Series(False, index=df.index)
+    keep[df.index[ok]] = (exp[ok] == near).to_numpy()
+    return df[keep.to_numpy()]
+
+
 def until_close(df, day):
-    """No lookahead: दिवस `day` च्या close नंतरचा एकही row नाही (feed today = D+1 ⇒ intraday / D+1 चे rows इथे वगळले जातात)."""
+    """No lookahead: दिवस `day` च्या close नंतरचा एकही row नाही (feed today = D+1 ⇒ intraday / D+1 चे rows इथे वगळले जातात).
+    एका timestamp ला अनेक contracts (`_all` file) ⇒ त्या दिवसाचा front month (`front_month`), मग timestamp-निहाय एकच row."""
     if df is None or not len(df):
         return df
     df = df.copy()
     df["timestamp"] = _naive(df["timestamp"])
-    return df[df["timestamp"] < day + pd.Timedelta(hours=15, minutes=30)].drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+    df = front_month(df[df["timestamp"] < day + pd.Timedelta(hours=15, minutes=30)])
+    return df.drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+
+
+def _front_on(token, symbol, day):
+    """दिवस `day` ला front-month असलेला FUT (engine3_live.resolve_future, as of day). सापडला नाही ⇒ None. tests मध्ये fake."""
+    import engine3_live as E3L
+    try:
+        return E3L.resolve_future(token, symbol, day)
+    except E3L.EngineDataError:
+        return None
+
+
+def feed_contract_warning(fpath, day, fut, front):
+    """Collector file मध्ये दिवस D नाही ⇒ feed चा contract वापरला: ⚠️ ओळ (contract नाव). D च्या front-month चा expiry ≤ D (expiry दिवस) किंवा
+    वेगळा contract ⇒ "volume from a different contract than the day's front month — c0 volume unreliable"."""
+    used = str(fut["contract"].iloc[-1]) if "contract" in fut.columns else "front-month (as of D+1)"
+    exp = pd.to_datetime(fut["expiry"].iloc[-1]).date() if "expiry" in fut.columns else None
+    line = f"⚠️ FUT 5M volume: {fpath} has no {day.date()} rows ⇒ Upstox feed contract {used}" + (f" (expiry {exp})" if exp else "")
+    d0 = day.date()
+    if front is None or str(front.get("trading_symbol")) != used or pd.Timestamp(front.get("expiry")).date() <= d0:
+        name = front.get("trading_symbol") if front else "unknown"
+        line += f" — volume from a different contract than the day's front month ({name}) — c0 volume unreliable"
+    return line
 
 
 def load_upstox(a, day):
@@ -275,7 +316,7 @@ def load_upstox(a, day):
             print(f"⚠️ FUT 5M volume: {fpath} मध्ये {day.date()} नाही, feed: {exc} ⇒ volume NA (c0 grade कमाल B)")
         else:
             if fut is not None and len(fut):
-                print(f"FUT 5M volume: Upstox feed ({fut['contract'].iloc[-1] if 'contract' in fut.columns else 'front-month'})")
+                print(feed_contract_warning(fpath, day, fut, _front_on(tok, sym, d0)))
             else:
                 print(f"⚠️ FUT 5M volume नाही ({fpath} / feed) ⇒ volume NA (c0 grade कमाल B)")
                 fut = None

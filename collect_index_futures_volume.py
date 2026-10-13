@@ -27,7 +27,7 @@ import pandas as pd
 
 import cloud_db
 import verify_opportunity_data_availability as V
-from config import get_ist_today
+from config import get_ist_now, get_ist_today
 from engine3_live import FUT_EXCHANGE
 from opportunity_engine.volume import candles_to_df, merge_store, merge_store_by_contract
 from upstox_api import SYMBOL_INSTRUMENT_KEYS
@@ -66,7 +66,26 @@ def fetch_intraday(token, instrument_key, interval="5minute"):
     return {"status": status, "candles": candles, "error": error}
 
 
-def _history_plus_today(token, key, start, today, out, tag):
+SETTLE = pd.Timedelta(minutes=1)        # bar बंद झाल्यावर Upstox candle अंतिम होईपर्यंतचा अवधी (12:00 चा run 11:55 bar घेत नाही)
+
+
+def closed_only(candles, now, minutes=5, settle=SETTLE):
+    """फक्त बंद झालेले bars (start + minutes + settle ≤ now, IST naive). चालू (अर्धवट) bar कधीच साठवायचा नाही — merge आधीचा row ठेवतो,
+    म्हणजे अर्धवट volume कायमचा अडकला असता."""
+    lim = pd.Timestamp(now)
+    if lim.tzinfo is not None:
+        lim = lim.tz_convert("Asia/Kolkata").tz_localize(None)
+    keep = []
+    for c in candles or []:
+        ts = pd.Timestamp(str(c[0]))
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("Asia/Kolkata").tz_localize(None)
+        if ts + pd.Timedelta(minutes=minutes) + settle <= lim:
+            keep.append(c)
+    return keep
+
+
+def _history_plus_today(token, key, start, today, out, tag, now=None):
     """History (start … काल) + आजचे intraday. History अपयश ⇒ (None, error). Intraday अपयश ⇒ फक्त नोंद (`out[tag + "_intraday_error"]`),
     history तरीही परत. to_date = काल: to_date = आज दिल्यास Upstox कालचा पूर्ण दिवस वगळतो (engine3_live, 13 Oct)."""
     hist = V.fetch_candles_window(token, key, "5minute", start, today - datetime.timedelta(days=1))
@@ -78,16 +97,17 @@ def _history_plus_today(token, key, start, today, out, tag):
     except Exception as exc:                                             # noqa: BLE001 — intraday अपयश ⇒ history तरीही साठवायची
         intra = {"status": None, "candles": [], "error": f"{type(exc).__name__}: {exc}"}
     if intra["status"] == 200:
-        candles.extend(intra["candles"])
+        candles.extend(closed_only(intra["candles"], now if now is not None else get_ist_now()))
     else:
         out[f"{tag}_intraday_error"] = f"HTTP {intra['status']} {str(intra['error'])[:120]}"
     return candles, None
 
 
-def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
+def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print, now=None):
     """एका symbol चे futures + index 5M candles (history + आजचे intraday). रिटर्न dict (rows, नवीन rows, volume>0 %, contract) किंवा error.
     OPTIONAL_SYMBOLS (SENSEX) चा front-month FUT सापडला नाही ⇒ `skipped` (error नाही; बाकी symbols वर परिणाम नाही)."""
     symbol = symbol.upper()
+    now = now if now is not None else get_ist_now()                       # intraday: फक्त now पर्यंत बंद झालेले bars
     exch = FUT_EXCHANGE.get(symbol, "NSE")
     kw = {"exchange": exch} if exch != "NSE" else {}
     info, err = V.resolve_front_future(token, symbol, today, **kw)
@@ -98,7 +118,7 @@ def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
         return {"symbol": symbol, "error": f"futures contract सापडला नाही: {err}"}
     start = today - datetime.timedelta(days=days)
     out = {"symbol": symbol, "contract": info["trading_symbol"], "instrument_key": info["instrument_key"], "expiry": info["expiry"]}
-    fut, ferr = _history_plus_today(token, info["instrument_key"], start, today, out, "futures")
+    fut, ferr = _history_plus_today(token, info["instrument_key"], start, today, out, "futures", now=now)
     if ferr:
         out["error"] = f"futures candles: {ferr}"
         return out
@@ -112,7 +132,7 @@ def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
         parts = [fdf]
         chain, cerr = V.resolve_futures_chain(token, symbol, today, n=2, **kw)
         for nxt in [c for c in chain if c["instrument_key"] != info["instrument_key"]]:
-            nf, nerr = _history_plus_today(token, nxt["instrument_key"], start, today, out, "next")
+            nf, nerr = _history_plus_today(token, nxt["instrument_key"], start, today, out, "next", now=now)
             if nerr is None:
                 parts.append(candles_to_df(nf, contract=nxt["trading_symbol"]))
                 out["next_contract"] = nxt["trading_symbol"]
@@ -127,7 +147,7 @@ def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
         out["next_error"] = f"{type(exc).__name__}: {exc}"
     idx_key = SYMBOL_INSTRUMENT_KEYS.get(symbol)
     if idx_key:
-        ix, ierr = _history_plus_today(token, idx_key, start, today, out, "index")
+        ix, ierr = _history_plus_today(token, idx_key, start, today, out, "index", now=now)
         if ierr is None:
             idf = candles_to_df(ix)
             added_i, total_i = _merge_into(store_path("index", symbol, data_dir), idf)

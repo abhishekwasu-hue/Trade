@@ -142,24 +142,43 @@ def engine_cron_installed(text):
                for x in (text or "").splitlines())
 
 
+def previous_session(day):
+    """`day` च्या आधीचा trading session (weekday, config.NSE_HOLIDAYS_2026 सुट्टी नाही)."""
+    try:
+        import config
+        hol = getattr(config, "NSE_HOLIDAYS_2026", set())
+    except Exception:                                                      # noqa: BLE001
+        hol = set()
+    d = pd.Timestamp(day).date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d in hol:
+        d -= dt.timedelta(days=1)
+    return d
+
+
 def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS, cron_installed=False):
-    """❌ ओळ (engine चालत नाही / माहिती नाही) किंवा None + OK असल्यास शेवटची वेळ. Store मध्ये अजून row नाही पण one-bot engine cron
-    ओळ आहे आणि 09:45 IST आधी ⇒ ❌ नाही, ℹ️ ओळ ("engine starts at 09:31") — पहिला run अजून झालेला नाही. Cron नाही / 09:45 नंतरही
-    row नाही ⇒ ❌ (आधीसारखं)."""
+    """(ओळ किंवा None, शेवटचा run किंवा None). आजचा पहिला run अजून नाही (09:45 IST आधी, आज row नाही) आणि one-bot engine cron ओळ आहे:
+      • मागच्या trading session चा किमान एक row (decision / error) ⇒ ℹ️ "engine starts at 09:31 (cron installed)";
+      • नाही ⇒ ❌ "engine did not run in the last session — check engine_signal.log".
+    बाकी: row नाही ⇒ ❌ no records; ENGINE_STALE_HOURS पेक्षा जुना ⇒ ❌ stopped; नाहीतर OK (None, t)."""
     try:
         t = engine_fn(sym)
     except Exception as exc:                                               # noqa: BLE001
         return f"❌ {sym}: engine status not readable ({type(exc).__name__}) — no engine setups can be trusted today.", None
-    if t is None:
-        n = pd.Timestamp(now)
-        if cron_installed and (n.hour, n.minute) < ENGINE_FIRST_RUN_GRACE:
+    n = pd.Timestamp(now)
+    t = None if t is None else pd.Timestamp(t)
+    before_first = (n.hour, n.minute) < ENGINE_FIRST_RUN_GRACE and (t is None or t.normalize() < n.normalize())
+    if cron_installed and before_first:
+        prev = previous_session(n)
+        if t is not None and t.date() >= prev:
             return (f"ℹ️ {sym}: engine starts at {ENGINE_FIRST_RUN[0]:02d}:{ENGINE_FIRST_RUN[1]:02d} (cron installed) — "
-                    "no engine records yet."), None
+                    f"last run {t:%d %b %H:%M}."), t
+        return f"❌ {sym}: engine did not run in the last session ({prev:%d %b}) — check engine_signal.log.", None
+    if t is None:
         return f"❌ {sym}: the engine has no records — it is not running, so no setups will come for {sym}.", None
-    age = (pd.Timestamp(now) - pd.Timestamp(t)).total_seconds() / 3600
+    age = (n - t).total_seconds() / 3600
     if age > stale_hours:
-        return f"❌ {sym}: the engine last ran {pd.Timestamp(t):%d %b %H:%M} ({age:,.0f} h ago) — it looks stopped.", None
-    return None, pd.Timestamp(t)
+        return f"❌ {sym}: the engine last ran {t:%d %b %H:%M} ({age:,.0f} h ago) — it looks stopped.", None
+    return None, t
 
 
 def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
@@ -170,7 +189,7 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
         return f"{mark}<b>{sym}</b>: NO NEW ENTRIES today — {html.escape(PT.unclear_words(ctx), quote=False)}, {wk}. Open trades still exit as usual."
     head = f"<b>{sym}</b>: {html.escape(PT.trend_words(ctx), quote=False)}, {wk}"
     if ctx.get("mature"):
-        head += " (daily move is mature: evidence only — grade at most B)"            # owner नियम: maturity = पुरावा फक्त (कमाल A ⇒ B)
+        head += f" (daily move is mature: {LR.mature_words(ctx)})"                 # cap engine च्याच नियमाने (B / weak)
     elif ctx.get("origin_risk"):
         head += " (price is near the trend's starting point, so new entries are weak)"
     if last is None:
@@ -211,7 +230,7 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
                 plain.append(bad)
-            else:
+            if t is not None:
                 det.append(f"{sym} engine: last run {t:%d %b %H:%M}")
         head = f"{sym} · {html.escape(str(ctx.get('reason')), quote=False)}"
         if ctx.get("protected") is not None:

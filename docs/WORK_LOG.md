@@ -2164,3 +2164,9 @@ historical, to = आज) आजचे bars कधीच साठवत नव�
 **Tests:** नवे — collector (आजचे bars, rerun idempotent, intraday अपयश, SENSEX BSE / skip), replay (fake feed: today = D+1, lookahead नाही,
 holdout), pre-open (ℹ️ / ❌ दोन्ही). जुना replay test आता fake feed वापरतो (अपेक्षा तशाच). 10 files: 176 pass.
 **उघडे:** OPEN_QUESTIONS DP1–DP4.
+**Review (PR #313, 4 🟡):** (1) collector: intraday मधून फक्त बंद bars (start + 5 min ≤ now IST) — चालू bar साठवला असता तर merge (आधीचा row
+ठेवतो) ने अर्धवट volume कायम राहिला असता; test: 12:00 run 11:55 bar साठवत नाही, 12:10 run पूर्ण volume सह साठवतो. (2) pre-open ℹ️ फक्त cron
+ओळ + मागच्या trading session चा row असेल तर; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". (3) maturity wording
+engine च्याच नियमाने (`LR.mature_cap` ⇒ `decision3.engine.mature_intact`, ctx phase / counter): अखंड ⇒ "grade at most B", नाहीतर "grade at most
+weak". (4) replay: feed fallback ⇒ ⚠️ ओळ contract नावासह; D च्या front month चा expiry ≤ D / वेगळा contract ⇒ "volume from a different contract
+than the day's front month — c0 volume unreliable"; `until_close` `_all` file मधून दिवसाचा front month (near_month नियम), alphabetical नाही.

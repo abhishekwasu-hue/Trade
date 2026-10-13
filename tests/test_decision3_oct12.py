@@ -268,6 +268,7 @@ def test_replay_upstox_loader_uses_feed_with_today_d_plus_1_and_no_lookahead(mon
     fut_late = pd.concat([fut, fut.tail(1).assign(timestamp=pd.Timestamp("2030-03-05 09:15"))], ignore_index=True)
     calls = []
     monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src, today, calls, fut=fut_late))
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: None)
     monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "tok")
     a = argparse.Namespace(symbol="NIFTY", m15_days=90, ltf_days=10, daily_days=3650, futures=str(tmp_path / "missing.parquet"))
     day = pd.Timestamp("2030-03-04")
@@ -286,3 +287,43 @@ def test_replay_upstox_loader_uses_feed_with_today_d_plus_1_and_no_lookahead(mon
     monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src2, today, [], fut=fut))
     m15b = RD.load_upstox(a, day)[0]
     assert sealed not in set(pd.to_datetime(m15b["timestamp"]))
+
+
+def test_replay_futures_all_file_picks_days_front_month_not_alphabetical():
+    """`_all` file (timestamp + contract): प्रत्येक दिवशी त्या दिवसाचा front month (near_month नियम) — alphabetical पहिला ("24 NOV" <
+    "27 OCT") नाही; expiry नंतर पुढचा contract."""
+    from scripts import replay_day as RD
+    rows = []
+    for d in ("2026-10-13", "2026-10-28"):
+        for c, v in (("NIFTY FUT 24 NOV 26", 40.0), ("NIFTY FUT 27 OCT 26", 100.0)):
+            rows.append({"timestamp": pd.Timestamp(f"{d} 09:15"), "volume": v, "contract": c})
+    allf = pd.DataFrame(rows)
+    got = RD.until_close(allf, pd.Timestamp("2026-10-13"))
+    assert list(got["contract"]) == ["NIFTY FUT 27 OCT 26"] and list(got["volume"]) == [100.0]
+    got = RD.until_close(allf, pd.Timestamp("2026-10-28"))
+    assert list(got["contract"]) == ["NIFTY FUT 27 OCT 26", "NIFTY FUT 24 NOV 26"] and list(got["volume"]) == [100.0, 40.0]
+    one = pd.DataFrame({"timestamp": [pd.Timestamp("2026-10-13 09:15")] * 2, "volume": [1.0, 2.0]})
+    assert len(RD.until_close(one, pd.Timestamp("2026-10-13"))) == 1
+
+
+def test_replay_feed_fallback_warns_with_contract_and_flags_expiry_day(monkeypatch, tmp_path, capsys):
+    """Collector file मध्ये दिवस D नाही ⇒ feed चा contract: ⚠️ ओळ त्याचं नाव सांगते; D = त्या दिवसाच्या front month चा expiry (feed ने
+    D+1 चा पुढचा contract घेतला) ⇒ "different contract … c0 volume unreliable"."""
+    import argparse
+    import cloud_db
+    from scripts import replay_day as RD
+    src, fut = _feed_src("2030-03-04")
+    nxt = fut.assign(contract="NIFTY FUT 25 APR 30", expiry=pd.Timestamp("2030-04-25"))
+    monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src, today, [], fut=nxt))
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "tok")
+    a = argparse.Namespace(symbol="NIFTY", m15_days=90, ltf_days=10, daily_days=3650, futures=str(tmp_path / "missing.parquet"))
+    day = pd.Timestamp("2030-03-04")
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: {"trading_symbol": "NIFTY FUT 25 APR 30", "expiry": "2030-04-25"})
+    RD.load_upstox(a, day)
+    out = capsys.readouterr().out
+    assert "⚠️ FUT 5M volume" in out and "contract NIFTY FUT 25 APR 30" in out and "unreliable" not in out
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: {"trading_symbol": "NIFTY FUT 04 MAR 30", "expiry": "2030-03-04"})
+    RD.load_upstox(a, day)
+    out = capsys.readouterr().out
+    assert ("contract NIFTY FUT 25 APR 30" in out and "volume from a different contract than the day's front month (NIFTY FUT 04 MAR 30)"
+            in out and "c0 volume unreliable" in out)

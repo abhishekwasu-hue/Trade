@@ -276,5 +276,5 @@
 |---|---|---|---|
 | DP1 | Futures collector ला SENSEX (BSE FUT) default मध्ये? | हो — `--symbols NIFTY,BANKNIFTY,SENSEX`; BSE front-month FUT सापडला नाही ⇒ ℹ️ log + skip (exit 0, बाकी symbols चालू) | SENSEX फक्त `--symbols` ने स्पष्ट दिल्यावर |
 | DP2 | Replay (`--source upstox`) चा FUT volume स्रोत | collector file मध्ये दिवस D असेल तर ती; नाहीतर `feed.futures` (front-month as of D+1 — expiry दिवशी पुढचा contract असू शकतो, contract छापला जातो) | नेहमी feed (live engine सारखं) / नेहमी file |
-| DP3 | Pre-open: engine row नाही + cron आहे — ℹ️ किती वेळ? | 09:45 IST पर्यंत ℹ️ (पहिला run 09:31 + 14 मिनिटं); त्यानंतर ❌. जुना पण > 96 h row ⇒ ❌ कायम (cron असूनही) | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
+| DP3 | Pre-open: आज engine row नाही + cron आहे — ℹ️ कधी? | (review #313) 09:45 IST पर्यंत, **आणि** मागच्या trading session (weekday − config सुट्ट्या) चा किमान एक row असेल तरच ℹ️; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". 09:45 नंतर row नाही ⇒ ❌ | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
 | DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |

@@ -3,7 +3,7 @@
 
   ओळ 1  साधी (काय पाहायचं) · "Decision needed: none — information"
   symbol-निहाय एक ओळ (NIFTY / BANKNIFTY / SENSEX): setup झाला का, Daily trend, किंमत trade-बाजूच्या area पर्यंत पोचली का (gate नोंदी:
-        armed / confirmed / ignored कारण), दिवसाच्या high / low पासून जवळचा trade-बाजूचा area (points), impulse mature ⇒ पुरावा फक्त (grade कमाल B) / origin जवळ ⇒ weak.
+        armed / confirmed / ignored कारण), दिवसाच्या high / low पासून जवळचा trade-बाजूचा area (points), impulse mature ⇒ cap engine च्याच नियमाने (रचना अखंड ⇒ कमाल B, नाहीतर weak) / origin जवळ ⇒ weak.
         एखादा भाग मिळाला नाही ⇒ तसं स्पष्ट ("no data today …").
   तुमचे निर्णय (approvals / ✏️ / ❌ कारणानुसार / उत्तर नाही) + approved trades चा net P&L + would-have + 📝 corrections (साधे शब्द).
   "── details ──" खाली level bots चा gate सारांश (L5 §5: armed / confirmed / ignored कारणानुसार, MCX, touch-legacy) — जुना तपशील.
@@ -146,8 +146,9 @@ def symbol_line(sym, ctx, gate, zones, rng):
                 tf = PT.tf_word(near[4])
                 s.append(f"Nearest {near[1]} {_band(near[2], near[3], '')} ({(tf + ', ') if tf else ''}{PT.pts(near[5])} {where}).")
     if ctx is not None and ctx.get("mature"):
+        from bots_common import level_reaction as LR
         tg = [float(x) for x in ctx.get("targets") or []]
-        s.append("Daily move is mature" + (f" near target {tg[0]:,.0f}" if tg else "") + " (evidence only — grade at most B).")
+        s.append("Daily move is mature" + (f" near target {tg[0]:,.0f}" if tg else "") + f" ({LR.mature_words(ctx)}).")
     elif ctx is not None and ctx.get("ok") and ctx.get("origin_risk"):
         s.append("Price is near the trend's starting point, so new entries are weak.")
     return " ".join(s)
