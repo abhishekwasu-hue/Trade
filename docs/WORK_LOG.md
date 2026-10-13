@@ -2238,3 +2238,10 @@ fixtures (bull + bear आरसा; ✔ आहे / ➕ जोडायचा).
 **Tests:** नाहीत (docs only; code / settings / भाग D ची PT ओळ बदलली नाही).
 **उघडे:** OPEN_QUESTIONS KP1–KP5 (G8 flag `breakout_ok` gate वि. "flag breakout नाही"; PT flag 4–20 वि. G8 2–11; संपूर्ण-K wedge
 ending वि. leading A (patterns2 v1 / v2.1); expanding wedge + `forming_wedge` position_ban; नवीन patterns ना PT गुण).
+**Abhi चे उत्तर (PR #317, 2026-10-13) — KB मध्ये लागू (docs only):** KP1 trigger form (area वरच्या dominant commitment candle ने
+correction ची स्वतःची रेषा close-through = valid; दूरचा breakout / पाठलाग / commitment शिवाय break नाही; minor break एकटा = noise) ⇒
+K11.0, K11.1, K11.2, K11.5, K11.6, K11.7, K11.18, K6.5, K3 बंदी, S5; KP2 flag 2–11 (setting), 4–20 नोंद; KP3 / KP4 wedge default ENDING,
+diverging = broadening (विरोधी पुरावा), अपूर्ण wedge entry अडवत नाही; KP5 गुण नाहीत. K6.1 बदल: रेषा 2 touches वरून, projected 3रा
+touch = trade location (handover + commitment), ≥ 3 = established. K4 बदल: horizontal band 2 reaction touches वरून, 3रा touch = trade
+location, flip नंतर नव्या बाजूने, "confluence" label, bands (वर / खाली 3, ताजा broken dashed). Golden fixtures (R1, ➕): 12 Oct NIFTY FUT
+2-touch रेषा + ≈22,667 confluence. K11.19 code-फरक तक्ता स्थितीसह (10 ओळी). OPEN_QUESTIONS KP1–KP5 निकाली.

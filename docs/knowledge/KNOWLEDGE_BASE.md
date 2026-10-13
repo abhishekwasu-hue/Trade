@@ -38,7 +38,7 @@
 - **भाग A:** मूलतत्त्वं (Abhi ची शैली आणि विचारपद्धती)
 - **भाग B:** Chart Reading Protocol (8 टप्पे)
 - **भाग C:** Knowledge chapters K1–K14 (K10.3 volume सह)
-  - **K11 chart patterns** (मसुदा, Abhi च्या मंजुरीसाठी): K11.0 सामायिक नियम · trend / correction K11.1–K11.7 (flag, pennant, rectangle, ascending / descending triangle, symmetrical triangle, channel, wedge / diagonal) · reversal K11.8–K11.14 (double, triple, H&S, rounding, V, broadening, island) · liquidity K11.15–K11.16 (sweep / spring / upthrust, failed breakout / trap) · K11.17 विश्वासार्हता · K11.18 चुका · K11.19 code शी फरक
+  - **K11 chart patterns** (KP1–KP5 वर Abhi चे निर्णय लागू, 2026-10-13, PR #317): K11.0 सामायिक नियम · trend / correction K11.1–K11.7 (flag, pennant, rectangle, ascending / descending triangle, symmetrical triangle, channel, wedge / diagonal) · reversal K11.8–K11.14 (double, triple, H&S, rounding, V, broadening, island) · liquidity K11.15–K11.16 (sweep / spring / upthrust, failed breakout / trap) · K11.17 विश्वासार्हता · K11.18 चुका · K11.19 code शी फरक
 - **भाग D:** पुराव्याची यादी आणि grade
 - **भाग E:** नेहमीच्या चुका (checklist)
 - **भाग F:** प्रामाणिक मर्यादा: काय सिद्ध आहे, काय नाही
@@ -299,7 +299,7 @@
 - A-end entry;
 - B, triangle किंवा X च्या आत entry;
 - wave 5 चा लगेच fade;
-- कोणत्याही level/trendline/bar-high च्या break वर entry;
+- कोणत्याही level/trendline/bar-high च्या break वर entry (area पासून दूर किंवा commitment शिवाय; area वरच्या commitment candle ने correction ची स्वतःची रेषा close-through हा K11.0 चा valid trigger form, Abhi 2026-10-13);
 - ending diagonal च्या दिशेने pullback विकणं.
 
 **Invalidation hierarchy:**
@@ -350,6 +350,17 @@
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
+- **Horizontal S/R band: 2 touches ⇒ band, 3रा touch ⇒ trade location [Abhi, 2026-10-13; K6.1 चाच तर्क]:**
+  - एकाच price area वर **दोन reaction touches** (दोन swing highs, किंवा दोन swing lows) ⇒ S/R band. Band tolerance = MR च्या पटीत setting (fixed points नाहीत).
+  - Touches **खऱ्या reactions** हवेत: दोन touches च्या मधे price band सोडून गेली. Touches एकमेकांपासून दूर (setting, default 6 bars).
+  - **3रा touch = trade location** (candidate area). Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
+  - **Role flip:** तुटलेला support = resistance, आणि उलट. Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
+  - Horizontal band आणि trendline (K6) एकाच किमतीवर भेटले ⇒ **सगळ्यात मजबूत location**, chart label **"confluence"** (K6.4).
+- **Chart वर areas कसे दाखवायचे [Abhi, 2026-10-13]:**
+  - Area नेहमी **band** (base / reaction candles चा low–high), एकच किंमत कधीच नाही.
+  - तुटलेले areas लपवायचे; फक्त सगळ्यात ताजा तुटलेला dashed, label "broken".
+  - प्रत्येक TF वर price च्या वर कमाल 3 आणि खाली कमाल 3 bands.
+- **Golden fixtures (➕ जोडायचे, R1; data trade-data मध्ये, CI मध्ये skip):** `test_golden_k4_nifty_fut_2026_10_12_supply_band_22667` (Abhi चा trade, NIFTY FUT 15M: ≈22,667 चा horizontal supply band 12 Oct आधीच ओळखलेला), `test_golden_k4_k6_nifty_fut_2026_10_12_confluence` (तोच band + K6 ची रेषा ⇒ "confluence" label, 12 Oct आधी, no look-ahead).
 
 **Pullback वाचनात उपयोग.**
 - Impulse ज्या base वरून सुरू झाला तिथेच, किंवा तुटलेल्या swing च्या flip वर, pullback संपणं = textbook continuation.
@@ -435,10 +446,23 @@
 **ओळख.**
 - **6.1 बांधणी:**
   - Confirmed pivots (k = 2–3).
-  - **Valid line ≥ 3 touches:** 2 anchors, आणि 3रा touch पुष्टी देतो. Touch = pivot चं टोक रेषेपासून ±0.2 MR मध्ये.
-  - Anchors च्या मधे कोणताही **close** रेषेपलीकडे > 0.3 MR नाही.
-  - **Anchor wicks वर, break चा निर्णय closes वर.**
-  - Touches एकमेकांपासून ≥ 6–8 bars दूर. Slope मध्यम: प्रति bar > 0.5 MR इतकी तीव्र रेषा reject.
+  - **रेषा 2 touches वरून काढली जाते [Abhi, 2026-10-13; जुना "valid line ≥ 3 touches" नियम बदलला]:**
+    - 2 anchors (touches) ⇒ रेषा. Touch = pivot चं टोक रेषेपासून ±0.2 MR मध्ये.
+    - **Projected 3रा touch = trade location** (candidate area), जिथे रेषा S/R म्हणून काम करते. Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
+    - **≥ 3 touches = "established" रेषा** ⇒ पुरावा + (AQ). हा वेगळा trade नियम नाही.
+    - No look-ahead: projected zone दुसरा anchor confirm झाल्यावरच (त्याआधी नाही).
+  - बाकी validity नियम 2-touch रेषांनाही लागू:
+    - **Anchor wicks वर, break चा निर्णय closes वर.**
+    - Anchors च्या मधे कोणताही **close** रेषेपलीकडे > 0.3 MR नाही.
+    - Touches एकमेकांपासून दूर (setting, default 6 bars).
+    - Slope मध्यम: प्रति bar > 0.5 MR इतकी तीव्र रेषा reject.
+  - **Chart label:** रेषेचा touch count, आणि projected 3rd-touch zone ची खूण.
+  - **Golden fixture (➕ जोडायचा, R1; data trade-data मध्ये, CI मध्ये skip):** `test_golden_k6_nifty_fut_2026_10_12_two_touch_line_projects_third_touch`. Abhi चा trade, NIFTY FUT 15M:
+    1. touch 1 = 30 Sep चा high, touch 2 = 6 / 7 Oct चे highs;
+    2. projected रेषा 12 Oct ला ≈22,667 (FUT) च्या horizontal supply ला भेटते (K4 ⇒ "confluence");
+    3. 3रा touch = 12 Oct चा opening spike त्या confluence मध्ये, rejection, मग bear call.
+
+    Trendline module ने ही रेषा **फक्त 2 touches वरून** शोधायची, आणि 12 Oct चा 3rd-touch zone **12 Oct आधी** दाखवायचा (no look-ahead). Confluence golden: K4 मधला `test_golden_k4_k6_nifty_fut_2026_10_12_confluence`.
 - **6.2 Channel:** anchors च्या मधल्या सगळ्यात टोकाच्या opposite pivot मधून समांतर रेषा. 15M वर रुंदी साधारण 2–6 MR.
 - **6.3 Correction चा स्वतःचा channel:** A ची सुरुवात आणि B चं टोक जोडा; A च्या टोकातून समांतर रेषा. C चं लक्ष्य = C जिथे ही रेषा गाठतो. C = A सोबत confluence.
 - **6.4 Horizontal की तिरका: ताज्या price action वरून निवड.** प्रत्येक candidate ला गुण:
@@ -449,12 +473,13 @@
   निर्णय:
   - ताजे pivots slope वर ओळीत येत असतील आणि horizontal levels कापले जात असतील ⇒ बाजार **slope** ला मान देतोय.
   - एकाच किमतीवर वारंवार reactions ⇒ **horizontal.**
-  - **दोन्ही ≤ 0.5 MR मध्ये भेटत असतील ⇒ तो छेदबिंदू सगळ्यात उच्च दर्जाचा area** (7 Oct चं उदाहरण).
+  - **दोन्ही ≤ 0.5 MR मध्ये भेटत असतील ⇒ तो छेदबिंदू सगळ्यात उच्च दर्जाचा area** (7 Oct, 12 Oct ची उदाहरणं), chart label **"confluence"** (K4).
 - **6.5 Break वि. false break:**
   - Real = K5 ची एकच व्याख्या (`elliott/breaks.py`: 0.25 MR buffer + displacement / acceptance / failed retest), किंवा structure बदल (LH/HL).
   - False = 1–2 bars मध्ये परत आत close (throw-over / sweep).
   - **Pullback दरम्यान minor impulse line तुटणं अपेक्षितच आहे.** त्याला reversal मानायचं नाही.
   - **Correction च्या channel चा impulse दिशेने break**, reversal candle नंतर = pullback संपल्याची अतिरिक्त पुष्टी.
+  - **Trigger form [Abhi, 2026-10-13, KP1]:** correction ची स्वतःची रेषा (flag / wedge / channel कड) **area वरच्या dominant commitment candle ने close-through** ⇒ valid trigger. Area पासून दूर breakout, चाल निघून गेल्यावर पाठलाग, किंवा commitment candle शिवाय रेषा break ⇒ entry नाही. Minor swing किंवा लहान trendline चा break **एकटा = noise** (K11.0).
 
 **Pullback वाचनात उपयोग (7 Oct 2026, NIFTY 15M, golden उदाहरण).**
 1. उतरती trendline: 28 Sep ~22,850 → 30 Sep ~22,801 → 7 Oct ~22,715 (3रा touch).
@@ -473,7 +498,7 @@
 **चुका.**
 - एका ठिकाणी bodies आणि दुसरीकडे wicks वरून रेषा.
 - प्रत्येक bar नंतर रेषा पुन्हा काढणं (curve-fitting).
-- फक्त 2 touches.
+- 2-touch रेषेला "established" (≥ 3) चं वजन देणं; किंवा projected 3rd touch वर handover + commitment शिवाय entry.
 - खूप तीव्र रेषा.
 - Pullback मध्ये impulse line तुटली म्हणजे reversal समजणं.
 - **फक्त horizontal पाहून trendline विसरणं (7 Oct ची चूक).**
@@ -698,11 +723,15 @@
 ## K11. Chart patterns: **वाचनासाठी**, breakout entry साठी कधीच नाही
 
 > **Change control:** KB diff → Abhi approves → code → test → traceability row (`docs/reports/kb_traceability.md`).
-> **स्थिती (2026-10-13):** K11 चा विस्तार = **मसुदा, Abhi च्या मंजुरीसाठी.** मंजुरीपर्यंत code, settings आणि भाग D ची PT ओळ बदलत नाहीत. Code शी फरक K11.19 मध्ये, निर्णय OPEN_QUESTIONS KP1–KP5 मध्ये.
+> **स्थिती (2026-10-13):** K11 विस्तार; **KP1–KP5 वर Abhi चे निर्णय (PR #317) या मजकुरात लागू.** Code / settings बदल वरच्या change control प्रमाणेच; भाग D ची PT ओळ तशीच (KP5). Code शी उरलेले फरक K11.19 मध्ये.
 
 ### K11.0 सामायिक नियम (सगळ्या patterns ना)
 - **नाव फक्त पुष्टीनंतर.** प्रत्येक pattern ची एक "पुष्टीची अट" आहे (उदा. neckline च्या पलीकडे **close**). त्याआधी तो फक्त "उमेदवार" (log / narrative मध्ये), पुरावा नाही.
-- **Breakout entry कधीच नाही** (A1.6, A3). Pattern फक्त **context / area / पुरावा / trigger ची जागा** सांगतो. Entry नेहमी: area + बंद commitment candle (K9, Simple Core). Pattern ची रेषा, neckline किंवा कड तुटली म्हणून entry नाही. तुटलेली रेषा पुढच्या pullback साठी **flip area** (K4) बनू शकते.
+- **Breakout entry कधीच नाही** (A1.6, A3). Pattern फक्त **context / area / पुरावा / trigger ची जागा** सांगतो. Entry नेहमी: area + बंद, dominant commitment candle (K9, Simple Core).
+- **Trigger form [Abhi, 2026-10-13, KP1]:** correction ची **स्वतःची** रेषा (flag / wedge / channel ची कड) **area वरच्या dominant commitment candle ने close-through** ⇒ valid trigger form. Abhi: "a wedge / correction may not complete; when its trendline breaks WITH a commitment candle at the area, I enter there." G8 (`simple_core/flags.py` `breakout_ok`) याच्याशी सुसंगत.
+  - **Entry कधीच नाही:** area पासून दूर झालेला breakout; चाल निघून गेल्यावर पाठलाग; commitment candle शिवाय रेषा break; pattern ची neckline / बाहेरची कड तुटली म्हणून.
+  - Minor swing किंवा लहान trendline चा break **एकटा = noise** (Abhi).
+  - तुटलेली neckline / कड पुढच्या pullback साठी **flip area** (K4) बनू शकते.
 - **मोजमाप सापेक्षच (P4):** MR (लेबलांचा अर्थ), σ (patterns2 / legs2 चा σ, जिथे code तो वापरतो), ATR14 daily (gaps, K13), bar संख्या, आधीच्या leg / pole चा %. Fixed points कधीच नाहीत. Pivots फक्त confirmed (k = 2–3).
 - **आकड्यांचा उगम (P8, I5):** KB / Abhi चे आकडे तसेच. नवीन आकडा "[अंदाज ⇒ setting]" म्हणून: setting + sensitivity (किमान 3 मूल्यं), tuning नाही.
 - **Abhi च्या पद्धतीत तीनच भूमिका** (प्रत्येक entry मध्ये एक लिहिली आहे):
@@ -723,8 +752,8 @@
 | K11.3 | Rectangle / range | trend / correction | A (trend मध्ये P) | RANGE state + प्रत्येक कडेवर ≥ 2 reactions | — |
 | K11.4 | Ascending / descending triangle | trend / correction | P (उलट जागी E) | E-end confirmed + commitment | — |
 | K11.5 | Symmetrical triangle | trend / correction | P | E-end confirmed + commitment | — |
-| K11.6 | Rising / falling channel | trend / correction | P | 3रा touch (K6) | — |
-| K11.7 | Rising / falling wedge (ending / leading diagonal) | trend / correction | P (counter) · E (with-trend) | 5वा push confirmed + 2–4 रेषेपलीकडे close | +3 · −10 |
+| K11.6 | Rising / falling channel | trend / correction | P | 2 touches ने रेषा; projected 3रा touch = trade location (K6) | — |
+| K11.7 | Rising / falling wedge (ending / leading diagonal) | trend / correction | P (counter) · E (with-trend) | default ending; अपूर्ण wedge सुद्धा KP1 trigger form ने वाचायचा | +3 · −10 |
 | K11.8 | Double top / bottom | reversal | E (आपल्या बाजूला A) | neckline पलीकडे close | −10 |
 | K11.9 | Triple top / bottom | reversal | E | neckline पलीकडे close | — (code ⇒ double) |
 | K11.10 | Head & shoulders / inverse | reversal | E | neckline पलीकडे close | −10 |
@@ -735,7 +764,7 @@
 | K11.15 | Sweep / spring / upthrust | liquidity | A | reclaim close | LQ 0…+8 |
 | K11.16 | Failed breakout / bull trap / bear trap | liquidity | A | reclaim close + उलट commitment | — (LQ) |
 
-"—" = आज गुण नाहीत; फक्त नोंद / narrative. नवीन गुण द्यायचे का हा Abhi चा निर्णय (KP5).
+"—" = गुण नाहीत; फक्त नोंद / narrative. **KP5 (Abhi, 2026-10-13): KB प्रमाणे** ⇒ नवीन patterns ना PT गुण नाहीत; भाग D ची PT ओळ तशीच.
 
 ---
 
@@ -744,13 +773,13 @@
 |---|---|
 | **व्याख्या** | जोरदार impulse (pole) नंतर लहान, अरुंद, pole विरुद्ध किंवा सपाट उताराचा समांतर consolidation. Bull flag = वरचा pole + खाली / बाजूला झुकलेला flag; bear flag आरसा. Elliott: zigzag / छोटा ABC ((ii) / (iv) of 3); Brooks H2 / L2. |
 | **मानसशास्त्र** | Pole मध्ये trend बाजूचं पूर्ण नियंत्रण. Flag मध्ये फक्त profit-taking; counter-traders ना वेळ मिळत नाही. **अडकतात:** flag मध्ये उशिरा आलेले counter-traders (bull flag मध्ये shorts; त्यांचे stops flag च्या वर). **नियंत्रण:** trend बाजूकडेच. |
-| **ओळख** | Pole = K2 चा impulse (≥ 4 MR, BOS). जुना "pole ≥ 6 MR, ≤ 12 bars" = research अंदाज (chart_reader code). Flag **2–11 bars** (G8, Abhi #284). खोली उथळ: **23.6–38.2% of pole** (G8, Abhi); code ची वरची मर्यादा ≤ 50% (`flag_retrace_max`, अंदाज). Overlap ≥ 0.6 (K10.1). Flag च्या candles pole पेक्षा अरुंद. उतार pole विरुद्ध किंवा सपाट. With-trend legs लहान होत नाहीत (S5 वि. S8). |
+| **ओळख** | Pole = K2 चा impulse (≥ 4 MR, BOS). जुना "pole ≥ 6 MR, ≤ 12 bars" = research अंदाज (chart_reader code). Flag **2–11 bars** = setting (G8, Abhi #284; `flag_min_bars` 2 / `g8_max_bars` 11; KP2). Research चा "4–20 bars" फक्त नोंद (S5). खोली उथळ: **23.6–38.2% of pole** (G8, Abhi); code ची वरची मर्यादा ≤ 50% (`flag_retrace_max`, अंदाज). Overlap ≥ 0.6 (K10.1). Flag च्या candles pole पेक्षा अरुंद. उतार pole विरुद्ध किंवा सपाट. With-trend legs लहान होत नाहीत (S5 वि. S8). |
 | **Validity (नाव कधी)** | पालक दिशा स्पष्ट (P1); flag मध्ये counter displacement नाही; futures volume कमी (K10.3). **नाव:** flag चं counter-trend टोक confirmed pivot झालं आणि trend दिशेने commitment candle बंद झाली तेव्हाच. |
 | **Invalidation** | खोली > 50% pole, किंवा > 11 bars ⇒ flag नाही (S1 / सामान्य pullback म्हणून वाचा). Flag मध्ये counter displacement (≥ 1.2 MR, K5) ⇒ flag नाही (S3 चा संशय). Trade: flag चं टोक. Count: (ii) ⇒ (i) ची सुरुवात; (iv) ⇒ (i) चं टोक (R1, R3). |
-| **उपयोग** | **[P]** Flag = pullback. Area = flag ची कड (pivots confirmed असतील तर), flag मधला / आधीचा तुटलेला swing, शेवटच्या displacement चा base (S5, I8). Trigger = त्या area वर commitment candle (K9). Flag च्या रेषेपलीकडे close = फक्त K6.5 चा अतिरिक्त पुरावा; रेषा तुटली म्हणून entry नाही (KP1). **Final flag** (trend चे ≥ 3 pushes किंवा measured move आधीच पूर्ण, patterns2 `final_flag_risk`) ⇒ **[E]** grade कमी. |
+| **उपयोग** | **[P]** Flag = pullback. Area = flag ची कड (pivots confirmed असतील तर), flag मधला / आधीचा तुटलेला swing, शेवटच्या displacement चा base (S5, I8). Trigger = त्या area वर dominant commitment candle (K9). ती candle flag ची स्वतःची रेषा close-through करते ⇒ valid trigger form (K11.0, KP1; G8 `breakout_ok` हेच). Area पासून दूर breakout, pole टोकापलीकडे पाठलाग, किंवा commitment शिवाय रेषा break ⇒ entry नाही. **Final flag** (trend चे ≥ 3 pushes किंवा measured move आधीच पूर्ण, patterns2 `final_flag_risk`) ⇒ **[E]** grade कमी. |
 | **विश्वासार्हता** | NM. Repo मध्ये फक्त regression उदाहरणं (28 Sep G8, I7). [अनुभव, Brooks] final flag ~40% (heuristic). |
-| **चुका** | 1-candle pause ला flag म्हणणं (S12); खोल (> 50%) pullback ला flag; wave 5 / S8 मधला final flag G8 मानणं; बाजार pole टोकापलीकडे पळाल्यावर पाठलाग; research चा "4–20 bars" G8 ऐवजी वापरणं (S5). |
-| **Fixtures** | ✔ `test_pt_flag_plus_5` (bull, `tests/test_chart_reader_evidence.py`); ✔ `test_g8_flag_channel_is_area_and_breakout_signal`, `test_g8_flag_length_boundary_11_yes_12_no` (bear, `tests/test_simple_core_v2.py`); ✔ `test_final_flag_measured_move` (`tests/test_patterns2_v2.py`). ➕ `test_k11_flag_bear_pt_plus_5` (PT आरसा), `test_k11_flag_bull_g8_area` (G8 आरसा), `test_k11_flag_too_deep_is_not_flag_bull/bear`, `test_k11_flag_counter_displacement_is_not_flag_bull/bear`, `test_k11_final_flag_lowers_grade_bull/bear`. |
+| **चुका** | 1-candle pause ला flag म्हणणं (S12); खोल (> 50%) pullback ला flag; wave 5 / S8 मधला final flag G8 मानणं; बाजार pole टोकापलीकडे पळाल्यावर पाठलाग; commitment candle शिवाय flag रेषेचा break (minor break एकटा = noise); research चा "4–20 bars" G8 ऐवजी वापरणं (S5). |
+| **Fixtures** | ✔ `test_pt_flag_plus_5` (bull, `tests/test_chart_reader_evidence.py`); ✔ `test_g8_flag_channel_is_area_and_breakout_signal`, `test_g8_flag_length_boundary_11_yes_12_no` (bear, `tests/test_simple_core_v2.py`); ✔ `test_final_flag_measured_move` (`tests/test_patterns2_v2.py`). ➕ `test_k11_flag_bear_pt_plus_5` (PT आरसा), `test_k11_flag_bull_g8_area` (G8 आरसा), `test_k11_flag_too_deep_is_not_flag_bull/bear`, `test_k11_flag_counter_displacement_is_not_flag_bull/bear`, `test_k11_final_flag_lowers_grade_bull/bear`, `test_k11_flag_line_break_without_commitment_no_entry_bull/bear`, `test_k11_flag_breakout_away_from_area_no_entry_bull/bear`. |
 
 ### K11.2 Pennant
 | घटक | मजकूर |
@@ -760,9 +789,9 @@
 | **ओळख** | Pole: flag प्रमाणे. Consolidation 2–11 bars (G8 window). प्रत्येक बाजूला ≥ 2 confirmed pivots, रेषा converging, apex पुढे. Legs प्रत्येकी आधीच्या पेक्षा लहान. खोली flag प्रमाणे. ⚠️ 2–4 bars च्या pennant मध्ये confirmed pivots नसतात ⇒ तो फक्त flag म्हणून वाचायचा. |
 | **Validity (नाव कधी)** | Impulse नंतरचा **पहिलाच** correction (wave 2 जागा) triangle असू शकत नाही (R5) ⇒ तिथे pennant नाही, zigzag म्हणून वाचा. **नाव:** E-leg (शेवटचा leg) confirmed + commitment. |
 | **Invalidation** | रेषा diverging ⇒ broadening (K11.13); खोली > 50% pole; counter displacement. Trade: E चं टोक. |
-| **उपयोग** | **[P]** E-end वर commitment (G3 / G8 सारखं). Apex पर्यंतच्या वेळेचा > 85% खर्च ⇒ पुरावा कमी (patterns2 `apex_frac`, अंदाज). B–D रेषेच्या break वर entry नाही (K3). Code मध्ये तो flag म्हणूनच मोजला जातो (PT +5). |
+| **उपयोग** | **[P]** E-end वर commitment (G3 / G8 सारखं). Apex पर्यंतच्या वेळेचा > 85% खर्च ⇒ पुरावा कमी (patterns2 `apex_frac`, अंदाज). E-end area वरच्या dominant commitment candle ने pennant ची रेषा close-through ⇒ valid trigger form (K11.0, KP1). Area पासून दूर B–D रेषेचा break, किंवा commitment शिवाय break ⇒ entry नाही (K3). Code मध्ये तो flag म्हणूनच मोजला जातो (PT +5). |
 | **विश्वासार्हता** | NM. [पुरावा, Bulkowski, US daily] pennants: 54% failure; target फक्त ~30% वेळा ⇒ target dashboard वर (S5). |
-| **चुका** | B–D / वरच्या रेषेच्या break वर entry; wave 2 जागी triangle; apex नंतर "pennant" वाचणं; 2 pivots वरून रेषा. |
+| **चुका** | Area पासून दूर B–D / वरच्या रेषेच्या break वर entry (commitment शिवाय); wave 2 जागी triangle; apex नंतर "pennant" वाचणं; 2 pivots वरून रेषा. |
 | **Fixtures** | ➕ `test_k11_pennant_bull_e_end_commitment`, `test_k11_pennant_bear_e_end_commitment`, `test_k11_pennant_as_first_correction_is_zigzag_bull/bear`, `test_k11_pennant_line_break_is_not_entry_bull/bear`. |
 
 ### K11.3 Rectangle / range
@@ -773,7 +802,7 @@
 | **ओळख** | Trade degree चा market_state = RANGE (K1: 4 नवे swings, निर्णय नाही). कडा = confirmed range high / low; equal highs / lows (≤ 0.15 MR, ≥ 5 bars अंतर) ⇒ liquidity (K5). PDH / PDL फक्त कडेवर असतील तर. Range उंची risk च्या तुलनेत पुरेशी (R:R नियमातूनच; नवा आकडा नाही, S9). K वेळ > 2 × I-leg ⇒ `range_like` (patterns2, अंदाज). |
 | **Validity (नाव कधी)** | कडांचे pivots decision bar आधी confirmed. **नाव:** RANGE state confirm + प्रत्येक कडेवर ≥ 2 reactions. पालक trend असेल ⇒ S6 + S9: फक्त trend दिशेची कड. |
 | **Invalidation** | कडेची real break (breaks.py) ⇒ range संपली ⇒ S4 (flip retest, break दिशेने). Break अपयशी (परत आत real break) ⇒ पुन्हा range. Trade: sweep चं टोक (sweep नसेल तर कड) + buffer. |
-| **उपयोग** | **[A]** कड = area. कडेवर sweep + reclaim किंवा rejection = handover (G10, सध्या shadow). Range चा मध्य = MAGNET ⇒ trade नाही. **Partial rise / decline** (swing उंचीच्या ≥ 70% पण < 100%, विरुद्ध कड न गाठता परत; patterns2 `partial_rise`) ⇒ त्या बाजूची ताकद संपली = handover ची नोंद. Trend मधला range (S6) ⇒ **[P]**: C-end / E-end फक्त. |
+| **उपयोग** | **[A]** कड = area (band, K4). दोन reaction touches ⇒ band; कडेवरचा पुढचा (3रा) touch = trade location (K4, Abhi 2026-10-13). कडेवर sweep + reclaim किंवा rejection = handover, मग commitment (G10, सध्या shadow). Range चा मध्य = MAGNET ⇒ trade नाही. **Partial rise / decline** (swing उंचीच्या ≥ 70% पण < 100%, विरुद्ध कड न गाठता परत; patterns2 `partial_rise`) ⇒ त्या बाजूची ताकद संपली = handover ची नोंद. Trend मधला range (S6) ⇒ **[P]**: C-end / E-end फक्त. |
 | **विश्वासार्हता** | **[NIFTY] A5 (IS 2015–2021, 496 tests, `docs/reports/situation_map/A5_range_edges.md`):** sweep + reclaim 162 ⇒ आधी विरुद्ध कड 49 (30%); sweep शिवाय rejection 258 ⇒ 74 (29%). Trend दिशेची कड 27% वि. विरुद्ध कड 31%. ⇒ sweep ने फरक दिसला नाही. Partial rise "उलट कडेचा break 75–79%" [Bulkowski, code मधली नोंद; NIFTY वर NM]. प्रकाशित पुरावा कमकुवत (S9: Sullivan, Timmermann & White; Turtle Soup "D"). |
 | **चुका** | Range च्या मध्यात trade; कड रुंद करण्यासाठी PDH / PDL ओढणं; कडेच्या break वर entry; trend मधल्या flat ला range समजून विरुद्ध कड trade (S11: B च्या आत); एकाच reaction वरून कड. |
 | **Fixtures** | ✔ `test_g10_edges_range_only_and_parent_trend_side`, `test_g10_settings_defaults_shadow` (`tests/test_phase_b.py`); ✔ `test_q27_range_after_origin_break_with_equal_highs_lows` (`tests/test_decision3_q22_q34.py`). ➕ `test_k11_range_low_edge_spring_bull_put`, `test_k11_range_high_edge_upthrust_bear_call`, `test_k11_range_mid_is_magnet_no_trade_bull/bear`, `test_k11_range_edge_real_break_is_s4_bull/bear`, `test_k11_partial_rise_note_bull` / `_partial_decline_note_bear`. |
@@ -799,7 +828,7 @@
 | **ओळख** | 5 legs, प्रत्येक आधीच्या पेक्षा लहान; A–C आणि B–D रेषा converging, apex E च्या पुढे; legs corrective (3). Apex पर्यंतच्या वेळेचा > 85% खर्च ⇒ पुरावा कमी (patterns2 `apex_frac` / `apex_m`, अंदाज). |
 | **Validity (नाव कधी)** | Wave 4 / B / X (wave 2 कधीच नाही, R5). **नाव:** पाच legs पूर्ण, E confirmed (Gray-2: "triangle: पाच legs"). |
 | **Invalidation** | D पलीकडे B, किंवा E पलीकडे C ⇒ नाही (R8). Legs मोठे होत असतील ⇒ broadening (K11.13). E throw-over नंतर real break ⇒ count चुकला. |
-| **उपयोग** | **[P]** E-end (G3, S6). B–D रेषेच्या break वर entry नाही (K3). लांब trend नंतर ⇒ final consolidation ची शक्यता ⇒ [E] सारखी सावधानता (grade कमी). |
+| **उपयोग** | **[P]** E-end (G3, S6): E-end area वर commitment. B–D रेषेचा break एकटा / area पासून दूर ⇒ entry नाही (K3, K11.0). लांब trend नंतर ⇒ final consolidation ची शक्यता ⇒ [E] सारखी सावधानता (grade कमी). |
 | **विश्वासार्हता** | NM. |
 | **चुका** | Triangle लवकर "पूर्ण" म्हणणं (EWI); triangle च्या आत trade; wave 2 जागी triangle; B–D break वर entry. |
 | **Fixtures** | ✔ `test_triangle_and_impulse_k_types`, `test_apex_math` (`tests/test_patterns2_v2.py`); ✔ `test_triangle_five_leg_penalty_wave2_evidence_and_c_beyond_a_allowed` (`tests/test_patterns2.py`). ➕ `test_k11_sym_triangle_bull_e_end`, `test_k11_sym_triangle_bear_e_end`, `test_k11_triangle_inside_b_d_no_entry_bull/bear`, `test_k11_triangle_as_wave2_is_not_triangle_bull/bear`. |
@@ -809,26 +838,26 @@
 |---|---|
 | **व्याख्या** | दोन समांतर तिरक्या रेषांमधली चाल (K6.2). दोन प्रकार: impulse चा channel (trend दिशेने) आणि correction चा स्वतःचा channel (trend विरुद्ध; K6.3). |
 | **मानसशास्त्र** | Slope = वरचढ बाजूची घाई. Uptrend channel मध्ये dip buyers वाढत्या दराने खरेदी करतात. Slope तुटणं = घाई संपली; reversal झालंच असं नाही (K6). |
-| **ओळख** | K6.1–6.2: confirmed pivots; ≥ 3 touches (±0.2 MR); anchors च्या मधे कोणताही close रेषेपलीकडे > 0.3 MR नाही; touches ≥ 6–8 bars दूर; slope ≤ 0.5 MR / bar; रुंदी 15M वर साधारण 2–6 MR. Correction channel: A सुरुवात–B टोक, A टोकातून समांतर (K6.3). |
-| **Validity (नाव कधी)** | **नाव:** 3रा touch confirmed. ताज्या price action ला मान (K6.4). |
+| **ओळख** | K6.1–6.2 [Abhi, 2026-10-13]: confirmed pivots; रेषा **2 touches** (±0.2 MR) वरून; projected 3रा touch = trade location; ≥ 3 touches = "established" (पुरावा +); anchors wicks वर; anchors च्या मधे कोणताही close रेषेपलीकडे > 0.3 MR नाही; touches दूर (setting, default 6 bars); slope ≤ 0.5 MR / bar; रुंदी 15M वर साधारण 2–6 MR. Correction channel: A सुरुवात–B टोक, A टोकातून समांतर (K6.3). |
+| **Validity (नाव कधी)** | **नाव:** दुसरा anchor confirmed ⇒ रेषा; projected 3rd-touch zone chart वर (touch count सह). Entry तिथे handover + commitment ने. ताज्या price action ला मान (K6.4). |
 | **Invalidation** | रेषेची real break (breaks.py). 1–2 bars मध्ये परत आत = throw-over / sweep, break नाही (K6.5). |
-| **उपयोग** | **[P]** Correction चा counter-trend channel (uptrend मधला falling channel) = pullback; C-end लक्ष्य = C ने रेषा गाठली ती जागा (C = A सोबत confluence). Reversal candle नंतर correction channel चा impulse दिशेने break = अतिरिक्त पुरावा (K6.5), entry चं कारण नाही. Pullback दरम्यान impulse channel ची रेषा तुटणं अपेक्षितच (E8). Impulse channel च्या पलीकडे wave 5 throw-over ⇒ थकव्याचा इशारा (K10). |
+| **उपयोग** | **[P]** Correction चा counter-trend channel (uptrend मधला falling channel) = pullback; C-end लक्ष्य = C ने रेषा गाठली ती जागा (C = A सोबत confluence). Area वरच्या dominant commitment candle ने correction channel ची कड impulse दिशेने close-through ⇒ valid trigger form (K6.5, KP1); commitment शिवाय / area पासून दूर break ⇒ entry नाही. Pullback दरम्यान impulse channel ची रेषा तुटणं अपेक्षितच (E8). Impulse channel च्या पलीकडे wave 5 throw-over ⇒ थकव्याचा इशारा (K10). |
 | **विश्वासार्हता** | NM. [पुरावा, Bulkowski] uptrend line 3rd touch bounce फक्त 37% (K6). Repo SILVER audit: OOS मध्ये trendline control पेक्षा कमकुवत [SILVER, NIFTY नाही]. Elliott channel targets [अनुभव]. |
-| **चुका** | K6 ची यादी: bodies आणि wicks मिसळणं, दर bar ला रेषा पुन्हा, फक्त 2 touches, तीव्र रेषा, pullback मध्ये impulse line तुटली म्हणून reversal. |
-| **Fixtures** | ✔ `test_validity_close_beyond_wick_ok_slope_spacing`, `test_k_base_break_once_and_mirror` (`tests/test_trendlines2.py`, रेषा नियम). ➕ `test_k11_falling_channel_pullback_c_end_bull`, `test_k11_rising_channel_pullback_c_end_bear`, `test_k11_impulse_line_break_in_pullback_not_reversal_bull/bear`, `test_k11_channel_break_before_commitment_is_not_entry_bull/bear`. |
+| **चुका** | K6 ची यादी: bodies आणि wicks मिसळणं, दर bar ला रेषा पुन्हा, 2-touch रेषेला "established" चं वजन, 3rd touch वर commitment शिवाय entry, तीव्र रेषा, pullback मध्ये impulse line तुटली म्हणून reversal. |
+| **Fixtures** | ✔ `test_validity_close_beyond_wick_ok_slope_spacing`, `test_k_base_break_once_and_mirror` (`tests/test_trendlines2.py`, रेषा नियम). ➕ golden (R1): `test_golden_k6_nifty_fut_2026_10_12_two_touch_line_projects_third_touch`, `test_golden_k4_k6_nifty_fut_2026_10_12_confluence` (K6.1, K4). ➕ `test_k11_two_touch_line_projects_third_touch_zone_bull/bear` (no look-ahead), `test_k11_falling_channel_pullback_c_end_bull`, `test_k11_rising_channel_pullback_c_end_bear`, `test_k11_impulse_line_break_in_pullback_not_reversal_bull/bear`, `test_k11_channel_break_before_commitment_is_not_entry_bull/bear`. |
 
 ### K11.7 Rising / falling wedge (ending / leading diagonal)
 | घटक | मजकूर |
 |---|---|
 | **व्याख्या** | दोन्ही रेषा एकाच दिशेने आणि एकमेकांकडे येणाऱ्या (converging); प्रत्येक push आधीच्या पेक्षा लहान; overlap. Rising wedge = वर झुकलेला, falling = खाली. Elliott: **diagonal** — ending (फक्त 5 किंवा C, 3-3-3-3-3, R9) किंवा leading (फक्त 1 किंवा A). Brooks: three pushes. |
 | **मानसशास्त्र** | **With-trend wedge:** trend बाजू पुढे जाते, पण प्रत्येक push लहान आणि विरुद्ध बाजू प्रत्येक वेळी जास्त परत घेते ⇒ शेवटचे buyers (rising wedge) अडकतात. **Counter-trend wedge (pullback):** counter बाजू थकते; trend बाजूचा ताबा परत येणार. |
-| **ओळख** | प्रत्येक रेषेवर ≥ 3 confirmed pivots; रेषा एकाच दिशेने, converging. Legs 1 > 3 > 5 (shrinking ratio < 0.8, K10.1); 4 हा 1 च्या पट्ट्यात (overlap, guideline); 2 ≯ 1-start, 4 ≯ 2-end (patterns2 मजबूत पुरावा). 3रा push 1-end पलीकडे नसेल तरी चालतो (Brooks three push, m 0.6). |
-| **Validity (नाव कधी)** | **नाव:** 5वा push confirmed pivot + 2–4 रेषेपलीकडे close (Kennedy; S11). तोपर्यंत "wedge उमेदवार". 5 ने 3 गाठलं नाही ⇒ "अपूर्ण wedge" (`final_leg_short`), पूर्णता-पुरावा कमी. |
-| **Invalidation** | 5व्या push पलीकडे real break (extension) ⇒ wedge नाही. रेषा diverging ⇒ wedge नाही, broadening (K11.13). Trade: diagonal चं टोक. |
-| **उपयोग** | **[P] counter-trend wedge** (uptrend मध्ये falling wedge) = pullback, momentum कमकुवत होतोय: C मधला ending diagonal ⇒ diagonal संपल्यावर reversal candle वर मोठ्या trend दिशेने (G5, 7 Oct). PT +3. **[E] with-trend wedge** (impulse स्वतःच rising wedge / wave 5 ending diagonal) ⇒ थकवा: पुढचा pullback reversal असू शकतो ⇒ PT −10, grade कमी; wave 5 चा लगेच fade नाही (K3, S8). **Leading diagonal:** संपूर्ण counter-move हाच पहिला 5-leg wedge ⇒ Default [थर 3 v2.1 prompt; Abhi ने पक्कं करायचं, KP3]: 3-3-3-3-3 = corrective ⇒ ending (pullback end) म्हणून वाचा; **alternate** = leading diagonal (A) ⇒ count स्पष्ट असेल तर A-end ban (R4, P2). Wedge च्या आत (2 / 4 बनत असताना) diagonal च्या दिशेने entry नाही (K3 बंदी). |
+| **ओळख** | पूर्ण wedge: प्रत्येक रेषेवर ≥ 3 confirmed pivots; अपूर्ण wedge: रेषा 2 touches वरून (K6.1). रेषा एकाच दिशेने, converging. Legs 1 > 3 > 5 (shrinking ratio < 0.8, K10.1); 4 हा 1 च्या पट्ट्यात (overlap, guideline); 2 ≯ 1-start, 4 ≯ 2-end (patterns2 मजबूत पुरावा). 3रा push 1-end पलीकडे नसेल तरी चालतो (Brooks three push, m 0.6). |
+| **Validity (नाव कधी)** | **Default वाचन: ENDING [Abhi, 2026-10-13, KP3].** पूर्ण नाव: 5वा push confirmed pivot + 2–4 रेषेपलीकडे close (Kennedy; S11). 5 ने 3 गाठलं नाही ⇒ "अपूर्ण wedge" (`final_leg_short`), पूर्णता-पुरावा कमी. **अपूर्ण / बनत असलेला wedge entry अडवत नाही** [Abhi, KP4]: तो K11.0 च्या trigger form ने तपासायचा (area वर dominant commitment candle ने wedge ची रेषा close-through ⇒ trigger). |
+| **Invalidation** | 5व्या push पलीकडे real break (extension) ⇒ wedge नाही. रेषा diverging ⇒ wedge नाही, broadening (K11.13) ⇒ **फक्त विरोधी पुरावा** [Abhi, KP4]. Trade: diagonal चं टोक. |
+| **उपयोग** | **[P] counter-trend wedge** (uptrend मध्ये falling wedge) = pullback, momentum कमकुवत होतोय: C मधला ending diagonal ⇒ diagonal संपल्यावर reversal candle वर मोठ्या trend दिशेने (G5, 7 Oct). PT +3. **[E] with-trend wedge** (impulse स्वतःच rising wedge / wave 5 ending diagonal) ⇒ थकवा: पुढचा pullback reversal असू शकतो ⇒ PT −10, grade कमी; wave 5 चा लगेच fade नाही (K3, S8). **Leading diagonal:** संपूर्ण counter-move हाच पहिला 5-leg wedge ⇒ **default ending** [Abhi, KP3; थर 3 v2.1 prompt]: 3-3-3-3-3 = corrective ⇒ pullback end म्हणून वाचा. Leading diagonal (A) फक्त alternate count म्हणून narrative मध्ये (P2). **अपूर्ण wedge:** wedge पूर्ण होईलच असं नाही; area वर commitment candle ने त्याची रेषा close-through ⇒ trigger (K11.0); commitment शिवाय रेषा break = noise. Diagonal च्या **दिशेने** pullback विकणं मात्र नाहीच (K3 बंदी). |
 | **विश्वासार्हता** | NM. [पुरावा, Bulkowski] rising wedge: 60% खाली तुटतो; downward break failure 51%, bust rate 63%. |
-| **चुका** | Diagonal च्या दिशेने pullback विकणं (K3 बंदी); wave 5 diagonal लगेच fade; diverging आकाराला wedge म्हणणं; 2 pivots वरून wedge; trend च्या 5 मधला diagonal (S8) आणि C मधला diagonal (S1) गोंधळणं. |
-| **Fixtures** | ✔ `test_prototype_wedge_and_abc_readings_both_present` (`tests/test_patterns2.py`, खालची K); ✔ `test_wedge_strong_evidence_and_incomplete_valid`, `test_flat_ba_mid_band_rising_and_wedge_three_push_guideline` (`tests/test_patterns2_v2.py`); ✔ `test_measure2_finds_diagonal_with_only_three_d0_sublegs_and_in_progress_uses_confirmed` (`tests/test_patterns2.py`). ➕ `test_k11_pt_opposite_wedge_plus_3_bull/bear` (chart_reader `_wedge` ला आज test नाही), `test_k11_pt_impulse_wedge_minus_10_bull/bear`, `test_k11_expanding_wedge_is_not_wedge_bull/bear`, `test_k11_inside_forming_wedge_no_entry_bull/bear`. |
+| **चुका** | Diagonal च्या दिशेने pullback विकणं (K3 बंदी); wave 5 diagonal लगेच fade; diverging आकाराला wedge म्हणणं (तो broadening); 2 pivots वरून "पूर्ण" wedge म्हणणं; wedge अपूर्ण आहे म्हणून area वरची commitment सोडणं; trend च्या 5 मधला diagonal (S8) आणि C मधला diagonal (S1) गोंधळणं. |
+| **Fixtures** | ✔ `test_prototype_wedge_and_abc_readings_both_present` (`tests/test_patterns2.py`, खालची K); ✔ `test_wedge_strong_evidence_and_incomplete_valid`, `test_flat_ba_mid_band_rising_and_wedge_three_push_guideline` (`tests/test_patterns2_v2.py`); ✔ `test_measure2_finds_diagonal_with_only_three_d0_sublegs_and_in_progress_uses_confirmed` (`tests/test_patterns2.py`). ➕ `test_k11_pt_opposite_wedge_plus_3_bull/bear` (chart_reader `_wedge` ला आज test नाही), `test_k11_pt_impulse_wedge_minus_10_bull/bear`, `test_k11_expanding_wedge_is_broadening_contrary_evidence_bull/bear`, `test_k11_incomplete_wedge_line_close_through_at_area_is_trigger_bull/bear`, `test_k11_incomplete_wedge_line_break_without_commitment_no_entry_bull/bear`, `test_k11_whole_k_wedge_read_as_ending_bull/bear`. |
 
 ### K11.8 Double top / bottom
 | घटक | मजकूर |
@@ -851,7 +880,7 @@
 | **ओळख** | तीन highs एकमेकांपासून ≤ 0.5 MR, प्रत्येकी ≥ 8 bars दूर (double top चेच आकडे); troughs ≥ 2 MR खाली. Range मध्ये हाच आकार rectangle (K11.3) असतो ⇒ आधीचा trend हवा. |
 | **Validity (नाव कधी)** | **नाव:** neckline च्या पलीकडे close. |
 | **Invalidation** | तिसऱ्या टोकापलीकडे acceptance; neckline reclaim. |
-| **उपयोग** | **[E]** double top सारखंच: trend च्या टोकावर grade कमी. Neckline flip ⇒ फक्त S4 retest. |
+| **उपयोग** | **[E]** double top सारखंच: trend च्या टोकावर grade कमी. Neckline flip ⇒ फक्त S4 retest. पहिल्या दोन टोकांनी K4 चा band बनतो ⇒ तिसरं टोक = त्या band चा trade location; तिथे handover + commitment असेल तर ते G10 / S4 / P1 (पालक दिशा) नियमांनी वाचायचं, pattern च्या नावाने नाही. |
 | **विश्वासार्हता** | NM. |
 | **चुका** | Range च्या कडेला triple top म्हणणं (तो G10 चा area); तिसरा touch sweep होऊन परत आत आला तर "अपयश" विसरून breakout मानणं; neckline आधी नाव. |
 | **Fixtures** | ➕ `test_k11_triple_top_bull_side_warning`, `test_k11_triple_bottom_bear_side_warning`, `test_k11_triple_top_inside_range_is_range_edge_bull/bear`. (आज chart_reader फक्त शेवटची दोन टोकं पाहतो ⇒ triple = double, K11.19.) |
@@ -905,7 +934,7 @@
 | **Invalidation** | Legs लहान होऊ लागले ⇒ triangle / wedge म्हणून पुन्हा वाचा. |
 | **उपयोग** | **[E]** Trend च्या शेवटी ⇒ grade कमी. Trend मध्ये बाजूचा correction म्हणून (S6 expanding triangle) ⇒ फक्त नकारात्मक पुरावा, बंदी नाही (I9.5 default). कडा = sweep जागा; breakout नाही. |
 | **विश्वासार्हता** | NM. [स्रोत: NEoWave QOW 1109] expanding triangle / diametric मध्ये Type-2 confirmation "can provide false signals" (S6). |
-| **चुका** | Diverging wedge ला wedge म्हणणं; कडेच्या "breakout" वर entry; प्रत्येक नव्या टोकाला trend समजणं. |
+| **चुका** | Diverging wedge ला wedge म्हणणं (Abhi, KP4: diverging wedge = broadening = फक्त विरोधी पुरावा); कडेच्या "breakout" वर entry; प्रत्येक नव्या टोकाला trend समजणं. |
 | **Fixtures** | ✔ `test_triangle_contracting_barrier_expanding` (expanding ⇒ `next_motive_dir` 0, `tests/test_elliott_counts.py`). ➕ `test_k11_broadening_top_lowers_grade_bull`, `test_k11_broadening_bottom_lowers_grade_bear`, `test_k11_expanding_wedge_scored_as_broadening_bull/bear`. |
 
 ### K11.14 Island reversal (gaps)
@@ -961,20 +990,24 @@
 - Neckline (पुष्टीची अट) तुटण्याआधी pattern नाव देणं.
 - 0.3 MR उंचीचा "double top" (हा noise).
 - गोष्टीला जुळेल अशा रेषा काढणं.
-- Pattern च्या रेषेच्या / कडेच्या break वर entry (breakout). Entry फक्त area + commitment.
+- Area पासून दूर pattern च्या रेषेच्या / कडेच्या break वर entry (breakout), पाठलाग, किंवा commitment candle शिवाय रेषा break वर entry. Entry फक्त area + dominant commitment (correction ची स्वतःची रेषा त्या candle ने close-through = valid trigger form, K11.0).
+- Minor swing / लहान trendline चा break एकटा याला signal मानणं (noise).
 - Pattern ला निर्णय मानणं: pattern फक्त पुरावा; grade भाग D प्रमाणे.
 - Hindsight labels tests मध्ये (I4.6): fixture मध्ये decision bar पर्यंतचाच data.
 
-### K11.19 Code शी फरक (आजचं code; बदल फक्त Abhi च्या मंजुरीनंतर)
-| # | Code (file:line) | KB (K11) | OPEN_QUESTIONS |
+### K11.19 Code शी फरक (Abhi चे निर्णय 2026-10-13, PR #317; code बदल change control प्रमाणेच)
+| # | Code (file:line) | KB (Abhi चा निर्णय) | स्थिती |
 |---|---|---|---|
-| 1 | `simple_core/flags.py:62` `breakout_ok` (engine `simple_core/engine.py:259`): G8 ला commitment flag रेषेबाहेर close **हवाच** (gate) | K11.1 / S5: flag breakout वर entry नाही; रेषेपलीकडे close = फक्त K6.5 पुरावा; T7 no-breakout (K9) | KP1 |
-| 2 | `chart_reader/settings.py:62–63` `pt_flag_min_bars` 4 / `pt_flag_max_bars` 20 | K11.1: flag 2–11 bars (G8, Abhi #284); 4–20 हा research अंदाज (S5) | KP2 |
-| 3 | `patterns2/settings.py:21` `wedge_as_ending` False + `patterns2/fold.py:56` (v1): संपूर्ण-K wedge ⇒ "leading A ⇒ थांबा" | K11.7: default ending (थर 3 v2.1 prompt; `patterns2/fold2.py:7`), leading A = alternate | KP3 |
-| 4 | `patterns2/enum2.py:66` + `patterns2/score2.py:123` (wedge गुणांत expanding साठी दंड नाही; triangle expanding ला 0.5 `score2.py:113`) | K11.7 / K11.13: diverging रेषा = wedge नाही, broadening ⇒ फक्त नकारात्मक पुरावा | KP4 |
-| 5 | `patterns2/fold2.py:30` `BAN_STATES` मध्ये `forming_wedge` नाही (position_ban) | K11.7 / K3: wedge (diagonal) च्या आत, त्याच्या दिशेने entry नाही | KP4 |
-| 6 | `chart_reader/evidence.py:272` फक्त शेवटची दोन टोकं ⇒ triple top = double top (PT −10 तोच) | K11.9: वेगळं नाव; गुण तोच चालेल | — (फक्त नोंद) |
-| 7 | नवीन patterns (pennant वगळता) ना PT गुण नाहीत | K11 सारांश: "—" = नोंद फक्त | KP5 |
+| 1 | `simple_core/flags.py:62` `breakout_ok` (engine `simple_core/engine.py:259`): G8 ला commitment flag रेषेबाहेर close हवा | KP1: area वरच्या dominant commitment candle ने correction ची स्वतःची रेषा close-through = valid trigger form (K11.0) | ✅ सुसंगत; code बदल नाही |
+| 2 | `chart_reader/settings.py:62–63` `pt_flag_min_bars` 4 / `pt_flag_max_bars` 20 | KP2: flag लांबी = G8 चे 2–11 bars (setting); 4–20 फक्त नोंद | code बदल बाकी (change control) |
+| 3 | `patterns2/settings.py:21` `wedge_as_ending` False + `patterns2/fold.py:56` (v1): संपूर्ण-K wedge ⇒ "leading A ⇒ थांबा" | KP3: default ENDING (v2.1 `patterns2/fold2.py:7` सुसंगत) | v1 बदल / निवृत्ती बाकी |
+| 4 | `patterns2/enum2.py:66` + `patterns2/score2.py:123` (expanding wedge ला दंड नाही; expanding triangle ला 0.5 `score2.py:113`) | KP4: diverging wedge = broadening = फक्त विरोधी पुरावा | code बदल बाकी |
+| 5 | `patterns2/fold2.py:30` `BAN_STATES` मध्ये `forming_wedge` नाही | KP4: अपूर्ण / बनत असलेला wedge entry अडवत नाही; KP1 trigger form ने तपासायचा | ✅ सुसंगत; code बदल नाही |
+| 6 | `chart_reader/evidence.py:272` फक्त शेवटची दोन टोकं ⇒ triple top = double top (PT −10 तोच) | K11.9: वेगळं नाव; गुण तोच चालेल | फक्त नोंद |
+| 7 | नवीन patterns (pennant वगळता) ना PT गुण नाहीत | KP5: KB प्रमाणे ⇒ गुण नाहीत, नोंद फक्त | ✅ सुसंगत |
+| 8 | `trendlines2/settings.py:16` `valid_touches` 3 ("2 ⇒ उमेदवार") | K6.1 (Abhi): रेषा 2 touches वरून; projected 3रा touch = trade location; ≥ 3 = "established" (पुरावा +); chart वर touch count + 3rd-touch zone | code तपासणी / बदल बाकी; golden 12 Oct (K6.1) |
+| 9 | Areas चं chart drawing (bands, broken लपवणं, वर / खाली कमाल 3) | K4 (Abhi): band low–high; फक्त ताजा broken dashed; प्रति TF 3 + 3; "confluence" label | code तपासणी बाकी |
+| 10 | `elliott/trigger.py:11` T7 no-breakout (reclaim close शेवटच्या sub-leg origin च्या आत) | KP1 trigger form: commitment candle correction ची रेषा close-through करू शकते | code टप्प्यात T7 आणि KP1 एकत्र तपासायचे (T7 फक्त area पासून दूर close ला लागावा का) |
 
 ---
 
@@ -1530,7 +1563,7 @@
 
   जुना मोठा zone असेलच असं नाही. 28 Sep ला code फक्त zones पाहत होता [अनुमान; KB E1 ची चूक].
 - **खोली:** < 38.2% इथेच valid (G8: 23.6–38.2% [KB H, Abhi]).
-- **Trade:** flag च्या शेवटी trend दिशेने commitment (G8). Flag breakout वर नाही [Abhi].
+- **Trade:** flag च्या शेवटी trend दिशेने commitment (G8). Flag breakout (area पासून दूर, पाठलाग, किंवा commitment शिवाय रेषा break) वर नाही [Abhi]. Area वरच्या dominant commitment candle ने flag ची रेषा close-through = valid trigger form [Abhi, 2026-10-13, KB K11.0 KP1].
 - **Invalidation:**
   - trade: flag चं टोक;
   - count: (ii) ⇒ (i) ची सुरुवात; (iv) ⇒ (i) चं टोक [नियम R1, R3].
