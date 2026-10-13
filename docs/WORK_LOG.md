@@ -2492,3 +2492,9 @@ legs owner वि. reader2 gate).
   FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
   काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
   (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.
+
+## 2026-10-13 — K-RSI: BANKNIFTY run2 "0 divergences" = लहान इतिहास (bug नाही), script आता fail-closed
+- कारण: swings2 σ ला आधीचे 20 पूर्ण sessions लागतात; फक्त live export (15 Sep पासून, ≤ 20 sessions) ⇒ σ NaN ⇒ एकही pivot नाही ⇒
+  "0 divergences, 0 cap" (खोटं शून्य). run1 ने `banknifty/BANKNIFTY_15M.csv.gz` (13 Jul पासून) वापरला होता.
+- `scripts/rsi_divergence_check.py`: pivots नसतील तर कारणासह थांबतो (`need_history`); instrument निवड caller ला गळत नाही. Test जोडला.
+  Threshold बदल नाही.

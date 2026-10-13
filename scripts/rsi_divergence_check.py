@@ -86,6 +86,18 @@ def load(paths):
     return m15, m1
 
 
+def need_history(sym, D, full):
+    """Fail closed (no silent "0 divergences"): swings2 σ needs `sigma_sessions` complete sessions before a session, so a short export
+    (e.g. a ~20-session live export alone) gives NO pivots at all. Stop with the reason instead of reporting zero divergences."""
+    if any(D.piv.values()):
+        return
+    n = int(D.res["settings"]["sigma_sessions"])
+    days = sorted(full)
+    raise SystemExit(f"{sym}: swings2 found no pivots — σ needs {n} complete sessions before the first usable session; the input has "
+                     f"{sum(full.values())} complete sessions ({days[0]:%d %b %Y} → {days[-1]:%d %b %Y}). Add longer history "
+                     "(e.g. trade-data banknifty/BANKNIFTY_15M.csv.gz or the upstox 1m files) — this is not a 'no divergence' result.")
+
+
 def chart(D, out_dir, name, title, f0, f1, t, ctx, note):
     png, divs, caps = RC.div_chart(D, t, f0, f1, title, context_bars=ctx, note=note)
     with open(os.path.join(out_dir, name), "wb") as fh:
@@ -100,6 +112,7 @@ def run_symbol(sym, paths, a):
     ts = pd.to_datetime(m15["timestamp"])
     day = ts.dt.normalize()
     full = PE.complete_sessions(m15)
+    need_history(sym, D, full)
     done = [d for d in sorted(full) if full[d]]
     last10 = done[-int(a.sessions):]
     partial = [d for d in sorted(full) if not full[d] and d > (done[-1] if done else pd.Timestamp.min)]
@@ -150,7 +163,11 @@ def main(argv=None):
         jobs.setdefault(sym.upper(), []).append(p)
     res, items = [], []
     for sym, paths in jobs.items():
-        r = run_symbol(sym, paths, a)
+        prev = INS._current["name"]
+        try:
+            r = run_symbol(sym, paths, a)
+        finally:
+            INS._current["name"] = prev                                       # the instrument choice never leaks to the caller
         res.append(r)
         c = r["counts"]
         reading = (f"{sym} 15M spot: {c['divergences']} divergences in the last {len(r['sessions'])} sessions "

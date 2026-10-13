@@ -378,6 +378,16 @@ def test_dashboard_overlay_is_cached_per_data_and_settings(walk_frame, monkeypat
     PD._rsi_div_overlay_cached.clear()
 
 
+def test_review_script_fails_closed_on_short_history(tmp_path):
+    """≤ 20 sessions (σ warm-up) ⇒ swings2 has no pivots ⇒ the script stops with the reason, never a silent '0 divergences'."""
+    from scripts import rsi_divergence_check as CHK
+    short = tmp_path / "short.csv"
+    m15_from(walk(25 * 18, 3, step=3.0)).drop(columns=["bar_end"]).to_csv(short, index=False)
+    with pytest.raises(SystemExit) as e:
+        CHK.main(["--out-dir", str(tmp_path / "o"), "--run-id", "x/run", "--input", f"BANKNIFTY={short}"])
+    assert "no pivots" in str(e.value) and "not a 'no divergence' result" in str(e.value)
+
+
 def test_owner_has_no_dates_and_no_second_rsi():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     src = open(os.path.join(root, "rsi2", "engine.py"), encoding="utf-8").read()
