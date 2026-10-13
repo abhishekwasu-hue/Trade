@@ -53,7 +53,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
         return 2
     if run_fn is None:
         if engine == "decision3":
-            run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run)  # noqa: E731
+            run_fn = lambda sym, t: ES.run3(sym, t, now=now, dry_run=a.dry_run, s=ES.engine3_settings(sym))  # noqa: E731
         else:
             run_fn = ES.run
     rc = 0
@@ -70,7 +70,7 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 continue
             tag = " (dry-run, store नाही)" if a.dry_run else ""
             print(f"✅ {sym} [{engine}] {r['bar_ts']}: {r['decision']} gate {r.get('gate') or '—'} dir {r.get('direction')} "
-                  f"grade {r.get('grade') or '—'} · {r.get('reason') or ''}{tag}")
+                  f"grade {r.get('grade') or '—'} · {r.get('reason') or ''}{tag}{_m1_tag(r)}")
             if not a.dry_run:
                 print(f"   {ES.opinion(sym, r['bar_ts'])}")
         except Exception as exc:                                         # noqa: BLE001 — fail-closed
@@ -87,6 +87,20 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                 else:
                     ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
     return rc
+
+
+def _m1_tag(r):
+    """Z-1o: payload `m1` ⇒ " · 1m ✓" / " · 1m off" / " · 1m fallback: …" (decision3 फक्त; नसेल ⇒ "")."""
+    try:
+        import json
+        m = (json.loads(r.get("payload") or "{}") or {}).get("m1")
+    except (TypeError, ValueError):
+        return ""
+    if not m:
+        return ""
+    if m.get("used"):
+        return f" · 1m ✓ ({m.get('m15_covered')}/{m.get('m15_bars')})" + (f" {m['note']}" if m.get("note") else "")
+    return " · 1m off" if not m.get("setting") else f" · 1m fallback: {m.get('note')}"
 
 
 def _data_problem(r):

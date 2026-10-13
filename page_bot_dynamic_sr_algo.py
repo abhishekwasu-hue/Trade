@@ -1324,6 +1324,7 @@ def render():
 
     signal_source = settings.get("signal_source", "own")
     srv3_signal_source = settings.get("srv3_signal_source", "own")
+    engine3_use_1m = bool(settings.get("engine3_use_1m", True))
     if strategy_key in ("1m_instant", "15m_dynamic_sr"):
         # 🎓 Abhi (Monday PAPER): signal कुठून — own (bot चा स्वतःचा, default) / engine (common analysis engine चा setup) / both (दोन्ही एकाच
         # दिशेला तरच). कुठलाही असो: Vision + ✅ approval शिवाय PAPER entry नाही; engine चं मत caption मध्ये नेहमी (shadow).
@@ -1337,6 +1338,11 @@ def render():
                                                   index=_ss.index(srv3_signal_source) if srv3_signal_source in _ss else 0,
                                                   key=_widget_key(strategy_key, symbol, "srv3_signal_source"))
             st.caption("Engine signal फक्त PAPER साठी. `engine` / `both` साठी VPS वर engine service (scripts/engine_signal_run.py) चालू हवा.")
+            if strategy_key == "15m_dynamic_sr":
+                # 🎓 Abhi Z-1o (a): engine (decision3) ला 1m spot ⇒ swings2 प्रत्येक 15M candle मधला high / low क्रम replay / RSI सारखाच.
+                engine3_use_1m = st.checkbox("Engine: 1m data वापरा (swings2 candle आतला high / low क्रम)", value=engine3_use_1m,
+                                             key=_widget_key(strategy_key, symbol, "engine3_use_1m"),
+                                             help="ON (default) = replay / RSI divergence सारखेच pivots · OFF = जुनं (1m शिवाय). 1m नाही ⇒ आपोआप 1m शिवाय (block नाही).")
 
     st.markdown("---")
     if st.button("💾 Settings जतन करा", key="bdsr_save_btn", type="primary"):
@@ -1381,6 +1387,8 @@ def render():
             new_settings["pcr_bullish_min"] = float(pcr_bullish_min)
             new_settings["pcr_bearish_max"] = float(pcr_bearish_max)
 
+        if strategy_key == "15m_dynamic_sr":
+            new_settings["engine3_use_1m"] = bool(engine3_use_1m)
         if strategy_key == "1m_instant":
             new_settings["timeframe_choice"] = timeframe_choice
             new_settings["rsi_support_max"] = int(rsi_support_max)

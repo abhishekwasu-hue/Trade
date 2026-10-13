@@ -2539,3 +2539,16 @@ legs owner वि. reader2 gate).
   (67.09 → 66.41, 4 bars). Golden bear call default मध्ये **नाही** — FUT history 7 sessions < 10 ⇒ data problem; what-if (min 5) ⇒ 10:15
   setup (B). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅. RSI फरक: आधीच्या अहवालात V22 1m शिवाय (D0 pivot वेगळा) —
   live सुद्धा 1m शिवाय (Z-1o). OPEN_QUESTIONS Z-1h … Z-1o.
+
+## 2026-10-13 · Z-1o = (a): live engine3 ला 1m (branch `claude/engine3-live-1m`, PR #325 वर)
+
+- Abhi चा निर्णय (a): live decision3 (`engine_signal_run --engine decision3` ⇒ `engine3_live` ⇒ V22) ला spot 1m ⇒ V22 `df1m` ⇒ swings2
+  प्रत्येक 15M candle मधला high / low क्रम replay / rsi2 सारखाच (levels + RSI divergence त्याच pivots वर). decision3 नियमांना हात नाही.
+- 1m window = `engine3_m15_days` (90 दिवस). आधीचे दिवस historical (28-दिवस chunks, दिवसातून एकदा disk cache — कालचा दिवस अजून नसेल तर
+  cache नाही), आजचा intraday प्रत्येक cycle. फक्त बंद 1m आणि शेवटच्या बंद 15M bar_end पर्यंत (look-ahead नाही); NIFTY holdout filter.
+- 1m नाही / त्रुटी ⇒ 1m शिवाय (जुना मार्ग) + कारण: log ओळ + row payload `m1` (used / fallback / note). Data error नाही (FUT volume हाच
+  आवश्यक input). Setting `engine3_use_1m` (dashboard 15M SRv2 पान, default ON; OFF = जुनं वर्तन, 1m मागवत नाही).
+- Upstox calls: प्रत्येक cycle +1 / symbol (intraday); दिवसाचा पहिला cycle +5 (4 history + 1 intraday). 3 symbols × 24 cycles ⇒ ~84 / दिवस.
+- तुलना `scripts/engine3_1m_compare.py` (read-only) ⇒ trade-data `review/engine3_1m/run1`: NIFTY 12 / 13 Oct निर्णय सगळे wait दोन्हीकडे;
+  1m सह zone hi 22,621.80 ⇒ 22,651.10, RSI bear div 9 Oct 14:15 → 12 Oct 09:15 फक्त 1m सह, wait bars वर grade 10 ठिकाणी वर. BANKNIFTY:
+  निर्णय बदल नाही. Tests: नवे `tests/test_engine3_1m.py` (14). OPEN_QUESTIONS Z-1o (a).

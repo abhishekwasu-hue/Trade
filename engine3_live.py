@@ -10,6 +10,10 @@
   • V22(m15, daily_df=…).decide(शेवटचा बंद bar) ⇒ engine_signal store row (decision2 च्याच columns) ⇒ bots चा adapter (`pending_entry`).
 Fail-closed: data नाही / अपूर्ण / exception ⇒ EngineDataError (caller "error" row + दिवसातून एकदा Telegram ओळ). Order / broker call नाही.
 Daily fold (सर्वात महाग भाग, ~50 s) दिवसाला एकदा: input hash वर disk cache (`data/engine3_cache/`) — शुद्ध function, निकाल तोच.
+1m spot (Abhi Z-1o = (a), setting `engine3_use_1m`, default True): swings2 ला प्रत्येक 15M candle मधला high / low क्रम (replay / rsi2 सारखाच)
+⇒ V22 `df1m=` (swings2 ⇒ levels + rsi2 Divergence त्याच pivots वर). आधीचे दिवस historical (दिवसातून एकदा, disk cache), आजचे intraday
+(प्रत्येक cycle ला 1 call). फक्त बंद 1m आणि शेवटच्या बंद 15M च्या आतले (look-ahead नाही). 1m नाही ⇒ जुना मार्ग (1m शिवाय) + कारण
+(payload `m1`, log ओळ) — data error / block नाही (FUT volume हा आवश्यक input, 1m नाही). False ⇒ जुनं वर्तन.
 """
 import datetime as dt
 import hashlib
@@ -23,7 +27,8 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = {"engine3_m15_days": 90, "engine3_daily_days": 3650, "engine3_ltf_days": 10,
-            "engine3_fut_days": 45}                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
+            "engine3_fut_days": 45,                                       # Abhi Z-1: volume ÷ slot median of 20 sessions ⇒ ≥ 21 sessions FUT
+            "engine3_use_1m": True}                                       # Abhi Z-1o (a): 1m spot ⇒ swings2 (1m चा window = engine3_m15_days)
 FUT_REQUIRED = ("NIFTY", "BANKNIFTY")                                     # Abhi Z-1c: FUT volume नाही = data error (entry नाही + Telegram)
 DATA_PROBLEM_FUT = "data problem: FUT volume missing"
 SESSION_OPEN, SESSION_CLOSE = (9, 15), (15, 30)
@@ -74,7 +79,7 @@ def resolve_future(token, symbol, today):
 # ------------------------------------------------------------------------------------------------ Upstox feed (VPS)
 class UpstoxFeed:
     """फक्त GET. historical (chunks) + आजचा intraday. कोणताही chunk अयशस्वी ⇒ EngineDataError (अपूर्ण history वर निर्णय नाही)."""
-    CHUNK = {"5minute": 28, "15minute": 28, "day": 3700}
+    CHUNK = {"1minute": 28, "5minute": 28, "15minute": 28, "day": 3700}
 
     def __init__(self, token, today=None):
         if not token:
@@ -83,10 +88,14 @@ class UpstoxFeed:
         self.today = today or dt.date.today()
 
     def _series(self, key, interval, days, contract=None):
+        out = self._history(key, interval, days)
+        if interval != "day":
+            out = out + self._intraday(key, interval)
+        return candles_df(out, contract)
+
+    def _history(self, key, interval, days):
+        """historical chunks (+ गायब दिवस) — candles list. minute ⇒ काल पर्यंत; day ⇒ आज पर्यंत."""
         import verify_opportunity_data_availability as V
-        from opportunity_engine.volume import candles_to_df
-        unit, val = V._V3_UNITS[interval]
-        enc = urllib.parse.quote(key, safe="")
         # minute history: to_date = काल (आजचे bars intraday मधून). to_date = आज दिल्यास Upstox कालचा पूर्ण दिवस वगळतो (13 Oct: 15M/5M
         # 9 Oct ला संपले, 12 Oct गायब; फक्त 12 Oct मागितल्यावर पूर्ण दिवस आला).
         out = []
@@ -101,11 +110,45 @@ class UpstoxFeed:
             to = frm - dt.timedelta(days=1)
         if interval != "day":
             out.extend(self._fill_recent_days(key, interval, out))
-            st, body, err = V._get(f"{V.BASE_V3}/intraday/{enc}/{unit}/{val}", self.token)
-            if st != 200:
-                raise EngineDataError(f"{key} {interval} intraday HTTP {st} ({str(err)[:80]})")
-            out.extend(((body or {}).get("data") or {}).get("candles") or [])
-        return candles_to_df(out, contract=contract)
+        return out
+
+    def _intraday(self, key, interval):
+        import verify_opportunity_data_availability as V
+        unit, val = V._V3_UNITS[interval]
+        enc = urllib.parse.quote(key, safe="")
+        st, body, err = V._get(f"{V.BASE_V3}/intraday/{enc}/{unit}/{val}", self.token)
+        if st != 200:
+            raise EngineDataError(f"{key} {interval} intraday HTTP {st} ({str(err)[:80]})")
+        return list(((body or {}).get("data") or {}).get("candles") or [])
+
+    def _history_cached(self, key, interval, days):
+        """आधीचे दिवस बदलत नाहीत ⇒ history दिवसातून एकदा (disk cache: key + interval + days + आजची तारीख). Cache त्रुटी ⇒ साधा fetch."""
+        tag = "".join(ch if ch.isalnum() else "_" for ch in f"{key}_{interval}_{int(days)}")
+        p = os.path.join(cache_dir(), f"hist_{tag}_{self.today.isoformat()}.pkl")
+        try:
+            if os.path.exists(p):
+                with open(p, "rb") as f:
+                    return pickle.load(f)
+        except Exception:                                                # noqa: BLE001
+            pass
+        out = self._history(key, interval, days)
+        prev = self.today - dt.timedelta(days=1)
+        while prev.weekday() >= 5:
+            prev -= dt.timedelta(days=1)
+        last = max((pd.Timestamp(str(c[0])[:10]).date() for c in out), default=None)
+        if last is None or last < prev:                                  # कालचा दिवस अजून नाही (उशीर / सुट्टी) ⇒ cache नाही, पुढच्या cycle ला पुन्हा
+            return out
+        try:
+            os.makedirs(cache_dir(), exist_ok=True)
+            with open(p + ".tmp", "wb") as f:
+                pickle.dump(out, f)
+            os.replace(p + ".tmp", p)
+            for old in os.listdir(cache_dir()):                          # जुन्या दिवसांच्या history files
+                if old.startswith(f"hist_{tag}_") and old.endswith(".pkl") and old != os.path.basename(p):
+                    os.remove(os.path.join(cache_dir(), old))
+        except Exception:                                                # noqa: BLE001
+            pass
+        return out
 
     def _fill_recent_days(self, key, interval, rows, lookback=7):
         """History मध्ये शेवटच्या दिवसानंतरचे (आज वगळून) weekday दिवस गायब असतील तर ते एकेक-दिवस मागवून भरतो (सुट्टी ⇒ रिकामं, चालतं)."""
@@ -124,6 +167,9 @@ class UpstoxFeed:
         return extra
 
     def index(self, symbol, interval, days):
+        if interval == "1minute":                                        # Z-1o: history दिवसातून एकदा (cache) + आजचा intraday
+            key = index_key(symbol)
+            return candles_df(self._history_cached(key, interval, days) + self._intraday(key, interval))
         return self._series(index_key(symbol), interval, days)
 
     def futures(self, symbol, interval, days):
@@ -133,6 +179,11 @@ class UpstoxFeed:
 
 
 # ------------------------------------------------------------------------------------------------ frames
+def candles_df(candles, contract=None):
+    from opportunity_engine.volume import candles_to_df
+    return candles_to_df(candles, contract=contract)
+
+
 def _naive(df):
     df = df.copy()
     ts = pd.to_datetime(df["timestamp"])
@@ -276,18 +327,64 @@ def build_inputs(feed, symbol, now, s=None):
     return m15, daily, ltf, fut, note
 
 
-def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None):
-    """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा)."""
+def use_1m(s=None):
+    """Setting `engine3_use_1m` (dashboard, default True — Abhi Z-1o (a)). "false" / "0" / "no" / "off" ⇒ False."""
+    v = {**DEFAULTS, **(s or {})}["engine3_use_1m"]
+    if isinstance(v, str):
+        return v.strip().lower() not in ("false", "0", "no", "off", "")
+    return bool(v)
+
+
+def load_m1(feed, symbol, m15, now, s=None):
+    """Abhi Z-1o (a): spot 1m ⇒ (df1m | None, info). फक्त बंद 1m (start + 1 ≤ now), session मधले, m15 च्या पहिल्या bar पासून शेवटच्या
+    बंद 15M bar च्या bar_end पर्यंत (त्यानंतरचा 1m कधीच नाही ⇒ look-ahead नाही); NIFTY ⇒ holdout rows नाहीत. 1m नाही / त्रुटी ⇒ None +
+    कारण (जुना मार्ग; data error नाही). info = payload `m1`: used, setting, rows, m15_covered / m15_bars, note."""
+    from decision3 import history as HI
+    from elliott import data_policy as DP
+    s = {**DEFAULTS, **(s or {})}
+    if not use_1m(s):
+        return None, {"used": False, "setting": False, "note": "engine3_use_1m = False ⇒ 1m शिवाय (जुना मार्ग)"}
+
+    def fallback(why):
+        note = f"1m नाही ⇒ 1m शिवाय (जुना मार्ग): {why}"
+        print(f"⚠️ {str(symbol).upper()} engine3: {note}")
+        return None, {"used": False, "setting": True, "fallback": True, "note": note}
+    try:
+        raw = feed.index(symbol, "1minute", s["engine3_m15_days"])
+        m1 = closed_session_bars(raw, 1, now)
+        if HI.is_nifty(symbol):
+            m1 = DP.filter_allowed(m1, "annotation")
+    except Exception as exc:                                             # noqa: BLE001 — 1m हा आवश्यक input नाही
+        return fallback(f"{type(exc).__name__}: {str(exc)[:120]}")
+    if len(m15):
+        first, last_end = pd.Timestamp(m15["timestamp"].iloc[0]), pd.Timestamp(m15["bar_end"].iloc[-1])
+        m1 = m1[(m1["timestamp"] >= first) & (m1["bar_end"] <= last_end)]
+    if not len(m1):
+        return fallback("Upstox कडून 1m candles मिळाले नाहीत (या 15M window मध्ये)")
+    m1 = m1[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
+    have = set(m1["timestamp"].dt.floor("15min"))
+    keys = pd.to_datetime(m15["timestamp"])
+    cov = int(keys.isin(have).sum())
+    info = {"used": True, "setting": True, "rows": int(len(m1)), "m15_covered": cov, "m15_bars": int(len(m15)), "note": None}
+    if len(m15) and pd.Timestamp(keys.iloc[-1]) not in have:
+        info["note"] = "शेवटच्या 15M bar चा 1m नाही (intraday उशीर) ⇒ त्या bar चा क्रम 1m शिवाय"
+    elif cov < len(m15):
+        info["note"] = f"1m {cov}/{len(m15)} 15M bars (बाकी bars चा क्रम 1m शिवाय)"
+    return m1, info
+
+
+def evaluate(symbol, m15, daily, ltf=None, fut=None, s3=None, m1=None):
+    """V22 ⇒ शेवटच्या बंद 15M bar चा निर्णय (dict, decide() चा). m1 = spot 1m (Z-1o) ⇒ V22 df1m (swings2 ⇒ levels + rsi2)."""
     import instruments as INS
     prev = INS._current["name"]
     INS.set_current(symbol)                                              # PE.guard चा holdout नियम त्याच instrument चा (NIFTY फक्त)
     try:
-        return _evaluate(symbol, m15, daily, ltf, fut, s3)
+        return _evaluate(symbol, m15, daily, ltf, fut, s3, m1)
     finally:
         INS._current["name"] = prev                                      # process-wide instrument पुढच्या caller ला गळू नये
 
 
-def _evaluate(symbol, m15, daily, ltf, fut, s3):
+def _evaluate(symbol, m15, daily, ltf, fut, s3, m1=None):
     from decision3 import engine as E3
     from decision3 import history as HI
     m15 = m15.drop(columns=[c for c in ("volume",) if c in m15.columns])   # index volume 0 ≠ खरा volume (NA हवा)
@@ -302,7 +399,7 @@ def _evaluate(symbol, m15, daily, ltf, fut, s3):
     if "futures" in params and fut is not None:
         kw["futures"] = fut
     with fold_cache(symbol.upper()):
-        V = E3.V22(m15, None, daily, **kw)
+        V = E3.V22(m15, m1, daily, **kw)
     return V.decide(len(V.m15) - 1)
 
 
@@ -341,7 +438,8 @@ def row_from_v22(symbol, r, now_fn):
     reason = r.get("why") or why or ""
     payload = {"engine": "decision3", **{k: r.get(k) for k in ("ts", "bar_end", "daily_trend", "trend_used", "trend_resolution",
                                                             "weekly_trend", "daily_phase", "mature", "trend_notes", "trend_cap",
-                                                            "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note")},
+                                                            "mark", "conviction", "commitment_form", "missing", "checklist", "volume_note",
+                                                            "m1")},
                "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
                                                 "flipped_ts")} if lv else None,
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
@@ -354,6 +452,8 @@ def row_from_v22(symbol, r, now_fn):
 
 def compute(symbol, feed, now, s=None):
     m15, daily, ltf, fut, note = build_inputs(feed, symbol, now, s)
-    r = evaluate(symbol, m15, daily, ltf, fut)
+    m1, m1_info = load_m1(feed, symbol, m15, pd.Timestamp(now), s)
+    r = evaluate(symbol, m15, daily, ltf, fut, m1=m1)
     r["volume_note"] = note
+    r["m1"] = m1_info                                                    # Z-1o: 1m वापरला का / fallback कारण (row payload)
     return r
