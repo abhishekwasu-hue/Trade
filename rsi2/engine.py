@@ -331,3 +331,327 @@ def mapping(r15, r1h, sp, casc, rng1, range_edge_hit, s):
     rev = [x for x in labels if x[2] == "reversal"]
     pool = sorted(rev if rev else labels, key=lambda x: 0 if x[0] == "1H" else 1)
     return labels, (pool[0][1] if pool else None)
+
+
+# ================================================================================================ K-RSI: regular divergence facts
+# KB K10.4 (K-RSI, pending Abhi). Owner = rsi2 (design §3). Facts only — no score / grade / vote; evidence inside the zone study, never a
+# trigger or a gate. Wilder RSI on the SPOT close of the frame's timeframe (15M primary, 1H context, 5M optional). Pivots = swings2
+# (the facts swing owner): two CONSECUTIVE same-kind pivots of one degree (no higher high / lower low between them); price on wicks; the
+# RSI value = the RSI extreme within ± `div_rsi_window` bars of the price pivot, inside the pivot's own swing (between the neighbouring
+# opposite pivots of that degree) and using only bars closed by the bar that confirms that pivot (or by the read bar while it is still
+# forming) ⇒ no look-ahead, and a confirmed value never changes later.
+# Status: "forming" = the current push's running extreme vs the previous pivot; "confirmed" = the extreme is confirmed by the right-side
+# bars (swings2 confirmation) OR by a dominant commitment candle (decision3.method.commitment) closing away from it.
+# Bar window per TF (`div_bars`) is only a safety cap: pairs rejected ONLY by it are logged (`cap_rejected`).
+BEAR_SIDE, BULL_SIDE = "bear", "bull"
+SIDE_KIND = {BEAR_SIDE: "H", BULL_SIDE: "L"}
+
+
+def div_frame(df):
+    """OHLC frame ⇒ timestamp (tz-naive), bar_end, open / high / low / close; index reset. bar_end missing ⇒ timestamp + the frame's
+    usual bar step (most common gap)."""
+    d = df.reset_index(drop=True).copy()
+    ts = pd.to_datetime(d["timestamp"])
+    if getattr(ts.dt, "tz", None) is not None:
+        ts = ts.dt.tz_localize(None)
+    d["timestamp"] = ts
+    if "bar_end" in d.columns:
+        be = pd.to_datetime(d["bar_end"])
+        d["bar_end"] = be.dt.tz_localize(None) if getattr(be.dt, "tz", None) is not None else be
+    else:
+        gaps = ts.diff().dropna()
+        gaps = gaps[gaps > pd.Timedelta(0)]
+        step = gaps.mode().iloc[0] if len(gaps) else pd.Timedelta(0)
+        d["bar_end"] = ts + step
+    for k in ("open", "high", "low", "close"):
+        d[k] = d[k].astype(float)
+    return d[["timestamp", "bar_end", "open", "high", "low", "close"]]
+
+
+def _r2(x):
+    return None if x is None or not np.isfinite(x) else round(float(x), 2)
+
+
+def div_label(x):
+    """Chart / caption label (English): 'bear div · confirmed · 12 bars · RSI 68.21 → 64.10' ('=' when the RSI values are equal)."""
+    pre = ("hidden " if x["type"] == "hidden" else "") + x["side"] + " div"
+    a, b = x["L1"]["rsi"], x["L2"]["rsi"]
+    rs = f"RSI {a:.2f} = {b:.2f}" if x["rsi_diff"] == 0 else f"RSI {a:.2f} → {b:.2f}"
+    return f"{pre} · {x['status']} · {x['bars']} bars · {rs}"
+
+
+class Divergence:
+    """K-RSI facts on one timeframe frame. `read(t)` = facts at closed bar t (bars ≤ t only); `history(t)` = every divergence confirmed
+    by t (+ the forming ones at t); `cap_log(t)` = pairs rejected only by the bar cap.
+
+    df   : SPOT OHLC of the timeframe (timestamp [, bar_end], open, high, low, close).
+    tf   : "15M" / "1H" / "5M" (selects the bar window in `div_bars`).
+    res  : a swings2.engine.build result for this frame (built here if None; pass 1m order data only with a 15M frame).
+    rsi  : optional precomputed RSI array (tests); default Wilder(`period`) per data segment (chart_reader.evidence.rsi).
+    areas: True ⇒ at / in a valid area via decision3.levels.find_bands (facts.validity); errors ⇒ NA with the reason."""
+
+    def __init__(self, df, tf="15M", s=None, res=None, df1m=None, rsi=None, areas=True, s_swings=None):
+        from facts import validity as FV
+        self.s = RS.load(s)
+        self.tf = tf
+        self.df = div_frame(df)
+        if res is None:
+            from swings2 import engine as SE
+            res = SE.build(self.df, df1m, s=s_swings)
+        self.res = res
+        self.n = len(self.df)
+        self.B = FV.bars_of(self.df)
+        self.FV = FV
+        self.fv = FV.lookback(tf)
+        self.seg = np.array([res["segments"].get(pd.Timestamp(d), -1) for d in self.B.day])
+        self.seg_start = np.zeros(self.n, int)
+        for i in range(1, self.n):
+            self.seg_start[i] = i if self.seg[i] != self.seg[i - 1] else self.seg_start[i - 1]
+        self.rsi = np.asarray(rsi, float) if rsi is not None else rsi_segmented(self.B.C, self.seg, int(self.s["period"]))
+        self.warm = (np.arange(self.n) - self.seg_start) < int(self.s["warmup_bars"])
+        lo, hi = self.s["div_bars"][tf]
+        self.win = (int(lo), int(hi))
+        self.N = int(self.s["div_rsi_window"])
+        self.degrees = tuple(int(d) for d in self.s["div_degrees"])
+        self.piv = {d: sorted([p for p in res["pivots"].get(d, []) if not p.warmup], key=lambda p: (p.confirm_bar, p.bar))
+                    for d in self.degrees}
+        self.with_areas = areas
+        self._areas = {}
+        self._s3 = None
+        self._scan()
+
+    # -------------------------------------------------------------------------------------------- pieces
+    def _rsi_ext(self, bar, side, lo, hi):
+        """RSI extreme (max for bear, min for bull) over bars [lo, hi] ∩ the pivot's segment ⇒ (value, rsi bar) or None."""
+        i0 = max(lo, int(self.seg_start[bar]))
+        i1 = min(hi, self.n - 1)
+        idx = np.array([i for i in range(i0, i1 + 1) if self.seg[i] == self.seg[bar]], int)
+        if not len(idx):
+            return None
+        w = self.rsi[idx]
+        if not np.isfinite(w).all() or self.warm[idx].any():
+            return None
+        k = int(np.argmax(w)) if side == BEAR_SIDE else int(np.argmin(w))
+        return float(w[k]), int(idx[k])
+
+    def _commit(self, j, side, price):
+        """decision3.method.commitment at bar j, away from the extreme `price` (bear ⇒ DOWN) ⇒ (ok, facts)."""
+        from decision3 import method as M
+        from decision3 import settings as S3
+        if self._s3 is None:
+            self._s3 = S3.load()
+            self._A = {"open": self.B.O, "high": self.B.H, "low": self.B.L, "close": self.B.C}
+        d = M.DOWN if side == BEAR_SIDE else M.UP
+        ok, _, cm = M.commitment(self._A, j, d, {"lo": price, "hi": price}, self._s3)
+        return bool(ok), ({"form": cm.get("form"), "grade": cm.get("grade")} if ok else None)
+
+    def area_at(self, k, price, side):
+        """At / in a valid area at bar k (decision3.levels.find_bands, facts.validity checks): 'in' (inside the band), 'at' (within the
+        band tolerance), 'away'; NA with the reason when the area owner fails or finds no valid band."""
+        if not self.with_areas:
+            return {"status": "NA", "reason": "areas not computed (areas=False)"}
+        if k not in self._areas:
+            try:
+                from decision3 import levels as LV
+                bands = [b for b in LV.find_bands(self.B, k, self.fv) if b["valid"]]
+                self._areas[k] = (bands, self.FV.mr_at(self.B, k, self.fv), None)
+            except Exception as exc:                                    # noqa: BLE001 — NA with the reason (evidence only)
+                self._areas[k] = (None, None, f"{type(exc).__name__}: {exc}")
+        bands, mr, err = self._areas[k]
+        if err is not None:
+            return {"status": "NA", "reason": "area owner failed — " + err}
+        if not bands:
+            return {"status": "NA", "reason": "no valid band (decision3.levels.find_bands) at this bar"}
+        tol = float(self.fv["band_tol_mr"]) * mr
+
+        def dist(b):
+            return 0.0 if b["lo"] <= price <= b["hi"] else min(abs(price - b["lo"]), abs(price - b["hi"]))
+        b = min(bands, key=dist)
+        st = "in" if dist(b) == 0 else ("at" if dist(b) <= tol else "away")
+        return {"status": st, "band": {"lo": b["lo"], "hi": b["hi"], "role": b["role"], "touch_count": int(b["touch_count"])},
+                "distance": round(float(dist(b)), 2), "tolerance": round(float(tol), 2)}
+
+    def _pt(self, bar, price, rv):
+        return {"bar": int(bar), "time": str(self.B.ts.iloc[bar]), "price": round(float(price), 2),
+                "rsi": _r2(rv[0]) if rv else None, "rsi_bar": int(rv[1]) if rv else None,
+                "rsi_time": str(self.B.ts.iloc[rv[1]]) if rv else None}
+
+    def _eval(self, d, side, a, b_bar, b_price, cap_b, known_bar, status, status_by, known):
+        """One pair (a = confirmed swings2 pivot, b = the next pivot / running extreme) ⇒ record (divergence or not, with the reason).
+        known = the degree's pivots known at known_bar: each RSI window stays inside its own swing (between the neighbouring opposite
+        pivots), so the two windows never share a bar and a pivot's RSI value is the same in every pair."""
+        kind = SIDE_KIND[side]
+        rec = {"tf": self.tf, "degree": int(d), "side": side, "status": status, "status_by": status_by, "known_bar": int(known_bar),
+               "known_time": str(self.B.ts.iloc[known_bar]), "bars": int(b_bar - a.bar), "window": list(self.win)}
+        opp = [p.bar for p in known if p.kind != kind]
+        before = [x for x in opp if x < a.bar]
+        mid = [x for x in opp if a.bar < x < b_bar]
+        a_lo = before[-1] + 1 if before else a.bar - self.N
+        a_hi = mid[-1] - 1 if mid else b_bar - 1
+        b_lo = mid[-1] + 1 if mid else a.bar + 1
+        ra = self._rsi_ext(a.bar, side, max(a.bar - self.N, a_lo), min(a.bar + self.N, a.confirm_bar, a_hi))
+        rb = self._rsi_ext(b_bar, side, max(b_bar - self.N, b_lo), min(b_bar + self.N, cap_b))
+        rec["L1"], rec["L2"] = self._pt(a.bar, a.price, ra), self._pt(b_bar, b_price, rb)
+        rec.update(type=None, is_div=False, cap=None, price_rel=None, price_diff=round(float(b_price - a.price), 2), rsi_diff=None)
+        if self.seg[a.bar] != self.seg[b_bar]:
+            rec["reason"] = "pivots in different data segments"
+            return rec
+        if ra is None or rb is None:
+            rec["reason"] = "RSI not available at a pivot (warm-up)"
+            return rec
+        tol = float(self.fv["band_tol_mr"]) * self.FV.mr_at(self.B, b_bar, self.fv)
+        dp = float(b_price - a.price)
+        if kind == "H":
+            rel = "equal high" if abs(dp) <= tol else ("higher high" if dp > 0 else "lower high")
+            between = self.B.H[a.bar + 1:b_bar]
+            clear = not len(between) or float(between.max()) <= max(a.price, b_price) + 1e-9
+        else:
+            rel = "equal low" if abs(dp) <= tol else ("lower low" if dp < 0 else "higher low")
+            between = self.B.L[a.bar + 1:b_bar]
+            clear = not len(between) or float(between.min()) >= min(a.price, b_price) - 1e-9
+        r1, r2 = rec["L1"]["rsi"], rec["L2"]["rsi"]
+        rec.update(price_rel=rel, tolerance=round(tol, 2), rsi_diff=round(r2 - r1, 2), consecutive=bool(clear))
+        if not clear:
+            rec["reason"] = "not consecutive pushes (a more extreme price between the pivots)"
+            return rec
+        extend = rel in ("higher high", "equal high", "lower low", "equal low")
+        if kind == "H":
+            typ = "regular" if extend and r2 <= r1 else ("hidden" if not extend and r2 >= r1 else None)
+        else:
+            typ = "regular" if extend and r2 >= r1 else ("hidden" if not extend and r2 <= r1 else None)
+        if typ == "hidden" and not self.s["div_hidden"]:
+            typ = None
+        if typ is None:
+            if extend:
+                word, op = ("high", ">") if kind == "H" else ("low", "<")
+                rec["reason"] = f"RSI made a new {word} with price ({r2:.2f} {op} {r1:.2f})"
+            else:
+                rec["reason"] = f"price made a {rel} ({b_price:,.2f} vs {a.price:,.2f}); RSI {r1:.2f} → {r2:.2f}"
+            return rec
+        rec["type"] = typ
+        lo, hi = self.win
+        if not lo <= rec["bars"] <= hi:
+            rec["cap"] = "max" if rec["bars"] > hi else "min"
+            rec["reason"] = f"rejected only by the bar window: {rec['bars']} bars apart (window {lo}–{hi})"
+            return rec
+        rec["is_div"] = True
+        rec["reason"] = None
+        return rec
+
+    def _count(self, rec, a_bar):
+        """Multiple divergence: 1 + the count of the same-degree, same-side, same-type divergence that ended at L1 (consecutive)."""
+        return 1 + self._chain.get((rec["degree"], rec["side"], rec["type"], a_bar), 0)
+
+    def _finish(self, rec, a_bar, t):
+        if rec["is_div"]:
+            rec["count"] = self._count(rec, a_bar)
+            self._chain[(rec["degree"], rec["side"], rec["type"], rec["L2"]["bar"])] = rec["count"]
+            self.events.append(rec)
+        elif rec["cap"]:
+            self.rejects.append(rec)
+
+    # -------------------------------------------------------------------------------------------- scan (bar by bar, bars ≤ t)
+    def _scan(self):
+        self.events, self.rejects = [], []
+        self.latest = {}                                                # t ⇒ {(degree, side): record at t}
+        self._chain = {}
+        done = {}
+        ptr = {d: 0 for d in self.degrees}
+        known = {d: [] for d in self.degrees}
+        cur = {}
+        for t in range(self.n):
+            for d in self.degrees:
+                ps = self.piv[d]
+                while ptr[d] < len(ps) and ps[ptr[d]].confirm_bar <= t:
+                    b = ps[ptr[d]]
+                    ptr[d] += 1
+                    same = [p for p in known[d] if p.kind == b.kind and p.bar < b.bar]
+                    known[d].append(b)
+                    if not same:
+                        continue
+                    a = same[-1]
+                    side = BEAR_SIDE if b.kind == "H" else BULL_SIDE
+                    key = (d, side, a.bar, b.bar)
+                    if key not in done:                                 # else: already confirmed earlier by a commitment candle
+                        rec = self._eval(d, side, a, b.bar, b.price, b.confirm_bar, t, "confirmed", "right_side_bars", known[d])
+                        self._finish(rec, a.bar, t)
+                        done[key] = rec
+                    cur[(d, side)] = done[key]
+                if not known[d]:
+                    continue
+                last = known[d][-1]
+                side = BEAR_SIDE if last.kind == "L" else BULL_SIDE      # the push in progress after the last confirmed pivot
+                kind = SIDE_KIND[side]
+                prev = [p for p in known[d] if p.kind == kind and p.bar < last.bar]
+                if not prev or t <= last.bar or self.seg[t] != self.seg[last.bar]:
+                    continue
+                a = prev[-1]
+                seg = np.arange(last.bar + 1, t + 1)
+                y = self.B.H[seg] if kind == "H" else self.B.L[seg]
+                ext = float(y.max()) if kind == "H" else float(y.min())
+                m = int(seg[np.flatnonzero(y == ext)[-1]])               # later bar on a tie (swings2 rule)
+                key = (d, side, a.bar, m)
+                if key not in done:
+                    ok, cm = (False, None) if t <= m else self._commit(t, side, ext)
+                    if ok:
+                        rec = self._eval(d, side, a, m, ext, t, t, "confirmed", "commitment_candle", known[d])
+                        rec["commitment"] = cm
+                        self._finish(rec, a.bar, t)
+                        done[key] = rec
+                    else:
+                        rec = self._eval(d, side, a, m, ext, t, t, "forming", None, known[d])
+                        if rec["is_div"]:
+                            rec["count"] = self._count(rec, a.bar)
+                    cur[(d, side)] = rec
+                else:
+                    cur[(d, side)] = done[key]
+            self.latest[t] = dict(cur)
+
+    # -------------------------------------------------------------------------------------------- public reads
+    def with_area(self, rec):
+        """Adds the at / in area fact (at the record's known bar — the confirmation bar, or the read bar while forming); lazy because
+        the area owner is costly. Returns the record."""
+        if rec.get("is_div") and "area" not in rec:
+            rec["area"] = self.area_at(rec["known_bar"], rec["L2"]["price"], rec["side"])
+        return rec
+
+    def history(self, t=None, areas=False):
+        """Every divergence confirmed by bar t (in known order) + the forming ones at t. areas ⇒ each with its area fact."""
+        t = self.n - 1 if t is None else int(t)
+        out = [x for x in self.events if x["known_bar"] <= t]
+        out += [x for x in (self.latest.get(t) or {}).values() if x["status"] == "forming" and x["is_div"]]
+        return [self.with_area(x) for x in out] if areas else out
+
+    def cap_log(self, t=None):
+        """Pairs rejected ONLY by the bar window (confirmed by t, plus the forming ones at t) — for Abhi's review of the cap."""
+        t = self.n - 1 if t is None else int(t)
+        out = [x for x in self.rejects if x["known_bar"] <= t]
+        return out + [x for x in (self.latest.get(t) or {}).values() if x["status"] == "forming" and x["cap"]]
+
+    def read(self, t=None):
+        """Facts at closed bar t: per degree and side, the latest pair (the push in progress, or the last confirmed pair) with its
+        divergence facts or the explicit absence statement; which status was used is logged. Never a score."""
+        t = self.n - 1 if t is None else int(t)
+        cur = self.latest.get(t) or {}
+        latest, divs, caps, log = [], [], [], []
+        for d in self.degrees:
+            for side in (BEAR_SIDE, BULL_SIDE):
+                x = cur.get((d, side))
+                if x is None:
+                    latest.append({"degree": d, "side": side, "statement": f"no {side} divergence (D{d}): fewer than two swing "
+                                   f"{'highs' if side == BEAR_SIDE else 'lows'} of this degree known"})
+                    continue
+                st = (f"{div_label(x)} (D{d}, {x['price_rel']})" if x["is_div"]
+                      else f"no {side} divergence (D{d}, {x['status']}): {x['reason']}")
+                latest.append({"degree": d, "side": side, "statement": st, "pair": x})
+                log.append({"degree": d, "side": side, "status": x["status"], "status_by": x["status_by"]})
+                if x["is_div"]:
+                    divs.append(self.with_area(x))
+                elif x["cap"]:
+                    caps.append(x)
+        return {"owner": "rsi2.engine.Divergence", "kb": "K10.4 K-RSI (pending Abhi)", "tf": self.tf, "bar": t,
+                "asof": str(self.B.ts.iloc[t]), "rsi": _r2(self.rsi[t]), "rsi_warmup": bool(self.warm[t]),
+                "rsi_period": int(self.s["period"]), "rsi_window_bars": self.N, "bar_window": list(self.win),
+                "hidden_enabled": bool(self.s["div_hidden"]), "degrees": list(self.degrees), "divergences": divs, "cap_rejected": caps,
+                "latest": latest, "status_log": log,
+                "note": "facts only — evidence inside the zone study; never a trigger alone, never a gate"}

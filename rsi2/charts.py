@@ -138,6 +138,126 @@ def rows(R, L6, t0, t1):
              "rsi_disagree %": round(100 * sum(r["rsi_disagree"] for r in rs) / max(len(rs), 1))}]
 
 
+# ================================================================================================ K-RSI verification plot (spec §8a)
+DIV_COL = {("bear", "regular"): "#ef5350", ("bull", "regular"): "#26a69a", ("bear", "hidden"): "#ef9a9a", ("bull", "hidden"): "#80cbc4"}
+CAP_COL = "#9e9e9e"
+
+
+def merge_degrees(recs):
+    """The same pivot pair found at several swings2 degrees ⇒ one chart line (degrees joined, the first record kept)."""
+    out = {}
+    for x in recs:
+        k = (x["side"], x["type"], x["L1"]["bar"], x["L2"]["bar"], x["status"])
+        if k in out:
+            out[k]["degrees"].append(x["degree"])
+        else:
+            out[k] = dict(x, degrees=[x["degree"]])
+    return list(out.values())
+
+
+def div_rows(divs, caps):
+    """Table rows under the chart (English): both pivots (time, price, RSI), bars apart, RSI difference, status, count, area."""
+    rows = []
+    for x in merge_degrees(divs) + merge_degrees(caps):
+        area = (x.get("area") or {})
+        rows.append({"kind": ("cap-rejected " if x.get("cap") else "") + ("hidden " if x["type"] == "hidden" else "") + x["side"] + " div",
+                     "degree": "/".join(f"D{d}" for d in sorted(x["degrees"])),
+                     "pivot 1": f"{pd.Timestamp(x['L1']['time']):%d %b %H:%M} · {x['L1']['price']:,.2f} · RSI {x['L1']['rsi']:.2f}",
+                     "pivot 2": f"{pd.Timestamp(x['L2']['time']):%d %b %H:%M} · {x['L2']['price']:,.2f} · RSI {x['L2']['rsi']:.2f}",
+                     "bars": x["bars"], "RSI diff": f"{x['rsi_diff']:+.2f}",
+                     "status": x["status"] + (f" ({x['status_by'].replace('_', ' ')})" if x.get("status_by") else ""),
+                     "count": x.get("count", "—") if not x.get("cap") else "—",
+                     "area": "—" if x.get("cap") else (area.get("status", "—") + (
+                         f" {area['band']['role']} {area['band']['lo']:,.0f}-{area['band']['hi']:,.0f}" if area.get("band") else ""))})
+    return rows
+
+
+def div_figure(frame, rsi, divs, caps, title, note=None):
+    """Price pane + RSI pane (70 / 30 reference lines) + a facts table. Every divergence: the price-pivot line and the RSI-point line in
+    one colour (red = bear, green = bull; dashed = forming) and a label at the second pivot ("bear div · confirmed · N bars · RSI a → b",
+    "=" when equal). Pairs rejected only by the bar cap: thin grey dotted lines labelled "cap N bars". English only."""
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    from . import engine as RE
+    d = frame.reset_index(drop=True)
+    n = len(d)
+    rows = div_rows(divs, caps)
+    main, tab_px = 940, (46 + 22 * len(rows)) if rows else 24
+    fig = make_subplots(rows=3, cols=1, row_heights=[0.68 * main, 0.32 * main, tab_px], vertical_spacing=0.04,
+                        specs=[[{"type": "xy"}], [{"type": "xy"}], [{"type": "table"}]])
+    x = np.arange(n)
+    fig.add_trace(go.Candlestick(x=x, open=d["open"], high=d["high"], low=d["low"], close=d["close"], showlegend=False,
+                                 increasing_line_color="#26a69a", decreasing_line_color="#ef5350"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=x, y=rsi, mode="lines", line=dict(color="#ffd54f", width=1.5), showlegend=False, hoverinfo="skip"),
+                  row=2, col=1)
+    for yv in (30, 70):
+        fig.add_shape(type="line", x0=0, x1=n - 1, y0=yv, y1=yv, line=dict(color="#90a4ae", width=1, dash="dot"), row=2, col=1)
+    for c in merge_degrees(caps):
+        xa, xb = PC._x_of(d, c["L1"]["time"]), PC._x_of(d, c["L2"]["time"])
+        if xa is None or xb is None:
+            continue
+        ln = dict(color=CAP_COL, width=1, dash="dot")
+        fig.add_trace(go.Scatter(x=[xa, xb], y=[c["L1"]["price"], c["L2"]["price"]], mode="lines", line=ln, showlegend=False,
+                                 hoverinfo="skip"), row=1, col=1)
+        ra, rb = PC._x_of(d, c["L1"]["rsi_time"]), PC._x_of(d, c["L2"]["rsi_time"])
+        if ra is not None and rb is not None:
+            fig.add_trace(go.Scatter(x=[ra, rb], y=[c["L1"]["rsi"], c["L2"]["rsi"]], mode="lines", line=ln, showlegend=False,
+                                     hoverinfo="skip"), row=2, col=1)
+        fig.add_annotation(x=xb, y=c["L2"]["price"], text=f"cap {c['bars']} bars", showarrow=False,
+                           yshift=-14 if c["side"] == "bull" else 14, font=dict(size=9, color=CAP_COL), row=1, col=1)
+    for k, v in enumerate(merge_degrees(divs)):
+        xa, xb = PC._x_of(d, v["L1"]["time"]), PC._x_of(d, v["L2"]["time"])
+        if xa is None or xb is None:
+            continue
+        col = DIV_COL[(v["side"], v["type"])]
+        ln = dict(color=col, width=2, dash="dash" if v["status"] == "forming" else "solid")
+        fig.add_trace(go.Scatter(x=[xa, xb], y=[v["L1"]["price"], v["L2"]["price"]], mode="lines+markers", line=ln, showlegend=False,
+                                 hoverinfo="skip"), row=1, col=1)
+        ra, rb = PC._x_of(d, v["L1"]["rsi_time"]), PC._x_of(d, v["L2"]["rsi_time"])
+        if ra is not None and rb is not None:
+            fig.add_trace(go.Scatter(x=[ra, rb], y=[v["L1"]["rsi"], v["L2"]["rsi"]], mode="lines+markers", line=ln, showlegend=False,
+                                     hoverinfo="skip"), row=2, col=1)
+        up = v["side"] == "bear"
+        fig.add_annotation(x=xb, y=v["L2"]["price"], text=RE.div_label(v), showarrow=True, arrowhead=0, arrowcolor=col,
+                           ax=0, ay=(-26 - 14 * (k % 3)) if up else (26 + 14 * (k % 3)), font=dict(size=10, color=col),
+                           bgcolor="rgba(14,17,23,0.85)", row=1, col=1)
+    if not divs:
+        fig.add_annotation(x=0.01, y=0.95, xref="x2 domain", yref="y2 domain", xanchor="left", text="no divergence", showarrow=False,
+                           font=dict(size=11, color="#b0bec5"))
+    if note:
+        fig.add_annotation(x=0.005, y=0.995, xref="paper", yref="paper", xanchor="left", yanchor="top", align="left", showarrow=False,
+                           text=note, font=dict(size=10), bgcolor="rgba(14,17,23,0.88)", bordercolor="#455a64", borderwidth=1)
+    if rows:
+        cols = list(rows[0])
+        fig.add_trace(go.Table(header=dict(values=cols, fill_color="#263238", font=dict(color="#eceff1", size=11), align="left"),
+                               cells=dict(values=[[r[c] for r in rows] for c in cols], fill_color="#11161c",
+                                          font=dict(color="#cfd8dc", size=10), align="left", height=20),
+                               columnwidth=[1.4, 0.7, 2.6, 2.6, 0.6, 0.8, 2.2, 0.6, 1.8]), row=3, col=1)
+    lo, hi = float(d["low"].min()), float(d["high"].max())
+    pad = 0.16 * ((hi - lo) or 1.0)
+    fig.update_layout(template="plotly_dark", width=1600, height=main + tab_px + 80, margin=dict(l=10, r=80, t=60, b=20),
+                      paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=16)), showlegend=False)
+    ticks, labels = VC._x_ticks(d, fmt="%d %b %H:%M", n=12)
+    fig.update_xaxes(tickvals=ticks, ticktext=labels, rangeslider_visible=False, showgrid=False, row=1, col=1)
+    fig.update_xaxes(tickvals=ticks, ticktext=labels, showgrid=False, matches="x", row=2, col=1)
+    fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", range=[lo - pad, hi + pad], row=1, col=1)
+    fig.update_yaxes(side="right", range=[0, 100], gridcolor="#263238", tickvals=[30, 50, 70], row=2, col=1)
+    return fig
+
+
+def div_chart(D, t, focus_from, focus_to, title, context_bars=0, note=None):
+    """PNG + the records drawn: frame = bars [focus_from − context_bars, t]; divergences / cap pairs known by t whose second pivot lies in
+    [focus_from, focus_to] (each first pivot pulled into the frame)."""
+    divs = [D.with_area(x) for x in D.history(t) if focus_from <= x["L2"]["bar"] <= focus_to]
+    caps = [x for x in D.cap_log(t) if focus_from <= x["L2"]["bar"] <= focus_to]
+    first = min([focus_from - context_bars] + [x["L1"]["bar"] - 2 for x in divs + caps])
+    i0 = max(first, 0)
+    fr = D.df.iloc[i0:t + 1].reset_index(drop=True)
+    fig = div_figure(fr, D.rsi[i0:t + 1], divs, caps, title, note=note)
+    return PC.png(fig), divs, caps
+
+
 def register_rows():
     from . import settings as RS
     return [{"आकडा": k, "default": str(v[0]), "पर्याय": str(v[1]), "वर्ग": v[2], "स्रोत": v[3]} for k, v in RS.REGISTER.items()]

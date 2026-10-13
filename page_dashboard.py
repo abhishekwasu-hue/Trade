@@ -46,7 +46,9 @@ from live_chart import infer_tf_seconds, render_live_charts
 from bot_view import (
     BOT_VIEWS, CHART_TF_DYN_SUFFIX, NO_BOT, NSE_BOTS, TF_INTERVAL, align_supertrend, last_rsi as bot_last_rsi, leg_overlay, level_lines, rsi_gate_line, rsi_threshold_values,
     mcx_level_suffixes, rejection_markers, supertrend_directions, supertrend_gate_line, supertrend_specs, zone_suffixes,
+    RSI_DIV_TF, rsi_div_overlay,
 )
+from rsi2 import settings as RSI2_SETTINGS
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE, HDR_ORANGE, HDR_PINK, HDR_GREEN, HDR_AMBER, HDR_CYAN, HDR_RED
 from sr_v3_chart import V3_VIEW, tf_set_label, v3_chart_lines
 from level_memory import NSE_SETTINGS_KEY
@@ -1221,6 +1223,9 @@ def render():
             ind_params = chart_indicator_controls("tv_chart_ind")
             # 🎓 T2 legs overlay (डीफॉल्ट बंद; फक्त दाखवण्यासाठी — bots वर परिणाम नाही)
             show_legs = st.checkbox("Legs (impulse / pullback लेबल)", value=False, key=f"tv_legs_{symbol}")
+            # 🎓 K-RSI (spec §8a): rsi2 owner च्या divergences 5M / 15M / 1H चार्टवर (डीफॉल्ट ON — verification; फक्त display, gate नाही)
+            show_rsi_div = st.checkbox("Show RSI divergences", value=bool(RSI2_SETTINGS.DEFAULTS["div_show"]), key=f"tv_rsi_div_{symbol}") \
+                if chart_tf in RSI_DIV_TF else False
             if chart_symbol == symbol and chart_tf == timeframe_option:
                 chart_df, chart_spot = df_candles, underlying_price
             else:
@@ -1381,6 +1386,18 @@ def render():
                         st.caption(leg_cap)
                 except Exception as _lge:          # overlay अयशस्वी ⇒ साधा चार्ट (कारण दाखवून)
                     st.caption(f"Legs overlay तयार करता आला नाही ({type(_lge).__name__}).")
+            rsi_div_lines = []
+            if show_rsi_div and not chart_df.empty:
+                try:
+                    rsi_div_lines, _rsi_owner, _rsi_cap = rsi_div_overlay(chart_df, chart_tf, get_ist_now())
+                    if _rsi_owner is not None:
+                        rsi_for_tv = _rsi_owner                  # RSI pane = owner चा Wilder RSI (divergence points रेषेवरच बसतात)
+                        if bot_choice == NO_BOT:
+                            bot_rsi_levels = (30, 70)
+                    if _rsi_cap:
+                        st.caption(_rsi_cap)
+                except Exception as _rde:          # overlay अयशस्वी ⇒ साधा चार्ट (कारण दाखवून)
+                    st.caption(f"RSI divergences तयार करता आल्या नाहीत ({type(_rde).__name__}).")
             tv_html = build_lightweight_chart_html(
                 chart_df, symbol=chart_symbol, timeframe_label=chart_tf,
                 supertrend_1d_series=st1d_line_aligned, supertrend_1d_direction=st1d_dir_aligned,
@@ -1388,7 +1405,7 @@ def render():
                 supertrend_15m_series=st15m_line_aligned, supertrend_15m_direction=st15m_dir_aligned,
                 rsi_series=rsi_for_tv, sr_levels=sr_for_tv, pattern_markers=pattern_markers_tv, height=650,
                 indicators=chart_indicators, live_tf_seconds=infer_tf_seconds(chart_df),
-                trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels, legs=leg_segs or None,
+                trade_lines=bot_lines or None, rsi_levels=bot_rsi_levels, legs=leg_segs or None, rsi_divs=rsi_div_lines or None,
             )
             # 🎓 Live updates -- दर 3 सेकंदांनी शेवटची candle (REST LTP; बघा live_chart.py). Daily/डेटा नसेल तर साधा स्थिर चार्ट.
             if infer_tf_seconds(chart_df) and token_input:

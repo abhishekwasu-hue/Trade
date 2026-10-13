@@ -390,3 +390,15 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | R0-7 | Golden मध्ये FUT volume | ✅ निकाली (R0-5) |
 | R0-8 | Live V4 default off; Abhi golden निकालांनंतर ठरवतो | ✅ निकाली (off) |
 | R0-9 | `vision_v4_daily_cap` = $0.30 / दिवस | ✅ निकाली |
+
+## K-RSI — RSI divergence facts (branch `claude/rsi-divergence`; `rsi2.engine.Divergence`, KB K10.4 pending) — Abhi निर्णय हवे
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| RSI-1 | "त्याच swing degree चे push" — कोणती swings2 degree? 12 Oct: फक्त D0 मध्ये 9-Oct push high (22,580.75) हा आधीचा H आहे; D1 / D2 मध्ये आधीचा H 7 Oct 22,717.65 / 6 Oct 22,731.85 (12-Oct 22,651.10 = lower high ⇒ divergence नाही) | D0, D1, D2 तिन्ही (`div_degrees`), प्रत्येक divergence ला degree; chart वर same pair एकच रेघ (D0/D1) | एकच degree (उदा. D0 = 15M push, D1 = 1H) |
+| RSI-2 | 12-Oct spike high वि. 9-Oct push high (D0): price HH 22,580.75 → 22,651.10, RSI 67.09 → 66.41 (−0.68), पण **4 bars** (9 Oct 14:15 → 12 Oct 09:15; मध्ये 14:30, 14:45, 15:00 आणि रात्रीचा gap) ⇒ 15M window 5–50 च्या min मुळे नाकारली (grey "cap 4 bars"). Min 5 bars रात्रीच्या gap वरही लागू करायचा? | spec प्रमाणे 5–50 (tuning नाही); cap log मध्ये नोंद | min कमी / session-gap वेगळा मोजा — Abhi ✏️ नंतरच |
+| RSI-3 | 13 Oct golden: export मध्ये 13 Oct फक्त 10:15 पर्यंत (oe_index 5M) ⇒ test skip; partial chart पाठवला (10:00 ला RSI 67.9, price 22,581 < 22,651 ⇒ lower high, divergence नाही) | skip + partial chart | पूर्ण दिवसाचा export (VPS) नंतर rerun |
+| RSI-4 | Telegram reply ✏️: review listener फक्त ✔ / ✅ (OK) आणि ✘ (WRONG) ओळखतो; ✏️ नोंदला जात नाही | headline मध्ये ✅ / ✏️ (spec); ✏️ ऐवजी "✘ + काय चुकलं" लिहिलं तर नोंद होते | listener मध्ये ✏️ = WRONG (वेगळा PR) |
+| RSI-5 | "Dominant commitment candle" = `decision3.method.commitment` (कोणताही ओळखलेला reversal form, close मागच्या close पलीकडे; grade A / B दोन्ही) | A आणि B दोन्ही confirm करतात (`status_by` + form / grade नोंद) | फक्त grade A |
+| RSI-6 | Area fact spot 15M वर `decision3.levels.find_bands` (confirmation bar ला) — 22,667 zone FUT band आहे; spot band वेगळा येतो | spot (spec: structure / levels spot वर) | FUT band सुद्धा तपासा |
+| RSI-7 | RSI window ± 2 bars रात्रीच्या gap पलीकडे जाते (उदा. 12-Oct 09:15 चा D1 / D2 RSI 9-Oct 14:45 च्या bar वरून 67.09) — फक्त pivot च्या स्वतःच्या swing आत | ± N bars, swing च्या आत, confirm bar पर्यंत | फक्त त्याच session मधले bars |

@@ -55,7 +55,7 @@
 ## अनुक्रमणिका
 - **भाग A:** मूलतत्त्वं (Abhi ची शैली आणि विचारपद्धती)
 - **भाग B:** Chart Reading Protocol (8 टप्पे)
-- **भाग C:** Knowledge chapters K1–K14 (K10.3 volume सह)
+- **भाग C:** Knowledge chapters K1–K14 (K10.3 volume सह; K10.4 K-RSI — pending Abhi)
   - **K11 chart patterns** (KP1–KP5 वर Abhi चे निर्णय लागू, 2026-10-13, PR #317): K11.0 सामायिक नियम · trend / correction K11.1–K11.7 (flag, pennant, rectangle, ascending / descending triangle, symmetrical triangle, channel, wedge / diagonal) · reversal K11.8–K11.14 (double, triple, H&S, rounding, V, broadening, island) · liquidity K11.15–K11.16 (sweep / spring / upthrust, failed breakout / trap) · K11.17 विश्वासार्हता · K11.18 चुका · K11.19 code शी फरक
 - **भाग D:** पुराव्याची यादी आणि grade
 - **भाग E:** नेहमीच्या चुका (checklist)
@@ -979,6 +979,57 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - "Pullback मध्ये volume कमी, impulse मध्ये जास्त": Wyckoff, Dow आणि practitioners मध्ये सर्वमान्य [अनुभव]. कठोर अभ्यास मर्यादित.
 - Volume U-shape (NSE): [पुरावा +]. म्हणून slot-normalisation अनिवार्य.
 - **[NIFTY] मर्यादा:** expired futures चा जुना volume Upstox Plus शिवाय मिळत नाही (HTTP 401). Collector काही आठवड्यांपासूनच data गोळा करतोय, आणि तो सगळा holdout / contaminated काळातला आहे. **म्हणून IS/VAL backtest मध्ये volume तपासता येणार नाही.** त्याचं मूल्य फक्त live PAPER scorecard मधून कळेल. सुरुवातीला गुण लहान.
+
+<!-- pending:abhi -->
+### K10.4 K-RSI: RSI divergence — facts module ची व्याख्या [Abhi spec 2026-10-13; **pending Abhi ✅ — Method Pack मध्ये नाही**]
+> KB change control (design §2): ही नोंद Abhi ✅ करेपर्यंत `pending`; generator ती pack मधून वगळतो. Owner = `rsi2` (design §3);
+> code `rsi2.engine.Divergence` (evidence only). Abhi ✅ नंतर pack section 5 मध्ये English ओळ जोडायची आणि हे markers काढायचे.
+
+**व्याख्या.**
+- **Regular bearish:** चालू push चा high आधीच्या (त्याच swing degree च्या) push high पेक्षा **वर किंवा बरोबर** (equal high = band tolerance मध्ये, double top) **आणि** नव्या high चा RSI ≤ आधीच्या high चा RSI. **बरोबर RSI सुद्धा divergence** (Abhi, 13 Oct).
+- **Regular bullish (आरसा):** price lower low (किंवा equal low) **आणि** नव्या low चा RSI ≥ आधीच्या low चा RSI. बरोबर RSI low सुद्धा divergence.
+- **Hidden divergence:** फक्त setting मागे (default OFF), फक्त fact म्हणून; verdict मध्ये कधीच नाही (Abhi ने वापर सांगितलेला नाही).
+- **Multiple divergence:** लागोपाठ ≥ 2 RSI lower highs (higher lows) price च्या नव्या टोकांविरुद्ध ⇒ count fact (जास्त पुरावा).
+- RSI = Wilder RSI(14) **SPOT close** वर (period setting). TF: 15M मुख्य, 1H context, 5M पर्यायी (area जवळ). Futures फक्त volume साठी.
+
+**मानसशास्त्र.**
+- Price अजून पुढे जातेय पण momentum ओसरतोय ⇒ trend बाजूची ताकद संपत चाललीय.
+- Seller area वर: buyers पुढे ढकलतात, पण कमी ताकदीने (प्रत्येक push ला कमी जोर). Buyer area वर उलट.
+
+**ओळख (code साठी; relative units फक्त).**
+1. Pivots = facts layer चे swings2 pivots (reader वापरतो तेच), वेगळी pivot routine नाही. Price wicks वर (high / low).
+2. दोन pivots **लागोपाठचे pushes, एकाच swing degree चे:** आधीचा pivot = चालू push आधीचा शेवटचा swing high (low), आणि दोघांमध्ये त्याहून उंच high (खालचा low) नाही. **ही मुख्य मर्यादा**; bar window फक्त safety cap.
+3. RSI value = price pivot च्या ± N bars (setting, default 2) मधला RSI extreme (RSI peak price peak च्या 1 bar आधी / नंतर येऊ शकतो), त्याच swing च्या आत, आणि फक्त pivot confirm होईपर्यंत बंद झालेल्या bars मधून.
+4. Bar window (setting, dashboard): 15M 5–50 bars (≈ 2 दिवस), 1H 5–35 (≈ 5 दिवस), 5M 5–60 (≈ 1 session). कारण: RSI 14 ≈ शेवटच्या 14 bars चा momentum; 3–4 × period पलीकडे दोन RSI values वेगवेगळ्या market phases सांगतात. प्रत्येक divergence ला खरं bar अंतर नोंदवायचं; **फक्त cap मुळे नाकारलेल्या जोड्या log** (Abhi cap तपासेल).
+5. RSI फरकाला किमान मर्यादा नाही (≤ / ≥); खरा फरक नेहमी नोंद (0 सुद्धा).
+
+**वैधता.**
+- **Status (no look-ahead, live वापरता येईल):** "forming" = चालू push चं आत्तापर्यंतचं टोक वि. आधीचा pivot (price अजून area मध्ये); "confirmed" = टोक right-side bars नी confirm, **किंवा** त्यापासून दूर close होणारी dominant commitment candle. प्रत्येक read चा status नोंद.
+- Data कुठल्याही bar ला कापला तरी आधीचे outputs बदलत नाहीत (फक्त forming → confirmed).
+- Area: price valid area (K4 band, `facts.validity`) वर / आत आहे का ⇒ fact; area नसेल तर NA + कारण.
+
+**Invalidation.**
+- Push पुढे जाऊन नवा high (low) आणि RSI सुद्धा नवा high (low) ⇒ forming divergence संपली ("no divergence: RSI made a new high with price (a > b)").
+- आधीच्या pivot पलीकडे मधेच नवा टोक ⇒ जोडी लागोपाठची नाही ⇒ divergence नाही.
+
+**Abhi चा वापर.**
+- Abhi वापरतो ते **एकमेव indicator**. Zone मध्ये, zone च्या गोष्टीचा भाग म्हणून वाचतो (13 Oct: "काल त्या zone मध्ये RSI divergence आली; आज नाही, म्हणून bear-call ची अट नाही").
+- Zone study (Method Pack item 5) मधला पुरावा आणि reader च्या "story" section ची अनिवार्य ओळ (GOLDEN_12_13_OCT_STORY §3); handover, volume आणि commitment candle सोबत तोलायचा.
+- **कधीच एकट्याने entry trigger नाही, daily trend विरुद्ध trade चं कारण नाही, breakout entry नाही, code मध्ये hard gate नाही** (Abhi नंतर सांगेपर्यंत). Area पासून दूर ⇒ फक्त context.
+- Output = facts (TF, type, दोन pivots: वेळ / price / RSI, bars, RSI फरक, status, count, area); **absence सुद्धा स्पष्ट** (उदा. "no divergence: RSI made a new high with price (78.4 > 72.1)"). Score / grade नाही.
+
+**विश्वासार्हता.** K10.2 प्रमाणे: [पुरावा −/कमकुवत] Bulkowski; मजबूत trend मध्ये divergence 2–3 वेळा येते. म्हणून फक्त area मधला पुरावा.
+
+**चुका.**
+- मजबूत trend मध्ये divergence वरून counter-trade (divergence पुन्हा पुन्हा येते आणि fail होते).
+- कुठल्याही area पासून दूरची divergence ला महत्त्व देणं.
+- वेगवेगळ्या degree चे pivots जोडणं, किंवा मधे जास्त उंच high असताना जोडी मानणं.
+- RSI pivot वेगळे शोधून price pivot शी न जुळवणं; confirm होण्याआधीच्या right-side bars वापरणं (look-ahead).
+
+**Fixtures (data trade-data मध्ये, CI मध्ये skip).**
+- 12 Oct NIFTY 15M spot: 22,667 zone मध्ये regular bearish (12-Oct spike high > 9-Oct push high, RSI कमी) — Abhi चं वाचन. Module चा निकाल ✅ / ✏️ साठी review chart वर (threshold tuning नाही).
+- 13 Oct: zone मध्ये divergence नाही (RSI price सोबत ≈ 80 पर्यंत) — absence स्पष्ट.
+<!-- /pending -->
 
 <!-- pack:5 zone_study -->
 <details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
