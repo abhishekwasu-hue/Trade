@@ -402,3 +402,13 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | RSI-5 | "Dominant commitment candle" = `decision3.method.commitment` (कोणताही ओळखलेला reversal form, close मागच्या close पलीकडे; grade A / B दोन्ही) | A आणि B दोन्ही confirm करतात (`status_by` + form / grade नोंद) | फक्त grade A |
 | RSI-6 | Area fact spot 15M वर `decision3.levels.find_bands` (confirmation bar ला) — 22,667 zone FUT band आहे; spot band वेगळा येतो | spot (spec: structure / levels spot वर) | FUT band सुद्धा तपासा |
 | RSI-7 | RSI window ± 2 bars रात्रीच्या gap पलीकडे जाते (उदा. 12-Oct 09:15 चा D1 / D2 RSI 9-Oct 14:45 च्या bar वरून 67.09) — फक्त pivot च्या स्वतःच्या swing आत | ± N bars, swing च्या आत, confirm bar पर्यंत | फक्त त्याच session मधले bars |
+
+### Abhi निर्णय — FUT roll, BANKNIFTY दिवस, zone flip
+
+| # | निर्णय | परिणाम |
+|---|---|---|
+| R1b-3 | Roll च्या दिवशी सुद्धा FUT volume = **फक्त near-month** contract (दोन contracts ची बेरीज कधीच नाही) | `opportunity_engine.volume.near_month_rows` + `attach_futures_volume(near_month=True)` (default False ⇒ जुने callers तसेच); facts dossier near-month वापरतो; KB K10.3 + pack 5b. ✅ निकाली |
+| R0-4 | BANKNIFTY a-b-c golden दिवस: **सोडून द्या** | Golden फक्त 12 Oct + 29 Sep NIFTY; 3 उमेदवार charts trade-data मध्ये तसेच (हटवले नाहीत). ✅ निकाली |
+| R0-2 (zone) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
+| Z-1 | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |
+| Z-2 | KB S4 / G4 आणि pack मध्ये "flip retest" हे नाव कोणत्याही real break नंतरच्या retest ला वापरलं आहे — Abhi च्या flip नियमापेक्षा सैल. नाव बदलायचं ("break retest") की G4 ला flip नियम लावायचा? | तसेच (pack मध्ये व्याख्या नाही, फक्त नाव) | Abhi ठरवतो |

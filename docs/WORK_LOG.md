@@ -2479,3 +2479,16 @@ legs owner वि. reader2 gate).
   min 5 मुळे नाकारली (cap log); D1 / D2 मध्ये lower high. Tuning नाही ⇒ OPEN_QUESTIONS RSI-1 … RSI-7. 13 Oct export फक्त 10:15 पर्यंत.
 - Tests: `tests/test_rsi_divergence.py` (synthetic, no look-ahead, JSON, chart, dashboard; 12 Oct report; 13 Oct skip).
 - VPS: `cd /root/Trade && python3 scripts/send_review_to_telegram.py --run review/rsi_divergence/run1` (आधी `--dry-run`).
+
+## Abhi निर्णय: FUT roll near-month, BANKNIFTY दिवस सोडला, zone flip नियम
+
+- **FUT roll (R1b-3):** roll च्या दिवशी सुद्धा फक्त near-month contract चा volume. नवीन `opportunity_engine.volume.near_month_rows`
+  (expiry parser `legs2.volume.expiry_of` — एकच); `attach_futures_volume(near_month=False)` default ⇒ जुने callers (frozen backtest) बदलत नाहीत;
+  facts dossier near-month वापरतो. KB K10.3 roll ओळ + pack 5b. Tests: roll दिवशी next-month volume दुर्लक्षित, expiry दिवशी expiring contract.
+- **BANKNIFTY a-b-c दिवस:** Abhi — सोडून द्या. Golden फक्त 12 Oct + 29 Sep.
+- **Zone:** "dead beyond far swing" नियम काढला. Abhi: तुटलेला zone flip होतो — मजबूत move ने तोडून पुढच्या swing पर्यंत; नाहीतर sweep.
+  KB K4 मध्ये मंजूर block, Method Pack नवीन version. Code (decision3 levels lifecycle) Abhi च्या शब्द ✅ नंतर (OPEN_QUESTIONS Z-1).
+- **Review (PR #322) fixes:** K4 मध्ये flip च्या तीन व्याख्या एकमेकांविरुद्ध होत्या ⇒ आता एकच: "Real break" (a/b/c) फक्त BROKEN ठरवतो,
+  FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
+  काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
+  (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.
