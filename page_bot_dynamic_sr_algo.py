@@ -665,6 +665,8 @@ def render():
             gate_no_target_disarm_enabled = _r2.checkbox("Target area नाही ⇒ entry नाही (डीफॉल्ट बंद)",
                                                          value=bool(_gs["no_target_disarm_enabled"]),
                                                          key=_widget_key(strategy_key, symbol, "gate_no_target_disarm_enabled"))
+            st.caption("NSE options bots: R:R gate (चालू असेल तर) engine चा reference SL (area च्या पलीकडे) आणि पुढचा area target वापरतो — "
+                       "dashboard SL / target option premium वर आधारित आहेत (spot मध्ये नाहीत). Trade चे SL / target नेहमी dashboard चेच.")
             _c1, _c2, _c3 = st.columns(3)
             gate_min_rr = _c1.number_input("किमान R:R", min_value=1.0, max_value=10.0, step=0.5, value=float(_gs["min_rr"]),
                                            key=_widget_key(strategy_key, symbol, "gate_min_rr"), disabled=not gate_rr_gate_enabled)

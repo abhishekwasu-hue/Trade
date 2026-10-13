@@ -2260,3 +2260,10 @@ paper_manual, decision3_touch_levels (+ 1 नवा default test; जुना l
   `_NO_TARGET` ऐवजी. Area सोडल्यावरच पुन्हा arm (DISARMED सारखंच) — पण entries / Vision signals ची संख्या वाढते, options bots (5M
   Instant / Classic / 15M SRv2) साठीही, फक्त MCX नाही. Tests: replay (l4_plan नवा mirror, target None replay test), level_reaction (invalid
   SL guard), telegram_approval_v2 (gate OFF ⇒ R:R नाही). 25 files: 616 pass.
+- **Re-review items:** `SKIPPED_GATE_INVALID_SL` ला label (15:45 सारांश `level_visibility` CAT / STATE / IGNORED, replay CATEGORY_LABEL);
+  summarize docstring दुरुस्त (जुने MCX invalidated / target_passed / sl_too_wide labels फक्त जुन्या rows साठी ठेवले). **LIVE safety:**
+  MCX confirmation मार्ग फक्त PAPER — LIVE / LIVE_PAPER ⇒ नेहमी touch (entry_mode = confirmation असलं तरी) ⇒ हा PR LIVE MCX चे SL /
+  target कधीच बदलत नाही. Tests rename (`test_confirmed_takes_trade_with_dashboard_sl_no_gate_sl_cap`,
+  `test_gate_rr_skip_and_engine_settings_mirror`) + नवे: PERCENT mode dashboard SL / target, LIVE / LIVE_PAPER + confirmation ⇒ touch,
+  `_gate_rr_skip` SL 0. Bot Dynamic SR Algo पानावर caption (options bots चा R:R gate engine reference SL / पुढचा area वापरतो); OPEN_QUESTIONS
+  RR6. 25 files: 619 pass.

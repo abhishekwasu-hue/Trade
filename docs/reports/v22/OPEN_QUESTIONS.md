@@ -290,6 +290,7 @@
 | RR3 | **✅ Abhi निर्णय (PR #316): "no target area" = स्वतंत्र dashboard setting, default बंद.** | `gate_no_target_disarm_enabled` (level_reaction `no_target_disarm_enabled`, default False), `gate_rr_gate_enabled` पासून स्वतंत्र; दोन्ही पानांवर (Bot Dynamic SR Algo, MCX) R:R checkbox शेजारी. R:R gate चालू पण target area नाही ⇒ R:R मोजता येत नाही ⇒ R:R skip नाही (target नसण्याचा निर्णय फक्त या setting चा) | — |
 | RR4 | Setups audit (a) मधला target = V22 run चा (फक्त legacy `rr_step` = True मध्ये असतो; default run ⇒ "no risk") — dashboard target वापरायचा? | तसेच (verdict नाही, फक्त तथ्य) | audit script ला dashboard target (points / %) input |
 | RR5 | `simple_core` PAPER_SEED मध्ये `rr_filter` = True, `min_rr` 3 (research / backtest review पान; live execution नाही — `bots_common/one_bot`: "simple_core (execution नाही)") | तसेच (live नाही ⇒ हात नाही) | seed मध्ये `rr_filter` False |
+| RR6 | NSE options bots (5M Instant / Classic / 15M SRv2): dashboard R:R gate **चालू** केल्यास तो engine चा reference SL (area च्या पलीकडे + buffer) आणि पुढच्या area चा target (spot) वापरतो — कारण त्या bots चे dashboard SL / target option premium / P&L वर आहेत (spot अंतर नाही). हे चालेल का? (gate default बंद ⇒ आज परिणाम नाही; trade चे SL / target नेहमी dashboard चेच) | तसेच (पानावर caption) | R:R gate options bots साठी लपवायचा; किंवा spot मध्ये वेगळे dashboard SL / target अंतर देऊन त्यावर R:R |
 
 ## Data / pre-open fixes (13 Oct VPS findings) — घेतलेले default निर्णय (Abhi ने बदलावे)
 

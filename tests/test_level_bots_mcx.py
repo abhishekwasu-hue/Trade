@@ -136,12 +136,34 @@ def test_confirmed_places_paper_order_with_gate_side_and_dashboard_sl_target(mon
     assert not _legacy_rows()
 
 
-def test_confirmed_but_structural_sl_wider_than_settings_sl_skips(monkeypatch, tmp_path):
+def test_confirmed_takes_trade_with_dashboard_sl_no_gate_sl_cap(monkeypatch, tmp_path):
     """Abhi (RR1): gate SL ला cap / skip करत नाही — structural SL settings SL (10) पेक्षा रुंद असूनही entry, SL = dashboard 10."""
     h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, settings={"sl_points": 10}, price=1008.0)
     h.run()
     assert len(h.trade.calls) == 1 and h.trade.calls[0][0][2]["max_loss"] == 10.0
     assert not any(s in h.statuses() for s in ("SKIPPED_GATE_SL_TOO_WIDE", "SKIPPED_GATE_INVALIDATED", "SKIPPED_GATE_TARGET_PASSED"))
+
+
+def test_confirmed_percent_mode_uses_dashboard_pct_sl_target(monkeypatch, tmp_path):
+    """Abhi (RR1): PERCENT mode ⇒ SL / target = entry भावाचे dashboard % (gate चे नाहीत)."""
+    h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, settings={"sl_target_mode": "PERCENT", "sl_pct": 1.0, "target_pct": 3.0}, price=1008.0)
+    h.run()
+    assert len(h.trade.calls) == 1
+    a = h.trade.calls[0][0]
+    assert a[2]["max_loss"] == pytest.approx(10.08) and a[2]["max_profit"] == pytest.approx(30.24)
+
+
+@pytest.mark.parametrize("mode", ["LIVE", "LIVE_PAPER"])
+def test_live_with_explicit_confirmation_stays_touch(monkeypatch, tmp_path, mode):
+    """LIVE safety: settings मध्ये entry_mode = confirmation असलं तरी LIVE / LIVE_PAPER ⇒ touch (gate नाही, जुने settings SL / target)."""
+    h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, settings={"trading_mode": mode, "entry_mode": "confirmation"}, price=995.5)
+    gate = Rec(exc=AssertionError("LIVE ⇒ gate नको"))
+    monkeypatch.setattr(LGB, "cycle_gate", gate)
+    h.run()
+    assert not gate.calls and not h.trend.calls
+    assert len(h.trade.calls) == 1 and h.trade.calls[0][1]["trading_mode"] == mode
+    assert (h.trade.calls[0][0][2]["max_loss"], h.trade.calls[0][0][2]["max_profit"]) == (50, 40)
+    assert [e["hit_type"] for e in h.level_logs()] == ["TOUCH"]
 
 
 def test_rr_gate_on_checks_dashboard_sl_target(monkeypatch, tmp_path):
@@ -283,7 +305,7 @@ def _px(side, x):
 
 
 @pytest.mark.parametrize("side", ["BULLISH", "BEARISH"])
-def test_gate_sl_target_mirror(side):
+def test_gate_rr_skip_and_engine_settings_mirror(side):
     """Abhi (RR1): MCX चे SL / target dashboard चे; `_gate_rr_skip` फक्त R:R gate चालू असेल तर, dashboard points वर (दिशा-निरपेक्ष).
     Gate (level_reaction) ला R:R कधीच नाही (engine भूमिती); "no target area" setting मात्र तशीच पोहोचते."""
     s = dict(_DEFAULT_SETTINGS)
@@ -292,6 +314,7 @@ def test_gate_sl_target_mirror(side):
     on = {**s, "gate_rr_gate_enabled": True}
     assert mft._gate_rr_skip(50.0, 40.0, px, on)[0] == "SKIPPED_GATE_RR"
     assert mft._gate_rr_skip(50.0, 150.0, px, on) is None and mft._gate_rr_skip(50.0, 100.0, px, {**on, "gate_min_rr": 2.0}) is None
+    assert mft._gate_rr_skip(0.0, 40.0, px, on) is None and mft._gate_rr_skip(None, 40.0, px, on) is None   # SL 0 ⇒ R:R नाही, crash नाही
     eng = mft._gate_engine_settings({**on, "gate_no_target_disarm_enabled": True})
     g = LGB.gate_settings(eng)
     assert g["rr_gate_enabled"] is False and g["no_target_disarm_enabled"] is True and on["gate_rr_gate_enabled"] is True

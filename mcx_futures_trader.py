@@ -677,7 +677,10 @@ def _process_symbol_core(access_token, symbol, check_info, level_source="DYNAMIC
     # 🎓 Abhi (level bots confirmation, L4): entry_mode — PAPER default "confirmation" (Daily trend च्या बाजूने, बंद 15M candle वर area ची
     # commitment झाल्यावरच; दिशा gate ची), LIVE ⇒ "touch" (जुनं वर्तन तंतोतंत) जोपर्यंत settings["entry_mode"] स्पष्टपणे बदलत नाही. Confirmation
     # मध्ये: Breakout नाही, RSI threshold gate default बंद (conf_rsi_gate_enabled), candle-confirm / min-hold नाहीत (commitment candle हाच पुरावा).
-    _conf = LGB.entry_mode(settings) == LGB.CONFIRMATION
+    # LIVE safety (review): confirmation फक्त PAPER — LIVE / LIVE_PAPER ⇒ नेहमी touch (settings["entry_mode"] = confirmation असलं तरी;
+    # dashboard save सुद्धा LIVE ला touch लावतो) ⇒ हा मार्ग LIVE MCX चे SL / target कधीच बदलत नाही.
+    _conf = (LGB.entry_mode(settings) == LGB.CONFIRMATION
+             and str(settings.get("trading_mode", "PAPER")).upper() == "PAPER")
     entry_rsi_gate_enabled = LGB.conf_gate_enabled(settings, "rsi") if _conf else settings.get("entry_rsi_gate_enabled", True)
     rsi_support_max = settings.get("rsi_support_max", 40)
     rsi_resistance_min = settings.get("rsi_resistance_min", 60)
