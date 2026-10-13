@@ -434,3 +434,14 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | Z-1f | Flip झाल्यावर जुनी भूमिका संपते; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead (दुसरा flip नाही), log. ✅ |
 | RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |
 | Trend बाजू (13 Oct) | Daily trend बदलला नाही तोपर्यंत reversal पासूनची चाल correction (a-b-c); flip झालेल्या zone वर bull trade = S4 अपवाद **नाही**. पुढचा seller zone ≈ 5–6 Oct highs; correction च्या शेवटी zone वाचन ⇒ bear. ✅ Abhi |
+
+### R3 Chart Story (पहिला भाग, branch `claude/chart-story`)
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| ST-1 | Abhi चा flip नियम (zone पलीकडे + far-side swing पार ⇒ FLIPPED, नाहीतर BROKEN) code मध्ये main वर नाही (`claude/decision3-flip-state` merge बाकी) | Story facts मध्ये `abhi_flip_rule` = NA + कारण; model zone चे breaks + pivots वरून ठरवतो. `decision3.levels.band_flip_facts` main वर आलं की story ते आपोआप वापरते | Z-1 PR आधी merge करून मगच golden run |
+| ST-2 | FUT इतिहास 30 Sep पासूनच ⇒ owner चं RVOL (`legs2.volume.rvol`, किमान 10 sessions) NA | त्याच owner ने 5–9 sessions वर "SHORT baseline" RVOL, facts मध्ये स्पष्ट लेबल | फक्त NA (normalised volume नाही) |
+| ST-3 | 12 Oct 09:45 ला K-RSI facts (`rsi2.engine.Divergence`, K10.4 pending) "no bear divergence (D0: RSI new high with price 67.74 > 65.99)" सांगतात, Abhi divergence वाचतो; RSI-2 (किमान 3 bars) अजून `div_bars` मध्ये नाही (5) | Facts जसे owner देतो तसेच; golden तुलना ते दाखवेल (expectation बदलली नाही) | K-RSI pairing / RSI-2 setting आधी तपासा |
+| ST-4 | Story frames `cas=False` (closing auction bars तसेच) ⇒ 13 Oct 15:25 चा high 22,721.95 fact मध्ये येतो; decision3 / market_state CAS वगळतात | cas=False (Abhi च्या chart सारखं) | CAS वगळा (high 22,719.25) |
+| ST-5 | a-b-c स्रोत: patterns2 (owner) दोन्ही as-of ला "none"; c = a projection = प्रत्येक degree (D1 / D2) चे शेवटचे 3 confirmed swings2 pivots (`patterns2.fold2.c_equals_a` सूत्र) | हेच (facts; कोणता count खरा ते model ठरवतो) | frozen `correction/reader` |
+| ST-6 | Deep role model: VPS `.env` मध्ये `VISION_STORY_DEEP_MODEL` (किंवा `_global story_model_deep` setting) हवं; light role ⇒ `VISION_STORY_LIGHT_MODEL` ⇒ `VISION_SIGNAL_MODEL` | Deep कधीच दुसऱ्या role वर fallback नाही (golden चुकीच्या model वर चालत नाही) | — |

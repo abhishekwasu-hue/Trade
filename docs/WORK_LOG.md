@@ -2506,3 +2506,21 @@ legs owner वि. reader2 gate).
 - Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
 - Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
 - Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
+
+## 2026-10-13 · R3 (पहिला भाग) — Chart Story reader (branch `claude/chart-story`; design §5, §7, §8, §9, §12)
+
+- **KB + pack:** भाग B टप्पा 8a (मराठी) + Method Pack block **0b. Chart Story** (English): सात भाग (daily trend / degree, zones व
+  स्थिती + far-side swing, a-b-c / c = a / confluence, zone मधला अभ्यास, RSI divergence, पुढे काय / invalidation, setup / wait / none +
+  "SHADOW — no trade; Abhi decides") + ≤ 15 ओळी मराठी. Golden अपेक्षा pack / prompt मध्ये नाहीत (test). Pack version नवीन (stale test हिरवा).
+- **`vision/story.py`:** system = pack + story schema (V4 चाच cached prefix); images = 15M (+ FUT volume pane + RSI pane / divergences),
+  1H, Daily; FACTS = dossier sections (compact) + zone states (Abhi flip नियम code main वर नाही ⇒ NA + कारण) + `rsi2.engine.Divergence`
+  + a-b-c (patterns2 + swings2 pivots वरून `c_equals_a`) + OHLC तक्ते. Anonymise = `golden_vision_check.anonymise` (facts anonymised
+  frames वरूनच); खरी तारीख / symbol prompt मध्ये सापडला ⇒ नकार. Validator: schema, cites, किंमती facts मध्ये (V4 validator; देवनागरी अंक
+  सुद्धा) ⇒ नाहीतर नकार + log. Model role नुसार: `_global` `story_model_deep` / `story_model_light` ⇒ env `VISION_STORY_DEEP_MODEL` /
+  `VISION_STORY_LIGHT_MODEL` (⇒ `VISION_SIGNAL_MODEL`); कोडमध्ये नाव नाही. खर्च `vision_usage` task `chart_story`; उप-मर्यादा
+  `story_daily_cap` $1.00 (Vision एकूण budget च्या आत). AI कधीच order देत नाही.
+- **`scripts/golden_story_check.py`:** cases + अपेक्षा फक्त trade-data `golden_story/cases.json` (status "Abhi ✅ (13 Oct chat)");
+  12 Oct 09:45 पर्यंतचाच data, 13 Oct EOD (5M spot export). `--dry-run` = images + facts + अंदाज, call नाही. सगळे निकाल PROVISIONAL.
+- **Dry-run (local):** प्रत्येक केस ≈ 9.0k system (cached) + ≈ 11.7k fresh (3 images) + ≤ 6k output; deep-model किंमतीने ≈ $0.20 / call
+  uncached, दोन्ही मिळून ≈ $0.38–0.41 (Abhi ची मंजुरी ≈ $1).
+- **Tests:** `tests/test_vision_story.py` (28) + vision / pack / dossier संबंधित tests. उघडे प्रश्न: OPEN_QUESTIONS ST-1 … ST-6.

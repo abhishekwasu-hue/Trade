@@ -91,6 +91,9 @@ GLOBAL_DEFAULTS = {
     "vision_v4_audit": "off",              # R0 (design §12): "v4" ⇒ V2 audit नंतर Method Pack checklist (audit-only: Telegram + नोंद);
                                            # default off ⇒ live मध्ये काहीच बदल नाही; खर्च याच $2 / दिवस budget मध्ये
     "vision_v4_daily_cap": 0.30,           # R0: V4 ची दैनिक उप-मर्यादा ($); शिवाय V4 कधीच (दैनिक budget − signals राखीव) पलीकडे नाही
+    "story_daily_cap": 1.00,               # R3 Chart Story (vision/story.py): दैनिक उप-मर्यादा ($), Vision च्या एकूण budget च्या आतच
+    "story_model_deep": "",                # R3: pre-open / EOD story चा model (role "deep"); रिकामा ⇒ env VISION_STORY_DEEP_MODEL
+    "story_model_light": "",               # R3: intraday story चा model (role "light"); रिकामा ⇒ env VISION_STORY_LIGHT_MODEL ⇒ VISION_SIGNAL_MODEL
 }
 VISUAL_AUDIT_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ENUMS = {
@@ -102,7 +105,8 @@ RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_ti
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),
           "line_lookback_sessions": (2, 15), "inv_buffer_mr": (0.1, 3.0), "gap_g0_atr": (0.0, 3.0), "gap_large_atr": (0.1, 5.0), "gap_stretch_atr": (0.5, 20.0),
           "gap_max_age_sessions": (0, 30), "vision_daily_budget_usd": (0.0, 5.0), "vision_monthly_budget_usd": (0.0, 100.0),
-          "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0), "vision_v4_daily_cap": (0.0, 2.0)}
+          "visual_audit_daily_cap": (0.0, 2.0), "signals_daily_reserve_usd": (0.0, 5.0), "vision_v4_daily_cap": (0.0, 2.0),
+          "story_daily_cap": (0.0, 2.0)}
 
 
 def defaults(bot):
@@ -129,6 +133,8 @@ def validate(bot, s):
                 raise ValueError(f"{k} = {v} — [{lo}, {hi}] मध्ये हवं")
         if k in ("exit_advice", "vision_wait_for_bar_close", "approval_required"):
             v = bool(v) if not isinstance(v, str) else v.lower() in ("1", "true", "yes", "on")
+        if k in ("story_model_deep", "story_model_light"):
+            v = str(v or "").strip()                                     # model नाव फक्त DB setting / env मध्ये — कोडमध्ये नाही
         if k == "visual_audit_symbols":
             v = [str(x).strip().upper() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()]
             bad = [x for x in v if x not in VISUAL_AUDIT_SYMBOLS]

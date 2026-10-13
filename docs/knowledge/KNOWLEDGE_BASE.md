@@ -170,6 +170,50 @@
 - **Evidence for / against** यादी, आणि grade (भाग D).
 - **"मी कुठे चुकीचा ठरेन"** हे एका ओळीत.
 
+### टप्पा 8a: Chart Story — reader चं output स्वरूप [Abhi, 13 Oct]
+AI ला chart दिला की तो काळजीपूर्वक trader सारखा chart समजावून सांगतो; त्यातून trade ओळखायला मदत होते. नियम इथे (KB / Method Pack)
+मजकूर म्हणून राहतात, code मध्ये hard-code नाहीत. Code facts मोजतो; model charts + facts वाचून गोष्ट लिहितो (`vision/story.py`).
+- **सात भाग, याच क्रमाने.** प्रत्येक भाग facts cite करतो; कोणतीही किंमत फक्त facts मधून.
+  1. **Daily trend आणि degree:** चालू चाल impulse की correction (a-b-c)? Daily trend बदललेला नसताना reversal low (high) वरून
+     आलेली चाल = correction.
+  2. **Zones आणि त्यांची स्थिती:** sweep / BROKEN / FLIPPED / DEAD, far-side swing सह (K4).
+  3. **Structure / projection:** a, b, c pivots, c = a, आधीच्या swing high / low शी confluence.
+  4. **Zone मधला अभ्यास:** बाजूनुसार candle आकार, वेळेनुसार normalise केलेला FUT volume, zone मधले patterns, कोणत्या बाजूच्या
+     candles वाढतात / आटतात, selling (buying) volume वाढतो का. Approach फक्त context (K4).
+  5. **RSI divergence:** pivots, values, bars अंतर, status; किंवा divergence नाही हे स्पष्ट.
+  6. **पुढे काय पाहायचं**, आणि काय झालं तर हे वाचन चुकीचं.
+  7. **Setup वाचन:** setup / wait / none + कारण; नेहमी "SHADOW — no trade; Abhi decides".
+- Output = या 7 keys चा JSON + Telegram साठी ≤ 15 ओळींचा छोटा मराठी मजकूर.
+- Golden दिवसांच्या अपेक्षा (12 / 13 Oct) इथे किंवा pack / prompt मध्ये कधीच नाहीत — फक्त private trade-data मध्ये.
+
+<!-- pack:0 conventions -->
+<details><summary>Method Pack (English) — 0b. Chart Story: how to explain a chart (source: Part B stage 8, stage 8a [Abhi])</summary>
+
+When the request asks for a **Chart Story**, explain the chart the way a careful trader would, so that it helps to identify a trade.
+Code computed the facts; you read the charts plus the FACTS and write the story. Seven parts, in this order. Every part cites the
+FACTS it uses (by their key names); every price is copied from the FACTS. A fact given as NA stays NA: say what is missing, never fill
+it from the image.
+1. **Daily trend and degree** — the daily trend (UP / DOWN / RANGE) and whether the current move is an impulse or a correction
+   (a-b-c). While the daily trend is unchanged, a move off a reversal low (high) is a correction, not a new trend [Abhi].
+2. **Zones and their state** — each relevant buyer / seller zone with its state: sweep / BROKEN / FLIPPED / DEAD (section 2), and
+   the far-side swing that decides between BROKEN and FLIPPED.
+3. **Structure / projection** — the a, b, c pivots, the c = a projection, and whether it meets the prior swing high (low) or a zone
+   (confluence; a measuring tool counts only together with a real area).
+4. **In-zone study** — what price did AFTER entering the zone: candle sizes by side, FUT volume per bar normalised by time of day,
+   patterns inside the zone, which side's candles grow or shrink, whether selling (buying) volume expands. The approach into the
+   zone is context only (section 2).
+5. **RSI divergence** — the two pivots, their RSI values, bars apart and status (forming / confirmed); or say plainly that there is
+   none and why. Evidence only, never a trigger on its own.
+6. **What to watch next** — the next location or event that would make a setup, and what invalidates this read.
+7. **Setup read** — setup / wait / none, the side, and the reason in one or two lines. Always marked
+   "SHADOW — no trade; Abhi decides": the story never places, sizes or approves a trade.
+
+Then a short Marathi version of the same story for Telegram (at most 15 lines, Western digits); it adds nothing that is not in the
+seven parts.
+
+</details>
+<!-- /pack -->
+
 ---
 
 # भाग C: Knowledge chapters

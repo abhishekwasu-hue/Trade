@@ -26,13 +26,14 @@ def max_tokens():
     return int(os.environ.get("VISION_V4_MAX_TOKENS", MAX_TOKENS))
 
 
-def system_blocks(pack_text, ttl=None):
-    """[Method Pack, schema मजकूर (cache_control)] — prefix स्थिर: pack version बदलला तरच बदलतो. ttl None ⇒ default (5 मिनिटं)."""
+def system_blocks(pack_text, ttl=None, schema_text=None):
+    """[Method Pack, schema मजकूर (cache_control)] — prefix स्थिर: pack version बदलला तरच बदलतो. ttl None ⇒ default (5 मिनिटं).
+    schema_text None ⇒ V4 checklist schema; Chart Story (vision/story.py) स्वतःचा schema मजकूर देतो — तोच pack, तोच breakpoint."""
     cc = {"type": "ephemeral"}
     if ttl:
         cc["ttl"] = ttl
     return [{"type": "text", "text": pack_text.rstrip() + "\n"},
-            {"type": "text", "text": CK.SCHEMA_TEXT, "cache_control": cc}]
+            {"type": "text", "text": schema_text or CK.SCHEMA_TEXT, "cache_control": cc}]
 
 
 def user_content(images, facts):
@@ -59,11 +60,12 @@ def build_request(images, facts, model, pack=None, max_tokens_=None, effort=None
     return params
 
 
-def estimate(n_images, facts, pack_text, model, max_tokens_=None):
-    """Dry-run अंदाज (chars / 4, image ≈ 1,600): tokens + $ (pack cached / uncached / पहिला cache write). खर्च signal_audit.cost_usd ने."""
+def estimate(n_images, facts, pack_text, model, max_tokens_=None, schema_text=None, user_text=None):
+    """Dry-run अंदाज (chars / 4, image ≈ 1,600): tokens + $ (pack cached / uncached / पहिला cache write). खर्च signal_audit.cost_usd ने.
+    schema_text / user_text (Chart Story) ⇒ V4 च्या schema / facts मजकुराऐवजी तेच मोजले जातात."""
     from .signal_audit import cost_usd
-    sys_tok = MP.tokens_estimate(pack_text) + MP.tokens_estimate(CK.SCHEMA_TEXT)
-    fresh = n_images * IMAGE_TOKENS + MP.tokens_estimate(FACTS_HEAD + str(facts) + TASK_TEXT)
+    sys_tok = MP.tokens_estimate(pack_text) + MP.tokens_estimate(schema_text or CK.SCHEMA_TEXT)
+    fresh = n_images * IMAGE_TOKENS + MP.tokens_estimate(user_text if user_text is not None else FACTS_HEAD + str(facts) + TASK_TEXT)
     out = int(max_tokens_ or max_tokens())
     return {"system_tokens": sys_tok, "fresh_input_tokens": fresh, "max_output_tokens": out,
             "usd_uncached": round(cost_usd(model, {"input_tokens": sys_tok + fresh, "output_tokens": out}), 5),
@@ -79,7 +81,7 @@ def weekdays_left(today):
     return int(len(pd.bdate_range(t + pd.Timedelta(days=1), end))) if end > t else 0
 
 
-def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None):
+def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None, label="V4"):
     """Signals ला प्राधान्य (run_visual_audit.audit_allowed सारखाच): V4 फक्त जर
       task आज + est ≤ min(sub_cap, दैनिक − signals राखीव) · आजचा एकूण + est ≤ दैनिक − signals राखीव ·
       महिना + est ≤ मासिक − राखीव × (उरलेले weekdays + आज weekday असेल तर 1).
@@ -90,7 +92,7 @@ def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None):
     day = sum(v[0] for v in by_task.values())
     month = sum(v[1] for v in by_task.values())
     if sub_cap is not None and task_day + est > min(float(sub_cap), allow) + 1e-12:
-        return False, (f"V4 daily cap: today ${task_day:.3f} + est ${est:.3f} > ${min(float(sub_cap), allow):.2f} "
+        return False, (f"{label} daily cap: today ${task_day:.3f} + est ${est:.3f} > ${min(float(sub_cap), allow):.2f} "
                        f"(cap ${float(sub_cap):.2f}, daily ${daily:.2f} − signals reserve ${reserve:.2f})")
     if day + est > allow + 1e-12:
         return False, (f"Vision daily budget: today ${day:.3f} + est ${est:.3f} > ${allow:.2f} (daily ${daily:.2f} − signals reserve "
@@ -103,8 +105,9 @@ def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None):
     return True, ""
 
 
-def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK, anchors=None):
-    """API message ⇒ (data, error). Refusal / max_tokens / JSON / schema / price check ⇒ error (fail-closed)."""
+def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK, anchors=None, validator=None):
+    """API message ⇒ (data, error). Refusal / max_tokens / JSON / schema / price check ⇒ error (fail-closed).
+    validator None ⇒ V4 checklist (CK.validate); Chart Story तोच मार्ग स्वतःच्या validator ने वापरतो."""
     stop = getattr(msg, "stop_reason", None)
     if stop in ("refusal", "max_tokens"):
         return None, f"stop_reason {stop}"
@@ -115,7 +118,7 @@ def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK, anchors=
         raw = CK.parse_json(text)
     except ValueError:
         return None, "parse error"
-    return CK.validate(raw, pack_version=pack_version, known_prices=known_prices, tick=tick, anchors=anchors)
+    return (validator or CK.validate)(raw, pack_version=pack_version, known_prices=known_prices, tick=tick, anchors=anchors)
 
 
 def audit(client, images, facts, model, known_prices, pack=None, on_usage=None, effort=None, thinking=None, ttl=None, anchors=None):
