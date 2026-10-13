@@ -2521,6 +2521,6 @@ legs owner वि. reader2 gate).
   `story_daily_cap` $1.00 (Vision एकूण budget च्या आत). AI कधीच order देत नाही.
 - **`scripts/golden_story_check.py`:** cases + अपेक्षा फक्त trade-data `golden_story/cases.json` (status "Abhi ✅ (13 Oct chat)");
   12 Oct 09:45 पर्यंतचाच data, 13 Oct EOD (5M spot export). `--dry-run` = images + facts + अंदाज, call नाही. सगळे निकाल PROVISIONAL.
-- **Dry-run (local):** प्रत्येक केस ≈ 9.0k system (cached) + ≈ 11.7k fresh (3 images) + ≤ 6k output; deep-model किंमतीने ≈ $0.20 / call
-  uncached, दोन्ही मिळून ≈ $0.38–0.41 (Abhi ची मंजुरी ≈ $1).
+- **Dry-run (local):** प्रत्येक केस ≈ 9.0k system (cached) + ≈ 11.7k fresh (3 images) + ≤ 12k output (thinking सह; पूर्ण वापरलं तरच);
+  deep-model किंमतीने कमाल ≈ $0.32 / call uncached, दोन्ही मिळून कमाल ≈ $0.62–0.65 (Abhi ची मंजुरी ≈ $1; प्रत्यक्ष output कमी ⇒ कमी).
 - **Tests:** `tests/test_vision_story.py` (28) + vision / pack / dossier संबंधित tests. उघडे प्रश्न: OPEN_QUESTIONS ST-1 … ST-6.

@@ -42,7 +42,7 @@ TASK = "chart_story"
 PROMPT_VERSION = "story_v1"
 SHADOW = "SHADOW — no trade; Abhi decides"
 MARATHI_MAX_LINES = 15
-MAX_TOKENS = 6000                                                          # सात भाग + मराठी + thinking (env ने बदलता येतो)
+MAX_TOKENS = 12000                                                         # सात भाग + मराठी + thinking (thinking output मध्ये मोजलं जातं; env ने बदलता येतो)
 READS = ("pre_open", "intraday", "eod")
 READ_ROLE = {"pre_open": "deep", "eod": "deep", "intraday": "light"}       # design §7 + Abhi (13 Oct): deep = pre-open / EOD
 ROLE_SETTING = {"deep": "story_model_deep", "light": "story_model_light"}
