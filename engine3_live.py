@@ -77,7 +77,10 @@ class UpstoxFeed:
         from opportunity_engine.volume import candles_to_df
         unit, val = V._V3_UNITS[interval]
         enc = urllib.parse.quote(key, safe="")
-        out, to = [], self.today
+        # minute history: to_date = काल (आजचे bars intraday मधून). to_date = आज दिल्यास Upstox कालचा पूर्ण दिवस वगळतो (13 Oct: 15M/5M
+        # 9 Oct ला संपले, 12 Oct गायब; फक्त 12 Oct मागितल्यावर पूर्ण दिवस आला).
+        out = []
+        to = self.today if interval == "day" else self.today - dt.timedelta(days=1)
         start = self.today - dt.timedelta(days=int(days))
         while to > start:
             frm = max(start, to - dt.timedelta(days=self.CHUNK[interval]))
@@ -87,11 +90,28 @@ class UpstoxFeed:
             out.extend(r["candles"])
             to = frm - dt.timedelta(days=1)
         if interval != "day":
+            out.extend(self._fill_recent_days(key, interval, out))
             st, body, err = V._get(f"{V.BASE_V3}/intraday/{enc}/{unit}/{val}", self.token)
             if st != 200:
                 raise EngineDataError(f"{key} {interval} intraday HTTP {st} ({str(err)[:80]})")
             out.extend(((body or {}).get("data") or {}).get("candles") or [])
         return candles_to_df(out, contract=contract)
+
+    def _fill_recent_days(self, key, interval, rows, lookback=7):
+        """History मध्ये शेवटच्या दिवसानंतरचे (आज वगळून) weekday दिवस गायब असतील तर ते एकेक-दिवस मागवून भरतो (सुट्टी ⇒ रिकामं, चालतं)."""
+        import verify_opportunity_data_availability as V
+        last = max((pd.Timestamp(str(c[0])[:10]).date() for c in rows), default=None)
+        if last is None:
+            return []
+        extra, d = [], max(last + dt.timedelta(days=1), self.today - dt.timedelta(days=lookback))
+        while d < self.today:
+            if d.weekday() < 5:
+                r = V.fetch_candles_window(self.token, key, interval, d, d)
+                if r["status"] != 200:
+                    raise EngineDataError(f"{key} {interval} {d} history HTTP {r['status']} ({str(r['error'])[:80]})")
+                extra.extend(r["candles"])
+            d += dt.timedelta(days=1)
+        return extra
 
     def index(self, symbol, interval, days):
         return self._series(index_key(symbol), interval, days)
