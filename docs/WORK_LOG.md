@@ -2539,3 +2539,4 @@ legs owner वि. reader2 gate).
   (67.09 → 66.41, 4 bars). Golden bear call default मध्ये **नाही** — FUT history 7 sessions < 10 ⇒ data problem; what-if (min 5) ⇒ 10:15
   setup (B). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅. RSI फरक: आधीच्या अहवालात V22 1m शिवाय (D0 pivot वेगळा) —
   live सुद्धा 1m शिवाय (Z-1o). OPEN_QUESTIONS Z-1h … Z-1o.
+- **Abhi B (patience):** wave / maturity फक्त context; watch-list = trend दिशेचे सगळे पुढचे zones armed; loss सामान्य, lock-out default OFF. Pack 4d96843284c6.
