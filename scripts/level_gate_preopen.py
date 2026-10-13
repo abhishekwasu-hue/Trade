@@ -131,18 +131,54 @@ def engine_last_run(symbol, path=None):
     return None if not t else ES._naive(t)
 
 
-def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS):
-    """❌ ओळ (engine चालत नाही / माहिती नाही) किंवा None + OK असल्यास शेवटची वेळ."""
+ENGINE_FIRST_RUN = (9, 31)                                                  # one-bot engine cron: 1,16,31,46 4-9 UTC ⇒ पहिला run 09:31 IST
+ENGINE_FIRST_RUN_GRACE = (9, 45)                                           # त्यानंतरही एकही row नाही ⇒ ❌ (चालत नाही)
+ENGINE_CRON_MARK = "# one-bot-engine"                                      # install_engine_schedule.sh ची engine ओळ (warm ओळ नाही)
+
+
+def engine_cron_installed(text):
+    """crontab मध्ये चालू (comment नसलेली) one-bot engine ओळ आहे का. crontab वाचता नाही (None) ⇒ False (खात्री नाही ⇒ ❌ कायम)."""
+    return any(x.rstrip().endswith(ENGINE_CRON_MARK) and "engine_signal_run.py" in x and not x.lstrip().startswith("#")
+               for x in (text or "").splitlines())
+
+
+def previous_session(day):
+    """`day` च्या आधीचा trading session (weekday, config.NSE_HOLIDAYS_2026 सुट्टी नाही)."""
+    try:
+        import config
+        hol = getattr(config, "NSE_HOLIDAYS_2026", set())
+    except Exception:                                                      # noqa: BLE001
+        hol = set()
+    d = pd.Timestamp(day).date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d in hol:
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def engine_problem(sym, engine_fn, now, stale_hours=ENGINE_STALE_HOURS, cron_installed=False):
+    """(ओळ किंवा None, शेवटचा run किंवा None). आजचा पहिला run अजून नाही (09:45 IST आधी, आज row नाही) आणि one-bot engine cron ओळ आहे:
+      • मागच्या trading session चा किमान एक row (decision / error) ⇒ ℹ️ "engine starts at 09:31 (cron installed)";
+      • नाही ⇒ ❌ "engine did not run in the last session — check engine_signal.log".
+    बाकी: row नाही ⇒ ❌ no records; ENGINE_STALE_HOURS पेक्षा जुना ⇒ ❌ stopped; नाहीतर OK (None, t)."""
     try:
         t = engine_fn(sym)
     except Exception as exc:                                               # noqa: BLE001
         return f"❌ {sym}: engine status not readable ({type(exc).__name__}) — no engine setups can be trusted today.", None
+    n = pd.Timestamp(now)
+    t = None if t is None else pd.Timestamp(t)
+    before_first = (n.hour, n.minute) < ENGINE_FIRST_RUN_GRACE and (t is None or t.normalize() < n.normalize())
+    if cron_installed and before_first:
+        prev = previous_session(n)
+        if t is not None and t.date() >= prev:
+            return (f"ℹ️ {sym}: engine starts at {ENGINE_FIRST_RUN[0]:02d}:{ENGINE_FIRST_RUN[1]:02d} (cron installed) — "
+                    f"last run {t:%d %b %H:%M}."), t
+        return f"❌ {sym}: engine did not run in the last session ({prev:%d %b}) — check engine_signal.log.", None
     if t is None:
         return f"❌ {sym}: the engine has no records — it is not running, so no setups will come for {sym}.", None
-    age = (pd.Timestamp(now) - pd.Timestamp(t)).total_seconds() / 3600
+    age = (n - t).total_seconds() / 3600
     if age > stale_hours:
-        return f"❌ {sym}: the engine last ran {pd.Timestamp(t):%d %b %H:%M} ({age:,.0f} h ago) — it looks stopped.", None
-    return None, pd.Timestamp(t)
+        return f"❌ {sym}: the engine last ran {t:%d %b %H:%M} ({age:,.0f} h ago) — it looks stopped.", None
+    return None, t
 
 
 def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
@@ -153,7 +189,7 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
         return f"{mark}<b>{sym}</b>: NO NEW ENTRIES today — {html.escape(PT.unclear_words(ctx), quote=False)}, {wk}. Open trades still exit as usual."
     head = f"<b>{sym}</b>: {html.escape(PT.trend_words(ctx), quote=False)}, {wk}"
     if ctx.get("mature"):
-        head += " (the daily move is mature, so new entries are weak)"
+        head += f" (daily move is mature: {LR.mature_words(ctx)})"                 # cap engine च्याच नियमाने (B / weak)
     elif ctx.get("origin_risk"):
         head += " (price is near the trend's starting point, so new entries are weak)"
     if last is None:
@@ -167,11 +203,11 @@ def symbol_line(sym, ctx, weekly, last, zones, tfs=ALL_TFS):
 
 
 def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn=None, day=None, active=False, engine_fn=None,
-                 now=None, problems=()):
+                 now=None, problems=(), engine_cron=False):
     """एकच संदेश (HTML). ओळ 1 = चालू bot(s) (settings वरून: "Only 15M SRv2 active · signal source: engine · symbols … · mode PAPER"),
     ओळ 2 साधी (काय पाहायचं), ओळ 3 Decision needed; symbol-निहाय एक ओळ (+ ❌ engine / data ओळ) · ── details ── (bot-निहाय areas, MCX, नियम).
     active = bot_status() निकाल (None ⇒ settings वाचता नाही ⇒ ❌; False ⇒ status ओळ नाही — जुने callers). engine_fn(sym) ⇒ computed_at —
-    signal source engine / both असलेल्या symbols साठीच तपासणी."""
+    signal source engine / both असलेल्या symbols साठीच तपासणी. engine_cron = one-bot engine cron ओळ आहे (`engine_cron_installed`)."""
     trend_fn = trend_fn or (lambda sym: LR.daily_trend(sym, token))
     weekly_fn = weekly_fn or (lambda sym: None)
     day = day or dt.date.today().isoformat()
@@ -191,10 +227,10 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
             wk = None
         plain.append(symbol_line(sym, ctx, wk, last, zones, tfs))
         if sym in eng_syms:
-            bad, t = engine_problem(sym, engine_fn or engine_last_run, now)
+            bad, t = engine_problem(sym, engine_fn or engine_last_run, now, cron_installed=engine_cron)
             if bad:
                 plain.append(bad)
-            else:
+            if t is not None:
                 det.append(f"{sym} engine: last run {t:%d %b %H:%M}")
         head = f"{sym} · {html.escape(str(ctx.get('reason')), quote=False)}"
         if ctx.get("protected") is not None:
@@ -293,10 +329,15 @@ def main(argv=None):
         print(f"⚠️ bot settings: {type(exc).__name__}: {exc}")
         active = None
     problems = one_bot_problems() + problems
+    try:
+        from bots_common.one_bot import read_crontab
+        engine_cron = engine_cron_installed(read_crontab())
+    except Exception:                                                      # noqa: BLE001 — खात्री नाही ⇒ ❌ कायम
+        engine_cron = False
     msg = build_report(syms, token, lambda s: cloud_db.get_market_zones(s), last_close,
                        trend_fn=lambda s: LR.daily_trend(s, token, fetch=lambda tok, sy: daily_df(sy)),
                        weekly_fn=lambda s: weekly_trend(daily_df(s), today), day=today.isoformat(), active=active,
-                       problems=problems)
+                       problems=problems, engine_cron=engine_cron)
     print(msg)
     if a.no_telegram or a.dry_run:
         return 0

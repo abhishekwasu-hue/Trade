@@ -2143,3 +2143,30 @@ vision_audit 22 pass.
 unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
 "impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
 chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.
+
+## 2026-10-13 · DP — futures volume रोज, replay = live feed, pre-open engine ओळ, maturity wording
+
+**कारण (VPS 13 Oct):** Upstox v3 historical minute candles दिवस D चे फक्त D+1 सकाळी (~07:00 IST) येतात ⇒ 16:10 चा collector (फक्त
+historical, to = आज) आजचे bars कधीच साठवत नव्हता (stores 9 Oct ला संपले).
+**काय केलं:**
+- `collect_index_futures_volume.py`: history (start … काल; to = आज दिल्यास कालचा दिवस वगळला जातो — engine3_live सारखं) + आजचे bars
+  `{BASE_V3}/intraday/<key>/minutes/5` मधून — front FUT, पुढचा contract (`_all`) आणि index; merge तोच (आधीचा row ठेवला ⇒ rerun idempotent).
+  Intraday अपयश ⇒ history तरीही साठवली, `*_intraday_error` log मध्ये. SENSEX: BSE front-month FUT (`exchange="BSE"`, resolver ला नवा
+  default-NSE param) — सापडला नाही ⇒ ℹ️ log + skip (exit code वर परिणाम नाही); default `--symbols NIFTY,BANKNIFTY,SENSEX`.
+- `scripts/replay_day.py --source upstox`: loader आता `engine3_live.UpstoxFeed` (live engine चाच स्रोत), today = D+1 ⇒ history मध्ये D,
+  `until_close` ⇒ D च्या close नंतरचा एकही row नाही (D+1 / intraday). NIFTY holdout filter (DP.filter_allowed) तसाच; read-only. FUT volume:
+  collector file मध्ये D असेल तर ती, नाहीतर `feed.futures`.
+- `scripts/level_gate_preopen.py`: store मध्ये engine row नाही + one-bot engine cron ओळ (`# one-bot-engine`) आहे + 09:45 IST आधी ⇒ ❌ ऐवजी
+  "ℹ️ <SYM>: engine starts at 09:31 (cron installed)". Cron ओळ नाही / 09:45 नंतरही row नाही ⇒ ❌ (आधीसारखं).
+- Maturity wording (owner नियम: पुरावा फक्त, कमाल A ⇒ B): pre-open "daily move is mature: evidence only — grade at most B", 15:45 summary
+  "Daily move is mature near target … (evidence only — grade at most B).", setup chart note (रचना अखंड ⇒ "evidence only - grade at most B";
+  अखंड नाही ⇒ "structure not intact => cap weak", engine logic बदल नाही). Wording test त्यानुसार (फक्त मजकूर).
+**Tests:** नवे — collector (आजचे bars, rerun idempotent, intraday अपयश, SENSEX BSE / skip), replay (fake feed: today = D+1, lookahead नाही,
+holdout), pre-open (ℹ️ / ❌ दोन्ही). जुना replay test आता fake feed वापरतो (अपेक्षा तशाच). 10 files: 176 pass.
+**उघडे:** OPEN_QUESTIONS DP1–DP4.
+**Review (PR #313, 4 🟡):** (1) collector: intraday मधून फक्त बंद bars (start + 5 min ≤ now IST) — चालू bar साठवला असता तर merge (आधीचा row
+ठेवतो) ने अर्धवट volume कायम राहिला असता; test: 12:00 run 11:55 bar साठवत नाही, 12:10 run पूर्ण volume सह साठवतो. (2) pre-open ℹ️ फक्त cron
+ओळ + मागच्या trading session चा row असेल तर; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". (3) maturity wording
+engine च्याच नियमाने (`LR.mature_cap` ⇒ `decision3.engine.mature_intact`, ctx phase / counter): अखंड ⇒ "grade at most B", नाहीतर "grade at most
+weak". (4) replay: feed fallback ⇒ ⚠️ ओळ contract नावासह; D च्या front month चा expiry ≤ D / वेगळा contract ⇒ "volume from a different contract
+than the day's front month — c0 volume unreliable"; `until_close` `_all` file मधून दिवसाचा front month (near_month नियम), alphabetical नाही.

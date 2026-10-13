@@ -247,6 +247,42 @@ def test_preopen_engine_store_last_run(tmp_path):
     assert P.engine_problem("NIFTY", lambda s: (_ for _ in ()).throw(OSError("x")), NOW)[0].startswith("❌ NIFTY: engine status not")
 
 
+def test_preopen_engine_not_yet_started_is_info_when_cron_installed():
+    """पहिल्या engine run आधी (09:45 पर्यंत, आज row नाही): cron ओळ आहे + मागच्या trading session चा row ⇒ ℹ️ "engine starts at 09:31
+    (cron installed)"; cron आहे पण मागच्या session चा row नाही ⇒ ❌ "did not run in the last session". Cron ओळ नाही (comment / फक्त warm)
+    ⇒ जुने ❌; 09:45 नंतरही row नाही ⇒ ❌."""
+    P = _preopen()
+    cron = ("1,16,31,46 4-9 * * 1-5 cd /root/Trade && python3 scripts/engine_signal_run.py --engine decision3 >> e.log 2>&1 # one-bot-engine\n")
+    warm_only = "20 3 * * 1-5 cd /root/Trade && python3 scripts/engine_signal_run.py --dry-run --force >> e.log 2>&1 # one-bot-engine-warm\n"
+    assert P.engine_cron_installed(cron) and not P.engine_cron_installed(warm_only)
+    assert not P.engine_cron_installed("#one-bot-off# " + cron) and not P.engine_cron_installed(None)
+    prev_row = lambda s: pd.Timestamp("2026-10-12 15:16")                  # noqa: E731 — सोम 12 Oct (मागचा session)
+    info, t = P.engine_problem("NIFTY", prev_row, NOW, cron_installed=True)
+    assert info.startswith("ℹ️ NIFTY: engine starts at 09:31 (cron installed)") and "❌" not in info and t == pd.Timestamp("2026-10-12 15:16")
+    assert P.engine_problem("NIFTY", prev_row, pd.Timestamp("2026-10-13 09:40"), cron_installed=True)[0].startswith("ℹ️")
+    # cron आहे, पण मागच्या session चा row नाही (store रिकामा / जुना row) ⇒ ❌
+    for fn in (lambda s: None, lambda s: pd.Timestamp("2026-10-09 15:16")):
+        bad = P.engine_problem("NIFTY", fn, NOW, cron_installed=True)[0]
+        assert bad == "❌ NIFTY: engine did not run in the last session (12 Oct) — check engine_signal.log."
+    # weekend + सुट्टी: सोम 5 Oct चा मागचा session = गुरु 1 Oct (2 Oct गांधी जयंती)
+    assert P.previous_session(pd.Timestamp("2026-10-05")) == pd.Timestamp("2026-10-01").date()
+    assert P.engine_problem("NIFTY", lambda s: pd.Timestamp("2026-10-01 15:16"), pd.Timestamp("2026-10-05 09:00"),
+                            cron_installed=True)[0].startswith("ℹ️")
+    late = P.engine_problem("NIFTY", lambda s: None, pd.Timestamp("2026-10-13 09:46"), cron_installed=True)[0]
+    assert late.startswith("❌ NIFTY: the engine has no records")
+    assert P.engine_problem("NIFTY", lambda s: None, NOW, cron_installed=False)[0].startswith("❌ NIFTY: the engine has no records")
+    assert P.engine_problem("NIFTY", lambda s: pd.Timestamp("2026-10-13 09:31"), pd.Timestamp("2026-10-13 09:40"), cron_installed=True)[0] is None
+    active = P.bot_status(["NIFTY", "BANKNIFTY", "SENSEX"], _settings(ONE_BOT))
+    msg = _one_bot_report(P, active, prev_row, engine_cron=True)
+    top = PT.first_part(msg)
+    assert "❌" not in "".join(ln for ln in top.splitlines() if "engine" in ln) and top.count("engine starts at 09:31 (cron installed)") == 3
+    assert "NIFTY engine: last run 12 Oct 15:16" in msg.split(PT.SEP)[1]
+    top = PT.first_part(_one_bot_report(P, active, lambda s: None, engine_cron=True))
+    assert top.count("engine did not run in the last session") == 3 and "engine starts at" not in top
+    top = PT.first_part(_one_bot_report(P, active, lambda s: None, engine_cron=False))
+    assert "❌ NIFTY: the engine has no records" in top and "engine starts at" not in top
+
+
 def test_preopen_dry_run_does_not_send(monkeypatch, capsys):
     import cloud_db
     import notifications
@@ -296,18 +332,36 @@ def test_summary_symbol_lines_plain_words_like_abhis_example():
     txt = _section(S)
     lines = txt.splitlines()
     assert lines[0] == ("<b>NIFTY</b>: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest supply "
-                        "22,715–22,776 (1H, ≈90 pts above the high). Impulse is mature near target 22,183, so new entries are weak.")
+                        "22,715–22,776 (1H, ≈90 pts above the high). Daily move is mature near target 22,183 (evidence only — grade at most B).")
     assert lines[1].startswith("<b>BANKNIFTY</b>: no setup today. Trend UP (daily). Price reached a demand area 1 time; no entry because "
                                "the reward was too small for the risk.") and "Price traded into demand 50,800–50,900" in lines[1]
     assert lines[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
     assert not PT.has_raw_codes(txt)
 
 
+def test_maturity_wording_follows_engine_cap_b_or_weak():
+    """Maturity wording = engine चा खरा cap (`decision3.engine.mature_intact`, ctx चे phase / counter): रचना अखंड ⇒ "grade at most B";
+    अखंड नाही (उलट correction नक्की) ⇒ engine cap weak ⇒ "grade at most weak". Pre-open आणि 15:45 सारांश दोन्ही."""
+    from types import SimpleNamespace
+    from decision3 import engine as E3
+    P, S = _preopen(), _summary()
+    weak = {**NIFTY, "counter": "correction"}
+    for c, cap in ((NIFTY, "B"), (weak, "weak")):
+        assert LR.mature_cap(c) == cap
+        assert E3.mature_intact(SimpleNamespace(phase=c.get("phase"), counter=c.get("counter"))) == (cap == "B")
+    assert LR.mature_cap({**NIFTY, "mature": False}) is None
+    assert "(daily move is mature: evidence only — grade at most B)" in P.symbol_line("NIFTY", NIFTY, "UP", 22565.0, ZONES)
+    line = P.symbol_line("NIFTY", weak, "UP", 22565.0, ZONES)
+    assert "(daily move is mature: structure not intact — grade at most weak)" in line and "grade at most B" not in line
+    txt = _section(S, ctx_fn=lambda s, d: {"NIFTY": weak, "BANKNIFTY": BANK}.get(s))
+    assert "Daily move is mature near target 22,183 (structure not intact — grade at most weak)." in txt.splitlines()[0]
+
+
 def test_summary_partial_data_says_so():
     S = _summary()
     txt = _section(S, range_fn=lambda s, d: None, rows_fn=lambda s, d: (_ for _ in ()).throw(RuntimeError("db down")))
     nifty = txt.splitlines()[0]
-    assert "bot records not available" in nifty and "Day high / low not available" in nifty and "Impulse is mature" in nifty
+    assert "bot records not available" in nifty and "Day high / low not available" in nifty and "Daily move is mature" in nifty
 
 
 def test_summary_one_message_headline_decisions_pnl_details(monkeypatch):

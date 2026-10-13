@@ -106,6 +106,24 @@ def trend_context(daily_df, today=None, s=None):
     return context_from_state(DD.fold(d)[-1], s, asof=str(d["timestamp"].iloc[-1].date()))
 
 
+def mature_cap(ctx):
+    """Daily move mature असेल तर engine चा cap — engine च्याच नियमाने (`decision3.engine.mature_intact`, ctx चे phase / counter):
+    रचना अखंड ⇒ "B" (पुरावा फक्त, grade एक पायरी खाली: A ⇒ B); अखंड नाही ⇒ "weak" (engine cap). Mature नाही ⇒ None."""
+    if not (ctx or {}).get("mature"):
+        return None
+    from types import SimpleNamespace
+    from decision3.engine import mature_intact
+    return "B" if mature_intact(SimpleNamespace(phase=ctx.get("phase"), counter=ctx.get("counter"))) else "weak"
+
+
+def mature_words(ctx):
+    """Telegram (pre-open / 15:45) साठी: "evidence only — grade at most B" किंवा "structure not intact — grade at most weak". None ⇒ mature नाही."""
+    cap = mature_cap(ctx)
+    if cap is None:
+        return None
+    return "evidence only — grade at most B" if cap == "B" else "structure not intact — grade at most weak"
+
+
 def context_from_state(st, s=None, asof=None):
     """एक decision3 DState ⇒ trend context (replay साठी: एकदा fold, मग DD.state_at(states, ts) ⇒ इथे)."""
     s = settings(s)
