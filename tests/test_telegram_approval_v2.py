@@ -1,5 +1,5 @@
 """Abhi §10 (Monday PAPER): Telegram approval v2 — ✅ · ✏️ Modify (फक्त entry) · ❌ + कारण · 📝 Correct marking · /exit · 15:45 सारांश.
-non-approver ignored; parsing (चुकीचा मजकूर ⇒ स्पष्ट उत्तर, बदल नाही); area बाहेर / R:R < 3 ⇒ इशारा पण ✅ हवंच; limit न गाठता ⇒ EXPIRED,
+non-approver ignored; parsing (चुकीचा मजकूर ⇒ स्पष्ट उत्तर, बदल नाही); area बाहेर ⇒ इशारा पण ✅ हवंच (R:R इशारा नाही — Abhi); limit न गाठता ⇒ EXPIRED,
 position नाही, would-have; Telegram वरून इतर कुठलाही parameter बदलत नाही; correction नोंद होते पण engine output बदलत नाही; Modify नंतर
 approval window पुन्हा; exits कधीच अडत नाहीत."""
 import datetime as dt
@@ -131,10 +131,22 @@ def test_modify_bad_input_clear_error_no_change_then_ticket(db):
     assert json.loads(r["setup_json"]) == json.loads(before["setup_json"]) and r["level"] == before["level"]
     cap, btn = db["photos"][-1]
     assert len(db["photos"]) == n + 1 and "सुधारित ticket" in cap and "22590" in cap and "R:R <b>8</b>" in cap   # echo आधी
+    assert "engine reference (info): SL 22540" in cap and "trade चे SL / target / lots" in cap   # Abhi RR2: trade चे SL / target = dashboard
     assert VD.parse_callback(btn[0][1]) == (sid, "A") and r["tg_message_id"] == 777
     assert any("ही बटणं बंद" in e[1] for e in db["edits"])                              # जुन्या chart वरची बटणं काढली
     assert AP.state_get(str(ME)) is None
     assert gate(spot=22580.0).action == "HOLD"                                             # ✅ नाही ⇒ entry नाही
+
+
+def test_modify_ticket_no_rr_when_rr_gate_off(db):
+    """Abhi: gate tags मध्ये rr नाही (dashboard R:R gate बंद, default) ⇒ ✏️ ticket मध्ये R:R / "reward … × the risk" नाही; engine SL / target
+    फक्त "engine reference (info)"."""
+    sid = pending(tags={"gate": {**GATE["gate"], "rr": None}})
+    press(db, sid, "M")
+    assert say(db, "entry 22590")[0]
+    cap = db["photos"][-1][0]
+    assert "R:R" not in cap and "reward" not in cap and "engine reference (info): SL 22540" in cap
+    assert json.loads(VS.get_signal(sid)["mod_json"])["rr"] is None
 
 
 def test_modify_outside_area_or_low_rr_warns_but_still_needs_approve(db):
@@ -142,7 +154,8 @@ def test_modify_outside_area_or_low_rr_warns_but_still_needs_approve(db):
     press(db, sid, "M")
     assert say(db, "entry 22660")[0]                                                      # area 22570–22640 बाहेर, R:R 330/120 = 2.75
     cap = db["photos"][-1][0]
-    assert "area 22,570–22,640 बाहेर" in cap and "R:R 2.75 &lt; 3" in cap
+    assert "area 22,570–22,640 बाहेर" in cap and "&lt; 3" not in cap and "⚠️ R:R" not in cap   # Abhi: R:R इशारा नाही (माहिती फक्त)
+    assert "R:R <b>2.75</b>" in cap
     r = VS.get_signal(sid)
     assert r["status"] == "PENDING_HUMAN" and r["mod_entry"] == 22660.0
     assert gate(spot=22650.0).action == "HOLD"                                             # इशारा ⇒ आपोआप entry नाही

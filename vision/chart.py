@@ -316,7 +316,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
             if a[0] is not None and a[1] is not None:
                 fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(a[0]), y1=float(a[1]), fillcolor="rgba(66,165,245,0.12)",
                               line=dict(width=0), layer="below", row=1, col=c)
-            for k_, lab, colr in (("entry", "ENTRY", "#ffd54f"), ("sl", "SL", "#ef5350"), ("target", "TARGET", "#66bb6a")):
+            for k_, lab, colr in (("entry", "ENTRY", "#ffd54f"), ("sl", "ENGINE REF SL", "#ef5350"),      # Abhi RR2: trade SL / target
+                                  ("target", "ENGINE REF TARGET", "#66bb6a")):                      # = dashboard; हे फक्त माहिती
                 v = gate.get(k_)
                 if v is not None and np.isfinite(float(v)):
                     fig.add_shape(type="line", x0=n * 0.6, x1=n - 0.5, y0=float(v), y1=float(v), line=dict(color=colr, width=1, dash="dot"),
@@ -335,7 +336,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
     cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
     title = f"{sig.get('symbol', '')} · {sig.get('bot_label') or sig.get('bot', '')} · {sig.get('direction', '')} · signal {ts:%d %b %H:%M} ({cutnote})"
     if gate:
-        title += f"<br><sup>{gate.get('trend') or ''} · {gate.get('form') or ''} · R:R {gate.get('rr')}</sup>"
+        rr = f" · R:R {gate.get('rr')}" if gate.get("rr") is not None else ""   # R:R फक्त dashboard rr gate चालू असेल तर
+        title += f"<br><sup>{gate.get('trend') or ''} · {gate.get('form') or ''}{rr}</sup>"
     fig.update_yaxes(side="right", tickformat=",.0f", gridcolor="#263238", color="#eceff1")
     fig.update_layout(template="plotly_dark", width=WIDTH, height=HEIGHT_V21 if with_line else HEIGHT, margin=dict(l=10, r=60, t=60, b=30),
                       paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", title=dict(text=title, font=dict(size=14)), showlegend=False)

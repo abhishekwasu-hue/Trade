@@ -91,7 +91,10 @@ R:R against the nearest demand:
 
 A 3R trade needs a target ≤ 22,260.
 
-**Verdict: no setup. Valid read (touch + buyers exhausting + dominant bearish engulf + 5M CHoCH), skipped on R:R (0.77 < 3).** The
-engine now logs `no_trade · R:R < 3` for this bar instead of "no touch". Fixture: `tests/test_decision3_touch_levels.py`.
-- Synthetic, mirrored: the read, plus the decide-level selection with the near and far levels in either order.
+**Verdict (corrected, Abhi rr-correction): valid bear-call read** (touch + buyers exhausting + dominant bearish engulf + 5M CHoCH).
+There is no "skipped on R:R" outcome: Abhi never asked for an R:R filter — R:R, SL, target, lots and exits are his dashboard
+settings. The R:R numbers above are history / information only. (The earlier verdict "no setup, skipped on R:R (0.77 < 3)" came from
+the legacy ⑦, which now runs only with `rr_step` = True.) Fixture: `tests/test_decision3_touch_levels.py`.
+- Synthetic, mirrored: the read, plus the decide-level selection with the near and far levels in either order (default ⇒ bear-call
+  setup at the touched supply; legacy `rr_step` = True ⇒ the old `no_trade · R:R < 3`, still at the touched level, not "no touch").
 - Real-data check (skipped if private data is missing): touch + dominant engulf + counter weakening.

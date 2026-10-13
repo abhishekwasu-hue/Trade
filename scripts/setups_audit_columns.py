@@ -3,10 +3,11 @@
 evidence with the existing decision3 functions; it never changes an engine decision. The fixes live on other branches.
 
 Columns (each uses only bars <= the setup bar; no outcome, no P&L):
-  (a) nearest opposite area between entry and target on 15M / 1H / Daily, and R:R against it. Opposite = (bull put) unbroken swing
+  (a) nearest opposite area between entry and target on 15M / 1H / Daily — information only (the fact and its price; Abhi: no R:R
+      verdict, never pass / fail; R:R / target are dashboard settings). Opposite = (bull put) unbroken swing
       highs above the entry — 15M fractal N = 3 in the last 5 sessions, 1H fractal N = 2 in the last 20 sessions, Daily N = 2 in the
       last 126 sessions — plus broken Daily swing lows (closed below since) that are still above the close = flipped supply.
-      "Unbroken" = no close beyond it since it formed. Bear call = mirror. R:R = (area − entry) / (entry − SL).
+      "Unbroken" = no close beyond it since it formed. Bear call = mirror.
   (b) arrival: "breakout→retest" if a 15M close on the far side of the area happened after the K impulse origin (the impulse that
       opened K was the break of the area itself), else "pullback"; plus K bars that touched the area, the penetration depth (K extreme
       into the band, 1 = far edge) and "edge touch only" (<= 2 candles touched and the K extreme stayed in the near half — Abhi's
@@ -86,7 +87,7 @@ def flipped_daily(df, upto, first, d):
 def col_a(r, m15, t, daily, h1):
     d = 1 if r["trade_side"] == ["bull_put"] else -1
     rk = r["risk"] or {}
-    e, sl, tg = rk.get("entry"), rk.get("sl"), rk.get("target")
+    e, tg = rk.get("entry"), rk.get("target")
     if e is None or tg is None:
         return {"note": "no risk"}
     day = pd.Timestamp(r["ts"]).normalize()
@@ -114,12 +115,11 @@ def col_a(r, m15, t, daily, h1):
     for px, i in flipped_daily(db, len(db) - 1, fd, d):
         cands.append((px, f"Daily broken {'low ⇒ supply' if d > 0 else 'high ⇒ demand'} {px:,.0f} ({db['timestamp'].iloc[i]:%d-%b-%y})"))
     between = [(px, lab) for px, lab in cands if (e < px < tg) if d > 0] if d > 0 else [(px, lab) for px, lab in cands if tg < px < e]
-    if not between:
-        return {"area": None, "rr_area": rk.get("rr"), "verdict": "pass"}
+    if not between:                                                       # Abhi: R:R verdict नाही — फक्त तथ्य (माहिती), pass / fail नाही
+        return {"area": None, "info": f"no opposite area between entry {e:,.2f} and target {tg:,.2f}"}
     px, lab = min(between, key=lambda x: abs(x[0] - e))
-    rr = round(abs(px - e) / abs(e - sl), 2) if sl is not None and e != sl else None
-    return {"area": lab, "area_px": round(px, 2), "rr_area": rr, "rr_engine": rk.get("rr"),
-            "verdict": "FAIL (R:R < 3 against it)" if rr is not None and rr < 3 else "pass"}
+    return {"area": lab, "area_px": round(px, 2),
+            "info": f"opposite area ({lab}) lies between entry {e:,.2f} and target {tg:,.2f} at {px:,.2f}"}
 
 
 def col_b(r, A, t):

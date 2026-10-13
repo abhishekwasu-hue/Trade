@@ -6,7 +6,7 @@ pending signal (source MANUAL) ⇒ Vision (अयशस्वी ⇒ "Vision: NA
 
 Validation (सगळं order च्या आधी): instrument enabled (config.yaml paper), बाजार वेळ, token, pause / kill-switch / उघडी manual position /
 आधीचा pending manual, option chain (आज expiry ⇒ पुढची weekly — bots चाच नियम), बाजू (bull put: short > hedge, SL spot खाली, T वर;
-bear call उलट), strikes chain मध्ये, net credit > 0. R:R = |T − spot| / |spot − SL| (spot वरून) — < 3 ⇒ इशारा (तरी घेता येतो).
+bear call उलट), strikes chain मध्ये, net credit > 0. R:R = |T − spot| / |spot − SL| (spot वरून) — माहिती फक्त (इशारा / अडथळा नाही).
 
 🎓 Vision bot key "manual" वेगळा (bots च्या forced levels मध्ये manual signal मिसळू नये ⇒ दुहेरी entry नाही); profile फक्त strikes / lots साठी.
 Exit: तुमचा spot SL / T (`spot_exit`, paper watcher — trade_monitor च्या प्रत्येक cycle ला) + backstop म्हणून generic exit नियम
@@ -29,12 +29,11 @@ SOURCE = "manual_paper"                                                 # live_t
 KINDS = {"bullput": ("BULLISH", "PE", "Support"), "bearcall": ("BEARISH", "CE", "Resistance")}
 PROFILES = {"srv3_instant": "1m_instant", "dynamic_sr_instant": "1m_instant", "srv2_momentum_reversal": "15m_dynamic_sr"}
 PROFILE_LABEL = {"srv3_instant": "SR V3", "dynamic_sr_instant": "5-Min Instant", "srv2_momentum_reversal": "15M Dynamic SR"}
-RR_WARN = 3.0
 OPEN = ("QUEUED",)                                                      # approval / Vision ची वाट
 HELP = ("✋ <b>Manual PAPER trigger</b> (फक्त approver):\n"
         "• <code>/paper NIFTY bullput SL 24750 T 25300</code> — strikes / width / lots: manual_profile bot च्या settings ने\n"
         "• <code>/paper NIFTY bearcall 25100/25200 SL 25250 T 24800</code> — तुमचे strikes (short/hedge)\n"
-        "SL / T = spot. T ऐच्छिक. पुढे: Vision ⇒ ✅ / ❌ ⇒ PAPER entry. R:R &lt; 3 ⇒ इशारा.\n"
+        "SL / T = spot. T ऐच्छिक. पुढे: Vision ⇒ ✅ / ❌ ⇒ PAPER entry.\n"
         "इतर: /status · /positions · /pause · /resume · /pending · /today\n"
         "Approval संदेश: ✅ · ✏️ (फक्त entry: <code>entry 22590</code>) · ❌ (+ कारण) · 📝 marking दुरुस्ती (/correct) · "
         "PAPER लगेच बंद: <code>/exit &lt;id&gt;</code>")
@@ -247,7 +246,7 @@ def _settings(profile, symbol):
 
 def summary(m):
     st = f"{m['short_strike']:g}/{m['hedge_strike']:g}" if m.get("short_strike") is not None else "?"
-    rtxt = "NA (T नाही)" if m.get("rr") is None else f"{m['rr']:g}" + (" ⚠️ &lt; 3" if m["rr"] < RR_WARN else "")
+    rtxt = "NA (T नाही)" if m.get("rr") is None else f"{m['rr']:g}"     # माहिती फक्त (Abhi चे SL / T वरून), इशारा नाही
     return (f"✋ MANUAL · {m['symbol']} {m['kind']} {st} ({m['strikes_from']}) · SL {m['sl']:g}"
             + (f" · T {m['target']:g}" if m.get("target") is not None else "") + f" · spot {m['spot']:,.1f} · R:R {rtxt} · "
             f"{m['lots']} lot × {m['lot_size']}")
@@ -344,8 +343,7 @@ def handle(text, by, send=None, token_fn=None, market_fn=None, chain_fn=None, ga
         _set_status(m["id"], "NEW", "FAILED", path, note=f"gate {g.action} {g.status}: {g.note}"[:300])
         return no(f"approval मार्ग उपलब्ध नाही ({g.action} {g.status}: {g.note}) ⇒ entry नाही")
     _set_status(m["id"], "NEW", "QUEUED", path, vision_signal_id=g.signal_id)
-    warn = "" if m["rr"] is None or m["rr"] >= RR_WARN else f"\n⚠️ R:R {m['rr']:g} &lt; 3 — तरीही ✅ दाबल्यास entry होईल"
-    msg = f"{summary(m)}\n⏳ Vision chart + ✅ / ❌ संदेश येतोय (signal {g.signal_id}){warn}"
+    msg = f"{summary(m)}\n⏳ Vision chart + ✅ / ❌ संदेश येतोय (signal {g.signal_id})"   # R:R इशारा नाही (Abhi: R:R dashboard चा)
     send(msg)
     return True, msg
 
