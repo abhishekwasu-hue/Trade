@@ -12,8 +12,9 @@ cooldowns, 14:45 नंतर नवा entry नाही, EOD):
   • confirmation (live) — entry फक्त gate ने: `level_reaction.evaluate` (live सारखंच: प्रत्येक बंद confirmation-TF candle ला आजचे बंद bars
     replay, `entry` फक्त commitment candle वरच), trend = ONE `decision3.daily.fold` प्रति symbol + `DD.state_at` प्रति दिवस ⇒
     `LR.context_from_state`; RSI / PCR gates बंद, breakout नाही. **Exit = bot चेच exits** (live confirmation mode मध्ये exits ला हात नाही ⇒
-    touch सारखेच: naked spot % SL / target + TSL-to-breakeven) — फक्त entry gate वेगळा. MCX (L4): structural SL (settings SL = कमाल ⇒
-    जास्त रुंद ⇒ SL_TOO_WIDE skip), target = पुढचा उलट area, entry भावावर R:R पुन्हा, एका confirmation वर एकच entry.
+    touch सारखेच: naked spot % SL / target + TSL-to-breakeven) — फक्त entry gate वेगळा. MCX (L4, Abhi RR1): SL / target = dashboard
+    settings (gate फक्त entry हो / नाही); R:R < min_rr ⇒ skip फक्त dashboard R:R gate चालू असेल तर (dashboard SL / target वर), एका
+    confirmation वर एकच entry.
   • confirmation + structural exit (not live) — तेच gate entries, पण gate चा structural SL / पुढच्या area चा target (NSE bots साठी फक्त
     तुलना; live मध्ये असं नाही).
 Levels = bots चे Dynamic S/R (sr_dynamic.compute_dynamic_sr, refresh scripts चेच parameters आणि lookback), सत्राच्या सुरुवातीला आणि नंतर
@@ -91,7 +92,7 @@ class BotSpec:
     eod: str                    # "HH:MM" — EOD square-off
     tsl_pct: object = None      # spot % ⇒ SL entry वर (sticky); None ⇒ नाही
     level_dir_sl_block: bool = False    # MCX: आज त्याच level + दिशेवर तोट्याचा SL ⇒ दिवसभर पुन्हा नाही
-    live_structural: bool = False       # MCX L4: confirmation arm चा live exit = structural SL (settings SL कमाल) / पुढचा area
+    live_structural: bool = False       # MCX L4: confirmation arm = live MCX gate मार्ग (`l4_plan`: dashboard SL / target; STRUCT arm नाही)
     illustration: str = ""      # अहवालात ठळक इशारा
     markets: tuple = ("NSE",)
 
@@ -432,22 +433,18 @@ def metrics(net):
 
 
 # ------------------------------------------------------------------------------------------------ MCX L4 entry rules (confirmation arm)
-def l4_plan(sig, spec, min_rr):
-    """mcx_futures_trader._gate_sl_target (L4) सारखंच: entry भावावर structural SL (settings SL = कमाल), target = gate चा पुढचा area,
-    R:R पुन्हा. रिटर्न (plan | None, skip code | None)."""
-    d = 1 if sig["direction"] == LR.BULL else -1
+def l4_plan(sig, spec, gate_s=None):
+    """live mcx_futures_trader (Abhi RR1) सारखंच: SL / target = bot चे dashboard settings (`legacy_plan`, entry भावावरून) — gate चा
+    structural SL / पुढचा area नाही, cap / skip नाही. R:R < min_rr ⇒ SKIPPED_GATE_RR फक्त gate_s["rr_gate_enabled"] (dashboard, default
+    बंद) — dashboard SL / target वर (`_gate_rr_skip`). रिटर्न (plan | None, skip code | None)."""
+    gs = LR.settings(gate_s)
     price = float(sig["entry"])
-    sl_pts, tgt_pts = (price - float(sig["plan_sl"])) * d, (float(sig["plan_target"]) - price) * d
-    max_sl = price * spec.sl[1] / 100.0 if spec.sl[0] == "pct" else spec.sl[1]
-    if sl_pts <= 0:
-        return None, "SKIPPED_GATE_INVALIDATED"
-    if tgt_pts <= 0:
-        return None, "SKIPPED_GATE_TARGET_PASSED"
-    if sl_pts > max_sl:
-        return None, "SKIPPED_GATE_SL_TOO_WIDE"
-    if tgt_pts / sl_pts < float(min_rr):
-        return None, "SKIPPED_GATE_RR"
-    return {"sl": float(sig["plan_sl"]), "target": float(sig["plan_target"]), "tsl": None}, None
+    plan = legacy_plan(spec, price, sig["direction"])
+    if gs["rr_gate_enabled"]:
+        sl_pts, tgt_pts = abs(price - plan["sl"]), abs(plan["target"] - price)
+        if sl_pts > 0 and tgt_pts / sl_pts < float(gs["min_rr"]):
+            return None, "SKIPPED_GATE_RR"
+    return plan, None
 
 
 # ------------------------------------------------------------------------------------------------ gate verdict for legacy trades
@@ -663,12 +660,13 @@ def replay_day(mk, spec, day, gate_s=None, s=None, cost=None):
         M = int(gate_s["max_armed_bars"])
         cutoff = next((t for t in range(k0, len(B)) if (BE[t].hour * 60 + BE[t].minute) >= _hm(spec.last_entry)), len(B))
         cache = {}
+        gate_ev = {**gate_s, "rr_gate_enabled": False} if spec.live_structural else gate_s   # live MCX `_gate_engine_settings` सारखं
 
         def ev(j, a, t):
             key = (j, a, t)
             if key not in cache:
                 others = [x for x in areas[j] if (round(min(x), 4), round(max(x), 4)) != (round(a[0], 4), round(a[1], 4))]
-                cache[key] = LR.safe_evaluate(B.iloc[:t + 1], a, ctx, others, k0, s=gate_s, ltf=LTF, tf_minutes=cm)
+                cache[key] = LR.safe_evaluate(B.iloc[:t + 1], a, ctx, others, k0, s=gate_ev, ltf=LTF, tf_minutes=cm)
             return cache[key]
 
         if ctx.get("ok"):
@@ -684,12 +682,13 @@ def replay_day(mk, spec, day, gate_s=None, s=None, cost=None):
                     r = ev(j, a, t)
                     if r.get("entry"):
                         sigs.append({"time": c_t, "order": order, "level": epochs[j][order][1], "tf": epochs[j][order][0], "direction": r["side"],
-                                     "entry": float(r["entry_price"]), "plan_sl": float(r["sl"]), "plan_target": float(r["target"]),
+                                     "entry": float(r["entry_price"]), "plan_sl": float(r["sl"]),
+                                     "plan_target": None if r.get("target") is None else float(r["target"]),   # target area नाही ⇒ None
                                      "grade": r.get("grade"), "form": r.get("form"), "rr": r.get("rr"), "bar": t, "area": a})
         conf_c, struct_c = [], []
         for g in sigs:
             if spec.live_structural:                                   # MCX L4
-                plan, why = l4_plan(g, spec, gate_s["min_rr"])
+                plan, why = l4_plan(g, spec, gate_s)
                 if why:
                     skipped.append({**{k: v for k, v in g.items() if k != "order"}, "exit_reason": why})
                     continue
@@ -825,7 +824,7 @@ def render_report(trades, meta, sample=True, min_n=MIN_N, per_reason=None):
           f"Data: {meta.get('data', '')}", "", "## How this replay works", ""]
     L += [f"- {x}" for x in meta.get("assumptions", [])]
     L += ["", f"Arms: **{TOUCH}** (legacy = what LIVE bots do today) · **{CONF}** (live PAPER behaviour: gate entry, the bot's own exits; MCX: L4 "
-          f"structural exits) · **{STRUCT}** (comparison only, NSE bots).", "",
+          f"dashboard SL / target, R:R gate only if enabled) · **{STRUCT}** (comparison only, NSE bots).", "",
           f"Cells with n < {min_n} carry **no conclusion** (numbers shown for reference only).", ""]
     L += ["## Conclusions (cells with n ≥ %d in both arms compared)" % min_n, ""]
     cl = conclusion_lines(summ, min_n)

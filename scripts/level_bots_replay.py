@@ -94,10 +94,11 @@ def assumptions(level_refresh):
         "(14:45; MCX 22:45); EOD square-off.",
         "**Confirmation** (live PAPER behaviour) entries = `level_reaction.evaluate` on closed confirmation-TF candles, exactly as the live cycle: "
         "an entry only on the commitment candle itself, at its close. Trend = one `decision3.daily.fold` per symbol + `state_at` per day "
-        f"(yesterday's close). Gate defaults: min R:R {g['min_rr']:g}, max armed bars {g['max_armed_bars']}, area = level ± "
+        f"(yesterday's close). Gate defaults: R:R gate {'on' if g['rr_gate_enabled'] else 'off'} (min R:R {g['min_rr']:g} only when on), "
+        f"no-target disarm {'on' if g['no_target_disarm_enabled'] else 'off'}, max armed bars {g['max_armed_bars']}, area = level ± "
         f"{LGB.AREA_PAD_PCT:g}% / 2. RSI / PCR gates off, no breakout. **Exits = the bot's own exits, the same as touch** (live confirmation mode "
-        "never touches exits) ⇒ for 5M Instant / SRv2 / Classic only the entry differs. MCX (L4): structural SL capped by the settings SL "
-        "(wider ⇒ skipped `SKIPPED_GATE_SL_TOO_WIDE`), target = next opposite area, R:R re-checked at the entry price, one entry per confirmation.",
+        "never touches exits) ⇒ for 5M Instant / SRv2 / Classic only the entry differs. MCX (L4, Abhi RR1): SL / target = the dashboard "
+        "settings (the gate decides entry yes / no only); R:R checked against them only when the R:R gate is on; one entry per confirmation.",
         f"**{RP.STRUCT}** = the same gate entries with the gate's structural SL (beyond the area's far edge + buffer) and next-area target, no "
         "TSL — a comparison arm for the NSE bots only; it is **not** what the bots do live.",
         "Bot exits replayed from `trading_engine.evaluate_point_spot_exit`, spot part only: naked spot-% SL / target from entry (MCX: settings "

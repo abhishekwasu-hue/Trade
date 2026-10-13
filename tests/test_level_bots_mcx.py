@@ -109,7 +109,7 @@ def test_no_reaction_no_entry_and_no_telegram(monkeypatch, tmp_path):
     assert h.level_logs()[0]["hit_type"] == "NO_HIT" and h.level_logs()[0]["reason"].startswith("[GATE] Watching demand")
 
 
-def test_confirmed_places_paper_order_with_gate_side_and_structural_sl(monkeypatch, tmp_path):
+def test_confirmed_places_paper_order_with_gate_side_and_dashboard_sl_target(monkeypatch, tmp_path):
     h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, price=1008.0)
     out = h.run()
     assert len(h.trade.calls) == 1, out
@@ -117,12 +117,14 @@ def test_confirmed_places_paper_order_with_gate_side_and_structural_sl(monkeypat
     leg = a[2]["legs"][0]
     assert leg["transaction_type"] == "BUY" and k["trading_mode"] == "PAPER" and k["source"] == "mcx_futures"
     assert k["lots"] == 1 and k["entry_level_price"] == LEVEL and k["entry_timeframe"] == "30M"
-    # gate plan: SL = sweep low च्या पलीकडे, target = पुढचा area (TARGET_LEVEL − 1% pad) — points सद्य भावापासून
+    # Abhi (RR1): SL / target पूर्णपणे dashboard चे (sl_points 50 / target_points 40) — gate चा structural SL / पुढचा area नाही;
+    # R:R 0.8 < 3 तरी entry (R:R gate default बंद)
     sl_pts, tgt_pts = a[2]["max_loss"], a[2]["max_profit"]
-    assert 15 < sl_pts < 30 and tgt_pts == pytest.approx(TARGET_LEVEL * 0.995 - 1008.0, abs=0.01) and tgt_pts / sl_pts >= 3
+    assert (sl_pts, tgt_pts) == (50.0, 40.0) == mft._sl_target_points(h.settings, 1008.0)
     log = [e for e in h.level_logs() if e["hit_type"] == "CONFIRMED"]
     assert len(log) == 1 and log[0]["direction"] == "BULLISH" and log[0]["level_type"] == "SUPPORT"
-    assert "[GATE] CONFIRMED demand" in log[0]["reason"] and "🎯 Gate: SL" in log[0]["reason"]
+    assert "[GATE] CONFIRMED demand" in log[0]["reason"] and "🎯 SL / target = dashboard (50.00 / 40.00 pts)" in log[0]["reason"]
+    assert "engine reference (info)" in log[0]["reason"] and "R:R" not in log[0]["reason"]
     assert not h.rsi.calls                                                 # confirmation ⇒ RSI threshold gate default बंद
     assert len(h.tg.calls) == 1 and "15M commitment" in h.tg.calls[0][0][0] and "inside demand" in h.tg.calls[0][0][0]
     # trend: decision3 Daily — contract चं trading_symbol (cache key, NSE शी टक्कर नाही), fetch = त्याच contract चे "day" candles
@@ -135,10 +137,22 @@ def test_confirmed_places_paper_order_with_gate_side_and_structural_sl(monkeypat
 
 
 def test_confirmed_but_structural_sl_wider_than_settings_sl_skips(monkeypatch, tmp_path):
+    """Abhi (RR1): gate SL ला cap / skip करत नाही — structural SL settings SL (10) पेक्षा रुंद असूनही entry, SL = dashboard 10."""
     h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, settings={"sl_points": 10}, price=1008.0)
     h.run()
-    assert not h.trade.calls and not h.tg.calls
-    assert "SKIPPED_GATE_SL_TOO_WIDE" in h.statuses()
+    assert len(h.trade.calls) == 1 and h.trade.calls[0][0][2]["max_loss"] == 10.0
+    assert not any(s in h.statuses() for s in ("SKIPPED_GATE_SL_TOO_WIDE", "SKIPPED_GATE_INVALIDATED", "SKIPPED_GATE_TARGET_PASSED"))
+
+
+def test_rr_gate_on_checks_dashboard_sl_target(monkeypatch, tmp_path):
+    """R:R gate (dashboard, default बंद) चालू ⇒ dashboard SL / target वर: 40 / 50 = 0.8 < 3 ⇒ SKIPPED_GATE_RR; 160 / 50 ⇒ entry."""
+    h = Harness(monkeypatch, tmp_path, CONFIRMED_ROWS, settings={"gate_rr_gate_enabled": True}, price=1008.0)
+    h.run()
+    assert not h.trade.calls and "SKIPPED_GATE_RR" in h.statuses()
+    assert "dashboard SL / target: 0.80 < 3" in next(e for e in h.level_logs() if e["trade_status"] == "SKIPPED_GATE_RR")["reason"]
+    h2 = Harness(monkeypatch, tmp_path / "b", CONFIRMED_ROWS, settings={"gate_rr_gate_enabled": True, "target_points": 160}, price=1008.0)
+    h2.run()
+    assert len(h2.trade.calls) == 1 and (h2.trade.calls[0][0][2]["max_loss"], h2.trade.calls[0][0][2]["max_profit"]) == (50.0, 160.0)
 
 
 def test_against_trend_ignored(monkeypatch, tmp_path):
@@ -264,29 +278,23 @@ def test_confirm_used_is_per_level_and_commitment_candle(tmp_path):
     assert not mft._gate_confirm_used(SYMBOL, "mcx_futures", TARGET_LEVEL, r, p)
 
 
-def _plan(side):
-    """BULLISH plan आणि त्याचा आरसा (किंमती 2000 − x): pts तेच, दिशा उलट."""
-    bull = {"sl": 985.0, "target": 1085.0}
-    return bull if side == "BULLISH" else {"sl": 2000 - bull["sl"], "target": 2000 - bull["target"]}
-
-
 def _px(side, x):
     return x if side == "BULLISH" else 2000 - x
 
 
 @pytest.mark.parametrize("side", ["BULLISH", "BEARISH"])
 def test_gate_sl_target_mirror(side):
-    s = dict(_DEFAULT_SETTINGS)                                            # sl_points 50 = कमाल, min_rr 3
-    sl, tgt, skip = mft._gate_sl_target(_plan(side), _px(side, 1008.0), side, s)
-    assert skip is None and sl == pytest.approx(23.0) and tgt == pytest.approx(77.0)
-    assert mft._gate_sl_target(_plan(side), _px(side, 980.0), side, s)[2][0] == "SKIPPED_GATE_INVALIDATED"
-    assert mft._gate_sl_target(_plan(side), _px(side, 1090.0), side, s)[2][0] == "SKIPPED_GATE_TARGET_PASSED"
-    assert mft._gate_sl_target(_plan(side), _px(side, 1008.0), side, {**s, "sl_points": 20})[2][0] == "SKIPPED_GATE_SL_TOO_WIDE"
-    # Abhi (rr-correction): R:R entry ची अट नाही ⇒ default (gate_rr_gate_enabled बंद) 60 / 40 < 3 तरी skip नाही; चालू ⇒ जुनं SKIPPED_GATE_RR
-    assert mft._gate_sl_target(_plan(side), _px(side, 1025.0), side, s)[2] is None
-    assert mft._gate_sl_target(_plan(side), _px(side, 1025.0), side, {**s, "gate_rr_gate_enabled": True})[2][0] == "SKIPPED_GATE_RR"
-    sl2, tgt2, skip2 = mft._gate_sl_target({**_plan(side), "target": None}, _px(side, 1008.0), side, s)   # target area नाही ⇒ dashboard target
-    assert skip2 is None and sl2 == pytest.approx(23.0) and tgt2 == pytest.approx(mft._sl_target_points(s, _px(side, 1008.0))[1])
+    """Abhi (RR1): MCX चे SL / target dashboard चे; `_gate_rr_skip` फक्त R:R gate चालू असेल तर, dashboard points वर (दिशा-निरपेक्ष).
+    Gate (level_reaction) ला R:R कधीच नाही (engine भूमिती); "no target area" setting मात्र तशीच पोहोचते."""
+    s = dict(_DEFAULT_SETTINGS)
+    px = _px(side, 1008.0)
+    assert mft._gate_rr_skip(50.0, 40.0, px, s) is None                                      # default बंद ⇒ 0.8 < 3 तरी skip नाही
+    on = {**s, "gate_rr_gate_enabled": True}
+    assert mft._gate_rr_skip(50.0, 40.0, px, on)[0] == "SKIPPED_GATE_RR"
+    assert mft._gate_rr_skip(50.0, 150.0, px, on) is None and mft._gate_rr_skip(50.0, 100.0, px, {**on, "gate_min_rr": 2.0}) is None
+    eng = mft._gate_engine_settings({**on, "gate_no_target_disarm_enabled": True})
+    g = LGB.gate_settings(eng)
+    assert g["rr_gate_enabled"] is False and g["no_target_disarm_enabled"] is True and on["gate_rr_gate_enabled"] is True
 
 
 def _shadow(monkeypatch, h):

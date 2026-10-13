@@ -953,14 +953,19 @@ def render():
             )
 
         st.markdown("---")
-        sub_header("⚖️ Confirmation mode: R:R gate (डीफॉल्ट बंद)", HDR_ORANGE)
+        sub_header("⚖️ Confirmation mode: R:R gate / target area (डीफॉल्ट बंद)", HDR_ORANGE)
         from bots_common import level_gate_bot as _LGB
         _gs = _LGB.gate_settings(settings)
-        rr1, rr2 = st.columns(2)
+        rr1, rr2, rr3 = st.columns(3)
         gate_rr_gate_enabled = rr1.checkbox("R:R gate सक्रिय (बंद ⇒ R:R वर skip / इशारा नाही)", value=bool(_gs["rr_gate_enabled"]),
                                             key=_widget_key(symbol, "gate_rr_gate_enabled"))
         gate_min_rr = rr2.number_input("किमान R:R", min_value=1.0, max_value=10.0, step=0.5, value=float(_gs["min_rr"]),
                                        key=_widget_key(symbol, "gate_min_rr"), disabled=not gate_rr_gate_enabled)
+        gate_no_target_disarm_enabled = rr3.checkbox("Target area नाही ⇒ entry नाही (डीफॉल्ट बंद)",
+                                                     value=bool(_gs["no_target_disarm_enabled"]),
+                                                     key=_widget_key(symbol, "gate_no_target_disarm_enabled"))
+        st.caption("Confirmation gate फक्त entry हो / नाही ठरवतो. SL / target नेहमी खालच्या Exit tab मधले (dashboard) — R:R gate चालू असेल "
+                   "तर तेच SL / target वापरून R:R तपासतो.")
 
         if st.button("💾 Entry Gate सेव्ह करा", key=_widget_key(symbol, "save_entry")):
             new_settings = dict(settings)
@@ -991,6 +996,7 @@ def render():
                 "entry_min_hold_minutes": int(entry_min_hold_minutes),
                 "entry_min_hold_first_trade_only": bool(entry_min_hold_first_trade_only),
                 "gate_rr_gate_enabled": bool(gate_rr_gate_enabled), "gate_min_rr": float(gate_min_rr),
+                "gate_no_target_disarm_enabled": bool(gate_no_target_disarm_enabled),
             })
             ok = cloud_db.save_strategy_settings(STRATEGY_KEY, symbol, new_settings)
             st.success(f"✅ {symbol} Entry Gate जतन झालं.") if ok else st.error("जतन करता आलं नाही (Supabase जोडणी तपासा).")

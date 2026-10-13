@@ -131,10 +131,22 @@ def test_modify_bad_input_clear_error_no_change_then_ticket(db):
     assert json.loads(r["setup_json"]) == json.loads(before["setup_json"]) and r["level"] == before["level"]
     cap, btn = db["photos"][-1]
     assert len(db["photos"]) == n + 1 and "सुधारित ticket" in cap and "22590" in cap and "R:R <b>8</b>" in cap   # echo आधी
+    assert "engine reference (info): SL 22540" in cap and "trade चे SL / target / lots" in cap   # Abhi RR2: trade चे SL / target = dashboard
     assert VD.parse_callback(btn[0][1]) == (sid, "A") and r["tg_message_id"] == 777
     assert any("ही बटणं बंद" in e[1] for e in db["edits"])                              # जुन्या chart वरची बटणं काढली
     assert AP.state_get(str(ME)) is None
     assert gate(spot=22580.0).action == "HOLD"                                             # ✅ नाही ⇒ entry नाही
+
+
+def test_modify_ticket_no_rr_when_rr_gate_off(db):
+    """Abhi: gate tags मध्ये rr नाही (dashboard R:R gate बंद, default) ⇒ ✏️ ticket मध्ये R:R / "reward … × the risk" नाही; engine SL / target
+    फक्त "engine reference (info)"."""
+    sid = pending(tags={"gate": {**GATE["gate"], "rr": None}})
+    press(db, sid, "M")
+    assert say(db, "entry 22590")[0]
+    cap = db["photos"][-1][0]
+    assert "R:R" not in cap and "reward" not in cap and "engine reference (info): SL 22540" in cap
+    assert json.loads(VS.get_signal(sid)["mod_json"])["rr"] is None
 
 
 def test_modify_outside_area_or_low_rr_warns_but_still_needs_approve(db):

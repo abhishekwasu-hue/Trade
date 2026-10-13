@@ -316,7 +316,8 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
             if a[0] is not None and a[1] is not None:
                 fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=float(a[0]), y1=float(a[1]), fillcolor="rgba(66,165,245,0.12)",
                               line=dict(width=0), layer="below", row=1, col=c)
-            for k_, lab, colr in (("entry", "ENTRY", "#ffd54f"), ("sl", "SL", "#ef5350"), ("target", "TARGET", "#66bb6a")):
+            for k_, lab, colr in (("entry", "ENTRY", "#ffd54f"), ("sl", "ENGINE REF SL", "#ef5350"),      # Abhi RR2: trade SL / target
+                                  ("target", "ENGINE REF TARGET", "#66bb6a")):                      # = dashboard; हे फक्त माहिती
                 v = gate.get(k_)
                 if v is not None and np.isfinite(float(v)):
                     fig.add_shape(type="line", x0=n * 0.6, x1=n - 0.5, y0=float(v), y1=float(v), line=dict(color=colr, width=1, dash="dot"),

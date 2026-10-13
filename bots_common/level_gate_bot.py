@@ -24,6 +24,7 @@ STATUS = {                                                                 # sig
     LR.R_AGAINST: "SKIPPED_GATE_AGAINST_TREND", LR.R_NO_TREND: "SKIPPED_GATE_NO_TREND", LR.R_IMPULSIVE: "SKIPPED_GATE_IMPULSIVE",
     LR.R_NO_COMMIT: "SKIPPED_GATE_WAITING_COMMITMENT", LR.R_BROKEN: "SKIPPED_GATE_BROKEN", LR.R_TIMEOUT: "SKIPPED_GATE_TIMEOUT",
     LR.R_RR: "SKIPPED_GATE_RR", LR.R_NO_TARGET: "SKIPPED_GATE_NO_TARGET", LR.R_ERROR: "SKIPPED_GATE_ERROR",
+    LR.R_BAD_SL: "SKIPPED_GATE_INVALID_SL",
 }
 ARMED_WHY = {"absorbing": "SKIPPED_GATE_ABSORPTION", "low_volume": "SKIPPED_GATE_LOW_VOLUME"}   # ARMED चालू, पण कारण वेगळं (L5 सारांश)
 LTF_WHY = {LR.R_LTF_MISSING: "SKIPPED_GATE_LTF_MISSING", LR.R_LTF_AGAINST: "SKIPPED_GATE_LTF_AGAINST",   # c1: ARMED, commitment आहे
@@ -252,8 +253,9 @@ def gate_caption_lines(tags):
     out = [f"🎯 Confirmation: {kind} {area} · grade {g.get('grade')} · trend: {g.get('trend')}"]
     out += [x for x in (g.get("study"), g.get("commit_line")) if x]        # a2 / c0 ticket ओळी
     if any(g.get(k) is not None for k in ("entry", "sl", "target", "rr")):   # decision3 default (Abhi 13 Oct): engine SL / target / R:R नाहीत ⇒ ओळ नाही
-        out.append(f"Entry {g.get('entry')} · SL {g.get('sl')} · target {g.get('target')}"
-                   + (f" · R:R {g.get('rr')}" if g.get("rr") is not None else ""))   # R:R फक्त dashboard rr gate चालू असेल तर
+        out.append(f"Entry {g.get('entry')} · engine reference (info): SL {g.get('sl')} · target {g.get('target')}"   # Abhi RR2: trade
+                   + (f" · R:R {g.get('rr')}" if g.get("rr") is not None else ""))   # चे SL / target = dashboard; R:R फक्त rr gate चालू
+        out.append("Trade SL / target: dashboard settings")
     return out
 
 

@@ -103,17 +103,32 @@ def test_rr_below_min_is_skipped_with_reason():
 
 
 def test_no_target_area_is_skipped():
-    """target area नसणं = ⑦ चा भाग ⇒ default (rr gate बंद) entry चालते (target None); rr gate चालू ⇒ जुनं "no target area"."""
-    r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[])
+    """Abhi (RR3): "no target area" = स्वतंत्र dashboard setting `gate_no_target_disarm_enabled` (default बंद) — rr gate पासून स्वतंत्र."""
+    rows = PULL + [TOUCH, SWEEP, BULL_ENGULF]
+    r = _run(rows, others=[])                                                                  # दोन्ही बंद (default)
     assert r["entry"] and r["state"] == LR.CONFIRMED and r["target"] is None and r["rr"] is None
-    r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], others=[], s={"rr_gate_enabled": True})
-    assert not r["entry"] and r["reason"] == LR.R_NO_TARGET
+    r = _run(rows, others=[], s={"rr_gate_enabled": True})                                     # फक्त rr gate: target नाही ⇒ R:R मोजता येत नाही ⇒ skip नाही
+    assert r["entry"] and r["state"] == LR.CONFIRMED
+    r = _run(rows, others=[], s={"no_target_disarm_enabled": True})                            # फक्त no-target setting ⇒ जुनं "no target area"
+    assert not r["entry"] and r["state"] == LR.DISARMED and r["reason"] == LR.R_NO_TARGET
+    r = _run(rows, others=[(1015.0, 1020.0)], s={"no_target_disarm_enabled": True})            # target आहे ⇒ no-target setting लागू नाही, R:R नाही
+    assert r["entry"] and r["rr"] is None
+
+
+def test_invalid_sl_disarms_independent_of_rr_gate():
+    """review: R:R-निरपेक्ष guard — structural SL entry च्या चुकीच्या बाजूला (rk ≤ 0) ⇒ DISARMED, rr gate बंद असतानाही."""
+    from bots_common import level_gate_bot as LGB
+    r = _run(PULL + [TOUCH, SWEEP, BULL_ENGULF], s={"sl_buffer_mr": -100.0})          # SL = area खाली − (−100 × mr) ⇒ entry वर
+    assert not r["entry"] and r["state"] == LR.DISARMED and r["reason"] == LR.R_BAD_SL
+    assert LGB.status_of(r) == "SKIPPED_GATE_INVALID_SL"
 
 
 def test_rr_gate_is_a_dashboard_setting_default_off():
     from bots_common import level_gate_bot as LGB
     assert LR.DEFAULTS["rr_gate_enabled"] is False and LGB.gate_settings({})["rr_gate_enabled"] is False
-    assert LGB.gate_settings({"gate_rr_gate_enabled": True, "gate_min_rr": 2.0}) == {**LR.DEFAULTS, "rr_gate_enabled": True, "min_rr": 2.0}
+    assert LR.DEFAULTS["no_target_disarm_enabled"] is False and LGB.gate_settings({})["no_target_disarm_enabled"] is False
+    assert LGB.gate_settings({"gate_rr_gate_enabled": True, "gate_min_rr": 2.0, "gate_no_target_disarm_enabled": True}) == {
+        **LR.DEFAULTS, "rr_gate_enabled": True, "min_rr": 2.0, "no_target_disarm_enabled": True}
 
 
 def test_unclear_trend_fails_closed():
@@ -256,12 +271,14 @@ def test_vision_chart_draws_gate_area_entry_sl_target():
     setup, higher, tfs = CH.panels(m1_frame(), s_["signal_ts"], s_["setup_tf"])
     fig = CH.build_figure(setup, higher, s_, tfs)
     texts = [a.text for a in fig.layout.annotations]
-    assert any(t.startswith("SL 24,980") for t in texts) and any(t.startswith("TARGET 25,120") for t in texts)
+    # Abhi (RR2): engine SL / target = "engine reference" (माहिती); trade चे SL / target dashboard चे
+    assert any(t.startswith("ENGINE REF SL 24,980") for t in texts) and any(t.startswith("ENGINE REF TARGET 25,120") for t in texts)
     assert "R:R 3.4" in fig.layout.title.text
     lines = LGB.gate_caption_lines(tags)
-    assert "demand 24,990–25,000" in lines[0] and "R:R 3.4" in lines[1]
+    assert "demand 24,990–25,000" in lines[0] and "R:R 3.4" in lines[1] and "engine reference (info): SL 24980.0" in lines[1]
+    assert lines[-1] == "Trade SL / target: dashboard settings"
     fig0 = CH.build_figure(setup, higher, sig(), tfs)                    # gate नसेल ⇒ आधीसारखंच
-    assert not any(str(a.text).startswith("SL ") for a in fig0.layout.annotations)
+    assert not any(str(a.text).startswith(("SL ", "ENGINE REF")) for a in fig0.layout.annotations)
 
 
 def test_dry_run_confirmed_replay_picks_last_confirmed_area(monkeypatch):

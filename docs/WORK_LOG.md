@@ -2243,3 +2243,20 @@ exits are his dashboard settings only." इतर वर्तन बदल न�
 **Tests:** बदललेले (काढले नाहीत) — level_reaction (3 + 1 नवा), level_bots_5m, level_bots_classic_srv2, level_bots_mcx, telegram_approval_v2,
 paper_manual, decision3_touch_levels (+ 1 नवा default test; जुना legacy `rr_step` = True वर). 23 files: 548 pass.
 **उघडे:** OPEN_QUESTIONS EC6 (✅ बंद), RR1–RR5.
+- **Follow-up (Abhi निर्णय RR1–RR3, PR #316):** RR1 — MCX चे SL / target पूर्णपणे dashboard चे (gate SL / target set / cap नाही;
+  `SKIPPED_GATE_SL_TOO_WIDE` / `_TARGET_PASSED` / `_INVALIDATED` गेले); R:R gate (default बंद) चालू ⇒ dashboard SL / target वर
+  (`_gate_rr_skip`), MCX gate ला engine-भूमितीचा R:R कधीच नाही. RR3 — `gate_no_target_disarm_enabled` (default बंद) स्वतंत्र setting, दोन्ही
+  पानांवर checkbox. RR2 — लहान बदल = लेबल: engine SL / target सगळीकडे "engine reference (info)" (caption + "Trade SL / target: dashboard
+  settings", describe, Vision chart, audit prompt, ✏️ Modify). Tests: level_reaction (no-target 4 अवस्था, settings), level_bots_mcx (dashboard
+  SL / target, SL cap नाही, R:R gate ON / OFF, `_gate_rr_skip`), telegram_approval_v2 (लेबल). 24 files: 570 pass.
+- **Review fixes (same branch):** (1) 🔴 `level_bots_replay.py`: gate OFF ⇒ सर्वात बाहेरचा area CONFIRMED with target None ⇒
+  `float(r["target"])` crash — `plan_target` None-safe (NSE structural comparison arm: target None ⇒ फक्त SL / EOD); `l4_plan` आता live MCX
+  सारखा (dashboard SL / target = `legacy_plan`, R:R skip फक्त `rr_gate_enabled`, gate ला MCX साठी R:R नाही); report / script wording
+  त्यानुसार. (2) `level_reaction`: R:R-निरपेक्ष guard `rk ≤ 0 ⇒ DISARMED "invalid SL"` (`SKIPPED_GATE_INVALID_SL`) — आधी R:R None मधून
+  अप्रत्यक्ष होता. (3) ✏️ Modify: engine signal + R:R gate बंद (gate tags `rr` None) ⇒ ticket / head मध्ये R:R / "reward … × the risk" नाही
+  (✋ /paper — Abhi चे स्वतःचे SL / T — R:R माहिती तशीच). (4) test rename `test_rr_below_3_shows_rr_info_without_warning`.
+  (5) **वर्तन बदल स्पष्ट:** आधी R:R < 3 / target area नाही ⇒ DISARMED झालेले areas आता CONFIRMED (entry त्या commitment bar वर) — त्याच
+  भेटीत पुढच्या bars ना "confirmed earlier (area not left yet)" (`SKIPPED_GATE_ALREADY_CONFIRMED`), आधीच्या `SKIPPED_GATE_RR` /
+  `_NO_TARGET` ऐवजी. Area सोडल्यावरच पुन्हा arm (DISARMED सारखंच) — पण entries / Vision signals ची संख्या वाढते, options bots (5M
+  Instant / Classic / 15M SRv2) साठीही, फक्त MCX नाही. Tests: replay (l4_plan नवा mirror, target None replay test), level_reaction (invalid
+  SL guard), telegram_approval_v2 (gate OFF ⇒ R:R नाही). 25 files: 616 pass.

@@ -7,14 +7,15 @@ decision3 ची कार्यं जशीच्या तशी वापर
   ④ power_shift = पुरावा (corrective approach)
   खरा break    = elliott.breaks.break_from (displacement किंवा पुढचे bars reclaim नाही)
   ⑦ R:R        = entry ची अट नाही (Abhi: R:R / SL / target / lots / exits = dashboard settings). फक्त dashboard setting
-                 `gate_rr_gate_enabled` (default False) चालू केल्यास जुना नियम: target area नाही / R:R < min_rr ⇒ DISARMED.
+                 `gate_rr_gate_enabled` (default False) चालू केल्यास: R:R < min_rr ⇒ DISARMED (target area असेल तरच मोजता येतो).
+                 "target area नाही ⇒ DISARMED" = स्वतंत्र dashboard setting `gate_no_target_disarm_enabled` (default False).
 
 State machine प्रत्येक (symbol, area) साठी, फक्त बंद candles वर — दर cycle ला आजच्या session च्या bars वरून पुन्हा replay (DB state
 नाही ⇒ restart-safe, causal: bar t चा निर्णय फक्त bars ≤ t वरून):
   IDLE → ARMED (बंद candle area ला overlap, आधीचा close trade-बाजूला, आणि ती बाजू trend ने परवानगी दिलेली)
        → CONFIRMED (commitment candle + LTF CHoCH, approach impulsive नाही, close area च्या आतल्या कडेपलीकडे) = entry
        → DISARMED (खरा break ⇒ area broken, breakout / उलट trade नाही · max_armed_bars मध्ये commitment नाही · impulsive approach;
-                   R:R < min_rr / target area नाही — फक्त rr_gate_enabled = True असेल तर)
+                   R:R < min_rr फक्त rr_gate_enabled = True; target area नाही फक्त no_target_disarm_enabled = True)
 Fail-closed: trend / data / कुठलीही exception ⇒ entry नाही, कारण नोंदीत. हा module order / broker call करत नाही.
 """
 import datetime as dt
@@ -37,6 +38,7 @@ R_BROKEN = "broken"
 R_TIMEOUT = "timeout"
 R_RR = "R:R < min"
 R_NO_TARGET = "no target area"
+R_BAD_SL = "invalid SL (not beyond the entry)"     # review: R:R पासून स्वतंत्र guard (structural SL entry च्या चुकीच्या बाजूला ⇒ entry नाही)
 R_ERROR = "gate error (fail-closed)"
 R_ABSORPTION = "absorption (counter side strengthening inside the area)"
 R_LOW_VOL = "commitment on low volume"
@@ -62,6 +64,7 @@ def form_name(form, side):
 DEFAULTS = {
     "rr_gate_enabled": False,       # ⑦ R:R gate (dashboard `gate_rr_gate_enabled`). Abhi: R:R entry ची अट नाही ⇒ default बंद (skip / disarm / इशारा नाही)
     "min_rr": 3.0,                  # ⑦ R:R किमान — फक्त rr_gate_enabled = True
+    "no_target_disarm_enabled": False,   # "no target area" ⇒ DISARMED (dashboard `gate_no_target_disarm_enabled`; Abhi RR3: स्वतंत्र, default बंद)
     "max_armed_bars": 8,            # ARMED नंतर इतक्या बंद candles मध्ये commitment नाही ⇒ timeout
     "mr_n": 20,                     # median range = मागच्या इतक्या बंद candles चा (high − low) median (चालू वगळून)
     "approach_bars": 3,             # approach = ARMED candle सह शेवटच्या इतक्या candles
@@ -512,13 +515,18 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
                     "commit_line": "commitment: " + " · ".join(x for x in (form_name(cm.get("form"), side), btxt, vtxt) if x)}
             if cf["choch"] and cf["choch"].get("done"):
                 plan["ltf_line"] = cf["choch"]["line"]                     # c1 ticket: "5M CHoCH: higher low …, close above LH … at 10:20"
-            if rr_on and tgt is None:                                      # ⑦ फक्त dashboard rr gate चालू असेल तर
+            if rk <= 0:                                                    # R:R-निरपेक्ष guard (आधी R:R None ⇒ disarm मधून अप्रत्यक्ष होता)
+                state, reason = DISARMED, R_BAD_SL
+                ev(t, DISARMED, R_BAD_SL)
+                out.update(plan)
+                continue
+            if tgt is None and s["no_target_disarm_enabled"]:              # स्वतंत्र dashboard setting (default बंद; Abhi RR3)
                 state, reason = DISARMED, R_NO_TARGET
                 ev(t, DISARMED, R_NO_TARGET)
                 out.update(plan)
                 continue
-            if rr_on and (rr is None or rr < float(s["min_rr"])):
-                state, reason = DISARMED, f"{R_RR} ({rr:.2f} < {float(s['min_rr']):g})" if rr is not None else R_RR
+            if rr_on and rr is not None and rr < float(s["min_rr"]):      # target नाही ⇒ R:R मोजता येत नाही ⇒ इथे skip नाही (वरची setting)
+                state, reason = DISARMED, f"{R_RR} ({rr:.2f} < {float(s['min_rr']):g})"
                 ev(t, DISARMED, reason)
                 out.update(plan)
                 continue
@@ -607,8 +615,9 @@ def describe(r, area=None):
         return (f"Watching {kind} {rng} · price arrived · waiting for a {word} commitment · "
                 f"{r.get('bars_armed', 0)}/{r.get('max_armed_bars')} bars{why}")
     if st == CONFIRMED:
-        return (f"CONFIRMED {kind} {rng} · {r.get('form')} · grade {r.get('grade')} · entry {r.get('entry_price')} · SL {r.get('sl')} · "
-                f"target {r.get('target')}" + (f" · R:R {r.get('rr')}" if r.get("rr") is not None else ""))   # R:R फक्त rr gate चालू
+        return (f"CONFIRMED {kind} {rng} · {r.get('form')} · grade {r.get('grade')} · entry {r.get('entry_price')} · "   # Abhi RR2: trade चे
+                f"engine reference (info): SL {r.get('sl')} · target {r.get('target')}"                        # SL / target = dashboard
+                + (f" · R:R {r.get('rr')}" if r.get("rr") is not None else ""))   # R:R फक्त rr gate चालू
     if st == DISARMED:
         return f"{kind} {rng} · disarmed: {r.get('reason')}"
     if st == "ERROR":
