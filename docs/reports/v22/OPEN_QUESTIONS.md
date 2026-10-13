@@ -339,6 +339,20 @@ TA5 अजून उघडा ⇒ shared line check मध्ये "शेव�
 | R1a-13 | Vision approval chart वर bands (TA4) चालू करायचे? Setting `vision_chart_bands` (per bot): ON ⇒ M1 / M2 एकच-किंमत रेषा नाहीत, shared band check चे पट्टे (supply नारिंगी, demand फिकट निळा — L च्या हिरव्या / लाल पासून वेगळे; ताजा broken तपकिरी-राखाडी dashed) आणि signal text मध्ये "Chart note" legend + पट्ट्यांच्या अचूक किंमती. Vision SYSTEM_PROMPT (legend "thin blue lines M1/M2") बदललेला नाही | **OFF** (image main सारखीच, byte-for-byte तपासलं) — Vision चं वर्तन Abhi च्या मंजुरीशिवाय बदलत नाही | ON (bot-वार); ON करताना SYSTEM_PROMPT चा legend सुद्धा बदलायचा का? |
 | R1a-12 | Dashboard "Trendline Gate" (`signals.detect_trendline`, polyfit) — gate आहे, बदलला नाही. Shared check: 86 पैकी 4 valid (79 anchors wick वर नाहीत) | बदल नाही (या PR चा scope फक्त drawing) | (a) wick-anchored `trendlines2.two_touch` ने बदला; (b) gate मधून काढा |
 
+## R1 (b) — facts dossier (branch `claude/r1b-facts-dossier`; `facts/dossier.py`, `facts/README.md`) — owners मधले मतभेद / नसलेले owners (Abhi ने ठरवावे)
+
+Dossier कुठलाही मतभेद स्वतः सोडवत नाही: §3 चा owner जसा देतो तसा; इतर हिशोब फक्त "evidence" म्हणून नोंदवले.
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| R1b-1 | Trend चे अनेक हिशोब: swings2 D1 / D2 fold (owner) वि. reader2 चा leg-trend (`legs.reader2_trend`) वि. vision.gap_context चा SMA-10 trend (`gaps.trend`); decision3 चा Daily Dow dossier मध्ये नाही. R1a real data, 9 Oct close: swings2 D1 DOWN, D2 RANGE, D3 DOWN; reader2 15M "uncertain" | owner = swings2; बाकी फक्त evidence म्हणून दिसतात | (a) reader2 / gap trend dossier मधून काढा; (b) decision3 Daily Dow swings2 मध्ये merge होईपर्यंत तोही evidence म्हणून द्या |
+| R1b-2 | PDH / PDL / PWH / PWL दोनदा: `context` (vision.context, 1m, ISO आठवडा) आणि `liquidity.pools` (decision3.liquidity, 15M, W-FRI आठवडा) | दोन्ही ठेवले (synthetic वर जुळले); §3 प्रमाणे context = owner | liquidity pools ने context च्या किंमती वापराव्या (merge टप्प्यात) |
+| R1b-3 | FUT contract roll: volume owner (`opportunity_engine.volume.attach_futures_volume`) एका timestamp चे सगळे FUT rows बेरीज करतो; `legs2.volume.bar_volume` फक्त near-month ठेवतो | owner जसा (R1a FUT file मध्ये प्रत्येक timestamp ला एकच contract ⇒ फरक नाही) | volume owner मध्ये near-month filter (K10.3) — merge टप्प्यात |
+| R1b-4 | Owner नाही: VIX, FII / DII, global cues (context `missing`); K11 चे box / flag / double top area मध्ये फक्त `decision3.method.zone_pattern` (candles.area_studies) मधून | NA म्हणून नोंद | vision_led मधून context owner मध्ये हलवा (§3); K11 patterns2 शी align (R1 नंतर) |
+| R1b-5 | swings2 warm-up: σ ला 20 पूर्ण sessions + D2 ला 10 warm-up sessions ⇒ लहान इतिहासावर structure NA / D2 "unknown", तेव्हा decision3 Daily Dow (daily bars) कडे trend असतो | NA / unknown तसेच (silent pass नाही) | dossier ला Daily / Weekly इतिहास द्या आणि swings2 D3 / D4 त्यावर (merge टप्पा) |
+| R1b-6 | Legs owner: design §3 म्हणतो reader2, पण reader2 research-only (gallery gate + Abhi ✅ होईपर्यंत production import मनाई — `tests/test_reader2_boundary.py`) | facts reader2 import करत नाही; `legs` default NA (कारणासह); research / test caller `cfg["legs_reader"] = reader2.reader.read` देतो | (a) R1 साठी facts/ ला boundary अपवाद (Abhi ✅); (b) gallery gate नंतरच legs; (c) तोपर्यंत legs2 / decision3.daily_legs |
+| R1b-7 | Owners swings2 (`sigma_1h`, `structure._h1`) आणि rsi2 `pivots.charts` import करतात ⇒ `backtest_review.charts` ⇒ `vision_led.charts` (frozen package, फक्त plotting helpers). facts चा स्वतःचा code chart module import करत नाही (1H = `opportunity_engine.sessions.resample_nse`) | test: vision_led मधून फक्त `vision_led.charts`; बाकी frozen modules कधीच load नाहीत | owner merge मध्ये `agg_1h` / `daily_from_15m` non-chart module मध्ये हलवा |
+
 ## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
 
 | # | प्रश्न | Abhi चा निर्णय | पर्याय |
