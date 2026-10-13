@@ -467,7 +467,7 @@ completed pattern allows, the count is wrong.
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
 - **Flip level:** वरचा flip नियम [Abhi] (zone पलीकडे + पलीकडचा swing पार). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
-- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout ⇒ spot 22,731.8 (6 Oct high) पार झाला तर flip (support).
+- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = 22,544–22,622 (spot; FUT मध्ये ≈22,667 — तोच zone) हा 8 Oct ला flip झालेला seller zone; zone मध्ये selling volume वाढला, dominant red candle, RSI divergence ⇒ bear call ✅ (golden). 13 Oct NIFTY = तोच zone; लहान red candles, कमी volume, घसरण नाही, sideways base ⇒ bear call नाही; दुपारी breakout ⇒ spot 22,731.8 (6 Oct high) पार झाला तर flip (support).
 - **Trend बाजू [Abhi] (13 Oct, pack मध्ये नाही):** daily trend बदलला नाही (price 5–6 Oct च्या highs खाली) तोपर्यंत reversal low पासूनची चाल = **correction (a-b-c)**; तुटलेला / flip झालेला zone त्या correction मध्ये bull trade location नाही (S4 अपवाद नाही). पुढचा seller zone = आधीचे swing highs (5–6 Oct); तिथे correction संपताना zone मधलं वाचन ⇒ bear. 13 Oct spot: a = 8 Oct low 22,179.9 → 12 Oct 22,651.1 (471); b = 13 Oct 09:15 low 22,288.45; c = a ⇒ ≈22,760; 6 Oct high 22,776.1.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
@@ -980,7 +980,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - **Roll [Abhi]:** roll च्या दिवशी सुद्धा फक्त **near-month** contract चा volume (त्या दिवशी चालू असलेला सगळ्यात जवळचा expiry); दोन contracts चा volume कधीच बेरीज नाही. Roll च्या दिवसांची तुलना टाळायची.
 - **वेळेनुसार normalise (आवश्यक):** NSE वर volume U-आकाराचा आहे (K14). म्हणून volume ची तुलना **त्याच वेळेच्या slot च्या median** शी (उदा. 10:15 चा bar मागच्या 20 दिवसांच्या 10:15 bars शी). याला `rel_vol` म्हणू.
 - **मोजमापं:**
-  - **Pullback dry-up:** pullback च्या bars चा सरासरी `rel_vol` ÷ impulse च्या bars चा सरासरी `rel_vol`. < 0.8 ⇒ healthy; > 1.0 ⇒ धोक्याचा.
+  - **Pullback dry-up:** pullback च्या bars चा सरासरी `rel_vol` ÷ impulse च्या bars चा सरासरी `rel_vol`. < 0.8 ⇒ healthy; > 1.0 ⇒ धोक्याचा. (फक्त पुरावा / context; flip झालेल्या area वर कधीच gate नाही — निर्णय zone मधल्या वाचनावर, K4 [Abhi].)
   - **C मध्ये घटता volume:** C चा `rel_vol` A पेक्षा कमी ⇒ थकवा.
   - **Absorption spike:** area वर `rel_vol` ≥ 1.5, पण निव्वळ प्रगती ≤ 0.3 MR आणि close परत आत ⇒ correction संपण्याचा पुरावा.
   - **Reversal candle चा volume:** reversal candle (impulse दिशेने) चा `rel_vol` ≥ 1.2 ⇒ पुष्टी अधिक मजबूत.
@@ -1053,7 +1053,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
   price comes from spot. Compare volume only with the
   median of the same time-of-day slot (`rel_vol`), because session volume is U-shaped.
 - **Pullback dry-up:** average `rel_vol` of the pullback bars ÷ that of the impulse bars < 0.8 ⇒ healthy; > 1.0 ⇒ dangerous (the other
-  side is really coming in). Falling volume in C versus A ⇒ exhaustion.
+  side is really coming in). Falling volume in C versus A ⇒ exhaustion. Evidence / context only: never a gate at a flipped area —
+  the in-zone study decides (K4, Abhi).
 - **Absorption spike at the area:** `rel_vol` ≥ 1.5 but net progress ≤ 0.3 MR and the close back inside ⇒ evidence the correction is
   ending (effort without result).
 - **Reversal / commitment candle volume** `rel_vol` ≥ 1.2 ⇒ stronger confirmation.
