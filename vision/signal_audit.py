@@ -270,6 +270,19 @@ def signal_text(sig):
             if r.get("open_bar_breaking") and r.get("held_until"):
                 tr += (f" until {r.get('held_until')}; the current OPEN (unfinished) bar is breaking it {r['open_bar_breaking']}")
             lines.append(f"  {r['name']} | {r['price']:,.2f} | {pos} {'n/a' if d is None else f'{d:+.2f}'} x | {tr}")
+    bands = ctx.get("bands")
+    if bands is not None:                                               # setting vision_chart_bands ON (R1, TA4): chart legend + prices
+        lines.append("Chart note: on this chart the major levels M1 / M2 are NOT drawn as lines (their exact prices stay in the levels "
+                     "table above). Shaded horizontal zones = S/R bands (2+ real reaction touches, low-high from the reaction candles): "
+                     "orange = supply (resistance), light blue = demand (support), dashed brown-grey outline = the most recently broken "
+                     "band. They are not the traded level L (thick green / red line).")
+        if bands:
+            lines.append("Bands (exact prices from OHLC data): role | low - high | reaction touches | state")
+            for b in sorted(bands, key=lambda z: -z["hi"]):
+                role = "supply" if b["role"] == "resistance" else "demand"
+                lines.append(f"  {role} | {b['lo']:,.2f} - {b['hi']:,.2f} | {b['touches']} | {b['state']}")
+        else:
+            lines.append("Bands: none pass the band rule near price, so none are drawn.")
     ll = ctx.get("l_line")
     if ll:
         brk = ("yes - " + ll["today_role"] + " at " + str(ll["broken_at"])) if ll["broken"] else (

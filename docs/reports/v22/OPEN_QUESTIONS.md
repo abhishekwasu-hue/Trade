@@ -319,6 +319,26 @@ Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 establish
 |---|---|---|---|
 | TA5 | "Recent price ने मान" (शेवटच्या 2 sessions मध्ये touch) 2-touch नियमाशी टक्कर देतो: projected 3ऱ्या touch ची वाट पाहणारी रेघ बहुतेक 2 sessions touch शिवाय असते. Re-run मध्ये 44 रेघा फक्त याच नियमावर गळल्या (31 "touch नाही", 13 broken); 30 Sep → 6 Oct golden रेघ 9 Oct close ला फक्त यामुळे लपली असती (12 Oct 09:15 ला तिचा touch 22,654 वर) | audit मध्ये तसाच ठेवला (Abhi: "keep as defined") | (a) फक्त real break (K5) ठेवा, "2 sessions touch" काढा; (b) touch-window = रेघेच्या स्वतःच्या touch-spacing च्या × k; (c) तसेच |
 
+## R1 (a) — shared line / band checks (branch `claude/r1a-lines-bands`; `facts/validity.py`) — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+TA5 अजून उघडा ⇒ shared line check मध्ये "शेवटच्या 2 sessions मध्ये touch" नियम **लावलेला नाही**. Decision3 चा निर्णय / कोणताही bot gate बदललेला नाही (फक्त charts).
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| R1a-1 | TF वर 2 पेक्षा जास्त valid रेघा ⇒ कोणत्या 2 दाखवायच्या? (audit मध्ये cap फक्त एकदा लागला: BANKNIFTY 15M, 3 रेघा) | जास्त spaced touches आधी; बरोबरी ⇒ शेवटचा touch जास्त ताजा; मग लांब रेघ (`rank_line`); बाजू (वर / खाली) वेगळी नाही | (a) ताजा touch आधी; (b) एक resistance + एक support; (c) projected touch किंमतीच्या सगळ्यात जवळ |
+| R1a-2 | K6 व्याख्या "uptrend मध्ये lows, downtrend मध्ये highs": highs मधून चढती / lows मधून उतरती रेघ = channel कड, trendline नाही — validity नियम? | हो, `trend_direction_only` (reason `against_trend_direction`); audit re-run मध्ये एकाही engine रेघेला लागला नाही (finder मधल्या दूरच्या रेघा गळतात) | बंद (setting) |
+| R1a-3 | Anchor कोणता? 6 bars पेक्षा जवळचे pivots = एकच touch | त्या reaction चं टोक (highest high / lowest low) — रेघ wicks वरून, आरपार नाही (golden: 6 Oct 14:00, 12:45 नाही) | पहिला pivot |
+| R1a-4 | Band ची कडा (low–high) reaction candles वरून कशी? | swing highs ⇒ [उंच body-top (खालच्या high पर्यंत मर्यादित), उंच high]; lows ⇒ आरसा. रुंदी > 1.5 MR ⇒ invalid (कापत नाही) | (a) पूर्ण candle; (b) टोक ± अपूर्णांक × MR |
+| R1a-5 | "Broken" band ची व्याख्या | शेवटची घटना K5 real break आणि नव्या बाजूने < 2 touches ⇒ broken (invalid; chart वर फक्त सगळ्यात ताजा dashed); नव्या बाजूने 2 touches ⇒ पुन्हा valid ("flipped") | audit §8 सारखा: पहिल्या touch नंतर कधीही acceptance ⇒ broken |
+| R1a-6 | K5 magnet (दिवसात ≥ 4 close-crossings) band invalid करतो का? (TA1–TA4 मध्ये नव्हता) | हो (`magnet_invalidates`, KB K5 "no-trade level"; audit 2-touch run सारखा) | फक्त खूण, invalid नाही |
+| R1a-7 | Projected touch zone रुंदी: ± 0.2 MR (K6 touch). 12 Oct 09:15 FUT high रेघेच्या 0.27 MR वर (zone बाहेर, close परत खाली = K5 sweep); spot high zone मध्ये | ± 0.2 MR; बदल नाही (golden test FUT साठी "touch किंवा K5 sweep" तपासतो) | (a) ± 0.25 MR; (b) zone = touch + sweep पट्टा (0.1–1.0 MR पलीकडे, close आत) |
+| R1a-8 | FUT "≈ 22,667 supply" कोणता band? Data: 22,620–22,665 (9 Oct 11:15 / 14:15 reactions, flipped) — रेघेला 12 Oct 13:45 ला भेटतो (0.49 MR), 09:15 ला नाही (1.14 MR दूर). 09:15 ला confluence 22,729–22,761 (7 Oct 11:00 / 14:15) शी | Rule जसा तसा; दोन्ही अहवालात (audit §9); golden test: ≈ 22,667 band + रेघ confluence 12 Oct वर, आणि 09:15 ला कोणत्यातरी supply band शी | Abhi ने band चे reaction bars सांगावे |
+| R1a-9 | Decision3 1H chart: engine चा active level band check fail करतो तेव्हा? | तरीही दाखवतो (निर्णय त्यावरच), label "fails band check: …" | लपवा (फक्त debug) |
+| R1a-10 | Confluence: रेघेचा anchor हाच band चा touch असेल तर? | confluence नाही (स्वतंत्र साधनं नाहीत; KB टप्पा 3) | मोजा |
+| R1a-11 | Setup chart वरची V22 K रेघ तुटलेली असते (break = trigger, K6.5) — TA1 "फक्त valid" मध्ये? | K6 गुणवत्तेचे नियम (wick, spacing, close-through, slope, दिशा) pass ⇒ दाखवते, label "broken HH:MM"; बाकी फक्त debug | तुटलेली रेघ लपवा |
+| R1a-13 | Vision approval chart वर bands (TA4) चालू करायचे? Setting `vision_chart_bands` (per bot): ON ⇒ M1 / M2 एकच-किंमत रेषा नाहीत, shared band check चे पट्टे (supply नारिंगी, demand फिकट निळा — L च्या हिरव्या / लाल पासून वेगळे; ताजा broken तपकिरी-राखाडी dashed) आणि signal text मध्ये "Chart note" legend + पट्ट्यांच्या अचूक किंमती. Vision SYSTEM_PROMPT (legend "thin blue lines M1/M2") बदललेला नाही | **OFF** (image main सारखीच, byte-for-byte तपासलं) — Vision चं वर्तन Abhi च्या मंजुरीशिवाय बदलत नाही | ON (bot-वार); ON करताना SYSTEM_PROMPT चा legend सुद्धा बदलायचा का? |
+| R1a-12 | Dashboard "Trendline Gate" (`signals.detect_trendline`, polyfit) — gate आहे, बदलला नाही. Shared check: 86 पैकी 4 valid (79 anchors wick वर नाहीत) | बदल नाही (या PR चा scope फक्त drawing) | (a) wick-anchored `trendlines2.two_touch` ने बदला; (b) gate मधून काढा |
+
 ## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
 
 | # | प्रश्न | Abhi चा निर्णय | पर्याय |

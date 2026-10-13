@@ -2322,6 +2322,42 @@ touch = trade location (handover + commitment), ≥ 3 = established. K4 बद�
 location, flip नंतर नव्या बाजूने, "confluence" label, bands (वर / खाली 3, ताजा broken dashed). Golden fixtures (R1, ➕): 12 Oct NIFTY FUT
 2-touch रेषा + ≈22,667 confluence. K11.19 code-फरक तक्ता स्थितीसह (10 ओळी). OPEN_QUESTIONS KP1–KP5 निकाली.
 
+## 2026-10-13 · R1 (a) — एक shared line check + एक shared band check, charts वर फक्त valid (design §3 / §10 TA1–TA4; branch `claude/r1a-lines-bands`)
+
+**काय केलं (AI call नाही; decision3 निर्णय / bot gates बदलले नाहीत — फक्त drawing):**
+- नवं `facts/validity.py`: `check_line` (K6: 2 wick-anchored touches, spacing ≥ 6, मधे close > 0.3 MR नाही, slope ≤ 0.5 MR/bar, K5 real
+  break नाही, K6 दिशा; ≥ 3 = established; projected next-touch zone = ± 0.2 MR, candidate area), `check_band` (K4: पट्टा, ≤ 1.5 MR, 2 reaction
+  touches — मधे पट्टा सोडला, ≥ 6 bars; K5 break ⇒ role flip, touches नव्या बाजूने; broken / flipped / established; K5 magnet),
+  `confluence` (≤ 0.5 MR, K6.4), display `select_lines` (≤ 2) / `select_bands` (≤ 3 वर + ≤ 3 खाली + ताजा broken). सगळे आकडे `DEFAULTS` +
+  `REGISTER` (KB citation). फक्त bars ≤ t (truncation test).
+- Owners: `trendlines2/two_touch.py` (`find_lines`, `display_lines`, `line_label`); `decision3/levels.py` (`find_bands`, `display_bands`,
+  `check_bands`, `band_label`; `Levels` बदलला नाही).
+- Renderers (drawing layer): `decision3/charts.h1_png` (level bands shared check ने, 3 / 3, active level नेहमी + कारण), `decision3/setup_chart`
+  (K रेघ फक्त K6 pass झाली तर, touch count + पुढचा touch zone), `trendlines2/charts` + `zones2/charts` (trendline_check / zone_check),
+  `vision/chart` (setting `vision_chart_bands`, default OFF ⇒ image तशीच; ON ⇒ majors ऐवजी 15m bands + signal text legend), `sr_v3_chart.v3_chart_lines` + `page_sr_levels_v3`
+  (V3 levels band म्हणून, दोन कडा). सगळ्यांना `debug` = invalid सुद्धा, कारणासह.
+- Frozen (§4) ⇒ हात नाही: `mtf/charts.py`, opportunity_engine visual audit, chart_reader grading, vision_led. Dashboard "Trendline Gate"
+  (`signals.detect_trendline`) = gate ⇒ बदल नाही (shared check: 86 पैकी 4 valid; OPEN_QUESTIONS R1a-12).
+- `research/trendline_area_audit.py --rule shared` re-run (trade-data `.../2026-10-13/rerun_shared/`): रेघा 55 / 153 valid — §8 चे 24 +
+  फक्त TA5 नियमावर गळलेल्या 31 (बाकी एकही verdict बदलला नाही); areas 336 / 1,485 (§8: 310; फरक broken / flip व्याख्येमुळे). अहवाल §9.
+- Golden display charts (English): trade-data `reports/r1_lines_bands/2026-10-13/`.
+**Goldens (`tests/test_r1_golden_lines.py`; data 9 Oct close ला कापून):** spot रेघ 30 Sep 12:45 22,809.35 → 6 Oct 14:00 22,731.85, 6 Oct
+close पासून valid (2 touches), 7 Oct पासून established, 9 Oct close ला पहिली दाखवलेली; 12 Oct 09:15 zone 22,647.22–22,661.48 (22,654.35),
+high 22,651.10 आत ✔. FUT 22,935 → 22,830: 22,709.6 (22,701.75–22,717.45), high 22,720 = 0.27 MR वर (zone बाहेर, close खाली = K5 sweep;
+zone रुंद केला नाही). FUT ≈ 22,667 supply = 22,620–22,665 (9 Oct 11:15 / 14:15), रेघेला 12 Oct 13:45 ला भेटतो (0.49 MR), 09:15 ला नाही;
+09:15 ला confluence 22,729–22,761 शी (FUT) आणि 22,667–22,711 शी (spot, 0.34 MR). CI साठी synthetic fixtures (data नसेल तर real tests skip).
+**Tests:** नवे 23 (+5 private-data). बदललेले 2: `test_decision3_method::test_review_charts_default_at_most_six_level_bands` (C1 6 पट्टे ⇒
+TA4 3 / 3 valid), `test_sr_v3_chart_tf::test_v3_chart_lines_differ_by_chart_tf_and_old_default_kept` (TF तुलना debug view वर) + नवा band test.
+**Data:** CONTAMINATED + ILLUSTRATION (`purpose="annotation"`); NIFTY holdout लोड केला नाही; Upstox / paid API नाही.
+**उघडे:** OPEN_QUESTIONS R1a-1 … R1a-13; TA5 अजून उघडा (लावला नाही).
+**Independent review (PR #319) fixes:** 🔴 Vision bands आता setting `vision_chart_bands` मागे (default OFF ⇒ approval image main सारखीच —
+figure JSON आणि PNG byte-for-byte तपासले; ON ⇒ supply नारिंगी / demand फिकट निळा, signal text मध्ये "Chart note" legend + किंमती; R1a-13);
+🔴 `candidate_lines`: anchor-2 आधीचा twin pivot (< 6 bars) रेघ मारत नाही (repro + support आरसा test). 🟡 zones2 1H / Daily figures
+स्वतःच्या TF bars वर (3 + 3 प्रत्येक TF, degree filter आधी); h1_png: valid पण 3 + 3 बाहेरचा active level वेगळा label; setup chart K रेघ
+V22 ची स्वतःची break स्थिती (वेगळी असेल तर K5 break सुद्धा); sloped रेघेवर acceptance close ची तुलना v(i + 1) शी; magnet closes bar t च्या
+शेवटापर्यंतच; `check_band` / `check_bands` चा default window = finder lookback (`lookback(tf)`: 5M 2, 15M 8, 1H 15, D 126 sessions);
+h1_png real check test (stub नाही), SR V3 default view test ठोस, bands truncation test. Audit re-run (`rerun_shared_review/`): counts तसेच.
+
 ## 2026-10-13 · Chart Reader R0 — Method Pack + Vision V4 checklist (branch `claude/r0-method-pack`; design `docs/design/CHART_READER_AGENT.md` §12, §13)
 
 **काय केलं:**
