@@ -249,6 +249,8 @@ def test_deploy_script_syntax_and_live_readonly():
     p = os.path.join(ROOT, "scripts", "deploy_one_bot.sh")
     subprocess.run(["bash", "-n", p], check=True)
     s = open(p, encoding="utf-8").read()
+    body = s[s.index('echo "== 1/7'):]
+    assert body.index("bash scripts/install_engine_schedule.sh\n") < body.index("python3 scripts/set_one_bot_mode.py; RC")   # status तपासणीला engine cron आधी हवा
     assert "list-units --type=service" in s and ". ./.env" in s and "--revert" in s and '"$RC" = 3' in s and "LIVE" not in s.replace("LIVE ला हात नाही", "").replace(
         "LIVE combos", "").replace("LIVE cron", "").replace("LIVE setting", "")
 

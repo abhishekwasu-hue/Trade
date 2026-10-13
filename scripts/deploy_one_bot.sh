@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/deploy_one_bot.sh — Abhi (one bot, VPS वर एकच command). LIVE ला हात नाही (set_one_bot_mode LIVE combos नाकारतो; installer LIVE cron
 # ओळी तशाच ठेवतो; इथे कुठलाही order / LIVE setting नाही).
-#   bash scripts/deploy_one_bot.sh            ⇒ pull (deploy-main = origin/main, rollback file) → one-bot settings → engine schedule
+#   bash scripts/deploy_one_bot.sh            ⇒ pull (deploy-main = origin/main, rollback file) → engine schedule → one-bot settings (status तपासणीला cron हवा)
 #                                               (before / after table) → services restart (असतील तेच) → pre-open dry-run → engine dry-run → status
 #   bash scripts/deploy_one_bot.sh --revert   ⇒ settings revert → schedule revert → code rollback (rollback file) → restart → status
 # Env: REPO_DIR (default /root/Trade), DEPLOY_REF (default origin/main), ROLLBACK_FILE (default /root/one_bot_rollback.txt).
@@ -56,16 +56,16 @@ git diff --quiet "$OLD" "$REF" -- requirements.txt || python3 -m pip install -q 
 git checkout -q -B deploy-main "$REF"
 echo "code: $(git log -1 --oneline)"
 
-echo "== 2/7 one-bot settings (before / after)"
+echo "== 2/7 engine schedule"
+bash scripts/install_engine_schedule.sh
+
+echo "== 3/7 one-bot settings (before / after)"
 set +e; python3 scripts/set_one_bot_mode.py; RC=$?; set -e
 if [ "$RC" = 3 ]; then
   echo "❌ one-bot mode clean नाही (वरची ❌ ओळ = कारण) — deploy इथे थांबवला. Revert: bash scripts/deploy_one_bot.sh --revert"; exit 3
 elif [ "$RC" != 0 ]; then
   echo "❌ set_one_bot_mode exit $RC — deploy थांबवला"; exit "$RC"
 fi
-
-echo "== 3/7 engine schedule"
-bash scripts/install_engine_schedule.sh
 
 echo "== 4/7 restart (असलेले units)"; restart_units
 echo "== 5/7 pre-open (dry-run, Telegram नाही)"; python3 scripts/level_gate_preopen.py --dry-run || echo "⚠️ pre-open dry-run अयशस्वी"
