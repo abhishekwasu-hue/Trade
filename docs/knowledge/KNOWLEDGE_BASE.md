@@ -454,7 +454,7 @@ completed pattern allows, the count is wrong.
 ## K4. Areas: buyer/seller (supply/demand), role flip, range edges
 **काय.**
 - **Demand (supply) zone** = displacement (जोरदार impulse) च्या आधीचा **base**: 1–4 लहान, overlapping candles. तिथे न भरलेल्या orders शिल्लक असतात असं मानलं जातं.
-- **Role flip (polarity):** तुटलेला support resistance बनतो, आणि उलट.
+- **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त **मजबूत move ने तोडून पुढच्या swing पर्यंत** पोचल्यावर; नाहीतर sweep, zone जुनी भूमिका ठेवतो.
 
 **मानसशास्त्र.**
 - चाल सुटलेले traders परत किंमत आली की entry घेऊ इच्छितात.
@@ -466,7 +466,7 @@ completed pattern allows, the count is wrong.
   - Zone = [lowest low, highest body-top] (demand; supply उलट).
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
-- **Flip level:** आधीचा swing ≥ 0.5 MR close ने तुटला, आणि नंतर दुसऱ्या बाजूने retest आणि rejection (repo `breaks.py` चा failed retest).
+- **Flip level:** वरचा flip नियम [Abhi] (मजबूत move + पुढचा swing). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
@@ -474,7 +474,7 @@ completed pattern allows, the count is wrong.
   - एकाच price area वर **दोन reaction touches** (दोन swing highs, किंवा दोन swing lows) ⇒ S/R band. Band tolerance = MR च्या पटीत setting (fixed points नाहीत).
   - Touches **खऱ्या reactions** हवेत: दोन touches च्या मधे price band सोडून गेली. Touches एकमेकांपासून दूर (setting, default 6 bars).
   - **3रा touch = trade location** (candidate area). Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
-  - **Role flip:** तुटलेला support = resistance, आणि उलट. Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
+  - **Role flip:** तुटलेला support = resistance, आणि उलट (flip नियम [Abhi]: मजबूत move + पुढचा swing). Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
   - Horizontal band आणि trendline (K6) एकाच किमतीवर भेटले ⇒ **सगळ्यात मजबूत location**, chart label **"confluence"** (K6.4).
 - **Chart वर areas कसे दाखवायचे [Abhi, 2026-10-13]:**
   - Area नेहमी **band** (base / reaction candles चा low–high), एकच किंमत कधीच नाही.
@@ -575,7 +575,7 @@ completed pattern allows, the count is wrong.
 - **Real break (repo `elliott/breaks.py`, एकच अधिकृत व्याख्या):** buffer = **0.25 × MR** पलीकडे close, आणि पुढीलपैकी पहिलं जे होईल ते:
   - (a) **displacement:** break bar range ≥ 1.2 MR, close break दिशेच्या बाहेरच्या 30% मध्ये;
   - (b) **acceptance:** पुढचा bar सुद्धा पलीकडे close (reclaim नाही);
-  - (c) **failed retest:** reclaim नंतर तुटलेल्या बाजूने retest, आणि तिथे logical reversal ने rejection ⇒ role flip confirmed.
+  - (c) **failed retest:** reclaim नंतर तुटलेल्या बाजूने retest, आणि तिथे logical reversal ने rejection ⇒ break confirmed (BROKEN; flip फक्त flip नियमाने).
 
   नाहीतर **false break: exit नाही, invalidation नाही.**
 - **Magnet:** दिवसात ≥ 4 वेळा close ने आरपार झालेला level ⇒ no-trade level.
