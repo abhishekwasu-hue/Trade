@@ -2471,3 +2471,7 @@ legs owner वि. reader2 gate).
 - **BANKNIFTY a-b-c दिवस:** Abhi — सोडून द्या. Golden फक्त 12 Oct + 29 Sep.
 - **Zone:** "dead beyond far swing" नियम काढला. Abhi: तुटलेला zone flip होतो — मजबूत move ने तोडून पुढच्या swing पर्यंत; नाहीतर sweep.
   KB K4 मध्ये मंजूर block, Method Pack नवीन version. Code (decision3 levels lifecycle) Abhi च्या शब्द ✅ नंतर (OPEN_QUESTIONS Z-1).
+- **Review (PR #322) fixes:** K4 मध्ये flip च्या तीन व्याख्या एकमेकांविरुद्ध होत्या ⇒ आता एकच: "Real break" (a/b/c) फक्त BROKEN ठरवतो,
+  FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
+  काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
+  (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.

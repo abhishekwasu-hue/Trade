@@ -515,8 +515,8 @@ completed pattern allows, the count is wrong.
   overlapping); demand zone = [lowest low, highest body top] (supply mirrored); height ≤ 1.5 MR. Valid only when the displacement
   (≥ 2 consecutive candles with body ≥ 0.6 × range and range ≥ 1.5 MR, or one candle ≥ 2.5 MR) also broke the previous swing (BOS).
   No BOS ⇒ noise. The zone exists only from the bar where displacement + BOS are confirmed (no look-ahead).
-- **Role flip:** broken support becomes resistance and vice versa. A flip level = a prior swing closed through by ≥ 0.5 MR, then
-  retested from the other side and rejected. After a flip, touches are counted on the new side; the next retest is the trade location.
+- **Role flip:** broken support becomes resistance and vice versa — only by the flip rule below (Abhi: a strong move through the zone
+  that reaches the next swing). After a flip, touches are counted on the new side; the next retest is the trade location.
 - **Horizontal S/R band — drawn from 2 touches [Abhi, TA3b]:** two reaction touches at one price area (two swing highs, or two swing
   lows) are enough to DRAW the band (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced
   (setting, default 6 bars). **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with
@@ -536,18 +536,20 @@ completed pattern allows, the count is wrong.
   scores 0. Anchor only on confirmed pivots of an impulse ≥ 4 MR that broke structure; never on an overlapping (corrective) leg (K7).
 - **Round numbers / PDH / PDL / PDC:** low weight, confluence only. A reversal candle at or just before a round number =
   take-profit absorption; a close ≥ 0.5 MR beyond = cascade risk (K8).
-- **Area state:** ACTIVE (the market reacts to it in recent bars) / TESTED / BROKEN / FLIPPED / MAGNET. MAGNET = a level crossed by
+- **Area state:** ACTIVE (the market reacts to it in recent bars) / TESTED / BROKEN (real break, not yet flipped) / FLIPPED / MAGNET. MAGNET = a level crossed by
   closes ≥ 4 times in a day ⇒ no-trade level; the middle of a range is a magnet.
 - **Freshness:** judge the strength of the reaction at each test, not only the count. A zone already traded through on a higher
   timeframe is not "fresh".
 - **Real break (one definition, K5 / Part G):** close beyond the level by a 0.25 MR buffer AND the first of: (a) displacement — break
   bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
-  a retest from the broken side is rejected by a logical reversal (role flip confirmed). Anything else is a false break (sweep).
-- **A broken zone flips; it does not die [Abhi]:** a zone is never simply "dead". It FLIPS role (supply ⇒ demand, demand ⇒ supply) only
-  when price breaks through it with a **strong move** (dominant commitment / displacement, K9) AND that move **reaches the next swing**
-  beyond the zone. After the flip its next retest from the new side is the trade location (TA3b). A push through the band that does not
-  reach the next swing, or that is not a strong move, is a sweep / false break (K5): the zone keeps its old role. (Example: 12 Oct the
-  NIFTY FUT spike to ≈22,720 went above the ≈22,667 supply without a strong move to the next swing high ⇒ sweep, supply still valid.)
+  a retest from the broken side is rejected by a logical reversal (break confirmed). Anything else is a false break (sweep). A real
+  break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
+- **A broken zone flips [Abhi]:** a broken zone FLIPS role (supply ⇒ demand, demand ⇒ supply) after a **strong move** through it that
+  **reaches the next swing**. Otherwise it is a sweep and the zone keeps its old role.
+<!-- pending:abhi -->
+- **[pending Abhi — reading of "strong move", NOT in the Method Pack]** "Strong move" is read with K9: the break is made by a dominant
+  commitment candle / displacement, not by a single wick or small closes.
+<!-- /pending -->
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal

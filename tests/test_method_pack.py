@@ -114,8 +114,10 @@ def test_pending_abhi_text_is_excluded_from_pack():
     text, _ = MP.build_from_repo()
     assert "pending" not in text.lower()
     flat = text.replace("\n  ", " ")                                               # Abhi: "zone dead" नाही — तुटलेला zone flip होतो
-    assert "dead only beyond the far swing" not in flat and "A broken zone flips; it does not die" in flat
+    assert "dead only beyond the far swing" not in flat and "A broken zone flips [Abhi]" in flat
     assert "reaches the next swing" in flat and "strong move" in flat
+    assert "not by a single wick" not in flat                                  # "strong move" चं वाचन अजून pending
+    assert "22,720" not in flat                                                # golden दिवसाचा निकाल pack मध्ये नाही (leak)
     pend = "\n<!-- pending:abhi -->\n- secret pending rule\n<!-- /pending -->"
     t1, _ = MP.build(_kb().replace("- text 2", "- text 2" + pend), "")
     assert "secret pending rule" not in t1 and "text 2" in t1

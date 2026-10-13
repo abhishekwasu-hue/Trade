@@ -62,6 +62,8 @@ def near_month_rows(fut5):
         f["contract"] = ""
     exp = expiry_of(f)
     if exp.isna().all():
+        import warnings
+        warnings.warn("futures: contract-expiry ओळखता आली नाही ⇒ near-month निवड नाही, सगळे rows एक series म्हणून (बेरीज)")
         return fut5
     day = pd.to_datetime(f["timestamp"]).dt.normalize()
     live = exp.notna() & (exp >= day)
