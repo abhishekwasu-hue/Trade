@@ -41,15 +41,36 @@ def test_frames_follow_chart_tf(chart_tf, expect):
 
 
 def test_v3_chart_lines_differ_by_chart_tf_and_old_default_kept():
+    # TA4 (Abhi, design §10): default view = only levels that pass the shared band rule; debug = every level (with the reason) — the
+    # chart-TF level sets are compared on the debug view (these random candles rarely make a 2-reaction band).
     fetch = _fetch_factory([])
     price = 24500.0
-    l5, n5 = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="5minute")
-    ld, nd = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="day")
+    l5, n5 = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="5minute", debug=True)
+    ld, nd = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="day", debug=True)
     assert n5 is None and nd is None and l5 and ld
     assert {round(l["price"], 1) for l in l5} != {round(l["price"], 1) for l in ld}
     assert any(" D" in l["title"] or "+D" in l["title"] or "W" in l["title"] for l in ld)
-    old, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price)                    # chart TF नाही ⇒ जुनं वर्तन
+    old, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, debug=True)        # chart TF नाही ⇒ जुनं वर्तन
     assert note is None
+    shown, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="5minute")     # these candles: no 5M level passes
+    assert shown == [] and "band" in note
+    shown, note = C.v3_chart_lines(fetch, "tok", "NIFTY", price, chart_tf="15minute")    # 15M: one valid band + the latest broken
+    assert note is None and len(shown) == 4 and not any("invalid" in l["title"] for l in shown)
+    assert sum(1 for l in shown if l["title"].endswith("broken")) == 1 and sum(1 for l in shown if " T" in l["title"]) == 1
+
+
+def test_band_chart_lines_only_valid_bands_and_single_price_dropped():
+    t = pd.date_range("2026-09-01 09:15", periods=80, freq="15min")
+    path = np.r_[np.linspace(100, 120, 11), np.linspace(120, 100, 10)[1:], np.linspace(100, 120, 11)[1:], np.linspace(120, 104, 60)[1:]]
+    c = path[:80]
+    o = np.r_[c[0], c[:-1]]
+    fr = pd.DataFrame({"timestamp": t, "open": o, "high": np.maximum(o, c) + 1, "low": np.minimum(o, c) - 1, "close": c})
+    lv = [{"low": 119.0, "high": 121.0, "role": "RESISTANCE", "grade": "A", "score": 80, "tags": ["15M"]},     # 2 reactions ⇒ band
+          {"low": 121.0, "high": 121.0, "role": "RESISTANCE", "grade": "B", "score": 60, "tags": ["15M"]}]     # single price
+    lines = C.band_chart_lines(lv, fr, float(c[-1]))
+    assert lines and all(l["title"].startswith("R A80") for l in lines) and {l["price"] for l in lines} == {119.0, 121.0}
+    dbg = C.band_chart_lines(lv, fr, float(c[-1]), debug=True)
+    assert any("not_a_band" in l["title"] for l in dbg)
 
 
 def test_tf_set_label():

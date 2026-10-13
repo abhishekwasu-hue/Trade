@@ -382,6 +382,43 @@ def latest_broken_only(areas):
                 a["reasons"] = "|".join([x for x in a["reasons"].split("|") if x] + ["broken_not_latest"])
 
 
+# ------------------------------------------------------------------------------------------------ R1 shared checks (facts/validity.py)
+def check_line_shared(F, t, ln, overrides=None):
+    """--rule shared: the R1 shared K6 line check (facts.validity.check_line) mapped onto the audit row fields. No "touch in the last 2
+    sessions" rule (TA5 open)."""
+    from facts import validity as FV
+    side = FV.RES if ln["side"] == "res" else FV.SUP
+    r = FV.check_line(F.df, t, (ln["b1"], ln["y1"]), (ln["b2"], ln["y2"]), side, overrides)
+    rs = "|".join(r["reasons"])
+    return {"mr": r["mr"], "touches": len(r["touches"]), "spaced6": r["touch_count"], "spaced8": r["touch_count"],
+            "slope_mr_per_bar": r["slope_mr_per_bar"], "anchor_dev_mr": r["anchor_dev_mr"],
+            "max_close_beyond_between_mr": r["max_close_beyond_between_mr"], "break_ts": (r["break"] or {}).get("ts", ""),
+            "recent_touch": None, "value_t": r["value_at_t"], "valid6": r["valid"], "valid8": r["valid"], "reasons6": rs, "reasons8": rs,
+            "established": r["established"], "fail_only_recent": False}
+
+
+def check_area_shared(F, F15, t, ar, overrides=None):
+    """--rule shared: the R1 shared K4 band check (facts.validity.check_band; magnet on the 15M closes as in the 2-touch run)."""
+    from facts import validity as FV
+    r = FV.check_band(F.df, t, ar["lo"], ar["hi"], overrides, start=0, magnet_df=F15.df)
+    return {"mr": r["mr"], "width_mr": r["width_mr"], "reaction_touches": r["touch_count"],
+            "touch_ts": "|".join(p["ts"] for p in r["touches"][:6]), "break_ts": (r["breaks"][-1]["ts"] if r["breaks"] else ""),
+            "_brk": r["last_break_bar"] if r["broken"] else None, "price_side": r["price_side"], "crossings_session": r["crossings_session"],
+            "valid": r["valid"], "reasons": "|".join(r["reasons"]), "_facts": r}
+
+
+def latest_broken_only_shared(areas):
+    """TA4 per engine chart on the shared facts: every broken band except the most recently broken one gets "broken_not_latest"."""
+    from facts import validity as FV
+    for eng in {a["engine"] for a in areas}:
+        fs = [a["_facts"] for a in areas if a["engine"] == eng]
+        FV.latest_broken_only(fs)
+        for a in areas:
+            if a["engine"] == eng:
+                a["reasons"] = "|".join(a["_facts"]["reasons"])
+                a["latest_broken"] = a["_facts"]["broken"] and "broken_not_latest" not in a["_facts"]["reasons"]
+
+
 def frame15_from_5m(path):
     """FUT 5M (front contract file) ⇒ 15M, 09:15-anchored (same grouping as h1_frame / m30_of)."""
     d = no_holdout(_read(path))
@@ -632,7 +669,7 @@ def render(path, F, t, sym, tf, lines, areas, nbars, rule="k6k4"):
         why = "VALID" if ok else ",".join(SHORT.get(r, r) for r in ln["reasons6"].split("|") if r)
         est = " established" if ln.get("established") else ""
         labs.append((0, ys[-1], f"{ln['engine']} {ln['side']} T={ln['touches']}: {why}{est}" + (f" (3rd touch now {ln['value_t']:,.0f})"
-                     if ok and rule == "2touch" else ""), ENG_COL[ln["engine"]]))
+                     if ok and rule in ("2touch", "shared") else ""), ENG_COL[ln["engine"]]))
     for ar in areas:
         ok = ar["valid"]
         if ar["hi"] - ar["lo"] <= 0:
@@ -659,14 +696,14 @@ def render(path, F, t, sym, tf, lines, areas, nbars, rule="k6k4"):
     axs[0].set_ylim(ylo, yhi)
     nv6 = sum(1 for z in lines if z["valid6"])
     nva = sum(1 for z in areas if z["valid"])
-    lr, arl = ("2-touch rule", "band rule") if rule == "2touch" else ("K6-valid at 6-bar spacing", "K4-valid")
+    lr, arl = ("2-touch rule", "band rule") if rule in ("2touch", "shared") else ("K6-valid at 6-bar spacing", "K4-valid")
     axs[0].set_title(f"Lines drawn: {len(lines)} ({lr}: {nv6}) - solid = valid, dashed = invalid", fontsize=9, loc="left")
     axs[1].set_title(f"Areas drawn: {len(areas)} ({arl}: {nva}) - filled = valid, hatched = invalid", fontsize=9, loc="left")
     leg = [Line2D([0], [0], color=ENG_COL[e], lw=2, label=e) for e in ("trendlines2", "d3_kline", "d3_swingline", "dash_tl")]
     axs[0].legend(handles=leg, fontsize=7, loc="upper left")
     leg = [Patch(color=ENG_COL[e], alpha=0.4, label=e) for e in ("d3_level", "d3_tl_area", "zones2", "srv3", "vision_major")]
     axs[1].legend(handles=leg, fontsize=7, loc="upper left")
-    rl = "owner rule 2026-10-13 (2-touch lines, 2-reaction bands)" if rule == "2touch" else "KB K6 / K4"
+    rl = {"2touch": "owner rule 2026-10-13 (2-touch lines, 2-reaction bands)", "shared": "R1 shared checks (facts/validity.py)"}.get(rule, "KB K6 / K4")
     fig.suptitle(f"{sym} {tf} - session close {F.ts[t]:%Y-%m-%d %H:%M} (bar start) - audit vs {rl}, read-only", fontsize=11)
     fig.tight_layout()
     fig.savefig(path, dpi=95)
@@ -674,8 +711,9 @@ def render(path, F, t, sym, tf, lines, areas, nbars, rule="k6k4"):
 
 
 # ------------------------------------------------------------------------------------------------ main
-def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4"):
-    two = rule == "2touch"
+def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4", overrides=None):
+    two = rule in ("2touch", "shared")
+    shared = rule == "shared"
     F15 = Frame(m15, "15M")
     h1 = h1_of(m15)
     F1 = Frame(h1, "1H")
@@ -714,7 +752,7 @@ def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4"):
                 lines += dash_lines(F, t, 60)
                 areas += srv3_areas(m15, daily, t15, "1hour")
             for ln in lines:
-                ln.update(check_line_2touch(F, t, ln) if two else check_line(F, t, ln))
+                ln.update(check_line_shared(F, t, ln, overrides) if shared else check_line_2touch(F, t, ln) if two else check_line(F, t, ln))
                 rows.append({"symbol": sym, "tf": tf, "session": str(d.date()), "asof_bar": str(F.ts[t]), "kind": "line",
                              "engine": ln["engine"], "name": ln["name"], "engine_class": ln.get("class", ""),
                              "engine_touches": ln.get("engine_touches"), "side_or_role": ln["side"],
@@ -724,8 +762,11 @@ def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4"):
                              "valid": ln["valid6"], "valid8": ln["valid8"], "reasons": ln["reasons6"], "reasons8": ln["reasons8"],
                              **({"established": ln["established"], "fail_only_recent": ln["fail_only_recent"]} if two else {})})
             for ar in areas:
-                ar.update(check_area_2touch(F, F15, t, ar) if two else check_area(F, F15, t, ar))
-            if two:
+                ar.update(check_area_shared(F, F15, t, ar, overrides) if shared else check_area_2touch(F, F15, t, ar) if two
+                          else check_area(F, F15, t, ar))
+            if shared:
+                latest_broken_only_shared(areas)
+            elif two:
                 latest_broken_only(areas)
             for ar in areas:
                 rows.append({"symbol": sym, "tf": tf, "session": str(d.date()), "asof_bar": str(F.ts[t]), "kind": "area",
@@ -735,7 +776,8 @@ def run_symbol(sym, m15, daily, n_sessions, end, out_dir, charts, rule="k6k4"):
                              **{k: ar[k] for k in (("mr", "width_mr", "reaction_touches", "touch_ts", "break_ts", "price_side",
                                                     "crossings_session") if two else
                                                    ("mr", "width_mr", "origin", "origin_ts", "consumed", "crossings_session"))},
-                             "valid": ar["valid"], "valid8": ar["valid"], "reasons": ar["reasons"], "reasons8": ar["reasons"]})
+                             "valid": ar["valid"], "valid8": ar["valid"], "reasons": ar["reasons"], "reasons8": ar["reasons"],
+                             **({"latest_broken": ar.get("latest_broken", False)} if shared else {})})
             if charts:
                 cdir = os.path.join(out_dir, "charts", sym, tf)
                 os.makedirs(cdir, exist_ok=True)
@@ -766,17 +808,21 @@ def main(argv=None):
     ap.add_argument("--end", help="last session (YYYY-MM-DD); default = last in data")
     ap.add_argument("--sessions", type=int, default=20)
     ap.add_argument("--no-charts", action="store_true")
-    ap.add_argument("--rule", choices=("k6k4", "2touch"), default="k6k4",
-                    help="k6k4 = first run (KB K6 / K4); 2touch = owner rule 2026-10-13 (TA1-TA4)")
+    ap.add_argument("--rule", choices=("k6k4", "2touch", "shared"), default="k6k4",
+                    help="k6k4 = first run (KB K6 / K4); 2touch = owner rule 2026-10-13 (TA1-TA4); shared = the R1 shared checks "
+                         "(facts/validity.py)")
+    ap.add_argument("--shared-set", nargs="*", default=[], metavar="KEY=VALUE",
+                    help="--rule shared: override a facts.validity setting (e.g. trend_direction_only=0)")
     ap.add_argument("--nifty-fut-5m", help="NIFTY FUT 5M parquet (for the golden-line projection on FUT)")
     ap.add_argument("--golden", nargs=3, metavar=("A1_DAY", "A2_DAYS", "CHECK_DAY"),
                     help="NIFTY 15M golden line: anchor-1 day, anchor-2 days (comma list), the day to project onto")
     a = ap.parse_args(argv)
+    ov = {k: json.loads(v) for k, v in (x.split("=", 1) for x in a.shared_set)} or None
     end = pd.Timestamp(a.end) if a.end else None
     os.makedirs(a.out, exist_ok=True)
     rows = []
     m15 = load_m15(a.nifty_1m)
-    rows += run_symbol("NIFTY", m15, load_daily(None, m15), a.sessions, end, a.out, not a.no_charts, a.rule)   # NIFTY daily: 15M only
+    rows += run_symbol("NIFTY", m15, load_daily(None, m15), a.sessions, end, a.out, not a.no_charts, a.rule, ov)   # NIFTY daily
     if a.golden:
         a1d, a2s, ckd = pd.Timestamp(a.golden[0]), [pd.Timestamp(x) for x in a.golden[1].split(",")], pd.Timestamp(a.golden[2])
         gold = golden_line(Frame(m15, "15M"), a1d, a2s, ckd, "NIFTY spot 15M")
@@ -785,7 +831,7 @@ def main(argv=None):
         with open(os.path.join(a.out, "golden_line.json"), "w", encoding="utf-8") as f:
             json.dump(gold, f, indent=1, default=str)
     m15 = load_m15(a.banknifty_1m, a.banknifty_15m)
-    rows += run_symbol("BANKNIFTY", m15, load_daily(a.banknifty_daily, m15), a.sessions, end, a.out, not a.no_charts, a.rule)
+    rows += run_symbol("BANKNIFTY", m15, load_daily(a.banknifty_daily, m15), a.sessions, end, a.out, not a.no_charts, a.rule, ov)
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(a.out, "trendline_area_audit.csv"), index=False)
     with open(os.path.join(a.out, "summary.json"), "w", encoding="utf-8") as f:

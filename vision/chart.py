@@ -9,6 +9,10 @@
   • v2 (signal_check_v2) overlays — `vision/context.py` (causal): major levels (M1↑ / M1↓, flip ⇒ F), PDH / PDL / PDC, PWH / PWL (dotted),
     आजचा open + opening range (फिकट पट्टा), swing H / L खुणा, session separators. 0.1 × median range पेक्षा जवळचे overlays ⇒ एक label
     (उदा. PDH+M1↑); y-range बाहेरचे ⇒ कडेला ▲ / ▼ खुणा. Labels इंग्रजीत; अचूक किंमती फक्त signal text मध्ये.
+  • TA4 (Abhi, design §10) — **setting `vision_chart_bands`, default OFF** (OFF ⇒ image main सारखीच, byte-for-byte): ON ⇒ major levels
+    (एकच किंमत, M1↑ / M1↓) chart वर रेषा नाहीत; त्याऐवजी 15m वरचे shared band check pass होणारे पट्टे (`chart_bands`:
+    decision3.levels.display_bands — ≤ 3 वर, ≤ 3 खाली, शेवटचा तुटलेला dashed). रंग L (हिरवा / लाल) पासून वेगळे: supply नारिंगी, demand
+    फिकट निळा, broken तपकिरी-राखाडी dashed. ctx["bands"] ⇒ signal text मध्ये legend + अचूक किंमती (signal_audit.signal_text).
 """
 import numpy as np
 import pandas as pd
@@ -112,13 +116,63 @@ ROLE_SHORT = {"held_as_support": "held S", "held_as_resistance": "held R", "brok
 OVL_STYLE = {"major": dict(color="#90caf9", width=1), "ref": dict(color="#b0bec5", width=1, dash="dot")}
 
 
-def _overlays(fig, df, ctx, lo, hi, c, n, label_x):
-    """ctx overlays (L वगळून — L वेगळा जाड) एका panel वर. y-range बाहेरचे ⇒ कडेला ▲ / ▼."""
+def no_majors(o):
+    """TA4: an overlay without its single-price major levels (M1↑ / M1↓ …) — None when only majors are left."""
+    names = [x for x in o["label"].split("+") if not x.startswith("M")]
+    kinds = [k for k in o["kinds"] if k != "major"]
+    if not names or not kinds:
+        return None
+    return {**o, "label": "+".join(names), "kinds": kinds}
+
+
+def chart_bands(cut, s=None):
+    """TA4: the bands the approval chart draws — the shared band finder (decision3.levels.display_bands) on the 15m bars of `cut`
+    (signal-time 1m, no look-ahead). Returns the facts list (may be empty)."""
+    from decision3 import levels as LV
+    m15 = resample(cut, 15).rename(columns={"start": "timestamp"})
+    if len(m15) < 30:
+        return []
+    return LV.display_bands(m15[["timestamp", "open", "high", "low", "close"]], len(m15) - 1, s)
+
+
+BAND_COLOR = {"resistance": ("#ffa726", "rgba(255,167,38,0.10)"), "support": ("#4fc3f7", "rgba(79,195,247,0.10)"),
+              "broken": ("#bcaaa4", "rgba(0,0,0,0)")}                  # L = हिरवा / लाल ⇒ पट्टे नारिंगी / फिकट निळे (टक्कर नाही)
+
+
+def band_rows(bands):
+    """ctx["bands"] (signal text साठी): role, low, high, reaction touches, state."""
+    return [{"role": b.get("role"), "lo": float(b["lo"]), "hi": float(b["hi"]), "touches": int(b.get("touch_count") or 0),
+             "state": "broken (most recent)" if (b.get("broken") and not b.get("valid")) else
+             ("flipped" if b.get("flipped") else ("established" if b.get("established") else "valid"))} for b in bands]
+
+
+def _bands(fig, bands, lo, hi, c, n, label_x):
+    """TA4 bands on one price panel: valid filled (supply red / demand green), the most recent broken one dashed grey; labels in English."""
+    for b in bands or []:
+        if b["hi"] < lo or b["lo"] > hi:
+            continue
+        broken = b.get("broken") and not b.get("valid")
+        colr, fill = BAND_COLOR["broken" if broken else ("resistance" if b.get("role") == "resistance" else "support")]
+        fig.add_shape(type="rect", x0=-0.5, x1=n - 0.5, y0=max(lo, b["lo"]), y1=min(hi, b["hi"]), layer="below", fillcolor=fill,
+                      line=dict(color=colr, width=1, dash="dash" if broken else None), row=1, col=c)
+        if c == 1:
+            role = "supply" if b.get("role") == "resistance" else "demand"
+            txt = f"{role} {b['lo']:,.0f}-{b['hi']:,.0f} · " + ("broken" if broken else f"{b['touch_count']} touches")
+            fig.add_annotation(x=label_x, y=min(hi, b["hi"]), text=txt, showarrow=False, xanchor="right", yshift=-7,
+                               font=dict(size=8, color=colr), row=1, col=c)
+
+
+def _overlays(fig, df, ctx, lo, hi, c, n, label_x, hide_majors=False):
+    """ctx overlays (L वगळून — L वेगळा जाड) एका panel वर. y-range बाहेरचे ⇒ कडेला ▲ / ▼. hide_majors (TA4): single-price major levels नाहीत."""
     above, below, placed = [], [], []                                # placed: [(y, slot)] — जवळचे labels एकमेकांवर येऊ नयेत
     gap = 0.03 * (hi - lo)
     for o in sorted((ctx or {}).get("overlays") or [], key=lambda z: z["price"]):
         if "L" in o["kinds"]:
             continue
+        if hide_majors:
+            o = no_majors(o)
+            if o is None:
+                continue
         y = float(o["price"])
         if y > hi:
             above.append(o["label"])
@@ -182,7 +236,7 @@ def _gap_overlays(fig, df, ctx, lo, hi, n, sig):
                            row=1, col=1)
 
 
-def _line_panel(fig, line, ctx, sig, row=3):
+def _line_panel(fig, line, ctx, sig, row=3, hide_majors=False):
     """Panel C: closes ची रेषा (मोठा lookback), L / M / PDC / PDH / PDL, swing ठिपके, session separators, signal क्षणी उभी रेषा — त्यानंतर काहीच नाही."""
     import plotly.graph_objects as go
     if line is None or len(line) < 3:
@@ -204,6 +258,10 @@ def _line_panel(fig, line, ctx, sig, row=3):
             fig.add_shape(type="line", x0=k - 0.5, x1=k - 0.5, y0=lo, y1=hi, line=dict(color="#37474f", width=1, dash="dot"), row=row, col=1)
     placed = []
     for o in sorted((ctx or {}).get("overlays") or [], key=lambda z: z["price"]):
+        if hide_majors and "L" not in o["kinds"]:
+            o = no_majors(o)
+            if o is None:
+                continue
         names = o["label"].split("+")
         if not any(nm.startswith(("L", "M", "PDC", "PDH", "PDL")) for nm in names) or not (lo <= o["price"] <= hi):
             continue
@@ -227,9 +285,10 @@ def _line_panel(fig, line, ctx, sig, row=3):
                      showgrid=False, color="#b0bec5", row=row, col=1)
 
 
-def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
+def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None, bands=None):
     """vols = (setup volume array, higher volume array) — `panel_volumes`; None ⇒ volume pane मध्ये "volume: NA (grade cap B)".
-    Volume pane (row 2) प्रत्येक price panel खाली — image size तोच (price panel ची उंची कमी)."""
+    Volume pane (row 2) प्रत्येक price panel खाली — image size तोच (price panel ची उंची कमी).
+    bands (TA4) = `chart_bands` चे पट्टे; दिले ⇒ ते पट्टे काढतो आणि single-price major levels लपवतो; None ⇒ जुनं drawing."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     from decision3 import volume_pane as VP
@@ -286,7 +345,9 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
                 if idx:
                     fig.add_shape(type="rect", x0=idx[0] - 0.5, x1=n - 0.5, y0=max(lo, op["or_low"]), y1=min(hi, op["or_high"]),
                                   fillcolor="rgba(176,190,197,0.06)", line=dict(width=0), layer="below", row=1, col=c)
-            _overlays(fig, df, ctx, lo, hi, c, n, n - 1)
+            if bands is not None:
+                _bands(fig, bands, lo, hi, c, n, n - 1)
+            _overlays(fig, df, ctx, lo, hi, c, n, n - 1, hide_majors=bands is not None)
             if c == 1:
                 for s_ in ctx.get("swings") or []:
                     i = s_["i"]
@@ -330,7 +391,7 @@ def build_figure(setup, higher, sig, tfs, ctx=None, line=None, vols=None):
             fig.add_annotation(x=n - 1, y=y, text="▲ signal" if up else "▼ signal", showarrow=False, yshift=-16 if up else 16,
                                font=dict(size=12, color="#ffd54f"), row=1, col=c)
     if with_line:
-        _line_panel(fig, line, ctx, sig, row=3)
+        _line_panel(fig, line, ctx, sig, row=3, hide_majors=bands is not None)
     ts = pd.Timestamp(to_ist_naive(sig["signal_ts"]))
     ev = pd.Timestamp(to_ist_naive(sig["asof"])) if sig.get("asof") is not None else ts
     cutnote = "chart cut at signal" if ev == ts else f"evaluated at bar close {ev:%H:%M}"
@@ -406,7 +467,14 @@ def render(df1m, sig, daily=None, fut=None):
             vols = panel_volumes(setup, higher, sig, asof, df1m, fut)
         except Exception as exc:                                         # volume पूरक ⇒ NA pane, chart तरी
             vols, meta["vol_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
-        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols)
+        bands = None                                                     # default (setting OFF) ⇒ जुनं drawing, ctx तसाच
+        if ctx is not None and (sig.get("ctx_settings") or {}).get("vision_chart_bands"):
+            try:
+                bands = chart_bands(cut)
+                ctx["bands"] = band_rows(bands)                          # signal text: legend + अचूक किंमती
+            except Exception as exc:                                     # पट्टे अपयशी ⇒ जुनं drawing (majors सह), नोंद
+                bands, meta["bands_error"] = None, f"{type(exc).__name__}: {str(exc)[:120]}"
+        fig = build_figure(setup, higher, sig, tfs, ctx, line, vols, bands)
         meta["volume_line"] = _volume_line(setup, sig, vols)
         png = fig.to_image(format="png", width=WIDTH, height=int(fig.layout.height or HEIGHT), scale=1)
         return png, meta

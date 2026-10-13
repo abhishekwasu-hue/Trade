@@ -411,3 +411,44 @@ class Levels:
     def known_pivots(self, t):
         """t च्या close ला माहीत D2 pivots (confirm क्रमाने)."""
         return self._pv_sorted[:self.known_by[t]] if t < len(self.known_by) else list(self._pv_sorted)
+
+
+# ------------------------------------------------------------------------------------------------ shared band facts (R1, TA3b / TA4)
+# The area owner's horizontal-band finder on the shared K4 check (facts/validity.py; Abhi, design §10). Facts + evidence only; it is
+# NOT used by the V22 decision (`Levels` above is unchanged) — charts call `display_bands` / `check_bands` to draw only valid bands.
+def find_bands(df, t, s=None, start=None, magnet_df=None):
+    """Horizontal S/R bands at decision bar t from pairs of reaction touches (facts.validity.candidate_bands): one per distinct area
+    (overlapping candidates merged), valid ones first, then broken ones, then the rest. Bars ≤ t only."""
+    from facts import validity as FV
+    cands = FV.candidate_bands(df, t, s, start=start, magnet_df=magnet_df)
+    valid = FV.dedupe_bands([x for x in cands if x["valid"]])
+    broken = FV.dedupe_bands([x for x in cands if x["broken"] and x["reasons"] == ["broken"]])
+    rest = [x for x in cands if not x["valid"] and not (x["broken"] and x["reasons"] == ["broken"])]
+    return valid + broken + rest
+
+
+def display_bands(df, t, s=None, start=None, magnet_df=None, debug=False):
+    """TA4: the bands a chart draws at t — ≤ 3 valid above and ≤ 3 below the close at t, plus the most recently broken one."""
+    from facts import validity as FV
+    B = FV.bars_of(df)
+    return FV.select_bands(find_bands(B, t, s, start, magnet_df), float(B.C[t]), s, debug=debug)
+
+
+def check_bands(df, t, items, s=None, start=None, magnet_df=None):
+    """Run the shared band check on areas another engine drew (items with lo / hi): returns [(item, facts)], TA4 latest-broken applied.
+    start None ⇒ the finders' lookback window (`lookback_sessions`; pass facts.validity.lookback(tf) for 1H / Daily)."""
+    from facts import validity as FV
+    B = FV.bars_of(df)
+    out = [(x, FV.check_band(B, t, x["lo"], x["hi"], s, start=start, magnet_df=magnet_df)) for x in items]
+    FV.latest_broken_only([f for _, f in out])
+    return out
+
+
+def band_label(x):
+    """Chart label (English): role, low–high, touch count, flags."""
+    role = {"resistance": "supply", "support": "demand"}.get(x.get("role"), "area")
+    flags = [f for f, on in (("established", x.get("established")), ("flipped", x.get("flipped")), ("broken", x.get("broken"))) if on]
+    lab = f"{role} {x['lo']:,.0f}-{x['hi']:,.0f}, {x['touch_count']} touches" + (f" ({', '.join(flags)})" if flags else "")
+    if not x["valid"] and not x.get("broken"):
+        lab += " [invalid: " + ", ".join(x["reasons"]) + "]"
+    return lab

@@ -11,7 +11,36 @@ COL = {"trade-योग्य": ("#ef5350", 3, "solid"), "लागू नाह
        "तीव्र": ("rgba(255,183,77,0.5)", 1, "dash"), "K": ("#42a5f5", 2, "dash")}
 
 
-def _draw(fig, d, E, lj, t, cls):
+def checked_lines(lines, chk, keep_broken=False):
+    """TA1 (Abhi, design §10), drawing layer only: each engine line through the shared K6 check (facts/validity.py) on the 15M bars up
+    to t (`chk`; the engine's own frame). Returns [(line json, facts or None)]; facts None = anchors not in the frame (unverifiable).
+    keep_broken: K base / tip lines — their real break is the trigger (K6.5), so "broken" alone does not make them invalid."""
+    from facts import validity as FV
+    pos = {pd.Timestamp(x): i for i, x in enumerate(pd.to_datetime(chk["timestamp"]))}
+    t = len(chk) - 1
+    out = []
+    for lj in lines:
+        b1, b2 = pos.get(pd.Timestamp(lj["a1"]["ts"])), pos.get(pd.Timestamp(lj["a2"]["ts"]))
+        f = None
+        if b1 is not None and b2 is not None and b1 < b2:
+            f = FV.check_line(chk, t, (b1, float(lj["a1"]["price"])), (b2, float(lj["a2"]["price"])), FV.RES if lj["kind"] == "H" else FV.SUP)
+            if keep_broken and f["reasons"] == ["broken"]:
+                f = dict(f, valid=True)
+        out.append((lj, f))
+    return out
+
+
+def shown_lines(lines, chk, debug=False):
+    """TA1: at most 2 valid lines (facts.validity.select_lines); debug: every line, invalid ones marked."""
+    from facts import validity as FV
+    ch = checked_lines(lines, chk)
+    if debug:
+        return ch
+    pick = {id(f) for f in FV.select_lines([f for _, f in ch if f is not None and f["valid"]])}
+    return [(lj, f) for lj, f in ch if f is not None and id(f) in pick]
+
+
+def _draw(fig, d, E, lj, t, cls, facts=None):
     import plotly.graph_objects as go
     t0 = pd.to_datetime(d["timestamp"]).min()
     n = len(d)
@@ -29,25 +58,40 @@ def _draw(fig, d, E, lj, t, cls):
         col = "#26a69a"
     fig.add_trace(go.Scatter(x=[x1, x2, xn, xn + 4], y=[y1, p2, lj["value_now"], lj["value_now"] + 4 * slope_x], mode="lines",
                              line=dict(color=col, width=w, dash=dash), showlegend=False, hoverinfo="skip"))
-    tag = f"{lj['name'] or ''} · {lj['touches']['held']} touches" + (" · flip" if lj["status"] == "flip" else "") + \
-        (f" · {lj['touches']['slope_cls']}" if lj["touches"].get("slope_cls") else "")
+    if facts is not None:                                                  # TA3 label: shared touch count + projected 3rd touch
+        from trendlines2 import two_touch as TT
+        tag = f"{lj['name'] or ''} · " + TT.line_label(facts)
+    else:
+        tag = f"{lj['name'] or ''} · {lj['touches']['held']} touches" + (" · flip" if lj["status"] == "flip" else "") + \
+            (f" · {lj['touches']['slope_cls']}" if lj["touches"].get("slope_cls") else "")
     fig.add_annotation(x=xn, y=lj["value_now"], text=tag, showarrow=False, xanchor="left", font=dict(size=9, color=col))
 
 
-def figure(frame, tf, r, E, t, title, zones=None, box=None):
+def figure(frame, tf, r, E, t, title, zones=None, box=None, chk=None, debug=False):
+    """chk = the 15M bars up to t ⇒ TA1 drawing rule (≤ 2 valid lines, touch count + projected 3rd touch; zones only if they pass the
+    shared band check); chk None ⇒ the old drawing (all engine lines)."""
     import plotly.graph_objects as go
     d = frame.reset_index(drop=True)
     fig = BC._base(d, title)
     lo, hi = float(d["low"].min()), float(d["high"].max())
+    if chk is not None and zones and not debug:
+        from zones2 import charts as ZC
+        zones = [z for z, f, _ in ZC.shown_zones(zones, chk)]
     for z in zones or []:
         fig.add_shape(type="rect", x0=0, x1=len(d) - 1, y0=z["bottom"], y1=z["top"], fillcolor="rgba(239,83,80,0.07)" if z["role"] == "seller"
                       else "rgba(38,166,154,0.07)", line=dict(width=0), layer="below")
-    for lj in r.get("lines", []):
-        _draw(fig, d, E, lj, t, lj["class"])
+    if chk is None:
+        for lj in r.get("lines", []):
+            _draw(fig, d, E, lj, t, lj["class"])
+    else:
+        for lj, f in shown_lines(r.get("lines", []), chk, debug):
+            _draw(fig, d, E, lj, t, lj["class"] if (f is not None and f["valid"]) else "लागू नाही", f)
     kl = r.get("k_lines") or {}
     for k in ("base", "tip"):
         if kl.get(k):
-            _draw(fig, d, E, kl[k], t, "K")
+            f = checked_lines([kl[k]], chk, keep_broken=True)[0][1] if chk is not None else None
+            if chk is None or debug or (f is not None and f["valid"]):
+                _draw(fig, d, E, kl[k], t, "K", f)
     kb = r.get("k_base")
     if kb:
         x = PC._x_of(d, pd.Timestamp(kb["ts"]))
@@ -82,13 +126,13 @@ def box_text(r, momentum=None, zone_area=None):
     return "<br>".join(rows)
 
 
-def charts(E, E1h, r, r1h, t, zones=None, momentum=None, zone_area=None):
+def charts(E, E1h, r, r1h, t, zones=None, momentum=None, zone_area=None, debug=False):
     m = E.m15.iloc[:t + 1]
     asof = pd.Timestamp(m["bar_end"].iloc[-1])
     title = "🧭 TRENDLINE CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     return {"15M": PC.png(figure(PC.window(m, "15M", asof), "15M", r, E, t, title.format(tf="15M", d=asof), zones,
-                                 box_text(r, momentum, zone_area))),
-            "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", r1h, E1h, t, title.format(tf="1H", d=asof)))}
+                                 box_text(r, momentum, zone_area), chk=m, debug=debug)),
+            "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", r1h, E1h, t, title.format(tf="1H", d=asof), chk=m, debug=debug))}
 
 
 def caption(n, total, asof, r, why=None):

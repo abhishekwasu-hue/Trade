@@ -6,7 +6,7 @@ import dataclasses
 import pandas as pd
 
 from signals import resample_to_1h, resample_to_4h
-from sr_levels_v3 import TF_SHORT, SRConfig, compute_sr_v3, select_display_levels, to_chart_lines
+from sr_levels_v3 import TF_SHORT, SRConfig, compute_sr_v3, select_display_levels
 
 V3_VIEW = "SR Levels V3 (नवीन)"
 CHART_TFS = ["5minute", "15minute", "30minute"]
@@ -95,8 +95,52 @@ def frames_for_chart_tf(fetch_fn, token_input, symbol, chart_tf):
     return frames, daily
 
 
-def v3_chart_lines(fetch_fn, token_input, symbol, price, cfg=None, chart_tf=None):
-    """Dashboard चार्टसाठी: (chart_lines, note). डेटा/levels नसतील तर ([], कारण-सांगणारी note). exception बाहेर जात नाही."""
+TF_LABEL = {"1minute": "5M", "5minute": "5M", "15minute": "15M", "30minute": "15M", "1hour": "1H", "4hour": "1H", "day": "D", "week": "D"}
+
+
+def band_chart_lines(levels, frame, price, debug=False, tf="15minute"):
+    """TA1 / TA4 (Abhi, design §10), drawing layer only: each V3 level as a band (low–high; a single price is "not a band") through the
+    shared band check (facts/validity.py via decision3.levels.check_bands) on the chart-TF bars `frame`; ≤ 3 valid bands above and ≤ 3
+    below price + the most recently broken one (dashed grey). Each band = two edge lines (tradingview price lines). debug ⇒ every level,
+    invalid ones dotted with the reason. The V3 levels themselves (and the bots that read them) are unchanged."""
+    from decision3 import levels as LV
+    from facts import validity as FV
+    from sr_levels_v3 import _ROLE_COLORS
+    if frame is None or len(frame) < 10 or not levels:
+        return []
+    fr = frame.reset_index(drop=True)
+    ch = LV.check_bands(fr, len(fr) - 1, [{"lo": z["low"], "hi": z["high"]} for z in levels], FV.lookback(TF_LABEL.get(tf, "15M")))
+    pick = {id(f) for f in FV.select_bands([f for _, f in ch], float(price))}
+    out = []
+    for z, (_, f) in zip(levels, ch):
+        if not debug and id(f) not in pick:
+            continue
+        letter = {"SUPPORT": "S", "RESISTANCE": "R"}.get(z["role"], "Z")
+        head = f"{letter} {z['grade']}{int(round(z['score']))} {'+'.join(z['tags'][:3])}".strip()
+        if f["valid"]:
+            col, txt, dash = _ROLE_COLORS[z["role"]][z["grade"]], f"{head} {f['lo']:,.0f}-{f['hi']:,.0f} T{f['touch_count']}", False
+        elif f["broken"] and id(f) in pick:
+            col, txt, dash = "#90a4ae", f"{head} {f['lo']:,.0f}-{f['hi']:,.0f} broken", True
+        else:
+            col, txt, dash = "#78909c", f"{head} invalid: {', '.join(f['reasons'])}", True
+        near, far = (f["hi"], f["lo"]) if f["hi"] <= price else (f["lo"], f["hi"])
+        out.append({"price": near, "title": txt, "color": col, "dashed": dash, "width": 2 if f["valid"] else 1})
+        if f["hi"] > f["lo"]:
+            out.append({"price": far, "title": f"{head} band edge", "color": col, "dashed": True, "width": 1})
+    return out
+
+
+def view_frame(frames, chart_tf):
+    """(TF, bars) for the band check: the chart's own TF (the first TF of its level set that was fetched)."""
+    for tf in CHART_TF_SETS.get(chart_tf, ("15minute", "5minute", "30minute")):
+        if tf in frames:
+            return tf, frames[tf]
+    return next(iter(frames.items()), (None, None))
+
+
+def v3_chart_lines(fetch_fn, token_input, symbol, price, cfg=None, chart_tf=None, debug=False):
+    """Dashboard चार्टसाठी: (chart_lines, note). डेटा/levels नसतील तर ([], कारण-सांगणारी note). exception बाहेर जात नाही.
+    TA4: फक्त band rule pass होणारे पट्टे (`band_chart_lines`); debug ⇒ सगळे, कारणासह."""
     cfg = cfg or SRConfig()
     if chart_tf in DISPLAY_MAX_DISTANCE_PCT:
         cfg = dataclasses.replace(cfg, max_distance_pct=max(cfg.max_distance_pct, DISPLAY_MAX_DISTANCE_PCT[chart_tf]))
@@ -111,6 +155,10 @@ def v3_chart_lines(fetch_fn, token_input, symbol, price, cfg=None, chart_tf=None
         shown = select_display_levels(result["levels"], price, cfg)
         if not shown:
             return [], "SR Levels V3: सध्या किंमतीजवळ पात्र level सापडला नाही."
-        return to_chart_lines(shown), None
+        vtf, vfr = view_frame(frames, chart_tf)
+        lines = band_chart_lines(shown, vfr, price, debug, vtf)
+        if not lines:
+            return [], "SR Levels V3: किंमतीजवळचा एकही level band नियम (2 reaction touches, ≤ 1.5 MR, TA4) पूर्ण करत नाही."
+        return lines, None
     except Exception as e:  # चार्ट दिसत राहावा; कारण caption मध्ये
         return [], f"SR Levels V3 लोड करता आला नाही ({type(e).__name__}: {e})."

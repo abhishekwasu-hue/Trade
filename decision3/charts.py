@@ -125,13 +125,40 @@ def weekly_png(daily_df, title):
     return _png(fig)
 
 
-MAX_LEVEL_BANDS = 6                                                        # C1 (Abhi): review charts वर कमाल 6 level पट्टे
+MAX_LEVEL_BANDS = 6                                                        # C1 (Abhi): review charts वर कमाल 6 level पट्टे (debug बाहेर आता TA4: 3 वर + 3 खाली)
+
+
+def band_view(lv, t, shown, act, debug=False):
+    """TA1 / TA4 (Abhi, design §10) — drawing layer only, the decision is unchanged: the shared band check (facts/validity.py via
+    decision3.levels.check_bands) on each level band, on the 1H bars up to t (the running hour only up to t). Returns
+    [(level, facts, style)] with style "valid" / "broken" (the most recent broken one, dashed) / "active" (the engine's active level,
+    valid but outside the 3 + 3 view — still drawn) / "decision" (the engine's active level that fails the check — still drawn,
+    labelled with the reasons, because it is the level the decision used). ≤ 3 valid above and ≤ 3 below price. Band check window =
+    the 1H lookback (design §5, 15 sessions).
+    debug=True: every level with its facts (style "debug")."""
+    from facts import validity as FV
+    j_end = int(lv.h1_of[t])
+    fr = lv.h1.iloc[:j_end + 1].reset_index(drop=True)
+    fr.loc[len(fr) - 1, ["open", "high", "low", "close"]] = list(lv._h1_upto(j_end, t))
+    checked = LV.check_bands(fr, len(fr) - 1, shown, FV.lookback("1H"), magnet_df=lv.m15.iloc[:t + 1])
+    if debug:
+        return [(x, f, "debug") for x, f in checked]
+    facts = [f for _, f in checked]
+    pick = {id(f) for f in FV.select_bands(facts, float(fr["close"].iloc[-1]))}
+    out = []
+    for x, f in checked:
+        if id(f) in pick:
+            out.append((x, f, "valid" if f["valid"] else "broken"))
+        elif x["id"] in act:
+            out.append((x, f, "active" if f["valid"] else "decision"))
+    return out
 
 
 def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None, debug=False):
-    """1H (C1 default): candles of the last `sessions` sessions (up to t), at most 6 level bands (active first, then nearest; one
-    label: role, price, state) and the highlighted trigger candle - nothing else. debug=True: all nearby levels (births, sweeps,
-    tests), D2 swings and liquidity marks."""
+    """1H: candles of the last `sessions` sessions (up to t), the level bands that pass the shared band check (TA1 / TA4: ≤ 3 above and
+    ≤ 3 below price, the most recent broken one dashed, the active level always; label: role, price, touch count) and the highlighted
+    trigger candle - nothing else. debug=True: all nearby levels (births, sweeps, tests, band-check reasons), D2 swings and liquidity
+    marks."""
     h1, h1_of = lv.h1, lv.h1_of
     j_end = int(h1_of[t])
     days = pd.to_datetime(h1["timestamp"]).dt.normalize()
@@ -146,17 +173,22 @@ def h1_png(lv, t, trend, title, sessions=8, max_sigma=None, liq=None, band=None,
     lim = (max_sigma or float(lv.s["show_distance_sigma"])) * (sg if np.isfinite(sg) else np.inf)
     act = {x["id"] for x in lv.active(t, trend, band)}                    # Q27: engine ② सारखाच पट्टा
     shown = [x for x in lv.snapshot(t) if x["dist"] <= lim or x["id"] in act]   # दूरची levels chart वर लपवा (snapshot मध्ये आहेत)
-    if not debug:
-        shown = sorted(shown, key=lambda x: (x["id"] not in act, x["dist"]))[:MAX_LEVEL_BANDS]
-    for x in shown:
+    view = band_view(lv, t, shown, act, debug) if shown else []
+    for x, f, style in view:
         col = "#2f9e44" if x["role"] == LV.SUP else "#e03131"
-        ax.axhspan(x["lo"], x["hi"], color=col, alpha=0.30 if x["id"] in act else 0.10, lw=0)
-        if debug:
-            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'][:3]} {'+'.join(x['births'])} {'★' * x['sweeps']} t{x['tests']}"
+        if style == "broken":
+            ax.axhspan(x["lo"], x["hi"], facecolor="none", edgecolor="#868e96", ls="--", lw=1.0)
         else:
-            st = "tested" if x.get("tests") else "fresh"
+            ax.axhspan(x["lo"], x["hi"], color=col, alpha=0.30 if x["id"] in act else 0.10, lw=0)
+        if debug:
+            lab = f"{'▶ ' if x['id'] in act else ''}{x['role'][:3]} {'+'.join(x['births'])} {'★' * x['sweeps']} t{x['tests']}" + \
+                f" [{'valid' if f['valid'] else ','.join(f['reasons'])}, T{f['touch_count']}]"
+        else:
+            st = {"valid": f"{f['touch_count']} touches" + (", established" if f["established"] else ""), "broken": "broken",
+                  "active": f"{f['touch_count']} touches, active level outside the 3 + 3 view",
+                  "decision": "fails band check: " + ", ".join(f["reasons"])}[style]
             lab = f"{'▶ ' if x['id'] in act else ''}{x['role'].lower()} {x['lo']:,.0f}-{x['hi']:,.0f} ({st})"
-        ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color=col, va="center")
+        ax.text(len(frame) - 0.5, (x["lo"] + x["hi"]) / 2, " " + lab, fontsize=7, color="#868e96" if style == "broken" else col, va="center")
     ax.axvspan(len(frame) - 1.5, len(frame) - 0.5, color="#fab005", alpha=0.18, lw=0)   # C1: trigger candle (चालू तास)
     for q in (liq or ()) if debug else ():                                                        # §7.6 liquidity pools (BSL वर / SSL खाली) — लहान खुणा
         col = "#1971c2" if q["side"] == "buy" else "#c2255c"
