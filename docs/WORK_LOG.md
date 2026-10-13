@@ -2143,3 +2143,27 @@ vision_audit 22 pass.
 unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
 "impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
 chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.
+
+## 2026-10-13 (IST पहाट) · RESUME worker — PR #299 main merge + merged-main वर 30-setup re-run (अहवाल §9)
+
+**PR #299 (`claude/v22-trapped-zones`):** origin/main (1396ac8, 72 commits मागे) merge; conflict फक्त WORK_LOG (दोन्ही नोंदी ठेवल्या);
+`test_decision3*.py test_level*.py test_elliott_correction_library.py` ⇒ 684 passed, 2 skipped, 9 xfailed. Code बदल नाही.
+**Re-run (`claude/setups-rerun-merged`):** `scripts/v22_setup_charts.py run` NIFTY 2015-01 … 2024-03 (holdout assert), 56,765 bars, 459 s:
+setup **14** (30 पैकी 4 + 10 नवे bear calls), wait 39,024, no_trade 17,727. §2 trend audit 6 pass · 2 ambiguous · 6 FAIL (नवे FAIL 2015-08-03,
+2015-11-20 ×2 — Daily advance मध्ये bear call, rev gate ने पकडलं नाही); a–f: एकही row सगळे pass नाही ((a) 13 ✘, (e) 14 ✘ volume NA).
+कारणं engine fields + role0 what-if (decide() फक्त त्या bars वर): 7 नवे = `mature_step_down` (D12-1; आधी weak), 2015-08-03 = `level_death_side = role`
+(role0 ⇒ wait), 2020-04-08 / 09 = वेगळं कारण (role0 ने सुद्धा setup; वेगळं काढलं नाही); confirmation run चे 2018 चे 3 setups आता ⑦ R:R < 3 (role ने
+रुंद merged band; role0 ⇒ तिन्ही setup परत ⇒ TL1 + TL2), 2022-01-20 ③ K नाही (दोन्ही death rules). #24 09:45 अजूनही "not dominant" (Abhi ची अपेक्षा).
+Charts (Daily + 15M + 5M, volume pane; intraday NA, Daily bhavcopy FUT 2018-12 पासून) + `audit_columns.json` + `trend_audit.txt` ⇒ trade-data
+`review/v22/setups_prA_v2/` (tag debug). Setting / threshold / gate बदल **0**. उघडे: TF8.
+**Self-review:** holdout — run / columns / render तिन्ही scripts चे asserts (2024-04 नंतरचा एकही row नाही; setups सगळे ≤ 2022-04); run चे output
+फक्त अहवाल + data (code बदल नाही ⇒ नवे tests नाहीत); "7 step-down" rows चं कारण code logic (mature ⇒ weak cap) + flag; "death-side" rows what-if ने (माझा पहिला अंदाज "3 death-side" चुकीचा होता — 2020-04 चे दोन नाहीत, 2018 चे तीन उलट death-side ने गेले); audit (e)/(f) ची व्याख्या engine च्या ⑥ पेक्षा वेगळी (#9 वर उलट निकाल) — TF7 मध्ये नोंद, script बदलला नाही.
+**Driver:** `scripts/v22_setup_charts.py run` ला `--m15 / --daily / --ltf / --futures` (15M-only symbols; ltf नाही ⇒ fail-closed wait, futures नाही ⇒ NA)
++ pickle मध्ये `bars` (प्रत्येक bar: decision, पहिला ✘ gate, कारण). Tests `tests/test_v22_setup_charts_run_m15.py` (4: inputs / pickle रचना, ltf नाही ⇒
+setup 0 + warning, `--from` truncation = पूर्ण run चे तेच निर्णय, --daily आवश्यक). `test_volume_pane.py` 21 पास.
+**BANKNIFTY merged-main run** (15M Jul–Oct 2026, Daily पूर्ण, 5M + FUT volume फक्त 30 Sep–6 Oct): setup 0; 30 Sep 14:00 / 14:15 bear call
+a2 / c0 (volume 1.4× / 1.8×) / c1 ✔ पण area 54,891–56,200 (1,309 pts) ⇒ R:R 0.06 / 0.21 ⇒ TL2 + D12-5 चं live उदाहरण (no_signals §6; charts
+trade-data `review/v22/banknifty_merged_1013/`). Live path चे a2 / c0 / c1 खऱ्या data वर end-to-end दिसले.
+**PR #299 BANKNIFTY before / after** (पेंडिंग होतं): तोच BANKNIFTY run #299 branch वर — 1,575 bars decision / gate / कारण 0 फरक, ⑦ चे 2 bars R:R
+समान (PR वर comment). CI: #299 ✅ (c21bc76), #311 ✅ (6312d52 — एक test fix: LTF-missing इशारा process मध्ये एकदाच ⇒ test मध्ये `_LTF_WARNED` reset).
+**पुढे:** Abhi TF8 / TL2 / D12-1 / D12-5; 12-Oct खऱ्या data वर replay (VPS). 01:03 UTC पासून दुसरं session सक्रिय (`claude/deploy-order-fix`) ⇒ थांबलो.

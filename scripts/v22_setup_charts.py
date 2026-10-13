@@ -4,6 +4,8 @@ Upstox call नाही: सगळा डेटा दिलेल्या फ
 
     # 1) V22 run ⇒ pickle (setups + m15 + daily states)
     python3 scripts/v22_setup_charts.py run --symbol NIFTY --m1 data/nifty50_1min.parquet --out setups_rows.pkl [--from 2026-09-01]
+    #    15M-only symbols (BANKNIFTY): --m15 <15M csv> --daily <D csv ...> [--ltf <5M index parquet/csv>] [--futures <FUT 5M ...>]
+    #    (ltf नाही ⇒ V22 fail-closed: प्रत्येक bar "LTF data missing" ⇒ wait; futures नाही ⇒ volume NA)
     # 2) charts
     python3 scripts/v22_setup_charts.py render setups_rows.pkl OUT_DIR --symbol NIFTY \
         [--futures trade-data/futures_volume/oe_futures_5min_NIFTY.parquet] [--bhavcopy trade-data/nse_fo_bhavcopy/NIFTY ...] \
@@ -109,29 +111,93 @@ def load_bhavcopy_fut(dirs, symbol):
 
 
 # ------------------------------------------------------------------------------------------------ run (V22 ⇒ pickle)
+def load_m15(path, symbol):
+    """बंद 15M bars (timestamp = bar सुरुवात, naive IST) + bar_end; pivots.engine.guard (holdout) लागू."""
+    from pivots import engine as PE
+    x = _read(path)
+    x["timestamp"] = pd.to_datetime(x["timestamp"])
+    if getattr(x["timestamp"].dt, "tz", None) is not None:
+        x["timestamp"] = x["timestamp"].dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    if "bar_end" not in x.columns:
+        x["bar_end"] = x["timestamp"] + pd.Timedelta(minutes=15)
+    else:
+        x["bar_end"] = pd.to_datetime(x["bar_end"])
+    x = x.drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+    PE.guard(x, instrument=symbol)
+    return _no_holdout(x[["timestamp", "bar_end", "open", "high", "low", "close"]], symbol)
+
+
+def load_ltf(paths, symbol):
+    """LTF (5M) spot bars ⇒ V22 `ltf=` (बंद bars; timestamp = bar सुरुवात). नाही ⇒ None (V22 fail-closed)."""
+    if not paths:
+        return None
+    fr = []
+    for p in paths:
+        x = _read(p)
+        x["timestamp"] = pd.to_datetime(x["timestamp"])
+        if getattr(x["timestamp"].dt, "tz", None) is not None:
+            x["timestamp"] = x["timestamp"].dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+        fr.append(x[["timestamp", "open", "high", "low", "close"]])
+    x = pd.concat(fr, ignore_index=True).drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+    return _no_holdout(x, symbol)
+
+
+def load_fut_engine(paths, symbol):
+    """FUT 5M (timestamp, volume, contract) ⇒ V22 `futures=` (legs2.volume.near_month expiry contract नावावरून). नाही ⇒ None (volume NA)."""
+    if not paths:
+        return None
+    f = pd.concat([_read(p) for p in paths], ignore_index=True)
+    f["timestamp"] = pd.to_datetime(f["timestamp"])
+    if getattr(f["timestamp"].dt, "tz", None) is not None:
+        f["timestamp"] = f["timestamp"].dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    f = f.sort_values("timestamp").reset_index(drop=True)
+    return _no_holdout(f, symbol)
+
+
 def cmd_run(a):
     from decision3 import engine as E3
     from decision3 import history as HI
     from pivots import engine as PE
     t0 = time.time()
-    m1 = load_m1(a.m1, a.symbol)
-    assert not any(DP.period(t) == "HOLDOUT" for t in m1["timestamp"].dt.normalize().unique()) or a.symbol.upper() != "NIFTY"
-    m15 = PE.bars_15m(m1)
-    d = m1.set_index("timestamp").resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna().reset_index()
+    if not a.m1 and not a.m15:
+        raise SystemExit("run: --m1 किंवा --m15 हवं")
+    if a.m1:
+        m1 = load_m1(a.m1, a.symbol)
+        assert not any(DP.period(t) == "HOLDOUT" for t in m1["timestamp"].dt.normalize().unique()) or a.symbol.upper() != "NIFTY"
+        m15 = PE.bars_15m(m1)
+        d = m1.set_index("timestamp").resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna().reset_index()
+    else:
+        if not a.daily:
+            raise SystemExit("run --m15: --daily हवं (Daily history 15M वरून बनत नाही)")
+        m1 = None
+        m15 = load_m15(a.m15, a.symbol)
+        d = m15.iloc[0:0][["timestamp", "open", "high", "low", "close"]]
     if a.daily:
         dd = HI.load_daily(a.daily)[["timestamp", "open", "high", "low", "close"]]
         d = pd.concat([dd, d[d["timestamp"] > dd["timestamp"].max()]], ignore_index=True)
     d = d[d["timestamp"] <= pd.to_datetime(m15["timestamp"]).max().normalize()].reset_index(drop=True)
     d["bar_end"] = d["timestamp"] + pd.Timedelta(hours=15, minutes=30)
-    V = E3.V22(m15, m1, d, sealed=HI.sealed_fn(a.symbol))
+    kw = {}
+    ltf = load_ltf(a.ltf, a.symbol)
+    if ltf is not None:
+        kw["ltf"] = ltf
+    fut = load_fut_engine(a.futures, a.symbol)
+    if fut is not None:
+        kw["futures"] = fut
+    V = E3.V22(m15, m1, d, sealed=HI.sealed_fn(a.symbol), **kw)
     bars = None
     if a.from_:
         ts = pd.to_datetime(V.m15["timestamp"])
         bars = [i for i in range(len(ts)) if ts.iloc[i] >= pd.Timestamp(a.from_)]
     rows = V.run(bars) if bars is not None else V.run()
     setups = [r for r in rows if r["decision"] == "setup"]
+
+    def brief(r):                                                           # प्रत्येक bar ची छोटी नोंद (funnel: पहिला ✘ gate + कारण)
+        gate = next((k for k, v in (r.get("checklist") or {}).items() if v and v[0] is False), None)
+        why = (r.get("checklist") or {}).get(gate, [None, ""])[1] if gate else (r.get("why") or "")
+        return {"ts": r["ts"], "decision": r["decision"], "gate": gate, "why": str(why)[:200], "trend": r.get("trend_used")}
     out = {"symbol": a.symbol.upper(), "setups": setups, "m15": V.m15, "daily_df": V.daily_df, "daily_states": V.daily, "n": len(rows),
-           "decisions": collections.Counter(r["decision"] for r in rows)}
+           "decisions": collections.Counter(r["decision"] for r in rows), "bars": [brief(r) for r in rows]}
     with open(a.out, "wb") as fh:
         pickle.dump(out, fh)
     print(len(rows), dict(out["decisions"]), len(setups), round(time.time() - t0, 1))
@@ -194,8 +260,11 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--symbol", default="NIFTY")
-    r.add_argument("--m1", nargs="+", required=True)
+    r.add_argument("--m1", nargs="*", default=None, help="1m bars (NIFTY repo parquet / upstox csv); 15M + Daily + 5M LTF यावरून")
+    r.add_argument("--m15", default=None, help="बंद 15M bars (BANKNIFTY) — --m1 नसेल तर; --daily आवश्यक")
     r.add_argument("--daily", nargs="*", default=None, help="Daily files (decision3.history.load_daily); नाही ⇒ 1m वरून")
+    r.add_argument("--ltf", nargs="*", default=None, help="5M spot bars ⇒ V22 ltf= (c1); नसेल तर --m1 मधून 5M; दोन्ही नाही ⇒ fail-closed wait")
+    r.add_argument("--futures", nargs="*", default=None, help="FUT 5M (timestamp, volume, contract) ⇒ V22 futures= (c0 volume); नाही ⇒ NA")
     r.add_argument("--from", dest="from_", default=None, help="या तारखेपासूनचे bars च evaluate (warm-up आधीचे)")
     r.add_argument("--out", required=True)
     g = sub.add_parser("render")

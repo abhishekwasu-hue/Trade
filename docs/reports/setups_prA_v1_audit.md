@@ -209,3 +209,70 @@ already removed by the trend-first fix.
   15M LH 17,198 (R:R 1.49). So there is no setup at 09:45, as Abhi expected. The same area later: 12:00 has a 5M CHoCH (11:20) and a
   dominant engulf (1.74×) but no handover, and (a) ✘ (R:R 0.27 to 17,066). 12:15 passes a2 + c0 (3.57×) + CHoCH but fails (a)
   (R:R 1.43 to 17,198) and (d) (conviction A on a provisional origin).
+
+## 9. Re-run on the merged main (13 Oct, 1396ac8 — after #305 trend-first, #308 a2/c0/c1, #309 touch / death side, #306 volume pane, 12-Oct blockers)
+
+Same data, same range, holdout asserted absent (`scripts/v22_setup_charts.py run`, 56,765 bars, 459 s). No setting was changed for this
+run. Charts (Daily + 15M + 5M, volume pane under each; intraday volume NA, Daily = bhavcopy near-month FUT from 2018-12) and the
+machine-readable audit are in trade-data `review/v22/setups_prA_v2/` (commit ebe254e; manifest tag `debug` — not for Telegram until Abhi has audited).
+
+| run | setup | wait | no_trade |
+|---|---|---|---|
+| §3 before PR A fixes (prA_v1) | 30 | 55,813 | 922 |
+| §5 trend-first only (#305) | 28 | 40,055 | 16,682 |
+| a2/c0/c1 only (`v22_confirmation_c1.md`, on the pre-#305 base) | 8 | 55,873 | 884 |
+| **merged main (this run)** | **14** | 39,024 | 17,727 |
+
+**The 14 setups.** 4 are from the confirmation run's 8 (2017-11-08 13:30, 2022-03-14 13:30, 2022-03-28 12:00 and 12:15) — all of them
+were in the original 30. **10 are new bear calls, none in the original 30**, all grade B (volume NA): 2015-08-03 13:00, 2015-11-20 12:15 /
+13:30, 2016-02-18 11:15, 2016-04-12 13:15 / 13:30, 2017-01-24 11:30 / 12:45, 2020-04-08 11:30, 2020-04-09 10:45. Why they appear now
+(engine fields + one what-if, `level_death_side = "role0"`, decide() on these bars only — `role0_whatif.json`): 7 of the 10 carry
+`mature_step_down` — the Daily impulse was mature, which until the 12-Oct blockers change capped the bar at "weak" (wait, whatever
+③–⑦ said) and now only steps the grade down (D12-1: maturity is evidence). 2015-08-03 is a death-side row: with `role0` the area
+8,551–8,561 (born a:D2+c) is dead and the bar waits ("no touch"); with `role` (TL1, Abhi approved) it lives. 2020-04-08 / 09 are **not**
+death-side rows (with `role0` they are still setups) and not maturity rows; which of the other merged changes (#309 touched-level
+ranking, 12-Oct blockers evidence window / areas, #305) opened them was not isolated here.
+
+**The 4 confirmation-run setups that are gone:** 2018-03-05 13:45, 2018-05-16 10:15 and 2018-06-19 13:15 now end at ⑦ **R:R < 3**
+(2.71 / 1.34 / 1.28) — a2 / c0 / c1 still pass, but the area is a different, wider merged band (10,295–10,424 born a:D2+b+a:D+c with
+13 sweeps, vs 10,303–10,388 under `role0`), so the SL sits further away. The what-if confirms it: with `level_death_side = "role0"`
+all three are setups again. So TL1 (approved) and the merge rule (TL2) together cost these three; they are the concrete rows for TL2.
+2022-01-20 14:45 ends at ③ ("no trend-direction impulse / origin broken" — K not open) under both death rules — not isolated here.
+#24 (2022-03-28 09:45) still waits — "commitment not dominant (1.0×)" — as Abhi expected (`lost_rows_decide.json`).
+
+**Trend audit (§2 rule, unchanged):** 6 pass · 2 ambiguous · 6 FAIL. New FAIL rows: 2015-08-03 (engine DOWN impulse; rule UP — HH
+8,561 → 8,655, HL 7,941 → 8,316) and 2015-11-20 ×2 (engine DOWN correction candidate; rule UP — HH 8,055 → 8,335, HL 7,540 → 7,691).
+Both are bear calls inside a Daily advance that the trend-first gate (`rev`) did not catch — the same degree question as TF1 / TF4 (the
+rule's N = 5 swings vs the engine's N = 2 + Q45). 2017-01-24 ×2 pass with the `broken` flag (rule DOWN already broken by the close).
+2022-03-14 and 2022-03-28 ×2 (12:00, 12:15) FAIL as in §5. 2020-04-08 / 09 pass (rule DOWN) — but they are bear calls in the 2nd / 3rd week of the
+2020-03-24 rebound; Abhi reads them (TF8).
+
+**Audit columns a–f (same script, same definitions as §8):**
+
+| # | setup | area | (a) nearest opposite area between entry and target · R:R (engine) | (b) arrival | (c) crossings 5d (tests/sweeps) | (d) Daily · provisional · conv | (e) a2 · c0 body× · volume | (f) 5M at setup |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 2015-08-03 13:00 BC | 8,551–8,561 | 15M swing low 8,511 (03-Aug 09:15) · R:R 0.99 (6.01) ✘ | breakout→retest (0 bars after break, immediate), 15 touch, depth 1.25 ✘ | 1 (6/6) | DOWN impulse/pullback · provisional · B | no handover · 3.6× ok · vol NA ✘ | CHoCH by close at 03-Aug 13:00 (8,549 beyond 8,555) |
+| 2 | 2015-11-20 12:15 BC | 7,897–7,938 | 15M swing low 7,818 (20-Nov 09:45) · R:R 1.37 (3.14) ✘ | pullback, 6 touch, depth 0.24 | 0 (18/7) | DOWN correction/candidate · provisional · B | handover · 3.19× ok · vol NA ✘ | CHoCH by close at 20-Nov 12:20 (7,889 beyond 7,893) |
+| 3 | 2015-11-20 13:30 BC | 7,897–7,938 | 15M swing low 7,880 (20-Nov 12:30) · R:R 0.17 (3.19) ✘ | pullback, 10 touch, depth 0.24 | 0 (19/7) | DOWN correction/candidate · provisional · B | handover · 1.75× ok · vol NA ✘ | CHoCH by close at 20-Nov 12:20 (7,889 beyond 7,893) |
+| 4 | 2016-02-18 11:15 BC | 7,194–7,199 | 15M swing low 6,994 (17-Feb 13:15) · R:R 3.37 (3.71) | breakout→retest (0 bars after break, immediate), 9 touch, depth 4.43 ✘ | 3 (2/3) | DOWN impulse/pullback · provisional · B | absorption · 2.5× ok · vol NA ✘ | CHoCH by close at 18-Feb 11:25 (7,168 beyond 7,180) |
+| 5 | 2016-04-12 13:15 BC | 7,667–7,726 | 15M swing low 7,679 (12-Apr 10:15) · R:R 0.5 (4.95) ✘ | breakout→retest (133 bars after break), 19 touch, depth 0.84 | 0 (34/9) | DOWN correction/candidate · provisional · B | no handover · 2.16× ok · vol NA ✘ | CHoCH by close at 12-Apr 13:25 (7,696 beyond 7,701) |
+| 6 | 2016-04-12 13:30 BC | 7,667–7,726 | 15M swing low 7,679 (12-Apr 10:15) · R:R 0.07 (3.26) ✘ | breakout→retest (134 bars after break), 20 touch, depth 0.84 | 0 (34/9) | DOWN correction/candidate · provisional · B | handover · 4.19× ok · vol NA ✘ | CHoCH by close at 12-Apr 13:25 (7,696 beyond 7,701) |
+| 7 | 2017-01-24 11:30 BC | 8,414–8,460 | 15M swing low 8,351 (23-Jan 13:30) · R:R 2.65 (3.32) ✘ | pullback, 10 touch, depth 0.61 | 0 (2/1) | DOWN impulse/pullback · provisional · B | no handover · 1.99× ok · vol NA ✘ | CHoCH by close at 24-Jan 11:30 (8,434 beyond 8,434) |
+| 8 | 2017-01-24 12:45 BC | 8,414–8,460 | 15M swing low 8,429 (24-Jan 11:30) · R:R 0.17 (3.62) ✘ | pullback, 15 touch, depth 0.67 | 0 (2/1) | DOWN impulse/pullback · provisional · B | no handover · 1.68× ok · vol NA ✘ | CHoCH by close at 24-Jan 12:50 (8,431 beyond 8,433) |
+| 9 | 2017-11-08 13:30 BP | 10,321–10,333 | 15M swing high 10,370 (08-Nov 11:45) · R:R 0.93 (4.86) ✘ | breakout→retest (192 bars after break), 4 touch, depth 0.54 | 0 (10/2) | UP impulse/pullback · provisional · B | no handover · 1.24× not dominant · vol NA ✘ | still against (last 5M LH 10,353 at 08-Nov 12:30, no close beyond) ✘ |
+| 10 | 2020-04-08 11:30 BC | 8,949–9,038 | 15M swing low 8,658 (08-Apr 09:15) · R:R 0.9 (4.04) ✘ | breakout→retest (0 bars after break, immediate), 8 touch, depth 2.03 ✘ | 1 (1/2) | DOWN impulse/pullback · provisional · B | no handover · 3.28× ok · vol NA ✘ | CHoCH by close at 08-Apr 11:40 (8,889 beyond 8,900) |
+| 11 | 2020-04-09 10:45 BC | 8,949–9,038 | 15M swing low 8,700 (08-Apr 14:00) · R:R 1.1 (3.89) ✘ | breakout→retest (22 bars after break, immediate), 15 touch, depth 2.03 ✘ | 2 (2/2) | DOWN impulse/pullback · provisional · B | no handover · 1.8× ok · vol NA ✘ | CHoCH by close at 08-Apr 11:40 (8,889 beyond 8,900) |
+| 12 | 2022-03-14 13:30 BP | 16,701–16,757 | Daily broken low ⇒ supply 16,810 (14-Feb-22) · R:R 0.18 (3.94) ✘ | breakout→retest (4 bars after break, immediate), 1 touch, depth 0.01, edge only ✘ | 1 (6/8) | UP correction/correction · provisional · B | too few bars · 1.67× ok · vol NA ✘ | no 5M swing before the pullback extreme ✘ |
+| 13 | 2022-03-28 12:00 BP | 17,006–17,039 | 15M swing high 17,066 (28-Mar 11:15) · R:R 0.27 (6.25) ✘ | pullback, 9 touch, depth 1.07 | 0 (2/2) | UP impulse/pullback · provisional · B | no handover · 1.74× ok · vol NA ✘ | CHoCH by close at 28-Mar 11:20 (17,055 beyond 17,046) |
+| 14 | 2022-03-28 12:15 BP | 17,006–17,039 | 15M swing high 17,198 (25-Mar 15:15) · R:R 1.43 (3.9) ✘ | pullback, 9 touch, depth 1.07 | 0 (2/2) | UP impulse/pullback · provisional · B | handover · 3.57× ok · vol NA ✘ | CHoCH by close at 28-Mar 11:20 (17,055 beyond 17,046) |
+
+✘ counts (14 rows): (a) 13 · (b) 5 · (c) 0 · (d) 0 · (e) 14 · (f) 2. **No row passes all of a–f.** (a) fails on 13 of 14 — the nearest
+15M opposite swing between entry and target gives R:R < 3 everywhere except 2016-02-18 (3.37); (e) fails everywhere because volume is NA
+in 2015–2024 (LB23) — with volume ignored, (e) would pass on 4 rows (handover + dominant: 2015-11-20 ×2, 2016-04-12 13:30, 2022-03-28
+12:15). (d) is 0 now because every setup is grade B (volume NA cap), so "conviction A on a provisional origin" cannot occur.
+**Definition note (TF7):** for #9 (2017-11-08 13:30) the audit's (e) says "1.24× not dominant" and (f) "still against", while the
+engine's ⑥ passed (engulf 2.42×, 5M CHoCH via sweep-and-reclaim at 13:40). The column script uses its own arrival bar and a plain N = 2
+5M swing (LB25 / LB26 differ: sweep of the study-window low, last 1-bar LH); it is diagnostic and was not changed here.
+
+Not done here: no threshold, merge rule or gate was touched. The rows go to Abhi (TF8); the TL2 merge-width question now has 3 concrete
+2018 rows.
