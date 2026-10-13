@@ -48,6 +48,20 @@ def mature_intact(st):
     return st.phase in ("impulse", "correction") and st.counter != "correction"
 
 
+def fut_children(fut_ts):
+    """FUT bars ⇒ (children per 15M bin, children a complete bin needs, FUT bar step). Bins are the same 09:15-anchored 15M bins as
+    legs2.volume.to_15m (OPEN / BAR — the volume join itself); the step is the FUT data's own bar size (median spacing inside a session),
+    never the LTF minutes. A complete bin needs BAR ÷ step distinct FUT bars."""
+    from legs2 import volume as LVOL
+    ft = pd.to_datetime(pd.Series(fut_ts)).sort_values().reset_index(drop=True)
+    day = ft.dt.normalize()
+    d = ft.diff()[(day == day.shift()) & (ft.diff() > pd.Timedelta(0))]
+    step = d.median() if len(d) else LVOL.BAR
+    step = step if pd.notna(step) and step > pd.Timedelta(0) else LVOL.BAR
+    b0 = day + LVOL.OPEN + ((ft - day - LVOL.OPEN) // LVOL.BAR) * LVOL.BAR
+    return ft.groupby(b0).nunique(), max(1, int(LVOL.BAR // step)), step
+
+
 class V22:
     def __init__(self, m15, df1m=None, daily_df=None, s=None, res=None, sealed=None, ltf=None, futures=None):
         self.s = S3.load(s)
@@ -98,17 +112,12 @@ class V22:
             nm = LVOL.near_month(futures)
             st = pd.to_datetime(self.m15["timestamp"]).reset_index(drop=True)
             if len(nm):                                                    # 15M bar with < 3 of 3 FUT 5M children ⇒ NA (never under-counted)
-                ft = pd.to_datetime(nm["timestamp"])
-                day = ft.dt.normalize()
-                b0 = day + pd.Timedelta(hours=9, minutes=15) + ((ft - day - pd.Timedelta(hours=9, minutes=15)) // pd.Timedelta(minutes=15)) \
-                    * pd.Timedelta(minutes=15)
-                kids = ft.groupby(b0).nunique()
-                need = 15 // lm
+                kids, need, step = fut_children(nm["timestamp"])
                 for i, x in enumerate(st):
                     got = int(kids.get(x, 0))
                     if 0 < got < need:
                         raw[i] = np.nan
-                        self.vol_reason[i] = f"incomplete 15M FUT bar ({got} of {need} 5M bars)"
+                        self.vol_reason[i] = f"incomplete 15M FUT bar ({got} of {need} {int(step / pd.Timedelta(minutes=1))}M bars)"
                     elif got == 0:
                         self.vol_reason[i] = "no FUT bar"
                 sessions = sorted(st.dt.normalize().unique())

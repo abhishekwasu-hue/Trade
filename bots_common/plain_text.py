@@ -89,14 +89,16 @@ def trend_words(ctx):
 
 
 def unclear_words(ctx):
-    """trend नसताना (fail-closed) साधं कारण — engine चे शब्द (Q47, origin …) नाहीत."""
+    """trend नसताना (fail-closed) साधं कारण — engine चे शब्द (Q47, origin …) नाहीत. क्रम level_reaction.context_from_state सारखाच
+    (origin तुटला → रचना उलट (rev) → parent correction → unclear). Origin धोक्यात (origin_risk) = फक्त context (Abhi B1) ⇒ हे कधीच
+    no-entry कारण नाही."""
     ctx = ctx or {}
     tr = str(ctx.get("trend") or "UNKNOWN")
     if tr in ("UP", "DOWN"):
         if ctx.get("phase") == "origin_broken":
             return f"Daily {tr}, but the trend's starting point broke on a daily close"
-        if ctx.get("origin_risk"):
-            return f"Daily {tr}, but price is back at the trend's starting point"
+        if ctx.get("structure_against"):
+            return f"Daily {tr}, but the daily structure since the trend's last {'high' if tr == 'UP' else 'low'} turned against it"
         if ctx.get("counter") == "correction":
             return f"Daily {tr} is inside a bigger correction"
     if tr == "UNKNOWN":

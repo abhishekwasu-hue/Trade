@@ -571,41 +571,53 @@ def find_bands(df, t, s=None, start=None, magnet_df=None):
 
 
 def band_flip_facts(df, t, x, s=None, start=None):
-    """KB K4 (Abhi) facts on a checked band x (facts.validity.check_band output): flip_state ACTIVE / BROKEN / FLIPPED by Abhi's rule —
-    after the band's last real break, FLIPPED only once price has traded past the far-side swing (the nearest confirmed swing beyond the
-    band on the break side that formed before the break, from the band check's own swing source `facts.validity.pivots`, confirmed by
-    the bar it is used on); none such (the band is at new highs / lows) ⇒ the FIRST CONFIRMED swing beyond the band that formed after the
-    break (Abhi Z-1a — the same rule as the engine's flip.far_swing, so chart labels match the engine). Additive facts only: `valid` /
+    """KB K4 (Abhi) facts on a checked band x (facts.validity.check_band output): flip_state ACTIVE / BROKEN / FLIPPED / DEAD by Abhi's
+    rule, the same state machine as the engine (Levels._step_far_swing). The band's real breaks are walked in order; each break's segment
+    runs to the next break (or t). FLIPPED once price trades past the break's far-side swing: the nearest confirmed swing beyond the band
+    on the break side that formed before the break (`facts.validity.pivots`, confirmed by the bar it is used on); none such (new highs /
+    lows) ⇒ the FIRST CONFIRMED swing beyond the band that formed after the break (Abhi Z-1a, as flip.far_swing). A band that already
+    flipped and is passed past a far-side swing again ⇒ DEAD, no second flip (Abhi Z-1f / Z-1k). Additive facts only: `valid` /
     `flipped` / `broken` of the shared check are not changed (open question Z-1b).
-    Returns {flip_state, broken_at, far_swing (+ source), flipped_at} (bars + ts; bars ≤ t only)."""
+    Returns {flip_state, broken_at, far_swing (+ source), flipped_at, dead_at} (bars + ts; bars ≤ t only)."""
     from facts import validity as FV
     s = FV.load(s)
     B = FV.bars_of(df)
-    if not x.get("breaks"):
-        return {"flip_state": FL.ACTIVE, "broken_at": None, "far_swing": None, "flipped_at": None}
-    br = x["breaks"][-1]
-    b, up = int(br["bar"]), br["dir"] == "up"
+    brs = sorted((br for br in (x.get("breaks") or []) if int(br["bar"]) <= t), key=lambda br: int(br["bar"]))
+    out = {"flip_state": FL.ACTIVE, "broken_at": None, "far_swing": None, "flipped_at": None, "dead_at": None}
+    if not brs:
+        return out
     st = FV.session_start(B, t, int(s["lookback_sessions"])) if start is None else int(start)
     k = int(s["pivot_k"])
-    tol = float(s["band_tol_mr"]) * FV.mr_at(B, b, s)                      # a swing within the band's touch tolerance is its own touch
-    beyond = [i for i in FV.pivots(B, t, "H" if up else "L", s, start=min(st, b))
-              if ((B.H[i] > x["hi"] + tol) if up else (B.L[i] < x["lo"] - tol))]
-    piv, post = [i for i in beyond if i < b], sorted(i for i in beyond if i >= b)
-    out = {"flip_state": FL.BROKEN, "broken_at": {"bar": b, "ts": str(B.ts.iloc[b])}, "far_swing": None, "flipped_at": None}
-    for i in range(b, t + 1):
-        known = [p for p in piv if p + k <= i]                              # confirmed by bar i (no look-ahead)
-        if known:
-            p, src = (min(known, key=lambda j: B.H[j]) if up else max(known, key=lambda j: B.L[j])), "before_break"
-        else:                                                               # Z-1a: first confirmed swing after the break
-            first = [q for q in post if q + k <= i]
-            if not first:
-                continue
-            p, src = first[0], "first_confirmed_after_break"
-        px = float(B.H[p] if up else B.L[p])
-        out["far_swing"] = {"price": round(px, 2), "bar": int(p), "ts": str(B.ts.iloc[p]), "source": src}
-        if (B.H[i] > px) if up else (B.L[i] < px):
-            out.update(flip_state=FL.FLIPPED, flipped_at={"bar": i, "ts": str(B.ts.iloc[i])})
-            break
+    bar = lambda i: {"bar": int(i), "ts": str(B.ts.iloc[int(i)])}  # noqa: E731
+    flipped = None
+    for n, br in enumerate(brs):
+        b, up = int(br["bar"]), br["dir"] == "up"
+        end = min(t, int(brs[n + 1]["bar"]) - 1) if n + 1 < len(brs) else t
+        tol = float(s["band_tol_mr"]) * FV.mr_at(B, b, s)                  # a swing within the band's touch tolerance is its own touch
+        beyond = [i for i in FV.pivots(B, end, "H" if up else "L", s, start=min(st, b))
+                  if ((B.H[i] > x["hi"] + tol) if up else (B.L[i] < x["lo"] - tol))]
+        piv, post = [i for i in beyond if i < b], sorted(i for i in beyond if i >= b)
+        out.update(flip_state=FL.BROKEN, broken_at=bar(b), far_swing=None)
+        for i in range(b, end + 1):
+            known = [p for p in piv if p + k <= i]                          # confirmed by bar i (no look-ahead)
+            if known:
+                p, src = (min(known, key=lambda j: B.H[j]) if up else max(known, key=lambda j: B.L[j])), "before_break"
+            else:                                                           # Z-1a: first confirmed swing after the break
+                first = [q for q in post if q + k <= i]
+                if not first:
+                    continue
+                p, src = first[0], "first_confirmed_after_break"
+            px = float(B.H[p] if up else B.L[p])
+            out["far_swing"] = {"price": round(px, 2), "bar": int(p), "ts": str(B.ts.iloc[p]), "source": src}
+            if (B.H[i] > px) if up else (B.L[i] < px):
+                if flipped is not None:                                     # Z-1f / Z-1k: flipped once ⇒ passed again = DEAD
+                    out.update(flip_state=FL.DEAD, dead_at=bar(i), flipped_at=flipped)
+                    return out
+                flipped = bar(i)
+                out.update(flip_state=FL.FLIPPED, flipped_at=flipped)
+                break
+        if flipped is not None and out["flip_state"] == FL.BROKEN:
+            out["flipped_at"] = flipped                                     # broken after its flip, far swing not passed (yet)
     return out
 
 
@@ -631,7 +643,8 @@ def band_label(x):
     role = {"resistance": "supply", "support": "demand"}.get(x.get("role"), "area")
     flipped = x.get("flipped") if "flip_state" not in x else x["flip_state"] == FL.FLIPPED   # K4 (Abhi): far-side swing पार
     flags = [f for f, on in (("established", x.get("established")), ("flipped", flipped), ("broken", x.get("broken")),
-                             ("far swing not reached", x.get("flip_state") == FL.BROKEN and not x.get("broken"))) if on]
+                             ("far swing not reached", x.get("flip_state") == FL.BROKEN and not x.get("broken")),
+                             ("dead", x.get("flip_state") == FL.DEAD)) if on]                    # Z-1f / Z-1k: flipped, then passed again
     lab = f"{role} {x['lo']:,.0f}-{x['hi']:,.0f}, {x['touch_count']} touches" + (f" ({', '.join(flags)})" if flags else "")
     if not x["valid"] and not x.get("broken"):
         lab += " [invalid: " + ", ".join(x["reasons"]) + "]"

@@ -2572,3 +2572,13 @@ legs owner वि. reader2 gate).
 - Tests: B1 test मधलं vacuous assert काढलं; DEFAULT मार्गाचा end-to-end decide() test (far_swing flip + c0 volume + handover अनिवार्य
   + 5M CHoCH ⇒ setup; handover नाही / FUT नाही / कमी volume ⇒ wait); FUT incomplete, rollover, Telegram, payload tests.
 - **Abhi Z-1j / Z-1h / Z-1m:** entry क्रम = handover (बंधनकारक) → LTF CHoCH → dominant commitment (जास्त volume); overlap / sideways = handover study, gate नाही; volume normalise 20 (किमान 10) sessions, कमी ⇒ raw per-bar सरासरी (label). Pack bb237fb57225.
+
+## Re-review fixes (282d484 नंतर)
+
+- No-entry कारण (`plain_text.unclear_words`, `level_bots_replay.no_trend_detail`): क्रम gate सारखा — origin तुटला → रचना उलट → parent
+  correction; origin_risk कधीच no-entry कारण नाही (B1: context).
+- Setup chart (`setup_chart.NOTE_EN`): default maturity / origin notes ⇒ "context only … (no cap, no gate)", इंग्रजीत.
+- `levels.band_flip_facts`: सगळे breaks क्रमाने, engine सारखं — flip झालेला band पुन्हा far swing पार ⇒ DEAD (दुसरा flip नाही).
+- 12 Oct golden xfail फक्त Z-1p कारणावर (no handover, counter weakening NA); दुसरं कारण ⇒ fail.
+- FUT 15M पूर्णता: children = 15M ÷ FUT bar step (data वरून), bins legs2.volume चे OPEN / BAR (वर्तन बदल नाही).
+- OPEN_QUESTIONS: जुन्या Z-1h / Z-1m / B1-a ओळी struck (नव्या ओळीकडे बोट); नवे Z-1q, Z-1r.

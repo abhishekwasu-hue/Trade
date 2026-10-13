@@ -527,8 +527,15 @@ def test_real_12_oct_flipped_seller_zone_in_zone_study_and_golden_bear_call(real
     bear = [r for r in at if r["decision"] == "setup" and r["trend_used"] == "DOWN"]
     if not bear:
         last = at[-1]
-        pytest.xfail(f"golden 12 Oct bear call NOT produced: decision {last['decision']} · ⑥ {last['checklist'].get('⑥')} · "
-                     f"conviction {last.get('conviction')} · missing {last.get('missing')}")
+        six = last["checklist"].get("⑥") or [None, ""]
+        sm = (last.get("zone_read") or {}).get("summary") or {}
+        # only the known open question may xfail: Z-1p (the counter side is absent in the window's second half ⇒ counter weakening NA
+        # ⇒ no handover ⇒ wait). Any other cause is a real failure.
+        assert last["decision"] == "wait" and six[0] is False and str(six[1]).startswith(M.REASON[M.C_NO_HANDOVER]), six
+        assert (last.get("commit") or {}).get("handover_present") is False
+        assert sm.get("trade_side_growing") is True and sm.get("counter_side_weakening") is None, sm
+        pytest.xfail(f"golden 12 Oct bear call NOT produced — open question Z-1p (no counter candle in the second half ⇒ counter "
+                     f"weakening NA ⇒ no handover): decision {last['decision']} · ⑥ {six} · conviction {last.get('conviction')}")
 
 
 def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
@@ -840,3 +847,62 @@ def test_end_to_end_default_path_no_handover_or_no_fut_is_no_entry():
     assert nf["decision"] == "wait" and "data problem" in nf["checklist"]["⑥"][1]
     lo = _default_case(_HANDOVER, commit_vol=1e5).decide(741)              # commitment without volume ⇒ no entry
     assert lo["decision"] == "wait" and "low volume" in lo["checklist"]["⑥"][1]
+
+
+# ------------------------------------------------------------------------------------------------ re-review (282d484) fixes
+def test_band_flip_facts_flipped_then_passed_again_is_dead_like_the_engine():
+    """Re-review: a 95–98 band breaks up (bar 20), flips past the swing 104 (bar 30), then breaks down (bar 36) and trades past that
+    break's far swing 92 (first confirmed swing after the break, bar 39) at bar 43 ⇒ DEAD, never a second flip (Z-1f / Z-1k)."""
+    from facts import validity as FV
+    hi = [96.5, 97.0, 96.0, 97.5, 96.5, 97.2, 96.0, 97.4, 96.4, 97.0] * 2
+    hi += [100.5, 101.5, 102.5, 103.0, 104.0, 103.0, 102.0, 101.5, 102.5, 103.5, 105.0, 104.5]
+    hi += [103.0, 101.0, 99.0, 97.5, 95.5, 94.5, 93.8, 93.0, 94.0, 94.6, 93.5, 91.5, 91.0]
+    cl = [h - 0.6 for h in hi]
+    lo = [h - 1.0 for h in hi]
+    ts = pd.date_range("2030-01-07 09:15", periods=len(hi), freq="15min")
+    B = FV.bars_of(pd.DataFrame({"timestamp": ts, "open": cl, "high": hi, "low": lo, "close": cl}))
+    x = {"lo": 95.0, "hi": 98.0, "breaks": [{"bar": 20, "dir": "up"}, {"bar": 36, "dir": "down"}]}
+    assert LV.band_flip_facts(B, 35, x, start=0)["flip_state"] == FL.FLIPPED
+    mid = LV.band_flip_facts(B, 42, x, start=0)
+    assert mid["flip_state"] == FL.BROKEN and mid["flipped_at"]["bar"] == 30 and mid["broken_at"]["bar"] == 36
+    assert mid["far_swing"]["bar"] == 39 and mid["far_swing"]["source"] == "first_confirmed_after_break"
+    f = LV.band_flip_facts(B, len(hi) - 1, x, start=0)
+    assert f["flip_state"] == FL.DEAD and f["dead_at"]["bar"] == 43 and f["flipped_at"]["bar"] == 30
+    assert "dead" in LV.band_label({**f, "role": "resistance", "lo": 95.0, "hi": 98.0, "touch_count": 2, "valid": True})
+
+
+def test_setup_chart_notes_for_maturity_and_origin_are_context_only_in_english():
+    import inspect
+
+    from decision3 import setup_chart as SC
+    notes = ["context: impulse mature — target जवळ (Q44) (gate / downgrade नाही — Abhi B1)",
+             "context: correction protected origin जवळ (gate नाही — Abhi B1)"]
+    src = inspect.getsource(E3)
+    for n in notes:
+        assert n in src                                                    # the exact notes the engine writes by default
+        en = SC.note_en(n)
+        assert en.startswith("context only") and "no cap, no gate" in en and en.isascii()
+        assert "weak" not in en and "cap B" not in en and "(gate" not in en
+
+
+def test_no_entry_reason_never_names_origin_risk():
+    from bots_common import plain_text as PT
+    base = {"trend": "UP", "origin_risk": True, "ok": False}
+    assert PT.unclear_words({**base, "counter": "correction"}) == "Daily UP is inside a bigger correction"
+    w = PT.unclear_words({**base, "structure_against": True, "counter": "correction"})
+    assert "structure" in w and "starting point" not in w
+    assert "starting point" not in PT.unclear_words(base) and "origin" not in PT.unclear_words(base)
+    assert "broke on a daily close" in PT.unclear_words({**base, "phase": "origin_broken"})
+
+
+def test_fut_children_use_the_fut_bar_step_and_the_legs2_session_anchor():
+    from legs2 import volume as LVOL
+    day = pd.Timestamp("2030-01-07")
+    t5 = [day + LVOL.OPEN + pd.Timedelta(minutes=5 * j) for j in range(9)]
+    kids, need, step = E3.fut_children(t5)
+    assert (need, step) == (3, pd.Timedelta(minutes=5)) and int(kids[day + LVOL.OPEN]) == 3 and len(kids) == 3
+    t1 = [day + LVOL.OPEN + pd.Timedelta(minutes=j) for j in range(30) if j != 7]
+    kids1, need1, step1 = E3.fut_children(t1)
+    assert (need1, step1) == (15, pd.Timedelta(minutes=1)) and int(kids1[day + LVOL.OPEN]) == 14   # 1M FUT ⇒ 15 children, not 3
+    kids15, need15, _ = E3.fut_children([day + LVOL.OPEN + pd.Timedelta(minutes=15 * j) for j in range(4)])
+    assert need15 == 1 and (kids15 == 1).all()
