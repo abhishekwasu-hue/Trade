@@ -136,12 +136,31 @@ Every shadow message is labelled **"SHADOW — no trade"**. Telegram gets only: 
 watched area, invalidation hit, scenario switched); every enter / skip-with-reason at an area; the 15:45 EOD review. Every read
 (all types) goes to the log and to a dashboard **"Reader timeline"** page, not to Telegram.
 
-## 10. Trendline / area validity audit
+## 10. Trendline / area validity audit (done, read-only)
 
-Results: `docs/reports/2026-10-13_trendline_area_audit.md` (separate PR, linked in this PR's description) — last 20 sessions,
-NIFTY / BANKNIFTY, 15M / 1H: lines drawn / valid / invalid by K6 reason; areas drawn / valid / invalid. Charts in private storage.
-Rule after the fix (built in phase R1, not before approval): charts show **only valid lines, at most 2 per timeframe, each
-labelled with its touch count**, and only areas that pass the validity rules.
+Report: `docs/reports/2026-10-13_trendline_area_audit.md` (in this PR); script `research/trendline_area_audit.py`; 80 charts + CSV
+in private storage (`trade-data/reports/trendline_audit/2026-10-13/`). 20 session closes (11 Sep … 12 Oct 2026), NIFTY / BANKNIFTY,
+15M / 1H. Illustration, not a test (mostly the contaminated period); nothing tuned; holdout never loaded.
+
+| Symbol | TF | Lines drawn | K6-valid | Areas drawn | K4-valid |
+|---|---|---|---|---|---|
+| NIFTY | 15M | 54 | 6 | 409 | 240 |
+| NIFTY | 1H | 24 | 1 | 326 | 124 |
+| BANKNIFTY | 15M | 42 | 1 | 400 | 201 |
+| BANKNIFTY | 1H | 33 | 0 | 350 | 145 |
+| **All** | | **153** | **8 (5%)** | **1,485** | **710 (48%)** |
+
+Main causes: decision3 lines need only 2 touches (K6: ≥ 3); the dashboard "Trendline Gate" (`signals.detect_trendline`) is a
+least-squares fit, not wick-anchored (79 / 86 fail); trendlines2 still draws weak / provisional lines; no per-timeframe cap (up to 5
+lines on one chart). Areas: SR V3 and the Vision chart draw single prices, not zones, and keep broken levels (SR V3 has no written
+validity rules); some decision3 1H bands are 4–5 MR wide (TL2); zones2 shows 7–17 zones per 15M chart.
+
+Rule after the fix (built in R1, not before approval): charts show **only K6-valid lines, at most 2 per timeframe, each labelled
+with its touch count**, and only K4-valid areas (real bands, width cap), through one shared line check and one shared area check used
+by every chart. Abhi's decisions: TA1–TA4 in `docs/reports/v22/OPEN_QUESTIONS.md` (show only valid; 6 or 8 bars between touches;
+touch minimum 2 → 3; band drawing for SR V3 / Vision).
+
+Related PRs: R:R correction #316; KB K11 expansion #317.
 
 ## 11. Testing and promotion
 
