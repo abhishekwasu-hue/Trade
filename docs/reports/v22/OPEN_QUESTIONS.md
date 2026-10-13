@@ -390,3 +390,12 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | R0-7 | Golden मध्ये FUT volume | ✅ निकाली (R0-5) |
 | R0-8 | Live V4 default off; Abhi golden निकालांनंतर ठरवतो | ✅ निकाली (off) |
 | R0-9 | `vision_v4_daily_cap` = $0.30 / दिवस | ✅ निकाली |
+
+### Abhi निर्णय — FUT roll, BANKNIFTY दिवस, zone flip
+
+| # | निर्णय | परिणाम |
+|---|---|---|
+| R1b-3 | Roll च्या दिवशी सुद्धा FUT volume = **फक्त near-month** contract (दोन contracts ची बेरीज कधीच नाही) | `opportunity_engine.volume.near_month_rows` + `attach_futures_volume(near_month=True)` (default False ⇒ जुने callers तसेच); facts dossier near-month वापरतो; KB K10.3 + pack 5b. ✅ निकाली |
+| R0-4 | BANKNIFTY a-b-c golden दिवस: **सोडून द्या** | Golden फक्त 12 Oct + 29 Sep NIFTY; 3 उमेदवार charts trade-data मध्ये तसेच (हटवले नाहीत). ✅ निकाली |
+| R0-2 (zone) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
+| Z-1 | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |

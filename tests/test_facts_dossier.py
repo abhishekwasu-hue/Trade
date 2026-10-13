@@ -266,7 +266,8 @@ def _last_bar_rows(fut, as_of):
     return fut[(ft >= t) & (ft < as_of)]
 
 
-def test_fut_two_contracts_at_a_roll_are_not_collapsed_and_order_does_not_matter(world):
+def test_fut_roll_day_uses_near_month_only_and_order_does_not_matter(world):
+    """Abhi (R1b-3): roll च्या दिवशी FUT volume = फक्त near-month; next-month rows बेरजेत येत नाहीत, row क्रम निकाल बदलत नाही."""
     m15, fut, ltf, one, as_of, d = world
     rows = _last_bar_rows(fut, as_of)
     nxt = rows.assign(volume=1000.0, expiry=rows["expiry"] + pd.Timedelta(days=28))
@@ -274,10 +275,20 @@ def test_fut_two_contracts_at_a_roll_are_not_collapsed_and_order_does_not_matter
     a = _dossier(m15, two, ltf, one, as_of)["sections"]["volume"]
     b = _dossier(m15, two.iloc[::-1].reset_index(drop=True), ltf, one, as_of)["sections"]["volume"]
     assert a == b                                                               # stable: row order never picks a contract
-    assert a["status"] == D.OK and a["multi_contract_bars"] == [d["asof_bar"]["ts"]]
-    assert a["last_bar"]["volume"] == d["sections"]["volume"]["last_bar"]["volume"] + 3 * 1000.0   # owner sums every row (R1b-3)
-    c = _dossier(m15, two.drop(columns=["expiry"]), ltf, one, as_of)["sections"]["volume"]   # no contract column ⇒ no dedupe
-    assert c["last_bar"]["volume"] == a["last_bar"]["volume"]
+    assert a["status"] == D.OK and a["multi_contract_bars"] == []
+    assert a["last_bar"]["volume"] == d["sections"]["volume"]["last_bar"]["volume"]   # next-month volume ignored
+    c = _dossier(m15, two.drop(columns=["expiry"]), ltf, one, as_of)["sections"]["volume"]   # no contract info ⇒ cannot pick ⇒ sum
+    assert c["last_bar"]["volume"] == d["sections"]["volume"]["last_bar"]["volume"] + 3 * 1000.0
+
+
+def test_near_month_rows_keeps_expiring_contract_on_its_expiry_day():
+    from opportunity_engine import volume as OV
+    ts = pd.to_datetime(["2026-09-29 09:15", "2026-09-29 09:15", "2026-09-30 09:15", "2026-09-30 09:15"])
+    f = pd.DataFrame({"timestamp": ts, "volume": [5.0, 1.0, 7.0, 2.0],
+                      "expiry": pd.to_datetime(["2026-09-29", "2026-10-27", "2026-09-29", "2026-10-27"])})
+    got = OV.near_month_rows(f)
+    assert got["volume"].tolist() == [5.0, 2.0]                                   # expiry day: expiring; next day: next month
+    assert OV.near_month_rows(f.drop(columns=["expiry"])) is not None and len(OV.near_month_rows(f.drop(columns=["expiry"]))) == 4
 
 
 def test_fut_bar_with_missing_5m_children_is_na_with_reason(world):

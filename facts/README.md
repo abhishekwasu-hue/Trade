@@ -63,9 +63,8 @@ is the band's role (support ⇒ up, resistance ⇒ down) — a fact about the ba
   On the R1a real-data fixture at the 9 Oct close: swings2 D1 DOWN, D2 RANGE, D3 DOWN; reader2 15M "uncertain".
 - **PDH / PDL / PWH / PWL twice:** `context` (vision.context, from 1m, ISO weeks) and `liquidity.pools` (decision3.liquidity, from 15M,
   W-FRI weeks). They matched on the synthetic fixture; §3 says context owns them.
-- **FUT contract roll:** `opportunity_engine.volume.attach_futures_volume` sums every FUT row per timestamp (no near-month filter);
-  `legs2.volume.bar_volume` (used inside legs2 / rsi2 / patterns2 inputs) keeps the near-month contract only. Same result while the data
-  holds one contract per timestamp (true for the R1a FUT file).
+- **FUT contract roll (decided, Abhi):** the dossier keeps only the near-month contract (`opportunity_engine.volume.near_month_rows`,
+  expiry ≥ the day, nearest), on roll days too; volumes of two contracts are never summed. No contract / expiry columns ⇒ rows used as one series.
 - **No owner yet:** VIX, FII / DII, global cues (context `missing`); K11 patterns beyond patterns2's correction family (box / flag /
   double top inside an area come only from `decision3.method.zone_pattern` inside `candles.area_studies`).
 - **swings2 warm-up:** D2 (decision3's level degree) needs 20 sessions for σ plus 10 warm-up sessions; on shorter history `structure` is

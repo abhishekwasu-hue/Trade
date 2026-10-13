@@ -543,12 +543,11 @@ completed pattern allows, the count is wrong.
 - **Real break (one definition, K5 / Part G):** close beyond the level by a 0.25 MR buffer AND the first of: (a) displacement — break
   bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
   a retest from the broken side is rejected by a logical reversal (role flip confirmed). Anything else is a false break (sweep).
-<!-- pending:abhi -->
-- **[pending Abhi — NOT in the generated Method Pack (R0-2)]** A zone is dead only beyond the far swing: an area dies only when price
-  CLOSES beyond the structural swing on the far side of the area, on the side of its CURRENT role — a support dies when the nearest swing
-  low below it is closed through; a resistance (or a flipped support now acting as supply) dies only when the nearest swing high above it
-  is closed through. A close through the band itself is a break / flip candidate (acceptance ⇒ flip), not death.
-<!-- /pending -->
+- **A broken zone flips; it does not die [Abhi]:** a zone is never simply "dead". It FLIPS role (supply ⇒ demand, demand ⇒ supply) only
+  when price breaks through it with a **strong move** (dominant commitment / displacement, K9) AND that move **reaches the next swing**
+  beyond the zone. After the flip its next retest from the new side is the trade location (TA3b). A push through the band that does not
+  reach the next swing, or that is not a strong move, is a sweep / false break (K5): the zone keeps its old role. (Example: 12 Oct the
+  NIFTY FUT spike to ≈22,720 went above the ≈22,667 supply without a strong move to the next swing high ⇒ sweep, supply still valid.)
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal
@@ -962,7 +961,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 
 **ओळख (code साठी).**
 - **स्रोत:** near-month NIFTY futures चे 5M candles (repo `collect_index_futures_volume.py`, रोज VPS वर). 15M साठी 3 candles ची बेरीज.
-- **Roll:** expiry जवळ volume पुढच्या महिन्याकडे सरकतो. ज्या दिवशी पुढच्या contract चा volume जास्त होतो त्या दिवसापासून त्याचा वापर (continuous series). Roll च्या दिवसांची तुलना टाळायची.
+- **Roll [Abhi]:** roll च्या दिवशी सुद्धा फक्त **near-month** contract चा volume (त्या दिवशी चालू असलेला सगळ्यात जवळचा expiry); दोन contracts चा volume कधीच बेरीज नाही. Roll च्या दिवसांची तुलना टाळायची.
 - **वेळेनुसार normalise (आवश्यक):** NSE वर volume U-आकाराचा आहे (K14). म्हणून volume ची तुलना **त्याच वेळेच्या slot च्या median** शी (उदा. 10:15 चा bar मागच्या 20 दिवसांच्या 10:15 bars शी). याला `rel_vol` म्हणू.
 - **मोजमापं:**
   - **Pullback dry-up:** pullback च्या bars चा सरासरी `rel_vol` ÷ impulse च्या bars चा सरासरी `rel_vol`. < 0.8 ⇒ healthy; > 1.0 ⇒ धोक्याचा.
@@ -983,7 +982,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 <!-- pack:5 zone_study -->
 <details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
 
-- Volume comes from the near-month index **futures** (the index itself has none); price comes from spot. Compare volume only with the
+- Volume comes from the near-month index **futures** (the index itself has none; on roll days too, never summed across contracts);
+  price comes from spot. Compare volume only with the
   median of the same time-of-day slot (`rel_vol`), because session volume is U-shaped.
 - **Pullback dry-up:** average `rel_vol` of the pullback bars ÷ that of the impulse bars < 0.8 ⇒ healthy; > 1.0 ⇒ dangerous (the other
   side is really coming in). Falling volume in C versus A ⇒ exhaustion.

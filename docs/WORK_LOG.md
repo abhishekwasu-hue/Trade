@@ -2462,3 +2462,12 @@ legs owner वि. reader2 gate).
   Transitive test: frozen decision modules कधीच load नाहीत; owners (swings2 / rsi2 → pivots.charts) मुळे फक्त `vision_led.charts` येतो
   ⇒ OPEN_QUESTIONS R1b-7. Tests: `test_facts_dossier` 34 (नवे 16), full suite पुन्हा चालवला नाही (review सूचना).
 
+
+## Abhi निर्णय: FUT roll near-month, BANKNIFTY दिवस सोडला, zone flip नियम
+
+- **FUT roll (R1b-3):** roll च्या दिवशी सुद्धा फक्त near-month contract चा volume. नवीन `opportunity_engine.volume.near_month_rows`
+  (expiry parser `legs2.volume.expiry_of` — एकच); `attach_futures_volume(near_month=False)` default ⇒ जुने callers (frozen backtest) बदलत नाहीत;
+  facts dossier near-month वापरतो. KB K10.3 roll ओळ + pack 5b. Tests: roll दिवशी next-month volume दुर्लक्षित, expiry दिवशी expiring contract.
+- **BANKNIFTY a-b-c दिवस:** Abhi — सोडून द्या. Golden फक्त 12 Oct + 29 Sep.
+- **Zone:** "dead beyond far swing" नियम काढला. Abhi: तुटलेला zone flip होतो — मजबूत move ने तोडून पुढच्या swing पर्यंत; नाहीतर sweep.
+  KB K4 मध्ये मंजूर block, Method Pack नवीन version. Code (decision3 levels lifecycle) Abhi च्या शब्द ✅ नंतर (OPEN_QUESTIONS Z-1).

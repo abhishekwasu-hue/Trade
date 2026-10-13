@@ -521,19 +521,20 @@ def _attach_volume(c):
     s5 = c.f.get("5M")
     f5 = s5.assign(bar_start=s5["timestamp"]) if s5 is not None else \
         pd.DataFrame({"bar_start": pd.to_datetime(c.fut5["timestamp"]).drop_duplicates().sort_values().reset_index(drop=True)})
-    frames, cov = OV.attach_futures_volume({"5m": f5, "15m": f15}, c.fut5)
+    fut = OV.near_month_rows(c.fut5)                                         # Abhi (R1b-3): roll दिवशी सुद्धा फक्त near-month
+    frames, cov = OV.attach_futures_volume({"5m": f5, "15m": f15}, fut)
     v = np.array(frames["15m"]["volume"].to_numpy(float), dtype=float)
     v[~(v > 0)] = np.nan                                                    # owner: 0 = no FUT row ⇒ NA, never a guess
     # completeness (adapter facts, not a rule): a 15M bar whose FUT 5M children (distinct 5M starts inside it) are fewer than the 5M
     # slots of the bar is under-counted by the sum ⇒ NA for that bar; bars where more than one contract was summed are listed.
-    ft = pd.to_datetime(c.fut5["timestamp"]).to_numpy()
+    ft = pd.to_datetime(fut["timestamp"]).to_numpy()
     st, en = c.m15["timestamp"].to_numpy(), c.m15["bar_end"].to_numpy()
     pos = np.searchsorted(st, ft, side="right") - 1
     ok = (pos >= 0) & (ft < en[np.clip(pos, 0, len(st) - 1)])
     slot = pd.Timedelta(minutes=M3.LTF_OF.get(15, 5))
     kids = pd.Series(ft[ok]).groupby(pos[ok]).nunique()
-    ccol = next((k for k in ("contract", "expiry") if k in c.fut5.columns), None)
-    multi = pd.Series(c.fut5[ccol].to_numpy()[ok]).groupby(pos[ok]).nunique() if ccol else pd.Series(dtype=int)
+    ccol = next((k for k in ("contract", "expiry") if k in fut.columns), None)
+    multi = pd.Series(fut[ccol].to_numpy()[ok]).groupby(pos[ok]).nunique() if ccol else pd.Series(dtype=int)
     incomplete = []
     for i in range(len(st)):
         need = int((pd.Timestamp(en[i]) - pd.Timestamp(st[i])) / slot)
@@ -548,7 +549,7 @@ def _attach_volume(c):
 
 
 def volume(c):
-    owner = "opportunity_engine.volume.attach_futures_volume (FUT 5M ⇒ 09:15-anchored 15M sums)"
+    owner = "opportunity_engine.volume.attach_futures_volume (near-month FUT 5M ⇒ 09:15-anchored 15M sums)"
     if c.fut5 is None:
         return _na(owner, "FUT volume missing (no FUT 5M bars at or before as_of)")
     v = c.fut15()

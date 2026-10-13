@@ -50,8 +50,30 @@ def merge_store_by_contract(existing, new):
     return out.drop_duplicates(["timestamp", "contract"], keep="first").sort_values(["timestamp", "contract"]).reset_index(drop=True)
 
 
-def attach_futures_volume(frames, fut5):
-    """frames (engine frames) च्या 5m आणि 15m `volume` ला futures volume ने बदलतो (नवीन dict; मूळ frames बदलत नाहीत). रिटर्न (frames, coverage dict)."""
+def near_month_rows(fut5):
+    """Abhi (R1b-3, K10.3): FUT volume = near-month contract, roll च्या दिवशी सुद्धा. प्रत्येक दिवशी expiry ≥ त्या दिवसाचा सगळ्यात जवळचा
+    contract ठेवतो (expiry: `expiry` column, नाहीतर contract नावातून — legs2.volume.expiry_of, एकच parser). contract / expiry column च नाही
+    किंवा एकाही row ची expiry ओळखता आली नाही ⇒ rows तसेच (एकच series समजून; बदल नाही)."""
+    if fut5 is None or not len(fut5) or not any(c in fut5.columns for c in ("contract", "expiry")):
+        return fut5
+    from legs2.volume import expiry_of
+    f = fut5.copy()
+    if "contract" not in f.columns:
+        f["contract"] = ""
+    exp = expiry_of(f)
+    if exp.isna().all():
+        return fut5
+    day = pd.to_datetime(f["timestamp"]).dt.normalize()
+    live = exp.notna() & (exp >= day)
+    near = exp.where(live).groupby(day).transform("min")
+    return fut5[live & (exp == near)]
+
+
+def attach_futures_volume(frames, fut5, near_month=False):
+    """frames (engine frames) च्या 5m आणि 15m `volume` ला futures volume ने बदलतो (नवीन dict; मूळ frames बदलत नाहीत). रिटर्न (frames, coverage dict).
+    near_month=True ⇒ आधी `near_month_rows` (roll दिवशी फक्त near-month); default False = जुने वर्तन (सगळे rows बेरीज) — जुन्या callers साठी."""
+    if near_month:
+        fut5 = near_month_rows(fut5)
     out = dict(frames)
     f5 = frames["5m"].copy()
     if fut5 is None or not len(fut5):

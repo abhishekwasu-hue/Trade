@@ -112,9 +112,10 @@ def test_pack_has_two_touch_rule_and_no_three_touch_minimum():
 
 def test_pending_abhi_text_is_excluded_from_pack():
     text, _ = MP.build_from_repo()
-    assert "far swing" not in text.lower() and "pending" not in text.lower()          # R0-2: "zone dead" अजून मंजूर नाही
-    kb = open(MP.KB_PATH, encoding="utf-8").read()
-    assert "<!-- pending:abhi -->" in kb and "dead only beyond the far swing" in kb.replace("\n  ", " ")
+    assert "pending" not in text.lower()
+    flat = text.replace("\n  ", " ")                                               # Abhi: "zone dead" नाही — तुटलेला zone flip होतो
+    assert "dead only beyond the far swing" not in flat and "A broken zone flips; it does not die" in flat
+    assert "reaches the next swing" in flat and "strong move" in flat
     pend = "\n<!-- pending:abhi -->\n- secret pending rule\n<!-- /pending -->"
     t1, _ = MP.build(_kb().replace("- text 2", "- text 2" + pend), "")
     assert "secret pending rule" not in t1 and "text 2" in t1
