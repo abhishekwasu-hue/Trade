@@ -307,3 +307,13 @@ Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 establish
 | # | प्रश्न | घेतलेला default | पर्याय |
 |---|---|---|---|
 | TA5 | "Recent price ने मान" (शेवटच्या 2 sessions मध्ये touch) 2-touch नियमाशी टक्कर देतो: projected 3ऱ्या touch ची वाट पाहणारी रेघ बहुतेक 2 sessions touch शिवाय असते. Re-run मध्ये 44 रेघा फक्त याच नियमावर गळल्या (31 "touch नाही", 13 broken); 30 Sep → 6 Oct golden रेघ 9 Oct close ला फक्त यामुळे लपली असती (12 Oct 09:15 ला तिचा touch 22,654 वर) | audit मध्ये तसाच ठेवला (Abhi: "keep as defined") | (a) फक्त real break (K5) ठेवा, "2 sessions touch" काढा; (b) touch-window = रेघेच्या स्वतःच्या touch-spacing च्या × k; (c) तसेच |
+
+## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
+
+| # | प्रश्न | Abhi चा निर्णय | पर्याय |
+|---|---|---|---|
+| KP1 | ~~G8 flag: `simple_core/flags.py:62` `breakout_ok` gate वि. "flag breakout वर entry नाही"~~ **निकाली (Abhi)** | Correction ची स्वतःची रेषा (flag / wedge / channel कड) **area वरच्या dominant commitment candle ने close-through** = valid trigger form. Entry कधीच नाही: area पासून दूर breakout, चाल निघून गेल्यावर पाठलाग, commitment candle शिवाय रेषा break. Minor swing / लहान trendline चा break एकटा = noise. G8 gate सुसंगत (code बदल नाही). T7 (`elliott/trigger.py`) code टप्प्यात एकत्र तपासायचा (KB K11.19 #10) | — |
+| KP2 | ~~Flag लांबी: PT 4–20 वि. G8 2–11~~ **निकाली (Abhi)** | Flag लांबी = G8 चे 2–11 bars (setting); research चा 4–20 फक्त नोंद ⇒ `chart_reader/settings.py:62–63` change control ने | — |
+| KP3 | ~~संपूर्ण counter-move wedge: ending वि. leading A~~ **निकाली (Abhi)** | Default वाचन **ENDING**; leading A फक्त alternate count (narrative) ⇒ patterns2 v1 `wedge_as_ending` बदल / निवृत्ती change control ने | — |
+| KP4 | ~~Expanding wedge + `forming_wedge` position_ban~~ **निकाली (Abhi)** | Diverging wedge = broadening = **फक्त विरोधी पुरावा** (patterns2 दंड: change control). अपूर्ण / बनत असलेला wedge entry **अडवत नाही**; KP1 नियमाने तपासायचा (`forming_wedge` BAN_STATES बाहेरच — सुसंगत) | — |
+| KP5 | ~~नवीन K11 patterns ना PT गुण~~ **निकाली (Abhi: "KB प्रमाणे")** | गुण नाहीत — फक्त नोंद / narrative; भाग D ची PT ओळ तशीच | — |
