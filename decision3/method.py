@@ -1,4 +1,5 @@
-"""decision3/method.py — थर v2.2 पायरी C: ③ Pullback (K), ④ power shift, ⑥ commitment, ⑦ risk, §5–§7 पुरावे आणि conviction.
+"""decision3/method.py — थर v2.2 पायरी C: ③ Pullback (K), ④ power shift, ⑥ commitment, (⑦ risk — legacy `rr_step` फक्त), §5–§7 पुरावे, conviction.
+Abhi 13 Oct: R:R engine मधून काढला (default `rr_step` = False) — setup ⑥ (commitment + c1) वर संपतो; SL / target dashboard चे.
 
 कठोर नियम फक्त तीन (spec §6.2): H1 दिशा = Daily Dow (①); H2 entry pullback नंतर significant level वर, किंमत level मध्ये उलट बाजूने
 आलेली — breakout / gap-through ⇒ नाही (②③); H3 SL आणि target ठरतात, R:R ≥ 3 (⑦). ⑥ commitment candle = entry trigger (entry bar).
@@ -409,6 +410,14 @@ def reversal_form(A, t, d, s, tss=None):
     return None
 
 
+def entry_open(s):
+    """commitment (entry) candle ची सर्वात लवकरची सुरुवात: `entry_first_bar` (Abhi 13 Oct, default True) ⇒ सत्राची पहिली candle
+    (`evidence_start`, 09:15 — निर्णय तिच्या close ला, bar_end 09:30); False / setting नाही ⇒ जुनं `entry_start` (09:30)."""
+    if s.get("entry_first_bar", False):
+        return min(s.get("evidence_start", s["entry_start"]), s["entry_start"])
+    return s["entry_start"]
+
+
 def commitment(A, t, d, lvl, s, tss=None, win=None):
     """⑥ Q16 (Abhi): commitment = level वरची price-reversal candle (≤ 2 merged); कोणताही ओळखलेला reversal form चालतो.
     किमान सामायिक अट: close मागच्या candle च्या **close** पलीकडे trade-दिशेने (`commit_beyond` = close, default; "extreme" = what-if) आणि
@@ -419,7 +428,7 @@ def commitment(A, t, d, lvl, s, tss=None, win=None):
         raise ValueError(f"commit_beyond {s['commit_beyond']!r} — extreme / close पैकी")
     if tss is not None:                                                    # tss = 15M bars चे timestamps (bar सुरुवात)
         hm = pd.Timestamp(tss[t]).strftime("%H:%M")
-        if not (s["entry_start"] <= hm < s["entry_end"]):               # 15:15 चा bar बाजार बंदला close ⇒ entry नाही (v2.1 सारखं)
+        if not (entry_open(s) <= hm < s["entry_end"]):                  # 15:15 चा bar बाजार बंदला close ⇒ entry नाही (v2.1 सारखं)
             return False, "entry वेळ-खिडकीबाहेर", {}
     if t < 1:
         return False, "commitment candle नाही", {}
@@ -633,9 +642,9 @@ def confirm(A, arm, t, d, lvl, s, tss=None, mr=None, ltf=None, ltf_times=None):
     return out
 
 
-# ------------------------------------------------------------------------------------------------ ⑦ risk
+# ------------------------------------------------------------------------------------------------ ⑦ risk (legacy: फक्त rr_step = True)
 def risk(V, t, d, lvl, k, s):
-    """SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत level (जवळचा)."""
+    """Legacy (`rr_step` = True; Abhi 13 Oct ने default मधून काढला — SL / target dashboard चे, R:R Abhi चा निर्णय). SL = level आणि K टोक पलीकडे + buffer (σ_15M × sl_buffer_sigma); target = I_end किंवा विरुद्ध बाजूचा जवळचा जिवंत level (जवळचा)."""
     A = V.levels.A
     entry = float(A["close"][t])
     sg15 = V.res["sigma"].get(pd.Timestamp(V.levels.ts[t]).normalize(), np.nan)

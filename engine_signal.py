@@ -1,6 +1,6 @@
 """engine_signal.py — common analysis engine चा signal bots ना एकाच interface ने (Abhi, Monday PAPER). **Order कधीच नाही.**
 
-Engine (`engine_name`, default decision3 — Abhi, one bot): decision3 = थर v2.2 method engine (trend → area → pullback → commitment → R:R;
+Engine (`engine_name`, default decision3 — Abhi, one bot): decision3 = थर v2.2 method engine (trend → area → pullback → commitment + c1; R:R नाही — Abhi 13 Oct;
 live feed `engine3_live.py`, NIFTY / BANKNIFTY / SENSEX); decision2 = जुना मार्ग (NIFTY 1m ⇒ थर 1–7) तसाच उपलब्ध (`--engine decision2`).
 
 रचना:

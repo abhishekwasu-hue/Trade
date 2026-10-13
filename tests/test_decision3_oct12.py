@@ -18,11 +18,12 @@ from decision3 import trendline as TL
 from tests import oct12_fixture as F
 
 S_ROLE = {"level_death_side": "role"}                                      # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
+S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
-def _run(mirror):
+def _run(mirror, s=S_ROLE):
     m15, fut, ltf = F.build(mirror=mirror)
-    V = E3.V22(m15, s=S_ROLE, ltf=ltf, futures=fut)
+    V = E3.V22(m15, s=s, ltf=ltf, futures=fut)
     ts = V.levels.ts
     last = ts.dt.normalize().iloc[-1]
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
@@ -34,8 +35,13 @@ def case(request):
     return request.param, _run(request.param)
 
 
-def test_first_hour_setup_with_a2_c0_c1_active(case):
-    mirror, (V, m15, fut, ltf, bars) = case
+@pytest.fixture(scope="module", params=[False, True], ids=["bear_call", "bull_put_mirror"])
+def case_old(request):
+    return request.param, _run(request.param, S_OLD)
+
+
+def test_first_hour_setup_with_a2_c0_c1_active(case_old):
+    mirror, (V, m15, fut, ltf, bars) = case_old                                   # जुने नियम (⑦ R:R, 09:15 पुरावा) — inputs pin
     rows = [V.decide(t) for t in bars]
     st = [r for r in rows if r["decision"] == "setup"]
     assert st, [(r["ts"][11:16], r["checklist"]["⑥"][1][:60]) for r in rows[:4]]
@@ -50,7 +56,7 @@ def test_first_hour_setup_with_a2_c0_c1_active(case):
     assert rows[0]["decision"] != "setup" and "वेळ-खिडकी" in rows[0]["checklist"]["⑥"][1]   # 09:15 = entry नाही (फक्त पुरावा)
     k = r["bar"] + 1                                                              # setup bar वर कापलेलं data ⇒ तोच निर्णय
     end = V.bar_end[r["bar"]]
-    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True), s=S_ROLE, ltf=ltf[pd.to_datetime(ltf["timestamp"]) < end],
+    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True), s=S_OLD, ltf=ltf[pd.to_datetime(ltf["timestamp"]) < end],
                 futures=fut[pd.to_datetime(fut["timestamp"]) < end])
     rt = Vt.decide(r["bar"])
     assert (rt["decision"], rt["conviction"], rt["risk"]) == (r["decision"], r["conviction"], r["risk"])
@@ -96,7 +102,7 @@ def test_opening_candle_counts_as_evidence_entry_window_unchanged(d):
     assert M.reversal_form(A, 4, d, S, tss) == ("engulf", 1)
     assert M.reversal_form(A, 4, d, {**S, "evidence_start": S["entry_start"]}, tss) != ("engulf", 1)
     lvl = {"lo": 100.0, "hi": 103.0} if d == M.DOWN else {"lo": 99.0, "hi": 102.0}
-    assert M.commitment(A, 3, d, lvl, S, tss)[1] == "entry वेळ-खिडकीबाहेर"                     # 09:15 = entry नाही
+    assert M.commitment(A, 3, d, lvl, {**S, "entry_first_bar": False}, tss)[1] == "entry वेळ-खिडकीबाहेर"   # जुना नियम (pin)
     ok, why, cm = M.commitment(A, 4, d, lvl, S, tss)
     assert ok and cm["form"] == "engulf"
 
@@ -231,7 +237,7 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     fut.to_parquet(fpath)
     out = tmp_path / "out.json"
     rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
-                  "--json", str(out), "--out-dir", str(tmp_path)])
+                  "--json", str(out), "--out-dir", str(tmp_path), "--legacy-rr", "--no-first-bar-entry"])   # rr असर्ट ⇒ जुने नियम (pin)
     assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")

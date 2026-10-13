@@ -2143,3 +2143,51 @@ vision_audit 22 pass.
 unverified + न-स्वीकारलेला ⇒ "Trend DOWN (trend leg) · … (depth NN% of last trend leg)", caption "DOWN · trend leg · …"; verified / स्वीकारलेला ⇒
 "impulse". 🟡2 `DECISION3_ACCEPTED_LEGS` file नाही / चुकीची ⇒ warning + repo file वर परत; repo file चुकीची ⇒ warning, स्वीकारलेल्या नोंदींशिवाय
 chart (build कधीच थांबत नाही — script व सगळे callers). Tests (आरसा + script): 6 files 175 pass, 1 xfail.
+
+## 2026-10-13 · Entry candle + R:R काढला (Abhi, one bot; branch `claude/entry-candle-sl`)
+
+**Abhi निर्णय (2026-10-13, त्याच दिवशी क्रमाने बदलले; शेवटचा लागू):** "R:R removed from the engine; R:R is Abhi's own judgement at approval;
+SL/target from dashboard (Abhi 2026-10-13)". आधीचे टप्पे (entry-candle spot SL + PAPER spot-SL exit; मग R:R फक्त माहिती) Abhi नेच रद्द केले ⇒
+exits / trade_monitor / position monitors / PAPER exit ला हात नाही. "09:15 candle = entry candle शक्य" (12 Oct chart) — लागू.
+
+**काय केलं (decision3):**
+- `settings.rr_step` (default False): ⑦ engine मधून काढला — `engine._level_eval` risk मोजत नाही, checklist मध्ये ⑦ नाही, `risk` = None,
+  `level_evals` मध्ये rr / entry / sl / target नाहीत; setup निर्णय ⑥ (commitment + c1) + conviction वर संपतो. True = जुना ⑦ (`method.risk`
+  तसाच) फक्त जुने reports / golden tests (dashboard वर नाही). `sl_mode` बनवलं नाही (फक्त R:R साठी होतं).
+- `settings.entry_first_bar` (default True) + `method.entry_open`: commitment खिडकी `evidence_start` (09:15) पासून ⇒ 09:15 candle स्वतः
+  entry candle (निर्णय bar_end 09:30). False = जुनं.
+- User-facing output मधून engine SL / target / R:R: `replay_day` (bar ओळ, FIRST SETUP, JSON, dry-run approval), `level_gate_bot.gate_caption_lines`
+  (Entry / SL / target / R:R ओळ फक्त मूल्यं असतील तर — level bots तसेच), `setup_chart` (footer / caption), `charts` (आधीच guarded), store row
+  (entry / invalidation / target = NULL). Ticket: dashboard चे SL / target ("SL / target / exits: bot चे नेहमीचे नियम") आजसारखे.
+- `v22_check --legacy`, `replay_day --legacy-rr --no-first-bar-entry` (जुने reports); checklist वाचणारे (`telegram_view`, `v22_check`,
+  `v22_whatif`) ⑦ नसला तरी चालतात.
+
+**Live window तपासणी:** store row bar_ts = bar_end (`engine3_live.row_from_v22`) ⇒ 09:15 candle = 09:30 ⇒ `engine_signal.in_window`
+(09:30–15:00) ✔; `run3` "आजचा bar" ✔; cron `1,16,31,46 4-9 UTC` ⇒ पहिला run 09:31 IST. c1: LTF फक्त bar_end ≤ 09:30 (`ltf_choch`).
+
+**c1 तपासणी (09:15 candle मध्येच?):** हो, शक्य — 5M 09:15 / 09:20 / 09:25 (09:30 पर्यंत बंद) + आदल्या दिवसाची 5M रचना: spike नंतर 09:25 चा
+close आदल्या दिवसाच्या शेवटच्या 5M swing (HL / LH) पलीकडे ⇒ CHoCH ✔ (synthetic आरसा test). c1 सैल केला नाही.
+**पण c0 अडथळा (OPEN_QUESTIONS EC3):** 09:15 candle हीच area मधली पहिली (arrival) candle ⇒ study window = ती स्वतः ⇒ body / volume 1.0× ⇒
+"dominant नाही" ⇒ वाट. 12 Oct सारखा gap-up spike (आदल्या दिवशी area ला स्पर्श नाही) 09:15 ला setup होत नाही; आदल्या दिवसाचे शेवटचे bars area
+मध्ये असतील तरच. EC4: "मागची candle" = आदल्या दिवसाची 15:15 (close पलीकडे close हवा). c0 / commitment बदलले नाहीत — निर्णय हवा.
+
+**परिणाम (thresholds बदल नाही):**
+- `replay_day --day 2026-10-12 --synthetic` (खरा data नाही): जुना / नवा दोन्ही ⇒ setup 09:45 bear call ✅ A (जुना R:R 3.13). 09:15: जुना "entry
+  वेळ-खिडकीबाहेर", नवा "commitment candle नाही" (fixture चा 09:15 close आदल्या close च्या वर). Approval संदेशात engine Entry / SL / R:R ओळ नाही.
+- V22 NIFTY **IS फक्त** (2015-01-09 … 2021-12-31, 42,969 15M bars, `data/nifty50_1min.parquet`, VAL / holdout नाही; FUT volume नाही ⇒ c0 volume NA):
+
+| variant | `rr_step` | `entry_first_bar` | setups | त्यापैकी 09:15 | no_trade (R:R) |
+|---|---|---|---|---|---|
+| जुना | True | False | 11 | 0 | 164 |
+| R:R काढला | False | False | 126 | 0 | 0 |
+| 09:15 entry फक्त | True | True | 11 | 0 | 173 |
+| **नवा (default)** | False | True | **134** | 8 | 0 |
+
+  जुने 11 setups सगळे नव्यात आहेत (नवे 123 जास्त, कमी 0).
+
+**Tests:** golden / जुने नियम असर्ट करणारे tests inputs ने pinned (अपेक्षा तशाच): `test_decision3_oct12` (first-hour setup + R:R + 09:15
+"वेळ-खिडकी" ⇒ `S_OLD`; replay_day ⇒ `--legacy-rr --no-first-bar-entry`), `test_decision3_method` (invariants R:R ≥ 3 ⇒ `LEGACY_RR`),
+`test_decision3_commitment_q16` (09:15 ⇒ `entry_first_bar` False), `test_decision3_telegram` (B1 / risk caption ⇒ `rr_step` True),
+`test_decision3_touch_levels` (⑦ R:R no_trade ⇒ `rr_step` True). नवे `tests/test_decision3_entry_first_bar.py` (आरसा: ⑦ / risk नाही, जुना ⑦
+reproduce, R:R काढल्याने setups फक्त वाढतात, 09:15 commitment + जुनं window, c1 09:15 मध्येच (+ नकार), arrival-candle c0, live window, replay
+output).

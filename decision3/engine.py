@@ -1,7 +1,9 @@
 """decision3/engine.py — थर v2.2 "method-first" (docs/prompts_v2/08_थर_v22_METHOD_FIRST.md). Gates = Abhi च्या 6 पायऱ्या; दुसरं gate नाही.
 
 पायरी B: ① Daily trend (Dow) + ② 1H levels (जीवनक्रम). पायरी C: ③ K, ④ power shift, ⑥ commitment, ⑦ risk (R:R ≥ 3), §5–§7 पुरावे ⇒
-conviction (A ✅ / B 🟡 / weak ⇒ वाट / against ⇒ नाही). कठोर नियम फक्त H1 (①), H2 (②③, breakout नाही), H3 (⑦); ⑥ = entry trigger;
+conviction (A ✅ / B 🟡 / weak ⇒ वाट / against ⇒ नाही). Abhi 13 Oct: ⑦ (SL / target / R:R) engine मधून काढला — default
+`rr_step` = False ⇒ checklist मध्ये ⑦ नाही, risk नाही; setup निर्णय ⑥ (commitment + c1) वर संपतो (SL / target dashboard चे, R:R Abhi चा
+approval वेळचा निर्णय). rr_step = True = जुना ⑦ फक्त जुने reports / golden tests reproduce. कठोर नियम फक्त H1 (①), H2 (②③, breakout नाही), H3 (⑦); ⑥ = entry trigger;
 §5.3 range अवस्था = gate. ⑤ K ची आतली रेघ close ने तुटली = पुरावा (grade +), gate नाही (`trendline.py`).
 जुना decision2 (v2.1) तसाच — `engine_version` setting ने shadow तुलना. हा module order / broker call करत नाही; AI order देत नाही.
 Known_at: प्रत्येक bar चा निर्णय फक्त त्या bar च्या close पर्यंतच्या माहितीवर (Daily state known_at ≤ bar_end; levels त्यांच्या जन्म-bar पासून).
@@ -26,13 +28,16 @@ def level_eval_brief(dd, part, extra, lvl):
     """अहवालासाठी: एका active level चा निकाल (decide फक्त सर्वोत्तम level दाखवतो — R:R ने अडलेले levels इथे दिसतात)."""
     gates = ("③", "⑥", "⑦")
     reached = [k for k in gates if (part.get(k) or [None])[0]]
-    rk = extra.get("risk") or {}
-    return {"id": lvl["id"], "role": lvl["role"], "lo": lvl["lo"], "hi": lvl["hi"],
-            "decision": {M_SETUP: SETUP, M_WAIT: WAIT, M_NO: NO_TRADE}[dd], "reached": reached[-1] if reached else "②",
-            "n_ok": sum(1 for k in STEPS if (part.get(k) or [None])[0]),
-            "checklist": {k: [v[0], str(v[1])[:90]] for k, v in part.items()}, "conviction": extra.get("conviction"),
-            "form": (extra.get("commit") or {}).get("form"), "rr": rk.get("rr"), "entry": rk.get("entry"), "sl": rk.get("sl"),
-            "target": rk.get("target"), "why": (extra.get("why") or "")[:120]}
+    rk = extra.get("risk")
+    out = {"id": lvl["id"], "role": lvl["role"], "lo": lvl["lo"], "hi": lvl["hi"],
+           "decision": {M_SETUP: SETUP, M_WAIT: WAIT, M_NO: NO_TRADE}[dd], "reached": reached[-1] if reached else "②",
+           "n_ok": sum(1 for k in STEPS if (part.get(k) or [None])[0]),
+           "checklist": {k: [v[0], str(v[1])[:90]] for k, v in part.items()}, "conviction": extra.get("conviction"),
+           "form": (extra.get("commit") or {}).get("form")}
+    if rk:                                                                 # legacy rr_step = True फक्त (default: engine R:R / SL / target नाही)
+        out.update(rr=rk.get("rr"), entry=rk.get("entry"), sl=rk.get("sl"), target=rk.get("target"))
+    out["why"] = (extra.get("why") or "")[:120]
+    return out
 
 
 def mature_intact(st):
@@ -63,6 +68,11 @@ class V22:
         self._ts = pd.to_datetime(self.m15["timestamp"]).to_numpy()
         self.pb = M.Pullbacks(self)
         self._confirm_inputs(ltf, futures)
+
+    @property
+    def rr_step(self):
+        """legacy ⑦ (SL / target / R:R ≥ min_rr gate) — default False (Abhi 13 Oct: R:R engine मधून काढला)."""
+        return bool(self.s.get("rr_step", False))
 
     def _confirm_inputs(self, ltf, futures):
         """⑥ c1 / c0 inputs (Abhi, LEVEL_BOTS_CONFIRMATION): LTF = दिलेले bars, नाहीतर त्याच 1m data चे 5M (market_state.core.frame —
@@ -220,11 +230,12 @@ class V22:
             return M_NO, chk, {**extra, "why": "चौथा+ प्रयत्न ⇒ reversal शक्यता (§5.1)"}
         if not ok6:
             return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
-        ok7, rk = M.risk(self, t, d, lvl, k, self.s)
-        chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
-        extra["risk"] = rk
-        if not ok7:
-            return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
+        if self.rr_step:                                                 # legacy फक्त (Abhi 13 Oct: R:R engine मधून काढला; SL / target dashboard चे)
+            ok7, rk = M.risk(self, t, d, lvl, k, self.s)
+            chk["⑦"] = [ok7, f"R:R {rk['rr']}" if rk["rr"] is not None else "target नाही"]
+            extra["risk"] = rk
+            if not ok7:
+                return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
         conv1 = M.first_leg_cap(conv, k["legs"], lvl["sweeps"], ev["commit_strong"])
         if conv1 != conv:
             conv = extra["conviction"] = conv1
@@ -252,7 +263,7 @@ class V22:
         trend = ctx["trend"]
         ok2, why2, act = self.step2(t, trend, ctx.get("band")) if ok1 else (False, "① ✘", [])
         chk = {"①": [ok1, why1], "②": [ok2, why2]}
-        for k in ("③", "④", "⑤", "⑥", "⑦"):
+        for k in STEPS if self.rr_step else STEPS[:-1]:                  # default: ⑦ नाही (Abhi 13 Oct)
             chk[k] = [None, "—"]
         dec, best, evals = (NO_TRADE if not ok1 else WAIT), {}, []
         if ok1 and ok2:

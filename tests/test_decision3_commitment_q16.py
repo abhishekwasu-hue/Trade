@@ -108,7 +108,7 @@ def test_entry_window_end_exclusive():
     tss = lambda hm: [day + pd.Timedelta(hours=9, minutes=45), day + pd.Timedelta(hours=10), pd.Timestamp(f"2030-01-07 {hm}")]  # noqa: E731
     assert M.commitment(A, 2, M.UP, LVL, S, tss("15:00"))[0]
     assert not M.commitment(A, 2, M.UP, LVL, S, tss("15:15"))[0]
-    assert not M.commitment(A, 2, M.UP, LVL, S, tss("09:15"))[0]
+    assert not M.commitment(A, 2, M.UP, LVL, {**S, "entry_first_bar": False}, tss("09:15"))[0]   # जुना नियम (pin, Abhi 13 Oct)
 
 
 def test_range_state_released_when_commitment_closes_beyond_cluster():

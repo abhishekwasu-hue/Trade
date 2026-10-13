@@ -16,8 +16,8 @@ from decision3 import telegram_view as TV
 from tests.test_decision3_method import NO_MATURE, _abc_m15
 
 
-def _V_rows():
-    V = E3.V22(_abc_m15(), s=NO_MATURE)
+def _V_rows(s=None):
+    V = E3.V22(_abc_m15(), s=s or NO_MATURE)
     return V, V.run()
 
 
@@ -101,7 +101,7 @@ def test_no_trade_caption_says_where_it_stopped_and_has_5_lines():
 
 
 def test_caption_at_most_7_lines_for_every_row_incl_wait_with_risk():
-    V, rows = _V_rows()
+    V, rows = _V_rows({**NO_MATURE, "rr_step": True})                               # risk / B1 असर्ट ⇒ legacy ⑦ (pin, Abhi 13 Oct)
     assert any(r["decision"] != "setup" and r.get("risk") for r in rows)          # non-vacuous: risk असलेली wait / no_trade row आहे
     for r in rows:
         lines = TV.caption(V, r, "NIFTY").splitlines()
