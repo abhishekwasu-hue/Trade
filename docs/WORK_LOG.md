@@ -2514,4 +2514,4 @@ legs owner वि. reader2 gate).
   LIVE नकार BANKNIFTY + SENSEX, cron ओळ, engine run symbols), `test_telegram_cleanup` (engine source ⇒ engine पट्टे).
 - **Deploy:** git pull + restart पुरेसं नाही — `bash scripts/deploy_one_bot.sh` पुन्हा (schedule ओळी + `set_one_bot_mode.py` ⇒ SENSEX 15M SRv2
   OFF, Vision symbols NIFTY / BANKNIFTY). Setting DB मध्ये लिहायची गरज नाही (default).
-- **बाकी:** 15:45 सारांश (`paper_daily_summary`) अजून market_zones चे एकच-किंमत areas दाखवतो (OPEN_QUESTIONS PF-1).
+- **Review #326 नंतर:** 15:45 सारांश — symbols `signal_symbols` वरून (SENSEX ओळ नाही); areas पट्टे (engine ⇒ `watched_levels`, own ⇒ gate पट्टा); areas आणता आले नाहीत ⇒ "Bot areas not available" (PF-1 केलं).

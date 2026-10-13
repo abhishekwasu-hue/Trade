@@ -417,6 +417,6 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 
 | # | प्रश्न | आत्ता काय (default) | पर्याय |
 |---|---|---|---|
-| PF-1 | 15:45 सारांश (`scripts/paper_daily_summary.py`) अजून market_zones चे DYNAMIC_SR (एकच किंमत) areas दाखवतो; engine source bot साठी engine पट्टे दाखवायचे? | तसेच (या branch चा scope नाही) | pre-open सारखं `watched_levels` (वेगळा PR) |
+| PF-1 | ~~15:45 सारांश एकच-किंमत areas~~ — केलं (review #326): engine source ⇒ `watched_levels` पट्टे (BROKEN / DEAD नाहीत); own / both ⇒ bot चा gate पट्टा; symbols = `signal_symbols` (SENSEX ओळ नाही) | केलं | — |
 | PF-2 | decision3 levels: σ_1H नसताना (window चे पहिले 20 sessions) तात्पुरती किमान रुंदी = bars ≤ t चे 1H ranges चा median × 0.15; σ आल्यावर spec प्रमाणे | लावलं (नवा आकडा नाही, तोच `level_min_width_sigma`) | σ नसताना level जन्मच नाही |
 | PF-3 | `signal_symbols` बदलल्यावर one-bot mode आपोआप लागत नाही (Vision symbols / 15M SRv2 on-off) — `python3 scripts/set_one_bot_mode.py` पुन्हा चालवावा लागतो; engine / pre-open / engine entry लगेच नवी यादी वापरतात | dashboard caption मध्ये सूचना | dashboard save वरच one-bot mode लावा |

@@ -341,7 +341,9 @@ def test_summary_symbol_lines_plain_words_like_abhis_example():
                         "22,715–22,776 (1H, ≈90 pts above the high). Daily move is mature near target 22,183 (evidence only — grade at most B).")
     assert lines[1].startswith("<b>BANKNIFTY</b>: no setup today. Trend UP (daily). Price reached a demand area 1 time; no entry because "
                                "the reward was too small for the risk.") and "Price traded into demand 50,800–50,900" in lines[1]
-    assert lines[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
+    assert len(lines) == 2 and "SENSEX" not in txt                       # default = signal_symbols (NIFTY, BANKNIFTY) — SENSEX ची ओळ नाही
+    three = _section(S, symbols=("NIFTY", "BANKNIFTY", "SENSEX")).splitlines()
+    assert three[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
     assert not PT.has_raw_codes(txt)
 
 
@@ -382,7 +384,7 @@ def test_summary_one_message_headline_decisions_pnl_details(monkeypatch):
     msg = sent[0]
     top = _shape(msg, PT.DECISION_NONE)
     assert top.startswith("🗓 Day summary 2026-10-09 (15:45, PAPER)")
-    assert "<b>NIFTY</b>: no setup today." in top and "<b>SENSEX</b>: no data today" in top
+    assert "<b>NIFTY</b>: no setup today." in top and "SENSEX" not in top   # default signal_symbols ⇒ SENSEX ची ओळ नाही
     assert "approved 1 (1 with a changed entry), rejected 2 (wrong zone 2), changed entry 1, no answer 1." in top
     assert "net P&L <b>₹-850</b>" in top and "Skipped trades tracked for comparison: 2" in top
     assert "a:D2+b" in msg.split(PT.SEP)[1]                                            # gate तपशील details मध्येच

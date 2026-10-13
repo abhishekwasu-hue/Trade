@@ -250,3 +250,54 @@ def test_watched_levels_show_only_tradeable_states(monkeypatch):
     P = _preopen()                                                             # pre-open: BROKEN पट्टा किंमतीजवळ असला तरी नाही
     msg = _report(P, ["NIFTY"], P.bot_status(["NIFTY"], _settings(ONE_BOT)), engine_areas_fn=lambda s: lv)
     assert "22,600" not in msg and "22,650" not in msg and "supply 22,715–22,776" in msg
+
+
+# ------------------------------------------------------------------------------------------------ 15:45 सारांश (review #326)
+def _ctx_down():
+    return {"ok": True, "trend": "DOWN", "sides": {LR.BEAR}, "mature": False}
+
+
+def test_summary_default_symbols_follow_signal_symbols_no_sensex(monkeypatch):
+    from scripts import paper_daily_summary as S
+    monkeypatch.setattr(cloud_db, "get_signal_symbols", lambda: ["NIFTY", "BANKNIFTY"])
+    txt = S.symbols_section("2026-10-09", ctx_fn=lambda s, d: None, rows_fn=lambda s, d: (None, "db"),
+                            zones_fn=lambda s: None, range_fn=lambda s, d: None)
+    assert "NIFTY" in txt and "BANKNIFTY" in txt and "SENSEX" not in txt
+
+
+def test_summary_own_source_single_price_zone_printed_as_bots_gate_band(monkeypatch):
+    from scripts import paper_daily_summary as S
+    monkeypatch.setattr(cloud_db, "get_strategy_settings", lambda k, s: {"signal_source": "own", "gate_area_pad_pct": 0.1})
+    monkeypatch.setattr(cloud_db, "get_market_zones", lambda s: pd.DataFrame([
+        {"zone_type": "DYNAMIC_SR_RESISTANCE_15M", "zone_low": 22781.0, "zone_high": 22781.0, "status": "ACTIVE"}]))
+    z = S.default_zones("NIFTY")
+    assert z["zone_high"].iloc[0] - z["zone_low"].iloc[0] == pytest.approx(22781.0 * 0.1 / 100)
+    txt = S.symbols_section("2026-10-09", symbols=("NIFTY",), ctx_fn=lambda s, d: _ctx_down(), rows_fn=lambda s, d: ([], None),
+                            range_fn=lambda s, d: {"high": 22700.0, "low": 22600.0})
+    near = re.search(r"Nearest supply ([\d,]+)–([\d,]+)", txt)
+    assert near and near.group(1) != near.group(2)                         # पट्टा, एकच किंमत नाही
+
+
+def test_summary_engine_source_uses_engine_bands_without_broken(monkeypatch):
+    from scripts import paper_daily_summary as S
+    import engine3_live as L3
+    monkeypatch.setattr(cloud_db, "get_strategy_settings", lambda k, s: {"signal_source": "engine"})
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda x: "t")
+    monkeypatch.setattr(cloud_db, "get_market_zones", lambda s: pytest.fail("engine source must not read market_zones"))
+    monkeypatch.setattr(L3, "UpstoxFeed", lambda tok, today=None: object())
+    monkeypatch.setattr(L3, "watched_levels", lambda sym, feed, now, s=None: L3.tradeable_levels([
+        {"role": "supply", "lo": 22763.0, "hi": 22809.0, "state": "ACTIVE"},
+        {"role": "supply", "lo": 22715.0, "hi": 22732.0, "state": "BROKEN"}]))
+    txt = S.symbols_section("2026-10-09", symbols=("NIFTY",), ctx_fn=lambda s, d: _ctx_down(), rows_fn=lambda s, d: ([], None),
+                            range_fn=lambda s, d: {"high": 22700.0, "low": 22600.0})
+    assert "Nearest supply 22,763–22,809 (1H" in txt and "22,715" not in txt
+
+
+def test_summary_engine_areas_missing_says_not_available(monkeypatch, capsys):
+    from scripts import paper_daily_summary as S
+    monkeypatch.setattr(cloud_db, "get_strategy_settings", lambda k, s: {"signal_source": "engine"})
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda x: None)
+    txt = S.symbols_section("2026-10-09", symbols=("NIFTY",), ctx_fn=lambda s, d: _ctx_down(), rows_fn=lambda s, d: ([], None),
+                            range_fn=lambda s, d: {"high": 22700.0, "low": 22600.0})
+    assert "Bot areas not available today (areas not available)." in txt and "Nearest" not in txt
+    assert "Upstox login missing" in capsys.readouterr().out               # तपशील फक्त log मध्ये
