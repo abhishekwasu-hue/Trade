@@ -435,3 +435,4 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |
 | Trend बाजू (13 Oct) | Daily trend बदलला नाही तोपर्यंत reversal पासूनची चाल correction (a-b-c); flip झालेल्या zone वर bull trade = S4 अपवाद **नाही**. पुढचा seller zone ≈ 5–6 Oct highs; correction च्या शेवटी zone वाचन ⇒ bear. ✅ Abhi |
 | B (Abhi, ZONE_STUDY_FINAL) | Trader's patience: wave count / maturity / c = a फक्त context — correction संपणं predict नाही, त्यावर block नाही. Watch-list: trend दिशेचे पुढचे सगळे counter-side zones armed (जवळचा आधी); zone तुटला ⇒ पुढचा आधीच armed. Loss सामान्य; rule / threshold जिंकवण्यासाठी बदलायचे नाहीत; loss नंतर lock-out नाही (setting, default OFF). ✅ KB + pack |
+| Z-1k | एकदा flip झालेला zone पुन्हा पलीकडच्या swing पार तुटला ⇒ **DEAD** (दुसरा flip नाही; Z-1f प्रमाणे). 13 Oct चा zone spot 22,731.8 पार झाला तर DEAD, मग वरचे armed zones. ✅ Abhi (a) |
