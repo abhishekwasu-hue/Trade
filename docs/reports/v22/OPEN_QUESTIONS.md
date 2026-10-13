@@ -350,6 +350,7 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | R1b-3 | FUT contract roll: volume owner (`opportunity_engine.volume.attach_futures_volume`) एका timestamp चे सगळे FUT rows बेरीज करतो; `legs2.volume.bar_volume` फक्त near-month ठेवतो | owner जसा (R1a FUT file मध्ये प्रत्येक timestamp ला एकच contract ⇒ फरक नाही) | volume owner मध्ये near-month filter (K10.3) — merge टप्प्यात |
 | R1b-4 | Owner नाही: VIX, FII / DII, global cues (context `missing`); K11 चे box / flag / double top area मध्ये फक्त `decision3.method.zone_pattern` (candles.area_studies) मधून | NA म्हणून नोंद | vision_led मधून context owner मध्ये हलवा (§3); K11 patterns2 शी align (R1 नंतर) |
 | R1b-5 | swings2 warm-up: σ ला 20 पूर्ण sessions + D2 ला 10 warm-up sessions ⇒ लहान इतिहासावर structure NA / D2 "unknown", तेव्हा decision3 Daily Dow (daily bars) कडे trend असतो | NA / unknown तसेच (silent pass नाही) | dossier ला Daily / Weekly इतिहास द्या आणि swings2 D3 / D4 त्यावर (merge टप्पा) |
+| R1b-6 | Legs owner: design §3 म्हणतो reader2, पण reader2 research-only (gallery gate + Abhi ✅ होईपर्यंत production import मनाई — `tests/test_reader2_boundary.py`) | facts reader2 import करत नाही; `legs` default NA (कारणासह); research / test caller `cfg["legs_reader"] = reader2.reader.read` देतो | (a) R1 साठी facts/ ला boundary अपवाद (Abhi ✅); (b) gallery gate नंतरच legs; (c) तोपर्यंत legs2 / decision3.daily_legs |
 
 ## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
 

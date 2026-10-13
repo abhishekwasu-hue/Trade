@@ -2438,12 +2438,17 @@ FUT volume, live V4 चालू करायचा का).
 - Owner अपयशी / data नाही ⇒ section `{"status": "NA", "reason": …}` (silent pass नाही); FUT volume नाही ⇒ volume NA; shared swings2 / legs2
   build अपयशी ⇒ त्यावर अवलंबून सगळे sections NA (कारणासह); holdout guard कधीच NA होत नाही (raise).
 - `facts/README.md`: concept → प्रत्यक्ष call केलेलं owner function → output keys तक्ता + उघडे प्रश्न.
-**Tests (`tests/test_facts_dossier.py`, 17):** synthetic 12-Oct fixture (`tests/oct12_fixture.py`, 1m / 5M त्याच 15M मधून) — सगळे sections, JSON,
+**Tests (`tests/test_facts_dossier.py`, 18):** synthetic 12-Oct fixture (`tests/oct12_fixture.py`, 1m / 5M त्याच 15M मधून) — सगळे sections, JSON,
 grade/score नाही, future bars कापले / बदलले तरी dossier तसाच (mid-bar as_of सुद्धा), NA paths (FUT नाही / जुळत नाही, 5M / 1m नाही, owner
 exception, swings2 build exception, लहान इतिहास ⇒ structure NA), 15M आवश्यक, holdout raise, bear वि. mirror आकार; module boundary (frozen /
 AI / broker import नाही, तारीख नाही). Private data (R1a fixture, नसेल तर skip): 9 Oct close ला dossier मध्ये R1a ची 30 Sep → 6 Oct FUT रेघ
 (तोच projected zone), ≈ 22,667 supply band आणि त्यांचा confluence.
-**Synthetic वर NA:** काही नाही (सगळे इनपुट दिले तर 13 / 13 OK). R1a real FUT 15M (फक्त 30 Sep पासून, 8 sessions) वर structure NA (σ ला 20
+**Synthetic वर NA:** काही नाही (सगळे इनपुट + legs reader दिले तर 13 / 13 OK; reader न दिल्यास legs NA). R1a real FUT 15M (फक्त 30 Sep पासून, 8 sessions) वर structure NA (σ ला 20
 sessions हवेत), 5M / 1m न दिल्याने ltf_choch / gaps / context NA.
 **Data:** synthetic (2030 तारखा) + R1a चा private fixture (CONTAMINATED / ILLUSTRATION, holdout filter); Upstox / paid API नाही.
-**उघडे:** OPEN_QUESTIONS R1b-1 … R1b-5 (trend चे अनेक हिशोब, PDH/PDL दोनदा, FUT roll, owner नसलेले VIX / FII-DII / cues, swings2 warm-up).
+- reader2 research-only (boundary test) ⇒ facts मध्ये reader2 import नाही: `legs` default NA (कारणासह); research / test caller `cfg["legs_reader"]`
+  = `reader2.reader.read` देतो (tests तसेच करतात).
+**Full suite (एकदा, flock):** 1 failed / 5065 passed / 1 skipped / 50 xfailed — एकमेव fail `test_reader2_boundary` (या branch चा reader2 import)
+⇒ वरची दुरुस्ती; मग `test_facts_dossier` + `test_reader2_boundary` + `-k "facts or validity or two_touch or levels or dossier"` पुन्हा पास.
+**उघडे:** OPEN_QUESTIONS R1b-1 … R1b-6 (trend चे अनेक हिशोब, PDH/PDL दोनदा, FUT roll, owner नसलेले VIX / FII-DII / cues, swings2 warm-up,
+legs owner वि. reader2 gate).

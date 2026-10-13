@@ -38,6 +38,7 @@ DEFAULTS = {
     "swings2": None,                 # overrides for swings2 settings
     "decision3": None,               # overrides for decision3 settings (method / liquidity)
     "reader2": None,                 # overrides for reader2 settings
+    "legs_reader": None,             # reader2.reader.read, injected by a research / test caller (reader2 is research-only) — None ⇒ legs NA
 }
 # keys an owner may return that are a grade / score / vote, never a fact (design §3) — dropped everywhere in the dossier
 NOT_FACTS = frozenset({"grade", "score", "scores", "vote", "votes", "conviction", "decision", "confidence", "verdict", "ratio",
@@ -250,10 +251,9 @@ def structure(c):
 
 # ------------------------------------------------------------------------------------------------ K2 / K3 legs — reader2
 def _legs_of(R, tf):
-    from reader2 import trend as RT
     out = []
     for lg in R.all_legs() + list(R.current.values()):
-        sv = RT.eff_structure(lg) or {}
+        sv = ((lg.reread or {}).get("structure")) or lg.structure or {}        # = reader2.trend.eff_structure (re-read vote, else the first)
         out.append({"tf": tf, "degree": lg.degree, "dir": lg.dir_name, "start": {"bar": lg.i0, "ts": str(R.ch.d["timestamp"].iloc[lg.i0]),
                                                                                   "price": lg.p0},
                     "end": {"bar": lg.i1, "ts": str(R.ch.d["timestamp"].iloc[lg.i1]), "price": lg.p1}, "bars": lg.bars,
@@ -262,9 +262,19 @@ def _legs_of(R, tf):
     return out
 
 
+LEGS_GATE = ("reader2 is research-only until its gallery gate passes and Abhi approves (docs/READER2_DESIGN.md, "
+             "tests/test_reader2_boundary.py) — no production module may import it; pass cfg['legs_reader'] = reader2.reader.read "
+             "from a research / test caller")
+
+
 def legs(c):
+    """K2 / K3 legs from the owner reader2 (`reader2.reader.read`). reader2 is research-only (its boundary test forbids any production
+    import), so the facts package never imports it: the caller injects the reader as cfg["legs_reader"] (default None ⇒ NA with the
+    reason). Open question R1b-6: design §3 names reader2 the owner; the reader2 gate says research-only."""
     owner = "reader2.reader.read (structure + anatomy fusion, self-check)"
-    from reader2 import reader as RR
+    read = c.cfg.get("legs_reader")
+    if read is None:
+        return _na(owner, LEGS_GATE)
     out, na = {}, {}
     for tf in c.cfg["area_tfs"]:
         df = c.f.get(tf)
@@ -272,8 +282,8 @@ def legs(c):
             na[tf] = f"{tf} bars missing"
             continue
         low = c.f.get("5M") if tf == "15M" else (c.m15 if tf == "1H" else None)
-        R = RR.read(df[["timestamp", "bar_end", "open", "high", "low", "close"]], c.cfg["reader2"],
-                    low=None if low is None else low[["timestamp", "bar_end", "open", "high", "low", "close"]])
+        R = read(df[["timestamp", "bar_end", "open", "high", "low", "close"]], c.cfg["reader2"],
+                 low=None if low is None else low[["timestamp", "bar_end", "open", "high", "low", "close"]])
         t_now = R.trend_now() or {}
         out[tf] = {"legs": _legs_of(R, tf), "selfcheck_passes": R.passes,
                    "reader2_trend": {"trend": t_now.get("trend"), "origin": t_now.get("origin")},

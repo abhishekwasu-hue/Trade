@@ -14,6 +14,7 @@ import pytest
 from elliott import data_policy as DP
 from facts import dossier as D
 from facts import validity as V
+from reader2 import reader as RR
 from tests import oct12_fixture as F
 from tests import test_r1_golden_lines as G
 from tests.ltf_fixtures import split_bars
@@ -39,7 +40,8 @@ def _dossier(m15, fut, ltf, one, as_of, **kw):
     bars = {"15M": m15, "5M": ltf, "1m": one}
     for k in kw.pop("drop", ()):
         bars.pop(k, None)
-    return D.build_dossier("SYNTH", bars, {"5M": fut} if fut is not None else None, as_of=as_of, **kw)
+    cfg = {"legs_reader": RR.read, **kw.pop("cfg", {})}                     # reader2 is research-only: the test injects it (R1b-6)
+    return D.build_dossier("SYNTH", bars, {"5M": fut} if fut is not None else None, as_of=as_of, cfg=cfg, **kw)
 
 
 def _cut(df, as_of, minutes):
@@ -166,6 +168,13 @@ def test_missing_ltf_and_1m_are_na(world):
     assert S["structure"]["status"] == D.OK and S["areas"]["status"] == D.OK
 
 
+def test_legs_na_without_injected_reader2(world):
+    m15, fut, ltf, one, as_of, d = world
+    x = _dossier(m15, fut, ltf, one, as_of, cfg={"legs_reader": None})
+    assert x["sections"]["legs"]["status"] == D.NA and "research-only" in x["sections"]["legs"]["reason"]
+    assert {k: v for k, v in x["sections"].items() if k != "legs"} == {k: v for k, v in d["sections"].items() if k != "legs"}
+
+
 def test_owner_failure_is_na_with_reason(world, monkeypatch):
     m15, fut, ltf, one, as_of, _ = world
     from decision3 import liquidity as LQ
@@ -260,7 +269,7 @@ def test_golden_dossier_nifty_fut_9oct_close_carries_the_r1a_line_band_and_confl
     fut15 = G.load_fut15()
     t, cut, ref, _ = G._golden(fut15, "2026-10-09")
     as_of = pd.Timestamp(cut["timestamp"].iloc[-1]) + pd.Timedelta(minutes=15)
-    d = D.build_dossier("NIFTY", {"15M": fut15}, None, as_of=as_of)
+    d = D.build_dossier("NIFTY", {"15M": fut15}, None, as_of=as_of, cfg={"legs_reader": RR.read})
     S = d["sections"]
     lines = [x for x in S["lines"]["by_tf"]["15M"]["lines"] if V.same_line(x, ref, ref["mr"], V.DEFAULTS["touch_mr"])]
     assert lines and lines[0]["projected_zone"]["next"] == ref["projected_zone"]["next"]

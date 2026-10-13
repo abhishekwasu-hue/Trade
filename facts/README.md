@@ -24,7 +24,7 @@ into NA (it raises).
 | Section | Concept (KB) | Owner function(s) called | Output keys (besides status / owner) | NA when |
 |---|---|---|---|---|
 | `structure` | Swings / structure, degree-aware: trend, protected swing, BOS / CHoCH (K1) | `swings2.engine.build` (pivots DC engine) → `swings2.structure.all_structure`; per degree `swings2.engine.known` / `labels` / `pivot_json`, `swings2.structure.trend_of` | `degrees.D0…D4.{pivots, confirmed_pivots, warmup_done, pivot_trend}`; D1 / D2 also `state` (trend, range, lastH / lastL, strict, protected, weak, reversal stage) and `events` (BOS, CHoCH, sweep, range_start / range_break, LH, reversal, always_in_flip, failed_gap_break) since the 15M lookback start; `events_from` | engine fails; no confirmed pivot at any degree (σ needs 20 complete sessions) |
-| `legs` | Legs: impulse vs correction (K2, K3) | `reader2.reader.read` on 15M (low = 5M) and on 1H (low = 15M) | `by_tf.<tf>.legs[]` (degree, dir, start / end bar-ts-price, bars, label impulse / correction / uncertain, structure_family, reason, provisional, known_at), `selfcheck_passes`, `selfcheck_log`, `reader2_trend` (evidence only) | no frame |
+| `legs` | Legs: impulse vs correction (K2, K3) | `reader2.reader.read` on 15M (low = 5M) and on 1H (low = 15M) — **injected** as `cfg["legs_reader"]` (reader2 is research-only; facts never imports it) | `by_tf.<tf>.legs[]` (degree, dir, start / end bar-ts-price, bars, label impulse / correction / uncertain, structure_family, reason, provisional, known_at), `selfcheck_passes`, `selfcheck_log`, `reader2_trend` (evidence only) | no reader injected (default; reason names the reader2 gate); no frame |
 | `areas` | Areas: demand / supply bands, flips, broken (K4, TA3b / TA4) | `decision3.levels.display_bands` (→ `facts.validity.check_band`), lookback per TF (`facts.validity.lookback`), 1H magnet count on 15M | `by_tf.<15M / 1H>.{asof_bar, close, mr, lookback_sessions, bands[]}` — each band: lo, hi, role, touches, touch_count, earlier_side_touches, established, breaks, flipped, broken, price_side, crossings_session, valid, reasons, defined_by | no frame |
 | `lines` | Trendlines (K6, TA3) | `trendlines2.two_touch.display_lines` (→ `facts.validity.check_line`) | `by_tf.<15M / 1H>.{asof_bar, mr, lines[]}` — each line: side, anchor1 / anchor2, slope, touches, touch_count, established, valid_from, value_at_t, projected_zone (next 3rd-touch zone + path) | no frame |
 | `confluence` | Band + line meeting (K4 + K6.4) | `facts.validity.confluence` over the shown bands × lines (all TF pairs) | `items[]` (band_tf, line_tf, role, offset, line_value, band, distance_mr, zone, line_anchors, band_touches) | no frame at all |
@@ -45,6 +45,10 @@ Dropped everywhere (not facts): `grade`, `score(s)`, `vote(s)`, `conviction`, `d
 is the band's role (support ⇒ up, resistance ⇒ down) — a fact about the band, not a trade direction.
 
 ## Open questions (R1b; for Abhi — not decided here)
+
+- **Legs owner vs reader2 gate:** design §3 names `reader2` the legs owner, but reader2 is research-only until its gallery gate passes
+  and Abhi approves (`docs/READER2_DESIGN.md`, `tests/test_reader2_boundary.py` forbids any production import). The dossier therefore
+  never imports reader2: `legs` is NA by default and a research / test caller injects `reader2.reader.read` as `cfg["legs_reader"]`.
 
 - **Trend has more than one computation in the dossier inputs:** `structure` (swings2 D1 / D2 fold, the owner) vs `legs.reader2_trend`
   (reader2's leg-trend) vs `gaps.trend` (vision.gap_context SMA-10 trend on daily closes); decision3's own Daily Dow is not in the dossier.
