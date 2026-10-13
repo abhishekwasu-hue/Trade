@@ -1,4 +1,4 @@
-"""engine3_live.py — decision3 (थर v2.2, method engine: trend → area → pullback → commitment → R:R) चा **live** feed (Abhi: one bot, Tuesday PAPER).
+"""engine3_live.py — decision3 (थर v2.2, method engine: trend → area → pullback → commitment + c1; R:R नाही — Abhi 13 Oct) चा **live** feed (Abhi: one bot, Tuesday PAPER).
 
 प्रत्येक बंद 15M candle नंतर (cron, `scripts/engine_signal_run.py --engine decision3`) एका symbol साठी:
   • 15M spot (Upstox, `engine3_m15_days` दिवस) — फक्त बंद candles; NIFTY ⇒ `data_policy.filter_allowed(..., "annotation")` (holdout row नाही).

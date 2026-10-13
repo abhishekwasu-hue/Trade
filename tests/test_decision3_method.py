@@ -78,6 +78,7 @@ def _synthetic_m15(seed=7, legs=None):
 # LEVEL_BOTS_CONFIRMATION) इथे बंद — हे tests त्या नियमांचे नाहीत (setup invariants / charts / captions); c0 + c1 चे tests (आरशासह)
 # tests/test_decision3_confirm.py मध्ये.
 NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0}
+LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 
 def _abc_m15(seed=1, impulse=900, pb=0.7, n_cycles=8, start=22000):
@@ -123,7 +124,7 @@ def _key(r):
 def test_engine_invariants_no_breakout_setups_direction_and_truncation():
     from decision3 import engine as E3
     m15 = _abc_m15()
-    V = E3.V22(m15, s=NO_MATURE)
+    V = E3.V22(m15, s=LEGACY_RR)                                                  # ⑦ R:R असर्ट ⇒ legacy rr_step (pin, Abhi 13 Oct)
     rows = V.run()
     A = V.levels.A
     assert any(r["decision"] == "setup" for r in rows)                           # test vacuous नाही: setup invariants खरंच तपासले
@@ -141,7 +142,7 @@ def test_engine_invariants_no_breakout_setups_direction_and_truncation():
     assert any(r["daily_trend"] == "DOWN" for r in rows)
     st = [r["bar"] for r in rows if r["decision"] == "setup"][0]
     k = st + 1                                                                    # setup bar वरच कापलेलं data ⇒ तोच निर्णय (lookahead नाही)
-    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True), s=NO_MATURE)
+    Vt = E3.V22(m15.iloc[:k].reset_index(drop=True), s=LEGACY_RR)
     for t in range(max(0, k - 200), k):
         a, b = rows[t], Vt.decide(t)
         assert _key(a) == _key(b), t                                             # K, risk, checklist, band सुद्धा

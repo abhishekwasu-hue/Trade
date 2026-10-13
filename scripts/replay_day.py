@@ -143,7 +143,7 @@ def bar_line(r):
     rk = r.get("risk") or {}
     rr = f"R:R {rk.get('rr')}" if rk.get("rr") is not None else ""
     head = f"{hm} {r['decision']:<8} {r.get('mark') or '  '} {side_of(r) if r['decision'] == 'setup' else '':<9} {r.get('conviction') or '':<7}"
-    why = r.get("why") or next((f"{k} {c[k][1]}" for k in ("①", "②", "③", "⑥", "⑦") if c[k][0] is False), "")
+    why = r.get("why") or next((f"{k} {c[k][1]}" for k in ("①", "②", "③", "⑥", "⑦") if k in c and c[k][0] is False), "")
     return f"{head} | {lvl} | {str(why)[:150]} {rr}"
 
 
@@ -170,13 +170,13 @@ def approval(V, r, symbol, out_dir):
     t = int(r["bar"])
     lv = r["level"]
     bull = lv["role"] == "support"
-    rk = r["risk"]
+    rk = r.get("risk") or {}                                             # default (Abhi 13 Oct): engine SL / target / R:R नाहीत
     cm = r.get("commit") or {}
     lines = cm.get("confirm_lines") or []
     png = os.path.join(out_dir, f"approval_{symbol}_{r['ts'][:16].replace(' ', '_').replace(':', '')}.png")
     open(png, "wb").write(CH.m15_png(V, t, f"{symbol} 15M", r=r))
     gr ={"side": LR.BULL if bull else LR.BEAR, "area": (lv["lo"], lv["hi"]), "form": cm.get("form"), "grade": r.get("conviction"),
-          "commit_grade": cm.get("grade"), "entry_price": rk["entry"], "sl": rk["sl"], "target": rk["target"], "rr": rk["rr"],
+          "commit_grade": cm.get("grade"), "entry_price": rk.get("entry"), "sl": rk.get("sl"), "target": rk.get("target"), "rr": rk.get("rr"),
           "confirm_ts": str(V.bar_end[t]), "study": lines[0] if lines else None, "commit_line": " · ".join(lines[1:]) or None,
           "evidence": {k: v for k, v in (r.get("evidence") or {}).items() if v is not None}}
     tags = LGB.gate_tags(gr, {"reason": r["checklist"]["①"][1]}, 15)
@@ -331,14 +331,17 @@ def _hm_window(w):
 
 
 def brief(r):
-    rk = r.get("risk") or {}
+    rk = r.get("risk")
     lv = r.get("level") or {}
-    return {"ts": r["ts"], "bar_end": r["bar_end"], "decision": r["decision"], "mark": r.get("mark"),
-            "side": side_of(r) if r["decision"] == "setup" else None, "conviction": r.get("conviction"), "trend": r.get("trend_used"),
-            "mature": r.get("mature"), "mature_step_down": r.get("mature_step_down"),
-            "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps")} if lv else None,
-            "entry": rk.get("entry"), "sl": rk.get("sl"), "target": rk.get("target"), "rr": rk.get("rr"), "why": r.get("why"),
-            "checklist": r["checklist"], "confirm_lines": (r.get("commit") or {}).get("confirm_lines"), "level_evals": r.get("level_evals")}
+    out = {"ts": r["ts"], "bar_end": r["bar_end"], "decision": r["decision"], "mark": r.get("mark"),
+           "side": side_of(r) if r["decision"] == "setup" else None, "conviction": r.get("conviction"), "trend": r.get("trend_used"),
+           "mature": r.get("mature"), "mature_step_down": r.get("mature_step_down"),
+           "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps")} if lv else None}
+    if rk:                                                               # legacy --legacy-rr फक्त (default: engine SL / target / R:R नाहीत)
+        out.update({k: rk.get(k) for k in ("entry", "sl", "target", "rr")})
+    out.update(why=r.get("why"), checklist=r["checklist"], confirm_lines=(r.get("commit") or {}).get("confirm_lines"),
+               level_evals=r.get("level_evals"))
+    return out
 
 
 def main(argv=None):
@@ -368,6 +371,8 @@ def _main(argv=None):
     ap.add_argument("--dry-run-telegram", "--dry-run", dest="dry_run", action="store_true")
     ap.add_argument("--json", help="per-bar निर्णय + setup + approval संदेश JSON file")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--legacy-rr", action="store_true", help="जुना ⑦ (engine SL / target / R:R ≥ 3 gate) — फक्त जुने reports reproduce")
+    ap.add_argument("--no-first-bar-entry", action="store_true", help="जुनं: 09:15 candle फक्त पुरावा (entry 09:30 पासून)")
     a = ap.parse_args(argv)
     import instruments as INS
     from decision3 import engine as E3
@@ -400,13 +405,15 @@ def _main(argv=None):
     if not bars:
         print(f"❌ {a.symbol} {day.date()}: त्या दिवसाचे 15M bars नाहीत — `--source upstox` (VPS) किंवा `--synthetic`")
         return 2
-    V = E3.V22(m15, m1, daily, s=ENGINE_S, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
+    es = {**ENGINE_S, **({"rr_step": True} if a.legacy_rr else {}), **({"entry_first_bar": False} if a.no_first_bar_entry else {})}
+    V = E3.V22(m15, m1, daily, s=es, sealed=HI.sealed_fn(a.symbol) if src != "synthetic" else None, ltf=ltf, futures=fut)
     vol = V.levels.A.get("volume")
     nv = int(np.isfinite(vol[bars]).sum()) if vol is not None else 0
     print(f"{a.symbol} {day.date()} source={src}{' (SYNTHETIC FIXTURE, खरा data नाही)' if src == 'synthetic' else ''} · bars {lo}–{hi}: "
           f"{len(bars)} · FUT volume on {nv}/{len(bars)} bars · LTF 5M {'yes' if V.ltf is not None else 'MISSING'} · "
           f"c0 dominant ×{V.s['commit_dom_mult']} · c1 LTF CHoCH {'required' if V.s.get('ltf_choch', True) else 'off'} · "
-          f"level_death_side {V.s.get('level_death_side', '—')}")
+          f"level_death_side {V.s.get('level_death_side', '—')} · 09:15 entry {'on' if V.s.get('entry_first_bar') else 'off'}"
+          f"{' · legacy ⑦ R:R' if V.rr_step else ''}")
     rows = V.run(bars)
     for r in rows:
         print(bar_line(r))
@@ -423,10 +430,10 @@ def _main(argv=None):
     else:
         rc = 0
         r = st[0]
-        rk = r["risk"]
+        rk = r.get("risk")
         out["setup"] = brief(r)
-        print(f"\nFIRST SETUP {r['ts'][:16]} (bar close {r['bar_end'][11:16]}) · {side_of(r)} · {r.get('mark')} {r.get('conviction')} · "
-              f"entry {rk['entry']:,.2f} · SL {rk['sl']:,.2f} · target {rk['target']:,.2f} · R:R {rk['rr']}")
+        legacy = f" · entry {rk['entry']:,.2f} · SL {rk['sl']:,.2f} · target {rk['target']:,.2f} · R:R {rk['rr']}" if rk else ""
+        print(f"\nFIRST SETUP {r['ts'][:16]} (bar close {r['bar_end'][11:16]}) · {side_of(r)} · {r.get('mark')} {r.get('conviction')}{legacy}")
         print("reasons:", " | ".join(f"{k} {v[1]}" for k, v in r["checklist"].items() if v[0] is not None))
         for x in (r.get("commit") or {}).get("confirm_lines") or []:
             print("  ", x)

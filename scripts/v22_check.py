@@ -61,12 +61,13 @@ def main(argv=None):
     ap.add_argument("--to")
     ap.add_argument("--moments", nargs="*", default=[], help="Abhi च्या खुणा: 'YYYY-MM-DD' (त्या दिवसाचे ✅ / 🟡 / कारण) किंवा 'YYYY-MM-DD HH:MM'")
     ap.add_argument("--max-charts", type=int, default=12)
+    ap.add_argument("--legacy", action="store_true", help="जुने नियम (rr_step = True, entry_first_bar = False) — फक्त तुलना / जुने reports")
     ap.add_argument("--tg-run", help="पायरी D: Telegram trader view run folder (उदा. <trade-data>/review/v22/nifty_run3) — फक्त फाइली, पाठवणं नाही")
     a = ap.parse_args(argv)
     m15, m1, daily = load_inputs(a)
     print(f"{a.symbol}: 15M bars {len(m15)} · engine बांधतो…", flush=True)
     from decision3 import history as HI
-    V = E3.V22(m15, m1, daily, sealed=HI.sealed_fn(a.symbol))
+    V = E3.V22(m15, m1, daily, s={"rr_step": True, "entry_first_bar": False} if a.legacy else None, sealed=HI.sealed_fn(a.symbol))
     ts = pd.to_datetime(V.m15["timestamp"])
     lo = pd.Timestamp(a.frm) if a.frm else ts.min()
     hi = pd.Timestamp(a.to) + pd.Timedelta(days=1) if a.to else ts.max() + pd.Timedelta(days=1)
@@ -80,7 +81,7 @@ def main(argv=None):
     for r in rows:
         fun["decision"][r["decision"]] = fun["decision"].get(r["decision"], 0) + 1
         for k in ("①", "②", "③", "④", "⑥", "⑦"):
-            v = r["checklist"][k][0]
+            v = (r["checklist"].get(k) or [None])[0]
             if v is not None:
                 fun["funnel"].setdefault(k, {"ok": 0, "no": 0})["ok" if v else "no"] += 1
         if r["decision"] == "setup":
@@ -142,7 +143,7 @@ def main(argv=None):
         day = pd.Timestamp(mstr).normalize()
         dr = [r for r in rows if pd.Timestamp(r["ts"]).normalize() == day]
         best = [r for r in dr if r["decision"] == "setup"]
-        far = max(dr, key=lambda r: sum(1 for k in ("①", "②", "③", "④", "⑥", "⑦") if r["checklist"][k][0]), default=None)
+        far = max(dr, key=lambda r: sum(1 for k in ("①", "②", "③", "④", "⑥", "⑦") if (r["checklist"].get(k) or [None])[0]), default=None)
         # सर्वात पुढे गेलेलं (bar, level) — decide फक्त सर्वोत्तम level दाखवतो; R:R ने अडलेले levels level_evals मध्ये
         cand = [(r, e) for r in dr for e in (r.get("level_evals") or [])]
         far_lv = max(cand, key=lambda x: (x[1]["n_ok"], x[0]["bar"]), default=(None, None))
@@ -150,7 +151,7 @@ def main(argv=None):
             if r is None:
                 return None
             steps = ("①", "②", "③", "⑥", "⑦")
-            reached = max([k for k in steps if r["checklist"][k][0]], default="—", key=steps.index)
+            reached = max([k for k in steps if (r["checklist"].get(k) or [None])[0]], default="—", key=steps.index)
             rk = r.get("risk") or {}
             lv = r.get("level") or {}
             return {"ts": r["ts"], "decision": r["decision"], "mark": r.get("mark"), "step_reached": reached,

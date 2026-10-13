@@ -470,7 +470,8 @@ def footer_lines(r, st, status, vline):
             f"(2) 1H {lv['role']} {lv['lo']:,.0f}-{lv['hi']:,.0f} (born {'+'.join(lv['births'])}, tests {lv.get('tests')}, sweeps {lv.get('sweeps')}, "
             f"{'fresh' if lv['fresh'] else 'not fresh'})   (3) K pullback open ({why_open}), leg {K.get('legs')}   (4) {ps}",
             f"(5) K line: {'none' if not tl else ('broken (grade +)' if tl['broken'] else 'intact')}   (6) commitment {cm.get('form')} grade "
-            f"{cm.get('grade')}   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target {fmt(rk.get('target'))}",
+            f"{cm.get('grade')}" + (f"   (7) R:R {rk.get('rr')} · entry {fmt(rk.get('entry'))} / SL {fmt(rk.get('sl'))} / target "
+                                   f"{fmt(rk.get('target'))}" if rk else ""),       # legacy rr_step फक्त (Abhi 13 Oct)
             f"(8) {vline}",
             f"Conviction {r['conviction']} (score {r.get('conv_score')}) · missing: {', '.join(r.get('missing') or []) or 'none'} · {status}"]
 
@@ -494,10 +495,12 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
     notes = [note_en(x) for x in r.get("trend_notes") or []]
     ts = pd.Timestamp(r["ts"])
     reading = f"{D.symbol} 15M {ts:%Y-%m-%d %H:%M} · {side_of(r)} · conviction {r['conviction']} · {short}"
+    trade = ([f"Trade: entry {fmt(rk.get('entry'))} · stop {fmt(rk.get('sl'))} · target {fmt(rk.get('target'))} · reward/risk {rk.get('rr')}"]
+             if rk else [])                                                 # legacy rr_step फक्त — default: SL / target dashboard चे (Abhi 13 Oct)
     cap = "\n".join([
         headline(r, st, vst or {}),
         f"{head} · {reading}",
-        f"Trade: entry {fmt(rk.get('entry'))} · stop {fmt(rk.get('sl'))} · target {fmt(rk.get('target'))} · reward/risk {rk.get('rr')}",
+        *trade,
         vline,
         tail,
         "Engine detail:",

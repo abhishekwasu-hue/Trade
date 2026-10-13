@@ -49,7 +49,7 @@ def caption(V, r, symbol, count=None):
 def stop_reason(r):
     """setup नसेल तर: पहिला ✘ gate (①②③⑥⑦; ④ / ⑤ पुरावे) + कारण, नाहीतर engine चं why."""
     for k in ("①", "②", "③", "⑥", "⑦"):
-        ok, why = r["checklist"][k]
+        ok, why = r["checklist"].get(k) or (None, "")
         if ok is False:
             return f"{k} {why}"[:160]
     return (r.get("why") or "पुढच्या candle ची वाट")[:160]
@@ -71,7 +71,7 @@ def select(rows, moments=()):
         day = pd.Timestamp(mstr).normalize()
         dr = [r for r in rows if pd.Timestamp(r["ts"]).normalize() == day]
         if dr and not any(r["bar"] in pick for r in dr):
-            far = max(dr, key=lambda r: (sum(1 for k in keys if r["checklist"][k][0]), r["bar"]))
+            far = max(dr, key=lambda r: (sum(1 for k in keys if (r["checklist"].get(k) or [None])[0]), r["bar"]))
             pick[far["bar"]] = far
     return [pick[b] for b in sorted(pick)]
 

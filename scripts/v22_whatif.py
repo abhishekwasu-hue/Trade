@@ -38,7 +38,7 @@ def summarize(rows, moments):
     fun = {k: {"ok": 0, "no": 0} for k in STEPS}
     for r in rows:
         for k in STEPS:
-            v = r["checklist"][k][0]
+            v = (r["checklist"].get(k) or [None])[0]
             if v is not None:
                 fun[k]["ok" if v else "no"] += 1
     setups = [{"ts": r["ts"][:16], "mark": r["mark"], "side": "bull put" if r["level"]["role"] == "support" else "bear call",
@@ -48,10 +48,10 @@ def summarize(rows, moments):
         day = pd.Timestamp(m).normalize()
         dr = [r for r in rows if pd.Timestamp(r["ts"]).normalize() == day]
         hit = [f"{r['ts'][11:16]} {r['mark']}" for r in dr if r["decision"] == "setup"]
-        far = max(dr, key=lambda r: (sum(1 for k in STEPS if r["checklist"][k][0]), r["bar"]), default=None)
+        far = max(dr, key=lambda r: (sum(1 for k in STEPS if (r["checklist"].get(k) or [None])[0]), r["bar"]), default=None)
         stop = None
         if far is not None and not hit:
-            stop = next((f"{k} {far['checklist'][k][1]}" for k in GATES if far["checklist"][k][0] is False), None) or far.get("why")
+            stop = next((f"{k} {far['checklist'][k][1]}" for k in GATES if (far["checklist"].get(k) or [None])[0] is False), None) or far.get("why")
         marks[m] = {"setups": hit, "trend": None if far is None else far["daily_trend"], "stop": stop}
     trend = {}
     for r in rows:

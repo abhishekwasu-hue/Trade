@@ -251,7 +251,8 @@ def gate_caption_lines(tags):
     area = f"{lo:,.0f}–{hi:,.0f}" if lo is not None and hi is not None else "?"
     out = [f"🎯 Confirmation: {kind} {area} · grade {g.get('grade')} · trend: {g.get('trend')}"]
     out += [x for x in (g.get("study"), g.get("commit_line")) if x]        # a2 / c0 ticket ओळी
-    out.append(f"Entry {g.get('entry')} · SL {g.get('sl')} · target {g.get('target')} · R:R {g.get('rr')}")
+    if any(g.get(k) is not None for k in ("entry", "sl", "target", "rr")):   # decision3 default (Abhi 13 Oct): engine SL / target / R:R नाहीत ⇒ ओळ नाही
+        out.append(f"Entry {g.get('entry')} · SL {g.get('sl')} · target {g.get('target')} · R:R {g.get('rr')}")
     return out
 
 
