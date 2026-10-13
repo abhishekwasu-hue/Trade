@@ -203,6 +203,25 @@ def alert_error(symbol, msg, send=None, state_path=None, now=None):
     return True
 
 
+def alert_data_problem(symbol, msg="data problem: FUT volume missing", send=None, state_path=None, now=None):
+    """Abhi Z-1c: data problem (NIFTY / BANKNIFTY FUT volume missing) ⇒ एक Telegram ओळ, symbol प्रमाणे दिवसातून जास्तीत जास्त एकदा
+    (त्याच alert state file मध्ये). Entry आधीच नाही (caller). रिटर्न पाठवलं का. raise नाही."""
+    p, sym = _alert_path(state_path), str(symbol).upper()
+    day = str(_naive(now or now_ist()).date())
+    st = _alert_state(p)
+    seen = st.setdefault("_data_problem", {})
+    if seen.get(sym) == day:
+        return False
+    _alert_send(f"⚠️ Engine {sym}: {str(msg)[:160]} ⇒ no engine entry for {sym} (exits unaffected)", send)
+    seen[sym] = day
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        json.dump(st, open(p, "w", encoding="utf-8"))
+    except OSError:
+        pass
+    return True
+
+
 def alert_recovered(symbol, send=None, state_path=None, now=None):
     """आधी अपयशी होता आणि आता चालला ⇒ एक "recovered" ओळ (एकदाच). रिटर्न पाठवलं का."""
     p, sym = _alert_path(state_path), str(symbol).upper()

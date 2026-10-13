@@ -2523,3 +2523,18 @@ legs owner वि. reader2 gate).
 - Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
 - Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
 - Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
+
+## Z-1 rework: in-zone study ठरवतो (Abhi अंतिम उत्तरं) + RSI-2
+
+- G4 (a) pullback आकार / (b) pullback volume = फक्त context (checklist "G4" = [None, …]); निर्णय ⑥ (a2 + c0 + c1) — zone मध्ये आल्यानंतरचं
+  वाचन. `zone_read`: प्रत्येक candle (बाजू, body × window, raw / normalised FUT volume), कोणती बाजू वाढते / दमते, pattern, counter-side
+  volume, RSI divergence (rsi2, पुरावा). Payload / row_from_v22 मध्ये flip facts + context + in-zone summary.
+- Volume: bar FUT volume ÷ त्याच 15M slot चा मागच्या 20 sessions median (`method.slot_rel_volume`, किमान 10 sessions, नाहीतर NA); a2, c0,
+  context सगळीकडे per-bar सरासरी. Live FUT 45 दिवस (`engine3_fut_days`).
+- Z-1c: NIFTY / BANKNIFTY FUT नाही ⇒ `FutVolumeMissing` ⇒ entry नाही + Telegram "data problem: FUT volume missing" (दिवसातून एकदा);
+  V22 c0 volume NA ⇒ data problem वाट (grade-B नाही). cap_b काढला.
+- Z-1a: swing नसेल ⇒ break नंतरचा पहिला confirmed swing. Z-1f: FLIPPED zone पुन्हा far swing पार ⇒ DEAD. Reclaim ⇒ sweep ★ नोंद.
+- RSI-2: `div_bars` किमान 3 (15M / 1H / 5M); dashboard "RSI div min bars".
+- Real data (spot): 12 Oct zone 22,543.75–22,621.8 FLIPPED (8 Oct), 09:15 sweep; golden bear call **नाही** — FUT history 7 sessions < 10 ⇒
+  data problem (what-if: §5.3 range अवस्था 09:30, §5.1 पहिला पाय 10:15). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅.
+  OPEN_QUESTIONS Z-1h … Z-1n.

@@ -87,17 +87,33 @@ class V22:
         self.ltf = M.ltf_frame(ltf, lm, f"{lm}M")
         if self.ltf is None and bool(self.s.get("ltf_choch", True)):
             M.warn_ltf_missing("decision3 V22")                            # fail-closed (⑥ "LTF data missing"), पण शांतपणे नाही
-        self.fut15, self.fut15_src = None, None                            # G4 (b): FUT volume (opportunity_engine.volume, near-month)
+        # Abhi (Z-1 volume): every in-zone comparison (a2, c0, in-zone facts, G4 context) uses the per-bar FUT volume ÷ the median of the
+        # same 15M slot over the previous `vol_slot_sessions` sessions (method.slot_rel_volume); averages per bar, never sums. Raw kept.
+        raw, self.vol_src = None, None
         if futures is not None:
             from legs2 import volume as LVOL
-            self.levels.A["volume"] = LVOL.bar_volume(self.m15, futures)
-            self.fut15 = FL.fut_volume_15m(self.m15, futures, lm)
-            self.fut15_src = "near-month FUT 5M ⇒ 15M (opportunity_engine.volume)"
+            raw, self.vol_src = LVOL.bar_volume(self.m15, futures), "near-month FUT 5M ⇒ 15M (legs2.volume.bar_volume)"
         elif "volume" in self.m15.columns:
-            self.levels.A["volume"] = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
-            v = M._vol(self.levels.A)                                      # caller-joined column (⑥ c0 ची प्रथा); spot 0 ⇒ None (NA)
-            if v is not None:
-                self.fut15, self.fut15_src = np.where(v > 0, v, np.nan), "m15 volume column (caller-joined)"
+            raw = pd.to_numeric(self.m15["volume"], errors="coerce").to_numpy(float)
+            raw, self.vol_src = (raw, "m15 volume column (caller-joined)") if M._vol({"volume": raw}) is not None else (None, None)
+        self.vol_hist = None
+        if raw is not None:
+            rel, self.vol_hist = M.slot_rel_volume(self.m15["timestamp"], raw, int(self.s["vol_slot_sessions"]),
+                                                   int(self.s["vol_slot_min_sessions"]))
+            self.levels.A["volume"] = rel
+            self.levels.A["volume_raw"] = np.asarray(raw, float)
+
+    def vol_na_reason(self, t):
+        """Why the normalised volume at bar t is NA (None ⇒ it is available)."""
+        A = self.levels.A
+        if A.get("volume_raw") is None:
+            return "FUT volume missing (no FUT bars given)"
+        if not (np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0):
+            return "FUT volume missing on this bar"
+        if np.isfinite(A["volume"][t]):
+            return None
+        return (f"FUT volume slot baseline NA: {int(self.vol_hist[t])} earlier sessions in this time slot "
+                f"(< vol_slot_min_sessions {int(self.s['vol_slot_min_sessions'])})")
 
     def _confirm(self, t, d, lvl, k):
         """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
@@ -117,8 +133,12 @@ class V22:
         cm = dict(cf["commit"] or {})
         cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
                   ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
-                  absorption=cf["absorption"])
-        return cf["ok"], cf["why"], cm
+                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"])
+        ok, why = cf["ok"], cf["why"]
+        if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):                                  # Abhi Z-1c: volume शिवाय grade-B trade नाही ⇒ data problem
+            ok, why = False, "data problem: " + (self.vol_na_reason(t) or "FUT volume missing")
+            cm.update(confirm_wait="data_problem", data_problem=why)
+        return ok, why, cm
 
     def step1(self, t):
         """① Q15: Daily impulse-degree Dow + Weekly पालक. रिटर्न (ok, why, st, ctx); ctx = {trend (वापरलेला), resolution, cap, notes,
@@ -193,32 +213,31 @@ class V22:
             act = self.levels.active(t, trend)
         return TL.confluence_areas(self, t, M._dir(trend), act)
 
-    def flip_gate(self, t, lvl, cap=None, notes=None):
-        """KB K4 / G4 (Abhi): FLIPPED level ची retest — (a) pullback corrective (daily_legs.classify) आणि (b) pullback ची एकूण FUT volume
-        flip impulse पेक्षा कमी (`flip_pullback_vol_ratio`); (c) = ⑥ (तसाच). (a) / (b) False ⇒ impulsive / जास्त volume ⇒ trade नाही;
-        (a) वाचता येत नाही ⇒ वाट; (b) NA ⇒ `flip_volume_na` ("cap_b" = decision3 volume-NA प्रथा: चालतं, कमाल B; "block" ⇒ वाट).
-        रिटर्न (g4 facts + ok / decision / why, cap, notes)."""
-        g = FL.flip_retest(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, vol=self.fut15,
-                           vol_src=self.fut15_src, legs_A=self._legs_A())
-        notes = list(notes or [])
-        if g["a"] is False or g["b"] is False:
-            bad = [w for w, x in (("impulsive", g["a"] is False), ("high-volume", g["b"] is False)) if x]
-            g.update(ok=False, decision=M_NO, why=f"{g['why']} ⇒ {' / '.join(bad)} return into the flipped area ⇒ no trade (G4)")
-        elif g["a"] is None:
-            g.update(ok=False, decision=M_WAIT, why=f"{g['why']} ⇒ wait (G4 (a) not read yet)")
-        elif g["b"] is None:
-            mode = self.s.get("flip_volume_na", "cap_b")
-            if mode not in ("cap_b", "block"):
-                raise ValueError(f"flip_volume_na {mode!r} — cap_b / block पैकी")
-            if mode == "block":
-                g.update(ok=False, decision=M_WAIT, why=f"{g['why']} ⇒ wait (G4 (b) NA, flip_volume_na = block)")
-            else:
-                cap = M.cap_min(cap, "B")
-                notes.append("G4 (b) pullback FUT volume NA ⇒ कमाल B")
-                g.update(ok=True, decision=None, why=f"{g['why']} ⇒ (a) passes, (b) NA ⇒ grade कमाल B")
-        else:
-            g.update(ok=True, decision=None, why=g["why"] + " ⇒ (a) + (b) pass; (c) = ⑥")
-        return g, cap, notes
+    def flip_context(self, t, lvl):
+        """KB G4 (Abhi Z-1d): how price came back into a FLIPPED area — (a) approach shape, (b) approach volume vs the flip impulse
+        (normalised per bar). CONTEXT ONLY: reported in the checklist / payload, never a no_trade or a wait."""
+        return FL.approach_context(self.levels.A, self.levels.ts.to_numpy(), t, lvl, self.res["pivots"], self.s, legs_A=self._legs_A())
+
+    def rsi_divergence(self, t, d, arm):
+        """RSI divergence (rsi2.engine.Divergence, 15M, `div_bars` minimum 3 — Abhi RSI-2) as ZONE EVIDENCE: a regular divergence on the
+        trade side (bear for a bear call) whose second pivot / running extreme is inside the zone visit (bar ≥ arm), known by bar t.
+        Never a gate. Returns {found, divergences, statement} or NA with the reason."""
+        if getattr(self, "_rsi", None) is None:
+            try:
+                from rsi2 import engine as RE
+                self._rsi = RE.Divergence(self.m15[["timestamp", "open", "high", "low", "close"]], "15M", res=self.res, areas=False)
+            except Exception as exc:                                       # noqa: BLE001 — evidence only ⇒ NA with the reason
+                self._rsi = f"{type(exc).__name__}: {exc}"
+        if isinstance(self._rsi, str):
+            return {"found": None, "na": "rsi2 Divergence failed — " + self._rsi}
+        side = "bear" if d < 0 else "bull"
+        r = self._rsi.read(t)
+        divs = [x for x in r["divergences"] if x["side"] == side and x["type"] == "regular" and x["L2"]["bar"] >= int(arm)]
+        keep = ("degree", "status", "bars", "price_rel", "count")
+        out = [{**{k: x.get(k) for k in keep}, "L1": {k: x["L1"][k] for k in ("time", "price", "rsi")},
+                "L2": {k: x["L2"][k] for k in ("time", "price", "rsi")}} for x in divs]
+        st = [y["statement"] for y in r["latest"] if y["side"] == side]
+        return {"found": bool(out), "divergences": out, "bar_window": r["bar_window"], "statements": st}
 
     def _legs_A(self):
         if getattr(self, "_legs_arr", None) is None:
@@ -240,10 +259,8 @@ class V22:
             return M_WAIT, chk, {"K": k}
         g4 = None
         if lvl.get("state") == FL.FLIPPED and self.s.get("level_flip_rule", "far_swing") == "far_swing":
-            g4, cap, notes = self.flip_gate(t, lvl, cap, notes)
-            chk["G4"] = [g4["ok"], g4["why"]]
-            if g4["ok"] is False:
-                return g4["decision"], chk, {"K": k, "flip_retest": g4, "why": g4["why"]}
+            g4 = self.flip_context(t, lvl)                                # Abhi Z-1d: context only — never a gate
+            chk["G4"] = [None, g4["why"]]
         tl = TL.k_line(self, t, d, k)
         chk["⑤"] = [None, "K ची आतली रेघ नाही (< 2 स्पर्श)"] if tl is None else \
             [tl["broken"], f"K रेघ ({tl['touches']} स्पर्श) {'close ने तुटली ⇒ grade +' if tl['broken'] else 'अजून अखंड'}"]
@@ -252,12 +269,15 @@ class V22:
         rng = M.range_state(A, t, self.s) and not M.range_broken_by(A, t, d, self.s)   # Q24: पट्ट्याबाहेर close ⇒ range संपली
         ok6, why6, cm = self._confirm(t, d, lvl, k)                         # ⑥ a2 + c0 + c1 (shared, method.confirm)
         chk["⑥"] = [ok6, why6]
+        arm = int(cm.get("arm_bar", t))
+        rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
+        zr = FL.zone_read(A, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)   # in-zone study facts (bars arm … t)
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
               "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1, "second_attempt": k["legs"] >= 2,
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
-              "rsi_div": None, "volume_low": None, "pattern": None,
+              "rsi_div": True if rsi.get("found") else None, "volume_low": None, "pattern": None,   # RSI: evidence + only
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
               "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
               "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
@@ -268,7 +288,8 @@ class V22:
         ev["trap_sweep"] = bool(ev["trap_sweep"] or mine or [x for x in tr if x["side"] == side])
         conv, score, missing = M.conviction(ev, self.s)
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
-                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4}
+                 "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4,
+                 "zone_read": zr}
         if rng:
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
@@ -343,7 +364,9 @@ class V22:
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
-                "flip_retest": best.get("flip_retest"),
+                "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"),
+                "flip": None if not best.get("level") else {k: best["level"].get(k) for k in ("state", "broken_ts", "far_swing",
+                                                                                              "flipped_ts", "break_dir")},
                 "level_evals": evals}
 
     def run(self, bars=None):

@@ -163,6 +163,37 @@ def _vol(A):
     return v if np.isfinite(v).any() and np.nanmax(v) > 0 else None
 
 
+def slot_rel_volume(ts, vol, sessions=20, min_sessions=10):
+    """Abhi (Z-1 volume): per-bar volume ÷ the median volume of the SAME time-of-day slot over the previous `sessions` sessions that have
+    volume in that slot (the 09:15 and closing bars are always heavy). Fewer than `min_sessions` such sessions ⇒ NaN (NA). Only earlier
+    sessions are used (no look-ahead). Returns (rel array, history-count array). vol None ⇒ (None, None)."""
+    if vol is None:
+        return None, None
+    t = pd.to_datetime(pd.Series(ts)).reset_index(drop=True)
+    v = np.asarray(vol, float)
+    day = t.dt.normalize()
+    slot = (t - day).to_numpy()
+    days = day.to_numpy()
+    rel = np.full(len(v), np.nan)
+    cnt = np.zeros(len(v), int)
+    hist = {}                                                              # slot ⇒ [(day, vol)] of earlier sessions (in order)
+    order = np.argsort(t.to_numpy(), kind="stable")
+    cur_day, pending = None, []
+    for i in order:
+        if days[i] != cur_day:                                             # a new session: the previous one becomes history
+            for j in pending:
+                if np.isfinite(v[j]) and v[j] > 0:
+                    hist.setdefault(slot[j], []).append(v[j])
+            pending, cur_day = [], days[i]
+        pending.append(i)
+        h = hist.get(slot[i], [])[-int(sessions):]
+        cnt[i] = len(h)
+        if len(h) >= int(min_sessions) and np.isfinite(v[i]) and v[i] > 0:
+            med = float(np.median(h))
+            rel[i] = v[i] / med if med > 0 else np.nan
+    return rel, cnt
+
+
 def contraction(A, t, d, k, s, lvl=None):
     """④ (a) Abhi (level bots spec): विरुद्ध बाजू area मध्ये दमली ⇒ candles लहान. Relative: area मधल्या (lvl नसेल ⇒ pullback चा शेवटचा
     तिसरा भाग) pullback candles चा सरासरी range < pullback च्या आधीच्या candles चा **आणि** impulse candles चा सरासरी range. नेमके 3 नाहीत."""

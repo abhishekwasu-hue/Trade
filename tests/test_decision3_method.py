@@ -80,7 +80,9 @@ def _synthetic_m15(seed=7, legs=None):
 # या fixture चा एकमेव setup acceptance-flip झालेल्या level च्या retest वर होता (जुना spec §5.4); Abhi च्या K4 नियमाने (Z-1) तो level
 # far swing पार न झाल्याने BROKEN ⇒ trade location नाही. हे tests flip नियमाचे नाहीत (setup invariants / charts / captions) ⇒ जुना नियम
 # स्पष्ट pin (`level_flip_rule` = "acceptance"); नवा नियम tests/test_decision3_flip.py मध्ये. असर्ट बदलले नाहीत.
-NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0, "level_flip_rule": "acceptance"}
+# हे fixtures volume-नसलेले ⇒ Abhi Z-1c (volume नाही ⇒ data problem, entry नाही) इथे जुनी प्रथा pin (`c0_volume_required` False).
+NO_MATURE = {"maturity_sigma_d": -1e6, "ltf_choch": False, "commit_dom_mult": 0.0, "level_flip_rule": "acceptance",
+             "c0_volume_required": False}
 LEGACY_RR = {**NO_MATURE, "rr_step": True}                                       # Abhi 13 Oct: ⑦ default मधून काढला — जुने असर्ट याने
 
 

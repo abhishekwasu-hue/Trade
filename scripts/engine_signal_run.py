@@ -62,6 +62,9 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
             r = run_fn(sym, tok)
             if not a.dry_run:
                 ES.alert_recovered(sym, send=send, state_path=alert_path, now=now)
+                dp = _data_problem(r)
+                if dp:                                                   # Abhi Z-1c: volume NA at the decision ⇒ data problem (entry नाही)
+                    ES.alert_data_problem(sym, dp, send=send, state_path=alert_path, now=now)
             if r.get("skipped"):
                 print(f"⏭️ {sym} [{engine}] {r['bar_ts']}: {r['decision']} — {r['skipped']}")
                 continue
@@ -79,8 +82,20 @@ def main(argv=None, token_fn=None, run_fn=None, market_fn=None, send=None, alert
                     ES.save_error(sym, bar, msg, engine=engine)
                 except Exception as exc2:                                # noqa: BLE001
                     print(f"⚠️ {sym}: error row लिहिता आली नाही: {exc2}")
-                ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
+                if getattr(exc, "data_problem", False):                  # Abhi Z-1c: FUT volume missing ⇒ एकच ओळ, दिवसातून एकदा
+                    ES.alert_data_problem(sym, str(exc), send=send, state_path=alert_path, now=now)
+                else:
+                    ES.alert_error(sym, msg, send=send, state_path=alert_path, now=now)
     return rc
+
+
+def _data_problem(r):
+    """engine row (payload JSON) मधली data-problem नोंद (V22 ⑥ c0 volume NA) — नाही ⇒ None."""
+    try:
+        import json
+        return (json.loads(r.get("payload") or "{}") or {}).get("data_problem")
+    except (TypeError, ValueError):
+        return None
 
 
 if __name__ == "__main__":

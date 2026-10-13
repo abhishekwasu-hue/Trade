@@ -17,13 +17,13 @@ trade-बाजूला / पट्ट्यात; किंवा acceptance 
 KB K4 flip rule (Abhi, final — `level_flip_rule` = "far_swing", default; decision3/flip.py). State per level, bar by bar (bars ≤ t only):
   ACTIVE / TESTED (tests ≥ 1) ──acceptance (accept_closes closes beyond)──▶ BROKEN  (old role kept; NOT a trade location — `active` skips it)
   ACTIVE / TESTED / BROKEN ──price trades past the far-side swing during the excursion (≥ 1 close beyond)──▶ FLIPPED (role reversed, "c")
-  BROKEN ──accept_closes closes back on the role's own side──▶ ACTIVE again ("reclaim" = the break failed, old role, a sweep)
+  BROKEN ──accept_closes closes back on the role's own side──▶ previous state ("reclaim" = the break failed, role kept; logged as a sweep ★)
   fewer than accept_closes closes beyond and back, far swing not reached ⇒ sweep ★ (old role).
-  Far-side swing = the nearest confirmed D`level_degree` pivot beyond the band on the break side, formed before the excursion began,
-  known (confirm_bar ≤ t) — `flip.far_swing`. The same rule applies again to a FLIPPED level (broken on its new role ⇒ BROKEN; past
-  its far swing ⇒ FLIPPED back: demand ⇒ supply, later supply ⇒ support). No death in this rule: Abhi (R0-2)
-  "zone dead beyond the far swing" is NOT the rule — passing the far swing flips the zone; `level_death_side` (TL1) is legacy only.
-  Facts per level (snapshot): state, broken_at, break_dir, exc_start, far_swing {price, bar, ts}, flipped_at.
+  FLIPPED ──broken again and past ITS far-side swing──▶ DEAD (Abhi Z-1f: once flipped the old role is over; no second flip, logged).
+  Far-side swing (`flip.far_swing`): the nearest confirmed D`level_degree` pivot beyond the band on the break side that formed before the
+  excursion began; none (new highs / lows) ⇒ the first CONFIRMED such swing formed after the break (Abhi Z-1a). Known = confirm_bar ≤ t.
+  A new swing never merges into a DEAD level (it is born as its own level); `level_death_side` (TL1) is legacy only.
+  Facts per level (snapshot): state, broken_at, break_dir, exc_start, far_swing {price, bar, ts, source}, flipped_at (DEAD: dead_at).
   "acceptance" = the old spec §5.4 (acceptance ⇒ flip at once; flip_failed back), kept only for old tests / what-if.
 """
 from dataclasses import dataclass, field
@@ -168,8 +168,8 @@ class Levels:
         return float(self.s["level_min_width_sigma"]) * (sg if np.isfinite(sg) else 0.0)
 
     def _born(self, t, role, lo, hi, birth, anchor):
-        for L in self.L:                                                  # merge: overlap असलेला जिवंत level
-            if L.alive(t) and not (hi < L.lo or lo > L.hi):
+        for L in self.L:                                                  # merge: overlap असलेला जिवंत level — DEAD level कधीच नाही
+            if L.alive(t) and not (hi < L.lo or lo > L.hi):               # (alive); BROKEN मध्ये merge चालतो: तोच zone (Z-1 review — OPEN_QUESTIONS)
                 L.lo, L.hi = min(L.lo, lo), max(L.hi, hi)
                 L.bands.append((t, L.lo, L.hi))
                 if birth not in L.births:
@@ -406,8 +406,8 @@ class Levels:
                 self._born(t, role, lo, hi, why, anchor)
 
     def _step_far_swing(self, L, t, role, known, beyond_wick, beyond_close, excursion, st, acc):
-        """KB K4 (Abhi): one bar of one level — sweep / BROKEN / FLIPPED / reclaim (module docstring). No death: a zone whose far-side
-        swing is passed flips (R0-2: "zone dead beyond the far swing" is not the rule)."""
+        """KB K4 (Abhi): one bar of one level — sweep / BROKEN / FLIPPED / reclaim / DEAD (module docstring). A never-flipped zone whose
+        far-side swing is passed flips; a FLIPPED zone broken again past its far-side swing is DEAD — no second flip (Abhi, Z-1f)."""
         H, Lo, C = self.A["high"], self.A["low"], self.A["close"]
         exc = excursion.get(L.id, 0)
         up = role == RES                                                   # break direction: resistance ⇒ up, support ⇒ down
@@ -418,6 +418,16 @@ class Levels:
         if st["brk"] or exc > 0 or beyond_close:                           # पलीकडे (≥ 1 close) ⇒ far swing पार? ⇒ FLIPPED
             fs = FL.far_swing(known, L.lo, L.hi, up, st["start"])
             if fs is not None and ((H[t] > fs.price) if up else (Lo[t] < fs.price)):
+                src = FL.swing_source(fs, st["start"])
+                if L.count("flip", t - 1) > 0:                             # Z-1f: flip नंतर जुनी भूमिका संपली ⇒ दुसरा flip नाही ⇒ DEAD
+                    if not st["brk"]:
+                        L.events.append((t, "broken", f"beyond the band and past the far-side swing {fs.price:,.2f} on one excursion"))
+                    L.events.append((t, "dead", f"flipped zone broken again past its far-side swing {fs.price:,.2f} ({src}) ⇒ dead "
+                                                f"(no second flip)"))
+                    L.flip_facts.append((t, {**L.facts_at(t), "dead_at": t, "dead_far_swing": self._swing_fact(fs)}))
+                    L.dead_bar = t
+                    excursion[L.id] = 0
+                    return
                 new_role = SUP if up else RES
                 brk_at = self._last_broken(L, t) if st["brk"] else t
                 if not st["brk"]:
@@ -426,7 +436,7 @@ class Levels:
                 if "c" not in L.births:
                     L.births.append("c")
                 L.flip_facts.append((t, {"broken_at": brk_at, "break_dir": 1 if up else -1, "exc_start": st["start"],
-                                         "far_swing": self._swing_fact(fs), "flipped_at": t}))
+                                         "far_swing": {**self._swing_fact(fs), "source": src}, "flipped_at": t}))
                 st.update(brk=False, start=None, rc=0)
                 excursion[L.id] = 0
                 return
@@ -435,6 +445,7 @@ class Levels:
             st["rc"] = st["rc"] + 1 if back else 0
             if st["rc"] >= acc:
                 L.events.append((t, "reclaim", f"{acc} closes back on the {role} side ⇒ break failed, role kept (sweep)"))
+                L.events.append((t, "sweep", "broken then reclaimed (far-side swing not reached) ⇒ sweep ★"))   # ★ / trap_sweep पुरावा
                 last_flip = [x for b, x in L.flip_facts if b <= t and x.get("flipped_at") == b]   # the flip entry itself
                 L.flip_facts.append((t, {**(dict(last_flip[-1]) if last_flip else {}), "reclaimed_at": t}))
                 st.update(brk=False, start=None, rc=0)
@@ -474,9 +485,12 @@ class Levels:
         flipped = L.count("flip", t) > 0
         if state == FL.BROKEN and f.get("exc_start") is not None:
             lo, hi = L.band_at(t)
-            f["far_swing"] = self._swing_fact(FL.far_swing(self.known_pivots(t), lo, hi, (f.get("break_dir") or 0) > 0, f["exc_start"]))
+            fs = FL.far_swing(self.known_pivots(t), lo, hi, (f.get("break_dir") or 0) > 0, f["exc_start"])
+            f["far_swing"] = None if fs is None else {**self._swing_fact(fs), "source": FL.swing_source(fs, f["exc_start"])}
         ts = lambda b: None if b is None else str(self.ts.iloc[int(b)])  # noqa: E731
         brk = f.get("broken_at") if (state == FL.BROKEN or flipped) else None
+        if state == FL.DEAD:
+            return {"state": state, "dead_at": f.get("dead_at"), "dead_far_swing": f.get("dead_far_swing")}
         return {"state": state, "broken_at": brk, "broken_ts": ts(brk), "break_dir": f.get("break_dir"), "exc_start": f.get("exc_start"),
                 "far_swing": f.get("far_swing"), "flipped_at": f.get("flipped_at") if flipped else None,
                 "flipped_ts": ts(f.get("flipped_at")) if flipped else None}
