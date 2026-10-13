@@ -2463,6 +2463,23 @@ legs owner वि. reader2 gate).
   ⇒ OPEN_QUESTIONS R1b-7. Tests: `test_facts_dossier` 34 (नवे 16), full suite पुन्हा चालवला नाही (review सूचना).
 
 
+## 2026-10-13 — K-RSI phase 1: RSI divergence facts (owner `rsi2`, branch `claude/rsi-divergence`)
+- Inventory (`docs/reports/v22/RSI_DIVERGENCE_INVENTORY.md`): owner `rsi2` (design §3); `chart_reader.evidence.divergence`, `signals`,
+  `elliott/trigger`, `correction/reader`, `nifty_futures_swing_rsi_st` इ. frozen — बदल नाही, दुसरी अंमलबजावणी नाही.
+- KB K10.4 K-RSI पूर्ण नोंद `<!-- pending:abhi -->` मध्ये ⇒ Method Pack बदलला नाही (version 4855ff77991f, stale test ✅). Traceability ओळ
+  `kb_traceability.md` मध्ये.
+- `rsi2.engine.Divergence` (नवा class; जुना `RSI` / `known` API तसाच — facts dossier): Wilder RSI(14) spot close, swings2 pivots (D0 / D1 /
+  D2), लागोपाठचे pushes, wicks, RSI ± 2 bars (swing च्या आत, confirm पर्यंत), equal high / equal RSI = divergence, किमान RSI फरक नाही,
+  bar window 15M 5–50 · 1H 5–35 · 5M 5–60 + cap log, hidden OFF, count, forming / confirmed (right-side bars किंवा commitment candle),
+  area (decision3 bands; नसेल तर NA + कारण), absence वाक्य. Settings `rsi2/settings.py` `div_*`. फक्त पुरावा — gate नाही.
+- Charts: `rsi2/charts.div_figure` (price + RSI 70 / 30 + table) · `scripts/rsi_divergence_check.py` ⇒ trade-data
+  `review/rsi_divergence/run1` (NIFTY / BANKNIFTY 15M: शेवटचे 10 sessions, 12 Oct, partial 13 Oct; manifest kind `rsi_check`). Dashboard:
+  "Show RSI divergences" toggle (5M / 15M / 1H, default ON, फक्त display).
+- 12 Oct (NIFTY spot, D0): 9-Oct 14:15 22,580.75 (RSI 67.09) → 12-Oct 09:15 22,651.10 (RSI 66.41) — HH + RSI कमी, पण 4 bars ⇒ window
+  min 5 मुळे नाकारली (cap log); D1 / D2 मध्ये lower high. Tuning नाही ⇒ OPEN_QUESTIONS RSI-1 … RSI-7. 13 Oct export फक्त 10:15 पर्यंत.
+- Tests: `tests/test_rsi_divergence.py` (synthetic, no look-ahead, JSON, chart, dashboard; 12 Oct report; 13 Oct skip).
+- VPS: `cd /root/Trade && python3 scripts/send_review_to_telegram.py --run review/rsi_divergence/run1` (आधी `--dry-run`).
+
 ## Abhi निर्णय: FUT roll near-month, BANKNIFTY दिवस सोडला, zone flip नियम
 
 - **FUT roll (R1b-3):** roll च्या दिवशी सुद्धा फक्त near-month contract चा volume. नवीन `opportunity_engine.volume.near_month_rows`
