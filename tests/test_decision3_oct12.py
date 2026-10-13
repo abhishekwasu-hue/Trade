@@ -20,7 +20,7 @@ from tests import oct12_fixture as F
 # Z-1 (Abhi K4 flip नियम): या synthetic fixture चा supply = acceptance ने flip झालेला support, आणि त्याखाली आधीचा swing low नाही ⇒
 # नव्या नियमाने BROKEN (trade location नाही). हे tests a2 / c0 / c1 / confluence चे ⇒ जुना flip नियम स्पष्ट pin (असर्ट तसेच);
 # default नियमावर हाच fixture: tests/test_decision3_flip.py::test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4.
-S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance"}     # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
+S_ROLE = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # Z-1m आधीचा fixture — pin     # claude/v22-touch-levels (TL1) — merge होईपर्यंत स्पष्ट
 S_OLD = {**S_ROLE, "rr_step": True, "entry_first_bar": False}              # Abhi 13 Oct आधीचे नियम (⑦ R:R + 09:15 फक्त पुरावा) — जुने असर्ट pin
 
 
@@ -267,7 +267,7 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     out = tmp_path / "out.json"
     rc = RD.main(["--date", "2030-03-04", "--symbol", "NIFTY", "--source", "upstox", "--futures", str(fpath), "--dry-run",
                   "--json", str(out), "--out-dir", str(tmp_path), "--legacy-rr", "--no-first-bar-entry",
-                  "--flip-rule", "acceptance"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
+                  "--flip-rule", "acceptance", "--legacy-zone-gates"])                          # rr असर्ट ⇒ जुने नियम (pin); Z-1 flip pin
     assert rc == 0 and {c[1] for c in calls} == {"15minute", "5minute", "day"}
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")

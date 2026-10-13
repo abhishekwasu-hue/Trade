@@ -2549,3 +2549,12 @@ legs owner वि. reader2 gate).
 - B3: engine मार्गात loss lock-out नाही; SRv2 own-path cooldowns / kill switch फक्त यादी (OPEN_QUESTIONS B3).
 - Re-run (1m सह): 12 Oct — default data problem (FUT 7 sessions), what-if ⇒ 10:15 bear call (B); 13 Oct — bear call नाही, BROKEN,
   पुढचे zones 22,715–22,732 / 22,778–22,809 armed; 29 Sep — FUT नाही + किंमतीजवळ 1H zone नाही ⇒ wait. Z-1k = DEAD (Abhi).
+
+## Abhi Z-1j / Z-1h / Z-1m
+
+- Z-1j: §5.3 range अवस्था फक्त context (`range_state`). Z-1h: slot history < 10 ⇒ raw per-bar सरासरी (label "volume normalisation:
+  insufficient history"), data error नाही; FUT पूर्ण नसेल ⇒ data error तसाच. Z-1m: a2 handover अनिवार्य, क्रम handover → LTF CHoCH →
+  commitment; level bots (OFF) जुनं.
+- Re-run (default, 1m सह, FUT 7–8 sessions ⇒ raw fallback): 12 Oct — 09:30 handover नाही (buying candles दमल्या नाहीत), 10:15 handover
+  नाही (दुसऱ्या अर्ध्यात buying candle नाही) ⇒ wait; 13 Oct — handover नाही / absorption ⇒ bear call नाही ✅; 29 Sep — zone ला
+  स्पर्श नाही ⇒ wait. OPEN_QUESTIONS Z-1p.

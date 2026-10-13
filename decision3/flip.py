@@ -139,8 +139,9 @@ def zone_read(A, ts, arm, t, d, lvl, s, rsi=None):
     the counter-side volume first half → second half. rsi = an rsi2 Divergence read summary (optional). Facts only."""
     from . import method as M
     o, h, lo_, c = A["open"], A["high"], A["low"], A["close"]
-    V = A.get("volume")
+    V = A.get("volume")                                                    # what the comparisons use (normalised, or raw fallback)
     R = A.get("volume_raw")
+    Rel = A["volume_rel"] if "volume_rel" in A else V
     arm, t = int(arm), int(t)
     w = list(range(arm, t + 1))
     bodies = [abs(c[i] - o[i]) for i in w]
@@ -150,12 +151,13 @@ def zone_read(A, ts, arm, t, d, lvl, s, rsi=None):
         side = "doji" if M.candle_read(A, i, s)["doji"] else ("trade side" if (c[i] - o[i]) * d > 0 else "counter side")
         rows.append({"bar": i, "time": _ts(ts, i), "side": side, "body_vs_window": round(abs(c[i] - o[i]) / mb, 2) if mb > 0 else None,
                      "vol_raw": None if R is None or not np.isfinite(R[i]) else round(float(R[i]), 0),
-                     "vol_rel": None if V is None or not np.isfinite(V[i]) else round(float(V[i]), 2),
+                     "vol_rel": None if Rel is None or not np.isfinite(Rel[i]) else round(float(Rel[i]), 2),
+                     "vol_used": None if V is None or not np.isfinite(V[i]) else round(float(V[i]), 2),
                      "in_zone": bool(lo_[i] <= lvl["hi"] and h[i] >= lvl["lo"])})
     zs = M.zone_study(A, arm, t - 1, d, s) if t - 1 >= arm else {}
 
     def half(sel):
-        x = [r["vol_rel"] for r in sel if r["vol_rel"] is not None]
+        x = [r["vol_used"] for r in sel if r["vol_used"] is not None]
         return round(float(np.mean(x)), 2) if x else None
     pre = rows[:-1]
     m = len(pre) // 2
@@ -163,7 +165,7 @@ def zone_read(A, ts, arm, t, d, lvl, s, rsi=None):
     ts_ = [r for r in pre if r["side"] == "trade side"]
     cs1, cs2 = [r for r in pre[:m] if r["side"] == "counter side"], [r for r in pre[m:] if r["side"] == "counter side"]
     summary = {"bars": len(rows), "trade_side_bars": len(ts_), "counter_side_bars": len(cs),
-               "trade_side_vol_rel": half(ts_), "counter_side_vol_rel": half(cs),
+               "trade_side_vol_avg": half(ts_), "counter_side_vol_avg": half(cs),
                "counter_vol_first_half": half(cs1), "counter_vol_second_half": half(cs2),
                "counter_volume_expanding": None if half(cs1) is None or half(cs2) is None else bool(half(cs2) > half(cs1)),
                "trade_side_growing": zs.get("trade_growing", zs.get("trend_growing")), "counter_side_weakening": zs.get("counter_weakening"),

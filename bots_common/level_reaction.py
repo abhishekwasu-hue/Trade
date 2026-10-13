@@ -342,7 +342,9 @@ def evaluate(bars, area, ctx, others=(), session_start=0, s=None, s3=None, es=No
     from decision3 import settings as S3
     from elliott import breaks as BR
     from elliott import settings as ES
-    s3 = {**(s3 or S3.DEFAULTS), "ltf_choch": bool(s["ltf_choch"])}
+    s3 = {**(s3 or S3.DEFAULTS), "ltf_choch": bool(s["ltf_choch"]),
+          "a2_handover_required": bool(s.get("a2_handover_required", False)),   # level bots (OFF): जुनं वर्तन; Abhi Z-1m decision3 engine साठी
+          "range_state_gate": False}
     es = es or ES.DEFAULTS
     lo, hi = float(min(area)), float(max(area))
     n = len(bars)

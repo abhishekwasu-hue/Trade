@@ -136,6 +136,20 @@ ENGINE_FIRST_RUN_GRACE = (9, 45)                                           # त
 ENGINE_CRON_MARK = "# one-bot-engine"                                      # install_engine_schedule.sh ची engine ओळ (warm ओळ नाही)
 
 
+def engine_volume_note(symbol, path=None):
+    """Abhi Z-1h: engine चा शेवटचा row "volume normalisation: insufficient history" (raw per-bar average) वापरत असेल तर ती ओळ; नाहीतर /
+    store वाचता नाही ⇒ None."""
+    try:
+        import json
+        import engine_signal as ES
+        with ES.connect(path) as c:
+            r = c.execute("SELECT payload FROM engine_signals WHERE symbol=? ORDER BY bar_ts DESC LIMIT 1", (str(symbol).upper(),)).fetchone()
+        vm = (json.loads(r["payload"] or "{}") or {}).get("volume_measure") if r else None
+    except Exception:                                                      # noqa: BLE001 — फक्त माहिती
+        return None
+    return f"ℹ️ {symbol}: {vm}." if vm and "insufficient history" in vm else None
+
+
 def engine_cron_installed(text):
     """crontab मध्ये चालू (comment नसलेली) one-bot engine ओळ आहे का. crontab वाचता नाही (None) ⇒ False (खात्री नाही ⇒ ❌ कायम)."""
     return any(x.rstrip().endswith(ENGINE_CRON_MARK) and "engine_signal_run.py" in x and not x.lstrip().startswith("#")
@@ -232,6 +246,9 @@ def build_report(symbols, token, get_zones, last_close, trend_fn=None, weekly_fn
                 plain.append(bad)
             if t is not None:
                 det.append(f"{sym} engine: last run {t:%d %b %H:%M}")
+            vnote = engine_volume_note(sym)                                # Abhi Z-1h: raw-volume fallback स्पष्ट
+            if vnote:
+                plain.append(vnote)
         head = f"{sym} · {html.escape(str(ctx.get('reason')), quote=False)}"
         if ctx.get("protected") is not None:
             head += f" · protected {ctx['protected']:,.0f}"

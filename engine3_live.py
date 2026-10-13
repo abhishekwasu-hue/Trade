@@ -345,7 +345,8 @@ def row_from_v22(symbol, r, now_fn):
                "level": {k: lv.get(k) for k in ("id", "role", "lo", "hi", "births", "sweeps", "dist", "state", "broken_ts", "far_swing",
                                                 "flipped_ts")} if lv else None,
                "risk": rk or None, "flip_context": _flip_ctx(r.get("flip_retest")), "zone_read": _zone_sum(r.get("zone_read")),
-               "data_problem": (r.get("commit") or {}).get("data_problem")}
+               "data_problem": (r.get("commit") or {}).get("data_problem"), "volume_measure": r.get("volume_measure"),
+               "range_state": r.get("range_state"), "watch_list": r.get("watch_list")}
     return {"symbol": str(symbol).upper(), "bar_ts": str(pd.Timestamp(r["bar_end"])), "computed_at": str(now_fn()),
             "decision": r.get("decision"), "gate": gate, "direction": d, "level_lo": lv.get("lo"), "level_hi": lv.get("hi"),
             "entry": rk.get("entry"), "invalidation": rk.get("sl"), "target": rk.get("target"), "grade": r.get("conviction"),

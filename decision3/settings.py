@@ -65,6 +65,10 @@ DEFAULTS = {
     "commit_dom_mult": 1.5,                  # ⑥ c0 (Abhi): commitment candle "dominant" ⇔ body ≥ इतके × study window ची सरासरी body (window दिला तरच)
     "study_min_bars": 4,                     # a2 zone study: window मध्ये किमान इतक्या candles (पहिला / दुसरा अर्धा तुलना)
     "pattern_eq_mr": 0.5,                    # a2 patterns: double / triple top-bottom ⇔ swing टोकं इतक्या × median range आत
+    "a2_handover_required": True,            # Abhi Z-1m: a2 handover अनिवार्य (trade-बाजू वाढते + उलट बाजू दमते, zone मध्ये); क्रम a2 → c1 → c0.
+                                             # False = जुनं (a2 फक्त absorption ⇒ वाट) — जुने tests / what-if
+    "range_state_gate": False,               # Abhi Z-1j: §5.3 range अवस्था (overlap + doji) = context fact, gate नाही (sideways = handover study;
+                                             # range trades चालतात). True = जुना gate (फक्त जुने tests)
     "ltf_choch": True,                       # ⑥ c1 (Abhi, REQUIRED): lower-timeframe CHoCH by close (15M setup ⇒ 5M; method.LTF_OF). False = फक्त what-if
     "power_overlap": 0.5,                    # (b) bodies overlap
     # ⑤ Trendline (grade फक्त)
@@ -136,6 +140,8 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
+    "a2_handover_required": (True, "True / False", "Abhi नियम", "Abhi Z-1m: handover (a2) अनिवार्य, क्रम a2 → c1 → c0; False फक्त जुने tests"),
+    "range_state_gate": (False, "False / True", "Abhi नियम", "Abhi Z-1j: §5.3 range अवस्था context fact फक्त; True फक्त जुने tests"),
     "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (13 Oct final) + KB K4 chart display (≤ 3 bands above / below price)"),
     "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला confirmed swing); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),

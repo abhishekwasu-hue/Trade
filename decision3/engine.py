@@ -103,9 +103,11 @@ class V22:
             self.levels.A["volume"] = rel
             self.levels.A["volume_raw"] = np.asarray(raw, float)
 
-    def vol_na_reason(self, t):
-        """Why the normalised volume at bar t is NA (None ⇒ it is available)."""
+    def vol_na_reason(self, t, Av=None):
+        """Why the volume used at bar t is NA (None ⇒ it is available). Av = the window's volume view (raw fallback ⇒ only missing FUT)."""
         A = self.levels.A
+        if Av is not None and Av is not A and A.get("volume_raw") is not None and np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0:
+            return None
         if A.get("volume_raw") is None:
             return "FUT volume missing (no FUT bars given)"
         if not (np.isfinite(A["volume_raw"][t]) and A["volume_raw"][t] > 0):
@@ -114,6 +116,24 @@ class V22:
             return None
         return (f"FUT volume slot baseline NA: {int(self.vol_hist[t])} earlier sessions in this time slot "
                 f"(< vol_slot_min_sessions {int(self.s['vol_slot_min_sessions'])})")
+
+    INSUFFICIENT = "volume normalisation: insufficient history — raw per-bar average"
+
+    def vol_view(self, arm, t):
+        """Abhi Z-1h: the volume the in-zone comparisons use for the window arm … t. Slot-normalised (20 sessions, min 10) when every bar
+        with FUT volume has a baseline; otherwise (fewer than `vol_slot_min_sessions` earlier sessions in a slot) the RAW per-bar FUT
+        volume for the whole window (comparisons stay within the same window ⇒ per-bar averages, never sums) — labelled, NOT a data error.
+        Returns (A to use, label)."""
+        A = self.levels.A
+        raw = A.get("volume_raw")
+        if raw is None:
+            return A, "FUT volume missing"
+        w = np.arange(int(arm), int(t) + 1)
+        have = np.isfinite(raw[w]) & (raw[w] > 0)
+        if have.any() and not np.isfinite(A["volume"][w][have]).all():
+            return {**A, "volume": raw, "volume_rel": A["volume"]}, self.INSUFFICIENT
+        return A, f"slot-normalised (÷ median of the same 15M slot, {int(self.s['vol_slot_sessions'])} sessions, min " \
+                  f"{int(self.s['vol_slot_min_sessions'])})"
 
     def _confirm(self, t, d, lvl, k):
         """⑥ = एकच shared confirmation (method.confirm: a2 + c0 + c1). Study window = चालू भेट: K मध्ये level ला स्पर्श करणाऱ्या bars चा
@@ -129,14 +149,15 @@ class V22:
             arm = i
         c0 = k.get("i_end_bar") if k.get("i_end_bar") is not None else k0
         times = (pd.Timestamp(self._ts[min(int(c0), arm)]), pd.Timestamp(self._ts[arm]), pd.Timestamp(self.bar_end[t]))
-        cf = M.confirm(A, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
+        Av, vlabel = self.vol_view(arm, t)                                  # Abhi Z-1h: normalised, or raw per-bar fallback (labelled)
+        cf = M.confirm(Av, arm, t, d, lvl, self.s, self._ts, ltf=self.ltf, ltf_times=times)
         cm = dict(cf["commit"] or {})
         cm.update(study_from=str(pd.Timestamp(self._ts[arm])), confirm_wait=cf["wait"], confirm_lines=cf["lines"],
                   ltf_line=(cf["choch"] or {}).get("line"), handover=(cf["study"] or {}).get("handover"),
-                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"])
+                  absorption=cf["absorption"], arm_bar=int(arm), choch=cf["choch"], volume_measure=vlabel, handover_present=cf.get("handover"))
         ok, why = cf["ok"], cf["why"]
-        if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):                                  # Abhi Z-1c: volume शिवाय grade-B trade नाही ⇒ data problem
-            ok, why = False, "data problem: " + (self.vol_na_reason(t) or "FUT volume missing")
+        if cf["c0"] and cm.get("vol_na") and bool(self.s.get("c0_volume_required", True)):   # Abhi Z-1c: FUT volume नाही ⇒ data problem
+            ok, why = False, "data problem: " + (self.vol_na_reason(t, Av) or "FUT volume missing")
             cm.update(confirm_wait="data_problem", data_problem=why)
         return ok, why, cm
 
@@ -278,7 +299,9 @@ class V22:
         chk["⑥"] = [ok6, why6]
         arm = int(cm.get("arm_bar", t))
         rsi = self.rsi_divergence(t, d, arm)                               # zone evidence (Abhi): never a gate
-        zr = FL.zone_read(A, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)   # in-zone study facts (bars arm … t)
+        Av, vlabel = self.vol_view(arm, t)
+        zr = FL.zone_read(Av, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)  # in-zone study facts (bars arm … t)
+        zr["volume_measure"] = vlabel
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
               "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1,
@@ -298,7 +321,8 @@ class V22:
         extra = {"K": k, "evidence": ev, "trendline": tl, "conviction": conv, "conv_score": score, "missing": missing, "commit": cm,
                  "liquidity": {"sweeps": mine[:3], "trapped": [x for x in tr if x["side"] == side][:2]}, "flip_retest": g4,
                  "zone_read": zr}
-        if rng:
+        extra["range_state"] = bool(rng)                                  # Abhi Z-1j: context fact (sideways = the handover study)
+        if rng and bool(self.s.get("range_state_gate", False)):            # legacy only
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
         gates = bool(self.s.get("wave_gates", False))
@@ -377,7 +401,8 @@ class V22:
                 "missing": best.get("missing"), "evidence": best.get("evidence"), "why": best.get("why"),
                 "level": best.get("level"), "liquidity": best.get("liquidity"), "trendline": best.get("trendline"),
                 "commit": best.get("commit"), "commitment_form": (best.get("commit") or {}).get("form"),
-                "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"),
+                "flip_retest": best.get("flip_retest"), "zone_read": best.get("zone_read"), "range_state": best.get("range_state"),
+                "volume_measure": (best.get("commit") or {}).get("volume_measure") or (best.get("zone_read") or {}).get("volume_measure"),
                 "flip": None if not best.get("level") else {k: best["level"].get(k) for k in ("state", "broken_ts", "far_swing",
                                                                                               "flipped_ts", "break_dir")},
                 "level_evals": evals}

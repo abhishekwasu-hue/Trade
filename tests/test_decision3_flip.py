@@ -418,7 +418,8 @@ def test_oct12_synthetic_fixture_supply_is_broken_not_flipped_under_k4():
     from tests import oct12_fixture as F
     m15, fut, ltf = F.build(mirror=False)
     new = E3.V22(m15, s={"level_death_side": "role"}, ltf=ltf, futures=fut)
-    old = E3.V22(m15, s={"level_death_side": "role", "level_flip_rule": "acceptance"}, ltf=ltf, futures=fut)
+    old = E3.V22(m15, s={"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}, ltf=ltf,
+                 futures=fut)
     ts = new.levels.ts
     bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == ts.dt.normalize().iloc[-1]]
     so = [r for r in (old.decide(t) for t in bars) if r["decision"] == "setup"]
@@ -630,3 +631,49 @@ def test_zone_broken_the_next_zone_is_already_armed(mirror):
     after = [x["id"] for x in lv.active(t_brk, trend)]
     assert R1.id not in after and after[0] == R2.id and R1.state_at(t_brk) == FL.BROKEN
     assert all(R2.id in [x["id"] for x in lv.active(t, trend)] for t in range(40, len(m)))   # no gap in watching R2
+
+
+# ------------------------------------------------------------------------------------------------ Abhi Z-1j / Z-1h
+def test_range_state_is_context_only_never_an_entry_gate(abc, monkeypatch):
+    """Abhi Z-1j: overlapping / sideways candles inside the zone are the handover study, not a blocker — §5.3 range state is reported as
+    a context fact and never changes the decision (the old gate only with `range_state_gate` = True, legacy)."""
+    m15, s, V, _ = abc
+    bars = range(735, 746)
+    base = {t: V.decide(t) for t in bars}
+    monkeypatch.setattr(M, "range_state", lambda A, t, s=None: True)
+    monkeypatch.setattr(M, "range_broken_by", lambda A, t, d, s=None: False)
+    V2 = E3.V22(m15, s={**s, "c0_volume_required": False})
+    for t in bars:
+        r = V2.decide(t)
+        assert (r["decision"], r["checklist"]["⑥"]) == (base[t]["decision"], base[t]["checklist"]["⑥"])
+        if (r["checklist"].get("③") or [None])[0]:
+            assert r["range_state"] is True and "§5.3" not in str(r["checklist"]["⑥"][1])
+    V3 = E3.V22(m15, s={**s, "c0_volume_required": False, "range_state_gate": True})
+    hit = [V3.decide(t) for t in bars if (V3.decide(t)["checklist"].get("③") or [None])[0]]
+    assert hit and all("§5.3" in str(r["checklist"]["⑥"][1]) and r["decision"] == "wait" for r in hit)
+
+
+def test_short_fut_history_falls_back_to_raw_per_bar_volume_not_a_data_error():
+    """Abhi Z-1h: < vol_slot_min_sessions sessions of slot history ⇒ "volume normalisation: insufficient history", the window's
+    comparisons use the RAW per-bar FUT volume — labelled in the row / payload, never a data-problem wait. FUT missing entirely stays the
+    data error (Z-1c)."""
+    import engine3_live as L
+    from tests import oct12_fixture as F
+    m15, fut, ltf = F.build(mirror=False)
+    last = pd.to_datetime(m15["timestamp"]).dt.normalize().iloc[-1]
+    days = sorted(pd.to_datetime(fut["timestamp"]).dt.normalize().unique())
+    short = fut[pd.to_datetime(fut["timestamp"]).dt.normalize() >= days[-5]]                    # 4 earlier sessions only
+    sv = {"level_death_side": "role", "level_flip_rule": "acceptance", "a2_handover_required": False}   # fixture's setup level (old pins)
+    V = E3.V22(m15, s=sv, ltf=ltf, futures=short)
+    ts = V.levels.ts
+    bars = [i for i in range(len(ts)) if ts.dt.normalize().iloc[i] == last]
+    A, label = V.vol_view(bars[0], bars[-1])
+    assert label == V.INSUFFICIENT and np.allclose(A["volume"][bars], V.levels.A["volume_raw"][bars], equal_nan=True)
+    rows = [V.decide(t) for t in bars]
+    assert not [r for r in rows if "data problem" in str(r["checklist"].get("⑥"))]
+    seen = [r for r in rows if (r["checklist"].get("③") or [None])[0]]
+    assert seen and all(r["volume_measure"] == V.INSUFFICIENT for r in seen)
+    row = L.row_from_v22("NIFTY", seen[0], lambda: pd.Timestamp("2030-03-04 10:00"))
+    assert "insufficient history" in row["payload"]
+    full = E3.V22(m15, s=sv, ltf=ltf, futures=fut)
+    assert full.vol_view(bars[0], bars[-1])[1].startswith("slot-normalised")
