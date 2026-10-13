@@ -269,3 +269,12 @@
 | TL2 | (Abhi 2026-10-12: "आत्ता नाही" — merge नियम तसाच, प्रश्न उघडा) Merge (Q19) ने पट्टा फुगतो: 22,570–22,640 चं क्षेत्र 22,476–22,809 (333 pts) level मध्ये गेलं (bar 0 ला Q40 prior Daily / Weekly पट्टे + नंतर D2 H 22,809 / BOS base / D2 H 22,732 — भूमिका वेगळी असूनही). इतक्या रुंद पट्ट्यावर SL वरच्या कडेपलीकडे ⇒ R:R < 1 (9 Oct 11:00 / 11:45: 0.99 / 0.74) | तसेच (Q19) | (a) फक्त समान भूमिकेचे merge (Q19 पर्याय); (b) merge फक्त पट्टा ≤ k × σ_1H राहत असेल तर (k Abhi ने ठरवायचा); (c) Q40 prior पट्टे आपापसात merge न करता वेगळे |
 | TL3 | (b) BOS base: 8 Oct BOS चा origin = शेवटचा confirmed D2 H 22,732 (6 Oct) ⇒ base 22,715–22,724. धाव प्रत्यक्ष 7 Oct 14:15 (22,649, D0) / 8 Oct open 22,599 पासून सुरू झाली — तो D2 swing नाही (degree filter: "लहान pivot पासून level नाही") | तसेच (Q4 / spec ② (b)) | 1H साठी Q55 सारखा "sharp-fall base" (धाव सुरू करणारी candle) — Daily `sharp_zone` चा 1H आरसा |
 | TL4 | a2 handover (`zone_study`) — trend-बाजूचा पहिला अर्धा रिकामा (29 Sep: 11:00–12:00 सगळ्या greens, 12:15 पहिली red) ⇒ `trend_growing` NA ⇒ `handover` False, जरी buying candles दमल्या (counter_weakening ✔) आणि 12:15 dominant engulf | तसेच (बदल नाही — `claude/v22-confirmation` चा भाग) | रिकामा पहिला अर्धा + दुसऱ्यात trend candle ⇒ "growing" ✔ |
+
+## Data / pre-open fixes (13 Oct VPS findings) — घेतलेले default निर्णय (Abhi ने बदलावे)
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| DP1 | Futures collector ला SENSEX (BSE FUT) default मध्ये? | हो — `--symbols NIFTY,BANKNIFTY,SENSEX`; BSE front-month FUT सापडला नाही ⇒ ℹ️ log + skip (exit 0, बाकी symbols चालू) | SENSEX फक्त `--symbols` ने स्पष्ट दिल्यावर |
+| DP2 | Replay (`--source upstox`) चा FUT volume स्रोत | collector file मध्ये दिवस D असेल तर ती; नाहीतर `feed.futures` (front-month as of D+1 — expiry दिवशी पुढचा contract असू शकतो, contract छापला जातो) | नेहमी feed (live engine सारखं) / नेहमी file |
+| DP3 | Pre-open: engine row नाही + cron आहे — ℹ️ किती वेळ? | 09:45 IST पर्यंत ℹ️ (पहिला run 09:31 + 14 मिनिटं); त्यानंतर ❌. जुना पण > 96 h row ⇒ ❌ कायम (cron असूनही) | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
+| DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |

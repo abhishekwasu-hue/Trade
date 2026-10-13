@@ -200,13 +200,30 @@ def approval(V, r, symbol, out_dir):
     return png, cap
 
 
+def _feed(token, today):
+    """Live engine चाच स्रोत (engine3_live.UpstoxFeed: history chunks + गायब दिवस भरणे + intraday). tests मध्ये fake feed."""
+    import engine3_live as E3L
+    return E3L.UpstoxFeed(token, today=today)
+
+
+def until_close(df, day):
+    """No lookahead: दिवस `day` च्या close नंतरचा एकही row नाही (feed today = D+1 ⇒ intraday / D+1 चे rows इथे वगळले जातात)."""
+    if df is None or not len(df):
+        return df
+    df = df.copy()
+    df["timestamp"] = _naive(df["timestamp"])
+    return df[df["timestamp"] < day + pd.Timedelta(hours=15, minutes=30)].drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+
+
 def load_upstox(a, day):
-    """VPS: live engine सारखाच स्रोत — Upstox historical (`upstox_api.fetch_candles_date_range`; token .env / Supabase मधून, कधीच print
-    नाही): 15M (`--m15-days`), 5M LTF (`--ltf-days`), Daily (`--daily-days`, Q33 warm-up). फक्त GET; order / store नाही. FUT volume =
-    data/oe_futures_5min_<SYM>.parquet (collector) असेल तर, नाहीतर NA (c0 volume NA ⇒ grade कमाल B)."""
+    """VPS: live engine सारखाच स्रोत — `engine3_live.UpstoxFeed` (token .env / Supabase मधून, कधीच print नाही), today = D+1 ⇒ minute
+    history D पर्यंत (D चा दिवस समाविष्ट; historical नसेल तर feed चा recent-day fill / intraday) आणि D च्या close नंतरचं काहीच नाही
+    (`until_close`). 15M (`--m15-days`), 5M LTF (`--ltf-days`), Daily (`--daily-days`, Q33 warm-up). फक्त GET; order / store नाही.
+    FUT volume = --futures / data/oe_futures_5min_<SYM>.parquet (collector) मध्ये दिवस D असेल तर ते, नाहीतर feed.futures (front-month
+    as of D+1 — expiry दिवशी पुढचा contract असू शकतो, छापलेला contract पहा); दोन्ही नाही ⇒ NA (c0 volume NA ⇒ grade कमाल B)."""
     import datetime as _dt
     import cloud_db
-    import upstox_api as UA
+    import engine3_live as E3L
     from bots_common import level_reaction as LR
     from decision3 import history as HI
     from elliott import data_policy as DP
@@ -215,14 +232,20 @@ def load_upstox(a, day):
     if not tok:
         raise SystemExit("❌ Upstox token नाही (.env / daily login) — replay नाही")
     d0 = day.date()
+    try:
+        feed = _feed(tok, d0 + _dt.timedelta(days=1))
+    except E3L.EngineDataError as exc:
+        raise SystemExit(f"❌ Upstox feed: {exc}")
 
     def get(interval, days):
-        df = UA.fetch_candles_date_range(tok, sym, interval, d0 - _dt.timedelta(days=int(days)), d0)
+        try:
+            df = feed.index(sym, interval, days)
+        except E3L.EngineDataError as exc:
+            raise SystemExit(f"❌ {sym} {interval}: {exc}")
+        df = until_close(df, day)
         if df is None or not len(df):
             raise SystemExit(f"❌ {sym} {interval}: Upstox candles मिळाले नाहीत")
-        df = df.copy()
-        df["timestamp"] = _naive(df["timestamp"])
-        return df.drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True)
+        return df
 
     def session(df, minutes):
         end = df["timestamp"] + pd.Timedelta(minutes=minutes)
@@ -241,13 +264,21 @@ def load_upstox(a, day):
     daily = daily[["timestamp", "open", "high", "low", "close"]].reset_index(drop=True)
     daily["bar_end"] = pd.to_datetime(daily["timestamp"]).dt.normalize() + pd.Timedelta(hours=15, minutes=30)
     fpath = a.futures or os.path.join(ROOT, "data", f"oe_futures_5min_{sym}.parquet")
-    fut = allowed(_read_any([fpath]), sym)
-    if fut is not None and len(fut):
-        fut["timestamp"] = _naive(fut["timestamp"])
+    fut = until_close(allowed(_read_any([fpath]), sym), day)
+    if fut is not None and len(fut) and (fut["timestamp"].dt.normalize() == day).any():
         fut = fut.drop_duplicates(["timestamp"] + (["contract"] if "contract" in fut.columns else []), keep="first")
     else:
-        print(f"⚠️ FUT 5M volume file नाही ({fpath}) ⇒ volume NA (c0 grade कमाल B)")
-        fut = None
+        try:
+            fut = until_close(allowed(feed.futures(sym, "5minute", a.ltf_days), sym), day)
+        except E3L.EngineDataError as exc:
+            fut = None
+            print(f"⚠️ FUT 5M volume: {fpath} मध्ये {day.date()} नाही, feed: {exc} ⇒ volume NA (c0 grade कमाल B)")
+        else:
+            if fut is not None and len(fut):
+                print(f"FUT 5M volume: Upstox feed ({fut['contract'].iloc[-1] if 'contract' in fut.columns else 'front-month'})")
+            else:
+                print(f"⚠️ FUT 5M volume नाही ({fpath} / feed) ⇒ volume NA (c0 grade कमाल B)")
+                fut = None
     return m15, None, ltf, fut, daily
 
 

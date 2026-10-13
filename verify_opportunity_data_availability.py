@@ -180,10 +180,10 @@ def _name_before_fut(trading_symbol):
     return (trading_symbol or "").upper().split(" FUT")[0].strip()
 
 
-def resolve_front_future(token, name, today):
-    """NSE index futures चा सध्याचा front-month contract — trading_symbol चा ' FUT' आधीचा भाग **तंतोतंत** `name` असावा (FINNIFTY/NIFTYNXT50 वगैरे वगळले जातात).
-    रिटर्न (info_dict|None, error|None)."""
-    params = {"query": name, "exchanges": "NSE", "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
+def resolve_front_future(token, name, today, exchange="NSE"):
+    """Index futures चा सध्याचा front-month contract (डीफॉल्ट NSE; SENSEX ⇒ exchange="BSE") — trading_symbol चा ' FUT' आधीचा भाग
+    **तंतोतंत** `name` असावा (FINNIFTY/NIFTYNXT50 वगैरे वगळले जातात). रिटर्न (info_dict|None, error|None)."""
+    params = {"query": name, "exchanges": exchange, "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
     status, body, error = _get(f"{BASE_V2}/instruments/search", token, params=params)
     if status != 200:
         return None, f"HTTP {status}: {error}"
@@ -201,10 +201,10 @@ def resolve_front_future(token, name, today):
     }, None
 
 
-def resolve_futures_chain(token, name, today, n=2):
+def resolve_futures_chain(token, name, today, n=2, exchange="NSE"):
     """Front + पुढचे (n) अजून expire न झालेले futures contracts, expiry क्रमाने (Chart Reader K10.3: volume roll साठी पुढचा contract
-    सुद्धा साठवायचा). रिटर्न (list, error|None)."""
-    params = {"query": name, "exchanges": "NSE", "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
+    सुद्धा साठवायचा; SENSEX ⇒ exchange="BSE"). रिटर्न (list, error|None)."""
+    params = {"query": name, "exchanges": exchange, "segments": "FO", "instrument_types": "FUT", "page_number": 1, "records": 30}
     status, body, error = _get(f"{BASE_V2}/instruments/search", token, params=params)
     if status != 200:
         return [], f"HTTP {status}: {error}"
