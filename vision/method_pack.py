@@ -1,6 +1,7 @@
 """vision/method_pack.py — Method Pack (design `docs/design/CHART_READER_AGENT.md` §12): KB मधून बनलेला स्थिर English method मजकूर.
 
-🎓 एकच स्रोत: `docs/knowledge/KNOWLEDGE_BASE.md`. KB मधले `<!-- pack:N key -->` … `<!-- /pack -->` blocks (Abhi च्या क्रमाने N = 0–7)
+🎓 एकच स्रोत: `docs/knowledge/KNOWLEDGE_BASE.md`. KB मधले `<!-- pack:N key -->` … `<!-- /pack -->` blocks (Abhi च्या क्रमाने N = 0–7; आतले `<!-- pending:abhi -->` …
+`<!-- /pending -->` भाग = Abhi ची मंजुरी बाकी ⇒ pack मध्ये येत नाहीत)
 आणि `docs/knowledge/ABHI_METHOD_NOTES.md` चे "## Entries" (section 8) ⇒ `docs/knowledge/method_pack.md` (`scripts/build_method_pack.py`).
 Pack version = pack body चा sha256 (पहिले 12 hex) — header मध्ये; प्रत्येक Vision / reader नोंदीत तोच version (§12.4).
 Pack मध्ये R:R / SL / target / size / exits नाहीत (dashboard settings, Abhi चा निर्णय) — `banned_hits` + stale-pack test.
@@ -35,6 +36,7 @@ BANNED = (                                                                 # §1
 )
 _BLOCK = re.compile(r"<!-- pack:(\d) ([a-z_]+) -->\n(.*?)\n<!-- /pack -->", re.S)
 _SUMMARY = re.compile(r"^<summary>Method Pack \(English\) — ([^<]*?)\(source: (.*)\)</summary>$")
+_PENDING = re.compile(r"\n?<!-- pending:[a-z_]+ -->\n.*?\n<!-- /pending -->", re.S)    # Abhi च्या मंजुरीची वाट ⇒ pack मध्ये नाही
 _HEAD = re.compile(r"\A# Method Pack — version ([0-9a-f]{12})\n<!--[^\n]*-->\n\n")
 NONE_YET = "(none yet — entries are added only after Abhi approves them)"
 
@@ -57,6 +59,9 @@ def blocks(kb_text):
         if not sm or lines[-1] != "</details>":
             raise PackError(f"pack:{n} {key} — summary / </details> ओळ चुकीची: {lines[0][:80]!r}")
         body = "\n".join(lines[1:-1]).strip("\n")
+        body = _PENDING.sub("", body)
+        if "<!-- pending" in body or "<!-- /pending" in body:
+            raise PackError(f"pack:{n} {key} — pending marker उघडा / बंद जुळत नाही")
         out.append((n, key, sm.group(1).strip(), sm.group(2).strip(), body))
     opened, closed = kb_text.count("<!-- pack:"), kb_text.count("<!-- /pack -->")
     if opened != len(out) or closed != len(out):

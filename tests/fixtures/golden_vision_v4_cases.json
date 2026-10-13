@@ -1,5 +1,5 @@
 {
-  "_about": "R0 golden days for Vision V4 (design §11.1, §12.5). Expected checklist readings are Abhi's: every TODO must be filled by Abhi (pass / fail / NA per item 1-7, verdict agree / partly / disagree). Never edit an expectation to make a run pass. Abhi's filled copy may live in private trade-data and be passed with --cases. Item n = Method Pack section n (vision/checklist.py ITEMS).",
+  "_about": "R0 golden days for Vision V4 — repo TEMPLATE only (public repo). Abhi's draft expected answers live in private trade-data golden_v4/cases.json (status 'draft — pending Abhi ✅'; R0-3) and are passed with --cases; every result is provisional until a case's status starts with 'confirmed'. Item n = Method Pack section n (vision/checklist.py ITEMS, DECISION3_MAP).",
   "cases": [
     {
       "id": "nifty_2026-10-12_bear_call",
@@ -9,7 +9,17 @@
       "area": "TODO(Abhi): spot band [lo, hi] of the supply / 2-touch line confluence, or null to let Vision judge the area",
       "data": "TODO(Abhi): 1m spot file(s) covering 2026-07-01 .. 2026-10-12 on the VPS (e.g. NIFTY_1m_2026-07-01_2026-10-08.csv.gz + the illustration file)",
       "source": "design §11.1: bear call found at the 09:30-09:45 commitment; KB K4 / K6 golden (30 Sep + 6/7 Oct line, 3rd touch 12 Oct)",
-      "expected": {"1": "TODO", "2": "TODO", "3": "TODO", "4": "TODO", "5": "TODO", "6": "TODO", "7": "TODO", "verdict": "TODO"}
+      "expected": {
+        "1": "TODO",
+        "2": "TODO",
+        "3": "TODO",
+        "4": "TODO",
+        "5": "TODO",
+        "6": "TODO",
+        "7": "TODO",
+        "verdict": "TODO"
+      },
+      "status": "template"
     },
     {
       "id": "nifty_2026-09-29_bear_call",
@@ -17,9 +27,21 @@
       "decision": "2026-09-29 12:15",
       "direction": "BEARISH",
       "area": "TODO(Abhi): spot band [lo, hi] or null",
-      "data": ["/root/trade-data/upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz"],
+      "data": [
+        "/root/trade-data/upstox/NIFTY_1m_2026-07-01_2026-10-08.csv.gz"
+      ],
       "source": "design §11.1: a valid bear-call read (no R:R skip); WORK_LOG 29 Sep 12:15 (touch + sellers' handover + dominant engulf + 5M CHoCH; futures volume NA that day)",
-      "expected": {"1": "TODO", "2": "TODO", "3": "TODO", "4": "TODO", "5": "TODO", "6": "TODO", "7": "TODO", "verdict": "TODO"}
+      "expected": {
+        "1": "TODO",
+        "2": "TODO",
+        "3": "TODO",
+        "4": "TODO",
+        "5": "TODO",
+        "6": "TODO",
+        "7": "TODO",
+        "verdict": "TODO"
+      },
+      "status": "template"
     },
     {
       "id": "banknifty_abc",
@@ -29,7 +51,17 @@
       "area": "TODO(Abhi): spot band [lo, hi] or null",
       "data": "TODO(Abhi): BANKNIFTY spot file(s) (1m or 15m) covering the decision day",
       "source": "design §12.5 'BANKNIFTY a-b-c'; OPEN_QUESTIONS R0-G3",
-      "expected": {"1": "TODO", "2": "TODO", "3": "TODO", "4": "TODO", "5": "TODO", "6": "TODO", "7": "TODO", "verdict": "TODO"}
+      "expected": {
+        "1": "TODO",
+        "2": "TODO",
+        "3": "TODO",
+        "4": "TODO",
+        "5": "TODO",
+        "6": "TODO",
+        "7": "TODO",
+        "verdict": "TODO"
+      },
+      "status": "template"
     }
   ]
 }

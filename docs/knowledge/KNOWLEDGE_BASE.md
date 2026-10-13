@@ -506,7 +506,7 @@ completed pattern allows, the count is wrong.
 - वरच्या TF ने आधीच पार केलेला zone "fresh" मानणं.
 
 <!-- pack:2 areas -->
-<details><summary>Method Pack (English) — 2. Areas: demand / supply, flips, bands, confluence, validity (source: K4, stage 3, K5 real break, K7, K8, Part G; zone death: v2.2 Q2 / TL1 [Abhi]; sharp-fall point: ABC_FIX rule 2 / Q55 [Abhi])</summary>
+<details><summary>Method Pack (English) — 2. Areas: demand / supply, flips, bands, confluence, validity (source: K4, stage 3, K5 real break, K7, K8, Part G; 2-touch band: TA3b [Abhi]; sharp-fall point: ABC_FIX rule 2 / Q55 [Abhi])</summary>
 
 - **An area tells WHERE to look; it is not protection.** [NIFTY] none of our level engines beat random zones; the information is in the
   REACTION at the area (sections 5, 6).
@@ -517,10 +517,11 @@ completed pattern allows, the count is wrong.
   No BOS ⇒ noise. The zone exists only from the bar where displacement + BOS are confirmed (no look-ahead).
 - **Role flip:** broken support becomes resistance and vice versa. A flip level = a prior swing closed through by ≥ 0.5 MR, then
   retested from the other side and rejected. After a flip, touches are counted on the new side; the next retest is the trade location.
-- **Horizontal S/R band [Abhi]:** two reaction touches at one price area (two swing highs, or two swing lows) define the band
-  (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced (setting, default 6 bars).
-  **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with handover (section 5) and a
-  commitment candle (section 6).
+- **Horizontal S/R band — drawn from 2 touches [Abhi, TA3b]:** two reaction touches at one price area (two swing highs, or two swing
+  lows) are enough to DRAW the band (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced
+  (setting, default 6 bars). **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with
+  handover (section 5) and a commitment candle (section 6). Three or more touches = "established" (evidence +), never a minimum for
+  drawing the band. After a role flip, touches count on the new side.
 - **Sharp-fall / sharp-rise point [Abhi]:** in a down impulse, the first swing low (one degree lower) broken by the impulse's run of
   wide-range candles is where the fall accelerated; that broken demand becomes **supply** (sharp-fall supply). Mirror in an up impulse
   (sharp-rise demand).
@@ -542,10 +543,12 @@ completed pattern allows, the count is wrong.
 - **Real break (one definition, K5 / Part G):** close beyond the level by a 0.25 MR buffer AND the first of: (a) displacement — break
   bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
   a retest from the broken side is rejected by a logical reversal (role flip confirmed). Anything else is a false break (sweep).
-- **A zone is dead only beyond the far swing [Abhi]:** an area dies only when price CLOSES beyond the structural swing on the far side
-  of the area, on the side of its CURRENT role — a support dies when the nearest swing low below it is closed through; a resistance (or
-  a flipped support now acting as supply) dies only when the nearest swing high above it is closed through. A close through the band
-  itself is a break / flip candidate (acceptance ⇒ flip), not death.
+<!-- pending:abhi -->
+- **[pending Abhi — NOT in the generated Method Pack (R0-2)]** A zone is dead only beyond the far swing: an area dies only when price
+  CLOSES beyond the structural swing on the far side of the area, on the side of its CURRENT role — a support dies when the nearest swing
+  low below it is closed through; a resistance (or a flipped support now acting as supply) dies only when the nearest swing high above it
+  is closed through. A close through the band itself is a break / flip candidate (acceptance ⇒ flip), not death.
+<!-- /pending -->
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal
@@ -701,10 +704,11 @@ completed pattern allows, the count is wrong.
 
 - **Trendline** = a line through swing pivots (lows in an uptrend, highs in a downtrend); **channel** = the parallel line through the
   most extreme opposite pivot between the anchors (on 15M usually 2–6 MR wide).
-- **Built from 2 touches [Abhi]:** two anchors (touches) make the line; a touch = the pivot extreme within ± 0.2 MR of the line. The
+- **A trendline is drawn from 2 touches [Abhi, TA3]:** two anchors (touches) make the line; a touch = the pivot extreme within ± 0.2 MR
+  of the line. The
   **projected 3rd touch is the trade location** (a candidate area where the line acts as support / resistance) — entry there only with
-  handover (section 5) + a commitment candle (section 6); the 3rd touch alone is never an entry. **≥ 3 touches = "established"**
-  (evidence +), not a different trade rule. The projected zone exists only after the 2nd anchor is confirmed (no look-ahead).
+  handover (section 5) + a commitment candle (section 6); the 3rd touch alone is never an entry. **Three or more touches =
+  "established"** (evidence +), not a different trade rule and never a minimum for drawing the line. The projected zone exists only after the 2nd anchor is confirmed (no look-ahead).
 - Validity, also for 2-touch lines: anchors on **wicks**, break decisions on **closes**; no close beyond the line by > 0.3 MR between
   the anchors; touches spaced (setting, default 6 bars); slope not extreme (steeper than 0.5 MR per bar ⇒ reject). Never mix bodies at
   one anchor and wicks at another; never redraw the line every bar (curve-fitting).

@@ -342,3 +342,17 @@ Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 establish
 | R0-7 | Golden runner मध्ये futures volume नाही ⇒ items 5 / 6 चा volume भाग NA | NA (facts मध्ये तसं लिहिलं) | FUT 1m / 5M file option जोडा (anonymise सह) |
 | R0-8 | Live V4 (`vision_v4_audit` = "v4"): V2 audit नंतर प्रत्येक signal ला एक जास्त call (≈ $0.03–0.05, pack cached / uncached) + एक Telegram संदेश (shadow mode ⇒ फक्त नोंद); cache TTL 5 मिनिटं | **off** (live मध्ये बदल नाही); golden runs नंतर Abhi ठरवतो — dashboard "vision_v4_audit" किंवा `python3 -m vision.config set _global vision_v4_audit v4 --by abhi` | on; TTL 1h (§8) |
 | R0-9 | V4 ची दैनिक उप-मर्यादा `vision_v4_daily_cap` (review #318): किती? (V4 कधीच signals राखीव `signals_daily_reserve_usd` वापरत नाही; मासिक राखीव नियम visual audit सारखाच) | **$0.30 / दिवस** (≈ 6–8 V4 calls, pack cached / uncached) | dashboard वरून बदला (0–2) |
+
+**R0 ✅ Abhi निर्णय (2026-10-13) — लागू (branch `claude/r0-method-pack`):**
+
+| # | निर्णय | स्थिती |
+|---|---|---|
+| R0-1 | Checklist items = Method Pack चे 7 sections; decision3 शी ठरीव जोड: 1→① · 2→② · 3→⑤ · 4→③ · 5→④ + ⑥a2 · 6→⑥ c0 + c1 · 7→H1–H3 (design §12.2 तक्ता; `vision/checklist.py` `DECISION3_MAP`, प्रत्येक V4 निकाल / log row / golden निकालात) | ✅ निकाली |
+| R0-2 | Handover + trigger शब्द ✅; sharp-fall / sharp-rise point ✅. 2-touch नियम (TA3 / TA3b) pack मध्ये स्पष्ट: रेषा / horizontal band 2 touches वरून, 3रा touch = trade location, ≥ 3 = established (minimum नाही). **"Zone dead only beyond the far swing" मंजूर नाही** ⇒ KB block मध्ये `pending Abhi`, generated pack मधून वगळला (pack version 4855ff77991f) | ✅ बाकी निकाली · **"zone dead" उघडा** |
+| R0-3 | Golden अपेक्षा private trade-data `golden_v4/cases.json` मध्ये, status "draft — pending Abhi ✅"; Abhi ✅ होईपर्यंत प्रत्येक निकाल "PROVISIONAL" | ✅ निकाली (drafts लिहिले; Abhi ✅ बाकी) |
+| R0-4 | BANKNIFTY दिवस: 3 उमेदवार (`trade-data/review/banknifty_abc_candidates/`) — Abhi एक निवडेपर्यंत golden फक्त 12 Oct + 29 Sep | ✅ निकाली (निवड बाकी) |
+| R0-5 | Golden runner नेहमी FUT volume (`--futures`, default collector parquet); नाही ⇒ स्पष्ट "volume NA". W / D फक्त holdout-नंतरचा data (1 Jul 2026 पासून) + "item 1 limited history" नोंद | ✅ निकाली |
+| R0-6 | भरलेल्या अपेक्षा private trade-data मध्ये (repo मध्ये फक्त template) | ✅ निकाली (R0-3 सोबत) |
+| R0-7 | Golden मध्ये FUT volume | ✅ निकाली (R0-5) |
+| R0-8 | Live V4 default off; Abhi golden निकालांनंतर ठरवतो | ✅ निकाली (off) |
+| R0-9 | `vision_v4_daily_cap` = $0.30 / दिवस | ✅ निकाली |

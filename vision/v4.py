@@ -125,7 +125,7 @@ def audit(client, images, facts, model, known_prices, pack=None, on_usage=None, 
     text, ver = pack or MP.load()
     params = build_request(images, facts, model, pack=(text, ver), effort=effort, thinking=thinking, ttl=ttl)
     out = {"status": "failed", "data": None, "error": None, "usage": {}, "cost_usd": 0.0, "latency_ms": 0, "pack_version": ver,
-           "prompt_version": PROMPT_VERSION, "model": model}
+           "prompt_version": PROMPT_VERSION, "model": model, "decision3_map": dict(CK.DECISION3_MAP)}   # R0-1: item ⇒ decision3 पायरी
     t0 = time.monotonic()
     try:
         msg = client.messages.create(**params)

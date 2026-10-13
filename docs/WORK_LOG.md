@@ -2376,3 +2376,11 @@ FUT volume, live V4 चालू करायचा का).
   worker V4 पास: कमाल 2 jobs / `run_once` (`V4_MAX_PER_CYCLE`), आणि नवे (bar बंद) QUEUED rows असतील तर V4 पास वगळतो — सोडलेले V4
   jobs पुढे नेत नाही (audit-only), `vision_events` मध्ये `v4_dropped` नोंद; shadow rows साठी V4 budget Telegram इशारा नाही; dashboard V4 cap
   0–2. Tests: test_vision_v4_checklist, test_golden_vision_check.
+- **Abhi चे R0 निर्णय (R0-1 … R0-9) लागू:** R0-1 item ⇒ decision3 map (design §12.2 तक्ता, `DECISION3_MAP` प्रत्येक V4 निकाल / `v4_json` /
+  Telegram ओळ / golden निकालात); R0-2 "zone dead only beyond the far swing" KB मध्ये `<!-- pending:abhi -->` ⇒ generator ते वगळतो
+  (test), K4 / K6 English blocks: "drawn from 2 touches", 3रा touch = trade location, ≥ 3 = established "never a minimum" (TA3 / TA3b;
+  design §12.1 item 3 सुद्धा) ⇒ **pack version 4855ff77991f** (≈ 7,282 tokens); R0-3 drafts `trade-data/golden_v4/cases.json` (status
+  "draft — pending Abhi ✅"), runner "PROVISIONAL" छापतो; R0-5 runner FUT volume (`--futures`, default collector + exports; नाही ⇒ स्पष्ट
+  NA) + item 6 मोजमाप (FUT volume ÷ आधीचे 8 bars, 5M CHoCH by close); R0-4 `research/banknifty_abc_candidates.py` (V22, research only)
+  ⇒ 3 उमेदवार charts trade-data `review/banknifty_abc_candidates/`. Sandbox dry-run (खरा data, API नाही): 12 Oct FUT volume 1.33×, 5M CHoCH
+  09:40; 29 Sep FUT volume NA (exports 30 Sep पासून), 5M CHoCH 12:30. OPEN_QUESTIONS R0-1 … R0-9 निकाली ("zone dead" उघडा).

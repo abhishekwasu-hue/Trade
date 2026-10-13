@@ -142,6 +142,7 @@ def test_telegram_failed_and_na_first_max_12_lines_audit_only():
     assert len(lines) <= CK.TELEGRAM_MAX_LINES
     assert "audit only" in lines[0].lower() and "&lt;bear&gt;" in lines[0]
     assert lines[2].startswith("❌ 6.") and lines[3].startswith("— 5.") and lines[4].startswith("✅ 1.")
+    assert "(⑥ c0 + c1)" in lines[2] and "(①)" in lines[4]
     assert lines[-1] == CK.FOOTER and "never blocks" in lines[-1]
     na = CK.telegram_lines({"error": "prices not in facts: 22,690"})
     assert "22,690" in na[1] and na[-1] == CK.FOOTER
@@ -203,6 +204,7 @@ def test_v4_audit_done_rejected_failed():
     seen = []
     r = V4.audit(FakeClient(good(pack_version=ver)), [b"p"], "facts", "m", KNOWN, pack=pack, on_usage=lambda u, c: seen.append((u, c)))
     assert r["status"] == "done" and r["pack_version"] == ver and r["usage"]["cache_read"] == 8000 and seen
+    assert r["decision3_map"] == CK.DECISION3_MAP and CK.DECISION3_MAP[1] == "①" and CK.DECISION3_MAP[6].startswith("⑥")
     bad = good(pack_version=ver)
     bad["items"][1]["evidence"] = "band 23,000"
     r = V4.audit(FakeClient(bad), [b"p"], "facts", "m", KNOWN, pack=pack)
@@ -282,6 +284,7 @@ def test_worker_v4_on_records_pack_version_and_never_touches_decision(tmp_path, 
     assert res["status"] == "done", res
     after = VS.get_signal(row["signal_id"], p)
     assert after["pack_version"] == ver and json.loads(after["v4_json"])["data"]["verdict"] == "partly"
+    assert json.loads(after["v4_json"])["decision3_map"]["3"] == "⑤"
     for k in ("status", "verdict", "final_decision", "human_decision", "factor"):
         assert after[k] == before[k]                                        # audit-only: निर्णय / gate fields तसेच
     with VS.connect(p) as c:

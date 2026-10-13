@@ -31,7 +31,8 @@ def _deps(calls):
     return {"load": lambda paths: calls.append(("load", tuple(paths))) or pd.DataFrame(),
             "frames": lambda m1, dec: _frames(dec),
             "render": lambda fr, asof: [b"PNG-" + tf.encode() for tf in G.TFS if tf in fr],
-            "client": no_client, "on_usage": lambda ver: (lambda u, c: calls.append("usage"))}
+            "client": no_client, "on_usage": lambda ver: (lambda u, c: calls.append("usage")),
+            "load_fut": lambda paths: calls.append(("fut", tuple(paths))) or None}
 
 
 def _cases(tmp_path, cases):
@@ -123,7 +124,7 @@ def test_real_run_path_with_fake_client_validates_and_logs_usage(tmp_path):
             u = types.SimpleNamespace(input_tokens=100, output_tokens=50, cache_read_input_tokens=0, cache_creation_input_tokens=0)
             return types.SimpleNamespace(stop_reason="end_turn", usage=u, content=[types.SimpleNamespace(
                 type="text", text=json.dumps({"pack_version": ver, "items": items, "verdict": "agree"}))])
-    a = types.SimpleNamespace(data={}, model="m", max_tokens=8000, shift_weeks=G.SHIFT_WEEKS, scale=G.SCALE, tick=G.TICK, out_dir=None,
+    a = types.SimpleNamespace(data={}, futures={}, model="m", max_tokens=8000, shift_weeks=G.SHIFT_WEEKS, scale=G.SCALE, tick=G.TICK, out_dir=None,
                               dry_run=False)
     deps = {**G.default_deps(a), **_deps([]), "client": FC}
     deps["on_usage"] = lambda v: (lambda u, c: calls.append(("usage", v)))
@@ -188,3 +189,61 @@ def test_holdout_gap_checked_on_every_frame():
     assert not G.holdout_gap(fr)
     fr["15M"] = pd.concat([fr["15M"].iloc[:1].assign(timestamp=pd.Timestamp("2024-03-28 10:00")), fr["15M"]], ignore_index=True)
     assert G.holdout_gap(fr)
+
+
+
+def _fut(decision, mult_last=3.0):
+    """Fake near-month FUT 5M rows aligned to the fake 15M bars (3 × 5M per 15M); last 15M bar volume × mult_last."""
+    fr, _ = _frames(decision)
+    rows = []
+    for i, t in enumerate(fr["15M"]["timestamp"]):
+        for k in range(3):
+            v = 1000.0 * (mult_last if i == len(fr["15M"]) - 1 else 1.0)
+            rows.append((pd.Timestamp(t) + pd.Timedelta(minutes=5 * k), v))
+    f = pd.DataFrame(rows, columns=["timestamp", "volume"])
+    f["expiry"] = pd.Timestamp("2026-10-27")
+    return f
+
+
+def test_futures_volume_in_facts_and_measured(tmp_path):
+    calls, lines = [], []
+    deps = {**_deps(calls), "load_fut": lambda paths: calls.append(("fut", tuple(paths))) or _fut(DEC)}
+    out_dir = tmp_path / "o"
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [CASE]), "--out-dir", str(out_dir), "--futures", "NIFTY=/f.parquet"], deps=deps,
+           out=lines.append)
+    assert ("fut", ("/f.parquet",)) in calls
+    r = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))[0]
+    assert r["volume"] == "FUT" and r["measured"]["fut_volume"].startswith("3.00x")
+    facts = (out_dir / "c1" / "facts.txt").read_text(encoding="utf-8")
+    assert "fut_volume" in facts and "Futures volume: NA" not in facts
+
+
+def test_missing_futures_is_explicit_na_and_default_paths_used(tmp_path):
+    calls, lines = [], []
+    out_dir = tmp_path / "o"
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [CASE]), "--out-dir", str(out_dir)], deps=_deps(calls), out=lines.append)
+    fut_call = [c for c in calls if isinstance(c, tuple) and c[0] == "fut"][0]
+    assert any(p.endswith("oe_futures_5min_NIFTY.parquet") for p in fut_call[1])         # collector default
+    r = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))[0]
+    assert r["volume"] == "NA" and any("volume NA" in w for w in r["warnings"])
+    facts = (out_dir / "c1" / "facts.txt").read_text(encoding="utf-8")
+    assert "Futures volume: NA" in facts and "never pass an item on volume" in facts
+    assert "volume" in "\n".join(lines)
+
+
+def test_draft_expectations_print_provisional(tmp_path):
+    lines = []
+    draft = dict(CASE, status="draft — pending Abhi ✅")
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [draft])], deps=_deps([]), out=lines.append)
+    text = "\n".join(lines)
+    assert "PROVISIONAL" in text and "(provisional)" in text and "results PROVISIONAL" in text
+    lines.clear()
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [dict(CASE, status="confirmed by Abhi ✅")])], deps=_deps([]), out=lines.append)
+    assert "PROVISIONAL" not in "\n".join(lines) and "(provisional)" not in "\n".join(lines)
+
+
+def test_decision3_map_in_every_record(tmp_path):
+    out_dir = tmp_path / "o"
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [CASE]), "--out-dir", str(out_dir)], deps=_deps([]), out=lambda s: None)
+    r = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))[0]
+    assert r["decision3_map"] == {str(k): v for k, v in CK.DECISION3_MAP.items()}

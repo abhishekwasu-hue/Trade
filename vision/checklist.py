@@ -19,8 +19,8 @@ ITEMS = {                                                                  # n �
         "Top-down (section 1): weekly state, daily / parent trend (degree-aware Dow, protected origin intact); the trade is on the trend "
         "side (or an approved exception)."),
     2: ("area", "Area",
-        "Area (section 2): price is at a valid, alive band — base / flip / 2-touch band at its 3rd touch / sharp-fall or sharp-rise "
-        "point / confluence — not a magnet, not dead beyond the far swing."),
+        "Area (section 2): price is at a valid band — base / flip / band drawn from 2 touches at its 3rd touch / sharp-fall or "
+        "sharp-rise point / confluence — not a magnet, not really broken."),
     3: ("trendline", "Trendline / channel",
         "Trendlines / channels (section 3): any line used is valid (2 wick touches, spacing, no close through, slope) and respected; "
         "NA when no line is relevant."),
@@ -37,6 +37,11 @@ ITEMS = {                                                                  # n �
         "Never-list (section 7): no breakout / chase, no counter-trend entry, no minor-swing break alone, no unclosed candle, no price "
         "outside the facts. pass = nothing on the never-list is violated."),
 }
+# R0-1 (Abhi): checklist items = Method Pack sections 1–7; decision3 च्या ①–⑥ शी ठरीव जोड (design §12.2 तक्ता) — प्रत्येक V4 निकालात.
+DECISION3_MAP = {1: "①", 2: "②", 3: "⑤", 4: "③", 5: "④ + ⑥a2", 6: "⑥ c0 + c1", 7: "H1–H3"}
+DECISION3_MAP_TEXT = {1: "① Daily trend (Dow, Weekly parent)", 2: "② 1H levels / areas (incl. sloping-line areas)",
+                      3: "⑤ K inner trendline", 4: "③ K open (pullback / correction)", 5: "④ power shift + ⑥ a2 zone study",
+                      6: "⑥ commitment c0 + LTF CHoCH c1", 7: "hard rules H1–H3 (trend side, no breakout, known prices)"}
 STATUSES = ("pass", "fail", "NA")
 VERDICTS = ("agree", "partly", "disagree")
 ICON = {"pass": "✅", "fail": "❌", "NA": "—"}
@@ -268,7 +273,8 @@ def telegram_lines(res, title=None):
         lines.append(f"Verdict: {data['verdict']} · pack {data['pack_version']}")
         order = {"fail": 0, "NA": 1, "pass": 2}
         for it in sorted(data["items"], key=lambda i: (order[i["status"]], i["n"])):
-            lines.append(f"{ICON[it['status']]} {it['n']}. {ITEMS[it['n']][1]}: {html.escape(it['evidence'])}"[:240])
+            lines.append(f"{ICON[it['status']]} {it['n']}. {ITEMS[it['n']][1]} ({DECISION3_MAP[it['n']]}): "
+                         f"{html.escape(it['evidence'])}"[:240])
     lines = lines[:TELEGRAM_MAX_LINES - 1] + [FOOTER]
     return lines
 

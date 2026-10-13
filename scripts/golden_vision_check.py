@@ -9,6 +9,10 @@ Abhi VPS वर चालवतो (VPS चा key; sandbox मध्ये क�
     python3 scripts/golden_vision_check.py --dry-run --data NIFTY=/root/trade-data/upstox/NIFTY_1m_….csv.gz
     python3 scripts/golden_vision_check.py --cases /root/trade-data/golden_v4/cases.json --out-dir /root/trade-data/review/golden_v4/run1
 
+FUT volume नेहमी (Abhi R0-5): `--futures SYMBOL=PATH` / case "futures" / default collector `data/oe_futures_5min_<SYM>.parquet` +
+trade-data exports; decision bar ला नाही ⇒ facts मध्ये स्पष्ट "volume NA" (कधीच शांत pass नाही). Item 6 साठी code मोजतो: decision bar FUT
+volume ÷ आधीच्या 8 bars ची सरासरी आणि 5M CHoCH by close (output मध्ये). Case status "confirmed…" नसेल (draft — pending Abhi ✅) ⇒ सगळे
+निकाल "PROVISIONAL". प्रत्येक निकालात item ⇒ decision3 ①–⑥ map (R0-1).
 --dry-run: सगळं बनवतो (frames, anonymise, charts, prompt), API call नाही; token + $ अंदाज छापतो. खर्च vision_usage मध्ये
 (task golden_v4, pack_version); आजचा Vision खर्च + अंदाज > दैनिक budget ($2) ⇒ थांबतो.
 """
@@ -34,6 +38,90 @@ SCALE = 0.731                                                              # क
 TICK = 0.05
 LTF_SESSIONS = 2                                                           # 5M: चालू + मागचा session (design §5)
 MAX_TOKENS = 8000
+VOL_WINDOW = 8                                                             # decision bar volume ÷ आधीच्या इतक्या 15M bars ची सरासरी
+TRADE_DATA = os.environ.get("TRADE_DATA_DIR") or next(
+    (p for p in (os.path.join(os.path.dirname(ROOT), "trade-data"), os.path.expanduser("~/trade-data")) if os.path.isdir(p)),
+    os.path.join(os.path.dirname(ROOT), "trade-data"))                     # VPS: /root/trade-data
+
+
+def is_confirmed(case):
+    """Abhi ✅ ने निश्चित झालेली अपेक्षाच "confirmed"; बाकी (draft — pending Abhi ✅ / template) ⇒ निकाल provisional."""
+    return str(case.get("status") or "").strip().lower().startswith("confirmed")
+
+
+def default_futures(symbol):
+    """FUT 5M volume चे default स्रोत: VPS collector (data/oe_futures_5min_<SYM>.parquet) + trade-data futures* / live_export exports."""
+    import glob
+    sym = str(symbol).upper()
+    return ([os.path.join(ROOT, "data", f"oe_futures_5min_{sym}.parquet")]
+            + sorted(glob.glob(os.path.join(TRADE_DATA, "futures*", f"oe_futures_5min_{sym}*.parquet")))
+            + sorted(glob.glob(os.path.join(TRADE_DATA, "live_export", "*", f"oe_futures_5min_{sym}.parquet"))))
+
+
+def load_futures(paths):
+    """FUT 5M files ⇒ near-month (legs2.volume) [timestamp, volume, expiry], holdout rows नाहीत. काहीच नाही ⇒ None (volume NA)."""
+    from legs2 import volume as LV
+    parts = []
+    for p in paths or []:
+        if p and os.path.exists(p):
+            x = pd.read_parquet(p) if str(p).endswith(".parquet") else pd.read_csv(p)
+            t = pd.to_datetime(x["timestamp"])
+            x["timestamp"] = t.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None) if t.dt.tz is not None else t
+            parts.append(x)
+    if not parts:
+        return None
+    raw = pd.concat(parts, ignore_index=True)
+    raw = raw.drop_duplicates(["timestamp"] + (["contract"] if "contract" in raw.columns else []), keep="last")
+    nm = LV.near_month(raw)
+    return nm if len(nm) else None
+
+
+def attach_volume(frames, fut, asof):
+    """15M / 5M frames ला FUT volume column (asof नंतर संपणारी row कधीच नाही). fut None ⇒ frames तसेच."""
+    if fut is None or not len(fut):
+        return frames
+    from legs2 import volume as LV
+    f = fut[pd.to_datetime(fut["timestamp"]) + pd.Timedelta(minutes=5) <= pd.Timestamp(asof)]
+    out = dict(frames)
+    if "15M" in out and len(out["15M"]):
+        out["15M"] = out["15M"].assign(volume=LV.bar_volume(out["15M"], f))
+    if "5M" in out and len(out["5M"]):
+        v5 = dict(zip(pd.to_datetime(f["timestamp"]), f["volume"].astype(float)))
+        out["5M"] = out["5M"].assign(volume=[v5.get(pd.Timestamp(x), float("nan")) for x in out["5M"]["timestamp"]])
+    return out
+
+
+def measure(frames, case, area=None):
+    """Item 6 साठी code ने मोजलेलं (खऱ्या frames वर, Vision ला नाही; Abhi च्या तुलनेसाठी): decision bar FUT volume ÷ आधीच्या VOL_WINDOW
+    15M bars ची सरासरी, आणि 5M CHoCH by close (decision3.method.ltf_choch; study = decision session, area दिल्यास पहिला स्पर्श)."""
+    import numpy as np
+    from decision3 import method as M
+    out = {"fut_volume": "NA", "ltf_choch": "NA"}
+    f15 = frames.get("15M")
+    if f15 is not None and len(f15) and "volume" in f15.columns:
+        v = f15["volume"].to_numpy(float)
+        prev = v[-1 - VOL_WINDOW:-1]
+        prev = prev[~np.isnan(prev)]
+        if not np.isnan(v[-1]) and len(prev) and prev.mean() > 0:
+            out["fut_volume"] = f"{v[-1] / prev.mean():.2f}x the previous {len(prev)} 15M bars' average"
+    f5 = frames.get("5M")
+    if f5 is not None and len(f5) and f15 is not None and len(f15):
+        d = -1 if str(case.get("direction", "")).upper().startswith("BEAR") else 1
+        t_end = pd.Timestamp(f15["bar_end"].iloc[-1]) if "bar_end" in f15.columns else pd.Timestamp(f15["timestamp"].iloc[-1]) +             pd.Timedelta(minutes=15)
+        days = sorted(pd.to_datetime(f5["timestamp"]).dt.normalize().unique())
+        t_start = pd.Timestamp(days[-1]) + pd.Timedelta(hours=9, minutes=15)
+        if area:
+            day5 = f5[pd.to_datetime(f5["timestamp"]) >= t_start]
+            hit = day5[(day5["low"] <= max(area)) & (day5["high"] >= min(area))]
+            if len(hit):
+                t_start = pd.Timestamp(hit["timestamp"].iloc[0])
+        t_ctx = pd.Timestamp(days[0]) + pd.Timedelta(hours=9, minutes=15)
+        try:
+            ch = M.ltf_choch(M.ltf_frame(f5, 5, "5M"), d, t_ctx, t_start, t_end)
+            out["ltf_choch"] = ch.get("line") or ("done" if ch.get("done") else "not done")
+        except Exception as exc:                                           # noqa: BLE001
+            out["ltf_choch"] = f"NA ({type(exc).__name__})"
+    return out
 
 
 def is_todo(v):
@@ -133,16 +221,23 @@ def anonymise(frames, asof, shift_weeks=SHIFT_WEEKS, scale=SCALE, tick=TICK):
 
 
 # ----------------------------------------------------------------------------------------------------------- facts / images
+def _vol(x):
+    return "NA" if x is None or x != x else f"{int(round(float(x)))}"
+
+
 def ohlc_table(df, tf):
     from vision_led import blind_test as BT
-    if tf in ("W", "D", "1H", "15M"):
+    has_vol = "volume" in df.columns and tf in ("15M", "5M")
+    if tf in ("W", "D", "1H") or (tf == "15M" and not has_vol):
         return BT.ohlc_table(df, tf)
-    rows = [f"{pd.Timestamp(r.timestamp):%Y-%m-%d %H:%M},{r.open:.2f},{r.high:.2f},{r.low:.2f},{r.close:.2f}" for r in df.itertuples()]
-    return ("5M (bar start; current + previous session) OHLC — time,open,high,low,close; last row = last CLOSED bar:\n"
+    rows = [f"{pd.Timestamp(r.timestamp):%Y-%m-%d %H:%M},{r.open:.2f},{r.high:.2f},{r.low:.2f},{r.close:.2f}"
+            + (f",{_vol(r.volume)}" if has_vol else "") for r in df.itertuples()]
+    label = {"15M": "15M (bar start IST)", "5M": "5M (bar start; current + previous session)"}[tf]
+    return (f"{label} OHLC — time,open,high,low,close{',fut_volume' if has_vol else ''}; last row = last CLOSED bar:\n"
             + "\n".join(rows))
 
 
-def facts_text(case, fr, asof, area=None, short_note=False):
+def facts_text(case, fr, asof, area=None, short_note=False, volume_na=True):
     """Anonymised facts (symbol लपवलेला). area = anonymised [lo, hi] किंवा None."""
     bear = str(case["direction"]).upper().startswith("BEAR")
     dec = fr["15M"]["timestamp"].iloc[-1] if len(fr["15M"]) else asof
@@ -152,7 +247,10 @@ def facts_text(case, fr, asof, area=None, short_note=False):
             "decision bar (treated as the commitment candle).",
             (f"Proposed area: {area[0]:,.2f}-{area[1]:,.2f} ({'supply' if bear else 'demand'})." if area else
              "Proposed area: not given — judge the area from the charts and tables."),
-            "Futures volume: not provided in this run — judge the volume part of items 5 and 6 as NA."]
+            ("Futures volume: NA — no futures data for this session. Items 5 and 6: the volume part is NA; never pass an item on "
+             "volume." if volume_na else
+             "Futures volume: the 15M and 5M tables carry the near-month futures volume (fut_volume; NA where missing). Judge "
+             "volume for items 5 and 6 from it.")]
     if short_note:
         head.append("History note: older data is not provided (data policy), so the Weekly / Daily history is short; judge item 1 on "
                     "what is shown and say so in its evidence.")
@@ -175,16 +273,17 @@ def compare(data, expected):
         e = exp.get(str(n), "TODO")
         g = items.get(n)
         got = g["status"] if g else None
-        mark = "TODO" if is_todo(e) else ("✔" if got == e else "✘")
+        mark = "TODO" if is_todo(e) else ("—" if got is None else ("✔" if got == e else "✘"))   # — = Vision ने उत्तर दिलं नाही (dry-run)
         rows.append((n, name, got, g["evidence"] if g else "", e, mark))
     ev = exp.get("verdict", "TODO")
     gv = (data or {}).get("verdict")
-    return rows, ("verdict", gv, ev, "TODO" if is_todo(ev) else ("✔" if gv == ev else "✘"))
+    return rows, ("verdict", gv, ev, "TODO" if is_todo(ev) else ("—" if gv is None else ("✔" if gv == ev else "✘")))
 
 
 def print_case(rec, out=print):
-    out(f"\n=== {rec['id']} · {rec['status']} ===")
-    for k in ("why", "error", "warnings"):
+    prov = " · PROVISIONAL (expected answers are a draft — pending Abhi ✅)" if rec.get("provisional") else ""
+    out(f"\n=== {rec['id']} · {rec['status']}{prov} ===")
+    for k in ("why", "error", "warnings", "volume", "measured"):
         if rec.get(k):
             out(f"  {k}: {rec[k]}")
     if rec.get("estimate"):
@@ -195,16 +294,18 @@ def print_case(rec, out=print):
             f"${e['usd_cached']:.4f}" + ("" if rec.get("model") else "  (model not set ⇒ conservative unknown-model prices)"))
     if rec.get("cost_usd"):
         out(f"  cost: ${rec['cost_usd']:.4f}")
+    tag = " (provisional)" if rec.get("provisional") else ""
     for n, name, got, ev, exp, mark in rec.get("rows") or []:
-        out(f"  {n}. {name:<20} got {got or '-':<5} expected {exp:<5} {mark}  {ev[:110]}")
+        out(f"  {n}. {name:<20} [{CK.DECISION3_MAP[n]}] got {got or '-':<5} expected {exp:<5} {mark}{tag}  {ev[:100]}")
     if rec.get("verdict_row"):
         _, gv, ev, mark = rec["verdict_row"]
-        out(f"  verdict: got {gv} · expected {ev} {mark}")
+        out(f"  verdict: got {gv} · expected {ev} {mark}{tag}")
 
 
 # ----------------------------------------------------------------------------------------------------------- run
 def run_case(case, a, deps, state):
-    rec = {"id": case.get("id"), "status": None, "model": a.model}
+    rec = {"id": case.get("id"), "status": None, "model": a.model, "provisional": not is_confirmed(case),
+           "case_status": case.get("status"), "decision3_map": dict(CK.DECISION3_MAP)}
     for k in ("decision", "direction"):
         if is_todo(case.get(k)) or not case.get(k):
             rec.update(status="SKIPPED_TODO", why=f"{k} TODO (Abhi)")
@@ -230,13 +331,24 @@ def run_case(case, a, deps, state):
     short = short_history(fr)
     if short:
         rec["warnings"] = [f"item 1 unreliable: short {'/'.join(short)} history (data policy)"]
+    fpaths = a.futures.get(case["symbol"]) or ([] if is_todo(case.get("futures")) else list(case.get("futures") or [])) \
+        or default_futures(case["symbol"])
+    fr = attach_volume(fr, deps["load_fut"](fpaths), asof)
+    f15 = fr.get("15M")
+    vol_ok = bool(f15 is not None and len(f15) and "volume" in f15.columns and f15["volume"].iloc[-1] == f15["volume"].iloc[-1])
+    rec["volume"] = "FUT" if vol_ok else "NA"
+    if not vol_ok:
+        rec.setdefault("warnings", []).append("futures volume NA for the decision bar — items 5 / 6 volume part NA (not a pass)")
+    real_area = case.get("area") if isinstance(case.get("area"), (list, tuple)) and len(case.get("area")) == 2 else None
+    rec["measured"] = measure(fr, case, real_area)
     afr, aasof = anonymise(fr, asof, a.shift_weeks, a.scale, a.tick)
     _, price = anonymiser(a.shift_weeks, a.scale, a.tick)
     area = case.get("area")
     area = [price(area[0]), price(area[1])] if isinstance(area, (list, tuple)) and len(area) == 2 else None
-    facts = facts_text(case, afr, aasof, area, short_note=bool(short))
+    facts = facts_text(case, afr, aasof, area, short_note=bool(short), volume_na=not vol_ok)
     images = deps["render"](afr, aasof)
-    known = CK.facts_prices(afr, area)
+    anchors = CK.facts_prices(afr, area)                                   # OHLC + area फक्त (volume / counts नाहीत)
+    known = CK.facts_prices(anchors, facts)
     pack = deps["pack"]()
     rec.update(n_images=len(images), pack_version=pack[1], estimate=V4.estimate(len(images), facts, pack[0], a.model, a.max_tokens))
     if a.out_dir:
@@ -254,7 +366,7 @@ def run_case(case, a, deps, state):
     if not ok:
         rec.update(status="NOT_RUN_BUDGET", why=why)
         return rec
-    res = V4.audit(deps["client"](), images, facts, a.model, known, pack=pack, on_usage=deps["on_usage"](pack[1]),
+    res = V4.audit(deps["client"](), images, facts, a.model, known, pack=pack, on_usage=deps["on_usage"](pack[1]), anchors=anchors,
                    effort=os.environ.get("VISION_SIGNAL_EFFORT") or None, thinking=os.environ.get("VISION_SIGNAL_THINKING") or None)
     d, m, n = state["by_task"].get(TASK, (0.0, 0.0, 0))
     c = res.get("cost_usd") or 0.0
@@ -274,7 +386,7 @@ def default_deps(a):
         from vision import store as VS
         return lambda u, c: VS.add_usage(TASK, a.model, u, c, pack_version=ver)
     return {"guard": guard, "load": load_data, "frames": build_frames, "render": render_images, "pack": MP.load, "client": client,
-            "on_usage": on_usage}
+            "on_usage": on_usage, "load_fut": load_futures}
 
 
 def _data_arg(items):
@@ -292,6 +404,8 @@ def main(argv=None, deps=None, out=print):
     ap.add_argument("--cases", default=CASES_DEFAULT, help="cases JSON (Abhi चा भरलेला copy private trade-data मध्ये ठेवता येतो)")
     ap.add_argument("--only", nargs="+", help="फक्त हे case ids")
     ap.add_argument("--data", nargs="+", default=[], help="SYMBOL=PATH[,PATH] (case मधल्या data ऐवजी)")
+    ap.add_argument("--futures", nargs="+", default=[], help="SYMBOL=PATH[,PATH] FUT 5M volume (default: collector "
+                    "data/oe_futures_5min_<SYM>.parquet + trade-data futures* / live_export); नसेल ⇒ volume NA (स्पष्ट)")
     ap.add_argument("--out-dir", default=None, help="charts / facts इथे (private trade-data); नसेल ⇒ disk वर काही नाही")
     ap.add_argument("--model", default=None, help="default VISION_SIGNAL_MODEL env")
     ap.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
@@ -302,6 +416,7 @@ def main(argv=None, deps=None, out=print):
     a = ap.parse_args(argv)
     a.model = a.model or os.environ.get("VISION_SIGNAL_MODEL") or None
     a.data = _data_arg(a.data)
+    a.futures = _data_arg(a.futures)
     deps = {**default_deps(a), **(deps or {})}
     state = {"by_task": {}, "g": None, "today": None}
     if not a.dry_run:
@@ -332,7 +447,8 @@ def main(argv=None, deps=None, out=print):
         json.dump(recs, open(os.path.join(a.out_dir, "summary.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
     tot = sum((r.get("estimate") or {}).get("usd_uncached", 0.0) for r in recs)
     spent = sum(r.get("cost_usd") or 0.0 for r in recs)
-    out(f"\nCases {len(recs)} · est. total (uncached) ${tot:.4f}" + ("" if a.dry_run else f" · spent ${spent:.4f}"))
+    out(f"\nCases {len(recs)} · est. total (uncached) ${tot:.4f}" + ("" if a.dry_run else f" · spent ${spent:.4f}")
+        + (" · results PROVISIONAL until Abhi ✅ confirms the expected answers" if any(r.get("provisional") for r in recs) else ""))
     return 0
 
 

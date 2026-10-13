@@ -35,7 +35,7 @@ def test_sections_in_abhi_order_and_kb_sources():
     text, _ = MP.build_from_repo()
     heads = re.findall(r"^## (\d)\. ", text, re.M)
     assert heads == [str(n) for n in range(9)]
-    for must in ("2 touches", "3rd touch", "role flip", "confluence", "far swing", "zigzag", "expanded", "running flat", "triangle",
+    for must in ("2 touches", "3rd touch", "role flip", "confluence", "zigzag", "expanded", "running flat", "triangle",
                  "W-X-Y", "handover", "sweep", "CHoCH by close", "dominant commitment", "KP1", "Never a breakout"):
         assert must.lower() in text.lower(), must
     assert "KB source:" in text
@@ -95,3 +95,28 @@ def test_generator_check_mode(tmp_path, capsys):
     out.write_text("stale", encoding="utf-8")
     assert G.main(["--check", "--out", str(out)]) == 1
     assert "tokens" in capsys.readouterr().out
+
+
+
+def test_pack_has_two_touch_rule_and_no_three_touch_minimum():
+    """TA3 / TA3b (Abhi): line आणि horizontal band 2 touches वरून काढले जातात; 3रा touch = trade location; ≥ 3 = established."""
+    text, _ = MP.build_from_repo()
+    low = text.lower()
+    assert "a trendline is drawn from 2 touches" in low and "horizontal s/r band — drawn from 2 touches" in low
+    assert "3rd touch is the trade location" in low and "established" in low
+    assert "never a minimum" in low
+    for bad in ("≥ 3 touches", ">= 3 touches", "at least 3 touches", "at least three touches", "minimum of 3 touches",
+                "need 3 touches", "needs 3 touches", "requires 3 touches"):
+        assert bad not in low, bad
+
+
+def test_pending_abhi_text_is_excluded_from_pack():
+    text, _ = MP.build_from_repo()
+    assert "far swing" not in text.lower() and "pending" not in text.lower()          # R0-2: "zone dead" अजून मंजूर नाही
+    kb = open(MP.KB_PATH, encoding="utf-8").read()
+    assert "<!-- pending:abhi -->" in kb and "dead only beyond the far swing" in kb.replace("\n  ", " ")
+    pend = "\n<!-- pending:abhi -->\n- secret pending rule\n<!-- /pending -->"
+    t1, _ = MP.build(_kb().replace("- text 2", "- text 2" + pend), "")
+    assert "secret pending rule" not in t1 and "text 2" in t1
+    with pytest.raises(MP.PackError):                                      # उघडा pending marker
+        MP.build(_kb().replace("- text 2", "- text 2\n<!-- pending:abhi -->\n- x"), "")

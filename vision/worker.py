@@ -460,8 +460,9 @@ def maybe_v4(row, png, meta, g, model, path=None, send_text=None, client_factory
                            on_usage=lambda u, c: VS.add_usage(V4.TASK, model, u, c, sid, path, pack_version=pack[1]),
                            effort=VC.env_effort("signal"), thinking=VC.env_thinking("signal"))
         VS.update(sid, path, pack_version=res.get("pack_version"),
-                  v4_json=json.dumps({k: res.get(k) for k in ("status", "data", "error", "usage", "cost_usd", "latency_ms", "pack_version",
-                                                               "prompt_version")}, ensure_ascii=False, default=str))
+                  v4_json=json.dumps({**{k: res.get(k) for k in ("status", "data", "error", "usage", "cost_usd", "latency_ms",
+                                                                 "pack_version", "prompt_version")},
+                                      "decision3_map": dict(CK.DECISION3_MAP)}, ensure_ascii=False, default=str))
         if ok and row.get("mode") != "shadow" and send_text is not None:
             title = f"{row.get('symbol')} {row.get('direction')} {pd.Timestamp(row['signal_ts']):%H:%M}"
             send_text(CK.telegram_text(res, title))
