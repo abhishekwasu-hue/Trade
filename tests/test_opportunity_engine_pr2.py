@@ -203,6 +203,15 @@ def test_prepare_timeline_attaches_15m_shift_events_per_day():
 
 
 # ---- collector / resolver --------------------------------------------------------------------------------------------------------------------
+REAL_FETCH_INTRADAY = COL.fetch_intraday
+
+
+@pytest.fixture(autouse=True)
+def _no_intraday_network(monkeypatch):
+    """Collector चा intraday call कधीच network वर जाऊ नये (डीफॉल्ट: आजचे bars नाहीत; खालचे tests स्वतः बदलतात)."""
+    monkeypatch.setattr(COL, "fetch_intraday", lambda tok, key, interval="5minute": {"status": 200, "candles": [], "error": None})
+
+
 def test_collector_stores_futures_and_index_and_is_idempotent(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: ({"trading_symbol": f"{s} FUT 30 OCT 26", "instrument_key": f"NSE_FO|{s}",
@@ -244,6 +253,106 @@ def test_collector_also_stores_next_contract_keyed_by_contract(tmp_path, monkeyp
     assert pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path)))["volume"].sum() == 100
     r2 = COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 2), data_dir=str(tmp_path), log=lambda s: None)
     assert r2["all_added"] == 0
+
+
+AFTER_CLOSE = pd.Timestamp("2026-10-13 16:10")
+
+
+def _intraday_fixture(monkeypatch, today_bars, fail=False):
+    """Historical (काल पर्यंत) + intraday (आज) — दोन्ही mocked HTTP. रिटर्न calls list."""
+    import datetime
+    calls = []
+    front = {"trading_symbol": "NIFTY FUT 27 OCT 26", "instrument_key": "NSE_FO|A", "expiry": "2026-10-27", "lot_size": 65}
+    nxt = {"trading_symbol": "NIFTY FUT 24 NOV 26", "instrument_key": "NSE_FO|B", "expiry": "2026-11-24", "lot_size": 65}
+    monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: (front, None))
+    monkeypatch.setattr(COL.V, "resolve_futures_chain", lambda tok, s, today, n=2: ([front, nxt], None))
+
+    def fetch(tok, key, interval, start, end, expired=False):
+        calls.append(("hist", key, end))
+        assert end < datetime.date(2026, 10, 13)                          # history = काल पर्यंत (आजचे bars intraday मधून)
+        return {"status": 200, "candles": [["2026-10-12T15:25:00+05:30", 1, 2, 0.5, 1.5, 10, 9]], "error": None}
+
+    def _get(url, tok, params=None, **kw):
+        calls.append(("intra", url))
+        assert "/intraday/" in url and url.endswith("/minutes/5")
+        if fail:
+            return 500, None, "boom"
+        return 200, {"data": {"candles": [[f"2026-10-13T09:{m:02d}:00+05:30", 1, 2, 0.5, 1.5, 100 + m, 9] for m in today_bars]}}, None
+    monkeypatch.setattr(COL.V, "fetch_candles_window", fetch)
+    monkeypatch.setattr(COL.V, "_get", _get)
+    monkeypatch.setattr(COL, "fetch_intraday", REAL_FETCH_INTRADAY)       # खरं function, पण V._get mocked (network नाही)
+    return calls
+
+
+def test_collector_saves_same_day_bars_from_intraday_and_rerun_is_idempotent(tmp_path, monkeypatch):
+    """Upstox historical minute candles दिवस D चे D+1 सकाळीच येतात ⇒ 16:10 run ला आजचे bars intraday मधून (front, next, index)."""
+    import datetime
+    today = datetime.date(2026, 10, 13)
+    calls = _intraday_fixture(monkeypatch, today_bars=[15, 20, 25])
+    logs = []
+    r = COL.collect_symbol("tok", "NIFTY", 5, today, data_dir=str(tmp_path), log=logs.append, now=AFTER_CLOSE)
+    assert "error" not in r and r["futures_today"] == 3 and r["futures_added"] == 4 and r["index_added"] == 4
+    intra = [c[1] for c in calls if c[0] == "intra"]
+    assert len(intra) == 3 and any("NSE_FO%7CB" in u for u in intra) and any("NSE_INDEX" in u for u in intra)
+    fut = pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path)))
+    assert (fut["timestamp"].dt.date == today).sum() == 3 and fut["contract"].eq("NIFTY FUT 27 OCT 26").all()
+    allf = pd.read_parquet(tmp_path / "oe_futures_5min_NIFTY_all.parquet")
+    assert len(allf) == 8 and set(allf["contract"]) == {"NIFTY FUT 27 OCT 26", "NIFTY FUT 24 NOV 26"}
+    r2 = COL.collect_symbol("tok", "NIFTY", 5, today, data_dir=str(tmp_path), log=lambda s: None, now=AFTER_CLOSE)
+    assert r2["futures_added"] == 0 and r2["index_added"] == 0 and r2["all_added"] == 0
+    assert len(pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path)))) == 4
+
+
+def test_collector_never_stores_a_forming_intraday_bar(tmp_path, monkeypatch):
+    """12:00 चा run: 11:55 bar अजून चालू (11:55 + 5 > 12:00) ⇒ साठवत नाही; नंतरचा run (12:10) तो पूर्ण volume सह साठवतो (merge आधीचा row
+    ठेवतो, म्हणून अर्धवट bar साठवला असता तर चुकीचा volume कायम राहिला असता)."""
+    import datetime
+    today = datetime.date(2026, 10, 13)
+    state = {"bars": [("11:50", 500), ("11:55", 37)]}
+    front = {"trading_symbol": "NIFTY FUT 27 OCT 26", "instrument_key": "NSE_FO|A", "expiry": "2026-10-27", "lot_size": 65}
+    monkeypatch.setattr(COL.V, "resolve_front_future", lambda tok, s, today: (front, None))
+    monkeypatch.setattr(COL.V, "resolve_futures_chain", lambda tok, s, today, n=2: ([front], None))
+    monkeypatch.setattr(COL.V, "fetch_candles_window", lambda *a, **k: {"status": 200, "candles": [], "error": None})
+    monkeypatch.setattr(COL, "fetch_intraday", lambda tok, key, interval="5minute": {"status": 200, "error": None, "candles": [
+        [f"2026-10-13T{hm}:00+05:30", 1, 2, 0.5, 1.5, v, 9] for hm, v in state["bars"]]})
+    COL.collect_symbol("tok", "NIFTY", 5, today, data_dir=str(tmp_path), log=lambda s: None, now=pd.Timestamp("2026-10-13 12:00"))
+    fut = pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path)))
+    assert list(fut["timestamp"].dt.strftime("%H:%M")) == ["11:50"]
+    state["bars"] = [("11:50", 500), ("11:55", 812), ("12:00", 640), ("12:05", 12)]
+    COL.collect_symbol("tok", "NIFTY", 5, today, data_dir=str(tmp_path), log=lambda s: None, now=pd.Timestamp("2026-10-13 12:10"))
+    fut = pd.read_parquet(COL.store_path("futures", "NIFTY", str(tmp_path))).set_index("timestamp")
+    assert list(fut.index.strftime("%H:%M")) == ["11:50", "11:55", "12:00"] and fut.loc["2026-10-13 11:55", "volume"] == 812
+    assert COL.closed_only([["2026-10-13T12:05:00+05:30"]], pd.Timestamp("2026-10-13 12:10")) == []
+    assert COL.closed_only([["2026-10-13T12:05:00+05:30"]], pd.Timestamp("2026-10-13 12:11")) == [["2026-10-13T12:05:00+05:30"]]
+
+
+def test_collector_intraday_failure_still_saves_history_and_logs(tmp_path, monkeypatch):
+    import datetime
+    _intraday_fixture(monkeypatch, today_bars=[15], fail=True)
+    logs = []
+    r = COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 13), data_dir=str(tmp_path), log=logs.append, now=AFTER_CLOSE)
+    assert "error" not in r and r["futures_added"] == 1 and r["index_added"] == 1 and r["futures_today"] == 0
+    assert "HTTP 500" in r["futures_intraday_error"] and "index_intraday_error" in r
+    assert any("futures_intraday_error" in line for line in logs)
+
+
+def test_collector_sensex_uses_bse_and_is_skipped_when_unresolved(tmp_path, monkeypatch):
+    import datetime
+    seen = {}
+
+    def resolve(tok, s, today, exchange="NSE"):
+        seen[s] = exchange
+        return None, "no rows"
+    monkeypatch.setattr(COL.V, "resolve_front_future", resolve)
+    logs = []
+    r = COL.collect_symbol("tok", "SENSEX", 5, datetime.date(2026, 10, 13), data_dir=str(tmp_path), log=logs.append)
+    assert seen["SENSEX"] == "BSE" and "skipped" in r and "error" not in r and any("SENSEX" in line for line in logs)
+    nifty = COL.collect_symbol("tok", "NIFTY", 5, datetime.date(2026, 10, 13), data_dir=str(tmp_path), log=logs.append)
+    assert seen["NIFTY"] == "NSE" and "error" in nifty                     # NIFTY/BANKNIFTY चं अपयश अजूनही error
+    # main(): SENSEX skip ⇒ exit code 0 (बाकी symbols चालू)
+    monkeypatch.setattr(COL.cloud_db, "get_effective_upstox_token", lambda t: "tok")
+    monkeypatch.setattr(COL, "collect_symbol", lambda tok, s, d, today, data_dir: {"symbol": s, "skipped": "x"} if s == "SENSEX" else {"symbol": s})
+    assert COL.main(["--data-dir", str(tmp_path)]) == 0
 
 
 def test_resolver_returns_front_future_per_symbol(monkeypatch):

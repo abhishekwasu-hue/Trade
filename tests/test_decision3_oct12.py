@@ -210,27 +210,46 @@ def test_futures_volume_15m_is_sum_of_0915_anchored_5m_bins():
     assert v[3] == fut["volume"].iloc[9:11].sum()                                             # live: फक्त आलेले bins (spot bar बंद नसेल तर वापर नाही)
 
 
+class FakeFeed:
+    """engine3_live.UpstoxFeed सारखा (index / futures); `today` नोंदवतो. D नंतरचे rows (D+1 / intraday) मुद्दाम देतो ⇒ lookahead तपासणी."""
+
+    def __init__(self, src, today, calls, fut=None):
+        self.src, self.today, self.calls, self.fut = src, today, calls, fut
+
+    def index(self, sym, interval, days):
+        self.calls.append((sym, interval, self.today))
+        df = self.src[interval][["timestamp", "open", "high", "low", "close"]].assign(volume=0.0, oi=0.0)
+        later = df.tail(1).assign(timestamp=pd.Timestamp(self.today) + pd.Timedelta(hours=9, minutes=15), close=1e9)
+        return pd.concat([df, later], ignore_index=True)
+
+    def futures(self, sym, interval, days):
+        import engine3_live as E3L
+        if self.fut is None:
+            raise E3L.EngineDataError("no FUT")
+        self.calls.append((sym, "fut", self.today))
+        return self.fut
+
+
+def _feed_src(end_day):
+    m15, fut, ltf = F.build(end_day=end_day)
+    daily = m15.assign(d=m15["timestamp"].dt.normalize()).groupby("d").agg(
+        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index().rename(columns={"d": "timestamp"})
+    return {"15minute": m15, "5minute": ltf, "day": daily}, fut
+
+
 def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_path):
-    """VPS मार्ग (`--source upstox`): Upstox fetch (mock — इथे fixture) ⇒ per-bar निर्णय + dry-run approval संदेश + --json; engine_signal
-    store ला लिहीत नाही; token कधीच छापत नाही."""
+    """VPS मार्ग (`--source upstox`): live engine चाच feed (engine3_live.UpstoxFeed — इथे fake) ⇒ per-bar निर्णय + dry-run approval
+    संदेश + --json; engine_signal store ला लिहीत नाही; token कधीच छापत नाही."""
     import json
     import cloud_db
     import engine_signal as ES
-    import upstox_api as UA
     from scripts import replay_day as RD
-    m15, fut, ltf = F.build(end_day="2030-03-04")
-    daily = m15.assign(d=m15["timestamp"].dt.normalize()).groupby("d").agg(
-        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last")).reset_index().rename(columns={"d": "timestamp"})
-    src = {"15minute": m15, "5minute": ltf, "day": daily}
+    src, fut = _feed_src("2030-03-04")
     calls = []
-
-    def fake_fetch(tok, sym, interval, frm, to):
-        calls.append((sym, interval))
-        return src[interval][["timestamp", "open", "high", "low", "close"]].assign(volume=0.0, oi=0.0)
 
     def no_write(*a, **k):
         raise AssertionError("store write")
-    monkeypatch.setattr(UA, "fetch_candles_date_range", fake_fetch)
+    monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src, today, calls))
     monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "SECRET-TOKEN")
     monkeypatch.setattr(ES, "save", no_write)
     fpath = tmp_path / "fut.parquet"
@@ -242,3 +261,75 @@ def test_replay_day_upstox_source_is_read_only_and_writes_json(monkeypatch, tmp_
     j = json.loads(out.read_text(encoding="utf-8"))
     assert j["setup"]["side"] == "bear call" and j["setup"]["rr"] >= 3 and j["bars"][0]["ts"].endswith("09:15:00")
     assert "Vision skipped: dry run" in j["approval"]["message"] and "SECRET" not in out.read_text(encoding="utf-8")
+
+
+def test_replay_upstox_loader_uses_feed_with_today_d_plus_1_and_no_lookahead(monkeypatch, tmp_path):
+    """Past day D: feed today = D+1 (history मध्ये D समाविष्ट), D च्या close नंतरचा एकही row नाही (fake feed D+1 चे rows देतो);
+    FUT file मध्ये D नाही ⇒ feed.futures (≤ D); NIFTY holdout filter कायम."""
+    import argparse
+    import datetime
+    import cloud_db
+    from scripts import replay_day as RD
+    src, fut = _feed_src("2030-03-04")
+    fut_late = pd.concat([fut, fut.tail(1).assign(timestamp=pd.Timestamp("2030-03-05 09:15"))], ignore_index=True)
+    calls = []
+    monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src, today, calls, fut=fut_late))
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: None)
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "tok")
+    a = argparse.Namespace(symbol="NIFTY", m15_days=90, ltf_days=10, daily_days=3650, futures=str(tmp_path / "missing.parquet"))
+    day = pd.Timestamp("2030-03-04")
+    m15, m1, ltf, f5, daily = RD.load_upstox(a, day)
+    assert {c[2] for c in calls} == {datetime.date(2030, 3, 5)} and any(c[1] == "fut" for c in calls)
+    for df in (m15, ltf, f5, daily):
+        assert pd.to_datetime(df["timestamp"]).max() < day + pd.Timedelta(hours=15, minutes=30)
+    assert (pd.to_datetime(m15["timestamp"]).dt.normalize() == day).sum() == 25 and m15["close"].max() < 1e9
+    assert pd.to_datetime(daily["timestamp"]).max() == day
+    # holdout: NIFTY sealed rows feed मधून आले तरी 15M input मध्ये नाहीत
+    from elliott import data_policy as DP
+    sealed = pd.Timestamp("2025-01-06 09:15")
+    assert DP.period(sealed) == "HOLDOUT"
+    src2 = dict(src)
+    src2["15minute"] = pd.concat([src["15minute"].head(1).assign(timestamp=sealed), src["15minute"]], ignore_index=True)
+    monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src2, today, [], fut=fut))
+    m15b = RD.load_upstox(a, day)[0]
+    assert sealed not in set(pd.to_datetime(m15b["timestamp"]))
+
+
+def test_replay_futures_all_file_picks_days_front_month_not_alphabetical():
+    """`_all` file (timestamp + contract): प्रत्येक दिवशी त्या दिवसाचा front month (near_month नियम) — alphabetical पहिला ("24 NOV" <
+    "27 OCT") नाही; expiry नंतर पुढचा contract."""
+    from scripts import replay_day as RD
+    rows = []
+    for d in ("2026-10-13", "2026-10-28"):
+        for c, v in (("NIFTY FUT 24 NOV 26", 40.0), ("NIFTY FUT 27 OCT 26", 100.0)):
+            rows.append({"timestamp": pd.Timestamp(f"{d} 09:15"), "volume": v, "contract": c})
+    allf = pd.DataFrame(rows)
+    got = RD.until_close(allf, pd.Timestamp("2026-10-13"))
+    assert list(got["contract"]) == ["NIFTY FUT 27 OCT 26"] and list(got["volume"]) == [100.0]
+    got = RD.until_close(allf, pd.Timestamp("2026-10-28"))
+    assert list(got["contract"]) == ["NIFTY FUT 27 OCT 26", "NIFTY FUT 24 NOV 26"] and list(got["volume"]) == [100.0, 40.0]
+    one = pd.DataFrame({"timestamp": [pd.Timestamp("2026-10-13 09:15")] * 2, "volume": [1.0, 2.0]})
+    assert len(RD.until_close(one, pd.Timestamp("2026-10-13"))) == 1
+
+
+def test_replay_feed_fallback_warns_with_contract_and_flags_expiry_day(monkeypatch, tmp_path, capsys):
+    """Collector file मध्ये दिवस D नाही ⇒ feed चा contract: ⚠️ ओळ त्याचं नाव सांगते; D = त्या दिवसाच्या front month चा expiry (feed ने
+    D+1 चा पुढचा contract घेतला) ⇒ "different contract … c0 volume unreliable"."""
+    import argparse
+    import cloud_db
+    from scripts import replay_day as RD
+    src, fut = _feed_src("2030-03-04")
+    nxt = fut.assign(contract="NIFTY FUT 25 APR 30", expiry=pd.Timestamp("2030-04-25"))
+    monkeypatch.setattr(RD, "_feed", lambda tok, today: FakeFeed(src, today, [], fut=nxt))
+    monkeypatch.setattr(cloud_db, "get_effective_upstox_token", lambda *_a, **_k: "tok")
+    a = argparse.Namespace(symbol="NIFTY", m15_days=90, ltf_days=10, daily_days=3650, futures=str(tmp_path / "missing.parquet"))
+    day = pd.Timestamp("2030-03-04")
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: {"trading_symbol": "NIFTY FUT 25 APR 30", "expiry": "2030-04-25"})
+    RD.load_upstox(a, day)
+    out = capsys.readouterr().out
+    assert "⚠️ FUT 5M volume" in out and "contract NIFTY FUT 25 APR 30" in out and "unreliable" not in out
+    monkeypatch.setattr(RD, "_front_on", lambda tok, sym, d: {"trading_symbol": "NIFTY FUT 04 MAR 30", "expiry": "2030-03-04"})
+    RD.load_upstox(a, day)
+    out = capsys.readouterr().out
+    assert ("contract NIFTY FUT 25 APR 30" in out and "volume from a different contract than the day's front month (NIFTY FUT 04 MAR 30)"
+            in out and "c0 volume unreliable" in out)

@@ -9,6 +9,8 @@ collect_index_futures_volume.py
     data/oe_futures_5min_<SYMBOL>.parquet   (timestamp, open, high, low, close, volume, oi, contract)
     data/oe_index_5min_<SYMBOL>.parquet     (timestamp, open, high, low, close, volume, oi)
     data/oe_futures_5min_<SYMBOL>_all.parquet  (front + पुढचा contract, key = timestamp + contract — Chart Reader K10.3 चा volume roll)
+Upstox v3 historical minute candles दिवस D चे फक्त D+1 सकाळी (~07:00 IST) येतात ⇒ history (start … काल) + आजचे bars intraday
+endpoint मधून (engine3_live सारखे). Intraday अपयश ⇒ history तरीही साठवली जाते, अपयश log मध्ये. SENSEX (BSE FUT) सापडला नाही ⇒ skip.
 एकाच timestamp चा आधी साठवलेला row ठेवला जातो (rollover नंतर पुढच्या contract चे जुने दिवस front-month चा डेटा बदलत नाहीत).
 
 चालवणे (VPS वर, रोज बाजार बंद झाल्यावर; मागचे 5 दिवस पुन्हा मागवले जातात म्हणून एखादा दिवस चुकला तरी भरून निघतो):
@@ -19,16 +21,19 @@ import argparse
 import datetime
 import os
 import sys
+import urllib.parse
 
 import pandas as pd
 
 import cloud_db
 import verify_opportunity_data_availability as V
-from config import get_ist_today
+from config import get_ist_now, get_ist_today
+from engine3_live import FUT_EXCHANGE
 from opportunity_engine.volume import candles_to_df, merge_store, merge_store_by_contract
 from upstox_api import SYMBOL_INSTRUMENT_KEYS
 
 DATA_DIR = "data"
+OPTIONAL_SYMBOLS = {"SENSEX"}          # BSE front-month FUT सापडला नाही ⇒ log + skip (बाकी symbols चालू; exit code वर परिणाम नाही)
 
 
 def store_path(kind, symbol, data_dir=DATA_DIR):
@@ -51,57 +56,115 @@ def _merge_all(path, new):
     return len(merged) - (0 if old is None else len(old)), len(merged)
 
 
-def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print):
-    """एका symbol चे futures + index 5M candles. रिटर्न dict (rows, नवीन rows, volume>0 %, contract) किंवा error."""
-    info, err = V.resolve_front_future(token, symbol, today)
+def fetch_intraday(token, instrument_key, interval="5minute"):
+    """आजचे (चालू दिवसाचे) candles — Upstox v3 intraday endpoint (engine3_live.UpstoxFeed._series प्रमाणेच). Historical minute candles
+    दिवस D चे फक्त D+1 सकाळी (~07:00 IST) येतात, म्हणून 16:10 च्या run ला आजचे bars इथूनच. रिटर्न {"status", "candles", "error"}."""
+    unit, val = V._V3_UNITS[interval]
+    enc = urllib.parse.quote(instrument_key, safe="")
+    status, body, error = V._get(f"{V.BASE_V3}/intraday/{enc}/{unit}/{val}", token)
+    candles = (((body or {}).get("data") or {}).get("candles") or []) if status == 200 else []
+    return {"status": status, "candles": candles, "error": error}
+
+
+SETTLE = pd.Timedelta(minutes=1)        # bar बंद झाल्यावर Upstox candle अंतिम होईपर्यंतचा अवधी (12:00 चा run 11:55 bar घेत नाही)
+
+
+def closed_only(candles, now, minutes=5, settle=SETTLE):
+    """फक्त बंद झालेले bars (start + minutes + settle ≤ now, IST naive). चालू (अर्धवट) bar कधीच साठवायचा नाही — merge आधीचा row ठेवतो,
+    म्हणजे अर्धवट volume कायमचा अडकला असता."""
+    lim = pd.Timestamp(now)
+    if lim.tzinfo is not None:
+        lim = lim.tz_convert("Asia/Kolkata").tz_localize(None)
+    keep = []
+    for c in candles or []:
+        ts = pd.Timestamp(str(c[0]))
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("Asia/Kolkata").tz_localize(None)
+        if ts + pd.Timedelta(minutes=minutes) + settle <= lim:
+            keep.append(c)
+    return keep
+
+
+def _history_plus_today(token, key, start, today, out, tag, now=None):
+    """History (start … काल) + आजचे intraday. History अपयश ⇒ (None, error). Intraday अपयश ⇒ फक्त नोंद (`out[tag + "_intraday_error"]`),
+    history तरीही परत. to_date = काल: to_date = आज दिल्यास Upstox कालचा पूर्ण दिवस वगळतो (engine3_live, 13 Oct)."""
+    hist = V.fetch_candles_window(token, key, "5minute", start, today - datetime.timedelta(days=1))
+    if hist["status"] != 200:
+        return None, f"HTTP {hist['status']} {hist['error']}"
+    candles = list(hist["candles"])
+    try:
+        intra = fetch_intraday(token, key)
+    except Exception as exc:                                             # noqa: BLE001 — intraday अपयश ⇒ history तरीही साठवायची
+        intra = {"status": None, "candles": [], "error": f"{type(exc).__name__}: {exc}"}
+    if intra["status"] == 200:
+        candles.extend(closed_only(intra["candles"], now if now is not None else get_ist_now()))
+    else:
+        out[f"{tag}_intraday_error"] = f"HTTP {intra['status']} {str(intra['error'])[:120]}"
+    return candles, None
+
+
+def collect_symbol(token, symbol, days, today, data_dir=DATA_DIR, log=print, now=None):
+    """एका symbol चे futures + index 5M candles (history + आजचे intraday). रिटर्न dict (rows, नवीन rows, volume>0 %, contract) किंवा error.
+    OPTIONAL_SYMBOLS (SENSEX) चा front-month FUT सापडला नाही ⇒ `skipped` (error नाही; बाकी symbols वर परिणाम नाही)."""
+    symbol = symbol.upper()
+    now = now if now is not None else get_ist_now()                       # intraday: फक्त now पर्यंत बंद झालेले bars
+    exch = FUT_EXCHANGE.get(symbol, "NSE")
+    kw = {"exchange": exch} if exch != "NSE" else {}
+    info, err = V.resolve_front_future(token, symbol, today, **kw)
     if info is None:
+        if symbol in OPTIONAL_SYMBOLS:
+            log(f"  ℹ️ {symbol}: {exch} front-month futures सापडला नाही — skip ({err})")
+            return {"symbol": symbol, "skipped": f"{exch} futures contract सापडला नाही: {err}"}
         return {"symbol": symbol, "error": f"futures contract सापडला नाही: {err}"}
     start = today - datetime.timedelta(days=days)
     out = {"symbol": symbol, "contract": info["trading_symbol"], "instrument_key": info["instrument_key"], "expiry": info["expiry"]}
-    fut = V.fetch_candles_window(token, info["instrument_key"], "5minute", start, today)
-    if fut["status"] != 200:
-        out["error"] = f"futures candles: HTTP {fut['status']} {fut['error']}"
+    fut, ferr = _history_plus_today(token, info["instrument_key"], start, today, out, "futures", now=now)
+    if ferr:
+        out["error"] = f"futures candles: {ferr}"
         return out
-    fdf = candles_to_df(fut["candles"], contract=info["trading_symbol"])
+    fdf = candles_to_df(fut, contract=info["trading_symbol"])
     added, total = _merge_into(store_path("futures", symbol, data_dir), fdf)
     out.update({"futures_rows": len(fdf), "futures_added": added, "futures_total": total,
+                "futures_today": int((fdf["timestamp"].dt.date == today).sum()) if len(fdf) else 0,
                 "volume_nonzero_pct": round(100.0 * (fdf["volume"] > 0).mean(), 1) if len(fdf) else 0.0})
     # पुढचा contract सुद्धा (K10.3 roll) — `_all` store मध्ये, front सोबत. अपयश ⇒ फक्त नोंद (front data वर परिणाम नाही).
     try:
         parts = [fdf]
-        chain, cerr = V.resolve_futures_chain(token, symbol, today, n=2)
+        chain, cerr = V.resolve_futures_chain(token, symbol, today, n=2, **kw)
         for nxt in [c for c in chain if c["instrument_key"] != info["instrument_key"]]:
-            nf = V.fetch_candles_window(token, nxt["instrument_key"], "5minute", start, today)
-            if nf["status"] == 200:
-                parts.append(candles_to_df(nf["candles"], contract=nxt["trading_symbol"]))
+            nf, nerr = _history_plus_today(token, nxt["instrument_key"], start, today, out, "next", now=now)
+            if nerr is None:
+                parts.append(candles_to_df(nf, contract=nxt["trading_symbol"]))
                 out["next_contract"] = nxt["trading_symbol"]
             else:
-                out["next_error"] = f"HTTP {nf['status']} {nf['error']}"
+                out["next_error"] = nerr
         if cerr:
             out["next_error"] = cerr
-        added_all, total_all = _merge_all(os.path.join(data_dir, f"oe_futures_5min_{symbol.upper()}_all.parquet"),
+        added_all, total_all = _merge_all(os.path.join(data_dir, f"oe_futures_5min_{symbol}_all.parquet"),
                                           pd.concat([p for p in parts if len(p)], ignore_index=True) if any(len(p) for p in parts) else fdf)
         out.update({"all_added": added_all, "all_total": total_all})
     except Exception as exc:                                             # नवीन पायरीचं अपयश ⇒ फक्त नोंद; front / index collection चालू राहते
         out["next_error"] = f"{type(exc).__name__}: {exc}"
-    idx_key = SYMBOL_INSTRUMENT_KEYS.get(symbol.upper())
+    idx_key = SYMBOL_INSTRUMENT_KEYS.get(symbol)
     if idx_key:
-        ix = V.fetch_candles_window(token, idx_key, "5minute", start, today)
-        if ix["status"] == 200:
-            idf = candles_to_df(ix["candles"])
+        ix, ierr = _history_plus_today(token, idx_key, start, today, out, "index", now=now)
+        if ierr is None:
+            idf = candles_to_df(ix)
             added_i, total_i = _merge_into(store_path("index", symbol, data_dir), idf)
             out.update({"index_rows": len(idf), "index_added": added_i, "index_total": total_i})
         else:
-            out["index_error"] = f"HTTP {ix['status']} {ix['error']}"
-    log(f"  {symbol}: {out.get('contract')} | futures +{out.get('futures_added', 0)} (एकूण {out.get('futures_total', 0)}, volume>0 {out.get('volume_nonzero_pct')}%)"
-        f" | index +{out.get('index_added', 0)} (एकूण {out.get('index_total', 0)})")
+            out["index_error"] = ierr
+    log(f"  {symbol}: {out.get('contract')} | futures +{out.get('futures_added', 0)} (एकूण {out.get('futures_total', 0)}, आजचे bars "
+        f"{out.get('futures_today', 0)}, volume>0 {out.get('volume_nonzero_pct')}%) | index +{out.get('index_added', 0)} (एकूण {out.get('index_total', 0)})")
+    for k in sorted(k for k in out if k.endswith("_error")):
+        log(f"  ⚠️ {symbol} {k}: {out[k]}")
     return out
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--token", default=None, help="Upstox Access Token (न दिल्यास Supabase मधून)")
-    parser.add_argument("--symbols", default="NIFTY,BANKNIFTY")
+    parser.add_argument("--symbols", default="NIFTY,BANKNIFTY,SENSEX")
     parser.add_argument("--days", type=int, default=5, help="इतके मागचे दिवस पुन्हा मागवा (overlap; डीफॉल्ट 5)")
     parser.add_argument("--data-dir", default=DATA_DIR)
     args = parser.parse_args(argv)

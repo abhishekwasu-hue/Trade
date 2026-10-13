@@ -35,7 +35,8 @@ NOTE_EN = [
     ("impulse origin close ने तुटला", lambda n: "impulse origin broken on close, parent held - same-degree correction => cap B"),
     ("origin धोक्यात", lambda n: "correction near protected origin (origin at risk) => new entries weak"),
     ("continuation evidence", lambda n: n),
-    ("impulse mature", lambda n: "impulse mature - near Q44 target => new entries weak"),
+    ("impulse mature", lambda n: ("daily move is mature - near Q44 target (evidence only - grade at most B)" if "पुरावा फक्त" in n
+                                  else "impulse mature - near Q44 target, structure not intact => cap weak")),
     ("Daily वाचता येत नाही", lambda n: "Daily unreadable => Weekly fallback (cap B)"),
 ]
 WHY_OPEN = {"उलट D1 swing confirm": "opposite D1 swing confirmed", "trade-बाजूच्या level मध्ये": "inside trade-side level"}
