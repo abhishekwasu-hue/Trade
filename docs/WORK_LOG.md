@@ -2426,3 +2426,24 @@ FUT volume, live V4 चालू करायचा का).
   overlay chart (`data/visual_audit/<audit_date>/<SYM>_<tf>_overlay.png`) with its own summary line as caption (`send_review_charts`).
   Missing file ⇒ skipped; a send error never fails the audit. No extra API call, no cost change. Test: `test_review_charts_sent_after_summary_with_their_line`.
 
+
+## 2026-10-13 · R1 (b) — facts package: एकच dossier function (design §3 / §13 R1b; branch `claude/r1b-facts-dossier`)
+
+**काय केलं (AI call नाही; owner code हलवला / बदलला नाही; frozen engines, decision2, bots, executors, settings defaults, Telegram — हात नाही):**
+- नवं `facts/dossier.py`: `build_dossier(symbol, bars_by_tf, fut_bars_by_tf=None, as_of=None, cfg=None)` ⇒ JSON-safe dict, 13 sections, प्रत्येक
+  concept साठी §3 तक्त्यातला **एकच owner** (swings2 + pivots, reader2, decision3.levels / trendlines2.two_touch via facts.validity, patterns2,
+  decision3.method, opportunity_engine.volume, decision3.method.ltf_choch, decision3.liquidity, vision.gap_context, vision.context, rsi2).
+  फक्त facts + पुरावा (किंमती, bar वेळा, संख्या); grade / score / vote / conviction keys आणि commitment मजकुरातला "· grade X" काढले.
+- No look-ahead: प्रत्येक frame आधीच कापला — फक्त close वेळ ≤ as_of असलेले bars (15M / 5M / 1m / FUT 5M, Daily 15:30, 1H = 15M मधले पूर्ण तास).
+- Owner अपयशी / data नाही ⇒ section `{"status": "NA", "reason": …}` (silent pass नाही); FUT volume नाही ⇒ volume NA; shared swings2 / legs2
+  build अपयशी ⇒ त्यावर अवलंबून सगळे sections NA (कारणासह); holdout guard कधीच NA होत नाही (raise).
+- `facts/README.md`: concept → प्रत्यक्ष call केलेलं owner function → output keys तक्ता + उघडे प्रश्न.
+**Tests (`tests/test_facts_dossier.py`, 17):** synthetic 12-Oct fixture (`tests/oct12_fixture.py`, 1m / 5M त्याच 15M मधून) — सगळे sections, JSON,
+grade/score नाही, future bars कापले / बदलले तरी dossier तसाच (mid-bar as_of सुद्धा), NA paths (FUT नाही / जुळत नाही, 5M / 1m नाही, owner
+exception, swings2 build exception, लहान इतिहास ⇒ structure NA), 15M आवश्यक, holdout raise, bear वि. mirror आकार; module boundary (frozen /
+AI / broker import नाही, तारीख नाही). Private data (R1a fixture, नसेल तर skip): 9 Oct close ला dossier मध्ये R1a ची 30 Sep → 6 Oct FUT रेघ
+(तोच projected zone), ≈ 22,667 supply band आणि त्यांचा confluence.
+**Synthetic वर NA:** काही नाही (सगळे इनपुट दिले तर 13 / 13 OK). R1a real FUT 15M (फक्त 30 Sep पासून, 8 sessions) वर structure NA (σ ला 20
+sessions हवेत), 5M / 1m न दिल्याने ltf_choch / gaps / context NA.
+**Data:** synthetic (2030 तारखा) + R1a चा private fixture (CONTAMINATED / ILLUSTRATION, holdout filter); Upstox / paid API नाही.
+**उघडे:** OPEN_QUESTIONS R1b-1 … R1b-5 (trend चे अनेक हिशोब, PDH/PDL दोनदा, FUT roll, owner नसलेले VIX / FII-DII / cues, swings2 warm-up).
