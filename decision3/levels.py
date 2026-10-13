@@ -527,11 +527,12 @@ class Levels:
         return out
 
     def active(self, t, trend, band=None):
-        """trade-बाजूची जवळची levels (≤ active_levels_max). DOWN ⇒ किंमतीवरचे / किंमत ज्यात आहे ते resistance; UP ⇒ खालचे support;
+        """Abhi B2 watch-list: trade-बाजूचे सगळे पुढचे valid zones, जवळचे पहिले (UP / DOWN ≤ watch_levels_max; RANGE ≤ active_levels_max);
+        BROKEN / DEAD नाहीत ⇒ zone तुटला की पुढचा आधीच यादीत (reset नाही). जुनी व्याख्या: trade-बाजूची जवळची levels. DOWN ⇒ किंमतीवरचे / किंमत ज्यात आहे ते resistance; UP ⇒ खालचे support;
         RANGE ⇒ खालचा support + वरचा resistance (प्रत्येकी जवळचा). Daily पट्टा (Q27) दिला असेल ⇒ फक्त कडांची बाजू: support पट्ट्याच्या
         खालच्या अर्ध्यात, resistance वरच्या अर्ध्यात (मध्य = पट्ट्याचा मध्य; Abhi: bull put खालच्या कडेला, bear call वरच्या)."""
         snap = [x for x in self.snapshot(t) if x.get("state") != FL.BROKEN]   # K4 (Abhi): BROKEN (far swing पार नाही) ⇒ trade location नाही
-        m = int(self.s["active_levels_max"])
+        m = int(self.s["active_levels_max"]) if trend == "RANGE" else int(self.s.get("watch_levels_max", self.s["active_levels_max"]))
         sup = sorted([x for x in snap if x["role"] == SUP and not x["above"]], key=lambda x: x["dist"])
         res = sorted([x for x in snap if x["role"] == RES and not x["below"]], key=lambda x: x["dist"])
         if trend == "DOWN":

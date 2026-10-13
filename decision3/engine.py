@@ -173,13 +173,20 @@ class V22:
             if st.counter == "correction":                                  # A1: impulse origin तुटला (parent टिकला) ⇒ आधीसारखाच कमाल B (Q23)
                 ctx["cap"] = M.cap_min(ctx["cap"], "B")
                 ctx["notes"].append("impulse origin close ने तुटला, parent टिकला — same-degree correction चालू ⇒ कमाल B")
-            if st.origin_risk:                                              # B1 (Abhi): correction origin जवळ ⇒ conviction weak
+            gates = bool(self.s.get("wave_gates", False))                   # Abhi B1 (patience): wave / maturity फक्त context
+            ctx["wave_context"] = {"mature": bool(st.mature), "maturity_targets": list(st.targets), "origin_risk": bool(st.origin_risk),
+                                   "wave": st.wave, "corr_label": st.corr_label}
+            if st.origin_risk and gates:                                    # legacy (wave_gates): correction origin जवळ ⇒ conviction weak
                 ctx["cap"] = M.cap_min(ctx["cap"], "weak")
                 ctx["notes"].append("correction protected origin जवळ (origin धोक्यात) ⇒ नवे entries weak")
+            elif st.origin_risk:
+                ctx["notes"].append("context: correction protected origin जवळ (gate नाही — Abhi B1)")
             if getattr(st, "corr_zone", None) is not None and st.phase == "impulse" and st.counter in (None, "pullback"):                  # ABC_FIX rule 3: correction sharp zone मध्ये संपली + trend
                 ctx["evidence"] = list(st.evidence)                         # दिशेने close ⇒ continuation पुरावा (cap नाही; नोंद — Q51)
                 ctx["notes"].append("continuation evidence: " + st.evidence[-1] if st.evidence else "continuation evidence")
-            if st.mature and mature_intact(st):                             # Abhi (12 Oct): maturity = पुरावा फक्त — रचना अखंड ⇒ gate नाही,
+            if st.mature and not gates:                                     # Abhi B1: maturity / projections = context only — no cap, no step-down
+                ctx["notes"].append("context: impulse mature — target जवळ (Q44) (gate / downgrade नाही — Abhi B1)")
+            elif st.mature and mature_intact(st):                           # legacy (wave_gates): maturity — रचना अखंड ⇒ gate नाही,
                 ctx["step_down"] = True                                     # grade फक्त एक पायरी खाली (A ⇒ B; B तसाच) — `step_down_conv`
                 ctx["notes"].append("impulse mature — target जवळ (Q44) · पुरावा फक्त: protected अखंड, उलट impulse नाही ⇒ grade एक पायरी खाली")
             elif st.mature:
@@ -274,12 +281,13 @@ class V22:
         zr = FL.zone_read(A, self.levels.ts.to_numpy(), arm, t, d, lvl, self.s, rsi=rsi)   # in-zone study facts (bars arm … t)
         last3 = range(max(0, t - 2), t + 1)
         ev = {"level_star": lvl["sweeps"] >= 1 or any(b in lvl["births"] for b in ("b", "c", "d", "a:D")), "fresh": lvl["fresh"],
-              "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1, "second_attempt": k["legs"] >= 2,
+              "power_shift": ok4, "trap_sweep": bool(items.get("sweep")) or lvl["sweeps"] >= 1,
+              "second_attempt": (k["legs"] >= 2) if self.s.get("wave_gates", False) else None,   # Abhi B1: leg count = context (NA)
               "commit_strong": bool(cm.get("big_body") and cm.get("big_range")) if cm else False,   # signal-bar ताकद (आकार); grade वेगळी
               "engulf": bool(cm.get("engulf")) if cm else False,
               "rsi_div": True if rsi.get("found") else None, "volume_low": None, "pattern": None,   # RSI: evidence + only
               "against_bodies": any((A["close"][i] - A["open"][i]) * d < 0 and M.candle_read(A, i, self.s)["big_body"] for i in last3),
-              "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
+              "fourth_attempt": (k["legs"] > int(self.s["max_attempts"])) if self.s.get("wave_gates", False) else None,
               "tl_break": True if (tl and tl["broken"]) else None,           # ⑤ "(असल्यास) तुटली ⇒ grade +": अखंड / नाही ⇒ NA (वजा नाही)
               "tl_confluence": True if "tl" in lvl["births"] else None}      # फक्त नोंद (वजन नाही ⇒ grade वाढत नाही; D12-6)
         sw, tr = LQ.sweeps_and_traps(self, t, int(self.s["liquidity_lookback"]))                           # §7: pullback ने pool (bear call ⇒ buy-side वर, bull put ⇒ खाली) sweep?
@@ -293,7 +301,10 @@ class V22:
         if rng:
             chk["⑥"] = [False, "§5.3 range अवस्था (overlap + doji) ⇒ entry नाही"]
             return M_WAIT, chk, extra
-        if k["legs"] > int(self.s["max_attempts"]):
+        gates = bool(self.s.get("wave_gates", False))
+        extra["wave_context"] = {"legs": k["legs"], "second_attempt": k["legs"] >= 2, "fourth_attempt": k["legs"] > int(self.s["max_attempts"]),
+                                 "note": "context only (Abhi B1)" if not gates else "legacy wave gates on"}
+        if k["legs"] > int(self.s["max_attempts"]) and gates:          # legacy only: Abhi B1 — leg / wave count never blocks
             return M_NO, chk, {**extra, "why": "चौथा+ प्रयत्न ⇒ reversal शक्यता (§5.1)"}
         if not ok6:
             return M_WAIT, chk, {**extra, "why": f"commitment ची वाट ({why6})"}
@@ -303,7 +314,7 @@ class V22:
             extra["risk"] = rk
             if not ok7:
                 return M_NO, chk, {**extra, "why": "R:R < 3 ⇒ trade नाही"}
-        conv1 = M.first_leg_cap(conv, k["legs"], lvl["sweeps"], ev["commit_strong"])
+        conv1 = M.first_leg_cap(conv, k["legs"], lvl["sweeps"], ev["commit_strong"]) if gates else conv   # Abhi B1: legacy only
         if conv1 != conv:
             conv = extra["conviction"] = conv1
             if conv == "weak":
@@ -354,7 +365,9 @@ class V22:
                 "engine_version": "v22", "daily_trend": st.trend, "trend_used": trend, "trend_resolution": ctx["resolution"],
                 "weekly_trend": ctx["weekly"], "daily_phase": st.phase, "daily_leg": st.wave, "corr_label": st.corr_label,
                 "mature": st.mature, "maturity_targets": list(st.targets), "trend_notes": ctx["notes"], "trend_cap": ctx["cap"],
-                "mature_step_down": bool(ctx.get("step_down")),
+                "mature_step_down": bool(ctx.get("step_down")), "wave_context": {**(ctx.get("wave_context") or {}),
+                                                                                 **(best.get("wave_context") or {})},
+                "watch_list": [{k: a.get(k) for k in ("id", "role", "lo", "hi", "state", "dist", "births")} for a in act],
                 "trade_side": list(DD.trade_side(trend)),
                 "protected": None if st.protected is None else {"kind": st.protected.kind, "price": st.protected.price,
                                                                   "day": ("before window" if self.sealed and self.sealed(st.protected.day)

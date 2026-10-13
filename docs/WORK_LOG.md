@@ -2540,3 +2540,12 @@ legs owner वि. reader2 gate).
   setup (B). 13 Oct: high 22,721.95 < 22,731.8 ⇒ BROKEN, bear call नाही ✅. RSI फरक: आधीच्या अहवालात V22 1m शिवाय (D0 pivot वेगळा) —
   live सुद्धा 1m शिवाय (Z-1o). OPEN_QUESTIONS Z-1h … Z-1o.
 - **Abhi B (patience):** wave / maturity फक्त context; watch-list = trend दिशेचे सगळे पुढचे zones armed; loss सामान्य, lock-out default OFF. Pack 4d96843284c6.
+
+## Abhi B (trader's patience): wave gates काढले, watch-list, loss lock-out तपास
+
+- B1: maturity cap / step-down, origin_risk cap, §5.1 पहिला-पाय cap, चौथा-प्रयत्न no_trade, leg-count पुरावा ⇒ फक्त context (`wave_gates` = False;
+  `wave_context` row मध्ये). Level gate `mature_cap` ⇒ None; pre-open / 15:45: "daily move: mature (context only)".
+- B2: `watch_levels_max` 3 — trend दिशेचे पुढचे सगळे zones armed (जवळचे पहिले), zone तुटला ⇒ पुढचा आधीच armed; row मध्ये `watch_list`.
+- B3: engine मार्गात loss lock-out नाही; SRv2 own-path cooldowns / kill switch फक्त यादी (OPEN_QUESTIONS B3).
+- Re-run (1m सह): 12 Oct — default data problem (FUT 7 sessions), what-if ⇒ 10:15 bear call (B); 13 Oct — bear call नाही, BROKEN,
+  पुढचे zones 22,715–22,732 / 22,778–22,809 armed; 29 Sep — FUT नाही + किंमतीजवळ 1H zone नाही ⇒ wait. Z-1k = DEAD (Abhi).

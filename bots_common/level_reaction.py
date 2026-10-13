@@ -112,21 +112,16 @@ def trend_context(daily_df, today=None, s=None):
 
 
 def mature_cap(ctx):
-    """Daily move mature असेल तर engine चा cap — engine च्याच नियमाने (`decision3.engine.mature_intact`, ctx चे phase / counter):
-    रचना अखंड ⇒ "B" (पुरावा फक्त, grade एक पायरी खाली: A ⇒ B); अखंड नाही ⇒ "weak" (engine cap). Mature नाही ⇒ None."""
-    if not (ctx or {}).get("mature"):
-        return None
-    from types import SimpleNamespace
-    from decision3.engine import mature_intact
-    return "B" if mature_intact(SimpleNamespace(phase=ctx.get("phase"), counter=ctx.get("counter"))) else "weak"
+    """Abhi B1 (trader's patience, 13 Oct final): maturity / wave count = context only ⇒ never a grade cap. Always None (kept for
+    callers; the old engine cap B / weak was removed — `decision3` setting `wave_gates` = True only for old tests / what-if)."""
+    return None
 
 
 def mature_words(ctx):
-    """Telegram (pre-open / 15:45) साठी: "evidence only — grade at most B" किंवा "structure not intact — grade at most weak". None ⇒ mature नाही."""
-    cap = mature_cap(ctx)
-    if cap is None:
+    """Telegram (pre-open / 15:45) साठी एकच context ओळ: "mature (context only)". Mature नाही ⇒ None."""
+    if not (ctx or {}).get("mature"):
         return None
-    return "evidence only — grade at most B" if cap == "B" else "structure not intact — grade at most weak"
+    return "mature (context only)"
 
 
 def context_from_state(st, s=None, asof=None):

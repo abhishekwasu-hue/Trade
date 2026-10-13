@@ -27,7 +27,12 @@ DEFAULTS = {
     "level_degree": 2,                       # swings2 degree = 1H trend-degree (D2)
     "level_min_width_sigma": 0.15,           # पट्ट्याची किमान रुंदी = σ_1H × हे
     "liquidity_eq_sigma": 0.15,              # equal highs / lows = σ_1H च्या इतक्या अपूर्णांकात
-    "active_levels_max": 2,                  # trade-बाजूची जवळची levels
+    "active_levels_max": 2,                  # RANGE: प्रत्येक कडेचे जवळचे levels (UP / DOWN साठी watch_levels_max)
+    "watch_levels_max": 3,                   # Abhi B2 (watch-list): trend दिशेचे पुढचे सगळे counter-side zones armed, जवळचे पहिले, इतके
+                                             # (KB K4 chart display: किंमतीवर / खाली कमाल 3 bands) — zone तुटला ⇒ पुढचा आधीच armed
+    "wave_gates": False,                     # Abhi B1 (trader's patience): wave count / maturity / projections फक्त context — maturity cap,
+                                             # mature step-down, origin_risk cap, §5.1 first-leg cap, 4th-attempt no-trade, leg-count पुरावा
+                                             # नाहीत. True = जुने gates (फक्त जुने tests / what-if)
     "prior_level_atr_mult": 8.0,             # Q40: window आधीचे trend-degree Daily / Weekly swings — किंमतीपासून इतक्या ATR_D आत
     "prior_level_atr_n": 14,                 # Q40: ATR_D = window आधीच्या इतक्या Daily candles चा सरासरी true range
     "accept_closes": 3,                      # पलीकडे सलग इतके closes ⇒ acceptance (flip पक्का); कमी आणि परत ⇒ sweep ★
@@ -131,6 +136,8 @@ REGISTER = {
     "prior_level_atr_n": (14, "—", "व्याख्या", "Q40: ATR_D कालावधी (सामान्य 14)"),
     "accept_closes": (3, "2/3/4", "Abhi नियम", "spec §5.4 / §7.2 / §7.7: पलीकडे 3+ closes टिकले ⇒ acceptance; नाहीतर sweep"),
     "level_death_side": ("role", "role / role0", "Abhi नियम", "Q2 / TL1 (Abhi मंजूर): spec ② (c) flip = भूमिका उलट; मृत्यू = चालू भूमिकेच्या पलीकडचा structural swing close ने तुटला"),
+    "watch_levels_max": (3, "—", "Abhi नियम", "Abhi B2 watch-list (13 Oct final) + KB K4 chart display (≤ 3 bands above / below price)"),
+    "wave_gates": (False, "False / True", "Abhi नियम", "Abhi B1: no wave prediction — wave / maturity / C = a context only; True फक्त जुने tests"),
     "level_flip_rule": ("far_swing", "far_swing / acceptance", "Abhi नियम", "KB K4 / G4 (Abhi final, Z-1): flip = पलीकडे + पलीकडचा swing पार (swing नसेल ⇒ break नंतरचा पहिला confirmed swing); नाहीतर BROKEN; flipped zone दुसऱ्यांदा ⇒ DEAD"),
     "flip_pullback_inner_degree": (1, "0 / 1", "व्याख्या", "KB G4 context (a): pullback ची रचना एक degree खालच्या pivots वर (daily_legs.classify inner_seq) — फक्त fact"),
     "flip_pullback_vol_ratio": (1.0, "—", "setting", "KB G4 context (b) 'lower FUT volume than the impulse' ⇒ ratio < 1.0 — फक्त fact, gate नाही (Abhi Z-1)"),

@@ -75,6 +75,8 @@ def test_mirror_gives_the_same_decisions():
 
 def test_maturity_is_evidence_only_on_the_oct12_case(case):
     mirror, (V, m15, fut, ltf, bars) = case
+    dflt = {t: V.decide(t) for t in bars[:6]}
+    V.s["wave_gates"] = True                                                     # Abhi 12 Oct नियम (step-down) pin — B1 ने बदलला
     base = {t: V.decide(t) for t in bars[:6]}
     V.daily = [dataclasses.replace(x, mature=True) if x.trend in ("UP", "DOWN") else x for x in V.daily]
     try:
@@ -83,7 +85,12 @@ def test_maturity_is_evidence_only_on_the_oct12_case(case):
             assert r["mature"] and r["mature_step_down"] and r["decision"] == r0["decision"]
             if r0["decision"] == "setup":
                 assert r["conviction"] == M.step_down_conv(r0["conviction"])
+        V.s["wave_gates"] = False                                                # Abhi B1 (default): maturity = context, grade unchanged
+        for t, r0 in dflt.items():
+            r = V.decide(t)
+            assert r["mature"] and not r["mature_step_down"] and (r["decision"], r["conviction"]) == (r0["decision"], r0["conviction"])
     finally:
+        V.s["wave_gates"] = False
         V.daily = E3.DD.fold(V.daily_df, V.s)
 
 

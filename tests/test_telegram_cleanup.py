@@ -332,36 +332,32 @@ def test_summary_symbol_lines_plain_words_like_abhis_example():
     txt = _section(S)
     lines = txt.splitlines()
     assert lines[0] == ("<b>NIFTY</b>: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest supply "
-                        "22,715–22,776 (1H, ≈90 pts above the high). Daily move is mature near target 22,183 (evidence only — grade at most B).")
+                        "22,715–22,776 (1H, ≈90 pts above the high). Daily move: mature (context only), near target 22,183.")
     assert lines[1].startswith("<b>BANKNIFTY</b>: no setup today. Trend UP (daily). Price reached a demand area 1 time; no entry because "
                                "the reward was too small for the risk.") and "Price traded into demand 50,800–50,900" in lines[1]
     assert lines[2] == "<b>SENSEX</b>: no data today (no trend file, bot records and day high / low not available)."
     assert not PT.has_raw_codes(txt)
 
 
-def test_maturity_wording_follows_engine_cap_b_or_weak():
-    """Maturity wording = engine चा खरा cap (`decision3.engine.mature_intact`, ctx चे phase / counter): रचना अखंड ⇒ "grade at most B";
-    अखंड नाही (उलट correction नक्की) ⇒ engine cap weak ⇒ "grade at most weak". Pre-open आणि 15:45 सारांश दोन्ही."""
-    from types import SimpleNamespace
-    from decision3 import engine as E3
+def test_maturity_is_one_context_line_and_never_a_grade_cap():
+    """Abhi B1 (trader's patience, 13 Oct final): maturity = context only — no grade cap anywhere (level gate, engine, texts). Pre-open
+    and the 15:45 summary print one context line "daily move: mature (context only)", whatever the structure."""
     P, S = _preopen(), _summary()
     weak = {**NIFTY, "counter": "correction"}
-    for c, cap in ((NIFTY, "B"), (weak, "weak")):
-        assert LR.mature_cap(c) == cap
-        assert E3.mature_intact(SimpleNamespace(phase=c.get("phase"), counter=c.get("counter"))) == (cap == "B")
-    assert LR.mature_cap({**NIFTY, "mature": False}) is None
-    assert "(daily move is mature: evidence only — grade at most B)" in P.symbol_line("NIFTY", NIFTY, "UP", 22565.0, ZONES)
-    line = P.symbol_line("NIFTY", weak, "UP", 22565.0, ZONES)
-    assert "(daily move is mature: structure not intact — grade at most weak)" in line and "grade at most B" not in line
+    for c in (NIFTY, weak):
+        assert LR.mature_cap(c) is None
+        line = P.symbol_line("NIFTY", c, "UP", 22565.0, ZONES)
+        assert "(daily move: mature (context only))" in line and "grade at most" not in line
+    assert LR.mature_cap({**NIFTY, "mature": False}) is None and LR.mature_words({**NIFTY, "mature": False}) is None
     txt = _section(S, ctx_fn=lambda s, d: {"NIFTY": weak, "BANKNIFTY": BANK}.get(s))
-    assert "Daily move is mature near target 22,183 (structure not intact — grade at most weak)." in txt.splitlines()[0]
+    assert "Daily move: mature (context only), near target 22,183." in txt.splitlines()[0] and "grade at most" not in txt
 
 
 def test_summary_partial_data_says_so():
     S = _summary()
     txt = _section(S, range_fn=lambda s, d: None, rows_fn=lambda s, d: (_ for _ in ()).throw(RuntimeError("db down")))
     nifty = txt.splitlines()[0]
-    assert "bot records not available" in nifty and "Day high / low not available" in nifty and "Daily move is mature" in nifty
+    assert "bot records not available" in nifty and "Day high / low not available" in nifty and "Daily move: mature (context only)" in nifty
 
 
 def test_summary_one_message_headline_decisions_pnl_details(monkeypatch):

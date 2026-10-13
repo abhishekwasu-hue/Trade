@@ -292,7 +292,7 @@ def test_end_to_end_flipped_zone_in_zone_study_decides_and_context_never_gates(a
     assert rows                                                            # the G4 path is really exercised through decide()
     for r in rows:
         assert r["checklist"]["G4"][0] is None and "not a gate" in r["checklist"]["G4"][1]   # context, never a gate
-        assert r["decision"] in ("setup", "wait") and r["flip"]["state"] == FL.FLIPPED and r["flip"]["far_swing"]
+        assert "G4" not in str(r.get("why")) and r["flip"]["state"] == FL.FLIPPED and r["flip"]["far_swing"]   # outcome: ⑥ / conviction
         z = r["zone_read"]
         assert z and z["candles"] and z["summary"]["bars"] == len(z["candles"]) and "rsi_divergence" in z["summary"]
         assert r["flip_retest"]["context_only"]
@@ -552,7 +552,81 @@ def test_real_13_oct_no_bear_call_then_flip_only_past_22731(real):
     st = L.state_at(t)
     print(f"\n13 Oct: {len(ix)} bars, spot high {hi:,.2f} vs far swing {FAR_UP:,.1f} ⇒ state {st}, role {L.role_at(t)}; "
           f"trend {[r['trend_used'] for r in rows][-1]}")
+    nxt = [w for w in (rows[-1].get("watch_list") or []) if w["role"] == LV.RES]
+    print(f"13 Oct close watch-list: {[(w['lo'], w['hi'], w['state']) for w in nxt]}")
+    assert nxt and nxt[0]["lo"] > ZONE[1]                                  # Abhi B2: the next seller zones above are already armed
     if hi > FAR_UP and (m15["close"].iloc[ix] > ZONE[1]).any():
-        assert st == FL.DEAD                                               # Z-1f: second break past the far swing ⇒ dead
+        assert st == FL.DEAD                                               # Z-1f / Z-1k (Abhi: DEAD): second break past the far swing
     else:
         assert st in (FL.BROKEN, FL.FLIPPED) and L.role_at(t) == LV.RES    # not past 22,731.8 ⇒ no flip to support
+
+
+# ------------------------------------------------------------------------------------------------ Abhi A / B: in-zone study, watch-list
+def _zone_bars(kind, mirror):
+    """A seller zone 100–102 (bear call, DOWN) and 9 in-zone bars arm … t − 1, then the decision bar t. kind "absorption": the buying
+    (counter) candles grow and their volume rises inside the zone; kind "takeover": the selling candles grow on rising volume, the buying
+    candles shrink, then a dominant red candle on high volume. Mirror: prices reflected (p ⇒ 2·MID − p), bull put. Volume = already
+    slot-normalised values."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    if kind == "absorption":
+        seq = [(101.0, 100.6, 1.0), (100.6, 100.9, 0.8), (100.9, 100.5, 1.0), (100.5, 100.8, 0.8),
+               (100.8, 100.5, 1.0), (100.5, 101.4, 1.4), (101.4, 101.0, 1.0), (101.0, 101.9, 1.6), (101.9, 101.6, 1.0),
+               (101.6, 100.9, 1.0)]
+    else:
+        seq = [(101.0, 101.4, 1.2), (101.4, 101.1, 0.9), (101.1, 101.5, 1.1), (101.5, 101.2, 0.9),
+               (101.2, 101.4, 0.8), (101.4, 100.8, 1.3), (100.8, 101.0, 0.7), (101.0, 100.2, 1.5), (100.2, 100.4, 0.6),
+               (100.4, 98.6, 2.5)]
+    o = np.array([f(x[0]) for x in seq])
+    c = np.array([f(x[1]) for x in seq])
+    A = {"open": o, "close": c, "high": np.maximum(o, c) + 0.3, "low": np.minimum(o, c) - 0.3, "volume": np.array([x[2] for x in seq])}
+    lvl = {"lo": min(f(100.0), f(102.0)), "hi": max(f(100.0), f(102.0))}
+    return A, lvl, (UP if mirror else DOWN)
+
+
+def _tss(n):
+    return pd.date_range("2030-01-07 09:15", periods=n, freq="15min").to_numpy()
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_in_zone_absorption_is_no_trade(mirror):
+    A, lvl, d = _zone_bars("absorption", mirror)
+    t = len(A["close"]) - 1
+    cf = M.confirm(A, 0, t, d, lvl, {**S, "ltf_choch": False})
+    assert not cf["ok"] and cf["wait"] == M.C_ABSORB                      # counter side strengthening inside the zone ⇒ no entry
+    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, S)
+    assert z["summary"]["absorption"] is True and z["summary"]["handover"] is False
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_in_zone_seller_takeover_plus_commitment_is_a_trade(mirror):
+    A, lvl, d = _zone_bars("takeover", mirror)
+    t = len(A["close"]) - 1
+    cf = M.confirm(A, 0, t, d, lvl, {**S, "ltf_choch": False})
+    assert cf["ok"] and cf["c0"] and not cf["absorption"], cf["why"]
+    assert cf["commit"]["vol_mult"] > 1.0 and cf["commit"]["form"]
+    z = FL.zone_read(A, _tss(t + 1), 0, t, d, lvl, S)
+    assert z["summary"]["trade_side_growing"] is True and z["summary"]["absorption"] is False
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["bear", "bull"])
+def test_zone_broken_the_next_zone_is_already_armed(mirror):
+    """Abhi B2: in a downtrend every supply ahead of price is armed, nearest first; the nearest breaks (the correction extends) ⇒ the
+    next one is already on the list — no reset, no gap. Mirror: uptrend, demand zones below."""
+    f = (lambda x: 2 * MID - x) if mirror else (lambda x: float(x))
+    sw = (lambda k: ("L" if k == "H" else "H")) if mirror else (lambda k: k)
+    anchors = [(0, 140), (6, 110), (10, 130), (18, 104), (26, 118), (34, 100), (40, 106), (50, 124)]
+    closes = [float(anchors[0][1])]
+    for (b0, p0), (b1, p1) in zip(anchors[:-1], anchors[1:]):
+        closes += list(np.linspace(p0, p1, b1 - b0 + 1)[1:])
+    m = m15_from([f(c) for c in closes], wick=0.3)
+    p2 = [P(sw("L"), f(110), 6, 8), P(sw("H"), f(130), 10, 12), P(sw("L"), f(104), 18, 20), P(sw("H"), f(118), 26, 28),
+          P(sw("L"), f(100), 34, 36)]
+    lv = _levels(m, p2, [])
+    trend = "UP" if mirror else "DOWN"
+    before = [x["id"] for x in lv.active(40, trend)]
+    R1, R2 = lv.L[before[0]], lv.L[before[1]]                             # nearest first, the next one already armed
+    assert len(before) >= 2 and abs(R2.anchor - f(130)) < 1e-6 and (R1.hi < R2.lo if not mirror else R1.lo > R2.hi)
+    t_brk = next(b for b, k, _ in R1.events if k == "broken" and b > 40)
+    after = [x["id"] for x in lv.active(t_brk, trend)]
+    assert R1.id not in after and after[0] == R2.id and R1.state_at(t_brk) == FL.BROKEN
+    assert all(R2.id in [x["id"] for x in lv.active(t, trend)] for t in range(40, len(m)))   # no gap in watching R2

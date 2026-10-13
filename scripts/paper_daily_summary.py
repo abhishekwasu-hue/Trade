@@ -108,7 +108,7 @@ def nearest_area(ctx, zones, rng):
 
 def symbol_line(sym, ctx, gate, zones, rng):
     """एका symbol ची साधी ओळ (Abhi चं उदाहरण: "NIFTY: no setup today. Trend DOWN (daily), but price never reached a supply area. Nearest
-    supply 22,715–22,776 (≈150 pts above the high). Daily move is mature near target 22,183 (evidence only — grade at most B).").
+    supply 22,715–22,776 (≈150 pts above the high). Daily move: mature (context only), near target 22,183.").
     ctx = trend cache (None ⇒ नाही) · gate = LV.summarize निकाल (None ⇒ bot नोंदी वाचता आल्या नाहीत) · rng = {"high", "low"} (None ⇒ नाही)."""
     from bots_common import level_reaction as LR
     from bots_common import plain_text as PT
@@ -148,7 +148,7 @@ def symbol_line(sym, ctx, gate, zones, rng):
     if ctx is not None and ctx.get("mature"):
         from bots_common import level_reaction as LR
         tg = [float(x) for x in ctx.get("targets") or []]
-        s.append("Daily move is mature" + (f" near target {tg[0]:,.0f}" if tg else "") + f" ({LR.mature_words(ctx)}).")
+        s.append("Daily move: " + LR.mature_words(ctx) + (f", near target {tg[0]:,.0f}" if tg else "") + ".")   # Abhi B1: context only
     elif ctx is not None and ctx.get("ok") and ctx.get("origin_risk"):
         s.append("Price is near the trend's starting point, so new entries are weak.")
     return " ".join(s)
