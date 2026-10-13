@@ -244,7 +244,7 @@ all three are setups again. So TL1 (approved) and the merge rule (TL2) together 
 8,561 → 8,655, HL 7,941 → 8,316) and 2015-11-20 ×2 (engine DOWN correction candidate; rule UP — HH 8,055 → 8,335, HL 7,540 → 7,691).
 Both are bear calls inside a Daily advance that the trend-first gate (`rev`) did not catch — the same degree question as TF1 / TF4 (the
 rule's N = 5 swings vs the engine's N = 2 + Q45). 2017-01-24 ×2 pass with the `broken` flag (rule DOWN already broken by the close).
-2022-03-14 and 2022-03-28 ×3 FAIL as in §5. 2020-04-08 / 09 pass (rule DOWN) — but they are bear calls in the 2nd / 3rd week of the
+2022-03-14 and 2022-03-28 ×2 (12:00, 12:15) FAIL as in §5. 2020-04-08 / 09 pass (rule DOWN) — but they are bear calls in the 2nd / 3rd week of the
 2020-03-24 rebound; Abhi reads them (TF8).
 
 **Audit columns a–f (same script, same definitions as §8):**
