@@ -1,5 +1,6 @@
 """Visual audit (EOD): अपयशाचं कारण (कोणता chart, का), खर्च vision च्याच budget मध्ये, symbols setting (default फक्त NIFTY)."""
 import json
+import os
 
 import pandas as pd
 import pytest
@@ -132,6 +133,8 @@ def test_main_reports_failed_charts_in_error_and_records_cost(vdb, monkeypatch, 
     monkeypatch.setattr(RVA.cloud_db, "get_effective_upstox_token", lambda t: "tok")
     monkeypatch.setattr(RVA, "send_telegram_message", lambda m: sent.append(m))
     monkeypatch.setattr(RVA, "notify_error", lambda who, m: errs.append(m))
+    photos = []
+    monkeypatch.setattr(RVA, "send_review_charts", lambda d, syms, tfs, summ, since=None: photos.append((d, syms, tfs, since)))
     seen = []
 
     def fake_run(sym, *a, on_record=None, allow=None, **k):
@@ -147,6 +150,8 @@ def test_main_reports_failed_charts_in_error_and_records_cost(vdb, monkeypatch, 
     assert sent and "NIFTY 1d ok" in sent[0] and "NIFTY 1h overlay: FAILED — verdict नाही: ['C']" in sent[0] and "Vision एकूण" in sent[0] and "cap" in sent[0]
     assert errs and "NIFTY 1h overlay" in errs[0]
     assert VUS.spent_by_task()["visual_audit"][2] == 2
+    assert len(photos) == 1 and photos[0][1:3] == (["NIFTY"], ("1d", "1h"))                # सारांशानंतर review charts
+    assert photos[0][0].startswith(RVA.PNG_ROOT) and photos[0][3] is not None              # run_symbol जिथे लिहितो तीच dir; जुन्या files वगळायला since
 
 
 def test_dashboard_spend_rows_sum_signal_and_visual():
@@ -242,3 +247,29 @@ def test_vision_page_file_check_handles_nan_paths():
     import page_vision_human_eye as P
     assert P._file(float("nan")) is False and P._file(None) is False and P._file("") is False
     assert P._file(__file__) is True
+
+
+def test_review_charts_sent_after_summary_with_their_line(tmp_path):
+    """Abhi (13 Oct): सारांशानंतर प्रत्येक symbol × TF चा overlay chart, caption = त्याची सारांश ओळ; file नसेल ⇒ वगळा; पाठवणं अयशस्वी ⇒ raise नाही."""
+    for name in ("NIFTY_1d_overlay.png", "NIFTY_1h_overlay.png", "NIFTY_1d_plain.png"):
+        (tmp_path / name).write_bytes(b"png-" + name.encode())
+    summary = ["NIFTY 1D: 6 levels → 3 VALID, 3 SPURIOUS", "NIFTY 1H: 12 levels → 7 VALID"]
+    sent = []
+    n = RVA.send_review_charts(str(tmp_path), ["NIFTY", "BANKNIFTY"], ("1d", "1h"), summary,
+                               send_photo=lambda png, cap: sent.append((png, cap)) or True, log=lambda *_: None)
+    assert n == 2 and [c for _, c in sent] == ["👁️ " + summary[0], "👁️ " + summary[1]]
+    assert sent[0][0] == b"png-NIFTY_1d_overlay.png"                                       # overlay, plain नाही
+    def boom(png, cap):
+        raise RuntimeError("network")
+    assert RVA.send_review_charts(str(tmp_path), ["NIFTY"], ("1d",), summary, send_photo=boom, log=lambda *_: None) == 0
+    (tmp_path / "BANKNIFTY_1d_overlay.png").write_bytes(b"bn")                            # BANKNIFTY ओळ NIFTY chart ला लागू नये
+    sent.clear()
+    summary2 = ["BANKNIFTY 1D: 4 levels → 2 VALID", "NIFTY 1D: 6 levels → 3 VALID"]
+    RVA.send_review_charts(str(tmp_path), ["NIFTY", "BANKNIFTY"], ("1d",), summary2, send_photo=lambda png, cap: sent.append((png, cap)) or True)
+    assert [c for _, c in sent] == ["👁️ " + summary2[1], "👁️ " + summary2[0]]
+    old = tmp_path / "NIFTY_1h_overlay.png"                                                # मागच्या run चा जुना chart ⇒ पाठवायचा नाही
+    os.utime(old, (1_000_000, 1_000_000))
+    sent.clear()
+    RVA.send_review_charts(str(tmp_path), ["NIFTY"], ("1d", "1h"), summary, send_photo=lambda png, cap: sent.append((png, cap)) or True,
+                           since=2_000_000)
+    assert [p for p, _ in sent] == [b"png-NIFTY_1d_overlay.png"]
