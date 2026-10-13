@@ -454,7 +454,7 @@ completed pattern allows, the count is wrong.
 ## K4. Areas: buyer/seller (supply/demand), role flip, range edges
 **काय.**
 - **Demand (supply) zone** = displacement (जोरदार impulse) च्या आधीचा **base**: 1–4 लहान, overlapping candles. तिथे न भरलेल्या orders शिल्लक असतात असं मानलं जातं.
-- **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त **मजबूत move ने तोडून पुढच्या swing पर्यंत** पोचल्यावर; नाहीतर sweep, zone जुनी भूमिका ठेवतो.
+- **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त price zone च्या पलीकडे जाऊन **पलीकडच्या बाजूचा swing पार** केल्यावर (तो swing पार होणं हाच पुरावा; candle ची वेगळी अट नाही). तोपर्यंत zone जुनी भूमिका ठेवतो (sweep).
 
 **मानसशास्त्र.**
 - चाल सुटलेले traders परत किंमत आली की entry घेऊ इच्छितात.
@@ -466,7 +466,8 @@ completed pattern allows, the count is wrong.
   - Zone = [lowest low, highest body-top] (demand; supply उलट).
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
-- **Flip level:** वरचा flip नियम [Abhi] (मजबूत move + पुढचा swing). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
+- **Flip level:** वरचा flip नियम [Abhi] (zone पलीकडे + पलीकडचा swing पार). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
+- **Flip fixtures [Abhi] (pack मध्ये नाहीत):** 12 Oct NIFTY = sweep (22,667 supply कायम). 13 Oct NIFTY = flip (22,667 तुटला; price 6/7 Oct च्या swing high पार ⇒ support); नंतरचा 22,667–22,700 मधला pullback G4 नियमाने तपासायचा.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
@@ -474,7 +475,7 @@ completed pattern allows, the count is wrong.
   - एकाच price area वर **दोन reaction touches** (दोन swing highs, किंवा दोन swing lows) ⇒ S/R band. Band tolerance = MR च्या पटीत setting (fixed points नाहीत).
   - Touches **खऱ्या reactions** हवेत: दोन touches च्या मधे price band सोडून गेली. Touches एकमेकांपासून दूर (setting, default 6 bars).
   - **3रा touch = trade location** (candidate area). Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
-  - **Role flip:** तुटलेला support = resistance, आणि उलट (flip नियम [Abhi]: मजबूत move + पुढचा swing). Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
+  - **Role flip:** तुटलेला support = resistance, आणि उलट (flip नियम [Abhi]: zone पलीकडे + पलीकडचा swing पार). Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
   - Horizontal band आणि trendline (K6) एकाच किमतीवर भेटले ⇒ **सगळ्यात मजबूत location**, chart label **"confluence"** (K6.4).
 - **Chart वर areas कसे दाखवायचे [Abhi, 2026-10-13]:**
   - Area नेहमी **band** (base / reaction candles चा low–high), एकच किंमत कधीच नाही.
@@ -515,8 +516,8 @@ completed pattern allows, the count is wrong.
   overlapping); demand zone = [lowest low, highest body top] (supply mirrored); height ≤ 1.5 MR. Valid only when the displacement
   (≥ 2 consecutive candles with body ≥ 0.6 × range and range ≥ 1.5 MR, or one candle ≥ 2.5 MR) also broke the previous swing (BOS).
   No BOS ⇒ noise. The zone exists only from the bar where displacement + BOS are confirmed (no look-ahead).
-- **Role flip:** broken support becomes resistance and vice versa — only by the flip rule below (Abhi: a strong move through the zone
-  that reaches the next swing). After a flip, touches are counted on the new side; the next retest is the trade location.
+- **Role flip:** broken support becomes resistance and vice versa — only by the flip rule below (Abhi: price goes beyond the zone AND
+  past the swing on the far side). After a flip, touches are counted on the new side.
 - **Horizontal S/R band — drawn from 2 touches [Abhi, TA3b]:** two reaction touches at one price area (two swing highs, or two swing
   lows) are enough to DRAW the band (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced
   (setting, default 6 bars). **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with
@@ -544,12 +545,19 @@ completed pattern allows, the count is wrong.
   bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
   a retest from the broken side is rejected by a logical reversal (break confirmed). Anything else is a false break (sweep). A real
   break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
-- **A broken zone flips [Abhi]:** a broken zone FLIPS role (supply ⇒ demand, demand ⇒ supply) after a **strong move** through it that
-  **reaches the next swing**. Otherwise it is a sweep and the zone keeps its old role.
-<!-- pending:abhi -->
-- **[pending Abhi — reading of "strong move", NOT in the Method Pack]** "Strong move" is read with K9: the break is made by a dominant
-  commitment candle / displacement, not by a single wick or small closes.
-<!-- /pending -->
+- **A broken zone flips [Abhi]:** a zone FLIPS role (supply ⇒ demand, demand ⇒ supply) when price goes beyond it AND past the swing
+  on the far side. Reaching that swing is the proof; there is no extra candle condition. Until then the zone keeps its old role (sweep).
+- **Broken, not flipped [Abhi]:** price went beyond the zone but did NOT reach the far-side swing ⇒ state BROKEN. Its retest is NOT a
+  trade location; wait.
+- **Flip retest (G4 / S4) [Abhi]:** after a flip, price reversing from that far-side swing back into the flipped area is a PULLBACK, and
+  the flipped area is a valid trade location. How the pullback arrives matters most. Before any entry, check:
+  (a) the pullback is CORRECTIVE (zigzag, flat or triangle, by anatomy and structure), not an impulsive move against the flip;
+  (b) the pullback as a whole is on LOWER FUT volume than the impulse leg that made the flip (it may start on rising volume; judge the
+  whole pullback);
+  (c) then, at the area, the zone criteria: handover study, dominant commitment candle on higher FUT volume, LTF CHoCH by close, RSI
+  divergence as zone evidence.
+  Entry only when all of this has been read and passes. An impulsive or high-volume move back into the area = no trade (the flip may be
+  failing).
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
 - Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal
@@ -1571,7 +1579,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 | **G1** | Zigzag wave 2 / ABC चा शेवट | धारदार impulse → A-B-C. C ≈ A. 50–61.8% (80% पर्यंत) retrace, **आणि तिथे आधीचा demand / base** | C-end ला reversal candle बंद झाल्यावर | Impulse origin (wave 1 सुरुवात) | K3, K4, K7 |
 | **G2** | Expanded flat: C, A चा low/high तोडून परत (spring / upthrust) | B > 105% A (सापळा). C, A च्या टोकापलीकडे sweep करून परत आत close | Sweep नंतरची पहिली मजबूत candle | C चं टोक | K3, K5, K12 |
 | **G3** | Triangle (wave 4 / B): E चा शेवट | आकुंचन पावणारे 5 legs (3-3-3-3-3). E undershoot किंवा throw-over | E-end ला reversal. Triangle breakout वर नाही. | C चं टोक | K3 |
-| **G4** | Role flip retest | तुटलेला support (आता resistance) किंवा उलट. त्यावर pullback, **कमी volume**, rejection wick / engulfing | Rejection candle बंद झाल्यावर | Flip zone पलीकडे real break | K4, K5, K10.3 |
+| **G4** | Flip retest [Abhi] | Zone **FLIPPED** (price zone पलीकडे + पलीकडचा swing पार). त्या swing वरून flipped area मध्ये परत येणारा **pullback**: (a) corrective (zigzag / flat / triangle), (b) एकूण **कमी FUT volume** (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover + dominant commitment (जास्त FUT volume) + LTF CHoCH + RSI divergence (पुरावा). फक्त BROKEN (swing पार नाही) ⇒ retest trade location नाही | (a)–(c) सगळं वाचून pass झाल्यावर | Impulsive / जास्त volume ने परत area मध्ये ⇒ trade नाही (flip अपयशी होत असेल) | K4, K5, K9, K10.3, K10.4 |
 | **G5** | Ending diagonal C + trendline / resistance | C wedge सारखा: लहान होत जाणारे, overlapping legs. Trendline / area वर संपतो. Gap ची पुष्टी असेल तर अधिक मजबूत (7 Oct 2026). | Area वर reversal candle | Diagonal चं टोक | K3, K6, K13 |
 | **G6** | Trend मधला साधा pullback demand वर | HH/HL स्पष्ट. Pullback संथ, overlapping, कमी volume. Displacement च्या आधीच्या base वर. | Hammer / engulfing बंद झाल्यावर | Base पलीकडे | K1, K2, K4, K9 |
 
@@ -1869,7 +1877,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 - **सारखी दिसणारी:** S7 (sweep, म्हणजे परत आत).
 - **फरक:** breaks.py ची real break (buffer + displacement / acceptance / failed retest) वि. reclaim. एकच व्याख्या [KB भाग G].
 - **Trade:**
-  - फक्त break दिशेने, तुटलेल्या level च्या flip retest वर: retest corrective, आणि rejection (G4) [Abhi].
+  - फक्त break दिशेने, **FLIPPED** level च्या flip retest वर (G4 [Abhi]: corrective + कमी FUT volume pullback, मग zone निकष). फक्त BROKEN ⇒ थांबा.
   - Retest ची वारंवारता: Bulkowski च्या daily chart patterns मध्ये ~2/3 [स्रोत: Bulkowski; NIFTY intraday वर तपासलेलं नाही].
 - **MAGNET:** तुटलेल्या level भोवती closes वर-खाली (16 Feb 13:30) ⇒ बाजार अनिर्णित ⇒ setup नाही.
 - **S4 कसा संपतो:**

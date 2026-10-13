@@ -400,3 +400,11 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | R0-2 (zone) | "Zone dead only beyond the far swing" **नाही**: तुटलेला zone **flip** होतो — मजबूत move (dominant commitment / displacement) ने तोडून **पुढच्या swing पर्यंत** पोचल्यावर; तसा नसेल तर sweep, zone जुनी भूमिका ठेवतो | KB K4 block (pending काढला) ⇒ Method Pack मध्ये (नवीन version). ✅ नियम निकाली |
 | Z-1 | Code: `decision3/levels.py` चा BROKEN / FLIPPED lifecycle या नियमाशी जुळवायचा (flip = strong move + next swing गाठला; नाहीतर sweep, भूमिका तशीच) | Abhi ने KB शब्द ✅ केल्यावर वेगळा PR (KB change control) — आत्ता code बदल नाही |
 | Z-2 | KB S4 / G4 आणि pack मध्ये "flip retest" हे नाव कोणत्याही real break नंतरच्या retest ला वापरलं आहे — Abhi च्या flip नियमापेक्षा सैल. नाव बदलायचं ("break retest") की G4 ला flip नियम लावायचा? | तसेच (pack मध्ये व्याख्या नाही, फक्त नाव) | Abhi ठरवतो |
+
+### Abhi अंतिम उत्तरं (#322 नंतर) — flip नियम
+
+| # | निर्णय | परिणाम |
+|---|---|---|
+| "strong move" | "strong" आणि dominant candle / displacement अर्थ **काढला**. Zone flip = price zone पलीकडे **आणि** पलीकडच्या बाजूचा swing पार; swing पार होणं हाच पुरावा, candle ची वेगळी अट नाही. तोपर्यंत sweep | KB K4 + pack. ✅ निकाली |
+| Z-2 | (b) सगळीकडे एकच flip नियम (G4 सकट). BROKEN (swing पार नाही) ⇒ retest trade location नाही, थांबा. FLIPPED ⇒ swing वरून परत येणं = pullback, flipped area = trade location; entry आधी (a) pullback corrective (zigzag / flat / triangle), (b) एकूण कमी FUT volume (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover (a2) + dominant commitment जास्त FUT volume (c0) + LTF CHoCH (c1) + RSI divergence पुरावा. Impulsive / जास्त volume ने परत ⇒ trade नाही. G4 चं नाव "flip retest" = नेमकं हेच | KB K4 + G4 + pack. ✅ निकाली |
+| Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |

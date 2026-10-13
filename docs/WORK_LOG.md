@@ -2475,3 +2475,10 @@ legs owner वि. reader2 gate).
   FLIPPED फक्त Abhi च्या नियमाने (मजबूत move + पुढचा swing); "Role flip" ओळ आणि Area state त्याला जुळवले. 12 Oct चं उदाहरण pack मधून
   काढलं (golden दिवसाचं उत्तर reader ला दिसू नये). [Abhi] block मध्ये फक्त Abhi चे शब्द; "strong move" = K9 हे वाचन `pending Abhi`
   (pack बाहेर). `near_month_rows`: expiry ओळखता आली नाही ⇒ warning. Pack version 76e5dd6b7ff3.
+
+## Abhi: flip नियम अंतिम (KB + pack)
+
+- "Strong move" अट काढली: zone flip = price zone पलीकडे + पलीकडच्या बाजूचा swing पार (तोच पुरावा). तोपर्यंत sweep.
+- BROKEN (swing पार नाही) ⇒ retest trade location नाही. FLIPPED ⇒ pullback flipped area मध्ये = trade location, पण entry आधी: corrective
+  pullback + एकूण कमी FUT volume + area वर handover / commitment / LTF CHoCH / RSI divergence. G4 "flip retest" = हेच.
+- Fixtures (pack बाहेर, KB मराठी K4): 12 Oct sweep, 13 Oct flip. Pack version 5c23b29ca714. पुढे: decision3 BROKEN / FLIPPED code PR.

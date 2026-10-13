@@ -115,9 +115,11 @@ def test_pending_abhi_text_is_excluded_from_pack():
     assert "pending" not in text.lower()
     flat = text.replace("\n  ", " ")                                               # Abhi: "zone dead" नाही — तुटलेला zone flip होतो
     assert "dead only beyond the far swing" not in flat and "A broken zone flips [Abhi]" in flat
-    assert "reaches the next swing" in flat and "strong move" in flat
-    assert "not by a single wick" not in flat                                  # "strong move" चं वाचन अजून pending
-    assert "22,720" not in flat                                                # golden दिवसाचा निकाल pack मध्ये नाही (leak)
+    assert "past the swing on the far side" in flat and "no extra candle condition" in flat     # Abhi: swing पार = पुरावा
+    assert "strong move" not in flat and "not by a single wick" not in flat
+    assert "Broken, not flipped [Abhi]" in flat and "Flip retest (G4 / S4) [Abhi]" in flat
+    assert "LOWER FUT volume" in flat and "CORRECTIVE" in flat
+    assert "22,720" not in flat and "22,667" not in flat                       # golden fixtures pack मध्ये नाहीत (leak)
     pend = "\n<!-- pending:abhi -->\n- secret pending rule\n<!-- /pending -->"
     t1, _ = MP.build(_kb().replace("- text 2", "- text 2" + pend), "")
     assert "secret pending rule" not in t1 and "text 2" in t1
