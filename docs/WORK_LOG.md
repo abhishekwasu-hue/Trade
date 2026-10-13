@@ -2347,3 +2347,25 @@ location, flip नंतर नव्या बाजूने, "confluence" lab
 `test_golden_vision_check.py` (dry-run fakes). 18 files (vision सगळे + approval / telegram): 379 pass.
 **उघडे:** OPEN_QUESTIONS R0-1 … R0-8 (items 1–7 चा अर्थ, नवे KB blocks चे शब्द, golden अपेक्षा, BANKNIFTY दिवस / holdout, area, labels कुठे,
 FUT volume, live V4 चालू करायचा का).
+- **Review #318 दुरुस्त्या (त्याच branch वर):**
+  🔴1 budget — V4 ची स्वतःची दैनिक उप-मर्यादा `vision_v4_daily_cap` (default $0.30, 0–2, dashboard + CLI) आणि `run_visual_audit` /
+  `decision3.vision_audit` सारखाच signals राखीव नियम (`v4.budget_ok`: V4 आज + अंदाज ≤ min(cap, दैनिक − राखीव); एकूण ≤ दैनिक − राखीव;
+  मासिक ≤ मासिक − राखीव × उरलेले weekdays) ⇒ V4 नंतरचा V2 audit कधीच "budget संपलं" होत नाही (test). Budget संपलं ⇒ दिवसातून एकच
+  Telegram ओळ (🟡c), per-signal संदेश नाही.
+  🔴2 latency — V4 आता `run_once` च्या **दुसऱ्या पासमध्ये** (`run_v4_jobs`): सगळ्या claimed rows चे V2 निर्णय / `VS.finish` आधी, मग V4
+  (test: row B चं finish row A च्या V4 आधी). एकट्या row चे callers (smoke / dry-run) ⇒ लगेच. कधीच raise नाही. (V4 चालू असताना नवे rows
+  पुढच्या `run_once` मध्ये — त्या pass मधल्या V4 calls इतका उशीर.)
+  🔴3 + 🟡a price validator — price-range फक्त price anchors वरून (level / spot / invalidation / chart levels / room; golden मध्ये model ला
+  दिसणारे OHLC), facts मधले bar counts / MR / अंतरं नाहीत. Range खालचे आकडे दुर्लक्षित; range मधले known मध्ये हवेत; range च्या वर
+  (> 1.5 × max — दुसऱ्या instrument ची किंमत?) ⇒ नाकार. Wave / item / section क्रमांक, "(4)" / "(iv)", ordinals, %, percent, lakh / crore,
+  volume, "9:30am", "12/10", "12-Oct" वगळले (reviewer probes tests मध्ये). Live worker known prices = Vision ला दिलेले facts + chart levels +
+  signal किंमती (21 दिवसांचे 1m OHLC नाहीत).
+  🟡d golden runner — parquet `DP.load_parquet` (holdout file नकार) + `filter_allowed`; W / D holdout gap ओलांडत असतील ⇒ `REFUSED_HOLDOUT_GAP`;
+  लहान W / D इतिहास ⇒ facts मध्ये नोंद + "item 1 unreliable" इशारा; budget = दैनिक − राखीव + मासिक (`v4.budget_ok`).
+  🟡b **Deploy / rollback (VPS):** नवे `_global` keys (`vision_v4_audit`, `vision_v4_daily_cap`) जुन्या code ला "अज्ञात setting" वाटतात ⇒ जुना
+  `VC.load("_global")` defaults वर परत जातो (budget बदल हरवतात). म्हणून (1) deploy ⇒ सगळे vision processes **एकत्र** restart:
+  `git pull && systemctl restart vision_worker vision_telegram` + dashboard (streamlit) restart; (2) rollback ⇒ **आधी** (नव्या code वर) keys काढा:
+  `python3 -m vision.config unset _global vision_v4_audit vision_v4_daily_cap --by abhi`, मग जुना code + तेच restart. `vision_usage`
+  insert कॉलम-निहाय (जुना / नवा schema दोन्हीवर चालतो).
+  Tests: test_vision_v4_checklist (probes, budget, second pass, unset), test_golden_vision_check (holdout gap / parquet / budget).
+  OPEN_QUESTIONS R0-9 (V4 cap).

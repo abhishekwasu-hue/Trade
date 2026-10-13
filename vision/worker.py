@@ -408,32 +408,34 @@ def bar_wait(row, s, now=None):
 
 
 # --------------------------------------------------------------------------------------------------------- V4 (R0, audit-only)
-def v4_known_prices(row, meta, m1, facts=None):
-    """V4 price check साठी facts: signal (level / spot / invalidation), chart ctx (सगळ्या levels च्या किंमती), Vision ला दिलेला facts मजकूर
-    आणि signal पर्यंतचे 1m OHLC (chart वरचे candles)."""
+def v4_price_facts(row, meta, facts):
+    """V4 price check: (known, anchors). known = Vision ला दिलेल्या facts मजकुरातले आकडे + chart वरचे levels + signal च्या किंमती (21 दिवसांचे
+    1m OHLC नाहीत — नाहीतर प्रत्येक पूर्णांक "known" होतो). anchors (price-range साठी) = फक्त किंमती: level / spot / invalidation +
+    ctx levels / room / invalidation / spot — bar counts / MR / अंतरं नाहीत."""
     from . import checklist as CK
-    ohlc = None
-    if m1 is not None and len(m1):
-        try:
-            f = CH.norm_1m(m1)
-            cut = pd.Timestamp(row.get("asof") or CH.to_ist_naive(row["signal_ts"]))
-            ohlc = f[f["timestamp"] <= cut]
-        except Exception:                                                # noqa: BLE001 — कापता आलं नाही ⇒ सगळा frame (facts च)
-            ohlc = m1
-    return CK.facts_prices({k: row.get(k) for k in ("level", "spot", "invalidation")}, meta.get("ctx"), ohlc, facts)
+    ctx = (meta or {}).get("ctx") or {}
+    anchors = [row.get(k) for k in ("level", "spot", "invalidation")]
+    anchors += [ctx.get(k) for k in ("spot", "spot_signal", "invalidation", "level")]
+    anchors += [x.get("price") for x in ctx.get("levels") or [] if isinstance(x, dict)]
+    anchors.append((ctx.get("room") or {}).get("next_price"))
+    anchors = CK.facts_prices([x for x in anchors if isinstance(x, (int, float)) and not isinstance(x, bool)])
+    return CK.facts_prices(anchors, facts), anchors
 
 
-def _v4_budget_ok(g, est_usd, path=None):
-    """V2 सारखाच hard stop (`_budget_ok`), फक्त अंदाज V4 चा: आजचा / महिन्याचा खर्च + अंदाज ≤ $2 / दिवस आणि मासिक cap."""
-    day, month = VS.spent(path)
-    ok = day + est_usd <= float(g["vision_daily_budget_usd"]) and month + est_usd <= float(g["vision_monthly_budget_usd"])
-    return ok, day, month
+def _warn_v4_budget_once(why, send_text, path=None):
+    """V4 budget संपलं ⇒ दिवसातून एकच Telegram ओळ (प्रत्येक signal ला नाही)."""
+    k = "v4_budget_warned_" + VS.now_ist().strftime("%Y-%m-%d")
+    if send_text is None or VS.kv_get(k, path):
+        return
+    VS.kv_set(k, "1", path)
+    send_text(f"👁 Vision V4 checklist (audit only) paused for today: {html.escape(why)}. V2 audits and orders are unaffected.")
 
 
-def maybe_v4(row, png, meta, m1, g, model, path=None, send_text=None, client_factory=None, timeout_sec=20):
-    """Global `vision_v4_audit` = "v4" ⇒ V2 निर्णय नोंदल्यानंतर Method Pack checklist (audit-only). निकाल `vision_signals.v4_json` +
-    `pack_version`, खर्च `vision_usage` (task signal_v4, pack_version). Shadow mode ⇒ फक्त नोंद; बाकी ⇒ एक Telegram संदेश. Gate / निर्णय /
-    order ला कधीच हात नाही; कधीच raise नाही. रिटर्न V4 निकाल dict किंवा None (बंद / चालवला नाही)."""
+def maybe_v4(row, png, meta, g, model, path=None, send_text=None, client_factory=None, timeout_sec=20):
+    """Global `vision_v4_audit` = "v4" ⇒ Method Pack checklist (audit-only). run_once मध्ये **सगळ्या rows चे V2 निर्णय नोंदल्यानंतर** दुसऱ्या
+    पासमध्ये चालतो (V2 / gate ला उशीर नाही). निकाल `vision_signals.v4_json` + `pack_version`, खर्च `vision_usage` (task signal_v4, pack_version).
+    Budget: स्वतःची दैनिक उप-मर्यादा `vision_v4_daily_cap` + signals राखीव कधीच नाही (V4.budget_ok); संपलं ⇒ दिवसातून एकदा Telegram.
+    Shadow mode ⇒ फक्त नोंद; बाकी ⇒ एक Telegram संदेश. Gate / निर्णय / order ला कधीच हात नाही; कधीच raise नाही. रिटर्न निकाल dict | None."""
     if (g or {}).get("vision_v4_audit", "off") != "v4" or png is None or not model or not VC.api_key_present():
         return None
     sid = row["signal_id"]
@@ -444,18 +446,22 @@ def maybe_v4(row, png, meta, m1, g, model, path=None, send_text=None, client_fac
         pack = MP.load()
         facts = SA.signal_text(row)
         est = V4.estimate(1, facts, pack[0], model)["usd_uncached"]
-        ok, day, month = _v4_budget_ok(g, est, path)
+        today = VS.now_ist()
+        ok, why = V4.budget_ok(est, g, VS.spent_by_task(path), today.replace(tzinfo=None) if getattr(today, "tzinfo", None) else today,
+                               sub_cap=float(g.get("vision_v4_daily_cap", 0.0)))
         if not ok:
-            res = {"status": "skipped", "error": "budget reached", "pack_version": pack[1], "prompt_version": V4.PROMPT_VERSION}
+            res = {"status": "skipped", "error": why, "pack_version": pack[1], "prompt_version": V4.PROMPT_VERSION}
+            _warn_v4_budget_once(why, send_text, path)
         else:
+            known, anchors = v4_price_facts(row, meta, facts)
             client = (client_factory or SA.make_client)(timeout_sec)
-            res = V4.audit(client, [png], facts, model, v4_known_prices(row, meta, m1, facts), pack=pack,
+            res = V4.audit(client, [png], facts, model, known, pack=pack, anchors=anchors,
                            on_usage=lambda u, c: VS.add_usage(V4.TASK, model, u, c, sid, path, pack_version=pack[1]),
                            effort=VC.env_effort("signal"), thinking=VC.env_thinking("signal"))
         VS.update(sid, path, pack_version=res.get("pack_version"),
                   v4_json=json.dumps({k: res.get(k) for k in ("status", "data", "error", "usage", "cost_usd", "latency_ms", "pack_version",
                                                                "prompt_version")}, ensure_ascii=False, default=str))
-        if row.get("mode") != "shadow" and send_text is not None:
+        if ok and row.get("mode") != "shadow" and send_text is not None:
             title = f"{row.get('symbol')} {row.get('direction')} {pd.Timestamp(row['signal_ts']):%H:%M}"
             send_text(CK.telegram_text(res, title))
         return res
@@ -467,8 +473,19 @@ def maybe_v4(row, png, meta, m1, g, model, path=None, send_text=None, client_fac
         return None
 
 
+def run_v4_jobs(jobs):
+    """दुसरा पास: प्रत्येक job (kwargs) maybe_v4 ला — एकाचं अपयश बाकींना थांबवत नाही; कधीच raise नाही."""
+    out = []
+    for j in jobs or []:
+        try:
+            out.append((j["row"]["signal_id"], maybe_v4(**j)))
+        except Exception:                                                # noqa: BLE001
+            out.append((j.get("row", {}).get("signal_id"), None))
+    return out
+
+
 def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send_photo=None, send_text=None, path=None, data_cache=None,
-                wait_for_bar=True, fetch_volume_fn=None):
+                wait_for_bar=True, fetch_volume_fn=None, v4_jobs=None):
     """एक RUNNING row पूर्ण करणे. रिटर्न अंतिम result dict. कधीच raise नाही (चूक ⇒ FAILED row).
     `vision_wait_for_bar_close` (default on): signal चा setup bar बंद होईपर्यंत row परत QUEUED (data fetch / खर्च नाही); बंद झाल्यावर chart आणि
     संदर्भ त्या bar च्या close पर्यंत (asof) — मग निर्णय, आणि entry च्या क्षणी drift guard."""
@@ -599,8 +616,13 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
             _safe_notify(row, res, d, png, path)
         elif row["mode"] == "notify":
             VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"])), path)
-        maybe_v4(row, png, meta, m1, g, model, path=path, send_text=send_text, client_factory=client_factory,
-                 timeout_sec=int(s["vision_timeout_sec"]))
+        if g.get("vision_v4_audit", "off") == "v4":                       # R0 V4 (audit-only): V2 निर्णयानंतर
+            job = {"row": row, "png": png, "meta": meta, "g": g, "model": model, "path": path, "send_text": send_text,
+                   "client_factory": client_factory, "timeout_sec": int(s["vision_timeout_sec"])}
+            if v4_jobs is None:
+                run_v4_jobs([job])                                      # एकट्या row चा caller (smoke / dry-run) ⇒ लगेच
+            else:
+                v4_jobs.append(job)                                     # run_once ⇒ सगळ्या rows चे V2 निर्णय आधी, मग V4
         return res
     except Exception as exc:
         err = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -626,10 +648,12 @@ def run_once(path=None, **kw):
         print(f"⚠️ vision housekeeping त्रुटी: {type(exc).__name__}: {exc}")
     cache = {}
     done = []
+    v4_jobs = []
     for row in VS.claim_queued(path=path):
-        r = process_row(row, path=path, data_cache=cache, **kw)
+        r = process_row(row, path=path, data_cache=cache, v4_jobs=v4_jobs, **kw)
         if not (isinstance(r, dict) and r.get("deferred")):
             done.append((row["signal_id"], r))
+    run_v4_jobs(v4_jobs)                                                # R0 V4: दुसरा पास — V2 निर्णय सगळे नोंदल्यानंतरच
     return done
 
 

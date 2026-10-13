@@ -97,6 +97,31 @@ def test_no_known_prices_is_fail_closed():
     assert CK.unknown_prices(["3 legs, 0.5 MR"], []) == []
 
 
+PROBES = ["wave 5 of C", "Wave (4) low", "item 3 NA", "section 6 trigger", "2nd leg of 3", "touches on 12/10", "spring at 9:30am",
+          "fell 1.5 percent", "volume 1.8 lakh", "12-Oct sweep", "(iv) of 3 ended", "volume 1,80,000 on the commitment candle",
+          "wave (5) at 10am", "0.5 MR, 61.8%, 3 bars, 2 touches"]
+
+
+@pytest.mark.parametrize("probe", PROBES)
+def test_reviewer_probes_are_not_prices(probe):
+    anchors = [22610.5, 22640.0, 22700.0]
+    assert CK.unknown_prices([probe], anchors, anchors=anchors) == []
+    assert CK.unknown_prices([probe], [], anchors=[]) == []                # anchors नसतानाही (fail-closed मोड) हे prices नाहीत
+    out, err = CK.validate(dict(good(), items=[dict(i, evidence=probe if i["n"] == 3 else "ok") for i in good()["items"]]),
+                           pack_version=PV, known_prices=anchors, anchors=anchors)
+    assert err is None, (probe, err)
+
+
+def test_invented_and_other_instrument_prices_rejected():
+    anchors = [22610.5, 22640.0, 22700.0]
+    known = anchors + [5.0, 420.0, 12.0]                                    # facts मधले bar counts / MR range वाढवत नाहीत
+    assert CK.unknown_prices(["rejected at 22,655"], known, anchors=anchors) == ["22,655"]          # invented
+    assert CK.unknown_prices(["like BANKNIFTY 55,120"], known, anchors=anchors) == ["55,120"]       # > 1.5 × max ⇒ नाकार
+    assert CK.unknown_prices(["5 legs, 420 bars ago, 9,000 contracts"], known, anchors=anchors) == []
+    assert CK.price_range([12.0, 22610.5]) == (6.0, 22610.5 * 1.5)
+    assert CK.price_range([]) == (100.0, float("inf"))
+
+
 def test_facts_prices_reads_frames_and_text():
     df = pd.DataFrame({"timestamp": pd.to_datetime(["2020-01-01 09:15"]), "open": [1.5], "high": [2.25], "low": [1.0], "close": [2.0]})
     got = CK.facts_prices({"15M": df}, "Level L: 22,640.50 as resistance", None, True)
@@ -233,7 +258,7 @@ def test_worker_v4_off_by_default_no_call(tmp_path, monkeypatch):
     row = _row(p)
     called = []
     g = VC.load("_global", p)
-    assert W.maybe_v4(row, b"png", {}, None, g, "m", path=p, send_text=called.append,
+    assert W.maybe_v4(row, b"png", {}, g, "m", path=p, send_text=called.append,
                       client_factory=lambda t: called.append("client")) is None
     assert called == [] and VS.get_signal(row["signal_id"], p)["v4_json"] is None
 
@@ -252,7 +277,7 @@ def test_worker_v4_on_records_pack_version_and_never_touches_decision(tmp_path, 
     texts = []
     fc = FakeClient(reply)
     g = {**VC.load("_global", p), "vision_v4_audit": "v4"}
-    res = W.maybe_v4(row, b"png", {"ctx": {"levels": [{"price": 22640.0}]}}, None, g, "m", path=p, send_text=texts.append,
+    res = W.maybe_v4(row, b"png", {"ctx": {"levels": [{"price": 22640.0}]}}, g, "m", path=p, send_text=texts.append,
                      client_factory=lambda t: fc)
     assert res["status"] == "done", res
     after = VS.get_signal(row["signal_id"], p)
@@ -268,26 +293,110 @@ def test_worker_v4_on_records_pack_version_and_never_touches_decision(tmp_path, 
     assert "cache_control" in fc.calls[0]["system"][-1]
 
 
-def test_worker_v4_budget_and_errors_never_raise(tmp_path, monkeypatch):
+def test_worker_v4_errors_never_raise(tmp_path, monkeypatch):
     from vision import worker as W
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
     p = str(tmp_path / "v.db")
     row = _row(p)
-    g = {**VC.load("_global", p), "vision_v4_audit": "v4", "vision_daily_budget_usd": 0.0}
-    calls = []
-    r = W.maybe_v4(row, b"png", {}, None, g, "m", path=p, send_text=lambda t: None, client_factory=lambda t: calls.append(1))
-    assert r["status"] == "skipped" and calls == []
-    g["vision_daily_budget_usd"] = 2.0
+    g = {**VC.load("_global", p), "vision_v4_audit": "v4"}
 
     def boom(t):
         raise RuntimeError("x")
-    assert W.maybe_v4(row, b"png", {}, None, g, "m", path=p, send_text=lambda t: None, client_factory=boom) is None
+    assert W.maybe_v4(row, b"png", {}, g, "m", path=p, send_text=lambda t: None, client_factory=boom) is None
+    assert W.run_v4_jobs([{"row": row}]) == [(row["signal_id"], None)]          # चुकीचा job ⇒ raise नाही
 
 
-def test_worker_known_prices_cut_at_signal():
+# ----------------------------------------------------------------------------------------------------------- budget (🔴1)
+G0 = {"vision_daily_budget_usd": 2.0, "vision_monthly_budget_usd": 60.0, "signals_daily_reserve_usd": 0.20}
+TODAY = pd.Timestamp("2026-10-29 11:00")                                    # गुरुवार: महिन्यात 1 weekday उरलेला (fixture तारीख)
+
+
+def test_v4_budget_sub_cap_reserve_and_month():
+    assert V4.budget_ok(0.05, G0, {}, TODAY, sub_cap=0.30)[0]
+    ok, why = V4.budget_ok(0.05, G0, {"signal_v4": (0.27, 0.27, 6)}, TODAY, sub_cap=0.30)
+    assert not ok and "V4 daily cap" in why
+    ok, why = V4.budget_ok(0.05, G0, {"signal": (1.76, 10.0, 40)}, TODAY, sub_cap=2.0)
+    assert not ok and "reserve" in why                                     # 1.76 + 0.05 > 2.0 − 0.20
+    assert V4.budget_ok(0.04, G0, {"signal": (1.76, 10.0, 40)}, TODAY, sub_cap=2.0)[0]
+    ok, why = V4.budget_ok(0.05, G0, {"signal": (0.0, 59.78, 0)}, TODAY, sub_cap=2.0)
+    assert not ok and "monthly" in why                                     # 59.78 + 0.05 > 60 − 0.20 × 1
+    assert V4.weekdays_left(TODAY) == 1
+
+
+def test_v4_can_never_make_a_later_v2_audit_unavailable(tmp_path, monkeypatch):
+    """V4 जास्तीत जास्त (दैनिक − राखीव) पर्यंतच; मग V2 चा budget check (worker._budget_ok) अजून पास होतो."""
+    from vision import signal_audit as SA
     from vision import worker as W
-    m1 = pd.DataFrame({"timestamp": pd.to_datetime(["2026-10-12 09:15", "2026-10-12 09:16", "2026-10-12 10:30"]),
-                       "open": [1.0, 2.0, 99.0], "high": [1.5, 2.5, 99.5], "low": [0.5, 1.5, 98.5], "close": [1.25, 2.25, 99.25]})
-    row = {"signal_ts": "2026-10-12 09:45:00", "level": 22640.0, "spot": None, "invalidation": None}
-    k = W.v4_known_prices(row, {"ctx": {"levels": [{"price": 22650.0}]}}, m1)
-    assert 22640.0 in k and 22650.0 in k and 2.5 in k and 99.5 not in k
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
+    p = str(tmp_path / "v.db")
+    g = {**VC.load("_global", p), "vision_v4_audit": "v4", "vision_v4_daily_cap": 2.0}
+    VS.add_usage("signal", "m", {}, 1.60, "x", p)                            # आज signals चा खर्च
+    assert SA.estimate_usd("m") <= g["signals_daily_reserve_usd"]            # राखीव एका V2 audit ला पुरतो
+    texts = []
+    for i in range(20):                                                     # V4 कडून शक्य तितका खर्च (प्रत्येक call = पूर्ण अंदाज)
+        row = _row(p)
+        monkeypatch.setattr(V4, "audit", lambda *a, **k: (k["on_usage"]({"input_tokens": 1}, 0.12), {
+            "status": "done", "data": None, "pack_version": "x", "cost_usd": 0.12})[1])
+        monkeypatch.setattr(V4, "estimate", lambda *a, **k: {"usd_uncached": 0.12})
+        W.maybe_v4(row, b"png", {}, g, "m", path=p, send_text=texts.append, client_factory=lambda t: object())
+    day, _ = VS.spent(p)
+    assert day <= g["vision_daily_budget_usd"] - g["signals_daily_reserve_usd"] + 1e-9
+    assert W._budget_ok(g, "m", p)[0]                                       # V2 audit अजून चालतो (unavailable नाही)
+    warn = [t for t in texts if "paused for today" in t]
+    assert len(warn) == 1                                                   # 🟡c: budget इशारा दिवसातून एकदाच
+    skipped = [json.loads(r["v4_json"])["status"] for r in VS.list_signals(path=p) if r["v4_json"]]
+    assert "skipped" in skipped and "done" in skipped
+
+
+# ----------------------------------------------------------------------------------------------------------- second pass (🔴2)
+def test_run_once_finishes_all_v2_rows_before_any_v4_call(monkeypatch, tmp_path):
+    import datetime as dt
+    from tests import test_vision_v0 as T0
+    from vision import chart as CH
+    from vision import worker as W
+    p = str(tmp_path / "vision.db")
+    monkeypatch.setenv("VISION_DB_PATH", p)
+    monkeypatch.setenv("VISION_IMAGE_DIR", str(tmp_path / "img"))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-real")
+    monkeypatch.setenv("VISION_SIGNAL_MODEL", "test-model")
+    monkeypatch.setattr(VS, "now_ist", lambda: dt.datetime(2026, 10, 6, 10, 43))
+    monkeypatch.setattr(CH, "render", lambda df, s, daily=None, **k: (b"\x89PNGfake", {"error": None, "ctx": T0.CTX_OK}))
+    VC.save("_global", {"vision_v4_audit": "v4"}, "t")
+    T0.queue(p)
+    T0.queue(p, level=25200.0)
+    order = []
+    real_finish = VS.finish
+    monkeypatch.setattr(VS, "finish", lambda sid, st, *a, **k: order.append(("finish", sid)) or real_finish(sid, st, *a, **k))
+    monkeypatch.setattr(W, "maybe_v4", lambda row, *a, **k: order.append(("v4", row["signal_id"])))
+    sent = T0.Sent()
+    out = W.run_once(fetch_fn=lambda sym, daily: (T0.m1_frame(), None), client_factory=lambda t: T0.FakeClient([T0.msg(T0.GOOD)] * 4),
+                     send_photo=sent.photo, send_text=sent.text)
+    assert len(out) == 2
+    kinds = [k for k, _ in order]
+    assert kinds == ["finish", "finish", "v4", "v4"], order                 # row B चा V2 finish row A च्या V4 आधी
+    assert {s for k, s in order if k == "v4"} == {s for k, s in order if k == "finish"}
+
+
+def test_v4_price_facts_use_facts_and_levels_not_1m_history():
+    from vision import worker as W
+    row = {"level": 22640.0, "spot": 22610.5, "invalidation": None}
+    meta = {"ctx": {"levels": [{"price": 22650.0}], "room": {"next_price": 22500.25}, "median_range": 12.0}}
+    known, anchors = W.v4_price_facts(row, meta, "Level L: 22,640.00 as resistance. PDH 22,701.40. 420 bars, 1.2 x median range")
+    assert {22640.0, 22610.5, 22650.0, 22500.25, 22701.4} <= set(known)
+    assert anchors == [22500.25, 22610.5, 22640.0, 22650.0]                 # anchors फक्त किंमती (12.0 median range / 420 bars नाहीत)
+    assert CK.unknown_prices(["PDH 22,701.40 swept"], known, anchors=anchors) == []
+    assert CK.unknown_prices(["swept 22,702"], known, anchors=anchors) == ["22,702"]
+
+
+def test_config_v4_cap_and_unset_for_rollback(tmp_path):
+    p = str(tmp_path / "v.db")
+    assert VC.GLOBAL_DEFAULTS["vision_v4_daily_cap"] == 0.30
+    with pytest.raises(ValueError):
+        VC.validate("_global", {"vision_v4_daily_cap": 5})
+    VC.save("_global", {"vision_v4_audit": "v4", "vision_v4_daily_cap": 0.5, "vision_daily_budget_usd": 1.5}, "t", path=p)
+    assert VC.unset("_global", ["vision_v4_audit", "vision_v4_daily_cap", "nope"], "t", path=p) == ["vision_v4_audit",
+                                                                                                    "vision_v4_daily_cap"]
+    with VS.connect(p) as c:
+        stored = json.loads(c.execute("SELECT json FROM vision_settings WHERE bot='_global'").fetchone()[0])
+    assert "vision_v4_audit" not in stored and "vision_v4_daily_cap" not in stored and stored["vision_daily_budget_usd"] == 1.5
+    assert VC.history("_global", p)[-1]["by"] == "t"

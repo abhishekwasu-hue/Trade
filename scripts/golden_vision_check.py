@@ -51,15 +51,41 @@ def guard(decision):
 
 
 def load_data(paths):
-    """CSV / parquet ⇒ [timestamp (naive), open, high, low, close(, volume)] + policy filter (holdout rows कधीच परत येत नाहीत)."""
+    """CSV / parquet ⇒ [timestamp (naive), open, high, low, close(, volume)] + policy: parquet `DP.load_parquet` ने (holdout-only file
+    वाचायलाच नकार), नंतर सगळ्यांवर `filter_allowed` (holdout rows कधीच परत येत नाहीत)."""
     from elliott import data_policy as DP
-    raw = pd.concat([pd.read_parquet(p) if str(p).endswith(".parquet") else pd.read_csv(p, parse_dates=["timestamp"]) for p in paths],
-                    ignore_index=True).drop_duplicates("timestamp", keep="last").sort_values("timestamp").reset_index(drop=True)
+    parts = []
+    for p in paths:
+        if str(p).endswith(".parquet"):
+            parts.append(DP.load_parquet(p, "annotation"))
+        else:
+            parts.append(pd.read_csv(p, parse_dates=["timestamp"]))
+    raw = pd.concat(parts, ignore_index=True)
     ts = pd.to_datetime(raw["timestamp"])
     if ts.dt.tz is not None:
         ts = ts.dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
     raw["timestamp"] = ts
+    raw = raw.drop_duplicates("timestamp", keep="last").sort_values("timestamp").reset_index(drop=True)
     return DP.filter_allowed(raw, "annotation")
+
+
+def holdout_gap(frames):
+    """W / D frame sealed holdout ओलांडून (आधीचा data + नंतरचा data, मधे holdout काढलेला) ⇒ True — असा chart खोटा trend दाखवतो ⇒ केस नाकारा."""
+    from elliott import data_policy as DP
+    for tf in ("W", "D"):
+        f = frames.get(tf)
+        if f is None or not len(f):
+            continue
+        ts = pd.to_datetime(f["timestamp"])
+        if ts.min() < DP.HOLDOUT_START and ts.max() >= DP.CONTAMINATED_START:
+            return True
+    return False
+
+
+def short_history(frames):
+    """Policy मुळे W / D इतिहास लहान (blind_test BARS पेक्षा कमी bars) ⇒ [tf]; item 1 (top-down) कमी विश्वासाचा."""
+    from vision_led import blind_test as BT
+    return [tf for tf in ("W", "D") if tf in frames and len(frames[tf]) < BT.BARS[tf]]
 
 
 def build_frames(m1, decision):
@@ -114,7 +140,7 @@ def ohlc_table(df, tf):
             + "\n".join(rows))
 
 
-def facts_text(case, fr, asof, area=None):
+def facts_text(case, fr, asof, area=None, short_note=False):
     """Anonymised facts (symbol लपवलेला). area = anonymised [lo, hi] किंवा None."""
     bear = str(case["direction"]).upper().startswith("BEAR")
     dec = fr["15M"]["timestamp"].iloc[-1] if len(fr["15M"]) else asof
@@ -125,6 +151,9 @@ def facts_text(case, fr, asof, area=None):
             (f"Proposed area: {area[0]:,.2f}-{area[1]:,.2f} ({'supply' if bear else 'demand'})." if area else
              "Proposed area: not given — judge the area from the charts and tables."),
             "Futures volume: not provided in this run — judge the volume part of items 5 and 6 as NA."]
+    if short_note:
+        head.append("History note: older data is not provided (data policy), so the Weekly / Daily history is short; judge item 1 on "
+                    "what is shown and say so in its evidence.")
     return "\n".join(head + [ohlc_table(fr[tf], tf) for tf in TFS if tf in fr])
 
 
@@ -153,7 +182,7 @@ def compare(data, expected):
 
 def print_case(rec, out=print):
     out(f"\n=== {rec['id']} · {rec['status']} ===")
-    for k in ("why", "error"):
+    for k in ("why", "error", "warnings"):
         if rec.get(k):
             out(f"  {k}: {rec[k]}")
     if rec.get("estimate"):
@@ -193,11 +222,17 @@ def run_case(case, a, deps, state):
     if not len(fr.get("15M", [])) or pd.Timestamp(fr["15M"]["timestamp"].iloc[-1]) != decision:
         rec.update(status="NO_DATA", why=f"decision bar {decision} not in the data")
         return rec
+    if holdout_gap(fr):
+        rec.update(status="REFUSED_HOLDOUT_GAP", why="Weekly / Daily frames span the sealed holdout gap — pass only post-holdout data")
+        return rec
+    short = short_history(fr)
+    if short:
+        rec["warnings"] = [f"item 1 unreliable: short {'/'.join(short)} history (data policy)"]
     afr, aasof = anonymise(fr, asof, a.shift_weeks, a.scale, a.tick)
     _, price = anonymiser(a.shift_weeks, a.scale, a.tick)
     area = case.get("area")
     area = [price(area[0]), price(area[1])] if isinstance(area, (list, tuple)) and len(area) == 2 else None
-    facts = facts_text(case, afr, aasof, area)
+    facts = facts_text(case, afr, aasof, area, short_note=bool(short))
     images = deps["render"](afr, aasof)
     known = CK.facts_prices(afr, area)
     pack = deps["pack"]()
@@ -213,12 +248,15 @@ def run_case(case, a, deps, state):
         rec["rows"], rec["verdict_row"] = compare(None, case.get("expected"))
         return rec
     est = rec["estimate"]["usd_uncached"]
-    if state["spent"] + est > state["cap"]:
-        rec.update(status="NOT_RUN_BUDGET", why=f"today's Vision spend ${state['spent']:.3f} + est ${est:.3f} > daily ${state['cap']:.2f}")
+    ok, why = V4.budget_ok(est, state["g"], state["by_task"], state["today"], task=TASK)   # दैनिक − signals राखीव, मासिक
+    if not ok:
+        rec.update(status="NOT_RUN_BUDGET", why=why)
         return rec
     res = V4.audit(deps["client"](), images, facts, a.model, known, pack=pack, on_usage=deps["on_usage"](pack[1]),
                    effort=os.environ.get("VISION_SIGNAL_EFFORT") or None, thinking=os.environ.get("VISION_SIGNAL_THINKING") or None)
-    state["spent"] += res.get("cost_usd") or 0.0
+    d, m, n = state["by_task"].get(TASK, (0.0, 0.0, 0))
+    c = res.get("cost_usd") or 0.0
+    state["by_task"][TASK] = (d + c, m + c, n + 1)
     rec.update(status=res["status"].upper(), error=res.get("error"), cost_usd=res.get("cost_usd"), usage=res.get("usage"),
                checklist=res.get("data"))
     rec["rows"], rec["verdict_row"] = compare(res.get("data"), case.get("expected"))
@@ -263,7 +301,7 @@ def main(argv=None, deps=None, out=print):
     a.model = a.model or os.environ.get("VISION_SIGNAL_MODEL") or None
     a.data = _data_arg(a.data)
     deps = {**default_deps(a), **(deps or {})}
-    state = {"spent": 0.0, "cap": float("inf")}
+    state = {"by_task": {}, "g": None, "today": None}
     if not a.dry_run:
         if not a.model:
             out("⛔ VISION_SIGNAL_MODEL env नाही (किंवा --model)")
@@ -273,8 +311,9 @@ def main(argv=None, deps=None, out=print):
             out("⛔ API key env मध्ये नाही (VPS: set -a && . ./.env && set +a)")
             return 1
         from vision import store as VS
-        state["spent"] = VS.spent()[0]
-        state["cap"] = float(VC.load("_global")["vision_daily_budget_usd"])
+        now = VS.now_ist()
+        state.update(by_task=dict(VS.spent_by_task()), g=VC.load("_global"),
+                     today=now.replace(tzinfo=None) if getattr(now, "tzinfo", None) else now)
     cases = json.load(open(a.cases, encoding="utf-8"))["cases"]
     if a.only:
         cases = [c for c in cases if c.get("id") in a.only]

@@ -71,7 +71,35 @@ def estimate(n_images, facts, pack_text, model, max_tokens_=None):
             "usd_cached": round(cost_usd(model, {"input_tokens": fresh, "cache_read": sys_tok, "output_tokens": out}), 5)}
 
 
-def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK):
+def weekdays_left(today):
+    """आजनंतर महिन्यात उरलेले सोम–शुक्र (signals चा मासिक राखीव भाग — run_visual_audit / decision3.vision_audit सारखाच नियम)."""
+    import pandas as pd
+    t = pd.Timestamp(today).normalize()
+    end = t + pd.offsets.MonthEnd(0)
+    return int(len(pd.bdate_range(t + pd.Timedelta(days=1), end))) if end > t else 0
+
+
+def budget_ok(est, g, by_task, today, task=TASK, sub_cap=None):
+    """Signals ला प्राधान्य (run_visual_audit.audit_allowed सारखाच): V4 फक्त जर
+      task आज + est ≤ min(sub_cap, दैनिक − signals राखीव) · आजचा एकूण + est ≤ दैनिक − signals राखीव ·
+      महिना + est ≤ मासिक − राखीव × उरलेले weekdays.
+    ⇒ V4 कधीच signals चा राखीव भाग खात नाही (नंतरचा V2 audit "budget संपलं" होत नाही). by_task = store.spent_by_task(). रिटर्न (ok, कारण)."""
+    daily, reserve = float(g["vision_daily_budget_usd"]), float(g.get("signals_daily_reserve_usd", 0.0))
+    allow = daily - reserve
+    task_day = (by_task.get(task) or (0.0, 0.0, 0))[0]
+    day = sum(v[0] for v in by_task.values())
+    month = sum(v[1] for v in by_task.values())
+    if sub_cap is not None and task_day + est > min(float(sub_cap), allow) + 1e-12:
+        return False, f"V4 daily cap: today ${task_day:.3f} + est ${est:.3f} > ${min(float(sub_cap), allow):.2f}"
+    if day + est > allow + 1e-12:
+        return False, f"Vision daily budget: today ${day:.3f} + est ${est:.3f} > ${daily:.2f} − signals reserve ${reserve:.2f}"
+    m_allow = float(g["vision_monthly_budget_usd"]) - reserve * weekdays_left(today)
+    if month + est > m_allow + 1e-12:
+        return False, f"Vision monthly budget: ${month:.2f} + est ${est:.3f} > ${m_allow:.2f}"
+    return True, ""
+
+
+def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK, anchors=None):
     """API message ⇒ (data, error). Refusal / max_tokens / JSON / schema / price check ⇒ error (fail-closed)."""
     stop = getattr(msg, "stop_reason", None)
     if stop in ("refusal", "max_tokens"):
@@ -83,10 +111,10 @@ def read_message(msg, pack_version, known_prices, tick=CK.DEFAULT_TICK):
         raw = CK.parse_json(text)
     except ValueError:
         return None, "parse error"
-    return CK.validate(raw, pack_version=pack_version, known_prices=known_prices, tick=tick)
+    return CK.validate(raw, pack_version=pack_version, known_prices=known_prices, tick=tick, anchors=anchors)
 
 
-def audit(client, images, facts, model, known_prices, pack=None, on_usage=None, effort=None, thinking=None, ttl=None):
+def audit(client, images, facts, model, known_prices, pack=None, on_usage=None, effort=None, thinking=None, ttl=None, anchors=None):
     """एक V4 call (repair / दुसरा call नाही — खर्च मर्यादित). रिटर्न dict: status done / rejected / failed, data, error, usage, cost_usd,
     latency_ms, pack_version, prompt_version, model. कधीच raise नाही (request बांधताना चूक वगळता)."""
     from . import signal_audit as SA
@@ -110,7 +138,7 @@ def audit(client, images, facts, model, known_prices, pack=None, on_usage=None, 
     usage = SA.usage_of(msg)
     out.update(usage=usage, cost_usd=round(SA.cost_usd(model, usage), 6))
     _usage_cb(on_usage, usage, out)
-    data, err = read_message(msg, ver, known_prices)
+    data, err = read_message(msg, ver, known_prices, anchors=anchors)
     if err:
         out.update(status="rejected", error=err)
         return out

@@ -96,18 +96,27 @@ def parse_json(text):
 
 # ----------------------------------------------------------------------------------------------------------- prices in facts
 _MONTHS = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
-_DATE_TIME = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?\b"            # 2026-10-12 [09:15]
-                        rf"|\b\d{{1,2}}\s+(?:{_MONTHS})[a-z]*(?:\s+\d{{4}})?\b"                # 12 Oct [2026]
-                        rf"|\b(?:{_MONTHS})[a-z]*\s+\d{{1,2}}(?:,?\s+\d{{4}})?\b"              # Oct 12[, 2026]
-                        r"|\b\d{1,2}:\d{2}(?::\d{2})?\b", re.I)                               # 09:15
-_NUM = re.compile(r"(?<![\w.,])(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\w%×]|[.,]\d)")
-_UNIT_AFTER = re.compile(r"\s*(?:x\b|×|%|MR\b|bars?\b|candles?\b|min(?:utes?)?\b|sessions?\b|days?\b|touch(?:es)?\b|legs?\b|"
-                         r"waves?\b|pivots?\b|pts?\b|points?\b|σ)", re.I)
+_NOT_PRICE = re.compile(
+    r"\b\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?"                                  # 2026-10-12 [09:15]
+    rf"|\b\d{{1,2}}[\s-]+(?:{_MONTHS})[a-z]*(?:[\s-]+\d{{2,4}})?\b"                           # 12 Oct [2026] / 12-Oct
+    rf"|\b(?:{_MONTHS})[a-z]*[\s-]+\d{{1,2}}(?:,?\s+\d{{4}})?\b"                               # Oct 12[, 2026]
+    r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d{1,2}\.\d{1,2}\.\d{2,4}\b"                         # 12/10, 12/10/2026, 12.10.2026
+    r"|\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?m\.?)?"                                         # 09:15, 9:30am
+    r"|\b\d{1,2}\s*[ap]\.?m\b"                                                                # 10am
+    r"|\b(?:waves?|items?|sections?|steps?|stages?|legs?|sub-?waves?|degree|n|no\.?|#)\s*\(?\s*[ivx\d]+\s*\)?"   # wave (4), item 3
+    r"|\(\s*(?:\d{1,2}|[ivx]{1,4})\s*\)"                                                       # (4) / (iv) wave labels
+    r"|\b(?:volume|vol\.?)\s+(?:of\s+)?[\d.,]+",                                              # volume 1.8 / volume 180,000
+    re.I)
+_NUM = re.compile(r"(?<![\w.,/])(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\w%×/]|[.,]\d)")
+_UNIT_AFTER = re.compile(r"\s*(?:x\b|×|%|percent\b|pc\b|MR\b|ATR\b|bars?\b|candles?\b|min(?:utes?)?\b|hours?\b|sessions?\b|days?\b|"
+                         r"weeks?\b|touch(?:es)?\b|legs?\b|waves?\b|pivots?\b|pts?\b|points?\b|σ|lakh\b|lac\b|crore\b|cr\b|k\b|"
+                         r"contracts?\b|shares?\b|times\b)", re.I)
 
 
 def numbers(text):
-    """Evidence मधले आकडे ⇒ [(value, decimals, मूळ मजकूर)] — तारखा / वेळा / एककासह (MR, %, ×, bars …) आकडे वगळून."""
-    t = _DATE_TIME.sub(" ", str(text or ""))
+    """मजकुरातले आकडे ⇒ [(value, decimals, मूळ मजकूर)] — तारखा, वेळा, wave / item / section क्रमांक, ordinals, एककासह आकडे (MR, %,
+    percent, lakh, ×, bars …) आणि volume वगळून."""
+    t = _NOT_PRICE.sub(" ", str(text or ""))
     out = []
     for m in _NUM.finditer(t):
         if _UNIT_AFTER.match(t, m.end()):
@@ -151,16 +160,30 @@ def facts_prices(*objs):
     return sorted(vals)
 
 
-def unknown_prices(texts, known, tick=DEFAULT_TICK):
+PRICE_LO, PRICE_HI = 0.5, 1.5                                              # price-range = [0.5 × min anchor, 1.5 × max anchor]
+
+
+def price_range(anchors):
+    """Price anchors (level, spot, invalidation, chart levels, model ला दिसणारे OHLC — facts मधले bar counts / MR / अंतरं नाहीत) ⇒
+    (lo, hi). Anchors नाहीत ⇒ (100, inf): fail-closed (≥ 100 चा कोणताही आकडा संशयित)."""
+    a = sorted(x for x in (anchors or []) if x and x > 0)
+    return (PRICE_LO * a[0], PRICE_HI * a[-1]) if a else (100.0, math.inf)
+
+
+def unknown_prices(texts, known, tick=DEFAULT_TICK, anchors=None):
     """texts मधले price-सारखे आकडे जे known मध्ये (tick + लिहिलेल्या अचूकतेच्या अर्ध्या एककात) नाहीत ⇒ [मूळ मजकूर].
-    Price-सारखा = known prices च्या [0.5 × min, 1.5 × max] मध्ये. Known रिकामे ⇒ ≥ 100 चा कोणताही आकडा संशयित (fail-closed)."""
+    Range फक्त anchors वरून (None ⇒ known = anchors, उदा. golden मध्ये model ला दिसणारे OHLC): range मध्ये ⇒ known मध्ये हवा;
+    range च्या **वर** (> 1.5 × max: दुसऱ्या instrument ची किंमत?) ⇒ नाकार; range च्या **खाली** (counts, %, wave क्रमांक) ⇒ दुर्लक्ष."""
     import bisect
     known = sorted(known or [])
-    lo, hi = (0.5 * known[0], 1.5 * known[-1]) if known else (100.0, math.inf)
+    lo, hi = price_range(known if anchors is None else anchors)
     bad = []
     for tx in texts:
         for v, dec, raw in numbers(tx):
-            if not lo <= v <= hi:
+            if v < lo:
+                continue
+            if v > hi:
+                bad.append(raw)
                 continue
             tol = tick + 0.5 * 10 ** (-dec) + 1e-9
             i = bisect.bisect_left(known, v - tol)
@@ -174,16 +197,17 @@ def _one_line(x):
     return " ".join(str(x).split())
 
 
-def validate(raw, pack_version=None, known_prices=None, tick=DEFAULT_TICK):
+def validate(raw, pack_version=None, known_prices=None, tick=DEFAULT_TICK, anchors=None):
     """Model JSON ⇒ (स्वच्छ dict, None) किंवा (None, English कारण). Fail-closed: कोणतीही चूक ⇒ संपूर्ण output नाकारला (log warning).
-    known_prices = facts_prices(...) चा निकाल; None ⇒ price check नाही (फक्त tests / आकार तपासणी)."""
+    known_prices = facts_prices(...) चा निकाल (model ला दिलेल्या किंमती); anchors = price-range साठी किंमती (None ⇒ known); known_prices
+    None ⇒ price check नाही (फक्त tests / आकार तपासणी)."""
     err = _validate(raw, pack_version)
     if isinstance(err, str):
         log.warning("V4 checklist rejected: %s", err)
         return None, err
     out = err
     if known_prices is not None:
-        bad = unknown_prices([it["evidence"] for it in out["items"]], known_prices, tick)
+        bad = unknown_prices([it["evidence"] for it in out["items"]], known_prices, tick, anchors)
         if bad:
             why = "prices not in facts: " + ", ".join(dict.fromkeys(bad))
             log.warning("V4 checklist rejected: %s", why)

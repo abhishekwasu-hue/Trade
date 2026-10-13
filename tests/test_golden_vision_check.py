@@ -127,11 +127,18 @@ def test_real_run_path_with_fake_client_validates_and_logs_usage(tmp_path):
                               dry_run=False)
     deps = {**G.default_deps(a), **_deps([]), "client": FC}
     deps["on_usage"] = lambda v: (lambda u, c: calls.append(("usage", v)))
-    rec = G.run_case(dict(CASE, expected={"1": "pass", "verdict": "agree"}), a, deps, {"spent": 0.0, "cap": 2.0})
+    g = {"vision_daily_budget_usd": 2.0, "vision_monthly_budget_usd": 60.0, "signals_daily_reserve_usd": 0.20}
+    today = pd.Timestamp("2026-10-13 18:00")
+    st = {"by_task": {}, "g": g, "today": today}
+    rec = G.run_case(dict(CASE, expected={"1": "pass", "verdict": "agree"}), a, deps, st)
     assert rec["status"] == "DONE", rec
     assert ("usage", ver) in calls and rec["verdict_row"][-1] == "✔"
-    rec = G.run_case(CASE, a, deps, {"spent": 1.99, "cap": 2.0})            # $2 / दिवस budget ओलांडत नाही
-    assert rec["status"] == "NOT_RUN_BUDGET"
+    assert st["by_task"][G.TASK][2] == 1
+    assert "item 1 unreliable" in rec["warnings"][0]                        # fake W / D लहान ⇒ इशारा
+    rec = G.run_case(CASE, a, deps, {"by_task": {"signal": (1.79, 5.0, 9)}, "g": g, "today": today})
+    assert rec["status"] == "NOT_RUN_BUDGET" and "reserve" in rec["why"]   # $2 − signals राखीव ओलांडत नाही
+    rec = G.run_case(CASE, a, deps, {"by_task": {"signal": (0.0, 59.99, 9)}, "g": g, "today": today})
+    assert rec["status"] == "NOT_RUN_BUDGET" and "monthly" in rec["why"]
 
 
 def test_guard_uses_data_policy():
@@ -140,3 +147,27 @@ def test_guard_uses_data_policy():
     G.guard(pd.Timestamp("2026-09-29 12:15"))
     with pytest.raises(DP.HoldoutError):
         G.guard(pd.Timestamp("2024-06-03 10:00"))
+
+
+def test_holdout_gap_in_weekly_daily_is_refused(tmp_path):
+    fr, asof = _frames(DEC)
+    fr["D"] = pd.concat([fr["D"].iloc[:1].assign(timestamp=pd.Timestamp("2024-03-28")), fr["D"]], ignore_index=True)
+    assert G.holdout_gap(fr)
+    deps = {**_deps([]), "frames": lambda m1, dec: (fr, asof)}
+    lines = []
+    G.main(["--dry-run", "--cases", _cases(tmp_path, [CASE])], deps=deps, out=lines.append)
+    assert any("REFUSED_HOLDOUT_GAP" in x for x in lines)
+
+
+def test_load_data_refuses_holdout_parquet_and_filters_rows(tmp_path):
+    from elliott import data_policy as DP
+    df = pd.DataFrame({"timestamp": pd.to_datetime(["2025-01-02 09:15", "2026-09-29 09:15"]), "open": [1.0, 2.0], "high": [1.0, 2.0],
+                       "low": [1.0, 2.0], "close": [1.0, 2.0]})
+    bad = tmp_path / "nifty50_daily_extension.parquet"
+    df.to_parquet(bad)
+    with pytest.raises(DP.HoldoutError):
+        G.load_data([str(bad)])
+    ok = tmp_path / "x.csv"
+    df.to_csv(ok, index=False)
+    got = G.load_data([str(ok)])
+    assert list(got["timestamp"].dt.year) == [2026]                          # holdout row कधीच परत नाही
