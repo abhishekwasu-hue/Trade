@@ -7,8 +7,8 @@ import streamlit as st
 
 from safe_widgets import safe_number_input
 from sr_dynamic import compute_dynamic_sr
-from sr_levels_v3 import SRConfig, TF_SHORT, compute_sr_v3, select_display_levels, to_chart_lines
-from sr_v3_chart import CHART_TFS, load_frames
+from sr_levels_v3 import SRConfig, TF_SHORT, compute_sr_v3, select_display_levels
+from sr_v3_chart import CHART_TFS, band_chart_lines, load_frames
 from tradingview_chart import build_lightweight_chart_html
 from ui_headers import mega_header, sub_header, HDR_BLUE, HDR_TEAL, HDR_PURPLE
 from upstox_api import fetch_candles
@@ -142,7 +142,7 @@ def render():
                                         mintick=0.05 if symbol in ("NIFTY", "BANKNIFTY") else None)
         html = build_lightweight_chart_html(
             chart_df, symbol=symbol, timeframe_label=chart_tf, height=600,
-            trade_lines=to_chart_lines(shown), sr_levels=old_sr,
+            trade_lines=band_chart_lines(shown, chart_df, price), sr_levels=old_sr,           # TA4: फक्त band rule pass होणारे पट्टे
         )
         st.components.v1.html(html, height=650, scrolling=False)
         st.caption(

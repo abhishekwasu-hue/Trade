@@ -20,23 +20,40 @@ def label(z):
     return f"D{z['degree'] or '-'} {f or '-'} {'★' * z['stars']} ts{z['touch_score']:+d}{st}"
 
 
-def figure(frame, tf, zones, title, i_end_bar=None, side=None, box=None, min_deg=0):
+def shown_zones(zones, chk, debug=False):
+    """TA1 / TA4 (Abhi, design §10), drawing layer only: each zone (bottom–top) through the shared band check (facts/validity.py via
+    decision3.levels.check_bands) on the 15M bars up to t (`chk`, the engine's own frame). Returns [(zone, facts, style)]: ≤ 3 valid
+    above and ≤ 3 below the close at t, plus the most recently broken one (style "broken", dashed); debug ⇒ every zone (style "debug")."""
+    from decision3 import levels as LV
+    from facts import validity as FV
+    ch = LV.check_bands(chk, len(chk) - 1, [{"lo": z["bottom"], "hi": z["top"]} for z in zones])
+    if debug:
+        return [(z, f, "debug") for z, (_, f) in zip(zones, ch)]
+    pick = {id(f) for f in FV.select_bands([f for _, f in ch], float(chk["close"].iloc[-1]))}
+    return [(z, f, "valid" if f["valid"] else "broken") for z, (_, f) in zip(zones, ch) if id(f) in pick]
+
+
+def figure(frame, tf, zones, title, i_end_bar=None, side=None, box=None, min_deg=0, chk=None, debug=False):
+    """chk = the 15M bars up to t ⇒ TA4 drawing rule (shown_zones); chk None ⇒ the old drawing (every zone)."""
     d = frame.reset_index(drop=True)
     n = len(d)
     fig = BC._base(d, title)
     lo, hi = float(d["low"].min()), float(d["high"].max())
-    for z in zones:
+    view = shown_zones(zones, chk, debug) if chk is not None else [(z, None, "old") for z in zones]
+    for z, f, style in view:
         if (z["degree"] or 0) < min_deg and not z["k"]:
             continue
         if z["top"] < lo - (hi - lo) or z["bottom"] > hi + (hi - lo):
             continue
         self_ = i_end_bar is not None and z["pivot_bar"] is not None and z["pivot_bar"] > i_end_bar
         trade = side is not None and z["role"] == side and not self_
-        col = GREY if (self_ or z["status"] == "dead") else (RED if z["role"] == ZE.SELLER else GREEN)
-        dash = "dash" if (z["pending"] or z["status"] == "flipped") else "solid"
+        col = GREY if (self_ or z["status"] == "dead" or style == "broken") else (RED if z["role"] == ZE.SELLER else GREEN)
+        dash = "dash" if (z["pending"] or z["status"] == "flipped" or style == "broken") else "solid"
         fig.add_shape(type="rect", x0=0, x1=n - 1, y0=z["bottom"], y1=z["top"], fillcolor=col.format(a=0.22 if trade else 0.10),
                       line=dict(color=col.format(a=0.9), width=2 if trade else 1, dash=dash), layer="below")
-        fig.add_annotation(x=n - 1, y=z["top"], text=label(z), showarrow=False, xanchor="right", yanchor="bottom",
+        txt = label(z) if f is None else label(z) + f" · {f['touch_count']} touches" + (" · broken" if f["broken"] else "") + \
+            ("" if f["valid"] or f["broken"] else " · invalid: " + ", ".join(f["reasons"]))
+        fig.add_annotation(x=n - 1, y=z["top"], text=txt, showarrow=False, xanchor="right", yanchor="bottom",
                            font=dict(size=9, color=col.format(a=1.0)))
     if box:
         fig.add_annotation(x=0.005, y=0.995, xref="paper", yref="paper", xanchor="left", yanchor="top", align="left", showarrow=False,
@@ -64,7 +81,7 @@ def box_text(r, zmap):
     return "<br>".join(rows)
 
 
-def charts(Z, t, r, i_end_bar=None):
+def charts(Z, t, r, i_end_bar=None, debug=False):
     m15 = Z.m15
     m = m15.iloc[:t + 1]
     asof = pd.Timestamp(m["bar_end"].iloc[-1])
@@ -73,10 +90,11 @@ def charts(Z, t, r, i_end_bar=None):
     side = r["side"] if r["side"] in (ZE.SELLER, ZE.BUYER) else None
     title = "🧭 ZONE CHECK · " + INS.label() + " {tf} · {d:%d %b %Y %H:%M}"
     return {"15M": PC.png(figure(PC.window(m, "15M", asof), "15M", zones, title.format(tf="15M", d=asof), i_end_bar, side,
-                                 box_text(r, zmap))),
+                                 box_text(r, zmap), chk=m, debug=debug)),
             "1H": PC.png(figure(PC.window(PC.agg_1h(m), "1H", asof), "1H", zones, title.format(tf="1H", d=asof), i_end_bar, side,
-                                min_deg=2)),
-            "D": PC.png(figure(PC.daily_from_15m(m, asof), "D", zones, title.format(tf="Daily", d=asof), i_end_bar, side, min_deg=3))}
+                                min_deg=2, chk=m, debug=debug)),
+            "D": PC.png(figure(PC.daily_from_15m(m, asof), "D", zones, title.format(tf="Daily", d=asof), i_end_bar, side, min_deg=3,
+                               chk=m, debug=debug))}
 
 
 def caption(n, total, asof, r, zmap, why=None):

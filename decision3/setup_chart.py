@@ -353,7 +353,28 @@ def _session_ticks(ax, ts, n, hours=(11, 13)):
     return starts
 
 
-def m15_panel(D, ax, axv, r, st, setup_ts, w, vst):
+def k_line_facts(D, r, t):
+    """TA1 / TA3 (Abhi, design §10), drawing layer only: the V22 K line (r["trendline"], unchanged) through the shared K6 line check
+    (facts/validity.py) on the 15M bars up to the setup bar t. The K line's real break is its trigger (K6.5), so "broken" does not hide
+    it; any other K6 reason does (debug only). Label: touch count, and the projected next-touch zone while it is intact."""
+    from facts import validity as FV
+    tl = r["trendline"]
+    (b1, y1), (b2, y2) = tl["p1"], tl["p2"]
+    side = FV.RES if _dir(r) == 1 else FV.SUP                                 # K counter-move: UP => highs, DOWN => lows
+    f = FV.check_line(D.m15.iloc[:t + 1].reset_index(drop=True), t, (int(b1), float(y1)), (int(b2), float(y2)), side)
+    quality = [x for x in f["reasons"] if x != "broken"]
+    lab = f"K line ({f['touch_count']} touches" + (", established" if f["established"] else "")
+    if f["broken"]:
+        lab += f", broken {pd.Timestamp(f['break']['ts']):%H:%M})"
+    else:
+        z = FV.projected_zone(f, t, bars=1)["next"]
+        lab += f", intact; touch {f['touch_count'] + 1} zone {z['lo']:,.0f}-{z['hi']:,.0f})"
+    if quality:
+        lab += " [fails K6: " + ", ".join(quality) + "]"
+    return {"facts": f, "drawable": not quality, "label": lab}
+
+
+def m15_panel(D, ax, axv, r, st, setup_ts, w, vst, debug=False):
     idx = list(w.index)
     n = len(w)
     x = np.arange(n)
@@ -397,12 +418,13 @@ def m15_panel(D, ax, axv, r, st, setup_ts, w, vst):
             ax.plot(bar_x[b], p, marker="o", ms=7, mfc="none", mec=col, mew=1.5, zorder=7)
             labs.append((p, f"{nm} {p:,.0f}", col, bar_x[b]))
     tl = r.get("trendline")
-    if tl and tl.get("p1") and tl["p1"][0] in bar_x:
+    kf = k_line_facts(D, r, idx[-1]) if tl and tl.get("p1") and tl["p1"][0] in bar_x else None
+    if kf is not None and (debug or kf["drawable"]):                        # TA1: only a K6-valid K line (break = its trigger)
         (b1, p1), slope = tl["p1"], tl["slope"]
         xs = np.array([bar_x[b1], sx])
         ys = p1 + slope * np.array([0, idx[-1] - b1])
-        ax.plot(xs, ys, color="#555555", lw=1, ls=":", zorder=5)
-        labs.append((ys[-1], f"K line ({tl['touches']} touches, {'broken' if tl['broken'] else 'intact'})", "#555555"))
+        ax.plot(xs, ys, color="#555555", lw=1, ls=":" if kf["drawable"] else (0, (1, 3)), zorder=5)
+        labs.append((ys[-1], kf["label"], "#555555"))
     if st.protected is not None and ylo <= st.protected.price <= yhi:
         ax.axhline(st.protected.price, color=C["prot"], lw=1.2, zorder=5)
         labs.append((st.protected.price, f"Daily protected {st.protected.price:,.0f}", C["prot"]))
@@ -516,8 +538,8 @@ def caption(D, r, st, short, longst, head="V22 setup", tail="Reading review only
     return reading, cap
 
 
-def render(D, r, header="", status=None, path=None, dpi=110):
-    """एका setup row चा chart. रिटर्न dict (fig = path नसेल तर; नाहीतर बंद), st, short, longst, vol (15M study), ltf_vol, vline."""
+def render(D, r, header="", status=None, path=None, dpi=110, debug=False):
+    """एका setup row चा chart (debug=True: shared check fail होणारी K रेघ सुद्धा, ठिपक्यांत + कारण). रिटर्न dict (fig = path नसेल तर; नाहीतर बंद), st, short, longst, vol (15M study), ltf_vol, vline."""
     setup_ts, setup_end = pd.Timestamp(r["ts"]), pd.Timestamp(r["bar_end"])
     assert not D.sealed(setup_ts), "sealed (holdout) setup"
     st = D.state_at(setup_end)
@@ -539,7 +561,7 @@ def render(D, r, header="", status=None, path=None, dpi=110):
     ax_m = fig.add_subplot(gr[0])
     ax_mv = fig.add_subplot(gr[1], sharex=ax_m)
     daily_panel(D, ax_d, ax_dv, ax_s, r, st, setup_ts, setup_end)
-    m15_panel(D, ax_m, ax_mv, r, st, setup_ts, w, vst)
+    m15_panel(D, ax_m, ax_mv, r, st, setup_ts, w, vst, debug)
     lst, what = None, None
     if has_ltf:
         lst, what = ltf_study(D, r, g, arm_ts, setup_end)

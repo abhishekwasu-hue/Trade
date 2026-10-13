@@ -292,24 +292,37 @@ def test_charts_with_liquidity_layer_render_english_only():
 
 
 def test_review_charts_default_at_most_six_level_bands(monkeypatch):
-    """C1 (Abhi): 1H default chart वर ≤ 6 level पट्टे (+ trigger candle); debug मध्ये सगळी जवळची levels."""
+    """C1 (Abhi) → TA1 / TA4 (Abhi, design §10): 1H default chart वर फक्त shared band check pass होणारे पट्टे, किंमतीच्या वर कमाल 3 आणि
+    खाली कमाल 3 (+ trigger candle); invalid फक्त debug मध्ये (debug मध्ये सगळी जवळची levels)."""
     import matplotlib.axes
     from decision3 import charts as CH
     from decision3 import engine as E3
+    from decision3 import levels as LVM
     V = E3.V22(_abc_m15(), s=NO_MATURE)
     rows = V.run()
     r = next(x for x in rows if x["decision"] == "setup")
+    t = r["bar"]
+    c = float(V.levels._h1_upto(int(V.levels.h1_of[t]), t)[3])
     spans = []
     real = matplotlib.axes.Axes.axhspan
     monkeypatch.setattr(matplotlib.axes.Axes, "axhspan", lambda self, *a, **k: spans.append(a) or real(self, *a, **k))
-    monkeypatch.setattr(V.levels, "snapshot", lambda t: [{"id": f"L{i}", "lo": 100.0 + i, "hi": 100.5 + i, "role": "support",
-                                                         "births": ["a"], "sweeps": 0, "tests": i % 2, "dist": float(i)}
-                                                        for i in range(10)])
+    lv = [{"id": f"L{i}", "lo": c - 10.25 + 2 * i, "hi": c - 9.75 + 2 * i, "role": "support" if i < 5 else "resistance",
+           "births": ["a"], "sweeps": 0, "tests": i % 2, "dist": float(i)} for i in range(10)]
+    monkeypatch.setattr(V.levels, "snapshot", lambda t: lv)
     monkeypatch.setattr(V.levels, "active", lambda t, trend, band=None: [])
-    CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", max_sigma=1e9)
-    assert len(spans) == CH.MAX_LEVEL_BANDS
+
+    def fake_check(df, t, items, s=None, start=0, magnet_df=None):                    # shared check stubbed: even ids valid
+        return [(x, {"lo": x["lo"], "hi": x["hi"], "role": x["role"], "valid": int(x["id"][1:]) % 2 == 0, "broken": False,
+                     "reasons": [] if int(x["id"][1:]) % 2 == 0 else ["lt2_reaction_touches"], "touch_count": 2, "touches": [{"bar": 1}],
+                     "established": False, "last_break_bar": None}) for x in items]
+    monkeypatch.setattr(LVM, "check_bands", fake_check)
+    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9)
+    drawn = {round(a[0], 2) for a in spans}
+    assert drawn == {round(x["lo"], 2) for x in lv if int(x["id"][1:]) % 2 == 0}      # 5 valid (3 below + 2 above), invalid hidden
+    assert len(spans) <= CH.MAX_LEVEL_BANDS
+    assert sum(1 for a in spans if a[0] > c) <= 3 and sum(1 for a in spans if a[1] < c) <= 3
     spans.clear()
-    CH.h1_png(V.levels, r["bar"], r["daily_trend"], "NIFTY", max_sigma=1e9, debug=True)
+    CH.h1_png(V.levels, t, r["daily_trend"], "NIFTY", max_sigma=1e9, debug=True)
     assert len(spans) == 10
 
 

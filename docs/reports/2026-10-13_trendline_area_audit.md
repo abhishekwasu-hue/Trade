@@ -308,3 +308,70 @@ Rerun: the command in section 7, plus:
 --rule 2touch --nifty-fut-5m <trade-data>/live_export/2026-10-13/oe_futures_5min_NIFTY.parquet \
 --golden 2026-09-30 2026-10-06,2026-10-07 2026-10-12 --out <trade-data>/reports/trendline_audit/2026-10-13/rerun_2touch
 ```
+
+---
+
+## 9. Re-run with the R1 shared checks (`facts/validity.py`, branch `claude/r1a-lines-bands`)
+
+Same data, same 20 sessions, same drawers, one run (`--rule shared`). The 2-touch checks of §8 are replaced by the shared checks that
+every chart now uses: `facts.validity.check_line` (lines) and `facts.validity.check_band` + `latest_broken_only` (areas). Read-only for
+the engines; nothing tuned.
+
+**Rule differences versus §8 (by design, not tuning):**
+- Lines: no "touch in the last 2 sessions" rule (TA5 is still open, so it is not applied). Everything else is the same (2 wick-anchored
+  touches spaced ≥ 6 bars, no close > 0.3 MR beyond between the anchors, slope ≤ 0.5 MR/bar, no K5 real break after anchor 2, ≥ 3 =
+  established). New: a falling line through lows / rising line through highs is a channel edge, not a trendline (K6 definition,
+  `trend_direction_only`); no engine line hit this rule.
+- Areas: touches are counted on the band's current side only. A K5 real break (0.25 MR + acceptance or displacement) flips the role and
+  the count restarts on the new side (TA3b). "Broken" now means "the last event is a break and there are < 2 touches on the new side":
+  such a band is invalid and only the most recent one is drawn, dashed. A flipped band with 2 new-side touches is valid again. In §8 any
+  band with an acceptance through it after its first touch stayed broken, and the latest broken band per chart stayed valid.
+
+**Summary per symbol × TF**
+
+| symbol | TF | lines drawn | valid §8 | valid shared | established §8 → shared | areas drawn | valid §8 | valid shared | latest broken (dashed) |
+|---|---|---|---|---|---|---|---|---|---|
+| NIFTY | 15M | 54 | 10 | 19 | 6 → 10 | 409 | 108 | 91 | 53 |
+| NIFTY | 1H | 24 | 1 | 1 | 1 → 1 | 326 | 61 | 44 | 61 |
+| BANKNIFTY | 15M | 42 | 11 | 19 | 1 → 4 | 400 | 41 | 100 | 49 |
+| BANKNIFTY | 1H | 33 | 2 | 16 | 0 → 12 | 350 | 100 | 101 | 59 |
+| **all** | | **153** | **24** | **55 (36%)** | **8 → 27** | **1,485** | **310** | **336 (23%)** | **222** |
+
+**Lines: the counts match §8 exactly once TA5 is removed.** 31 lines change from invalid to valid. In §8 each of them failed only on
+"no touch in the last 2 sessions". 24 + 31 = 55, and no other line changed its verdict. The 13 lines that failed "only on the recent
+rule" because they were broken stay invalid. Per engine: trendlines2 3 → 28, d3_swingline 12 → 17, d3_kline 6 → 6, dashboard Trendline
+Gate (polyfit) 3 → 4. The gate is still the worst: 79 of 86 anchors are not on wicks. At most 2 valid lines per chart on NIFTY and 3 on
+BANKNIFTY 15M (one session), so the TA1 cap of 2 binds once.
+
+**Areas: 336 valid instead of 310; 272 single verdicts differ.** The differences come from the broken / flip semantics above:
+- 149 areas that §8 called "broken, not the latest" are valid now. They were broken once and then touched twice from the new side, so
+  they are flipped bands (TA3b).
+- 123 areas that §8 kept valid are not valid now:
+  - 84 are "broken": the last event is a break with < 2 new-side touches. §8 kept the latest broken band valid; now it is drawn dashed
+    as "broken", not as a valid area.
+  - 39 are "broken, not the latest".
+- Unchanged: all 279 SR V3 and 84 Vision single prices fail as "not a band". Per engine, valid areas went:
+  - d3_level 42 → 40;
+  - d3_tl_area 3 → 2;
+  - zones2 180 → 200;
+  - srv3 85 → 94;
+  - vision_major 0 → 0.
+
+**Goldens with the shared checks** (tests/test_r1_golden_lines.py; data truncated at the decision bar, no 12 Oct bar read):
+
+| | spot 15M | FUT 15M (from 5M) |
+|---|---|---|
+| line found at the 6 Oct close from 2 touches | 30 Sep 12:45 22,809.35 → 6 Oct 14:00 22,731.85 (valid from 14:30) | 30 Sep 12:45 22,935.0 → 6 Oct 12:45 22,830.0 (valid from 13:15) |
+| valid at the 6 / 7 / 8 / 9 Oct closes | yes; established (3 spaced touches, 7 Oct 12:00 = 3rd) from the 7 Oct close | yes; established from the 7 Oct close |
+| drawn at the 9 Oct close (TA1, ≤ 2 lines) | yes, first | yes, first |
+| projected zone at 12 Oct 09:15 (± 0.2 MR) | 22,654.35 (22,647.22–22,661.48); high 22,651.10 **inside**; close 22,581.8 | 22,709.6 (22,701.75–22,717.45); high 22,720.0 = 0.27 MR above the line, **outside the zone**, close 22,639.5 back below = a K5 sweep of the projected touch |
+| supply band near ≈ 22,667 | the same two reactions on spot: 22,534–22,574 (9 Oct 11:15, 14:15); no confluence with the spot line inside one session | **22,620–22,665**, 2 touches (9 Oct 11:15 22,620; 14:15 22,665), a flipped band (it was demand until the 8 Oct 09:15 break) |
+| band + line confluence | 22,667–22,711 (4 touches, established): line 22,655.4 at the 9 Oct close, 0.34 MR from it, **confluence at 09:15** | ≈ 22,667 band: the line reaches it at 12 Oct 13:45 (offset 19, line 22,684.4, 0.49 MR), **not at 09:15** (1.14 MR apart). At 09:15 the line is in confluence with supply 22,729–22,761 (7 Oct 11:00, 14:15; 0.46–0.49 MR) |
+
+So the line golden holds on both feeds. The FUT opening spike is a sweep through the zone, not a touch inside ± 0.2 MR. The zone was not
+widened. The ≈ 22,667 FUT band is found, but by the rule it meets the projected line only later on 12 Oct. The band that is in confluence at
+09:15 is the one above it. Both points are open questions for Abhi (R1a-7, R1a-8).
+
+Files (private): `trade-data/reports/trendline_audit/2026-10-13/rerun_shared/` (80 charts, CSV with `latest_broken`, `summary.json`);
+golden display charts: `trade-data/reports/r1_lines_bands/2026-10-13/`. Rerun: the command in section 7 plus `--rule shared --out
+<trade-data>/reports/trendline_audit/2026-10-13/rerun_shared`.
