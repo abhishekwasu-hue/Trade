@@ -407,6 +407,66 @@ def bar_wait(row, s, now=None):
     return bool(BAR_WAIT and s.get("vision_wait_for_bar_close", True) and not sb["closed"]), sb
 
 
+# --------------------------------------------------------------------------------------------------------- V4 (R0, audit-only)
+def v4_known_prices(row, meta, m1, facts=None):
+    """V4 price check साठी facts: signal (level / spot / invalidation), chart ctx (सगळ्या levels च्या किंमती), Vision ला दिलेला facts मजकूर
+    आणि signal पर्यंतचे 1m OHLC (chart वरचे candles)."""
+    from . import checklist as CK
+    ohlc = None
+    if m1 is not None and len(m1):
+        try:
+            f = CH.norm_1m(m1)
+            cut = pd.Timestamp(row.get("asof") or CH.to_ist_naive(row["signal_ts"]))
+            ohlc = f[f["timestamp"] <= cut]
+        except Exception:                                                # noqa: BLE001 — कापता आलं नाही ⇒ सगळा frame (facts च)
+            ohlc = m1
+    return CK.facts_prices({k: row.get(k) for k in ("level", "spot", "invalidation")}, meta.get("ctx"), ohlc, facts)
+
+
+def _v4_budget_ok(g, est_usd, path=None):
+    """V2 सारखाच hard stop (`_budget_ok`), फक्त अंदाज V4 चा: आजचा / महिन्याचा खर्च + अंदाज ≤ $2 / दिवस आणि मासिक cap."""
+    day, month = VS.spent(path)
+    ok = day + est_usd <= float(g["vision_daily_budget_usd"]) and month + est_usd <= float(g["vision_monthly_budget_usd"])
+    return ok, day, month
+
+
+def maybe_v4(row, png, meta, m1, g, model, path=None, send_text=None, client_factory=None, timeout_sec=20):
+    """Global `vision_v4_audit` = "v4" ⇒ V2 निर्णय नोंदल्यानंतर Method Pack checklist (audit-only). निकाल `vision_signals.v4_json` +
+    `pack_version`, खर्च `vision_usage` (task signal_v4, pack_version). Shadow mode ⇒ फक्त नोंद; बाकी ⇒ एक Telegram संदेश. Gate / निर्णय /
+    order ला कधीच हात नाही; कधीच raise नाही. रिटर्न V4 निकाल dict किंवा None (बंद / चालवला नाही)."""
+    if (g or {}).get("vision_v4_audit", "off") != "v4" or png is None or not model or not VC.api_key_present():
+        return None
+    sid = row["signal_id"]
+    try:
+        from . import checklist as CK
+        from . import method_pack as MP
+        from . import v4 as V4
+        pack = MP.load()
+        facts = SA.signal_text(row)
+        est = V4.estimate(1, facts, pack[0], model)["usd_uncached"]
+        ok, day, month = _v4_budget_ok(g, est, path)
+        if not ok:
+            res = {"status": "skipped", "error": "budget reached", "pack_version": pack[1], "prompt_version": V4.PROMPT_VERSION}
+        else:
+            client = (client_factory or SA.make_client)(timeout_sec)
+            res = V4.audit(client, [png], facts, model, v4_known_prices(row, meta, m1, facts), pack=pack,
+                           on_usage=lambda u, c: VS.add_usage(V4.TASK, model, u, c, sid, path, pack_version=pack[1]),
+                           effort=VC.env_effort("signal"), thinking=VC.env_thinking("signal"))
+        VS.update(sid, path, pack_version=res.get("pack_version"),
+                  v4_json=json.dumps({k: res.get(k) for k in ("status", "data", "error", "usage", "cost_usd", "latency_ms", "pack_version",
+                                                               "prompt_version")}, ensure_ascii=False, default=str))
+        if row.get("mode") != "shadow" and send_text is not None:
+            title = f"{row.get('symbol')} {row.get('direction')} {pd.Timestamp(row['signal_ts']):%H:%M}"
+            send_text(CK.telegram_text(res, title))
+        return res
+    except Exception as exc:                                             # noqa: BLE001 — V4 अपयश ⇒ V2 / gate वर परिणाम नाही
+        try:
+            VS.event(sid, "v4_error", f"{type(exc).__name__}: {str(exc)[:200]}", path)
+        except Exception:                                                # noqa: BLE001
+            pass
+        return None
+
+
 def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send_photo=None, send_text=None, path=None, data_cache=None,
                 wait_for_bar=True, fetch_volume_fn=None):
     """एक RUNNING row पूर्ण करणे. रिटर्न अंतिम result dict. कधीच raise नाही (चूक ⇒ FAILED row).
@@ -539,6 +599,8 @@ def process_row(row, fetch_fn=default_fetch, client_factory=SA.make_client, send
             _safe_notify(row, res, d, png, path)
         elif row["mode"] == "notify":
             VS.set_notified(sid, send_photo(png, caption(row, res, row["mode"])), path)
+        maybe_v4(row, png, meta, m1, g, model, path=path, send_text=send_text, client_factory=client_factory,
+                 timeout_sec=int(s["vision_timeout_sec"]))
         return res
     except Exception as exc:
         err = f"{type(exc).__name__}: {str(exc)[:200]}"

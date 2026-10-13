@@ -2321,3 +2321,29 @@ diverging = broadening (विरोधी पुरावा), अपूर्�
 touch = trade location (handover + commitment), ≥ 3 = established. K4 बदल: horizontal band 2 reaction touches वरून, 3रा touch = trade
 location, flip नंतर नव्या बाजूने, "confluence" label, bands (वर / खाली 3, ताजा broken dashed). Golden fixtures (R1, ➕): 12 Oct NIFTY FUT
 2-touch रेषा + ≈22,667 confluence. K11.19 code-फरक तक्ता स्थितीसह (10 ओळी). OPEN_QUESTIONS KP1–KP5 निकाली.
+
+## 2026-10-13 · Chart Reader R0 — Method Pack + Vision V4 checklist (branch `claude/r0-method-pack`; design `docs/design/CHART_READER_AGENT.md` §12, §13)
+
+**काय केलं:**
+- **KB markers (फक्त भर, मूळ मजकूर बदलला नाही):** `KNOWLEDGE_BASE.md` मध्ये 11 English "Method Pack" blocks (`<!-- pack:N key -->` …
+  `<!-- /pack -->`, `<details>` मध्ये — KB वाचताना मिटलेले), प्रत्येक त्याच्या मराठी स्रोताशेजारी, source सह: 0 conventions (मोजपट्टी नंतर) ·
+  1 top-down (K1 नंतर) · 4a impulse वि. correction (K2) · 4b correction types (K3) · 2 areas (K4) · 5a liquidity (K5) · 3 trendlines (K6) ·
+  6 trigger (K9) · 5b volume (K10.3) · 5c handover + patterns (K11.18) · 7 never (भाग E). R:R / SL / target / lots / exits pack मध्ये नाहीत.
+- **`scripts/build_method_pack.py` + `vision/method_pack.py`:** blocks Abhi च्या क्रमाने (0–7) + `ABHI_METHOD_NOTES.md` (नवा stub: entries फक्त
+  Abhi च्या मंजुरीनंतर) ⇒ `docs/knowledge/method_pack.md`. Version = body चा sha256 (12 hex) header मध्ये. आज: **version 1ff8a2eaeab5,
+  29,352 chars ≈ 7,338 tokens**. `--check` = stale तपासणी.
+- **`vision/checklist.py`:** JSON (items 1–7 pass / fail / NA + एक evidence ओळ, verdict agree / partly / disagree, pack_version), validator
+  (fail-closed: आकार, agree + fail विसंगत, pack version, **evidence मधला कोणताही price-सारखा आकडा facts / OHLC मध्ये tick ± लिहिलेल्या
+  अचूकतेत नाही ⇒ संपूर्ण output नाकारला + log**), Telegram ओळी (fail / NA आधी, ≤ 12, "audit only").
+- **`vision/v4.py`:** system = [Method Pack, schema मजकूर + `cache_control`] (स्थिर cached prefix), मग images + facts; एकच call (repair नाही);
+  खर्च signal_audit चेच भाव. **Worker:** global `vision_v4_audit` (default **off**, dashboard + CLI) ⇒ V2 निर्णय नोंदल्यानंतरच V4 —
+  `vision_signals.v4_json` + `pack_version`, `vision_usage` (task signal_v4, नवा कॉलम pack_version, जुन्या DB वर migration); $2 / दिवस
+  budget तसाच; gate / verdict / order ला हात नाही; कोणतीही चूक ⇒ V2 वर परिणाम नाही.
+- **`scripts/golden_vision_check.py`:** cases JSON (`tests/fixtures/golden_vision_v4_cases.json`: 12 Oct 09:30, 29 Sep 12:15, BANKNIFTY TODO;
+  अपेक्षा TODO) ⇒ policy guard (holdout कधीच नाही) ⇒ W / D / 1H / 15M / 5M frames ⇒ anonymise (symbol लपवला, तारखा 297 आठवडे मागे,
+  किंमत × 0.731 tick ला) ⇒ charts + OHLC facts + V4 ⇒ validate ⇒ item-निहाय अपेक्षेशी तुलना. `--dry-run` = API नाही, token + $ अंदाज.
+  Sandbox मध्ये खऱ्या key ने कधीच चालवलं नाही.
+**Tests:** `test_method_pack.py` (stale pack = CI check, version hash, R:R / lot नाही, आकार, markers fail-closed), `test_vision_v4_checklist.py`,
+`test_golden_vision_check.py` (dry-run fakes). 18 files (vision सगळे + approval / telegram): 379 pass.
+**उघडे:** OPEN_QUESTIONS R0-1 … R0-8 (items 1–7 चा अर्थ, नवे KB blocks चे शब्द, golden अपेक्षा, BANKNIFTY दिवस / holdout, area, labels कुठे,
+FUT volume, live V4 चालू करायचा का).

@@ -328,3 +328,16 @@ Re-run: अहवाल §8 (रेघा 153 पैकी 24 valid, 8 establish
 | KP3 | ~~संपूर्ण counter-move wedge: ending वि. leading A~~ **निकाली (Abhi)** | Default वाचन **ENDING**; leading A फक्त alternate count (narrative) ⇒ patterns2 v1 `wedge_as_ending` बदल / निवृत्ती change control ने | — |
 | KP4 | ~~Expanding wedge + `forming_wedge` position_ban~~ **निकाली (Abhi)** | Diverging wedge = broadening = **फक्त विरोधी पुरावा** (patterns2 दंड: change control). अपूर्ण / बनत असलेला wedge entry **अडवत नाही**; KP1 नियमाने तपासायचा (`forming_wedge` BAN_STATES बाहेरच — सुसंगत) | — |
 | KP5 | ~~नवीन K11 patterns ना PT गुण~~ **निकाली (Abhi: "KB प्रमाणे")** | गुण नाहीत — फक्त नोंद / narrative; भाग D ची PT ओळ तशीच | — |
+
+## Chart Reader R0 — Method Pack + Vision V4 checklist (branch `claude/r0-method-pack`) — Abhi निर्णय हवे
+
+| # | प्रश्न | घेतलेला default | पर्याय |
+|---|---|---|---|
+| R0-1 | Checklist items 1–7 म्हणजे नक्की काय? (design §12.2 मध्ये यादी नाही) | Method Pack sections 1–7: ① top-down trend · ② area · ③ trendline / channel · ④ correction · ⑤ zone study (handover) · ⑥ trigger (5M CHoCH by close + FUT volume वरची dominant commitment) · ⑦ never-list (`vision/checklist.py` ITEMS) | decision3 चे ①–⑥ (⑦ R:R बंद असल्याने 6 items) |
+| R0-2 | Pack मधले 4 नियम KB च्या जुन्या मजकुरात नव्हते, आता KB मध्ये English pack blocks म्हणून आले: zone "dead only beyond the far swing" (Q2 / TL1), sharp-fall / sharp-rise point (Q55), handover candle वाचन (a2), trigger c0 + c1 (LEVEL_BOTS_CONFIRMATION). शब्द बरोबर आहेत का? | §12.1 मंजुरीनुसार तसेच (KB blocks 2, 5c, 6 — source सह) | शब्द बदला ⇒ KB block बदल + `scripts/build_method_pack.py` (pack version बदलतो) |
+| R0-3 | Golden दिवसांचे अपेक्षित checklist वाचन (प्रत्येक item pass / fail / NA + verdict): 12 Oct NIFTY, 29 Sep NIFTY, BANKNIFTY a-b-c | सगळे TODO (`tests/fixtures/golden_vision_v4_cases.json`); run "TODO" दाखवतो, pass / fail ठरवत नाही | — (फक्त Abhi भरतो; अपेक्षा कधीच run नंतर बदलायची नाही) |
+| R0-4 | BANKNIFTY a-b-c दिवस: नक्की decision bar, दिशा, data file? तुमचा case (Feb → Mar 2026 घसरण, a-b-c Jun 2026) NIFTY holdout तारखांत (2024-04 … 2026-06) येतो — runner चा guard सगळ्या symbols ना लागतो ⇒ तो दिवस नाकारतो | guard तसाच (holdout कधीच load नाही); 2026-07 नंतरचा BANKNIFTY a-b-c दिवस निवडा (BANKNIFTY intraday फक्त 15M ≈ Jul → Oct 2026) | BANKNIFTY ला CR-Q14 प्रमाणे अपवाद (code बदल + स्पष्ट मंजुरी) |
+| R0-5 | 12 Oct आणि 29 Sep चा proposal area (spot band lo–hi) Vision ला द्यायचा का? | नाही (`area` TODO ⇒ "not given — judge the area"); 29 Sep 12:15 आणि 12 Oct 09:30 decision bars WORK_LOG / design §11 वरून | band द्या (anonymise होऊनच जातो) |
+| R0-6 | भरलेल्या अपेक्षा कुठे? Repo public आहे (Abhi चे labels फक्त trade-data मध्ये) | repo मध्ये फक्त TODO template; भरलेली copy `/root/trade-data/golden_v4/cases.json` ⇒ `--cases` | repo fixture मध्येच भरा |
+| R0-7 | Golden runner मध्ये futures volume नाही ⇒ items 5 / 6 चा volume भाग NA | NA (facts मध्ये तसं लिहिलं) | FUT 1m / 5M file option जोडा (anonymise सह) |
+| R0-8 | Live V4 (`vision_v4_audit` = "v4"): V2 audit नंतर प्रत्येक signal ला एक जास्त call (≈ $0.03–0.05, pack cached / uncached) + एक Telegram संदेश (shadow mode ⇒ फक्त नोंद); cache TTL 5 मिनिटं | **off** (live मध्ये बदल नाही); golden runs नंतर Abhi ठरवतो — dashboard "vision_v4_audit" किंवा `python3 -m vision.config set _global vision_v4_audit v4 --by abhi` | on; TTL 1h (§8) |

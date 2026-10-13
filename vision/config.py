@@ -85,12 +85,14 @@ GLOBAL_DEFAULTS = {
     "visual_audit_daily_cap": 0.10,        # visual audit ची दैनिक उप-मर्यादा ($) — signals ला प्राधान्य (Abhi 2026-10-08)
     "signals_daily_reserve_usd": 0.20,     # signals साठी राखीव ($/दिवस): audit कधीच (दैनिक budget − हे) पलीकडे जात नाही
     "manual_profile": "srv3_instant",      # ✋ /paper (strikes न दिल्यास): strikes / spread width / lots या bot च्या settings ने
+    "vision_v4_audit": "off",              # R0 (design §12): "v4" ⇒ V2 audit नंतर Method Pack checklist (audit-only: Telegram + नोंद);
+                                           # default off ⇒ live मध्ये काहीच बदल नाही; खर्च याच $2 / दिवस budget मध्ये
 }
 VISUAL_AUDIT_SYMBOLS = ("NIFTY", "BANKNIFTY")
 ENUMS = {
     "vision_mode": MODES, "vision_gray_action": ("half", "skip", "ignore"), "vision_disagree_action": ("skip", "half", "ignore"),
     "vision_fail_action": ("ignore", "skip"), "timeout_action": ("auto_veto", "skip"), "level_gate": ("off", "skip_mid_range"),
-    "manual_profile": MANUAL_PROFILES,
+    "manual_profile": MANUAL_PROFILES, "vision_v4_audit": ("off", "v4"),
 }
 RANGES = {"approve_window_min": (1, 60), "max_drift_mr": (0.05, 5.0), "vision_timeout_sec": (5, 120), "second_audit_below_conf": (0.0, 1.0),
           "reuse_window_min": (0, 120), "exec_window_min": (1, 30), "shadow_cooldown_min": (0, 240),

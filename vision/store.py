@@ -66,7 +66,9 @@ V1_COLUMNS = {
     "decided_at": "TEXT", "decided_by": "TEXT", "decision_reason": "TEXT", "median_range": "REAL", "executed_at": "TEXT",
     "exec_note": "TEXT", "transition_notified": "INTEGER DEFAULT 0",
     "mod_entry": "REAL", "mod_json": "TEXT", "reject_reason": "TEXT",     # Abhi §10: ✏️ limit entry (spot) + सुधारित ticket; ❌ चं कारण
+    "pack_version": "TEXT", "v4_json": "TEXT",                           # R0 (design §12): V4 checklist audit (audit-only) + Method Pack version
 }
+USAGE_COLUMNS = {"pack_version": "TEXT"}                                  # R0: प्रत्येक V4 call ला कोणता Method Pack होता
 V1_MODES = ("auto_veto", "human_confirm", "veto_then_confirm")
 OPEN_V1 = ("QUEUED", "RUNNING", "PENDING_HUMAN", "APPROVED", "REJECTED")
 OUTCOME_STATUSES = ("DONE", "EXECUTED", "SHADOWED", "DRIFT_REJECTED")
@@ -82,6 +84,14 @@ def _migrate(conn, p):
             try:
                 conn.execute(f"ALTER TABLE vision_signals ADD COLUMN {col} {typ}")
             except sqlite3.OperationalError as exc:                      # दुसऱ्या process ने (bot / worker / service) आधीच जोडला
+                if "duplicate column" not in str(exc).lower():
+                    raise
+    have_u = {r[1] for r in conn.execute("PRAGMA table_info(vision_usage)")}
+    for col, typ in USAGE_COLUMNS.items():
+        if col not in have_u:
+            try:
+                conn.execute(f"ALTER TABLE vision_usage ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
                     raise
     _MIGRATED.add(p)
@@ -290,12 +300,15 @@ def list_signals(day=None, path=None):
 
 
 # --------------------------------------------------------------------------------------------------------- usage / budget
-def add_usage(task, model, usage, cost_usd, signal_id=None, path=None, ts=None):
+def add_usage(task, model, usage, cost_usd, signal_id=None, path=None, ts=None, pack_version=None):
+    """एका API call चा खर्च. pack_version (R0, V4 checklist) ⇒ कोणत्या Method Pack ने call झाला ते log मध्ये."""
     t = ts or now_ist()
     with connect(path) as c:
-        c.execute("INSERT INTO vision_usage VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO vision_usage (ts, day, month, task, model, signal_id, input_tokens, output_tokens, cache_read, cache_write, "
+                  "cost_usd, pack_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                   (_iso(t), t.strftime("%Y-%m-%d"), t.strftime("%Y-%m"), task, model, signal_id, int(usage.get("input_tokens", 0)),
-                   int(usage.get("output_tokens", 0)), int(usage.get("cache_read", 0)), int(usage.get("cache_write", 0)), float(cost_usd)))
+                   int(usage.get("output_tokens", 0)), int(usage.get("cache_read", 0)), int(usage.get("cache_write", 0)), float(cost_usd),
+                   pack_version))
 
 
 def spent_by_task(path=None, ts=None):
