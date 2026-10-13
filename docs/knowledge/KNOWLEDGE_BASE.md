@@ -454,7 +454,7 @@ completed pattern allows, the count is wrong.
 ## K4. Areas: buyer/seller (supply/demand), role flip, range edges
 **काय.**
 - **Demand (supply) zone** = displacement (जोरदार impulse) च्या आधीचा **base**: 1–4 लहान, overlapping candles. तिथे न भरलेल्या orders शिल्लक असतात असं मानलं जातं.
-- **Role flip (polarity):** तुटलेला support resistance बनतो, आणि उलट.
+- **Role flip (polarity) [Abhi]:** तुटलेला support resistance बनतो, आणि उलट — फक्त **मजबूत move ने तोडून पुढच्या swing पर्यंत** पोचल्यावर; नाहीतर sweep, zone जुनी भूमिका ठेवतो.
 
 **मानसशास्त्र.**
 - चाल सुटलेले traders परत किंमत आली की entry घेऊ इच्छितात.
@@ -466,7 +466,7 @@ completed pattern allows, the count is wrong.
   - Zone = [lowest low, highest body-top] (demand; supply उलट).
   - उंची ≤ 1.5 MR.
 - **Displacement** (repo `zones.py`): ≥ 2 सलग candles, प्रत्येकाचा body ≥ 0.6 × range आणि range ≥ 1.5 MR; किंवा एकच candle ≥ 2.5 MR. सोबत **आधीचा swing तुटला पाहिजे (BOS).** BOS नाही तर तो noise.
-- **Flip level:** आधीचा swing ≥ 0.5 MR close ने तुटला, आणि नंतर दुसऱ्या बाजूने retest आणि rejection (repo `breaks.py` चा failed retest).
+- **Flip level:** वरचा flip नियम [Abhi] (मजबूत move + पुढचा swing). Real break (खाली) फक्त BROKEN ठरवतो, flip नाही.
 - **Freshness:** touches मोजा. पण नुसती संख्या नको; **प्रत्येक test वरची reaction किती जोरदार** होती ते मोजा (खाली विश्वासार्हता पाहा).
 - **Range edge:** range चा वरचा आणि खालचा कडा. Range च्या आतले minor swings नाहीत.
 - **Zone, line नाही.**
@@ -474,7 +474,7 @@ completed pattern allows, the count is wrong.
   - एकाच price area वर **दोन reaction touches** (दोन swing highs, किंवा दोन swing lows) ⇒ S/R band. Band tolerance = MR च्या पटीत setting (fixed points नाहीत).
   - Touches **खऱ्या reactions** हवेत: दोन touches च्या मधे price band सोडून गेली. Touches एकमेकांपासून दूर (setting, default 6 bars).
   - **3रा touch = trade location** (candidate area). Entry तिथे फक्त handover (K5 / K11 [A]) + commitment candle (K9) ने. 3रा touch स्वतः entry नाही.
-  - **Role flip:** तुटलेला support = resistance, आणि उलट. Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
+  - **Role flip:** तुटलेला support = resistance, आणि उलट (flip नियम [Abhi]: मजबूत move + पुढचा swing). Flip नंतर touches **नव्या बाजूने** मोजायचे; पुढचा retest = trade location.
   - Horizontal band आणि trendline (K6) एकाच किमतीवर भेटले ⇒ **सगळ्यात मजबूत location**, chart label **"confluence"** (K6.4).
 - **Chart वर areas कसे दाखवायचे [Abhi, 2026-10-13]:**
   - Area नेहमी **band** (base / reaction candles चा low–high), एकच किंमत कधीच नाही.
@@ -515,8 +515,8 @@ completed pattern allows, the count is wrong.
   overlapping); demand zone = [lowest low, highest body top] (supply mirrored); height ≤ 1.5 MR. Valid only when the displacement
   (≥ 2 consecutive candles with body ≥ 0.6 × range and range ≥ 1.5 MR, or one candle ≥ 2.5 MR) also broke the previous swing (BOS).
   No BOS ⇒ noise. The zone exists only from the bar where displacement + BOS are confirmed (no look-ahead).
-- **Role flip:** broken support becomes resistance and vice versa. A flip level = a prior swing closed through by ≥ 0.5 MR, then
-  retested from the other side and rejected. After a flip, touches are counted on the new side; the next retest is the trade location.
+- **Role flip:** broken support becomes resistance and vice versa — only by the flip rule below (Abhi: a strong move through the zone
+  that reaches the next swing). After a flip, touches are counted on the new side; the next retest is the trade location.
 - **Horizontal S/R band — drawn from 2 touches [Abhi, TA3b]:** two reaction touches at one price area (two swing highs, or two swing
   lows) are enough to DRAW the band (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced
   (setting, default 6 bars). **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with
@@ -536,18 +536,19 @@ completed pattern allows, the count is wrong.
   scores 0. Anchor only on confirmed pivots of an impulse ≥ 4 MR that broke structure; never on an overlapping (corrective) leg (K7).
 - **Round numbers / PDH / PDL / PDC:** low weight, confluence only. A reversal candle at or just before a round number =
   take-profit absorption; a close ≥ 0.5 MR beyond = cascade risk (K8).
-- **Area state:** ACTIVE (the market reacts to it in recent bars) / TESTED / BROKEN / FLIPPED / MAGNET. MAGNET = a level crossed by
+- **Area state:** ACTIVE (the market reacts to it in recent bars) / TESTED / BROKEN (real break, not yet flipped) / FLIPPED / MAGNET. MAGNET = a level crossed by
   closes ≥ 4 times in a day ⇒ no-trade level; the middle of a range is a magnet.
 - **Freshness:** judge the strength of the reaction at each test, not only the count. A zone already traded through on a higher
   timeframe is not "fresh".
 - **Real break (one definition, K5 / Part G):** close beyond the level by a 0.25 MR buffer AND the first of: (a) displacement — break
   bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
-  a retest from the broken side is rejected by a logical reversal (role flip confirmed). Anything else is a false break (sweep).
+  a retest from the broken side is rejected by a logical reversal (break confirmed). Anything else is a false break (sweep). A real
+  break makes the area BROKEN; it becomes FLIPPED only by the flip rule below.
+- **A broken zone flips [Abhi]:** a broken zone FLIPS role (supply ⇒ demand, demand ⇒ supply) after a **strong move** through it that
+  **reaches the next swing**. Otherwise it is a sweep and the zone keeps its old role.
 <!-- pending:abhi -->
-- **[pending Abhi — NOT in the generated Method Pack (R0-2)]** A zone is dead only beyond the far swing: an area dies only when price
-  CLOSES beyond the structural swing on the far side of the area, on the side of its CURRENT role — a support dies when the nearest swing
-  low below it is closed through; a resistance (or a flipped support now acting as supply) dies only when the nearest swing high above it
-  is closed through. A close through the band itself is a break / flip candidate (acceptance ⇒ flip), not death.
+- **[pending Abhi — reading of "strong move", NOT in the Method Pack]** "Strong move" is read with K9: the break is made by a dominant
+  commitment candle / displacement, not by a single wick or small closes.
 <!-- /pending -->
 - **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
   below price per timeframe.
@@ -574,7 +575,7 @@ completed pattern allows, the count is wrong.
 - **Real break (repo `elliott/breaks.py`, एकच अधिकृत व्याख्या):** buffer = **0.25 × MR** पलीकडे close, आणि पुढीलपैकी पहिलं जे होईल ते:
   - (a) **displacement:** break bar range ≥ 1.2 MR, close break दिशेच्या बाहेरच्या 30% मध्ये;
   - (b) **acceptance:** पुढचा bar सुद्धा पलीकडे close (reclaim नाही);
-  - (c) **failed retest:** reclaim नंतर तुटलेल्या बाजूने retest, आणि तिथे logical reversal ने rejection ⇒ role flip confirmed.
+  - (c) **failed retest:** reclaim नंतर तुटलेल्या बाजूने retest, आणि तिथे logical reversal ने rejection ⇒ break confirmed (BROKEN; flip फक्त flip नियमाने).
 
   नाहीतर **false break: exit नाही, invalidation नाही.**
 - **Magnet:** दिवसात ≥ 4 वेळा close ने आरपार झालेला level ⇒ no-trade level.
@@ -962,7 +963,7 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 
 **ओळख (code साठी).**
 - **स्रोत:** near-month NIFTY futures चे 5M candles (repo `collect_index_futures_volume.py`, रोज VPS वर). 15M साठी 3 candles ची बेरीज.
-- **Roll:** expiry जवळ volume पुढच्या महिन्याकडे सरकतो. ज्या दिवशी पुढच्या contract चा volume जास्त होतो त्या दिवसापासून त्याचा वापर (continuous series). Roll च्या दिवसांची तुलना टाळायची.
+- **Roll [Abhi]:** roll च्या दिवशी सुद्धा फक्त **near-month** contract चा volume (त्या दिवशी चालू असलेला सगळ्यात जवळचा expiry); दोन contracts चा volume कधीच बेरीज नाही. Roll च्या दिवसांची तुलना टाळायची.
 - **वेळेनुसार normalise (आवश्यक):** NSE वर volume U-आकाराचा आहे (K14). म्हणून volume ची तुलना **त्याच वेळेच्या slot च्या median** शी (उदा. 10:15 चा bar मागच्या 20 दिवसांच्या 10:15 bars शी). याला `rel_vol` म्हणू.
 - **मोजमापं:**
   - **Pullback dry-up:** pullback च्या bars चा सरासरी `rel_vol` ÷ impulse च्या bars चा सरासरी `rel_vol`. < 0.8 ⇒ healthy; > 1.0 ⇒ धोक्याचा.
@@ -983,7 +984,8 @@ BEFORE the candle (sections 2, 3), only after the zone study (section 5). The tr
 <!-- pack:5 zone_study -->
 <details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
 
-- Volume comes from the near-month index **futures** (the index itself has none); price comes from spot. Compare volume only with the
+- Volume comes from the near-month index **futures** (the index itself has none; on roll days too, never summed across contracts);
+  price comes from spot. Compare volume only with the
   median of the same time-of-day slot (`rel_vol`), because session volume is U-shaped.
 - **Pullback dry-up:** average `rel_vol` of the pullback bars ÷ that of the impulse bars < 0.8 ⇒ healthy; > 1.0 ⇒ dangerous (the other
   side is really coming in). Falling volume in C versus A ⇒ exhaustion.
