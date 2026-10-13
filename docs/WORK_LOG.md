@@ -2267,3 +2267,30 @@ paper_manual, decision3_touch_levels (+ 1 नवा default test; जुना l
   `test_gate_rr_skip_and_engine_settings_mirror`) + नवे: PERCENT mode dashboard SL / target, LIVE / LIVE_PAPER + confirmation ⇒ touch,
   `_gate_rr_skip` SL 0. Bot Dynamic SR Algo पानावर caption (options bots चा R:R gate engine reference SL / पुढचा area वापरतो); OPEN_QUESTIONS
   RR6. 25 files: 619 pass.
+
+## 2026-10-13 · KB K11 chart patterns विस्तार (फक्त docs; branch `claude/kb-k11-patterns`)
+
+**काय केलं:** `docs/knowledge/KNOWLEDGE_BASE.md` चा K11 = 16 pattern entries (K11.1–K11.16), owner च्या ठरीव क्रमाने: व्याख्या ·
+मानसशास्त्र · ओळख (MR / σ / ATR, bars, leg चा % — fixed points नाहीत) · validity (नाव फक्त पुष्टीनंतर) · invalidation · Abhi च्या
+पद्धतीत उपयोग ([P] pullback आत / [A] area handover / [E] trend शेवटी इशारा; breakout entry कधीच नाही) · विश्वासार्हता · चुका ·
+fixtures (bull + bear आरसा; ✔ आहे / ➕ जोडायचा).
+- Trend / correction: flag, pennant, rectangle, ascending / descending triangle, symmetrical triangle, channel, wedge (ending / leading
+  diagonal). Reversal: double, triple, H&S / inverse, rounding, V, broadening, island. Liquidity: sweep / spring / upthrust, failed
+  breakout / trap.
+- K11.0 सामायिक नियम + सारांश तक्ता; वर "change control" टीप (KB diff → Abhi approves → code → test → traceability row).
+- जुना K11 मजकूर (तक्ता, ओळख, उपयोग, Bulkowski / LMW / Savin, चुका) entries मध्ये आणि K11.17 / K11.18 मध्ये जपला. जुना "flag 4–20
+  bars" आता research अंदाज म्हणून; G8 चे 2–11 (Abhi #284) KB मध्ये मुख्य.
+- विश्वासार्हता: आकडे नवीन शोधले नाहीत. Repo मध्ये मोजलेलं फक्त A5 (range कडा, IS) आणि K2 / P4 (pullback वेग, displacement,
+  खोली) ⇒ ते [NIFTY] म्हणून; बाकी "NM: not measured yet — IS वर मोजायचं (holdout sealed)".
+- K11.19: code शी 7 फरक (file:line); अनुक्रमणिका अद्ययावत.
+
+**Tests:** नाहीत (docs only; code / settings / भाग D ची PT ओळ बदलली नाही).
+**उघडे:** OPEN_QUESTIONS KP1–KP5 (G8 flag `breakout_ok` gate वि. "flag breakout नाही"; PT flag 4–20 वि. G8 2–11; संपूर्ण-K wedge
+ending वि. leading A (patterns2 v1 / v2.1); expanding wedge + `forming_wedge` position_ban; नवीन patterns ना PT गुण).
+**Abhi चे उत्तर (PR #317, 2026-10-13) — KB मध्ये लागू (docs only):** KP1 trigger form (area वरच्या dominant commitment candle ने
+correction ची स्वतःची रेषा close-through = valid; दूरचा breakout / पाठलाग / commitment शिवाय break नाही; minor break एकटा = noise) ⇒
+K11.0, K11.1, K11.2, K11.5, K11.6, K11.7, K11.18, K6.5, K3 बंदी, S5; KP2 flag 2–11 (setting), 4–20 नोंद; KP3 / KP4 wedge default ENDING,
+diverging = broadening (विरोधी पुरावा), अपूर्ण wedge entry अडवत नाही; KP5 गुण नाहीत. K6.1 बदल: रेषा 2 touches वरून, projected 3रा
+touch = trade location (handover + commitment), ≥ 3 = established. K4 बदल: horizontal band 2 reaction touches वरून, 3रा touch = trade
+location, flip नंतर नव्या बाजूने, "confluence" label, bands (वर / खाली 3, ताजा broken dashed). Golden fixtures (R1, ➕): 12 Oct NIFTY FUT
+2-touch रेषा + ≈22,667 confluence. K11.19 code-फरक तक्ता स्थितीसह (10 ओळी). OPEN_QUESTIONS KP1–KP5 निकाली.

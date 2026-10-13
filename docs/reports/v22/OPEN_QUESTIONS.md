@@ -300,3 +300,13 @@
 | DP2 | Replay (`--source upstox`) चा FUT volume स्रोत | collector file मध्ये दिवस D असेल तर ती; नाहीतर `feed.futures` (front-month as of D+1 — expiry दिवशी पुढचा contract असू शकतो, contract छापला जातो) | नेहमी feed (live engine सारखं) / नेहमी file |
 | DP3 | Pre-open: आज engine row नाही + cron आहे — ℹ️ कधी? | (review #313) 09:45 IST पर्यंत, **आणि** मागच्या trading session (weekday − config सुट्ट्या) चा किमान एक row असेल तरच ℹ️; नाहीतर ❌ "engine did not run in the last session — check engine_signal.log". 09:45 नंतर row नाही ⇒ ❌ | ℹ️ फक्त 09:31 पर्यंत / stale row ला पण ℹ️ |
 | DP4 | 09:45 नंतर "आज row नाही" पण कालचा row आहे ⇒ ❌? | नाही (बदल नाही — सुट्टीच्या दिवशी manual run ला खोटा ❌ टाळला); फक्त store पूर्ण रिकामा ⇒ ❌ | trading day + 09:45 नंतर आजचा row नाही ⇒ ❌ |
+
+## KB K11 chart patterns (branch `claude/kb-k11-patterns`, PR #317) — **निकाली: Abhi चे निर्णय 2026-10-13** (KB K11.0, K11.1, K11.7, K11.19; code बदल change control प्रमाणे)
+
+| # | प्रश्न | Abhi चा निर्णय | पर्याय |
+|---|---|---|---|
+| KP1 | ~~G8 flag: `simple_core/flags.py:62` `breakout_ok` gate वि. "flag breakout वर entry नाही"~~ **निकाली (Abhi)** | Correction ची स्वतःची रेषा (flag / wedge / channel कड) **area वरच्या dominant commitment candle ने close-through** = valid trigger form. Entry कधीच नाही: area पासून दूर breakout, चाल निघून गेल्यावर पाठलाग, commitment candle शिवाय रेषा break. Minor swing / लहान trendline चा break एकटा = noise. G8 gate सुसंगत (code बदल नाही). T7 (`elliott/trigger.py`) code टप्प्यात एकत्र तपासायचा (KB K11.19 #10) | — |
+| KP2 | ~~Flag लांबी: PT 4–20 वि. G8 2–11~~ **निकाली (Abhi)** | Flag लांबी = G8 चे 2–11 bars (setting); research चा 4–20 फक्त नोंद ⇒ `chart_reader/settings.py:62–63` change control ने | — |
+| KP3 | ~~संपूर्ण counter-move wedge: ending वि. leading A~~ **निकाली (Abhi)** | Default वाचन **ENDING**; leading A फक्त alternate count (narrative) ⇒ patterns2 v1 `wedge_as_ending` बदल / निवृत्ती change control ने | — |
+| KP4 | ~~Expanding wedge + `forming_wedge` position_ban~~ **निकाली (Abhi)** | Diverging wedge = broadening = **फक्त विरोधी पुरावा** (patterns2 दंड: change control). अपूर्ण / बनत असलेला wedge entry **अडवत नाही**; KP1 नियमाने तपासायचा (`forming_wedge` BAN_STATES बाहेरच — सुसंगत) | — |
+| KP5 | ~~नवीन K11 patterns ना PT गुण~~ **निकाली (Abhi: "KB प्रमाणे")** | गुण नाहीत — फक्त नोंद / narrative; भाग D ची PT ओळ तशीच | — |
