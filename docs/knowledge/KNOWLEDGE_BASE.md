@@ -559,11 +559,17 @@ completed pattern allows, the count is wrong.
   decide the trade. Whether the pullback is corrective and how its volume compares with the impulse are reported as CONTEXT only. The
   decision comes from price behaviour AFTER price enters the zone: candle sizes by side and FUT volume per candle; patterns forming inside
   the zone (channel, wedge, double / triple top or bottom, sideways base); which side's candles grow or shrink; whether selling (or
-  buying) volume expands; RSI divergence. Then the dominant commitment candle on higher FUT volume + LTF CHoCH by close = entry. This
-  in-zone study tells whether price will break out or the trend will continue. In-zone study unclear ⇒ wait.
+  buying) volume expands; RSI divergence. This in-zone study tells whether price will break out or the trend will continue. In-zone study
+  unclear ⇒ wait.
+- **Entry order at a zone [Abhi]:** (1) a visible HANDOVER inside the zone (seller ⇒ buyer for a bull trade, buyer ⇒ seller for a bear
+  trade) is MANDATORY; (2) then an LTF CHoCH by close; (3) then the dominant commitment candle on higher FUT volume = entry. No handover
+  or no CHoCH ⇒ no entry. RSI divergence is evidence, not a trigger.
+- **Overlap / sideways candles inside the zone are the handover study, not a blocker [Abhi]:** a range or sideways base inside a zone is
+  read, never used to skip; ranges are traded at their edges (bull put at the range low, bear call at the range high).
 - **Volume in the in-zone study [Abhi]:** compare the average per bar, never sums, and normalise each bar by its time-of-day slot (the
-  median of the same slot over the last 20 sessions), because the opening and closing bars are always heavy. NIFTY / BANKNIFTY with FUT
-  volume missing = a data error ⇒ no entry.
+  median of the same slot over the last 20 sessions, at least 10), because the opening and closing bars are always heavy. With fewer than
+  10 sessions say "volume normalisation: insufficient history" and compare raw per-bar averages, clearly labelled. NIFTY / BANKNIFTY with
+  FUT volume missing = a data error ⇒ no entry.
 - **Trader's patience — no wave prediction [Abhi]:** a C wave (any correction) can EXTEND; nobody knows in advance where it ends. Never
   predict the end of a correction, and never block or skip on wave count, maturity or "C is long enough": wave count, maturity and
   projections (e.g. c = a) are CONTEXT facts only.
