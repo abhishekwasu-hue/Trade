@@ -420,3 +420,16 @@ Dossier कुठलाही मतभेद स्वतः सोडवत �
 | "strong move" | "strong" आणि dominant candle / displacement अर्थ **काढला**. Zone flip = price zone पलीकडे **आणि** पलीकडच्या बाजूचा swing पार; swing पार होणं हाच पुरावा, candle ची वेगळी अट नाही. तोपर्यंत sweep | KB K4 + pack. ✅ निकाली |
 | Z-2 | (b) सगळीकडे एकच flip नियम (G4 सकट). BROKEN (swing पार नाही) ⇒ retest trade location नाही, थांबा. FLIPPED ⇒ swing वरून परत येणं = pullback, flipped area = trade location; entry आधी (a) pullback corrective (zigzag / flat / triangle), (b) एकूण कमी FUT volume (flip करणाऱ्या impulse पेक्षा; सुरुवात वाढत्या volume ने चालते), (c) area वर handover (a2) + dominant commitment जास्त FUT volume (c0) + LTF CHoCH (c1) + RSI divergence पुरावा. Impulsive / जास्त volume ने परत ⇒ trade नाही. G4 चं नाव "flip retest" = नेमकं हेच | KB K4 + G4 + pack. ✅ निकाली |
 | Z-1 | decision3 BROKEN / FLIPPED code | वेगळा PR (fixtures: 12 Oct sweep, 13 Oct flip, 3 synthetic) |
+
+### Abhi अंतिम उत्तरं — Z-1 / RSI-2 (in-zone study)
+
+| # | निर्णय |
+|---|---|
+| मुख्य | Zone कडे येण्याची पद्धत (जलद / हळू, कोणताही volume) trade ठरवत नाही. Pullback corrective का आणि volume कमी का = फक्त **context**. निर्णय **zone मध्ये आल्यानंतरच्या वाचनावर** (बाजूनुसार candles, प्रत्येक candle चा normalised FUT volume, zone मधले patterns, कोणती बाजू वाढते / कमी होते, selling / buying volume, RSI divergence) ⇒ dominant commitment (जास्त volume) + LTF CHoCH = entry. ✅ |
+| Volume | सरासरी per bar (बेरीज नाही), प्रत्येक bar त्याच्या वेळेच्या slot च्या मागच्या 20 sessions च्या median ने normalise. ✅ |
+| Z-1a | पलीकडे swing नसेल (नवे high / low) ⇒ break नंतरचा पहिला **confirmed** swing. ✅ |
+| Z-1c | NIFTY / BANKNIFTY FUT volume नाही = data error ⇒ entry नाही + Telegram "data problem: FUT volume missing". Volume शिवाय grade-B trade नाही. ✅ |
+| Z-1d | Pullback आकार फक्त context; zone वाचन अस्पष्ट ⇒ थांबा. ✅ |
+| Z-1e | (ii) 22,544–22,622 spot zone = FLIPPED seller area; zone मधलं वाचन ठरवतं. 12 Oct bear call = golden ✅. |
+| Z-1f | Flip झाल्यावर जुनी भूमिका संपते; FLIPPED zone पुन्हा पलीकडच्या swing पार तुटला ⇒ dead (दुसरा flip नाही), log. ✅ |
+| RSI-2 | किमान pivot अंतर 3 bars, सगळ्या timeframes (dashboard setting). ✅ |

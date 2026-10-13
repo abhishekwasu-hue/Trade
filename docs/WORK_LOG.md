@@ -2499,3 +2499,10 @@ legs owner वि. reader2 gate).
 - BROKEN (swing पार नाही) ⇒ retest trade location नाही. FLIPPED ⇒ pullback flipped area मध्ये = trade location, पण entry आधी: corrective
   pullback + एकूण कमी FUT volume + area वर handover / commitment / LTF CHoCH / RSI divergence. G4 "flip retest" = हेच.
 - Fixtures (pack बाहेर, KB मराठी K4): 12 Oct sweep, 13 Oct flip. Pack version 5c23b29ca714. पुढे: decision3 BROKEN / FLIPPED code PR.
+
+## Abhi: in-zone study हाच निर्णय (KB + pack)
+
+- G4 / S4: येण्याची पद्धत (corrective / volume कमी) फक्त context; निर्णय zone मध्ये आल्यानंतरच्या वाचनावर + commitment + CHoCH. वाचन अस्पष्ट ⇒ थांबा.
+- Volume: per-bar सरासरी, वेळेच्या slot (20 sessions median) ने normalise. FUT volume नाही (NIFTY / BANKNIFTY) ⇒ data error, entry नाही.
+- Flip: पलीकडे swing नसेल ⇒ break नंतरचा पहिला confirmed swing; FLIPPED zone पुन्हा तुटला ⇒ dead. RSI किमान 3 bars (K10.4, pending).
+- Fixtures (pack बाहेर): 12 Oct = flipped seller zone, bear call ✅; 13 Oct = no bear call, नंतर flip. Pack 1f0c37eed37f.
