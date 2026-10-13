@@ -67,11 +67,14 @@ def test_run_m15_with_ltf_and_futures(files):
     assert len(o["daily_df"]) > len(set(pd.to_datetime(m15["timestamp"]).dt.normalize()))
 
 
-def test_run_m15_without_ltf_is_fail_closed_wait(files):
-    """ltf नाही ⇒ V22 fail-closed: ⑥ "LTF data missing" ⇒ एकही setup नाही (decisions मध्ये setup 0)."""
+def test_run_m15_without_ltf_is_fail_closed_wait(files, monkeypatch):
+    """ltf नाही ⇒ V22 fail-closed: ⑥ "LTF data missing" ⇒ एकही setup नाही; इशारा एकदाच (process-wide set) ⇒ test साठी set रिकामा."""
+    from decision3 import method as M
+    monkeypatch.setattr(M, "_LTF_WARNED", set())
     with pytest.warns(RuntimeWarning, match="LTF data missing"):
         o = _run(files)
     assert o["decisions"].get("setup", 0) == 0
+    assert all(b["decision"] != "setup" for b in o["bars"])
 
 
 def test_run_from_truncation_no_lookahead(files):
