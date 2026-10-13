@@ -32,6 +32,24 @@
 
 **No-lookahead:** फक्त बंद candles. Swing pivot फक्त k (2–3) candles नंतर confirmed. त्याआधी तो वापरायचा नाही.
 
+<!-- pack:0 conventions -->
+<details><summary>Method Pack (English) — 0. Conventions (source: labels, measuring scale, no-lookahead, A1, A2, Part E 15)</summary>
+
+- The owner's style: at the END of a pullback (a corrective move), sell a weekly credit spread in the direction of the impulse —
+  bull put in an uptrend, bear call in a downtrend; holding about two days. First make sure the move is a pullback, not a reversal (A1).
+- Probability, not a chain of rules: no single tool decides. Evidence adds up (confluence), then a confirmation candle (A2).
+  Buyer / seller areas and liquidity are objective; Fibonacci, channels and C = A are measuring tools that count only together with a
+  real area or liquidity (K7).
+- Unit **MR** = median of (high − low) of the last 20 CLOSED candles, current candle excluded. Every distance is a multiple of MR (or of
+  ATR14 daily for gaps, or a % of the leg being measured) so the rules hold on any instrument or timeframe. Never fixed points.
+- Closed candles only. A swing pivot exists only after it is confirmed k (2–3) candles later; never use it before (no look-ahead).
+- Evidence labels used below: [rule] true by definition; [evidence +] / [evidence −] supported / not supported in tests;
+  [experience] practitioner lore; [inference] our reasoning; [NIFTY] measured on NIFTY data in this repo; [Abhi] the owner's decision.
+- Prices: every price you write must be copied from the FACTS / OHLC text. Never read a price from an image (Part E 15).
+
+</details>
+<!-- /pack -->
+
 ---
 
 ## अनुक्रमणिका
@@ -199,6 +217,46 @@
 - पहिल्या CHoCH लाच reversal म्हणणं.
 - वरचा TF न पाहणं.
 
+<!-- pack:1 topdown -->
+<details><summary>Method Pack (English) — 1. Top-down reading (source: Part B stage 1, K1, P1, P3, P9, S3, S4, Part G "HTF trend")</summary>
+
+Read top-down, in this order, every time:
+1. **Weekly** — the overall market state (P9 [Abhi]). Macro / sentiment (FII / DII flows, global cues, VIX) is context and evidence,
+   never a trigger.
+2. **Daily** — the trend is decided here at least. Dow structure: higher highs + higher lows = UP; lower highs + lower lows = DOWN;
+   four new swings without a decision = RANGE. Count only real swings (≥ 1.5–2 MR); minor wiggles are noise.
+   - **Degree-aware:** degree is the place in the count, not the timeframe (P1). The trade follows the **parent** direction — the
+     motive sequence that the correction we trade belongs to. A higher (grandparent) degree pointing the other way is negative evidence
+     only, not a ban [Abhi].
+   - All breaks are by **close**. A wick beyond with a close back inside = SWEEP; the trend state does not change.
+   - BOS = close beyond the last swing extreme in the trend direction (an event, not a state change).
+   - CHoCH = close beyond the **protected** swing (the last HL in an uptrend, LH in a downtrend) ⇒ trend weak. A CHoCH is a WARNING,
+     not a reversal. Reversal is confirmed only when, after the CHoCH, a failed rally forms (an LH when an uptrend turns down; an HL in
+     the mirror) and then price closes beyond the post-CHoCH extreme (Dow: first break = warning).
+   - **A correction does not change the trend.** A pullback whose extreme holds the prior HL (LH) keeps the trend alive. Depth is
+     evidence: < 38.2 % strong trend; 38.2–80 % valid [Abhi]; 80–100 % weak (needs an area + sweep); a real break of the impulse
+     **origin** ⇒ not a pullback any more.
+   - **Protected origin:** the origin of the impulse being corrected (usually the parent's protected level). Its real break = S4
+     "testing": trade only the flip retest in the break direction, never the old direction, until a new trend is confirmed (LH / HL,
+     then a new extreme) or the break fails (old extreme retaken).
+   - A real break of the last confirmed 1H HL / LH inside the impulse while the origin holds = S3 (strong counter-move): Gray-1, no
+     trade until the reaction answers (P3). Corrective reaction that does not cross back over the broken area, then commitment in the
+     counter-move direction ⇒ the counter-move was a new impulse. Impulsive reaction that takes back the counter-move's start by a real
+     break ⇒ it was only a pullback, old trend.
+   - Exhaustion signs (evidence, not a fade signal): marginal new extreme (< 0.5 MR beyond the previous one) followed by a larger
+     pullback; with-trend legs shrinking (ratio < 0.8 twice); pullbacks expanding (> 1.3 × the previous). S8: lower confidence, never
+     fade.
+3. **1H** — buyer / seller areas (section 2) and the swing direction.
+4. **15M** — the pullback: is it a correction, which type, is it complete (section 4); the setup.
+5. **5M** — lower-timeframe CHoCH by close, only near an area (section 6).
+
+Always look at the higher timeframe: a 15M "uptrend" can be a secondary reaction inside a 1H downtrend (K1). Approved exceptions to
+the parent direction, each with its own scorecard: S4 flip retest (break direction), G7 exhaustion-gap reversal, G10 range edges (no
+parent trend: lower edge ⇒ bull put, upper edge ⇒ bear call, never the middle of a range).
+
+</details>
+<!-- /pack -->
+
 ---
 
 ## K2. Impulse वि. correction (pullback की reversal?)
@@ -245,6 +303,27 @@
 - Opening candles (नैसर्गिकरीत्या रुंद) वरून निष्कर्ष काढणं.
 - Triangle चा वेगवान E wave म्हणजे counter-impulse समजणं.
 - Running flat (मजबूत trend चं लक्षण) ला कमजोरी समजणं.
+
+<!-- pack:4 corrections -->
+<details><summary>Method Pack (English) — 4a. Impulse vs correction (source: K2, K10.1, P3, P4)</summary>
+
+- **Impulse:** fast, little overlap (overlap ratio < 0.4), large bodies, closes near the extremes, breaks prior extremes (BOS), length
+  ≥ 4 MR. **Correction:** slow or choppy, overlapping (overlap ratio > 0.6), mixed candles, wicks on both sides, narrower candles than
+  the impulse; the opposite side looks for an opportunity but runs into the trend side's resting orders.
+- Description of a healthy pullback: 3 waves, overlapping, inside the impulse origin. Danger signs: displacement against the trend,
+  5 waves in the counter-move, depth > 0.80, a real break of the protected swing.
+- **[NIFTY] caution:** NIFTY 15M pullbacks are often as fast as the impulse or faster (57 %), carry displacement (62 %) and go deeper
+  than 0.75 (31 %); corrective legs average fewer bars than impulsive ones. So speed and displacement alone are NOT evidence of a
+  reversal.
+- **What discriminates (frozen list [Abhi]):** depth = evidence; displacement = weak evidence; overlap / number of legs = recorded only.
+  At the moment of a strong counter-move, pullback-vs-reversal usually cannot be decided from the move itself — the **reaction test
+  (P3)** decides it (section 1, S3). It is known earliest at the close of the reaction's commitment candle, or at the confirm bar of a
+  real break — never before.
+- No single observation decides; read them together. Never judge strength from one candle, from naturally wide opening candles, from
+  a triangle's fast E wave, or call a running flat (a sign of a strong trend) weakness.
+
+</details>
+<!-- /pack -->
 
 ---
 
@@ -329,6 +408,47 @@
 - Expanded flat च्या B ला breakout समजणं.
 - X आल्यावर correction संपला असं मानणं.
 
+<!-- pack:4 corrections -->
+<details><summary>Method Pack (English) — 4b. Correction types and position in the count (source: K3, P2 Gray-2, S1, S6, S7, S11, Part E 3–4, 16)</summary>
+
+**Elliott rules [rule]:** wave 2 never goes beyond the start of wave 1; wave 3 is never the shortest; wave 4 does not enter wave 1's
+territory (NIFTY spot; diagonals excepted); **a correction is never 5 waves — the first 5-wave move against the trend is not the end of
+a correction (A-end ban)**; a triangle is never wave 2 alone (only before the last actionary wave: 4, B, X); in a zigzag B never goes
+beyond A's start; in a flat B ≥ 90 % of A; an ending diagonal only in wave 5 or C (3-3-3-3-3); if the market goes beyond what a
+completed pattern allows, the count is wrong.
+
+| Type | Structure | Recognition | Trade at |
+|---|---|---|---|
+| Zigzag | 5-3-5 | sharp; B = 38–79 % of A; C usually beyond A's end; C = A, then 1.618 A, then 0.618 A | C-end reversal |
+| Regular flat | 3-3-5 | B = 90–105 % of A; C ≈ A's end | C-end |
+| Expanded flat | 3-3-5 | B > 105 % of A (often 1.236–1.382 A); C ≈ 1.618 A, beyond A's end. **B's new extreme is the biggest "breakout" trap** | C-end (a sweep of A's end is common) |
+| Running flat | 3-3-5 | B far beyond; C does not reach A's end ⇒ strong trend | shallow C-end |
+| Triangle | 3-3-3-3-3 | contracting, time-consuming; E throw-over possible | E-end reversal, never the B–D line break |
+| Combination | W-X-Y | sideways, time-consuming. **An X means the correction is not over** | Y-end |
+| Ending diagonal | 3-3-3-3-3 wedge | only in 5 or C; legs shrink (1 > 3 > 5), overlap | in C: after it ends, on a reversal candle in the larger-trend direction; in wave 5: no immediate fade |
+
+- **Family classifier:** B < ~80 % of A ⇒ zigzag; 90–105 % ⇒ regular flat; > 105 % ⇒ expanded flat.
+- **Depth (classification only):** < 38.2 % strong trend; 38.2–61.8 normal; 61.8–80 deep but valid [Abhi] (needs an area / sweep);
+  80–100 weak; > 100 reversal (or the prior move was corrective).
+- **Wave personality:** 2 erases most of 1; 3 strong with shallow inner pullbacks; 4 sideways (truncation risk); 5 weaker, divergence;
+  A "feels like just a pullback" ⇒ no entry; B = "phonies, bull traps" ⇒ never enter inside B; **C is as strong as a 3 — the best entry
+  is at the END of C, when the crowd believes the correction is the new trend.**
+- **Tradable ends:** wave-2 end, wave-4 end, **C / Y end (main)**, triangle E-end, (ii) / (iv) of 3 (shallow 23.6–38.2 % flag, 2–11
+  bars [Abhi]). B-end → C against the trend that the whole ABC corrects: default OFF [Abhi].
+- **Is the correction complete (Gray-2)?** Decidable at the commitment bar only when: zigzag / flat — A, B and C are all visible and C
+  reached or passed A's end (a truncated C ⇒ Gray-2, except the strong-trend S5 criteria, and then as weaker evidence); triangle — five
+  legs; flag — the G8 structure; and the commitment candle has closed. A counter-move that is itself 5 waves is an A, not a C ⇒ no entry.
+- **Combination risk (S1):** the correction ran sideways far longer than the impulse, or the first "C" looks small / truncated ⇒ the
+  alternate "this is only W" gets stronger. Keep a primary and an alternate count, each with its invalidation (P2); an alternate always
+  exists — gray means a question the structure has not yet answered.
+- **Time (Neely, score only, never invalidation):** in an impulse t(w2) > t(w1) or t(w4) > t(w3); in a zigzag / flat t(C) ≤ t(A) + t(B).
+  "The whole correction takes longer than the impulse" is NOT a rule.
+- Mistakes: trading a gray count; calling an A-end a C-end (count A, B, C; after A wait for B); calling an expanded flat's B a
+  breakout; assuming the correction ended when an X appeared.
+
+</details>
+<!-- /pack -->
+
 ---
 
 ## K4. Areas: buyer/seller (supply/demand), role flip, range edges
@@ -385,6 +505,58 @@
 - Reversal candle शिवाय zone टिकेल असं गृहीत धरणं.
 - वरच्या TF ने आधीच पार केलेला zone "fresh" मानणं.
 
+<!-- pack:2 areas -->
+<details><summary>Method Pack (English) — 2. Areas: demand / supply, flips, bands, confluence, validity (source: K4, stage 3, K5 real break, K7, K8, Part G; 2-touch band: TA3b [Abhi]; sharp-fall point: ABC_FIX rule 2 / Q55 [Abhi])</summary>
+
+- **An area tells WHERE to look; it is not protection.** [NIFTY] none of our level engines beat random zones; the information is in the
+  REACTION at the area (sections 5, 6).
+- **Always a band** (low–high of its base / reaction candles), never a single price.
+- **Demand (supply) zone** = the base before a displacement: 1–4 small overlapping candles (each range ≤ 0.8 MR, bodies ≥ 50 %
+  overlapping); demand zone = [lowest low, highest body top] (supply mirrored); height ≤ 1.5 MR. Valid only when the displacement
+  (≥ 2 consecutive candles with body ≥ 0.6 × range and range ≥ 1.5 MR, or one candle ≥ 2.5 MR) also broke the previous swing (BOS).
+  No BOS ⇒ noise. The zone exists only from the bar where displacement + BOS are confirmed (no look-ahead).
+- **Role flip:** broken support becomes resistance and vice versa. A flip level = a prior swing closed through by ≥ 0.5 MR, then
+  retested from the other side and rejected. After a flip, touches are counted on the new side; the next retest is the trade location.
+- **Horizontal S/R band — drawn from 2 touches [Abhi, TA3b]:** two reaction touches at one price area (two swing highs, or two swing
+  lows) are enough to DRAW the band (tolerance in MR). Touches must be real reactions (price left the band in between) and spaced
+  (setting, default 6 bars). **The 3rd touch is the trade location** (a candidate area) — never an entry by itself: entry there only with
+  handover (section 5) and a commitment candle (section 6). Three or more touches = "established" (evidence +), never a minimum for
+  drawing the band. After a role flip, touches count on the new side.
+- **Sharp-fall / sharp-rise point [Abhi]:** in a down impulse, the first swing low (one degree lower) broken by the impulse's run of
+  wide-range candles is where the fall accelerated; that broken demand becomes **supply** (sharp-fall supply). Mirror in an up impulse
+  (sharp-rise demand).
+- **Confluence:** count how many different KINDS of tools meet at one place (within 0.5 MR). Solid + measuring tool = good; a measuring
+  tool alone = 0. A horizontal band and a valid trendline meeting at one price = the strongest location, labelled "confluence".
+- Check the full list every time (stage 3): (a) horizontal swing high / low cluster, (b) role flip, (c) supply / demand origin,
+  (d) range edge, (e) liquidity pools — equal highs / lows, prior swing extremes, PDH / PDL, (f) sloping trendline, (g) channel,
+  (h) Fibonacci 38.2 / 50 / 61.8 / 78.6 as bands ± 0.25 MR, (i) C = A (0.618 / 1.0 / 1.618 × A), (j) round numbers 100 / 500 / 1000,
+  (k) PDH / PDL / PDC and previous week high / low, (l) gap edge / PDC. (a)–(f) and (k) are solid; (g)–(i) are measuring tools;
+  (j) and (l) are weak.
+- **Fibonacci** counts only when its band overlaps a real area, liquidity, a trendline / channel or a round number / PDH-PDL; alone it
+  scores 0. Anchor only on confirmed pivots of an impulse ≥ 4 MR that broke structure; never on an overlapping (corrective) leg (K7).
+- **Round numbers / PDH / PDL / PDC:** low weight, confluence only. A reversal candle at or just before a round number =
+  take-profit absorption; a close ≥ 0.5 MR beyond = cascade risk (K8).
+- **Area state:** ACTIVE (the market reacts to it in recent bars) / TESTED / BROKEN / FLIPPED / MAGNET. MAGNET = a level crossed by
+  closes ≥ 4 times in a day ⇒ no-trade level; the middle of a range is a magnet.
+- **Freshness:** judge the strength of the reaction at each test, not only the count. A zone already traded through on a higher
+  timeframe is not "fresh".
+- **Real break (one definition, K5 / Part G):** close beyond the level by a 0.25 MR buffer AND the first of: (a) displacement — break
+  bar range ≥ 1.2 MR closing in its outer 30 %; (b) acceptance — the next bar also closes beyond; (c) failed retest — after a reclaim,
+  a retest from the broken side is rejected by a logical reversal (role flip confirmed). Anything else is a false break (sweep).
+<!-- pending:abhi -->
+- **[pending Abhi — NOT in the generated Method Pack (R0-2)]** A zone is dead only beyond the far swing: an area dies only when price
+  CLOSES beyond the structural swing on the far side of the area, on the side of its CURRENT role — a support dies when the nearest swing
+  low below it is closed through; a resistance (or a flipped support now acting as supply) dies only when the nearest swing high above it
+  is closed through. A close through the band itself is a break / flip candidate (acceptance ⇒ flip), not death.
+<!-- /pending -->
+- **Chart display [Abhi]:** broken areas are hidden except the most recent broken one (dashed, "broken"); at most 3 bands above and 3
+  below price per timeframe.
+- Mistakes: calling every pause a zone without displacement / BOS; zones wider than 1.5 MR; assuming a zone holds without a reversal
+  candle; treating a zone already crossed by a higher timeframe as fresh.
+
+</details>
+<!-- /pack -->
+
 ---
 
 ## K5. Liquidity, sweep, spring/upthrust, real break वि. false break
@@ -428,6 +600,30 @@
 - Sweep bar बंद होण्याआधी entry.
 - 2+ closes पलीकडे म्हणजे acceptance: आता stops हे इंधन आहे, सापळा नाही.
 - स्वतःचा short strike नेमका स्पष्ट pool वर ठेवणं.
+
+<!-- pack:5 zone_study -->
+<details><summary>Method Pack (English) — 5a. Liquidity, sweeps and traps (source: K5, K11.15, K11.16, K12, S7, S9)</summary>
+
+- **Pools:** stops and breakout orders gather just beyond clear swing highs / lows, equal highs / lows (≥ 2 pivots within 0.15 MR,
+  ≥ 5 bars apart), PDH / PDL and round numbers.
+- **Sweep** (stop run, spring below / upthrust above): a bar goes 0.1–1.0 MR beyond the pool but **closes back inside** (or the next
+  1–2 bars close back inside); a wick ≥ 50 % of the range is stronger. A sweep is known only at the reclaim close — never act on the
+  sweep bar itself. It matters because the stop cascade FAILED; not every poke reverses.
+- **Acceptance:** 2+ closes beyond ⇒ the stops became fuel; it is a real break, not a trap — never fade it.
+- **Failed breakout / bull trap / bear trap:** at least one close beyond a level (range edge, swing, triangle edge, neckline) without
+  acceptance, then back inside within a few bars and a commitment the other way. Named only at the reclaim close + opposite commitment.
+- **Use in the area (handover evidence [A]):** the best pullback endings often sweep A's low (or an inner low) and reclaim (S7, G2: in an
+  expanded flat C goes beyond A by design); a range edge sweep + reclaim (G10); a mini-spring inside the correction. Entry still comes
+  only on the commitment candle that follows.
+- **Reversal warning:** a sweep beyond the impulse origin (100 %) followed by ACCEPTANCE there ⇒ the trend changed; not a pullback.
+- **Wyckoff (K12):** the end of C should look like a last point of support / a test — spreads contracting, closes moving away from the
+  extreme (rising close location), a small sweep of A's low and an immediate reclaim. The opposite — wide spreads, closes at the lows, no
+  reclaim — is supply, not absorption (possible sign of weakness / reversal).
+- Mistakes: calling every wick a sweep (needs the reclaim close); entering before the sweep bar closes; fading after acceptance;
+  calling a gap open through a pool a sweep.
+
+</details>
+<!-- /pack -->
 
 ---
 
@@ -502,6 +698,37 @@
 - खूप तीव्र रेषा.
 - Pullback मध्ये impulse line तुटली म्हणजे reversal समजणं.
 - **फक्त horizontal पाहून trendline विसरणं (7 Oct ची चूक).**
+
+<!-- pack:3 trendlines -->
+<details><summary>Method Pack (English) — 3. Trendlines and channels (source: K6.1–K6.5, K11.6, Part F)</summary>
+
+- **Trendline** = a line through swing pivots (lows in an uptrend, highs in a downtrend); **channel** = the parallel line through the
+  most extreme opposite pivot between the anchors (on 15M usually 2–6 MR wide).
+- **A trendline is drawn from 2 touches [Abhi, TA3]:** two anchors (touches) make the line; a touch = the pivot extreme within ± 0.2 MR
+  of the line. The
+  **projected 3rd touch is the trade location** (a candidate area where the line acts as support / resistance) — entry there only with
+  handover (section 5) + a commitment candle (section 6); the 3rd touch alone is never an entry. **Three or more touches =
+  "established"** (evidence +), not a different trade rule and never a minimum for drawing the line. The projected zone exists only after the 2nd anchor is confirmed (no look-ahead).
+- Validity, also for 2-touch lines: anchors on **wicks**, break decisions on **closes**; no close beyond the line by > 0.3 MR between
+  the anchors; touches spaced (setting, default 6 bars); slope not extreme (steeper than 0.5 MR per bar ⇒ reject). Never mix bodies at
+  one anchor and wicks at another; never redraw the line every bar (curve-fitting).
+- **Horizontal or sloping — decide from recent price action (K6.4):** score each candidate on touches in the last ~2 sessions, how
+  recent the last reaction is, and the reaction strength (MR travelled in 3 bars). Recent pivots lining up on a slope while horizontal
+  levels get cut ⇒ the market respects the slope. Repeated reactions at one price ⇒ horizontal. **Both meeting within 0.5 MR ⇒ the
+  highest-quality area ("confluence").** Never look only at horizontals and forget the trendline (the 7 Oct mistake).
+- **Elliott channeling (measuring tool):** wave 4 often ends near the parallel through wave 2; a zigzag's C often ends near the line
+  drawn through A's end parallel to the line joining A's start and B's end — the correction's own channel (C target where C reaches
+  it; confluence with C = A). Throw-over in the last wave: a brief poke beyond the channel and a close back inside.
+- **Break vs false break:** real = the single K5 definition (0.25 MR buffer + displacement / acceptance / failed retest) or a structure
+  change (LH / HL). False = a close back inside within 1–2 bars (throw-over / sweep). **A minor impulse line breaking during a pullback
+  is expected — not a reversal.** A break of the correction's own channel in the impulse direction AFTER a reversal candle = extra
+  confirmation that the pullback ended.
+- [evidence, practitioner dataset] a bounce trade at the 3rd touch of an uptrend line wins only ~37 %; lines with 4+ touches, long
+  duration, gentle slope and widely spaced touches are better ⇒ **a trendline alone is never an entry**: it needs area confluence and a
+  reversal candle.
+
+</details>
+<!-- /pack -->
 
 ---
 
@@ -635,6 +862,41 @@
 - **फक्त आधी ओळखलेल्या area वर** शेवटच्या 1–3 बंद candles एकत्र वाचायच्या: कोण अडकलं? नावं विसरा.
 - **Exit बाजू:** एकटी विरुद्ध candle कधीच exit नाही. Exit फक्त real break वर (K5).
 
+<!-- pack:6 trigger -->
+<details><summary>Method Pack (English) — 6. Trigger (source: K9, P6, K6.5 / K11.0 KP1, K14 session; LTF CHoCH and dominant commitment: design §12.1 item 6 / level-bots confirmation c0 + c1 [Abhi])</summary>
+
+"Let the market commit to you before you commit to the market" (P6). Entry only on a **closed** candle, only at an area identified
+BEFORE the candle (sections 2, 3), only after the zone study (section 5). The trigger has two parts:
+
+1. **Dominant commitment candle** on the trade timeframe: any logical reversal form, read as one composite of the last 1–3 candles
+   (first open, highest high, lowest low, last close — hammer, engulfing and star share one logic: "pushed, then the other side took
+   over"):
+   - touch — the area was touched without a close beyond the invalidation;
+   - reclaim — the composite closes back beyond the deepest touched level, on the trade side; it closes beyond the area's inner edge;
+   - strength — range / MR about 1.2–2.5 (< 1.2 weak; > 2.5 with close location < 0.6 = climax / extension, negative; > 2.5 with
+     reclaim and close location ≥ 0.6 = absorption, fine);
+   - close location CL = (close − low) / (high − low) on the trade side; CL 0.40–0.60 = indecision ⇒ wait for the next close to follow
+     through;
+   - **dominant:** its body clearly larger than the average body of the study window, on **higher futures volume** than the window
+     average (volume missing ⇒ allowed, but weaker evidence; volume lower ⇒ "commitment on low volume", keep waiting).
+2. **Lower-timeframe CHoCH by close** (5M, near the area only): after the study window's extreme (lowest low for a bull put), the lower
+   timeframe stops extending (a later closed candle does not exceed that extreme, or the extreme candle swept the prior LTF swing / the
+   area's far edge and closed back inside), and then a candle **closes** beyond the last LTF swing high (low) that preceded the extreme
+   ⇒ CHoCH. A wick beyond without a close is not a CHoCH. LTF data missing ⇒ wait (never assumed).
+
+- **Trigger form [Abhi, KP1]:** the correction's OWN line (flag / wedge / channel edge) closed through by the dominant commitment candle
+  AT the area = a valid trigger. Not valid: a break far from the area, chasing after the move left, a line break without a commitment
+  candle. A minor swing or small trendline break ALONE is noise.
+- Pattern names (hammer, engulfing …) are for the log only — decide from the composite and the context. Single candles are close to a
+  coin toss ([evidence −]); they work at the end of a pullback, at a real area, with confirmation (multi-candle forms are stronger).
+- Extra confirmation (not required): the correction's own channel / trendline broken in the impulse direction after the reversal
+  candle, or a lower-timeframe structure shift.
+- **Time of day (K14):** signals in 09:15–09:45 are less reliable (wide opening candles) and need the next candle's confirmation;
+  11:00–13:30 bars carry less information; an afternoon entry held overnight fits the evidence.
+
+</details>
+<!-- /pack -->
+
 ---
 
 ## K10. Momentum आणि ताकद: price, RSI divergence आणि futures volume
@@ -717,6 +979,27 @@
 - "Pullback मध्ये volume कमी, impulse मध्ये जास्त": Wyckoff, Dow आणि practitioners मध्ये सर्वमान्य [अनुभव]. कठोर अभ्यास मर्यादित.
 - Volume U-shape (NSE): [पुरावा +]. म्हणून slot-normalisation अनिवार्य.
 - **[NIFTY] मर्यादा:** expired futures चा जुना volume Upstox Plus शिवाय मिळत नाही (HTTP 401). Collector काही आठवड्यांपासूनच data गोळा करतोय, आणि तो सगळा holdout / contaminated काळातला आहे. **म्हणून IS/VAL backtest मध्ये volume तपासता येणार नाही.** त्याचं मूल्य फक्त live PAPER scorecard मधून कळेल. सुरुवातीला गुण लहान.
+
+<!-- pack:5 zone_study -->
+<details><summary>Method Pack (English) — 5b. Futures volume and momentum inside the correction (source: K10.1, K10.2, K10.3)</summary>
+
+- Volume comes from the near-month index **futures** (the index itself has none); price comes from spot. Compare volume only with the
+  median of the same time-of-day slot (`rel_vol`), because session volume is U-shaped.
+- **Pullback dry-up:** average `rel_vol` of the pullback bars ÷ that of the impulse bars < 0.8 ⇒ healthy; > 1.0 ⇒ dangerous (the other
+  side is really coming in). Falling volume in C versus A ⇒ exhaustion.
+- **Absorption spike at the area:** `rel_vol` ≥ 1.5 but net progress ≤ 0.3 MR and the close back inside ⇒ evidence the correction is
+  ending (effort without result).
+- **Reversal / commitment candle volume** `rel_vol` ≥ 1.2 ⇒ stronger confirmation.
+- Volume data missing (gap, contract roll, collector failure) ⇒ volume evidence 0; it never blocks on its own.
+- **Correction weakening (price-only):** legs inside C getting shorter, spreads contracting, closes moving away from the extreme, a sweep
+  and reclaim of A's end, the first strong candle in the opposite direction. Failed extension (< 0.5 MR beyond the previous extreme,
+  back inside within 2 bars); rejection wick at the pullback extreme (≥ 0.5 of the range and ≥ 0.6 MR).
+- **RSI(14) divergence — evidence only, never a decision:** regular divergence at a C-end (C makes a new extreme, RSI does not) ⇒
+  correction tiring; hidden divergence in a pullback ⇒ continuation evidence; regular divergence at the impulse's last extreme ⇒ the next
+  pullback may be a reversal, demand more confirmation. Never trade against the trend on divergence.
+
+</details>
+<!-- /pack -->
 
 ---
 
@@ -995,6 +1278,32 @@
 - Pattern ला निर्णय मानणं: pattern फक्त पुरावा; grade भाग D प्रमाणे.
 - Hindsight labels tests मध्ये (I4.6): fixture मध्ये decision bar पर्यंतचाच data.
 
+<!-- pack:5 zone_study -->
+<details><summary>Method Pack (English) — 5c. Handover and patterns inside the area (source: K11.0, K11.1–K11.16 "use" rows, K11.17, K11.18; handover candle reading: design §12.1 item 5 / level-bots confirmation a2 [Abhi])</summary>
+
+- **Zone study = what happens INSIDE the area, from arrival to the commitment candle.** The question is always: is the opposite side
+  (sellers in a pullback down, buyers in a pullback up) losing control and the trend side taking over?
+- **Handover:** trend-side candles growing (bodies larger; range, close near the extreme, volume) while counter-side candles weaken
+  (bodies smaller; opposite wicks, closes away from the extreme, volume falling) ⇒ handover (strong evidence). **Absorption the wrong way:**
+  counter-side candles strengthening (body and range up, volume up when known) ⇒ wait while it lasts — no entry.
+- **Contraction:** the pullback's candles inside the area are smaller than its earlier candles and than the impulse candles ⇒ evidence.
+- **Patterns have only three roles (K11.0):** [P] inside the pullback — the correction's shape shows its momentum fading (flag 2–11
+  bars at 23.6–38.2 % of the pole, pennant, counter-trend channel or wedge, triangle E-end); [A] inside the area — handover shapes
+  (sweep / spring / upthrust, failed breakout / trap, equal lows or a second test, partial rise / decline that fails to reach the
+  opposite edge); [E] at the end of a trend — reversal warnings (double / triple top-bottom, head & shoulders, rounding, V-spike,
+  broadening, island, with-trend rising / falling wedge, final flag) ⇒ lower confidence or no trade.
+- **A pattern is named only after its confirming condition** (e.g. a close beyond the neckline; E-leg confirmed + commitment; reclaim
+  close). Before that it is only a candidate, not evidence. On our side of the trade, a second test of the area (equal lows / highs)
+  before any neckline is equal-lows / sweep handover evidence, not a "double bottom" — never wait for the neckline (that is a breakout).
+- A broken neckline / edge can become the next pullback's **flip area**.
+- Wedges: default reading ENDING [Abhi]. A diverging "wedge" is broadening = contrary evidence only. An incomplete / forming wedge does
+  not block an entry: it is judged by the trigger form in section 6.
+- Patterns are good as context filters, not as triggers ([evidence] mostly not measured on NIFTY). Never draw lines to fit the story;
+  0.3 MR "double tops" are noise.
+
+</details>
+<!-- /pack -->
+
 ### K11.19 Code शी फरक (Abhi चे निर्णय 2026-10-13, PR #317; code बदल change control प्रमाणेच)
 | # | Code (file:line) | KB (Abhi चा निर्णय) | स्थिती |
 |---|---|---|---|
@@ -1175,6 +1484,30 @@
 15. Image वरून किंमत वाचली (vision). ⇒ किंमती फक्त code कडून.
 16. X wave आल्यावर correction संपला असं मानलं.
 17. Gap open वर पाठलाग. ⇒ पहिल्या pullback ची वाट.
+
+<!-- pack:7 never -->
+<details><summary>Method Pack (English) — 7. Never (source: A3 hard rules 1–2 and definitional vetoes, K3 bans, K11.0, K13, Part E 1–17, design §12.1 item 7)</summary>
+
+- **Never a breakout or chase entry:** no bear call at support, no bull put at resistance, no gap-and-go, no opening-range breakout,
+  no entry on the break of the first candle, no fair-value-gap entry, no entry on the break of any level / trendline / bar high away
+  from an area or without a commitment candle, no entry on a pattern's neckline / outer-edge break.
+- **Never a counter-trend entry:** the trade follows the parent direction. Only the approved exceptions (S4 flip retest in the break
+  direction, G7, G10 range edges) and never on divergence alone.
+- **Never a minor-swing break alone as confirmation** — a minor swing or small trendline break by itself is noise; a minor impulse line
+  breaking during a pullback is expected, not a reversal.
+- **Never a price that is not in the facts** — every price you write must exist in the FACTS / OHLC text; never read one from the image.
+- Never decide on an unclosed candle; never act on a sweep before its reclaim close.
+- Never enter at an A-end, or inside a B wave, a triangle or an X; never on a gray count; never fade wave 5 at once; never sell a
+  pullback in the direction of an ending diagonal.
+- Never trade the middle of a range or a MAGNET level; never fade acceptance (2+ closes beyond).
+- Never call the first CHoCH a reversal (wait for the LH / HL); never treat the 09:15 candles as clean structure; never chase a gap open
+  (wait for the first pullback).
+- Never use Fibonacci alone as an area; never decide from a pattern name alone; never assume an X ended the correction.
+- Never check only horizontals and forget trendlines / channels — run the full area list every time (the 7 Oct mistake).
+- Never treat a pullback as a pullback after acceptance beyond the impulse origin (> 100 %).
+
+</details>
+<!-- /pack -->
 
 ---
 
