@@ -441,18 +441,43 @@ def test_last_bar_entry_is_dropped_and_logged(specs):
 
 @pytest.mark.parametrize("side", [BULL, BEAR])
 def test_mcx_l4_plan_mirror(specs, side):
-    """L4: structural SL settings SL पेक्षा रुंद ⇒ SL_TOO_WIDE; entry भावावर R:R < min ⇒ RR; नाहीतर structural SL / target."""
-    sg = 1 if side == BULL else -1
+    """L4 = live MCX (Abhi RR1): SL / target = dashboard settings (legacy_plan) — gate चा structural SL / पुढचा area / cap / skip नाही;
+    R:R gate (default बंद) चालू ⇒ dashboard SL / target वर R:R < min ⇒ SKIPPED_GATE_RR."""
     m = specs["mcx"]
-    cap = m.sl[1]
-    ok, why = RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 0.5, "plan_target": 1000.0 + sg * cap * 2}, m, 3)
-    assert why is None and ok["sl"] == 1000.0 - sg * cap * 0.5 and ok["tsl"] is None
-    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 1.5, "plan_target": 1000.0 + sg * cap * 9}, m, 3)[1] == \
-        "SKIPPED_GATE_SL_TOO_WIDE"
-    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - sg * cap * 0.5, "plan_target": 1000.0 + sg * cap}, m, 3)[1] == \
-        "SKIPPED_GATE_RR"
-    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 + sg, "plan_target": 1000.0 + sg * 50}, m, 3)[1] == \
-        "SKIPPED_GATE_INVALIDATED"
+    dash = RP.legacy_plan(m, 1000.0, side)
+    rr_dash = abs(dash["target"] - 1000.0) / abs(1000.0 - dash["sl"])
+    for g in ({"direction": side, "entry": 1000.0, "plan_sl": 1000.0 - (1 if side == BULL else -1) * m.sl[1] * 1.5, "plan_target": None},
+              {"direction": side, "entry": 1000.0, "plan_sl": 1000.0 + (1 if side == BULL else -1), "plan_target": 1000.0}):
+        ok, why = RP.l4_plan(g, m)                                           # default: gate किंमती कशाही असल्या तरी dashboard plan
+        assert why is None and ok == dash
+    on = {"rr_gate_enabled": True, "min_rr": rr_dash + 0.5}
+    assert RP.l4_plan({"direction": side, "entry": 1000.0, "plan_target": None}, m, on) == (None, "SKIPPED_GATE_RR")
+    assert RP.l4_plan({"direction": side, "entry": 1000.0}, m, {**on, "min_rr": max(rr_dash - 0.5, 0.1)}) == (dash, None)
+
+
+@pytest.mark.parametrize("side", [BULL, BEAR])
+def test_confirmation_with_no_target_area_does_not_crash_mirror(monkeypatch, specs, side):
+    """review 🔴: gate OFF ⇒ सर्वात बाहेरचा area (पुढचा area नाही) CONFIRMED, target None ⇒ replay crash नाही; confirmation arm =
+    bot चे exits, structural (not live) arm target None ⇒ फक्त SL / EOD."""
+    sg = 1 if side == BULL else -1
+    path = [22000.0 + sg * 0.5 * k for k in range(375)]
+    mk, day = _touch_market(monkeypatch, path, 22000.0, 50.0)
+    ctx = {"ok": True, "trend": "UP" if side == BULL else "DOWN", "sides": {side}, "reason": "Daily"}
+    monkeypatch.setattr(RP, "trend_ctx", lambda *a, **k: ctx)
+    cf = mk.frames[5]
+    t_conf = int(mk.day_rows[5][day][2])
+
+    def fake_eval(bars, area, ctx_, others, k0, s=None, **_ltf):
+        if bars["timestamp"].iloc[-1] == cf["timestamp"].iat[t_conf]:
+            c = float(bars["close"].iloc[-1])
+            return {"state": LR.CONFIRMED, "entry": True, "side": side, "entry_price": c, "sl": c - sg * 5, "target": None,
+                    "events": [], "grade": "B", "form": "engulf", "rr": None}
+        return {"state": LR.ARMED, "entry": False, "side": side, "events": []}
+    monkeypatch.setattr(RP.LR, "safe_evaluate", fake_eval)
+    out = RP.replay_day(mk, specs["instant"], day, cost=0.0)
+    assert len(out["conf"]) == 1 and len(out["struct"]) == 1
+    assert out["struct"][0]["target"] is None and out["struct"][0]["exit_reason"] in ("SL", "EOD")
+    assert out["conf"][0]["target"] == RP.legacy_plan(specs["instant"], out["conf"][0]["entry"], side)["target"]
 
 
 def test_period_labels_and_is_nifty_seal():

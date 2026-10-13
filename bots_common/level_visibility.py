@@ -35,25 +35,26 @@ CAT = {"SKIPPED_GATE_WAITING_COMMITMENT": "waiting", "SKIPPED_GATE_ABSORPTION": 
        "SKIPPED_GATE_ALREADY_CONFIRMED": "confirmed_earlier", "SKIPPED_GATE_AGAINST_TREND": "against_trend",
        "SKIPPED_GATE_NO_TREND": "trend_unclear", "SKIPPED_GATE_IMPULSIVE": "impulsive", "SKIPPED_GATE_BROKEN": "broken",
        "SKIPPED_GATE_TIMEOUT": "timeout", "SKIPPED_GATE_RR": "rr", "SKIPPED_GATE_NO_TARGET": "no_target", "SKIPPED_GATE_ERROR": "error",
+       "SKIPPED_GATE_INVALID_SL": "invalid_sl",                          # SL entry च्या चुकीच्या बाजूला (R:R-निरपेक्ष guard)
        "SKIPPED_GATE_NOT_AT_AREA": "idle",
-       # MCX (L4): CONFIRMED नंतर entry भावावर पुन्हा तपासणी
+       # MCX (L4): CONFIRMED नंतर entry भावावर पुन्हा तपासणी — Abhi RR1 नंतर फक्त जुन्या rows साठी (आता dashboard SL / target)
        "SKIPPED_GATE_INVALIDATED": "invalidated", "SKIPPED_GATE_TARGET_PASSED": "target_passed", "SKIPPED_GATE_SL_TOO_WIDE": "sl_too_wide",
        "SKIPPED_GATE_CONFIRM_USED": "confirm_used"}
 POST_CONFIRM = ("invalidated", "target_passed", "sl_too_wide", "rr")       # confirmed पण gate ने entry थांबवली ⇒ ignored (शेवटचं कारण)
 ARMED_CATS = ("waiting", "absorption", "low_volume")                     # ARMED चालू
-EPISODE = ARMED_CATS + ("confirmed", "confirmed_earlier", "impulsive", "timeout", "rr", "no_target")   # ARMED नंतरच येणाऱ्या अवस्था
+EPISODE = ARMED_CATS + ("confirmed", "confirmed_earlier", "impulsive", "timeout", "rr", "no_target", "invalid_sl")   # ARMED नंतरच येणाऱ्या अवस्था
 IGNORED = {"against_trend": "against trend", "trend_unclear": "trend unclear", "impulsive": "impulsive", "no_commitment": "no commitment",
-           "broken": "broken", "timeout": "timeout", "rr": "R:R < min", "no_target": "no target", "low_volume": "low volume",
+           "broken": "broken", "timeout": "timeout", "rr": "R:R < min", "no_target": "no target", "invalid_sl": "invalid SL", "low_volume": "low volume",
            "absorption": "absorption", "error": "error", "invalidated": "invalidated", "target_passed": "target passed",
            "sl_too_wide": "SL too wide"}
 STATE_LABEL = {"waiting": "🟡 armed — commitment ची वाट", "absorption": "🟠 armed — absorption", "low_volume": "🟠 armed — low-volume commitment",
                "confirmed": "✅ confirmed", "confirmed_earlier": "✅ confirmed (आधी)", "against_trend": "⛔ against trend",
                "trend_unclear": "⛔ trend unclear", "impulsive": "⛔ impulsive approach", "broken": "💥 broken", "timeout": "⌛ timeout",
-               "rr": "⛔ R:R < min", "no_target": "⛔ no target", "error": "⚠️ gate error", "idle": "⚪ price not at area",
+               "rr": "⛔ R:R < min", "no_target": "⛔ no target", "invalid_sl": "⛔ invalid SL", "error": "⚠️ gate error", "idle": "⚪ price not at area",
                "invalidated": "⛔ invalidated", "target_passed": "⛔ target passed", "sl_too_wide": "⛔ SL too wide",
                "confirm_used": "✅ confirmation वापरली"}
 _ORDER = {c: i for i, c in enumerate(("waiting", "absorption", "low_volume", "confirmed", "confirmed_earlier", "confirm_used", "impulsive",
-                                      "timeout", "rr", "no_target", "invalidated", "target_passed", "sl_too_wide", "broken", "against_trend",
+                                      "timeout", "rr", "no_target", "invalid_sl", "invalidated", "target_passed", "sl_too_wide", "broken", "against_trend",
                                       "trend_unclear", "error", "idle"))}
 _BARS = re.compile(r"(\d+)/(\d+) bars")
 
@@ -139,7 +140,7 @@ def summarize(rows):
     """एका गटाचे gate rows ⇒ {armed, confirmed, ignored: Counter, entry_statuses: Counter}. प्रत्येक area च्या भेटी (_visits):
     armed = ARMED-नंतरची कुठलीही अवस्था असलेल्या भेटी; confirmed = CONFIRMED / ALREADY_CONFIRMED असलेल्या (entry_statuses = त्या भेटीचा
     entry निकाल: पहिला खरा order status, नाहीतर शेवटचा); ignored = entry शिवाय संपलेल्या भेटीचं **शेवटचं** कारण ("waiting" ⇒ no commitment;
-    मधले absorption / low volume नंतर confirmed झाले तर मोजत नाही). MCX: confirmed पण entry भावावर gate ने थांबवलं (SL too wide …) ⇒ ते कारण."""
+    मधले absorption / low volume नंतर confirmed झाले तर मोजत नाही). MCX: confirmed पण entry ला gate ने थांबवलं (आता फक्त dashboard R:R gate चालू असेल तर "R:R < min"; जुन्या rows मध्ये SL too wide …) ⇒ ते कारण."""
     out = {"armed": 0, "confirmed": 0, "ignored": Counter(), "entry_statuses": Counter()}
     by = {}
     for i, r in enumerate(_records(rows)):

@@ -169,7 +169,7 @@ def test_confirmed_goes_to_vision_gate_with_gate_tags_and_side_no_trade_without_
     assert a[3] == "BULLISH" and a[5] == "SUPPORT" and a[6] == h.b["setup_tf"]   # srv2: hysteresis BEARISH होता — दिशा gate ची
     assert k["forced"] is False
     g = k["tags"]["gate"]
-    assert g["side"] == "BULLISH" and g["mode"] == "confirmation" and g["rr"] >= 3 and g["tf"] == f"{BOTS[name]['tf']}M"
+    assert g["side"] == "BULLISH" and g["mode"] == "confirmation" and g["rr"] is None and g["tf"] == f"{BOTS[name]['tf']}M"   # R:R gate default बंद
     assert g["trend"] == "Daily UP" and g["entry"] == 1008.0 and g["sl"] < 990
     assert k["tags"]["hit"] == "CONFIRMATION" and not k["tags"].get("breakout_entry")
     assert not h.trade.calls                                               # HOLD ⇒ entry नाही

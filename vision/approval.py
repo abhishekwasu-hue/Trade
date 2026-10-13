@@ -2,7 +2,7 @@
 फक्त approver (TELEGRAM_APPROVER_IDS — telegram_bot._authorized नंतर). प्रत्येक parsed value आधी परत दाखवतो (echo), मगच लागू.
 
   ✏️ Modify  = फक्त ENTRY (spot वर limit): "entry 22590". SL / target engine चेच (signal tags["gate"]; ✋ manual ⇒ /paper चे SL / T),
-               R:R पुन्हा मोजतो; area बाहेर / R:R < 3 ⇒ इशारा (block नाही). सुधारित ticket ⇒ पुन्हा ✅ हवं; approval window पुन्हा सुरू.
+               R:R फक्त माहिती म्हणून मोजतो (R:R इशारा नाही — Abhi: R:R dashboard चा); area बाहेर ⇒ इशारा (block नाही). सुधारित ticket ⇒ पुन्हा ✅ हवं; approval window पुन्हा सुरू.
                ✅ नंतर spot entry ला पोहोचला तरच PAPER entry (vision/gate.py: limit_reached); exec window मध्ये नाही ⇒ EXPIRED + would-have.
                Vision पुन्हा चालत नाही. SL / target / lots / strikes / hedge / expiry / risk — Telegram वरून कधीच नाही (dashboard वरच).
   ❌ Reject  = लगेच REJECTED (जुनं वर्तन: position नाही, would-have) + कारण एक tap: wrong trend / wrong zone / no real commitment /
@@ -24,7 +24,6 @@ from . import store as VS
 from . import tg as TG
 
 STATE_TTL_MIN = 15                                                      # reply ची वाट (मग "पुन्हा बटण दाबा")
-RR_WARN = 3.0
 CANCEL = ("cancel", "रद्द")
 NOT_MINE = ("unauthorized", "no_state")                                 # handle_text ने हा मजकूर घेतला नाही ⇒ पुढचा router (review replies)
 FORBIDDEN = ("sl", "stop", "stoploss", "target", "tgt", "t", "lot", "lots", "qty", "strike", "strikes", "hedge", "width", "expiry", "risk",
@@ -95,13 +94,14 @@ def base_levels(row):
         if _f(g.get("sl")) is not None:
             area = [_f(x) for x in (g.get("area") or [])[:2]]
             return {"side": str(g.get("side") or row.get("direction") or "").upper(), "sl": _f(g["sl"]), "target": _f(g.get("target")),
-                    "entry": _f(g.get("entry")), "area": area if len(area) == 2 and None not in area else None, "src": "engine"}
+                    "entry": _f(g.get("entry")), "area": area if len(area) == 2 and None not in area else None, "src": "engine",
+                    "show_rr": g.get("rr") is not None}                   # gate tags मध्ये rr फक्त dashboard R:R gate चालू असेल तर
         if tags.get("manual") and tags.get("manual_id"):
             from paper import manual as PM
             m = PM.get(tags["manual_id"])
             if m and _f(m.get("sl")) is not None:
                 return {"side": str(m.get("direction") or row.get("direction") or "").upper(), "sl": _f(m["sl"]), "target": _f(m.get("target")),
-                        "entry": _f(m.get("spot")), "area": None, "src": "manual"}
+                        "entry": _f(m.get("spot")), "area": None, "src": "manual", "show_rr": True}   # Abhi चे स्वतःचे SL / T ⇒ R:R माहिती
     except Exception as exc:
         print(f"⚠️ approval base_levels: {type(exc).__name__}: {exc}")
     return None
@@ -133,34 +133,36 @@ def modify_ticket(row, entry):
         return None, f"❌ entry {entry:g} हा SL {sl:g} च्या {'वर' if d > 0 else 'खाली'} हवा ({b['side']}). काहीच बदल नाही."
     if tg is not None and (tg - entry) * d <= 0:
         return None, f"❌ entry {entry:g} target {tg:g} च्या पलीकडे — trade उरत नाही. काहीच बदल नाही."
-    rr = round((tg - entry) * d / ((entry - sl) * d), 2) if tg is not None else None
+    show_rr = bool(b.get("show_rr", True))                               # engine: फक्त dashboard R:R gate चालू असेल तर (Abhi)
+    rr = round((tg - entry) * d / ((entry - sl) * d), 2) if (tg is not None and show_rr) else None
     warn = []
     if b["area"]:
         lo, hi = sorted(b["area"])
         if not lo <= entry <= hi:
             warn.append(f"⚠️ entry area {lo:,.0f}–{hi:,.0f} बाहेर")
-    if rr is None:
-        warn.append("⚠️ target नाही ⇒ R:R NA")
-    elif rr < RR_WARN:
-        warn.append(f"⚠️ R:R {rr:g} &lt; 3")
     return {"side": b["side"], "entry": entry, "sl": sl, "target": tg, "rr": rr, "area": b["area"], "engine_entry": b["entry"],
-            "src": b["src"], "warnings": warn}, None
+            "src": b["src"], "warnings": warn, "show_rr": show_rr}, None
 
 
 def ticket_text(row, t, deadline, exec_min):
     eng = f" (engine: {t['engine_entry']:g})" if t.get("engine_entry") is not None else ""
     area = f" · area {min(t['area']):,.0f}–{max(t['area']):,.0f}" if t.get("area") else ""
+    show_rr = bool(t.get("show_rr", True))                               # engine signal + R:R gate बंद ⇒ R:R कुठेच नाही (Abhi)
     rr = "NA" if t["rr"] is None else f"{t['rr']:g}"
     tgt = "NA" if t["target"] is None else f"{t['target']:g}"
+    ref = "engine reference (info): " if t.get("src") == "engine" else ""   # Abhi RR2: trade चे SL / target = dashboard
     lines = [f"✏️ <b>सुधारित ticket</b> · {html.escape(str(row.get('symbol')))} {t['side']} · {html.escape(str(row.get('setup_tf') or ''))}",
-             f"Entry (limit, spot) <b>{t['entry']:g}</b>{eng} · SL {t['sl']:g} · target {tgt}{area} · R:R <b>{rr}</b>"]
+             f"Entry (limit, spot) <b>{t['entry']:g}</b>{eng} · {ref}SL {t['sl']:g} · target {tgt}{area}"
+             + (f" · R:R <b>{rr}</b>" if show_rr else "")]
     lines += t["warnings"]
-    lines += ["फक्त entry बदलली — SL / target / lots / strikes / hedge / expiry / risk: engine / dashboard चेच.",
+    lines += ["फक्त entry बदलली — trade चे SL / target / lots / strikes / hedge / expiry / risk: dashboard चेच." if ref else
+              "फक्त entry बदलली — SL / target / lots / strikes / hedge / expiry / risk: engine / dashboard चेच.",
               f"⏱ <b>{pd.Timestamp(deadline):%H:%M} पर्यंत</b> पुन्हा ✅ हवं. ✅ नंतर spot {t['entry']:g} ला पोहोचला तरच PAPER entry; "
               f"{exec_min} मिनिटांत नाही ⇒ position नाही (would-have नोंद)."]
     from bots_common import plain_text as PT                             # Abhi (TELEGRAM_CLEANUP 3): ओळ 1 साधी, ओळ 2 निर्णय
-    rr_txt = "R:R not available" if t["rr"] is None else f"reward is {t['rr']:g}× the risk"
-    head = (f"{html.escape(str(row.get('symbol')))}: your changed entry {t['entry']:g} (stop {t['sl']:g}, target {tgt}) — {rr_txt}. "
+    rr_txt = "" if not show_rr else (" — R:R not available" if t["rr"] is None else f" — reward is {t['rr']:g}× the risk")
+    head = (f"{html.escape(str(row.get('symbol')))}: your changed entry {t['entry']:g} ({'engine reference ' if ref else ''}stop {t['sl']:g}, "
+            f"target {tgt}){rr_txt}. "
             "Check the new numbers, then approve again.")
     return f"{head}\n<b>{PT.DECISION_APPROVE}</b> by {pd.Timestamp(deadline):%H:%M}\n{PT.SEP}\n" + "\n".join(lines)
 
@@ -176,7 +178,8 @@ def start_modify(row, uid, answer, cq_id, send=None, path=None, now=None):
     eng = f"entry {b['entry']:g} · " if b["entry"] is not None else ""
     tgt = "NA" if b["target"] is None else f"{b['target']:g}"
     send(f"✏️ {html.escape(str(row['symbol']))} {html.escape(str(row.get('direction') or ''))}: नवीन <b>entry</b> लिहा — "
-         f"<code>entry 22590</code> (spot वर limit). रद्द: cancel\nEngine: {eng}SL {b['sl']:g} · target {tgt}{area} (हे बदलत नाहीत)")
+         f"<code>entry 22590</code> (spot वर limit). रद्द: cancel\nEngine: {eng}SL {b['sl']:g} · target {tgt}{area} (हे बदलत नाहीत)"
+         + ("\nहे engine reference (info) — trade चे SL / target = dashboard settings." if b.get("src") == "engine" else ""))   # Abhi RR2
     answer(cq_id, "✏️ entry लिहा (उदा. entry 22590)")
     return True, "modify_prompt"
 

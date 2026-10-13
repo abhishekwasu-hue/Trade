@@ -158,7 +158,7 @@ def test_real_gate_with_trend_confirmed_vs_against_trend(env, monkeypatch):
     dsr.process_symbol("tok", "NIFTY")
     (v,) = env.vision
     assert v["direction"] == "BULLISH" and v["level"] == 990.0 and v["tags"]["gate"]["entry"] == 1008.0
-    assert v["tags"]["gate"]["target"] == 1090.0 and v["tags"]["gate"]["rr"] >= 3
+    assert v["tags"]["gate"]["target"] == 1090.0 and v["tags"]["gate"]["rr"] is None   # R:R gate default बंद ⇒ R:R नाही (Abhi)
 
     env.vision.clear()
     env.logs.clear()

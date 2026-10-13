@@ -4,6 +4,8 @@
     candle engulfs the last greens and closes back below the band. Read = touch + buyers exhausting (a2 counter side) + dominant
     bearish engulf (c0). Bug: decide() ranked a far untouched level's "wait / no touch" above the touched level's "no_trade (R:R)",
     so the bar logged "no touch". Fixed: the level price is at (③ ✔) carries the bar's verdict. Mirrored (bull put) as well.
+    Abhi (rr-correction): no "skipped on R:R" outcome — by default the expected read is a valid bear-call read; the old
+    `no_trade (R:R)` remains only under legacy `rr_step` = True.
 (4) is in tests/test_decision3_level_death_side.py.
 """
 import os
@@ -62,11 +64,11 @@ def test_sep29_read_is_touch_buyers_exhausting_dominant_engulf(mirror):
 
 
 class _Stub(E3.V22):
-    """decide() फक्त: ① DOWN / UP, ② दोन active levels (जवळचा स्पर्शलेला + दूरचा), प्रत्येकाचा ③ / ⑥ खरा method, ⑦ R:R = day low /
-    high पर्यंत (engine सारखा: entry close, SL पट्ट्याची दूरची कडा)."""
+    """decide() फक्त: ① DOWN / UP, ② दोन active levels (जवळचा स्पर्शलेला + दूरचा), प्रत्येकाचा ③ / ⑥ खरा method. ⑦ R:R (day low /
+    high पर्यंत, engine सारखा: entry close, SL पट्ट्याची दूरची कडा) फक्त legacy `rr_step` = True — engine सारखंच (default ⑦ नाही)."""
 
-    def __init__(self, A, levels, trend):
-        self.s, self.A, self.act, self.trend, self.sealed = S3.load({"rr_step": True}), A, levels, trend, None   # ⑦ असर्ट ⇒ legacy (pin)
+    def __init__(self, A, levels, trend, rr_step=False):
+        self.s, self.A, self.act, self.trend, self.sealed = S3.load({"rr_step": rr_step}), A, levels, trend, None
         n = len(A["close"])
         ts = pd.date_range("2030-01-07 09:15", periods=n, freq="15min")
         self.m15 = pd.DataFrame({"timestamp": ts})
@@ -90,6 +92,8 @@ class _Stub(E3.V22):
         chk["⑥"] = [ok6, why6]
         if not ok6:
             return E3.M_WAIT, chk, {"why": f"commitment ची वाट ({why6})"}
+        if not self.rr_step:                                                  # default (Abhi): R:R entry ची अट नाही
+            return E3.M_SETUP, chk, {"commit": cm, "conviction": "B"}
         entry = float(A["close"][t])
         sl = lvl["hi"] if d == M.DOWN else lvl["lo"]
         tgt = float(min(A["low"][:t + 1])) if d == M.DOWN else float(max(A["high"][:t + 1]))
@@ -102,17 +106,32 @@ class _Stub(E3.V22):
 
 
 @pytest.mark.parametrize("mirror", [False, True])
-def test_sep29_bar_logs_touched_level_reason_not_no_touch(mirror):
+def test_sep29_is_valid_bear_call_read_no_rr_skip(mirror):
+    """Abhi (rr-correction): 29 Sep 12:15 = valid bear-call read (mirror: bull put) — "skipped on R:R" निकाल नाही (default ⑦ नाही)."""
     A = _A(SEP29, mirror)
     lv = [_lvl(SUPPLY, mirror), _lvl(FAR, mirror)]
     for order in (lv, lv[::-1]):                                              # active क्रम कोणताही ⇒ तोच निकाल
         r = _Stub(A, order, "UP" if mirror else "DOWN").decide(T_1215)
         assert r["level"]["id"] == SUPPLY["id"]
+        assert r["decision"] == E3.SETUP and r["trade_side"] == (["bull_put"] if mirror else ["bear_call"])
+        assert r["checklist"]["③"][0] is True and r["checklist"]["⑥"][0] is True and "⑦" not in r["checklist"]
+        assert "R:R" not in str(r["why"] or "") and r["risk"] is None
+        assert {e["id"]: e["decision"] for e in r["level_evals"]} == {SUPPLY["id"]: E3.SETUP, FAR["id"]: E3.WAIT}
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_sep29_bar_logs_touched_level_reason_not_no_touch(mirror):
+    """Legacy `rr_step` = True (setting ON) ⇒ जुना ⑦ अजून चालतो, आणि निकाल स्पर्शलेल्या level चा (no touch नाही)."""
+    A = _A(SEP29, mirror)
+    lv = [_lvl(SUPPLY, mirror), _lvl(FAR, mirror)]
+    for order in (lv, lv[::-1]):                                              # active क्रम कोणताही ⇒ तोच निकाल
+        r = _Stub(A, order, "UP" if mirror else "DOWN", rr_step=True).decide(T_1215)
+        assert r["level"]["id"] == SUPPLY["id"]
         assert r["checklist"]["③"][0] is True and r["checklist"]["⑥"][0] is True and r["checklist"]["⑦"][0] is False
-        assert r["decision"] == E3.NO_TRADE and "R:R" in r["why"]             # "valid read, skipped on R:R" — "no touch" नाही
+        assert r["decision"] == E3.NO_TRADE and "R:R" in r["why"]             # legacy ⑦ फक्त — "no touch" नाही
         assert {e["id"]: e["decision"] for e in r["level_evals"]} == {SUPPLY["id"]: E3.NO_TRADE, FAR["id"]: E3.WAIT}
     # कोणत्याच level ला स्पर्श नाही ⇒ जुना क्रम (wait)
-    r = _Stub(A, lv, "UP" if mirror else "DOWN").decide(T_1100 - 1)
+    r = _Stub(A, lv, "UP" if mirror else "DOWN", rr_step=True).decide(T_1100 - 1)
     assert r["decision"] == E3.WAIT and r["checklist"]["③"][0] is False
 
 
